@@ -1,10 +1,27 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
   "files": {
-    "includes": ["**", "!**/dist", "!**/out", "!**/node_modules", "!examples", "!apps/site"]
+    "includes": [
+      "**",
+      "!**/dist",
+      "!**/out",
+      "!**/node_modules",
+      "!examples",
+      "!**/.next",
+      "!**/next-env.d.ts"
+    ]
   },
-  "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
-  "javascript": { "formatter": { "quoteStyle": "double", "semicolons": "always" } },
+  "formatter": {
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "semicolons": "always"
+    }
+  },
   "linter": {
     "rules": {
       "recommended": true,
@@ -18,9 +35,21 @@
         "noControlCharactersInRegex": "off",
         "useIterableCallbackReturn": "off"
       },
-      "correctness": { "useExhaustiveDependencies": "off" },
-      "complexity": { "useOptionalChain": "off" },
-      "a11y": { "noStaticElementInteractions": "off", "noAutofocus": "off" }
+      "correctness": {
+        "useExhaustiveDependencies": "off"
+      },
+      "complexity": {
+        "useOptionalChain": "off"
+      },
+      "a11y": {
+        "noStaticElementInteractions": "off",
+        "noAutofocus": "off"
+      }
+    }
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
     }
   }
 }

@@ -1,4 +1,4 @@
-<p align="center"><img src="apps/site/public/favicon.svg" width="72" height="72" alt=""></p>
+<p align="center"><img src="apps/web/public/favicon.svg" width="72" height="72" alt=""></p>
 
 <h1 align="center">Ponzu</h1>
 

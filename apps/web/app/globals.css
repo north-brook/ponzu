@@ -1,0 +1,116 @@
+@import "tailwindcss";
+
+:root {
+  --ground: #ffffff;
+  --ink: #000000;
+  --text: #0e0e0e;
+  --muted: #5a5a5a;
+  --faint: #8a8a8a;
+  --tile: #f6f6f4;
+  --well: #ffffff;
+  --well-rule: #ececea;
+  --code: #0e0e0e;
+  --code-ink: #ededed;
+  --code-rule: transparent;
+  --chip: #f3f3f1;
+  --stage: #fff3cf;
+  --stage-shadow: rgba(90, 60, 0, 0.22);
+  --rule: #efefed;
+  --outline: #d6d6d4;
+  --cta: #0e0e0e;
+  --cta-ink: #ffffff;
+  --m1: #ffd23f;
+  --m2: #f4b012;
+  --rind: #f4b012;
+  --pith: #fff3cf;
+  --flesh: #ffd23f;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground: #0a0a0a;
+    --ink: #f2f2f2;
+    --text: #f2f2f2;
+    --muted: #a0a0a0;
+    --faint: #707070;
+    --tile: #141414;
+    --well: #1c1c1c;
+    --well-rule: #262626;
+    --code: #000000;
+    --code-ink: #ededed;
+    --code-rule: #262626;
+    --chip: #161616;
+    --stage: #1a1606;
+    --stage-shadow: rgba(0, 0, 0, 0.6);
+    --rule: #1c1c1c;
+    --outline: #333333;
+    --cta: #ffd23f;
+    --cta-ink: #0e0e0e;
+    --m1: #ffda55;
+    --m2: #ffc21a;
+    --rind: #ffc21a;
+    --pith: #fff1c2;
+    --flesh: #ffda55;
+  }
+}
+
+@theme inline {
+  --color-ground: var(--ground);
+  --color-ink: var(--ink);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-tile: var(--tile);
+  --color-well: var(--well);
+  --color-well-rule: var(--well-rule);
+  --color-code: var(--code);
+  --color-code-ink: var(--code-ink);
+  --color-code-rule: var(--code-rule);
+  --color-chip: var(--chip);
+  --color-stage: var(--stage);
+  --color-stage-shadow: var(--stage-shadow);
+  --color-rule: var(--rule);
+  --color-outline: var(--outline);
+  --color-cta: var(--cta);
+  --color-cta-ink: var(--cta-ink);
+  --color-m1: var(--m1);
+  --color-m2: var(--m2);
+
+  --font-sans: var(--font-inter-tight), system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply bg-ground font-sans text-[17px]/normal text-text;
+  }
+}
+
+@keyframes pop {
+  0%,
+  12% {
+    scale: 0.7;
+    opacity: 0.3;
+    background: var(--m1);
+  }
+  30%,
+  70% {
+    scale: 1;
+    opacity: 1;
+    background: var(--m2);
+    box-shadow: 0 12px 24px color-mix(in srgb, var(--m2) 45%, transparent);
+  }
+  100% {
+    scale: 0.7;
+    opacity: 0.3;
+    background: var(--m1);
+  }
+}
+
+@utility animate-pop {
+  animation: pop 2.4s cubic-bezier(0.3, 1.6, 0.5, 1) infinite;
+}
