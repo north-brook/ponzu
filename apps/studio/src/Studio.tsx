@@ -347,7 +347,10 @@ function useTabDrag(tabs: string[], setTabs: (tabs: string[]) => void) {
         const others = [...s.children].filter(
           (c): c is HTMLElement => c instanceof HTMLElement && c !== el,
         );
-        const middle = el.offsetLeft + d.dx + el.offsetWidth / 2;
+        // From the pointer, not the clamped tab: a wide tab held at the strip's end can't
+        // reach the middle of a narrow one there.
+        const left = s.getBoundingClientRect().left - s.scrollLeft;
+        const middle = d.x - d.grab - left + el.offsetWidth / 2;
         const to = others.filter((c) => c.offsetLeft + c.offsetWidth / 2 < middle).length;
         const tabs = order.current;
         if (to === tabs.indexOf(key)) return;
