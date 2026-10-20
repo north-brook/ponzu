@@ -216,17 +216,21 @@ function motionRuntime() {
     if (trigger === "load") {
       for (const el of smil()) out.push(describeSmil(el));
       for (const v of videos()) {
+        const duration = Number.isFinite(v.duration) ? round(v.duration * 1000) : 0;
         out.push({
           id: idOf(v),
           kind: "video",
-          name: (v.currentSrc || v.src || "video").split("/").pop() ?? "video",
+          name: /^(data|blob):/.test(v.currentSrc)
+            ? "video"
+            : v.currentSrc.split("/").pop() || "video",
           properties: [],
           delay: 0,
-          duration: round((v.duration || 0) * 1000),
+          duration,
           iterations: v.loop ? null : 1,
           direction: "normal",
           easing: "linear",
-          end: null,
+          // Unknown until its metadata loads; a video without one doesn't set the pace.
+          end: v.loop || !duration ? null : duration,
           timeline: "time",
         });
       }
@@ -241,9 +245,9 @@ function motionRuntime() {
     let cycle = 0;
     let loops = false;
     for (const a of animations) {
-      if (a.timeline !== "time" || a.paused || a.kind === "video") continue;
+      if (a.timeline !== "time" || a.paused) continue;
       if (a.end !== null) settled = Math.max(settled, a.end);
-      else {
+      else if (a.duration > 0 || a.kind !== "video") {
         loops = true;
         const one = a.duration * (a.direction.includes("alternate") ? 2 : 1);
         cycle = Math.max(cycle, one);
@@ -373,7 +377,8 @@ function motionRuntime() {
     void document.body.offsetHeight;
     const rules = rewrite();
     const before = rules.map(matches);
-    const looked = look();
+    const near = targets.flatMap(([, el]) => [...chain(el), ...el.querySelectorAll("*")]);
+    const looked = look() + full(near);
     for (const [kind, el] of targets) {
       if (kind === "hover" || kind === "press")
         for (const n of chain(el)) n.setAttribute("data-ponzu-hover", "");
@@ -387,18 +392,21 @@ function motionRuntime() {
     }
     const known = new Set(entries.map((e) => e.anim));
     const fresh = document.getAnimations().filter((a) => !known.has(a));
-    const ruleChanged = rules.some((r, i) => matches(r) !== before[i]);
+    const changed = rules.filter((r, i) => matches(r) !== before[i]);
     // A new transition means something changes, though its first frame looks the same.
-    if (!fresh.length && look() === looked) {
+    if (!fresh.length && look() + full(near) === looked) {
+      const beaten = changed.some(overriddenInline);
       for (const [kind, el, pseudo] of targets) {
         const which = kind === "press" ? ":active or :hover" : pseudo;
         const verb = kind === "press" ? "pressing" : kind === "hover" ? "hovering" : "focusing";
         issues.push({
           id: idOf(el),
           kind: "no-state-style",
-          message: ruleChanged
+          message: beaten
             ? `a ${which} rule matches ${label(el)}, but ${verb} it changes nothing: inline styles beat <style> rules. Mark the state's declarations !important`
-            : `no ${which} rule matches ${label(el)} or its ancestors, so ${verb} it changes nothing`,
+            : changed.length
+              ? `a ${which} rule matches ${label(el)}, but ${verb} it changes nothing: its values are what's already there`
+              : `no ${which} rule matches ${label(el)} or its ancestors, so ${verb} it changes nothing`,
         });
       }
     }
@@ -444,6 +452,40 @@ function motionRuntime() {
     return out;
   }
 
+  /** Every computed property of a few elements: what a state near them could change. */
+  function full(els: Element[]): string {
+    let out = "";
+    for (const el of els.slice(0, 300)) {
+      const cs = getComputedStyle(el);
+      for (let i = 0; i < cs.length; i++) out += `${cs.getPropertyValue(cs[i]!)}|`;
+    }
+    return out;
+  }
+
+  /** Whether an element the rule matches sets one of its properties inline, without !important. */
+  function overriddenInline(rule: CSSStyleRule): boolean {
+    const sel = rule.selectorText.replace(/::?(before|after|marker|placeholder)(?![\w-])/g, "");
+    let els: Element[];
+    try {
+      els = [root!, ...root!.querySelectorAll("*")].filter((el) => el.matches(sel));
+    } catch {
+      return false;
+    }
+    for (let i = 0; i < rule.style.length; i++) {
+      const prop = rule.style[i]!;
+      if (rule.style.getPropertyPriority(prop) === "important") continue;
+      for (const el of els) {
+        const inline = (el as HTMLElement).style;
+        if (
+          inline?.getPropertyValue(prop) &&
+          inline.getPropertyValue(prop) !== rule.style.getPropertyValue(prop)
+        )
+          return true;
+      }
+    }
+    return false;
+  }
+
   function matches(rule: CSSStyleRule): boolean {
     // Pseudo-elements never match an element; their originating element does.
     const sel = rule.selectorText.replace(
@@ -462,6 +504,18 @@ function motionRuntime() {
     interact?: { hover?: string; focus?: string; press?: string };
     at?: number;
   }) {
+    // A video's length is what paces it; give each a moment to report it.
+    await Promise.all(
+      videos().map(
+        (v) =>
+          new Promise<void>((resolve) => {
+            if (v.readyState >= 1 || v.error || !(v.currentSrc || v.src)) return resolve();
+            v.addEventListener("loadedmetadata", () => resolve(), { once: true });
+            v.addEventListener("error", () => resolve(), { once: true });
+            setTimeout(resolve, 2000);
+          }),
+      ),
+    );
     hold();
     if (opts.interact && Object.values(opts.interact).some(Boolean)) {
       const r = interact(opts.interact);
@@ -595,6 +649,12 @@ function motionRuntime() {
       if (ct.fill === "forwards" || ct.fill === "both") continue;
       if (!effect.getKeyframes().some((k) => "opacity" in k)) continue;
       if (getComputedStyle(target).opacity !== "0") continue;
+      // A fade-out is meant to end hidden: only flag one that ends visible.
+      const at = e.anim.currentTime;
+      e.anim.currentTime = Math.max(0, Number(ct.endTime) - 1);
+      const last = getComputedStyle(target).opacity;
+      e.anim.currentTime = at;
+      if (Number(last) < 0.05) continue;
       const id = idOf(target);
       if (flagged.has(id)) continue;
       flagged.add(id);

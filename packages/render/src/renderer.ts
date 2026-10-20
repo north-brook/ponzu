@@ -96,7 +96,7 @@ export const LINT_SCRIPT = `(() => {
   const label = (el) => el.getAttribute('data-name') || el.tagName.toLowerCase();
   // Content scrolled out of a scroll container is meant to be out of view.
   const scrolls = (el) => { const o = getComputedStyle(el); return /auto|scroll/.test(o.overflowX + o.overflowY); };
-  const inScroller = (el) => { for (let p = el.parentElement; p && p !== root; p = p.parentElement) if (scrolls(p)) return true; return false; };
+  const inScroller = (el) => { for (let p = el.parentElement; p; p = p.parentElement) { if (scrolls(p)) return true; if (p === root) return false; } return false; };
   for (const el of root.querySelectorAll('[data-id]')) {
     const id = el.getAttribute('data-id');
     const cs = getComputedStyle(el);
@@ -135,7 +135,7 @@ export const LINT_SCRIPT = `(() => {
       }
     }
   }
-  if (root.scrollHeight > root.clientHeight + 1) {
+  if (!scrolls(root) && root.scrollHeight > root.clientHeight + 1) {
     issues.push({ id: root.getAttribute('data-id'), kind: 'overflow', message: 'content is ' + (root.scrollHeight - root.clientHeight) + 'px taller than the artboard; set height: fit-content or make room' });
   }
   return issues.slice(0, 30);
