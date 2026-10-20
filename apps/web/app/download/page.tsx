@@ -2,14 +2,18 @@ import type { Metadata } from "next";
 import { Footer, Nav } from "@/components/chrome";
 import { REPO } from "@/components/links";
 import { latestVersion } from "@/components/release";
+import { share } from "@/components/share";
 import { AutoStart, Download } from "./download";
 import { Steps } from "./steps";
 
+const TITLE = "Download Ponzu for Mac";
+const DESCRIPTION =
+  "Install Ponzu for Mac: open the disk image, drag it into Applications, and connect your agent.";
+
 export const metadata: Metadata = {
-  title: "Download Ponzu for Mac",
-  description:
-    "Install Ponzu for Mac: open the disk image, drag it into Applications, and connect your agent.",
-  alternates: { canonical: "/download" },
+  title: { absolute: TITLE },
+  description: DESCRIPTION,
+  ...share({ path: "/download", title: TITLE, description: DESCRIPTION }),
 };
 
 /** The DMG keeps one name across versions (apps/desktop/package.json, dmg.artifactName). */
@@ -28,10 +32,10 @@ export default async function Page(props: PageProps<"/download">) {
       <Nav />
 
       <header className="flex flex-col items-center gap-6 pt-[88px] pb-14 text-center max-[720px]:pt-14 max-[720px]:pb-10">
-        <h1 className="m-0 text-[clamp(44px,6vw,72px)] leading-[1.02] font-medium tracking-[-0.04em] text-balance text-ink">
+        <h1 className="m-0 text-[clamp(44px,6vw,72px)] leading-[1.06] font-semibold tracking-[-0.035em] text-balance text-ink">
           Ponzu for Mac.
         </h1>
-        <p className="m-0 max-w-[560px] text-[19px]/[29px] text-balance text-muted">
+        <p className="m-0 max-w-[560px] text-[19px]/[31px] text-balance text-muted">
           Download it, drag it into Applications, and point your agent at the canvas.
         </p>
         <div className="pt-2">
@@ -54,8 +58,9 @@ export default async function Page(props: PageProps<"/download">) {
           </a>
           .
         </p>
-        <Footer />
       </section>
+
+      <Footer />
     </div>
   );
 }

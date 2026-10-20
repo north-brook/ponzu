@@ -26,7 +26,7 @@
   --pz-comment-soft: #fff6da;
   --pz-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 28px rgba(0, 0, 0, 0.1);
   --pz-board-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 2px 10px rgba(0, 0, 0, 0.05);
-  --pz-font: "Inter Tight", "Inter", system-ui, -apple-system, sans-serif;
+  --pz-font: "Inter", system-ui, -apple-system, sans-serif;
 
   position: relative;
   display: flex;
@@ -36,7 +36,7 @@
   min-height: 0;
   background: var(--pz-canvas);
   color: var(--pz-ink);
-  font: 13px / 1.35 var(--pz-font);
+  font: 13px / 1.5 var(--pz-font);
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   user-select: none;
