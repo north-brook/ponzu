@@ -69,7 +69,7 @@ export const organizeTools = [
         .string()
         .optional()
         .describe(
-          'Shown as the tab title, e.g. "Onboarding" or "Checkout flow". Default: the folder name as written.',
+          'Shown as the tab title, e.g. "Onboarding" or "Checkout flow". Default: the folder name without .design, case unchanged.',
         ),
       pages: z
         .array(z.object({ name: z.string(), icon: z.enum(PAGE_ICONS).optional() }))
