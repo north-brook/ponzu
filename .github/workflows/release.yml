@@ -117,6 +117,9 @@ jobs:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           GH_TOKEN: ${{ github.token }}
+          # Inlined into the bundled server, so release builds report anonymous
+          # usage and builds from source don't (apps/cli/src/telemetry.ts).
+          PONZU_POSTHOG_KEY: ${{ vars.PONZU_POSTHOG_KEY }}
       - name: Signed, notarized and stapled
         # The app inside the DMG carries the notarization ticket; the DMG
         # itself is only a container and is not notarized.

@@ -7,8 +7,12 @@ import type { Feedback, Telemetry } from "@ponzu/tools";
 import { PostHog } from "posthog-node";
 import { ponzuHome } from "./host.ts";
 
-/** The Ponzu project's public ingestion key: it can send events, not read them. */
-const KEY = "phc_mEVKBf9GwcLquUtegCVaSJ3nzWJBZQjXV9BBkwGaEFi2";
+/**
+ * The Ponzu project's ingestion key. Release builds inline it (the desktop
+ * build's `--env`, from the release workflow), so only official builds
+ * report; a checkout or fork without it sends nothing.
+ */
+const KEY = process.env.PONZU_POSTHOG_KEY;
 const HOST = "https://us.i.posthog.com";
 
 /**
@@ -80,6 +84,7 @@ const truthy = (v?: string) => v !== undefined && v.trim() !== "" && !falsy(v);
 
 /** Why telemetry is off, or null when it's on. */
 function offBecause(): string | null {
+  if (!KEY) return "this build doesn't report usage";
   if (falsy(process.env.PONZU_TELEMETRY)) return "PONZU_TELEMETRY is off";
   if (truthy(process.env.DO_NOT_TRACK)) return "DO_NOT_TRACK is set";
   if (truthy(process.env.CI)) return "running in CI";
@@ -110,7 +115,7 @@ export async function startTelemetry(base: {
     // An unwritable home has no stable id to count it by.
     return null;
   }
-  const client = new PostHog(KEY, { host: HOST, flushAt: 20, flushInterval: 10_000 });
+  const client = new PostHog(KEY!, { host: HOST, flushAt: 20, flushInterval: 10_000 });
   // Network trouble is never the person's problem.
   client.on("error", () => {});
   const common = {

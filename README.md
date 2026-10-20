@@ -130,11 +130,11 @@ Skills for agents that support them live in [`skills/`](skills).
 
 ## Telemetry
 
-The CLI and the Mac app send anonymous usage to the Ponzu team: which tools agents call and whether they fail, which agents connect, how often the canvas opens, and the Ponzu version and OS. Each install is a random id in `~/.ponzu/telemetry.json`. Nothing about your designs leaves your machine: no HTML, file names, paths, comment text or tool arguments.
+The Mac app sends anonymous usage to the Ponzu team: which tools agents call and whether they fail, which agents connect, how often the canvas opens, and the Ponzu version and OS. Each install is a random id in `~/.ponzu/telemetry.json`. Nothing about your designs leaves your machine: no HTML, file names, paths, comment text or tool arguments.
 
 Agents can also tell us how Ponzu is working for them with `send_feedback`. That's the one event with words in it, and it's about Ponzu, not your work.
 
-Turn all of it off with `ponzu telemetry off`, or set `PONZU_TELEMETRY=0` or `DO_NOT_TRACK=1`. Nothing is sent in CI. The packages you embed (`@ponzu/tools`, `@ponzu/react` and the rest) send nothing on their own; a host opts in by passing a `telemetry` to its workspace.
+Turn all of it off with `ponzu telemetry off`, or set `PONZU_TELEMETRY=0` or `DO_NOT_TRACK=1`. Nothing is sent in CI. Only release builds report: Ponzu built from source, or a fork, has no key and sends nothing. The packages you embed (`@ponzu/tools`, `@ponzu/react` and the rest) send nothing on their own; a host opts in by passing a `telemetry` to its workspace.
 
 ## Develop
 
