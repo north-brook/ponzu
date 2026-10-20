@@ -1,0 +1,703 @@
+/*
+ * The product demo. The canvas itself is Ponzu's own stylesheet (@ponzu/react/styles.css); this
+ * adds the studio's window chrome around it, the terminal, and the build-up motion.
+ */
+
+.dm {
+  --bar: #e9e9e6;
+  --bar-ink: #0e0e0e;
+  --bar-muted: #6b6b6b;
+  --tab-on: #f3f3f1;
+  --hover: rgba(0, 0, 0, 0.05);
+  --window-rule: rgb(0 0 0 / 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  .dm {
+    --bar: #0a0a0a;
+    --bar-ink: #f2f2f2;
+    --bar-muted: #8a8a8a;
+    --tab-on: #1a1a1a;
+    --hover: rgba(255, 255, 255, 0.06);
+    --window-rule: rgb(255 255 255 / 0.1);
+  }
+}
+
+.dm-window {
+  overflow: hidden;
+  border-radius: 12px;
+  box-shadow:
+    0 0 0 0.5px var(--window-rule),
+    0 1px 2px rgb(0 0 0 / 0.08),
+    0 32px 80px -28px var(--shot-shadow);
+}
+
+/* The studio: a 40px bar over the canvas, inset 8px like the desktop app. */
+.dm-studio {
+  display: flex;
+  flex-direction: column;
+  background: var(--bar);
+  color: var(--bar-ink);
+  font:
+    13px / 1.35 var(--font-inter),
+    system-ui,
+    sans-serif;
+}
+
+.dm-bar {
+  flex-shrink: 0;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px 0 14px;
+}
+
+.dm-lights {
+  display: flex;
+  gap: 8px;
+  margin-right: 18px;
+}
+
+.dm-lights i {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #ff5f57;
+  box-shadow: inset 0 0 0 0.5px rgb(0 0 0 / 0.12);
+}
+
+.dm-lights i:nth-child(2) {
+  background: #febc2e;
+}
+
+.dm-lights i:nth-child(3) {
+  background: #28c840;
+}
+
+.dm-home,
+.dm-icon {
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--bar-muted);
+}
+
+.dm-home {
+  width: 32px;
+}
+
+.dm-icon {
+  width: 30px;
+}
+
+.dm-tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  padding: 0 6px 0 10px;
+  border-radius: 8px;
+  background: var(--tab-on);
+  white-space: nowrap;
+}
+
+.dm-tab-close {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  opacity: 0.6;
+}
+
+.dm-spinner {
+  width: 12px;
+  height: 12px;
+  margin: 1px;
+  border-radius: 50%;
+  border: 1.6px solid currentColor;
+  border-right-color: transparent;
+  animation: dm-spin 0.8s linear infinite;
+}
+
+@keyframes dm-spin {
+  to {
+    rotate: 1turn;
+  }
+}
+
+.dm-bar-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dm-agent {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-right: 4px;
+  transition:
+    opacity 300ms,
+    scale 400ms cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+
+.dm-agent[data-on="false"] {
+  opacity: 0;
+  scale: 0.6;
+}
+
+.dm-agent-dot {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #30a46c;
+  box-shadow: 0 0 0 2px var(--bar);
+}
+
+.dm-agent-dot[data-busy="true"] {
+  background: #f4b012;
+  animation: dm-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes dm-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.dm-main {
+  flex: 1;
+  min-height: 0;
+  padding: 0 8px 8px;
+}
+
+.dm-main > .pz-root {
+  border-radius: 12px;
+}
+
+/* Pins and cards arrive with a short pop, as they do in the app. */
+.dm-canvas [class*="pz:shadow-pop"] {
+  animation: dm-card 220ms ease-out both;
+}
+
+@keyframes dm-card {
+  from {
+    opacity: 0;
+    translate: -4px 0;
+  }
+}
+
+/* The camera glides between shots instead of jumping. */
+.dm .dm-world {
+  transition: transform 1300ms cubic-bezier(0.65, 0, 0.25, 1);
+}
+
+.dm .dm-board {
+  animation: dm-board-in 500ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@keyframes dm-board-in {
+  from {
+    opacity: 0;
+    scale: 0.97;
+  }
+}
+
+.dm .dm-board-title {
+  transition: font-size 1300ms cubic-bezier(0.65, 0, 0.25, 1);
+}
+
+.dm .dm-agent-chip {
+  animation: dm-chip 1.4s ease-in-out infinite;
+}
+
+@keyframes dm-chip {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* Pieces of a design arrive in the order the agent writes them. */
+.dm-board-body {
+  position: relative;
+  overflow: hidden;
+}
+
+.dm-board-body [data-r] {
+  opacity: 0;
+  translate: 0 28px;
+  filter: blur(6px);
+  transition:
+    opacity 600ms ease-out,
+    translate 800ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    filter 600ms ease-out;
+}
+
+.dm-board-body [data-revision] {
+  animation: dm-revision 900ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@keyframes dm-revision {
+  from {
+    opacity: 0;
+    translate: 0 -16px;
+    filter: blur(8px);
+  }
+}
+
+/* The person's cursor. */
+.dm-cursor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 10;
+  pointer-events: none;
+  transition:
+    translate 700ms cubic-bezier(0.55, 0, 0.2, 1),
+    opacity 300ms;
+}
+
+.dm-cursor svg {
+  display: block;
+  filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 0.35));
+  transition: scale 120ms;
+}
+
+.dm-cursor[data-down="true"] svg {
+  scale: 0.86;
+}
+
+.dm-pin-new {
+  animation: dm-pin 360ms cubic-bezier(0.3, 1.6, 0.5, 1) both;
+}
+
+@keyframes dm-pin {
+  from {
+    scale: 0;
+  }
+}
+
+.dm-line {
+  flex-shrink: 0;
+  animation: dm-line 320ms ease-out both;
+}
+
+@keyframes dm-line {
+  from {
+    opacity: 0;
+    translate: 0 4px;
+  }
+}
+
+@keyframes dm-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dm *,
+  .dm *::before,
+  .dm *::after {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* The canvas follows the page's color scheme, as `.pz-dark` would. */
+@media (prefers-color-scheme: dark) {
+  .dm .pz-root {
+    --pz-canvas: #121212;
+    --pz-ink: #f2f2f2;
+    --pz-muted: #a0a0a0;
+    --pz-faint: #6a6a6a;
+    --pz-rule: #262626;
+    --pz-chip: #1f1f1f;
+    --pz-surface: #1a1a1a;
+    --pz-hover: rgba(255, 255, 255, 0.06);
+    --pz-select: #4c8dff;
+    --pz-comment: #ffc21a;
+    --pz-comment-ink: #2a1f00;
+    --pz-comment-soft: #2a2416;
+    --pz-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.5);
+    --pz-board-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06);
+  }
+
+  .dm .dm-page-on {
+    background: var(--pz-chip);
+  }
+}
+
+/*
+ * Narrow screens: two overlapping windows. The terminal sits behind the studio with its prompt
+ * peeking out below, and comes to the front, lifting slightly, whenever it's Claude's turn.
+ */
+.dm-float {
+  z-index: 0;
+  transition:
+    translate 600ms cubic-bezier(0.3, 1.2, 0.5, 1),
+    filter 400ms;
+  filter: brightness(0.92);
+}
+
+.dm-float[data-front="true"] {
+  z-index: 2;
+  translate: 0 -24px;
+  filter: none;
+}
+
+/* Floating over the studio, the window casts a deeper shadow so it reads as in front. */
+.dm-float > .dm-window {
+  box-shadow:
+    0 0 0 1px var(--app-rule),
+    0 40px 90px -20px rgb(0 0 0 / 0.35);
+}
+
+.dm-studio-wrap {
+  z-index: 1;
+}
+
+/* A page tab arriving as the agent creates or renames a page. */
+.dm-page-new {
+  animation: dm-page 420ms cubic-bezier(0.3, 1.4, 0.5, 1) both;
+}
+
+@keyframes dm-page {
+  from {
+    opacity: 0;
+    scale: 0.8;
+  }
+}
+
+.dm .dm-empty {
+  bottom: 44px;
+}
+
+/* The caret in the canvas comment composer. */
+.dm-text-caret {
+  display: inline-block;
+  width: 1.5px;
+  height: 1.1em;
+  margin-left: 1px;
+  translate: 0 0.2em;
+  background: var(--pz-ink);
+  animation: dm-blink 1s steps(1) infinite;
+}
+
+/* The comments tile: a pin with its card beside it, as it sits on the canvas. */
+.dm-thread-tile.pz-root {
+  background: transparent;
+}
+
+.dm-thread-tile {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  height: auto;
+  overflow: visible;
+  background: transparent;
+  user-select: text;
+}
+
+@media (prefers-color-scheme: dark) {
+  .pz-root.dm {
+    --pz-canvas: #121212;
+    --pz-ink: #f2f2f2;
+    --pz-muted: #a0a0a0;
+    --pz-faint: #6a6a6a;
+    --pz-rule: #262626;
+    --pz-chip: #1f1f1f;
+    --pz-surface: #1a1a1a;
+    --pz-comment: #ffc21a;
+    --pz-comment-ink: #2a1f00;
+    --pz-comment-soft: #2a2416;
+    --pz-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.5);
+  }
+}
+
+/*
+ * The agent app beside the canvas. Colors are sampled from the app's own light and dark themes;
+ * the type is the platform's UI face, the closest public match to the app's own.
+ */
+.dm-app {
+  --app-bg: #fcfcfb;
+  --app-ink: #0b0b0b;
+  --app-soft: #52514f;
+  --app-muted: #898781;
+  --app-rule: #e4e4e3;
+  --app-bubble: #f0f0ef;
+  --app-field: #ffffff;
+  --app-field-rule: #c5c5c4;
+  --app-orange: #d97757;
+  display: flex;
+  flex-direction: column;
+  background: var(--app-bg);
+  color: var(--app-ink);
+  font-family:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", var(--font-inter), system-ui, sans-serif;
+  line-height: 1.55;
+  letter-spacing: -0.003em;
+}
+
+@media (prefers-color-scheme: dark) {
+  .dm-app {
+    --app-bg: #151515;
+    --app-ink: #f0efec;
+    --app-soft: #c3c2b7;
+    --app-muted: #898781;
+    --app-rule: #2c2c2c;
+    --app-bubble: #212121;
+    --app-field: #20201f;
+    --app-field-rule: #2f2f2e;
+  }
+
+  .dm-window.dm-app {
+    box-shadow:
+      0 0 0 1px #2c2c2c,
+      0 32px 80px -28px var(--shot-shadow);
+  }
+}
+
+.dm-app-ink {
+  color: var(--app-ink);
+}
+
+.dm-app-soft {
+  color: var(--app-soft);
+}
+
+.dm-app-muted {
+  color: var(--app-muted);
+}
+
+.dm-app-faint {
+  color: var(--app-muted);
+  opacity: 0.6;
+}
+
+.dm-app-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 1em;
+  height: 3.1em;
+  padding: 0 1em;
+}
+
+.dm-app-bar .dm-lights {
+  margin-right: 0.2em;
+}
+
+.dm-app-icons {
+  display: flex;
+  align-items: center;
+  gap: 0.85em;
+}
+
+.dm-app-divider {
+  width: 1px;
+  height: 1.3em;
+  background: var(--app-rule);
+}
+
+.dm-app-glyph {
+  width: 1.3em;
+  height: 1.3em;
+  flex-shrink: 0;
+}
+
+.dm-app-glyph-sm {
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+}
+
+.dm-app-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  min-width: 0;
+  margin-left: 0.6em;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* The conversation, in a centered column that scrolls to follow new messages. */
+.dm-app-thread {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1em;
+  overflow: hidden;
+  padding: 1.6em 1.5em 0.6em;
+  mask-image: linear-gradient(transparent, #000 1.6em);
+}
+
+.dm-app-bubble {
+  max-width: 82%;
+  padding: 0.6em 0.95em;
+  border-radius: 0.85em;
+  background: var(--app-bubble);
+}
+
+.dm-app-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55em;
+  padding: 0.95em 1.05em;
+  border: 1px solid var(--app-rule);
+  border-radius: 0.85em;
+}
+
+.dm-app-step {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+}
+
+.dm-app-step[data-state="done"] {
+  color: var(--app-soft);
+}
+
+.dm-app-step-icon {
+  width: 1.05em;
+  height: 1.05em;
+  flex-shrink: 0;
+  color: var(--app-soft);
+}
+
+.dm-app-step[data-state="active"] .dm-app-step-icon {
+  color: var(--app-ink);
+}
+
+.dm-app-spin {
+  animation: dm-spin 1.1s linear infinite;
+}
+
+/* "Using ponzu: …" with the app's three bouncing dots. */
+.dm-app-status {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  height: 2.6em;
+  padding: 0 1.5em;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.dm-app-dots {
+  display: inline-flex;
+  gap: 0.22em;
+}
+
+.dm-app-dots i {
+  width: 0.34em;
+  height: 0.34em;
+  border-radius: 50%;
+  background: var(--app-orange);
+  animation: dm-app-dot 1.2s ease-in-out infinite;
+}
+
+.dm-app-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.dm-app-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes dm-app-dot {
+  0%,
+  60%,
+  100% {
+    translate: 0 0;
+  }
+  30% {
+    translate: 0 -0.28em;
+  }
+}
+
+.dm-app-foot {
+  flex-shrink: 0;
+  padding: 0 1.1em 0.9em;
+}
+
+.dm-app-composer {
+  display: flex;
+  align-items: center;
+  gap: 0.75em;
+  height: 3.1em;
+  padding: 0 0.95em;
+  border-radius: 1em;
+  background: var(--app-field);
+  box-shadow:
+    inset 0 0 0 1px var(--app-field-rule),
+    0 1px 2px rgb(0 0 0 / 0.04);
+}
+
+.dm-app-send {
+  display: grid;
+  place-items: center;
+  width: 1.85em;
+  height: 1.85em;
+  border-radius: 50%;
+  color: var(--app-bg);
+  background: var(--app-muted);
+  opacity: 0.55;
+  transition:
+    opacity 150ms,
+    background 150ms;
+}
+
+.dm-app-send[data-ready="true"] {
+  background: var(--app-ink);
+  opacity: 1;
+}
+
+.dm-app-send .dm-app-glyph {
+  width: 1.05em;
+  height: 1.05em;
+}
+
+.dm-app-caret {
+  display: inline-block;
+  width: 1.5px;
+  height: 1.15em;
+  margin: 0 1px;
+  vertical-align: -0.2em;
+  background: var(--app-ink);
+  animation: dm-blink 1s steps(1) infinite;
+}
+
+.dm-app-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.6em 0.5em 0;
+}
+
+.dm-app-ring {
+  width: 1.05em;
+  height: 1.05em;
+  margin-left: 0.5em;
+  animation: dm-spin 1.4s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dm-app-dots i,
+  .dm-app-spin,
+  .dm-app-ring,
+  .dm-app-caret {
+    animation: none;
+  }
+}

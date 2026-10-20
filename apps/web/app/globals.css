@@ -13,8 +13,7 @@
   --code-ink: #ededed;
   --code-rule: transparent;
   --chip: #f3f3f1;
-  --stage: #fff3cf;
-  --stage-shadow: rgba(90, 60, 0, 0.22);
+  --shot-shadow: rgba(40, 30, 0, 0.28);
   --rule: #efefed;
   --outline: #d6d6d4;
   --cta: #0e0e0e;
@@ -40,8 +39,7 @@
     --code-ink: #ededed;
     --code-rule: #262626;
     --chip: #161616;
-    --stage: #1a1606;
-    --stage-shadow: rgba(0, 0, 0, 0.6);
+    --shot-shadow: rgba(0, 0, 0, 0.8);
     --rule: #1c1c1c;
     --outline: #333333;
     --cta: #ffd23f;
@@ -67,17 +65,17 @@
   --color-code-ink: var(--code-ink);
   --color-code-rule: var(--code-rule);
   --color-chip: var(--chip);
-  --color-stage: var(--stage);
-  --color-stage-shadow: var(--stage-shadow);
   --color-rule: var(--rule);
   --color-outline: var(--outline);
   --color-cta: var(--cta);
   --color-cta-ink: var(--cta-ink);
+  /* Citrus highlights: the selected file and the cursor on the download page. */
   --color-m1: var(--m1);
   --color-m2: var(--m2);
 
-  --font-sans: var(--font-inter-tight), system-ui, -apple-system, sans-serif;
+  --font-sans: var(--font-inter), system-ui, -apple-system, sans-serif;
   --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+  --font-serif: var(--font-instrument-serif), Georgia, serif;
 }
 
 @layer base {
@@ -86,33 +84,213 @@
     text-rendering: optimizeLegibility;
   }
   body {
-    @apply bg-ground font-sans text-[17px]/normal text-text;
+    @apply bg-ground font-sans text-[17px]/[1.6] text-text;
+    font-feature-settings: "cv11", "ss03";
   }
 }
 
-@keyframes pop {
-  0%,
-  12% {
-    scale: 0.7;
-    opacity: 0.3;
-    background: var(--m1);
-  }
-  30%,
-  70% {
-    scale: 1;
-    opacity: 1;
-    background: var(--m2);
-    box-shadow: 0 12px 24px color-mix(in srgb, var(--m2) 45%, transparent);
-  }
-  100% {
-    scale: 0.7;
-    opacity: 0.3;
-    background: var(--m1);
+/*
+ * Syntax colors, one palette per color scheme: warm paper in light mode, citrus on ink in dark.
+ * Every code block on the page uses them, so they all switch together.
+ */
+.code {
+  --sh-fg: #1c1b18;
+  --sh-comment: #9a968c;
+  --sh-punct: #a8a49a;
+  --sh-tag: #b45309;
+  --sh-attr: #7c5cc4;
+  --sh-prop: #1f6f8b;
+  --sh-var: #a3407a;
+  --sh-num: #c2410c;
+  --sh-fn: #2f7a4f;
+  --sh-key: #a3407a;
+  --sh-str: #2f7a4f;
+  --sh-add: #2f7a4f;
+  --sh-del: #b42318;
+}
+
+@media (prefers-color-scheme: dark) {
+  .code {
+    --sh-fg: #ededed;
+    --sh-comment: #6b6b66;
+    --sh-punct: #7a7a74;
+    --sh-tag: #ffd23f;
+    --sh-attr: #c4a7ff;
+    --sh-prop: #8fd3ff;
+    --sh-var: #ff9ecd;
+    --sh-num: #ffa45c;
+    --sh-fn: #7bd88f;
+    --sh-key: #ff9ecd;
+    --sh-str: #a5e3b0;
+    --sh-add: #7bd88f;
+    --sh-del: #ff7b72;
   }
 }
 
-@utility animate-pop {
-  animation: pop 2.4s cubic-bezier(0.3, 1.6, 0.5, 1) infinite;
+.code-lines {
+  display: block;
+  counter-reset: line;
+}
+
+.code-line {
+  display: block;
+}
+
+.code-lines[data-numbers] .code-line::before {
+  counter-increment: line;
+  content: counter(line);
+  display: inline-block;
+  width: 3ch;
+  margin-right: 2.2ch;
+  text-align: right;
+  color: var(--sh-comment);
+  opacity: 0.55;
+  user-select: none;
+}
+
+.code-line[data-mark] {
+  margin-inline: -20px;
+  padding-inline: 20px;
+}
+
+.code-line[data-mark]::before {
+  display: inline-block;
+  width: 2ch;
+  user-select: none;
+}
+
+.code-line[data-mark="add"] {
+  background: color-mix(in srgb, var(--sh-add) 14%, transparent);
+  box-shadow: inset 2px 0 var(--sh-add);
+}
+
+.code-line[data-mark="add"]::before {
+  content: "+";
+  color: var(--sh-add);
+}
+
+.code-line[data-mark="del"] {
+  background: color-mix(in srgb, var(--sh-del) 13%, transparent);
+  box-shadow: inset 2px 0 var(--sh-del);
+}
+
+.code-line[data-mark="del"]::before {
+  content: "-";
+  color: var(--sh-del);
+}
+
+.code-line[data-mark="del"] > span {
+  opacity: 0.6;
+}
+
+/*
+ * Footer: a citrus sunrise. Half a ponzu wheel sits on the horizon line, a faint dawn warms the air
+ * above it, and the line turns warm where the sun touches it. As the footer scrolls into view the
+ * sun crests the line and the dawn comes up with it, finishing as you reach the end of the page.
+ * Without scroll timelines, or with reduced motion, it simply rests above the line.
+ */
+.horizon {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  height: 72px;
+  overflow: clip;
+}
+
+.horizon::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    50% 100% at 50% 100%,
+    color-mix(in srgb, var(--flesh) var(--dawn), transparent),
+    transparent
+  );
+}
+
+.horizon::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    var(--rule),
+    color-mix(in srgb, var(--rind) 55%, var(--rule)) 50%,
+    var(--rule)
+  );
+}
+
+.horizon-sun {
+  position: relative;
+  align-self: flex-end;
+  width: 76px;
+  translate: 0 22%;
+}
+
+:root {
+  --dawn: 16%;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --dawn: 9%;
+  }
+}
+
+@supports (animation-timeline: view()) {
+  /* From the horizon peeking over the fold to the end of the page, where it sits ~150px up. */
+  .horizon {
+    view-timeline: --horizon block;
+  }
+
+  .horizon-sun,
+  .horizon::before {
+    animation: linear both;
+    animation-timeline: --horizon;
+    animation-range: cover 0% cover 140px;
+  }
+
+  .horizon-sun {
+    animation-name: sunrise;
+  }
+
+  .horizon::before {
+    animation-name: dawn;
+  }
+}
+
+@keyframes sunrise {
+  from {
+    translate: 0 88%;
+  }
+}
+
+@keyframes dawn {
+  from {
+    opacity: 0;
+  }
+}
+
+/* `svg` lifts the wheel rules above the tile's own inline stylesheet. */
+@media (prefers-reduced-motion: reduce) {
+  svg .cit-wheel,
+  svg .cit-seg,
+  .horizon-sun,
+  .horizon::before {
+    animation: none;
+  }
+}
+
+.footer-link {
+  background: linear-gradient(currentColor, currentColor) 0 100% / 0 1px no-repeat;
+  transition:
+    color 150ms ease-out,
+    background-size 250ms ease-out;
+}
+
+.footer-link:hover {
+  background-size: 100% 1px;
 }
 
 /* The download button and its confirmation trade places with a short rise. */
@@ -128,4 +306,18 @@
   @media (prefers-reduced-motion: reduce) {
     animation: none;
   }
+}
+
+/* Bento code blocks never scroll: a line that runs past the edge fades out instead. */
+.code-well {
+  position: relative;
+}
+
+.code-well-fade {
+  display: block;
+}
+
+.code-well[data-overflows] .code-well-fade {
+  margin-right: -1.25rem;
+  mask-image: linear-gradient(90deg, #000 calc(100% - 72px), transparent);
 }

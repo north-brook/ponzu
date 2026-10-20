@@ -4,16 +4,21 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "predev": "bun run --cwd ../../packages/react build",
     "dev": "next dev --port 4321",
+    "prebuild": "bun run --cwd ../../packages/react build",
     "build": "next build",
     "start": "next start --port 4321"
   },
   "dependencies": {
+    "@ponzu/react": "workspace:*",
     "next": "^16.4.2",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "react-dom": "^19.3.1",
+    "shiki": "^4.5.0"
   },
   "devDependencies": {
+    "@ponzu/render": "workspace:*",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^24",
     "@types/react": "^19.3.0",

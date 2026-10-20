@@ -1,14 +1,15 @@
 import type { MouseEventHandler, ReactNode } from "react";
-import { Apple } from "./icons";
+import { Apple, GitHub } from "./icons";
 
 export const REPO = "https://github.com/north-brook/ponzu";
-export const DOCS = `${REPO}#readme`;
 export const RELEASES = `${REPO}/releases/latest`;
 /** The newest signed build. The release workflow keeps this file name across versions. */
 export const DMG = `${RELEASES}/download/Ponzu-arm64.dmg`;
 /** The install steps, which start the download as they open. */
 export const DOWNLOAD = "/download?start=1";
 export const SDK = `${REPO}/tree/main/packages/react`;
+export const CONTRIBUTING = `${REPO}/blob/main/CONTRIBUTING.md`;
+export const LICENSE = `${REPO}/blob/main/LICENSE`;
 
 const btn =
   "inline-flex items-center gap-[9px] whitespace-nowrap rounded-full font-semibold transition-[translate,opacity] duration-150 ease-out hover:-translate-y-px";
@@ -34,12 +35,10 @@ export function DownloadButton({
   );
 }
 
-export function OutlineButton({ href, children }: { href: string; children: ReactNode }) {
+export function GitHubButton({ children }: { children: ReactNode }) {
   return (
-    <a
-      className={`${btn} px-6 py-[15px] text-base text-text shadow-[inset_0_0_0_1.5px_var(--outline)]`}
-      href={href}
-    >
+    <a className={`${btn} bg-chip py-[15px] pr-6 pl-5 text-base text-text`} href={REPO}>
+      <GitHub />
       {children}
     </a>
   );
