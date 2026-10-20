@@ -12,7 +12,7 @@ Ponzu is an infinite canvas of artboards. Agents draw on it over MCP, writing HT
 
 - **Free forever.** MIT. No account, no seats, no limits. Bring the agent you already use.
 - **Your files, your workflow.** A `.design` is a folder of HTML files on your disk. Commit it next to your code, sync it through Dropbox, or toss it.
-- **Just HTML and CSS.** If a browser can do it, so can your design: grid, gradients, variable fonts, video, real animation.
+- **Just HTML and CSS.** If a browser can do it, so can your design: grid, gradients, variable fonts, video, real animation. Agents watch their animations and hover states frame by frame, not just the first frame.
 
 ## Quick start
 
@@ -89,7 +89,7 @@ Ponzu is a set of packages you can build into your own product:
 | `@ponzu/store` | Opens a `.design` from any storage; diffs outside edits into ops |
 | `@ponzu/tools` | The agent tools as transport-agnostic `{ name, schema, handler }` |
 | `@ponzu/mcp` | Those tools over MCP (stdio and streamable HTTP) |
-| `@ponzu/render` | Screenshots plus a layout lint pass. Uses Chromium, an Electron window, or your own renderer |
+| `@ponzu/render` | Screenshots, frame-by-frame animation recordings and a lint pass. Uses Chromium, an Electron window, or your own renderer |
 | `@ponzu/react` | `<Canvas>`. Renders artboards with the host page's own engine, in shadow roots |
 | `@ponzu/server` | The local host behind `ponzu serve` |
 
@@ -117,7 +117,7 @@ About thirty tools in six groups. `get_guide` serves the house rules.
 | --- | --- |
 | Orient | `get_basic_info` `get_selection` `get_tree` `get_node` `get_html` `find_nodes` |
 | Write | `create_artboard` `write_html` `update_styles` `set_text` `set_attributes` `duplicate` `move_nodes` `delete` `rename` `update_artboard` |
-| See | `screenshot` (with lint) `export` |
+| See | `screenshot` (with lint) `record` `export` |
 | Organize | `list_files` `create_file` `create_page` `update_page` `archive` `get_tokens` `set_tokens` |
 | Converse | `list_comments` `get_comment` `create_comment` `reply` `set_comment_status` |
 | Listen + remember | `wait_for_activity` `start_working` `finish_working` `write_note` `read_notes` `get_guide` |

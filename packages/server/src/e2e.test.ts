@@ -127,3 +127,48 @@ test("edits made in a text editor show up as file.changed", async () => {
   expect(events.length).toBeGreaterThan(0);
   expect(JSON.stringify(design.doc)).toContain("Ferns");
 });
+
+test("an agent watches its animation through screenshot and record", async () => {
+  const { ChromiumRenderer, findChromium } = await import("@ponzu/render/chromium");
+  const chromium = findChromium();
+  if (!chromium) return;
+  ws.renderer = new ChromiumRenderer({ executablePath: chromium });
+  try {
+    const ab = await client.callTool({
+      name: "create_artboard",
+      arguments: { name: "Motion", width: 400, height: 240 },
+    });
+    const abId = /artboard (ab_\w+)/.exec(text(ab))![1]!;
+    await client.callTool({
+      name: "write_html",
+      arguments: {
+        target: abId,
+        html: `<style>@keyframes in { from { opacity: 0 } to { opacity: 1 } } .cta { transition: transform 200ms } .cta:hover { transform: scale(1.1) }</style>
+<h1 data-name="Title" style="opacity:0;animation:in 600ms 100ms forwards">Ferns</h1>
+<button data-name="Buy" class="cta">Buy</button>`,
+      },
+    });
+    const shot = await client.callTool({ name: "screenshot", arguments: { id: abId } });
+    expect(text(shot)).toContain("settled at 700ms");
+    expect(text(shot)).toMatch(/: in \(opacity\) 600ms, delay 100ms/);
+
+    const rec = await client.callTool({ name: "record", arguments: { id: abId, frames: 4 } });
+    expect((rec.content as { type: string }[]).filter((c) => c.type === "image")).toHaveLength(1);
+    expect(text(rec)).toContain("4 frames from 0ms to 700ms settled");
+
+    const buy = /n_\w+(?=: transition)/;
+    const tree = text(await client.callTool({ name: "find_nodes", arguments: { name: "Buy" } }));
+    const buyId = /(n_\w+)/.exec(tree)![1]!;
+    const hover = await client.callTool({
+      name: "record",
+      arguments: { id: buyId, hover: buyId, frames: 3 },
+    });
+    expect(text(hover)).toContain(`after hover ${buyId}`);
+    expect(text(hover)).toMatch(buy);
+    // Lint runs in the hovered end state: the full-width button outgrows the artboard.
+    expect(text(hover)).toContain(`Lint at the end (hover ${buyId})`);
+  } finally {
+    await ws.renderer.close();
+    ws.renderer = undefined;
+  }
+}, 30_000);

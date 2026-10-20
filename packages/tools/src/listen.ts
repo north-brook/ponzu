@@ -180,7 +180,7 @@ export const listenTools = [
     group: "listen",
     readOnly: true,
     description:
-      "House rules and workflows for designing in Ponzu. Read 'basics' once per session before writing. Topics: basics, layout, typography, collaborate, variations, implement, mobile.",
+      "House rules and workflows for designing in Ponzu. Read 'basics' once per session before writing. Topics: basics, layout, typography, collaborate, variations, implement, motion, mobile.",
     input: { topic: z.enum(Object.keys(GUIDES) as [GuideTopic, ...GuideTopic[]]) },
     handler({ topic }) {
       return { text: GUIDES[topic] };

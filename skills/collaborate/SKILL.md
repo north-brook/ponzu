@@ -12,7 +12,7 @@ You sit next to the person while they review. They comment in the canvas; you ac
 3. Loop:
    - `wait_for_activity` with the cursor from the previous call (start without one).
    - For each new comment or reply:
-     - **Change** ("bigger", "try blue"): `start_working` on the artboard, edit, `screenshot`, fix lint, then `reply` with what changed and `resolve: true`.
+     - **Change** ("bigger", "try blue"): `start_working` on the artboard, edit, `screenshot` (`record` when it moves or has a hover state), fix lint, then `reply` with what changed and `resolve: true`.
      - **Question**: `reply` with the answer. Leave it open.
      - **Decision** ("A or B?"): reply with a recommendation and why. Leave it open.
    - Group comments on the same artboard into one pass.

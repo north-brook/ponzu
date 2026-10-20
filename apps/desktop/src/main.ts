@@ -1,7 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -40,19 +40,27 @@ interface Job {
   format: "png" | "jpeg" | "pdf";
   lint: boolean;
   lintScript: string;
+  /** Holds animations at the requested time; evaluates to the motion summary. */
+  prepareScript?: string;
 }
 
 const renderToken = randomBytes(24).toString("hex");
 let renderDir: string | null = null;
 
-async function renderJob(job: Job) {
+/** Writes the page to disk and loads it: file URLs reach assets and fonts like the canvas does. */
+async function loadPage(win: BrowserWindow, html: string) {
   renderDir ??= await mkdtemp(join(tmpdir(), "ponzu-render-"));
   const file = join(renderDir, `${randomBytes(6).toString("hex")}.html`);
-  await writeFile(file, job.html);
+  await writeFile(file, html);
+  await win.loadFile(file);
+  void rm(file, { force: true });
+}
+
+function renderWindow(width: number, height: number) {
   const win = new BrowserWindow({
     show: false,
-    width: Math.ceil(job.width),
-    height: Math.min(Math.ceil(job.height), 16000),
+    width: Math.ceil(width),
+    height: Math.min(Math.ceil(height), 16000),
     useContentSize: true,
     webPreferences: {
       offscreen: true,
@@ -61,9 +69,15 @@ async function renderJob(job: Job) {
       backgroundThrottling: false,
     },
   });
+  // Seeking an animation waits for two frames, so frames have to come quickly.
+  win.webContents.setFrameRate(60);
+  return win;
+}
+
+async function renderJob(job: Job) {
+  const win = renderWindow(job.width, job.height);
   try {
-    win.webContents.setFrameRate(1);
-    await win.loadFile(file);
+    await loadPage(win, job.html);
     win.webContents.setZoomFactor(job.scale);
     win.setContentSize(
       Math.ceil(job.width * job.scale),
@@ -72,6 +86,10 @@ async function renderJob(job: Job) {
     await win.webContents.executeJavaScript(
       "document.fonts.ready.then(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))))",
     );
+    const motion = job.prepareScript
+      ? await win.webContents.executeJavaScript(job.prepareScript)
+      : undefined;
+    if (motion?.error) return { motion };
     const box = (await win.webContents.executeJavaScript(
       `(() => { const el = document.querySelector(${JSON.stringify(job.selector)}); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.left, y: r.top, width: r.width, height: r.height, contentHeight: document.querySelector('[data-artboard]')?.scrollHeight ?? 0 }; })()`,
     )) as { x: number; y: number; width: number; height: number; contentHeight: number } | null;
@@ -90,6 +108,7 @@ async function renderJob(job: Job) {
         height: box.height,
         contentHeight: box.contentHeight,
         issues,
+        motion,
       };
     }
     if (box.y + box.height > job.height)
@@ -111,9 +130,127 @@ async function renderJob(job: Job) {
       height: box.height,
       contentHeight: box.contentHeight,
       issues,
+      motion,
     };
   } finally {
     win.destroy();
+  }
+}
+
+/* Recording steps through an animation on one live page, so it keeps a window per session. */
+
+type SessionOp =
+  | { op: "open"; html: string; width: number; height: number }
+  | { op: "eval"; session: string; expression: string }
+  | {
+      op: "capture";
+      session: string;
+      box: { x: number; y: number; width: number; height: number };
+      scale: number;
+    }
+  | { op: "show"; session: string; html: string; width: number; height: number }
+  | { op: "close"; session: string };
+
+interface Session {
+  win: BrowserWindow;
+  timer: NodeJS.Timeout;
+  /** The viewport in CSS px, and the zoom it's shown at. */
+  width: number;
+  height: number;
+  zoom: number;
+}
+
+const sessions = new Map<string, Session>();
+
+/** Abandoned sessions close themselves. */
+function keepAlive(id: string) {
+  const s = sessions.get(id);
+  if (!s) throw new Error(`No render session ${id}.`);
+  clearTimeout(s.timer);
+  s.timer = setTimeout(() => closeSession(id), 60_000);
+  return s;
+}
+
+function closeSession(id: string) {
+  const s = sessions.get(id);
+  if (!s) return;
+  clearTimeout(s.timer);
+  sessions.delete(id);
+  s.win.destroy();
+}
+
+/** Sizes the viewport in CSS px; zoom renders it sharper, like a device pixel ratio. */
+async function sizeTo(s: Session, width: number, height: number, zoom = s.zoom) {
+  s.width = width;
+  s.height = height;
+  s.zoom = zoom;
+  s.win.webContents.setZoomFactor(zoom);
+  s.win.setContentSize(Math.ceil(width * zoom), Math.min(Math.ceil(height * zoom), 16000));
+  await s.win.webContents.executeJavaScript(
+    "new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))",
+  );
+}
+
+async function sessionOp(op: SessionOp) {
+  switch (op.op) {
+    case "open": {
+      const id = randomBytes(8).toString("hex");
+      const win = renderWindow(op.width, op.height);
+      const s: Session = {
+        win,
+        timer: setTimeout(() => closeSession(id), 60_000),
+        width: op.width,
+        height: op.height,
+        zoom: 1,
+      };
+      sessions.set(id, s);
+      try {
+        await loadPage(win, op.html);
+        await win.webContents.executeJavaScript("document.fonts.ready.then(() => true)");
+        // Tall artboards (height: fit-content) need the whole of themselves on screen.
+        const tall = await win.webContents.executeJavaScript(
+          "document.querySelector('[data-artboard]')?.getBoundingClientRect().bottom ?? 0",
+        );
+        if (tall > op.height) await sizeTo(s, op.width, tall);
+      } catch (err) {
+        closeSession(id);
+        throw err;
+      }
+      return { session: id };
+    }
+    case "eval":
+      return {
+        value: await keepAlive(op.session).win.webContents.executeJavaScript(op.expression),
+      };
+    case "capture": {
+      const s = keepAlive(op.session);
+      // Enlarged frames render at that zoom so text stays sharp; smaller ones are scaled down.
+      const zoom = Math.max(1, op.scale);
+      if (zoom !== s.zoom) await sizeTo(s, s.width, s.height, zoom);
+      const rect = {
+        x: Math.round(op.box.x * zoom),
+        y: Math.round(op.box.y * zoom),
+        width: Math.max(1, Math.round(op.box.width * zoom)),
+        height: Math.max(1, Math.round(op.box.height * zoom)),
+      };
+      let image = await s.win.webContents.capturePage(rect);
+      const width = Math.max(1, Math.round(op.box.width * op.scale));
+      if (image.getSize().width !== width)
+        image = image.resize({ width, quality: op.scale < 1 ? "best" : "good" });
+      return { data: image.toPNG().toString("base64") };
+    }
+    case "show": {
+      const s = keepAlive(op.session);
+      await loadPage(s.win, op.html);
+      await s.win.webContents.executeJavaScript(
+        "Promise.all([...document.images].map((i) => i.decode().catch(() => {})))",
+      );
+      await sizeTo(s, op.width, op.height, 1);
+      return {};
+    }
+    case "close":
+      closeSession(op.session);
+      return {};
   }
 }
 
@@ -125,8 +262,8 @@ function startRenderHost(): Promise<string> {
         return;
       }
       try {
-        const job = JSON.parse(await body(req)) as Job;
-        const out = await renderJob(job);
+        const payload = JSON.parse(await body(req));
+        const out = req.url === "/session" ? await sessionOp(payload) : await renderJob(payload);
         res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(out));
       } catch (err) {
         res.writeHead(500).end(err instanceof Error ? err.message : String(err));
