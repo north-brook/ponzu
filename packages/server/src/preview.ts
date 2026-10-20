@@ -146,7 +146,16 @@ export async function previewStale(root: string): Promise<boolean> {
     for (const e of entries) {
       if (e.name.startsWith(".")) continue;
       const p = join(dir, e.name);
-      if (e.isDirectory() ? await newer(p) : (await stat(p)).mtimeMs > made) return true;
+      if (e.isDirectory()) {
+        if (await newer(p)) return true;
+        continue;
+      }
+      // A file saved away mid-walk, or a dangling symlink, says nothing.
+      const changed = await stat(p).then(
+        (s) => s.mtimeMs,
+        () => 0,
+      );
+      if (changed > made) return true;
     }
     return false;
   };

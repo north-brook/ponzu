@@ -99,7 +99,11 @@ export class LocalWorkspace implements Workspace {
         entry.stop = this.bridge(key, design);
         this.entries.set(key, entry);
         for (const l of this.openListeners) l(key);
-        if (await previewStale(key)) this.schedulePreview(key);
+        // In the background: the walk shouldn't hold up opening the file.
+        if (this.previewsOn)
+          void previewStale(key).then((stale) => {
+            if (stale && this.entries.get(key) === entry) this.schedulePreview(key);
+          });
         return entry;
       })();
       this.opening.set(key, pending);
@@ -179,8 +183,12 @@ export class LocalWorkspace implements Workspace {
    * Redraw the design's preview once edits settle. Renders run one at a time,
    * so a burst of edits across files doesn't open a window per file.
    */
+  private get previewsOn(): boolean {
+    return Boolean(this.renderer) && (this.opts.previews ?? process.platform === "darwin");
+  }
+
   private schedulePreview(key: string): void {
-    if (!this.renderer || !(this.opts.previews ?? process.platform === "darwin")) return;
+    if (!this.previewsOn) return;
     clearTimeout(this.previewTimers.get(key));
     this.previewTimers.set(
       key,

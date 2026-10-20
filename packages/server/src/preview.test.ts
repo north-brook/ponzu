@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, stat, utimes } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Artboard, Doc } from "@ponzu/core";
 import type { Renderer } from "@ponzu/render";
-import { PREVIEW_FILE, previewArtboard, writePreview } from "./preview.ts";
+import { PREVIEW_FILE, previewArtboard, previewStale, writePreview } from "./preview.ts";
 
 const board = (id: string, x: number, y: number, width: number, height: number): Artboard => ({
   id,
@@ -65,6 +65,29 @@ test("writes the preview, and removes it once the first page is empty", async ()
     expect(existsSync(join(root, PREVIEW_FILE))).toBe(false);
     // Finder only refreshes the icon when the package's own date moves.
     expect((await stat(root)).mtimeMs).toBeGreaterThan(old.getTime());
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("the preview is stale when missing or older than the design, and a dangling link doesn't throw", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ponzu-stale-"));
+  try {
+    await mkdir(join(root, "pages/home"), { recursive: true });
+    await writeFile(join(root, "pages/home/hero.html"), "<section></section>");
+    expect(await previewStale(root)).toBe(true);
+
+    await mkdir(join(root, ".ponzu"));
+    await writeFile(join(root, PREVIEW_FILE), "png");
+    const old = new Date(Date.now() - 60_000);
+    await utimes(join(root, "pages/home/hero.html"), old, old);
+    await symlink(join(root, "gone"), join(root, "pages/home/dangling.html"));
+    expect(await previewStale(root)).toBe(false);
+
+    await writeFile(join(root, "pages/home/hero.html"), "<section>new</section>");
+    const later = new Date(Date.now() + 60_000);
+    await utimes(join(root, "pages/home/hero.html"), later, later);
+    expect(await previewStale(root)).toBe(true);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

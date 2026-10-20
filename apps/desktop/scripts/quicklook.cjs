@@ -79,6 +79,27 @@ exports.afterPack = async (context) => {
     join(appex, "Contents/Info.plist"),
     infoPlist(packager.appInfo.id, packager.appInfo.version),
   );
+  // The extension runs in its own process, so it must match the app's architecture.
+  const archs = SWIFT_ARCHS[context.arch];
+  if (!archs) throw new Error(`No Quick Look extension build for arch ${context.arch}`);
+  const binary = join(appex, "Contents/MacOS", NAME);
+  const slices = archs.map((arch) => {
+    const out = archs.length > 1 ? `${binary}-${arch}` : binary;
+    compile(arch, out);
+    return out;
+  });
+  if (slices.length > 1) {
+    execFileSync("lipo", ["-create", ...slices, "-output", binary]);
+    for (const s of slices) rmSync(s);
+  }
+  // Unsigned extensions never load; an unsigned build still gets a working local one.
+  signAppex(appex, "-");
+};
+
+/** electron-builder's Arch enum (builder-util) to Swift target architectures. */
+const SWIFT_ARCHS = { 1: ["x86_64"], 3: ["arm64"], 4: ["arm64", "x86_64"] };
+
+function compile(arch, out) {
   execFileSync(
     "xcrun",
     [
@@ -89,7 +110,7 @@ exports.afterPack = async (context) => {
       "-parse-as-library",
       "-application-extension",
       "-target",
-      `arm64-apple-macos${MIN_MACOS}`,
+      `${arch}-apple-macos${MIN_MACOS}`,
       "-framework",
       "QuickLookThumbnailing",
       // App extensions start in Foundation's NSExtensionMain, not main().
@@ -99,13 +120,11 @@ exports.afterPack = async (context) => {
       "_NSExtensionMain",
       join(source, "ThumbnailProvider.swift"),
       "-o",
-      join(appex, "Contents/MacOS", NAME),
+      out,
     ],
     { stdio: "inherit" },
   );
-  // Unsigned extensions never load; an unsigned build still gets a working local one.
-  signAppex(appex, "-");
-};
+}
 
 /** mac.sign: the extension with the release identity, then the app as usual. */
 exports.sign = async (opts) => {
