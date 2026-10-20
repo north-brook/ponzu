@@ -10,10 +10,12 @@ import { RemoteRenderer, type Renderer } from "@ponzu/render";
 import { findDesigns, LocalWorkspace, serve } from "@ponzu/server";
 import { Design } from "@ponzu/store";
 import { FsAdapter } from "@ponzu/store/fs";
+import pkg from "../package.json" with { type: "json" };
 import { announceHost, findHost, ponzuHome } from "./host.ts";
 import { agentStatus, installAgent } from "./install.ts";
+import { startTelemetry, telemetryCommand, telemetryNotice } from "./telemetry.ts";
 
-const VERSION = "0.1.0";
+const VERSION = pkg.version;
 const here = dirname(fileURLToPath(import.meta.url));
 
 const HELP = `Ponzu ${VERSION}: a design canvas your coding agent drives with HTML and CSS.
@@ -25,6 +27,7 @@ Usage
                                 runs on its own
   ponzu init [name.design]      Create a new .design folder
   ponzu install [agent]         Add Ponzu to claude, codex and cursor (all found by default)
+  ponzu telemetry [on|off]      Show or change anonymous usage reporting
 
 Options
   -p, --port <n>       Port for serve (default 7777)
@@ -36,6 +39,9 @@ Options
   -v, --version
 
 With no files, serve and mcp open every .design under the current folder.
+
+Ponzu sends anonymous usage (tool names, errors, versions; never your designs)
+to help us improve it. Turn it off with \`ponzu telemetry off\` or PONZU_TELEMETRY=0.
 `;
 
 async function main() {
@@ -73,6 +79,8 @@ async function main() {
       return runInit(files[0]);
     case "install":
       return installAgent(files[0], { url: values.url, auto: values.auto });
+    case "telemetry":
+      return telemetryCommand(files[0]);
     default:
       if (cmd.endsWith(".design"))
         return runServe([cmd, ...files], {
@@ -105,8 +113,11 @@ async function pickRenderer(): Promise<Renderer | undefined> {
 }
 
 async function openWorkspace(files: string[], log: (s: string) => void) {
-  const renderer = await pickRenderer();
-  const ws = new LocalWorkspace({ renderer });
+  const [renderer, telemetry] = await Promise.all([
+    pickRenderer(),
+    startTelemetry({ version: VERSION, command: "serve" }),
+  ]);
+  const ws = new LocalWorkspace({ renderer, telemetry: telemetry ?? undefined });
   const paths = files.length ? files.map((f) => resolve(f)) : await findDesigns(process.cwd());
   for (const p of paths) {
     if (!existsSync(join(p, "design.json")) && existsSync(p) === false && files.length) {
@@ -116,14 +127,19 @@ async function openWorkspace(files: string[], log: (s: string) => void) {
   }
   if (!renderer)
     log("No Chrome or Chromium found: screenshots are off. Install Chrome or set PONZU_CHROMIUM.");
-  return ws;
+  telemetry?.capture("host started", {
+    launched_by: process.env.PONZU_LAUNCHED_BY ?? "person",
+    designs: ws.designs().length,
+    renderer: Boolean(renderer),
+  });
+  return { ws, telemetry };
 }
 
 async function runServe(
   files: string[],
   o: { port: number; host: string; open: boolean; dev: boolean; studio?: string },
 ) {
-  const ws = await openWorkspace(files, (s) => console.log(s));
+  const { ws, telemetry } = await openWorkspace(files, (s) => console.log(s));
   const studioDir = o.studio ?? findStudio();
   const server = serve(ws, {
     port: o.port,
@@ -153,6 +169,9 @@ async function runServe(
     `  Files    ${open.length ? open.map((d) => d.key.replace(process.cwd() + "/", "")).join(", ") : "none yet (ponzu init, or ask your agent to create_file)"}`,
   );
   lines.push(``, `  Connect an agent:  ponzu install claude  (or codex, cursor)`, ``);
+  // The desktop app reads stdout for PONZU_READY and nothing else.
+  const notice = process.env.PONZU_DESKTOP ? null : await telemetryNotice();
+  if (notice) lines.push(`  ${notice}`, ``);
   console.log(lines.join("\n"));
   if (o.dev) console.log("  Dev mode: run the studio with `bun run --filter @ponzu/studio dev`\n");
   if (o.open) {
@@ -164,6 +183,7 @@ async function runServe(
     await unannounce();
     await ws.closeAll();
     server.stop();
+    await telemetry?.shutdown();
     process.exit(0);
   };
   process.on("SIGINT", stop);
@@ -187,12 +207,19 @@ async function runMcp(files: string[]) {
   const cwd = process.cwd();
   const designs = async () =>
     files.length ? files.map((f) => resolve(f)) : await findDesigns(cwd);
-  const ws = new LocalWorkspace({ cwd });
+  // Tool calls that reach a host are counted there; this counts the ones run here.
+  const telemetry = await startTelemetry({ version: VERSION, command: "mcp" });
+  const ws = new LocalWorkspace({ cwd, telemetry: telemetry ?? undefined });
   let opened: Promise<void> | null = null;
   const openLocal = () =>
     (opened ??= (async () => {
       ws.renderer = await pickRenderer();
       for (const p of await designs()) await ws.open(p);
+      telemetry?.capture("host started", {
+        launched_by: "agent",
+        designs: ws.designs().length,
+        renderer: Boolean(ws.renderer),
+      });
     })().catch((err) => {
       opened = null;
       throw err;
@@ -219,6 +246,7 @@ async function runMcp(files: string[]) {
   const stop = async () => {
     await bridge.close().catch(() => {});
     await ws.closeAll();
+    await telemetry?.shutdown();
     process.exit(0);
   };
   process.stdin.on("close", stop);

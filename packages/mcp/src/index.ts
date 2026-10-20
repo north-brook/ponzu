@@ -63,6 +63,16 @@ export function createMcpServer(ws: Workspace, opts: McpOptions = {}): McpServer
     };
     return caller;
   };
+  server.server.oninitialized = () => {
+    const info = server.server.getClientVersion();
+    ws.telemetry?.capture("agent connected", {
+      client: clientKind(info?.name),
+      client_name: info?.name,
+      client_version: info?.version,
+      // No caller: `ponzu mcp` running tools itself, with no host to join.
+      via: opts.caller ? (opts.caller.origin?.via ?? "http") : "local",
+    });
+  };
 
   for (const def of tools) {
     server.registerTool(

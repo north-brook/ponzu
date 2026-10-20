@@ -29,6 +29,29 @@ export interface Workspace {
   focus?(key: string, artboardId: string): void;
   events: EventHub;
   presence: PresenceHub;
+  /** Usage events and agent feedback for the Ponzu team. Without it nothing is sent. */
+  telemetry?: Telemetry;
+}
+
+/**
+ * Where a host sends usage. Properties are names, counts and timings, never
+ * design content, file names or paths.
+ */
+export interface Telemetry {
+  capture(event: string, properties?: Record<string, unknown>): void;
+  /** Send an agent's feedback to the Ponzu team. False when telemetry is off. */
+  feedback(feedback: Feedback): Promise<boolean>;
+}
+
+export interface Feedback {
+  sentiment: "positive" | "neutral" | "negative" | "mixed";
+  category: "bug" | "missing_capability" | "confusing_tool" | "praise" | "other";
+  summary: string;
+  details?: string;
+  /** The tool it's about, if any. */
+  tool?: string;
+  /** The agent that sent it, e.g. "claude". */
+  client?: string;
 }
 
 export interface ToolCaller {
