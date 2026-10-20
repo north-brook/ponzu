@@ -1,6 +1,10 @@
 import { cva, type VariantProps } from "class-variance-authority";
 import { type ClassValue, clsx } from "clsx";
-import { ToggleGroup as ToggleGroupPrimitive, Tooltip as TooltipPrimitive } from "radix-ui";
+import {
+  DropdownMenu as MenuPrimitive,
+  ToggleGroup as ToggleGroupPrimitive,
+  Tooltip as TooltipPrimitive,
+} from "radix-ui";
 import {
   type ComponentProps,
   createContext,
@@ -215,5 +219,45 @@ export function ToggleGroup<T extends string>({
         );
       })}
     </ToggleGroupPrimitive.Root>
+  );
+}
+
+/**
+ * A small menu off a trigger. Not portalled: it renders inside .pz-root, so the
+ * canvas's colors apply and a click in it counts as inside whatever holds it.
+ */
+export function Menu({
+  trigger,
+  items,
+}: {
+  trigger: ReactNode;
+  items: { label: string; icon?: ReactNode; danger?: boolean; onSelect: () => void }[];
+}) {
+  return (
+    <MenuPrimitive.Root modal={false}>
+      <MenuPrimitive.Trigger asChild>{trigger}</MenuPrimitive.Trigger>
+      <MenuPrimitive.Content
+        align="end"
+        sideOffset={4}
+        className="pz:z-10 pz:min-w-40 pz:rounded-[10px] pz:bg-card pz:p-1 pz:shadow-pop pz:outline-none pz:ring-1 pz:ring-black/5 pz:dark:ring-white/10"
+        onPointerDown={(e) => e.stopPropagation()}
+        // Esc closes the menu, not whatever holds it.
+        onEscapeKeyDown={(e) => e.stopPropagation()}
+      >
+        {items.map((item) => (
+          <MenuPrimitive.Item
+            key={item.label}
+            onSelect={item.onSelect}
+            className={cn(
+              "pz:flex pz:h-[30px] pz:cursor-default pz:items-center pz:gap-2 pz:rounded-md pz:px-2 pz:outline-none pz:data-highlighted:bg-accent",
+              item.danger && "pz:text-danger",
+            )}
+          >
+            {item.icon}
+            {item.label}
+          </MenuPrimitive.Item>
+        ))}
+      </MenuPrimitive.Content>
+    </MenuPrimitive.Root>
   );
 }

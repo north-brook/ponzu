@@ -58,7 +58,7 @@ Don't
 
 Use this when the person wants you to sit with them while they review: they leave comments in the canvas, you pick them up, make the change, and resolve them. No chatting required.
 
-1. listen: wait_for_activity with the cursor from your last call. Start with types comment.created, comment.replied, file.changed.
+1. listen: wait_for_activity with the cursor from your last call. Start with types comment.created, comment.replied, comment.edited, file.changed. An edit replaces what the comment asks; work from the new text.
 2. triage each comment:
    - change ("make this bigger", "try blue"): do it.
    - question ("why this font?"): reply with an answer, leave it open.

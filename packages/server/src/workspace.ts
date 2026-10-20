@@ -247,10 +247,10 @@ export class LocalWorkspace implements Workspace {
           text: t.thread.messages[0]?.text ?? "",
           author,
         });
-      } else if (t.kind === "message") {
+      } else if (t.kind === "message" || t.kind === "edited") {
         const th = doc.threads.find((x) => x.id === t.id);
         this.events.emit(key, {
-          type: "comment.replied",
+          type: t.kind === "message" ? "comment.replied" : "comment.edited",
           thread: t.id,
           artboard: th?.artboardId,
           text: t.text,
@@ -280,12 +280,14 @@ export class LocalWorkspace implements Workspace {
 type ThreadEvent =
   | { kind: "created"; thread: Thread }
   | { kind: "message"; id: string; text: string }
+  | { kind: "edited"; id: string; text: string }
   | { kind: "status"; id: string; status: Thread["status"] };
 
 function threadEvents(op: Op): ThreadEvent[] {
   if (op.op === "batch") return op.ops.flatMap(threadEvents);
   if (op.op === "thread.create") return [{ kind: "created", thread: op.thread }];
   if (op.op === "thread.message") return [{ kind: "message", id: op.id, text: op.message.text }];
+  if (op.op === "thread.edit") return [{ kind: "edited", id: op.id, text: op.text }];
   if (op.op === "thread.update" && op.status)
     return [{ kind: "status", id: op.id, status: op.status }];
   return [];
