@@ -6,6 +6,7 @@ import type { Renderer } from "@ponzu/render";
 import { Design, type OpEvent } from "@ponzu/store";
 import { FsAdapter } from "@ponzu/store/fs";
 import { EventHub, PresenceHub, ToolError, type Workspace } from "@ponzu/tools";
+import { previewStale, writePreview } from "./preview.ts";
 
 export interface WorkspaceOptions {
   /** Where relative paths resolve. Defaults to process.cwd(). */
@@ -13,7 +14,15 @@ export interface WorkspaceOptions {
   renderer?: Renderer;
   /** Allow agents to open any .design path, not just the ones opened by the host. */
   openAnything?: boolean;
+  /**
+   * Keep each design's .ponzu/preview.png current while a renderer is available,
+   * for Finder's icons. Default: on macOS.
+   */
+  previews?: boolean;
 }
+
+/** How long the canvas has to sit still before the preview is redrawn. */
+const PREVIEW_DELAY = 2000;
 
 interface Entry {
   key: string;
@@ -34,6 +43,8 @@ export class LocalWorkspace implements Workspace {
   private opening = new Map<string, Promise<Entry>>();
   private focusListeners = new Set<(key: string, artboard: string) => void>();
   private openListeners = new Set<(key: string) => void>();
+  private previewTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private previewing: Promise<unknown> = Promise.resolve();
   private cwd: string;
 
   constructor(private opts: WorkspaceOptions = {}) {
@@ -88,6 +99,11 @@ export class LocalWorkspace implements Workspace {
         entry.stop = this.bridge(key, design);
         this.entries.set(key, entry);
         for (const l of this.openListeners) l(key);
+        // In the background: the walk shouldn't hold up opening the file.
+        if (this.previewsOn)
+          void previewStale(key).then((stale) => {
+            if (stale && this.entries.get(key) === entry) this.schedulePreview(key);
+          });
         return entry;
       })();
       this.opening.set(key, pending);
@@ -146,12 +162,15 @@ export class LocalWorkspace implements Workspace {
     const e = this.entries.get(key);
     if (!e) return;
     e.stop();
+    clearTimeout(this.previewTimers.get(key));
+    this.previewTimers.delete(key);
     await e.design.close();
     this.entries.delete(key);
   }
 
   async closeAll(): Promise<void> {
     for (const key of [...this.entries.keys()]) await this.close(key);
+    await this.previewing;
     await this.renderer?.close();
   }
 
@@ -160,12 +179,44 @@ export class LocalWorkspace implements Workspace {
     return abs.replace(/[\\/]+$/, "");
   }
 
+  /**
+   * Redraw the design's preview once edits settle. Renders run one at a time,
+   * so a burst of edits across files doesn't open a window per file.
+   */
+  private get previewsOn(): boolean {
+    return Boolean(this.renderer) && (this.opts.previews ?? process.platform === "darwin");
+  }
+
+  private schedulePreview(key: string): void {
+    if (!this.previewsOn) return;
+    clearTimeout(this.previewTimers.get(key));
+    this.previewTimers.set(
+      key,
+      setTimeout(() => {
+        this.previewTimers.delete(key);
+        this.previewing = this.previewing.then(async () => {
+          const design = this.get(key);
+          if (!design || !this.renderer) return;
+          try {
+            await writePreview(key, design.doc, this.renderer);
+          } catch {
+            // A preview is a nicety; the next edit tries again.
+          }
+        });
+      }, PREVIEW_DELAY),
+    );
+  }
+
   /** Translate store ops into agent-facing events. */
   private bridge(key: string, design: Design): () => void {
-    const offOp = design.onOp((e) => this.emitFor(key, design.doc, e));
-    const offReset = design.onReset(() =>
-      this.events.emit(key, { type: "file.changed", path: key, artboards: [] }),
-    );
+    const offOp = design.onOp((e) => {
+      this.emitFor(key, design.doc, e);
+      if (e.artboards.length || touchesStructure(e.op)) this.schedulePreview(key);
+    });
+    const offReset = design.onReset(() => {
+      this.events.emit(key, { type: "file.changed", path: key, artboards: [] });
+      this.schedulePreview(key);
+    });
     return () => {
       offOp();
       offReset();
