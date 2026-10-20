@@ -464,6 +464,8 @@ export function Canvas({
                 <div
                   className={cn(
                     "pz:absolute pz:left-0 pz:flex pz:cursor-default pz:items-center pz:gap-[0.5em] pz:whitespace-nowrap pz:leading-[1.4]",
+                    // Zoomed out, the title would run into the next board; clip it to this one.
+                    renaming !== ab.id && "pz:max-w-full",
                     selection.includes(ab.id)
                       ? "pz:text-select"
                       : "pz:text-muted-foreground pz:hover:text-foreground",
@@ -491,10 +493,12 @@ export function Canvas({
                       }}
                     />
                   ) : (
-                    <span>{ab.name}</span>
+                    <span className="pz:min-w-0 pz:truncate" title={ab.name}>
+                      {ab.name}
+                    </span>
                   )}
                   {who && (
-                    <span className="pz:inline-flex" style={{ gap: 4 / camera.zoom }}>
+                    <span className="pz:inline-flex pz:shrink-0" style={{ gap: 4 / camera.zoom }}>
                       {who.map((a) => (
                         <span
                           key={a.name}
