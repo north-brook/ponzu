@@ -1,8 +1,13 @@
 import { AgentMark, Canvas, Icon, Logo, SocketSource, useSource } from "@ponzu/react";
 import { useEffect, useMemo, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { WhatsNew } from "@/components/whats-new";
+import { cn } from "@/lib/utils";
 
 /** Where `ponzu serve` lives. Same origin in production; the dev server proxies. */
 const ORIGIN = window.location.origin;
+const mod = navigator.userAgent.includes("Mac") ? "⌘" : "Ctrl+";
 
 interface FileEntry {
   key: string;
@@ -20,6 +25,9 @@ declare global {
       openFolder(): Promise<string | null>;
       newFile(): Promise<string | null>;
       reveal(path: string): void;
+      /** Missing from builds before What's new. */
+      whatsNew?(): Promise<{ version: string; notes: string[] } | null>;
+      whatsNewSeen?(): void;
     };
   }
 }
@@ -101,65 +109,90 @@ export function Studio() {
     if (active === key) setActive(null);
   };
 
+  // ⌘1–8 open file tabs, ⌘9 the last, like a browser.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const digit = /^Digit([1-9])$/.exec(e.code)?.[1];
+      if (!digit || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      const key = digit === "9" ? tabs.at(-1) : tabs[Number(digit) - 1];
+      if (!key) return;
+      e.preventDefault();
+      setActive(key);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [tabs]);
+
   const desktop = window.ponzuDesktop;
   const isMac = desktop?.platform === "darwin";
 
   return (
-    <div
-      className={`studio studio-${theme} ${desktop ? "studio-desktop" : ""} ${isMac ? "studio-mac" : ""}`}
-    >
-      <header className="studio-bar">
-        <button
-          type="button"
-          className={`studio-home ${active === null ? "on" : ""}`}
+    <div className="flex h-full flex-col bg-background text-foreground">
+      <header
+        className={cn(
+          "flex h-10 shrink-0 items-center gap-1 px-2",
+          desktop && "app-drag [&_button]:app-no-drag",
+          // Electron on macOS: room for the traffic lights.
+          isMac && "pl-20",
+        )}
+      >
+        <Button
+          variant="ghost"
+          size="icon"
+          className={cn("w-8", active === null && "bg-secondary hover:bg-secondary")}
           onClick={() => setActive(null)}
           title="Home"
         >
           <Logo size={18} dark={theme === "dark"} />
-        </button>
-        <div className="studio-tabs">
-          {tabs.map((key) => (
+        </Button>
+        <div className="flex min-w-0 gap-0.5 overflow-x-auto [scrollbar-width:none]">
+          {tabs.map((key, i) => (
             <FileTab
               key={key}
               source={source(key)}
+              shortcut={i < 8 ? i + 1 : i === tabs.length - 1 ? 9 : undefined}
               active={key === active}
               onClick={() => setActive(key)}
               onClose={() => closeTab(key)}
             />
           ))}
         </div>
-        <div className="studio-bar-right">
+        <div className="ml-auto flex items-center gap-1.5">
           {active && <AgentDots source={source(active)} />}
-          <button
-            type="button"
-            className="studio-icon"
+          <Button
+            variant="ghost"
+            size="icon"
+            className="w-[30px]"
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
             title="Toggle theme"
           >
             <Icon name={theme === "dark" ? "sun" : "moon"} size={16} />
-          </button>
+          </Button>
         </div>
       </header>
-      <main className="studio-main">
+      <main className="min-h-0 flex-1 px-2 pb-2">
         {active ? (
-          <div className="studio-file" key={active}>
+          <div className="h-full overflow-hidden rounded-xl bg-canvas" key={active}>
             <Canvas source={source(active)} theme={theme} me={{ kind: "user", name: "You" }} />
           </div>
         ) : (
           <Home files={files} onOpen={openFile} theme={theme} />
         )}
       </main>
+      <WhatsNew />
     </div>
   );
 }
 
 function FileTab({
   source,
+  shortcut,
   active,
   onClick,
   onClose,
 }: {
   source: SocketSource;
+  shortcut?: number;
   active: boolean;
   onClick: () => void;
   onClose: () => void;
@@ -174,19 +207,34 @@ function FileTab({
       ?.replace(/\.design$/, "");
   return (
     <div
-      className={`studio-tab ${active ? "on" : ""}`}
+      className={cn(
+        "group app-no-drag flex h-7 max-w-[220px] shrink-0 cursor-default items-center gap-[7px] whitespace-nowrap rounded-lg pr-1.5 pl-2.5 outline-none",
+        active
+          ? "bg-secondary text-foreground"
+          : "text-muted-foreground hover:bg-accent hover:text-foreground",
+      )}
       onClick={onClick}
       onKeyDown={(e) => e.key === "Enter" && onClick()}
       role="tab"
       tabIndex={0}
-      title={source.file}
+      title={shortcut ? `${source.file} (${mod}${shortcut})` : source.file}
     >
-      {busy ? <span className="studio-spinner" /> : <Icon name="file" size={14} />}
-      <span className="studio-tab-name">{name}</span>
-      {state.status === "offline" && <span className="studio-offline" title="Reconnecting" />}
+      {busy ? (
+        <span className="m-px size-3 animate-spin rounded-full border-[1.6px] border-current border-r-transparent [animation-duration:0.8s]" />
+      ) : (
+        <Icon name="file" size={14} />
+      )}
+      <span className="truncate">{name}</span>
+      {state.status === "offline" && (
+        <span className="size-1.5 rounded-full bg-offline" title="Reconnecting" />
+      )}
       <button
         type="button"
-        className="studio-tab-close"
+        aria-label="Close tab"
+        className={cn(
+          "grid size-[18px] place-items-center rounded-[5px] opacity-0 hover:bg-accent hover:opacity-100! group-hover:opacity-60",
+          active && "opacity-60",
+        )}
         onClick={(e) => {
           e.stopPropagation();
           onClose();
@@ -203,20 +251,29 @@ function AgentDots({ source }: { source: SocketSource }) {
   const agents = presence.filter((p) => p.kind === "agent");
   if (!agents.length) return null;
   return (
-    <div className="studio-agents">
+    <div className="flex gap-1.5 pr-1">
       {agents.map((a) => (
         <span
           key={a.id}
-          className="studio-agent"
+          className="relative grid size-6 place-items-center"
           title={`${a.name}${a.working.length ? " · working" : a.status ? ` · ${a.status}` : " · connected"}`}
         >
           <AgentMark client={a.client} size={16} />
-          <span className={`studio-agent-dot ${a.working.length ? "busy" : ""}`} />
+          <span
+            className={cn(
+              "absolute right-px bottom-px size-[7px] rounded-full shadow-[0_0_0_2px_var(--background)]",
+              a.working.length ? "animate-pulse bg-busy" : "bg-online",
+            )}
+          />
         </span>
       ))}
     </div>
   );
 }
+
+const heading = "mb-3 font-semibold text-[15px]";
+const muted = "my-2 text-muted-foreground";
+const code = "font-mono text-xs";
 
 function Home({
   files,
@@ -232,44 +289,47 @@ function Home({
   const mcp = `${ORIGIN}/mcp`;
   const desktop = window.ponzuDesktop;
   return (
-    <div className="home">
-      <div className="home-inner">
-        <div className="home-head">
+    <div className="h-full overflow-auto rounded-xl bg-canvas">
+      <div className="mx-auto flex max-w-[720px] flex-col gap-10 px-8 py-[72px]">
+        <div className="flex items-center gap-3.5">
           <Logo size={40} dark={theme === "dark"} />
-          <h1>Ponzu</h1>
+          <h1 className="font-semibold text-[32px] tracking-[-0.03em]">Ponzu</h1>
         </div>
 
         <section>
-          <h2>Files</h2>
+          <h2 className={heading}>Files</h2>
           {files.length === 0 ? (
-            <p className="home-muted">
-              No .design files yet. Ask your agent to create one, or run <code>ponzu init</code>.
+            <p className={muted}>
+              No .design files yet. Ask your agent to create one, or run{" "}
+              <code className={code}>ponzu init</code>.
             </p>
           ) : (
-            <div className="home-files">
+            <div className="flex flex-col overflow-hidden rounded-xl bg-card">
               {files.map((f) => (
                 <button
                   type="button"
                   key={f.key}
-                  className="home-file"
+                  className="flex items-center gap-3 border-b px-3.5 py-3 text-left last:border-b-0 hover:bg-accent"
                   onClick={() => onOpen(f.key)}
                 >
-                  <span className="home-file-icon">
+                  <span className="grid size-9 place-items-center rounded-[9px] bg-canvas">
                     <Icon name="file" size={18} />
                   </span>
-                  <span className="home-file-text">
-                    <b>{f.name}</b>
-                    <span>{f.key.replace(/^\/Users\/[^/]+/, "~")}</span>
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <b className="font-semibold">{f.name}</b>
+                    <span className="truncate text-muted-foreground text-xs">
+                      {f.key.replace(/^\/Users\/[^/]+/, "~")}
+                    </span>
                   </span>
                   {f.artboards !== undefined && (
-                    <span className="home-muted">{f.artboards} artboards</span>
+                    <span className="text-muted-foreground">{f.artboards} artboards</span>
                   )}
                 </button>
               ))}
             </div>
           )}
           <form
-            className="home-open"
+            className="mt-3 flex gap-2"
             onSubmit={(e) => {
               e.preventDefault();
               if (path.trim()) onOpen(path.trim());
@@ -277,70 +337,70 @@ function Home({
           >
             {desktop ? (
               <>
-                <button
-                  type="button"
-                  className="home-btn"
+                <Button
                   onClick={async () => {
                     const picked = await desktop.openFolder();
                     if (picked) onOpen(picked);
                   }}
                 >
                   Open…
-                </button>
-                <button
-                  type="button"
-                  className="home-btn"
+                </Button>
+                <Button
                   onClick={async () => {
                     const created = await desktop.newFile();
                     if (created) onOpen(created);
                   }}
                 >
                   New…
-                </button>
+                </Button>
               </>
             ) : null}
-            <input
+            <Input
+              className="flex-1"
               value={path}
               onChange={(e) => setPath(e.target.value)}
               placeholder="/path/to/name.design"
             />
-            <button type="submit" className="home-btn">
-              Open
-            </button>
+            <Button type="submit">Open</Button>
           </form>
         </section>
 
         <section>
-          <h2>Connect an agent</h2>
+          <h2 className={heading}>Connect an agent</h2>
           {desktop ? (
-            <p className="home-muted">
+            <p className={muted}>
               Claude Code, Codex and Cursor on this Mac are already set up, and they reach Ponzu
               whether or not this window is open. Ask one to design something.
             </p>
           ) : (
-            <p className="home-muted">
-              Ponzu speaks MCP. Run <code>ponzu install</code> to set up the agents on this machine,
-              or point any agent at this server.
+            <p className={muted}>
+              Ponzu speaks MCP. Run <code className={code}>ponzu install</code> to set up the agents
+              on this machine, or point any agent at this server.
             </p>
           )}
-          <div className="home-code">
-            <code>claude mcp add --transport http ponzu {mcp}</code>
-            <button
-              type="button"
-              className="home-btn"
-              onClick={() => {
-                navigator.clipboard.writeText(`claude mcp add --transport http ponzu ${mcp}`);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 1200);
-              }}
-            >
-              {copied ? "Copied" : "Copy"}
-            </button>
-          </div>
-          <p className="home-muted">
-            Codex: <code>codex mcp add ponzu --url {mcp}</code> · Cursor:{" "}
-            <code>ponzu install cursor</code>
-          </p>
+          {/* The app already set agents up; registering a URL here would replace that. */}
+          {!desktop && (
+            <>
+              <div className="flex items-center gap-3 rounded-[10px] bg-card py-2.5 pr-2.5 pl-3.5">
+                <code className={cn(code, "flex-1 overflow-x-auto whitespace-nowrap")}>
+                  claude mcp add --transport http ponzu {mcp}
+                </code>
+                <Button
+                  onClick={() => {
+                    navigator.clipboard.writeText(`claude mcp add --transport http ponzu ${mcp}`);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1200);
+                  }}
+                >
+                  {copied ? "Copied" : "Copy"}
+                </Button>
+              </div>
+              <p className={muted}>
+                Codex: <code className={code}>codex mcp add ponzu --url {mcp}</code> · Cursor:{" "}
+                <code className={code}>ponzu install cursor</code>
+              </p>
+            </>
+          )}
         </section>
       </div>
     </div>

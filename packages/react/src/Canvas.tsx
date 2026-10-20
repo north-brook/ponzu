@@ -1,9 +1,18 @@
-import { type Artboard, type Author, findArtboard, locate, newId, type Thread } from "@ponzu/core";
+import {
+  type Artboard,
+  type Author,
+  findArtboard,
+  locate,
+  newId,
+  type Thread,
+  threadPage,
+} from "@ponzu/core";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArtboardView } from "./Artboard.tsx";
-import { CommentsPanel, Composer, ThreadCard } from "./Comments.tsx";
+import { Composer, ThreadCard, threadCard } from "./Comments.tsx";
 import type { CanvasSource } from "./connection.ts";
-import { AgentMark, Icon } from "./icons.tsx";
+import { AgentMark, Icon, Icons } from "./icons.tsx";
+import { Button, cn, ToggleGroup } from "./ui.tsx";
 import { isTyping, useCamera, useKeyHeld, useSource } from "./useCanvas.ts";
 
 export type Mode = "select" | "hand" | "comment";
@@ -21,9 +30,11 @@ export interface CanvasProps {
 }
 
 interface Pending {
-  artboardId: string;
+  /** Absent for a comment on the open canvas. */
+  artboardId?: string;
+  pageId: string;
   nodeId?: string;
-  /** Offset inside the artboard, in artboard px. */
+  /** Offset inside the artboard in artboard px, or the page position without one. */
   x: number;
   y: number;
 }
@@ -60,8 +71,6 @@ export function Canvas({
   const [measured, setMeasured] = useState<Record<string, number>>({});
   const [pending, setPending] = useState<Pending | null>(null);
   const [openThread, setOpenThread] = useState<string | null>(null);
-  const [panel, setPanel] = useState(false);
-  const [showResolved] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
   const fitted = useRef<string | null>(null);
 
@@ -156,12 +165,39 @@ export function Canvas({
     return () => el.removeEventListener("wheel", onWheel);
   }, [zoomAt, panBy]);
 
+  // An open thread or composer closes on any click outside it, footer included.
+  useEffect(() => {
+    if (!openThread && !pending) return;
+    const onDown = (e: PointerEvent) => {
+      const inside = e
+        .composedPath()
+        .some((n) => n instanceof Element && n.hasAttribute("data-comment-open"));
+      if (inside) return;
+      setOpenThread(null);
+      setPending(null);
+    };
+    window.addEventListener("pointerdown", onDown, true);
+    return () => window.removeEventListener("pointerdown", onDown, true);
+  }, [openThread, pending]);
+
+  const goToPage = (id: string) => {
+    setPageId(id);
+    setPending(null);
+    setOpenThread(null);
+  };
+
   // Keyboard.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTyping(e)) return;
       const mod = e.metaKey || e.ctrlKey;
-      if (mod && e.key.toLowerCase() === "z") {
+      // ⌥1–9: pages, by e.code since ⌥ changes e.key on a Mac. 9 is the last.
+      const digit = /^Digit([1-9])$/.exec(e.code)?.[1];
+      if (e.altKey && !mod && !e.shiftKey && digit && doc) {
+        e.preventDefault();
+        const p = digit === "9" ? doc.pages.at(-1) : doc.pages[Number(digit) - 1];
+        if (p) goToPage(p.id);
+      } else if (mod && e.key.toLowerCase() === "z") {
         e.preventDefault();
         e.shiftKey ? source.redo() : source.undo();
       } else if (mod && (e.key === "=" || e.key === "+")) {
@@ -260,15 +296,20 @@ export function Canvas({
     if (e.button !== 0 || !doc) return;
     const hit = hitTest(e);
     if (mode === "comment") {
-      if (!hit) return;
+      if (!page) return;
       const w = toWorld(e.clientX, e.clientY);
       setOpenThread(null);
-      setPending({
-        artboardId: hit.artboard.id,
-        nodeId: hit.nodeId,
-        x: w.x - hit.artboard.x,
-        y: w.y - hit.artboard.y,
-      });
+      setPending(
+        hit
+          ? {
+              artboardId: hit.artboard.id,
+              pageId: page.id,
+              nodeId: hit.nodeId,
+              x: w.x - hit.artboard.x,
+              y: w.y - hit.artboard.y,
+            }
+          : { pageId: page.id, x: w.x, y: w.y },
+      );
       return;
     }
     setPending(null);
@@ -351,7 +392,7 @@ export function Canvas({
     const now = Date.now();
     const thread: Thread = {
       id: newId("th"),
-      artboardId: pending.artboardId,
+      ...(pending.artboardId ? { artboardId: pending.artboardId } : { pageId: pending.pageId }),
       ...(pending.nodeId ? { nodeId: pending.nodeId } : {}),
       x: Math.round(pending.x),
       y: Math.round(pending.y),
@@ -362,35 +403,39 @@ export function Canvas({
     };
     source.apply({ op: "thread.create", thread });
     setPending(null);
-    setOpenThread(thread.id);
     setMode("select");
   };
 
   if (!doc || !page) {
     return (
-      <div className={`pz-root pz-${theme} ${className ?? ""}`}>
-        <div className="pz-loading">
+      <div className={cn("pz-root", `pz-${theme}`, className)}>
+        <div className="pz:pointer-events-none pz:absolute pz:inset-0 pz:grid pz:place-content-center pz:text-muted-foreground">
           {state.status === "offline" ? "Reconnecting to Ponzu…" : "Opening…"}
         </div>
       </div>
     );
   }
 
+  // Resolved threads leave the board.
   const pageThreads = doc.threads.filter(
-    (t) =>
-      (showResolved || t.status === "open" || t.id === openThread) &&
-      boards.some((b) => b.id === t.artboardId),
+    (t) => t.status === "open" && threadPage(doc, t)?.id === page.id,
   );
-  const openCount = doc.threads.filter((t) => t.status === "open").length;
   const zoomPct = Math.round(camera.zoom * 100);
   const selectedRects = selectionRects(selection, viewport.current, camera);
   const ghostFor = (id: string) => (ghost && drag.current?.ids.includes(id) ? ghost : null);
 
   return (
-    <div className={`pz-root pz-${theme} ${className ?? ""}`}>
+    <div className={cn("pz-root", `pz-${theme}`, className)}>
       <div
         ref={viewport}
-        className={`pz-viewport pz-mode-${panning ? "hand" : mode}`}
+        className={cn(
+          "pz:relative pz:min-h-0 pz:flex-1 pz:touch-none pz:overflow-hidden",
+          panning
+            ? "pz:cursor-grab pz:active:cursor-grabbing"
+            : mode === "comment"
+              ? "pz:cursor-crosshair"
+              : "pz:cursor-default",
+        )}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -398,7 +443,7 @@ export function Canvas({
         onDragOver={(e) => e.preventDefault()}
       >
         <div
-          className="pz-world"
+          className="pz:absolute pz:top-0 pz:left-0 pz:origin-top-left pz:will-change-transform"
           style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}
         >
           {boards.map((ab) => {
@@ -410,11 +455,16 @@ export function Canvas({
             return (
               <div
                 key={ab.id}
-                className={`pz-board ${selection.includes(ab.id) ? "pz-selected" : ""}`}
+                className="pz:absolute pz:shadow-board"
                 style={{ left: x, top: y, width: w, height: h ?? undefined }}
               >
                 <div
-                  className="pz-board-title"
+                  className={cn(
+                    "pz:absolute pz:left-0 pz:flex pz:cursor-default pz:items-center pz:gap-[0.5em] pz:whitespace-nowrap pz:leading-[1.4]",
+                    selection.includes(ab.id)
+                      ? "pz:text-select"
+                      : "pz:text-muted-foreground pz:hover:text-foreground",
+                  )}
                   style={{ fontSize: 12 / camera.zoom, top: -22 / camera.zoom }}
                   onPointerDown={(e) => startMove(e, ab)}
                   onDoubleClick={() => setRenaming(ab.id)}
@@ -422,6 +472,7 @@ export function Canvas({
                   {renaming === ab.id ? (
                     <input
                       autoFocus
+                      className="pz:rounded-[3px] pz:bg-card pz:px-[0.3em] pz:outline-1 pz:outline-select"
                       defaultValue={ab.name}
                       style={{ fontSize: 12 / camera.zoom }}
                       onPointerDown={(e) => e.stopPropagation()}
@@ -440,11 +491,11 @@ export function Canvas({
                     <span>{ab.name}</span>
                   )}
                   {who && (
-                    <span className="pz-board-agents" style={{ gap: 4 / camera.zoom }}>
+                    <span className="pz:inline-flex" style={{ gap: 4 / camera.zoom }}>
                       {who.map((a) => (
                         <span
                           key={a.name}
-                          className="pz-agent-chip"
+                          className="pz:inline-grid pz:place-items-center pz:text-foreground"
                           title={`${a.name} is working here`}
                         >
                           <AgentMark client={a.client} size={12 / camera.zoom} />
@@ -460,24 +511,35 @@ export function Canvas({
         </div>
 
         {/* Overlays in screen space so they stay crisp at any zoom. */}
-        <div className="pz-overlay">
+        <div className="pz:pointer-events-none pz:absolute pz:inset-0">
           {selectedRects.map((r) => (
             <div
               key={r.id}
-              className={`pz-sel ${r.artboard ? "pz-sel-board" : ""}`}
+              className={cn(
+                "pz:pointer-events-none pz:absolute pz:outline-select",
+                r.artboard ? "pz:outline-2" : "pz:outline-[1.5px]",
+              )}
               style={{ left: r.x, top: r.y, width: r.w, height: r.h }}
             />
           ))}
           {pageThreads.map((t) => {
             const ab = boards.find((b) => b.id === t.artboardId);
-            if (!ab) return null;
             const p = pinPoint(t, ab, viewport.current, camera);
             const open = openThread === t.id;
             return (
-              <div key={t.id} className="pz-pin-wrap" style={{ left: p.x, top: p.y }}>
+              <div
+                key={t.id}
+                className={pinWrap}
+                style={{ left: p.x, top: p.y }}
+                data-comment-open={open || undefined}
+              >
                 <button
                   type="button"
-                  className={`pz-pin ${t.status === "resolved" ? "pz-pin-resolved" : ""} ${open ? "pz-pin-open" : ""}`}
+                  className={cn(
+                    pin,
+                    "pz:bg-comment pz:text-comment-foreground",
+                    open && "pz:scale-112",
+                  )}
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={() => setOpenThread(open ? null : t.id)}
                 >
@@ -486,7 +548,6 @@ export function Canvas({
                 {open && (
                   <ThreadCard
                     thread={t}
-                    doc={doc}
                     source={source}
                     me={me}
                     onClose={() => setOpenThread(null)}
@@ -497,13 +558,17 @@ export function Canvas({
           })}
           {pending &&
             (() => {
-              const ab = boards.find((b) => b.id === pending.artboardId)!;
-              const x = (ab.x + pending.x) * camera.zoom + camera.x;
-              const y = (ab.y + pending.y) * camera.zoom + camera.y;
+              const ab = boards.find((b) => b.id === pending.artboardId);
+              const x = ((ab?.x ?? 0) + pending.x) * camera.zoom + camera.x;
+              const y = ((ab?.y ?? 0) + pending.y) * camera.zoom + camera.y;
               return (
-                <div className="pz-pin-wrap" style={{ left: x, top: y }}>
-                  <span className="pz-pin pz-pin-open">+</span>
-                  <div className="pz-thread">
+                <div className={pinWrap} style={{ left: x, top: y }} data-comment-open>
+                  <span
+                    className={cn(pin, "pz:scale-112 pz:bg-comment pz:text-comment-foreground")}
+                  >
+                    +
+                  </span>
+                  <div className={threadCard}>
                     <Composer onSubmit={createThread} onCancel={() => setPending(null)} />
                   </div>
                 </div>
@@ -512,57 +577,32 @@ export function Canvas({
         </div>
 
         {!boards.length && (
-          <div className="pz-empty-page">
-            <p>This page is empty.</p>
-            <p className="pz-muted">
+          <div className="pz:pointer-events-none pz:absolute pz:inset-0 pz:grid pz:place-content-center pz:gap-1 pz:text-center">
+            <p className="pz:m-0 pz:text-[15px]">This page is empty.</p>
+            <p className="pz:m-0 pz:text-muted-foreground">
               Ask your agent to design something. It will appear here as it works.
             </p>
           </div>
         )}
-        {panel && (
-          <CommentsPanel
-            doc={doc}
-            onClose={() => setPanel(false)}
-            onOpen={(t) => {
-              const pg = doc.pages.find((p) => p.artboards.some((a) => a.id === t.artboardId));
-              if (pg && pg.id !== page.id) {
-                fitted.current = pg.id;
-                setPageId(pg.id);
-              }
-              const ab = findArtboard(doc, t.artboardId)?.artboard;
-              if (ab)
-                fit(
-                  { x: ab.x, y: ab.y, w: size(ab).w, h: boardHeight(ab) },
-                  viewportSize(),
-                  120,
-                  1,
-                );
-              setOpenThread(t.id);
-            }}
-          />
-        )}
       </div>
 
       {footer && (
-        <div className="pz-footer">
-          <div className="pz-pages">
-            {doc.pages.map((p) => (
+        <div className="pz:flex pz:h-11 pz:shrink-0 pz:items-center pz:justify-between pz:gap-4 pz:bg-background pz:px-2">
+          <div className="pz:flex pz:min-w-0 pz:items-center pz:gap-0.5 pz:overflow-x-auto pz:[scrollbar-width:none]">
+            {doc.pages.map((p, i) => (
               <PageTab
                 key={p.id}
                 name={p.name}
+                shortcut={i < 8 ? i + 1 : i === doc.pages.length - 1 ? 9 : undefined}
                 icon={p.icon}
                 active={p.id === page.id}
-                onClick={() => {
-                  setPageId(p.id);
-                  setPending(null);
-                  setOpenThread(null);
-                }}
+                onClick={() => goToPage(p.id)}
                 onRename={(name) => source.apply({ op: "page.update", id: p.id, name })}
               />
             ))}
-            <button
-              type="button"
-              className="pz-icon-btn"
+            <Button
+              variant="ghost"
+              size="icon"
               title="New page"
               onClick={() => {
                 const id = newId("pg");
@@ -575,56 +615,44 @@ export function Canvas({
               }}
             >
               <Icon name="add" size={15} />
-            </button>
+            </Button>
           </div>
-          <div className="pz-controls">
+          <div className="pz:flex pz:shrink-0 pz:items-center pz:gap-2.5">
             {footerExtra}
-            <button
-              type="button"
-              className={`pz-comments-btn ${panel ? "on" : ""}`}
-              onClick={() => setPanel((v) => !v)}
-            >
-              {openCount > 0 && <span className="pz-badge">{openCount}</span>}
-              Comments
-            </button>
-            <div className="pz-modes">
-              {(["select", "hand", "comment"] as const).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  className={(panning ? "hand" : mode) === m ? "on" : ""}
-                  title={`${m[0]!.toUpperCase()}${m.slice(1)} (${m === "select" ? "V" : m === "hand" ? "H" : "C"})`}
-                  onClick={() => setMode(m)}
-                >
-                  <Icon name={m} size={16} />
-                </button>
-              ))}
-            </div>
-            <div className="pz-zoom">
-              <button
-                type="button"
-                className="pz-icon-btn"
+            <ToggleGroup
+              value={panning ? "hand" : mode}
+              onValueChange={setMode}
+              items={(["select", "hand", "comment"] as const).map((m) => ({
+                value: m,
+                title: `${m[0]!.toUpperCase()}${m.slice(1)} (${m === "select" ? "V" : m === "hand" ? "H" : "C"})`,
+                label: <Icon name={m} size={16} />,
+              }))}
+            />
+            <div className="pz:flex pz:items-center">
+              <Button
+                variant="ghost"
+                size="icon"
                 onClick={() => zoomAt(0.8, viewportSize().w / 2, viewportSize().h / 2)}
                 title="Zoom out (⌘−)"
               >
                 <Icon name="minus" size={14} />
-              </button>
-              <button
-                type="button"
-                className="pz-zoom-value"
+              </Button>
+              <Button
+                variant="ghost"
+                className="pz:h-[26px] pz:min-w-11 pz:rounded-[7px] pz:px-0 pz:tabular-nums"
                 onClick={fitPage}
                 title="Zoom to fit (⇧1)"
               >
                 {zoomPct}%
-              </button>
-              <button
-                type="button"
-                className="pz-icon-btn"
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
                 onClick={() => zoomAt(1.25, viewportSize().w / 2, viewportSize().h / 2)}
                 title="Zoom in (⌘+)"
               >
                 <Icon name="plus" size={14} />
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -633,14 +661,21 @@ export function Canvas({
   );
 }
 
+const pinWrap = "pz:pointer-events-auto pz:absolute pz:z-[2] pz:size-0";
+/** A circle centred on the comment's spot, holding its message count. */
+const pin =
+  "pz:absolute pz:top-0 pz:left-0 pz:grid pz:size-6 pz:-translate-1/2 pz:place-items-center pz:rounded-full pz:font-semibold pz:text-[11px] pz:tabular-nums pz:shadow-[0_1px_3px_rgba(0,0,0,0.25)] pz:transition-transform pz:duration-[120ms] pz:hover:scale-112";
+
 function PageTab({
   name,
+  shortcut,
   icon,
   active,
   onClick,
   onRename,
 }: {
   name: string;
+  shortcut?: number;
   icon?: string;
   active: boolean;
   onClick: () => void;
@@ -650,14 +685,21 @@ function PageTab({
   return (
     <button
       type="button"
-      className={`pz-page ${active ? "on" : ""}`}
+      className={cn(
+        "pz:inline-flex pz:h-7 pz:shrink-0 pz:items-center pz:gap-1.5 pz:whitespace-nowrap pz:rounded-lg pz:px-2.5",
+        active
+          ? "pz:bg-card pz:text-foreground pz:shadow-[0_1px_2px_rgba(0,0,0,0.06)] pz:dark:bg-muted"
+          : "pz:text-muted-foreground pz:hover:bg-accent pz:hover:text-foreground",
+      )}
+      title={shortcut ? `${name} (⌥${shortcut})` : name}
       onClick={onClick}
       onDoubleClick={() => setEditing(true)}
     >
-      <Icon name={icon ?? "file"} size={14} />
+      <Icon name={icon && icon in Icons ? icon : "page"} size={14} />
       {editing ? (
         <input
           autoFocus
+          className="pz:w-[9em] pz:bg-transparent pz:outline-0"
           defaultValue={name}
           onClick={(e) => e.stopPropagation()}
           onBlur={(e) => {
@@ -680,10 +722,12 @@ function PageTab({
 
 function pinPoint(
   t: Thread,
-  ab: Artboard,
+  ab: Artboard | undefined,
   vp: HTMLElement | null,
   cam: { x: number; y: number; zoom: number },
 ) {
+  // On the open canvas, x and y are already page coordinates.
+  if (!ab) return { x: t.x * cam.zoom + cam.x, y: t.y * cam.zoom + cam.y };
   // Prefer the node's live position: top-right corner of the node.
   if (t.nodeId && vp) {
     const host = vp.querySelector(`[data-artboard-host="${ab.id}"]`) as HTMLElement | null;

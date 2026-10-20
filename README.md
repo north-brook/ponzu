@@ -8,7 +8,7 @@
 
 ---
 
-Ponzu is an infinite canvas of artboards. Agents draw on it over MCP, writing HTML and CSS, and you watch it happen live. You leave comments on the canvas; the agent picks them up, makes the change, and replies. There are no manual editing panels. If you want something changed, you ask.
+Ponzu is an infinite canvas of artboards. Agents draw on it over MCP, writing HTML and CSS, and you watch it happen live. You leave comments on the canvas; the agent picks them up, makes the change, and resolves them. There are no manual editing panels. If you want something changed, you ask.
 
 - **Free forever.** MIT. No account, no seats, no limits. Bring the agent you already use.
 - **Your files, your workflow.** A `.design` is a folder of HTML files on your disk. Commit it next to your code, sync it through Dropbox, or toss it.
@@ -22,7 +22,7 @@ bunx ponzu serve
 
 This opens the canvas in your browser and serves MCP at `http://127.0.0.1:7777/mcp`. Every `.design` folder under the current directory is opened.
 
-Or [download the Mac app](https://github.com/north-brook/ponzu/releases/latest/download/Ponzu-arm64.dmg) (Apple silicon, signed and notarized; it updates itself). It opens `.design` folders like documents, and on first launch it sets up Claude Code, Codex and Cursor for you. There's nothing else to install or keep running.
+Or [download the Mac app](https://ponzu.design/download) (Apple silicon, signed and notarized; it updates itself). It opens `.design` folders like documents, and on first launch it sets up Claude Code, Codex and Cursor for you. There's nothing else to install or keep running.
 
 ## Connect an agent
 
@@ -41,7 +41,7 @@ Then ask for something:
 
 > Design a landing page for a houseplant shop in a new `design/shop.design`. Give me three takes on the hero.
 
-To pair on feedback, use the `collaborate` prompt (or say "run the Ponzu collaborate loop"). The agent waits for your comments, handles each one, and replies in the thread.
+To pair on feedback, use the `collaborate` prompt (or say "run the Ponzu collaborate loop"). The agent waits for your comments, handles each one and resolves it, replying only to answer a question or flag something.
 
 ### Reach it from another machine
 

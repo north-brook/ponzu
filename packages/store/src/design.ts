@@ -303,7 +303,8 @@ export class Design {
 
 function pinnedArtboards(op: Op): string[] {
   if (op.op === "batch") return op.ops.flatMap(pinnedArtboards);
-  if (op.op === "thread.create" && op.thread.nodeId) return [op.thread.artboardId];
+  if (op.op === "thread.create" && op.thread.nodeId && op.thread.artboardId)
+    return [op.thread.artboardId];
   return [];
 }
 

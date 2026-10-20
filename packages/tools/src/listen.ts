@@ -21,7 +21,7 @@ export function describeEvent(doc: Doc | undefined, e: PonzuEvent): string {
     case "change":
       return `#${e.seq} change by ${e.origin.name}: ${e.summary}${e.artboards.length ? ` (${e.artboards.map((a) => `"${ab(a)}"`).join(", ")})` : ""}`;
     case "comment.created":
-      return `#${e.seq} new comment ${e.thread} on "${ab(e.artboard)}" from ${e.author}: "${e.text}"`;
+      return `#${e.seq} new comment ${e.thread} on ${e.artboard ? `"${ab(e.artboard)}"` : "the canvas"} from ${e.author}: "${e.text}"`;
     case "comment.replied":
       return `#${e.seq} reply in ${e.thread} from ${e.author}: "${e.text}"`;
     case "comment.resolved":

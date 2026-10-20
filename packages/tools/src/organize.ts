@@ -4,6 +4,7 @@ import { fileArg, ToolError, tool } from "./define.ts";
 import { apply, plural } from "./util.ts";
 
 const PAGE_ICONS = [
+  "page",
   "file",
   "home",
   "layout",

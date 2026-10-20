@@ -1,15 +1,16 @@
 {
   "name": "@ponzu/desktop",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.4.0",
   "description": "Ponzu desktop app",
   "type": "module",
   "main": "dist/main.cjs",
   "scripts": {
-    "build": "bun build src/main.ts --target node --format cjs --outfile dist/main.cjs --external electron && bun build src/preload.ts --target node --format cjs --outfile dist/preload.cjs --external electron && bun build ../cli/src/index.ts --compile --external playwright-core --external @ponzu/render/chromium --outfile dist/server/ponzu",
+    "build": "bun ../../scripts/release-notes.ts dist/release-notes.json && bun build src/main.ts --target node --format cjs --outfile dist/main.cjs --external electron && bun build src/preload.ts --target node --format cjs --outfile dist/preload.cjs --external electron && bun build ../cli/src/index.ts --compile --external playwright-core --external @ponzu/render/chromium --outfile dist/server/ponzu",
     "start": "bun run build && ./run-dev.sh",
     "dist": "bun run build && bun run --filter @ponzu/studio build && electron-builder --mac --arm64 --publish never",
-    "package:dir": "bun run build && bun run --filter @ponzu/studio build && electron-builder --dir --publish never"
+    "package:dir": "bun run build && bun run --filter @ponzu/studio build && electron-builder --dir --publish never",
+    "icons:installer": "bash scripts/make-installer-icon.sh"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
@@ -88,7 +89,8 @@
       "artifactName": "${productName}-${version}-${arch}-mac.${ext}"
     },
     "dmg": {
-      "artifactName": "${productName}-${arch}.${ext}"
+      "artifactName": "${productName}-${arch}.${ext}",
+      "icon": "build/installer-icon.icns"
     },
     "npmRebuild": false,
     "publish": {

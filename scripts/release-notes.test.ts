@@ -1,0 +1,93 @@
+import { expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { $ } from "bun";
+import { compareVersions, extractNotes, releases } from "./release-notes";
+
+test("a description's release note section becomes one note per bullet", () => {
+  expect(
+    extractNotes(
+      [
+        "## What",
+        "",
+        "Detail.",
+        "",
+        "## Release note",
+        "",
+        "- Comments show who replied.",
+        "- pages can be",
+        "  renamed by double-clicking.",
+        "",
+        "## Testing",
+        "",
+        "- Not a note.",
+      ].join("\n"),
+    ),
+  ).toEqual(["Comments show who replied.", "Pages can be renamed by double-clicking."]);
+});
+
+test("a note ends at a sign-off or the trailers git adds", () => {
+  expect(
+    extractNotes(
+      "### Release notes\n\nZoom keeps its place.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+    ),
+  ).toEqual(["Zoom keeps its place."]);
+  expect(
+    extractNotes(
+      "## Release note\n\n- Export keeps fonts.\nCo-Authored-By: Someone <someone@example.com>",
+    ),
+  ).toEqual(["Export keeps fonts."]);
+});
+
+test("no section, an empty one, or none says nothing", () => {
+  expect(extractNotes("fix: a thing\n\nNo notes here.")).toEqual([]);
+  expect(extractNotes("## Release note\n\n<!-- one line per change -->\n")).toEqual([]);
+  expect(extractNotes("## Release note\n\nNone.")).toEqual([]);
+  expect(extractNotes("## Release note\n\n- n/a")).toEqual([]);
+});
+
+test("versions order by number, not text", () => {
+  expect(["0.10.0", "0.2.0", "1.0.0", "0.2.1"].sort(compareVersions)).toEqual([
+    "0.2.0",
+    "0.2.1",
+    "0.10.0",
+    "1.0.0",
+  ]);
+});
+
+test("each release carries the notes merged since the tag before it", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "release-notes-"));
+  try {
+    const git = (...args: string[]) =>
+      $`git -c user.name=t -c user.email=t@example.com -c tag.gpgsign=false -c commit.gpgsign=false ${args}`
+        .cwd(dir)
+        .quiet();
+    const commit = (subject: string, note?: string) =>
+      git(
+        "commit",
+        "-q",
+        "--allow-empty",
+        "-m",
+        note ? `${subject}\n\n## Release note\n\n- ${note}` : subject,
+      );
+    await git("init", "-q", "-b", "main");
+    await commit("feat: an open canvas", "Open a design.");
+    await git("tag", "v0.1.0");
+    await commit("ci: faster checks");
+    await commit("fix: comments stay put", "Comments stay where you left them.");
+    await commit("feat: page icons", "Pages show their icons.");
+    await commit("chore(main): release 0.2.0", "Not a note.");
+    await git("tag", "v0.2.0");
+    await commit("feat: not shipped yet", "Unreleased.");
+    expect(await releases(dir)).toEqual([
+      {
+        version: "0.2.0",
+        notes: ["Comments stay where you left them.", "Pages show their icons."],
+      },
+      { version: "0.1.0", notes: ["Open a design."] },
+    ]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
