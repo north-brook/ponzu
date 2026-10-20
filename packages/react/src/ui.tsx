@@ -50,6 +50,20 @@ export function Button({
   );
 }
 
+/** Grows with its text. Borderless: it sits inside the card that frames it. */
+export function Textarea({ className, ...props }: ComponentProps<"textarea">) {
+  return (
+    <textarea
+      data-slot="textarea"
+      className={cn(
+        "pz:field-sizing-content pz:min-h-7 pz:w-full pz:resize-none pz:bg-transparent pz:py-1 pz:outline-0 pz:placeholder:text-muted-foreground pz:disabled:cursor-not-allowed pz:disabled:opacity-50",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
 const toggleGroupVariants = cva("pz:flex pz:gap-0.5 pz:p-0.5", {
   variants: {
     variant: {

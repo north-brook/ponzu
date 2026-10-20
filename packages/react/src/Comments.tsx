@@ -2,7 +2,7 @@ import { type Author, newId, type Thread } from "@ponzu/core";
 import { useEffect, useRef, useState } from "react";
 import type { CanvasSource } from "./connection.ts";
 import { AgentMark, Icon } from "./icons.tsx";
-import { Button, cn } from "./ui.tsx";
+import { Button, cn, Textarea } from "./ui.tsx";
 
 /** A card floating over the canvas: a thread, or the composer for a new one. */
 export const threadCard =
@@ -85,15 +85,18 @@ export function Composer({
   }, []);
   const submit = () => {
     const t = text.trim();
-    if (t) onSubmit(t);
+    if (!t) return;
+    onSubmit(t);
+    // A reply's composer stays open for the next message.
+    setText("");
   };
   return (
     <div
       className="pz:flex pz:items-end pz:gap-2 pz:border-t pz:py-2 pz:pr-2 pz:pl-3.5 pz:only:border-t-0"
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <textarea
-        className="pz:field-sizing-content pz:max-h-40 pz:min-h-7 pz:flex-1 pz:resize-none pz:bg-transparent pz:py-1 pz:text-[13.5px] pz:leading-[1.55] pz:outline-0 pz:placeholder:text-muted-foreground"
+      <Textarea
+        className="pz:max-h-40 pz:flex-1 pz:text-[13.5px] pz:leading-[1.55]"
         ref={ref}
         value={text}
         placeholder={placeholder}

@@ -729,32 +729,32 @@ function pinPoint(
   vp: HTMLElement | null,
   cam: { x: number; y: number; zoom: number },
 ) {
-  // On the open canvas, x and y are already page coordinates.
-  if (!ab) return { x: t.x * cam.zoom + cam.x, y: t.y * cam.zoom + cam.y };
-  // Prefer the node's live position: top-right corner of the node.
-  if (t.nodeId && vp) {
-    const host = vp.querySelector(`[data-artboard-host="${ab.id}"]`) as HTMLElement | null;
-    const el = host?.shadowRoot?.querySelector(
-      `[data-id="${CSS.escape(t.nodeId)}"]`,
-    ) as HTMLElement | null;
-    if (el) {
-      const r = el.getBoundingClientRect();
-      const v = vp.getBoundingClientRect();
-      const ox = Math.min(t.x * cam.zoom, r.width);
-      const oy = Math.min(t.y * cam.zoom, r.height);
-      const nodeOrigin = { x: r.left - v.left, y: r.top - v.top };
-      // Pins were placed in artboard coordinates; keep them inside the node.
-      const abOrigin = { x: ab.x * cam.zoom + cam.x, y: ab.y * cam.zoom + cam.y };
-      const want = { x: abOrigin.x + t.x * cam.zoom, y: abOrigin.y + t.y * cam.zoom };
-      const inside =
-        want.x >= nodeOrigin.x &&
-        want.x <= nodeOrigin.x + r.width &&
-        want.y >= nodeOrigin.y &&
-        want.y <= nodeOrigin.y + r.height;
-      return inside ? want : { x: nodeOrigin.x + ox, y: nodeOrigin.y + oy };
-    }
+  let { x, y } = t;
+  // Pins were placed in artboard coordinates; keep them on their node as it moves or resizes.
+  const box = ab && t.nodeId && vp ? nodeBox(vp, ab, t.nodeId) : null;
+  if (box) {
+    x = Math.min(Math.max(x, box.x), box.x + box.w);
+    y = Math.min(Math.max(y, box.y), box.y + box.h);
   }
-  return { x: (ab.x + t.x) * cam.zoom + cam.x, y: (ab.y + t.y) * cam.zoom + cam.y };
+  // On the open canvas, x and y are already page coordinates.
+  return { x: ((ab?.x ?? 0) + x) * cam.zoom + cam.x, y: ((ab?.y ?? 0) + y) * cam.zoom + cam.y };
+}
+
+/**
+ * A node's box in its artboard's pixels. Measured against the artboard rather
+ * than the viewport: the DOM still shows the last frame's camera while a pan
+ * renders, so mixing it with the new camera makes pins jump.
+ */
+function nodeBox(vp: HTMLElement, ab: Artboard, nodeId: string) {
+  const host = vp.querySelector(`[data-artboard-host="${CSS.escape(ab.id)}"]`);
+  const board = host?.parentElement;
+  const el = host?.shadowRoot?.querySelector(`[data-id="${CSS.escape(nodeId)}"]`);
+  if (!board || !el) return null;
+  const b = board.getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  const k = b.width / size(ab).w;
+  if (!k) return null;
+  return { x: (r.left - b.left) / k, y: (r.top - b.top) / k, w: r.width / k, h: r.height / k };
 }
 
 function selectionRects(
