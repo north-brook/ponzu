@@ -167,6 +167,34 @@ Or launch \`ponzu mcp\` over stdio from any MCP client.`);
 }
 
 /**
+ * The agents Ponzu knows on this Mac, for the home screen's first steps:
+ * whether each is installed and whether Ponzu is registered with it now,
+ * from its current config. A past setup that the person has since removed
+ * doesn't count. Asking Codex's CLI is slow, so its config file is read.
+ */
+export function agentStatus(): { id: string; label: string; found: boolean; connected: boolean }[] {
+  return AGENTS.map((a) => {
+    const found = a.detect();
+    const connected = a.id === "codex" ? codexConfigured() : Boolean(a.current());
+    return { id: a.id, label: a.label, found, connected: found && connected };
+  });
+}
+
+/** Codex keeps its servers in ~/.codex/config.toml. */
+function codexConfigured(): boolean {
+  try {
+    return /^\[mcp_servers\.ponzu\]/m.test(
+      readFileSync(
+        join(process.env.CODEX_HOME ?? join(homedir(), ".codex"), "config.toml"),
+        "utf8",
+      ),
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The command agents launch. With the desktop app installed, that's a shim
  * into the app, so it updates with it. Null when this binary runs from a
  * place that goes away (the disk image) and no installed app exists.

@@ -180,7 +180,12 @@ export class ChromiumRenderer implements Renderer {
   /** Puts the artboard on the page, sized to it, with fonts loaded. */
   private async load(
     page: Page,
-    req: { artboard: RenderRequest["artboard"]; tokens: string; colorScheme?: "light" | "dark" },
+    req: {
+      artboard: RenderRequest["artboard"];
+      tokens: string;
+      colorScheme?: "light" | "dark";
+      assetBase?: string;
+    },
   ): Promise<{ width: number; height: number }> {
     const width = cssPx(req.artboard.root.style.width) ?? 1440;
     const height = cssPx(req.artboard.root.style.height) ?? 900;
@@ -191,7 +196,7 @@ export class ChromiumRenderer implements Renderer {
     if (req.colorScheme) await page.emulateMedia({ colorScheme: req.colorScheme });
     const html = artboardPage(req.artboard, {
       tokens: req.tokens,
-      assetBase: this.opts.assetBase,
+      assetBase: req.assetBase ?? this.opts.assetBase,
       colorScheme: req.colorScheme,
     });
     await show(page, html);

@@ -8,7 +8,7 @@ import { Steps } from "./steps";
 
 const TITLE = "Download Ponzu for Mac";
 const DESCRIPTION =
-  "Install Ponzu for Mac: open the disk image, drag it into Applications, and connect your agent.";
+  "Install Ponzu for Mac: open the disk image, drag it into Applications, and ask your agent for a design.";
 
 export const metadata: Metadata = {
   title: { absolute: TITLE },
@@ -18,8 +18,6 @@ export const metadata: Metadata = {
 
 /** The DMG keeps one name across versions (apps/desktop/package.json, dmg.artifactName). */
 const INSTALLER = "Ponzu-arm64.dmg";
-/** What the app serves while it runs; File › Copy MCP URL copies the actual one. */
-const MCP_URL = "http://127.0.0.1:7777/mcp";
 
 // The version only labels the fine print: the DMG link always serves the newest release.
 export default async function Page(props: PageProps<"/download">) {
@@ -36,7 +34,7 @@ export default async function Page(props: PageProps<"/download">) {
           Ponzu for Mac.
         </h1>
         <p className="m-0 max-w-[560px] text-[19px]/[31px] text-balance text-muted">
-          Download it, drag it into Applications, and point your agent at the canvas.
+          Download it, drag it into Applications, and ask your agent for a design.
         </p>
         <div className="pt-2">
           <Download installer={INSTALLER} started={started} />
@@ -44,12 +42,13 @@ export default async function Page(props: PageProps<"/download">) {
       </header>
 
       <section className="flex flex-col items-center">
-        <Steps installer={INSTALLER} url={MCP_URL} />
+        <Steps installer={INSTALLER} />
         <p className="m-0 max-w-[640px] pt-14 text-center text-[13px]/[19px] text-pretty text-faint">
           {version ? `Version ${version} · ` : ""}Signed by Northbrook and notarized by Apple. If
           macOS asks whether you are sure you want to open an app downloaded from the internet,
-          choose Open. Updates install themselves. File › Copy MCP URL copies the address your agent
-          needs; any MCP client works. The source and every release are{" "}
+          choose Open. Updates install themselves. Ponzu sets up Claude Code, Codex and Cursor on
+          its own; for any other MCP client, File › Copy MCP URL copies the address. The source and
+          every release are{" "}
           <a
             className="text-ink underline decoration-outline underline-offset-4 hover:decoration-ink"
             href={REPO}

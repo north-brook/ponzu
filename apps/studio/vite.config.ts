@@ -14,6 +14,8 @@ export default defineConfig({
       "/api": target,
       "/mcp": target,
       "/files": target,
+      // Designs on the person's other Macs, relayed by the server.
+      "/peers": { target, ws: true },
       "/ws": { target: target.replace(/^http/, "ws"), ws: true },
     },
   },

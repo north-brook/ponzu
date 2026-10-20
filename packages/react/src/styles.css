@@ -24,8 +24,16 @@
   --pz-comment: #f4b012;
   --pz-comment-ink: #3a2a00;
   --pz-comment-soft: #fff6da;
+  --pz-danger: #d93a2b;
   --pz-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 28px rgba(0, 0, 0, 0.1);
   --pz-board-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 2px 10px rgba(0, 0, 0, 0.05);
+  /* The floating page and tool bars: frosted, so the canvas shows through. */
+  --pz-bar: rgba(250, 250, 249, 0.72);
+  --pz-bar-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.1), 0 6px 20px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06);
+  /* The chosen page or tool on a bar. */
+  --pz-raised: #ffffff;
+  --pz-raised-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
   --pz-font: "Inter", system-ui, -apple-system, sans-serif;
 
   position: relative;
@@ -55,8 +63,15 @@
   --pz-comment: #ffc21a;
   --pz-comment-ink: #2a1f00;
   --pz-comment-soft: #2a2416;
+  --pz-danger: #ff6b5e;
   --pz-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.5);
   --pz-board-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --pz-bar: rgba(28, 28, 28, 0.72);
+  --pz-bar-shadow:
+    0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 6px 20px rgba(0, 0, 0, 0.4),
+    0 1px 3px rgba(0, 0, 0, 0.3);
+  --pz-raised: #3a3a3a;
+  --pz-raised-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.06), 0 1px 2px rgba(0, 0, 0, 0.4);
   color-scheme: dark;
 }
 
@@ -77,8 +92,13 @@
   --color-comment: var(--pz-comment);
   --color-comment-foreground: var(--pz-comment-ink);
   --color-comment-soft: var(--pz-comment-soft);
+  --color-danger: var(--pz-danger);
   --shadow-pop: var(--pz-shadow);
   --shadow-board: var(--pz-board-shadow);
+  --color-bar: var(--pz-bar);
+  --shadow-bar: var(--pz-bar-shadow);
+  --color-raised: var(--pz-raised);
+  --shadow-raised: var(--pz-raised-shadow);
 }
 
 /* The only reset: zero specificity, so every utility wins over it. */
@@ -103,6 +123,19 @@
 :where(.pz-root) ::after {
   box-sizing: border-box;
   border: 0 solid var(--pz-rule);
+}
+
+/*
+ * Tips render in a portal, outside .pz-root, so the reset above doesn't reach
+ * them: give them the canvas's font, and reset the key caps.
+ */
+.pz-tip {
+  font-family: var(--pz-font, "Inter", system-ui, -apple-system, sans-serif);
+}
+
+.pz-tip kbd {
+  margin: 0;
+  border: 0;
 }
 
 /*

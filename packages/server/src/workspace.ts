@@ -45,6 +45,7 @@ export class LocalWorkspace implements Workspace {
   private opening = new Map<string, Promise<Entry>>();
   private focusListeners = new Set<(key: string, artboard: string) => void>();
   private openListeners = new Set<(key: string) => void>();
+  private createListeners = new Set<(key: string) => void>();
   private previewTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private previewing: Promise<unknown> = Promise.resolve();
   private cwd: string;
@@ -88,6 +89,12 @@ export class LocalWorkspace implements Workspace {
     return () => this.openListeners.delete(fn);
   }
 
+  /** A .design an agent (or anyone) just created through this workspace. */
+  onCreate(fn: (key: string) => void): () => void {
+    this.createListeners.add(fn);
+    return () => this.createListeners.delete(fn);
+  }
+
   /** Open a .design folder (idempotent). */
   async open(path: string): Promise<{ key: string; design: Design }> {
     const key = this.keyOf(path);
@@ -123,7 +130,9 @@ export class LocalWorkspace implements Workspace {
     await mkdir(key, { recursive: true });
     const design = await Design.create(new FsAdapter(key), doc);
     await design.close();
-    return this.open(key);
+    const opened = await this.open(key);
+    for (const l of this.createListeners) l(opened.key);
+    return opened;
   }
 
   async resolve(file?: string): Promise<{ key: string; design: Design }> {
@@ -241,10 +250,10 @@ export class LocalWorkspace implements Workspace {
           text: t.thread.messages[0]?.text ?? "",
           author,
         });
-      } else if (t.kind === "message") {
+      } else if (t.kind === "message" || t.kind === "edited") {
         const th = doc.threads.find((x) => x.id === t.id);
         this.events.emit(key, {
-          type: "comment.replied",
+          type: t.kind === "message" ? "comment.replied" : "comment.edited",
           thread: t.id,
           artboard: th?.artboardId,
           text: t.text,
@@ -274,12 +283,14 @@ export class LocalWorkspace implements Workspace {
 type ThreadEvent =
   | { kind: "created"; thread: Thread }
   | { kind: "message"; id: string; text: string }
+  | { kind: "edited"; id: string; text: string }
   | { kind: "status"; id: string; status: Thread["status"] };
 
 function threadEvents(op: Op): ThreadEvent[] {
   if (op.op === "batch") return op.ops.flatMap(threadEvents);
   if (op.op === "thread.create") return [{ kind: "created", thread: op.thread }];
   if (op.op === "thread.message") return [{ kind: "message", id: op.id, text: op.message.text }];
+  if (op.op === "thread.edit") return [{ kind: "edited", id: op.id, text: op.text }];
   if (op.op === "thread.update" && op.status)
     return [{ kind: "status", id: op.id, status: op.status }];
   return [];

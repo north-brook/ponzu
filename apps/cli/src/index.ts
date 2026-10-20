@@ -11,8 +11,8 @@ import { findDesigns, LocalWorkspace, serve } from "@ponzu/server";
 import { Design } from "@ponzu/store";
 import { FsAdapter } from "@ponzu/store/fs";
 import pkg from "../package.json" with { type: "json" };
-import { announceHost, findHost } from "./host.ts";
-import { installAgent } from "./install.ts";
+import { announceHost, findHost, ponzuHome } from "./host.ts";
+import { agentStatus, installAgent } from "./install.ts";
 import { startTelemetry, telemetryCommand, telemetryNotice } from "./telemetry.ts";
 
 const VERSION = pkg.version;
@@ -141,7 +141,20 @@ async function runServe(
 ) {
   const { ws, telemetry } = await openWorkspace(files, (s) => console.log(s));
   const studioDir = o.studio ?? findStudio();
-  const server = serve(ws, { port: o.port, hostname: o.host, studioDir, root: process.cwd() });
+  const server = serve(ws, {
+    port: o.port,
+    hostname: o.host,
+    studioDir,
+    root: process.cwd(),
+    // The owner's other Macs list this one's designs, and it lists theirs, whenever
+    // Tailscale runs. PONZU_TAILSCALE=none turns that off.
+    tailnet: true,
+    tailnetPort: 7777,
+    stateFile: join(ponzuHome(), "catalog.json"),
+    // PONZU_SPOTLIGHT=0 lists only designs under the current folder, as a fresh Mac would.
+    spotlight: process.env.PONZU_SPOTLIGHT === "0" ? false : undefined,
+    agents: async () => agents(),
+  });
   const local = `http://${o.host === "0.0.0.0" ? "localhost" : o.host}:${server.port}`;
   const unannounce = await announceHost(local, { takeOver: Boolean(process.env.PONZU_DESKTOP) });
   // The desktop app reads this line to find the server.
@@ -175,6 +188,14 @@ async function runServe(
   };
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
+}
+
+/** Agent status reads a few config files; the home screen asks every few seconds. */
+let agentCache: { at: number; list: ReturnType<typeof agentStatus> } | null = null;
+function agents() {
+  if (!agentCache || Date.now() - agentCache.at > 5_000)
+    agentCache = { at: Date.now(), list: agentStatus() };
+  return agentCache.list;
 }
 
 /**

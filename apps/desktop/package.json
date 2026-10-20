@@ -2,7 +2,7 @@
   "name": "@ponzu/desktop",
   "productName": "Ponzu",
   "private": true,
-  "version": "1.11.0",
+  "version": "1.13.0",
   "description": "Ponzu desktop app",
   "type": "module",
   "main": "dist/main.cjs",
@@ -95,7 +95,20 @@
     },
     "dmg": {
       "artifactName": "${productName}-${arch}.${ext}",
-      "icon": "build/installer-icon.icns"
+      "icon": "build/installer-icon.icns",
+      "iconSize": 80,
+      "contents": [
+        {
+          "x": 130,
+          "y": 124
+        },
+        {
+          "x": 410,
+          "y": 124,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
     },
     "npmRebuild": false,
     "publish": {

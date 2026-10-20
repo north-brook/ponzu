@@ -48,6 +48,8 @@ export interface Message {
   author: Author;
   text: string;
   createdAt: number;
+  /** Set when the author changed the text after sending it. */
+  editedAt?: number;
 }
 
 export interface Author {

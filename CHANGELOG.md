@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.13.0](https://github.com/north-brook/ponzu/compare/v1.12.0...v1.13.0) (2026-10-20)
+
+
+### Features
+
+* a home screen of every design on your macs, and a first launch that sets itself up ([#35](https://github.com/north-brook/ponzu/issues/35)) ([8e7cc14](https://github.com/north-brook/ponzu/commit/8e7cc14569c399d149b36f4858d9da73acbc4c67))
+
+## [1.12.0](https://github.com/north-brook/ponzu/compare/v1.11.0...v1.12.0) (2026-10-20)
+
+
+### Features
+
+* edit, delete and move comments ([#33](https://github.com/north-brook/ponzu/issues/33)) ([864e7cf](https://github.com/north-brook/ponzu/commit/864e7cfa68e685cc58676b88b01cf20834f820ff))
+
 ## [1.11.0](https://github.com/north-brook/ponzu/compare/v1.10.0...v1.11.0) (2026-10-20)
 
 
