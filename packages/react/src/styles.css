@@ -212,4 +212,8 @@
     animation: none;
     opacity: 1;
   }
+
+  .pz-appear {
+    animation: none;
+  }
 }
