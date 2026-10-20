@@ -75,13 +75,37 @@ export async function serveBridge(
       return client;
     })());
 
-  let host: { client: Client; transport: StreamableHTTPClientTransport } | null = null;
+  interface Host {
+    url: string;
+    client: Client;
+    transport: StreamableHTTPClientTransport;
+    /** Calls still running on it. */
+    busy: number;
+    /** Replaced by another host: end the session once `busy` is 0. */
+    retired: boolean;
+  }
+  let host: Host | null = null;
+  const hosts = new Map<Client, Host>();
   // One attempt at a time of each kind; a listing's quick look never stands in for a launch.
   const connecting = new Map<boolean, Promise<Client | null>>();
   const dropHost = async (client: Client) => {
-    if (host?.client !== client) return;
-    host = null;
+    hosts.delete(client);
+    if (host?.client === client) host = null;
     await client.close().catch(() => {});
+  };
+  const endSession = async (h: Host) => {
+    await h.transport.terminateSession().catch(() => {});
+    await dropHost(h.client);
+  };
+  /** Run `fn` on a host client, so a retired host stays up until its calls finish. */
+  const using = async <T>(client: Client, fn: () => Promise<T>): Promise<T> => {
+    const h = hosts.get(client);
+    if (h) h.busy++;
+    try {
+      return await fn();
+    } finally {
+      if (h && --h.busy === 0 && h.retired) void endSession(h);
+    }
   };
   const connectHost = async (launch: boolean): Promise<Client | null> => {
     const url = await opts.findHost(launch).catch(() => null);
@@ -98,12 +122,15 @@ export async function serveBridge(
       return null;
     }
     // Both kinds of attempt can land at once; keep one connection.
-    if (host) {
+    if (host?.url === url) {
       await client.close().catch(() => {});
       return host.client;
     }
-    host = { client, transport: http };
+    if (host) retire(host);
+    host = { url, client, transport: http, busy: 0, retired: false };
+    hosts.set(client, host);
     client.onclose = () => {
+      hosts.delete(client);
       if (host?.client === client) host = null;
     };
     await opts.onHost?.(url).catch(() => {});
@@ -111,8 +138,18 @@ export async function serveBridge(
     void server.sendToolListChanged().catch(() => {});
     return client;
   };
-  const hostClient = (launch = true): Promise<Client | null> => {
-    if (host) return Promise.resolve(host.client);
+  const retire = (h: Host) => {
+    h.retired = true;
+    if (host === h) host = null;
+    if (h.busy === 0) void endSession(h);
+  };
+  const hostClient = async (launch = true): Promise<Client | null> => {
+    if (host) {
+      // Another Ponzu may have taken over since, e.g. the app opened while `ponzu serve` ran.
+      const announced = await opts.findHost(false).catch(() => null);
+      if (!announced || announced === host.url) return host.client;
+      retire(host);
+    }
     let pending = connecting.get(launch);
     if (!pending) {
       pending = connectHost(launch).finally(() => connecting.delete(launch));
@@ -130,7 +167,7 @@ export async function serveBridge(
     async (_req: unknown, extra: { signal: AbortSignal }): Promise<T> => {
       const client = await lister();
       try {
-        return await fn(client, extra.signal);
+        return await using(client, () => fn(client, extra.signal));
       } catch (err) {
         if (client === (await local)) throw err;
         await dropHost(client);
@@ -147,10 +184,8 @@ export async function serveBridge(
       const client = await hostClient();
       if (!client) break;
       try {
-        return await client.request(
-          { method: "tools/call", params },
-          CallToolResultSchema,
-          options,
+        return await using(client, () =>
+          client.request({ method: "tools/call", params }, CallToolResultSchema, options),
         );
       } catch (err) {
         // The host answered with an error: that's the answer.
@@ -207,12 +242,8 @@ export async function serveBridge(
     server,
     /** End the host session, so the canvas drops this agent, and stop serving. */
     async close() {
-      const h = host;
       host = null;
-      if (h) {
-        await h.transport.terminateSession().catch(() => {});
-        await h.client.close().catch(() => {});
-      }
+      for (const h of [...hosts.values()]) await endSession(h);
       if (local) await (await local).close().catch(() => {});
       await server.close();
     },

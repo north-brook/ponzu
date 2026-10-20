@@ -11,6 +11,8 @@ let dir: string;
 let local: LocalWorkspace;
 let hostWs: LocalWorkspace | null = null;
 let host: ReturnType<typeof serve> | null = null;
+/** What ~/.ponzu/host.json would say, when it isn't simply `host`. */
+let announced: string | null = null;
 let bridge: Awaited<ReturnType<typeof serveBridge>>;
 let agent: Client;
 
@@ -39,7 +41,7 @@ beforeAll(async () => {
   bridge = await serveBridge(
     {
       local,
-      findHost: async () => (host ? `http://127.0.0.1:${host.port}/mcp` : null),
+      findHost: async () => announced ?? (host ? `http://127.0.0.1:${host.port}/mcp` : null),
     },
     theirs,
   );
@@ -133,4 +135,26 @@ test("a write cut off mid-call isn't sent again", async () => {
   expect(text(result)).toContain("may or may not have applied");
   const info = text(await agent.callTool({ name: "get_basic_info", arguments: { file } }));
   expect(info).not.toContain("Hero");
+});
+
+test("when another Ponzu takes over, calls move to it", async () => {
+  await startHost();
+  const file = join(dir, "shop.design");
+  await agent.callTool({ name: "get_basic_info", arguments: { file } });
+  const first = hostWs!;
+  // The desktop app opens while `ponzu serve` keeps running, and announces itself.
+  const appWs = new LocalWorkspace({ cwd: dir });
+  const app = serve(appWs, { port: 0 });
+  announced = `http://127.0.0.1:${app.port}/mcp`;
+  try {
+    await agent.callTool({ name: "get_basic_info", arguments: { file } });
+    expect(appWs.presence.list().map((p) => p.name)).toContain("Claude");
+    // The old session ends, so the first host drops the agent.
+    await Bun.sleep(100);
+    expect(first.presence.list().map((p) => p.name)).not.toContain("Claude");
+  } finally {
+    announced = null;
+    app.stop(true);
+    await appWs.closeAll();
+  }
 });
