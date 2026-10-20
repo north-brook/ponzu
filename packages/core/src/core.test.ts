@@ -134,6 +134,73 @@ describe("ops", () => {
     expect(JSON.stringify(d)).toBe(before);
   });
 
+  test("thread ops invert, edits included", () => {
+    const d = doc();
+    const before = JSON.stringify(d);
+    const message = {
+      id: "m_1",
+      author: { kind: "user" as const, name: "You" },
+      text: "a",
+      createdAt: 1,
+    };
+    const ops = [
+      {
+        op: "thread.create",
+        thread: {
+          id: "th_1",
+          artboardId: "ab_1",
+          x: 1,
+          y: 2,
+          status: "open",
+          createdAt: 1,
+          updatedAt: 1,
+          messages: [message],
+        },
+      },
+      { op: "thread.edit", id: "th_1", messageId: "m_1", text: "b", editedAt: 5 },
+      { op: "thread.edit", id: "th_1", messageId: "m_1", text: "c", editedAt: 6 },
+      { op: "thread.update", id: "th_1", x: 9, y: 9, nodeId: "n_2" },
+      { op: "thread.update", id: "th_1", artboardId: null, nodeId: null, pageId: "pg_1" },
+      { op: "thread.delete", id: "th_1" },
+    ] as const;
+    const inverses = ops.map((op) => applyOp(d, structuredClone(op) as any));
+    for (const inv of inverses.reverse()) applyOp(d, inv);
+    expect(JSON.stringify(d)).toBe(before);
+  });
+
+  test("an edit marks the message and undoing it clears the mark", () => {
+    const d = doc();
+    const message = {
+      id: "m_1",
+      author: { kind: "user" as const, name: "You" },
+      text: "a",
+      createdAt: 1,
+    };
+    d.threads.push({
+      id: "th_1",
+      artboardId: "ab_1",
+      x: 0,
+      y: 0,
+      status: "open",
+      createdAt: 1,
+      updatedAt: 1,
+      messages: [message],
+    });
+    const inverse = applyOp(d, {
+      op: "thread.edit",
+      id: "th_1",
+      messageId: "m_1",
+      text: "b",
+      editedAt: 5,
+    });
+    expect(d.threads[0]!.messages[0]).toMatchObject({ text: "b", editedAt: 5 });
+    applyOp(d, inverse);
+    expect(d.threads[0]!.messages[0]).toEqual(message);
+    expect(() =>
+      applyOp(d, { op: "thread.edit", id: "th_1", messageId: "m_x", text: "b", editedAt: 5 }),
+    ).toThrow();
+  });
+
   test("can't move into itself", () => {
     const d = doc();
     expect(() => applyOp(d, { op: "move", id: "n_1", parent: "n_2", index: 0 })).toThrow();

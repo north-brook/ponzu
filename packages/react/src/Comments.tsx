@@ -2,7 +2,7 @@ import { type Author, newId, type Thread } from "@ponzu/core";
 import { useEffect, useRef, useState } from "react";
 import type { CanvasSource } from "./connection.ts";
 import { AgentMark, Icon } from "./icons.tsx";
-import { Button, cn, Textarea } from "./ui.tsx";
+import { Button, cn, Menu, Textarea } from "./ui.tsx";
 
 /** A card floating over the canvas: a thread, or the composer for a new one. */
 export const threadCard =
@@ -65,6 +65,37 @@ export function Avatar({ author, size = 20 }: { author: Author; size?: number })
   );
 }
 
+/** Enter sends, Shift+Enter breaks the line, Esc cancels. Keys stay out of the canvas. */
+function onFieldKey(
+  e: React.KeyboardEvent<HTMLTextAreaElement>,
+  submit: () => void,
+  cancel: () => void,
+) {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    submit();
+  }
+  if (e.key === "Escape") cancel();
+  e.stopPropagation();
+}
+
+/** Focus a field once it mounts, caret at the end. */
+function useAutofocus(ref: React.RefObject<HTMLTextAreaElement | null>) {
+  // Wait a frame: the click that opened it focuses the canvas after this
+  // mounts, which would take focus straight back.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      const el = ref.current;
+      if (!el) return;
+      // A card that runs past the canvas's edge would otherwise scroll the
+      // canvas itself, shifting every pin and board.
+      el.focus({ preventScroll: true });
+      el.setSelectionRange(el.value.length, el.value.length);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [ref]);
+}
+
 /** The comment composer that appears where you clicked in comment mode. */
 export function Composer({
   onSubmit,
@@ -77,12 +108,7 @@ export function Composer({
 }) {
   const [text, setText] = useState("");
   const ref = useRef<HTMLTextAreaElement>(null);
-  // Wait a frame: the click that opened the composer focuses the canvas after
-  // this mounts, which would take focus straight back.
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => ref.current?.focus());
-    return () => cancelAnimationFrame(frame);
-  }, []);
+  useAutofocus(ref);
   const submit = () => {
     const t = text.trim();
     if (!t) return;
@@ -102,18 +128,52 @@ export function Composer({
         placeholder={placeholder}
         rows={1}
         onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            submit();
-          }
-          if (e.key === "Escape") onCancel();
-          e.stopPropagation();
-        }}
+        onKeyDown={(e) => onFieldKey(e, submit, onCancel)}
       />
       <Button size="icon-lg" disabled={!text.trim()} onClick={submit} aria-label="Send">
         <Icon name="send" size={14} />
       </Button>
+    </div>
+  );
+}
+
+/** Edits one of your messages in place. */
+function EditField({
+  initial,
+  onSave,
+  onCancel,
+}: {
+  initial: string;
+  onSave: (text: string) => void;
+  onCancel: () => void;
+}) {
+  const [text, setText] = useState(initial);
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useAutofocus(ref);
+  const save = () => {
+    const t = text.trim();
+    if (t && t !== initial) onSave(t);
+    else onCancel();
+  };
+  return (
+    <div className="pz:flex pz:flex-col pz:gap-1.5">
+      <Textarea
+        className="pz:max-h-60 pz:rounded-lg pz:px-2 pz:text-[13.5px] pz:leading-[1.55] pz:ring-[1.5px] pz:ring-select"
+        ref={ref}
+        value={text}
+        aria-label="Edit message"
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => onFieldKey(e, save, onCancel)}
+      />
+      <div className="pz:flex pz:items-center pz:justify-end pz:gap-1">
+        <span className={cn(meta, "pz:mr-auto")}>Enter to save · Esc to cancel</span>
+        <Button variant="ghost" className="pz:h-6 pz:rounded-md pz:px-2" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button className="pz:h-6 pz:rounded-md pz:px-2" disabled={!text.trim()} onClick={save}>
+          Save
+        </Button>
+      </div>
     </div>
   );
 }
@@ -129,6 +189,8 @@ export function ThreadCard({
   me: Author;
   onClose: () => void;
 }) {
+  const [editing, setEditing] = useState<string | null>(null);
+  const [scrolled, setScrolled] = useState(false);
   const reply = (text: string) =>
     source.apply({
       op: "thread.message",
@@ -139,32 +201,100 @@ export function ThreadCard({
     source.apply({ op: "thread.update", id: thread.id, status: "resolved" });
     onClose();
   };
+  const remove = () => {
+    source.apply({ op: "thread.delete", id: thread.id });
+    onClose();
+  };
+  const edit = (messageId: string, text: string) => {
+    source.apply({ op: "thread.edit", id: thread.id, messageId, text, editedAt: Date.now() });
+    setEditing(null);
+  };
+  // The first message is the comment; deleting it deletes the thread.
+  const removeMessage = (messageId: string) =>
+    messageId === thread.messages[0]?.id
+      ? remove()
+      : source.apply({ op: "thread.unmessage", id: thread.id, messageId });
   const mine = (a: Author) => a.kind === me.kind && a.name === me.name;
   return (
-    <div
-      className={threadCard}
-      onPointerDown={(e) => e.stopPropagation()}
-      onWheel={(e) => e.stopPropagation()}
-    >
+    <div className={threadCard} onPointerDown={(e) => e.stopPropagation()}>
       <div className="pz:absolute pz:top-1.5 pz:right-1.5 pz:z-[1] pz:flex pz:gap-0.5 pz:rounded-lg pz:bg-card">
         <Button variant="ghost" size="icon" onClick={resolve} title="Resolve">
           <Icon name="check" size={15} />
         </Button>
-        <Button variant="ghost" size="icon" onClick={onClose} title="Close">
-          <Icon name="close" size={15} />
-        </Button>
+        <Menu
+          trigger={
+            <Button variant="ghost" size="icon" title="More">
+              <Icon name="more" size={15} />
+            </Button>
+          }
+          items={[
+            {
+              label: "Delete thread",
+              icon: <Icon name="trash" size={14} />,
+              danger: true,
+              onSelect: remove,
+            },
+          ]}
+        />
       </div>
-      <div className="pz:flex pz:max-h-80 pz:flex-col pz:gap-3.5 pz:overflow-auto pz:pt-3 pz:pr-16 pz:pb-3.5 pz:pl-3.5">
-        {thread.messages.map((m) => (
-          <div key={m.id} className="pz:flex pz:flex-col pz:gap-1">
-            {!mine(m.author) && (
-              <div className="pz:flex pz:items-center pz:gap-1.5">
-                <Avatar author={m.author} size={18} />
-                <span className="pz:font-medium">{m.author.name}</span>
-                <span className={meta}>{timeAgo(m.createdAt)}</span>
-              </div>
+      {/*
+        data-scroll lets the wheel scroll this list instead of panning the canvas.
+        Scrolled, its top fades out so messages never run under the buttons.
+      */}
+      <div
+        data-scroll
+        className={cn(
+          "pz:flex pz:max-h-80 pz:flex-col pz:gap-1 pz:overflow-y-auto pz:overscroll-contain pz:px-1.5 pz:pt-1.5 pz:pb-2.5",
+          scrolled && "pz:[mask-image:linear-gradient(transparent_24px,#000_44px)]",
+        )}
+        onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 0)}
+      >
+        {thread.messages.map((m, i) => (
+          <div
+            key={m.id}
+            className={cn(
+              "pz:group pz:flex pz:flex-col pz:gap-1 pz:rounded-lg pz:px-2 pz:py-1.5",
+              mine(m.author) && editing !== m.id && "pz:hover:bg-accent",
             )}
-            <div className={messageText}>{m.text}</div>
+          >
+            {/* At the top, only the first row sits beside the card's buttons. */}
+            <div className={cn("pz:flex pz:h-6 pz:items-center pz:gap-1.5", i === 0 && "pz:pr-14")}>
+              <Avatar author={m.author} size={18} />
+              <span className="pz:truncate pz:font-medium">{m.author.name}</span>
+              <span className={cn(meta, "pz:shrink-0")}>
+                {timeAgo(m.createdAt)}
+                {m.editedAt ? " · edited" : ""}
+              </span>
+              {mine(m.author) && editing !== m.id && (
+                <div className="pz:ml-auto pz:flex pz:shrink-0 pz:opacity-0 pz:group-hover:opacity-100 pz:focus-within:opacity-100">
+                  <Button
+                    variant="ghost"
+                    className="pz:size-6 pz:rounded-md"
+                    onClick={() => setEditing(m.id)}
+                    title="Edit"
+                  >
+                    <Icon name="edit" size={14} />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="pz:size-6 pz:rounded-md"
+                    onClick={() => removeMessage(m.id)}
+                    title={i === 0 ? "Delete thread" : "Delete"}
+                  >
+                    <Icon name="trash" size={14} />
+                  </Button>
+                </div>
+              )}
+            </div>
+            {editing === m.id ? (
+              <EditField
+                initial={m.text}
+                onSave={(text) => edit(m.id, text)}
+                onCancel={() => setEditing(null)}
+              />
+            ) : (
+              <div className={messageText}>{m.text}</div>
+            )}
           </div>
         ))}
       </div>

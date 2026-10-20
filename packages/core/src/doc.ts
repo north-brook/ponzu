@@ -44,10 +44,14 @@ export type Op =
       nodeId?: string | null;
       x?: number;
       y?: number;
-      artboardId?: string;
+      /** null moves the pin off its artboard, onto the open canvas of `pageId`. */
+      artboardId?: string | null;
+      pageId?: string | null;
     }
   | { op: "thread.message"; id: string; message: Message }
   | { op: "thread.unmessage"; id: string; messageId: string }
+  /** Replace a message's text. `editedAt: null` clears the mark, for undo. */
+  | { op: "thread.edit"; id: string; messageId: string; text: string; editedAt: number | null }
   | { op: "note"; name: string; content: string | null }
   | { op: "batch"; ops: Op[] };
 
@@ -318,8 +322,14 @@ export function applyOp(doc: Doc, op: Op): Op {
         thread.y = op.y;
       }
       if (op.artboardId !== undefined) {
-        inverse.artboardId = thread.artboardId;
-        thread.artboardId = op.artboardId;
+        inverse.artboardId = thread.artboardId ?? null;
+        if (op.artboardId === null) delete thread.artboardId;
+        else thread.artboardId = op.artboardId;
+      }
+      if (op.pageId !== undefined) {
+        inverse.pageId = thread.pageId ?? null;
+        if (op.pageId === null) delete thread.pageId;
+        else thread.pageId = op.pageId;
       }
       thread.updatedAt = Date.now();
       return inverse;
@@ -336,6 +346,22 @@ export function applyOp(doc: Doc, op: Op): Op {
       if (index < 0) throw new OpError(`No message ${op.messageId}.`);
       const [message] = thread.messages.splice(index, 1);
       return { op: "thread.message", id: op.id, message: message! };
+    }
+    case "thread.edit": {
+      const thread = mustThread(doc, op.id);
+      const message = thread.messages.find((m) => m.id === op.messageId);
+      if (!message) throw new OpError(`No message ${op.messageId}.`);
+      const inverse: Op = {
+        op: "thread.edit",
+        id: op.id,
+        messageId: op.messageId,
+        text: message.text,
+        editedAt: message.editedAt ?? null,
+      };
+      message.text = op.text;
+      if (op.editedAt === null) delete message.editedAt;
+      else message.editedAt = op.editedAt;
+      return inverse;
     }
     case "note": {
       const prev = doc.notes[op.name] ?? null;
