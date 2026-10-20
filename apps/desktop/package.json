@@ -1,5 +1,6 @@
 {
   "name": "@ponzu/desktop",
+  "productName": "Ponzu",
   "private": true,
   "version": "1.6.0",
   "description": "Ponzu desktop app",
@@ -19,7 +20,6 @@
   },
   "build": {
     "appId": "design.ponzu.app",
-    "productName": "Ponzu",
     "directories": {
       "output": "out",
       "buildResources": "build"
