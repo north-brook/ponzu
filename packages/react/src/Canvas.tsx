@@ -1,9 +1,10 @@
 import { type Artboard, type Author, findArtboard, locate, newId, type Thread } from "@ponzu/core";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArtboardView } from "./Artboard.tsx";
-import { CommentsPanel, Composer, ThreadCard } from "./Comments.tsx";
+import { CommentsPanel, Composer, ThreadCard, threadCard } from "./Comments.tsx";
 import type { CanvasSource } from "./connection.ts";
 import { AgentMark, Icon } from "./icons.tsx";
+import { Button, cn, ToggleGroup } from "./ui.tsx";
 import { isTyping, useCamera, useKeyHeld, useSource } from "./useCanvas.ts";
 
 export type Mode = "select" | "hand" | "comment";
@@ -368,8 +369,8 @@ export function Canvas({
 
   if (!doc || !page) {
     return (
-      <div className={`pz-root pz-${theme} ${className ?? ""}`}>
-        <div className="pz-loading">
+      <div className={cn("pz-root", `pz-${theme}`, className)}>
+        <div className="pz:pointer-events-none pz:absolute pz:inset-0 pz:grid pz:place-content-center pz:text-muted-foreground">
           {state.status === "offline" ? "Reconnecting to Ponzu…" : "Opening…"}
         </div>
       </div>
@@ -387,10 +388,17 @@ export function Canvas({
   const ghostFor = (id: string) => (ghost && drag.current?.ids.includes(id) ? ghost : null);
 
   return (
-    <div className={`pz-root pz-${theme} ${className ?? ""}`}>
+    <div className={cn("pz-root", `pz-${theme}`, className)}>
       <div
         ref={viewport}
-        className={`pz-viewport pz-mode-${panning ? "hand" : mode}`}
+        className={cn(
+          "pz:relative pz:min-h-0 pz:flex-1 pz:touch-none pz:overflow-hidden",
+          panning
+            ? "pz:cursor-grab pz:active:cursor-grabbing"
+            : mode === "comment"
+              ? "pz:cursor-crosshair"
+              : "pz:cursor-default",
+        )}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -398,7 +406,7 @@ export function Canvas({
         onDragOver={(e) => e.preventDefault()}
       >
         <div
-          className="pz-world"
+          className="pz:absolute pz:top-0 pz:left-0 pz:origin-top-left pz:will-change-transform"
           style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}
         >
           {boards.map((ab) => {
@@ -410,11 +418,16 @@ export function Canvas({
             return (
               <div
                 key={ab.id}
-                className={`pz-board ${selection.includes(ab.id) ? "pz-selected" : ""}`}
+                className="pz:absolute pz:shadow-board"
                 style={{ left: x, top: y, width: w, height: h ?? undefined }}
               >
                 <div
-                  className="pz-board-title"
+                  className={cn(
+                    "pz:absolute pz:left-0 pz:flex pz:cursor-default pz:items-center pz:gap-[0.5em] pz:whitespace-nowrap pz:leading-[1.4]",
+                    selection.includes(ab.id)
+                      ? "pz:text-select"
+                      : "pz:text-muted-foreground pz:hover:text-foreground",
+                  )}
                   style={{ fontSize: 12 / camera.zoom, top: -22 / camera.zoom }}
                   onPointerDown={(e) => startMove(e, ab)}
                   onDoubleClick={() => setRenaming(ab.id)}
@@ -422,6 +435,7 @@ export function Canvas({
                   {renaming === ab.id ? (
                     <input
                       autoFocus
+                      className="pz:rounded-[3px] pz:bg-card pz:px-[0.3em] pz:outline-1 pz:outline-select"
                       defaultValue={ab.name}
                       style={{ fontSize: 12 / camera.zoom }}
                       onPointerDown={(e) => e.stopPropagation()}
@@ -440,11 +454,11 @@ export function Canvas({
                     <span>{ab.name}</span>
                   )}
                   {who && (
-                    <span className="pz-board-agents" style={{ gap: 4 / camera.zoom }}>
+                    <span className="pz:inline-flex" style={{ gap: 4 / camera.zoom }}>
                       {who.map((a) => (
                         <span
                           key={a.name}
-                          className="pz-agent-chip"
+                          className="pz:inline-grid pz:place-items-center pz:text-foreground"
                           title={`${a.name} is working here`}
                         >
                           <AgentMark client={a.client} size={12 / camera.zoom} />
@@ -460,11 +474,14 @@ export function Canvas({
         </div>
 
         {/* Overlays in screen space so they stay crisp at any zoom. */}
-        <div className="pz-overlay">
+        <div className="pz:pointer-events-none pz:absolute pz:inset-0">
           {selectedRects.map((r) => (
             <div
               key={r.id}
-              className={`pz-sel ${r.artboard ? "pz-sel-board" : ""}`}
+              className={cn(
+                "pz:pointer-events-none pz:absolute pz:outline-select",
+                r.artboard ? "pz:outline-2" : "pz:outline-[1.5px]",
+              )}
               style={{ left: r.x, top: r.y, width: r.w, height: r.h }}
             />
           ))}
@@ -474,10 +491,16 @@ export function Canvas({
             const p = pinPoint(t, ab, viewport.current, camera);
             const open = openThread === t.id;
             return (
-              <div key={t.id} className="pz-pin-wrap" style={{ left: p.x, top: p.y }}>
+              <div key={t.id} className={pinWrap} style={{ left: p.x, top: p.y }}>
                 <button
                   type="button"
-                  className={`pz-pin ${t.status === "resolved" ? "pz-pin-resolved" : ""} ${open ? "pz-pin-open" : ""}`}
+                  className={cn(
+                    pin,
+                    t.status === "resolved"
+                      ? "pz:bg-muted pz:text-muted-foreground"
+                      : "pz:bg-comment pz:text-comment-foreground",
+                    open && "pz:scale-112",
+                  )}
                   onPointerDown={(e) => e.stopPropagation()}
                   onClick={() => setOpenThread(open ? null : t.id)}
                 >
@@ -501,9 +524,13 @@ export function Canvas({
               const x = (ab.x + pending.x) * camera.zoom + camera.x;
               const y = (ab.y + pending.y) * camera.zoom + camera.y;
               return (
-                <div className="pz-pin-wrap" style={{ left: x, top: y }}>
-                  <span className="pz-pin pz-pin-open">+</span>
-                  <div className="pz-thread">
+                <div className={pinWrap} style={{ left: x, top: y }}>
+                  <span
+                    className={cn(pin, "pz:scale-112 pz:bg-comment pz:text-comment-foreground")}
+                  >
+                    +
+                  </span>
+                  <div className={threadCard}>
                     <Composer onSubmit={createThread} onCancel={() => setPending(null)} />
                   </div>
                 </div>
@@ -512,9 +539,9 @@ export function Canvas({
         </div>
 
         {!boards.length && (
-          <div className="pz-empty-page">
-            <p>This page is empty.</p>
-            <p className="pz-muted">
+          <div className="pz:pointer-events-none pz:absolute pz:inset-0 pz:grid pz:place-content-center pz:gap-1 pz:text-center">
+            <p className="pz:m-0 pz:text-[15px]">This page is empty.</p>
+            <p className="pz:m-0 pz:text-muted-foreground">
               Ask your agent to design something. It will appear here as it works.
             </p>
           </div>
@@ -544,8 +571,8 @@ export function Canvas({
       </div>
 
       {footer && (
-        <div className="pz-footer">
-          <div className="pz-pages">
+        <div className="pz:flex pz:h-11 pz:shrink-0 pz:items-center pz:justify-between pz:gap-4 pz:bg-background pz:px-2">
+          <div className="pz:flex pz:min-w-0 pz:items-center pz:gap-0.5 pz:overflow-x-auto pz:[scrollbar-width:none]">
             {doc.pages.map((p) => (
               <PageTab
                 key={p.id}
@@ -560,9 +587,9 @@ export function Canvas({
                 onRename={(name) => source.apply({ op: "page.update", id: p.id, name })}
               />
             ))}
-            <button
-              type="button"
-              className="pz-icon-btn"
+            <Button
+              variant="ghost"
+              size="icon"
               title="New page"
               onClick={() => {
                 const id = newId("pg");
@@ -575,56 +602,56 @@ export function Canvas({
               }}
             >
               <Icon name="add" size={15} />
-            </button>
+            </Button>
           </div>
-          <div className="pz-controls">
+          <div className="pz:flex pz:shrink-0 pz:items-center pz:gap-2.5">
             {footerExtra}
-            <button
-              type="button"
-              className={`pz-comments-btn ${panel ? "on" : ""}`}
+            <Button
+              variant="ghost"
+              className={cn(panel && "pz:bg-accent pz:text-foreground")}
               onClick={() => setPanel((v) => !v)}
             >
-              {openCount > 0 && <span className="pz-badge">{openCount}</span>}
+              {openCount > 0 && (
+                <span className="pz:box-content pz:inline-grid pz:h-[18px] pz:min-w-[18px] pz:place-items-center pz:rounded-[9px] pz:bg-comment pz:px-[5px] pz:font-semibold pz:text-[11px] pz:text-comment-foreground">
+                  {openCount}
+                </span>
+              )}
               Comments
-            </button>
-            <div className="pz-modes">
-              {(["select", "hand", "comment"] as const).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  className={(panning ? "hand" : mode) === m ? "on" : ""}
-                  title={`${m[0]!.toUpperCase()}${m.slice(1)} (${m === "select" ? "V" : m === "hand" ? "H" : "C"})`}
-                  onClick={() => setMode(m)}
-                >
-                  <Icon name={m} size={16} />
-                </button>
-              ))}
-            </div>
-            <div className="pz-zoom">
-              <button
-                type="button"
-                className="pz-icon-btn"
+            </Button>
+            <ToggleGroup
+              value={panning ? "hand" : mode}
+              onValueChange={setMode}
+              items={(["select", "hand", "comment"] as const).map((m) => ({
+                value: m,
+                title: `${m[0]!.toUpperCase()}${m.slice(1)} (${m === "select" ? "V" : m === "hand" ? "H" : "C"})`,
+                label: <Icon name={m} size={16} />,
+              }))}
+            />
+            <div className="pz:flex pz:items-center">
+              <Button
+                variant="ghost"
+                size="icon"
                 onClick={() => zoomAt(0.8, viewportSize().w / 2, viewportSize().h / 2)}
                 title="Zoom out (⌘−)"
               >
                 <Icon name="minus" size={14} />
-              </button>
-              <button
-                type="button"
-                className="pz-zoom-value"
+              </Button>
+              <Button
+                variant="ghost"
+                className="pz:h-[26px] pz:min-w-11 pz:rounded-[7px] pz:px-0 pz:tabular-nums"
                 onClick={fitPage}
                 title="Zoom to fit (⇧1)"
               >
                 {zoomPct}%
-              </button>
-              <button
-                type="button"
-                className="pz-icon-btn"
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
                 onClick={() => zoomAt(1.25, viewportSize().w / 2, viewportSize().h / 2)}
                 title="Zoom in (⌘+)"
               >
                 <Icon name="plus" size={14} />
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -632,6 +659,10 @@ export function Canvas({
     </div>
   );
 }
+
+const pinWrap = "pz:pointer-events-auto pz:absolute pz:z-[2] pz:size-0";
+const pin =
+  "pz:absolute pz:bottom-0 pz:left-0 pz:grid pz:h-6 pz:min-w-6 pz:origin-bottom-left pz:place-items-center pz:rounded-[12px_12px_12px_3px] pz:px-[7px] pz:font-semibold pz:text-[11px] pz:shadow-[0_1px_3px_rgba(0,0,0,0.25)] pz:transition-transform pz:duration-[120ms] pz:hover:scale-112";
 
 function PageTab({
   name,
@@ -650,7 +681,12 @@ function PageTab({
   return (
     <button
       type="button"
-      className={`pz-page ${active ? "on" : ""}`}
+      className={cn(
+        "pz:inline-flex pz:h-7 pz:shrink-0 pz:items-center pz:gap-1.5 pz:whitespace-nowrap pz:rounded-lg pz:px-2.5",
+        active
+          ? "pz:bg-card pz:text-foreground pz:shadow-[0_1px_2px_rgba(0,0,0,0.06)] pz:dark:bg-muted"
+          : "pz:text-muted-foreground pz:hover:bg-accent pz:hover:text-foreground",
+      )}
       onClick={onClick}
       onDoubleClick={() => setEditing(true)}
     >
@@ -658,6 +694,7 @@ function PageTab({
       {editing ? (
         <input
           autoFocus
+          className="pz:w-[9em] pz:bg-transparent pz:outline-0"
           defaultValue={name}
           onClick={(e) => e.stopPropagation()}
           onBlur={(e) => {

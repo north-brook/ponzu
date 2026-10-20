@@ -30,6 +30,18 @@ jobs:
         run: bunx commitlint <<<"$TITLE"
         env:
           TITLE: ${{ github.event.pull_request.title }}
+      # A feature or fix usually changes something a user notices; its note is
+      # what the app's What's new says about it (docs/release-notes.md). Some
+      # fixes are invisible, so this warns.
+      - name: A feature or fix says what users will notice
+        if: github.event_name == 'pull_request'
+        run: |
+          grep -Eq '^(feat|fix)(\([^)]*\))?!?:' <<<"$TITLE" || exit 0
+          grep -Eiq '^#{2,3}[[:space:]]+release notes?[[:space:]]*$' <<<"$BODY" ||
+            echo "::warning title=No release note::Add a '## Release note' section to the description if users will notice this change (docs/release-notes.md)."
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          BODY: ${{ github.event.pull_request.body }}
 
   test:
     name: Check, typecheck, test

@@ -88,6 +88,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.TAG }}
+          # The app bundles every release's notes for What's new, read from
+          # main's history between tags (scripts/release-notes.ts).
+          fetch-depth: 0
+          fetch-tags: true
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
