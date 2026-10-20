@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0](https://github.com/north-brook/ponzu/compare/v1.6.2...v1.7.0) (2026-10-20)
+
+
+### Features
+
+* agents can watch animations and hover states with record and settled screenshots ([#18](https://github.com/north-brook/ponzu/issues/18)) ([f510f06](https://github.com/north-brook/ponzu/commit/f510f06425c65c1a5cfb6dba1cc1cefd0dcb7252))
+
 ## [1.6.2](https://github.com/north-brook/ponzu/compare/v1.6.1...v1.6.2) (2026-10-20)
 
 
