@@ -158,3 +158,28 @@ test("when another Ponzu takes over, calls move to it", async () => {
     await appWs.closeAll();
   }
 });
+
+test("calls racing a takeover all land on the new Ponzu", async () => {
+  const file = join(dir, "shop.design");
+  await agent.callTool({ name: "get_basic_info", arguments: { file } });
+  const appWs = new LocalWorkspace({ cwd: dir });
+  const app = serve(appWs, { port: 0 });
+  announced = `http://127.0.0.1:${app.port}/mcp`;
+  try {
+    // Each call sees the takeover; the first to act retires the old host under the others.
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () =>
+        agent.callTool({ name: "get_basic_info", arguments: { file } }),
+      ),
+    );
+    for (const r of results) {
+      expect(r.isError).toBeFalsy();
+      expect(text(r)).toContain("shop");
+    }
+    expect(appWs.presence.list().map((p) => p.name)).toContain("Claude");
+  } finally {
+    announced = null;
+    app.stop(true);
+    await appWs.closeAll();
+  }
+});

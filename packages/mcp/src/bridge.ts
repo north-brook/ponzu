@@ -139,16 +139,20 @@ export async function serveBridge(
     return client;
   };
   const retire = (h: Host) => {
+    if (h.retired) return;
     h.retired = true;
     if (host === h) host = null;
     if (h.busy === 0) void endSession(h);
   };
   const hostClient = async (launch = true): Promise<Client | null> => {
-    if (host) {
+    const current = host;
+    if (current) {
       // Another Ponzu may have taken over since, e.g. the app opened while `ponzu serve` ran.
       const announced = await opts.findHost(false).catch(() => null);
-      if (!announced || announced === host.url) return host.client;
-      retire(host);
+      // The probe was async: another call may have dropped or replaced `current` meanwhile.
+      if (host && host !== current) return host.client;
+      if (host === current && (!announced || announced === current.url)) return current.client;
+      retire(current);
     }
     let pending = connecting.get(launch);
     if (!pending) {
