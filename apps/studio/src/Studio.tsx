@@ -32,26 +32,24 @@ declare global {
   }
 }
 
-function useTheme(): ["light" | "dark", (t: "light" | "dark") => void] {
-  const media = window.matchMedia("(prefers-color-scheme: dark)");
-  const stored = localStorage.getItem("ponzu.theme") as "light" | "dark" | null;
-  const [theme, setTheme] = useState<"light" | "dark">(
-    stored ?? (media.matches ? "dark" : "light"),
-  );
+const darkScheme = window.matchMedia("(prefers-color-scheme: dark)");
+
+/** Follows the system appearance. */
+function useTheme(): "light" | "dark" {
+  const [theme, setTheme] = useState<"light" | "dark">(darkScheme.matches ? "dark" : "light");
+  useEffect(() => {
+    const onChange = () => setTheme(darkScheme.matches ? "dark" : "light");
+    darkScheme.addEventListener("change", onChange);
+    return () => darkScheme.removeEventListener("change", onChange);
+  }, []);
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
-  return [
-    theme,
-    (t) => {
-      localStorage.setItem("ponzu.theme", t);
-      setTheme(t);
-    },
-  ];
+  return theme;
 }
 
 export function Studio() {
-  const [theme, setTheme] = useTheme();
+  const theme = useTheme();
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [tabs, setTabs] = useState<string[]>(() => {
     const q = new URLSearchParams(location.search).get("file");
@@ -109,11 +107,26 @@ export function Studio() {
     if (active === key) setActive(null);
   };
 
-  // ⌘1–8 open file tabs, ⌘9 the last, like a browser.
+  // ⌘0 goes home, ⌘1–8 open file tabs, ⌘9 the last, and ⌘⇧[ ⌘⇧] cycle through home and
+  // the tabs, like a browser.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const digit = /^Digit([1-9])$/.exec(e.code)?.[1];
-      if (!digit || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      const step = e.shiftKey && { BracketLeft: -1, BracketRight: 1 }[e.code];
+      if (step) {
+        e.preventDefault();
+        const stops = [null, ...tabs];
+        const i = stops.indexOf(active);
+        setActive(stops[(i + step + stops.length) % stops.length] ?? null);
+        return;
+      }
+      const digit = /^Digit([0-9])$/.exec(e.code)?.[1];
+      if (!digit || e.shiftKey) return;
+      if (digit === "0") {
+        e.preventDefault();
+        setActive(null);
+        return;
+      }
       const key = digit === "9" ? tabs.at(-1) : tabs[Number(digit) - 1];
       if (!key) return;
       e.preventDefault();
@@ -121,7 +134,7 @@ export function Studio() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [tabs]);
+  }, [tabs, active]);
 
   const desktop = window.ponzuDesktop;
   const isMac = desktop?.platform === "darwin";
@@ -141,7 +154,7 @@ export function Studio() {
           size="icon"
           className={cn("w-8", active === null && "bg-secondary hover:bg-secondary")}
           onClick={() => setActive(null)}
-          title="Home"
+          title={`Home (${mod}0)`}
         >
           <Logo size={18} dark={theme === "dark"} />
         </Button>
@@ -159,15 +172,6 @@ export function Studio() {
         </div>
         <div className="ml-auto flex items-center gap-1.5">
           {active && <AgentDots source={source(active)} />}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="w-[30px]"
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            title="Toggle theme"
-          >
-            <Icon name={theme === "dark" ? "sun" : "moon"} size={16} />
-          </Button>
         </div>
       </header>
       <main className="min-h-0 flex-1 px-2 pb-2">
