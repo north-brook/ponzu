@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { AGENTS, AgentMark } from "@/components/agent-marks";
 import { Footer, Nav } from "@/components/chrome";
@@ -14,6 +15,12 @@ const well =
   "m-0 overflow-hidden whitespace-pre rounded-[14px] px-5 py-4 font-mono text-[12.5px]/[22px]";
 /** A code block: white on the light page, near-black on the dark one. */
 const codeWell = `${well} code bg-well text-text shadow-[inset_0_0_0_1px_var(--well-rule)]`;
+
+// Set here, not in the layout, so other pages don't inherit the home page's canonical URL.
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+  openGraph: { url: "/" },
+};
 
 export default function Home() {
   return (
@@ -34,7 +41,7 @@ export default function Home() {
         </div>
       </header>
 
-      <div className="mt-4 mb-28">
+      <div className="dm-frame-host mt-4 mb-28">
         <ProductDemo />
       </div>
 

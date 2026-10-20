@@ -57,12 +57,13 @@ export function ClaudeApp({ beat, t, big }: { beat: number; t: number; big: bool
   const tool = id ? TOOL[id] : undefined;
   const tokens = Math.max(0, (beat - index("send")) * 0.38 + t * 0.34);
 
-  // New messages arrive at the bottom; once the thread fills the window, it follows them.
+  // New messages arrive at the bottom; once the thread fills the window, it follows them. The
+  // thread only grows when the beat changes, so measure then, not on every tick.
   const scroll = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const el = scroll.current;
     if (el) el.scrollTop = el.scrollHeight;
-  });
+  }, [beat]);
 
   return (
     <div className="dm-window dm-app min-h-0" style={{ fontSize: big ? 16 : 12.5 }}>

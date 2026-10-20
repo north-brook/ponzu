@@ -17,6 +17,8 @@ import { BEATS, type BeatId, COMMENT, index, LAST } from "./script";
 const WIDE = { width: 1440, height: 860, studio: 952 };
 const NARROW = { width: 1000, height: 1000 };
 const NARROW_AT = 860;
+/** How often the clock re-renders the scene within a beat. */
+const TICK_MS = 33;
 
 export type PageId = "brand" | "landing" | "app";
 
@@ -123,6 +125,7 @@ export function ProductDemo() {
     let started = performance.now();
     let last = started;
     let frame = 0;
+    let painted = started;
     const tick = (now: number) => {
       frame = requestAnimationFrame(tick);
       if (!visible) {
@@ -139,7 +142,11 @@ export function ProductDemo() {
         if (current === 0) setCycle((c) => c + 1);
         setBeat(current);
         setT(0);
-      } else {
+        painted = now;
+      } else if (now - painted >= TICK_MS) {
+        // Everything that reads `t` moves in steps (a typed letter, a piece of a board), so
+        // ~30 updates a second look the same as 60 and halve the renders.
+        painted = now;
         setT(elapsed / beatMs);
       }
     };
@@ -162,11 +169,9 @@ export function ProductDemo() {
       ref={wrap}
       role="img"
       aria-label="Claude Code designs Fernwood, a houseplant shop, on the Ponzu canvas. Starting from an empty page, it creates a Brand page with a logo and palette, a Landing page with a hero and three directions, and an App page with four phone screens. You pin a comment on the Sunroom direction, and Claude makes the change and resolves it."
-      className="relative w-full"
-      style={{
-        height: fit ? size.height * fit.scale : undefined,
-        aspectRatio: fit ? undefined : `${WIDE.width} / ${WIDE.height}`,
-      }}
+      className="dm-frame relative w-full"
+      data-sized={fit ? "" : undefined}
+      style={{ height: fit ? size.height * fit.scale : undefined }}
     >
       {fit &&
         (narrow ? (

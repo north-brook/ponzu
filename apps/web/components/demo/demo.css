@@ -23,6 +23,30 @@
   }
 }
 
+/*
+ * The demo's box before it measures itself, on the server and first paint: the wide layout's
+ * shape, or the square overlapping one when narrower than 860px, so the page doesn't move once
+ * it does. The query reads the parent's width, which `.dm-frame-host` exposes.
+ */
+.dm-frame-host {
+  container-type: inline-size;
+}
+
+.dm-frame {
+  aspect-ratio: 1440 / 860;
+}
+
+@container (max-width: 859px) {
+  .dm-frame {
+    aspect-ratio: 1;
+  }
+}
+
+/* Once measured, the script sets the exact height. */
+.dm-frame[data-sized] {
+  aspect-ratio: auto;
+}
+
 .dm-window {
   overflow: hidden;
   border-radius: 12px;
@@ -399,6 +423,7 @@
 
 .dm-thread-tile {
   display: flex;
+  flex-direction: row;
   align-items: flex-start;
   gap: 10px;
   height: auto;

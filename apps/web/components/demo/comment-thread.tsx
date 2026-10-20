@@ -7,7 +7,7 @@ import "./demo.css";
 /** Ponzu's class strings for pins and cards (Canvas.tsx, Comments.tsx), so they match exactly. */
 const PIN =
   "pz:grid pz:size-6 pz:shrink-0 pz:place-items-center pz:rounded-full pz:bg-comment pz:font-semibold pz:text-[11px] pz:text-comment-foreground pz:tabular-nums pz:shadow-[0_1px_3px_rgba(0,0,0,0.25)]";
-const CARD = "pz:w-full pz:max-w-[380px] pz:overflow-hidden pz:rounded-xl pz:bg-card pz:shadow-pop";
+const CARD = "w-full max-w-[380px] pz:overflow-hidden pz:rounded-xl pz:bg-card pz:shadow-pop";
 const TEXT = "pz:whitespace-pre-wrap pz:text-[13.5px] pz:leading-[1.55]";
 const GHOST =
   "pz:inline-flex pz:size-[26px] pz:items-center pz:justify-center pz:rounded-[7px] pz:text-muted-foreground";

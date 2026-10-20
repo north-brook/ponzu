@@ -8,6 +8,7 @@
  * the demo or the brand changes. Output is 2400×1260 (2× the 1200×630 card) for sharp previews on
  * high-density screens; X, LinkedIn, Slack, iMessage and Facebook all accept that size.
  */
+import { fileURLToPath } from "node:url";
 import { findChromium } from "@ponzu/render/chromium";
 import { chromium } from "playwright-core";
 
@@ -35,7 +36,7 @@ try {
   // load fast in the feed, with no visible loss.
   const card = page.locator("[data-share-card]");
   for (const name of ["opengraph-image.jpg", "twitter-image.jpg"]) {
-    await card.screenshot({ path: new URL(name, OUT).pathname, type: "jpeg", quality: 88 });
+    await card.screenshot({ path: fileURLToPath(new URL(name, OUT)), type: "jpeg", quality: 88 });
     console.log(`Wrote app/${name}`);
   }
 } finally {

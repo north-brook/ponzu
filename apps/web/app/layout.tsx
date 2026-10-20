@@ -49,7 +49,6 @@ export const metadata: Metadata = {
     "HTML and CSS",
     "open source",
   ],
-  alternates: { canonical: "/" },
   icons: {
     icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
     apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
@@ -58,7 +57,6 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     siteName: "Ponzu",
-    url: "/",
     locale: "en_US",
     title: TITLE,
     description: DESCRIPTION,

@@ -44,7 +44,7 @@ export default function ShareCard() {
       </div>
 
       {/* The real demo, held on the moment you comment on a design. It runs off the bottom edge. */}
-      <div className="relative mx-auto mt-[40px] w-[1056px]">
+      <div className="dm-frame-host relative mx-auto mt-[40px] w-[1056px]">
         <ProductDemo />
       </div>
     </div>
