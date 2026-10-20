@@ -47,19 +47,33 @@ export async function runTool(
   rawArgs: unknown,
   ctx: ToolContext,
 ): Promise<ToolResult> {
+  const started = Date.now();
+  // Which tools agents use and how they fail; never the arguments or the result.
+  const track = (outcome: "ok" | "invalid_args" | "tool_error" | "mistake" | "crash") =>
+    ctx.ws.telemetry?.capture("tool called", {
+      tool: def.name,
+      group: def.group,
+      outcome,
+      duration_ms: Date.now() - started,
+      client: ctx.caller.client,
+    });
   const parsed = z.object(def.input).safeParse(rawArgs ?? {});
   if (!parsed.success) {
     const issues = parsed.error.issues
       .map((i) => `${i.path.join(".") || "input"}: ${i.message}`)
       .join("; ");
+    track("invalid_args");
     return { text: `Invalid arguments for ${def.name}: ${issues}`, isError: true };
   }
   try {
     ctx.ws.presence.touch(ctx.caller);
-    return await def.handler(parsed.data, ctx);
+    const result = await def.handler(parsed.data, ctx);
+    track(result.isError ? "tool_error" : "ok");
+    return result;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const known = err instanceof ToolError || (err as Error)?.name === "OpError";
+    track(known ? "mistake" : "crash");
     return { text: known ? message : `${def.name} failed: ${message}`, isError: true };
   }
 }

@@ -191,6 +191,7 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
     websocket: {
       open(s) {
         sockets.add(s);
+        ws.telemetry?.capture("canvas opened", { open_canvases: sockets.size });
         const design = ws.get(s.data.key)!;
         send(s, {
           t: "hello",
@@ -218,6 +219,8 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
         try {
           if (msg.t === "op") {
             design.apply(msg.op, user);
+            if (msg.op.op === "thread.create" || msg.op.op === "thread.message")
+              ws.telemetry?.capture("comment left", { reply: msg.op.op === "thread.message" });
             send(s, { t: "ack", req: msg.req });
           } else if (msg.t === "undo") {
             design.undo(user);

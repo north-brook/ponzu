@@ -9,10 +9,11 @@
   },
   "dependencies": {
     "@ponzu/core": "workspace:*",
-    "@ponzu/store": "workspace:*",
-    "@ponzu/render": "workspace:*",
-    "@ponzu/tools": "workspace:*",
     "@ponzu/mcp": "workspace:*",
-    "@ponzu/server": "workspace:*"
+    "@ponzu/render": "workspace:*",
+    "@ponzu/server": "workspace:*",
+    "@ponzu/store": "workspace:*",
+    "@ponzu/tools": "workspace:*",
+    "posthog-node": "^5.56.2"
   }
 }

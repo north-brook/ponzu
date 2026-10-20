@@ -123,10 +123,18 @@ About thirty tools in six groups. `get_guide` serves the house rules.
 | Write | `create_artboard` `write_html` `update_styles` `set_text` `set_attributes` `duplicate` `move_nodes` `delete` `rename` `update_artboard` |
 | See | `screenshot` (with lint) `record` `export` |
 | Organize | `list_files` `create_file` `create_page` `update_page` `archive` `get_tokens` `set_tokens` |
-| Converse | `list_comments` `get_comment` `create_comment` `reply` `set_comment_status` |
+| Converse | `list_comments` `get_comment` `create_comment` `reply` `set_comment_status` `send_feedback` |
 | Listen + remember | `wait_for_activity` `start_working` `finish_working` `write_note` `read_notes` `get_guide` |
 
 Skills for agents that support them live in [`skills/`](skills).
+
+## Telemetry
+
+The CLI and the Mac app send anonymous usage to the Ponzu team: which tools agents call and whether they fail, which agents connect, how often the canvas opens, and the Ponzu version and OS. Each install is a random id in `~/.ponzu/telemetry.json`. Nothing about your designs leaves your machine: no HTML, file names, paths, comment text or tool arguments.
+
+Agents can also tell us how Ponzu is working for them with `send_feedback`. That's the one event with words in it, and it's about Ponzu, not your work.
+
+Turn all of it off with `ponzu telemetry off`, or set `PONZU_TELEMETRY=0` or `DO_NOT_TRACK=1`. Nothing is sent in CI. The packages you embed (`@ponzu/tools`, `@ponzu/react` and the rest) send nothing on their own; a host opts in by passing a `telemetry` to its workspace.
 
 ## Develop
 

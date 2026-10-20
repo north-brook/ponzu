@@ -5,13 +5,14 @@ import { type Doc, findArtboard, locate, type Op, type Selection, type Thread } 
 import type { Renderer } from "@ponzu/render";
 import { Design, type OpEvent } from "@ponzu/store";
 import { FsAdapter } from "@ponzu/store/fs";
-import { EventHub, PresenceHub, ToolError, type Workspace } from "@ponzu/tools";
+import { EventHub, PresenceHub, type Telemetry, ToolError, type Workspace } from "@ponzu/tools";
 import { previewStale, writePreview } from "./preview.ts";
 
 export interface WorkspaceOptions {
   /** Where relative paths resolve. Defaults to process.cwd(). */
   cwd?: string;
   renderer?: Renderer;
+  telemetry?: Telemetry;
   /** Allow agents to open any .design path, not just the ones opened by the host. */
   openAnything?: boolean;
   /**
@@ -39,6 +40,7 @@ export class LocalWorkspace implements Workspace {
   readonly events = new EventHub();
   readonly presence = new PresenceHub();
   renderer?: Renderer;
+  telemetry?: Telemetry;
   private entries = new Map<string, Entry>();
   private opening = new Map<string, Promise<Entry>>();
   private focusListeners = new Set<(key: string, artboard: string) => void>();
@@ -50,6 +52,7 @@ export class LocalWorkspace implements Workspace {
   constructor(private opts: WorkspaceOptions = {}) {
     this.cwd = opts.cwd ?? process.cwd();
     this.renderer = opts.renderer;
+    this.telemetry = opts.telemetry;
   }
 
   designs() {

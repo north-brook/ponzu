@@ -141,4 +141,6 @@ Start every session with get_basic_info, then read_notes, then get_guide('basics
 
 Build in small pieces, screenshot often, and fix what lint reports. record shows animation and hover states frame by frame. Put design decisions in tokens and notes. Variations go next to the original, never over it. Use start_working / finish_working around edits to existing artboards.
 
-To pair on feedback, run the collaborate loop: wait_for_activity → triage → start_working → edit + screenshot → set_comment_status resolved for what you did (reply only to answer a question, flag an ambiguity or explain what you couldn't do) → repeat. get_guide('collaborate') has details.`;
+To pair on feedback, run the collaborate loop: wait_for_activity → triage → start_working → edit + screenshot → set_comment_status resolved for what you did (reply only to answer a question, flag an ambiguity or explain what you couldn't do) → repeat. get_guide('collaborate') has details.
+
+When Ponzu gets in your way (a confusing tool, an error, something it can't do) or works notably well, tell the Ponzu team with send_feedback, then carry on.`;
