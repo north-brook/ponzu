@@ -1,7 +1,15 @@
-import { type Artboard, type Author, findArtboard, locate, newId, type Thread } from "@ponzu/core";
+import {
+  type Artboard,
+  type Author,
+  findArtboard,
+  locate,
+  newId,
+  type Thread,
+  threadPage,
+} from "@ponzu/core";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArtboardView } from "./Artboard.tsx";
-import { CommentsPanel, Composer, ThreadCard, threadCard } from "./Comments.tsx";
+import { Composer, ThreadCard, threadCard } from "./Comments.tsx";
 import type { CanvasSource } from "./connection.ts";
 import { AgentMark, Icon } from "./icons.tsx";
 import { Button, cn, ToggleGroup } from "./ui.tsx";
@@ -22,9 +30,11 @@ export interface CanvasProps {
 }
 
 interface Pending {
-  artboardId: string;
+  /** Absent for a comment on the open canvas. */
+  artboardId?: string;
+  pageId: string;
   nodeId?: string;
-  /** Offset inside the artboard, in artboard px. */
+  /** Offset inside the artboard in artboard px, or the page position without one. */
   x: number;
   y: number;
 }
@@ -61,8 +71,6 @@ export function Canvas({
   const [measured, setMeasured] = useState<Record<string, number>>({});
   const [pending, setPending] = useState<Pending | null>(null);
   const [openThread, setOpenThread] = useState<string | null>(null);
-  const [panel, setPanel] = useState(false);
-  const [showResolved] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
   const fitted = useRef<string | null>(null);
 
@@ -156,6 +164,21 @@ export function Canvas({
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
   }, [zoomAt, panBy]);
+
+  // An open thread or composer closes on any click outside it, footer included.
+  useEffect(() => {
+    if (!openThread && !pending) return;
+    const onDown = (e: PointerEvent) => {
+      const inside = e
+        .composedPath()
+        .some((n) => n instanceof Element && n.hasAttribute("data-comment-open"));
+      if (inside) return;
+      setOpenThread(null);
+      setPending(null);
+    };
+    window.addEventListener("pointerdown", onDown, true);
+    return () => window.removeEventListener("pointerdown", onDown, true);
+  }, [openThread, pending]);
 
   // Keyboard.
   useEffect(() => {
@@ -261,15 +284,20 @@ export function Canvas({
     if (e.button !== 0 || !doc) return;
     const hit = hitTest(e);
     if (mode === "comment") {
-      if (!hit) return;
+      if (!page) return;
       const w = toWorld(e.clientX, e.clientY);
       setOpenThread(null);
-      setPending({
-        artboardId: hit.artboard.id,
-        nodeId: hit.nodeId,
-        x: w.x - hit.artboard.x,
-        y: w.y - hit.artboard.y,
-      });
+      setPending(
+        hit
+          ? {
+              artboardId: hit.artboard.id,
+              pageId: page.id,
+              nodeId: hit.nodeId,
+              x: w.x - hit.artboard.x,
+              y: w.y - hit.artboard.y,
+            }
+          : { pageId: page.id, x: w.x, y: w.y },
+      );
       return;
     }
     setPending(null);
@@ -352,7 +380,7 @@ export function Canvas({
     const now = Date.now();
     const thread: Thread = {
       id: newId("th"),
-      artboardId: pending.artboardId,
+      ...(pending.artboardId ? { artboardId: pending.artboardId } : { pageId: pending.pageId }),
       ...(pending.nodeId ? { nodeId: pending.nodeId } : {}),
       x: Math.round(pending.x),
       y: Math.round(pending.y),
@@ -363,7 +391,6 @@ export function Canvas({
     };
     source.apply({ op: "thread.create", thread });
     setPending(null);
-    setOpenThread(thread.id);
     setMode("select");
   };
 
@@ -377,12 +404,10 @@ export function Canvas({
     );
   }
 
+  // Resolved threads leave the board.
   const pageThreads = doc.threads.filter(
-    (t) =>
-      (showResolved || t.status === "open" || t.id === openThread) &&
-      boards.some((b) => b.id === t.artboardId),
+    (t) => t.status === "open" && threadPage(doc, t)?.id === page.id,
   );
-  const openCount = doc.threads.filter((t) => t.status === "open").length;
   const zoomPct = Math.round(camera.zoom * 100);
   const selectedRects = selectionRects(selection, viewport.current, camera);
   const ghostFor = (id: string) => (ghost && drag.current?.ids.includes(id) ? ghost : null);
@@ -487,18 +512,20 @@ export function Canvas({
           ))}
           {pageThreads.map((t) => {
             const ab = boards.find((b) => b.id === t.artboardId);
-            if (!ab) return null;
             const p = pinPoint(t, ab, viewport.current, camera);
             const open = openThread === t.id;
             return (
-              <div key={t.id} className={pinWrap} style={{ left: p.x, top: p.y }}>
+              <div
+                key={t.id}
+                className={pinWrap}
+                style={{ left: p.x, top: p.y }}
+                data-comment-open={open || undefined}
+              >
                 <button
                   type="button"
                   className={cn(
                     pin,
-                    t.status === "resolved"
-                      ? "pz:bg-muted pz:text-muted-foreground"
-                      : "pz:bg-comment pz:text-comment-foreground",
+                    "pz:bg-comment pz:text-comment-foreground",
                     open && "pz:scale-112",
                   )}
                   onPointerDown={(e) => e.stopPropagation()}
@@ -509,7 +536,6 @@ export function Canvas({
                 {open && (
                   <ThreadCard
                     thread={t}
-                    doc={doc}
                     source={source}
                     me={me}
                     onClose={() => setOpenThread(null)}
@@ -520,11 +546,11 @@ export function Canvas({
           })}
           {pending &&
             (() => {
-              const ab = boards.find((b) => b.id === pending.artboardId)!;
-              const x = (ab.x + pending.x) * camera.zoom + camera.x;
-              const y = (ab.y + pending.y) * camera.zoom + camera.y;
+              const ab = boards.find((b) => b.id === pending.artboardId);
+              const x = ((ab?.x ?? 0) + pending.x) * camera.zoom + camera.x;
+              const y = ((ab?.y ?? 0) + pending.y) * camera.zoom + camera.y;
               return (
-                <div className={pinWrap} style={{ left: x, top: y }}>
+                <div className={pinWrap} style={{ left: x, top: y }} data-comment-open>
                   <span
                     className={cn(pin, "pz:scale-112 pz:bg-comment pz:text-comment-foreground")}
                   >
@@ -545,28 +571,6 @@ export function Canvas({
               Ask your agent to design something. It will appear here as it works.
             </p>
           </div>
-        )}
-        {panel && (
-          <CommentsPanel
-            doc={doc}
-            onClose={() => setPanel(false)}
-            onOpen={(t) => {
-              const pg = doc.pages.find((p) => p.artboards.some((a) => a.id === t.artboardId));
-              if (pg && pg.id !== page.id) {
-                fitted.current = pg.id;
-                setPageId(pg.id);
-              }
-              const ab = findArtboard(doc, t.artboardId)?.artboard;
-              if (ab)
-                fit(
-                  { x: ab.x, y: ab.y, w: size(ab).w, h: boardHeight(ab) },
-                  viewportSize(),
-                  120,
-                  1,
-                );
-              setOpenThread(t.id);
-            }}
-          />
         )}
       </div>
 
@@ -606,18 +610,6 @@ export function Canvas({
           </div>
           <div className="pz:flex pz:shrink-0 pz:items-center pz:gap-2.5">
             {footerExtra}
-            <Button
-              variant="ghost"
-              className={cn(panel && "pz:bg-accent pz:text-foreground")}
-              onClick={() => setPanel((v) => !v)}
-            >
-              {openCount > 0 && (
-                <span className="pz:box-content pz:inline-grid pz:h-[18px] pz:min-w-[18px] pz:place-items-center pz:rounded-[9px] pz:bg-comment pz:px-[5px] pz:font-semibold pz:text-[11px] pz:text-comment-foreground">
-                  {openCount}
-                </span>
-              )}
-              Comments
-            </Button>
             <ToggleGroup
               value={panning ? "hand" : mode}
               onValueChange={setMode}
@@ -661,8 +653,9 @@ export function Canvas({
 }
 
 const pinWrap = "pz:pointer-events-auto pz:absolute pz:z-[2] pz:size-0";
+/** A circle centred on the comment's spot, holding its message count. */
 const pin =
-  "pz:absolute pz:bottom-0 pz:left-0 pz:grid pz:h-6 pz:min-w-6 pz:origin-bottom-left pz:place-items-center pz:rounded-[12px_12px_12px_3px] pz:px-[7px] pz:font-semibold pz:text-[11px] pz:shadow-[0_1px_3px_rgba(0,0,0,0.25)] pz:transition-transform pz:duration-[120ms] pz:hover:scale-112";
+  "pz:absolute pz:top-0 pz:left-0 pz:grid pz:size-6 pz:-translate-1/2 pz:place-items-center pz:rounded-full pz:font-semibold pz:text-[11px] pz:tabular-nums pz:shadow-[0_1px_3px_rgba(0,0,0,0.25)] pz:transition-transform pz:duration-[120ms] pz:hover:scale-112";
 
 function PageTab({
   name,
@@ -717,10 +710,12 @@ function PageTab({
 
 function pinPoint(
   t: Thread,
-  ab: Artboard,
+  ab: Artboard | undefined,
   vp: HTMLElement | null,
   cam: { x: number; y: number; zoom: number },
 ) {
+  // On the open canvas, x and y are already page coordinates.
+  if (!ab) return { x: t.x * cam.zoom + cam.x, y: t.y * cam.zoom + cam.y };
   // Prefer the node's live position: top-right corner of the node.
   if (t.nodeId && vp) {
     const host = vp.querySelector(`[data-artboard-host="${ab.id}"]`) as HTMLElement | null;

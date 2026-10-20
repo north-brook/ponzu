@@ -110,6 +110,12 @@ export function findArtboard(
   return null;
 }
 
+/** The page a comment thread's pin is on. */
+export function threadPage(doc: Doc, thread: Thread): PageState | null {
+  if (thread.artboardId) return findArtboard(doc, thread.artboardId)?.page ?? null;
+  return doc.pages.find((p) => p.id === thread.pageId) ?? null;
+}
+
 export function findPage(doc: Doc, idOrName: string): PageState | null {
   return (
     doc.pages.find((p) => p.id === idOrName) ??
