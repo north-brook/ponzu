@@ -75,7 +75,7 @@ export const listenTools = [
         "comment.reopened",
         "file.changed",
       ];
-      ws.presence.touch(caller, { status: "listening" });
+      ws.presence.touch(caller, { file: key, listening: true });
       const events = await ws.events.wait(
         cursor,
         (args.timeout ?? 60) * 1000,
@@ -89,7 +89,7 @@ export const listenTools = [
       const next = events.length
         ? events[events.length - 1]!.event.seq
         : Math.max(cursor, ws.events.cursor);
-      ws.presence.touch(caller, { status: undefined });
+      ws.presence.touch(caller, { listening: false, listenedAt: Date.now() });
       if (!events.length)
         return { text: `Nothing new. cursor=${next}`, data: { cursor: next, events: [] } };
       return {
@@ -104,17 +104,22 @@ export const listenTools = [
     title: "Start working",
     group: "listen",
     description:
-      "Tell the person which artboards you're about to change. The canvas shows your agent icon on them and a spinner on their file tab. Call finish_working when you're done.",
+      "Tell the person which artboards you're about to change. The canvas traces their outline and shows your status and icon in their header; their page and file tabs shimmer. Call finish_working when you're done.",
     input: {
       file: fileArg,
       artboards: z.array(z.string()).min(1),
-      status: z.string().optional().describe("A few words, e.g. 'tightening the hero'."),
+      status: z
+        .string()
+        .optional()
+        .describe(
+          "A few words the person reads on the artboard, e.g. 'tightening the hero'. Without it they see 'Working'.",
+        ),
     },
     async handler(args, { ws, caller }) {
-      const { design } = await ws.resolve(args.file);
+      const { key, design } = await ws.resolve(args.file);
       for (const id of args.artboards)
         if (!findArtboard(design.doc, id)) throw new ToolError(`No artboard ${id}.`);
-      ws.presence.touch(caller, { working: args.artboards, status: args.status });
+      ws.presence.touch(caller, { working: args.artboards, status: args.status, file: key });
       return { text: `Working on ${args.artboards.join(", ")}.` };
     },
   }),

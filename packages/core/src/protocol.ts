@@ -19,8 +19,29 @@ export interface Presence {
   client?: string;
   /** Artboards the agent said it is working on. */
   working: string[];
+  /** A few words on what it's doing, from start_working. */
   status?: string;
+  /** The design (key) it last worked or listened in. */
+  file?: string;
+  /** Waiting in wait_for_activity right now. */
+  listening?: boolean;
+  /** When it last came back from wait_for_activity, to tell a collaborate loop from one look. */
+  listenedAt?: number;
+  /** Where the session comes from, for the studio's hover card. */
+  origin?: PresenceOrigin;
+  /** When the agent first showed up. */
+  since: number;
   lastSeen: number;
+}
+
+export interface PresenceOrigin {
+  /** The MCP client's own name and version, e.g. "claude-code" "2.1.0". */
+  clientName?: string;
+  clientVersion?: string;
+  /** The agent's working directory, when it reached us through `ponzu mcp`. */
+  cwd?: string;
+  /** "bridge": through `ponzu mcp`. "http": straight to /mcp. */
+  via?: "bridge" | "http";
 }
 
 export interface Viewport {

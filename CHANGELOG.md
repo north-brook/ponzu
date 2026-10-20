@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.0](https://github.com/north-brook/ponzu/compare/v1.10.0...v1.11.0) (2026-10-20)
+
+
+### Features
+
+* agents show what they're working on, and loading uses the juicing wedge ([#31](https://github.com/north-brook/ponzu/issues/31)) ([165624d](https://github.com/north-brook/ponzu/commit/165624d2d6dc72679df0450692ecbbf3d957f1c8))
+
 ## [1.10.0](https://github.com/north-brook/ponzu/compare/v1.9.0...v1.10.0) (2026-10-20)
 
 

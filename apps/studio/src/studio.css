@@ -47,9 +47,6 @@
   --color-primary: var(--foreground);
   --color-primary-foreground: var(--canvas);
   --color-ring: var(--ring);
-  --color-online: #30a46c;
-  --color-busy: #f4b012;
-  --color-offline: #e5484d;
 }
 
 @layer base {
