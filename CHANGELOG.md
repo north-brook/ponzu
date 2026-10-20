@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.3.0](https://github.com/north-brook/ponzu/compare/v1.2.0...v1.3.0) (2026-10-20)
+
+
+### Features
+
+* tab and page shortcuts, a page icon, and a quieter mode switcher ([#4](https://github.com/north-brook/ponzu/issues/4)) ([371ed00](https://github.com/north-brook/ponzu/commit/371ed006dbb14119fb473a23df7469b03e1a068c))
+
+## [1.2.0](https://github.com/north-brook/ponzu/compare/v1.1.0...v1.2.0) (2026-10-20)
+
+
+### Features
+
+* a download page that walks through the install, and a badged disk image icon ([#6](https://github.com/north-brook/ponzu/issues/6)) ([e974aa2](https://github.com/north-brook/ponzu/commit/e974aa2031e8f2def9493659d99be59f7a03160f))
+
+## [1.1.0](https://github.com/north-brook/ponzu/compare/v1.0.0...v1.1.0) (2026-10-20)
+
+
+### Features
+
+* higher-contrast logo in dark mode and a dark app icon ([#3](https://github.com/north-brook/ponzu/issues/3)) ([eaba7b8](https://github.com/north-brook/ponzu/commit/eaba7b89a75cfe9181ee1296c146ab1702320379))
+
 ## 1.0.0 (2026-10-20)
 
 

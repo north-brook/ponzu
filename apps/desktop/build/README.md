@@ -1,6 +1,9 @@
 # Desktop build resources
 
 - `icon.icns`, `icon-1024.png`: the app and `.design` document icon.
+- `installer-icon.icns`, `installer-icon.png`: the mounted DMG's icon, the app
+  icon with an install badge so the disk image isn't mistaken for the app.
+  Regenerate with `bun run icons:installer` whenever the app icon changes.
 - `entitlements.mac.plist`: the hardened-runtime exceptions the signed app and
   its bundled server need. Electron's V8 and the server (a `bun build --compile`
   binary) both JIT, and Bun documents this set for signed standalone
