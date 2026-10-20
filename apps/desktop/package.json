@@ -20,6 +20,9 @@
   },
   "build": {
     "appId": "design.ponzu.app",
+    "extraMetadata": {
+      "name": "ponzu"
+    },
     "directories": {
       "output": "out",
       "buildResources": "build"
