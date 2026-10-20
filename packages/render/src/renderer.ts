@@ -32,6 +32,8 @@ export interface RenderRequest {
   at?: number;
   /** Hover, focus or press a node first; `at` then counts from that moment. */
   interact?: Interaction;
+  /** Base URL for this design's assets/ paths, when it differs from the renderer's own. */
+  assetBase?: string;
 }
 
 export interface RecordRequest {

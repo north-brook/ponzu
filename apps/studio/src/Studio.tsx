@@ -1,7 +1,17 @@
-import { AgentMark, Canvas, Icon, Logo, SocketSource, useSource } from "@ponzu/react";
+import type { Catalog } from "@ponzu/core";
+import {
+  AgentMark,
+  Canvas,
+  Icon,
+  Logo,
+  SocketSource,
+  Tip,
+  TipProvider,
+  useSource,
+} from "@ponzu/react";
 import { useEffect, useMemo, useState } from "react";
+import { Dashboard, type OpenTarget } from "@/components/dashboard";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { WhatsNew } from "@/components/whats-new";
 import { cn } from "@/lib/utils";
 
@@ -9,13 +19,16 @@ import { cn } from "@/lib/utils";
 const ORIGIN = window.location.origin;
 const mod = navigator.userAgent.includes("Mac") ? "⌘" : "Ctrl+";
 
-interface FileEntry {
-  key: string;
-  name: string;
-  pages?: number;
-  artboards?: number;
-  open: boolean;
-}
+/**
+ * A tab names its design and the server in front of it: the key alone for a
+ * design on this Mac, `<base>\n<key>` for one on another Mac, which this Mac's
+ * server relays at `<base>` (`/peers/<name>`).
+ */
+const tabOf = ({ key, base }: OpenTarget) => (base ? `${base}\n${key}` : key);
+const targetOf = (tab: string): OpenTarget => {
+  const i = tab.indexOf("\n");
+  return i < 0 ? { key: tab, base: "" } : { base: tab.slice(0, i), key: tab.slice(i + 1) };
+};
 
 declare global {
   interface Window {
@@ -50,7 +63,7 @@ function useTheme(): "light" | "dark" {
 
 export function Studio() {
   const theme = useTheme();
-  const [files, setFiles] = useState<FileEntry[]>([]);
+  const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [tabs, setTabs] = useState<string[]>(() => {
     const q = new URLSearchParams(location.search).get("file");
     const saved = JSON.parse(localStorage.getItem("ponzu.tabs") ?? "[]") as string[];
@@ -60,26 +73,49 @@ export function Studio() {
     new URLSearchParams(location.search).get("file"),
   );
   const sources = useMemo(() => new Map<string, SocketSource>(), []);
-  const source = (key: string) => {
-    let s = sources.get(key);
+  const source = (tab: string) => {
+    let s = sources.get(tab);
     if (!s) {
-      s = new SocketSource(ORIGIN, key);
-      sources.set(key, s);
+      const { key, base } = targetOf(tab);
+      s = new SocketSource(`${ORIGIN}${base}`, key);
+      sources.set(tab, s);
     }
     return s;
   };
 
-  const refresh = () =>
-    fetch(`${ORIGIN}/api/files`)
-      .then((r) => r.json())
-      .then((d: { files: FileEntry[] }) => setFiles(d.files))
-      .catch(() => {});
-
+  // The home screen's catalog: polled while it shows, fetched once otherwise so the
+  // file an agent just made is known when it opens.
   useEffect(() => {
-    refresh();
-    const t = setInterval(refresh, 4000);
-    return () => clearInterval(t);
-  }, []);
+    let stop = false;
+    const refresh = () =>
+      fetch(`${ORIGIN}/api/catalog`)
+        .then((r) => r.json())
+        .then((c: Catalog) => !stop && setCatalog(c))
+        .catch(() => {});
+    void refresh();
+    if (active)
+      return () => {
+        stop = true;
+      };
+    const t = setInterval(refresh, 3000);
+    return () => {
+      stop = true;
+      clearInterval(t);
+    };
+  }, [active]);
+
+  // A design an agent creates opens in a tab as soon as it exists, once.
+  const [seen] = useState(() => new Set<string>());
+  useEffect(() => {
+    if (!catalog) return;
+    for (const f of catalog.files) {
+      if (f.machine !== "local" || !f.created || seen.has(f.key)) continue;
+      seen.add(f.key);
+      if (Date.now() - f.created > 60_000 || tabs.includes(f.key)) continue;
+      setTabs((t) => (t.includes(f.key) ? t : [...t, f.key]));
+      setActive(f.key);
+    }
+  }, [catalog]);
 
   useEffect(() => {
     localStorage.setItem("ponzu.tabs", JSON.stringify(tabs));
@@ -89,15 +125,18 @@ export function Studio() {
     history.replaceState(null, "", url);
   }, [tabs, active]);
 
-  const openFile = async (key: string) => {
-    await fetch(`${ORIGIN}/api/files`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ path: key }),
-    });
-    setTabs((t) => (t.includes(key) ? t : [...t, key]));
-    setActive(key);
-    refresh();
+  const openFile = async (target: OpenTarget) => {
+    // A design here opens through the API, which lets the server read a guarded folder now
+    // that the person asked for it. One on another Mac opens with its socket.
+    if (!target.base)
+      await fetch(`${ORIGIN}/api/files`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: target.key }),
+      });
+    const tab = tabOf(target);
+    setTabs((t) => (t.includes(tab) ? t : [...t, tab]));
+    setActive(tab);
   };
 
   const closeTab = (key: string) => {
@@ -145,31 +184,37 @@ export function Studio() {
         className={cn(
           "flex h-10 shrink-0 items-center gap-1 px-2",
           desktop && "app-drag [&_button]:app-no-drag",
-          // Electron on macOS: room for the traffic lights.
-          isMac && "pl-20",
+          // Electron on macOS: room for the traffic lights. Since macOS 26 they end at x=76;
+          // this keeps the logo 19px clear of them.
+          isMac && "pl-[88px]",
         )}
       >
-        <Button
-          variant="ghost"
-          size="icon"
-          className={cn("w-8", active === null && "bg-secondary hover:bg-secondary")}
-          onClick={() => setActive(null)}
-          title={`Home (${mod}0)`}
-        >
-          <Logo size={18} dark={theme === "dark"} />
-        </Button>
-        <div className="flex min-w-0 gap-0.5 overflow-x-auto [scrollbar-width:none]">
-          {tabs.map((key, i) => (
-            <FileTab
-              key={key}
-              source={source(key)}
-              shortcut={i < 8 ? i + 1 : i === tabs.length - 1 ? 9 : undefined}
-              active={key === active}
-              onClick={() => setActive(key)}
-              onClose={() => closeTab(key)}
-            />
-          ))}
-        </div>
+        <TipProvider>
+          <Tip label="Home" keys={[mod.trim(), "0"]} side="bottom">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Home"
+              className={cn("w-8", active === null && "bg-secondary hover:bg-secondary")}
+              onClick={() => setActive(null)}
+            >
+              <Logo size={18} dark={theme === "dark"} />
+            </Button>
+          </Tip>
+          <div className="flex min-w-0 gap-0.5 overflow-x-auto [scrollbar-width:none]">
+            {tabs.map((key, i) => (
+              <FileTab
+                key={key}
+                source={source(key)}
+                shortcut={i < 8 ? i + 1 : i === tabs.length - 1 ? 9 : undefined}
+                remote={targetOf(key).base.replace(/^\/peers\//, "")}
+                active={key === active}
+                onClick={() => setActive(key)}
+                onClose={() => closeTab(key)}
+              />
+            ))}
+          </div>
+        </TipProvider>
         <div className="ml-auto flex items-center gap-1.5">
           {active && <AgentDots source={source(active)} />}
         </div>
@@ -180,7 +225,24 @@ export function Studio() {
             <Canvas source={source(active)} theme={theme} me={{ kind: "user", name: "You" }} />
           </div>
         ) : (
-          <Home files={files} onOpen={openFile} theme={theme} />
+          <Dashboard
+            catalog={catalog}
+            onOpen={(t) => void openFile(t)}
+            onOpenFolder={
+              desktop &&
+              (async () => {
+                const picked = await desktop.openFolder();
+                if (picked) await openFile({ key: picked, base: "" });
+              })
+            }
+            onNew={
+              desktop &&
+              (async () => {
+                const created = await desktop.newFile();
+                if (created) await openFile({ key: created, base: "" });
+              })
+            }
+          />
         )}
       </main>
       <WhatsNew />
@@ -191,12 +253,15 @@ export function Studio() {
 function FileTab({
   source,
   shortcut,
+  remote,
   active,
   onClick,
   onClose,
 }: {
   source: SocketSource;
   shortcut?: number;
+  /** The Mac the design is on, when it isn't this one. */
+  remote?: string;
   active: boolean;
   onClick: () => void;
   onClose: () => void;
@@ -209,44 +274,46 @@ function FileTab({
       .split("/")
       .pop()
       ?.replace(/\.design$/, "");
+  const label = remote ? `${name} on ${decodeURIComponent(remote)}` : (name ?? "");
   return (
-    <div
-      className={cn(
-        "group app-no-drag flex h-7 max-w-[220px] shrink-0 cursor-default items-center gap-[7px] whitespace-nowrap rounded-lg pr-1.5 pl-2.5 outline-none",
-        active
-          ? "bg-secondary text-foreground"
-          : "text-muted-foreground hover:bg-accent hover:text-foreground",
-      )}
-      onClick={onClick}
-      onKeyDown={(e) => e.key === "Enter" && onClick()}
-      role="tab"
-      tabIndex={0}
-      title={shortcut ? `${source.file} (${mod}${shortcut})` : source.file}
-    >
-      {busy ? (
-        <span className="m-px size-3 animate-spin rounded-full border-[1.6px] border-current border-r-transparent [animation-duration:0.8s]" />
-      ) : (
-        <Icon name="file" size={14} />
-      )}
-      <span className="truncate">{name}</span>
-      {state.status === "offline" && (
-        <span className="size-1.5 rounded-full bg-offline" title="Reconnecting" />
-      )}
-      <button
-        type="button"
-        aria-label="Close tab"
+    <Tip label={label} keys={shortcut ? [mod.trim(), String(shortcut)] : undefined} side="bottom">
+      <div
         className={cn(
-          "grid size-[18px] place-items-center rounded-[5px] opacity-0 hover:bg-accent hover:opacity-100! group-hover:opacity-60",
-          active && "opacity-60",
+          "group app-no-drag flex h-7 max-w-[220px] shrink-0 cursor-default items-center gap-[7px] whitespace-nowrap rounded-lg pr-1.5 pl-2.5 outline-none",
+          active
+            ? "bg-secondary text-foreground"
+            : "text-muted-foreground hover:bg-accent hover:text-foreground",
         )}
-        onClick={(e) => {
-          e.stopPropagation();
-          onClose();
-        }}
+        onClick={onClick}
+        onKeyDown={(e) => e.key === "Enter" && onClick()}
+        role="tab"
+        tabIndex={0}
       >
-        <Icon name="close" size={12} />
-      </button>
-    </div>
+        {busy ? (
+          <span className="m-px size-3 animate-spin rounded-full border-[1.6px] border-current border-r-transparent [animation-duration:0.8s]" />
+        ) : (
+          <Icon name="blank" size={14} />
+        )}
+        <span className="truncate">{name}</span>
+        {state.status === "offline" && (
+          <span className="size-1.5 rounded-full bg-offline" title="Reconnecting" />
+        )}
+        <button
+          type="button"
+          aria-label="Close tab"
+          className={cn(
+            "grid size-[18px] place-items-center rounded-[5px] opacity-0 hover:bg-accent hover:opacity-100! group-hover:opacity-60",
+            active && "opacity-60",
+          )}
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
+        >
+          <Icon name="close" size={12} />
+        </button>
+      </div>
+    </Tip>
   );
 }
 
@@ -271,142 +338,6 @@ function AgentDots({ source }: { source: SocketSource }) {
           />
         </span>
       ))}
-    </div>
-  );
-}
-
-const heading = "mb-3 font-semibold text-[15px]";
-const muted = "my-2 text-muted-foreground";
-const code = "font-mono text-xs";
-
-function Home({
-  files,
-  onOpen,
-  theme,
-}: {
-  files: FileEntry[];
-  onOpen: (key: string) => void;
-  theme: "light" | "dark";
-}) {
-  const [path, setPath] = useState("");
-  const [copied, setCopied] = useState(false);
-  const mcp = `${ORIGIN}/mcp`;
-  const desktop = window.ponzuDesktop;
-  return (
-    <div className="h-full overflow-auto rounded-xl bg-canvas">
-      <div className="mx-auto flex max-w-[720px] flex-col gap-10 px-8 py-[72px]">
-        <div className="flex items-center gap-3.5">
-          <Logo size={40} dark={theme === "dark"} />
-          <h1 className="font-semibold text-[32px] tracking-[-0.03em]">Ponzu</h1>
-        </div>
-
-        <section>
-          <h2 className={heading}>Files</h2>
-          {files.length === 0 ? (
-            <p className={muted}>
-              No .design files yet. Ask your agent to create one, or run{" "}
-              <code className={code}>ponzu init</code>.
-            </p>
-          ) : (
-            <div className="flex flex-col overflow-hidden rounded-xl bg-card">
-              {files.map((f) => (
-                <button
-                  type="button"
-                  key={f.key}
-                  className="flex items-center gap-3 border-b px-3.5 py-3 text-left last:border-b-0 hover:bg-accent"
-                  onClick={() => onOpen(f.key)}
-                >
-                  <span className="grid size-9 place-items-center rounded-[9px] bg-canvas">
-                    <Icon name="file" size={18} />
-                  </span>
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <b className="font-semibold">{f.name}</b>
-                    <span className="truncate text-muted-foreground text-xs">
-                      {f.key.replace(/^\/Users\/[^/]+/, "~")}
-                    </span>
-                  </span>
-                  {f.artboards !== undefined && (
-                    <span className="text-muted-foreground">{f.artboards} artboards</span>
-                  )}
-                </button>
-              ))}
-            </div>
-          )}
-          <form
-            className="mt-3 flex gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (path.trim()) onOpen(path.trim());
-            }}
-          >
-            {desktop ? (
-              <>
-                <Button
-                  onClick={async () => {
-                    const picked = await desktop.openFolder();
-                    if (picked) onOpen(picked);
-                  }}
-                >
-                  Open…
-                </Button>
-                <Button
-                  onClick={async () => {
-                    const created = await desktop.newFile();
-                    if (created) onOpen(created);
-                  }}
-                >
-                  New…
-                </Button>
-              </>
-            ) : null}
-            <Input
-              className="flex-1"
-              value={path}
-              onChange={(e) => setPath(e.target.value)}
-              placeholder="/path/to/name.design"
-            />
-            <Button type="submit">Open</Button>
-          </form>
-        </section>
-
-        <section>
-          <h2 className={heading}>Connect an agent</h2>
-          {desktop ? (
-            <p className={muted}>
-              Claude Code, Codex and Cursor on this Mac are already set up, and they reach Ponzu
-              whether or not this window is open. Ask one to design something.
-            </p>
-          ) : (
-            <p className={muted}>
-              Ponzu speaks MCP. Run <code className={code}>ponzu install</code> to set up the agents
-              on this machine, or point any agent at this server.
-            </p>
-          )}
-          {/* The app already set agents up; registering a URL here would replace that. */}
-          {!desktop && (
-            <>
-              <div className="flex items-center gap-3 rounded-[10px] bg-card py-2.5 pr-2.5 pl-3.5">
-                <code className={cn(code, "flex-1 overflow-x-auto whitespace-nowrap")}>
-                  claude mcp add --transport http ponzu {mcp}
-                </code>
-                <Button
-                  onClick={() => {
-                    navigator.clipboard.writeText(`claude mcp add --transport http ponzu ${mcp}`);
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 1200);
-                  }}
-                >
-                  {copied ? "Copied" : "Copy"}
-                </Button>
-              </div>
-              <p className={muted}>
-                Codex: <code className={code}>codex mcp add ponzu --url {mcp}</code> · Cursor:{" "}
-                <code className={code}>ponzu install cursor</code>
-              </p>
-            </>
-          )}
-        </section>
-      </div>
     </div>
   );
 }

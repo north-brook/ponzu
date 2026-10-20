@@ -43,6 +43,7 @@ export class LocalWorkspace implements Workspace {
   private opening = new Map<string, Promise<Entry>>();
   private focusListeners = new Set<(key: string, artboard: string) => void>();
   private openListeners = new Set<(key: string) => void>();
+  private createListeners = new Set<(key: string) => void>();
   private previewTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private previewing: Promise<unknown> = Promise.resolve();
   private cwd: string;
@@ -85,6 +86,12 @@ export class LocalWorkspace implements Workspace {
     return () => this.openListeners.delete(fn);
   }
 
+  /** A .design an agent (or anyone) just created through this workspace. */
+  onCreate(fn: (key: string) => void): () => void {
+    this.createListeners.add(fn);
+    return () => this.createListeners.delete(fn);
+  }
+
   /** Open a .design folder (idempotent). */
   async open(path: string): Promise<{ key: string; design: Design }> {
     const key = this.keyOf(path);
@@ -120,7 +127,9 @@ export class LocalWorkspace implements Workspace {
     await mkdir(key, { recursive: true });
     const design = await Design.create(new FsAdapter(key), doc);
     await design.close();
-    return this.open(key);
+    const opened = await this.open(key);
+    for (const l of this.createListeners) l(opened.key);
+    return opened;
   }
 
   async resolve(file?: string): Promise<{ key: string; design: Design }> {
