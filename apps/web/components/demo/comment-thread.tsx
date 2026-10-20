@@ -13,7 +13,7 @@ const GHOST =
   "pz:inline-flex pz:size-[26px] pz:items-center pz:justify-center pz:rounded-[7px] pz:text-muted-foreground";
 
 /**
- * The "Steer with comments" tile: a question on the canvas and Claude's answer, in Ponzu 1.4's
+ * The "Steer with comments" tile: a question on the canvas and Claude's answer, in Ponzu's
  * comment card. Claude replies here because you asked for its pick; a change it simply makes gets
  * resolved without a reply.
  */
@@ -27,11 +27,20 @@ export function CommentThread() {
             <Icon name="check" size={15} />
           </span>
           <span className={GHOST}>
-            <Icon name="close" size={15} />
+            <Icon name="more" size={15} />
           </span>
         </div>
-        <div className="pz:flex pz:flex-col pz:gap-3.5 pz:pt-3 pz:pr-16 pz:pb-3.5 pz:pl-3.5">
-          <div className={TEXT}>Sunroom or Night Garden for the launch? Your call.</div>
+        <div className="pz:flex pz:flex-col pz:gap-3.5 pz:pt-3 pz:pr-3.5 pz:pb-3.5 pz:pl-3.5">
+          <div className="pz:flex pz:flex-col pz:gap-1">
+            <div className="pz:flex pz:h-6 pz:items-center pz:gap-1.5 pz:pr-14">
+              <span className="pz:inline-grid pz:size-[18px] pz:place-items-center pz:rounded-full pz:bg-muted pz:text-[7.5px] pz:font-semibold">
+                Y
+              </span>
+              <span className="pz:font-medium">You</span>
+              <span className="pz:text-[11.5px] pz:text-muted-foreground">2m</span>
+            </div>
+            <div className={TEXT}>Sunroom or Night Garden for the launch? Your call.</div>
+          </div>
           <div className="pz:flex pz:flex-col pz:gap-1">
             <div className="pz:flex pz:items-center pz:gap-1.5">
               <AgentMark client="claude" size={18} />

@@ -8,6 +8,7 @@ const EVENT_TYPES = [
   "change",
   "comment.created",
   "comment.replied",
+  "comment.edited",
   "comment.resolved",
   "comment.reopened",
   "selection",
@@ -24,6 +25,8 @@ export function describeEvent(doc: Doc | undefined, e: PonzuEvent): string {
       return `#${e.seq} new comment ${e.thread} on ${e.artboard ? `"${ab(e.artboard)}"` : "the canvas"} from ${e.author}: "${e.text}"`;
     case "comment.replied":
       return `#${e.seq} reply in ${e.thread} from ${e.author}: "${e.text}"`;
+    case "comment.edited":
+      return `#${e.seq} ${e.author} edited a message in ${e.thread}, now: "${e.text}"`;
     case "comment.resolved":
       return `#${e.seq} ${e.author} resolved ${e.thread}`;
     case "comment.reopened":
@@ -68,6 +71,7 @@ export const listenTools = [
       const types = args.types ?? [
         "comment.created",
         "comment.replied",
+        "comment.edited",
         "comment.reopened",
         "file.changed",
       ];

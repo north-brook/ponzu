@@ -51,6 +51,15 @@ export type PonzuEvent =
       text: string;
       author: string;
     }
+  | {
+      type: "comment.edited";
+      seq: number;
+      thread: string;
+      /** Absent for a comment on the open canvas. */
+      artboard?: string;
+      text: string;
+      author: string;
+    }
   | { type: "comment.resolved"; seq: number; thread: string; artboard?: string; author: string }
   | { type: "comment.reopened"; seq: number; thread: string; artboard?: string; author: string }
   | { type: "selection"; seq: number; ids: string[]; page?: string }

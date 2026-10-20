@@ -158,11 +158,17 @@ export function Canvas({
     const el = viewport.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
       const r = el.getBoundingClientRect();
-      if (e.ctrlKey || e.metaKey)
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
         zoomAt(Math.exp(-e.deltaY * 0.01), e.clientX - r.left, e.clientY - r.top);
-      else panBy(-e.deltaX, -e.deltaY);
+        return;
+      }
+      // An open thread scrolls its own messages; the canvas stays put under it.
+      if (e.composedPath().some((n) => n instanceof Element && n.hasAttribute("data-comment-open")))
+        return;
+      e.preventDefault();
+      panBy(-e.deltaX, -e.deltaY);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
@@ -257,7 +263,10 @@ export function Canvas({
   };
 
   /** Find the artboard and deepest node under a pointer, looking inside shadow roots. */
-  const hitTest = (e: React.PointerEvent): { artboard: Artboard; nodeId?: string } | null => {
+  const hitTest = (e: {
+    clientX: number;
+    clientY: number;
+  }): { artboard: Artboard; nodeId?: string } | null => {
     const w = toWorld(e.clientX, e.clientY);
     const ab = [...boards]
       .reverse()
@@ -405,8 +414,87 @@ export function Canvas({
       messages: [{ id: newId("m"), author: me, text, createdAt: now }],
     };
     source.apply({ op: "thread.create", thread });
+    // Stay in comment mode: the next click starts another. Esc or V leaves it.
     setPending(null);
-    setMode("select");
+  };
+
+  // Pins drag to a new spot; a press that doesn't move opens the thread.
+  const [pinDrag, setPinDrag] = useState<{
+    id: string;
+    startX: number;
+    startY: number;
+    moved: boolean;
+    /** Pointer position in the viewport, and what it's over. */
+    x: number;
+    y: number;
+    target?: string;
+  } | null>(null);
+
+  const pinDown = (e: React.PointerEvent, t: Thread) => {
+    // Space or the hand tool pans right through pins.
+    if (panning || e.button !== 0) return;
+    e.stopPropagation();
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    const r = viewport.current!.getBoundingClientRect();
+    setPinDrag({
+      id: t.id,
+      startX: e.clientX,
+      startY: e.clientY,
+      moved: false,
+      x: e.clientX - r.left,
+      y: e.clientY - r.top,
+    });
+  };
+
+  const pinMove = (e: React.PointerEvent) => {
+    if (!pinDrag) return;
+    const moved =
+      pinDrag.moved ||
+      Math.abs(e.clientX - pinDrag.startX) + Math.abs(e.clientY - pinDrag.startY) > 3;
+    if (!moved) return;
+    const r = viewport.current!.getBoundingClientRect();
+    const hit = hitTest(e);
+    setPinDrag({
+      ...pinDrag,
+      moved,
+      x: e.clientX - r.left,
+      y: e.clientY - r.top,
+      target: hit ? (hit.nodeId ?? hit.artboard.id) : undefined,
+    });
+  };
+
+  const pinUp = (e: React.PointerEvent, t: Thread) => {
+    const d = pinDrag;
+    setPinDrag(null);
+    if (!d || d.id !== t.id || !page) return;
+    if (!d.moved) {
+      setPending(null);
+      setOpenThread(openThread === t.id ? null : t.id);
+      return;
+    }
+    const w = toWorld(e.clientX, e.clientY);
+    const hit = hitTest(e);
+    source.apply(
+      hit
+        ? {
+            op: "thread.update",
+            id: t.id,
+            artboardId: hit.artboard.id,
+            pageId: null,
+            nodeId: hit.nodeId ?? null,
+            x: Math.round(w.x - hit.artboard.x),
+            y: Math.round(w.y - hit.artboard.y),
+          }
+        : {
+            op: "thread.update",
+            id: t.id,
+            artboardId: null,
+            pageId: page.id,
+            nodeId: null,
+            x: Math.round(w.x),
+            y: Math.round(w.y),
+          },
+    );
   };
 
   if (!doc || !page) {
@@ -519,6 +607,15 @@ export function Canvas({
 
         {/* Overlays in screen space so they stay crisp at any zoom. */}
         <div className="pz:pointer-events-none pz:absolute pz:inset-0">
+          {pinDrag?.moved &&
+            pinDrag.target &&
+            selectionRects([pinDrag.target], viewport.current, camera).map((r) => (
+              <div
+                key={r.id}
+                className="pz:pointer-events-none pz:absolute pz:outline-[1.5px] pz:outline-select"
+                style={{ left: r.x, top: r.y, width: r.w, height: r.h }}
+              />
+            ))}
           {selectedRects.map((r) => (
             <div
               key={r.id}
@@ -531,7 +628,8 @@ export function Canvas({
           ))}
           {pageThreads.map((t) => {
             const ab = boards.find((b) => b.id === t.artboardId);
-            const p = pinPoint(t, ab, viewport.current, camera);
+            const dragging = pinDrag?.id === t.id && pinDrag.moved ? pinDrag : null;
+            const p = dragging ?? pinPoint(t, ab, viewport.current, camera);
             const open = openThread === t.id;
             return (
               <div
@@ -542,13 +640,20 @@ export function Canvas({
               >
                 <button
                   type="button"
+                  title="Drag to move"
                   className={cn(
                     pin,
                     "pz:bg-comment pz:text-comment-foreground",
-                    open && "pz:scale-112",
+                    panning ? "pz:cursor-grab" : "pz:cursor-pointer",
+                    (open || dragging) && "pz:scale-112",
+                    dragging && "pz:cursor-grabbing pz:shadow-[0_4px_12px_rgba(0,0,0,0.25)]",
                   )}
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={() => setOpenThread(open ? null : t.id)}
+                  onPointerDown={(e) => pinDown(e, t)}
+                  onPointerMove={pinMove}
+                  onPointerUp={(e) => pinUp(e, t)}
+                  onPointerCancel={() => setPinDrag(null)}
+                  // A press opens the thread in pinUp; this is for the keyboard.
+                  onClick={(e) => e.detail === 0 && setOpenThread(open ? null : t.id)}
                 >
                   {t.messages.length}
                 </button>

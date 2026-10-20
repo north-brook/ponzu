@@ -70,7 +70,7 @@ export const converseTools = [
         threadLine(design.doc, t),
         ...t.messages.map(
           (m) =>
-            `  ${m.author.name} (${m.author.kind}), ${new Date(m.createdAt).toISOString()}: ${m.text}`,
+            `  ${m.author.name} (${m.author.kind}), ${new Date(m.createdAt).toISOString()}${m.editedAt ? " (edited)" : ""}: ${m.text}`,
         ),
       ];
       return { text: lines.join("\n") };
