@@ -113,7 +113,7 @@ export function Icon({
 /** The Ponzu wedge. Rotation is baked into the path data. */
 export function Logo({ size = 20, dark = false }: { size?: number; dark?: boolean }) {
   const [rind, pith, flesh] = dark
-    ? ["#FFC21A", "#FFF1C2", "#FFDA55"]
+    ? ["#FFA800", "#FFFDF2", "#FFC400"]
     : ["#F4B012", "#FFF3CF", "#FFD23F"];
   return (
     <svg width={size} height={size} viewBox="0 0 64 64" role="img" aria-label="Ponzu">
