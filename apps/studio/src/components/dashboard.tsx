@@ -162,8 +162,10 @@ function Setup({
   const [copied, setCopied] = useState(false);
   const agents = catalog?.agents.filter((a) => a.found) ?? [];
   const connected = agents.some((a) => a.connected);
+  // Step 2 is done once an agent is designing something here, not when one merely
+  // connects: until then the prompt stays to copy.
   const working = files.find((f) => f.busy && f.machine === "local");
-  const asked = Boolean(catalog?.agent || working);
+  const asked = Boolean(working);
   return (
     <>
       <div className="mt-3 flex max-w-[640px] flex-col gap-4">
@@ -219,14 +221,8 @@ function Setup({
           <Step n={2} done={asked} active={connected && !asked} title="Ask one for a design">
             {asked ? (
               <p className="m-0 text-[12.5px] text-muted-foreground">
-                {working ? (
-                  <>
-                    {agentName(working.busy, catalog?.agent?.name)} is designing{" "}
-                    <b className="font-medium text-foreground">{working.name}</b>.
-                  </>
-                ) : (
-                  <>{catalog?.agent?.name ?? "Your agent"} is connected.</>
-                )}
+                {agentName(working?.busy, catalog?.agent?.name)} is designing{" "}
+                <b className="font-medium text-foreground">{working?.name}</b>.
               </p>
             ) : (
               <div className="flex h-11 items-center gap-3 rounded-[10px] bg-secondary pr-3 pl-3.5 shadow-[inset_0_0_0_1px_var(--hairline)]">
