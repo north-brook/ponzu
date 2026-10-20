@@ -20,19 +20,10 @@ let ctx = CGContext(
   data: nil, width: Int(size), height: Int(size), bitsPerComponent: 8, bytesPerRow: 0,
   space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
 )!
-// icon-1024.png fills the margin around the tile with opaque white; clip to
-// the Big Sur tile (824pt, 185.4pt corners) so the volume sits on any desktop.
-ctx.saveGState()
-ctx.addPath(CGPath(
-  roundedRect: CGRect(x: 100 * scale, y: 100 * scale, width: 824 * scale, height: 824 * scale),
-  cornerWidth: 185.4 * scale, cornerHeight: 185.4 * scale, transform: nil
-))
-ctx.clip()
 ctx.draw(baseCG, in: CGRect(x: 0, y: 0, width: size, height: size))
-ctx.restoreGState()
 
 // Badge in the tile's bottom-right corner (CoreGraphics is y-up), in the
-// site's near-black ink, over the end of the wedge's rind.
+// site's near-black ink. Its white ring sets it off the dark tile.
 let ink = CGColor(srgbRed: 0x0e / 255, green: 0x0e / 255, blue: 0x0e / 255, alpha: 1)
 let center = CGPoint(x: 736 * scale, y: (1024 - 736) * scale)
 let radius = 138 * scale
