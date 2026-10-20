@@ -1,6 +1,20 @@
-import { AgentMark, Canvas, Icon, Logo, SocketSource, useSource } from "@ponzu/react";
-import { useEffect, useMemo, useState } from "react";
+import { type Doc, findArtboard, type Presence } from "@ponzu/core";
+import {
+  type AgentActivity,
+  AgentMark,
+  agentActivity,
+  Canvas,
+  Icon,
+  Juice,
+  Logo,
+  SocketSource,
+  timeAgo,
+  useDelayed,
+  useSource,
+} from "@ponzu/react";
+import { Fragment, type ReactNode, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Input } from "@/components/ui/input";
 import { WhatsNew } from "@/components/whats-new";
 import { cn } from "@/lib/utils";
@@ -165,13 +179,14 @@ export function Studio() {
               source={source(key)}
               shortcut={i < 8 ? i + 1 : i === tabs.length - 1 ? 9 : undefined}
               active={key === active}
+              theme={theme}
               onClick={() => setActive(key)}
               onClose={() => closeTab(key)}
             />
           ))}
         </div>
         <div className="ml-auto flex items-center gap-1.5">
-          {active && <AgentDots source={source(active)} />}
+          {active && <ActiveAgents source={source(active)} />}
         </div>
       </header>
       <main className="min-h-0 flex-1 px-2 pb-2">
@@ -192,17 +207,22 @@ function FileTab({
   source,
   shortcut,
   active,
+  theme,
   onClick,
   onClose,
 }: {
   source: SocketSource;
   shortcut?: number;
   active: boolean;
+  theme: "light" | "dark";
   onClick: () => void;
   onClose: () => void;
 }) {
   const state = useSource(source);
-  const busy = state.presence.some((p) => p.working.length > 0);
+  const working = state.presence.some((p) => agentActivity(p, state.path) === "working");
+  const offline = state.status === "offline";
+  // Quick loads and blips show nothing; only a wait you'd notice gets the wedge.
+  const waiting = useDelayed(!state.doc || offline);
   const name =
     state.doc?.name ??
     source.file
@@ -223,15 +243,17 @@ function FileTab({
       tabIndex={0}
       title={shortcut ? `${source.file} (${mod}${shortcut})` : source.file}
     >
-      {busy ? (
-        <span className="m-px size-3 animate-spin rounded-full border-[1.6px] border-current border-r-transparent [animation-duration:0.8s]" />
+      {waiting ? (
+        <span
+          className="grid size-3.5 place-items-center"
+          title={offline ? "Reconnecting" : "Opening"}
+        >
+          <Juice size={14} dark={theme === "dark"} dry={offline} />
+        </span>
       ) : (
         <Icon name="file" size={14} />
       )}
-      <span className="truncate">{name}</span>
-      {state.status === "offline" && (
-        <span className="size-1.5 rounded-full bg-offline" title="Reconnecting" />
-      )}
+      <span className={cn("truncate", working && "pz-shimmer")}>{name}</span>
       <button
         type="button"
         aria-label="Close tab"
@@ -250,29 +272,125 @@ function FileTab({
   );
 }
 
-function AgentDots({ source }: { source: SocketSource }) {
-  const { presence } = useSource(source);
-  const agents = presence.filter((p) => p.kind === "agent");
+/**
+ * The agents with you in this file: full color while working, half while
+ * collaborating (waiting on your comments). Agents that are connected but
+ * idle, or busy in another file, don't show.
+ */
+function ActiveAgents({ source }: { source: SocketSource }) {
+  const { presence, path, doc } = useSource(source);
+  // A collaborate loop counts as active for a while after each wait; re-check as time passes.
+  const now = useNow(15_000);
+  const agents = presence
+    .map((p) => ({ p, activity: agentActivity(p, path, now) }))
+    .filter((a) => a.activity);
   if (!agents.length) return null;
   return (
-    <div className="flex gap-1.5 pr-1">
-      {agents.map((a) => (
-        <span
-          key={a.id}
-          className="relative grid size-6 place-items-center"
-          title={`${a.name}${a.working.length ? " · working" : a.status ? ` · ${a.status}` : " · connected"}`}
-        >
-          <AgentMark client={a.client} size={16} />
-          <span
-            className={cn(
-              "absolute right-px bottom-px size-[7px] rounded-full shadow-[0_0_0_2px_var(--background)]",
-              a.working.length ? "animate-pulse bg-busy" : "bg-online",
-            )}
-          />
-        </span>
+    <div className="flex gap-0.5 pr-1">
+      {agents.map(({ p, activity }) => (
+        <HoverCard key={p.id} openDelay={150} closeDelay={100}>
+          <HoverCardTrigger asChild>
+            <span
+              className={cn(
+                "app-no-drag grid size-6 cursor-default place-items-center rounded-md transition-opacity duration-200 hover:bg-accent",
+                activity === "collaborating" && "opacity-50",
+              )}
+            >
+              <AgentMark client={p.client} size={16} />
+            </span>
+          </HoverCardTrigger>
+          <HoverCardContent>
+            <SessionCard presence={p} activity={activity!} doc={doc} />
+          </HoverCardContent>
+        </HoverCard>
       ))}
     </div>
   );
+}
+
+/** Where an agent's session comes from. Read-only. */
+function SessionCard({
+  presence: p,
+  activity,
+  doc,
+}: {
+  presence: Presence;
+  activity: AgentActivity;
+  doc: Doc | null;
+}) {
+  const product = productName(p);
+  const boards = doc
+    ? p.working.map((id) => findArtboard(doc, id)?.artboard.name).filter(Boolean)
+    : [];
+  const facts: [string, ReactNode][] = [];
+  if (p.origin?.cwd)
+    facts.push([
+      "Project",
+      <span key="cwd" className={cn(code, "truncate")} title={p.origin.cwd}>
+        {p.origin.cwd.replace(/^\/Users\/[^/]+/, "~")}
+      </span>,
+    ]);
+  facts.push([
+    "Via",
+    p.origin?.via === "bridge" ? (
+      <span key="via">
+        Terminal · <span className={code}>ponzu mcp</span>
+      </span>
+    ) : (
+      "MCP over HTTP"
+    ),
+  ]);
+  facts.push(["Since", `${timeAgo(p.since)}${timeAgo(p.since) === "now" ? "" : " ago"}`]);
+  if (boards.length) facts.push(["On", boards.join(", ")]);
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-2.5">
+        <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-canvas">
+          <AgentMark client={p.client} size={16} />
+        </span>
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <b className="font-semibold">{product}</b>
+          <span className="truncate text-muted-foreground text-xs">
+            {activity === "working"
+              ? `Working${p.status ? ` · ${p.status}` : ""}`
+              : "Collaborating · waiting for your comments"}
+          </span>
+        </div>
+      </div>
+      <div className="grid grid-cols-[56px_minmax(0,1fr)] gap-x-2.5 gap-y-1.5 border-t pt-2.5 text-xs">
+        {facts.map(([label, value]) => (
+          <Fragment key={label}>
+            <span className="text-muted-foreground">{label}</span>
+            <span className="flex min-w-0">{value}</span>
+          </Fragment>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** "Claude Code 2.1.0", from the MCP client's own name when it gave one. */
+function productName(p: Presence): string {
+  const raw = p.origin?.clientName;
+  const known: Record<string, string> = {
+    "claude-code": "Claude Code",
+    "claude-ai": "Claude",
+    codex: "Codex",
+    "codex-mcp-client": "Codex",
+    cursor: "Cursor",
+    "cursor-vscode": "Cursor",
+  };
+  const name = raw ? (known[raw] ?? raw) : p.name;
+  return p.origin?.clientVersion ? `${name} ${p.origin.clientVersion}` : name;
+}
+
+function useNow(every: number): number {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), every);
+    return () => clearInterval(t);
+  }, [every]);
+  return now;
 }
 
 const heading = "mb-3 font-semibold text-[15px]";
@@ -285,9 +403,15 @@ function Home({
   theme,
 }: {
   files: FileEntry[];
-  onOpen: (key: string) => void;
+  onOpen: (key: string) => Promise<void>;
   theme: "light" | "dark";
 }) {
+  const [opening, setOpening] = useState<string | null>(null);
+  const slow = useDelayed(opening !== null);
+  const open = (key: string) => {
+    setOpening(key);
+    onOpen(key).finally(() => setOpening(null));
+  };
   const [path, setPath] = useState("");
   const [copied, setCopied] = useState(false);
   const mcp = `${ORIGIN}/mcp`;
@@ -313,16 +437,26 @@ function Home({
                 <button
                   type="button"
                   key={f.key}
-                  className="flex items-center gap-3 border-b px-3.5 py-3 text-left last:border-b-0 hover:bg-accent"
-                  onClick={() => onOpen(f.key)}
+                  className={cn(
+                    "flex items-center gap-3 border-b px-3.5 py-3 text-left transition-opacity last:border-b-0 hover:bg-accent",
+                    slow && (opening === f.key ? "bg-accent" : "opacity-50"),
+                  )}
+                  disabled={opening !== null}
+                  onClick={() => open(f.key)}
                 >
                   <span className="grid size-9 place-items-center rounded-[9px] bg-canvas">
-                    <Icon name="file" size={18} />
+                    {slow && opening === f.key ? (
+                      <Juice size={20} dark={theme === "dark"} />
+                    ) : (
+                      <Icon name="file" size={18} />
+                    )}
                   </span>
                   <span className="flex min-w-0 flex-1 flex-col">
                     <b className="font-semibold">{f.name}</b>
                     <span className="truncate text-muted-foreground text-xs">
-                      {f.key.replace(/^\/Users\/[^/]+/, "~")}
+                      {slow && opening === f.key
+                        ? "Opening…"
+                        : f.key.replace(/^\/Users\/[^/]+/, "~")}
                     </span>
                   </span>
                   {f.artboards !== undefined && (

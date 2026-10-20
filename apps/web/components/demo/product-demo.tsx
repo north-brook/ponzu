@@ -29,6 +29,20 @@ const PAGES: { id: PageId; name: string; icon: string; from: BeatId }[] = [
   { id: "app", name: "App", icon: "phone", from: "app-page" },
 ];
 
+/** What Claude says it's doing on each board, shown in the board's header while it works. */
+const STATUS: Record<string, string> = {
+  logo: "drawing the mark",
+  palette: "picking the palette",
+  home: "laying out the hero",
+  night: "trying a night garden",
+  sunroom: "trying a sunroom",
+  market: "trying a market day",
+  product: "building the product screen",
+  "app-today": "drawing Today",
+  "app-plant": "drawing the plant page",
+  "app-shop": "drawing the shop",
+};
+
 /** Where each board sits, in world px on its page, and when it's written. */
 const PLACES: Record<
   string,
@@ -277,16 +291,16 @@ function Studio({ beat, t }: { beat: number; t: number }) {
           <LogoMark />
         </span>
         <span className="dm-tab">
-          {busy ? <span className="dm-spinner" /> : <Icon name="file" size={14} />}
-          <span>Fernwood</span>
+          <Icon name="file" size={14} />
+          <span className={busy ? "pz-shimmer" : undefined}>Fernwood</span>
           <span className="dm-tab-close">
             <Icon name="close" size={12} />
           </span>
         </span>
         <div className="dm-bar-right">
-          <span className="dm-agent" data-on={at("send")}>
+          {/* As in the app: the agent shows only while it's working or waiting on your comments. */}
+          <span className="dm-agent" data-on={at("send") && !at("rest")} data-busy={busy}>
             <AgentMark client="claude" size={16} />
-            <span className="dm-agent-dot" data-busy={busy} />
           </span>
           <span className="dm-icon">
             <ThemeIcon />
@@ -323,18 +337,53 @@ function Studio({ beat, t }: { beat: number; t: number }) {
                     }}
                   >
                     <div
-                      className="dm-board-title pz:absolute pz:left-0 pz:flex pz:items-center pz:gap-[0.5em] pz:whitespace-nowrap pz:leading-[1.4] pz:text-muted-foreground"
+                      className="dm-board-title pz:absolute pz:right-0 pz:left-0 pz:flex pz:items-center pz:gap-[0.5em] pz:whitespace-nowrap pz:leading-[1.4] pz:text-muted-foreground"
                       style={{ fontSize: 12 / zoom, top: -22 / zoom }}
                     >
                       <span>{board.name}</span>
                       {working(board.id) && (
-                        <span className="pz:inline-flex" style={{ gap: 4 / zoom }}>
-                          <span className="dm-agent-chip pz:inline-grid pz:place-items-center pz:text-foreground">
+                        <span
+                          className="pz:ml-auto pz:inline-flex pz:items-center"
+                          style={{ gap: 6 / zoom }}
+                        >
+                          <span className="pz-shimmer">
+                            {board.id === "sunroom" && at("heard")
+                              ? "adding the Autumn Drop"
+                              : (STATUS[board.id] ?? "Working")}
+                          </span>
+                          <span className="pz:inline-grid pz:place-items-center">
                             <AgentMark client="claude" size={12 / zoom} />
                           </span>
                         </span>
                       )}
                     </div>
+                    {working(board.id) && (
+                      <svg
+                        className="dm-trace pz:pointer-events-none pz:absolute pz:inset-0 pz:overflow-visible pz:text-foreground"
+                        width={board.width}
+                        height={board.height}
+                        aria-hidden
+                      >
+                        <rect
+                          width={board.width}
+                          height={board.height}
+                          fill="none"
+                          stroke="currentColor"
+                          strokeOpacity={0.14}
+                          strokeWidth={1 / zoom}
+                        />
+                        <rect
+                          className="pz-trace"
+                          width={board.width}
+                          height={board.height}
+                          pathLength={100}
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={1.5 / zoom}
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                    )}
                     <div
                       className="dm-board-body"
                       style={
@@ -383,6 +432,7 @@ function Studio({ beat, t }: { beat: number; t: number }) {
             zoom={page ? zoom : 1}
             pages={pages}
             page={page}
+            busyPage={Object.entries(PLACES).find(([id]) => working(id))?.[1].page ?? null}
             mode={at("cursor") && !at("post") ? "comment" : "select"}
           />
         </div>
@@ -489,11 +539,14 @@ function Footer({
   zoom,
   pages,
   page,
+  busyPage,
   mode,
 }: {
   zoom: number;
   pages: typeof PAGES;
   page: PageId | null;
+  /** The page Claude is working on, whose tab shimmers. */
+  busyPage: PageId | null;
   mode: "select" | "hand" | "comment";
 }) {
   const tabs = pages.length ? pages : [{ id: null, name: "Page 1", icon: "page" }];
@@ -510,7 +563,7 @@ function Footer({
             } ${pages.length ? "dm-page-new" : ""}`}
           >
             <Icon name={p.icon} size={14} />
-            <span>{p.name}</span>
+            <span className={p.id && p.id === busyPage ? "pz-shimmer" : undefined}>{p.name}</span>
           </span>
         ))}
         <span className={GHOST_ICON}>

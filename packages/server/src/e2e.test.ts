@@ -117,6 +117,33 @@ test("comments flow through wait_for_activity and reply", async () => {
   expect(t.messages[1]!.author).toEqual({ kind: "agent", name: "Claude" });
 });
 
+test("presence says what an agent is doing, and in which file", async () => {
+  const { key, design } = ws.designs()[0]!;
+  const ab = design.doc.pages[0]!.artboards[0]!;
+  const claude = () => ws.presence.list().find((p) => p.name === "Claude")!;
+
+  // Straight to /mcp: the studio says so and names the client.
+  expect(claude().origin).toMatchObject({ via: "http", clientName: "claude-code-test" });
+  expect(claude().since).toBeLessThanOrEqual(Date.now());
+
+  await client.callTool({
+    name: "start_working",
+    arguments: { artboards: [ab.id], status: "tightening the hero" },
+  });
+  expect(claude()).toMatchObject({ working: [ab.id], status: "tightening the hero", file: key });
+
+  await client.callTool({ name: "finish_working", arguments: {} });
+  expect(claude().working).toEqual([]);
+  expect(claude().status).toBeUndefined();
+
+  const waiting = client.callTool({ name: "wait_for_activity", arguments: { timeout: 1 } });
+  await Bun.sleep(100);
+  expect(claude().listening).toBe(true);
+  await waiting;
+  expect(claude().listening).toBe(false);
+  expect(claude().listenedAt).toBeGreaterThan(0);
+});
+
 test("edits made in a text editor show up as file.changed", async () => {
   const design = ws.designs()[0]!.design;
   const cursor = ws.events.cursor;

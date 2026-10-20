@@ -80,7 +80,8 @@ export class SocketSource implements CanvasSource {
     };
     socket.onclose = () => {
       if (this.closed) return;
-      this.set({ status: "offline" });
+      // Who's here is unknown until we're back; hello brings it again.
+      this.set({ status: "offline", presence: [] });
       const delay = Math.min(5000, 250 * 2 ** this.retry++);
       setTimeout(() => !this.closed && this.connect(), delay);
     };

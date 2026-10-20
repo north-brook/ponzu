@@ -8,3 +8,4 @@ out
 apps/desktop/dist
 apps/desktop/out
 examples/**/exports
+.context
