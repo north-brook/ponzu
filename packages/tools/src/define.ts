@@ -49,14 +49,19 @@ export async function runTool(
 ): Promise<ToolResult> {
   const started = Date.now();
   // Which tools agents use and how they fail; never the arguments or the result.
-  const track = (outcome: "ok" | "invalid_args" | "tool_error" | "mistake" | "crash") =>
-    ctx.ws.telemetry?.capture("tool called", {
-      tool: def.name,
-      group: def.group,
-      outcome,
-      duration_ms: Date.now() - started,
-      client: ctx.caller.client,
-    });
+  const track = (outcome: "ok" | "invalid_args" | "tool_error" | "mistake" | "crash") => {
+    try {
+      ctx.ws.telemetry?.capture("tool called", {
+        tool: def.name,
+        group: def.group,
+        outcome,
+        duration_ms: Date.now() - started,
+        client: ctx.caller.client,
+      });
+    } catch {
+      // Counting a call never changes its result.
+    }
+  };
   const parsed = z.object(def.input).safeParse(rawArgs ?? {});
   if (!parsed.success) {
     const issues = parsed.error.issues

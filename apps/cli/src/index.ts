@@ -215,6 +215,11 @@ async function runMcp(files: string[]) {
     (opened ??= (async () => {
       ws.renderer = await pickRenderer();
       for (const p of await designs()) await ws.open(p);
+      telemetry?.capture("host started", {
+        launched_by: "agent",
+        designs: ws.designs().length,
+        renderer: Boolean(ws.renderer),
+      });
     })().catch((err) => {
       opened = null;
       throw err;

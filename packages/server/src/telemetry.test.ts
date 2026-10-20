@@ -80,3 +80,18 @@ test("send_feedback says so when telemetry is off", async () => {
   );
   expect(res.text).toContain("Not sent");
 });
+
+test("a telemetry failure never changes a tool's result", async () => {
+  const broken = new LocalWorkspace({
+    cwd: dir,
+    telemetry: {
+      capture: () => {
+        throw new Error("offline");
+      },
+      feedback: async () => false,
+    },
+  });
+  const res = await runTool(getTool("list_files")!, {}, { ws: broken, caller });
+  expect(res.isError).toBeFalsy();
+  await broken.closeAll();
+});

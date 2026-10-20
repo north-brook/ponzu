@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rename, writeFile } from "node:fs/promises";
 import { arch, platform } from "node:os";
 import { dirname, join } from "node:path";
 import type { Feedback, Telemetry } from "@ponzu/tools";
@@ -57,22 +57,28 @@ interface Settings {
 
 const settingsFile = () => join(ponzuHome(), "telemetry.json");
 
-function readSettings(): Partial<Settings> {
+/** The file's settings, `{}` when there's none yet, or null when it can't be read. */
+function readSettings(): Partial<Settings> | null {
   try {
     return JSON.parse(readFileSync(settingsFile(), "utf8")) as Partial<Settings>;
-  } catch {
-    return {};
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "ENOENT" ? {} : null;
   }
 }
 
 async function writeSettings(settings: Settings) {
   const path = settingsFile();
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(settings, null, 2)}\n`);
+  // Whole or not at all: a half-written file would lose the person's choice.
+  const tmp = `${path}.${process.pid}.tmp`;
+  await writeFile(tmp, `${JSON.stringify(settings, null, 2)}\n`);
+  await rename(tmp, path);
 }
 
-async function settings(): Promise<Settings> {
+/** This install's settings, given an id. Null when the file can't be read: never replace it. */
+async function settings(): Promise<Settings | null> {
   const current = readSettings();
+  if (!current) return null;
   if (current.id) return current as Settings;
   const next = { ...current, id: randomUUID() };
   await writeSettings(next);
@@ -88,8 +94,26 @@ function offBecause(): string | null {
   if (falsy(process.env.PONZU_TELEMETRY)) return "PONZU_TELEMETRY is off";
   if (truthy(process.env.DO_NOT_TRACK)) return "DO_NOT_TRACK is set";
   if (truthy(process.env.CI)) return "running in CI";
-  if (readSettings().enabled === false) return "turned off with `ponzu telemetry off`";
+  const current = readSettings();
+  if (!current) return "~/.ponzu/telemetry.json can't be read";
+  if (current.enabled === false) return "turned off with `ponzu telemetry off`";
   return null;
+}
+
+/**
+ * offBecause, rechecked at most every few seconds: hosts run for days, and
+ * `ponzu telemetry off` in another terminal should stop them too.
+ */
+function onNow(): () => boolean {
+  let checked = 0;
+  let on = true;
+  return () => {
+    if (Date.now() - checked > 5_000) {
+      checked = Date.now();
+      on = !offBecause();
+    }
+    return on;
+  };
 }
 
 export interface HostTelemetry extends Telemetry {
@@ -110,7 +134,9 @@ export async function startTelemetry(base: {
   if (offBecause()) return null;
   let id: string;
   try {
-    id = (await settings()).id;
+    const current = await settings();
+    if (!current) return null;
+    id = current.id;
   } catch {
     // An unwritable home has no stable id to count it by.
     return null;
@@ -124,9 +150,13 @@ export async function startTelemetry(base: {
     surface: process.env.PONZU_DESKTOP ? "desktop" : "cli",
     os: platform(),
     arch: arch(),
+    // An install is a random id, not a person: no person profiles.
+    $process_person_profile: false,
   };
+  const on = onNow();
   return {
     capture(event, properties) {
+      if (!on()) return;
       client.capture({ distinctId: id, event, properties: { ...common, ...properties } });
     },
     async feedback(f) {
@@ -171,7 +201,7 @@ export async function startTelemetry(base: {
 export async function telemetryNotice(): Promise<string | null> {
   if (offBecause()) return null;
   const current = readSettings();
-  if (current.noticed || !current.id) return null;
+  if (!current?.id || current.noticed) return null;
   await writeSettings({ ...current, id: current.id, noticed: new Date().toISOString() }).catch(
     () => {},
   );
@@ -182,6 +212,10 @@ export async function telemetryNotice(): Promise<string | null> {
 export async function telemetryCommand(arg = "status") {
   if (arg === "on" || arg === "off") {
     const current = await settings();
+    if (!current) {
+      console.error(`Can't read ${settingsFile()}. Fix or delete it, then try again.`);
+      process.exit(1);
+    }
     await writeSettings({ ...current, enabled: arg === "on" });
   } else if (arg !== "status") {
     console.error("Usage: ponzu telemetry [on|off|status]");

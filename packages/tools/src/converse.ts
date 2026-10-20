@@ -180,7 +180,7 @@ export const converseTools = [
         .max(4000)
         .optional()
         .describe(
-          "What happened, the exact tool, argument or error text, and what would have helped.",
+          "What happened, which tool, and what would have helped. Leave design content, file names, paths and personal details out of any argument or error you quote.",
         ),
       tool: z.string().optional().describe("The Ponzu tool it's about, if any."),
     },

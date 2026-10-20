@@ -9,7 +9,8 @@ if (key) {
     api_host: "/ingest",
     ui_host: "https://us.posthog.com",
     defaults: "2026-08-30",
-    // Anonymous visitors: no person profiles, no recordings.
+    // Pageviews and download clicks only: no autocapture, person profiles or recordings.
+    autocapture: false,
     person_profiles: "identified_only",
     disable_session_recording: true,
     respect_dnt: true,
