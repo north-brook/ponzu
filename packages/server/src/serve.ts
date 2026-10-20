@@ -261,6 +261,8 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
       return Response.json({ path: rel });
     }
 
+    // Another Mac only gets the routes above; nothing falls through to the studio.
+    if (caller === "peer") return new Response("Not found", { status: 404 });
     return serveStudio(path, opts.studioDir);
   };
 
@@ -359,14 +361,19 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
   // against Tailscale: only devices signed in as the same user get through.
   let tailnetServer: Server<SocketData> | null = null;
   const listenOnTailnet = async () => {
-    if (!opts.tailnet || !isLoopback(opts.hostname ?? "127.0.0.1")) return;
+    if (!opts.tailnet || tailnetServer) return;
     const net = await home.net();
-    if (!net || tailnetServer) return;
+    if (!net) return;
+    // Not when the main listener already hears the tailnet address on the tailnet port: it
+    // checks tailnet callers itself, and a second bind there would fail.
+    const host = opts.hostname ?? "127.0.0.1";
+    const port = opts.tailnetPort ?? 7777;
+    if ((host === "0.0.0.0" || host === "::" || host === net.ip) && server.port === port) return;
     try {
       // Always the tailnet port, whatever port this Mac's own server got: that's where
       // the other Macs look. It doesn't clash with a server on 127.0.0.1 at the same port.
       tailnetServer = Bun.serve<SocketData>({
-        port: opts.tailnetPort ?? 7777,
+        port,
         hostname: net.ip,
         idleTimeout: 255,
         async fetch(req, srv) {
@@ -405,7 +412,7 @@ function peerAllowed(req: Request, pathname: string): boolean {
   if (req.method !== "GET") return false;
   return (
     ["/api/catalog", "/api/preview", "/api/thumb", "/api/info", "/ws"].includes(pathname) ||
-    /^\/files\/[^/]+\/assets\//.test(pathname)
+    /^\/files\/[^/]+\/assets\/.+$/.test(pathname)
   );
 }
 
