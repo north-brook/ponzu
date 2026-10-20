@@ -49,8 +49,8 @@ export function Dashboard({
     () => new Map((catalog?.machines ?? []).map((m) => [m.id, m])),
     [catalog?.machines],
   );
-  // Setup shows until this Mac has a design an agent can work in.
-  const setup = catalog !== null && !files.some((f) => f.machine === "local" && !f.locked);
+  // Setup shows until this Mac has a design, read yet or not.
+  const setup = catalog !== null && !files.some((f) => f.machine === "local");
   const q = query.trim();
 
   return (

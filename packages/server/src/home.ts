@@ -50,6 +50,8 @@ export class Home {
   readonly catalog: LocalCatalog;
   private tailnet: Promise<Tailnet | null> | null = null;
   private tailnetAt = 0;
+  private owner: Promise<string | null> = Promise.resolve(null);
+  private ownerAt = 0;
   private kind = machineKind();
   private created = new Map<string, number>();
   private agent: Catalog["agent"];
@@ -89,11 +91,20 @@ export class Home {
     return this.tailnet;
   }
 
-  /** Whether a request from this tailnet address is one of the owner's own Macs. */
+  /**
+   * Whether a request from this tailnet address is one of the owner's own
+   * devices. Asks Tailscale even with listing off: a server bound past
+   * loopback still hears the tailnet.
+   */
   async trusted(ip: string): Promise<boolean> {
-    const net = await this.net();
-    if (!net) return false;
-    return (await ownerOf(ip)) === net.user;
+    if (Date.now() - this.ownerAt > TAILNET_TTL) {
+      this.ownerAt = Date.now();
+      this.owner = readTailnet()
+        .then((n) => n?.user ?? null)
+        .catch(() => null);
+    }
+    const owner = await this.owner;
+    return owner !== null && (await ownerOf(ip)) === owner;
   }
 
   /** This Mac's designs, as another Mac or this one's studio sees them. */

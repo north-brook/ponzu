@@ -728,87 +728,91 @@ export function Canvas({
         <TipProvider>
           {/*
            * The bars float over the canvas, which runs to the container's edges beneath them.
-           * Pointer and wheel events stop here, so pressing a bar never pans or zooms.
+           * They share one row that lets clicks through between them: Pages takes what Controls
+           * leaves and scrolls its tabs, so the two never overlap. Pointer and wheel events stop
+           * at a bar, so pressing one never pans or zooms.
            */}
-          <Bar name="Pages" className="pz:left-2.5 pz:max-w-[calc(100%-20px)]">
-            <div className="pz:flex pz:min-w-0 pz:items-center pz:gap-0.5 pz:overflow-x-auto pz:[scrollbar-width:none]">
-              {doc.pages.map((p, i) => (
-                <PageTab
-                  key={p.id}
-                  name={p.name}
-                  shortcut={i < 8 ? i + 1 : i === doc.pages.length - 1 ? 9 : undefined}
-                  icon={p.icon}
-                  active={p.id === page.id}
-                  working={busyPages.has(p.id)}
-                  onClick={() => goToPage(p.id)}
-                  onRename={(name) => source.apply({ op: "page.update", id: p.id, name })}
-                />
-              ))}
-            </div>
-            <Tip label="New page">
-              <Button
-                variant="ghost"
-                size="icon-lg"
-                aria-label="New page"
-                onClick={() => {
-                  const id = newId("pg");
-                  source.apply({
-                    op: "page.create",
-                    index: doc.pages.length,
-                    page: { id, name: `Page ${doc.pages.length + 1}` },
-                  });
-                  setPageId(id);
-                }}
-              >
-                <Icon name="add" size={15} />
-              </Button>
-            </Tip>
-          </Bar>
-          <Bar name="Controls" className="pz:right-2.5">
-            {footerExtra}
-            <ToggleGroup
-              variant="raised"
-              value={panning ? "hand" : mode}
-              onValueChange={setMode}
-              items={MODES.map((m) => ({
-                value: m.value,
-                title: m.label,
-                keys: [m.key],
-                label: <Icon name={m.value} size={16} />,
-              }))}
-            />
-            <span aria-hidden className="pz:mx-1.5 pz:h-4 pz:w-px pz:bg-foreground/10" />
-            <Tip label="Zoom out" keys={["⌘", "−"]}>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Zoom out"
-                onClick={() => zoomAt(0.8, viewportSize().w / 2, viewportSize().h / 2)}
-              >
-                <Icon name="minus" size={14} />
-              </Button>
-            </Tip>
-            <Tip label="Zoom to fit" keys={["⇧", "1"]}>
-              <Button
-                variant="ghost"
-                className="pz:h-7 pz:min-w-11 pz:rounded-lg pz:px-0 pz:text-foreground pz:tabular-nums"
-                aria-label="Zoom to fit"
-                onClick={fitPage}
-              >
-                {zoomPct}%
-              </Button>
-            </Tip>
-            <Tip label="Zoom in" keys={["⌘", "+"]}>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Zoom in"
-                onClick={() => zoomAt(1.25, viewportSize().w / 2, viewportSize().h / 2)}
-              >
-                <Icon name="plus" size={14} />
-              </Button>
-            </Tip>
-          </Bar>
+          <div className="pz:pointer-events-none pz:absolute pz:inset-x-2.5 pz:bottom-2.5 pz:z-[3] pz:flex pz:items-end pz:justify-between pz:gap-2.5">
+            <Bar name="Pages" className="pz:min-w-0 pz:shrink">
+              <div className="pz:flex pz:min-w-0 pz:items-center pz:gap-0.5 pz:overflow-x-auto pz:[scrollbar-width:none]">
+                {doc.pages.map((p, i) => (
+                  <PageTab
+                    key={p.id}
+                    name={p.name}
+                    shortcut={i < 8 ? i + 1 : i === doc.pages.length - 1 ? 9 : undefined}
+                    icon={p.icon}
+                    active={p.id === page.id}
+                    working={busyPages.has(p.id)}
+                    onClick={() => goToPage(p.id)}
+                    onRename={(name) => source.apply({ op: "page.update", id: p.id, name })}
+                  />
+                ))}
+              </div>
+              <Tip label="New page">
+                <Button
+                  variant="ghost"
+                  size="icon-lg"
+                  aria-label="New page"
+                  onClick={() => {
+                    const id = newId("pg");
+                    source.apply({
+                      op: "page.create",
+                      index: doc.pages.length,
+                      page: { id, name: `Page ${doc.pages.length + 1}` },
+                    });
+                    setPageId(id);
+                  }}
+                >
+                  <Icon name="add" size={15} />
+                </Button>
+              </Tip>
+            </Bar>
+            <Bar name="Controls" className="pz:shrink-0">
+              {footerExtra}
+              <ToggleGroup
+                variant="raised"
+                value={panning ? "hand" : mode}
+                onValueChange={setMode}
+                items={MODES.map((m) => ({
+                  value: m.value,
+                  title: m.label,
+                  keys: [m.key],
+                  label: <Icon name={m.value} size={16} />,
+                }))}
+              />
+              <span aria-hidden className="pz:mx-1.5 pz:h-4 pz:w-px pz:bg-foreground/10" />
+              <Tip label="Zoom out" keys={["⌘", "−"]}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Zoom out"
+                  onClick={() => zoomAt(0.8, viewportSize().w / 2, viewportSize().h / 2)}
+                >
+                  <Icon name="minus" size={14} />
+                </Button>
+              </Tip>
+              <Tip label="Zoom to fit" keys={["⇧", "1"]}>
+                <Button
+                  variant="ghost"
+                  className="pz:h-7 pz:min-w-11 pz:rounded-lg pz:px-0 pz:text-foreground pz:tabular-nums"
+                  aria-label="Zoom to fit"
+                  onClick={fitPage}
+                >
+                  {zoomPct}%
+                </Button>
+              </Tip>
+              <Tip label="Zoom in" keys={["⌘", "+"]}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Zoom in"
+                  onClick={() => zoomAt(1.25, viewportSize().w / 2, viewportSize().h / 2)}
+                >
+                  <Icon name="plus" size={14} />
+                </Button>
+              </Tip>
+            </Bar>
+          </div>
         </TipProvider>
       )}
     </div>
@@ -821,7 +825,7 @@ const MODES = [
   { value: "comment", label: "Comment", key: "C" },
 ] as const;
 
-/** A frosted bar pinned to a bottom corner of the canvas. */
+/** A frosted bar in the canvas's bottom row. */
 function Bar({
   name,
   className,
@@ -837,7 +841,7 @@ function Bar({
       aria-label={name}
       data-slot="canvas-bar"
       className={cn(
-        "pz:absolute pz:bottom-2.5 pz:z-[3] pz:flex pz:items-center pz:gap-0.5 pz:rounded-xl pz:bg-bar pz:p-1 pz:shadow-bar pz:backdrop-blur-[18px] pz:backdrop-saturate-[1.6]",
+        "pz:pointer-events-auto pz:flex pz:items-center pz:gap-0.5 pz:rounded-xl pz:bg-bar pz:p-1 pz:shadow-bar pz:backdrop-blur-[18px] pz:backdrop-saturate-[1.6]",
         className,
       )}
       onPointerDown={(e) => e.stopPropagation()}

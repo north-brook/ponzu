@@ -5,6 +5,7 @@ import type { CatalogAgent, ClientMessage, Origin, ServerMessage } from "@ponzu/
 import { createHttpHandler } from "@ponzu/mcp";
 import type { Server, ServerWebSocket, WebSocketHandler } from "bun";
 import { Home } from "./home.ts";
+import { isTailnetAddress } from "./tailnet.ts";
 import type { LocalWorkspace } from "./workspace.ts";
 
 export interface ServeOptions {
@@ -338,7 +339,19 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
     port: opts.port ?? 7777,
     hostname: opts.hostname ?? "127.0.0.1",
     idleTimeout: 255,
-    fetch: (req, srv) => handle(req, srv, "local"),
+    async fetch(req, srv) {
+      // Bound past loopback (--host 0.0.0.0 or a tailnet IP), this listener hears the
+      // tailnet too: a tailnet caller gets the same check and limits as on the tailnet one.
+      // Other addresses (the LAN) keep the access `--host` has always given them.
+      if (!isLoopback(opts.hostname ?? "127.0.0.1")) {
+        const ip = srv.requestIP(req)?.address ?? "";
+        if (isTailnetAddress(ip)) {
+          if (!(await home.trusted(ip))) return new Response("Forbidden", { status: 403 });
+          return handle(req, srv, "peer");
+        }
+      }
+      return handle(req, srv, "local");
+    },
     websocket,
   });
 

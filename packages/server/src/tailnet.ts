@@ -106,16 +106,18 @@ function peerName(p: StatusNode): string {
   return (dns || p.HostName || "mac").toLowerCase();
 }
 
-const owners = new Map<string, { at: number; user: string | null }>();
+const refused = new Map<string, number>();
 
 /**
  * The Tailscale user a tailnet address belongs to, as Tailscale vouches for
  * it. Null for tagged devices and nodes shared in from another account.
- * Cached for a few minutes: it runs on every request from another Mac.
+ * Asked on every request, so a device that's re-tagged or moves to another
+ * account loses access at once. Only a refusal is remembered, for a few
+ * seconds, so a stranger can't make this Mac spawn a whois per request.
  */
 export async function ownerOf(ip: string): Promise<string | null> {
-  const hit = owners.get(ip);
-  if (hit && Date.now() - hit.at < 5 * 60_000) return hit.user;
+  const at = refused.get(ip);
+  if (at && Date.now() - at < 10_000) return null;
   const text = await cli(["whois", "--json", ip]);
   let user: string | null = null;
   try {
@@ -125,6 +127,14 @@ export async function ownerOf(ip: string): Promise<string | null> {
     const node = who?.Node;
     if (node?.User !== undefined && !node.Tags?.length && !node.Sharer) user = String(node.User);
   } catch {}
-  owners.set(ip, { at: Date.now(), user });
+  if (user) refused.delete(ip);
+  else refused.set(ip, Date.now());
   return user;
+}
+
+/** Whether an address is in Tailscale's ranges: 100.64.0.0/10, or fd7a:115c:a1e0::/48. */
+export function isTailnetAddress(ip: string): boolean {
+  const v4 = /^(?:::ffff:)?(\d+)\.(\d+)\.\d+\.\d+$/.exec(ip);
+  if (v4) return Number(v4[1]) === 100 && Number(v4[2]) >= 64 && Number(v4[2]) <= 127;
+  return ip.toLowerCase().startsWith("fd7a:115c:a1e0:");
 }
