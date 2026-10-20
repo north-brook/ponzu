@@ -190,6 +190,7 @@ export function ThreadCard({
   onClose: () => void;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
+  const [scrolled, setScrolled] = useState(false);
   const reply = (text: string) =>
     source.apply({
       op: "thread.message",
@@ -236,10 +237,17 @@ export function ThreadCard({
           ]}
         />
       </div>
-      {/* data-scroll lets the wheel scroll this list instead of panning the canvas. */}
+      {/*
+        data-scroll lets the wheel scroll this list instead of panning the canvas.
+        Scrolled, its top fades out so messages never run under the buttons.
+      */}
       <div
         data-scroll
-        className="pz:flex pz:max-h-80 pz:flex-col pz:gap-1 pz:overflow-y-auto pz:overscroll-contain pz:px-1.5 pz:pt-1.5 pz:pb-2.5"
+        className={cn(
+          "pz:flex pz:max-h-80 pz:flex-col pz:gap-1 pz:overflow-y-auto pz:overscroll-contain pz:px-1.5 pz:pt-1.5 pz:pb-2.5",
+          scrolled && "pz:[mask-image:linear-gradient(transparent_24px,#000_44px)]",
+        )}
+        onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 0)}
       >
         {thread.messages.map((m, i) => (
           <div
@@ -249,7 +257,7 @@ export function ThreadCard({
               mine(m.author) && editing !== m.id && "pz:hover:bg-accent",
             )}
           >
-            {/* Only the first row sits beside the card's buttons; it alone leaves room. */}
+            {/* At the top, only the first row sits beside the card's buttons. */}
             <div className={cn("pz:flex pz:h-6 pz:items-center pz:gap-1.5", i === 0 && "pz:pr-14")}>
               <Avatar author={m.author} size={18} />
               <span className="pz:truncate pz:font-medium">{m.author.name}</span>
