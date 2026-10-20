@@ -491,6 +491,8 @@ export function Canvas({
                 <div
                   className={cn(
                     "pz:absolute pz:left-0 pz:flex pz:cursor-default pz:items-center pz:gap-[0.5em] pz:whitespace-nowrap pz:leading-[1.4]",
+                    // Zoomed out, the title would run into the next board; clip it to this one.
+                    renaming !== ab.id && "pz:max-w-full",
                     // Spans the board so an agent's status can sit on the right.
                     who && "pz:right-0",
                     selection.includes(ab.id)
@@ -520,7 +522,9 @@ export function Canvas({
                       }}
                     />
                   ) : (
-                    <span className={cn(who && "pz:min-w-0 pz:truncate")}>{ab.name}</span>
+                    <span className="pz:min-w-0 pz:truncate" title={ab.name}>
+                      {ab.name}
+                    </span>
                   )}
                   {who && <WorkingStatus who={who} zoom={camera.zoom} />}
                 </div>
