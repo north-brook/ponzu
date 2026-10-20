@@ -164,6 +164,35 @@ export const converseTools = [
       return { text: `Thread ${args.thread} is ${args.status}.` };
     },
   }),
+
+  tool({
+    name: "send_feedback",
+    title: "Send feedback to the Ponzu team",
+    group: "converse",
+    description:
+      "Tell the people who build Ponzu how it's working for you. Send it when a tool confused you, failed or got in your way, when you had to work around something Ponzu can't do, when something worked notably well, or when the person asks you to pass something on. Keep it about Ponzu: no design content, file names, paths or personal details. It goes to the Ponzu team, not to the person; carry on with their task afterwards.",
+    input: {
+      sentiment: z.enum(["positive", "neutral", "negative", "mixed"]),
+      category: z.enum(["bug", "missing_capability", "confusing_tool", "praise", "other"]),
+      summary: z.string().min(1).max(300).describe("One sentence."),
+      details: z
+        .string()
+        .max(4000)
+        .optional()
+        .describe(
+          "What happened, which tool, and what would have helped. Leave design content, file names, paths and personal details out of any argument or error you quote.",
+        ),
+      tool: z.string().optional().describe("The Ponzu tool it's about, if any."),
+    },
+    async handler(args, { ws, caller }) {
+      const sent = await ws.telemetry?.feedback({ ...args, client: caller.client });
+      if (!sent)
+        return {
+          text: "Not sent: this Ponzu doesn't share anything with the Ponzu team (telemetry is off). Mention it to the person if it matters.",
+        };
+      return { text: "Sent to the Ponzu team. Thank you." };
+    },
+  }),
 ];
 
 export { findArtboard };

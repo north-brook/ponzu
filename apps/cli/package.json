@@ -1,6 +1,6 @@
 {
   "name": "ponzu",
-  "version": "1.13.0",
+  "version": "1.14.0",
   "description": "An open-source design canvas your coding agent drives with HTML and CSS.",
   "type": "module",
   "license": "MIT",
@@ -9,10 +9,11 @@
   },
   "dependencies": {
     "@ponzu/core": "workspace:*",
-    "@ponzu/store": "workspace:*",
-    "@ponzu/render": "workspace:*",
-    "@ponzu/tools": "workspace:*",
     "@ponzu/mcp": "workspace:*",
-    "@ponzu/server": "workspace:*"
+    "@ponzu/render": "workspace:*",
+    "@ponzu/server": "workspace:*",
+    "@ponzu/store": "workspace:*",
+    "@ponzu/tools": "workspace:*",
+    "posthog-node": "^5.56.2"
   }
 }

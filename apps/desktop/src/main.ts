@@ -318,6 +318,9 @@ function startServer(renderEndpoint: string, port: number): Promise<string> {
         env: {
           ...process.env,
           PONZU_DESKTOP: "1",
+          PONZU_LAUNCHED_BY: background ? "agent" : "person",
+          // Development and the smoke check aren't anyone using Ponzu.
+          ...(isDev || smoke ? { PONZU_TELEMETRY: "0" } : {}),
           PONZU_RENDER_ENDPOINT: renderEndpoint,
           PONZU_RENDER_TOKEN: renderToken,
         },

@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.0](https://github.com/north-brook/ponzu/compare/v1.13.0...v1.14.0) (2026-10-20)
+
+
+### Features
+
+* anonymous usage telemetry and a send_feedback tool for agents ([#36](https://github.com/north-brook/ponzu/issues/36)) ([d999e43](https://github.com/north-brook/ponzu/commit/d999e431be28ed74d65f8fecd8e7d18247a04782))
+
 ## [1.13.0](https://github.com/north-brook/ponzu/compare/v1.12.0...v1.13.0) (2026-10-20)
 
 
