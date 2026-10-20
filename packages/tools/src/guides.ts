@@ -31,7 +31,7 @@ Don't
 - Don't rebuild what exists. duplicate it and edit the copy.
 - Don't overwrite an artboard the person liked. Put variations next to it (get_guide('variations')).
 - Don't guess sizes from screenshots. get_node has the real values.
-- Don't resolve a comment you didn't address.`,
+- Don't resolve a comment you didn't address. Resolve the ones you did, without a reply unless there's something to say.`,
 
   layout: `# Layout
 
@@ -56,7 +56,7 @@ Don't
 
   collaborate: `# The collaborate loop
 
-Use this when the person wants you to sit with them while they review: they leave comments in the canvas, you pick them up, make the change, and reply. No chatting required.
+Use this when the person wants you to sit with them while they review: they leave comments in the canvas, you pick them up, make the change, and resolve them. No chatting required.
 
 1. listen: wait_for_activity with the cursor from your last call. Start with types comment.created, comment.replied, file.changed.
 2. triage each comment:
@@ -66,11 +66,18 @@ Use this when the person wants you to sit with them while they review: they leav
    Batch comments that touch the same artboard.
 3. claim: start_working on the artboards you're about to touch. The person sees your icon there.
 4. do + check: edit, screenshot, fix lint. Variations go next to the original, never over it.
-5. reply: one or two sentences saying what changed, resolve: true for changes you made. Then finish_working.
+5. close: for a change you made, set_comment_status resolved. That hides the pin; the canvas already shows the change, so don't reply. Then finish_working.
 6. Go back to 1 with the new cursor. Keep looping until the person says stop or you're interrupted.
 
+Reply only when the person needs to read something:
+- they asked a question, or asked for your recommendation;
+- the comment was ambiguous and you picked one reading (say which, in a sentence);
+- you couldn't do it, or did something different from what they asked (say why).
+Leave a thread you replied to open: resolved threads leave the canvas, so a reply on one is never seen. The person resolves it once they've read it.
+Replies are one or two sentences. A reply that just says "Done" or restates the change is noise.
+
 file.changed means someone edited the HTML outside Ponzu (an editor, another agent). Re-read before editing that artboard.
-Never resolve a question or decision for the person. Never resolve a comment you didn't address; say why instead.`,
+Never resolve a question or decision for the person. Never resolve a comment you didn't address.`,
 
   variations: `# Variations
 
@@ -134,4 +141,4 @@ Start every session with get_basic_info, then read_notes, then get_guide('basics
 
 Build in small pieces, screenshot often, and fix what lint reports. record shows animation and hover states frame by frame. Put design decisions in tokens and notes. Variations go next to the original, never over it. Use start_working / finish_working around edits to existing artboards.
 
-To pair on feedback, run the collaborate loop: wait_for_activity → triage → start_working → edit + screenshot → reply (resolve changes, leave questions open) → repeat. get_guide('collaborate') has details.`;
+To pair on feedback, run the collaborate loop: wait_for_activity → triage → start_working → edit + screenshot → set_comment_status resolved for what you did (reply only to answer a question, flag an ambiguity or explain what you couldn't do) → repeat. get_guide('collaborate') has details.`;

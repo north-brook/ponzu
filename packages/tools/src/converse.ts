@@ -1,12 +1,26 @@
-import { type Doc, describeNode, findArtboard, locate, newId, type Thread } from "@ponzu/core";
+import {
+  type Doc,
+  describeNode,
+  findArtboard,
+  locate,
+  newId,
+  type Thread,
+  threadPage,
+} from "@ponzu/core";
 import { z } from "zod";
 import { fileArg, ToolError, tool } from "./define.ts";
 import { apply } from "./util.ts";
 
 export function threadLine(doc: Doc, t: Thread): string {
-  const ab = findArtboard(doc, t.artboardId)?.artboard;
   const node = t.nodeId ? locate(doc, t.nodeId)?.node : undefined;
-  const where = `${ab ? `"${ab.name}"` : t.artboardId}${node ? ` › ${describeNode(node)} (${node.id})` : ""}`;
+  let where: string;
+  if (t.artboardId) {
+    const ab = findArtboard(doc, t.artboardId)?.artboard;
+    where = `${ab ? `"${ab.name}"` : t.artboardId}${node ? ` › ${describeNode(node)} (${node.id})` : ""}`;
+  } else {
+    const page = threadPage(doc, t);
+    where = `the canvas of page "${page?.name ?? t.pageId}" at ${t.x}, ${t.y}`;
+  }
   const first = t.messages[0];
   const last = t.messages[t.messages.length - 1];
   const replies = t.messages.length - 1;
@@ -20,7 +34,7 @@ export const converseTools = [
     group: "converse",
     readOnly: true,
     description:
-      "Comment threads in the file. Open ones by default. Each thread is pinned to an artboard and usually a node inside it.",
+      "Comment threads in the file. Open ones by default. Most are pinned to an artboard and usually a node inside it; some sit on the open canvas of a page, beside the artboards.",
     input: {
       file: fileArg,
       status: z.enum(["open", "resolved", "all"]).optional(),
@@ -101,7 +115,7 @@ export const converseTools = [
     title: "Reply",
     group: "converse",
     description:
-      "Reply in a comment thread. When you've done what a comment asked, reply with what changed (one or two sentences) and set resolve: true. Leave questions and decisions open for the person.",
+      "Reply in a comment thread, in one or two sentences. Only when the person needs to read it: to answer a question, give a recommendation, say how you read an ambiguous comment, or explain what you couldn't do. For a change you simply made, don't reply; resolve it with set_comment_status. Leave a thread you replied to open: resolved threads leave the canvas, so resolve: true hides your reply from the person.",
     input: {
       file: fileArg,
       thread: z.string(),
@@ -139,7 +153,8 @@ export const converseTools = [
     name: "set_comment_status",
     title: "Set comment status",
     group: "converse",
-    description: "Resolve or reopen a thread without replying.",
+    description:
+      "Resolve or reopen a thread without replying. Resolve a comment once you've done what it asked; that hides its pin from the canvas, and the change speaks for itself.",
     input: { file: fileArg, thread: z.string(), status: z.enum(["open", "resolved"]) },
     async handler(args, ctx) {
       const { design } = await ctx.ws.resolve(args.file);

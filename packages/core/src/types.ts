@@ -57,10 +57,16 @@ export interface Author {
 
 export interface Thread {
   id: string;
-  artboardId: string;
+  /** The artboard the pin is on. Absent for a pin on the open canvas. */
+  artboardId?: string;
+  /** The page of a pin on the open canvas. Set only when there is no artboard. */
+  pageId?: string;
   /** The node the pin is attached to, if any. Falls back to the artboard. */
   nodeId?: string;
-  /** Pin offset from the artboard's top-left corner, in artboard pixels. */
+  /**
+   * Pin offset from the artboard's top-left corner, in artboard pixels. On the
+   * open canvas, the pin's position on the page.
+   */
   x: number;
   y: number;
   status: "open" | "resolved";

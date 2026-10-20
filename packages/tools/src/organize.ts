@@ -63,7 +63,7 @@ export const organizeTools = [
       path: z
         .string()
         .describe(
-          "Folder path ending in .design. Relative paths resolve from where Ponzu was started.",
+          "Folder path ending in .design. Relative paths resolve from your working directory.",
         ),
       name: z.string().optional(),
       pages: z

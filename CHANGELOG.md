@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.6.1](https://github.com/north-brook/ponzu/compare/v1.6.0...v1.6.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* name the app Ponzu in its menus ([#11](https://github.com/north-brook/ponzu/issues/11)) ([0fff89d](https://github.com/north-brook/ponzu/commit/0fff89de160753a6aacc1cd086abcd8e92bae203))
+
+## [1.6.0](https://github.com/north-brook/ponzu/compare/v1.5.0...v1.6.0) (2026-10-20)
+
+
+### Features
+
+* agents reach ponzu whether or not the desktop app is open ([#13](https://github.com/north-brook/ponzu/issues/13)) ([9292994](https://github.com/north-brook/ponzu/commit/9292994da547dbccc4dfe27b0719f1a6ca3159ef))
+
+## [1.5.0](https://github.com/north-brook/ponzu/compare/v1.4.0...v1.5.0) (2026-10-20)
+
+
+### Features
+
+* cycle tabs with cmd+shift+[ and ], cmd+0 for home, and follow the system theme ([#12](https://github.com/north-brook/ponzu/issues/12)) ([9defc27](https://github.com/north-brook/ponzu/commit/9defc275766481a6fbd40c3dcb69f25cff7fc794))
+
+## [1.4.0](https://github.com/north-brook/ponzu/compare/v1.3.0...v1.4.0) (2026-10-20)
+
+
+### Features
+
+* comments anywhere on the canvas, a quieter comment card, and resolve-first agents ([#9](https://github.com/north-brook/ponzu/issues/9)) ([414d1d8](https://github.com/north-brook/ponzu/commit/414d1d823ef73fd6466dce2425389d1a35d2e7fd))
+
+## [1.3.0](https://github.com/north-brook/ponzu/compare/v1.2.0...v1.3.0) (2026-10-20)
+
+
+### Features
+
+* tab and page shortcuts, a page icon, and a quieter mode switcher ([#4](https://github.com/north-brook/ponzu/issues/4)) ([371ed00](https://github.com/north-brook/ponzu/commit/371ed006dbb14119fb473a23df7469b03e1a068c))
+
 ## [1.2.0](https://github.com/north-brook/ponzu/compare/v1.1.0...v1.2.0) (2026-10-20)
 
 
