@@ -41,6 +41,7 @@
         "to": "server"
       }
     ],
+    "afterPack": "./scripts/quicklook.cjs",
     "fileAssociations": [
       {
         "ext": "design",
@@ -88,6 +89,7 @@
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
+      "sign": "./scripts/quicklook.cjs",
       "notarize": true,
       "artifactName": "${productName}-${version}-${arch}-mac.${ext}"
     },
