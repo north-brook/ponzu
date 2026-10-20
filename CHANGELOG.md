@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.2](https://github.com/north-brook/ponzu/compare/v1.6.1...v1.6.2) (2026-10-20)
+
+
+### Bug Fixes
+
+* name the updater cache ponzu-updater ([#17](https://github.com/north-brook/ponzu/issues/17)) ([ca8099c](https://github.com/north-brook/ponzu/commit/ca8099ca7c3cc9d39d451d446a49d9f73ddaa3c2))
+
 ## [1.6.1](https://github.com/north-brook/ponzu/compare/v1.6.0...v1.6.1) (2026-10-20)
 
 
