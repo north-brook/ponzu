@@ -9,6 +9,7 @@ import { CommentThread } from "@/components/demo/comment-thread";
 import { ProductDemo } from "@/components/demo/product-demo";
 import { Wedge } from "@/components/icons";
 import { DownloadButton, GitHubButton } from "@/components/links";
+import { DESCRIPTION, share, TITLE } from "@/components/share";
 import { SLICE_CSS } from "@/components/slice-demo";
 
 const well =
@@ -16,11 +17,13 @@ const well =
 /** A code block: white on the light page, near-black on the dark one. */
 const codeWell = `${well} code bg-well text-text shadow-[inset_0_0_0_1px_var(--well-rule)]`;
 
-// Set here, not in the layout, so other pages don't inherit the home page's canonical URL.
-export const metadata: Metadata = {
-  alternates: { canonical: "/" },
-  openGraph: { url: "/" },
-};
+export const metadata: Metadata = share({
+  path: "/",
+  title: TITLE,
+  description: DESCRIPTION,
+  xDescription:
+    "Open source and local. Your agent designs in HTML and CSS; you steer with comments.",
+});
 
 export default function Home() {
   return (

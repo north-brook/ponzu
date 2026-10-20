@@ -2,35 +2,18 @@ import type { Metadata } from "next";
 import { Footer, Nav } from "@/components/chrome";
 import { REPO } from "@/components/links";
 import { latestVersion } from "@/components/release";
+import { share } from "@/components/share";
 import { AutoStart, Download } from "./download";
 import { Steps } from "./steps";
 
-const SHARE_ALT =
-  "Ponzu: the design canvas for your coding agent. Claude designs a houseplant shop's landing page on the Ponzu canvas while you pin a comment on the headline.";
+const TITLE = "Download Ponzu for Mac";
 const DESCRIPTION =
   "Install Ponzu for Mac: open the disk image, drag it into Applications, and connect your agent.";
 
 export const metadata: Metadata = {
-  title: { absolute: "Download Ponzu for Mac" },
+  title: { absolute: TITLE },
   description: DESCRIPTION,
-  alternates: { canonical: "/download" },
-  // A page's openGraph and twitter replace the layout's rather than merge, so restate the
-  // card type and the shared image here.
-  openGraph: {
-    type: "website",
-    siteName: "Ponzu",
-    url: "/download",
-    title: "Download Ponzu for Mac",
-    description: DESCRIPTION,
-    images: [{ url: "/opengraph-image.jpg", width: 2400, height: 1260, alt: SHARE_ALT }],
-  },
-  twitter: {
-    card: "summary_large_image",
-    creator: "@brycebjork",
-    title: "Download Ponzu for Mac",
-    description: DESCRIPTION,
-    images: [{ url: "/twitter-image.jpg", alt: SHARE_ALT }],
-  },
+  ...share({ path: "/download", title: TITLE, description: DESCRIPTION }),
 };
 
 /** The DMG keeps one name across versions (apps/desktop/package.json, dmg.artifactName). */

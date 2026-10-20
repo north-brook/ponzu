@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Instrument_Serif, Inter, JetBrains_Mono } from "next/font/google";
 import type { ReactNode } from "react";
+import { DESCRIPTION, TITLE } from "@/components/share";
 import "./globals.css";
 
 // Variable, so every weight is available and text can use Inter's optical sizes.
@@ -23,14 +24,7 @@ const jetbrainsMono = JetBrains_Mono({
   variable: "--font-jetbrains-mono",
 });
 
-const TITLE = "Ponzu — the design canvas for your coding agent";
-const DESCRIPTION =
-  "Open source and local. Your coding agent designs in plain HTML and CSS on an infinite canvas, and you steer with comments.";
-
-/*
- * Share previews: the image is app/opengraph-image.jpg (and twitter-image.jpg), rendered from
- * /share by scripts/share-image.ts. Next adds its URL, size and alt text from those files.
- */
+// Site-wide defaults. Each page sets its own share tags with `share()` (components/share.ts).
 export const metadata: Metadata = {
   metadataBase: new URL("https://ponzu.design"),
   title: { default: TITLE, template: "%s · Ponzu" },
@@ -54,20 +48,6 @@ export const metadata: Metadata = {
     apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
   },
   manifest: "/manifest.webmanifest",
-  openGraph: {
-    type: "website",
-    siteName: "Ponzu",
-    locale: "en_US",
-    title: TITLE,
-    description: DESCRIPTION,
-  },
-  twitter: {
-    card: "summary_large_image",
-    creator: "@brycebjork",
-    title: TITLE,
-    description:
-      "Open source and local. Your agent designs in HTML and CSS; you steer with comments.",
-  },
   formatDetection: { telephone: false },
 };
 
