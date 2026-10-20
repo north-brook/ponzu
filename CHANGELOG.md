@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.0](https://github.com/north-brook/ponzu/compare/v1.11.0...v1.12.0) (2026-10-20)
+
+
+### Features
+
+* edit, delete and move comments ([#33](https://github.com/north-brook/ponzu/issues/33)) ([864e7cf](https://github.com/north-brook/ponzu/commit/864e7cfa68e685cc58676b88b01cf20834f820ff))
+
 ## [1.11.0](https://github.com/north-brook/ponzu/compare/v1.10.0...v1.11.0) (2026-10-20)
 
 
