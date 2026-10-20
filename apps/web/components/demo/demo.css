@@ -135,22 +135,6 @@
   opacity: 0.6;
 }
 
-.dm-spinner {
-  width: 12px;
-  height: 12px;
-  margin: 1px;
-  border-radius: 50%;
-  border: 1.6px solid currentColor;
-  border-right-color: transparent;
-  animation: dm-spin 0.8s linear infinite;
-}
-
-@keyframes dm-spin {
-  to {
-    rotate: 1turn;
-  }
-}
-
 .dm-bar-right {
   margin-left: auto;
   display: flex;
@@ -175,26 +159,9 @@
   scale: 0.6;
 }
 
-.dm-agent-dot {
-  position: absolute;
-  right: 1px;
-  bottom: 1px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #30a46c;
-  box-shadow: 0 0 0 2px var(--bar);
-}
-
-.dm-agent-dot[data-busy="true"] {
-  background: #f4b012;
-  animation: dm-pulse 1.2s ease-in-out infinite;
-}
-
-@keyframes dm-pulse {
-  50% {
-    opacity: 0.35;
-  }
+/* Waiting on your comments rather than working: half strength, as in the app. */
+.dm-agent[data-on="true"][data-busy="false"] {
+  opacity: 0.5;
 }
 
 .dm-main {
@@ -237,16 +204,6 @@
 
 .dm .dm-board-title {
   transition: font-size 1300ms cubic-bezier(0.65, 0, 0.25, 1);
-}
-
-.dm .dm-agent-chip {
-  animation: dm-chip 1.4s ease-in-out infinite;
-}
-
-@keyframes dm-chip {
-  50% {
-    opacity: 0.45;
-  }
 }
 
 /* Pieces of a design arrive in the order the agent writes them. */
@@ -318,6 +275,12 @@
   from {
     opacity: 0;
     translate: 0 4px;
+  }
+}
+
+@keyframes dm-spin {
+  to {
+    rotate: 1turn;
   }
 }
 

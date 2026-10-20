@@ -1,4 +1,13 @@
-import type { Author, Doc, EventType, Op, PonzuEvent, Presence, Selection } from "@ponzu/core";
+import type {
+  Author,
+  Doc,
+  EventType,
+  Op,
+  PonzuEvent,
+  Presence,
+  PresenceOrigin,
+  Selection,
+} from "@ponzu/core";
 import type { Renderer } from "@ponzu/render";
 import type { Design } from "@ponzu/store";
 
@@ -27,6 +36,8 @@ export interface ToolCaller {
   id: string;
   author: Author;
   client?: string;
+  /** Where the session comes from, shown in the studio. */
+  origin?: PresenceOrigin;
 }
 
 export interface ToolContext {
@@ -136,19 +147,27 @@ export class PresenceHub {
     return [...this.map.values()].filter((p) => p.lastSeen > cutoff);
   }
 
-  touch(caller: ToolCaller, patch: Partial<Pick<Presence, "working" | "status">> = {}): void {
+  touch(
+    caller: ToolCaller,
+    patch: Partial<Pick<Presence, "working" | "status" | "file" | "listening" | "listenedAt">> = {},
+  ): void {
     const prev = this.map.get(caller.id);
+    const now = Date.now();
     const next: Presence = {
+      ...prev,
+      ...patch,
       id: caller.id,
       name: caller.author.name,
       kind: caller.author.kind,
       client: caller.client,
+      origin: caller.origin,
       working: patch.working ?? prev?.working ?? [],
-      status: "status" in patch ? patch.status : prev?.status,
-      lastSeen: Date.now(),
+      since: prev?.since ?? now,
+      lastSeen: now,
     };
     this.map.set(caller.id, next);
-    if (!prev || patch.working || "status" in patch) this.notify();
+    // A plain tool call only moves lastSeen, which nothing shows; skip the broadcast.
+    if (!prev || Object.keys(patch).length) this.notify();
   }
 
   leave(id: string): void {

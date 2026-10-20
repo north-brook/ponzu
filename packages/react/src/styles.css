@@ -104,3 +104,116 @@
   box-sizing: border-box;
   border: 0 solid var(--pz-rule);
 }
+
+/*
+ * Working and loading. Not scoped to .pz-root: the studio's own chrome (file
+ * tabs) uses them too. An agent at work is neutral ink: a band of light
+ * sweeping its status text and tab names, and a stroke tracing the artboard.
+ * Loading is the juicing wedge.
+ */
+@keyframes pz-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+/* The text keeps its color; a lighter band sweeps across it. */
+.pz-shimmer {
+  background:
+    linear-gradient(
+      90deg,
+      currentColor 40%,
+      color-mix(in srgb, currentColor 30%, transparent) 50%,
+      currentColor 60%
+    )
+    0 0 / 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: pz-shimmer 1.8s linear infinite;
+}
+
+@keyframes pz-trace {
+  to {
+    stroke-dashoffset: -100;
+  }
+}
+
+/* On a path with pathLength="100": a tenth of the outline travels around it. */
+.pz-trace {
+  stroke-dasharray: 10 90;
+  animation: pz-trace 3.2s linear infinite;
+}
+
+@keyframes pz-juice {
+  0% {
+    opacity: 0.15;
+  }
+  18%,
+  42% {
+    opacity: 1;
+  }
+  64%,
+  100% {
+    opacity: 0.15;
+  }
+}
+
+.pz-juice-seg {
+  animation: pz-juice 1.2s ease-in-out infinite;
+}
+
+.pz-juice-seg:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.pz-juice-seg:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+/* Waiting rather than working: half speed. */
+.pz-juice-slow .pz-juice-seg {
+  animation-duration: 2.4s;
+}
+
+.pz-juice-slow .pz-juice-seg:nth-child(2) {
+  animation-delay: 0.4s;
+}
+
+.pz-juice-slow .pz-juice-seg:nth-child(3) {
+  animation-delay: 0.8s;
+}
+
+@keyframes pz-appear {
+  from {
+    opacity: 0;
+  }
+}
+
+.pz-appear {
+  animation: pz-appear 0.3s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pz-shimmer {
+    animation: none;
+    -webkit-text-fill-color: currentColor;
+  }
+
+  .pz-trace {
+    animation: none;
+    stroke-dasharray: none;
+  }
+
+  .pz-juice-seg {
+    animation: none;
+    opacity: 1;
+  }
+
+  .pz-appear {
+    animation: none;
+  }
+}

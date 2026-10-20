@@ -21,7 +21,7 @@ import {
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { SERVER_INSTRUCTIONS, tools, type Workspace } from "@ponzu/tools";
-import { createMcpServer } from "./index.ts";
+import { createMcpServer, ORIGIN_HEADERS } from "./index.ts";
 
 export interface BridgeOptions {
   name?: string;
@@ -36,6 +36,8 @@ export interface BridgeOptions {
   onHost?: (url: string) => Promise<void>;
   /** Rewrite tool arguments before they run, e.g. relative paths to absolute. */
   mapArgs?: (tool: string, args: Record<string, unknown>) => Record<string, unknown>;
+  /** The agent's working directory, shown in the studio's session card. */
+  cwd?: string;
 }
 
 /** Longer than wait_for_activity's longest poll. */
@@ -111,7 +113,14 @@ export async function serveBridge(
     const url = await opts.findHost(launch).catch(() => null);
     if (!url) return null;
     const client = new Client(agent());
-    const http = new StreamableHTTPClientTransport(new URL(url));
+    const http = new StreamableHTTPClientTransport(new URL(url), {
+      requestInit: {
+        headers: {
+          [ORIGIN_HEADERS.via]: "bridge",
+          ...(opts.cwd ? { [ORIGIN_HEADERS.cwd]: encodeURIComponent(opts.cwd) } : {}),
+        },
+      },
+    });
     // The host quit under an open stream. Closing rejects the pending calls instead of hanging them.
     client.onerror = (err) => {
       if (/SSE stream disconnected|reconnect/i.test(String(err))) void dropHost(client);
