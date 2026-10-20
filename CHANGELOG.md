@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/north-brook/ponzu/compare/v1.5.0...v1.6.0) (2026-10-20)
+
+
+### Features
+
+* agents reach ponzu whether or not the desktop app is open ([#13](https://github.com/north-brook/ponzu/issues/13)) ([9292994](https://github.com/north-brook/ponzu/commit/9292994da547dbccc4dfe27b0719f1a6ca3159ef))
+
 ## [1.5.0](https://github.com/north-brook/ponzu/compare/v1.4.0...v1.5.0) (2026-10-20)
 
 
