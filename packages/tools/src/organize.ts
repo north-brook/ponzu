@@ -65,7 +65,12 @@ export const organizeTools = [
         .describe(
           "Folder path ending in .design. Relative paths resolve from your working directory.",
         ),
-      name: z.string().optional(),
+      name: z
+        .string()
+        .optional()
+        .describe(
+          'Shown as the tab title, e.g. "Onboarding" or "Checkout flow". Default: the folder name as written.',
+        ),
       pages: z
         .array(z.object({ name: z.string(), icon: z.enum(PAGE_ICONS).optional() }))
         .optional()
