@@ -152,10 +152,11 @@ export class RemoteRenderer implements Renderer {
     artboard: RenderRequest["artboard"];
     tokens: string;
     colorScheme?: "light" | "dark";
+    assetBase?: string;
   }) {
     return artboardPage(req.artboard, {
       tokens: req.tokens,
-      assetBase: this.assetBase,
+      assetBase: req.assetBase ?? this.assetBase,
       colorScheme: req.colorScheme,
     });
   }

@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 
 /*
  * The three steps between the download and the first design, drawn rather
- * than screenshotted: two Finder windows and a terminal on the stage the home
+ * than screenshotted: two Finder windows and an agent's terminal on the stage the home
  * page sets its screenshot on, built from the real macOS icons in
  * /public/download. Step two's title carries the disk image's own badged
  * icon (apps/desktop/build/installer-icon.png), so the page shows what Finder
@@ -166,8 +166,11 @@ function Installer() {
   );
 }
 
-/** Step three: the agent pointed at the canvas the app is serving. */
-function Terminal({ url }: { url: string }) {
+/**
+ * Step three: an agent asked for a design. The app registers itself with
+ * Claude Code, Codex and Cursor on launch, so there's nothing to connect.
+ */
+function Terminal() {
   return (
     <Window dark>
       <div className="flex h-10 items-center gap-2 border-b border-white/10 px-3.5">
@@ -176,11 +179,9 @@ function Terminal({ url }: { url: string }) {
         <i className="size-3 rounded-full bg-white/15" />
       </div>
       <pre className="m-0 h-[132px] px-4 py-3.5 font-mono text-xs/5 whitespace-pre-wrap text-code-ink">
-        <span className="text-white/45">$ </span>claude mcp add \{"\n"}
-        {"    "}--transport http \{"\n"}
-        {"    "}ponzu {url}
-        {"\n\n"}
         <span className="text-white/45">$ </span>claude
+        {"\n\n"}
+        <span className="text-white/45">&gt; </span>Design a landing page for my app in Ponzu.
         <i className="ml-1 inline-block h-3.5 w-[7px] translate-y-0.5 bg-m1" />
       </pre>
     </Window>
@@ -217,7 +218,7 @@ function Step({
 }
 
 /** The three steps, side by side on the desk and stacked on the phone. */
-export function Steps({ installer, url }: { installer: string; url: string }) {
+export function Steps({ installer }: { installer: string }) {
   return (
     <ol className="m-0 grid w-full max-w-[1200px] list-none grid-cols-3 gap-6 p-0 max-[1000px]:grid-cols-1 max-[1000px]:gap-10">
       <Step
@@ -243,12 +244,12 @@ export function Steps({ installer, url }: { installer: string; url: string }) {
       <Step
         caption={
           <>
-            Connect your agent to <Key>{url}</Key> and ask for a design.
+            Open <Key>Ponzu</Key> and ask your agent for a design.
           </>
         }
         index={3}
       >
-        <Terminal url={url} />
+        <Terminal />
       </Step>
     </ol>
   );

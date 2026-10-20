@@ -295,14 +295,13 @@ function body(req: IncomingMessage): Promise<string> {
 /* ------------------------------------------------------------------ */
 
 /**
- * Where the server starts, which is also the folder its home screen lists.
- * Documents, except when an agent started us: reading a protected folder
- * blocks on a privacy prompt, and with no window it would wait unanswered.
+ * Where the server starts. Never a folder macOS guards (Documents, Desktop):
+ * reading one asks "Ponzu would like to access files in your Documents
+ * folder" before anyone has asked Ponzu for anything. The home screen finds
+ * designs through Spotlight, wherever they are.
  */
 function serverCwd(): string {
-  if (background) return app.getPath("userData");
-  // CI runners have no Documents folder.
-  return existsSync(app.getPath("documents")) ? app.getPath("documents") : app.getPath("home");
+  return app.getPath("userData");
 }
 
 function startServer(renderEndpoint: string, port: number): Promise<string> {

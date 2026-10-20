@@ -19,11 +19,7 @@ export function Footer() {
             Ponzu
           </a>
           <p className="m-0 max-w-[300px] text-[15px]/[25px] text-pretty text-muted">
-            The design canvas for your coding agent. Made by{" "}
-            <a className="footer-link text-ink" href="https://github.com/north-brook">
-              Northbrook PBC
-            </a>
-            , a public benefit corporation.
+            The design canvas for your coding agent.
           </p>
         </div>
         <FooterLinks
@@ -60,7 +56,9 @@ export function Footer() {
       </div>
 
       <div className="flex justify-between gap-4 py-7 text-[13px] text-faint max-[720px]:flex-col max-[720px]:gap-1.5">
-        <span>© 2026 Northbrook PBC</span>
+        <a className="footer-link w-fit hover:text-muted" href="https://northbrook.com">
+          © 2026 Northbrook PBC
+        </a>
         <span>Free and open source, MIT licensed</span>
       </div>
     </footer>

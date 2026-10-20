@@ -12,7 +12,7 @@ import { ArtboardView } from "./Artboard.tsx";
 import { Composer, ThreadCard, threadCard } from "./Comments.tsx";
 import type { CanvasSource } from "./connection.ts";
 import { AgentMark, Icon, Icons } from "./icons.tsx";
-import { Button, cn, ToggleGroup } from "./ui.tsx";
+import { Button, cn, Tip, TipProvider, ToggleGroup } from "./ui.tsx";
 import { isTyping, useCamera, useKeyHeld, useSource } from "./useCanvas.ts";
 import { Juice, useDelayed } from "./working.tsx";
 
@@ -23,9 +23,9 @@ export interface CanvasProps {
   /** Who's using the canvas, for comments. */
   me?: Author;
   theme?: "light" | "dark";
-  /** Render a footer with page tabs and controls. Default true. */
+  /** Float page tabs (bottom left) and tools (bottom right) over the canvas. Default true. */
   footer?: boolean;
-  /** Extra content on the right of the footer, before the modes. */
+  /** Extra content at the start of the tools bar, before the modes. */
   footerExtra?: ReactNode;
   className?: string;
 }
@@ -722,89 +722,132 @@ export function Canvas({
               );
             })()}
         </div>
-
-        {!boards.length && (
-          <div className="pz:pointer-events-none pz:absolute pz:inset-0 pz:grid pz:place-content-center pz:gap-1 pz:text-center">
-            <p className="pz:m-0 pz:text-[15px]">This page is empty.</p>
-            <p className="pz:m-0 pz:text-muted-foreground">
-              Ask your agent to design something. It will appear here as it works.
-            </p>
-          </div>
-        )}
       </div>
 
       {footer && (
-        <div className="pz:flex pz:h-11 pz:shrink-0 pz:items-center pz:justify-between pz:gap-4 pz:bg-background pz:px-2">
-          <div className="pz:flex pz:min-w-0 pz:items-center pz:gap-0.5 pz:overflow-x-auto pz:[scrollbar-width:none]">
-            {doc.pages.map((p, i) => (
-              <PageTab
-                key={p.id}
-                name={p.name}
-                shortcut={i < 8 ? i + 1 : i === doc.pages.length - 1 ? 9 : undefined}
-                icon={p.icon}
-                active={p.id === page.id}
-                working={busyPages.has(p.id)}
-                onClick={() => goToPage(p.id)}
-                onRename={(name) => source.apply({ op: "page.update", id: p.id, name })}
+        <TipProvider>
+          {/*
+           * The bars float over the canvas, which runs to the container's edges beneath them.
+           * They share one row that lets clicks through between them: Pages takes what Controls
+           * leaves and scrolls its tabs, so the two never overlap. Pointer and wheel events stop
+           * at a bar, so pressing one never pans or zooms.
+           */}
+          <div className="pz:pointer-events-none pz:absolute pz:inset-x-2.5 pz:bottom-2.5 pz:z-[3] pz:flex pz:items-end pz:justify-between pz:gap-2.5">
+            <Bar name="Pages" className="pz:min-w-0 pz:shrink">
+              <div className="pz:flex pz:min-w-0 pz:items-center pz:gap-0.5 pz:overflow-x-auto pz:[scrollbar-width:none]">
+                {doc.pages.map((p, i) => (
+                  <PageTab
+                    key={p.id}
+                    name={p.name}
+                    shortcut={i < 8 ? i + 1 : i === doc.pages.length - 1 ? 9 : undefined}
+                    icon={p.icon}
+                    active={p.id === page.id}
+                    working={busyPages.has(p.id)}
+                    onClick={() => goToPage(p.id)}
+                    onRename={(name) => source.apply({ op: "page.update", id: p.id, name })}
+                  />
+                ))}
+              </div>
+              <Tip label="New page">
+                <Button
+                  variant="ghost"
+                  size="icon-lg"
+                  aria-label="New page"
+                  onClick={() => {
+                    const id = newId("pg");
+                    source.apply({
+                      op: "page.create",
+                      index: doc.pages.length,
+                      page: { id, name: `Page ${doc.pages.length + 1}` },
+                    });
+                    setPageId(id);
+                  }}
+                >
+                  <Icon name="add" size={15} />
+                </Button>
+              </Tip>
+            </Bar>
+            <Bar name="Controls" className="pz:shrink-0">
+              {footerExtra}
+              <ToggleGroup
+                variant="raised"
+                value={panning ? "hand" : mode}
+                onValueChange={setMode}
+                items={MODES.map((m) => ({
+                  value: m.value,
+                  title: m.label,
+                  keys: [m.key],
+                  label: <Icon name={m.value} size={16} />,
+                }))}
               />
-            ))}
-            <Button
-              variant="ghost"
-              size="icon"
-              title="New page"
-              onClick={() => {
-                const id = newId("pg");
-                source.apply({
-                  op: "page.create",
-                  index: doc.pages.length,
-                  page: { id, name: `Page ${doc.pages.length + 1}` },
-                });
-                setPageId(id);
-              }}
-            >
-              <Icon name="add" size={15} />
-            </Button>
+              <span aria-hidden className="pz:mx-1.5 pz:h-4 pz:w-px pz:bg-foreground/10" />
+              <Tip label="Zoom out" keys={["⌘", "−"]}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Zoom out"
+                  onClick={() => zoomAt(0.8, viewportSize().w / 2, viewportSize().h / 2)}
+                >
+                  <Icon name="minus" size={14} />
+                </Button>
+              </Tip>
+              <Tip label="Zoom to fit" keys={["⇧", "1"]}>
+                <Button
+                  variant="ghost"
+                  className="pz:h-7 pz:min-w-11 pz:rounded-lg pz:px-0 pz:text-foreground pz:tabular-nums"
+                  aria-label="Zoom to fit"
+                  onClick={fitPage}
+                >
+                  {zoomPct}%
+                </Button>
+              </Tip>
+              <Tip label="Zoom in" keys={["⌘", "+"]}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Zoom in"
+                  onClick={() => zoomAt(1.25, viewportSize().w / 2, viewportSize().h / 2)}
+                >
+                  <Icon name="plus" size={14} />
+                </Button>
+              </Tip>
+            </Bar>
           </div>
-          <div className="pz:flex pz:shrink-0 pz:items-center pz:gap-2.5">
-            {footerExtra}
-            <ToggleGroup
-              value={panning ? "hand" : mode}
-              onValueChange={setMode}
-              items={(["select", "hand", "comment"] as const).map((m) => ({
-                value: m,
-                title: `${m[0]!.toUpperCase()}${m.slice(1)} (${m === "select" ? "V" : m === "hand" ? "H" : "C"})`,
-                label: <Icon name={m} size={16} />,
-              }))}
-            />
-            <div className="pz:flex pz:items-center">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => zoomAt(0.8, viewportSize().w / 2, viewportSize().h / 2)}
-                title="Zoom out (⌘−)"
-              >
-                <Icon name="minus" size={14} />
-              </Button>
-              <Button
-                variant="ghost"
-                className="pz:h-[26px] pz:min-w-11 pz:rounded-[7px] pz:px-0 pz:tabular-nums"
-                onClick={fitPage}
-                title="Zoom to fit (⇧1)"
-              >
-                {zoomPct}%
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => zoomAt(1.25, viewportSize().w / 2, viewportSize().h / 2)}
-                title="Zoom in (⌘+)"
-              >
-                <Icon name="plus" size={14} />
-              </Button>
-            </div>
-          </div>
-        </div>
+        </TipProvider>
       )}
+    </div>
+  );
+}
+
+const MODES = [
+  { value: "select", label: "Select", key: "V" },
+  { value: "hand", label: "Hand", key: "H" },
+  { value: "comment", label: "Comment", key: "C" },
+] as const;
+
+/** A frosted bar in the canvas's bottom row. */
+function Bar({
+  name,
+  className,
+  children,
+}: {
+  name: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      role="toolbar"
+      aria-label={name}
+      data-slot="canvas-bar"
+      className={cn(
+        "pz:pointer-events-auto pz:flex pz:items-center pz:gap-0.5 pz:rounded-xl pz:bg-bar pz:p-1 pz:shadow-bar pz:backdrop-blur-[18px] pz:backdrop-saturate-[1.6]",
+        className,
+      )}
+      onPointerDown={(e) => e.stopPropagation()}
+      onWheel={(e) => e.stopPropagation()}
+    >
+      {children}
     </div>
   );
 }
@@ -900,20 +943,19 @@ function PageTab({
   onRename: (n: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
-  return (
+  const tab = (
     <button
       type="button"
       className={cn(
         "pz:inline-flex pz:h-7 pz:shrink-0 pz:items-center pz:gap-1.5 pz:whitespace-nowrap pz:rounded-lg pz:px-2.5",
         active
-          ? "pz:bg-card pz:text-foreground pz:shadow-[0_1px_2px_rgba(0,0,0,0.06)] pz:dark:bg-muted"
+          ? "pz:bg-raised pz:text-foreground pz:shadow-raised"
           : "pz:text-muted-foreground pz:hover:bg-accent pz:hover:text-foreground",
       )}
-      title={shortcut ? `${name} (⌥${shortcut})` : name}
       onClick={onClick}
       onDoubleClick={() => setEditing(true)}
     >
-      <Icon name={icon && icon in Icons ? icon : "page"} size={14} />
+      <Icon name={icon && icon in Icons ? icon : "board"} size={14} />
       {editing ? (
         <input
           autoFocus
@@ -935,6 +977,13 @@ function PageTab({
         <span className={cn(working && "pz-shimmer")}>{name}</span>
       )}
     </button>
+  );
+  // While renaming, a tip would sit over the field.
+  if (editing) return tab;
+  return (
+    <Tip label={name} keys={shortcut ? ["⌥", String(shortcut)] : undefined}>
+      {tab}
+    </Tip>
   );
 }
 

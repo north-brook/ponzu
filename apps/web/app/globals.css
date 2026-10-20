@@ -13,6 +13,9 @@
   --code-ink: #ededed;
   --code-rule: transparent;
   --chip: #f3f3f1;
+  /* The download page's step stages and the shadow under their windows. */
+  --stage: #fff3cf;
+  --stage-shadow: rgba(90, 60, 0, 0.22);
   --shot-shadow: rgba(40, 30, 0, 0.28);
   --rule: #efefed;
   --outline: #d6d6d4;
@@ -39,6 +42,8 @@
     --code-ink: #ededed;
     --code-rule: #262626;
     --chip: #161616;
+    --stage: #1a1606;
+    --stage-shadow: rgba(0, 0, 0, 0.6);
     --shot-shadow: rgba(0, 0, 0, 0.8);
     --rule: #1c1c1c;
     --outline: #333333;
@@ -65,6 +70,8 @@
   --color-code-ink: var(--code-ink);
   --color-code-rule: var(--code-rule);
   --color-chip: var(--chip);
+  --color-stage: var(--stage);
+  --color-stage-shadow: var(--stage-shadow);
   --color-rule: var(--rule);
   --color-outline: var(--outline);
   --color-cta: var(--cta);
