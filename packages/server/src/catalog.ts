@@ -150,10 +150,11 @@ export class LocalCatalog {
       const found = new Map<string, number>();
       const spotlight = useSpotlight === true ? await mdfind() : null;
       if (spotlight) for (const [k, t] of spotlight) found.set(k, t);
-      // Without Spotlight, walk the usual folders. Never the guarded ones: walking one
-      // would ask for access before there's any reason to.
+      // Without Spotlight, walk the usual folders. An empty answer counts as none: with
+      // indexing off, mdfind succeeds and finds nothing. Never the guarded folders: walking
+      // one would ask for access before there's any reason to.
       const dirs =
-        spotlight || useSpotlight === "roots"
+        spotlight?.size || useSpotlight === "roots"
           ? roots
           : [...roots, ...FALLBACK_DIRS.map((d) => join(homedir(), d))];
       // `${dir}/` so a guarded folder counts as inside itself.
