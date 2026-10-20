@@ -1,14 +1,22 @@
 import { existsSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
-import type { Browser, BrowserContext } from "playwright-core";
+import type { Browser, BrowserContext, Page } from "playwright-core";
 import { artboardPage } from "./document.ts";
 import {
-  LINT_SCRIPT,
-  type LintIssue,
-  type Renderer,
-  type RenderRequest,
-  type RenderResult,
+  type FrameDriver,
+  FULL_LINT_SCRIPT,
+  type MotionInfo,
+  prepareScript,
+  recordFrames,
+} from "./motion.ts";
+import type {
+  LintIssue,
+  RecordRequest,
+  RecordResult,
+  Renderer,
+  RenderRequest,
+  RenderResult,
 } from "./renderer.ts";
 
 export interface ChromiumOptions {
@@ -59,27 +67,13 @@ export class ChromiumRenderer implements Renderer {
     const own = scale !== 1 ? await browser.newContext({ deviceScaleFactor: scale }) : null;
     const page = await (own ?? context).newPage();
     try {
-      const width = cssPx(req.artboard.root.style.width) ?? 1440;
-      const height = cssPx(req.artboard.root.style.height) ?? 900;
-      await page.setViewportSize({
-        width: Math.ceil(width),
-        height: Math.min(Math.ceil(height), 16000),
-      });
-      if (req.colorScheme) await page.emulateMedia({ colorScheme: req.colorScheme });
-      const html = artboardPage(req.artboard, {
-        tokens: req.tokens,
-        assetBase: this.opts.assetBase,
-        colorScheme: req.colorScheme,
-      });
-      await page.setContent(html, { waitUntil: "load", timeout: 15000 });
-      await page.evaluate(() => document.fonts.ready).catch(() => {});
-      // Let CSS animations settle on their first frame consistently.
-      await page.evaluate(
-        () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))),
+      const { width, height } = await this.load(page, req);
+      const motion = await page.evaluate<MotionInfo | { error: string }>(
+        prepareScript({ interact: req.interact, at: req.at }),
       );
+      if ("error" in motion) throw new Error(motion.error);
 
-      const selector = req.nodeId ? `[data-id="${cssEscape(req.nodeId)}"]` : "[data-artboard]";
-      const el = await page.$(selector);
+      const el = await page.$(selectorFor(req.nodeId));
       if (!el) throw new Error(`Node ${req.nodeId} is not in this artboard.`);
       const box = (await el.boundingBox()) ?? { width, height, x: 0, y: 0 };
       const contentHeight = await page.evaluate(
@@ -92,7 +86,7 @@ export class ChromiumRenderer implements Renderer {
         });
 
       const issues: LintIssue[] = req.lint
-        ? ((await page.evaluate(LINT_SCRIPT)) as LintIssue[])
+        ? ((await page.evaluate(FULL_LINT_SCRIPT)) as LintIssue[])
         : [];
       if (req.format === "pdf") {
         const bytes = await page.pdf({
@@ -108,6 +102,7 @@ export class ChromiumRenderer implements Renderer {
           height: box.height,
           contentHeight,
           issues,
+          motion,
         };
       }
       const type = req.format === "jpeg" ? "jpeg" : "png";
@@ -123,11 +118,85 @@ export class ChromiumRenderer implements Renderer {
         height: box.height,
         contentHeight,
         issues,
+        motion,
       };
     } finally {
       await page.close().catch(() => {});
       if (own) await own.close().catch(() => {});
     }
+  }
+
+  async record(req: RecordRequest): Promise<RecordResult> {
+    const page = await (await this.ctx()).newPage();
+    try {
+      const { width, height } = await this.load(page, req);
+      // Tall artboards (height: fit-content) need the whole of themselves in the viewport.
+      const bottom = await page.evaluate(
+        () => document.querySelector("[data-artboard]")?.getBoundingClientRect().bottom ?? 0,
+      );
+      if (bottom > height)
+        await page.setViewportSize({
+          width: Math.ceil(width),
+          height: Math.min(Math.ceil(bottom), 16000),
+        });
+      const cdp = await page.context().newCDPSession(page);
+      // Transparent where the design is, like screenshots.
+      await cdp.send("Emulation.setDefaultBackgroundColorOverride", {
+        color: { r: 0, g: 0, b: 0, a: 0 },
+      });
+      const driver: FrameDriver = {
+        evaluate: (expression) => page.evaluate(expression),
+        async capture(box, scale) {
+          const shot = await cdp.send("Page.captureScreenshot", {
+            format: "png",
+            clip: { ...box, scale },
+            // Without it, wide captures repeat a tile at the bottom edge.
+            captureBeyondViewport: true,
+          });
+          return new Uint8Array(Buffer.from(shot.data, "base64"));
+        },
+        async show(html, width, height) {
+          await page.setViewportSize({ width: Math.ceil(width), height: Math.ceil(height) });
+          await show(page, html);
+          await page.evaluate(SHOWN);
+        },
+      };
+      const out = await recordFrames(driver, {
+        selector: selectorFor(req.nodeId),
+        interact: req.interact,
+        frames: req.frames,
+        from: req.from,
+        to: req.to,
+        scroll: req.scroll,
+        lint: req.lint,
+      });
+      await cdp.detach().catch(() => {});
+      return { ...out, mime: "image/png" };
+    } finally {
+      await page.close().catch(() => {});
+    }
+  }
+
+  /** Puts the artboard on the page, sized to it, with fonts loaded. */
+  private async load(
+    page: Page,
+    req: { artboard: RenderRequest["artboard"]; tokens: string; colorScheme?: "light" | "dark" },
+  ): Promise<{ width: number; height: number }> {
+    const width = cssPx(req.artboard.root.style.width) ?? 1440;
+    const height = cssPx(req.artboard.root.style.height) ?? 900;
+    await page.setViewportSize({
+      width: Math.ceil(width),
+      height: Math.min(Math.ceil(height), 16000),
+    });
+    if (req.colorScheme) await page.emulateMedia({ colorScheme: req.colorScheme });
+    const html = artboardPage(req.artboard, {
+      tokens: req.tokens,
+      assetBase: this.opts.assetBase,
+      colorScheme: req.colorScheme,
+    });
+    await show(page, html);
+    await page.evaluate(() => document.fonts.ready).catch(() => {});
+    return { width, height };
   }
 
   async close(): Promise<void> {
@@ -144,8 +213,25 @@ function cssPx(v: string | undefined): number | null {
   return m ? Number(m[1]) : null;
 }
 
-function cssEscape(s: string): string {
-  return s.replace(/["\\]/g, "\\$&");
+/**
+ * Navigates to the HTML rather than using setContent. Under Bun, an evaluate
+ * right after setContent sometimes never returned once a test suite had
+ * spawned child processes; a real navigation hasn't hung.
+ */
+async function show(page: Page, html: string): Promise<void> {
+  const url = "http://ponzu.render/";
+  await page.unroute(url).catch(() => {});
+  await page.route(url, (route) =>
+    route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: html }),
+  );
+  await page.goto(url, { waitUntil: "load", timeout: 15000 });
+}
+
+/** Every image decoded and painted, so a capture doesn't catch tiles mid-raster. */
+const SHOWN = `Promise.all([...document.images].map((i) => i.decode().catch(() => {}))).then(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))`;
+
+function selectorFor(nodeId?: string): string {
+  return nodeId ? `[data-id="${nodeId.replace(/["\\]/g, "\\$&")}"]` : "[data-artboard]";
 }
 
 export function findChromium(): string | null {

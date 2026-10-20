@@ -11,7 +11,7 @@ Workflow
 1. get_basic_info, then read_notes. If the person selected something, that's what "this" means.
 2. Before building something new, settle a direction: palette, type scale, spacing. Put it in tokens with set_tokens. Write the brief to a note.
 3. Build in small pieces. One write_html call per visual group: a header, then a row, then a card. The person watches the canvas as you work.
-4. screenshot after every few writes. Read the lint lines. Fix clipped text and overflow before moving on.
+4. screenshot after every few writes. Read the lint lines. Fix clipped text and overflow before moving on. When you add motion or states, record them (get_guide('motion')).
 5. When you change existing work, call start_working with the artboard ids first and finish_working at the end.
 
 HTML and CSS
@@ -21,7 +21,7 @@ HTML and CSS
 - Any Google Font named in font-family loads automatically. Name it exactly ("Inter Tight", "Instrument Serif").
 - Images: https URLs, data URLs, or files in assets/ referenced as assets/name.png.
 - SVG for icons and logos. Transforms work.
-- Animation is real: @keyframes, transitions, animation-timeline. Screenshots catch the first frame.
+- Animation is real: @keyframes, transitions, animation-timeline. Screenshots show the settled page; record shows the motion. get_guide('motion') has the details.
 - No scripts and no on* handlers; they're stripped. The result tells you what was removed.
 - Name meaningful layers with data-name="Hero". Names make get_tree readable and survive into implementation.
 
@@ -98,6 +98,30 @@ The .design folder is the spec. Read it directly from disk; don't screenshot and
 - notes/ has the brief and decisions. Read them before you start.
 - When something can't be built as drawn, leave a comment on the node explaining what you did instead.`,
 
+  motion: `# Motion and states
+
+Designs have no scripts, so motion is CSS (@keyframes, transitions, animation-timeline) and SVG <animate>. Ponzu pauses it and seeks to exact times, so frames are the same every time and cost no real waiting.
+
+See it
+- screenshot shows the settled page: every finite animation has finished. at: 0 shows the first frame; any other at shows that moment.
+- record returns one contact sheet of frames labeled by time, plus a list of what animates (node, keyframes, duration, delay, easing, iterations). Default: the whole load, or one cycle of a loop. Raise frames (12–16) for fast or detailed motion; use from/to to zoom into a stretch.
+- hover, focus or press (a node id) on either tool puts that node in the state first. record then shows the transition into it, starting from the settled page.
+- scroll (a scroll container's id) on record steps through its scroll range, for animation-timeline: scroll() and view(). The container needs a fixed height and overflow: auto.
+
+Write it
+- Put @keyframes and state rules in a <style> inside the artboard. Name a class on the element (class="cta") and target it: .cta:hover { … }.
+- Inline styles beat <style> rules. A state rule that changes a property the element also sets inline needs !important. Lint tells you when a state changes nothing.
+- Entrance animations that start hidden (opacity: 0) need animation-fill-mode: forwards (or both), or the element snaps back to hidden when they end. Lint catches this.
+- Put the transition on the base rule, not the :hover rule, so it eases both ways.
+- Keep entrances short: 200–600ms, staggered 50–100ms. Use ease-out for things arriving and ease-in for things leaving. Loops should be slow and subtle.
+- Animate transform and opacity. Animating width, height, top or margin moves the layout around it.
+
+Check
+1. screenshot: the settled page is what people see most. Lint it like any other.
+2. record the load: does each thing arrive in order, and nothing jump or overlap?
+3. record hover/focus/press on every interactive element you styled. A state without a transition snaps; that's fine for focus rings, rarely for hover.
+4. Read the motion list: delays and durations should add up to the rhythm you meant.`,
+
   mobile: `# Mobile
 
 - 390×844 artboards. Include a status bar (time, signal, battery) as a 54px row at the top; make it a duplicated component across screens.
@@ -115,6 +139,6 @@ export const SERVER_INSTRUCTIONS = `Ponzu is a design canvas you drive with HTML
 
 Start every session with get_basic_info, then read_notes, then get_guide('basics') if you haven't read it. When the person says "this", call get_selection.
 
-Build in small pieces, screenshot often, and fix what lint reports. Put design decisions in tokens and notes. Variations go next to the original, never over it. Use start_working / finish_working around edits to existing artboards.
+Build in small pieces, screenshot often, and fix what lint reports. record shows animation and hover states frame by frame. Put design decisions in tokens and notes. Variations go next to the original, never over it. Use start_working / finish_working around edits to existing artboards.
 
 To pair on feedback, run the collaborate loop: wait_for_activity → triage → start_working → edit + screenshot → set_comment_status resolved for what you did (reply only to answer a question, flag an ambiguity or explain what you couldn't do) → repeat. get_guide('collaborate') has details.`;

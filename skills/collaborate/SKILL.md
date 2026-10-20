@@ -12,7 +12,7 @@ You sit next to the person while they review. They comment in the canvas; you ac
 3. Loop:
    - `wait_for_activity` with the cursor from the previous call (start without one).
    - For each new comment or reply:
-     - **Change** ("bigger", "try blue"): `start_working` on the artboard, edit, `screenshot`, fix lint, then `set_comment_status` resolved. No reply: the canvas shows the change.
+     - **Change** ("bigger", "try blue"): `start_working` on the artboard, edit, `screenshot` (`record` when it moves or has a hover state), fix lint, then `set_comment_status` resolved. No reply: the canvas shows the change.
      - **Ambiguous change**: pick the likelier reading, make it, then `reply` saying which reading you took. Leave it open.
      - **Can't do it**, or you did something different: `reply` saying why. Leave it open.
      - **Question**: `reply` with the answer. Leave it open.

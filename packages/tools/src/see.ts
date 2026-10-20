@@ -1,10 +1,20 @@
 import { findArtboard, locate } from "@ponzu/core";
+import type { Interaction, MotionAnimation, MotionInfo } from "@ponzu/render";
 import { z } from "zod";
 import { fileArg, ToolError, type ToolImage, tool } from "./define.ts";
 
 function toBase64(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64");
 }
+
+const interactionArgs = {
+  hover: z.string().optional().describe("Node id to hover first. Its :hover rules apply."),
+  focus: z.string().optional().describe("Node id to focus first. :focus and :focus-visible apply."),
+  press: z
+    .string()
+    .optional()
+    .describe("Node id to press (pointer down) first. :active and :hover apply."),
+};
 
 export const seeTools = [
   tool({
@@ -13,7 +23,7 @@ export const seeTools = [
     group: "see",
     readOnly: true,
     description:
-      "Render an artboard or node and look at it. Comes with a lint pass that reports clipped text, overflow, zero-size and off-artboard elements, broken images and tiny text. Use scale 1 for layout checks and 2 only to read small text. Check your work after every few edits.",
+      "Render an artboard or node and look at it. Shows the settled state: every finite animation has finished, the way a person sees the page after it loads. Pass `at` for a moment mid-animation, and hover, focus or press to see a state. Comes with a lint pass that reports clipped text, overflow, zero-size and off-artboard elements, broken images, tiny text, missing @keyframes, elements left invisible after an animation, and states with no styles. Lists what animates. Use scale 1 for layout checks and 2 only to read small text. Check your work after every few edits; use record to watch motion.",
     input: {
       file: fileArg,
       id: z.string().describe("Artboard or node id."),
@@ -22,6 +32,14 @@ export const seeTools = [
         .enum(["light", "dark"])
         .optional()
         .describe("For tokens that use light-dark()."),
+      at: z
+        .number()
+        .min(0)
+        .optional()
+        .describe(
+          "Milliseconds into the animation timeline. Default: settled. 0 is the first frame. With hover, focus or press, counts from that moment.",
+        ),
+      ...interactionArgs,
     },
     async handler(args, { ws }) {
       if (!ws.renderer)
@@ -47,17 +65,118 @@ export const seeTools = [
         scale,
         lint: true,
         colorScheme: args.colorScheme,
+        at: args.at,
+        interact: interaction(args),
       });
       const image: ToolImage = { data: toBase64(out.bytes), mime: out.mime };
       const lines = [
-        `${nodeId ?? ab.id} rendered ${Math.round(out.width)}×${Math.round(out.height)} at ${scale}x.`,
+        `${nodeId ?? ab.id} rendered ${Math.round(out.width)}×${Math.round(out.height)} at ${scale}x${out.motion ? `, ${moment(out.motion, args.at)}` : ""}.`,
       ];
       if (!nodeId && ab.root.style.height === "fit-content")
         lines.push(`Content height: ${out.contentHeight}px.`);
       if (out.issues.length)
         lines.push(`Lint:\n${out.issues.map((i) => `  ${i.id}: ${i.message}`).join("\n")}`);
       else lines.push("Lint: clean.");
-      return { text: lines.join("\n"), images: [image], data: { issues: out.issues } };
+      if (out.motion?.animations.length) lines.push(motionText(out.motion));
+      return {
+        text: lines.join("\n"),
+        images: [image],
+        data: { issues: out.issues, motion: out.motion },
+      };
+    },
+  }),
+
+  tool({
+    name: "record",
+    title: "Record",
+    group: "see",
+    readOnly: true,
+    description:
+      "Watch an animation. Steps through the timeline frame by frame (paused and seeked, so frames are exact and repeatable) and returns one contact sheet with every frame labeled by its time, plus what animates: node, keyframes, duration, delay, easing, iterations. By default it covers the whole page load once, or one cycle of anything that loops. Use hover, focus or press to watch a transition into that state, and scroll to step through a scroll container for scroll-driven animation. Lint runs on the last frame. Use it after writing @keyframes, transitions or hover styles, and check easing, overlap and the end state.",
+    input: {
+      file: fileArg,
+      id: z.string().describe("Artboard or node id. Frames show this area."),
+      frames: z
+        .number()
+        .int()
+        .min(2)
+        .max(24)
+        .optional()
+        .describe("How many frames, evenly spaced. Default 9; 12–16 for fast or detailed motion."),
+      from: z.number().min(0).optional().describe("Start, in ms. Default 0."),
+      to: z
+        .number()
+        .min(0)
+        .max(60000)
+        .optional()
+        .describe(
+          "End, in ms. Default: when everything has settled, plus one cycle of any loop (capped at 10s).",
+        ),
+      scroll: z
+        .string()
+        .optional()
+        .describe(
+          "Id of a scroll container (fixed height, overflow: auto). Steps through its scroll range instead of time, for animation-timeline: scroll() or view().",
+        ),
+      ...interactionArgs,
+      colorScheme: z.enum(["light", "dark"]).optional(),
+    },
+    async handler(args, { ws }) {
+      if (!ws.renderer)
+        throw new ToolError(
+          "No renderer is available here, so recording is off. Ask the user to install Chrome.",
+        );
+      if (!ws.renderer.record)
+        throw new ToolError("This renderer can't record. Use screenshot with `at` instead.");
+      if (args.scroll && (args.from !== undefined || args.to !== undefined))
+        throw new ToolError("scroll steps through a scroll range, so from and to don't apply.");
+      if (args.from !== undefined && args.to !== undefined && args.to <= args.from)
+        throw new ToolError("to has to be after from.");
+      const { design } = await ws.resolve(args.file);
+      const doc = design.doc;
+      const ab = findArtboard(doc, args.id)?.artboard ?? locate(doc, args.id)?.artboard;
+      if (!ab) throw new ToolError(`No artboard or node ${args.id}.`);
+      const out = await ws.renderer.record({
+        artboard: ab,
+        tokens: doc.tokens,
+        nodeId: ab.id === args.id ? undefined : args.id,
+        colorScheme: args.colorScheme,
+        interact: interaction(args),
+        frames: args.frames,
+        from: args.from,
+        to: args.to,
+        scroll: args.scroll,
+        lint: true,
+      });
+      const m = out.motion;
+      const first = out.steps[0]?.label ?? "";
+      const last = out.steps[out.steps.length - 1]?.label ?? "";
+      const after = m.trigger === "load" ? "" : ` after ${m.trigger}`;
+      const lines = [
+        out.steps.length === 1
+          ? `${args.id}: 1 frame at ${first}${after}.`
+          : `${args.id}: ${out.steps.length} frames from ${first} to ${last}${after}, left to right, top to bottom.`,
+      ];
+      if (!args.scroll && !m.animations.some((a) => a.timeline === "time" && !a.paused))
+        lines.push(
+          m.trigger === "load"
+            ? "Nothing animates over time on load, so every frame is the same."
+            : `Nothing animates on ${m.trigger}: it has no transition or animation. A state change without one snaps.`,
+        );
+      if (args.scroll && !m.animations.some((a) => a.timeline !== "time"))
+        lines.push(
+          "No scroll-driven animations: frames only show the content scrolling. Use animation-timeline: scroll() or view() to tie motion to it.",
+        );
+      if (m.animations.length) lines.push(motionText(m));
+      const at = `Lint at the end${m.trigger === "load" ? "" : ` (${m.trigger})`}`;
+      if (out.issues.length)
+        lines.push(`${at}:\n${out.issues.map((i) => `  ${i.id}: ${i.message}`).join("\n")}`);
+      else lines.push(`${at}: clean.`);
+      return {
+        text: lines.join("\n"),
+        images: [{ data: toBase64(out.bytes), mime: out.mime }],
+        data: { steps: out.steps, motion: m, issues: out.issues },
+      };
     },
   }),
 
@@ -107,6 +226,57 @@ export const seeTools = [
     },
   }),
 ];
+
+function interaction(args: Interaction): Interaction | undefined {
+  const { hover, focus, press } = args;
+  return hover || focus || press ? { hover, focus, press } : undefined;
+}
+
+/** Where on the timeline a screenshot sits, in words. */
+function moment(m: MotionInfo, at: number | undefined): string {
+  const after = m.trigger === "load" ? "" : ` after ${m.trigger}`;
+  if (at === undefined) {
+    if (!m.animations.length) return m.trigger === "load" ? "static" : `${m.trigger}, no motion`;
+    return `settled at ${ms(m.settled)}${after}`;
+  }
+  const where = at < m.settled ? `of ${ms(m.settled)} to settle` : "settled";
+  return `at ${ms(at)}${after} (${where})`;
+}
+
+function motionText(m: MotionInfo): string {
+  const loops = m.loops ? `; loops, one cycle is ${ms(m.cycle)}` : "";
+  const head = `Motion (${m.trigger}): settles at ${ms(m.settled)}${loops}.`;
+  const rows = m.animations.slice(0, 20).map((a) => `  ${animationLine(a)}`);
+  if (m.animations.length > 20) rows.push(`  …and ${m.animations.length - 20} more`);
+  return [head, ...rows].join("\n");
+}
+
+function animationLine(a: MotionAnimation): string {
+  const who = `${a.id || "?"}${a.pseudo ?? ""}`;
+  if (a.kind === "video")
+    return `${who}: video ${a.name}, ${ms(a.duration)}${a.iterations === null ? ", loops" : ""}`;
+  const what =
+    a.kind === "transition"
+      ? `transition ${a.name}`
+      : a.kind === "smil"
+        ? `SVG <animate> ${a.name}`
+        : `${a.name}${a.properties.length ? ` (${a.properties.slice(0, 4).join(", ")})` : ""}`;
+  if (a.timeline !== "time") return `${who}: ${what} on a ${a.timeline} timeline, ${a.easing}`;
+  const parts = [
+    ms(a.duration),
+    a.delay ? `delay ${ms(a.delay)}` : "",
+    a.easing,
+    a.iterations === null ? "infinite" : a.iterations !== 1 ? `×${a.iterations}` : "",
+    a.direction !== "normal" ? a.direction : "",
+    a.end !== null ? `ends ${ms(a.end)}` : "",
+    a.paused ? "paused in CSS, never plays" : "",
+  ].filter(Boolean);
+  return `${who}: ${what} ${parts.join(", ")}`;
+}
+
+function ms(n: number): string {
+  return n >= 1000 && n % 100 === 0 ? `${n / 1000}s` : `${Math.round(n)}ms`;
+}
 
 function slug(s: string): string {
   return (
