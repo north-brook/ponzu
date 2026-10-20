@@ -398,6 +398,7 @@ svg{opacity:0;animation:in .3s ease-out .3s forwards}
 g polygon{fill:#FFD23F;animation:juice 1.8s ease-in-out infinite}
 @keyframes in{to{opacity:1}}
 @keyframes juice{0%{opacity:.15}18%,42%{opacity:1}64%,100%{opacity:.15}}
+@media (prefers-reduced-motion:reduce){svg{opacity:1;animation:none}g polygon{animation:none}}
 </style><svg width="44" height="44" viewBox="0 0 64 64"><defs><clipPath id="c"><path d="M19.57 9.61A24.62 24.62 0 0 0 54.39 44.43Z"/></clipPath></defs>
 <path fill="#F4B012" d="M12.96 3.00A33.96 33.96 0 0 0 61.00 51.04Z"/><path fill="#FFF3CF" d="M17.08 7.12A28.14 28.14 0 0 0 56.88 46.92Z"/>
 <g clip-path="url(#c)">${seg("34.49,29.51 -30,41.2 -60,-60 60,-60", 0)}${seg("34.49,29.51 -30,41.2 -60,120 22.85,93.4", 0.3)}${seg("34.49,29.51 22.85,93.4 120,120 120,-60", 0.6)}</g>

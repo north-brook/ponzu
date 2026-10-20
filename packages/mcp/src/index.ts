@@ -234,7 +234,12 @@ function originFrom(req: Request): PresenceOrigin | undefined {
   const via = req.headers.get(ORIGIN_HEADERS.via);
   const cwd = req.headers.get(ORIGIN_HEADERS.cwd);
   if (via !== "bridge") return undefined;
-  return { via, ...(cwd ? { cwd: decodeURIComponent(cwd) } : {}) };
+  try {
+    return { via, ...(cwd ? { cwd: decodeURIComponent(cwd) } : {}) };
+  } catch {
+    // A malformed header loses the folder, never the session.
+    return { via };
+  }
 }
 
 function once(fn: () => void): () => void {

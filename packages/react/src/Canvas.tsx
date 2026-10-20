@@ -81,7 +81,10 @@ export function Canvas({
     for (const p of state.presence) {
       if (p.file && p.file !== state.path) continue;
       for (const id of p.working)
-        map.set(id, [...(map.get(id) ?? []), { name: p.name, client: p.client, status: p.status }]);
+        map.set(id, [
+          ...(map.get(id) ?? []),
+          { id: p.id, name: p.name, client: p.client, status: p.status },
+        ]);
     }
     return map;
   }, [state.presence, state.path]);
@@ -702,6 +705,8 @@ export function Canvas({
 }
 
 interface Worker {
+  /** Presence id: two sessions of one agent share a name. */
+  id: string;
   name: string;
   client?: string;
   status?: string;
@@ -723,7 +728,7 @@ function WorkingStatus({ who, zoom }: { who: Worker[]; zoom: number }) {
       <span className="pz-shimmer pz:min-w-0 pz:truncate">{status}</span>
       <span className="pz:inline-flex pz:shrink-0" style={{ gap: 3 / zoom }}>
         {who.map((a) => (
-          <span key={a.name} className="pz:inline-grid pz:place-items-center pz:text-foreground">
+          <span key={a.id} className="pz:inline-grid pz:place-items-center pz:text-foreground">
             <AgentMark client={a.client} size={12 / zoom} />
           </span>
         ))}
