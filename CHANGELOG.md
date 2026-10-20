@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/north-brook/ponzu/compare/v1.6.0...v1.6.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* name the app Ponzu in its menus ([#11](https://github.com/north-brook/ponzu/issues/11)) ([0fff89d](https://github.com/north-brook/ponzu/commit/0fff89de160753a6aacc1cd086abcd8e92bae203))
+
 ## [1.6.0](https://github.com/north-brook/ponzu/compare/v1.5.0...v1.6.0) (2026-10-20)
 
 
