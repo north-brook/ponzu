@@ -22,17 +22,20 @@ bunx ponzu serve
 
 This opens the canvas in your browser and serves MCP at `http://127.0.0.1:7777/mcp`. Every `.design` folder under the current directory is opened.
 
-Or [download the Mac app](https://ponzu.design/download) (Apple silicon, signed and notarized; it updates itself). It opens `.design` folders like documents.
+Or [download the Mac app](https://ponzu.design/download) (Apple silicon, signed and notarized; it updates itself). It opens `.design` folders like documents, and on first launch it sets up Claude Code, Codex and Cursor for you. There's nothing else to install or keep running.
 
 ## Connect an agent
 
+The Mac app does this on launch. Without it:
+
 ```sh
-ponzu install claude   # Claude Code
-ponzu install codex    # Codex
-ponzu install cursor   # Cursor
+ponzu install          # every agent found: Claude Code, Codex, Cursor
+ponzu install claude   # or just one
 ```
 
-These register `http://127.0.0.1:7777/mcp` (streamable HTTP) with the agent. Any other MCP client works too, either over HTTP while `ponzu serve` runs or by launching `bunx ponzu mcp` over stdio.
+Agents get a command to launch, `ponzu mcp`, rather than a URL. It finds the running Ponzu (the app or `ponzu serve`) on whatever port it's on, so the agent shares your canvas. If the app is installed but not running, it starts it in the background, with no window until you open Ponzu. With neither, it runs the tools itself on the `.design` folders under the agent's project. With the app installed, the command runs from inside the app, so it updates with it.
+
+Any other MCP client can launch `ponzu mcp` over stdio, or use `http://127.0.0.1:7777/mcp` while Ponzu runs. `ponzu install claude --url <url>` registers a URL, e.g. a Ponzu on another machine.
 
 Then ask for something:
 
@@ -44,6 +47,7 @@ To pair on feedback, use the `collaborate` prompt (or say "run the Ponzu collabo
 
 ```sh
 ponzu serve --host 0.0.0.0     # or your tailnet IP
+ponzu install claude --url http://<that machine>:7777/mcp
 ```
 
 Ponzu has no auth. Bind beyond localhost only on networks you trust, such as a tailnet.

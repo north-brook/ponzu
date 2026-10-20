@@ -371,27 +371,40 @@ function Home({
 
         <section>
           <h2 className={heading}>Connect an agent</h2>
-          <p className={muted}>
-            Ponzu speaks MCP. Point your agent at this server and ask it to design something.
-          </p>
-          <div className="flex items-center gap-3 rounded-[10px] bg-card py-2.5 pr-2.5 pl-3.5">
-            <code className={cn(code, "flex-1 overflow-x-auto whitespace-nowrap")}>
-              claude mcp add --transport http ponzu {mcp}
-            </code>
-            <Button
-              onClick={() => {
-                navigator.clipboard.writeText(`claude mcp add --transport http ponzu ${mcp}`);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 1200);
-              }}
-            >
-              {copied ? "Copied" : "Copy"}
-            </Button>
-          </div>
-          <p className={muted}>
-            Codex: <code className={code}>codex mcp add ponzu --url {mcp}</code> · Cursor:{" "}
-            <code className={code}>ponzu install cursor</code>
-          </p>
+          {desktop ? (
+            <p className={muted}>
+              Claude Code, Codex and Cursor on this Mac are already set up, and they reach Ponzu
+              whether or not this window is open. Ask one to design something.
+            </p>
+          ) : (
+            <p className={muted}>
+              Ponzu speaks MCP. Run <code className={code}>ponzu install</code> to set up the agents
+              on this machine, or point any agent at this server.
+            </p>
+          )}
+          {/* The app already set agents up; registering a URL here would replace that. */}
+          {!desktop && (
+            <>
+              <div className="flex items-center gap-3 rounded-[10px] bg-card py-2.5 pr-2.5 pl-3.5">
+                <code className={cn(code, "flex-1 overflow-x-auto whitespace-nowrap")}>
+                  claude mcp add --transport http ponzu {mcp}
+                </code>
+                <Button
+                  onClick={() => {
+                    navigator.clipboard.writeText(`claude mcp add --transport http ponzu ${mcp}`);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1200);
+                  }}
+                >
+                  {copied ? "Copied" : "Copy"}
+                </Button>
+              </div>
+              <p className={muted}>
+                Codex: <code className={code}>codex mcp add ponzu --url {mcp}</code> · Cursor:{" "}
+                <code className={code}>ponzu install cursor</code>
+              </p>
+            </>
+          )}
         </section>
       </div>
     </div>

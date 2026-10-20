@@ -150,13 +150,32 @@ export async function serveStdio(ws: Workspace, opts: McpOptions = {}): Promise<
 /**
  * Streamable HTTP handler with sessions. Mount it at /mcp:
  *   const mcp = createHttpHandler(ws); Bun.serve({ fetch: (req) => mcp(req) })
+ * `mcp.idleMs()` is how long it's been since an agent last had a call running.
  */
 export function createHttpHandler(
   ws: Workspace,
   opts: McpOptions & { onClose?: (callerId: string) => void } = {},
 ) {
   const sessions = new Map<string, WebStandardStreamableHTTPServerTransport>();
-  return async (req: Request): Promise<Response> => {
+  let running = 0;
+  let lastActive = Date.now();
+  // POSTs carry calls; a GET is a listening stream that stays open while the agent idles.
+  const tracked = async (req: Request, res: Promise<Response>): Promise<Response> => {
+    if (req.method !== "POST") return res;
+    running++;
+    const done = once(() => {
+      running--;
+      lastActive = Date.now();
+    });
+    try {
+      return onBodyDone(await res, done);
+    } catch (err) {
+      done();
+      throw err;
+    }
+  };
+  const handle = (req: Request) => tracked(req, route(req));
+  const route = async (req: Request): Promise<Response> => {
     const sid = req.headers.get("mcp-session-id");
     const existing = sid ? sessions.get(sid) : undefined;
     if (existing) return existing.handleRequest(req);
@@ -190,4 +209,48 @@ export function createHttpHandler(
     await server.connect(transport);
     return transport.handleRequest(req);
   };
+  const idleMs = () => (running > 0 ? 0 : Date.now() - lastActive);
+  return Object.assign(handle, { idleMs });
+}
+
+function once(fn: () => void): () => void {
+  let called = false;
+  return () => {
+    if (!called) {
+      called = true;
+      fn();
+    }
+  };
+}
+
+/** Call `done` once the response body has been sent, or the client went away. */
+function onBodyDone(res: Response, done: () => void): Response {
+  if (!res.body) {
+    done();
+    return res;
+  }
+  const reader = res.body.getReader();
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { value, done: end } = await reader.read();
+        if (end) {
+          done();
+          controller.close();
+        } else controller.enqueue(value);
+      } catch (err) {
+        done();
+        controller.error(err);
+      }
+    },
+    cancel(reason) {
+      done();
+      return reader.cancel(reason);
+    },
+  });
+  return new Response(body, {
+    status: res.status,
+    statusText: res.statusText,
+    headers: res.headers,
+  });
 }
