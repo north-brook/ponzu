@@ -1,8 +1,9 @@
 import { getImageProps } from "next/image";
 import type { ReactNode } from "react";
+import { Footer, Nav } from "@/components/chrome";
 import { CopyChip } from "@/components/copy-chip";
 import { Wedge } from "@/components/icons";
-import { DOCS, DownloadButton, OutlineButton, REPO, SDK } from "@/components/links";
+import { DownloadButton, OutlineButton, REPO } from "@/components/links";
 
 const well =
   "m-0 flex-1 overflow-auto whitespace-pre rounded-[14px] px-5 py-[18px] font-mono text-[13px]/6";
@@ -21,24 +22,7 @@ const { props: light } = getImageProps({ ...screenshot, alt: "", src: "/app-ligh
 export default function Home() {
   return (
     <div className="mx-auto max-w-[1440px] px-16 max-[720px]:px-5">
-      <nav className="flex items-center justify-between py-[22px]">
-        <a
-          className="flex items-center gap-2.5 text-[19px] font-bold tracking-[-0.04em] text-ink"
-          href="/"
-        >
-          <Wedge size={28} />
-          Ponzu
-        </a>
-        <div className="flex items-center gap-7 text-sm text-muted">
-          <a className="hover:text-ink max-[720px]:hidden" href={DOCS}>
-            Docs
-          </a>
-          <a className="hover:text-ink max-[720px]:hidden" href={REPO}>
-            GitHub
-          </a>
-          <DownloadButton size="sm">Download</DownloadButton>
-        </div>
-      </nav>
+      <Nav />
 
       <header className="flex flex-col items-center gap-6 pt-[104px] pb-16 text-center max-[720px]:pt-14">
         <h1 className="m-0 max-w-[1040px] text-[clamp(48px,7vw,96px)] leading-[.96] font-medium tracking-[-0.04em] text-balance text-ink">
@@ -141,22 +125,7 @@ export default function Home() {
           <DownloadButton>Download for Mac</DownloadButton>
           <OutlineButton href={REPO}>View on GitHub</OutlineButton>
         </div>
-        <footer className="mt-24 flex w-full justify-between gap-4 border-t border-rule pt-7 pb-10 text-[13px] text-faint max-[720px]:flex-col">
-          <span>© 2026 Ponzu · MIT</span>
-          <span>
-            <a className="hover:text-ink" href={DOCS}>
-              Docs
-            </a>{" "}
-            ·{" "}
-            <a className="hover:text-ink" href={REPO}>
-              GitHub
-            </a>{" "}
-            ·{" "}
-            <a className="hover:text-ink" href={SDK}>
-              SDK
-            </a>
-          </span>
-        </footer>
+        <Footer />
       </section>
     </div>
   );
