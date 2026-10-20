@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.0](https://github.com/north-brook/ponzu/compare/v1.7.0...v1.8.0) (2026-10-20)
+
+
+### Features
+
+* **web:** a redesigned site with a live product demo and share cards ([19139a2](https://github.com/north-brook/ponzu/commit/19139a294ea0a08fc98fc4fff05d9d4f68f5c033))
+
 ## [1.7.0](https://github.com/north-brook/ponzu/compare/v1.6.2...v1.7.0) (2026-10-20)
 
 
