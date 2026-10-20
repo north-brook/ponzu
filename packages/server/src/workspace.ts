@@ -192,7 +192,7 @@ export class LocalWorkspace implements Workspace {
         this.events.emit(key, {
           type: "comment.replied",
           thread: t.id,
-          artboard: th?.artboardId ?? "",
+          artboard: th?.artboardId,
           text: t.text,
           author,
         });
@@ -201,7 +201,7 @@ export class LocalWorkspace implements Workspace {
         this.events.emit(key, {
           type: t.status === "resolved" ? "comment.resolved" : "comment.reopened",
           thread: t.id,
-          artboard: th?.artboardId ?? "",
+          artboard: th?.artboardId,
           author,
         });
       }

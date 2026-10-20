@@ -37,7 +37,8 @@ export type PonzuEvent =
       type: "comment.created";
       seq: number;
       thread: string;
-      artboard: string;
+      /** Absent for a comment on the open canvas. */
+      artboard?: string;
       text: string;
       author: string;
     }
@@ -45,12 +46,13 @@ export type PonzuEvent =
       type: "comment.replied";
       seq: number;
       thread: string;
-      artboard: string;
+      /** Absent for a comment on the open canvas. */
+      artboard?: string;
       text: string;
       author: string;
     }
-  | { type: "comment.resolved"; seq: number; thread: string; artboard: string; author: string }
-  | { type: "comment.reopened"; seq: number; thread: string; artboard: string; author: string }
+  | { type: "comment.resolved"; seq: number; thread: string; artboard?: string; author: string }
+  | { type: "comment.reopened"; seq: number; thread: string; artboard?: string; author: string }
   | { type: "selection"; seq: number; ids: string[]; page?: string }
   | { type: "file.changed"; seq: number; path: string; artboards: string[] }
   | { type: "presence"; seq: number; presence: Presence[] };
