@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/north-brook/ponzu/compare/v1.3.0...v1.4.0) (2026-10-20)
+
+
+### Features
+
+* comments anywhere on the canvas, a quieter comment card, and resolve-first agents ([#9](https://github.com/north-brook/ponzu/issues/9)) ([414d1d8](https://github.com/north-brook/ponzu/commit/414d1d823ef73fd6466dce2425389d1a35d2e7fd))
+
 ## [1.3.0](https://github.com/north-brook/ponzu/compare/v1.2.0...v1.3.0) (2026-10-20)
 
 
