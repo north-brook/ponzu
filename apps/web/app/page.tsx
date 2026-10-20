@@ -1,157 +1,185 @@
-import { getImageProps } from "next/image";
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { AGENTS, AgentMark } from "@/components/agent-marks";
 import { Footer, Nav } from "@/components/chrome";
-import { CopyChip } from "@/components/copy-chip";
+import { Code, Diff, Tree } from "@/components/code";
+import { CodeWell } from "@/components/code-well";
+import { CssTileVisual } from "@/components/css-tile";
+import { CommentThread } from "@/components/demo/comment-thread";
+import { ProductDemo } from "@/components/demo/product-demo";
 import { Wedge } from "@/components/icons";
-import { DownloadButton, OutlineButton, REPO } from "@/components/links";
+import { DownloadButton, GitHubButton } from "@/components/links";
+import { DESCRIPTION, share, TITLE } from "@/components/share";
+import { SLICE_CSS } from "@/components/slice-demo";
 
 const well =
-  "m-0 flex-1 overflow-auto whitespace-pre rounded-[14px] px-5 py-[18px] font-mono text-[13px]/6";
-const wellLight = `${well} bg-well text-text shadow-[inset_0_0_0_1px_var(--well-rule)]`;
-const wellDark = `${well} bg-code text-code-ink shadow-[inset_0_0_0_1px_var(--code-rule)]`;
+  "m-0 overflow-hidden whitespace-pre rounded-[14px] px-5 py-4 font-mono text-[12.5px]/[22px]";
+/** A code block: white on the light page, near-black on the dark one. */
+const codeWell = `${well} code bg-well text-text shadow-[inset_0_0_0_1px_var(--well-rule)]`;
 
-const screenshot = {
-  width: 2272,
-  height: 1420,
-  sizes: "(max-width: 1240px) 100vw, 1136px",
-  priority: true,
-};
-const { props: dark } = getImageProps({ ...screenshot, alt: "", src: "/app-dark.png" });
-const { props: light } = getImageProps({ ...screenshot, alt: "", src: "/app-light.png" });
+export const metadata: Metadata = share({
+  path: "/",
+  title: TITLE,
+  description: DESCRIPTION,
+  xDescription:
+    "Open source and local. Your agent designs in HTML and CSS; you steer with comments.",
+});
 
 export default function Home() {
   return (
     <div className="mx-auto max-w-[1440px] px-16 max-[720px]:px-5">
       <Nav />
 
-      <header className="flex flex-col items-center gap-6 pt-[104px] pb-16 text-center max-[720px]:pt-14">
-        <h1 className="m-0 max-w-[1040px] text-[clamp(48px,7vw,96px)] leading-[.96] font-medium tracking-[-0.04em] text-balance text-ink">
+      <header className="flex flex-col items-center gap-6 pt-14 pb-16 text-center md:pt-[104px]">
+        <h1 className="m-0 max-w-[1040px] text-5xl leading-[1.02] font-semibold tracking-[-0.035em] text-balance text-ink sm:text-6xl md:text-7xl lg:text-8xl">
           The design canvas for your coding agent.
         </h1>
-        <p className="m-0 max-w-[620px] text-[21px]/[31px] text-pretty text-muted">
+        <p className="m-0 max-w-[620px] text-lg/[29px] text-pretty text-muted md:text-[20px]/[32px]">
           Open source. Runs on your machine. Your agent designs in plain HTML and CSS, and you steer
           with comments.
         </p>
         <div className="flex flex-wrap justify-center gap-3 pt-3">
           <DownloadButton>Download for Mac</DownloadButton>
-          <CopyChip text="bunx ponzu serve" />
+          <GitHubButton>GitHub</GitHubButton>
         </div>
       </header>
 
-      <div className="mt-4 mb-28 flex items-center justify-center rounded-3xl bg-stage p-12 max-[720px]:rounded-2xl max-[720px]:p-3">
-        <picture className="block w-full max-w-[1136px]">
-          <source srcSet={dark.srcSet} media="(prefers-color-scheme: dark)" />
-          <img
-            {...light}
-            alt="Ponzu showing a plant shop's hero with three headline variations side by side and an open comment thread."
-            className="block h-auto w-full rounded-xl shadow-[0_30px_70px_var(--stage-shadow)]"
-          />
-        </picture>
+      <div className="dm-frame-host mt-4 mb-28">
+        <ProductDemo />
       </div>
 
-      <section className="flex flex-col gap-4 pb-[120px]">
-        <div className="flex gap-4 max-[1100px]:flex-col">
-          <Tile className="w-[520px] shrink-0 flex-col justify-between gap-10 max-[1100px]:w-auto">
-            <Head title="Free forever.">
-              Open source, MIT. No account, no seats, no limits. Bring the agent you already use.
-            </Head>
-            <div className="flex items-baseline gap-2.5">
-              <b className="text-[120px]/[100px] font-semibold tracking-[-0.06em] text-ink">$0</b>
-              <span className="text-base text-faint">forever</span>
-            </div>
-          </Tile>
-          <Tile className="flex-1 flex-col">
-            <Head title="Your files, your workflow.">
-              A .design is a folder on your disk. Commit it, sync it, or toss it, and embed the
-              canvas in your own product.
-            </Head>
-            <div className="flex gap-3 max-[720px]:flex-col">
-              <pre className={wellLight}>
-                {`~/code/fernwood
-├─ src/
-└─ design/fernwood.design
-   ├─ tokens.css
-   └─ pages/home/hero.html`}
-              </pre>
-              <pre className={wellDark}>
-                {`$ git diff design/
-- <h1>Plants that outlive
--   your lease.</h1>
-+ <h1>Outlive your
-+   lease.</h1>`}
-              </pre>
-            </div>
-          </Tile>
-        </div>
-        <Tile className="flex-row items-center gap-14 max-[1100px]:flex-col max-[1100px]:items-stretch">
-          <Head title="Just HTML and CSS." className="w-[420px] shrink-0 max-[1100px]:w-auto">
-            If a browser can do it, so can your design: grid, gradients, variable fonts, video, real
-            animation. Nothing is approximated.
-          </Head>
-          <div className="flex min-w-0 flex-1 gap-3 max-[720px]:flex-col">
+      {/*
+        Two rows, each a wide tile beside a narrow one, flipped on the second row. Tiles in a row
+        share a height, so each pair holds proofs of about the same size: a thread beside a diff,
+        a grid of agents beside a stylesheet.
+      */}
+      <section className="grid gap-4 pb-[120px] md:grid-cols-12">
+        <Tile
+          className="md:col-span-12 lg:col-span-7"
+          title="Steer with comments."
+          body="Pin feedback anywhere on the canvas. Your agent makes the change and resolves it, and answers when you ask a question."
+        >
+          <CommentThread />
+        </Tile>
+
+        <Tile
+          className="md:col-span-6 lg:col-span-5"
+          title="Designs you can commit."
+          body="Every artboard is an HTML file. Review changes in git, next to your code."
+        >
+          <div className="flex flex-col gap-2">
+            <CodeWell className={codeWell}>
+              <Tree>{`fernwood.design/
+├─ tokens.css
+└─ pages/landing/sunroom.html`}</Tree>
+            </CodeWell>
+            <CodeWell className={codeWell}>
+              <Diff
+                lang="html"
+                lines={[
+                  "  <header>",
+                  '+   <a class="drop">',
+                  "+     The Autumn Drop",
+                  "+   </a>",
+                  "    <h1>Plants that…",
+                ]}
+              />
+            </CodeWell>
+          </div>
+        </Tile>
+
+        <Tile
+          className="md:col-span-6 lg:col-span-5"
+          title="Bring your agent."
+          body="Claude Code, Codex, Cursor, Gemini, Grok, Conductor and any MCP client. No account."
+        >
+          <AgentsVisual />
+        </Tile>
+
+        <Tile
+          className="md:col-span-12 lg:col-span-7"
+          title="Just HTML and CSS."
+          body="Grid, gradients, variable fonts, video and animation: the browser's own building blocks."
+        >
+          <style>{SLICE_CSS}</style>
+          <div className="grid flex-1 gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
             <div
-              aria-hidden="true"
-              className="flex h-40 min-w-0 flex-1 items-center justify-center gap-5 rounded-[14px] bg-well p-5 shadow-[inset_0_0_0_1px_var(--well-rule)]"
+              className={`${codeWell} flex min-h-[160px] items-center justify-center overflow-hidden py-0`}
             >
-              {[0, 0.12, 0.24, 0.36].map((delay) => (
-                <i
-                  key={delay}
-                  style={{ animationDelay: `${delay}s` }}
-                  className="block size-12 flex-[0_0_48px] rounded-[15px] bg-m2 animate-pop motion-reduce:animate-none"
-                />
-              ))}
+              <CssTileVisual />
             </div>
-            <pre
-              className={`${wellDark} min-w-0 flex-[0_1_340px] text-xs/[21px] max-[1100px]:flex-none`}
-            >
-              {`.card {
-  animation: pop 360ms
-    cubic-bezier(.3,1.6,.5,1);
-}
-@keyframes pop {
-  from { scale: .7; opacity: .3 }
-}`}
-            </pre>
+            <CodeWell className={`${codeWell} px-4 text-[11.5px]/[19px]`}>
+              <Code code={SLICE_CSS} lang="css" />
+            </CodeWell>
           </div>
         </Tile>
       </section>
 
       <section className="flex flex-col items-center gap-7 pt-10 pb-14 text-center">
         <Wedge size={72} />
-        <h2 className="m-0 text-[clamp(36px,5vw,56px)] leading-[1.04] font-medium tracking-[-0.04em] text-ink">
+        <h2 className="m-0 text-4xl leading-[1.1] font-semibold tracking-[-0.03em] text-ink md:text-5xl lg:text-[56px]">
           Give your agent a canvas.
         </h2>
         <div className="flex flex-wrap justify-center gap-3 pt-3">
           <DownloadButton>Download for Mac</DownloadButton>
-          <OutlineButton href={REPO}>View on GitHub</OutlineButton>
+          <GitHubButton>View on GitHub</GitHubButton>
         </div>
-        <Footer />
       </section>
+
+      <Footer />
     </div>
   );
 }
 
-function Tile({ className = "", children }: { className?: string; children: ReactNode }) {
-  return (
-    <div className={`flex gap-7 rounded-3xl bg-tile p-10 max-[720px]:p-7 ${className}`}>
-      {children}
-    </div>
-  );
-}
-
-function Head({
+/** A bento cell: a short claim, then its proof, which grows to fill the rest of the tile. */
+function Tile({
   title,
+  body,
   className = "",
   children,
 }: {
   title: string;
+  body: string;
   className?: string;
   children: ReactNode;
 }) {
   return (
-    <div className={`flex flex-col gap-3 ${className}`}>
-      <h2 className="m-0 text-4xl/10 font-medium tracking-[-0.03em] text-ink">{title}</h2>
-      <p className="m-0 max-w-[520px] text-[17px]/[26px] text-pretty text-muted">{children}</p>
+    <div className={`flex min-w-0 flex-col gap-7 rounded-3xl bg-tile p-6 sm:p-8 ${className}`}>
+      <div className="flex max-w-[480px] flex-col gap-2">
+        <h2 className="m-0 text-[26px]/[32px] font-semibold tracking-[-0.022em] text-ink md:text-[28px]/[34px]">
+          {title}
+        </h2>
+        <p className="m-0 text-base/[26px] text-pretty text-muted">{body}</p>
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col justify-center">{children}</div>
+    </div>
+  );
+}
+
+/** The agents Ponzu works with, and the commands that connect the ones it installs into. */
+function AgentsVisual() {
+  return (
+    <div className="flex flex-col gap-3">
+      <ul className="m-0 grid list-none grid-cols-4 gap-2 p-0">
+        {AGENTS.map((agent) => (
+          <li
+            key={agent.id}
+            title={agent.name}
+            className="grid aspect-square place-items-center rounded-[14px] bg-well text-ink shadow-[inset_0_0_0_1px_var(--well-rule)]"
+          >
+            <AgentMark agent={agent.id} size={28} />
+            <span className="sr-only">{agent.name}</span>
+          </li>
+        ))}
+      </ul>
+      <CodeWell className={`${codeWell} py-3.5 text-[12.5px]/[22px]`}>
+        {["claude", "codex", "cursor"].map((agent) => (
+          <span key={agent} className="block">
+            <span className="text-[var(--sh-comment)]">$ </span>
+            <span className="text-[var(--sh-fn)]">ponzu</span> install {agent}
+          </span>
+        ))}
+      </CodeWell>
     </div>
   );
 }
