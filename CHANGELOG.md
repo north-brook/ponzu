@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/north-brook/ponzu/compare/v1.0.0...v1.1.0) (2026-10-20)
+
+
+### Features
+
+* higher-contrast logo in dark mode and a dark app icon ([#3](https://github.com/north-brook/ponzu/issues/3)) ([eaba7b8](https://github.com/north-brook/ponzu/commit/eaba7b89a75cfe9181ee1296c146ab1702320379))
+
 ## 1.0.0 (2026-10-20)
 
 
