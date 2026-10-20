@@ -115,7 +115,7 @@ export const converseTools = [
     title: "Reply",
     group: "converse",
     description:
-      "Reply in a comment thread, in one or two sentences. Only when the person needs to read it: to answer a question, give a recommendation, say how you read an ambiguous comment, or explain what you couldn't do. For a change you simply made, don't reply; resolve it with set_comment_status. resolve: true closes the thread after replying. Leave questions and decisions open for the person.",
+      "Reply in a comment thread, in one or two sentences. Only when the person needs to read it: to answer a question, give a recommendation, say how you read an ambiguous comment, or explain what you couldn't do. For a change you simply made, don't reply; resolve it with set_comment_status. Leave a thread you replied to open: resolved threads leave the canvas, so resolve: true hides your reply from the person.",
     input: {
       file: fileArg,
       thread: z.string(),

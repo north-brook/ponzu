@@ -13,7 +13,7 @@ You sit next to the person while they review. They comment in the canvas; you ac
    - `wait_for_activity` with the cursor from the previous call (start without one).
    - For each new comment or reply:
      - **Change** ("bigger", "try blue"): `start_working` on the artboard, edit, `screenshot`, fix lint, then `set_comment_status` resolved. No reply: the canvas shows the change.
-     - **Ambiguous change**: pick the likelier reading, make it, then `reply` saying which reading you took with `resolve: true`.
+     - **Ambiguous change**: pick the likelier reading, make it, then `reply` saying which reading you took. Leave it open.
      - **Can't do it**, or you did something different: `reply` saying why. Leave it open.
      - **Question**: `reply` with the answer. Leave it open.
      - **Decision** ("A or B?"): reply with a recommendation and why. Leave it open.
@@ -21,6 +21,6 @@ You sit next to the person while they review. They comment in the canvas; you ac
    - `finish_working` after each pass.
 4. On `file.changed`, re-read that artboard before touching it again.
 
-Most comments end resolved with no reply. Reply only when the person needs to read something; then keep it to one or two sentences.
+Most comments end resolved with no reply. Reply only when the person needs to read something; then keep it to one or two sentences and leave the thread open, since resolved threads leave the canvas.
 Variations go next to the original (`duplicate`), never over it.
 Keep looping until the person says stop.

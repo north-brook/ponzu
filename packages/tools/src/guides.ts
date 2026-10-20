@@ -71,8 +71,9 @@ Use this when the person wants you to sit with them while they review: they leav
 
 Reply only when the person needs to read something:
 - they asked a question, or asked for your recommendation;
-- the comment was ambiguous and you picked one reading (say which, in a sentence, and resolve);
-- you couldn't do it, or did something different from what they asked (say why, leave it open).
+- the comment was ambiguous and you picked one reading (say which, in a sentence);
+- you couldn't do it, or did something different from what they asked (say why).
+Leave a thread you replied to open: resolved threads leave the canvas, so a reply on one is never seen. The person resolves it once they've read it.
 Replies are one or two sentences. A reply that just says "Done" or restates the change is noise.
 
 file.changed means someone edited the HTML outside Ponzu (an editor, another agent). Re-read before editing that artboard.
