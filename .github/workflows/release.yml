@@ -1,31 +1,167 @@
 name: Release
+
+# Release Please keeps one open release PR on main ("chore(main): release
+# X.Y.Z"). Every push to main enables auto-merge on it, so once CI passes it
+# lands, and the next run of this workflow tags the version and opens a
+# draft GitHub release with its notes. The mac job builds, signs and
+# notarizes Ponzu into that draft, launches the exact signed app, and only
+# then publishes it. electron-updater and the site's download link only see
+# published releases, so a failed build never reaches anyone. A fix or
+# feature merged to main reaches installed apps without anyone touching a
+# release PR.
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+  # Rebuild an existing release, e.g. after a build-only fix.
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to rebuild (vX.Y.Z)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
+  release-please:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      released: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - name: Require the release token
+        run: '[ -n "$RELEASE_TOKEN" ] || { echo "Set the RELEASE_TOKEN repository secret (see CONTRIBUTING.md#releases)"; exit 1; }'
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+      - uses: googleapis/release-please-action@v5
+        id: release
+        with:
+          # A PAT, not GITHUB_TOKEN: CI must run on the release PR, which the
+          # ruleset's required checks gate.
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+  # Auto-merge is idempotent: an updated release PR keeps it and merges once
+  # its new head is green.
+  auto-merge:
+    name: Auto-merge the release PR
+    needs: release-please
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Enable squash auto-merge on the open release PR
+        run: |
+          pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+            --label "autorelease: pending" \
+            --json number,autoMergeRequest --jq '.[0]')
+          if [ -z "$pr" ] || [ "$pr" = "null" ]; then
+            echo "no open release PR"; exit 0
+          fi
+          number=$(jq -r .number <<<"$pr")
+          if [ "$(jq -r .autoMergeRequest <<<"$pr")" != "null" ]; then
+            echo "auto-merge already enabled on #$number"; exit 0
+          fi
+          gh pr merge "$number" --repo "$GITHUB_REPOSITORY" --squash --auto
+          echo "auto-merge enabled on #$number"
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+
   mac:
+    name: Desktop macOS arm64
+    needs: release-please
+    if: ${{ !cancelled() && (needs.release-please.outputs.released == 'true' || startsWith(inputs.tag, 'v')) }}
     runs-on: macos-15
+    # Holds the signing certificate and notarization key; only main may use it.
+    environment: release-signing
+    timeout-minutes: 45
     permissions:
       contents: write
+    env:
+      TAG: ${{ inputs.tag || needs.release-please.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+          persist-credentials: false
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
       - run: bun install --frozen-lockfile
-      - name: Build
+      - name: Write the App Store Connect API key
+        run: |
+          echo "$APPLE_API_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
+          echo "APPLE_API_KEY=$RUNNER_TEMP/AuthKey.p8" >> "$GITHUB_ENV"
+        env:
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+      - name: Build, sign, notarize and upload into the draft release
+        run: |
+          bun run --filter @ponzu/studio build
+          bun run build
+          bunx electron-builder --mac --arm64 --publish always
         working-directory: apps/desktop
         env:
-          # Signing and notarization run when these secrets exist; otherwise the build is unsigned.
-          CSC_LINK: ${{ secrets.MAC_CERTIFICATE_P12 }}
-          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.MAC_CERTIFICATE_P12 != '' }}
-        run: bun run dist
-      - uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
+          # electron-builder imports the base64 p12 into a temporary keychain itself.
+          CSC_LINK: ${{ secrets.APPLE_CERTIFICATE }}
+          CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          CSC_NAME: Northbrook PBC (R9352YFQL4)
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          GH_TOKEN: ${{ github.token }}
+      - name: Signed, notarized and stapled
+        # The app inside the DMG carries the notarization ticket; the DMG
+        # itself is only a container and is not notarized.
+        run: |
+          codesign --verify --deep --strict --verbose=2 out/mac-arm64/Ponzu.app
+          codesign --verify --strict --verbose=2 out/mac-arm64/Ponzu.app/Contents/Resources/server/ponzu
+          spctl --assess --type execute --verbose=2 out/mac-arm64/Ponzu.app
+          xcrun stapler validate out/mac-arm64/Ponzu.app
+        working-directory: apps/desktop
+      - name: The signed app starts its server and paints the studio
+        # The exact bundle in the draft, before the draft goes public. A broken
+        # main process hangs on Electron's error dialog and trips the alarm;
+        # a server or renderer failure exits 1. See src/smoke.ts. macOS ships
+        # no `timeout`; perl's alarm survives exec.
+        # ELECTRON_RUN_AS_NODE, if a host sets it, would make the app plain Node.
+        run: env -u ELECTRON_RUN_AS_NODE PONZU_SMOKE=1 perl -e 'alarm shift; exec @ARGV' 120 out/mac-arm64/Ponzu.app/Contents/MacOS/Ponzu
+        working-directory: apps/desktop
+      # Release Please opened the draft and electron-builder uploaded into it.
+      # Upload anything missing, check every file latest-mac.yml names is
+      # present, then publish. electron-updater and the site's download link
+      # only see published releases.
+      - name: Publish the release
+        run: |
+          id=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=30" \
+            --jq "[.[] | select(.tag_name == \"$TAG\")][0].id")
+          [ -n "$id" ] && [ "$id" != "null" ] || { echo "no release for $TAG"; exit 1; }
+          have=$(gh api "repos/$GITHUB_REPOSITORY/releases/$id/assets?per_page=100" --jq '.[].name')
+          for file in out/*.dmg out/*.zip out/*.blockmap out/latest-mac.yml; do
+            name=$(basename "$file")
+            if ! grep -qx "$name" <<<"$have"; then
+              echo "uploading missing $name"
+              gh release upload "$TAG" "$file" --repo "$GITHUB_REPOSITORY"
+            fi
+          done
+          have=$(gh api "repos/$GITHUB_REPOSITORY/releases/$id/assets?per_page=100" --jq '.[].name')
+          for name in Ponzu-arm64.dmg $(sed -n 's/^ *- url: //p; s/^path: //p' out/latest-mac.yml | sort -u); do
+            grep -qx "$name" <<<"$have" || { echo "the release lacks $name"; exit 1; }
+          done
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$id" \
+            -F draft=false -f make_latest=true --jq '"published \(.tag_name) \(.html_url)"'
+        working-directory: apps/desktop
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - uses: actions/upload-artifact@v4
         with:
-          files: |
+          name: macos-arm64
+          path: |
             apps/desktop/out/*.dmg
             apps/desktop/out/*.zip
+            apps/desktop/out/latest-mac.yml
+          if-no-files-found: error
+          retention-days: 30

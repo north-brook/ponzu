@@ -7,6 +7,8 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, shell } from "electron";
+import { smoke, watchSmoke } from "./smoke";
+import { checkForUpdatesNow, installUpdater } from "./updater";
 
 const isDev = !app.isPackaged;
 /** The built main/preload live in <app>/dist, in development and inside the bundle. */
@@ -158,7 +160,8 @@ function startServer(renderEndpoint: string, port: number): Promise<string> {
       cmd,
       [...args, "serve", "--no-open", "--port", String(port), "--studio", paths.studio],
       {
-        cwd: app.getPath("documents"),
+        // CI runners have no Documents folder.
+        cwd: existsSync(app.getPath("documents")) ? app.getPath("documents") : app.getPath("home"),
         env: {
           ...process.env,
           PONZU_DESKTOP: "1",
@@ -206,7 +209,9 @@ function createWindow(url: string) {
     show: false,
     webPreferences: { preload: paths.preload, contextIsolation: true, sandbox: true },
   });
-  win.once("ready-to-show", () => win.show());
+  // The smoke check only needs the window painted, never on screen.
+  win.once("ready-to-show", () => !smoke && win.show());
+  watchSmoke(win, () => server?.kill("SIGTERM"));
   win.webContents.setWindowOpenHandler(({ url: target }) => {
     void shell.openExternal(target);
     return { action: "deny" };
@@ -256,7 +261,25 @@ ipcMain.on("ponzu:reveal", (_e, path: string) => shell.showItemInFolder(path));
 
 function buildMenu() {
   const template: Electron.MenuItemConstructorOptions[] = [
-    ...(process.platform === "darwin" ? [{ role: "appMenu" as const }] : []),
+    ...(process.platform === "darwin"
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              { role: "about" as const },
+              { label: "Check for Updates…", click: () => void checkForUpdatesNow() },
+              { type: "separator" as const },
+              { role: "services" as const },
+              { type: "separator" as const },
+              { role: "hide" as const },
+              { role: "hideOthers" as const },
+              { role: "unhide" as const },
+              { type: "separator" as const },
+              { role: "quit" as const },
+            ],
+          },
+        ]
+      : []),
     {
       label: "File",
       submenu: [
@@ -334,11 +357,17 @@ if (!app.requestSingleInstanceLock()) {
       // A stable port lets agents keep one MCP URL; fall back if it's taken.
       serverUrl = await startServer(render, 7777).catch(() => startServer(render, 0));
     } catch (err) {
+      if (smoke) {
+        console.error(`smoke: server failed to start (${err})`);
+        app.exit(1);
+        return;
+      }
       dialog.showErrorBox("Ponzu couldn't start", String(err));
       app.quit();
       return;
     }
     mainWindow = createWindow(serverUrl);
+    if (!smoke) installUpdater();
     const fromArgv = process.argv.find((a) => a.endsWith(".design"));
     if (fromArgv) pendingOpens.push(fromArgv);
     for (const p of pendingOpens.splice(0)) await openDesign(p);

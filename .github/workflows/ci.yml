@@ -1,17 +1,73 @@
 name: CI
+
 on:
   push:
     branches: [main]
   pull_request:
+
+permissions:
+  contents: read
+
+# Merging into main requires every job here (ruleset "Protect main").
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # A newer push to a pull request supersedes the old head; main keeps every run.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  test:
+  commits:
+    name: Conventional commit messages
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - name: The PR title becomes the squash commit, which Release Please reads
+        if: github.event_name == 'pull_request'
+        run: bunx commitlint <<<"$TITLE"
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+
+  test:
+    name: Check, typecheck, test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
       - run: bun install --frozen-lockfile
       - run: bunx biome check .
       - run: bunx tsc -p tsconfig.json --noEmit
+      - run: bunx tsc -p apps/desktop/tsconfig.json --noEmit
       - run: bun test
       - run: bun run --filter @ponzu/studio build
       - run: bun run --filter @ponzu/web build
+
+  desktop:
+    name: Desktop package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+      - name: Unsigned, unpublished package
+        run: bun run package:dir
+        working-directory: apps/desktop
+      - name: The packaged app starts its server and paints the studio
+        # A main process that fails to load hangs on Electron's error dialog
+        # and trips the timeout; a server or renderer failure exits 1. See
+        # src/smoke.ts. The release workflow runs the same check on the
+        # signed Mac build before publishing it.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb
+          PONZU_SMOKE=1 timeout 120 xvfb-run -a out/linux-unpacked/ponzu --no-sandbox
+        working-directory: apps/desktop

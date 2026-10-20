@@ -22,7 +22,7 @@ bunx ponzu serve
 
 This opens the canvas in your browser and serves MCP at `http://127.0.0.1:7777/mcp`. Every `.design` folder under the current directory is opened.
 
-Or download the Mac app from [Releases](https://github.com/north-brook/ponzu/releases/latest). It opens `.design` folders like documents.
+Or [download the Mac app](https://github.com/north-brook/ponzu/releases/latest/download/Ponzu-arm64.dmg) (Apple silicon, signed and notarized; it updates itself). It opens `.design` folders like documents.
 
 ## Connect an agent
 
@@ -136,6 +136,8 @@ bun apps/cli/src/index.ts serve examples/fernwood.design
 For studio work, run `bun apps/cli/src/index.ts serve examples/fernwood.design --dev` and `bun run --filter @ponzu/studio dev` side by side.
 
 Desktop: `cd apps/desktop && bun run start`.
+
+PR titles are Conventional Commits, and merging a `feat` or `fix` ships a signed release on its own. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

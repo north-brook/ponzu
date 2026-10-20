@@ -8,7 +8,8 @@
   "scripts": {
     "build": "bun build src/main.ts --target node --format cjs --outfile dist/main.cjs --external electron && bun build src/preload.ts --target node --format cjs --outfile dist/preload.cjs --external electron && bun build ../cli/src/index.ts --compile --external playwright-core --external @ponzu/render/chromium --outfile dist/server/ponzu",
     "start": "bun run build && ./run-dev.sh",
-    "dist": "bun run build && bun run --filter @ponzu/studio build && electron-builder --mac --publish never"
+    "dist": "bun run build && bun run --filter @ponzu/studio build && electron-builder --mac --arm64 --publish never",
+    "package:dir": "bun run build && bun run --filter @ponzu/studio build && electron-builder --dir --publish never"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
@@ -48,8 +49,18 @@
     "mac": {
       "category": "public.app-category.graphics-design",
       "target": [
-        "dmg",
-        "zip"
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
       ],
       "icon": "build/icon.icns",
       "extendInfo": {
@@ -68,7 +79,32 @@
             }
           }
         ]
-      }
+      },
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true,
+      "artifactName": "${productName}-${version}-${arch}-mac.${ext}"
+    },
+    "dmg": {
+      "artifactName": "${productName}-${arch}.${ext}"
+    },
+    "npmRebuild": false,
+    "publish": {
+      "provider": "github",
+      "owner": "north-brook",
+      "repo": "ponzu",
+      "releaseType": "draft"
+    },
+    "linux": {
+      "executableName": "ponzu",
+      "target": [
+        "dir"
+      ]
     }
+  },
+  "dependencies": {
+    "electron-updater": "6.8.9"
   }
 }

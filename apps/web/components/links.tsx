@@ -4,6 +4,8 @@ import { Apple } from "./icons";
 export const REPO = "https://github.com/north-brook/ponzu";
 export const DOCS = `${REPO}#readme`;
 export const RELEASES = `${REPO}/releases/latest`;
+/** The newest signed build. The release workflow keeps this file name across versions. */
+export const DOWNLOAD = `${RELEASES}/download/Ponzu-arm64.dmg`;
 export const SDK = `${REPO}/tree/main/packages/react`;
 
 const btn =
@@ -19,7 +21,7 @@ export function DownloadButton({
   const sizing =
     size === "sm" ? "gap-[7px] py-[9px] pr-4 pl-3.5 text-sm" : "py-[15px] pr-6 pl-5 text-base";
   return (
-    <a className={`${btn} ${sizing} bg-cta text-cta-ink`} href={RELEASES}>
+    <a className={`${btn} ${sizing} bg-cta text-cta-ink`} href={DOWNLOAD}>
       <Apple />
       {children}
     </a>
