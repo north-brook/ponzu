@@ -1,374 +1,78 @@
-html,
-body,
-#root {
-  margin: 0;
-  height: 100%;
-}
+@import "tailwindcss";
+@import "tw-animate-css";
 
-body {
-  font-family: "Inter Tight", "Inter", system-ui, -apple-system, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  overflow: hidden;
-}
+/* The studio sets data-theme on <html>, so dialogs portaled to <body> follow it too. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-.studio {
-  --bar: #e9e9e6;
-  --bar-ink: #0e0e0e;
-  --bar-muted: #6b6b6b;
-  --tab-on: #f3f3f1;
-  --hover: rgba(0, 0, 0, 0.05);
-  --surface: #ffffff;
-  --rule: #e3e3e0;
+:root {
+  --background: #e9e9e6;
+  --foreground: #0e0e0e;
+  --muted-foreground: #6b6b6b;
+  --secondary: #f3f3f1;
+  --accent: rgba(0, 0, 0, 0.05);
+  --card: #ffffff;
+  --border: #e3e3e0;
   --canvas: #f3f3f1;
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  background: var(--bar);
-  color: var(--bar-ink);
-  font-size: 13px;
+  --ring: #1f6bff;
 }
 
-.studio-dark {
-  --bar: #0a0a0a;
-  --bar-ink: #f2f2f2;
-  --bar-muted: #8a8a8a;
-  --tab-on: #1a1a1a;
-  --hover: rgba(255, 255, 255, 0.06);
-  --surface: #161616;
-  --rule: #262626;
+[data-theme="dark"] {
+  --background: #0a0a0a;
+  --foreground: #f2f2f2;
+  --muted-foreground: #8a8a8a;
+  --secondary: #1a1a1a;
+  --accent: rgba(255, 255, 255, 0.06);
+  --card: #161616;
+  --border: #262626;
   --canvas: #121212;
+  --ring: #4c8dff;
   color-scheme: dark;
 }
 
-:where(.studio) button {
-  font: inherit;
-  color: inherit;
-  background: none;
-  border: 0;
-  padding: 0;
-  cursor: pointer;
+@theme inline {
+  --font-sans: "Inter Tight", "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  /* The active tab and the home button. */
+  --color-secondary: var(--secondary);
+  --color-accent: var(--accent);
+  --color-card: var(--card);
+  --color-popover: var(--card);
+  --color-popover-foreground: var(--foreground);
+  --color-border: var(--border);
+  --color-input: var(--border);
+  --color-canvas: var(--canvas);
+  --color-primary: var(--foreground);
+  --color-primary-foreground: var(--canvas);
+  --color-ring: var(--ring);
+  --color-online: #30a46c;
+  --color-busy: #f4b012;
+  --color-offline: #e5484d;
 }
 
-.studio-bar {
-  flex-shrink: 0;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 8px;
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply overflow-hidden bg-background font-sans text-[13px] text-foreground antialiased;
+  }
+
+  * {
+    @apply border-border;
+  }
 }
 
-/* Electron on macOS: leave room for the traffic lights and let the bar drag the window. */
-.studio-mac .studio-bar {
-  padding-left: 80px;
-}
-
-.studio-desktop .studio-bar {
+/* Electron: the bar drags the window; what's clickable in it doesn't. */
+@utility app-drag {
   -webkit-app-region: drag;
 }
 
-.studio-desktop .studio-bar button,
-.studio-desktop .studio-tab {
+@utility app-no-drag {
   -webkit-app-region: no-drag;
-}
-
-.studio-home {
-  width: 32px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-  border-radius: 8px;
-  flex-shrink: 0;
-}
-
-.studio-home:hover,
-.studio-icon:hover {
-  background: var(--hover);
-}
-
-.studio-home.on {
-  background: var(--tab-on);
-}
-
-.studio-tabs {
-  display: flex;
-  gap: 2px;
-  min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.studio-tab {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  height: 28px;
-  padding: 0 6px 0 10px;
-  border-radius: 8px;
-  color: var(--bar-muted);
-  cursor: default;
-  white-space: nowrap;
-  max-width: 220px;
-  flex-shrink: 0;
-  outline: none;
-}
-
-.studio-tab:hover {
-  background: var(--hover);
-  color: var(--bar-ink);
-}
-
-.studio-tab.on {
-  background: var(--tab-on);
-  color: var(--bar-ink);
-}
-
-.studio-tab-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.studio-tab-close {
-  width: 18px;
-  height: 18px;
-  display: grid;
-  place-items: center;
-  border-radius: 5px;
-  opacity: 0;
-}
-
-.studio-tab:hover .studio-tab-close,
-.studio-tab.on .studio-tab-close {
-  opacity: 0.6;
-}
-
-.studio-tab-close:hover {
-  opacity: 1;
-  background: var(--hover);
-}
-
-.studio-offline {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #e5484d;
-}
-
-.studio-spinner {
-  width: 12px;
-  height: 12px;
-  margin: 1px;
-  border-radius: 50%;
-  border: 1.6px solid currentColor;
-  border-right-color: transparent;
-  animation: studio-spin 0.8s linear infinite;
-}
-
-@keyframes studio-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.studio-bar-right {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.studio-icon {
-  width: 30px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-  border-radius: 8px;
-  color: var(--bar-muted);
-}
-
-.studio-agents {
-  display: flex;
-  gap: 6px;
-  padding-right: 4px;
-}
-
-.studio-agent {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-}
-
-.studio-agent-dot {
-  position: absolute;
-  right: 1px;
-  bottom: 1px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #30a46c;
-  box-shadow: 0 0 0 2px var(--bar);
-}
-
-.studio-agent-dot.busy {
-  background: #f4b012;
-  animation: studio-pulse 1.2s ease-in-out infinite;
-}
-
-@keyframes studio-pulse {
-  50% {
-    opacity: 0.35;
-  }
-}
-
-.studio-main {
-  flex: 1;
-  min-height: 0;
-  padding: 0 8px 8px;
-}
-
-.studio-file {
-  height: 100%;
-  border-radius: 12px;
-  overflow: hidden;
-  background: var(--canvas);
-}
-
-/* Home */
-
-.home {
-  height: 100%;
-  overflow: auto;
-  border-radius: 12px;
-  background: var(--canvas);
-}
-
-.home-inner {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 72px 32px;
-  display: flex;
-  flex-direction: column;
-  gap: 40px;
-}
-
-.home-head {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.home h1 {
-  margin: 0;
-  font-size: 32px;
-  font-weight: 600;
-  letter-spacing: -0.03em;
-}
-
-.home h2 {
-  margin: 0 0 12px;
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.home-muted {
-  color: var(--bar-muted);
-  margin: 8px 0;
-}
-
-.home code {
-  font-family: "JetBrains Mono", ui-monospace, monospace;
-  font-size: 12px;
-}
-
-.home-files {
-  display: flex;
-  flex-direction: column;
-  background: var(--surface);
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.home-file {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  text-align: left;
-  border-bottom: 1px solid var(--rule);
-}
-
-.home-file:last-child {
-  border-bottom: 0;
-}
-
-.home-file:hover {
-  background: var(--hover);
-}
-
-.home-file-icon {
-  width: 36px;
-  height: 36px;
-  display: grid;
-  place-items: center;
-  border-radius: 9px;
-  background: var(--canvas);
-}
-
-.home-file-text {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.home-file-text span {
-  color: var(--bar-muted);
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.home-open {
-  display: flex;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.home-open input {
-  flex: 1;
-  height: 34px;
-  padding: 0 12px;
-  border-radius: 9px;
-  border: 1px solid var(--rule);
-  background: var(--surface);
-  color: inherit;
-  font: inherit;
-  outline: none;
-}
-
-.home-btn {
-  height: 34px;
-  padding: 0 14px;
-  border-radius: 9px;
-  background: var(--bar-ink);
-  color: var(--canvas);
-  font-weight: 500;
-}
-
-.home-code {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 10px 10px 14px;
-  border-radius: 10px;
-  background: var(--surface);
-}
-
-.home-code code {
-  flex: 1;
-  overflow-x: auto;
-  white-space: nowrap;
 }

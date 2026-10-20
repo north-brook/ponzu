@@ -1,4 +1,15 @@
-/* Ponzu canvas. Scoped under .pz-root so it can live inside any host app. */
+/*
+ * Ponzu canvas. Tailwind with the `pz:` prefix and no preflight, so it can
+ * live inside any host app: its utilities can't collide with the host's, and
+ * nothing outside .pz-root is restyled. Unlayered, so a host's unlayered CSS
+ * doesn't outrank it. `bun run build` compiles this to dist/styles.css for
+ * hosts without Tailwind; hosts with it can import this file instead.
+ */
+@import "tailwindcss/theme.css" prefix(pz) source(none);
+@import "tailwindcss/utilities.css" source(none);
+@source "./";
+
+@custom-variant dark (&:where(.pz-dark, .pz-dark *));
 
 .pz-root {
   --pz-canvas: #f3f3f1;
@@ -49,11 +60,34 @@
   color-scheme: dark;
 }
 
+/* shadcn's names for the canvas's colors, as `pz:bg-card`, `pz:text-muted-foreground`… */
+@theme inline {
+  --color-background: var(--pz-canvas);
+  --color-foreground: var(--pz-ink);
+  --color-muted: var(--pz-chip);
+  --color-muted-foreground: var(--pz-muted);
+  --color-faint: var(--pz-faint);
+  --color-card: var(--pz-surface);
+  --color-accent: var(--pz-hover);
+  --color-border: var(--pz-rule);
+  --color-primary: var(--pz-ink);
+  --color-primary-foreground: var(--pz-canvas);
+  --color-ring: var(--pz-select);
+  --color-select: var(--pz-select);
+  --color-comment: var(--pz-comment);
+  --color-comment-foreground: var(--pz-comment-ink);
+  --color-comment-soft: var(--pz-comment-soft);
+  --shadow-pop: var(--pz-shadow);
+  --shadow-board: var(--pz-board-shadow);
+}
+
+/* The only reset: zero specificity, so every utility wins over it. */
 :where(.pz-root) button {
   font: inherit;
   color: inherit;
   background: none;
-  border: 0;
+  /* Width only: the shorthand would turn borders back to currentColor. */
+  border-width: 0;
   padding: 0;
   cursor: pointer;
 }
@@ -64,480 +98,9 @@
   color: inherit;
 }
 
-.pz-loading,
-.pz-empty-page {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-content: center;
-  text-align: center;
-  color: var(--pz-muted);
-  gap: 4px;
-  pointer-events: none;
-}
-
-.pz-empty-page p {
-  margin: 0;
-  font-size: 15px;
-  color: var(--pz-ink);
-}
-
-.pz-empty-page .pz-muted {
-  color: var(--pz-muted);
-  font-size: 13px;
-}
-
-.pz-viewport {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  touch-action: none;
-  cursor: default;
-}
-
-.pz-mode-hand {
-  cursor: grab;
-}
-
-.pz-mode-hand:active {
-  cursor: grabbing;
-}
-
-.pz-mode-comment {
-  cursor: crosshair;
-}
-
-.pz-world {
-  position: absolute;
-  left: 0;
-  top: 0;
-  transform-origin: 0 0;
-  will-change: transform;
-}
-
-.pz-board {
-  position: absolute;
-  box-shadow: var(--pz-board-shadow);
-}
-
-.pz-board-title {
-  position: absolute;
-  left: 0;
-  display: flex;
-  align-items: center;
-  gap: 0.5em;
-  white-space: nowrap;
-  color: var(--pz-muted);
-  cursor: default;
-  line-height: 1.4;
-}
-
-.pz-board-title:hover {
-  color: var(--pz-ink);
-}
-
-.pz-board-title input {
-  border: 0;
-  outline: 1px solid var(--pz-select);
-  background: var(--pz-surface);
-  border-radius: 3px;
-  padding: 0 0.3em;
-}
-
-.pz-selected > .pz-board-title {
-  color: var(--pz-select);
-}
-
-.pz-board-agents {
-  display: inline-flex;
-}
-
-.pz-agent-chip {
-  display: inline-grid;
-  place-items: center;
-  color: var(--pz-ink);
-}
-
-.pz-overlay {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.pz-overlay > * {
-  pointer-events: auto;
-}
-
-.pz-sel {
-  position: absolute;
-  outline: 1.5px solid var(--pz-select);
-  pointer-events: none;
-}
-
-.pz-sel-board {
-  outline-width: 2px;
-}
-
-/* Comments */
-
-.pz-pin-wrap {
-  position: absolute;
-  width: 0;
-  height: 0;
-  z-index: 2;
-}
-
-.pz-pin {
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  min-width: 24px;
-  height: 24px;
-  padding: 0 7px;
-  display: grid;
-  place-items: center;
-  border-radius: 12px 12px 12px 3px;
-  background: var(--pz-comment);
-  color: var(--pz-comment-ink);
-  font-weight: 600;
-  font-size: 11px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
-  transform-origin: bottom left;
-  transition: transform 0.12s ease;
-}
-
-.pz-pin:hover,
-.pz-pin-open {
-  transform: scale(1.12);
-}
-
-.pz-pin-resolved {
-  background: var(--pz-chip);
-  color: var(--pz-muted);
-}
-
-.pz-thread {
-  position: absolute;
-  left: 30px;
-  top: -24px;
-  width: 300px;
-  background: var(--pz-surface);
-  border-radius: 12px;
-  box-shadow: var(--pz-shadow);
-  overflow: hidden;
-  user-select: text;
-}
-
-.pz-thread-head {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 8px 8px 6px 12px;
-  border-bottom: 1px solid var(--pz-rule);
-}
-
-.pz-thread-where {
-  flex: 1;
-  color: var(--pz-muted);
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pz-thread-messages {
-  max-height: 320px;
-  overflow: auto;
-  padding: 6px 0;
-}
-
-.pz-message {
-  display: flex;
-  gap: 8px;
-  padding: 6px 12px;
-}
-
-.pz-message-meta {
-  color: var(--pz-muted);
-  font-size: 11.5px;
-}
-
-.pz-message-meta b {
-  color: var(--pz-ink);
-  font-weight: 600;
-}
-
-.pz-message-text {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.pz-avatar {
-  flex-shrink: 0;
-  display: inline-grid;
-  place-items: center;
-  border-radius: 50%;
-  background: var(--pz-chip);
-  color: var(--pz-ink);
-  font-weight: 600;
-}
-
-.pz-avatar-agent {
-  background: var(--pz-comment-soft);
-  color: var(--pz-comment-ink);
-}
-
-.pz-dark .pz-avatar-agent {
-  color: var(--pz-comment);
-}
-
-.pz-composer {
-  display: flex;
-  align-items: flex-end;
-  gap: 6px;
-  padding: 8px;
-  border-top: 1px solid var(--pz-rule);
-}
-
-.pz-thread > .pz-composer:only-child {
-  border-top: 0;
-}
-
-.pz-composer textarea {
-  flex: 1;
-  resize: none;
-  border: 0;
-  outline: 0;
-  background: transparent;
-  padding: 4px;
-  min-height: 36px;
-}
-
-.pz-send {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  display: grid;
-  place-items: center;
-  background: var(--pz-ink);
-  color: var(--pz-canvas);
-}
-
-.pz-send:disabled {
-  opacity: 0.3;
-  cursor: default;
-}
-
-.pz-icon-btn {
-  width: 26px;
-  height: 26px;
-  display: inline-grid;
-  place-items: center;
-  border-radius: 7px;
-  color: var(--pz-muted);
-}
-
-.pz-icon-btn:hover {
-  background: var(--pz-hover);
-  color: var(--pz-ink);
-}
-
-.pz-panel {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  bottom: 12px;
-  width: 320px;
-  background: var(--pz-surface);
-  border-radius: 12px;
-  box-shadow: var(--pz-shadow);
-  overflow: auto;
-  z-index: 3;
-  user-select: text;
-}
-
-.pz-panel-head {
-  position: sticky;
-  top: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 10px 10px 12px;
-  background: var(--pz-surface);
-  border-bottom: 1px solid var(--pz-rule);
-}
-
-.pz-seg {
-  display: flex;
-  background: var(--pz-chip);
-  border-radius: 8px;
-  padding: 2px;
-}
-
-.pz-seg button {
-  padding: 4px 10px;
-  border-radius: 6px;
-  color: var(--pz-muted);
-}
-
-.pz-seg button.on {
-  background: var(--pz-surface);
-  color: var(--pz-ink);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
-}
-
-.pz-panel-row {
-  display: flex;
-  gap: 10px;
-  width: 100%;
-  text-align: left;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--pz-rule);
-}
-
-.pz-panel-row:hover {
-  background: var(--pz-comment-soft);
-}
-
-.pz-empty {
-  padding: 24px 16px;
-  color: var(--pz-muted);
-  text-align: center;
-}
-
-/* Footer: pages on the left, comments + modes + zoom on the right. */
-
-.pz-footer {
-  flex-shrink: 0;
-  height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 0 8px;
-  background: var(--pz-canvas);
-}
-
-.pz-pages {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.pz-page {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 8px;
-  color: var(--pz-muted);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.pz-page:hover {
-  color: var(--pz-ink);
-  background: var(--pz-hover);
-}
-
-.pz-page.on {
-  background: var(--pz-surface);
-  color: var(--pz-ink);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
-}
-
-.pz-dark .pz-page.on {
-  background: var(--pz-chip);
-}
-
-.pz-page input {
-  width: 9em;
-  border: 0;
-  outline: 0;
-  background: transparent;
-}
-
-.pz-controls {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
-.pz-comments-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  padding: 0 10px;
-  border-radius: 8px;
-  color: var(--pz-muted);
-}
-
-.pz-comments-btn:hover,
-.pz-comments-btn.on {
-  color: var(--pz-ink);
-  background: var(--pz-hover);
-}
-
-.pz-badge {
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 9px;
-  display: inline-grid;
-  place-items: center;
-  background: var(--pz-comment);
-  color: var(--pz-comment-ink);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.pz-modes {
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-  border-radius: 9px;
-  background: var(--pz-chip);
-}
-
-.pz-modes button {
-  width: 30px;
-  height: 26px;
-  display: grid;
-  place-items: center;
-  border-radius: 7px;
-  color: var(--pz-muted);
-}
-
-.pz-modes button:hover {
-  color: var(--pz-ink);
-}
-
-.pz-modes button.on {
-  background: var(--pz-ink);
-  color: var(--pz-canvas);
-}
-
-.pz-zoom {
-  display: flex;
-  align-items: center;
-}
-
-.pz-zoom-value {
-  min-width: 44px;
-  height: 26px;
-  border-radius: 7px;
-  color: var(--pz-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.pz-zoom-value:hover {
-  background: var(--pz-hover);
-  color: var(--pz-ink);
+:where(.pz-root) *,
+:where(.pz-root) ::before,
+:where(.pz-root) ::after {
+  box-sizing: border-box;
+  border: 0 solid var(--pz-rule);
 }

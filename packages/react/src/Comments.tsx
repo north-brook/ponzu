@@ -2,6 +2,13 @@ import { type Author, type Doc, describeNode, locate, newId, type Thread } from 
 import { useEffect, useRef, useState } from "react";
 import type { CanvasSource } from "./connection.ts";
 import { Icon } from "./icons.tsx";
+import { Button, cn, ToggleGroup } from "./ui.tsx";
+
+/** A card floating over the canvas: a thread, or the composer for a new one. */
+export const threadCard =
+  "pz:absolute pz:-top-6 pz:left-[30px] pz:w-[300px] pz:select-text pz:overflow-hidden pz:rounded-xl pz:bg-card pz:shadow-pop";
+const meta = "pz:text-[11.5px] pz:text-muted-foreground";
+const messageText = "pz:whitespace-pre-wrap pz:[overflow-wrap:anywhere]";
 
 export function timeAgo(ms: number): string {
   const s = Math.max(1, Math.round((Date.now() - ms) / 1000));
@@ -25,7 +32,12 @@ function initials(name: string): string {
 export function Avatar({ author, size = 20 }: { author: Author; size?: number }) {
   return (
     <span
-      className={`pz-avatar ${author.kind === "agent" ? "pz-avatar-agent" : ""}`}
+      className={cn(
+        "pz:inline-grid pz:shrink-0 pz:place-items-center pz:rounded-full pz:font-semibold",
+        author.kind === "agent"
+          ? "pz:bg-comment-soft pz:text-comment-foreground pz:dark:text-comment"
+          : "pz:bg-muted pz:text-foreground",
+      )}
       style={{ width: size, height: size, fontSize: size * 0.42 }}
     >
       {initials(author.name)}
@@ -51,8 +63,12 @@ export function Composer({
     if (t) onSubmit(t);
   };
   return (
-    <div className="pz-composer" onPointerDown={(e) => e.stopPropagation()}>
+    <div
+      className="pz:flex pz:items-end pz:gap-1.5 pz:border-t pz:p-2 pz:only:border-t-0"
+      onPointerDown={(e) => e.stopPropagation()}
+    >
       <textarea
+        className="pz:min-h-11 pz:flex-1 pz:resize-none pz:bg-transparent pz:p-1 pz:outline-0"
         ref={ref}
         value={text}
         placeholder={placeholder}
@@ -67,15 +83,9 @@ export function Composer({
           e.stopPropagation();
         }}
       />
-      <button
-        type="button"
-        className="pz-send"
-        disabled={!text.trim()}
-        onClick={submit}
-        aria-label="Send"
-      >
+      <Button size="icon-lg" disabled={!text.trim()} onClick={submit} aria-label="Send">
         <Icon name="send" size={14} />
-      </button>
+      </Button>
     </div>
   );
 }
@@ -108,33 +118,36 @@ export function ThreadCard({
     });
   return (
     <div
-      className="pz-thread"
+      className={threadCard}
       onPointerDown={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
     >
-      <div className="pz-thread-head">
-        <span className="pz-thread-where">{node ? describeNode(node) : "Artboard"}</span>
-        <button
-          type="button"
-          className="pz-icon-btn"
+      <div className="pz:flex pz:items-center pz:gap-0.5 pz:border-b pz:pt-2 pz:pr-2 pz:pb-1.5 pz:pl-3">
+        <span className="pz:flex-1 pz:truncate pz:text-muted-foreground pz:text-xs">
+          {node ? describeNode(node) : "Artboard"}
+        </span>
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={toggle}
           title={thread.status === "open" ? "Resolve" : "Reopen"}
         >
           <Icon name={thread.status === "open" ? "check" : "refresh"} size={15} />
-        </button>
-        <button type="button" className="pz-icon-btn" onClick={onClose} title="Close">
+        </Button>
+        <Button variant="ghost" size="icon" onClick={onClose} title="Close">
           <Icon name="close" size={15} />
-        </button>
+        </Button>
       </div>
-      <div className="pz-thread-messages">
+      <div className="pz:max-h-80 pz:overflow-auto pz:py-1.5">
         {thread.messages.map((m) => (
-          <div key={m.id} className="pz-message">
+          <div key={m.id} className="pz:flex pz:gap-2 pz:px-3 pz:py-1.5">
             <Avatar author={m.author} />
             <div>
-              <div className="pz-message-meta">
-                <b>{m.author.name}</b> <span>{timeAgo(m.createdAt)}</span>
+              <div className={meta}>
+                <b className="pz:font-semibold pz:text-foreground">{m.author.name}</b>{" "}
+                <span>{timeAgo(m.createdAt)}</span>
               </div>
-              <div className="pz-message-text">{m.text}</div>
+              <div className={messageText}>{m.text}</div>
             </div>
           </div>
         ))}
@@ -160,33 +173,26 @@ export function CommentsPanel({
     .sort((a, b) => b.updatedAt - a.updatedAt);
   return (
     <div
-      className="pz-panel"
+      className="pz:absolute pz:top-3 pz:right-3 pz:bottom-3 pz:z-[3] pz:w-80 pz:select-text pz:overflow-auto pz:rounded-xl pz:bg-card pz:shadow-pop"
       onPointerDown={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
     >
-      <div className="pz-panel-head">
-        <div className="pz-seg">
-          <button
-            type="button"
-            className={filter === "open" ? "on" : ""}
-            onClick={() => setFilter("open")}
-          >
-            Open
-          </button>
-          <button
-            type="button"
-            className={filter === "resolved" ? "on" : ""}
-            onClick={() => setFilter("resolved")}
-          >
-            Resolved
-          </button>
-        </div>
-        <button type="button" className="pz-icon-btn" onClick={onClose}>
+      <div className="pz:sticky pz:top-0 pz:flex pz:items-center pz:justify-between pz:border-b pz:bg-card pz:py-2.5 pz:pr-2.5 pz:pl-3">
+        <ToggleGroup
+          variant="segmented"
+          value={filter}
+          onValueChange={setFilter}
+          items={[
+            { value: "open", label: "Open" },
+            { value: "resolved", label: "Resolved" },
+          ]}
+        />
+        <Button variant="ghost" size="icon" onClick={onClose} title="Close">
           <Icon name="close" size={15} />
-        </button>
+        </Button>
       </div>
       {threads.length === 0 && (
-        <div className="pz-empty">
+        <div className="pz:px-4 pz:py-6 pz:text-center pz:text-muted-foreground">
           {filter === "open"
             ? "No open comments. Press C and click anywhere to leave one."
             : "Nothing resolved yet."}
@@ -196,11 +202,16 @@ export function CommentsPanel({
         const ab = doc.pages.flatMap((p) => p.artboards).find((a) => a.id === t.artboardId);
         const last = t.messages[t.messages.length - 1];
         return (
-          <button type="button" key={t.id} className="pz-panel-row" onClick={() => onOpen(t)}>
+          <button
+            type="button"
+            key={t.id}
+            className="pz:flex pz:w-full pz:gap-2.5 pz:border-b pz:px-3 pz:py-2.5 pz:text-left pz:hover:bg-comment-soft"
+            onClick={() => onOpen(t)}
+          >
             <Avatar author={t.messages[0]!.author} />
             <div>
-              <div className="pz-message-text">{t.messages[0]?.text}</div>
-              <div className="pz-message-meta">
+              <div className={messageText}>{t.messages[0]?.text}</div>
+              <div className={meta}>
                 {ab?.name ?? "—"} ·{" "}
                 {t.messages.length > 1
                   ? `${last?.author.name} replied`
