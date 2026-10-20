@@ -150,8 +150,11 @@ export function Canvas({
       setMeasured((m) => ({ ...m, ...next }));
   });
 
-  // Wheel: pan; pinch or modifier: zoom.
+  // Wheel: pan; pinch or modifier: zoom. The viewport only mounts once the doc
+  // arrives, so attach again then.
+  const mounted = !!(doc && page);
   useEffect(() => {
+    if (!mounted) return;
     const el = viewport.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
@@ -163,7 +166,7 @@ export function Canvas({
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [zoomAt, panBy]);
+  }, [mounted, zoomAt, panBy]);
 
   // An open thread or composer closes on any click outside it, footer included.
   useEffect(() => {
