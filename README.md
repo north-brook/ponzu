@@ -22,7 +22,7 @@ bunx ponzu serve
 
 This opens the canvas in your browser and serves MCP at `http://127.0.0.1:7777/mcp`. Every `.design` folder under the current directory is opened.
 
-Or [download the Mac app](https://github.com/north-brook/ponzu/releases/latest/download/Ponzu-arm64.dmg) (Apple silicon, signed and notarized; it updates itself). It opens `.design` folders like documents.
+Or [download the Mac app](https://ponzu.design/download) (Apple silicon, signed and notarized; it updates itself). It opens `.design` folders like documents.
 
 ## Connect an agent
 
