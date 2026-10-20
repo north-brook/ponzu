@@ -101,8 +101,8 @@ export function Studio() {
     return s;
   };
 
-  // The home screen's catalog: polled while it shows, fetched once otherwise so the
-  // file an agent just made is known when it opens.
+  // The home screen's catalog. Polled the whole time, slower away from home, so a design an
+  // agent creates opens in a tab whichever screen is showing.
   useEffect(() => {
     let stop = false;
     const refresh = () =>
@@ -111,11 +111,7 @@ export function Studio() {
         .then((c: Catalog) => !stop && setCatalog(c))
         .catch(() => {});
     void refresh();
-    if (active)
-      return () => {
-        stop = true;
-      };
-    const t = setInterval(refresh, 3000);
+    const t = setInterval(refresh, active ? 6000 : 3000);
     return () => {
       stop = true;
       clearInterval(t);

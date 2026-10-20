@@ -83,3 +83,17 @@ test("the server's catalog is newest first, and serves nothing it doesn't list",
     await ws.closeAll();
   }
 });
+
+test("Desktop, Documents and Downloads are guarded; other folders aren't", async () => {
+  const { guardOf } = await import("./catalog.ts");
+  const { homedir } = await import("node:os");
+  const inside = join(homedir(), "Documents", "x.design");
+  expect(guardOf(inside)).toBe(join(homedir(), "Documents"));
+  expect(guardOf(`${join(homedir(), "Documents")}/`)).toBe(join(homedir(), "Documents"));
+  expect(guardOf(join(dir, "shop.design"))).toBeNull();
+  // A design outside the guarded folders is read in full.
+  const catalog = new LocalCatalog({ roots: [], spotlight: "roots" });
+  catalog.add(join(dir, "nested/deep/brand.design"));
+  const files = await catalog.files(new Map());
+  expect(files.map((f) => [f.name, f.locked])).toEqual([["Brand", false]]);
+});

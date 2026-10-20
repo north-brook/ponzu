@@ -358,11 +358,14 @@ function FileCard({
   machine,
   onOpen,
   match,
+  pathMatch,
 }: {
   file: CatalogFile;
   machine?: CatalogMachine;
   onOpen: (target: OpenTarget) => void;
   match?: readonly [number, number][];
+  /** Where a search matched the file's path, when it matched there and not in the name. */
+  pathMatch?: readonly [number, number][];
 }) {
   const fresh = file.created !== undefined && Date.now() - file.created < 5 * 60_000;
   return (
@@ -392,6 +395,14 @@ function FileCard({
         <span className="truncate font-medium text-[13.5px]">
           <Highlight text={file.name} ranges={match} />
         </span>
+        {pathMatch && (
+          <span className="truncate font-mono text-[11px] text-muted-foreground" dir="rtl">
+            {/* Right to left, so a long path keeps its end; the marks stay on their letters. */}
+            <bdi>
+              <Highlight text={file.key} ranges={pathMatch} />
+            </bdi>
+          </span>
+        )}
         <span className="flex items-center gap-[5px] text-muted-foreground text-xs">
           <Device machine={machine} />
           <span className="text-faint">·</span>
@@ -466,7 +477,7 @@ function plural(n: number, word: string): string {
 interface FrameHit {
   file: CatalogFile;
   artboard: CatalogArtboard;
-  /** The page it's on, when its name helped it match. */
+  /** The name of the page it's on. */
   page?: string;
 }
 
@@ -543,6 +554,7 @@ function Results({
                 machine={machines.get(item.machine)}
                 onOpen={onOpen}
                 match={ranges(matches, "name")}
+                pathMatch={ranges(matches, "name") ? undefined : ranges(matches, "key")}
               />
             ))}
           </Grid>
@@ -558,6 +570,7 @@ function Results({
                 hit={item}
                 machine={machines.get(item.file.machine)}
                 match={ranges(matches, "artboard.name")}
+                pageMatch={ranges(matches, "page")}
                 onOpen={onOpen}
               />
             ))}
@@ -572,11 +585,13 @@ function FrameCard({
   hit,
   machine,
   match,
+  pageMatch,
   onOpen,
 }: {
   hit: FrameHit;
   machine?: CatalogMachine;
   match?: readonly [number, number][];
+  pageMatch?: readonly [number, number][];
   onOpen: (target: OpenTarget) => void;
 }) {
   const [failed, setFailed] = useState(false);
@@ -596,7 +611,7 @@ function FrameCard({
             loading="lazy"
             draggable={false}
             onError={() => setFailed(true)}
-            className="block max-h-full max-w-full object-contain shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_2px_6px_rgba(0,0,0,0.06)]"
+            className="block max-h-[160px] max-w-full object-contain shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_2px_6px_rgba(0,0,0,0.06)]"
           />
         )}
       </div>
@@ -606,7 +621,8 @@ function FrameCard({
         </span>
         <span className="flex min-w-0 items-center gap-[5px] text-muted-foreground text-xs">
           <span className="truncate">
-            {hit.page ? `${hit.page} in ${hit.file.name}` : `Artboard in ${hit.file.name}`}
+            {hit.page ? <Highlight text={hit.page} ranges={pageMatch} /> : "Artboard"} in{" "}
+            {hit.file.name}
           </span>
           <span className="text-faint">·</span>
           <Device machine={machine} />

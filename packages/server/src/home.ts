@@ -96,11 +96,8 @@ export class Home {
     return (await ownerOf(ip)) === net.user;
   }
 
-  /**
-   * This Mac's designs, as another Mac or this one's studio sees them. With
-   * `present`, someone is at this Mac looking at the list.
-   */
-  async local(present = false): Promise<{ machine: CatalogMachine; files: CatalogFile[] }> {
+  /** This Mac's designs, as another Mac or this one's studio sees them. */
+  async local(): Promise<{ machine: CatalogMachine; files: CatalogFile[] }> {
     const open = new Map<string, Doc>(
       this.ws.designs().map(({ key, design }) => [key, design.doc]),
     );
@@ -111,7 +108,7 @@ export class Home {
         if (p.working.some((id) => findArtboard(design.doc, id)))
           busy.set(key, p.client ?? "other");
     }
-    const files = (await this.catalog.files(open, present)).map((s) =>
+    const files = (await this.catalog.files(open)).map((s) =>
       catalogFile(s, { busy: busy.get(s.key), created: this.created.get(s.key) }),
     );
     return { machine: { id: "local", name: "This Mac", kind: await this.kind }, files };
@@ -120,7 +117,7 @@ export class Home {
   /** Everything the home screen lists: this Mac first, then each reachable peer. */
   async full(): Promise<Catalog> {
     const [here, net, agents] = await Promise.all([
-      this.local(true),
+      this.local(),
       this.net(),
       this.opts.agents?.() ?? Promise.resolve([]),
     ]);

@@ -168,15 +168,14 @@ Or launch \`ponzu mcp\` over stdio from any MCP client.`);
 
 /**
  * The agents Ponzu knows on this Mac, for the home screen's first steps:
- * whether each is installed and whether Ponzu is registered with it. Asking an
- * agent's CLI is slow, so this reads their config files instead.
+ * whether each is installed and whether Ponzu is registered with it now,
+ * from its current config. A past setup that the person has since removed
+ * doesn't count. Asking Codex's CLI is slow, so its config file is read.
  */
 export function agentStatus(): { id: string; label: string; found: boolean; connected: boolean }[] {
-  const done = readDone();
   return AGENTS.map((a) => {
-    const found = a.id === "codex" ? Boolean(which("codex")) : a.detect();
-    const connected =
-      a.id === "codex" ? codexConfigured() : Boolean(a.current()) || (found && done.has(a.id));
+    const found = a.detect();
+    const connected = a.id === "codex" ? codexConfigured() : Boolean(a.current());
     return { id: a.id, label: a.label, found, connected: found && connected };
   });
 }

@@ -97,22 +97,20 @@ export class LocalCatalog {
 
   /**
    * Every design here, newest edit first. Open designs pass their live doc, so
-   * an edit shows before it reaches the disk. With `present`, someone is
-   * looking at the home screen on this Mac: a guarded folder that holds a
-   * design is read then, so a privacy prompt for it comes up while they can
-   * answer it, and only when there's a design to show.
+   * an edit shows before it reaches the disk. Listing never reads inside a
+   * guarded folder Ponzu hasn't been let into: only opening a design does.
    */
-  async files(open: Map<string, Doc>, present = false): Promise<CatalogSummary[]> {
+  async files(open: Map<string, Doc>): Promise<CatalogSummary[]> {
     const found = await this.scan();
     // One entry per folder, however it was reached (/tmp is /private/tmp, a symlinked
     // project, …). An open design's own key wins, so its card opens the same socket.
     const byReal = new Map<string, string>();
     for (const k of [...found.keys(), ...this.extra, ...open.keys()]) {
-      const real = await realpath(k).catch(() => k);
+      // Resolving a path inside a guarded folder touches it too; those keep the path Spotlight gave.
+      const real = this.readable(k) ? await realpath(k).catch(() => k) : k;
       if (!byReal.has(real) || open.has(k)) byReal.set(real, k);
     }
     const keys = new Set(byReal.values());
-    if (present) await this.unlock([...keys]);
     const out: CatalogSummary[] = [];
     await Promise.all(
       [...keys].map(async (key) => {
@@ -131,22 +129,6 @@ export class LocalCatalog {
       }),
     );
     return out.sort((a, b) => b.modified - a.modified);
-  }
-
-  /** Read one design in each guarded folder not yet known to be readable. */
-  private async unlock(keys: string[]): Promise<void> {
-    const tried = new Set<string>();
-    for (const key of keys) {
-      const guard = guardOf(key);
-      if (!guard || this.granted.has(guard) || tried.has(guard)) continue;
-      tried.add(guard);
-      try {
-        // Reading a file, not just listing it, is what macOS guards and asks about.
-        await readFile(join(key, "design.json"));
-        this.granted.add(guard);
-        await this.save();
-      } catch {}
-    }
   }
 
   private async save(): Promise<void> {
@@ -174,8 +156,9 @@ export class LocalCatalog {
         spotlight || useSpotlight === "roots"
           ? roots
           : [...roots, ...FALLBACK_DIRS.map((d) => join(homedir(), d))];
-      for (const dir of dirs)
-        if (this.readable(`${dir}/`)) for (const k of await walk(dir, 4)) found.set(k, 0);
+      // `${dir}/` so a guarded folder counts as inside itself.
+      const enter = (dir: string) => this.readable(`${dir}/`);
+      for (const dir of dirs) for (const k of await walk(dir, 4, enter)) found.set(k, 0);
       for (const k of found.keys()) if (!isListed(k)) found.delete(k);
       return found;
     })();
@@ -273,8 +256,18 @@ function mdfind(): Promise<Map<string, number> | null> {
   });
 }
 
-async function walk(dir: string, depth: number): Promise<string[]> {
+/**
+ * .design folders under `dir`, a few levels down. `enter` vets every folder
+ * before it's read, the root included: a walk from the home folder must not
+ * wander into Documents and set off its privacy prompt.
+ */
+async function walk(
+  dir: string,
+  depth: number,
+  enter: (dir: string) => boolean,
+): Promise<string[]> {
   const out: string[] = [];
+  if (!enter(dir)) return out;
   let entries: import("node:fs").Dirent[];
   try {
     entries = await readdir(dir, { withFileTypes: true });
@@ -285,7 +278,7 @@ async function walk(dir: string, depth: number): Promise<string[]> {
     if (!e.isDirectory() || e.name.startsWith(".") || e.name === "node_modules") continue;
     const p = join(dir, e.name);
     if (e.name.endsWith(".design")) out.push(p);
-    else if (depth > 0) out.push(...(await walk(p, depth - 1)));
+    else if (depth > 0) out.push(...(await walk(p, depth - 1, enter)));
   }
   return out;
 }
