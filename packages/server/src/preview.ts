@@ -1,4 +1,5 @@
-import { mkdir, readdir, rename, stat, utimes, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, readdir, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Artboard, Doc, PElement } from "@ponzu/core";
 import type { Renderer } from "@ponzu/render";
@@ -93,24 +94,38 @@ export function previewArtboard(doc: Doc): Artboard | null {
   return { id: "preview_canvas", name: doc.name, x: 0, y: 0, root };
 }
 
-/** Renders the preview into the design folder. False when there was nothing to draw. */
+/**
+ * Renders the preview into the design folder. With nothing to draw, removes
+ * any old preview so Finder falls back to the document icon. False then.
+ */
 export async function writePreview(root: string, doc: Doc, renderer: Renderer): Promise<boolean> {
+  const file = join(root, PREVIEW_FILE);
   const artboard = previewArtboard(doc);
-  if (!artboard) return false;
+  if (!artboard) {
+    if (!existsSync(file)) return false;
+    await rm(file, { force: true });
+    await touch(root);
+    return false;
+  }
   const out = await renderer.render({ artboard, tokens: doc.tokens, scale: SCALE });
   const dir = join(root, PREVIEW_DIR);
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, ".gitignore"), "*\n");
   // Write then rename, so Finder never reads half an image.
-  const file = join(root, PREVIEW_FILE);
   const tmp = `${file}.${process.pid}.tmp`;
   await writeFile(tmp, out.bytes);
   await rename(tmp, file);
-  // Finder keys its icon cache on the package's own modification date, which
-  // a write two levels down doesn't change.
+  await touch(root);
+  return true;
+}
+
+/**
+ * Finder keys its icon cache on the package's own modification date, which a
+ * write two levels down doesn't change.
+ */
+async function touch(root: string): Promise<void> {
   const now = new Date();
   await utimes(root, now, now);
-  return true;
 }
 
 /** Whether the preview is missing or older than anything else in the design. */

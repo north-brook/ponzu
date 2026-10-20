@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test";
+import { existsSync } from "node:fs";
+import { mkdtemp, readFile, rm, stat, utimes } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Artboard, Doc } from "@ponzu/core";
-import { previewArtboard } from "./preview.ts";
+import type { Renderer } from "@ponzu/render";
+import { PREVIEW_FILE, previewArtboard, writePreview } from "./preview.ts";
 
 const board = (id: string, x: number, y: number, width: number, height: number): Artboard => ({
   id,
@@ -41,4 +46,26 @@ test("keeps an icon-friendly shape and skips empty files", () => {
   const tall = previewArtboard(doc([board("a", 0, 0, 390, 6000)]))!;
   expect(Number.parseFloat(tall.root.style.width!)).toBe(384);
   expect(previewArtboard(doc([]))).toBeNull();
+});
+
+test("writes the preview, and removes it once the first page is empty", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ponzu-preview-"));
+  try {
+    const renderer = {
+      render: async () => ({ bytes: new Uint8Array([1, 2, 3]) }),
+      close: async () => {},
+    } as unknown as Renderer;
+    expect(await writePreview(root, doc([board("a", 0, 0, 800, 600)]), renderer)).toBe(true);
+    expect(existsSync(join(root, PREVIEW_FILE))).toBe(true);
+    expect(await readFile(join(root, ".ponzu/.gitignore"), "utf8")).toBe("*\n");
+
+    const old = new Date(Date.now() - 60_000);
+    await utimes(root, old, old);
+    expect(await writePreview(root, doc([]), renderer)).toBe(false);
+    expect(existsSync(join(root, PREVIEW_FILE))).toBe(false);
+    // Finder only refreshes the icon when the package's own date moves.
+    expect((await stat(root)).mtimeMs).toBeGreaterThan(old.getTime());
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
