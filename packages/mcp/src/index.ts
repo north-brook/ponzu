@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import type { PresenceOrigin } from "@ponzu/core";
 import {
   GUIDES,
   runTool,
@@ -53,6 +54,12 @@ export function createMcpServer(ws: Workspace, opts: McpOptions = {}): McpServer
       id,
       author: { kind: "agent", name: displayName(info?.name) },
       client: clientKind(info?.name),
+      origin: {
+        clientName: info?.name,
+        clientVersion: info?.version,
+        via: "http",
+        ...opts.caller?.origin,
+      },
     };
     return caller;
   };
@@ -205,12 +212,34 @@ export function createHttpHandler(
       if (transport.sessionId) sessions.delete(transport.sessionId);
       opts.onClose?.(callerId);
     };
-    const server = createMcpServer(ws, { ...opts, caller: { id: callerId, ...opts.caller } });
+    const server = createMcpServer(ws, {
+      ...opts,
+      caller: { id: callerId, ...opts.caller, origin: originFrom(req) },
+    });
     await server.connect(transport);
     return transport.handleRequest(req);
   };
   const idleMs = () => (running > 0 ? 0 : Date.now() - lastActive);
   return Object.assign(handle, { idleMs });
+}
+
+/**
+ * Headers `ponzu mcp` sends when it relays an agent to a running Ponzu, so
+ * the studio can say where the session comes from. Display only: nothing
+ * trusts them.
+ */
+export const ORIGIN_HEADERS = { via: "x-ponzu-via", cwd: "x-ponzu-cwd" } as const;
+
+function originFrom(req: Request): PresenceOrigin | undefined {
+  const via = req.headers.get(ORIGIN_HEADERS.via);
+  const cwd = req.headers.get(ORIGIN_HEADERS.cwd);
+  if (via !== "bridge") return undefined;
+  try {
+    return { via, ...(cwd ? { cwd: decodeURIComponent(cwd) } : {}) };
+  } catch {
+    // A malformed header loses the folder, never the session.
+    return { via };
+  }
 }
 
 function once(fn: () => void): () => void {

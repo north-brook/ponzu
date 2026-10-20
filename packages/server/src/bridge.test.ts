@@ -42,6 +42,7 @@ beforeAll(async () => {
     {
       local,
       findHost: async () => announced ?? (host ? `http://127.0.0.1:${host.port}/mcp` : null),
+      cwd: dir,
     },
     theirs,
   );
@@ -79,7 +80,9 @@ test("once a host is running, calls go to it and the agent shows up there", asyn
   });
   expect(text(info)).toContain("shop");
   expect(hostWs!.designs()).toHaveLength(1);
-  expect(hostWs!.presence.list().map((p) => p.name)).toContain("Claude");
+  const claude = hostWs!.presence.list().find((p) => p.name === "Claude");
+  // The host learns where the session comes from, for the studio's card.
+  expect(claude?.origin).toMatchObject({ via: "bridge", cwd: dir, clientName: "claude-code-test" });
 });
 
 test("when the host goes away, the next call runs locally again", async () => {

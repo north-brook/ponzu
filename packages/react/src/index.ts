@@ -5,3 +5,4 @@ export { type CanvasSource, type CanvasState, MemorySource, SocketSource } from 
 export { AgentMark, Icon, type IconName, Icons, Logo } from "./icons.tsx";
 export { Tip, TipProvider } from "./ui.tsx";
 export { useCamera, useSource } from "./useCanvas.ts";
+export { type AgentActivity, agentActivity, Juice, useDelayed } from "./working.tsx";

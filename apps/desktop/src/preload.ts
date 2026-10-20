@@ -10,4 +10,11 @@ contextBridge.exposeInMainWorld("ponzuDesktop", {
   whatsNew: (): Promise<{ version: string; notes: string[] } | null> =>
     ipcRenderer.invoke("ponzu:whats-new"),
   whatsNewSeen: () => ipcRenderer.send("ponzu:whats-new-seen"),
+  /** File > Close Tab (⌘W). The studio closes its open tab, or the window from home. */
+  onCloseTab: (handler: () => void) => {
+    const listener = () => handler();
+    ipcRenderer.on("ponzu:close-tab", listener);
+    return () => ipcRenderer.removeListener("ponzu:close-tab", listener);
+  },
+  closeWindow: () => ipcRenderer.send("ponzu:close-window"),
 });

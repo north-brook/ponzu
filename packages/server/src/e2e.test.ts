@@ -117,6 +117,50 @@ test("comments flow through wait_for_activity and reply", async () => {
   expect(t.messages[1]!.author).toEqual({ kind: "agent", name: "Claude" });
 });
 
+test("presence says what an agent is doing, and in which file", async () => {
+  const { key, design } = ws.designs()[0]!;
+  const ab = design.doc.pages[0]!.artboards[0]!;
+  const claude = () => ws.presence.list().find((p) => p.name === "Claude")!;
+
+  // Straight to /mcp: the studio says so and names the client.
+  expect(claude().origin).toMatchObject({ via: "http", clientName: "claude-code-test" });
+  expect(claude().since).toBeLessThanOrEqual(Date.now());
+
+  await client.callTool({
+    name: "start_working",
+    arguments: { artboards: [ab.id], status: "tightening the hero" },
+  });
+  expect(claude()).toMatchObject({ working: [ab.id], status: "tightening the hero", file: key });
+
+  await client.callTool({ name: "finish_working", arguments: {} });
+  expect(claude().working).toEqual([]);
+  expect(claude().status).toBeUndefined();
+
+  const waiting = client.callTool({ name: "wait_for_activity", arguments: { timeout: 1 } });
+  await Bun.sleep(100);
+  expect(claude().listening).toBe(true);
+  await waiting;
+  expect(claude().listening).toBe(false);
+  expect(claude().listenedAt).toBeGreaterThan(0);
+});
+
+test("a malformed origin header costs the folder, not the session", async () => {
+  const odd = new Client({ name: "claude-code-odd", version: "1" });
+  await odd.connect(
+    new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${server.port}/mcp`), {
+      requestInit: { headers: { "x-ponzu-via": "bridge", "x-ponzu-cwd": "%E0%A4%A" } },
+    }),
+  );
+  try {
+    await odd.callTool({ name: "list_files", arguments: {} });
+    const p = ws.presence.list().find((x) => x.origin?.clientName === "claude-code-odd");
+    expect(p?.origin).toMatchObject({ via: "bridge" });
+    expect(p?.origin?.cwd).toBeUndefined();
+  } finally {
+    await odd.close();
+  }
+});
+
 test("edits made in a text editor show up as file.changed", async () => {
   const design = ws.designs()[0]!.design;
   const cursor = ws.events.cursor;

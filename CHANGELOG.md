@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.11.0](https://github.com/north-brook/ponzu/compare/v1.10.0...v1.11.0) (2026-10-20)
+
+
+### Features
+
+* agents show what they're working on, and loading uses the juicing wedge ([#31](https://github.com/north-brook/ponzu/issues/31)) ([165624d](https://github.com/north-brook/ponzu/commit/165624d2d6dc72679df0450692ecbbf3d957f1c8))
+
+## [1.10.0](https://github.com/north-brook/ponzu/compare/v1.9.0...v1.10.0) (2026-10-20)
+
+
+### Features
+
+* drag tabs to reorder, close them with cmd+w, and cmd+1 for home ([#30](https://github.com/north-brook/ponzu/issues/30)) ([cd8a19c](https://github.com/north-brook/ponzu/commit/cd8a19ceedc007353690356006b75d08c9a8922c))
+
+
+### Bug Fixes
+
+* **react:** frame titles stay within their frame when you zoom out ([#27](https://github.com/north-brook/ponzu/issues/27)) ([6a04ab5](https://github.com/north-brook/ponzu/commit/6a04ab5982e727404a38daf158c53ce9082785e1))
+
 ## [1.9.0](https://github.com/north-brook/ponzu/compare/v1.8.0...v1.9.0) (2026-10-20)
 
 

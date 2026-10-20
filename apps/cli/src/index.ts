@@ -213,6 +213,7 @@ async function runMcp(files: string[]) {
     },
     prepareLocal: openLocal,
     mapArgs: (_tool, args) => absolutePaths(args, cwd),
+    cwd,
   });
   // stdout belongs to the protocol; log to stderr.
   const stop = async () => {

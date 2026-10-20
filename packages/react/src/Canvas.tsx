@@ -14,6 +14,7 @@ import type { CanvasSource } from "./connection.ts";
 import { AgentMark, Icon, Icons } from "./icons.tsx";
 import { Button, cn, Tip, TipProvider, ToggleGroup } from "./ui.tsx";
 import { isTyping, useCamera, useKeyHeld, useSource } from "./useCanvas.ts";
+import { Juice, useDelayed } from "./working.tsx";
 
 export type Mode = "select" | "hand" | "comment";
 
@@ -76,12 +77,25 @@ export function Canvas({
 
   const selection = state.selection.ids;
   const working = useMemo(() => {
-    const map = new Map<string, { name: string; client?: string }[]>();
-    for (const p of state.presence)
+    const map = new Map<string, Worker[]>();
+    for (const p of state.presence) {
+      if (p.file && p.file !== state.path) continue;
       for (const id of p.working)
-        map.set(id, [...(map.get(id) ?? []), { name: p.name, client: p.client }]);
+        map.set(id, [
+          ...(map.get(id) ?? []),
+          { id: p.id, name: p.name, client: p.client, status: p.status },
+        ]);
+    }
     return map;
-  }, [state.presence]);
+  }, [state.presence, state.path]);
+  const busyPages = useMemo(
+    () =>
+      new Set(
+        doc?.pages.filter((p) => p.artboards.some((ab) => working.has(ab.id))).map((p) => p.id),
+      ),
+    [doc, working],
+  );
+  const opening = useDelayed(!doc || !page);
 
   const boards = page?.artboards ?? [];
   const boardHeight = (ab: Artboard) => size(ab).h ?? measured[ab.id] ?? 900;
@@ -410,11 +424,27 @@ export function Canvas({
   };
 
   if (!doc || !page) {
+    const offline = state.status === "offline";
+    const name = state.path
+      .split("/")
+      .pop()
+      ?.replace(/\.design$/, "");
     return (
       <div className={cn("pz-root", `pz-${theme}`, className)}>
-        <div className="pz:pointer-events-none pz:absolute pz:inset-0 pz:grid pz:place-content-center pz:text-muted-foreground">
-          {state.status === "offline" ? "Reconnecting to Ponzu…" : "Opening…"}
-        </div>
+        {opening && (
+          <div className="pz-appear pz:pointer-events-none pz:absolute pz:inset-0 pz:flex pz:flex-col pz:items-center pz:justify-center pz:gap-3 pz:text-muted-foreground">
+            <Juice size={44} dark={theme === "dark"} dry={offline} />
+            <span>
+              {state.error
+                ? state.error
+                : offline
+                  ? "Reconnecting to Ponzu"
+                  : name
+                    ? `Opening ${name}`
+                    : "Opening"}
+            </span>
+          </div>
+        )}
       </div>
     );
   }
@@ -464,6 +494,10 @@ export function Canvas({
                 <div
                   className={cn(
                     "pz:absolute pz:left-0 pz:flex pz:cursor-default pz:items-center pz:gap-[0.5em] pz:whitespace-nowrap pz:leading-[1.4]",
+                    // Zoomed out, the title would run into the next board; clip it to this one.
+                    renaming !== ab.id && "pz:max-w-full",
+                    // Spans the board so an agent's status can sit on the right.
+                    who && "pz:right-0",
                     selection.includes(ab.id)
                       ? "pz:text-select"
                       : "pz:text-muted-foreground pz:hover:text-foreground",
@@ -491,21 +525,11 @@ export function Canvas({
                       }}
                     />
                   ) : (
-                    <span>{ab.name}</span>
-                  )}
-                  {who && (
-                    <span className="pz:inline-flex" style={{ gap: 4 / camera.zoom }}>
-                      {who.map((a) => (
-                        <span
-                          key={a.name}
-                          className="pz:inline-grid pz:place-items-center pz:text-foreground"
-                          title={`${a.name} is working here`}
-                        >
-                          <AgentMark client={a.client} size={12 / camera.zoom} />
-                        </span>
-                      ))}
+                    <span className="pz:min-w-0 pz:truncate" title={ab.name}>
+                      {ab.name}
                     </span>
                   )}
+                  {who && <WorkingStatus who={who} zoom={camera.zoom} />}
                 </div>
                 <ArtboardView artboard={ab} tokens={doc.tokens} assetBase={source.assetBase} />
               </div>
@@ -515,6 +539,21 @@ export function Canvas({
 
         {/* Overlays in screen space so they stay crisp at any zoom. */}
         <div className="pz:pointer-events-none pz:absolute pz:inset-0">
+          {boards.map((ab) => {
+            if (!working.has(ab.id)) return null;
+            const g = ghostFor(ab.id);
+            const w = size(ab).w * camera.zoom;
+            const h = boardHeight(ab) * camera.zoom;
+            return (
+              <Trace
+                key={ab.id}
+                x={(ab.x + (g?.dx ?? 0)) * camera.zoom + camera.x}
+                y={(ab.y + (g?.dy ?? 0)) * camera.zoom + camera.y}
+                w={w}
+                h={h}
+              />
+            );
+          })}
           {selectedRects.map((r) => (
             <div
               key={r.id}
@@ -595,6 +634,7 @@ export function Canvas({
                   shortcut={i < 8 ? i + 1 : i === doc.pages.length - 1 ? 9 : undefined}
                   icon={p.icon}
                   active={p.id === page.id}
+                  working={busyPages.has(p.id)}
                   onClick={() => goToPage(p.id)}
                   onRename={(name) => source.apply({ op: "page.update", id: p.id, name })}
                 />
@@ -703,6 +743,73 @@ function Bar({
   );
 }
 
+interface Worker {
+  /** Presence id: two sessions of one agent share a name. */
+  id: string;
+  name: string;
+  client?: string;
+  status?: string;
+}
+
+/**
+ * The right side of a working artboard's header: what the agent says it's
+ * doing, in shimmering ink, and its mark in color. Several agents show the
+ * first one's status and all their marks.
+ */
+function WorkingStatus({ who, zoom }: { who: Worker[]; zoom: number }) {
+  const status = who.find((a) => a.status)?.status ?? "Working";
+  return (
+    <span
+      className="pz:ml-auto pz:inline-flex pz:min-w-0 pz:max-w-[60%] pz:items-center pz:text-muted-foreground"
+      style={{ gap: 6 / zoom }}
+      title={who.map((a) => `${a.name}: ${a.status ?? "working"}`).join("\n")}
+    >
+      <span className="pz-shimmer pz:min-w-0 pz:truncate">{status}</span>
+      <span className="pz:inline-flex pz:shrink-0" style={{ gap: 3 / zoom }}>
+        {who.map((a) => (
+          <span key={a.id} className="pz:inline-grid pz:place-items-center pz:text-foreground">
+            <AgentMark client={a.client} size={12 / zoom} />
+          </span>
+        ))}
+      </span>
+    </span>
+  );
+}
+
+/**
+ * A stroke tracing a working artboard's outline, over a faint full outline.
+ * Drawn in the screen-space overlay so it's 1.5px at any zoom, and never part
+ * of the design: screenshots and exports don't see it.
+ */
+function Trace({ x, y, w, h }: { x: number; y: number; w: number; h: number }) {
+  return (
+    <svg
+      className="pz:pointer-events-none pz:absolute pz:overflow-visible pz:text-foreground"
+      style={{ left: x, top: y, width: w, height: h }}
+      aria-hidden
+    >
+      <rect
+        width={w}
+        height={h}
+        fill="none"
+        stroke="currentColor"
+        strokeOpacity={0.14}
+        strokeWidth={1}
+      />
+      <rect
+        className="pz-trace"
+        width={w}
+        height={h}
+        pathLength={100}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 const pinWrap = "pz:pointer-events-auto pz:absolute pz:z-[2] pz:size-0";
 /** A circle centred on the comment's spot, holding its message count. */
 const pin =
@@ -713,6 +820,7 @@ function PageTab({
   shortcut,
   icon,
   active,
+  working,
   onClick,
   onRename,
 }: {
@@ -720,6 +828,8 @@ function PageTab({
   shortcut?: number;
   icon?: string;
   active: boolean;
+  /** An agent is working on an artboard on this page. */
+  working: boolean;
   onClick: () => void;
   onRename: (n: string) => void;
 }) {
@@ -755,7 +865,7 @@ function PageTab({
           }}
         />
       ) : (
-        <span>{name}</span>
+        <span className={cn(working && "pz-shimmer")}>{name}</span>
       )}
     </button>
   );
