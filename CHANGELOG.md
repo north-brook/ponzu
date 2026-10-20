@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/north-brook/ponzu/compare/v1.4.0...v1.5.0) (2026-10-20)
+
+
+### Features
+
+* cycle tabs with cmd+shift+[ and ], cmd+0 for home, and follow the system theme ([#12](https://github.com/north-brook/ponzu/issues/12)) ([9defc27](https://github.com/north-brook/ponzu/commit/9defc275766481a6fbd40c3dcb69f25cff7fc794))
+
 ## [1.4.0](https://github.com/north-brook/ponzu/compare/v1.3.0...v1.4.0) (2026-10-20)
 
 
