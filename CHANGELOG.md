@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.9.0](https://github.com/north-brook/ponzu/compare/v1.8.0...v1.9.0) (2026-10-20)
+
+
+### Features
+
+* .design files show a preview of their canvas in finder ([#24](https://github.com/north-brook/ponzu/issues/24)) ([6b6f062](https://github.com/north-brook/ponzu/commit/6b6f062864e7875d1452fd7006d11204de647adf))
+
+
+### Bug Fixes
+
+* **react:** comment pins stay put while you scroll, and replies clear the input ([#25](https://github.com/north-brook/ponzu/issues/25)) ([242a823](https://github.com/north-brook/ponzu/commit/242a823c4d0ffddcec7f8a4a94099060bcbf79cb))
+
 ## [1.8.0](https://github.com/north-brook/ponzu/compare/v1.7.0...v1.8.0) (2026-10-20)
 
 
