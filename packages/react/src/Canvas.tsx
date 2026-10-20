@@ -3,7 +3,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import { ArtboardView } from "./Artboard.tsx";
 import { CommentsPanel, Composer, ThreadCard, threadCard } from "./Comments.tsx";
 import type { CanvasSource } from "./connection.ts";
-import { AgentMark, Icon } from "./icons.tsx";
+import { AgentMark, Icon, Icons } from "./icons.tsx";
 import { Button, cn, ToggleGroup } from "./ui.tsx";
 import { isTyping, useCamera, useKeyHeld, useSource } from "./useCanvas.ts";
 
@@ -157,12 +157,24 @@ export function Canvas({
     return () => el.removeEventListener("wheel", onWheel);
   }, [zoomAt, panBy]);
 
+  const goToPage = (id: string) => {
+    setPageId(id);
+    setPending(null);
+    setOpenThread(null);
+  };
+
   // Keyboard.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTyping(e)) return;
       const mod = e.metaKey || e.ctrlKey;
-      if (mod && e.key.toLowerCase() === "z") {
+      // ⌥1–9: pages, by e.code since ⌥ changes e.key on a Mac. 9 is the last.
+      const digit = /^Digit([1-9])$/.exec(e.code)?.[1];
+      if (e.altKey && !mod && !e.shiftKey && digit && doc) {
+        e.preventDefault();
+        const p = digit === "9" ? doc.pages.at(-1) : doc.pages[Number(digit) - 1];
+        if (p) goToPage(p.id);
+      } else if (mod && e.key.toLowerCase() === "z") {
         e.preventDefault();
         e.shiftKey ? source.redo() : source.undo();
       } else if (mod && (e.key === "=" || e.key === "+")) {
@@ -573,17 +585,14 @@ export function Canvas({
       {footer && (
         <div className="pz:flex pz:h-11 pz:shrink-0 pz:items-center pz:justify-between pz:gap-4 pz:bg-background pz:px-2">
           <div className="pz:flex pz:min-w-0 pz:items-center pz:gap-0.5 pz:overflow-x-auto pz:[scrollbar-width:none]">
-            {doc.pages.map((p) => (
+            {doc.pages.map((p, i) => (
               <PageTab
                 key={p.id}
                 name={p.name}
+                shortcut={i < 8 ? i + 1 : i === doc.pages.length - 1 ? 9 : undefined}
                 icon={p.icon}
                 active={p.id === page.id}
-                onClick={() => {
-                  setPageId(p.id);
-                  setPending(null);
-                  setOpenThread(null);
-                }}
+                onClick={() => goToPage(p.id)}
                 onRename={(name) => source.apply({ op: "page.update", id: p.id, name })}
               />
             ))}
@@ -666,12 +675,14 @@ const pin =
 
 function PageTab({
   name,
+  shortcut,
   icon,
   active,
   onClick,
   onRename,
 }: {
   name: string;
+  shortcut?: number;
   icon?: string;
   active: boolean;
   onClick: () => void;
@@ -687,10 +698,11 @@ function PageTab({
           ? "pz:bg-card pz:text-foreground pz:shadow-[0_1px_2px_rgba(0,0,0,0.06)] pz:dark:bg-muted"
           : "pz:text-muted-foreground pz:hover:bg-accent pz:hover:text-foreground",
       )}
+      title={shortcut ? `${name} (⌥${shortcut})` : name}
       onClick={onClick}
       onDoubleClick={() => setEditing(true)}
     >
-      <Icon name={icon ?? "file"} size={14} />
+      <Icon name={icon && icon in Icons ? icon : "page"} size={14} />
       {editing ? (
         <input
           autoFocus

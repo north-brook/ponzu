@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 
 /** Where `ponzu serve` lives. Same origin in production; the dev server proxies. */
 const ORIGIN = window.location.origin;
+const mod = navigator.userAgent.includes("Mac") ? "⌘" : "Ctrl+";
 
 interface FileEntry {
   key: string;
@@ -108,6 +109,20 @@ export function Studio() {
     if (active === key) setActive(null);
   };
 
+  // ⌘1–8 open file tabs, ⌘9 the last, like a browser.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const digit = /^Digit([1-9])$/.exec(e.code)?.[1];
+      if (!digit || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      const key = digit === "9" ? tabs.at(-1) : tabs[Number(digit) - 1];
+      if (!key) return;
+      e.preventDefault();
+      setActive(key);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [tabs]);
+
   const desktop = window.ponzuDesktop;
   const isMac = desktop?.platform === "darwin";
 
@@ -131,10 +146,11 @@ export function Studio() {
           <Logo size={18} dark={theme === "dark"} />
         </Button>
         <div className="flex min-w-0 gap-0.5 overflow-x-auto [scrollbar-width:none]">
-          {tabs.map((key) => (
+          {tabs.map((key, i) => (
             <FileTab
               key={key}
               source={source(key)}
+              shortcut={i < 8 ? i + 1 : i === tabs.length - 1 ? 9 : undefined}
               active={key === active}
               onClick={() => setActive(key)}
               onClose={() => closeTab(key)}
@@ -170,11 +186,13 @@ export function Studio() {
 
 function FileTab({
   source,
+  shortcut,
   active,
   onClick,
   onClose,
 }: {
   source: SocketSource;
+  shortcut?: number;
   active: boolean;
   onClick: () => void;
   onClose: () => void;
@@ -199,7 +217,7 @@ function FileTab({
       onKeyDown={(e) => e.key === "Enter" && onClick()}
       role="tab"
       tabIndex={0}
-      title={source.file}
+      title={shortcut ? `${source.file} (${mod}${shortcut})` : source.file}
     >
       {busy ? (
         <span className="m-px size-3 animate-spin rounded-full border-[1.6px] border-current border-r-transparent [animation-duration:0.8s]" />

@@ -50,13 +50,13 @@ export function Button({
   );
 }
 
-const toggleGroupVariants = cva("pz:flex pz:gap-0.5 pz:bg-muted pz:p-0.5", {
+const toggleGroupVariants = cva("pz:flex pz:gap-0.5 pz:p-0.5", {
   variants: {
     variant: {
-      /** The mode switcher: the chosen one inverts. */
+      /** The mode switcher: the chosen one gets a soft chip. */
       solid: "pz:rounded-[9px]",
       /** A segmented control: the chosen one lifts. */
-      segmented: "pz:rounded-lg",
+      segmented: "pz:rounded-lg pz:bg-muted",
     },
   },
   defaultVariants: { variant: "solid" },
@@ -68,7 +68,7 @@ const toggleGroupItemVariants = cva(
     variants: {
       variant: {
         solid:
-          "pz:grid pz:h-[26px] pz:w-[30px] pz:place-items-center pz:rounded-[7px] pz:data-[state=on]:bg-primary pz:data-[state=on]:text-primary-foreground",
+          "pz:grid pz:h-[26px] pz:w-[30px] pz:place-items-center pz:rounded-[7px] pz:hover:bg-accent pz:data-[state=on]:bg-muted pz:data-[state=on]:text-foreground",
         segmented:
           "pz:rounded-md pz:px-2.5 pz:py-1 pz:data-[state=on]:bg-card pz:data-[state=on]:text-foreground pz:data-[state=on]:shadow-[0_1px_2px_rgba(0,0,0,0.08)]",
       },
