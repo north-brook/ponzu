@@ -1,0 +1,193 @@
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import {
+  GUIDES,
+  runTool,
+  SERVER_INSTRUCTIONS,
+  type ToolCaller,
+  type ToolResult,
+  tools,
+  type Workspace,
+} from "@ponzu/tools";
+import { z } from "zod";
+
+export interface McpOptions {
+  name?: string;
+  version?: string;
+  /** Who is calling. Filled from the client's name on initialize when omitted. */
+  caller?: Partial<ToolCaller>;
+}
+
+/** Map an MCP client name to an agent icon. */
+export function clientKind(name = ""): string {
+  const n = name.toLowerCase();
+  if (n.includes("claude")) return "claude";
+  if (n.includes("codex") || n.includes("openai") || n.includes("chatgpt")) return "openai";
+  if (n.includes("cursor")) return "cursor";
+  if (n.includes("gemini")) return "gemini";
+  return "other";
+}
+
+function displayName(clientName = ""): string {
+  const kind = clientKind(clientName);
+  if (kind === "claude") return "Claude";
+  if (kind === "openai") return "Codex";
+  if (kind === "cursor") return "Cursor";
+  if (kind === "gemini") return "Gemini";
+  return clientName || "Agent";
+}
+
+/** One MCP server per agent connection, all sharing a Workspace. */
+export function createMcpServer(ws: Workspace, opts: McpOptions = {}): McpServer {
+  const server = new McpServer(
+    { name: opts.name ?? "ponzu", version: opts.version ?? "0.1.0", title: "Ponzu" },
+    { instructions: SERVER_INSTRUCTIONS, capabilities: { logging: {} } },
+  );
+  const id = opts.caller?.id ?? `agent_${Math.random().toString(36).slice(2, 8)}`;
+  let caller: ToolCaller | null = opts.caller?.author ? (opts.caller as ToolCaller) : null;
+  const getCaller = (): ToolCaller => {
+    if (caller) return caller;
+    const info = server.server.getClientVersion();
+    caller = {
+      id,
+      author: { kind: "agent", name: displayName(info?.name) },
+      client: clientKind(info?.name),
+    };
+    return caller;
+  };
+
+  for (const def of tools) {
+    server.registerTool(
+      def.name,
+      {
+        title: def.title,
+        description: def.description,
+        inputSchema: def.input,
+        annotations: {
+          title: def.title,
+          readOnlyHint: def.readOnly ?? false,
+          destructiveHint: def.destructive ?? false,
+          openWorldHint: false,
+        },
+      },
+      async (args: unknown, extra: { signal?: AbortSignal }) =>
+        toMcp(await runTool(def, args, { ws, caller: getCaller(), signal: extra.signal })),
+    );
+  }
+
+  for (const [topic, text] of Object.entries(GUIDES)) {
+    server.registerResource(
+      `guide-${topic}`,
+      `ponzu://guide/${topic}`,
+      { title: `Ponzu guide: ${topic}`, mimeType: "text/markdown" },
+      async (uri) => ({ contents: [{ uri: uri.href, mimeType: "text/markdown", text }] }),
+    );
+  }
+
+  server.registerPrompt(
+    "collaborate",
+    {
+      title: "Collaborate on comments",
+      description:
+        "Sit with the person: pick up canvas comments as they leave them, make the changes, and reply.",
+      argsSchema: { file: z.string().optional() },
+    },
+    ({ file }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: `Run the Ponzu collaborate loop${file ? ` on ${file}` : ""}. Read get_guide('collaborate'), then call wait_for_activity in a loop and handle each comment until I tell you to stop.`,
+          },
+        },
+      ],
+    }),
+  );
+
+  server.registerPrompt(
+    "design-brief",
+    {
+      title: "Start from a brief",
+      description: "Turn a brief into tokens, a direction and first artboards.",
+      argsSchema: { brief: z.string() },
+    },
+    ({ brief }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: `Design this in Ponzu: ${brief}\n\nRead get_guide('basics'). Write the brief and your direction to a note, set tokens, then build the first artboard in small pieces, screenshotting as you go. Offer two or three variations of the key screen side by side.`,
+          },
+        },
+      ],
+    }),
+  );
+
+  return server;
+}
+
+function toMcp(r: ToolResult) {
+  const content: (
+    | { type: "text"; text: string }
+    | { type: "image"; data: string; mimeType: string }
+  )[] = [];
+  for (const img of r.images ?? [])
+    content.push({ type: "image", data: img.data, mimeType: img.mime });
+  content.push({ type: "text", text: r.text });
+  return { content, isError: r.isError };
+}
+
+/** Serve MCP over stdio (for `ponzu mcp` launched by an agent). */
+export async function serveStdio(ws: Workspace, opts: McpOptions = {}): Promise<McpServer> {
+  const server = createMcpServer(ws, opts);
+  await server.connect(new StdioServerTransport());
+  return server;
+}
+
+/**
+ * Streamable HTTP handler with sessions. Mount it at /mcp:
+ *   const mcp = createHttpHandler(ws); Bun.serve({ fetch: (req) => mcp(req) })
+ */
+export function createHttpHandler(
+  ws: Workspace,
+  opts: McpOptions & { onClose?: (callerId: string) => void } = {},
+) {
+  const sessions = new Map<string, WebStandardStreamableHTTPServerTransport>();
+  return async (req: Request): Promise<Response> => {
+    const sid = req.headers.get("mcp-session-id");
+    const existing = sid ? sessions.get(sid) : undefined;
+    if (existing) return existing.handleRequest(req);
+    if (sid) {
+      return Response.json(
+        {
+          jsonrpc: "2.0",
+          error: { code: -32001, message: "Session not found; reinitialize." },
+          id: null,
+        },
+        { status: 404 },
+      );
+    }
+    if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
+    const callerId = `agent_${crypto.randomUUID().slice(0, 8)}`;
+    const transport = new WebStandardStreamableHTTPServerTransport({
+      sessionIdGenerator: () => crypto.randomUUID(),
+      onsessioninitialized: (id) => {
+        sessions.set(id, transport);
+      },
+      onsessionclosed: (id) => {
+        sessions.delete(id);
+        opts.onClose?.(callerId);
+      },
+    });
+    transport.onclose = () => {
+      if (transport.sessionId) sessions.delete(transport.sessionId);
+      opts.onClose?.(callerId);
+    };
+    const server = createMcpServer(ws, { ...opts, caller: { id: callerId, ...opts.caller } });
+    await server.connect(transport);
+    return transport.handleRequest(req);
+  };
+}

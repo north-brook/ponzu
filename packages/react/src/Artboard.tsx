@@ -1,0 +1,59 @@
+import { type Artboard as AB, serializeArtboardElement } from "@ponzu/core";
+import { ARTBOARD_BASE_CSS, googleFontsLink, resolveAsset } from "@ponzu/render";
+import { memo, useLayoutEffect, useRef } from "react";
+
+interface Props {
+  artboard: AB;
+  tokens: string;
+  assetBase?: string;
+  colorScheme?: "light" | "dark";
+}
+
+const loadedFonts = new Set<string>();
+
+/** Load Google Fonts in the host document; shadow roots inherit @font-face. */
+function ensureFonts(href: string) {
+  if (!href || loadedFonts.has(href)) return;
+  loadedFonts.add(href);
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = href;
+  document.head.appendChild(link);
+}
+
+/**
+ * One artboard, rendered by the host page's own engine inside a shadow root
+ * so its styles can't leak in or out. Re-renders only when the artboard or
+ * tokens change.
+ */
+export const ArtboardView = memo(function ArtboardView({
+  artboard,
+  tokens,
+  assetBase,
+  colorScheme,
+}: Props) {
+  const host = useRef<HTMLDivElement>(null);
+  const last = useRef("");
+
+  useLayoutEffect(() => {
+    const el = host.current;
+    if (!el) return;
+    const root = el.shadowRoot ?? el.attachShadow({ mode: "open" });
+    const body = serializeArtboardElement(artboard, {
+      rewriteUrl: (u) => resolveAsset(u, assetBase),
+    });
+    const scheme = colorScheme ? `:host{color-scheme:${colorScheme}}` : "";
+    const html = `<style>${hostTokens(tokens)}${scheme}${ARTBOARD_BASE_CSS}</style>${body}`;
+    if (html === last.current) return;
+    last.current = html;
+    ensureFonts(googleFontsLink(body, tokens));
+    root.innerHTML = html;
+  }, [artboard, tokens, assetBase, colorScheme]);
+
+  return <div ref={host} data-artboard-host={artboard.id} style={{ display: "contents" }} />;
+});
+
+/** Custom properties declared on :root apply to :host inside a shadow root. */
+function hostTokens(css: string): string {
+  return css.replace(/:root\b/g, ":host");
+}

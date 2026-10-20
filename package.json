@@ -1,0 +1,22 @@
+{
+  "name": "ponzu-monorepo",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "bun run --filter @ponzu/studio dev & bun apps/cli/src/index.ts serve examples/fernwood.design --dev",
+    "build": "bun run --filter '*' build",
+    "test": "bun test",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "biome check .",
+    "format": "biome format --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
+    "@types/bun": "latest",
+    "typescript": "^5.9.3"
+  }
+}

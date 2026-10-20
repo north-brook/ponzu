@@ -1,0 +1,16 @@
+{
+  "ponzu": 1,
+  "name": "Fernwood",
+  "pages": [
+    {
+      "id": "pg_home",
+      "name": "Home",
+      "icon": "home"
+    },
+    {
+      "id": "pg_mobile",
+      "name": "Mobile",
+      "icon": "phone"
+    }
+  ]
+}

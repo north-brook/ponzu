@@ -1,0 +1,10 @@
+node_modules
+dist
+out
+.DS_Store
+*.log
+.vercel
+.ponzu-cache
+apps/desktop/dist
+apps/desktop/out
+examples/**/exports

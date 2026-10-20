@@ -1,0 +1,12 @@
+{
+  "name": "@ponzu/core",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "parse5": "^8"
+  }
+}

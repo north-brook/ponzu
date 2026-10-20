@@ -1,0 +1,129 @@
+import { afterAll, beforeAll, expect, test } from "bun:test";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { LocalWorkspace, serve } from "./index.ts";
+
+let dir: string;
+let ws: LocalWorkspace;
+let server: ReturnType<typeof serve>;
+let client: Client;
+
+const text = (r: any) =>
+  (r.content as { type: string; text?: string }[])
+    .filter((c) => c.type === "text")
+    .map((c) => c.text)
+    .join("\n");
+
+beforeAll(async () => {
+  dir = await mkdtemp(join(tmpdir(), "ponzu-e2e-"));
+  ws = new LocalWorkspace({ cwd: dir });
+  server = serve(ws, { port: 0 });
+  client = new Client({ name: "claude-code-test", version: "1" });
+  await client.connect(
+    new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${server.port}/mcp`)),
+  );
+});
+
+afterAll(async () => {
+  await client.close();
+  await ws.closeAll();
+  server.stop(true);
+  await rm(dir, { recursive: true, force: true });
+});
+
+test("an agent builds a file through MCP and it lands on disk", async () => {
+  const { tools } = await client.listTools();
+  expect(tools.length).toBeGreaterThan(25);
+
+  const created = await client.callTool({
+    name: "create_file",
+    arguments: { path: "shop.design", pages: [{ name: "Home" }], tokens: ":root { --ink: #111; }" },
+  });
+  expect(text(created)).toContain("Created");
+
+  const ab = await client.callTool({
+    name: "create_artboard",
+    arguments: { name: "Hero", width: 800, height: 600 },
+  });
+  const abId = /artboard (ab_\w+)/.exec(text(ab))![1]!;
+
+  const wrote = await client.callTool({
+    name: "write_html",
+    arguments: {
+      target: abId,
+      html: `<h1 data-name="Headline" style="color:var(--ink)">Plants</h1><button onclick="evil()">Shop</button>`,
+    },
+  });
+  expect(text(wrote)).toContain("Headline");
+  expect(text(wrote)).toContain("onclick");
+
+  const tree = await client.callTool({ name: "get_tree", arguments: { id: abId } });
+  expect(text(tree)).toContain('"Headline"');
+
+  await ws.designs()[0]!.design.flush();
+  const html = await readFile(join(dir, "shop.design/pages/home/hero.html"), "utf8");
+  expect(html).toContain("Plants");
+  expect(html).not.toContain("onclick");
+  expect(await readFile(join(dir, "shop.design/tokens.css"), "utf8")).toContain("--ink");
+});
+
+test("comments flow through wait_for_activity and reply", async () => {
+  const design = ws.designs()[0]!.design;
+  const ab = design.doc.pages[0]!.artboards[0]!;
+  const start = await client.callTool({ name: "wait_for_activity", arguments: { timeout: 0 } });
+  const cursor = Number(/cursor=(\d+)/.exec(text(start))![1]);
+
+  const waiting = client.callTool({
+    name: "wait_for_activity",
+    arguments: { since: cursor, timeout: 5 },
+  });
+  setTimeout(() => {
+    design.apply(
+      {
+        op: "thread.create",
+        thread: {
+          id: "th_test1",
+          artboardId: ab.id,
+          x: 0,
+          y: 0,
+          status: "open",
+          createdAt: 1,
+          updatedAt: 1,
+          messages: [
+            {
+              id: "m_1",
+              author: { kind: "user", name: "Bryce" },
+              text: "make it bigger",
+              createdAt: 1,
+            },
+          ],
+        },
+      },
+      { kind: "user", name: "Bryce" },
+    );
+  }, 100);
+  const got = text(await waiting);
+  expect(got).toContain("make it bigger");
+
+  await client.callTool({
+    name: "reply",
+    arguments: { thread: "th_test1", text: "Bumped to 96px.", resolve: true },
+  });
+  const t = design.doc.threads.find((x) => x.id === "th_test1")!;
+  expect(t.status).toBe("resolved");
+  expect(t.messages[1]!.author).toEqual({ kind: "agent", name: "Claude" });
+});
+
+test("edits made in a text editor show up as file.changed", async () => {
+  const design = ws.designs()[0]!.design;
+  const cursor = ws.events.cursor;
+  const path = join(dir, "shop.design/pages/home/hero.html");
+  const html = await readFile(path, "utf8");
+  await writeFile(path, html.replace("Plants", "Ferns"));
+  const events = await ws.events.wait(cursor, 3000, { types: ["file.changed"] });
+  expect(events.length).toBeGreaterThan(0);
+  expect(JSON.stringify(design.doc)).toContain("Ferns");
+});

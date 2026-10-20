@@ -1,0 +1,13 @@
+{
+  "name": "@ponzu/store",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./fs": "./src/fs.ts"
+  },
+  "dependencies": {
+    "@ponzu/core": "workspace:*"
+  }
+}

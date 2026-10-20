@@ -1,0 +1,14 @@
+{
+  "name": "@ponzu/render",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./chromium": "./src/chromium.ts"
+  },
+  "dependencies": {
+    "playwright-core": "^1.64.1",
+    "@ponzu/core": "workspace:*"
+  }
+}

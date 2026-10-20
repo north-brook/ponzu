@@ -1,0 +1,74 @@
+{
+  "name": "@ponzu/desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Ponzu desktop app",
+  "type": "module",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "build": "bun build src/main.ts --target node --format cjs --outfile dist/main.cjs --external electron && bun build src/preload.ts --target node --format cjs --outfile dist/preload.cjs --external electron && bun build ../cli/src/index.ts --compile --external playwright-core --external @ponzu/render/chromium --outfile dist/server/ponzu",
+    "start": "bun run build && ./run-dev.sh",
+    "dist": "bun run build && bun run --filter @ponzu/studio build && electron-builder --mac --publish never"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "electron": "^44.9.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "design.ponzu.app",
+    "productName": "Ponzu",
+    "directories": {
+      "output": "out",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../studio/dist",
+        "to": "studio"
+      },
+      {
+        "from": "dist/server",
+        "to": "server"
+      }
+    ],
+    "fileAssociations": [
+      {
+        "ext": "design",
+        "name": "Ponzu Design",
+        "role": "Editor",
+        "isPackage": true,
+        "icon": "build/icon.icns"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.graphics-design",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "build/icon.icns",
+      "extendInfo": {
+        "UTExportedTypeDeclarations": [
+          {
+            "UTTypeIdentifier": "design.ponzu.design",
+            "UTTypeDescription": "Ponzu Design",
+            "UTTypeConformsTo": [
+              "com.apple.package",
+              "public.composite-content"
+            ],
+            "UTTypeTagSpecification": {
+              "public.filename-extension": [
+                "design"
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}
