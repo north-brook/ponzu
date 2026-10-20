@@ -459,6 +459,7 @@ ipcMain.handle("ponzu:new-file", () => newDesign());
 ipcMain.on("ponzu:reveal", (_e, path: string) => shell.showItemInFolder(path));
 ipcMain.handle("ponzu:whats-new", () => pendingWhatsNew());
 ipcMain.on("ponzu:whats-new-seen", () => markWhatsNewSeen());
+ipcMain.on("ponzu:close-window", (e) => BrowserWindow.fromWebContents(e.sender)?.close());
 
 function buildMenu() {
   const template: Electron.MenuItemConstructorOptions[] = [
@@ -510,7 +511,14 @@ function buildMenu() {
           click: () => serverUrl && clipboard.writeText(`${serverUrl}/mcp`),
         },
         { type: "separator" },
-        { role: "close" },
+        {
+          label: "Close Tab",
+          accelerator: "CmdOrCtrl+W",
+          click: (_item, win) => {
+            if (win instanceof BrowserWindow) win.webContents.send("ponzu:close-tab");
+          },
+        },
+        { role: "close", accelerator: "CmdOrCtrl+Shift+W" },
       ],
     },
     { role: "editMenu" },

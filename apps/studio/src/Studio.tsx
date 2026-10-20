@@ -1,5 +1,12 @@
 import { AgentMark, Canvas, Icon, Logo, SocketSource, useSource } from "@ponzu/react";
-import { useEffect, useMemo, useState } from "react";
+import {
+  type PointerEvent as ReactPointerEvent,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { WhatsNew } from "@/components/whats-new";
@@ -28,6 +35,9 @@ declare global {
       /** Missing from builds before What's new. */
       whatsNew?(): Promise<{ version: string; notes: string[] } | null>;
       whatsNewSeen?(): void;
+      /** ⌘W from the app menu. Returns the unsubscribe. Missing from builds before tab closing. */
+      onCloseTab?(handler: () => void): () => void;
+      closeWindow?(): void;
     };
   }
 }
@@ -100,14 +110,26 @@ export function Studio() {
     refresh();
   };
 
+  // Closing the open tab opens its neighbour, like a browser, so ⌘W works through them.
   const closeTab = (key: string) => {
     sources.get(key)?.close();
     sources.delete(key);
+    const i = tabs.indexOf(key);
     setTabs((t) => t.filter((k) => k !== key));
-    if (active === key) setActive(null);
+    if (active === key) setActive(tabs[i + 1] ?? tabs[i - 1] ?? null);
   };
 
-  // ⌘0 goes home, ⌘1–8 open file tabs, ⌘9 the last, and ⌘⇧[ ⌘⇧] cycle through home and
+  // ⌘W closes the open tab; at home it closes the window.
+  useEffect(
+    () =>
+      window.ponzuDesktop?.onCloseTab?.(() => {
+        if (active) closeTab(active);
+        else window.ponzuDesktop?.closeWindow?.();
+      }),
+    [tabs, active],
+  );
+
+  // ⌘1 goes home, ⌘2–8 open file tabs, ⌘9 the last, and ⌘⇧[ ⌘⇧] cycle through home and
   // the tabs, like a browser.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -120,14 +142,14 @@ export function Studio() {
         setActive(stops[(i + step + stops.length) % stops.length] ?? null);
         return;
       }
-      const digit = /^Digit([0-9])$/.exec(e.code)?.[1];
+      const digit = /^Digit([1-9])$/.exec(e.code)?.[1];
       if (!digit || e.shiftKey) return;
-      if (digit === "0") {
+      if (digit === "1") {
         e.preventDefault();
         setActive(null);
         return;
       }
-      const key = digit === "9" ? tabs.at(-1) : tabs[Number(digit) - 1];
+      const key = digit === "9" ? tabs.at(-1) : tabs[Number(digit) - 2];
       if (!key) return;
       e.preventDefault();
       setActive(key);
@@ -135,6 +157,8 @@ export function Studio() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [tabs, active]);
+
+  const { strip, dragProps } = useTabDrag(tabs, setTabs);
 
   const desktop = window.ponzuDesktop;
   const isMac = desktop?.platform === "darwin";
@@ -154,19 +178,23 @@ export function Studio() {
           size="icon"
           className={cn("w-8", active === null && "bg-secondary hover:bg-secondary")}
           onClick={() => setActive(null)}
-          title={`Home (${mod}0)`}
+          title={`Home (${mod}1)`}
         >
           <Logo size={18} dark={theme === "dark"} />
         </Button>
-        <div className="flex min-w-0 gap-0.5 overflow-x-auto [scrollbar-width:none]">
+        <div
+          ref={strip}
+          className="relative flex min-w-0 gap-0.5 overflow-x-auto [scrollbar-width:none]"
+        >
           {tabs.map((key, i) => (
             <FileTab
               key={key}
               source={source(key)}
-              shortcut={i < 8 ? i + 1 : i === tabs.length - 1 ? 9 : undefined}
+              shortcut={i < 7 ? i + 2 : i === tabs.length - 1 ? 9 : undefined}
               active={key === active}
               onClick={() => setActive(key)}
               onClose={() => closeTab(key)}
+              {...dragProps(key)}
             />
           ))}
         </div>
@@ -188,19 +216,22 @@ export function Studio() {
   );
 }
 
+type DragProps = ReturnType<ReturnType<typeof useTabDrag>["dragProps"]>;
+
 function FileTab({
   source,
   shortcut,
   active,
   onClick,
   onClose,
+  ...drag
 }: {
   source: SocketSource;
   shortcut?: number;
   active: boolean;
   onClick: () => void;
   onClose: () => void;
-}) {
+} & DragProps) {
   const state = useSource(source);
   const busy = state.presence.some((p) => p.working.length > 0);
   const name =
@@ -212,7 +243,7 @@ function FileTab({
   return (
     <div
       className={cn(
-        "group app-no-drag flex h-7 max-w-[220px] shrink-0 cursor-default items-center gap-[7px] whitespace-nowrap rounded-lg pr-1.5 pl-2.5 outline-none",
+        "group app-no-drag relative flex h-7 max-w-[220px] shrink-0 cursor-default select-none items-center whitespace-nowrap rounded-lg px-2.5 outline-none",
         active
           ? "bg-secondary text-foreground"
           : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -222,23 +253,24 @@ function FileTab({
       role="tab"
       tabIndex={0}
       title={shortcut ? `${source.file} (${mod}${shortcut})` : source.file}
+      {...drag}
     >
-      {busy ? (
-        <span className="m-px size-3 animate-spin rounded-full border-[1.6px] border-current border-r-transparent [animation-duration:0.8s]" />
-      ) : (
-        <Icon name="file" size={14} />
-      )}
-      <span className="truncate">{name}</span>
-      {state.status === "offline" && (
-        <span className="size-1.5 rounded-full bg-offline" title="Reconnecting" />
-      )}
+      {/* The close button sits over the end of the label, which fades out under it. */}
+      <span className="flex min-w-0 items-center gap-[7px] group-focus-visible:[mask-image:linear-gradient(to_left,transparent_14px,#000_32px)] group-hover:[mask-image:linear-gradient(to_left,transparent_14px,#000_32px)]">
+        {busy ? (
+          <span className="m-px size-3 shrink-0 animate-spin rounded-full border-[1.6px] border-current border-r-transparent [animation-duration:0.8s]" />
+        ) : (
+          <Icon name="file" size={14} />
+        )}
+        <span className="truncate">{name}</span>
+        {state.status === "offline" && (
+          <span className="size-1.5 shrink-0 rounded-full bg-offline" title="Reconnecting" />
+        )}
+      </span>
       <button
         type="button"
         aria-label="Close tab"
-        className={cn(
-          "grid size-[18px] place-items-center rounded-[5px] opacity-0 hover:bg-accent hover:opacity-100! group-hover:opacity-60",
-          active && "opacity-60",
-        )}
+        className="absolute top-1/2 right-1 grid size-[18px] -translate-y-1/2 place-items-center rounded-[5px] opacity-0 hover:bg-accent hover:opacity-100! group-focus-visible:opacity-60 group-hover:opacity-60"
         onClick={(e) => {
           e.stopPropagation();
           onClose();
@@ -248,6 +280,106 @@ function FileTab({
       </button>
     </div>
   );
+}
+
+const slide = { duration: 150, easing: "ease-out" };
+
+/**
+ * Drag a tab along the strip to move it. It follows the pointer, and the others
+ * slide out of its way as it passes their middles. Pointer events, not HTML drag
+ * and drop: the strip sits in the desktop app's window-drag region.
+ */
+function useTabDrag(tabs: string[], setTabs: (tabs: string[]) => void) {
+  const strip = useRef<HTMLDivElement>(null);
+  const order = useRef(tabs);
+  order.current = tabs;
+  const drag = useRef<{
+    el: HTMLElement;
+    /** Where in the tab it was picked up. */
+    grab: number;
+    x: number;
+    dx: number;
+  } | null>(null);
+  /** Where the other tabs were drawn before a move, to slide them from. */
+  const before = useRef(new Map<HTMLElement, number>());
+
+  // Hold the dragged tab under the pointer, wherever its slot in the strip is now.
+  const follow = () => {
+    const d = drag.current;
+    const s = strip.current;
+    if (!d || !s) return;
+    const slot = s.getBoundingClientRect().left - s.scrollLeft + d.el.offsetLeft;
+    d.dx = Math.min(
+      Math.max(d.x - d.grab - slot, -d.el.offsetLeft),
+      s.scrollWidth - d.el.offsetLeft - d.el.offsetWidth,
+    );
+    d.el.style.transform = `translateX(${d.dx}px)`;
+  };
+
+  useLayoutEffect(() => {
+    for (const [el, left] of before.current) {
+      for (const a of el.getAnimations()) a.cancel();
+      const dx = left - el.getBoundingClientRect().left;
+      if (dx) el.animate([{ transform: `translateX(${dx}px)` }, { transform: "none" }], slide);
+    }
+    before.current.clear();
+    follow();
+  }, [tabs]);
+
+  const dragProps = (key: string) => ({
+    onPointerDown: (down: ReactPointerEvent<HTMLElement>) => {
+      // The close button clicks; it doesn't drag.
+      if (down.button !== 0 || (down.target as Element).closest("button")) return;
+      const el = down.currentTarget;
+      const grab = down.clientX - el.getBoundingClientRect().left;
+      // On the window, so a quick flick that leaves the tab still moves it.
+      const move = (e: PointerEvent) => {
+        const s = strip.current;
+        if (!s) return;
+        if (!drag.current) {
+          if (Math.abs(e.clientX - down.clientX) < 4) return;
+          drag.current = { el, grab, x: e.clientX, dx: 0 };
+          el.style.zIndex = "1";
+        }
+        const d = drag.current;
+        d.x = e.clientX;
+        follow();
+        const others = [...s.children].filter(
+          (c): c is HTMLElement => c instanceof HTMLElement && c !== el,
+        );
+        // From the pointer, not the clamped tab: a wide tab held at the strip's end can't
+        // reach the middle of a narrow one there.
+        const left = s.getBoundingClientRect().left - s.scrollLeft;
+        const middle = d.x - d.grab - left + el.offsetWidth / 2;
+        const to = others.filter((c) => c.offsetLeft + c.offsetWidth / 2 < middle).length;
+        const tabs = order.current;
+        if (to === tabs.indexOf(key)) return;
+        for (const c of others) before.current.set(c, c.getBoundingClientRect().left);
+        const next = tabs.filter((k) => k !== key);
+        next.splice(to, 0, key);
+        setTabs(next);
+      };
+      const end = () => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", end);
+        window.removeEventListener("pointercancel", end);
+        const d = drag.current;
+        drag.current = null;
+        if (!d) return;
+        el.style.transform = "";
+        el.animate([{ transform: `translateX(${d.dx}px)` }, { transform: "none" }], slide)
+          .finished.then(() => {
+            el.style.zIndex = "";
+          })
+          .catch(() => {});
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", end);
+      window.addEventListener("pointercancel", end);
+    },
+  });
+
+  return { strip, dragProps };
 }
 
 function AgentDots({ source }: { source: SocketSource }) {
