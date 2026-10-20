@@ -62,7 +62,9 @@ export const listenTools = [
     },
     async handler(args, { ws, caller, signal }) {
       const { key, design } = await ws.resolve(args.file);
-      const cursor = args.since ?? ws.events.cursor;
+      // A cursor past the end came from a Ponzu that has since restarted: start from now.
+      const cursor =
+        args.since !== undefined && args.since <= ws.events.cursor ? args.since : ws.events.cursor;
       const types = args.types ?? [
         "comment.created",
         "comment.replied",

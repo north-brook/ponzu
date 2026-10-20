@@ -312,9 +312,17 @@ function Home({
 
         <section>
           <h2>Connect an agent</h2>
-          <p className="home-muted">
-            Ponzu speaks MCP. Point your agent at this server and ask it to design something.
-          </p>
+          {desktop ? (
+            <p className="home-muted">
+              Claude Code, Codex and Cursor on this Mac are already set up, and they reach Ponzu
+              whether or not this window is open. Ask one to design something.
+            </p>
+          ) : (
+            <p className="home-muted">
+              Ponzu speaks MCP. Run <code>ponzu install</code> to set up the agents on this machine,
+              or point any agent at this server.
+            </p>
+          )}
           <div className="home-code">
             <code>claude mcp add --transport http ponzu {mcp}</code>
             <button

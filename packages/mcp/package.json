@@ -4,7 +4,8 @@
   "type": "module",
   "license": "MIT",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./bridge": "./src/bridge.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",

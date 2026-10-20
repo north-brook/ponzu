@@ -1,15 +1,16 @@
 #!/usr/bin/env bun
 import { existsSync } from "node:fs";
 import { networkInterfaces } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { emptyDoc, newId } from "@ponzu/core";
-import { serveStdio } from "@ponzu/mcp";
+import { serveBridge } from "@ponzu/mcp/bridge";
 import { RemoteRenderer, type Renderer } from "@ponzu/render";
 import { findDesigns, LocalWorkspace, serve } from "@ponzu/server";
 import { Design } from "@ponzu/store";
 import { FsAdapter } from "@ponzu/store/fs";
+import { announceHost, findHost } from "./host.ts";
 import { installAgent } from "./install.ts";
 
 const VERSION = "0.1.0";
@@ -19,15 +20,18 @@ const HELP = `Ponzu ${VERSION}: a design canvas your coding agent drives with HT
 
 Usage
   ponzu serve [files.design…]   Open the canvas in your browser and serve MCP at /mcp
-  ponzu mcp [files.design…]     MCP over stdio, for agents that launch their own servers
+  ponzu mcp [files.design…]     MCP over stdio: what agents launch. Joins the running
+                                Ponzu, starts the desktop app in the background, or
+                                runs on its own
   ponzu init [name.design]      Create a new .design folder
-  ponzu install <agent>         Add Ponzu to claude, codex or cursor
+  ponzu install [agent]         Add Ponzu to claude, codex and cursor (all found by default)
 
 Options
   -p, --port <n>       Port for serve (default 7777)
   -H, --host <addr>    Address to bind (default 127.0.0.1). Use 0.0.0.0 or your
                        tailnet IP to reach the canvas from other machines.
       --no-open        Don't open a browser
+      --url <url>      With install: register this MCP URL instead of the command
   -h, --help
   -v, --version
 
@@ -47,6 +51,7 @@ async function main() {
       version: { type: "boolean", short: "v" },
       url: { type: "string" },
       studio: { type: "string" },
+      auto: { type: "boolean" },
     },
   });
   const [cmd = "serve", ...files] = positionals;
@@ -67,9 +72,7 @@ async function main() {
     case "init":
       return runInit(files[0]);
     case "install":
-      return installAgent(files[0], {
-        url: values.url ?? `http://127.0.0.1:${values.port ?? 7777}/mcp`,
-      });
+      return installAgent(files[0], { url: values.url, auto: values.auto });
     default:
       if (cmd.endsWith(".design"))
         return runServe([cmd, ...files], {
@@ -124,6 +127,7 @@ async function runServe(
   const studioDir = o.studio ?? findStudio();
   const server = serve(ws, { port: o.port, hostname: o.host, studioDir, root: process.cwd() });
   const local = `http://${o.host === "0.0.0.0" ? "localhost" : o.host}:${server.port}`;
+  const unannounce = await announceHost(local, { takeOver: Boolean(process.env.PONZU_DESKTOP) });
   // The desktop app reads this line to find the server.
   if (process.env.PONZU_DESKTOP)
     console.log(`PONZU_READY ${JSON.stringify({ url: local, mcp: `${local}/mcp` })}`);
@@ -144,6 +148,7 @@ async function runServe(
     openBrowser(url);
   }
   const stop = async () => {
+    await unannounce();
     await ws.closeAll();
     server.stop();
     process.exit(0);
@@ -152,16 +157,62 @@ async function runServe(
   process.on("SIGTERM", stop);
 }
 
+/**
+ * What agents launch. Tool calls go to the machine's Ponzu (the desktop app,
+ * started in the background if it's installed and not running, or a `ponzu
+ * serve`), so the agent shares the canvas. With neither, it runs them here.
+ */
 async function runMcp(files: string[]) {
+  const cwd = process.cwd();
+  const designs = async () =>
+    files.length ? files.map((f) => resolve(f)) : await findDesigns(cwd);
+  const ws = new LocalWorkspace({ cwd });
+  let opened: Promise<void> | null = null;
+  const openLocal = () =>
+    (opened ??= (async () => {
+      ws.renderer = await pickRenderer();
+      for (const p of await designs()) await ws.open(p);
+    })().catch((err) => {
+      opened = null;
+      throw err;
+    }));
+  const bridge = await serveBridge({
+    version: VERSION,
+    local: ws,
+    findHost,
+    // The host runs from elsewhere: show it this project's files, and send it absolute paths.
+    onHost: async (mcp) => {
+      const base = mcp.replace(/\/mcp$/, "");
+      for (const path of await designs())
+        await fetch(`${base}/api/files`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ path }),
+        });
+    },
+    prepareLocal: openLocal,
+    mapArgs: (_tool, args) => absolutePaths(args, cwd),
+  });
   // stdout belongs to the protocol; log to stderr.
-  const ws = await openWorkspace(files, (s) => console.error(s));
-  await serveStdio(ws);
   const stop = async () => {
+    await bridge.close().catch(() => {});
     await ws.closeAll();
     process.exit(0);
   };
   process.stdin.on("close", stop);
   process.on("SIGINT", stop);
+  process.on("SIGTERM", stop);
+}
+
+/** Resolve relative `path` and `file` arguments (a file can also be a name) against `cwd`. */
+function absolutePaths(args: Record<string, unknown>, cwd: string): Record<string, unknown> {
+  const out = { ...args };
+  for (const key of ["path", "file"]) {
+    const v = out[key];
+    if (typeof v !== "string" || isAbsolute(v)) continue;
+    if (key === "path" || v.endsWith(".design") || v.includes("/")) out[key] = resolve(cwd, v);
+  }
+  return out;
 }
 
 async function runInit(target = "design/untitled.design") {

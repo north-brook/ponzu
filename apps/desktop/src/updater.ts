@@ -7,16 +7,18 @@ const FOUR_HOURS = 4 * 60 * 60 * 1000;
 /**
  * Checks this repo's GitHub Releases for a newer signed build on launch and
  * every four hours. It downloads in the background and installs the next
- * time Ponzu quits; a dialog offers to restart now. Only a packaged build
- * checks: development has no feed to compare against.
+ * time Ponzu quits; a dialog offers to restart now, unless no window is open
+ * (`quiet`), in which case main quits on its own once agents go idle. Only a
+ * packaged build checks: development has no feed to compare against.
  */
-export function installUpdater() {
+export function installUpdater(opts: { quiet: () => boolean; onReady: () => void }) {
   if (!app.isPackaged) return;
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   let offered: string | null = null;
   autoUpdater.on("update-downloaded", async (info) => {
-    if (offered === info.version) return;
+    opts.onReady();
+    if (offered === info.version || opts.quiet()) return;
     offered = info.version;
     const { response } = await dialog.showMessageBox({
       type: "info",

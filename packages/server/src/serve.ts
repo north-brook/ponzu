@@ -100,6 +100,8 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
 
       if (path === "/mcp" || path.startsWith("/mcp/")) {
         if (!sameHostOk(req, url)) return new Response("Forbidden", { status: 403 });
+        // wait_for_activity holds a response open with nothing to send for up to 300s.
+        srv.timeout(req, 0);
         return mcp(req);
       }
 
@@ -149,6 +151,8 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
           version: "0.1.0",
           mcp: `${url.origin}/mcp`,
           renderer: Boolean(ws.renderer),
+          /** Seconds since an agent last had a call running. */
+          idle: Math.floor(mcp.idleMs() / 1000),
         });
       }
 

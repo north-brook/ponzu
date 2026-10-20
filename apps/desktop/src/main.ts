@@ -25,6 +25,12 @@ let server: ChildProcess | null = null;
 let serverUrl: string | null = null;
 let mainWindow: BrowserWindow | null = null;
 const pendingOpens: string[] = [];
+/**
+ * Started by an agent (`ponzu mcp`), not the person: serve without a window
+ * or dock icon until they open Ponzu themselves.
+ */
+const background = process.argv.includes("--background");
+let updateReady = false;
 
 /* ------------------------------------------------------------------ */
 /* Offscreen renderer: the server asks us for screenshots              */
@@ -150,6 +156,17 @@ function body(req: IncomingMessage): Promise<string> {
 /* The local Ponzu server                                             */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Where the server starts, which is also the folder its home screen lists.
+ * Documents, except when an agent started us: reading a protected folder
+ * blocks on a privacy prompt, and with no window it would wait unanswered.
+ */
+function serverCwd(): string {
+  if (background) return app.getPath("userData");
+  // CI runners have no Documents folder.
+  return existsSync(app.getPath("documents")) ? app.getPath("documents") : app.getPath("home");
+}
+
 function startServer(renderEndpoint: string, port: number): Promise<string> {
   return new Promise((resolve, reject) => {
     const bin = paths.server;
@@ -160,8 +177,7 @@ function startServer(renderEndpoint: string, port: number): Promise<string> {
       cmd,
       [...args, "serve", "--no-open", "--port", String(port), "--studio", paths.studio],
       {
-        // CI runners have no Documents folder.
-        cwd: existsSync(app.getPath("documents")) ? app.getPath("documents") : app.getPath("home"),
+        cwd: serverCwd(),
         env: {
           ...process.env,
           PONZU_DESKTOP: "1",
@@ -194,6 +210,37 @@ function startServer(renderEndpoint: string, port: number): Promise<string> {
 }
 
 /* ------------------------------------------------------------------ */
+/* Agents                                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Register Ponzu with the agents on this Mac (`ponzu install --auto`): new
+ * ones get it, and old fixed-URL setups move to the command that runs inside
+ * this app. The command reaches the app through a shim, so it updates with it.
+ */
+function setupAgents() {
+  if (isDev && !process.env.PONZU_SETUP_AGENTS) return;
+  if (!existsSync(paths.server)) return;
+  const child = spawn(paths.server, ["install", "--auto"], { stdio: "ignore" });
+  child.on("error", () => {});
+}
+
+/** With no window open, quit once agents have been quiet a while. Updates install on quit. */
+const IDLE_QUIT = 15 * 60_000;
+const IDLE_QUIT_UPDATE = 60_000;
+function watchIdle() {
+  setInterval(async () => {
+    if (mainWindow || !serverUrl) return;
+    try {
+      const res = await fetch(`${serverUrl}/api/info`);
+      const { idle } = (await res.json()) as { idle?: number };
+      if (idle !== undefined && idle * 1000 >= (updateReady ? IDLE_QUIT_UPDATE : IDLE_QUIT))
+        app.quit();
+    } catch {}
+  }, 30_000);
+}
+
+/* ------------------------------------------------------------------ */
 /* Windows                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -211,6 +258,9 @@ function createWindow(url: string) {
   });
   // The smoke check only needs the window painted, never on screen.
   win.once("ready-to-show", () => !smoke && win.show());
+  win.on("closed", () => {
+    if (mainWindow === win) mainWindow = null;
+  });
   watchSmoke(win, () => server?.kill("SIGTERM"));
   win.webContents.setWindowOpenHandler(({ url: target }) => {
     void shell.openExternal(target);
@@ -220,11 +270,22 @@ function createWindow(url: string) {
   return win;
 }
 
+/** Bring up the canvas, and the dock icon if an agent started us in the background. */
+function showWindow() {
+  if (!serverUrl) return;
+  if (process.platform === "darwin") void app.dock?.show();
+  if (!mainWindow || mainWindow.isDestroyed()) mainWindow = createWindow(serverUrl);
+  else mainWindow.show();
+  mainWindow.focus();
+}
+
 async function openDesign(path: string) {
-  if (!serverUrl || !mainWindow) {
+  if (!serverUrl) {
     pendingOpens.push(path);
     return;
   }
+  showWindow();
+  if (!mainWindow) return;
   await fetch(`${serverUrl}/api/files`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -339,9 +400,11 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on("second-instance", (_e, argv) => {
+    // Another agent asking for the app: it's already serving.
+    if (argv.includes("--background")) return;
     const p = argv.find((a) => a.endsWith(".design"));
     if (p) void openDesign(p);
-    mainWindow?.focus();
+    else showWindow();
   });
 
   // macOS: double-clicking a .design or dropping it on the dock icon.
@@ -354,7 +417,8 @@ if (!app.requestSingleInstanceLock()) {
     buildMenu();
     const render = await startRenderHost();
     try {
-      // A stable port lets agents keep one MCP URL; fall back if it's taken.
+      // Agents find the server through ~/.ponzu/host.json on any port. 7777 is
+      // for anything pointed at a fixed URL.
       serverUrl = await startServer(render, 7777).catch(() => startServer(render, 0));
     } catch (err) {
       if (smoke) {
@@ -366,19 +430,22 @@ if (!app.requestSingleInstanceLock()) {
       app.quit();
       return;
     }
-    mainWindow = createWindow(serverUrl);
-    if (!smoke) installUpdater();
     const fromArgv = process.argv.find((a) => a.endsWith(".design"));
     if (fromArgv) pendingOpens.push(fromArgv);
+    if (!background || pendingOpens.length || smoke) showWindow();
+    else app.dock?.hide();
+    if (!smoke) {
+      installUpdater({ quiet: () => !mainWindow, onReady: () => (updateReady = true) });
+      setupAgents();
+      watchIdle();
+    }
     for (const p of pendingOpens.splice(0)) await openDesign(p);
   });
 
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0 && serverUrl)
-      mainWindow = createWindow(serverUrl);
-  });
+  app.on("activate", () => showWindow());
 
   app.on("window-all-closed", () => {
+    mainWindow = null;
     if (process.platform !== "darwin") app.quit();
   });
 
