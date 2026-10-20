@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/north-brook/ponzu/compare/v1.2.0...v1.3.0) (2026-10-20)
+
+
+### Features
+
+* tab and page shortcuts, a page icon, and a quieter mode switcher ([#4](https://github.com/north-brook/ponzu/issues/4)) ([371ed00](https://github.com/north-brook/ponzu/commit/371ed006dbb14119fb473a23df7469b03e1a068c))
+
 ## [1.2.0](https://github.com/north-brook/ponzu/compare/v1.1.0...v1.2.0) (2026-10-20)
 
 
