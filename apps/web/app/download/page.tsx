@@ -24,7 +24,7 @@ export default async function Page(props: PageProps<"/download">) {
 
   return (
     <div className="mx-auto max-w-[1440px] px-16 max-[720px]:px-5">
-      {started ? <AutoStart version={version ?? "latest"} /> : null}
+      {started ? <AutoStart /> : null}
       <Nav />
 
       <header className="flex flex-col items-center gap-6 pt-[88px] pb-14 text-center max-[720px]:pt-14 max-[720px]:pb-10">

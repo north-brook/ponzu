@@ -53,13 +53,15 @@ export function Download({ installer, started: initial }: { installer: string; s
  * it (`?start=1`, which every Download button on the site sends). A hidden
  * frame requests the DMG once: it is an attachment, so nothing navigates and
  * the steps stay on screen. Session storage keeps a reload or the second
- * effect pass in development from downloading it twice.
+ * effect pass in development from downloading it twice. The key names no
+ * version: the link always serves the newest build, and the version lookup
+ * can fail on one load and succeed on the next.
  */
-export function AutoStart({ version }: { version: string }) {
+export function AutoStart() {
   const [src, setSrc] = useState<string>();
 
   useEffect(() => {
-    const key = `ponzu-download-started:${version}`;
+    const key = "ponzu-download-started";
     try {
       if (sessionStorage.getItem(key)) return;
       sessionStorage.setItem(key, "1");
@@ -67,7 +69,7 @@ export function AutoStart({ version }: { version: string }) {
       // Storage refused (private window). One request per mount is still right.
     }
     setSrc(DMG);
-  }, [version]);
+  }, []);
 
   if (!src) return null;
   return <iframe hidden src={src} tabIndex={-1} title="Ponzu download" />;
