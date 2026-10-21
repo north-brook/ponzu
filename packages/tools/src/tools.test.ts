@@ -429,6 +429,16 @@ test("waiting for activity ends a pass", async () => {
   expect(me().status).toBeUndefined();
 });
 
+test("deleting an artboard takes it from another agent working on it", async () => {
+  const { call, ws } = await setup();
+  const other: ToolContext = { ws, caller: { id: "o", author: { kind: "agent", name: "other" } } };
+  const them = () => ws.presence.list().find((p) => p.id === "o")!;
+  await runTool(getTool("set_text")!, { updates: [{ id: "n_h", text: "Mine" }] }, other);
+  expect(them().working).toEqual(["ab_hero"]);
+  await call("delete", { ids: ["ab_hero"] });
+  expect(them().working).toEqual([]);
+});
+
 /** Two artboards on one page, the second at (x, y) with the given style. */
 async function twoBoards(x: number, y: number, style: string) {
   return withFiles({

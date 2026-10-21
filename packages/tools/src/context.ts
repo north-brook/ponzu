@@ -225,6 +225,7 @@ export class PresenceHub {
     file: string,
     change: { artboards?: string[]; gone?: string[]; status?: string },
   ): void {
+    if (change.gone?.length) this.drop(caller.id, file, change.gone);
     const prev = this.map.get(caller.id);
     const same = prev?.file === file;
     const kept = same ? prev.working.filter((id) => !change.gone?.includes(id)) : [];
@@ -233,6 +234,18 @@ export class PresenceHub {
     // Another edit to the same artboards changes nothing anyone sees, and the call already touched.
     if (same && sameIds(working, prev.working) && status === prev.status) return;
     this.touch(caller, { file, working, status });
+  }
+
+  /** Deleted artboards are no longer anyone's: take them from the other agents in `file`. */
+  private drop(except: string, file: string, gone: string[]): void {
+    let changed = false;
+    for (const p of this.map.values()) {
+      if (p.id === except || p.file !== file || !p.working.some((id) => gone.includes(id)))
+        continue;
+      this.map.set(p.id, { ...p, working: p.working.filter((id) => !gone.includes(id)) });
+      changed = true;
+    }
+    if (changed) this.notify();
   }
 
   leave(id: string): void {
