@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.21.3](https://github.com/north-brook/ponzu/compare/v1.21.2...v1.21.3) (2026-10-21)
+
+
+### Bug Fixes
+
+* screenshots stop within a minute and say what stalled ([#91](https://github.com/north-brook/ponzu/issues/91)) ([ed934fe](https://github.com/north-brook/ponzu/commit/ed934fea2509451a51978aeeaa79cbc42e038017))
+* tools use the file an agent is working in when several are open ([#85](https://github.com/north-brook/ponzu/issues/85)) ([4fba1db](https://github.com/north-brook/ponzu/commit/4fba1db07e35a8dfb7b02e19a4cc575a5c857e49))
+
 ## [1.21.2](https://github.com/north-brook/ponzu/compare/v1.21.1...v1.21.2) (2026-10-21)
 
 
