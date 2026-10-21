@@ -35,6 +35,7 @@ export const buttonVariants = cva(
       },
       size: {
         default: "pz:h-7 pz:rounded-lg pz:px-2.5",
+        "icon-sm": "pz:size-6 pz:rounded-md",
         icon: "pz:size-[26px] pz:rounded-[7px]",
         "icon-lg": "pz:size-7 pz:rounded-lg",
       },

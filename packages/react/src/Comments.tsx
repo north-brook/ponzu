@@ -269,7 +269,7 @@ export function ThreadCard({
                 <div className="pz:ml-auto pz:flex pz:shrink-0 pz:opacity-0 pz:group-hover:opacity-100 pz:focus-within:opacity-100">
                   <Button
                     variant="ghost"
-                    className="pz:size-6 pz:rounded-md"
+                    size="icon-sm"
                     onClick={() => setEditing(m.id)}
                     title="Edit"
                   >
@@ -277,7 +277,7 @@ export function ThreadCard({
                   </Button>
                   <Button
                     variant="ghost"
-                    className="pz:size-6 pz:rounded-md"
+                    size="icon-sm"
                     onClick={() => removeMessage(m.id)}
                     title={i === 0 ? "Delete thread" : "Delete"}
                   >
