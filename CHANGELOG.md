@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.0](https://github.com/north-brook/ponzu/compare/v1.16.3...v1.17.0) (2026-10-21)
+
+
+### Features
+
+* get_node shows rendered boxes, and lint measures what an artboard needs ([#65](https://github.com/north-brook/ponzu/issues/65)) ([639fc1c](https://github.com/north-brook/ponzu/commit/639fc1cf9f53a7d794666935f46f41396a3b09c7))
+
 ## [1.16.3](https://github.com/north-brook/ponzu/compare/v1.16.2...v1.16.3) (2026-10-21)
 
 
