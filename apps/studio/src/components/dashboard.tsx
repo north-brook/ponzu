@@ -1,5 +1,20 @@
-import type { Catalog, CatalogArtboard, CatalogFile, CatalogMachine } from "@ponzu/core";
-import { AgentMark, Icon, Tip, TipProvider, timeAgo } from "@ponzu/react";
+import {
+  type Catalog,
+  type CatalogArtboard,
+  type CatalogFile,
+  type CatalogMachine,
+  previewArtboard,
+} from "@ponzu/core";
+import {
+  AgentMark,
+  ArtboardView,
+  Icon,
+  SocketSource,
+  Tip,
+  TipProvider,
+  timeAgo,
+  useSource,
+} from "@ponzu/react";
 import Fuse, { type FuseResultMatch } from "fuse.js";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -11,6 +26,11 @@ export interface OpenTarget {
 }
 
 const mod = navigator.userAgent.includes("Mac") ? "⌘" : "Ctrl+";
+
+/** Cards shown live at once. Each holds its design's first page in the page. */
+const LIVE_CARDS = 4;
+/** How long a card stays live after its agent stops: about as long as its preview takes to redraw. */
+const LIVE_LINGER = 10_000;
 
 /**
  * The home screen. Until this Mac has a design of its own, or is set up and can
@@ -58,6 +78,7 @@ export function Dashboard({
     !files.some((f) => f.machine === "local") &&
     !(connected && files.length > 0);
   const q = query.trim();
+  const live = useLive(files);
 
   return (
     <div className="h-full overflow-auto rounded-xl bg-home">
@@ -102,9 +123,9 @@ export function Dashboard({
         </TipProvider>
 
         {q ? (
-          <Results query={q} files={files} machines={machines} onOpen={onOpen} />
+          <Results query={q} files={files} machines={machines} onOpen={onOpen} live={live} />
         ) : setup ? (
-          <Setup catalog={catalog} files={files} machines={machines} onOpen={onOpen} />
+          <Setup catalog={catalog} files={files} machines={machines} onOpen={onOpen} live={live} />
         ) : (
           <>
             <Heading
@@ -113,7 +134,13 @@ export function Dashboard({
             />
             <Grid>
               {files.map((f) => (
-                <FileCard key={f.id} file={f} machine={machines.get(f.machine)} onOpen={onOpen} />
+                <FileCard
+                  key={f.id}
+                  file={f}
+                  machine={machines.get(f.machine)}
+                  onOpen={onOpen}
+                  live={live.has(f.id)}
+                />
               ))}
             </Grid>
           </>
@@ -159,11 +186,14 @@ function Setup({
   files,
   machines,
   onOpen,
+  live,
 }: {
   catalog: Catalog | null;
   files: CatalogFile[];
   machines: Map<string, CatalogMachine>;
   onOpen: (target: OpenTarget) => void;
+  /** Cards to show live (useLive). */
+  live: Set<string>;
 }) {
   const [copied, setCopied] = useState(false);
   const agents = catalog?.agents.filter((a) => a.found) ?? [];
@@ -257,7 +287,13 @@ function Setup({
       {files.length ? (
         <Grid>
           {files.map((f) => (
-            <FileCard key={f.id} file={f} machine={machines.get(f.machine)} onOpen={onOpen} />
+            <FileCard
+              key={f.id}
+              file={f}
+              machine={machines.get(f.machine)}
+              onOpen={onOpen}
+              live={live.has(f.id)}
+            />
           ))}
         </Grid>
       ) : (
@@ -361,10 +397,13 @@ function FileCard({
   onOpen,
   match,
   pathMatch,
+  live,
 }: {
   file: CatalogFile;
   machine?: CatalogMachine;
   onOpen: (target: OpenTarget) => void;
+  /** Show the design itself, edits and all, over its preview. */
+  live?: boolean;
   match?: readonly [number, number][];
   /** Where a search matched the file's path, when it matched there and not in the name. */
   pathMatch?: readonly [number, number][];
@@ -386,6 +425,7 @@ function FileCard({
         )}
       >
         <Preview src={file.preview} />
+        {live && <LivePreview file={file} />}
         {file.busy && (
           <span className="absolute top-2.5 left-2.5 flex h-6 items-center gap-1.5 rounded-full bg-card/80 pr-2.5 pl-[7px] text-xs shadow-[0_0_0_0.5px_rgba(0,0,0,0.08),0_2px_6px_rgba(0,0,0,0.06)] backdrop-blur-md">
             <AgentMark client={file.busy} size={13} />
@@ -441,6 +481,115 @@ function Preview({ src }: { src: string | null }) {
         className="absolute inset-0 size-full object-contain"
       />
     </picture>
+  );
+}
+
+/**
+ * Which cards are live: the first few an agent is working in, and each for a
+ * little while after it stops, until its preview has caught up with what it did.
+ */
+function useLive(files: CatalogFile[]): Set<string> {
+  const busy = useRef(new Set<string>());
+  const until = useRef(new Map<string, number>());
+  const [, wake] = useState(0);
+  const now = Date.now();
+  for (const f of files) {
+    if (f.busy) {
+      busy.current.add(f.id);
+      until.current.delete(f.id);
+    } else if (busy.current.delete(f.id)) {
+      // The first catalog that shows the agent gone starts the linger.
+      until.current.set(f.id, now + LIVE_LINGER);
+    }
+  }
+  const live = new Set<string>();
+  for (const f of files) {
+    if (live.size === LIVE_CARDS) break;
+    if (f.busy || (until.current.get(f.id) ?? 0) > now) live.add(f.id);
+  }
+  // Catalog polls come every few seconds; a lingering card ends on time without one.
+  const next = Math.min(
+    ...[...live].map((id) => until.current.get(id) ?? 0).filter((t) => t > now),
+  );
+  useEffect(() => {
+    if (!Number.isFinite(next)) return;
+    const t = setTimeout(() => wake((n) => n + 1), next - Date.now() + 50);
+    return () => clearTimeout(t);
+  }, [next]);
+  return live;
+}
+
+const darkScheme = window.matchMedia("(prefers-color-scheme: dark)");
+
+function useScheme(): "light" | "dark" {
+  const [dark, setDark] = useState(darkScheme.matches);
+  useEffect(() => {
+    const onChange = () => setDark(darkScheme.matches);
+    darkScheme.addEventListener("change", onChange);
+    return () => darkScheme.removeEventListener("change", onChange);
+  }, []);
+  return dark ? "dark" : "light";
+}
+
+/**
+ * The design's first page as the preview lays it out, rendered here from its
+ * live document rather than a picture of it, so an agent's edits show as they
+ * land. It listens without editing or counting as an open canvas, and fades
+ * in over the preview once the design arrives.
+ */
+function LivePreview({ file }: { file: CatalogFile }) {
+  const scheme = useScheme();
+  const [source, setSource] = useState<SocketSource | null>(null);
+  useEffect(() => {
+    const s = new SocketSource(`${window.location.origin}${file.base}`, file.key, { watch: true });
+    setSource(s);
+    return () => s.close();
+  }, [file.base, file.key]);
+  if (!source) return null;
+  return <LiveBoards source={source} scheme={scheme} />;
+}
+
+function LiveBoards({ source, scheme }: { source: SocketSource; scheme: "light" | "dark" }) {
+  const { doc } = useSource(source);
+  const board = useMemo(() => doc && previewArtboard(doc, scheme), [doc, scheme]);
+  const box = useRef<HTMLDivElement>(null);
+  const [fit, setFit] = useState<number | null>(null);
+  const w = board ? Number.parseFloat(board.root.style.width!) : 0;
+  const h = board ? Number.parseFloat(board.root.style.height!) : 0;
+  useEffect(() => {
+    const el = box.current;
+    if (!el || !w || !h) return;
+    const measure = () => setFit(Math.min(el.clientWidth / w, el.clientHeight / h));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [w, h]);
+  return (
+    <div
+      ref={box}
+      inert
+      aria-hidden
+      className={cn(
+        "pointer-events-none absolute inset-0 grid place-items-center overflow-hidden transition-opacity duration-300",
+        board && fit ? "opacity-100" : "opacity-0",
+      )}
+    >
+      {board && (
+        <div style={{ width: w * (fit ?? 0), height: h * (fit ?? 0) }}>
+          <div
+            style={{ width: w, height: h, transform: `scale(${fit ?? 0})`, transformOrigin: "0 0" }}
+          >
+            <ArtboardView
+              artboard={board}
+              tokens={doc!.tokens}
+              assetBase={source.assetBase}
+              colorScheme={scheme}
+            />
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -502,11 +651,14 @@ function Results({
   files,
   machines,
   onOpen,
+  live,
 }: {
   query: string;
   files: CatalogFile[];
   machines: Map<string, CatalogMachine>;
   onOpen: (target: OpenTarget) => void;
+  /** Cards to show live (useLive). */
+  live: Set<string>;
 }) {
   const fileFuse = useMemo(
     () =>
@@ -558,6 +710,7 @@ function Results({
                 file={item}
                 machine={machines.get(item.machine)}
                 onOpen={onOpen}
+                live={live.has(item.id)}
                 match={ranges(matches, "name")}
                 pathMatch={ranges(matches, "name") ? undefined : ranges(matches, "key")}
               />

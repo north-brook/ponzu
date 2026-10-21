@@ -19,6 +19,15 @@ export interface PageOptions {
   colorScheme?: "light" | "dark";
 }
 
+/**
+ * CSS to put inside a <style> element. A design's tokens are any CSS, and a
+ * `</style` in them would end the element and go on as markup, script
+ * handlers and all. CSS can't use the sequence, so escaping it changes nothing.
+ */
+export function styleText(css: string): string {
+  return css.replace(/<\/(style)/gi, "<\\/$1");
+}
+
 /** A standalone HTML page that renders one artboard at the origin. */
 export function artboardPage(ab: Artboard, opts: PageOptions): string {
   const body = serializeArtboardElement(ab, { rewriteUrl: (u) => resolveAsset(u, opts.assetBase) });
@@ -26,7 +35,7 @@ export function artboardPage(ab: Artboard, opts: PageOptions): string {
   const scheme = opts.colorScheme ? `:root{color-scheme:${opts.colorScheme}}` : "";
   return `<!doctype html><html><head><meta charset="utf-8">
 ${fonts}
-<style>${opts.tokens}</style>
+<style>${styleText(opts.tokens)}</style>
 <style>html,body{margin:0;padding:0;background:transparent}${scheme}${ARTBOARD_BASE_CSS}</style>
 </head><body>${body}</body></html>`;
 }

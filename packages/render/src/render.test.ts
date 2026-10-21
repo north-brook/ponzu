@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { parseArtboardFile } from "@ponzu/core";
-import { artboardPage } from "./document.ts";
+import { artboardPage, styleText } from "./document.ts";
 import { fontFamilies, googleFontLinks, googleFontRequest, googleFonts } from "./fonts.ts";
 
 test("finds families in font-family, the font shorthand and tokens", () => {
@@ -70,4 +70,17 @@ test("each family loads on its own, so one bad family can't break the rest", () 
     { tokens: `:root { --font-display: "Instrument Serif", serif; }` },
   );
   expect(page).toContain("family=Instrument+Serif:ital,wght@0,400;1,400&amp;display=block");
+});
+
+test("tokens can't end their <style> and run as markup", () => {
+  const ab = parseArtboardFile(
+    `<section data-artboard data-id="ab_x" data-name="X" style="width:100px;height:100px"></section>`,
+    { id: "ab_x", name: "X" },
+  ).artboard;
+  const tokens = `:root { --a: 1px; }</STYLE><img src=x onerror="alert(1)"><style>`;
+  const page = artboardPage(ab, { tokens });
+  // The page's own two <style> elements, and nothing the tokens opened or closed.
+  expect(page.match(/<\/style/gi)).toHaveLength(2);
+  expect(page).toContain("<\\/STYLE><img");
+  expect(styleText(`a::after { content: "</style>" }`)).toBe(`a::after { content: "<\\/style>" }`);
 });
