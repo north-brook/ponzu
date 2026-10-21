@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.22.0](https://github.com/north-brook/ponzu/compare/v1.21.4...v1.22.0) (2026-10-21)
+
+
+### Features
+
+* remember every design in a catalog database, with archive, scratch and project filters ([#98](https://github.com/north-brook/ponzu/issues/98)) ([8fa2301](https://github.com/north-brook/ponzu/commit/8fa2301cb2c82afcc93123fafbdeebde47652ace))
+
 ## [1.21.4](https://github.com/north-brook/ponzu/compare/v1.21.3...v1.21.4) (2026-10-21)
 
 
