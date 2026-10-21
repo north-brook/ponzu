@@ -2,58 +2,60 @@
 
 :root {
   --ground: #ffffff;
-  --ink: #000000;
-  --text: #0e0e0e;
-  --muted: #5a5a5a;
-  --faint: #8a8a8a;
-  --tile: #f6f6f4;
+  --ink: #111110;
+  --text: #111110;
+  --muted: #5e5b54;
+  --faint: #807c73;
+  --tile: #f4f3ef;
   --well: #ffffff;
-  --well-rule: #ececea;
-  --code: #0e0e0e;
-  --code-ink: #ededed;
+  --well-rule: #e8e6e0;
+  --code: #111110;
+  --code-ink: #e8e6e0;
   --code-rule: transparent;
-  --chip: #f3f3f1;
-  /* The download page's step stages and the shadow under their windows. */
-  --stage: #fff3cf;
-  --stage-shadow: rgba(90, 60, 0, 0.22);
+  --chip: #f4f3ef;
+  /* Yuzu: the brand's one color. The demo's stage and the download page's step stages sit on it. */
+  --yuzu: #ffc81e;
+  --stage: #ffc81e;
+  --stage-shadow: rgba(90, 60, 0, 0.3);
   --shot-shadow: rgba(40, 30, 0, 0.28);
-  --rule: #efefed;
-  --outline: #d6d6d4;
-  --cta: #0e0e0e;
+  --rule: #e8e6e0;
+  --outline: #d3d0c8;
+  --cta: #111110;
   --cta-ink: #ffffff;
-  --m1: #ffd23f;
-  --m2: #f4b012;
-  --rind: #f4b012;
-  --pith: #fff3cf;
-  --flesh: #ffd23f;
+  /* The slice: ink on light. */
+  --slice: #111110;
+  /* The footer's field of slices. */
+  --field: #e4e1d9;
+  /* Citrus highlights: the selected file and the cursor on the download page. */
+  --m1: #ffc81e;
+  --m2: #ffc81e;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --ground: #0a0a0a;
-    --ink: #f2f2f2;
-    --text: #f2f2f2;
-    --muted: #a0a0a0;
-    --faint: #707070;
-    --tile: #141414;
-    --well: #1c1c1c;
-    --well-rule: #262626;
+    --ground: #0e0e0d;
+    --ink: #f4f3ef;
+    --text: #f4f3ef;
+    --muted: #a9a59b;
+    --faint: #807c73;
+    --tile: #161615;
+    --well: #1b1b1a;
+    --well-rule: #262523;
     --code: #000000;
-    --code-ink: #ededed;
-    --code-rule: #262626;
-    --chip: #161616;
-    --stage: #1a1606;
-    --stage-shadow: rgba(0, 0, 0, 0.6);
+    --code-ink: #e8e6e0;
+    --code-rule: #262523;
+    --chip: #161615;
+    --stage: #ffc81e;
+    --stage-shadow: rgba(0, 0, 0, 0.5);
     --shot-shadow: rgba(0, 0, 0, 0.8);
-    --rule: #1c1c1c;
-    --outline: #333333;
-    --cta: #ffd23f;
-    --cta-ink: #0e0e0e;
-    --m1: #ffda55;
-    --m2: #ffc21a;
-    --rind: #ffa800;
-    --pith: #fffdf2;
-    --flesh: #ffc400;
+    --rule: #1f1f1e;
+    --outline: #3f3d39;
+    --cta: #ffc81e;
+    --cta-ink: #111110;
+    --slice: #ffc81e;
+    --field: #262523;
+    --m1: #ffc81e;
+    --m2: #ffc81e;
   }
 }
 
@@ -72,6 +74,7 @@
   --color-chip: var(--chip);
   --color-stage: var(--stage);
   --color-stage-shadow: var(--stage-shadow);
+  --color-yuzu: var(--yuzu);
   --color-rule: var(--rule);
   --color-outline: var(--outline);
   --color-cta: var(--cta);
@@ -81,8 +84,8 @@
   --color-m2: var(--m2);
 
   --font-sans: var(--font-inter), system-ui, -apple-system, sans-serif;
-  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
-  --font-serif: var(--font-instrument-serif), Georgia, serif;
+  --font-display: var(--font-funnel-display), var(--font-inter), system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
 }
 
 @layer base {
@@ -121,7 +124,7 @@
     --sh-fg: #ededed;
     --sh-comment: #6b6b66;
     --sh-punct: #7a7a74;
-    --sh-tag: #ffd23f;
+    --sh-tag: #ffc81e;
     --sh-attr: #c4a7ff;
     --sh-prop: #8fd3ff;
     --sh-var: #ff9ecd;
@@ -190,102 +193,88 @@
   opacity: 0.6;
 }
 
+/* The slice. Each segment carries its place as --i, for motion that runs round it. */
+.slice {
+  fill: var(--slice);
+  stroke: var(--slice);
+}
+
+/* The lockup's hover: the slice turns by one segment. */
+.lockup .slice g {
+  transform-origin: 32px 32px;
+  transition: rotate 600ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.lockup:hover .slice g {
+  rotate: 60deg;
+}
+
 /*
- * Footer: a citrus sunrise. Half a ponzu wheel sits on the horizon line, a faint dawn warms the air
- * above it, and the line turns warm where the sun touches it. As the footer scrolls into view the
- * sun crests the line and the dawn comes up with it, finishing as you reach the end of the page.
- * Without scroll timelines, or with reduced motion, it simply rests above the line.
+ * The footer's field: a grid of tiny slices, with a huge yuzu one rising from the bottom edge. The
+ * field fades in from the top, so the slice comes up out of the page. Every few seconds a ripple
+ * runs out from the slice's centre and turns its units by one segment; any unit turns on hover.
  */
-.horizon {
-  position: relative;
-  display: flex;
-  justify-content: center;
-  height: 72px;
-  overflow: clip;
+.field {
+  display: block;
+  width: 100%;
+  height: auto;
+  mask-image: linear-gradient(to bottom, transparent, rgb(0 0 0 / 0.25) 30%, #000 82%);
 }
 
-.horizon::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(
-    50% 100% at 50% 100%,
-    color-mix(in srgb, var(--flesh) var(--dawn), transparent),
-    transparent
-  );
+.field-ripple,
+.field-unit {
+  transform-box: fill-box;
+  transform-origin: center;
 }
 
-.horizon::after {
-  content: "";
-  position: absolute;
-  inset: auto 0 0;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    var(--rule),
-    color-mix(in srgb, var(--rind) 55%, var(--rule)) 50%,
-    var(--rule)
-  );
+.field-unit {
+  color: var(--field);
+  transition: rotate 600ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.horizon-sun {
-  position: relative;
-  align-self: flex-end;
-  width: 76px;
-  translate: 0 22%;
+/* The ripple runs on the unit's group, so the unit's own hover turn still applies on top. */
+.field-ripple[data-on] {
+  animation: ripple 7s cubic-bezier(0.2, 0.8, 0.2, 1) infinite both;
+  animation-delay: calc(var(--d) * 28ms);
 }
 
-:root {
-  --dawn: 16%;
+.field-ripple[data-on] .field-unit {
+  color: var(--yuzu);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --dawn: 9%;
+/* The legal line's clearing: the ground behind its text, feathered into the field. */
+.field-clear {
+  background: var(--ground);
+  box-shadow: 0 0 12px 10px var(--ground);
+  border-radius: 6px;
+}
+
+.field-unit:hover {
+  rotate: 60deg;
+  transition-duration: 250ms;
+}
+
+@keyframes ripple {
+  0%,
+  6% {
+    rotate: 0deg;
   }
-}
-
-@supports (animation-timeline: view()) {
-  /* From the horizon peeking over the fold to the end of the page, where it sits ~150px up. */
-  .horizon {
-    view-timeline: --horizon block;
-  }
-
-  .horizon-sun,
-  .horizon::before {
-    animation: linear both;
-    animation-timeline: --horizon;
-    animation-range: cover 0% cover 140px;
-  }
-
-  .horizon-sun {
-    animation-name: sunrise;
-  }
-
-  .horizon::before {
-    animation-name: dawn;
-  }
-}
-
-@keyframes sunrise {
-  from {
-    translate: 0 88%;
-  }
-}
-
-@keyframes dawn {
-  from {
-    opacity: 0;
+  16%,
+  100% {
+    rotate: 60deg;
   }
 }
 
 /* `svg` lifts the wheel rules above the tile's own inline stylesheet. */
 @media (prefers-reduced-motion: reduce) {
-  svg .cit-wheel,
   svg .cit-seg,
-  .horizon-sun,
-  .horizon::before {
+  .field-ripple[data-on] {
     animation: none;
+  }
+
+  .lockup .slice g,
+  .field-unit {
+    transition: none;
   }
 }
 

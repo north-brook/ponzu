@@ -5,6 +5,7 @@
   "license": "MIT",
   "exports": {
     ".": "./src/index.ts",
+    "./slice": "./src/slice.ts",
     "./styles.css": "./dist/styles.css",
     "./tailwind.css": "./src/styles.css"
   },

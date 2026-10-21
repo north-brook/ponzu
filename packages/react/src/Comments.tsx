@@ -55,7 +55,7 @@ export function Avatar({ author, size = 20 }: { author: Author; size?: number })
       className={cn(
         "pz:inline-grid pz:shrink-0 pz:place-items-center pz:rounded-full pz:font-semibold",
         author.kind === "agent"
-          ? "pz:bg-comment-soft pz:text-comment-foreground pz:dark:text-comment"
+          ? "pz:bg-comment-soft pz:text-foreground"
           : "pz:bg-muted pz:text-foreground",
       )}
       style={{ width: size, height: size, fontSize: size * 0.42 }}
