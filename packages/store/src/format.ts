@@ -18,7 +18,7 @@ import {
  * The .design convention, independent of where bytes live:
  *
  *   name.design/
- *     design.json        { ponzu: 1, name, icon?, example?, pages: [{ id, name, icon? }] }
+ *     design.json        { ponzu: 1, name, icon?, example?, scratch?, pages: [{ id, name, icon? }] }
  *     tokens.css         :root { --token: value }
  *     comments.json      { threads: [{ id, artboardId (+ nodeId?) | pageId, x, y, status,
  *                          createdAt, updatedAt, messages: [{ id, author, text, createdAt }] }] }
@@ -71,6 +71,7 @@ export function readBag(bag: FileBag, fallbackName: string): ReadResult {
   const doc = emptyDoc(meta.name);
   if (meta.icon) doc.icon = meta.icon;
   if (meta.example) doc.example = true;
+  if (meta.scratch) doc.scratch = true;
   doc.tokens = bag["tokens.css"] ?? ":root {\n}\n";
   const { threads, unreadable } = parseThreads(bag["comments.json"], problems);
   doc.threads = threads;
@@ -166,6 +167,7 @@ function parseMeta(
       name: typeof raw.name === "string" && raw.name ? raw.name : fallbackName,
       ...(typeof raw.icon === "string" && raw.icon ? { icon: raw.icon } : {}),
       ...(raw.example === true ? { example: true as const } : {}),
+      ...(raw.scratch === true ? { scratch: true as const } : {}),
       pages: Array.isArray(raw.pages)
         ? raw.pages
             .filter((p) => p && typeof p.name === "string")

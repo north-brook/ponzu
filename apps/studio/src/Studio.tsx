@@ -1,4 +1,11 @@
-import { type Catalog, type Doc, findArtboard, type Presence } from "@ponzu/core";
+import {
+  type Catalog,
+  type CatalogFile,
+  type CatalogMachine,
+  type Doc,
+  findArtboard,
+  type Presence,
+} from "@ponzu/core";
 import {
   type AgentActivity,
   AgentMark,
@@ -8,8 +15,6 @@ import {
   Juice,
   Logo,
   SocketSource,
-  Tip,
-  TipProvider,
   timeAgo,
   useDelayed,
   useModifierHint,
@@ -25,7 +30,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { Dashboard, type OpenTarget } from "@/components/dashboard";
+import { Dashboard, type OpenTarget, type ShelfAction } from "@/components/dashboard";
+import { FileDetails, fileOf } from "@/components/file-info";
 import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { WhatsNew } from "@/components/whats-new";
@@ -34,7 +40,6 @@ import { cn } from "@/lib/utils";
 /** Where `ponzu serve` lives. Same origin in production; the dev server proxies. */
 const ORIGIN = window.location.origin;
 const mac = navigator.userAgent.includes("Mac");
-const mod = mac ? "⌘" : "Ctrl+";
 
 /**
  * A tab names its design and the server in front of it: the key alone for a
@@ -120,12 +125,13 @@ export function Studio() {
     };
   }, [active]);
 
-  // A design an agent creates opens in a tab as soon as it exists, once.
+  // A design an agent creates opens in a tab as soon as it exists, once. Not one it made
+  // for its own use: scratch stays out of the way.
   const [seen] = useState(() => new Set<string>());
   useEffect(() => {
     if (!catalog) return;
     for (const f of catalog.files) {
-      if (f.machine !== "local" || !f.created || seen.has(f.key)) continue;
+      if (f.machine !== "local" || !f.created || f.shelf === "scratch" || seen.has(f.key)) continue;
       seen.add(f.key);
       if (Date.now() - f.created > 60_000 || tabs.includes(f.key)) continue;
       setTabs((t) => (t.includes(f.key) ? t : [...t, f.key]));
@@ -140,6 +146,40 @@ export function Studio() {
     else url.searchParams.delete("file");
     history.replaceState(null, "", url);
   }, [tabs, active]);
+
+  // Archive, restore or move between Recent and Scratch, on the Mac the design is on: its
+  // server relays to another Mac's. The catalog shows it on the next poll, or now.
+  const shelve = async (file: CatalogFile, action: ShelfAction) => {
+    const res = await fetch(`${ORIGIN}${file.base}/api/shelf`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key: file.key, action }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    setCatalog(
+      (c) =>
+        c && {
+          ...c,
+          files: c.files.map((f) =>
+            f.id === file.id
+              ? {
+                  ...f,
+                  shelf:
+                    action === "archive"
+                      ? "archived"
+                      : action === "scratch"
+                        ? "scratch"
+                        : action === "recent"
+                          ? "recent"
+                          : file.shelf === "archived"
+                            ? "recent"
+                            : f.shelf,
+                }
+              : f,
+          ),
+        },
+    );
+  };
 
   const openFile = async (target: OpenTarget) => {
     // A design here opens through the API, which lets the server read a guarded folder now
@@ -174,7 +214,7 @@ export function Studio() {
     [tabs, active],
   );
 
-  // ⌘1 goes home, ⌘2–8 open file tabs, ⌘9 the last, and ⌘⇧[ ⌘⇧] cycle through home and
+  // ⌘0 goes home, ⌘1–8 open file tabs, ⌘9 the last, and ⌘⇧[ ⌘⇧] cycle through home and
   // the tabs, like a browser.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -187,14 +227,14 @@ export function Studio() {
         setActive(stops[(i + step + stops.length) % stops.length] ?? null);
         return;
       }
-      const digit = /^Digit([1-9])$/.exec(e.code)?.[1];
+      const digit = /^Digit([0-9])$/.exec(e.code)?.[1];
       if (!digit || e.shiftKey) return;
-      if (digit === "1") {
+      if (digit === "0") {
         e.preventDefault();
         setActive(null);
         return;
       }
-      const key = digit === "9" ? tabs.at(-1) : tabs[Number(digit) - 2];
+      const key = digit === "9" ? tabs.at(-1) : tabs[Number(digit) - 1];
       if (!key) return;
       e.preventDefault();
       setActive(key);
@@ -221,38 +261,35 @@ export function Studio() {
           isMac && "pl-[88px]",
         )}
       >
-        <TipProvider>
-          <Tip label="Home" keys={[mod.trim(), "1"]} side="bottom">
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Home"
-              className={cn("w-8", active === null && "bg-secondary hover:bg-secondary")}
-              onClick={() => setActive(null)}
-            >
-              {hint ? <ShortcutDigit n={1} /> : <Logo size={18} dark={theme === "dark"} />}
-            </Button>
-          </Tip>
-          <div
-            ref={strip}
-            className="relative flex min-w-0 gap-0.5 overflow-x-auto [scrollbar-width:none]"
-          >
-            {tabs.map((key, i) => (
-              <FileTab
-                key={key}
-                source={source(key)}
-                shortcut={i < 7 ? i + 2 : i === tabs.length - 1 ? 9 : undefined}
-                showShortcut={hint}
-                remote={targetOf(key).base.replace(/^\/peers\//, "")}
-                active={key === active}
-                theme={theme}
-                onClick={() => setActive(key)}
-                onClose={() => closeTab(key)}
-                {...dragProps(key)}
-              />
-            ))}
-          </div>
-        </TipProvider>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Home"
+          className={cn("w-8", active === null && "bg-secondary hover:bg-secondary")}
+          onClick={() => setActive(null)}
+        >
+          {hint ? <ShortcutDigit n={0} /> : <Logo size={18} dark={theme === "dark"} />}
+        </Button>
+        <div
+          ref={strip}
+          className="relative flex min-w-0 gap-0.5 overflow-x-auto [scrollbar-width:none]"
+        >
+          {tabs.map((key, i) => (
+            <FileTab
+              key={key}
+              source={source(key)}
+              file={fileOf(catalog, targetOf(key))}
+              machines={catalog?.machines}
+              shortcut={i < 8 ? i + 1 : i === tabs.length - 1 ? 9 : undefined}
+              showShortcut={hint}
+              active={key === active}
+              theme={theme}
+              onClick={() => setActive(key)}
+              onClose={() => closeTab(key)}
+              {...dragProps(key)}
+            />
+          ))}
+        </div>
         <div className="ml-auto flex items-center gap-1.5">
           {active && <ActiveAgents source={source(active)} />}
         </div>
@@ -266,6 +303,7 @@ export function Studio() {
           <Dashboard
             catalog={catalog}
             onOpen={(t) => void openFile(t)}
+            onShelve={shelve}
             onOpenFolder={
               desktop &&
               (async () => {
@@ -292,9 +330,10 @@ type DragProps = ReturnType<ReturnType<typeof useTabDrag>["dragProps"]>;
 
 function FileTab({
   source,
+  file,
+  machines,
   shortcut,
   showShortcut,
-  remote,
   active,
   theme,
   onClick,
@@ -302,11 +341,12 @@ function FileTab({
   ...drag
 }: {
   source: SocketSource;
+  /** The catalog's entry for it: where it lives, its branch. */
+  file?: CatalogFile;
+  machines?: CatalogMachine[];
   shortcut?: number;
   /** ⌘ is held: the shortcut takes the icon's place. */
   showShortcut: boolean;
-  /** The Mac the design is on, when it isn't this one. */
-  remote?: string;
   active: boolean;
   theme: "light" | "dark";
   onClick: () => void;
@@ -317,6 +357,7 @@ function FileTab({
   const offline = state.status === "offline";
   // Quick loads and blips show nothing; only a wait you'd notice gets the wedge.
   const waiting = useDelayed(!state.doc || offline);
+  const [held, setHeld] = useState(false);
   const name =
     state.doc?.name ??
     source.file
@@ -336,6 +377,11 @@ function FileTab({
       role="tab"
       tabIndex={0}
       {...drag}
+      onPointerDown={(e) => {
+        setHeld(true);
+        drag.onPointerDown(e);
+      }}
+      onPointerLeave={() => setHeld(false)}
     >
       {/* The close button sits over the end of the label, which fades out under it. */}
       <span className="flex min-w-0 items-center gap-[7px] group-focus-visible:[mask-image:linear-gradient(to_left,transparent_14px,#000_32px)] group-hover:[mask-image:linear-gradient(to_left,transparent_14px,#000_32px)]">
@@ -366,12 +412,18 @@ function FileTab({
       </button>
     </div>
   );
-  // The tab shows its name; only one on another Mac has more to say.
-  if (!remote) return tab;
+  // Slow to open, so it stays out of the way of switching tabs; dragging closes it.
   return (
-    <Tip label={`${name} on ${decodeURIComponent(remote)}`} side="bottom">
-      {tab}
-    </Tip>
+    <HoverCard open={held ? false : undefined} openDelay={600} closeDelay={100}>
+      <HoverCardTrigger asChild>{tab}</HoverCardTrigger>
+      <HoverCardContent align="start" side="bottom">
+        <FileDetails
+          file={file}
+          name={name}
+          machine={machines?.find((m) => m.id === (file?.machine ?? "local"))}
+        />
+      </HoverCardContent>
+    </HoverCard>
   );
 }
 

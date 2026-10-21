@@ -909,14 +909,14 @@ function WorkingStatus({ who, zoom }: { who: Worker[]; zoom: number }) {
 }
 
 /**
- * A stroke tracing a working artboard's outline, over a faint full outline.
- * Drawn in the screen-space overlay so it's 1.5px at any zoom, and never part
- * of the design: screenshots and exports don't see it.
+ * A stroke in the brand's rind tracing a working artboard's outline, over a
+ * faint full outline. Drawn in the screen-space overlay so it's 1.5px at any
+ * zoom, and never part of the design: screenshots and exports don't see it.
  */
 function Trace({ x, y, w, h }: { x: number; y: number; w: number; h: number }) {
   return (
     <svg
-      className="pz:pointer-events-none pz:absolute pz:overflow-visible pz:text-foreground"
+      className="pz:pointer-events-none pz:absolute pz:overflow-visible pz:text-[var(--pz-rind)]"
       style={{ left: x, top: y, width: w, height: h }}
       aria-hidden
     >
@@ -925,7 +925,7 @@ function Trace({ x, y, w, h }: { x: number; y: number; w: number; h: number }) {
         height={h}
         fill="none"
         stroke="currentColor"
-        strokeOpacity={0.14}
+        strokeOpacity={0.3}
         strokeWidth={1}
       />
       <rect

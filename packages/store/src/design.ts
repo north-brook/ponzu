@@ -393,6 +393,8 @@ export function diffDocs(cur: Doc, next: Doc): Op[] {
   if (cur.name !== next.name) ops.push({ op: "file.rename", name: next.name });
   if ((cur.icon ?? null) !== (next.icon ?? null))
     ops.push({ op: "file.icon", icon: next.icon ?? null });
+  if (Boolean(cur.scratch) !== Boolean(next.scratch))
+    ops.push({ op: "file.scratch", scratch: Boolean(next.scratch) });
   if (cur.tokens !== next.tokens) ops.push({ op: "tokens", css: next.tokens });
 
   for (const name of new Set([...Object.keys(cur.notes), ...Object.keys(next.notes)])) {

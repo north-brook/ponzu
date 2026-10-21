@@ -72,6 +72,12 @@ export const organizeTools = [
           'Shown as the tab title, e.g. "Onboarding" or "Checkout flow". Default: the folder name without .design, case unchanged.',
         ),
       icon: z.enum(PAGE_ICONS).optional().describe("Shown on the file's tab."),
+      scratch: z
+        .boolean()
+        .optional()
+        .describe(
+          "For a file you make for your own use (an experiment, a test fixture), not for the person: Ponzu lists it under Scratch, out of their Recent designs.",
+        ),
       pages: z
         .array(z.object({ name: z.string(), icon: z.enum(PAGE_ICONS).optional() }))
         .optional()
@@ -95,6 +101,7 @@ export const organizeTools = [
           .replace(/\.design$/, "");
       const doc = emptyDoc(name);
       if (args.icon) doc.icon = args.icon;
+      if (args.scratch) doc.scratch = true;
       for (const p of args.pages?.length ? args.pages : [{ name: "Home" }]) {
         doc.pages.push({
           id: newId("pg"),
@@ -115,17 +122,25 @@ export const organizeTools = [
     name: "update_file",
     title: "Update file",
     group: "organize",
-    description: "Rename a file (its tab title) or change the icon on its tab.",
+    description:
+      "Rename a file (its tab title), change the icon on its tab, or mark it as scratch.",
     input: {
       file: fileArg,
       name: z.string().min(1).optional(),
       icon: z.enum(PAGE_ICONS).nullable().optional().describe("null removes it."),
+      scratch: z
+        .boolean()
+        .optional()
+        .describe(
+          "true lists it under Scratch, out of the person's Recent designs; false brings it back.",
+        ),
     },
     async handler(args, ctx) {
       const { key, design } = await ctx.ws.resolve(args.file);
       const ops: Op[] = [];
       if (args.name !== undefined) ops.push({ op: "file.rename", name: args.name });
       if (args.icon !== undefined) ops.push({ op: "file.icon", icon: args.icon });
+      if (args.scratch !== undefined) ops.push({ op: "file.scratch", scratch: args.scratch });
       if (!ops.length) return { text: "Nothing to change." };
       apply(design, ops.length === 1 ? ops[0]! : { op: "batch", ops }, ctx);
       return { text: `Updated ${key}.` };

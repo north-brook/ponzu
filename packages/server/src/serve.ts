@@ -27,7 +27,12 @@ export interface ServeOptions {
   tailnet?: boolean;
   /** Port the owner's Macs reach each other on over the tailnet. Default 7777. */
   tailnetPort?: number;
-  /** Where the home screen remembers which guarded folders it may read. */
+  /**
+   * Where the home screen remembers the designs it found and what the person
+   * did with them: archived, kept out of Scratch, the folders let in.
+   */
+  dbFile?: string;
+  /** What versions before the database remembered, read once and kept for going back. */
   stateFile?: string;
   /** How to find designs beyond the roots (see CatalogOptions). Default: Spotlight on macOS. */
   spotlight?: boolean | "roots";
@@ -123,6 +128,7 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
   const home = new Home(ws, {
     roots: opts.root ? [opts.root] : [],
     spotlight: opts.spotlight,
+    dbFile: opts.dbFile,
     stateFile: opts.stateFile,
     tailnet: Boolean(opts.tailnet),
     agents: opts.agents,
@@ -197,6 +203,24 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
       if (caller === "peer" || url.searchParams.get("scope") === "local")
         return Response.json(await home.local());
       return Response.json(await home.full());
+    }
+
+    // The person archives, restores or shelves a design. Another Mac's studio asks this
+    // Mac for its own designs, so every Mac shows the same.
+    if (path === "/api/shelf") {
+      if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
+      if (caller === "local" && !sameHostOk(req, url))
+        return new Response("Forbidden", { status: 403 });
+      const body = (await req.json().catch(() => null)) as ShelfRequest | null;
+      if (!body || typeof body.key !== "string" || !SHELF_ACTIONS.includes(body.action))
+        return new Response("key and action required", { status: 400 });
+      if (!(await home.catalog.has(body.key))) return new Response("Not found", { status: 404 });
+      if (home.catalog.db.readOnly)
+        return new Response("A newer Ponzu owns this Mac's catalog", { status: 409 });
+      if (body.action === "archive") home.catalog.archive(body.key);
+      else if (body.action === "restore") home.catalog.restore(body.key);
+      else home.catalog.shelve(body.key, body.action === "scratch" ? "scratch" : "recent");
+      return Response.json({ ok: true });
     }
 
     if (path === "/api/preview" || path === "/api/thumb") {
@@ -438,6 +462,7 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
  */
 function peerAllowed(req: Request, pathname: string): boolean {
   if (req.headers.get("origin") || req.headers.get("sec-fetch-site")) return false;
+  if (pathname === "/api/shelf") return req.method === "POST";
   if (req.method !== "GET") return false;
   return (
     ["/api/catalog", "/api/preview", "/api/thumb", "/api/info", "/ws"].includes(pathname) ||
@@ -445,11 +470,32 @@ function peerAllowed(req: Request, pathname: string): boolean {
   );
 }
 
-/** A request passed on to another Mac's server, and its answer passed back. */
+const SHELF_ACTIONS = ["archive", "restore", "scratch", "recent"] as const;
+
+interface ShelfRequest {
+  key: string;
+  action: (typeof SHELF_ACTIONS)[number];
+}
+
+/**
+ * A request passed on to another Mac's server, and its answer passed back. GETs,
+ * and the one POST another Mac takes, a shelf change, without the studio's
+ * Origin: the other Mac only answers servers, never pages.
+ */
 async function relay(req: Request, target: string): Promise<Response> {
-  if (req.method !== "GET") return new Response("Method not allowed", { status: 405 });
+  const shelf = req.method === "POST" && new URL(target).pathname === "/api/shelf";
+  if (req.method !== "GET" && !shelf) return new Response("Method not allowed", { status: 405 });
   try {
-    const res = await fetch(target, { signal: AbortSignal.timeout(30_000) });
+    const res = await fetch(target, {
+      signal: AbortSignal.timeout(shelf ? 5_000 : 30_000),
+      ...(shelf
+        ? {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: await req.text(),
+          }
+        : {}),
+    });
     const headers = new Headers();
     for (const h of ["content-type", "cache-control"]) {
       const v = res.headers.get(h);

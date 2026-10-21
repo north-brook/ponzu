@@ -401,3 +401,11 @@ test("record says when fonts or images ran out of time", async () => {
   expect(r.isError).toBeFalsy();
   expect(r.text).toContain("still loading when time ran out");
 });
+
+test("update_file marks a file as scratch and back", async () => {
+  const { design, call } = await setup();
+  await call("update_file", { scratch: true });
+  expect(design.doc.scratch).toBe(true);
+  await call("update_file", { scratch: false });
+  expect(design.doc.scratch).toBeUndefined();
+});

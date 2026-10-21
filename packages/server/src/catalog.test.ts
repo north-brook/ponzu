@@ -1,5 +1,14 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, symlink, utimes, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  symlink,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Catalog } from "@ponzu/core";
@@ -143,6 +152,46 @@ test("a preview older than an edit to a closed design is redrawn, and its URL ch
   }
 });
 
+test("over HTTP: the studio archives and restores a design it lists, and nothing else", async () => {
+  const ws = new LocalWorkspace({ cwd: dir });
+  const server = serve(ws, { port: 0, root: dir, spotlight: "roots" });
+  const base = `http://127.0.0.1:${server.port}`;
+  const shelf = (body: object, headers: Record<string, string> = {}) =>
+    fetch(`${base}/api/shelf`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...headers },
+      body: JSON.stringify(body),
+    });
+  const shop = async () =>
+    ((await (await fetch(`${base}/api/catalog`)).json()) as Catalog).files.find((f) =>
+      f.key.endsWith("/shop.design"),
+    );
+  try {
+    const key = (await shop())!.key;
+    expect((await shelf({ key, action: "archive" })).status).toBe(200);
+    expect(await shop()).toMatchObject({ shelf: "archived", archived: expect.any(Number) });
+    expect((await shelf({ key, action: "restore" })).status).toBe(200);
+    expect((await shop())?.shelf).toBe("recent");
+    expect((await shelf({ key: join(tmpdir(), "else.design"), action: "archive" })).status).toBe(
+      404,
+    );
+    expect((await shelf({ key, action: "delete" })).status).toBe(400);
+    // An agent's edit brings it back; the person's own edits don't need to.
+    expect((await shelf({ key, action: "archive" })).status).toBe(200);
+    const { design: d } = await ws.open(key);
+    d.apply({ op: "file.icon", icon: "star" }, { kind: "agent", name: "t" });
+    expect((await shop())?.shelf).toBe("recent");
+    d.apply({ op: "file.icon", icon: null }, { kind: "agent", name: "t" });
+    // A page on another site can't.
+    expect(
+      (await shelf({ key, action: "archive" }, { origin: "https://evil.example" })).status,
+    ).toBe(403);
+  } finally {
+    server.stop(true);
+    await ws.closeAll();
+  }
+});
+
 test("Desktop, Documents and Downloads are guarded; other folders aren't", async () => {
   const { guardOf } = await import("./catalog.ts");
   const { homedir } = await import("node:os");
@@ -155,6 +204,154 @@ test("Desktop, Documents and Downloads are guarded; other folders aren't", async
   catalog.add(join(dir, "nested/deep/brand.design"));
   const files = await catalog.files(new Map());
   expect(files.map((f) => [f.name, f.locked])).toEqual([["Brand", false]]);
+});
+
+test("a design in a git checkout carries its root, branch and project; a worktree's, a detached HEAD's and none", async () => {
+  const { gitOf } = await import("./catalog.ts");
+  const repo = join(dir, "repo");
+  await mkdir(join(repo, ".git"), { recursive: true });
+  await writeFile(join(repo, ".git/HEAD"), "ref: refs/heads/feat/hover-card\n");
+  await design(join(repo, "design/app.design"), "App", { Home: ["Hero"] });
+  // Without a remote, the project is the main checkout.
+  expect(await gitOf(join(repo, "design/app.design"))).toEqual({
+    root: repo,
+    branch: "feat/hover-card",
+    project: repo,
+    projectName: "repo",
+  });
+  await writeFile(
+    join(repo, ".git/config"),
+    '[core]\n\tbare = false\n[remote "origin"]\n\turl = git@github.com:north-brook/ponzu.git\n',
+  );
+  const project = { project: "github.com/north-brook/ponzu", projectName: "ponzu" };
+
+  // A worktree's .git is a file naming its own HEAD under the main checkout's .git, which
+  // names the shared one: the same project.
+  const tree = join(dir, "tree");
+  await mkdir(join(repo, ".git/worktrees/tree"), { recursive: true });
+  await writeFile(join(repo, ".git/worktrees/tree/HEAD"), "ref: refs/heads/t3/abc\n");
+  await writeFile(join(repo, ".git/worktrees/tree/commondir"), "../..\n");
+  await mkdir(tree, { recursive: true });
+  await writeFile(join(tree, ".git"), `gitdir: ${join(repo, ".git/worktrees/tree")}\n`);
+  expect(await gitOf(join(tree, "x.design"))).toEqual({ root: tree, branch: "t3/abc", ...project });
+
+  await writeFile(join(repo, ".git/worktrees/tree/HEAD"), "8f1dcad0123456789abcdef\n");
+  expect(await gitOf(join(tree, "x.design"))).toEqual({
+    root: tree,
+    commit: "8f1dcad",
+    ...project,
+  });
+
+  expect(await gitOf(join(dir, "shop.design"))).toBeNull();
+
+  const catalog = new LocalCatalog({ roots: [repo], spotlight: "roots" });
+  const [app] = await catalog.files(new Map());
+  expect(app?.git).toEqual({ root: repo, branch: "feat/hover-card", ...project });
+});
+
+test("every worktree of a repository a design is known in is walked", async () => {
+  const main = join(dir, "wt-main");
+  await mkdir(join(main, ".git/worktrees/feature"), { recursive: true });
+  await writeFile(join(main, ".git/HEAD"), "ref: refs/heads/main\n");
+  await design(join(main, "design/known.design"), "Known", { Home: ["A"] });
+  // A worktree far from the main checkout, with a design only it has.
+  const tree = join(dir, "elsewhere/feature");
+  await mkdir(tree, { recursive: true });
+  await writeFile(join(tree, ".git"), `gitdir: ${join(main, ".git/worktrees/feature")}\n`);
+  await writeFile(join(main, ".git/worktrees/feature/gitdir"), `${join(tree, ".git")}\n`);
+  await writeFile(join(main, ".git/worktrees/feature/commondir"), "../..\n");
+  await writeFile(join(main, ".git/worktrees/feature/HEAD"), "ref: refs/heads/feature\n");
+  await design(join(tree, ".context/only-here.design"), "Only here", { Home: ["A"] });
+  const catalog = new LocalCatalog({ roots: [join(main, "design")], spotlight: "roots" });
+  expect((await catalog.files(new Map())).map((f) => f.name).sort()).toEqual([
+    "Known",
+    "Only here",
+  ]);
+});
+
+test("remotes name a project the same however they're written", async () => {
+  const { remoteId } = await import("./catalog.ts");
+  for (const url of [
+    "git@github.com:north-brook/ponzu.git",
+    "https://github.com/north-brook/ponzu",
+    "https://GitHub.com/north-brook/ponzu.git/",
+    "ssh://git@github.com:22/north-brook/ponzu.git",
+  ])
+    expect(remoteId(url)).toBe("github.com/north-brook/ponzu");
+  expect(remoteId("file:///tmp/x")).toBeNull();
+});
+
+test("a checkout's hidden folders are walked once a design in it is known", async () => {
+  const repo = join(dir, "hidden-repo");
+  await mkdir(join(repo, ".git"), { recursive: true });
+  await writeFile(join(repo, ".git/HEAD"), "ref: refs/heads/main\n");
+  await design(join(repo, "design/app.design"), "Seen", { Home: ["Hero"] });
+  // Spotlight never indexes these: a .context folder, a worktree under a dot-folder.
+  await design(join(repo, ".context/notes.design"), "In context", { Home: ["A"] });
+  await design(join(repo, ".claude/worktrees/x/y.design"), "In a worktree", { Home: ["A"] });
+  await design(join(repo, "node_modules/pkg/z.design"), "Vendored", { Home: ["A"] });
+  const catalog = new LocalCatalog({ roots: [join(repo, "design")], spotlight: "roots" });
+  expect((await catalog.files(new Map())).map((f) => f.name).sort()).toEqual([
+    "In a worktree",
+    "In context",
+    "Seen",
+  ]);
+});
+
+test("archiving, restoring and shelving are remembered; an agent's edit restores", async () => {
+  const dbFile = join(dir, "state/shelf.db");
+  const key = join(dir, "nested/deep/brand.design");
+  const catalog = new LocalCatalog({ roots: [], spotlight: "roots", dbFile });
+  catalog.add(key);
+  const shelf = async (c: LocalCatalog) =>
+    (await c.files(new Map())).find((f) => f.key === key)?.shelf;
+  expect(await shelf(catalog)).toBe("recent");
+  catalog.archive(key);
+  expect(await shelf(catalog)).toBe("archived");
+  // Another process on the same database sees it, and its restore wins once it's later.
+  const other = new LocalCatalog({ roots: [], spotlight: "roots", dbFile });
+  other.add(key);
+  expect(await shelf(other)).toBe("archived");
+  await new Promise((r) => setTimeout(r, 5));
+  other.edited(key);
+  expect(await shelf(catalog)).toBe("recent");
+  catalog.shelve(key, "scratch");
+  expect(await shelf(other)).toBe("scratch");
+  catalog.shelve(key, null);
+  expect(await shelf(other)).toBe("recent");
+  catalog.close();
+  other.close();
+});
+
+test("a scratch design lists under Scratch until the person keeps it", async () => {
+  const key = join(dir, "scratch/probe.design");
+  await design(key, "Probe", { Home: ["A"] });
+  const meta = JSON.parse(await readFile(join(key, "design.json"), "utf8"));
+  await writeFile(join(key, "design.json"), JSON.stringify({ ...meta, scratch: true }));
+  const catalog = new LocalCatalog({ roots: [join(dir, "scratch")], spotlight: "roots" });
+  const probe = async () => (await catalog.files(new Map())).find((f) => f.key === key);
+  expect(await probe()).toMatchObject({ scratch: true, shelf: "scratch" });
+  catalog.shelve(key, "recent");
+  expect(await probe()).toMatchObject({ scratch: true, shelf: "recent" });
+});
+
+test("a design whose folder is gone drops off, and comes back with its archive state", async () => {
+  const dbFile = join(dir, "state/gone.db");
+  const key = join(dir, "gone/temp.design");
+  await design(key, "Temp", { Home: ["A"] });
+  const catalog = new LocalCatalog({ roots: [join(dir, "gone")], spotlight: "roots", dbFile });
+  expect((await catalog.files(new Map())).map((f) => f.name)).toContain("Temp");
+  catalog.archive(key);
+  // The database knows a design by its real path (/var is /private/var).
+  const real = await realpath(key);
+  await rm(key, { recursive: true });
+  expect((await catalog.files(new Map())).map((f) => f.name)).not.toContain("Temp");
+  expect(catalog.db.get(real)?.missing_since).toBeNumber();
+  await design(key, "Temp", { Home: ["A"] });
+  // Found again by the next look, as a re-created worktree is.
+  const again = new LocalCatalog({ roots: [join(dir, "gone")], spotlight: "roots", dbFile });
+  await again.rescan();
+  expect((await again.files(new Map())).find((f) => f.key === key)?.shelf).toBe("archived");
 });
 
 describe("example designs", () => {
@@ -191,18 +388,33 @@ describe("example designs", () => {
   });
 
   test("an example the person opens stays listed after a restart; one named to serve doesn't", async () => {
-    const stateFile = join(root, "state/catalog.json");
-    const first = new LocalCatalog({ roots: [], spotlight: "roots", stateFile });
+    const dbFile = join(root, "state/ponzu.db");
+    const first = new LocalCatalog({ roots: [], spotlight: "roots", dbFile });
     first.opened(sample());
     expect(await names(first)).toEqual(["Sample"]);
-    expect(await names(new LocalCatalog({ roots: [], spotlight: "roots", stateFile }))).toEqual([]);
+    expect(await names(new LocalCatalog({ roots: [], spotlight: "roots", dbFile }))).toEqual([]);
     first.opened(sample(), { remember: true });
-    await new Promise((r) => setTimeout(r, 20));
-    expect(JSON.parse(await readFile(stateFile, "utf8")).opened).toHaveLength(1);
     // Listed even with nothing scanned: Spotlight skips hidden folders like .t3 worktrees.
-    expect(await names(new LocalCatalog({ roots: [], spotlight: "roots", stateFile }))).toEqual([
+    expect(await names(new LocalCatalog({ roots: [], spotlight: "roots", dbFile }))).toEqual([
       "Sample",
     ]);
+  });
+
+  test("what an older version kept in catalog.json is read in once, and kept for going back", async () => {
+    const stateFile = join(root, "old/catalog.json");
+    await mkdir(join(root, "old"), { recursive: true });
+    await writeFile(
+      stateFile,
+      JSON.stringify({ granted: ["/Users/x/Desktop"], opened: [sample()] }),
+    );
+    const dbFile = join(root, "old/ponzu.db");
+    const catalog = new LocalCatalog({ roots: [], spotlight: "roots", dbFile, stateFile });
+    expect(await names(catalog)).toEqual(["Sample"]);
+    expect(catalog.db.grants()).toEqual(["/Users/x/Desktop"]);
+    // Read once: taken out of the file later, it stays.
+    await writeFile(stateFile, JSON.stringify({ granted: [] }));
+    const again = new LocalCatalog({ roots: [], spotlight: "roots", dbFile, stateFile });
+    expect(await names(again)).toEqual(["Sample"]);
   });
 
   test("over HTTP: an agent's registration hides an example, the person's open lists it", async () => {

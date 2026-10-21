@@ -60,6 +60,8 @@ function startServer(renderEndpoint: string, port: number): Promise<string> {
           PONZU_LAUNCHED_BY: background ? "agent" : "person",
           // Development and the smoke check aren't anyone using Ponzu.
           ...(isDev || smoke ? { PONZU_TELEMETRY: "0" } : {}),
+          // The smoke check proves the bundled server can open its catalog database.
+          ...(smoke ? { PONZU_DB_STRICT: "1" } : {}),
           PONZU_RENDER_ENDPOINT: renderEndpoint,
           PONZU_RENDER_TOKEN: renderToken,
         },

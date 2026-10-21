@@ -21,6 +21,7 @@ import {
   Folder01Icon,
   FolderOpenIcon,
   FrameIcon,
+  GitBranchIcon,
   GridViewIcon,
   HandIcon,
   Home01Icon,
@@ -46,8 +47,10 @@ import {
   StarIcon,
   Sun01Icon,
   Tablet01Icon,
+  TestTube01Icon,
   TextFontIcon,
   Tick02Icon,
+  Unarchive03Icon,
   UserIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -76,6 +79,7 @@ export const Icons = {
   flow: FlowConnectionIcon,
   folder: Folder01Icon,
   folderOpen: FolderOpenIcon,
+  branch: GitBranchIcon,
   grid: GridViewIcon,
   hand: HandIcon,
   home: Home01Icon,
@@ -100,10 +104,12 @@ export const Icons = {
   cart: ShoppingCart01Icon,
   phone: SmartPhone01Icon,
   star: StarIcon,
+  scratch: TestTube01Icon,
   sun: Sun01Icon,
   tablet: Tablet01Icon,
   type: TextFontIcon,
   check: Tick02Icon,
+  unarchive: Unarchive03Icon,
   user: UserIcon,
 } as const;
 

@@ -12,11 +12,18 @@ import {
   SocketSource,
   Tip,
   TipProvider,
-  timeAgo,
   useSource,
 } from "@ponzu/react";
 import Fuse, { type FuseResultMatch } from "fuse.js";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { agoShort, Device, folderOf, projectOf, WhereLine } from "@/components/file-info";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 /** What opening a design needs: its key on its own Mac, and the server path in front of it. */
@@ -43,13 +50,19 @@ export function Dashboard({
   onOpen,
   onOpenFolder,
   onNew,
+  onShelve,
 }: {
   catalog: Catalog | null;
   onOpen: (target: OpenTarget) => void;
   onOpenFolder?: () => void;
   onNew?: () => void;
+  /** Archive, restore or move a design between Recent and Scratch. Resolves once it's done. */
+  onShelve?: (file: CatalogFile, action: ShelfAction) => Promise<void>;
 }) {
   const [query, setQuery] = useState("");
+  const [view, setView] = useState<View>("recent");
+  const [project, setProject] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ text: string; undo?: () => void } | null>(null);
   const search = useRef<HTMLInputElement>(null);
 
   // ⌘K, or typing anywhere on the home screen, goes to search.
@@ -79,6 +92,42 @@ export function Dashboard({
     !(connected && files.length > 0);
   const q = query.trim();
   const live = useLive(files);
+  const shelved = useMemo(() => {
+    const by: Record<View, CatalogFile[]> = { recent: [], scratch: [], archived: [] };
+    for (const f of files) by[f.shelf ?? "recent"].push(f);
+    return by;
+  }, [files]);
+  // Searching looks everywhere but the archive.
+  const searchable = useMemo(() => files.filter((f) => f.shelf !== "archived"), [files]);
+  const inView = shelved[view];
+  const projects = useProjects(inView);
+  // A filter for a project this view no longer has goes back to All.
+  const scope = project && projects.some((p) => p.id === project) ? project : null;
+  const shown = scope ? inView.filter((f) => (projectOf(f)?.id ?? NO_PROJECT) === scope) : inView;
+
+  const shelve = onShelve
+    ? async (file: CatalogFile, action: ShelfAction) => {
+        await onShelve(file, action);
+        const undo: Record<ShelfAction, ShelfAction> = {
+          archive: "restore",
+          restore: "archive",
+          scratch: "recent",
+          recent: "scratch",
+        };
+        setToast({
+          text: TOAST[action](file.name),
+          undo: () => {
+            setToast(null);
+            void onShelve(file, undo[action]);
+          },
+        });
+      }
+    : undefined;
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 6000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   return (
     <div className="h-full overflow-auto rounded-xl bg-home">
@@ -123,29 +172,262 @@ export function Dashboard({
         </TipProvider>
 
         {q ? (
-          <Results query={q} files={files} machines={machines} onOpen={onOpen} live={live} />
+          <Results
+            query={q}
+            files={searchable}
+            machines={machines}
+            onOpen={onOpen}
+            onShelve={shelve}
+            live={live}
+          />
         ) : setup ? (
           <Setup catalog={catalog} files={files} machines={machines} onOpen={onOpen} live={live} />
         ) : (
           <>
-            <Heading
-              left="Recent"
-              right={`${plural(files.length, "file")}${machines.size > 1 ? ` on ${machines.size} Macs` : ""}`}
+            <Views
+              view={view}
+              counts={{
+                recent: shelved.recent.length,
+                scratch: shelved.scratch.length,
+                archived: shelved.archived.length,
+              }}
+              onView={setView}
             />
-            <Grid>
-              {files.map((f) => (
-                <FileCard
-                  key={f.id}
-                  file={f}
-                  machine={machines.get(f.machine)}
-                  onOpen={onOpen}
-                  live={live.has(f.id)}
-                />
-              ))}
-            </Grid>
+            {projects.length > 1 && (
+              <Projects
+                projects={projects}
+                total={inView.length}
+                scope={scope}
+                onScope={setProject}
+              />
+            )}
+            {view !== "recent" && <ViewNote view={view} />}
+            {shown.length ? (
+              <Grid>
+                {shown.map((f) => (
+                  <FileCard
+                    key={f.id}
+                    file={f}
+                    machine={machines.get(f.machine)}
+                    onOpen={onOpen}
+                    onShelve={shelve}
+                    live={live.has(f.id)}
+                    short={Boolean(scope)}
+                  />
+                ))}
+              </Grid>
+            ) : (
+              <p className="mt-6 text-center text-muted-foreground">{EMPTY[view]}</p>
+            )}
           </>
         )}
       </div>
+      {toast && <Toast text={toast.text} onUndo={toast.undo} onClose={() => setToast(null)} />}
+    </div>
+  );
+}
+
+/** Which designs the home screen lists: the person's, an agent's scratch, or put away. */
+type View = "recent" | "scratch" | "archived";
+
+export type ShelfAction = "archive" | "restore" | "scratch" | "recent";
+
+const VIEWS: { id: View; label: string }[] = [
+  { id: "recent", label: "Recent" },
+  { id: "scratch", label: "Scratch" },
+  { id: "archived", label: "Archived" },
+];
+
+const EMPTY: Record<View, string> = {
+  recent: "Nothing here yet.",
+  scratch: "No scratch files. Agents put the files they make for themselves here.",
+  archived: "Nothing archived.",
+};
+
+const TOAST: Record<ShelfAction, (name: string) => string> = {
+  archive: (n) => `Archived “${n}”. It comes back when you open it or an agent edits it.`,
+  restore: (n) => `Restored “${n}”.`,
+  scratch: (n) => `Moved “${n}” to Scratch.`,
+  recent: (n) => `Moved “${n}” to Recent.`,
+};
+
+/** The chip for designs outside any git checkout. */
+const NO_PROJECT = "";
+
+function Views({
+  view,
+  counts,
+  onView,
+}: {
+  view: View;
+  counts: Record<View, number>;
+  onView: (view: View) => void;
+}) {
+  return (
+    <div className="-mb-3.5 flex items-baseline gap-4 text-[13px]" role="tablist">
+      {VIEWS.map((v) =>
+        // Scratch and Archived show once there's something in them, or while they're open.
+        v.id === "recent" || counts[v.id] || view === v.id ? (
+          <button
+            key={v.id}
+            type="button"
+            role="tab"
+            aria-selected={view === v.id}
+            onClick={() => onView(v.id)}
+            className={cn(
+              "flex items-baseline gap-[5px]",
+              view === v.id
+                ? "font-medium text-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {v.label}
+            <span className="font-normal text-[11px] text-faint tabular-nums">{counts[v.id]}</span>
+          </button>
+        ) : null,
+      )}
+    </div>
+  );
+}
+
+interface Project {
+  id: string;
+  name: string;
+  count: number;
+}
+
+/** The projects in a view, the busiest first, and the designs outside one last. */
+function useProjects(files: CatalogFile[]): Project[] {
+  return useMemo(() => {
+    const by = new Map<string, Project>();
+    for (const f of files) {
+      const p = projectOf(f);
+      const id = p?.id ?? NO_PROJECT;
+      const had = by.get(id);
+      if (had) had.count++;
+      else by.set(id, { id, name: p?.name ?? "Not in a project", count: 1 });
+    }
+    // Two projects with the same short name say which owner each is.
+    const names = new Map<string, number>();
+    for (const p of by.values()) names.set(p.name, (names.get(p.name) ?? 0) + 1);
+    for (const p of by.values())
+      if (p.id !== NO_PROJECT && (names.get(p.name) ?? 0) > 1)
+        p.name = p.id.split("/").slice(-2).join("/");
+    return [...by.values()].sort(
+      (a, b) =>
+        Number(a.id === NO_PROJECT) - Number(b.id === NO_PROJECT) ||
+        b.count - a.count ||
+        a.name.localeCompare(b.name),
+    );
+  }, [files]);
+}
+
+function Projects({
+  projects,
+  total,
+  scope,
+  onScope,
+}: {
+  projects: Project[];
+  total: number;
+  scope: string | null;
+  onScope: (id: string | null) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      <Chip on={scope === null} onClick={() => onScope(null)} count={total}>
+        All
+      </Chip>
+      {projects.map((p) => (
+        <Chip
+          key={p.id}
+          on={scope === p.id}
+          onClick={() => onScope(scope === p.id ? null : p.id)}
+          count={p.count}
+          icon={p.id === NO_PROJECT ? "folder" : "branch"}
+          title={p.id || undefined}
+        >
+          {p.name}
+        </Chip>
+      ))}
+    </div>
+  );
+}
+
+function Chip({
+  on,
+  onClick,
+  count,
+  icon,
+  title,
+  children,
+}: {
+  on: boolean;
+  onClick: () => void;
+  count: number;
+  icon?: string;
+  title?: string;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      title={title}
+      onClick={onClick}
+      className={cn(
+        "flex h-7 items-center gap-1.5 whitespace-nowrap rounded-full px-[11px] text-xs",
+        on
+          ? "bg-foreground text-home"
+          : "text-muted-foreground shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:text-foreground",
+      )}
+    >
+      {icon && <Icon name={icon} size={13} strokeWidth={1.6} className="opacity-80" />}
+      {children}
+      <span className="opacity-60 tabular-nums">{count}</span>
+    </button>
+  );
+}
+
+function ViewNote({ view }: { view: "scratch" | "archived" }) {
+  return (
+    <div className="flex items-center gap-2.5 rounded-[10px] bg-secondary px-3.5 py-2.5 text-[12.5px] text-muted-foreground">
+      <Icon name={view === "scratch" ? "scratch" : "archive"} size={16} className="text-faint" />
+      {view === "scratch"
+        ? "Files agents made for their own use, like experiments and test fixtures. They stay out of Recent unless you move one there."
+        : "Archived designs come back to Recent when you open one or an agent edits it. Designs whose folder is gone, like a deleted worktree’s, drop off by themselves."}
+    </div>
+  );
+}
+
+function Toast({
+  text,
+  onUndo,
+  onClose,
+}: {
+  text: string;
+  onUndo?: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      role="status"
+      className="fixed bottom-6 left-1/2 z-50 flex h-10 -translate-x-1/2 items-center gap-3.5 rounded-xl bg-foreground pr-2 pl-3.5 text-[13px] text-home shadow-[0_1px_2px_rgba(0,0,0,0.06),0_8px_28px_rgba(0,0,0,0.1)]"
+    >
+      <span>{text}</span>
+      {onUndo ? (
+        <button
+          type="button"
+          onClick={onUndo}
+          className="flex h-7 items-center rounded-lg bg-home/15 px-2.5 font-medium hover:bg-home/25"
+        >
+          Undo
+        </button>
+      ) : (
+        <button type="button" aria-label="Dismiss" onClick={onClose} className="px-1.5 opacity-70">
+          <Icon name="close" size={13} />
+        </button>
+      )}
     </div>
   );
 }
@@ -367,13 +649,8 @@ function agentName(client?: string, fallback?: string): string {
 /* Files                                                              */
 /* ------------------------------------------------------------------ */
 
-function Heading({ left, right }: { left: string; right?: string }) {
-  return (
-    <div className="-mb-3.5 flex items-baseline justify-between text-muted-foreground text-xs">
-      <span>{left}</span>
-      {right && <span>{right}</span>}
-    </div>
-  );
+function Heading({ left }: { left: string }) {
+  return <div className="-mb-3.5 text-muted-foreground text-xs">{left}</div>;
 }
 
 function Grid({ children, columns = 4 }: { children: ReactNode; columns?: 3 | 4 }) {
@@ -395,63 +672,220 @@ function FileCard({
   file,
   machine,
   onOpen,
+  onShelve,
   match,
   pathMatch,
   live,
+  short,
 }: {
   file: CatalogFile;
   machine?: CatalogMachine;
   onOpen: (target: OpenTarget) => void;
+  onShelve?: (file: CatalogFile, action: ShelfAction) => Promise<void>;
   /** Show the design itself, edits and all, over its preview. */
   live?: boolean;
   match?: readonly [number, number][];
   /** Where a search matched the file's path, when it matched there and not in the name. */
   pathMatch?: readonly [number, number][];
+  /** Filtered to its project: the folder line can say less. */
+  short?: boolean;
 }) {
   const fresh = file.created !== undefined && Date.now() - file.created < 5 * 60_000;
+  const working = Boolean(file.busy) || fresh;
+  const archived = file.shelf === "archived";
+  const open = () => onOpen({ key: file.key, base: file.base });
   return (
-    <button
-      type="button"
-      className="group flex min-w-0 flex-col gap-2.5 text-left"
-      onClick={() => onOpen({ key: file.key, base: file.base })}
-      title={file.locked ? `${file.key}\nOpen it to let Ponzu read this folder.` : file.key}
+    // A div, not a button: the menu's button sits inside it.
+    // biome-ignore lint/a11y/useSemanticElements: holds the menu's own button
+    <div
+      role="button"
+      tabIndex={0}
+      className="group relative flex min-w-0 cursor-default flex-col gap-2.5 text-left outline-none"
+      onClick={open}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          open();
+        }
+      }}
+      title={file.locked ? "Open it to let Ponzu read this folder." : undefined}
     >
       <div
         className={cn(
-          "relative aspect-[16/11] overflow-hidden rounded-xl bg-preview transition-shadow",
-          file.busy || fresh
-            ? "shadow-[0_0_0_1.5px_var(--rind),0_6px_20px_rgba(244,176,18,0.22)]"
+          "relative aspect-[16/11] overflow-hidden rounded-xl bg-preview transition-shadow group-focus-visible:shadow-[0_0_0_2px_var(--ring)]",
+          working
+            ? "shadow-[0_0_0_1px_var(--hairline)]"
             : "shadow-[0_0_0_1px_var(--hairline)] group-hover:shadow-[0_0_0_1px_var(--hairline-strong),0_4px_14px_rgba(0,0,0,0.06)]",
         )}
       >
-        <Preview src={file.preview} />
-        {live && <LivePreview file={file} />}
-        {file.busy && (
-          <span className="absolute top-2.5 left-2.5 flex h-6 items-center gap-1.5 rounded-full bg-card/80 pr-2.5 pl-[7px] text-xs shadow-[0_0_0_0.5px_rgba(0,0,0,0.08),0_2px_6px_rgba(0,0,0,0.06)] backdrop-blur-md">
-            <AgentMark client={file.busy} size={13} />
-            Designing…
-          </span>
-        )}
+        <div className={cn("absolute inset-0", archived && "opacity-55 grayscale")}>
+          <Preview src={file.preview} />
+          {live && <LivePreview file={file} />}
+        </div>
+        {working && <CardTrace />}
+        {onShelve && <CardMenu file={file} onOpen={open} onShelve={onShelve} />}
       </div>
       <div className="flex min-w-0 flex-col gap-0.5 px-0.5">
-        <span className="truncate font-medium text-[13.5px]">
-          <Highlight text={file.name} ranges={match} />
+        <span className="flex min-w-0 items-baseline gap-2">
+          <span
+            className={cn(
+              "min-w-0 flex-1 truncate font-medium text-[13.5px]",
+              working && "pz-shimmer",
+              archived && "text-muted-foreground",
+            )}
+          >
+            <Highlight text={file.name} ranges={match} />
+          </span>
+          <span
+            className="shrink-0 text-faint text-xs tabular-nums"
+            title={
+              archived && file.archived
+                ? `Archived ${new Date(file.archived).toLocaleString()}`
+                : undefined
+            }
+          >
+            {agoShort(file.modified)}
+          </span>
         </span>
-        {pathMatch && (
+        {pathMatch ? (
           <span className="truncate font-mono text-[11px] text-muted-foreground" dir="rtl">
             {/* Right to left, so a long path keeps its end; the marks stay on their letters. */}
             <bdi>
               <Highlight text={file.key} ranges={pathMatch} />
             </bdi>
           </span>
+        ) : (
+          <span className="flex min-w-0 items-center gap-[5px] text-muted-foreground text-xs">
+            <WhereLine file={file} className="min-w-0 shrink" />
+            {short && file.git && (
+              <>
+                <span className="text-faint">·</span>
+                <span className="min-w-0 shrink-[2] truncate">
+                  {folderOf(file).split("/").pop()}
+                </span>
+              </>
+            )}
+            {machine && machine.id !== "local" && (
+              <>
+                <span className="text-faint">·</span>
+                <span className="shrink-0">
+                  <Device machine={machine} />
+                </span>
+              </>
+            )}
+          </span>
         )}
-        <span className="flex items-center gap-[5px] text-muted-foreground text-xs">
-          <Device machine={machine} />
-          <span className="text-faint">·</span>
-          <span>{ago(file.modified)}</span>
-        </span>
       </div>
-    </button>
+    </div>
+  );
+}
+
+/**
+ * The trace an agent's artboard gets on the canvas, around the card of the
+ * design it's working in: a short stroke of the brand's rind running the
+ * edge. Drawn over the preview, which is rounded, so the path is too.
+ */
+function CardTrace() {
+  return (
+    <svg
+      aria-hidden
+      className="pointer-events-none absolute inset-0 size-full overflow-visible text-[var(--rind)]"
+    >
+      <rect
+        x="0.75"
+        y="0.75"
+        width="calc(100% - 1.5px)"
+        height="calc(100% - 1.5px)"
+        rx="11.25"
+        fill="none"
+        stroke="currentColor"
+        strokeOpacity={0.3}
+        strokeWidth={1}
+      />
+      <rect
+        className="pz-trace"
+        x="0.75"
+        y="0.75"
+        width="calc(100% - 1.5px)"
+        height="calc(100% - 1.5px)"
+        rx="11.25"
+        pathLength={100}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+/** A card's "…": open it, find it, or put it away. Shows on hover, and stays while open. */
+function CardMenu({
+  file,
+  onOpen,
+  onShelve,
+}: {
+  file: CatalogFile;
+  onOpen: () => void;
+  onShelve: (file: CatalogFile, action: ShelfAction) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const desktop = window.ponzuDesktop;
+  const here = file.machine === "local";
+  const shelf = file.shelf ?? "recent";
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label="More"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+          className={cn(
+            "absolute top-2 right-2 grid size-7 place-items-center rounded-lg bg-card text-foreground shadow-[0_0_0_1px_var(--hairline-strong),0_2px_6px_rgba(0,0,0,0.08)] transition-opacity",
+            open ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+          )}
+        >
+          <Icon name="more" size={16} />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+        <DropdownMenuItem onSelect={onOpen}>
+          <Icon name="folderOpen" size={15} />
+          Open
+        </DropdownMenuItem>
+        {desktop && here && (
+          <DropdownMenuItem onSelect={() => desktop.reveal(file.key)}>
+            <Icon name="folder" size={15} />
+            Show in Finder
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem onSelect={() => void navigator.clipboard.writeText(file.key)}>
+          <Icon name="copy" size={15} />
+          Copy path
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        {shelf === "archived" ? (
+          <DropdownMenuItem onSelect={() => void onShelve(file, "restore")}>
+            <Icon name="unarchive" size={15} />
+            Restore
+          </DropdownMenuItem>
+        ) : (
+          <>
+            <DropdownMenuItem
+              onSelect={() => void onShelve(file, shelf === "scratch" ? "recent" : "scratch")}
+            >
+              <Icon name={shelf === "scratch" ? "check" : "scratch"} size={15} />
+              {shelf === "scratch" ? "Move to Recent" : "Move to Scratch"}
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => void onShelve(file, "archive")}>
+              <Icon name="archive" size={15} />
+              Archive
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -593,37 +1027,6 @@ function LiveBoards({ source, scheme }: { source: SocketSource; scheme: "light" 
   );
 }
 
-function Device({ machine }: { machine?: CatalogMachine }) {
-  return (
-    <span className="flex items-center gap-[5px]">
-      <Icon
-        name={machine?.kind === "laptop" ? "laptop" : "desktop"}
-        size={13}
-        strokeWidth={1.7}
-        className="text-faint"
-      />
-      {machine?.name ?? "This Mac"}
-    </span>
-  );
-}
-
-function ago(ms: number): string {
-  if (!ms) return "Edited a while ago";
-  const t = timeAgo(ms);
-  if (t === "now") return "Just now";
-  const unit = t.slice(-1);
-  const n = Number(t.slice(0, -1));
-  if (unit === "m") return `${plural(n, "min")} ago`;
-  if (unit === "h") return `${plural(n, "hour")} ago`;
-  if (n === 1) return "Yesterday";
-  if (n < 7) return `${n} days ago`;
-  return new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-function plural(n: number, word: string): string {
-  return `${n} ${word}${n === 1 ? "" : "s"}`;
-}
-
 /* ------------------------------------------------------------------ */
 /* Search                                                             */
 /* ------------------------------------------------------------------ */
@@ -651,12 +1054,14 @@ function Results({
   files,
   machines,
   onOpen,
+  onShelve,
   live,
 }: {
   query: string;
   files: CatalogFile[];
   machines: Map<string, CatalogMachine>;
   onOpen: (target: OpenTarget) => void;
+  onShelve?: (file: CatalogFile, action: ShelfAction) => Promise<void>;
   /** Cards to show live (useLive). */
   live: Set<string>;
 }) {
@@ -710,6 +1115,7 @@ function Results({
                 file={item}
                 machine={machines.get(item.machine)}
                 onOpen={onOpen}
+                onShelve={onShelve}
                 live={live.has(item.id)}
                 match={ranges(matches, "name")}
                 pathMatch={ranges(matches, "name") ? undefined : ranges(matches, "key")}

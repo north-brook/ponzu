@@ -35,7 +35,9 @@ export interface HomeOptions {
   /** Folders always scanned for designs. */
   roots?: string[];
   spotlight?: boolean | "roots";
-  /** Where to remember which guarded folders Ponzu may read. */
+  /** Where the catalog remembers the designs it found and what the person did with them. */
+  dbFile?: string;
+  /** What older versions remembered, read once (see CatalogOptions). */
   stateFile?: string;
   /** List the owner's other Macs' designs over Tailscale. */
   tailnet: boolean;
@@ -78,13 +80,14 @@ export class Home {
     this.catalog = new LocalCatalog({
       roots: opts.roots,
       spotlight: opts.spotlight,
+      dbFile: opts.dbFile,
       stateFile: opts.stateFile,
     });
-    for (const { key } of ws.designs()) this.catalog.add(key);
+    for (const { key } of ws.designs()) this.watch(key);
     for (const key of opts.opened ?? []) this.catalog.opened(key);
-    ws.onOpen((key) => this.catalog.add(key));
+    ws.onOpen((key) => this.watch(key));
     ws.onCreate((key) => {
-      this.catalog.add(key);
+      this.catalog.add(key, "created");
       this.created.set(key, Date.now());
     });
     ws.presence.on((list) => {
@@ -93,6 +96,15 @@ export class Home {
         .sort((a, b) => b.lastSeen - a.lastSeen)[0];
       if (latest)
         this.agent = { name: latest.name, ...(latest.client ? { client: latest.client } : {}) };
+    });
+  }
+
+  /** List an open design, and bring it out of the archive when an agent edits it. */
+  private watch(key: string): void {
+    this.catalog.add(key);
+    const design = this.ws.get(key);
+    design?.onOp((e) => {
+      if (e.origin.kind === "agent") this.catalog.edited(key);
     });
   }
 

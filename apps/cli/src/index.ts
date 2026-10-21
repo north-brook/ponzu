@@ -153,6 +153,7 @@ async function runServe(
     // Tailscale runs. PONZU_TAILSCALE=none turns that off.
     tailnet: true,
     tailnetPort: 7777,
+    dbFile: join(ponzuHome(), "ponzu.db"),
     stateFile: join(ponzuHome(), "catalog.json"),
     // PONZU_SPOTLIGHT=0 lists only designs under the current folder, as a fresh Mac would.
     spotlight: process.env.PONZU_SPOTLIGHT === "0" ? false : undefined,

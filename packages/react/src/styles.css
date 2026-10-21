@@ -22,6 +22,8 @@
   --pz-hover: rgba(0, 0, 0, 0.05);
   --pz-select: #1f6bff;
   --pz-comment: #f4b012;
+  /* The brand's rind: an agent's trace around the artboard it's working on. */
+  --pz-rind: #f4b012;
   --pz-comment-ink: #3a2a00;
   --pz-comment-soft: #fff6da;
   --pz-danger: #d93a2b;
@@ -61,6 +63,7 @@
   --pz-hover: rgba(255, 255, 255, 0.06);
   --pz-select: #4c8dff;
   --pz-comment: #ffc21a;
+  --pz-rind: #ffa800;
   --pz-comment-ink: #2a1f00;
   --pz-comment-soft: #2a2416;
   --pz-danger: #ff6b5e;
