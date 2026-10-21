@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.2](https://github.com/north-brook/ponzu/compare/v1.15.1...v1.15.2) (2026-10-21)
+
+
+### Bug Fixes
+
+* keep document order when duplicating or moving several nodes ([#49](https://github.com/north-brook/ponzu/issues/49)) ([875b1be](https://github.com/north-brook/ponzu/commit/875b1be2b06f37b227e3a48a83703d41eedbb30c))
+
 ## [1.15.1](https://github.com/north-brook/ponzu/compare/v1.15.0...v1.15.1) (2026-10-21)
 
 
