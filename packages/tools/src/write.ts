@@ -1,6 +1,7 @@
 import {
   type Artboard,
   cloneWithNewIds,
+  type Doc,
   findArtboard,
   findPage,
   locate,
@@ -12,6 +13,7 @@ import {
   parseStyle,
   rawIndex,
   toKebab,
+  walk,
 } from "@ponzu/core";
 import { z } from "zod";
 import { fileArg, styleArg, ToolError, tool } from "./define.ts";
@@ -266,11 +268,25 @@ export const writeTools = [
       const { key, design } = await ctx.ws.resolve(args.file);
       const doc = design.doc;
       const ops: Op[] = [];
-      const lines: string[] = [];
       const map: Record<string, string> = {};
       const placed: Artboard[] = [];
-      const ids: string[] = [];
-      args.ids.forEach((id, i) => {
+      // Reported in the order asked for; names[i] goes with ids[i].
+      const lines: string[] = new Array(args.ids.length);
+      const ids: string[] = new Array(args.ids.length);
+      const intoParent = args.parent ? target(doc, args.parent).node : null;
+      const parentCopies: PElement[] = [];
+      const siblingCopies: { parent: string; index: number; copy: PElement }[] = [];
+      const copiesOnPage = new Map<string, number>();
+      // Copies follow their sources' document order, whatever order the ids came in.
+      const position = nodeOrder(doc);
+      const order = args.ids
+        .map((id, i) => ({ id, i }))
+        .sort(
+          (a, b) =>
+            (position.get(a.id) ?? Number.POSITIVE_INFINITY) -
+            (position.get(b.id) ?? Number.POSITIVE_INFINITY),
+        );
+      for (const { id, i } of order) {
         const ab = findArtboard(doc, id);
         if (ab) {
           const copyRoot = cloneWithNewIds(ab.artboard.root, map, "ab");
@@ -285,28 +301,38 @@ export const writeTools = [
             root: copyRoot,
           };
           placed.push(artboard);
+          const onPage = (copiesOnPage.get(ab.page.id) ?? 0) + 1;
+          copiesOnPage.set(ab.page.id, onPage);
           ops.push({
             op: "artboard.create",
             page: ab.page.id,
-            index: ab.page.artboards.length + placed.length,
+            // After the page's artboards and the copies already made for it, in the order asked.
+            index: ab.page.artboards.length + onPage - 1,
             artboard,
           });
-          ids.push(artboard.id);
-          lines.push(`${id} → ${artboard.id} "${name}" at (${artboard.x}, ${artboard.y})`);
-          return;
+          ids[i] = artboard.id;
+          lines[i] = `${id} → ${artboard.id} "${name}" at (${artboard.x}, ${artboard.y})`;
+          continue;
         }
         const t = target(doc, id);
         const copy = cloneWithNewIds(t.node, map);
         if (args.names?.[i]) copy.name = args.names[i];
-        if (args.parent) {
-          const p = target(doc, args.parent).node;
-          ops.push({ op: "insert", parent: p.id, index: p.children.length, nodes: [copy] });
-        } else {
-          ops.push({ op: "insert", parent: t.parent!.id, index: t.index + 1, nodes: [copy] });
-        }
-        ids.push(copy.id);
-        lines.push(`${id} → ${copy.id}`);
-      });
+        if (intoParent) parentCopies.push(copy);
+        else siblingCopies.push({ parent: t.parent!.id, index: t.index + 1, copy });
+        ids[i] = copy.id;
+        lines[i] = `${id} → ${copy.id}`;
+      }
+      if (intoParent && parentCopies.length)
+        ops.push({
+          op: "insert",
+          parent: intoParent.id,
+          index: intoParent.children.length,
+          nodes: parentCopies,
+        });
+      // Indices are from before any insert, so go last to first: inserting
+      // further down never shifts a spot above it.
+      for (const s of siblingCopies.reverse())
+        ops.push({ op: "insert", parent: s.parent, index: s.index, nodes: [s.copy] });
       apply(design, ops.length === 1 ? ops[0]! : { op: "batch", ops }, ctx);
       if (placed[0]) ctx.ws.focus?.(key, placed[0].id);
       const copied = Object.keys(map).length;
@@ -351,8 +377,22 @@ export const writeTools = [
       const { design } = await ctx.ws.resolve(args.file);
       const doc = design.doc;
       const ops: Op[] = [];
+      // The node last moved to each `after` sibling or parent index. Moves that
+      // share a spot line up after one another, in the order given, rather than
+      // each landing in front of the last.
+      const lastAt = new Map<string, string>();
       // Apply one by one so later moves see earlier ones.
-      for (const m of args.moves) {
+      for (const move of args.moves) {
+        const spot = move.after
+          ? `after ${move.after}`
+          : !move.before && move.parent && move.index !== undefined
+            ? `index ${move.parent} ${move.index}`
+            : null;
+        const prev = spot ? lastAt.get(spot) : undefined;
+        const m = prev && prev !== move.id ? { id: move.id, after: prev } : move;
+        // A node that moves on no longer marks where its old spot ends.
+        for (const [k, v] of lastAt) if (v === move.id) lastAt.delete(k);
+        if (spot) lastAt.set(spot, move.id);
         const sibling = m.before ?? m.after;
         let parent: string;
         let index: number;
@@ -509,6 +549,15 @@ function styleWarnings(keys: string[]): string {
 }
 
 export { type PElement, parseStyle };
+
+/** Every artboard's and node's position in document order (pages, artboards, then depth-first). */
+function nodeOrder(doc: Doc): Map<string, number> {
+  const order = new Map<string, number>();
+  for (const page of doc.pages)
+    for (const ab of page.artboards)
+      for (const { node } of walk(ab.root)) order.set(node.id, order.size);
+  return order;
+}
 
 /**
  * Where an artboard copy goes. Without x/y it takes the next free spot in the
