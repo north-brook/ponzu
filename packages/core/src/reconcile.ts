@@ -49,52 +49,45 @@ export function carryIds(prev: PElement, next: PElement, derived: Set<string>): 
     kept.add(n);
   };
 
+  // Matched pairs whose leftover children still need the same-tag pass.
+  const edited: [PElement, PElement][] = [];
+
+  /** Pair o with n, then their children by written id and by being unchanged. */
   const match = (o: PElement, n: PElement) => {
     pair(o, n);
     const olds = elementChildren(o).filter((c) => !oldDone.has(c));
+    const news = elementChildren(n).filter((c) => !newDone.has(c));
     const pairs: [PElement, PElement][] = [];
     const claimed = new Set<PElement>();
-    const claim = (a: PElement, b: PElement) => {
-      claimed.add(a);
-      pairs.push([a, b]);
-    };
-    let news = elementChildren(n).filter((c) => !newDone.has(c));
-    // 1. Ids written in the file.
     const byId = new Map(olds.map((c) => [c.id, c]));
-    news = news.filter((c) => {
-      const hit = !lazy.has(c) && byId.get(c.id);
-      if (hit) claim(hit, c);
-      return !hit;
-    });
-    // 2. Unchanged elements, wherever they moved among their siblings.
     const byShape = new Map<string, PElement[]>();
     for (const c of olds) {
-      if (claimed.has(c)) continue;
       const list = byShape.get(shape(c));
       if (list) list.push(c);
       else byShape.set(shape(c), [c]);
     }
-    news = news.filter((c) => {
-      const hit = byShape.get(shape(c))?.find((x) => !claimed.has(x));
-      if (hit) claim(hit, c);
-      return !hit;
-    });
-    // 3. Edited elements: the next unclaimed sibling with the same tag, in order.
-    let from = 0;
-    for (const c of news) {
-      for (let i = from; i < olds.length; i++) {
-        const hit = olds[i]!;
-        if (claimed.has(hit) || hit.tag !== c.tag) continue;
-        claim(hit, c);
-        from = i + 1;
-        break;
+    const find = [
+      // Ids written in the file.
+      (c: PElement) => (lazy.has(c) ? undefined : byId.get(c.id)),
+      // Unchanged elements, wherever they moved among their siblings.
+      (c: PElement) => byShape.get(shape(c))?.find((x) => !claimed.has(x)),
+    ];
+    for (const how of find) {
+      for (const c of news) {
+        if (pairs.some(([, b]) => b === c)) continue;
+        const hit = how(c);
+        if (!hit || claimed.has(hit)) continue;
+        claimed.add(hit);
+        pairs.push([hit, c]);
       }
     }
     for (const [a, b] of pairs) match(a, b);
+    edited.push([o, n]);
   };
   match(prev, next);
 
-  // Unchanged elements that moved to another parent, when they're unambiguous.
+  // Unchanged elements that moved to another parent, when that's unambiguous.
+  // Before the same-tag pass, so an edited sibling can't take their id.
   const unique = new Map<string, PElement | null>();
   for (const { node } of walk(prev)) {
     if (oldDone.has(node)) continue;
@@ -105,6 +98,23 @@ export function carryIds(prev: PElement, next: PElement, derived: Set<string>): 
     if (newDone.has(node) || !lazy.has(node)) continue;
     const hit = unique.get(shape(node));
     if (hit && !oldDone.has(hit)) match(hit, node);
+  }
+
+  // Edited elements: the next unpaired sibling with the same tag, in order.
+  for (let i = 0; i < edited.length; i++) {
+    const [o, n] = edited[i]!;
+    const olds = elementChildren(o);
+    let from = 0;
+    for (const c of elementChildren(n)) {
+      if (newDone.has(c)) continue;
+      for (let j = from; j < olds.length; j++) {
+        const hit = olds[j]!;
+        if (oldDone.has(hit) || hit.tag !== c.tag) continue;
+        from = j + 1;
+        match(hit, c);
+        break;
+      }
+    }
   }
 
   // Whatever matched nothing keeps its positional id, unless that's now taken.

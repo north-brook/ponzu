@@ -318,12 +318,14 @@ export class Design {
    */
   private async pinIds(artboardIds: string[], read: FileBag): Promise<void> {
     const run = async () => {
-      if (this.closed) return;
-      const now = await this.storage.readAll();
       for (const id of artboardIds) {
+        if (this.closed) return;
         const ab = findArtboard(this.doc, id)?.artboard;
         const path = this.layout.artboards.get(id);
-        if (!ab || !path || now[path] !== read[path]) continue;
+        if (!ab || !path) continue;
+        // Fresh for each file: a script may write the next one meanwhile.
+        const now = await this.storage.readAll();
+        if (now[path] !== read[path]) continue;
         const content = serializeArtboard(ab);
         if (content === now[path]) continue;
         this.written.set(path, content);

@@ -323,6 +323,23 @@ describe("carrying ids across an outside edit", () => {
     expect(new Set(Object.values(now)).size).toBe(3);
   });
 
+  test("a written id that matches another element's position stays with its element", () => {
+    const before = read("<p>One</p><p>Two</p>");
+    const two = ids(before.root).Two!;
+    const after = read(`<p data-id="${two}">One</p><p>Two</p>`);
+    carryIds(before.root, after.root, after.assigned);
+    const now = ids(after.root);
+    expect(now.One).toBe(two);
+    expect(now.Two).not.toBe(two);
+  });
+
+  test("an unchanged element moved to another parent keeps its id over an edited one", () => {
+    const before = read("<div><p>Alpha</p></div><aside><p>Beta</p></aside>");
+    const after = read("<div></div><aside><p>Alpha</p></aside>");
+    carryIds(before.root, after.root, after.assigned);
+    expect(ids(after.root).Alpha).toBe(ids(before.root).Alpha!);
+  });
+
   test("nothing changes when every id is still where it was", () => {
     const before = read("<p>One</p><p>Two</p>");
     const after = read("<p>One</p><p>Two</p><p>Three</p>");

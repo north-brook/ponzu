@@ -76,10 +76,44 @@ export function parseHtml(html: string, opts: ParseOptions = {}): ParseResult {
   const context = opts.parent ? foreignContext(opts.parent) : null;
   const frag = context ? parseFragment(context, html, {}) : parseFragment(html);
   const assign = opts.assignId ?? "random";
+  // Ids written in the file are claimed up front, so a made-up id never takes one.
   const seen = new Set<string>();
+  const written = new Set<string>();
+  collectIds(frag.childNodes, written);
   const assigned = new Set<string>();
-  const nodes = convertChildren(frag.childNodes, [], assign, dropped, seen, assigned);
+  const ids: IdState = { assign, seen, written, assigned };
+  const nodes = convertChildren(frag.childNodes, [], ids, dropped);
   return { nodes, dropped, assigned };
+}
+
+interface IdState {
+  assign: NonNullable<ParseOptions["assignId"]>;
+  /** Ids given out so far. */
+  seen: Set<string>;
+  /** Every data-id in the fragment. */
+  written: Set<string>;
+  /** Ids made up for elements without a usable data-id. */
+  assigned: Set<string>;
+}
+
+function collectIds(list: P5.ChildNode[], out: Set<string>): void {
+  for (const child of list) {
+    const el = child as P5.Element;
+    if (!el.attrs) continue;
+    const id = el.attrs.find((a) => !a.prefix && a.name.toLowerCase() === "data-id")?.value.trim();
+    if (id) out.add(id);
+    collectIds(el.childNodes ?? [], out);
+  }
+}
+
+function makeUpId(ids: IdState, path: number[]): string {
+  const make = (n: number) =>
+    ids.assign === "random" ? newId("n") : ids.assign(n ? [...path, -n] : path);
+  let id = make(0);
+  // Still derived from position on a clash, so it comes out the same next time.
+  for (let n = 1; ids.seen.has(id) || ids.written.has(id); n++) id = make(n);
+  ids.assigned.add(id);
+  return id;
 }
 
 /** A parse5 context element for an SVG or MathML parent; null for HTML. */
@@ -93,10 +127,8 @@ function foreignContext(parent: Pick<PElement, "tag" | "ns" | "attrs">): P5.Elem
 function convertChildren(
   list: P5.ChildNode[],
   path: number[],
-  assign: NonNullable<ParseOptions["assignId"]>,
+  ids: IdState,
   dropped: Dropped[],
-  seen: Set<string>,
-  assigned: Set<string>,
 ): PNode[] {
   const out: PNode[] = [];
   let elIndex = 0;
@@ -116,7 +148,7 @@ function convertChildren(
       continue;
     }
     const childPath = [...path, elIndex++];
-    out.push(convertElement(el, childPath, assign, dropped, seen, assigned));
+    out.push(convertElement(el, childPath, ids, dropped));
   }
   return out;
 }
@@ -124,10 +156,8 @@ function convertChildren(
 function convertElement(
   el: P5.Element,
   path: number[],
-  assign: NonNullable<ParseOptions["assignId"]>,
+  ids: IdState,
   dropped: Dropped[],
-  seen: Set<string>,
-  assigned: Set<string>,
 ): PElement {
   const attrs: Record<string, string> = {};
   let style: Record<string, string> = {};
@@ -150,16 +180,13 @@ function convertElement(
     else if (lower === "srcdoc") dropped.push({ what: `srcdoc on <${el.tagName}>` });
     else attrs[key] = a.value;
   }
-  if (!id || seen.has(id)) {
-    id = assign === "random" ? newId("n") : assign(path);
-    assigned.add(id);
-  }
-  seen.add(id);
+  if (!id || ids.seen.has(id)) id = makeUpId(ids, path);
+  ids.seen.add(id);
   const ns = el.namespaceURI === NS_SVG ? "svg" : el.namespaceURI === NS_MATH ? "math" : undefined;
   const node: PElement = { kind: "el", id, tag: el.tagName, attrs, style, children: [] };
   if (ns) node.ns = ns;
   if (name !== undefined) node.name = name;
-  node.children = convertChildren(el.childNodes, path, assign, dropped, seen, assigned);
+  node.children = convertChildren(el.childNodes, path, ids, dropped);
   if (RAW_TEXT.has(el.tagName)) {
     for (const c of node.children)
       if (c.kind === "text") c.value = sanitizeCssText(c.value, dropped);
