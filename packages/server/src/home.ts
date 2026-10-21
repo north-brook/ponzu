@@ -14,7 +14,13 @@ import type { Renderer } from "@ponzu/render";
 import { Design } from "@ponzu/store";
 import { FsAdapter } from "@ponzu/store/fs";
 import { catalogFile, LocalCatalog, machineKind } from "./catalog.ts";
-import { PREVIEW_FILE, type PreviewTheme, previewFile, writePreview } from "./preview.ts";
+import {
+  PREVIEW_FILE,
+  type PreviewTheme,
+  previewFile,
+  previewStale,
+  writePreview,
+} from "./preview.ts";
 import { ownerOf, readTailnet, type Tailnet } from "./tailnet.ts";
 import type { LocalWorkspace } from "./workspace.ts";
 
@@ -202,25 +208,26 @@ export class Home {
   }
 
   /**
-   * A design's canvas preview, on the light or dark canvas. Drawn on first
-   * request when missing, and only from a design the catalog lists and may read.
+   * A design's canvas preview, on the light or dark canvas, and only from a
+   * design the catalog lists and may read. Drawn on request when it's missing,
+   * or when a design that isn't open changed on disk since (a pull, another
+   * Mac, an edit by hand): an open one redraws its own as it's edited.
    */
   async preview(key: string, theme: PreviewTheme = "light"): Promise<Uint8Array | null> {
     if (!(await this.listed(key))) return null;
     const file = join(key, previewFile(theme));
-    if (existsSync(file)) return new Uint8Array(await readFile(file));
     const renderer = this.ws.renderer;
-    if (!renderer) {
-      // Drawn before there were dark previews, with nothing here to draw one now.
-      const light = join(key, PREVIEW_FILE);
-      return existsSync(light) ? new Uint8Array(await readFile(light)) : null;
-    }
-    // One draw for both themes, whichever is asked for first.
-    const drawn = await this.once(`preview:${key}`, async () => {
-      const doc = await this.doc(key);
-      return Boolean(doc && (await writePreview(key, doc, renderer)));
-    });
-    return drawn ? new Uint8Array(await readFile(file)) : null;
+    if (renderer && (!existsSync(file) || (!this.ws.get(key) && (await previewStale(key)))))
+      // One draw for both themes, whichever is asked for first.
+      await this.once(`preview:${key}`, async () => {
+        const doc = await this.doc(key);
+        return Boolean(doc && (await writePreview(key, doc, renderer)));
+      });
+    // A draw that failed leaves the last preview, which beats none.
+    if (existsSync(file)) return new Uint8Array(await readFile(file));
+    // Drawn before there were dark previews, with nothing here to draw one now.
+    const light = join(key, PREVIEW_FILE);
+    return !renderer && existsSync(light) ? new Uint8Array(await readFile(light)) : null;
   }
 
   /** One artboard as a PNG, a few hundred pixels wide, for search results. */

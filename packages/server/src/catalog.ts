@@ -447,14 +447,16 @@ function slug(name: string): string {
 
 /**
  * What the catalog sends for one design. A readable design always gets a
- * preview URL: the server draws a missing preview on first request.
+ * preview URL: the server draws a missing preview on first request. Its
+ * version is the later of the preview and the last edit, so an edit the
+ * preview hasn't caught up with asks again, and the server redraws it.
  */
 export function catalogFile(
   s: CatalogSummary,
   opts: { busy?: string; created?: number },
 ): CatalogFile {
   const enc = encodeURIComponent(s.key);
-  const v = Math.round(s.previewAt ?? 0);
+  const v = Math.round(Math.max(s.previewAt ?? 0, s.modified));
   const at = Math.round(s.modified);
   return {
     id: `local:${s.key}`,
