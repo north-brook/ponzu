@@ -420,9 +420,18 @@ function FileTab({
     </div>
   );
   // Slow to open, so it stays out of the way of switching tabs; dragging closes it.
+  // Radix also opens it on focus, which a clicked tab gets back whenever the
+  // window does, so only keyboard focus counts.
   return (
     <HoverCard open={held ? false : undefined} openDelay={600} closeDelay={100}>
-      <HoverCardTrigger asChild>{tab}</HoverCardTrigger>
+      <HoverCardTrigger
+        asChild
+        onFocus={(e) => {
+          if (!e.currentTarget.matches(":focus-visible")) e.preventDefault();
+        }}
+      >
+        {tab}
+      </HoverCardTrigger>
       <HoverCardContent align="start" side="bottom">
         <FileDetails
           file={file}
