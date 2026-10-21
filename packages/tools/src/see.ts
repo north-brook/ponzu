@@ -79,15 +79,13 @@ export const seeTools = [
           isError: true,
           data: { issues: out.issues, motion: out.motion },
           failure: "capture_failed",
+          stage: "capture",
         };
       const image: ToolImage = { data: toBase64(out.bytes), mime: out.mime };
       const lines = [
         `${nodeId ?? ab.id} rendered ${Math.round(out.width)}×${Math.round(out.height)} at ${shownScale(scale, out.scale)}${out.motion ? `, ${moment(out.motion, args.at)}` : ""}.`,
       ];
-      if (out.assetsTimedOut)
-        lines.push(
-          "Fonts or images were still loading when time ran out, so the image may show fallbacks. Lint says which.",
-        );
+      if (out.assetsTimedOut) lines.push(ASSETS_LATE);
       if (!nodeId && ab.root.style.height === "fit-content")
         lines.push(`Content height: ${out.contentHeight}px.`);
       lines.push(lint);
@@ -175,6 +173,7 @@ export const seeTools = [
           ? `${args.id}: 1 frame at ${first}${after}.`
           : `${args.id}: ${out.steps.length} frames from ${first} to ${last}${after}, left to right, top to bottom.`,
       ];
+      if (out.assetsTimedOut) lines.push(ASSETS_LATE);
       if (!args.scroll && !m.animations.some((a) => a.timeline === "time" && !a.paused))
         lines.push(
           m.trigger === "load"
@@ -245,6 +244,9 @@ export const seeTools = [
     },
   }),
 ];
+
+const ASSETS_LATE =
+  "Fonts or images were still loading when time ran out, so the image may show fallbacks. Lint says which.";
 
 /** The scale an image came out at, and why when it's less than the one asked for. */
 function shownScale(asked: number, got: number | undefined): string {

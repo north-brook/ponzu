@@ -191,6 +191,10 @@ test("lint without its image still counts as a crash", async () => {
     { ws: partial, caller },
   );
   expect(r.text).toContain("Lint: clean.");
-  expect(events[0]).toMatchObject({ outcome: "crash", error_class: "capture_failed" });
+  expect(events[0]).toMatchObject({
+    outcome: "crash",
+    error_class: "capture_failed",
+    stage: "capture",
+  });
   await partial.closeAll();
 });

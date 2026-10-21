@@ -383,3 +383,21 @@ test("an artboard given display: flex with no direction says it stays a column",
   const plain = await call("create_artboard", { name: "Page" });
   expect(plain.text).not.toContain("Note:");
 });
+
+test("record says when fonts or images ran out of time", async () => {
+  const { renderer } = fakeRenderer({});
+  renderer.record = async () => ({
+    bytes: new Uint8Array([1]),
+    mime: "image/png",
+    width: 10,
+    height: 10,
+    steps: [{ label: "0ms" }, { label: "1s" }] as never,
+    motion: { trigger: "load", animations: [], settled: 0, loops: false, cycle: 0 } as never,
+    issues: [],
+    assetsTimedOut: true,
+  });
+  const { call } = await setup(3, renderer);
+  const r = await call("record", { id: "ab_hero" });
+  expect(r.isError).toBeFalsy();
+  expect(r.text).toContain("still loading when time ran out");
+});

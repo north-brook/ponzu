@@ -284,13 +284,14 @@ async function sessionOp(op: SessionOp) {
         const id = randomBytes(8).toString("hex");
         const win = renderWindow(op.width, op.height);
         sessions.set(id, { win, timer: setTimeout(() => closeSession(id), 60_000) });
+        let loaded: boolean;
         try {
-          await loadWithAssets(win, op.html);
+          loaded = await loadWithAssets(win, op.html);
         } catch (err) {
           closeSession(id);
           throw err;
         }
-        return { session: id };
+        return { session: id, ...(loaded ? {} : { assetsTimedOut: true }) };
       });
     case "eval":
       // Recording's evals seek and wait for frames; lint and settling are the slowest of them.

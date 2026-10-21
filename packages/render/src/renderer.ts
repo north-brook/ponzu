@@ -97,6 +97,8 @@ export interface RecordResult {
   motion: MotionInfo;
   /** Lint once everything has settled, in the requested state. */
   issues: LintIssue[];
+  /** Fonts or images were still loading when their time ran out; frames may show fallbacks. */
+  assetsTimedOut?: boolean;
 }
 
 export interface RenderResult {

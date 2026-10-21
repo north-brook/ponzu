@@ -15,9 +15,11 @@ export interface ToolResult {
   data?: unknown;
   /**
    * Set when the tool broke, though it still had something to give back
-   * (screenshot's lint without its image). Counted as a crash of this class.
+   * (screenshot's lint without its image). Counted as a crash of this class,
+   * at this render stage.
    */
   failure?: ErrorClass;
+  stage?: "queue" | "load" | "assets" | "prepare" | "lint" | "capture";
 }
 
 /**
@@ -117,8 +119,8 @@ export async function runTool(
   }
   try {
     ctx.ws.presence.touch(ctx.caller);
-    const { failure, ...result } = await def.handler(parsed.data, ctx);
-    if (failure) track("crash", { error_class: failure });
+    const { failure, stage, ...result } = await def.handler(parsed.data, ctx);
+    if (failure) track("crash", { error_class: failure, ...(stage ? { stage } : {}) });
     else track(result.isError ? "tool_error" : "ok");
     return result;
   } catch (err) {

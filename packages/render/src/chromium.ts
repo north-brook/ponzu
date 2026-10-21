@@ -190,7 +190,7 @@ export class ChromiumRenderer implements Renderer {
   async record(req: RecordRequest): Promise<RecordResult> {
     const page = await (await this.ctx()).newPage();
     try {
-      await this.load(page, req);
+      const loaded = await this.load(page, req);
       const cdp = await page.context().newCDPSession(page);
       // Transparent where the design is, like screenshots.
       await cdp.send("Emulation.setDefaultBackgroundColorOverride", {
@@ -237,7 +237,7 @@ export class ChromiumRenderer implements Renderer {
         lint: req.lint,
       });
       await cdp.detach().catch(() => {});
-      return { ...out, mime: "image/png" };
+      return { ...out, mime: "image/png", ...(loaded ? {} : { assetsTimedOut: true }) };
     } finally {
       await page.close().catch(() => {});
     }
@@ -332,6 +332,15 @@ async function captureNow(
 ): Promise<Buffer> {
   const cdp = await page.context().newCDPSession(page);
   try {
+    // A capture past the viewport from a new session resets the viewport to the
+    // window's own size, changing 100vh after lint measured; pinned, it holds.
+    const v = page.viewportSize();
+    if (v)
+      await cdp.send("Emulation.setDeviceMetricsOverride", {
+        ...v,
+        deviceScaleFactor: 0,
+        mobile: false,
+      });
     if (format === "png")
       await cdp.send("Emulation.setDefaultBackgroundColorOverride", {
         color: { r: 0, g: 0, b: 0, a: 0 },

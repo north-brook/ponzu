@@ -78,6 +78,8 @@ export type RemoteSessionRequest =
 
 export interface RemoteSessionReply {
   session?: string;
+  /** On open: fonts or images ran out of time, and the page went on without them. */
+  assetsTimedOut?: boolean;
   value?: unknown;
   data?: string;
 }
@@ -191,7 +193,7 @@ export class RemoteRenderer implements Renderer {
 
   async record(req: RecordRequest): Promise<RecordResult> {
     const call = this.sessionCall("This render host can't record animation.");
-    const { session } = await call({
+    const { session, assetsTimedOut } = await call({
       op: "open",
       html: this.page(req),
       ...size(req.artboard.root.style),
@@ -216,7 +218,7 @@ export class RemoteRenderer implements Renderer {
         scroll: req.scroll,
         lint: req.lint,
       });
-      return { ...out, mime: "image/png" };
+      return { ...out, mime: "image/png", ...(assetsTimedOut ? { assetsTimedOut } : {}) };
     } finally {
       await call({ op: "close", session }).catch(() => {});
     }
