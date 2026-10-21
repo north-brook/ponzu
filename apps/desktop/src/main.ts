@@ -126,26 +126,32 @@ function watchIdle() {
 /* ------------------------------------------------------------------ */
 
 /**
- * What the window shows while the server starts: the juicing wedge, faded in
- * only if the start takes long enough to notice. Self-contained, so it paints
- * before anything else is up.
+ * What the window shows while the server starts: the slice, its segments
+ * fading in turn, faded in only if the start takes long enough to notice.
+ * Self-contained, so it paints before anything else is up. The segments are
+ * `SLICE` from @ponzu/react.
  */
 function splashUrl() {
-  const seg = (points: string, delay: number) =>
-    `<polygon points="${points}" style="animation-delay:${delay}s"/>`;
+  const segments = [
+    "M36 25.07L36 4.99A27.3 27.3 0 0 1 53.39 15.03Z",
+    "M40 32L57.39 21.96A27.3 27.3 0 0 1 57.39 42.04Z",
+    "M36 38.93L53.39 48.97A27.3 27.3 0 0 1 36 59.01Z",
+    "M28 38.93L28 59.01A27.3 27.3 0 0 1 10.61 48.97Z",
+    "M24 32L6.61 42.04A27.3 27.3 0 0 1 6.61 21.96Z",
+    "M28 25.07L10.61 15.03A27.3 27.3 0 0 1 28 4.99Z",
+  ]
+    .map((d, i) => `<path d="${d}" style="animation-delay:${i * 0.2 - 1.2}s"/>`)
+    .join("");
   const html = `<!doctype html><meta charset="utf-8"><style>
-:root{color-scheme:light dark;background:#e9e9e6}
-@media (prefers-color-scheme:dark){:root{background:#0a0a0a}}
+:root{color-scheme:light dark;background:#e8e6e0}
+@media (prefers-color-scheme:dark){:root{background:#0e0e0d}}
 body{margin:0;height:100vh;display:grid;place-items:center;-webkit-app-region:drag}
 svg{opacity:0;animation:in .3s ease-out .3s forwards}
-g polygon{fill:#FFD23F;animation:juice 1.8s ease-in-out infinite}
+path{animation:juice 1.2s linear infinite both}
 @keyframes in{to{opacity:1}}
-@keyframes juice{0%{opacity:.15}18%,42%{opacity:1}64%,100%{opacity:.15}}
-@media (prefers-reduced-motion:reduce){svg{opacity:1;animation:none}g polygon{animation:none}}
-</style><svg width="44" height="44" viewBox="0 0 64 64"><defs><clipPath id="c"><path d="M19.57 9.61A24.62 24.62 0 0 0 54.39 44.43Z"/></clipPath></defs>
-<path fill="#F4B012" d="M12.96 3.00A33.96 33.96 0 0 0 61.00 51.04Z"/><path fill="#FFF3CF" d="M17.08 7.12A28.14 28.14 0 0 0 56.88 46.92Z"/>
-<g clip-path="url(#c)">${seg("34.49,29.51 -30,41.2 -60,-60 60,-60", 0)}${seg("34.49,29.51 -30,41.2 -60,120 22.85,93.4", 0.3)}${seg("34.49,29.51 22.85,93.4 120,120 120,-60", 0.6)}</g>
-<path fill="#FFF3CF" d="M17.08 7.12L56.88 46.92L54.39 49.41L14.59 9.61Z"/><path stroke="#FFF3CF" d="M34.49 29.51L30.61 50.80M34.49 29.51L13.20 33.39" stroke-width="3.4" stroke-linecap="round" fill="none"/></svg>`;
+@keyframes juice{0%,100%{opacity:1}70%{opacity:.16}}
+@media (prefers-reduced-motion:reduce){svg{opacity:1;animation:none}path{animation:none}}
+</style><svg width="44" height="44" viewBox="0 0 64 64"><g fill="#FFC81E" stroke="#FFC81E" stroke-width="3.4" stroke-linejoin="round">${segments}</g></svg>`;
   return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
 }
 
@@ -160,7 +166,7 @@ function createWindow(url: string) {
     minHeight: 480,
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
     trafficLightPosition: { x: 16, y: 13 },
-    backgroundColor: nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#e9e9e6",
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#0e0e0d" : "#e8e6e0",
     show: false,
     webPreferences: { preload: paths.preload, contextIsolation: true, sandbox: true },
   });

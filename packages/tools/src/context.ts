@@ -1,13 +1,4 @@
-import type {
-  Author,
-  Doc,
-  EventType,
-  Op,
-  PonzuEvent,
-  Presence,
-  PresenceOrigin,
-  Selection,
-} from "@ponzu/core";
+import type { Author, Doc, EventType, Op, PonzuEvent, Presence, PresenceOrigin } from "@ponzu/core";
 import type { Renderer } from "@ponzu/render";
 import type { Design } from "@ponzu/store";
 
@@ -25,8 +16,6 @@ export interface Workspace {
   renderer?: Renderer;
   /** Where a renderer loads this design's assets/ from, when the host serves them. */
   assetBase?(key: string): string | undefined;
-  /** What the person in the studio has selected, per design key. */
-  selection(key: string): Selection;
   /** Ask any open studio to show this artboard. */
   focus?(key: string, artboardId: string): void;
   events: EventHub;

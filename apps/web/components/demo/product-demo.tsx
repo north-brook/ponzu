@@ -353,7 +353,7 @@ function Studio({ beat, t }: { beat: number; t: number }) {
                     </div>
                     {working(board.id) && (
                       <svg
-                        className="dm-trace pz:pointer-events-none pz:absolute pz:inset-0 pz:overflow-visible pz:text-foreground"
+                        className="dm-trace pz:pointer-events-none pz:absolute pz:inset-0 pz:overflow-visible pz:text-[var(--pz-rind)]"
                         width={board.width}
                         height={board.height}
                         aria-hidden
@@ -363,7 +363,7 @@ function Studio({ beat, t }: { beat: number; t: number }) {
                           height={board.height}
                           fill="none"
                           stroke="currentColor"
-                          strokeOpacity={0.14}
+                          strokeOpacity={0.6}
                           strokeWidth={1 / zoom}
                         />
                         <rect
@@ -373,7 +373,7 @@ function Studio({ beat, t }: { beat: number; t: number }) {
                           pathLength={100}
                           fill="none"
                           stroke="currentColor"
-                          strokeWidth={1.5 / zoom}
+                          strokeWidth={3 / zoom}
                           strokeLinecap="round"
                         />
                       </svg>
@@ -587,7 +587,7 @@ function Footer({
   );
 }
 
-/** The studio picks the wedge's light or dark tones from the page's color scheme. */
+/** The studio's slice: ink in light mode, paper in dark, following the page's color scheme. */
 function LogoMark() {
   return (
     <>

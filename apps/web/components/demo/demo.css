@@ -4,20 +4,20 @@
  */
 
 .dm {
-  --bar: #e9e9e6;
-  --bar-ink: #0e0e0e;
-  --bar-muted: #6b6b6b;
-  --tab-on: #f3f3f1;
-  --hover: rgba(0, 0, 0, 0.05);
+  --bar: #e8e6e0;
+  --bar-ink: #111110;
+  --bar-muted: #5e5b54;
+  --tab-on: #f4f3ef;
+  --hover: rgba(17, 17, 16, 0.05);
   --window-rule: rgb(0 0 0 / 0.1);
 }
 
 @media (prefers-color-scheme: dark) {
   .dm {
-    --bar: #0a0a0a;
-    --bar-ink: #f2f2f2;
-    --bar-muted: #8a8a8a;
-    --tab-on: #1a1a1a;
+    --bar: #0e0e0d;
+    --bar-ink: #f4f3ef;
+    --bar-muted: #8e8a82;
+    --tab-on: #1b1b1a;
     --hover: rgba(255, 255, 255, 0.06);
     --window-rule: rgb(255 255 255 / 0.1);
   }
@@ -289,18 +289,17 @@
 /* The canvas follows the page's color scheme, as `.pz-dark` would. */
 @media (prefers-color-scheme: dark) {
   .dm .pz-root {
-    --pz-canvas: #121212;
-    --pz-ink: #f2f2f2;
-    --pz-muted: #a0a0a0;
-    --pz-faint: #6a6a6a;
-    --pz-rule: #262626;
-    --pz-chip: #1f1f1f;
-    --pz-surface: #1a1a1a;
+    --pz-canvas: #121211;
+    --pz-ink: #f4f3ef;
+    --pz-muted: #a9a59b;
+    --pz-faint: #6b6862;
+    --pz-rule: #262523;
+    --pz-chip: #1f1f1e;
+    --pz-surface: #1b1b1a;
     --pz-hover: rgba(255, 255, 255, 0.06);
-    --pz-select: #4c8dff;
-    --pz-comment: #ffc21a;
-    --pz-comment-ink: #2a1f00;
-    --pz-comment-soft: #2a2416;
+    --pz-comment: #f4f3ef;
+    --pz-comment-ink: #111110;
+    --pz-comment-soft: #2e2a1c;
     --pz-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.5);
     --pz-board-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06);
     --pz-bar: rgba(28, 28, 28, 0.72);
@@ -382,16 +381,16 @@
 
 @media (prefers-color-scheme: dark) {
   .pz-root.dm {
-    --pz-canvas: #121212;
-    --pz-ink: #f2f2f2;
-    --pz-muted: #a0a0a0;
-    --pz-faint: #6a6a6a;
-    --pz-rule: #262626;
-    --pz-chip: #1f1f1f;
-    --pz-surface: #1a1a1a;
-    --pz-comment: #ffc21a;
-    --pz-comment-ink: #2a1f00;
-    --pz-comment-soft: #2a2416;
+    --pz-canvas: #121211;
+    --pz-ink: #f4f3ef;
+    --pz-muted: #a9a59b;
+    --pz-faint: #6b6862;
+    --pz-rule: #262523;
+    --pz-chip: #1f1f1e;
+    --pz-surface: #1b1b1a;
+    --pz-comment: #f4f3ef;
+    --pz-comment-ink: #111110;
+    --pz-comment-soft: #2e2a1c;
     --pz-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.5);
   }
 }

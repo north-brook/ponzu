@@ -1,8 +1,9 @@
 import type { Presence } from "@ponzu/core";
-import { useEffect, useId, useState } from "react";
+import { type CSSProperties, useEffect, useState } from "react";
+import { SLICE, SLICE_STROKE } from "./slice.ts";
 
 /**
- * The Ponzu wedge with its three segments filling in turn: Ponzu is loading
+ * The slice with its six segments fading in turn, clockwise: Ponzu is loading
  * a file or a screen. `dry` is grey at half speed, for waiting rather than
  * working (reconnecting). Agents at work never use it; see `.pz-shimmer`.
  */
@@ -15,14 +16,7 @@ export function Juice({
   dark?: boolean;
   dry?: boolean;
 }) {
-  const clip = useId();
-  const [rind, pith, flesh] = dry
-    ? dark
-      ? ["#5a5a58", "#2a2a28", "#6a6a68"]
-      : ["#bdb9b0", "#f1efea", "#d9d6cf"]
-    : dark
-      ? ["#FFA800", "#FFFDF2", "#FFC400"]
-      : ["#F4B012", "#FFF3CF", "#FFD23F"];
+  const fill = dry ? (dark ? "#5e5b54" : "#c9c5bc") : "#ffc81e";
   return (
     <svg
       width={size}
@@ -32,27 +26,11 @@ export function Juice({
       aria-label="Loading"
       className={dry ? "pz-juice-slow" : undefined}
     >
-      <defs>
-        <clipPath id={clip}>
-          <path d="M19.57 9.61A24.62 24.62 0 0 0 54.39 44.43Z" />
-        </clipPath>
-      </defs>
-      <path fill={rind} d="M12.96 3.00A33.96 33.96 0 0 0 61.00 51.04Z" />
-      <path fill={pith} d="M17.08 7.12A28.14 28.14 0 0 0 56.88 46.92Z" />
-      {/* Three slices of the flesh, split along the pith lines. */}
-      <g clipPath={`url(#${clip})`} fill={flesh}>
-        <polygon className="pz-juice-seg" points="34.49,29.51 -30,41.2 -60,-60 60,-60" />
-        <polygon className="pz-juice-seg" points="34.49,29.51 -30,41.2 -60,120 22.85,93.4" />
-        <polygon className="pz-juice-seg" points="34.49,29.51 22.85,93.4 120,120 120,-60" />
+      <g fill={fill} stroke={fill} strokeWidth={SLICE_STROKE} strokeLinejoin="round">
+        {SLICE.map((d, i) => (
+          <path key={d} d={d} className="pz-juice-seg" style={{ "--i": i } as CSSProperties} />
+        ))}
       </g>
-      <path fill={pith} d="M17.08 7.12L56.88 46.92L54.39 49.41L14.59 9.61Z" />
-      <path
-        stroke={pith}
-        d="M34.49 29.51L30.61 50.80M34.49 29.51L13.20 33.39"
-        strokeWidth={3.4}
-        strokeLinecap="round"
-        fill="none"
-      />
     </svg>
   );
 }

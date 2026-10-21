@@ -1,5 +1,11 @@
 import type { Metadata, Viewport } from "next";
-import { Instrument_Serif, Inter, JetBrains_Mono } from "next/font/google";
+import {
+  Funnel_Display,
+  IBM_Plex_Mono,
+  Instrument_Serif,
+  Inter,
+  JetBrains_Mono,
+} from "next/font/google";
 import type { ReactNode } from "react";
 import { DESCRIPTION, TITLE } from "@/components/share";
 import "./globals.css";
@@ -10,6 +16,20 @@ const inter = Inter({
   variable: "--font-inter",
 });
 
+// Ponzu's display face: headlines and the wordmark.
+const funnelDisplay = Funnel_Display({
+  subsets: ["latin"],
+  weight: ["600", "700"],
+  variable: "--font-funnel-display",
+});
+
+// Ponzu's mono: commands, file names and code on the site.
+const plexMono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
+  variable: "--font-plex-mono",
+});
+
 // Fernwood's display face, for the artboards in the product demo.
 const instrumentSerif = Instrument_Serif({
   subsets: ["latin"],
@@ -18,6 +38,7 @@ const instrumentSerif = Instrument_Serif({
   variable: "--font-instrument-serif",
 });
 
+// Fernwood's mono, also only inside the demo's artboards.
 const jetbrainsMono = JetBrains_Mono({
   subsets: ["latin"],
   weight: ["400", "500"],
@@ -55,7 +76,7 @@ export const viewport: Viewport = {
   colorScheme: "light dark",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
+    { media: "(prefers-color-scheme: dark)", color: "#0e0e0d" },
   ],
 };
 
@@ -63,7 +84,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable}`}
+      className={`${inter.variable} ${funnelDisplay.variable} ${plexMono.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable}`}
     >
       <body>{children}</body>
     </html>

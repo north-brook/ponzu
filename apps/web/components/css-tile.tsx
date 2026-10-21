@@ -1,29 +1,16 @@
+import { SLICE, SLICE_STROKE } from "@ponzu/react/slice";
 import type { CSSProperties } from "react";
 
-const SEGMENTS = [0, 1, 2, 3, 4, 5, 6, 7];
-
 /**
- * A ponzu wheel for the "Just HTML and CSS" tile. `SLICE_CSS` turns the wheel while its segments
- * spring in one after another and pop back out; each segment carries its place in the ring as `--i`.
+ * The slice for the "Just HTML and CSS" tile. `SLICE_CSS` blooms its six segments in one after
+ * another and turns them back out; each segment carries its place in the ring as `--i`.
  */
 export function CssTileVisual() {
   return (
-    <svg viewBox="-60 -60 120 120" className="h-[128px] w-auto overflow-visible" aria-hidden="true">
-      <circle r="57" fill="var(--rind)" />
-      <circle r="51" fill="var(--pith)" />
-      <g className="cit-wheel">
-        {SEGMENTS.map((i) => (
-          <path
-            key={i}
-            className="cit-seg"
-            style={{ "--i": i } as CSSProperties}
-            transform={`rotate(${i * 45})`}
-            d="M0 -8L-12.9 -42.1A44 44 0 0 1 12.9 -42.1Z"
-            fill="var(--flesh)"
-            stroke="var(--flesh)"
-            strokeWidth="5"
-            strokeLinejoin="round"
-          />
+    <svg viewBox="0 0 64 64" className="h-[128px] w-auto overflow-visible" aria-hidden="true">
+      <g fill="var(--yuzu)" stroke="var(--yuzu)" strokeWidth={SLICE_STROKE} strokeLinejoin="round">
+        {SLICE.map((d, i) => (
+          <path key={d} className="cit-seg" style={{ "--i": i } as CSSProperties} d={d} />
         ))}
       </g>
     </svg>

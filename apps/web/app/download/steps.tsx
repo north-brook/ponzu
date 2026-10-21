@@ -122,7 +122,7 @@ function Row({
 }) {
   return (
     <div
-      className={`relative flex h-10 items-center gap-2.5 px-3.5 ${selected ? "bg-m2 text-[#0e0e0e]" : "text-muted"}`}
+      className={`relative flex h-10 items-center gap-2.5 px-3.5 ${selected ? "bg-m2 text-[#111110]" : "text-muted"}`}
     >
       {icon}
       <span className="truncate text-sm/5">{name}</span>
