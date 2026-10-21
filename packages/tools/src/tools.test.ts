@@ -401,3 +401,11 @@ test("record says when fonts or images ran out of time", async () => {
   expect(r.isError).toBeFalsy();
   expect(r.text).toContain("still loading when time ran out");
 });
+
+test("list_files filters by name or path", async () => {
+  const { call } = await setup();
+  expect((await call("list_files", { query: "FER" })).text).toContain("Fern — fern");
+  expect((await call("list_files", { query: "kettle" })).text).toBe(
+    'No open file matches "kettle" (1 file open).',
+  );
+});

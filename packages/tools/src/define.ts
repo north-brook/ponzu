@@ -28,6 +28,11 @@ export interface ToolResult {
  */
 export type ErrorClass =
   | "invalid_target"
+  | "file_ambiguous"
+  | "file_name_ambiguous"
+  | "file_ids_ambiguous"
+  | "file_ids_split"
+  | "file_not_found"
   | "host_unreachable"
   | "host_unresponsive"
   | "host_busy"
@@ -79,9 +84,13 @@ export function tool<S extends z.ZodRawShape>(def: ToolDef<S>): ToolDef<S> {
 
 /** A mistake the agent can fix. Shown as a tool error, not a crash. */
 export class ToolError extends Error {
-  constructor(message: string) {
+  /** Counted in telemetry in place of invalid_target, for mistakes worth telling apart. */
+  code?: ErrorClass;
+
+  constructor(message: string, code?: ErrorClass) {
     super(message);
     this.name = "ToolError";
+    if (code) this.code = code;
   }
 }
 
@@ -91,6 +100,8 @@ export async function runTool(
   ctx: ToolContext,
 ): Promise<ToolResult> {
   const started = Date.now();
+  // Its own copy, so what this call resolved never leaks into another's.
+  const call: ToolContext = { ...ctx, resolved: undefined };
   // Which tools agents use and how they fail; never the arguments or the result.
   const track = (
     outcome: "ok" | "invalid_args" | "tool_error" | "mistake" | "crash",
@@ -103,6 +114,7 @@ export async function runTool(
         outcome,
         duration_ms: Date.now() - started,
         client: ctx.caller.client,
+        ...(call.resolved ? { file_from: call.resolved.from } : {}),
         ...why,
       });
     } catch {
@@ -119,22 +131,27 @@ export async function runTool(
   }
   try {
     ctx.ws.presence.touch(ctx.caller);
-    const { failure, stage, ...result } = await def.handler(parsed.data, ctx);
+    const { failure, stage, ...result } = await def.handler(parsed.data, call);
     if (failure) track("crash", { error_class: failure, ...(stage ? { stage } : {}) });
     else track(result.isError ? "tool_error" : "ok");
-    return result;
+    const note = call.resolved?.note;
+    return note ? { ...result, text: result.text + note } : result;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const known = err instanceof ToolError || (err as Error)?.name === "OpError";
+    // A call can fail after its ids moved the session; the agent still needs to hear it moved.
+    const note = call.resolved?.note ?? "";
     if (known) {
-      track("mistake", { error_class: "invalid_target" });
-      return { text: message, isError: true };
+      track("mistake", {
+        error_class: err instanceof ToolError && err.code ? err.code : "invalid_target",
+      });
+      return { text: message + note, isError: true };
     }
     const render = renderFailure(err);
     const aborted = (err as Error)?.name === "AbortError";
     track("crash", render ?? { error_class: aborted ? "aborted" : "unknown" });
     // A failed render already says what stalled, in words meant for the agent.
-    return { text: render ? message : `${def.name} failed: ${message}`, isError: true };
+    return { text: (render ? message : `${def.name} failed: ${message}`) + note, isError: true };
   }
 }
 
@@ -151,7 +168,9 @@ export function jsonSchema(def: ToolDef<any>): Record<string, unknown> {
 export const fileArg = z
   .string()
   .optional()
-  .describe("Which .design, by path or name. Omit when only one file is open.");
+  .describe(
+    "Which .design, by path or name. Omit to use the file that holds the ids you pass, else the one you last created, named or edited in this session.",
+  );
 
 export const styleValue = z.union([z.string(), z.number(), z.null()]);
 
