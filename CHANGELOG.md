@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.1](https://github.com/north-brook/ponzu/compare/v1.17.0...v1.17.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* screenshots of tall fit-content artboards ([#67](https://github.com/north-brook/ponzu/issues/67)) ([fdffb01](https://github.com/north-brook/ponzu/commit/fdffb01541fcfa73db4dc20d975e066b00b2a034))
+
 ## [1.17.0](https://github.com/north-brook/ponzu/compare/v1.16.3...v1.17.0) (2026-10-21)
 
 
