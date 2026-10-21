@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.23.2](https://github.com/north-brook/ponzu/compare/v1.23.1...v1.23.2) (2026-10-21)
+
+
+### Bug Fixes
+
+* keep a tab's hovercard tidy and closed until hovered ([#106](https://github.com/north-brook/ponzu/issues/106)) ([04c0fec](https://github.com/north-brook/ponzu/commit/04c0fecde2b9f56fe5079c90b3841528c3d03c1c))
+
 ## [1.23.1](https://github.com/north-brook/ponzu/compare/v1.23.0...v1.23.1) (2026-10-21)
 
 
