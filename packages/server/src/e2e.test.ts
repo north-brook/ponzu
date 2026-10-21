@@ -288,3 +288,50 @@ test("get_node gives rendered boxes, and the height an artboard's content needs"
     ws.renderer = undefined;
   }
 }, 30_000);
+
+test("a home screen card's watch socket hears an agent's edits and can't make any", async () => {
+  const key = join(dir, "watched.design");
+  await client.callTool({ name: "create_file", arguments: { path: key } });
+  const ab = await client.callTool({
+    name: "create_artboard",
+    arguments: { file: key, name: "Card", width: 400, height: 300 },
+  });
+  const abId = /artboard (ab_\w+)/.exec(text(ab))![1]!;
+  const card = new WebSocket(
+    `ws://127.0.0.1:${server.port}/ws?file=${encodeURIComponent(key)}&watch=1`,
+  );
+  const heard: any[] = [];
+  card.onmessage = (e) => heard.push(JSON.parse(String(e.data)));
+  await new Promise((r) => (card.onopen = r));
+  // Nor does it count as an open canvas when one opens beside it.
+  const opened: number[] = [];
+  ws.telemetry = {
+    capture: (event: string, props?: { open_canvases?: number }) => {
+      if (event === "canvas opened") opened.push(props?.open_canvases ?? -1);
+    },
+  } as any;
+  const canvas = new WebSocket(`ws://127.0.0.1:${server.port}/ws?file=${encodeURIComponent(key)}`);
+  await new Promise((r) => (canvas.onopen = r));
+  canvas.close();
+  ws.telemetry = undefined;
+  expect(opened).toEqual([1]);
+  const until = async (pred: () => boolean) => {
+    for (let i = 0; i < 100 && !pred(); i++) await new Promise((r) => setTimeout(r, 10));
+  };
+  await until(() => heard.some((m) => m.t === "hello"));
+  expect(heard[0].doc.pages[0].artboards.map((a: any) => a.id)).toEqual([abId]);
+
+  const design = ws.get(key)!;
+  const before = design.seq;
+  card.send(JSON.stringify({ t: "op", req: 1, op: { op: "file.rename", name: "Hijacked" } }));
+  await client.callTool({
+    name: "write_html",
+    arguments: { file: key, target: abId, html: `<p data-name="Line">Live</p>` },
+  });
+  await until(() => heard.some((m) => m.t === "op"));
+  expect(heard.some((m) => m.t === "op")).toBe(true);
+  expect(heard.some((m) => m.t === "ack")).toBe(false);
+  expect(design.doc.name).not.toBe("Hijacked");
+  expect(design.seq).toBe(before + 1);
+  card.close();
+});

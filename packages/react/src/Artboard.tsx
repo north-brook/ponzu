@@ -5,6 +5,7 @@ import {
   googleFontElement,
   googleFonts,
   resolveAsset,
+  styleText,
 } from "@ponzu/render";
 import { memo, useLayoutEffect, useRef } from "react";
 
@@ -52,7 +53,7 @@ export const ArtboardView = memo(function ArtboardView({
       rewriteUrl: (u) => resolveAsset(u, assetBase),
     });
     const scheme = colorScheme ? `:host{color-scheme:${colorScheme}}` : "";
-    const html = `<style>${hostTokens(tokens)}${scheme}${ARTBOARD_BASE_CSS}</style>${body}`;
+    const html = `<style>${styleText(hostTokens(tokens))}${scheme}${ARTBOARD_BASE_CSS}</style>${body}`;
     if (html === last.current) return;
     last.current = html;
     ensureFonts(googleFonts(body, tokens));
