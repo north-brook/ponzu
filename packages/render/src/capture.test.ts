@@ -28,12 +28,21 @@ setDefaultTimeout(60_000);
 
 describe.skipIf(!chromium)("tall artboards in Chromium", () => {
   const renderer = new ChromiumRenderer({ executablePath: chromium ?? undefined });
+  // One whose fonts never arrive, and a shorter wait for them than the real one.
+  const stalling = new ChromiumRenderer({
+    executablePath: chromium ?? undefined,
+    assetsMs: 1_500,
+    preparePage: async (page) => {
+      await page.route("https://stall.test/**", () => new Promise(() => {}));
+    },
+  });
   // A second browser that only reads pixels back out of the images.
   const reader = playwright.launch({ executablePath: chromium ?? undefined, headless: true });
-  afterAll(async () => {
-    await renderer.close();
-    await (await reader).close();
-  });
+  // Together: closing a browser takes seconds.
+  afterAll(
+    () => Promise.all([renderer.close(), stalling.close(), reader.then((b) => b.close())]),
+    30_000,
+  );
 
   /** RGB at fractions of the image's height, sampled down its middle. */
   async function pixels(png: Uint8Array, at: number[]) {
@@ -140,31 +149,21 @@ ${Array.from({ length: 12 }, (_, i) => `<div data-id="n_f${i}" style="height:100
 
   test("with a font that never arrives, the whole artboard still matches what was measured", async () => {
     // This capture skips page.screenshot (it waits for fonts), so the viewport has to stay pinned.
-    const stalling = new ChromiumRenderer({
-      executablePath: chromium ?? undefined,
-      preparePage: async (page) => {
-        await page.route("https://stall.test/**", () => new Promise(() => {}));
-      },
-    });
-    try {
-      const slow = parseArtboardFile(
-        `<section data-artboard data-id="ab_slow" style="width:1440px;height:fit-content;font-family:'Slow',monospace">
+    const slow = parseArtboardFile(
+      `<section data-artboard data-id="ab_slow" style="width:1440px;height:fit-content;font-family:'Slow',monospace">
 <style>@font-face { font-family: "Slow"; src: url(https://stall.test/slow.woff2); }</style>
 <div data-id="n_hero" style="height:100vh;flex-shrink:0;background:rgb(255,0,0)">Hero</div>
 ${Array.from({ length: 20 }, (_, i) => `<div data-id="n_s${i}" style="height:100px;flex-shrink:0;background:rgb(${band(i).join(",")})">${i}</div>`).join("\n")}
 </section>`,
-        { id: "ab_slow", name: "Slow" },
-      ).artboard;
-      const out = await stalling.render({ artboard: slow, tokens: "", lint: true });
-      expect(out.assetsTimedOut).toBe(true);
-      expect(out.height).toBe(900 + 2000);
-      // Just above the hero's 900px bottom, then the first band just below it.
-      const px = await pixels(out.bytes, [880 / 2900, 920 / 2900]);
-      expect(px.height).toBe(2900);
-      expect(px.rgb).toEqual([[255, 0, 0], band(0)]);
-    } finally {
-      await stalling.close();
-    }
+      { id: "ab_slow", name: "Slow" },
+    ).artboard;
+    const out = await stalling.render({ artboard: slow, tokens: "", lint: true });
+    expect(out.assetsTimedOut).toBe(true);
+    expect(out.height).toBe(900 + 2000);
+    // Just above the hero's 900px bottom, then the first band just below it.
+    const px = await pixels(out.bytes, [880 / 2900, 920 / 2900]);
+    expect(px.height).toBe(2900);
+    expect(px.rgb).toEqual([[255, 0, 0], band(0)]);
   });
 
   test("records a node below the first screenful", async () => {

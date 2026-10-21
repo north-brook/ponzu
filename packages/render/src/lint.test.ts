@@ -15,7 +15,7 @@ const board = (style: string, body: string) =>
 
 describe.skipIf(!chromium)("layout lint in Chromium", () => {
   const renderer = new ChromiumRenderer({ executablePath: chromium ?? undefined });
-  afterAll(() => renderer.close());
+  afterAll(() => renderer.close(), 30_000);
 
   const lint = async (style: string, body: string) =>
     (await renderer.render({ artboard: board(style, body), tokens: "", lint: true })).issues;

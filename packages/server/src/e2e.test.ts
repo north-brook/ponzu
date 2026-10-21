@@ -4,12 +4,26 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import type { Renderer } from "@ponzu/render";
 import { LocalWorkspace, serve } from "./index.ts";
 
 let dir: string;
 let ws: LocalWorkspace;
 let server: ReturnType<typeof serve>;
 let client: Client;
+
+/**
+ * One Chromium for the tests that render, when there is one: closing a
+ * browser takes seconds, so each test borrows it rather than launching its own.
+ */
+let browser: Renderer | undefined;
+async function chromium(): Promise<Renderer | undefined> {
+  if (browser) return browser;
+  const { ChromiumRenderer, findChromium } = await import("@ponzu/render/chromium");
+  const executablePath = findChromium();
+  if (executablePath) browser = new ChromiumRenderer({ executablePath });
+  return browser;
+}
 
 const text = (r: any) =>
   (r.content as { type: string; text?: string }[])
@@ -28,11 +42,13 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await browser?.close();
   await client.close();
   await ws.closeAll();
   server.stop(true);
   await rm(dir, { recursive: true, force: true });
-});
+  // Closing Chromium takes seconds, more on a busy machine.
+}, 30_000);
 
 test("an agent builds a file through MCP and it lands on disk", async () => {
   const { tools } = await client.listTools();
@@ -201,10 +217,8 @@ test("edits made in a text editor show up as file.changed", async () => {
 });
 
 test("an agent watches its animation through screenshot and record", async () => {
-  const { ChromiumRenderer, findChromium } = await import("@ponzu/render/chromium");
-  const chromium = findChromium();
-  if (!chromium) return;
-  ws.renderer = new ChromiumRenderer({ executablePath: chromium });
+  ws.renderer = await chromium();
+  if (!ws.renderer) return;
   try {
     const ab = await client.callTool({
       name: "create_artboard",
@@ -240,16 +254,13 @@ test("an agent watches its animation through screenshot and record", async () =>
     // Lint runs in the hovered end state: the full-width button outgrows the artboard.
     expect(text(hover)).toContain(`Lint at the end (hover ${buyId})`);
   } finally {
-    await ws.renderer.close();
     ws.renderer = undefined;
   }
 }, 30_000);
 
 test("screenshots load the design's assets/ images", async () => {
-  const { ChromiumRenderer, findChromium } = await import("@ponzu/render/chromium");
-  const chromium = findChromium();
-  if (!chromium) return;
-  ws.renderer = new ChromiumRenderer({ executablePath: chromium });
+  ws.renderer = await chromium();
+  if (!ws.renderer) return;
   try {
     // A 1×1 PNG.
     const png = Buffer.from(
@@ -270,7 +281,6 @@ test("screenshots load the design's assets/ images", async () => {
     const shot = text(await client.callTool({ name: "screenshot", arguments: { id: abId } }));
     expect(shot).not.toContain("failed to load");
   } finally {
-    await ws.renderer.close();
     ws.renderer = undefined;
   }
 }, 30_000);
@@ -294,10 +304,8 @@ test("get_node gives rendered boxes, and the height an artboard's content needs"
   expect(bare).toContain("height: 300px");
   expect(bare).not.toContain("Box:");
 
-  const { ChromiumRenderer, findChromium } = await import("@ponzu/render/chromium");
-  const chromium = findChromium();
-  if (!chromium) return;
-  ws.renderer = new ChromiumRenderer({ executablePath: chromium });
+  ws.renderer = await chromium();
+  if (!ws.renderer) return;
   try {
     const hero = text(await client.callTool({ name: "get_node", arguments: { id: heroId } }));
     expect(hero).toContain("Box: x 20, y 20, 350×300.");
@@ -314,7 +322,6 @@ test("get_node gives rendered boxes, and the height an artboard's content needs"
     const squeezed = text(await client.callTool({ name: "get_node", arguments: { id: heroId } }));
     expect(squeezed).toContain("350×272.");
   } finally {
-    await ws.renderer.close();
     ws.renderer = undefined;
   }
 }, 30_000);
@@ -334,10 +341,8 @@ test("screenshot lint catches a fit-content artboard grown over the one below it
   // Declared, fit-content reads as 900 tall: no overlap yet.
   expect(text(below)).not.toContain("Overlap");
 
-  const { ChromiumRenderer, findChromium } = await import("@ponzu/render/chromium");
-  const chromium = findChromium();
-  if (!chromium) return;
-  ws.renderer = new ChromiumRenderer({ executablePath: chromium });
+  ws.renderer = await chromium();
+  if (!ws.renderer) return;
   try {
     await client.callTool({
       name: "write_html",
@@ -361,7 +366,6 @@ test("screenshot lint catches a fit-content artboard grown over the one below it
     expect(next).toContain("at (880, 900)");
     expect(next).not.toContain("Overlap");
   } finally {
-    await ws.renderer.close();
     ws.renderer = undefined;
   }
 }, 30_000);
