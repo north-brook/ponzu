@@ -6,12 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BrowserWindow } from "electron";
 // Shared with the server's own renderers. It imports nothing, so the bundle takes just this file.
-import {
-  captureLimit,
-  captureScale,
-  IMAGES_READY_SCRIPT,
-  MAX_TEXTURE_SCRIPT,
-} from "../../../packages/render/src/capture.ts";
+import { captureScale, IMAGES_READY_SCRIPT } from "../../../packages/render/src/capture.ts";
 
 /*
  * The server asks the desktop app for screenshots: it runs no Chrome of its
@@ -88,16 +83,6 @@ function renderWindow(width: number, height: number) {
   return win;
 }
 
-/** The longest capture this GPU draws in one piece, measured once. */
-let limit: number | null = null;
-async function maxCapture(win: BrowserWindow): Promise<number> {
-  if (limit === null)
-    limit = captureLimit(
-      await win.webContents.executeJavaScript(MAX_TEXTURE_SCRIPT).catch(() => 0),
-    );
-  return limit;
-}
-
 /** An image of `box` (CSS px, from the top of the page) at `scale` device px per CSS px. */
 async function capture(
   win: BrowserWindow,
@@ -160,7 +145,7 @@ async function renderJob(job: Job) {
       };
     }
     const format = job.format === "jpeg" ? "jpeg" : "png";
-    const scale = captureScale(box.width, box.height, job.scale, await maxCapture(win));
+    const scale = captureScale(box.width, box.height, job.scale);
     const image = await capture(win, box, scale, format);
     return {
       data: image.toString("base64"),
@@ -225,7 +210,7 @@ async function sessionOp(op: SessionOp) {
     case "capture": {
       const s = keepAlive(op.session);
       const { box } = op;
-      const scale = captureScale(box.width, box.height, op.scale, await maxCapture(s.win));
+      const scale = captureScale(box.width, box.height, op.scale);
       return { data: (await capture(s.win, box, scale)).toString("base64") };
     }
     case "show": {

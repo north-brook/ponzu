@@ -1,10 +1,10 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { parseArtboardFile } from "@ponzu/core";
 import { chromium as playwright } from "playwright-core";
-import { captureLimit, captureScale, clampScale, MAX_CAPTURE_PX } from "./capture.ts";
+import { captureScale, clampScale, MAX_CAPTURE_PX } from "./capture.ts";
 import { ChromiumRenderer, findChromium } from "./chromium.ts";
 
-test("capture scale keeps the image within the GPU's texture size", () => {
+test("capture scale keeps the image within a GPU texture", () => {
   expect(clampScale(undefined)).toBe(1);
   expect(clampScale(0.1)).toBe(0.25);
   expect(clampScale(9)).toBe(4);
@@ -16,12 +16,9 @@ test("capture scale keeps the image within the GPU's texture size", () => {
   expect(s).toBeLessThan(3);
   expect(Math.ceil(8000 * s)).toBeLessThanOrEqual(MAX_CAPTURE_PX);
   expect(Math.ceil(8000 * s)).toBeGreaterThan(MAX_CAPTURE_PX - 20);
-  // A smaller GPU, a smaller limit; unknown means the default.
-  expect(Math.ceil(8000 * captureScale(1440, 8000, 2, captureLimit(8192)))).toBeLessThanOrEqual(
-    8192,
-  );
-  expect(captureLimit(0)).toBe(MAX_CAPTURE_PX);
-  expect(captureLimit(32768)).toBe(MAX_CAPTURE_PX);
+  // Wide ones too.
+  expect(Math.ceil(17000 * captureScale(17000, 300, 1))).toBeLessThanOrEqual(MAX_CAPTURE_PX);
+  expect(captureScale(0, 0, 2)).toBe(2);
 });
 
 const chromium = findChromium();

@@ -2,13 +2,7 @@ import { existsSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import type { Browser, BrowserContext, Page } from "playwright-core";
-import {
-  captureLimit,
-  captureScale,
-  clampScale,
-  IMAGES_READY_SCRIPT,
-  MAX_TEXTURE_SCRIPT,
-} from "./capture.ts";
+import { captureScale, clampScale, IMAGES_READY_SCRIPT } from "./capture.ts";
 import { artboardPage } from "./document.ts";
 import {
   type FrameDriver,
@@ -45,8 +39,6 @@ export interface ChromiumOptions {
 export class ChromiumRenderer implements Renderer {
   private browser: Promise<Browser> | null = null;
   private context: Promise<BrowserContext> | null = null;
-  /** The longest capture this GPU draws in one piece, measured once. */
-  private limit: number | null = null;
 
   constructor(private opts: ChromiumOptions = {}) {}
 
@@ -114,8 +106,7 @@ export class ChromiumRenderer implements Renderer {
       if (!measured) throw new Error(`Node ${req.nodeId} is not in this artboard.`);
       const { box, contentHeight } = measured;
       if (req.format !== "pdf") {
-        this.limit ??= captureLimit(await page.evaluate(MAX_TEXTURE_SCRIPT).catch(() => 0));
-        const fits = captureScale(box.width, box.height, scale, this.limit);
+        const fits = captureScale(box.width, box.height, scale);
         if (fits < scale) return { retry: fits };
       }
 
@@ -168,19 +159,30 @@ export class ChromiumRenderer implements Renderer {
     const page = await (await this.ctx()).newPage();
     try {
       await this.load(page, req);
-      this.limit ??= captureLimit(await page.evaluate(MAX_TEXTURE_SCRIPT).catch(() => 0));
-      const limit = this.limit;
       const cdp = await page.context().newCDPSession(page);
       // Transparent where the design is, like screenshots.
       await cdp.send("Emulation.setDefaultBackgroundColorOverride", {
         color: { r: 0, g: 0, b: 0, a: 0 },
       });
+      // A capture past the viewport from this session resets the viewport to
+      // the window's own size, which changes 100vh and moves everything below
+      // it between measuring a node and capturing it. Pinned here, it holds.
+      const pin = async () => {
+        const v = page.viewportSize();
+        if (v)
+          await cdp.send("Emulation.setDeviceMetricsOverride", {
+            ...v,
+            deviceScaleFactor: 0,
+            mobile: false,
+          });
+      };
+      await pin();
       const driver: FrameDriver = {
         evaluate: (expression) => page.evaluate(expression),
         async capture(box, scale) {
           const shot = await cdp.send("Page.captureScreenshot", {
             format: "png",
-            clip: { ...box, scale: captureScale(box.width, box.height, scale, limit) },
+            clip: { ...box, scale: captureScale(box.width, box.height, scale) },
             // Renders the clip even below the viewport, which stays the artboard's own size.
             captureBeyondViewport: true,
           });
@@ -188,6 +190,7 @@ export class ChromiumRenderer implements Renderer {
         },
         async show(html, width, height) {
           await page.setViewportSize({ width: Math.ceil(width), height: Math.ceil(height) });
+          await pin();
           await show(page, html);
           await page.evaluate(SHOWN);
         },

@@ -8,21 +8,13 @@ export const MIN_SCALE = 0.25;
 export const MAX_SCALE = 4;
 
 /**
- * The longest side, in device pixels, of one capture. Chrome draws a capture
- * into a single GPU texture; past the GPU's texture size (16384 on most) the
- * image repeats tiles or comes back blank.
+ * The longest side, in device pixels, of one capture. With GPU compositing,
+ * Chrome draws a capture into one texture, and past 16384 (the texture size
+ * of current GPUs) the image comes back with tiles repeated. Software
+ * compositing has no such limit, but WebGL can't tell the two apart: it
+ * reports 8192 under SwiftShader, which captures far more than that.
  */
 export const MAX_CAPTURE_PX = 16384;
-
-/** Runs in a page: the GPU's texture size, or 0 without WebGL. */
-export const MAX_TEXTURE_SCRIPT = `(() => { try { const gl = document.createElement('canvas').getContext('webgl'); return (gl && gl.getParameter(gl.MAX_TEXTURE_SIZE)) || 0; } catch { return 0; } })()`;
-
-/** The longest capture a GPU with this texture size can draw. */
-export function captureLimit(maxTexture: unknown): number {
-  return typeof maxTexture === "number" && maxTexture > 0
-    ? Math.min(maxTexture, MAX_CAPTURE_PX)
-    : MAX_CAPTURE_PX;
-}
 
 export function clampScale(scale: number | undefined): number {
   const s = scale ?? 1;
