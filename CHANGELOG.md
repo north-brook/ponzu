@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.21.2](https://github.com/north-brook/ponzu/compare/v1.21.1...v1.21.2) (2026-10-21)
+
+
+### Bug Fixes
+
+* keep the selection outline on an artboard after dragging it ([#94](https://github.com/north-brook/ponzu/issues/94)) ([4300283](https://github.com/north-brook/ponzu/commit/4300283d52a7f2b2373e946e47744a7880959249))
+
 ## [1.21.1](https://github.com/north-brook/ponzu/compare/v1.21.0...v1.21.1) (2026-10-21)
 
 
