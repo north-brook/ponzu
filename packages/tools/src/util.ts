@@ -94,8 +94,10 @@ export function elementsIn(nodes: PNode[]): PElement[] {
   return nodes.filter((n): n is PElement => n.kind === "el");
 }
 
+/** "1 match", "2 matches", "3 nodes". */
 export function plural(n: number, word: string): string {
-  return `${n} ${word}${n === 1 ? "" : "s"}`;
+  if (n === 1) return `${n} ${word}`;
+  return `${n} ${word}${/(s|x|z|ch|sh)$/.test(word) ? "es" : "s"}`;
 }
 
 export function droppedNote(dropped: { what: string }[]): string {

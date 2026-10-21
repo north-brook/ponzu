@@ -15,7 +15,16 @@ import {
 } from "@ponzu/core";
 import { z } from "zod";
 import { fileArg, styleArg, ToolError, tool } from "./define.ts";
-import { apply, autoPlace, droppedNote, elementsIn, plural, reportIds, target } from "./util.ts";
+import {
+  apply,
+  artboardSize,
+  autoPlace,
+  droppedNote,
+  elementsIn,
+  plural,
+  reportIds,
+  target,
+} from "./util.ts";
 
 export const writeTools = [
   tool({
@@ -239,12 +248,19 @@ export const writeTools = [
     title: "Duplicate",
     group: "write",
     description:
-      "Deep-copy nodes or artboards. Copies of nodes go right after the original (or into `parent`); artboard copies are placed in a free spot, which makes variations easy. Returns an old→new id map for every descendant.",
+      "Deep-copy nodes or artboards. Copies of nodes go right after the original (or into `parent`); artboard copies are placed in a free spot to the right of the original, which makes variations easy, unless you give x/y. Returns each copy's new id; get_tree on a copy lists its descendants.",
     input: {
       file: fileArg,
       ids: z.array(z.string()).min(1),
       parent: z.string().optional().describe("Put node copies inside this node instead."),
       names: z.array(z.string()).optional().describe("New names for the copies, in order."),
+      x: z
+        .number()
+        .optional()
+        .describe(
+          "Where the first artboard copy goes. Further artboard copies line up to its right.",
+        ),
+      y: z.number().optional().describe("Row for artboard copies. Default: the original's row."),
     },
     async handler(args, ctx) {
       const { key, design } = await ctx.ws.resolve(args.file);
@@ -253,18 +269,19 @@ export const writeTools = [
       const lines: string[] = [];
       const map: Record<string, string> = {};
       const placed: Artboard[] = [];
+      const ids: string[] = [];
       args.ids.forEach((id, i) => {
         const ab = findArtboard(doc, id);
         if (ab) {
           const copyRoot = cloneWithNewIds(ab.artboard.root, map, "ab");
           const name = args.names?.[i] ?? `${ab.artboard.name} copy`;
           copyRoot.name = name;
-          const pos = autoPlace([...ab.page.artboards, ...placed], 0, ab.artboard.y);
+          const pos = placeCopy(ab.page.artboards, placed, ab.artboard.y, args.x, args.y);
           const artboard: Artboard = {
             id: copyRoot.id,
             name,
             x: pos.x,
-            y: ab.artboard.y,
+            y: pos.y,
             root: copyRoot,
           };
           placed.push(artboard);
@@ -274,6 +291,7 @@ export const writeTools = [
             index: ab.page.artboards.length + placed.length,
             artboard,
           });
+          ids.push(artboard.id);
           lines.push(`${id} → ${artboard.id} "${name}" at (${artboard.x}, ${artboard.y})`);
           return;
         }
@@ -286,17 +304,20 @@ export const writeTools = [
         } else {
           ops.push({ op: "insert", parent: t.parent!.id, index: t.index + 1, nodes: [copy] });
         }
+        ids.push(copy.id);
         lines.push(`${id} → ${copy.id}`);
       });
       apply(design, ops.length === 1 ? ops[0]! : { op: "batch", ops }, ctx);
       if (placed[0]) ctx.ws.focus?.(key, placed[0].id);
-      const mapLines = Object.entries(map)
-        .filter(([from]) => !args.ids.includes(from))
-        .slice(0, 60)
-        .map(([a, b]) => `${a}→${b}`);
+      const copied = Object.keys(map).length;
+      const total =
+        copied > args.ids.length
+          ? `\n${plural(copied, "node")} copied in all; get_tree on a copy lists their ids.`
+          : "";
       return {
-        text: `${lines.join("\n")}${mapLines.length ? `\nDescendants: ${mapLines.join(" ")}${Object.keys(map).length > 60 ? " …" : ""}` : ""}`,
-        data: { map },
+        text: `${lines.join("\n")}${total}`,
+        // Agents get the top-level ids; the full old→new map is for hosts calling runTool.
+        data: { ids, map },
       };
     },
   }),
@@ -488,3 +509,24 @@ function styleWarnings(keys: string[]): string {
 }
 
 export { type PElement, parseStyle };
+
+/**
+ * Where an artboard copy goes. Without x/y it takes the next free spot in the
+ * original's row. With them the first copy goes there (a missing x autoplaces
+ * in row y, like create_artboard) and later copies line up to its right.
+ */
+function placeCopy(
+  artboards: Artboard[],
+  placed: Artboard[],
+  rowY: number,
+  x?: number,
+  y?: number,
+): { x: number; y: number } {
+  if (x === undefined && y === undefined) {
+    return { x: autoPlace([...artboards, ...placed], 0, rowY).x, y: rowY };
+  }
+  const prev = placed.at(-1);
+  if (prev) return { x: prev.x + artboardSize(prev).w + 80, y: prev.y };
+  const row = y ?? rowY;
+  return { x: x ?? autoPlace(artboards, 0, row).x, y: row };
+}
