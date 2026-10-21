@@ -27,7 +27,7 @@ Usage
                                 runs on its own
   ponzu init [name.design]      Create a new .design folder
   ponzu install [agent]         Add Ponzu to claude, codex and cursor (all found by default)
-  ponzu telemetry [on|off]      Show or change anonymous usage reporting
+  ponzu telemetry [on|off]      Show or change usage reporting
 
 Options
   -p, --port <n>       Port for serve (default 7777)
@@ -40,7 +40,7 @@ Options
 
 With no files, serve and mcp open every .design under the current folder.
 
-Ponzu sends anonymous usage (tool names, errors, versions; never your designs)
+Ponzu sends pseudonymous usage (tool names, errors, versions; never your designs)
 to help us improve it. Turn it off with \`ponzu telemetry off\` or PONZU_TELEMETRY=0.
 `;
 
