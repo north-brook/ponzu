@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   applyOp,
+  carryIds,
   type Doc,
   emptyDoc,
   mergeStyle,
@@ -261,6 +262,88 @@ describe("html", () => {
     const b = parseArtboardFile(src, { id: "ab_1", name: "A" }).artboard;
     expect(serializeArtboardFile(a)).toBe(serializeArtboardFile(b));
     expect(a.id).toBe("ab_1");
+  });
+});
+
+describe("carrying ids across an outside edit", () => {
+  const read = (html: string) => {
+    const { artboard, assigned } = parseArtboardFile(
+      `<section data-artboard data-name="A">${html}</section>`,
+      { id: "ab_1", name: "A" },
+    );
+    return { root: artboard.root, assigned };
+  };
+  const ids = (root: PElement) => {
+    const out: Record<string, string> = {};
+    const visit = (el: PElement) => {
+      for (const c of el.children) {
+        if (c.kind !== "el") continue;
+        out[c.children.find((t) => t.kind === "text")?.value ?? c.tag] = c.id;
+        visit(c);
+      }
+    };
+    visit(root);
+    return out;
+  };
+
+  test("an element added above the others leaves their ids alone", () => {
+    const before = read("<div><h1>Flow</h1><p>Alpha</p><p>Beta</p></div>");
+    const after = read("<header>Banner</header><div><h1>Flow</h1><p>Alpha</p><p>Beta</p></div>");
+    expect(carryIds(before.root, after.root, after.assigned)).toBe(true);
+    const was = ids(before.root);
+    const now = ids(after.root);
+    expect(now.Alpha).toBe(was.Alpha!);
+    expect(now.Beta).toBe(was.Beta!);
+    expect(now.Banner).not.toBe(was.div!);
+    expect(new Set(Object.values(now)).size).toBe(Object.keys(now).length);
+  });
+
+  test("an edited element keeps its id while it's the same tag in the same place", () => {
+    const before = read("<p>Alpha</p><p>Beta</p>");
+    const after = read("<p>Alpha, revised</p><p>Beta</p>");
+    carryIds(before.root, after.root, after.assigned);
+    expect(ids(after.root)["Alpha, revised"]).toBe(ids(before.root).Alpha!);
+  });
+
+  test("reordered elements keep their ids", () => {
+    const before = read("<p>One</p><p>Two</p><p>Three</p>");
+    const after = read("<p>Three</p><p>One</p><p>Two</p>");
+    carryIds(before.root, after.root, after.assigned);
+    expect(ids(after.root)).toEqual(ids(before.root));
+  });
+
+  test("ids written in the file win", () => {
+    const before = read("<p>One</p><p>Two</p>");
+    const one = ids(before.root).One!;
+    const after = read(`<p>New</p><p data-id="${one}">One</p><p>Two</p>`);
+    carryIds(before.root, after.root, after.assigned);
+    const now = ids(after.root);
+    expect(now.One).toBe(one);
+    expect(now.Two).toBe(ids(before.root).Two!);
+    expect(new Set(Object.values(now)).size).toBe(3);
+  });
+
+  test("a written id that matches another element's position stays with its element", () => {
+    const before = read("<p>One</p><p>Two</p>");
+    const two = ids(before.root).Two!;
+    const after = read(`<p data-id="${two}">One</p><p>Two</p>`);
+    carryIds(before.root, after.root, after.assigned);
+    const now = ids(after.root);
+    expect(now.One).toBe(two);
+    expect(now.Two).not.toBe(two);
+  });
+
+  test("an unchanged element moved to another parent keeps its id over an edited one", () => {
+    const before = read("<div><p>Alpha</p></div><aside><p>Beta</p></aside>");
+    const after = read("<div></div><aside><p>Alpha</p></aside>");
+    carryIds(before.root, after.root, after.assigned);
+    expect(ids(after.root).Alpha).toBe(ids(before.root).Alpha!);
+  });
+
+  test("nothing changes when every id is still where it was", () => {
+    const before = read("<p>One</p><p>Two</p>");
+    const after = read("<p>One</p><p>Two</p><p>Three</p>");
+    expect(carryIds(before.root, after.root, after.assigned)).toBe(false);
   });
 });
 

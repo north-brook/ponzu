@@ -27,6 +27,8 @@ HTML and CSS
 
 Results are lean: ids of what you created, and what was dropped. Use get_tree to see structure, get_node for one node's detail.
 
+Big generated content (a long table, a diagram from a script) can go straight into the artboard's file, pages/<page>/<artboard>.html, instead of through write_html. Ponzu picks the edit up live. Elements without a data-id get one: ids from get_tree keep pointing at the same element across later edits to the file, and Ponzu writes them in when it needs to.
+
 Don't
 - Don't rebuild what exists. duplicate it and edit the copy.
 - Don't overwrite an artboard the person liked. Put variations next to it (get_guide('variations')).

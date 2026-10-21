@@ -1,6 +1,7 @@
 import {
   type Artboard,
   applyOp,
+  carryIds,
   type Doc,
   findArtboard,
   type Op,
@@ -11,6 +12,7 @@ import {
 } from "@ponzu/core";
 import type { StorageAdapter } from "./adapter.ts";
 import {
+  type FileBag,
   type Layout,
   planLayout,
   readBag,
@@ -278,23 +280,60 @@ export class Design {
       }
     }
     if (!changed) return;
-    const { doc: incoming, layout } = readBag(bag, this.doc.name);
+    const { doc: incoming, layout, lazy } = readBag(bag, this.doc.name);
     this.written = new Map(Object.entries(bag));
+    // Elements the edit left alone keep the ids tools already handed out.
+    // When that moves an id off its position, the file has to spell it out.
+    const pin: string[] = [];
+    for (const page of incoming.pages) {
+      for (const ab of page.artboards) {
+        const derived = lazy.get(ab.id);
+        const prev = derived && findArtboard(this.doc, ab.id)?.artboard;
+        if (prev && carryIds(prev.root, ab.root, derived)) pin.push(ab.id);
+      }
+    }
     const ops = diffDocs(this.doc, incoming);
     this.layout = layout;
     // Set by hand in design.json, never by an op: carry it over so the next write keeps it.
     if (incoming.example) this.doc.example = true;
     else delete this.doc.example;
-    if (!ops.length) return;
-    const origin: Origin = { kind: "disk", name: relevant[0]! };
-    try {
-      this.apply({ op: "batch", ops }, origin, { history: false });
-    } catch {
-      this.doc = incoming;
-      this.undoStack = [];
-      this.redoStack = [];
-      for (const l of this.resetListeners) l(this.doc);
+    if (ops.length) {
+      const origin: Origin = { kind: "disk", name: relevant[0]! };
+      try {
+        this.apply({ op: "batch", ops }, origin, { history: false });
+      } catch {
+        this.doc = incoming;
+        this.undoStack = [];
+        this.redoStack = [];
+        for (const l of this.resetListeners) l(this.doc);
+      }
     }
+    if (pin.length) await this.pinIds(pin, bag);
+  }
+
+  /**
+   * Write the ids of these artboards into their files, which an outside edit
+   * just changed. Skips a file that changed again since: that edit gets its
+   * own turn through the watcher, and must not be overwritten.
+   */
+  private async pinIds(artboardIds: string[], read: FileBag): Promise<void> {
+    const run = async () => {
+      for (const id of artboardIds) {
+        if (this.closed) return;
+        const ab = findArtboard(this.doc, id)?.artboard;
+        const path = this.layout.artboards.get(id);
+        if (!ab || !path) continue;
+        // Fresh for each file: a script may write the next one meanwhile.
+        const now = await this.storage.readAll();
+        if (now[path] !== read[path]) continue;
+        const content = serializeArtboard(ab);
+        if (content === now[path]) continue;
+        this.written.set(path, content);
+        await this.storage.write(path, content);
+      }
+    };
+    this.saving = this.saving.then(run).catch((err) => console.error("[ponzu] save failed:", err));
+    await this.saving;
   }
 
   async close(): Promise<void> {

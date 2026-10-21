@@ -125,7 +125,7 @@ export const orientTools = [
       const n = hit.node;
       const lines = [
         `${n.id} <${n.tag}>${n.name ? ` "${n.name}"` : ""}`,
-        `Artboard: ${hit.artboard.id} "${hit.artboard.name}" · file pages/…/${design.pathOf(hit.artboard.id)?.split("/").pop() ?? "?"}`,
+        `Artboard: ${hit.artboard.id} "${hit.artboard.name}" · file ${design.pathOf(hit.artboard.id) ?? "?"}`,
         hit.parent
           ? `Parent: ${hit.parent.id} ${describeNode(hit.parent)} (child ${hit.index})`
           : `Artboard at (${hit.artboard.x}, ${hit.artboard.y})`,
