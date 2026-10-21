@@ -56,6 +56,8 @@ Workflow
 5. When you change existing work, call start_working with the artboard ids first and finish_working at the end.
 6. Explain your work on the canvas itself. A small artboard beside the work, named "Note: …" with height fit-content, holds rationale, labels, a flow's arrows or what to compare. The canvas is infinite, so annotate generously. Comments are for what needs the person: a question, a decision, something you couldn't do.
 
+Several files open: a call without file goes to the file that holds the ids it passes, else the one you last created, named or edited. Pass file once to switch; list_files marks the current one.
+
 HTML and CSS
 - Inline styles only (style="…"). No <style> blocks unless you need @keyframes or :hover; keep those inside the artboard.
 - Layout with flexbox and grid, spacing with gap and padding. Artboards are flex columns by default, even when their style sets display: flex. HTML from elsewhere that sets display: flex on the root expects a row, so set flex-direction: row on it or its side-by-side panes stack.

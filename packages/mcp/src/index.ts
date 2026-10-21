@@ -8,6 +8,7 @@ import {
   SERVER_INSTRUCTIONS,
   type ToolCaller,
   type ToolResult,
+  type ToolSession,
   tools,
   type Workspace,
 } from "@ponzu/tools";
@@ -47,6 +48,8 @@ export function createMcpServer(ws: Workspace, opts: McpOptions = {}): McpServer
   );
   const id = opts.caller?.id ?? `agent_${Math.random().toString(36).slice(2, 8)}`;
   let caller: ToolCaller | null = opts.caller?.author ? (opts.caller as ToolCaller) : null;
+  // Each connection keeps its own current file, so two agents never steer each other.
+  const session: ToolSession = {};
   const getCaller = (): ToolCaller => {
     if (caller) return caller;
     const info = server.server.getClientVersion();
@@ -89,7 +92,7 @@ export function createMcpServer(ws: Workspace, opts: McpOptions = {}): McpServer
         },
       },
       async (args: unknown, extra: { signal?: AbortSignal }) =>
-        toMcp(await runTool(def, args, { ws, caller: getCaller(), signal: extra.signal })),
+        toMcp(await runTool(def, args, { ws, caller: getCaller(), signal: extra.signal, session })),
     );
   }
 

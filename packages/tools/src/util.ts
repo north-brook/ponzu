@@ -11,8 +11,103 @@ import {
   walk,
 } from "@ponzu/core";
 import type { Design } from "@ponzu/store";
-import type { ToolContext } from "./context.ts";
+import type { FileSource, ToolContext } from "./context.ts";
 import { ToolError } from "./define.ts";
+
+/**
+ * The design a call works on. A `file` argument wins; then the open design
+ * that holds the ids the call passes; then the session's file; then the only
+ * open design. Whichever it is becomes the session's file.
+ */
+export async function resolveFile(
+  ctx: ToolContext,
+  file: string | undefined,
+  ids: (string | undefined)[] = [],
+): Promise<{ key: string; design: Design }> {
+  const { ws, session } = ctx;
+  const all = ws.designs();
+  const current = all.find((d) => d.key === session?.file);
+  let picked: { key: string; design: Design };
+  let from: FileSource;
+  const wanted = ids.filter((id): id is string => Boolean(id));
+  if (file) {
+    picked = await ws.resolve(file);
+    from = "arg";
+  } else {
+    // The files that hold the most of these ids: an id only one copy has outweighs ids they
+    // share, and a page name passed in place of an id counts for none.
+    const counts = all.map((d) => wanted.filter((id) => holds(d.design.doc, id)).length);
+    const best = all.length > 1 ? Math.max(0, ...counts) : 0;
+    const holders = best ? all.filter((_, i) => counts[i] === best) : [];
+    if (holders.length === 1) {
+      picked = holders[0]!;
+      from = "ids";
+    } else if (holders.length > 1) {
+      // Copies of one design share ids; only the session's file can say which.
+      const mine = holders.find((d) => d.key === current?.key);
+      if (!mine)
+        throw new ToolError(
+          `${wanted.length === 1 ? wanted[0] : "Those ids"} ${wanted.length === 1 ? "is" : "are"} in ${holders.length} open files: ${fileList(holders)}. Pass file.`,
+          "file_ids_ambiguous",
+        );
+      picked = mine;
+      from = "session";
+    } else if (current) {
+      picked = current;
+      from = "session";
+    } else {
+      picked = await ws.resolve();
+      from = "only";
+    }
+  }
+  // Ids from two files in one call: refuse before any of it lands in the wrong one.
+  const doc = picked.design.doc;
+  for (const id of wanted) {
+    if (holds(doc, id)) continue;
+    const other = all.find((d) => d.key !== picked.key && holds(d.design.doc, id));
+    if (other)
+      throw new ToolError(
+        `${id} is in ${label(other, all)}, not ${label(picked, all)}. One call works on one file: ${file ? "split the call" : "pass file, or split the call"}.`,
+        "file_ids_split",
+      );
+  }
+  // Ids took the session to another file: say so, since later calls without file follow.
+  const moved = session && from === "ids" && session.file !== picked.key;
+  ctx.resolved = {
+    from,
+    note: moved ? `\nNow in ${label(picked, all)}; calls without file use it.` : undefined,
+  };
+  if (session) session.file = picked.key;
+  return picked;
+}
+
+/** A design's name, with its path when another open file shares the name. */
+function label(
+  picked: { key: string; design: Design },
+  all: { key: string; design: Design }[],
+): string {
+  const name = picked.design.doc.name;
+  return all.some((d) => d.key !== picked.key && d.design.doc.name === name)
+    ? `"${name}" (${picked.key})`
+    : `"${name}"`;
+}
+
+/** Whether a page, artboard, node or thread with this exact id is in the doc. */
+function holds(doc: Doc, id: string): boolean {
+  return (
+    doc.pages.some((p) => p.id === id) ||
+    doc.threads.some((t) => t.id === id) ||
+    locate(doc, id) !== null
+  );
+}
+
+/** "Name (path), …", at most five. */
+export function fileList(files: { key: string; design: Design }[], limit = 5): string {
+  const shown = files.slice(0, limit).map((f) => `${f.design.doc.name} (${f.key})`);
+  return files.length > limit
+    ? `${shown.join(", ")} and ${files.length - limit} more`
+    : shown.join(", ");
+}
 
 export function origin(ctx: ToolContext): Origin {
   return ctx.caller.author;

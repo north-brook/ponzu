@@ -409,3 +409,11 @@ test("update_file marks a file as scratch and back", async () => {
   await call("update_file", { scratch: false });
   expect(design.doc.scratch).toBeUndefined();
 });
+
+test("list_files filters by name or path", async () => {
+  const { call } = await setup();
+  expect((await call("list_files", { query: "FER" })).text).toContain("Fern — fern");
+  expect((await call("list_files", { query: "kettle" })).text).toBe(
+    'No open file matches "kettle" (1 file open).',
+  );
+});
