@@ -70,7 +70,7 @@ export const seeTools = [
       });
       const image: ToolImage = { data: toBase64(out.bytes), mime: out.mime };
       const lines = [
-        `${nodeId ?? ab.id} rendered ${Math.round(out.width)}×${Math.round(out.height)} at ${scale}x${out.motion ? `, ${moment(out.motion, args.at)}` : ""}.`,
+        `${nodeId ?? ab.id} rendered ${Math.round(out.width)}×${Math.round(out.height)} at ${shownScale(scale, out.scale)}${out.motion ? `, ${moment(out.motion, args.at)}` : ""}.`,
       ];
       if (!nodeId && ab.root.style.height === "fit-content")
         lines.push(`Content height: ${out.contentHeight}px.`);
@@ -221,11 +221,17 @@ export const seeTools = [
       await mkdir(dirname(path), { recursive: true });
       await writeFile(path, out.bytes);
       return {
-        text: `Wrote ${path} (${Math.round(out.width)}×${Math.round(out.height)} @${args.scale ?? 2}x, ${Math.round(out.bytes.length / 1024)} KB).`,
+        text: `Wrote ${path} (${Math.round(out.width)}×${Math.round(out.height)} at ${shownScale(args.scale ?? 2, out.scale)}, ${Math.round(out.bytes.length / 1024)} KB).`,
       };
     },
   }),
 ];
+
+/** The scale an image came out at, and why when it's less than the one asked for. */
+function shownScale(asked: number, got: number | undefined): string {
+  if (got === undefined || got >= asked) return `${asked}x`;
+  return `${got}x (${asked}x would be too big for one image; screenshot a node to see it closer)`;
+}
 
 function interaction(args: Interaction): Interaction | undefined {
   const { hover, focus, press } = args;

@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import type { Browser, BrowserContext, Page } from "playwright-core";
+import { captureScale, clampScale, IMAGES_READY_SCRIPT } from "./capture.ts";
 import { artboardPage } from "./document.ts";
 import {
   type FrameDriver,
@@ -65,30 +66,49 @@ export class ChromiumRenderer implements Renderer {
   }
 
   async render(req: RenderRequest): Promise<RenderResult> {
-    const scale = Math.min(Math.max(req.scale ?? 1, 0.25), 3);
+    const out = await this.renderAt(req, clampScale(req.scale));
+    // Too big for the GPU to draw at that scale: again, at the largest it can.
+    return "retry" in out ? ((await this.renderAt(req, out.retry)) as RenderResult) : out;
+  }
+
+  /**
+   * Renders at `scale` device pixels per CSS pixel, or says which smaller
+   * scale to try when an image that big can't be drawn.
+   */
+  private async renderAt(
+    req: RenderRequest,
+    scale: number,
+  ): Promise<RenderResult | { retry: number }> {
     const context = await this.ctx();
     const browser = await this.browser!;
     // deviceScaleFactor is per-context, so non-default scales get their own.
+    // devicePixelRatio reports it, so srcset and image-set() pick to suit.
     const own = scale !== 1 ? await browser.newContext({ deviceScaleFactor: scale }) : null;
     const page = await (own ?? context).newPage();
     try {
-      const { width, height } = await this.load(page, req);
+      await this.load(page, req);
       const motion = await page.evaluate<MotionInfo | { error: string }>(
         prepareScript({ interact: req.interact, at: req.at }),
       );
       if ("error" in motion) throw new Error(motion.error);
 
-      const el = await page.$(selectorFor(req.nodeId));
-      if (!el) throw new Error(`Node ${req.nodeId} is not in this artboard.`);
-      const box = (await el.boundingBox()) ?? { width, height, x: 0, y: 0 };
-      const contentHeight = await page.evaluate(
-        () => document.querySelector("[data-artboard]")?.scrollHeight ?? 0,
-      );
-      if (!req.nodeId && box.height > height)
-        await page.setViewportSize({
-          width: Math.ceil(width),
-          height: Math.min(Math.ceil(box.height), 16000),
-        });
+      // From the top of the page, not the viewport: the viewport stays the
+      // artboard's own size, and a fit-content artboard runs on below it.
+      const measured = await page.evaluate((selector) => {
+        const el = document.querySelector(selector);
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return {
+          box: { x: r.left + scrollX, y: r.top + scrollY, width: r.width, height: r.height },
+          contentHeight: document.querySelector("[data-artboard]")?.scrollHeight ?? 0,
+        };
+      }, selectorFor(req.nodeId));
+      if (!measured) throw new Error(`Node ${req.nodeId} is not in this artboard.`);
+      const { box, contentHeight } = measured;
+      if (req.format !== "pdf") {
+        const fits = captureScale(box.width, box.height, scale);
+        if (fits < scale) return { retry: fits };
+      }
 
       const issues: LintIssue[] = req.lint
         ? ((await page.evaluate(FULL_LINT_SCRIPT)) as LintIssue[])
@@ -111,8 +131,11 @@ export class ChromiumRenderer implements Renderer {
         };
       }
       const type = req.format === "jpeg" ? "jpeg" : "png";
-      const bytes = await el.screenshot({
+      // fullPage makes the clip page-relative, so it can reach below the viewport.
+      const bytes = await page.screenshot({
         type,
+        clip: box,
+        fullPage: true,
         omitBackground: type === "png",
         ...(type === "jpeg" ? { quality: 85 } : {}),
       });
@@ -122,6 +145,7 @@ export class ChromiumRenderer implements Renderer {
         width: box.width,
         height: box.height,
         contentHeight,
+        scale,
         issues,
         motion,
       };
@@ -134,34 +158,39 @@ export class ChromiumRenderer implements Renderer {
   async record(req: RecordRequest): Promise<RecordResult> {
     const page = await (await this.ctx()).newPage();
     try {
-      const { width, height } = await this.load(page, req);
-      // Tall artboards (height: fit-content) need the whole of themselves in the viewport.
-      const bottom = await page.evaluate(
-        () => document.querySelector("[data-artboard]")?.getBoundingClientRect().bottom ?? 0,
-      );
-      if (bottom > height)
-        await page.setViewportSize({
-          width: Math.ceil(width),
-          height: Math.min(Math.ceil(bottom), 16000),
-        });
+      await this.load(page, req);
       const cdp = await page.context().newCDPSession(page);
       // Transparent where the design is, like screenshots.
       await cdp.send("Emulation.setDefaultBackgroundColorOverride", {
         color: { r: 0, g: 0, b: 0, a: 0 },
       });
+      // A capture past the viewport from this session resets the viewport to
+      // the window's own size, which changes 100vh and moves everything below
+      // it between measuring a node and capturing it. Pinned here, it holds.
+      const pin = async () => {
+        const v = page.viewportSize();
+        if (v)
+          await cdp.send("Emulation.setDeviceMetricsOverride", {
+            ...v,
+            deviceScaleFactor: 0,
+            mobile: false,
+          });
+      };
+      await pin();
       const driver: FrameDriver = {
         evaluate: (expression) => page.evaluate(expression),
         async capture(box, scale) {
           const shot = await cdp.send("Page.captureScreenshot", {
             format: "png",
-            clip: { ...box, scale },
-            // Without it, wide captures repeat a tile at the bottom edge.
+            clip: { ...box, scale: captureScale(box.width, box.height, scale) },
+            // Renders the clip even below the viewport, which stays the artboard's own size.
             captureBeyondViewport: true,
           });
           return new Uint8Array(Buffer.from(shot.data, "base64"));
         },
         async show(html, width, height) {
           await page.setViewportSize({ width: Math.ceil(width), height: Math.ceil(height) });
+          await pin();
           await show(page, html);
           await page.evaluate(SHOWN);
         },
@@ -197,7 +226,11 @@ export class ChromiumRenderer implements Renderer {
     }
   }
 
-  /** Puts the artboard on the page, sized to it, with fonts loaded. */
+  /**
+   * Puts the artboard on the page with fonts and images loaded. The viewport
+   * is the artboard's own size (900px tall for fit-content, like the canvas
+   * shows it), so 100vh means the same here; captures reach below it.
+   */
   private async load(
     page: Page,
     req: {
@@ -206,12 +239,12 @@ export class ChromiumRenderer implements Renderer {
       colorScheme?: "light" | "dark";
       assetBase?: string;
     },
-  ): Promise<{ width: number; height: number }> {
+  ): Promise<void> {
     const width = cssPx(req.artboard.root.style.width) ?? 1440;
     const height = cssPx(req.artboard.root.style.height) ?? 900;
     await page.setViewportSize({
-      width: Math.ceil(width),
-      height: Math.min(Math.ceil(height), 16000),
+      width: Math.max(1, Math.ceil(width)),
+      height: Math.max(1, Math.ceil(height)),
     });
     if (req.colorScheme) await page.emulateMedia({ colorScheme: req.colorScheme });
     await this.opts.preparePage?.(page);
@@ -221,8 +254,7 @@ export class ChromiumRenderer implements Renderer {
       colorScheme: req.colorScheme,
     });
     await show(page, html);
-    await page.evaluate(() => document.fonts.ready).catch(() => {});
-    return { width, height };
+    await page.evaluate(`document.fonts.ready.then(() => ${IMAGES_READY_SCRIPT})`).catch(() => {});
   }
 
   async close(): Promise<void> {
