@@ -54,6 +54,7 @@ import {
   UserIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { SLICE, SLICE_STROKE } from "./slice.ts";
 
 export const Icons = {
   add: Add01Icon,
@@ -130,24 +131,24 @@ export function Icon({
   return <HugeiconsIcon icon={icon} size={size} strokeWidth={strokeWidth} className={className} />;
 }
 
-/** The Ponzu wedge. Rotation is baked into the path data. */
-export function Logo({ size = 20, dark = false }: { size?: number; dark?: boolean }) {
-  const [rind, pith, flesh] = dark
-    ? ["#FFA800", "#FFFDF2", "#FFC400"]
-    : ["#F4B012", "#FFF3CF", "#FFD23F"];
+/** The Ponzu slice, in one color: ink, or paper on dark. `color` overrides both. */
+export function Logo({
+  size = 20,
+  dark = false,
+  color,
+}: {
+  size?: number;
+  dark?: boolean;
+  color?: string;
+}) {
+  const fill = color ?? (dark ? "#F4F3EF" : "#111110");
   return (
     <svg width={size} height={size} viewBox="0 0 64 64" role="img" aria-label="Ponzu">
-      <path fill={rind} d="M12.96 3.00A33.96 33.96 0 0 0 61.00 51.04Z" />
-      <path fill={pith} d="M17.08 7.12A28.14 28.14 0 0 0 56.88 46.92Z" />
-      <path fill={flesh} d="M19.57 9.61A24.62 24.62 0 0 0 54.39 44.43Z" />
-      <path fill={pith} d="M17.08 7.12L56.88 46.92L54.39 49.41L14.59 9.61Z" />
-      <path
-        stroke={pith}
-        d="M34.49 29.51L30.61 50.80M34.49 29.51L13.20 33.39"
-        strokeWidth={3.4}
-        strokeLinecap="round"
-        fill="none"
-      />
+      <g fill={fill} stroke={fill} strokeWidth={SLICE_STROKE} strokeLinejoin="round">
+        {SLICE.map((d) => (
+          <path key={d} d={d} />
+        ))}
+      </g>
     </svg>
   );
 }

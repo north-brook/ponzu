@@ -795,8 +795,8 @@ function FileCard({
 
 /**
  * The trace an agent's artboard gets on the canvas, around the card of the
- * design it's working in: a short stroke of the brand's rind running the
- * edge. Drawn over the preview, which is rounded, so the path is too.
+ * design it's working in: six yuzu dashes marching round the edge. Drawn
+ * over the preview, which is rounded, so the path is too.
  */
 function CardTrace() {
   return (
@@ -812,7 +812,7 @@ function CardTrace() {
         rx="11.25"
         fill="none"
         stroke="currentColor"
-        strokeOpacity={0.3}
+        strokeOpacity={0.6}
         strokeWidth={1}
       />
       <rect
@@ -825,7 +825,7 @@ function CardTrace() {
         pathLength={100}
         fill="none"
         stroke="currentColor"
-        strokeWidth={1.5}
+        strokeWidth={2.5}
         strokeLinecap="round"
       />
     </svg>

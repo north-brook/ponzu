@@ -8,7 +8,7 @@ import { CssTileVisual } from "@/components/css-tile";
 import { CommentThread } from "@/components/demo/comment-thread";
 import { ProductDemo } from "@/components/demo/product-demo";
 import { HomeScreen } from "@/components/home-screen";
-import { Wedge } from "@/components/icons";
+import { Slice } from "@/components/icons";
 import { DownloadButton, GitHubButton } from "@/components/links";
 import { DESCRIPTION, share, TITLE } from "@/components/share";
 import { SLICE_CSS } from "@/components/slice-demo";
@@ -32,7 +32,7 @@ export default function Home() {
       <Nav />
 
       <header className="flex flex-col items-center gap-6 pt-14 pb-16 text-center md:pt-[104px]">
-        <h1 className="m-0 max-w-[1040px] text-5xl leading-[1.02] font-semibold tracking-[-0.035em] text-balance text-ink sm:text-6xl md:text-7xl lg:text-8xl">
+        <h1 className="m-0 max-w-[1040px] font-display text-5xl leading-[1.02] font-semibold tracking-[-0.035em] text-balance text-ink sm:text-6xl md:text-7xl lg:text-8xl">
           The design canvas for your coding agent.
         </h1>
         <p className="m-0 max-w-[620px] text-lg/[29px] text-pretty text-muted md:text-[20px]/[32px]">
@@ -45,8 +45,15 @@ export default function Home() {
         </div>
       </header>
 
-      <div className="dm-frame-host mt-4 mb-28">
-        <ProductDemo />
+      {/* The demo on a yuzu desktop, with room on every side. The big slice behind it holds still. */}
+      <div className="relative mt-4 mb-28 overflow-hidden rounded-[28px] bg-yuzu p-14 max-[720px]:rounded-2xl max-[720px]:p-4">
+        <Slice
+          size={620}
+          className="pointer-events-none absolute -top-[200px] -right-[180px] opacity-[0.12] [--slice:#111110] max-[720px]:hidden"
+        />
+        <div className="dm-frame-host relative">
+          <ProductDemo />
+        </div>
       </div>
 
       {/*
@@ -92,7 +99,7 @@ export default function Home() {
         <Tile
           className="md:col-span-6 lg:col-span-5"
           title="Bring your agent."
-          body="Claude Code, Codex, Cursor, Gemini, Grok, Conductor and any MCP client. The Mac app connects the first three itself. No account."
+          body="Claude Code, Codex, Cursor and any MCP client. No account."
         >
           <AgentsVisual />
         </Tile>
@@ -118,15 +125,17 @@ export default function Home() {
         <Tile
           className="md:col-span-12"
           title="Every design on your Macs."
-          body="Ponzu's home screen lists every .design on this Mac and your others on Tailscale, with live previews and search across every frame."
+          body="Ponzu's home screen lists every .design on this Mac and your others on Tailscale, grouped by project and branch, with live previews of whatever your agent is working on."
         >
           <HomeScreen />
         </Tile>
       </section>
 
       <section className="flex flex-col items-center gap-7 pt-10 pb-14 text-center">
-        <Wedge size={72} />
-        <h2 className="m-0 text-4xl leading-[1.1] font-semibold tracking-[-0.03em] text-ink md:text-5xl lg:text-[56px]">
+        <a href="/" className="lockup" aria-label="Ponzu">
+          <Slice size={72} className="[--slice:var(--yuzu)]" />
+        </a>
+        <h2 className="m-0 font-display text-4xl leading-[1.1] font-semibold tracking-[-0.03em] text-ink md:text-5xl lg:text-[56px]">
           Give your agent a canvas.
         </h2>
         <div className="flex flex-wrap justify-center gap-3 pt-3">
@@ -155,7 +164,7 @@ function Tile({
   return (
     <div className={`flex min-w-0 flex-col gap-7 rounded-3xl bg-tile p-6 sm:p-8 ${className}`}>
       <div className="flex max-w-[480px] flex-col gap-2">
-        <h2 className="m-0 text-[26px]/[32px] font-semibold tracking-[-0.022em] text-ink md:text-[28px]/[34px]">
+        <h2 className="m-0 font-display text-[26px]/[32px] font-semibold tracking-[-0.022em] text-ink md:text-[28px]/[34px]">
           {title}
         </h2>
         <p className="m-0 text-base/[26px] text-pretty text-muted">{body}</p>

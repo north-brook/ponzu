@@ -5,48 +5,49 @@
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 :root {
-  --background: #e9e9e6;
-  --foreground: #0e0e0e;
-  --muted-foreground: #6b6b6b;
-  --secondary: #f3f3f1;
-  --accent: rgba(0, 0, 0, 0.05);
+  --background: #e8e6e0;
+  --foreground: #111110;
+  --muted-foreground: #5e5b54;
+  --secondary: #f4f3ef;
+  --accent: rgba(17, 17, 16, 0.05);
   --card: #ffffff;
-  --border: #e3e3e0;
-  --canvas: #f3f3f1;
+  --border: #e8e6e0;
+  --canvas: #f4f3ef;
   --ring: #1f6bff;
   /* The home screen. */
-  --home: #fafaf9;
-  --faint: #9a9a97;
-  --hairline: rgba(0, 0, 0, 0.06);
-  --hairline-strong: rgba(0, 0, 0, 0.12);
+  --home: #faf9f6;
+  --faint: #a9a59b;
+  --hairline: rgba(17, 17, 16, 0.06);
+  --hairline-strong: rgba(17, 17, 16, 0.12);
   --highlight: #ffe89a;
-  --rind: #f4b012;
-  --flesh: #ffd23f;
+  /* Yuzu: the agent's color, and the brand's. */
+  --rind: #ffc81e;
+  --flesh: #ffc81e;
 }
 
 [data-theme="dark"] {
-  --background: #0a0a0a;
-  --foreground: #f2f2f2;
-  --muted-foreground: #8a8a8a;
-  --secondary: #1a1a1a;
+  --background: #0e0e0d;
+  --foreground: #f4f3ef;
+  --muted-foreground: #8e8a82;
+  --secondary: #1b1b1a;
   --accent: rgba(255, 255, 255, 0.06);
-  --card: #161616;
-  --border: #262626;
-  --canvas: #121212;
+  --card: #161615;
+  --border: #262523;
+  --canvas: #121211;
   --ring: #4c8dff;
-  --home: #151515;
-  --faint: #6b6b68;
+  --home: #151514;
+  --faint: #6b6862;
   --hairline: rgba(255, 255, 255, 0.11);
   --hairline-strong: rgba(255, 255, 255, 0.2);
-  --highlight: rgba(255, 196, 0, 0.32);
-  --rind: #ffa800;
-  --flesh: #ffc400;
+  --highlight: rgba(255, 200, 30, 0.32);
+  --rind: #ffc81e;
+  --flesh: #ffc81e;
   color-scheme: dark;
 }
 
 @theme inline {
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-muted-foreground: var(--muted-foreground);
@@ -87,7 +88,7 @@
   }
 }
 
-/* The home screen's search field: a hairline at rest, the brand's rind when focused. */
+/* The home screen's search field: a hairline at rest, yuzu when focused. */
 .search {
   box-shadow:
     0 0 0 1px var(--hairline-strong),

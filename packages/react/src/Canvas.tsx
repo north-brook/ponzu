@@ -933,9 +933,10 @@ function WorkingStatus({ who, zoom }: { who: Worker[]; zoom: number }) {
 }
 
 /**
- * A stroke in the brand's rind tracing a working artboard's outline, over a
- * faint full outline. Drawn in the screen-space overlay so it's 1.5px at any
- * zoom, and never part of the design: screenshots and exports don't see it.
+ * Yuzu tracing a working artboard's outline: six dashes, one per segment of
+ * the slice, marching over a faint full outline. Drawn in the screen-space
+ * overlay so it's 3px at any zoom, and never part of the design: screenshots
+ * and exports don't see it.
  */
 function Trace({ x, y, w, h }: { x: number; y: number; w: number; h: number }) {
   return (
@@ -949,7 +950,7 @@ function Trace({ x, y, w, h }: { x: number; y: number; w: number; h: number }) {
         height={h}
         fill="none"
         stroke="currentColor"
-        strokeOpacity={0.3}
+        strokeOpacity={0.6}
         strokeWidth={1}
       />
       <rect
@@ -959,7 +960,7 @@ function Trace({ x, y, w, h }: { x: number; y: number; w: number; h: number }) {
         pathLength={100}
         fill="none"
         stroke="currentColor"
-        strokeWidth={1.5}
+        strokeWidth={3}
         strokeLinecap="round"
       />
     </svg>

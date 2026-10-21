@@ -12,20 +12,21 @@
 @custom-variant dark (&:where(.pz-dark, .pz-dark *));
 
 .pz-root {
-  --pz-canvas: #f3f3f1;
-  --pz-ink: #0e0e0e;
-  --pz-muted: #6b6b6b;
-  --pz-faint: #a3a3a0;
-  --pz-rule: #e3e3e0;
-  --pz-chip: #e6e6e3;
+  --pz-canvas: #f4f3ef;
+  --pz-ink: #111110;
+  --pz-muted: #5e5b54;
+  --pz-faint: #a9a59b;
+  --pz-rule: #e8e6e0;
+  --pz-chip: #e8e6e0;
   --pz-surface: #ffffff;
-  --pz-hover: rgba(0, 0, 0, 0.05);
+  --pz-hover: rgba(17, 17, 16, 0.05);
   --pz-select: #1f6bff;
-  --pz-comment: #f4b012;
-  /* The brand's rind: an agent's trace around the artboard it's working on. */
-  --pz-rind: #f4b012;
-  --pz-comment-ink: #3a2a00;
-  --pz-comment-soft: #fff6da;
+  /* Your pins are ink; yellow is kept for the agent. */
+  --pz-comment: #111110;
+  /* Yuzu: an agent's trace around the artboard it's working on. */
+  --pz-rind: #ffc81e;
+  --pz-comment-ink: #ffffff;
+  --pz-comment-soft: #fff4d1;
   --pz-danger: #d93a2b;
   --pz-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 28px rgba(0, 0, 0, 0.1);
   --pz-board-shadow: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 2px 10px rgba(0, 0, 0, 0.05);
@@ -53,19 +54,19 @@
 }
 
 .pz-root.pz-dark {
-  --pz-canvas: #121212;
-  --pz-ink: #f2f2f2;
-  --pz-muted: #a0a0a0;
-  --pz-faint: #6a6a6a;
-  --pz-rule: #262626;
-  --pz-chip: #1f1f1f;
-  --pz-surface: #1a1a1a;
+  --pz-canvas: #121211;
+  --pz-ink: #f4f3ef;
+  --pz-muted: #a9a59b;
+  --pz-faint: #6b6862;
+  --pz-rule: #262523;
+  --pz-chip: #1f1f1e;
+  --pz-surface: #1b1b1a;
   --pz-hover: rgba(255, 255, 255, 0.06);
   --pz-select: #4c8dff;
-  --pz-comment: #ffc21a;
-  --pz-rind: #ffa800;
-  --pz-comment-ink: #2a1f00;
-  --pz-comment-soft: #2a2416;
+  --pz-comment: #f4f3ef;
+  --pz-rind: #ffc81e;
+  --pz-comment-ink: #111110;
+  --pz-comment-soft: #2e2a1c;
   --pz-danger: #ff6b5e;
   --pz-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.5);
   --pz-board-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06);
@@ -144,8 +145,8 @@
 /*
  * Working and loading. Not scoped to .pz-root: the studio's own chrome (file
  * tabs) uses them too. An agent at work is neutral ink: a band of light
- * sweeping its status text and tab names, and a stroke tracing the artboard.
- * Loading is the juicing wedge.
+ * sweeping its status text and tab names, and yuzu tracing the artboard.
+ * Loading is the slice, its segments fading in turn.
  */
 @keyframes pz-shimmer {
   from {
@@ -178,49 +179,35 @@
   }
 }
 
-/* On a path with pathLength="100": a tenth of the outline travels around it. */
+/*
+ * On a path with pathLength="100": six dashes, one for each segment of the
+ * slice, march around the outline, a dash-length per beat of the loader.
+ */
 .pz-trace {
-  stroke-dasharray: 10 90;
-  animation: pz-trace 3.2s linear infinite;
+  stroke-dasharray: 10.67 6;
+  animation: pz-trace 9.6s linear infinite;
 }
 
 @keyframes pz-juice {
-  0% {
-    opacity: 0.15;
-  }
-  18%,
-  42% {
+  0%,
+  100% {
     opacity: 1;
   }
-  64%,
-  100% {
-    opacity: 0.15;
+  70% {
+    opacity: 0.16;
   }
 }
 
+/* Each segment carries its place as --i, so the fade runs clockwise. */
 .pz-juice-seg {
-  animation: pz-juice 1.2s ease-in-out infinite;
-}
-
-.pz-juice-seg:nth-child(2) {
-  animation-delay: 0.2s;
-}
-
-.pz-juice-seg:nth-child(3) {
-  animation-delay: 0.4s;
+  animation: pz-juice 1.2s linear infinite both;
+  animation-delay: calc(var(--i) * 0.2s - 1.2s);
 }
 
 /* Waiting rather than working: half speed. */
 .pz-juice-slow .pz-juice-seg {
   animation-duration: 2.4s;
-}
-
-.pz-juice-slow .pz-juice-seg:nth-child(2) {
-  animation-delay: 0.4s;
-}
-
-.pz-juice-slow .pz-juice-seg:nth-child(3) {
-  animation-delay: 0.8s;
+  animation-delay: calc(var(--i) * 0.4s - 2.4s);
 }
 
 @keyframes pz-appear {
