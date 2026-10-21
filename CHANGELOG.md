@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.16.0](https://github.com/north-brook/ponzu/compare/v1.15.2...v1.16.0) (2026-10-21)
+
+
+### Features
+
+* dark previews on the dashboard in dark mode ([#54](https://github.com/north-brook/ponzu/issues/54)) ([04b6c37](https://github.com/north-brook/ponzu/commit/04b6c3766ea0baae52e34e51970c2c0c3f8ff681))
+* hold ⌘ or ⌥ to see the numbers that jump to tabs and pages ([#56](https://github.com/north-brook/ponzu/issues/56)) ([1fb575a](https://github.com/north-brook/ponzu/commit/1fb575a99d07a58efedd039a100a92364ec8bcfc))
+
 ## [1.15.2](https://github.com/north-brook/ponzu/compare/v1.15.1...v1.15.2) (2026-10-21)
 
 
