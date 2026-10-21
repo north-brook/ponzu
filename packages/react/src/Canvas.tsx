@@ -231,9 +231,10 @@ export function Canvas({
         e.preventDefault();
         const v = viewportSize();
         zoomAt(0.8, v.w / 2, v.h / 2);
-      } else if (e.shiftKey && e.key === "1") {
+      } else if (e.shiftKey && !mod && !e.altKey && digit === "1") {
+        // ⇧1 and ⇧2 by e.code too: ⇧ turns e.key into "!" and "@".
         fitPage();
-      } else if (e.shiftKey && e.key === "2" && selection[0] && doc) {
+      } else if (e.shiftKey && !mod && !e.altKey && digit === "2" && selection[0] && doc) {
         const hit = locate(doc, selection[0]);
         if (hit) {
           const { w } = size(hit.artboard);
@@ -794,7 +795,7 @@ export function Canvas({
               <Tip label="Zoom to fit" keys={["⇧", "1"]}>
                 <Button
                   variant="ghost"
-                  className="pz:h-7 pz:min-w-11 pz:rounded-lg pz:px-0 pz:text-foreground pz:tabular-nums"
+                  className="pz:h-7 pz:min-w-9 pz:rounded-lg pz:px-0.5 pz:text-foreground pz:tabular-nums"
                   aria-label="Zoom to fit"
                   onClick={fitPage}
                 >
@@ -845,6 +846,13 @@ function Bar({
         className,
       )}
       onPointerDown={(e) => e.stopPropagation()}
+      // A clicked control doesn't keep focus, as in a native toolbar: a focused one
+      // showed a stale ring once a shortcut changed the mode, and Space clicked it.
+      onMouseDown={(e) => {
+        if (!(e.target instanceof Element && e.target.closest("input, textarea"))) {
+          e.preventDefault();
+        }
+      }}
       onWheel={(e) => e.stopPropagation()}
     >
       {children}
