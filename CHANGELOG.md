@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.23.1](https://github.com/north-brook/ponzu/compare/v1.23.0...v1.23.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* keep the canvas sharp after zooming in ([#104](https://github.com/north-brook/ponzu/issues/104)) ([f1eeb27](https://github.com/north-brook/ponzu/commit/f1eeb2737b1d59a306e1819204e698f55f0b4f39))
+
 ## [1.23.0](https://github.com/north-brook/ponzu/compare/v1.22.0...v1.23.0) (2026-10-21)
 
 
