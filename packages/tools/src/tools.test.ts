@@ -296,3 +296,31 @@ test("get_basic_info lists what in the files Ponzu couldn't use", async () => {
   const clean = await setup();
   expect((await clean.call("get_basic_info", {})).text).not.toContain("Not used as written");
 });
+
+test("an artboard given display: flex with no direction says it stays a column", async () => {
+  const { call } = await setup();
+  const flexed = await call("update_styles", {
+    updates: [{ ids: ["ab_hero"], style: { display: "flex" } }],
+  });
+  expect(flexed.text).toContain("Note: ab_hero sets display: flex with no flex-direction");
+  const tree = await call("get_tree", { id: "ab_hero" });
+  expect(tree.text).toContain('<section> ab_hero "Hero" [flex column');
+
+  const row = await call("update_styles", {
+    updates: [{ ids: ["ab_hero"], style: { flexDirection: "row" } }],
+  });
+  expect(row.text).not.toContain("flex-direction");
+  expect((await call("get_tree", { id: "ab_hero" })).text).toContain("[flex row");
+
+  // A node inside an artboard is plain CSS: display: flex is a row there.
+  const card = await call("update_styles", {
+    updates: [{ ids: ["n_card"], style: { display: "flex" } }],
+  });
+  expect(card.text).not.toContain("Note:");
+  expect((await call("get_tree", { id: "ab_hero" })).text).toContain("n_card [flex row]");
+
+  const created = await call("create_artboard", { name: "App", style: { display: "flex" } });
+  expect(created.text).toMatch(/Note: ab_\w+ sets display: flex with no flex-direction/);
+  const plain = await call("create_artboard", { name: "Page" });
+  expect(plain.text).not.toContain("Note:");
+});

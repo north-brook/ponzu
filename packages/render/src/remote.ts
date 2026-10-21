@@ -199,7 +199,7 @@ export class RemoteRenderer implements Renderer {
 }
 
 function size(style: Record<string, string>): { width: number; height: number } {
-  const px = (v?: string) => (v && /px$/.test(v) ? Number.parseFloat(v) : null);
+  const px = (v?: string) => (v && /^\d+(\.\d+)?px$/.test(v) ? Number.parseFloat(v) : null);
   return { width: px(style.width) ?? 1440, height: px(style.height) ?? 900 };
 }
 

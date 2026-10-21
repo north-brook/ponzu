@@ -157,4 +157,41 @@ describe.skipIf(!chromium)("layout lint in Chromium", () => {
     expect(wrapped).not.toContain("n_h");
     expect(wrapped).not.toContain("n_l1");
   });
+
+  // An app laid out for plain CSS: a rail and two panes in a display: flex root.
+  const panes = (rows: number) => `
+<nav data-id="n_rail" style="width:64px;flex-shrink:0;background:#222"></nav>
+<aside data-id="n_list" style="width:360px;flex-shrink:0;display:flex;flex-direction:column;gap:8px;padding:16px">${'<div style="height:56px;font:14px sans-serif">Row</div>'.repeat(rows)}</aside>
+<main data-id="n_detail" style="flex:1;padding:24px;font:14px/1.5 sans-serif">${"Body copy. ".repeat(60)}</main>`;
+  const app = "width:1440px;height:900px";
+
+  test("a root that sets display: flex with no direction is flagged, even when nothing overflows", async () => {
+    const issues = await lint(`${app};display:flex`, panes(4));
+    expect(ids(issues)).toEqual(["ab_l flex-direction"]);
+    expect(issues[0]!.message).toContain("flex-direction: row");
+    // Like the write tools' note, it's about the root's style, not what's in it yet.
+    expect(ids(await lint(`${app};display:flex`, ""))).toEqual(["ab_l flex-direction"]);
+
+    // Saying which way clears it, and so does leaving display to the artboard.
+    for (const style of [
+      "display:flex;flex-direction:row",
+      "display:flex;flex-direction:column",
+      "display:flex;flex-flow:row wrap",
+      "",
+      "display:grid;grid-template-columns:64px 360px 1fr",
+    ])
+      expect(ids(await lint(`${app};${style}`, panes(4)))).toEqual([]);
+  });
+
+  test("when the stacked panes overflow, the fix offered includes the direction", async () => {
+    const issues = await lint(`${app};display:flex`, panes(12));
+    const overflow = issues.find((i) => i.id === "ab_l" && i.kind === "overflow");
+    expect(overflow?.message).toContain("set flex-direction: row");
+    expect(ids(await lint(`${app};display:flex;flex-direction:row`, panes(12)))).toEqual([]);
+    // Without the flex hint, the advice stays as it was.
+    const tall = await lint(`${pad};height:700px`, landing);
+    expect(tall.find((i) => i.id === "ab_l")?.message).toEndWith(
+      "set height: fit-content or make room",
+    );
+  });
 });

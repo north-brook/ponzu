@@ -109,7 +109,9 @@ export const orientTools = [
         if (!page.artboards.length)
           return { text: `Page ${page.id} "${page.name}" has no artboards.` };
         return {
-          text: page.artboards.map((ab) => outline(ab.root, Math.min(depth ?? 2, 3))).join("\n\n"),
+          text: page.artboards
+            .map((ab) => outline(ab.root, Math.min(depth ?? 2, 3), { artboard: true }))
+            .join("\n\n"),
         };
       }
       const hit = locate(doc, id);
@@ -117,7 +119,7 @@ export const orientTools = [
       const head = hit.parent
         ? `In ${hit.artboard.id} "${hit.artboard.name}"\n`
         : `${artboardSummary(hit.artboard)} · page "${hit.page.name}"\n`;
-      return { text: head + outline(hit.node, depth ?? 4) };
+      return { text: head + outline(hit.node, depth ?? 4, { artboard: !hit.parent }) };
     },
   }),
 
