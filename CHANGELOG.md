@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.23.3](https://github.com/north-brook/ponzu/compare/v1.23.2...v1.23.3) (2026-10-21)
+
+
+### Bug Fixes
+
+* switch pages without the canvas flashing at the old zoom ([#108](https://github.com/north-brook/ponzu/issues/108)) ([48a283b](https://github.com/north-brook/ponzu/commit/48a283b16e60152f1ad357597b5ebe242fa7a877))
+
 ## [1.23.2](https://github.com/north-brook/ponzu/compare/v1.23.1...v1.23.2) (2026-10-21)
 
 
