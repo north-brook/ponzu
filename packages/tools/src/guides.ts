@@ -1,3 +1,44 @@
+/** The files the format guide shows, one small design. Tests load them as written. */
+export const FORMAT_EXAMPLE = {
+  "design.json": `{
+  "ponzu": 1,
+  "name": "Checkout",
+  "pages": [{ "id": "pg_flow", "name": "Flow", "icon": "flow" }]
+}`,
+  "pages/flow/cart.html": `<section data-artboard data-id="ab_cart" data-name="Cart" data-x="0" data-y="0" style="width:390px;height:844px;background-color:var(--color-paper)">
+  <h1 data-id="n_title" data-name="Title" style="font:600 28px/1.1 var(--font-text)">Your cart</h1>
+</section>`,
+  "comments.json": `{
+  "threads": [
+    {
+      "id": "th_title",
+      "artboardId": "ab_cart",
+      "nodeId": "n_title",
+      "x": 24,
+      "y": 24,
+      "status": "open",
+      "createdAt": 1767225600000,
+      "updatedAt": 1767225600000,
+      "messages": [
+        { "id": "m_1", "author": { "kind": "user", "name": "Sam" }, "text": "Say how many items.", "createdAt": 1767225600000 }
+      ]
+    },
+    {
+      "id": "th_next",
+      "pageId": "pg_flow",
+      "x": 480,
+      "y": 120,
+      "status": "open",
+      "createdAt": 1767225600000,
+      "updatedAt": 1767225600000,
+      "messages": [
+        { "id": "m_2", "author": { "kind": "agent", "name": "Claude" }, "text": "Payment screen goes here.", "createdAt": 1767225600000 }
+      ]
+    }
+  ]
+}`,
+};
+
 /**
  * Guides served by get_guide. Written for agents: short, specific, and in
  * the order things go wrong. Each one stands alone.
@@ -27,7 +68,7 @@ HTML and CSS
 
 Results are lean: ids of what you created, and what was dropped. Use get_tree to see structure, get_node for one node's detail.
 
-Big generated content (a long table, a diagram from a script) can go straight into the artboard's file, pages/<page>/<artboard>.html, instead of through write_html. Ponzu picks the edit up live. Elements without a data-id get one: ids from get_tree keep pointing at the same element across later edits to the file, and Ponzu writes them in when it needs to.
+Big generated content (a long table, a diagram from a script) can go straight into the artboard's file, pages/<page>/<artboard>.html, instead of through write_html. Ponzu picks the edit up live. Elements without a data-id get one: ids from get_tree keep pointing at the same element across later edits to the file, and Ponzu writes them in when it needs to. get_guide('format') has the files and their fields.
 
 Don't
 - Don't rebuild what exists. duplicate it and edit the copy.
@@ -99,6 +140,46 @@ The .design folder is the spec. Read it directly from disk; don't screenshot and
 - Open comment threads may hold requirements ("this should collapse on mobile"). Read comments.json.
 - notes/ has the brief and decisions. Read them before you start.
 - When something can't be built as drawn, leave a comment on the node explaining what you did instead.`,
+
+  format: `# The .design format
+
+Write the files yourself only to bring in or generate a lot at once: a design ported from another tool, a diagram from a script, dozens of artboards. Ponzu picks them up live. Then open the design with get_basic_info (it lists anything Ponzu couldn't use), screenshot each artboard and fix what lint reports. For everything else use the tools: they lint as you go, the person can undo them, and the canvas shows who's working.
+
+name.design/
+  design.json                   name and pages
+  tokens.css                    :root { --color-ink: #111; }
+  comments.json                 comment threads (optional)
+  notes/<name>.md               the brief and decisions
+  assets/                       images and fonts, used as assets/logo.png
+  pages/<page>/<artboard>.html  one artboard per file
+
+design.json
+\`\`\`json
+${FORMAT_EXAMPLE["design.json"]}
+\`\`\`
+- Give every page an id. Without one it gets a new id each time the design loads, and comments on its canvas lose their page.
+- A page's folder is its name, lowercase with dashes: "Home screens" lives in pages/home-screens/. A folder no page names becomes a page of its own.
+- icon is optional, on the file and on each page: page, home, phone, desktop, flow, palette and the rest of create_file's list.
+
+An artboard, pages/flow/cart.html
+\`\`\`html
+${FORMAT_EXAMPLE["pages/flow/cart.html"]}
+\`\`\`
+- One <section data-artboard> per file holds the whole artboard.
+- Size goes in style, as width and height in px. data-x and data-y only place the artboard on its page. Without a width or height it's 1440×900; height: fit-content grows with the content.
+- Give the section a data-id (ab_…) so comments and tools can point at it. Elements inside don't need one: they get stable ids from their position.
+- data-name is the name people see, for the artboard and for layers.
+- Same HTML and CSS rules as write_html (get_guide('basics')): inline styles, var(--token), no scripts.
+
+comments.json
+\`\`\`json
+${FORMAT_EXAMPLE["comments.json"]}
+\`\`\`
+- Every thread needs id, x, y, status ("open" or "resolved"), createdAt, updatedAt and at least one message. Times are milliseconds since 1970.
+- On an artboard: artboardId, and nodeId to pin it to a node inside. x and y are measured from the artboard's top-left corner.
+- On a page's open canvas: pageId instead. x and y are its place on the page, the same space as data-x and data-y.
+- Each message needs id, author ({ "kind": "user" or "agent", "name" }), text and createdAt. Bringing comments over from another tool, keep who wrote them.
+- A thread missing any of this isn't shown. get_basic_info says which thread and what it needs; the file keeps it until you fix it.`,
 
   motion: `# Motion and states
 

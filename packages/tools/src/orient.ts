@@ -23,7 +23,7 @@ export const orientTools = [
     group: "orient",
     readOnly: true,
     description:
-      "Start here. Summarizes the open .design: pages, artboards with sizes and positions, token names, open comments, what the person has selected, and who else is working. Call get_guide('basics') once per session for the house rules.",
+      "Start here. Summarizes the open .design: pages, artboards with sizes and positions, token names, open comments, what the person has selected, who else is working, and anything in the files Ponzu couldn't use. Call get_guide('basics') once per session for the house rules.",
     input: { file: fileArg },
     async handler({ file }, { ws }) {
       const { key, design } = await ws.resolve(file);
@@ -40,6 +40,15 @@ export const orientTools = [
       } else {
         lines.push(
           "Tokens: none yet. Define colors, type and spacing with set_tokens before building.",
+        );
+      }
+      const problems = design.problems;
+      if (problems.length) {
+        const limit = 10;
+        const shown = problems.slice(0, limit).map((p) => `${p.path}: ${p.what}`);
+        const more = problems.length - shown.length;
+        lines.push(
+          `Not used as written (fix the files; get_guide('format') has the format):\n  ${shown.join("\n  ")}${more ? `\n  … ${more} more` : ""}`,
         );
       }
       const sel = ws.selection(key);
