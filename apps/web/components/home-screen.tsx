@@ -1,24 +1,23 @@
 "use client";
 
 import { Icon } from "@ponzu/react";
-import Image from "next/image";
 import { AgentMark } from "./agent-marks";
 
 /**
  * The "Every design on your Macs" tile: the app's home screen (apps/studio's dashboard), with the
- * repo's example designs. Their previews are the canvas renders Ponzu writes to `.ponzu/preview.png`,
- * the same images Finder shows as the files' icons.
+ * repo's example designs. Their previews are the canvas renders Ponzu writes to `.ponzu/preview.png`
+ * and `preview-dark.png`; as in the app, the one shown follows the color scheme.
  */
 const FILES = [
-  { name: "Weft", src: "/home/weft.jpg", machine: "This Mac", laptop: false, ago: "Just now" },
+  { name: "Weft", src: "/home/weft", machine: "This Mac", laptop: false, ago: "Just now" },
   {
     name: "Kettle",
-    src: "/home/kettle.jpg",
+    src: "/home/kettle",
     machine: "MacBook Air",
     laptop: true,
     ago: "2 hours ago",
   },
-  { name: "Halon", src: "/home/halon.jpg", machine: "This Mac", laptop: false, ago: "Yesterday" },
+  { name: "Halon", src: "/home/halon", machine: "This Mac", laptop: false, ago: "Yesterday" },
 ];
 
 export function HomeScreen() {
@@ -40,20 +39,24 @@ export function HomeScreen() {
         {FILES.map((file, i) => (
           <li key={file.name} className="flex min-w-0 flex-col gap-2.5">
             <div
-              className={`relative aspect-[16/10] overflow-hidden rounded-xl bg-[#f3f3f1] ${
+              className={`relative aspect-[16/10] overflow-hidden rounded-xl bg-[#f3f3f1] dark:bg-[#121212] ${
                 i === 0
                   ? "shadow-[0_0_0_1.5px_var(--rind),0_6px_20px_rgba(244,176,18,0.22)]"
                   : "shadow-[0_0_0_1px_var(--well-rule)]"
               }`}
             >
-              <Image
-                alt=""
-                className="size-full object-contain"
-                draggable={false}
-                height={500}
-                src={file.src}
-                width={800}
-              />
+              <picture>
+                <source srcSet={`${file.src}-dark.jpg`} media="(prefers-color-scheme: dark)" />
+                <img
+                  alt=""
+                  className="size-full object-contain"
+                  draggable={false}
+                  height={500}
+                  loading="lazy"
+                  src={`${file.src}.jpg`}
+                  width={800}
+                />
+              </picture>
               {i === 0 && (
                 <span className="absolute top-2.5 left-2.5 flex h-6 items-center gap-1.5 rounded-full bg-white/85 pr-2.5 pl-[7px] text-xs text-[#0e0e0e] shadow-[0_0_0_0.5px_rgba(0,0,0,0.08),0_2px_6px_rgba(0,0,0,0.06)] backdrop-blur-md">
                   <AgentMark agent="claude" size={13} />
