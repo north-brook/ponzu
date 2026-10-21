@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.21.4](https://github.com/north-brook/ponzu/compare/v1.21.3...v1.21.4) (2026-10-21)
+
+
+### Bug Fixes
+
+* lint artboards that overlap on the canvas ([#96](https://github.com/north-brook/ponzu/issues/96)) ([0575ef4](https://github.com/north-brook/ponzu/commit/0575ef4fc244edbd37f4516938eedb9081ad5a3d))
+
 ## [1.21.3](https://github.com/north-brook/ponzu/compare/v1.21.2...v1.21.3) (2026-10-21)
 
 

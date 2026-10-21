@@ -89,7 +89,8 @@ Don't
 - Prefer gap over margins. Prefer padding on containers over spacer divs.
 - absolute positioning is fine for decoration (badges, glows, overlaps). Don't cover the whole artboard with one absolute element.
 - Grid: grid-template-columns: repeat(12, 1fr) for page layouts; repeat(auto-fill, minmax(240px, 1fr)) for card grids.
-- When lint says the artboard overflows, either make the artboard height fit-content or cut content. Don't shrink type to cram.`,
+- When lint says the artboard overflows, either make the artboard height fit-content or cut content. Don't shrink type to cram.
+- A fit-content artboard grows down the canvas as you add to it, over anything placed below it. When lint says two artboards overlap, move the lower one to the y it gives.`,
 
   typography: `# Typography
 
