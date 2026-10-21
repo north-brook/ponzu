@@ -262,10 +262,20 @@ test("every worktree of a repository a design is known in is walked", async () =
   await writeFile(join(main, ".git/worktrees/feature/commondir"), "../..\n");
   await writeFile(join(main, ".git/worktrees/feature/HEAD"), "ref: refs/heads/feature\n");
   await design(join(tree, ".context/only-here.design"), "Only here", { Home: ["A"] });
+  // And one `git worktree add --relative-paths` made, which names its .git file relatively.
+  const near = join(dir, "elsewhere/near");
+  await mkdir(join(main, ".git/worktrees/near"), { recursive: true });
+  await mkdir(near, { recursive: true });
+  await writeFile(join(near, ".git"), "gitdir: ../../wt-main/.git/worktrees/near\n");
+  await writeFile(join(main, ".git/worktrees/near/gitdir"), "../../../../elsewhere/near/.git\n");
+  await writeFile(join(main, ".git/worktrees/near/commondir"), "../..\n");
+  await writeFile(join(main, ".git/worktrees/near/HEAD"), "ref: refs/heads/near\n");
+  await design(join(near, ".context/relative.design"), "Relative", { Home: ["A"] });
   const catalog = new LocalCatalog({ roots: [join(main, "design")], spotlight: "roots" });
   expect((await catalog.files(new Map())).map((f) => f.name).sort()).toEqual([
     "Known",
     "Only here",
+    "Relative",
   ]);
 });
 

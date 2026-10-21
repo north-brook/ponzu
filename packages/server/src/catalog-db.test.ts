@@ -100,6 +100,18 @@ test("an unreadable database is moved aside and started over", async () => {
   db.close();
 });
 
+test("two processes recovering the same unreadable database don't crash or move each other's", async () => {
+  const file = join(dir, "both-corrupt.db");
+  await writeFile(file, "not a database either, just bytes that look nothing like one at all");
+  const a = new CatalogDb(file);
+  const b = new CatalogDb(file);
+  a.seen([["/a.design", "walk"]]);
+  // The first moved it and started over; the second found it started and opened it.
+  expect(b.all().map((r) => r.path)).toEqual(["/a.design"]);
+  a.close();
+  b.close();
+});
+
 test("two processes starting at once both end up on the current schema", () => {
   const file = join(dir, "together.db");
   const a = new CatalogDb(file);

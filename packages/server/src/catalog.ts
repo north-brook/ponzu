@@ -508,9 +508,11 @@ async function checkoutsOf(root: string): Promise<string[]> {
     trees = await readdir(join(common, "worktrees"));
   } catch {}
   for (const t of trees) {
-    // Each names its checkout's .git file; a pruned worktree's is gone.
-    const at = await readFile(join(common, "worktrees", t, "gitdir"), "utf8").catch(() => "");
-    if (at.trim()) out.push(dirname(at.trim()));
+    // Each names its checkout's .git file (relative to itself with `--relative-paths`);
+    // a pruned worktree's is gone.
+    const meta = join(common, "worktrees", t);
+    const at = (await readFile(join(meta, "gitdir"), "utf8").catch(() => "")).trim();
+    if (at) out.push(dirname(resolve(meta, at)));
   }
   return [...new Set(out)];
 }

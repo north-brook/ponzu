@@ -272,13 +272,22 @@ function open(path: string | undefined): { db: Database; readOnly: boolean } {
     return setUp(path);
   } catch (err) {
     if (unusable(err)) {
-      // Rediscovered from scratch; only what the person did is lost.
-      const aside = `${path}.corrupt-${Date.now()}`;
-      for (const ext of ["", "-wal", "-shm"])
-        if (existsSync(path + ext)) renameSync(path + ext, aside + ext);
-      try {
-        return setUp(path);
-      } catch {}
+      // Rediscovered from scratch; only what the person did is lost. Each move on its own:
+      // another process recovering the same file may have moved it already, or the folder
+      // may not let us. Only the process that moved the database itself starts the new
+      // one; the others run from memory rather than move a database just started.
+      const aside = `${path}.corrupt-${Date.now()}-${process.pid}`;
+      let moved = false;
+      for (const ext of ["", "-wal", "-shm"]) {
+        try {
+          renameSync(path + ext, aside + ext);
+          if (ext === "") moved = true;
+        } catch {}
+      }
+      if (moved)
+        try {
+          return setUp(path);
+        } catch {}
     }
     return setUp(":memory:");
   }

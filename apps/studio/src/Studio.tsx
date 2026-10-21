@@ -157,7 +157,12 @@ export function Studio() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ key: file.key, action }),
     });
-    if (!res.ok) throw new Error(await res.text());
+    if (!res.ok)
+      throw new Error(
+        res.status === 502
+          ? "That Mac isn’t answering. Try again once it’s back."
+          : await res.text(),
+      );
     setCatalog(
       (c) =>
         c && {

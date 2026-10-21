@@ -107,9 +107,18 @@ export function Dashboard({
   const shown =
     scope !== null ? inView.filter((f) => (projectOf(f)?.id ?? NO_PROJECT) === scope) : inView;
 
+  // A shelf change that fails (another Mac offline, a newer Ponzu owning the catalog)
+  // says why in the toast, and the card stays as it was.
+  const failed = (err: unknown) =>
+    setToast({ text: err instanceof Error && err.message ? err.message : "That didn’t work." });
   const shelve = onShelve
     ? async (file: CatalogFile, action: ShelfAction) => {
-        await onShelve(file, action);
+        try {
+          await onShelve(file, action);
+        } catch (err) {
+          failed(err);
+          return;
+        }
         const undo: Record<ShelfAction, ShelfAction> = {
           archive: "restore",
           restore: "archive",
@@ -120,7 +129,7 @@ export function Dashboard({
           text: TOAST[action](file.name),
           undo: () => {
             setToast(null);
-            void onShelve(file, undo[action]);
+            onShelve(file, undo[action]).catch(failed);
           },
         });
       }
