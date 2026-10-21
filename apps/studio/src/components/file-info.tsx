@@ -95,9 +95,10 @@ export function FileDetails({
     <div className="flex flex-col gap-2.5">
       <div className="flex min-w-0 items-center justify-between gap-2">
         <b className="truncate font-semibold text-[14px]">{file?.name ?? name}</b>
+        {/* The name keeps its room; a long branch gives way first. */}
         {branch && (
           <span
-            className="flex h-5 min-w-0 shrink items-center gap-1 rounded-md bg-secondary px-1.5"
+            className="flex h-5 min-w-16 shrink-[999] items-center gap-1 rounded-md bg-secondary px-1.5"
             title={file?.git?.branch ? branch : `Detached at ${branch}`}
           >
             <Icon name="branch" size={13} strokeWidth={1.7} className="shrink-0 text-faint" />
