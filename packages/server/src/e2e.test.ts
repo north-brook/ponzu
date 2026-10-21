@@ -245,6 +245,36 @@ test("an agent watches its animation through screenshot and record", async () =>
   }
 }, 30_000);
 
+test("screenshots load the design's assets/ images", async () => {
+  const { ChromiumRenderer, findChromium } = await import("@ponzu/render/chromium");
+  const chromium = findChromium();
+  if (!chromium) return;
+  ws.renderer = new ChromiumRenderer({ executablePath: chromium });
+  try {
+    // A 1×1 PNG.
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      "base64",
+    );
+    await ws.designs()[0]!.design.storage.writeAsset("assets/dot.png", new Uint8Array(png));
+    const ab = await client.callTool({
+      name: "create_artboard",
+      arguments: {
+        name: "Pictures",
+        width: 200,
+        height: 200,
+        html: `<img data-name="Dot" src="assets/dot.png" style="width:40px;height:40px">`,
+      },
+    });
+    const abId = /artboard (ab_\w+)/.exec(text(ab))![1]!;
+    const shot = text(await client.callTool({ name: "screenshot", arguments: { id: abId } }));
+    expect(shot).not.toContain("failed to load");
+  } finally {
+    await ws.renderer.close();
+    ws.renderer = undefined;
+  }
+}, 30_000);
+
 test("get_node gives rendered boxes, and the height an artboard's content needs", async () => {
   const ab = await client.callTool({
     name: "create_artboard",

@@ -82,6 +82,7 @@ export interface RecordRequest {
   /** Step through this node's scroll range instead of time, for scroll-driven animation. */
   scroll?: string;
   lint?: boolean;
+  assetBase?: string;
 }
 
 export interface RecordResult {

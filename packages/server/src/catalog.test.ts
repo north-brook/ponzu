@@ -86,6 +86,15 @@ test("the server's catalog is newest first, and serves nothing it doesn't list",
     expect(catalog.files.every((f) => f.machine === "local" && f.base === "")).toBe(true);
     const outside = encodeURIComponent(join(tmpdir(), "elsewhere.design"));
     expect((await fetch(`${base}/api/preview?file=${outside}`)).status).toBe(404);
+    expect((await fetch(`${base}/files/${outside}/assets/logo.png`)).status).toBe(404);
+    // A listed design's assets load without opening it, for its preview and thumbnails.
+    const brand = join(dir, "nested/deep/brand.design");
+    await mkdir(join(brand, "assets"), { recursive: true });
+    await writeFile(join(brand, "assets/logo.png"), "png");
+    const logo = await fetch(`${base}/files/${encodeURIComponent(brand)}/assets/logo.png`);
+    expect(await logo.text()).toBe("png");
+    expect(ws.get(brand)).toBeUndefined();
+    expect(ws.assetBase(brand)).toBe(`${base}/files/${encodeURIComponent(brand)}`);
     expect((await fetch(`${base}/peers/spare/api/catalog`)).status).toBe(404);
   } finally {
     server.stop(true);

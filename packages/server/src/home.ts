@@ -41,8 +41,6 @@ export interface HomeOptions {
   tailnet: boolean;
   /** The agents Ponzu can set up here. */
   agents?: () => Promise<CatalogAgent[]>;
-  /** This server's own URL, for rendering thumbnails with a design's assets. */
-  self: () => string;
   /** The port the owner's other Macs serve their designs on. */
   peerPort: number;
   /** Designs the person named when starting the server, listed even if they're examples. */
@@ -221,7 +219,7 @@ export class Home {
       // One draw for both themes, whichever is asked for first.
       await this.once(`preview:${key}`, async () => {
         const doc = await this.doc(key);
-        return Boolean(doc && (await writePreview(key, doc, renderer)));
+        return Boolean(doc && (await writePreview(key, doc, renderer, this.ws.assetBase(key))));
       });
     // A draw that failed leaves the last preview, which beats none.
     if (existsSync(file)) return new Uint8Array(await readFile(file));
@@ -242,12 +240,7 @@ export class Home {
       const doc = await this.doc(key);
       const ab = doc && findArtboard(doc, artboardId)?.artboard;
       if (!doc || !ab) return null;
-      const bytes = await drawThumb(
-        renderer,
-        ab,
-        doc.tokens,
-        `${this.opts.self()}/files/${encodeURIComponent(key)}`,
-      );
+      const bytes = await drawThumb(renderer, ab, doc.tokens, this.ws.assetBase(key));
       this.thumbs.set(id, bytes);
       if (this.thumbs.size > THUMBS) this.thumbs.delete(this.thumbs.keys().next().value!);
       return bytes;
@@ -293,7 +286,7 @@ async function drawThumb(
   renderer: Renderer,
   ab: Artboard,
   tokens: string,
-  assetBase: string,
+  assetBase: string | undefined,
 ): Promise<Uint8Array> {
   const px = (v?: string) => (v && /px$/.test(v) ? Number.parseFloat(v) : 0);
   const w = px(ab.root.style.width) || 1440;

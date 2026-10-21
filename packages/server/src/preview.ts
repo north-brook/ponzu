@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, readdir, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type Doc, type PreviewTheme, previewArtboard } from "@ponzu/core";
 import type { Renderer } from "@ponzu/render";
@@ -15,6 +15,13 @@ export const PREVIEW_FILE = `${PREVIEW_DIR}/preview.png`;
 /** The same preview on the dark canvas, for the studio in dark mode. */
 export const PREVIEW_DARK_FILE = `${PREVIEW_DIR}/preview-dark.png`;
 
+/**
+ * How previews are drawn. A preview from an older version is redrawn and gets
+ * a new URL: version 1 drew without the design's assets/ images.
+ */
+export const PREVIEW_VERSION = 2;
+const VERSION_FILE = `${PREVIEW_DIR}/version`;
+
 export const previewFile = (theme: PreviewTheme) =>
   theme === "dark" ? PREVIEW_DARK_FILE : PREVIEW_FILE;
 
@@ -24,9 +31,14 @@ const SCALE = 2;
 /**
  * Renders the preview, light and dark, into the design folder. With nothing to
  * draw, removes any old preview so Finder falls back to the document icon.
- * False then.
+ * False then. `assetBase` is where the renderer loads the design's assets/ from.
  */
-export async function writePreview(root: string, doc: Doc, renderer: Renderer): Promise<boolean> {
+export async function writePreview(
+  root: string,
+  doc: Doc,
+  renderer: Renderer,
+  assetBase?: string,
+): Promise<boolean> {
   const files = [PREVIEW_DARK_FILE, PREVIEW_FILE].map((f) => join(root, f));
   if (!previewArtboard(doc)) {
     if (!files.some((f) => existsSync(f))) return false;
@@ -44,6 +56,7 @@ export async function writePreview(root: string, doc: Doc, renderer: Renderer): 
       tokens: doc.tokens,
       scale: SCALE,
       colorScheme: theme,
+      assetBase,
     });
     // Write then rename, so Finder never reads half an image.
     const file = join(root, previewFile(theme));
@@ -51,8 +64,15 @@ export async function writePreview(root: string, doc: Doc, renderer: Renderer): 
     await writeFile(tmp, out.bytes);
     await rename(tmp, file);
   }
+  await writeFile(join(root, VERSION_FILE), `${PREVIEW_VERSION}\n`);
   await touch(root);
   return true;
+}
+
+/** Whether the preview on disk was drawn the way this version draws them. */
+export async function previewCurrent(root: string): Promise<boolean> {
+  const v = await readFile(join(root, VERSION_FILE), "utf8").catch(() => "");
+  return Number.parseInt(v, 10) === PREVIEW_VERSION;
 }
 
 /**
@@ -64,8 +84,12 @@ async function touch(root: string): Promise<void> {
   await utimes(root, now, now);
 }
 
-/** Whether either preview is missing or older than anything else in the design. */
+/**
+ * Whether either preview is missing, older than anything else in the design,
+ * or drawn by an older version.
+ */
 export async function previewStale(root: string): Promise<boolean> {
+  if (!(await previewCurrent(root))) return true;
   let made: number;
   try {
     const dates = await Promise.all(
