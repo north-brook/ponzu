@@ -13,7 +13,8 @@ export interface LintIssue {
     | "low-contrast"
     | "missing-keyframes"
     | "hidden-after-animation"
-    | "no-state-style";
+    | "no-state-style"
+    | "missing-font";
   message: string;
 }
 
