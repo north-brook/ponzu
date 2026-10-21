@@ -304,7 +304,7 @@ export const LINT_SCRIPT = `(() => {
   // The root's own display: flex keeps the artboard's column, where HTML
   // written for plain CSS means a row: side-by-side panes stack. Inline style
   // only, since that's what the HTML said; flex-flow sets the longhand too.
-  const unset = /flex/.test(root.style.display) && !root.style.flexDirection && root.children.length > 1;
+  const unset = /flex/.test(root.style.display) && !root.style.flexDirection;
   if (unset) issues.push({ id: root.getAttribute('data-id'), kind: 'flex-direction', message: ${JSON.stringify(ROOT_DIRECTION_NOTE)} });
   if (!scrolls(root)) {
     const fit = ${ARTBOARD_FIT}(root);

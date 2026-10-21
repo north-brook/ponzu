@@ -169,6 +169,8 @@ describe.skipIf(!chromium)("layout lint in Chromium", () => {
     const issues = await lint(`${app};display:flex`, panes(4));
     expect(ids(issues)).toEqual(["ab_l flex-direction"]);
     expect(issues[0]!.message).toContain("flex-direction: row");
+    // Like the write tools' note, it's about the root's style, not what's in it yet.
+    expect(ids(await lint(`${app};display:flex`, ""))).toEqual(["ab_l flex-direction"]);
 
     // Saying which way clears it, and so does leaving display to the artboard.
     for (const style of [
