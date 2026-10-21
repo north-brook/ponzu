@@ -242,4 +242,16 @@ test("moving several nodes to one spot keeps the order they were given", async (
     ],
   });
   expect(mixed.names("n_frame")).toEqual(["n_old", "Content", "Status bar", "Tab bar"]);
+
+  // A member sent on to another spot leaves the run, even if it lands nearby.
+  const away = await phone();
+  await away.call("move_nodes", {
+    moves: [
+      { id: "n_tabs", parent: "n_frame" },
+      { id: "n_status", after: "n_old" },
+      { id: "n_status", after: "n_tabs" },
+      { id: "n_content", after: "n_old" },
+    ],
+  });
+  expect(away.names("n_frame")).toEqual(["n_old", "Content", "Tab bar", "Status bar"]);
 });

@@ -381,20 +381,27 @@ export const writeTools = [
       // Nodes moved so far to each `after` sibling or parent index. Moves that
       // share a spot line up after one another, in the order given, rather than
       // each landing in front of the last.
-      const runs = new Map<string, Set<string>>();
-      const moved = new Set<string>();
+      const runs = new Map<string, Run>();
+      // When each node was last moved in this batch.
+      const movedAt = new Map<string, number>();
       // Apply one by one so later moves see earlier ones.
-      for (const move of args.moves) {
+      for (const [step, move] of args.moves.entries()) {
         const spot = move.after
           ? `after ${move.after}`
           : !move.before && move.parent && move.index !== undefined
             ? `index ${move.parent} ${move.index}`
             : null;
         const run = spot ? runs.get(spot) : undefined;
-        const tail = run ? runTail(doc, move, run, moved) : null;
+        const tail = run ? runTail(doc, move, run, movedAt) : null;
         const m = tail ? { id: move.id, after: tail } : move;
-        if (spot) runs.set(spot, (run ?? new Set()).add(move.id));
-        moved.add(move.id);
+        // A node belongs to the run of the spot it was last sent to.
+        for (const r of runs.values()) r.members.delete(move.id);
+        if (spot) {
+          const r = run ?? { start: step, members: new Set<string>() };
+          r.members.add(move.id);
+          runs.set(spot, r);
+        }
+        movedAt.set(move.id, step);
         const sibling = m.before ?? m.after;
         let parent: string;
         let index: number;
@@ -552,18 +559,24 @@ function styleWarnings(keys: string[]): string {
 
 export { type PElement, parseStyle };
 
+/** Nodes a move_nodes batch sent to one spot, and the step its first move was. */
+interface Run {
+  start: number;
+  members: Set<string>;
+}
+
 /**
  * The last node of an earlier run still sitting at a move's spot (right after
  * its `after` sibling, or from its parent index on), read from the doc as it
- * is now. Nodes this batch moved in between don't break the run; a node it
- * never touched does. Null when no run member is there, so the move goes to
+ * is now. Nodes moved in after the run began don't break it; anything that
+ * was there before does. Null when no member is there, so the move goes to
  * the spot itself.
  */
 function runTail(
   doc: Doc,
   move: { id: string; after?: string; parent?: string; index?: number },
-  run: Set<string>,
-  moved: Set<string>,
+  run: Run,
+  movedAt: Map<string, number>,
 ): string | null {
   let siblings: PElement[];
   let start: number;
@@ -581,8 +594,8 @@ function runTail(
   let tail: string | null = null;
   for (const c of siblings.slice(start)) {
     if (c.id === move.id) continue;
-    if (run.has(c.id)) tail = c.id;
-    else if (!moved.has(c.id)) break;
+    if (run.members.has(c.id)) tail = c.id;
+    else if ((movedAt.get(c.id) ?? -1) <= run.start) break;
   }
   return tail;
 }
