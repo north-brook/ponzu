@@ -349,7 +349,7 @@ function FileTab({
             <Juice size={14} dark={theme === "dark"} dry={offline} />
           </span>
         ) : (
-          <Icon name="blank" size={14} />
+          <Icon name={state.doc?.icon ?? "blank"} size={14} />
         )}
         <span className={cn("truncate", working && "pz-shimmer")}>{name}</span>
       </span>

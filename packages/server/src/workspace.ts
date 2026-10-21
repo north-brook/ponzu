@@ -347,6 +347,8 @@ export function summarize(doc: Doc, op: Op): string {
       return "changed tokens";
     case "file.rename":
       return `renamed the file to "${op.name}"`;
+    case "file.icon":
+      return "changed the file's icon";
     case "note":
       return `${op.content === null ? "deleted" : "wrote"} note ${op.name}`;
     default:

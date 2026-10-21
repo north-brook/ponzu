@@ -7,6 +7,7 @@ import type { Artboard, DesignMeta, Message, PageMeta, PElement, PNode, Thread }
  */
 export interface Doc {
   name: string;
+  icon?: string;
   /** From design.json: a sample design the home screen hides until it's opened. */
   example?: true;
   pages: PageState[];
@@ -36,6 +37,7 @@ export type Op =
   | { op: "page.update"; id: string; name?: string; icon?: string | null }
   | { op: "page.order"; ids: string[] }
   | { op: "file.rename"; name: string }
+  | { op: "file.icon"; icon: string | null }
   | { op: "tokens"; css: string }
   | { op: "thread.create"; thread: Thread }
   | { op: "thread.delete"; id: string }
@@ -72,6 +74,7 @@ export function metaOf(doc: Doc): DesignMeta {
   return {
     ponzu: 1,
     name: doc.name,
+    ...(doc.icon ? { icon: doc.icon } : {}),
     ...(doc.example ? { example: true as const } : {}),
     pages: doc.pages.map(({ id, name, icon }) => (icon ? { id, name, icon } : { id, name })),
   };
@@ -287,6 +290,12 @@ export function applyOp(doc: Doc, op: Op): Op {
       doc.name = op.name;
       return { op: "file.rename", name: prev };
     }
+    case "file.icon": {
+      const prev = doc.icon ?? null;
+      if (op.icon === null) delete doc.icon;
+      else doc.icon = op.icon;
+      return { op: "file.icon", icon: prev };
+    }
     case "tokens": {
       const prev = doc.tokens;
       doc.tokens = op.css;
@@ -455,7 +464,7 @@ export function opScopes(op: Op): Set<"artboards" | "meta" | "tokens" | "threads
     if (o.op.startsWith("thread.")) out.add("threads");
     else if (o.op === "tokens") out.add("tokens");
     else if (o.op === "note") out.add("notes");
-    else if (o.op.startsWith("page.") || o.op === "file.rename") out.add("meta");
+    else if (o.op.startsWith("page.") || o.op.startsWith("file.")) out.add("meta");
     else out.add("artboards");
     if (o.op === "artboard.create" || o.op === "artboard.delete" || o.op === "artboard.move")
       out.add("meta");
