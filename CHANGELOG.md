@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.16.1](https://github.com/north-brook/ponzu/compare/v1.16.0...v1.16.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* keep node ids stable when artboard files are edited outside ponzu ([#58](https://github.com/north-brook/ponzu/issues/58)) ([e20b9a1](https://github.com/north-brook/ponzu/commit/e20b9a10f78f7b6ad3763aa60b5ba73fadca2a2d))
+
 ## [1.16.0](https://github.com/north-brook/ponzu/compare/v1.15.2...v1.16.0) (2026-10-21)
 
 
