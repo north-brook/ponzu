@@ -239,7 +239,13 @@ function buildMenu() {
             label: app.name,
             submenu: [
               { role: "about" as const },
-              { label: "Check for Updates…", click: () => void checkForUpdatesNow() },
+              {
+                label: "Check for Updates…",
+                click: () => {
+                  showWindow();
+                  if (mainWindow) void checkForUpdatesNow(mainWindow);
+                },
+              },
               { type: "separator" as const },
               { role: "services" as const },
               { type: "separator" as const },
@@ -359,7 +365,7 @@ if (!app.requestSingleInstanceLock()) {
     if (!background || pendingOpens.length || smoke) showWindow();
     else app.dock?.hide();
     if (!smoke) {
-      installUpdater({ quiet: () => !mainWindow, onReady: () => (updateReady = true) });
+      installUpdater({ window: () => mainWindow, onReady: () => (updateReady = true) });
       setupAgents();
       watchIdle();
     }
