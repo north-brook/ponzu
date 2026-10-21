@@ -225,10 +225,15 @@ export function Canvas({
   // Holding ⌥ turns the page tabs' icons into the numbers that jump to them.
   const pageHint = useModifierHint("Alt");
 
+  // Whatever changes the page (a tab, New page, an agent's focus), Delete
+  // would otherwise reach boards on a page you can't see.
+  const pageKey = page?.id;
+  useEffect(() => {
+    if (pageKey) setSelection([]);
+  }, [pageKey]);
+
   const goToPage = (id: string) => {
     setPageId(id);
-    // Delete would otherwise reach boards on a page you can't see.
-    setSelection([]);
     setPending(null);
     setOpenThread(null);
   };
