@@ -13,7 +13,7 @@ import { Composer, ThreadCard, threadCard } from "./Comments.tsx";
 import type { CanvasSource } from "./connection.ts";
 import { AgentMark, Icon, Icons } from "./icons.tsx";
 import { Button, cn, Tip, TipProvider, ToggleGroup } from "./ui.tsx";
-import { isTyping, useCamera, useKeyHeld, useSource } from "./useCanvas.ts";
+import { isTyping, useCamera, useKeyHeld, useModifierHint, useSource } from "./useCanvas.ts";
 import { Juice, useDelayed } from "./working.tsx";
 
 export type Mode = "select" | "hand" | "comment";
@@ -202,6 +202,9 @@ export function Canvas({
     window.addEventListener("pointerdown", onDown, true);
     return () => window.removeEventListener("pointerdown", onDown, true);
   }, [openThread, pending]);
+
+  // Holding ⌥ turns the page tabs' icons into the numbers that jump to them.
+  const pageHint = useModifierHint("Alt");
 
   const goToPage = (id: string) => {
     setPageId(id);
@@ -748,6 +751,7 @@ export function Canvas({
                     key={p.id}
                     name={p.name}
                     shortcut={i < 8 ? i + 1 : i === doc.pages.length - 1 ? 9 : undefined}
+                    showShortcut={pageHint}
                     icon={p.icon}
                     active={p.id === page.id}
                     working={busyPages.has(p.id)}
@@ -942,6 +946,7 @@ const pin =
 function PageTab({
   name,
   shortcut,
+  showShortcut,
   icon,
   active,
   working,
@@ -950,6 +955,8 @@ function PageTab({
 }: {
   name: string;
   shortcut?: number;
+  /** ⌥ is held: the shortcut takes the icon's place. */
+  showShortcut: boolean;
   icon?: string;
   active: boolean;
   /** An agent is working on an artboard on this page. */
@@ -958,7 +965,7 @@ function PageTab({
   onRename: (n: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
-  const tab = (
+  return (
     <button
       type="button"
       className={cn(
@@ -970,7 +977,16 @@ function PageTab({
       onClick={onClick}
       onDoubleClick={() => setEditing(true)}
     >
-      <Icon name={icon && icon in Icons ? icon : "board"} size={14} />
+      {showShortcut && shortcut ? (
+        <span
+          aria-hidden
+          className="pz:grid pz:size-3.5 pz:shrink-0 pz:place-items-center pz:font-medium pz:text-[12px] pz:text-foreground pz:tabular-nums pz:leading-none"
+        >
+          {shortcut}
+        </span>
+      ) : (
+        <Icon name={icon && icon in Icons ? icon : "board"} size={14} />
+      )}
       {editing ? (
         <input
           autoFocus
@@ -992,13 +1008,6 @@ function PageTab({
         <span className={cn(working && "pz-shimmer")}>{name}</span>
       )}
     </button>
-  );
-  // While renaming, a tip would sit over the field.
-  if (editing) return tab;
-  return (
-    <Tip label={name} keys={shortcut ? ["⌥", String(shortcut)] : undefined}>
-      {tab}
-    </Tip>
   );
 }
 

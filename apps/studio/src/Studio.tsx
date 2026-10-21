@@ -12,6 +12,7 @@ import {
   TipProvider,
   timeAgo,
   useDelayed,
+  useModifierHint,
   useSource,
 } from "@ponzu/react";
 import {
@@ -32,7 +33,8 @@ import { cn } from "@/lib/utils";
 
 /** Where `ponzu serve` lives. Same origin in production; the dev server proxies. */
 const ORIGIN = window.location.origin;
-const mod = navigator.userAgent.includes("Mac") ? "⌘" : "Ctrl+";
+const mac = navigator.userAgent.includes("Mac");
+const mod = mac ? "⌘" : "Ctrl+";
 
 /**
  * A tab names its design and the server in front of it: the key alone for a
@@ -202,6 +204,8 @@ export function Studio() {
   }, [tabs, active]);
 
   const { strip, dragProps } = useTabDrag(tabs, setTabs);
+  // Holding ⌘ turns the tabs' icons into the numbers that jump to them.
+  const hint = useModifierHint(mac ? "Meta" : "Control");
 
   const desktop = window.ponzuDesktop;
   const isMac = desktop?.platform === "darwin";
@@ -226,7 +230,7 @@ export function Studio() {
               className={cn("w-8", active === null && "bg-secondary hover:bg-secondary")}
               onClick={() => setActive(null)}
             >
-              <Logo size={18} dark={theme === "dark"} />
+              {hint ? <ShortcutDigit n={1} /> : <Logo size={18} dark={theme === "dark"} />}
             </Button>
           </Tip>
           <div
@@ -238,6 +242,7 @@ export function Studio() {
                 key={key}
                 source={source(key)}
                 shortcut={i < 7 ? i + 2 : i === tabs.length - 1 ? 9 : undefined}
+                showShortcut={hint}
                 remote={targetOf(key).base.replace(/^\/peers\//, "")}
                 active={key === active}
                 theme={theme}
@@ -288,6 +293,7 @@ type DragProps = ReturnType<ReturnType<typeof useTabDrag>["dragProps"]>;
 function FileTab({
   source,
   shortcut,
+  showShortcut,
   remote,
   active,
   theme,
@@ -297,6 +303,8 @@ function FileTab({
 }: {
   source: SocketSource;
   shortcut?: number;
+  /** ⌘ is held: the shortcut takes the icon's place. */
+  showShortcut: boolean;
   /** The Mac the design is on, when it isn't this one. */
   remote?: string;
   active: boolean;
@@ -315,49 +323,67 @@ function FileTab({
       .split("/")
       .pop()
       ?.replace(/\.design$/, "");
-  const label = remote ? `${name} on ${decodeURIComponent(remote)}` : (name ?? "");
-  return (
-    <Tip label={label} keys={shortcut ? [mod.trim(), String(shortcut)] : undefined} side="bottom">
-      <div
-        className={cn(
-          "group app-no-drag relative flex h-7 max-w-[220px] shrink-0 cursor-default select-none items-center whitespace-nowrap rounded-lg px-2.5 outline-none",
-          active
-            ? "bg-secondary text-foreground"
-            : "text-muted-foreground hover:bg-accent hover:text-foreground",
+  const tab = (
+    <div
+      className={cn(
+        "group app-no-drag relative flex h-7 max-w-[220px] shrink-0 cursor-default select-none items-center whitespace-nowrap rounded-lg px-2.5 outline-none",
+        active
+          ? "bg-secondary text-foreground"
+          : "text-muted-foreground hover:bg-accent hover:text-foreground",
+      )}
+      onClick={onClick}
+      onKeyDown={(e) => e.key === "Enter" && onClick()}
+      role="tab"
+      tabIndex={0}
+      {...drag}
+    >
+      {/* The close button sits over the end of the label, which fades out under it. */}
+      <span className="flex min-w-0 items-center gap-[7px] group-focus-visible:[mask-image:linear-gradient(to_left,transparent_14px,#000_32px)] group-hover:[mask-image:linear-gradient(to_left,transparent_14px,#000_32px)]">
+        {showShortcut && shortcut ? (
+          <ShortcutDigit n={shortcut} />
+        ) : waiting ? (
+          <span
+            className="grid size-3.5 shrink-0 place-items-center"
+            title={offline ? "Reconnecting" : "Opening"}
+          >
+            <Juice size={14} dark={theme === "dark"} dry={offline} />
+          </span>
+        ) : (
+          <Icon name="blank" size={14} />
         )}
-        onClick={onClick}
-        onKeyDown={(e) => e.key === "Enter" && onClick()}
-        role="tab"
-        tabIndex={0}
-        {...drag}
+        <span className={cn("truncate", working && "pz-shimmer")}>{name}</span>
+      </span>
+      <button
+        type="button"
+        aria-label="Close tab"
+        className="absolute top-1/2 right-1 grid size-[18px] -translate-y-1/2 place-items-center rounded-[5px] opacity-0 hover:bg-accent hover:opacity-100! group-focus-visible:opacity-60 group-hover:opacity-60"
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
       >
-        {/* The close button sits over the end of the label, which fades out under it. */}
-        <span className="flex min-w-0 items-center gap-[7px] group-focus-visible:[mask-image:linear-gradient(to_left,transparent_14px,#000_32px)] group-hover:[mask-image:linear-gradient(to_left,transparent_14px,#000_32px)]">
-          {waiting ? (
-            <span
-              className="grid size-3.5 shrink-0 place-items-center"
-              title={offline ? "Reconnecting" : "Opening"}
-            >
-              <Juice size={14} dark={theme === "dark"} dry={offline} />
-            </span>
-          ) : (
-            <Icon name="blank" size={14} />
-          )}
-          <span className={cn("truncate", working && "pz-shimmer")}>{name}</span>
-        </span>
-        <button
-          type="button"
-          aria-label="Close tab"
-          className="absolute top-1/2 right-1 grid size-[18px] -translate-y-1/2 place-items-center rounded-[5px] opacity-0 hover:bg-accent hover:opacity-100! group-focus-visible:opacity-60 group-hover:opacity-60"
-          onClick={(e) => {
-            e.stopPropagation();
-            onClose();
-          }}
-        >
-          <Icon name="close" size={12} />
-        </button>
-      </div>
+        <Icon name="close" size={12} />
+      </button>
+    </div>
+  );
+  // The tab shows its name; only one on another Mac has more to say.
+  if (!remote) return tab;
+  return (
+    <Tip label={`${name} on ${decodeURIComponent(remote)}`} side="bottom">
+      {tab}
     </Tip>
+  );
+}
+
+/** A tab's shortcut digit, in its icon's place while ⌘ is held. */
+function ShortcutDigit({ n }: { n: number }) {
+  return (
+    <span
+      aria-hidden
+      className="grid size-3.5 shrink-0 place-items-center font-medium text-[12px] text-foreground tabular-nums leading-none"
+    >
+      {n}
+    </span>
   );
 }
 
