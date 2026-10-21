@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readdir } from "node:fs/promises";
 import { basename, isAbsolute, join, resolve } from "node:path";
-import { type Doc, findArtboard, locate, type Op, type Selection, type Thread } from "@ponzu/core";
+import { type Doc, findArtboard, locate, type Op, type Thread } from "@ponzu/core";
 import type { Renderer } from "@ponzu/render";
 import { Design, type OpEvent } from "@ponzu/store";
 import { FsAdapter } from "@ponzu/store/fs";
@@ -35,13 +35,12 @@ const PREVIEW_DELAY = 2000;
 interface Entry {
   key: string;
   design: Design;
-  selection: Selection;
   stop: () => void;
 }
 
 /**
  * The local host for a set of open .design folders. Turns store ops into
- * events, tracks selection and presence, and implements the tool Workspace.
+ * events, tracks presence, and implements the tool Workspace.
  */
 export class LocalWorkspace implements Workspace {
   readonly events = new EventHub();
@@ -71,17 +70,6 @@ export class LocalWorkspace implements Workspace {
 
   get(key: string): Design | undefined {
     return this.entries.get(key)?.design;
-  }
-
-  selection(key: string): Selection {
-    return this.entries.get(key)?.selection ?? { ids: [] };
-  }
-
-  setSelection(key: string, selection: Selection): void {
-    const e = this.entries.get(key);
-    if (!e) return;
-    e.selection = selection;
-    this.events.emit(key, { type: "selection", ids: selection.ids, page: selection.page });
   }
 
   focus(key: string, artboard: string): void {
@@ -114,7 +102,7 @@ export class LocalWorkspace implements Workspace {
       pending = (async () => {
         await mkdir(key, { recursive: true });
         const design = await Design.open(new FsAdapter(key));
-        const entry: Entry = { key, design, selection: { ids: [] }, stop: () => {} };
+        const entry: Entry = { key, design, stop: () => {} };
         entry.stop = this.bridge(key, design);
         this.entries.set(key, entry);
         for (const l of this.openListeners) l(key);

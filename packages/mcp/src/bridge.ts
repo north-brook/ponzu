@@ -47,7 +47,7 @@ const readOnly = new Set(tools.filter((t) => t.readOnly).map((t) => t.name));
 /**
  * MCP for agents that launch their own server (`ponzu mcp`). Tool calls go
  * to the running Ponzu host when there is one, so the agent shares its
- * canvas, selection and presence; without one they run against `local`.
+ * canvas and presence; without one they run against `local`.
  * Every call looks again, so the host can come and go mid-session.
  */
 export async function serveBridge(

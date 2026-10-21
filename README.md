@@ -122,7 +122,7 @@ About thirty tools in six groups. `get_guide` serves the house rules.
 
 | Group | Tools |
 | --- | --- |
-| Orient | `get_basic_info` `get_selection` `get_tree` `get_node` `get_html` `find_nodes` |
+| Orient | `get_basic_info` `get_tree` `get_node` `get_html` `find_nodes` |
 | Write | `create_artboard` `write_html` `update_styles` `set_text` `set_attributes` `duplicate` `move_nodes` `delete` `rename` `update_artboard` |
 | See | `screenshot` (with lint) `record` `export` |
 | Organize | `list_files` `create_file` `update_file` `create_page` `update_page` `archive` `get_tokens` `set_tokens` |

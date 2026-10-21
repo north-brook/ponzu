@@ -91,9 +91,10 @@ export function Canvas({
   const [pending, setPending] = useState<Pending | null>(null);
   const [openThread, setOpenThread] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
+  /** Artboard and node ids, for this canvas only: agents point with comments instead. */
+  const [selection, setSelection] = useState<string[]>([]);
   const fitted = useRef<string | null>(null);
 
-  const selection = state.selection.ids;
   const working = useMemo(() => {
     const map = new Map<string, Worker[]>();
     for (const p of state.presence) {
@@ -226,6 +227,8 @@ export function Canvas({
 
   const goToPage = (id: string) => {
     setPageId(id);
+    // Delete would otherwise reach boards on a page you can't see.
+    setSelection([]);
     setPending(null);
     setOpenThread(null);
   };
@@ -279,7 +282,7 @@ export function Canvas({
       else if (e.key === "Escape") {
         setPending(null);
         setOpenThread(null);
-        source.select({ ids: [] });
+        setSelection([]);
         switchMode("select");
       } else if ((e.key === "Backspace" || e.key === "Delete") && selection.length && doc) {
         // Only artboards are deleted from the canvas; node edits are for agents.
@@ -290,7 +293,7 @@ export function Canvas({
               ? { op: "artboard.delete", id: ids[0]! }
               : { op: "batch", ops: ids.map((id) => ({ op: "artboard.delete" as const, id })) },
           );
-        source.select({ ids: [] });
+        setSelection([]);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -370,7 +373,7 @@ export function Canvas({
     setPending(null);
     setOpenThread(null);
     if (!hit) {
-      source.select({ ids: [], page: page?.id });
+      setSelection([]);
       drag.current = {
         kind: "pan",
         startX: e.clientX,
@@ -388,7 +391,7 @@ export function Canvas({
         ? selection.filter((x) => x !== id)
         : [...selection, id]
       : [id];
-    source.select({ ids, page: page?.id });
+    setSelection(ids);
   };
 
   const startMove = (e: React.PointerEvent, ab: Artboard) => {
@@ -397,7 +400,7 @@ export function Canvas({
     const ids = selection.includes(ab.id)
       ? selection.filter((id) => findArtboard(doc!, id))
       : [ab.id];
-    if (!selection.includes(ab.id)) source.select({ ids: [ab.id], page: page?.id });
+    if (!selection.includes(ab.id)) setSelection([ab.id]);
     drag.current = {
       kind: "move",
       startX: e.clientX,

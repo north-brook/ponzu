@@ -4,12 +4,6 @@ import type { Author } from "./types.ts";
 /** Who caused a change. Disk means an outside edit picked up by the watcher. */
 export type Origin = Author | { kind: "disk"; name: string };
 
-export interface Selection {
-  /** Artboard ids or node ids. */
-  ids: string[];
-  page?: string;
-}
-
 export interface Presence {
   /** Agent or client id. */
   id: string;
@@ -83,7 +77,6 @@ export type PonzuEvent =
     }
   | { type: "comment.resolved"; seq: number; thread: string; artboard?: string; author: string }
   | { type: "comment.reopened"; seq: number; thread: string; artboard?: string; author: string }
-  | { type: "selection"; seq: number; ids: string[]; page?: string }
   | { type: "file.changed"; seq: number; path: string; artboards: string[] }
   | { type: "presence"; seq: number; presence: Presence[] };
 
@@ -97,14 +90,12 @@ export type ServerMessage =
       seq: number;
       path: string;
       presence: Presence[];
-      selection: Selection;
       canUndo: boolean;
       canRedo: boolean;
     }
   | { t: "op"; seq: number; op: Op; origin: Origin; canUndo: boolean; canRedo: boolean }
   | { t: "reset"; doc: Doc; seq: number }
   | { t: "presence"; presence: Presence[] }
-  | { t: "selection"; selection: Selection }
   | { t: "focus"; artboard: string; page: string }
   | { t: "error"; message: string; req?: number }
   | { t: "ack"; req: number };
@@ -112,7 +103,6 @@ export type ServerMessage =
 /** Studio → server. */
 export type ClientMessage =
   | { t: "op"; req: number; op: Op }
-  | { t: "select"; selection: Selection }
   | { t: "undo"; req: number }
   | { t: "redo"; req: number }
   | { t: "viewport"; viewport: Viewport };

@@ -120,10 +120,6 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
     const page = design?.doc.pages.find((p) => p.artboards.some((a) => a.id === artboard));
     if (page) broadcast(key, { t: "focus", artboard, page: page.id });
   });
-  ws.events.on(({ key, event }) => {
-    if (event.type === "selection")
-      broadcast(key, { t: "selection", selection: ws.selection(key) });
-  });
 
   const home = new Home(ws, {
     roots: opts.root ? [opts.root] : [],
@@ -325,7 +321,6 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
         seq: design.seq,
         path: s.data.key,
         presence: ws.presence.list(),
-        selection: ws.selection(s.data.key),
         canUndo: design.canUndo,
         canRedo: design.canRedo,
       });
@@ -363,8 +358,6 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
         } else if (msg.t === "redo") {
           design.redo(user);
           send(s, { t: "ack", req: msg.req });
-        } else if (msg.t === "select") {
-          ws.setSelection(s.data.key, msg.selection);
         }
       } catch (err) {
         const req = "req" in msg ? msg.req : undefined;

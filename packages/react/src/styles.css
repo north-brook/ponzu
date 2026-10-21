@@ -20,7 +20,8 @@
   --pz-chip: #e6e6e3;
   --pz-surface: #ffffff;
   --pz-hover: rgba(0, 0, 0, 0.05);
-  --pz-select: #1f6bff;
+  /* Selection is neutral: color on the canvas belongs to the brand and the design. */
+  --pz-select: var(--pz-ink);
   --pz-comment: #f4b012;
   /* The brand's rind: an agent's trace around the artboard it's working on. */
   --pz-rind: #f4b012;
@@ -61,7 +62,6 @@
   --pz-chip: #1f1f1f;
   --pz-surface: #1a1a1a;
   --pz-hover: rgba(255, 255, 255, 0.06);
-  --pz-select: #4c8dff;
   --pz-comment: #ffc21a;
   --pz-rind: #ffa800;
   --pz-comment-ink: #2a1f00;
