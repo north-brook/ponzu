@@ -2,6 +2,7 @@ import {
   type Artboard,
   cloneWithNewIds,
   type Doc,
+  elementChildren,
   findArtboard,
   findPage,
   locate,
@@ -377,10 +378,10 @@ export const writeTools = [
       const { design } = await ctx.ws.resolve(args.file);
       const doc = design.doc;
       const ops: Op[] = [];
-      // The node last moved to each `after` sibling or parent index. Moves that
+      // Nodes moved so far to each `after` sibling or parent index. Moves that
       // share a spot line up after one another, in the order given, rather than
       // each landing in front of the last.
-      const lastAt = new Map<string, string>();
+      const runs = new Map<string, Set<string>>();
       // Apply one by one so later moves see earlier ones.
       for (const move of args.moves) {
         const spot = move.after
@@ -388,11 +389,10 @@ export const writeTools = [
           : !move.before && move.parent && move.index !== undefined
             ? `index ${move.parent} ${move.index}`
             : null;
-        const prev = spot ? lastAt.get(spot) : undefined;
-        const m = prev && prev !== move.id ? { id: move.id, after: prev } : move;
-        // A node that moves on no longer marks where its old spot ends.
-        for (const [k, v] of lastAt) if (v === move.id) lastAt.delete(k);
-        if (spot) lastAt.set(spot, move.id);
+        const run = spot ? runs.get(spot) : undefined;
+        const tail = run ? runTail(doc, move, run) : null;
+        const m = tail ? { id: move.id, after: tail } : move;
+        if (spot) runs.set(spot, (run ?? new Set()).add(move.id));
         const sibling = m.before ?? m.after;
         let parent: string;
         let index: number;
@@ -549,6 +549,38 @@ function styleWarnings(keys: string[]): string {
 }
 
 export { type PElement, parseStyle };
+
+/**
+ * The last node of an earlier run still sitting, unbroken, at a move's spot
+ * (right after its `after` sibling, or from its parent index on), read from
+ * the doc as it is now. Null when none is, so the move goes to the spot itself.
+ */
+function runTail(
+  doc: Doc,
+  move: { id: string; after?: string; parent?: string; index?: number },
+  run: Set<string>,
+): string | null {
+  let siblings: PElement[];
+  let start: number;
+  if (move.after) {
+    const anchor = locate(doc, move.after);
+    if (!anchor?.parent) return null;
+    siblings = elementChildren(anchor.parent);
+    start = siblings.findIndex((c) => c.id === move.after) + 1;
+  } else {
+    const parent = move.parent ? locate(doc, move.parent) : null;
+    if (!parent || move.index === undefined) return null;
+    siblings = elementChildren(parent.node);
+    start = move.index;
+  }
+  let tail: string | null = null;
+  for (const c of siblings.slice(start)) {
+    if (c.id === move.id) continue;
+    if (!run.has(c.id)) break;
+    tail = c.id;
+  }
+  return tail;
+}
 
 /** Every artboard's and node's position in document order (pages, artboards, then depth-first). */
 function nodeOrder(doc: Doc): Map<string, number> {

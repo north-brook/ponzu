@@ -206,4 +206,29 @@ test("moving several nodes to one spot keeps the order they were given", async (
   });
   expect(later.names("n_frame")).toEqual(["n_old", "Content"]);
   expect(later.names("n_screen")).toEqual(["Status bar", "Tab bar"]);
+
+  // When the end of a run moves on, the next move joins what's left of it.
+  const tail = await phone();
+  await tail.call("move_nodes", {
+    moves: [
+      { id: "n_status", after: "n_old" },
+      { id: "n_content", after: "n_old" },
+      { id: "n_content", parent: "n_screen" },
+      { id: "n_tabs", after: "n_old" },
+    ],
+  });
+  expect(tail.names("n_frame")).toEqual(["n_old", "Status bar", "Tab bar"]);
+  expect(tail.names("n_screen")).toEqual(["Content"]);
+
+  // When the anchor itself moves, later moves follow it, not the old run.
+  const anchor = await phone();
+  await anchor.call("move_nodes", {
+    moves: [
+      { id: "n_status", after: "n_old" },
+      { id: "n_old", parent: "n_screen", index: 0 },
+      { id: "n_tabs", after: "n_old" },
+    ],
+  });
+  expect(anchor.names("n_screen")).toEqual(["n_old", "Tab bar", "Content"]);
+  expect(anchor.names("n_frame")).toEqual(["Status bar"]);
 });
