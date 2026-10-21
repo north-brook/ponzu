@@ -13,6 +13,49 @@ export interface ToolResult {
   isError?: boolean;
   /** Structured result for hosts that want it (the AI SDK, tests). */
   data?: unknown;
+  /**
+   * Set when the tool broke, though it still had something to give back
+   * (screenshot's lint without its image). Counted as a crash of this class,
+   * at this render stage.
+   */
+  failure?: ErrorClass;
+  stage?: "queue" | "load" | "assets" | "prepare" | "lint" | "capture";
+}
+
+/**
+ * Why a call failed, coarsely, for telemetry. A fixed list, never words from
+ * an error message, which can carry ids and names from the person's design.
+ */
+export type ErrorClass =
+  | "invalid_target"
+  | "host_unreachable"
+  | "host_unresponsive"
+  | "host_busy"
+  | "timeout"
+  | "capture_failed"
+  | "render_error"
+  | "aborted"
+  | "unknown";
+
+const RENDER_CLASSES = new Set<ErrorClass>([
+  "host_unreachable",
+  "host_unresponsive",
+  "host_busy",
+  "timeout",
+  "capture_failed",
+  "render_error",
+]);
+const STAGES = new Set(["queue", "load", "assets", "prepare", "lint", "capture"]);
+
+/** A failed render (`RenderError` from @ponzu/render): its class and where it stalled. */
+function renderFailure(err: unknown): { error_class: ErrorClass; stage?: string } | null {
+  const e = err as { name?: string; failure?: unknown; stage?: unknown } | null;
+  if (e?.name !== "RenderError") return null;
+  const cls = RENDER_CLASSES.has(e.failure as ErrorClass) ? (e.failure as ErrorClass) : "unknown";
+  return {
+    error_class: cls,
+    ...(STAGES.has(e.stage as string) ? { stage: e.stage as string } : {}),
+  };
 }
 
 export type ToolGroup = "orient" | "write" | "see" | "organize" | "converse" | "listen";
@@ -49,7 +92,10 @@ export async function runTool(
 ): Promise<ToolResult> {
   const started = Date.now();
   // Which tools agents use and how they fail; never the arguments or the result.
-  const track = (outcome: "ok" | "invalid_args" | "tool_error" | "mistake" | "crash") => {
+  const track = (
+    outcome: "ok" | "invalid_args" | "tool_error" | "mistake" | "crash",
+    why?: { error_class: ErrorClass; stage?: string },
+  ) => {
     try {
       ctx.ws.telemetry?.capture("tool called", {
         tool: def.name,
@@ -57,6 +103,7 @@ export async function runTool(
         outcome,
         duration_ms: Date.now() - started,
         client: ctx.caller.client,
+        ...why,
       });
     } catch {
       // Counting a call never changes its result.
@@ -72,14 +119,22 @@ export async function runTool(
   }
   try {
     ctx.ws.presence.touch(ctx.caller);
-    const result = await def.handler(parsed.data, ctx);
-    track(result.isError ? "tool_error" : "ok");
+    const { failure, stage, ...result } = await def.handler(parsed.data, ctx);
+    if (failure) track("crash", { error_class: failure, ...(stage ? { stage } : {}) });
+    else track(result.isError ? "tool_error" : "ok");
     return result;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const known = err instanceof ToolError || (err as Error)?.name === "OpError";
-    track(known ? "mistake" : "crash");
-    return { text: known ? message : `${def.name} failed: ${message}`, isError: true };
+    if (known) {
+      track("mistake", { error_class: "invalid_target" });
+      return { text: message, isError: true };
+    }
+    const render = renderFailure(err);
+    const aborted = (err as Error)?.name === "AbortError";
+    track("crash", render ?? { error_class: aborted ? "aborted" : "unknown" });
+    // A failed render already says what stalled, in words meant for the agent.
+    return { text: render ? message : `${def.name} failed: ${message}`, isError: true };
   }
 }
 

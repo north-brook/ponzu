@@ -1,4 +1,4 @@
-import { findArtboard, locate } from "@ponzu/core";
+import { type Artboard, findArtboard, findNode, locate } from "@ponzu/core";
 import type { Interaction, MotionAnimation, MotionInfo } from "@ponzu/render";
 import { z } from "zod";
 import { fileArg, ToolError, type ToolImage, tool } from "./define.ts";
@@ -23,7 +23,7 @@ export const seeTools = [
     group: "see",
     readOnly: true,
     description:
-      "Render an artboard or node and look at it. Shows the settled state: every finite animation has finished, the way a person sees the page after it loads. Pass `at` for a moment mid-animation, and hover, focus or press to see a state. Comes with a lint pass that reports clipped text, overflow (with the height the artboard needs), charts and images spilling over their neighbors, short labels wrapping in a row, zero-size and off-artboard elements, broken images, tiny text, missing @keyframes, elements left invisible after an animation, and states with no styles. Lists what animates. Use scale 1 for layout checks and 2 only to read small text. Check your work after every few edits; use record to watch motion.",
+      "Render an artboard or node and look at it. Shows the settled state: every finite animation has finished, the way a person sees the page after it loads. Pass `at` for a moment mid-animation, and hover, focus or press to see a state. Comes with a lint pass that reports clipped text, overflow (with the height the artboard needs), charts and images spilling over their neighbors, short labels wrapping in a row, zero-size and off-artboard elements, broken images, tiny text, missing @keyframes, elements left invisible after an animation, and states with no styles. Lists what animates. Use scale 1 for layout checks and 2 only to read small text. Check your work after every few edits; use record to watch motion. A render that stalls stops within a minute and says which step it stalled on; if only the image fails, lint still comes back.",
     input: {
       file: fileArg,
       id: z.string().describe("Artboard or node id."),
@@ -50,6 +50,7 @@ export const seeTools = [
       const doc = design.doc;
       const ab = findArtboard(doc, args.id)?.artboard ?? locate(doc, args.id)?.artboard;
       if (!ab) throw new ToolError(`No artboard or node ${args.id}.`);
+      checkTargets(ab, args);
       const nodeId = ab.id === args.id ? undefined : args.id;
       // Keep the image within a sensible budget: ~1600px on the long side.
       const { w, h } = {
@@ -69,15 +70,25 @@ export const seeTools = [
         interact: interaction(args),
         assetBase: ws.assetBase?.(key),
       });
+      const lint = out.issues.length
+        ? `Lint:\n${out.issues.map((i) => `  ${i.id}: ${i.message}`).join("\n")}`
+        : "Lint: clean.";
+      if (out.captureError)
+        return {
+          text: `Couldn't capture the image of ${nodeId ?? ab.id}: ${out.captureError}\nThe page rendered, and lint ran on it.\n${lint}`,
+          isError: true,
+          data: { issues: out.issues, motion: out.motion },
+          failure: "capture_failed",
+          stage: "capture",
+        };
       const image: ToolImage = { data: toBase64(out.bytes), mime: out.mime };
       const lines = [
         `${nodeId ?? ab.id} rendered ${Math.round(out.width)}×${Math.round(out.height)} at ${shownScale(scale, out.scale)}${out.motion ? `, ${moment(out.motion, args.at)}` : ""}.`,
       ];
+      if (out.assetsTimedOut) lines.push(ASSETS_LATE);
       if (!nodeId && ab.root.style.height === "fit-content")
         lines.push(`Content height: ${out.contentHeight}px.`);
-      if (out.issues.length)
-        lines.push(`Lint:\n${out.issues.map((i) => `  ${i.id}: ${i.message}`).join("\n")}`);
-      else lines.push("Lint: clean.");
+      lines.push(lint);
       if (out.motion?.animations.length) lines.push(motionText(out.motion));
       return {
         text: lines.join("\n"),
@@ -137,6 +148,9 @@ export const seeTools = [
       const doc = design.doc;
       const ab = findArtboard(doc, args.id)?.artboard ?? locate(doc, args.id)?.artboard;
       if (!ab) throw new ToolError(`No artboard or node ${args.id}.`);
+      checkTargets(ab, args);
+      if (args.scroll && !findNode(ab.root, args.scroll))
+        throw new ToolError(`No node ${args.scroll} to scroll in this artboard.`);
       const out = await ws.renderer.record({
         artboard: ab,
         tokens: doc.tokens,
@@ -159,6 +173,7 @@ export const seeTools = [
           ? `${args.id}: 1 frame at ${first}${after}.`
           : `${args.id}: ${out.steps.length} frames from ${first} to ${last}${after}, left to right, top to bottom.`,
       ];
+      if (out.assetsTimedOut) lines.push(ASSETS_LATE);
       if (!args.scroll && !m.animations.some((a) => a.timeline === "time" && !a.paused))
         lines.push(
           m.trigger === "load"
@@ -230,10 +245,25 @@ export const seeTools = [
   }),
 ];
 
+const ASSETS_LATE =
+  "Fonts or images were still loading when time ran out, so the image may show fallbacks. Lint says which.";
+
 /** The scale an image came out at, and why when it's less than the one asked for. */
 function shownScale(asked: number, got: number | undefined): string {
   if (got === undefined || got >= asked) return `${asked}x`;
   return `${got}x (${asked}x would be too big for one image; screenshot a node to see it closer)`;
+}
+
+/** Hover, focus and press ids have to be in the artboard being rendered. */
+function checkTargets(ab: Artboard, args: Interaction) {
+  for (const [what, id] of [
+    ["hover", args.hover],
+    ["focus", args.focus],
+    ["press", args.press],
+  ] as const) {
+    if (id && !findNode(ab.root, id))
+      throw new ToolError(`No node ${id} to ${what} in ${ab.id}. Ids come from get_tree.`);
+  }
 }
 
 function interaction(args: Interaction): Interaction | undefined {
