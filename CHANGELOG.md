@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.26.0](https://github.com/north-brook/ponzu/compare/v1.25.0...v1.26.0) (2026-10-21)
+
+
+### Features
+
+* tab hovercard shows the folder on one line ([#114](https://github.com/north-brook/ponzu/issues/114)) ([d7979da](https://github.com/north-brook/ponzu/commit/d7979da40b0a977e8e335c2c1a3a6d69a9c4b209))
+
+
+### Bug Fixes
+
+* keep unsaved edits through outside file changes, and speed up ci ([#115](https://github.com/north-brook/ponzu/issues/115)) ([0646db2](https://github.com/north-brook/ponzu/commit/0646db2f8469b98e7c5eef83b57ad8afba2d8e66))
+
 ## [1.25.0](https://github.com/north-brook/ponzu/compare/v1.24.0...v1.25.0) (2026-10-21)
 
 
