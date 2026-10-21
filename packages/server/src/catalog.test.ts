@@ -9,7 +9,7 @@ import {
   utimes,
   writeFile,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Catalog } from "@ponzu/core";
 import type { Renderer } from "@ponzu/render";
@@ -411,6 +411,14 @@ describe("example designs", () => {
     const catalog = new LocalCatalog({ roots: [], spotlight: "roots", dbFile, stateFile });
     expect(await names(catalog)).toEqual(["Sample"]);
     expect(catalog.db.grants()).toEqual(["/Users/x/Desktop"]);
+    // A grant here keeps the file's, and another server's, in catalog.json.
+    const other = new LocalCatalog({ roots: [], spotlight: "roots", dbFile });
+    other.db.grant("/Users/x/Downloads");
+    catalog.add(join(homedir(), "Documents/new.design"));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(JSON.parse(await readFile(stateFile, "utf8")).granted.sort()).toEqual(
+      [join(homedir(), "Documents"), "/Users/x/Desktop", "/Users/x/Downloads"].sort(),
+    );
     // Read once: taken out of the file later, it stays.
     await writeFile(stateFile, JSON.stringify({ granted: [] }));
     const again = new LocalCatalog({ roots: [], spotlight: "roots", dbFile, stateFile });

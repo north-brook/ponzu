@@ -131,8 +131,10 @@ export function Studio() {
   useEffect(() => {
     if (!catalog) return;
     for (const f of catalog.files) {
-      if (f.machine !== "local" || !f.created || f.shelf === "scratch" || seen.has(f.key)) continue;
+      if (f.machine !== "local" || !f.created || seen.has(f.key)) continue;
       seen.add(f.key);
+      // Decided once, on first sight: archiving or restoring it later doesn't open it.
+      if (f.shelf && f.shelf !== "recent") continue;
       if (Date.now() - f.created > 60_000 || tabs.includes(f.key)) continue;
       setTabs((t) => (t.includes(f.key) ? t : [...t, f.key]));
       setActive(f.key);

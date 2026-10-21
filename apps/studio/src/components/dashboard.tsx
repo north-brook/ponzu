@@ -102,8 +102,10 @@ export function Dashboard({
   const inView = shelved[view];
   const projects = useProjects(inView);
   // A filter for a project this view no longer has goes back to All.
-  const scope = project && projects.some((p) => p.id === project) ? project : null;
-  const shown = scope ? inView.filter((f) => (projectOf(f)?.id ?? NO_PROJECT) === scope) : inView;
+  // NO_PROJECT is "", a scope like any other: compare with null, not truthiness.
+  const scope = project !== null && projects.some((p) => p.id === project) ? project : null;
+  const shown =
+    scope !== null ? inView.filter((f) => (projectOf(f)?.id ?? NO_PROJECT) === scope) : inView;
 
   const shelve = onShelve
     ? async (file: CatalogFile, action: ShelfAction) => {
@@ -703,6 +705,8 @@ function FileCard({
       className="group relative flex min-w-0 cursor-default flex-col gap-2.5 text-left outline-none"
       onClick={open}
       onKeyDown={(e) => {
+        // Only the card's own keys: the menu's, portaled but still in this tree, bubble here.
+        if (e.target !== e.currentTarget) return;
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           open();

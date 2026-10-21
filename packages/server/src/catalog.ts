@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { readFileSync, realpathSync } from "node:fs";
-import { mkdir, readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import {
@@ -378,7 +378,12 @@ export class LocalCatalog {
     this.db.setMeta("imported_json", String(Date.now()));
   }
 
-  /** catalog.json for older versions: the folders let in, so going back doesn't ask again. */
+  /**
+   * catalog.json for older versions: the folders let in, so going back doesn't
+   * ask again. Every grant the database has, and every one the file already
+   * lists, so a server saving its view can't drop another's. Written to a
+   * temporary file and renamed, so an older version never reads half of it.
+   */
   private async saveState(): Promise<void> {
     const file = this.opts.stateFile;
     if (!file) return;
@@ -387,9 +392,14 @@ export class LocalCatalog {
       try {
         saved = JSON.parse(await readFile(file, "utf8"));
       } catch {}
+      const listed = Array.isArray(saved.granted)
+        ? saved.granted.filter((g): g is string => typeof g === "string")
+        : [];
+      const granted = [...new Set([...listed, ...this.db.grants(), ...this.granted])].sort();
       await mkdir(dirname(file), { recursive: true });
-      const state = { ...saved, granted: [...this.granted].sort() };
-      await writeFile(file, `${JSON.stringify(state, null, 2)}\n`);
+      const tmp = `${file}.${process.pid}.tmp`;
+      await writeFile(tmp, `${JSON.stringify({ ...saved, granted }, null, 2)}\n`);
+      await rename(tmp, file);
     } catch {}
   }
 
