@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.15.2](https://github.com/north-brook/ponzu/compare/v1.15.1...v1.15.2) (2026-10-21)
+
+
+### Bug Fixes
+
+* keep document order when duplicating or moving several nodes ([#49](https://github.com/north-brook/ponzu/issues/49)) ([875b1be](https://github.com/north-brook/ponzu/commit/875b1be2b06f37b227e3a48a83703d41eedbb30c))
+
+## [1.15.1](https://github.com/north-brook/ponzu/compare/v1.15.0...v1.15.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* keep self-closing svg children as siblings in write_html ([#47](https://github.com/north-brook/ponzu/issues/47)) ([9b37213](https://github.com/north-brook/ponzu/commit/9b37213d2885191edbe04273dbc0520a20dad0db))
+
 ## [1.15.0](https://github.com/north-brook/ponzu/compare/v1.14.4...v1.15.0) (2026-10-21)
 
 
