@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.24.0](https://github.com/north-brook/ponzu/compare/v1.23.3...v1.24.0) (2026-10-21)
+
+
+### Features
+
+* new brand: the slice, yuzu and Funnel Display ([#110](https://github.com/north-brook/ponzu/issues/110)) ([807a250](https://github.com/north-brook/ponzu/commit/807a25047f52f196a46f30c27184e2bfc718449d))
+
 ## [1.23.3](https://github.com/north-brook/ponzu/compare/v1.23.2...v1.23.3) (2026-10-21)
 
 

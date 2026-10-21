@@ -1,7 +1,7 @@
 {
   "name": "ponzu-monorepo",
   "private": true,
-  "version": "1.23.3",
+  "version": "1.24.0",
   "type": "module",
   "workspaces": [
     "packages/*",
