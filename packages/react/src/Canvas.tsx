@@ -7,7 +7,15 @@ import {
   type Thread,
   threadPage,
 } from "@ponzu/core";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { ArtboardView } from "./Artboard.tsx";
 import { Composer, ThreadCard, threadCard } from "./Comments.tsx";
 import type { CanvasSource } from "./connection.ts";
@@ -136,8 +144,8 @@ export function Canvas({
     if (bounds) fit(bounds, viewportSize(), 72, 1);
   }, [bounds, fit]);
 
-  // Fit when a page first shows.
-  useEffect(() => {
+  // Fit when a page first shows, before it paints: after, its first frame is at the old page's camera.
+  useLayoutEffect(() => {
     if (!page || !bounds || fitted.current === page.id) return;
     fitted.current = page.id;
     fitPage();
@@ -159,8 +167,8 @@ export function Canvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.focus?.at]);
 
-  // Measure artboards with fit-content height.
-  useEffect(() => {
+  // Measure artboards with fit-content height, before paint like the fit.
+  useLayoutEffect(() => {
     const el = viewport.current;
     if (!el) return;
     const next: Record<string, number> = {};
