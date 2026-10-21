@@ -48,6 +48,9 @@ const sent = async (
 ) => {
   const capture = spyOn(PostHog.prototype, "capture").mockImplementation(() => {});
   const alias = spyOn(PostHog.prototype, "alias").mockImplementation(() => {});
+  const aliasImmediate = spyOn(PostHog.prototype, "aliasImmediate").mockImplementation(async (a) =>
+    alias(a),
+  );
   try {
     const telemetry = await mod.startTelemetry({ version: "test", command: "serve" });
     if (!telemetry) throw new Error("telemetry is off");
@@ -60,6 +63,7 @@ const sent = async (
   } finally {
     capture.mockRestore();
     alias.mockRestore();
+    aliasImmediate.mockRestore();
     delete process.env.PONZU_TAILSCALE;
   }
 };
@@ -78,6 +82,35 @@ test("with Tailscale, an install is aliased once to a hash of its owner", async 
   expect(mod.ownerHash("7")).toMatch(/^[0-9a-f]{32}$/);
   expect(events.map((e) => e?.distinctId)).toEqual(["install-1", "install-1"]);
   expect(events[1]?.properties).not.toHaveProperty("$process_person_profile");
+});
+
+test("feedback sent first waits for the alias", async () => {
+  await writeFile(file(), JSON.stringify({ id: "install-1" }));
+  await fakeTailscale({
+    BackendState: "Running",
+    Self: { TailscaleIPs: ["100.64.0.1"], UserID: 7 },
+  });
+  const order: string[] = [];
+  const aliasImmediate = spyOn(PostHog.prototype, "aliasImmediate").mockImplementation(async () => {
+    order.push("alias");
+  });
+  const captureImmediate = spyOn(PostHog.prototype, "captureImmediate").mockImplementation(
+    async () => {
+      order.push("feedback");
+    },
+  );
+  try {
+    const telemetry = await mod.startTelemetry({ version: "test", command: "serve" });
+    expect(
+      await telemetry?.feedback({ sentiment: "positive", category: "praise", summary: "Nice" }),
+    ).toBe(true);
+    await telemetry?.shutdown();
+    expect(order).toEqual(["alias", "feedback"]);
+  } finally {
+    aliasImmediate.mockRestore();
+    captureImmediate.mockRestore();
+    delete process.env.PONZU_TAILSCALE;
+  }
 });
 
 test("a Mac that signs in to another Tailscale account isn't aliased again", async () => {

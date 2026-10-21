@@ -146,7 +146,7 @@ export interface HostTelemetry extends Telemetry {
 }
 
 /**
- * Anonymous usage for the Ponzu team: which tools agents call and how they
+ * Pseudonymous usage for the Ponzu team: which tools agents call and how they
  * fail, which agents people use, how often the canvas is open, and feedback
  * agents send with send_feedback. Never design content, file names or paths.
  * Events go out under this install's random id. With Tailscale, the install is
@@ -186,13 +186,15 @@ export async function startTelemetry(base: {
    * without an owner personless, so an install alone gets no person profile.
    * An install already joined to one owner stays with them, so a Mac that
    * signs in to another Tailscale account isn't aliased again: PostHog
-   * refuses to merge two people.
+   * refuses to merge two people. `immediate` is for events sent straight
+   * away, which would otherwise overtake the queued alias.
    */
-  const person = async () => {
+  const person = async (immediate = false) => {
     const o = await owner();
     if (o && !aliased) {
-      client.alias({ distinctId: o, alias: id });
       aliased = true;
+      if (immediate) await client.aliasImmediate({ distinctId: o, alias: id });
+      else client.alias({ distinctId: o, alias: id });
     }
     return o ? {} : { $process_person_profile: false };
   };
@@ -204,7 +206,7 @@ export async function startTelemetry(base: {
       if (!on()) return;
       const timestamp = new Date();
       queue = queue
-        .then(person)
+        .then(() => person())
         .then((profile) =>
           client.capture({
             distinctId: id,
@@ -231,7 +233,7 @@ export async function startTelemetry(base: {
           event: "survey sent",
           properties: {
             ...common,
-            ...(await person()),
+            ...(await person(true)),
             $survey_id: SURVEY.id,
             $survey_iteration: null,
             $survey_submission_id: randomUUID(),
@@ -264,7 +266,7 @@ export async function telemetryNotice(): Promise<string | null> {
   await writeSettings({ ...current, id: current.id, noticed: new Date().toISOString() }).catch(
     () => {},
   );
-  return "Ponzu sends anonymous usage (tool names, errors, versions; never your designs) to help us improve it. Turn it off with `ponzu telemetry off` or PONZU_TELEMETRY=0.";
+  return "Ponzu sends pseudonymous usage (tool names, errors, versions; never your designs) to help us improve it. Turn it off with `ponzu telemetry off` or PONZU_TELEMETRY=0.";
 }
 
 /** `ponzu telemetry [on|off|status]` */
@@ -284,6 +286,6 @@ export async function telemetryCommand(arg = "status") {
   console.log(
     why
       ? `Telemetry is off (${why}).`
-      : "Telemetry is on: Ponzu sends anonymous usage (tool names, errors, versions; never your designs). Turn it off with `ponzu telemetry off`.",
+      : "Telemetry is on: Ponzu sends pseudonymous usage (tool names, errors, versions; never your designs). Turn it off with `ponzu telemetry off`.",
   );
 }
