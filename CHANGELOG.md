@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.0](https://github.com/north-brook/ponzu/compare/v1.17.3...v1.18.0) (2026-10-21)
+
+
+### Features
+
+* let agents choose an icon for a file ([#73](https://github.com/north-brook/ponzu/issues/73)) ([87ca720](https://github.com/north-brook/ponzu/commit/87ca72065272e6d03863ccebe0c9d62ab9cadeaa))
+
 ## [1.17.3](https://github.com/north-brook/ponzu/compare/v1.17.2...v1.17.3) (2026-10-21)
 
 
