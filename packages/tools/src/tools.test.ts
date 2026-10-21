@@ -1,24 +1,26 @@
 import { expect, test } from "bun:test";
-import { locate } from "@ponzu/core";
+import { locate, threadPage } from "@ponzu/core";
 import { Design, MemoryAdapter } from "@ponzu/store";
 import { EventHub, PresenceHub, type ToolContext, type Workspace } from "./context.ts";
+import { FORMAT_EXAMPLE, GUIDES } from "./guides.ts";
 import { getTool, runTool } from "./index.ts";
 import { plural } from "./util.ts";
 
 async function setup(tokens = 3) {
   const css = `:root {\n${Array.from({ length: tokens }, (_, i) => `  --t${i}: ${i}px;`).join("\n")}\n}\n`;
-  const design = await Design.open(
-    new MemoryAdapter({
-      "design.json": JSON.stringify({
-        ponzu: 1,
-        name: "Fern",
-        pages: [{ id: "pg_home", name: "Home" }],
-      }),
-      "tokens.css": css,
-      "pages/home/hero.html": `<section data-artboard data-id="ab_hero" data-name="Hero" data-x="0" data-y="0" style="width:800px;height:600px">\n<div data-id="n_card"><h1 data-id="n_h">Hi</h1><p data-id="n_p">There</p></div>\n</section>\n`,
+  return withFiles({
+    "design.json": JSON.stringify({
+      ponzu: 1,
+      name: "Fern",
+      pages: [{ id: "pg_home", name: "Home" }],
     }),
-    { saveDelay: 0 },
-  );
+    "tokens.css": css,
+    "pages/home/hero.html": `<section data-artboard data-id="ab_hero" data-name="Hero" data-x="0" data-y="0" style="width:800px;height:600px">\n<div data-id="n_card"><h1 data-id="n_h">Hi</h1><p data-id="n_p">There</p></div>\n</section>\n`,
+  });
+}
+
+async function withFiles(files: Record<string, string>) {
+  const design = await Design.open(new MemoryAdapter(files), { saveDelay: 0 });
   const ws: Workspace = {
     designs: () => [{ key: "fern", design }],
     resolve: async () => ({ key: "fern", design }),
@@ -263,4 +265,34 @@ test("update_file renames the file and sets or clears its icon", async () => {
   await call("update_file", { icon: null });
   expect(design.doc.icon).toBeUndefined();
   expect(design.doc.name).toBe("Fern app");
+});
+
+test("the format guide's example files load as it describes", async () => {
+  for (const text of Object.values(FORMAT_EXAMPLE)) expect(GUIDES.format).toContain(text);
+  const { design, call } = await withFiles(FORMAT_EXAMPLE);
+  const { doc } = design;
+  expect(design.problems).toEqual([]);
+  expect(doc.pages.map((p) => [p.id, p.name, p.icon])).toEqual([["pg_flow", "Flow", "flow"]]);
+  const cart = doc.pages[0]!.artboards[0]!;
+  expect([cart.id, cart.name, cart.x, cart.y]).toEqual(["ab_cart", "Cart", 0, 0]);
+  expect(cart.root.style).toMatchObject({ width: "390px", height: "844px" });
+  const [pinned, canvas] = doc.threads;
+  expect(locate(doc, pinned!.nodeId!)?.artboard.id).toBe("ab_cart");
+  expect(canvas!.artboardId).toBeUndefined();
+  expect(threadPage(doc, canvas!)?.id).toBe("pg_flow");
+  const listed = (await call("list_comments", {})).text;
+  expect(listed).toContain('th_title [open] on "Cart" › ');
+  expect(listed).toContain('th_next [open] on the canvas of page "Flow" at 480, 120');
+});
+
+test("get_basic_info lists what in the files Ponzu couldn't use", async () => {
+  const { call } = await withFiles({
+    ...FORMAT_EXAMPLE,
+    "comments.json": JSON.stringify({ threads: [{ id: "th_x", pageId: "pg_flow", x: 1, y: 1 }] }),
+  });
+  const text = (await call("get_basic_info", {})).text;
+  expect(text).toContain("Not used as written");
+  expect(text).toContain("comments.json: thread th_x not shown, needs status");
+  const clean = await setup();
+  expect((await clean.call("get_basic_info", {})).text).not.toContain("Not used as written");
 });
