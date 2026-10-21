@@ -107,7 +107,7 @@ export class RemoteRenderer implements Renderer {
    * the call until the runtime's own fetch timeout, six minutes, which said
    * nothing about why.
    */
-  private async post(url: string, body: unknown): Promise<Response> {
+  private async post<T>(url: string, body: unknown): Promise<T> {
     let res: Response;
     try {
       res = await fetch(url, {
@@ -123,7 +123,14 @@ export class RemoteRenderer implements Renderer {
       throw unreachable(err, this.deadlineMs);
     }
     if (!res.ok) throw await failed(res);
-    return res;
+    // The deadline covers the body too: a host can answer, then stall mid-reply.
+    try {
+      return (await res.json()) as T;
+    } catch (err) {
+      const name = (err as Error | null)?.name;
+      if (name === "TimeoutError" || name === "AbortError") throw unreachable(err, this.deadlineMs);
+      throw err;
+    }
   }
 
   async render(req: RenderRequest): Promise<RenderResult> {
@@ -137,8 +144,7 @@ export class RemoteRenderer implements Renderer {
       lintScript: FULL_LINT_SCRIPT,
       prepareScript: prepareScript({ interact: req.interact, at: req.at }),
     };
-    const res = await this.post(this.endpoint, job);
-    const out = (await res.json()) as RemoteRenderReply;
+    const out = await this.post<RemoteRenderReply>(this.endpoint, job);
     if (out.motion && "error" in out.motion) throw new Error(out.motion.error);
     if (out.captureError && !job.lint)
       throw new RenderError(out.captureError, "capture_failed", "capture");
@@ -161,7 +167,7 @@ export class RemoteRenderer implements Renderer {
     const url = new URL("session", this.endpoint).href;
     return async (op: RemoteSessionRequest): Promise<RemoteSessionReply> => {
       try {
-        return (await (await this.post(url, op)).json()) as RemoteSessionReply;
+        return await this.post<RemoteSessionReply>(url, op);
       } catch (err) {
         if (err instanceof RenderError && err.status === 404) throw new Error(cant);
         throw err;

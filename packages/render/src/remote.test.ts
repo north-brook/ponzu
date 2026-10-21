@@ -44,6 +44,25 @@ test("a host that never answers fails within the deadline and says so", async ()
   expect(err.message).toContain("didn't answer");
 });
 
+test("a host that answers, then stalls mid-reply, fails within the deadline too", async () => {
+  const endpoint = host(
+    () =>
+      new Response(
+        new ReadableStream({
+          start(c) {
+            c.enqueue(new TextEncoder().encode('{"data":"'));
+          },
+        }),
+        { headers: { "content-type": "application/json" } },
+      ),
+  );
+  const renderer = new RemoteRenderer(endpoint, "t", undefined, { deadlineMs: 300 });
+  const started = Date.now();
+  const err = await renderer.render(req()).catch((e) => e);
+  expect(Date.now() - started).toBeLessThan(2_000);
+  expect(err).toMatchObject({ name: "RenderError", failure: "host_unresponsive" });
+});
+
 test("a host that isn't running says so", async () => {
   const endpoint = host(() => json({}));
   stop?.();

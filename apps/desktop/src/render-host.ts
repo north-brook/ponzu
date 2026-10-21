@@ -296,30 +296,37 @@ async function sessionOp(op: SessionOp) {
     case "eval":
       // Recording's evals seek and wait for frames; lint and settling are the slowest of them.
       return { value: await run(keepAlive(op.session).win, "prepare", op.expression) };
-    case "capture": {
-      const s = keepAlive(op.session);
-      const { box } = op;
-      const scale = captureScale(box.width, box.height, op.scale);
-      return {
-        data: (await withBudget("capture", capture(s.win, box, scale))).toString("base64"),
-      };
-    }
-    case "show": {
-      // The contact sheet: a new page at its own size.
-      const s = keepAlive(op.session);
-      s.win.setContentSize(Math.max(1, Math.ceil(op.width)), Math.max(1, Math.ceil(op.height)));
-      const { loaded } = await withBudget("load", loadPage(s.win, op.html));
-      const images = loaded
-        .catch(() => {})
-        .then(() => s.win.webContents.executeJavaScript(IMAGES_READY_SCRIPT));
-      if (!(await within(images, STAGE_BUDGET_MS.assets))) s.win.webContents.stop();
-      await withBudget("load", s.win.webContents.executeJavaScript(FRAMES));
-      return {};
-    }
+    // Captures and pages take the same turns as renders: they're what costs
+    // memory and GPU. A session doesn't hold a turn between them, so a long
+    // recording can't keep previews and screenshots out.
+    case "capture":
+      return turn(async () => {
+        const s = keepAlive(op.session);
+        const { box } = op;
+        const scale = captureScale(box.width, box.height, op.scale);
+        return {
+          data: (await withBudget("capture", capture(s.win, box, scale))).toString("base64"),
+        };
+      });
+    case "show":
+      return turn(() => showSheet(op));
     case "close":
       closeSession(op.session);
       return {};
   }
+}
+
+/** The contact sheet: a new page at its own size. */
+async function showSheet(op: Extract<SessionOp, { op: "show" }>) {
+  const s = keepAlive(op.session);
+  s.win.setContentSize(Math.max(1, Math.ceil(op.width)), Math.max(1, Math.ceil(op.height)));
+  const { loaded } = await withBudget("load", loadPage(s.win, op.html));
+  const images = loaded
+    .catch(() => {})
+    .then(() => s.win.webContents.executeJavaScript(IMAGES_READY_SCRIPT));
+  if (!(await within(images, STAGE_BUDGET_MS.assets))) s.win.webContents.stop();
+  await withBudget("load", s.win.webContents.executeJavaScript(FRAMES));
+  return {};
 }
 
 /** Serves render jobs on a free local port. Resolves with the endpoint to hand the server. */
