@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.1](https://github.com/north-brook/ponzu/compare/v1.18.0...v1.18.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* redraw home screen previews of designs changed while closed ([#76](https://github.com/north-brook/ponzu/issues/76)) ([1bbd8a7](https://github.com/north-brook/ponzu/commit/1bbd8a7364d3b42a2734148ec433b375b0658afd))
+
 ## [1.18.0](https://github.com/north-brook/ponzu/compare/v1.17.3...v1.18.0) (2026-10-21)
 
 
