@@ -199,7 +199,7 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
       if (!key) return new Response("file required", { status: 400 });
       const bytes =
         path === "/api/preview"
-          ? await home.preview(key)
+          ? await home.preview(key, url.searchParams.get("theme") === "dark" ? "dark" : "light")
           : await home.thumb(
               key,
               url.searchParams.get("artboard") ?? "",

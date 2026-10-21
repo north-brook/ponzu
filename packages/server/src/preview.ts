@@ -10,12 +10,24 @@ import type { Renderer } from "@ponzu/render";
  */
 export const PREVIEW_DIR = ".ponzu";
 export const PREVIEW_FILE = `${PREVIEW_DIR}/preview.png`;
+/** The same preview on the dark canvas, for the studio in dark mode. */
+export const PREVIEW_DARK_FILE = `${PREVIEW_DIR}/preview-dark.png`;
+
+export type PreviewTheme = "light" | "dark";
+
+export const previewFile = (theme: PreviewTheme) =>
+  theme === "dark" ? PREVIEW_DARK_FILE : PREVIEW_FILE;
 
 /** The long side of the preview in CSS px; it renders at 2x. */
 const SIZE = 512;
 const SCALE = 2;
-/** Light canvas color from the studio, so the preview reads as the canvas. */
-const CANVAS = "#f3f3f1";
+/** The canvas in each theme (packages/react/src/styles.css), so the preview reads as it. */
+const CANVAS = { light: "#f3f3f1", dark: "#121212" };
+/** The artboard edge on each canvas, at 1 preview px. */
+const EDGE = {
+  light: (u: number) => `0 0 0 ${u}px rgba(0,0,0,0.08), 0 ${2 * u}px ${6 * u}px rgba(0,0,0,0.08)`,
+  dark: (u: number) => `0 0 0 ${u}px rgba(255,255,255,0.08)`,
+};
 
 const px = (v: string | undefined, fallback: number) =>
   v && /px$/.test(v) ? Number.parseFloat(v) || fallback : fallback;
@@ -24,7 +36,7 @@ const px = (v: string | undefined, fallback: number) =>
  * The first page laid out like the canvas, scaled to fit, as one artboard a
  * Renderer can shoot. Null when the page has nothing on it.
  */
-export function previewArtboard(doc: Doc): Artboard | null {
+export function previewArtboard(doc: Doc, theme: PreviewTheme = "light"): Artboard | null {
   const boards = doc.pages[0]?.artboards ?? [];
   if (!boards.length) return null;
   const rects = boards.map((ab) => ({
@@ -59,7 +71,7 @@ export function previewArtboard(doc: Doc): Artboard | null {
       left: `${x + offsetX}px`,
       top: `${y + offsetY}px`,
       margin: "0",
-      "box-shadow": `0 0 0 ${1 / fit}px rgba(0,0,0,0.08), 0 ${2 / fit}px ${6 / fit}px rgba(0,0,0,0.08)`,
+      "box-shadow": EDGE[theme](1 / fit),
     },
   }));
   const root: PElement = {
@@ -70,7 +82,7 @@ export function previewArtboard(doc: Doc): Artboard | null {
     style: {
       width: `${Math.round(w * fit)}px`,
       height: `${Math.round(h * fit)}px`,
-      background: CANVAS,
+      background: CANVAS[theme],
     },
     children: [
       {
@@ -95,26 +107,35 @@ export function previewArtboard(doc: Doc): Artboard | null {
 }
 
 /**
- * Renders the preview into the design folder. With nothing to draw, removes
- * any old preview so Finder falls back to the document icon. False then.
+ * Renders the preview, light and dark, into the design folder. With nothing to
+ * draw, removes any old preview so Finder falls back to the document icon.
+ * False then.
  */
 export async function writePreview(root: string, doc: Doc, renderer: Renderer): Promise<boolean> {
-  const file = join(root, PREVIEW_FILE);
-  const artboard = previewArtboard(doc);
-  if (!artboard) {
-    if (!existsSync(file)) return false;
-    await rm(file, { force: true });
+  const files = [PREVIEW_DARK_FILE, PREVIEW_FILE].map((f) => join(root, f));
+  if (!previewArtboard(doc)) {
+    if (!files.some((f) => existsSync(f))) return false;
+    await Promise.all(files.map((f) => rm(f, { force: true })));
     await touch(root);
     return false;
   }
-  const out = await renderer.render({ artboard, tokens: doc.tokens, scale: SCALE });
   const dir = join(root, PREVIEW_DIR);
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, ".gitignore"), "*\n");
-  // Write then rename, so Finder never reads half an image.
-  const tmp = `${file}.${process.pid}.tmp`;
-  await writeFile(tmp, out.bytes);
-  await rename(tmp, file);
+  // Dark first: the light file's date is the preview's version (catalog.ts).
+  for (const theme of ["dark", "light"] as const) {
+    const out = await renderer.render({
+      artboard: previewArtboard(doc, theme)!,
+      tokens: doc.tokens,
+      scale: SCALE,
+      colorScheme: theme,
+    });
+    // Write then rename, so Finder never reads half an image.
+    const file = join(root, previewFile(theme));
+    const tmp = `${file}.${process.pid}.tmp`;
+    await writeFile(tmp, out.bytes);
+    await rename(tmp, file);
+  }
   await touch(root);
   return true;
 }
@@ -128,11 +149,14 @@ async function touch(root: string): Promise<void> {
   await utimes(root, now, now);
 }
 
-/** Whether the preview is missing or older than anything else in the design. */
+/** Whether either preview is missing or older than anything else in the design. */
 export async function previewStale(root: string): Promise<boolean> {
   let made: number;
   try {
-    made = (await stat(join(root, PREVIEW_FILE))).mtimeMs;
+    const dates = await Promise.all(
+      [PREVIEW_FILE, PREVIEW_DARK_FILE].map(async (f) => (await stat(join(root, f))).mtimeMs),
+    );
+    made = Math.min(...dates);
   } catch {
     return true;
   }

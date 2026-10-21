@@ -14,7 +14,7 @@ import type { Renderer } from "@ponzu/render";
 import { Design } from "@ponzu/store";
 import { FsAdapter } from "@ponzu/store/fs";
 import { catalogFile, LocalCatalog, machineKind } from "./catalog.ts";
-import { PREVIEW_FILE, writePreview } from "./preview.ts";
+import { PREVIEW_FILE, type PreviewTheme, previewFile, writePreview } from "./preview.ts";
 import { ownerOf, readTailnet, type Tailnet } from "./tailnet.ts";
 import type { LocalWorkspace } from "./workspace.ts";
 
@@ -202,20 +202,25 @@ export class Home {
   }
 
   /**
-   * A design's canvas preview. Drawn on first request when missing, and only
-   * from a design the catalog lists and may read.
+   * A design's canvas preview, on the light or dark canvas. Drawn on first
+   * request when missing, and only from a design the catalog lists and may read.
    */
-  async preview(key: string): Promise<Uint8Array | null> {
+  async preview(key: string, theme: PreviewTheme = "light"): Promise<Uint8Array | null> {
     if (!(await this.listed(key))) return null;
-    const file = join(key, PREVIEW_FILE);
+    const file = join(key, previewFile(theme));
     if (existsSync(file)) return new Uint8Array(await readFile(file));
     const renderer = this.ws.renderer;
-    if (!renderer) return null;
-    return this.once(`preview:${key}`, async () => {
+    if (!renderer) {
+      // Drawn before there were dark previews, with nothing here to draw one now.
+      const light = join(key, PREVIEW_FILE);
+      return existsSync(light) ? new Uint8Array(await readFile(light)) : null;
+    }
+    // One draw for both themes, whichever is asked for first.
+    const drawn = await this.once(`preview:${key}`, async () => {
       const doc = await this.doc(key);
-      if (!doc || !(await writePreview(key, doc, renderer))) return null;
-      return new Uint8Array(await readFile(file));
+      return Boolean(doc && (await writePreview(key, doc, renderer)));
     });
+    return drawn ? new Uint8Array(await readFile(file)) : null;
   }
 
   /** One artboard as a PNG, a few hundred pixels wide, for search results. */

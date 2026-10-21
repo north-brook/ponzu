@@ -5,7 +5,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Artboard, Doc } from "@ponzu/core";
 import type { Renderer } from "@ponzu/render";
-import { PREVIEW_FILE, previewArtboard, previewStale, writePreview } from "./preview.ts";
+import {
+  PREVIEW_DARK_FILE,
+  PREVIEW_FILE,
+  previewArtboard,
+  previewStale,
+  writePreview,
+} from "./preview.ts";
 
 const board = (id: string, x: number, y: number, width: number, height: number): Artboard => ({
   id,
@@ -48,21 +54,36 @@ test("keeps an icon-friendly shape and skips empty files", () => {
   expect(previewArtboard(doc([]))).toBeNull();
 });
 
+test("draws on the dark canvas for dark mode", () => {
+  const light = previewArtboard(doc([board("a", 0, 0, 800, 600)]))!;
+  const dark = previewArtboard(doc([board("a", 0, 0, 800, 600)]), "dark")!;
+  expect(light.root.style.background).toBe("#f3f3f1");
+  expect(dark.root.style.background).toBe("#121212");
+  expect(dark.root.style.width).toBe(light.root.style.width);
+});
+
 test("writes the preview, and removes it once the first page is empty", async () => {
   const root = await mkdtemp(join(tmpdir(), "ponzu-preview-"));
   try {
+    const schemes: (string | undefined)[] = [];
     const renderer = {
-      render: async () => ({ bytes: new Uint8Array([1, 2, 3]) }),
+      render: async (req: { colorScheme?: string }) => {
+        schemes.push(req.colorScheme);
+        return { bytes: new Uint8Array([1, 2, 3]) };
+      },
       close: async () => {},
     } as unknown as Renderer;
     expect(await writePreview(root, doc([board("a", 0, 0, 800, 600)]), renderer)).toBe(true);
     expect(existsSync(join(root, PREVIEW_FILE))).toBe(true);
+    expect(existsSync(join(root, PREVIEW_DARK_FILE))).toBe(true);
+    expect(schemes.sort()).toEqual(["dark", "light"]);
     expect(await readFile(join(root, ".ponzu/.gitignore"), "utf8")).toBe("*\n");
 
     const old = new Date(Date.now() - 60_000);
     await utimes(root, old, old);
     expect(await writePreview(root, doc([]), renderer)).toBe(false);
     expect(existsSync(join(root, PREVIEW_FILE))).toBe(false);
+    expect(existsSync(join(root, PREVIEW_DARK_FILE))).toBe(false);
     // Finder only refreshes the icon when the package's own date moves.
     expect((await stat(root)).mtimeMs).toBeGreaterThan(old.getTime());
   } finally {
@@ -81,6 +102,9 @@ test("the preview is stale when missing or older than the design, and a dangling
     await writeFile(join(root, PREVIEW_FILE), "png");
     const old = new Date(Date.now() - 60_000);
     await utimes(join(root, "pages/home/hero.html"), old, old);
+    // A design previewed before dark previews existed gets both drawn.
+    expect(await previewStale(root)).toBe(true);
+    await writeFile(join(root, PREVIEW_DARK_FILE), "png");
     await symlink(join(root, "gone"), join(root, "pages/home/dangling.html"));
     expect(await previewStale(root)).toBe(false);
 
