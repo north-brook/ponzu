@@ -59,6 +59,17 @@ export async function resolveFile(
       picked = await ws.resolve();
       from = "only";
     }
+    // Ids from two files in one call: refuse before any of it lands in the wrong one.
+    const doc = picked.design.doc;
+    for (const id of wanted) {
+      if (holds(doc, id)) continue;
+      const other = all.find((d) => d.key !== picked.key && holds(d.design.doc, id));
+      if (other)
+        throw new ToolError(
+          `${id} is in ${label(other, all)}, not ${label(picked, all)}. One call works on one file: pass file, or split the call.`,
+          "file_ids_split",
+        );
+    }
   }
   // Ids took the session to another file: say so, since later calls without file follow.
   const moved = session && from === "ids" && session.file !== picked.key;

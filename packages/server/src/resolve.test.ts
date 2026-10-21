@@ -96,6 +96,26 @@ test("an id finds its file, and the session moves there and says so", async () =
   expect((await call("get_basic_info")).text).toContain(`Path: ${keyOf("kettle")}`);
 });
 
+test("ids from two files in one call change nothing", async () => {
+  const call = await connect();
+  await call("get_basic_info", { file: "halon" });
+  const halon = ws.get(keyOf("halon"))!.doc.pages[0]!.artboards[0]!;
+  const [first, second] = halon.root.children.filter((c) => c.kind === "el");
+  const weft = firstArtboard("weft");
+  const before = JSON.stringify(halon.root);
+
+  const r = await call("move_nodes", {
+    moves: [
+      { id: second!.id, before: first!.id },
+      { id: weft, parent: halon.id },
+    ],
+  });
+  expect(r.isError).toBe(true);
+  expect(r.text).toContain(`${weft} is in "Weft", not "Halon"`);
+  expect(JSON.stringify(ws.get(keyOf("halon"))!.doc.pages[0]!.artboards[0]!.root)).toBe(before);
+  expect((await call("get_basic_info")).text).toContain(`Path: ${keyOf("halon")}`);
+});
+
 test("two agents keep their own current file", async () => {
   const a = await connect("agent-a");
   const b = await connect("agent-b");
