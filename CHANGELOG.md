@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.16.3](https://github.com/north-brook/ponzu/compare/v1.16.2...v1.16.3) (2026-10-21)
+
+
+### Bug Fixes
+
+* make card borders visible in dark mode ([#62](https://github.com/north-brook/ponzu/issues/62)) ([57273db](https://github.com/north-brook/ponzu/commit/57273db3d3dd7b28a3302cca58084f0d0b919390))
+
 ## [1.16.2](https://github.com/north-brook/ponzu/compare/v1.16.1...v1.16.2) (2026-10-21)
 
 
