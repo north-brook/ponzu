@@ -131,7 +131,7 @@ Skills for agents that support them live in [`skills/`](skills).
 
 ## Telemetry
 
-The Mac app sends anonymous usage to the Ponzu team: which tools agents call and whether they fail, which agents connect, how often the canvas opens, and the Ponzu version and OS. Each install is a random id in `~/.ponzu/telemetry.json`. Nothing about your designs leaves your machine: no HTML, file names, paths, comment text or tool arguments.
+The Mac app sends pseudonymous usage to the Ponzu team: which tools agents call and whether they fail, which agents connect, how often the canvas opens, and the Ponzu version and OS. Each install is a random id in `~/.ponzu/telemetry.json`. When Tailscale is running, Ponzu also links that id to a hash of your Tailscale user id, which is the same on each of your Macs, so the team counts people rather than machines. Your Tailscale id, name and email are never sent, but someone with the hash could check guessed ids against it. Nothing about your designs leaves your machine: no HTML, file names, paths, comment text or tool arguments.
 
 Agents can also tell us how Ponzu is working for them with `send_feedback`. That's the one event with words in it, and it's about Ponzu, not your work.
 

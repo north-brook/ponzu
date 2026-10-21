@@ -1,7 +1,8 @@
-import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { afterAll, beforeAll, expect, setSystemTime, spyOn, test } from "bun:test";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PostHog } from "posthog-node";
 
 let home: string;
 let mod: typeof import("./telemetry.ts");
@@ -31,6 +32,162 @@ const status = async (arg?: string) => {
     log.mockRestore();
   }
 };
+
+const fakeTailscale = async (status: object | null) => {
+  const bin = join(home, "tailscale");
+  await writeFile(
+    bin,
+    status ? `#!/bin/sh\necho '${JSON.stringify(status)}'\n` : "#!/bin/sh\nexit 1\n",
+  );
+  await chmod(bin, 0o755);
+  process.env.PONZU_TAILSCALE = bin;
+};
+
+const sent = async (
+  run: (t: NonNullable<Awaited<ReturnType<typeof mod.startTelemetry>>>) => void | Promise<void>,
+) => {
+  const capture = spyOn(PostHog.prototype, "capture").mockImplementation(() => {});
+  const alias = spyOn(PostHog.prototype, "aliasImmediate").mockImplementation(async () => {});
+  try {
+    const telemetry = await mod.startTelemetry({ version: "test", command: "serve" });
+    if (!telemetry) throw new Error("telemetry is off");
+    await run(telemetry);
+    await telemetry.shutdown();
+    return {
+      events: capture.mock.calls.map(([e]) => e),
+      aliases: alias.mock.calls.map(([a]) => a),
+    };
+  } finally {
+    capture.mockRestore();
+    alias.mockRestore();
+    delete process.env.PONZU_TAILSCALE;
+  }
+};
+
+test("with Tailscale, an install is aliased once to a hash of its owner", async () => {
+  await writeFile(file(), JSON.stringify({ id: "install-1" }));
+  await fakeTailscale({
+    BackendState: "Running",
+    Self: { TailscaleIPs: ["100.64.0.1"], UserID: 7 },
+  });
+  const { events, aliases } = await sent((t) => {
+    t.capture("host started", {});
+    t.capture("canvas opened", { open_canvases: 1 });
+  });
+  expect(aliases).toEqual([{ distinctId: mod.ownerHash("7"), alias: "install-1" }]);
+  expect(mod.ownerHash("7")).toMatch(/^[0-9a-f]{32}$/);
+  expect(events.map((e) => e?.distinctId)).toEqual(["install-1", "install-1"]);
+  expect(events[1]?.properties).not.toHaveProperty("$process_person_profile");
+});
+
+test("feedback sent first waits for the alias", async () => {
+  await writeFile(file(), JSON.stringify({ id: "install-1" }));
+  await fakeTailscale({
+    BackendState: "Running",
+    Self: { TailscaleIPs: ["100.64.0.1"], UserID: 7 },
+  });
+  const order: string[] = [];
+  const aliasImmediate = spyOn(PostHog.prototype, "aliasImmediate").mockImplementation(async () => {
+    order.push("alias");
+  });
+  const captureImmediate = spyOn(PostHog.prototype, "captureImmediate").mockImplementation(
+    async () => {
+      order.push("feedback");
+    },
+  );
+  try {
+    const telemetry = await mod.startTelemetry({ version: "test", command: "serve" });
+    expect(
+      await telemetry?.feedback({ sentiment: "positive", category: "praise", summary: "Nice" }),
+    ).toBe(true);
+    await telemetry?.shutdown();
+    expect(order).toEqual(["alias", "feedback"]);
+  } finally {
+    aliasImmediate.mockRestore();
+    captureImmediate.mockRestore();
+    delete process.env.PONZU_TAILSCALE;
+  }
+});
+
+test("feedback waits for an alias a queued event already started", async () => {
+  await writeFile(file(), JSON.stringify({ id: "install-1" }));
+  await fakeTailscale({
+    BackendState: "Running",
+    Self: { TailscaleIPs: ["100.64.0.1"], UserID: 7 },
+  });
+  const order: string[] = [];
+  let land = () => {};
+  const aliasImmediate = spyOn(PostHog.prototype, "aliasImmediate").mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        order.push("alias sent");
+        land = () => {
+          order.push("alias landed");
+          resolve();
+        };
+      }),
+  );
+  const capture = spyOn(PostHog.prototype, "capture").mockImplementation(() => {});
+  const captureImmediate = spyOn(PostHog.prototype, "captureImmediate").mockImplementation(
+    async () => {
+      order.push("feedback");
+    },
+  );
+  try {
+    const telemetry = await mod.startTelemetry({ version: "test", command: "serve" });
+    telemetry?.capture("host started", {});
+    for (let i = 0; i < 200 && !order.length; i++) await Bun.sleep(5);
+    const sent = telemetry?.feedback({
+      sentiment: "positive",
+      category: "praise",
+      summary: "Nice",
+    });
+    await Bun.sleep(20);
+    land();
+    expect(await sent).toBe(true);
+    await telemetry?.shutdown();
+    expect(order).toEqual(["alias sent", "alias landed", "feedback"]);
+    expect(aliasImmediate).toHaveBeenCalledTimes(1);
+  } finally {
+    aliasImmediate.mockRestore();
+    capture.mockRestore();
+    captureImmediate.mockRestore();
+    delete process.env.PONZU_TAILSCALE;
+  }
+});
+
+test("a Mac that signs in to another Tailscale account isn't aliased again", async () => {
+  await writeFile(file(), JSON.stringify({ id: "install-1" }));
+  const tailnet = (user: number) =>
+    fakeTailscale({
+      BackendState: "Running",
+      Self: { TailscaleIPs: ["100.64.0.1"], UserID: user },
+    });
+  await tailnet(7);
+  try {
+    const { aliases } = await sent(async (t) => {
+      t.capture("host started", {});
+      // The first owner is read and aliased before the account changes.
+      const alias = PostHog.prototype.aliasImmediate as unknown as { mock: { calls: unknown[] } };
+      for (let i = 0; i < 200 && !alias.mock.calls.length; i++) await Bun.sleep(5);
+      await tailnet(8);
+      // Past the owner's re-read.
+      setSystemTime(new Date(Date.now() + 11 * 60_000));
+      t.capture("canvas opened", { open_canvases: 1 });
+    });
+    expect(aliases).toEqual([{ distinctId: mod.ownerHash("7"), alias: "install-1" }]);
+  } finally {
+    setSystemTime();
+  }
+});
+
+test("without Tailscale, events stay personless and nothing is aliased", async () => {
+  await writeFile(file(), JSON.stringify({ id: "install-1" }));
+  await fakeTailscale(null);
+  const { events, aliases } = await sent((t) => t.capture("host started", {}));
+  expect(aliases).toEqual([]);
+  expect(events[0]?.properties?.$process_person_profile).toBe(false);
+});
 
 test("ponzu telemetry off sticks, and keeps the install id", async () => {
   expect(await status("on")).toContain("Telemetry is on");

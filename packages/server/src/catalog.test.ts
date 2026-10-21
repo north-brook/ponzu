@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Catalog } from "@ponzu/core";
+import type { Renderer } from "@ponzu/render";
 import { LocalCatalog } from "./catalog.ts";
 import { LocalWorkspace, serve } from "./index.ts";
 
@@ -98,6 +99,47 @@ test("the server's catalog is newest first, and serves nothing it doesn't list",
   } finally {
     server.stop(true);
     await ws.closeAll();
+  }
+});
+
+test("a preview older than an edit to a closed design is redrawn, and its URL changes", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ponzu-stale-"));
+  const path = join(root, "site.design");
+  await design(path, "Site", { Home: ["Hero"] });
+  let draws = 0;
+  const renderer = {
+    render: async () => ({ bytes: new Uint8Array([++draws]) }),
+    close: async () => {},
+  } as unknown as Renderer;
+  const ws = new LocalWorkspace({ cwd: root, renderer, previews: false });
+  const server = serve(ws, { port: 0, root, spotlight: "roots" });
+  const base = `http://127.0.0.1:${server.port}`;
+  const preview = async () => {
+    const catalog = (await (await fetch(`${base}/api/catalog`)).json()) as Catalog;
+    const url = catalog.files.find((f) => f.name === "Site")!.preview!;
+    return { url, bytes: [...new Uint8Array(await (await fetch(`${base}${url}`)).arrayBuffer())] };
+  };
+  try {
+    const first = await preview();
+    // Light is drawn after dark.
+    expect(first.bytes).toEqual([2]);
+    expect((await preview()).bytes).toEqual([2]);
+    // Changed on disk while closed, as a pull would.
+    const later = new Date(Date.now() + 5000);
+    const hero = join(path, "pages/home/hero.html");
+    await writeFile(
+      hero,
+      `<section data-artboard data-id="ab_hero" data-name="Hero" style="width:500px;height:300px"></section>`,
+    );
+    await utimes(hero, later, later);
+    await new Promise((r) => setTimeout(r, 3100));
+    const second = await preview();
+    expect(second.url).not.toBe(first.url);
+    expect(second.bytes).toEqual([4]);
+  } finally {
+    server.stop(true);
+    await ws.closeAll();
+    await rm(root, { recursive: true, force: true });
   }
 });
 
