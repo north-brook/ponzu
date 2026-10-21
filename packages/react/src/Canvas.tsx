@@ -684,7 +684,7 @@ export function Canvas({
             return (
               <div
                 key={t.id}
-                className={pinWrap}
+                className={cn(pinWrap, open ? "pz:z-[3]" : "pz:z-[2]")}
                 style={{ left: p.x, top: p.y }}
                 data-comment-open={open || undefined}
               >
@@ -724,7 +724,11 @@ export function Canvas({
               const x = ((ab?.x ?? 0) + pending.x) * camera.zoom + camera.x;
               const y = ((ab?.y ?? 0) + pending.y) * camera.zoom + camera.y;
               return (
-                <div className={pinWrap} style={{ left: x, top: y }} data-comment-open>
+                <div
+                  className={cn(pinWrap, "pz:z-[3]")}
+                  style={{ left: x, top: y }}
+                  data-comment-open
+                >
                   <span
                     className={cn(pin, "pz:scale-112 pz:bg-comment pz:text-comment-foreground")}
                   >
@@ -942,7 +946,8 @@ function Trace({ x, y, w, h }: { x: number; y: number; w: number; h: number }) {
   );
 }
 
-const pinWrap = "pz:pointer-events-auto pz:absolute pz:z-[2] pz:size-0";
+/** Open pins sit a level above the rest, so another pin never covers their card. */
+const pinWrap = "pz:pointer-events-auto pz:absolute pz:size-0";
 /** A circle centred on the comment's spot, holding its message count. */
 const pin =
   "pz:absolute pz:top-0 pz:left-0 pz:grid pz:size-6 pz:-translate-1/2 pz:place-items-center pz:rounded-full pz:font-semibold pz:text-[11px] pz:tabular-nums pz:shadow-[0_1px_3px_rgba(0,0,0,0.25)] pz:transition-transform pz:duration-[120ms] pz:hover:scale-112";
