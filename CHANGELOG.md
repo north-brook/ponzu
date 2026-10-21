@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.2](https://github.com/north-brook/ponzu/compare/v1.14.1...v1.14.2) (2026-10-21)
+
+
+### Bug Fixes
+
+* skip get started when your other macs' designs are listed ([#41](https://github.com/north-brook/ponzu/issues/41)) ([0d4493b](https://github.com/north-brook/ponzu/commit/0d4493b12ef322b33d2b077d6e196f23177500de))
+
 ## [1.14.1](https://github.com/north-brook/ponzu/compare/v1.14.0...v1.14.1) (2026-10-21)
 
 
