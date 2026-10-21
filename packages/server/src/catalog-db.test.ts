@@ -100,7 +100,7 @@ test("an unreadable database is moved aside and started over", async () => {
   db.close();
 });
 
-test("two processes recovering the same unreadable database don't crash or move each other's", async () => {
+test("two processes recovering the same unreadable database share the one that replaces it", async () => {
   const file = join(dir, "both-corrupt.db");
   await writeFile(file, "not a database either, just bytes that look nothing like one at all");
   const a = new CatalogDb(file);
@@ -108,8 +108,38 @@ test("two processes recovering the same unreadable database don't crash or move 
   a.seen([["/a.design", "walk"]]);
   // The first moved it and started over; the second found it started and opened it.
   expect(b.all().map((r) => r.path)).toEqual(["/a.design"]);
+  b.archive("/a.design", 5);
+  expect(archivedAt(a.get("/a.design"))).toBe(5);
   a.close();
   b.close();
+});
+
+test("recovery that loses the race opens the database the winner started", async () => {
+  const { renameSync } = await import("node:fs");
+  const file = join(dir, "lost-race.db");
+  await writeFile(file, "a corrupt database, about to be replaced by another process's recovery");
+  // Another process moves the bad file aside and starts a good one, after this one read the
+  // bad file and before it moves anything: the good one is opened, not moved.
+  const winner = { started: false };
+  const original = Database.prototype.exec;
+  Database.prototype.exec = function (this: Database, sql: string) {
+    if (!winner.started && sql.includes("busy_timeout")) {
+      winner.started = true;
+      renameSync(file, `${file}.moved`);
+      const good = new CatalogDb(file);
+      good.seen([["/winner.design", "walk"]]);
+      good.close();
+      throw Object.assign(new Error("file is not a database"), { code: "SQLITE_NOTADB" });
+    }
+    return original.call(this, sql);
+  } as typeof original;
+  try {
+    const loser = new CatalogDb(file);
+    expect(loser.all().map((r) => r.path)).toEqual(["/winner.design"]);
+    loser.close();
+  } finally {
+    Database.prototype.exec = original;
+  }
 });
 
 test("two processes starting at once both end up on the current schema", () => {

@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { existsSync, mkdirSync, renameSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 
 /** The schema this build writes. */
@@ -268,28 +268,39 @@ function open(path: string | undefined): { db: Database; readOnly: boolean } {
   if (!path) return setUp(":memory:");
   // The packaged app's smoke check: a database that won't open fails the launch.
   if (process.env.PONZU_DB_STRICT) return setUp(path);
+  // The file this tries, so recovery moves only that one and never its replacement.
+  const tried = inode(path);
   try {
     return setUp(path);
   } catch (err) {
     if (unusable(err)) {
-      // Rediscovered from scratch; only what the person did is lost. Each move on its own:
-      // another process recovering the same file may have moved it already, or the folder
-      // may not let us. Only the process that moved the database itself starts the new
-      // one; the others run from memory rather than move a database just started.
+      // Rediscovered from scratch; only what the person did is lost. Another process may
+      // be recovering the same file: it's moved aside only if it's still the file that
+      // failed, so a database another process just started is never moved, and then
+      // whatever is there is opened and shared. Still unusable (the folder won't let us
+      // move it): from memory, for this run.
       const aside = `${path}.corrupt-${Date.now()}-${process.pid}`;
-      let moved = false;
-      for (const ext of ["", "-wal", "-shm"]) {
-        try {
-          renameSync(path + ext, aside + ext);
-          if (ext === "") moved = true;
-        } catch {}
+      if (tried !== null && inode(path) === tried) {
+        for (const ext of ["", "-wal", "-shm"]) {
+          try {
+            renameSync(path + ext, aside + ext);
+          } catch {}
+        }
       }
-      if (moved)
-        try {
-          return setUp(path);
-        } catch {}
+      try {
+        return setUp(path);
+      } catch {}
     }
     return setUp(":memory:");
+  }
+}
+
+/** Which file is at `path` now, to tell a moved-and-replaced database from the one that failed. */
+function inode(path: string): number | null {
+  try {
+    return statSync(path).ino;
+  } catch {
+    return null;
   }
 }
 
