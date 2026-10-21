@@ -47,8 +47,36 @@ export interface CatalogFile {
   busy?: string;
   /** When an agent created it, if that happened since this server started. */
   created?: number;
+  /** The git checkout it's in, if any. Not read for a locked design. */
+  git?: CatalogGit;
+  /**
+   * Which view lists it: Recent, Scratch (made by an agent for its own use) or
+   * Archived (put away by the person). Missing from Macs on older versions,
+   * which means Recent.
+   */
+  shelf?: CatalogShelf;
+  /** When the person archived it, on an archived design. */
+  archived?: number;
   pages: { id: string; name: string; icon?: string }[];
   artboards: CatalogArtboard[];
+}
+
+export type CatalogShelf = "recent" | "scratch" | "archived";
+
+export interface CatalogGit {
+  /** The checkout's top folder (a worktree's own, for a worktree). */
+  root: string;
+  /** The branch checked out there. Missing when HEAD is detached. */
+  branch?: string;
+  /** HEAD's short commit, when it's detached. */
+  commit?: string;
+  /**
+   * The repository every checkout of it shares: its origin remote, as
+   * `host/owner/name`, or without one, the main checkout's folder.
+   */
+  project?: string;
+  /** The project's short name, e.g. "ponzu". */
+  projectName?: string;
 }
 
 export interface CatalogArtboard {

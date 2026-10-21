@@ -47,6 +47,11 @@ export interface DesignMeta {
    * only once the person opens it themselves, not when it's merely found.
    */
   example?: true;
+  /**
+   * An agent made it for its own use (an experiment, a test fixture): the
+   * home screen lists it under Scratch, out of Recent.
+   */
+  scratch?: true;
   pages: PageMeta[];
 }
 

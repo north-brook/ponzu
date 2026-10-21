@@ -36,6 +36,18 @@ describe("design", () => {
     expect(d.doc.icon).toBeUndefined();
   });
 
+  test("scratch is kept in design.json, and undone like any edit", async () => {
+    const mem = new MemoryAdapter(seed);
+    const d = await Design.open(mem, { saveDelay: 0 });
+    d.apply({ op: "file.scratch", scratch: true }, { kind: "agent", name: "t" });
+    await d.flush();
+    expect(JSON.parse(mem.files["design.json"]!).scratch).toBe(true);
+    expect((await Design.open(mem, { saveDelay: 0 })).doc.scratch).toBe(true);
+    d.undo({ kind: "agent", name: "t" });
+    await d.flush();
+    expect(JSON.parse(mem.files["design.json"]!).scratch).toBeUndefined();
+  });
+
   test("renaming an artboard renames its file", async () => {
     const mem = new MemoryAdapter(seed);
     const d = await Design.open(mem, { saveDelay: 0 });

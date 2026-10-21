@@ -374,6 +374,8 @@ export function summarize(doc: Doc, op: Op): string {
       return `renamed the file to "${op.name}"`;
     case "file.icon":
       return "changed the file's icon";
+    case "file.scratch":
+      return op.scratch ? "marked the file as scratch" : "took the file out of scratch";
     case "note":
       return `${op.content === null ? "deleted" : "wrote"} note ${op.name}`;
     default:
