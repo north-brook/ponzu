@@ -244,3 +244,47 @@ test("an agent watches its animation through screenshot and record", async () =>
     ws.renderer = undefined;
   }
 }, 30_000);
+
+test("get_node gives rendered boxes, and the height an artboard's content needs", async () => {
+  const ab = await client.callTool({
+    name: "create_artboard",
+    arguments: {
+      name: "Boxes",
+      width: 390,
+      height: 400,
+      style: { padding: 20 },
+      html: `<div data-name="Hero" style="height:300px;margin-bottom:24px"></div><p data-name="Copy" style="margin:0;font:16px/24px sans-serif">Plants</p>`,
+    },
+  });
+  const abId = /artboard (ab_\w+)/.exec(text(ab))![1]!;
+  const found = text(await client.callTool({ name: "find_nodes", arguments: { name: "Hero" } }));
+  const heroId = /(n_\w+)/.exec(found)![1]!;
+  // Without a renderer there's no box, and the rest reads as before.
+  const bare = text(await client.callTool({ name: "get_node", arguments: { id: heroId } }));
+  expect(bare).toContain("height: 300px");
+  expect(bare).not.toContain("Box:");
+
+  const { ChromiumRenderer, findChromium } = await import("@ponzu/render/chromium");
+  const chromium = findChromium();
+  if (!chromium) return;
+  ws.renderer = new ChromiumRenderer({ executablePath: chromium });
+  try {
+    const hero = text(await client.callTool({ name: "get_node", arguments: { id: heroId } }));
+    expect(hero).toContain("Box: x 20, y 20, 350×300.");
+    // 20 + 300 + 24 + 24 + 20 = 388, with room to spare.
+    const room = text(await client.callTool({ name: "get_node", arguments: { id: abId } }));
+    expect(room).toContain("Rendered: 390×400, content needs 388px.");
+    // Too short: the hero squeezes before anything overflows, and the shortfall still counts it.
+    await client.callTool({
+      name: "update_styles",
+      arguments: { updates: [{ ids: [abId], style: { height: 360 } }] },
+    });
+    const short = text(await client.callTool({ name: "get_node", arguments: { id: abId } }));
+    expect(short).toContain("Rendered: 390×360, content needs 388px, 28px more.");
+    const squeezed = text(await client.callTool({ name: "get_node", arguments: { id: heroId } }));
+    expect(squeezed).toContain("350×272.");
+  } finally {
+    await ws.renderer.close();
+    ws.renderer = undefined;
+  }
+}, 30_000);

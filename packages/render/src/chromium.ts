@@ -10,13 +10,16 @@ import {
   prepareScript,
   recordFrames,
 } from "./motion.ts";
-import type {
-  LintIssue,
-  RecordRequest,
-  RecordResult,
-  Renderer,
-  RenderRequest,
-  RenderResult,
+import {
+  type LintIssue,
+  type MeasureRequest,
+  type MeasureResult,
+  measureScript,
+  type RecordRequest,
+  type RecordResult,
+  type Renderer,
+  type RenderRequest,
+  type RenderResult,
 } from "./renderer.ts";
 
 export interface ChromiumOptions {
@@ -174,6 +177,21 @@ export class ChromiumRenderer implements Renderer {
       });
       await cdp.detach().catch(() => {});
       return { ...out, mime: "image/png" };
+    } finally {
+      await page.close().catch(() => {});
+    }
+  }
+
+  async measure(req: MeasureRequest): Promise<MeasureResult> {
+    const page = await (await this.ctx()).newPage();
+    try {
+      await this.load(page, req);
+      // At rest, like a screenshot: every finite animation finished.
+      const motion = await page.evaluate<MotionInfo | { error: string }>(prepareScript({}));
+      if ("error" in motion) throw new Error(motion.error);
+      const out = await page.evaluate<MeasureResult | null>(measureScript(req.ids));
+      if (!out) throw new Error("The artboard didn't render.");
+      return out;
     } finally {
       await page.close().catch(() => {});
     }
