@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { mkdir, readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -32,7 +32,7 @@ export interface CatalogOptions {
    * answer), or nothing more ("roots").
    */
   spotlight?: boolean | "roots";
-  /** Remembers which guarded folders this Mac has let Ponzu read. */
+  /** Remembers which guarded folders this Mac has let Ponzu read, and which examples were opened. */
   stateFile?: string;
 }
 
@@ -45,6 +45,8 @@ export interface CatalogSummary {
   locked: boolean;
   /** When the canvas preview was drawn, or null without one. */
   previewAt: number | null;
+  /** design.json says `"example": true`. */
+  example: boolean;
   pages: CatalogFile["pages"];
   artboards: Omit<CatalogArtboard, "thumb">[];
 }
@@ -53,6 +55,13 @@ export interface CatalogSummary {
  * Every .design on this Mac, newest edit first. Spotlight finds them anywhere;
  * without it (Linux, an unindexed disk) a shallow walk of the usual folders
  * stands in.
+ *
+ * Example designs (`"example": true` in design.json, like the ones in Ponzu's
+ * repo, which every checkout of it carries) are listed only once the person
+ * opens one: see `opened`. Being found by Spotlight or a walk, or opened for
+ * an agent (`ponzu mcp` registering its project's designs, a tool call),
+ * doesn't list them. A design in a guarded folder Ponzu can't read yet can't
+ * say it's an example, so it's listed by name like any other.
  */
 export class LocalCatalog {
   private scanned: Promise<Map<string, number>> | null = null;
@@ -61,13 +70,25 @@ export class LocalCatalog {
   private edits = new Map<string, { at: number; modified: number }>();
   private summaries = new Map<string, { modified: number; summary: CatalogSummary | null }>();
   private granted: Set<string>;
+  /** Designs the person opened while this runs, by key and by real path. */
+  private shown = new Set<string>();
+  /** Examples the person opened, kept across restarts. Real paths. */
+  private kept: Set<string>;
 
   constructor(private opts: CatalogOptions = {}) {
-    let saved: { granted?: string[] } = {};
+    let saved: { granted?: string[]; opened?: string[] } = {};
     try {
       if (opts.stateFile) saved = JSON.parse(readFileSync(opts.stateFile, "utf8"));
     } catch {}
     this.granted = new Set(saved.granted);
+    // Forget examples whose folder is gone, like a deleted worktree's.
+    this.kept = new Set(
+      (saved.opened ?? []).filter(
+        (k) => typeof k === "string" && (!this.readable(k) || existsSync(join(k, "design.json"))),
+      ),
+    );
+    // Listed wherever they are: Spotlight doesn't index hidden folders like a worktree's.
+    for (const k of this.kept) this.extra.add(k);
   }
 
   /**
@@ -80,6 +101,23 @@ export class LocalCatalog {
     const guard = guardOf(key);
     if (guard && !this.granted.has(guard)) {
       this.granted.add(guard);
+      void this.save();
+    }
+  }
+
+  /**
+   * The person opened this design themselves, so it's listed even if it's an
+   * example. `remember` keeps an example listed after a restart, as opening it
+   * in the app does; the designs named to `ponzu serve` are listed while it runs.
+   */
+  opened(key: string, opts: { remember?: boolean } = {}): void {
+    this.add(key);
+    // They just opened it, so its folder is readable and resolving it asks nothing.
+    const real = realpathOr(key);
+    this.shown.add(key);
+    this.shown.add(real);
+    if (opts.remember && !this.kept.has(real)) {
+      this.kept.add(real);
       void this.save();
     }
   }
@@ -110,10 +148,9 @@ export class LocalCatalog {
       const real = this.readable(k) ? await realpath(k).catch(() => k) : k;
       if (!byReal.has(real) || open.has(k)) byReal.set(real, k);
     }
-    const keys = new Set(byReal.values());
     const out: CatalogSummary[] = [];
     await Promise.all(
-      [...keys].map(async (key) => {
+      [...byReal].map(async ([real, key]) => {
         const doc = open.get(key);
         if (!doc && !this.readable(key)) {
           out.push(lockedSummary(key, found.get(key) ?? 0));
@@ -121,6 +158,9 @@ export class LocalCatalog {
         }
         const s = await this.summary(key);
         if (!s) return;
+        const example = doc ? Boolean(doc.example) : s.example;
+        if (example && !this.shown.has(key) && !this.shown.has(real) && !this.kept.has(real))
+          return;
         const previewAt = await stat(join(key, PREVIEW_FILE)).then(
           (st) => st.mtimeMs,
           () => null,
@@ -136,7 +176,8 @@ export class LocalCatalog {
     if (!file) return;
     try {
       await mkdir(dirname(file), { recursive: true });
-      await writeFile(file, `${JSON.stringify({ granted: [...this.granted].sort() }, null, 2)}\n`);
+      const state = { granted: [...this.granted].sort(), opened: [...this.kept].sort() };
+      await writeFile(file, `${JSON.stringify(state, null, 2)}\n`);
     } catch {}
   }
 
@@ -205,6 +246,14 @@ function isListed(key: string): boolean {
   return !/\/(node_modules|\.Trash|\.cache)\//.test(key) && !/\/\.[^/]+\.design$/.test(key);
 }
 
+function realpathOr(key: string): string {
+  try {
+    return realpathSync(key);
+  } catch {
+    return key;
+  }
+}
+
 function lockedSummary(key: string, modified: number): CatalogSummary {
   return {
     key,
@@ -212,6 +261,7 @@ function lockedSummary(key: string, modified: number): CatalogSummary {
     modified,
     locked: true,
     previewAt: null,
+    example: false,
     pages: [],
     artboards: [],
   };
@@ -311,7 +361,11 @@ async function lastEdit(key: string): Promise<number> {
 }
 
 async function readSummary(key: string, modified: number): Promise<CatalogSummary | null> {
-  let meta: { name?: string; pages?: { id?: string; name?: string; icon?: string }[] };
+  let meta: {
+    name?: string;
+    example?: unknown;
+    pages?: { id?: string; name?: string; icon?: string }[];
+  };
   try {
     meta = JSON.parse(await readFile(join(key, "design.json"), "utf8"));
   } catch {
@@ -355,6 +409,7 @@ async function readSummary(key: string, modified: number): Promise<CatalogSummar
     modified,
     locked: false,
     previewAt: null,
+    example: meta.example === true,
     pages,
     artboards,
   };

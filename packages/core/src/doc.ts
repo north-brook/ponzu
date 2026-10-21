@@ -7,6 +7,8 @@ import type { Artboard, DesignMeta, Message, PageMeta, PElement, PNode, Thread }
  */
 export interface Doc {
   name: string;
+  /** From design.json: a sample design the home screen hides until it's opened. */
+  example?: true;
   pages: PageState[];
   tokens: string;
   threads: Thread[];
@@ -70,6 +72,7 @@ export function metaOf(doc: Doc): DesignMeta {
   return {
     ponzu: 1,
     name: doc.name,
+    ...(doc.example ? { example: true as const } : {}),
     pages: doc.pages.map(({ id, name, icon }) => (icon ? { id, name, icon } : { id, name })),
   };
 }

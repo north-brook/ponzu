@@ -56,4 +56,41 @@ describe("design", () => {
     d.redo(who);
     expect(d.doc.pages[0]!.artboards[0]!.root.children.length).toBe(4);
   });
+
+  test("the example flag survives saves and outside edits to design.json", async () => {
+    const meta = JSON.parse(seed["design.json"]);
+    const mem = new MemoryAdapter({
+      ...seed,
+      "design.json": JSON.stringify({ ...meta, example: true }),
+    });
+    const d = await Design.open(mem, { saveDelay: 0 });
+    expect(d.doc.example).toBe(true);
+    // A write of design.json for another reason keeps it.
+    d.apply({ op: "file.rename", name: "Fern 2" }, { kind: "user", name: "t" });
+    await d.flush();
+    expect(JSON.parse(mem.files["design.json"]!)).toMatchObject({ name: "Fern 2", example: true });
+    // Taken out by hand, it stays out on the next write.
+    await mem.externalWrite("design.json", JSON.stringify({ ...meta, name: "Fern 3" }));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(d.doc.example).toBeUndefined();
+    d.apply({ op: "file.rename", name: "Fern 4" }, { kind: "user", name: "t" });
+    await d.flush();
+    expect(JSON.parse(mem.files["design.json"]!).example).toBeUndefined();
+    // Put back by hand, it's picked up.
+    await mem.externalWrite("design.json", JSON.stringify({ ...meta, example: true }));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(d.doc.example).toBe(true);
+  });
+
+  test("only `true` makes a design an example", async () => {
+    const meta = JSON.parse(seed["design.json"]);
+    for (const example of ["true", 1, false, null]) {
+      const mem = new MemoryAdapter({
+        ...seed,
+        "design.json": JSON.stringify({ ...meta, example }),
+      });
+      const d = await Design.open(mem, { saveDelay: 0 });
+      expect(d.doc.example).toBeUndefined();
+    }
+  });
 });
