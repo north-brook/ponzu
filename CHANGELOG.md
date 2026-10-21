@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.21.0](https://github.com/north-brook/ponzu/compare/v1.20.3...v1.21.0) (2026-10-21)
+
+
+### Features
+
+* add a get_guide topic on the .design file format ([#89](https://github.com/north-brook/ponzu/issues/89)) ([54a1072](https://github.com/north-brook/ponzu/commit/54a10722beb10cf927cbbc606b0fdf59f9b98a34))
+
 ## [1.20.3](https://github.com/north-brook/ponzu/compare/v1.20.2...v1.20.3) (2026-10-21)
 
 
