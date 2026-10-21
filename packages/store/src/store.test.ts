@@ -288,5 +288,18 @@ describe("design", () => {
       );
       expect(d.problems).toEqual([{ path: "comments.json", what: "not valid JSON" }]);
     });
+
+    test("an empty design.json or comments.json is reported, not taken for a missing one", async () => {
+      const d = await Design.open(
+        new MemoryAdapter({ ...seed, "design.json": "", "comments.json": "" }),
+        { watch: false },
+      );
+      expect(d.problems).toEqual([
+        { path: "design.json", what: "not valid JSON" },
+        { path: "comments.json", what: "not valid JSON" },
+      ]);
+      const missing = await Design.open(new MemoryAdapter(seed), { watch: false });
+      expect(missing.problems).toEqual([]);
+    });
   });
 });

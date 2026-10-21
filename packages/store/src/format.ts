@@ -153,7 +153,8 @@ function parseMeta(
   fallbackName: string,
   problems: Problem[],
 ): DesignMeta {
-  if (!text) return { ponzu: 1, name: fallbackName, pages: [] };
+  // An empty file is there but unreadable: reported below, unlike a missing one.
+  if (text === undefined) return { ponzu: 1, name: fallbackName, pages: [] };
   try {
     const raw = JSON.parse(text) as Partial<DesignMeta>;
     // Without an id a page gets a new one on every read, and pins on its canvas lose it.
@@ -187,7 +188,7 @@ function parseThreads(
 ): { threads: Thread[]; unreadable: unknown[] } {
   const threads: Thread[] = [];
   const unreadable: unknown[] = [];
-  if (!text) return { threads, unreadable };
+  if (text === undefined) return { threads, unreadable };
   let raw: { threads?: unknown };
   try {
     raw = JSON.parse(text);
