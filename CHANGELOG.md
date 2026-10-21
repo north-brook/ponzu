@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.0](https://github.com/north-brook/ponzu/compare/v1.18.1...v1.19.0) (2026-10-21)
+
+
+### Features
+
+* count a person's Macs as one in usage telemetry ([#75](https://github.com/north-brook/ponzu/issues/75)) ([288ca56](https://github.com/north-brook/ponzu/commit/288ca56475945d191aeb48d1e59b9a6afb808436))
+
 ## [1.18.1](https://github.com/north-brook/ponzu/compare/v1.18.0...v1.18.1) (2026-10-21)
 
 
