@@ -13,8 +13,9 @@ export interface OpenTarget {
 const mod = navigator.userAgent.includes("Mac") ? "⌘" : "Ctrl+";
 
 /**
- * The home screen. Until this Mac has a design of its own it walks through the
- * first steps; after that it's the catalog: every design on this Mac and the
+ * The home screen. Until this Mac has a design of its own, or is set up and can
+ * list designs from the person's other Macs, it walks through the first steps;
+ * after that it's the catalog: every design on this Mac and the
  * person's other Macs, newest first, with search over files and their frames.
  */
 export function Dashboard({
@@ -49,8 +50,13 @@ export function Dashboard({
     () => new Map((catalog?.machines ?? []).map((m) => [m.id, m])),
     [catalog?.machines],
   );
-  // Setup shows until this Mac has a design, read yet or not.
-  const setup = catalog !== null && !files.some((f) => f.machine === "local");
+  // Setup shows until this Mac has a design, read yet or not, or until its agents are
+  // connected and the person's other Macs have designs to list.
+  const connected = catalog?.agents.some((a) => a.found && a.connected) ?? false;
+  const setup =
+    catalog !== null &&
+    !files.some((f) => f.machine === "local") &&
+    !(connected && files.length > 0);
   const q = query.trim();
 
   return (
