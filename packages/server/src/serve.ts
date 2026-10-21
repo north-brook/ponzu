@@ -165,6 +165,7 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
         const data: SocketData = {
           key: target,
           clientId: crypto.randomUUID(),
+          watch: url.searchParams.get("watch") === "1",
           relay: { url: target.replace(/^http/, "ws"), queue: [] },
         };
         if (srv.upgrade(req, { data })) return;
@@ -286,7 +287,11 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
     open(s) {
       sockets.add(s);
       if (s.data.relay) return openRelay(s);
-      if (!s.data.watch) ws.telemetry?.capture("canvas opened", { open_canvases: sockets.size });
+      if (!s.data.watch) {
+        let canvases = 0;
+        for (const c of sockets) if (!c.data.watch) canvases++;
+        ws.telemetry?.capture("canvas opened", { open_canvases: canvases });
+      }
       const design = ws.get(s.data.key)!;
       send(s, {
         t: "hello",

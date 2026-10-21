@@ -477,20 +477,31 @@ function Preview({ src }: { src: string | null }) {
 
 /**
  * Which cards are live: the first few an agent is working in, and each for a
- * little while after, until its preview has caught up with what it did.
+ * little while after it stops, until its preview has caught up with what it did.
  */
 function useLive(files: CatalogFile[]): Set<string> {
+  const busy = useRef(new Set<string>());
   const until = useRef(new Map<string, number>());
   const [, wake] = useState(0);
   const now = Date.now();
-  for (const f of files) if (f.busy) until.current.set(f.id, now + LIVE_LINGER);
+  for (const f of files) {
+    if (f.busy) {
+      busy.current.add(f.id);
+      until.current.delete(f.id);
+    } else if (busy.current.delete(f.id)) {
+      // The first catalog that shows the agent gone starts the linger.
+      until.current.set(f.id, now + LIVE_LINGER);
+    }
+  }
   const live = new Set<string>();
   for (const f of files) {
     if (live.size === LIVE_CARDS) break;
-    if ((until.current.get(f.id) ?? 0) > now) live.add(f.id);
+    if (f.busy || (until.current.get(f.id) ?? 0) > now) live.add(f.id);
   }
   // Catalog polls come every few seconds; a lingering card ends on time without one.
-  const next = Math.min(...[...live].map((id) => until.current.get(id)!).filter((t) => t > now));
+  const next = Math.min(
+    ...[...live].map((id) => until.current.get(id) ?? 0).filter((t) => t > now),
+  );
   useEffect(() => {
     if (!Number.isFinite(next)) return;
     const t = setTimeout(() => wake((n) => n + 1), next - Date.now() + 50);

@@ -303,6 +303,18 @@ test("a home screen card's watch socket hears an agent's edits and can't make an
   const heard: any[] = [];
   card.onmessage = (e) => heard.push(JSON.parse(String(e.data)));
   await new Promise((r) => (card.onopen = r));
+  // Nor does it count as an open canvas when one opens beside it.
+  const opened: number[] = [];
+  ws.telemetry = {
+    capture: (event: string, props?: { open_canvases?: number }) => {
+      if (event === "canvas opened") opened.push(props?.open_canvases ?? -1);
+    },
+  } as any;
+  const canvas = new WebSocket(`ws://127.0.0.1:${server.port}/ws?file=${encodeURIComponent(key)}`);
+  await new Promise((r) => (canvas.onopen = r));
+  canvas.close();
+  ws.telemetry = undefined;
+  expect(opened).toEqual([1]);
   const until = async (pred: () => boolean) => {
     for (let i = 0; i < 100 && !pred(); i++) await new Promise((r) => setTimeout(r, 10));
   };
