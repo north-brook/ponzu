@@ -119,11 +119,14 @@ async function openWorkspace(files: string[], log: (s: string) => void) {
   ]);
   const ws = new LocalWorkspace({ renderer, telemetry: telemetry ?? undefined });
   const paths = files.length ? files.map((f) => resolve(f)) : await findDesigns(process.cwd());
+  // Files named on the command line were chosen; the ones found under the folder weren't.
+  const named: string[] = [];
   for (const p of paths) {
     if (!existsSync(join(p, "design.json")) && existsSync(p) === false && files.length) {
       log(`Creating ${p}`);
     }
-    await ws.open(p);
+    const { key } = await ws.open(p);
+    if (files.length) named.push(key);
   }
   if (!renderer)
     log("No Chrome or Chromium found: screenshots are off. Install Chrome or set PONZU_CHROMIUM.");
@@ -132,14 +135,14 @@ async function openWorkspace(files: string[], log: (s: string) => void) {
     designs: ws.designs().length,
     renderer: Boolean(renderer),
   });
-  return { ws, telemetry };
+  return { ws, telemetry, named };
 }
 
 async function runServe(
   files: string[],
   o: { port: number; host: string; open: boolean; dev: boolean; studio?: string },
 ) {
-  const { ws, telemetry } = await openWorkspace(files, (s) => console.log(s));
+  const { ws, telemetry, named } = await openWorkspace(files, (s) => console.log(s));
   const studioDir = o.studio ?? findStudio();
   const server = serve(ws, {
     port: o.port,
@@ -154,6 +157,7 @@ async function runServe(
     // PONZU_SPOTLIGHT=0 lists only designs under the current folder, as a fresh Mac would.
     spotlight: process.env.PONZU_SPOTLIGHT === "0" ? false : undefined,
     agents: async () => agents(),
+    opened: named,
   });
   const local = `http://${o.host === "0.0.0.0" ? "localhost" : o.host}:${server.port}`;
   const unannounce = await announceHost(local, { takeOver: Boolean(process.env.PONZU_DESKTOP) });
@@ -228,14 +232,15 @@ async function runMcp(files: string[]) {
     version: VERSION,
     local: ws,
     findHost,
-    // The host runs from elsewhere: show it this project's files, and send it absolute paths.
+    // The host runs from elsewhere: open this project's files there for the agent, and send
+    // it absolute paths. Opened by an agent, an example design stays off the home screen.
     onHost: async (mcp) => {
       const base = mcp.replace(/\/mcp$/, "");
       for (const path of await designs())
         await fetch(`${base}/api/files`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ path }),
+          body: JSON.stringify({ path, by: "agent" }),
         });
     },
     prepareLocal: openLocal,

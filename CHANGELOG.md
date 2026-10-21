@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.15.0](https://github.com/north-brook/ponzu/compare/v1.14.4...v1.15.0) (2026-10-21)
+
+
+### Features
+
+* three example companies, hidden from your dashboard ([#50](https://github.com/north-brook/ponzu/issues/50)) ([612a0c4](https://github.com/north-brook/ponzu/commit/612a0c4af2647bfda5433d974ae141093778b719))
+
+## [1.14.4](https://github.com/north-brook/ponzu/compare/v1.14.3...v1.14.4) (2026-10-21)
+
+
+### Bug Fixes
+
+* artboard sizes given as plain numbers keep their px ([#46](https://github.com/north-brook/ponzu/issues/46)) ([8d03ac8](https://github.com/north-brook/ponzu/commit/8d03ac89f6cb6953409d704e44a1a5390530b348))
+
+## [1.14.3](https://github.com/north-brook/ponzu/compare/v1.14.2...v1.14.3) (2026-10-21)
+
+
+### Bug Fixes
+
+* shift+1 fits the page and canvas toolbar buttons drop stale focus ([#43](https://github.com/north-brook/ponzu/issues/43)) ([d4da85f](https://github.com/north-brook/ponzu/commit/d4da85f0c446c0798aa6f7dd41f318b7dc8f180e))
+* tidier tool output for agents ([#44](https://github.com/north-brook/ponzu/issues/44)) ([bf6643a](https://github.com/north-brook/ponzu/commit/bf6643a4a2a3c7b3930929331d2e4d623f429464))
+
 ## [1.14.2](https://github.com/north-brook/ponzu/compare/v1.14.1...v1.14.2) (2026-10-21)
 
 

@@ -103,5 +103,5 @@ export const styleValue = z.union([z.string(), z.number(), z.null()]);
 export const styleArg = z
   .record(z.string(), styleValue)
   .describe(
-    'CSS declarations, camelCase or kebab-case. Numbers get px where CSS needs a unit. null removes. Example: {"padding": 24, "backgroundColor": "var(--color-ink)"}',
+    'CSS declarations, camelCase or kebab-case. Numbers, and numeric strings like "24", get px where CSS needs a unit. null removes. Example: {"padding": 24, "backgroundColor": "var(--color-ink)"}',
   );

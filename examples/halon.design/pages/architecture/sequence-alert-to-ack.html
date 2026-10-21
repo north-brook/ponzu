@@ -1,0 +1,142 @@
+<section data-artboard data-id="ab_yys0r" data-name="Sequence · alert to ack" data-x="2500" data-y="0" style="width:1600px;height:1480px;background-color:var(--color-ink);padding:56px 64px;gap:32px;font-family:var(--font-text);color:var(--color-text-inv)">
+<div data-id="n_hs2c2" data-name="Header" style="display:flex;justify-content:space-between;align-items:flex-end">
+  <div data-id="n_b4wjb" style="display:flex;flex-direction:column;gap:12px">
+    <div data-id="n_7iz3d" style="font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:0.08em;text-transform:uppercase;color:var(--color-phosphor)">Sequence · INC-2481 · Tue 20 Oct 2026</div>
+    <div data-id="n_lndt5" style="font-family:var(--font-display);font-size:var(--text-3xl);font-weight:600;letter-spacing:-0.035em;line-height:1">Alert fires → responder acknowledges</div>
+  </div>
+  <div data-id="n_pdcgb" style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;font-family:var(--font-mono)">
+    <span data-id="n_c1e0w" style="font-size:var(--text-2xl);letter-spacing:-0.02em;color:var(--color-phosphor)">89.4 s</span>
+    <span data-id="n_7dt29" style="font-size:var(--text-xs);color:var(--color-text-inv-3)">time to acknowledge, end to end</span>
+  </div>
+</div>
+<div data-id="n_mjtmm" data-name="Sequence" style="position:relative;width:1472px;height:1240px;flex-shrink:0"><svg data-id="n_kxc2w" data-name="Lifelines and messages" width="1472" height="1240" viewBox="0 0 1472 1240" fill="none" font-family="Geist Mono, monospace" style="position:absolute;left:0;top:0">
+  <defs data-id="n_lkim0">
+    <marker data-id="n_pu861" id="sa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path data-id="n_b55pq" d="M0 0 L10 5 L0 10z" fill="#F2F0EA"/></marker>
+    <marker data-id="n_1s3nf" id="sr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path data-id="n_lred3" d="M1 1 L9 5 L1 9" fill="none" stroke="#A2A7AE" stroke-width="1.5"/></marker>
+    <marker data-id="n_eax46" id="sp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path data-id="n_69eav" d="M0 0 L10 5 L0 10z" fill="#C8F54A"/></marker>
+  </defs>
+  <g data-id="n_gdm2v" data-name="Lifelines" stroke="#2A3039" stroke-width="1" stroke-dasharray="3 4">
+    <path data-id="n_kaics" d="M160 64 V1180"/><path data-id="n_b5hi2" d="M316 64 V1180"/><path data-id="n_3gker" d="M472 64 V1180"/><path data-id="n_ul0np" d="M628 64 V1180"/><path data-id="n_1puke" d="M784 64 V1180"/><path data-id="n_59y2d" d="M940 64 V1180"/><path data-id="n_idlue" d="M1096 64 V1180"/><path data-id="n_65cwi" d="M1252 64 V1180"/><path data-id="n_ur399" d="M1408 64 V1180"/>
+  </g>
+  <g data-id="n_0c2rv" data-name="Time grid" stroke="#151920" stroke-width="1">
+    <path data-id="n_tnrc3" d="M0 110 H1472M0 150 H1472M0 190 H1472M0 230 H1472M0 270 H1472M0 310 H1472M0 350 H1472M0 390 H1472M0 430 H1472M0 470 H1472M0 510 H1472M0 550 H1472M0 590 H1472M0 680 H1472M0 720 H1472M0 780 H1472M0 820 H1472M0 860 H1472M0 900 H1472M0 940 H1472"/>
+  </g>
+  <g data-id="n_1ku84" data-name="Activations" fill="#2A3039" stroke="#6B7179" stroke-width="1">
+    <rect data-id="n_rcu6s" x="311" y="104" width="10" height="132"/>
+    <rect data-id="n_20cm3" x="467" y="224" width="10" height="92"/>
+    <rect data-id="n_9qdxy" x="623" y="304" width="10" height="252"/>
+    <rect data-id="n_c5nhc" x="779" y="384" width="10" height="132"/>
+    <rect data-id="n_ap69p" x="935" y="424" width="10" height="52"/>
+    <rect data-id="n_6je0i" x="1091" y="504" width="10" height="222"/>
+    <rect data-id="n_kbq46" x="623" y="774" width="10" height="132"/>
+    <rect data-id="n_kli5r" x="779" y="814" width="10" height="52"/>
+    <rect data-id="n_z2q2u" x="1091" y="854" width="10" height="92"/>
+  </g>
+  <g data-id="n_fng6a" data-name="Gap band">
+    <rect data-id="n_dc9av" x="96" y="612" width="1376" height="48" fill="#151920"/>
+    <path data-id="n_phwcm" d="M96 612 H1472 M96 660 H1472" stroke="#2A3039" stroke-dasharray="2 3"/>
+    <text data-id="n_11ove" x="784" y="641" fill="#A2A7AE" font-size="12" text-anchor="middle">≈ 60 s pass · push delivered, not opened · contact rule moves to step 2</text>
+  </g>
+  <g data-id="n_bvtl6" data-name="Messages" font-size="12">
+    <path data-id="n_4y2me" d="M160 110 H310" stroke="#F2F0EA" stroke-width="1.5" marker-end="url(#sa)"/>
+    <text data-id="n_l4oqh" x="238" y="102" fill="#F2F0EA" text-anchor="middle" stroke="#0D1014" stroke-width="5" paint-order="stroke">POST /v1/hooks/datadog</text>
+
+    <path data-id="n_4yl08" d="M321 142 H352 V160 H322" stroke="#F2F0EA" stroke-width="1.5" marker-end="url(#sa)"/>
+    <text data-id="n_9ukkj" x="362" y="155" fill="#A2A7AE">verify HMAC · normalize · event_id ev_8KQ2</text>
+
+    <path data-id="n_2rd24" d="M310 190 H161" stroke="#A2A7AE" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#sr)"/>
+    <text data-id="n_x8ter" x="238" y="182" fill="#A2A7AE" text-anchor="middle" stroke="#0D1014" stroke-width="5" paint-order="stroke">202 Accepted</text>
+
+    <path data-id="n_y1a73" d="M321 230 H466" stroke="#F2F0EA" stroke-width="1.5" marker-end="url(#sa)"/>
+    <text data-id="n_2p11n" x="394" y="222" fill="#F2F0EA" text-anchor="middle" stroke="#0D1014" stroke-width="5" paint-order="stroke">Kafka alerts.raw · p37</text>
+
+    <path data-id="n_ec659" d="M477 262 H508 V280 H478" stroke="#F2F0EA" stroke-width="1.5" marker-end="url(#sa)"/>
+    <text data-id="n_nvmjx" x="518" y="275" fill="#A2A7AE">fingerprint 9f2c…e1 · new · not suppressed</text>
+
+    <path data-id="n_3es1b" d="M477 310 H622" stroke="#F2F0EA" stroke-width="1.5" marker-end="url(#sa)"/>
+    <text data-id="n_wvewl" x="550" y="302" fill="#F2F0EA" text-anchor="middle" stroke="#0D1014" stroke-width="5" paint-order="stroke">route checkout-api</text>
+
+    <path data-id="n_b7k3x" d="M633 342 H664 V360 H634" stroke="#F2F0EA" stroke-width="1.5" marker-end="url(#sa)"/>
+    <text data-id="n_wvget" x="674" y="355" fill="#F2F0EA">open INC-2481 · <tspan data-id="n_ypwk3" fill="#E5484D" font-weight="600">SEV1</tspan> <tspan data-id="n_7nzrd" fill="#A2A7AE">(tier-0 · 5xx &gt; 2%)</tspan></text>
+
+    <path data-id="n_c4y7k" d="M633 390 H778" stroke="#F2F0EA" stroke-width="1.5" marker-end="url(#sa)"/>
+    <text data-id="n_ucew6" x="706" y="382" fill="#F2F0EA" text-anchor="middle" stroke="#0D1014" stroke-width="5" paint-order="stroke">StartWorkflow L1</text>
+
+    <path data-id="n_m5k82" d="M789 430 H934" stroke="#F2F0EA" stroke-width="1.5" marker-end="url(#sa)"/>
+    <text data-id="n_c5727" x="862" y="422" fill="#F2F0EA" text-anchor="middle" stroke="#0D1014" stroke-width="5" paint-order="stroke">who is on call?</text>
+
+    <path data-id="n_01ycv" d="M935 470 H790" stroke="#A2A7AE" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#sr)"/>
+    <text data-id="n_o2jq8" x="862" y="462" fill="#A2A7AE" text-anchor="middle" stroke="#0D1014" stroke-width="5" paint-order="stroke">marcus.o · to 17:00Z</text>
+
+    <path data-id="n_z90c4" d="M789 510 H1090" stroke="#F2F0EA" stroke-width="1.5" marker-end="url(#sa)"/>
+    <text data-id="n_6b390" x="940" y="502" fill="#F2F0EA" text-anchor="middle" stroke="#0D1014" stroke-width="5" paint-order="stroke">notify(marcus.o, INC-2481)</text>
+
+    <path data-id="n_5xkug" d="M633 550 H1407" stroke="#F2F0EA" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#sa)"/>
+    <text data-id="n_nj1pt" x="1018" y="542" fill="#F2F0EA" text-anchor="middle" stroke="#0D1014" stroke-width="5" paint-order="stroke">incident.events → chat-sync: create #inc-2481-checkout-5xx</text>
+
+    <path data-id="n_5mx45" d="M1101 590 H1251" stroke="#C8F54A" stroke-width="2" marker-end="url(#sp)"/>
+    <text data-id="n_ectjt" x="1176" y="582" fill="#C8F54A" text-anchor="middle" stroke="#0D1014" stroke-width="5" paint-order="stroke">APNs push</text>
+
+    <path data-id="n_bter6" d="M1101 680 H1251" stroke="#C8F54A" stroke-width="2" marker-end="url(#sp)"/>
+    <text data-id="n_awxnd" x="1176" y="672" fill="#C8F54A" text-anchor="middle" stroke="#0D1014" stroke-width="5" paint-order="stroke">SMS · Twilio</text>
+
+    <path data-id="n_o1zlt" d="M1101 712 H1132 V730 H1102" stroke="#F2F0EA" stroke-width="1.5" marker-end="url(#sa)"/>
+    <text data-id="n_ac1g6" x="1142" y="725" fill="#A2A7AE" stroke="#0D1014" stroke-width="5" paint-order="stroke">voice queued +180 s</text>
+
+    <rect data-id="n_spqrw" x="1252" y="764" width="10" height="20" fill="#C8F54A"/>
+    <path data-id="n_cx4b4" d="M1252 780 H634" stroke="#C8F54A" stroke-width="3" marker-end="url(#sp)"/>
+    <text data-id="n_nyep1" x="940" y="770" fill="#C8F54A" text-anchor="middle" font-weight="600" stroke="#0D1014" stroke-width="5" paint-order="stroke">Marcus taps Acknowledge · POST /incidents/2481/ack</text>
+
+    <path data-id="n_g5se4" d="M633 820 H778" stroke="#F2F0EA" stroke-width="1.5" marker-end="url(#sa)"/>
+    <text data-id="n_k3f3b" x="706" y="812" fill="#F2F0EA" text-anchor="middle" stroke="#0D1014" stroke-width="5" paint-order="stroke">signal: acked</text>
+
+    <path data-id="n_czs7k" d="M789 860 H1090" stroke="#F2F0EA" stroke-width="1.5" marker-end="url(#sa)"/>
+    <text data-id="n_dy0r8" x="940" y="852" fill="#F2F0EA" text-anchor="middle" stroke="#0D1014" stroke-width="5" paint-order="stroke">cancel L2 timer + queued voice</text>
+
+    <path data-id="n_65u1a" d="M633 900 H1407" stroke="#F2F0EA" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#sa)"/>
+    <text data-id="n_8xy7f" x="1018" y="892" fill="#F2F0EA" text-anchor="middle" stroke="#0D1014" stroke-width="5" paint-order="stroke">post: “Acknowledged by @marcus.o in 89 s”</text>
+
+    <path data-id="n_0t07t" d="M1101 940 H1251" stroke="#A2A7AE" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#sr)"/>
+    <text data-id="n_7xyfb" x="1176" y="932" fill="#A2A7AE" text-anchor="middle" stroke="#0D1014" stroke-width="5" paint-order="stroke">push: Acknowledged</text>
+  </g>
+  <g data-id="n_9dwg9" data-name="Alt frame">
+    <rect data-id="n_3j3uw" x="96" y="990" width="1376" height="180" stroke="#6B7179" stroke-width="1" stroke-dasharray="6 4"/>
+    <path data-id="n_8dipe" d="M96 990 H330 V1008 L318 1020 H96" fill="#1E232B" stroke="#6B7179"/>
+    <text data-id="n_dr9ms" x="108" y="1010" fill="#F2F0EA" font-size="12" font-weight="600">alt <tspan data-id="n_lsn52" fill="#A2A7AE" font-weight="400">[no ack by 14:07:11Z]</tspan></text>
+    <path data-id="n_lzt5z" d="M789 1050 H934" stroke="#A2A7AE" stroke-width="1.5" marker-end="url(#sr)"/>
+    <text data-id="n_1bcbm" x="862" y="1042" fill="#A2A7AE" text-anchor="middle" font-size="12" stroke="#0D1014" stroke-width="5" paint-order="stroke">who is L2?</text>
+    <path data-id="n_vtyod" d="M935 1090 H790" stroke="#A2A7AE" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#sr)"/>
+    <text data-id="n_e8lli" x="862" y="1082" fill="#A2A7AE" text-anchor="middle" font-size="12" stroke="#0D1014" stroke-width="5" paint-order="stroke">lena.hoffmann</text>
+    <path data-id="n_xh9rf" d="M789 1130 H1090" stroke="#A2A7AE" stroke-width="1.5" marker-end="url(#sr)"/>
+    <text data-id="n_46yqf" x="940" y="1122" fill="#A2A7AE" text-anchor="middle" font-size="12" stroke="#0D1014" stroke-width="5" paint-order="stroke">page lena · voice call marcus</text>
+    <text data-id="n_54edb" x="108" y="1154" fill="#6B7179" font-size="11">Escalation timers live in Temporal, so a region failover resumes them instead of restarting them.</text>
+  </g>
+  <g data-id="n_7m19w" data-name="Times" font-size="11" fill="#6B7179" text-anchor="end">
+    <text data-id="n_13vua" x="84" y="114" fill="#F2F0EA">14:02:11.000</text>
+    <text data-id="n_62sr1" x="84" y="154">+6 ms</text><text data-id="n_mpp5o" x="84" y="194">+41 ms</text><text data-id="n_b9q92" x="84" y="234">+58 ms</text><text data-id="n_n4lhp" x="84" y="274">+71 ms</text><text data-id="n_6wwrh" x="84" y="314">+93 ms</text><text data-id="n_dqkly" x="84" y="354">+118 ms</text><text data-id="n_1hn8u" x="84" y="394">+140 ms</text><text data-id="n_z1ej3" x="84" y="434">+146 ms</text><text data-id="n_duvew" x="84" y="474">+149 ms</text><text data-id="n_g1qz5" x="84" y="514">+162 ms</text><text data-id="n_xm2e4" x="84" y="554">+410 ms</text>
+    <text data-id="n_fti8k" x="84" y="594" fill="#C8F54A">+1.92 s</text>
+    <text data-id="n_ou0ih" x="84" y="684" fill="#C8F54A">+62.0 s</text><text data-id="n_8glyf" x="84" y="724">+62.1 s</text>
+    <text data-id="n_xlvy6" x="84" y="784" fill="#C8F54A" font-weight="600">+89.4 s</text>
+    <text data-id="n_lpc2k" x="84" y="824">+89.4 s</text><text data-id="n_wi361" x="84" y="864">+89.5 s</text><text data-id="n_l0zos" x="84" y="904">+89.6 s</text><text data-id="n_u17ke" x="84" y="944">+89.9 s</text>
+    <text data-id="n_eam1n" x="84" y="1054">+300 s</text>
+  </g>
+</svg>
+<div data-id="n_2br4m" data-name="Participants" style="position:absolute;left:0;top:0;width:1472px;height:64px">
+  <div data-id="n_jz7vd" style="position:absolute;left:92px;top:0;width:136px;height:56px;box-sizing:border-box;border:1px solid var(--color-ink-4);border-radius:var(--radius-sm);background:var(--color-ink-2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px"><span data-id="n_mhv9c" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">Datadog</span><span data-id="n_6zj5s" style="font-size:var(--text-2xs);color:var(--color-text-inv-3)">monitor 88213</span></div>
+  <div data-id="n_j35pj" style="position:absolute;left:248px;top:0;width:136px;height:56px;box-sizing:border-box;border:1px solid var(--color-ink-4);border-radius:var(--radius-sm);background:var(--color-ink-2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px"><span data-id="n_iixhc" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">ingest-gateway</span><span data-id="n_3rm15" style="font-size:var(--text-2xs);color:var(--color-text-inv-3)">edge</span></div>
+  <div data-id="n_8eg8y" style="position:absolute;left:404px;top:0;width:136px;height:56px;box-sizing:border-box;border:1px solid var(--color-ink-4);border-radius:var(--radius-sm);background:var(--color-ink-2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px"><span data-id="n_cn7i2" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">dedup-router</span><span data-id="n_fiz9b" style="font-size:var(--text-2xs);color:var(--color-text-inv-3)">core</span></div>
+  <div data-id="n_147he" style="position:absolute;left:560px;top:0;width:136px;height:56px;box-sizing:border-box;border:1px solid var(--color-ink-4);border-radius:var(--radius-sm);background:var(--color-ink-2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px"><span data-id="n_60067" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">incident-svc</span><span data-id="n_c7nwf" style="font-size:var(--text-2xs);color:var(--color-text-inv-3)">core</span></div>
+  <div data-id="n_5kidw" style="position:absolute;left:716px;top:0;width:136px;height:56px;box-sizing:border-box;border:1px solid var(--color-ink-4);border-radius:var(--radius-sm);background:var(--color-ink-2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px"><span data-id="n_v4zd6" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">escalation</span><span data-id="n_587ia" style="font-size:var(--text-2xs);color:var(--color-text-inv-3)">Temporal</span></div>
+  <div data-id="n_ja3y1" style="position:absolute;left:872px;top:0;width:136px;height:56px;box-sizing:border-box;border:1px solid var(--color-ink-4);border-radius:var(--radius-sm);background:var(--color-ink-2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px"><span data-id="n_qgwtn" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">oncall-sched</span><span data-id="n_g6h6m" style="font-size:var(--text-2xs);color:var(--color-text-inv-3)">core</span></div>
+  <div data-id="n_1o6ik" style="position:absolute;left:1028px;top:0;width:136px;height:56px;box-sizing:border-box;border:1px solid var(--color-ink-4);border-radius:var(--radius-sm);background:var(--color-ink-2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px"><span data-id="n_cml05" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">notify-fanout</span><span data-id="n_a19ry" style="font-size:var(--text-2xs);color:var(--color-text-inv-3)">core</span></div>
+  <div data-id="n_irkon" style="position:absolute;left:1184px;top:0;width:136px;height:56px;box-sizing:border-box;border:1.5px solid var(--color-phosphor);border-radius:var(--radius-sm);background:var(--color-ink-2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px"><span data-id="n_21snk" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600;color:var(--color-phosphor)">Marcus · iOS</span><span data-id="n_6ujj4" style="font-size:var(--text-2xs);color:var(--color-text-inv-3)">payments on-call</span></div>
+  <div data-id="n_2f6i8" style="position:absolute;left:1340px;top:0;width:132px;height:56px;box-sizing:border-box;border:1px solid var(--color-ink-4);border-radius:var(--radius-sm);background:var(--color-ink-2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px"><span data-id="n_d9q0j" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">Slack</span><span data-id="n_839q9" style="font-size:var(--text-2xs);color:var(--color-text-inv-3)">via chat-sync</span></div>
+</div>
+<div data-id="n_9x5x9" data-name="Sequence legend" style="position:absolute;left:96px;top:1200px;width:1376px;display:flex;gap:32px;align-items:center;font-size:var(--text-xs);color:var(--color-text-inv-2)">
+  <span data-id="n_rmj1h" style="display:flex;align-items:center;gap:8px"><svg data-id="n_igmbh" width="36" height="10"><path data-id="n_k74jc" d="M0 5 H30" stroke="#F2F0EA" stroke-width="1.5"/><path data-id="n_b92mf" d="M28 1 L36 5 L28 9z" fill="#F2F0EA"/></svg>Call</span>
+  <span data-id="n_o6y8m" style="display:flex;align-items:center;gap:8px"><svg data-id="n_j9bz0" width="36" height="10"><path data-id="n_dtcu5" d="M0 5 H32" stroke="#A2A7AE" stroke-width="1.5" stroke-dasharray="5 4"/><path data-id="n_ofblf" d="M29 1 L35 5 L29 9" stroke="#A2A7AE" stroke-width="1.5" fill="none"/></svg>Return</span>
+  <span data-id="n_udbh6" style="display:flex;align-items:center;gap:8px"><svg data-id="n_i59pr" width="36" height="10"><path data-id="n_4zyoy" d="M0 5 H30" stroke="#F2F0EA" stroke-width="1.5" stroke-dasharray="5 4"/><path data-id="n_lm9cd" d="M28 1 L36 5 L28 9z" fill="#F2F0EA"/></svg>Async via incident.events</span>
+  <span data-id="n_quj96" style="display:flex;align-items:center;gap:8px"><svg data-id="n_ln0j3" width="36" height="10"><path data-id="n_czc7a" d="M0 5 H30" stroke="#C8F54A" stroke-width="2"/><path data-id="n_3cde6" d="M28 1 L36 5 L28 9z" fill="#C8F54A"/></svg>Reaches a human</span>
+  <span data-id="n_vvx4l" style="margin-left:auto;font-family:var(--font-mono);color:var(--color-text-inv-3)">Times are offsets from webhook receipt, measured from trace 4c1a…7be0</span>
+</div></div>
+</section>

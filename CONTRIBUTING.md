@@ -2,7 +2,7 @@
 
 ```sh
 bun install
-bun run dev          # the studio with hot reload, on examples/fernwood.design
+bun run dev          # the studio with hot reload, on the three examples/
 bun run lint && bun run typecheck && bun test
 ```
 

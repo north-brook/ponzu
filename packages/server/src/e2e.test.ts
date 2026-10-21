@@ -70,6 +70,34 @@ test("an agent builds a file through MCP and it lands on disk", async () => {
   expect(await readFile(join(dir, "shop.design/tokens.css"), "utf8")).toContain("--ink");
 });
 
+test("self-closing svg children written with write_html stay siblings", async () => {
+  const ab = await client.callTool({
+    name: "create_artboard",
+    arguments: { name: "Icons", width: 200, height: 200 },
+  });
+  const abId = /artboard (ab_\w+)/.exec(text(ab))![1]!;
+  await client.callTool({
+    name: "write_html",
+    arguments: {
+      target: abId,
+      html: `<svg viewBox="0 0 24 24"><g data-name="Glyph"><path d="M1 1"/><path d="M2 2"/><circle r="2"/></g></svg>`,
+    },
+  });
+  const found = text(await client.callTool({ name: "find_nodes", arguments: { name: "Glyph" } }));
+  const gId = /(n_\w+)/.exec(found)![1]!;
+  for (const mode of ["append", "after"])
+    await client.callTool({
+      name: "write_html",
+      arguments: { target: gId, mode, html: `<path d="M3 3"/><path d="M4 4"/>` },
+    });
+  const html = text(
+    await client.callTool({ name: "get_html", arguments: { id: abId, ids: false } }),
+  );
+  expect(html).toContain(
+    `<svg viewBox="0 0 24 24"><g data-name="Glyph"><path d="M1 1"/><path d="M2 2"/><circle r="2"/><path d="M3 3"/><path d="M4 4"/></g><path d="M3 3"/><path d="M4 4"/></svg>`,
+  );
+});
+
 test("comments flow through wait_for_activity and reply", async () => {
   const design = ws.designs()[0]!.design;
   const ab = design.doc.pages[0]!.artboards[0]!;

@@ -146,7 +146,7 @@ export function Studio() {
       await fetch(`${ORIGIN}/api/files`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ path: target.key }),
+        body: JSON.stringify({ path: target.key, by: "person" }),
       });
     const tab = tabOf(target);
     setTabs((t) => (t.includes(tab) ? t : [...t, tab]));

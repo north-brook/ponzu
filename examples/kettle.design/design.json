@@ -1,0 +1,27 @@
+{
+  "ponzu": 1,
+  "name": "Kettle",
+  "example": true,
+  "pages": [
+    {
+      "id": "pg_w2rbn",
+      "name": "Brand",
+      "icon": "palette"
+    },
+    {
+      "id": "pg_43n3c",
+      "name": "Architecture",
+      "icon": "flow"
+    },
+    {
+      "id": "pg_0gh1n",
+      "name": "Website",
+      "icon": "desktop"
+    },
+    {
+      "id": "pg_5wdq6",
+      "name": "App",
+      "icon": "phone"
+    }
+  ]
+}

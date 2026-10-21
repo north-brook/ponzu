@@ -39,7 +39,16 @@ export interface HomeOptions {
   self: () => string;
   /** The port the owner's other Macs serve their designs on. */
   peerPort: number;
+  /** Designs the person named when starting the server, listed even if they're examples. */
+  opened?: string[];
 }
+
+/**
+ * Who asked to open a design. The person (the studio's Open, a card, Finder, the
+ * app's Open Recent) lists it on the home screen even if it's an example; an
+ * agent (`ponzu mcp` registering its project's designs) only makes it available.
+ */
+export type OpenedBy = "person" | "agent";
 
 /**
  * The home screen's data: every design on this Mac and on the owner's other
@@ -68,6 +77,7 @@ export class Home {
       stateFile: opts.stateFile,
     });
     for (const { key } of ws.designs()) this.catalog.add(key);
+    for (const key of opts.opened ?? []) this.catalog.opened(key);
     ws.onOpen((key) => this.catalog.add(key));
     ws.onCreate((key) => {
       this.catalog.add(key);
@@ -80,6 +90,17 @@ export class Home {
       if (latest)
         this.agent = { name: latest.name, ...(latest.client ? { client: latest.client } : {}) };
     });
+  }
+
+  /**
+   * Open a design for someone. Opening it for the person lists it, examples
+   * included, and an example they open stays listed after a restart.
+   */
+  async open(path: string, by: OpenedBy): Promise<{ key: string; design: Design }> {
+    const opened = await this.ws.open(path);
+    if (by === "person")
+      this.catalog.opened(opened.key, { remember: Boolean(opened.design.doc.example) });
+    return opened;
   }
 
   /** The owner's tailnet, re-read every few seconds. Null when Tailscale isn't running or is off. */

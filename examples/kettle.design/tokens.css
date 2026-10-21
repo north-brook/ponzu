@@ -1,0 +1,62 @@
+:root {
+  /* Color: the kitchen */
+  --color-tomato: #E4572E;
+  --color-tomato-deep: #B53E1D;
+  --color-tomato-soft: #F9D5C6;
+  --color-oat: #F5EDE0;
+  --color-paper: #FFFAF2;
+  --color-iron: #2B1F1B;
+  --color-iron-soft: #3D2F29;
+  --color-cocoa: #75625A;
+  --color-crumb: #A8978C;
+  --color-line: #E7DBCB;
+  --color-butter: #F6C445;
+  --color-butter-soft: #FCEBB6;
+  --color-mint: #A9DBBE;
+  --color-mint-soft: #DDF1E4;
+  --color-basil: #2E7650;
+  --color-plum: #6B4D8F;
+  --color-lilac: #D9CCF4;
+  --color-sky: #BFDDF2;
+  --color-navy: #24435C;
+  --color-white: #FFFFFF;
+
+  /* Type */
+  --font-display: "Fraunces", Georgia, serif;
+  --font-text: "DM Sans", system-ui, sans-serif;
+  --font-mono: "Azeret Mono", ui-monospace, monospace;
+
+  --text-hero: 88px;
+  --text-display: 56px;
+  --text-title: 34px;
+  --text-heading: 22px;
+  --text-body: 17px;
+  --text-callout: 15px;
+  --text-caption: 13px;
+
+  /* Shape */
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --radius-xl: 32px;
+  --radius-phone: 54px;
+  --radius-pill: 999px;
+
+  /* Space (4pt) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+
+  --shadow-card: 0 1px 0 rgba(43,31,27,0.04), 0 8px 24px -12px rgba(43,31,27,0.18);
+  --shadow-phone: 0 40px 80px -30px rgba(43,31,27,0.45), 0 12px 30px -12px rgba(43,31,27,0.25);
+    --color-honey: #C38A0C;
+}

@@ -1,7 +1,8 @@
 /**
  * Small, forgiving parser for inline style attributes. It splits on
  * semicolons that sit outside strings and parentheses, so values like
- * `url(data:image/png;base64,...)` survive.
+ * `url(data:image/png;base64,...)` survive. Bare numbers on properties that
+ * need a length get px (see `cssValue`).
  */
 export function parseStyle(text: string): Record<string, string> {
   const out: Record<string, string> = {};
@@ -11,7 +12,8 @@ export function parseStyle(text: string): Record<string, string> {
     const prop = decl.slice(0, colon).trim();
     const value = decl.slice(colon + 1).trim();
     if (!prop || !value) continue;
-    out[prop.startsWith("--") ? prop : prop.toLowerCase()] = value;
+    const key = prop.startsWith("--") ? prop : prop.toLowerCase();
+    out[key] = cssValue(key, value);
   }
   return out;
 }
@@ -50,11 +52,12 @@ export function mergeStyle(
       delete out[key];
       continue;
     }
-    out[key] = typeof rawValue === "number" ? numberToCss(key, rawValue) : String(rawValue).trim();
+    out[key] = cssValue(key, rawValue);
   }
   return out;
 }
 
+/** Properties where a bare number is valid CSS, so it never gets a unit. */
 const UNITLESS = new Set([
   "opacity",
   "z-index",
@@ -68,12 +71,64 @@ const UNITLESS = new Set([
   "zoom",
   "aspect-ratio",
   "column-count",
+  "columns",
   "fill-opacity",
   "stroke-opacity",
+  "stop-opacity",
+  "flood-opacity",
+  "stroke-width",
+  "stroke-dasharray",
+  "stroke-dashoffset",
+  "stroke-miterlimit",
+  "animation-iteration-count",
+  "border-image-outset",
+  "border-image-slice",
+  "border-image-width",
+  "font-size-adjust",
+  "grid-area",
+  "grid-row",
+  "grid-row-start",
+  "grid-row-end",
+  "grid-column",
+  "grid-column-start",
+  "grid-column-end",
+  "initial-letter",
+  "line-clamp",
+  "box-flex",
+  "box-flex-group",
+  "box-ordinal-group",
+  "flex-positive",
+  "flex-negative",
+  "flex-order",
+  "counter-increment",
+  "counter-reset",
+  "counter-set",
+  "hyphenate-limit-chars",
+  "mask-border-outset",
+  "mask-border-slice",
+  "mask-border-width",
+  "max-lines",
+  "math-depth",
+  "orphans",
+  "widows",
+  "shape-image-threshold",
+  "tab-size",
 ]);
 
-function numberToCss(key: string, n: number): string {
-  return UNITLESS.has(key) || key.startsWith("--") || n === 0 ? String(n) : `${n}px`;
+const BARE_NUMBER = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/;
+
+/**
+ * One CSS value as Ponzu stores it. A bare number, given as a number or as a
+ * string like "1440" or "16 24", gets px on properties that need a length,
+ * because the browser drops `width:1440` entirely. Zero, custom properties
+ * and the unitless properties above keep the number as is.
+ */
+export function cssValue(key: string, value: string | number): string {
+  const text = String(value).trim();
+  if (key.startsWith("--") || UNITLESS.has(key.replace(/^-(webkit|moz|ms|o)-/, ""))) return text;
+  const parts = text.split(/\s+/);
+  if (!parts.every((p) => BARE_NUMBER.test(p))) return text;
+  return parts.map((p) => (Number(p) === 0 ? p : `${p}px`)).join(" ");
 }
 
 export function splitTopLevel(text: string, sep: string): string[] {

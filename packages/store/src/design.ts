@@ -282,6 +282,9 @@ export class Design {
     this.written = new Map(Object.entries(bag));
     const ops = diffDocs(this.doc, incoming);
     this.layout = layout;
+    // Set by hand in design.json, never by an op: carry it over so the next write keeps it.
+    if (incoming.example) this.doc.example = true;
+    else delete this.doc.example;
     if (!ops.length) return;
     const origin: Origin = { kind: "disk", name: relevant[0]! };
     try {
