@@ -1,3 +1,4 @@
+import { clampScale } from "./capture.ts";
 import { artboardPage } from "./document.ts";
 import {
   type Box,
@@ -44,6 +45,8 @@ export interface RemoteRenderReply {
   width: number;
   height: number;
   contentHeight: number;
+  /** The scale the image is at, when the host had to use less than the job's. */
+  scale?: number;
   issues: LintIssue[];
   /** What prepareScript evaluated to. */
   motion?: MotionInfo | { error: string };
@@ -91,7 +94,7 @@ export class RemoteRenderer implements Renderer {
       html: this.page(req),
       ...size(req.artboard.root.style),
       selector: selectorFor(req.nodeId),
-      scale: req.scale ?? 1,
+      scale: clampScale(req.scale),
       format: req.format ?? "png",
       lint: req.lint ?? false,
       lintScript: FULL_LINT_SCRIPT,
@@ -107,6 +110,8 @@ export class RemoteRenderer implements Renderer {
       width: out.width,
       height: out.height,
       contentHeight: out.contentHeight,
+      // Hosts from before this field always captured at the job's scale.
+      scale: out.scale ?? job.scale,
       issues: out.issues,
       motion: out.motion,
     };

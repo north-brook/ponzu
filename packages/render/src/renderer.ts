@@ -104,6 +104,11 @@ export interface RenderResult {
   height: number;
   /** The artboard's actual content height, useful when its height is fit-content. */
   contentHeight: number;
+  /**
+   * Device pixels per CSS pixel in the image: the scale asked for, or less
+   * when that image would have been too big for the GPU to draw.
+   */
+  scale?: number;
   issues: LintIssue[];
   /** What animates and where the shot sits on the timeline. */
   motion?: MotionInfo;
