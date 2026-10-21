@@ -40,10 +40,12 @@ interface Pending {
   y: number;
 }
 
-function size(ab: Artboard) {
+/** An artboard's size; h is null when it isn't a px length, so the canvas measures it. */
+export function size(ab: Artboard) {
   const w = Number.parseFloat(ab.root.style.width ?? "") || 1440;
   const hRaw = ab.root.style.height;
-  const h = hRaw && hRaw.endsWith("px") ? Number.parseFloat(hRaw) : null;
+  // Not just /px$/: "fit-contentpx" ends in px and parses to NaN, which poisons the camera.
+  const h = hRaw && /^\d+(\.\d+)?px$/.test(hRaw) ? Number.parseFloat(hRaw) : null;
   return { w, h };
 }
 
