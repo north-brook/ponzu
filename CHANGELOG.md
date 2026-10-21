@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.20.3](https://github.com/north-brook/ponzu/compare/v1.20.2...v1.20.3) (2026-10-21)
+
+
+### Bug Fixes
+
+* warn when an artboard sets display: flex without a direction ([#84](https://github.com/north-brook/ponzu/issues/84)) ([f20c23c](https://github.com/north-brook/ponzu/commit/f20c23c0c31a2abea2e2a7e2274fe1c5fce4a9da))
+
 ## [1.20.2](https://github.com/north-brook/ponzu/compare/v1.20.1...v1.20.2) (2026-10-21)
 
 
