@@ -1,7 +1,7 @@
 "use client";
 
 import { AgentMark, Icon } from "@ponzu/react";
-import "@ponzu/react/styles.css";
+import "./ponzu.css";
 import "./demo.css";
 
 /** Ponzu's class strings for pins and cards (Canvas.tsx, Comments.tsx), so they match exactly. */

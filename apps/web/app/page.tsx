@@ -7,6 +7,7 @@ import { CodeWell } from "@/components/code-well";
 import { CssTileVisual } from "@/components/css-tile";
 import { CommentThread } from "@/components/demo/comment-thread";
 import { ProductDemo } from "@/components/demo/product-demo";
+import { HomeScreen } from "@/components/home-screen";
 import { Wedge } from "@/components/icons";
 import { DownloadButton, GitHubButton } from "@/components/links";
 import { DESCRIPTION, share, TITLE } from "@/components/share";
@@ -49,9 +50,9 @@ export default function Home() {
       </div>
 
       {/*
-        Two rows, each a wide tile beside a narrow one, flipped on the second row. Tiles in a row
-        share a height, so each pair holds proofs of about the same size: a thread beside a diff,
-        a grid of agents beside a stylesheet.
+        Two rows, each a wide tile beside a narrow one, flipped on the second row, then the home
+        screen across the full width. Tiles in a row share a height, so each pair holds proofs of
+        about the same size: a thread beside a diff, a grid of agents beside a stylesheet.
       */}
       <section className="grid gap-4 pb-[120px] md:grid-cols-12">
         <Tile
@@ -91,7 +92,7 @@ export default function Home() {
         <Tile
           className="md:col-span-6 lg:col-span-5"
           title="Bring your agent."
-          body="Claude Code, Codex, Cursor, Gemini, Grok, Conductor and any MCP client. No account."
+          body="Claude Code, Codex, Cursor, Gemini, Grok, Conductor and any MCP client. The Mac app connects the first three itself. No account."
         >
           <AgentsVisual />
         </Tile>
@@ -112,6 +113,14 @@ export default function Home() {
               <Code code={SLICE_CSS} lang="css" />
             </CodeWell>
           </div>
+        </Tile>
+
+        <Tile
+          className="md:col-span-12"
+          title="Every design on your Macs."
+          body="Ponzu's home screen lists every .design on this Mac and your others on Tailscale, with live previews and search across every frame."
+        >
+          <HomeScreen />
         </Tile>
       </section>
 

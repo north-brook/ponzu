@@ -1,0 +1,6 @@
+/*
+ * Ponzu's canvas stylesheet, compiled here rather than taken prebuilt: the demo uses `pz:` classes
+ * the canvas itself doesn't, and the prebuilt file only has the ones the package uses.
+ */
+@import "@ponzu/react/tailwind.css";
+@source "./";

@@ -1,7 +1,7 @@
 "use client";
 
 import { AgentMark, Icon, Logo } from "@ponzu/react";
-import "@ponzu/react/styles.css";
+import "./ponzu.css";
 import "./demo.css";
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
 import { ClaudeApp } from "./claude-app";
@@ -291,19 +291,13 @@ function Studio({ beat, t }: { beat: number; t: number }) {
           <LogoMark />
         </span>
         <span className="dm-tab">
-          <Icon name="file" size={14} />
+          <Icon name="blank" size={14} />
           <span className={busy ? "pz-shimmer" : undefined}>Fernwood</span>
-          <span className="dm-tab-close">
-            <Icon name="close" size={12} />
-          </span>
         </span>
         <div className="dm-bar-right">
           {/* As in the app: the agent shows only while it's working or waiting on your comments. */}
           <span className="dm-agent" data-on={at("send") && !at("rest")} data-busy={busy}>
             <AgentMark client="claude" size={16} />
-          </span>
-          <span className="dm-icon">
-            <ThemeIcon />
           </span>
         </div>
       </header>
@@ -419,15 +413,6 @@ function Studio({ beat, t }: { beat: number; t: number }) {
             <Cursor beat={beat} target={pin} view={view} />
           </div>
 
-          {!page && (
-            <div className="pz:pointer-events-none pz:absolute pz:inset-0 pz:grid pz:place-content-center pz:gap-1 pz:text-center dm-empty">
-              <p className="pz:m-0 pz:text-[15px]">This page is empty.</p>
-              <p className="pz:m-0 pz:text-muted-foreground">
-                Ask your agent to design something. It will appear here as it works.
-              </p>
-            </div>
-          )}
-
           <Footer
             zoom={page ? zoom : 1}
             pages={pages}
@@ -531,10 +516,14 @@ function Cursor({
   );
 }
 
+/** Ponzu's class strings for the canvas's floating bars (Canvas.tsx, ui.tsx). */
+const BAR =
+  "pz:flex pz:items-center pz:gap-0.5 pz:rounded-xl pz:bg-bar pz:p-1 pz:shadow-bar pz:backdrop-blur-[18px] pz:backdrop-saturate-[1.6]";
 const GHOST_ICON =
   "pz:inline-flex pz:size-[26px] pz:shrink-0 pz:items-center pz:justify-center pz:rounded-[7px] pz:text-muted-foreground";
+const RAISED = "pz:bg-raised pz:text-foreground pz:shadow-raised";
 
-/** The canvas footer as of Ponzu 1.4: pages, then the mode switcher and zoom. */
+/** The canvas's floating bars: pages at the bottom left, the mode switcher and zoom at the right. */
 function Footer({
   zoom,
   pages,
@@ -549,51 +538,50 @@ function Footer({
   busyPage: PageId | null;
   mode: "select" | "hand" | "comment";
 }) {
-  const tabs = pages.length ? pages : [{ id: null, name: "Page 1", icon: "page" }];
+  const tabs = pages.length ? pages : [{ id: null, name: "Page 1", icon: "board" }];
   return (
-    <div className="pz:flex pz:h-11 pz:shrink-0 pz:items-center pz:justify-between pz:gap-4 pz:bg-background pz:px-2">
-      <div className="pz:flex pz:min-w-0 pz:items-center pz:gap-0.5">
-        {tabs.map((p) => (
-          <span
-            key={p.name}
-            className={`dm-page pz:inline-flex pz:h-7 pz:shrink-0 pz:items-center pz:gap-1.5 pz:whitespace-nowrap pz:rounded-lg pz:px-2.5 ${
-              p.id === page
-                ? "dm-page-on pz:bg-card pz:text-foreground pz:shadow-[0_1px_2px_rgba(0,0,0,0.06)]"
-                : "pz:text-muted-foreground"
-            } ${pages.length ? "dm-page-new" : ""}`}
-          >
-            <Icon name={p.icon} size={14} />
-            <span className={p.id && p.id === busyPage ? "pz-shimmer" : undefined}>{p.name}</span>
-          </span>
-        ))}
-        <span className={GHOST_ICON}>
+    <div className="pz:pointer-events-none pz:absolute pz:inset-x-2.5 pz:bottom-2.5 pz:z-[3] pz:flex pz:items-end pz:justify-between pz:gap-2.5">
+      <div className={`${BAR} pz:min-w-0 pz:shrink`}>
+        <div className="pz:flex pz:min-w-0 pz:items-center pz:gap-0.5">
+          {tabs.map((p) => (
+            <span
+              key={p.name}
+              className={`dm-page pz:inline-flex pz:h-7 pz:shrink-0 pz:items-center pz:gap-1.5 pz:whitespace-nowrap pz:rounded-lg pz:px-2.5 ${
+                p.id === page ? RAISED : "pz:text-muted-foreground"
+              } ${pages.length ? "dm-page-new" : ""}`}
+            >
+              <Icon name={p.icon} size={14} />
+              <span className={p.id && p.id === busyPage ? "pz-shimmer" : undefined}>{p.name}</span>
+            </span>
+          ))}
+        </div>
+        <span className={`${GHOST_ICON} pz:size-7 pz:rounded-lg`}>
           <Icon name="add" size={15} />
         </span>
       </div>
-      <div className="pz:flex pz:shrink-0 pz:items-center pz:gap-2.5">
-        <div className="pz:flex pz:gap-0.5 pz:p-0.5 pz:rounded-[9px]">
+      <div className={`${BAR} pz:shrink-0`}>
+        <div className="pz:flex pz:gap-0.5">
           {(["select", "hand", "comment"] as const).map((m) => (
             <span
               key={m}
-              className={`dm-mode pz:grid pz:h-[26px] pz:w-[30px] pz:place-items-center pz:rounded-[7px] ${
-                mode === m ? "pz:bg-muted pz:text-foreground" : "pz:text-muted-foreground"
+              className={`dm-mode pz:grid pz:size-7 pz:place-items-center pz:rounded-lg ${
+                mode === m ? RAISED : "pz:text-muted-foreground"
               }`}
             >
               <Icon name={m} size={16} />
             </span>
           ))}
         </div>
-        <div className="pz:flex pz:items-center">
-          <span className={GHOST_ICON}>
-            <Icon name="minus" size={14} />
-          </span>
-          <span className="pz:inline-flex pz:h-[26px] pz:min-w-11 pz:items-center pz:justify-center pz:rounded-[7px] pz:text-muted-foreground pz:tabular-nums">
-            {Math.round(zoom * 100)}%
-          </span>
-          <span className={GHOST_ICON}>
-            <Icon name="plus" size={14} />
-          </span>
-        </div>
+        <span aria-hidden className="pz:mx-1.5 pz:h-4 pz:w-px pz:bg-foreground/10" />
+        <span className={GHOST_ICON}>
+          <Icon name="minus" size={14} />
+        </span>
+        <span className="pz:inline-flex pz:h-7 pz:min-w-9 pz:items-center pz:justify-center pz:rounded-lg pz:px-0.5 pz:text-foreground pz:tabular-nums">
+          {Math.round(zoom * 100)}%
+        </span>
+        <span className={GHOST_ICON}>
+          <Icon name="plus" size={14} />
+        </span>
       </div>
     </div>
   );
@@ -608,19 +596,6 @@ function LogoMark() {
       </span>
       <span className="hidden dark:inline">
         <Logo size={18} dark />
-      </span>
-    </>
-  );
-}
-
-function ThemeIcon() {
-  return (
-    <>
-      <span className="dark:hidden">
-        <Icon name="moon" size={16} />
-      </span>
-      <span className="hidden dark:inline">
-        <Icon name="sun" size={16} />
       </span>
     </>
   );
