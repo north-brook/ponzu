@@ -72,10 +72,10 @@ export function useDelayed(on: boolean, ms = 300): boolean {
 }
 
 /**
- * What an agent is doing in a file. `working` between start_working and
- * finish_working; `collaborating` while it runs the collaborate loop, i.e.
- * waiting in wait_for_activity or handling what it heard from it; otherwise
- * nothing the person needs to see.
+ * What an agent is doing in a file. `working` while it changes artboards
+ * (see `Presence.working`); `collaborating` while it runs the collaborate
+ * loop, i.e. waiting in wait_for_activity or handling what it heard from it;
+ * otherwise nothing the person needs to see.
  */
 export type AgentActivity = "working" | "collaborating" | null;
 

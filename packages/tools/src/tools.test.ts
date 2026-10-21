@@ -384,6 +384,61 @@ test("an artboard given display: flex with no direction says it stays a column",
   expect(plain.text).not.toContain("Note:");
 });
 
+test("an agent shows as working on what it changes until it goes quiet", async () => {
+  const { call, ws } = await setup();
+  ws.presence = new PresenceHub(100);
+  const me = () => ws.presence.list().find((p) => p.id === "t")!;
+
+  await call("get_tree", {});
+  expect(me().working).toEqual([]);
+
+  await call("set_text", { updates: [{ id: "n_h", text: "Hello" }] });
+  expect(me()).toMatchObject({ working: ["ab_hero"], file: "fern" });
+  const created = await call("create_artboard", { name: "Card" });
+  const card = /ab_\w+/.exec(created.text)![0];
+  expect(me().working).toEqual(["ab_hero", card]);
+
+  await call("set_status", { status: "tightening the hero" });
+  expect(me()).toMatchObject({ working: ["ab_hero", card], status: "tightening the hero" });
+  await call("set_status", { status: "just the card", artboards: [card] });
+  expect(me().working).toEqual([card]);
+
+  // Deleting the artboard drops it rather than claiming it.
+  await call("delete", { ids: [card] });
+  expect(me().working).toEqual([]);
+  expect(me().status).toBe("just the card");
+
+  // A read keeps it going; a minute of nothing (100ms here) clears it.
+  await call("set_text", { updates: [{ id: "n_h", text: "Hi" }] });
+  await Bun.sleep(60);
+  await call("get_tree", {});
+  await Bun.sleep(60);
+  expect(me().working).toEqual(["ab_hero"]);
+  await Bun.sleep(80);
+  expect(me()).toMatchObject({ working: [] });
+  expect(me().status).toBeUndefined();
+});
+
+test("waiting for activity ends a pass", async () => {
+  const { call, ws } = await setup();
+  const me = () => ws.presence.list().find((p) => p.id === "t")!;
+  await call("set_status", { status: "making it blue", artboards: ["ab_hero"] });
+  expect(me().working).toEqual(["ab_hero"]);
+  await call("wait_for_activity", { timeout: 0 });
+  expect(me().working).toEqual([]);
+  expect(me().status).toBeUndefined();
+});
+
+test("deleting an artboard takes it from another agent working on it", async () => {
+  const { call, ws } = await setup();
+  const other: ToolContext = { ws, caller: { id: "o", author: { kind: "agent", name: "other" } } };
+  const them = () => ws.presence.list().find((p) => p.id === "o")!;
+  await runTool(getTool("set_text")!, { updates: [{ id: "n_h", text: "Mine" }] }, other);
+  expect(them().working).toEqual(["ab_hero"]);
+  await call("delete", { ids: ["ab_hero"] });
+  expect(them().working).toEqual([]);
+});
+
 /** Two artboards on one page, the second at (x, y) with the given style. */
 async function twoBoards(x: number, y: number, style: string) {
   return withFiles({

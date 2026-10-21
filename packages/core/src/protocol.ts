@@ -17,9 +17,9 @@ export interface Presence {
   kind: "user" | "agent";
   /** The agent's product, for the right icon: claude, openai, other. */
   client?: string;
-  /** Artboards the agent said it is working on. */
+  /** Artboards the agent is changing, until it goes quiet or waits for activity. */
   working: string[];
-  /** A few words on what it's doing, from start_working. */
+  /** A few words on what it's doing, from set_status. */
   status?: string;
   /** The design (key) it last worked or listened in. */
   file?: string;

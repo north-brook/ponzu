@@ -155,18 +155,18 @@ test("presence says what an agent is doing, and in which file", async () => {
   expect(claude().since).toBeLessThanOrEqual(Date.now());
 
   await client.callTool({
-    name: "start_working",
-    arguments: { artboards: [ab.id], status: "tightening the hero" },
+    name: "update_artboard",
+    arguments: { id: ab.id, x: ab.x + 10 },
   });
-  expect(claude()).toMatchObject({ working: [ab.id], status: "tightening the hero", file: key });
-
-  await client.callTool({ name: "finish_working", arguments: {} });
-  expect(claude().working).toEqual([]);
-  expect(claude().status).toBeUndefined();
+  expect(claude()).toMatchObject({ working: [ab.id], file: key });
+  await client.callTool({ name: "set_status", arguments: { status: "tightening the hero" } });
+  expect(claude()).toMatchObject({ working: [ab.id], status: "tightening the hero" });
 
   const waiting = client.callTool({ name: "wait_for_activity", arguments: { timeout: 1 } });
   await Bun.sleep(100);
   expect(claude().listening).toBe(true);
+  expect(claude().working).toEqual([]);
+  expect(claude().status).toBeUndefined();
   await waiting;
   expect(claude().listening).toBe(false);
   expect(claude().listenedAt).toBeGreaterThan(0);
