@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.16.2](https://github.com/north-brook/ponzu/compare/v1.16.1...v1.16.2) (2026-10-21)
+
+
+### Bug Fixes
+
+* every google font loads, and lint flags fonts that don't ([#59](https://github.com/north-brook/ponzu/issues/59)) ([26466c7](https://github.com/north-brook/ponzu/commit/26466c7de71a86afcdef3a3007ac8e8a17f8d912))
+
 ## [1.16.1](https://github.com/north-brook/ponzu/compare/v1.16.0...v1.16.1) (2026-10-21)
 
 
