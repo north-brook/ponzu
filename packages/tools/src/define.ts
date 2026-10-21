@@ -86,12 +86,14 @@ export async function runTool(
     const result = await def.handler(parsed.data, call);
     track(result.isError ? "tool_error" : "ok");
     const note = call.resolved?.note;
-    return note && !result.isError ? { ...result, text: result.text + note } : result;
+    return note ? { ...result, text: result.text + note } : result;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const known = err instanceof ToolError || (err as Error)?.name === "OpError";
     track(known ? "mistake" : "crash", err instanceof ToolError ? err.code : undefined);
-    return { text: known ? message : `${def.name} failed: ${message}`, isError: true };
+    // A call can fail after its ids moved the session; the agent still needs to hear it moved.
+    const note = call.resolved?.note ?? "";
+    return { text: (known ? message : `${def.name} failed: ${message}`) + note, isError: true };
   }
 }
 

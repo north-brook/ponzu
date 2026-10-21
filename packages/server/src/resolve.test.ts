@@ -91,6 +91,13 @@ test("an id finds its file, and the session moves there and says so", async () =
   expect(tree.isError).toBe(false);
   expect(tree.text).toContain('Now in "Kettle"; calls without file use it.');
 
+  // A call that fails after its id moved the session still says so.
+  await call("get_basic_info", { file: "halon" });
+  const failed = await call("update_artboard", { id: kettleBoard, page: "no-such-page" });
+  expect(failed.isError).toBe(true);
+  expect(failed.text).toContain("No page no-such-page.");
+  expect(failed.text).toContain('Now in "Kettle"; calls without file use it.');
+
   // No note once the agent is already there.
   expect((await call("get_tree", { id: kettleBoard })).text).not.toContain("Now in");
   expect((await call("get_basic_info")).text).toContain(`Path: ${keyOf("kettle")}`);
