@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.4](https://github.com/north-brook/ponzu/compare/v1.14.3...v1.14.4) (2026-10-21)
+
+
+### Bug Fixes
+
+* artboard sizes given as plain numbers keep their px ([#46](https://github.com/north-brook/ponzu/issues/46)) ([8d03ac8](https://github.com/north-brook/ponzu/commit/8d03ac89f6cb6953409d704e44a1a5390530b348))
+
 ## [1.14.3](https://github.com/north-brook/ponzu/compare/v1.14.2...v1.14.3) (2026-10-21)
 
 
