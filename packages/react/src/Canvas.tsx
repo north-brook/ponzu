@@ -211,6 +211,13 @@ export function Canvas({
 
   // Keyboard.
   useEffect(() => {
+    // A tool focused from the keyboard would keep its ring after a shortcut picks another.
+    const switchMode = (next: Mode) => {
+      setMode(next);
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && active.closest('[data-slot="canvas-bar"]'))
+        active.blur();
+    };
     const onKey = (e: KeyboardEvent) => {
       if (isTyping(e)) return;
       const mod = e.metaKey || e.ctrlKey;
@@ -245,14 +252,14 @@ export function Canvas({
             2,
           );
         }
-      } else if (!mod && e.key === "v") setMode("select");
-      else if (!mod && e.key === "h") setMode("hand");
-      else if (!mod && e.key === "c") setMode("comment");
+      } else if (!mod && e.key === "v") switchMode("select");
+      else if (!mod && e.key === "h") switchMode("hand");
+      else if (!mod && e.key === "c") switchMode("comment");
       else if (e.key === "Escape") {
         setPending(null);
         setOpenThread(null);
         source.select({ ids: [] });
-        setMode("select");
+        switchMode("select");
       } else if ((e.key === "Backspace" || e.key === "Delete") && selection.length && doc) {
         // Only artboards are deleted from the canvas; node edits are for agents.
         const ids = selection.filter((id) => findArtboard(doc, id));
