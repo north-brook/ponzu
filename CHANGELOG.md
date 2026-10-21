@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.14.3](https://github.com/north-brook/ponzu/compare/v1.14.2...v1.14.3) (2026-10-21)
+
+
+### Bug Fixes
+
+* shift+1 fits the page and canvas toolbar buttons drop stale focus ([#43](https://github.com/north-brook/ponzu/issues/43)) ([d4da85f](https://github.com/north-brook/ponzu/commit/d4da85f0c446c0798aa6f7dd41f318b7dc8f180e))
+* tidier tool output for agents ([#44](https://github.com/north-brook/ponzu/issues/44)) ([bf6643a](https://github.com/north-brook/ponzu/commit/bf6643a4a2a3c7b3930929331d2e4d623f429464))
+
 ## [1.14.2](https://github.com/north-brook/ponzu/compare/v1.14.1...v1.14.2) (2026-10-21)
 
 
