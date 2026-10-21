@@ -65,10 +65,23 @@ export interface ToolCaller {
   origin?: PresenceOrigin;
 }
 
+/** What one agent connection remembers between calls. */
+export interface ToolSession {
+  /** The design this agent last created, named or reached by id: calls without `file` use it. */
+  file?: string;
+}
+
+/** How a call found its design: named, by the ids it passed, the session's file, or the only one. */
+export type FileSource = "arg" | "ids" | "session" | "only";
+
 export interface ToolContext {
   ws: Workspace;
   caller: ToolCaller;
   signal?: AbortSignal;
+  /** Without one, every call without `file` needs a single open design. */
+  session?: ToolSession;
+  /** Set while the call runs, by resolveFile. */
+  resolved?: { from: FileSource; note?: string };
 }
 
 /* ------------------------------------------------------------------ */

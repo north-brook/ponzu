@@ -14,6 +14,8 @@ Workflow
 4. screenshot after every few writes. Read the lint lines. Fix clipped text and overflow before moving on. When you add motion or states, record them (get_guide('motion')).
 5. When you change existing work, call start_working with the artboard ids first and finish_working at the end.
 
+Several files open: a call without file goes to the file that holds the ids it passes, else the one you last created, named or edited. Pass file once to switch; list_files marks the current one.
+
 HTML and CSS
 - Inline styles only (style="…"). No <style> blocks unless you need @keyframes or :hover; keep those inside the artboard.
 - Layout with flexbox and grid, spacing with gap and padding. Artboards are flex columns by default.

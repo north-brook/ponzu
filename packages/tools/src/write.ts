@@ -26,6 +26,7 @@ import {
   elementsIn,
   plural,
   reportIds,
+  resolveFile,
   target,
 } from "./util.ts";
 
@@ -51,7 +52,7 @@ export const writeTools = [
       y: z.number().optional(),
     },
     async handler(args, ctx) {
-      const { key, design } = await ctx.ws.resolve(args.file);
+      const { key, design } = await resolveFile(ctx, args.file, [args.page]);
       const doc = design.doc;
       const page = args.page ? findPage(doc, args.page) : doc.pages[0];
       if (!page)
@@ -117,7 +118,7 @@ export const writeTools = [
         ),
     },
     async handler(args, ctx) {
-      const { design } = await ctx.ws.resolve(args.file);
+      const { design } = await resolveFile(ctx, args.file, [args.target]);
       const doc = design.doc;
       const t = target(doc, args.target);
       const mode = args.mode ?? "append";
@@ -180,7 +181,11 @@ export const writeTools = [
       updates: z.array(z.object({ ids: z.array(z.string()).min(1), style: styleArg })).min(1),
     },
     async handler(args, ctx) {
-      const { design } = await ctx.ws.resolve(args.file);
+      const { design } = await resolveFile(
+        ctx,
+        args.file,
+        args.updates.flatMap((u) => u.ids),
+      );
       const doc = design.doc;
       const ops: Op[] = [];
       const pending = new Map<string, Record<string, string>>();
@@ -209,7 +214,11 @@ export const writeTools = [
       updates: z.array(z.object({ id: z.string(), text: z.string() })).min(1),
     },
     async handler(args, ctx) {
-      const { design } = await ctx.ws.resolve(args.file);
+      const { design } = await resolveFile(
+        ctx,
+        args.file,
+        args.updates.map((u) => u.id),
+      );
       const ops: Op[] = args.updates.map((u) => {
         const t = target(design.doc, u.id);
         if (t.isArtboard)
@@ -233,7 +242,7 @@ export const writeTools = [
       attrs: z.record(z.string(), z.union([z.string(), z.null()])),
     },
     async handler(args, ctx) {
-      const { design } = await ctx.ws.resolve(args.file);
+      const { design } = await resolveFile(ctx, args.file, [args.id]);
       const t = target(design.doc, args.id);
       const next = { ...t.node.attrs };
       for (const [k, v] of Object.entries(args.attrs)) {
@@ -272,7 +281,7 @@ export const writeTools = [
       y: z.number().optional().describe("Row for artboard copies. Default: the original's row."),
     },
     async handler(args, ctx) {
-      const { key, design } = await ctx.ws.resolve(args.file);
+      const { key, design } = await resolveFile(ctx, args.file, [...args.ids, args.parent]);
       const doc = design.doc;
       const ops: Op[] = [];
       const map: Record<string, string> = {};
@@ -381,7 +390,11 @@ export const writeTools = [
         .min(1),
     },
     async handler(args, ctx) {
-      const { design } = await ctx.ws.resolve(args.file);
+      const { design } = await resolveFile(
+        ctx,
+        args.file,
+        args.moves.map((m) => m.id),
+      );
       const doc = design.doc;
       const ops: Op[] = [];
       // Nodes moved so far to each `after` sibling or parent index. Moves that
@@ -444,7 +457,7 @@ export const writeTools = [
     description: "Delete nodes or whole artboards (and their files). Undoable from the app.",
     input: { file: fileArg, ids: z.array(z.string()).min(1) },
     async handler(args, ctx) {
-      const { design } = await ctx.ws.resolve(args.file);
+      const { design } = await resolveFile(ctx, args.file, args.ids);
       const doc = design.doc;
       const ops: Op[] = [];
       for (const id of args.ids) {
@@ -468,7 +481,11 @@ export const writeTools = [
       updates: z.array(z.object({ id: z.string(), name: z.string() })).min(1),
     },
     async handler(args, ctx) {
-      const { design } = await ctx.ws.resolve(args.file);
+      const { design } = await resolveFile(
+        ctx,
+        args.file,
+        args.updates.map((u) => u.id),
+      );
       const ops: Op[] = args.updates.map((u) =>
         findArtboard(design.doc, u.id)
           ? { op: "artboard.update", id: u.id, name: u.name }
@@ -496,7 +513,7 @@ export const writeTools = [
       page: z.string().optional().describe("Move to this page (id or name)."),
     },
     async handler(args, ctx) {
-      const { design } = await ctx.ws.resolve(args.file);
+      const { design } = await resolveFile(ctx, args.file, [args.id]);
       const doc = design.doc;
       const hit = findArtboard(doc, args.id);
       if (!hit) throw new ToolError(`No artboard ${args.id}.`);

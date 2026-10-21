@@ -9,7 +9,7 @@ import {
 } from "@ponzu/core";
 import { z } from "zod";
 import { fileArg, ToolError, tool } from "./define.ts";
-import { apply } from "./util.ts";
+import { apply, resolveFile } from "./util.ts";
 
 export function threadLine(doc: Doc, t: Thread): string {
   const node = t.nodeId ? locate(doc, t.nodeId)?.node : undefined;
@@ -40,8 +40,8 @@ export const converseTools = [
       status: z.enum(["open", "resolved", "all"]).optional(),
       artboard: z.string().optional(),
     },
-    async handler(args, { ws }) {
-      const { design } = await ws.resolve(args.file);
+    async handler(args, ctx) {
+      const { design } = await resolveFile(ctx, args.file, [args.artboard]);
       const doc = design.doc;
       const status = args.status ?? "open";
       const threads = doc.threads.filter(
@@ -62,8 +62,8 @@ export const converseTools = [
     readOnly: true,
     description: "A thread with every message, and what its pin points at.",
     input: { file: fileArg, id: z.string() },
-    async handler(args, { ws }) {
-      const { design } = await ws.resolve(args.file);
+    async handler(args, ctx) {
+      const { design } = await resolveFile(ctx, args.file, [args.id]);
       const t = design.doc.threads.find((x) => x.id === args.id);
       if (!t) throw new ToolError(`No thread ${args.id}.`);
       const lines = [
@@ -89,7 +89,7 @@ export const converseTools = [
       text: z.string().min(1),
     },
     async handler(args, ctx) {
-      const { design } = await ctx.ws.resolve(args.file);
+      const { design } = await resolveFile(ctx, args.file, [args.on]);
       const doc = design.doc;
       const hit = locate(doc, args.on);
       if (!hit) throw new ToolError(`No node or artboard ${args.on}.`);
@@ -123,7 +123,7 @@ export const converseTools = [
       resolve: z.boolean().optional(),
     },
     async handler(args, ctx) {
-      const { design } = await ctx.ws.resolve(args.file);
+      const { design } = await resolveFile(ctx, args.file, [args.thread]);
       const t = design.doc.threads.find((x) => x.id === args.thread);
       if (!t) throw new ToolError(`No thread ${args.thread}.`);
       const message = {
@@ -157,7 +157,7 @@ export const converseTools = [
       "Resolve or reopen a thread without replying. Resolve a comment once you've done what it asked; that hides its pin from the canvas, and the change speaks for itself.",
     input: { file: fileArg, thread: z.string(), status: z.enum(["open", "resolved"]) },
     async handler(args, ctx) {
-      const { design } = await ctx.ws.resolve(args.file);
+      const { design } = await resolveFile(ctx, args.file, [args.thread]);
       if (!design.doc.threads.some((t) => t.id === args.thread))
         throw new ToolError(`No thread ${args.thread}.`);
       apply(design, { op: "thread.update", id: args.thread, status: args.status }, ctx);

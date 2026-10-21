@@ -264,3 +264,11 @@ test("update_file renames the file and sets or clears its icon", async () => {
   expect(design.doc.icon).toBeUndefined();
   expect(design.doc.name).toBe("Fern app");
 });
+
+test("list_files filters by name or path", async () => {
+  const { call } = await setup();
+  expect((await call("list_files", { query: "FER" })).text).toContain("Fern — fern");
+  expect((await call("list_files", { query: "kettle" })).text).toBe(
+    'No open file matches "kettle" (1 file open).',
+  );
+});

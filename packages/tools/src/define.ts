@@ -36,9 +36,13 @@ export function tool<S extends z.ZodRawShape>(def: ToolDef<S>): ToolDef<S> {
 
 /** A mistake the agent can fix. Shown as a tool error, not a crash. */
 export class ToolError extends Error {
-  constructor(message: string) {
+  /** A short name for the kind of mistake, counted in telemetry. Never content or paths. */
+  code?: string;
+
+  constructor(message: string, code?: string) {
     super(message);
     this.name = "ToolError";
+    if (code) this.code = code;
   }
 }
 
@@ -48,8 +52,13 @@ export async function runTool(
   ctx: ToolContext,
 ): Promise<ToolResult> {
   const started = Date.now();
+  // Its own copy, so what this call resolved never leaks into another's.
+  const call: ToolContext = { ...ctx, resolved: undefined };
   // Which tools agents use and how they fail; never the arguments or the result.
-  const track = (outcome: "ok" | "invalid_args" | "tool_error" | "mistake" | "crash") => {
+  const track = (
+    outcome: "ok" | "invalid_args" | "tool_error" | "mistake" | "crash",
+    error?: string,
+  ) => {
     try {
       ctx.ws.telemetry?.capture("tool called", {
         tool: def.name,
@@ -57,6 +66,8 @@ export async function runTool(
         outcome,
         duration_ms: Date.now() - started,
         client: ctx.caller.client,
+        ...(call.resolved ? { file_from: call.resolved.from } : {}),
+        ...(error ? { error } : {}),
       });
     } catch {
       // Counting a call never changes its result.
@@ -72,13 +83,14 @@ export async function runTool(
   }
   try {
     ctx.ws.presence.touch(ctx.caller);
-    const result = await def.handler(parsed.data, ctx);
+    const result = await def.handler(parsed.data, call);
     track(result.isError ? "tool_error" : "ok");
-    return result;
+    const note = call.resolved?.note;
+    return note && !result.isError ? { ...result, text: result.text + note } : result;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const known = err instanceof ToolError || (err as Error)?.name === "OpError";
-    track(known ? "mistake" : "crash");
+    track(known ? "mistake" : "crash", err instanceof ToolError ? err.code : undefined);
     return { text: known ? message : `${def.name} failed: ${message}`, isError: true };
   }
 }
@@ -96,7 +108,9 @@ export function jsonSchema(def: ToolDef<any>): Record<string, unknown> {
 export const fileArg = z
   .string()
   .optional()
-  .describe("Which .design, by path or name. Omit when only one file is open.");
+  .describe(
+    "Which .design, by path or name. Omit to use the file that holds the ids you pass, else the one you last created, named or edited in this session.",
+  );
 
 export const styleValue = z.union([z.string(), z.number(), z.null()]);
 

@@ -2,6 +2,7 @@ import { findArtboard, locate } from "@ponzu/core";
 import type { Interaction, MotionAnimation, MotionInfo } from "@ponzu/render";
 import { z } from "zod";
 import { fileArg, ToolError, type ToolImage, tool } from "./define.ts";
+import { resolveFile } from "./util.ts";
 
 function toBase64(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64");
@@ -41,12 +42,13 @@ export const seeTools = [
         ),
       ...interactionArgs,
     },
-    async handler(args, { ws }) {
+    async handler(args, ctx) {
+      const { ws } = ctx;
       if (!ws.renderer)
         throw new ToolError(
           "No renderer is available here, so screenshots are off. Ask the user to install Chrome.",
         );
-      const { key, design } = await ws.resolve(args.file);
+      const { key, design } = await resolveFile(ctx, args.file, [args.id]);
       const doc = design.doc;
       const ab = findArtboard(doc, args.id)?.artboard ?? locate(doc, args.id)?.artboard;
       if (!ab) throw new ToolError(`No artboard or node ${args.id}.`);
@@ -122,7 +124,8 @@ export const seeTools = [
       ...interactionArgs,
       colorScheme: z.enum(["light", "dark"]).optional(),
     },
-    async handler(args, { ws }) {
+    async handler(args, ctx) {
+      const { ws } = ctx;
       if (!ws.renderer)
         throw new ToolError(
           "No renderer is available here, so recording is off. Ask the user to install Chrome.",
@@ -133,7 +136,7 @@ export const seeTools = [
         throw new ToolError("scroll steps through a scroll range, so from and to don't apply.");
       if (args.from !== undefined && args.to !== undefined && args.to <= args.from)
         throw new ToolError("to has to be after from.");
-      const { key, design } = await ws.resolve(args.file);
+      const { key, design } = await resolveFile(ctx, args.file, [args.id]);
       const doc = design.doc;
       const ab = findArtboard(doc, args.id)?.artboard ?? locate(doc, args.id)?.artboard;
       if (!ab) throw new ToolError(`No artboard or node ${args.id}.`);
@@ -196,9 +199,10 @@ export const seeTools = [
       scale: z.number().min(0.25).max(4).optional().describe("Default 2."),
       path: z.string().optional().describe("Absolute output path."),
     },
-    async handler(args, { ws }) {
+    async handler(args, ctx) {
+      const { ws } = ctx;
       if (!ws.renderer) throw new ToolError("No renderer available.");
-      const { key, design } = await ws.resolve(args.file);
+      const { key, design } = await resolveFile(ctx, args.file, [args.id]);
       const doc = design.doc;
       const ab = findArtboard(doc, args.id)?.artboard ?? locate(doc, args.id)?.artboard;
       if (!ab) throw new ToolError(`No artboard or node ${args.id}.`);
