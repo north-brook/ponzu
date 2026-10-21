@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.3](https://github.com/north-brook/ponzu/compare/v1.17.2...v1.17.3) (2026-10-21)
+
+
+### Bug Fixes
+
+* keep previews drawing while the update prompt is open ([#71](https://github.com/north-brook/ponzu/issues/71)) ([f034cf6](https://github.com/north-brook/ponzu/commit/f034cf6f5d98d106345146fd8a721508aaea5c71))
+
 ## [1.17.2](https://github.com/north-brook/ponzu/compare/v1.17.1...v1.17.2) (2026-10-21)
 
 
