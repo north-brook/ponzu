@@ -4,6 +4,7 @@ import {
   type Doc,
   type Dropped,
   emptyDoc,
+  hashedId,
   metaOf,
   newId,
   parseArtboardFile,
@@ -47,11 +48,14 @@ export interface ReadResult {
   doc: Doc;
   layout: Layout;
   dropped: { path: string; what: string }[];
+  /** artboard id → ids derived from position, for elements whose file gave them none. */
+  lazy: Map<string, Set<string>>;
 }
 
 export function readBag(bag: FileBag, fallbackName: string): ReadResult {
   const layout = emptyLayout();
   const dropped: ReadResult["dropped"] = [];
+  const lazy: ReadResult["lazy"] = new Map();
   const meta = parseMeta(bag["design.json"], fallbackName);
   const doc = emptyDoc(meta.name);
   if (meta.example) doc.example = true;
@@ -92,14 +96,23 @@ export function readBag(bag: FileBag, fallbackName: string): ReadResult {
     const artboards: Artboard[] = [];
     for (const path of folders.get(folder) ?? []) {
       const base = path.slice(path.lastIndexOf("/") + 1, -5);
-      const fallbackId = `ab_${slugify(`${folder}-${base}`).replace(/-/g, "").slice(0, 10)}`;
-      const { artboard, dropped: d } = parseArtboardFile(bag[path]!, {
+      // Derived from the whole path, so every file gets its own id (and its
+      // elements their own positional ids) and keeps it across reloads.
+      const fallbackId = hashedId("ab", path);
+      const {
+        artboard,
+        dropped: d,
+        assigned,
+      } = parseArtboardFile(bag[path]!, {
         id: fallbackId,
         name: titleCase(base),
       });
-      if (seenArtboards.has(artboard.id)) artboard.id = newId("ab");
+      // A copied file still carrying its original's id: tell them apart.
+      if (seenArtboards.has(artboard.id))
+        artboard.id = seenArtboards.has(fallbackId) ? newId("ab") : fallbackId;
       seenArtboards.add(artboard.id);
       artboard.root.id = artboard.id;
+      if (assigned.size) lazy.set(artboard.id, assigned);
       for (const x of d) dropped.push({ path, what: x.what });
       layout.artboards.set(artboard.id, path);
       artboards.push(artboard);
@@ -112,7 +125,7 @@ export function readBag(bag: FileBag, fallbackName: string): ReadResult {
     doc.pages.push({ id, name: "Page 1", artboards: [] });
     layout.pages.set(id, "page-1");
   }
-  return { doc, layout, dropped };
+  return { doc, layout, dropped, lazy };
 }
 
 function folderFor(

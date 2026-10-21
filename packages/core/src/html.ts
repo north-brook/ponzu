@@ -66,6 +66,8 @@ export interface ParseOptions {
 export interface ParseResult {
   nodes: PNode[];
   dropped: Dropped[];
+  /** Ids the parser made up, for elements that came without a usable data-id. */
+  assigned: Set<string>;
 }
 
 /** Parse an HTML fragment into Ponzu nodes, removing anything executable. */
@@ -75,8 +77,9 @@ export function parseHtml(html: string, opts: ParseOptions = {}): ParseResult {
   const frag = context ? parseFragment(context, html, {}) : parseFragment(html);
   const assign = opts.assignId ?? "random";
   const seen = new Set<string>();
-  const nodes = convertChildren(frag.childNodes, [], assign, dropped, seen);
-  return { nodes, dropped };
+  const assigned = new Set<string>();
+  const nodes = convertChildren(frag.childNodes, [], assign, dropped, seen, assigned);
+  return { nodes, dropped, assigned };
 }
 
 /** A parse5 context element for an SVG or MathML parent; null for HTML. */
@@ -93,6 +96,7 @@ function convertChildren(
   assign: NonNullable<ParseOptions["assignId"]>,
   dropped: Dropped[],
   seen: Set<string>,
+  assigned: Set<string>,
 ): PNode[] {
   const out: PNode[] = [];
   let elIndex = 0;
@@ -112,7 +116,7 @@ function convertChildren(
       continue;
     }
     const childPath = [...path, elIndex++];
-    out.push(convertElement(el, childPath, assign, dropped, seen));
+    out.push(convertElement(el, childPath, assign, dropped, seen, assigned));
   }
   return out;
 }
@@ -123,6 +127,7 @@ function convertElement(
   assign: NonNullable<ParseOptions["assignId"]>,
   dropped: Dropped[],
   seen: Set<string>,
+  assigned: Set<string>,
 ): PElement {
   const attrs: Record<string, string> = {};
   let style: Record<string, string> = {};
@@ -145,13 +150,16 @@ function convertElement(
     else if (lower === "srcdoc") dropped.push({ what: `srcdoc on <${el.tagName}>` });
     else attrs[key] = a.value;
   }
-  if (!id || seen.has(id)) id = assign === "random" ? newId("n") : assign(path);
+  if (!id || seen.has(id)) {
+    id = assign === "random" ? newId("n") : assign(path);
+    assigned.add(id);
+  }
   seen.add(id);
   const ns = el.namespaceURI === NS_SVG ? "svg" : el.namespaceURI === NS_MATH ? "math" : undefined;
   const node: PElement = { kind: "el", id, tag: el.tagName, attrs, style, children: [] };
   if (ns) node.ns = ns;
   if (name !== undefined) node.name = name;
-  node.children = convertChildren(el.childNodes, path, assign, dropped, seen);
+  node.children = convertChildren(el.childNodes, path, assign, dropped, seen, assigned);
   if (RAW_TEXT.has(el.tagName)) {
     for (const c of node.children)
       if (c.kind === "text") c.value = sanitizeCssText(c.value, dropped);
@@ -286,7 +294,12 @@ function escapeAttr(s: string): string {
 
 /** Deterministic id from a seed and position, so unchanged files keep the same ids across reloads. */
 export function positionalId(seed: string, path: number[]): string {
-  const s = `${seed}/${path.join(".")}`;
+  return hashedId("n", `${seed}/${path.join(".")}`);
+}
+
+/** A short id derived from `key`: the same key always gives the same id. */
+export function hashedId(prefix: "n" | "ab", key: string): string {
+  const s = key;
   let h1 = 0x811c9dc5;
   let h2 = 0x01000193;
   for (let i = 0; i < s.length; i++) {
@@ -295,7 +308,7 @@ export function positionalId(seed: string, path: number[]): string {
     h2 = Math.imul(h2 ^ c, 0x5bd1e995);
   }
   const v = ((h1 >>> 0) * 0x100000 + ((h2 >>> 0) & 0xfffff)).toString(36);
-  return `n_${v.slice(-7)}`;
+  return `${prefix}_${v.slice(-7)}`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -309,9 +322,9 @@ export function positionalId(seed: string, path: number[]): string {
 export function parseArtboardFile(
   html: string,
   fallback: { id: string; name: string },
-): { artboard: Artboard; dropped: Dropped[] } {
+): { artboard: Artboard; dropped: Dropped[]; assigned: Set<string> } {
   const seed = fallback.id;
-  const { nodes, dropped } = parseHtml(html, { assignId: (p) => positionalId(seed, p) });
+  const { nodes, dropped, assigned } = parseHtml(html, { assignId: (p) => positionalId(seed, p) });
   const section = nodes.find(
     (n): n is PElement => n.kind === "el" && ("data-artboard" in n.attrs || n.tag === "section"),
   );
@@ -337,7 +350,7 @@ export function parseArtboardFile(
     root.id = fallback.id;
   const name = root.name ?? fallback.name;
   root.name = name;
-  return { artboard: { id: root.id, name, x, y, root }, dropped };
+  return { artboard: { id: root.id, name, x, y, root }, dropped, assigned };
 }
 
 export function serializeArtboardFile(ab: Artboard): string {

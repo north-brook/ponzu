@@ -104,7 +104,7 @@ export const writeTools = [
     title: "Write HTML",
     group: "write",
     description:
-      "Insert HTML into a node, or replace a node with HTML. Use inline styles, flexbox/grid, and var(--token) values. Write in small visual pieces (a header, then a row, then a card) and screenshot as you go. Name important layers with data-name. Returns the new ids.",
+      "Insert HTML into a node, or replace a node with HTML. Use inline styles, flexbox/grid, and var(--token) values. Write in small visual pieces (a header, then a row, then a card) and screenshot as you go. Name important layers with data-name. Returns the new ids. For big generated content (a long table, a diagram from a script), write the artboard's HTML file directly instead (get_node on the artboard shows its path); Ponzu picks the change up live.",
     input: {
       file: fileArg,
       target: z.string().describe("Artboard or node id."),

@@ -3,7 +3,13 @@ import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { mkdir, readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import { type CatalogArtboard, type CatalogFile, type Doc, parseArtboardFile } from "@ponzu/core";
+import {
+  type CatalogArtboard,
+  type CatalogFile,
+  type Doc,
+  hashedId,
+  parseArtboardFile,
+} from "@ponzu/core";
 import { PREVIEW_FILE } from "./preview.ts";
 
 /** How long a scan for .design folders stays fresh. */
@@ -398,7 +404,9 @@ async function readSummary(key: string, modified: number): Promise<CatalogSummar
     for (const f of files.sort()) {
       try {
         const html = await readFile(join(key, "pages", folder, f), "utf8");
-        const { artboard } = parseArtboardFile(html, { id: f, name: f.replace(/\.html$/, "") });
+        // The same fallback id the store gives a file without one.
+        const id = hashedId("ab", `pages/${folder}/${f}`);
+        const { artboard } = parseArtboardFile(html, { id, name: f.replace(/\.html$/, "") });
         artboards.push({ id: artboard.id, name: artboard.name, page: page.id });
       } catch {}
     }
