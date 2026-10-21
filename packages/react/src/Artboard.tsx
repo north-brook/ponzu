@@ -1,11 +1,13 @@
 import { type Artboard as AB, serializeArtboardElement } from "@ponzu/core";
 import {
   ARTBOARD_BASE_CSS,
+  fontFaceRules,
   type GoogleFontRequest,
   googleFontElement,
   googleFonts,
   pinColorScheme,
   resolveAsset,
+  resolveTokenAssets,
   styleText,
 } from "@ponzu/render";
 import { memo, useLayoutEffect, useRef } from "react";
@@ -30,6 +32,23 @@ function ensureFonts(fonts: GoogleFontRequest[]) {
     loadedFonts.add(f.href);
     document.head.appendChild(googleFontElement(document, f));
   }
+}
+
+const loadedFaces = new Set<string>();
+
+/**
+ * Declare a design's own @font-face rules (from tokens.css) in the host
+ * document: inside a shadow root Chromium ignores them, and the artboard's
+ * text falls back to the next family.
+ */
+function ensureFaces(rules: string[]) {
+  const fresh = rules.filter((r) => !loadedFaces.has(r));
+  if (!fresh.length) return;
+  for (const r of fresh) loadedFaces.add(r);
+  const style = document.createElement("style");
+  style.dataset.ponzuFaces = "";
+  style.textContent = fresh.join("\n");
+  document.head.appendChild(style);
 }
 
 /**
@@ -57,10 +76,13 @@ export const ArtboardView = memo(function ArtboardView({
     const pin = (css: string) => (colorScheme ? pinColorScheme(css, colorScheme) : css);
     const body = pin(markup);
     const scheme = colorScheme ? `:host{color-scheme:${colorScheme}}` : "";
-    const html = `<style>${styleText(pin(hostTokens(tokens)))}${scheme}${ARTBOARD_BASE_CSS}</style>${body}`;
+    // Tokens' url()s resolve like the artboard's: an @font-face in tokens.css finds assets/ too.
+    const resolved = resolveTokenAssets(tokens, assetBase);
+    const html = `<style>${styleText(pin(hostTokens(resolved)))}${scheme}${ARTBOARD_BASE_CSS}</style>${body}`;
     if (html === last.current) return;
     last.current = html;
     ensureFonts(googleFonts(body, tokens));
+    ensureFaces(fontFaceRules(resolved));
     root.innerHTML = html;
   }, [artboard, tokens, assetBase, colorScheme]);
 

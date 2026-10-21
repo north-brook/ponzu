@@ -19,7 +19,7 @@ import {
 } from "react";
 import { ArtboardView } from "./Artboard.tsx";
 import { Composer, ThreadCard, threadCard } from "./Comments.tsx";
-import type { CanvasSource } from "./connection.ts";
+import { type CanvasSource, viewOnly } from "./connection.ts";
 import { AgentMark, Icon, Icons } from "./icons.tsx";
 import { Button, cn, Tip, TipProvider, ToggleGroup } from "./ui.tsx";
 import {
@@ -43,6 +43,12 @@ export interface CanvasProps {
   footer?: boolean;
   /** Extra content at the start of the tools bar, before the modes. */
   footerExtra?: ReactNode;
+  /**
+   * Look, don't touch: pan, zoom, switch pages, select and read comment
+   * threads, but never send an edit. For showing a design you can't save,
+   * like one on GitHub. Default false.
+   */
+  readOnly?: boolean;
   className?: string;
 }
 
@@ -68,16 +74,19 @@ export function size(ab: Artboard) {
 /**
  * The Ponzu canvas: pages of artboards on an infinite plane, comments pinned
  * to nodes, and live presence. Read-only for layout (agents do the editing);
- * people select, comment, rename and arrange.
+ * people select, comment, rename and arrange. With `readOnly`, they only look.
  */
 export function Canvas({
-  source,
+  source: given,
   me = { kind: "user", name: "You" },
   theme = "light",
   footer = true,
   footerExtra,
+  readOnly = false,
   className,
 }: CanvasProps) {
+  // Read-only hides the controls that edit; this catches anything they missed.
+  const source = useMemo(() => (readOnly ? viewOnly(given) : given), [given, readOnly]);
   const state = useSource(source);
   const doc = state.doc;
   const [pageId, setPageId] = useState<string | null>(null);
@@ -262,7 +271,7 @@ export function Canvas({
         if (p) goToPage(p.id);
       } else if (mod && e.key.toLowerCase() === "z") {
         e.preventDefault();
-        e.shiftKey ? source.redo() : source.undo();
+        if (!readOnly) e.shiftKey ? source.redo() : source.undo();
       } else if (mod && (e.key === "=" || e.key === "+")) {
         e.preventDefault();
         const v = viewportSize();
@@ -287,13 +296,18 @@ export function Canvas({
         }
       } else if (!mod && e.key === "v") switchMode("select");
       else if (!mod && e.key === "h") switchMode("hand");
-      else if (!mod && e.key === "c") switchMode("comment");
+      else if (!mod && e.key === "c" && !readOnly) switchMode("comment");
       else if (e.key === "Escape") {
         setPending(null);
         setOpenThread(null);
         setSelection([]);
         switchMode("select");
-      } else if ((e.key === "Backspace" || e.key === "Delete") && selection.length && doc) {
+      } else if (
+        (e.key === "Backspace" || e.key === "Delete") &&
+        !readOnly &&
+        selection.length &&
+        doc
+      ) {
         // Only artboards are deleted from the canvas; node edits are for agents.
         const ids = selection.filter((id) => findArtboard(doc, id));
         if (ids.length)
@@ -362,7 +376,7 @@ export function Canvas({
     }
     if (e.button !== 0 || !doc) return;
     const hit = hitTest(e);
-    if (mode === "comment") {
+    if (mode === "comment" && !readOnly) {
       if (!page) return;
       const w = toWorld(e.clientX, e.clientY);
       setOpenThread(null);
@@ -406,6 +420,13 @@ export function Canvas({
   const startMove = (e: React.PointerEvent, ab: Artboard) => {
     if (e.button !== 0 || panning) return;
     e.stopPropagation();
+    // Read-only, a title selects its board and stays put.
+    if (readOnly) {
+      setPending(null);
+      setOpenThread(null);
+      setSelection([ab.id]);
+      return;
+    }
     const ids = selection.includes(ab.id)
       ? selection.filter((id) => findArtboard(doc!, id))
       : [ab.id];
@@ -442,7 +463,7 @@ export function Canvas({
   const onPointerUp = () => {
     const d = drag.current;
     drag.current = null;
-    if (d?.kind === "move" && d.moved && ghost) {
+    if (d?.kind === "move" && d.moved && ghost && !readOnly) {
       const ops = d.origin.map((o) => ({
         op: "artboard.update" as const,
         id: o.id,
@@ -455,7 +476,7 @@ export function Canvas({
   };
 
   const createThread = (text: string) => {
-    if (!pending) return;
+    if (!pending || readOnly) return;
     const now = Date.now();
     const thread: Thread = {
       id: newId("th"),
@@ -502,7 +523,8 @@ export function Canvas({
   };
 
   const pinMove = (e: React.PointerEvent) => {
-    if (!pinDrag) return;
+    // Read-only pins never leave their spot, so every press opens the thread.
+    if (!pinDrag || readOnly) return;
     const moved =
       pinDrag.moved ||
       Math.abs(e.clientX - pinDrag.startX) + Math.abs(e.clientY - pinDrag.startY) > 3;
@@ -522,7 +544,7 @@ export function Canvas({
     const d = pinDrag;
     setPinDrag(null);
     if (!d || d.id !== t.id || !page) return;
-    if (!d.moved) {
+    if (!d.moved || readOnly) {
       setPending(null);
       setOpenThread(openThread === t.id ? null : t.id);
       return;
@@ -639,7 +661,7 @@ export function Canvas({
                   )}
                   style={{ fontSize: 12 / camera.zoom, top: -22 / camera.zoom }}
                   onPointerDown={(e) => startMove(e, ab)}
-                  onDoubleClick={() => setRenaming(ab.id)}
+                  onDoubleClick={() => !readOnly && setRenaming(ab.id)}
                 >
                   {renaming === ab.id ? (
                     <input
@@ -730,7 +752,7 @@ export function Canvas({
               >
                 <button
                   type="button"
-                  title="Drag to move"
+                  title={readOnly ? "Open thread" : "Drag to move"}
                   className={cn(
                     pin,
                     "pz:bg-comment pz:text-comment-foreground",
@@ -753,6 +775,7 @@ export function Canvas({
                     thread={t}
                     source={source}
                     me={me}
+                    readOnly={readOnly}
                     onClose={() => setOpenThread(null)}
                   />
                 )}
@@ -805,28 +828,34 @@ export function Canvas({
                     active={p.id === page.id}
                     working={busyPages.has(p.id)}
                     onClick={() => goToPage(p.id)}
-                    onRename={(name) => source.apply({ op: "page.update", id: p.id, name })}
+                    onRename={
+                      readOnly
+                        ? undefined
+                        : (name) => source.apply({ op: "page.update", id: p.id, name })
+                    }
                   />
                 ))}
               </div>
-              <Tip label="New page">
-                <Button
-                  variant="ghost"
-                  size="icon-lg"
-                  aria-label="New page"
-                  onClick={() => {
-                    const id = newId("pg");
-                    source.apply({
-                      op: "page.create",
-                      index: doc.pages.length,
-                      page: { id, name: `Page ${doc.pages.length + 1}` },
-                    });
-                    setPageId(id);
-                  }}
-                >
-                  <Icon name="add" size={15} />
-                </Button>
-              </Tip>
+              {!readOnly && (
+                <Tip label="New page">
+                  <Button
+                    variant="ghost"
+                    size="icon-lg"
+                    aria-label="New page"
+                    onClick={() => {
+                      const id = newId("pg");
+                      source.apply({
+                        op: "page.create",
+                        index: doc.pages.length,
+                        page: { id, name: `Page ${doc.pages.length + 1}` },
+                      });
+                      setPageId(id);
+                    }}
+                  >
+                    <Icon name="add" size={15} />
+                  </Button>
+                </Tip>
+              )}
             </Bar>
             <Bar name="Controls" className="pz:shrink-0">
               {footerExtra}
@@ -834,7 +863,7 @@ export function Canvas({
                 variant="raised"
                 value={panning ? "hand" : mode}
                 onValueChange={setMode}
-                items={MODES.map((m) => ({
+                items={MODES.filter((m) => !readOnly || m.value !== "comment").map((m) => ({
                   value: m.value,
                   title: m.label,
                   keys: [m.key],
@@ -1012,7 +1041,8 @@ function PageTab({
   /** An agent is working on an artboard on this page. */
   working: boolean;
   onClick: () => void;
-  onRename: (n: string) => void;
+  /** Absent on a read-only canvas, where a double click doesn't rename. */
+  onRename?: (n: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
   return (
@@ -1025,7 +1055,7 @@ function PageTab({
           : "pz:text-muted-foreground pz:hover:bg-accent pz:hover:text-foreground",
       )}
       onClick={onClick}
-      onDoubleClick={() => setEditing(true)}
+      onDoubleClick={() => onRename && setEditing(true)}
     >
       {showShortcut && shortcut ? (
         <span
@@ -1045,7 +1075,7 @@ function PageTab({
           onClick={(e) => e.stopPropagation()}
           onBlur={(e) => {
             const v = e.target.value.trim();
-            if (v && v !== name) onRename(v);
+            if (v && v !== name) onRename?.(v);
             setEditing(false);
           }}
           onKeyDown={(e) => {

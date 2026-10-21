@@ -86,6 +86,14 @@ Each artboard file holds one `<section data-artboard>`. Its size is the `width` 
 
 To implement a design, point your coding agent at the folder. The HTML, tokens and comments are the spec.
 
+### Share it from GitHub
+
+A `.design` committed to a public repo opens on the canvas at `ponzu.design/gh/<owner>/<repo>/<path/to/name.design>`, read-only, with its comments, images and fonts: [this repo's Kettle](https://ponzu.design/gh/north-brook/ponzu/examples/kettle.design), for one. Add `@<branch, tag or commit>` to the repo for another ref, or leave off the path to list every design in the repo. Link it from your README:
+
+```md
+[![Open in Ponzu](https://ponzu.design/badge.svg)](https://ponzu.design/gh/<owner>/<repo>/<path/to/name.design>)
+```
+
 ## Embed it
 
 Ponzu is a set of packages you can build into your own product:

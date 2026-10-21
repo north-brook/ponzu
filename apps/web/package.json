@@ -11,7 +11,9 @@
     "start": "next start --port 4321"
   },
   "dependencies": {
+    "@ponzu/core": "workspace:*",
     "@ponzu/react": "workspace:*",
+    "@ponzu/store": "workspace:*",
     "next": "^16.4.2",
     "posthog-js": "^1.438.13",
     "react": "^19.3.1",

@@ -188,17 +188,38 @@ export class SocketSource implements CanvasSource {
   }
 }
 
+/**
+ * A source that shows another without ever changing it: edits, undo and redo
+ * go nowhere. A read-only canvas wraps its source in one, so no control it
+ * missed can write.
+ */
+export function viewOnly(source: CanvasSource): CanvasSource {
+  return {
+    subscribe: (listener) => source.subscribe(listener),
+    getState: () => source.getState(),
+    apply() {},
+    undo() {},
+    redo() {},
+    assetBase: source.assetBase,
+    setTheme: source.setTheme ? (theme) => source.setTheme?.(theme) : undefined,
+  };
+}
+
 /** A CanvasSource over a plain doc in memory, for hosts that own state. */
 export class MemorySource implements CanvasSource {
   private state: CanvasState;
   private listeners = new Set<Listener>();
   private undoStack: Op[] = [];
   private redoStack: Op[] = [];
+  readonly assetBase?: string;
 
+  /** `assetBase` is where the design's assets/ live, such as a raw GitHub URL at one commit. */
   constructor(
     doc: Doc,
     private onChange?: (doc: Doc, op: Op) => void,
+    opts: { assetBase?: string } = {},
   ) {
+    this.assetBase = opts.assetBase;
     this.state = {
       status: "ready",
       doc,
