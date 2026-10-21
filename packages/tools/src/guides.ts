@@ -54,6 +54,7 @@ Workflow
 3. Build in small pieces. One write_html call per visual group: a header, then a row, then a card. The person watches the canvas as you work.
 4. screenshot after every few writes. Read the lint lines. Fix clipped text and overflow before moving on. When you add motion or states, record them (get_guide('motion')).
 5. When you change existing work, call start_working with the artboard ids first and finish_working at the end.
+6. Explain your work on the canvas itself. A small artboard beside the work, named "Note: …" with height fit-content, holds rationale, labels, a flow's arrows or what to compare. The canvas is infinite, so annotate generously. Comments are for what needs the person: a question, a decision, something you couldn't do.
 
 HTML and CSS
 - Inline styles only (style="…"). No <style> blocks unless you need @keyframes or :hover; keep those inside the artboard.
@@ -128,7 +129,8 @@ Never resolve a question or decision for the person. Never resolve a comment you
 - duplicate the artboard (names: "Hero / A", "Hero / B"). Copies land to the right of the original.
 - Change one idea per variation, and say what it is in the name. Three is usually enough.
 - Keep the original untouched so the person can compare.
-- Put a one-line note on each with create_comment ("B: tighter type, warmer palette") so the decision has context.
+- Put the rationale on the canvas: a "Note: Hero options" artboard beside the set, one line per variation ("B: tighter type, warmer palette") and what to compare.
+- Ask the person to pick in your reply to them.
 - When the person picks one, move the others to the Archive with archive.`,
 
   implement: `# Implementing a design in code
@@ -140,6 +142,7 @@ The .design folder is the spec. Read it directly from disk; don't screenshot and
 - Translate the structure into the codebase's components; don't paste the HTML. Keep flex/grid decisions.
 - Open comment threads may hold requirements ("this should collapse on mobile"). Read comments.json.
 - notes/ has the brief and decisions. Read them before you start.
+- "Note: …" artboards explain the screens beside them. Read them alongside the screens they sit next to.
 - When something can't be built as drawn, leave a comment on the node explaining what you did instead.`,
 
   format: `# The .design format
@@ -224,6 +227,8 @@ export const SERVER_INSTRUCTIONS = `Ponzu is a design canvas you drive with HTML
 Start every session with get_basic_info, then read_notes, then get_guide('basics') if you haven't read it. When the person says "this", call get_selection.
 
 Build in small pieces, screenshot often, and fix what lint reports. record shows animation and hover states frame by frame. Put design decisions in tokens and notes. Variations go next to the original, never over it. Use start_working / finish_working around edits to existing artboards.
+
+The canvas is yours to annotate: a "Note: …" artboard beside the work carries rationale, labels and what to compare. Comments carry what needs the person: a question, a choice, something you couldn't do.
 
 To pair on feedback, run the collaborate loop: wait_for_activity → triage → start_working → edit + screenshot → set_comment_status resolved for what you did (reply only to answer a question, flag an ambiguity or explain what you couldn't do) → repeat. get_guide('collaborate') has details.
 

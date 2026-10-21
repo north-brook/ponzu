@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.21.1](https://github.com/north-brook/ponzu/compare/v1.21.0...v1.21.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* agents explain their work on the canvas and comment only when they need you ([#92](https://github.com/north-brook/ponzu/issues/92)) ([c6f88b2](https://github.com/north-brook/ponzu/commit/c6f88b2faaa8ad28d7f2246555169adeac6ba95a))
+
+## [1.21.0](https://github.com/north-brook/ponzu/compare/v1.20.3...v1.21.0) (2026-10-21)
+
+
+### Features
+
+* add a get_guide topic on the .design file format ([#89](https://github.com/north-brook/ponzu/issues/89)) ([54a1072](https://github.com/north-brook/ponzu/commit/54a10722beb10cf927cbbc606b0fdf59f9b98a34))
+
 ## [1.20.3](https://github.com/north-brook/ponzu/compare/v1.20.2...v1.20.3) (2026-10-21)
 
 
