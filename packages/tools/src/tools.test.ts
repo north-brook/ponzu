@@ -449,3 +449,30 @@ test("duplicating to an explicit spot doesn't render distant artboards", async (
   expect(r.text).toContain("at (0, -5000)");
   expect(measured).toEqual([]);
 });
+
+test("a copy in an empty row clears the page's widest artboard at its rendered width", async () => {
+  // Nothing sits in row -5000, so the copy goes right of everything; ab_b is
+  // far below that row but renders 3000px wide.
+  const s = await withFiles({
+    "design.json": JSON.stringify({
+      ponzu: 1,
+      name: "Fern",
+      pages: [{ id: "pg_home", name: "Home" }],
+    }),
+    "tokens.css": ":root {}\n",
+    "pages/home/a.html": `<section data-artboard data-id="ab_a" data-name="A" data-x="0" data-y="0" style="width:400px;height:10000px">\n<p>a</p>\n</section>\n`,
+    "pages/home/b.html": `<section data-artboard data-id="ab_b" data-name="B" data-x="800" data-y="4000" style="width:fit-content;height:400px;padding:3px">\n<p>b</p>\n</section>\n`,
+  });
+  s.ws.renderer = {
+    render: async () => {
+      throw new Error("unused");
+    },
+    measure: async (req) => ({
+      boxes: { [req.artboard.id]: { x: 0, y: 0, width: 3000, height: 400 } },
+      contentHeight: 400,
+    }),
+    close: async () => {},
+  };
+  const r = await s.call("duplicate", { ids: ["ab_a"], y: -5000 });
+  expect(r.text).toContain("at (3880, -5000)");
+});

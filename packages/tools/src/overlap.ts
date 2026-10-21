@@ -129,11 +129,16 @@ export function mayReach(ab: Artboard, box: { x: number; y: number; w: number; h
 /**
  * For autoPlace: which artboards' real size could change the spot it picks in
  * any of `rows` (the first artboard's row by default). Ones starting well
- * below every row can't.
+ * below every row can't, unless a row could end up empty: then autoPlace
+ * clears the whole page, and every artboard's width counts.
  */
 export function rowNeed(artboards: Artboard[], ...rows: (number | undefined)[]) {
   const ys = rows.filter((y) => y !== undefined);
   if (!ys.length) ys.push(artboards[0]?.y ?? 0);
+  // Mirrors autoPlace's row test, with an unmeasured height read as unbounded.
+  const inRow = (ab: Artboard, y: number) =>
+    ab.y < y + 2000 && ab.y + (declared(ab.root.style.height) ?? Number.POSITIVE_INFINITY) > y - 1;
+  if (ys.some((y) => !artboards.some((ab) => inRow(ab, y)))) return () => true;
   return (ab: Artboard) => ys.some((y) => ab.y < y + 2000);
 }
 
