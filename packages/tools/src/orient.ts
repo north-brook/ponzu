@@ -23,7 +23,7 @@ export const orientTools = [
     group: "orient",
     readOnly: true,
     description:
-      "Start here. Summarizes the open .design: pages, artboards with sizes and positions, token names, open comments, what the person has selected, and who else is working. Call get_guide('basics') once per session for the house rules.",
+      "Start here. Summarizes the open .design: pages, artboards with sizes and positions, token names, open comments, what the person has selected, who else is working, and anything in the files Ponzu couldn't use. Call get_guide('basics') once per session for the house rules.",
     input: { file: fileArg },
     async handler({ file }, ctx) {
       const { ws } = ctx;
@@ -41,6 +41,15 @@ export const orientTools = [
       } else {
         lines.push(
           "Tokens: none yet. Define colors, type and spacing with set_tokens before building.",
+        );
+      }
+      const problems = design.problems;
+      if (problems.length) {
+        const limit = 10;
+        const shown = problems.slice(0, limit).map((p) => `${p.path}: ${p.what}`);
+        const more = problems.length - shown.length;
+        lines.push(
+          `Not used as written (fix the files; get_guide('format') has the format):\n  ${shown.join("\n  ")}${more ? `\n  … ${more} more` : ""}`,
         );
       }
       const sel = ws.selection(key);
@@ -103,7 +112,9 @@ export const orientTools = [
         if (!page.artboards.length)
           return { text: `Page ${page.id} "${page.name}" has no artboards.` };
         return {
-          text: page.artboards.map((ab) => outline(ab.root, Math.min(depth ?? 2, 3))).join("\n\n"),
+          text: page.artboards
+            .map((ab) => outline(ab.root, Math.min(depth ?? 2, 3), { artboard: true }))
+            .join("\n\n"),
         };
       }
       const hit = locate(doc, id);
@@ -111,7 +122,7 @@ export const orientTools = [
       const head = hit.parent
         ? `In ${hit.artboard.id} "${hit.artboard.name}"\n`
         : `${artboardSummary(hit.artboard)} · page "${hit.page.name}"\n`;
-      return { text: head + outline(hit.node, depth ?? 4) };
+      return { text: head + outline(hit.node, depth ?? 4, { artboard: !hit.parent }) };
     },
   }),
 

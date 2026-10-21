@@ -60,7 +60,7 @@ A `.design` is a folder. macOS shows it as a single document; everything else se
 weft.design/
   design.json          { "ponzu": 1, "name": "Weft", "pages": [{ "id", "name", "icon" }] }
   tokens.css           :root { --color-signal: #FF5A1F; … }
-  comments.json        comment threads, pinned to node ids
+  comments.json        { "threads": [{ "id", "artboardId", "nodeId", "x", "y", "status", "messages", … }] }
   notes/brief.md       notes the agent keeps between sessions
   assets/              images and fonts
   pages/
@@ -68,7 +68,7 @@ weft.design/
       landing.html     one artboard per file
 ```
 
-Each artboard file holds one `<section data-artboard>`:
+Each artboard file holds one `<section data-artboard>`. Its size is the `width` and `height` in its style (1440×900 without them); `data-x` and `data-y` only place it on the page.
 
 ```html
 <section data-artboard data-id="ab_dr6yq" data-name="Landing" data-x="0" data-y="0" style="width:1440px;height:7216px;background-color:var(--color-paper)">
@@ -79,6 +79,8 @@ Each artboard file holds one `<section data-artboard>`:
 - **Edit it however you like.** Ponzu watches the folder. An edit from your editor, `sed` or another agent shows up live and becomes an event agents can react to.
 - **Ids are lazy.** Hand-written elements get stable ids derived from their position. Ponzu writes an id into a file only when something needs to point at it.
 - **Inert by default.** `<script>`, `on*` handlers and `javascript:` URLs are stripped on load.
+- **Comments are pins.** A thread in `comments.json` sits on an artboard (`artboardId`, plus `nodeId` for a node in it) or on a page's open canvas (`pageId`), at `x`/`y`. One missing a field isn't shown, and stays in the file until it's fixed.
+- **Agents can read the format too.** `get_guide('format')` gives them every file's fields, with examples, for importing or generating a design by writing it directly.
 - **Fonts just work.** Google Fonts named in `font-family` load automatically on the canvas and in screenshots.
 - **Examples stay off your home screen.** `"example": true` in `design.json` marks a sample design. The home screen lists an example only once you open it yourself (from Finder, the app, or `ponzu serve path/to/example.design`), not when it's merely found: by Spotlight, by a scan of your folders, or because an agent started in a folder that has one. Agents still open and use examples like any other design. The ones in [`examples/`](examples) are marked.
 
@@ -131,7 +133,7 @@ Skills for agents that support them live in [`skills/`](skills).
 
 ## Telemetry
 
-The Mac app sends pseudonymous usage to the Ponzu team: which tools agents call and whether they fail, which agents connect, how often the canvas opens, and the Ponzu version and OS. Each install is a random id in `~/.ponzu/telemetry.json`. When Tailscale is running, Ponzu also links that id to a hash of your Tailscale user id, which is the same on each of your Macs, so the team counts people rather than machines. Your Tailscale id, name and email are never sent, but someone with the hash could check guessed ids against it. Nothing about your designs leaves your machine: no HTML, file names, paths, comment text or tool arguments.
+The Mac app sends pseudonymous usage to the Ponzu team: which tools agents call and whether they fail (with a coarse reason, like a timeout), which agents connect, how often the canvas opens, and the Ponzu version and OS. Each install is a random id in `~/.ponzu/telemetry.json`. When Tailscale is running, Ponzu also links that id to a hash of your Tailscale user id, which is the same on each of your Macs, so the team counts people rather than machines. Your Tailscale id, name and email are never sent, but someone with the hash could check guessed ids against it. Nothing about your designs leaves your machine: no HTML, file names, paths, comment text or tool arguments.
 
 Agents can also tell us how Ponzu is working for them with `send_feedback`. That's the one event with words in it, and it's about Ponzu, not your work.
 

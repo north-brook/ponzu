@@ -12,7 +12,9 @@ import {
   type PElement,
   parseHtml,
   parseStyle,
+  ROOT_DIRECTION_NOTE,
   rawIndex,
+  rootDirectionUnset,
   toKebab,
   walk,
 } from "@ponzu/core";
@@ -36,7 +38,7 @@ export const writeTools = [
     title: "Create artboard",
     group: "write",
     description:
-      "Add an artboard (a top-level frame, stored as its own HTML file). It's placed in a free spot unless you give x/y. Defaults to a flex column. Typical sizes: desktop 1440×900, tablet 768×1024, phone 390×844. Use height 'fit-content' for long pages. Optionally pass `html` to fill it in the same call.",
+      "Add an artboard (a top-level frame, stored as its own HTML file). It's placed in a free spot unless you give x/y. Defaults to a flex column, even when its style sets display: flex; give flex-direction: row for side-by-side panes. Typical sizes: desktop 1440×900, tablet 768×1024, phone 390×844. Use height 'fit-content' for long pages. Optionally pass `html` to fill it in the same call.",
     input: {
       file: fileArg,
       name: z.string().describe("Shown above the artboard and used as its file name."),
@@ -94,7 +96,7 @@ export const writeTools = [
       ctx.ws.focus?.(key, id);
       const kids = elementsIn(nodes);
       return {
-        text: `Created artboard ${id} "${args.name}" ${width}×${height} at (${artboard.x}, ${artboard.y}) on "${page.name}".${kids.length ? `\n${reportIds(nodes)}` : ""}${droppedNote(dropped)}`,
+        text: `Created artboard ${id} "${args.name}" ${width}×${height} at (${artboard.x}, ${artboard.y}) on "${page.name}".${kids.length ? `\n${reportIds(nodes)}` : ""}${droppedNote(dropped)}${directionNote([id], () => style)}`,
         data: { id },
       };
     },
@@ -199,7 +201,9 @@ export const writeTools = [
       for (const [id, style] of pending) ops.push({ op: "style", id, style });
       apply(design, ops.length === 1 ? ops[0]! : { op: "batch", ops }, ctx);
       const warnings = styleWarnings(args.updates.flatMap((u) => Object.keys(u.style)));
-      return { text: `Updated ${plural(pending.size, "node")}.${warnings}` };
+      return {
+        text: `Updated ${plural(pending.size, "node")}.${warnings}${directionNote([...pending.keys()], (id) => findArtboard(doc, id) && pending.get(id))}`,
+      };
     },
   }),
 
@@ -562,6 +566,22 @@ function styleWarnings(keys: string[]): string {
   if ([...k].some((x) => x === "margin" || x.startsWith("margin-")))
     notes.push("margin works, but gap and padding keep layouts easier to edit");
   return notes.length ? `\nNote: ${notes.join("; ")}.` : "";
+}
+
+/**
+ * A note naming the artboards among ids whose own style sets display: flex
+ * with no direction. rootStyle gives an artboard's style as written, and
+ * nothing for ids that aren't artboards.
+ */
+function directionNote(
+  ids: string[],
+  rootStyle: (id: string) => Record<string, string> | null | undefined,
+): string {
+  const roots = ids.filter((id) => {
+    const style = rootStyle(id);
+    return style && rootDirectionUnset(style);
+  });
+  return roots.length ? `\nNote: ${roots.join(", ")} ${ROOT_DIRECTION_NOTE}.` : "";
 }
 
 export { type PElement, parseStyle };

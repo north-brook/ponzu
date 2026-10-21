@@ -14,6 +14,7 @@ import type { StorageAdapter } from "./adapter.ts";
 import {
   type FileBag,
   type Layout,
+  type Problem,
   planLayout,
   readBag,
   serializeArtboard,
@@ -68,6 +69,8 @@ export class Design {
   private resetListeners = new Set<Listener<Doc>>();
   private stopWatching: (() => void) | null = null;
   private closed = false;
+  /** What the last read of the files couldn't use: see `problems`. */
+  private read: { problems: Problem[]; unreadable: unknown[] } = { problems: [], unreadable: [] };
 
   private constructor(
     readonly storage: StorageAdapter,
@@ -82,8 +85,9 @@ export class Design {
   static async open(storage: StorageAdapter, opts: DesignOptions = {}): Promise<Design> {
     const name = opts.name ?? nameFromRoot(storage.root) ?? "Untitled";
     const bag = await storage.readAll();
-    const { doc, layout } = readBag(bag, name);
+    const { doc, layout, problems, unreadable } = readBag(bag, name);
     const design = new Design(storage, doc, layout, { saveDelay: opts.saveDelay ?? 120 });
+    design.read = { problems, unreadable };
     for (const [path, content] of Object.entries(bag)) design.written.set(path, content);
     if (!bag["design.json"]) {
       design.dirtyScopes.add("meta");
@@ -220,7 +224,8 @@ export class Design {
       !sameMap(this.layout.artboards, next.artboards) || !sameMap(this.layout.pages, next.pages);
     if (scopes.has("meta") || layoutChanged) writes.set("design.json", serializeMeta(this.doc));
     if (scopes.has("tokens")) writes.set("tokens.css", this.doc.tokens);
-    if (scopes.has("threads")) writes.set("comments.json", serializeThreads(this.doc));
+    if (scopes.has("threads"))
+      writes.set("comments.json", serializeThreads(this.doc, this.read.unreadable));
     if (scopes.has("notes"))
       for (const [name, content] of Object.entries(this.doc.notes))
         writes.set(`notes/${name}.md`, content);
@@ -244,6 +249,12 @@ export class Design {
     }
 
     this.layout = next;
+    // A file Ponzu rewrites or removes no longer holds what was reported. comments.json
+    // still carries the threads it can't use, so their reports stand.
+    const fixed = (p: Problem) =>
+      (writes.has(p.path) || removals.includes(p.path)) && !p.what.startsWith("thread ");
+    if (this.read.problems.some(fixed))
+      this.read = { ...this.read, problems: this.read.problems.filter((p) => !fixed(p)) };
     for (const [path, content] of writes) {
       if (this.written.get(path) === content) continue;
       this.written.set(path, content);
@@ -254,6 +265,15 @@ export class Design {
       this.written.delete(path);
       await this.storage.remove(path);
     }
+  }
+
+  /**
+   * What Ponzu couldn't use in the files as last read: a comment thread
+   * missing fields, a page without an id, scripts stripped from an artboard.
+   * Hand-written files are where these come from; fixing the file clears them.
+   */
+  get problems(): readonly Problem[] {
+    return this.read.problems;
   }
 
   /** Where an artboard is stored, relative to the design root. */
@@ -280,8 +300,9 @@ export class Design {
       }
     }
     if (!changed) return;
-    const { doc: incoming, layout, lazy } = readBag(bag, this.doc.name);
+    const { doc: incoming, layout, lazy, problems, unreadable } = readBag(bag, this.doc.name);
     this.written = new Map(Object.entries(bag));
+    this.read = { problems, unreadable };
     // Elements the edit left alone keep the ids tools already handed out.
     // When that moves an id off its position, the file has to spell it out.
     const pin: string[] = [];

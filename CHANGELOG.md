@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.21.2](https://github.com/north-brook/ponzu/compare/v1.21.1...v1.21.2) (2026-10-21)
+
+
+### Bug Fixes
+
+* keep the selection outline on an artboard after dragging it ([#94](https://github.com/north-brook/ponzu/issues/94)) ([4300283](https://github.com/north-brook/ponzu/commit/4300283d52a7f2b2373e946e47744a7880959249))
+
+## [1.21.1](https://github.com/north-brook/ponzu/compare/v1.21.0...v1.21.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* agents explain their work on the canvas and comment only when they need you ([#92](https://github.com/north-brook/ponzu/issues/92)) ([c6f88b2](https://github.com/north-brook/ponzu/commit/c6f88b2faaa8ad28d7f2246555169adeac6ba95a))
+
+## [1.21.0](https://github.com/north-brook/ponzu/compare/v1.20.3...v1.21.0) (2026-10-21)
+
+
+### Features
+
+* add a get_guide topic on the .design file format ([#89](https://github.com/north-brook/ponzu/issues/89)) ([54a1072](https://github.com/north-brook/ponzu/commit/54a10722beb10cf927cbbc606b0fdf59f9b98a34))
+
+## [1.20.3](https://github.com/north-brook/ponzu/compare/v1.20.2...v1.20.3) (2026-10-21)
+
+
+### Bug Fixes
+
+* warn when an artboard sets display: flex without a direction ([#84](https://github.com/north-brook/ponzu/issues/84)) ([f20c23c](https://github.com/north-brook/ponzu/commit/f20c23c0c31a2abea2e2a7e2274fe1c5fce4a9da))
+
+## [1.20.2](https://github.com/north-brook/ponzu/compare/v1.20.1...v1.20.2) (2026-10-21)
+
+
+### Bug Fixes
+
+* a page with a malformed artboard height no longer freezes the canvas ([#86](https://github.com/north-brook/ponzu/issues/86)) ([9fbc451](https://github.com/north-brook/ponzu/commit/9fbc451ce5b18155606a7a112cb7f6cbbb341daa))
+
 ## [1.20.1](https://github.com/north-brook/ponzu/compare/v1.20.0...v1.20.1) (2026-10-21)
 
 

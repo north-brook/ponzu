@@ -3,7 +3,8 @@ import { googleFontLinks, googleFonts } from "./fonts.ts";
 
 /**
  * Shared base styles for an artboard, in the canvas and in screenshots.
- * Artboards are flex columns by default, like Paper, and clip what overflows.
+ * Artboards are flex columns by default and clip what overflows. Plain CSS
+ * makes display: flex a row, so lint flags a root that sets it with no direction.
  */
 export const ARTBOARD_BASE_CSS = `
 [data-artboard] { display: flex; flex-direction: column; position: relative; overflow: hidden; box-sizing: border-box; background: #fff; }

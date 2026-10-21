@@ -1,4 +1,4 @@
-import type { Artboard } from "@ponzu/core";
+import { type Artboard, ROOT_DIRECTION_NOTE } from "@ponzu/core";
 import type { FrameStep, Interaction, MotionInfo } from "./motion.ts";
 
 export interface LintIssue {
@@ -15,7 +15,8 @@ export interface LintIssue {
     | "hidden-after-animation"
     | "no-state-style"
     | "missing-font"
-    | "wrapped-text";
+    | "wrapped-text"
+    | "flex-direction";
   message: string;
 }
 
@@ -96,6 +97,8 @@ export interface RecordResult {
   motion: MotionInfo;
   /** Lint once everything has settled, in the requested state. */
   issues: LintIssue[];
+  /** Fonts or images were still loading when their time ran out; frames may show fallbacks. */
+  assetsTimedOut?: boolean;
 }
 
 export interface RenderResult {
@@ -113,6 +116,16 @@ export interface RenderResult {
   issues: LintIssue[];
   /** What animates and where the shot sits on the timeline. */
   motion?: MotionInfo;
+  /**
+   * Fonts or images were still loading when their time ran out, so the
+   * image may show fallbacks. Lint says which.
+   */
+  assetsTimedOut?: boolean;
+  /**
+   * Set when lint ran but the image couldn't be captured. `bytes` is then
+   * empty, and `issues` still holds the lint.
+   */
+  captureError?: string;
 }
 
 /**
@@ -300,12 +313,18 @@ export const LINT_SCRIPT = `(() => {
       issues.push({ id, kind: 'wrapped-text', message: label(el) + ' wraps onto two lines in its row; give it white-space: nowrap or more room' });
     }
   }
+  // The root's own display: flex keeps the artboard's column, where HTML
+  // written for plain CSS means a row: side-by-side panes stack. Inline style
+  // only, since that's what the HTML said; flex-flow sets the longhand too.
+  const unset = /flex/.test(root.style.display) && !root.style.flexDirection;
+  if (unset) issues.push({ id: root.getAttribute('data-id'), kind: 'flex-direction', message: ${JSON.stringify(ROOT_DIRECTION_NOTE)} });
   if (!scrolls(root)) {
     const fit = ${ARTBOARD_FIT}(root);
     const short = fit.needed === null ? root.scrollHeight - root.clientHeight : Math.ceil(fit.needed - 0.01) - Math.round(fit.height);
+    const fix = unset ? ', make room, or set flex-direction: row' : ' or make room';
     if (short > 1) issues.push({ id: root.getAttribute('data-id'), kind: 'overflow', message: fit.needed === null
-      ? 'content is ' + short + 'px taller than the artboard, and a child sized in % of it grows with it; set height: fit-content or make room'
-      : 'content needs ' + Math.ceil(fit.needed - 0.01) + 'px, ' + short + 'px more than the artboard; set height: fit-content or make room' });
+      ? 'content is ' + short + 'px taller than the artboard, and a child sized in % of it grows with it; set height: fit-content' + fix
+      : 'content needs ' + Math.ceil(fit.needed - 0.01) + 'px, ' + short + 'px more than the artboard; set height: fit-content' + fix });
   }
   return issues.slice(0, 30);
 })()`;

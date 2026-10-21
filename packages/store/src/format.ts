@@ -20,13 +20,15 @@ import {
  *   name.design/
  *     design.json        { ponzu: 1, name, icon?, example?, pages: [{ id, name, icon? }] }
  *     tokens.css         :root { --token: value }
- *     comments.json      { threads: [...] }
+ *     comments.json      { threads: [{ id, artboardId (+ nodeId?) | pageId, x, y, status,
+ *                          createdAt, updatedAt, messages: [{ id, author, text, createdAt }] }] }
  *     notes/*.md         agent field notes
  *     assets/            images, fonts
  *     pages/<page>/<artboard>.html
  *
  * Page folders and artboard files are named from slugs of their names.
  * Ids live inside the files, so renaming a folder never loses identity.
+ * get_guide('format') spells this out for agents writing the files by hand.
  */
 export interface FileBag {
   /** Relative path → text content. Binary assets are not part of the bag. */
@@ -44,24 +46,34 @@ export function emptyLayout(): Layout {
   return { pages: new Map(), artboards: new Map() };
 }
 
+/** Something in the files Ponzu couldn't use as written. */
+export interface Problem {
+  path: string;
+  what: string;
+}
+
 export interface ReadResult {
   doc: Doc;
   layout: Layout;
-  dropped: { path: string; what: string }[];
+  /** Content stripped from artboards, comment threads left out, ids missing. */
+  problems: Problem[];
+  /** Raw comment threads Ponzu can't use, kept so writing comments.json doesn't lose them. */
+  unreadable: unknown[];
   /** artboard id → ids derived from position, for elements whose file gave them none. */
   lazy: Map<string, Set<string>>;
 }
 
 export function readBag(bag: FileBag, fallbackName: string): ReadResult {
   const layout = emptyLayout();
-  const dropped: ReadResult["dropped"] = [];
+  const problems: Problem[] = [];
   const lazy: ReadResult["lazy"] = new Map();
-  const meta = parseMeta(bag["design.json"], fallbackName);
+  const meta = parseMeta(bag["design.json"], fallbackName, problems);
   const doc = emptyDoc(meta.name);
   if (meta.icon) doc.icon = meta.icon;
   if (meta.example) doc.example = true;
   doc.tokens = bag["tokens.css"] ?? ":root {\n}\n";
-  doc.threads = parseThreads(bag["comments.json"]);
+  const { threads, unreadable } = parseThreads(bag["comments.json"], problems);
+  doc.threads = threads;
   for (const [path, content] of Object.entries(bag)) {
     const m = /^notes\/(.+)\.md$/.exec(path);
     if (m) doc.notes[m[1]!] = content;
@@ -100,11 +112,7 @@ export function readBag(bag: FileBag, fallbackName: string): ReadResult {
       // Derived from the whole path, so every file gets its own id (and its
       // elements their own positional ids) and keeps it across reloads.
       const fallbackId = hashedId("ab", path);
-      const {
-        artboard,
-        dropped: d,
-        assigned,
-      } = parseArtboardFile(bag[path]!, {
+      const { artboard, dropped, assigned } = parseArtboardFile(bag[path]!, {
         id: fallbackId,
         name: titleCase(base),
       });
@@ -114,7 +122,7 @@ export function readBag(bag: FileBag, fallbackName: string): ReadResult {
       seenArtboards.add(artboard.id);
       artboard.root.id = artboard.id;
       if (assigned.size) lazy.set(artboard.id, assigned);
-      for (const x of d) dropped.push({ path, what: x.what });
+      for (const x of dropped) problems.push({ path, what: `removed ${x.what}` });
       layout.artboards.set(artboard.id, path);
       artboards.push(artboard);
     }
@@ -126,7 +134,7 @@ export function readBag(bag: FileBag, fallbackName: string): ReadResult {
     doc.pages.push({ id, name: "Page 1", artboards: [] });
     layout.pages.set(id, "page-1");
   }
-  return { doc, layout, dropped, lazy };
+  return { doc, layout, problems, unreadable, lazy };
 }
 
 function folderFor(
@@ -140,10 +148,19 @@ function folderFor(
   return uniqueName(slug, (n) => claimed.has(n));
 }
 
-function parseMeta(text: string | undefined, fallbackName: string): DesignMeta {
-  if (!text) return { ponzu: 1, name: fallbackName, pages: [] };
+function parseMeta(
+  text: string | undefined,
+  fallbackName: string,
+  problems: Problem[],
+): DesignMeta {
+  // An empty file is there but unreadable: reported below, unlike a missing one.
+  if (text === undefined) return { ponzu: 1, name: fallbackName, pages: [] };
   try {
     const raw = JSON.parse(text) as Partial<DesignMeta>;
+    // Without an id a page gets a new one on every read, and pins on its canvas lose it.
+    for (const p of Array.isArray(raw.pages) ? raw.pages : [])
+      if (p && typeof p.name === "string" && typeof p.id !== "string")
+        problems.push({ path: "design.json", what: `page "${p.name}" has no id` });
     return {
       ponzu: 1,
       name: typeof raw.name === "string" && raw.name ? raw.name : fallbackName,
@@ -160,18 +177,71 @@ function parseMeta(text: string | undefined, fallbackName: string): DesignMeta {
         : [],
     };
   } catch {
+    problems.push({ path: "design.json", what: "not valid JSON" });
     return { ponzu: 1, name: fallbackName, pages: [] };
   }
 }
 
-function parseThreads(text: string | undefined): Thread[] {
-  if (!text) return [];
+function parseThreads(
+  text: string | undefined,
+  problems: Problem[],
+): { threads: Thread[]; unreadable: unknown[] } {
+  const threads: Thread[] = [];
+  const unreadable: unknown[] = [];
+  if (text === undefined) return { threads, unreadable };
+  let raw: { threads?: unknown };
   try {
-    const raw = JSON.parse(text) as { threads?: Thread[] };
-    return Array.isArray(raw.threads) ? raw.threads : [];
+    raw = JSON.parse(text);
   } catch {
-    return [];
+    problems.push({ path: "comments.json", what: "not valid JSON" });
+    return { threads, unreadable };
   }
+  if (!Array.isArray(raw?.threads)) {
+    problems.push({ path: "comments.json", what: 'no "threads" list' });
+    return { threads, unreadable };
+  }
+  raw.threads.forEach((t, i) => {
+    const missing = threadFaults(t);
+    if (!missing.length) return threads.push(t as Thread);
+    unreadable.push(t);
+    const id = (t as { id?: unknown })?.id;
+    const which = typeof id === "string" && id ? id : `#${i + 1}`;
+    problems.push({
+      path: "comments.json",
+      what: `thread ${which} not shown, needs ${missing.join(", ")}`,
+    });
+  });
+  return { threads, unreadable };
+}
+
+/** What a thread from disk lacks to be shown, in words. Empty when it's whole. */
+function threadFaults(t: unknown): string[] {
+  if (!t || typeof t !== "object") return ["to be an object"];
+  const o = t as Record<string, unknown>;
+  const out: string[] = [];
+  const str = (v: unknown) => typeof v === "string" && v.length > 0;
+  const num = (v: unknown) => typeof v === "number" && Number.isFinite(v);
+  if (!str(o.id)) out.push("id");
+  if (!str(o.artboardId) && !str(o.pageId)) out.push("artboardId or pageId");
+  if (!num(o.x) || !num(o.y)) out.push("x and y");
+  if (o.status !== "open" && o.status !== "resolved") out.push('status "open" or "resolved"');
+  if (!num(o.createdAt) || !num(o.updatedAt)) out.push("createdAt and updatedAt");
+  if (!Array.isArray(o.messages) || !o.messages.every(messageWhole))
+    out.push("messages, each with id, author { kind, name }, text and createdAt");
+  return out;
+}
+
+function messageWhole(m: unknown): boolean {
+  if (!m || typeof m !== "object") return false;
+  const o = m as Record<string, unknown>;
+  const author = o.author as Record<string, unknown> | undefined;
+  return (
+    typeof o.id === "string" &&
+    typeof o.text === "string" &&
+    typeof o.createdAt === "number" &&
+    (author?.kind === "user" || author?.kind === "agent") &&
+    typeof author.name === "string"
+  );
 }
 
 function titleCase(slug: string): string {
@@ -220,8 +290,9 @@ export function serializeMeta(doc: Doc): string {
   return `${JSON.stringify(metaOf(doc), null, 2)}\n`;
 }
 
-export function serializeThreads(doc: Doc): string {
-  return `${JSON.stringify({ threads: doc.threads }, null, 2)}\n`;
+/** `unreadable` threads go back as they were, after the rest, so fixing them by hand still works. */
+export function serializeThreads(doc: Doc, unreadable: unknown[] = []): string {
+  return `${JSON.stringify({ threads: [...doc.threads, ...unreadable] }, null, 2)}\n`;
 }
 
 export function serializeArtboard(ab: Artboard): string {

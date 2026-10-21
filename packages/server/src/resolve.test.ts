@@ -199,7 +199,7 @@ test("telemetry says how the file was found and why it wasn't, never which", asy
   await runTool(getTool("get_basic_info")!, {}, { ws, caller });
   await runTool(getTool("get_basic_info")!, { file: "no-such" }, { ws, caller });
   await runTool(getTool("get_tree")!, { id: firstArtboard("halon") }, { ws, caller, session: {} });
-  expect(captured.map((c) => [c.outcome, c.error, c.file_from])).toEqual([
+  expect(captured.map((c) => [c.outcome, c.error_class, c.file_from])).toEqual([
     ["mistake", "file_ambiguous", undefined],
     ["mistake", "file_not_found", undefined],
     ["ok", undefined, "ids"],
