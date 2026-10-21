@@ -362,7 +362,7 @@ function FileTab({
   const state = useSource(source);
   const working = state.presence.some((p) => agentActivity(p, state.path) === "working");
   const offline = state.status === "offline";
-  // Quick loads and blips show nothing; only a wait you'd notice gets the wedge.
+  // Quick loads and blips show nothing; only a wait you'd notice gets the slice.
   const waiting = useDelayed(!state.doc || offline);
   const [held, setHeld] = useState(false);
   const name =

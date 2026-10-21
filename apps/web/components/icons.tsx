@@ -1,20 +1,43 @@
-import type { SVGProps } from "react";
+import { SLICE, SLICE_STROKE } from "@ponzu/react/slice";
+import type { CSSProperties, SVGProps } from "react";
 
-export function Wedge({ size, ...props }: SVGProps<SVGSVGElement> & { size: number }) {
+/**
+ * The Ponzu slice. `SLICE` is the same geometry the app draws; the fill follows `--slice`, ink on
+ * light and paper on dark, unless a class or style sets it.
+ */
+export function Slice({ size, className, ...props }: SVGProps<SVGSVGElement> & { size: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true" {...props}>
-      <path fill="var(--rind)" d="M12.96 3.00A33.96 33.96 0 0 0 61.00 51.04Z" />
-      <path fill="var(--pith)" d="M17.08 7.12A28.14 28.14 0 0 0 56.88 46.92Z" />
-      <path fill="var(--flesh)" d="M19.57 9.61A24.62 24.62 0 0 0 54.39 44.43Z" />
-      <path fill="var(--pith)" d="M17.08 7.12L56.88 46.92L54.39 49.41L14.59 9.61Z" />
-      <path
-        stroke="var(--pith)"
-        d="M34.49 29.51L30.61 50.80M34.49 29.51L13.20 33.39"
-        strokeWidth="3.4"
-        strokeLinecap="round"
-        fill="none"
-      />
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 64 64"
+      aria-hidden="true"
+      className={`slice ${className ?? ""}`}
+      {...props}
+    >
+      <g strokeWidth={SLICE_STROKE} strokeLinejoin="round">
+        {SLICE.map((d, i) => (
+          <path key={d} d={d} className="slice-seg" style={{ "--i": i } as CSSProperties} />
+        ))}
+      </g>
     </svg>
+  );
+}
+
+/**
+ * The lockup: the slice beside the lowercase word, in Funnel Display Bold. Hover turns the slice by
+ * one segment (`.lockup` in globals.css).
+ */
+export function Lockup({ size = 22, href = "/" }: { size?: number; href?: string }) {
+  return (
+    <a
+      className="lockup flex w-fit items-center font-display font-bold tracking-[-0.05em] text-ink"
+      style={{ gap: size * 0.32, fontSize: size }}
+      href={href}
+    >
+      <Slice size={size * 1.18} />
+      <span className="-translate-y-[0.04em] leading-none">ponzu</span>
+    </a>
   );
 }
 

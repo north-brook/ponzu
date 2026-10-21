@@ -1,23 +1,19 @@
-import { Wedge } from "./icons";
+import { SLICE, SLICE_STROKE } from "@ponzu/react/slice";
+import type { CSSProperties } from "react";
+import { Lockup } from "./icons";
 import { CONTRIBUTING, DOWNLOAD, LICENSE, RELEASES, REPO, SDK } from "./links";
 
 /**
- * The site footer. Its sign-off is a citrus sunrise: half a ponzu wheel resting on the horizon
- * line, its segments doubling as rays. It rises a few pixels as the page reaches its end, a quiet
- * note that the last section is a beginning. See `.horizon` in globals.css.
+ * The site footer. Its sign-off is a sunrise drawn in the mark: a field of tiny slices with a huge
+ * one rising from the bottom edge in yuzu. The field fades in from the top, a ripple turns the big
+ * slice every few seconds, and any unit turns when you point at it. See `.field` in globals.css.
  */
 export function Footer() {
   return (
     <footer className="mt-24 border-t border-rule pt-14">
       <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-20 gap-y-10 max-md:grid-cols-2">
         <div className="flex flex-col gap-4 max-md:col-span-2">
-          <a
-            className="flex w-fit items-center gap-2.5 text-[19px] font-bold tracking-[-0.03em] text-ink"
-            href="/"
-          >
-            <Wedge size={28} />
-            Ponzu
-          </a>
+          <Lockup size={22} />
           <p className="m-0 max-w-[300px] text-[15px]/[25px] text-pretty text-muted">
             The design canvas for your coding agent.
           </p>
@@ -40,26 +36,15 @@ export function Footer() {
         />
       </div>
 
-      <div className="horizon mt-24 max-md:mt-16">
-        <svg className="horizon-sun" viewBox="0 0 100 50" aria-hidden="true">
-          <path fill="var(--rind)" d="M2 50A48 48 0 0 1 98 50Z" />
-          <path fill="var(--pith)" d="M7 50A43 43 0 0 1 93 50Z" />
-          <path fill="var(--flesh)" d="M10 50A40 40 0 0 1 90 50Z" />
-          <path
-            stroke="var(--pith)"
-            strokeWidth="2.6"
-            strokeLinecap="round"
-            fill="none"
-            d="M50 50L15.36 30M50 50L30 15.36M50 50L50 10M50 50L70 15.36M50 50L84.64 30"
-          />
-        </svg>
-      </div>
-
-      <div className="flex justify-between gap-4 py-7 text-[13px] text-faint max-[720px]:flex-col max-[720px]:gap-1.5">
-        <a className="footer-link w-fit hover:text-muted" href="https://northbrook.com">
-          © 2026 Northbrook PBC
-        </a>
-        <span>Free and open source, MIT licensed</span>
+      <div className="relative -mx-16 mt-16 max-[720px]:-mx-5">
+        <Field />
+        {/* The legal line sits in the field, on a soft clearing of the page's own ground. */}
+        <div className="absolute inset-x-0 bottom-0 flex justify-between gap-4 px-16 pb-5 text-[13px] text-muted max-[720px]:static max-[720px]:flex-col max-[720px]:gap-1.5 max-[720px]:px-5 max-[720px]:py-6">
+          <a className="footer-link field-clear w-fit hover:text-ink" href="https://northbrook.com">
+            © 2026 Northbrook PBC
+          </a>
+          <span className="field-clear">Free and open source, MIT licensed</span>
+        </div>
       </div>
     </footer>
   );
@@ -75,5 +60,79 @@ function FooterLinks({ title, links }: { title: string; links: [string, string][
         </a>
       ))}
     </div>
+  );
+}
+
+const CELL = 14;
+const COLS = 103;
+const ROWS = 22;
+const W = COLS * CELL;
+const H = ROWS * CELL;
+/** The big slice: centred on the bottom edge, nearly the field's height, its gaps 13% of it. */
+const R = H * 0.95;
+const GAP = R * 0.13;
+
+/** Whether a point falls inside one of the big slice's six segments. */
+function inSlice(x: number, y: number) {
+  const dx = x - W / 2;
+  const dy = y - H;
+  if (Math.hypot(dx, dy) > R) return false;
+  // Each segment's two sides run along radii at -90° + 60°k, inset by half the gap.
+  const a = (Math.atan2(dy, dx) * 180) / Math.PI;
+  const k = Math.floor((((a + 90) % 360) + 360) / 60) % 6;
+  return [k, k + 1].every((side) => {
+    const r = ((-90 + 60 * side) * Math.PI) / 180;
+    return Math.abs(-Math.sin(r) * dx + Math.cos(r) * dy) >= GAP / 2;
+  });
+}
+
+const UNITS = Array.from({ length: COLS * ROWS }, (_, n) => {
+  const x = (n % COLS) * CELL + CELL / 2;
+  const y = Math.floor(n / COLS) * CELL + CELL / 2;
+  const on = inSlice(x, y);
+  // How far the ripple has to travel to reach this unit, in cells.
+  const d = Math.round(Math.hypot(x - W / 2, y - H) / CELL);
+  return { x, y, on, d };
+});
+
+/** The field, drawn once on the server: 2,266 units, each a <use> of one slice. */
+function Field() {
+  const unit = CELL * 0.88;
+  return (
+    <svg
+      className="field h-[308px] max-[720px]:h-[200px]"
+      viewBox={`0 0 ${W} ${H}`}
+      preserveAspectRatio="xMidYMax slice"
+      aria-hidden="true"
+    >
+      <defs>
+        <symbol id="field-unit" viewBox="0 0 64 64">
+          <g
+            fill="currentColor"
+            stroke="currentColor"
+            strokeWidth={SLICE_STROKE}
+            strokeLinejoin="round"
+          >
+            {SLICE.map((d) => (
+              <path key={d} d={d} />
+            ))}
+          </g>
+        </symbol>
+      </defs>
+      {UNITS.map(({ x, y, on, d }) => (
+        <g key={`${x},${y}`} transform={`translate(${x} ${y})`}>
+          <use
+            href="#field-unit"
+            className="field-unit"
+            data-on={on || undefined}
+            style={{ "--d": d } as CSSProperties}
+            x={-unit / 2}
+            y={-unit / 2}
+            width={unit}
+            height={unit}
+          />
+        </g>
+      ))}
+    </svg>
   );
 }
