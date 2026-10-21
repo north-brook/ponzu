@@ -1,8 +1,9 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { arch, platform } from "node:os";
 import { dirname, join } from "node:path";
+import { readTailnet } from "@ponzu/server";
 import type { Feedback, Telemetry } from "@ponzu/tools";
 import { PostHog } from "posthog-node";
 import { ponzuHome } from "./host.ts";
@@ -116,6 +117,29 @@ function onNow(): () => boolean {
   };
 }
 
+/**
+ * The person behind this install: a hash of their Tailscale user id, the same
+ * on each of their Macs, so the id itself is never sent. Null without
+ * Tailscale. Re-read every few minutes, for hosts that start before Tailscale
+ * connects and then run for days.
+ */
+function tailscaleOwner(): () => Promise<string | null> {
+  let checked = 0;
+  let owner: Promise<string | null> = Promise.resolve(null);
+  return () => {
+    if (Date.now() - checked > 10 * 60_000) {
+      checked = Date.now();
+      owner = readTailnet()
+        .then((n) => (n ? ownerHash(n.user) : null))
+        .catch(() => null);
+    }
+    return owner;
+  };
+}
+
+export const ownerHash = (user: string) =>
+  createHash("sha256").update(`ponzu:tailscale:${user}`).digest("hex").slice(0, 32);
+
 export interface HostTelemetry extends Telemetry {
   /** Send what's queued. Short-lived processes call it before they exit. */
   shutdown(): Promise<void>;
@@ -125,6 +149,9 @@ export interface HostTelemetry extends Telemetry {
  * Anonymous usage for the Ponzu team: which tools agents call and how they
  * fail, which agents people use, how often the canvas is open, and feedback
  * agents send with send_feedback. Never design content, file names or paths.
+ * Events go out under this install's random id. With Tailscale, the install is
+ * also aliased to its owner's hash, so PostHog counts one person's Macs, and
+ * their events from before Tailscale connected, as one person.
  * Null when the person turned it off.
  */
 export async function startTelemetry(base: {
@@ -150,14 +177,43 @@ export async function startTelemetry(base: {
     surface: process.env.PONZU_DESKTOP ? "desktop" : "cli",
     os: platform(),
     arch: arch(),
-    // An install is a random id, not a person: no person profiles.
-    $process_person_profile: false,
+  };
+  const owner = tailscaleOwner();
+  let aliased: string | null = null;
+  /**
+   * What an event needs from the Tailscale read: aliases this install to its
+   * owner once per process (PostHog ignores a repeat), and leaves events
+   * without an owner personless, so an install alone gets no person profile.
+   * An install already joined to one owner stays with them: PostHog refuses
+   * to merge two people.
+   */
+  const person = async () => {
+    const o = await owner();
+    if (o && o !== aliased) {
+      client.alias({ distinctId: o, alias: id });
+      aliased = o;
+    }
+    return o ? {} : { $process_person_profile: false };
   };
   const on = onNow();
+  // Events wait for the first Tailscale read, in order, stamped when they happened.
+  let queue = Promise.resolve();
   return {
     capture(event, properties) {
       if (!on()) return;
-      client.capture({ distinctId: id, event, properties: { ...common, ...properties } });
+      const timestamp = new Date();
+      queue = queue
+        .then(person)
+        .then((profile) =>
+          client.capture({
+            distinctId: id,
+            event,
+            timestamp,
+            properties: { ...common, ...profile, ...properties },
+          }),
+        )
+        // One lost event must not stop the ones after it.
+        .catch(() => {});
     },
     async feedback(f) {
       // Off since this process started: honour it.
@@ -174,6 +230,7 @@ export async function startTelemetry(base: {
           event: "survey sent",
           properties: {
             ...common,
+            ...(await person()),
             $survey_id: SURVEY.id,
             $survey_iteration: null,
             $survey_submission_id: randomUUID(),
@@ -192,6 +249,7 @@ export async function startTelemetry(base: {
       }
     },
     async shutdown() {
+      await queue;
       await client.shutdown(2000).catch(() => {});
     },
   };
