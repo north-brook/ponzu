@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.20.0](https://github.com/north-brook/ponzu/compare/v1.19.0...v1.20.0) (2026-10-21)
+
+
+### Features
+
+* show designs live on the home screen while an agent works ([#78](https://github.com/north-brook/ponzu/issues/78)) ([391e083](https://github.com/north-brook/ponzu/commit/391e083304a4779a00d0f1cdd10da93213501e97))
+
 ## [1.19.0](https://github.com/north-brook/ponzu/compare/v1.18.1...v1.19.0) (2026-10-21)
 
 
