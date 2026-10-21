@@ -60,7 +60,7 @@ export const orientTools = [
         const shown = overlaps.slice(0, limit).map(overlapLine);
         const more = overlaps.length - shown.length;
         lines.push(
-          `Overlapping artboards (the canvas draws one over the other):\n  ${shown.join("\n  ")}${more ? `\n  … ${more} more` : ""}`,
+          `Overlapping artboards (the canvas draws one over the other):\n  ${shown.join("\n  ")}${more ? `\n  … ${more} more; move these and call get_basic_info again for the rest` : ""}`,
         );
       }
       const sel = ws.selection(key);

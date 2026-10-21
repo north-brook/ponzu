@@ -91,7 +91,8 @@ export async function footprintsAround(
 
 /**
  * Overlaps anywhere on a page. Only measures an artboard whose size could
- * reach another one; between two unmeasured ones, either side catches it.
+ * reach another one's, with both read at their largest: an unmeasured width
+ * or height could be anything.
  */
 export async function pageOverlapList(
   ws: Workspace,
@@ -99,9 +100,18 @@ export async function pageOverlapList(
   doc: Doc,
   artboards: Artboard[],
 ): Promise<Overlap[]> {
-  const need = (ab: Artboard) =>
-    artboards.some((o) => o !== ab && mayReach(ab, { x: o.x, y: o.y, ...artboardSize(o) }));
+  const need = (ab: Artboard) => artboards.some((o) => o !== ab && mayReach(ab, reach(o)));
   return overlaps(await footprints(ws, key, doc, artboards, { need }));
+}
+
+/** The most an artboard can cover: its declared px size, unbounded where it has none. */
+function reach(ab: Artboard): { x: number; y: number; w: number; h: number } {
+  return {
+    x: ab.x,
+    y: ab.y,
+    w: declared(ab.root.style.width) ?? Number.POSITIVE_INFINITY,
+    h: declared(ab.root.style.height) ?? Number.POSITIVE_INFINITY,
+  };
 }
 
 /** Whether artboard ab, whatever its unmeasured size turns out to be, could cover box. */
@@ -118,11 +128,13 @@ export function mayReach(ab: Artboard, box: { x: number; y: number; w: number; h
 
 /**
  * For autoPlace: which artboards' real size could change the spot it picks in
- * row y (the first artboard's row by default). Ones starting well below it can't.
+ * any of `rows` (the first artboard's row by default). Ones starting well
+ * below every row can't.
  */
-export function rowNeed(artboards: Artboard[], y?: number) {
-  const rowY = y ?? artboards[0]?.y ?? 0;
-  return (ab: Artboard) => ab.y < rowY + 2000;
+export function rowNeed(artboards: Artboard[], ...rows: (number | undefined)[]) {
+  const ys = rows.filter((y) => y !== undefined);
+  if (!ys.length) ys.push(artboards[0]?.y ?? 0);
+  return (ab: Artboard) => ys.some((y) => ab.y < y + 2000);
 }
 
 function declared(v: string | undefined): number | null {

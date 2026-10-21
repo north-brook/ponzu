@@ -299,9 +299,21 @@ export const writeTools = [
       // Artboard copies so far, at their originals' size on the canvas.
       const placed: Footprint[] = [];
       const measuredPages = new Map<string, Promise<Footprint[]>>();
+      // Measures the originals, for their copies' size, and when x is left
+      // to autoPlace, what's in the rows the copies join.
       const pageBoxes = (page: { id: string; artboards: Artboard[] }) => {
-        if (!measuredPages.has(page.id))
-          measuredPages.set(page.id, footprints(ctx.ws, key, doc, page.artboards));
+        if (!measuredPages.has(page.id)) {
+          const originals = page.artboards.filter((ab) => args.ids.includes(ab.id));
+          const inRow =
+            args.x === undefined
+              ? rowNeed(
+                  page.artboards,
+                  ...(args.y !== undefined ? [args.y] : originals.map((ab) => ab.y)),
+                )
+              : () => false;
+          const need = (ab: Artboard) => args.ids.includes(ab.id) || inRow(ab);
+          measuredPages.set(page.id, footprints(ctx.ws, key, doc, page.artboards, { need }));
+        }
         return measuredPages.get(page.id)!;
       };
       // Reported in the order asked for; names[i] goes with ids[i].
@@ -382,6 +394,8 @@ export const writeTools = [
             key,
             design,
             placed.map((p) => p.id),
+            // A copy renders at its original's size, measured above.
+            Object.fromEntries(placed.map((p) => [p.id, { w: p.w, h: p.h }])),
           )
         : "";
       return {
@@ -687,11 +701,14 @@ async function pageOverlaps(
   key: string,
   design: Design,
   ids: string[],
+  known: Record<string, { w: number; h: number }> = {},
 ): Promise<string> {
   const doc = design.doc;
   const pages = doc.pages.filter((p) => p.artboards.some((ab) => ids.includes(ab.id)));
   const found = [];
   for (const page of pages)
-    found.push(...overlaps(await footprintsAround(ctx.ws, key, doc, page.artboards, ids), ids));
+    found.push(
+      ...overlaps(await footprintsAround(ctx.ws, key, doc, page.artboards, ids, known), ids),
+    );
   return overlapNote(found);
 }

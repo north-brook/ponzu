@@ -398,3 +398,54 @@ test("a fit-content artboard is checked at its rendered height", async () => {
   await tall.call("get_basic_info", {});
   expect(measured).toEqual(["ab_b"]);
 });
+
+test("two unmeasured artboards that only meet at their rendered sizes are both measured", async () => {
+  // A wide fit-content-width board and a tall fit-content-height board: at the
+  // 1440×900 fallback they miss each other; rendered, they cross.
+  const s = await withFiles({
+    "design.json": JSON.stringify({
+      ponzu: 1,
+      name: "Fern",
+      pages: [{ id: "pg_home", name: "Home" }],
+    }),
+    "tokens.css": ":root {}\n",
+    "pages/home/wide.html": `<section data-artboard data-id="ab_wide" data-name="Wide" data-x="0" data-y="2000" style="width:fit-content;height:400px">\n<p>w</p>\n</section>\n`,
+    "pages/home/tall.html": `<section data-artboard data-id="ab_tall" data-name="Tall" data-x="2000" data-y="0" style="width:400px;height:fit-content">\n<p>t</p>\n</section>\n`,
+  });
+  const sizes: Record<string, [number, number]> = { ab_wide: [3000, 400], ab_tall: [400, 3000] };
+  s.ws.renderer = {
+    render: async () => {
+      throw new Error("unused");
+    },
+    measure: async (req) => {
+      const [width, height] = sizes[req.artboard.id]!;
+      return { boxes: { [req.artboard.id]: { x: 0, y: 0, width, height } }, contentHeight: height };
+    },
+    close: async () => {},
+  };
+  const r = await s.call("get_basic_info", {});
+  expect(r.text).toContain('ab_tall "Tall" and ab_wide "Wide" overlap by 400×400px');
+});
+
+test("duplicating to an explicit spot doesn't render distant artboards", async () => {
+  // ab_b grows down from y 5000; the copy goes far above it, so its size can't matter.
+  // Its own padding, so no earlier test's measurement of ab_b is cached for it.
+  const s = await twoBoards(0, 5000, "width:800px;height:fit-content;padding:7px");
+  const measured: string[] = [];
+  s.ws.renderer = {
+    render: async () => {
+      throw new Error("unused");
+    },
+    measure: async (req) => {
+      measured.push(req.artboard.id);
+      return {
+        boxes: { [req.artboard.id]: { x: 0, y: 0, width: 800, height: 300 } },
+        contentHeight: 300,
+      };
+    },
+    close: async () => {},
+  };
+  const r = await s.call("duplicate", { ids: ["ab_a"], x: 0, y: -5000 });
+  expect(r.text).toContain("at (0, -5000)");
+  expect(measured).toEqual([]);
+});
