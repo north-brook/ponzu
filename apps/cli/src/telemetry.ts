@@ -179,19 +179,20 @@ export async function startTelemetry(base: {
     arch: arch(),
   };
   const owner = tailscaleOwner();
-  let aliased: string | null = null;
+  let aliased = false;
   /**
    * What an event needs from the Tailscale read: aliases this install to its
    * owner once per process (PostHog ignores a repeat), and leaves events
    * without an owner personless, so an install alone gets no person profile.
-   * An install already joined to one owner stays with them: PostHog refuses
-   * to merge two people.
+   * An install already joined to one owner stays with them, so a Mac that
+   * signs in to another Tailscale account isn't aliased again: PostHog
+   * refuses to merge two people.
    */
   const person = async () => {
     const o = await owner();
-    if (o && o !== aliased) {
+    if (o && !aliased) {
       client.alias({ distinctId: o, alias: id });
-      aliased = o;
+      aliased = true;
     }
     return o ? {} : { $process_person_profile: false };
   };
