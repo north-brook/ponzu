@@ -87,6 +87,57 @@ export function useKeyHeld(code: string): boolean {
   return held;
 }
 
+/**
+ * Whether a modifier has been held on its own for a moment, so the 1–9 it jumps with
+ * can show. It waits because ⌘ is down for ⌘Z too. Another key, a click or a scroll
+ * hides it, except the digits it shows, so you can keep jumping while you hold it.
+ */
+export function useModifierHint(key: "Meta" | "Control" | "Alt", delay = 250): boolean {
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let on = false;
+    const show = (next: boolean) => {
+      on = next;
+      setShown(next);
+    };
+    const hide = () => {
+      clearTimeout(timer);
+      show(false);
+    };
+    const down = (e: KeyboardEvent) => {
+      const alone =
+        e.metaKey === (key === "Meta") &&
+        e.ctrlKey === (key === "Control") &&
+        e.altKey === (key === "Alt") &&
+        !e.shiftKey;
+      if (e.key !== key) {
+        if (!(on && alone && /^Digit[1-9]$/.test(e.code))) hide();
+        return;
+      }
+      // Windows repeats a held Ctrl; that's still the same hold.
+      if (e.repeat) return;
+      hide();
+      if (alone && !isTyping(e)) timer = setTimeout(() => show(true), delay);
+    };
+    const up = (e: KeyboardEvent) => e.key === key && hide();
+    window.addEventListener("keydown", down, true);
+    window.addEventListener("keyup", up, true);
+    window.addEventListener("pointerdown", hide, true);
+    window.addEventListener("wheel", hide, true);
+    window.addEventListener("blur", hide);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("keydown", down, true);
+      window.removeEventListener("keyup", up, true);
+      window.removeEventListener("pointerdown", hide, true);
+      window.removeEventListener("wheel", hide, true);
+      window.removeEventListener("blur", hide);
+    };
+  }, [key, delay]);
+  return shown;
+}
+
 export function isTyping(e: Event): boolean {
   const t = e.composedPath()[0] as HTMLElement | undefined;
   return !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
