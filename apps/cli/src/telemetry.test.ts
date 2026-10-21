@@ -47,10 +47,7 @@ const sent = async (
   run: (t: NonNullable<Awaited<ReturnType<typeof mod.startTelemetry>>>) => void | Promise<void>,
 ) => {
   const capture = spyOn(PostHog.prototype, "capture").mockImplementation(() => {});
-  const alias = spyOn(PostHog.prototype, "alias").mockImplementation(() => {});
-  const aliasImmediate = spyOn(PostHog.prototype, "aliasImmediate").mockImplementation(async (a) =>
-    alias(a),
-  );
+  const alias = spyOn(PostHog.prototype, "aliasImmediate").mockImplementation(async () => {});
   try {
     const telemetry = await mod.startTelemetry({ version: "test", command: "serve" });
     if (!telemetry) throw new Error("telemetry is off");
@@ -63,7 +60,6 @@ const sent = async (
   } finally {
     capture.mockRestore();
     alias.mockRestore();
-    aliasImmediate.mockRestore();
     delete process.env.PONZU_TAILSCALE;
   }
 };
@@ -113,6 +109,53 @@ test("feedback sent first waits for the alias", async () => {
   }
 });
 
+test("feedback waits for an alias a queued event already started", async () => {
+  await writeFile(file(), JSON.stringify({ id: "install-1" }));
+  await fakeTailscale({
+    BackendState: "Running",
+    Self: { TailscaleIPs: ["100.64.0.1"], UserID: 7 },
+  });
+  const order: string[] = [];
+  let land = () => {};
+  const aliasImmediate = spyOn(PostHog.prototype, "aliasImmediate").mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        order.push("alias sent");
+        land = () => {
+          order.push("alias landed");
+          resolve();
+        };
+      }),
+  );
+  const capture = spyOn(PostHog.prototype, "capture").mockImplementation(() => {});
+  const captureImmediate = spyOn(PostHog.prototype, "captureImmediate").mockImplementation(
+    async () => {
+      order.push("feedback");
+    },
+  );
+  try {
+    const telemetry = await mod.startTelemetry({ version: "test", command: "serve" });
+    telemetry?.capture("host started", {});
+    for (let i = 0; i < 200 && !order.length; i++) await Bun.sleep(5);
+    const sent = telemetry?.feedback({
+      sentiment: "positive",
+      category: "praise",
+      summary: "Nice",
+    });
+    await Bun.sleep(20);
+    land();
+    expect(await sent).toBe(true);
+    await telemetry?.shutdown();
+    expect(order).toEqual(["alias sent", "alias landed", "feedback"]);
+    expect(aliasImmediate).toHaveBeenCalledTimes(1);
+  } finally {
+    aliasImmediate.mockRestore();
+    capture.mockRestore();
+    captureImmediate.mockRestore();
+    delete process.env.PONZU_TAILSCALE;
+  }
+});
+
 test("a Mac that signs in to another Tailscale account isn't aliased again", async () => {
   await writeFile(file(), JSON.stringify({ id: "install-1" }));
   const tailnet = (user: number) =>
@@ -125,7 +168,7 @@ test("a Mac that signs in to another Tailscale account isn't aliased again", asy
     const { aliases } = await sent(async (t) => {
       t.capture("host started", {});
       // The first owner is read and aliased before the account changes.
-      const alias = PostHog.prototype.alias as unknown as { mock: { calls: unknown[] } };
+      const alias = PostHog.prototype.aliasImmediate as unknown as { mock: { calls: unknown[] } };
       for (let i = 0; i < 200 && !alias.mock.calls.length; i++) await Bun.sleep(5);
       await tailnet(8);
       // Past the owner's re-read.

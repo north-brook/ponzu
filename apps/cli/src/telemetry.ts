@@ -179,24 +179,22 @@ export async function startTelemetry(base: {
     arch: arch(),
   };
   const owner = tailscaleOwner();
-  let aliased = false;
+  let alias: Promise<void> | null = null;
   /**
    * What an event needs from the Tailscale read: aliases this install to its
    * owner once per process (PostHog ignores a repeat), and leaves events
    * without an owner personless, so an install alone gets no person profile.
    * An install already joined to one owner stays with them, so a Mac that
    * signs in to another Tailscale account isn't aliased again: PostHog
-   * refuses to merge two people. `immediate` is for events sent straight
-   * away, which would otherwise overtake the queued alias.
+   * refuses to merge two people. The alias goes out on its own, and every
+   * event with an owner waits for it, so none reaches PostHog first.
    */
-  const person = async (immediate = false) => {
+  const person = async () => {
     const o = await owner();
-    if (o && !aliased) {
-      aliased = true;
-      if (immediate) await client.aliasImmediate({ distinctId: o, alias: id });
-      else client.alias({ distinctId: o, alias: id });
-    }
-    return o ? {} : { $process_person_profile: false };
+    if (!o) return { $process_person_profile: false };
+    alias ??= client.aliasImmediate({ distinctId: o, alias: id }).catch(() => {});
+    await alias;
+    return {};
   };
   const on = onNow();
   // Events wait for the first Tailscale read, in order, stamped when they happened.
@@ -233,7 +231,7 @@ export async function startTelemetry(base: {
           event: "survey sent",
           properties: {
             ...common,
-            ...(await person(true)),
+            ...(await person()),
             $survey_id: SURVEY.id,
             $survey_iteration: null,
             $survey_submission_id: randomUUID(),
