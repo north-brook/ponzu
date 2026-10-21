@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.26.1](https://github.com/north-brook/ponzu/compare/v1.26.0...v1.26.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* keep the first comment's actions in the thread menu ([#117](https://github.com/north-brook/ponzu/issues/117)) ([f468d4d](https://github.com/north-brook/ponzu/commit/f468d4d376d9a4c8f0d0cd0b0de91d22b7698fab))
+
 ## [1.26.0](https://github.com/north-brook/ponzu/compare/v1.25.0...v1.26.0) (2026-10-21)
 
 
