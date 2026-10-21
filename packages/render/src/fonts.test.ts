@@ -105,7 +105,7 @@ describe.skipIf(!chromium)("fonts in Chromium", () => {
     try {
       const out = await renderer.render({
         artboard: board(
-          `<h1 data-id="n_head" style="margin:0;font-family:'Instrument Serif', Georgia, serif;font-size:48px">Ferns</h1>`,
+          `<h1 data-id="n_head" style="margin:0;font-family:'Instrument Serif', monospace;font-size:48px">Ferns</h1>`,
         ),
         tokens: "",
         lint: true,
@@ -117,7 +117,7 @@ describe.skipIf(!chromium)("fonts in Chromium", () => {
       expect(issues[0]!.message).toContain(
         `font "Instrument Serif" didn't load from Google Fonts (offline?)`,
       );
-      expect(issues[0]!.message).toContain("Georgia instead");
+      expect(issues[0]!.message).toContain("shows in monospace instead");
     } finally {
       offline = false;
     }
