@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.1](https://github.com/north-brook/ponzu/compare/v1.15.0...v1.15.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* keep self-closing svg children as siblings in write_html ([#47](https://github.com/north-brook/ponzu/issues/47)) ([9b37213](https://github.com/north-brook/ponzu/commit/9b37213d2885191edbe04273dbc0520a20dad0db))
+
 ## [1.15.0](https://github.com/north-brook/ponzu/compare/v1.14.4...v1.15.0) (2026-10-21)
 
 
