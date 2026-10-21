@@ -55,10 +55,12 @@ export const writeTools = [
         throw new ToolError(
           `No page ${args.page}. Pages: ${doc.pages.map((p) => `${p.id} "${p.name}"`).join(", ")}`,
         );
-      const width = typeof args.width === "number" ? `${args.width}px` : (args.width ?? "1440px");
-      const height =
-        typeof args.height === "number" ? `${args.height}px` : (args.height ?? "900px");
-      const style = mergeStyle({ width, height }, args.style ?? {});
+      const style = mergeStyle(
+        {},
+        { width: args.width ?? 1440, height: args.height ?? 900, ...args.style },
+      );
+      const width = style.width ?? "auto";
+      const height = style.height ?? "auto";
       const { nodes, dropped } = args.html ? parseHtml(args.html) : { nodes: [], dropped: [] };
       const pos =
         args.x !== undefined && args.y !== undefined
@@ -466,26 +468,10 @@ export const writeTools = [
         ops.push({ op: "artboard.update", id: args.id, x: args.x, y: args.y, name: args.name });
       }
       if (args.width !== undefined || args.height !== undefined) {
-        ops.push({
-          op: "style",
-          id: args.id,
-          style: mergeStyle(hit.artboard.root.style, {
-            width: args.width ?? null,
-            height: args.height ?? null,
-          }),
-        });
-        if (args.width === undefined)
-          ops[ops.length - 1] = {
-            op: "style",
-            id: args.id,
-            style: mergeStyle(hit.artboard.root.style, { height: args.height! }),
-          };
-        if (args.height === undefined)
-          ops[ops.length - 1] = {
-            op: "style",
-            id: args.id,
-            style: mergeStyle(hit.artboard.root.style, { width: args.width! }),
-          };
+        const size: Record<string, string | number> = {};
+        if (args.width !== undefined) size.width = args.width;
+        if (args.height !== undefined) size.height = args.height;
+        ops.push({ op: "style", id: args.id, style: mergeStyle(hit.artboard.root.style, size) });
       }
       if (!ops.length) return { text: "Nothing to change." };
       apply(design, { op: "batch", ops }, ctx);

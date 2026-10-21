@@ -34,6 +34,58 @@ describe("css", () => {
     });
   });
 
+  test("bare numbers get px where CSS needs a length, as numbers or strings", () => {
+    expect(
+      mergeStyle(
+        {},
+        {
+          width: "1440",
+          height: " 900 ",
+          padding: "16 24",
+          margin: "0 auto",
+          gap: "0",
+          top: "-8.5",
+          opacity: "0.5",
+          zIndex: "2",
+          flex: "1",
+          lineHeight: "1.4",
+          WebkitLineClamp: "3",
+          "--gap": "8",
+          fontSize: "1.5rem",
+        },
+      ),
+    ).toEqual({
+      width: "1440px",
+      height: "900px",
+      padding: "16px 24px",
+      margin: "0 auto",
+      gap: "0",
+      top: "-8.5px",
+      opacity: "0.5",
+      "z-index": "2",
+      flex: "1",
+      "line-height": "1.4",
+      "-webkit-line-clamp": "3",
+      "--gap": "8",
+      "font-size": "1.5rem",
+    });
+    expect(mergeStyle({}, { WebkitLineClamp: 3 })).toEqual({ "-webkit-line-clamp": "3" });
+  });
+
+  test("inline styles with bare numbers parse with px", () => {
+    expect(parseStyle("width:1440;height:900;opacity:1;--n:4")).toEqual({
+      width: "1440px",
+      height: "900px",
+      opacity: "1",
+      "--n": "4",
+    });
+    const { artboard } = parseArtboardFile(
+      `<section data-artboard data-id="ab_1" style="width:1440;height:900"></section>`,
+      { id: "ab_1", name: "A" },
+    );
+    expect(artboard.root.style).toEqual({ width: "1440px", height: "900px" });
+  });
+
   test("tokens round trip", () => {
     let css = ":root {\n  --ink: #000;\n}\n";
     css = setTokens(css, { "--ink": "#111", "--paper": "#fff" });
