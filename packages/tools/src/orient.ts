@@ -30,9 +30,11 @@ export const orientTools = [
       const lines = [docSummary(doc), `Path: ${key}`];
       const tokens = parseTokens(doc.tokens);
       if (tokens.length) {
-        const shown = tokens.slice(0, 40).map((t) => `${t.name}: ${t.value}`);
+        const limit = 40;
+        const shown = tokens.slice(0, limit).map((t) => `${t.name}: ${t.value}`);
+        const more = tokens.length - shown.length;
         lines.push(
-          `Tokens (${tokens.length}, use as var(--name)):\n  ${shown.join("\n  ")}${tokens.length > 40 ? "\n  …" : ""}`,
+          `Tokens (${tokens.length}, use as var(--name)):\n  ${shown.join("\n  ")}${more ? `\n  … ${more} more (get_tokens lists them all)` : ""}`,
         );
       } else {
         lines.push(
