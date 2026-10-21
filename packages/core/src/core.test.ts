@@ -5,11 +5,13 @@ import {
   type Doc,
   emptyDoc,
   mergeStyle,
+  outline,
   type PElement,
   parseArtboardFile,
   parseHtml,
   parseStyle,
   parseTokens,
+  rootDirectionUnset,
   serializeArtboardFile,
   serializeNodes,
   setTokens,
@@ -461,5 +463,34 @@ describe("ops", () => {
   test("can't move into itself", () => {
     const d = doc();
     expect(() => applyOp(d, { op: "move", id: "n_1", parent: "n_2", index: 0 })).toThrow();
+  });
+});
+
+describe("outline", () => {
+  const root = (style: string) =>
+    parseArtboardFile(
+      `<section data-artboard data-id="ab_o" data-name="O" style="${style}"><div data-id="n_row" style="display:flex"></div></section>`,
+      { id: "ab_o", name: "O" },
+    ).artboard.root;
+  const first = (style: string) => outline(root(style), 4, { artboard: true }).split("\n")[0];
+
+  test("an artboard root shows the flex column it renders as", () => {
+    expect(first("width:800px")).toContain("[flex column w=800px]");
+    expect(first("display:flex")).toContain("[flex column]");
+    expect(first("display:flex;flex-direction:row")).toContain("[flex row]");
+    expect(first("display:flex;flex-flow:row-reverse wrap")).toContain("[flex row-reverse]");
+    expect(first("display:grid")).toContain("[grid]");
+    // Children are plain CSS, and so is a root outlined as an ordinary node.
+    expect(outline(root("width:800px"), 4, { artboard: true })).toContain("n_row [flex row]");
+    expect(outline(root("width:800px")).split("\n")[0]).not.toContain("flex");
+  });
+
+  test("a root's direction is unset only when it sets display: flex and nothing says which way", () => {
+    expect(rootDirectionUnset({ display: "flex" })).toBe(true);
+    expect(rootDirectionUnset({ display: "inline-flex" })).toBe(true);
+    expect(rootDirectionUnset({ display: "flex", "flex-direction": "column" })).toBe(false);
+    expect(rootDirectionUnset({ display: "flex", "flex-flow": "wrap" })).toBe(false);
+    expect(rootDirectionUnset({})).toBe(false);
+    expect(rootDirectionUnset({ display: "grid" })).toBe(false);
   });
 });
