@@ -44,7 +44,8 @@ export function useCamera(initial: Camera = { x: 80, y: 80, zoom: 0.5 }) {
       padding = 64,
       maxZoom = 1,
     ) => {
-      if (rect.w <= 0 || rect.h <= 0) return;
+      // A NaN camera never recovers: every pan and zoom after it is NaN too.
+      if (!(rect.w > 0 && rect.h > 0 && Number.isFinite(rect.x + rect.y + rect.w + rect.h))) return;
       const zoom = Math.min(
         maxZoom,
         (viewport.w - padding * 2) / rect.w,
