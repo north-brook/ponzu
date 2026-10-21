@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { parseArtboardFile } from "@ponzu/core";
 import type { Page } from "playwright-core";
 import { ChromiumRenderer, findChromium } from "./chromium.ts";
+import { STAGE_BUDGET_MS } from "./stages.ts";
 
 /**
  * A stand-in for fonts.googleapis.com that is as strict as the real css2: it
@@ -17,6 +18,8 @@ const ACCEPTS: Record<string, string> = {
 };
 const requested: string[] = [];
 let offline = false;
+/** Font files never arrive, as from a server that accepts the connection and goes quiet. */
+let stalled = false;
 
 async function fakeGoogle(page: Page) {
   await page.route("https://fonts.googleapis.com/**", (route) => {
@@ -35,14 +38,16 @@ async function fakeGoogle(page: Page) {
     });
   });
   await page.route("https://fonts.gstatic.com/**", (route) =>
-    offline
-      ? route.abort("internetdisconnected")
-      : route.fulfill({
-          status: 200,
-          contentType: "font/woff2",
-          headers: { "access-control-allow-origin": "*" },
-          body: FONT,
-        }),
+    stalled
+      ? new Promise<void>(() => {})
+      : offline
+        ? route.abort("internetdisconnected")
+        : route.fulfill({
+            status: 200,
+            contentType: "font/woff2",
+            headers: { "access-control-allow-origin": "*" },
+            body: FONT,
+          }),
   );
 }
 
@@ -137,5 +142,28 @@ describe.skipIf(!chromium)("fonts in Chromium", () => {
     expect(missing(out.issues).map((i) => i.message)).toEqual([
       `font "Brand Sans" didn't load; check its @font-face src. Its text shows in sans-serif instead`,
     ]);
+  });
+
+  test("a font that never arrives doesn't hold the screenshot, and lint names it", async () => {
+    stalled = true;
+    try {
+      const started = Date.now();
+      const out = await renderer.render({
+        artboard: board(
+          `<h1 data-id="n_head" style="margin:0;font-family:'Instrument Serif', monospace;font-size:48px">Ferns</h1>`,
+        ),
+        tokens: "",
+        lint: true,
+        scale: 2,
+      });
+      expect(Date.now() - started).toBeLessThan(STAGE_BUDGET_MS.assets + 5_000);
+      expect(out.assetsTimedOut).toBe(true);
+      // A whole PNG of the 600×300 artboard at 2x, from its header.
+      const png = Buffer.from(out.bytes);
+      expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([1200, 600]);
+      expect(missing(out.issues).map((i) => i.id)).toEqual(["n_head"]);
+    } finally {
+      stalled = false;
+    }
   });
 });

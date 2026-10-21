@@ -22,6 +22,7 @@ import {
   type RenderRequest,
   type RenderResult,
 } from "./renderer.ts";
+import { RenderError, STAGE_BUDGET_MS, stalled, withBudget, within } from "./stages.ts";
 
 export interface ChromiumOptions {
   /** Path to a Chrome or Chromium binary. Found automatically when omitted. */
@@ -86,9 +87,13 @@ export class ChromiumRenderer implements Renderer {
     const own = scale !== 1 ? await browser.newContext({ deviceScaleFactor: scale }) : null;
     const page = await (own ?? context).newPage();
     try {
-      await this.load(page, req);
-      const motion = await page.evaluate<MotionInfo | { error: string }>(
-        prepareScript({ interact: req.interact, at: req.at }),
+      const loaded = await this.load(page, req);
+      const assetsTimedOut = loaded ? undefined : true;
+      const motion = await withBudget(
+        "prepare",
+        page.evaluate<MotionInfo | { error: string }>(
+          prepareScript({ interact: req.interact, at: req.at }),
+        ),
       );
       if ("error" in motion) throw new Error(motion.error);
 
@@ -111,44 +116,71 @@ export class ChromiumRenderer implements Renderer {
       }
 
       const issues: LintIssue[] = req.lint
-        ? ((await page.evaluate(FULL_LINT_SCRIPT)) as LintIssue[])
+        ? ((await withBudget("lint", page.evaluate(FULL_LINT_SCRIPT))) as LintIssue[])
         : [];
-      if (req.format === "pdf") {
-        const bytes = await page.pdf({
-          width: `${Math.ceil(box.width)}px`,
-          height: `${Math.ceil(box.height)}px`,
-          printBackground: true,
-          pageRanges: "1",
-        });
+      const size = { width: box.width, height: box.height, contentHeight };
+      const timeout = STAGE_BUDGET_MS.capture;
+      try {
+        if (req.format === "pdf") {
+          const bytes = await withBudget(
+            "capture",
+            page.pdf({
+              width: `${Math.ceil(box.width)}px`,
+              height: `${Math.ceil(box.height)}px`,
+              printBackground: true,
+              pageRanges: "1",
+            }),
+          );
+          return {
+            bytes: new Uint8Array(bytes),
+            mime: "application/pdf",
+            ...size,
+            issues,
+            motion,
+            assetsTimedOut,
+          };
+        }
+        const type = req.format === "jpeg" ? "jpeg" : "png";
+        const bytes = await (loaded
+          ? // fullPage makes the clip page-relative, so it can reach below the viewport.
+            page.screenshot({
+              type,
+              clip: box,
+              fullPage: true,
+              omitBackground: type === "png",
+              timeout,
+              ...(type === "jpeg" ? { quality: 85 } : {}),
+            })
+          : // page.screenshot waits for fonts first, and these never came.
+            withBudget("capture", captureNow(page, box, scale, type)));
         return {
           bytes: new Uint8Array(bytes),
-          mime: "application/pdf",
-          width: box.width,
-          height: box.height,
-          contentHeight,
+          mime: `image/${type}`,
+          ...size,
+          scale,
           issues,
           motion,
+          assetsTimedOut,
+        };
+      } catch (err) {
+        // With lint, return it and what went wrong rather than nothing. Without, there's nothing to return.
+        const message =
+          (err as Error | null)?.name === "TimeoutError"
+            ? stalled("capture", timeout)
+            : err instanceof Error
+              ? err.message
+              : String(err);
+        if (!req.lint) throw new RenderError(message, "capture_failed", "capture");
+        return {
+          bytes: new Uint8Array(),
+          mime: "",
+          ...size,
+          issues,
+          motion,
+          assetsTimedOut,
+          captureError: message,
         };
       }
-      const type = req.format === "jpeg" ? "jpeg" : "png";
-      // fullPage makes the clip page-relative, so it can reach below the viewport.
-      const bytes = await page.screenshot({
-        type,
-        clip: box,
-        fullPage: true,
-        omitBackground: type === "png",
-        ...(type === "jpeg" ? { quality: 85 } : {}),
-      });
-      return {
-        bytes: new Uint8Array(bytes),
-        mime: `image/${type}`,
-        width: box.width,
-        height: box.height,
-        contentHeight,
-        scale,
-        issues,
-        motion,
-      };
     } finally {
       await page.close().catch(() => {});
       if (own) await own.close().catch(() => {});
@@ -192,7 +224,7 @@ export class ChromiumRenderer implements Renderer {
           await page.setViewportSize({ width: Math.ceil(width), height: Math.ceil(height) });
           await pin();
           await show(page, html);
-          await page.evaluate(SHOWN);
+          await withBudget("load", page.evaluate(SHOWN));
         },
       };
       const out = await recordFrames(driver, {
@@ -227,7 +259,8 @@ export class ChromiumRenderer implements Renderer {
   }
 
   /**
-   * Puts the artboard on the page with fonts and images loaded. The viewport
+   * Puts the artboard on the page with fonts and images loaded, or as many as
+   * load in time; resolves with whether all of them did. The viewport
    * is the artboard's own size (900px tall for fit-content, like the canvas
    * shows it), so 100vh means the same here; captures reach below it.
    */
@@ -239,7 +272,7 @@ export class ChromiumRenderer implements Renderer {
       colorScheme?: "light" | "dark";
       assetBase?: string;
     },
-  ): Promise<void> {
+  ): Promise<boolean> {
     const width = cssPx(req.artboard.root.style.width) ?? 1440;
     const height = cssPx(req.artboard.root.style.height) ?? 900;
     await page.setViewportSize({
@@ -270,7 +303,16 @@ export class ChromiumRenderer implements Renderer {
       colorScheme: req.colorScheme,
     });
     await show(page, html);
-    await page.evaluate(`document.fonts.ready.then(() => ${IMAGES_READY_SCRIPT})`).catch(() => {});
+    const all = await within(
+      page
+        .waitForLoadState("load", { timeout: 0 })
+        .catch(() => {})
+        .then(() => page.evaluate(`document.fonts.ready.then(() => ${IMAGES_READY_SCRIPT})`)),
+      STAGE_BUDGET_MS.assets,
+    );
+    // Give up on what's still coming, so fonts fall back and the page settles.
+    if (!all) await page.evaluate("window.stop()").catch(() => {});
+    return all;
   }
 
   async close(): Promise<void> {
@@ -278,6 +320,31 @@ export class ChromiumRenderer implements Renderer {
     this.browser = null;
     this.context = null;
     if (b) await (await b).close().catch(() => {});
+  }
+}
+
+/** A capture straight through the DevTools protocol, which doesn't wait for fonts the way page.screenshot does. */
+async function captureNow(
+  page: Page,
+  box: { x: number; y: number; width: number; height: number },
+  scale: number,
+  format: "png" | "jpeg",
+): Promise<Buffer> {
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    if (format === "png")
+      await cdp.send("Emulation.setDefaultBackgroundColorOverride", {
+        color: { r: 0, g: 0, b: 0, a: 0 },
+      });
+    const shot = await cdp.send("Page.captureScreenshot", {
+      format,
+      ...(format === "jpeg" ? { quality: 85 } : {}),
+      clip: { ...box, scale },
+      captureBeyondViewport: true,
+    });
+    return Buffer.from(shot.data, "base64");
+  } finally {
+    await cdp.detach().catch(() => {});
   }
 }
 
@@ -290,7 +357,8 @@ function cssPx(v: string | undefined): number | null {
 /**
  * Navigates to the HTML rather than using setContent. Under Bun, an evaluate
  * right after setContent sometimes never returned once a test suite had
- * spawned child processes; a real navigation hasn't hung.
+ * spawned child processes; a real navigation hasn't hung. Returns once the
+ * DOM is ready: fonts and images get their own time limit after this.
  */
 async function show(page: Page, html: string): Promise<void> {
   const url = "http://ponzu.render/";
@@ -298,7 +366,13 @@ async function show(page: Page, html: string): Promise<void> {
   await page.route(url, (route) =>
     route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: html }),
   );
-  await page.goto(url, { waitUntil: "load", timeout: 15000 });
+  try {
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: STAGE_BUDGET_MS.load });
+  } catch (err) {
+    if ((err as Error | null)?.name === "TimeoutError")
+      throw new RenderError(stalled("load"), "timeout", "load");
+    throw err;
+  }
 }
 
 /** Every image decoded and painted, so a capture doesn't catch tiles mid-raster. */

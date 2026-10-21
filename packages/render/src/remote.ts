@@ -19,6 +19,7 @@ import {
   type RenderRequest,
   type RenderResult,
 } from "./renderer.ts";
+import { HOST_DEADLINE_MS, RENDER_FAILURES, RenderError, type RenderStage } from "./stages.ts";
 
 /**
  * What a render host receives: a complete page plus where to look. The
@@ -50,6 +51,17 @@ export interface RemoteRenderReply {
   issues: LintIssue[];
   /** What prepareScript evaluated to. */
   motion?: MotionInfo | { error: string };
+  /** Fonts or images ran out of time; the render went on without them. */
+  assetsTimedOut?: boolean;
+  /** Lint ran but the capture failed: `data` is empty. */
+  captureError?: string;
+}
+
+/** What a render host answers with a 500. Older hosts sent the message as plain text. */
+export interface RemoteRenderFailure {
+  error: string;
+  failure?: string;
+  stage?: RenderStage;
 }
 
 /**
@@ -70,23 +82,46 @@ export interface RemoteSessionReply {
   data?: string;
 }
 
+export interface RemoteOptions {
+  /** How long to wait for the host to answer one request. Default HOST_DEADLINE_MS. */
+  deadlineMs?: number;
+}
+
 /** Renders by POSTing jobs to a render host (`PONZU_RENDER_ENDPOINT`). */
 export class RemoteRenderer implements Renderer {
+  private deadlineMs: number;
+
   constructor(
     private endpoint: string,
     private token?: string,
     private assetBase?: string,
-  ) {}
+    opts: RemoteOptions = {},
+  ) {
+    this.deadlineMs = opts.deadlineMs ?? HOST_DEADLINE_MS;
+  }
 
-  private post(url: string, body: unknown): Promise<Response> {
-    return fetch(url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
-      },
-      body: JSON.stringify(body),
-    });
+  /**
+   * One request with a deadline. Without it a host that never answered held
+   * the call until the runtime's own fetch timeout, six minutes, which said
+   * nothing about why.
+   */
+  private async post(url: string, body: unknown): Promise<Response> {
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(this.deadlineMs),
+      });
+    } catch (err) {
+      throw unreachable(err, this.deadlineMs);
+    }
+    if (!res.ok) throw await failed(res);
+    return res;
   }
 
   async render(req: RenderRequest): Promise<RenderResult> {
@@ -101,9 +136,10 @@ export class RemoteRenderer implements Renderer {
       prepareScript: prepareScript({ interact: req.interact, at: req.at }),
     };
     const res = await this.post(this.endpoint, job);
-    if (!res.ok) throw new Error(`Render host: ${res.status} ${await res.text()}`);
     const out = (await res.json()) as RemoteRenderReply;
     if (out.motion && "error" in out.motion) throw new Error(out.motion.error);
+    if (out.captureError && !job.lint)
+      throw new RenderError(out.captureError, "capture_failed", "capture");
     return {
       bytes: fromBase64(out.data),
       mime: out.mime,
@@ -114,16 +150,20 @@ export class RemoteRenderer implements Renderer {
       scale: out.scale ?? job.scale,
       issues: out.issues,
       motion: out.motion,
+      assetsTimedOut: out.assetsTimedOut,
+      captureError: out.captureError,
     };
   }
 
   private sessionCall(cant: string) {
     const url = new URL("session", this.endpoint).href;
     return async (op: RemoteSessionRequest): Promise<RemoteSessionReply> => {
-      const res = await this.post(url, op);
-      if (res.status === 404) throw new Error(cant);
-      if (!res.ok) throw new Error(`Render host: ${res.status} ${await res.text()}`);
-      return (await res.json()) as RemoteSessionReply;
+      try {
+        return (await (await this.post(url, op)).json()) as RemoteSessionReply;
+      } catch (err) {
+        if (err instanceof RenderError && err.status === 404) throw new Error(cant);
+        throw err;
+      }
     };
   }
 
@@ -196,6 +236,32 @@ export class RemoteRenderer implements Renderer {
   }
 
   async close(): Promise<void> {}
+}
+
+/** A request that got no answer: the host isn't there, or didn't reply in time. */
+function unreachable(err: unknown, deadlineMs: number): RenderError {
+  const name = (err as Error | null)?.name;
+  if (name === "TimeoutError" || name === "AbortError")
+    return new RenderError(
+      `Ponzu's renderer didn't answer within ${Math.round(deadlineMs / 1000)}s. The Ponzu app may be busy or waiting on a dialog; ask the person to check it, then try again.`,
+      "host_unresponsive",
+    );
+  return new RenderError(
+    "Ponzu's renderer isn't running (the app may be restarting or updating). Try again in a moment.",
+    "host_unreachable",
+  );
+}
+
+/** A host's error reply, with the step that failed when the host says. */
+async function failed(res: Response): Promise<RenderError> {
+  const text = await res.text().catch(() => "");
+  let body: RemoteRenderFailure | null = null;
+  try {
+    body = JSON.parse(text) as RemoteRenderFailure;
+  } catch {}
+  const failure = RENDER_FAILURES.find((f) => f === body?.failure) ?? "render_error";
+  const message = body?.error ?? `Render host: ${res.status} ${text}`;
+  return new RenderError(message, failure, body?.stage, res.status);
 }
 
 function size(style: Record<string, string>): { width: number; height: number } {

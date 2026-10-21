@@ -7,6 +7,13 @@ import { join } from "node:path";
 import { BrowserWindow } from "electron";
 // Shared with the server's own renderers. It imports nothing, so the bundle takes just this file.
 import { captureScale, IMAGES_READY_SCRIPT } from "../../../packages/render/src/capture.ts";
+import {
+  RenderError,
+  type RenderStage,
+  STAGE_BUDGET_MS,
+  withBudget,
+  within,
+} from "../../../packages/render/src/stages.ts";
 
 /*
  * The server asks the desktop app for screenshots: it runs no Chrome of its
@@ -19,6 +26,9 @@ import { captureScale, IMAGES_READY_SCRIPT } from "../../../packages/render/src/
  * resized or zoomed (a fit-content artboard taller than 900px, or any
  * fractional scale) and no frame at the new size had been drawn yet. And
  * growing the window to fit a tall artboard changed what 100vh meant.
+ *
+ * Every step has a time limit (stages.ts), so a render that stalls says
+ * where instead of hanging until the server gives up on it.
  */
 
 interface Job {
@@ -51,17 +61,85 @@ type SessionOp =
 export const renderToken = randomBytes(24).toString("hex");
 let renderDir: string | null = null;
 
-/** Writes the page to disk and loads it: file URLs reach assets and fonts like the canvas does. */
-async function loadPage(win: BrowserWindow, html: string) {
+/**
+ * Writes the page to disk and loads it: file URLs reach assets and fonts like
+ * the canvas does. Resolves once the page's DOM is ready. `loaded` settles
+ * when the whole page has, fonts and images included, which may be never.
+ */
+async function loadPage(win: BrowserWindow, html: string): Promise<{ loaded: Promise<void> }> {
   renderDir ??= await mkdtemp(join(tmpdir(), "ponzu-render-"));
   const file = join(renderDir, `${randomBytes(6).toString("hex")}.html`);
   await writeFile(file, html);
-  await win.loadFile(file);
-  void rm(file, { force: true });
+  const ready = new Promise<void>((resolve) => win.webContents.once("dom-ready", () => resolve()));
+  const loaded = win.loadFile(file).finally(() => void rm(file, { force: true }));
+  loaded.catch(() => {});
+  await Promise.race([ready, loaded]);
+  return { loaded };
 }
 
 const FRAMES = "new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))";
-const LOADED = `document.fonts.ready.then(() => ${IMAGES_READY_SCRIPT}).then(() => ${FRAMES})`;
+const ASSETS = `document.fonts.ready.then(() => ${IMAGES_READY_SCRIPT})`;
+
+/**
+ * Loads the page, then waits a while for its fonts and images. Ones that
+ * haven't arrived by then don't stop the render: it goes on with fallbacks,
+ * and lint names what's missing. Resolves with whether everything arrived.
+ */
+async function loadWithAssets(win: BrowserWindow, html: string): Promise<boolean> {
+  const { loaded } = await withBudget("load", loadPage(win, html));
+  const assets = loaded.catch(() => {}).then(() => win.webContents.executeJavaScript(ASSETS));
+  const all = await within(assets, STAGE_BUDGET_MS.assets);
+  // Give up on what's still coming: the page then finishes loading, fonts
+  // fall back, and it draws frames again (it draws none while loading).
+  if (!all) win.webContents.stop();
+  await withBudget("load", win.webContents.executeJavaScript(FRAMES));
+  return all;
+}
+
+/** Runs `expression` in the page within `stage`'s time limit. */
+function run<T = unknown>(win: BrowserWindow, stage: RenderStage, expression: string): Promise<T> {
+  return withBudget(stage, win.webContents.executeJavaScript(expression) as Promise<T>);
+}
+
+/**
+ * A couple of renders at a time. Each one is a window with its own page, and
+ * a backlog of home screen previews shouldn't starve an agent's screenshot of
+ * memory and GPU. A job that waits too long for its turn says the host is busy.
+ */
+const MAX_JOBS = 2;
+let running = 0;
+const waiting: (() => void)[] = [];
+
+async function turn<T>(work: () => Promise<T>): Promise<T> {
+  if (running >= MAX_JOBS) {
+    let ready!: () => void;
+    const mine = new Promise<void>((r) => {
+      ready = r;
+    });
+    waiting.push(ready);
+    try {
+      await withBudget("queue", mine);
+    } catch (err) {
+      // Gave up waiting: take ourselves out of line, unless our turn came just now.
+      const i = waiting.indexOf(ready);
+      if (i >= 0) waiting.splice(i, 1);
+      else next();
+      throw err;
+    }
+  } else running++;
+  try {
+    return await work();
+  } finally {
+    next();
+  }
+}
+
+/** Hands a finished job's slot to the next in line. */
+function next() {
+  const go = waiting.shift();
+  if (go) go();
+  else running--;
+}
 
 /** The window is the viewport, so it stays the artboard's own size and 100vh means what it says. */
 function renderWindow(width: number, height: number) {
@@ -117,46 +195,57 @@ async function capture(
 async function renderJob(job: Job) {
   const win = renderWindow(job.width, job.height);
   try {
-    await loadPage(win, job.html);
-    await win.webContents.executeJavaScript(LOADED);
+    const loaded = await loadWithAssets(win, job.html);
+    const assetsTimedOut = loaded ? undefined : true;
     const motion = job.prepareScript
-      ? await win.webContents.executeJavaScript(job.prepareScript)
+      ? await run<{ error?: string }>(win, "prepare", job.prepareScript)
       : undefined;
     if (motion?.error) return { motion };
-    const box = (await win.webContents.executeJavaScript(
+    const box = await run<(Box & { contentHeight: number }) | null>(
+      win,
+      "prepare",
       `(() => { const el = document.querySelector(${JSON.stringify(job.selector)}); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.left + scrollX, y: r.top + scrollY, width: r.width, height: r.height, contentHeight: document.querySelector('[data-artboard]')?.scrollHeight ?? 0 }; })()`,
-    )) as (Box & { contentHeight: number }) | null;
+    );
     if (!box) throw new Error("That node isn't in this artboard.");
-    const issues = job.lint ? await win.webContents.executeJavaScript(job.lintScript) : [];
-    if (job.format === "pdf") {
-      const pdf = await win.webContents.printToPDF({
-        printBackground: true,
-        pageSize: { width: box.width / 96, height: box.height / 96 },
-        margins: { top: 0, bottom: 0, left: 0, right: 0 },
-      });
+    const issues = job.lint ? await run(win, "lint", job.lintScript) : [];
+    const size = { width: box.width, height: box.height, contentHeight: box.contentHeight };
+    try {
+      if (job.format === "pdf") {
+        const pdf = await withBudget(
+          "capture",
+          win.webContents.printToPDF({
+            printBackground: true,
+            pageSize: { width: box.width / 96, height: box.height / 96 },
+            margins: { top: 0, bottom: 0, left: 0, right: 0 },
+          }),
+        );
+        return {
+          data: pdf.toString("base64"),
+          mime: "application/pdf",
+          ...size,
+          issues,
+          motion,
+          assetsTimedOut,
+        };
+      }
+      const format = job.format === "jpeg" ? "jpeg" : "png";
+      const scale = captureScale(box.width, box.height, job.scale);
+      const image = await withBudget("capture", capture(win, box, scale, format));
       return {
-        data: pdf.toString("base64"),
-        mime: "application/pdf",
-        width: box.width,
-        height: box.height,
-        contentHeight: box.contentHeight,
+        data: image.toString("base64"),
+        mime: `image/${format}`,
+        ...size,
+        scale,
         issues,
         motion,
+        assetsTimedOut,
       };
+    } catch (err) {
+      // With lint, send it back and what went wrong rather than nothing. Without, there's nothing to send.
+      const message = err instanceof Error ? err.message : String(err);
+      if (!job.lint) throw new RenderError(message, "capture_failed", "capture");
+      return { data: "", mime: "", ...size, issues, motion, assetsTimedOut, captureError: message };
     }
-    const format = job.format === "jpeg" ? "jpeg" : "png";
-    const scale = captureScale(box.width, box.height, job.scale);
-    const image = await capture(win, box, scale, format);
-    return {
-      data: image.toString("base64"),
-      mime: `image/${format}`,
-      width: box.width,
-      height: box.height,
-      contentHeight: box.contentHeight,
-      scale,
-      issues,
-      motion,
-    };
   } finally {
     win.destroy();
   }
@@ -190,35 +279,40 @@ function closeSession(id: string) {
 
 async function sessionOp(op: SessionOp) {
   switch (op.op) {
-    case "open": {
-      const id = randomBytes(8).toString("hex");
-      const win = renderWindow(op.width, op.height);
-      sessions.set(id, { win, timer: setTimeout(() => closeSession(id), 60_000) });
-      try {
-        await loadPage(win, op.html);
-        await win.webContents.executeJavaScript(LOADED);
-      } catch (err) {
-        closeSession(id);
-        throw err;
-      }
-      return { session: id };
-    }
+    case "open":
+      return turn(async () => {
+        const id = randomBytes(8).toString("hex");
+        const win = renderWindow(op.width, op.height);
+        sessions.set(id, { win, timer: setTimeout(() => closeSession(id), 60_000) });
+        try {
+          await loadWithAssets(win, op.html);
+        } catch (err) {
+          closeSession(id);
+          throw err;
+        }
+        return { session: id };
+      });
     case "eval":
-      return {
-        value: await keepAlive(op.session).win.webContents.executeJavaScript(op.expression),
-      };
+      // Recording's evals seek and wait for frames; lint and settling are the slowest of them.
+      return { value: await run(keepAlive(op.session).win, "prepare", op.expression) };
     case "capture": {
       const s = keepAlive(op.session);
       const { box } = op;
       const scale = captureScale(box.width, box.height, op.scale);
-      return { data: (await capture(s.win, box, scale)).toString("base64") };
+      return {
+        data: (await withBudget("capture", capture(s.win, box, scale))).toString("base64"),
+      };
     }
     case "show": {
       // The contact sheet: a new page at its own size.
       const s = keepAlive(op.session);
       s.win.setContentSize(Math.max(1, Math.ceil(op.width)), Math.max(1, Math.ceil(op.height)));
-      await loadPage(s.win, op.html);
-      await s.win.webContents.executeJavaScript(`${IMAGES_READY_SCRIPT}.then(() => ${FRAMES})`);
+      const { loaded } = await withBudget("load", loadPage(s.win, op.html));
+      const images = loaded
+        .catch(() => {})
+        .then(() => s.win.webContents.executeJavaScript(IMAGES_READY_SCRIPT));
+      if (!(await within(images, STAGE_BUDGET_MS.assets))) s.win.webContents.stop();
+      await withBudget("load", s.win.webContents.executeJavaScript(FRAMES));
       return {};
     }
     case "close":
@@ -237,10 +331,20 @@ export function startRenderHost(): Promise<string> {
       }
       try {
         const payload = JSON.parse(await body(req));
-        const out = req.url === "/session" ? await sessionOp(payload) : await renderJob(payload);
+        const out =
+          req.url === "/session" ? await sessionOp(payload) : await turn(() => renderJob(payload));
         res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(out));
       } catch (err) {
-        res.writeHead(500).end(err instanceof Error ? err.message : String(err));
+        // Which step failed and why, so the agent hears more than "it failed".
+        const error = err instanceof Error ? err.message : String(err);
+        const known = err instanceof RenderError;
+        res.writeHead(500, { "content-type": "application/json" }).end(
+          JSON.stringify({
+            error,
+            failure: known ? err.failure : "render_error",
+            stage: known ? err.stage : undefined,
+          }),
+        );
       }
     });
     http.listen(0, "127.0.0.1", () =>

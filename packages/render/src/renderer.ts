@@ -113,6 +113,16 @@ export interface RenderResult {
   issues: LintIssue[];
   /** What animates and where the shot sits on the timeline. */
   motion?: MotionInfo;
+  /**
+   * Fonts or images were still loading when their time ran out, so the
+   * image may show fallbacks. Lint says which.
+   */
+  assetsTimedOut?: boolean;
+  /**
+   * Set when lint ran but the image couldn't be captured. `bytes` is then
+   * empty, and `issues` still holds the lint.
+   */
+  captureError?: string;
 }
 
 /**

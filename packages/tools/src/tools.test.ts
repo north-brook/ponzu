@@ -1,11 +1,12 @@
 import { expect, test } from "bun:test";
 import { locate } from "@ponzu/core";
+import type { Renderer, RenderResult } from "@ponzu/render";
 import { Design, MemoryAdapter } from "@ponzu/store";
 import { EventHub, PresenceHub, type ToolContext, type Workspace } from "./context.ts";
 import { getTool, runTool } from "./index.ts";
 import { plural } from "./util.ts";
 
-async function setup(tokens = 3) {
+async function setup(tokens = 3, renderer?: Renderer) {
   const css = `:root {\n${Array.from({ length: tokens }, (_, i) => `  --t${i}: ${i}px;`).join("\n")}\n}\n`;
   const design = await Design.open(
     new MemoryAdapter({
@@ -25,6 +26,7 @@ async function setup(tokens = 3) {
     selection: () => ({ ids: [] }) as never,
     events: new EventHub(),
     presence: new PresenceHub(),
+    renderer,
   };
   const ctx: ToolContext = { ws, caller: { id: "t", author: { kind: "agent", name: "test" } } };
   const call = (name: string, args: unknown) => runTool(getTool(name)!, args, ctx);
@@ -263,4 +265,58 @@ test("update_file renames the file and sets or clears its icon", async () => {
   await call("update_file", { icon: null });
   expect(design.doc.icon).toBeUndefined();
   expect(design.doc.name).toBe("Fern app");
+});
+
+/** A renderer that answers every render with `out`, and counts its calls. */
+function fakeRenderer(out: Partial<RenderResult>) {
+  const calls: unknown[] = [];
+  const renderer = {
+    render: async (req: unknown) => {
+      calls.push(req);
+      return {
+        bytes: new Uint8Array([1]),
+        mime: "image/png",
+        width: 800,
+        height: 600,
+        contentHeight: 600,
+        issues: [],
+        ...out,
+      } as RenderResult;
+    },
+    close: async () => {},
+  } as Renderer;
+  return { renderer, calls };
+}
+
+test("screenshot returns lint when only the image failed", async () => {
+  const { renderer } = fakeRenderer({
+    bytes: new Uint8Array(),
+    issues: [{ id: "n_h", kind: "clipped-text", message: "text is clipped" }],
+    captureError: "The render stalled capturing the image (stopped after 20s).",
+  });
+  const { call } = await setup(3, renderer);
+  const r = await call("screenshot", { id: "ab_hero" });
+  expect(r.isError).toBe(true);
+  expect(r.images).toBeUndefined();
+  expect(r.text).toContain("Couldn't capture the image of ab_hero");
+  expect(r.text).toContain("n_h: text is clipped");
+  expect("failure" in r).toBe(false);
+});
+
+test("screenshot says when fonts or images ran out of time", async () => {
+  const { renderer } = fakeRenderer({ assetsTimedOut: true });
+  const { call } = await setup(3, renderer);
+  const r = await call("screenshot", { id: "ab_hero" });
+  expect(r.isError).toBeFalsy();
+  expect(r.text).toContain("still loading when time ran out");
+});
+
+test("screenshot checks hover, focus and press ids before rendering", async () => {
+  const { renderer, calls } = fakeRenderer({});
+  const { call } = await setup(3, renderer);
+  const r = await call("screenshot", { id: "ab_hero", hover: "n_nope" });
+  expect(r.isError).toBe(true);
+  expect(r.text).toBe("No node n_nope to hover in ab_hero. Ids come from get_tree.");
+  expect(calls).toHaveLength(0);
+  expect((await call("screenshot", { id: "ab_hero", press: "n_p" })).isError).toBeFalsy();
 });
