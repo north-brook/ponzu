@@ -14,6 +14,7 @@ import {
 import type { MeasureRequest, MeasureResult, Renderer } from "@ponzu/render";
 import { z } from "zod";
 import { fileArg, ToolError, tool } from "./define.ts";
+import { overlapLine, pageOverlapList } from "./overlap.ts";
 import { plural, resolveFile } from "./util.ts";
 
 export const orientTools = [
@@ -23,7 +24,7 @@ export const orientTools = [
     group: "orient",
     readOnly: true,
     description:
-      "Start here. Summarizes the open .design: pages, artboards with sizes and positions, token names, open comments, what the person has selected, who else is working, and anything in the files Ponzu couldn't use. Call get_guide('basics') once per session for the house rules.",
+      "Start here. Summarizes the open .design: pages, artboards with sizes and positions, token names, open comments, artboards that overlap each other, what the person has selected, who else is working, and anything in the files Ponzu couldn't use. Call get_guide('basics') once per session for the house rules.",
     input: { file: fileArg },
     async handler({ file }, ctx) {
       const { ws } = ctx;
@@ -50,6 +51,17 @@ export const orientTools = [
         const more = problems.length - shown.length;
         lines.push(
           `Not used as written (fix the files; get_guide('format') has the format):\n  ${shown.join("\n  ")}${more ? `\n  … ${more} more` : ""}`,
+        );
+      }
+      const overlaps = [];
+      for (const page of doc.pages)
+        overlaps.push(...(await pageOverlapList(ws, key, doc, page.artboards)));
+      if (overlaps.length) {
+        const limit = 10;
+        const shown = overlaps.slice(0, limit).map(overlapLine);
+        const more = overlaps.length - shown.length;
+        lines.push(
+          `Overlapping artboards (the canvas draws one over the other):\n  ${shown.join("\n  ")}${more ? `\n  … ${more} more; move these and call get_basic_info again for the rest` : ""}`,
         );
       }
       const sel = ws.selection(key);

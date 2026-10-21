@@ -319,6 +319,53 @@ test("get_node gives rendered boxes, and the height an artboard's content needs"
   }
 }, 30_000);
 
+test("screenshot lint catches a fit-content artboard grown over the one below it", async () => {
+  const key = join(dir, "grown.design");
+  await client.callTool({ name: "create_file", arguments: { path: key } });
+  const top = await client.callTool({
+    name: "create_artboard",
+    arguments: { file: key, name: "Wordmarks", width: 800, height: "fit-content", x: 0, y: 0 },
+  });
+  const topId = /artboard (ab_\w+)/.exec(text(top))![1]!;
+  const below = await client.callTool({
+    name: "create_artboard",
+    arguments: { file: key, name: "Below", width: 800, height: 400, x: 0, y: 980 },
+  });
+  // Declared, fit-content reads as 900 tall: no overlap yet.
+  expect(text(below)).not.toContain("Overlap");
+
+  const { ChromiumRenderer, findChromium } = await import("@ponzu/render/chromium");
+  const chromium = findChromium();
+  if (!chromium) return;
+  ws.renderer = new ChromiumRenderer({ executablePath: chromium });
+  try {
+    await client.callTool({
+      name: "write_html",
+      arguments: { file: key, target: topId, html: `<div style="height:1200px"></div>` },
+    });
+    const shot = text(
+      await client.callTool({ name: "screenshot", arguments: { file: key, id: topId } }),
+    );
+    expect(shot).toMatch(
+      /overlaps artboard ab_\w+ "Below" by 800×220px on the canvas; ab_\w+ clears it at y 1280/,
+    );
+    const info = text(await client.callTool({ name: "get_basic_info", arguments: { file: key } }));
+    expect(info).toContain("Overlapping artboards");
+    // A new artboard in the row goes right of the grown one, not into it.
+    const next = text(
+      await client.callTool({
+        name: "create_artboard",
+        arguments: { file: key, name: "Next", width: 400, height: 400, y: 900 },
+      }),
+    );
+    expect(next).toContain("at (880, 900)");
+    expect(next).not.toContain("Overlap");
+  } finally {
+    await ws.renderer.close();
+    ws.renderer = undefined;
+  }
+}, 30_000);
+
 test("a home screen card's watch socket hears an agent's edits and can't make any", async () => {
   const key = join(dir, "watched.design");
   await client.callTool({ name: "create_file", arguments: { path: key } });
