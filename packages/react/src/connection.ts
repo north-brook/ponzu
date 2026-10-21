@@ -53,9 +53,14 @@ export class SocketSource implements CanvasSource {
   private closed = false;
   readonly assetBase: string;
 
+  /**
+   * `watch` only listens: the home screen's live cards show a design without
+   * editing it or counting as an open canvas.
+   */
   constructor(
     private origin: string,
     readonly file: string,
+    private opts: { watch?: boolean } = {},
   ) {
     this.state = {
       status: "connecting",
@@ -71,7 +76,8 @@ export class SocketSource implements CanvasSource {
   }
 
   private connect() {
-    const url = `${this.origin.replace(/^http/, "ws")}/ws?file=${encodeURIComponent(this.file)}`;
+    const watch = this.opts.watch ? "&watch=1" : "";
+    const url = `${this.origin.replace(/^http/, "ws")}/ws?file=${encodeURIComponent(this.file)}${watch}`;
     const socket = new WebSocket(url);
     this.socket = socket;
     socket.onmessage = (e) => this.onMessage(JSON.parse(String(e.data)) as ServerMessage);

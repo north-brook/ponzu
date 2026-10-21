@@ -4,6 +4,7 @@ export * from "./doc.ts";
 export * from "./html.ts";
 export * from "./ids.ts";
 export * from "./outline.ts";
+export * from "./preview.ts";
 export * from "./protocol.ts";
 export * from "./reconcile.ts";
 export * from "./tree.ts";

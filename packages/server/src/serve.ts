@@ -46,6 +46,8 @@ type Caller = "local" | "peer";
 interface SocketData {
   key: string;
   clientId: string;
+  /** A home screen card showing the design live: it hears edits and makes none. */
+  watch?: boolean;
   /** Set when this socket relays to a design on another Mac. */
   relay?: { url: string; upstream?: WebSocket; queue: string[] };
 }
@@ -184,7 +186,9 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
       }
       const resolved = (await ws.resolve(key)).key;
       subscribe(resolved);
-      if (srv.upgrade(req, { data: { key: resolved, clientId: crypto.randomUUID() } })) return;
+      const watch = url.searchParams.get("watch") === "1";
+      if (srv.upgrade(req, { data: { key: resolved, clientId: crypto.randomUUID(), watch } }))
+        return;
       return new Response("Upgrade failed", { status: 400 });
     }
 
@@ -282,7 +286,7 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
     open(s) {
       sockets.add(s);
       if (s.data.relay) return openRelay(s);
-      ws.telemetry?.capture("canvas opened", { open_canvases: sockets.size });
+      if (!s.data.watch) ws.telemetry?.capture("canvas opened", { open_canvases: sockets.size });
       const design = ws.get(s.data.key)!;
       send(s, {
         t: "hello",
@@ -307,6 +311,7 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
         else relayed.queue.push(text);
         return;
       }
+      if (s.data.watch) return;
       let msg: ClientMessage;
       try {
         msg = JSON.parse(String(raw));
