@@ -42,6 +42,7 @@
       }
     ],
     "afterPack": "./scripts/quicklook.cjs",
+    "afterSign": "./scripts/notarize.cjs",
     "fileAssociations": [
       {
         "ext": "design",
@@ -90,7 +91,7 @@
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "sign": "./scripts/quicklook.cjs",
-      "notarize": true,
+      "notarize": false,
       "artifactName": "${productName}-${version}-${arch}-mac.${ext}"
     },
     "dmg": {
