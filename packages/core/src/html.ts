@@ -1,4 +1,9 @@
-import { type DefaultTreeAdapterTypes as P5, parseFragment } from "parse5";
+import {
+  defaultTreeAdapter,
+  html as html5,
+  type DefaultTreeAdapterTypes as P5,
+  parseFragment,
+} from "parse5";
 import { parseStyle, serializeStyle } from "./css.ts";
 import { newId } from "./ids.ts";
 import type { Artboard, Dropped, PElement, PNode } from "./types.ts";
@@ -49,6 +54,13 @@ export interface ParseOptions {
    * or a function for stable ids derived from position (used when loading files).
    */
   assignId?: "random" | ((path: number[]) => string);
+  /**
+   * The element the fragment goes into. Inside SVG or MathML the fragment is
+   * parsed as foreign content, as a browser's innerHTML would, so `<path/>`
+   * closes itself instead of swallowing its siblings. HTML parents (or none)
+   * parse as before.
+   */
+  parent?: Pick<PElement, "tag" | "ns" | "attrs">;
 }
 
 export interface ParseResult {
@@ -59,11 +71,20 @@ export interface ParseResult {
 /** Parse an HTML fragment into Ponzu nodes, removing anything executable. */
 export function parseHtml(html: string, opts: ParseOptions = {}): ParseResult {
   const dropped: Dropped[] = [];
-  const frag = parseFragment(html);
+  const context = opts.parent ? foreignContext(opts.parent) : null;
+  const frag = context ? parseFragment(context, html, {}) : parseFragment(html);
   const assign = opts.assignId ?? "random";
   const seen = new Set<string>();
   const nodes = convertChildren(frag.childNodes, [], assign, dropped, seen);
   return { nodes, dropped };
+}
+
+/** A parse5 context element for an SVG or MathML parent; null for HTML. */
+function foreignContext(parent: Pick<PElement, "tag" | "ns" | "attrs">): P5.Element | null {
+  if (!parent.ns) return null;
+  const ns = parent.ns === "svg" ? html5.NS.SVG : html5.NS.MATHML;
+  const attrs = Object.entries(parent.attrs).map(([name, value]) => ({ name, value }));
+  return defaultTreeAdapter.createElement(parent.tag, ns, attrs);
 }
 
 function convertChildren(
@@ -161,11 +182,21 @@ export interface SerializeOptions {
 
 export function serializeNodes(nodes: PNode[], opts: SerializeOptions = {}): string {
   let out = "";
-  for (const n of nodes) out += serializeNode(n, opts, false);
+  for (const n of nodes) out += serializeNode(n, opts, false, false);
   return out;
 }
 
-export function serializeNode(node: PNode, opts: SerializeOptions = {}, rawText = false): string {
+/**
+ * `inForeign` says whether a parser reading this node will be in SVG/MathML
+ * content, where `<x/>` closes itself. Undefined (a node serialized on its
+ * own) assumes a foreign node sits inside its own namespace.
+ */
+export function serializeNode(
+  node: PNode,
+  opts: SerializeOptions = {},
+  rawText = false,
+  inForeign?: boolean,
+): string {
   if (node.kind === "text") return rawText ? node.value : escapeText(node.value);
   let out = `<${node.tag}`;
   if (!opts.omitIds) out += ` data-id="${node.id}"`;
@@ -178,15 +209,41 @@ export function serializeNode(node: PNode, opts: SerializeOptions = {}, rawText 
   if (style)
     out += ` style="${escapeAttr(opts.rewriteUrl ? rewriteCssUrls(style, opts.rewriteUrl) : style)}"`;
   if (!node.ns && VOID.has(node.tag)) return `${out}>`;
-  if (node.ns && node.children.length === 0) return `${out}/>`;
+  // HTML parsers honor `/>` on <svg> and <math> anywhere, and on any element
+  // inside foreign content. Elsewhere it would be ignored and the element
+  // would swallow its next siblings, so close it explicitly.
+  const parsedForeign =
+    !!node.ns && (node.tag === "svg" || node.tag === "math" || (inForeign ?? true));
+  if (node.ns && node.children.length === 0)
+    return parsedForeign ? `${out}/>` : `${out}></${node.tag}>`;
   out += ">";
   const raw = RAW_TEXT.has(node.tag);
+  const foreign = parsedForeign && childrenAreForeign(node);
   for (const c of node.children) {
     if (raw && c.kind === "text" && opts.rewriteUrl)
       out += rewriteCssUrls(c.value, opts.rewriteUrl);
-    else out += serializeNode(c, opts, raw);
+    else out += serializeNode(c, opts, raw, foreign);
   }
   return `${out}</${node.tag}>`;
+}
+
+/** SVG elements whose children parse as HTML. */
+const SVG_HTML_INTEGRATION = new Set(["foreignObject", "desc", "title"]);
+/** MathML elements whose children (mostly) parse as HTML. */
+const MATHML_TEXT_INTEGRATION = new Set(["mi", "mo", "mn", "ms", "mtext"]);
+
+/** Whether a parser reads this element's children as foreign (SVG/MathML) content. */
+function childrenAreForeign(node: PElement): boolean {
+  if (node.ns === "svg") return !SVG_HTML_INTEGRATION.has(node.tag);
+  if (node.ns === "math") {
+    if (MATHML_TEXT_INTEGRATION.has(node.tag)) return false;
+    if (node.tag === "annotation-xml") {
+      const encoding = (node.attrs.encoding ?? "").toLowerCase();
+      return encoding !== "text/html" && encoding !== "application/xhtml+xml";
+    }
+    return true;
+  }
+  return false;
 }
 
 function isBooleanish(attr: string): boolean {
