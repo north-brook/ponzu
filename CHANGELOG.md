@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.1](https://github.com/north-brook/ponzu/compare/v1.14.0...v1.14.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* list your other macs' designs when the app starts ponzu ([#38](https://github.com/north-brook/ponzu/issues/38)) ([aa158ca](https://github.com/north-brook/ponzu/commit/aa158ca16c18ae9a463646ec4ff73acb28aab713))
+
 ## [1.14.0](https://github.com/north-brook/ponzu/compare/v1.13.0...v1.14.0) (2026-10-20)
 
 
