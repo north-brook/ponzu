@@ -71,6 +71,7 @@ export const organizeTools = [
         .describe(
           'Shown as the tab title, e.g. "Onboarding" or "Checkout flow". Default: the folder name without .design, case unchanged.',
         ),
+      icon: z.enum(PAGE_ICONS).optional().describe("Shown on the file's tab."),
       pages: z
         .array(z.object({ name: z.string(), icon: z.enum(PAGE_ICONS).optional() }))
         .optional()
@@ -93,6 +94,7 @@ export const organizeTools = [
           .pop()!
           .replace(/\.design$/, "");
       const doc = emptyDoc(name);
+      if (args.icon) doc.icon = args.icon;
       for (const p of args.pages?.length ? args.pages : [{ name: "Home" }]) {
         doc.pages.push({
           id: newId("pg"),
@@ -106,6 +108,27 @@ export const organizeTools = [
       return {
         text: `Created ${key}\nPages: ${design.doc.pages.map((p) => `${p.id} "${p.name}"`).join(", ")}\nTokens: ${parseTokens(design.doc.tokens).length}`,
       };
+    },
+  }),
+
+  tool({
+    name: "update_file",
+    title: "Update file",
+    group: "organize",
+    description: "Rename a file (its tab title) or change the icon on its tab.",
+    input: {
+      file: fileArg,
+      name: z.string().min(1).optional(),
+      icon: z.enum(PAGE_ICONS).nullable().optional().describe("null removes it."),
+    },
+    async handler(args, ctx) {
+      const { key, design } = await ctx.ws.resolve(args.file);
+      const ops: Op[] = [];
+      if (args.name !== undefined) ops.push({ op: "file.rename", name: args.name });
+      if (args.icon !== undefined) ops.push({ op: "file.icon", icon: args.icon });
+      if (!ops.length) return { text: "Nothing to change." };
+      apply(design, ops.length === 1 ? ops[0]! : { op: "batch", ops }, ctx);
+      return { text: `Updated ${key}.` };
     },
   }),
 

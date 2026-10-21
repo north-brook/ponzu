@@ -255,3 +255,12 @@ test("moving several nodes to one spot keeps the order they were given", async (
   });
   expect(away.names("n_frame")).toEqual(["n_old", "Content", "Tab bar", "Status bar"]);
 });
+
+test("update_file renames the file and sets or clears its icon", async () => {
+  const { design, call } = await setup();
+  await call("update_file", { name: "Fern app", icon: "phone" });
+  expect(design.doc).toMatchObject({ name: "Fern app", icon: "phone" });
+  await call("update_file", { icon: null });
+  expect(design.doc.icon).toBeUndefined();
+  expect(design.doc.name).toBe("Fern app");
+});

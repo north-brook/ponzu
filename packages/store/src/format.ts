@@ -18,7 +18,7 @@ import {
  * The .design convention, independent of where bytes live:
  *
  *   name.design/
- *     design.json        { ponzu: 1, name, example?, pages: [{ id, name, icon? }] }
+ *     design.json        { ponzu: 1, name, icon?, example?, pages: [{ id, name, icon? }] }
  *     tokens.css         :root { --token: value }
  *     comments.json      { threads: [...] }
  *     notes/*.md         agent field notes
@@ -58,6 +58,7 @@ export function readBag(bag: FileBag, fallbackName: string): ReadResult {
   const lazy: ReadResult["lazy"] = new Map();
   const meta = parseMeta(bag["design.json"], fallbackName);
   const doc = emptyDoc(meta.name);
+  if (meta.icon) doc.icon = meta.icon;
   if (meta.example) doc.example = true;
   doc.tokens = bag["tokens.css"] ?? ":root {\n}\n";
   doc.threads = parseThreads(bag["comments.json"]);
@@ -146,6 +147,7 @@ function parseMeta(text: string | undefined, fallbackName: string): DesignMeta {
     return {
       ponzu: 1,
       name: typeof raw.name === "string" && raw.name ? raw.name : fallbackName,
+      ...(typeof raw.icon === "string" && raw.icon ? { icon: raw.icon } : {}),
       ...(raw.example === true ? { example: true as const } : {}),
       pages: Array.isArray(raw.pages)
         ? raw.pages

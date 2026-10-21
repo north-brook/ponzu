@@ -23,6 +23,19 @@ describe("design", () => {
     expect(mem.files["design.json"]).toBe(seed["design.json"]);
   });
 
+  test("the file's icon is kept in design.json and read back", async () => {
+    const mem = new MemoryAdapter(seed);
+    const d = await Design.open(mem, { saveDelay: 0 });
+    d.apply({ op: "file.icon", icon: "palette" }, { kind: "agent", name: "t" });
+    await d.flush();
+    expect(JSON.parse(mem.files["design.json"]!).icon).toBe("palette");
+    expect((await Design.open(mem, { saveDelay: 0 })).doc.icon).toBe("palette");
+    // Taken out by hand, it goes from the doc too.
+    await mem.externalWrite("design.json", seed["design.json"]);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(d.doc.icon).toBeUndefined();
+  });
+
   test("renaming an artboard renames its file", async () => {
     const mem = new MemoryAdapter(seed);
     const d = await Design.open(mem, { saveDelay: 0 });

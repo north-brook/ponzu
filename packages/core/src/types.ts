@@ -40,6 +40,8 @@ export interface PageMeta {
 export interface DesignMeta {
   ponzu: 1;
   name: string;
+  /** Shown on the file's tab. One of the page icons. */
+  icon?: string;
   /**
    * A sample design, like the ones in Ponzu's repo. The home screen lists it
    * only once the person opens it themselves, not when it's merely found.
