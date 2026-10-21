@@ -2,6 +2,7 @@ import { findArtboard, locate } from "@ponzu/core";
 import type { Interaction, MotionAnimation, MotionInfo } from "@ponzu/render";
 import { z } from "zod";
 import { fileArg, ToolError, type ToolImage, tool } from "./define.ts";
+import { footprintsAround, overlapIssues, overlaps } from "./overlap.ts";
 
 function toBase64(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64");
@@ -23,7 +24,7 @@ export const seeTools = [
     group: "see",
     readOnly: true,
     description:
-      "Render an artboard or node and look at it. Shows the settled state: every finite animation has finished, the way a person sees the page after it loads. Pass `at` for a moment mid-animation, and hover, focus or press to see a state. Comes with a lint pass that reports clipped text, overflow (with the height the artboard needs), charts and images spilling over their neighbors, short labels wrapping in a row, zero-size and off-artboard elements, broken images, tiny text, missing @keyframes, elements left invisible after an animation, and states with no styles. Lists what animates. Use scale 1 for layout checks and 2 only to read small text. Check your work after every few edits; use record to watch motion.",
+      "Render an artboard or node and look at it. Shows the settled state: every finite animation has finished, the way a person sees the page after it loads. Pass `at` for a moment mid-animation, and hover, focus or press to see a state. Comes with a lint pass that reports clipped text, overflow (with the height the artboard needs), charts and images spilling over their neighbors, short labels wrapping in a row, zero-size and off-artboard elements, artboards overlapping each other on the canvas, broken images, tiny text, missing @keyframes, elements left invisible after an animation, and states with no styles. Lists what animates. Use scale 1 for layout checks and 2 only to read small text. Check your work after every few edits; use record to watch motion.",
     input: {
       file: fileArg,
       id: z.string().describe("Artboard or node id."),
@@ -75,6 +76,20 @@ export const seeTools = [
       ];
       if (!nodeId && ab.root.style.height === "fit-content")
         lines.push(`Content height: ${out.contentHeight}px.`);
+      // Lint sees one artboard; whether it lands on its neighbors takes the page.
+      if (!nodeId) {
+        const page = doc.pages.find((p) => p.artboards.includes(ab));
+        const known = { [ab.id]: { w: Math.round(out.width), h: Math.round(out.height) } };
+        if (page)
+          out.issues.push(
+            ...overlapIssues(
+              ab.id,
+              overlaps(await footprintsAround(ws, key, doc, page.artboards, [ab.id], known), [
+                ab.id,
+              ]),
+            ),
+          );
+      }
       if (out.issues.length)
         lines.push(`Lint:\n${out.issues.map((i) => `  ${i.id}: ${i.message}`).join("\n")}`);
       else lines.push("Lint: clean.");

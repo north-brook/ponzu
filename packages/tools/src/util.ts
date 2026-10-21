@@ -71,23 +71,25 @@ export function reportIds(nodes: PNode[], limit = 24): string {
   return lines.join("\n");
 }
 
-/** Where to drop a new artboard so it doesn't overlap: right of the row it joins. */
+/** The space left between artboards placed side by side. */
+export const ARTBOARD_GAP = 80;
+
+/**
+ * Where to drop a new artboard so it doesn't overlap: right of the row it
+ * joins. `boxes` are the page's artboards at their size on the canvas.
+ */
 export function autoPlace(
-  artboards: Artboard[],
-  width: number,
+  boxes: { x: number; y: number; w: number; h: number }[],
   y?: number,
 ): { x: number; y: number } {
-  if (!artboards.length) return { x: 0, y: y ?? 0 };
-  const rowY = y ?? artboards[0]!.y;
+  if (!boxes.length) return { x: 0, y: y ?? 0 };
+  const rowY = y ?? boxes[0]!.y;
   let right = Number.NEGATIVE_INFINITY;
-  for (const ab of artboards) {
-    const { w, h } = artboardSize(ab);
-    if (ab.y < rowY + 2000 && ab.y + h > rowY - 1) right = Math.max(right, ab.x + w);
+  for (const b of boxes) {
+    if (b.y < rowY + 2000 && b.y + b.h > rowY - 1) right = Math.max(right, b.x + b.w);
   }
-  if (right === Number.NEGATIVE_INFINITY)
-    right = Math.max(...artboards.map((a) => a.x + artboardSize(a).w));
-  void width;
-  return { x: Math.round(right + 80), y: rowY };
+  if (right === Number.NEGATIVE_INFINITY) right = Math.max(...boxes.map((b) => b.x + b.w));
+  return { x: Math.round(right + ARTBOARD_GAP), y: rowY };
 }
 
 export function elementsIn(nodes: PNode[]): PElement[] {

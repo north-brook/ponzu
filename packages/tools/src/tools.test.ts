@@ -30,7 +30,7 @@ async function withFiles(files: Record<string, string>) {
   };
   const ctx: ToolContext = { ws, caller: { id: "t", author: { kind: "agent", name: "test" } } };
   const call = (name: string, args: unknown) => runTool(getTool(name)!, args, ctx);
-  return { design, call };
+  return { design, call, ws };
 }
 
 test("plural adds -es after sibilants", () => {
@@ -323,4 +323,78 @@ test("an artboard given display: flex with no direction says it stays a column",
   expect(created.text).toMatch(/Note: ab_\w+ sets display: flex with no flex-direction/);
   const plain = await call("create_artboard", { name: "Page" });
   expect(plain.text).not.toContain("Note:");
+});
+
+/** Two artboards on one page, the second at (x, y) with the given style. */
+async function twoBoards(x: number, y: number, style: string) {
+  return withFiles({
+    "design.json": JSON.stringify({
+      ponzu: 1,
+      name: "Fern",
+      pages: [{ id: "pg_home", name: "Home" }],
+    }),
+    "tokens.css": ":root {}\n",
+    "pages/home/a.html": `<section data-artboard data-id="ab_a" data-name="A" data-x="0" data-y="0" style="width:800px;height:600px">\n<p>a</p>\n</section>\n`,
+    "pages/home/b.html": `<section data-artboard data-id="ab_b" data-name="B" data-x="${x}" data-y="${y}" style="${style}">\n<p>b</p>\n</section>\n`,
+  });
+}
+
+test("get_basic_info lists artboards that overlap, and where the lower one clears", async () => {
+  const { call } = await twoBoards(400, 500, "width:800px;height:600px");
+  const r = await call("get_basic_info", {});
+  expect(r.text).toContain(
+    'ab_a "A" and ab_b "B" overlap by 400×100px; ab_b clears it at y 680 (update_artboard).',
+  );
+  const apart = await twoBoards(880, 0, "width:800px;height:600px");
+  expect((await apart.call("get_basic_info", {})).text).not.toContain("overlap");
+});
+
+test("moving an artboard onto another says so, and moving it off clears it", async () => {
+  const { call } = await twoBoards(880, 0, "width:800px;height:600px");
+  const onto = await call("update_artboard", { id: "ab_b", x: 700, y: 300 });
+  expect(onto.text).toContain("Overlap: ab_a");
+  expect(onto.text).toContain("ab_b clears it at y 680");
+  const off = await call("update_artboard", { id: "ab_b", x: 700, y: 680 });
+  expect(off.text).not.toContain("Overlap");
+});
+
+test("create_artboard at an explicit spot on top of another reports the overlap", async () => {
+  const { call } = await setup();
+  const r = await call("create_artboard", {
+    name: "Over",
+    width: 400,
+    height: 400,
+    x: 100,
+    y: 100,
+  });
+  expect(r.text).toContain('Overlap: ab_hero "Hero" and');
+  const free = await call("create_artboard", { name: "Free", width: 400, height: 400 });
+  expect(free.text).not.toContain("Overlap");
+});
+
+test("a fit-content artboard is checked at its rendered height", async () => {
+  const s = await twoBoards(0, 700, "width:800px;height:fit-content");
+  // Without a renderer it reads as 900 tall and starts below A: clear.
+  expect((await s.call("get_basic_info", {})).text).not.toContain("overlap");
+  const measured: string[] = [];
+  const tall = await twoBoards(0, -1400, "width:800px;height:fit-content");
+  tall.ws.renderer = {
+    render: async () => {
+      throw new Error("unused");
+    },
+    measure: async (req) => {
+      measured.push(req.artboard.id);
+      return {
+        boxes: { [req.artboard.id]: { x: 0, y: 0, width: 800, height: 1500 } },
+        contentHeight: 1500,
+      };
+    },
+    close: async () => {},
+  };
+  const r = await tall.call("get_basic_info", {});
+  expect(r.text).toContain('ab_b "B" and ab_a "A" overlap by 800×100px; ab_a clears it at y 180');
+  expect(measured).toEqual(["ab_b"]);
+  // Unchanged since: not rendered again.
+  await tall.call("get_basic_info", {});
+  expect(measured).toEqual(["ab_b"]);
 });
