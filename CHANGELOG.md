@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.23.0](https://github.com/north-brook/ponzu/compare/v1.22.0...v1.23.0) (2026-10-21)
+
+
+### Features
+
+* the canvas shows what an agent is changing without it having to say so ([#102](https://github.com/north-brook/ponzu/issues/102)) ([3e003ec](https://github.com/north-brook/ponzu/commit/3e003ec314a2a8b2aa3be2da61a19f6f3aeea5ef))
+
+
+### Bug Fixes
+
+* keep an open comment above other pins ([#101](https://github.com/north-brook/ponzu/issues/101)) ([86d1130](https://github.com/north-brook/ponzu/commit/86d113035ed80eb3732b88989e22a52e39dfa36f))
+
 ## [1.22.0](https://github.com/north-brook/ponzu/compare/v1.21.4...v1.22.0) (2026-10-21)
 
 
