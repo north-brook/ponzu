@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.2](https://github.com/north-brook/ponzu/compare/v1.17.1...v1.17.2) (2026-10-21)
+
+
+### Bug Fixes
+
+* separate the home screen from the window chrome in dark mode ([#69](https://github.com/north-brook/ponzu/issues/69)) ([a83bca7](https://github.com/north-brook/ponzu/commit/a83bca734dc0333e2ba52e4e0780d4b417592b66))
+
 ## [1.17.1](https://github.com/north-brook/ponzu/compare/v1.17.0...v1.17.1) (2026-10-21)
 
 
