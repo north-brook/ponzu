@@ -107,6 +107,8 @@ function Field() {
     >
       <defs>
         <symbol id="field-unit" viewBox="0 0 64 64">
+          {/* An invisible disc, so the whole unit answers the pointer: its centre is a gap. */}
+          <circle cx={32} cy={32} r={32} fill="transparent" />
           <g
             fill="currentColor"
             stroke="currentColor"
@@ -121,16 +123,21 @@ function Field() {
       </defs>
       {UNITS.map(({ x, y, on, d }) => (
         <g key={`${x},${y}`} transform={`translate(${x} ${y})`}>
-          <use
-            href="#field-unit"
-            className="field-unit"
+          {/* The ripple turns the group and hover turns the unit, so each keeps its own rotation. */}
+          <g
+            className="field-ripple"
             data-on={on || undefined}
             style={{ "--d": d } as CSSProperties}
-            x={-unit / 2}
-            y={-unit / 2}
-            width={unit}
-            height={unit}
-          />
+          >
+            <use
+              href="#field-unit"
+              className="field-unit"
+              x={-unit / 2}
+              y={-unit / 2}
+              width={unit}
+              height={unit}
+            />
+          </g>
         </g>
       ))}
     </svg>

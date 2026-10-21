@@ -221,17 +221,25 @@
   mask-image: linear-gradient(to bottom, transparent, rgb(0 0 0 / 0.25) 30%, #000 82%);
 }
 
+.field-ripple,
 .field-unit {
-  color: var(--field);
   transform-box: fill-box;
   transform-origin: center;
+}
+
+.field-unit {
+  color: var(--field);
   transition: rotate 600ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.field-unit[data-on] {
-  color: var(--yuzu);
+/* The ripple runs on the unit's group, so the unit's own hover turn still applies on top. */
+.field-ripple[data-on] {
   animation: ripple 7s cubic-bezier(0.2, 0.8, 0.2, 1) infinite both;
   animation-delay: calc(var(--d) * 28ms);
+}
+
+.field-ripple[data-on] .field-unit {
+  color: var(--yuzu);
 }
 
 /* The legal line's clearing: the ground behind its text, feathered into the field. */
@@ -260,7 +268,7 @@
 /* `svg` lifts the wheel rules above the tile's own inline stylesheet. */
 @media (prefers-reduced-motion: reduce) {
   svg .cit-seg,
-  .field-unit[data-on] {
+  .field-ripple[data-on] {
     animation: none;
   }
 
