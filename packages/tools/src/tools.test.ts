@@ -1,14 +1,16 @@
 import { expect, test } from "bun:test";
-import { locate } from "@ponzu/core";
+import { locate, threadPage } from "@ponzu/core";
+import type { Renderer, RenderResult } from "@ponzu/render";
 import { Design, MemoryAdapter } from "@ponzu/store";
 import { EventHub, PresenceHub, type ToolContext, type Workspace } from "./context.ts";
+import { FORMAT_EXAMPLE, GUIDES } from "./guides.ts";
 import { getTool, runTool } from "./index.ts";
 import { plural } from "./util.ts";
 
-async function setup(tokens = 3, idleMs?: number) {
+async function setup(tokens = 3, renderer?: Renderer) {
   const css = `:root {\n${Array.from({ length: tokens }, (_, i) => `  --t${i}: ${i}px;`).join("\n")}\n}\n`;
-  const design = await Design.open(
-    new MemoryAdapter({
+  return withFiles(
+    {
       "design.json": JSON.stringify({
         ponzu: 1,
         name: "Fern",
@@ -16,15 +18,20 @@ async function setup(tokens = 3, idleMs?: number) {
       }),
       "tokens.css": css,
       "pages/home/hero.html": `<section data-artboard data-id="ab_hero" data-name="Hero" data-x="0" data-y="0" style="width:800px;height:600px">\n<div data-id="n_card"><h1 data-id="n_h">Hi</h1><p data-id="n_p">There</p></div>\n</section>\n`,
-    }),
-    { saveDelay: 0 },
+    },
+    renderer,
   );
+}
+
+async function withFiles(files: Record<string, string>, renderer?: Renderer) {
+  const design = await Design.open(new MemoryAdapter(files), { saveDelay: 0 });
   const ws: Workspace = {
     designs: () => [{ key: "fern", design }],
     resolve: async () => ({ key: "fern", design }),
     selection: () => ({ ids: [] }) as never,
     events: new EventHub(),
-    presence: new PresenceHub(idleMs),
+    presence: new PresenceHub(),
+    renderer,
   };
   const ctx: ToolContext = { ws, caller: { id: "t", author: { kind: "agent", name: "test" } } };
   const call = (name: string, args: unknown) => runTool(getTool(name)!, args, ctx);
@@ -265,6 +272,90 @@ test("update_file renames the file and sets or clears its icon", async () => {
   expect(design.doc.name).toBe("Fern app");
 });
 
+/** A renderer that answers every render with `out`, and counts its calls. */
+function fakeRenderer(out: Partial<RenderResult>) {
+  const calls: unknown[] = [];
+  const renderer = {
+    render: async (req: unknown) => {
+      calls.push(req);
+      return {
+        bytes: new Uint8Array([1]),
+        mime: "image/png",
+        width: 800,
+        height: 600,
+        contentHeight: 600,
+        issues: [],
+        ...out,
+      } as RenderResult;
+    },
+    close: async () => {},
+  } as Renderer;
+  return { renderer, calls };
+}
+
+test("screenshot returns lint when only the image failed", async () => {
+  const { renderer } = fakeRenderer({
+    bytes: new Uint8Array(),
+    issues: [{ id: "n_h", kind: "clipped-text", message: "text is clipped" }],
+    captureError: "The render stalled capturing the image (stopped after 20s).",
+  });
+  const { call } = await setup(3, renderer);
+  const r = await call("screenshot", { id: "ab_hero" });
+  expect(r.isError).toBe(true);
+  expect(r.images).toBeUndefined();
+  expect(r.text).toContain("Couldn't capture the image of ab_hero");
+  expect(r.text).toContain("n_h: text is clipped");
+  expect("failure" in r).toBe(false);
+});
+
+test("screenshot says when fonts or images ran out of time", async () => {
+  const { renderer } = fakeRenderer({ assetsTimedOut: true });
+  const { call } = await setup(3, renderer);
+  const r = await call("screenshot", { id: "ab_hero" });
+  expect(r.isError).toBeFalsy();
+  expect(r.text).toContain("still loading when time ran out");
+});
+
+test("screenshot checks hover, focus and press ids before rendering", async () => {
+  const { renderer, calls } = fakeRenderer({});
+  const { call } = await setup(3, renderer);
+  const r = await call("screenshot", { id: "ab_hero", hover: "n_nope" });
+  expect(r.isError).toBe(true);
+  expect(r.text).toBe("No node n_nope to hover in ab_hero. Ids come from get_tree.");
+  expect(calls).toHaveLength(0);
+  expect((await call("screenshot", { id: "ab_hero", press: "n_p" })).isError).toBeFalsy();
+});
+
+test("the format guide's example files load as it describes", async () => {
+  for (const text of Object.values(FORMAT_EXAMPLE)) expect(GUIDES.format).toContain(text);
+  const { design, call } = await withFiles(FORMAT_EXAMPLE);
+  const { doc } = design;
+  expect(design.problems).toEqual([]);
+  expect(doc.pages.map((p) => [p.id, p.name, p.icon])).toEqual([["pg_flow", "Flow", "flow"]]);
+  const cart = doc.pages[0]!.artboards[0]!;
+  expect([cart.id, cart.name, cart.x, cart.y]).toEqual(["ab_cart", "Cart", 0, 0]);
+  expect(cart.root.style).toMatchObject({ width: "390px", height: "844px" });
+  const [pinned, canvas] = doc.threads;
+  expect(locate(doc, pinned!.nodeId!)?.artboard.id).toBe("ab_cart");
+  expect(canvas!.artboardId).toBeUndefined();
+  expect(threadPage(doc, canvas!)?.id).toBe("pg_flow");
+  const listed = (await call("list_comments", {})).text;
+  expect(listed).toContain('th_title [open] on "Cart" › ');
+  expect(listed).toContain('th_next [open] on the canvas of page "Flow" at 480, 120');
+});
+
+test("get_basic_info lists what in the files Ponzu couldn't use", async () => {
+  const { call } = await withFiles({
+    ...FORMAT_EXAMPLE,
+    "comments.json": JSON.stringify({ threads: [{ id: "th_x", pageId: "pg_flow", x: 1, y: 1 }] }),
+  });
+  const text = (await call("get_basic_info", {})).text;
+  expect(text).toContain("Not used as written");
+  expect(text).toContain("comments.json: thread th_x not shown, needs status");
+  const clean = await setup();
+  expect((await clean.call("get_basic_info", {})).text).not.toContain("Not used as written");
+});
+
 test("an artboard given display: flex with no direction says it stays a column", async () => {
   const { call } = await setup();
   const flexed = await call("update_styles", {
@@ -294,7 +385,8 @@ test("an artboard given display: flex with no direction says it stays a column",
 });
 
 test("an agent shows as working on what it changes until it goes quiet", async () => {
-  const { call, ws } = await setup(3, 100);
+  const { call, ws } = await setup();
+  ws.presence = new PresenceHub(100);
   const me = () => ws.presence.list().find((p) => p.id === "t")!;
 
   await call("get_tree", {});
@@ -335,4 +427,190 @@ test("waiting for activity ends a pass", async () => {
   await call("wait_for_activity", { timeout: 0 });
   expect(me().working).toEqual([]);
   expect(me().status).toBeUndefined();
+});
+
+/** Two artboards on one page, the second at (x, y) with the given style. */
+async function twoBoards(x: number, y: number, style: string) {
+  return withFiles({
+    "design.json": JSON.stringify({
+      ponzu: 1,
+      name: "Fern",
+      pages: [{ id: "pg_home", name: "Home" }],
+    }),
+    "tokens.css": ":root {}\n",
+    "pages/home/a.html": `<section data-artboard data-id="ab_a" data-name="A" data-x="0" data-y="0" style="width:800px;height:600px">\n<p>a</p>\n</section>\n`,
+    "pages/home/b.html": `<section data-artboard data-id="ab_b" data-name="B" data-x="${x}" data-y="${y}" style="${style}">\n<p>b</p>\n</section>\n`,
+  });
+}
+
+test("get_basic_info lists artboards that overlap, and where the lower one clears", async () => {
+  const { call } = await twoBoards(400, 500, "width:800px;height:600px");
+  const r = await call("get_basic_info", {});
+  expect(r.text).toContain(
+    'ab_a "A" and ab_b "B" overlap by 400×100px; ab_b clears it at y 680 (update_artboard).',
+  );
+  const apart = await twoBoards(880, 0, "width:800px;height:600px");
+  expect((await apart.call("get_basic_info", {})).text).not.toContain("overlap");
+});
+
+test("moving an artboard onto another says so, and moving it off clears it", async () => {
+  const { call } = await twoBoards(880, 0, "width:800px;height:600px");
+  const onto = await call("update_artboard", { id: "ab_b", x: 700, y: 300 });
+  expect(onto.text).toContain("Overlap: ab_a");
+  expect(onto.text).toContain("ab_b clears it at y 680");
+  const off = await call("update_artboard", { id: "ab_b", x: 700, y: 680 });
+  expect(off.text).not.toContain("Overlap");
+});
+
+test("create_artboard at an explicit spot on top of another reports the overlap", async () => {
+  const { call } = await setup();
+  const r = await call("create_artboard", {
+    name: "Over",
+    width: 400,
+    height: 400,
+    x: 100,
+    y: 100,
+  });
+  expect(r.text).toContain('Overlap: ab_hero "Hero" and');
+  const free = await call("create_artboard", { name: "Free", width: 400, height: 400 });
+  expect(free.text).not.toContain("Overlap");
+});
+
+test("a fit-content artboard is checked at its rendered height", async () => {
+  const s = await twoBoards(0, 700, "width:800px;height:fit-content");
+  // Without a renderer it reads as 900 tall and starts below A: clear.
+  expect((await s.call("get_basic_info", {})).text).not.toContain("overlap");
+  const measured: string[] = [];
+  const tall = await twoBoards(0, -1400, "width:800px;height:fit-content");
+  tall.ws.renderer = {
+    render: async () => {
+      throw new Error("unused");
+    },
+    measure: async (req) => {
+      measured.push(req.artboard.id);
+      return {
+        boxes: { [req.artboard.id]: { x: 0, y: 0, width: 800, height: 1500 } },
+        contentHeight: 1500,
+      };
+    },
+    close: async () => {},
+  };
+  const r = await tall.call("get_basic_info", {});
+  expect(r.text).toContain('ab_b "B" and ab_a "A" overlap by 800×100px; ab_a clears it at y 180');
+  expect(measured).toEqual(["ab_b"]);
+  // Unchanged since: not rendered again.
+  await tall.call("get_basic_info", {});
+  expect(measured).toEqual(["ab_b"]);
+});
+
+test("two unmeasured artboards that only meet at their rendered sizes are both measured", async () => {
+  // A wide fit-content-width board and a tall fit-content-height board: at the
+  // 1440×900 fallback they miss each other; rendered, they cross.
+  const s = await withFiles({
+    "design.json": JSON.stringify({
+      ponzu: 1,
+      name: "Fern",
+      pages: [{ id: "pg_home", name: "Home" }],
+    }),
+    "tokens.css": ":root {}\n",
+    "pages/home/wide.html": `<section data-artboard data-id="ab_wide" data-name="Wide" data-x="0" data-y="2000" style="width:fit-content;height:400px">\n<p>w</p>\n</section>\n`,
+    "pages/home/tall.html": `<section data-artboard data-id="ab_tall" data-name="Tall" data-x="2000" data-y="0" style="width:400px;height:fit-content">\n<p>t</p>\n</section>\n`,
+  });
+  const sizes: Record<string, [number, number]> = { ab_wide: [3000, 400], ab_tall: [400, 3000] };
+  s.ws.renderer = {
+    render: async () => {
+      throw new Error("unused");
+    },
+    measure: async (req) => {
+      const [width, height] = sizes[req.artboard.id]!;
+      return { boxes: { [req.artboard.id]: { x: 0, y: 0, width, height } }, contentHeight: height };
+    },
+    close: async () => {},
+  };
+  const r = await s.call("get_basic_info", {});
+  expect(r.text).toContain('ab_tall "Tall" and ab_wide "Wide" overlap by 400×400px');
+});
+
+test("duplicating to an explicit spot doesn't render distant artboards", async () => {
+  // ab_b grows down from y 5000; the copy goes far above it, so its size can't matter.
+  // Its own padding, so no earlier test's measurement of ab_b is cached for it.
+  const s = await twoBoards(0, 5000, "width:800px;height:fit-content;padding:7px");
+  const measured: string[] = [];
+  s.ws.renderer = {
+    render: async () => {
+      throw new Error("unused");
+    },
+    measure: async (req) => {
+      measured.push(req.artboard.id);
+      return {
+        boxes: { [req.artboard.id]: { x: 0, y: 0, width: 800, height: 300 } },
+        contentHeight: 300,
+      };
+    },
+    close: async () => {},
+  };
+  const r = await s.call("duplicate", { ids: ["ab_a"], x: 0, y: -5000 });
+  expect(r.text).toContain("at (0, -5000)");
+  expect(measured).toEqual([]);
+});
+
+test("a copy in an empty row clears the page's widest artboard at its rendered width", async () => {
+  // Nothing sits in row -5000, so the copy goes right of everything; ab_b is
+  // far below that row but renders 3000px wide.
+  const s = await withFiles({
+    "design.json": JSON.stringify({
+      ponzu: 1,
+      name: "Fern",
+      pages: [{ id: "pg_home", name: "Home" }],
+    }),
+    "tokens.css": ":root {}\n",
+    "pages/home/a.html": `<section data-artboard data-id="ab_a" data-name="A" data-x="0" data-y="0" style="width:400px;height:10000px">\n<p>a</p>\n</section>\n`,
+    "pages/home/b.html": `<section data-artboard data-id="ab_b" data-name="B" data-x="800" data-y="4000" style="width:fit-content;height:400px;padding:3px">\n<p>b</p>\n</section>\n`,
+  });
+  s.ws.renderer = {
+    render: async () => {
+      throw new Error("unused");
+    },
+    measure: async (req) => ({
+      boxes: { [req.artboard.id]: { x: 0, y: 0, width: 3000, height: 400 } },
+      contentHeight: 400,
+    }),
+    close: async () => {},
+  };
+  const r = await s.call("duplicate", { ids: ["ab_a"], y: -5000 });
+  expect(r.text).toContain("at (3880, -5000)");
+});
+
+test("record says when fonts or images ran out of time", async () => {
+  const { renderer } = fakeRenderer({});
+  renderer.record = async () => ({
+    bytes: new Uint8Array([1]),
+    mime: "image/png",
+    width: 10,
+    height: 10,
+    steps: [{ label: "0ms" }, { label: "1s" }] as never,
+    motion: { trigger: "load", animations: [], settled: 0, loops: false, cycle: 0 } as never,
+    issues: [],
+    assetsTimedOut: true,
+  });
+  const { call } = await setup(3, renderer);
+  const r = await call("record", { id: "ab_hero" });
+  expect(r.isError).toBeFalsy();
+  expect(r.text).toContain("still loading when time ran out");
+});
+
+test("update_file marks a file as scratch and back", async () => {
+  const { design, call } = await setup();
+  await call("update_file", { scratch: true });
+  expect(design.doc.scratch).toBe(true);
+  await call("update_file", { scratch: false });
+  expect(design.doc.scratch).toBeUndefined();
+});
+
+test("list_files filters by name or path", async () => {
+  const { call } = await setup();
+  expect((await call("list_files", { query: "FER" })).text).toContain("Fern — fern");
+  expect((await call("list_files", { query: "kettle" })).text).toBe(
+    'No open file matches "kettle" (1 file open).',
+  );
 });

@@ -10,6 +10,8 @@ export interface Doc {
   icon?: string;
   /** From design.json: a sample design the home screen hides until it's opened. */
   example?: true;
+  /** An agent made it for its own use: the home screen lists it under Scratch, not Recent. */
+  scratch?: true;
   pages: PageState[];
   tokens: string;
   threads: Thread[];
@@ -38,6 +40,7 @@ export type Op =
   | { op: "page.order"; ids: string[] }
   | { op: "file.rename"; name: string }
   | { op: "file.icon"; icon: string | null }
+  | { op: "file.scratch"; scratch: boolean }
   | { op: "tokens"; css: string }
   | { op: "thread.create"; thread: Thread }
   | { op: "thread.delete"; id: string }
@@ -76,6 +79,7 @@ export function metaOf(doc: Doc): DesignMeta {
     name: doc.name,
     ...(doc.icon ? { icon: doc.icon } : {}),
     ...(doc.example ? { example: true as const } : {}),
+    ...(doc.scratch ? { scratch: true as const } : {}),
     pages: doc.pages.map(({ id, name, icon }) => (icon ? { id, name, icon } : { id, name })),
   };
 }
@@ -295,6 +299,12 @@ export function applyOp(doc: Doc, op: Op): Op {
       if (op.icon === null) delete doc.icon;
       else doc.icon = op.icon;
       return { op: "file.icon", icon: prev };
+    }
+    case "file.scratch": {
+      const prev = Boolean(doc.scratch);
+      if (op.scratch) doc.scratch = true;
+      else delete doc.scratch;
+      return { op: "file.scratch", scratch: prev };
     }
     case "tokens": {
       const prev = doc.tokens;

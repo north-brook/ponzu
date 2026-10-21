@@ -1,7 +1,7 @@
 import { emptyDoc, findPage, newId, type Op, parseTokens, setTokens } from "@ponzu/core";
 import { z } from "zod";
 import { fileArg, ToolError, tool } from "./define.ts";
-import { apply, plural } from "./util.ts";
+import { apply, plural, resolveFile } from "./util.ts";
 
 const PAGE_ICONS = [
   "page",
@@ -37,16 +37,33 @@ export const organizeTools = [
     title: "List files",
     group: "organize",
     readOnly: true,
-    description: "The .design files open in this Ponzu session.",
-    input: {},
-    handler(_args, { ws }) {
-      const files = ws.designs();
-      if (!files.length) return { text: "No files open. Use create_file." };
+    description:
+      "The .design files open in this Ponzu session. The one marked (current) is what calls without file use.",
+    input: {
+      query: z
+        .string()
+        .optional()
+        .describe("Only files whose name or path contains this, case-insensitive."),
+    },
+    handler(args, { ws, session }) {
+      const all = ws.designs();
+      if (!all.length) return { text: "No files open. Use create_file." };
+      const q = args.query?.toLowerCase();
+      const files = q
+        ? all.filter(
+            ({ key, design }) =>
+              key.toLowerCase().includes(q) || design.doc.name.toLowerCase().includes(q),
+          )
+        : all;
+      if (!files.length)
+        return {
+          text: `No open file matches "${args.query}" (${plural(all.length, "file")} open).`,
+        };
       return {
         text: files
           .map(({ key, design }) => {
             const ab = design.doc.pages.reduce((n, p) => n + p.artboards.length, 0);
-            return `${design.doc.name} — ${key} (${plural(design.doc.pages.length, "page")}, ${plural(ab, "artboard")})`;
+            return `${design.doc.name} — ${key} (${plural(design.doc.pages.length, "page")}, ${plural(ab, "artboard")})${key === session?.file ? " (current)" : ""}`;
           })
           .join("\n"),
       };
@@ -58,7 +75,7 @@ export const organizeTools = [
     title: "Create file",
     group: "organize",
     description:
-      "Create a new .design folder with its pages and tokens in one call, then open it. Put it next to the code it designs (e.g. ./design/app.design) unless the user says otherwise.",
+      "Create a new .design folder with its pages and tokens in one call, then open it; later calls without file use it. Put it next to the code it designs (e.g. ./design/app.design) unless the user says otherwise. To import or generate a whole design by writing its files instead, see get_guide('format').",
     input: {
       path: z
         .string()
@@ -72,6 +89,12 @@ export const organizeTools = [
           'Shown as the tab title, e.g. "Onboarding" or "Checkout flow". Default: the folder name without .design, case unchanged.',
         ),
       icon: z.enum(PAGE_ICONS).optional().describe("Shown on the file's tab."),
+      scratch: z
+        .boolean()
+        .optional()
+        .describe(
+          "For a file you make for your own use (an experiment, a test fixture), not for the person: Ponzu lists it under Scratch, out of their Recent designs.",
+        ),
       pages: z
         .array(z.object({ name: z.string(), icon: z.enum(PAGE_ICONS).optional() }))
         .optional()
@@ -83,7 +106,7 @@ export const organizeTools = [
           "CSS with custom properties, e.g. ':root { --color-ink: #111; --font-sans: \"Inter\", sans-serif; }'",
         ),
     },
-    async handler(args, { ws }) {
+    async handler(args, { ws, session }) {
       if (!ws.create) throw new ToolError("This host doesn't create files.");
       if (!/\.design\/?$/.test(args.path)) throw new ToolError("The path should end in .design");
       const name =
@@ -95,6 +118,7 @@ export const organizeTools = [
           .replace(/\.design$/, "");
       const doc = emptyDoc(name);
       if (args.icon) doc.icon = args.icon;
+      if (args.scratch) doc.scratch = true;
       for (const p of args.pages?.length ? args.pages : [{ name: "Home" }]) {
         doc.pages.push({
           id: newId("pg"),
@@ -105,6 +129,7 @@ export const organizeTools = [
       }
       if (args.tokens) doc.tokens = args.tokens.endsWith("\n") ? args.tokens : `${args.tokens}\n`;
       const { key, design } = await ws.create(args.path, doc);
+      if (session) session.file = key;
       return {
         text: `Created ${key}\nPages: ${design.doc.pages.map((p) => `${p.id} "${p.name}"`).join(", ")}\nTokens: ${parseTokens(design.doc.tokens).length}`,
       };
@@ -115,17 +140,25 @@ export const organizeTools = [
     name: "update_file",
     title: "Update file",
     group: "organize",
-    description: "Rename a file (its tab title) or change the icon on its tab.",
+    description:
+      "Rename a file (its tab title), change the icon on its tab, or mark it as scratch.",
     input: {
       file: fileArg,
       name: z.string().min(1).optional(),
       icon: z.enum(PAGE_ICONS).nullable().optional().describe("null removes it."),
+      scratch: z
+        .boolean()
+        .optional()
+        .describe(
+          "true lists it under Scratch, out of the person's Recent designs; false brings it back.",
+        ),
     },
     async handler(args, ctx) {
-      const { key, design } = await ctx.ws.resolve(args.file);
+      const { key, design } = await resolveFile(ctx, args.file);
       const ops: Op[] = [];
       if (args.name !== undefined) ops.push({ op: "file.rename", name: args.name });
       if (args.icon !== undefined) ops.push({ op: "file.icon", icon: args.icon });
+      if (args.scratch !== undefined) ops.push({ op: "file.scratch", scratch: args.scratch });
       if (!ops.length) return { text: "Nothing to change." };
       apply(design, ops.length === 1 ? ops[0]! : { op: "batch", ops }, ctx);
       return { text: `Updated ${key}.` };
@@ -150,7 +183,7 @@ export const organizeTools = [
         .describe("Position in the page list. Default last."),
     },
     async handler(args, ctx) {
-      const { design } = await ctx.ws.resolve(args.file);
+      const { design } = await resolveFile(ctx, args.file);
       const id = newId("pg");
       apply(
         design,
@@ -180,7 +213,7 @@ export const organizeTools = [
       delete: z.boolean().optional(),
     },
     async handler(args, ctx) {
-      const { design } = await ctx.ws.resolve(args.file);
+      const { design } = await resolveFile(ctx, args.file, [args.page]);
       const doc = design.doc;
       const page = findPage(doc, args.page);
       if (!page) throw new ToolError(`No page ${args.page}.`);
@@ -213,7 +246,7 @@ export const organizeTools = [
       "Move superseded artboards to an Archive page (created if needed, kept last) and pack them into a grid. Keeps the working pages clean without losing history.",
     input: { file: fileArg, ids: z.array(z.string()).min(1) },
     async handler(args, ctx) {
-      const { design } = await ctx.ws.resolve(args.file);
+      const { design } = await resolveFile(ctx, args.file, args.ids);
       const doc = design.doc;
       const ops: Op[] = [];
       const archive = doc.pages.find((p) => p.name.toLowerCase() === "archive");
@@ -260,8 +293,8 @@ export const organizeTools = [
     readOnly: true,
     description: "The design tokens as plain CSS (tokens.css). Use them in styles as var(--name).",
     input: { file: fileArg },
-    async handler(args, { ws }) {
-      const { design } = await ws.resolve(args.file);
+    async handler(args, ctx) {
+      const { design } = await resolveFile(ctx, args.file);
       return { text: design.doc.tokens.trim() || ":root {}" };
     },
   }),
@@ -278,7 +311,7 @@ export const organizeTools = [
       css: z.string().optional(),
     },
     async handler(args, ctx) {
-      const { design } = await ctx.ws.resolve(args.file);
+      const { design } = await resolveFile(ctx, args.file);
       let css = args.css ?? design.doc.tokens;
       if (args.tokens) css = setTokens(css, args.tokens);
       if (!args.css && !args.tokens) throw new ToolError("Pass tokens or css.");

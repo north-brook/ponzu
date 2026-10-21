@@ -113,7 +113,7 @@ export function useModifierHint(key: "Meta" | "Control" | "Alt", delay = 250): b
         e.altKey === (key === "Alt") &&
         !e.shiftKey;
       if (e.key !== key) {
-        if (!(on && alone && /^Digit[1-9]$/.test(e.code))) hide();
+        if (!(on && alone && /^Digit[0-9]$/.test(e.code))) hide();
         return;
       }
       // Windows repeats a held Ctrl; that's still the same hold.

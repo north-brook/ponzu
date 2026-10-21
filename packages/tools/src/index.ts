@@ -11,6 +11,7 @@ export { threadLine } from "./converse.ts";
 export * from "./define.ts";
 export { GUIDES, type GuideTopic, SERVER_INSTRUCTIONS } from "./guides.ts";
 export { describeEvent } from "./listen.ts";
+export { fileList, resolveFile } from "./util.ts";
 
 /** Every Ponzu tool, in the order agents should discover them. */
 export const tools: ToolDef<any>[] = [

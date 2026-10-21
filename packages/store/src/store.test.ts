@@ -36,6 +36,18 @@ describe("design", () => {
     expect(d.doc.icon).toBeUndefined();
   });
 
+  test("scratch is kept in design.json, and undone like any edit", async () => {
+    const mem = new MemoryAdapter(seed);
+    const d = await Design.open(mem, { saveDelay: 0 });
+    d.apply({ op: "file.scratch", scratch: true }, { kind: "agent", name: "t" });
+    await d.flush();
+    expect(JSON.parse(mem.files["design.json"]!).scratch).toBe(true);
+    expect((await Design.open(mem, { saveDelay: 0 })).doc.scratch).toBe(true);
+    d.undo({ kind: "agent", name: "t" });
+    await d.flush();
+    expect(JSON.parse(mem.files["design.json"]!).scratch).toBeUndefined();
+  });
+
   test("renaming an artboard renames its file", async () => {
     const mem = new MemoryAdapter(seed);
     const d = await Design.open(mem, { saveDelay: 0 });
@@ -212,6 +224,94 @@ describe("design", () => {
       await settle();
       await d.flush();
       expect(mem.files["pages/components/diagram-one.html"]).toBe(edited);
+    });
+
+    test("a comment thread missing fields is reported and kept in the file, not shown", async () => {
+      const at = 1767225600000;
+      const whole = {
+        id: "th_ok",
+        artboardId: "ab_hero",
+        x: 10,
+        y: 10,
+        status: "open",
+        createdAt: at,
+        updatedAt: at,
+        messages: [{ id: "m_1", author: { kind: "user", name: "Sam" }, text: "Hi", createdAt: at }],
+      };
+      // A page pin written without a status or message times.
+      const broken = {
+        id: "th_bad",
+        pageId: "pg_home",
+        x: 400,
+        y: 80,
+        createdAt: at,
+        updatedAt: at,
+        messages: [{ id: "m_2", author: { kind: "agent", name: "a" }, text: "Next" }],
+      };
+      const mem = new MemoryAdapter({
+        ...seed,
+        "comments.json": JSON.stringify({ threads: [whole, broken] }),
+      });
+      const d = await Design.open(mem, { saveDelay: 0 });
+      expect(d.doc.threads.map((t) => t.id)).toEqual(["th_ok"]);
+      expect(d.problems).toEqual([
+        {
+          path: "comments.json",
+          what: 'thread th_bad not shown, needs status "open" or "resolved", messages, each with id, author { kind, name }, text and createdAt',
+        },
+      ]);
+
+      // Resolving the good one rewrites comments.json; the broken one is still there to fix.
+      d.apply(
+        { op: "thread.update", id: "th_ok", status: "resolved" },
+        { kind: "user", name: "t" },
+      );
+      await d.flush();
+      const saved = JSON.parse(mem.files["comments.json"]!).threads;
+      expect(saved.map((t: { id: string }) => t.id)).toEqual(["th_ok", "th_bad"]);
+
+      // Fixed by hand, it shows and the report clears.
+      saved[1].status = "open";
+      saved[1].messages[0].createdAt = at;
+      await mem.externalWrite("comments.json", JSON.stringify({ threads: saved }));
+      await settle();
+      expect(d.doc.threads.map((t) => t.id)).toEqual(["th_ok", "th_bad"]);
+      expect(d.problems).toEqual([]);
+    });
+
+    test("a page without an id, and files that aren't JSON, are reported", async () => {
+      const d = await Design.open(
+        new MemoryAdapter({
+          ...seed,
+          "design.json": JSON.stringify({ ponzu: 1, name: "Fern", pages: [{ name: "Home" }] }),
+          "comments.json": "{ threads: [",
+        }),
+        { watch: false, saveDelay: 0 },
+      );
+      expect(d.problems).toEqual([
+        { path: "design.json", what: 'page "Home" has no id' },
+        { path: "comments.json", what: "not valid JSON" },
+      ]);
+      // Once Ponzu writes design.json, every page has its id there.
+      d.apply({ op: "file.rename", name: "Fern 2" }, { kind: "user", name: "t" });
+      await d.flush();
+      expect(JSON.parse((d.storage as MemoryAdapter).files["design.json"]!).pages[0].id).toBe(
+        d.doc.pages[0]!.id,
+      );
+      expect(d.problems).toEqual([{ path: "comments.json", what: "not valid JSON" }]);
+    });
+
+    test("an empty design.json or comments.json is reported, not taken for a missing one", async () => {
+      const d = await Design.open(
+        new MemoryAdapter({ ...seed, "design.json": "", "comments.json": "" }),
+        { watch: false },
+      );
+      expect(d.problems).toEqual([
+        { path: "design.json", what: "not valid JSON" },
+        { path: "comments.json", what: "not valid JSON" },
+      ]);
+      const missing = await Design.open(new MemoryAdapter(seed), { watch: false });
+      expect(missing.problems).toEqual([]);
     });
   });
 });

@@ -2,7 +2,7 @@ import { type Doc, describeNode, findArtboard, type PonzuEvent } from "@ponzu/co
 import { z } from "zod";
 import { fileArg, ToolError, tool } from "./define.ts";
 import { GUIDES, type GuideTopic } from "./guides.ts";
-import { apply } from "./util.ts";
+import { apply, resolveFile } from "./util.ts";
 
 const EVENT_TYPES = [
   "change",
@@ -63,8 +63,9 @@ export const listenTools = [
       timeout: z.number().min(0).max(300).optional().describe("Seconds to wait. Default 60."),
       include_own: z.boolean().optional().describe("Include events caused by you. Default false."),
     },
-    async handler(args, { ws, caller, signal }) {
-      const { key, design } = await ws.resolve(args.file);
+    async handler(args, ctx) {
+      const { ws, caller, signal } = ctx;
+      const { key, design } = await resolveFile(ctx, args.file);
       // A cursor past the end came from a Ponzu that has since restarted: start from now.
       const cursor =
         args.since !== undefined && args.since <= ws.events.cursor ? args.since : ws.events.cursor;
@@ -116,8 +117,9 @@ export const listenTools = [
           "The artboards this is about, replacing the ones you were working on. Omit to keep them.",
         ),
     },
-    async handler(args, { ws, caller }) {
-      const { key, design } = await ws.resolve(args.file);
+    async handler(args, ctx) {
+      const { ws, caller } = ctx;
+      const { key, design } = await resolveFile(ctx, args.file, args.artboards);
       for (const id of args.artboards ?? [])
         if (!findArtboard(design.doc, id)) throw new ToolError(`No artboard ${id}.`);
       if (args.artboards)
@@ -142,7 +144,7 @@ export const listenTools = [
       content: z.string().nullable().describe("Markdown. null deletes the note."),
     },
     async handler(args, ctx) {
-      const { design } = await ctx.ws.resolve(args.file);
+      const { design } = await resolveFile(ctx, args.file);
       apply(design, { op: "note", name: args.name, content: args.content }, ctx);
       return {
         text:
@@ -159,8 +161,8 @@ export const listenTools = [
     description:
       "Read the file's notes. Omit name to read them all. Do this at the start of a session.",
     input: { file: fileArg, name: z.string().optional() },
-    async handler(args, { ws }) {
-      const { design } = await ws.resolve(args.file);
+    async handler(args, ctx) {
+      const { design } = await resolveFile(ctx, args.file);
       const notes = design.doc.notes;
       if (args.name) {
         const n = notes[args.name];
@@ -182,7 +184,7 @@ export const listenTools = [
     group: "listen",
     readOnly: true,
     description:
-      "House rules and workflows for designing in Ponzu. Read 'basics' once per session before writing. Topics: basics, layout, typography, collaborate, variations, implement, motion, mobile.",
+      "House rules and workflows for designing in Ponzu. Read 'basics' once per session before writing. Topics: basics, layout, typography, collaborate, variations, implement, format (writing the files directly), motion, mobile.",
     input: { topic: z.enum(Object.keys(GUIDES) as [GuideTopic, ...GuideTopic[]]) },
     handler({ topic }) {
       return { text: GUIDES[topic] };

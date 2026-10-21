@@ -5,7 +5,14 @@ import { type Doc, findArtboard, locate, type Op, type Selection, type Thread } 
 import type { Renderer } from "@ponzu/render";
 import { Design, type OpEvent } from "@ponzu/store";
 import { FsAdapter } from "@ponzu/store/fs";
-import { EventHub, PresenceHub, type Telemetry, ToolError, type Workspace } from "@ponzu/tools";
+import {
+  EventHub,
+  fileList,
+  PresenceHub,
+  type Telemetry,
+  ToolError,
+  type Workspace,
+} from "@ponzu/tools";
 import { previewStale, writePreview } from "./preview.ts";
 
 export interface WorkspaceOptions {
@@ -146,20 +153,29 @@ export class LocalWorkspace implements Workspace {
           "No .design is open. Use create_file, or pass file with a path to a .design folder.",
         );
       throw new ToolError(
-        `Several files are open; pass file. Open: ${all.map((d) => `${d.design.doc.name} (${d.key})`).join(", ")}`,
+        all.length > 5
+          ? `${all.length} files are open; pass file (a path, or a name from list_files).`
+          : `Several files are open; pass file. Open: ${fileList(all)}`,
+        "file_ambiguous",
       );
     }
     const byKey = this.entries.get(this.keyOf(file));
     if (byKey) return byKey;
     const lower = file.toLowerCase().replace(/\.design$/, "");
-    const byName = all.find(
+    const byName = all.filter(
       (d) =>
         d.design.doc.name.toLowerCase() === lower ||
         basename(d.key)
           .toLowerCase()
           .replace(/\.design$/, "") === lower,
     );
-    if (byName) return byName;
+    // Copies of one design (in worktrees, say) share a name: only a path tells them apart.
+    if (byName.length > 1)
+      throw new ToolError(
+        `"${file}" matches ${byName.length} open files; pass the path: ${fileList(byName)}`,
+        "file_name_ambiguous",
+      );
+    if (byName[0]) return byName[0];
     if (
       this.opts.openAnything !== false &&
       file.endsWith(".design") &&
@@ -168,7 +184,10 @@ export class LocalWorkspace implements Workspace {
       return this.open(file);
     }
     throw new ToolError(
-      `No open file matches "${file}". Open: ${all.map((d) => d.design.doc.name).join(", ") || "none"}`,
+      all.length > 5
+        ? `No open file matches "${file}". ${all.length} are open; list_files lists them.`
+        : `No open file matches "${file}". Open: ${all.map((d) => d.design.doc.name).join(", ") || "none"}`,
+      "file_not_found",
     );
   }
 
@@ -355,6 +374,8 @@ export function summarize(doc: Doc, op: Op): string {
       return `renamed the file to "${op.name}"`;
     case "file.icon":
       return "changed the file's icon";
+    case "file.scratch":
+      return op.scratch ? "marked the file as scratch" : "took the file out of scratch";
     case "note":
       return `${op.content === null ? "deleted" : "wrote"} note ${op.name}`;
     default:

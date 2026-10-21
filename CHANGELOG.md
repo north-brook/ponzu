@@ -1,5 +1,55 @@
 # Changelog
 
+## [1.22.0](https://github.com/north-brook/ponzu/compare/v1.21.4...v1.22.0) (2026-10-21)
+
+
+### Features
+
+* remember every design in a catalog database, with archive, scratch and project filters ([#98](https://github.com/north-brook/ponzu/issues/98)) ([8fa2301](https://github.com/north-brook/ponzu/commit/8fa2301cb2c82afcc93123fafbdeebde47652ace))
+
+## [1.21.4](https://github.com/north-brook/ponzu/compare/v1.21.3...v1.21.4) (2026-10-21)
+
+
+### Bug Fixes
+
+* lint artboards that overlap on the canvas ([#96](https://github.com/north-brook/ponzu/issues/96)) ([0575ef4](https://github.com/north-brook/ponzu/commit/0575ef4fc244edbd37f4516938eedb9081ad5a3d))
+
+## [1.21.3](https://github.com/north-brook/ponzu/compare/v1.21.2...v1.21.3) (2026-10-21)
+
+
+### Bug Fixes
+
+* screenshots stop within a minute and say what stalled ([#91](https://github.com/north-brook/ponzu/issues/91)) ([ed934fe](https://github.com/north-brook/ponzu/commit/ed934fea2509451a51978aeeaa79cbc42e038017))
+* tools use the file an agent is working in when several are open ([#85](https://github.com/north-brook/ponzu/issues/85)) ([4fba1db](https://github.com/north-brook/ponzu/commit/4fba1db07e35a8dfb7b02e19a4cc575a5c857e49))
+
+## [1.21.2](https://github.com/north-brook/ponzu/compare/v1.21.1...v1.21.2) (2026-10-21)
+
+
+### Bug Fixes
+
+* keep the selection outline on an artboard after dragging it ([#94](https://github.com/north-brook/ponzu/issues/94)) ([4300283](https://github.com/north-brook/ponzu/commit/4300283d52a7f2b2373e946e47744a7880959249))
+
+## [1.21.1](https://github.com/north-brook/ponzu/compare/v1.21.0...v1.21.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* agents explain their work on the canvas and comment only when they need you ([#92](https://github.com/north-brook/ponzu/issues/92)) ([c6f88b2](https://github.com/north-brook/ponzu/commit/c6f88b2faaa8ad28d7f2246555169adeac6ba95a))
+
+## [1.21.0](https://github.com/north-brook/ponzu/compare/v1.20.3...v1.21.0) (2026-10-21)
+
+
+### Features
+
+* add a get_guide topic on the .design file format ([#89](https://github.com/north-brook/ponzu/issues/89)) ([54a1072](https://github.com/north-brook/ponzu/commit/54a10722beb10cf927cbbc606b0fdf59f9b98a34))
+
+## [1.20.3](https://github.com/north-brook/ponzu/compare/v1.20.2...v1.20.3) (2026-10-21)
+
+
+### Bug Fixes
+
+* warn when an artboard sets display: flex without a direction ([#84](https://github.com/north-brook/ponzu/issues/84)) ([f20c23c](https://github.com/north-brook/ponzu/commit/f20c23c0c31a2abea2e2a7e2274fe1c5fce4a9da))
+
 ## [1.20.2](https://github.com/north-brook/ponzu/compare/v1.20.1...v1.20.2) (2026-10-21)
 
 

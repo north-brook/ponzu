@@ -18,16 +18,27 @@ import {
   toKebab,
   walk,
 } from "@ponzu/core";
+import type { Design } from "@ponzu/store";
 import { z } from "zod";
+import type { ToolContext } from "./context.ts";
 import { fileArg, styleArg, ToolError, tool } from "./define.ts";
 import {
+  type Footprint,
+  footprints,
+  footprintsAround,
+  overlapNote,
+  overlaps,
+  rowNeed,
+} from "./overlap.ts";
+import {
+  ARTBOARD_GAP,
   apply,
-  artboardSize,
   autoPlace,
   droppedNote,
   elementsIn,
   plural,
   reportIds,
+  resolveFile,
   target,
 } from "./util.ts";
 
@@ -53,7 +64,7 @@ export const writeTools = [
       y: z.number().optional(),
     },
     async handler(args, ctx) {
-      const { key, design } = await ctx.ws.resolve(args.file);
+      const { key, design } = await resolveFile(ctx, args.file, [args.page]);
       const doc = design.doc;
       const page = args.page ? findPage(doc, args.page) : doc.pages[0];
       if (!page)
@@ -70,7 +81,12 @@ export const writeTools = [
       const pos =
         args.x !== undefined && args.y !== undefined
           ? { x: args.x, y: args.y }
-          : autoPlace(page.artboards, Number.parseFloat(width) || 1440, args.y);
+          : autoPlace(
+              await footprints(ctx.ws, key, doc, page.artboards, {
+                need: rowNeed(page.artboards, args.y),
+              }),
+              args.y,
+            );
       const id = newId("ab");
       const artboard: Artboard = {
         id,
@@ -94,8 +110,9 @@ export const writeTools = [
       );
       ctx.ws.focus?.(key, id);
       const kids = elementsIn(nodes);
+      const overlap = await pageOverlaps(ctx, key, design, [id]);
       return {
-        text: `Created artboard ${id} "${args.name}" ${width}×${height} at (${artboard.x}, ${artboard.y}) on "${page.name}".${kids.length ? `\n${reportIds(nodes)}` : ""}${droppedNote(dropped)}${directionNote([id], () => style)}`,
+        text: `Created artboard ${id} "${args.name}" ${width}×${height} at (${artboard.x}, ${artboard.y}) on "${page.name}".${kids.length ? `\n${reportIds(nodes)}` : ""}${droppedNote(dropped)}${directionNote([id], () => style)}${overlap}`,
         data: { id },
       };
     },
@@ -119,7 +136,7 @@ export const writeTools = [
         ),
     },
     async handler(args, ctx) {
-      const { design } = await ctx.ws.resolve(args.file);
+      const { design } = await resolveFile(ctx, args.file, [args.target]);
       const doc = design.doc;
       const t = target(doc, args.target);
       const mode = args.mode ?? "append";
@@ -182,7 +199,11 @@ export const writeTools = [
       updates: z.array(z.object({ ids: z.array(z.string()).min(1), style: styleArg })).min(1),
     },
     async handler(args, ctx) {
-      const { design } = await ctx.ws.resolve(args.file);
+      const { design } = await resolveFile(
+        ctx,
+        args.file,
+        args.updates.flatMap((u) => u.ids),
+      );
       const doc = design.doc;
       const ops: Op[] = [];
       const pending = new Map<string, Record<string, string>>();
@@ -213,7 +234,11 @@ export const writeTools = [
       updates: z.array(z.object({ id: z.string(), text: z.string() })).min(1),
     },
     async handler(args, ctx) {
-      const { design } = await ctx.ws.resolve(args.file);
+      const { design } = await resolveFile(
+        ctx,
+        args.file,
+        args.updates.map((u) => u.id),
+      );
       const ops: Op[] = args.updates.map((u) => {
         const t = target(design.doc, u.id);
         if (t.isArtboard)
@@ -237,7 +262,7 @@ export const writeTools = [
       attrs: z.record(z.string(), z.union([z.string(), z.null()])),
     },
     async handler(args, ctx) {
-      const { design } = await ctx.ws.resolve(args.file);
+      const { design } = await resolveFile(ctx, args.file, [args.id]);
       const t = target(design.doc, args.id);
       const next = { ...t.node.attrs };
       for (const [k, v] of Object.entries(args.attrs)) {
@@ -276,11 +301,30 @@ export const writeTools = [
       y: z.number().optional().describe("Row for artboard copies. Default: the original's row."),
     },
     async handler(args, ctx) {
-      const { key, design } = await ctx.ws.resolve(args.file);
+      const { key, design } = await resolveFile(ctx, args.file, [...args.ids, args.parent]);
       const doc = design.doc;
       const ops: Op[] = [];
       const map: Record<string, string> = {};
-      const placed: Artboard[] = [];
+      // Artboard copies so far, at their originals' size on the canvas.
+      const placed: Footprint[] = [];
+      const measuredPages = new Map<string, Promise<Footprint[]>>();
+      // Measures the originals, for their copies' size, and when x is left
+      // to autoPlace, what's in the rows the copies join.
+      const pageBoxes = (page: { id: string; artboards: Artboard[] }) => {
+        if (!measuredPages.has(page.id)) {
+          const originals = page.artboards.filter((ab) => args.ids.includes(ab.id));
+          const inRow =
+            args.x === undefined
+              ? rowNeed(
+                  page.artboards,
+                  ...(args.y !== undefined ? [args.y] : originals.map((ab) => ab.y)),
+                )
+              : () => false;
+          const need = (ab: Artboard) => args.ids.includes(ab.id) || inRow(ab);
+          measuredPages.set(page.id, footprints(ctx.ws, key, doc, page.artboards, { need }));
+        }
+        return measuredPages.get(page.id)!;
+      };
       // Reported in the order asked for; names[i] goes with ids[i].
       const lines: string[] = new Array(args.ids.length);
       const ids: string[] = new Array(args.ids.length);
@@ -303,7 +347,8 @@ export const writeTools = [
           const copyRoot = cloneWithNewIds(ab.artboard.root, map, "ab");
           const name = args.names?.[i] ?? `${ab.artboard.name} copy`;
           copyRoot.name = name;
-          const pos = placeCopy(ab.page.artboards, placed, ab.artboard.y, args.x, args.y);
+          const boxes = await pageBoxes(ab.page);
+          const pos = placeCopy(boxes, placed, ab.artboard.y, args.x, args.y);
           const artboard: Artboard = {
             id: copyRoot.id,
             name,
@@ -311,7 +356,8 @@ export const writeTools = [
             y: pos.y,
             root: copyRoot,
           };
-          placed.push(artboard);
+          const { w, h } = boxes.find((b) => b.id === id)!;
+          placed.push({ id: artboard.id, name, x: pos.x, y: pos.y, w, h });
           const onPage = (copiesOnPage.get(ab.page.id) ?? 0) + 1;
           copiesOnPage.set(ab.page.id, onPage);
           ops.push({
@@ -351,8 +397,18 @@ export const writeTools = [
         copied > args.ids.length
           ? `\n${plural(copied, "node")} copied in all; get_tree on a copy lists their ids.`
           : "";
+      const overlap = placed.length
+        ? await pageOverlaps(
+            ctx,
+            key,
+            design,
+            placed.map((p) => p.id),
+            // A copy renders at its original's size, measured above.
+            Object.fromEntries(placed.map((p) => [p.id, { w: p.w, h: p.h }])),
+          )
+        : "";
       return {
-        text: `${lines.join("\n")}${total}`,
+        text: `${lines.join("\n")}${total}${overlap}`,
         // Agents get the top-level ids; the full old→new map is for hosts calling runTool.
         data: { ids, map },
       };
@@ -385,7 +441,11 @@ export const writeTools = [
         .min(1),
     },
     async handler(args, ctx) {
-      const { design } = await ctx.ws.resolve(args.file);
+      const { design } = await resolveFile(
+        ctx,
+        args.file,
+        args.moves.flatMap((m) => [m.id, m.before, m.after, m.parent]),
+      );
       const doc = design.doc;
       const ops: Op[] = [];
       // Nodes moved so far to each `after` sibling or parent index. Moves that
@@ -448,7 +508,7 @@ export const writeTools = [
     description: "Delete nodes or whole artboards (and their files). Undoable from the app.",
     input: { file: fileArg, ids: z.array(z.string()).min(1) },
     async handler(args, ctx) {
-      const { design } = await ctx.ws.resolve(args.file);
+      const { design } = await resolveFile(ctx, args.file, args.ids);
       const doc = design.doc;
       const ops: Op[] = [];
       for (const id of args.ids) {
@@ -472,7 +532,11 @@ export const writeTools = [
       updates: z.array(z.object({ id: z.string(), name: z.string() })).min(1),
     },
     async handler(args, ctx) {
-      const { design } = await ctx.ws.resolve(args.file);
+      const { design } = await resolveFile(
+        ctx,
+        args.file,
+        args.updates.map((u) => u.id),
+      );
       const ops: Op[] = args.updates.map((u) =>
         findArtboard(design.doc, u.id)
           ? { op: "artboard.update", id: u.id, name: u.name }
@@ -500,7 +564,7 @@ export const writeTools = [
       page: z.string().optional().describe("Move to this page (id or name)."),
     },
     async handler(args, ctx) {
-      const { design } = await ctx.ws.resolve(args.file);
+      const { key, design } = await resolveFile(ctx, args.file, [args.id, args.page]);
       const doc = design.doc;
       const hit = findArtboard(doc, args.id);
       if (!hit) throw new ToolError(`No artboard ${args.id}.`);
@@ -516,7 +580,11 @@ export const writeTools = [
             index: page.artboards.length,
           });
           if (args.x === undefined) {
-            const pos = autoPlace(page.artboards, 0);
+            const pos = autoPlace(
+              await footprints(ctx.ws, key, doc, page.artboards, {
+                need: rowNeed(page.artboards),
+              }),
+            );
             ops.push({ op: "artboard.update", id: args.id, x: pos.x, y: pos.y });
           }
         }
@@ -533,8 +601,9 @@ export const writeTools = [
       if (!ops.length) return { text: "Nothing to change." };
       apply(design, { op: "batch", ops }, ctx);
       const a = findArtboard(design.doc, args.id)!.artboard;
+      const overlap = await pageOverlaps(ctx, key, design, [a.id]);
       return {
-        text: `${a.id} "${a.name}" ${a.root.style.width}×${a.root.style.height} at (${a.x}, ${a.y}).`,
+        text: `${a.id} "${a.name}" ${a.root.style.width}×${a.root.style.height} at (${a.x}, ${a.y}).${overlap}`,
       };
     },
   }),
@@ -625,17 +694,38 @@ function nodeOrder(doc: Doc): Map<string, number> {
  * in row y, like create_artboard) and later copies line up to its right.
  */
 function placeCopy(
-  artboards: Artboard[],
-  placed: Artboard[],
+  boxes: Footprint[],
+  placed: Footprint[],
   rowY: number,
   x?: number,
   y?: number,
 ): { x: number; y: number } {
   if (x === undefined && y === undefined) {
-    return { x: autoPlace([...artboards, ...placed], 0, rowY).x, y: rowY };
+    return { x: autoPlace([...boxes, ...placed], rowY).x, y: rowY };
   }
   const prev = placed.at(-1);
-  if (prev) return { x: prev.x + artboardSize(prev).w + 80, y: prev.y };
+  if (prev) return { x: prev.x + prev.w + ARTBOARD_GAP, y: prev.y };
   const row = y ?? rowY;
-  return { x: x ?? autoPlace(artboards, 0, row).x, y: row };
+  return { x: x ?? autoPlace(boxes, row).x, y: row };
+}
+
+/**
+ * A note naming the artboards that now overlap any of `ids` on its page, as
+ * the canvas draws them. Measures fit-content artboards when it can.
+ */
+async function pageOverlaps(
+  ctx: ToolContext,
+  key: string,
+  design: Design,
+  ids: string[],
+  known: Record<string, { w: number; h: number }> = {},
+): Promise<string> {
+  const doc = design.doc;
+  const pages = doc.pages.filter((p) => p.artboards.some((ab) => ids.includes(ab.id)));
+  const found = [];
+  for (const page of pages)
+    found.push(
+      ...overlaps(await footprintsAround(ctx.ws, key, doc, page.artboards, ids, known), ids),
+    );
+  return overlapNote(found);
 }
