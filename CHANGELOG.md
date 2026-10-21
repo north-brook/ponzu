@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.25.0](https://github.com/north-brook/ponzu/compare/v1.24.0...v1.25.0) (2026-10-21)
+
+
+### Features
+
+* neutral selection and no get_selection tool ([#111](https://github.com/north-brook/ponzu/issues/111)) ([9530de9](https://github.com/north-brook/ponzu/commit/9530de90917ae762634050a870215968d7a213c8))
+
 ## [1.24.0](https://github.com/north-brook/ponzu/compare/v1.23.3...v1.24.0) (2026-10-21)
 
 
