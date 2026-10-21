@@ -382,6 +382,7 @@ export const writeTools = [
       // share a spot line up after one another, in the order given, rather than
       // each landing in front of the last.
       const runs = new Map<string, Set<string>>();
+      const moved = new Set<string>();
       // Apply one by one so later moves see earlier ones.
       for (const move of args.moves) {
         const spot = move.after
@@ -390,9 +391,10 @@ export const writeTools = [
             ? `index ${move.parent} ${move.index}`
             : null;
         const run = spot ? runs.get(spot) : undefined;
-        const tail = run ? runTail(doc, move, run) : null;
+        const tail = run ? runTail(doc, move, run, moved) : null;
         const m = tail ? { id: move.id, after: tail } : move;
         if (spot) runs.set(spot, (run ?? new Set()).add(move.id));
+        moved.add(move.id);
         const sibling = m.before ?? m.after;
         let parent: string;
         let index: number;
@@ -551,14 +553,17 @@ function styleWarnings(keys: string[]): string {
 export { type PElement, parseStyle };
 
 /**
- * The last node of an earlier run still sitting, unbroken, at a move's spot
- * (right after its `after` sibling, or from its parent index on), read from
- * the doc as it is now. Null when none is, so the move goes to the spot itself.
+ * The last node of an earlier run still sitting at a move's spot (right after
+ * its `after` sibling, or from its parent index on), read from the doc as it
+ * is now. Nodes this batch moved in between don't break the run; a node it
+ * never touched does. Null when no run member is there, so the move goes to
+ * the spot itself.
  */
 function runTail(
   doc: Doc,
   move: { id: string; after?: string; parent?: string; index?: number },
   run: Set<string>,
+  moved: Set<string>,
 ): string | null {
   let siblings: PElement[];
   let start: number;
@@ -576,8 +581,8 @@ function runTail(
   let tail: string | null = null;
   for (const c of siblings.slice(start)) {
     if (c.id === move.id) continue;
-    if (!run.has(c.id)) break;
-    tail = c.id;
+    if (run.has(c.id)) tail = c.id;
+    else if (!moved.has(c.id)) break;
   }
   return tail;
 }

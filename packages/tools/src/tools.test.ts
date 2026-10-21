@@ -231,4 +231,15 @@ test("moving several nodes to one spot keeps the order they were given", async (
   });
   expect(anchor.names("n_screen")).toEqual(["n_old", "Tab bar", "Content"]);
   expect(anchor.names("n_frame")).toEqual(["Status bar"]);
+
+  // Another move landing inside a run doesn't break it.
+  const mixed = await phone();
+  await mixed.call("move_nodes", {
+    moves: [
+      { id: "n_status", after: "n_old" },
+      { id: "n_content", before: "n_status" },
+      { id: "n_tabs", after: "n_old" },
+    ],
+  });
+  expect(mixed.names("n_frame")).toEqual(["n_old", "Content", "Status bar", "Tab bar"]);
 });
