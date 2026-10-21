@@ -123,9 +123,9 @@ export function Dashboard({
         </TipProvider>
 
         {q ? (
-          <Results query={q} files={files} machines={machines} onOpen={onOpen} />
+          <Results query={q} files={files} machines={machines} onOpen={onOpen} live={live} />
         ) : setup ? (
-          <Setup catalog={catalog} files={files} machines={machines} onOpen={onOpen} />
+          <Setup catalog={catalog} files={files} machines={machines} onOpen={onOpen} live={live} />
         ) : (
           <>
             <Heading
@@ -186,11 +186,14 @@ function Setup({
   files,
   machines,
   onOpen,
+  live,
 }: {
   catalog: Catalog | null;
   files: CatalogFile[];
   machines: Map<string, CatalogMachine>;
   onOpen: (target: OpenTarget) => void;
+  /** Cards to show live (useLive). */
+  live: Set<string>;
 }) {
   const [copied, setCopied] = useState(false);
   const agents = catalog?.agents.filter((a) => a.found) ?? [];
@@ -284,7 +287,13 @@ function Setup({
       {files.length ? (
         <Grid>
           {files.map((f) => (
-            <FileCard key={f.id} file={f} machine={machines.get(f.machine)} onOpen={onOpen} />
+            <FileCard
+              key={f.id}
+              file={f}
+              machine={machines.get(f.machine)}
+              onOpen={onOpen}
+              live={live.has(f.id)}
+            />
           ))}
         </Grid>
       ) : (
@@ -642,11 +651,14 @@ function Results({
   files,
   machines,
   onOpen,
+  live,
 }: {
   query: string;
   files: CatalogFile[];
   machines: Map<string, CatalogMachine>;
   onOpen: (target: OpenTarget) => void;
+  /** Cards to show live (useLive). */
+  live: Set<string>;
 }) {
   const fileFuse = useMemo(
     () =>
@@ -698,6 +710,7 @@ function Results({
                 file={item}
                 machine={machines.get(item.machine)}
                 onOpen={onOpen}
+                live={live.has(item.id)}
                 match={ranges(matches, "name")}
                 pathMatch={ranges(matches, "name") ? undefined : ranges(matches, "key")}
               />
