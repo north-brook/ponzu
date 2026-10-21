@@ -458,7 +458,7 @@ async function openDesign(path: string) {
   await fetch(`${serverUrl}/api/files`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ path }),
+    body: JSON.stringify({ path, by: "person" }),
   });
   await mainWindow.loadURL(`${serverUrl}/?file=${encodeURIComponent(path)}`);
   app.addRecentDocument(path);

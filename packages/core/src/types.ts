@@ -40,6 +40,11 @@ export interface PageMeta {
 export interface DesignMeta {
   ponzu: 1;
   name: string;
+  /**
+   * A sample design, like the ones in Ponzu's repo. The home screen lists it
+   * only once the person opens it themselves, not when it's merely found.
+   */
+  example?: true;
   pages: PageMeta[];
 }
 

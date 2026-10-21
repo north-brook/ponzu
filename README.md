@@ -57,22 +57,22 @@ Ponzu has no auth. Bind beyond localhost only on networks you trust, such as a t
 A `.design` is a folder. macOS shows it as a single document; everything else sees a directory.
 
 ```
-fernwood.design/
-  design.json          { "ponzu": 1, "name": "Fernwood", "pages": [{ "id", "name", "icon" }] }
-  tokens.css           :root { --color-ink: #111; … }
+weft.design/
+  design.json          { "ponzu": 1, "name": "Weft", "pages": [{ "id", "name", "icon" }] }
+  tokens.css           :root { --color-signal: #FF5A1F; … }
   comments.json        comment threads, pinned to node ids
   notes/brief.md       notes the agent keeps between sessions
   assets/              images and fonts
   pages/
-    home/
-      hero.html        one artboard per file
+    website/
+      landing.html     one artboard per file
 ```
 
 Each artboard file holds one `<section data-artboard>`:
 
 ```html
-<section data-artboard data-id="ab_hero" data-name="Hero" data-x="0" data-y="0" style="width:1440px;height:900px">
-  <h1 data-id="n_k3x9q" data-name="Headline" style="font:600 64px/1.1 var(--font-display)">Plants that outlive your lease</h1>
+<section data-artboard data-id="ab_dr6yq" data-name="Landing" data-x="0" data-y="0" style="width:1440px;height:7216px;background-color:var(--color-paper)">
+  <h1 data-id="n_g9oar7w" style="font:700 80px/0.95 var(--font-display);letter-spacing:-0.05em">Write locally. Sync everywhere.</h1>
 </section>
 ```
 
@@ -80,6 +80,7 @@ Each artboard file holds one `<section data-artboard>`:
 - **Ids are lazy.** Hand-written elements get stable ids derived from their position. Ponzu writes an id into a file only when something needs to point at it.
 - **Inert by default.** `<script>`, `on*` handlers and `javascript:` URLs are stripped on load.
 - **Fonts just work.** Google Fonts named in `font-family` load automatically on the canvas and in screenshots.
+- **Examples stay off your home screen.** `"example": true` in `design.json` marks a sample design. The home screen lists an example only once you open it yourself (from Finder, the app, or `ponzu serve path/to/example.design`), not when it's merely found: by Spotlight, by a scan of your folders, or because an agent started in a folder that has one. Agents still open and use examples like any other design. The ones in [`examples/`](examples) are marked.
 
 To implement a design, point your coding agent at the folder. The HTML, tokens and comments are the spec.
 
@@ -142,10 +143,12 @@ Turn all of it off with `ponzu telemetry off`, or set `PONZU_TELEMETRY=0` or `DO
 bun install
 bun test
 bun run --filter @ponzu/studio build
-bun apps/cli/src/index.ts serve examples/fernwood.design
+bun apps/cli/src/index.ts serve examples/halon.design examples/kettle.design examples/weft.design
 ```
 
-For studio work, run `bun apps/cli/src/index.ts serve examples/fernwood.design --dev` and `bun run --filter @ponzu/studio dev` side by side.
+[`examples/`](examples) holds three made-up companies to try Ponzu on: Halon (incident response for engineering teams), Kettle (an iPhone app for people who live together) and Weft (a sync platform for developers). Each has a brand, architecture diagrams, a website and an app, with its brief in `notes/brief.md`.
+
+For studio work, run `bun run dev`: the studio with hot reload on all three examples.
 
 Desktop: `cd apps/desktop && bun run start`.
 

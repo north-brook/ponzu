@@ -4,7 +4,7 @@ import { extname, join, normalize } from "node:path";
 import type { CatalogAgent, ClientMessage, Origin, ServerMessage } from "@ponzu/core";
 import { createHttpHandler } from "@ponzu/mcp";
 import type { Server, ServerWebSocket, WebSocketHandler } from "bun";
-import { Home } from "./home.ts";
+import { Home, type OpenedBy } from "./home.ts";
 import { isTailnetAddress } from "./tailnet.ts";
 import type { LocalWorkspace } from "./workspace.ts";
 
@@ -32,6 +32,12 @@ export interface ServeOptions {
   spotlight?: boolean | "roots";
   /** The agents Ponzu can set up on this Mac, for the home screen's first steps. */
   agents?: () => Promise<CatalogAgent[]>;
+  /**
+   * Designs the person named (`ponzu serve a.design`): the home screen lists
+   * them even if they're examples. Designs open in the workspace but not named
+   * here were found, not chosen.
+   */
+  opened?: string[];
 }
 
 /** Who a request comes from: this Mac, or one of the owner's Macs over the tailnet. */
@@ -119,6 +125,7 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
     agents: opts.agents,
     self: () => `http://127.0.0.1:${server.port}`,
     peerPort: opts.tailnetPort ?? 7777,
+    opened: opts.opened,
   });
 
   /**
@@ -207,8 +214,13 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
 
     if (path === "/api/files") {
       if (req.method === "POST") {
-        const body = (await req.json()) as { path: string };
-        const { key, design } = await ws.open(body.path);
+        // `by: "person"` from the studio and the app; `ponzu mcp` registering a project's
+        // designs, and any older client, leaves it out.
+        const body = (await req.json()) as { path: string; by?: OpenedBy };
+        const { key, design } = await home.open(
+          body.path,
+          body.by === "person" ? "person" : "agent",
+        );
         return Response.json({ key, name: design.doc.name });
       }
       const open = ws.designs().map(({ key, design }) => ({

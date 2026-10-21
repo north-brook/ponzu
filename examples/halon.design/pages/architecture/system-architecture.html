@@ -1,0 +1,270 @@
+<section data-artboard data-id="ab_n32dr" data-name="System architecture" data-x="0" data-y="0" style="width:2400px;height:1480px;background-color:var(--color-paper);padding:56px 64px;gap:40px;font-family:var(--font-text);color:var(--color-text)">
+<div data-id="n_1itg5" data-name="Header" style="display:flex;justify-content:space-between;align-items:flex-end">
+  <div data-id="n_1csje" style="display:flex;flex-direction:column;gap:12px">
+    <div data-id="n_28scz" style="display:flex;align-items:center;gap:10px;font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:0.08em;text-transform:uppercase;color:var(--color-text-2)"><svg data-id="n_pn67v" width="18" height="18" viewBox="0 0 64 64"><circle data-id="n_bxujz" cx="32" cy="32" r="30" fill="#0D1014"/><path data-id="n_0k0j9" d="M2 35 H21 L26 17 L33 49 L38 29 L41 35 H62" fill="none" stroke="#C8F54A" stroke-width="6"/></svg>Halon platform · architecture overview · rev 14 · Oct 2026</div>
+    <div data-id="n_lw53o" style="font-family:var(--font-display);font-size:var(--text-3xl);font-weight:600;letter-spacing:-0.035em;line-height:1">From alert to acknowledged, in one path</div>
+  </div>
+  <div data-id="n_08hyi" style="display:flex;gap:40px;font-family:var(--font-mono)">
+    <div data-id="n_bqxi9" style="display:flex;flex-direction:column;gap:4px"><span data-id="n_fkcyh" style="font-size:var(--text-xl);letter-spacing:-0.02em">p99 41 ms</span><span data-id="n_2jmoa" style="font-size:var(--text-xs);color:var(--color-text-3)">webhook accept</span></div>
+    <div data-id="n_9mvf6" style="display:flex;flex-direction:column;gap:4px"><span data-id="n_8v7w8" style="font-size:var(--text-xl);letter-spacing:-0.02em">p99 3.8 s</span><span data-id="n_taj24" style="font-size:var(--text-xs);color:var(--color-text-3)">alert → first page sent</span></div>
+    <div data-id="n_rtsg7" style="display:flex;flex-direction:column;gap:4px"><span data-id="n_zcprr" style="font-size:var(--text-xl);letter-spacing:-0.02em">99.99%</span><span data-id="n_ta4eb" style="font-size:var(--text-xs);color:var(--color-text-3)">paging SLA</span></div>
+  </div>
+</div>
+<div data-id="n_lr4xh" data-name="Diagram" style="position:relative;width:2272px;height:1180px;flex-shrink:0">
+  <div data-id="n_0pv12" data-name="Zone · Customer" style="position:absolute;left:0;top:0;width:360px;height:900px;background:var(--color-bone);border:1px dashed var(--color-line-strong);border-radius:var(--radius-md);box-sizing:border-box"><div data-id="n_wwmnt" style="position:absolute;left:20px;top:18px;font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:0.08em;text-transform:uppercase;color:var(--color-text-2)">A · Customer &amp; third party</div></div>
+  <div data-id="n_u26tk" data-name="Zone · Edge" style="position:absolute;left:420px;top:0;width:340px;height:900px;background:var(--color-white);border:1px solid var(--color-line-strong);border-radius:var(--radius-md);box-sizing:border-box"><div data-id="n_09s3y" style="position:absolute;left:20px;top:18px;font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:0.08em;text-transform:uppercase;color:var(--color-text-2)">B · Edge &amp; delivery</div></div>
+  <div data-id="n_6jlu3" data-name="Zone · Core" style="position:absolute;left:820px;top:0;width:900px;height:900px;background:var(--color-white);border:1.5px solid var(--color-ink);border-radius:var(--radius-md);box-sizing:border-box"><div data-id="n_37nrk" style="position:absolute;left:20px;top:18px;font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:0.08em;text-transform:uppercase;color:var(--color-text)">C · Halon core · one cell per region · EKS, 3 AZs</div><div data-id="n_nygzc" style="position:absolute;right:20px;top:16px;display:flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-phosphor-ink);background:var(--color-phosphor-tint);padding:3px 8px;border-radius:var(--radius-pill)"><span data-id="n_kll0i" style="width:6px;height:6px;border-radius:50%;background:var(--color-phosphor-ink)"></span>us-east-1 shown</div></div>
+  <div data-id="n_sez29" data-name="Zone · Data" style="position:absolute;left:1780px;top:0;width:492px;height:900px;background:var(--color-white);border:1px solid var(--color-line-strong);border-radius:var(--radius-md);box-sizing:border-box"><div data-id="n_dhvur" style="position:absolute;left:20px;top:18px;font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:0.08em;text-transform:uppercase;color:var(--color-text-2)">D · Data</div></div>
+<div data-id="n_5hrus" data-name="Customer nodes" style="position:absolute;inset:0;pointer-events:none">
+  <div data-id="n_23725" data-name="Monitoring sources" style="position:absolute;left:30px;top:60px;width:300px;height:110px;box-sizing:border-box;background:var(--color-white);border:1px solid var(--color-line-strong);border-radius:var(--radius-sm);padding:12px 14px;display:flex;flex-direction:column;gap:8px">
+    <div data-id="n_6lf1l" style="display:flex;justify-content:space-between;align-items:center"><span data-id="n_i6it9" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">Monitoring tools</span><span data-id="n_4eihh" style="font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-3)">60+ sources</span></div>
+    <div data-id="n_6bug3" style="display:flex;flex-wrap:wrap;gap:4px">
+      <span data-id="n_jtgrc" style="font-size:var(--text-xs);font-weight:600;padding:2px 7px;border-radius:var(--radius-xs);background:#632CA6;color:#fff">Datadog</span>
+      <span data-id="n_orndv" style="font-size:var(--text-xs);font-weight:600;padding:2px 7px;border-radius:var(--radius-xs);background:#E6522C;color:#fff">Alertmanager</span>
+      <span data-id="n_qra2g" style="font-size:var(--text-xs);font-weight:600;padding:2px 7px;border-radius:var(--radius-xs);background:#362D59;color:#fff">Sentry</span>
+      <span data-id="n_ki90n" style="font-size:var(--text-xs);padding:2px 7px;border-radius:var(--radius-xs);background:var(--color-bone);color:var(--color-text-2)">CloudWatch</span>
+      <span data-id="n_c05zn" style="font-size:var(--text-xs);padding:2px 7px;border-radius:var(--radius-xs);background:var(--color-bone);color:var(--color-text-2)">Grafana</span>
+      <span data-id="n_kbjeu" style="font-size:var(--text-xs);padding:2px 7px;border-radius:var(--radius-xs);background:var(--color-bone);color:var(--color-text-2)">Email</span>
+    </div>
+  </div>
+  <div data-id="n_uywls" data-name="Responders" style="position:absolute;left:30px;top:230px;width:300px;height:110px;box-sizing:border-box;background:var(--color-white);border:1px solid var(--color-line-strong);border-radius:var(--radius-sm);padding:12px 14px;display:flex;flex-direction:column;gap:6px">
+    <div data-id="n_d1kui" style="display:flex;justify-content:space-between;align-items:center"><span data-id="n_t5jxb" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">On-call responders</span><span data-id="n_gzph8" style="font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-3)">humans</span></div>
+    <div data-id="n_qfqsi" style="font-size:var(--text-xs);color:var(--color-text-2);line-height:1.4">Halon iOS / Android app, SMS, voice call. Ack by tap, reply “4”, or keypress.</div>
+  </div>
+  <div data-id="n_pcycj" data-name="Chat workspaces" style="position:absolute;left:30px;top:456px;width:300px;height:110px;box-sizing:border-box;background:var(--color-white);border:1px solid var(--color-line-strong);border-radius:var(--radius-sm);padding:12px 14px;display:flex;flex-direction:column;gap:6px">
+    <div data-id="n_u2xfv" style="display:flex;justify-content:space-between;align-items:center"><span data-id="n_1pj9j" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">Slack · Microsoft Teams</span></div>
+    <div data-id="n_x5ovh" style="font-size:var(--text-xs);color:var(--color-text-2);line-height:1.4">Incident channels like #inc-2481-checkout-5xx, slash commands, message mirroring.</div>
+  </div>
+  <div data-id="n_rwiqk" data-name="Status viewers" style="position:absolute;left:30px;top:606px;width:300px;height:110px;box-sizing:border-box;background:var(--color-white);border:1px solid var(--color-line-strong);border-radius:var(--radius-sm);padding:12px 14px;display:flex;flex-direction:column;gap:6px">
+    <div data-id="n_6g1ar" style="display:flex;justify-content:space-between;align-items:center"><span data-id="n_hfedl" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">End customers</span><span data-id="n_c3g25" style="font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-3)">public</span></div>
+    <div data-id="n_l9zjl" style="font-size:var(--text-xs);color:var(--color-text-2);line-height:1.4">status.northwindpay.com, RSS, email and webhook subscribers.</div>
+  </div>
+  <div data-id="n_lccrj" data-name="Identity provider" style="position:absolute;left:30px;top:756px;width:300px;height:110px;box-sizing:border-box;background:var(--color-white);border:1px solid var(--color-line-strong);border-radius:var(--radius-sm);padding:12px 14px;display:flex;flex-direction:column;gap:6px">
+    <div data-id="n_m45wb" style="display:flex;justify-content:space-between;align-items:center"><span data-id="n_orilq" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">Identity provider</span></div>
+    <div data-id="n_hjkvw" style="font-size:var(--text-xs);color:var(--color-text-2);line-height:1.4">Okta, Microsoft Entra ID, Google Workspace. Users and groups pushed by SCIM.</div>
+  </div>
+
+  <div data-id="n_fiq5k" data-name="Ingest gateway" style="position:absolute;left:450px;top:60px;width:280px;height:110px;box-sizing:border-box;background:var(--color-ink);color:var(--color-text-inv);border-radius:var(--radius-sm);padding:12px 14px;display:flex;flex-direction:column;gap:6px">
+    <div data-id="n_crwds" style="display:flex;justify-content:space-between;align-items:center"><span data-id="n_7lmds" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">ingest-gateway</span><span data-id="n_bq3la" style="font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-phosphor)">Go</span></div>
+    <div data-id="n_1bawx" style="font-size:var(--text-xs);color:var(--color-text-inv-2);line-height:1.4">Anycast + WAF. Verifies HMAC, writes to Kafka, then returns 202. Never blocks on downstream.</div>
+  </div>
+  <div data-id="n_1vmda" data-name="Delivery providers" style="position:absolute;left:450px;top:230px;width:280px;height:110px;box-sizing:border-box;background:var(--color-white);border:1px solid var(--color-line-strong);border-radius:var(--radius-sm);padding:12px 14px;display:flex;flex-direction:column;gap:6px">
+    <div data-id="n_7k0i2" style="display:flex;justify-content:space-between;align-items:center"><span data-id="n_5c6s0" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">Delivery providers</span><span data-id="n_jtvha" style="font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-3)">3rd party</span></div>
+    <div data-id="n_ohfk9" style="font-size:var(--text-xs);color:var(--color-text-2);line-height:1.4">Twilio + Bandwidth (SMS, voice), APNs, FCM. Two carriers per channel, failover in 8 s.</div>
+  </div>
+  <div data-id="n_xlsvs" data-name="Chat gateway" style="position:absolute;left:450px;top:456px;width:280px;height:110px;box-sizing:border-box;background:var(--color-white);border:1px solid var(--color-line-strong);border-radius:var(--radius-sm);padding:12px 14px;display:flex;flex-direction:column;gap:6px">
+    <div data-id="n_9x0oo" style="display:flex;justify-content:space-between;align-items:center"><span data-id="n_v7ktn" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">chat-gateway</span><span data-id="n_e3gng" style="font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-3)">Go</span></div>
+    <div data-id="n_7m39o" style="font-size:var(--text-xs);color:var(--color-text-2);line-height:1.4">Slack Events + Interactivity API, Teams Bot Framework. Signs and rate-limits per workspace.</div>
+  </div>
+  <div data-id="n_192fn" data-name="Status CDN" style="position:absolute;left:450px;top:606px;width:280px;height:110px;box-sizing:border-box;background:var(--color-white);border:1px solid var(--color-line-strong);border-radius:var(--radius-sm);padding:12px 14px;display:flex;flex-direction:column;gap:6px">
+    <div data-id="n_u215e" style="display:flex;justify-content:space-between;align-items:center"><span data-id="n_ofehi" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">Status page CDN</span><span data-id="n_44lb6" style="font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-3)">CloudFront</span></div>
+    <div data-id="n_ecj96" style="font-size:var(--text-xs);color:var(--color-text-2);line-height:1.4">Static pages rebuilt on publish, 15 s TTL. Separate AWS account: stays up when we don't.</div>
+  </div>
+  <div data-id="n_hx0z7" data-name="Identity edge" style="position:absolute;left:450px;top:756px;width:280px;height:110px;box-sizing:border-box;background:var(--color-white);border:1px solid var(--color-line-strong);border-radius:var(--radius-sm);padding:12px 14px;display:flex;flex-direction:column;gap:6px">
+    <div data-id="n_j5099" style="display:flex;justify-content:space-between;align-items:center"><span data-id="n_rr5uw" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">SSO · SCIM endpoints</span></div>
+    <div data-id="n_69r3w" style="font-size:var(--text-xs);color:var(--color-text-2);line-height:1.4">SAML 2.0, OIDC, SCIM 2.0 at /scim/v2. Enforced MFA, IP allowlists.</div>
+  </div>
+</div><div data-id="n_7mxr4" data-name="Core nodes" style="position:absolute;inset:0">
+  <div data-id="n_qmcw0" data-name="Kafka alerts.raw" style="position:absolute;left:850px;top:60px;width:250px;height:110px;box-sizing:border-box;background:var(--color-bone);border:1px solid var(--color-line-strong);border-radius:var(--radius-sm);padding:12px 14px;display:flex;flex-direction:column;gap:6px">
+    <div data-id="n_vp5fr" style="display:flex;justify-content:space-between;align-items:center"><span data-id="n_yf0cn" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">alerts.raw</span><span data-id="n_8uqky" style="font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-3)">Kafka · MSK</span></div>
+    <div data-id="n_6ge1e" style="font-size:var(--text-xs);color:var(--color-text-2);line-height:1.4">96 partitions keyed by integration. 7-day retention, replayable.</div>
+    <div data-id="n_teytm" style="display:flex;gap:2px;margin-top:auto"><span data-id="n_ijhmn" style="flex:1;height:4px;background:var(--color-ink-4)"></span><span data-id="n_78ays" style="flex:1;height:4px;background:var(--color-ink-4)"></span><span data-id="n_v6q8j" style="flex:1;height:4px;background:var(--color-ink-4)"></span><span data-id="n_avlc0" style="flex:1;height:4px;background:var(--color-ink-4)"></span><span data-id="n_cq7ee" style="flex:1;height:4px;background:var(--color-ink-4)"></span><span data-id="n_35i74" style="flex:1;height:4px;background:var(--color-line-strong)"></span><span data-id="n_l6tz5" style="flex:1;height:4px;background:var(--color-line-strong)"></span><span data-id="n_0t396" style="flex:1;height:4px;background:var(--color-line-strong)"></span></div>
+  </div>
+  <div data-id="n_ln98o" data-name="dedup-router" style="position:absolute;left:1140px;top:60px;width:250px;height:110px;box-sizing:border-box;background:var(--color-white);border:1.5px solid var(--color-ink);border-radius:var(--radius-sm);padding:12px 14px;display:flex;flex-direction:column;gap:6px">
+    <div data-id="n_s4tkk" style="display:flex;justify-content:space-between;align-items:center"><span data-id="n_r4q20" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">dedup-router</span><span data-id="n_28f17" style="font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-3)">Rust</span></div>
+    <div data-id="n_0s60b" style="font-size:var(--text-xs);color:var(--color-text-2);line-height:1.4">Fingerprint, 5-min dedup window in Redis, suppression and maintenance rules, route to service + policy.</div>
+  </div>
+  <div data-id="n_vfp40" data-name="incident-svc" style="position:absolute;left:1430px;top:60px;width:250px;height:110px;box-sizing:border-box;background:var(--color-white);border:1px solid var(--color-line-strong);border-radius:var(--radius-sm);padding:12px 14px;display:flex;flex-direction:column;gap:6px">
+    <div data-id="n_du6jj" style="display:flex;justify-content:space-between;align-items:center"><span data-id="n_6p4fh" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">incident-svc</span><span data-id="n_3728w" style="font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-3)">Go</span></div>
+    <div data-id="n_j5e4e" style="font-size:var(--text-xs);color:var(--color-text-2);line-height:1.4">Opens or attaches incidents. Owns state, severity, roles and the append-only timeline.</div>
+  </div>
+  <div data-id="n_g5po8" data-name="notify-fanout" style="position:absolute;left:850px;top:230px;width:250px;height:110px;box-sizing:border-box;background:var(--color-white);border:1.5px solid var(--color-ink);border-radius:var(--radius-sm);padding:12px 14px;display:flex;flex-direction:column;gap:6px">
+    <div data-id="n_11ucq" style="display:flex;justify-content:space-between;align-items:center"><span data-id="n_6ptwr" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">notify-fanout</span><span data-id="n_gncor" style="font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-3)">Go</span></div>
+    <div data-id="n_uojqx" style="font-size:var(--text-xs);color:var(--color-text-2);line-height:1.4">Per-user contact rules. Push, then SMS at +1 min, voice at +3 min. Idempotent sends.</div>
+  </div>
+  <div data-id="n_5fy9v" data-name="escalation-engine" style="position:absolute;left:1140px;top:230px;width:250px;height:110px;box-sizing:border-box;background:var(--color-white);border:1.5px solid var(--color-ink);border-radius:var(--radius-sm);padding:12px 14px;display:flex;flex-direction:column;gap:6px">
+    <div data-id="n_ky7qz" style="display:flex;justify-content:space-between;align-items:center"><span data-id="n_6dsy0" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">escalation-engine</span><span data-id="n_t7e56" style="font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-3)">Temporal</span></div>
+    <div data-id="n_72qo5" style="font-size:var(--text-xs);color:var(--color-text-2);line-height:1.4">One durable workflow per incident. Timers per level; an ack signal cancels the rest.</div>
+  </div>
+  <div data-id="n_9vkbq" data-name="oncall-scheduler" style="position:absolute;left:1430px;top:230px;width:250px;height:110px;box-sizing:border-box;background:var(--color-white);border:1px solid var(--color-line-strong);border-radius:var(--radius-sm);padding:12px 14px;display:flex;flex-direction:column;gap:6px">
+    <div data-id="n_ts0ao" style="display:flex;justify-content:space-between;align-items:center"><span data-id="n_jco20" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">oncall-scheduler</span><span data-id="n_aqvzo" style="font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-3)">Kotlin</span></div>
+    <div data-id="n_9vo6t" style="font-size:var(--text-xs);color:var(--color-text-2);line-height:1.4">Rotations, layers, overrides, follow-the-sun. Answers “who is on call now?” in &lt;5 ms.</div>
+  </div>
+  <div data-id="n_47ifq" data-name="Kafka incident.events bus" style="position:absolute;left:850px;top:380px;width:830px;height:36px;box-sizing:border-box;background:var(--color-ink);border-radius:var(--radius-xs);display:flex;align-items:center;justify-content:space-between;padding:0 14px;color:var(--color-text-inv)">
+    <span data-id="n_92pof" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">incident.events <span data-id="n_ttwuk" style="color:var(--color-text-inv-3);font-weight:400">· Kafka · ordered per incident_id</span></span>
+    <span data-id="n_dn04l" style="font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-inv-2)">consumed by every service below</span>
+  </div>
+  <div data-id="n_hy70r" data-name="chat-sync" style="position:absolute;left:850px;top:456px;width:250px;height:110px;box-sizing:border-box;background:var(--color-white);border:1px solid var(--color-line-strong);border-radius:var(--radius-sm);padding:12px 14px;display:flex;flex-direction:column;gap:6px">
+    <div data-id="n_ucprm" style="display:flex;justify-content:space-between;align-items:center"><span data-id="n_8dlm0" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">chat-sync</span><span data-id="n_wswrf" style="font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-3)">TypeScript</span></div>
+    <div data-id="n_gdflc" style="font-size:var(--text-xs);color:var(--color-text-2);line-height:1.4">Creates the incident channel, mirrors messages both ways, runs /halon commands.</div>
+  </div>
+  <div data-id="n_v4r2y" data-name="workflow-runner" style="position:absolute;left:1140px;top:456px;width:250px;height:110px;box-sizing:border-box;background:var(--color-white);border:1px solid var(--color-line-strong);border-radius:var(--radius-sm);padding:12px 14px;display:flex;flex-direction:column;gap:6px">
+    <div data-id="n_5hpbv" style="display:flex;justify-content:space-between;align-items:center"><span data-id="n_zy71l" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">workflow-runner</span><span data-id="n_2dag2" style="font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-3)">Temporal</span></div>
+    <div data-id="n_azzsx" style="font-size:var(--text-xs);color:var(--color-text-2);line-height:1.4">Automations: Zoom bridge, Jira ticket, runbook links, Sev1 exec notify.</div>
+  </div>
+  <div data-id="n_vxqu2" data-name="api-gateway" style="position:absolute;left:1430px;top:456px;width:250px;height:110px;box-sizing:border-box;background:var(--color-white);border:1px solid var(--color-line-strong);border-radius:var(--radius-sm);padding:12px 14px;display:flex;flex-direction:column;gap:6px">
+    <div data-id="n_wkcng" style="display:flex;justify-content:space-between;align-items:center"><span data-id="n_xzyan" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">api-gateway</span><span data-id="n_a3z26" style="font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-3)">GraphQL · REST</span></div>
+    <div data-id="n_319ob" style="font-size:var(--text-xs);color:var(--color-text-2);line-height:1.4">Web app, mobile apps, Terraform provider and public API. Live updates over WebSocket.</div>
+  </div>
+  <div data-id="n_mzoid" data-name="status-publisher" style="position:absolute;left:850px;top:606px;width:250px;height:110px;box-sizing:border-box;background:var(--color-white);border:1px solid var(--color-line-strong);border-radius:var(--radius-sm);padding:12px 14px;display:flex;flex-direction:column;gap:6px">
+    <div data-id="n_zls52" style="display:flex;justify-content:space-between;align-items:center"><span data-id="n_1bm4b" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">status-publisher</span><span data-id="n_njg9g" style="font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-3)">Go</span></div>
+    <div data-id="n_cyuj9" style="font-size:var(--text-xs);color:var(--color-text-2);line-height:1.4">Renders status pages to static HTML on each update, notifies subscribers.</div>
+  </div>
+  <div data-id="n_7yvur" data-name="postmortem-svc" style="position:absolute;left:1140px;top:606px;width:250px;height:110px;box-sizing:border-box;background:var(--color-white);border:1px solid var(--color-line-strong);border-radius:var(--radius-sm);padding:12px 14px;display:flex;flex-direction:column;gap:6px">
+    <div data-id="n_84z3n" style="display:flex;justify-content:space-between;align-items:center"><span data-id="n_274o9" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">postmortem-svc</span><span data-id="n_4qtzt" style="font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-3)">TypeScript</span></div>
+    <div data-id="n_zqjqo" style="font-size:var(--text-xs);color:var(--color-text-2);line-height:1.4">Drafts the doc from the timeline. Tracks action items to Jira and Linear.</div>
+  </div>
+  <div data-id="n_i03ow" data-name="analytics-pipeline" style="position:absolute;left:1430px;top:606px;width:250px;height:110px;box-sizing:border-box;background:var(--color-white);border:1px solid var(--color-line-strong);border-radius:var(--radius-sm);padding:12px 14px;display:flex;flex-direction:column;gap:6px">
+    <div data-id="n_ag17o" style="display:flex;justify-content:space-between;align-items:center"><span data-id="n_fge81" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">analytics-pipeline</span><span data-id="n_nyh8m" style="font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-3)">Flink</span></div>
+    <div data-id="n_ery11" style="font-size:var(--text-xs);color:var(--color-text-2);line-height:1.4">MTTA, MTTR, SLO burn and on-call load, aggregated per minute.</div>
+  </div>
+  <div data-id="n_tap1j" data-name="auth-svc" style="position:absolute;left:850px;top:756px;width:250px;height:110px;box-sizing:border-box;background:var(--color-white);border:1px solid var(--color-line-strong);border-radius:var(--radius-sm);padding:12px 14px;display:flex;flex-direction:column;gap:6px">
+    <div data-id="n_t2lnj" style="display:flex;justify-content:space-between;align-items:center"><span data-id="n_kxaiq" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">auth-svc</span><span data-id="n_2hgz6" style="font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-3)">Go</span></div>
+    <div data-id="n_fz5ke" style="font-size:var(--text-xs);color:var(--color-text-2);line-height:1.4">Sessions, RBAC and team scoping, SCIM provisioning, API tokens.</div>
+  </div>
+  <div data-id="n_cip3f" data-name="slo-engine" style="position:absolute;left:1140px;top:756px;width:250px;height:110px;box-sizing:border-box;background:var(--color-white);border:1px solid var(--color-line-strong);border-radius:var(--radius-sm);padding:12px 14px;display:flex;flex-direction:column;gap:6px">
+    <div data-id="n_jalh7" style="display:flex;justify-content:space-between;align-items:center"><span data-id="n_43b01" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">slo-engine</span><span data-id="n_vepn6" style="font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-3)">Go</span></div>
+    <div data-id="n_kzxb7" style="font-size:var(--text-xs);color:var(--color-text-2);line-height:1.4">Error budgets and multi-window burn-rate alerts, fed back into alerts.raw.</div>
+  </div>
+  <div data-id="n_5kyg3" data-name="audit-writer" style="position:absolute;left:1430px;top:756px;width:250px;height:110px;box-sizing:border-box;background:var(--color-white);border:1px solid var(--color-line-strong);border-radius:var(--radius-sm);padding:12px 14px;display:flex;flex-direction:column;gap:6px">
+    <div data-id="n_y403x" style="display:flex;justify-content:space-between;align-items:center"><span data-id="n_317lj" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">audit-writer</span><span data-id="n_m2duf" style="font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-3)">Go</span></div>
+    <div data-id="n_bbj27" style="font-size:var(--text-xs);color:var(--color-text-2);line-height:1.4">Every write, login and permission change. Hash-chained, exported to SIEM.</div>
+  </div>
+</div>
+<div data-id="n_3lgju" data-name="Data nodes" style="position:absolute;inset:0">
+  <div data-id="n_djbem" data-name="Postgres" style="position:absolute;left:1810px;top:60px;width:432px;height:280px;box-sizing:border-box;background:var(--color-white);border:1px solid var(--color-line-strong);border-radius:var(--radius-sm);padding:16px;display:flex;flex-direction:column;gap:10px">
+    <div data-id="n_pzldp" style="display:flex;align-items:center;gap:10px"><svg data-id="n_mz9q6" width="22" height="26" viewBox="0 0 22 26" fill="none" stroke="#0D1014" stroke-width="1.5"><ellipse data-id="n_u9dcw" cx="11" cy="5" rx="9" ry="3.5"/><path data-id="n_y7eau" d="M2 5v16c0 2 4 3.5 9 3.5s9-1.5 9-3.5V5"/><path data-id="n_pvxn3" d="M2 13c0 2 4 3.5 9 3.5s9-1.5 9-3.5"/></svg><span data-id="n_9vyo2" style="font-family:var(--font-mono);font-size:var(--text-md);font-weight:600">Postgres</span><span data-id="n_vrzkh" style="font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-3);margin-left:auto">Aurora Global · r7g.4xl</span></div>
+    <div data-id="n_1ziod" style="font-size:var(--text-xs);color:var(--color-text-2);line-height:1.5">System of record. Row-level security per org; storage encrypted with customer-managed KMS keys on Enterprise.</div>
+    <div data-id="n_v9j56" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:auto;font-family:var(--font-mono);font-size:var(--text-xs)">
+      <span data-id="n_13i9f" style="padding:6px 8px;background:var(--color-bone);border-radius:var(--radius-xs)">incidents</span>
+      <span data-id="n_suii2" style="padding:6px 8px;background:var(--color-bone);border-radius:var(--radius-xs)">timeline_events</span>
+      <span data-id="n_xs5xg" style="padding:6px 8px;background:var(--color-bone);border-radius:var(--radius-xs)">schedules · layers</span>
+      <span data-id="n_qy7sr" style="padding:6px 8px;background:var(--color-bone);border-radius:var(--radius-xs)">escalation_policies</span>
+      <span data-id="n_rtm66" style="padding:6px 8px;background:var(--color-bone);border-radius:var(--radius-xs)">services · deps</span>
+      <span data-id="n_4r71n" style="padding:6px 8px;background:var(--color-bone);border-radius:var(--radius-xs)">users · teams</span>
+    </div>
+  </div>
+  <div data-id="n_a49wq" data-name="Redis" style="position:absolute;left:1810px;top:456px;width:432px;height:110px;box-sizing:border-box;background:var(--color-white);border:1px solid var(--color-line-strong);border-radius:var(--radius-sm);padding:12px 16px;display:flex;flex-direction:column;gap:6px">
+    <div data-id="n_wrew9" style="display:flex;align-items:center;gap:10px"><svg data-id="n_j2r3d" width="18" height="20" viewBox="0 0 22 26" fill="none" stroke="#0D1014" stroke-width="1.75"><ellipse data-id="n_bls4b" cx="11" cy="5" rx="9" ry="3.5"/><path data-id="n_ovgym" d="M2 5v16c0 2 4 3.5 9 3.5s9-1.5 9-3.5V5"/></svg><span data-id="n_zql7h" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">Redis</span><span data-id="n_ccva3" style="font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-3);margin-left:auto">ElastiCache cluster</span></div>
+    <div data-id="n_48pgg" style="font-size:var(--text-xs);color:var(--color-text-2);line-height:1.4">Dedup fingerprints, rule cache, sessions, per-tenant rate limits. Never the source of truth.</div>
+  </div>
+  <div data-id="n_d6oiq" data-name="ClickHouse" style="position:absolute;left:1810px;top:606px;width:432px;height:110px;box-sizing:border-box;background:var(--color-white);border:1px solid var(--color-line-strong);border-radius:var(--radius-sm);padding:12px 16px;display:flex;flex-direction:column;gap:6px">
+    <div data-id="n_9t8wi" style="display:flex;align-items:center;gap:10px"><svg data-id="n_92moq" width="18" height="20" viewBox="0 0 18 20" fill="#0D1014"><rect data-id="n_3ld4h" x="1" y="2" width="2.5" height="16"/><rect data-id="n_ls5je" x="5.5" y="2" width="2.5" height="16"/><rect data-id="n_irwfu" x="10" y="2" width="2.5" height="16"/><rect data-id="n_i6p5j" x="14.5" y="8" width="2.5" height="4"/></svg><span data-id="n_4rs4g" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">ClickHouse</span><span data-id="n_cq0l6" style="font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-3);margin-left:auto">time-series + analytics</span></div>
+    <div data-id="n_hbwwg" style="font-size:var(--text-xs);color:var(--color-text-2);line-height:1.4">Every alert and page as an event. 25 months hot, powers analytics and SLO history.</div>
+  </div>
+  <div data-id="n_is5nu" data-name="S3" style="position:absolute;left:1810px;top:756px;width:432px;height:110px;box-sizing:border-box;background:var(--color-white);border:1px solid var(--color-line-strong);border-radius:var(--radius-sm);padding:12px 16px;display:flex;flex-direction:column;gap:6px">
+    <div data-id="n_81ua7" style="display:flex;align-items:center;gap:10px"><svg data-id="n_s9iby" width="18" height="20" viewBox="0 0 18 20" fill="none" stroke="#0D1014" stroke-width="1.75"><rect data-id="n_bu1ka" x="1.5" y="3" width="15" height="14" rx="1"/><path data-id="n_rk2zx" d="M1.5 8h15"/><rect data-id="n_kc6pw" x="7" y="11" width="4" height="3" fill="#0D1014" stroke="none"/></svg><span data-id="n_dlo35" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">S3 · Object Lock</span><span data-id="n_ng0y5" style="font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-3);margin-left:auto">WORM, 7 years</span></div>
+    <div data-id="n_l579p" style="font-size:var(--text-xs);color:var(--color-text-2);line-height:1.4">Audit log archive, raw alert payloads, postmortem attachments.</div>
+  </div>
+</div><svg data-id="n_yt9hl" data-name="Connectors" width="2272" height="900" viewBox="0 0 2272 900" fill="none" style="position:absolute;left:0;top:0;overflow:visible">
+  <defs data-id="n_2w69j">
+    <marker data-id="n_e7mey" id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path data-id="n_5ddjn" d="M0 0 L10 5 L0 10 z" fill="#0D1014"/></marker>
+    <marker data-id="n_9i13m" id="ahg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path data-id="n_ucsm1" d="M0 0 L10 5 L0 10 z" fill="#7E838A"/></marker>
+  </defs>
+  <g data-id="n_gdsgr" data-name="Critical path halo" stroke="#C8F54A" stroke-width="9" stroke-linecap="round" stroke-linejoin="round">
+    <path data-id="n_04ln8" d="M330 115 H450"/><path data-id="n_vcpz1" d="M730 115 H850"/><path data-id="n_o0i78" d="M1100 115 H1140"/><path data-id="n_45z4d" d="M1390 115 H1430"/>
+    <path data-id="n_giz0m" d="M1490 170 V200 H1290 V230"/><path data-id="n_ru5ps" d="M1140 285 H1100"/><path data-id="n_n5bxr" d="M850 285 H730"/><path data-id="n_giieg" d="M450 285 H330"/>
+  </g>
+  <g data-id="n_k1z33" data-name="Critical path" stroke="#0D1014" stroke-width="2" marker-end="url(#ah)">
+    <path data-id="n_f78s0" d="M330 115 H449"/><path data-id="n_1juty" d="M730 115 H849"/><path data-id="n_s8yfi" d="M1100 115 H1139"/><path data-id="n_px9x7" d="M1390 115 H1429"/>
+    <path data-id="n_uznzi" d="M1490 170 V200 H1290 V229"/><path data-id="n_n10hp" d="M1140 285 H1101"/><path data-id="n_whxb7" d="M850 285 H731"/><path data-id="n_evvdi" d="M450 285 H331"/>
+  </g>
+  <g data-id="n_rbanh" data-name="Sync calls" stroke="#0D1014" stroke-width="1.5">
+    <path data-id="n_of5oj" d="M1392 285 H1428" marker-start="url(#ah)" marker-end="url(#ah)"/>
+    <path data-id="n_0n7dv" d="M332 511 H448" marker-start="url(#ah)" marker-end="url(#ah)"/>
+    <path data-id="n_d53nd" d="M730 511 H849" marker-end="url(#ah)"/>
+    <path data-id="n_sr6mg" d="M850 661 H731" marker-end="url(#ah)"/>
+    <path data-id="n_6om2b" d="M450 661 H331" marker-end="url(#ah)"/>
+    <path data-id="n_1dvqo" d="M330 811 H449" marker-end="url(#ah)"/>
+    <path data-id="n_cg6bp" d="M730 811 H849" marker-end="url(#ah)"/>
+  </g>
+  <g data-id="n_fo1ls" data-name="Async events" stroke="#0D1014" stroke-width="1.5" stroke-dasharray="5 4">
+    <path data-id="n_iyqxg" d="M975 340 V379" marker-end="url(#ah)"/>
+    <path data-id="n_a0l20" d="M1265 340 V379" marker-end="url(#ah)"/>
+    <path data-id="n_90vn2" d="M1680 145 H1700 V398 H1681" marker-end="url(#ah)"/>
+    <path data-id="n_61ct4" d="M975 416 V455" marker-end="url(#ah)"/>
+    <path data-id="n_dboh9" d="M1265 416 V455" marker-end="url(#ah)"/>
+    <path data-id="n_7b883" d="M1555 416 V455" marker-end="url(#ah)"/>
+  </g>
+  <g data-id="n_25zcn" data-name="Data access" stroke="#7E838A" stroke-width="1.5" stroke-dasharray="1.5 3.5" stroke-linecap="round">
+    <path data-id="n_kel63" d="M1680 115 H1808" marker-end="url(#ahg)"/>
+    <path data-id="n_s5my3" d="M1704 300 H1808" stroke="#FAF9F6" stroke-width="7" stroke-dasharray="none"/>
+    <path data-id="n_si5rh" d="M1680 300 H1808" marker-end="url(#ahg)"/>
+    <path data-id="n_ood1l" d="M1680 511 H1808" marker-end="url(#ahg)"/>
+    <path data-id="n_hofcs" d="M1680 661 H1808" marker-end="url(#ahg)"/>
+    <path data-id="n_qbz2i" d="M1680 811 H1808" marker-end="url(#ahg)"/>
+  </g>
+  <g data-id="n_wj3gy" data-name="Step numbers" font-family="Geist Mono, monospace" font-size="11" font-weight="600">
+    <circle data-id="n_jk1nd" cx="390" cy="115" r="11" fill="#0D1014"/><text data-id="n_bwi6o" x="390" y="119" fill="#C8F54A" text-anchor="middle">1</text>
+    <circle data-id="n_zaxij" cx="790" cy="115" r="11" fill="#0D1014"/><text data-id="n_4lj7i" x="790" y="119" fill="#C8F54A" text-anchor="middle">2</text>
+    <circle data-id="n_npnbo" cx="1120" cy="115" r="11" fill="#0D1014"/><text data-id="n_iqslk" x="1120" y="119" fill="#C8F54A" text-anchor="middle">3</text>
+    <circle data-id="n_16smi" cx="1410" cy="115" r="11" fill="#0D1014"/><text data-id="n_324kz" x="1410" y="119" fill="#C8F54A" text-anchor="middle">4</text>
+    <circle data-id="n_ru8g6" cx="1380" cy="200" r="11" fill="#0D1014"/><text data-id="n_75dzi" x="1380" y="204" fill="#C8F54A" text-anchor="middle">5</text>
+    <circle data-id="n_u701s" cx="1120" cy="285" r="11" fill="#0D1014"/><text data-id="n_fp8xw" x="1120" y="289" fill="#C8F54A" text-anchor="middle">6</text>
+    <circle data-id="n_i7dcu" cx="790" cy="285" r="11" fill="#0D1014"/><text data-id="n_kf2gh" x="790" y="289" fill="#C8F54A" text-anchor="middle">7</text>
+    <circle data-id="n_vc3sq" cx="390" cy="285" r="11" fill="#0D1014"/><text data-id="n_c710g" x="390" y="289" fill="#C8F54A" text-anchor="middle">8</text>
+  </g>
+</svg>
+<div data-id="n_zfhum" data-name="Connector labels" style="position:absolute;inset:0;font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-2);line-height:1.3">
+  <div data-id="n_0drod" style="position:absolute;left:336px;top:134px;width:108px;text-align:center">HTTPS webhook<br data-id="n_giwt2">HMAC signed</div>
+  <div data-id="n_t9rcu" style="position:absolute;left:736px;top:134px;width:108px;text-align:center">produce<br data-id="n_cuu85">acks=all</div>
+  <div data-id="n_kzna5" style="position:absolute;left:1300px;top:180px;width:180px;text-align:right;padding-right:22px;box-sizing:border-box">start policy</div>
+  <div data-id="n_esu6o" style="position:absolute;left:736px;top:304px;width:108px;text-align:center">send · retry<br data-id="n_qgdue">carrier failover</div>
+  <div data-id="n_kub4r" style="position:absolute;left:336px;top:304px;width:108px;text-align:center">push · SMS<br data-id="n_4fdor">voice call</div>
+  <div data-id="n_63xe4" style="position:absolute;left:336px;top:530px;width:108px;text-align:center">events ⇄<br data-id="n_8ibzs">messages</div>
+  <div data-id="n_4br13" style="position:absolute;left:736px;top:530px;width:108px;text-align:center">verified events</div>
+  <div data-id="n_ft44e" style="position:absolute;left:736px;top:680px;width:108px;text-align:center">publish HTML<br data-id="n_votio">invalidate</div>
+  <div data-id="n_9xuah" style="position:absolute;left:336px;top:680px;width:108px;text-align:center">HTTPS · 15 s TTL</div>
+  <div data-id="n_cobf4" style="position:absolute;left:336px;top:830px;width:108px;text-align:center">SAML · SCIM 2.0</div>
+  <div data-id="n_d63or" style="position:absolute;left:736px;top:830px;width:108px;text-align:center">assertions<br data-id="n_7fhq8">provisioning</div>
+  <div data-id="n_dz3z0" style="position:absolute;left:1712px;top:92px;width:96px;text-align:center">read · write</div>
+  <div data-id="n_yowx2" style="position:absolute;left:1712px;top:277px;width:96px;text-align:center">schedules</div>
+  <div data-id="n_oqfwi" style="position:absolute;left:1712px;top:488px;width:96px;text-align:center">cache · limits</div>
+  <div data-id="n_dq7ka" style="position:absolute;left:1712px;top:638px;width:96px;text-align:center">events · rollups</div>
+  <div data-id="n_wox9u" style="position:absolute;left:1712px;top:788px;width:96px;text-align:center">WORM archive</div>
+  
+  
+</div><div data-id="n_uoz7p" data-name="Multi-region" style="position:absolute;left:0;top:940px;width:1720px;height:240px;box-sizing:border-box;background:var(--color-ink);border-radius:var(--radius-md);padding:20px 24px;color:var(--color-text-inv);display:flex;gap:28px">
+  <div data-id="n_04n2b" style="width:300px;flex-shrink:0;display:flex;flex-direction:column;gap:10px">
+    <div data-id="n_iwwhn" style="font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:0.08em;text-transform:uppercase;color:var(--color-phosphor)">E · Multi-region and failover</div>
+    <div data-id="n_jkj6f" style="font-family:var(--font-display);font-size:var(--text-xl);font-weight:600;letter-spacing:-0.02em;line-height:1.15">Active-active cells. Paging never waits on a single region.</div>
+    <div data-id="n_d9xbo" style="font-size:var(--text-xs);color:var(--color-text-inv-2);line-height:1.5">Route 53 health checks move ingest in &lt;30 s. Each tenant has a home cell; escalation timers are replicated so a failover never double-pages or drops a page.</div>
+  </div>
+  <div data-id="n_agbap" style="flex:1;position:relative;min-width:0">
+    <svg data-id="n_a4hxr" width="100%" height="200" viewBox="0 0 1340 200" preserveAspectRatio="none" fill="none" style="position:absolute;inset:0">
+      <path data-id="n_x1ps4" d="M300 100 H520" stroke="#C8F54A" stroke-width="1.5" stroke-dasharray="5 4"/>
+      <path data-id="n_p3i0q" d="M820 100 H1040" stroke="#6B7179" stroke-width="1.5" stroke-dasharray="5 4"/>
+    </svg>
+    <div data-id="n_qga9z" style="position:absolute;left:0;top:20px;width:300px;height:160px;box-sizing:border-box;border:1.5px solid var(--color-phosphor);border-radius:var(--radius-sm);padding:14px;display:flex;flex-direction:column;gap:8px">
+      <div data-id="n_g3bsr" style="display:flex;justify-content:space-between;align-items:center"><span data-id="n_o6vcn" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">us-east-1</span><span data-id="n_0fkw5" style="display:flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-phosphor)"><span data-id="n_611a3" style="width:6px;height:6px;border-radius:50%;background:var(--color-phosphor)"></span>PRIMARY · writer</span></div>
+      <div data-id="n_ki7og" style="font-size:var(--text-xs);color:var(--color-text-inv-2);line-height:1.5">Full core cell. Aurora writer, MSK cluster, Temporal namespace. 62% of US tenants.</div>
+      <div data-id="n_2ewee" style="display:flex;gap:16px;margin-top:auto;font-family:var(--font-mono);font-size:var(--text-xs)"><span data-id="n_0wrkh">ingest 18.4k/s</span><span data-id="n_1yjos" style="color:var(--color-text-inv-3)">lag 0.2 s</span></div>
+    </div>
+    <div data-id="n_xbpyo" style="position:absolute;left:520px;top:20px;width:300px;height:160px;box-sizing:border-box;border:1px solid var(--color-ink-4);border-radius:var(--radius-sm);padding:14px;display:flex;flex-direction:column;gap:8px">
+      <div data-id="n_1w6g0" style="display:flex;justify-content:space-between;align-items:center"><span data-id="n_wseee" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">us-west-2</span><span data-id="n_tiic1" style="display:flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-inv-2)"><span data-id="n_w7awn" style="width:6px;height:6px;border-radius:50%;background:var(--color-text-inv-2)"></span>ACTIVE · reader</span></div>
+      <div data-id="n_zs503" style="font-size:var(--text-xs);color:var(--color-text-inv-2);line-height:1.5">Serves ingest and pages for its tenants. Aurora Global secondary; promotes in &lt;60 s.</div>
+      <div data-id="n_t6qf3" style="display:flex;gap:16px;margin-top:auto;font-family:var(--font-mono);font-size:var(--text-xs)"><span data-id="n_41sbr">ingest 11.1k/s</span><span data-id="n_1havv" style="color:var(--color-text-inv-3)">replica lag 0.8 s</span></div>
+    </div>
+    <div data-id="n_wip61" style="position:absolute;left:1040px;top:20px;width:300px;height:160px;box-sizing:border-box;border:1px solid var(--color-ink-4);border-radius:var(--radius-sm);padding:14px;display:flex;flex-direction:column;gap:8px">
+      <div data-id="n_n2mo6" style="display:flex;justify-content:space-between;align-items:center"><span data-id="n_93oau" style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:600">eu-central-1</span><span data-id="n_vre80" style="display:flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-inv-2)"><span data-id="n_14pvz" style="width:6px;height:6px;border-radius:50%;background:var(--color-text-inv-2)"></span>EU DATA BOUNDARY</span></div>
+      <div data-id="n_tyagm" style="font-size:var(--text-xs);color:var(--color-text-inv-2);line-height:1.5">Separate writer for EU-resident tenants, paired with eu-west-1. No personal data leaves the EU.</div>
+      <div data-id="n_6e24q" style="display:flex;gap:16px;margin-top:auto;font-family:var(--font-mono);font-size:var(--text-xs)"><span data-id="n_gevi2">ingest 7.9k/s</span><span data-id="n_osq0j" style="color:var(--color-text-inv-3)">pair eu-west-1</span></div>
+    </div>
+    <div data-id="n_4duq6" style="position:absolute;left:320px;top:60px;width:180px;text-align:center;font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-phosphor);line-height:1.4">Aurora Global<br data-id="n_8qm0j">MSK replicator</div>
+    <div data-id="n_m02dt" style="position:absolute;left:840px;top:60px;width:180px;text-align:center;font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-inv-3);line-height:1.4">isolated<br data-id="n_bamtz">config sync only</div>
+  </div>
+</div>
+<div data-id="n_hsy49" data-name="Legend" style="position:absolute;left:1780px;top:940px;width:492px;height:240px;box-sizing:border-box;background:var(--color-white);border:1px solid var(--color-line-strong);border-radius:var(--radius-md);padding:20px 24px;display:flex;flex-direction:column;gap:12px">
+  <div data-id="n_xesch" style="font-family:var(--font-mono);font-size:var(--text-xs);letter-spacing:0.08em;text-transform:uppercase;color:var(--color-text-2)">Legend</div>
+  <div data-id="n_wkhnj" style="display:grid;grid-template-columns:1fr 1fr;gap:10px 20px;font-size:var(--text-xs);color:var(--color-text-2)">
+    <div data-id="n_j1r2a" style="display:flex;align-items:center;gap:10px"><svg data-id="n_7clmp" width="44" height="12" style="flex-shrink:0"><path data-id="n_d74nw" d="M2 6 H40" stroke="#C8F54A" stroke-width="8" stroke-linecap="round"/><path data-id="n_5wa8i" d="M2 6 H38" stroke="#0D1014" stroke-width="2"/><path data-id="n_p02lw" d="M36 2 L42 6 L36 10z" fill="#0D1014"/></svg>Critical paging path</div>
+    <div data-id="n_yjy98" style="display:flex;align-items:center;gap:10px"><svg data-id="n_sik0x" width="44" height="12" style="flex-shrink:0"><path data-id="n_p8m34" d="M2 6 H38" stroke="#0D1014" stroke-width="1.5"/><path data-id="n_w8fgl" d="M36 2 L42 6 L36 10z" fill="#0D1014"/></svg>Synchronous call</div>
+    <div data-id="n_j0qv0" style="display:flex;align-items:center;gap:10px"><svg data-id="n_burgp" width="44" height="12" style="flex-shrink:0"><path data-id="n_8ghym" d="M2 6 H38" stroke="#0D1014" stroke-width="1.5" stroke-dasharray="5 4"/><path data-id="n_21fpu" d="M36 2 L42 6 L36 10z" fill="#0D1014"/></svg>Async event (Kafka)</div>
+    <div data-id="n_hkye0" style="display:flex;align-items:center;gap:10px"><svg data-id="n_dy7dn" width="44" height="12" style="flex-shrink:0"><path data-id="n_wsatt" d="M2 6 H38" stroke="#7E838A" stroke-width="1.5" stroke-dasharray="1.5 3.5" stroke-linecap="round"/><path data-id="n_1a456" d="M36 2 L42 6 L36 10z" fill="#7E838A"/></svg>Data read / write</div>
+    <div data-id="n_wqcfy" style="display:flex;align-items:center;gap:10px"><span data-id="n_tdaue" style="width:44px;height:18px;box-sizing:border-box;border:1.5px solid var(--color-ink);border-radius:3px;flex-shrink:0"></span>Tier 0 service</div>
+    <div data-id="n_hlcg7" style="display:flex;align-items:center;gap:10px"><span data-id="n_f6tv1" style="width:44px;height:18px;box-sizing:border-box;border:1px solid var(--color-line-strong);border-radius:3px;flex-shrink:0"></span>Tier 1 service</div>
+    <div data-id="n_vn83h" style="display:flex;align-items:center;gap:10px"><span data-id="n_rdzrw" style="width:44px;height:18px;background:var(--color-ink);border-radius:3px;flex-shrink:0"></span>Public entry point</div>
+    <div data-id="n_5109z" style="display:flex;align-items:center;gap:10px"><span data-id="n_889e0" style="width:20px;height:20px;border-radius:50%;background:var(--color-ink);color:var(--color-phosphor);font-family:var(--font-mono);font-size:var(--text-2xs);font-weight:600;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin:0 12px">1</span>Step in sequence</div>
+  </div>
+</div></div>
+</section>

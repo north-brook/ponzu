@@ -8,7 +8,7 @@
     "apps/*"
   ],
   "scripts": {
-    "dev": "bun run --filter @ponzu/studio dev & PONZU_TELEMETRY=0 bun apps/cli/src/index.ts serve examples/fernwood.design --dev",
+    "dev": "bun run --filter @ponzu/studio dev & PONZU_TELEMETRY=0 bun apps/cli/src/index.ts serve examples/halon.design examples/kettle.design examples/weft.design --dev",
     "build": "bun run --filter '*' build",
     "test": "bun test",
     "typecheck": "tsc -p tsconfig.json --noEmit",
