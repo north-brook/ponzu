@@ -125,7 +125,7 @@ About thirty tools in six groups. `get_guide` serves the house rules.
 | See | `screenshot` (with lint) `record` `export` |
 | Organize | `list_files` `create_file` `update_file` `create_page` `update_page` `archive` `get_tokens` `set_tokens` |
 | Converse | `list_comments` `get_comment` `create_comment` `reply` `set_comment_status` `send_feedback` |
-| Listen + remember | `wait_for_activity` `start_working` `finish_working` `write_note` `read_notes` `get_guide` |
+| Listen + remember | `wait_for_activity` `set_status` `write_note` `read_notes` `get_guide` |
 
 Skills for agents that support them live in [`skills/`](skills).
 

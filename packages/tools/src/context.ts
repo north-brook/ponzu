@@ -163,9 +163,15 @@ function authorOf(e: PonzuEvent): string | undefined {
   return undefined;
 }
 
+/** How long an agent can go without a tool call before it stops showing as working. */
+export const WORKING_IDLE = 60_000;
+
 export class PresenceHub {
   private map = new Map<string, Presence>();
   private listeners = new Set<(p: Presence[]) => void>();
+  private idle = new Map<string, ReturnType<typeof setTimeout>>();
+
+  constructor(private idleMs = WORKING_IDLE) {}
 
   list(): Presence[] {
     const cutoff = Date.now() - 10 * 60_000;
@@ -191,12 +197,51 @@ export class PresenceHub {
       lastSeen: now,
     };
     this.map.set(caller.id, next);
+    this.armIdle(next);
     // A plain tool call only moves lastSeen, which nothing shows; skip the broadcast.
     if (!prev || Object.keys(patch).length) this.notify();
   }
 
+  /**
+   * The agent changed these artboards in `file`, or deleted the `gone` ones.
+   * It shows as working on them, and on any it touched before, until it
+   * goes quiet. `status` replaces what it said it's doing.
+   */
+  worked(
+    caller: ToolCaller,
+    file: string,
+    change: { artboards?: string[]; gone?: string[]; status?: string },
+  ): void {
+    const prev = this.map.get(caller.id);
+    const same = prev?.file === file;
+    const kept = same ? prev.working.filter((id) => !change.gone?.includes(id)) : [];
+    const working = [...new Set([...kept, ...(change.artboards ?? [])])];
+    const status = change.status ?? (same ? prev.status : undefined);
+    // Another edit to the same artboards changes nothing anyone sees, and the call already touched.
+    if (same && sameIds(working, prev.working) && status === prev.status) return;
+    this.touch(caller, { file, working, status });
+  }
+
   leave(id: string): void {
+    clearTimeout(this.idle.get(id));
+    this.idle.delete(id);
     if (this.map.delete(id)) this.notify();
+  }
+
+  /** Clear what an agent is working on once it has made no tool call for `idleMs`. */
+  private armIdle(p: Presence): void {
+    clearTimeout(this.idle.get(p.id));
+    this.idle.delete(p.id);
+    if (!p.working.length && !p.status) return;
+    const timer = setTimeout(() => {
+      this.idle.delete(p.id);
+      const cur = this.map.get(p.id);
+      if (!cur) return;
+      this.map.set(p.id, { ...cur, working: [], status: undefined });
+      this.notify();
+    }, this.idleMs);
+    timer.unref?.();
+    this.idle.set(p.id, timer);
   }
 
   on(fn: (p: Presence[]) => void): () => void {
@@ -208,6 +253,10 @@ export class PresenceHub {
     const list = this.list();
     for (const l of this.listeners) l(list);
   }
+}
+
+function sameIds(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((id, i) => id === b[i]);
 }
 
 export type { Op };

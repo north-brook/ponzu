@@ -12,7 +12,7 @@ Workflow
 2. Before building something new, settle a direction: palette, type scale, spacing. Put it in tokens with set_tokens. Write the brief to a note.
 3. Build in small pieces. One write_html call per visual group: a header, then a row, then a card. The person watches the canvas as you work.
 4. screenshot after every few writes. Read the lint lines. Fix clipped text and overflow before moving on. When you add motion or states, record them (get_guide('motion')).
-5. When you change existing work, call start_working with the artboard ids first and finish_working at the end.
+5. The canvas shows which artboards you're changing on its own. To tell the person what you're doing, set_status with a few words.
 
 HTML and CSS
 - Inline styles only (style="…"). No <style> blocks unless you need @keyframes or :hover; keep those inside the artboard.
@@ -66,10 +66,10 @@ Use this when the person wants you to sit with them while they review: they leav
    - question ("why this font?"): reply with an answer, leave it open.
    - decision ("A or B?"): reply with your recommendation, leave it open for them.
    Batch comments that touch the same artboard.
-3. claim: start_working on the artboards you're about to touch, with a status of a few words ("adding the autumn drop"). The person sees it in the artboard's header while its outline traces.
+3. say what you're doing: set_status with a few words ("adding the autumn drop") and the artboards you're about to touch. The person sees it in the artboard's header while its outline traces.
 4. do + check: edit, screenshot, fix lint. Variations go next to the original, never over it.
-5. close: for a change you made, set_comment_status resolved. That hides the pin; the canvas already shows the change, so don't reply. Then finish_working.
-6. Go back to 1 with the new cursor. Keep looping until the person says stop or you're interrupted.
+5. close: for a change you made, set_comment_status resolved. That hides the pin; the canvas already shows the change, so don't reply.
+6. Go back to 1 with the new cursor. Waiting again clears your working indicator. Keep looping until the person says stop or you're interrupted.
 
 Reply only when the person needs to read something:
 - they asked a question, or asked for your recommendation;
@@ -141,8 +141,8 @@ export const SERVER_INSTRUCTIONS = `Ponzu is a design canvas you drive with HTML
 
 Start every session with get_basic_info, then read_notes, then get_guide('basics') if you haven't read it. When the person says "this", call get_selection.
 
-Build in small pieces, screenshot often, and fix what lint reports. record shows animation and hover states frame by frame. Put design decisions in tokens and notes. Variations go next to the original, never over it. Use start_working / finish_working around edits to existing artboards.
+Build in small pieces, screenshot often, and fix what lint reports. record shows animation and hover states frame by frame. Put design decisions in tokens and notes. Variations go next to the original, never over it. The canvas shows which artboards you're changing; set_status tells the person what you're doing.
 
-To pair on feedback, run the collaborate loop: wait_for_activity → triage → start_working → edit + screenshot → set_comment_status resolved for what you did (reply only to answer a question, flag an ambiguity or explain what you couldn't do) → repeat. get_guide('collaborate') has details.
+To pair on feedback, run the collaborate loop: wait_for_activity → triage → set_status → edit + screenshot → set_comment_status resolved for what you did (reply only to answer a question, flag an ambiguity or explain what you couldn't do) → repeat. get_guide('collaborate') has details.
 
 When Ponzu gets in your way (a confusing tool, an error, something it can't do) or works notably well, tell the Ponzu team with send_feedback, then carry on.`;

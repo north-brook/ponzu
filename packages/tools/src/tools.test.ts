@@ -5,7 +5,7 @@ import { EventHub, PresenceHub, type ToolContext, type Workspace } from "./conte
 import { getTool, runTool } from "./index.ts";
 import { plural } from "./util.ts";
 
-async function setup(tokens = 3) {
+async function setup(tokens = 3, idleMs?: number) {
   const css = `:root {\n${Array.from({ length: tokens }, (_, i) => `  --t${i}: ${i}px;`).join("\n")}\n}\n`;
   const design = await Design.open(
     new MemoryAdapter({
@@ -24,11 +24,11 @@ async function setup(tokens = 3) {
     resolve: async () => ({ key: "fern", design }),
     selection: () => ({ ids: [] }) as never,
     events: new EventHub(),
-    presence: new PresenceHub(),
+    presence: new PresenceHub(idleMs),
   };
   const ctx: ToolContext = { ws, caller: { id: "t", author: { kind: "agent", name: "test" } } };
   const call = (name: string, args: unknown) => runTool(getTool(name)!, args, ctx);
-  return { design, call };
+  return { design, call, ws };
 }
 
 test("plural adds -es after sibilants", () => {
@@ -291,4 +291,48 @@ test("an artboard given display: flex with no direction says it stays a column",
   expect(created.text).toMatch(/Note: ab_\w+ sets display: flex with no flex-direction/);
   const plain = await call("create_artboard", { name: "Page" });
   expect(plain.text).not.toContain("Note:");
+});
+
+test("an agent shows as working on what it changes until it goes quiet", async () => {
+  const { call, ws } = await setup(3, 100);
+  const me = () => ws.presence.list().find((p) => p.id === "t")!;
+
+  await call("get_tree", {});
+  expect(me().working).toEqual([]);
+
+  await call("set_text", { updates: [{ id: "n_h", text: "Hello" }] });
+  expect(me()).toMatchObject({ working: ["ab_hero"], file: "fern" });
+  const created = await call("create_artboard", { name: "Card" });
+  const card = /ab_\w+/.exec(created.text)![0];
+  expect(me().working).toEqual(["ab_hero", card]);
+
+  await call("set_status", { status: "tightening the hero" });
+  expect(me()).toMatchObject({ working: ["ab_hero", card], status: "tightening the hero" });
+  await call("set_status", { status: "just the card", artboards: [card] });
+  expect(me().working).toEqual([card]);
+
+  // Deleting the artboard drops it rather than claiming it.
+  await call("delete", { ids: [card] });
+  expect(me().working).toEqual([]);
+  expect(me().status).toBe("just the card");
+
+  // A read keeps it going; a minute of nothing (100ms here) clears it.
+  await call("set_text", { updates: [{ id: "n_h", text: "Hi" }] });
+  await Bun.sleep(60);
+  await call("get_tree", {});
+  await Bun.sleep(60);
+  expect(me().working).toEqual(["ab_hero"]);
+  await Bun.sleep(80);
+  expect(me()).toMatchObject({ working: [] });
+  expect(me().status).toBeUndefined();
+});
+
+test("waiting for activity ends a pass", async () => {
+  const { call, ws } = await setup();
+  const me = () => ws.presence.list().find((p) => p.id === "t")!;
+  await call("set_status", { status: "making it blue", artboards: ["ab_hero"] });
+  expect(me().working).toEqual(["ab_hero"]);
+  await call("wait_for_activity", { timeout: 0 });
+  expect(me().working).toEqual([]);
+  expect(me().status).toBeUndefined();
 });

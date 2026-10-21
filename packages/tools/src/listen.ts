@@ -75,7 +75,8 @@ export const listenTools = [
         "comment.reopened",
         "file.changed",
       ];
-      ws.presence.touch(caller, { file: key, listening: true });
+      // Going back to listening ends a pass: what it was working on is done.
+      ws.presence.touch(caller, { file: key, listening: true, working: [], status: undefined });
       const events = await ws.events.wait(
         cursor,
         (args.timeout ?? 60) * 1000,
@@ -100,39 +101,29 @@ export const listenTools = [
   }),
 
   tool({
-    name: "start_working",
-    title: "Start working",
+    name: "set_status",
+    title: "Set status",
     group: "listen",
     description:
-      "Tell the person which artboards you're about to change. The canvas traces their outline and shows your status and icon in their header; their page and file tabs shimmer. Call finish_working when you're done.",
+      "Optional. Say in a few words what you're doing, e.g. 'tightening the hero'; the person reads it in the header of each artboard you're working on. Artboards you change already show as yours (their outline traces, their page and file tabs shimmer) until you go a minute without a tool call or call wait_for_activity. Pass artboards to claim them before your first edit.",
     input: {
       file: fileArg,
-      artboards: z.array(z.string()).min(1),
-      status: z
-        .string()
+      status: z.string().min(1).describe("A few words, lowercase, e.g. 'adding the autumn drop'."),
+      artboards: z
+        .array(z.string())
         .optional()
         .describe(
-          "A few words the person reads on the artboard, e.g. 'tightening the hero'. Without it they see 'Working'.",
+          "The artboards this is about, replacing the ones you were working on. Omit to keep them.",
         ),
     },
     async handler(args, { ws, caller }) {
       const { key, design } = await ws.resolve(args.file);
-      for (const id of args.artboards)
+      for (const id of args.artboards ?? [])
         if (!findArtboard(design.doc, id)) throw new ToolError(`No artboard ${id}.`);
-      ws.presence.touch(caller, { working: args.artboards, status: args.status, file: key });
-      return { text: `Working on ${args.artboards.join(", ")}.` };
-    },
-  }),
-
-  tool({
-    name: "finish_working",
-    title: "Finish working",
-    group: "listen",
-    description: "Clear your working indicator. Always call this when you finish or stop.",
-    input: { file: fileArg },
-    async handler(_args, { ws, caller }) {
-      ws.presence.touch(caller, { working: [], status: undefined });
-      return { text: "Done." };
+      if (args.artboards)
+        ws.presence.touch(caller, { file: key, working: args.artboards, status: args.status });
+      else ws.presence.worked(caller, key, { status: args.status });
+      return { text: `Status: ${args.status}.` };
     },
   }),
 

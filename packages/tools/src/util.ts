@@ -18,8 +18,17 @@ export function origin(ctx: ToolContext): Origin {
   return ctx.caller.author;
 }
 
+/** Apply an agent's op. The artboards it changed show as theirs while they keep working. */
 export function apply(design: Design, op: Op, ctx: ToolContext) {
-  return design.apply(op, origin(ctx));
+  const event = design.apply(op, origin(ctx));
+  const key = ctx.ws.designs().find((d) => d.design === design)?.key;
+  if (key && event.artboards.length) {
+    // A deleted artboard is no longer anyone's to work on.
+    const gone = event.artboards.filter((id) => !findArtboard(design.doc, id));
+    const artboards = event.artboards.filter((id) => !gone.includes(id));
+    ctx.ws.presence.worked(ctx.caller, key, { artboards, gone });
+  }
+  return event;
 }
 
 export function px(v: string | undefined, fallback: number): number {
