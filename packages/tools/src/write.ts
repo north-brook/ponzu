@@ -117,10 +117,14 @@ export const writeTools = [
       const { design } = await ctx.ws.resolve(args.file);
       const doc = design.doc;
       const t = target(doc, args.target);
-      const { nodes, dropped } = parseHtml(args.html);
+      const mode = args.mode ?? "append";
+      // Parse in the context of the element the HTML lands in, so SVG children
+      // written into an <svg> or <g> close themselves like they do in a browser.
+      const sibling = mode === "before" || mode === "after" || mode === "replace";
+      const parent = sibling ? t.parent : t.node;
+      const { nodes, dropped } = parseHtml(args.html, parent ? { parent } : {});
       if (!nodes.some((n) => n.kind === "el" || n.value.trim()))
         throw new ToolError("The HTML is empty after cleanup." + droppedNote(dropped));
-      const mode = args.mode ?? "append";
       let op: Op;
       switch (mode) {
         case "append":
