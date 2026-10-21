@@ -555,8 +555,10 @@ export function Canvas({
     (t) => t.status === "open" && threadPage(doc, t)?.id === page.id,
   );
   const zoomPct = Math.round(camera.zoom * 100);
-  const selectedRects = selectionRects(selection, viewport.current, camera);
   const ghostFor = (id: string) => (ghost && drag.current?.ids.includes(id) ? ghost : null);
+  const rectsFor = (ids: string[]) =>
+    selectionRects(ids, boards, boardHeight, ghostFor, viewport.current, camera);
+  const selectedRects = rectsFor(selection);
 
   return (
     <div className={cn("pz-root", `pz-${theme}`, className)}>
@@ -657,7 +659,7 @@ export function Canvas({
           })}
           {pinDrag?.moved &&
             pinDrag.target &&
-            selectionRects([pinDrag.target], viewport.current, camera).map((r) => (
+            rectsFor([pinDrag.target]).map((r) => (
               <div
                 key={r.id}
                 className="pz:pointer-events-none pz:absolute pz:outline-[1.5px] pz:outline-select"
@@ -1047,43 +1049,42 @@ function nodeBox(vp: HTMLElement, ab: Artboard, nodeId: string) {
   return { x: (r.left - b.left) / k, y: (r.top - b.top) / k, w: r.width / k, h: r.height / k };
 }
 
+/**
+ * Outlines for selected artboards and nodes, in viewport pixels. Placed from
+ * the model like pins: the DOM still shows the last frame, so after a move it
+ * would put the outline where the board used to be.
+ */
 function selectionRects(
   ids: string[],
+  boards: Artboard[],
+  boardHeight: (ab: Artboard) => number,
+  offset: (id: string) => { dx: number; dy: number } | null,
   vp: HTMLElement | null,
-  _cam: { x: number; y: number; zoom: number },
+  cam: { x: number; y: number; zoom: number },
 ) {
-  if (!vp) return [];
-  const v = vp.getBoundingClientRect();
   const out: { id: string; x: number; y: number; w: number; h: number; artboard: boolean }[] = [];
   for (const id of ids) {
-    const board = vp.querySelector(`[data-artboard-host="${CSS.escape(id)}"]`)?.parentElement;
-    if (board) {
-      const r = board.getBoundingClientRect();
-      out.push({
-        id,
-        x: r.left - v.left,
-        y: r.top - v.top,
-        w: r.width,
-        h: r.height,
-        artboard: true,
-      });
-      continue;
-    }
-    for (const host of vp.querySelectorAll("[data-artboard-host]")) {
-      const el = (host as HTMLElement).shadowRoot?.querySelector(`[data-id="${CSS.escape(id)}"]`);
-      if (el) {
-        const r = el.getBoundingClientRect();
-        out.push({
-          id,
-          x: r.left - v.left,
-          y: r.top - v.top,
-          w: r.width,
-          h: r.height,
-          artboard: false,
-        });
-        break;
+    let ab = boards.find((b) => b.id === id);
+    let box = ab ? { x: 0, y: 0, w: size(ab).w, h: boardHeight(ab) } : null;
+    if (!box && vp) {
+      for (const b of boards) {
+        box = nodeBox(vp, b, id);
+        if (box) {
+          ab = b;
+          break;
+        }
       }
     }
+    if (!ab || !box) continue;
+    const g = offset(ab.id);
+    out.push({
+      id,
+      x: (ab.x + (g?.dx ?? 0) + box.x) * cam.zoom + cam.x,
+      y: (ab.y + (g?.dy ?? 0) + box.y) * cam.zoom + cam.y,
+      w: box.w * cam.zoom,
+      h: box.h * cam.zoom,
+      artboard: ab.id === id,
+    });
   }
   return out;
 }

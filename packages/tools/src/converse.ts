@@ -82,7 +82,7 @@ export const converseTools = [
     title: "Create comment",
     group: "converse",
     description:
-      "Start a thread pinned to a node or artboard: ask the person a question, explain a decision, or flag something.",
+      'Start a thread pinned to a node or artboard when you need the person: a question only they can answer, a choice for them to make, or something you couldn\'t build as asked. Each open thread is something for them to act on. Explanations and rationale go on the canvas, in a "Note: …" artboard beside the work.',
     input: {
       file: fileArg,
       on: z.string().describe("Node or artboard id."),

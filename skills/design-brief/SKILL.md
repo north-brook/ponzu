@@ -10,6 +10,6 @@ description: Start a new design in Ponzu from a brief. Sets up the .design file,
 3. `get_guide('basics')` and `get_guide('layout')` if you haven't this session.
 4. Build the key screen first, in small pieces: frame (`create_artboard`), then each section with `write_html`. Screenshot after every two or three writes and fix lint.
 5. Offer 2–3 variations of the key screen side by side (`duplicate`, then change one idea each). Name them for the idea ("Hero / editorial", "Hero / product-first").
-6. Leave a `create_comment` on each variation explaining it, and ask the person to pick.
+6. Beside the variations, `create_artboard` a "Note: …" (height `fit-content`) explaining each one, then ask the person to pick in your reply.
 
 Don't build every screen before the direction is agreed.
