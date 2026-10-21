@@ -13,7 +13,7 @@ export const SLICE_CSS = `.cit-wheel {
   to { rotate: 1turn }
 }
 @keyframes pop {
-  0%, 90% { scale: 0 }
+  0%, 90%, 100% { scale: 0 }
   14% { scale: 1.1 }
   24%, 66% { scale: 1 }
 }`;

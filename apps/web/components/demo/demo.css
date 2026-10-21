@@ -1,5 +1,5 @@
 /*
- * The product demo. The canvas itself is Ponzu's own stylesheet (@ponzu/react/styles.css); this
+ * The product demo. The canvas itself is Ponzu's own stylesheet (ponzu.css); this
  * adds the studio's window chrome around it, the terminal, and the build-up motion.
  */
 
@@ -99,8 +99,7 @@
   background: #28c840;
 }
 
-.dm-home,
-.dm-icon {
+.dm-home {
   height: 28px;
   display: grid;
   place-items: center;
@@ -112,27 +111,15 @@
   width: 32px;
 }
 
-.dm-icon {
-  width: 30px;
-}
-
 .dm-tab {
   display: flex;
   align-items: center;
   gap: 7px;
   height: 28px;
-  padding: 0 6px 0 10px;
+  padding: 0 10px;
   border-radius: 8px;
   background: var(--tab-on);
   white-space: nowrap;
-}
-
-.dm-tab-close {
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  opacity: 0.6;
 }
 
 .dm-bar-right {
@@ -316,10 +303,12 @@
     --pz-comment-soft: #2a2416;
     --pz-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.5);
     --pz-board-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06);
-  }
-
-  .dm .dm-page-on {
-    background: var(--pz-chip);
+    --pz-bar: rgba(28, 28, 28, 0.72);
+    --pz-bar-shadow:
+      0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 6px 20px rgba(0, 0, 0, 0.4),
+      0 1px 3px rgba(0, 0, 0, 0.3);
+    --pz-raised: #3a3a3a;
+    --pz-raised-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.06), 0 1px 2px rgba(0, 0, 0, 0.4);
   }
 }
 
@@ -362,10 +351,6 @@
     opacity: 0;
     scale: 0.8;
   }
-}
-
-.dm .dm-empty {
-  bottom: 44px;
 }
 
 /* The caret in the canvas comment composer. */
