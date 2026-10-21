@@ -288,8 +288,8 @@ export class Design {
     if (this.closed) return;
     const relevant = paths.filter((p) => !p.startsWith("assets/"));
     if (!relevant.length) return;
-    await this.saving;
-    const bag = await this.storage.readAll();
+    const bag = await this.readSettled();
+    if (this.closed) return;
     // Ignore echoes of our own writes.
     let changed = false;
     const known = new Set([...Object.keys(bag), ...this.written.keys()]);
@@ -330,6 +330,27 @@ export class Design {
       }
     }
     if (pin.length) await this.pinIds(pin, bag);
+  }
+
+  /**
+   * The folder with every edit made here already in it. Pending edits are
+   * written first and nothing writes during the read: read mid-save, the
+   * folder lacks an edit already counted as written, which then looks like
+   * an outside change and gets undone. An edit made during the read sends
+   * it round again.
+   */
+  private async readSettled(): Promise<FileBag> {
+    for (;;) {
+      await this.flush();
+      const read = this.saving.then(() => this.storage.readAll());
+      this.saving = read.then(
+        () => {},
+        () => {},
+      );
+      const bag = await read;
+      const pending = this.saveTimer || this.dirtyScopes.size || this.dirtyArtboards.size;
+      if (!pending || this.closed) return bag;
+    }
   }
 
   /**

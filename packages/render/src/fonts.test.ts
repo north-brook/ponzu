@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { parseArtboardFile } from "@ponzu/core";
 import type { Page } from "playwright-core";
 import { ChromiumRenderer, findChromium } from "./chromium.ts";
-import { STAGE_BUDGET_MS } from "./stages.ts";
 
 /**
  * A stand-in for fonts.googleapis.com that is as strict as the real css2: it
@@ -53,13 +52,21 @@ async function fakeGoogle(page: Page) {
 
 const chromium = findChromium();
 setDefaultTimeout(30_000);
+const ASSETS_MS = 1_500;
 
 describe.skipIf(!chromium)("fonts in Chromium", () => {
   const renderer = new ChromiumRenderer({
     executablePath: chromium ?? undefined,
     preparePage: fakeGoogle,
   });
-  afterAll(() => renderer.close());
+  // A shorter wait for fonts than the real one, for the font that never arrives.
+  const impatient = new ChromiumRenderer({
+    executablePath: chromium ?? undefined,
+    preparePage: fakeGoogle,
+    assetsMs: ASSETS_MS,
+  });
+  // Together: closing a browser takes seconds.
+  afterAll(() => Promise.all([renderer.close(), impatient.close()]), 30_000);
 
   const board = (body: string) =>
     parseArtboardFile(
@@ -148,7 +155,7 @@ describe.skipIf(!chromium)("fonts in Chromium", () => {
     stalled = true;
     try {
       const started = Date.now();
-      const out = await renderer.render({
+      const out = await impatient.render({
         artboard: board(
           `<h1 data-id="n_head" style="margin:0;font-family:'Instrument Serif', monospace;font-size:48px">Ferns</h1>`,
         ),
@@ -156,7 +163,7 @@ describe.skipIf(!chromium)("fonts in Chromium", () => {
         lint: true,
         scale: 2,
       });
-      expect(Date.now() - started).toBeLessThan(STAGE_BUDGET_MS.assets + 5_000);
+      expect(Date.now() - started).toBeLessThan(ASSETS_MS + 5_000);
       expect(out.assetsTimedOut).toBe(true);
       // A whole PNG of the 600×300 artboard at 2x, from its header.
       const png = Buffer.from(out.bytes);

@@ -22,7 +22,9 @@ afterEach(() => {
 
 /** A host that answers every request with `reply`. */
 function host(reply: (req: Request) => Response | Promise<Response>): string {
-  const server = Bun.serve({ port: 0, idleTimeout: 0, fetch: reply });
+  // On the address it's dialed at: bound to every address, its port could be
+  // one another server holds on 127.0.0.1, which would answer instead.
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, idleTimeout: 0, fetch: reply });
   stop = () => server.stop(true);
   return `http://127.0.0.1:${server.port}/render`;
 }

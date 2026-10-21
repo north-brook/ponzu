@@ -31,6 +31,8 @@ export interface ChromiumOptions {
   assetBase?: string;
   /** Runs on each new page before the artboard loads, e.g. to route its requests in tests. */
   preparePage?: (page: Page) => Promise<void>;
+  /** How long fonts and images may take, so tests of one that never arrives needn't wait the full budget. */
+  assetsMs?: number;
 }
 
 /**
@@ -308,7 +310,7 @@ export class ChromiumRenderer implements Renderer {
         .waitForLoadState("load", { timeout: 0 })
         .catch(() => {})
         .then(() => page.evaluate(`document.fonts.ready.then(() => ${IMAGES_READY_SCRIPT})`)),
-      STAGE_BUDGET_MS.assets,
+      this.opts.assetsMs ?? STAGE_BUDGET_MS.assets,
     );
     // Give up on what's still coming, so fonts fall back and the page settles.
     if (!all) await page.evaluate("window.stop()").catch(() => {});
