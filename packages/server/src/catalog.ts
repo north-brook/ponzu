@@ -10,7 +10,7 @@ import {
   hashedId,
   parseArtboardFile,
 } from "@ponzu/core";
-import { PREVIEW_FILE } from "./preview.ts";
+import { PREVIEW_FILE, PREVIEW_VERSION, previewCurrent } from "./preview.ts";
 
 /** How long a scan for .design folders stays fresh. */
 const SCAN_TTL = 30_000;
@@ -167,10 +167,13 @@ export class LocalCatalog {
         const example = doc ? Boolean(doc.example) : s.example;
         if (example && !this.shown.has(key) && !this.shown.has(real) && !this.kept.has(real))
           return;
-        const previewAt = await stat(join(key, PREVIEW_FILE)).then(
-          (st) => st.mtimeMs,
-          () => null,
-        );
+        // One from an older version counts as none: the server redraws it when asked.
+        const previewAt = (await previewCurrent(key))
+          ? await stat(join(key, PREVIEW_FILE)).then(
+              (st) => st.mtimeMs,
+              () => null,
+            )
+          : null;
         out.push(doc ? { ...s, ...fromDoc(doc), previewAt } : { ...s, previewAt });
       }),
     );
@@ -463,7 +466,7 @@ export function catalogFile(
     machine: "local",
     base: "",
     modified: s.modified,
-    preview: s.locked ? null : `/api/preview?file=${enc}&v=${v}`,
+    preview: s.locked ? null : `/api/preview?file=${enc}&v=${PREVIEW_VERSION}-${v}`,
     ...(s.locked ? { locked: true } : {}),
     ...(opts.busy ? { busy: opts.busy } : {}),
     ...(opts.created ? { created: opts.created } : {}),

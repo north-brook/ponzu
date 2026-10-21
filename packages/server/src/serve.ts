@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import type { CatalogAgent, ClientMessage, Origin, ServerMessage } from "@ponzu/core";
 import { createHttpHandler } from "@ponzu/mcp";
+import { FsAdapter } from "@ponzu/store/fs";
 import type { Server, ServerWebSocket, WebSocketHandler } from "bun";
 import { Home, type OpenedBy } from "./home.ts";
 import { isTailnetAddress } from "./tailnet.ts";
@@ -123,7 +124,6 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
     stateFile: opts.stateFile,
     tailnet: Boolean(opts.tailnet),
     agents: opts.agents,
-    self: () => `http://127.0.0.1:${server.port}`,
     peerPort: opts.tailnetPort ?? 7777,
     opened: opts.opened,
   });
@@ -243,14 +243,16 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
       });
     }
 
-    // /files/<encoded key>/assets/... serves a design's assets.
+    // /files/<encoded key>/assets/... serves a design's assets: an open one's, or
+    // one the home screen lists, which its preview and thumbnails draw from disk.
     const assetMatch = /^\/files\/([^/]+)\/(assets\/.+)$/.exec(url.pathname);
     if (assetMatch) {
       const key = decodeURIComponent(assetMatch[1]!);
-      const design = ws.get(key);
-      if (!design) return new Response("Not found", { status: 404 });
+      const storage =
+        ws.get(key)?.storage ?? ((await home.listed(key)) ? new FsAdapter(key) : null);
+      if (!storage) return new Response("Not found", { status: 404 });
       const rel = decodeURIComponent(assetMatch[2]!);
-      const bytes = await design.storage.readAsset(rel);
+      const bytes = await storage.readAsset(rel);
       if (!bytes) return new Response("Not found", { status: 404 });
       return new Response(bytes as BodyInit, {
         headers: {
@@ -371,6 +373,8 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
     },
     websocket,
   });
+  // Renders load a design's assets from here, as the canvas does.
+  ws.assetOrigin = `http://127.0.0.1:${server.port}`;
 
   // The owner's other Macs reach this one on its tailnet address. Each request is checked
   // against Tailscale: only devices signed in as the same user get through.

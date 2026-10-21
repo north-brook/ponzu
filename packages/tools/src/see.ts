@@ -46,7 +46,7 @@ export const seeTools = [
         throw new ToolError(
           "No renderer is available here, so screenshots are off. Ask the user to install Chrome.",
         );
-      const { design } = await ws.resolve(args.file);
+      const { key, design } = await ws.resolve(args.file);
       const doc = design.doc;
       const ab = findArtboard(doc, args.id)?.artboard ?? locate(doc, args.id)?.artboard;
       if (!ab) throw new ToolError(`No artboard or node ${args.id}.`);
@@ -67,6 +67,7 @@ export const seeTools = [
         colorScheme: args.colorScheme,
         at: args.at,
         interact: interaction(args),
+        assetBase: ws.assetBase?.(key),
       });
       const image: ToolImage = { data: toBase64(out.bytes), mime: out.mime };
       const lines = [
@@ -132,7 +133,7 @@ export const seeTools = [
         throw new ToolError("scroll steps through a scroll range, so from and to don't apply.");
       if (args.from !== undefined && args.to !== undefined && args.to <= args.from)
         throw new ToolError("to has to be after from.");
-      const { design } = await ws.resolve(args.file);
+      const { key, design } = await ws.resolve(args.file);
       const doc = design.doc;
       const ab = findArtboard(doc, args.id)?.artboard ?? locate(doc, args.id)?.artboard;
       if (!ab) throw new ToolError(`No artboard or node ${args.id}.`);
@@ -147,6 +148,7 @@ export const seeTools = [
         to: args.to,
         scroll: args.scroll,
         lint: true,
+        assetBase: ws.assetBase?.(key),
       });
       const m = out.motion;
       const first = out.steps[0]?.label ?? "";
@@ -196,7 +198,7 @@ export const seeTools = [
     },
     async handler(args, { ws }) {
       if (!ws.renderer) throw new ToolError("No renderer available.");
-      const { design } = await ws.resolve(args.file);
+      const { key, design } = await ws.resolve(args.file);
       const doc = design.doc;
       const ab = findArtboard(doc, args.id)?.artboard ?? locate(doc, args.id)?.artboard;
       if (!ab) throw new ToolError(`No artboard or node ${args.id}.`);
@@ -207,6 +209,7 @@ export const seeTools = [
         nodeId: ab.id === args.id ? undefined : args.id,
         scale: args.scale ?? 2,
         format,
+        assetBase: ws.assetBase?.(key),
       });
       const root = design.storage.root;
       const ext = format === "jpeg" ? "jpg" : format;

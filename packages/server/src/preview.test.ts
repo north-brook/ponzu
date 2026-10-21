@@ -8,7 +8,9 @@ import type { Renderer } from "@ponzu/render";
 import {
   PREVIEW_DARK_FILE,
   PREVIEW_FILE,
+  PREVIEW_VERSION,
   previewArtboard,
+  previewCurrent,
   previewStale,
   writePreview,
 } from "./preview.ts";
@@ -66,17 +68,26 @@ test("writes the preview, and removes it once the first page is empty", async ()
   const root = await mkdtemp(join(tmpdir(), "ponzu-preview-"));
   try {
     const schemes: (string | undefined)[] = [];
+    const bases: (string | undefined)[] = [];
     const renderer = {
-      render: async (req: { colorScheme?: string }) => {
+      render: async (req: { colorScheme?: string; assetBase?: string }) => {
         schemes.push(req.colorScheme);
+        bases.push(req.assetBase);
         return { bytes: new Uint8Array([1, 2, 3]) };
       },
       close: async () => {},
     } as unknown as Renderer;
-    expect(await writePreview(root, doc([board("a", 0, 0, 800, 600)]), renderer)).toBe(true);
+    expect(await previewCurrent(root)).toBe(false);
+    const assets = "http://127.0.0.1:7777/files/x";
+    expect(await writePreview(root, doc([board("a", 0, 0, 800, 600)]), renderer, assets)).toBe(
+      true,
+    );
     expect(existsSync(join(root, PREVIEW_FILE))).toBe(true);
     expect(existsSync(join(root, PREVIEW_DARK_FILE))).toBe(true);
     expect(schemes.sort()).toEqual(["dark", "light"]);
+    // The design's assets/ images load from where the server serves them.
+    expect(bases).toEqual([assets, assets]);
+    expect(await previewCurrent(root)).toBe(true);
     expect(await readFile(join(root, ".ponzu/.gitignore"), "utf8")).toBe("*\n");
 
     const old = new Date(Date.now() - 60_000);
@@ -106,6 +117,9 @@ test("the preview is stale when missing or older than the design, and a dangling
     expect(await previewStale(root)).toBe(true);
     await writeFile(join(root, PREVIEW_DARK_FILE), "png");
     await symlink(join(root, "gone"), join(root, "pages/home/dangling.html"));
+    // Drawn by an older version (before previews had their images), so drawn again.
+    expect(await previewStale(root)).toBe(true);
+    await writeFile(join(root, ".ponzu/version"), `${PREVIEW_VERSION}\n`);
     expect(await previewStale(root)).toBe(false);
 
     await writeFile(join(root, "pages/home/hero.html"), "<section>new</section>");

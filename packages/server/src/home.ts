@@ -14,7 +14,13 @@ import type { Renderer } from "@ponzu/render";
 import { Design } from "@ponzu/store";
 import { FsAdapter } from "@ponzu/store/fs";
 import { catalogFile, LocalCatalog, machineKind } from "./catalog.ts";
-import { PREVIEW_FILE, type PreviewTheme, previewFile, writePreview } from "./preview.ts";
+import {
+  PREVIEW_FILE,
+  type PreviewTheme,
+  previewCurrent,
+  previewFile,
+  writePreview,
+} from "./preview.ts";
 import { ownerOf, readTailnet, type Tailnet } from "./tailnet.ts";
 import type { LocalWorkspace } from "./workspace.ts";
 
@@ -35,8 +41,6 @@ export interface HomeOptions {
   tailnet: boolean;
   /** The agents Ponzu can set up here. */
   agents?: () => Promise<CatalogAgent[]>;
-  /** This server's own URL, for rendering thumbnails with a design's assets. */
-  self: () => string;
   /** The port the owner's other Macs serve their designs on. */
   peerPort: number;
   /** Designs the person named when starting the server, listed even if they're examples. */
@@ -208,8 +212,9 @@ export class Home {
   async preview(key: string, theme: PreviewTheme = "light"): Promise<Uint8Array | null> {
     if (!(await this.listed(key))) return null;
     const file = join(key, previewFile(theme));
-    if (existsSync(file)) return new Uint8Array(await readFile(file));
     const renderer = this.ws.renderer;
+    if (existsSync(file) && (!renderer || (await previewCurrent(key))))
+      return new Uint8Array(await readFile(file));
     if (!renderer) {
       // Drawn before there were dark previews, with nothing here to draw one now.
       const light = join(key, PREVIEW_FILE);
@@ -218,7 +223,7 @@ export class Home {
     // One draw for both themes, whichever is asked for first.
     const drawn = await this.once(`preview:${key}`, async () => {
       const doc = await this.doc(key);
-      return Boolean(doc && (await writePreview(key, doc, renderer)));
+      return Boolean(doc && (await writePreview(key, doc, renderer, this.ws.assetBase(key))));
     });
     return drawn ? new Uint8Array(await readFile(file)) : null;
   }
@@ -235,12 +240,7 @@ export class Home {
       const doc = await this.doc(key);
       const ab = doc && findArtboard(doc, artboardId)?.artboard;
       if (!doc || !ab) return null;
-      const bytes = await drawThumb(
-        renderer,
-        ab,
-        doc.tokens,
-        `${this.opts.self()}/files/${encodeURIComponent(key)}`,
-      );
+      const bytes = await drawThumb(renderer, ab, doc.tokens, this.ws.assetBase(key));
       this.thumbs.set(id, bytes);
       if (this.thumbs.size > THUMBS) this.thumbs.delete(this.thumbs.keys().next().value!);
       return bytes;
@@ -286,7 +286,7 @@ async function drawThumb(
   renderer: Renderer,
   ab: Artboard,
   tokens: string,
-  assetBase: string,
+  assetBase: string | undefined,
 ): Promise<Uint8Array> {
   const px = (v?: string) => (v && /px$/.test(v) ? Number.parseFloat(v) : 0);
   const w = px(ab.root.style.width) || 1440;

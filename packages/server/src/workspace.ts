@@ -41,6 +41,8 @@ export class LocalWorkspace implements Workspace {
   readonly presence = new PresenceHub();
   renderer?: Renderer;
   telemetry?: Telemetry;
+  /** The server that serves designs' assets, once there is one, so renders can load them. */
+  assetOrigin?: string;
   private entries = new Map<string, Entry>();
   private opening = new Map<string, Promise<Entry>>();
   private focusListeners = new Set<(key: string, artboard: string) => void>();
@@ -186,6 +188,10 @@ export class LocalWorkspace implements Workspace {
     await this.renderer?.close();
   }
 
+  assetBase(key: string): string | undefined {
+    return this.assetOrigin && `${this.assetOrigin}/files/${encodeURIComponent(key)}`;
+  }
+
   private keyOf(path: string): string {
     const abs = isAbsolute(path) ? path : resolve(this.cwd, path);
     return abs.replace(/[\\/]+$/, "");
@@ -210,7 +216,7 @@ export class LocalWorkspace implements Workspace {
           const design = this.get(key);
           if (!design || !this.renderer) return;
           try {
-            await writePreview(key, design.doc, this.renderer);
+            await writePreview(key, design.doc, this.renderer, this.assetBase(key));
           } catch {
             // A preview is a nicety; the next edit tries again.
           }

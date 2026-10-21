@@ -1,5 +1,4 @@
 import {
-  type Artboard,
   artboardSummary,
   describeNode,
   docSummary,
@@ -12,7 +11,7 @@ import {
   visibleText,
   walk,
 } from "@ponzu/core";
-import type { MeasureResult, Renderer } from "@ponzu/render";
+import type { MeasureRequest, MeasureResult, Renderer } from "@ponzu/render";
 import { z } from "zod";
 import { fileArg, ToolError, tool } from "./define.ts";
 import { plural } from "./util.ts";
@@ -122,7 +121,7 @@ export const orientTools = [
       "Full detail for one node: its rendered box (x, y, width, height in px from the artboard's top left), styles, attributes, parent, children and text. For an artboard, also the height its content needs, so you can set its height in one step.",
     input: { file: fileArg, id: z.string() },
     async handler({ file, id }, { ws }) {
-      const { design } = await ws.resolve(file);
+      const { key, design } = await ws.resolve(file);
       const doc = design.doc;
       const hit = locate(doc, id);
       if (!hit) throw new ToolError(`No node with id ${id}.`);
@@ -134,7 +133,12 @@ export const orientTools = [
           ? `Parent: ${hit.parent.id} ${describeNode(hit.parent)} (child ${hit.index})`
           : `Artboard at (${hit.artboard.x}, ${hit.artboard.y})`,
       ];
-      const layout = await measured(ws.renderer, hit.artboard, doc.tokens, n.id, !hit.parent);
+      const layout = await measured(
+        ws.renderer,
+        { artboard: hit.artboard, tokens: doc.tokens, assetBase: ws.assetBase?.(key) },
+        n.id,
+        !hit.parent,
+      );
       if (layout) lines.push(layout);
       const style = Object.entries(n.style);
       if (style.length) lines.push(`Style:\n  ${style.map(([k, v]) => `${k}: ${v}`).join("\n  ")}`);
@@ -257,15 +261,15 @@ export const orientTools = [
 /** The node's rendered box as one line, or nothing when there's no renderer to ask. */
 async function measured(
   renderer: Renderer | undefined,
-  artboard: Artboard,
-  tokens: string,
+  page: Omit<MeasureRequest, "ids">,
   id: string,
   isArtboard: boolean,
 ): Promise<string | null> {
   if (!renderer?.measure) return null;
+  const { artboard } = page;
   let out: MeasureResult;
   try {
-    out = await renderer.measure({ artboard, tokens, ids: [id] });
+    out = await renderer.measure({ ...page, ids: [id] });
   } catch (err) {
     return `Box: couldn't measure (${err instanceof Error ? err.message : String(err)}).`;
   }

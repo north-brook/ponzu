@@ -248,9 +248,25 @@ export class ChromiumRenderer implements Renderer {
     });
     if (req.colorScheme) await page.emulateMedia({ colorScheme: req.colorScheme });
     await this.opts.preparePage?.(page);
+    const assetBase = req.assetBase ?? this.opts.assetBase;
+    // Chrome won't let the page reach a server on 127.0.0.1 (local network
+    // access), so its asset requests are fetched from here instead.
+    if (assetBase && /^https?:/.test(assetBase)) {
+      const prefix = `${assetBase.replace(/\/$/, "")}/`;
+      await page.route(
+        (url) => url.href.startsWith(prefix),
+        async (route) => {
+          try {
+            await route.fulfill({ response: await route.fetch() });
+          } catch {
+            await route.abort().catch(() => {});
+          }
+        },
+      );
+    }
     const html = artboardPage(req.artboard, {
       tokens: req.tokens,
-      assetBase: req.assetBase ?? this.opts.assetBase,
+      assetBase,
       colorScheme: req.colorScheme,
     });
     await show(page, html);

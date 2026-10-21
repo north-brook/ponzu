@@ -23,6 +23,8 @@ export interface Workspace {
   /** Create a new .design and open it. */
   create?(path: string, doc: Doc): Promise<{ key: string; design: Design }>;
   renderer?: Renderer;
+  /** Where a renderer loads this design's assets/ from, when the host serves them. */
+  assetBase?(key: string): string | undefined;
   /** What the person in the studio has selected, per design key. */
   selection(key: string): Selection;
   /** Ask any open studio to show this artboard. */
