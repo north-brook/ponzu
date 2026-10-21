@@ -51,7 +51,12 @@ function cli(args: string[], timeoutMs = 3000): Promise<string | null> {
       clearTimeout(timer);
       resolve(v);
     };
-    const child = spawn(bin, args, { stdio: ["ignore", "pipe", "ignore"] });
+    // The app bundle's binary is also the GUI. Started outside a shell, as the desktop app
+    // starts the server, it tries to open the GUI, prints that it couldn't, and exits 0.
+    const child = spawn(bin, args, {
+      stdio: ["ignore", "pipe", "ignore"],
+      env: { ...process.env, TAILSCALE_BE_CLI: "1" },
+    });
     const timer = setTimeout(() => {
       child.kill();
       finish(null);
