@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.0](https://github.com/north-brook/ponzu/compare/v1.14.4...v1.15.0) (2026-10-21)
+
+
+### Features
+
+* three example companies, hidden from your dashboard ([#50](https://github.com/north-brook/ponzu/issues/50)) ([612a0c4](https://github.com/north-brook/ponzu/commit/612a0c4af2647bfda5433d974ae141093778b719))
+
 ## [1.14.4](https://github.com/north-brook/ponzu/compare/v1.14.3...v1.14.4) (2026-10-21)
 
 
