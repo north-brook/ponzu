@@ -1,4 +1,5 @@
 import {
+  type Artboard,
   artboardSummary,
   describeNode,
   docSummary,
@@ -11,6 +12,7 @@ import {
   visibleText,
   walk,
 } from "@ponzu/core";
+import type { MeasureResult, Renderer } from "@ponzu/render";
 import { z } from "zod";
 import { fileArg, ToolError, tool } from "./define.ts";
 import { plural } from "./util.ts";
@@ -116,11 +118,13 @@ export const orientTools = [
     title: "Get node",
     group: "orient",
     readOnly: true,
-    description: "Full detail for one node: its styles, attributes, parent, children and text.",
+    description:
+      "Full detail for one node: its rendered box (x, y, width, height in px from the artboard's top left), styles, attributes, parent, children and text. For an artboard, also the height its content needs, so you can set its height in one step.",
     input: { file: fileArg, id: z.string() },
     async handler({ file, id }, { ws }) {
       const { design } = await ws.resolve(file);
-      const hit = locate(design.doc, id);
+      const doc = design.doc;
+      const hit = locate(doc, id);
       if (!hit) throw new ToolError(`No node with id ${id}.`);
       const n = hit.node;
       const lines = [
@@ -130,6 +134,8 @@ export const orientTools = [
           ? `Parent: ${hit.parent.id} ${describeNode(hit.parent)} (child ${hit.index})`
           : `Artboard at (${hit.artboard.x}, ${hit.artboard.y})`,
       ];
+      const layout = await measured(ws.renderer, hit.artboard, doc.tokens, n.id, !hit.parent);
+      if (layout) lines.push(layout);
       const style = Object.entries(n.style);
       if (style.length) lines.push(`Style:\n  ${style.map(([k, v]) => `${k}: ${v}`).join("\n  ")}`);
       const attrs = Object.entries(n.attrs);
@@ -247,6 +253,43 @@ export const orientTools = [
     },
   }),
 ];
+
+/** The node's rendered box as one line, or nothing when there's no renderer to ask. */
+async function measured(
+  renderer: Renderer | undefined,
+  artboard: Artboard,
+  tokens: string,
+  id: string,
+  isArtboard: boolean,
+): Promise<string | null> {
+  if (!renderer?.measure) return null;
+  let out: MeasureResult;
+  try {
+    out = await renderer.measure({ artboard, tokens, ids: [id] });
+  } catch (err) {
+    return `Box: couldn't measure (${err instanceof Error ? err.message : String(err)}).`;
+  }
+  const b = out.boxes[id];
+  if (!b) return null;
+  const size = `${px(b.width)}×${px(b.height)}`;
+  if (isArtboard) {
+    const fixed = artboard.root.style.height !== "fit-content";
+    const need =
+      out.contentHeight === null
+        ? "content outgrows any fixed height (a child is sized in % of it); use height: fit-content"
+        : !fixed
+          ? `content height ${out.contentHeight}px`
+          : out.contentHeight > Math.round(b.height)
+            ? `content needs ${out.contentHeight}px, ${out.contentHeight - Math.round(b.height)}px more`
+            : `content needs ${out.contentHeight}px`;
+    return `Rendered: ${size}, ${need}.`;
+  }
+  return `Box: x ${px(b.x)}, y ${px(b.y)}, ${size}${b.hidden ? " (hidden)" : ""}.`;
+}
+
+function px(n: number): string {
+  return String(Math.round(n * 10) / 10);
+}
 
 function scopeRoots(doc: import("@ponzu/core").Doc, within?: string) {
   const all = doc.pages.flatMap((p) =>

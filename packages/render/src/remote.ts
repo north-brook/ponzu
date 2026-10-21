@@ -7,13 +7,16 @@ import {
   prepareScript,
   recordFrames,
 } from "./motion.ts";
-import type {
-  LintIssue,
-  RecordRequest,
-  RecordResult,
-  Renderer,
-  RenderRequest,
-  RenderResult,
+import {
+  type LintIssue,
+  type MeasureRequest,
+  type MeasureResult,
+  measureScript,
+  type RecordRequest,
+  type RecordResult,
+  type Renderer,
+  type RenderRequest,
+  type RenderResult,
 } from "./renderer.ts";
 
 /**
@@ -109,14 +112,40 @@ export class RemoteRenderer implements Renderer {
     };
   }
 
-  async record(req: RecordRequest): Promise<RecordResult> {
+  private sessionCall(cant: string) {
     const url = new URL("session", this.endpoint).href;
-    const call = async (op: RemoteSessionRequest): Promise<RemoteSessionReply> => {
+    return async (op: RemoteSessionRequest): Promise<RemoteSessionReply> => {
       const res = await this.post(url, op);
-      if (res.status === 404) throw new Error("This render host can't record animation.");
+      if (res.status === 404) throw new Error(cant);
       if (!res.ok) throw new Error(`Render host: ${res.status} ${await res.text()}`);
       return (await res.json()) as RemoteSessionReply;
     };
+  }
+
+  /** Over the recording session API, so any host that can record can measure. */
+  async measure(req: MeasureRequest): Promise<MeasureResult> {
+    const call = this.sessionCall("This render host can't measure layout.");
+    const { session } = await call({
+      op: "open",
+      html: this.page(req),
+      ...size(req.artboard.root.style),
+    });
+    if (!session) throw new Error("Render host didn't open a session.");
+    try {
+      const eval_ = async <T>(expression: string) =>
+        (await call({ op: "eval", session, expression })).value as T;
+      const motion = await eval_<MotionInfo | { error: string }>(prepareScript({}));
+      if (motion && "error" in motion) throw new Error(motion.error);
+      const out = await eval_<MeasureResult | null>(measureScript(req.ids));
+      if (!out) throw new Error("The artboard didn't render.");
+      return out;
+    } finally {
+      await call({ op: "close", session }).catch(() => {});
+    }
+  }
+
+  async record(req: RecordRequest): Promise<RecordResult> {
+    const call = this.sessionCall("This render host can't record animation.");
     const { session } = await call({
       op: "open",
       html: this.page(req),
