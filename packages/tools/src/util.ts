@@ -34,10 +34,11 @@ export async function resolveFile(
     from = "arg";
   } else {
     const wanted = ids.filter((id): id is string => Boolean(id));
-    const holders =
-      wanted.length && all.length > 1
-        ? all.filter((d) => wanted.some((id) => holds(d.design.doc, id)))
-        : [];
+    // The files that hold the most of these ids: an id only one copy has outweighs ids they
+    // share, and a page name passed in place of an id counts for none.
+    const counts = all.map((d) => wanted.filter((id) => holds(d.design.doc, id)).length);
+    const best = all.length > 1 ? Math.max(0, ...counts) : 0;
+    const holders = best ? all.filter((_, i) => counts[i] === best) : [];
     if (holders.length === 1) {
       picked = holders[0]!;
       from = "ids";

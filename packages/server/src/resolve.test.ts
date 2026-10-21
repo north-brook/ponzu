@@ -142,6 +142,15 @@ test("copies of one design: ids and names are ambiguous unless the session says 
     expect(mine.isError).toBe(false);
     expect(mine.text).not.toContain("Now in");
     expect((await call("get_basic_info")).text).toContain(`Path: ${copy}`);
+
+    // An id only the original has outweighs the shared one, even with the copy current.
+    const original = ws.get(keyOf("kettle"))!.doc;
+    const own = original.pages[1]!.id;
+    await ws.get(copy)!.apply({ op: "page.delete", id: own }, { kind: "agent", name: "test" });
+    const moved = await call("update_artboard", { id: board, page: own });
+    expect(moved.isError).toBe(false);
+    expect(moved.text).toContain(`Now in "Kettle" (${keyOf("kettle")})`);
+    expect(original.pages[1]!.artboards.some((a) => a.id === board)).toBe(true);
   } finally {
     await ws.close(copy);
   }

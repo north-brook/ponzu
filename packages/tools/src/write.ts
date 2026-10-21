@@ -393,7 +393,7 @@ export const writeTools = [
       const { design } = await resolveFile(
         ctx,
         args.file,
-        args.moves.map((m) => m.id),
+        args.moves.flatMap((m) => [m.id, m.before, m.after, m.parent]),
       );
       const doc = design.doc;
       const ops: Op[] = [];
@@ -513,7 +513,7 @@ export const writeTools = [
       page: z.string().optional().describe("Move to this page (id or name)."),
     },
     async handler(args, ctx) {
-      const { design } = await resolveFile(ctx, args.file, [args.id]);
+      const { design } = await resolveFile(ctx, args.file, [args.id, args.page]);
       const doc = design.doc;
       const hit = findArtboard(doc, args.id);
       if (!hit) throw new ToolError(`No artboard ${args.id}.`);
