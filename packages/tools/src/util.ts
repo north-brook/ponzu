@@ -29,11 +29,11 @@ export async function resolveFile(
   const current = all.find((d) => d.key === session?.file);
   let picked: { key: string; design: Design };
   let from: FileSource;
+  const wanted = ids.filter((id): id is string => Boolean(id));
   if (file) {
     picked = await ws.resolve(file);
     from = "arg";
   } else {
-    const wanted = ids.filter((id): id is string => Boolean(id));
     // The files that hold the most of these ids: an id only one copy has outweighs ids they
     // share, and a page name passed in place of an id counts for none.
     const counts = all.map((d) => wanted.filter((id) => holds(d.design.doc, id)).length);
@@ -59,17 +59,17 @@ export async function resolveFile(
       picked = await ws.resolve();
       from = "only";
     }
-    // Ids from two files in one call: refuse before any of it lands in the wrong one.
-    const doc = picked.design.doc;
-    for (const id of wanted) {
-      if (holds(doc, id)) continue;
-      const other = all.find((d) => d.key !== picked.key && holds(d.design.doc, id));
-      if (other)
-        throw new ToolError(
-          `${id} is in ${label(other, all)}, not ${label(picked, all)}. One call works on one file: pass file, or split the call.`,
-          "file_ids_split",
-        );
-    }
+  }
+  // Ids from two files in one call: refuse before any of it lands in the wrong one.
+  const doc = picked.design.doc;
+  for (const id of wanted) {
+    if (holds(doc, id)) continue;
+    const other = all.find((d) => d.key !== picked.key && holds(d.design.doc, id));
+    if (other)
+      throw new ToolError(
+        `${id} is in ${label(other, all)}, not ${label(picked, all)}. One call works on one file: ${file ? "split the call" : "pass file, or split the call"}.`,
+        "file_ids_split",
+      );
   }
   // Ids took the session to another file: say so, since later calls without file follow.
   const moved = session && from === "ids" && session.file !== picked.key;

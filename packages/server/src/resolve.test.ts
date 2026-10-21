@@ -121,6 +121,18 @@ test("ids from two files in one call change nothing", async () => {
   expect(r.text).toContain(`${weft} is in "Weft", not "Halon"`);
   expect(JSON.stringify(ws.get(keyOf("halon"))!.doc.pages[0]!.artboards[0]!.root)).toBe(before);
   expect((await call("get_basic_info")).text).toContain(`Path: ${keyOf("halon")}`);
+
+  // Naming the file doesn't let a stray id through either.
+  const named = await call("move_nodes", {
+    file: "halon",
+    moves: [
+      { id: second!.id, before: first!.id },
+      { id: weft, parent: halon.id },
+    ],
+  });
+  expect(named.isError).toBe(true);
+  expect(named.text).toContain(`${weft} is in "Weft", not "Halon"`);
+  expect(JSON.stringify(ws.get(keyOf("halon"))!.doc.pages[0]!.artboards[0]!.root)).toBe(before);
 });
 
 test("two agents keep their own current file", async () => {
