@@ -28,7 +28,6 @@ async function withFiles(files: Record<string, string>, renderer?: Renderer) {
   const ws: Workspace = {
     designs: () => [{ key: "fern", design }],
     resolve: async () => ({ key: "fern", design }),
-    selection: () => ({ ids: [] }) as never,
     events: new EventHub(),
     presence: new PresenceHub(),
     renderer,

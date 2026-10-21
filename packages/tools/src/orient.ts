@@ -2,7 +2,6 @@ import {
   artboardSummary,
   describeNode,
   docSummary,
-  findArtboard,
   findPage,
   locate,
   outline,
@@ -24,7 +23,7 @@ export const orientTools = [
     group: "orient",
     readOnly: true,
     description:
-      "Start here. Summarizes the open .design: pages, artboards with sizes and positions, token names, open comments, artboards that overlap each other, what the person has selected, who else is working, and anything in the files Ponzu couldn't use. Call get_guide('basics') once per session for the house rules.",
+      "Start here. Summarizes the open .design: pages, artboards with sizes and positions, token names, open comments, artboards that overlap each other, who else is working, and anything in the files Ponzu couldn't use. Call get_guide('basics') once per session for the house rules.",
     input: { file: fileArg },
     async handler({ file }, ctx) {
       const { ws } = ctx;
@@ -64,10 +63,6 @@ export const orientTools = [
           `Overlapping artboards (the canvas draws one over the other):\n  ${shown.join("\n  ")}${more ? `\n  … ${more} more; move these and call get_basic_info again for the rest` : ""}`,
         );
       }
-      const sel = ws.selection(key);
-      if (sel.ids.length) {
-        lines.push(`Selected: ${sel.ids.map((id) => describeSelected(doc, id)).join(", ")}`);
-      }
       const others = ws.presence.list().filter((p) => p.working.length);
       if (others.length)
         lines.push(
@@ -83,23 +78,6 @@ export const orientTools = [
         );
       }
       return { text: lines.join("\n") };
-    },
-  }),
-
-  tool({
-    name: "get_selection",
-    title: "Get selection",
-    group: "orient",
-    readOnly: true,
-    description:
-      "What the person has selected in the canvas right now. When they say 'make this bigger' or 'fix that', this is what they mean.",
-    input: { file: fileArg },
-    async handler({ file }, ctx) {
-      const { ws } = ctx;
-      const { key, design } = await resolveFile(ctx, file);
-      const sel = ws.selection(key);
-      if (!sel.ids.length) return { text: "Nothing selected." };
-      return { text: sel.ids.map((id) => describeSelected(design.doc, id)).join("\n") };
     },
   }),
 
@@ -332,12 +310,4 @@ function scopeRoots(doc: import("@ponzu/core").Doc, within?: string) {
   const hit = locate(doc, within);
   if (!hit) throw new ToolError(`No page, artboard or node ${within}.`);
   return [{ artboard: hit.artboard, root: hit.node }];
-}
-
-function describeSelected(doc: import("@ponzu/core").Doc, id: string): string {
-  const ab = findArtboard(doc, id);
-  if (ab) return `${id} artboard "${ab.artboard.name}" on page "${ab.page.name}"`;
-  const hit = locate(doc, id);
-  if (!hit) return `${id} (gone)`;
-  return `${id} ${describeNode(hit.node)} <${hit.node.tag}> in ${hit.artboard.id} "${hit.artboard.name}"`;
 }

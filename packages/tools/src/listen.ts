@@ -11,7 +11,6 @@ const EVENT_TYPES = [
   "comment.edited",
   "comment.resolved",
   "comment.reopened",
-  "selection",
   "file.changed",
   "presence",
 ] as const;
@@ -31,8 +30,6 @@ export function describeEvent(doc: Doc | undefined, e: PonzuEvent): string {
       return `#${e.seq} ${e.author} resolved ${e.thread}`;
     case "comment.reopened":
       return `#${e.seq} ${e.author} reopened ${e.thread}`;
-    case "selection":
-      return `#${e.seq} selection: ${e.ids.length ? e.ids.join(", ") : "nothing"}`;
     case "file.changed":
       return `#${e.seq} ${e.path} changed on disk${e.artboards.length ? ` (${e.artboards.map((a) => `"${ab(a)}"`).join(", ")})` : ""}`;
     case "presence":
@@ -47,7 +44,7 @@ export const listenTools = [
     group: "listen",
     readOnly: true,
     description:
-      "Long-poll for what people do in the canvas: new comments and replies, selection changes, edits made in a text editor, other agents' changes. Returns immediately if anything happened after `since`; otherwise waits up to `timeout` seconds. Pass back the returned cursor next time so nothing is missed. This is the heart of the collaborate loop (get_guide('collaborate')).",
+      "Long-poll for what people do in the canvas: new comments and replies, edits made in a text editor, other agents' changes. Returns immediately if anything happened after `since`; otherwise waits up to `timeout` seconds. Pass back the returned cursor next time so nothing is missed. This is the heart of the collaborate loop (get_guide('collaborate')).",
     input: {
       file: fileArg,
       since: z

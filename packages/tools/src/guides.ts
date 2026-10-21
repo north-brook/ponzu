@@ -49,7 +49,7 @@ export const GUIDES = {
 A .design is a folder. Each artboard is one HTML file in pages/<page>/. Tokens live in tokens.css. Everything you do is saved immediately and shows up live in the person's canvas.
 
 Workflow
-1. get_basic_info, then read_notes. If the person selected something, that's what "this" means.
+1. get_basic_info, then read_notes. When the person says "this", look for the comment they pinned to it.
 2. Before building something new, settle a direction: palette, type scale, spacing. Put it in tokens with set_tokens. Write the brief to a note.
 3. Build in small pieces. One write_html call per visual group: a header, then a row, then a card. The person watches the canvas as you work.
 4. screenshot after every few writes. Read the lint lines. Fix clipped text and overflow before moving on. When you add motion or states, record them (get_guide('motion')). If a screenshot fails, its error says why: a renderer that didn't answer means the Ponzu app is busy or showing a dialog, so ask the person; one that isn't running is restarting, so try again shortly. Keep working in Ponzu rather than rendering the page some other way.
@@ -226,7 +226,7 @@ export type GuideTopic = keyof typeof GUIDES;
 /** Short server instructions shown to every MCP client on connect. */
 export const SERVER_INSTRUCTIONS = `Ponzu is a design canvas you drive with HTML and CSS. The person sees your work live in their canvas and steers with comments.
 
-Start every session with get_basic_info, then read_notes, then get_guide('basics') if you haven't read it. When the person says "this", call get_selection.
+Start every session with get_basic_info, then read_notes, then get_guide('basics') if you haven't read it. When the person says "this", look for the comment they pinned to it.
 
 Build in small pieces, screenshot often, and fix what lint reports. record shows animation and hover states frame by frame. Put design decisions in tokens and notes. Variations go next to the original, never over it. The canvas shows which artboards you're changing; set_status tells the person what you're doing.
 

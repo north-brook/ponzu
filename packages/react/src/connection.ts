@@ -5,7 +5,6 @@ import {
   type Op,
   type Origin,
   type Presence,
-  type Selection,
   type ServerMessage,
 } from "@ponzu/core";
 
@@ -17,7 +16,6 @@ export interface CanvasSource {
   subscribe(listener: (state: CanvasState) => void): () => void;
   getState(): CanvasState;
   apply(op: Op): void;
-  select(selection: Selection): void;
   undo(): void;
   redo(): void;
   /** Base URL for this design's assets/ folder. */
@@ -31,7 +29,6 @@ export interface CanvasState {
   doc: Doc | null;
   path: string;
   presence: Presence[];
-  selection: Selection;
   canUndo: boolean;
   canRedo: boolean;
   /** Artboard the server asked us to show (after an agent created it). */
@@ -67,7 +64,6 @@ export class SocketSource implements CanvasSource {
       doc: null,
       path: file,
       presence: [],
-      selection: { ids: [] },
       canUndo: false,
       canRedo: false,
     };
@@ -101,7 +97,6 @@ export class SocketSource implements CanvasSource {
           doc: msg.doc,
           path: msg.path,
           presence: msg.presence,
-          selection: msg.selection,
           canUndo: msg.canUndo,
           canRedo: msg.canRedo,
         });
@@ -125,9 +120,6 @@ export class SocketSource implements CanvasSource {
         break;
       case "presence":
         this.set({ presence: msg.presence });
-        break;
-      case "selection":
-        this.set({ selection: msg.selection });
         break;
       case "focus":
         this.set({ focus: { artboard: msg.artboard, page: msg.page, at: Date.now() } });
@@ -161,11 +153,6 @@ export class SocketSource implements CanvasSource {
   // and avoid ever diverging from the file on disk.
   apply(op: Op) {
     this.send({ t: "op", req: ++this.req, op });
-  }
-
-  select(selection: Selection) {
-    this.set({ selection });
-    this.send({ t: "select", selection });
   }
 
   undo() {
@@ -206,7 +193,6 @@ export class MemorySource implements CanvasSource {
       doc,
       path: doc.name,
       presence: [],
-      selection: { ids: [] },
       canUndo: false,
       canRedo: false,
     };
@@ -241,11 +227,6 @@ export class MemorySource implements CanvasSource {
 
   apply(op: Op) {
     this.commit(op, "new");
-  }
-
-  select(selection: Selection) {
-    this.state = { ...this.state, selection };
-    for (const l of this.listeners) l(this.state);
   }
 
   undo() {

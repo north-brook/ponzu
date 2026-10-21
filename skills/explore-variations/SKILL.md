@@ -5,7 +5,7 @@ description: Generate and compare design variations in Ponzu. Use when asked for
 
 # Variations
 
-1. Find the artboard (`get_selection` if the person pointed at one).
+1. Find the artboard (the one the person named or commented on).
 2. `duplicate` it once per idea. Name each copy for its idea: "Hero / B: bigger type".
 3. Change one idea per copy: layout, type, color, or density. Don't change everything at once.
 4. Screenshot each and fix lint.
