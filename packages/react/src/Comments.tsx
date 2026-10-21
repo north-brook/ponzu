@@ -209,12 +209,14 @@ export function ThreadCard({
     source.apply({ op: "thread.edit", id: thread.id, messageId, text, editedAt: Date.now() });
     setEditing(null);
   };
-  // The first message is the comment; deleting it deletes the thread.
   const removeMessage = (messageId: string) =>
-    messageId === thread.messages[0]?.id
-      ? remove()
-      : source.apply({ op: "thread.unmessage", id: thread.id, messageId });
+    source.apply({ op: "thread.unmessage", id: thread.id, messageId });
   const mine = (a: Author) => a.kind === me.kind && a.name === me.name;
+  // The first message is the comment itself. Its actions live in the card's
+  // menu, so nothing appears on hover beside the Resolve and More buttons.
+  const first = thread.messages[0];
+  const hoverActions = (m: Thread["messages"][number], i: number) =>
+    i > 0 && mine(m.author) && editing !== m.id;
   return (
     <div className={threadCard} onPointerDown={(e) => e.stopPropagation()}>
       <div className="pz:absolute pz:top-1.5 pz:right-1.5 pz:z-[1] pz:flex pz:gap-0.5 pz:rounded-lg pz:bg-card">
@@ -228,6 +230,15 @@ export function ThreadCard({
             </Button>
           }
           items={[
+            ...(first && mine(first.author)
+              ? [
+                  {
+                    label: "Edit",
+                    icon: <Icon name="edit" size={14} />,
+                    onSelect: () => setEditing(first.id),
+                  },
+                ]
+              : []),
             {
               label: "Delete thread",
               icon: <Icon name="trash" size={14} />,
@@ -254,7 +265,7 @@ export function ThreadCard({
             key={m.id}
             className={cn(
               "pz:group pz:flex pz:flex-col pz:gap-1 pz:rounded-lg pz:px-2 pz:py-1.5",
-              mine(m.author) && editing !== m.id && "pz:hover:bg-accent",
+              hoverActions(m, i) && "pz:hover:bg-accent",
             )}
           >
             {/* At the top, only the first row sits beside the card's buttons. */}
@@ -265,7 +276,7 @@ export function ThreadCard({
                 {timeAgo(m.createdAt)}
                 {m.editedAt ? " · edited" : ""}
               </span>
-              {mine(m.author) && editing !== m.id && (
+              {hoverActions(m, i) && (
                 <div className="pz:ml-auto pz:flex pz:shrink-0 pz:opacity-0 pz:group-hover:opacity-100 pz:focus-within:opacity-100">
                   <Button
                     variant="ghost"
@@ -279,7 +290,7 @@ export function ThreadCard({
                     variant="ghost"
                     size="icon-sm"
                     onClick={() => removeMessage(m.id)}
-                    title={i === 0 ? "Delete thread" : "Delete"}
+                    title="Delete"
                   >
                     <Icon name="trash" size={14} />
                   </Button>
