@@ -417,8 +417,8 @@ function FileCard({
 
 /**
  * The canvas preview, or an empty canvas while it's drawn (or when there's
- * none). Previews are drawn on the light canvas, so the tile behind them is
- * that color in either theme.
+ * none). Previews are drawn on the light and the dark canvas; the studio's
+ * theme follows the system's, and so does the one shown.
  */
 function Preview({ src }: { src: string | null }) {
   const [failed, setFailed] = useState(false);
@@ -430,14 +430,17 @@ function Preview({ src }: { src: string | null }) {
       </span>
     );
   return (
-    <img
-      src={src}
-      alt=""
-      loading="lazy"
-      draggable={false}
-      onError={() => setFailed(true)}
-      className="absolute inset-0 size-full object-contain"
-    />
+    <picture>
+      <source srcSet={`${src}&theme=dark`} media="(prefers-color-scheme: dark)" />
+      <img
+        src={src}
+        alt=""
+        loading="lazy"
+        draggable={false}
+        onError={() => setFailed(true)}
+        className="absolute inset-0 size-full object-contain"
+      />
+    </picture>
   );
 }
 
@@ -613,7 +616,7 @@ function FrameCard({
             loading="lazy"
             draggable={false}
             onError={() => setFailed(true)}
-            className="block max-h-[160px] max-w-full object-contain shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_2px_6px_rgba(0,0,0,0.06)]"
+            className="block max-h-[160px] max-w-full object-contain shadow-[0_0_0_1px_rgba(0,0,0,0.06),0_2px_6px_rgba(0,0,0,0.06)] dark:shadow-[0_0_0_1px_rgba(255,255,255,0.08)]"
           />
         )}
       </div>

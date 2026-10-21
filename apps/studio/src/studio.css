@@ -61,7 +61,7 @@
   --color-canvas: var(--canvas);
   --color-home: var(--home);
   /* The canvas color previews are drawn on (packages/server/src/preview.ts). */
-  --color-preview: #f3f3f1;
+  --color-preview: var(--canvas);
   --color-faint: var(--faint);
   --color-hairline: var(--hairline);
   --color-highlight: var(--highlight);
