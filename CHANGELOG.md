@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.20.3](https://github.com/north-brook/ponzu/compare/v1.20.2...v1.20.3) (2026-10-21)
+
+
+### Bug Fixes
+
+* warn when an artboard sets display: flex without a direction ([#84](https://github.com/north-brook/ponzu/issues/84)) ([f20c23c](https://github.com/north-brook/ponzu/commit/f20c23c0c31a2abea2e2a7e2274fe1c5fce4a9da))
+
+## [1.20.2](https://github.com/north-brook/ponzu/compare/v1.20.1...v1.20.2) (2026-10-21)
+
+
+### Bug Fixes
+
+* a page with a malformed artboard height no longer freezes the canvas ([#86](https://github.com/north-brook/ponzu/issues/86)) ([9fbc451](https://github.com/north-brook/ponzu/commit/9fbc451ce5b18155606a7a112cb7f6cbbb341daa))
+
 ## [1.20.1](https://github.com/north-brook/ponzu/compare/v1.20.0...v1.20.1) (2026-10-21)
 
 

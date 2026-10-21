@@ -58,7 +58,7 @@ export const organizeTools = [
     title: "Create file",
     group: "organize",
     description:
-      "Create a new .design folder with its pages and tokens in one call, then open it. Put it next to the code it designs (e.g. ./design/app.design) unless the user says otherwise.",
+      "Create a new .design folder with its pages and tokens in one call, then open it. Put it next to the code it designs (e.g. ./design/app.design) unless the user says otherwise. To import or generate a whole design by writing its files instead, see get_guide('format').",
     input: {
       path: z
         .string()

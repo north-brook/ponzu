@@ -3,13 +3,29 @@ import { describeNode, elementChildren, visibleText } from "./tree.ts";
 import type { Artboard, PElement } from "./types.ts";
 
 /**
+ * An artboard root that sets display: flex but no direction. Artboards are
+ * flex columns, so it stays one, while HTML written for plain CSS expects a
+ * row there.
+ */
+export function rootDirectionUnset(style: Record<string, string>): boolean {
+  return (
+    /^(inline-)?flex$/.test(style.display ?? "") && !style["flex-direction"] && !style["flex-flow"]
+  );
+}
+
+export const ROOT_DIRECTION_NOTE =
+  "sets display: flex with no flex-direction, so it stays a column (the artboard default; plain CSS would make it a row). Set flex-direction: row for side-by-side panes, or column to keep it";
+
+/**
  * Compact indented outline of an element tree, for agents. One line per
  * element: tag, id, name or text, and the few styles that matter for layout.
+ * With `artboard`, the root is an artboard and shows the flex column it
+ * renders as.
  */
-export function outline(root: PElement, maxDepth = 4): string {
+export function outline(root: PElement, maxDepth = 4, opts: { artboard?: boolean } = {}): string {
   const lines: string[] = [];
   const visit = (el: PElement, depth: number) => {
-    lines.push(`${"  ".repeat(depth)}${line(el)}`);
+    lines.push(`${"  ".repeat(depth)}${line(el, depth === 0 && !!opts.artboard)}`);
     const kids = elementChildren(el);
     if (depth >= maxDepth) {
       if (kids.length)
@@ -22,7 +38,7 @@ export function outline(root: PElement, maxDepth = 4): string {
   return lines.join("\n");
 }
 
-function line(el: PElement): string {
+function line(el: PElement, artboard: boolean): string {
   const parts = [`<${el.tag}>`, el.id];
   if (el.name) parts.push(`"${el.name}"`);
   const kids = elementChildren(el);
@@ -31,8 +47,14 @@ function line(el: PElement): string {
     parts.push(`text="${text.length > 60 ? `${text.slice(0, 60)}…` : text}"`);
   const s = el.style;
   const layout: string[] = [];
-  if (s.display && s.display !== "block")
-    layout.push(s.display === "flex" ? `flex ${s["flex-direction"] ?? "row"}` : s.display);
+  const display = s.display ?? (artboard ? "flex" : undefined);
+  if (display && display !== "block") {
+    // flex-flow sets the direction too, to row when it only names a wrap.
+    const flow =
+      s["flex-flow"] && (/\b(row|column)(-reverse)?\b/.exec(s["flex-flow"])?.[0] ?? "row");
+    const direction = s["flex-direction"] ?? flow ?? (artboard ? "column" : "row");
+    layout.push(/^(inline-)?flex$/.test(display) ? `${display} ${direction}` : display);
+  }
   if (s.width) layout.push(`w=${s.width}`);
   if (s.height) layout.push(`h=${s.height}`);
   if (s.position === "absolute") layout.push("abs");
