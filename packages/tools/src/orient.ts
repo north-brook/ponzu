@@ -15,7 +15,7 @@ import type { MeasureRequest, MeasureResult, Renderer } from "@ponzu/render";
 import { z } from "zod";
 import { fileArg, ToolError, tool } from "./define.ts";
 import { overlapLine, pageOverlapList } from "./overlap.ts";
-import { plural } from "./util.ts";
+import { plural, resolveFile } from "./util.ts";
 
 export const orientTools = [
   tool({
@@ -26,8 +26,9 @@ export const orientTools = [
     description:
       "Start here. Summarizes the open .design: pages, artboards with sizes and positions, token names, open comments, artboards that overlap each other, what the person has selected, who else is working, and anything in the files Ponzu couldn't use. Call get_guide('basics') once per session for the house rules.",
     input: { file: fileArg },
-    async handler({ file }, { ws }) {
-      const { key, design } = await ws.resolve(file);
+    async handler({ file }, ctx) {
+      const { ws } = ctx;
+      const { key, design } = await resolveFile(ctx, file);
       const doc = design.doc;
       const lines = [docSummary(doc), `Path: ${key}`];
       const tokens = parseTokens(doc.tokens);
@@ -72,14 +73,15 @@ export const orientTools = [
         lines.push(
           `Working now: ${others.map((p) => `${p.name} on ${p.working.join(", ")}`).join("; ")}`,
         );
-      const files = ws.designs();
-      if (files.length > 1)
+      const rest = ws.designs().filter((f) => f.key !== key);
+      if (rest.length) {
+        const sticks = ctx.session ? " Calls without file use this one." : "";
         lines.push(
-          `Other open files: ${files
-            .filter((f) => f.key !== key)
-            .map((f) => f.design.doc.name)
-            .join(", ")}`,
+          rest.length > 5
+            ? `Other open files: ${rest.length} (list_files).${sticks}`
+            : `Other open files: ${rest.map((f) => f.design.doc.name).join(", ")}.${sticks}`,
         );
+      }
       return { text: lines.join("\n") };
     },
   }),
@@ -92,8 +94,9 @@ export const orientTools = [
     description:
       "What the person has selected in the canvas right now. When they say 'make this bigger' or 'fix that', this is what they mean.",
     input: { file: fileArg },
-    async handler({ file }, { ws }) {
-      const { key, design } = await ws.resolve(file);
+    async handler({ file }, ctx) {
+      const { ws } = ctx;
+      const { key, design } = await resolveFile(ctx, file);
       const sel = ws.selection(key);
       if (!sel.ids.length) return { text: "Nothing selected." };
       return { text: sel.ids.map((id) => describeSelected(design.doc, id)).join("\n") };
@@ -112,8 +115,8 @@ export const orientTools = [
       id: z.string().optional().describe("Artboard, node or page id. Omit for the whole file."),
       depth: z.number().int().min(1).max(12).optional().describe("Levels to show. Default 4."),
     },
-    async handler({ file, id, depth }, { ws }) {
-      const { design } = await ws.resolve(file);
+    async handler({ file, id, depth }, ctx) {
+      const { design } = await resolveFile(ctx, file, [id]);
       const doc = design.doc;
       if (!id) return { text: docSummary(doc) };
       const page = findPage(doc, id);
@@ -143,8 +146,9 @@ export const orientTools = [
     description:
       "Full detail for one node: its rendered box (x, y, width, height in px from the artboard's top left), styles, attributes, parent, children and text. For an artboard, also the height its content needs, so you can set its height in one step.",
     input: { file: fileArg, id: z.string() },
-    async handler({ file, id }, { ws }) {
-      const { key, design } = await ws.resolve(file);
+    async handler({ file, id }, ctx) {
+      const { ws } = ctx;
+      const { key, design } = await resolveFile(ctx, file, [id]);
       const doc = design.doc;
       const hit = locate(doc, id);
       if (!hit) throw new ToolError(`No node with id ${id}.`);
@@ -193,8 +197,8 @@ export const orientTools = [
       id: z.string(),
       ids: z.boolean().optional().describe("Include data-id attributes. Default true."),
     },
-    async handler({ file, id, ids }, { ws }) {
-      const { design } = await ws.resolve(file);
+    async handler({ file, id, ids }, ctx) {
+      const { design } = await resolveFile(ctx, file, [id]);
       const hit = locate(design.doc, id);
       if (!hit) throw new ToolError(`No artboard or node with id ${id}.`);
       const html = serializeNode(hit.node, { omitIds: ids === false });
@@ -230,8 +234,8 @@ export const orientTools = [
       within: z.string().optional().describe("Page, artboard or node id to search inside."),
       limit: z.number().int().min(1).max(200).optional(),
     },
-    async handler(args, { ws }) {
-      const { design } = await ws.resolve(args.file);
+    async handler(args, ctx) {
+      const { design } = await resolveFile(ctx, args.file, [args.within]);
       const doc = design.doc;
       const roots = scopeRoots(doc, args.within);
       const results: string[] = [];

@@ -1,25 +1,29 @@
 import { expect, test } from "bun:test";
 import { locate, threadPage } from "@ponzu/core";
+import type { Renderer, RenderResult } from "@ponzu/render";
 import { Design, MemoryAdapter } from "@ponzu/store";
 import { EventHub, PresenceHub, type ToolContext, type Workspace } from "./context.ts";
 import { FORMAT_EXAMPLE, GUIDES } from "./guides.ts";
 import { getTool, runTool } from "./index.ts";
 import { plural } from "./util.ts";
 
-async function setup(tokens = 3) {
+async function setup(tokens = 3, renderer?: Renderer) {
   const css = `:root {\n${Array.from({ length: tokens }, (_, i) => `  --t${i}: ${i}px;`).join("\n")}\n}\n`;
-  return withFiles({
-    "design.json": JSON.stringify({
-      ponzu: 1,
-      name: "Fern",
-      pages: [{ id: "pg_home", name: "Home" }],
-    }),
-    "tokens.css": css,
-    "pages/home/hero.html": `<section data-artboard data-id="ab_hero" data-name="Hero" data-x="0" data-y="0" style="width:800px;height:600px">\n<div data-id="n_card"><h1 data-id="n_h">Hi</h1><p data-id="n_p">There</p></div>\n</section>\n`,
-  });
+  return withFiles(
+    {
+      "design.json": JSON.stringify({
+        ponzu: 1,
+        name: "Fern",
+        pages: [{ id: "pg_home", name: "Home" }],
+      }),
+      "tokens.css": css,
+      "pages/home/hero.html": `<section data-artboard data-id="ab_hero" data-name="Hero" data-x="0" data-y="0" style="width:800px;height:600px">\n<div data-id="n_card"><h1 data-id="n_h">Hi</h1><p data-id="n_p">There</p></div>\n</section>\n`,
+    },
+    renderer,
+  );
 }
 
-async function withFiles(files: Record<string, string>) {
+async function withFiles(files: Record<string, string>, renderer?: Renderer) {
   const design = await Design.open(new MemoryAdapter(files), { saveDelay: 0 });
   const ws: Workspace = {
     designs: () => [{ key: "fern", design }],
@@ -27,6 +31,7 @@ async function withFiles(files: Record<string, string>) {
     selection: () => ({ ids: [] }) as never,
     events: new EventHub(),
     presence: new PresenceHub(),
+    renderer,
   };
   const ctx: ToolContext = { ws, caller: { id: "t", author: { kind: "agent", name: "test" } } };
   const call = (name: string, args: unknown) => runTool(getTool(name)!, args, ctx);
@@ -267,6 +272,60 @@ test("update_file renames the file and sets or clears its icon", async () => {
   expect(design.doc.name).toBe("Fern app");
 });
 
+/** A renderer that answers every render with `out`, and counts its calls. */
+function fakeRenderer(out: Partial<RenderResult>) {
+  const calls: unknown[] = [];
+  const renderer = {
+    render: async (req: unknown) => {
+      calls.push(req);
+      return {
+        bytes: new Uint8Array([1]),
+        mime: "image/png",
+        width: 800,
+        height: 600,
+        contentHeight: 600,
+        issues: [],
+        ...out,
+      } as RenderResult;
+    },
+    close: async () => {},
+  } as Renderer;
+  return { renderer, calls };
+}
+
+test("screenshot returns lint when only the image failed", async () => {
+  const { renderer } = fakeRenderer({
+    bytes: new Uint8Array(),
+    issues: [{ id: "n_h", kind: "clipped-text", message: "text is clipped" }],
+    captureError: "The render stalled capturing the image (stopped after 20s).",
+  });
+  const { call } = await setup(3, renderer);
+  const r = await call("screenshot", { id: "ab_hero" });
+  expect(r.isError).toBe(true);
+  expect(r.images).toBeUndefined();
+  expect(r.text).toContain("Couldn't capture the image of ab_hero");
+  expect(r.text).toContain("n_h: text is clipped");
+  expect("failure" in r).toBe(false);
+});
+
+test("screenshot says when fonts or images ran out of time", async () => {
+  const { renderer } = fakeRenderer({ assetsTimedOut: true });
+  const { call } = await setup(3, renderer);
+  const r = await call("screenshot", { id: "ab_hero" });
+  expect(r.isError).toBeFalsy();
+  expect(r.text).toContain("still loading when time ran out");
+});
+
+test("screenshot checks hover, focus and press ids before rendering", async () => {
+  const { renderer, calls } = fakeRenderer({});
+  const { call } = await setup(3, renderer);
+  const r = await call("screenshot", { id: "ab_hero", hover: "n_nope" });
+  expect(r.isError).toBe(true);
+  expect(r.text).toBe("No node n_nope to hover in ab_hero. Ids come from get_tree.");
+  expect(calls).toHaveLength(0);
+  expect((await call("screenshot", { id: "ab_hero", press: "n_p" })).isError).toBeFalsy();
+});
+
 test("the format guide's example files load as it describes", async () => {
   for (const text of Object.values(FORMAT_EXAMPLE)) expect(GUIDES.format).toContain(text);
   const { design, call } = await withFiles(FORMAT_EXAMPLE);
@@ -475,4 +534,30 @@ test("a copy in an empty row clears the page's widest artboard at its rendered w
   };
   const r = await s.call("duplicate", { ids: ["ab_a"], y: -5000 });
   expect(r.text).toContain("at (3880, -5000)");
+});
+
+test("record says when fonts or images ran out of time", async () => {
+  const { renderer } = fakeRenderer({});
+  renderer.record = async () => ({
+    bytes: new Uint8Array([1]),
+    mime: "image/png",
+    width: 10,
+    height: 10,
+    steps: [{ label: "0ms" }, { label: "1s" }] as never,
+    motion: { trigger: "load", animations: [], settled: 0, loops: false, cycle: 0 } as never,
+    issues: [],
+    assetsTimedOut: true,
+  });
+  const { call } = await setup(3, renderer);
+  const r = await call("record", { id: "ab_hero" });
+  expect(r.isError).toBeFalsy();
+  expect(r.text).toContain("still loading when time ran out");
+});
+
+test("list_files filters by name or path", async () => {
+  const { call } = await setup();
+  expect((await call("list_files", { query: "FER" })).text).toContain("Fern — fern");
+  expect((await call("list_files", { query: "kettle" })).text).toBe(
+    'No open file matches "kettle" (1 file open).',
+  );
 });
