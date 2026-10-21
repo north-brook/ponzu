@@ -64,6 +64,27 @@ export function useCamera(initial: Camera = { x: 80, y: 80, zoom: 0.5 }) {
   return { camera, setCamera, zoomAt, panBy, fit, cameraRef: ref };
 }
 
+/**
+ * Whether `value` changed within the last `settle` ms. The canvas layer keeps
+ * `will-change: transform` only while the camera moves: with it, Chromium
+ * stretches a bitmap drawn at the old zoom (fast, but blurry once zoomed in);
+ * without it, the boards and their animations redraw sharp at the new zoom.
+ */
+export function useMoving(value: unknown, settle = 150): boolean {
+  const [moving, setMoving] = useState(false);
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    setMoving(true);
+    const timer = setTimeout(() => setMoving(false), settle);
+    return () => clearTimeout(timer);
+  }, [value, settle]);
+  return moving;
+}
+
 /** Track a key held down (for space-to-pan). */
 export function useKeyHeld(code: string): boolean {
   const [held, setHeld] = useState(false);

@@ -13,7 +13,14 @@ import { Composer, ThreadCard, threadCard } from "./Comments.tsx";
 import type { CanvasSource } from "./connection.ts";
 import { AgentMark, Icon, Icons } from "./icons.tsx";
 import { Button, cn, Tip, TipProvider, ToggleGroup } from "./ui.tsx";
-import { isTyping, useCamera, useKeyHeld, useModifierHint, useSource } from "./useCanvas.ts";
+import {
+  isTyping,
+  useCamera,
+  useKeyHeld,
+  useModifierHint,
+  useMoving,
+  useSource,
+} from "./useCanvas.ts";
 import { Juice, useDelayed } from "./working.tsx";
 
 export type Mode = "select" | "hand" | "comment";
@@ -70,6 +77,7 @@ export function Canvas({
   const space = useKeyHeld("Space");
   const panning = mode === "hand" || space;
   const { camera, zoomAt, panBy, fit } = useCamera();
+  const moving = useMoving(camera);
   const viewport = useRef<HTMLDivElement>(null);
   const [measured, setMeasured] = useState<Record<string, number>>({});
   const [pending, setPending] = useState<Pending | null>(null);
@@ -579,7 +587,11 @@ export function Canvas({
         onDragOver={(e) => e.preventDefault()}
       >
         <div
-          className="pz:absolute pz:top-0 pz:left-0 pz:origin-top-left pz:will-change-transform"
+          className={cn(
+            "pz:absolute pz:top-0 pz:left-0 pz:origin-top-left",
+            // Only mid-gesture: left on, the boards stay a bitmap drawn at an old zoom.
+            moving && "pz:will-change-transform",
+          )}
           style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}
         >
           {boards.map((ab) => {
