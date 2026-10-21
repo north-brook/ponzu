@@ -1,5 +1,11 @@
 import { type Artboard as AB, serializeArtboardElement } from "@ponzu/core";
-import { ARTBOARD_BASE_CSS, googleFontsLink, resolveAsset } from "@ponzu/render";
+import {
+  ARTBOARD_BASE_CSS,
+  type GoogleFontRequest,
+  googleFontElement,
+  googleFonts,
+  resolveAsset,
+} from "@ponzu/render";
 import { memo, useLayoutEffect, useRef } from "react";
 
 interface Props {
@@ -11,14 +17,17 @@ interface Props {
 
 const loadedFonts = new Set<string>();
 
-/** Load Google Fonts in the host document; shadow roots inherit @font-face. */
-function ensureFonts(href: string) {
-  if (!href || loadedFonts.has(href)) return;
-  loadedFonts.add(href);
-  const link = document.createElement("link");
-  link.rel = "stylesheet";
-  link.href = href;
-  document.head.appendChild(link);
+/**
+ * Load Google Fonts in the host document; shadow roots inherit @font-face.
+ * One stylesheet per family, the same ones screenshots use, so a family
+ * Google rejects can't take the others down with it.
+ */
+function ensureFonts(fonts: GoogleFontRequest[]) {
+  for (const f of fonts) {
+    if (loadedFonts.has(f.href)) continue;
+    loadedFonts.add(f.href);
+    document.head.appendChild(googleFontElement(document, f));
+  }
 }
 
 /**
@@ -46,7 +55,7 @@ export const ArtboardView = memo(function ArtboardView({
     const html = `<style>${hostTokens(tokens)}${scheme}${ARTBOARD_BASE_CSS}</style>${body}`;
     if (html === last.current) return;
     last.current = html;
-    ensureFonts(googleFontsLink(body, tokens));
+    ensureFonts(googleFonts(body, tokens));
     root.innerHTML = html;
   }, [artboard, tokens, assetBase, colorScheme]);
 

@@ -18,7 +18,7 @@ HTML and CSS
 - Inline styles only (style="…"). No <style> blocks unless you need @keyframes or :hover; keep those inside the artboard.
 - Layout with flexbox and grid, spacing with gap and padding. Artboards are flex columns by default.
 - Use var(--token) for colors, fonts, sizes. Add a token rather than repeating a raw value.
-- Any Google Font named in font-family loads automatically. Name it exactly ("Inter Tight", "Instrument Serif").
+- Any Google Font named in font-family loads automatically, with the weights and italics it has. Name it exactly ("Inter Tight", "Instrument Serif"); lint says when a font didn't load and what shows instead.
 - Images: https URLs, data URLs, or files in assets/ referenced as assets/name.png.
 - SVG for icons and logos. Transforms work.
 - Animation is real: @keyframes, transitions, animation-timeline. Screenshots show the settled page; record shows the motion. get_guide('motion') has the details.

@@ -24,6 +24,8 @@ export interface ChromiumOptions {
   executablePath?: string;
   /** Base URL for relative asset paths, usually the server's /assets route. */
   assetBase?: string;
+  /** Runs on each new page before the artboard loads, e.g. to route its requests in tests. */
+  preparePage?: (page: Page) => Promise<void>;
 }
 
 /**
@@ -194,6 +196,7 @@ export class ChromiumRenderer implements Renderer {
       height: Math.min(Math.ceil(height), 16000),
     });
     if (req.colorScheme) await page.emulateMedia({ colorScheme: req.colorScheme });
+    await this.opts.preparePage?.(page);
     const html = artboardPage(req.artboard, {
       tokens: req.tokens,
       assetBase: req.assetBase ?? this.opts.assetBase,
