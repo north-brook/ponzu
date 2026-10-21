@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.20.1](https://github.com/north-brook/ponzu/compare/v1.20.0...v1.20.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* previews and screenshots show a design's own images ([#80](https://github.com/north-brook/ponzu/issues/80)) ([b84569e](https://github.com/north-brook/ponzu/commit/b84569e48fef5c8a83339ed0eccd2963d6792ed2))
+* show comment edit and delete icons at full size ([#82](https://github.com/north-brook/ponzu/issues/82)) ([9e91ccd](https://github.com/north-brook/ponzu/commit/9e91ccdb536622a6c06c2ce2821d7711a520850f))
+
 ## [1.20.0](https://github.com/north-brook/ponzu/compare/v1.19.0...v1.20.0) (2026-10-21)
 
 
