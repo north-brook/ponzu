@@ -5,6 +5,7 @@ import type { CatalogAgent, ClientMessage, Origin, ServerMessage } from "@ponzu/
 import { createHttpHandler } from "@ponzu/mcp";
 import { FsAdapter } from "@ponzu/store/fs";
 import type { Server, ServerWebSocket, WebSocketHandler } from "bun";
+import { advertise, type Bonjour } from "./bonjour.ts";
 import { CatalogFeed, type Scope } from "./feed.ts";
 import { Home, type OpenedBy } from "./home.ts";
 import { isTailnetAddress } from "./tailnet.ts";
@@ -551,21 +552,32 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
   // The owner's other Macs reach this one on its tailnet address. Each request is checked
   // against Tailscale: only devices signed in as the same user get through.
   let tailnetServer: Server<SocketData> | null = null;
-  const listenOnTailnet = async () => {
-    if (!opts.tailnet || tailnetServer) return;
-    const net = await home.net();
-    if (!net) return;
-    // Not when the main listener already hears the tailnet address on the tailnet port: it
-    // checks tailnet callers itself, and a second bind there would fail.
+  /** Whether this server answers on the tailnet port, given this Mac's tailnet address. */
+  const onTailnet = (ip: string): boolean => {
     const host = opts.hostname ?? "127.0.0.1";
     const port = opts.tailnetPort ?? 7777;
-    if ((host === "0.0.0.0" || host === "::" || host === net.ip) && server.port === port) return;
+    if (tailnetServer) return true;
+    return (host === "0.0.0.0" || host === "::" || host === ip) && server.port === port;
+  };
+  let stopped = false;
+  const listenOnTailnet = async () => {
+    if (!opts.tailnet) return;
+    const net = await home.net();
+    if (stopped) return;
+    if (!net) return updateAdvert(null);
+    // Not when the main listener already hears the tailnet address on the tailnet port: it
+    // checks tailnet callers itself, and a second bind there would fail.
+    if (!onTailnet(net.ip)) bindTailnet(net.ip);
+    updateAdvert(onTailnet(net.ip) && net.dns ? net : null);
+  };
+  const bindTailnet = (ip: string) => {
+    const port = opts.tailnetPort ?? 7777;
     try {
       // Always the tailnet port, whatever port this Mac's own server got: that's where
       // the other Macs look. It doesn't clash with a server on 127.0.0.1 at the same port.
       tailnetServer = Bun.serve<SocketData>({
         port,
-        hostname: net.ip,
+        hostname: ip,
         idleTimeout: 255,
         async fetch(req, srv) {
           const ip = srv.requestIP(req)?.address ?? "";
@@ -578,6 +590,17 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
       // The address went away, or the port is taken there. Tried again on the next check.
     }
   };
+  // The phone on the same Wi-Fi finds this Mac by Bonjour, then connects to its MagicDNS
+  // name over the tailnet. Only while this server is the one answering there: not while
+  // Tailscale is off, and not for a second Ponzu whose tailnet port another one holds.
+  let advert: Bonjour | null = null;
+  const updateAdvert = (net: { name: string; dns?: string } | null) => {
+    const port = opts.tailnetPort ?? 7777;
+    const a = advert?.advert;
+    if (net?.dns && a && a.host === net.dns && a.name === net.name && a.port === port) return;
+    advert?.stop();
+    advert = net?.dns ? advertise({ name: net.name, host: net.dns, port }) : null;
+  };
   let timer: ReturnType<typeof setInterval> | undefined;
   if (opts.tailnet) {
     void listenOnTailnet();
@@ -586,8 +609,11 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
   }
   const stop = server.stop.bind(server);
   server.stop = (force?: boolean) => {
+    stopped = true;
     clearInterval(timer);
     feed.stop();
+    advert?.stop();
+    advert = null;
     tailnetServer?.stop(force);
     return stop(force);
   };
