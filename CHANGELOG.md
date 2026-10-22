@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.0](https://github.com/north-brook/ponzu/compare/v1.31.0...v1.32.0) (2026-10-22)
+
+
+### Features
+
+* yuzu comment pins ([#122](https://github.com/north-brook/ponzu/issues/122)) ([cb98746](https://github.com/north-brook/ponzu/commit/cb98746da5b7e1444a48a25e27f8f59ac5ffc3d4))
+
 ## [1.31.0](https://github.com/north-brook/ponzu/compare/v1.30.0...v1.31.0) (2026-10-22)
 
 
