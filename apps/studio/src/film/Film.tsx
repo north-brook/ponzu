@@ -483,7 +483,8 @@ function keepCardsInFrame(root: HTMLElement, view: { w: number; h: number }) {
     const subj = wrap.dataset.subject
       ? (JSON.parse(wrap.dataset.subject) as { x: number; y: number; w: number; h: number })
       : null;
-    // Where the card's top-left may go: right of the pin, left of it, below it, above it.
+    // Where the card's top-left may go: beside the pin, and beside what the comment is about
+    // (above, below, left or right of it), so it reads next to its subject without covering it.
     const options = [
       { x: px + 20, y: py - 12 },
       { x: px - 20 - w, y: py - 12 },
@@ -491,6 +492,16 @@ function keepCardsInFrame(root: HTMLElement, view: { w: number; h: number }) {
       { x: px - w / 2, y: py - 20 - h },
       { x: px + 20, y: py + 20 },
       { x: px - 20 - w, y: py - 20 - h },
+      ...(subj
+        ? [
+            { x: subj.x + subj.w + 14, y: subj.y + subj.h / 2 - h / 2 },
+            { x: subj.x - 14 - w, y: subj.y + subj.h / 2 - h / 2 },
+            { x: subj.x + subj.w / 2 - w / 2, y: subj.y + subj.h + 14 },
+            { x: subj.x + subj.w / 2 - w / 2, y: subj.y - 14 - h },
+            { x: px - w / 2, y: subj.y + subj.h + 14 },
+            { x: px - w / 2, y: subj.y - 14 - h },
+          ]
+        : []),
     ];
     const clampX = (x: number) => Math.min(view.w - SAFE - w, Math.max(SAFE, x));
     const clampY = (y: number) => Math.min(view.h - SAFE - h, Math.max(SAFE_TOP, y));
@@ -504,9 +515,10 @@ function keepCardsInFrame(root: HTMLElement, view: { w: number; h: number }) {
         const iy = Math.max(0, Math.min(y + h, subj.y + subj.h) - Math.max(y, subj.y));
         cover = (ix * iy) / Math.max(1, Math.min(w * h, subj.w * subj.h));
       }
-      // Covering the pin itself is worst; then covering the subject; then being pushed away from the pin.
+      // Covering the pin is worst; then covering what it's about; then far from the pin.
       const pinHit = px > x - 8 && px < x + w + 8 && py > y - 8 && py < y + h + 8 ? 1 : 0;
-      return pinHit * 10 + cover * 4 + moved / 200;
+      const far = Math.hypot(x + w / 2 - px, y + h / 2 - py) / Math.max(view.w, view.h);
+      return pinHit * 10 + cover * 8 + moved / 120 + far * 1.5;
     };
     const best = options.reduce((a, o) => (cost(o) < cost(a) ? o : a));
     const tx = clampX(best.x);

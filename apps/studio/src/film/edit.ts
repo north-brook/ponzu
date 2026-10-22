@@ -549,10 +549,21 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
         const pin = { x: ab.x + t.x, y: ab.y + t.y };
         const host = await lab.show(d, ab, 2);
         const node = t.nodeId ? lab.box(host, t.nodeId) : null;
-        const subject = node
+        const subjectOnly = node
           ? union([offset(node, ab), { x: pin.x - 16, y: pin.y - 16, w: 32, h: 32 }])!
-          : { x: pin.x - 160, y: pin.y - 120, w: 320, h: 240 };
-        subjects.push(subject);
+          : { x: pin.x - 110, y: pin.y - 80, w: 220, h: 160 };
+        subjects.push(subjectOnly);
+        // Frame the subject with room for its card beside it (about 380×190 screen px): on the
+        // side with more of the board, so the card lands on the board rather than off it.
+        const cardW = 380 / framing.comfort;
+        const roomRight = ab.x + artboardSize(ab).w - (subjectOnly.x + subjectOnly.w);
+        const roomLeft = subjectOnly.x - ab.x;
+        const subject =
+          view.w > view.h
+            ? roomRight >= roomLeft
+              ? { ...subjectOnly, w: subjectOnly.w + cardW }
+              : { ...subjectOnly, x: subjectOnly.x - cardW, w: subjectOnly.w + cardW }
+            : { ...subjectOnly, h: subjectOnly.h + 200 / framing.comfort };
         const texts = await textsOf(d, [ab]);
         const context = await textsOf(
           d,
@@ -617,11 +628,16 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
       framing.minZoom
     );
   };
+  // The first payoff is the heart of the film (the first comment, answered); then the biggest.
+  const firstPaid = scenes.find(
+    (sc) => sc.board && sc.shot.moment.kind === "work" && sc.shot.moment.answers !== undefined,
+  );
   const candidates = scenes
     .filter((sc) => sc.board && sc.shot.moment.kind === "work" && !notes.has(sc.board))
     .map((sc) => {
       const m = sc.shot.moment as Extract<Moment, { kind: "work" }>;
-      const v = (looks.get(m)?.change ?? 0) * (m.answers !== undefined ? 3 : 1);
+      let v = (looks.get(m)?.change ?? 0) * (m.answers !== undefined ? 3 : 1);
+      if (sc === firstPaid) v += 2;
       return { board: sc.board!, v: v * (reads(sc.board!) ? 1.6 : 1) };
     })
     .sort((x, y) => y.v - x.v);
