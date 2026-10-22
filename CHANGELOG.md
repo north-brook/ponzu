@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.29.0](https://github.com/north-brook/ponzu/compare/v1.28.0...v1.29.0) (2026-10-22)
+
+
+### Features
+
+* polish the website and show an agent's mark on its home screen card ([#127](https://github.com/north-brook/ponzu/issues/127)) ([0c52427](https://github.com/north-brook/ponzu/commit/0c524271f98ad9ce29cfec6a10c9b73b7bb908ae))
+
 ## [1.28.0](https://github.com/north-brook/ponzu/compare/v1.27.0...v1.28.0) (2026-10-22)
 
 
