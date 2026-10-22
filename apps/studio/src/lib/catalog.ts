@@ -11,6 +11,8 @@ type SetCatalog = (update: (c: Catalog | null) => Catalog | null) => void;
  */
 export function watchCatalog(origin: string, set: SetCatalog): () => void {
   let socket: WebSocket | null = null;
+  /** Counts the stream's snapshots: a fallback answer that a snapshot overtook is out of date. */
+  let snapshots = 0;
   let retry = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let stopped = false;
@@ -31,17 +33,22 @@ export function watchCatalog(origin: string, set: SetCatalog): () => void {
       } catch {
         return;
       }
-      if (msg.t === "snapshot") set(() => msg.catalog);
-      else if (msg.t === "patch") set((c) => c && applyCatalogPatch(c, msg.patch));
+      if (msg.t === "snapshot") {
+        snapshots++;
+        set(() => msg.catalog);
+      } else if (msg.t === "patch") set((c) => c && applyCatalogPatch(c, msg.patch));
     };
     s.onclose = () => {
       if (stopped) return;
-      // Something to show while the stream is down; the next snapshot replaces it.
-      if (!opened)
+      // Something to show while the stream is down. Not once a snapshot came while it was on
+      // its way: that's newer, and the patches after it build on it.
+      if (!opened) {
+        const asked = snapshots;
         void fetch(`${origin}/api/catalog`)
           .then((r) => (r.ok ? (r.json() as Promise<Catalog>) : null))
-          .then((c) => !stopped && c && set(() => c))
+          .then((c) => !stopped && c && snapshots === asked && set(() => c))
           .catch(() => {});
+      }
       timer = setTimeout(connect, Math.min(5000, 250 * 2 ** retry++));
     };
   };

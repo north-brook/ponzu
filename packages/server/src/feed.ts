@@ -89,6 +89,8 @@ export class CatalogFeed {
   constructor(
     private home: Home,
     ws: LocalWorkspace,
+    /** How long the links outlive the last home screen. */
+    private lingerMs = LINGER,
   ) {
     const soon = () => this.poke(SOON);
     const watch = (key: string) => ws.get(key)?.onOp(() => this.poke(EDIT_DELAY));
@@ -119,10 +121,11 @@ export class CatalogFeed {
   async subscribe(sub: Subscriber): Promise<() => void> {
     const first = !this.subs.size;
     this.subs.add(sub);
-    if (this.linger) clearTimeout(this.linger);
-    this.linger = null;
     if (first) this.start();
     if (sub.scope === "full") {
+      // A home screen is back: the links stay. Another Mac's stream says nothing about that.
+      if (this.linger) clearTimeout(this.linger);
+      this.linger = null;
       this.ready ??= this.startPeers();
       await this.ready;
     }
@@ -134,6 +137,11 @@ export class CatalogFeed {
     return () => this.unsubscribe(sub);
   }
 
+  /** Whether this Mac keeps sockets to the other Macs' streams right now. */
+  get linked(): boolean {
+    return this.peers.size > 0;
+  }
+
   stop(): void {
     this.stopped = true;
     this.halt();
@@ -143,14 +151,19 @@ export class CatalogFeed {
 
   private unsubscribe(sub: Subscriber): void {
     if (!this.subs.delete(sub)) return;
+    if (sub.scope === "local") {
+      // Nothing left listening at all: the timers go now. Links, if any, wait for the linger.
+      if (!this.subs.size && !this.linger) this.halt();
+      return;
+    }
     if ([...this.subs].some((s) => s.scope === "full")) return;
-    // No home screen here: the links to the other Macs can go, after a while.
+    // The last home screen here closed: the links to the other Macs go after a while.
     if (this.linger) clearTimeout(this.linger);
     this.linger = setTimeout(() => {
       this.linger = null;
       if (![...this.subs].some((s) => s.scope === "full")) this.stopPeers();
       if (!this.subs.size) this.halt();
-    }, LINGER);
+    }, this.lingerMs);
     this.linger.unref?.();
   }
 

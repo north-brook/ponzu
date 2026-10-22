@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { applyCatalogPatch, type Catalog, type CatalogMessage } from "@ponzu/core";
 import { getTool, runTool, type ToolCaller } from "@ponzu/tools";
+import { CatalogFeed } from "./feed.ts";
+import { Home } from "./home.ts";
 import { LocalWorkspace, serve } from "./index.ts";
 
 const caller: ToolCaller = {
@@ -231,5 +233,38 @@ test("this Mac's own changes reach its home screen, and the stream refuses other
     home.close();
     server.stop(true);
     await ws.closeAll();
+  }
+}, 15_000);
+
+test("the links to the other Macs close after the last home screen, whoever else is streaming", async () => {
+  await fakeTailnet();
+  const spareDir = join(dir, "spare-linger");
+  const spareWs = new LocalWorkspace({ cwd: spareDir });
+  const spare = serve(spareWs, { port: 0, root: spareDir, spotlight: "roots" });
+  const hereDir = join(dir, "here-linger");
+  const hereWs = new LocalWorkspace({ cwd: hereDir });
+  const home = new Home(hereWs, {
+    roots: [hereDir],
+    spotlight: "roots",
+    tailnet: true,
+    peerPort: spare.port!,
+  });
+  const feed = new CatalogFeed(home, hereWs, 200);
+  const sink = (scope: "local" | "full") => ({ scope, send: () => {}, close: () => {} });
+  try {
+    const leaveHome = await feed.subscribe(sink("full"));
+    expect(feed.linked).toBe(true);
+    leaveHome();
+    // Another Mac's stream comes and goes in the meantime: it isn't a home screen here.
+    const other = await feed.subscribe(sink("local"));
+    await new Promise((r) => setTimeout(r, 400));
+    expect(feed.linked).toBe(false);
+    other();
+  } finally {
+    feed.stop();
+    home.catalog.close();
+    spare.stop(true);
+    await hereWs.closeAll();
+    await spareWs.closeAll();
   }
 }, 15_000);
