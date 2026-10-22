@@ -703,13 +703,15 @@ export interface Framing {
   pad: number;
   /** Extra room at the top for the board's name and the wayfinding line. */
   top: number;
+  /** A change on a board that only fits small is framed closer, up to this zoom, so it reads. */
+  comfort: number;
 }
 
 /** In the film's CSS pixels (see filmViewport). */
 export function framingFor(shape: FilmShape): Framing {
-  if (shape === "9:16") return { minZoom: 0.6, maxZoom: 1.5, pad: 24, top: 60 };
-  if (shape === "1:1") return { minZoom: 0.5, maxZoom: 1.4, pad: 32, top: 48 };
-  return { minZoom: 0.36, maxZoom: 1.2, pad: 40, top: 44 };
+  if (shape === "9:16") return { minZoom: 0.6, maxZoom: 1.5, pad: 24, top: 60, comfort: 0.95 };
+  if (shape === "1:1") return { minZoom: 0.5, maxZoom: 1.4, pad: 32, top: 48, comfort: 0.85 };
+  return { minZoom: 0.36, maxZoom: 1.2, pad: 40, top: 44, comfort: 0.78 };
 }
 
 /**
@@ -770,55 +772,58 @@ export function avoidCuts(
       if (widest.y + widest.h > top) cam = { ...cam, cy: cam.cy + (widest.y + widest.h + 8 - top) };
     }
   }
-  texts = lines;
+  return cleanFrame(cam, lines, view, f);
+}
+
+/** Lines a camera's frame cuts: partly in, partly out, at any edge. Top edge is below the wayfinding line. */
+export function cutLines(
+  cam: Cam,
+  lines: Rect[],
+  view: { w: number; h: number },
+  f: Framing,
+): Rect[] {
   const z = cam.zoom;
-  const hw = view.w / 2 / z;
-  const hh = view.h / 2 / z;
-  const top = (f.top + 8) / z;
-  const m = 6 / z;
-  let { cx, cy } = cam;
-  for (let pass = 0; pass < 4; pass++) {
-    let moved = false;
-    const x0 = cx - hw;
-    const x1 = cx + hw;
-    const y0 = cy - hh + top;
-    const y1 = cy + hh;
-    for (const r of texts) {
-      if (r.x + r.w < x0 || r.x > x1) continue;
-      // Top edge (below the wayfinding line): bring the line in if it's mostly in, else push it out.
-      if (r.y < y0 && r.y + r.h > y0) {
-        const inside = (r.y + r.h - y0) / r.h;
-        cy += inside > 0.5 ? r.y - m - y0 : r.y + r.h + m - y0;
-        moved = true;
-        break;
-      }
-      if (r.y < y1 && r.y + r.h > y1) {
-        const inside = (y1 - r.y) / r.h;
-        cy += inside > 0.5 ? r.y + r.h + m - y1 : r.y - m - y1;
-        moved = true;
-        break;
-      }
-    }
-    if (!moved) {
-      for (const r of texts) {
-        if (r.y + r.h < cy - hh + top || r.y > cy + hh) continue;
-        // Side edges: only lines that could fit the frame's width.
-        if (r.w > 2 * hw - 2 * m) continue;
-        if (r.x < x0 && r.x + r.w > x0) {
-          cx += r.x - m - x0;
-          moved = true;
-          break;
-        }
-        if (r.x < x1 && r.x + r.w > x1) {
-          cx += r.x + r.w + m - x1;
-          moved = true;
-          break;
+  const x0 = cam.cx - view.w / 2 / z;
+  const x1 = cam.cx + view.w / 2 / z;
+  const y0 = cam.cy - view.h / 2 / z + (f.top + 6) / z;
+  const y1 = cam.cy + view.h / 2 / z;
+  const tol = 2 / z;
+  return lines.filter((r) => {
+    const inX = r.x + r.w > x0 + tol && r.x < x1 - tol;
+    const inY = r.y + r.h > y0 + tol && r.y < y1 - tol;
+    if (!inX || !inY) return false;
+    return r.x < x0 - tol || r.x + r.w > x1 + tol || r.y < y0 - tol || r.y + r.h > y1 + tol;
+  });
+}
+
+/**
+ * The nearest frame to `cam` that cuts no line of text: tries nudges of up to
+ * a third of a screen each way, then pulling back a little, and takes the
+ * closest that's clean (or the one that cuts the least).
+ */
+function cleanFrame(cam: Cam, lines: Rect[], view: { w: number; h: number }, f: Framing): Cam {
+  if (!cutLines(cam, lines, view, f).length) return cam;
+  let best = cam;
+  let bestScore = Number.POSITIVE_INFINITY;
+  for (const zk of [1, 0.94, 0.88, 0.8, 0.7, 0.6]) {
+    const z = cam.zoom * zk;
+    if (z < f.minZoom * 0.4) break;
+    const stepX = view.w / z / 32;
+    const stepY = view.h / z / 32;
+    for (let i = -14; i <= 14; i++)
+      for (let j = -14; j <= 14; j++) {
+        const c = { ...cam, zoom: z, cx: cam.cx + i * stepX, cy: cam.cy + j * stepY };
+        const cuts = cutLines(c, lines, view, f);
+        const area = cuts.reduce((a, r) => a + Math.min(r.w, 400) * r.h, 0);
+        const score = area * 100 + Math.hypot(i, j) * 0.8 + (1 - zk) * 60;
+        if (score < bestScore) {
+          bestScore = score;
+          best = c;
         }
       }
-    }
-    if (!moved) break;
+    if (bestScore < 1000) break;
   }
-  return { ...cam, cx, cy };
+  return best;
 }
 
 function frameFocusRaw(focus: Focus, view: { w: number; h: number }, f: Framing): Cam {
@@ -834,6 +839,19 @@ function frameFocusRaw(focus: Focus, view: { w: number; h: number }, f: Framing)
   });
   const b = focus.board;
   const fitBoard = Math.min(vw / b.w, vh / b.h);
+  // Whole but small (a phone screen in a wide frame): closer on what changed, while it fits.
+  if (!focus.overview && focus.detail && fitBoard >= f.minZoom && fitBoard < f.comfort * 0.9) {
+    const d = focus.detail;
+    const fitD = Math.min(vw / d.w, vh / d.h);
+    const zoom = Math.min(f.comfort, fitD);
+    if (zoom > fitBoard * 1.15) {
+      const sw = vw / zoom;
+      const sh = vh / zoom;
+      const cx = clampSpan(d.x + d.w / 2, b.x, b.x + b.w, sw);
+      const cy = clampSpan(d.y + d.h / 2, b.y, b.y + b.h, sh);
+      return withPin(at(cx, cy, zoom), focus, view, f);
+    }
+  }
   if (focus.overview || fitBoard >= f.minZoom || !focus.detail) {
     if (focus.overview || fitBoard >= f.minZoom)
       return withPin(

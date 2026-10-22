@@ -6,6 +6,7 @@ import {
   lastSession,
   parseJournal,
   type Range,
+  realTimeOf,
 } from "@ponzu/core";
 import { Icon, type SocketSource, Tip, useSource } from "@ponzu/react";
 import { Dialog as DialogPrimitive } from "radix-ui";
@@ -18,8 +19,8 @@ import {
   useRef,
   useState,
 } from "react";
+import { buildEdit, type Edit as FilmModel } from "@/film/edit";
 import { Film } from "@/film/Film";
-import { buildFilm, type FilmModel } from "@/film/model";
 import { journalText } from "@/film/page";
 import { cn } from "@/lib/utils";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "./ui/hover-card";
@@ -518,7 +519,7 @@ function Composer({
     if (!open || !entries.length || !range) return;
     let live = true;
     const t = setTimeout(() => {
-      void buildFilm({
+      void buildEdit({
         name,
         entries,
         shape,
@@ -534,7 +535,7 @@ function Composer({
     };
   }, [open, entries, range, shape, length, theme, origin, file, name]);
 
-  const duration = model?.plan.duration ?? length;
+  const duration = model?.timeline.duration ?? length;
   const [t, seek] = usePlayer(duration, open && playing && Boolean(model));
   const empty = journal !== null && !ops.length;
 
@@ -671,22 +672,17 @@ function Segments<T extends string | number>({
 
 /** Real time under the film's playhead. */
 function playheadReal(model: FilmModel, t: number): number | null {
-  const beats = model.plan.beats;
-  if (!beats.length) return null;
-  if (t >= model.plan.pullback) return beats[beats.length - 1]!.t;
-  let i = 0;
-  while (i + 1 < beats.length && beats[i + 1]!.at <= t) i++;
-  const b = beats[i]!;
-  const n = beats[i + 1];
-  if (!n || t < b.at) return b.t;
-  return b.t + ((n.t - b.t) * (t - b.at)) / Math.max(0.001, n.at - b.at);
+  return realTimeOf(model.timeline, t);
 }
 
-/** Film time of a real moment: the beat that landed by then. */
+/** Film time of a real moment: the shot that shows it. */
 function filmTimeAt(model: FilmModel, real: number): number {
-  const beats = model.plan.beats;
   let f = 0;
-  for (const b of beats) if (b.t <= real) f = b.at;
+  for (const s of model.timeline.shots) {
+    const m = s.moment;
+    const from = m.kind === "work" || m.kind === "turn" ? m.from : m.t;
+    if (from <= real) f = s.start;
+  }
   return f;
 }
 
@@ -919,7 +915,7 @@ function Ready({
     let live = true;
     void journalText(job.file).then(async (text) => {
       const entries = parseJournal(text);
-      const m = await buildFilm({
+      const m = await buildEdit({
         name,
         entries,
         shape: job.request.shape,
@@ -927,11 +923,7 @@ function Ready({
         range: job.request.range ?? lastSession(entries) ?? undefined,
         theme: job.request.theme,
       }).catch(() => null);
-      if (live && m)
-        setTicks({
-          ticks: m.plan.beats.filter((b) => b.kind === "comment").map((b) => b.at),
-          model: m,
-        });
+      if (live && m) setTicks({ ticks: m.filmTicks, model: m });
     });
     return () => {
       live = false;

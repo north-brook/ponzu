@@ -1,0 +1,580 @@
+import {
+  type Artboard,
+  avoidCuts,
+  type Cam,
+  type CommentLanding,
+  chooseStory,
+  type Doc,
+  type FilmShape,
+  filmViewport,
+  findArtboard,
+  findNode,
+  frameFocus,
+  framingFor,
+  type JournalEntry,
+  type Look,
+  type Moment,
+  moments,
+  noteBoards,
+  type Range,
+  type Rect,
+  replayTo,
+  type StoryShot,
+  streamUnits,
+  type Thread,
+  type Timeline,
+  timeline,
+  tryApply,
+} from "@ponzu/core";
+import { artboardMarkup, artboardSize, loadArtboardFonts } from "@ponzu/react";
+import { schemeFor, settleAssets } from "./model.ts";
+
+/**
+ * A film as an edit: the chosen moments, each with the canvas as it stands
+ * before and after it (settled states only, never the ops between), where
+ * its change sits, and a resting camera for it that never cuts a line of
+ * text. Frames are pure functions of film time over this.
+ */
+export interface Edit {
+  name: string;
+  shape: FilmShape;
+  view: { w: number; h: number; scale: number };
+  theme: "light" | "dark";
+  assetBase?: string;
+  timeline: Timeline;
+  /** Per shot: what the canvas shows, and how it gets there. */
+  scenes: Scene[];
+  /** The last look at the result. */
+  result: { doc: Doc; cam: Cam; heights: Map<string, number> };
+  /** Boards to keep out of every frame (the agent's notes stay, but quietly). */
+  first: { doc: Doc; heights: Map<string, number> };
+  /** For a track: the real span, and the real times of your comments. */
+  range: Range | null;
+  ticks: number[];
+  /** Film times your comments land at, for a track drawn on the film's clock. */
+  filmTicks: number[];
+}
+
+export interface Scene {
+  shot: StoryShot;
+  /** The canvas before this shot's change, and after it. */
+  before: Doc;
+  after: Doc;
+  heights: { before: Map<string, number>; after: Map<string, number> };
+  /** Where the camera rests for this shot. For a turn, one per landing (it hops between). */
+  cams: Cam[];
+  /** Work: the board that changes, its new pieces (rise in) and its restyled ones (cut). */
+  board?: string;
+  rise?: string[];
+  /** Work: a board that's new in this shot (it's drawn in). */
+  born?: boolean;
+  /** Pins that leave as this work lands. */
+  resolves?: string[];
+  /** Turn: the threads as they stand once each comment has landed. */
+  threads?: Thread[][];
+  /** Turn: what each comment is about, on the canvas (its card keeps clear of it). */
+  subjects?: Rect[];
+  who?: { name: string; client?: string };
+}
+
+export interface EditInput {
+  name: string;
+  entries: JournalEntry[];
+  shape: FilmShape;
+  length: number;
+  range?: Range;
+  theme: "light" | "dark";
+  assetBase?: string;
+}
+
+/* ------------------------------------------------------------------ */
+/* Measuring                                                           */
+/* ------------------------------------------------------------------ */
+
+type Host = { wrap: HTMLDivElement; shadow: ShadowRoot; html: string };
+
+/** Lays boards out offscreen as the film draws them, to measure them. */
+class Lab {
+  private root: HTMLDivElement;
+  private hosts: Host[] = [];
+  private next = 0;
+  /** Boxes the last diff found taken away (in the before layout). */
+  removed: Rect[] = [];
+
+  constructor(
+    private assetBase: string | undefined,
+    private theme: "light" | "dark",
+  ) {
+    this.root = document.createElement("div");
+    this.root.style.cssText =
+      "position:fixed;left:0;top:0;width:0;height:0;overflow:visible;visibility:hidden;pointer-events:none;contain:layout";
+    document.body.appendChild(this.root);
+  }
+
+  /** A board laid out in its own host (two of these can be compared). */
+  async show(doc: Doc, ab: Artboard, slot = 0): Promise<Host> {
+    while (this.hosts.length <= slot) {
+      const wrap = document.createElement("div");
+      wrap.style.cssText = "position:absolute;left:0;top:0";
+      const host = document.createElement("div");
+      host.style.display = "contents";
+      wrap.appendChild(host);
+      this.root.appendChild(wrap);
+      this.hosts.push({ wrap, shadow: host.attachShadow({ mode: "open" }), html: "" });
+    }
+    const h = this.hosts[slot]!;
+    const { w, h: fixed } = artboardSize(ab);
+    h.wrap.style.width = `${w}px`;
+    h.wrap.style.height = fixed ? `${fixed}px` : "";
+    const { html, fonts } = artboardMarkup(
+      ab,
+      doc.tokens,
+      this.assetBase,
+      schemeFor(doc, ab, this.theme),
+    );
+    if (html !== h.html) {
+      h.html = html;
+      loadArtboardFonts(fonts);
+      h.shadow.innerHTML = html;
+      await settleAssets(h.shadow);
+    }
+    void this.next;
+    return h;
+  }
+
+  height(h: Host): number {
+    return h.wrap.getBoundingClientRect().height;
+  }
+
+  box(h: Host, id: string): Rect | null {
+    const el = h.shadow.querySelector(`[data-id="${CSS.escape(id)}"]`);
+    if (!el) return null;
+    const b = h.wrap.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    if (!r.width && !r.height) return null;
+    return { x: r.left - b.left, y: r.top - b.top, w: r.width, h: r.height };
+  }
+
+  /** Lines of text on the board, in board px. */
+  texts(h: Host): Rect[] {
+    const b = h.wrap.getBoundingClientRect();
+    const out: Rect[] = [];
+    const walker = document.createTreeWalker(h.shadow, NodeFilter.SHOW_TEXT);
+    const range = document.createRange();
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (!n.textContent?.trim()) continue;
+      range.selectNodeContents(n);
+      for (const r of range.getClientRects()) {
+        if (r.width < 2 || r.height < 2) continue;
+        out.push({ x: r.left - b.left, y: r.top - b.top, w: r.width, h: r.height });
+      }
+      if (out.length > 800) break;
+    }
+    return out;
+  }
+
+  /**
+   * What looks different between two layouts of a board: the boxes of
+   * elements that are new, gone, moved, resized or restyled, by data-id.
+   */
+  diff(a: Host, b: Host): Rect[] {
+    this.removed = [];
+    const boxes = (h: Host) => {
+      const base = h.wrap.getBoundingClientRect();
+      const m = new Map<string, { r: Rect; sig: string }>();
+      for (const el of h.shadow.querySelectorAll<HTMLElement>("[data-id]")) {
+        const r = el.getBoundingClientRect();
+        if (r.width < 1 || r.height < 1) continue;
+        const own = [...el.childNodes]
+          .filter((c) => c.nodeType === 3)
+          .map((c) => c.textContent)
+          .join("");
+        const cs = getComputedStyle(el);
+        const sig = `${own}|${cs.color}|${cs.backgroundColor}|${cs.fontSize}|${cs.fontWeight}|${cs.backgroundImage.slice(0, 80)}|${cs.fill}|${cs.stroke}|${cs.transform}|${el.getAttribute("src") ?? ""}|${el.getAttribute("d") ?? ""}|${el.getAttribute("points") ?? ""}`;
+        m.set(el.dataset.id!, {
+          r: { x: r.left - base.left, y: r.top - base.top, w: r.width, h: r.height },
+          sig,
+        });
+      }
+      return m;
+    };
+    const A = boxes(a);
+    const B = boxes(b);
+    const out: Rect[] = [];
+    for (const [id, nb] of B) {
+      const na = A.get(id);
+      if (!na) out.push(nb.r);
+      else if (
+        na.sig !== nb.sig ||
+        Math.abs(na.r.x - nb.r.x) > 2 ||
+        Math.abs(na.r.y - nb.r.y) > 2 ||
+        Math.abs(na.r.w - nb.r.w) > 2 ||
+        Math.abs(na.r.h - nb.r.h) > 2
+      )
+        out.push(nb.r);
+    }
+    for (const [id, na] of A)
+      if (!B.has(id)) {
+        out.push(na.r);
+        this.removed.push(na.r);
+      }
+    // Keep the leaves: a container counts only when nothing inside it does.
+    return out.filter(
+      (r) =>
+        !out.some(
+          (o) =>
+            o !== r &&
+            o.x >= r.x - 1 &&
+            o.y >= r.y - 1 &&
+            o.x + o.w <= r.x + r.w + 1 &&
+            o.y + o.h <= r.y + r.h + 1 &&
+            o.w * o.h < r.w * r.h,
+        ),
+    );
+  }
+
+  dispose() {
+    this.root.remove();
+  }
+}
+
+const union = (rects: Rect[]): Rect | undefined => {
+  if (!rects.length) return undefined;
+  const x0 = Math.min(...rects.map((r) => r.x));
+  const y0 = Math.min(...rects.map((r) => r.y));
+  const x1 = Math.max(...rects.map((r) => r.x + r.w));
+  const y1 = Math.max(...rects.map((r) => r.y + r.h));
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+};
+const area = (rects: Rect[]) => rects.reduce((a, r) => a + r.w * r.h, 0);
+const offset = (r: Rect, ab: Artboard): Rect => ({ x: ab.x + r.x, y: ab.y + r.y, w: r.w, h: r.h });
+
+/* ------------------------------------------------------------------ */
+/* Building the edit                                                   */
+/* ------------------------------------------------------------------ */
+
+export async function buildEdit(input: EditInput): Promise<Edit> {
+  const { entries } = input;
+  const view = filmViewport(input.shape);
+  const framing = framingFor(input.shape);
+  const lab = new Lab(input.assetBase, input.theme);
+  const all = moments(entries, input.range);
+  const notes = noteBoards(entries);
+
+  // Docs at any journal index, replayed incrementally (indices only go forward per pass).
+  const docAt = (() => {
+    const cache = new Map<number, Doc>();
+    return (i: number): Doc => {
+      const hit = cache.get(i);
+      if (hit) return structuredClone(hit);
+      const doc = replayTo(entries, i) ?? {
+        name: input.name,
+        pages: [],
+        tokens: "",
+        threads: [],
+        notes: {},
+      };
+      cache.set(i, doc);
+      return structuredClone(doc);
+    };
+  })();
+
+  // The settled look of each work moment: the board before its first op, and after its last.
+  const looks = new Map<Moment, Look>();
+  const measured = new Map<Moment, { changed: Rect[]; removed: Rect[]; before: Doc; after: Doc }>();
+  for (const m of all) {
+    if (m.kind !== "work" || !m.board || notes.has(m.board)) {
+      looks.set(m, { change: 0 });
+      continue;
+    }
+    const before = docAt(m.before);
+    const after = docAt(m.after);
+    const abA = findArtboard(after, m.board)?.artboard;
+    if (!abA) {
+      looks.set(m, { change: 0 });
+      continue;
+    }
+    const abB = findArtboard(before, m.board)?.artboard;
+    const hA = await lab.show(after, abA, 1);
+    const boardArea = artboardSize(abA).w * (lab.height(hA) || 900);
+    let changed: Rect[];
+    let removed: Rect[] = [];
+    if (abB) {
+      const hB = await lab.show(before, abB, 0);
+      changed = lab.diff(hB, hA);
+      removed = lab.removed;
+    } else changed = [{ x: 0, y: 0, w: artboardSize(abA).w, h: lab.height(hA) }];
+    // How much of the board the change touches: the region it spans counts, not just the pixels
+    // of the leaves (a redrawn mark is a few thin paths, but it's the whole mark that changed).
+    const span = union(changed);
+    const change = Math.min(
+      1,
+      Math.max(area(changed), span ? span.w * span.h * 0.6 : 0) / Math.max(1, boardArea),
+    );
+    looks.set(m, { change });
+    measured.set(m, { changed, removed, before, after });
+  }
+
+  const story = chooseStory(all, looks, { length: input.length });
+  (window as unknown as { __looks?: unknown }).__looks = all.map((m) =>
+    m.kind === "work"
+      ? `work ${m.board} ops${m.ops} ${m.answers ?? "-"} change=${(looks.get(m)?.change ?? 0).toFixed(3)} ${story.includes(m) ? "*" : ""}`
+      : `${m.kind} ${story.includes(m) ? "*" : ""}`,
+  );
+  // Hops: a comment on a board the turn's frame doesn't show needs the camera to move.
+  const lastDoc = docAt(entries.length - 1);
+  const hops = new Map<Moment, boolean[]>();
+  const turnFrames = new Map<Moment, Rect[]>();
+  for (const m of story) {
+    if (m.kind !== "turn") continue;
+    const rects = m.comments.map((c) => {
+      const ab = c.board ? findArtboard(lastDoc, c.board)?.artboard : undefined;
+      return ab ? { x: ab.x, y: ab.y, w: artboardSize(ab).w, h: artboardSize(ab).h ?? 900 } : null;
+    });
+    turnFrames.set(
+      m,
+      rects.filter((r): r is Rect => Boolean(r)),
+    );
+    hops.set(
+      m,
+      m.comments.map((c, i) => i > 0 && c.board !== m.comments[i - 1]!.board),
+    );
+  }
+  const tl = timeline(story, { length: input.length, hops });
+
+  // The canvas as each shot sees it. Between shots the canvas jumps to the next shot's before:
+  // what happened off screen (build-up that didn't make the cut) is simply there.
+  const scenes: Scene[] = [];
+  const heightsOf = async (doc: Doc): Promise<Map<string, number>> => {
+    const out = new Map<string, number>();
+    for (const p of doc.pages)
+      for (const ab of p.artboards) {
+        const fixed = artboardSize(ab).h;
+        out.set(ab.id, fixed ?? lab.height(await lab.show(doc, ab, 2)));
+      }
+    return out;
+  };
+  const textsOf = async (doc: Doc, abs: Artboard[]): Promise<Rect[]> => {
+    const out: Rect[] = [];
+    for (const ab of abs)
+      for (const r of lab.texts(await lab.show(doc, ab, 2))) out.push(offset(r, ab));
+    return out;
+  };
+  const boardRect = (ab: Artboard, heights: Map<string, number>): Rect => ({
+    x: ab.x,
+    y: ab.y,
+    w: artboardSize(ab).w,
+    h: heights.get(ab.id) ?? artboardSize(ab).h ?? 900,
+  });
+  const pageBoards = (doc: Doc, id: string) =>
+    findArtboard(doc, id)?.page.artboards.filter((a) => !notes.has(a.id)) ?? [];
+
+  for (const [shotIndex, shot] of tl.shots.entries()) {
+    const m = shot.moment;
+    if (m.kind === "work") {
+      const got = measured.get(m)!;
+      const { after } = got;
+      // The film opens mid-build: the first shot starts with its board half made, not blank.
+      const before =
+        shotIndex === 0 && m.indices.length > 2
+          ? docAt(m.indices[Math.floor(m.indices.length * 0.55)]!)
+          : got.before;
+      const ab = findArtboard(after, m.board)!.artboard;
+      const hB = await heightsOf(before);
+      const hA = await heightsOf(after);
+      // Frame: the board whole if it reads, else everything that changed, never cutting text.
+      const detail = union(got.changed.map((r) => offset(r, ab)));
+      const neighbours = pageBoards(after, m.board);
+      // The camera rests here on the before and on the after: neither may cut a line.
+      const texts = [
+        ...(await textsOf(after, neighbours)),
+        ...(await textsOf(before, pageBoards(before, m.board))),
+      ];
+      const cam = frameFocus(
+        {
+          page: findArtboard(after, m.board)!.page.id,
+          board: boardRect(ab, hA),
+          detail,
+          parts: got.changed.map((r) => offset(r, ab)),
+          texts,
+          key: m.board,
+        },
+        view,
+        framing,
+      );
+      // What rises in: the new subtrees in the after state, opened into blocks.
+      const hostA = await lab.show(after, ab, 1);
+      const beforeAb = findArtboard(before, m.board)?.artboard;
+      const fresh: string[] = [];
+      const walk = (n: Artboard["root"]) => {
+        for (const c of n.children) {
+          if (c.kind !== "el") continue;
+          if (!beforeAb || !findNode(beforeAb.root, c.id)) fresh.push(c.id);
+          else walk(c);
+        }
+      };
+      walk(ab.root);
+      // New pieces rise in where there was nothing; a piece replacing something cuts in over it
+      // (rising from nothing there would show a hole).
+      const overlapsRemoved = (r: Rect) =>
+        got.removed.some(
+          (o) =>
+            Math.max(0, Math.min(r.x + r.w, o.x + o.w) - Math.max(r.x, o.x)) *
+              Math.max(0, Math.min(r.y + r.h, o.y + o.h) - Math.max(r.y, o.y)) >
+            0.2 * Math.min(r.w * r.h, o.w * o.h),
+        );
+      const rise = streamUnits((id) => findNode(ab.root, id)?.node ?? null, fresh, 6, 16).filter(
+        (id) => {
+          const r = lab.box(hostA, id);
+          return r && !overlapsRemoved(r);
+        },
+      );
+      scenes.push({
+        shot,
+        before,
+        after,
+        heights: { before: hB, after: hA },
+        cams: [cam],
+        board: m.board,
+        rise,
+        born: !beforeAb && shotIndex > 0,
+        resolves: m.resolves,
+        who: m.who,
+      });
+      continue;
+    }
+    if (m.kind === "turn") {
+      const before = docAt(m.comments[0]!.entry - 1);
+      const after = docAt(m.comments[m.comments.length - 1]!.entry);
+      const hA = await heightsOf(after);
+      const threads: Thread[][] = [];
+      const cams: Cam[] = [];
+      const subjects: Rect[] = [];
+      // Frame the turn's boards together when they read; else each comment's board in turn.
+      const rects = turnFrames.get(m) ?? [];
+      const all = union(rects.map((r) => ({ ...r, h: r.h })));
+      for (const [i, c] of m.comments.entries()) {
+        const d = docAt(c.entry);
+        threads.push(d.threads);
+        const ab = c.board ? findArtboard(d, c.board)?.artboard : undefined;
+        if (!ab) {
+          cams.push(cams[i - 1] ?? { page: d.pages[0]?.id ?? "", cx: 0, cy: 0, zoom: 1 });
+          subjects.push({ x: 0, y: 0, w: 0, h: 0 });
+          continue;
+        }
+        const t = d.threads.find((x) => x.id === c.thread)!;
+        const pin = { x: ab.x + t.x, y: ab.y + t.y };
+        const host = await lab.show(d, ab, 2);
+        const node = t.nodeId ? lab.box(host, t.nodeId) : null;
+        const subject = node
+          ? union([offset(node, ab), { x: pin.x - 16, y: pin.y - 16, w: 32, h: 32 }])!
+          : { x: pin.x - 160, y: pin.y - 120, w: 320, h: 240 };
+        subjects.push(subject);
+        const texts = await textsOf(d, pageBoards(d, ab.id));
+        const fitAll = all ? Math.min(view.w / all.w, view.h / all.h) : 0;
+        const together = all && fitAll >= framing.minZoom && rects.length > 1;
+        const cam = frameFocus(
+          together
+            ? { page: findArtboard(d, ab.id)!.page.id, board: all!, overview: true, texts }
+            : {
+                page: findArtboard(d, ab.id)!.page.id,
+                board: boardRect(ab, hA),
+                detail: subject,
+                texts,
+                pin,
+                key: ab.id,
+              },
+          view,
+          framing,
+        );
+        cams.push(cam);
+      }
+      scenes.push({
+        shot,
+        before,
+        after,
+        heights: { before: hA, after: hA },
+        cams,
+        threads,
+        subjects,
+      });
+    }
+  }
+
+  // The result: the board the session was about, whole, readable.
+  const endDoc = scenes.at(-1)?.after ?? lastDoc;
+  const endHeights = await heightsOf(endDoc);
+  const lastBoard =
+    [...scenes].reverse().find((s) => s.board)?.board ??
+    endDoc.pages.flatMap((p) => p.artboards)[0]?.id;
+  const counts = new Map<string, number>();
+  for (const m of all) {
+    if (m.kind === "turn")
+      for (const c of m.comments) if (c.board) counts.set(c.board, (counts.get(c.board) ?? 0) + 2);
+    if (m.kind === "work" && m.board && !notes.has(m.board))
+      counts.set(m.board, (counts.get(m.board) ?? 0) + (looks.get(m)?.change ?? 0));
+  }
+  // A board that reads whole in this shape makes the better last picture (a phone screen in a
+  // tall film, a desktop page in a wide one).
+  const reads = (id: string) => {
+    const ab = findArtboard(endDoc, id)?.artboard;
+    if (!ab) return false;
+    const r = boardRect(ab, endHeights);
+    return (
+      Math.min((view.w - 2 * framing.pad) / r.w, (view.h - 2 * framing.pad - framing.top) / r.h) >=
+      framing.minZoom
+    );
+  };
+  for (const [id, v] of counts) if (reads(id)) counts.set(id, v * 2.5 + 1);
+  const hero = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? lastBoard;
+  const heroAb = hero ? findArtboard(endDoc, hero)?.artboard : undefined;
+  const pageAll = heroAb
+    ? union(pageBoards(endDoc, heroAb.id).map((ab) => boardRect(ab, endHeights)))
+    : undefined;
+  const readsTogether =
+    pageAll &&
+    Math.min(
+      (view.w - 2 * framing.pad) / pageAll.w,
+      (view.h - 2 * framing.pad - framing.top) / pageAll.h,
+    ) >=
+      framing.minZoom * (view.h > view.w ? 1.05 : 0.7);
+  const resultCam = heroAb
+    ? frameFocus(
+        {
+          page: findArtboard(endDoc, heroAb.id)!.page.id,
+          board: readsTogether ? pageAll! : boardRect(heroAb, endHeights),
+          overview: true,
+          texts: await textsOf(endDoc, pageBoards(endDoc, heroAb.id)),
+        },
+        view,
+        framing,
+      )
+    : { page: endDoc.pages[0]?.id ?? "", cx: 0, cy: 0, zoom: 1 };
+
+  const firstDoc = scenes[0]?.before ?? endDoc;
+  const firstHeights = await heightsOf(firstDoc);
+  lab.dispose();
+
+  const turnMoments = all.filter((m): m is Extract<Moment, { kind: "turn" }> => m.kind === "turn");
+  const ticks = turnMoments.flatMap((m) => m.comments.map((c: CommentLanding) => c.t));
+  const ops = entries.filter(
+    (e) => e.kind === "op" && (!input.range || (e.t >= input.range.from && e.t <= input.range.to)),
+  );
+  return {
+    name: input.name,
+    shape: input.shape,
+    view,
+    theme: input.theme,
+    assetBase: input.assetBase,
+    timeline: tl,
+    scenes,
+    result: { doc: endDoc, cam: resultCam, heights: endHeights },
+    first: { doc: firstDoc, heights: firstHeights },
+    range: ops.length ? { from: ops[0]!.t, to: ops[ops.length - 1]!.t } : null,
+    ticks,
+    filmTicks: tl.shots.flatMap((s) => s.landings?.map((l) => l.at) ?? []),
+  };
+}
+
+/** Keeps `avoidCuts` reachable for callers that frame by hand. */
+export { avoidCuts, tryApply };

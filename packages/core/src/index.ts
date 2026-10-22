@@ -10,6 +10,7 @@ export * from "./outline.ts";
 export * from "./preview.ts";
 export * from "./protocol.ts";
 export * from "./reconcile.ts";
+export * from "./story.ts";
 export * from "./timelapse.ts";
 export * from "./tree.ts";
 export * from "./types.ts";

@@ -2,9 +2,10 @@ import type { FilmShape, JournalEntry, Range } from "@ponzu/core";
 import { parseJournal } from "@ponzu/core";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
+import { buildEdit, type Edit } from "./edit.ts";
 import { createEncoder, type FilmEncoder } from "./encode.ts";
 import { Film } from "./Film.tsx";
-import { buildFilm, type FilmModel, settleAssets } from "./model.ts";
+import { settleAssets } from "./model.ts";
 
 /**
  * The film page, at /film: renders one timelapse frame-exactly for a host
@@ -62,7 +63,7 @@ export function startFilmPage(el: HTMLElement) {
   document.body.style.margin = "0";
   document.body.style.overflow = "hidden";
   const root = createRoot(el);
-  let model: FilmModel | null = null;
+  let model: Edit | null = null;
   let fps = 30;
   let encoder: FilmEncoder | null = null;
 
@@ -86,7 +87,7 @@ export function startFilmPage(el: HTMLElement) {
       await document.fonts.load('700 40px "Funnel Display"').catch(() => {});
       await document.fonts.load('400 12px "IBM Plex Mono"').catch(() => {});
       await document.fonts.load('500 12px "Inter"').catch(() => {});
-      model = await buildFilm({
+      model = await buildEdit({
         name,
         entries,
         shape: spec.shape,
@@ -95,8 +96,8 @@ export function startFilmPage(el: HTMLElement) {
         theme: spec.theme,
         assetBase: `${location.origin}/files/${encodeURIComponent(spec.file)}`,
       });
-      (window as unknown as { __film?: FilmModel }).__film = model;
-      const frames = Math.round(model.plan.duration * fps);
+      (window as unknown as { __film?: Edit }).__film = model;
+      const frames = Math.round(model.timeline.duration * fps);
       await draw(0);
       return {
         frames,
@@ -104,7 +105,7 @@ export function startFilmPage(el: HTMLElement) {
         width: Math.round(model.view.w * model.view.scale),
         height: Math.round(model.view.h * model.view.scale),
         scale: model.view.scale,
-        duration: model.plan.duration,
+        duration: model.timeline.duration,
       };
     },
     frame: (i) => draw(i / fps),

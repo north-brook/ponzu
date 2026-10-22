@@ -1,13 +1,12 @@
 import {
   type Artboard,
-  beatIndexAt,
   type Cam,
-  camOnPath,
   clamp01,
   type Doc,
   ease,
-  pageDipAt,
+  flyTo,
   progress,
+  shotAt,
   type Thread,
 } from "@ponzu/core";
 import {
@@ -22,57 +21,191 @@ import {
   SLICE_STROKE,
   ThreadCard,
   Trace,
-  type Worker,
   WorkingStatus,
 } from "@ponzu/react";
 import { type CSSProperties, memo, useLayoutEffect, useMemo, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { type FilmModel, fallbackCam, pinSpot, type Swap, schemeFor } from "./model.ts";
+import type { Edit, Scene } from "./edit.ts";
+import { pinSpot, schemeFor } from "./model.ts";
 
 /** How long one piece takes to rise in, and how far. */
 export const STREAM_MS = 500;
 export const STREAM_RISE = 6;
-/** The gap between pieces of one change, at most. */
-const STAGGER = 0.07;
 const PIN_IN = 0.32;
-const PIN_OUT = 0.34;
+const PIN_OUT = 0.3;
+
+type FilmModel = Edit;
+
+interface Frame {
+  doc: Doc;
+  heights: Map<string, number>;
+  cam: Cam;
+  /** The board an agent is working on, with its mark. */
+  working?: { board: string; who: { name: string; client?: string } };
+  /** Pieces rising, and how far into their rise (ms), by data-id. */
+  rising?: { ids: string[]; at: number[] };
+  /** A board being drawn in: 0 → 1. */
+  drawing?: { board: string; p: number };
+  /** Pins: open threads, with how far they've popped in or out. */
+  threads: Thread[];
+  pinIn?: { thread: string; p: number };
+  pinsOut?: { thread: Thread; p: number }[];
+  /** The one card showing, and what it's about (canvas px), which it keeps clear of. */
+  card?: {
+    thread: Thread;
+    opacity: number;
+    now: number;
+    subject?: { x: number; y: number; w: number; h: number };
+  };
+  /** The end card: 0 → 1 fade, and its own clock. */
+  end?: { fade: number; t: number };
+}
+
+/** The canvas at film time `f`: one settled state, a camera, and what's animating. */
+function frameAt(e: Edit, f: number): Frame {
+  const tl = e.timeline;
+  const { index, phase } = shotAt(tl, f);
+  const scene = e.scenes[index];
+  if (!scene || phase === "result" || phase === "end") {
+    const from = scene ? sceneCam(scene, scene.shot.end, e.view) : e.result.cam;
+    const p = ease.inOut(clamp01((f - tl.result) / 1.0));
+    const cam =
+      from.page === e.result.cam.page ? flyTo(from, e.result.cam, p, e.view) : e.result.cam;
+    const doc = e.result.doc;
+    // The result, clean: the conversation's done, so its pins are off the final picture.
+    const out: Frame = { doc, heights: e.result.heights, cam, threads: [] };
+    if (f >= tl.endCard - 0.3)
+      out.end = { fade: clamp01((f - (tl.endCard - 0.3)) / 0.3), t: f - tl.endCard };
+    return out;
+  }
+  const s = scene.shot;
+  // Travelling: the canvas is this shot's before; the camera glides from the last shot's rest.
+  const prevScene = e.scenes[index - 1];
+  const from = prevScene ? sceneCam(prevScene, prevScene.shot.end, e.view) : scene.cams[0]!;
+  if (phase === "travel") {
+    const p = ease.inOut(clamp01((f - s.start) / Math.max(0.001, s.arrive - s.start)));
+    const to = scene.cams[0]!;
+    const cam = from.page === to.page ? flyTo(from, to, p, e.view) : p < 0.5 ? from : to;
+    return {
+      doc: scene.before,
+      heights: scene.heights.before,
+      cam,
+      threads: open(scene.before),
+    };
+  }
+  if (scene.shot.moment.kind === "turn") return turnFrame(e, scene, f);
+  return workFrame(e, scene, f);
+}
+
+/** Where a scene's camera is at time `f` (a turn's camera hops between its comments). */
+function sceneCam(scene: Scene, f: number, view: { w: number; h: number }): Cam {
+  const l = scene.shot.landings;
+  if (!l?.length || scene.cams.length < 2) return scene.cams[0]!;
+  let i = 0;
+  while (i + 1 < l.length && l[i + 1]!.at - 0.6 <= f) i++;
+  const cur = scene.cams[i]!;
+  const next = l[i + 1];
+  if (next?.hop && f > next.at - 0.6) {
+    const p = ease.inOut(clamp01((f - (next.at - 0.6)) / 0.55));
+    return flyTo(cur, scene.cams[i + 1]!, p, view);
+  }
+  return cur;
+}
+
+const open = (doc: Doc) => doc.threads.filter((t) => t.status === "open");
+
+function workFrame(e: Edit, scene: Scene, f: number): Frame {
+  const s = scene.shot;
+  const cam = scene.cams[0]!;
+  const changing = f >= s.change;
+  const doc = changing ? scene.after : scene.before;
+  const heights = changing ? scene.heights.after : scene.heights.before;
+  const out: Frame = {
+    doc,
+    heights,
+    cam,
+    threads: open(doc),
+    ...(scene.board && f < s.changed + 0.35
+      ? { working: { board: scene.board, who: scene.who ?? { name: "Agent" } } }
+      : {}),
+  };
+  // The pins this work answers stay up until it lands, then leave.
+  if (!changing) {
+    out.threads = open(doc);
+  } else {
+    const leaving = (scene.resolves ?? [])
+      .map((id) => scene.before.threads.find((t) => t.id === id))
+      .filter((t): t is Thread => Boolean(t));
+    const p = clamp01((f - s.changed + 0.1) / PIN_OUT);
+    if (p < 1) out.pinsOut = leaving.map((thread) => ({ thread, p: ease.in(p) }));
+  }
+  if (changing && scene.born)
+    out.drawing = { board: scene.board!, p: ease.out(clamp01((f - s.change) / 0.5)) };
+  if (changing && scene.rise?.length) {
+    const span = Math.max(0, s.changed - s.change - STREAM_MS / 1000);
+    const step = scene.rise.length > 1 ? Math.min(0.09, span / (scene.rise.length - 1)) : 0;
+    out.rising = {
+      ids: scene.rise,
+      at: scene.rise.map((_, i) => (f - s.change - i * step) * 1000),
+    };
+  }
+  return out;
+}
+
+function turnFrame(e: Edit, scene: Scene, f: number): Frame {
+  const s = scene.shot;
+  const l = s.landings ?? [];
+  let k = -1;
+  for (let i = 0; i < l.length; i++) if (l[i]!.at <= f) k = i;
+  const threads =
+    k >= 0 ? scene.threads![k]!.filter((t) => t.status === "open") : open(scene.before);
+  const cam = sceneCam(scene, f, e.view);
+  const out: Frame = { doc: scene.before, heights: scene.heights.before, cam, threads };
+  if (k >= 0) {
+    const cur = l[k]!;
+    out.pinIn = { thread: cur.comment.thread, p: clamp01((f - cur.at) / PIN_IN) };
+    if (cur.card) {
+      // In once the pin has popped, out a beat before the next lands or the camera hops.
+      const until = Math.min(
+        cur.until,
+        (l[k + 1]?.at ?? s.changed) - (l[k + 1]?.hop ? 0.62 : 0.08),
+      );
+      const opacity = Math.min(
+        progress(f, cur.at + 0.12, cur.at + 0.32, ease.out),
+        1 - progress(f, until - 0.16, until, ease.in),
+      );
+      const t = threads.find((x) => x.id === cur.comment.thread);
+      if (t && opacity > 0.001)
+        out.card = { thread: t, opacity, now: cur.comment.t + 1000, subject: scene.subjects?.[k] };
+    }
+  }
+  return out;
+}
 
 /**
  * One frame of a timelapse, as a pure function of film time `f` (seconds):
  * the canvas with the real artboard renderer, pins, thread cards, trace and
- * working status, under a scripted camera; then the brand's end card.
+ * working status, under a resting or gliding camera; then the brand's end card.
  */
 export function Film({ model, f }: { model: FilmModel; f: number }) {
-  const { plan, view } = model;
-  const k = beatIndexAt(plan, f);
-  const doc = model.docs[k + 1]!;
-  const heights = model.heights[k + 1]!;
-  const cam: Cam = camOnPath(model.camera, f) ?? fallbackCam(model, doc);
+  const { view } = model;
+  const fr = frameAt(model, f);
+  const { doc, cam, heights } = fr;
   const page = doc.pages.find((p) => p.id === cam.page) ?? doc.pages[0];
-  const end = f - model.plan.endCard;
   const root = useRef<HTMLDivElement>(null);
-  const empty = useMemo(() => new MemorySource(model.docs[0]!), [model]);
+  const empty = useMemo(() => new MemorySource(model.first.doc), [model]);
 
   const tx = view.w / 2 - cam.cx * cam.zoom;
   const ty = view.h / 2 - cam.cy * cam.zoom;
   const toScreen = (x: number, y: number) => ({ x: x * cam.zoom + tx, y: y * cam.zoom + ty });
-
-  const working = workingAt(model, f);
   const boards = page?.artboards ?? [];
 
-  // Stream-in: the pieces of recent changes rise and fade in, one after another.
   useLayoutEffect(() => {
     const el = root.current;
     if (!el) return;
-    applyStream(el, model, f);
+    applyRise(el, fr.rising);
     keepCardsInFrame(el, view);
   });
-
-  // Pins: open ones, plus ones leaving after their thread resolved.
-  const pins = pinsAt(model, f, cam.page);
-  const cards = cardsAt(model, f);
-  const dip = pageDipAt(model.camera, f);
-  const canvasFade = end > -0.35 ? clamp01((end + 0.35) / 0.35) : 0;
 
   return (
     <div
@@ -82,24 +215,16 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
       data-film-frame={Math.round(f * 1000)}
     >
       <div className="pz:absolute pz:inset-0 pz:overflow-hidden">
-        {/*
-          Each board is placed in screen space with its own transform. One big transformed
-          layer for the whole canvas left stale tiles of off-screen boards in headless
-          captures as the camera moved.
-        */}
+        {/* Each board placed in screen space with its own transform (see the capture note in git history). */}
         <div className="pz:absolute pz:inset-0">
           {boards.map((ab) => {
-            const appear = boardAppear(model, ab.id, f);
-            if (appear === null) return null;
-            const ghost = ghostFor(model, ab.id, f);
-            const who = working.get(ab.id);
+            const who = fr.working?.board === ab.id ? fr.working.who : undefined;
             const { w, h } = artboardSize(ab);
-            // Off screen: kept (its shadow root stays built) but not drawn, so the canvas layer
-            // only ever holds what's in frame.
             const bh = heights.get(ab.id) ?? h ?? 900;
             const s0 = toScreen(ab.x, ab.y - 40);
             const s1 = toScreen(ab.x + w, ab.y + bh);
             const offscreen = s1.x < -40 || s0.x > view.w + 40 || s1.y < -40 || s0.y > view.h + 40;
+            const drawing = fr.drawing?.board === ab.id ? fr.drawing.p : 1;
             return (
               <div
                 key={ab.id}
@@ -112,10 +237,9 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
                   transformOrigin: "0 0",
                   width: w,
                   height: h ?? undefined,
-                  // A new board arrives solid (a dark one never passes through grey): it's drawn
-                  // in from the top, as a sheet unrolls, its name first.
+                  // A new board is drawn in from the top, solid: a dark one never passes through grey.
                   clipPath:
-                    appear < 1 ? `inset(-40px -40px ${(1 - appear) * 100}% -40px)` : undefined,
+                    drawing < 1 ? `inset(-40px -40px ${(1 - drawing) * 100}% -40px)` : undefined,
                 }}
               >
                 <div
@@ -128,62 +252,88 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
                   <span className={cn("pz:min-w-0 pz:truncate", who && "pz-shimmer")}>
                     {ab.name}
                   </span>
-                  {who && <WorkingStatus who={who} zoom={cam.zoom} />}
+                  {who && (
+                    <WorkingStatus
+                      who={[{ id: who.name, name: who.name, client: who.client }]}
+                      zoom={cam.zoom}
+                    />
+                  )}
                 </div>
-                {/*
-                  One picture of a board at a time: while its old look holds, the new one waits
-                  hidden (kept built), then the swap is a cut. Two layouts never mix.
-                */}
-                <div style={{ display: ghost ? "none" : "contents" }}>
-                  <FilmBoard artboard={ab} doc={doc} model={model} />
-                </div>
-                {ghost && <FilmBoard artboard={ghost.artboard} doc={ghost.doc} model={model} />}
+                <FilmBoard artboard={ab} doc={doc} model={model} />
               </div>
             );
           })}
         </div>
 
         <div className="pz:pointer-events-none pz:absolute pz:inset-0">
-          {boards.map((ab) => {
-            if (!working.has(ab.id) || boardAppear(model, ab.id, f) === null) return null;
-            const p = toScreen(ab.x, ab.y);
-            const h = heights.get(ab.id) ?? artboardSize(ab).h ?? 900;
-            return (
-              <div key={ab.id} style={{ opacity: working.get(ab.id)?.[0] ? 1 : 0 }}>
-                <Trace x={p.x} y={p.y} w={artboardSize(ab).w * cam.zoom} h={h * cam.zoom} />
-              </div>
-            );
-          })}
-          {pins.map(({ thread, spot, scale, opacity }) => {
-            const p = toScreen(spot.x, spot.y);
-            const card = cards.find((c) => c.thread.id === thread.id);
-            const flip = p.x + 330 > view.w;
-            // Low in the frame, the card opens upward so it isn't cut off.
-            const up = p.y + 150 > view.h;
+          {fr.working &&
+            (() => {
+              const ab = boards.find((b) => b.id === fr.working!.board);
+              if (!ab) return null;
+              const p = toScreen(ab.x, ab.y);
+              const h = heights.get(ab.id) ?? artboardSize(ab).h ?? 900;
+              return <Trace x={p.x} y={p.y} w={artboardSize(ab).w * cam.zoom} h={h * cam.zoom} />;
+            })()}
+          {[
+            ...fr.threads.map((t) => ({
+              t,
+              scale: 1,
+              opacity: 1,
+              popping: fr.pinIn?.thread === t.id,
+            })),
+            ...(fr.pinsOut ?? []).map(({ thread, p }) => ({
+              t: thread,
+              scale: 1 - 0.7 * p,
+              opacity: 1 - p,
+              popping: false,
+            })),
+          ].map(({ t, scale: s0, opacity: o0, popping }) => {
+            const spot = pinSpot(doc, t) ?? pinSpot(model.first.doc, t);
+            if (!spot || spot.page !== cam.page) return null;
+            let scale = s0;
+            let opacity = o0;
+            if (popping && fr.pinIn!.p < 1) {
+              const p = fr.pinIn!.p;
+              scale =
+                p < 0.55
+                  ? 0.5 + 0.64 * ease.out(p / 0.55)
+                  : 1.14 - 0.14 * ease.inOut((p - 0.55) / 0.45);
+              opacity = clamp01(p * 3);
+            }
+            const sp = toScreen(spot.x, spot.y);
+            const card = fr.card?.thread.id === t.id ? fr.card : undefined;
             return (
               <div
-                key={thread.id}
+                key={t.id}
                 className={cn(pinWrapClass, card ? "pz:z-[3]" : "pz:z-[2]")}
-                style={{ left: p.x, top: p.y }}
+                style={{ left: sp.x, top: sp.y }}
               >
                 <span
                   className={cn(pinClass, "pz-film-pin pz:bg-comment pz:text-comment-foreground")}
                   style={{ scale: String(scale), opacity }}
                 >
-                  {thread.messages.length}
+                  {t.messages.length}
                 </span>
                 {card && (
                   <div
                     data-film-card
-                    className={cn(
-                      "pz-film-card",
-                      flip && "pz-film-card-flip",
-                      up && "pz-film-card-up",
-                    )}
-                    style={{
-                      opacity: card.opacity,
-                      translate: `0 ${(1 - card.opacity) * 4}px`,
-                    }}
+                    data-subject={
+                      card.subject
+                        ? JSON.stringify(
+                            (() => {
+                              const a = toScreen(card.subject.x, card.subject.y);
+                              return {
+                                x: a.x,
+                                y: a.y,
+                                w: card.subject.w * cam.zoom,
+                                h: card.subject.h * cam.zoom,
+                              };
+                            })(),
+                          )
+                        : undefined
+                    }
+                    className="pz-film-card"
+                    style={{ opacity: card.opacity, translate: `0 ${(1 - card.opacity) * 4}px` }}
                   >
                     <ThreadCard
                       thread={card.thread}
@@ -199,28 +349,16 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
             );
           })}
         </div>
-
-        {dip > 0 && (
-          <div className="pz:absolute pz:inset-0 pz:bg-background" style={{ opacity: dip }} />
-        )}
         <Wayfinding model={model} doc={doc} pageId={cam.page} />
       </div>
-      {canvasFade > 0 && (
-        // The bloom starts as the canvas fades, so there's never an empty card.
-        <EndCard model={model} t={Math.max(0, end + 0.3)} opacity={ease.out(canvasFade)} />
+      {fr.end && (
+        <EndCard model={model} t={Math.max(0, fr.end.t)} opacity={ease.out(fr.end.fade)} />
       )}
     </div>
   );
 }
 
-/* ------------------------------------------------------------------ */
-/* Boards                                                              */
-/* ------------------------------------------------------------------ */
-
-/**
- * One artboard, drawn the way the canvas draws it (ArtboardView's markup in a
- * shadow root). Replaces its markup only when the board changed.
- */
+/** One artboard, drawn the way the canvas draws it. Replaces its markup only when it changed. */
 const FilmBoard = memo(function FilmBoard({
   artboard,
   doc,
@@ -246,242 +384,40 @@ const FilmBoard = memo(function FilmBoard({
   return <div ref={host} data-artboard-host={artboard.id} style={{ display: "contents" }} />;
 });
 
-/** 0 → 1 as a new board arrives; null before it exists. Boards present at the start are just there. */
-function boardAppear(model: FilmModel, id: string, f: number): number | null {
-  const born = model.born.get(id);
-  // Made during the film but never given content: it stays out of the film.
-  if (born === undefined) return model.opening.has(id) ? 1 : null;
-  if (f < born) return null;
-  return progress(f, born, born + STREAM_MS / 1000, ease.out);
-}
+/** New pieces rise 6px and fade in, staggered, over 500ms; driven from film time. */
+const rising = new Set<Element>();
+const anims = new WeakMap<Element, Animation>();
 
-/**
- * The board as it was before a change, over the new one. Never two layouts at
- * once for long: a restyle holds the old picture whole and hands over in a
- * blink; replaced contents keep the old picture of their box until the new
- * pieces start to rise, then it clears quickly, so nothing dips to empty.
- */
-function ghostFor(
-  model: FilmModel,
-  id: string,
-  f: number,
-): { artboard: Artboard; doc: Doc; opacity: number; box?: Swap["box"] } | null {
-  const k = beatIndexAt(model.plan, f);
-  for (let j = k; j >= 0 && j > k - 12; j--) {
-    const b = model.plan.beats[j]!;
-    if (f - b.at > 4.2) break;
-    const swap = model.touched[j]!.find((t) => t.board === id);
-    if (!swap) continue;
-    const start = b.at + swap.hold;
-    // Two layouts never show at once: the old look holds, then cuts to the new one (a
-    // restyle is a change of state, as in the studio; new pieces rise on their own).
-    const handoff = 1 / 120;
-    if (f - start > handoff) continue;
-    const prev = model.docs[j]!;
-    const ab = prev.pages.flatMap((p) => p.artboards).find((a) => a.id === id);
-    if (!ab) return null;
-    return {
-      artboard: ab,
-      doc: prev,
-      box: swap.box,
-      opacity: f < start ? 1 : 1 - progress(f, start, start + handoff, ease.in),
-    };
-  }
-  return null;
-}
-
-/**
- * Pieces of changes rise 6px and fade in, staggered, over 500ms. Driven
- * from film time, so a frame is the same however it's reached.
- */
-function applyStream(root: HTMLElement, model: FilmModel, f: number) {
-  const k = beatIndexAt(model.plan, f);
+function applyRise(root: HTMLElement, r: Frame["rising"]) {
   const live = new Set<Element>();
-  for (let j = k; j >= 0; j--) {
-    const b = model.plan.beats[j]!;
-    const units = model.units[j]!;
-    const span = streamSpan(model, j);
-    if (f - b.at > span + STREAM_MS / 1000) break;
-    if (!units.length) continue;
-    const step = span / Math.max(1, units.length);
-    units.forEach((id, n) => {
-      const local = (f - b.at - n * step) * 1000;
+  if (r)
+    r.ids.forEach((id, n) => {
+      const local = r.at[n]!;
       if (local >= STREAM_MS) return;
       for (const host of root.querySelectorAll("[data-artboard-host]")) {
         const el = host.shadowRoot?.querySelector(`[data-id="${CSS.escape(id)}"]`);
         if (!el || live.has(el)) continue;
         live.add(el);
-        const anim = streamAnim(el);
-        anim.currentTime = Math.max(0, local);
+        let a = anims.get(el);
+        if (!a) {
+          a = el.animate([{ opacity: 0, translate: `0 ${STREAM_RISE}px` }], {
+            duration: STREAM_MS,
+            easing: "cubic-bezier(.2,.8,.2,1)",
+            fill: "both",
+          });
+          a.pause();
+          anims.set(el, a);
+          rising.add(el);
+        }
+        a.currentTime = Math.max(0, local);
       }
     });
-  }
-  // Nodes changed in place settle: a small ease back to size, so the change reads.
-  for (let j = k; j >= 0; j--) {
-    const b = model.plan.beats[j]!;
-    if (f - b.at > SETTLE_MS / 1000) break;
-    for (const id of model.settles[j] ?? []) {
-      const local = (f - b.at) * 1000;
-      for (const host of root.querySelectorAll("[data-artboard-host]")) {
-        const el = host.shadowRoot?.querySelector(`[data-id="${CSS.escape(id)}"]`);
-        if (!el || live.has(el)) continue;
-        live.add(el);
-        const anim = settleAnim(el);
-        anim.currentTime = Math.max(0, local);
-      }
-    }
-  }
-  // Pieces past their rise go back to their own styles.
-  for (const el of streaming) {
+  for (const el of rising) {
     if (live.has(el)) continue;
-    streamAnims.get(el)?.cancel();
-    streamAnims.delete(el);
-    streaming.delete(el);
+    anims.get(el)?.cancel();
+    anims.delete(el);
+    rising.delete(el);
   }
-}
-
-const streaming = new Set<Element>();
-const streamAnims = new WeakMap<Element, Animation>();
-
-function streamAnim(el: Element): Animation {
-  let a = streamAnims.get(el);
-  if (!a) {
-    // One keyframe: the end is the element's own opacity and position.
-    a = el.animate([{ opacity: 0, translate: `0 ${STREAM_RISE}px` }], {
-      duration: STREAM_MS,
-      easing: "cubic-bezier(.2,.8,.2,1)",
-      fill: "both",
-    });
-    a.pause();
-    streamAnims.set(el, a);
-    streaming.add(el);
-  }
-  return a;
-}
-
-const SETTLE_MS = 420;
-
-function settleAnim(el: Element): Animation {
-  let a = streamAnims.get(el);
-  if (!a) {
-    a = el.animate(
-      [
-        { scale: "0.97", filter: "brightness(1.06)" },
-        { scale: "1", filter: "none" },
-      ],
-      {
-        duration: SETTLE_MS,
-        easing: "cubic-bezier(.2,.8,.2,1)",
-        fill: "both",
-      },
-    );
-    a.pause();
-    streamAnims.set(el, a);
-    streaming.add(el);
-  }
-  return a;
-}
-
-/** How long a beat's pieces take to start, end to end. */
-function streamSpan(model: FilmModel, j: number): number {
-  const b = model.plan.beats[j]!;
-  const n = model.units[j]!.length;
-  return Math.min(n * STAGGER, Math.max(0, (b.end - b.at) * 0.8 - STREAM_MS / 1000));
-}
-
-/* ------------------------------------------------------------------ */
-/* Agents at work                                                      */
-/* ------------------------------------------------------------------ */
-
-/** Boards an agent is working on at `f`, with its mark, as the canvas shows them. */
-function workingAt(model: FilmModel, f: number): Map<string, Worker[]> {
-  const out = new Map<string, Worker[]>();
-  for (const w of model.working) {
-    if (f >= w.from && f <= w.to)
-      out.set(w.board, [{ id: w.who.name, name: w.who.name, client: w.who.client }]);
-  }
-  return out;
-}
-
-/* ------------------------------------------------------------------ */
-/* Comments                                                            */
-/* ------------------------------------------------------------------ */
-
-function pinsAt(model: FilmModel, f: number, page: string) {
-  const k = beatIndexAt(model.plan, f);
-  const doc = model.docs[k + 1]!;
-  const out: {
-    thread: Thread;
-    spot: { x: number; y: number };
-    scale: number;
-    opacity: number;
-  }[] = [];
-  const bornAt = (id: string) => model.pinBorn.get(id);
-  for (const t of doc.threads) {
-    if (t.status !== "open") continue;
-    const spot = pinSpot(doc, t);
-    if (!spot || spot.page !== page) continue;
-    const born = bornAt(t.id);
-    let scale = 1;
-    let opacity = 1;
-    if (born !== undefined && f - born < PIN_IN) {
-      const p = clamp01((f - born) / PIN_IN);
-      // A pop: overshoot, then settle.
-      scale =
-        p < 0.55
-          ? 0.5 + (1.14 - 0.5) * ease.out(p / 0.55)
-          : 1.14 - 0.14 * ease.inOut((p - 0.55) / 0.45);
-      opacity = clamp01(p * 3);
-    }
-    out.push({ thread: t, spot, scale, opacity });
-  }
-  // Threads resolved a moment ago, leaving.
-  for (let j = k; j >= 0; j--) {
-    const b = model.plan.beats[j]!;
-    if (f - b.at > PIN_OUT) break;
-    if (b.kind !== "resolve" || !b.thread) continue;
-    const before = model.docs[j]!;
-    const t = before.threads.find((x) => x.id === b.thread);
-    const spot = t && pinSpot(before, t);
-    if (!t || !spot || spot.page !== page) continue;
-    const p = ease.in(clamp01((f - b.at) / PIN_OUT));
-    out.push({ thread: t, spot, scale: 1 - 0.7 * p, opacity: 1 - p });
-  }
-  return out;
-}
-
-/**
- * The thread card showing at `f`, at most one: a comment's card comes in with
- * its pin and goes before the next card, or before the camera sets off
- * somewhere its pin won't be.
- */
-function cardsAt(model: FilmModel, f: number) {
-  const k = beatIndexAt(model.plan, f);
-  const out: { thread: Thread; opacity: number; now: number }[] = [];
-  for (let j = k; j >= Math.max(0, k - 2); j--) {
-    const b = model.plan.beats[j];
-    if (!b || (b.kind !== "comment" && b.kind !== "reply") || !b.thread) continue;
-    if (b.quiet) break;
-    const doc = model.docs[Math.min(model.docs.length - 1, k + 1)]!;
-    const t = doc.threads.find((x) => x.id === b.thread && x.status === "open");
-    if (!t) break;
-    // Gone a beat before the next card, and before the camera leaves.
-    const next = model.plan.beats
-      .slice(j + 1)
-      .find((x) => x.kind === "comment" || x.kind === "reply");
-    let until = Math.min(b.end, next ? next.at - 0.08 : b.end);
-    const leave = model.camera.targets.find((x) => x.t > b.at + 0.05);
-    if (leave && leave.t < until && leave.cam.page) until = Math.max(b.at + 0.5, leave.t);
-    // In once the camera has arrived on it.
-    const trip = [...model.camera.targets].reverse().find((x) => x.t <= b.at + 0.05);
-    const arrived = trip ? Math.max(b.at, trip.t + trip.travel - 0.1) : b.at;
-    const fadeIn = progress(f, arrived + 0.05, arrived + 0.25, ease.out);
-    const fadeOut = 1 - progress(f, until - 0.15, until, ease.in);
-    const opacity = Math.min(fadeIn, fadeOut);
-    if (opacity > 0.001) out.push({ thread: t, opacity, now: b.t + 1000 });
-    break;
-  }
-  return out;
 }
 
 /** Inside this far from the frame's edges, and below the wayfinding line. */
@@ -489,8 +425,8 @@ const SAFE = 16;
 const SAFE_TOP = 56;
 
 /**
- * Thread cards stay whole inside the frame: one that would run off an edge
- * slides back in. Measured after layout, so it's the same on every render.
+ * Thread cards sit beside their pin where they cover least of what the
+ * comment is about, and stay whole inside the frame.
  */
 function keepCardsInFrame(root: HTMLElement, view: { w: number; h: number }) {
   const frame = root.getBoundingClientRect();
@@ -500,13 +436,47 @@ function keepCardsInFrame(root: HTMLElement, view: { w: number; h: number }) {
     if (!card) continue;
     card.style.translate = "";
     const r = card.getBoundingClientRect();
-    const x = (r.left - frame.left) / k;
-    const y = (r.top - frame.top) / k;
     const w = r.width / k;
     const h = r.height / k;
-    const dx = Math.min(0, view.w - SAFE - (x + w)) || Math.max(0, SAFE - x);
-    const dy = Math.min(0, view.h - SAFE - (y + h)) || Math.max(0, SAFE_TOP - y);
-    if (dx || dy) card.style.translate = `${dx}px ${dy}px`;
+    // The pin, in frame px (the wrap sits at it).
+    const pr = wrap.parentElement!.getBoundingClientRect();
+    const px = (pr.left - frame.left) / k;
+    const py = (pr.top - frame.top) / k;
+    const subj = wrap.dataset.subject
+      ? (JSON.parse(wrap.dataset.subject) as { x: number; y: number; w: number; h: number })
+      : null;
+    // Where the card's top-left may go: right of the pin, left of it, below it, above it.
+    const options = [
+      { x: px + 20, y: py - 12 },
+      { x: px - 20 - w, y: py - 12 },
+      { x: px - w / 2, y: py + 20 },
+      { x: px - w / 2, y: py - 20 - h },
+      { x: px + 20, y: py + 20 },
+      { x: px - 20 - w, y: py - 20 - h },
+    ];
+    const clampX = (x: number) => Math.min(view.w - SAFE - w, Math.max(SAFE, x));
+    const clampY = (y: number) => Math.min(view.h - SAFE - h, Math.max(SAFE_TOP, y));
+    const cost = (o: { x: number; y: number }) => {
+      const x = clampX(o.x);
+      const y = clampY(o.y);
+      const moved = Math.hypot(x - o.x, y - o.y);
+      let cover = 0;
+      if (subj) {
+        const ix = Math.max(0, Math.min(x + w, subj.x + subj.w) - Math.max(x, subj.x));
+        const iy = Math.max(0, Math.min(y + h, subj.y + subj.h) - Math.max(y, subj.y));
+        cover = (ix * iy) / Math.max(1, Math.min(w * h, subj.w * subj.h));
+      }
+      // Covering the pin itself is worst; then covering the subject; then being pushed away from the pin.
+      const pinHit = px > x - 8 && px < x + w + 8 && py > y - 8 && py < y + h + 8 ? 1 : 0;
+      return pinHit * 10 + cover * 4 + moved / 200;
+    };
+    const best = options.reduce((a, o) => (cost(o) < cost(a) ? o : a));
+    const tx = clampX(best.x);
+    const ty = clampY(best.y);
+    // The card's own position now (it's laid out at right-of-pin by its class).
+    const cx = (r.left - frame.left) / k;
+    const cy = (r.top - frame.top) / k;
+    card.style.translate = `${tx - cx}px ${ty - cy}px`;
   }
 }
 
@@ -576,7 +546,7 @@ function EndCard({ model, t, opacity }: { model: FilmModel; t: number; opacity: 
   const url = progress(t, 0.62, 0.9, ease.out);
   return (
     <div
-      className="pz:absolute pz:inset-0 pz:flex pz:flex-col pz:items-center pz:justify-center pz:bg-background"
+      className="pz:absolute pz:inset-0 pz:z-[10] pz:flex pz:flex-col pz:items-center pz:justify-center pz:bg-background"
       style={{ opacity }}
     >
       <div className="pz:flex pz:items-center" style={{ gap: mark * 0.3 }}>
@@ -599,7 +569,8 @@ function EndCard({ model, t, opacity }: { model: FilmModel; t: number; opacity: 
             }}
           >
             {SLICE.map((d, i) => {
-              const p = progress(t, i * 0.06, i * 0.06 + 0.5, ease.out);
+              // The segments bloom close together, from a moment after the canvas has gone.
+              const p = progress(t, 0.08 + i * 0.035, 0.08 + i * 0.035 + 0.45, ease.out);
               return (
                 <path
                   key={d}
