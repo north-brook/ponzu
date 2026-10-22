@@ -2,7 +2,8 @@
  * Runs in the page. In a design whose colors change with the theme, finds
  * text and surfaces that only work in one theme: a raw color beside a
  * light-dark() token, so one changes and the other doesn't. Reads every color
- * in both schemes by flipping color-scheme on the page, then puts it back.
+ * in both schemes by flipping color-scheme on the page, and which
+ * prefers-color-scheme rules apply, then puts both back.
  * Parts that set color-scheme themselves don't follow the flip and are left alone.
  * Designs with no theme render light everywhere, so they're skipped.
  */
@@ -10,11 +11,29 @@ export const THEME_LINT_SCRIPT = `(() => {
   const root = document.querySelector('[data-artboard]');
   if (!root || !/light-dark\\(|prefers-color-scheme/i.test(document.documentElement.outerHTML)) return [];
   const html = document.documentElement;
-  // "light dark" lets the page's preference choose; "normal" is light.
-  const declared = getComputedStyle(html).colorScheme;
-  const dark = declared.includes('dark') && (!declared.includes('light') || matchMedia('(prefers-color-scheme: dark)').matches);
-  const now = dark ? 'dark' : 'light';
+  // A render in one theme sets it on the page; otherwise the media preference says.
+  const declared = getComputedStyle(html).colorScheme.trim();
+  const now = /^(light|dark)$/.test(declared) ? declared : matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   const other = now === 'dark' ? 'light' : 'dark';
+  // The page can't change its media preference, so each prefers-color-scheme
+  // condition is rewritten to hold for one theme or the other, and put back after.
+  const PREF = /\\(\\s*prefers-color-scheme\\s*:\\s*(light|dark)\\s*\\)/gi;
+  const lists = [];
+  const collect = (rules) => {
+    for (const r of rules) {
+      if (r.media && PREF.test(r.media.mediaText)) lists.push([r.media, r.media.mediaText]);
+      PREF.lastIndex = 0;
+      if (r.cssRules) collect(r.cssRules);
+    }
+  };
+  for (const sheet of document.styleSheets) {
+    if (PREF.test(sheet.media.mediaText)) lists.push([sheet.media, sheet.media.mediaText]);
+    PREF.lastIndex = 0;
+    try { collect(sheet.cssRules); } catch {}
+  }
+  const prefer = (scheme) => {
+    for (const [list, text] of lists) list.mediaText = text.replace(PREF, (_, s) => s.toLowerCase() === scheme ? '(min-width: 0px)' : '(not (min-width: 0px))');
+  };
   // Everything but the insides of SVGs, so every element's parent is here too.
   const els = [root, ...[...root.querySelectorAll('*')].filter((el) => !el.parentElement.closest('svg'))];
   const read = () => new Map(els.map((el) => {
@@ -25,12 +44,15 @@ export const THEME_LINT_SCRIPT = `(() => {
   const still = document.createElement('style');
   still.textContent = '*, *::before, *::after { transition: none !important; }';
   document.head.append(still);
+  prefer(now);
   const a = read();
   const was = html.style.getPropertyValue('color-scheme');
   html.style.setProperty('color-scheme', other);
+  prefer(other);
   const b = read();
   if (was) html.style.setProperty('color-scheme', was);
   else html.style.removeProperty('color-scheme');
+  for (const [list, text] of lists) list.mediaText = text;
   getComputedStyle(root).color;
   still.remove();
 
@@ -109,7 +131,8 @@ export const THEME_LINT_SCRIPT = `(() => {
     if (!ownText(el)) continue;
     const ta = ratio(over(rgba(ca.color), effA(el)), effA(el));
     const tb = ratio(over(rgba(cb.color), effB(el)), effB(el));
-    if (Math.min(ta, tb) < 2 && Math.max(ta, tb) >= 4) {
+    // Unreadable in one theme and clearly better in the other: faint text that's faint in both is a choice.
+    if (Math.min(ta, tb) < 2 && Math.max(ta, tb) / Math.min(ta, tb) >= 1.5) {
       const color = ca.color !== cb.color;
       const ground = changes(effA(el), effB(el));
       const why = color && !ground ? "its color changes with the theme and its background doesn't"

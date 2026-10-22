@@ -342,6 +342,13 @@ test("renders default to the person's theme and say so when the design has one",
     "These tokens don't change with the theme",
   );
 
+  // A theme in the markup counts as much as one in the tokens.
+  await call("update_styles", {
+    updates: [{ ids: ["n_h"], style: { color: "light-dark(#111, #eee)" } }],
+  });
+  expect((await call("get_basic_info", {})).text).toContain("canvas is in dark mode, so they see");
+  await call("update_styles", { updates: [{ ids: ["n_h"], style: { color: null } }] });
+
   await call("set_tokens", { tokens: { "--paper": "light-dark(#fff, #111)" } });
   const shot = await call("screenshot", { id: "ab_hero" });
   expect(scheme()).toBe("dark");

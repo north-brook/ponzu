@@ -64,6 +64,26 @@ describe.skipIf(!chromium)("theme lint in Chromium", () => {
     expect(await lint(body, "dark")).toEqual([]);
   });
 
+  test("a design themed with prefers-color-scheme is checked in both themes too", async () => {
+    const media = `:root { --bg: #f3f3f1; --ink: #111110; }
+@media (prefers-color-scheme: dark) { :root { --bg: #121212; --ink: #f2f2f2; } }`;
+    const body = `<p data-id="n_fixed" data-name="Fixed" style="color:#111110">Fixed ink</p><p data-id="n_ok" style="color:var(--ink)">Themed</p>`;
+    for (const scheme of ["light", "dark"] as const) {
+      const issues = await lint(body, scheme, media);
+      expect(issues.map((i) => i.id)).toEqual(["n_fixed"]);
+    }
+  });
+
+  test("text that drops below 2:1 in one theme is flagged even if it was only fair in the other", async () => {
+    // #777 is 3.1:1 on the light panel and 1.7:1 on the dark one.
+    const body = `<div data-id="n_panel" style="background:light-dark(#d8d8d8, #555555);padding:8px">
+  <p data-id="n_mid" style="color:#777777">Fair, then gone</p>
+  <p data-id="n_faint" style="color:light-dark(#c8c8c8, #5e5e5e)">Faint in both</p>
+</div>`;
+    const issues = await lint(body, "dark");
+    expect(issues.map((i) => i.id)).toEqual(["n_mid"]);
+  });
+
   test("checking leaves the page in the scheme it rendered in", async () => {
     const { issues } = await renderer.render({
       artboard: board(`<p data-id="n_gray" style="color:#111110">Fixed</p>`),

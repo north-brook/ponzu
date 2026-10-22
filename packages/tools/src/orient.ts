@@ -66,7 +66,8 @@ export const orientTools = [
       }
       if (ws.theme)
         lines.push(
-          isThemed(doc.tokens)
+          isThemed(doc.tokens) ||
+            doc.pages.some((p) => p.artboards.some((ab) => isThemed("", ab.root)))
             ? `The person's canvas is in ${ws.theme} mode, so they see this design's light-dark() colors in ${ws.theme}. Screenshots default to it.`
             : `The person's canvas is in ${ws.theme} mode. These tokens don't change with the theme, so artboards show as they are in both.`,
         );
