@@ -130,20 +130,14 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
                   </span>
                   {who && <WorkingStatus who={who} zoom={cam.zoom} />}
                 </div>
-                <FilmBoard artboard={ab} doc={doc} model={model} />
-                {ghost && (
-                  <div
-                    className="pz:pointer-events-none pz:absolute pz:inset-0"
-                    style={{
-                      opacity: ghost.opacity,
-                      clipPath: ghost.box
-                        ? `inset(${ghost.box.y}px ${w - ghost.box.x - ghost.box.w}px calc(100% - ${ghost.box.y + ghost.box.h}px) ${ghost.box.x}px)`
-                        : undefined,
-                    }}
-                  >
-                    <FilmBoard artboard={ghost.artboard} doc={ghost.doc} model={model} />
-                  </div>
-                )}
+                {/*
+                  One picture of a board at a time: while its old look holds, the new one waits
+                  hidden (kept built), then the swap is a cut. Two layouts never mix.
+                */}
+                <div style={{ display: ghost ? "none" : "contents" }}>
+                  <FilmBoard artboard={ab} doc={doc} model={model} />
+                </div>
+                {ghost && <FilmBoard artboard={ghost.artboard} doc={ghost.doc} model={model} />}
               </div>
             );
           })}
@@ -467,6 +461,7 @@ function cardsAt(model: FilmModel, f: number) {
   for (let j = k; j >= Math.max(0, k - 2); j--) {
     const b = model.plan.beats[j];
     if (!b || (b.kind !== "comment" && b.kind !== "reply") || !b.thread) continue;
+    if (b.quiet) break;
     const doc = model.docs[Math.min(model.docs.length - 1, k + 1)]!;
     const t = doc.threads.find((x) => x.id === b.thread && x.status === "open");
     if (!t) break;
@@ -477,7 +472,10 @@ function cardsAt(model: FilmModel, f: number) {
     let until = Math.min(b.end, next ? next.at - 0.08 : b.end);
     const leave = model.camera.targets.find((x) => x.t > b.at + 0.05);
     if (leave && leave.t < until && leave.cam.page) until = Math.max(b.at + 0.5, leave.t);
-    const fadeIn = progress(f, b.at + 0.05, b.at + 0.25, ease.out);
+    // In once the camera has arrived on it.
+    const trip = [...model.camera.targets].reverse().find((x) => x.t <= b.at + 0.05);
+    const arrived = trip ? Math.max(b.at, trip.t + trip.travel - 0.1) : b.at;
+    const fadeIn = progress(f, arrived + 0.05, arrived + 0.25, ease.out);
     const fadeOut = 1 - progress(f, until - 0.15, until, ease.in);
     const opacity = Math.min(fadeIn, fadeOut);
     if (opacity > 0.001) out.push({ thread: t, opacity, now: b.t + 1000 });

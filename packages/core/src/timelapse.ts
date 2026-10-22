@@ -91,6 +91,8 @@ export interface Beat {
   thread?: string;
   /** Who made it. */
   who: { kind: string; name: string; client?: string };
+  /** A comment that lands as a pin only, without its card (short films). */
+  quiet?: true;
 }
 
 export interface Turn {
@@ -142,6 +144,12 @@ export const RESOLVE_HOLD = 0.4;
 export const REPLY_HOLD = 0.9;
 /** The look at the result before the end card. */
 export const PULLBACK = 2.5;
+/** The look at the result never runs longer than this; spare time goes back to the work. */
+export const PULLBACK_MAX = 3.4;
+/** A run of work on one board gets at least this long, so the camera can visit and look. */
+export const RUN_MIN = 1.35;
+/** A comment that lands as a pin only. */
+export const QUIET_HOLD = 0.45;
 /** The first beat of a turn gets this much extra, so the change of hands reads. */
 export const TURN_BREATH = 0.35;
 /** Real gaps longer than this are idle, and cut down to it. */
@@ -225,44 +233,63 @@ export function planFilm(entries: JournalEntry[], opts: PlanOptions): Plan {
   }
 
   const turnOf = groupTurns(raw.map((r) => r.kind));
+  // In a short film, a turn's first two comments show their cards; the rest land as pins.
+  const cardsPerTurn = opts.length <= 15 ? 2 : Number.POSITIVE_INFINITY;
+  const seenInTurn = new Map<number, number>();
+  const quiet = raw.map((r, k) => {
+    if (r.kind !== "comment") return false;
+    const n = (seenInTurn.get(turnOf[k]!) ?? 0) + 1;
+    seenInTurn.set(turnOf[k]!, n);
+    return n > cardsPerTurn;
+  });
   const pullback = Math.min(PULLBACK, content * 0.11);
-  const durs = solveDurations(
-    raw.map((r) => ({
+  const { durs, leads } = solveDurations(
+    raw.map((r, k) => ({
       kind: r.kind,
       t: r.e.t,
-      board: r.e.artboards[0],
+      board: r.e.artboards[0] ?? threadBoard(r.e.op),
       light: r.kind === "edit" && (!visible(r.e.op) || r.note),
       words: r.kind === "comment" ? commentWords(r.e.op) : undefined,
       size: r.kind === "edit" ? JSON.stringify(r.e.op).length : undefined,
+      quiet: quiet[k],
     })),
     turnOf,
     content - pullback,
   );
-  const finalPull = content - durs.reduce((x, y) => x + y, 0);
+  // Time over (every run at its longest) goes to the look at the result, up to a point,
+  // then back to the work.
+  let finalPull = content - durs.reduce((x, y) => x + y, 0);
+  if (finalPull > PULLBACK_MAX) {
+    const extra = finalPull - PULLBACK_MAX;
+    const editTotal = durs.reduce((a, d, k) => a + (raw[k]!.kind === "edit" ? d : 0), 0);
+    if (editTotal > 0) {
+      for (let k = 0; k < durs.length; k++)
+        if (raw[k]!.kind === "edit") {
+          const add = (extra * durs[k]!) / editTotal;
+          durs[k] = durs[k]! + add;
+          leads[k] = leads[k]! + (leads[k]! > 0.3 ? add * 0.3 : 0);
+        }
+      finalPull = PULLBACK_MAX;
+    }
+  }
 
   const beats: Beat[] = [];
   let t = 0;
   for (let k = 0; k < raw.length; k++) {
     const r = raw[k]!;
     const d = durs[k]!;
-    // The change lands once the camera has had a moment to get there.
-    const lead =
-      r.kind === "comment"
-        ? Math.min(0.25, d * 0.25)
-        : r.kind === "edit"
-          ? Math.min(0.55, d * 0.4)
-          : Math.min(0.15, d * 0.3);
     beats.push({
       entry: r.i,
       kind: r.kind,
       turn: turnOf[k]!,
       start: t,
-      at: t + lead,
+      at: t + Math.min(leads[k]!, d * 0.9),
       end: t + d,
       t: r.e.t,
       artboards: r.e.artboards,
       thread: threadOf(r.e.op),
       who: r.e.origin,
+      ...(quiet[k] ? { quiet: true } : {}),
     });
     t += d;
   }
@@ -296,32 +323,42 @@ export function planFilm(entries: JournalEntry[], opts: PlanOptions): Plan {
   };
 }
 
+export interface DurationInput {
+  kind: BeatKind;
+  t: number;
+  board?: string;
+  /** Shows nothing on its own (a token, a note board): passes quickly. */
+  light?: boolean;
+  words?: number;
+  /** How much the op brings, roughly (its size in characters). */
+  size?: number;
+  /** A comment shown as a pin only. */
+  quiet?: boolean;
+}
+
 /**
- * Seconds for each beat, summing to exactly `room`. Comments get about a
- * second, resolves and replies a moment, the first beat of each turn a little
- * extra so the change of hands reads; edits share what's left in proportion
- * to their real gaps (idle capped), so the work plays at an even speed. When
- * the holds alone won't fit, they shrink together, never below a floor.
+ * Seconds for each beat, at most `room` in all, and how far into each its
+ * change lands. Comments get about a second (a pin-only one less), resolves
+ * and replies a moment, the first beat of each turn a little extra. The agent's
+ * work is played as runs, consecutive edits on one board: each run long enough
+ * for the camera to get there and look (its first change waits for it), and
+ * no longer than its changes can fill, so nothing holds on a board where
+ * nothing is happening. Within a run, edits play at an even speed, bigger ones
+ * longer. When the film can't give every run a visit, the smallest pass in a blink.
  */
 export function solveDurations(
-  beats: {
-    kind: BeatKind;
-    t: number;
-    board?: string;
-    light?: boolean;
-    words?: number;
-    /** How much the op brings, roughly (its size in characters). */
-    size?: number;
-  }[],
+  beats: DurationInput[],
   turnOf: number[],
   room: number,
-): number[] {
+): { durs: number[]; leads: number[] } {
   const n = beats.length;
-  if (!n) return [];
+  if (!n) return { durs: [], leads: [] };
   const hold = beats.map((b, k) => {
     const base =
       b.kind === "comment"
-        ? commentHold(b.words ?? 12)
+        ? b.quiet
+          ? QUIET_HOLD
+          : commentHold(b.words ?? 12)
         : b.kind === "resolve"
           ? RESOLVE_HOLD
           : b.kind === "reply"
@@ -330,72 +367,137 @@ export function solveDurations(
     const turnStart = k > 0 && turnOf[k] !== turnOf[k - 1];
     return base + (turnStart ? TURN_BREATH : 0);
   });
-  const weights: number[] = [];
-  let lastBoard: string | undefined;
+  // Op weights: real gaps (idle capped), scaled by size; light ones next to nothing.
+  const weights = beats.map((b, k) => {
+    if (b.kind !== "edit") return 0;
+    if (b.light) return 0.15;
+    const gap = k > 0 ? (b.t - beats[k - 1]!.t) / 1000 : MIN_WEIGHT;
+    let w = Math.min(IDLE_CAP, Math.max(MIN_WEIGHT, gap));
+    if (b.size !== undefined) w *= Math.min(1.7, Math.max(0.45, Math.sqrt(b.size / 2500)));
+    return w;
+  });
+  // Runs: consecutive edits on one board (light ones go with their neighbours).
+  interface Run {
+    ops: number[];
+    board?: string;
+    weight: number;
+    visible: number;
+    dur: number;
+  }
+  const runs: Run[] = [];
   for (let k = 0; k < n; k++) {
     const b = beats[k]!;
-    if (b.kind !== "edit") {
-      if (b.board) lastBoard = b.board;
-      weights.push(0);
-      continue;
-    }
-    const gap = k > 0 ? (b.t - beats[k - 1]!.t) / 1000 : MIN_WEIGHT;
-    let w = b.light ? MIN_WEIGHT * 0.5 : Math.min(IDLE_CAP, Math.max(MIN_WEIGHT, gap));
-    // Big changes get more of the film than small ones: a new section over a nudged chip.
-    if (!b.light && b.size !== undefined)
-      w *= Math.min(1.7, Math.max(0.45, Math.sqrt(b.size / 2500)));
-    if (!b.light && b.board && b.board !== lastBoard) w += MOVE_WEIGHT;
-    if (b.board && !b.light) lastBoard = b.board;
-    weights.push(w);
+    if (b.kind !== "edit") continue;
+    const last = runs[runs.length - 1];
+    const prevEdit = last ? last.ops[last.ops.length - 1]! : -1;
+    const adjacent = last && prevEdit === k - 1;
+    if (last && adjacent && (b.light || !b.board || !last.board || last.board === b.board)) {
+      last.ops.push(k);
+      last.board ??= b.light ? undefined : b.board;
+    } else
+      runs.push({ ops: [k], board: b.light ? undefined : b.board, weight: 0, visible: 0, dur: 0 });
   }
-  const edits = weights.filter((w) => w > 0).length;
+  for (const r of runs) {
+    r.weight = r.ops.reduce((a, k) => a + weights[k]!, 0);
+    r.visible = r.ops.filter((k) => !beats[k]!.light).length;
+  }
+  const runMax = (r: Run) => (r.visible ? Math.min(4.2, 1.0 + 0.42 * r.visible) : 0.3);
+
+  // Holds first; edits keep at least about half the film.
   const holdSum = hold.reduce((a, b) => a + b, 0);
-  // Edits keep at least this much of the film.
-  const editMin = edits ? Math.min(room * 0.55, edits * 0.3) : 0;
+  const editMin = runs.length ? Math.min(room * 0.55, runs.length * RUN_MIN) : 0;
   const holdScale = holdSum > room - editMin ? Math.max(0.3, (room - editMin) / holdSum) : 1;
-  const holds = hold.map((h) => h * holdScale);
-  const editRoom = Math.max(0, room - holds.reduce((a, b) => a + b, 0));
-  // Water-fill: edits get room in proportion to weight, within [floor, MAX_EDIT].
-  const floor = edits ? Math.min(MIN_EDIT, editRoom / edits) : 0;
-  const durs = holds.slice();
-  if (edits) {
-    const idx = weights.map((w, k) => (w > 0 ? k : -1)).filter((k) => k >= 0);
-    let free = idx;
-    let left = editRoom;
-    for (let pass = 0; pass < 8 && free.length; pass++) {
-      const wSum = free.reduce((a, k) => a + weights[k]!, 0);
-      const next: number[] = [];
-      let fixedUsed = 0;
-      for (const k of free) {
-        const share = (left * weights[k]!) / wSum;
-        if (share < floor) {
-          durs[k] = floor;
-          fixedUsed += floor;
-        } else if (share > MAX_EDIT) {
-          durs[k] = MAX_EDIT;
-          fixedUsed += MAX_EDIT;
-        } else {
-          durs[k] = share;
-          next.push(k);
+  const durs = hold.map((h) => h * holdScale);
+  let editRoom = Math.max(0, room - durs.reduce((a, b) => a + b, 0));
+
+  // Which runs get a visit: fixes first (work answering a comment is the payoff), then the
+  // biggest, as many as fit at RUN_MIN; the rest blink.
+  const BLINK = 0.05;
+  const shown = new Set<Run>();
+  // A run answers a comment when its board was commented on in the last turn, first visit after.
+  const answers = new Set<Run>();
+  {
+    let asked = new Set<string>();
+    let k = 0;
+    for (const r of runs) {
+      for (; k < r.ops[0]!; k++) {
+        const b = beats[k]!;
+        if (b.kind === "comment") {
+          if (k > 0 && beats[k - 1]!.kind !== "comment") asked = new Set();
+          if (b.board) asked.add(b.board);
         }
       }
-      if (next.length === free.length) break;
-      left -= fixedUsed;
-      free = next;
-      if (left <= 0) {
-        for (const k of free) durs[k] = floor;
-        break;
+      if (r.board && asked.has(r.board)) {
+        answers.add(r);
+        asked.delete(r.board);
       }
     }
   }
-  // Never more than `room`: over (floors on a crowded film) shrinks everything alike.
-  // Under (few edits, all at their longest) is left for the caller's pull-back.
+  const answering = (r: Run) => answers.has(r);
+  const priority = (r: Run) => r.weight + (answering(r) ? 1000 : 0);
+  const byWeight = [...runs].filter((r) => r.visible).sort((a, b) => priority(b) - priority(a));
+  let budget = editRoom - runs.reduce((a, r) => a + r.ops.length * BLINK, 0);
+  for (const r of byWeight) {
+    const cost = RUN_MIN - r.ops.length * BLINK;
+    if (budget >= cost) {
+      shown.add(r);
+      budget -= cost;
+    }
+  }
+  for (const r of runs) if (!shown.has(r)) r.dur = r.ops.length * BLINK;
+  editRoom -= runs.filter((r) => !shown.has(r)).reduce((a, r) => a + r.dur, 0);
+  // Water-fill the shown runs by weight within [RUN_MIN, runMax].
+  let free = [...shown];
+  let left = editRoom;
+  for (let pass = 0; pass < 10 && free.length; pass++) {
+    const wSum = free.reduce((a, r) => a + r.weight, 0) || 1;
+    const next: Run[] = [];
+    let fixed = 0;
+    for (const r of free) {
+      const share = (left * r.weight) / wSum;
+      const lo = Math.min(RUN_MIN, runMax(r));
+      if (share < lo) {
+        r.dur = lo;
+        fixed += lo;
+      } else if (share > runMax(r)) {
+        r.dur = runMax(r);
+        fixed += r.dur;
+      } else {
+        r.dur = share;
+        next.push(r);
+      }
+    }
+    if (next.length === free.length) break;
+    left -= fixed;
+    free = next;
+  }
+  // Within a run: the first change waits for the camera; then even speed, bigger ops longer.
+  const leads = beats.map((b, k) =>
+    b.kind === "comment"
+      ? Math.min(0.25, durs[k]! * 0.25)
+      : b.kind === "edit"
+        ? 0
+        : Math.min(0.15, durs[k]! * 0.3),
+  );
+  for (const r of runs) {
+    const arrive = shown.has(r) ? Math.min(1.05, r.dur * 0.55) : 0;
+    const playable = r.dur - arrive;
+    const w = r.ops.reduce((a, k) => a + Math.max(0.15, weights[k]!), 0) || 1;
+    r.ops.forEach((k, i) => {
+      durs[k] = (playable * Math.max(0.15, weights[k]!)) / w + (i === 0 ? arrive : 0);
+      leads[k] = i === 0 ? arrive : Math.min(0.08, durs[k]! * 0.3);
+    });
+  }
+  // Never more than `room`.
   const sum = durs.reduce((a, b) => a + b, 0);
   if (sum > room + 1e-9) {
     const k = room / sum;
-    for (let i = 0; i < n; i++) durs[i]! *= k;
+    for (let i = 0; i < n; i++) {
+      durs[i]! *= k;
+      leads[i]! *= k;
+    }
   }
-  return durs;
+  return { durs, leads };
 }
 
 /** Boards named "Note: …": the agent's annotations. The film passes them quickly. */
@@ -440,6 +542,12 @@ function visible(op: Op): boolean {
     default:
       return true;
   }
+}
+
+/** The board a new comment is pinned on. */
+function threadBoard(op: Op): string | undefined {
+  const create = (op.op === "batch" ? op.ops : [op]).find((o) => o.op === "thread.create");
+  return create?.op === "thread.create" ? create.thread.artboardId : undefined;
 }
 
 function threadOf(op: Op): string | undefined {
@@ -1033,7 +1141,7 @@ export interface CamTarget {
 }
 
 /** After arriving, the camera holds at least this long before it leaves again. */
-export const MIN_HOLD = 1.4;
+export const MIN_HOLD = 1.15;
 /** How far ahead of a change the camera sets off, at most. */
 export const LEAD = 0.7;
 
@@ -1123,17 +1231,20 @@ export function camTargets(
       if (t + travel >= plan.pullback - 0.2) continue;
       out.push({ t, cam: v.cam, travel: Math.max(0.45, Math.min(travel, v.at - t + 0.15)) });
     } else {
-      const t = Math.max(free, v.at - Math.min(LEAD, travel * 0.75));
+      // Arrive as the run's first change lands: a long trip goes a little quicker to make it.
+      const needed = v.at - 0.05 - free;
+      const trip = needed < travel ? Math.max(0.6, needed) : travel;
+      const t = Math.max(free, v.at - trip - 0.05);
       // It must hold, and still leave in time for the next comment.
       const next = visits.slice(k + 1).find((x) => x.fixed);
       if (next) {
         const leave = next.at - travelTime(v.cam, next.cam!, view);
-        if (t + travel + MIN_HOLD > leave) continue;
+        if (t + trip + MIN_HOLD > leave) continue;
       }
-      // Not worth it if the run is over before the camera gets there.
-      if (t + travel > v.end + 0.3) continue;
-      if (t + travel >= plan.pullback - 0.2) continue;
-      out.push({ t, cam: v.cam, travel });
+      // Arriving after the run has played still shows its result, for a little while.
+      if (t + trip > v.end + 1.0) continue;
+      if (t + trip >= plan.pullback - 0.2) continue;
+      out.push({ t, cam: v.cam, travel: trip });
     }
     const last = out[out.length - 1]!;
     // A comment's frame holds until it has been read.

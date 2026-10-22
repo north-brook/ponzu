@@ -327,7 +327,20 @@ export async function buildFilm(input: FilmInput): Promise<FilmModel> {
           .map((n) => (findNode(before.artboard.root, n) ? measurer.box(shownBefore, n) : null))
           .filter((r): r is Rect => Boolean(r));
         const box = union(boxes);
+        // Back to the board as it is now, for measuring what's new.
+        await measurer.show(doc, ab);
         if (box) {
+          // What lands where something was replaced doesn't fade up from nothing (that's a hole):
+          // it cuts in over the old picture and settles.
+          const overlaps = (r: Rect) =>
+            r.x < box.x + box.w && r.x + r.w > box.x && r.y < box.y + box.h && r.y + r.h > box.y;
+          for (let u = beatUnits.length - 1; u >= 0; u--) {
+            const r = measurer.box(shown, beatUnits[u]!);
+            if (r && overlaps(r)) {
+              beatSettles.push(beatUnits[u]!);
+              beatUnits.splice(u, 1);
+            }
+          }
           // Taken away with nothing in its place yet (an agent removes, then writes the new
           // version next): the old picture holds until that next change to the board lands.
           let hold = 0.12;
@@ -451,13 +464,17 @@ export async function buildFilm(input: FilmInput): Promise<FilmModel> {
           (view.w - 2 * framing.pad) / all.w,
           (view.h - 2 * framing.pad - framing.top) / all.h,
         );
-        const enough = view.h > view.w ? 0.8 : 0.55;
+        const enough = view.h > view.w ? 1 : 0.55;
         if (fit >= framing.minZoom * enough)
           return { page: endPage.id, board: all, overview: true };
+        // The board that changed the most: the size of what the film's ops brought to it.
         const time = new Map<string, number>();
-        for (const b of plan.beats)
-          if (b.kind === "edit")
-            for (const id of b.artboards) time.set(id, (time.get(id) ?? 0) + b.end - b.start);
+        for (const b of plan.beats) {
+          if (b.kind !== "edit") continue;
+          const e = input.entries[b.entry];
+          const size = e?.kind === "op" ? JSON.stringify(e.op).length : 0;
+          for (const id of b.artboards) time.set(id, (time.get(id) ?? 0) + size);
+        }
         const best = [...shown].sort((a, b) => (time.get(b.id) ?? 0) - (time.get(a.id) ?? 0))[0];
         return best ? { page: endPage.id, board: rectOf(best), overview: true } : null;
       })()

@@ -95,6 +95,7 @@ export function startFilmPage(el: HTMLElement) {
         theme: spec.theme,
         assetBase: `${location.origin}/files/${encodeURIComponent(spec.file)}`,
       });
+      (window as unknown as { __film?: FilmModel }).__film = model;
       const frames = Math.round(model.plan.duration * fps);
       await draw(0);
       return {
