@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.33.0](https://github.com/north-brook/ponzu/compare/v1.32.0...v1.33.0) (2026-10-22)
+
+
+### Features
+
+* view any .design on github at ponzu.design/gh ([#121](https://github.com/north-brook/ponzu/issues/121)) ([10af2bf](https://github.com/north-brook/ponzu/commit/10af2bfa66ed35c25c1d71f14027bde4e5d1ce9a))
+
 ## [1.32.0](https://github.com/north-brook/ponzu/compare/v1.31.0...v1.32.0) (2026-10-22)
 
 
