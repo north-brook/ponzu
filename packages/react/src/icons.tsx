@@ -19,6 +19,7 @@ import {
   FileEmpty02Icon,
   FlowConnectionIcon,
   Folder01Icon,
+  FolderGitIcon,
   FolderOpenIcon,
   FrameIcon,
   GitBranchIcon,
@@ -80,6 +81,8 @@ export const Icons = {
   flow: FlowConnectionIcon,
   folder: Folder01Icon,
   folderOpen: FolderOpenIcon,
+  /** A git repository: a project. */
+  repo: FolderGitIcon,
   branch: GitBranchIcon,
   grid: GridViewIcon,
   hand: HandIcon,
