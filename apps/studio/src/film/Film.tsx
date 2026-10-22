@@ -115,7 +115,8 @@ function frameAt(e: Edit, f: number): Frame {
   if (e.view.h > e.view.w && !fr.only) {
     // In a turn, the board of the card being read (pin-only comments land without moving it).
     const l = scene.shot.landings ?? [];
-    const k = landingIndex(scene, f);
+    // The subject switches at the middle of a hop, when every board is up: no pop.
+    const k = landingIndex(scene, f + 0.3);
     let card = l.findIndex((x, i) => x.card && i >= k);
     for (let i = k; i >= 0; i--)
       if (l[i]?.card) {

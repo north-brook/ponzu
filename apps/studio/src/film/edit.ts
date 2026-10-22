@@ -799,13 +799,18 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
   const pageAll = heroAb
     ? union(pageBoards(endDoc, heroAb.id).map((ab) => boardRect(ab, endHeights)))
     : undefined;
+  // A phone screen alone in a wide frame is a sliver: the result is the row of screens.
+  const heroR = heroAb ? boardRect(heroAb, endHeights) : undefined;
+  const narrowHero =
+    heroR && input.length > 15 && heroR.w / heroR.h < (view.w / view.h) * 0.5 && pageAll;
   const readsTogether =
-    pageAll &&
-    Math.min(
-      (view.w - 2 * framing.pad) / pageAll.w,
-      (view.h - 2 * framing.pad - framing.top) / pageAll.h,
-    ) >=
-      framing.comfort * (view.h > view.w ? 1.1 : 0.95);
+    narrowHero ||
+    (pageAll &&
+      Math.min(
+        (view.w - 2 * framing.pad) / pageAll.w,
+        (view.h - 2 * framing.pad - framing.top) / pageAll.h,
+      ) >=
+        framing.comfort * (view.h > view.w ? 1.1 : 0.95));
   const wholeCam = heroAb
     ? frameFocus(
         {
@@ -824,7 +829,7 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
   const payoffCam = payoff?.cams[0];
   // A long film pulls back to show the result whole, when whole still reads at all.
   const pullback =
-    input.length > 15 && wholeCam.zoom >= framing.minZoom * (view.h > view.w ? 0.75 : 0.85);
+    input.length > 15 && wholeCam.zoom >= framing.comfort * (view.h > view.w ? 0.5 : 0.6);
   const resultCam =
     !pullback && payoffCam && wholeCam.zoom < payoffCam.zoom * (input.length <= 15 ? 0.7 : 0.6)
       ? payoffCam
