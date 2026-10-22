@@ -268,3 +268,32 @@ test("the links to the other Macs close after the last home screen, whoever else
     await spareWs.closeAll();
   }
 }, 15_000);
+
+test("streams that join share a listing rather than each starting one", async () => {
+  delete process.env.PONZU_TAILSCALE;
+  const root = join(dir, "shared");
+  const ws = new LocalWorkspace({ cwd: root });
+  const home = new Home(ws, { roots: [root], spotlight: "roots", tailnet: false, peerPort: 0 });
+  let listings = 0;
+  const local = home.local.bind(home);
+  home.local = () => {
+    listings++;
+    return local();
+  };
+  const feed = new CatalogFeed(home, ws);
+  const sink = (scope: "local" | "full") => ({ scope, send: () => {}, close: () => {} });
+  try {
+    await feed.subscribe(sink("full"));
+    expect(listings).toBe(1);
+    // A home screen reloading in several windows, and other Macs reconnecting, all at once.
+    await Promise.all([
+      ...Array.from({ length: 4 }, () => feed.subscribe(sink("full"))),
+      ...Array.from({ length: 4 }, () => feed.subscribe(sink("local"))),
+    ]);
+    expect(listings).toBe(1);
+  } finally {
+    feed.stop();
+    home.catalog.close();
+    await ws.closeAll();
+  }
+});

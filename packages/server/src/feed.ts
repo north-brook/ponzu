@@ -78,6 +78,11 @@ export class CatalogFeed {
   private running: Promise<void> | null = null;
   private again = false;
   private lastRun = 0;
+  /**
+   * What the last listing covered: "full" also asked which agents are set up. Kept current
+   * by events and the resync while anyone streams; null once nobody has for a while.
+   */
+  private listed: Scope | null = null;
   private ready: Promise<void> | null = null;
   private peerTimer: ReturnType<typeof setInterval> | null = null;
   /** Subscribers sent their snapshot: only they get patches, which build on it. */
@@ -129,7 +134,7 @@ export class CatalogFeed {
       this.ready ??= this.startPeers();
       await this.ready;
     }
-    await this.refresh();
+    await this.baseline(sub.scope);
     if (this.subs.has(sub)) {
       sub.send(JSON.stringify({ t: "snapshot", catalog: this.snapshot(sub.scope) }));
       this.primed.add(sub);
@@ -151,6 +156,8 @@ export class CatalogFeed {
 
   private unsubscribe(sub: Subscriber): void {
     if (!this.subs.delete(sub)) return;
+    // With nobody streaming nothing lists, so what was listed goes stale.
+    if (!this.subs.size) this.listed = null;
     if (sub.scope === "local") {
       // Nothing left listening at all: the timers go now. Links, if any, wait for the linger.
       if (!this.subs.size && !this.linger) this.halt();
@@ -181,6 +188,8 @@ export class CatalogFeed {
   }
 
   private halt(): void {
+    // Nothing keeps the listing current from here on.
+    this.listed = null;
     for (const t of this.loops) clearInterval(t);
     this.loops = [];
     if (this.timer) clearTimeout(this.timer);
@@ -196,6 +205,19 @@ export class CatalogFeed {
         this.subs.delete(s);
         s.close();
       }
+  }
+
+  /**
+   * A listing a new stream's snapshot can come from. One already current serves every
+   * stream that joins, and one under way serves those that join meanwhile: a stream
+   * joining isn't a change, so it lists nothing more.
+   */
+  private async baseline(scope: Scope): Promise<void> {
+    while (!this.stopped) {
+      if (this.listed === "full" || this.listed === scope) return;
+      if (!this.running) return this.refresh();
+      await this.running;
+    }
   }
 
   /** List this Mac's designs and send what changed. One listing at a time. */
@@ -229,6 +251,7 @@ export class CatalogFeed {
     const patch = diff(this.local, here.files);
     this.agents = agents;
     this.agent = this.home.lastAgent();
+    this.listed = wantFull ? "full" : "local";
     // This Mac's own designs go to every stream; the rest only to its home screens.
     if (patch.put?.length || patch.drop?.length)
       this.broadcast((s) => (s === "local" ? { t: "patch", patch } : null));
