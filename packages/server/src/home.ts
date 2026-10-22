@@ -213,6 +213,11 @@ export class Home {
     return this.agent;
   }
 
+  /** Laptop or desktop, for the icon other devices show for this Mac. */
+  machineKind(): Promise<"laptop" | "desktop"> {
+    return this.kind;
+  }
+
   /** The port the owner's other Macs serve their designs on. */
   get peerPort(): number {
     return this.opts.peerPort;

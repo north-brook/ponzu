@@ -25,7 +25,7 @@ test("runs the app bundle's Tailscale as the CLI, not the GUI", async () => {
     bin,
     `#!/bin/sh
 if [ "$TAILSCALE_BE_CLI" != "1" ]; then echo "The Tailscale GUI failed to start"; exit 0; fi
-echo '{"BackendState":"Running","Self":{"TailscaleIPs":["100.64.0.1"],"UserID":7},"Peer":{"a":{"HostName":"Air","TailscaleIPs":["100.64.0.2"],"UserID":7,"OS":"macOS","Online":true}}}'
+echo '{"BackendState":"Running","Self":{"HostName":"Studio","DNSName":"studio.tail1.ts.net.","TailscaleIPs":["100.64.0.1"],"UserID":7},"Peer":{"a":{"HostName":"Air","DNSName":"air.tail1.ts.net.","TailscaleIPs":["100.64.0.2"],"UserID":7,"OS":"macOS","Online":true}}}'
 `,
   );
   await chmod(bin, 0o755);
@@ -35,7 +35,9 @@ echo '{"BackendState":"Running","Self":{"TailscaleIPs":["100.64.0.1"],"UserID":7
     expect(await readTailnet()).toEqual({
       ip: "100.64.0.1",
       user: "7",
-      peers: [{ name: "air", ip: "100.64.0.2", online: true }],
+      name: "studio",
+      dns: "studio.tail1.ts.net",
+      peers: [{ name: "air", ip: "100.64.0.2", online: true, dns: "air.tail1.ts.net" }],
     });
   } finally {
     if (before === undefined) delete process.env.PONZU_TAILSCALE;

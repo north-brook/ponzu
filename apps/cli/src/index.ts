@@ -13,7 +13,7 @@ import { FsAdapter } from "@ponzu/store/fs";
 import pkg from "../package.json" with { type: "json" };
 import { announceHost, findHost, ponzuHome } from "./host.ts";
 import { agentStatus, installAgent } from "./install.ts";
-import { startTelemetry, telemetryCommand, telemetryNotice } from "./telemetry.ts";
+import { phoneTelemetry, startTelemetry, telemetryCommand, telemetryNotice } from "./telemetry.ts";
 
 const VERSION = pkg.version;
 const here = dirname(fileURLToPath(import.meta.url));
@@ -174,6 +174,8 @@ async function runServe(
     spotlight: process.env.PONZU_SPOTLIGHT === "0" ? false : undefined,
     agents: async () => agents(),
     opened: named,
+    version: VERSION,
+    telemetry: phoneTelemetry(),
   });
   const local = `http://${o.host === "0.0.0.0" ? "localhost" : o.host}:${server.port}`;
   // Links agents hand the person open the Mac app, or this canvas.
