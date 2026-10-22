@@ -185,6 +185,8 @@ export interface Focus {
   context?: Rect[];
   /** What must stay wholly in frame whatever else moves (the change being shown). */
   keep?: Rect;
+  /** Where the comment points: when only a part can be framed, the part nearest this. */
+  anchor?: { x: number; y: number };
   /** A small answer to a comment: frame it close (past the comfortable zoom), so it reads. */
   close?: boolean;
   /** Show the whole of `board` even when that's below the shape's legible zoom. */
@@ -228,9 +230,32 @@ export function framingFor(shape: FilmShape): Framing {
  * canvas instead of re-laying it out.
  */
 export function frameFocus(focus: Focus, view: { w: number; h: number }, f: Framing): Cam {
-  const cam = frameFocusRaw(focus, view, f);
+  const chosen: { part?: Rect } = {};
+  const cam = frameFocusRaw(focus, view, f, chosen);
+  // What must stay in frame is what the framing chose to show: when the change is too wide to
+  // read whole (a row of notes in a tall frame), the part it frames, not the whole row.
+  let keep = focus.keep;
+  let part = false;
+  if (keep) {
+    const hw = (view.w - 2 * f.pad) / 2 / cam.zoom;
+    const hh = (view.h - 2 * f.pad - f.top) / 2 / cam.zoom;
+    if (chosen.part) {
+      // Only the part it chose has to stay whole; the rest of the change runs on past the frame.
+      keep = chosen.part;
+      part = true;
+    } else if (keep.w > hw * 2 * 1.02 || keep.h > hh * 2 * 1.02) {
+      const x0 = Math.max(keep.x, cam.cx - hw);
+      const y0 = Math.max(keep.y, cam.cy - hh);
+      const x1 = Math.min(keep.x + keep.w, cam.cx + hw);
+      const y1 = Math.min(keep.y + keep.h, cam.cy + hh);
+      keep = x1 > x0 && y1 > y0 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : undefined;
+      part = true;
+    }
+  }
+  // Framing a part of something wide, its lines run on past the frame: that's the shot (a
+  // part, read close), so it's nudged to cut the least but never pulled back to show it all.
   return focus.texts?.length
-    ? avoidCuts(cam, focus.texts, view, f, focus.context, focus.keep)
+    ? avoidCuts(cam, focus.texts, view, f, focus.context, keep, part)
     : cam;
 }
 
@@ -261,9 +286,11 @@ export function avoidCuts(
   f: Framing,
   context: Rect[] = [],
   keep?: Rect,
+  part = false,
 ): Cam {
   // Lines are measured as text runs; a heading's lines on one row make one line here.
   const lines = mergeRows(texts);
+  if (part) return cleanFrame(cam, lines, view, f, mergeRows(context), keep, 0.94);
   // A line wider than the frame across it (a big heading): pull back to fit it whole while
   // that stays readable; else frame below it, so it isn't cut at the sides.
   const inFrame = (r: Rect, c: Cam) =>
@@ -343,6 +370,7 @@ function cleanFrame(
   f: Framing,
   context: Rect[] = [],
   keep?: Rect,
+  minZk = 0,
 ): Cam {
   // The change being shown stays wholly in frame (below the corner lines): never traded away.
   const holds = (c: Cam) => {
@@ -376,7 +404,7 @@ function cleanFrame(
       best = c;
     }
   };
-  for (const zk of [1, 0.94, 0.88, 0.8, 0.72, 0.64, 0.56]) {
+  for (const zk of [1, 0.94, 0.88, 0.8, 0.72, 0.64, 0.56].filter((z) => z >= minZk)) {
     const z = cam.zoom * zk;
     if (z < f.minZoom * 0.55) break;
     const stepX = view.w / z / 32;
@@ -392,7 +420,12 @@ function cleanFrame(
   return best;
 }
 
-function frameFocusRaw(focus: Focus, view: { w: number; h: number }, f: Framing): Cam {
+function frameFocusRaw(
+  focus: Focus,
+  view: { w: number; h: number },
+  f: Framing,
+  out: { part?: Rect } = {},
+): Cam {
   // Frame inside the view less its margins: more at the top, for the board's name.
   const vw = view.w - 2 * f.pad;
   const vh = view.h - 2 * f.pad - f.top;
@@ -434,12 +467,45 @@ function frameFocusRaw(focus: Focus, view: { w: number; h: number }, f: Framing)
   // Too big to read whole: the whole changed block, as close as it fits, never cut.
   // When that's too small to read, the biggest piece of it instead, whole.
   let d = focus.detail;
-  if (Math.min(vw / d.w, vh / d.h) < f.minZoom * 0.75 && focus.parts?.length) {
-    const fits = focus.parts.filter((r) => Math.min(vw / r.w, vh / r.h) >= f.minZoom * 0.75);
-    const pick = (fits.length ? fits : focus.parts).reduce((a, r) =>
-      r.w * r.h > a.w * a.h ? r : a,
-    );
+  // A tall frame is narrow: what's small in it is unreadable on a phone, so it frames a part sooner.
+  const legible = f.minZoom * (view.h > view.w ? 1 : 0.75);
+  if (Math.min(vw / d.w, vh / d.h) < legible && focus.parts?.length) {
+    const reads = (r: Rect) => Math.min(vw / r.w, vh / r.h) >= legible;
+    const fits = focus.parts.filter(reads);
+    const at = focus.anchor;
+    const dist = (r: Rect) =>
+      at
+        ? Math.hypot(
+            Math.max(r.x - at.x, 0, at.x - r.x - r.w),
+            Math.max(r.y - at.y, 0, at.y - r.y - r.h),
+          )
+        : 0;
+    let pick = (fits.length ? fits : focus.parts).reduce((b, r) => {
+      if (!at || Math.abs(dist(r) - dist(b)) <= 1) return r.w * r.h > b.w * b.h ? r : b;
+      return dist(r) < dist(b) ? r : b;
+    });
+    // Grown by its neighbours while the group still reads: a few notes, not one line of one.
+    // Nearest first by the gap between edges, a row's neighbours before the rows above or below.
+    const seed = pick;
+    const gap = (r: Rect) =>
+      Math.max(0, r.x - seed.x - seed.w, seed.x - r.x - r.w) +
+      3 * Math.max(0, r.y - seed.y - seed.h, seed.y - r.y - r.h);
+    const near = [...fits].sort((a, b) => gap(a) - gap(b));
+    for (const r of near) {
+      const x = Math.min(pick.x, r.x);
+      const y = Math.min(pick.y, r.y);
+      const g = {
+        x,
+        y,
+        w: Math.max(pick.x + pick.w, r.x + r.w) - x,
+        h: Math.max(pick.y + pick.h, r.y + r.h) - y,
+      };
+      // Grows only while it stays close enough to read on a phone (a tall frame is held small).
+      const close = view.h > view.w ? f.comfort * 0.85 : legible;
+      if (Math.min(vw / g.w, vh / g.h) >= close) pick = g;
+    }
     d = pick;
+    out.part = pick;
   }
   const fitDetail = Math.min(vw / d.w, vh / d.h);
   const zoom = Math.max(

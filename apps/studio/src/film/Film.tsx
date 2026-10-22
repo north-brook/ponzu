@@ -97,7 +97,10 @@ function frameAt(e: Edit, f: number): Frame {
       doc: scene.before,
       heights: scene.heights.before,
       cam,
-      threads: open(scene.before),
+      // On the way to a fix, only its board's pins (as when it lands): no stray stories.
+      threads: open(scene.before).filter(
+        (t) => scene.shot.moment.kind !== "work" || t.artboardId === scene.board,
+      ),
     };
   }
   if (scene.shot.moment.kind === "turn") return turnFrame(e, scene, f);

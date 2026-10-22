@@ -326,6 +326,7 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
   // What each comment is about, in its board's px: the node it's pinned to, else around the pin.
   const askedSubjects = new Map<string, Rect[]>();
   const threadSubject = new Map<string, Rect>();
+  const threadPin = new Map<string, { x: number; y: number }>();
   for (const m of all) {
     if (m.kind !== "turn") continue;
     for (const c of m.comments) {
@@ -341,6 +342,7 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
       }
       askedSubjects.set(c.board, [...(askedSubjects.get(c.board) ?? []), r]);
       threadSubject.set(c.thread, r);
+      threadPin.set(c.thread, { x: t.x, y: t.y });
     }
   }
 
@@ -486,6 +488,11 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
         .filter((c) => c?.board === m.board)
         .map((c) => threadSubject.get(c!.thread))
         .filter((r): r is Rect => Boolean(r));
+      const readOutPins = (turnOf?.featured ?? [])
+        .map((id) => turnOf!.comments.find((c) => c.thread === id))
+        .filter((c) => c?.board === m.board)
+        .map((c) => threadPin.get(c!.thread))
+        .filter((p): p is { x: number; y: number } => Boolean(p));
       const asked =
         m.answers === undefined
           ? []
@@ -499,6 +506,7 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
         return { x: a.x - m, y: a.y - m, w: a.w + 2 * m, h: a.h + 2 * m };
       };
       const answering = got.changed.filter((r) => asked.some((a) => overlap(r, near(a)) > 0));
+      const askedUnion = union(asked);
       // The opening is a build: frame the top of the board, at a working zoom (the board's
       // first screenful, where its headline is), not the whole board small.
       const opening = shotIndex === 0 && m.answers === undefined;
@@ -553,6 +561,17 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
           context,
           keep: detail,
           close: answering.length > 0,
+          // Where the comment points: its pin (a whole section may be pinned; the pin says where).
+          ...(answering.length && (readOutPins[0] ?? askedUnion)
+            ? {
+                anchor: readOutPins[0]
+                  ? { x: ab.x + readOutPins[0].x, y: ab.y + readOutPins[0].y }
+                  : {
+                      x: ab.x + askedUnion!.x + askedUnion!.w / 2,
+                      y: ab.y + askedUnion!.y + askedUnion!.h / 2,
+                    },
+              }
+            : {}),
           key: m.board,
         },
         view,
@@ -742,7 +761,7 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
       (view.h - 2 * framing.pad - framing.top) / pageAll.h,
     ) >=
       framing.comfort * (view.h > view.w ? 1.1 : 0.95);
-  const resultCam = heroAb
+  const wholeCam = heroAb
     ? frameFocus(
         {
           page: findArtboard(endDoc, heroAb.id)!.page.id,
@@ -754,6 +773,11 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
         framing,
       )
     : { page: endDoc.pages[0]?.id ?? "", cx: 0, cy: 0, zoom: 1 };
+  // A short film ends where its story did: on the payoff, close, when the whole board is small.
+  const payoffCam = firstPaid?.board === hero ? firstPaid?.cams[0] : undefined;
+  const short = input.length <= 15;
+  const resultCam =
+    short && payoffCam && wholeCam.zoom < payoffCam.zoom * 0.7 ? payoffCam : wholeCam;
 
   const firstDoc = scenes[0]?.before ?? endDoc;
   const firstHeights = await heightsOf(firstDoc);
@@ -777,7 +801,7 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
       cam: resultCam,
       heights: endHeights,
       boards: heroAb
-        ? readsTogether
+        ? readsTogether && resultCam === wholeCam
           ? pageBoards(endDoc, heroAb.id).map((ab) => ab.id)
           : [heroAb.id]
         : [],
