@@ -9,7 +9,7 @@ import { usePages } from "./pages";
 const DARK = "(prefers-color-scheme: dark)";
 
 /** The system's color scheme, live. Light on the server and in the first client render. */
-function useSystemTheme(): "light" | "dark" {
+export function useSystemTheme(): "light" | "dark" {
   return useSyncExternalStore(
     (onChange) => {
       const query = matchMedia(DARK);

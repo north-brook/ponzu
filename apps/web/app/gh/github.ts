@@ -1,7 +1,7 @@
-import type { Doc } from "@ponzu/core";
+import { type Doc, slugify } from "@ponzu/core";
 import { readBag } from "@ponzu/store";
 import { cache } from "react";
-import { bagFiles, DIGEST, findDesigns, folderName, type TreeEntry } from "./target.ts";
+import { bagFiles, DIGEST, findDesigns, firstPageBoards, folderName, type TreeEntry } from "./target.ts";
 
 /*
  * Reads a public repo's .design folders off GitHub, on the server.
@@ -130,6 +130,14 @@ export interface ListedDesign {
   pages: number;
   artboards: number;
   assets: number;
+  /** What its card draws, read in the browser from raw GitHub at the listing's commit. */
+  thumb: {
+    /** The design folder on raw GitHub: its assets/ load from here too. */
+    base: string;
+    /** The first page's artboard files, relative to `base`. The card draws the top-left one. */
+    boards: string[];
+    tokens: boolean;
+  } | null;
 }
 
 export interface RepoView {
@@ -206,13 +214,10 @@ export const loadRepo = cache(
     const tree = await getTree(repo, commit.sha);
     const found = findDesigns(tree.tree, prefix);
     const raw = `${RAW}/${repo.owner}/${repo.repo}/${commit.sha}`;
-    const names = await inBatches(found.slice(0, NAMED), 12, (d) =>
+    const metas = await inBatches(found.slice(0, NAMED), 12, (d) =>
       d.meta
         ? text(`${raw}/${encodePath(d.path)}/design.json`)
-            .then((json) => {
-              const n = (JSON.parse(json) as { name?: unknown }).name;
-              return typeof n === "string" && n.trim() ? n.trim() : null;
-            })
+            .then((json) => readMeta(JSON.parse(json)))
             .catch(() => null)
         : null,
     );
@@ -222,17 +227,36 @@ export const loadRepo = cache(
       refInUrl: Boolean(ref),
       commit,
       prefix,
-      designs: found.map((d, i) => ({
-        path: d.path,
-        name: names[i] ?? folderName(d.path),
-        pages: d.pages,
-        artboards: d.artboards,
-        assets: d.assets,
-      })),
+      designs: found.map((d, i) => {
+        const boards = firstPageBoards(d.boards, metas[i]?.pages);
+        return {
+          path: d.path,
+          name: metas[i]?.name ?? folderName(d.path),
+          pages: d.pages,
+          artboards: d.artboards,
+          assets: d.assets,
+          thumb: boards.length
+            ? { base: `${raw}/${encodePath(d.path)}`, boards, tokens: d.tokens }
+            : null,
+        };
+      }),
       truncated: tree.truncated,
     };
   },
 );
+
+/** A design.json's name, and its pages' folders (slugs of their names), in order. */
+function readMeta(raw: unknown): { name: string | null; pages: string[] } {
+  const o = (raw ?? {}) as { name?: unknown; pages?: unknown };
+  const name = typeof o.name === "string" && o.name.trim() ? o.name.trim() : null;
+  const pages = Array.isArray(o.pages)
+    ? o.pages
+        .map((p) => (p as { name?: unknown } | null)?.name)
+        .filter((n): n is string => typeof n === "string")
+        .map((n) => slugify(n, "page"))
+    : [];
+  return { name, pages };
+}
 
 async function repoInfo(owner: string, name: string): Promise<RepoInfo> {
   const r = await api<{

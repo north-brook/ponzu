@@ -5,6 +5,7 @@ import { GitHub, Slice } from "@/components/icons";
 import { CopyButton, CopyCommand } from "./copy";
 import type { ListedDesign, RepoInfo, ViewerErrorKind } from "./github";
 import { type Repo, viewerPath } from "./target";
+import { DesignThumb } from "./thumb";
 
 /*
  * The viewer's surfaces, as designed in .context/github-viewer.design: one quiet bar that only
@@ -229,11 +230,13 @@ export function DesignList({
             {designs.map((d) => (
               <li key={d.path}>
                 <a className="group flex flex-col gap-3" href={viewerPath(link, d.path)}>
-                  <span className="grid aspect-[16/11] place-items-center rounded-xl bg-tile shadow-[inset_0_0_0_1px_var(--rule)] transition-colors group-hover:bg-chip">
+                  <span className="relative grid aspect-[16/11] place-items-center overflow-hidden rounded-xl bg-tile transition-colors group-hover:bg-chip">
                     <Slice
                       size={40}
                       className="opacity-15 transition-opacity group-hover:opacity-30"
                     />
+                    <DesignThumb thumb={d.thumb} />
+                    <span className="pointer-events-none absolute inset-0 rounded-xl shadow-[inset_0_0_0_1px_var(--rule)]" />
                   </span>
                   <span className="flex flex-col gap-0.5 px-0.5">
                     <span className="flex items-baseline justify-between gap-3 text-[15px] font-semibold text-ink">

@@ -49,6 +49,10 @@ export interface FoundDesign {
   assets: number;
   /** Whether it has a design.json to read its name from. */
   meta: boolean;
+  /** Whether it has a tokens.css. */
+  tokens: boolean;
+  /** Its artboard files, `pages/<page>/<board>.html`, in the order Ponzu reads them. */
+  boards: string[];
 }
 
 /**
@@ -65,7 +69,15 @@ export function findDesigns(tree: TreeEntry[], prefix = ""): FoundDesign[] {
   const designs: FoundDesign[] = [];
   for (const path of roots) {
     if (designs.some((d) => path.startsWith(`${d.path}/`))) continue;
-    designs.push({ path, artboards: 0, pages: 0, assets: 0, meta: false });
+    designs.push({
+      path,
+      artboards: 0,
+      pages: 0,
+      assets: 0,
+      meta: false,
+      tokens: false,
+      boards: [],
+    });
   }
   const pages = new Map<string, Set<string>>();
   for (const e of tree) {
@@ -74,15 +86,35 @@ export function findDesigns(tree: TreeEntry[], prefix = ""): FoundDesign[] {
     if (!d) continue;
     const rel = e.path.slice(d.path.length + 1);
     if (rel === "design.json") d.meta = true;
+    else if (rel === "tokens.css") d.tokens = true;
     else if (rel.startsWith("assets/")) d.assets++;
     const page = /^pages\/([^/]+)\/[^/]+\.html$/.exec(rel)?.[1];
     if (page) {
       d.artboards++;
+      d.boards.push(rel);
       const seen = pages.get(d.path) ?? new Set();
       seen.add(page);
       pages.set(d.path, seen);
     }
   }
-  for (const d of designs) d.pages = pages.get(d.path)?.size ?? 0;
+  for (const d of designs) {
+    d.pages = pages.get(d.path)?.size ?? 0;
+    d.boards.sort();
+  }
   return designs;
+}
+
+/** Most boards a card reads to find the first page's top-left one. */
+const PAGE_BOARDS = 8;
+
+/**
+ * The artboard files of the page a card shows: the first page with any, pages in design.json's
+ * order (its folders are slugs of their names) and then the rest, as `readBag` orders them. The
+ * card draws whichever sits top-left on the canvas, which only the files say.
+ */
+export function firstPageBoards(boards: string[], pageSlugs: string[] = []): string[] {
+  const folder = (b: string) => b.split("/")[1]!;
+  const slug =
+    pageSlugs.find((s) => boards.some((b) => folder(b) === s)) ?? (boards[0] && folder(boards[0]));
+  return slug ? boards.filter((b) => folder(b) === slug).slice(0, PAGE_BOARDS) : [];
 }

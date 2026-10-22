@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   bagFiles,
   findDesigns,
+  firstPageBoards,
   folderName,
   parseTarget,
   type TreeEntry,
@@ -90,9 +91,25 @@ const tree: TreeEntry[] = [
 
 test("finds every design in a tree, counting boards without reading them", () => {
   expect(findDesigns(tree)).toEqual([
-    { path: "brand.design", artboards: 1, pages: 1, assets: 0, meta: false },
+    {
+      path: "brand.design",
+      artboards: 1,
+      pages: 1,
+      assets: 0,
+      meta: false,
+      tokens: false,
+      boards: ["pages/p/q.html"],
+    },
     // The design nested inside app.design belongs to it.
-    { path: "design/app.design", artboards: 3, pages: 2, assets: 1, meta: true },
+    {
+      path: "design/app.design",
+      artboards: 3,
+      pages: 2,
+      assets: 1,
+      meta: true,
+      tokens: false,
+      boards: ["pages/brand/logo.html", "pages/home/a.html", "pages/home/b.html"],
+    },
   ]);
   expect(findDesigns(tree, "design").map((d) => d.path)).toEqual(["design/app.design"]);
   expect(findDesigns(tree, "nowhere")).toEqual([]);
@@ -117,4 +134,16 @@ test("reads only the files the format defines", () => {
     "notes/brief.md",
     "pages/home/a.html",
   ]);
+});
+
+test("a card reads the first page that has boards", () => {
+  const boards = ["pages/brand/logo.html", "pages/home/a.html", "pages/home/b.html"];
+  expect(firstPageBoards(boards, ["home", "brand"])).toEqual([
+    "pages/home/a.html",
+    "pages/home/b.html",
+  ]);
+  // A page in design.json with no folder is passed over.
+  expect(firstPageBoards(boards, ["empty", "brand"])).toEqual(["pages/brand/logo.html"]);
+  expect(firstPageBoards(boards)).toEqual(["pages/brand/logo.html"]);
+  expect(firstPageBoards([])).toEqual([]);
 });
