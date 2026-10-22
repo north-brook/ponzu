@@ -25,6 +25,8 @@ const TIMEOUT = 10_000;
 
 /** Past these, a design is too big to show here; it opens fine in Ponzu itself. */
 export const LIMITS = { files: 600, bytes: 12 * 1024 * 1024 };
+/** Where Ponzu keeps a design's canvas preview (packages/server/src/preview.ts). */
+const PREVIEW = ".ponzu/preview.png";
 /** Designs whose design.json the listing reads for a name. */
 const NAMED = 48;
 
@@ -112,6 +114,11 @@ export interface DesignView {
   };
   /** Where the canvas loads assets/ from: raw GitHub at `commit`. */
   assetBase: string;
+  /**
+   * The canvas preview Ponzu draws (.ponzu/preview.png) on raw GitHub, when it was committed.
+   * Rare: Ponzu's .ponzu/ folder ignores itself in git.
+   */
+  preview: string | null;
   /** The design's folder on GitHub at `commit`. */
   githubUrl: string;
 }
@@ -181,6 +188,9 @@ export const loadDesign = cache(
         problems: problems.length,
       },
       assetBase: base,
+      preview: tree.tree.some((e) => e.type === "blob" && e.path === PREVIEW)
+        ? `${base}/${PREVIEW}`
+        : null,
       githubUrl: `${repo.url}/tree/${commit.sha}/${encodePath(path)}`,
     };
   },

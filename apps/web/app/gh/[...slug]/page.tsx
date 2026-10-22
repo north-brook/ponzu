@@ -11,6 +11,7 @@ import {
 } from "../chrome";
 import { DesignCanvas } from "../design-canvas";
 import { type DesignView, loadDesign, loadRepo, type RepoView, ViewerError } from "../github";
+import { OG_SIZE } from "../og";
 import { PagePicker, PagesProvider } from "../pages";
 import { parseTarget, type Target, viewerPath } from "../target";
 
@@ -43,10 +44,18 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
     const { repo, name, stats } = loaded;
     const title = `${name} · ${repo.fullName}`;
     const description = `${name}, a design in ${repo.fullName} on GitHub: ${plural(stats.pages, "page")} and ${plural(stats.artboards, "artboard")} of HTML and CSS, open on the Ponzu canvas.`;
+    const path = canonical(target, loaded);
+    // Keyed by the commit, so a new one is a new image to every cache.
+    const image = {
+      url: `/og${path}?v=${loaded.commit.shortSha}`,
+      ...OG_SIZE,
+      alt: `${name}, a design in ${repo.fullName}: ${loaded.doc.pages.map((p) => p.name).join(", ")}. Open in Ponzu.`,
+      type: "image/png",
+    };
     return {
       title: { absolute: `${title} — Ponzu` },
       description,
-      ...share({ path: canonical(target, loaded), title, description }),
+      ...share({ path, title, description, image }),
     };
   }
   const { repo, designs } = loaded;
