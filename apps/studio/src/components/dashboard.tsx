@@ -1037,7 +1037,7 @@ function useLive(files: CatalogFile[]): Set<string> {
     if (live.size === LIVE_CARDS) break;
     if (f.busy || (until.current.get(f.id) ?? 0) > now) live.add(f.id);
   }
-  // Catalog polls come every few seconds; a lingering card ends on time without one.
+  // The catalog changes only when something does; a lingering card ends on time without it.
   const next = Math.min(
     ...[...live].map((id) => until.current.get(id) ?? 0).filter((t) => t > now),
   );
