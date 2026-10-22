@@ -1,7 +1,7 @@
 import type { Doc } from "@ponzu/core";
 import { readBag } from "@ponzu/store";
 import { cache } from "react";
-import { bagFiles, findDesigns, folderName, type TreeEntry } from "./target.ts";
+import { bagFiles, DIGEST, findDesigns, folderName, type TreeEntry } from "./target.ts";
 
 /*
  * Reads a public repo's .design folders off GitHub, on the server.
@@ -44,11 +44,15 @@ export type ViewerErrorKind =
   | "unavailable";
 
 export class ViewerError extends Error {
+  /** Set on transient failures, so the error page can tell a rate limit from an outage. */
+  readonly digest?: string;
+
   constructor(
     readonly kind: ViewerErrorKind,
     message: string = kind,
   ) {
     super(message);
+    if (kind === "rate-limited" || kind === "unavailable") this.digest = `${DIGEST}${kind}`;
   }
 
   /** Worth trying again soon. These throw to the error boundary rather than render, so they're never cached. */
@@ -142,8 +146,9 @@ export const loadDesign = cache(
     const commit = await newestCommit(repo, at, Boolean(ref), path);
     if (!commit) throw new ViewerError("design", `No ${path} at ${at}`);
     const tree = await getTree(repo, `${commit.sha}:${path}`).catch((e: unknown) => {
-      // The path was a file, or went away between the two requests.
-      throw e instanceof ViewerError && e.kind === "unavailable" ? e : new ViewerError("design");
+      // The path was a file, or went away between the two requests. A rate limit or an outage
+      // is GitHub's, not the path's: it goes on to the error page, uncached.
+      throw e instanceof ViewerError && e.transient ? e : new ViewerError("design");
     });
     if (tree.truncated) throw new ViewerError("too-big", "Too many files");
     const files = bagFiles(tree.tree);

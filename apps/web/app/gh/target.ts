@@ -12,6 +12,12 @@ export {
   viewerPath,
 } from "@ponzu/core/github";
 
+/**
+ * The `digest` of a failure GitHub may get over, then its kind. Next keeps a thrown error's own
+ * digest and passes it to error.tsx even where production hides the message.
+ */
+export const DIGEST = "ponzu-gh:";
+
 export interface TreeEntry {
   path: string;
   type: "blob" | "tree" | "commit";
