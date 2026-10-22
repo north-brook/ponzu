@@ -193,6 +193,12 @@ describe.skipIf(!chromium)("layout lint in Chromium", () => {
 .rise { animation: rise 1s both }
 .rise-back { animation: rise 1s backwards }
 .row { display:flex;gap:4px;animation: drift 7s infinite alternate }
+.spin { animation: spin 5s infinite }
+.sway { animation: sway 3s infinite alternate }
+.bob { animation: bob 2s infinite alternate }
+@keyframes spin { to { transform: rotate(-60deg) } }
+@keyframes sway { to { transform: translateY(6px) } }
+@keyframes bob { to { transform: translateY(-6px) } }
 </style>`;
     const dots = (n: number, cls: string) =>
       Array.from(
@@ -210,6 +216,14 @@ describe.skipIf(!chromium)("layout lint in Chromium", () => {
     expect(over?.id).toBe("n_field");
     expect(over?.message).toStartWith("150 elements animate at once (tilt on 150)");
     expect(over?.message).toContain("one per row");
+
+    // Every animation is in the breakdown, so its counts add up to the total.
+    const mixed = await field(
+      dots(60, "tilt") + dots(50, "rise") + dots(40, "spin") + dots(30, "sway") + dots(20, "bob"),
+    );
+    expect(mixed.find((i) => i.kind === "animation-budget")?.message).toStartWith(
+      "200 elements animate at once (tilt on 60, rise on 50, spin on 40, 2 more on 50)",
+    );
 
     // A finite entrance that holds its transform keeps every layer once it ends.
     const held = await field(dots(150, "rise"));

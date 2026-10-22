@@ -709,10 +709,12 @@ function motionRuntime() {
     const group = top[0]![1];
     let at: Element = group[0]!;
     while (at !== root && !group.every((el) => at.contains(el))) at = at.parentElement ?? root!;
-    const what = top
-      .slice(0, 2)
-      .map(([n, list]) => `${n} on ${list.length}`)
-      .join(", ");
+    // Every element is counted: past three names, the rest share one entry.
+    const named = top.slice(0, 3).map(([n, list]) => `${n} on ${list.length}`);
+    const rest = top.slice(3);
+    if (rest.length)
+      named.push(`${rest.length} more on ${rest.reduce((sum, [, list]) => sum + list.length, 0)}`);
+    const what = named.join(", ");
     const ends = held
       ? `. ${held} keep their layer after ending (fill-mode forwards or both): put the end state in their style and use backwards`
       : "";
