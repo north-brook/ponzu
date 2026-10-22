@@ -179,7 +179,7 @@ export function planFilm(entries: JournalEntry[], opts: PlanOptions): Plan {
 
   const turnOf = groupTurns(raw.map((r) => r.kind));
   // Fixed holds, scaled down when there are more of them than the film has room for.
-  const fixed = raw.map((r) =>
+  const fixed = raw.map((r): number =>
     r.kind === "comment"
       ? COMMENT_HOLD
       : r.kind === "resolve"
