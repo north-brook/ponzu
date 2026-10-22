@@ -151,7 +151,7 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
 
         <div className="pz:pointer-events-none pz:absolute pz:inset-0">
           {boards.map((ab) => {
-            if (!working.has(ab.id)) return null;
+            if (!working.has(ab.id) || boardAppear(model, ab.id, f) === null) return null;
             const p = toScreen(ab.x, ab.y);
             const h = heights.get(ab.id) ?? artboardSize(ab).h ?? 900;
             return (
@@ -255,7 +255,8 @@ const FilmBoard = memo(function FilmBoard({
 /** 0 → 1 as a new board arrives; null before it exists. Boards present at the start are just there. */
 function boardAppear(model: FilmModel, id: string, f: number): number | null {
   const born = model.born.get(id);
-  if (born === undefined) return 1;
+  // Made during the film but never given content: it stays out of the film.
+  if (born === undefined) return model.opening.has(id) ? 1 : null;
   if (f < born) return null;
   return progress(f, born, born + STREAM_MS / 1000, ease.out);
 }

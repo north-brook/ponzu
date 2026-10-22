@@ -64,6 +64,8 @@ export interface FilmModel {
   ticks: number[];
   /** Film time each board created during the film arrives. */
   born: Map<string, number>;
+  /** Boards already there when the film opens. */
+  opening: Set<string>;
   /** Film time each comment's pin lands. */
   pinBorn: Map<string, number>;
   /** When an agent shows as working on a board, in film time. */
@@ -470,8 +472,14 @@ export async function buildFilm(input: FilmInput): Promise<FilmModel> {
   const pinBorn = new Map<string, number>();
   const opening = new Set(docs[0]!.pages.flatMap((p) => p.artboards.map((a) => a.id)));
   plan.beats.forEach((b, i) => {
-    for (const id of b.artboards)
-      if (!opening.has(id) && !born.has(id) && findArtboard(docs[i + 1]!, id)) born.set(id, b.at);
+    // A new board shows once it has something on it: never as an empty slab.
+    for (const id of b.artboards) {
+      if (opening.has(id) || born.has(id)) continue;
+      // Something worth seeing: a few blocks (a status bar and a header are not).
+      const ab = findArtboard(docs[i + 1]!, id)?.artboard;
+      const blocks = ab?.root.children.filter((c) => c.kind === "el").length ?? 0;
+      if (blocks >= 2) born.set(id, b.at);
+    }
     if (b.kind === "comment" && b.thread && !pinBorn.has(b.thread)) pinBorn.set(b.thread, b.at);
   });
 
@@ -524,6 +532,7 @@ export async function buildFilm(input: FilmInput): Promise<FilmModel> {
     range,
     ticks: plan.beats.filter((b) => b.kind === "comment").map((b) => b.t),
     born,
+    opening,
     pinBorn,
     working,
   };
