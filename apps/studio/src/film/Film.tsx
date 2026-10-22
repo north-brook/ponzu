@@ -142,7 +142,7 @@ function frameAt(e: Edit, f: number): Frame {
       heights: scene.heights.before,
       cam,
       // On the way to a fix, only its board's pins (as when it lands): no stray stories.
-      threads: open(scene.before).filter(
+      threads: told(scene, open(scene.before)).filter(
         (t) => scene.shot.moment.kind !== "work" || t.artboardId === scene.board,
       ),
     };
@@ -150,7 +150,8 @@ function frameAt(e: Edit, f: number): Frame {
   const fr = scene.shot.moment.kind === "turn" ? turnFrame(e, scene, f) : workFrame(e, scene, f);
   // A tall frame shows one subject: once the camera rests, the boards beside it recede, and come
   // back as it leaves.
-  if (e.view.h > e.view.w && !fr.only) {
+  // The build moves from board to board itself: nothing recedes while the canvas fills in.
+  if (e.view.h > e.view.w && !fr.only && !(scene.build?.length && f < scene.shot.end)) {
     // In a turn, the board of the card being read (pin-only comments land without moving it).
     const l = scene.shot.landings ?? [];
     // The subject switches at the middle of a hop, when every board is up: no pop.
@@ -213,6 +214,8 @@ function sceneCam(scene: Scene, f: number, view: { w: number; h: number }): Cam 
 }
 
 const open = (doc: Doc) => doc.threads.filter((t) => t.status === "open");
+/** Of these threads, the ones the film's story has open at this shot. */
+const told = (scene: Scene, threads: Thread[]) => threads.filter((t) => scene.told.includes(t.id));
 
 /**
  * The opening build: the canvas as the agent wrote it, one write after another, each write's new
@@ -250,7 +253,10 @@ function buildFrame(e: Edit, scene: Scene, f: number): Frame | null {
     heights: step.heights,
     cam: buildCam(e, scene, f, times),
     threads: [],
-    working: { board: step.board, who: scene.who ?? { name: "Agent" } },
+    // The agent's mark stays on the board being written until the build is done.
+    ...(f < s.changed + 0.2
+      ? { working: { board: step.board, who: scene.who ?? { name: "Agent" } } }
+      : {}),
     rising: { ids, at },
     ...(sheets.length ? { sheets } : {}),
   };
@@ -289,6 +295,7 @@ function buildTimes(scene: Scene): number[] {
     runs.at(-1)!.push(i);
   });
   // Each run ends with its last rise and a rest; then a glide to the next.
+  // Every board finishes inside the shot: the last one's pieces have risen by the end of it.
   const overhead = runs.length * (rise + BUILD_REST) + (runs.length - 1) * BUILD_GLIDE;
   const span = Math.max(0.4 * runs.length, s.changed - s.change - overhead);
   // The first board is where the viewer learns what's happening: it gets more time.
@@ -332,7 +339,8 @@ const findNodeIn = (doc: Doc, id: string) =>
 
 function workFrame(e: Edit, scene: Scene, f: number): Frame {
   const s = scene.shot;
-  const built = f < s.changed ? buildFrame(e, scene, f) : null;
+  // The opening build owns its whole shot, its last look included: the canvas is the build's end.
+  const built = buildFrame(e, scene, f);
   if (built) return built;
   const cam = sceneCam(scene, f, e.view);
   const changing = f >= s.change;
@@ -343,7 +351,7 @@ function workFrame(e: Edit, scene: Scene, f: number): Frame {
     heights,
     cam,
     // On a fix, only the pins it answers: other boards' pins wait their turn off this shot.
-    threads: open(doc).filter((t) => t.artboardId === scene.board),
+    threads: told(scene, open(doc)).filter((t) => t.artboardId === scene.board),
     ...(scene.board && f < s.changed + 0.35
       ? { working: { board: scene.board, who: scene.who ?? { name: "Agent" } } }
       : {}),
@@ -356,7 +364,10 @@ function workFrame(e: Edit, scene: Scene, f: number): Frame {
       .map((id) => scene.before.threads.find((t) => t.id === id))
       .filter((t): t is Thread => Boolean(t));
     // Resolved: as the change settles the pin pops to a check, holds a beat, then shrinks away.
-    const p = clamp01((f - s.change - 0.35) / RESOLVE);
+    // Once the change has settled (its pieces risen and sharp), so the check confirms it.
+    const settled =
+      s.change + Math.min(ARRIVE_MS / 1000 + 0.15, Math.max(0.35, s.changed - s.change));
+    const p = clamp01((f - settled) / RESOLVE);
     if (p < 1) out.pinsOut = leaving.map((thread) => ({ thread, p }));
   }
   // The last fix: once it's landed, the boards around it fade, so the result stands alone.
@@ -404,8 +415,12 @@ function turnFrame(e: Edit, scene: Scene, f: number): Frame {
   const l = s.landings ?? [];
   let k = -1;
   for (let i = 0; i < l.length; i++) if (l[i]!.at <= f) k = i;
-  const threads =
-    k >= 0 ? scene.threads![k]!.filter((t) => t.status === "open") : open(scene.before);
+  // What's told so far, and this turn's comments as they've landed.
+  const mine = new Set(l.slice(0, k + 1).map((x) => x.comment.thread));
+  const pool = k >= 0 ? scene.threads![k]! : scene.before.threads;
+  const threads = pool.filter(
+    (t) => t.status === "open" && (scene.told.includes(t.id) || mine.has(t.id)),
+  );
   const cam = sceneCam(scene, f, e.view);
   const out: Frame = { doc: scene.before, heights: scene.heights.before, cam, threads };
   if (k >= 0) {
@@ -964,10 +979,13 @@ function keepCardsInFrame(root: HTMLElement, view: { w: number; h: number }) {
       // Covering the pin is worst; then covering what it's about; then far from the pin.
       const pinHit = px > x - 8 && px < x + w + 8 && py > y - 8 && py < y + h + 8 ? 1 : 0;
       const far = Math.hypot(x + w / 2 - px, y + h / 2 - py) / Math.max(view.w, view.h);
+      // A tall frame reads top to bottom: a card above or below its subject, not beside it.
+      const beside = view.h > view.w && (x + w <= px - 8 || x >= px + 8) ? 0.8 : 0;
       return (
         pinHit * 10 +
         (onCorner ? 6 : 0) +
-        cover * 8 +
+        cover * 14 +
+        beside +
         Math.min(1, overBoards(x, y)) * 2.5 +
         moved / 120 +
         far * 1.5

@@ -264,7 +264,11 @@ export function cardTime(words: number, length: number): number {
   // A short film can't afford the whole arrival: the cursor's glide is shortened, never the read.
   // The words are read as they type in: the hold after is what's left of the read, and a beat.
   const typing = typeTime(words);
-  const after = Math.max(1.2, commentTime(words, length) - typing * 0.8);
+  // Typed words were read as they came; after, a beat that grows a little with length.
+  const after = Math.min(
+    length <= 15 ? 0.9 : 1.4,
+    Math.max(0.6, commentTime(words, length) - typing * 1.6),
+  );
   return (length <= 15 ? arrive * 0.75 : arrive) + typing + after;
 }
 
@@ -377,7 +381,7 @@ export function chooseStory(all: Moment[], looks: Map<Moment, Look>, opts: Story
     .map((m) => (m.kind === "turn" ? { ...m, featured: featured.get(m) ?? [] } : m));
   // One question, one answer: a turn with several cards read out becomes a beat per card, each
   // followed straight away by its fix, in the order asked. The viewer never holds a comment in
-  // mind while another is read. (Pins for the rest of the turn land with the first card.)
+  // mind while another is read.
   const told: Moment[] = [];
   for (let i = 0; i < out.length; i++) {
     const t = out[i]!;
@@ -390,9 +394,9 @@ export function chooseStory(all: Moment[], looks: Map<Moment, Look>, opts: Story
     const fixes = out.slice(i + 1, j) as Extract<Moment, { kind: "work" }>[];
     const cards = t.comments.filter((c) => t.featured?.includes(c.thread));
     const used = new Set<Moment>();
-    cards.forEach((c, n) => {
-      const others = n === 0 ? t.comments.filter((x) => !t.featured?.includes(x.thread)) : [];
-      told.push({ ...t, comments: [...others, c], featured: [c.thread] });
+    cards.forEach((c) => {
+      // Only the comment told: the rest of the turn isn't the story, so its pins never show.
+      told.push({ ...t, comments: [c], featured: [c.thread] });
       const fix = fixes.find((w) => !used.has(w) && w.board === c.board);
       if (fix) {
         used.add(fix);
@@ -517,8 +521,10 @@ export function timeline(
     first.settle = 0;
     first.change = opts.length <= 15 ? SHOT.buildShort : SHOT.build;
   }
-  const lead = opts.prompt ? SHOT.prompt : 0;
-  const fixed = SHOT.open + lead + SHOT.result + SHOT.end;
+  const short = opts.length <= 15;
+  const lead = opts.prompt ? (short ? SHOT.prompt * 0.68 : SHOT.prompt * 0.86) : 0;
+  const endLen = short ? 2.0 : SHOT.end;
+  const fixed = SHOT.open + lead + SHOT.result + endLen;
   const room = Math.max(1, opts.length - fixed);
   const used = raw.reduce((a, r) => a + r.travel + r.settle + r.change + r.hold, 0);
   if (used > room) {
@@ -610,13 +616,13 @@ export function timeline(
     t = end;
   }
   const result = t;
-  const endCard = Math.max(result + SHOT.result, opts.length - SHOT.end);
+  const endCard = Math.max(result + SHOT.result, opts.length - endLen);
   return {
     ...(lead ? { prompt: { start: 0, end: SHOT.open + lead } } : {}),
     shots,
     result,
     endCard,
-    duration: endCard + SHOT.end,
+    duration: endCard + endLen,
   };
 }
 

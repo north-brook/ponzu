@@ -137,7 +137,8 @@ describe("story", () => {
       for (const l of turn!.landings!.filter((x) => x.card))
         expect(fixed.has(l.comment.board!)).toBe(true);
       if (length === 15) expect(turn!.landings!.filter((l) => l.card)).toHaveLength(1);
-      expect(tl.endCard).toBeCloseTo(length - SHOT.end, 5);
+      // A short film's end card is a touch shorter: its seconds are scarcer.
+      expect(tl.endCard).toBeCloseTo(length - (length <= 15 ? 2.0 : SHOT.end), 5);
     }
   });
 });

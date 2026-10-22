@@ -61,6 +61,11 @@ export interface Edit {
 }
 
 export interface Scene {
+  /**
+   * Pins the film has told by the time this shot starts: landed by a turn before it and not yet
+   * resolved by a fix before it. A pin shows only while the film's own story has it open.
+   */
+  told: string[];
   /** For a turn: per landing, the board its comment is on (a tall frame dims the others). */
   subjectBoards?: string[][];
   shot: StoryShot;
@@ -802,13 +807,16 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
         // The build starts on the canvas before its first write: empty, for a new design.
         buildBefore = opened.start?.doc ?? build[0]!.doc;
       }
+      // A build ends on everything it built: that's what the next shot starts from.
+      const builtAfter = build?.length ? build.at(-1)!.doc : after;
       scenes.push({
+        told: [],
         shot,
         before: buildCams ? buildBefore : before,
-        after,
+        after: builtAfter,
         heights: {
           before: buildCams ? (opened.start?.heights ?? build![0]!.heights) : hB,
-          after: hA,
+          after: build?.length ? build.at(-1)!.heights : hA,
         },
         cams: buildCams ? [buildCams.get(build![0]!.board) ?? cam] : [cam],
         ...(buildCams ? { buildCams } : {}),
@@ -819,7 +827,12 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
         who: m.who,
         ...(build ? { build } : {}),
       });
-      remember(after, [cam], hA);
+      if (build?.length) {
+        // Everything the build showed is as it left it.
+        shown.clear();
+        for (const p of builtAfter.pages)
+          for (const ab of p.artboards) shown.set(ab.id, structuredClone(ab));
+      } else remember(after, [cam], hA);
       continue;
     }
     if (m.kind === "turn") {
@@ -939,6 +952,7 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
       for (let k = 0; k < cams.length; k++) if (!cams[k]) cams[k] = firstCard ?? cams[0]!;
       remember(after, cams, hA);
       scenes.push({
+        told: [],
         shot,
         before,
         after,
@@ -950,6 +964,17 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
           c.board ? [c.board] : [],
         ),
       });
+    }
+  }
+
+  // What the film has told at the start of each shot: comments it has landed, fixes it has shown.
+  {
+    const open = new Set<string>();
+    for (const sc of scenes) {
+      sc.told = [...open];
+      const mm = sc.shot.moment;
+      if (mm.kind === "turn") for (const c of mm.comments) open.add(c.thread);
+      if (mm.kind === "work") for (const id of mm.resolves) open.delete(id);
     }
   }
 
@@ -1042,7 +1067,14 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
       framing.minZoom * (view.h > view.w ? 0.9 : 0.8);
   // The reveal: a long film ends on everything that was made on the page, together (a reveal, not
   // a read, so it may be small); a short one on its board, whole.
-  const revealAll = input.length > 15 && pageAll !== undefined;
+  // Only when it fills the frame well: a tall stack of pages in a wide frame is a thin strip.
+  const revealAll =
+    input.length > 15 &&
+    pageAll !== undefined &&
+    (() => {
+      const shapeOf = pageAll.w / pageAll.h / (view.w / view.h);
+      return shapeOf > 0.45 && shapeOf < 2.2;
+    })();
   const wholeCam = heroAb
     ? frameFocus(
         {
