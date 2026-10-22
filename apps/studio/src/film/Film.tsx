@@ -1,18 +1,27 @@
 import {
   type Artboard,
   type Cam,
+  COMMENT_IN,
   clamp01,
   type Doc,
   ease,
   findArtboard,
+  findNode,
   flyTo,
   progress,
   shotAt,
   type Thread,
+  typeTime,
 } from "@ponzu/core";
 import {
+  AgentMark,
+  ARRIVE_EASING,
+  ARRIVE_FROM,
+  ARRIVE_MS,
+  arriveDelay,
   artboardMarkup,
   artboardSize,
+  BOARD_MS,
   Icon,
   loadArtboardFonts,
   MemorySource,
@@ -29,9 +38,6 @@ import { cn } from "@/lib/utils";
 import type { Edit, Scene } from "./edit.ts";
 import { pinSpot, schemeFor } from "./model.ts";
 
-/** How long one piece takes to rise in, and how far. */
-export const STREAM_MS = 500;
-export const STREAM_RISE = 6;
 const PIN_IN = 0.32;
 const PIN_OUT = 0.3;
 
@@ -54,9 +60,22 @@ interface Frame {
   /** The one card showing, and what it's about (canvas px), which it keeps clear of. */
   card?: {
     thread: Thread;
-    opacity: number;
+    /** Opening out of the pin, and closing back into it: 0 → 1 each. */
+    open: number;
+    close: number;
+    /** How much of the comment has typed in: 0 → 1. */
+    typed: number;
     now: number;
     subject?: { x: number; y: number; w: number; h: number };
+  };
+  /** The person's cursor, coming to place a comment: canvas px, its glide 0 → 1, a press. */
+  cursor?: {
+    to: { x: number; y: number };
+    from?: "edge";
+    p: number;
+    down: boolean;
+    fade: number;
+    fadeIn: number;
   };
   /** The end card: 0 → 1 fade, and its own clock. */
   end?: { fade: number; t: number };
@@ -64,6 +83,10 @@ interface Frame {
   only?: { ids: string[]; p: number };
   /** The board as it was, over its new look, fading out: a replaced piece crossfades. */
   ghost?: { board: Artboard; doc: Doc; p: number };
+  /** The opening prompt: how much is typed, whether it's sent, and how far it's gone. */
+  prompt?: { typed: number; sent: number; out: number };
+  /** New artboards settling in as the agent makes them: 0 → 1. */
+  sheets?: { id: string; p: number }[];
   /** At rest in a tall frame: the boards beside the subject recede by `p` (0 → 1). */
   dim?: { ids: string[]; p: number };
 }
@@ -71,6 +94,14 @@ interface Frame {
 /** The canvas at film time `f`: one settled state, a camera, and what's animating. */
 function frameAt(e: Edit, f: number): Frame {
   const tl = e.timeline;
+  // The opening: what the person asked for, typed and sent, over the canvas the agent starts on.
+  if (tl.prompt && e.prompt && f < tl.prompt.end) {
+    const first = e.scenes[0];
+    const doc = first?.before ?? e.first.doc;
+    const heights = first?.heights.before ?? e.first.heights;
+    const cam = first?.cams[0] ?? e.result.cam;
+    return { doc, heights, cam, threads: [], prompt: promptState(tl.prompt, f) };
+  }
   const { index, phase } = shotAt(tl, f);
   const scene = e.scenes[index];
   if (!scene || phase === "result" || phase === "end") {
@@ -180,8 +211,119 @@ function sceneCam(scene: Scene, f: number, view: { w: number; h: number }): Cam 
 
 const open = (doc: Doc) => doc.threads.filter((t) => t.status === "open");
 
+/**
+ * The opening build: the canvas as the agent wrote it, one write after another, each write's new
+ * pieces rising in as they did on the canvas. The camera rests on the board being written and
+ * glides to the next board as the agent moves on. Writes come quicker as a board fills, so its
+ * first pieces read and the rest pour in.
+ */
+function buildFrame(e: Edit, scene: Scene, f: number): Frame | null {
+  const steps = scene.build;
+  const s = scene.shot;
+  if (!steps?.length || f < s.change) return null;
+  const times = buildTimes(scene);
+  let k = 0;
+  while (k + 1 < steps.length && times[k + 1]! <= f) k++;
+  const step = steps[k]!;
+  // Pieces still rising from the last few writes, each from its own start.
+  const ids: string[] = [];
+  const at: number[] = [];
+  for (let j = Math.max(0, k - 8); j <= k; j++) {
+    steps[j]!.arrive.forEach((id, i) => {
+      if (!findNodeIn(step.doc, id)) return;
+      ids.push(id);
+      at.push((f - times[j]!) * 1000 - arriveDelay(i));
+    });
+  }
+  // New boards: their sheets settle in as they're made.
+  const sheets: { id: string; p: number }[] = [];
+  for (let j = Math.max(0, k - 3); j <= k; j++)
+    for (const id of steps[j]!.boards) {
+      const p = clamp01(((f - times[j]!) * 1000) / BOARD_MS);
+      if (p < 1) sheets.push({ id, p: ease.out(p) });
+    }
+  return {
+    doc: step.doc,
+    heights: step.heights,
+    cam: buildCam(e, scene, f, times),
+    threads: [],
+    working: { board: step.board, who: scene.who ?? { name: "Agent" } },
+    rising: { ids, at },
+    ...(sheets.length ? { sheets } : {}),
+  };
+}
+
+/**
+ * The prompt's beats: it rises in, types itself, a moment to read, sent (the button presses and
+ * the agent's mark lights), then it lifts away as the canvas begins.
+ */
+function promptState(span: { start: number; end: number }, f: number) {
+  const d = span.end - span.start;
+  const t = f - span.start;
+  return {
+    typed: progress(t, 0.15, d * 0.52, (x) => x),
+    sent: progress(t, d * 0.66, d * 0.66 + 0.18, ease.out),
+    out: progress(t, d - 0.42, d, ease.in),
+  };
+}
+
+/** When each build step lands. A move to another board waits for the camera to get there. */
+function buildTimes(scene: Scene): number[] {
+  const steps = scene.build ?? [];
+  const s = scene.shot;
+  const GLIDE = 0.7;
+  const moves = steps.filter((st, i) => i > 0 && st.board !== steps[i - 1]!.board).length;
+  const span = Math.max(0.5, s.changed - s.change - ARRIVE_MS / 1000 - moves * GLIDE);
+  // Per board, its writes accelerate: patient at first, brisk by the end.
+  const runs: number[][] = [];
+  steps.forEach((st, i) => {
+    if (i === 0 || st.board !== steps[i - 1]!.board) runs.push([]);
+    runs.at(-1)!.push(i);
+  });
+  const out: number[] = [];
+  let t = s.change;
+  for (const [r, run] of runs.entries()) {
+    if (r > 0) t += GLIDE;
+    // The first board is where the viewer learns what's happening: it gets more time.
+    const weight = (i: number, n: number) => (i === 0 ? n * 1.7 : n);
+    const total = runs.reduce((a, x, i) => a + weight(i, x.length), 0);
+    const share = (span * weight(r, run.length)) / total;
+    run.forEach((_, j) => {
+      out.push(t + share * (j / run.length) ** 1.35);
+    });
+    t += share;
+  }
+  return out;
+}
+
+/** The build's camera: at rest on the board being written, gliding as the agent moves on. */
+function buildCam(e: Edit, scene: Scene, f: number, times: number[]): Cam {
+  const steps = scene.build!;
+  const cams = scene.buildCams!;
+  const GLIDE = 0.7;
+  let k = 0;
+  while (k + 1 < steps.length && times[k + 1]! <= f) k++;
+  const here = cams.get(steps[k]!.board) ?? scene.cams[0]!;
+  // The next write is on another board: glide there in the gap before it.
+  const next = steps[k + 1];
+  if (next && next.board !== steps[k]!.board && f > times[k + 1]! - GLIDE) {
+    const to = cams.get(next.board) ?? here;
+    const p = ease.inOut(clamp01((f - (times[k + 1]! - GLIDE)) / GLIDE));
+    return here.page === to.page ? flyTo(here, to, p, e.view) : p < 0.5 ? here : to;
+  }
+  // At rest, a slow lean in, so the build never sits still.
+  const run0 = steps.findIndex((st) => st.board === steps[k]!.board);
+  const lean = 1 + 0.025 * progress(f, times[run0]!, times[run0]! + 4, ease.inOut);
+  return { ...here, zoom: here.zoom * lean };
+}
+
+const findNodeIn = (doc: Doc, id: string) =>
+  doc.pages.some((p) => p.artboards.some((ab) => ab.id === id || Boolean(findNode(ab.root, id))));
+
 function workFrame(e: Edit, scene: Scene, f: number): Frame {
   const s = scene.shot;
+  const built = f < s.changed ? buildFrame(e, scene, f) : null;
+  if (built) return built;
   const cam = sceneCam(scene, f, e.view);
   const changing = f >= s.change;
   const doc = changing ? scene.after : scene.before;
@@ -230,7 +372,7 @@ function workFrame(e: Edit, scene: Scene, f: number): Frame {
   if (changing && scene.born)
     out.drawing = { board: scene.board!, p: ease.out(clamp01((f - s.change) / 0.5)) };
   if (changing && scene.rise?.length) {
-    const span = Math.max(0, s.changed - s.change - STREAM_MS / 1000);
+    const span = Math.max(0, s.changed - s.change - ARRIVE_MS / 1000);
     const step = scene.rise.length > 1 ? Math.min(0.09, span / (scene.rise.length - 1)) : 0;
     out.rising = {
       ids: scene.rise,
@@ -259,20 +401,56 @@ function turnFrame(e: Edit, scene: Scene, f: number): Frame {
   const out: Frame = { doc: scene.before, heights: scene.heights.before, cam, threads };
   if (k >= 0) {
     const cur = l[k]!;
-    out.pinIn = { thread: cur.comment.thread, p: clamp01((f - cur.at) / PIN_IN) };
+    const short = e.timeline.duration <= 16;
+    // A card arrives: the cursor glides to its spot and clicks, the pin springs in, the card
+    // opens out of the pin and the words type in. A pin-only comment just pops.
+    const glide = cur.card ? COMMENT_IN.cursor * (short ? 0.75 : 1) : 0;
+    const click = cur.at + glide;
+    const pinAt = cur.card ? click + COMMENT_IN.click : cur.at;
+    // Until the click, the comment isn't there yet.
+    if (f < pinAt) out.threads = threads.filter((t) => t.id !== cur.comment.thread);
+    else out.pinIn = { thread: cur.comment.thread, p: clamp01((f - pinAt) / PIN_IN) };
     if (cur.card) {
-      // In once the pin has popped, out a beat before the next lands or the camera hops.
+      // Out a beat before the next lands or the camera hops.
       const until = Math.min(
         cur.until,
         (l[k + 1]?.at ?? s.changed) - (l[k + 1]?.hop ? 0.82 : 0.08),
       );
-      const opacity = Math.min(
-        progress(f, cur.at + 0.12, cur.at + 0.26, ease.out),
-        1 - progress(f, until - 0.16, until, ease.in),
-      );
       const t = threads.find((x) => x.id === cur.comment.thread);
-      if (t && opacity > 0.001)
-        out.card = { thread: t, opacity, now: cur.comment.t + 1000, subject: scene.subjects?.[k] };
+      const open = progress(f, pinAt + 0.04, pinAt + 0.04 + COMMENT_IN.open, ease.out);
+      const close = progress(f, until - 0.22, until, ease.in);
+      const typeStart = pinAt + 0.04 + COMMENT_IN.open * 0.6;
+      const typed = progress(
+        f,
+        typeStart,
+        typeStart + typeTime(cur.comment.words) * (short ? 0.8 : 1),
+        (x) => x,
+      );
+      if (t && open > 0.001 && close < 0.999)
+        out.card = {
+          thread: t,
+          open,
+          close,
+          typed,
+          now: cur.comment.t + 1000,
+          subject: scene.subjects?.[k],
+        };
+      // The cursor: in from the frame's edge (or the last card), to the pin, a press, then away.
+      const pin = t ? (pinSpot(scene.before, t) ?? pinSpot(e.result.doc, t)) : null;
+      if (pin && f < pinAt + 0.5) {
+        const prev = l
+          .slice(0, k)
+          .reverse()
+          .find((x) => x.card);
+        out.cursor = {
+          to: { x: pin.x, y: pin.y },
+          from: prev ? undefined : "edge",
+          p: ease.inOut(clamp01((f - cur.at) / Math.max(0.001, glide))),
+          down: f >= click && f < click + 0.16,
+          fade: 1 - progress(f, pinAt + 0.2, pinAt + 0.5, ease.in),
+          fadeIn: progress(f, cur.at, cur.at + 0.15, ease.out),
+        };
+      }
     }
   }
   return out;
@@ -300,6 +478,7 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
     const el = root.current;
     if (!el) return;
     applyRise(el, fr.rising);
+    styleCards(el);
     keepCardsInFrame(el, view);
   });
 
@@ -321,6 +500,7 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
             const s1 = toScreen(ab.x + w, ab.y + bh);
             const offscreen = s1.x < -40 || s0.x > view.w + 40 || s1.y < -40 || s0.y > view.h + 40;
             const drawing = fr.drawing?.board === ab.id ? fr.drawing.p : 1;
+            const sheet = fr.sheets?.find((x) => x.id === ab.id)?.p ?? 1;
             // Receding: a wash of the canvas over it, so it falls back into the page, never grey.
             const veil =
               fr.only && !fr.only.ids.includes(ab.id)
@@ -338,13 +518,16 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
                   boxShadow: veil > 0.5 ? "none" : undefined,
                   left: 0,
                   top: 0,
-                  transform: `translate(${ab.x * cam.zoom + tx}px, ${ab.y * cam.zoom + ty}px) scale(${cam.zoom})`,
+                  transform: `translate(${ab.x * cam.zoom + tx}px, ${ab.y * cam.zoom + ty}px) scale(${cam.zoom * (0.985 + 0.015 * sheet)})`,
                   transformOrigin: "0 0",
                   width: w,
                   height: h ?? undefined,
                   // A new board is drawn in from the top, solid: a dark one never passes through grey.
+                  // A new sheet, too, unrolls from the top: solid all the way.
                   clipPath:
-                    drawing < 1 ? `inset(-40px -40px ${(1 - drawing) * 100}% -40px)` : undefined,
+                    Math.min(drawing, sheet) < 1
+                      ? `inset(-40px -40px ${(1 - Math.min(drawing, sheet)) * 100}% -40px)`
+                      : undefined,
                 }}
               >
                 <div
@@ -499,9 +682,10 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
                           )
                         : undefined
                     }
+                    data-open={card.open * (1 - card.close)}
+                    data-typed={card.typed}
                     className="pz-film-card"
                     style={{
-                      opacity: card.opacity,
                       // Read on a phone: the real card, a little larger than in the studio.
                       zoom: view.w > view.h ? 1.5 : 1.22,
                     }}
@@ -520,8 +704,43 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
             );
           })}
         </div>
+        {fr.cursor &&
+          (() => {
+            const c = fr.cursor;
+            const to = toScreen(c.to.x, c.to.y);
+            // From below and to the right of the pin, as a hand comes in to point.
+            const from = { x: to.x + view.w * 0.22, y: to.y + view.h * 0.18 };
+            const x = from.x + (to.x - from.x) * c.p;
+            const y = from.y + (to.y - from.y) * c.p;
+            const k = view.w > view.h ? 1.25 : 1.1;
+            return (
+              <div
+                className="pz:pointer-events-none pz:absolute pz:z-[4]"
+                style={{
+                  left: 0,
+                  top: 0,
+                  // The arrow's tip is at the pin.
+                  transform: `translate(${x - 3 * k}px, ${y - 2.2 * k}px) scale(${c.down ? 0.86 : 1})`,
+                  transformOrigin: `${3 * k}px ${2.2 * k}px`,
+                  opacity: Math.min(c.fade, c.fadeIn),
+                }}
+              >
+                <svg width={22 * k} height={22 * k} viewBox="0 0 22 22" aria-hidden>
+                  <path
+                    d="M3 2.2v15.6l4.2-3.9 2.7 6.1 2.8-1.2-2.7-6h5.9Z"
+                    fill="#0e0e0e"
+                    stroke="#fff"
+                    strokeWidth="1.4"
+                    strokeLinejoin="round"
+                    style={{ filter: "drop-shadow(0 1px 1.5px rgb(0 0 0 / 0.35))" }}
+                  />
+                </svg>
+              </div>
+            );
+          })()}
         <Wayfinding model={model} doc={doc} pageId={cam.page} />
       </div>
+      {fr.prompt && model.prompt && <Prompt model={model} state={fr.prompt} />}
       {fr.end && (
         <EndCard model={model} t={Math.max(0, fr.end.t)} opacity={ease.out(fr.end.fade)} />
       )}
@@ -564,7 +783,7 @@ function applyRise(root: HTMLElement, r: Frame["rising"]) {
   if (r)
     r.ids.forEach((id, n) => {
       const local = r.at[n]!;
-      if (local >= STREAM_MS) return;
+      if (local >= ARRIVE_MS) return;
       for (const host of root.querySelectorAll("[data-artboard-host]")) {
         const el = host.shadowRoot?.querySelector(`[data-id="${CSS.escape(id)}"]`);
         if (!el || live.has(el)) continue;
@@ -572,15 +791,17 @@ function applyRise(root: HTMLElement, r: Frame["rising"]) {
         let a = anims.get(el);
         if (!a) {
           // From hidden, at offset 0: a lone keyframe defaults to the end, which would fade it out.
-          a = el.animate([{ opacity: 0, translate: `0 ${STREAM_RISE}px`, offset: 0 }], {
-            duration: STREAM_MS,
-            easing: "cubic-bezier(.2,.8,.2,1)",
+          // The canvas's own arrival, seeked: the film shows what the person saw.
+          a = el.animate([ARRIVE_FROM], {
+            duration: ARRIVE_MS,
+            easing: ARRIVE_EASING,
             fill: "both",
           });
           a.pause();
           anims.set(el, a);
           rising.add(el);
         }
+        // Before its turn in the stagger it waits hidden, at its start.
         a.currentTime = Math.max(0, local);
       }
     });
@@ -589,6 +810,41 @@ function applyRise(root: HTMLElement, r: Frame["rising"]) {
     anims.get(el)?.cancel();
     anims.delete(el);
     rising.delete(el);
+  }
+}
+
+/**
+ * A card's comment typed in so far: the words still to come are there but unseen, so the card is
+ * its full size from the first frame and the words fill it rather than push it around. Then it
+ * opens out of its pin, and later folds back into it.
+ */
+function styleCards(root: HTMLElement) {
+  for (const wrap of root.querySelectorAll<HTMLElement>("[data-film-card]")) {
+    const card = wrap.firstElementChild as HTMLElement | null;
+    const text = card?.querySelector<HTMLElement>("[data-message-text]");
+    const typed = Number(wrap.dataset.typed ?? 1);
+    if (text) {
+      const full = text.dataset.full ?? text.textContent ?? "";
+      text.dataset.full = full;
+      const n = Math.round(full.length * typed);
+      if (typed >= 1) text.textContent = full;
+      else {
+        text.textContent = "";
+        text.append(full.slice(0, n));
+        const rest = document.createElement("span");
+        rest.style.color = "transparent";
+        rest.textContent = full.slice(n);
+        text.append(rest);
+      }
+    }
+    if (card) {
+      // Opens from the pin's side: a little smaller, rising, as a popover does in the studio.
+      const p = Number(wrap.dataset.open ?? 1);
+      card.style.opacity = String(clamp01(p * 1.6));
+      card.style.scale = String(0.94 + 0.06 * p);
+      card.style.transformOrigin = "0 12px";
+      card.style.filter = p < 1 ? `blur(${(1 - p) * 3}px)` : "";
+    }
   }
 }
 
@@ -760,6 +1016,102 @@ function Slice({ size, dark, style }: { size: number; dark: boolean; style?: CSS
         ))}
       </g>
     </svg>
+  );
+}
+
+/**
+ * The film's opening line: what the person asked for, as a message to the agent, typed into a
+ * composer at the bottom of an empty frame and sent. Ponzu's own surfaces, not an agent's app:
+ * the bar the canvas uses, the agent's mark, the person's words.
+ */
+function Prompt({
+  model,
+  state,
+}: {
+  model: FilmModel;
+  state: { typed: number; sent: number; out: number };
+}) {
+  const { view } = model;
+  const text = model.prompt!.text;
+  const tall = view.h > view.w;
+  const k = tall ? 1.18 : 1.08;
+  const n = Math.round(text.length * state.typed);
+  const w = Math.min(view.w - 48, tall ? view.w - 40 : 620);
+  const sentAt = state.sent;
+  // Sent: the message lifts into place above the composer, and the agent starts.
+  const lift = ease.out(sentAt);
+  return (
+    <div
+      className="pz:pointer-events-none pz:absolute pz:inset-0 pz:z-[6] pz:flex pz:flex-col pz:items-center pz:justify-end"
+      style={{
+        paddingBottom: tall ? 64 : 44,
+        opacity: 1 - state.out,
+        filter: state.out > 0 ? `blur(${state.out * 4}px)` : undefined,
+        translate: `0 ${-state.out * 14}px`,
+      }}
+    >
+      <div
+        className="pz:flex pz:flex-col pz:gap-3"
+        style={{ width: w, fontSize: 15 * k, lineHeight: 1.45 }}
+      >
+        {/* The message, once sent. */}
+        <div
+          className="pz:self-end pz:rounded-2xl pz:bg-card pz:px-4 pz:py-2.5 pz:text-foreground pz:shadow-popover"
+          style={{
+            maxWidth: w * 0.86,
+            opacity: lift,
+            translate: `0 ${(1 - lift) * 18}px`,
+            scale: String(0.97 + 0.03 * lift),
+            transformOrigin: "100% 100%",
+          }}
+        >
+          {text}
+        </div>
+        {/* The agent, on it. */}
+        <div
+          className="pz:flex pz:items-center pz:gap-2 pz:text-muted-foreground"
+          style={{
+            opacity: progress(sentAt, 0.4, 1, ease.out),
+            fontSize: 13 * k,
+          }}
+        >
+          <AgentMark client={model.prompt!.who.client} size={16 * k} />
+          <span className="pz-shimmer">{model.prompt!.who.name} is designing</span>
+        </div>
+        {/* The composer, where it's typed. */}
+        <div
+          className="pz:flex pz:items-end pz:gap-3 pz:rounded-2xl pz:bg-card pz:px-4 pz:py-3 pz:shadow-popover"
+          style={{ opacity: 1 - lift * 0.55 }}
+        >
+          <span className="pz:min-w-0 pz:flex-1 pz:text-foreground">
+            {sentAt > 0 ? (
+              <span className="pz:text-faint">Reply…</span>
+            ) : (
+              <>
+                {text.slice(0, n)}
+                <span
+                  className="pz:inline-block pz:align-[-0.15em] pz:bg-foreground"
+                  style={{ width: 1.6, height: "1.05em", marginLeft: 1 }}
+                />
+                <span style={{ color: "transparent" }}>{text.slice(n)}</span>
+              </>
+            )}
+          </span>
+          <span
+            className="pz:grid pz:shrink-0 pz:place-items-center pz:rounded-full"
+            style={{
+              width: 28 * k,
+              height: 28 * k,
+              background: n > 0 && sentAt === 0 ? "var(--pz-ink)" : "var(--pz-rule)",
+              color: n > 0 && sentAt === 0 ? "var(--pz-surface)" : "var(--pz-muted)",
+              scale: String(1 - 0.12 * Math.sin(Math.PI * clamp01(sentAt * 1.8))),
+            }}
+          >
+            <Icon name="send" size={14 * k} strokeWidth={2} />
+          </span>
+        </div>
+      </div>
+    </div>
   );
 }
 

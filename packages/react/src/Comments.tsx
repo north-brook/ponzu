@@ -320,7 +320,9 @@ export function ThreadCard({
                 onCancel={() => setEditing(null)}
               />
             ) : (
-              <div className={messageText}>{m.text}</div>
+              <div className={messageText} data-message-text>
+                {m.text}
+              </div>
             )}
           </div>
         ))}

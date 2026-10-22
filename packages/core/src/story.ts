@@ -210,6 +210,8 @@ export interface Look {
 
 export interface StoryOptions {
   length: number;
+  /** The film opens on what the person asked for. */
+  prompt?: boolean;
 }
 
 /** Seconds per kind of shot. */
@@ -230,13 +232,37 @@ export const SHOT = {
   result: 2.2,
   /** The first frame, before anything moves. */
   open: 0.25 as number,
+  /** The opening build: the board filling in, write by write, compressed. */
+  build: 4.2 as number,
+  /** A short film's opening build. */
+  buildShort: 2.4 as number,
+  /** The prompt the film opens on, typed into the agent's chat and sent. */
+  prompt: 2.3 as number,
 };
+
+/**
+ * How a comment arrives, in seconds: the cursor comes to its spot, clicks and the pin springs in,
+ * then the card opens out of the pin and the words type themselves in.
+ */
+export const COMMENT_IN = { cursor: 0.55, click: 0.12, open: 0.28 };
+
+/** How long a comment's words take to type in: brisk, never a crawl. */
+export function typeTime(words: number): number {
+  return Math.min(1.4, Math.max(0.45, words * 0.06));
+}
 
 /** Time to read a comment: about a second, plus a quarter second per four words. */
 export function commentTime(words: number, length: number): number {
   // About four words a second on a phone, plus a beat to find the card: a long note gets its read.
   const base = Math.min(5.2, Math.max(1.8, 0.8 + words * 0.125));
   return length <= 15 ? Math.min(4.6, base) : base;
+}
+
+/** A card's whole stay: arriving, typing, then read. */
+export function cardTime(words: number, length: number): number {
+  const arrive = COMMENT_IN.cursor + COMMENT_IN.click + COMMENT_IN.open;
+  // A short film can't afford the whole arrival: the cursor's glide is shortened, never the read.
+  return (length <= 15 ? arrive * 0.75 : arrive) + typeTime(words) + commentTime(words, length);
 }
 
 /**
@@ -249,7 +275,7 @@ export function commentTime(words: number, length: number): number {
  */
 export function chooseStory(all: Moment[], looks: Map<Moment, Look>, opts: StoryOptions): Moment[] {
   const short = opts.length <= 15;
-  const budget = opts.length - SHOT.end - SHOT.result - SHOT.open;
+  const budget = opts.length - SHOT.end - SHOT.result - SHOT.open - (opts.prompt ? SHOT.prompt : 0);
   const work = all.filter((m): m is Extract<Moment, { kind: "work" }> => m.kind === "work");
   const turns = all.filter((m): m is Extract<Moment, { kind: "turn" }> => m.kind === "turn");
   const visible = (m: Extract<Moment, { kind: "work" }>) => (looks.get(m)?.change ?? 0) >= 0.03;
@@ -261,7 +287,7 @@ export function chooseStory(all: Moment[], looks: Map<Moment, Look>, opts: Story
   const turnCost = (t: Extract<Moment, { kind: "turn" }>, featured: CommentLanding[]) =>
     SHOT.travel +
     0.25 +
-    featured.reduce((a, c) => a + commentTime(c.words, opts.length), 0) +
+    featured.reduce((a, c) => a + cardTime(c.words, opts.length), 0) +
     Math.max(0, featured.length - 1) * 0.6 +
     (short ? 0 : (t.comments.length - featured.length) * 0.3);
 
@@ -297,9 +323,10 @@ export function chooseStory(all: Moment[], looks: Map<Moment, Look>, opts: Story
   const opening =
     (firstBoard ? before.filter((w) => w.board === firstBoard && visible(w)).at(-1) : undefined) ??
     [...before].filter(visible).sort((a, b) => score(b) - score(a))[0];
+  const buildCost = short ? SHOT.buildShort : SHOT.build;
   if (opening) {
     picked.add(opening);
-    spent += workCost;
+    spent += SHOT.settle + buildCost + SHOT.hold;
   }
 
   const takeStory = (
@@ -398,6 +425,8 @@ export interface StoryShot {
 }
 
 export interface Timeline {
+  /** The prompt the film opens on, from the start until this. */
+  prompt?: { start: number; end: number };
   shots: StoryShot[];
   /** When the camera leaves for the last look at the result. */
   result: number;
@@ -443,7 +472,7 @@ export function timeline(
           k > 0 &&
           (lastCardBoard !== undefined ? c.board !== lastCardBoard : Boolean(hops[i]));
         if (card) lastCardBoard = c.board;
-        return { comment: c, card, hop, d: card ? commentTime(c.words, opts.length) : 0.3 };
+        return { comment: c, card, hop, d: card ? cardTime(c.words, opts.length) : 0.3 };
       });
       return {
         m,
@@ -464,7 +493,14 @@ export function timeline(
     };
   });
   if (raw[0]) raw[0].travel = 0;
-  const fixed = SHOT.open + SHOT.result + SHOT.end;
+  // The opening build is the first act: the board filling in, write by write.
+  const first = raw[0];
+  if (first && first.m.kind === "work" && first.m.answers === undefined) {
+    first.settle = 0.2;
+    first.change = opts.length <= 15 ? SHOT.buildShort : SHOT.build;
+  }
+  const lead = opts.prompt ? SHOT.prompt : 0;
+  const fixed = SHOT.open + lead + SHOT.result + SHOT.end;
   const room = Math.max(1, opts.length - fixed);
   const used = raw.reduce((a, r) => a + r.travel + r.settle + r.change + r.hold, 0);
   if (used > room) {
@@ -481,7 +517,14 @@ export function timeline(
     // Spare time: a longer look at each result (never a long still), a calmer change, and
     // longer reads of the cards; what's left goes to the last look at the result.
     let spare = room - used;
-    const works = raw.filter((r) => r.m.kind === "work");
+    // The build is the magic: it takes spare time first, up to a calm pace for its length.
+    if (first && first.m.kind === "work" && first.m.answers === undefined) {
+      const most = opts.length <= 15 ? 3.2 : opts.length <= 30 ? 6.5 : 11;
+      const extra = Math.max(0, Math.min(spare * 0.5, most - first.change));
+      first.change += extra;
+      spare -= extra;
+    }
+    const works = raw.filter((r) => r.m.kind === "work" && r !== first);
     const turns = raw.filter((r) => r.m.kind === "turn");
     const cards = turns.flatMap((r) => r.shown.filter((x) => x.card));
     for (let pass = 0; pass < 3 && spare > 0.05; pass++) {
@@ -506,7 +549,7 @@ export function timeline(
           // A long comment reads at its own pace: cards take their share first in a short film.
           const d = Math.max(
             0,
-            Math.min(each * cardShare, Math.min(9, commentTime(x.comment.words, 60) * 1.25) - x.d),
+            Math.min(each * cardShare, Math.min(11, cardTime(x.comment.words, 60) * 1.15) - x.d),
           );
           x.d += d;
           r.change += d;
@@ -517,7 +560,7 @@ export function timeline(
     }
   }
   const shots: StoryShot[] = [];
-  let t = SHOT.open;
+  let t = SHOT.open + lead;
   for (const r of raw) {
     const start = t;
     const arrive = start + r.travel;
@@ -550,7 +593,13 @@ export function timeline(
   }
   const result = t;
   const endCard = Math.max(result + SHOT.result, opts.length - SHOT.end);
-  return { shots, result, endCard, duration: endCard + SHOT.end };
+  return {
+    ...(lead ? { prompt: { start: 0, end: SHOT.open + lead } } : {}),
+    shots,
+    result,
+    endCard,
+    duration: endCard + SHOT.end,
+  };
 }
 
 /** The shot at film time `f`, and where in it. */
