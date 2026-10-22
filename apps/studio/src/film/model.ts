@@ -308,7 +308,14 @@ export async function buildFilm(input: FilmInput): Promise<FilmModel> {
           .filter((r): r is Rect => Boolean(r));
         const box = union(boxes);
         if (box) {
-          beatTouched.set(id, { board: id, box, hold: 0.12 });
+          // Taken away with nothing in its place yet (an agent removes, then writes the new
+          // version next): the old picture holds until that next change to the board lands.
+          let hold = 0.12;
+          if (!beatUnits.length) {
+            const next = plan.beats.slice(i + 1).find((x) => x.artboards.includes(id));
+            if (next && next.at - beat.at < 4) hold = next.at - beat.at + 0.05;
+          }
+          beatTouched.set(id, { board: id, box, hold });
           details.push({ x: ab.x + box.x, y: ab.y + box.y, w: box.w, h: box.h });
         }
         await measurer.show(doc, ab);

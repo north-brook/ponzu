@@ -233,6 +233,7 @@ export function planFilm(entries: JournalEntry[], opts: PlanOptions): Plan {
       board: r.e.artboards[0],
       light: r.kind === "edit" && (!visible(r.e.op) || r.note),
       words: r.kind === "comment" ? commentWords(r.e.op) : undefined,
+      size: r.kind === "edit" ? JSON.stringify(r.e.op).length : undefined,
     })),
     turnOf,
     content - pullback,
@@ -303,7 +304,15 @@ export function planFilm(entries: JournalEntry[], opts: PlanOptions): Plan {
  * the holds alone won't fit, they shrink together, never below a floor.
  */
 export function solveDurations(
-  beats: { kind: BeatKind; t: number; board?: string; light?: boolean; words?: number }[],
+  beats: {
+    kind: BeatKind;
+    t: number;
+    board?: string;
+    light?: boolean;
+    words?: number;
+    /** How much the op brings, roughly (its size in characters). */
+    size?: number;
+  }[],
   turnOf: number[],
   room: number,
 ): number[] {
@@ -332,6 +341,9 @@ export function solveDurations(
     }
     const gap = k > 0 ? (b.t - beats[k - 1]!.t) / 1000 : MIN_WEIGHT;
     let w = b.light ? MIN_WEIGHT * 0.5 : Math.min(IDLE_CAP, Math.max(MIN_WEIGHT, gap));
+    // Big changes get more of the film than small ones: a new section over a nudged chip.
+    if (!b.light && b.size !== undefined)
+      w *= Math.min(1.7, Math.max(0.45, Math.sqrt(b.size / 2500)));
     if (!b.light && b.board && b.board !== lastBoard) w += MOVE_WEIGHT;
     if (b.board && !b.light) lastBoard = b.board;
     weights.push(w);
@@ -644,8 +656,9 @@ export function frameFocus(focus: Focus, view: { w: number; h: number }, f: Fram
 }
 
 /**
- * Nudges a camera the least it takes for a pin and its card (to the pin's
- * right, 330×160 screen px) to sit inside the frame's margins.
+ * Nudges a camera the least it takes for a pin to sit inside the frame's
+ * margins. Its card is kept in frame by the film itself (it slides in from an
+ * edge), so the camera never trades the commented design for room beside it.
  */
 function withPin(cam: Cam, focus: Focus, view: { w: number; h: number }, f: Framing): Cam {
   const p = focus.pin;
@@ -653,14 +666,9 @@ function withPin(cam: Cam, focus: Focus, view: { w: number; h: number }, f: Fram
   const z = cam.zoom;
   const hw = view.w / 2 / z;
   const hh = view.h / 2 / z;
-  const m = f.pad / z;
-  // The span the frame must cover, in canvas px, and the centres that do it.
-  const x0 = p.x - 20 / z;
-  const x1 = p.x + 330 / z;
-  const y0 = p.y - 24 / z;
-  const y1 = p.y + 160 / z;
-  const cx = clampCentre(cam.cx, x1 - hw + m, x0 + hw - m);
-  const cy = clampCentre(cam.cy, y1 - hh + m, y0 + hh - m - f.top / z);
+  const m = (f.pad + 16) / z;
+  const cx = clampCentre(cam.cx, p.x - hw + m, p.x + hw - m);
+  const cy = clampCentre(cam.cy, p.y - hh + m, p.y + hh - m - f.top / z);
   return { ...cam, cx, cy };
 }
 
@@ -933,11 +941,12 @@ export function travelTime(a: Cam, b: Cam, view: { w: number; h: number }, slow 
 }
 
 /**
- * Targets from per-beat focus: one per change of subject. Comments, replies
- * and resolves are the plot, so they're placed first, arriving as their beat
- * lands; the agent's edits fill the time between, each only where the camera
- * can get there, hold, and still make the next plot beat. It never leaves a
- * subject before it has arrived and held there.
+ * Targets from per-beat focus, as visits. Comments and replies are fixed: the
+ * camera arrives as each lands. A run of the agent's edits to one board is one
+ * visit, framed on everything the run changes, taken only when the camera can
+ * get there and hold MIN_HOLD before it must leave for the next comment.
+ * Resolves never move the camera: the pin leaves wherever it is. So the
+ * camera settles on what it shows instead of chasing every op.
  */
 export function camTargets(
   plan: Plan,
@@ -946,80 +955,107 @@ export function camTargets(
   framing: Framing,
   final: Focus | null,
 ): CamTarget[] {
-  const cams = focus.map((fo) => (fo ? frameFocus(fo, view, framing) : null));
-  const plot = (i: number) => plan.beats[i]!.kind !== "edit";
-  // Pass 1: the plot beats' arrivals, in order.
-  const fixed = new Map<number, number>(); // beat index → arrival time
-  let lastPlot: { cam: Cam; arrive: number } | null = null;
-  for (let i = 0; i < plan.beats.length; i++) {
-    const cam = cams[i];
-    if (!cam || !plot(i)) continue;
-    if (lastPlot && sameCam(lastPlot.cam, cam, view)) continue;
-    const arrive = plan.beats[i]!.at;
-    fixed.set(i, arrive);
-    lastPlot = { cam, arrive };
+  interface Visit {
+    cam: Cam | null;
+    key?: string;
+    /** When its first change lands. */
+    at: number;
+    /** When its last change has played. */
+    end: number;
+    fixed: boolean;
+    parts: Focus[];
   }
+  const visits: Visit[] = [];
+  for (let i = 0; i < plan.beats.length; i++) {
+    const b = plan.beats[i]!;
+    const fo = focus[i];
+    if (!fo || b.kind === "resolve") continue;
+    const last = visits[visits.length - 1];
+    if (b.kind === "edit") {
+      // Runs of edits on the same board (or turn frame) are one visit.
+      if (last && !last.fixed && last.key === fo.key) {
+        last.end = b.end;
+        last.parts.push(fo);
+        continue;
+      }
+      visits.push({ cam: null, key: fo.key, at: b.at, end: b.end, fixed: false, parts: [fo] });
+      continue;
+    }
+    // A comment: on the same frame as the last comment of its turn, it's the same visit.
+    const cam = frameFocus(fo, view, framing);
+    if (last?.fixed && last.cam && (last.key === fo.key || sameCam(last.cam, cam, view))) {
+      last.end = b.end;
+      continue;
+    }
+    visits.push({ cam, key: fo.key, at: b.at, end: b.end, fixed: true, parts: [fo] });
+  }
+  // Edit visits frame everything their run changed, on the run's board.
+  for (const v of visits) {
+    if (v.cam) continue;
+    const first = v.parts[0]!;
+    const details = v.parts.flatMap((p) => (p.detail ? [p.detail] : []));
+    const parts = v.parts.flatMap((p) => p.parts ?? (p.detail ? [p.detail] : []));
+    const detail = details.length ? unionRects(details) : undefined;
+    v.cam = frameFocus({ ...first, detail, parts }, view, framing);
+  }
+
   const out: CamTarget[] = [];
   let prev: Cam | null = null;
-  let prevKey: string | undefined;
   let free = 0;
-  const nextFixed = (i: number) => {
-    for (let j = i + 1; j < plan.beats.length; j++) if (fixed.has(j)) return j;
-    return -1;
-  };
-  for (let i = 0; i < plan.beats.length; i++) {
-    const fo = focus[i];
-    const cam = cams[i];
-    if (!fo || !cam) continue;
-    const same =
-      prev &&
-      (sameCam(prev, cam, view) ||
-        (fo.key && fo.key === prevKey && camDistance(prev, cam, view) < 0.22));
-    if (same) continue;
+  for (let k = 0; k < visits.length; k++) {
+    const v = { ...visits[k]!, cam: visits[k]!.cam! };
     if (!prev) {
-      out.push({ t: 0, cam, travel: 0 });
-      prev = cam;
-      prevKey = fo.key;
+      out.push({ t: 0, cam: v.cam, travel: 0 });
+      prev = v.cam;
       free = MIN_HOLD;
       continue;
     }
-    if (plot(i)) {
-      if (!fixed.has(i)) continue;
-      const travel = travelTime(prev, cam, view);
-      // Arrive as it lands; if the last move is still underway, cut its hold short.
-      const t = Math.max(
-        out[out.length - 1]!.t + out[out.length - 1]!.travel * 0.8,
-        fixed.get(i)! - travel,
-      );
+    if (sameCam(prev, v.cam, view)) continue;
+    const travel = travelTime(prev, v.cam, view);
+    if (v.fixed) {
+      const lastT = out[out.length - 1]!;
+      const t = Math.max(lastT.t + lastT.travel * 0.8, v.at - travel, Math.min(free, v.at - 0.45));
       if (t + travel >= plan.pullback - 0.2) continue;
-      out.push({ t, cam, travel: Math.max(0.35, Math.min(travel, fixed.get(i)! - t + 0.15)) });
+      out.push({ t, cam: v.cam, travel: Math.max(0.45, Math.min(travel, v.at - t + 0.15)) });
     } else {
-      const travel = travelTime(prev, cam, view);
-      const t = Math.max(free, plan.beats[i]!.at - Math.min(LEAD, travel * 0.75));
-      // Only if there's time to arrive, hold and still leave for the next plot beat.
-      const nf = nextFixed(i);
-      if (nf >= 0) {
-        const nextCam = cams[nf]!;
-        const leave = fixed.get(nf)! - travelTime(cam, nextCam, view);
+      const t = Math.max(free, v.at - Math.min(LEAD, travel * 0.75));
+      // It must hold, and still leave in time for the next comment.
+      const next = visits.slice(k + 1).find((x) => x.fixed);
+      if (next) {
+        const leave = next.at - travelTime(v.cam, next.cam!, view);
         if (t + travel + MIN_HOLD > leave) continue;
       }
+      // Not worth it if the run is over before the camera gets there.
+      if (t + travel > v.end + 0.3) continue;
       if (t + travel >= plan.pullback - 0.2) continue;
-      out.push({ t, cam, travel });
+      out.push({ t, cam: v.cam, travel });
     }
     const last = out[out.length - 1]!;
-    free = last.t + last.travel + MIN_HOLD;
-    prev = cam;
-    prevKey = fo.key;
+    // A comment's frame holds until it has been read.
+    free = Math.max(last.t + last.travel + MIN_HOLD, v.fixed ? v.end - 0.1 : 0);
+    prev = v.cam;
   }
   if (final) {
     const cam = frameFocus({ ...final, overview: true }, view, framing);
     const last = out[out.length - 1];
     const from = last?.cam ?? cam;
     const travel = travelTime(from, cam, view, true);
-    const t = Math.max(plan.pullback, last ? last.t + last.travel + 0.3 : 0);
+    // Arrive with time to look before the end card.
+    const t = Math.max(
+      last ? last.t + last.travel + 0.2 : 0,
+      Math.min(plan.pullback, plan.endCard - travel - 0.8),
+    );
     if (!last || !sameCam(from, cam, view)) out.push({ t, cam, travel });
   }
   return out;
+}
+
+function unionRects(rects: Rect[]): Rect {
+  const x0 = Math.min(...rects.map((r) => r.x));
+  const y0 = Math.min(...rects.map((r) => r.y));
+  const x1 = Math.max(...rects.map((r) => r.x + r.w));
+  const y1 = Math.max(...rects.map((r) => r.y + r.h));
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
 export interface CamPath {

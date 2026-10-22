@@ -350,7 +350,6 @@ export class ChromiumRenderer implements Renderer {
         const shot = await cdp.send("Page.captureScreenshot", {
           format,
           ...(format === "jpeg" ? { quality: 70 } : {}),
-          optimizeForSpeed: true,
         });
         return shot.data;
       },

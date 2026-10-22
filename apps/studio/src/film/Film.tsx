@@ -82,30 +82,40 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
       data-film-frame={Math.round(f * 1000)}
     >
       <div className="pz:absolute pz:inset-0 pz:overflow-hidden">
-        <div
-          className="pz:absolute pz:top-0 pz:left-0 pz:origin-top-left"
-          style={{ transform: `translate(${tx}px, ${ty}px) scale(${cam.zoom})` }}
-        >
+        {/*
+          Each board is placed in screen space with its own transform. One big transformed
+          layer for the whole canvas left stale tiles of off-screen boards in headless
+          captures as the camera moved.
+        */}
+        <div className="pz:absolute pz:inset-0">
           {boards.map((ab) => {
             const appear = boardAppear(model, ab.id, f);
             if (appear === null) return null;
             const ghost = ghostFor(model, ab.id, f);
             const who = working.get(ab.id);
             const { w, h } = artboardSize(ab);
+            // Off screen: kept (its shadow root stays built) but not drawn, so the canvas layer
+            // only ever holds what's in frame.
+            const bh = heights.get(ab.id) ?? h ?? 900;
+            const s0 = toScreen(ab.x, ab.y - 40);
+            const s1 = toScreen(ab.x + w, ab.y + bh);
+            const offscreen = s1.x < -40 || s0.x > view.w + 40 || s1.y < -40 || s0.y > view.h + 40;
             return (
               <div
                 key={ab.id}
                 className="pz:absolute pz:shadow-board"
                 style={{
-                  left: ab.x,
-                  top: ab.y,
+                  display: offscreen ? "none" : undefined,
+                  left: 0,
+                  top: 0,
+                  transform: `translate(${ab.x * cam.zoom + tx}px, ${ab.y * cam.zoom + ty}px) scale(${cam.zoom})`,
+                  transformOrigin: "0 0",
                   width: w,
                   height: h ?? undefined,
-                  // A new board arrives solid (a dark one never passes through grey): it grows
-                  // in from slightly smaller, behind a quick fade of the first few frames.
-                  opacity: Math.min(1, appear * 2.5),
-                  scale: String(0.97 + 0.03 * appear),
-                  transformOrigin: "50% 40%",
+                  // A new board arrives solid (a dark one never passes through grey): it's drawn
+                  // in from the top, as a sheet unrolls, its name first.
+                  clipPath:
+                    appear < 1 ? `inset(-40px -40px ${(1 - appear) * 100}% -40px)` : undefined,
                 }}
               >
                 <div
@@ -202,7 +212,8 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
         <Wayfinding model={model} doc={doc} pageId={cam.page} />
       </div>
       {canvasFade > 0 && (
-        <EndCard model={model} t={Math.max(0, end)} opacity={ease.out(canvasFade)} />
+        // The bloom starts as the canvas fades, so there's never an empty card.
+        <EndCard model={model} t={Math.max(0, end + 0.3)} opacity={ease.out(canvasFade)} />
       )}
     </div>
   );
@@ -261,15 +272,16 @@ function ghostFor(
   f: number,
 ): { artboard: Artboard; doc: Doc; opacity: number; box?: Swap["box"] } | null {
   const k = beatIndexAt(model.plan, f);
-  for (let j = k; j >= 0 && j > k - 3; j--) {
+  for (let j = k; j >= 0 && j > k - 12; j--) {
     const b = model.plan.beats[j]!;
+    if (f - b.at > 4.2) break;
     const swap = model.touched[j]!.find((t) => t.board === id);
     if (!swap) continue;
     const start = b.at + swap.hold;
     // Two layouts never show at once: the old look holds, then cuts to the new one (a
     // restyle is a change of state, as in the studio; new pieces rise on their own).
     const handoff = 1 / 120;
-    if (f - start > handoff) return null;
+    if (f - start > handoff) continue;
     const prev = model.docs[j]!;
     const ab = prev.pages.flatMap((p) => p.artboards).find((a) => a.id === id);
     if (!ab) return null;
@@ -443,24 +455,32 @@ function pinsAt(model: FilmModel, f: number, page: string) {
   return out;
 }
 
-/** Thread cards showing at `f`: each comment's own beat, and an agent's reply. */
+/**
+ * The thread card showing at `f`, at most one: a comment's card comes in with
+ * its pin and goes before the next card, or before the camera sets off
+ * somewhere its pin won't be.
+ */
 function cardsAt(model: FilmModel, f: number) {
   const k = beatIndexAt(model.plan, f);
   const out: { thread: Thread; opacity: number; now: number }[] = [];
-  for (let j = Math.max(0, k - 1); j <= k; j++) {
+  for (let j = k; j >= Math.max(0, k - 2); j--) {
     const b = model.plan.beats[j];
     if (!b || (b.kind !== "comment" && b.kind !== "reply") || !b.thread) continue;
     const doc = model.docs[Math.min(model.docs.length - 1, k + 1)]!;
     const t = doc.threads.find((x) => x.id === b.thread && x.status === "open");
-    if (!t) continue;
-    // In with the pin, out as the next beat lands (or as this one ends).
-    const next = model.plan.beats[j + 1];
-    const until = Math.min(b.end + 0.1, next ? next.at + 0.05 : b.end);
-    const fadeIn = progress(f, b.at + 0.06, b.at + 0.3, ease.out);
-    const fadeOut = 1 - progress(f, until - 0.2, until, ease.in);
+    if (!t) break;
+    // Gone a beat before the next card, and before the camera leaves.
+    const next = model.plan.beats
+      .slice(j + 1)
+      .find((x) => x.kind === "comment" || x.kind === "reply");
+    let until = Math.min(b.end, next ? next.at - 0.08 : b.end);
+    const leave = model.camera.targets.find((x) => x.t > b.at + 0.05);
+    if (leave && leave.t < until && leave.cam.page) until = Math.max(b.at + 0.5, leave.t);
+    const fadeIn = progress(f, b.at + 0.05, b.at + 0.25, ease.out);
+    const fadeOut = 1 - progress(f, until - 0.15, until, ease.in);
     const opacity = Math.min(fadeIn, fadeOut);
-    if (opacity <= 0.001) continue;
-    out.push({ thread: t, opacity, now: b.t + 1000 });
+    if (opacity > 0.001) out.push({ thread: t, opacity, now: b.t + 1000 });
+    break;
   }
   return out;
 }
