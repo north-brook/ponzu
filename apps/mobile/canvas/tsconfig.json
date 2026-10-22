@@ -1,0 +1,11 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    // The web view is a browser page built from the desktop canvas's pieces, with their React.
+    "paths": {
+      "react-dom": ["../../../packages/react/node_modules/@types/react-dom"],
+      "react-dom/*": ["../../../packages/react/node_modules/@types/react-dom/*"]
+    }
+  },
+  "include": ["*.ts", "*.tsx"]
+}
