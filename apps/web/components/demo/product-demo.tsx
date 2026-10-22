@@ -427,7 +427,7 @@ function Reveal({ steps, children }: { steps: number; children: ReactNode }) {
 /** Ponzu's class strings for pins and cards (Canvas.tsx, Comments.tsx), so they match exactly. */
 const PIN_WRAP = "pz:pointer-events-auto pz:absolute pz:z-[2] pz:size-0";
 const PIN =
-  "pz:absolute pz:top-0 pz:left-0 pz:grid pz:size-6 pz:-translate-1/2 pz:place-items-center pz:rounded-full pz:font-semibold pz:text-[11px] pz:tabular-nums pz:shadow-[0_1px_3px_rgba(0,0,0,0.25)]";
+  "pz:absolute pz:top-0 pz:left-0 pz:grid pz:size-6 pz:-translate-1/2 pz:place-items-center pz:rounded-full pz:font-semibold pz:text-[11px] pz:tabular-nums pz:shadow-[0_0_0_1px_rgba(17,17,16,0.18),0_1px_3px_rgba(0,0,0,0.25)]";
 const THREAD_CARD =
   "pz:absolute pz:-top-3 pz:left-5 pz:w-[300px] pz:select-text pz:overflow-hidden pz:rounded-xl pz:bg-card pz:shadow-pop";
 

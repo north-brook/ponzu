@@ -736,7 +736,8 @@ export function Canvas({
                     "pz:bg-comment pz:text-comment-foreground",
                     panning ? "pz:cursor-grab" : "pz:cursor-pointer",
                     (open || dragging) && "pz:scale-112",
-                    dragging && "pz:cursor-grabbing pz:shadow-[0_4px_12px_rgba(0,0,0,0.25)]",
+                    dragging &&
+                      "pz:cursor-grabbing pz:shadow-[0_0_0_1px_rgba(17,17,16,0.18),0_4px_12px_rgba(0,0,0,0.25)]",
                   )}
                   onPointerDown={(e) => pinDown(e, t)}
                   onPointerMove={pinMove}
@@ -985,9 +986,12 @@ function Trace({ x, y, w, h }: { x: number; y: number; w: number; h: number }) {
 
 /** Open pins sit a level above the rest, so another pin never covers their card. */
 const pinWrap = "pz:pointer-events-auto pz:absolute pz:size-0";
-/** A circle centred on the comment's spot, holding its message count. */
+/**
+ * A circle centred on the comment's spot, holding its message count. The hairline keeps a yuzu pin
+ * visible on a yellow design.
+ */
 const pin =
-  "pz:absolute pz:top-0 pz:left-0 pz:grid pz:size-6 pz:-translate-1/2 pz:place-items-center pz:rounded-full pz:font-semibold pz:text-[11px] pz:tabular-nums pz:shadow-[0_1px_3px_rgba(0,0,0,0.25)] pz:transition-transform pz:duration-[120ms] pz:hover:scale-112";
+  "pz:absolute pz:top-0 pz:left-0 pz:grid pz:size-6 pz:-translate-1/2 pz:place-items-center pz:rounded-full pz:font-semibold pz:text-[11px] pz:tabular-nums pz:shadow-[0_0_0_1px_rgba(17,17,16,0.18),0_1px_3px_rgba(0,0,0,0.25)] pz:transition-transform pz:duration-[120ms] pz:hover:scale-112";
 
 function PageTab({
   name,
