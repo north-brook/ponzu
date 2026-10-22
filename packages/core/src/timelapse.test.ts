@@ -11,7 +11,6 @@ import {
   lastSession,
   streamUnits,
 } from "./timelapse.ts";
-import type { Thread } from "./types.ts";
 
 const agent = { kind: "agent" as const, name: "Claude", client: "claude" };
 const user = { kind: "user" as const, name: "Bryce" };
