@@ -4,6 +4,7 @@ import type { ReactNode, SVGProps } from "react";
 import { GitHub, Slice } from "@/components/icons";
 import { CopyButton, CopyCommand } from "./copy";
 import type { ListedDesign, RepoInfo, ViewerErrorKind } from "./github";
+import { OpenAppButton } from "./open-app";
 import { type Repo, viewerPath } from "./target";
 import { DesignThumb } from "./thumb";
 
@@ -31,6 +32,17 @@ export function badgeMarkdown(repo: Repo, path = "", name?: string): string {
  */
 export function openCommand(repo: Repo, path: string): string {
   return `bunx ponzu open ${targetPath(repo, path)}`;
+}
+
+/**
+ * The link the Mac app opens a design from: `ponzu://open?repo=<owner>/<repo>&ref=<ref>&path=…`.
+ * The app checks every part again before git sees it (@ponzu/server/clone).
+ */
+export function openLink(repo: Repo, path: string): string {
+  const q = new URLSearchParams({ repo: `${repo.owner}/${repo.repo}` });
+  if (repo.ref) q.set("ref", repo.ref);
+  q.set("path", path);
+  return `ponzu://open?${q}`;
 }
 
 export const pill =
@@ -141,10 +153,20 @@ export function repoCrumbs(repo: RepoInfo, link: Repo): Crumb[] {
 }
 
 /**
- * "Open in Ponzu", and the card that says why and how: change this design with your agent, by one
- * command that clones the repo and opens it. The Mac app is a quiet line under it.
+ * "Open in Ponzu", and the card that says why and how: change this design with your agent. The
+ * Mac app is the way in, by a ponzu:// link; the terminal is the alternative, under a hairline.
  */
-export function OpenInPonzu({ name, command }: { name: string; command: string }) {
+export function OpenInPonzu({
+  name,
+  link,
+  command,
+}: {
+  name: string;
+  /** The ponzu://open link the Mac app clones and opens (openLink). */
+  link: string;
+  /** The same, as a `bunx ponzu open` command (openCommand). */
+  command: string;
+}) {
   return (
     <>
       <button
@@ -158,24 +180,29 @@ export function OpenInPonzu({ name, command }: { name: string; command: string }
       <div
         id="pz-open"
         popover="auto"
-        className="fixed top-[62px] right-3.5 left-auto m-0 flex w-[min(480px,calc(100vw-24px))] flex-col gap-4 rounded-2xl bg-well p-5 text-[13.5px]/[1.5] text-text shadow-[0_0_0_1px_rgba(0,0,0,0.05),0_2px_4px_rgba(0,0,0,0.04),0_16px_48px_rgba(0,0,0,0.14)] dark:shadow-[0_0_0_1px_var(--well-rule),0_16px_48px_rgba(0,0,0,0.6)]"
+        className="fixed top-[62px] right-3.5 left-auto m-0 flex w-[min(440px,calc(100vw-24px))] flex-col gap-4 rounded-2xl bg-well p-5 text-[13.5px]/[1.5] text-text shadow-[0_0_0_1px_rgba(0,0,0,0.05),0_2px_4px_rgba(0,0,0,0.04),0_16px_48px_rgba(0,0,0,0.14)] dark:shadow-[0_0_0_1px_var(--well-rule),0_16px_48px_rgba(0,0,0,0.6)]"
       >
         <div className="flex flex-col gap-1">
           <div className="font-display text-[17px]/[1.25] font-semibold tracking-[-0.015em] text-ink">
             Change {name} with your agent
           </div>
           <p className="m-0 text-muted">
-            One command clones the repo and opens {name} on your machine. Leave comments on the
-            canvas, your coding agent makes the changes, and you commit them like code.
+            Ponzu clones the repo and opens {name} on your Mac. Leave comments on the canvas, your
+            coding agent makes the changes, and you commit them like code.
           </p>
         </div>
-        <CopyCommand value={command} />
-        <div className="flex items-center gap-2.5 text-[13px] text-muted">
-          <Slice size={16} />
-          <span className="flex-1">Rather click than type? Ponzu for Mac</span>
-          <a className="font-medium text-text hover:text-ink" href="/download">
-            Download →
-          </a>
+        <OpenAppButton link={link} />
+        <div className="flex flex-col gap-2 border-t border-rule pt-3.5 dark:border-well-rule">
+          <div className="flex items-center justify-between gap-3 text-[12.5px] text-faint">
+            <span>Not on a Mac, or prefer the terminal</span>
+            <span className="shrink-0 text-muted">
+              No app yet?{" "}
+              <a className="font-medium text-text hover:text-ink" href="/download">
+                Download
+              </a>
+            </span>
+          </div>
+          <CopyCommand value={command} />
         </div>
       </div>
     </>

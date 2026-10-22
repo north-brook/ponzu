@@ -5,6 +5,7 @@ import {
   DesignList,
   OpenInPonzu,
   openCommand,
+  openLink,
   repoCrumbs,
   TopBar,
   ViewerErrorPage,
@@ -100,7 +101,11 @@ export default async function Page(props: Props) {
             githubUrl={loaded.githubUrl}
             mobile={<PagePicker />}
           >
-            <OpenInPonzu name={loaded.name} command={openCommand(link, loaded.path)} />
+            <OpenInPonzu
+              name={loaded.name}
+              link={openLink(link, loaded.path)}
+              command={openCommand(link, loaded.path)}
+            />
           </TopBar>
           <div className="min-h-0 flex-1">
             <DesignCanvas doc={loaded.doc} assetBase={loaded.assetBase} />

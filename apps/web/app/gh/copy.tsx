@@ -36,11 +36,11 @@ function CopyIcon() {
   );
 }
 
-/** One command on ink, `$` first, cut short with an ellipsis, and a copy button at its end. */
+/** One command on a chip, `$` first, cut short with an ellipsis, and a copy button at its end. */
 export function CopyCommand({ value }: { value: string }) {
   const [copied, copy] = useCopy(value);
   return (
-    <div className="flex h-11 items-center gap-2.5 rounded-[11px] bg-code pr-1.5 pl-3.5 font-mono text-xs text-code-ink">
+    <div className="flex h-[38px] items-center gap-2.5 rounded-[10px] bg-chip pr-[5px] pl-3 font-mono text-xs text-text dark:bg-well-rule">
       <span aria-hidden="true" className="text-faint select-none">
         $
       </span>
@@ -50,7 +50,7 @@ export function CopyCommand({ value }: { value: string }) {
       <button
         type="button"
         aria-label={copied ? "Copied" : "Copy command"}
-        className="grid size-8 shrink-0 place-items-center rounded-lg bg-white/10 text-[13px] text-code-ink transition-colors hover:bg-white/20"
+        className="grid size-7 shrink-0 place-items-center rounded-[7px] text-[13px] text-muted transition-colors hover:bg-ground hover:text-ink dark:hover:bg-white/10"
         onClick={copy}
       >
         {copied ? <Check /> : <CopyIcon />}

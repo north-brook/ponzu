@@ -90,12 +90,17 @@ export default function Loading() {
               </span>
             ))}
           </div>
+          {/* The Controls bar: select and hand, then zoom. */}
           <div className="gv-bar flex items-center gap-0.5 rounded-xl p-1">
-            <span className="flex h-7 items-center px-2.5 text-[12.5px] text-[var(--gv-label)]">
-              Viewing
+            <span className="grid size-7 place-items-center rounded-lg bg-[var(--gv-raised)] shadow-[0_1px_2px_rgba(0,0,0,0.08)]">
+              <span className="size-3 rounded-[3px] bg-[var(--gv-line)]" />
             </span>
-            <span className="grid h-7 min-w-10 place-items-center">
-              <span className="h-2 w-7 rounded bg-[var(--gv-line)]" />
+            <span className="grid size-7 place-items-center">
+              <span className="size-3 rounded-[3px] bg-[var(--gv-line)]" />
+            </span>
+            <span className="mx-1.5 h-4 w-px bg-[var(--gv-line)]" />
+            <span className="grid h-7 min-w-[92px] place-items-center">
+              <span className="h-2 w-16 rounded bg-[var(--gv-line)]" />
             </span>
           </div>
         </div>
