@@ -650,8 +650,7 @@ function Segments<T extends string | number>({
         <button
           key={String(it.value)}
           type="button"
-          role="radio"
-          aria-checked={it.value === value}
+          aria-pressed={it.value === value}
           onClick={() => onChange(it.value)}
           className={cn(
             "flex h-7 items-center gap-1.5 rounded-[7px] px-2.5 text-[12.5px] text-muted-foreground tabular-nums hover:text-foreground",
@@ -942,7 +941,6 @@ function Ready({
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title="Timelapse ready">
       <div className="flex h-[min(520px,calc(100vh-260px))] items-center justify-center rounded-xl bg-canvas p-3">
-        {/* biome-ignore lint/a11y/useMediaCaption: a film of a canvas, no speech */}
         <video
           ref={video}
           src={src}
