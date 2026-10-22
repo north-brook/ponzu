@@ -20,6 +20,7 @@ import {
   ToolError,
   type Workspace,
 } from "@ponzu/tools";
+import { JournalWriter } from "./journal.ts";
 import { previewStale, writePreview } from "./preview.ts";
 
 export interface WorkspaceOptions {
@@ -34,6 +35,8 @@ export interface WorkspaceOptions {
    * for Finder's icons. Default: on macOS.
    */
   previews?: boolean;
+  /** Keep each design's .ponzu/journal.ndjson, the history timelapses are made from. Default true. */
+  journal?: boolean;
 }
 
 /** How long the canvas has to sit still before the preview is redrawn. */
@@ -43,6 +46,7 @@ interface Entry {
   key: string;
   design: Design;
   stop: () => void;
+  journal?: JournalWriter;
 }
 
 /**
@@ -112,7 +116,16 @@ export class LocalWorkspace implements Workspace {
         await mkdir(key, { recursive: true });
         const design = await Design.open(new FsAdapter(key));
         const entry: Entry = { key, design, stop: () => {} };
-        entry.stop = this.bridge(key, design);
+        const offBridge = this.bridge(key, design);
+        let offJournal = () => {};
+        if (this.opts.journal !== false) {
+          entry.journal = new JournalWriter(key);
+          offJournal = entry.journal.start(design, (o) => this.clientOf(o));
+        }
+        entry.stop = () => {
+          offBridge();
+          offJournal();
+        };
         this.entries.set(key, entry);
         for (const l of this.openListeners) l(key);
         // In the background: the walk shouldn't hold up opening the file.
@@ -195,6 +208,7 @@ export class LocalWorkspace implements Workspace {
     clearTimeout(this.previewTimers.get(key));
     this.previewTimers.delete(key);
     await e.design.close();
+    await e.journal?.close();
     this.entries.delete(key);
   }
 
@@ -202,6 +216,17 @@ export class LocalWorkspace implements Workspace {
     for (const key of [...this.entries.keys()]) await this.close(key);
     await this.previewing;
     await this.renderer?.close();
+  }
+
+  /** Everything this design's journal has been told is on disk. */
+  async journalFlushed(key: string): Promise<void> {
+    await this.entries.get(this.keyOf(key))?.journal?.flush();
+  }
+
+  /** The product of the agent behind an origin, for its mark in a timelapse. */
+  private clientOf(o: { kind: string; name: string }): string | undefined {
+    if (o.kind !== "agent") return undefined;
+    return this.presence.list().find((p) => p.kind === "agent" && p.name === o.name)?.client;
   }
 
   assetBase(key: string): string | undefined {

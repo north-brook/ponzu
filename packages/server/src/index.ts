@@ -7,6 +7,7 @@ export {
   parseOpenUrl,
   spawnGit,
 } from "./clone.ts";
+export * from "./journal.ts";
 export * from "./preview.ts";
 export * from "./serve.ts";
 export { readTailnet } from "./tailnet.ts";
