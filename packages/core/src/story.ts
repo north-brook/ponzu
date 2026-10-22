@@ -290,8 +290,16 @@ export function chooseStory(all: Moment[], looks: Map<Moment, Look>, opts: Story
         (a, b) =>
           Number(b.board === firstAsked) - Number(a.board === firstAsked) || score(b) - score(a),
       );
-    const keep = opts.length <= 15 ? 1 : payoff.length;
-    for (const w of payoff.slice(0, keep)) take(w);
+    // A short film pays off the comments it reads out: the first two boards asked about.
+    if (opts.length <= 15) {
+      const asked = [...new Set(firstTurn.comments.map((c) => c.board))].slice(0, 2);
+      for (const b of asked) {
+        const w = payoff.find((x) => x.board === b);
+        if (w) take(w);
+      }
+      if (![...picked].some((m) => m.kind === "work" && m.answers === firstTurn.round) && payoff[0])
+        take(payoff[0]);
+    } else for (const w of payoff) take(w);
   }
   if (opts.length > 15) {
     // Further turns with their payoffs, then the biggest remaining work.
@@ -310,16 +318,21 @@ export function chooseStory(all: Moment[], looks: Map<Moment, Look>, opts: Story
   }
   // Each turn features the comments whose fixes are in the film: a short film shows two cards,
   // so it spends them on the comments the film pays off.
-  const shownBoards = new Set(
-    [...picked]
-      .filter((m): m is Extract<Moment, { kind: "work" }> => m.kind === "work")
-      .map((w) => w.board),
-  );
+  // The boards whose fixes for each turn are shown.
+  const paidFor = (round: number) =>
+    new Set(
+      [...picked]
+        .filter(
+          (m): m is Extract<Moment, { kind: "work" }> => m.kind === "work" && m.answers === round,
+        )
+        .map((w) => w.board),
+    );
   const cards = opts.length <= 15 ? 2 : 4;
   return all
     .filter((m) => picked.has(m))
     .map((m) => {
       if (m.kind !== "turn") return m;
+      const shownBoards = paidFor(m.round);
       const paid = m.comments.filter((c) => c.board && shownBoards.has(c.board));
       const rest = m.comments.filter((c) => !paid.includes(c));
       // A short film only reads out the comments it pays off; the others land as pins.
@@ -431,15 +444,34 @@ export function timeline(
     }
   } else {
     // Spare time: longer looks at each result, then a calmer change, evenly across the work.
-    const spare = room - used;
+    // Spare time: a longer look at each result (never a long still), a calmer change, and
+    // longer reads of the cards; what's left goes to the last look at the result.
+    let spare = room - used;
     const works = raw.filter((r) => r.m.kind === "work");
-    const each = works.length ? spare / works.length : 0;
-    for (const r of works) {
-      const hold = Math.min(1.3, each * 0.55);
-      const change = Math.min(0.7, (each - hold) * 0.6);
-      r.hold += hold;
-      r.change += change;
-      r.settle += Math.max(0, Math.min(0.5, each - hold - change));
+    const turns = raw.filter((r) => r.m.kind === "turn");
+    const cards = turns.flatMap((r) => r.shown.filter((x) => x.card));
+    for (let pass = 0; pass < 3 && spare > 0.05; pass++) {
+      const slots = works.length * 2 + cards.length;
+      if (!slots) break;
+      const each = spare / slots;
+      let usedNow = 0;
+      for (const r of works) {
+        const h = Math.max(0, Math.min(each * 2 * 0.6, 1.5 - r.hold));
+        const c = Math.max(0, Math.min(each * 2 * 0.4, 1.7 - r.change));
+        r.hold += h;
+        r.change += c;
+        usedNow += h + c;
+      }
+      for (const r of turns)
+        for (const x of r.shown) {
+          if (!x.card) continue;
+          const d = Math.max(0, Math.min(each, 2.4 - x.d));
+          x.d += d;
+          r.change += d;
+          usedNow += d;
+        }
+      spare -= usedNow;
+      if (usedNow < 0.01) break;
     }
   }
   const shots: StoryShot[] = [];
