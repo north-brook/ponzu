@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.27.0](https://github.com/north-brook/ponzu/compare/v1.26.1...v1.27.0) (2026-10-22)
+
+
+### Features
+
+* agents see artboards in the person's theme and lint both ([#119](https://github.com/north-brook/ponzu/issues/119)) ([ec2460e](https://github.com/north-brook/ponzu/commit/ec2460e65f531cc1d1fe786835ae4d6d733c92ce))
+
 ## [1.26.1](https://github.com/north-brook/ponzu/compare/v1.26.0...v1.26.1) (2026-10-21)
 
 
