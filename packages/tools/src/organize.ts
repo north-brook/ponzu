@@ -203,7 +203,7 @@ export const organizeTools = [
     title: "Update page",
     group: "organize",
     description:
-      "Rename a page, change its icon, move it in the page list, or delete it (with its artboards).",
+      "Rename a page, change its icon, move it in the page list, or delete it (with its artboards). Renaming moves the page's folder of files to match its new name.",
     input: {
       file: fileArg,
       page: z.string().describe("Page id or name."),

@@ -1,5 +1,5 @@
-import { type Doc, slugify } from "@ponzu/core";
-import { readBag } from "@ponzu/store";
+import type { Doc } from "@ponzu/core";
+import { pageFolders, readBag } from "@ponzu/store";
 import { cache } from "react";
 import {
   bagFiles,
@@ -260,15 +260,17 @@ export const loadRepo = cache(
   },
 );
 
-/** A design.json's name, and its pages' folders (slugs of their names), in order. */
+/** A design.json's name, and its pages' folders (as `pageFolders` names them), in order. */
 function readMeta(raw: unknown): { name: string | null; pages: string[] } {
   const o = (raw ?? {}) as { name?: unknown; pages?: unknown };
   const name = typeof o.name === "string" && o.name.trim() ? o.name.trim() : null;
   const pages = Array.isArray(o.pages)
-    ? o.pages
-        .map((p) => (p as { name?: unknown } | null)?.name)
-        .filter((n): n is string => typeof n === "string")
-        .map((n) => slugify(n, "page"))
+    ? pageFolders(
+        o.pages
+          .map((p) => (p as { name?: unknown } | null)?.name)
+          .filter((n): n is string => typeof n === "string")
+          .map((name) => ({ name })),
+      )
     : [];
   return { name, pages };
 }
