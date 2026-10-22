@@ -2,6 +2,13 @@ import { DropdownMenu as MenuPrimitive } from "radix-ui";
 import type * as React from "react";
 import { cn } from "@/lib/utils";
 
+/** Shared with the context menu, so a card's right-click menu looks like its "…". */
+export const menuContent =
+  "z-50 min-w-[200px] rounded-[11px] bg-popover p-[5px] text-[13px] text-popover-foreground shadow-[0_0_0_1px_var(--hairline-strong),0_1px_2px_rgba(0,0,0,0.06),0_8px_28px_rgba(0,0,0,0.1)] outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0";
+export const menuItem =
+  "flex h-[30px] cursor-default select-none items-center gap-[9px] rounded-[7px] px-2.5 outline-none data-[disabled]:pointer-events-none data-[highlighted]:bg-accent data-[disabled]:opacity-40 [&_svg]:text-muted-foreground";
+export const menuSeparator = "mx-1.5 my-1 h-px bg-[var(--hairline-strong)]";
+
 const DropdownMenu = MenuPrimitive.Root;
 const DropdownMenuTrigger = MenuPrimitive.Trigger;
 
@@ -15,10 +22,7 @@ function DropdownMenuContent({
       <MenuPrimitive.Content
         data-slot="dropdown-menu-content"
         sideOffset={sideOffset}
-        className={cn(
-          "z-50 min-w-[200px] rounded-[11px] bg-popover p-[5px] text-[13px] text-popover-foreground shadow-[0_0_0_1px_var(--hairline-strong),0_1px_2px_rgba(0,0,0,0.06),0_8px_28px_rgba(0,0,0,0.1)] outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
-          className,
-        )}
+        className={cn(menuContent, className)}
         {...props}
       />
     </MenuPrimitive.Portal>
@@ -32,10 +36,7 @@ function DropdownMenuItem({
   return (
     <MenuPrimitive.Item
       data-slot="dropdown-menu-item"
-      className={cn(
-        "flex h-[30px] cursor-default select-none items-center gap-[9px] rounded-[7px] px-2.5 outline-none data-[disabled]:pointer-events-none data-[highlighted]:bg-accent data-[disabled]:opacity-40 [&_svg]:text-muted-foreground",
-        className,
-      )}
+      className={cn(menuItem, className)}
       {...props}
     />
   );
@@ -45,12 +46,7 @@ function DropdownMenuSeparator({
   className,
   ...props
 }: React.ComponentProps<typeof MenuPrimitive.Separator>) {
-  return (
-    <MenuPrimitive.Separator
-      className={cn("mx-1.5 my-1 h-px bg-[var(--hairline-strong)]", className)}
-      {...props}
-    />
-  );
+  return <MenuPrimitive.Separator className={cn(menuSeparator, className)} {...props} />;
 }
 
 export {
