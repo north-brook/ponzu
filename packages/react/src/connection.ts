@@ -25,6 +25,8 @@ export interface CanvasSource {
   upload?(file: File): Promise<string>;
   /** Tell the host how the canvas looks, so agents can see artboards that way. */
   setTheme?(theme: ColorScheme): void;
+  /** Each change as it lands, with who made it and the doc after it: for motion. */
+  onOp?(listener: (op: Op, origin: Origin, doc: Doc) => void): () => void;
 }
 
 export interface CanvasState {
@@ -47,6 +49,7 @@ type Listener = (s: CanvasState) => void;
 export class SocketSource implements CanvasSource {
   private state: CanvasState;
   private listeners = new Set<Listener>();
+  private opListeners = new Set<(op: Op, origin: Origin, doc: Doc) => void>();
   private socket: WebSocket | null = null;
   private req = 0;
   private retry = 0;
@@ -117,6 +120,7 @@ export class SocketSource implements CanvasSource {
         } catch {
           return;
         }
+        for (const l of this.opListeners) l(msg.op, msg.origin, next);
         this.set({ doc: next, canUndo: msg.canUndo, canRedo: msg.canRedo, lastOrigin: msg.origin });
         break;
       }
@@ -151,6 +155,11 @@ export class SocketSource implements CanvasSource {
 
   getState() {
     return this.state;
+  }
+
+  onOp(listener: (op: Op, origin: Origin, doc: Doc) => void) {
+    this.opListeners.add(listener);
+    return () => this.opListeners.delete(listener);
   }
 
   // Edits go to the server, which applies them and echoes the op back.
@@ -202,6 +211,7 @@ export function viewOnly(source: CanvasSource): CanvasSource {
     redo() {},
     assetBase: source.assetBase,
     setTheme: source.setTheme ? (theme) => source.setTheme?.(theme) : undefined,
+    onOp: source.onOp ? (listener) => source.onOp!(listener) : undefined,
   };
 }
 

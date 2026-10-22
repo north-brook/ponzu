@@ -18,6 +18,7 @@ import {
   useState,
 } from "react";
 import { ArtboardView } from "./Artboard.tsx";
+import { Arrivals, arriveBoard } from "./arrive.ts";
 import { Composer, ThreadCard, threadCard } from "./Comments.tsx";
 import { type CanvasSource, viewOnly } from "./connection.ts";
 import { AgentMark, Icon, Icons } from "./icons.tsx";
@@ -169,6 +170,16 @@ export function Canvas({
 
   // Agents' screenshots default to how this canvas shows artboards.
   useEffect(() => source.setTheme?.(theme), [source, theme]);
+
+  // An agent's work rises in as it lands; the person's own edits just appear.
+  const arrivals = useMemo(() => new Arrivals(), []);
+  useEffect(
+    () =>
+      source.onOp?.((op, origin, next) => {
+        if (origin.kind === "agent") arrivals.add(op, next);
+      }),
+    [source, arrivals],
+  );
 
   const boards = page?.artboards ?? [];
   const boardHeight = (ab: Artboard) => size(ab).h ?? measured[ab.id] ?? 900;
@@ -718,6 +729,9 @@ export function Canvas({
             return (
               <div
                 key={ab.id}
+                ref={(el) => {
+                  if (el && arrivals.takeBoard(ab.id)) arriveBoard(el);
+                }}
                 className="pz:absolute pz:shadow-board"
                 style={{ left: x, top: y, width: w, height: h ?? undefined }}
               >
@@ -773,6 +787,7 @@ export function Canvas({
                   tokens={doc.tokens}
                   assetBase={source.assetBase}
                   colorScheme={isThemed(doc.tokens, ab.root) ? theme : "light"}
+                  arrivals={arrivals}
                 />
               </div>
             );
