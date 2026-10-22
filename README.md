@@ -51,7 +51,7 @@ Then ask for something:
 
 > Design a landing page for a houseplant shop in a new `design/shop.design`. Give me three takes on the hero.
 
-To pair on feedback, use the `collaborate` prompt (or say "run the Ponzu collaborate loop"). The agent waits for your comments, handles each one and resolves it, replying only to answer a question or flag something.
+To go back and forth on a design, use the `iterate` prompt (or say "iterate with me in Ponzu"). The agent watches for your comments, handles each one and resolves it, replying only to answer a question or flag something. Agents also start iterating on their own once they've put work up for you to review.
 
 ### Reach it from another machine
 

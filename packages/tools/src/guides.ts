@@ -108,9 +108,11 @@ Don't
 - Set text-wrap: balance on headings and text-wrap: pretty on paragraphs.
 - Measure: body text 45–75 characters per line (max-width ~ 34em).`,
 
-  collaborate: `# The collaborate loop
+  iterate: `# The iterate loop
 
-Use this when the person wants you to sit with them while they review: they leave comments in the canvas, you pick them up, make the change, and resolve them. No chatting required.
+The person comments in the canvas; you pick each comment up, make the change and resolve it. No chatting required.
+
+When to run it: whenever you expect the person to react to the work on the canvas. That's after you've put up something new for them to review, when you're designing together, or when they ask you to watch their comments. Don't end your turn to wait for feedback; start the loop instead. A wait that hears nothing costs next to nothing.
 
 1. listen: wait_for_activity with the cursor from your last call. Start with types comment.created, comment.replied, comment.edited, file.changed. An edit replaces what the comment asks; work from the new text.
 2. triage each comment:
@@ -129,6 +131,9 @@ Reply only when the person needs to read something:
 - you couldn't do it, or did something different from what they asked (say why).
 Leave a thread you replied to open: resolved threads leave the canvas, so a reply on one is never seen. The person resolves it once they've read it.
 Replies are one or two sentences. A reply that just says "Done" or restates the change is noise.
+
+Keep each wait at the default 60 seconds or less: a message the person types in chat reaches you only once the wait returns. When one arrives, it comes first; go back to the loop once it's handled, unless it moved you on to something else.
+If you started the loop yourself and nothing has come in for half an hour, stop and tell the person in a sentence that you'll pick their comments up when they ask.
 
 file.changed means someone edited the HTML outside Ponzu (an editor, another agent). Re-read before editing that artboard.
 Never resolve a question or decision for the person. Never resolve a comment you didn't address.`,
@@ -230,8 +235,12 @@ Check
 
 export type GuideTopic = keyof typeof GUIDES;
 
-/** Short server instructions shown to every MCP client on connect. */
-export const SERVER_INSTRUCTIONS = `Ponzu is a design canvas you drive with HTML and CSS. The person sees your work live in their canvas and steers with comments.
+/**
+ * Short server instructions shown to every MCP client on connect. Some
+ * clients list only the first line until the tools load (Codex keeps 250
+ * characters of it), so that line says what Ponzu is and when to use it.
+ */
+export const SERVER_INSTRUCTIONS = `Ponzu is a design canvas you drive with HTML and CSS. Use it when showing beats describing: a screen or flow before you build it, options to pick from, a diagram. The person sees it live and steers with comments.
 
 Start every session with get_basic_info, then read_notes, then get_guide('basics') if you haven't read it. When the person says "this", look for the comment they pinned to it.
 
@@ -239,6 +248,6 @@ Build in small pieces, screenshot often, and fix what lint reports. Screenshots 
 
 The canvas is yours to annotate: a "Note: …" artboard beside the work carries rationale, labels and what to compare. Comments carry what needs the person: a question, a choice, something you couldn't do.
 
-To pair on feedback, run the collaborate loop: wait_for_activity → triage → set_status → edit + screenshot → set_comment_status resolved for what you did (reply only to answer a question, flag an ambiguity or explain what you couldn't do) → repeat. get_guide('collaborate') has details.
+When you've put work on the canvas for the person to react to, or you're designing together, run the iterate loop rather than ending your turn: wait_for_activity → triage → set_status → edit + screenshot → set_comment_status resolved for what you did (reply only to answer a question, flag an ambiguity or explain what you couldn't do) → repeat. A wait that hears nothing is cheap. get_guide('iterate') has details.
 
 When Ponzu gets in your way (a confusing tool, an error, something it can't do) or works notably well, tell the Ponzu team with send_feedback, then carry on.`;

@@ -25,10 +25,10 @@ test("an agent working in another file doesn't show in this one", () => {
   );
 });
 
-test("an agent waiting for comments is collaborating, and stays so between waits", () => {
+test("an agent waiting for comments is iterating, and stays so between waits", () => {
   const file = "/a.design";
-  expect(agentActivity(agent({ file, listening: true }), file, now)).toBe("collaborating");
-  expect(agentActivity(agent({ file, listenedAt: now - 30_000 }), file, now)).toBe("collaborating");
+  expect(agentActivity(agent({ file, listening: true }), file, now)).toBe("iterating");
+  expect(agentActivity(agent({ file, listenedAt: now - 30_000 }), file, now)).toBe("iterating");
   // A loop that stopped a while ago, or a session that only ever read: hidden.
   expect(agentActivity(agent({ file, listenedAt: now - 10 * 60_000 }), file, now)).toBe(null);
   expect(agentActivity(agent({ file }), file, now)).toBe(null);
