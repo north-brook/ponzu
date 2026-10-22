@@ -1,5 +1,5 @@
 import { type Author, newId, type Thread } from "@ponzu/core";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CanvasSource } from "./connection.ts";
 import { AgentMark, Icon } from "./icons.tsx";
 import { Button, cn, Menu, Textarea } from "./ui.tsx";
@@ -194,6 +194,25 @@ export function ThreadCard({
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
+  const list = useRef<HTMLDivElement>(null);
+  // Whether the list was at its end before the latest render.
+  const atEnd = useRef(true);
+  useLayoutEffect(() => {
+    const el = list.current;
+    if (el) atEnd.current = el.scrollHeight - el.clientHeight < 8;
+  }, []);
+  const count = useRef(thread.messages.length);
+  // A new message lands below a long thread's fold, so scroll down to it:
+  // always for your own, and for others' only if you weren't reading back.
+  useLayoutEffect(() => {
+    const el = list.current;
+    const added = thread.messages.length > count.current;
+    count.current = thread.messages.length;
+    const last = thread.messages.at(-1);
+    if (!el || !added || !last) return;
+    const own = last.author.kind === me.kind && last.author.name === me.name;
+    if (own || atEnd.current) el.scrollTop = el.scrollHeight;
+  }, [thread.messages, me]);
   const reply = (text: string) =>
     source.apply({
       op: "thread.message",
@@ -258,12 +277,17 @@ export function ThreadCard({
         Scrolled, its top fades out so messages never run under the buttons.
       */}
       <div
+        ref={list}
         data-scroll
         className={cn(
-          "pz:flex pz:max-h-80 pz:flex-col pz:gap-1 pz:overflow-y-auto pz:overscroll-contain pz:px-1.5 pz:pt-1.5 pz:pb-2.5",
+          "pz:flex pz:max-h-80 pz:flex-col pz:gap-1 pz:overflow-y-auto pz:overscroll-contain pz:scroll-smooth pz:px-1.5 pz:pt-1.5 pz:pb-2.5 pz:motion-reduce:scroll-auto",
           scrolled && "pz:[mask-image:linear-gradient(transparent_24px,#000_44px)]",
         )}
-        onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 0)}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          setScrolled(el.scrollTop > 0);
+          atEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 8;
+        }}
       >
         {thread.messages.map((m, i) => (
           <div
