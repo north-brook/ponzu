@@ -279,6 +279,35 @@ test("every worktree of a repository a design is known in is walked", async () =
   ]);
 });
 
+test("copies of a design in a repository's checkouts share a fingerprint until one changes", async () => {
+  const main = join(dir, "fp-main");
+  await mkdir(join(main, ".git/worktrees/agent"), { recursive: true });
+  await writeFile(join(main, ".git/HEAD"), "ref: refs/heads/main\n");
+  const tree = join(dir, "fp-agent");
+  await mkdir(tree, { recursive: true });
+  await writeFile(join(tree, ".git"), `gitdir: ${join(main, ".git/worktrees/agent")}\n`);
+  await writeFile(join(main, ".git/worktrees/agent/gitdir"), `${join(tree, ".git")}\n`);
+  await writeFile(join(main, ".git/worktrees/agent/commondir"), "../..\n");
+  await writeFile(join(main, ".git/worktrees/agent/HEAD"), "ref: refs/heads/agent\n");
+  await design(join(main, "design/app.design"), "App", { Home: ["Hero"] });
+  await design(join(tree, "design/app.design"), "App", { Home: ["Hero"] });
+  // A fresh catalog each time: one caches a design's last edit for a few seconds.
+  const print = async () =>
+    (await new LocalCatalog({ roots: [join(main, "design")], spotlight: "roots" }).files(new Map()))
+      .filter((f) => f.name === "App")
+      .map((f) => f.fingerprint);
+  const [a, b] = await print();
+  expect(a).toBeString();
+  expect(a).toBe(b);
+  // An agent draws in the worktree's copy: it's a design of its own again.
+  await writeFile(
+    join(tree, "design/app.design/pages/home/hero.html"),
+    '<section data-artboard data-id="ab_hero" data-name="Hero" style="width:500px;height:300px"></section>',
+  );
+  const [c, d] = await print();
+  expect(c).not.toBe(d);
+});
+
 test("remotes name a project the same however they're written", async () => {
   const { remoteId } = await import("./catalog.ts");
   for (const url of [
