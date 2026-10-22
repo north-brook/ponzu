@@ -120,7 +120,13 @@ export class SocketSource implements CanvasSource {
         } catch {
           return;
         }
-        for (const l of this.opListeners) l(msg.op, msg.origin, next);
+        // Motion only: a listener that fails must never hold the document back.
+        for (const l of this.opListeners)
+          try {
+            l(msg.op, msg.origin, next);
+          } catch (err) {
+            console.error("[ponzu] op listener failed:", err);
+          }
         this.set({ doc: next, canUndo: msg.canUndo, canRedo: msg.canRedo, lastOrigin: msg.origin });
         break;
       }

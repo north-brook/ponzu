@@ -50,6 +50,28 @@ test("a long write lands in about a second, and the next joins the end of its st
   const starts = (a as unknown as { pieces: Map<string, number> }).pieces;
   expect(starts.get("n_0")).toBe(0);
   expect(starts.get("n_19")).toBe(ARRIVE_MAX_STAGGER * ARRIVE_STAGGER_MS);
-  a.add({ op: "insert", parent: "ab", index: 20, nodes: [ids[20]!] }, d, 100);
-  expect(starts.get("n_20")).toBe((ARRIVE_MAX_STAGGER + 1) * ARRIVE_STAGGER_MS);
+  // A second long write a moment later: none of it starts more than ten staggers after it lands.
+  a.add({ op: "insert", parent: "ab", index: 20, nodes: ids.slice(20) }, d, 100);
+  for (const id of ids.slice(20).map((n) => n.id))
+    expect(starts.get(id)!).toBeLessThanOrEqual(100 + ARRIVE_MAX_STAGGER * ARRIVE_STAGGER_MS);
+});
+
+test("a board made inside a nested batch settles in; one never shown is forgotten", () => {
+  const a = new Arrivals();
+  const board = {
+    id: "ab_new",
+    name: "N",
+    x: 0,
+    y: 0,
+    root: el("ab_new", [el("n_x")]),
+  };
+  const nested: Op = {
+    op: "batch",
+    ops: [{ op: "batch", ops: [{ op: "artboard.create", page: "pg", index: 0, artboard: board }] }],
+  };
+  a.add(nested, doc(board.root), 0);
+  expect(a.takeBoard("ab_new", 10)).toBe(true);
+  a.add(nested, doc(board.root), 0);
+  // Its page opened long after: it arrives as it is.
+  expect(a.takeBoard("ab_new", 60_000)).toBe(false);
 });

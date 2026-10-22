@@ -91,31 +91,35 @@ export function reducedMotion(): boolean {
 export class Arrivals {
   /** Piece id → when it starts rising (performance.now()). */
   private pieces = new Map<string, number>();
-  /** New artboards, whose sheet fades up before their pieces rise. */
-  private boards = new Set<string>();
+  /** New artboards, whose sheet settles in as they mount, and when each was made. */
+  private boards = new Map<string, number>();
 
   /** An agent's op landed: queue what it brought, after anything still rising. */
   add(op: Op, doc: Doc, now = performance.now()) {
     if (reducedMotion()) return;
     this.prune(now);
-    if (op.op === "artboard.create") this.boards.add(op.artboard.id);
-    else if (op.op === "batch")
-      for (const o of op.ops) if (o.op === "artboard.create") this.boards.add(o.artboard.id);
+    for (const id of createdBoards(op)) this.boards.set(id, now);
     const ids = outermost(doc, arrivals(op)).filter((id) => !this.pieces.has(id));
-    // A write that lands while the last is still rising joins the end of its stagger.
+    // A write that lands while the last is still rising joins the end of its stagger, but every
+    // piece starts within ten staggers of now: a long write still lands in about a second.
     let last = now;
     for (const start of this.pieces.values()) last = Math.max(last, start + ARRIVE_STAGGER_MS);
-    const from = Math.min(last, now + ARRIVE_MAX_STAGGER * ARRIVE_STAGGER_MS);
-    ids.forEach((id, i) => this.pieces.set(id, from + arriveDelay(i)));
+    const latest = now + ARRIVE_MAX_STAGGER * ARRIVE_STAGGER_MS;
+    ids.forEach((id, i) => this.pieces.set(id, Math.min(latest, last + arriveDelay(i))));
   }
 
-  /** Whether this artboard is new from an agent, so its sheet fades up. Asked once, on mount. */
-  takeBoard(id: string): boolean {
+  /** Whether this artboard is new from an agent, so its sheet settles in. Asked once, on mount. */
+  takeBoard(id: string, now = performance.now()): boolean {
+    this.prune(now);
     return this.boards.delete(id);
   }
 
   /** After an artboard re-renders: set each piece in flight going again from where it was. */
   replay(root: ShadowRoot, now = performance.now()) {
+    if (reducedMotion()) {
+      this.pieces.clear();
+      return;
+    }
     this.prune(now);
     for (const [id, start] of this.pieces) {
       const el = root.querySelector(`[data-id="${CSS.escape(id)}"]`);
@@ -132,7 +136,16 @@ export class Arrivals {
 
   private prune(now: number) {
     for (const [id, start] of this.pieces) if (now - start > ARRIVE_MS) this.pieces.delete(id);
+    // A board made on a page that isn't showing arrives as it is when that page opens later.
+    for (const [id, at] of this.boards) if (now - at > BOARD_MS + 1000) this.boards.delete(id);
   }
+}
+
+/** Artboards an op makes, through nested batches. */
+function createdBoards(op: Op): string[] {
+  if (op.op === "artboard.create") return [op.artboard.id];
+  if (op.op === "batch") return op.ops.flatMap(createdBoards);
+  return [];
 }
 
 /** A new artboard's sheet settles onto the canvas. */

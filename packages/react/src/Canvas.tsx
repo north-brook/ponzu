@@ -172,7 +172,9 @@ export function Canvas({
   useEffect(() => source.setTheme?.(theme), [source, theme]);
 
   // An agent's work rises in as it lands; the person's own edits just appear.
-  const arrivals = useMemo(() => new Arrivals(), []);
+  // One per source: what's arriving in one document never rises in another.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new source starts a new queue.
+  const arrivals = useMemo(() => new Arrivals(), [source]);
   useEffect(
     () =>
       source.onOp?.((op, origin, next) => {
