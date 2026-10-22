@@ -201,6 +201,10 @@ export function ThreadCard({
     const el = list.current;
     if (el) atEnd.current = el.scrollHeight - el.clientHeight < 8;
   }, []);
+  // Set while the list glides down to a new message, so the positions it
+  // passes through don't read as you scrolling back. Your wheel or pointer
+  // cancels it.
+  const following = useRef(false);
   const count = useRef(thread.messages.length);
   // A new message lands below a long thread's fold, so scroll down to it:
   // always for your own, and for others' only if you weren't reading back.
@@ -211,8 +215,14 @@ export function ThreadCard({
     const last = thread.messages.at(-1);
     if (!el || !added || !last) return;
     const own = last.author.kind === me.kind && last.author.name === me.name;
-    if (own || atEnd.current) el.scrollTop = el.scrollHeight;
+    if (!own && !atEnd.current) return;
+    following.current = el.scrollHeight - el.scrollTop - el.clientHeight >= 8;
+    atEnd.current = true;
+    el.scrollTop = el.scrollHeight;
   }, [thread.messages, me]);
+  const stopFollowing = () => {
+    following.current = false;
+  };
   const reply = (text: string) =>
     source.apply({
       op: "thread.message",
@@ -286,8 +296,13 @@ export function ThreadCard({
         onScroll={(e) => {
           const el = e.currentTarget;
           setScrolled(el.scrollTop > 0);
-          atEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 8;
+          const end = el.scrollHeight - el.scrollTop - el.clientHeight < 8;
+          if (end) following.current = false;
+          if (!following.current) atEnd.current = end;
         }}
+        onWheel={stopFollowing}
+        onPointerDown={stopFollowing}
+        onTouchStart={stopFollowing}
       >
         {thread.messages.map((m, i) => (
           <div
