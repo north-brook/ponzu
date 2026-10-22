@@ -199,6 +199,21 @@ function showWindow() {
   mainWindow.focus();
 }
 
+/**
+ * Ponzu › Pair iPhone… before the studio could hear it: a window just created, or still
+ * on the splash. The studio claims it as it starts listening.
+ */
+let pairPending = false;
+
+/** Ponzu › Pair iPhone…: the studio shows a code the phone app scans. */
+function pairIphone() {
+  showWindow();
+  const win = mainWindow;
+  if (serverUrl && win && !splashing && !win.webContents.isLoading())
+    win.webContents.send("ponzu:pair-iphone");
+  else pairPending = true;
+}
+
 async function openDesign(path: string, artboard?: string) {
   if (!serverUrl) {
     pendingOpens.push(path);
@@ -282,6 +297,11 @@ ipcMain.handle("ponzu:new-file", () => newDesign());
 ipcMain.on("ponzu:reveal", (_e, path: string) => shell.showItemInFolder(path));
 ipcMain.handle("ponzu:whats-new", () => pendingWhatsNew());
 ipcMain.on("ponzu:whats-new-seen", () => markWhatsNewSeen());
+ipcMain.handle("ponzu:pair-iphone-pending", () => {
+  const pending = pairPending;
+  pairPending = false;
+  return pending;
+});
 ipcMain.on("ponzu:close-window", (e) => BrowserWindow.fromWebContents(e.sender)?.close());
 
 function buildMenu() {
@@ -299,6 +319,7 @@ function buildMenu() {
                   if (mainWindow) void checkForUpdatesNow(mainWindow);
                 },
               },
+              { label: "Pair iPhone…", click: () => pairIphone() },
               { type: "separator" as const },
               { role: "services" as const },
               { type: "separator" as const },

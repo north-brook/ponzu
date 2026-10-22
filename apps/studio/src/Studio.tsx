@@ -32,6 +32,7 @@ import {
 } from "react";
 import { Dashboard, type OpenTarget, type ShelfAction } from "@/components/dashboard";
 import { FileDetails, fileOf } from "@/components/file-info";
+import { PairIphone } from "@/components/pair-iphone";
 import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { WhatsNew } from "@/components/whats-new";
@@ -67,6 +68,8 @@ declare global {
       /** ⌘W from the app menu. Returns the unsubscribe. Missing from builds before tab closing. */
       onCloseTab?(handler: () => void): () => void;
       closeWindow?(): void;
+      /** Ponzu › Pair iPhone…. Returns the unsubscribe. Missing from builds before pairing. */
+      onPairIphone?(handler: () => void): () => void;
     };
   }
 }
@@ -341,6 +344,7 @@ export function Studio() {
         )}
       </main>
       <WhatsNew />
+      <PairIphone />
     </div>
   );
 }
