@@ -273,7 +273,16 @@ export function avoidCuts(
   const widest = lines
     .filter((r) => inFrame(r, cam) && r.w * cam.zoom > usable)
     .sort((a, b) => b.w - a.w)[0];
-  if (widest) {
+  // With a subject, only a line it holds that it isn't much narrower than matters here (a
+  // page-wide nav row over a headline column isn't a reason to see the whole page small).
+  const matters = (r: Rect) =>
+    !keep ||
+    (r.y + r.h > keep.y &&
+      r.y < keep.y + keep.h &&
+      r.x < keep.x + keep.w &&
+      r.x + r.w > keep.x &&
+      r.w <= keep.w * 1.1);
+  if (widest && matters(widest)) {
     const fitZ = usable / widest.w;
     if (fitZ >= f.minZoom * 0.5) cam = { ...cam, cx: widest.x + widest.w / 2, zoom: fitZ };
     else {

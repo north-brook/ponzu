@@ -138,7 +138,8 @@ function workFrame(_e: Edit, scene: Scene, f: number): Frame {
     const leaving = (scene.resolves ?? [])
       .map((id) => scene.before.threads.find((t) => t.id === id))
       .filter((t): t is Thread => Boolean(t));
-    const p = clamp01((f - s.change - 0.15) / PIN_OUT);
+    // Resolved: a check for a beat, then it leaves.
+    const p = clamp01((f - s.change - 0.55) / PIN_OUT);
     if (p < 1) out.pinsOut = leaving.map((thread) => ({ thread, p: ease.in(p) }));
   }
   if (changing && scene.born)
@@ -173,7 +174,7 @@ function turnFrame(e: Edit, scene: Scene, f: number): Frame {
         (l[k + 1]?.at ?? s.changed) - (l[k + 1]?.hop ? 0.62 : 0.08),
       );
       const opacity = Math.min(
-        progress(f, cur.at + 0.12, cur.at + 0.32, ease.out),
+        progress(f, cur.at + 0.12, cur.at + 0.26, ease.out),
         1 - progress(f, until - 0.16, until, ease.in),
       );
       const t = threads.find((x) => x.id === cur.comment.thread);
@@ -321,8 +322,10 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
               scale: 1 - 0.7 * p,
               opacity: 1 - p,
               popping: false,
+              done: true,
             })),
-          ].map(({ t, scale: s0, opacity: o0, popping }) => {
+          ].map(({ t, scale: s0, opacity: o0, popping, ...rest }) => {
+            const done = "done" in rest;
             const spot = pinSpot(doc, t) ?? pinSpot(model.first.doc, t);
             if (!spot || spot.page !== cam.page) return null;
             let scale = s0;
@@ -347,7 +350,7 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
                   className={cn(pinClass, "pz-film-pin pz:bg-comment pz:text-comment-foreground")}
                   style={{ scale: String(scale), opacity }}
                 >
-                  {t.messages.length}
+                  {done ? <Icon name="check" size={13} strokeWidth={2.4} /> : t.messages.length}
                 </span>
                 {card && (
                   <div
@@ -439,7 +442,8 @@ function applyRise(root: HTMLElement, r: Frame["rising"]) {
         live.add(el);
         let a = anims.get(el);
         if (!a) {
-          a = el.animate([{ opacity: 0, translate: `0 ${STREAM_RISE}px` }], {
+          // From hidden, at offset 0: a lone keyframe defaults to the end, which would fade it out.
+          a = el.animate([{ opacity: 0, translate: `0 ${STREAM_RISE}px`, offset: 0 }], {
             duration: STREAM_MS,
             easing: "cubic-bezier(.2,.8,.2,1)",
             fill: "both",
@@ -461,7 +465,7 @@ function applyRise(root: HTMLElement, r: Frame["rising"]) {
 
 /** Inside this far from the frame's edges, and below the wayfinding line. */
 const SAFE = 16;
-const SAFE_TOP = 56;
+const SAFE_TOP = 16;
 
 /**
  * Thread cards sit beside their pin where they cover least of what the
@@ -506,9 +510,24 @@ function keepCardsInFrame(root: HTMLElement, view: { w: number; h: number }) {
     ];
     const clampX = (x: number) => Math.min(view.w - SAFE - w, Math.max(SAFE, x));
     const clampY = (y: number) => Math.min(view.h - SAFE - h, Math.max(SAFE_TOP, y));
+    // The corner lines (wayfinding, top left; the agent's badge, top right) are off limits.
+    const blocked = [...root.querySelectorAll<HTMLElement>(".pz-film-way, .pz-film-badge")].map(
+      (b) => {
+        const r = b.getBoundingClientRect();
+        return {
+          x: (r.left - frame.left) / k - 12,
+          y: (r.top - frame.top) / k - 12,
+          w: r.width / k + 24,
+          h: r.height / k + 24,
+        };
+      },
+    );
     const cost = (o: { x: number; y: number }) => {
       const x = clampX(o.x);
       const y = clampY(o.y);
+      const onCorner = blocked.some(
+        (b) => x < b.x + b.w && x + w > b.x && y < b.y + b.h && y + h > b.y,
+      );
       const moved = Math.hypot(x - o.x, y - o.y);
       let cover = 0;
       if (subj) {
@@ -519,7 +538,7 @@ function keepCardsInFrame(root: HTMLElement, view: { w: number; h: number }) {
       // Covering the pin is worst; then covering what it's about; then far from the pin.
       const pinHit = px > x - 8 && px < x + w + 8 && py > y - 8 && py < y + h + 8 ? 1 : 0;
       const far = Math.hypot(x + w / 2 - px, y + h / 2 - py) / Math.max(view.w, view.h);
-      return pinHit * 10 + cover * 8 + moved / 120 + far * 1.5;
+      return pinHit * 10 + (onCorner ? 6 : 0) + cover * 8 + moved / 120 + far * 1.5;
     };
     const best = options.reduce((a, o) => (cost(o) < cost(a) ? o : a));
     const tx = clampX(best.x);

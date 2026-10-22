@@ -487,9 +487,34 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
             ? readOut
             : (askedSubjects.get(m.board) ?? []);
       const answering = got.changed.filter((r) => asked.some((a) => overlap(r, a) > 0));
-      const focusRects = answering.length
-        ? [...answering, ...asked.filter((a) => answering.some((r) => overlap(r, a) > 0))]
-        : got.changed;
+      // The opening is a build: frame the top of the board, at a working zoom (the board's
+      // first screenful, where its headline is), not the whole board small.
+      const opening = shotIndex === 0 && m.answers === undefined;
+      const boardH = (await heightsOf(got.after)).get(m.board) ?? 900;
+      // Its first screenful: in a tall frame, the column with the board's biggest type (the
+      // headline), so it opens readable rather than the whole page small.
+      const openAb = findArtboard(got.after, m.board)!.artboard;
+      const bw = artboardSize(openAb).w;
+      let openRect: Rect = { x: 0, y: 0, w: bw, h: Math.min(boardH, (bw * view.h) / view.w) };
+      if (opening && view.h > view.w && bw > 700) {
+        const host = await lab.show(got.after, openAb, 1);
+        // Set across, not up the side (a rotated label reads as tall type).
+        const top = lab.texts(host).filter((r) => r.y < 900 && r.w > r.h);
+        const most = Math.max(0, ...top.map((r) => r.h));
+        // The headline: the runs set in (near enough) the biggest type.
+        const big = top.filter((r) => r.h >= most * 0.7);
+        const head = union(big);
+        if (head) {
+          const w = Math.min(bw, Math.max(head.w + 96, 480));
+          const x = Math.max(0, Math.min(bw - w, head.x + head.w / 2 - w / 2));
+          openRect = { x, y: 0, w, h: Math.min(boardH, (w * view.h) / view.w) };
+        }
+      }
+      const focusRects = opening
+        ? [openRect]
+        : answering.length
+          ? [...answering, ...asked.filter((a) => answering.some((r) => overlap(r, a) > 0))]
+          : got.changed;
       const detail = union(focusRects.map((r) => offset(r, ab)));
       const neighbours = pageBoards(after, m.board);
       // The camera rests here on the before and on the after: neither may cut a line of the
