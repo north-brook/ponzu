@@ -50,6 +50,9 @@ test("names and paths that can't be on GitHub are refused", () => {
   expect(parseTarget(["o"])).toBeNull();
   expect(parseTarget(["o w", "r"])).toBeNull();
   expect(parseTarget(["o", ".."])).toBeNull();
+  // Dot segments would walk the API URL up a level: /repos/../user is /user.
+  expect(parseTarget(["..", "r"])).toBeNull();
+  expect(parseTarget([".", "r"])).toBeNull();
   expect(parseTarget(["o", "r", "..", "a.design"])).toBeNull();
   expect(parseTarget(["o", "r", "a/b.design"])).toBeNull();
 });

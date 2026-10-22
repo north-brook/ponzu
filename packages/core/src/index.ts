@@ -2,6 +2,7 @@ export * from "./activity.ts";
 export * from "./catalog.ts";
 export * from "./css.ts";
 export * from "./doc.ts";
+export * from "./github.ts";
 export * from "./html.ts";
 export * from "./ids.ts";
 export * from "./outline.ts";
