@@ -174,7 +174,7 @@ bun apps/cli/src/index.ts serve examples/halon.design examples/kettle.design exa
 
 For studio work, run `bun run dev`: the studio with hot reload on all three examples.
 
-Desktop: `cd apps/desktop && bun run start`.
+Desktop: `cd apps/desktop && bun run start`. iPhone: `cd apps/mobile && bunx expo run:ios` ([docs/mobile.md](docs/mobile.md)).
 
 PR titles are Conventional Commits, and merging a `feat` or `fix` ships a signed release on its own. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
