@@ -44,6 +44,8 @@ export interface FilmModel {
   docs: Doc[];
   /** Per beat: the pieces that stream in, in order. */
   units: string[][];
+  /** Per beat: nodes changed in place, which settle (a small ease back to size) as they change. */
+  settles: string[][];
   /**
    * Per beat: what to show of the old look while the new one arrives. A board
    * restyled in place swaps with a quick dip; replaced parts hold their old
@@ -251,6 +253,7 @@ export async function buildFilm(input: FilmInput): Promise<FilmModel> {
   heights.push(first);
 
   const units: string[][] = [];
+  const settles: string[][] = [];
   const touched: Swap[][] = [];
   const focus: (Focus | null)[] = [];
 
@@ -266,6 +269,7 @@ export async function buildFilm(input: FilmInput): Promise<FilmModel> {
     const tokensChanged =
       op && (op.op === "tokens" || (op.op === "batch" && op.ops.some((o) => o.op === "tokens")));
     const beatUnits: string[] = [];
+    const beatSettles: string[] = [];
     const beatTouched = new Map<string, Swap>();
     const details: Rect[] = [];
     let focusBoard: Artboard | undefined;
@@ -292,6 +296,7 @@ export async function buildFilm(input: FilmInput): Promise<FilmModel> {
         if (!findNode(ab.root, n)) continue;
         if (before) beatTouched.set(id, { board: id, hold: 0 });
         if (n === ab.id) continue;
+        beatSettles.push(n);
         const r = measurer.box(shown, n);
         if (r) details.push({ x: ab.x + r.x, y: ab.y + r.y, w: r.w, h: r.h });
       }
@@ -315,6 +320,7 @@ export async function buildFilm(input: FilmInput): Promise<FilmModel> {
           if (findArtboard(prev, ab.id)) beatTouched.set(ab.id, { board: ab.id, hold: 0 });
     heights.push(h);
     units.push(beatUnits);
+    settles.push(beatSettles);
     touched.push([...beatTouched.values()]);
 
     const boardRect = (ab: Artboard): Rect => ({
@@ -469,6 +475,7 @@ export async function buildFilm(input: FilmInput): Promise<FilmModel> {
     plan,
     docs,
     units,
+    settles,
     touched,
     heights,
     camera,

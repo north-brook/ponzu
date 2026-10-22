@@ -34,8 +34,6 @@ export const STREAM_MS = 500;
 export const STREAM_RISE = 6;
 /** The gap between pieces of one change, at most. */
 const STAGGER = 0.07;
-/** The old look of a changed part hands over to the new in this long. */
-const HANDOFF = 0.12;
 const PIN_IN = 0.32;
 const PIN_OUT = 0.34;
 
@@ -268,8 +266,9 @@ function ghostFor(
     const swap = model.touched[j]!.find((t) => t.board === id);
     if (!swap) continue;
     const start = b.at + swap.hold;
-    // A part swaps in a cut (the new pieces rise over it); a restyled board hands over quickly.
-    const handoff = swap.box ? 1 / 30 : HANDOFF;
+    // Two layouts never show at once: the old look holds, then cuts to the new one (a
+    // restyle is a change of state, as in the studio; new pieces rise on their own).
+    const handoff = 1 / 120;
     if (f - start > handoff) return null;
     const prev = model.docs[j]!;
     const ab = prev.pages.flatMap((p) => p.artboards).find((a) => a.id === id);
@@ -310,6 +309,21 @@ function applyStream(root: HTMLElement, model: FilmModel, f: number) {
       }
     });
   }
+  // Nodes changed in place settle: a small ease back to size, so the change reads.
+  for (let j = k; j >= 0; j--) {
+    const b = model.plan.beats[j]!;
+    if (f - b.at > SETTLE_MS / 1000) break;
+    for (const id of model.settles[j] ?? []) {
+      const local = (f - b.at) * 1000;
+      for (const host of root.querySelectorAll("[data-artboard-host]")) {
+        const el = host.shadowRoot?.querySelector(`[data-id="${CSS.escape(id)}"]`);
+        if (!el || live.has(el)) continue;
+        live.add(el);
+        const anim = settleAnim(el);
+        anim.currentTime = Math.max(0, local);
+      }
+    }
+  }
   // Pieces past their rise go back to their own styles.
   for (const el of streaming) {
     if (live.has(el)) continue;
@@ -331,6 +345,29 @@ function streamAnim(el: Element): Animation {
       easing: "cubic-bezier(.2,.8,.2,1)",
       fill: "both",
     });
+    a.pause();
+    streamAnims.set(el, a);
+    streaming.add(el);
+  }
+  return a;
+}
+
+const SETTLE_MS = 420;
+
+function settleAnim(el: Element): Animation {
+  let a = streamAnims.get(el);
+  if (!a) {
+    a = el.animate(
+      [
+        { scale: "0.97", filter: "brightness(1.06)" },
+        { scale: "1", filter: "none" },
+      ],
+      {
+        duration: SETTLE_MS,
+        easing: "cubic-bezier(.2,.8,.2,1)",
+        fill: "both",
+      },
+    );
     a.pause();
     streamAnims.set(el, a);
     streaming.add(el);
