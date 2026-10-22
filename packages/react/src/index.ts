@@ -1,11 +1,11 @@
 export { ArtboardView } from "./Artboard.tsx";
 export {
-  ARRIVE_BLUR,
   ARRIVE_EASING,
-  ARRIVE_FROM,
+  ARRIVE_KEYFRAMES,
+  ARRIVE_LAG_MS,
   ARRIVE_MAX_STAGGER,
   ARRIVE_MS,
-  ARRIVE_RISE,
+  ARRIVE_SLIDE,
   ARRIVE_STAGGER_MS,
   arrivals,
   arriveDelay,

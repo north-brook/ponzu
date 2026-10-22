@@ -1,36 +1,48 @@
 import type { Doc, Op, PNode } from "@ponzu/core";
 
 /*
- * How an agent's work arrives on the canvas: each new piece rises a little out of a soft blur,
- * in the order the agent wrote it. The person's own edits, undo, redo and outside changes just
- * appear. The studio plays it live; the timelapse film seeks the same animation frame by frame.
+ * How an agent's work arrives on the canvas: the shimmer slide. A beat after a write lands, each
+ * new piece is uncovered left to right while it eases in a few px, and a band of light rides the
+ * leading edge: the same sweep the agent's name shimmers with in the board's header. Neutral on
+ * purpose: the agent's trace is the yuzu. Pieces go in the order written. The person's own edits,
+ * undo, redo and outside changes just appear. The studio plays it live; the timelapse film seeks
+ * the same animation frame by frame. It never holds the agent up: it runs after a write has
+ * landed, in the page only.
  */
 
-/** One piece's rise. */
-export const ARRIVE_MS = 640;
+/** One piece's reveal. */
+export const ARRIVE_MS = 620;
+/** A beat between a write landing and its first piece showing: the reveal, not a wait. */
+export const ARRIVE_LAG_MS = 90;
 /** Between one piece and the next, in the order written. */
 export const ARRIVE_STAGGER_MS = 55;
 /** A long write still lands in about a second: past this many pieces, the rest come together. */
 export const ARRIVE_MAX_STAGGER = 10;
-/** How far a piece rises, in the artboard's own px. */
-export const ARRIVE_RISE = 14;
-export const ARRIVE_BLUR = 6;
-export const ARRIVE_EASING = "cubic-bezier(.2,.7,.2,1)";
+/** How far a piece slides in, in the artboard's own px. */
+export const ARRIVE_SLIDE = 10;
+export const ARRIVE_EASING = "cubic-bezier(.3,.7,.25,1)";
 
-/** The keyframe a piece rises from: on its way to how the design draws it. */
-export const ARRIVE_FROM: Keyframe = {
-  opacity: 0,
-  translate: `0 ${ARRIVE_RISE}px`,
-  filter: `blur(${ARRIVE_BLUR}px)`,
-  offset: 0,
-};
+/**
+ * The reveal's mask: three times the piece's width, shown | a band of light | a soft edge |
+ * hidden. Sliding it from 100% to 0% carries the edge, with the band just behind it, across the
+ * piece; at 0% only the shown third covers the piece, so the end is the piece as drawn.
+ */
+const MASK =
+  "linear-gradient(90deg,#000 0 44%,rgba(0,0,0,.4) 48%,rgba(0,0,0,.75) 50%,transparent 56%,transparent 100%)";
+const masked = { maskImage: MASK, maskSize: "300% 100%", maskRepeat: "no-repeat" };
 
-/** A new artboard's sheet: up from a touch smaller while its first pieces start to rise. */
+/** The shimmer slide, from hidden at the left edge to the piece as the design draws it. */
+export const ARRIVE_KEYFRAMES: Keyframe[] = [
+  { ...masked, maskPosition: "100% 0", translate: `-${ARRIVE_SLIDE}px 0` },
+  { ...masked, maskPosition: "0% 0", translate: "0 0" },
+];
+
+/** A new artboard's sheet: up from a touch smaller while its first pieces start to arrive. */
 export const BOARD_MS = 420;
 
-/** When each piece starts, after the first. */
+/** When a write's piece starts, after the write lands: the beat, then its place in the stagger. */
 export function arriveDelay(index: number): number {
-  return Math.min(index, ARRIVE_MAX_STAGGER) * ARRIVE_STAGGER_MS;
+  return ARRIVE_LAG_MS + Math.min(index, ARRIVE_MAX_STAGGER) * ARRIVE_STAGGER_MS;
 }
 
 /**
@@ -73,7 +85,7 @@ export function outermost(doc: Doc, ids: string[]): string[] {
     }
   };
   for (const page of doc.pages) for (const ab of page.artboards) visit(ab.root.children, false);
-  // Keep the order written, which is the order they rise in.
+  // Keep the order written, which is the order they arrive in.
   const order = new Map(ids.map((id, i) => [id, i]));
   return out.sort((a, b) => order.get(a)! - order.get(b)!);
 }
@@ -89,22 +101,22 @@ export function reducedMotion(): boolean {
  * next one: each render replays what's in flight from where it had got to.
  */
 export class Arrivals {
-  /** Piece id → when it starts rising (performance.now()). */
+  /** Piece id → when its reveal starts (performance.now()). */
   private pieces = new Map<string, number>();
   /** New artboards, whose sheet settles in as they mount, and when each was made. */
   private boards = new Map<string, number>();
 
-  /** An agent's op landed: queue what it brought, after anything still rising. */
+  /** An agent's op landed: queue what it brought, after anything still arriving. */
   add(op: Op, doc: Doc, now = performance.now()) {
     if (reducedMotion()) return;
     this.prune(now);
     for (const id of createdBoards(op)) this.boards.set(id, now);
     const ids = outermost(doc, arrivals(op)).filter((id) => !this.pieces.has(id));
-    // A write that lands while the last is still rising joins the end of its stagger, but every
+    // A write that lands while the last is still arriving joins the end of its stagger, but every
     // piece starts within ten staggers of now: a long write still lands in about a second.
     let last = now;
     for (const start of this.pieces.values()) last = Math.max(last, start + ARRIVE_STAGGER_MS);
-    const latest = now + ARRIVE_MAX_STAGGER * ARRIVE_STAGGER_MS;
+    const latest = now + arriveDelay(ARRIVE_MAX_STAGGER);
     ids.forEach((id, i) => this.pieces.set(id, Math.min(latest, last + arriveDelay(i))));
   }
 
@@ -124,7 +136,7 @@ export class Arrivals {
     for (const [id, start] of this.pieces) {
       const el = root.querySelector(`[data-id="${CSS.escape(id)}"]`);
       if (!el) continue;
-      const a = el.animate([ARRIVE_FROM], {
+      const a = el.animate(ARRIVE_KEYFRAMES, {
         duration: ARRIVE_MS,
         easing: ARRIVE_EASING,
         fill: "backwards",

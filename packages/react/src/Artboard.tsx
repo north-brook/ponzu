@@ -18,7 +18,7 @@ interface Props {
   tokens: string;
   assetBase?: string;
   colorScheme?: "light" | "dark";
-  /** An agent's new pieces, which rise in as they render. */
+  /** An agent's new pieces, which arrive as they render. */
   arrivals?: Arrivals;
 }
 

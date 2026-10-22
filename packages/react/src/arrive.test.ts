@@ -1,6 +1,13 @@
 import { expect, test } from "bun:test";
 import type { Doc, Op, PElement, PNode } from "@ponzu/core";
-import { ARRIVE_MAX_STAGGER, ARRIVE_STAGGER_MS, Arrivals, arrivals, outermost } from "./arrive.ts";
+import {
+  ARRIVE_LAG_MS,
+  ARRIVE_MAX_STAGGER,
+  ARRIVE_STAGGER_MS,
+  Arrivals,
+  arrivals,
+  outermost,
+} from "./arrive.ts";
 
 const el = (id: string, children: PNode[] = []): PElement =>
   ({ kind: "el", id, tag: "div", attrs: {}, style: {}, children }) as PElement;
@@ -30,14 +37,14 @@ test("what an op brings onto the canvas", () => {
   expect(arrivals(replace)).toEqual(["n_a"]);
 });
 
-test("restyles, moves and text edits change what's there, so nothing rises", () => {
+test("restyles, moves and text edits change what's there, so nothing arrives", () => {
   expect(arrivals({ op: "style", id: "n_a", style: { color: "red" } })).toEqual([]);
   expect(arrivals({ op: "move", id: "n_a", parent: "ab", index: 1 })).toEqual([]);
   // set_text replaces children with text alone.
   expect(arrivals({ op: "children", id: "n_a", children: [text("hi")] })).toEqual([]);
 });
 
-test("a piece inside another that's rising rises with it", () => {
+test("a piece inside another that's arriving arrives with it", () => {
   const d = doc(el("ab", [el("n_a", [el("n_b")]), el("n_c")]));
   expect(outermost(d, ["n_b", "n_a", "n_c", "n_gone"])).toEqual(["n_a", "n_c"]);
 });
@@ -48,12 +55,14 @@ test("a long write lands in about a second, and the next joins the end of its st
   const a = new Arrivals();
   a.add({ op: "insert", parent: "ab", index: 0, nodes: ids.slice(0, 20) }, d, 0);
   const starts = (a as unknown as { pieces: Map<string, number> }).pieces;
-  expect(starts.get("n_0")).toBe(0);
-  expect(starts.get("n_19")).toBe(ARRIVE_MAX_STAGGER * ARRIVE_STAGGER_MS);
+  // A beat after the write lands, then a stagger that stops growing after ten pieces.
+  const latest = ARRIVE_LAG_MS + ARRIVE_MAX_STAGGER * ARRIVE_STAGGER_MS;
+  expect(starts.get("n_0")).toBe(ARRIVE_LAG_MS);
+  expect(starts.get("n_19")).toBe(latest);
   // A second long write a moment later: none of it starts more than ten staggers after it lands.
   a.add({ op: "insert", parent: "ab", index: 20, nodes: ids.slice(20) }, d, 100);
   for (const id of ids.slice(20).map((n) => n.id))
-    expect(starts.get(id)!).toBeLessThanOrEqual(100 + ARRIVE_MAX_STAGGER * ARRIVE_STAGGER_MS);
+    expect(starts.get(id)!).toBeLessThanOrEqual(100 + latest);
 });
 
 test("a board made inside a nested batch settles in; one never shown is forgotten", () => {

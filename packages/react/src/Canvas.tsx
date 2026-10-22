@@ -171,9 +171,8 @@ export function Canvas({
   // Agents' screenshots default to how this canvas shows artboards.
   useEffect(() => source.setTheme?.(theme), [source, theme]);
 
-  // An agent's work rises in as it lands; the person's own edits just appear.
-  // One per source: what's arriving in one document never rises in another.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a new source starts a new queue.
+  // An agent's work arrives with the shimmer slide; the person's own edits just appear.
+  // One per source: what's arriving in one document never arrives in another.
   const arrivals = useMemo(() => new Arrivals(), [source]);
   useEffect(
     () =>
