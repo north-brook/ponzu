@@ -1,7 +1,15 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { share } from "@/components/share";
-import { DesignList, ViewerBar, ViewerErrorPage } from "../chrome";
+import {
+  badgeMarkdown,
+  DesignList,
+  localCommands,
+  OpenInPonzu,
+  repoCrumbs,
+  TopBar,
+  ViewerErrorPage,
+} from "../chrome";
 import { DesignCanvas } from "../design-canvas";
 import { type DesignView, loadDesign, loadRepo, type RepoView, ViewerError } from "../github";
 import { parseTarget, type Target, viewerPath } from "../target";
@@ -61,32 +69,34 @@ export default async function Page(props: Props) {
     return (
       <ViewerErrorPage
         kind={loaded.kind}
-        repo={loaded.kind === "design" ? viewerPath(repo) : undefined}
-        repoUrl={
-          loaded.kind === "repo" ? undefined : `https://github.com/${target.owner}/${target.repo}`
-        }
+        owner={target.owner}
+        repo={target.repo}
+        path={target.kind === "design" ? target.path : target.prefix || undefined}
       />
     );
 
   if (target.kind === "design" && target.extra) redirect(viewerPath(repo, target.path));
 
-  if ("doc" in loaded)
+  if ("doc" in loaded) {
+    const link = { ...repo, ref: loaded.refInUrl ? loaded.ref : undefined };
     return (
       <div className="flex h-dvh flex-col">
-        <ViewerBar
-          repo={loaded.repo}
-          gitRef={loaded.ref}
-          refInUrl={loaded.refInUrl}
-          commit={loaded.commit}
-          path={loaded.path}
-          name={loaded.name}
+        <TopBar
+          crumbs={[...repoCrumbs(loaded.repo, link), { label: loaded.name, title: loaded.path }]}
           githubUrl={loaded.githubUrl}
-        />
+        >
+          <OpenInPonzu
+            name={loaded.name}
+            commands={localCommands(loaded.repo, link.ref ?? null, loaded.path)}
+            badge={badgeMarkdown(link, loaded.path, loaded.name)}
+          />
+        </TopBar>
         <div className="min-h-0 flex-1">
           <DesignCanvas doc={loaded.doc} assetBase={loaded.assetBase} />
         </div>
       </div>
     );
+  }
 
   // A repo with one design opens it; a folder lists what's in it, even if that's one.
   const only = loaded.designs.length === 1 && !loaded.prefix ? loaded.designs[0] : undefined;
@@ -94,12 +104,11 @@ export default async function Page(props: Props) {
   return (
     <DesignList
       repo={loaded.repo}
-      gitRef={loaded.ref}
-      refInUrl={loaded.refInUrl}
-      commit={loaded.commit}
+      link={{ ...repo, ref: loaded.refInUrl ? loaded.ref : undefined }}
       prefix={loaded.prefix}
       designs={loaded.designs}
       truncated={loaded.truncated}
+      commitLabel={`${loaded.ref} · ${loaded.commit.shortSha}`}
     />
   );
 }

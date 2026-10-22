@@ -88,10 +88,10 @@ To implement a design, point your coding agent at the folder. The HTML, tokens a
 
 ### Share it from GitHub
 
-A `.design` committed to a public repo opens on the canvas at `ponzu.design/gh/<owner>/<repo>/<path/to/name.design>`, read-only, with its comments, images and fonts: [this repo's Kettle](https://ponzu.design/gh/north-brook/ponzu/examples/kettle.design), for one. Add `@<branch, tag or commit>` to the repo for another ref, or leave off the path to list every design in the repo. Link it from your README:
+A `.design` committed to a public repo opens on the canvas at `ponzu.design/gh/<owner>/<repo>/<path/to/name.design>`, read-only, with its comments, images and fonts: [this repo's Kettle](https://ponzu.design/gh/north-brook/ponzu/examples/kettle.design), for one. Add `@<branch, tag or commit>` to the repo for another ref, or leave off the path to list every design in the repo. Link it from your README with a badge labelled by the design's name; without `?label=` it reads "open in | Ponzu":
 
 ```md
-[![Open in Ponzu](https://ponzu.design/badge.svg)](https://ponzu.design/gh/<owner>/<repo>/<path/to/name.design>)
+[![Kettle | Ponzu](https://ponzu.design/badge.svg?label=Kettle)](https://ponzu.design/gh/<owner>/<repo>/<path/to/name.design>)
 ```
 
 ## Embed it
