@@ -1,0 +1,51 @@
+name: Preview
+
+# Every push to main that touches the phone reaches internal testers: an
+# over-the-air update when a preview build with the same native fingerprint
+# exists, a new build to TestFlight otherwise. iOS only.
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/mobile/**
+      - packages/core/**
+      - bun.lock
+
+# The Bun package.json pins (`packageManager`); the image's own Bun writes a
+# different lockfile, and a frozen install then refuses it. Every job's
+# install uses this one, builds included.
+defaults:
+  tools:
+    bun: 1.4.2
+
+jobs:
+  fingerprint:
+    type: fingerprint
+    environment: preview
+  ios_build_exists:
+    needs: [fingerprint]
+    type: get-build
+    params:
+      fingerprint_hash: ${{ needs.fingerprint.outputs.ios_fingerprint_hash }}
+      profile: preview
+  build_ios:
+    needs: [ios_build_exists]
+    if: ${{ !needs.ios_build_exists.outputs.build_id }}
+    type: build
+    params:
+      platform: ios
+      profile: preview
+  submit_ios:
+    needs: [build_ios]
+    type: submit
+    params:
+      build_id: ${{ needs.build_ios.outputs.build_id }}
+      profile: preview
+  update_ios:
+    needs: [ios_build_exists]
+    if: ${{ needs.ios_build_exists.outputs.build_id }}
+    type: update
+    environment: preview
+    params:
+      branch: preview
+      platform: ios
