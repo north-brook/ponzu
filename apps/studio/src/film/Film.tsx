@@ -127,12 +127,17 @@ function frameAt(e: Edit, f: number): Frame {
     const leaving = next ? next.shot.start : tl.result;
     // Only a real rest: a quick beat doesn't flicker its neighbours down and back up.
     if (ids.length && leaving - s.arrive >= 1.6) {
+      // Around a hop to another board's card, everything comes back up: no board arrives dimmed.
+      const hop = l.find((x, i) => x.hop && Math.abs(f - x.at) < 1 && i > 0);
+      const around = hop ? 1 - Math.min(1, Math.abs(f - (hop.at - 0.3)) / 0.7) : 0;
       fr.dim = {
         ids,
-        p: Math.min(
-          progress(f, s.arrive, s.arrive + 0.35, ease.out),
-          1 - progress(f, leaving - 0.3, leaving, ease.in),
-        ),
+        p:
+          (1 - around) *
+          Math.min(
+            progress(f, s.arrive, s.arrive + 0.35, ease.out),
+            1 - progress(f, leaving - 0.3, leaving, ease.in),
+          ),
       };
     }
   }
@@ -285,18 +290,16 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
             const s1 = toScreen(ab.x + w, ab.y + bh);
             const offscreen = s1.x < -40 || s0.x > view.w + 40 || s1.y < -40 || s0.y > view.h + 40;
             const drawing = fr.drawing?.board === ab.id ? fr.drawing.p : 1;
+            // Receding: a wash of the canvas over it, so it falls back into the page, never grey.
+            const veil = fr.dim && !fr.dim.ids.includes(ab.id) ? 0.94 * fr.dim.p : 0;
             return (
               <div
                 key={ab.id}
                 className="pz-film-board pz:absolute pz:shadow-board"
                 style={{
                   display: offscreen ? "none" : undefined,
-                  opacity:
-                    fr.only && !fr.only.ids.includes(ab.id)
-                      ? 1 - fr.only.p
-                      : fr.dim && !fr.dim.ids.includes(ab.id)
-                        ? 1 - 0.75 * fr.dim.p
-                        : undefined,
+                  opacity: fr.only && !fr.only.ids.includes(ab.id) ? 1 - fr.only.p : undefined,
+                  boxShadow: veil > 0.5 ? "none" : undefined,
                   left: 0,
                   top: 0,
                   transform: `translate(${ab.x * cam.zoom + tx}px, ${ab.y * cam.zoom + ty}px) scale(${cam.zoom})`,
@@ -313,7 +316,7 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
                     "pz:absolute pz:left-0 pz:flex pz:items-center pz:gap-[0.5em] pz:whitespace-nowrap pz:leading-[1.4] pz:max-w-full",
                     who ? "pz:right-0 pz:text-foreground" : "pz:text-muted-foreground",
                   )}
-                  style={{ fontSize: 12 / cam.zoom, top: -22 / cam.zoom }}
+                  style={{ fontSize: 12 / cam.zoom, top: -22 / cam.zoom, opacity: 1 - veil }}
                 >
                   <span className={cn("pz:min-w-0 pz:truncate", who && "pz-shimmer")}>
                     {ab.name}
@@ -326,6 +329,20 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
                   )}
                 </div>
                 <FilmBoard artboard={ab} doc={doc} model={model} />
+                {veil > 0 && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: -2,
+                      top: -2,
+                      width: w + 4,
+                      height: bh + 4,
+                      background: "var(--canvas)",
+                      opacity: veil,
+                      zIndex: 1,
+                    }}
+                  />
+                )}
               </div>
             );
           })}

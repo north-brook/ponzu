@@ -822,8 +822,11 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
   // story), the last look stays on the payoff, close.
   const payoff = lastPaid ?? (firstPaid?.board === hero ? firstPaid : undefined);
   const payoffCam = payoff?.cams[0];
+  // A long film pulls back to show the result whole, when whole still reads at all.
+  const pullback =
+    input.length > 15 && wholeCam.zoom >= framing.minZoom * (view.h > view.w ? 0.75 : 0.85);
   const resultCam =
-    payoffCam && wholeCam.zoom < payoffCam.zoom * (input.length <= 15 ? 0.7 : 0.6)
+    !pullback && payoffCam && wholeCam.zoom < payoffCam.zoom * (input.length <= 15 ? 0.7 : 0.6)
       ? payoffCam
       : wholeCam;
 

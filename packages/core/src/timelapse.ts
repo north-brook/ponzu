@@ -440,7 +440,15 @@ function frameFocusRaw(
   const fitBoard = Math.min(vw / b.w, vh / b.h);
   // Whole but small (a phone screen in a wide frame): closer on what changed, while it fits,
   // centred across the board's width when that fits, so the subject owns the frame.
-  if (!focus.overview && focus.detail && fitBoard >= f.minZoom && fitBoard < f.comfort * 0.9) {
+  // A board that reads whole at near the comfortable zoom is shown whole: the change in its place.
+  const wholeReads = !focus.close && fitBoard >= f.comfort * 0.75;
+  if (
+    !focus.overview &&
+    !wholeReads &&
+    focus.detail &&
+    fitBoard >= f.minZoom &&
+    fitBoard < f.comfort * 0.9
+  ) {
     const d = focus.detail;
     const fitD = Math.min(vw / d.w, vh / d.h);
     const zoom = Math.min(focus.close ? Math.min(f.maxZoom, f.comfort * 1.5) : f.comfort, fitD);

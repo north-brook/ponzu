@@ -216,8 +216,8 @@ export interface StoryOptions {
 export const SHOT = {
   /** Glide between subjects. */
   travel: 0.75 as number,
-  /** Settle on the subject before anything changes. */
-  settle: 0.2,
+  /** Settle on the subject before anything changes: long enough to see the before. */
+  settle: 0.45,
   /** The change itself: pieces rising in. */
   change: 0.9,
   /** Hold on the result. */
@@ -303,10 +303,15 @@ export function chooseStory(all: Moment[], looks: Map<Moment, Look>, opts: Story
     spent += workCost;
   }
 
-  const takeStory = (t: Extract<Moment, { kind: "turn" }>, maxBoards: number): boolean => {
+  const takeStory = (
+    t: Extract<Moment, { kind: "turn" }>,
+    maxBoards: number,
+    must = false,
+  ): boolean => {
     let { fixes, cards } = story(t, maxBoards);
-    // Shrink until it fits: fewer boards, never a card without its fix.
-    while (fixes.length) {
+    // Shrink until it fits: fewer boards, never a card without its fix. The first story is the
+    // film: down to one board it stays, and the timeline tightens around it.
+    while (fixes.length > (must ? 1 : 0)) {
       const cost = turnCost(t, cards) + fixes.length * workCost;
       if (spent + cost <= budget + 1e-9) break;
       fixes = fixes.slice(0, -1);
@@ -324,7 +329,7 @@ export function chooseStory(all: Moment[], looks: Map<Moment, Look>, opts: Story
     return true;
   };
 
-  if (firstTurn) takeStory(firstTurn, short ? 1 : 3);
+  if (firstTurn) takeStory(firstTurn, short ? 1 : 3, true);
   if (!short) for (const t of turns.slice(1)) if (!takeStory(t, 3)) break;
   // Leftover room in a long film: one more build before the first turn, if it's big; the rest
   // of the room goes to reading and holds, not a long tour before the story starts.
@@ -332,15 +337,28 @@ export function chooseStory(all: Moment[], looks: Map<Moment, Look>, opts: Story
     for (const w of before
       .filter((x) => !picked.has(x) && visible(x) && (looks.get(x)?.change ?? 0) >= 0.2)
       .sort((a, b) => score(b) - score(a))
-      .slice(0, 1))
+      .slice(0, 0))
       if (spent + workCost <= budget) {
         picked.add(w);
         spent += workCost;
       }
 
-  return all
+  const out = all
     .filter((m) => picked.has(m))
     .map((m) => (m.kind === "turn" ? { ...m, featured: featured.get(m) ?? [] } : m));
+  // The agent's turn starts where the camera is: the fix on the board of the last card read
+  // first, so the camera doesn't cross the page and back.
+  for (let i = 0; i < out.length; i++) {
+    const t = out[i]!;
+    if (t.kind !== "turn") continue;
+    const lastCard = t.comments.filter((c) => t.featured?.includes(c.thread)).at(-1);
+    let j = i + 1;
+    while (j < out.length && out[j]!.kind === "work") j++;
+    const fixes = out.slice(i + 1, j);
+    const k = fixes.findIndex((w) => w.kind === "work" && w.board === lastCard?.board);
+    if (k > 0) out.splice(i + 1, fixes.length, fixes[k]!, ...fixes.filter((_, n) => n !== k));
+  }
+  return out;
 }
 
 /* ------------------------------------------------------------------ */
@@ -461,7 +479,8 @@ export function timeline(
     const turns = raw.filter((r) => r.m.kind === "turn");
     const cards = turns.flatMap((r) => r.shown.filter((x) => x.card));
     for (let pass = 0; pass < 3 && spare > 0.05; pass++) {
-      const cardShare = opts.length <= 15 ? 3 : 1.5;
+      // A short film's card already reads at its pace; its slack goes to seeing the answer.
+      const cardShare = opts.length <= 15 ? 0 : 1.5;
       const slots = works.length * 2 + cards.length * cardShare;
       if (!slots) break;
       const each = spare / slots;
@@ -469,7 +488,7 @@ export function timeline(
       for (const r of works) {
         // A short film's opening build is a beat, not a hold: its time goes to the story.
         if (opts.length <= 15 && r.m.kind === "work" && r.m.answers === undefined) continue;
-        const h = Math.max(0, Math.min(each * 2 * 0.6, 1.3 - r.hold));
+        const h = Math.max(0, Math.min(each * 2 * 0.6, (opts.length <= 15 ? 2.4 : 1.3) - r.hold));
         const c = Math.max(0, Math.min(each * 2 * 0.4, 1.7 - r.change));
         r.hold += h;
         r.change += c;
