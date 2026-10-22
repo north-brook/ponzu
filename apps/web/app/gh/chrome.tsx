@@ -33,7 +33,7 @@ export function openCommand(repo: Repo, path: string): string {
   return `bunx ponzu open ${targetPath(repo, path)}`;
 }
 
-const pill =
+export const pill =
   "inline-flex h-[34px] shrink-0 items-center gap-2 rounded-full font-semibold whitespace-nowrap";
 
 interface Crumb {
