@@ -851,7 +851,8 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
   const payoffCam = payoff?.cams[0];
   // A long film pulls back to show the result whole, when whole still reads at all.
   const pullback =
-    input.length > 15 && wholeCam.zoom >= framing.comfort * (view.h > view.w ? 0.5 : 0.6);
+    input.length > 15 &&
+    wholeCam.zoom >= (view.h > view.w ? framing.comfort * 0.5 : framing.minZoom * 0.95);
   const resultCam =
     !pullback && payoffCam && wholeCam.zoom < payoffCam.zoom * (input.length <= 15 ? 0.7 : 0.6)
       ? payoffCam
@@ -878,11 +879,13 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
       doc: endDoc,
       cam: resultCam,
       heights: endHeights,
-      boards: heroAb
-        ? readsTogether && resultCam === wholeCam
-          ? pageBoards(endDoc, heroAb.id).map((ab) => ab.id)
-          : [heroAb.id]
-        : [],
+      // A close-up ending keeps the canvas around it as it is; a pull-back clears it.
+      boards:
+        heroAb && resultCam === wholeCam
+          ? readsTogether
+            ? pageBoards(endDoc, heroAb.id).map((ab) => ab.id)
+            : [heroAb.id]
+          : [],
     },
     first: { doc: firstDoc, heights: firstHeights },
     range: ops.length ? { from: ops[0]!.t, to: ops[ops.length - 1]!.t } : null,

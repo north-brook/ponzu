@@ -345,17 +345,19 @@ export function chooseStory(all: Moment[], looks: Map<Moment, Look>, opts: Story
   const out = all
     .filter((m) => picked.has(m))
     .map((m) => (m.kind === "turn" ? { ...m, featured: featured.get(m) ?? [] } : m));
-  // The agent's turn starts where the camera is: the fix on the board of the last card read
-  // first, so the camera doesn't cross the page and back.
+  // The agent answers in the order you asked: each fix follows its card's place in the turn.
   for (let i = 0; i < out.length; i++) {
     const t = out[i]!;
     if (t.kind !== "turn") continue;
-    const lastCard = t.comments.filter((c) => t.featured?.includes(c.thread)).at(-1);
+    const asked = t.comments.filter((c) => t.featured?.includes(c.thread)).map((c) => c.board);
     let j = i + 1;
     while (j < out.length && out[j]!.kind === "work") j++;
     const fixes = out.slice(i + 1, j);
-    const k = fixes.findIndex((w) => w.kind === "work" && w.board === lastCard?.board);
-    if (k > 0) out.splice(i + 1, fixes.length, fixes[k]!, ...fixes.filter((_, n) => n !== k));
+    const rank = (m: Moment) => {
+      const n = m.kind === "work" ? asked.indexOf(m.board) : -1;
+      return n < 0 ? asked.length : n;
+    };
+    out.splice(i + 1, fixes.length, ...[...fixes].sort((a, b) => rank(a) - rank(b)));
   }
   return out;
 }
@@ -417,7 +419,7 @@ export function timeline(
     hops?: Map<Moment, boolean[]>;
   },
 ): Timeline {
-  const HOP = 0.6;
+  const HOP = 0.85;
   const raw = story.map((m) => {
     if (m.kind === "turn") {
       const cards = opts.length <= 15 ? 2 : 4;
@@ -432,12 +434,17 @@ export function timeline(
           .filter((x) => opts.length > 15 && !featured.includes(x.c.thread)),
         ...m.comments.map((c, i) => ({ c, i })).filter((x) => featured.includes(x.c.thread)),
       ];
-      const shown = order.map(({ c, i }, k) => ({
-        comment: c,
-        card: featured.includes(c.thread),
-        hop: k > 0 && Boolean(hops[i]) && featured.includes(c.thread),
-        d: featured.includes(c.thread) ? commentTime(c.words, opts.length) : 0.3,
-      }));
+      // A card on another board than the card before it: the camera glides there first.
+      let lastCardBoard: string | undefined;
+      const shown = order.map(({ c, i }, k) => {
+        const card = featured.includes(c.thread);
+        const hop =
+          card &&
+          k > 0 &&
+          (lastCardBoard !== undefined ? c.board !== lastCardBoard : Boolean(hops[i]));
+        if (card) lastCardBoard = c.board;
+        return { comment: c, card, hop, d: card ? commentTime(c.words, opts.length) : 0.3 };
+      });
       return {
         m,
         travel: SHOT.travel,

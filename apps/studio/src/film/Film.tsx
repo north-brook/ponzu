@@ -4,6 +4,7 @@ import {
   clamp01,
   type Doc,
   ease,
+  findArtboard,
   flyTo,
   progress,
   shotAt,
@@ -61,6 +62,8 @@ interface Frame {
   end?: { fade: number; t: number };
   /** The last look: only these boards stay; the rest fade by `p`. */
   only?: { ids: string[]; p: number };
+  /** The board as it was, over its new look, fading out: a replaced piece crossfades. */
+  ghost?: { board: Artboard; doc: Doc; p: number };
   /** At rest in a tall frame: the boards beside the subject recede by `p` (0 → 1). */
   dim?: { ids: string[]; p: number };
 }
@@ -73,8 +76,9 @@ function frameAt(e: Edit, f: number): Frame {
   if (!scene || phase === "result" || phase === "end") {
     const from = scene ? sceneCam(scene, scene.shot.end, e.view) : e.result.cam;
     const p = ease.inOut(clamp01((f - tl.result) / 1.0));
-    const cam =
-      from.page === e.result.cam.page ? flyTo(from, e.result.cam, p, e.view) : e.result.cam;
+    const lean = 1 + 0.03 * progress(f, tl.result + 1, tl.endCard, ease.inOut);
+    const to = { ...e.result.cam, zoom: e.result.cam.zoom * lean };
+    const cam = from.page === to.page ? flyTo(from, to, p, e.view) : to;
     const doc = e.result.doc;
     // The result, clean: the conversation's done, so its pins are off the final picture.
     const out: Frame = { doc, heights: e.result.heights, cam, threads: [] };
@@ -123,7 +127,13 @@ function frameAt(e: Edit, f: number): Frame {
         card = i;
         break;
       }
-    const ids = scene.board ? [scene.board] : (scene.subjectBoards?.[Math.max(0, card)] ?? []);
+    const here = scene.board ? [scene.board] : (scene.subjectBoards?.[Math.max(0, card)] ?? []);
+    // The board the camera goes to next never recedes: it arrives as it is.
+    const nextScene = e.scenes[index + 1];
+    const ids = [
+      ...here,
+      ...(nextScene?.board ? [nextScene.board] : (nextScene?.subjectBoards?.flat() ?? [])),
+    ];
     const next = e.scenes[index + 1];
     const leaving = next ? next.shot.start : tl.result;
     // Only a real rest: a quick beat doesn't flicker its neighbours down and back up.
@@ -148,6 +158,12 @@ function frameAt(e: Edit, f: number): Frame {
 /** Where a scene's camera is at time `f` (a turn's camera hops between its comments). */
 function sceneCam(scene: Scene, f: number, view: { w: number; h: number }): Cam {
   const l = scene.shot.landings;
+  // At rest on a result, the camera leans in a touch, so a hold is never a still.
+  if (scene.shot.moment.kind === "work") {
+    const c = scene.cams[0]!;
+    const k = 1 + 0.035 * progress(f, scene.shot.changed, scene.shot.end + 1.5, ease.inOut);
+    return { ...c, zoom: c.zoom * k };
+  }
   if (!l?.length || scene.cams.length < 2) return scene.cams[0]!;
   // The camera only moves on a hop (a card on another board); pin-only landings keep it still.
   let i = 0;
@@ -165,7 +181,7 @@ const open = (doc: Doc) => doc.threads.filter((t) => t.status === "open");
 
 function workFrame(e: Edit, scene: Scene, f: number): Frame {
   const s = scene.shot;
-  const cam = scene.cams[0]!;
+  const cam = sceneCam(scene, f, e.view);
   const changing = f >= s.change;
   const doc = changing ? scene.after : scene.before;
   const heights = changing ? scene.heights.after : scene.heights.before;
@@ -197,6 +213,16 @@ function workFrame(e: Edit, scene: Scene, f: number): Frame {
       ids: e.result.boards,
       p: progress(f, s.changed - 0.2, s.changed + 0.5, ease.inOut),
     };
+  // What was there crossfades to what replaces it (new pieces rise in under it).
+  // Not on the opening build, nor where the board reflows (that would double the text).
+  const hb = scene.board ? scene.heights.before.get(scene.board) : undefined;
+  const ha = scene.board ? scene.heights.after.get(scene.board) : undefined;
+  const reflows = hb !== undefined && ha !== undefined && Math.abs(hb - ha) > 4;
+  if (changing && !scene.born && scene.board && scene !== e.scenes[0] && !reflows) {
+    const was = findArtboard(scene.before, scene.board)?.artboard;
+    const p = progress(f, s.change, s.change + 0.35, ease.inOut);
+    if (was && p < 1) out.ghost = { board: was, doc: scene.before, p };
+  }
   if (changing && scene.born)
     out.drawing = { board: scene.board!, p: ease.out(clamp01((f - s.change) / 0.5)) };
   if (changing && scene.rise?.length) {
@@ -292,14 +318,19 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
             const offscreen = s1.x < -40 || s0.x > view.w + 40 || s1.y < -40 || s0.y > view.h + 40;
             const drawing = fr.drawing?.board === ab.id ? fr.drawing.p : 1;
             // Receding: a wash of the canvas over it, so it falls back into the page, never grey.
-            const veil = fr.dim && !fr.dim.ids.includes(ab.id) ? 0.94 * fr.dim.p : 0;
+            const veil =
+              fr.only && !fr.only.ids.includes(ab.id)
+                ? fr.only.p
+                : fr.dim && !fr.dim.ids.includes(ab.id)
+                  ? 0.94 * fr.dim.p
+                  : 0;
             return (
               <div
                 key={ab.id}
                 className="pz-film-board pz:absolute pz:shadow-board"
                 style={{
                   display: offscreen ? "none" : undefined,
-                  opacity: fr.only && !fr.only.ids.includes(ab.id) ? 1 - fr.only.p : undefined,
+                  opacity: undefined,
                   boxShadow: veil > 0.5 ? "none" : undefined,
                   left: 0,
                   top: 0,
@@ -330,6 +361,19 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
                   )}
                 </div>
                 <FilmBoard artboard={ab} doc={doc} model={model} />
+                {fr.ghost?.board.id === ab.id && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      top: 0,
+                      width: w,
+                      opacity: 1 - fr.ghost.p,
+                    }}
+                  >
+                    <FilmBoard artboard={fr.ghost.board} doc={fr.ghost.doc} model={model} />
+                  </div>
+                )}
                 {veil > 0 && (
                   <div
                     style={{
