@@ -45,6 +45,8 @@ export function DesignCanvas({ doc, assetBase }: { doc: Doc; assetBase: string }
       theme={theme}
       readOnly
       footer={!phone}
+      // A phone starts on the first board at full width, to scroll down from, not the page at 6%.
+      initialFit={phone ? "first" : "page"}
       page={pages?.page ?? undefined}
       onPageChange={pages?.setPage}
     />
