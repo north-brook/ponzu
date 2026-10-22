@@ -68,11 +68,20 @@ export function artboardSummary(ab: Artboard): string {
   return `${ab.id} "${ab.name}" ${w}×${h} at (${ab.x}, ${ab.y})`;
 }
 
-/** One-screen overview of a whole file: pages, artboards, open threads. */
-export function docSummary(doc: Doc): string {
+/**
+ * One-screen overview of a whole file: pages, artboards, open threads.
+ * `folderOf` adds where each page's files live.
+ */
+export function docSummary(
+  doc: Doc,
+  opts: { folderOf?: (pageId: string) => string | undefined } = {},
+): string {
   const lines = [`File: ${doc.name}`];
   for (const page of doc.pages) {
-    lines.push(`Page ${page.id} "${page.name}"${page.artboards.length ? "" : " (empty)"}`);
+    const folder = opts.folderOf?.(page.id);
+    lines.push(
+      `Page ${page.id} "${page.name}"${folder ? ` · ${folder}` : ""}${page.artboards.length ? "" : " (empty)"}`,
+    );
     for (const ab of page.artboards) lines.push(`  ${artboardSummary(ab)}`);
   }
   const open = doc.threads.filter((t) => t.status === "open");

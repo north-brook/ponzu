@@ -24,13 +24,13 @@ export const orientTools = [
     group: "orient",
     readOnly: true,
     description:
-      "Start here. Summarizes the open .design: pages, artboards with sizes and positions, token names, open comments, artboards that overlap each other, who else is working, and anything in the files Ponzu couldn't use. Call get_guide('basics') once per session for the house rules.",
+      "Start here. Summarizes the open .design: pages with their folders, artboards with sizes and positions, token names, open comments, artboards that overlap each other, who else is working, and anything in the files Ponzu couldn't use. Call get_guide('basics') once per session for the house rules.",
     input: { file: fileArg },
     async handler({ file }, ctx) {
       const { ws } = ctx;
       const { key, design } = await resolveFile(ctx, file);
       const doc = design.doc;
-      const lines = [docSummary(doc), `Path: ${key}`];
+      const lines = [docSummary(doc, { folderOf: (id) => design.folderOf(id) }), `Path: ${key}`];
       const tokens = parseTokens(doc.tokens);
       if (tokens.length) {
         const limit = 40;

@@ -171,7 +171,7 @@ design.json
 ${FORMAT_EXAMPLE["design.json"]}
 \`\`\`
 - Give every page an id. Without one it gets a new id each time the design loads, and comments on its canvas lose their page.
-- A page's folder is its name, lowercase with dashes: "Home screens" lives in pages/home-screens/. A folder no page names becomes a page of its own.
+- A page's folder is its name, lowercase with dashes: "Home screens" lives in pages/home-screens/. Pages sharing a name get -2, -3 in list order. Renaming or reordering pages moves their folders, so take each page's folder from get_basic_info before writing into it. A folder no page names becomes a page of its own.
 - icon is optional, on the file and on each page: page, home, phone, desktop, flow, palette and the rest of create_file's list.
 
 An artboard, pages/flow/cart.html

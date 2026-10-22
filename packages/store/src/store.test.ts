@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type PElement, parseHtml } from "@ponzu/core";
+import { type PElement, parseArtboardFile, parseHtml } from "@ponzu/core";
 import { Design, MemoryAdapter } from "./index.ts";
 
 const seed = {
@@ -141,6 +141,147 @@ describe("design", () => {
       const d = await Design.open(mem, { saveDelay: 0 });
       expect(d.doc.example).toBeUndefined();
     }
+  });
+
+  describe("page folders", () => {
+    const who = { kind: "agent", name: "t" } as const;
+    const board = (id: string, text = "x") =>
+      `<section data-artboard data-id="${id}" data-name="Board" data-x="0" data-y="0" style="width:100px;height:100px"><p>${text}</p></section>\n`;
+    const files = (pages: { id: string; name: string }[], boards: Record<string, string>) => ({
+      "design.json": JSON.stringify({ ponzu: 1, name: "Fern", pages }),
+      "tokens.css": ":root {\n}\n",
+      ...boards,
+    });
+    /** Each page's name and artboards, as a fresh read of the files finds them. */
+    const reopened = async (mem: MemoryAdapter) => {
+      const d = await Design.open(new MemoryAdapter({ ...mem.files }), { watch: false });
+      return d.doc.pages.map((p) => [p.name, p.artboards.map((a) => a.id)]);
+    };
+    const folders = (mem: MemoryAdapter) =>
+      [
+        ...new Set(
+          Object.keys(mem.files)
+            .filter((p) => p.startsWith("pages/"))
+            .map((p) => p.split("/")[1]),
+        ),
+      ].sort();
+
+    test("renaming a page to the start of its old name moves its folder", async () => {
+      const mem = new MemoryAdapter(
+        files([{ id: "pg_b", name: "Home v2" }], { "pages/home-v2/hero.html": board("ab_hero") }),
+      );
+      const d = await Design.open(mem, { saveDelay: 0 });
+      d.apply({ op: "page.update", id: "pg_b", name: "Home" }, who);
+      await d.flush();
+      expect(folders(mem)).toEqual(["home"]);
+      expect(d.folderOf("pg_b")).toBe("pages/home/");
+      expect(await reopened(mem)).toEqual([["Home", ["ab_hero"]]]);
+    });
+
+    test("a page renamed to a deleted page's name takes edits written into its folder", async () => {
+      const mem = new MemoryAdapter(
+        files(
+          [
+            { id: "pg_a", name: "Home" },
+            { id: "pg_b", name: "Home v2" },
+          ],
+          { "pages/home-v2/hero.html": board("ab_hero") },
+        ),
+      );
+      const d = await Design.open(mem, { saveDelay: 0 });
+      d.apply({ op: "page.delete", id: "pg_a" }, who);
+      d.apply({ op: "page.update", id: "pg_b", name: "Home" }, who);
+      await d.flush();
+      expect(d.pathOf("ab_hero")).toBe("pages/home/board.html");
+      await mem.externalWrite("pages/home/board.html", board("ab_hero", "edited"));
+      await mem.externalWrite(`${d.folderOf("pg_b")}more.html`, board("ab_more"));
+      await new Promise((r) => setTimeout(r, 30));
+      expect(d.doc.pages.map((p) => [p.id, p.artboards.map((a) => a.id)])).toEqual([
+        ["pg_b", ["ab_hero", "ab_more"]],
+      ]);
+      expect(JSON.stringify(d.doc)).toContain("edited");
+      await d.close();
+      expect(await reopened(mem)).toEqual([["Home", ["ab_hero", "ab_more"]]]);
+    });
+
+    test("pages sharing a name keep their artboards through a reorder and a delete", async () => {
+      const seeded = () =>
+        new MemoryAdapter(
+          files(
+            [
+              { id: "pg_a", name: "Home" },
+              { id: "pg_b", name: "Home" },
+            ],
+            { "pages/home/a.html": board("ab_a"), "pages/home-2/b.html": board("ab_b") },
+          ),
+        );
+      const mem = seeded();
+      const d = await Design.open(mem, { saveDelay: 0 });
+      d.apply({ op: "page.order", ids: ["pg_b", "pg_a"] }, who);
+      await d.flush();
+      expect(await reopened(mem)).toEqual([
+        ["Home", ["ab_b"]],
+        ["Home", ["ab_a"]],
+      ]);
+
+      const gone = seeded();
+      const e = await Design.open(gone, { saveDelay: 0 });
+      e.apply({ op: "page.delete", id: "pg_a" }, who);
+      await e.flush();
+      expect(folders(gone)).toEqual(["home"]);
+      expect(await reopened(gone)).toEqual([["Home", ["ab_b"]]]);
+    });
+
+    test("swapping two pages' names keeps each page's artboards", async () => {
+      const mem = new MemoryAdapter(
+        files(
+          [
+            { id: "pg_a", name: "One" },
+            { id: "pg_b", name: "Two" },
+          ],
+          { "pages/one/board.html": board("ab_a"), "pages/two/board.html": board("ab_b") },
+        ),
+      );
+      const d = await Design.open(mem, { saveDelay: 0 });
+      d.apply(
+        {
+          op: "batch",
+          ops: [
+            { op: "page.update", id: "pg_a", name: "Two" },
+            { op: "page.update", id: "pg_b", name: "One" },
+          ],
+        },
+        who,
+      );
+      await d.flush();
+      expect(await reopened(mem)).toEqual([
+        ["Two", ["ab_a"]],
+        ["One", ["ab_b"]],
+      ]);
+    });
+
+    test("what Ponzu writes reads back as the same pages", async () => {
+      const lists = [
+        ["Home", "Home", "Home 2"],
+        ["Home v2", "Home", "Home-v2"],
+        ["", "Page", "Page"],
+        ["Ünïcode", "unicode", "Flow"],
+      ];
+      for (const names of lists) {
+        const pages = names.map((name, i) => ({ id: `pg_${i}`, name }));
+        const mem = new MemoryAdapter(files(pages, {}));
+        const d = await Design.open(mem, { saveDelay: 0 });
+        pages.forEach((p, i) => {
+          const { artboard } = parseArtboardFile(board(`ab_${i}`), {
+            id: `ab_${i}`,
+            name: "Board",
+          });
+          d.apply({ op: "artboard.create", page: p.id, index: 0, artboard }, who);
+        });
+        await d.flush();
+        expect(await reopened(mem)).toEqual(names.map((n, i) => [n, [`ab_${i}`]]));
+      }
+    });
   });
 
   describe("files written outside Ponzu", () => {

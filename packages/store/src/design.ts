@@ -15,6 +15,7 @@ import {
   type FileBag,
   type Layout,
   type Problem,
+  pageFolders,
   planLayout,
   readBag,
   serializeArtboard,
@@ -282,6 +283,15 @@ export class Design {
       this.layout.artboards.get(artboardId) ??
       planLayout(this.doc, this.layout).artboards.get(artboardId)
     );
+  }
+
+  /**
+   * The folder a page's artboard files live in, relative to the design root.
+   * Follows from the page list alone, so it's right even before a rename is saved.
+   */
+  folderOf(pageId: string): string | undefined {
+    const i = this.doc.pages.findIndex((p) => p.id === pageId);
+    return i < 0 ? undefined : `pages/${pageFolders(this.doc.pages)[i]}/`;
   }
 
   private async onOutsideChange(paths: string[]): Promise<void> {

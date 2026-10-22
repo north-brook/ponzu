@@ -403,6 +403,34 @@ test("the format guide's example files load as it describes", async () => {
   const listed = (await call("list_comments", {})).text;
   expect(listed).toContain('th_title [open] on "Cart" › ');
   expect(listed).toContain('th_next [open] on the canvas of page "Flow" at 480, 120');
+  expect((await call("get_basic_info", {})).text).toContain('Page pg_flow "Flow" · pages/flow/');
+});
+
+test("update_page renames a page's folder, and get_basic_info shows where it went", async () => {
+  const { design, call } = await withFiles({
+    "design.json": JSON.stringify({
+      ponzu: 1,
+      name: "Fern",
+      pages: [
+        { id: "pg_old", name: "Home" },
+        { id: "pg_new", name: "Home v2" },
+      ],
+    }),
+    "tokens.css": ":root {\n}\n",
+    "pages/home-v2/hero.html": `<section data-artboard data-id="ab_hero" data-name="Hero" data-x="0" data-y="0" style="width:800px;height:600px"></section>\n`,
+  });
+  await call("update_page", { page: "pg_old", delete: true });
+  await call("update_page", { page: "pg_new", name: "Home" });
+  await design.flush();
+  expect((await call("get_basic_info", {})).text).toContain('Page pg_new "Home" · pages/home/');
+  const files = (design.storage as MemoryAdapter).files;
+  expect(Object.keys(files).filter((p) => p.startsWith("pages/"))).toEqual([
+    "pages/home/hero.html",
+  ]);
+  const again = await Design.open(new MemoryAdapter({ ...files }), { watch: false });
+  expect(again.doc.pages.map((p) => [p.id, p.artboards.map((a) => a.id)])).toEqual([
+    ["pg_new", ["ab_hero"]],
+  ]);
 });
 
 test("get_basic_info lists what in the files Ponzu couldn't use", async () => {

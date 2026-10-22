@@ -27,7 +27,9 @@ import {
  *     pages/<page>/<artboard>.html
  *
  * Page folders and artboard files are named from slugs of their names.
- * Ids live inside the files, so renaming a folder never loses identity.
+ * A page's folder follows from the page list alone (see `pageFolders`), so
+ * renaming or reordering pages moves folders. Artboard ids live inside the
+ * files, so renaming a file never loses identity.
  * get_guide('format') spells this out for agents writing the files by hand.
  */
 export interface FileBag {
@@ -92,11 +94,11 @@ export function readBag(bag: FileBag, fallbackName: string): ReadResult {
   // Pages listed in design.json come first, in order. Folders with no entry are appended.
   const claimed = new Set<string>();
   const pageEntries: { id: string; name: string; icon?: string; folder: string }[] = [];
-  for (const p of meta.pages) {
-    const folder = folderFor(p, folders, claimed);
-    claimed.add(folder);
-    pageEntries.push({ ...p, folder });
-  }
+  const named = pageFolders(meta.pages);
+  meta.pages.forEach((p, i) => {
+    claimed.add(named[i]!);
+    pageEntries.push({ ...p, folder: named[i]! });
+  });
   for (const folder of [...folders.keys()].sort()) {
     if (claimed.has(folder)) continue;
     claimed.add(folder);
@@ -138,15 +140,18 @@ export function readBag(bag: FileBag, fallbackName: string): ReadResult {
   return { doc, layout, problems, unreadable, lazy };
 }
 
-function folderFor(
-  p: { id: string; name: string },
-  folders: Map<string, string[]>,
-  claimed: Set<string>,
-): string {
-  const slug = slugify(p.name, "page");
-  if (folders.has(slug) && !claimed.has(slug)) return slug;
-  // A folder holding artboards whose files carry the page id hint (renamed folder on disk).
-  return uniqueName(slug, (n) => claimed.has(n));
+/**
+ * Each page's folder, in list order: the slug of its name, with -2, -3… for
+ * pages that share one. Reading and writing both use this, so whatever Ponzu
+ * writes reads back as the same pages.
+ */
+export function pageFolders(pages: readonly { name: string }[]): string[] {
+  const used = new Set<string>();
+  return pages.map((p) => {
+    const folder = uniqueName(slugify(p.name, "page"), (n) => used.has(n));
+    used.add(folder);
+    return folder;
+  });
 }
 
 function parseMeta(
@@ -255,20 +260,15 @@ function titleCase(slug: string): string {
 /* ------------------------------------------------------------------ */
 
 /**
- * Decide where every page and artboard lives, keeping existing paths when
- * names haven't changed so renames are the only thing that moves files.
+ * Decide where every page and artboard lives. Page folders come from
+ * `pageFolders`, as reading finds them, so renaming or reordering pages moves
+ * them. Artboard files keep their names until their artboard is renamed.
  */
 export function planLayout(doc: Doc, prev: Layout): Layout {
   const next = emptyLayout();
-  const usedFolders = new Set<string>();
-  for (const page of doc.pages) {
-    const want = slugify(page.name, "page");
-    const old = prev.pages.get(page.id);
-    const folder =
-      old && (old === want || old.startsWith(`${want}-`)) && !usedFolders.has(old)
-        ? old
-        : uniqueName(want, (n) => usedFolders.has(n));
-    usedFolders.add(folder);
+  const folders = pageFolders(doc.pages);
+  doc.pages.forEach((page, i) => {
+    const folder = folders[i]!;
     next.pages.set(page.id, folder);
     const usedFiles = new Set<string>();
     for (const ab of page.artboards) {
@@ -284,7 +284,7 @@ export function planLayout(doc: Doc, prev: Layout): Layout {
       usedFiles.add(base);
       next.artboards.set(ab.id, `pages/${folder}/${base}.html`);
     }
-  }
+  });
   return next;
 }
 
