@@ -101,6 +101,7 @@ function frameAt(e: Edit, f: number): Frame {
 function sceneCam(scene: Scene, f: number, view: { w: number; h: number }): Cam {
   const l = scene.shot.landings;
   if (!l?.length || scene.cams.length < 2) return scene.cams[0]!;
+  // The camera only moves on a hop (a card on another board); pin-only landings keep it still.
   let i = 0;
   while (i + 1 < l.length && l[i + 1]!.at - 0.6 <= f) i++;
   const cur = scene.cams[i]!;
@@ -570,7 +571,7 @@ function EndCard({ model, t, opacity }: { model: FilmModel; t: number; opacity: 
           >
             {SLICE.map((d, i) => {
               // The segments bloom close together, from a moment after the canvas has gone.
-              const p = progress(t, 0.08 + i * 0.035, 0.08 + i * 0.035 + 0.45, ease.out);
+              const p = progress(t, 0.04 + i * 0.03, 0.04 + i * 0.03 + 0.42, ease.out);
               return (
                 <path
                   key={d}
@@ -578,8 +579,9 @@ function EndCard({ model, t, opacity }: { model: FilmModel; t: number; opacity: 
                   style={{
                     transformBox: "view-box",
                     transformOrigin: "32px 32px",
-                    transform: `scale(${p}) rotate(${-90 * (1 - p)}deg)`,
-                    opacity: clamp01(p * 1.6),
+                    // From most of its size, so the whole slice reads from the first frame.
+                    transform: `scale(${0.5 + 0.5 * p}) rotate(${-60 * (1 - p)}deg)`,
+                    opacity: clamp01(p * 2.2),
                   }}
                 />
               );

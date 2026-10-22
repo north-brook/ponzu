@@ -108,8 +108,9 @@ describe("story", () => {
     expect(turn).toBeDefined();
     // Its cards go to the comments the film pays off: the one on board a.
     expect(turn!.kind === "turn" && turn!.featured).toEqual(["t1", "t2"]);
-    // It pays off the boards its cards are about (a and b); the tiny build of b is cut.
-    expect(story.filter((m) => m.kind === "work" && m.answers === 0)).toHaveLength(2);
+    // One story: the fix to the first comment's board; the tiny build of b is cut.
+    const paid = story.filter((m) => m.kind === "work" && m.answers === 0);
+    expect(paid.map((m) => m.kind === "work" && m.board)).toEqual(["a"]);
     expect(story).not.toContain(work[1]!);
   });
 

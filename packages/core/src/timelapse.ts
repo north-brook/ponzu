@@ -323,7 +323,7 @@ function cleanFrame(
   // subject's own lines count fully, the boards around it a quarter.
   const weight = (c: Cam) =>
     cutLines(c, lines, view, f).reduce((a, r) => a + (r.h * c.zoom) ** 2, 0) +
-    0.6 * cutLines(c, context, view, f).reduce((a, r) => a + (r.h * c.zoom) ** 2, 0);
+    0.08 * cutLines(c, context, view, f).reduce((a, r) => a + (r.h * c.zoom) ** 2, 0);
   if (weight(cam) === 0) return cam;
   let best = cam;
   let bestW = weight(cam);
@@ -365,7 +365,8 @@ function frameFocusRaw(focus: Focus, view: { w: number; h: number }, f: Framing)
   });
   const b = focus.board;
   const fitBoard = Math.min(vw / b.w, vh / b.h);
-  // Whole but small (a phone screen in a wide frame): closer on what changed, while it fits.
+  // Whole but small (a phone screen in a wide frame): closer on what changed, while it fits,
+  // centred across the board's width when that fits, so the subject owns the frame.
   if (!focus.overview && focus.detail && fitBoard >= f.minZoom && fitBoard < f.comfort * 0.9) {
     const d = focus.detail;
     const fitD = Math.min(vw / d.w, vh / d.h);
@@ -373,8 +374,8 @@ function frameFocusRaw(focus: Focus, view: { w: number; h: number }, f: Framing)
     if (zoom > fitBoard * 1.15) {
       const sw = vw / zoom;
       const sh = vh / zoom;
-      const cx = clampSpan(d.x + d.w / 2, b.x, b.x + b.w, sw);
-      const cy = clampSpan(d.y + d.h / 2, b.y, b.y + b.h, sh);
+      const cx = b.w <= sw ? b.x + b.w / 2 : clampSpan(d.x + d.w / 2, b.x, b.x + b.w, sw);
+      const cy = b.h <= sh ? b.y + b.h / 2 : clampSpan(d.y + d.h / 2, b.y, b.y + b.h, sh);
       return withPin(at(cx, cy, zoom), focus, view, f);
     }
   }

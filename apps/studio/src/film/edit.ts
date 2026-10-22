@@ -517,8 +517,14 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
           d,
           pageBoards(d, ab.id).filter((n) => n.id !== ab.id),
         );
+        // A comment that lands as a pin only doesn't move the camera: it lands where we are.
+        const landing = shot.landings?.[i];
+        if (i > 0 && landing && !landing.card) {
+          cams.push(cams[i - 1]!);
+          continue;
+        }
         const fitAll = all ? Math.min(view.w / all.w, view.h / all.h) : 0;
-        const together = all && fitAll >= framing.minZoom && rects.length > 1;
+        const together = all && fitAll >= framing.comfort && rects.length > 1;
         const cam = frameFocus(
           together
             ? {
@@ -578,6 +584,18 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
     );
   };
   for (const [id, v] of counts) if (reads(id)) counts.set(id, v * 2.5 + 1);
+  // The ending is about what the film showed: a board it changed on screen.
+  const shownBoards = new Set(
+    scenes.flatMap((sc) =>
+      sc.board &&
+      sc.shot.moment.kind === "work" &&
+      (sc.shot.moment.answers !== undefined || input.length > 15)
+        ? [sc.board]
+        : [],
+    ),
+  );
+  if (shownBoards.size)
+    for (const id of [...counts.keys()]) if (!shownBoards.has(id)) counts.delete(id);
   const hero = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? lastBoard;
   const heroAb = hero ? findArtboard(endDoc, hero)?.artboard : undefined;
   const pageAll = heroAb

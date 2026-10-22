@@ -232,9 +232,10 @@ export const SHOT = {
   open: 0.25 as number,
 };
 
+/** Time to read a comment: about a second, plus a quarter second per four words. */
 export function commentTime(words: number, length: number): number {
-  const base = Math.min(2.0, Math.max(1.1, 0.6 + words * 0.06));
-  return length <= 15 ? Math.min(1.6, base) : base;
+  const base = Math.min(2.9, Math.max(1.2, 0.6 + words * 0.075));
+  return length <= 15 ? Math.min(2.4, base) : base;
 }
 
 /**
@@ -272,7 +273,12 @@ export function chooseStory(all: Moment[], looks: Map<Moment, Look>, opts: Story
   // Opening: the biggest piece of work before your first turn (the film opens on it, mid-build).
   const firstTurn = turns[0];
   const before = firstTurn ? work.filter((w) => all.indexOf(w) < all.indexOf(firstTurn)) : work;
-  const opening = [...before].filter(visible).sort((a, b) => score(b) - score(a))[0];
+  // A short film is one story on one board: it opens on the board its first comment is about.
+  const firstBoard = firstTurn?.comments[0]?.board;
+  const opening =
+    (opts.length <= 15 && firstBoard
+      ? before.filter((w) => w.board === firstBoard && visible(w)).at(-1)
+      : undefined) ?? [...before].filter(visible).sort((a, b) => score(b) - score(a))[0];
   function score(w: Extract<Moment, { kind: "work" }>) {
     const look = looks.get(w);
     return (look?.change ?? 0) * (w.answers !== undefined ? 2.5 : 1) + Math.min(0.3, w.ops * 0.01);
@@ -292,7 +298,7 @@ export function chooseStory(all: Moment[], looks: Map<Moment, Look>, opts: Story
       );
     // A short film pays off the comments it reads out: the first two boards asked about.
     if (opts.length <= 15) {
-      const asked = [...new Set(firstTurn.comments.map((c) => c.board))].slice(0, 2);
+      const asked = [...new Set(firstTurn.comments.map((c) => c.board))].slice(0, 1);
       for (const b of asked) {
         const w = payoff.find((x) => x.board === b);
         if (w) take(w);
