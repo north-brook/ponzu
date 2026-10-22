@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.31.0](https://github.com/north-brook/ponzu/compare/v1.30.0...v1.31.0) (2026-10-22)
+
+
+### Features
+
+* right-click a dashboard card to open its menu ([#130](https://github.com/north-brook/ponzu/issues/130)) ([4b0879e](https://github.com/north-brook/ponzu/commit/4b0879e83f305d230f4019c83ecbd12d18448895))
+
 ## [1.30.0](https://github.com/north-brook/ponzu/compare/v1.29.0...v1.30.0) (2026-10-22)
 
 
