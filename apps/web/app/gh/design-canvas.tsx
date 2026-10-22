@@ -7,18 +7,25 @@ import { useState, useSyncExternalStore } from "react";
 import { usePages } from "./pages";
 
 const DARK = "(prefers-color-scheme: dark)";
+/** Tailwind's `sm`, where the top bar's page picker takes over from the canvas's bars. */
+const PHONE = "(max-width: 639.98px)";
+
+/** Whether a media query matches, live. False on the server and in the first client render. */
+function useMedia(query: string): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const list = matchMedia(query);
+      list.addEventListener("change", onChange);
+      return () => list.removeEventListener("change", onChange);
+    },
+    () => matchMedia(query).matches,
+    () => false,
+  );
+}
 
 /** The system's color scheme, live. Light on the server and in the first client render. */
 export function useSystemTheme(): "light" | "dark" {
-  return useSyncExternalStore(
-    (onChange) => {
-      const query = matchMedia(DARK);
-      query.addEventListener("change", onChange);
-      return () => query.removeEventListener("change", onChange);
-    },
-    () => (matchMedia(DARK).matches ? "dark" : "light"),
-    () => "light",
-  );
+  return useMedia(DARK) ? "dark" : "light";
 }
 
 /**
@@ -31,17 +38,17 @@ export function DesignCanvas({ doc, assetBase }: { doc: Doc; assetBase: string }
   const theme = useSystemTheme();
   // The page is shared with the top bar's picker, which stands in for the bars on a phone.
   const pages = usePages();
+  const phone = useMedia(PHONE);
   return (
-    <div className="h-full max-sm:[&_[data-slot=canvas-bar]]:hidden">
-      <Canvas
-        source={source}
-        theme={theme}
-        readOnly
-        footerExtra={<Viewing />}
-        page={pages?.page ?? undefined}
-        onPageChange={pages?.setPage}
-      />
-    </div>
+    <Canvas
+      source={source}
+      theme={theme}
+      readOnly
+      footer={!phone}
+      footerExtra={<Viewing />}
+      page={pages?.page ?? undefined}
+      onPageChange={pages?.setPage}
+    />
   );
 }
 
