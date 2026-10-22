@@ -272,15 +272,19 @@ export function Canvas({
   };
 
   // Open on the board a link named, once the document is in. After the page's own fit, so the
-  // first frame painted is the board's.
-  const shownLink = useRef<string | null>(null);
+  // first frame painted is the board's. A fit-content board is framed again once it's measured,
+  // still before paint; after that the camera is the person's.
+  const shownLink = useRef<{ id: string; sized: boolean } | null>(null);
   useLayoutEffect(() => {
-    if (!linked || !doc || shownLink.current === linked) return;
-    shownLink.current = linked;
+    if (!linked || !doc) return;
     const hit = findArtboard(doc, linked);
+    const sized = !!hit && (size(hit.artboard).h !== null || measured[linked] !== undefined);
+    const shown = shownLink.current;
+    if (shown?.id === linked && (shown.sized || !sized)) return;
+    shownLink.current = { id: linked, sized };
     if (hit) showBoard(hit.page.id, hit.artboard);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [linked, doc]);
+  }, [linked, doc, measured]);
 
   // Follow focus requests (agent created an artboard).
   useEffect(() => {

@@ -106,7 +106,7 @@ export const organizeTools = [
           "CSS with custom properties, e.g. ':root { --color-ink: #111; --font-sans: \"Inter\", sans-serif; }'",
         ),
     },
-    async handler(args, { ws, session }) {
+    async handler(args, { ws, session, caller }) {
       if (!ws.create) throw new ToolError("This host doesn't create files.");
       if (!/\.design\/?$/.test(args.path)) throw new ToolError("The path should end in .design");
       const name =
@@ -130,7 +130,7 @@ export const organizeTools = [
       if (args.tokens) doc.tokens = args.tokens.endsWith("\n") ? args.tokens : `${args.tokens}\n`;
       const { key, design } = await ws.create(args.path, doc);
       if (session) session.file = key;
-      const link = ws.link?.(key);
+      const link = ws.link?.(key, { origin: caller.reachedAt });
       return {
         text: `Created ${key}${link ? `\nLink: ${link}` : ""}\nPages: ${design.doc.pages.map((p) => `${p.id} "${p.name}"`).join(", ")}\nTokens: ${parseTokens(design.doc.tokens).length}`,
       };

@@ -29,9 +29,10 @@ export interface Workspace {
   focus?(key: string, artboardId: string): void;
   /**
    * A link the person can click to open this design in Ponzu, on the artboard if one is given.
+   * `origin` is where the agent reached this host, for a canvas link that works from its machine.
    * Absent, or undefined, when there's no canvas for one to open.
    */
-  link?(key: string, artboardId?: string): string | undefined;
+  link?(key: string, opts?: { artboard?: string; origin?: string }): string | undefined;
   /** How the person's canvas looks, once one has said. Renders default to it. */
   theme?: ColorScheme;
   events: EventHub;
@@ -68,6 +69,8 @@ export interface ToolCaller {
   client?: string;
   /** Where the session comes from, shown in the studio. */
   origin?: PresenceOrigin;
+  /** The origin the agent reached this host at over HTTP, e.g. http://studio-mac:7777. */
+  reachedAt?: string;
 }
 
 /** What one agent connection remembers between calls. */
