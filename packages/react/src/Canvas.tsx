@@ -56,6 +56,11 @@ export interface CanvasProps {
   page?: string;
   /** Called whenever the canvas changes page: a tab, a shortcut, an agent's focus. */
   onPageChange?: (id: string) => void;
+  /**
+   * How a page is framed when it shows. "page" fits every board (the default); "first" fits the
+   * top-left board to the width, from its top, for a narrow screen to scroll down from.
+   */
+  initialFit?: "page" | "first";
   className?: string;
 }
 
@@ -67,6 +72,27 @@ interface Pending {
   /** Offset inside the artboard in artboard px, or the page position without one. */
   x: number;
   y: number;
+}
+
+/** "first" framing: px either side of the board, and above it, under its label. */
+const FIRST_SIDE = 16;
+const FIRST_TOP = 16 + 22;
+/** A board's title sits this many screen px above it (the label's `top`). */
+const LABEL = 22;
+
+/**
+ * Whether a board's title, a fixed size on screen above it, would lie over another board: zoomed
+ * out, or with boards close together, it would read as that board's. Then it's hidden.
+ */
+export function labelCovers(
+  ab: { id: string; x: number; y: number; w: number },
+  others: { id: string; x: number; y: number; w: number; h: number }[],
+  zoom: number,
+): boolean {
+  const top = ab.y - LABEL / zoom;
+  return others.some(
+    (o) => o.id !== ab.id && o.x < ab.x + ab.w && o.x + o.w > ab.x && o.y < ab.y && o.y + o.h > top,
+  );
 }
 
 /** An artboard's size; h is null when it isn't a px length, so the canvas measures it. */
@@ -92,6 +118,7 @@ export function Canvas({
   readOnly = false,
   page: pageProp,
   onPageChange,
+  initialFit = "page",
   className,
 }: CanvasProps) {
   // Read-only hides the controls that edit; this catches anything they missed.
@@ -108,7 +135,7 @@ export function Canvas({
   const [mode, setMode] = useState<Mode>("select");
   const space = useKeyHeld("Space");
   const panning = mode === "hand" || space;
-  const { camera, zoomAt, panBy, fit } = useCamera();
+  const { camera, setCamera, zoomAt, panBy, fit } = useCamera();
   const moving = useMoving(camera);
   const viewport = useRef<HTMLDivElement>(null);
   const [measured, setMeasured] = useState<Record<string, number>>({});
@@ -163,6 +190,13 @@ export function Canvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boards, measured]);
 
+  /** Every board's box, for labels to keep off one another. */
+  const boxes = useMemo(
+    () => boards.map((ab) => ({ id: ab.id, x: ab.x, y: ab.y, w: size(ab).w, h: boardHeight(ab) })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [boards, measured],
+  );
+
   const viewportSize = () => {
     const r = viewport.current?.getBoundingClientRect();
     return { w: r?.width ?? 1200, h: r?.height ?? 800 };
@@ -172,19 +206,38 @@ export function Canvas({
     if (bounds) fit(bounds, viewportSize(), 72, 1);
   }, [bounds, fit]);
 
-  // Fit when a page first shows, before it paints: after, its first frame is at the old page's camera.
+  /** The top-left board across the width, its label just in view: where a narrow screen starts. */
+  const fitFirst = useCallback(() => {
+    const first = [...boards].sort((a, b) => a.y - b.y || a.x - b.x)[0];
+    if (!first) return;
+    const v = viewportSize();
+    const zoom = Math.min(1, (v.w - FIRST_SIDE * 2) / size(first).w);
+    if (!(zoom > 0)) return;
+    setCamera({
+      zoom,
+      x: (v.w - size(first).w * zoom) / 2 - first.x * zoom,
+      y: FIRST_TOP - first.y * zoom,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boards, setCamera]);
+
+  // Fit when a page first shows, before it paints: after, its first frame is at the old page's
+  // camera. A change of framing (a window crossing a host's breakpoint) frames it again.
   useLayoutEffect(() => {
-    if (!page || !bounds || fitted.current === page.id) return;
-    fitted.current = page.id;
-    fitPage();
-  }, [page, bounds, fitPage]);
+    if (!page || !bounds) return;
+    const key = `${page.id}:${initialFit}`;
+    if (fitted.current === key) return;
+    fitted.current = key;
+    if (initialFit === "first") fitFirst();
+    else fitPage();
+  }, [page, bounds, fitPage, fitFirst, initialFit]);
 
   // Follow focus requests (agent created an artboard).
   useEffect(() => {
     const f = state.focus;
     if (!f || !doc) return;
     if (f.page !== page?.id) {
-      fitted.current = f.page;
+      fitted.current = `${f.page}:${initialFit}`;
       setPageId(f.page);
     }
     const ab = findArtboard(doc, f.artboard)?.artboard;
@@ -656,6 +709,12 @@ export function Canvas({
             const x = ab.x + (g?.dx ?? 0);
             const y = ab.y + (g?.dy ?? 0);
             const who = working.get(ab.id);
+            // Kept while it's named, worked on, renamed or selected: those need it in view.
+            const hideLabel =
+              !who &&
+              renaming !== ab.id &&
+              !selection.includes(ab.id) &&
+              labelCovers({ id: ab.id, x, y, w }, boxes, camera.zoom);
             return (
               <div
                 key={ab.id}
@@ -673,7 +732,11 @@ export function Canvas({
                       ? "pz:text-select"
                       : "pz:text-muted-foreground pz:hover:text-foreground",
                   )}
-                  style={{ fontSize: 12 / camera.zoom, top: -22 / camera.zoom }}
+                  style={{
+                    fontSize: 12 / camera.zoom,
+                    top: -LABEL / camera.zoom,
+                    visibility: hideLabel ? "hidden" : undefined,
+                  }}
                   onPointerDown={(e) => startMove(e, ab)}
                   onDoubleClick={() => !readOnly && setRenaming(ab.id)}
                 >
