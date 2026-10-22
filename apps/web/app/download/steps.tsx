@@ -204,7 +204,7 @@ function Step({
 }) {
   return (
     <li className="flex flex-col">
-      <div className="flex h-[262px] w-full items-center justify-center overflow-hidden rounded-3xl bg-stage px-[22px] max-[720px]:h-60 max-[720px]:rounded-2xl">
+      <div className="flex h-[262px] w-full items-center justify-center stage overflow-hidden rounded-3xl px-[22px] max-[720px]:h-60 max-[720px]:rounded-2xl">
         {children}
       </div>
       <div className="flex gap-3 pt-5">

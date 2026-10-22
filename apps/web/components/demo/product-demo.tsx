@@ -320,11 +320,13 @@ function Studio({ beat, t }: { beat: number; t: number }) {
                       className="dm-board-title pz:absolute pz:right-0 pz:left-0 pz:flex pz:items-center pz:gap-[0.5em] pz:whitespace-nowrap pz:leading-[1.4] pz:text-muted-foreground"
                       style={{ fontSize: 12 / zoom, top: -22 / zoom }}
                     >
-                      <span className={working(board.id) ? "pz-shimmer" : undefined}>
+                      <span
+                        className={`pz:min-w-0 pz:truncate ${working(board.id) ? "pz-shimmer" : ""}`}
+                      >
                         {board.name}
                       </span>
                       {working(board.id) && (
-                        <span className="pz:ml-auto pz:inline-grid pz:place-items-center">
+                        <span className="pz:ml-auto pz:inline-grid pz:shrink-0 pz:place-items-center">
                           <AgentMark client="claude" size={12 / zoom} />
                         </span>
                       )}
