@@ -27,13 +27,13 @@ function scheme(
   asked?: "light" | "dark",
 ): { colorScheme?: "light" | "dark"; line?: string } {
   if (!isThemed(tokens, ab.root)) return { colorScheme: asked };
-  const colorScheme = asked ?? ws.theme;
-  const shown = colorScheme ?? "light";
-  const other = shown === "dark" ? "light" : "dark";
+  // Always one or the other, so media queries don't follow wherever the renderer runs.
+  const colorScheme = asked ?? ws.theme ?? "light";
+  const other = colorScheme === "dark" ? "light" : "dark";
   const whose = asked ? "" : ws.theme ? ", the theme the person's canvas is in" : "";
   return {
     colorScheme,
-    line: `Shown in ${shown}${whose}. Lint checks colors in ${other} too; pass colorScheme: "${other}" to see it.`,
+    line: `Shown in ${colorScheme}${whose}. Lint checks colors in ${other} too; pass colorScheme: "${other}" to see it.`,
   };
 }
 
@@ -282,7 +282,7 @@ export const seeTools = [
       const path =
         args.path ??
         (root
-          ? `${root}/exports/${slug(ab.name)}${ab.id === args.id ? "" : `-${args.id}`}${theme.line ? `-${theme.colorScheme ?? "light"}` : ""}.${ext}`
+          ? `${root}/exports/${slug(ab.name)}${ab.id === args.id ? "" : `-${args.id}`}${theme.line ? `-${theme.colorScheme}` : ""}.${ext}`
           : null);
       if (!path) throw new ToolError("This design isn't on disk; pass an absolute path.");
       const { mkdir, writeFile } = await import("node:fs/promises");
@@ -290,7 +290,7 @@ export const seeTools = [
       await mkdir(dirname(path), { recursive: true });
       await writeFile(path, out.bytes);
       return {
-        text: `Wrote ${path} (${Math.round(out.width)}×${Math.round(out.height)} at ${shownScale(args.scale ?? 2, out.scale)}${theme.line ? `, ${theme.colorScheme ?? "light"}` : ""}, ${Math.round(out.bytes.length / 1024)} KB).`,
+        text: `Wrote ${path} (${Math.round(out.width)}×${Math.round(out.height)} at ${shownScale(args.scale ?? 2, out.scale)}${theme.line ? `, ${theme.colorScheme}` : ""}, ${Math.round(out.bytes.length / 1024)} KB).`,
       };
     },
   }),

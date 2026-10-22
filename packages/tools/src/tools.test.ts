@@ -363,7 +363,7 @@ test("renders default to the person's theme and say so when the design has one",
   // Without a canvas open, light, as before.
   ws.theme = undefined;
   const none = await call("screenshot", { id: "ab_hero" });
-  expect(scheme()).toBeUndefined();
+  expect(scheme()).toBe("light");
   expect(none.text).toContain("Shown in light.");
   expect((await call("get_basic_info", {})).text).not.toContain("canvas is in");
 

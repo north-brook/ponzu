@@ -43,6 +43,17 @@ ${fonts}
 </head><body>${body}</body></html>`;
 }
 
+/**
+ * CSS with every prefers-color-scheme condition decided for `scheme`, for a
+ * place that can't change the media preference itself, like a shadow root
+ * on a page in the other theme.
+ */
+export function pinColorScheme(css: string, scheme: "light" | "dark"): string {
+  return css.replace(/\(\s*prefers-color-scheme\s*:\s*(light|dark)\s*\)/gi, (_, s: string) =>
+    s.toLowerCase() === scheme ? "(min-width: 0px)" : "(not (min-width: 0px))",
+  );
+}
+
 export function resolveAsset(url: string, base?: string): string {
   if (!base) return url;
   if (/^(https?:|data:|blob:|#|\/\/)/i.test(url)) return url;

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { parseArtboardFile } from "@ponzu/core";
-import { artboardPage, styleText } from "./document.ts";
+import { artboardPage, pinColorScheme, styleText } from "./document.ts";
 import { fontFamilies, googleFontLinks, googleFontRequest, googleFonts } from "./fonts.ts";
 
 test("finds families in font-family, the font shorthand and tokens", () => {
@@ -83,4 +83,18 @@ test("tokens can't end their <style> and run as markup", () => {
   expect(page.match(/<\/style/gi)).toHaveLength(2);
   expect(page).toContain("<\\/STYLE><img");
   expect(styleText(`a::after { content: "</style>" }`)).toBe(`a::after { content: "<\\/style>" }`);
+});
+
+test("pinning a scheme decides every prefers-color-scheme condition", () => {
+  const css = `@media (prefers-color-scheme: dark) { :root { --bg: #000 } }
+@media screen and (PREFERS-COLOR-SCHEME:light) { :root { --bg: #fff } }`;
+  const dark = pinColorScheme(css, "dark");
+  expect(dark).toContain("@media (min-width: 0px) { :root { --bg: #000 } }");
+  expect(dark).toContain("@media screen and (not (min-width: 0px))");
+  expect(pinColorScheme(css, "light")).toContain(
+    "@media (not (min-width: 0px)) { :root { --bg: #000 } }",
+  );
+  expect(pinColorScheme(":root { --bg: light-dark(#fff, #000) }", "dark")).toBe(
+    ":root { --bg: light-dark(#fff, #000) }",
+  );
 });
