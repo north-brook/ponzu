@@ -1,0 +1,42 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Funnel+Display:wght@300..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap");
+
+:root {
+  /* Yuzu: the brand's one color. Fills, the mark, the agent. Never text on light. */
+  --yuzu: #ffc81e;
+  /* Ink: text, the mark on light, dark grounds. */
+  --ink: #111110;
+  /* Paper: the white page. */
+  --paper: #ffffff;
+  /* Rice: the warm off-white of the canvas and the site's tiles. */
+  --rice: #f4f3ef;
+  /* Pith: pale yuzu, behind an agent's avatar in a thread. */
+  --pith: #fff4d1;
+  /* Rind: yuzu's own text color, for yellow-family words on light. */
+  --rind: #7a4f00;
+  /* Soy: the dark stage yuzu sits on (the site's demo in dark mode). */
+  --soy: #1d1a13;
+
+  /* Warm neutrals: every grey leans a little toward yuzu. */
+  --n-50: #faf9f6;
+  --n-100: #f4f3ef;
+  --n-200: #e8e6e0;
+  --n-300: #d3d0c8;
+  --n-400: #a9a59b;
+  --n-500: #807c73;
+  --n-600: #5e5b54;
+  --n-700: #3f3d39;
+  --n-800: #262523;
+  --n-900: #161615;
+  --night: #0e0e0d;
+
+  /* Type: Inter for UI, Funnel Display for display and the wordmark, IBM Plex Mono for code. */
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-display: "Funnel Display", "Inter", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --turn: 600ms;
+  --beat: 1.2s;
+  --lap: 9.6s;
+}
