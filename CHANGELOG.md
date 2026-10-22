@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.30.0](https://github.com/north-brook/ponzu/compare/v1.29.0...v1.30.0) (2026-10-22)
+
+
+### Features
+
+* sync the home screen live across the person's macs ([#126](https://github.com/north-brook/ponzu/issues/126)) ([ae249b6](https://github.com/north-brook/ponzu/commit/ae249b64162ccef9af9c3faacde7df684474d7e4))
+
 ## [1.29.0](https://github.com/north-brook/ponzu/compare/v1.28.0...v1.29.0) (2026-10-22)
 
 
