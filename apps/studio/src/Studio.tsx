@@ -545,12 +545,12 @@ function useTabDrag(tabs: string[], setTabs: (tabs: string[]) => void) {
 
 /**
  * The agents with you in this file: full color while working, half while
- * collaborating (waiting on your comments). Agents that are connected but
+ * iterating (watching for your comments). Agents that are connected but
  * idle, or busy in another file, don't show.
  */
 function ActiveAgents({ source }: { source: SocketSource }) {
   const { presence, path, doc } = useSource(source);
-  // A collaborate loop counts as active for a while after each wait; re-check as time passes.
+  // An iterate loop counts as active for a while after each wait; re-check as time passes.
   const now = useNow(15_000);
   const agents = presence
     .map((p) => ({ p, activity: agentActivity(p, path, now) }))
@@ -564,7 +564,7 @@ function ActiveAgents({ source }: { source: SocketSource }) {
             <span
               className={cn(
                 "app-no-drag grid size-6 cursor-default place-items-center rounded-md transition-opacity duration-200 hover:bg-accent",
-                activity === "collaborating" && "opacity-50",
+                activity === "iterating" && "opacity-50",
               )}
             >
               <AgentMark client={p.client} size={16} />
@@ -624,7 +624,7 @@ function SessionCard({
           <span className="truncate text-muted-foreground text-xs">
             {activity === "working"
               ? `Working${p.status ? ` · ${p.status}` : ""}`
-              : "Collaborating · waiting for your comments"}
+              : "Iterating · watching for your comments"}
           </span>
         </div>
       </div>

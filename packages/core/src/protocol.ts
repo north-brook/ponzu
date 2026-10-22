@@ -19,7 +19,7 @@ export interface Presence {
   file?: string;
   /** Waiting in wait_for_activity right now. */
   listening?: boolean;
-  /** When it last came back from wait_for_activity, to tell a collaborate loop from one look. */
+  /** When it last came back from wait_for_activity, to tell an iterate loop from one look. */
   listenedAt?: number;
   /** Where the session comes from, for the studio's hover card. */
   origin?: PresenceOrigin;
