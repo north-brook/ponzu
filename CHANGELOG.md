@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.35.0](https://github.com/north-brook/ponzu/compare/v1.34.1...v1.35.0) (2026-10-22)
+
+
+### Features
+
+* rename the collaborate loop to iterate and start it by default ([#142](https://github.com/north-brook/ponzu/issues/142)) ([f4b5086](https://github.com/north-brook/ponzu/commit/f4b5086634c2cc95cea74ebe85be414dbe165462))
+
 ## [1.34.1](https://github.com/north-brook/ponzu/compare/v1.34.0...v1.34.1) (2026-10-22)
 
 
