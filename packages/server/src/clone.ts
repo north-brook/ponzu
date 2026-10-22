@@ -3,7 +3,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
-import { parseOpenTarget, parseTarget, type Target } from "@ponzu/core/github";
+import { parseOpenTarget, parseTarget, retarget, type Target } from "@ponzu/core/github";
 
 /*
  * A design on GitHub, on this machine: clone its repo into ~/Ponzu/<owner>/<repo> (or fetch the
@@ -79,6 +79,7 @@ export async function cloneTarget(target: Target, git: Git, root = clonesDir()):
     if ((await git(["clone", "--", url, clone])) !== 0)
       throw new Error(`Couldn't clone ${url}. Is the repo public, and is git installed?`);
   }
+  target = await settleRef(target, clone, git);
   // `--` after the ref: it's a revision, never a path, and parseTarget refuses a leading dash.
   if (target.ref && (await git(["checkout", "--quiet", target.ref, "--"], clone)) !== 0)
     throw new Error(`Couldn't check out ${target.ref} in ${clone}.`);
@@ -107,6 +108,22 @@ export async function openFromGitHub(
       `ponzu open takes a design on GitHub, like north-brook/ponzu/examples/kettle.design${input ? `, not "${input}"` : ""}.`,
     );
   return cloneTarget(target, git, root);
+}
+
+/**
+ * A github.com link writes a branch's slashes as slashes, so `tree/feature/x/a.design` may name
+ * branch `feature/x`. Now that the clone has the repo's refs, take the longest reading that is
+ * one: a remote branch, a tag or a commit.
+ */
+async function settleRef(target: Target, clone: string, git: Git): Promise<Target> {
+  for (let n = target.refTail?.length ?? 0; n > 0; n--) {
+    const longer = retarget(target, n);
+    if (!longer?.ref) continue;
+    for (const rev of [`refs/remotes/origin/${longer.ref}`, `refs/tags/${longer.ref}`])
+      if ((await git(["rev-parse", "--quiet", "--verify", `${rev}^{commit}`], clone)) === 0)
+        return longer;
+  }
+  return target;
 }
 
 /** Whether `path` is `dir` or under it. */

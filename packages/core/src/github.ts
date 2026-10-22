@@ -15,6 +15,11 @@ export interface Repo {
   repo: string;
   /** A branch, tag or commit as written in the path. Absent means the default branch. */
   ref?: string;
+  /**
+   * From a github.com link, the segments after the ref's first one. The ref may run into them
+   * (`tree/feature/x/a.design`), which only the repo can settle: see `retarget`.
+   */
+  refTail?: string[];
 }
 
 export type Target =
@@ -122,12 +127,32 @@ export function parseOpenTarget(input: string): Target | null {
       if (!owner || !repo) return null;
       const name = repo.replace(/\.git$/, "");
       if (!kind) segments = [owner, name];
-      else if ((kind === "tree" || kind === "blob") && ref)
+      else if ((kind === "tree" || kind === "blob") && ref) {
         segments = [owner, `${name}@${ref}`, ...rest];
-      else return null;
+        // GitHub writes a slash in a branch as a slash, so `tree/feature/x/a.design` could be
+        // branch `feature/x`. Only the repo can say; keep the rest for whoever can ask it.
+        const target = parseTarget(segments);
+        return target && rest.length ? { ...target, refTail: rest.map(decode) } : target;
+      } else return null;
     } else return null;
   } else {
     segments = raw.split("/").filter(Boolean);
   }
   return parseTarget(segments);
+}
+
+/**
+ * The same link with the ref running `n` segments further into the path: `tree/feature/x/a.design`
+ * with n = 1 is ref `feature/x` and path `a.design`. Null when that isn't a valid target.
+ */
+export function retarget(target: Target, n: number): Target | null {
+  const tail = target.refTail ?? [];
+  if (!target.ref || n < 1 || n > tail.length) return null;
+  const ref = [target.ref, ...tail.slice(0, n)].join("/");
+  const next = parseTarget([
+    target.owner,
+    `${target.repo}@${encodeURIComponent(ref)}`,
+    ...tail.slice(n).map(encodeURIComponent),
+  ]);
+  return next ? { ...next, refTail: tail.slice(n) } : null;
 }

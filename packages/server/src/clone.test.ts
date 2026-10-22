@@ -126,3 +126,20 @@ test("a design that links out of its clone isn't opened", async () => {
   await expect(cloneTarget(target, git, root)).rejects.toThrow("points outside");
   await rm(outside, { recursive: true, force: true });
 });
+
+test("a github.com link to a branch with a slash opens the design on that branch", async () => {
+  const clone = join(root, "o", "r");
+  await mkdir(join(clone, ".git"), { recursive: true });
+  await mkdir(join(clone, "a.design"), { recursive: true });
+  const calls: string[][] = [];
+  const git: Git = async (args) => {
+    calls.push(args);
+    // The repo has branch feature/x, and no branch or tag named feature.
+    if (args[0] === "rev-parse")
+      return args.at(-1) === "refs/remotes/origin/feature/x^{commit}" ? 0 : 1;
+    return 0;
+  };
+  const opened = await openFromGitHub("https://github.com/o/r/tree/feature/x/a.design", git, root);
+  expect(opened.target).toMatchObject({ ref: "feature/x", path: "a.design" });
+  expect(calls).toContainEqual(["checkout", "--quiet", "feature/x", "--"]);
+});

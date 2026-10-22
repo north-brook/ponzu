@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { parseOpenTarget, targetPath } from "./github.ts";
+import { parseOpenTarget, retarget, targetPath } from "./github.ts";
 
 test("ponzu open takes the viewer's own path", () => {
   expect(parseOpenTarget("north-brook/ponzu/examples/kettle.design")).toEqual({
@@ -37,6 +37,7 @@ test("ponzu open takes a ponzu.design or github.com link", () => {
     ref: "main",
     path: "examples/kettle.design",
     extra: false,
+    refTail: ["examples", "kettle.design"],
   });
   // A file inside the design opens the design.
   expect(
@@ -70,4 +71,17 @@ test("a target's path is safe to paste into a shell", () => {
     ref: "x;curl$IFS`id`|sh",
     path: "it's (v2);id.design",
   });
+});
+
+test("a github.com link's ref can run into its path", () => {
+  const link = parseOpenTarget("https://github.com/o/r/tree/feature/x/a.design")!;
+  // Read at face value first: branch "feature", design "x/a.design".
+  expect(link).toMatchObject({ ref: "feature", path: "x/a.design" });
+  // Until the repo says branch "feature/x" exists.
+  expect(retarget(link, 1)).toMatchObject({ kind: "design", ref: "feature/x", path: "a.design" });
+  // Running into the design's own name leaves a folder of the repo to list.
+  expect(retarget(link, 2)).toMatchObject({ kind: "repo", ref: "feature/x/a.design", prefix: "" });
+  expect(retarget(link, 3)).toBeNull();
+  // A ponzu.design link encodes the slash, so its ref never runs on.
+  expect(parseOpenTarget("ponzu.design/gh/o/r@feature%2Fx/a.design")?.refTail).toBeUndefined();
 });

@@ -18,29 +18,57 @@ type Loaded = { board: Artboard; tokens: string };
 /** Each card's files, kept for the visit: the commit in the URL means they never change. */
 const cache = new Map<string, Promise<Loaded | null>>();
 
+/** A board's position sits on its opening `<section>` tag, well inside its first kilobyte. */
+const HEAD_BYTES = 1024;
+
+/** Its canvas position, from the head of the file; null when the head doesn't say. */
+function position(head: string): { x: number; y: number } | null {
+  const tag = /<section\b[^>]*>/i.exec(head)?.[0];
+  if (!tag) return null;
+  const num = (name: string) => Number(new RegExp(`\\b${name}="(-?[\\d.]+)"`).exec(tag)?.[1]);
+  const x = num("data-x");
+  const y = num("data-y");
+  return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+}
+
 function load(thumb: NonNullable<ListedDesign["thumb"]>): Promise<Loaded | null> {
   const key = `${thumb.base}:${thumb.boards.join(",")}`;
   let hit = cache.get(key);
   if (!hit) {
-    const get = (path: string) =>
-      fetch(`${thumb.base}/${path.split("/").map(encodeURIComponent).join("/")}`).then((r) =>
+    const url = (path: string) =>
+      `${thumb.base}/${path.split("/").map(encodeURIComponent).join("/")}`;
+    const get = (path: string, init?: RequestInit) =>
+      fetch(url(path), init).then((r) =>
         r.ok ? r.text() : Promise.reject(new Error(String(r.status))),
       );
+    // Find the top-left board from each file's head (raw GitHub answers ranges), so a page of
+    // many boards costs a kilobyte each, then read only that one in full.
+    const pick =
+      thumb.boards.length === 1
+        ? Promise.resolve(thumb.boards[0]!)
+        : Promise.all(
+            thumb.boards.map((b) =>
+              get(b, { headers: { range: `bytes=0-${HEAD_BYTES - 1}` } })
+                .then(position)
+                .catch(() => null),
+            ),
+          ).then((spots) => {
+            const at = spots
+              .map((p, i) => ({ p, i }))
+              .filter((s): s is { p: { x: number; y: number }; i: number } => s.p !== null)
+              .sort((a, b) => a.p.y - b.p.y || a.p.x - b.p.x)[0];
+            return thumb.boards[at?.i ?? 0]!;
+          });
     hit = Promise.all([
-      Promise.all(thumb.boards.map((b) => get(b).catch(() => null))),
+      pick.then((path) => get(path).then((html) => ({ path, html }))),
       thumb.tokens ? get("tokens.css").catch(() => "") : "",
     ])
-      .then(([files, tokens]) => {
-        const boards = files.flatMap((html, i) => {
-          if (html === null) return [];
-          const name = thumb.boards[i]!.split("/")
-            .pop()!
-            .replace(/\.html$/, "");
-          return [parseArtboardFile(html, { id: `ab_thumb${i}`, name }).artboard];
-        });
-        // The one that sits top-left on the canvas: highest first, then leftmost.
-        const board = boards.sort((a, b) => a.y - b.y || a.x - b.x)[0];
-        return board ? { board, tokens } : null;
+      .then(([{ path, html }, tokens]) => {
+        const name = path
+          .split("/")
+          .pop()!
+          .replace(/\.html$/, "");
+        return { board: parseArtboardFile(html, { id: "ab_thumb", name }).artboard, tokens };
       })
       .catch(() => null);
     cache.set(key, hit);

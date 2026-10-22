@@ -109,17 +109,15 @@ export function findDesigns(tree: TreeEntry[], prefix = ""): FoundDesign[] {
   return designs;
 }
 
-/** Most boards a card reads to find the first page's top-left one. */
-const PAGE_BOARDS = 8;
-
 /**
  * The artboard files of the page a card shows: the first page with any, pages in design.json's
  * order (its folders are slugs of their names) and then the rest, as `readBag` orders them. The
- * card draws whichever sits top-left on the canvas, which only the files say.
+ * card draws whichever sits top-left on the canvas, which only the files say (thumb.tsx reads
+ * just the head of each to find it).
  */
 export function firstPageBoards(boards: string[], pageSlugs: string[] = []): string[] {
   const folder = (b: string) => b.split("/")[1]!;
   const slug =
     pageSlugs.find((s) => boards.some((b) => folder(b) === s)) ?? (boards[0] && folder(boards[0]));
-  return slug ? boards.filter((b) => folder(b) === slug).slice(0, PAGE_BOARDS) : [];
+  return slug ? boards.filter((b) => folder(b) === slug) : [];
 }
