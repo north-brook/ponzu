@@ -65,6 +65,17 @@ test("a long write lands in about a second, and the next joins the end of its st
     expect(starts.get(id)!).toBeLessThanOrEqual(100 + latest);
 });
 
+test("a write joining a stagger in flight keeps its pace: the beat is never paid twice", () => {
+  const ids = [el("n_a"), el("n_b")];
+  const d = doc(el("ab", ids));
+  const a = new Arrivals();
+  a.add({ op: "insert", parent: "ab", index: 0, nodes: [ids[0]!] }, d, 0);
+  a.add({ op: "insert", parent: "ab", index: 1, nodes: [ids[1]!] }, d, 10);
+  const starts = (a as unknown as { pieces: Map<string, number> }).pieces;
+  expect(starts.get("n_a")).toBe(ARRIVE_LAG_MS);
+  expect(starts.get("n_b")! - starts.get("n_a")!).toBe(ARRIVE_STAGGER_MS);
+});
+
 test("a board made inside a nested batch settles in; one never shown is forgotten", () => {
   const a = new Arrivals();
   const board = {

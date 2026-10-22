@@ -112,12 +112,13 @@ export class Arrivals {
     this.prune(now);
     for (const id of createdBoards(op)) this.boards.set(id, now);
     const ids = outermost(doc, arrivals(op)).filter((id) => !this.pieces.has(id));
-    // A write that lands while the last is still arriving joins the end of its stagger, but every
-    // piece starts within ten staggers of now: a long write still lands in about a second.
-    let last = now;
-    for (const start of this.pieces.values()) last = Math.max(last, start + ARRIVE_STAGGER_MS);
+    // The first piece shows a beat after the write lands, or one stagger after whatever is still
+    // arriving, whichever is later: the beat is a floor, never paid twice. Every piece starts
+    // within ten staggers of that beat, so a long write still lands in about a second.
+    let first = now + ARRIVE_LAG_MS;
+    for (const start of this.pieces.values()) first = Math.max(first, start + ARRIVE_STAGGER_MS);
     const latest = now + arriveDelay(ARRIVE_MAX_STAGGER);
-    ids.forEach((id, i) => this.pieces.set(id, Math.min(latest, last + arriveDelay(i))));
+    ids.forEach((id, i) => this.pieces.set(id, Math.min(latest, first + i * ARRIVE_STAGGER_MS)));
   }
 
   /** Whether this artboard is new from an agent, so its sheet settles in. Asked once, on mount. */
