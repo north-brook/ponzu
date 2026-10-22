@@ -5,6 +5,7 @@ import type { CatalogAgent, ClientMessage, Origin, ServerMessage } from "@ponzu/
 import { createHttpHandler } from "@ponzu/mcp";
 import { FsAdapter } from "@ponzu/store/fs";
 import type { Server, ServerWebSocket, WebSocketHandler } from "bun";
+import { CatalogFeed, type Scope } from "./feed.ts";
 import { Home, type OpenedBy } from "./home.ts";
 import { isTailnetAddress } from "./tailnet.ts";
 import type { LocalWorkspace } from "./workspace.ts";
@@ -56,6 +57,8 @@ interface SocketData {
   watch?: boolean;
   /** Set when this socket relays to a design on another Mac. */
   relay?: { url: string; upstream?: WebSocket; queue: string[] };
+  /** Set when this socket is a catalog stream: this Mac's home screen, or another Mac's server. */
+  feed?: { scope: Scope; peerIp?: string; stop?: () => void; closed?: boolean };
 }
 
 const MIME: Record<string, string> = {
@@ -131,6 +134,7 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
     peerPort: opts.tailnetPort ?? 7777,
     opened: opts.opened,
   });
+  const feed = new CatalogFeed(home, ws);
 
   /**
    * Every request, from this Mac or over the tailnet. `caller` says which:
@@ -195,6 +199,18 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
       return new Response("Upgrade failed", { status: 400 });
     }
 
+    // The catalog as it changes. Another Mac gets this Mac's designs alone.
+    if (path === "/api/catalog/stream") {
+      if (caller === "local" && !sameHostOk(req, url))
+        return new Response("Forbidden", { status: 403 });
+      const scope: Scope =
+        caller === "peer" || url.searchParams.get("scope") === "local" ? "local" : "full";
+      const peerIp = caller === "peer" ? srv.requestIP(req)?.address : undefined;
+      const data: SocketData = { key: "", clientId: crypto.randomUUID(), feed: { scope, peerIp } };
+      if (srv.upgrade(req, { data })) return;
+      return new Response("Upgrade failed", { status: 400 });
+    }
+
     if (path === "/api/catalog") {
       if (caller === "peer" || url.searchParams.get("scope") === "local")
         return Response.json(await home.local());
@@ -216,6 +232,7 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
       if (body.action === "archive") home.catalog.archive(body.key);
       else if (body.action === "restore") home.catalog.restore(body.key);
       else home.catalog.shelve(body.key, body.action === "scratch" ? "scratch" : "recent");
+      feed.poke(0);
       return Response.json({ ok: true });
     }
 
@@ -246,6 +263,7 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
           body.path,
           body.by === "person" ? "person" : "agent",
         );
+        feed.poke(0);
         return Response.json({ key, name: design.doc.name });
       }
       const open = ws.designs().map(({ key, design }) => ({
@@ -307,6 +325,7 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
 
   const websocket: WebSocketHandler<SocketData> = {
     open(s) {
+      if (s.data.feed) return openFeed(s);
       sockets.add(s);
       if (s.data.relay) return openRelay(s);
       if (!s.data.watch) {
@@ -326,10 +345,16 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
       });
     },
     close(s) {
+      if (s.data.feed) {
+        s.data.feed.closed = true;
+        s.data.feed.stop?.();
+        return;
+      }
       sockets.delete(s);
       s.data.relay?.upstream?.close();
     },
     message(s, raw) {
+      if (s.data.feed) return;
       const relayed = s.data.relay;
       if (relayed) {
         const text = String(raw);
@@ -368,6 +393,22 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
         send(s, { t: "reset", doc: design.doc, seq: design.seq });
       }
     },
+  };
+
+  /** Send a catalog stream the catalog, then each change, until it closes. */
+  const openFeed = (s: ServerWebSocket<SocketData>) => {
+    const f = s.data.feed!;
+    void feed
+      .subscribe({
+        scope: f.scope,
+        peerIp: f.peerIp,
+        send: (text) => s.send(text),
+        close: () => s.close(),
+      })
+      .then((stop) => {
+        if (f.closed) stop();
+        else f.stop = stop;
+      });
   };
 
   /** Pipe a studio socket to the same design's socket on another Mac. */
@@ -435,23 +476,25 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
       // The address went away, or the port is taken there. Tried again on the next check.
     }
   };
+  let timer: ReturnType<typeof setInterval> | undefined;
   if (opts.tailnet) {
     void listenOnTailnet();
-    const timer = setInterval(() => void listenOnTailnet(), 60_000);
+    timer = setInterval(() => void listenOnTailnet(), 60_000);
     timer.unref?.();
-    const stop = server.stop.bind(server);
-    server.stop = (force?: boolean) => {
-      clearInterval(timer);
-      tailnetServer?.stop(force);
-      return stop(force);
-    };
   }
+  const stop = server.stop.bind(server);
+  server.stop = (force?: boolean) => {
+    clearInterval(timer);
+    feed.stop();
+    tailnetServer?.stop(force);
+    return stop(force);
+  };
 
   return server;
 }
 
 /**
- * What another Mac may ask for: the catalog, previews, thumbnails, a design's
+ * What another Mac may ask for: the catalog and its stream, previews, thumbnails, a design's
  * socket and its assets. Not MCP, uploads or the studio, and nothing from a
  * browser page: only another Ponzu server sends these, without an Origin.
  */
@@ -460,8 +503,14 @@ function peerAllowed(req: Request, pathname: string): boolean {
   if (pathname === "/api/shelf") return req.method === "POST";
   if (req.method !== "GET") return false;
   return (
-    ["/api/catalog", "/api/preview", "/api/thumb", "/api/info", "/ws"].includes(pathname) ||
-    /^\/files\/[^/]+\/assets\/.+$/.test(pathname)
+    [
+      "/api/catalog",
+      "/api/catalog/stream",
+      "/api/preview",
+      "/api/thumb",
+      "/api/info",
+      "/ws",
+    ].includes(pathname) || /^\/files\/[^/]+\/assets\/.+$/.test(pathname)
   );
 }
 

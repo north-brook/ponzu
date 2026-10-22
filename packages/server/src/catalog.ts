@@ -7,6 +7,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import {
   type CatalogArtboard,
   type CatalogFile,
+  type CatalogFileAgent,
   type CatalogGit,
   type CatalogShelf,
   type Doc,
@@ -18,7 +19,7 @@ import { PREVIEW_FILE, PREVIEW_VERSION, previewCurrent } from "./preview.ts";
 
 /** How often designs are looked for in the background. */
 const DISCOVER_EVERY = 30_000;
-/** How long a design's last-edit time stays fresh: the home screen polls. */
+/** How long a design's last-edit time stays fresh: the catalog feed lists every few seconds. */
 const EDIT_TTL = 3_000;
 /** How long a design's git checkout and branch stay fresh. */
 const GIT_TTL = 10_000;
@@ -793,7 +794,7 @@ function slug(name: string): string {
  */
 export function catalogFile(
   s: CatalogSummary,
-  opts: { busy?: string; created?: number },
+  opts: { busy?: string; agents?: CatalogFileAgent[]; created?: number },
 ): CatalogFile {
   const enc = encodeURIComponent(s.key);
   const v = Math.round(Math.max(s.previewAt ?? 0, s.modified));
@@ -808,6 +809,7 @@ export function catalogFile(
     preview: s.locked ? null : `/api/preview?file=${enc}&v=${PREVIEW_VERSION}-${v}`,
     ...(s.locked ? { locked: true } : {}),
     ...(opts.busy ? { busy: opts.busy } : {}),
+    ...(opts.agents?.length ? { agents: opts.agents } : {}),
     ...(opts.created ? { created: opts.created } : {}),
     ...(s.git ? { git: s.git } : {}),
     shelf: s.shelf,

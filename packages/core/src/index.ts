@@ -1,3 +1,4 @@
+export * from "./activity.ts";
 export * from "./catalog.ts";
 export * from "./css.ts";
 export * from "./doc.ts";

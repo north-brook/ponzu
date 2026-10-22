@@ -35,6 +35,7 @@ import { FileDetails, fileOf } from "@/components/file-info";
 import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { WhatsNew } from "@/components/whats-new";
+import { watchCatalog } from "@/lib/catalog";
 import { cn } from "@/lib/utils";
 
 /** Where `ponzu serve` lives. Same origin in production; the dev server proxies. */
@@ -108,22 +109,9 @@ export function Studio() {
     return s;
   };
 
-  // The home screen's catalog. Polled the whole time, slower away from home, so a design an
-  // agent creates opens in a tab whichever screen is showing.
-  useEffect(() => {
-    let stop = false;
-    const refresh = () =>
-      fetch(`${ORIGIN}/api/catalog`)
-        .then((r) => r.json())
-        .then((c: Catalog) => !stop && setCatalog(c))
-        .catch(() => {});
-    void refresh();
-    const t = setInterval(refresh, active ? 6000 : 3000);
-    return () => {
-      stop = true;
-      clearInterval(t);
-    };
-  }, [active]);
+  // The home screen's catalog, pushed as it changes, here and on the person's other Macs, so a
+  // design an agent creates opens in a tab whichever screen is showing.
+  useEffect(() => watchCatalog(ORIGIN, setCatalog), []);
 
   // A design an agent creates opens in a tab as soon as it exists, once. Not one it made
   // for its own use: scratch stays out of the way.
@@ -150,7 +138,7 @@ export function Studio() {
   }, [tabs, active]);
 
   // Archive, restore or move between Recent and Scratch, on the Mac the design is on: its
-  // server relays to another Mac's. The catalog shows it on the next poll, or now.
+  // server relays to another Mac's. Shown now; the stream confirms it.
   const shelve = async (file: CatalogFile, action: ShelfAction) => {
     const res = await fetch(`${ORIGIN}${file.base}/api/shelf`, {
       method: "POST",

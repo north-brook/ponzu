@@ -1,6 +1,7 @@
 /**
  * What the home screen shows: every .design on this Mac and on the person's
- * other Macs in their tailnet, newest edit first. `GET /api/catalog`.
+ * other Macs in their tailnet, newest edit first. `GET /api/catalog`, or as it
+ * changes from `/api/catalog/stream` (see CatalogMessage).
  */
 export interface Catalog {
   machines: CatalogMachine[];
@@ -45,6 +46,8 @@ export interface CatalogFile {
   locked?: boolean;
   /** The agent editing it right now (its client: claude, openai, …). */
   busy?: string;
+  /** The agents in it now, working or collaborating. Missing from Macs on older versions. */
+  agents?: CatalogFileAgent[];
   /** When an agent created it, if that happened since this server started. */
   created?: number;
   /** The git checkout it's in, if any. Not read for a locked design. */
@@ -137,4 +140,57 @@ export function foldCopies(files: CatalogFile[]): CatalogCard[] {
     if (key) by.set(key, fresh);
   }
   return cards;
+}
+
+/** An agent in a design, as its card shows it. */
+export interface CatalogFileAgent {
+  /** The agent's session. */
+  id: string;
+  name: string;
+  /** Its product, for the icon: claude, openai, … */
+  client?: string;
+  /** What it said it's doing, from set_status. */
+  status?: string;
+  activity: "working" | "collaborating";
+}
+
+/**
+ * `/api/catalog/stream`, a WebSocket: the catalog as it changes. A snapshot on
+ * connecting, then a patch per change. `?scope=local`, and every other Mac,
+ * gets this Mac's designs alone. A ping every few seconds says it's alive.
+ */
+export type CatalogMessage =
+  | { t: "snapshot"; catalog: Catalog }
+  | { t: "patch"; patch: CatalogPatch }
+  | { t: "ping" };
+
+/** What changed in a catalog. Only what's here changed. */
+export interface CatalogPatch {
+  /** Files new or changed, whole. */
+  put?: CatalogFile[];
+  /** Ids of files gone. */
+  drop?: string[];
+  /** Every machine, when the list changed. */
+  machines?: CatalogMachine[];
+  agents?: CatalogAgent[];
+  agent?: Catalog["agent"];
+}
+
+/** The catalog after a patch, newest edit first. */
+export function applyCatalogPatch(catalog: Catalog, patch: CatalogPatch): Catalog {
+  const files = new Map(catalog.files.map((f) => [f.id, f]));
+  for (const id of patch.drop ?? []) files.delete(id);
+  for (const f of patch.put ?? []) files.set(f.id, f);
+  return {
+    ...catalog,
+    files: patch.put?.length || patch.drop?.length ? sortFiles([...files.values()]) : catalog.files,
+    ...(patch.machines ? { machines: patch.machines } : {}),
+    ...(patch.agents ? { agents: patch.agents } : {}),
+    ...(patch.agent ? { agent: patch.agent } : {}),
+  };
+}
+
+/** Newest edit first. */
+export function sortFiles(files: CatalogFile[]): CatalogFile[] {
+  return files.sort((a, b) => b.modified - a.modified);
 }

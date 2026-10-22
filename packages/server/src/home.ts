@@ -3,12 +3,15 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   type Artboard,
+  agentActivity,
   type Catalog,
   type CatalogAgent,
   type CatalogFile,
+  type CatalogFileAgent,
   type CatalogMachine,
   type Doc,
   findArtboard,
+  sortFiles,
 } from "@ponzu/core";
 import type { Renderer } from "@ponzu/render";
 import { Design } from "@ponzu/store";
@@ -150,14 +153,32 @@ export class Home {
       this.ws.designs().map(({ key, design }) => [key, design.doc]),
     );
     const busy = new Map<string, string>();
+    const agents = new Map<string, CatalogFileAgent[]>();
+    const now = Date.now();
     for (const p of this.ws.presence.list()) {
-      if (p.kind !== "agent" || !p.working.length) continue;
-      for (const { key, design } of this.ws.designs())
-        if (p.working.some((id) => findArtboard(design.doc, id)))
-          busy.set(key, p.client ?? "other");
+      if (p.kind !== "agent") continue;
+      for (const { key, design } of this.ws.designs()) {
+        const mine = p.working.some((id) => findArtboard(design.doc, id));
+        if (mine) busy.set(key, p.client ?? "other");
+        const activity = agentActivity(p, key, now);
+        if (!activity || (!mine && p.file !== key)) continue;
+        const list = agents.get(key) ?? [];
+        list.push({
+          id: p.id,
+          name: p.name,
+          ...(p.client ? { client: p.client } : {}),
+          ...(p.status ? { status: p.status } : {}),
+          activity,
+        });
+        agents.set(key, list);
+      }
     }
     const files = (await this.catalog.files(open)).map((s) =>
-      catalogFile(s, { busy: busy.get(s.key), created: this.created.get(s.key) }),
+      catalogFile(s, {
+        busy: busy.get(s.key),
+        agents: agents.get(s.key),
+        created: this.created.get(s.key),
+      }),
     );
     return { machine: { id: "local", name: "This Mac", kind: await this.kind }, files };
   }
@@ -178,12 +199,27 @@ export class Home {
       machines.push(r.machine);
       files.push(...r.files);
     }
-    files.sort((a, b) => b.modified - a.modified);
+    sortFiles(files);
     return { machines, files, agents, ...(this.agent ? { agent: this.agent } : {}) };
   }
 
+  /** The agents Ponzu can set up here, for the home screen's first steps. */
+  setupAgents(): Promise<CatalogAgent[]> {
+    return this.opts.agents?.() ?? Promise.resolve([]);
+  }
+
+  /** The agent that last called Ponzu here. */
+  lastAgent(): Catalog["agent"] {
+    return this.agent;
+  }
+
+  /** The port the owner's other Macs serve their designs on. */
+  get peerPort(): number {
+    return this.opts.peerPort;
+  }
+
   /** A peer's own designs, with every URL routed through this server's relay. */
-  private async peerCatalog(
+  async peerCatalog(
     name: string,
     ip: string,
   ): Promise<{ machine: CatalogMachine; files: CatalogFile[] } | null> {
@@ -193,18 +229,9 @@ export class Home {
       });
       if (!res.ok) return null;
       const body = (await res.json()) as { machine: CatalogMachine; files: CatalogFile[] };
-      const base = `/peers/${encodeURIComponent(name)}`;
-      const machine: CatalogMachine = { ...body.machine, id: name, name };
       return {
-        machine,
-        files: body.files.map((f) => ({
-          ...f,
-          id: `${name}:${f.key}`,
-          machine: name,
-          base,
-          preview: f.preview && `${base}${f.preview}`,
-          artboards: f.artboards.map((a) => ({ ...a, thumb: `${base}${a.thumb}` })),
-        })),
+        machine: { ...body.machine, id: name, name },
+        files: body.files.map((f) => rebase(name, f)),
       };
     } catch {
       return null;
@@ -289,6 +316,19 @@ export class Home {
     this.drawing.set(id, p as Promise<Uint8Array | null>);
     return p;
   }
+}
+
+/** A design on another Mac as this one lists it: its id and every URL under this server's relay. */
+export function rebase(machine: string, f: CatalogFile): CatalogFile {
+  const base = `/peers/${encodeURIComponent(machine)}`;
+  return {
+    ...f,
+    id: `${machine}:${f.key}`,
+    machine,
+    base,
+    preview: f.preview && `${base}${f.preview}`,
+    artboards: f.artboards.map((a) => ({ ...a, thumb: `${base}${a.thumb}` })),
+  };
 }
 
 /** Long side of a thumbnail, in CSS px. It renders at 2x. */
