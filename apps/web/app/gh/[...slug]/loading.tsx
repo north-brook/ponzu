@@ -14,7 +14,11 @@ import { folderName, parseTarget } from "../target";
  */
 
 /** Two rows of three, each a heading bar and a grid of blocks. */
-const BOARDS = [2, 3, 2, 3, 2, 3].map((cols, i) => ({ cols, i }));
+const BOARDS = [2, 3, 2, 3, 2, 3].map((cols, i) => ({
+  cols,
+  i,
+  blocks: cols === 2 ? ["wide", "narrow"] : ["a", "b", "c"],
+}));
 
 export default function Loading() {
   const slug = useParams<{ slug: string[] }>().slug;
@@ -53,7 +57,7 @@ export default function Loading() {
           Loading the design from GitHub…
         </span>
         <div className="absolute top-1/2 left-1/2 grid w-[min(1216px,calc(100vw-48px))] -translate-x-1/2 -translate-y-[55%] grid-cols-3 gap-x-8 gap-y-12 max-md:grid-cols-1 max-md:gap-y-10">
-          {BOARDS.map(({ cols, i }) => (
+          {BOARDS.map(({ cols, i, blocks }) => (
             <div
               key={i}
               className={`gv-board relative aspect-[384/230] ${i > 0 ? "max-md:hidden" : ""} ${i > 2 ? "max-lg:hidden" : ""}`}
@@ -67,8 +71,8 @@ export default function Loading() {
                   className="absolute inset-x-[18px] top-11 bottom-[18px] grid gap-2.5"
                   style={{ gridTemplateColumns: cols === 2 ? "2fr 1fr" : "1fr 1fr 1fr" }}
                 >
-                  {Array.from({ length: cols }, (_, n) => (
-                    <div key={n} className="rounded-md bg-[var(--gv-block)]" />
+                  {blocks.map((b) => (
+                    <div key={b} className="rounded-md bg-[var(--gv-block)]" />
                   ))}
                 </div>
               </div>

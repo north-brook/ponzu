@@ -1,7 +1,14 @@
 import { type Doc, slugify } from "@ponzu/core";
 import { readBag } from "@ponzu/store";
 import { cache } from "react";
-import { bagFiles, DIGEST, findDesigns, firstPageBoards, folderName, type TreeEntry } from "./target.ts";
+import {
+  bagFiles,
+  DIGEST,
+  findDesigns,
+  firstPageBoards,
+  folderName,
+  type TreeEntry,
+} from "./target.ts";
 
 /*
  * Reads a public repo's .design folders off GitHub, on the server.
