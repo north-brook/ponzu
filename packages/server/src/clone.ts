@@ -69,7 +69,8 @@ export async function cloneTarget(target: Target, git: Git, root = clonesDir()):
   // parseTarget keeps names to [A-Za-z0-9_.-] and refuses . and .., but check the result anyway.
   if (!inside(root, clone)) throw new Error(`${target.owner}/${target.repo} isn't a repo name.`);
   const url = `https://github.com/${target.owner}/${target.repo}.git`;
-  if (existsSync(join(clone, ".git"))) {
+  const reused = existsSync(join(clone, ".git"));
+  if (reused) {
     // Someone's own clone may have work in it: fetch, and switch only when asked to.
     if ((await git(["fetch", "--quiet", "origin"], clone)) !== 0)
       throw new Error(`Couldn't update ${clone} from ${url}.`);
@@ -81,6 +82,9 @@ export async function cloneTarget(target: Target, git: Git, root = clonesDir()):
   // `--` after the ref: it's a revision, never a path, and parseTarget refuses a leading dash.
   if (target.ref && (await git(["checkout", "--quiet", target.ref, "--"], clone)) !== 0)
     throw new Error(`Couldn't check out ${target.ref} in ${clone}.`);
+  // Bring a branch up to what was just fetched. Fast-forward only: a branch with work of its own
+  // stays as it is, and a tag or commit (no upstream) has nothing to follow.
+  if (reused) await git(["merge", "--quiet", "--ff-only", "@{upstream}"], clone);
   const want = target.kind === "design" ? target.path : target.prefix;
   const path = resolve(clone, want);
   if (!inside(clone, path)) throw new Error(`${want} isn't inside ${clone}.`);

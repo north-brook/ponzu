@@ -49,6 +49,8 @@ export interface FoundDesign {
   assets: number;
   /** Whether it has a design.json to read its name from. */
   meta: boolean;
+  /** Its design.json's size in bytes, from the tree; 0 when the tree doesn't say. */
+  metaBytes: number;
   /** Whether it has a tokens.css. */
   tokens: boolean;
   /** Its artboard files, `pages/<page>/<board>.html`, in the order Ponzu reads them. */
@@ -75,6 +77,7 @@ export function findDesigns(tree: TreeEntry[], prefix = ""): FoundDesign[] {
       pages: 0,
       assets: 0,
       meta: false,
+      metaBytes: 0,
       tokens: false,
       boards: [],
     });
@@ -85,8 +88,10 @@ export function findDesigns(tree: TreeEntry[], prefix = ""): FoundDesign[] {
     const d = designs.find((x) => e.path.startsWith(`${x.path}/`));
     if (!d) continue;
     const rel = e.path.slice(d.path.length + 1);
-    if (rel === "design.json") d.meta = true;
-    else if (rel === "tokens.css") d.tokens = true;
+    if (rel === "design.json") {
+      d.meta = true;
+      d.metaBytes = e.size ?? 0;
+    } else if (rel === "tokens.css") d.tokens = true;
     else if (rel.startsWith("assets/")) d.assets++;
     const page = /^pages\/([^/]+)\/[^/]+\.html$/.exec(rel)?.[1];
     if (page) {

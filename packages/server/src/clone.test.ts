@@ -51,6 +51,7 @@ test("reuses a clone, fetches, and checks out the ref", async () => {
   expect(calls.map((c) => c.args)).toEqual([
     ["fetch", "--quiet", "origin"],
     ["checkout", "--quiet", "feature/x", "--"],
+    ["merge", "--quiet", "--ff-only", "@{upstream}"],
   ]);
   expect(calls.every((c) => c.cwd === clone)).toBe(true);
 });

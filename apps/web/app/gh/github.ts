@@ -32,6 +32,8 @@ const TIMEOUT = 10_000;
 
 /** Past these, a design is too big to show here; it opens fine in Ponzu itself. */
 export const LIMITS = { files: 600, bytes: 12 * 1024 * 1024 };
+/** The largest design.json a repo index reads for a card's name. */
+const META_BYTES = 256 * 1024;
 /** Where Ponzu keeps a design's canvas preview (packages/server/src/preview.ts). */
 const PREVIEW = ".ponzu/preview.png";
 /** Designs whose design.json the listing reads for a name. */
@@ -221,11 +223,17 @@ export const loadRepo = cache(
     const tree = await getTree(repo, commit.sha);
     const found = findDesigns(tree.tree, prefix);
     const raw = `${RAW}/${repo.owner}/${repo.repo}/${commit.sha}`;
+    // A card only needs a name and its pages' order, so an oversized design.json goes unread.
+    // A transient failure (a rate limit, an outage) throws, so the listing is never cached
+    // without it; anything else falls back to the folder's name.
     const metas = await inBatches(found.slice(0, NAMED), 12, (d) =>
-      d.meta
+      d.meta && d.metaBytes <= META_BYTES
         ? text(`${raw}/${encodePath(d.path)}/design.json`)
             .then((json) => readMeta(JSON.parse(json)))
-            .catch(() => null)
+            .catch((e) => {
+              if (e instanceof ViewerError && e.transient) throw e;
+              return null;
+            })
         : null,
     );
     return {
