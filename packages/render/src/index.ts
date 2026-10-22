@@ -5,3 +5,4 @@ export * from "./motion.ts";
 export * from "./remote.ts";
 export * from "./renderer.ts";
 export * from "./stages.ts";
+export * from "./theme.ts";

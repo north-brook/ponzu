@@ -2,6 +2,7 @@ import {
   type Artboard,
   type Author,
   findArtboard,
+  isThemed,
   locate,
   newId,
   type Thread,
@@ -115,6 +116,9 @@ export function Canvas({
     [doc, working],
   );
   const opening = useDelayed(!doc || !page);
+
+  // Agents' screenshots default to how this canvas shows artboards.
+  useEffect(() => source.setTheme?.(theme), [source, theme]);
 
   const boards = page?.artboards ?? [];
   const boardHeight = (ab: Artboard) => size(ab).h ?? measured[ab.id] ?? 900;
@@ -662,7 +666,12 @@ export function Canvas({
                   )}
                   {who && <WorkingStatus who={who} zoom={camera.zoom} />}
                 </div>
-                <ArtboardView artboard={ab} tokens={doc.tokens} assetBase={source.assetBase} />
+                <ArtboardView
+                  artboard={ab}
+                  tokens={doc.tokens}
+                  assetBase={source.assetBase}
+                  colorScheme={isThemed(doc.tokens, ab.root) ? theme : "light"}
+                />
               </div>
             );
           })}

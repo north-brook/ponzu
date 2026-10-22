@@ -1,7 +1,14 @@
 import { existsSync } from "node:fs";
 import { mkdir, readdir } from "node:fs/promises";
 import { basename, isAbsolute, join, resolve } from "node:path";
-import { type Doc, findArtboard, locate, type Op, type Thread } from "@ponzu/core";
+import {
+  type ColorScheme,
+  type Doc,
+  findArtboard,
+  locate,
+  type Op,
+  type Thread,
+} from "@ponzu/core";
 import type { Renderer } from "@ponzu/render";
 import { Design, type OpEvent } from "@ponzu/store";
 import { FsAdapter } from "@ponzu/store/fs";
@@ -47,6 +54,8 @@ export class LocalWorkspace implements Workspace {
   readonly presence = new PresenceHub();
   renderer?: Renderer;
   telemetry?: Telemetry;
+  /** The appearance of the canvas the person last had open. */
+  theme?: ColorScheme;
   /** The server that serves designs' assets, once there is one, so renders can load them. */
   assetOrigin?: string;
   private entries = new Map<string, Entry>();

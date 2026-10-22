@@ -358,6 +358,8 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
         } else if (msg.t === "redo") {
           design.redo(user);
           send(s, { t: "ack", req: msg.req });
+        } else if (msg.t === "theme" && (msg.theme === "light" || msg.theme === "dark")) {
+          ws.theme = msg.theme;
         }
       } catch (err) {
         const req = "req" in msg ? msg.req : undefined;

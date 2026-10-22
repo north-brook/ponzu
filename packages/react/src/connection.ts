@@ -1,6 +1,7 @@
 import {
   applyOp,
   type ClientMessage,
+  type ColorScheme,
   type Doc,
   type Op,
   type Origin,
@@ -22,6 +23,8 @@ export interface CanvasSource {
   assetBase?: string;
   /** Upload a file into assets/, returning its relative path. */
   upload?(file: File): Promise<string>;
+  /** Tell the host how the canvas looks, so agents can see artboards that way. */
+  setTheme?(theme: ColorScheme): void;
 }
 
 export interface CanvasState {
@@ -48,6 +51,7 @@ export class SocketSource implements CanvasSource {
   private req = 0;
   private retry = 0;
   private closed = false;
+  private theme?: ColorScheme;
   readonly assetBase: string;
 
   /**
@@ -79,6 +83,7 @@ export class SocketSource implements CanvasSource {
     socket.onmessage = (e) => this.onMessage(JSON.parse(String(e.data)) as ServerMessage);
     socket.onopen = () => {
       this.retry = 0;
+      if (this.theme) this.send({ t: "theme", theme: this.theme });
     };
     socket.onclose = () => {
       if (this.closed) return;
@@ -161,6 +166,12 @@ export class SocketSource implements CanvasSource {
 
   redo() {
     this.send({ t: "redo", req: ++this.req });
+  }
+
+  setTheme(theme: ColorScheme) {
+    if (this.opts.watch || theme === this.theme) return;
+    this.theme = theme;
+    this.send({ t: "theme", theme });
   }
 
   async upload(file: File): Promise<string> {

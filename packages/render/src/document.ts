@@ -5,9 +5,11 @@ import { googleFontLinks, googleFonts } from "./fonts.ts";
  * Shared base styles for an artboard, in the canvas and in screenshots.
  * Artboards are flex columns by default and clip what overflows. Plain CSS
  * makes display: flex a row, so lint flags a root that sets it with no direction.
+ * Black on white unless the design says otherwise, in either theme: text left
+ * to the page's default would turn white in dark mode, on the white artboard.
  */
 export const ARTBOARD_BASE_CSS = `
-[data-artboard] { display: flex; flex-direction: column; position: relative; overflow: hidden; box-sizing: border-box; background: #fff; }
+[data-artboard] { display: flex; flex-direction: column; position: relative; overflow: hidden; box-sizing: border-box; background: #fff; color: #000; }
 [data-artboard] *, [data-artboard] *::before, [data-artboard] *::after { box-sizing: border-box; }
 [data-artboard] img, [data-artboard] video, [data-artboard] svg { max-width: none; }
 `;

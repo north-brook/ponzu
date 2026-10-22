@@ -1,4 +1,7 @@
 import { expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { locate, threadPage } from "@ponzu/core";
 import type { Renderer, RenderResult } from "@ponzu/render";
 import { Design, MemoryAdapter } from "@ponzu/store";
@@ -323,6 +326,58 @@ test("screenshot checks hover, focus and press ids before rendering", async () =
   expect(r.text).toBe("No node n_nope to hover in ab_hero. Ids come from get_tree.");
   expect(calls).toHaveLength(0);
   expect((await call("screenshot", { id: "ab_hero", press: "n_p" })).isError).toBeFalsy();
+});
+
+test("renders default to the person's theme and say so when the design has one", async () => {
+  const { renderer, calls } = fakeRenderer({});
+  const { call, ws, design } = await setup(3, renderer);
+  const scheme = () => (calls.at(-1) as { colorScheme?: string }).colorScheme;
+
+  // Tokens that don't change with the theme look the same on either canvas: light, and nothing to say.
+  ws.theme = "dark";
+  const plain = await call("screenshot", { id: "ab_hero" });
+  expect(scheme()).toBeUndefined();
+  expect(plain.text).not.toContain("Shown in");
+  expect((await call("get_basic_info", {})).text).toContain(
+    "These tokens don't change with the theme",
+  );
+
+  await call("set_tokens", { tokens: { "--paper": "light-dark(#fff, #111)" } });
+  const shot = await call("screenshot", { id: "ab_hero" });
+  expect(scheme()).toBe("dark");
+  expect(shot.text).toContain("Shown in dark, the theme the person's canvas is in.");
+  expect(shot.text).toContain('pass colorScheme: "light" to see it');
+  expect((await call("get_basic_info", {})).text).toContain(
+    "The person's canvas is in dark mode, so they see this design's light-dark() colors in dark.",
+  );
+  await call("screenshot", { id: "ab_hero", colorScheme: "light" });
+  expect(scheme()).toBe("light");
+
+  // Without a canvas open, light, as before.
+  ws.theme = undefined;
+  const none = await call("screenshot", { id: "ab_hero" });
+  expect(scheme()).toBeUndefined();
+  expect(none.text).toContain("Shown in light.");
+  expect((await call("get_basic_info", {})).text).not.toContain("canvas is in");
+
+  // Export takes a theme too, and names the file after it.
+  const dir = await mkdtemp(join(tmpdir(), "ponzu-export-"));
+  try {
+    const out = await call("export", {
+      id: "ab_hero",
+      colorScheme: "dark",
+      path: join(dir, "hero.png"),
+    });
+    expect(scheme()).toBe("dark");
+    expect(out.text).toContain(", dark,");
+    (design.storage as { root?: string }).root = dir;
+    ws.theme = "dark";
+    expect((await call("export", { id: "ab_hero" })).text).toContain(
+      `${dir}/exports/hero-dark.png`,
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("the format guide's example files load as it describes", async () => {
