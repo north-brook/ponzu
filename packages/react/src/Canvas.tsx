@@ -395,6 +395,9 @@ export function Canvas({
         setPending(null);
         setOpenThread(null);
         setSelection([]);
+        // A selection box being drawn is dropped too, or the next move would select again.
+        if (drag.current?.kind === "marquee") drag.current = null;
+        setMarquee(null);
         switchMode("select");
       } else if (
         (e.key === "Backspace" || e.key === "Delete") &&
@@ -454,6 +457,8 @@ export function Canvas({
     origin: { id: string; x: number; y: number }[];
     /** Where a selection box started, in page coordinates. */
     anchor?: { x: number; y: number };
+    /** The pointer's last position on screen, for the box to follow when the page scrolls. */
+    pointer?: { x: number; y: number };
     moved: boolean;
   } | null>(null);
 
@@ -494,7 +499,7 @@ export function Canvas({
     if (!hit) {
       // A finger on the open canvas pans, as it always has; a mouse draws a selection box.
       const box = e.pointerType !== "touch";
-      const keep = box && e.shiftKey ? selection.filter((id) => findArtboard(doc, id)) : [];
+      const keep = box && e.shiftKey ? selection : [];
       setSelection(keep);
       drag.current = {
         kind: box ? "marquee" : "pan",
@@ -552,6 +557,22 @@ export function Canvas({
     b: { x: number; y: number };
   } | null>(null);
 
+  /** Draws the selection box from its anchor to the pointer and selects the boards it touches. */
+  const boxTo = (d: NonNullable<typeof drag.current>) => {
+    if (!d.anchor || !d.pointer) return;
+    const b = toWorld(d.pointer.x, d.pointer.y);
+    setMarquee({ a: d.anchor, b });
+    const inside = boardsIn(d.anchor, b, boxes);
+    setSelection([...d.ids, ...inside.filter((id) => !d.ids.includes(id))]);
+  };
+
+  // Scrolling mid-box moves the page under a pointer that stayed put; the box's corner follows it.
+  useEffect(() => {
+    const d = drag.current;
+    if (d?.kind === "marquee" && d.moved) boxTo(d);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [camera]);
+
   const onPointerMove = (e: React.PointerEvent) => {
     const d = drag.current;
     if (!d) return;
@@ -561,12 +582,9 @@ export function Canvas({
     if (d.kind === "pan") {
       panBy(e.movementX, e.movementY);
     } else if (d.kind === "marquee") {
-      if (!d.moved || !d.anchor) return;
-      const a = d.anchor;
-      const b = toWorld(e.clientX, e.clientY);
-      setMarquee({ a, b });
-      const inside = boardsIn(a, b, boxes);
-      setSelection([...d.ids, ...inside.filter((id) => !d.ids.includes(id))]);
+      if (!d.moved) return;
+      d.pointer = { x: e.clientX, y: e.clientY };
+      boxTo(d);
     } else if (d.moved) {
       setGhost({ dx: dx / camera.zoom, dy: dy / camera.zoom });
     }
