@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.33.1](https://github.com/north-brook/ponzu/compare/v1.33.0...v1.33.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* move a page's folder when it's renamed ([#136](https://github.com/north-brook/ponzu/issues/136)) ([9152fe0](https://github.com/north-brook/ponzu/commit/9152fe01dd59cd2f1f5b09eb7e1cb46400cd6ea5))
+
 ## [1.33.0](https://github.com/north-brook/ponzu/compare/v1.32.0...v1.33.0) (2026-10-22)
 
 
