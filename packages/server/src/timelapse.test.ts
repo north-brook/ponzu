@@ -3,9 +3,9 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { serve } from "./serve.ts";
 import { timelapsePath } from "./timelapse.ts";
 import { LocalWorkspace } from "./workspace.ts";
-import { serve } from "./serve.ts";
 
 describe("timelapse", () => {
   test("films are dated, and numbered on collision", async () => {
