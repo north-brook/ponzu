@@ -131,7 +131,7 @@ class Lab {
     const { w, h: fixed } = artboardSize(ab);
     h.wrap.style.width = `${w}px`;
     h.wrap.style.height = fixed ? `${fixed}px` : "";
-    const { html, fonts } = artboardMarkup(
+    const { html, fonts, faces } = artboardMarkup(
       ab,
       doc.tokens,
       this.assetBase,
@@ -139,7 +139,7 @@ class Lab {
     );
     if (html !== h.html) {
       h.html = html;
-      loadArtboardFonts(fonts);
+      loadArtboardFonts(fonts, faces);
       h.shadow.innerHTML = html;
       await settleAssets(h.shadow);
     }

@@ -546,10 +546,10 @@ const FilmBoard = memo(function FilmBoard({
     const el = host.current;
     if (!el) return;
     const root = el.shadowRoot ?? el.attachShadow({ mode: "open" });
-    const { html, fonts } = artboardMarkup(artboard, doc.tokens, model.assetBase, scheme);
+    const { html, fonts, faces } = artboardMarkup(artboard, doc.tokens, model.assetBase, scheme);
     if (html === last.current) return;
     last.current = html;
-    loadArtboardFonts(fonts);
+    loadArtboardFonts(fonts, faces);
     root.innerHTML = html;
   }, [artboard, doc.tokens, model.assetBase, scheme]);
   return <div ref={host} data-artboard-host={artboard.id} style={{ display: "contents" }} />;
