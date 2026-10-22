@@ -74,9 +74,9 @@ export function WhereLine({ file, className }: { file: CatalogFile; className?: 
 }
 
 /**
- * Everything the catalog knows about a design: its branch, its whole path
- * with the design's own part picked out, which Mac it's on and when it last
- * changed. Read-only.
+ * Everything the catalog knows about a design: its branch, the folder it's in
+ * with the part inside its checkout picked out, which Mac it's on and when it
+ * last changed. Read-only.
  */
 export function FileDetails({
   file,
@@ -90,7 +90,8 @@ export function FileDetails({
 }) {
   const branch = file && branchOf(file);
   const folder = file && folderOf(file);
-  const inside = file && folder && file.key.startsWith(`${folder}/`);
+  const dir = file && (file.key.slice(0, file.key.lastIndexOf("/")) || "/");
+  const inside = folder && dir?.startsWith(`${folder}/`);
   return (
     <div className="flex flex-col gap-2.5">
       <div className="flex min-w-0 items-center justify-between gap-2">
@@ -111,19 +112,26 @@ export function FileDetails({
           Open it to let Ponzu read this folder.
         </span>
       )}
-      {file && (
-        <div className="break-all font-mono text-[11.5px] text-muted-foreground leading-[17px]">
-          {inside ? (
-            <>
-              {tilde(folder)}/
-              <span className="text-foreground">{file.key.slice(folder.length + 1)}</span>
-            </>
-          ) : (
-            tilde(file.key)
-          )}
+      {dir && (
+        // One line; a long folder reads from the right, so it keeps its end.
+        <div
+          className="truncate font-mono text-[11.5px] text-muted-foreground leading-[17px]"
+          dir="rtl"
+          title={tilde(dir)}
+        >
+          <bdi>
+            {inside ? (
+              <>
+                {tilde(folder)}/
+                <span className="text-foreground">{dir.slice(folder.length + 1)}</span>
+              </>
+            ) : (
+              tilde(dir)
+            )}
+          </bdi>
         </div>
       )}
-      <div className="flex items-center gap-[5px] border-t pt-2.5 text-muted-foreground text-xs">
+      <div className="flex items-center gap-[5px] whitespace-nowrap border-t pt-2.5 text-muted-foreground text-xs">
         <Device machine={machine} />
         {file?.modified ? (
           <>
@@ -131,12 +139,6 @@ export function FileDetails({
             {ago(file.modified)}
           </>
         ) : null}
-        {file && !file.locked && (
-          <>
-            <span className="text-faint">·</span>
-            {plural(file.artboards.length, "artboard")}
-          </>
-        )}
       </div>
     </div>
   );

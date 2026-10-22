@@ -107,6 +107,30 @@ describe("design", () => {
     expect(d.doc.example).toBe(true);
   });
 
+  test("an outside edit to another file keeps an edit not yet saved, or being saved", async () => {
+    // Writes take a while, as on a busy disk: the outside edit lands mid-save.
+    class SlowDisk extends MemoryAdapter {
+      override async write(path: string, content: string) {
+        await new Promise((r) => setTimeout(r, 15));
+        await super.write(path, content);
+      }
+    }
+    const who = { kind: "agent", name: "t" } as const;
+    for (const saveDelay of [0, 120]) {
+      const mem = new SlowDisk(seed);
+      const d = await Design.open(mem, { saveDelay });
+      d.apply({ op: "file.rename", name: "Fern 2" }, who);
+      d.apply({ op: "style", id: "n_h", style: { color: "red" } }, who);
+      if (!saveDelay) await new Promise((r) => setTimeout(r, 5));
+      await mem.externalWrite("tokens.css", ":root {\n  --ink: #111;\n}\n");
+      await new Promise((r) => setTimeout(r, 60));
+      await d.flush();
+      expect(d.doc.tokens).toContain("#111");
+      expect(d.doc.name).toBe("Fern 2");
+      expect(mem.files["pages/home/hero.html"]).toContain("color:red");
+    }
+  });
+
   test("only `true` makes a design an example", async () => {
     const meta = JSON.parse(seed["design.json"]);
     for (const example of ["true", 1, false, null]) {

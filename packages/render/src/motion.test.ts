@@ -26,7 +26,7 @@ setDefaultTimeout(30_000);
 
 describe.skipIf(!chromium)("motion in Chromium", () => {
   const renderer = new ChromiumRenderer({ executablePath: chromium ?? undefined });
-  afterAll(() => renderer.close());
+  afterAll(() => renderer.close(), 30_000);
 
   const artboard = parseArtboardFile(
     `<section data-artboard data-id="ab_m" data-name="Motion" style="width:500px;height:300px;padding:32px;gap:16px">
@@ -147,9 +147,12 @@ describe.skipIf(!chromium)("motion in Chromium", () => {
     expect(out.motion.animations.find((a) => a.id === "n_bar")?.timeline).toBe("scroll");
     // Rows scrolled out of view are meant to be out of view.
     expect(out.issues.filter((i) => i.kind === "offscreen" || i.kind === "overflow")).toEqual([]);
-    await expect(
-      renderer.record({ artboard: scroller, tokens: "", scroll: "n_bar" }),
-    ).rejects.toThrow("doesn't scroll");
+    // Caught rather than `expect(...).rejects`, which under Bun waits seconds
+    // on a rejection that crossed Playwright.
+    const still = await renderer
+      .record({ artboard: scroller, tokens: "", scroll: "n_bar" })
+      .catch((e) => e);
+    expect(still.message).toContain("doesn't scroll");
   });
 
   test("an artboard that scrolls itself isn't overflowing", async () => {
@@ -174,9 +177,10 @@ ${Array.from({ length: 6 }, (_, i) => `<div data-id="n_t${i}" style="height:100p
   });
 
   test("unknown ids are errors, not blank frames", async () => {
-    await expect(renderer.render({ ...base, interact: { hover: "n_missing" } })).rejects.toThrow(
-      "No node n_missing",
-    );
+    const err = await renderer
+      .render({ ...base, interact: { hover: "n_missing" } })
+      .catch((e) => e);
+    expect(err.message).toContain("No node n_missing");
   });
 });
 

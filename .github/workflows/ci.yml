@@ -14,17 +14,22 @@ concurrency:
   # A newer push to a pull request supersedes the old head; main keeps every run.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+env:
+  # Builds here are thrown away; Next shouldn't report on them.
+  NEXT_TELEMETRY_DISABLED: 1
+
 jobs:
   commits:
     name: Conventional commit messages
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: package.json
-      - run: bun install --frozen-lockfile --ignore-scripts
+      # commitlint is all this needs: the root package, not the workspaces.
+      - run: bun install --frozen-lockfile --ignore-scripts --filter ponzu-monorepo
       - name: The PR title becomes the squash commit, which Release Please reads
         if: github.event_name == 'pull_request'
         run: bunx commitlint <<<"$TITLE"
@@ -45,31 +50,83 @@ jobs:
 
   test:
     name: Check, typecheck, test
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: package.json
-      - run: bun install --frozen-lockfile
-      - run: bunx biome check .
-      - run: bunx tsc -p tsconfig.json --noEmit
-      - run: bunx tsc -p apps/desktop/tsconfig.json --noEmit
-      - run: bun test
-      - run: bun run --filter @ponzu/studio build
-      - run: bun run --filter @ponzu/web build
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - uses: actions/cache@v4
+        with:
+          path: apps/web/.next/cache
+          key: next-${{ runner.os }}-${{ hashFiles('bun.lock') }}-${{ github.sha }}
+          restore-keys: next-${{ runner.os }}-${{ hashFiles('bun.lock') }}-
+      # Nothing here needs Electron itself, only its types.
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - name: The Chromium the render tests use
+        # They skip without one, which would pass with them unrun.
+        run: |
+          chrome=$(command -v google-chrome-stable || command -v google-chrome || command -v chromium || true)
+          [ -n "$chrome" ] || { echo "::error::No Chrome or Chromium on this runner; the render tests would skip."; exit 1; }
+          echo "PONZU_CHROMIUM=$chrome" >> "$GITHUB_ENV"
+      - name: Lint, typecheck and build beside the tests
+        # None of these writes what another reads. Test files run in their own
+        # workers; the Chromium ones take most of the time. Each check's output
+        # is printed whole after everything finishes.
+        run: |
+          check() { name=$1; shift; { "$@" > "$RUNNER_TEMP/$name.log" 2>&1; echo $? > "$RUNNER_TEMP/$name.status"; } & }
+          check lint bunx biome check .
+          check typecheck bunx tsc -p tsconfig.json --noEmit
+          check typecheck-desktop bunx tsc -p apps/desktop/tsconfig.json --noEmit
+          check studio bun run --filter @ponzu/studio build
+          check web bun run --filter @ponzu/web build
+          failed=0
+          bun test --parallel || failed=1
+          wait
+          for name in lint typecheck typecheck-desktop studio web; do
+            echo "::group::$name"
+            cat "$RUNNER_TEMP/$name.log"
+            echo "::endgroup::"
+            if [ "$(cat "$RUNNER_TEMP/$name.status")" != 0 ]; then
+              echo "::error title=$name failed::Its output is in the $name group above."
+              failed=1
+            fi
+          done
+          exit $failed
 
   desktop:
     name: Desktop package
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: package.json
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: electron-${{ runner.os }}-
       - run: bun install --frozen-lockfile
+      - name: Xvfb, for the smoke test
+        # Alongside the package. Most images already have it; the package
+        # index is refreshed only when the install can't find it.
+        run: |
+          command -v xvfb-run && exit 0
+          sudo apt-get install -y --no-install-recommends xvfb ||
+            { sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb; }
       - name: Unsigned, unpublished package
         run: bun run package:dir
         working-directory: apps/desktop
@@ -78,8 +135,5 @@ jobs:
         # and trips the timeout; a server or renderer failure exits 1. See
         # src/smoke.ts. The release workflow runs the same check on the
         # signed Mac build before publishing it.
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends xvfb
-          PONZU_SMOKE=1 timeout 120 xvfb-run -a out/linux-unpacked/ponzu --no-sandbox
+        run: PONZU_SMOKE=1 timeout 120 xvfb-run -a out/linux-unpacked/ponzu --no-sandbox
         working-directory: apps/desktop

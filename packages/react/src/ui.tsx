@@ -11,6 +11,7 @@ import {
   type ReactElement,
   type ReactNode,
   useContext,
+  useRef,
 } from "react";
 import { extendTailwindMerge } from "tailwind-merge";
 
@@ -234,6 +235,7 @@ export function Menu({
   trigger: ReactNode;
   items: { label: string; icon?: ReactNode; danger?: boolean; onSelect: () => void }[];
 }) {
+  const chose = useRef(false);
   return (
     <MenuPrimitive.Root modal={false}>
       <MenuPrimitive.Trigger asChild>{trigger}</MenuPrimitive.Trigger>
@@ -244,11 +246,20 @@ export function Menu({
         onPointerDown={(e) => e.stopPropagation()}
         // Esc closes the menu, not whatever holds it.
         onEscapeKeyDown={(e) => e.stopPropagation()}
+        // After a choice, focus stays where the choice put it (an edit field, say)
+        // instead of snapping back to the trigger.
+        onCloseAutoFocus={(e) => {
+          if (chose.current) e.preventDefault();
+          chose.current = false;
+        }}
       >
         {items.map((item) => (
           <MenuPrimitive.Item
             key={item.label}
-            onSelect={item.onSelect}
+            onSelect={() => {
+              chose.current = true;
+              item.onSelect();
+            }}
             className={cn(
               "pz:flex pz:h-[30px] pz:cursor-default pz:items-center pz:gap-2 pz:rounded-md pz:px-2 pz:outline-none pz:data-highlighted:bg-accent",
               item.danger && "pz:text-danger",
