@@ -467,14 +467,23 @@ export async function buildFilm(input: FilmInput): Promise<FilmModel> {
         const enough = view.h > view.w ? 1 : 0.55;
         if (fit >= framing.minZoom * enough)
           return { page: endPage.id, board: all, overview: true };
-        // The board that changed the most: the size of what the film's ops brought to it.
+        // The board the session was about: where the person commented most, then where the
+        // agent did most. The hero of a landing page, not its pricing table.
         const time = new Map<string, number>();
+        const add = (id: string, v: number) => time.set(id, (time.get(id) ?? 0) + v);
         for (const b of plan.beats) {
+          if (b.kind === "comment" && b.thread) {
+            const th = last.threads.find((x) => x.id === b.thread);
+            if (th?.artboardId) add(th.artboardId, 1e6);
+          }
           if (b.kind !== "edit") continue;
           const e = input.entries[b.entry];
           const size = e?.kind === "op" ? JSON.stringify(e.op).length : 0;
-          for (const id of b.artboards) time.set(id, (time.get(id) ?? 0) + size);
+          for (const id of b.artboards) add(id, size);
         }
+        // Among the most commented, the one the film opened on wins a tie: it's the first impression.
+        const first = plan.beats.find((b) => b.kind === "edit" && b.artboards[0])?.artboards[0];
+        if (first) add(first, 5e5);
         const best = [...shown].sort((a, b) => (time.get(b.id) ?? 0) - (time.get(a.id) ?? 0))[0];
         return best ? { page: endPage.id, board: rectOf(best), overview: true } : null;
       })()
