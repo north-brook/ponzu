@@ -684,6 +684,8 @@ export interface Focus {
   parts?: Rect[];
   /** Lines of text on the board (canvas px): a resting frame never cuts one in half. */
   texts?: Rect[];
+  /** Lines on the boards around it: cutting these matters less (they're context). */
+  context?: Rect[];
   /** Show the whole of `board` even when that's below the shape's legible zoom. */
   overview?: boolean;
   /** What it's about (a board id), for debugging and tests. */
@@ -705,6 +707,8 @@ export interface Framing {
   top: number;
   /** A change on a board that only fits small is framed closer, up to this zoom, so it reads. */
   comfort: number;
+  /** The wayfinding line's box in screen px, when measured. */
+  pill?: Rect;
 }
 
 /** In the film's CSS pixels (see filmViewport). */
@@ -722,7 +726,7 @@ export function framingFor(shape: FilmShape): Framing {
  */
 export function frameFocus(focus: Focus, view: { w: number; h: number }, f: Framing): Cam {
   const cam = frameFocusRaw(focus, view, f);
-  return focus.texts?.length ? avoidCuts(cam, focus.texts, view, f) : cam;
+  return focus.texts?.length ? avoidCuts(cam, focus.texts, view, f, focus.context) : cam;
 }
 
 /** Text runs on one row (same top, touching) joined into the line they make. */
@@ -750,6 +754,7 @@ export function avoidCuts(
   texts: Rect[],
   view: { w: number; h: number },
   f: Framing,
+  context: Rect[] = [],
 ): Cam {
   // Lines are measured as text runs; a heading's lines on one row make one line here.
   const lines = mergeRows(texts);
@@ -772,27 +777,36 @@ export function avoidCuts(
       if (widest.y + widest.h > top) cam = { ...cam, cy: cam.cy + (widest.y + widest.h + 8 - top) };
     }
   }
-  return cleanFrame(cam, lines, view, f);
+  return cleanFrame(cam, lines, view, f, mergeRows(context));
 }
 
-/** Lines a camera's frame cuts: partly in, partly out, at any edge. Top edge is below the wayfinding line. */
+/** The corner wayfinding line, in screen px: text under it reads as cut too. Set per film. */
+export const WAYFINDING = { x: 10, y: 10, w: 300, h: 40 };
+
+/** Lines a camera's frame cuts: partly in and partly out at an edge, or under the wayfinding line. */
 export function cutLines(
   cam: Cam,
   lines: Rect[],
   view: { w: number; h: number },
-  f: Framing,
+  f?: Framing,
 ): Rect[] {
+  const W = f?.pill ?? WAYFINDING;
   const z = cam.zoom;
   const x0 = cam.cx - view.w / 2 / z;
   const x1 = cam.cx + view.w / 2 / z;
-  const y0 = cam.cy - view.h / 2 / z + (f.top + 6) / z;
+  const y0 = cam.cy - view.h / 2 / z;
   const y1 = cam.cy + view.h / 2 / z;
-  const tol = 2 / z;
+  const tol = 1.5 / z;
+  const pill = { x: x0 + (W.x - 4) / z, y: y0 + (W.y - 4) / z, w: (W.w + 8) / z, h: (W.h + 8) / z };
   return lines.filter((r) => {
     const inX = r.x + r.w > x0 + tol && r.x < x1 - tol;
     const inY = r.y + r.h > y0 + tol && r.y < y1 - tol;
     if (!inX || !inY) return false;
-    return r.x < x0 - tol || r.x + r.w > x1 + tol || r.y < y0 - tol || r.y + r.h > y1 + tol;
+    if (r.x < x0 - tol || r.x + r.w > x1 + tol || r.y < y0 - tol || r.y + r.h > y1 + tol)
+      return true;
+    return (
+      r.x < pill.x + pill.w && r.x + r.w > pill.x && r.y < pill.y + pill.h && r.y + r.h > pill.y
+    );
   });
 }
 
@@ -801,27 +815,42 @@ export function cutLines(
  * a third of a screen each way, then pulling back a little, and takes the
  * closest that's clean (or the one that cuts the least).
  */
-function cleanFrame(cam: Cam, lines: Rect[], view: { w: number; h: number }, f: Framing): Cam {
-  if (!cutLines(cam, lines, view, f).length) return cam;
+function cleanFrame(
+  cam: Cam,
+  lines: Rect[],
+  view: { w: number; h: number },
+  f: Framing,
+  context: Rect[] = [],
+): Cam {
+  // A cut heading is far worse than a cut caption: weigh each cut line by its type size; the
+  // subject's own lines count fully, the boards around it a quarter.
+  const weight = (c: Cam) =>
+    cutLines(c, lines, view, f).reduce((a, r) => a + (r.h * c.zoom) ** 2, 0) +
+    0.6 * cutLines(c, context, view, f).reduce((a, r) => a + (r.h * c.zoom) ** 2, 0);
+  if (weight(cam) === 0) return cam;
   let best = cam;
-  let bestScore = Number.POSITIVE_INFINITY;
-  for (const zk of [1, 0.94, 0.88, 0.8, 0.7, 0.6]) {
+  let bestW = weight(cam);
+  let bestCost = 0;
+  const consider = (c: Cam, cost: number) => {
+    const w = weight(c) + cost * 6;
+    if (w < bestW + bestCost * 6 - 1e-6) {
+      bestW = weight(c);
+      bestCost = cost;
+      best = c;
+    }
+  };
+  for (const zk of [1, 0.94, 0.88, 0.8, 0.72, 0.64, 0.56]) {
     const z = cam.zoom * zk;
-    if (z < f.minZoom * 0.4) break;
+    if (z < f.minZoom * 0.55) break;
     const stepX = view.w / z / 32;
     const stepY = view.h / z / 32;
-    for (let i = -14; i <= 14; i++)
-      for (let j = -14; j <= 14; j++) {
-        const c = { ...cam, zoom: z, cx: cam.cx + i * stepX, cy: cam.cy + j * stepY };
-        const cuts = cutLines(c, lines, view, f);
-        const area = cuts.reduce((a, r) => a + Math.min(r.w, 400) * r.h, 0);
-        const score = area * 100 + Math.hypot(i, j) * 0.8 + (1 - zk) * 60;
-        if (score < bestScore) {
-          bestScore = score;
-          best = c;
-        }
-      }
-    if (bestScore < 1000) break;
+    for (let i = -16; i <= 16; i++)
+      for (let j = -16; j <= 16; j++)
+        consider(
+          { ...cam, zoom: z, cx: cam.cx + i * stepX, cy: cam.cy + j * stepY },
+          // Small cuts are worth trading for staying close to the subject.
+          Math.hypot(i, j) * 2 + (1 - zk) * 120,
+        );
   }
   return best;
 }

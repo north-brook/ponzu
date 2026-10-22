@@ -114,7 +114,7 @@ function sceneCam(scene: Scene, f: number, view: { w: number; h: number }): Cam 
 
 const open = (doc: Doc) => doc.threads.filter((t) => t.status === "open");
 
-function workFrame(e: Edit, scene: Scene, f: number): Frame {
+function workFrame(_e: Edit, scene: Scene, f: number): Frame {
   const s = scene.shot;
   const cam = scene.cams[0]!;
   const changing = f >= s.change;

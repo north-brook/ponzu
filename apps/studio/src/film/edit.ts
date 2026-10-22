@@ -85,6 +85,8 @@ export interface EditInput {
   range?: Range;
   theme: "light" | "dark";
   assetBase?: string;
+  /** The wayfinding line's box in the film's px (the film page measures it). */
+  pill?: Rect;
 }
 
 /* ------------------------------------------------------------------ */
@@ -249,6 +251,34 @@ const union = (rects: Rect[]): Rect | undefined => {
 const area = (rects: Rect[]) => rects.reduce((a, r) => a + r.w * r.h, 0);
 const offset = (r: Rect, ab: Artboard): Rect => ({ x: ab.x + r.x, y: ab.y + r.y, w: r.w, h: r.h });
 
+/** The corner wayfinding line's box in film px: slice, file name, page name, as Film draws it. */
+function measurePill(input: EditInput, view: { w: number; h: number }): Rect {
+  const k = view.w < view.h ? 1.08 : 1;
+  const ctx = document.createElement("canvas").getContext("2d")!;
+  ctx.font = `500 ${12.5 * k}px Inter, system-ui, sans-serif`;
+  const page = (() => {
+    for (let i = input.entries.length - 1; i >= 0; i--) {
+      const e = input.entries[i]!;
+      if (e.kind === "checkpoint") return e.doc.pages[0]?.name ?? "";
+    }
+    return "";
+  })();
+  const pages = new Set<string>([page]);
+  for (const e of input.entries)
+    if (e.kind === "op" && e.op.op === "page.create") pages.add(e.op.page.name);
+  const longest = Math.max(...[...pages].map((p) => ctx.measureText(p).width), 0);
+  const w =
+    20 * k +
+    14 * k +
+    7 * k * 4 +
+    2 * ctx.measureText("/").width +
+    13 * k * 2 +
+    6 * 2 +
+    ctx.measureText(input.name).width +
+    longest;
+  return { x: 14, y: 14, w: Math.ceil(w), h: Math.ceil(12 * k + 14 * k) };
+}
+
 /* ------------------------------------------------------------------ */
 /* Building the edit                                                   */
 /* ------------------------------------------------------------------ */
@@ -256,7 +286,9 @@ const offset = (r: Rect, ab: Artboard): Rect => ({ x: ab.x + r.x, y: ab.y + r.y,
 export async function buildEdit(input: EditInput): Promise<Edit> {
   const { entries } = input;
   const view = filmViewport(input.shape);
-  const framing = framingFor(input.shape);
+  // The wayfinding line's box: measured off the real font, as the film draws it.
+  const pill = input.pill ?? measurePill(input, view);
+  const framing = { ...framingFor(input.shape), pill };
   const lab = new Lab(input.assetBase, input.theme);
   const all = moments(entries, input.range);
   const notes = noteBoards(entries);
@@ -385,11 +417,20 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
       // Frame: the board whole if it reads, else everything that changed, never cutting text.
       const detail = union(got.changed.map((r) => offset(r, ab)));
       const neighbours = pageBoards(after, m.board);
-      // The camera rests here on the before and on the after: neither may cut a line.
+      // The camera rests here on the before and on the after: neither may cut a line of the
+      // board, and the boards around it as little as can be.
+      const own = (doc: Doc) => {
+        const b = findArtboard(doc, m.board)?.artboard;
+        return b ? [b] : [];
+      };
       const texts = [
-        ...(await textsOf(after, neighbours)),
-        ...(await textsOf(before, pageBoards(before, m.board))),
+        ...(await textsOf(after, own(after))),
+        ...(await textsOf(before, own(before))),
       ];
+      const context = await textsOf(
+        after,
+        neighbours.filter((n) => n.id !== m.board),
+      );
       const cam = frameFocus(
         {
           page: findArtboard(after, m.board)!.page.id,
@@ -397,6 +438,7 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
           detail,
           parts: got.changed.map((r) => offset(r, ab)),
           texts,
+          context,
           key: m.board,
         },
         view,
@@ -470,17 +512,27 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
           ? union([offset(node, ab), { x: pin.x - 16, y: pin.y - 16, w: 32, h: 32 }])!
           : { x: pin.x - 160, y: pin.y - 120, w: 320, h: 240 };
         subjects.push(subject);
-        const texts = await textsOf(d, pageBoards(d, ab.id));
+        const texts = await textsOf(d, [ab]);
+        const context = await textsOf(
+          d,
+          pageBoards(d, ab.id).filter((n) => n.id !== ab.id),
+        );
         const fitAll = all ? Math.min(view.w / all.w, view.h / all.h) : 0;
         const together = all && fitAll >= framing.minZoom && rects.length > 1;
         const cam = frameFocus(
           together
-            ? { page: findArtboard(d, ab.id)!.page.id, board: all!, overview: true, texts }
+            ? {
+                page: findArtboard(d, ab.id)!.page.id,
+                board: all!,
+                overview: true,
+                texts: [...texts, ...context],
+              }
             : {
                 page: findArtboard(d, ab.id)!.page.id,
                 board: boardRect(ab, hA),
                 detail: subject,
                 texts,
+                context,
                 pin,
                 key: ab.id,
               },
