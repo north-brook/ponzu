@@ -82,6 +82,8 @@ function motionRuntime() {
   if (w.__ponzuMotion) return;
   const root = document.querySelector("[data-artboard]") as HTMLElement | null;
   const STATES = ["hover", "active", "focus-visible", "focus-within", "focus"];
+  /** How many elements can keep animating before the canvas drops frames. */
+  const ANIMATION_BUDGET = 100;
   let entries: Entry[] = [];
   let trigger = "load";
   let loadSettled = 0;
@@ -667,7 +669,58 @@ function motionRuntime() {
         message: `${label(target)} is invisible once ${name} ends: without animation-fill-mode: forwards it snaps back to opacity: 0`,
       });
     }
+    const busy = budget();
+    if (busy) out.push(busy);
     return out;
+  }
+
+  /**
+   * Every element that never stops animating, or holds a transform or
+   * opacity once its animation ends, is its own compositor layer in the
+   * canvas, which redoes all of them each frame anything repaints.
+   */
+  function budget(): LintIssue | null {
+    const HELD = /^(transform|translate|rotate|scale|opacity|filter|backdrop-filter)$/;
+    const els = new Set<Element>();
+    const names = new Map<string, Element[]>();
+    let held = 0;
+    for (const e of entries) {
+      const effect = e.anim.effect as KeyframeEffect | null;
+      const target = effect?.target;
+      if (!e.time || !effect || !target || e.anim.playState === "idle" || els.has(target)) continue;
+      const ct = effect.getComputedTiming();
+      const forever = !Number.isFinite(ct.endTime);
+      const holds =
+        !forever &&
+        (ct.fill === "forwards" || ct.fill === "both") &&
+        effect.getKeyframes().some((k) => Object.keys(k).some((p) => HELD.test(kebab(p))));
+      if (!forever && !holds) continue;
+      els.add(target);
+      if (holds) held++;
+      const name =
+        (e.anim as any).animationName ?? (e.anim as any).transitionProperty ?? "animation";
+      const same = names.get(name);
+      if (same) same.push(target);
+      else names.set(name, [target]);
+    }
+    if (els.size <= ANIMATION_BUDGET) return null;
+    const top = [...names].sort((a, b) => b[1].length - a[1].length);
+    // Point at what holds the biggest group: the field, not the artboard.
+    const group = top[0]![1];
+    let at: Element = group[0]!;
+    while (at !== root && !group.every((el) => at.contains(el))) at = at.parentElement ?? root!;
+    const what = top
+      .slice(0, 2)
+      .map(([n, list]) => `${n} on ${list.length}`)
+      .join(", ");
+    const ends = held
+      ? `. ${held} keep their layer after ending (fill-mode forwards or both): put the end state in their style and use backwards`
+      : "";
+    return {
+      id: idOf(at),
+      kind: "animation-budget",
+      message: `${els.size} elements animate at once (${what}): each is its own layer, and past ${ANIMATION_BUDGET} the canvas drops frames, even panning. Animate a few HTML wrappers instead, one per row or one around the group; an SVG <g> repaints everything in it every frame${ends}`,
+    };
   }
 
   w.__ponzuMotion = { hold, interact, prepare, seek, info, plan, apply, box, settle, lint };
