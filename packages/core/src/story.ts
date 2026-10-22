@@ -226,16 +226,17 @@ export const SHOT = {
   comment: 1.35,
   /** The end card. */
   end: 1.6,
-  /** The last look at the result. */
-  result: 1.8,
+  /** The last look at the result: a short glide, then a still hold. */
+  result: 2.2,
   /** The first frame, before anything moves. */
   open: 0.25 as number,
 };
 
 /** Time to read a comment: about a second, plus a quarter second per four words. */
 export function commentTime(words: number, length: number): number {
-  const base = Math.min(3.4, Math.max(1.2, 0.6 + words * 0.075));
-  return length <= 15 ? Math.min(3, base) : base;
+  // About four words a second on a phone, plus a beat to find the card: a long note gets its read.
+  const base = Math.min(5, Math.max(1.6, 0.9 + words * 0.09));
+  return length <= 15 ? Math.min(4.6, base) : base;
 }
 
 /**
@@ -459,6 +460,8 @@ export function timeline(
       const each = spare / slots;
       let usedNow = 0;
       for (const r of works) {
+        // A short film's opening build is a beat, not a hold: its time goes to the story.
+        if (opts.length <= 15 && r.m.kind === "work" && r.m.answers === undefined) continue;
         const h = Math.max(0, Math.min(each * 2 * 0.6, 1.3 - r.hold));
         const c = Math.max(0, Math.min(each * 2 * 0.4, 1.7 - r.change));
         r.hold += h;

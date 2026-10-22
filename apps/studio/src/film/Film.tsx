@@ -76,11 +76,15 @@ function frameAt(e: Edit, f: number): Frame {
     const doc = e.result.doc;
     // The result, clean: the conversation's done, so its pins are off the final picture.
     const out: Frame = { doc, heights: e.result.heights, cam, threads: [] };
-    if (e.result.boards.length)
+    if (e.result.boards.length) {
+      // Already faded if the last fix was on the result board; else they fade as the camera goes.
+      const last = e.scenes.at(-1);
+      const done = last?.board && e.result.boards.includes(last.board);
       out.only = {
         ids: e.result.boards,
-        p: progress(f, tl.result + 0.15, tl.result + 0.85, ease.inOut),
+        p: done ? 1 : progress(f, tl.result + 0.15, tl.result + 0.85, ease.inOut),
       };
+    }
     if (f >= tl.endCard - 0.3)
       out.end = { fade: clamp01((f - (tl.endCard - 0.3)) / 0.3), t: f - tl.endCard };
     return out;
@@ -125,7 +129,7 @@ function sceneCam(scene: Scene, f: number, view: { w: number; h: number }): Cam 
 
 const open = (doc: Doc) => doc.threads.filter((t) => t.status === "open");
 
-function workFrame(_e: Edit, scene: Scene, f: number): Frame {
+function workFrame(e: Edit, scene: Scene, f: number): Frame {
   const s = scene.shot;
   const cam = scene.cams[0]!;
   const changing = f >= s.change;
@@ -149,9 +153,16 @@ function workFrame(_e: Edit, scene: Scene, f: number): Frame {
       .map((id) => scene.before.threads.find((t) => t.id === id))
       .filter((t): t is Thread => Boolean(t));
     // Resolved: a check for a beat, then it leaves.
-    const p = clamp01((f - s.change - 0.55) / PIN_OUT);
+    // Off before the result holds, so the check never sits over the corrected piece.
+    const p = clamp01((f - s.change - 0.3) / PIN_OUT);
     if (p < 1) out.pinsOut = leaving.map((thread) => ({ thread, p: ease.in(p) }));
   }
+  // The last fix: once it's landed, the boards around it fade, so the result stands alone.
+  if (scene === e.scenes.at(-1) && scene.board && e.result.boards.includes(scene.board))
+    out.only = {
+      ids: e.result.boards,
+      p: progress(f, s.changed - 0.2, s.changed + 0.5, ease.inOut),
+    };
   if (changing && scene.born)
     out.drawing = { board: scene.board!, p: ease.out(clamp01((f - s.change) / 0.5)) };
   if (changing && scene.rise?.length) {
@@ -385,7 +396,7 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
                     style={{
                       opacity: card.opacity,
                       // Read on a phone: the real card, a little larger than in the studio.
-                      zoom: view.w > view.h ? 1.38 : 1.22,
+                      zoom: view.w > view.h ? 1.5 : 1.22,
                     }}
                   >
                     <ThreadCard
@@ -576,7 +587,7 @@ function keepCardsInFrame(root: HTMLElement, view: { w: number; h: number }) {
         pinHit * 10 +
         (onCorner ? 6 : 0) +
         cover * 8 +
-        Math.min(1, overBoards(x, y)) * 1.5 +
+        Math.min(1, overBoards(x, y)) * 2.5 +
         moved / 120 +
         far * 1.5
       );

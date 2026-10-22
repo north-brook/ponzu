@@ -453,8 +453,22 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
       );
     return doc;
   };
-  const remember = (doc: Doc) => {
-    for (const p of doc.pages) for (const ab of p.artboards) shown.set(ab.id, structuredClone(ab));
+  // Only what the last shot showed: off screen between shots, a board may have moved on.
+  const remember = (doc: Doc, cams: Cam[], heights: Map<string, number>) => {
+    shown.clear();
+    for (const p of doc.pages)
+      for (const ab of p.artboards) {
+        const r = boardRect(ab, heights);
+        const seen = cams.some((c) => {
+          if (c.page !== p.id) return false;
+          const hw = view.w / 2 / c.zoom;
+          const hh = view.h / 2 / c.zoom;
+          return (
+            r.x < c.cx + hw && r.x + r.w > c.cx - hw && r.y < c.cy + hh && r.y + r.h > c.cy - hh
+          );
+        });
+        if (seen) shown.set(ab.id, structuredClone(ab));
+      }
   };
 
   for (const [shotIndex, shot] of tl.shots.entries()) {
@@ -473,7 +487,6 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
           : got.before;
       const before = compose(rawBefore, [m.board]);
       const after = compose(got.after, [m.board]);
-      remember(after);
       const ab = findArtboard(after, m.board)!.artboard;
       const hB = await heightsOf(before);
       const hA = await heightsOf(after);
@@ -617,12 +630,12 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
         resolves: m.resolves,
         who: m.who,
       });
+      remember(after, [cam], hA);
       continue;
     }
     if (m.kind === "turn") {
       const before = compose(docAt(m.comments[0]!.entry - 1), []);
       const after = compose(docAt(m.comments[m.comments.length - 1]!.entry), []);
-      remember(after);
       const hA = await heightsOf(after);
       const threads: Thread[][] = [];
       const cams: Cam[] = [];
@@ -708,6 +721,7 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
       // Pin-only landings take the camera of the first card read out.
       const firstCard = cams.find(Boolean);
       for (let k = 0; k < cams.length; k++) if (!cams[k]) cams[k] = firstCard ?? cams[0]!;
+      remember(after, cams, hA);
       scenes.push({
         shot,
         before,
@@ -750,7 +764,14 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
       return { board: sc.board!, v: v * (reads(sc.board!) ? (view.h > view.w ? 3 : 1.6) : 1) };
     })
     .sort((x, y) => y.v - x.v);
-  const hero = candidates[0]?.board ?? lastBoard;
+  // The film ends where it left off: on the last fix shown, when it answered a comment (no cut
+  // to another board in the last second); else on the biggest payoff.
+  const lastScene = [...scenes].reverse().find((sc) => sc.board && sc.shot.moment.kind === "work");
+  const lastPaid =
+    lastScene && (lastScene.shot.moment as Extract<Moment, { kind: "work" }>).answers !== undefined
+      ? lastScene
+      : undefined;
+  const hero = lastPaid?.board ?? candidates[0]?.board ?? lastBoard;
   const heroAb = hero ? findArtboard(endDoc, hero)?.artboard : undefined;
   const pageAll = heroAb
     ? union(pageBoards(endDoc, heroAb.id).map((ab) => boardRect(ab, endHeights)))
@@ -774,11 +795,14 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
         framing,
       )
     : { page: endDoc.pages[0]?.id ?? "", cx: 0, cy: 0, zoom: 1 };
-  // A short film ends where its story did: on the payoff, close, when the whole board is small.
-  const payoffCam = firstPaid?.board === hero ? firstPaid?.cams[0] : undefined;
-  const short = input.length <= 15;
+  // When the whole board would be small (a desktop page in a tall frame, a short film's close
+  // story), the last look stays on the payoff, close.
+  const payoff = lastPaid ?? (firstPaid?.board === hero ? firstPaid : undefined);
+  const payoffCam = payoff?.cams[0];
   const resultCam =
-    short && payoffCam && wholeCam.zoom < payoffCam.zoom * 0.7 ? payoffCam : wholeCam;
+    payoffCam && wholeCam.zoom < payoffCam.zoom * (input.length <= 15 ? 0.7 : 0.6)
+      ? payoffCam
+      : wholeCam;
 
   const firstDoc = scenes[0]?.before ?? endDoc;
   const firstHeights = await heightsOf(firstDoc);
