@@ -11,12 +11,15 @@ import {
   styleText,
 } from "@ponzu/render";
 import { memo, useLayoutEffect, useRef } from "react";
+import type { Arrivals } from "./arrive.ts";
 
 interface Props {
   artboard: AB;
   tokens: string;
   assetBase?: string;
   colorScheme?: "light" | "dark";
+  /** An agent's new pieces, which arrive as they render. */
+  arrivals?: Arrivals;
 }
 
 const loadedFonts = new Set<string>();
@@ -61,6 +64,7 @@ export const ArtboardView = memo(function ArtboardView({
   tokens,
   assetBase,
   colorScheme,
+  arrivals,
 }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const last = useRef("");
@@ -84,7 +88,8 @@ export const ArtboardView = memo(function ArtboardView({
     ensureFonts(googleFonts(body, tokens));
     ensureFaces(fontFaceRules(resolved));
     root.innerHTML = html;
-  }, [artboard, tokens, assetBase, colorScheme]);
+    arrivals?.replay(root);
+  }, [artboard, tokens, assetBase, colorScheme, arrivals]);
 
   return <div ref={host} data-artboard-host={artboard.id} style={{ display: "contents" }} />;
 });

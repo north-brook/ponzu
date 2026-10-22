@@ -1,4 +1,17 @@
 export { ArtboardView } from "./Artboard.tsx";
+export {
+  ARRIVE_EASING,
+  ARRIVE_KEYFRAMES,
+  ARRIVE_LAG_MS,
+  ARRIVE_MAX_STAGGER,
+  ARRIVE_MS,
+  ARRIVE_SLIDE,
+  ARRIVE_STAGGER_MS,
+  arrivals,
+  arriveDelay,
+  BOARD_MS,
+  outermost,
+} from "./arrive.ts";
 export { Canvas, type CanvasProps, type Mode } from "./Canvas.tsx";
 export { Avatar, Composer, ThreadCard, timeAgo } from "./Comments.tsx";
 export {
