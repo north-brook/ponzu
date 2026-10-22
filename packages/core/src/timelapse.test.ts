@@ -5,12 +5,16 @@ import { checkpointLine, docAt, latestDoc, opLine, parseJournal } from "./journa
 import {
   bezier,
   cameraAt,
+  cameraPath,
+  camOnPath,
+  camTargets,
   changedNodes,
   END_CARD,
   frameFocus,
   framingFor,
   groupTurns,
   lastSession,
+  MIN_HOLD,
   planFilm,
   planShots,
   streamUnits,
@@ -153,7 +157,9 @@ describe("plan", () => {
       expect(plan.endCard).toBeCloseTo(length - END_CARD, 5);
       const comments = plan.beats.filter((b) => b.kind === "comment");
       expect(comments).toHaveLength(2);
-      for (const c of comments) expect(c.end - c.start).toBeCloseTo(1, 1);
+      // About a second each; the first of your turn gets a breath more.
+      for (const c of comments) expect(c.end - c.start).toBeGreaterThan(0.8);
+      for (const c of comments) expect(c.end - c.start).toBeLessThan(1.45);
       // The ten-minute idle gap doesn't swallow the film.
       const edits = plan.beats.filter((b) => b.kind === "edit");
       const longest = Math.max(...edits.map((b) => b.end - b.start));
@@ -259,7 +265,7 @@ describe("camera", () => {
 });
 
 describe("stream-in", () => {
-  test("inserted subtrees stream in; restyles are touched", () => {
+  test("inserted subtrees and new text stream in; restyles crossfade", () => {
     const op: Op = {
       op: "batch",
       ops: [
@@ -267,7 +273,7 @@ describe("stream-in", () => {
         { op: "style", id: "b", style: {} },
       ],
     };
-    expect(changedNodes(op)).toEqual({ fresh: ["a"], touched: ["p", "b"] });
+    expect(changedNodes(op)).toEqual({ fresh: ["a", "p"], restyled: ["b"] });
   });
 
   test("one big section opens into its blocks", () => {
@@ -291,5 +297,47 @@ describe("stream-in", () => {
     };
     index(tree);
     expect(streamUnits((id) => all.get(id) ?? null, ["s"])).toEqual(["h", "c1", "c2", "c3", "c4"]);
+  });
+});
+
+describe("follow camera", () => {
+  test("holds on each subject, eases between them and never jumps", () => {
+    const plan = planFilm(session(), { length: 30 });
+    const view = { w: 960, h: 540 };
+    const boards: Record<string, { x: number; y: number; w: number; h: number }> = {
+      ab_a: { x: 0, y: 0, w: 800, h: 600 },
+      ab_b: { x: 3000, y: 0, w: 800, h: 600 },
+    };
+    const focus = plan.beats.map((b) => {
+      const id = b.artboards[0];
+      return id ? { page: "pg", board: boards[id]!, key: id } : null;
+    });
+    const targets = camTargets(plan, focus, view, framingFor("16:9"), {
+      page: "pg",
+      board: { x: 0, y: 0, w: 3800, h: 600 },
+    });
+    for (let i = 1; i < targets.length; i++)
+      expect(targets[i]!.t).toBeGreaterThanOrEqual(
+        targets[i - 1]!.t +
+          targets[i - 1]!.travel +
+          (i === targets.length - 1 ? 0.3 : MIN_HOLD) -
+          1e-9,
+      );
+    const path = cameraPath(targets, view);
+    let prev = camOnPath(path, 0)!;
+    let maxStep = 0;
+    let backedOut = false;
+    for (let f = 1 / 30; f <= plan.duration; f += 1 / 30) {
+      const c = camOnPath(path, f)!;
+      maxStep = Math.max(maxStep, (Math.abs(c.cx - prev.cx) * c.zoom) / view.w);
+      if (c.zoom < Math.min(...targets.slice(0, -1).map((t) => t.cam.zoom)) * 0.9) backedOut = true;
+      prev = c;
+    }
+    // A long trip moves under an eighth of a screen a frame, and backs out on the way.
+    expect(maxStep).toBeLessThan(0.125);
+    expect(backedOut).toBe(true);
+    // It gets where it's going.
+    const end = camOnPath(path, plan.duration)!;
+    expect(end.cx).toBeCloseTo(targets.at(-1)!.cam.cx, 0);
   });
 });

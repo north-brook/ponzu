@@ -2,6 +2,9 @@ import {
   type Artboard,
   type Beat,
   type Cam,
+  type CamPath,
+  cameraPath,
+  camTargets,
   changedNodes,
   type Doc,
   type FilmShape,
@@ -12,14 +15,13 @@ import {
   framingFor,
   isThemed,
   type JournalEntry,
+  locate,
   type PageState,
   type Plan,
   planFilm,
-  planShots,
   type Range,
   type Rect,
   replayTo,
-  type Shot,
   streamUnits,
   type Thread,
   threadPage,
@@ -46,7 +48,7 @@ export interface FilmModel {
   touched: string[][];
   /** Board heights by beat index + 1 (as docs), for fit-content boards. */
   heights: Map<string, number>[];
-  shots: Shot[];
+  camera: CamPath;
   /** The page shown before any shot. */
   firstPage: string;
   assetBase?: string;
@@ -250,7 +252,10 @@ export async function buildFilm(input: FilmInput): Promise<FilmModel> {
     const h = new Map(heights[i]!);
     const entry = input.entries[beat.entry]!;
     const op = entry.kind === "op" ? entry.op : null;
-    const changed = op ? changedNodes(op) : { fresh: [], touched: [] };
+    const changed = op ? changedNodes(op) : { fresh: [], restyled: [] };
+    // A token change restyles every board on its page that uses it: crossfade them all.
+    const tokensChanged =
+      op && (op.op === "tokens" || (op.op === "batch" && op.ops.some((o) => o.op === "tokens")));
     const beatUnits: string[] = [];
     const beatTouched = new Set<string>();
     const details: Rect[] = [];
@@ -274,7 +279,7 @@ export async function buildFilm(input: FilmInput): Promise<FilmModel> {
         if (r) details.push({ x: ab.x + r.x, y: ab.y + r.y, w: r.w, h: r.h });
       }
       const wasThere = findArtboard(prev, id);
-      for (const n of changed.touched) {
+      for (const n of changed.restyled) {
         if (!findNode(ab.root, n)) continue;
         if (wasThere) beatTouched.add(id);
         if (n === ab.id) continue;
@@ -282,6 +287,9 @@ export async function buildFilm(input: FilmInput): Promise<FilmModel> {
         if (r) details.push({ x: ab.x + r.x, y: ab.y + r.y, w: r.w, h: r.h });
       }
     }
+    if (tokensChanged)
+      for (const p of doc.pages)
+        for (const ab of p.artboards) if (findArtboard(prev, ab.id)) beatTouched.add(ab.id);
     heights.push(h);
     units.push(beatUnits);
     touched.push([...beatTouched]);
@@ -349,7 +357,7 @@ export async function buildFilm(input: FilmInput): Promise<FilmModel> {
     : null;
   // Before the first focus, the camera opens on the first one's page.
   const firstFocus = focus.find(Boolean);
-  const shots = planShots(plan, focus, view, framing, final);
+  const camera = cameraPath(camTargets(plan, focus, view, framing, final), view);
   measurer.dispose();
 
   // Boards made during the film, and pins, arrive with their beat.
@@ -404,7 +412,7 @@ export async function buildFilm(input: FilmInput): Promise<FilmModel> {
     units,
     touched,
     heights,
-    shots,
+    camera,
     firstPage: firstFocus?.page ?? endPage?.id ?? docs[0]!.pages[0]?.id ?? "",
     assetBase: input.assetBase,
     range,

@@ -181,3 +181,8 @@
     transform: translateY(3px);
   }
 }
+
+.pz-film-card-up > * {
+  top: auto;
+  bottom: -12px;
+}

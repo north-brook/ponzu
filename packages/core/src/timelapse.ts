@@ -127,7 +127,9 @@ export const RESOLVE_HOLD = 0.4;
 /** An agent's reply: its card shows for a moment. */
 export const REPLY_HOLD = 0.9;
 /** The look at the result before the end card. */
-export const PULLBACK = 1.8;
+export const PULLBACK = 2.2;
+/** The first beat of a turn gets this much extra, so the change of hands reads. */
+export const TURN_BREATH = 0.35;
 /** Real gaps longer than this are idle, and cut down to it. */
 export const IDLE_CAP = 6;
 /** Even two ops in the same millisecond get this much weight, so each one is seen. */
@@ -174,6 +176,9 @@ export function planFilm(entries: JournalEntry[], opts: PlanOptions): Plan {
   const raw = all
     .map((x) => ({ ...x, kind: filmKind(x.e) }))
     .filter((x): x is typeof x & { kind: BeatKind } => x.kind !== null);
+  // Opening on nothing (tokens set, empty boards made) wastes the first seconds: start
+  // the film once there's something to see, with what came before already in place.
+  while (raw.length > 1 && raw[0]!.kind === "edit" && !visible(raw[0]!.e.op)) raw.shift();
   const content = Math.max(2, opts.length - END_CARD);
   const firstEntry = raw[0]?.i ?? entries.length;
   // The opening frame: the doc just before the first beat.
@@ -190,60 +195,18 @@ export function planFilm(entries: JournalEntry[], opts: PlanOptions): Plan {
   }
 
   const turnOf = groupTurns(raw.map((r) => r.kind));
-  // Fixed holds, scaled down when there are more of them than the film has room for.
-  const fixed = raw.map((r): number =>
-    r.kind === "comment"
-      ? COMMENT_HOLD
-      : r.kind === "resolve"
-        ? RESOLVE_HOLD
-        : r.kind === "reply"
-          ? REPLY_HOLD
-          : 0,
+  const pullback = Math.min(PULLBACK, content * 0.11);
+  const durs = solveDurations(
+    raw.map((r) => ({
+      kind: r.kind,
+      t: r.e.t,
+      board: r.e.artboards[0],
+      light: r.kind === "edit" && !visible(r.e.op),
+    })),
+    turnOf,
+    content - pullback,
   );
-  const edits = raw.filter((r) => r.kind === "edit").length;
-  const pullback = Math.min(PULLBACK, content * 0.12);
-  const fixedTotal = fixed.reduce((a, b) => a + b, 0);
-  // Edits keep at least half the film when there are many of them.
-  const editFloor = edits ? Math.min(content * 0.5, edits * MIN_EDIT * 1.6) : 0;
-  const room = content - pullback - editFloor;
-  const holdScale = fixedTotal > room ? Math.max(0.35, room / fixedTotal) : 1;
-
-  // Edit weights: real gaps, idle cut, floored, plus a move when the board changes.
-  const weights: number[] = [];
-  let lastBoard: string | undefined;
-  for (let k = 0; k < raw.length; k++) {
-    const r = raw[k]!;
-    const board = r.e.artboards[0];
-    if (r.kind !== "edit") {
-      if (board) lastBoard = board;
-      weights.push(0);
-      continue;
-    }
-    const gap = k > 0 ? (r.e.t - raw[k - 1]!.e.t) / 1000 : MIN_WEIGHT;
-    let w = Math.min(IDLE_CAP, Math.max(MIN_WEIGHT, gap));
-    if (board && board !== lastBoard) w += MOVE_WEIGHT;
-    if (board) lastBoard = board;
-    weights.push(w);
-  }
-  const wSum = weights.reduce((a, b) => a + b, 0);
-  const editRoom = content - pullback - fixedTotal * holdScale;
-  const durs = raw.map((r, k) => {
-    if (r.kind !== "edit") return fixed[k]! * holdScale;
-    return Math.min(MAX_EDIT, Math.max(MIN_EDIT, (editRoom * weights[k]!) / (wSum || 1)));
-  });
-  // Clamping may leave time over or short: spread the difference evenly over edits.
-  const used = durs.reduce((a, b) => a + b, 0);
-  let diff = content - pullback - used;
-  if (Math.abs(diff) > 1e-6) {
-    const flexible = raw.map((r, k) => (r.kind === "edit" ? k : -1)).filter((k) => k >= 0);
-    const pool = flexible.length ? flexible : raw.map((_, k) => k);
-    const each = diff / pool.length;
-    for (const k of pool) durs[k] = Math.max(0.12, durs[k]! + each);
-    diff = 0;
-  }
-  // Whatever's still off (all holds, nothing to stretch) goes to the pull-back.
-  const total = durs.reduce((a, b) => a + b, 0);
-  const finalPull = Math.max(pullback, content - total);
+  const finalPull = content - durs.reduce((x, y) => x + y, 0);
 
   const beats: Beat[] = [];
   let t = 0;
@@ -299,6 +262,120 @@ export function planFilm(entries: JournalEntry[], opts: PlanOptions): Plan {
     duration: pull + finalPull + END_CARD,
     base,
   };
+}
+
+/**
+ * Seconds for each beat, summing to exactly `room`. Comments get about a
+ * second, resolves and replies a moment, the first beat of each turn a little
+ * extra so the change of hands reads; edits share what's left in proportion
+ * to their real gaps (idle capped), so the work plays at an even speed. When
+ * the holds alone won't fit, they shrink together, never below a floor.
+ */
+export function solveDurations(
+  beats: { kind: BeatKind; t: number; board?: string; light?: boolean }[],
+  turnOf: number[],
+  room: number,
+): number[] {
+  const n = beats.length;
+  if (!n) return [];
+  const hold = beats.map((b, k) => {
+    const base =
+      b.kind === "comment"
+        ? COMMENT_HOLD
+        : b.kind === "resolve"
+          ? RESOLVE_HOLD
+          : b.kind === "reply"
+            ? REPLY_HOLD
+            : 0;
+    const turnStart = k > 0 && turnOf[k] !== turnOf[k - 1];
+    return base + (turnStart ? TURN_BREATH : 0);
+  });
+  const weights: number[] = [];
+  let lastBoard: string | undefined;
+  for (let k = 0; k < n; k++) {
+    const b = beats[k]!;
+    if (b.kind !== "edit") {
+      if (b.board) lastBoard = b.board;
+      weights.push(0);
+      continue;
+    }
+    const gap = k > 0 ? (b.t - beats[k - 1]!.t) / 1000 : MIN_WEIGHT;
+    let w = b.light ? MIN_WEIGHT * 0.5 : Math.min(IDLE_CAP, Math.max(MIN_WEIGHT, gap));
+    if (!b.light && b.board && b.board !== lastBoard) w += MOVE_WEIGHT;
+    if (b.board && !b.light) lastBoard = b.board;
+    weights.push(w);
+  }
+  const edits = weights.filter((w) => w > 0).length;
+  const holdSum = hold.reduce((a, b) => a + b, 0);
+  // Edits keep at least this much of the film.
+  const editMin = edits ? Math.min(room * 0.5, edits * 0.12) : 0;
+  const holdScale = holdSum > room - editMin ? Math.max(0.3, (room - editMin) / holdSum) : 1;
+  const holds = hold.map((h) => h * holdScale);
+  const editRoom = Math.max(0, room - holds.reduce((a, b) => a + b, 0));
+  // Water-fill: edits get room in proportion to weight, within [floor, MAX_EDIT].
+  const floor = edits ? Math.min(MIN_EDIT, editRoom / edits) : 0;
+  const durs = holds.slice();
+  if (edits) {
+    const idx = weights.map((w, k) => (w > 0 ? k : -1)).filter((k) => k >= 0);
+    let free = idx;
+    let left = editRoom;
+    for (let pass = 0; pass < 8 && free.length; pass++) {
+      const wSum = free.reduce((a, k) => a + weights[k]!, 0);
+      const next: number[] = [];
+      let fixedUsed = 0;
+      for (const k of free) {
+        const share = (left * weights[k]!) / wSum;
+        if (share < floor) {
+          durs[k] = floor;
+          fixedUsed += floor;
+        } else if (share > MAX_EDIT) {
+          durs[k] = MAX_EDIT;
+          fixedUsed += MAX_EDIT;
+        } else {
+          durs[k] = share;
+          next.push(k);
+        }
+      }
+      if (next.length === free.length) break;
+      left -= fixedUsed;
+      free = next;
+      if (left <= 0) {
+        for (const k of free) durs[k] = floor;
+        break;
+      }
+    }
+  }
+  // Never more than `room`: over (floors on a crowded film) shrinks everything alike.
+  // Under (few edits, all at their longest) is left for the caller's pull-back.
+  const sum = durs.reduce((a, b) => a + b, 0);
+  if (sum > room + 1e-9) {
+    const k = room / sum;
+    for (let i = 0; i < n; i++) durs[i]! *= k;
+  }
+  return durs;
+}
+
+/**
+ * Whether an op shows on the canvas by itself: not a token change on an empty
+ * canvas, an empty board, a rename or a page made.
+ */
+function visible(op: Op): boolean {
+  switch (op.op) {
+    case "batch":
+      return op.ops.some(visible);
+    case "artboard.create":
+      return op.artboard.root.children.length > 0;
+    case "tokens":
+    case "note":
+    case "page.create":
+    case "page.update":
+    case "file.rename":
+    case "file.icon":
+    case "name":
+      return false;
+    default:
+      return true;
+  }
 }
 
 function threadOf(op: Op): string | undefined {
@@ -443,13 +520,15 @@ export interface Framing {
   maxZoom: number;
   /** Margin around what's framed, in output px. */
   pad: number;
+  /** Extra room at the top for the board's name and the wayfinding line. */
+  top: number;
 }
 
 /** In the film's CSS pixels (see filmViewport). */
 export function framingFor(shape: FilmShape): Framing {
-  if (shape === "9:16") return { minZoom: 0.62, maxZoom: 1.6, pad: 28 };
-  if (shape === "1:1") return { minZoom: 0.5, maxZoom: 1.5, pad: 36 };
-  return { minZoom: 0.36, maxZoom: 1.3, pad: 48 };
+  if (shape === "9:16") return { minZoom: 0.62, maxZoom: 1.6, pad: 28, top: 56 };
+  if (shape === "1:1") return { minZoom: 0.5, maxZoom: 1.5, pad: 36, top: 44 };
+  return { minZoom: 0.36, maxZoom: 1.3, pad: 44, top: 40 };
 }
 
 /**
@@ -459,26 +538,37 @@ export function framingFor(shape: FilmShape): Framing {
  * canvas instead of re-laying it out.
  */
 export function frameFocus(focus: Focus, view: { w: number; h: number }, f: Framing): Cam {
+  // Frame inside the view less its margins: more at the top, for the board's name.
+  const vw = view.w - 2 * f.pad;
+  const vh = view.h - 2 * f.pad - f.top;
+  // The frame's centre sits below the view's by half the top inset.
+  const shift = f.top / 2;
+  const at = (cx: number, cy: number, zoom: number): Cam => ({
+    page: focus.page,
+    cx,
+    cy: cy - shift / zoom,
+    zoom,
+  });
   const b = focus.board;
-  const fit = Math.min((view.w - 2 * f.pad) / b.w, (view.h - 2 * f.pad) / b.h);
+  const fit = Math.min(vw / b.w, vh / b.h);
   if (fit >= f.minZoom || focus.overview) {
     const zoom = Math.min(f.maxZoom, focus.overview ? Math.max(fit, f.minZoom * 0.42) : fit);
-    if (zoom >= fit - 1e-9 || !focus.detail)
-      return { page: focus.page, cx: b.x + b.w / 2, cy: b.y + b.h / 2, zoom };
+    if (zoom >= fit - 1e-9 || !focus.detail) return at(b.x + b.w / 2, b.y + b.h / 2, zoom);
   }
-  // Fit the width if that's legible, else the legibility floor.
-  const widthFit = (view.w - 2 * f.pad) / b.w;
+  // Too big to read whole: as close as legibility needs (the width, if that's legible),
+  // panned to what changed but kept on the board. A tall frame fills its height
+  // instead, and pans across the board.
+  const tall = view.h > view.w * 1.2;
   const zoom = Math.min(
     f.maxZoom,
-    Math.max(f.minZoom, Math.min(widthFit, fit > 0 ? Math.max(fit, widthFit) : widthFit)),
+    Math.max(f.minZoom, tall ? Math.min((vh / b.h) * 0.94, vw / (b.w * 0.38)) : vw / b.w),
   );
-  const vw = view.w / zoom;
-  const vh = view.h / zoom;
-  const d = focus.detail ?? { x: b.x, y: b.y, w: b.w, h: Math.min(b.h, vh) };
-  const padC = f.pad / zoom;
-  const cx = clampSpan(d.x + d.w / 2, b.x - padC, b.x + b.w + padC, vw);
-  const cy = clampSpan(d.y + d.h / 2, b.y - padC, b.y + b.h + padC, vh);
-  return { page: focus.page, cx, cy, zoom };
+  const sw = vw / zoom;
+  const sh = vh / zoom;
+  const d = focus.detail ?? { x: b.x, y: b.y, w: b.w, h: Math.min(b.h, sh) };
+  const cx = clampSpan(d.x + d.w / 2, b.x, b.x + b.w, sw);
+  const cy = clampSpan(d.y + d.h / 2, b.y, b.y + b.h, sh);
+  return at(cx, cy, zoom);
 }
 
 /** Keep a window of `span` centred near `c` inside [lo, hi]; centred on the range if it's smaller. */
@@ -632,12 +722,13 @@ export function dipAt(shots: Shot[], f: number): number {
 /* ------------------------------------------------------------------ */
 
 /**
- * The nodes an op brings in (roots of new subtrees, which stream in) and the
- * ones it changes in place (restyled, retexted), for the camera's detail.
+ * What an op changes, for the film: `fresh` nodes rise in (new subtrees, and
+ * elements whose text was replaced); `restyled` nodes change in place, so their
+ * board crossfades from how it looked.
  */
-export function changedNodes(op: Op): { fresh: string[]; touched: string[] } {
+export function changedNodes(op: Op): { fresh: string[]; restyled: string[] } {
   const fresh: string[] = [];
-  const touched: string[] = [];
+  const restyled: string[] = [];
   const walk = (o: Op) => {
     switch (o.op) {
       case "batch":
@@ -645,33 +736,29 @@ export function changedNodes(op: Op): { fresh: string[]; touched: string[] } {
         return;
       case "insert":
         for (const n of o.nodes) if (n.kind === "el") fresh.push(n.id);
-        // Text inserted straight into a parent changes the parent.
-        if (o.nodes.some((n) => n.kind === "text")) touched.push(o.parent);
+        // Text inserted straight into a parent: the parent's text is new.
+        if (o.nodes.some((n) => n.kind === "text")) fresh.push(o.parent);
         return;
       case "children": {
         const els = o.children.filter((n) => n.kind === "el");
         if (els.length) for (const n of els) fresh.push(n.id);
-        else touched.push(o.id);
+        else fresh.push(o.id);
         return;
       }
       case "artboard.create":
         for (const n of o.artboard.root.children) if (n.kind === "el") fresh.push(n.id);
-        touched.push(o.artboard.id);
         return;
       case "style":
       case "attrs":
-      case "name":
-        touched.push(o.id);
-        return;
       case "move":
-        touched.push(o.id);
+        restyled.push(o.id);
         return;
       default:
         return;
     }
   };
   walk(op);
-  return { fresh, touched };
+  return { fresh, restyled };
 }
 
 interface TreeNode {
@@ -709,4 +796,135 @@ export function streamUnits(
     .map((u) => u.id)
     .filter((id): id is string => Boolean(id))
     .slice(0, max);
+}
+
+/* ------------------------------------------------------------------ */
+/* The follow camera                                                   */
+/* ------------------------------------------------------------------ */
+
+/** Where the camera goes at film time `t`, and how long it takes to get there. */
+export interface CamTarget {
+  t: number;
+  cam: Cam;
+  /** Seconds of travel from wherever the camera is at `t`. */
+  travel: number;
+}
+
+/** After arriving, the camera holds at least this long before it leaves again. */
+export const MIN_HOLD = 0.7;
+/** How far ahead of a change the camera sets off, at most. */
+export const LEAD = 0.7;
+
+/** How long a trip takes: longer for further, so the speed stays easy on the eye. */
+export function travelTime(a: Cam, b: Cam, view: { w: number; h: number }, slow = false): number {
+  if (a.page !== b.page) return 0;
+  const d = camDistance(a, b, view);
+  if (slow) return Math.min(2.2, Math.max(1.2, 0.9 + d * 0.5));
+  return Math.min(1.7, Math.max(0.55, 0.45 + d * 0.55));
+}
+
+/**
+ * Targets from per-beat focus: one per change of subject. The camera sets off
+ * a little before the beat lands, so it arrives as the change does; it never
+ * leaves a subject before it has arrived and held there.
+ */
+export function camTargets(
+  plan: Plan,
+  focus: (Focus | null)[],
+  view: { w: number; h: number },
+  framing: Framing,
+  final: Focus | null,
+): CamTarget[] {
+  const out: CamTarget[] = [];
+  let prev: Cam | null = null;
+  let prevKey: string | undefined;
+  for (let i = 0; i < plan.beats.length; i++) {
+    const fo = focus[i];
+    if (!fo) continue;
+    const b = plan.beats[i]!;
+    const cam = frameFocus(fo, view, framing);
+    if (
+      prev &&
+      (sameCam(prev, cam, view) ||
+        (fo.key && fo.key === prevKey && camDistance(prev, cam, view) < 0.22))
+    )
+      continue;
+    if (!prev) {
+      out.push({ t: 0, cam, travel: 0 });
+    } else {
+      const last = out[out.length - 1]!;
+      const travel = travelTime(prev, cam, view);
+      const free = last.t + last.travel + MIN_HOLD;
+      const t = Math.max(free, b.at - Math.min(LEAD, travel * 0.75));
+      if (t + travel >= plan.pullback - 0.2) continue;
+      out.push({ t, cam, travel });
+    }
+    prev = cam;
+    prevKey = fo.key;
+  }
+  if (final) {
+    const cam = frameFocus({ ...final, overview: true }, view, framing);
+    const last = out[out.length - 1];
+    const from = last?.cam ?? cam;
+    const travel = travelTime(from, cam, view, true);
+    const t = Math.max(plan.pullback, last ? last.t + last.travel + 0.3 : 0);
+    if (!last || !sameCam(from, cam, view)) out.push({ t, cam, travel });
+  }
+  return out;
+}
+
+export interface CamPath {
+  targets: CamTarget[];
+  view: { w: number; h: number };
+  /** Where each trip set off from. */
+  from: Cam[];
+}
+
+/** Precomputes where each trip starts, so any frame is a pure function of time. */
+export function cameraPath(targets: CamTarget[], view: { w: number; h: number }): CamPath {
+  const from: Cam[] = [];
+  for (let i = 0; i < targets.length; i++) {
+    if (i === 0) from.push(targets[0]!.cam);
+    else from.push(segmentAt(targets, from, i - 1, targets[i]!.t, view));
+  }
+  return { targets, view, from };
+}
+
+/** On trip i at time f: flying, then holding with a slow push in. */
+function segmentAt(
+  targets: CamTarget[],
+  from: Cam[],
+  i: number,
+  f: number,
+  view: { w: number; h: number },
+): Cam {
+  const tg = targets[i]!;
+  const start = from[i]!;
+  const local = f - tg.t;
+  if (tg.travel > 0 && local < tg.travel && start.page === tg.cam.page) {
+    const p = ease.inOut(clamp01(local / tg.travel));
+    return flyTo(start, tg.cam, p, view);
+  }
+  const held = Math.max(0, local - tg.travel);
+  return { ...tg.cam, zoom: tg.cam.zoom * (1 + Math.min(0.05, held * 0.011)) };
+}
+
+/** The camera at film time `f`. */
+export function camOnPath(path: CamPath, f: number): Cam | null {
+  const { targets, from, view } = path;
+  if (!targets.length) return null;
+  let i = 0;
+  while (i + 1 < targets.length && targets[i + 1]!.t <= f) i++;
+  return segmentAt(targets, from, i, f, view);
+}
+
+/** How much of the canvas the page-change dip hides at `f`: 0 clear, 1 covered. */
+export function pageDipAt(path: CamPath, f: number): number {
+  const { targets, from } = path;
+  for (let i = 1; i < targets.length; i++) {
+    if (from[i]!.page === targets[i]!.cam.page) continue;
+    const x = 1 - Math.abs(f - targets[i]!.t) / 0.3;
+    if (x > 0) return ease.inOut(Math.min(1, x * 1.3));
+  }
+  return 0;
 }

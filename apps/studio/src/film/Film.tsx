@@ -2,11 +2,11 @@ import {
   type Artboard,
   beatIndexAt,
   type Cam,
-  cameraAt,
+  camOnPath,
   clamp01,
   type Doc,
-  dipAt,
   ease,
+  pageDipAt,
   progress,
   type Thread,
 } from "@ponzu/core";
@@ -35,7 +35,7 @@ export const STREAM_RISE = 6;
 /** The gap between pieces of one change, at most. */
 const STAGGER = 0.07;
 /** A change made in place crossfades over this long. */
-const CROSSFADE = 0.45;
+const CROSSFADE = 0.3;
 const PIN_IN = 0.32;
 const PIN_OUT = 0.34;
 
@@ -49,7 +49,7 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
   const k = beatIndexAt(plan, f);
   const doc = model.docs[k + 1]!;
   const heights = model.heights[k + 1]!;
-  const cam: Cam = cameraAt(model.shots, f, view) ?? fallbackCam(model, doc);
+  const cam: Cam = camOnPath(model.camera, f) ?? fallbackCam(model, doc);
   const page = doc.pages.find((p) => p.id === cam.page) ?? doc.pages[0];
   const end = f - model.plan.endCard;
   const root = useRef<HTMLDivElement>(null);
@@ -72,7 +72,7 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
   // Pins: open ones, plus ones leaving after their thread resolved.
   const pins = pinsAt(model, f, cam.page);
   const cards = cardsAt(model, f);
-  const dip = dipAt(model.shots, f);
+  const dip = pageDipAt(model.camera, f);
   const canvasFade = end > -0.35 ? clamp01((end + 0.35) / 0.35) : 0;
 
   return (
@@ -147,6 +147,8 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
             const p = toScreen(spot.x, spot.y);
             const card = cards.find((c) => c.thread.id === thread.id);
             const flip = p.x + 330 > view.w;
+            // Low in the frame, the card opens upward so it isn't cut off.
+            const up = p.y + 150 > view.h;
             return (
               <div
                 key={thread.id}
@@ -161,7 +163,11 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
                 </span>
                 {card && (
                   <div
-                    className={cn("pz-film-card", flip && "pz-film-card-flip")}
+                    className={cn(
+                      "pz-film-card",
+                      flip && "pz-film-card-flip",
+                      up && "pz-film-card-up",
+                    )}
                     style={{
                       opacity: card.opacity,
                       translate: `0 ${(1 - card.opacity) * 4}px`,
