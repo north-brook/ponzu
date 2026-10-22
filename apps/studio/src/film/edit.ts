@@ -675,8 +675,22 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
         // Frame the subject with room for its card beside it (about 380×190 screen px): on the
         // side with more of the board, so the card lands on the board rather than off it.
         const cardW = 430 / framing.comfort;
-        const roomRight = ab.x + artboardSize(ab).w - (subjectOnly.x + subjectOnly.w);
-        const roomLeft = subjectOnly.x - ab.x;
+        let roomRight = ab.x + artboardSize(ab).w - (subjectOnly.x + subjectOnly.w);
+        let roomLeft = subjectOnly.x - ab.x;
+        // A narrow board (a phone screen): the card goes in the open canvas beside it, on the
+        // side with no board next to it, so it covers nothing.
+        if (artboardSize(ab).w < cardW * 1.6) {
+          const others = pageBoards(d, ab.id).filter((n) => n.id !== ab.id);
+          const near = (x0: number, x1: number) =>
+            others.some((n) => {
+              const r = boardRect(n, hA);
+              return r.x < x1 && r.x + r.w > x0 && r.y < ab.y + 900 && r.y + r.h > ab.y;
+            });
+          roomLeft = near(ab.x - cardW, ab.x) ? 0 : cardW * 2;
+          roomRight = near(ab.x + artboardSize(ab).w, ab.x + artboardSize(ab).w + cardW)
+            ? 0
+            : cardW * 2;
+        }
         const subject =
           view.w > view.h
             ? roomRight >= roomLeft
@@ -707,7 +721,11 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
               }
             : {
                 page: findArtboard(d, ab.id)!.page.id,
-                board: boardRect(ab, hA),
+                // A phone screen and the open canvas its card goes in, framed as one.
+                board:
+                  artboardSize(ab).w < cardW * 1.6 && view.w > view.h
+                    ? union([boardRect(ab, hA), { ...subject, y: ab.y, h: 1 }])!
+                    : boardRect(ab, hA),
                 detail: subject,
                 texts,
                 context,
