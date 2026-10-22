@@ -45,7 +45,8 @@ export interface Edit {
   /** Per shot: what the canvas shows, and how it gets there. */
   scenes: Scene[];
   /** The last look at the result. */
-  result: { doc: Doc; cam: Cam; heights: Map<string, number> };
+  /** `boards`: what the last look is of; the rest of the canvas fades away for it. */
+  result: { doc: Doc; cam: Cam; heights: Map<string, number>; boards: string[] };
   /** Boards to keep out of every frame (the agent's notes stay, but quietly). */
   first: { doc: Doc; heights: Map<string, number> };
   /** For a track: the real span, and the real times of your comments. */
@@ -459,9 +460,14 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
     if (m.kind === "work") {
       const got = measured.get(m)!;
       // The film opens mid-build: the first shot starts with its board half made, not blank.
+      // So does a board made in this shot: the camera arrives on it partly built, never on blank
+      // canvas where it's about to be.
+      const bornHere = !findArtboard(got.before, m.board);
+      const partly =
+        m.indices.length > 2 ? docAt(m.indices[Math.floor(m.indices.length * 0.55)]!) : null;
       const rawBefore =
-        shotIndex === 0 && m.indices.length > 2
-          ? docAt(m.indices[Math.floor(m.indices.length * 0.55)]!)
+        partly && (shotIndex === 0 || (bornHere && findArtboard(partly, m.board)))
+          ? partly
           : got.before;
       const before = compose(rawBefore, [m.board]);
       const after = compose(got.after, [m.board]);
@@ -486,7 +492,13 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
           : readOut.length
             ? readOut
             : (askedSubjects.get(m.board) ?? []);
-      const answering = got.changed.filter((r) => asked.some((a) => overlap(r, a) > 0));
+      // What answers it: changes in the subject, and new content right beside it ("add notes
+      // under the scale" lands just below what was pinned).
+      const near = (a: Rect) => {
+        const m = Math.min(200, Math.max(60, a.h * 0.6));
+        return { x: a.x - m, y: a.y - m, w: a.w + 2 * m, h: a.h + 2 * m };
+      };
+      const answering = got.changed.filter((r) => asked.some((a) => overlap(r, near(a)) > 0));
       // The opening is a build: frame the top of the board, at a working zoom (the board's
       // first screenful, where its headline is), not the whole board small.
       const opening = shotIndex === 0 && m.answers === undefined;
@@ -513,7 +525,7 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
       const focusRects = opening
         ? [openRect]
         : answering.length
-          ? [...answering, ...asked.filter((a) => answering.some((r) => overlap(r, a) > 0))]
+          ? [...answering, ...asked.filter((a) => answering.some((r) => overlap(r, near(a)) > 0))]
           : got.changed;
       const detail = union(focusRects.map((r) => offset(r, ab)));
       const neighbours = pageBoards(after, m.board);
@@ -540,6 +552,7 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
           texts,
           context,
           keep: detail,
+          close: answering.length > 0,
           key: m.board,
         },
         view,
@@ -714,7 +727,7 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
       const m = sc.shot.moment as Extract<Moment, { kind: "work" }>;
       let v = (looks.get(m)?.change ?? 0) * (m.answers !== undefined ? 3 : 1);
       if (sc === firstPaid) v += 2;
-      return { board: sc.board!, v: v * (reads(sc.board!) ? 1.6 : 1) };
+      return { board: sc.board!, v: v * (reads(sc.board!) ? (view.h > view.w ? 3 : 1.6) : 1) };
     })
     .sort((x, y) => y.v - x.v);
   const hero = candidates[0]?.board ?? lastBoard;
@@ -759,7 +772,16 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
     assetBase: input.assetBase,
     timeline: tl,
     scenes,
-    result: { doc: endDoc, cam: resultCam, heights: endHeights },
+    result: {
+      doc: endDoc,
+      cam: resultCam,
+      heights: endHeights,
+      boards: heroAb
+        ? readsTogether
+          ? pageBoards(endDoc, heroAb.id).map((ab) => ab.id)
+          : [heroAb.id]
+        : [],
+    },
     first: { doc: firstDoc, heights: firstHeights },
     range: ops.length ? { from: ops[0]!.t, to: ops[ops.length - 1]!.t } : null,
     ticks,

@@ -185,6 +185,8 @@ export interface Focus {
   context?: Rect[];
   /** What must stay wholly in frame whatever else moves (the change being shown). */
   keep?: Rect;
+  /** A small answer to a comment: frame it close (past the comfortable zoom), so it reads. */
+  close?: boolean;
   /** Show the whole of `board` even when that's below the shape's legible zoom. */
   overview?: boolean;
   /** What it's about (a board id), for debugging and tests. */
@@ -408,7 +410,7 @@ function frameFocusRaw(focus: Focus, view: { w: number; h: number }, f: Framing)
   if (!focus.overview && focus.detail && fitBoard >= f.minZoom && fitBoard < f.comfort * 0.9) {
     const d = focus.detail;
     const fitD = Math.min(vw / d.w, vh / d.h);
-    const zoom = Math.min(f.comfort, fitD);
+    const zoom = Math.min(focus.close ? Math.min(f.maxZoom, f.comfort * 1.5) : f.comfort, fitD);
     if (zoom > fitBoard * 1.15) {
       const sw = vw / zoom;
       const sh = vh / zoom;

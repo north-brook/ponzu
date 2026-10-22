@@ -234,8 +234,8 @@ export const SHOT = {
 
 /** Time to read a comment: about a second, plus a quarter second per four words. */
 export function commentTime(words: number, length: number): number {
-  const base = Math.min(2.9, Math.max(1.2, 0.6 + words * 0.075));
-  return length <= 15 ? Math.min(2.4, base) : base;
+  const base = Math.min(3.4, Math.max(1.2, 0.6 + words * 0.075));
+  return length <= 15 ? Math.min(3, base) : base;
 }
 
 /**
@@ -400,8 +400,11 @@ export function timeline(
       const featured = m.featured ?? m.comments.slice(0, cards).map((c) => c.thread);
       // Pin-only comments land first, quickly, wherever the camera is; the comments read out come
       // last, so the fix follows the card straight away.
+      // A short film tells one comment's story: the others don't land at all.
       const order = [
-        ...m.comments.map((c, i) => ({ c, i })).filter((x) => !featured.includes(x.c.thread)),
+        ...m.comments
+          .map((c, i) => ({ c, i }))
+          .filter((x) => opts.length > 15 && !featured.includes(x.c.thread)),
         ...m.comments.map((c, i) => ({ c, i })).filter((x) => featured.includes(x.c.thread)),
       ];
       const shown = order.map(({ c, i }, k) => ({
@@ -450,7 +453,8 @@ export function timeline(
     const turns = raw.filter((r) => r.m.kind === "turn");
     const cards = turns.flatMap((r) => r.shown.filter((x) => x.card));
     for (let pass = 0; pass < 3 && spare > 0.05; pass++) {
-      const slots = works.length * 2 + cards.length;
+      const cardShare = opts.length <= 15 ? 3 : 1.5;
+      const slots = works.length * 2 + cards.length * cardShare;
       if (!slots) break;
       const each = spare / slots;
       let usedNow = 0;
@@ -464,7 +468,8 @@ export function timeline(
       for (const r of turns)
         for (const x of r.shown) {
           if (!x.card) continue;
-          const d = Math.max(0, Math.min(each * 1.5, 3.2 - x.d));
+          // A long comment reads at its own pace: cards take their share first in a short film.
+          const d = Math.max(0, Math.min(each * cardShare, 3.8 - x.d));
           x.d += d;
           r.change += d;
           usedNow += d;

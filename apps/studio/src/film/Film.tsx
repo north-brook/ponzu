@@ -59,6 +59,8 @@ interface Frame {
   };
   /** The end card: 0 → 1 fade, and its own clock. */
   end?: { fade: number; t: number };
+  /** The last look: only these boards stay; the rest fade by `p`. */
+  only?: { ids: string[]; p: number };
 }
 
 /** The canvas at film time `f`: one settled state, a camera, and what's animating. */
@@ -74,6 +76,11 @@ function frameAt(e: Edit, f: number): Frame {
     const doc = e.result.doc;
     // The result, clean: the conversation's done, so its pins are off the final picture.
     const out: Frame = { doc, heights: e.result.heights, cam, threads: [] };
+    if (e.result.boards.length)
+      out.only = {
+        ids: e.result.boards,
+        p: progress(f, tl.result + 0.15, tl.result + 0.85, ease.inOut),
+      };
     if (f >= tl.endCard - 0.3)
       out.end = { fade: clamp01((f - (tl.endCard - 0.3)) / 0.3), t: f - tl.endCard };
     return out;
@@ -231,9 +238,10 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
             return (
               <div
                 key={ab.id}
-                className="pz:absolute pz:shadow-board"
+                className="pz-film-board pz:absolute pz:shadow-board"
                 style={{
                   display: offscreen ? "none" : undefined,
+                  opacity: fr.only && !fr.only.ids.includes(ab.id) ? 1 - fr.only.p : undefined,
                   left: 0,
                   top: 0,
                   transform: `translate(${ab.x * cam.zoom + tx}px, ${ab.y * cam.zoom + ty}px) scale(${cam.zoom})`,
@@ -505,6 +513,8 @@ function keepCardsInFrame(root: HTMLElement, view: { w: number; h: number }) {
             { x: subj.x + subj.w / 2 - w / 2, y: subj.y - 14 - h },
             { x: px - w / 2, y: subj.y + subj.h + 14 },
             { x: px - w / 2, y: subj.y - 14 - h },
+            { x: subj.x + subj.w + 14, y: py - h / 2 },
+            { x: subj.x - 14 - w, y: py - h / 2 },
           ]
         : []),
     ];
@@ -522,6 +532,27 @@ function keepCardsInFrame(root: HTMLElement, view: { w: number; h: number }) {
         };
       },
     );
+    // The boards in view: a card over empty canvas hides nothing, over a board it hides design.
+    const boards = [...root.querySelectorAll<HTMLElement>(".pz-film-board")]
+      .filter((b) => b.style.display !== "none")
+      .map((b) => {
+        const r = b.getBoundingClientRect();
+        return {
+          x: (r.left - frame.left) / k,
+          y: (r.top - frame.top) / k,
+          w: r.width / k,
+          h: r.height / k,
+        };
+      });
+    const overBoards = (x: number, y: number) =>
+      boards.reduce(
+        (a, b) =>
+          a +
+          Math.max(0, Math.min(x + w, b.x + b.w) - Math.max(x, b.x)) *
+            Math.max(0, Math.min(y + h, b.y + b.h) - Math.max(y, b.y)),
+        0,
+      ) /
+      (w * h);
     const cost = (o: { x: number; y: number }) => {
       const x = clampX(o.x);
       const y = clampY(o.y);
@@ -538,7 +569,14 @@ function keepCardsInFrame(root: HTMLElement, view: { w: number; h: number }) {
       // Covering the pin is worst; then covering what it's about; then far from the pin.
       const pinHit = px > x - 8 && px < x + w + 8 && py > y - 8 && py < y + h + 8 ? 1 : 0;
       const far = Math.hypot(x + w / 2 - px, y + h / 2 - py) / Math.max(view.w, view.h);
-      return pinHit * 10 + (onCorner ? 6 : 0) + cover * 8 + moved / 120 + far * 1.5;
+      return (
+        pinHit * 10 +
+        (onCorner ? 6 : 0) +
+        cover * 8 +
+        Math.min(1, overBoards(x, y)) * 1.5 +
+        moved / 120 +
+        far * 1.5
+      );
     };
     const best = options.reduce((a, o) => (cost(o) < cost(a) ? o : a));
     const tx = clampX(best.x);
@@ -546,7 +584,9 @@ function keepCardsInFrame(root: HTMLElement, view: { w: number; h: number }) {
     // The card's own position now (it's laid out at right-of-pin by its class).
     const cx = (r.left - frame.left) / k;
     const cy = (r.top - frame.top) / k;
-    card.style.translate = `${tx - cx}px ${ty - cy}px`;
+    // Translate is in the card's own px, which its wrap's zoom scales: undo that.
+    const local = r.width / k / (card.offsetWidth || w);
+    card.style.translate = `${(tx - cx) / local}px ${(ty - cy) / local}px`;
   }
 }
 
