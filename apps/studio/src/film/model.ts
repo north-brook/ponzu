@@ -15,6 +15,7 @@ import {
   framingFor,
   isThemed,
   type JournalEntry,
+  noteBoards,
   type PageState,
   type Plan,
   planFilm,
@@ -386,16 +387,31 @@ export async function buildFilm(input: FilmInput): Promise<FilmModel> {
   const endPage =
     last.pages.find((p) => p.id === lastFocus?.page) ?? last.pages.find((p) => p.artboards.length);
   const finalHeights = heights[heights.length - 1]!;
+  const rectOf = (ab: Artboard): Rect => ({
+    x: ab.x,
+    y: ab.y,
+    w: artboardSize(ab).w,
+    h: finalHeights.get(ab.id) ?? artboardSize(ab).h ?? 900,
+  });
   const final: Focus | null = endPage
     ? (() => {
-        const rects = endPage.artboards.map((ab) => ({
-          x: ab.x,
-          y: ab.y,
-          w: artboardSize(ab).w,
-          h: finalHeights.get(ab.id) ?? artboardSize(ab).h ?? 900,
-        }));
-        const board = union(rects);
-        return board ? { page: endPage.id, board, overview: true } : null;
+        // The result: every board but the agent's notes, when they read together. On a page
+        // too big to read at once, the board the film spent longest on, whole.
+        const notes = noteBoards(input.entries);
+        const shown = endPage.artboards.filter((ab) => !notes.has(ab.id));
+        const all = union((shown.length ? shown : endPage.artboards).map(rectOf));
+        if (!all) return null;
+        const fit = Math.min(
+          (view.w - 2 * framing.pad) / all.w,
+          (view.h - 2 * framing.pad - framing.top) / all.h,
+        );
+        if (fit >= framing.minZoom * 0.55) return { page: endPage.id, board: all, overview: true };
+        const time = new Map<string, number>();
+        for (const b of plan.beats)
+          if (b.kind === "edit")
+            for (const id of b.artboards) time.set(id, (time.get(id) ?? 0) + b.end - b.start);
+        const best = [...shown].sort((a, b) => (time.get(b.id) ?? 0) - (time.get(a.id) ?? 0))[0];
+        return best ? { page: endPage.id, board: rectOf(best), overview: true } : null;
       })()
     : null;
   // Before the first focus, the camera opens on the first one's page.
