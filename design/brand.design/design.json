@@ -1,0 +1,32 @@
+{
+  "ponzu": 1,
+  "name": "Ponzu brand",
+  "icon": "star",
+  "pages": [
+    {
+      "id": "pg_logo",
+      "name": "Logo",
+      "icon": "star"
+    },
+    {
+      "id": "pg_color",
+      "name": "Color",
+      "icon": "palette"
+    },
+    {
+      "id": "pg_type",
+      "name": "Type",
+      "icon": "type"
+    },
+    {
+      "id": "pg_motion",
+      "name": "Motion",
+      "icon": "flow"
+    },
+    {
+      "id": "pg_voice",
+      "name": "Voice",
+      "icon": "note"
+    }
+  ]
+}

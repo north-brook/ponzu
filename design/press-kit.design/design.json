@@ -1,0 +1,32 @@
+{
+  "ponzu": 1,
+  "name": "Press kit",
+  "icon": "image",
+  "pages": [
+    {
+      "id": "pg_about",
+      "name": "About",
+      "icon": "book"
+    },
+    {
+      "id": "pg_logos",
+      "name": "Logos",
+      "icon": "star"
+    },
+    {
+      "id": "pg_shots",
+      "name": "Product shots",
+      "icon": "image"
+    },
+    {
+      "id": "pg_social",
+      "name": "Social",
+      "icon": "layout"
+    },
+    {
+      "id": "pg_contact",
+      "name": "Contact",
+      "icon": "mail"
+    }
+  ]
+}

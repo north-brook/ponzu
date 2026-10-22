@@ -6,6 +6,8 @@
 
 <p align="center"><a href="https://ponzu.design">ponzu.design</a> · <a href="#connect-an-agent">Connect an agent</a> · <a href="#the-design-format">The .design format</a> · <a href="#embed-it">Embed it</a></p>
 
+<p align="center"><a href="https://ponzu.design/gh/north-brook/ponzu/design/brand.design"><img src="https://ponzu.design/badge.svg?label=brand" alt="brand | Ponzu"></a> <a href="https://ponzu.design/gh/north-brook/ponzu/design/press-kit.design"><img src="https://ponzu.design/badge.svg?label=press%20kit" alt="press kit | Ponzu"></a> <a href="https://ponzu.design/gh/north-brook/ponzu/design/components.design"><img src="https://ponzu.design/badge.svg?label=design%20system" alt="design system | Ponzu"></a></p>
+
 ---
 
 Ponzu is an infinite canvas of artboards. Agents draw on it over MCP, writing HTML and CSS, and you watch it happen live. You leave comments on the canvas; the agent picks them up, makes the change, and resolves them. There are no manual editing panels. If you want something changed, you ask.
@@ -173,6 +175,16 @@ For studio work, run `bun run dev`: the studio with hot reload on all three exam
 Desktop: `cd apps/desktop && bun run start`.
 
 PR titles are Conventional Commits, and merging a `feat` or `fix` ships a signed release on its own. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Brand and press
+
+Ponzu's own brand lives in this repo as `.design` folders under [`design/`](design), and opens on the canvas in your browser:
+
+- [Brand](https://ponzu.design/gh/north-brook/ponzu/design/brand.design): the slice, the lockup, the app icon, color, type, motion and voice.
+- [Press kit](https://ponzu.design/gh/north-brook/ponzu/design/press-kit.design): a description and the facts, logos, product shots and social images, ready to export.
+- [Design system](https://ponzu.design/gh/north-brook/ponzu/design/components.design): the studio's bars, buttons, menus, comments and icons, in light and dark.
+
+[All three](https://ponzu.design/gh/north-brook/ponzu/design). Each one's `notes/brief.md` says where its source of truth lives in the code.
 
 ## License
 

@@ -1,0 +1,120 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Funnel+Display:wght@300..800&family=IBM+Plex+Mono:wght@400;500;600&display=swap");
+
+:root {
+  /* Yuzu: the brand's one color. Fills, the mark, the agent. Never text on light. */
+  --yuzu: #ffc81e;
+  /* Ink: text, the mark on light, dark grounds. */
+  --ink: #111110;
+  /* Paper: the white page. */
+  --paper: #ffffff;
+  /* Rice: the warm off-white of the canvas and the site's tiles. */
+  --rice: #f4f3ef;
+  /* Pith: pale yuzu, behind an agent's avatar in a thread. */
+  --pith: #fff4d1;
+  /* Rind: yuzu's own text color, for yellow-family words on light. */
+  --rind: #7a4f00;
+  /* Soy: the dark stage yuzu sits on (the site's demo in dark mode). */
+  --soy: #1d1a13;
+
+  /* Warm neutrals: every grey leans a little toward yuzu. */
+  --n-50: #faf9f6;
+  --n-100: #f4f3ef;
+  --n-200: #e8e6e0;
+  --n-300: #d3d0c8;
+  --n-400: #a9a59b;
+  --n-500: #807c73;
+  --n-600: #5e5b54;
+  --n-700: #3f3d39;
+  --n-800: #262523;
+  --n-900: #161615;
+  --night: #0e0e0d;
+
+  /* Type: Inter for UI, Funnel Display for display and the wordmark, IBM Plex Mono for code. */
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-display: "Funnel Display", "Inter", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --turn: 600ms;
+  --beat: 1.2s;
+  --lap: 9.6s;
+}
+
+/*
+ * The studio's own colors, light and dark, from packages/react/src/styles.css
+ * (--pz-*) and apps/studio/src/studio.css. Wrap a component in .ui-light or
+ * .ui-dark and it reads them. Pins follow PR #122: yuzu with ink numbers.
+ */
+.ui-light {
+  --c-canvas: #f4f3ef;
+  --c-ink: #111110;
+  --c-muted: #5e5b54;
+  --c-faint: #a9a59b;
+  --c-rule: #e8e6e0;
+  --c-chip: #e8e6e0;
+  --c-surface: #ffffff;
+  --c-hover: rgba(17, 17, 16, 0.05);
+  --c-select: #111110;
+  --c-pin: #ffc81e;
+  --c-pin-ink: #111110;
+  --c-pin-soft: #fff4d1;
+  --c-rind: #ffc81e;
+  --c-danger: #d93a2b;
+  /* The loader while waiting: grey, half speed (working.tsx). */
+  --c-dry: #c9c5bc;
+  --c-pop: 0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 28px rgba(0, 0, 0, 0.1);
+  --c-ring: rgba(0, 0, 0, 0.05);
+  --c-board: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 2px 10px rgba(0, 0, 0, 0.05);
+  --c-bar: rgba(250, 250, 249, 0.72);
+  --c-bar-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.1), 0 6px 20px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.06);
+  --c-raised: #ffffff;
+  --c-raised-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  --c-sep: rgba(17, 17, 16, 0.1);
+  /* The studio around the canvas */
+  --c-chrome: #e8e6e0;
+  --c-secondary: #f4f3ef;
+  --c-home: #faf9f6;
+  --c-card: #ffffff;
+  --c-home-muted: #5e5b54;
+  --c-hairline: rgba(17, 17, 16, 0.06);
+  --c-hairline-strong: rgba(17, 17, 16, 0.12);
+  color: var(--c-ink);
+}
+
+.ui-dark {
+  --c-canvas: #121211;
+  --c-ink: #f4f3ef;
+  --c-muted: #a9a59b;
+  --c-faint: #6b6862;
+  --c-rule: #262523;
+  --c-chip: #1f1f1e;
+  --c-surface: #1b1b1a;
+  --c-hover: rgba(255, 255, 255, 0.06);
+  --c-select: #f4f3ef;
+  --c-pin: #ffc81e;
+  --c-pin-ink: #111110;
+  --c-pin-soft: #2e2a1c;
+  --c-rind: #ffc81e;
+  --c-danger: #ff6b5e;
+  --c-dry: #5e5b54;
+  --c-pop: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.5);
+  --c-ring: rgba(255, 255, 255, 0.1);
+  --c-board: 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --c-bar: rgba(28, 28, 28, 0.72);
+  --c-bar-shadow:
+    0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 6px 20px rgba(0, 0, 0, 0.4),
+    0 1px 3px rgba(0, 0, 0, 0.3);
+  --c-raised: #3a3a3a;
+  --c-raised-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.06), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --c-sep: rgba(244, 243, 239, 0.1);
+  --c-chrome: #0e0e0d;
+  --c-secondary: #1b1b1a;
+  --c-home: #151514;
+  --c-card: #161615;
+  --c-home-muted: #8e8a82;
+  --c-hairline: rgba(255, 255, 255, 0.11);
+  --c-hairline-strong: rgba(255, 255, 255, 0.2);
+  color: var(--c-ink);
+}

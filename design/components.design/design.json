@@ -1,0 +1,27 @@
+{
+  "ponzu": 1,
+  "name": "Design system",
+  "icon": "grid",
+  "pages": [
+    {
+      "id": "pg_found",
+      "name": "Foundations",
+      "icon": "palette"
+    },
+    {
+      "id": "pg_canvas",
+      "name": "Canvas",
+      "icon": "layout"
+    },
+    {
+      "id": "pg_home",
+      "name": "Home",
+      "icon": "home"
+    },
+    {
+      "id": "pg_icons",
+      "name": "Icons",
+      "icon": "grid"
+    }
+  ]
+}
