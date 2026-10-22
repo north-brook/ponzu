@@ -2,8 +2,8 @@ import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
-  commentTimes,
   type FilmShape,
+  filmKind,
   JOURNAL_FILE,
   lastSession,
   parseJournal,
@@ -55,7 +55,9 @@ export async function timelapseInfo(root: string) {
     first: ops[0]?.t ?? null,
     last: ops[ops.length - 1]?.t ?? null,
     session,
-    comments: commentTimes(entries),
+    comments: entries.flatMap((e) =>
+      e.kind === "op" && e.origin.kind === "user" && filmKind(e) === "comment" ? [e.t] : [],
+    ),
     ops: ops.map((e) => e.t),
   };
 }

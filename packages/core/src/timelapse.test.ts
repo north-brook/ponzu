@@ -5,18 +5,10 @@ import { checkpointLine, docAt, latestDoc, opLine, parseJournal } from "./journa
 import {
   avoidCuts,
   bezier,
-  cameraAt,
-  cameraPath,
-  camOnPath,
-  camTargets,
-  changedNodes,
-  END_CARD,
+  cutLines,
   frameFocus,
   framingFor,
-  groupTurns,
   lastSession,
-  planFilm,
-  planShots,
   streamUnits,
 } from "./timelapse.ts";
 import type { Thread } from "./types.ts";
@@ -53,19 +45,6 @@ function artboard(id: string, x: number) {
   };
 }
 
-function thread(id: string, artboardId: string): Thread {
-  return {
-    id,
-    artboardId,
-    x: 10,
-    y: 10,
-    status: "open",
-    createdAt: 0,
-    updatedAt: 0,
-    messages: [{ id: `m_${id}`, author: user, text: "Tighter?", createdAt: 0 }],
-  };
-}
-
 /** A journal built line by line, as the writer would. */
 function journal(steps: [number, Op, typeof agent | typeof user, string[]][]): JournalEntry[] {
   let text = checkpointLine(seedDoc(), T0);
@@ -81,21 +60,6 @@ const el = (id: string) => ({
   style: {},
   children: [],
 });
-
-function session() {
-  return journal([
-    [1000, artboard("ab_a", 0), agent, ["ab_a"]],
-    [3000, { op: "insert", parent: "ab_a", index: 0, nodes: [el("n1")] }, agent, ["ab_a"]],
-    [5000, { op: "insert", parent: "ab_a", index: 1, nodes: [el("n2")] }, agent, ["ab_a"]],
-    [9000, artboard("ab_b", 1000), agent, ["ab_b"]],
-    [600_000, { op: "thread.create", thread: thread("t1", "ab_a") }, user, ["ab_a"]],
-    [604_000, { op: "thread.create", thread: thread("t2", "ab_b") }, user, ["ab_b"]],
-    [700_000, { op: "style", id: "n1", style: { color: "red" } }, agent, ["ab_a"]],
-    [701_000, { op: "thread.update", id: "t1", status: "resolved" }, agent, []],
-    [705_000, { op: "insert", parent: "ab_b", index: 0, nodes: [el("n3")] }, agent, ["ab_b"]],
-    [706_000, { op: "thread.update", id: "t2", status: "resolved" }, agent, []],
-  ]);
-}
 
 describe("journal", () => {
   test("ignores a partial last line and replays to any time", () => {
@@ -143,64 +107,6 @@ describe("plan", () => {
     ]);
     expect(lastSession(e)).toEqual({ from: T0 + 2 * 3600_000, to: T0 + 2 * 3600_000 + 5000 });
   });
-
-  test("consecutive user comments make one turn; agent work between makes the next", () => {
-    expect(
-      groupTurns(["edit", "edit", "comment", "comment", "edit", "resolve", "comment"]),
-    ).toEqual([0, 0, 1, 1, 2, 2, 3]);
-  });
-
-  test("length is the output: idle is cut, comments get about a second, edits share the rest", () => {
-    for (const length of [15, 30, 60]) {
-      const plan = planFilm(session(), { length });
-      expect(plan.duration).toBeCloseTo(length, 5);
-      expect(plan.endCard).toBeCloseTo(length - END_CARD, 5);
-      const comments = plan.beats.filter((b) => b.kind === "comment");
-      expect(comments).toHaveLength(2);
-      // About a second each; the first of your turn gets a breath more.
-      for (const c of comments) expect(c.end - c.start).toBeGreaterThan(0.8);
-      for (const c of comments) expect(c.end - c.start).toBeLessThan(1.45);
-      // The ten-minute idle gap doesn't swallow the film.
-      const edits = plan.beats.filter((b) => b.kind === "edit");
-      const longest = Math.max(...edits.map((b) => b.end - b.start));
-      expect(longest).toBeLessThan(length * 0.35);
-      // Beats run back to back, in order.
-      for (let i = 1; i < plan.beats.length; i++)
-        expect(plan.beats[i]!.start).toBeCloseTo(plan.beats[i - 1]!.end, 6);
-    }
-  });
-
-  test("turns alternate agent, you, agent", () => {
-    const plan = planFilm(session(), { length: 30 });
-    expect(plan.turns.map((t) => t.kind)).toEqual(["agent", "user", "agent"]);
-    expect(plan.turns[2]!.who).toEqual({ name: "Claude", client: "claude" });
-  });
-
-  test("trims restrict the range", () => {
-    const e = session();
-    const plan = planFilm(e, { length: 15, range: { from: T0 + 600_000, to: T0 + 800_000 } });
-    expect(plan.beats[0]!.kind).toBe("comment");
-    expect(plan.beats).toHaveLength(6);
-    expect(plan.duration).toBeCloseTo(15, 5);
-    // The opening frame already has the boards made before the range.
-    expect(docAt(e, e[plan.base]!.t)!.pages[0]!.artboards).toHaveLength(2);
-  });
-
-  test("many comments in a short film still fit", () => {
-    const steps: [number, Op, typeof agent | typeof user, string[]][] = [
-      [0, artboard("a", 0), agent, ["a"]],
-    ];
-    for (let i = 0; i < 30; i++)
-      steps.push([
-        1000 + i * 1000,
-        { op: "thread.create", thread: thread(`t${i}`, "a") },
-        user,
-        ["a"],
-      ]);
-    const plan = planFilm(journal(steps), { length: 15 });
-    expect(plan.duration).toBeCloseTo(15, 5);
-    expect(plan.beats.at(-1)!.end).toBeLessThanOrEqual(plan.endCard + 1e-6);
-  });
 });
 
 describe("camera", () => {
@@ -232,51 +138,9 @@ describe("camera", () => {
     expect(tall.cx).toBeGreaterThan(720);
     expect(tall.cx + 540 / tall.zoom / 2).toBeLessThanOrEqual(1440 + f.pad / tall.zoom + 1e-6);
   });
-
-  test("the camera moves smoothly, arriving as each beat lands", () => {
-    const plan = planFilm(session(), { length: 30 });
-    const view = { w: 960, h: 540 };
-    const boards: Record<string, { x: number; y: number; w: number; h: number }> = {
-      ab_a: { x: 0, y: 0, w: 800, h: 600 },
-      ab_b: { x: 1000, y: 0, w: 800, h: 600 },
-    };
-    const focus = plan.beats.map((b) => {
-      const id = b.artboards[0];
-      return id ? { page: "pg", board: boards[id]! } : null;
-    });
-    const shots = planShots(plan, focus, view, framingFor("16:9"), {
-      page: "pg",
-      board: { x: 0, y: 0, w: 1800, h: 600 },
-    });
-    expect(shots.length).toBeGreaterThan(2);
-    let prev = cameraAt(shots, 0, view)!;
-    for (let f = 0; f <= plan.duration; f += 1 / 30) {
-      const c = cameraAt(shots, f, view)!;
-      expect(Number.isFinite(c.cx) && Number.isFinite(c.zoom)).toBe(true);
-      // No jumps: under a third of a screen per frame.
-      expect(Math.abs(c.cx - prev.cx) * c.zoom).toBeLessThan(view.w / 3);
-      prev = c;
-    }
-    for (const s of shots.slice(1)) {
-      const c = cameraAt(shots, s.arrive, view)!;
-      expect(c.cx).toBeCloseTo(s.cam.cx, 0);
-    }
-  });
 });
 
 describe("stream-in", () => {
-  test("inserted subtrees and new text stream in; restyles crossfade", () => {
-    const op: Op = {
-      op: "batch",
-      ops: [
-        { op: "insert", parent: "p", index: 0, nodes: [el("a"), { kind: "text", value: "x" }] },
-        { op: "style", id: "b", style: {} },
-      ],
-    };
-    expect(changedNodes(op)).toEqual({ fresh: ["a", "p"], restyled: ["b"], replaced: [] });
-    expect(changedNodes({ op: "children", id: "h", children: [el("x")] }).replaced).toEqual(["h"]);
-  });
-
   test("one big section opens into its blocks", () => {
     const tree = {
       kind: "el",
@@ -298,52 +162,6 @@ describe("stream-in", () => {
     };
     index(tree);
     expect(streamUnits((id) => all.get(id) ?? null, ["s"])).toEqual(["h", "c1", "c2", "c3", "c4"]);
-  });
-});
-
-describe("follow camera", () => {
-  test("holds on each subject, eases between them and never jumps", () => {
-    const plan = planFilm(session(), { length: 30 });
-    const view = { w: 960, h: 540 };
-    const boards: Record<string, { x: number; y: number; w: number; h: number }> = {
-      ab_a: { x: 0, y: 0, w: 800, h: 600 },
-      ab_b: { x: 3000, y: 0, w: 800, h: 600 },
-    };
-    const focus = plan.beats.map((b) => {
-      const id = b.artboards[0];
-      return id ? { page: "pg", board: boards[id]!, key: id } : null;
-    });
-    const targets = camTargets(plan, focus, view, framingFor("16:9"), {
-      page: "pg",
-      board: { x: 0, y: 0, w: 3800, h: 600 },
-    });
-    // Each move starts after the last has (nearly) arrived.
-    for (let i = 1; i < targets.length; i++)
-      expect(targets[i]!.t).toBeGreaterThanOrEqual(
-        targets[i - 1]!.t + targets[i - 1]!.travel * 0.8 - 1e-9,
-      );
-    const path = cameraPath(targets, view);
-    // Every comment has the camera on its board as the pin lands.
-    for (const b of plan.beats.filter((x) => x.kind === "comment")) {
-      const c = camOnPath(path, b.at + 0.16)!;
-      const board = boards[b.artboards[0]!]!;
-      expect(Math.abs(c.cx - (board.x + board.w / 2))).toBeLessThan(board.w / 2);
-    }
-    let prev = camOnPath(path, 0)!;
-    let maxStep = 0;
-    let backedOut = false;
-    for (let f = 1 / 30; f <= plan.duration; f += 1 / 30) {
-      const c = camOnPath(path, f)!;
-      maxStep = Math.max(maxStep, (Math.abs(c.cx - prev.cx) * c.zoom) / view.w);
-      if (c.zoom < Math.min(...targets.slice(0, -1).map((t) => t.cam.zoom)) * 0.9) backedOut = true;
-      prev = c;
-    }
-    // A long trip (3000px apart) moves well under a screen in a frame, and backs out on the way.
-    expect(maxStep).toBeLessThan(0.15);
-    expect(backedOut).toBe(true);
-    // It gets where it's going.
-    const end = camOnPath(path, plan.duration)!;
-    expect(end.cx).toBeCloseTo(targets.at(-1)!.cam.cx, 0);
   });
 });
 
@@ -375,5 +193,24 @@ describe("framing never cuts text", () => {
     );
     const y0 = top.cy - view.h / 2 + (f.top + 8);
     expect(70 >= y0 - 1e-6 || 110 <= y0 + 1e-6).toBe(true);
+  });
+});
+
+describe("cut lines", () => {
+  test("a line across an edge, or under the wayfinding line, is cut; one wholly in or out isn't", () => {
+    const view = { w: 960, h: 540 };
+    const f = { ...framingFor("16:9"), pill: { x: 14, y: 14, w: 200, h: 30 } };
+    const cam = { page: "p", cx: 480, cy: 270, zoom: 1 };
+    const inside = { x: 400, y: 200, w: 100, h: 20 };
+    const across = { x: 900, y: 200, w: 100, h: 20 };
+    const outside = { x: 1200, y: 200, w: 100, h: 20 };
+    const underPill = { x: 20, y: 20, w: 60, h: 14 };
+    expect(cutLines(cam, [inside, across, outside, underPill], view, f)).toEqual([
+      across,
+      underPill,
+    ]);
+    // A frame found for a cut line keeps it whole.
+    const fixed = avoidCuts(cam, [across], view, f);
+    expect(cutLines(fixed, [across], view, f)).toEqual([]);
   });
 });
