@@ -5,6 +5,7 @@ import {
   clamp01,
   type Doc,
   ease,
+  excerpt,
   findArtboard,
   findNode,
   flyTo,
@@ -193,6 +194,9 @@ function frameAt(e: Edit, f: number): Frame {
 /** Where a scene's camera is at time `f` (a turn's camera hops between its comments). */
 function sceneCam(scene: Scene, f: number, view: { w: number; h: number }): Cam {
   const l = scene.shot.landings;
+  // The build ends where its camera was, not back at its first board.
+  if (scene.build?.length && scene.buildCams && f >= scene.shot.change)
+    return buildCam(view, scene, f, buildTimes(scene));
   // At rest on a result, the camera leans in a touch, so a hold is never a still.
   if (scene.shot.moment.kind === "work") {
     const c = scene.cams[0]!;
@@ -251,7 +255,7 @@ function buildFrame(e: Edit, scene: Scene, f: number): Frame | null {
   return {
     doc: step.doc,
     heights: step.heights,
-    cam: buildCam(e, scene, f, times),
+    cam: buildCam(e.view, scene, f, times),
     threads: [],
     // The agent's mark stays on the board being written until the build is done.
     ...(f < s.changed + 0.2
@@ -313,29 +317,76 @@ function buildTimes(scene: Scene): number[] {
   return out;
 }
 
-/** The build's camera: at rest on the board being written, gliding as the agent moves on. */
-function buildCam(e: Edit, scene: Scene, f: number, times: number[]): Cam {
+/** How the build's camera trails the writing: two smoothing stages of this many seconds each. */
+const FOLLOW = 0.24;
+/** The camera heads for a write a moment before it lands, so the piece arrives in frame. */
+const FOLLOW_LEAD = 0.3;
+const FOLLOW_DT = 1 / 60;
+const follows = new WeakMap<Scene, Cam[]>();
+
+/**
+ * The build's camera: it follows the writing, close on what's written so far and pulling back as
+ * the board fills; it glides to the next board as the agent moves on. A smooth chase of each
+ * write's framing, worked out once per scene so every frame is a pure lookup.
+ */
+function buildCam(view: { w: number; h: number }, scene: Scene, f: number, times: number[]): Cam {
   const steps = scene.build!;
-  const cams = scene.buildCams!;
-  let k = 0;
-  while (k + 1 < steps.length && times[k + 1]! <= f) k++;
-  const here = cams.get(steps[k]!.board) ?? scene.cams[0]!;
-  // At rest, a slow lean in, so the build never sits still.
-  const run0 = steps.findIndex((st) => st.board === steps[k]!.board);
-  const leanAt = (t: number) => 1 + 0.025 * progress(t, times[run0]!, times[run0]! + 4, ease.inOut);
-  // The next write is on another board: glide there in the gap just before it lands.
-  const next = steps[k + 1];
-  if (next && next.board !== steps[k]!.board && f > times[k + 1]! - BUILD_GLIDE) {
-    const from = { ...here, zoom: here.zoom * leanAt(times[k + 1]! - BUILD_GLIDE) };
-    const to = cams.get(next.board) ?? here;
-    const p = ease.inOut(clamp01((f - (times[k + 1]! - BUILD_GLIDE)) / BUILD_GLIDE));
-    return from.page === to.page ? flyTo(from, to, p, e.view) : p < 0.5 ? from : to;
+  const s = scene.shot;
+  let track = follows.get(scene);
+  if (!track) {
+    track = [];
+    const camOf = (k: number) =>
+      steps[k]!.cam ?? scene.buildCams!.get(steps[k]!.board) ?? scene.cams[0]!;
+    const target = (t: number) => {
+      let k = 0;
+      while (k + 1 < steps.length && times[k + 1]! - FOLLOW_LEAD <= t) k++;
+      // Onto another board: an even glide over the gap before its first write.
+      const next = steps[k + 1];
+      if (next && next.board !== steps[k]!.board && t > times[k + 1]! - FOLLOW_LEAD - BUILD_GLIDE) {
+        const p = ease.inOut(
+          clamp01((t - (times[k + 1]! - FOLLOW_LEAD - BUILD_GLIDE)) / BUILD_GLIDE),
+        );
+        return { cam: flyTo(camOf(k), camOf(k + 1), p, view), glide: true };
+      }
+      return { cam: camOf(k), glide: false };
+    };
+    const first = target(s.change).cam;
+    let a = { x: first.cx, y: first.cy, z: Math.log(first.zoom) };
+    let b = { ...a };
+    const n = Math.ceil((s.end + 2 - s.change) / FOLLOW_DT);
+    const k = 1 - Math.exp(-FOLLOW_DT / FOLLOW);
+    for (let i = 0; i <= n; i++) {
+      const { cam, glide } = target(s.change + i * FOLLOW_DT);
+      const goal = { x: cam.cx, y: cam.cy, z: Math.log(cam.zoom) };
+      if (glide) {
+        // A glide is its own ease: the chase lets go of it.
+        a = goal;
+        b = goal;
+      } else {
+        a = {
+          x: a.x + (goal.x - a.x) * k,
+          y: a.y + (goal.y - a.y) * k,
+          z: a.z + (goal.z - a.z) * k,
+        };
+        b = { x: b.x + (a.x - b.x) * k, y: b.y + (a.y - b.y) * k, z: b.z + (a.z - b.z) * k };
+      }
+      track.push({ page: cam.page, cx: b.x, cy: b.y, zoom: Math.exp(b.z) });
+    }
+    follows.set(scene, track);
   }
-  return { ...here, zoom: here.zoom * leanAt(f) };
+  const i = Math.max(0, Math.min(track.length - 1, Math.round((f - s.change) / FOLLOW_DT)));
+  return track[i]!;
 }
 
 const findNodeIn = (doc: Doc, id: string) =>
   doc.pages.some((p) => p.artboards.some((ab) => ab.id === id || Boolean(findNode(ab.root, id))));
+
+/** Seconds between one piece of a fix rising and the next. */
+function riseStep(scene: Scene): number {
+  const n = scene.rise?.length ?? 0;
+  const span = Math.max(0, scene.shot.changed - scene.shot.change - ARRIVE_MS / 1000);
+  return n > 1 ? Math.min(0.09, span / (n - 1)) : 0;
+}
 
 function workFrame(e: Edit, scene: Scene, f: number): Frame {
   const s = scene.shot;
@@ -364,9 +415,11 @@ function workFrame(e: Edit, scene: Scene, f: number): Frame {
       .map((id) => scene.before.threads.find((t) => t.id === id))
       .filter((t): t is Thread => Boolean(t));
     // Resolved: as the change settles the pin pops to a check, holds a beat, then shrinks away.
-    // Once the change has settled (its pieces risen and sharp), so the check confirms it.
+    // Once every piece of the change has risen and the old look has gone, and a beat to see it:
+    // the check confirms what's there.
+    const n = scene.rise?.length ?? 0;
     const settled =
-      s.change + Math.min(ARRIVE_MS / 1000 + 0.15, Math.max(0.35, s.changed - s.change));
+      s.change + riseStep(scene) * Math.max(0, n - 1) + (n ? ARRIVE_MS / 1000 : 0.45) + 0.25;
     const p = clamp01((f - settled) / RESOLVE);
     if (p < 1) out.pinsOut = leaving.map((thread) => ({ thread, p }));
   }
@@ -392,8 +445,7 @@ function workFrame(e: Edit, scene: Scene, f: number): Frame {
   if (changing && scene.born)
     out.drawing = { board: scene.board!, p: ease.out(clamp01((f - s.change) / 0.5)) };
   if (changing && scene.rise?.length) {
-    const span = Math.max(0, s.changed - s.change - ARRIVE_MS / 1000);
-    const step = scene.rise.length > 1 ? Math.min(0.09, span / (scene.rise.length - 1)) : 0;
+    const step = riseStep(scene);
     out.rising = {
       ids: scene.rise,
       at: scene.rise.map((_, i) => (f - s.change - i * step) * 1000),
@@ -452,7 +504,13 @@ function turnFrame(e: Edit, scene: Scene, f: number): Frame {
       );
       if (t && open > 0.001 && close < 0.999)
         out.card = {
-          thread: t,
+          // A long comment shows as an excerpt of the person's own words.
+          thread: {
+            ...t,
+            messages: t.messages.map((msg, i) =>
+              i === 0 ? { ...msg, text: excerpt(msg.text) } : msg,
+            ),
+          },
           open,
           close,
           typed,

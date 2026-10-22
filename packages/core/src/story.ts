@@ -74,6 +74,45 @@ function opText(op: Op): string {
   return c?.op === "thread.create" ? (c.thread.messages[0]?.text ?? "") : "";
 }
 
+/** At most about this many words of a comment show on its card in a film. */
+export const EXCERPT_WORDS = 22;
+
+const countWords = (s: string) => s.split(/\s+/).filter(Boolean).length;
+
+/**
+ * A long comment as its card shows it in a film: the person's own words, cut, never reworded.
+ * The ask (the last question, else the last sentence) always stays; before it, the comment from
+ * its start while that fits, a long sentence down to its first clause; a cut shows as an ellipsis.
+ */
+export function excerpt(text: string, max = EXCERPT_WORDS): string {
+  const t = text.trim();
+  if (countWords(t) <= max) return t;
+  const sentences = (t.match(/[^.!?]+[.!?]+["”’)]*|[^.!?]+$/g) ?? [t])
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const ask = sentences.findLast((s) => s.endsWith("?")) ?? sentences.at(-1)!;
+  let room = max - countWords(ask);
+  const kept: string[] = [];
+  let cut = false;
+  for (const s of sentences.slice(0, sentences.indexOf(ask))) {
+    if (countWords(s) <= room) {
+      kept.push(s);
+      room -= countWords(s);
+      continue;
+    }
+    // Its first clause, before a colon, semicolon or dash, when that fits.
+    const clause = s.split(/\s*[:;—]\s*|\s+-\s+/)[0]!;
+    if (clause !== s && countWords(clause) <= room) kept.push(clause);
+    cut = true;
+    break;
+  }
+  if (!kept.length) return ask;
+  const head = kept.join(" ");
+  return cut || kept.length < sentences.indexOf(ask)
+    ? `${head.replace(/[.,]$/, "")}… ${ask}`
+    : `${head} ${ask}`;
+}
+
 /**
  * The session as moments. Each of your rounds of comments is a turn. Between
  * turns, the agent's work is grouped per board, in the order the agent first
@@ -112,7 +151,8 @@ export function moments(entries: JournalEntry[], range?: Range): Moment[] {
         thread: create.thread.id,
         board: create.thread.artboardId,
         t: e.t,
-        words: opText(e.op).split(/\s+/).filter(Boolean).length,
+        // As the film's card shows it.
+        words: countWords(excerpt(opText(e.op))),
       });
       turn.to = e.t;
       if (create.thread.artboardId) asked.set(create.thread.artboardId, round);
@@ -239,6 +279,9 @@ export const SHOT = {
   /** The prompt the film opens on, typed into the agent's chat and sent, then a beat of the agent. */
   prompt: 2.9 as number,
 };
+
+/** A fix, from its first piece to its check gone: rising, a beat to see it, the check. */
+export const FIX_SETTLES = 2.3;
 
 /**
  * How a comment arrives, in seconds: the cursor comes to its spot, clicks and the pin springs in,
@@ -512,6 +555,16 @@ export function timeline(
       hold: SHOT.hold,
       shown: [] as { comment: CommentLanding; card: boolean; hop: boolean; d: number }[],
     };
+  });
+  raw.forEach((r, i) => {
+    if (r.m.kind !== "work" || r.m.answers === undefined) return;
+    // Straight from the card into its fix: a short move, no wait on the unchanged design.
+    if (raw[i - 1]?.m.kind === "turn") {
+      r.travel = 0.6;
+      r.settle = 0.15;
+    }
+    // Room for the fix to settle and its check to pop before the camera moves on.
+    r.hold = Math.max(r.hold, FIX_SETTLES - r.change);
   });
   if (raw[0]) raw[0].travel = 0;
   // The opening build is the first act: the board filling in, write by write.

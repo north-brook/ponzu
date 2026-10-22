@@ -17,7 +17,6 @@ import {
   type Moment,
   moments,
   noteBoards,
-  type Op,
   type Range,
   type Rect,
   replayTo,
@@ -92,8 +91,12 @@ export interface Scene {
     boards: string[];
     /** The board this write was on: the camera is on it. */
     board: string;
+    /** Where on that board this write's pieces landed (board px). */
+    wrote?: Rect;
+    /** The camera on this write: close on what's written so far, pulling back as it fills. */
+    cam?: Cam;
   }[];
-  /** For a build: where the camera rests on each board it visits, in the order first written. */
+  /** For a build: where the camera rests on each board it visits (whole), once it's written. */
   buildCams?: Map<string, Cam>;
   /** Pins that leave as this work lands. */
   resolves?: string[];
@@ -114,13 +117,6 @@ export interface EditInput {
   assetBase?: string;
   /** The wayfinding line's box in the film's px (the film page measures it). */
   pill?: Rect;
-}
-
-/** Artboards an op makes. */
-function createdBoards(op: Op): string[] {
-  if (op.op === "artboard.create") return [op.artboard.id];
-  if (op.op === "batch") return op.ops.flatMap(createdBoards);
-  return [];
 }
 
 /** The intent said for this stretch, and who said it. */
@@ -201,6 +197,34 @@ class Lab {
     const r = el.getBoundingClientRect();
     if (!r.width && !r.height) return null;
     return { x: r.left - b.left, y: r.top - b.top, w: r.width, h: r.height };
+  }
+
+  /**
+   * What these elements actually show, in board px: their lines of text and their pictures, not
+   * the full-width bands they sit in. Null when they show neither.
+   */
+  ink(h: Host, ids: string[]): Rect | null {
+    const b = h.wrap.getBoundingClientRect();
+    const out: Rect[] = [];
+    const range = document.createRange();
+    const add = (r: DOMRect) => {
+      if (r.width >= 2 && r.height >= 2)
+        out.push({ x: r.left - b.left, y: r.top - b.top, w: r.width, h: r.height });
+    };
+    for (const id of ids) {
+      const el = h.shadow.querySelector(`[data-id="${CSS.escape(id)}"]`);
+      if (!el) continue;
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        if (!n.textContent?.trim()) continue;
+        range.selectNodeContents(n);
+        for (const r of range.getClientRects()) add(r);
+      }
+      for (const m of el.querySelectorAll("img, svg, video, canvas, picture"))
+        add(m.getBoundingClientRect());
+      if (el.matches("img, svg, video, canvas, picture")) add(el.getBoundingClientRect());
+    }
+    return union(out) ?? null;
   }
 
   /** Lines of text on the board, in board px. */
@@ -299,6 +323,9 @@ const overlap = (a: Rect, b: Rect) =>
   Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) *
   Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
 const offset = (r: Rect, ab: Artboard): Rect => ({ x: ab.x + r.x, y: ab.y + r.y, w: r.w, h: r.h });
+/** Keep a window of `span` centred near `c` inside [lo, hi]; centred on the range if it's smaller. */
+const clampSpan = (c: number, lo: number, hi: number, span: number) =>
+  hi - lo <= span ? (lo + hi) / 2 : Math.min(hi - span / 2, Math.max(lo + span / 2, c));
 
 /** The corner wayfinding line's box in film px: slice, file name, page name, as Film draws it. */
 function measurePill(input: EditInput, view: { w: number; h: number }): Rect {
@@ -488,7 +515,8 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
     findArtboard(doc, id)?.page.artboards.filter((a) => !notes.has(a.id)) ?? [];
 
   // Continuity: what the viewer has seen of each board. A board keeps the look the film last
-  // showed it with until the film shows it change; nothing reverts and nothing changes off cue.
+  // showed it with until the film shows it change; nothing reverts and nothing changes off cue
+  // (a neighbour's fix the film doesn't tell never shows, not even at the edge of a frame).
   // Boards the film hasn't shown yet are taken as of the moment they first appear.
   const shown = new Map<string, Artboard>();
   // Document-wide state (tokens: a colour, a font) moves only forward: shots shown out of order
@@ -505,29 +533,19 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
     if (latest.tokens !== null && (side === "before" || index < latest.index))
       doc.tokens = latest.tokens;
     else latest = { index, tokens: doc.tokens };
+    // The board a shot changes starts as the film last showed it too: its change is all it does.
     for (const p of doc.pages)
       p.artboards = p.artboards.map((ab) =>
-        !live.includes(ab.id) && shown.has(ab.id) ? structuredClone(shown.get(ab.id)!) : ab,
+        (side === "before" || !live.includes(ab.id)) && shown.has(ab.id)
+          ? structuredClone(shown.get(ab.id)!)
+          : ab,
       );
     return doc;
   };
-  // Only what the last shot showed: off screen between shots, a board may have moved on.
-  const remember = (doc: Doc, cams: Cam[], heights: Map<string, number>) => {
-    shown.clear();
-    for (const p of doc.pages)
-      for (const ab of p.artboards) {
-        const r = boardRect(ab, heights);
-        const seen = cams.some((c) => {
-          if (c.page !== p.id) return false;
-          const hw = view.w / 2 / c.zoom;
-          const hh = view.h / 2 / c.zoom;
-          // Seen means a good part of it was on screen, not a sliver at the edge.
-          const ix = Math.max(0, Math.min(r.x + r.w, c.cx + hw) - Math.max(r.x, c.cx - hw));
-          const iy = Math.max(0, Math.min(r.y + r.h, c.cy + hh) - Math.max(r.y, c.cy - hh));
-          return ix * iy >= 0.3 * Math.min(r.w * r.h, 4 * hw * hh);
-        });
-        if (seen) shown.set(ab.id, structuredClone(ab));
-      }
+  // Every board in a shot is as that shot left it, whether or not it was in frame: a board the
+  // camera passed by can't have moved on when it comes back.
+  const remember = (doc: Doc) => {
+    for (const p of doc.pages) for (const ab of p.artboards) shown.set(ab.id, structuredClone(ab));
   };
 
   // The opening build as the writes that made it: everything the agent did before your first
@@ -539,6 +557,8 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
   const buildSteps = async (
     m: Extract<Moment, { kind: "work" }>,
     to: Doc,
+    /** For a short film: the only boards it builds. */
+    solo?: Set<string>,
   ): Promise<NonNullable<Scene["build"]>> => {
     const page = findArtboard(to, m.board)?.page.id;
     // From the start of the stretch: the doc before the session's first write.
@@ -549,9 +569,12 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
     const last = firstTurnEntry?.kind === "turn" ? firstTurnEntry.comments[0]!.entry - 1 : m.after;
     const doc = docAt(startAt - 1);
     opened.start = { doc: structuredClone(doc), heights: await heightsOf(doc) };
+    const existed = new Set(doc.pages.flatMap((p) => p.artboards.map((ab) => ab.id)));
     const steps: NonNullable<Scene["build"]> = [];
     let pending: string[] = [];
-    let born: string[] = [];
+    // Sheets made in the build show from their first content: a blank sheet is never in frame.
+    const visible = new Set<string>();
+    const hasContent = (ab: Artboard) => ab.root.children.some((c) => c.kind === "el");
     for (let i = startAt; i <= last; i++) {
       const e = entries[i]!;
       if (e.kind !== "op" || e.origin.kind !== "agent") continue;
@@ -560,21 +583,41 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
         (id) => findArtboard(doc, id)?.page.id === page && !notes.has(id),
       );
       if (!boards.length) continue;
+      // A short film builds only the board its story is about.
+      if (solo && !boards.some((b) => solo.has(b))) continue;
       pending.push(...arrivals(e.op));
-      born.push(...createdBoards(e.op));
       // A write that brings nothing visible (a bare new sheet, a restyle) joins the next one that
       // does: a board appears with its first content, never as an empty sheet.
       if (!pending.length && i < last) continue;
       const shown = structuredClone(doc);
+      const born: string[] = [];
+      for (const p of shown.pages)
+        p.artboards = p.artboards.filter((ab) => {
+          if (existed.has(ab.id) || visible.has(ab.id)) return true;
+          if (!hasContent(ab) || (solo && !solo.has(ab.id))) return false;
+          visible.add(ab.id);
+          born.push(ab.id);
+          return true;
+        });
+      const board = boards.find((b) => !solo || solo.has(b)) ?? boards[0]!;
+      const arrive = outermost(shown, pending);
+      // Where this write landed on its board, for a camera that follows the writing.
+      const ab = findArtboard(shown, board)?.artboard;
+      const host = ab ? await lab.show(shown, ab, 2) : null;
+      const boxes = host
+        ? arrive.map((id) => lab.box(host, id)).filter((r): r is Rect => Boolean(r))
+        : [];
+      // A tall frame follows what the write shows, not the full-width band it's in.
+      const ink = host && view.h > view.w ? lab.ink(host, arrive) : null;
       steps.push({
         doc: shown,
         heights: await heightsOf(shown),
-        arrive: outermost(shown, pending),
+        arrive,
         boards: born,
-        board: boards[0]!,
+        board,
+        ...(ink ? { wrote: ink } : boxes.length ? { wrote: union(boxes)! } : {}),
       });
       pending = [];
-      born = [];
     }
     // At most so many steps: past that, neighbouring writes on the same board land together.
     const MAX = 30;
@@ -585,6 +628,9 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
       const group = steps.slice(Math.floor(k * per), Math.floor((k + 1) * per));
       if (!group.length) continue;
       const end = group.at(-1)!;
+      const wrote = union(
+        group.filter((g) => g.board === end.board && g.wrote).map((g) => g.wrote!),
+      );
       out.push({
         ...end,
         arrive: outermost(
@@ -592,6 +638,7 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
           group.flatMap((g) => g.arrive),
         ),
         boards: group.flatMap((g) => g.boards),
+        ...(wrote ? { wrote } : {}),
       });
     }
     return out;
@@ -607,6 +654,8 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
       const bornHere = !findArtboard(got.before, m.board);
       // The opening build plays from the start, write by write: that's the film's first act.
       const building = shotIndex === 0 && m.answers === undefined;
+      // A short film is one story: its build is the board that story is about, no tour.
+      const solo = input.length <= 15 ? new Set([m.board]) : undefined;
       const partly =
         !building && m.indices.length > 2
           ? docAt(m.indices[Math.floor(m.indices.length * 0.55)]!)
@@ -757,7 +806,7 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
         },
       );
       // The build, as the writes that made it: each one's doc, and the pieces it brought.
-      const build = building ? await buildSteps(m, after) : undefined;
+      const build = building ? await buildSteps(m, after, solo) : undefined;
       // The build's camera: on each board it visits, that board's first readable screenful,
       // framed as the board ends up (so it never reframes as the board grows).
       let buildCams: Map<string, Cam> | undefined;
@@ -804,6 +853,36 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
             ),
           );
         }
+        // The camera follows the writing on a board that's small whole: close on what's written
+        // so far (a wide frame) or on the latest few writes (a tall one, a section at a time),
+        // pulling back as the board fills. A wide frame ends each board whole.
+        const vw = view.w - 2 * framing.pad;
+        const vh = view.h - 2 * framing.pad - framing.top;
+        const tall = view.h > view.w;
+        const zMax = Math.min(framing.maxZoom, framing.comfort * (tall ? 1.05 : 1.3));
+        const written = new Map<string, Rect[]>();
+        build.forEach((st, k) => {
+          const whole = buildCams!.get(st.board)!;
+          const b = findArtboard(st.doc, st.board)?.artboard;
+          const lastOfRun = build[k + 1]?.board !== st.board;
+          if (st.wrote) written.set(st.board, [...(written.get(st.board) ?? []), st.wrote]);
+          const seen = written.get(st.board) ?? [];
+          if (!b || !seen.length || whole.zoom >= framing.comfort * 0.9 || (lastOfRun && !tall)) {
+            st.cam = whole;
+            return;
+          }
+          const region = union(tall ? seen.slice(-3) : seen)!;
+          // Never so close that a board's first, sparse write fills the frame with bare sheet.
+          const zoom = Math.max(
+            whole.zoom,
+            Math.min(zMax, whole.zoom * (tall ? 2.2 : 1.6), vw / region.w, vh / region.h),
+          );
+          const bh = st.heights.get(b.id) ?? artboardSize(b).h ?? 900;
+          const br = { x: b.x, y: b.y, w: artboardSize(b).w, h: bh };
+          const cx = clampSpan(b.x + region.x + region.w / 2, br.x, br.x + br.w, vw / zoom);
+          const cy = clampSpan(b.y + region.y + region.h / 2, br.y, br.y + br.h, vh / zoom);
+          st.cam = { page: whole.page, cx, cy: cy - framing.top / 2 / zoom, zoom };
+        });
         // The build starts on the canvas before its first write: empty, for a new design.
         buildBefore = opened.start?.doc ?? build[0]!.doc;
       }
@@ -818,7 +897,7 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
           before: buildCams ? (opened.start?.heights ?? build![0]!.heights) : hB,
           after: build?.length ? build.at(-1)!.heights : hA,
         },
-        cams: buildCams ? [buildCams.get(build![0]!.board) ?? cam] : [cam],
+        cams: buildCams ? [build![0]!.cam ?? buildCams.get(build![0]!.board) ?? cam] : [cam],
         ...(buildCams ? { buildCams } : {}),
         board: m.board,
         rise,
@@ -832,7 +911,7 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
         shown.clear();
         for (const p of builtAfter.pages)
           for (const ab of p.artboards) shown.set(ab.id, structuredClone(ab));
-      } else remember(after, [cam], hA);
+      } else remember(after);
       continue;
     }
     if (m.kind === "turn") {
@@ -950,7 +1029,7 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
       // Pin-only landings take the camera of the first card read out.
       const firstCard = cams.find(Boolean);
       for (let k = 0; k < cams.length; k++) if (!cams[k]) cams[k] = firstCard ?? cams[0]!;
-      remember(after, cams, hA);
+      remember(after);
       scenes.push({
         told: [],
         shot,
