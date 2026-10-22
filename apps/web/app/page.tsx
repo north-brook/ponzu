@@ -36,20 +36,23 @@ export default function Home() {
           The design canvas for your coding agent.
         </h1>
         <p className="m-0 max-w-[620px] text-lg/[29px] text-pretty text-muted md:text-[20px]/[32px]">
-          Open source. Runs on your machine. Your agent designs in plain HTML and CSS, and you steer
-          with comments.
+          Open source. Runs on your machine. Your agent designs in HTML and CSS. You steer with
+          comments.
         </p>
         <div className="flex flex-wrap justify-center gap-3 pt-3">
           <DownloadButton>Download for Mac</DownloadButton>
-          <GitHubButton>GitHub</GitHubButton>
+          <GitHubButton>View on GitHub</GitHubButton>
         </div>
       </header>
 
-      {/* The demo on a yuzu desktop, with room on every side. The big slice behind it holds still. */}
-      <div className="relative mt-4 mb-28 overflow-hidden rounded-[28px] bg-yuzu p-14 max-[720px]:rounded-2xl max-[720px]:p-4">
+      {/*
+        The demo on a desktop, with room on every side: yuzu on light, soy on dark (`.stage`). The
+        big slice behind it holds still.
+      */}
+      <div className="stage relative mt-4 mb-28 overflow-hidden rounded-[28px] p-14 max-[720px]:rounded-2xl max-[720px]:p-4">
         <Slice
           size={620}
-          className="pointer-events-none absolute -top-[200px] -right-[180px] opacity-[0.12] [--slice:#111110] max-[720px]:hidden"
+          className="pointer-events-none absolute -top-[200px] -right-[180px] opacity-(--stage-slice-opacity) [--slice:var(--stage-slice)] max-[720px]:hidden"
         />
         <div className="dm-frame-host relative">
           <ProductDemo />
@@ -65,7 +68,7 @@ export default function Home() {
         <Tile
           className="md:col-span-12 lg:col-span-7"
           title="Steer with comments."
-          body="Pin feedback anywhere on the canvas. Your agent makes the change and resolves it, and answers when you ask a question."
+          body="Pin feedback anywhere. Your agent makes the change, resolves it and answers your questions."
         >
           <CommentThread />
         </Tile>
@@ -73,7 +76,7 @@ export default function Home() {
         <Tile
           className="md:col-span-6 lg:col-span-5"
           title="Designs you can commit."
-          body="Every artboard is an HTML file. Review changes in git, next to your code."
+          body="Each artboard is an HTML file you review and commit alongside your code."
         >
           <div className="flex flex-col gap-2">
             <CodeWell className={codeWell}>
@@ -107,7 +110,7 @@ export default function Home() {
         <Tile
           className="md:col-span-12 lg:col-span-7"
           title="Just HTML and CSS."
-          body="Grid, gradients, variable fonts, video and animation: the browser's own building blocks."
+          body="Grid, gradients, variable fonts, video and real animation."
         >
           <style>{SLICE_CSS}</style>
           <div className="grid flex-1 gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
@@ -124,8 +127,8 @@ export default function Home() {
 
         <Tile
           className="md:col-span-12"
-          title="Every design on your Macs."
-          body="Ponzu's home screen lists every .design on this Mac and your others on Tailscale, grouped by project and branch, with live previews of whatever your agent is working on."
+          title="Your Macs. One home screen."
+          body="Find designs across your Macs on Tailscale and watch your agent's edits live."
         >
           <HomeScreen />
         </Tile>

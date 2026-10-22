@@ -13,9 +13,15 @@
   --code-ink: #e8e6e0;
   --code-rule: transparent;
   --chip: #f4f3ef;
-  /* Yuzu: the brand's one color. The demo's stage and the download page's step stages sit on it. */
+  /* Yuzu: the brand's one color. */
   --yuzu: #ffc81e;
+  /*
+   * The desktop the demo and the download page's steps sit on: yuzu on light. Its big slice is
+   * ink, faint.
+   */
   --stage: #ffc81e;
+  --stage-slice: #111110;
+  --stage-slice-opacity: 0.12;
   --stage-shadow: rgba(90, 60, 0, 0.3);
   --shot-shadow: rgba(40, 30, 0, 0.28);
   --rule: #e8e6e0;
@@ -26,6 +32,9 @@
   --slice: #111110;
   /* The footer's field of slices. */
   --field: #e4e1d9;
+  /* The stuck header's hairline and shadow. */
+  --nav-rule: rgb(17 17 16 / 0.08);
+  --nav-shadow: rgb(17 17 16 / 0.18);
   /* Citrus highlights: the selected file and the cursor on the download page. */
   --m1: #ffc81e;
   --m2: #ffc81e;
@@ -45,7 +54,10 @@
     --code-ink: #e8e6e0;
     --code-rule: #262523;
     --chip: #161615;
-    --stage: #ffc81e;
+    /* On dark a full yuzu desktop outshouts the page; the desktop goes soy and the slice is yuzu. */
+    --stage: #1d1a13;
+    --stage-slice: #ffc81e;
+    --stage-slice-opacity: 0.1;
     --stage-shadow: rgba(0, 0, 0, 0.5);
     --shot-shadow: rgba(0, 0, 0, 0.8);
     --rule: #1f1f1e;
@@ -54,6 +66,8 @@
     --cta-ink: #111110;
     --slice: #ffc81e;
     --field: #262523;
+    --nav-rule: rgb(255 255 255 / 0.08);
+    --nav-shadow: rgb(0 0 0 / 0.6);
     --m1: #ffc81e;
     --m2: #ffc81e;
   }
@@ -96,6 +110,78 @@
   body {
     @apply bg-ground font-sans text-[17px]/[1.6] text-text;
     font-feature-settings: "cv11", "ss03";
+  }
+}
+
+/*
+ * The header. Its box never changes, so nothing on the page moves as it sticks: 82px tall, its
+ * contents where they are at the top of the page. Stuck, a frosted inset bar fades in behind them
+ * (`::before`, 60px, centred on the same line), settling from a touch larger as it appears.
+ */
+.nav-bar {
+  position: relative;
+  height: 82px;
+}
+
+.nav-bar::before {
+  content: "";
+  position: absolute;
+  inset: 11px -14px;
+  z-index: -1;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ground) 72%, transparent);
+  backdrop-filter: blur(20px) saturate(1.6);
+  box-shadow:
+    0 0 0 1px var(--nav-rule),
+    0 8px 28px -12px var(--nav-shadow);
+  opacity: 0;
+  scale: 1.015 1.08;
+  transition:
+    opacity 240ms ease-out,
+    scale 360ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.nav[data-stuck] .nav-bar::before {
+  opacity: 1;
+  scale: 1;
+}
+
+/*
+ * The desktop under the demo and the download steps. Dark mode lights it from the corner the slice
+ * sits in, so the soy reads as a surface and not a hole.
+ */
+.stage {
+  background: var(--stage);
+}
+
+@media (prefers-color-scheme: dark) {
+  .stage {
+    background:
+      radial-gradient(120% 90% at 100% 0%, rgb(255 200 30 / 0.16), transparent 60%), var(--stage);
+    box-shadow: inset 0 0 0 1px rgb(255 200 30 / 0.08);
+  }
+}
+
+/* The app's home screen, in its tile on the home page: the studio's own colors. */
+.home {
+  --home-rule: rgb(17 17 16 / 0.06);
+  --home-rule-strong: rgb(17 17 16 / 0.12);
+  background: #faf9f6;
+}
+
+.home-preview {
+  background: #f4f3ef;
+}
+
+@media (prefers-color-scheme: dark) {
+  .home {
+    --home-rule: rgb(255 255 255 / 0.11);
+    --home-rule-strong: rgb(255 255 255 / 0.2);
+    background: #151514;
+  }
+
+  .home-preview {
+    background: #121211;
   }
 }
 
@@ -211,8 +297,7 @@
 
 /*
  * The footer's field: a grid of tiny slices, with a huge yuzu one rising from the bottom edge. The
- * field fades in from the top, so the slice comes up out of the page. Every few seconds a ripple
- * runs out from the slice's centre and turns its units by one segment; any unit turns on hover.
+ * field fades in from the top, so the slice comes up out of the page.
  */
 .field {
   display: block;
@@ -221,59 +306,43 @@
   mask-image: linear-gradient(to bottom, transparent, rgb(0 0 0 / 0.25) 30%, #000 82%);
 }
 
-.field-ripple,
-.field-unit {
-  transform-box: fill-box;
-  transform-origin: center;
-}
-
 .field-unit {
   color: var(--field);
-  transition: rotate 600ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-/* The ripple runs on the unit's group, so the unit's own hover turn still applies on top. */
-.field-ripple[data-on] {
-  animation: ripple 7s cubic-bezier(0.2, 0.8, 0.2, 1) infinite both;
-  animation-delay: calc(var(--d) * 28ms);
-}
-
-.field-ripple[data-on] .field-unit {
+.field-unit[data-on] {
   color: var(--yuzu);
 }
 
-/* The legal line's clearing: the ground behind its text, feathered into the field. */
+/*
+ * A clearing in the field for a line of text: the page's ground, solid right up to the text's own
+ * box, then feathering out to nothing over 14px across and 8px down, so it hugs the line.
+ */
 .field-clear {
+  position: relative;
+  isolation: isolate;
+}
+
+.field-clear::before {
+  content: "";
+  position: absolute;
+  inset: -8px -14px;
+  z-index: -1;
   background: var(--ground);
-  box-shadow: 0 0 12px 10px var(--ground);
-  border-radius: 6px;
-}
-
-.field-unit:hover {
-  rotate: 60deg;
-  transition-duration: 250ms;
-}
-
-@keyframes ripple {
-  0%,
-  6% {
-    rotate: 0deg;
-  }
-  16%,
-  100% {
-    rotate: 60deg;
-  }
+  mask-image:
+    linear-gradient(to right, transparent, #000 14px, #000 calc(100% - 14px), transparent),
+    linear-gradient(to bottom, transparent, #000 8px, #000 calc(100% - 8px), transparent);
+  mask-composite: intersect;
 }
 
 /* `svg` lifts the wheel rules above the tile's own inline stylesheet. */
 @media (prefers-reduced-motion: reduce) {
-  svg .cit-seg,
-  .field-ripple[data-on] {
+  svg .cit-seg {
     animation: none;
   }
 
-  .lockup .slice g,
-  .field-unit {
+  .nav-bar::before,
+  .lockup .slice g {
     transition: none;
   }
 }

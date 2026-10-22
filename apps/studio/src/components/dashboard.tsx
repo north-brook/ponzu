@@ -788,7 +788,17 @@ function FileCard({
                 : undefined
             }
           >
-            {agoShort(file.modified)}
+            {/* While an agent edits it, its mark stands in for "now". */}
+            {file.busy ? (
+              <span
+                className="grid h-full place-items-center self-center"
+                title="An agent is working"
+              >
+                <AgentMark client={file.busy} size={13} />
+              </span>
+            ) : (
+              agoShort(file.modified)
+            )}
           </span>
         </span>
         {pathMatch ? (
