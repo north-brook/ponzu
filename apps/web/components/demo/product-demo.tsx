@@ -29,20 +29,6 @@ const PAGES: { id: PageId; name: string; icon: string; from: BeatId }[] = [
   { id: "app", name: "App", icon: "phone", from: "app-page" },
 ];
 
-/** What Claude says it's doing on each board, shown in the board's header while it works. */
-const STATUS: Record<string, string> = {
-  logo: "drawing the mark",
-  palette: "picking the palette",
-  home: "laying out the hero",
-  night: "trying a night garden",
-  sunroom: "trying a sunroom",
-  market: "trying a market day",
-  product: "building the product screen",
-  "app-today": "drawing Today",
-  "app-plant": "drawing the plant page",
-  "app-shop": "drawing the shop",
-};
-
 /** Where each board sits, in world px on its page, and when it's written. */
 const PLACES: Record<
   string,
@@ -334,20 +320,12 @@ function Studio({ beat, t }: { beat: number; t: number }) {
                       className="dm-board-title pz:absolute pz:right-0 pz:left-0 pz:flex pz:items-center pz:gap-[0.5em] pz:whitespace-nowrap pz:leading-[1.4] pz:text-muted-foreground"
                       style={{ fontSize: 12 / zoom, top: -22 / zoom }}
                     >
-                      <span>{board.name}</span>
+                      <span className={working(board.id) ? "pz-shimmer" : undefined}>
+                        {board.name}
+                      </span>
                       {working(board.id) && (
-                        <span
-                          className="pz:ml-auto pz:inline-flex pz:items-center"
-                          style={{ gap: 6 / zoom }}
-                        >
-                          <span className="pz-shimmer">
-                            {board.id === "sunroom" && at("heard")
-                              ? "adding the Autumn Drop"
-                              : (STATUS[board.id] ?? "Working")}
-                          </span>
-                          <span className="pz:inline-grid pz:place-items-center">
-                            <AgentMark client="claude" size={12 / zoom} />
-                          </span>
+                        <span className="pz:ml-auto pz:inline-grid pz:place-items-center">
+                          <AgentMark client="claude" size={12 / zoom} />
                         </span>
                       )}
                     </div>

@@ -118,7 +118,7 @@ Use this when the person wants you to sit with them while they review: they leav
    - question ("why this font?"): reply with an answer, leave it open.
    - decision ("A or B?"): reply with your recommendation, leave it open for them.
    Batch comments that touch the same artboard.
-3. say what you're doing: set_status with a few words ("adding the autumn drop") and the artboards you're about to touch. The person sees it in the artboard's header while its outline traces.
+3. say what you're doing: set_status with a few words ("adding the autumn drop") and the artboards you're about to touch. The person sees your mark in the artboard's header while its outline traces, and your status when they hover it.
 4. do + check: edit, screenshot, fix lint. Variations go next to the original, never over it.
 5. close: for a change you made, set_comment_status resolved. That hides the pin; the canvas already shows the change, so don't reply.
 6. Go back to 1 with the new cursor. Waiting again clears your working indicator. Keep looping until the person says stop or you're interrupted.

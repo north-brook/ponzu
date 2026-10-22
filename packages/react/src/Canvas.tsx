@@ -660,7 +660,10 @@ export function Canvas({
                       }}
                     />
                   ) : (
-                    <span className="pz:min-w-0 pz:truncate" title={ab.name}>
+                    <span
+                      className={cn("pz:min-w-0 pz:truncate", who && "pz-shimmer")}
+                      title={ab.name}
+                    >
                       {ab.name}
                     </span>
                   )}
@@ -925,26 +928,22 @@ interface Worker {
 }
 
 /**
- * The right side of a working artboard's header: what the agent says it's
- * doing, in shimmering ink, and its mark in color. Several agents show the
- * first one's status and all their marks.
+ * The right side of a working artboard's header: the mark of each agent on
+ * it. What they say they're doing is in the tooltip; written out, one pass
+ * repeated the same status over every board it touched.
  */
 function WorkingStatus({ who, zoom }: { who: Worker[]; zoom: number }) {
-  const status = who.find((a) => a.status)?.status ?? "Working";
   return (
     <span
-      className="pz:ml-auto pz:inline-flex pz:min-w-0 pz:max-w-[60%] pz:items-center pz:text-muted-foreground"
-      style={{ gap: 6 / zoom }}
+      className="pz:ml-auto pz:inline-flex pz:shrink-0 pz:items-center pz:text-foreground"
+      style={{ gap: 3 / zoom }}
       title={who.map((a) => `${a.name}: ${a.status ?? "working"}`).join("\n")}
     >
-      <span className="pz-shimmer pz:min-w-0 pz:truncate">{status}</span>
-      <span className="pz:inline-flex pz:shrink-0" style={{ gap: 3 / zoom }}>
-        {who.map((a) => (
-          <span key={a.id} className="pz:inline-grid pz:place-items-center pz:text-foreground">
-            <AgentMark client={a.client} size={12 / zoom} />
-          </span>
-        ))}
-      </span>
+      {who.map((a) => (
+        <span key={a.id} className="pz:inline-grid pz:place-items-center">
+          <AgentMark client={a.client} size={12 / zoom} />
+        </span>
+      ))}
     </span>
   );
 }
