@@ -7,13 +7,12 @@ import { parseArgs } from "node:util";
 import { emptyDoc, newId } from "@ponzu/core";
 import { serveBridge } from "@ponzu/mcp/bridge";
 import { RemoteRenderer, type Renderer } from "@ponzu/render";
-import { findDesigns, LocalWorkspace, serve } from "@ponzu/server";
+import { findDesigns, LocalWorkspace, openFromGitHub, serve, spawnGit } from "@ponzu/server";
 import { Design } from "@ponzu/store";
 import { FsAdapter } from "@ponzu/store/fs";
 import pkg from "../package.json" with { type: "json" };
 import { announceHost, findHost, ponzuHome } from "./host.ts";
 import { agentStatus, installAgent } from "./install.ts";
-import { openFromGitHub, runGit } from "./open.ts";
 import { startTelemetry, telemetryCommand, telemetryNotice } from "./telemetry.ts";
 
 const VERSION = pkg.version;
@@ -78,7 +77,7 @@ async function main() {
         studio: values.studio,
       });
     case "open": {
-      const { path, clone } = await openFromGitHub(files[0], runGit);
+      const { path, clone } = await openFromGitHub(files[0], spawnGit());
       console.log(`Opening ${path.slice(clone.length + 1) || "every design"} in ${clone}`);
       process.chdir(clone);
       return runServe(path === clone ? [] : [path], {

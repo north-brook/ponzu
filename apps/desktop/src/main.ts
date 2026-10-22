@@ -1,6 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { cloneTarget, parseOpenUrl, spawnGit } from "@ponzu/server/clone";
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, shell } from "electron";
 import { renderToken, startRenderHost } from "./render-host";
 import { smoke, watchSmoke } from "./smoke";
@@ -22,6 +23,8 @@ let server: ChildProcess | null = null;
 let serverUrl: string | null = null;
 let mainWindow: BrowserWindow | null = null;
 const pendingOpens: string[] = [];
+/** ponzu:// links that arrived before the server was up. */
+const pendingLinks: string[] = [];
 /**
  * Started by an agent (`ponzu mcp`), not the person: serve without a window
  * or dock icon until they open Ponzu themselves.
@@ -212,6 +215,29 @@ async function openDesign(path: string) {
   mainWindow.focus();
 }
 
+/**
+ * `ponzu://open?repo=<owner>/<repo>&ref=<ref>&path=<path>.design`, from ponzu.design's Open in
+ * Ponzu button: clone the repo into ~/Ponzu (or fetch the clone there), check out the ref, and
+ * open the design. The link is checked in @ponzu/server/clone before git sees any of it.
+ */
+async function openLink(url: string) {
+  const target = parseOpenUrl(url);
+  if (!target) {
+    dialog.showErrorBox("Ponzu can't open that link", url);
+    return;
+  }
+  showWindow();
+  try {
+    const { path } = await cloneTarget(target, spawnGit("ignore"));
+    await openDesign(path);
+  } catch (err) {
+    dialog.showErrorBox(
+      `Ponzu couldn't open ${target.owner}/${target.repo}`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+}
+
 async function pickDesign(): Promise<string | null> {
   const res = await dialog.showOpenDialog(mainWindow!, {
     title: "Open a .design",
@@ -334,8 +360,11 @@ if (!app.requestSingleInstanceLock()) {
   app.on("second-instance", (_e, argv) => {
     // Another agent asking for the app: it's already serving.
     if (argv.includes("--background")) return;
+    // Linux and Windows hand a second launch its ponzu:// link in argv.
+    const link = argv.find((a) => a.startsWith("ponzu:"));
     const p = argv.find((a) => a.endsWith(".design"));
-    if (p) void openDesign(p);
+    if (link) void openLink(link);
+    else if (p) void openDesign(p);
     else showWindow();
   });
 
@@ -343,6 +372,15 @@ if (!app.requestSingleInstanceLock()) {
   app.on("open-file", (e, path) => {
     e.preventDefault();
     void openDesign(path);
+  });
+
+  // macOS: a ponzu:// link. It can arrive before ready, when it's what launched us: hold it
+  // until the server is up.
+  app.setAsDefaultProtocolClient("ponzu");
+  app.on("open-url", (e, url) => {
+    e.preventDefault();
+    if (serverUrl) void openLink(url);
+    else pendingLinks.push(url);
   });
 
   app.whenReady().then(async () => {
@@ -370,7 +408,7 @@ if (!app.requestSingleInstanceLock()) {
     }
     const fromArgv = process.argv.find((a) => a.endsWith(".design"));
     if (fromArgv) pendingOpens.push(fromArgv);
-    if (!background || pendingOpens.length || smoke) showWindow();
+    if (!background || pendingOpens.length || pendingLinks.length || smoke) showWindow();
     else app.dock?.hide();
     if (!smoke) {
       installUpdater({ window: () => mainWindow, onReady: () => (updateReady = true) });
@@ -378,6 +416,7 @@ if (!app.requestSingleInstanceLock()) {
       watchIdle();
     }
     for (const p of pendingOpens.splice(0)) await openDesign(p);
+    for (const url of pendingLinks.splice(0)) await openLink(url);
   });
 
   app.on("activate", () => showWindow());

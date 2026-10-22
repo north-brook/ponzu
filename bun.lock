@@ -14,7 +14,7 @@
     },
     "apps/cli": {
       "name": "ponzu",
-      "version": "1.7.0",
+      "version": "1.27.0",
       "bin": {
         "ponzu": "./src/index.ts",
       },
@@ -30,11 +30,12 @@
     },
     "apps/desktop": {
       "name": "@ponzu/desktop",
-      "version": "1.7.0",
+      "version": "1.27.0",
       "dependencies": {
         "electron-updater": "6.8.9",
       },
       "devDependencies": {
+        "@ponzu/server": "workspace:*",
         "@types/node": "^26.6.5",
         "electron": "^44.9.0",
         "electron-builder": "^26.15.3",
