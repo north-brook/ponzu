@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.34.1](https://github.com/north-brook/ponzu/compare/v1.34.0...v1.34.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* scroll to a new comment in a long thread ([#139](https://github.com/north-brook/ponzu/issues/139)) ([fb4fb7b](https://github.com/north-brook/ponzu/commit/fb4fb7b6391436c69dec43834d135bbaab405a37))
+
 ## [1.34.0](https://github.com/north-brook/ponzu/compare/v1.33.1...v1.34.0) (2026-10-22)
 
 
