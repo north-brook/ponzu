@@ -17,7 +17,8 @@ export interface LintIssue {
     | "missing-font"
     | "wrapped-text"
     | "flex-direction"
-    | "artboard-overlap";
+    | "artboard-overlap"
+    | "theme";
   message: string;
 }
 

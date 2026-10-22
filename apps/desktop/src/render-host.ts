@@ -42,6 +42,7 @@ interface Job {
   lintScript: string;
   /** Holds animations at the requested time; evaluates to the motion summary. */
   prepareScript?: string;
+  colorScheme?: "light" | "dark";
 }
 
 interface Box {
@@ -52,7 +53,7 @@ interface Box {
 }
 
 type SessionOp =
-  | { op: "open"; html: string; width: number; height: number }
+  | { op: "open"; html: string; width: number; height: number; colorScheme?: "light" | "dark" }
   | { op: "eval"; session: string; expression: string }
   | { op: "capture"; session: string; box: Box; scale: number }
   | { op: "show"; session: string; html: string; width: number; height: number }
@@ -85,8 +86,13 @@ const ASSETS = `document.fonts.ready.then(() => ${IMAGES_READY_SCRIPT})`;
  * haven't arrived by then don't stop the render: it goes on with fallbacks,
  * and lint names what's missing. Resolves with whether everything arrived.
  */
-async function loadWithAssets(win: BrowserWindow, html: string): Promise<boolean> {
+async function loadWithAssets(
+  win: BrowserWindow,
+  html: string,
+  colorScheme?: "light" | "dark",
+): Promise<boolean> {
   const { loaded } = await withBudget("load", loadPage(win, html));
+  if (colorScheme) await withBudget("load", emulateScheme(win, colorScheme));
   const assets = loaded.catch(() => {}).then(() => win.webContents.executeJavaScript(ASSETS));
   const all = await within(assets, STAGE_BUDGET_MS.assets);
   // Give up on what's still coming: the page then finishes loading, fonts
@@ -94,6 +100,18 @@ async function loadWithAssets(win: BrowserWindow, html: string): Promise<boolean
   if (!all) win.webContents.stop();
   await withBudget("load", win.webContents.executeJavaScript(FRAMES));
   return all;
+}
+
+/**
+ * Answers prefers-color-scheme with `scheme` rather than the Mac's appearance.
+ * After the page has navigated: attaching before that takes the window down.
+ */
+async function emulateScheme(win: BrowserWindow, scheme: "light" | "dark") {
+  const cdp = win.webContents.debugger;
+  if (!cdp.isAttached()) cdp.attach("1.3");
+  await cdp.sendCommand("Emulation.setEmulatedMedia", {
+    features: [{ name: "prefers-color-scheme", value: scheme }],
+  });
 }
 
 /** Runs `expression` in the page within `stage`'s time limit. */
@@ -195,7 +213,7 @@ async function capture(
 async function renderJob(job: Job) {
   const win = renderWindow(job.width, job.height);
   try {
-    const loaded = await loadWithAssets(win, job.html);
+    const loaded = await loadWithAssets(win, job.html, job.colorScheme);
     const assetsTimedOut = loaded ? undefined : true;
     const motion = job.prepareScript
       ? await run<{ error?: string }>(win, "prepare", job.prepareScript)
@@ -286,7 +304,7 @@ async function sessionOp(op: SessionOp) {
         sessions.set(id, { win, timer: setTimeout(() => closeSession(id), 60_000) });
         let loaded: boolean;
         try {
-          loaded = await loadWithAssets(win, op.html);
+          loaded = await loadWithAssets(win, op.html, op.colorScheme);
         } catch (err) {
           closeSession(id);
           throw err;

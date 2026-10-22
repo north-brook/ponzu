@@ -173,6 +173,18 @@ function indexOfTopLevel(text: string, ch: string): number {
   return -1;
 }
 
+/** Colors that change with the theme: light-dark() or a prefers-color-scheme query. */
+const THEMED = /light-dark\(|prefers-color-scheme/i;
+
+/**
+ * Whether a design changes with the theme, from its tokens and, given one, an
+ * artboard's markup. Ones that don't look the same in light and dark, so they
+ * render light everywhere.
+ */
+export function isThemed(tokens: string, artboard?: unknown): boolean {
+  return THEMED.test(tokens) || (artboard !== undefined && THEMED.test(JSON.stringify(artboard)));
+}
+
 /** Custom properties declared in a tokens stylesheet, in order. */
 export function parseTokens(css: string): { name: string; value: string }[] {
   const out: { name: string; value: string }[] = [];

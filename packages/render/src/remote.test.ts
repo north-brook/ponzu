@@ -154,3 +154,26 @@ test("a host without the session API still can't measure", async () => {
     .catch((e) => e);
   expect(err.message).toBe("This render host can't measure layout.");
 });
+
+test("the theme goes to the host, so prefers-color-scheme follows it there", async () => {
+  const sent: { colorScheme?: string; html: string }[] = [];
+  const endpoint = host(async (r) => {
+    const body = (await r.json()) as { op?: string; colorScheme?: string; html: string };
+    if (body.op && body.op !== "open") return json({});
+    sent.push(body);
+    if (body.op) return json({ session: "s1" });
+    return json({
+      data: btoa("png"),
+      mime: "image/png",
+      width: 400,
+      height: 300,
+      contentHeight: 300,
+      issues: [],
+    });
+  });
+  const remote = new RemoteRenderer(endpoint);
+  await remote.render({ ...req(), colorScheme: "dark" });
+  await remote.measure({ artboard, tokens: "", ids: ["n_p"], colorScheme: "dark" }).catch(() => {});
+  expect(sent.map((s) => s.colorScheme)).toEqual(["dark", "dark"]);
+  expect(sent[0]!.html).toContain(":root{color-scheme:dark}");
+});

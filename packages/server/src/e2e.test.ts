@@ -370,6 +370,31 @@ test("screenshot lint catches a fit-content artboard grown over the one below it
   }
 }, 30_000);
 
+test("the canvas tells agents its theme; a home screen card can't", async () => {
+  const key = join(dir, "themed.design");
+  await client.callTool({ name: "create_file", arguments: { path: key } });
+  const info = async () =>
+    text(await client.callTool({ name: "get_basic_info", arguments: { file: key } }));
+  const until = async (pred: () => boolean) => {
+    for (let i = 0; i < 100 && !pred(); i++) await new Promise((r) => setTimeout(r, 10));
+  };
+  const url = `ws://127.0.0.1:${server.port}/ws?file=${encodeURIComponent(key)}`;
+  const card = new WebSocket(`${url}&watch=1`);
+  await new Promise((r) => (card.onopen = r));
+  card.send(JSON.stringify({ t: "theme", theme: "dark" }));
+  const canvas = new WebSocket(url);
+  await new Promise((r) => (canvas.onopen = r));
+  canvas.send(JSON.stringify({ t: "theme", theme: "sepia" }));
+  await new Promise((r) => setTimeout(r, 50));
+  expect(ws.theme).toBeUndefined();
+  canvas.send(JSON.stringify({ t: "theme", theme: "dark" }));
+  await until(() => ws.theme === "dark");
+  expect(await info()).toContain("The person's canvas is in dark mode.");
+  canvas.close();
+  card.close();
+  ws.theme = undefined;
+});
+
 test("a home screen card's watch socket hears an agent's edits and can't make any", async () => {
   const key = join(dir, "watched.design");
   await client.callTool({ name: "create_file", arguments: { path: key } });

@@ -105,4 +105,8 @@ export type ClientMessage =
   | { t: "op"; req: number; op: Op }
   | { t: "undo"; req: number }
   | { t: "redo"; req: number }
-  | { t: "viewport"; viewport: Viewport };
+  | { t: "viewport"; viewport: Viewport }
+  /** The canvas's appearance, so agents render artboards the way the person sees them. */
+  | { t: "theme"; theme: ColorScheme };
+
+export type ColorScheme = "light" | "dark";

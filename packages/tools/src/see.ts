@@ -1,4 +1,4 @@
-import { type Artboard, findArtboard, findNode, locate } from "@ponzu/core";
+import { type Artboard, findArtboard, findNode, isThemed, locate } from "@ponzu/core";
 import type { Interaction, MotionAnimation, MotionInfo } from "@ponzu/render";
 import { z } from "zod";
 import { fileArg, ToolError, type ToolImage, tool } from "./define.ts";
@@ -7,6 +7,34 @@ import { resolveFile } from "./util.ts";
 
 function toBase64(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64");
+}
+
+const colorSchemeArg = z
+  .enum(["light", "dark"])
+  .optional()
+  .describe(
+    "Theme for light-dark() colors. Default: the theme the person's canvas is in, else light.",
+  );
+
+/**
+ * The theme to render in, and a line saying so when the design has one. The
+ * person's canvas shows a themed design in its own theme, so renders default to it.
+ */
+function scheme(
+  ws: { theme?: "light" | "dark" },
+  tokens: string,
+  ab: Artboard,
+  asked?: "light" | "dark",
+): { colorScheme?: "light" | "dark"; line?: string } {
+  if (!isThemed(tokens, ab.root)) return { colorScheme: asked };
+  // Always one or the other, so media queries don't follow wherever the renderer runs.
+  const colorScheme = asked ?? ws.theme ?? "light";
+  const other = colorScheme === "dark" ? "light" : "dark";
+  const whose = asked ? "" : ws.theme ? ", the theme the person's canvas is in" : "";
+  return {
+    colorScheme,
+    line: `Shown in ${colorScheme}${whose}. Lint checks colors in ${other} too; pass colorScheme: "${other}" to see it.`,
+  };
 }
 
 const interactionArgs = {
@@ -30,10 +58,7 @@ export const seeTools = [
       file: fileArg,
       id: z.string().describe("Artboard or node id."),
       scale: z.number().min(0.25).max(3).optional(),
-      colorScheme: z
-        .enum(["light", "dark"])
-        .optional()
-        .describe("For tokens that use light-dark()."),
+      colorScheme: colorSchemeArg,
       at: z
         .number()
         .min(0)
@@ -62,13 +87,14 @@ export const seeTools = [
       };
       const fit = Math.min(1, 1600 / Math.max(w, h));
       const scale = args.scale ?? (nodeId ? 1 : Math.max(0.5, Number(fit.toFixed(2))));
+      const theme = scheme(ws, doc.tokens, ab, args.colorScheme);
       const out = await ws.renderer.render({
         artboard: ab,
         tokens: doc.tokens,
         nodeId,
         scale,
         lint: true,
-        colorScheme: args.colorScheme,
+        colorScheme: theme.colorScheme,
         at: args.at,
         interact: interaction(args),
         assetBase: ws.assetBase?.(key),
@@ -102,6 +128,7 @@ export const seeTools = [
       const lines = [
         `${nodeId ?? ab.id} rendered ${Math.round(out.width)}×${Math.round(out.height)} at ${shownScale(scale, out.scale)}${out.motion ? `, ${moment(out.motion, args.at)}` : ""}.`,
       ];
+      if (theme.line) lines.push(theme.line);
       if (out.assetsTimedOut) lines.push(ASSETS_LATE);
       if (!nodeId && ab.root.style.height === "fit-content")
         lines.push(`Content height: ${out.contentHeight}px.`);
@@ -148,7 +175,7 @@ export const seeTools = [
           "Id of a scroll container (fixed height, overflow: auto). Steps through its scroll range instead of time, for animation-timeline: scroll() or view().",
         ),
       ...interactionArgs,
-      colorScheme: z.enum(["light", "dark"]).optional(),
+      colorScheme: colorSchemeArg,
     },
     async handler(args, ctx) {
       const { ws } = ctx;
@@ -169,11 +196,12 @@ export const seeTools = [
       checkTargets(ab, args);
       if (args.scroll && !findNode(ab.root, args.scroll))
         throw new ToolError(`No node ${args.scroll} to scroll in this artboard.`);
+      const theme = scheme(ws, doc.tokens, ab, args.colorScheme);
       const out = await ws.renderer.record({
         artboard: ab,
         tokens: doc.tokens,
         nodeId: ab.id === args.id ? undefined : args.id,
-        colorScheme: args.colorScheme,
+        colorScheme: theme.colorScheme,
         interact: interaction(args),
         frames: args.frames,
         from: args.from,
@@ -191,6 +219,7 @@ export const seeTools = [
           ? `${args.id}: 1 frame at ${first}${after}.`
           : `${args.id}: ${out.steps.length} frames from ${first} to ${last}${after}, left to right, top to bottom.`,
       ];
+      if (theme.line) lines.push(theme.line);
       if (out.assetsTimedOut) lines.push(ASSETS_LATE);
       if (!args.scroll && !m.animations.some((a) => a.timeline === "time" && !a.paused))
         lines.push(
@@ -221,13 +250,14 @@ export const seeTools = [
     group: "see",
     readOnly: true,
     description:
-      "Export an artboard or node as PNG, JPEG or PDF to a file path on disk (default: the design's exports/ folder).",
+      "Export an artboard or node as PNG, JPEG or PDF to a file path on disk (default: the design's exports/ folder). A design with light-dark() colors exports in the theme the person's canvas is in unless you pass colorScheme; the file name says which.",
     input: {
       file: fileArg,
       id: z.string(),
       format: z.enum(["png", "jpeg", "pdf"]).optional(),
       scale: z.number().min(0.25).max(4).optional().describe("Default 2."),
       path: z.string().optional().describe("Absolute output path."),
+      colorScheme: colorSchemeArg,
     },
     async handler(args, ctx) {
       const { ws } = ctx;
@@ -237,12 +267,14 @@ export const seeTools = [
       const ab = findArtboard(doc, args.id)?.artboard ?? locate(doc, args.id)?.artboard;
       if (!ab) throw new ToolError(`No artboard or node ${args.id}.`);
       const format = args.format ?? "png";
+      const theme = scheme(ws, doc.tokens, ab, args.colorScheme);
       const out = await ws.renderer.render({
         artboard: ab,
         tokens: doc.tokens,
         nodeId: ab.id === args.id ? undefined : args.id,
         scale: args.scale ?? 2,
         format,
+        colorScheme: theme.colorScheme,
         assetBase: ws.assetBase?.(key),
       });
       const root = design.storage.root;
@@ -250,7 +282,7 @@ export const seeTools = [
       const path =
         args.path ??
         (root
-          ? `${root}/exports/${slug(ab.name)}${ab.id === args.id ? "" : `-${args.id}`}.${ext}`
+          ? `${root}/exports/${slug(ab.name)}${ab.id === args.id ? "" : `-${args.id}`}${theme.line ? `-${theme.colorScheme}` : ""}.${ext}`
           : null);
       if (!path) throw new ToolError("This design isn't on disk; pass an absolute path.");
       const { mkdir, writeFile } = await import("node:fs/promises");
@@ -258,7 +290,7 @@ export const seeTools = [
       await mkdir(dirname(path), { recursive: true });
       await writeFile(path, out.bytes);
       return {
-        text: `Wrote ${path} (${Math.round(out.width)}×${Math.round(out.height)} at ${shownScale(args.scale ?? 2, out.scale)}, ${Math.round(out.bytes.length / 1024)} KB).`,
+        text: `Wrote ${path} (${Math.round(out.width)}×${Math.round(out.height)} at ${shownScale(args.scale ?? 2, out.scale)}${theme.line ? `, ${theme.colorScheme}` : ""}, ${Math.round(out.bytes.length / 1024)} KB).`,
       };
     },
   }),

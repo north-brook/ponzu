@@ -1,5 +1,6 @@
 import { FONT_LINT_SCRIPT } from "./fonts.ts";
 import { LINT_SCRIPT, type LintIssue } from "./renderer.ts";
+import { THEME_LINT_SCRIPT } from "./theme.ts";
 
 /** A node to put in an interaction state before capturing, by id. */
 export interface Interaction {
@@ -738,8 +739,8 @@ img{display:block;background:repeating-conic-gradient(#fff 0 25%,#f4f4f4 0 50%) 
   return { html, width, height };
 }
 
-/** Font lint, layout lint and motion lint, as one expression. Needs MOTION_SCRIPT installed for the motion part. */
-export const FULL_LINT_SCRIPT = `[...${FONT_LINT_SCRIPT}, ...${LINT_SCRIPT}, ...(window.__ponzuMotion ? ${motionCall("lint")} : [])].slice(0, 30)`;
+/** Font, layout, motion and theme lint, as one expression. Needs MOTION_SCRIPT installed for the motion part. */
+export const FULL_LINT_SCRIPT = `[...${FONT_LINT_SCRIPT}, ...${LINT_SCRIPT}, ...(window.__ponzuMotion ? ${motionCall("lint")} : []), ...${THEME_LINT_SCRIPT}].slice(0, 30)`;
 
 /** Installs the runtime, holds the timeline and shows `at`. Evaluates to MotionInfo or { error }. */
 export function prepareScript(opts: { interact?: Interaction; at?: number }): string {

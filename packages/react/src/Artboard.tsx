@@ -4,6 +4,7 @@ import {
   type GoogleFontRequest,
   googleFontElement,
   googleFonts,
+  pinColorScheme,
   resolveAsset,
   styleText,
 } from "@ponzu/render";
@@ -49,11 +50,14 @@ export const ArtboardView = memo(function ArtboardView({
     const el = host.current;
     if (!el) return;
     const root = el.shadowRoot ?? el.attachShadow({ mode: "open" });
-    const body = serializeArtboardElement(artboard, {
+    const markup = serializeArtboardElement(artboard, {
       rewriteUrl: (u) => resolveAsset(u, assetBase),
     });
+    // The page's media preference is the system's; a canvas in its own theme decides them here.
+    const pin = (css: string) => (colorScheme ? pinColorScheme(css, colorScheme) : css);
+    const body = pin(markup);
     const scheme = colorScheme ? `:host{color-scheme:${colorScheme}}` : "";
-    const html = `<style>${styleText(hostTokens(tokens))}${scheme}${ARTBOARD_BASE_CSS}</style>${body}`;
+    const html = `<style>${styleText(pin(hostTokens(tokens)))}${scheme}${ARTBOARD_BASE_CSS}</style>${body}`;
     if (html === last.current) return;
     last.current = html;
     ensureFonts(googleFonts(body, tokens));

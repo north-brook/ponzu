@@ -37,6 +37,8 @@ export interface RemoteRenderJob {
   lintScript: string;
   /** Evaluate after fonts load and before measuring: holds animations at the requested time. */
   prepareScript?: string;
+  /** The media preference to emulate, for prefers-color-scheme. Older hosts ignore it. */
+  colorScheme?: "light" | "dark";
 }
 
 export interface RemoteRenderReply {
@@ -69,7 +71,14 @@ export interface RemoteRenderFailure {
  * answers these at `session` next to its render endpoint.
  */
 export type RemoteSessionRequest =
-  | { op: "open"; html: string; width: number; height: number }
+  | {
+      op: "open";
+      html: string;
+      width: number;
+      height: number;
+      /** The media preference to emulate, for prefers-color-scheme. */
+      colorScheme?: "light" | "dark";
+    }
   | { op: "eval"; session: string; expression: string }
   /** Reply data: base64 PNG of `box` (CSS px) at `scale` device px per CSS px. */
   | { op: "capture"; session: string; box: Box; scale: number }
@@ -143,6 +152,7 @@ export class RemoteRenderer implements Renderer {
       lint: req.lint ?? false,
       lintScript: FULL_LINT_SCRIPT,
       prepareScript: prepareScript({ interact: req.interact, at: req.at }),
+      colorScheme: req.colorScheme,
     };
     const out = await this.post<RemoteRenderReply>(this.endpoint, job);
     if (out.motion && "error" in out.motion) throw new Error(out.motion.error);
@@ -182,6 +192,7 @@ export class RemoteRenderer implements Renderer {
       op: "open",
       html: this.page(req),
       ...size(req.artboard.root.style),
+      colorScheme: req.colorScheme,
     });
     if (!session) throw new Error("Render host didn't open a session.");
     try {
@@ -203,6 +214,7 @@ export class RemoteRenderer implements Renderer {
       op: "open",
       html: this.page(req),
       ...size(req.artboard.root.style),
+      colorScheme: req.colorScheme,
     });
     if (!session) throw new Error("Render host didn't open a session.");
     const driver: FrameDriver = {

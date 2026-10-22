@@ -1,4 +1,13 @@
-import type { Author, Doc, EventType, Op, PonzuEvent, Presence, PresenceOrigin } from "@ponzu/core";
+import type {
+  Author,
+  ColorScheme,
+  Doc,
+  EventType,
+  Op,
+  PonzuEvent,
+  Presence,
+  PresenceOrigin,
+} from "@ponzu/core";
 import type { Renderer } from "@ponzu/render";
 import type { Design } from "@ponzu/store";
 
@@ -18,6 +27,8 @@ export interface Workspace {
   assetBase?(key: string): string | undefined;
   /** Ask any open studio to show this artboard. */
   focus?(key: string, artboardId: string): void;
+  /** How the person's canvas looks, once one has said. Renders default to it. */
+  theme?: ColorScheme;
   events: EventHub;
   presence: PresenceHub;
   /** Usage events and agent feedback for the Ponzu team. Without it nothing is sent. */

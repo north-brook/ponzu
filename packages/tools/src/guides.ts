@@ -69,6 +69,13 @@ HTML and CSS
 - No scripts and no on* handlers; they're stripped. The result tells you what was removed.
 - Name meaningful layers with data-name="Hero". Names make get_tree readable and survive into implementation.
 
+Light and dark
+The person may have their canvas in dark mode; get_basic_info says which. Artboards show in that theme, and screenshots default to it.
+- A design with one look doesn't need to change: plain colors stay as they are in both themes.
+- A design with both themes puts every color in a light-dark() token: --color-paper: light-dark(#fafaf9, #121212). Use the tokens for text, surfaces, borders, shadows and dot grids alike. A raw #fff or rgba(0,0,0,.06) beside them stays light when the rest turns dark.
+- Content that should look one way in either theme (a mock of a light app, a photo's caption, a code block) sets color-scheme: light or dark on its wrapper. light-dark() inside it then picks that side.
+- Lint checks a themed design's colors in both themes, and says which text or surface stops reading in the other one. Screenshot the other theme with colorScheme before you call it done.
+
 Results are lean: ids of what you created, and what was dropped. Use get_tree to see structure, get_node for one node's detail.
 
 Big generated content (a long table, a diagram from a script) can go straight into the artboard's file, pages/<page>/<artboard>.html, instead of through write_html. Ponzu picks the edit up live. Elements without a data-id get one: ids from get_tree keep pointing at the same element across later edits to the file, and Ponzu writes them in when it needs to. get_guide('format') has the files and their fields.
@@ -228,7 +235,7 @@ export const SERVER_INSTRUCTIONS = `Ponzu is a design canvas you drive with HTML
 
 Start every session with get_basic_info, then read_notes, then get_guide('basics') if you haven't read it. When the person says "this", look for the comment they pinned to it.
 
-Build in small pieces, screenshot often, and fix what lint reports. record shows animation and hover states frame by frame. Put design decisions in tokens and notes. Variations go next to the original, never over it. The canvas shows which artboards you're changing; set_status tells the person what you're doing.
+Build in small pieces, screenshot often, and fix what lint reports. Screenshots show the theme the person's canvas is in; a design with both themes uses light-dark() tokens for every color. record shows animation and hover states frame by frame. Put design decisions in tokens and notes. Variations go next to the original, never over it. The canvas shows which artboards you're changing; set_status tells the person what you're doing.
 
 The canvas is yours to annotate: a "Note: …" artboard beside the work carries rationale, labels and what to compare. Comments carry what needs the person: a question, a choice, something you couldn't do.
 
