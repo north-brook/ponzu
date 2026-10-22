@@ -447,8 +447,20 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
   // showed it with until the film shows it change; nothing reverts and nothing changes off cue.
   // Boards the film hasn't shown yet are taken as of the moment they first appear.
   const shown = new Map<string, Artboard>();
-  const compose = (base: Doc, live: string[]): Doc => {
+  // Document-wide state (tokens: a colour, a font) moves only forward: shots shown out of order
+  // never bring back an older palette.
+  let latest = { index: -1, tokens: null as string | null };
+  const compose = (
+    base: Doc,
+    live: string[],
+    index = -1,
+    side: "before" | "after" = "after",
+  ): Doc => {
     const doc = structuredClone(base);
+    // A before shows them as last seen (a palette change lands with its board's change, on cue).
+    if (latest.tokens !== null && (side === "before" || index < latest.index))
+      doc.tokens = latest.tokens;
+    else latest = { index, tokens: doc.tokens };
     for (const p of doc.pages)
       p.artboards = p.artboards.map((ab) =>
         !live.includes(ab.id) && shown.has(ab.id) ? structuredClone(shown.get(ab.id)!) : ab,
@@ -465,9 +477,10 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
           if (c.page !== p.id) return false;
           const hw = view.w / 2 / c.zoom;
           const hh = view.h / 2 / c.zoom;
-          return (
-            r.x < c.cx + hw && r.x + r.w > c.cx - hw && r.y < c.cy + hh && r.y + r.h > c.cy - hh
-          );
+          // Seen means a good part of it was on screen, not a sliver at the edge.
+          const ix = Math.max(0, Math.min(r.x + r.w, c.cx + hw) - Math.max(r.x, c.cx - hw));
+          const iy = Math.max(0, Math.min(r.y + r.h, c.cy + hh) - Math.max(r.y, c.cy - hh));
+          return ix * iy >= 0.3 * Math.min(r.w * r.h, 4 * hw * hh);
         });
         if (seen) shown.set(ab.id, structuredClone(ab));
       }
@@ -487,8 +500,8 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
         partly && (shotIndex === 0 || (bornHere && findArtboard(partly, m.board)))
           ? partly
           : got.before;
-      const before = compose(rawBefore, [m.board]);
-      const after = compose(got.after, [m.board]);
+      const before = compose(rawBefore, [m.board], m.before, "before");
+      const after = compose(got.after, [m.board], m.after);
       const ab = findArtboard(after, m.board)!.artboard;
       const hB = await heightsOf(before);
       const hA = await heightsOf(after);
@@ -636,8 +649,17 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
       continue;
     }
     if (m.kind === "turn") {
-      const before = compose(docAt(m.comments[0]!.entry - 1), []);
-      const after = compose(docAt(m.comments[m.comments.length - 1]!.entry), []);
+      const before = compose(
+        docAt(m.comments[0]!.entry - 1),
+        [],
+        m.comments[0]!.entry - 1,
+        "before",
+      );
+      const after = compose(
+        docAt(m.comments[m.comments.length - 1]!.entry),
+        [],
+        m.comments[m.comments.length - 1]!.entry,
+      );
       const hA = await heightsOf(after);
       const threads: Thread[][] = [];
       const cams: Cam[] = [];

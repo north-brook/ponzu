@@ -215,7 +215,7 @@ export interface StoryOptions {
 /** Seconds per kind of shot. */
 export const SHOT = {
   /** Glide between subjects. */
-  travel: 0.75 as number,
+  travel: 0.95 as number,
   /** Settle on the subject before anything changes: long enough to see the before. */
   settle: 0.45,
   /** The change itself: pieces rising in. */
@@ -235,9 +235,8 @@ export const SHOT = {
 /** Time to read a comment: about a second, plus a quarter second per four words. */
 export function commentTime(words: number, length: number): number {
   // About four words a second on a phone, plus a beat to find the card: a long note gets its read.
-  const base = Math.min(8, Math.max(2, 0.7 + words * 0.25));
-  // A short film has one card and room for about five seconds of it.
-  return length <= 15 ? Math.min(4.9, base) : base;
+  const base = Math.min(6.5, Math.max(1.8, 0.6 + words * 0.16));
+  return length <= 15 ? Math.min(4.6, base) : base;
 }
 
 /**
@@ -294,10 +293,10 @@ export function chooseStory(all: Moment[], looks: Map<Moment, Look>, opts: Story
   // Opening: a build. A short film opens on the board its story is about.
   const before = firstTurn ? work.filter((w) => all.indexOf(w) < all.indexOf(firstTurn)) : work;
   const firstBoard = firstTurn?.comments[0]?.board;
+  // Every film opens on the board its story is about, when that board was being built.
   const opening =
-    (short && firstBoard
-      ? before.filter((w) => w.board === firstBoard && visible(w)).at(-1)
-      : undefined) ?? [...before].filter(visible).sort((a, b) => score(b) - score(a))[0];
+    (firstBoard ? before.filter((w) => w.board === firstBoard && visible(w)).at(-1) : undefined) ??
+    [...before].filter(visible).sort((a, b) => score(b) - score(a))[0];
   if (opening) {
     picked.add(opening);
     spent += workCost;
@@ -479,8 +478,8 @@ export function timeline(
     const turns = raw.filter((r) => r.m.kind === "turn");
     const cards = turns.flatMap((r) => r.shown.filter((x) => x.card));
     for (let pass = 0; pass < 3 && spare > 0.05; pass++) {
-      // A short film's card already reads at its pace; its slack goes to seeing the answer.
-      const cardShare = opts.length <= 15 ? 0 : 1.5;
+      // A card reads at its pace and no longer; slack goes to seeing the answers.
+      const cardShare = 0;
       const slots = works.length * 2 + cards.length * cardShare;
       if (!slots) break;
       const each = spare / slots;
@@ -488,8 +487,8 @@ export function timeline(
       for (const r of works) {
         // A short film's opening build is a beat, not a hold: its time goes to the story.
         if (opts.length <= 15 && r.m.kind === "work" && r.m.answers === undefined) continue;
-        const h = Math.max(0, Math.min(each * 2 * 0.6, (opts.length <= 15 ? 2.4 : 1.3) - r.hold));
-        const c = Math.max(0, Math.min(each * 2 * 0.4, 1.7 - r.change));
+        const h = Math.max(0, Math.min(each * 2 * 0.6, (opts.length <= 15 ? 2.4 : 2) - r.hold));
+        const c = Math.max(0, Math.min(each * 2 * 0.4, 2.2 - r.change));
         r.hold += h;
         r.change += c;
         usedNow += h + c;
