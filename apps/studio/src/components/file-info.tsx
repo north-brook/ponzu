@@ -49,7 +49,7 @@ export function Device({ machine }: { machine?: CatalogMachine }) {
 
 /**
  * Where a design lives, in one quiet line: the branch it's on, or for a design
- * outside git, the folder it's in. The full path is in the tab's hovercard.
+ * outside git, the folder it's in. The full path is its tooltip.
  */
 export function WhereLine({ file, className }: { file: CatalogFile; className?: string }) {
   const branch = branchOf(file);
@@ -74,9 +74,9 @@ export function WhereLine({ file, className }: { file: CatalogFile; className?: 
 }
 
 /**
- * Everything the catalog knows about a design: its branch, the folder it's in
- * with the part inside its checkout picked out, which Mac it's on and when it
- * last changed. Read-only.
+ * Everything the catalog knows about a design: the project and branch it's on
+ * (or for one outside git, the folder it's in), which Mac it's on and when it
+ * last changed. The full path is the name's tooltip. Read-only.
  */
 export function FileDetails({
   file,
@@ -88,48 +88,31 @@ export function FileDetails({
   name?: string;
   machine?: CatalogMachine;
 }) {
+  const project = file && projectOf(file);
   const branch = file && branchOf(file);
-  const folder = file && folderOf(file);
-  const dir = file && (file.key.slice(0, file.key.lastIndexOf("/")) || "/");
-  const inside = folder && dir?.startsWith(`${folder}/`);
+  const folder = file && !project && folderOf(file);
   return (
     <div className="flex flex-col gap-2.5">
-      <div className="flex min-w-0 items-center justify-between gap-2">
-        <b className="truncate font-semibold text-[14px]">{file?.name ?? name}</b>
-        {/* The name keeps its room; a long branch gives way first. */}
-        {branch && (
-          <span
-            className="flex h-5 min-w-16 shrink-[999] items-center gap-1 rounded-md bg-secondary px-1.5"
-            title={file?.git?.branch ? branch : `Detached at ${branch}`}
-          >
-            <Icon name="branch" size={13} strokeWidth={1.7} className="shrink-0 text-faint" />
-            <span className="truncate font-mono text-[11px]">{branch}</span>
-          </span>
-        )}
-      </div>
+      <b className="truncate font-semibold text-[14px]" title={file && tilde(file.key)}>
+        {file?.name ?? name}
+      </b>
+      {(project || folder) && (
+        <div className="flex flex-col gap-1">
+          {project && <Where icon="repo" label={repoOf(project)} title={tilde(project.id)} />}
+          {branch && (
+            <Where
+              icon="branch"
+              label={branch}
+              title={file?.git?.branch ? branch : `Detached at ${branch}`}
+            />
+          )}
+          {folder && <Where icon="folder" label={tilde(folder)} title={tilde(folder)} fromEnd />}
+        </div>
+      )}
       {file?.locked && (
         <span className="text-muted-foreground text-xs">
           Open it to let Ponzu read this folder.
         </span>
-      )}
-      {dir && (
-        // One line; a long folder reads from the right, so it keeps its end.
-        <div
-          className="truncate font-mono text-[11.5px] text-muted-foreground leading-[17px]"
-          dir="rtl"
-          title={tilde(dir)}
-        >
-          <bdi>
-            {inside ? (
-              <>
-                {tilde(folder)}/
-                <span className="text-foreground">{dir.slice(folder.length + 1)}</span>
-              </>
-            ) : (
-              tilde(dir)
-            )}
-          </bdi>
-        </div>
       )}
       <div className="flex items-center gap-[5px] whitespace-nowrap border-t pt-2.5 text-muted-foreground text-xs">
         <Device machine={machine} />
@@ -142,6 +125,37 @@ export function FileDetails({
       </div>
     </div>
   );
+}
+
+/** One line of where a design is: its repository, branch or folder. */
+function Where({
+  icon,
+  label,
+  title,
+  fromEnd,
+}: {
+  icon: string;
+  label: string;
+  title?: string;
+  /** A folder reads from the right, so a long one keeps its end. */
+  fromEnd?: boolean;
+}) {
+  return (
+    <span className="flex min-w-0 items-center gap-[5px] text-xs" title={title}>
+      <Icon name={icon} size={13} strokeWidth={1.7} className="shrink-0 text-faint" />
+      <span className="min-w-0 truncate" dir={fromEnd ? "rtl" : undefined}>
+        <bdi>{label}</bdi>
+      </span>
+    </span>
+  );
+}
+
+/**
+ * A project as its host shows it, e.g. "north-brook/ponzu", or for one with no
+ * remote, its folder's name.
+ */
+export function repoOf(project: { id: string; name: string }): string {
+  return project.id.startsWith("/") ? project.name : project.id.slice(project.id.indexOf("/") + 1);
 }
 
 export function ago(ms: number): string {
