@@ -165,16 +165,17 @@ function sceneCam(scene: Scene, f: number, view: { w: number; h: number }): Cam 
     return { ...c, zoom: c.zoom * k };
   }
   if (!l?.length || scene.cams.length < 2) return scene.cams[0]!;
-  // The camera only moves on a hop (a card on another board); pin-only landings keep it still.
+  // The camera only moves on a hop (a card on another board), gliding in the gap before that
+  // card lands; pin-only landings keep it still.
+  const GLIDE = 0.8;
   let i = 0;
-  while (i + 1 < l.length && l[i + 1]!.at - 0.6 <= f) i++;
-  const cur = scene.cams[i]!;
+  while (i + 1 < l.length && l[i + 1]!.at <= f) i++;
   const next = l[i + 1];
-  if (next?.hop && f > next.at - 0.6) {
-    const p = ease.inOut(clamp01((f - (next.at - 0.6)) / 0.55));
-    return flyTo(cur, scene.cams[i + 1]!, p, view);
+  if (next?.hop && f > next.at - GLIDE) {
+    const p = ease.inOut(clamp01((f - (next.at - GLIDE)) / GLIDE));
+    return flyTo(scene.cams[i]!, scene.cams[i + 1]!, p, view);
   }
-  return cur;
+  return scene.cams[i]!;
 }
 
 const open = (doc: Doc) => doc.threads.filter((t) => t.status === "open");
@@ -220,7 +221,10 @@ function workFrame(e: Edit, scene: Scene, f: number): Frame {
   const reflows = hb !== undefined && ha !== undefined && Math.abs(hb - ha) > 4;
   if (changing && !scene.born && scene.board && scene !== e.scenes[0] && !reflows) {
     const was = findArtboard(scene.before, scene.board)?.artboard;
-    const p = progress(f, s.change, s.change + 0.35, ease.inOut);
+    // A recolour crossfades; replaced pieces: the old leaves fast while the new rises in.
+    const p = scene.rise?.length
+      ? progress(f, s.change, s.change + 0.2, ease.out)
+      : progress(f, s.change, s.change + 0.45, ease.inOut);
     if (was && p < 1) out.ghost = { board: was, doc: scene.before, p };
   }
   if (changing && scene.born)
@@ -260,7 +264,7 @@ function turnFrame(e: Edit, scene: Scene, f: number): Frame {
       // In once the pin has popped, out a beat before the next lands or the camera hops.
       const until = Math.min(
         cur.until,
-        (l[k + 1]?.at ?? s.changed) - (l[k + 1]?.hop ? 0.62 : 0.08),
+        (l[k + 1]?.at ?? s.changed) - (l[k + 1]?.hop ? 0.82 : 0.08),
       );
       const opacity = Math.min(
         progress(f, cur.at + 0.12, cur.at + 0.26, ease.out),

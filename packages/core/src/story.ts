@@ -235,7 +235,7 @@ export const SHOT = {
 /** Time to read a comment: about a second, plus a quarter second per four words. */
 export function commentTime(words: number, length: number): number {
   // About four words a second on a phone, plus a beat to find the card: a long note gets its read.
-  const base = Math.min(6.5, Math.max(1.8, 0.6 + words * 0.16));
+  const base = Math.min(5.2, Math.max(1.8, 0.8 + words * 0.125));
   return length <= 15 ? Math.min(4.6, base) : base;
 }
 
@@ -419,7 +419,7 @@ export function timeline(
     hops?: Map<Moment, boolean[]>;
   },
 ): Timeline {
-  const HOP = 0.85;
+  const HOP = 0.9;
   const raw = story.map((m) => {
     if (m.kind === "turn") {
       const cards = opts.length <= 15 ? 2 : 4;

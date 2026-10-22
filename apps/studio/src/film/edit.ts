@@ -627,10 +627,13 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
               Math.max(0, Math.min(r.y + r.h, o.y + o.h) - Math.max(r.y, o.y)) >
             0.2 * Math.min(r.w * r.h, o.w * o.h),
         );
+      // When the board keeps its height, the old picture fades off over the new (see the film),
+      // so replacing pieces can rise in too; when it reflows, they cut in over the hole.
+      const reflows = Math.abs((hB.get(m.board) ?? 0) - (hA.get(m.board) ?? 0)) > 4;
       const rise = streamUnits((id) => findNode(ab.root, id)?.node ?? null, fresh, 6, 16).filter(
         (id) => {
           const r = lab.box(hostA, id);
-          return r && !overlapsRemoved(r);
+          return r && (!reflows || !overlapsRemoved(r));
         },
       );
       scenes.push({
@@ -816,7 +819,13 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
     lastScene && (lastScene.shot.moment as Extract<Moment, { kind: "work" }>).answers !== undefined
       ? lastScene
       : undefined;
-  const hero = lastPaid?.board ?? candidates[0]?.board ?? lastBoard;
+  // A long film ends on the heart of its story (the first answer's board, or all the fixed
+  // boards together when they read); a short one on its one fix.
+  const hero =
+    (input.length > 15 ? firstPaid?.board : undefined) ??
+    lastPaid?.board ??
+    candidates[0]?.board ??
+    lastBoard;
   const heroAb = hero ? findArtboard(endDoc, hero)?.artboard : undefined;
   const pageAll = heroAb
     ? union(pageBoards(endDoc, heroAb.id).map((ab) => boardRect(ab, endHeights)))
@@ -833,11 +842,38 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
         (view.h - 2 * framing.pad - framing.top) / pageAll.h,
       ) >=
         framing.comfort * (view.h > view.w ? 1.1 : 0.95));
+  // A long film's last look: every board it fixed, together, when that still reads.
+  const fixedBoards = [
+    ...new Set(
+      scenes
+        .filter(
+          (sc) =>
+            sc.board && sc.shot.moment.kind === "work" && sc.shot.moment.answers !== undefined,
+        )
+        .map((sc) => sc.board!),
+    ),
+  ]
+    .map((id) => findArtboard(endDoc, id)?.artboard)
+    .filter((ab): ab is Artboard => Boolean(ab) && ab!.id !== undefined);
+  const fixedAll =
+    input.length > 15 && fixedBoards.length > 1 && heroAb
+      ? union(fixedBoards.map((ab) => boardRect(ab, endHeights)))
+      : undefined;
+  const fixedReads =
+    fixedAll &&
+    fixedBoards.every(
+      (ab) => findArtboard(endDoc, ab.id)?.page.id === findArtboard(endDoc, heroAb!.id)?.page.id,
+    ) &&
+    Math.min(
+      (view.w - 2 * framing.pad) / fixedAll.w,
+      (view.h - 2 * framing.pad - framing.top) / fixedAll.h,
+    ) >=
+      framing.minZoom * (view.h > view.w ? 0.9 : 0.8);
   const wholeCam = heroAb
     ? frameFocus(
         {
           page: findArtboard(endDoc, heroAb.id)!.page.id,
-          board: readsTogether ? pageAll! : boardRect(heroAb, endHeights),
+          board: fixedReads ? fixedAll! : readsTogether ? pageAll! : boardRect(heroAb, endHeights),
           overview: true,
           texts: await textsOf(endDoc, pageBoards(endDoc, heroAb.id)),
         },
@@ -851,12 +887,15 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
   const payoffCam = payoff?.cams[0];
   // A long film pulls back to show the result whole, when whole still reads at all.
   const pullback =
-    input.length > 15 &&
-    wholeCam.zoom >= (view.h > view.w ? framing.comfort * 0.5 : framing.minZoom * 0.95);
-  const resultCam =
-    !pullback && payoffCam && wholeCam.zoom < payoffCam.zoom * (input.length <= 15 ? 0.7 : 0.6)
-      ? payoffCam
-      : wholeCam;
+    fixedReads ||
+    (input.length > 15 &&
+      wholeCam.zoom >= (view.h > view.w ? framing.comfort * 0.5 : framing.minZoom * 0.95));
+  const closeEnd =
+    !pullback && payoffCam && wholeCam.zoom < payoffCam.zoom * (input.length <= 15 ? 0.7 : 0.6);
+  // A close ending in a long film goes back to the first answer: the heart of the story.
+  const best = firstPaid;
+  const resultCam = closeEnd ? (input.length > 15 && best ? best.cams[0]! : payoffCam!) : wholeCam;
+  const endBoard = closeEnd && input.length > 15 && best ? best.board! : heroAb?.id;
 
   const firstDoc = scenes[0]?.before ?? endDoc;
   const firstHeights = await heightsOf(firstDoc);
@@ -880,11 +919,26 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
       cam: resultCam,
       heights: endHeights,
       // A close-up ending keeps the canvas around it as it is; a pull-back clears it.
+      // (In a tall frame a close ending clears its neighbours too: it shows one subject.)
       boards:
-        heroAb && resultCam === wholeCam
-          ? readsTogether
-            ? pageBoards(endDoc, heroAb.id).map((ab) => ab.id)
-            : [heroAb.id]
+        heroAb && (resultCam === wholeCam || view.h > view.w)
+          ? resultCam !== wholeCam
+            ? [endBoard ?? heroAb.id]
+            : fixedReads
+              ? pageBoards(endDoc, heroAb.id)
+                  .filter((ab) => {
+                    const r = boardRect(ab, endHeights);
+                    return (
+                      r.x < fixedAll!.x + fixedAll!.w &&
+                      r.x + r.w > fixedAll!.x &&
+                      r.y < fixedAll!.y + fixedAll!.h &&
+                      r.y + r.h > fixedAll!.y
+                    );
+                  })
+                  .map((ab) => ab.id)
+              : readsTogether
+                ? pageBoards(endDoc, heroAb.id).map((ab) => ab.id)
+                : [heroAb.id]
           : [],
     },
     first: { doc: firstDoc, heights: firstHeights },
