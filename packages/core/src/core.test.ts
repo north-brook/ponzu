@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import {
   applyOp,
+  type CatalogFile,
   carryIds,
   type Doc,
   emptyDoc,
+  foldCopies,
   mergeStyle,
   outline,
   type PElement,
@@ -492,5 +494,44 @@ describe("outline", () => {
     expect(rootDirectionUnset({ display: "flex", "flex-flow": "wrap" })).toBe(false);
     expect(rootDirectionUnset({})).toBe(false);
     expect(rootDirectionUnset({ display: "grid" })).toBe(false);
+  });
+});
+
+describe("foldCopies", () => {
+  const file = (key: string, extra: Partial<CatalogFile> = {}): CatalogFile => ({
+    id: `local:${key}`,
+    key,
+    name: "App",
+    machine: "local",
+    base: "",
+    modified: 0,
+    preview: null,
+    git: { root: key.split("/design")[0]!, branch: key, project: "github.com/a/app" },
+    fingerprint: "same",
+    pages: [],
+    artboards: [],
+    ...extra,
+  });
+
+  test("identical copies in one project's checkouts are one card, the newest first", () => {
+    const cards = foldCopies([file("/a/design/x"), file("/b/design/x"), file("/c/design/x")]);
+    expect(cards.map((c) => [c.file.key, c.copies.map((f) => f.key)])).toEqual([
+      ["/a/design/x", ["/b/design/x", "/c/design/x"]],
+    ]);
+  });
+
+  test("a changed copy, a busy one, another project's, Mac's or shelf's, and one outside git stay apart", () => {
+    const cards = foldCopies([
+      file("/a/design/x"),
+      file("/b/design/x", { fingerprint: "edited" }),
+      file("/c/design/x", { busy: "claude" }),
+      file("/d/design/x", { git: { root: "/d", project: "github.com/a/other" } }),
+      file("/e/design/x", { machine: "air" }),
+      file("/f/design/x", { shelf: "scratch" }),
+      file("/g/design/x", { git: undefined }),
+      file("/h/design/x", { fingerprint: undefined }),
+      file("/i/design/x"),
+    ]);
+    expect(cards.map((c) => c.copies.length)).toEqual([1, 0, 0, 0, 0, 0, 0, 0]);
   });
 });

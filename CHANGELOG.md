@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.28.0](https://github.com/north-brook/ponzu/compare/v1.27.0...v1.28.0) (2026-10-22)
+
+
+### Features
+
+* fold identical copies of a design across checkouts into one card ([#123](https://github.com/north-brook/ponzu/issues/123)) ([69371ad](https://github.com/north-brook/ponzu/commit/69371ad28dbe2d79111aaba5ed28bc21a82579e0))
+
+
+### Bug Fixes
+
+* show an agent's mark, not its status, in working artboard headers ([#124](https://github.com/north-brook/ponzu/issues/124)) ([e5ac993](https://github.com/north-brook/ponzu/commit/e5ac993d13f525e341dfdc80fb95c71b84c3d8c4))
+
 ## [1.27.0](https://github.com/north-brook/ponzu/compare/v1.26.1...v1.27.0) (2026-10-22)
 
 
