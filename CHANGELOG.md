@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.34.0](https://github.com/north-brook/ponzu/compare/v1.33.1...v1.34.0) (2026-10-22)
+
+
+### Features
+
+* an agent's work arrives on the canvas with a shimmer slide ([#138](https://github.com/north-brook/ponzu/issues/138)) ([401b1df](https://github.com/north-brook/ponzu/commit/401b1dfe6b32aa9102f8a58eebd96b6ca75d235f))
+
 ## [1.33.1](https://github.com/north-brook/ponzu/compare/v1.33.0...v1.33.1) (2026-10-22)
 
 
