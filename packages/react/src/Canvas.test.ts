@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Artboard } from "@ponzu/core";
-import { labelCovers, size } from "./Canvas.tsx";
+import { boardsIn, labelCovers, size } from "./Canvas.tsx";
 
 const board = (style: Record<string, string>) =>
   ({ id: "ab_1", name: "A", x: 0, y: 0, root: { style } }) as unknown as Artboard;
@@ -26,4 +26,17 @@ test("a board's title hides when it would sit on the board above", () => {
   // A board beside, not above, is no obstacle; nor is a board with nothing over it.
   expect(labelCovers({ id: "c", x: 2600, y: 820, w: 1200 }, [above], 0.06)).toBe(false);
   expect(labelCovers({ id: "a", x: 1300, y: 0, w: 1200 }, boards, 0.06)).toBe(false);
+});
+
+test("a selection box takes every board it touches, drawn either way", () => {
+  const boards = [
+    { id: "a", x: 0, y: 0, w: 400, h: 300 },
+    { id: "b", x: 500, y: 0, w: 400, h: 300 },
+    { id: "c", x: 0, y: 400, w: 400, h: 300 },
+  ];
+  // Clipping a corner of a board is enough, as in Figma.
+  expect(boardsIn({ x: -50, y: -50 }, { x: 550, y: 50 }, boards)).toEqual(["a", "b"]);
+  expect(boardsIn({ x: 550, y: 50 }, { x: -50, y: -50 }, boards)).toEqual(["a", "b"]);
+  // The gap between boards takes none.
+  expect(boardsIn({ x: 420, y: 320 }, { x: 480, y: 380 }, boards)).toEqual([]);
 });
