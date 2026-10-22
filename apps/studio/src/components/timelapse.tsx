@@ -788,11 +788,12 @@ function Track({
           ))}
         </>
       )}
-      {ticks.map((t) => (
+      {clusterTicks(ticks.map(x)).map((c) => (
         <span
-          key={t}
-          className="absolute top-1.5 size-2 -translate-x-1/2 rounded-full bg-[#ffc81e] shadow-[0_0_0_1px_rgba(17,17,16,0.18)]"
-          style={{ left: `${x(t)}%` }}
+          key={c.at}
+          className="absolute top-1.5 h-2 -translate-x-1/2 rounded-full bg-[#ffc81e] shadow-[0_0_0_1px_rgba(17,17,16,0.18)]"
+          style={{ left: `${c.at}%`, width: `calc(0.5rem + ${c.span}%)` }}
+          title={c.n > 1 ? `${c.n} comments` : "A comment"}
         />
       ))}
       {playhead !== null && (
@@ -803,6 +804,20 @@ function Track({
       )}
     </div>
   );
+}
+
+/** Ticks closer than about a tick's width merge into one longer mark, so a run of comments reads as a run. */
+function clusterTicks(xs: number[]): { at: number; span: number; n: number }[] {
+  const sorted = [...xs].sort((a, b) => a - b);
+  const out: { from: number; to: number; n: number }[] = [];
+  for (const v of sorted) {
+    const last = out[out.length - 1];
+    if (last && v - last.to < 1.6) {
+      last.to = v;
+      last.n++;
+    } else out.push({ from: v, to: v, n: 1 });
+  }
+  return out.map((c) => ({ at: (c.from + c.to) / 2, span: c.to - c.from, n: c.n }));
 }
 
 /** A time scale where gaps over a minute count as a minute, so sessions get the room. */
