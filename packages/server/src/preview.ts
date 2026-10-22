@@ -8,7 +8,8 @@ export { type PreviewTheme, previewArtboard } from "@ponzu/core";
 
 /**
  * Where a design keeps its canvas preview. The Mac app's Quick Look extension
- * shows it as the file's icon in Finder. The folder ignores itself in git.
+ * shows it as the file's icon in Finder, and ponzu.design/gh puts it on a
+ * design's share card, so git keeps the two previews and ignores the rest.
  */
 export const PREVIEW_DIR = ".ponzu";
 export const PREVIEW_FILE = `${PREVIEW_DIR}/preview.png`;
@@ -21,6 +22,9 @@ export const PREVIEW_DARK_FILE = `${PREVIEW_DIR}/preview-dark.png`;
  */
 export const PREVIEW_VERSION = 2;
 const VERSION_FILE = `${PREVIEW_DIR}/version`;
+
+/** The folder's .gitignore: everything but the previews, which travel with the design. */
+export const PREVIEW_GITIGNORE = "*\n!.gitignore\n!preview.png\n!preview-dark.png\n";
 
 export const previewFile = (theme: PreviewTheme) =>
   theme === "dark" ? PREVIEW_DARK_FILE : PREVIEW_FILE;
@@ -48,7 +52,7 @@ export async function writePreview(
   }
   const dir = join(root, PREVIEW_DIR);
   await mkdir(dir, { recursive: true });
-  await writeFile(join(dir, ".gitignore"), "*\n");
+  await writeFile(join(dir, ".gitignore"), PREVIEW_GITIGNORE);
   // Dark first: the light file's date is the preview's version (catalog.ts).
   for (const theme of ["dark", "light"] as const) {
     const out = await renderer.render({

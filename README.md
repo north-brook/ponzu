@@ -102,6 +102,8 @@ A `.design` committed to a public repo opens on the canvas at `ponzu.design/gh/<
 [![Kettle | Ponzu](https://ponzu.design/badge.svg?label=Kettle)](https://ponzu.design/gh/<owner>/<repo>/<path/to/name.design>)
 ```
 
+Ponzu keeps a light and a dark preview of each design in its `.ponzu/` folder (the picture Finder shows). Commit them, and a shared link's card shows the design itself.
+
 ## Embed it
 
 Ponzu is a set of packages you can build into your own product:
