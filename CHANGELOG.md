@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.36.0](https://github.com/north-brook/ponzu/compare/v1.35.0...v1.36.0) (2026-10-22)
+
+
+### Features
+
+* drag on the empty canvas to select boards with a box ([#143](https://github.com/north-brook/ponzu/issues/143)) ([196f36f](https://github.com/north-brook/ponzu/commit/196f36f79b3591e3c948477ffbe7cf73f8a5f330))
+* warn agents when a design animates more than the canvas can keep smooth ([#146](https://github.com/north-brook/ponzu/issues/146)) ([84990ad](https://github.com/north-brook/ponzu/commit/84990ad5b63069931e52e51355e24d42b5b15cbf))
+
 ## [1.35.0](https://github.com/north-brook/ponzu/compare/v1.34.1...v1.35.0) (2026-10-22)
 
 
