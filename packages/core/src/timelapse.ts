@@ -331,7 +331,7 @@ function cleanFrame(
   // subject's own lines count fully, the boards around it a quarter.
   const weight = (c: Cam) =>
     cutLines(c, lines, view, f).reduce((a, r) => a + (r.h * c.zoom) ** 2, 0) +
-    0.08 * cutLines(c, context, view, f).reduce((a, r) => a + (r.h * c.zoom) ** 2, 0);
+    0.5 * cutLines(c, context, view, f).reduce((a, r) => a + (r.h * c.zoom) ** 2, 0);
   if (weight(cam) === 0) return cam;
   let best = cam;
   let bestW = weight(cam);
