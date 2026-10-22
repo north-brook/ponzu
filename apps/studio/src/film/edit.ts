@@ -249,6 +249,9 @@ const union = (rects: Rect[]): Rect | undefined => {
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 };
 const area = (rects: Rect[]) => rects.reduce((a, r) => a + r.w * r.h, 0);
+const overlap = (a: Rect, b: Rect) =>
+  Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) *
+  Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
 const offset = (r: Rect, ab: Artboard): Rect => ({ x: ab.x + r.x, y: ab.y + r.y, w: r.w, h: r.h });
 
 /** The corner wayfinding line's box in film px: slice, file name, page name, as Film draws it. */
@@ -289,6 +292,14 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
   // The wayfinding line's box: measured off the real font, as the film draws it.
   const pill = input.pill ?? measurePill(input, view);
   const framing = { ...framingFor(input.shape), pill };
+  // A work shot also keeps clear of the agent's badge, top right (its width is the board's name).
+  const badgeFor = (name: string) => {
+    const k = view.w < view.h ? 1.08 : 1;
+    const ctx = document.createElement("canvas").getContext("2d")!;
+    ctx.font = `400 ${12.5 * k}px Inter, system-ui, sans-serif`;
+    const w = Math.min(view.w * 0.42, ctx.measureText(name).width + 20 * k + 16 * k + 6);
+    return { x: view.w - 14 - w, y: 14, w, h: Math.ceil(12 * k + 14 * k) };
+  };
   const lab = new Lab(input.assetBase, input.theme);
   const all = moments(entries, input.range);
   const notes = noteBoards(entries);
@@ -310,6 +321,25 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
       return structuredClone(doc);
     };
   })();
+
+  // What each comment is about, in its board's px: the node it's pinned to, else around the pin.
+  const askedSubjects = new Map<string, Rect[]>();
+  for (const m of all) {
+    if (m.kind !== "turn") continue;
+    for (const c of m.comments) {
+      if (!c.board) continue;
+      const d = docAt(c.entry);
+      const ab = findArtboard(d, c.board)?.artboard;
+      const t = d.threads.find((x) => x.id === c.thread);
+      if (!ab || !t) continue;
+      let r: Rect = { x: t.x - 90, y: t.y - 60, w: 180, h: 120 };
+      if (t.nodeId) {
+        const box = lab.box(await lab.show(d, ab, 2), t.nodeId);
+        if (box) r = box;
+      }
+      askedSubjects.set(c.board, [...(askedSubjects.get(c.board) ?? []), r]);
+    }
+  }
 
   // The settled look of each work moment: the board before its first op, and after its last.
   const looks = new Map<Moment, Look>();
@@ -339,10 +369,15 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
     // How much of the board the change touches: the region it spans counts, not just the pixels
     // of the leaves (a redrawn mark is a few thin paths, but it's the whole mark that changed).
     const span = union(changed);
-    const change = Math.min(
+    let change = Math.min(
       1,
       Math.max(area(changed), span ? span.w * span.h * 0.6 : 0) / Math.max(1, boardArea),
     );
+    // A fix to something you commented on counts by what the comment is about, however few
+    // pixels move: a colour, an icon, a label are the answer.
+    const asked = askedSubjects.get(m.board) ?? [];
+    const answersAsked = changed.some((r) => asked.some((a) => overlap(r, a) > 0));
+    if (m.answers !== undefined && answersAsked) change = Math.max(change, 0.12);
     looks.set(m, { change });
     measured.set(m, { changed, removed, before, after });
   }
@@ -415,7 +450,13 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
       const hB = await heightsOf(before);
       const hA = await heightsOf(after);
       // Frame: the board whole if it reads, else everything that changed, never cutting text.
-      const detail = union(got.changed.map((r) => offset(r, ab)));
+      // A fix is framed on what it answers: the commented subject and the changes in it.
+      const asked = m.answers !== undefined ? (askedSubjects.get(m.board) ?? []) : [];
+      const answering = got.changed.filter((r) => asked.some((a) => overlap(r, a) > 0));
+      const focusRects = answering.length
+        ? [...answering, ...asked.filter((a) => answering.some((r) => overlap(r, a) > 0))]
+        : got.changed;
+      const detail = union(focusRects.map((r) => offset(r, ab)));
       const neighbours = pageBoards(after, m.board);
       // The camera rests here on the before and on the after: neither may cut a line of the
       // board, and the boards around it as little as can be.
@@ -436,13 +477,13 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
           page: findArtboard(after, m.board)!.page.id,
           board: boardRect(ab, hA),
           detail,
-          parts: got.changed.map((r) => offset(r, ab)),
+          parts: focusRects.map((r) => offset(r, ab)),
           texts,
           context,
           key: m.board,
         },
         view,
-        framing,
+        { ...framing, badge: badgeFor(ab.name) },
       );
       // What rises in: the new subtrees in the after state, opened into blocks.
       const hostA = await lab.show(after, ab, 1);
@@ -565,15 +606,8 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
   const lastBoard =
     [...scenes].reverse().find((s) => s.board)?.board ??
     endDoc.pages.flatMap((p) => p.artboards)[0]?.id;
-  const counts = new Map<string, number>();
-  for (const m of all) {
-    if (m.kind === "turn")
-      for (const c of m.comments) if (c.board) counts.set(c.board, (counts.get(c.board) ?? 0) + 2);
-    if (m.kind === "work" && m.board && !notes.has(m.board))
-      counts.set(m.board, (counts.get(m.board) ?? 0) + (looks.get(m)?.change ?? 0));
-  }
-  // A board that reads whole in this shape makes the better last picture (a phone screen in a
-  // tall film, a desktop page in a wide one).
+  // The board the film was about: of the fixes it showed, the biggest answer to a comment
+  // (the payoff); a board that reads whole in this shape wins a close call.
   const reads = (id: string) => {
     const ab = findArtboard(endDoc, id)?.artboard;
     if (!ab) return false;
@@ -583,20 +617,15 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
       framing.minZoom
     );
   };
-  for (const [id, v] of counts) if (reads(id)) counts.set(id, v * 2.5 + 1);
-  // The ending is about what the film showed: a board it changed on screen.
-  const shownBoards = new Set(
-    scenes.flatMap((sc) =>
-      sc.board &&
-      sc.shot.moment.kind === "work" &&
-      (sc.shot.moment.answers !== undefined || input.length > 15)
-        ? [sc.board]
-        : [],
-    ),
-  );
-  if (shownBoards.size)
-    for (const id of [...counts.keys()]) if (!shownBoards.has(id)) counts.delete(id);
-  const hero = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? lastBoard;
+  const candidates = scenes
+    .filter((sc) => sc.board && sc.shot.moment.kind === "work" && !notes.has(sc.board))
+    .map((sc) => {
+      const m = sc.shot.moment as Extract<Moment, { kind: "work" }>;
+      const v = (looks.get(m)?.change ?? 0) * (m.answers !== undefined ? 3 : 1);
+      return { board: sc.board!, v: v * (reads(sc.board!) ? 1.6 : 1) };
+    })
+    .sort((x, y) => y.v - x.v);
+  const hero = candidates[0]?.board ?? lastBoard;
   const heroAb = hero ? findArtboard(endDoc, hero)?.artboard : undefined;
   const pageAll = heroAb
     ? union(pageBoards(endDoc, heroAb.id).map((ab) => boardRect(ab, endHeights)))
@@ -607,7 +636,7 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
       (view.w - 2 * framing.pad) / pageAll.w,
       (view.h - 2 * framing.pad - framing.top) / pageAll.h,
     ) >=
-      framing.minZoom * (view.h > view.w ? 1.05 : 0.7);
+      framing.comfort * (view.h > view.w ? 1.1 : 0.95);
   const resultCam = heroAb
     ? frameFocus(
         {

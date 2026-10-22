@@ -239,112 +239,100 @@ export function commentTime(words: number, length: number): number {
 }
 
 /**
- * The moments to show, in order. Always your first turn and the work that
- * answers it; then as many more as fit, the biggest changes first, payoffs
- * before build-up. A 15s film is one turn of at most two comments and its
- * payoff. Tiny changes never make the cut.
+ * The moments to show, in order: stories, each a turn of your comments and the
+ * fixes that answer them, shown at rest. A comment is read out only when its
+ * fix is in the film (others land as pins); a fix is in the film only when it
+ * answers a comment that's read out or it's the opening build. Your first story
+ * always; then more, while they fit, each whole. A 15s film is one story on one
+ * board. Tiny changes never make the cut.
  */
 export function chooseStory(all: Moment[], looks: Map<Moment, Look>, opts: StoryOptions): Moment[] {
+  const short = opts.length <= 15;
   const budget = opts.length - SHOT.end - SHOT.result - SHOT.open;
   const work = all.filter((m): m is Extract<Moment, { kind: "work" }> => m.kind === "work");
   const turns = all.filter((m): m is Extract<Moment, { kind: "turn" }> => m.kind === "turn");
-  const shotCost = (m: Moment): number => {
-    if (m.kind === "turn")
-      return (
-        SHOT.travel +
-        m.comments
-          .slice(0, opts.length <= 15 ? 2 : 4)
-          .reduce((a, c) => a + commentTime(c.words, opts.length), 0)
-      );
-    if (m.kind === "reply") return 0;
-    return SHOT.travel + SHOT.settle + SHOT.change + SHOT.hold;
-  };
   const visible = (m: Extract<Moment, { kind: "work" }>) => (looks.get(m)?.change ?? 0) >= 0.03;
+  const score = (w: Extract<Moment, { kind: "work" }>) =>
+    (looks.get(w)?.change ?? 0) * (w.answers !== undefined ? 2.5 : 1) + Math.min(0.3, w.ops * 0.01);
+  const workCost = SHOT.travel + SHOT.settle + SHOT.change + SHOT.hold;
+  const turnCost = (t: Extract<Moment, { kind: "turn" }>, featured: CommentLanding[]) =>
+    SHOT.travel +
+    featured.reduce((a, c) => a + commentTime(c.words, opts.length), 0) +
+    (t.comments.length - featured.length) * 0.4;
+
   const picked = new Set<Moment>();
+  const featured = new Map<Moment, string[]>();
   let spent = 0;
-  const take = (m: Moment) => {
-    if (picked.has(m)) return true;
-    const c = shotCost(m);
-    if (spent + c > budget + 1e-9) return false;
-    picked.add(m);
-    spent += c;
-    return true;
+
+  // A story: the turn, and for each board it asks about (in the order asked), its fix.
+  const story = (t: Extract<Moment, { kind: "turn" }>, maxBoards: number) => {
+    const boards = [...new Set(t.comments.map((c) => c.board).filter(Boolean))] as string[];
+    const fixes: Extract<Moment, { kind: "work" }>[] = [];
+    for (const b of boards) {
+      const w = work
+        .filter((x) => x.answers === t.round && x.board === b && visible(x))
+        .sort((x, y) => score(y) - score(x))[0];
+      if (w) fixes.push(w);
+      if (fixes.length >= maxBoards) break;
+    }
+    const paidBoards = new Set(fixes.map((w) => w.board));
+    // One card per paid board: the first comment on it.
+    const cards: CommentLanding[] = [];
+    for (const c of t.comments)
+      if (c.board && paidBoards.has(c.board) && !cards.some((x) => x.board === c.board))
+        cards.push(c);
+    return { fixes, cards };
   };
-  // Opening: the biggest piece of work before your first turn (the film opens on it, mid-build).
+
   const firstTurn = turns[0];
+  // Opening: a build. A short film opens on the board its story is about.
   const before = firstTurn ? work.filter((w) => all.indexOf(w) < all.indexOf(firstTurn)) : work;
-  // A short film is one story on one board: it opens on the board its first comment is about.
   const firstBoard = firstTurn?.comments[0]?.board;
   const opening =
-    (opts.length <= 15 && firstBoard
+    (short && firstBoard
       ? before.filter((w) => w.board === firstBoard && visible(w)).at(-1)
       : undefined) ?? [...before].filter(visible).sort((a, b) => score(b) - score(a))[0];
-  function score(w: Extract<Moment, { kind: "work" }>) {
-    const look = looks.get(w);
-    return (look?.change ?? 0) * (w.answers !== undefined ? 2.5 : 1) + Math.min(0.3, w.ops * 0.01);
+  if (opening) {
+    picked.add(opening);
+    spent += workCost;
   }
-  if (opening) take(opening);
-  // Your first turn and its payoff.
-  if (firstTurn) {
-    take(firstTurn);
-    // The payoff a short film shows is the fix to the first comment it reads out: the one
-    // that starts the conversation. Otherwise the biggest.
-    const firstAsked = firstTurn.comments[0]?.board;
-    const payoff = work
-      .filter((w) => w.answers === firstTurn.round && visible(w))
-      .sort(
-        (a, b) =>
-          Number(b.board === firstAsked) - Number(a.board === firstAsked) || score(b) - score(a),
-      );
-    // A short film pays off the comments it reads out: the first two boards asked about.
-    if (opts.length <= 15) {
-      const asked = [...new Set(firstTurn.comments.map((c) => c.board))].slice(0, 1);
-      for (const b of asked) {
-        const w = payoff.find((x) => x.board === b);
-        if (w) take(w);
-      }
-      if (![...picked].some((m) => m.kind === "work" && m.answers === firstTurn.round) && payoff[0])
-        take(payoff[0]);
-    } else for (const w of payoff) take(w);
-  }
-  if (opts.length > 15) {
-    // Further turns with their payoffs, then the biggest remaining work.
-    for (const t of turns.slice(1)) {
-      const payoff = work
-        .filter((w) => w.answers === t.round && visible(w))
-        .sort((a, b) => score(b) - score(a));
-      if (!payoff.length) continue;
-      if (!take(t)) break;
-      for (const w of payoff) take(w);
+
+  const takeStory = (t: Extract<Moment, { kind: "turn" }>, maxBoards: number): boolean => {
+    let { fixes, cards } = story(t, maxBoards);
+    // Shrink until it fits: fewer boards, never a card without its fix.
+    while (fixes.length) {
+      const cost = turnCost(t, cards) + fixes.length * workCost;
+      if (spent + cost <= budget + 1e-9) break;
+      fixes = fixes.slice(0, -1);
+      const paid = new Set(fixes.map((w) => w.board));
+      cards = cards.filter((c) => c.board && paid.has(c.board));
     }
-    const rest = work
-      .filter((w) => !picked.has(w) && visible(w))
-      .sort((a, b) => score(b) - score(a));
-    for (const w of rest) take(w);
-  }
-  // Each turn features the comments whose fixes are in the film: a short film shows two cards,
-  // so it spends them on the comments the film pays off.
-  // The boards whose fixes for each turn are shown.
-  const paidFor = (round: number) =>
-    new Set(
-      [...picked]
-        .filter(
-          (m): m is Extract<Moment, { kind: "work" }> => m.kind === "work" && m.answers === round,
-        )
-        .map((w) => w.board),
+    if (!fixes.length) return false;
+    picked.add(t);
+    featured.set(
+      t,
+      cards.map((c) => c.thread),
     );
-  const cards = opts.length <= 15 ? 2 : 4;
+    for (const w of fixes) picked.add(w);
+    spent += turnCost(t, cards) + fixes.length * workCost;
+    return true;
+  };
+
+  if (firstTurn) takeStory(firstTurn, short ? 1 : 3);
+  if (!short) for (const t of turns.slice(1)) if (!takeStory(t, 3)) break;
+  // Leftover room in a long film: the biggest builds that weren't shown, before the first turn.
+  if (!short)
+    for (const w of before
+      .filter((x) => !picked.has(x) && visible(x))
+      .sort((a, b) => score(b) - score(a)))
+      if (spent + workCost <= budget) {
+        picked.add(w);
+        spent += workCost;
+      }
+
   return all
     .filter((m) => picked.has(m))
-    .map((m) => {
-      if (m.kind !== "turn") return m;
-      const shownBoards = paidFor(m.round);
-      const paid = m.comments.filter((c) => c.board && shownBoards.has(c.board));
-      const rest = m.comments.filter((c) => !paid.includes(c));
-      // A short film only reads out the comments it pays off; the others land as pins.
-      const pool = opts.length <= 15 && paid.length ? paid : [...paid, ...rest];
-      return { ...m, featured: pool.slice(0, cards).map((c) => c.thread) };
-    });
+    .map((m) => (m.kind === "turn" ? { ...m, featured: featured.get(m) ?? [] } : m));
 }
 
 /* ------------------------------------------------------------------ */

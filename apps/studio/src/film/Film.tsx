@@ -273,7 +273,40 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
               if (!ab) return null;
               const p = toScreen(ab.x, ab.y);
               const h = heights.get(ab.id) ?? artboardSize(ab).h ?? 900;
-              return <Trace x={p.x} y={p.y} w={artboardSize(ab).w * cam.zoom} h={h * cam.zoom} />;
+              const w = artboardSize(ab).w * cam.zoom;
+              // The board's own header is above the frame (a close shot): its name and the
+              // agent's mark ride the top of the board's visible part, so the agent is always seen.
+              const headerY = p.y - 22;
+              const pinned = (headerY < 14 || p.x < 0) && p.y + h * cam.zoom > 120;
+              return (
+                <>
+                  <Trace x={p.x} y={p.y} w={w} h={h * cam.zoom} />
+                  {pinned && (
+                    <div
+                      className="pz-film-badge pz:absolute pz:flex pz:items-center pz:gap-[0.5em] pz:whitespace-nowrap pz:rounded-xl pz:bg-bar pz:text-foreground pz:leading-none pz:shadow-bar pz:backdrop-blur-[18px] pz:backdrop-saturate-[1.6]"
+                      style={{
+                        right: 14,
+                        top: 14,
+                        maxWidth: view.w * 0.42,
+                        padding: `${6 * (view.w < view.h ? 1.08 : 1)}px ${10 * (view.w < view.h ? 1.08 : 1)}px`,
+                        fontSize: 12.5 * (view.w < view.h ? 1.08 : 1),
+                      }}
+                    >
+                      <span className="pz:min-w-0 pz:truncate pz-shimmer">{ab.name}</span>
+                      <WorkingStatus
+                        who={[
+                          {
+                            id: fr.working!.who.name,
+                            name: fr.working!.who.name,
+                            client: fr.working!.who.client,
+                          },
+                        ]}
+                        zoom={1}
+                      />
+                    </div>
+                  )}
+                </>
+              );
             })()}
           {[
             ...fr.threads.map((t) => ({
@@ -334,7 +367,11 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
                         : undefined
                     }
                     className="pz-film-card"
-                    style={{ opacity: card.opacity, translate: `0 ${(1 - card.opacity) * 4}px` }}
+                    style={{
+                      opacity: card.opacity,
+                      // Read on a phone: the real card, a little larger than in the studio.
+                      zoom: view.w > view.h ? 1.22 : 1.12,
+                    }}
                   >
                     <ThreadCard
                       thread={card.thread}
@@ -571,7 +608,9 @@ function EndCard({ model, t, opacity }: { model: FilmModel; t: number; opacity: 
           >
             {SLICE.map((d, i) => {
               // The segments bloom close together, from a moment after the canvas has gone.
-              const p = progress(t, 0.04 + i * 0.03, 0.04 + i * 0.03 + 0.42, ease.out);
+              // All six from the same frame, from the centre: never a lone wedge.
+              void i;
+              const p = progress(t, 0.04, 0.5, ease.out);
               return (
                 <path
                   key={d}
@@ -579,9 +618,8 @@ function EndCard({ model, t, opacity }: { model: FilmModel; t: number; opacity: 
                   style={{
                     transformBox: "view-box",
                     transformOrigin: "32px 32px",
-                    // From most of its size, so the whole slice reads from the first frame.
-                    transform: `scale(${0.5 + 0.5 * p}) rotate(${-60 * (1 - p)}deg)`,
-                    opacity: clamp01(p * 2.2),
+                    transform: `scale(${0.35 + 0.65 * p})`,
+                    opacity: clamp01(p * 2.5),
                   }}
                 />
               );

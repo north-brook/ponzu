@@ -206,6 +206,8 @@ export interface Framing {
   comfort: number;
   /** The wayfinding line's box in screen px, when measured. */
   pill?: Rect;
+  /** The agent's badge, top right in a close shot of the board it's working on (screen px). */
+  badge?: Rect;
 }
 
 /** In the film's CSS pixels (see filmViewport). */
@@ -294,15 +296,21 @@ export function cutLines(
   const y0 = cam.cy - view.h / 2 / z;
   const y1 = cam.cy + view.h / 2 / z;
   const tol = 1.5 / z;
-  const pill = { x: x0 + (W.x - 4) / z, y: y0 + (W.y - 4) / z, w: (W.w + 8) / z, h: (W.h + 8) / z };
+  const toCanvas = (o: Rect) => ({
+    x: x0 + (o.x - 4) / z,
+    y: y0 + (o.y - 4) / z,
+    w: (o.w + 8) / z,
+    h: (o.h + 8) / z,
+  });
+  const obstacles = [toCanvas(W), ...(f?.badge ? [toCanvas(f.badge)] : [])];
   return lines.filter((r) => {
     const inX = r.x + r.w > x0 + tol && r.x < x1 - tol;
     const inY = r.y + r.h > y0 + tol && r.y < y1 - tol;
     if (!inX || !inY) return false;
     if (r.x < x0 - tol || r.x + r.w > x1 + tol || r.y < y0 - tol || r.y + r.h > y1 + tol)
       return true;
-    return (
-      r.x < pill.x + pill.w && r.x + r.w > pill.x && r.y < pill.y + pill.h && r.y + r.h > pill.y
+    return obstacles.some(
+      (o) => r.x < o.x + o.w && r.x + r.w > o.x && r.y < o.y + o.h && r.y + r.h > o.y,
     );
   });
 }

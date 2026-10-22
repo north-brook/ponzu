@@ -106,8 +106,8 @@ describe("story", () => {
     const story = chooseStory(ms, looks, { length: 15 });
     const turn = story.find((m) => m.kind === "turn");
     expect(turn).toBeDefined();
-    // Its cards go to the comments the film pays off: the one on board a.
-    expect(turn!.kind === "turn" && turn!.featured).toEqual(["t1", "t2"]);
+    // One story: one card, for the comment whose fix the film shows (the first on board a).
+    expect(turn!.kind === "turn" && turn!.featured).toEqual(["t1"]);
     // One story: the fix to the first comment's board; the tiny build of b is cut.
     const paid = story.filter((m) => m.kind === "work" && m.answers === 0);
     expect(paid.map((m) => m.kind === "work" && m.board)).toEqual(["a"]);
@@ -127,9 +127,16 @@ describe("story", () => {
           s.start < s.arrive ? "travel" : shotAt(tl, s.start).phase,
         );
       }
-      // Comments in a short film: two cards, the rest pins.
+      // Every card read out is paid off in the film: its board has a fix shot after it.
       const turn = tl.shots.find((s) => s.moment.kind === "turn");
-      if (length === 15) expect(turn!.landings!.filter((l) => l.card)).toHaveLength(2);
+      const fixed = new Set(
+        tl.shots.flatMap((s) =>
+          s.moment.kind === "work" && s.moment.answers === 0 ? [s.moment.board] : [],
+        ),
+      );
+      for (const l of turn!.landings!.filter((x) => x.card))
+        expect(fixed.has(l.comment.board!)).toBe(true);
+      if (length === 15) expect(turn!.landings!.filter((l) => l.card)).toHaveLength(1);
       expect(tl.endCard).toBeCloseTo(length - SHOT.end, 5);
     }
   });

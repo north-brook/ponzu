@@ -16,16 +16,11 @@ export function schemeFor(doc: Doc, ab: Artboard, theme: "light" | "dark"): "lig
 
 /** Fonts and images in a shadow root, with a time limit. */
 export async function settleAssets(root: ShadowRoot | Document, ms = 4000): Promise<void> {
-  const imgs = [...root.querySelectorAll("img")].filter((i) => !i.complete);
+  // Loaded and decoded: an image that's loaded but not decoded paints blank for a frame.
+  const imgs = [...root.querySelectorAll("img")];
   const all = Promise.all([
     document.fonts.ready,
-    ...imgs.map(
-      (img) =>
-        new Promise<void>((r) => {
-          img.addEventListener("load", () => r(), { once: true });
-          img.addEventListener("error", () => r(), { once: true });
-        }),
-    ),
+    ...imgs.map((img) => img.decode().catch(() => {})),
   ]);
   await Promise.race([all, new Promise((r) => setTimeout(r, ms))]);
 }
