@@ -1,4 +1,4 @@
-import { type Artboard, serializeArtboardElement } from "@ponzu/core";
+import { type Artboard, rewriteCssUrls, serializeArtboardElement } from "@ponzu/core";
 import { googleFontLinks, googleFonts } from "./fonts.ts";
 
 /**
@@ -38,7 +38,7 @@ export function artboardPage(ab: Artboard, opts: PageOptions): string {
   const scheme = opts.colorScheme ? `:root{color-scheme:${opts.colorScheme}}` : "";
   return `<!doctype html><html><head><meta charset="utf-8">
 ${fonts}
-<style>${styleText(opts.tokens)}</style>
+<style>${styleText(resolveTokenAssets(opts.tokens, opts.assetBase))}</style>
 <style>html,body{margin:0;padding:0;background:transparent}${scheme}${ARTBOARD_BASE_CSS}</style>
 </head><body>${body}</body></html>`;
 }
@@ -52,6 +52,23 @@ export function pinColorScheme(css: string, scheme: "light" | "dark"): string {
   return css.replace(/\(\s*prefers-color-scheme\s*:\s*(light|dark)\s*\)/gi, (_, s: string) =>
     s.toLowerCase() === scheme ? "(min-width: 0px)" : "(not (min-width: 0px))",
   );
+}
+
+/**
+ * Tokens with their relative url()s resolved against the design's assets, so an
+ * `@font-face { src: url(assets/brand.woff2) }` in tokens.css loads wherever the
+ * artboard renders, not only beside the files.
+ */
+export function resolveTokenAssets(tokens: string, base?: string): string {
+  return base ? rewriteCssUrls(tokens, (u) => resolveAsset(u, base)) : tokens;
+}
+
+/**
+ * The @font-face rules in a stylesheet. A face declared inside a shadow root
+ * never loads in Chromium, so the canvas lifts these into its host document.
+ */
+export function fontFaceRules(css: string): string[] {
+  return css.match(/@font-face\s*\{[^}]*\}/gi) ?? [];
 }
 
 export function resolveAsset(url: string, base?: string): string {

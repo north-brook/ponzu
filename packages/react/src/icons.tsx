@@ -1,6 +1,7 @@
 import {
   Add01Icon,
   Archive01Icon,
+  ArrowDown01Icon,
   ArrowTurnBackwardIcon,
   ArrowTurnForwardIcon,
   Book01Icon,
@@ -65,6 +66,7 @@ export const Icons = {
   book: Book01Icon,
   /** A blank page: a .design file. */
   blank: FileEmpty02Icon,
+  chevronDown: ArrowDown01Icon,
   /** A page with no icon of its own. */
   board: DashboardSquare01Icon,
   calendar: Calendar01Icon,

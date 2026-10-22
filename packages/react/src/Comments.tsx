@@ -182,11 +182,14 @@ export function ThreadCard({
   thread,
   source,
   me,
+  readOnly = false,
   onClose,
 }: {
   thread: Thread;
   source: CanvasSource;
   me: Author;
+  /** Only the messages: no reply, resolve, edit or delete. */
+  readOnly?: boolean;
   onClose: () => void;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
@@ -211,7 +214,7 @@ export function ThreadCard({
   };
   const removeMessage = (messageId: string) =>
     source.apply({ op: "thread.unmessage", id: thread.id, messageId });
-  const mine = (a: Author) => a.kind === me.kind && a.name === me.name;
+  const mine = (a: Author) => !readOnly && a.kind === me.kind && a.name === me.name;
   // The first message is the comment itself. Its actions live in the card's
   // menu, so nothing appears on hover beside the Resolve and More buttons.
   const first = thread.messages[0];
@@ -219,35 +222,37 @@ export function ThreadCard({
     i > 0 && mine(m.author) && editing !== m.id;
   return (
     <div className={threadCard} onPointerDown={(e) => e.stopPropagation()}>
-      <div className="pz:absolute pz:top-1.5 pz:right-1.5 pz:z-[1] pz:flex pz:gap-0.5 pz:rounded-lg pz:bg-card">
-        <Button variant="ghost" size="icon" onClick={resolve} title="Resolve">
-          <Icon name="check" size={15} />
-        </Button>
-        <Menu
-          trigger={
-            <Button variant="ghost" size="icon" title="More">
-              <Icon name="more" size={15} />
-            </Button>
-          }
-          items={[
-            ...(first && mine(first.author)
-              ? [
-                  {
-                    label: "Edit",
-                    icon: <Icon name="edit" size={14} />,
-                    onSelect: () => setEditing(first.id),
-                  },
-                ]
-              : []),
-            {
-              label: "Delete thread",
-              icon: <Icon name="trash" size={14} />,
-              danger: true,
-              onSelect: remove,
-            },
-          ]}
-        />
-      </div>
+      {!readOnly && (
+        <div className="pz:absolute pz:top-1.5 pz:right-1.5 pz:z-[1] pz:flex pz:gap-0.5 pz:rounded-lg pz:bg-card">
+          <Button variant="ghost" size="icon" onClick={resolve} title="Resolve">
+            <Icon name="check" size={15} />
+          </Button>
+          <Menu
+            trigger={
+              <Button variant="ghost" size="icon" title="More">
+                <Icon name="more" size={15} />
+              </Button>
+            }
+            items={[
+              ...(first && mine(first.author)
+                ? [
+                    {
+                      label: "Edit",
+                      icon: <Icon name="edit" size={14} />,
+                      onSelect: () => setEditing(first.id),
+                    },
+                  ]
+                : []),
+              {
+                label: "Delete thread",
+                icon: <Icon name="trash" size={14} />,
+                danger: true,
+                onSelect: remove,
+              },
+            ]}
+          />
+        </div>
+      )}
       {/*
         data-scroll lets the wheel scroll this list instead of panning the canvas.
         Scrolled, its top fades out so messages never run under the buttons.
@@ -269,7 +274,12 @@ export function ThreadCard({
             )}
           >
             {/* At the top, only the first row sits beside the card's buttons. */}
-            <div className={cn("pz:flex pz:h-6 pz:items-center pz:gap-1.5", i === 0 && "pz:pr-14")}>
+            <div
+              className={cn(
+                "pz:flex pz:h-6 pz:items-center pz:gap-1.5",
+                i === 0 && !readOnly && "pz:pr-14",
+              )}
+            >
               <Avatar author={m.author} size={18} />
               <span className="pz:truncate pz:font-medium">{m.author.name}</span>
               <span className={cn(meta, "pz:shrink-0")}>
@@ -309,7 +319,7 @@ export function ThreadCard({
           </div>
         ))}
       </div>
-      <Composer onSubmit={reply} onCancel={onClose} placeholder="Reply…" />
+      {!readOnly && <Composer onSubmit={reply} onCancel={onClose} placeholder="Reply…" />}
     </div>
   );
 }

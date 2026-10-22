@@ -7,7 +7,7 @@ import { parseArgs } from "node:util";
 import { emptyDoc, newId } from "@ponzu/core";
 import { serveBridge } from "@ponzu/mcp/bridge";
 import { RemoteRenderer, type Renderer } from "@ponzu/render";
-import { findDesigns, LocalWorkspace, serve } from "@ponzu/server";
+import { findDesigns, LocalWorkspace, openFromGitHub, serve, spawnGit } from "@ponzu/server";
 import { Design } from "@ponzu/store";
 import { FsAdapter } from "@ponzu/store/fs";
 import pkg from "../package.json" with { type: "json" };
@@ -22,6 +22,9 @@ const HELP = `Ponzu ${VERSION}: a design canvas your coding agent drives with HT
 
 Usage
   ponzu serve [files.design…]   Open the canvas in your browser and serve MCP at /mcp
+  ponzu open <owner/repo/x.design>
+                                Clone a design from GitHub into ~/Ponzu and serve it.
+                                Also takes a ponzu.design/gh or github.com link
   ponzu mcp [files.design…]     MCP over stdio: what agents launch. Joins the running
                                 Ponzu, starts the desktop app in the background, or
                                 runs on its own
@@ -73,6 +76,18 @@ async function main() {
         dev: Boolean(values.dev),
         studio: values.studio,
       });
+    case "open": {
+      const { path, clone } = await openFromGitHub(files[0], spawnGit());
+      console.log(`Opening ${path.slice(clone.length + 1) || "every design"} in ${clone}`);
+      process.chdir(clone);
+      return runServe(path === clone ? [] : [path], {
+        port: Number(values.port ?? 7777),
+        host: values.host ?? "127.0.0.1",
+        open: !values["no-open"],
+        dev: false,
+        studio: values.studio,
+      });
+    }
     case "mcp":
       return runMcp(files);
     case "init":

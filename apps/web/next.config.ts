@@ -3,6 +3,8 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // PostHog's API paths end in a slash; redirecting them breaks ingestion.
   skipTrailingSlashRedirect: true,
+  // The share cards read their fonts from disk (app/gh/og.tsx).
+  outputFileTracingIncludes: { "/og/gh/[...slug]": ["./assets/og/*.ttf"] },
   async rewrites() {
     return [
       {

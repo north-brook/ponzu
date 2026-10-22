@@ -8,6 +8,7 @@ import type { Renderer } from "@ponzu/render";
 import {
   PREVIEW_DARK_FILE,
   PREVIEW_FILE,
+  PREVIEW_GITIGNORE,
   PREVIEW_VERSION,
   previewArtboard,
   previewCurrent,
@@ -88,7 +89,7 @@ test("writes the preview, and removes it once the first page is empty", async ()
     // The design's assets/ images load from where the server serves them.
     expect(bases).toEqual([assets, assets]);
     expect(await previewCurrent(root)).toBe(true);
-    expect(await readFile(join(root, ".ponzu/.gitignore"), "utf8")).toBe("*\n");
+    expect(await readFile(join(root, ".ponzu/.gitignore"), "utf8")).toBe(PREVIEW_GITIGNORE);
 
     const old = new Date(Date.now() - 60_000);
     await utimes(root, old, old);

@@ -22,6 +22,14 @@ bunx ponzu serve
 
 This opens the canvas in your browser and serves MCP at `http://127.0.0.1:7777/mcp`. Every `.design` folder under the current directory is opened.
 
+To change a design someone committed to GitHub, open it by its path:
+
+```sh
+bunx ponzu open north-brook/ponzu/examples/kettle.design
+```
+
+This clones the repo into `~/Ponzu/north-brook/ponzu` (or reuses the clone there) and serves that design. It takes the same path as the [web viewer](#share-it-from-github), with `@branch` after the repo, or a `ponzu.design/gh` or `github.com` link.
+
 Or [download the Mac app](https://ponzu.design/download) (Apple silicon, signed and notarized; it updates itself). It opens `.design` folders like documents, and on first launch it sets up Claude Code, Codex and Cursor for you. There's nothing else to install or keep running.
 
 ## Connect an agent
@@ -85,6 +93,16 @@ Each artboard file holds one `<section data-artboard>`. Its size is the `width` 
 - **Examples stay off your home screen.** `"example": true` in `design.json` marks a sample design. The home screen lists an example only once you open it yourself (from Finder, the app, or `ponzu serve path/to/example.design`), not when it's merely found: by Spotlight, by a scan of your folders, or because an agent started in a folder that has one. Agents still open and use examples like any other design. The ones in [`examples/`](examples) are marked.
 
 To implement a design, point your coding agent at the folder. The HTML, tokens and comments are the spec.
+
+### Share it from GitHub
+
+A `.design` committed to a public repo opens on the canvas at `ponzu.design/gh/<owner>/<repo>/<path/to/name.design>`, read-only, with its comments, images and fonts: [this repo's Kettle](https://ponzu.design/gh/north-brook/ponzu/examples/kettle.design), for one. Add `@<branch, tag or commit>` to the repo for another ref, or leave off the path to list every design in the repo. Link it from your README with a badge labelled by the design's name; without `?label=` it reads "open in | Ponzu":
+
+```md
+[![Kettle | Ponzu](https://ponzu.design/badge.svg?label=Kettle)](https://ponzu.design/gh/<owner>/<repo>/<path/to/name.design>)
+```
+
+Ponzu keeps a light and a dark preview of each design in its `.ponzu/` folder (the picture Finder shows). Commit them, and a shared link's card shows the design itself.
 
 ## Embed it
 

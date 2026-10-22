@@ -1,6 +1,12 @@
 import { expect, test } from "bun:test";
 import { parseArtboardFile } from "@ponzu/core";
-import { artboardPage, pinColorScheme, styleText } from "./document.ts";
+import {
+  artboardPage,
+  fontFaceRules,
+  pinColorScheme,
+  resolveTokenAssets,
+  styleText,
+} from "./document.ts";
 import { fontFamilies, googleFontLinks, googleFontRequest, googleFonts } from "./fonts.ts";
 
 test("finds families in font-family, the font shorthand and tokens", () => {
@@ -97,4 +103,26 @@ test("pinning a scheme decides every prefers-color-scheme condition", () => {
   expect(pinColorScheme(":root { --bg: light-dark(#fff, #000) }", "dark")).toBe(
     ":root { --bg: light-dark(#fff, #000) }",
   );
+});
+
+test("tokens' relative url()s resolve against the design's assets", () => {
+  const base = "https://raw.githubusercontent.com/o/r/abc123/brand.design";
+  const tokens = `@font-face { font-family: "Brand"; src: url("assets/brand.woff2") format("woff2"); }
+:root { --texture: url(./assets/grain.png); --remote: url(https://x.test/a.png); --data: url(data:image/png;base64,AA); }`;
+  const out = resolveTokenAssets(tokens, base);
+  expect(out).toContain(`url("${base}/assets/brand.woff2")`);
+  expect(out).toContain(`url(${base}/assets/grain.png)`);
+  expect(out).toContain("url(https://x.test/a.png)");
+  expect(out).toContain("url(data:image/png;base64,AA)");
+  // Without a base, nothing moves: the files sit beside the page.
+  expect(resolveTokenAssets(tokens)).toBe(tokens);
+  expect(fontFaceRules(out)).toEqual([
+    `@font-face { font-family: "Brand"; src: url("${base}/assets/brand.woff2") format("woff2"); }`,
+  ]);
+
+  const ab = parseArtboardFile(
+    `<section data-artboard data-id="ab_f" data-name="F" style="width:100px;height:100px"></section>`,
+    { id: "ab_f", name: "F" },
+  ).artboard;
+  expect(artboardPage(ab, { tokens, assetBase: base })).toContain(`${base}/assets/brand.woff2`);
 });
