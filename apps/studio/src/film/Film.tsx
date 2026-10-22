@@ -16,7 +16,7 @@ import {
 import {
   AgentMark,
   ARRIVE_EASING,
-  ARRIVE_FROM,
+  ARRIVE_KEYFRAMES,
   ARRIVE_MS,
   arriveDelay,
   artboardMarkup,
@@ -823,9 +823,8 @@ function applyRise(root: HTMLElement, r: Frame["rising"]) {
         live.add(el);
         let a = anims.get(el);
         if (!a) {
-          // From hidden, at offset 0: a lone keyframe defaults to the end, which would fade it out.
-          // The canvas's own arrival, seeked: the film shows what the person saw.
-          a = el.animate([ARRIVE_FROM], {
+          // The canvas's own arrival (the shimmer slide), seeked: the film shows what the person saw.
+          a = el.animate(ARRIVE_KEYFRAMES, {
             duration: ARRIVE_MS,
             easing: ARRIVE_EASING,
             fill: "both",
@@ -834,7 +833,7 @@ function applyRise(root: HTMLElement, r: Frame["rising"]) {
           anims.set(el, a);
           rising.add(el);
         }
-        // Before its turn in the stagger it waits hidden, at its start.
+        // Before its turn (the beat after its write, its place in the stagger) it waits hidden.
         a.currentTime = Math.max(0, local);
       }
     });
