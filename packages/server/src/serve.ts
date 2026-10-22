@@ -65,6 +65,23 @@ export const PROTOCOL = 1;
 /** How long a phone counts as using this Mac after its last request, for the idle quit. */
 const PHONE_ACTIVE_MS = 2 * 60_000;
 
+/**
+ * How long this Mac has gone unused: since an agent's last call, or a phone's
+ * last request and a couple of minutes more. Never idle while a phone holds a
+ * socket open (a canvas, or the catalog stream) whatever it last asked.
+ */
+export function idleFor(o: {
+  agentIdle: number;
+  /** When a phone last asked for anything. 0 for never. */
+  phoneAt: number;
+  phoneSockets: number;
+  now: number;
+}): number {
+  if (o.phoneSockets > 0) return 0;
+  const phone = o.phoneAt ? Math.max(0, o.now - o.phoneAt - PHONE_ACTIVE_MS) : Infinity;
+  return Math.min(o.agentIdle, phone);
+}
+
 /** Who a request comes from: this Mac, or one of the owner's Macs over the tailnet. */
 type Caller = "local" | "peer";
 
@@ -113,11 +130,9 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
   const mcp = createHttpHandler(ws, { onClose: (id) => ws.presence.leave(id) });
   /** When a phone last asked this Mac for anything, so the app doesn't quit under it. */
   let phoneAt = 0;
-  const phoneSockets = (): number => {
-    let n = 0;
-    for (const s of sockets) if (s.data.phone) n++;
-    return n;
-  };
+  /** The phone's open sockets: a canvas, or its catalog stream (which `sockets` doesn't hold). */
+  const phones = new Set<ServerWebSocket<SocketData>>();
+  const phoneSockets = () => phones.size;
 
   const send = (s: ServerWebSocket<SocketData>, msg: ServerMessage) => s.send(JSON.stringify(msg));
   const broadcast = (key: string | null, msg: ServerMessage) => {
@@ -164,11 +179,8 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
   const feed = new CatalogFeed(home, ws);
 
   /** The idle the desktop app reads: no agent call and no phone for this long. */
-  const idleMs = (): number => {
-    if (phoneSockets() > 0) return 0;
-    const phone = phoneAt ? Math.max(0, Date.now() - phoneAt - PHONE_ACTIVE_MS) : Infinity;
-    return Math.min(mcp.idleMs(), phone);
-  };
+  const idleMs = (): number =>
+    idleFor({ agentIdle: mcp.idleMs(), phoneAt, phoneSockets: phoneSockets(), now: Date.now() });
 
   /**
    * Every request, from this Mac or over the tailnet. `caller` says which:
@@ -409,6 +421,7 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
 
   const websocket: WebSocketHandler<SocketData> = {
     open(s) {
+      if (s.data.phone) phones.add(s);
       if (s.data.feed) return openFeed(s);
       sockets.add(s);
       if (s.data.relay) return openRelay(s);
@@ -429,6 +442,11 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
       });
     },
     close(s) {
+      if (s.data.phone) {
+        phones.delete(s);
+        // Counted as in use until now, then for a couple of minutes, as after any request.
+        phoneAt = Date.now();
+      }
       if (s.data.feed) {
         s.data.feed.closed = true;
         s.data.feed.stop?.();
