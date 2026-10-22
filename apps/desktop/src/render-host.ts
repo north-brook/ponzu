@@ -57,7 +57,9 @@ type SessionOp =
   | { op: "eval"; session: string; expression: string }
   | { op: "capture"; session: string; box: Box; scale: number }
   | { op: "show"; session: string; html: string; width: number; height: number }
-  | { op: "close"; session: string };
+  | { op: "close"; session: string }
+  | { op: "film"; url: string; width: number; height: number; scale: number }
+  | { op: "frame"; session: string; format: "png" | "jpeg" };
 
 export const renderToken = randomBytes(24).toString("hex");
 let renderDir: string | null = null;
@@ -331,7 +333,62 @@ async function sessionOp(op: SessionOp) {
     case "close":
       closeSession(op.session);
       return {};
+    case "film":
+      return turn(() => openFilm(op));
+    case "frame":
+      return turn(async () => {
+        const s = keepAlive(op.session);
+        return {
+          data: (await withBudget("capture", captureFilm(s.win, op.format))).toString("base64"),
+        };
+      });
   }
+}
+
+/**
+ * A timelapse film page: the server's /film at the film's viewport, drawn at
+ * its device scale. It loads from the server (not a file) so the page has a
+ * secure origin and WebCodecs, and only from this Mac's own server.
+ */
+async function openFilm(op: Extract<SessionOp, { op: "film" }>) {
+  const url = new URL(op.url);
+  if (url.hostname !== "127.0.0.1" && url.hostname !== "localhost")
+    throw new Error("Films only load from this Mac's Ponzu server.");
+  const id = randomBytes(8).toString("hex");
+  const win = renderWindow(op.width, op.height);
+  sessions.set(id, { win, timer: setTimeout(() => closeSession(id), 60_000) });
+  try {
+    await withBudget("load", win.loadURL(url.href));
+    await withBudget(
+      "load",
+      win.webContents.executeJavaScript(
+        "new Promise((r) => { const go = () => window.ponzuFilm ? r(true) : setTimeout(go, 50); go(); })",
+      ),
+    );
+    const cdp = win.webContents.debugger;
+    if (!cdp.isAttached()) cdp.attach("1.3");
+    await cdp.sendCommand("Emulation.setDeviceMetricsOverride", {
+      width: op.width,
+      height: op.height,
+      deviceScaleFactor: op.scale,
+      mobile: false,
+    });
+  } catch (err) {
+    closeSession(id);
+    throw err;
+  }
+  return { session: id };
+}
+
+/** The whole viewport of a film page, at its device scale. */
+async function captureFilm(win: BrowserWindow, format: "png" | "jpeg"): Promise<Buffer> {
+  const cdp = win.webContents.debugger;
+  if (!cdp.isAttached()) cdp.attach("1.3");
+  const shot = (await cdp.sendCommand("Page.captureScreenshot", {
+    format,
+    ...(format === "jpeg" ? { quality: 70 } : {}),
+  })) as { data: string };
+  return Buffer.from(shot.data, "base64");
 }
 
 /** The contact sheet: a new page at its own size. */

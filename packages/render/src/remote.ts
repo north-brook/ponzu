@@ -1,5 +1,6 @@
 import { clampScale } from "./capture.ts";
 import { artboardPage } from "./document.ts";
+import type { FilmDriver } from "./film.ts";
 import {
   type Box,
   type FrameDriver,
@@ -83,7 +84,15 @@ export type RemoteSessionRequest =
   /** Reply data: base64 PNG of `box` (CSS px) at `scale` device px per CSS px. */
   | { op: "capture"; session: string; box: Box; scale: number }
   | { op: "show"; session: string; html: string; width: number; height: number }
-  | { op: "close"; session: string };
+  | { op: "close"; session: string }
+  /**
+   * A timelapse film page: a real URL on the server, at a device scale, kept
+   * until closed. Evals then drive it; `frame` captures the viewport. Hosts
+   * from before timelapses answer 404 or an unknown-op error.
+   */
+  | { op: "film"; url: string; width: number; height: number; scale: number }
+  /** Reply data: the whole viewport, base64, at the film's scale. */
+  | { op: "frame"; session: string; format: "png" | "jpeg" };
 
 export interface RemoteSessionReply {
   session?: string;
@@ -240,6 +249,30 @@ export class RemoteRenderer implements Renderer {
     } finally {
       await call({ op: "close", session }).catch(() => {});
     }
+  }
+
+  /** A film page in the host, over the session API (desktop: an offscreen window). */
+  async filmDriver(): Promise<FilmDriver> {
+    const call = this.sessionCall(
+      "This version of the Ponzu app can't make timelapses. Update it.",
+    );
+    let session: string | undefined;
+    return {
+      async open(url, width, height, scale) {
+        session = (await call({ op: "film", url, width, height, scale })).session;
+        if (!session) throw new Error("Render host didn't open a film page.");
+      },
+      async evaluate<T>(expression: string) {
+        return (await call({ op: "eval", session: session!, expression })).value as T;
+      },
+      async capture(format) {
+        return (await call({ op: "frame", session: session!, format })).data ?? "";
+      },
+      async close() {
+        if (session) await call({ op: "close", session }).catch(() => {});
+        session = undefined;
+      },
+    };
   }
 
   private page(req: {

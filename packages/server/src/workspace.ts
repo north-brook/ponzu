@@ -235,16 +235,16 @@ export class LocalWorkspace implements Workspace {
   }
 
   /** Make a timelapse film of a design and wait for it. Resolves with where it was written. */
-  async timelapse(
+  timelapse = async (
     key: string,
     req: import("./timelapse.ts").TimelapseRequest,
-  ): Promise<{ path: string; codec: string; duration: number; bytes: number }> {
+  ): Promise<{ path: string; codec: string; duration: number; bytes: number }> => {
     const job = this.timelapses.start(key, req);
     const state = await job.promise;
     if (state.status === "done")
       return { path: state.path, codec: state.codec, duration: state.duration, bytes: state.bytes };
     throw new ToolError(state.status === "failed" ? state.error : "The timelapse was cancelled.");
-  }
+  };
 
   private async flushForFilm(key: string): Promise<void> {
     await this.get(key)?.flush();
