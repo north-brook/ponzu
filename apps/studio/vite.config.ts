@@ -11,7 +11,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": target,
+      // The catalog's stream is a WebSocket under /api.
+      "/api": { target, ws: true },
       "/mcp": target,
       "/files": target,
       // Designs on the person's other Macs, relayed by the server.
