@@ -216,6 +216,7 @@ Write it
 - Put the transition on the base rule, not the :hover rule, so it eases both ways.
 - Keep entrances short: 200–600ms, staggered 50–100ms. Use ease-out for things arriving and ease-in for things leaving. Loops should be slow and subtle.
 - Animate transform and opacity. Animating width, height, top or margin moves the layout around it.
+- Keep fewer than 100 elements animating at once, counting loops and entrances that hold their end with forwards. Each is its own layer, and past that the whole canvas drops frames. For a field of dots, animate one HTML wrapper per row, or one around the lot, not every dot; an SVG <g> repaints everything in it each frame. Lint counts them.
 
 Check
 1. screenshot: the settled page is what people see most. Lint it like any other.

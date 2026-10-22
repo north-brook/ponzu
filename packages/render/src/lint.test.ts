@@ -183,6 +183,61 @@ describe.skipIf(!chromium)("layout lint in Chromium", () => {
       expect(ids(await lint(`${app};${style}`, panes(4)))).toEqual([]);
   });
 
+  test("a field of dots that each animate forever is over budget; rows that animate aren't", async () => {
+    const style = `<style>
+@keyframes tilt { to { transform: rotate(60deg) } }
+@keyframes rise { from { transform: scale(0) } to { transform: none } }
+@keyframes drift { to { transform: translateX(12px) } }
+.dot { width:8px;height:8px;border-radius:4px;background:#fc2 }
+.tilt { animation: tilt 7s infinite; animation-delay: calc(var(--d) * 28ms) }
+.rise { animation: rise 1s both }
+.rise-back { animation: rise 1s backwards }
+.row { display:flex;gap:4px;animation: drift 7s infinite alternate }
+.spin { animation: spin 5s infinite }
+.sway { animation: sway 3s infinite alternate }
+.bob { animation: bob 2s infinite alternate }
+@keyframes spin { to { transform: rotate(-60deg) } }
+@keyframes sway { to { transform: translateY(6px) } }
+@keyframes bob { to { transform: translateY(-6px) } }
+</style>`;
+    const dots = (n: number, cls: string) =>
+      Array.from(
+        { length: n },
+        (_, i) => `<div class="dot ${cls}" style="--d:${i % 40}"></div>`,
+      ).join("");
+    const field = (body: string) =>
+      lint(
+        "width:600px;height:fit-content;padding:20px",
+        `${style}<div data-id="n_field" data-name="Field" style="display:flex;flex-wrap:wrap;gap:4px">${body}</div>`,
+      );
+
+    const each = await field(dots(150, "tilt"));
+    const over = each.find((i) => i.kind === "animation-budget");
+    expect(over?.id).toBe("n_field");
+    expect(over?.message).toStartWith("150 elements animate at once (tilt on 150)");
+    expect(over?.message).toContain("one per row");
+
+    // Every animation is in the breakdown, so its counts add up to the total.
+    const mixed = await field(
+      dots(60, "tilt") + dots(50, "rise") + dots(40, "spin") + dots(30, "sway") + dots(20, "bob"),
+    );
+    expect(mixed.find((i) => i.kind === "animation-budget")?.message).toStartWith(
+      "200 elements animate at once (tilt on 60, rise on 50, spin on 40, 2 more on 50)",
+    );
+
+    // A finite entrance that holds its transform keeps every layer once it ends.
+    const held = await field(dots(150, "rise"));
+    expect(held.find((i) => i.kind === "animation-budget")?.message).toContain(
+      "150 keep their layer after ending",
+    );
+
+    // The same motion on 15 rows, a few dots, or an entrance that lets go is fine.
+    const rows = Array.from({ length: 15 }, () => `<div class="row">${dots(10, "")}</div>`);
+    expect(ids(await field(rows.join("")))).toEqual([]);
+    expect(ids(await field(dots(60, "tilt") + dots(90, "")))).toEqual([]);
+    expect(ids(await field(dots(150, "rise-back")))).toEqual([]);
+  });
+
   test("when the stacked panes overflow, the fix offered includes the direction", async () => {
     const issues = await lint(`${app};display:flex`, panes(12));
     const overflow = issues.find((i) => i.id === "ab_l" && i.kind === "overflow");
