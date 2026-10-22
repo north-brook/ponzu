@@ -575,9 +575,11 @@ export function timeline(
     first.change = opts.length <= 15 ? SHOT.buildShort : SHOT.build;
   }
   const short = opts.length <= 15;
-  const lead = opts.prompt ? (short ? SHOT.prompt * 0.68 : SHOT.prompt * 0.86) : 0;
+  const lead = opts.prompt ? (short ? SHOT.prompt * 0.6 : SHOT.prompt * 0.86) : 0;
   const endLen = short ? 2.0 : SHOT.end;
-  const fixed = SHOT.open + lead + SHOT.result + endLen;
+  // A short film's last look is a beat: its time goes to the build.
+  const resultLen = short ? 1.3 : SHOT.result;
+  const fixed = SHOT.open + lead + resultLen + endLen;
   const room = Math.max(1, opts.length - fixed);
   const used = raw.reduce((a, r) => a + r.travel + r.settle + r.change + r.hold, 0);
   if (used > room) {
@@ -596,7 +598,7 @@ export function timeline(
     let spare = room - used;
     // The build is the magic: it takes spare time first, up to a calm pace for its length.
     if (first && first.m.kind === "work" && first.m.answers === undefined) {
-      const most = opts.length <= 15 ? 4.6 : opts.length <= 30 ? 11 : 20;
+      const most = opts.length <= 15 ? 6 : opts.length <= 30 ? 11 : 20;
       const extra = Math.max(0, Math.min(spare, most - first.change));
       first.change += extra;
       spare -= extra;
@@ -669,7 +671,7 @@ export function timeline(
     t = end;
   }
   const result = t;
-  const endCard = Math.max(result + SHOT.result, opts.length - endLen);
+  const endCard = Math.max(result + resultLen, opts.length - endLen);
   return {
     ...(lead ? { prompt: { start: 0, end: SHOT.open + lead } } : {}),
     shots,

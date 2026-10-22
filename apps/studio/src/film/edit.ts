@@ -77,6 +77,10 @@ export interface Scene {
   /** Work: the board that changes, its new pieces (rise in) and its restyled ones (cut). */
   board?: string;
   rise?: string[];
+  /** Work: pieces of the before that are taken away or restyled (they fade off as the new rise). */
+  gone?: string[];
+  /** Work: pieces that only move, and from how far (board px): they slide to their new place. */
+  moves?: { id: string; dx: number; dy: number }[];
   /** Work: a board that's new in this shot (it's drawn in). */
   born?: boolean;
   /**
@@ -144,6 +148,10 @@ class Lab {
   private next = 0;
   /** Boxes the last diff found taken away (in the before layout). */
   removed: Rect[] = [];
+  /** Pieces of the before the last diff found taken away or restyled: they fade off. */
+  gone: string[] = [];
+  /** Pieces the last diff found only moved (outermost), and by how much from before to after. */
+  moves: { id: string; dx: number; dy: number }[] = [];
 
   constructor(
     private assetBase: string | undefined,
@@ -251,9 +259,11 @@ class Lab {
    */
   diff(a: Host, b: Host): Rect[] {
     this.removed = [];
+    this.gone = [];
+    this.moves = [];
     const boxes = (h: Host) => {
       const base = h.wrap.getBoundingClientRect();
-      const m = new Map<string, { r: Rect; sig: string }>();
+      const m = new Map<string, { r: Rect; sig: string; parent?: string }>();
       for (const el of h.shadow.querySelectorAll<HTMLElement>("[data-id]")) {
         const r = el.getBoundingClientRect();
         if (r.width < 1 || r.height < 1) continue;
@@ -263,9 +273,11 @@ class Lab {
           .join("");
         const cs = getComputedStyle(el);
         const sig = `${own}|${cs.color}|${cs.backgroundColor}|${cs.fontSize}|${cs.fontWeight}|${cs.backgroundImage.slice(0, 80)}|${cs.fill}|${cs.stroke}|${cs.transform}|${el.getAttribute("src") ?? ""}|${el.getAttribute("d") ?? ""}|${el.getAttribute("points") ?? ""}`;
+        const parent = el.parentElement?.closest<HTMLElement>("[data-id]")?.dataset.id;
         m.set(el.dataset.id!, {
           r: { x: r.left - base.left, y: r.top - base.top, w: r.width, h: r.height },
           sig,
+          ...(parent ? { parent } : {}),
         });
       }
       return m;
@@ -273,22 +285,36 @@ class Lab {
     const A = boxes(a);
     const B = boxes(b);
     const out: Rect[] = [];
+    const moved = new Map<string, { dx: number; dy: number }>();
     for (const [id, nb] of B) {
       const na = A.get(id);
       if (!na) out.push(nb.r);
-      else if (
-        na.sig !== nb.sig ||
+      else if (na.sig !== nb.sig) {
+        out.push(nb.r);
+        this.gone.push(id);
+      } else if (
         Math.abs(na.r.x - nb.r.x) > 2 ||
         Math.abs(na.r.y - nb.r.y) > 2 ||
         Math.abs(na.r.w - nb.r.w) > 2 ||
         Math.abs(na.r.h - nb.r.h) > 2
-      )
+      ) {
         out.push(nb.r);
+        moved.set(id, { dx: na.r.x - nb.r.x, dy: na.r.y - nb.r.y });
+      }
+    }
+    // A piece that's only moved slides from where it was; inside a piece that moves the same
+    // way, it rides along with it.
+    for (const [id, d] of moved) {
+      const parent = B.get(id)?.parent;
+      const up = parent ? moved.get(parent) : undefined;
+      if (up && Math.abs(up.dx - d.dx) < 2 && Math.abs(up.dy - d.dy) < 2) continue;
+      if (Math.abs(d.dx) > 2 || Math.abs(d.dy) > 2) this.moves.push({ id, ...d });
     }
     for (const [id, na] of A)
       if (!B.has(id)) {
         out.push(na.r);
         this.removed.push(na.r);
+        this.gone.push(id);
       }
     // Keep the leaves: a container counts only when nothing inside it does.
     return out.filter(
@@ -420,7 +446,17 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
 
   // The settled look of each work moment: the board before its first op, and after its last.
   const looks = new Map<Moment, Look>();
-  const measured = new Map<Moment, { changed: Rect[]; removed: Rect[]; before: Doc; after: Doc }>();
+  const measured = new Map<
+    Moment,
+    {
+      changed: Rect[];
+      removed: Rect[];
+      gone: string[];
+      moves: { id: string; dx: number; dy: number }[];
+      before: Doc;
+      after: Doc;
+    }
+  >();
   for (const m of all) {
     if (m.kind !== "work" || !m.board || notes.has(m.board)) {
       looks.set(m, { change: 0 });
@@ -438,10 +474,14 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
     const boardArea = artboardSize(abA).w * (lab.height(hA) || 900);
     let changed: Rect[];
     let removed: Rect[] = [];
+    let gone: string[] = [];
+    let moves: { id: string; dx: number; dy: number }[] = [];
     if (abB) {
       const hB = await lab.show(before, abB, 0);
       changed = lab.diff(hB, hA);
       removed = lab.removed;
+      gone = lab.gone;
+      moves = lab.moves;
     } else changed = [{ x: 0, y: 0, w: artboardSize(abA).w, h: lab.height(hA) }];
     // How much of the board the change touches: the region it spans counts, not just the pixels
     // of the leaves (a redrawn mark is a few thin paths, but it's the whole mark that changed).
@@ -456,7 +496,7 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
     const answersAsked = changed.some((r) => asked.some((a) => overlap(r, a) > 0));
     if (m.answers !== undefined && answersAsked) change = Math.max(change, 0.12);
     looks.set(m, { change });
-    measured.set(m, { changed, removed, before, after });
+    measured.set(m, { changed, removed, gone, moves, before, after });
   }
 
   const prompt = promptFor(entries, input.range);
@@ -787,23 +827,10 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
         }
       };
       walk(ab.root);
-      // New pieces rise in where there was nothing; a piece replacing something cuts in over it
-      // (rising from nothing there would show a hole).
-      const overlapsRemoved = (r: Rect) =>
-        got.removed.some(
-          (o) =>
-            Math.max(0, Math.min(r.x + r.w, o.x + o.w) - Math.max(r.x, o.x)) *
-              Math.max(0, Math.min(r.y + r.h, o.y + o.h) - Math.max(r.y, o.y)) >
-            0.2 * Math.min(r.w * r.h, o.w * o.h),
-        );
-      // When the board keeps its height, the old picture fades off over the new (see the film),
-      // so replacing pieces can rise in too; when it reflows, they cut in over the hole.
-      const reflows = Math.abs((hB.get(m.board) ?? 0) - (hA.get(m.board) ?? 0)) > 4;
+      // New pieces rise in, where there was nothing and over what they replace alike: what went
+      // fades off on its own, so there's never a hole and never a piece drawn twice.
       const rise = streamUnits((id) => findNode(ab.root, id)?.node ?? null, fresh, 6, 16).filter(
-        (id) => {
-          const r = lab.box(hostA, id);
-          return r && (!reflows || !overlapsRemoved(r));
-        },
+        (id) => Boolean(lab.box(hostA, id)),
       );
       // The build, as the writes that made it: each one's doc, and the pieces it brought.
       const build = building ? await buildSteps(m, after, solo) : undefined;
@@ -838,6 +865,18 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
                   ),
                 };
           const rect = offset(r, b);
+          // A phone screen in a wide frame stands nearly the frame's height, not small in it.
+          const phone = view.w > view.h && bH > bw * 1.3;
+          if (phone) {
+            const zoom = Math.min(framing.maxZoom, (view.h * 0.88) / bH);
+            buildCams.set(st.board, {
+              page: findArtboard(endDocOfBuild, b.id)!.page.id,
+              cx: b.x + bw / 2,
+              cy: b.y + bH / 2 - (view.h * 0.02) / zoom,
+              zoom,
+            });
+            continue;
+          }
           buildCams.set(
             st.board,
             frameFocus(
@@ -867,15 +906,24 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
           const lastOfRun = build[k + 1]?.board !== st.board;
           if (st.wrote) written.set(st.board, [...(written.get(st.board) ?? []), st.wrote]);
           const seen = written.get(st.board) ?? [];
-          if (!b || !seen.length || whole.zoom >= framing.comfort * 0.9 || (lastOfRun && !tall)) {
+          // A wide frame ends each board's run on it whole.
+          const endWhole = lastOfRun && !tall;
+          if (!b || !seen.length || whole.zoom >= framing.comfort * 0.9 || endWhole) {
             st.cam = whole;
             return;
           }
-          const region = union(tall ? seen.slice(-3) : seen)!;
+          // A wide frame keeps what's written so far in view; a tall one frames the newest write,
+          // closer than the board's width (a wide board fills a tall frame only cropped), and
+          // pans along as the writing moves.
+          const region = union(tall ? seen.slice(-1) : seen)!;
           // Never so close that a board's first, sparse write fills the frame with bare sheet.
+          const most = Math.min(zMax, whole.zoom * (tall ? 2.2 : 1.6));
+          const fit = Math.min(vw / region.w, vh / region.h);
           const zoom = Math.max(
             whole.zoom,
-            Math.min(zMax, whole.zoom * (tall ? 2.2 : 1.6), vw / region.w, vh / region.h),
+            tall && artboardSize(b).w > (vw / whole.zoom) * 0.9
+              ? Math.min(most, Math.max(fit, whole.zoom * 1.5))
+              : Math.min(most, fit),
           );
           const bh = st.heights.get(b.id) ?? artboardSize(b).h ?? 900;
           const br = { x: b.x, y: b.y, w: artboardSize(b).w, h: bh };
@@ -901,6 +949,8 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
         ...(buildCams ? { buildCams } : {}),
         board: m.board,
         rise,
+        ...(got.gone.length ? { gone: got.gone } : {}),
+        ...(got.moves.length ? { moves: got.moves } : {}),
         born: !beforeAb && shotIndex > 0,
         resolves: m.resolves,
         who: m.who,

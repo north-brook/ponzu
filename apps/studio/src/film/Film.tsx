@@ -18,11 +18,12 @@ import {
   AgentMark,
   ARRIVE_EASING,
   ARRIVE_KEYFRAMES,
+  ARRIVE_LAG_MS,
   ARRIVE_MS,
+  ARRIVE_SLIDE,
   arriveDelay,
   artboardMarkup,
   artboardSize,
-  BOARD_MS,
   Icon,
   loadArtboardFonts,
   MemorySource,
@@ -85,8 +86,13 @@ interface Frame {
   end?: { fade: number; t: number };
   /** The last look: only these boards stay; the rest fade by `p`. */
   only?: { ids: string[]; p: number };
-  /** The board as it was, over its new look, fading out: a replaced piece crossfades. */
-  ghost?: { board: Artboard; doc: Doc; p: number };
+  /**
+   * The board as it was, over its new look, fading out: a replaced piece crossfades. With
+   * `only`, just those pieces of it (what the change took away), never the rest a second time.
+   */
+  ghost?: { board: Artboard; doc: Doc; p: number; only?: string[] };
+  /** Pieces sliding to where the change put them: how far they still are from it (board px). */
+  moving?: { id: string; dx: number; dy: number }[];
   /** The opening prompt: how much is typed, whether it's sent, and how far it's gone. */
   prompt?: { typed: number; sent: number; out: number };
   /** New artboards settling in as the agent makes them: 0 → 1. */
@@ -245,11 +251,12 @@ function buildFrame(e: Edit, scene: Scene, f: number): Frame | null {
       at.push((f - times[j]!) * 1000 - arriveDelay(i));
     });
   }
-  // New boards: their sheets settle in as they're made.
+  // New boards: a sheet is uncovered with its first pieces, the same sweep at the same moment,
+  // so it's never seen bare (a dark one never a black slab).
   const sheets: { id: string; p: number }[] = [];
   for (let j = Math.max(0, k - 3); j <= k; j++)
     for (const id of steps[j]!.boards) {
-      const p = clamp01(((f - times[j]!) * 1000) / BOARD_MS);
+      const p = clamp01(((f - times[j]!) * 1000 - ARRIVE_LAG_MS) / ARRIVE_MS);
       if (p < 1) sheets.push({ id, p: ease.out(p) });
     }
   return {
@@ -282,6 +289,8 @@ function promptState(span: { start: number; end: number }, f: number) {
 
 /** Between boards in the build: a short glide. */
 const BUILD_GLIDE = 0.55;
+/** How much of that glide comes before the next board's first write lands. */
+const GLIDE_PRE = 0.38;
 /** After a board's last piece has risen, a beat to see it whole before the camera moves on. */
 const BUILD_REST = 0.45;
 
@@ -300,7 +309,7 @@ function buildTimes(scene: Scene): number[] {
   });
   // Each run ends with its last rise and a rest; then a glide to the next.
   // Every board finishes inside the shot: the last one's pieces have risen by the end of it.
-  const overhead = runs.length * (rise + BUILD_REST) + (runs.length - 1) * BUILD_GLIDE;
+  const overhead = runs.length * (rise + BUILD_REST) + (runs.length - 1) * GLIDE_PRE;
   const span = Math.max(0.4 * runs.length, s.changed - s.change - overhead);
   // The first board is where the viewer learns what's happening: it gets more time.
   const weight = (i: number, n: number) => (i === 0 ? n * 1.6 + 1 : n + 1);
@@ -312,7 +321,7 @@ function buildTimes(scene: Scene): number[] {
     run.forEach((_, j) => {
       out.push(t + share * (run.length > 1 ? (j / (run.length - 1)) ** 1.35 : 0));
     });
-    t += share + rise + BUILD_REST + BUILD_GLIDE;
+    t += share + rise + BUILD_REST + GLIDE_PRE;
   }
   return out;
 }
@@ -339,14 +348,24 @@ function buildCam(view: { w: number; h: number }, scene: Scene, f: number, times
       steps[k]!.cam ?? scene.buildCams!.get(steps[k]!.board) ?? scene.cams[0]!;
     const target = (t: number) => {
       let k = 0;
-      while (k + 1 < steps.length && times[k + 1]! - FOLLOW_LEAD <= t) k++;
-      // Onto another board: an even glide over the gap before its first write.
-      const next = steps[k + 1];
-      if (next && next.board !== steps[k]!.board && t > times[k + 1]! - FOLLOW_LEAD - BUILD_GLIDE) {
-        const p = ease.inOut(
-          clamp01((t - (times[k + 1]! - FOLLOW_LEAD - BUILD_GLIDE)) / BUILD_GLIDE),
-        );
-        return { cam: flyTo(camOf(k), camOf(k + 1), p, view), glide: true };
+      // Ahead to the next write on this board; onto another board only by its glide.
+      while (
+        k + 1 < steps.length &&
+        times[k + 1]! - (steps[k + 1]!.board === steps[k]!.board ? FOLLOW_LEAD : 0) <= t
+      )
+        k++;
+      // Onto another board: an even glide that lands as its first pieces are uncovered, so the
+      // camera never waits on bare canvas.
+      const into = steps.findIndex(
+        (st, j) =>
+          j > 0 &&
+          st.board !== steps[j - 1]!.board &&
+          t >= times[j]! - GLIDE_PRE &&
+          t < times[j]! - GLIDE_PRE + BUILD_GLIDE,
+      );
+      if (into > 0) {
+        const p = ease.inOut(clamp01((t - (times[into]! - GLIDE_PRE)) / BUILD_GLIDE));
+        return { cam: flyTo(camOf(into - 1), camOf(into), p, view), glide: true };
       }
       return { cam: camOf(k), glide: false };
     };
@@ -407,21 +426,23 @@ function workFrame(e: Edit, scene: Scene, f: number): Frame {
       ? { working: { board: scene.board, who: scene.who ?? { name: "Agent" } } }
       : {}),
   };
-  // The pins this work answers stay up until it lands, then leave.
+  // The pins this work answers stay up, numbered, until it has landed, then leave.
   if (changing) {
-    // Resolved: the pins it answers leave as soon as the change lands, so the result reads clean.
-    out.threads = out.threads.filter((t) => !(scene.resolves ?? []).includes(t.id));
     const leaving = (scene.resolves ?? [])
       .map((id) => scene.before.threads.find((t) => t.id === id))
-      .filter((t): t is Thread => Boolean(t));
-    // Resolved: as the change settles the pin pops to a check, holds a beat, then shrinks away.
-    // Once every piece of the change has risen and the old look has gone, and a beat to see it:
-    // the check confirms what's there.
+      .filter((t): t is Thread => Boolean(t) && scene.told.includes(t!.id));
+    // Resolved: once every piece of the change has risen and the old look has gone, and a beat
+    // to see it, the pin pops to a check, holds a beat, then shrinks away. Until then it's the
+    // numbered pin it was: the check confirms what's there.
     const n = scene.rise?.length ?? 0;
     const settled =
       s.change + riseStep(scene) * Math.max(0, n - 1) + (n ? ARRIVE_MS / 1000 : 0.45) + 0.25;
-    const p = clamp01((f - settled) / RESOLVE);
-    if (p < 1) out.pinsOut = leaving.map((thread) => ({ thread, p }));
+    out.threads = out.threads.filter((t) => !(scene.resolves ?? []).includes(t.id));
+    if (f < settled) out.threads.push(...leaving.filter((t) => !out.threads.includes(t)));
+    else {
+      const p = clamp01((f - settled) / RESOLVE);
+      if (p < 1) out.pinsOut = leaving.map((thread) => ({ thread, p }));
+    }
   }
   // The last fix: once it's landed, the boards around it fade, so the result stands alone.
   if (scene === e.scenes.at(-1) && scene.board && e.result.boards.includes(scene.board))
@@ -429,18 +450,26 @@ function workFrame(e: Edit, scene: Scene, f: number): Frame {
       ids: e.result.boards,
       p: progress(f, s.changed - 0.2, s.changed + 0.5, ease.inOut),
     };
-  // What was there crossfades to what replaces it (new pieces rise in under it).
-  // Not on the opening build, nor where the board reflows (that would double the text).
-  const hb = scene.board ? scene.heights.before.get(scene.board) : undefined;
-  const ha = scene.board ? scene.heights.after.get(scene.board) : undefined;
-  const reflows = hb !== undefined && ha !== undefined && Math.abs(hb - ha) > 4;
-  if (changing && !scene.born && scene.board && scene !== e.scenes[0] && !reflows) {
+  // What was there gives way to what replaces it: the pieces taken away or restyled fade off
+  // where they were, the pieces that only moved slide to their new places, and the new rise in.
+  // Nothing is drawn twice: the old look is only the pieces that went.
+  if (changing && !scene.born && scene.board && scene !== e.scenes[0]) {
     const was = findArtboard(scene.before, scene.board)?.artboard;
-    // A recolour crossfades; replaced pieces: the old leaves fast while the new rises in.
     const p = scene.rise?.length
-      ? progress(f, s.change, s.change + 0.2, ease.out)
+      ? progress(f, s.change, s.change + 0.18, ease.out)
       : progress(f, s.change, s.change + 0.45, ease.inOut);
-    if (was && p < 1) out.ghost = { board: was, doc: scene.before, p };
+    if (was && p < 1)
+      out.ghost = {
+        board: was,
+        doc: scene.before,
+        p,
+        ...(scene.gone || scene.moves ? { only: scene.gone ?? [] } : {}),
+      };
+    if (scene.moves?.length) {
+      const m = ease.inOut(clamp01((f - s.change) / 0.5));
+      if (m < 1)
+        out.moving = scene.moves.map((x) => ({ id: x.id, dx: x.dx * (1 - m), dy: x.dy * (1 - m) }));
+    }
   }
   if (changing && scene.born)
     out.drawing = { board: scene.board!, p: ease.out(clamp01((f - s.change) / 0.5)) };
@@ -560,6 +589,7 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
     const el = root.current;
     if (!el) return;
     applyRise(el, fr.rising);
+    applyMoves(el, fr.moving);
     styleCards(el);
     keepCardsInFrame(el, view);
   });
@@ -588,7 +618,7 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
               fr.only && !fr.only.ids.includes(ab.id)
                 ? fr.only.p
                 : fr.dim && !fr.dim.ids.includes(ab.id)
-                  ? 0.94 * fr.dim.p
+                  ? fr.dim.p
                   : 0;
             return (
               <div
@@ -600,16 +630,18 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
                   boxShadow: veil > 0.5 ? "none" : undefined,
                   left: 0,
                   top: 0,
-                  transform: `translate(${ab.x * cam.zoom + tx}px, ${ab.y * cam.zoom + ty}px) scale(${cam.zoom * (0.985 + 0.015 * sheet)})`,
+                  transform: `translate(${(ab.x - ARRIVE_SLIDE * (1 - sheet)) * cam.zoom + tx}px, ${ab.y * cam.zoom + ty}px) scale(${cam.zoom})`,
                   transformOrigin: "0 0",
                   width: w,
                   height: h ?? undefined,
                   // A new board is drawn in from the top, solid: a dark one never passes through grey.
-                  // A new sheet, too, unrolls from the top: solid all the way.
+                  // A new sheet is uncovered left to right with its first pieces (the shimmer slide).
                   clipPath:
-                    Math.min(drawing, sheet) < 1
-                      ? `inset(-40px -40px ${(1 - Math.min(drawing, sheet)) * 100}% -40px)`
-                      : undefined,
+                    drawing < 1
+                      ? `inset(-40px -40px ${(1 - drawing) * 100}% -40px)`
+                      : sheet < 1
+                        ? `inset(-40px ${(1 - sheet) * 100}% -40px -40px)`
+                        : undefined,
                 }}
               >
                 <div
@@ -640,7 +672,12 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
                       opacity: 1 - fr.ghost.p,
                     }}
                   >
-                    <FilmBoard artboard={fr.ghost.board} doc={fr.ghost.doc} model={model} />
+                    <FilmBoard
+                      artboard={fr.ghost.board}
+                      doc={fr.ghost.doc}
+                      model={model}
+                      only={fr.ghost.only}
+                    />
                   </div>
                 )}
                 {veil > 0 && (
@@ -778,7 +815,7 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
                     className="pz-film-card"
                     style={{
                       // Read on a phone: the real card, a little larger than in the studio.
-                      zoom: view.w > view.h ? 1.75 : 1.6,
+                      zoom: view.w > view.h ? 2.1 : 1.6,
                     }}
                   >
                     <ThreadCard
@@ -803,7 +840,7 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
             const from = { x: to.x + view.w * 0.22, y: to.y + view.h * 0.18 };
             const x = from.x + (to.x - from.x) * c.p;
             const y = from.y + (to.y - from.y) * c.p;
-            const k = view.w > view.h ? 1.25 : 1.1;
+            const k = view.w > view.h ? 1.9 : 1.5;
             return (
               <div
                 className="pz:pointer-events-none pz:absolute pz:z-[4]"
@@ -844,24 +881,37 @@ const FilmBoard = memo(function FilmBoard({
   artboard,
   doc,
   model,
+  only,
 }: {
   artboard: Artboard;
   doc: Doc;
   model: FilmModel;
+  /** Draw just these pieces (and what's in them); the rest of the board is there but unseen. */
+  only?: string[];
 }) {
   const host = useRef<HTMLDivElement>(null);
   const last = useRef("");
   const scheme = schemeFor(doc, artboard, model.theme);
+  const onlyKey = only?.join(" ");
   useLayoutEffect(() => {
     const el = host.current;
     if (!el) return;
     const root = el.shadowRoot ?? el.attachShadow({ mode: "open" });
-    const { html, fonts, faces } = artboardMarkup(artboard, doc.tokens, model.assetBase, scheme);
+    const {
+      html: board,
+      fonts,
+      faces,
+    } = artboardMarkup(artboard, doc.tokens, model.assetBase, scheme);
+    const ids = onlyKey ? onlyKey.split(" ") : onlyKey === "" ? [] : undefined;
+    const sel = (ids ?? []).map((id) => `[data-id="${CSS.escape(id)}"]`);
+    const html = ids
+      ? `${board}<style>*{visibility:hidden!important}${sel.length ? `${sel.join(",")},${sel.map((s) => `${s} *`).join(",")}{visibility:visible!important}` : ""}</style>`
+      : board;
     if (html === last.current) return;
     last.current = html;
     loadArtboardFonts(fonts, faces);
     root.innerHTML = html;
-  }, [artboard, doc.tokens, model.assetBase, scheme]);
+  }, [artboard, doc.tokens, model.assetBase, scheme, onlyKey]);
   return <div ref={host} data-artboard-host={artboard.id} style={{ display: "contents" }} />;
 });
 
@@ -901,6 +951,26 @@ function applyRise(root: HTMLElement, r: Frame["rising"]) {
     anims.delete(el);
     rising.delete(el);
   }
+}
+
+/** Pieces a change moved, drawn where they still are on their way (the live board, not the ghost). */
+const moved = new Set<HTMLElement>();
+
+function applyMoves(root: HTMLElement, m: Frame["moving"]) {
+  const live = new Set<HTMLElement>();
+  for (const x of m ?? [])
+    for (const host of root.querySelectorAll(".pz-film-board > [data-artboard-host]")) {
+      const el = host.shadowRoot?.querySelector<HTMLElement>(`[data-id="${CSS.escape(x.id)}"]`);
+      if (!el) continue;
+      el.style.translate = `${x.dx}px ${x.dy}px`;
+      live.add(el);
+      moved.add(el);
+    }
+  for (const el of moved)
+    if (!live.has(el)) {
+      el.style.translate = "";
+      moved.delete(el);
+    }
 }
 
 /**
@@ -1128,9 +1198,9 @@ function Prompt({
   const text = model.prompt!.text;
   const tall = view.h > view.w;
   // Read on a phone: the frame shows at about 390px wide, so the words are set large.
-  const k = tall ? 1.55 : 1.6;
+  const k = tall ? 1.55 : 2.25;
   const n = Math.round(text.length * state.typed);
-  const w = Math.min(view.w - 40, tall ? view.w - 36 : 760);
+  const w = Math.min(view.w - 40, tall ? view.w - 36 : 860);
   const sentAt = state.sent;
   // Sent: the message lifts into place above the composer, and the agent starts.
   const lift = ease.out(sentAt);
