@@ -118,16 +118,30 @@ export interface PlanOptions {
   range?: Range;
 }
 
+/** Visible edits already in place in the first frame, so it opens on something. */
+export const OPENING_SUBSTANCE = 3;
+
 /** The brand's bloom at the end. */
 export const END_CARD = 1.6;
-/** A user comment, at about real speed. */
+/** A user comment, at about real speed: a second, and a little more for a long one. */
 export const COMMENT_HOLD = 1.0;
+
+/** How long a comment holds: about a second, a little more for a long one, at most 1.7s. */
+export function commentHold(words: number): number {
+  return Math.min(1.7, Math.max(COMMENT_HOLD, 0.5 + words * 0.055));
+}
+
+function commentWords(op: Op): number {
+  const create = (op.op === "batch" ? op.ops : [op]).find((o) => o.op === "thread.create");
+  const text = create?.op === "thread.create" ? (create.thread.messages[0]?.text ?? "") : "";
+  return text.split(/\s+/).filter(Boolean).length;
+}
 /** A thread resolving: the pin leaves. */
 export const RESOLVE_HOLD = 0.4;
 /** An agent's reply: its card shows for a moment. */
 export const REPLY_HOLD = 0.9;
 /** The look at the result before the end card. */
-export const PULLBACK = 2.2;
+export const PULLBACK = 2.5;
 /** The first beat of a turn gets this much extra, so the change of hands reads. */
 export const TURN_BREATH = 0.35;
 /** Real gaps longer than this are idle, and cut down to it. */
@@ -173,12 +187,28 @@ export function groupTurns(kinds: BeatKind[]): number[] {
 export function planFilm(entries: JournalEntry[], opts: PlanOptions): Plan {
   const range = opts.range;
   const all = opEntries(entries, range);
+  const notes = noteBoards(entries);
   const raw = all
-    .map((x) => ({ ...x, kind: filmKind(x.e) }))
+    .map((x) => ({
+      ...x,
+      kind: filmKind(x.e),
+      note: x.e.artboards.length > 0 && x.e.artboards.every((a) => notes.has(a)),
+    }))
     .filter((x): x is typeof x & { kind: BeatKind } => x.kind !== null);
-  // Opening on nothing (tokens set, empty boards made) wastes the first seconds: start
-  // the film once there's something to see, with what came before already in place.
-  while (raw.length > 1 && raw[0]!.kind === "edit" && !visible(raw[0]!.e.op)) raw.shift();
+  // Opening on nothing (tokens set, empty boards made, a nav bar alone) wastes the first
+  // seconds: the film starts once a board has some substance, with what came before in place.
+  // Keep at least half of the opening run of work to watch being built.
+  let lead = 0;
+  while (lead < raw.length && raw[lead]!.kind === "edit") lead++;
+  const leadVisible = raw.slice(0, lead).filter((r) => visible(r.e.op)).length;
+  const absorb = Math.min(OPENING_SUBSTANCE, Math.floor(leadVisible / 2));
+  let substance = 0;
+  while (raw.length > 1 && raw[0]!.kind === "edit") {
+    const shows = visible(raw[0]!.e.op);
+    if (shows && substance >= absorb) break;
+    if (shows) substance++;
+    raw.shift();
+  }
   const content = Math.max(2, opts.length - END_CARD);
   const firstEntry = raw[0]?.i ?? entries.length;
   // The opening frame: the doc just before the first beat.
@@ -201,7 +231,8 @@ export function planFilm(entries: JournalEntry[], opts: PlanOptions): Plan {
       kind: r.kind,
       t: r.e.t,
       board: r.e.artboards[0],
-      light: r.kind === "edit" && !visible(r.e.op),
+      light: r.kind === "edit" && (!visible(r.e.op) || r.note),
+      words: r.kind === "comment" ? commentWords(r.e.op) : undefined,
     })),
     turnOf,
     content - pullback,
@@ -272,7 +303,7 @@ export function planFilm(entries: JournalEntry[], opts: PlanOptions): Plan {
  * the holds alone won't fit, they shrink together, never below a floor.
  */
 export function solveDurations(
-  beats: { kind: BeatKind; t: number; board?: string; light?: boolean }[],
+  beats: { kind: BeatKind; t: number; board?: string; light?: boolean; words?: number }[],
   turnOf: number[],
   room: number,
 ): number[] {
@@ -281,7 +312,7 @@ export function solveDurations(
   const hold = beats.map((b, k) => {
     const base =
       b.kind === "comment"
-        ? COMMENT_HOLD
+        ? commentHold(b.words ?? 12)
         : b.kind === "resolve"
           ? RESOLVE_HOLD
           : b.kind === "reply"
@@ -308,7 +339,7 @@ export function solveDurations(
   const edits = weights.filter((w) => w > 0).length;
   const holdSum = hold.reduce((a, b) => a + b, 0);
   // Edits keep at least this much of the film.
-  const editMin = edits ? Math.min(room * 0.5, edits * 0.12) : 0;
+  const editMin = edits ? Math.min(room * 0.55, edits * 0.3) : 0;
   const holdScale = holdSum > room - editMin ? Math.max(0.3, (room - editMin) / holdSum) : 1;
   const holds = hold.map((h) => h * holdScale);
   const editRoom = Math.max(0, room - holds.reduce((a, b) => a + b, 0));
@@ -353,6 +384,27 @@ export function solveDurations(
     for (let i = 0; i < n; i++) durs[i]! *= k;
   }
   return durs;
+}
+
+/** Boards named "Note: …": the agent's annotations. The film passes them quickly. */
+export function noteBoards(entries: JournalEntry[]): Set<string> {
+  const out = new Set<string>();
+  const see = (id: string, name?: string) => {
+    if (name === undefined) return;
+    if (/^note\b/i.test(name.trim())) out.add(id);
+    else out.delete(id);
+  };
+  const walk = (op: Op) => {
+    if (op.op === "batch") for (const o of op.ops) walk(o);
+    else if (op.op === "artboard.create") see(op.artboard.id, op.artboard.name);
+    else if (op.op === "artboard.update") see(op.id, op.name);
+  };
+  for (const e of entries) {
+    if (e.kind === "checkpoint")
+      for (const p of e.doc.pages) for (const ab of p.artboards) see(ab.id, ab.name);
+    else walk(e.op);
+  }
+  return out;
 }
 
 /**
@@ -508,10 +560,17 @@ export interface Focus {
   board: Rect;
   /** The part of it that changed, when known. */
   detail?: Rect;
+  /** The separate pieces that changed, when the whole is too wide to read at once. */
+  parts?: Rect[];
   /** Show the whole of `board` even when that's below the shape's legible zoom. */
   overview?: boolean;
   /** What it's about (a board id), for debugging and tests. */
   key?: string;
+  /**
+   * A pin whose thread card shows: the card is 320×150 screen px to its right
+   * (or left), so the frame keeps room for it at any zoom.
+   */
+  pin?: { x: number; y: number };
 }
 
 export interface Framing {
@@ -526,9 +585,9 @@ export interface Framing {
 
 /** In the film's CSS pixels (see filmViewport). */
 export function framingFor(shape: FilmShape): Framing {
-  if (shape === "9:16") return { minZoom: 0.62, maxZoom: 1.6, pad: 28, top: 56 };
-  if (shape === "1:1") return { minZoom: 0.5, maxZoom: 1.5, pad: 36, top: 44 };
-  return { minZoom: 0.36, maxZoom: 1.3, pad: 44, top: 40 };
+  if (shape === "9:16") return { minZoom: 0.6, maxZoom: 1.5, pad: 24, top: 60 };
+  if (shape === "1:1") return { minZoom: 0.5, maxZoom: 1.4, pad: 32, top: 48 };
+  return { minZoom: 0.36, maxZoom: 1.2, pad: 40, top: 44 };
 }
 
 /**
@@ -541,7 +600,6 @@ export function frameFocus(focus: Focus, view: { w: number; h: number }, f: Fram
   // Frame inside the view less its margins: more at the top, for the board's name.
   const vw = view.w - 2 * f.pad;
   const vh = view.h - 2 * f.pad - f.top;
-  // The frame's centre sits below the view's by half the top inset.
   const shift = f.top / 2;
   const at = (cx: number, cy: number, zoom: number): Cam => ({
     page: focus.page,
@@ -550,25 +608,66 @@ export function frameFocus(focus: Focus, view: { w: number; h: number }, f: Fram
     zoom,
   });
   const b = focus.board;
-  const fit = Math.min(vw / b.w, vh / b.h);
-  if (fit >= f.minZoom || focus.overview) {
-    const zoom = Math.min(f.maxZoom, focus.overview ? Math.max(fit, f.minZoom * 0.42) : fit);
-    if (zoom >= fit - 1e-9 || !focus.detail) return at(b.x + b.w / 2, b.y + b.h / 2, zoom);
+  const fitBoard = Math.min(vw / b.w, vh / b.h);
+  if (focus.overview || fitBoard >= f.minZoom || !focus.detail) {
+    if (focus.overview || fitBoard >= f.minZoom)
+      return withPin(
+        at(b.x + b.w / 2, b.y + b.h / 2, Math.min(f.maxZoom, fitBoard)),
+        focus,
+        view,
+        f,
+      );
+    // Too tall to show whole, nothing in particular changed: its width, from the top.
+    const zoom = Math.min(f.maxZoom, vw / b.w);
+    return withPin(at(b.x + b.w / 2, b.y + Math.min(b.h, vh / zoom) / 2, zoom), focus, view, f);
   }
-  // Too big to read whole: as close as legibility needs (the width, if that's legible),
-  // panned to what changed but kept on the board. A tall frame fills its height
-  // instead, and pans across the board.
-  const tall = view.h > view.w * 1.2;
-  const zoom = Math.min(
-    f.maxZoom,
-    Math.max(f.minZoom, tall ? Math.min((vh / b.h) * 0.94, vw / (b.w * 0.38)) : vw / b.w),
+  // Too big to read whole: the whole changed block, as close as it fits, never cut.
+  // When that's too small to read, the biggest piece of it instead, whole.
+  let d = focus.detail;
+  if (Math.min(vw / d.w, vh / d.h) < f.minZoom * 0.75 && focus.parts?.length) {
+    const fits = focus.parts.filter((r) => Math.min(vw / r.w, vh / r.h) >= f.minZoom * 0.75);
+    const pick = (fits.length ? fits : focus.parts).reduce((a, r) =>
+      r.w * r.h > a.w * a.h ? r : a,
+    );
+    d = pick;
+  }
+  const fitDetail = Math.min(vw / d.w, vh / d.h);
+  const zoom = Math.max(
+    fitBoard,
+    Math.min(f.maxZoom, fitDetail, Math.max(f.minZoom, vw / b.w) * 1.6),
   );
   const sw = vw / zoom;
   const sh = vh / zoom;
-  const d = focus.detail ?? { x: b.x, y: b.y, w: b.w, h: Math.min(b.h, sh) };
   const cx = clampSpan(d.x + d.w / 2, b.x, b.x + b.w, sw);
   const cy = clampSpan(d.y + d.h / 2, b.y, b.y + b.h, sh);
-  return at(cx, cy, zoom);
+  return withPin(at(cx, cy, zoom), focus, view, f);
+}
+
+/**
+ * Nudges a camera the least it takes for a pin and its card (to the pin's
+ * right, 330×160 screen px) to sit inside the frame's margins.
+ */
+function withPin(cam: Cam, focus: Focus, view: { w: number; h: number }, f: Framing): Cam {
+  const p = focus.pin;
+  if (!p) return cam;
+  const z = cam.zoom;
+  const hw = view.w / 2 / z;
+  const hh = view.h / 2 / z;
+  const m = f.pad / z;
+  // The span the frame must cover, in canvas px, and the centres that do it.
+  const x0 = p.x - 20 / z;
+  const x1 = p.x + 330 / z;
+  const y0 = p.y - 24 / z;
+  const y1 = p.y + 160 / z;
+  const cx = clampCentre(cam.cx, x1 - hw + m, x0 + hw - m);
+  const cy = clampCentre(cam.cy, y1 - hh + m, y0 + hh - m - f.top / z);
+  return { ...cam, cx, cy };
+}
+
+/** `c` moved into [lo, hi]; the middle of the two when they cross. */
+function clampCentre(c: number, lo: number, hi: number): number {
+  if (lo > hi) return (lo + hi) / 2;
+  return Math.min(hi, Math.max(lo, c));
 }
 
 /** Keep a window of `span` centred near `c` inside [lo, hi]; centred on the range if it's smaller. */
@@ -726,9 +825,15 @@ export function dipAt(shots: Shot[], f: number): number {
  * elements whose text was replaced); `restyled` nodes change in place, so their
  * board crossfades from how it looked.
  */
-export function changedNodes(op: Op): { fresh: string[]; restyled: string[] } {
+export function changedNodes(op: Op): {
+  fresh: string[];
+  restyled: string[];
+  /** Nodes whose old contents were replaced or taken away: where the old look has to give way. */
+  replaced: string[];
+} {
   const fresh: string[] = [];
   const restyled: string[] = [];
+  const replaced: string[] = [];
   const walk = (o: Op) => {
     switch (o.op) {
       case "batch":
@@ -740,6 +845,7 @@ export function changedNodes(op: Op): { fresh: string[]; restyled: string[] } {
         if (o.nodes.some((n) => n.kind === "text")) fresh.push(o.parent);
         return;
       case "children": {
+        replaced.push(o.id);
         const els = o.children.filter((n) => n.kind === "el");
         if (els.length) for (const n of els) fresh.push(n.id);
         else fresh.push(o.id);
@@ -753,12 +859,15 @@ export function changedNodes(op: Op): { fresh: string[]; restyled: string[] } {
       case "move":
         restyled.push(o.id);
         return;
+      case "remove":
+        replaced.push(o.id);
+        return;
       default:
         return;
     }
   };
   walk(op);
-  return { fresh, restyled };
+  return { fresh, restyled, replaced };
 }
 
 interface TreeNode {
@@ -811,7 +920,7 @@ export interface CamTarget {
 }
 
 /** After arriving, the camera holds at least this long before it leaves again. */
-export const MIN_HOLD = 0.7;
+export const MIN_HOLD = 1.4;
 /** How far ahead of a change the camera sets off, at most. */
 export const LEAD = 0.7;
 
@@ -819,8 +928,8 @@ export const LEAD = 0.7;
 export function travelTime(a: Cam, b: Cam, view: { w: number; h: number }, slow = false): number {
   if (a.page !== b.page) return 0;
   const d = camDistance(a, b, view);
-  if (slow) return Math.min(2.2, Math.max(1.2, 0.9 + d * 0.5));
-  return Math.min(1.7, Math.max(0.55, 0.45 + d * 0.55));
+  if (slow) return Math.min(1.3, Math.max(0.9, 0.8 + d * 0.3));
+  return Math.min(1.6, Math.max(0.7, 0.55 + d * 0.5));
 }
 
 /**

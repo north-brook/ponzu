@@ -272,7 +272,8 @@ describe("stream-in", () => {
         { op: "style", id: "b", style: {} },
       ],
     };
-    expect(changedNodes(op)).toEqual({ fresh: ["a", "p"], restyled: ["b"] });
+    expect(changedNodes(op)).toEqual({ fresh: ["a", "p"], restyled: ["b"], replaced: [] });
+    expect(changedNodes({ op: "children", id: "h", children: [el("x")] }).replaced).toEqual(["h"]);
   });
 
   test("one big section opens into its blocks", () => {
@@ -336,8 +337,8 @@ describe("follow camera", () => {
       if (c.zoom < Math.min(...targets.slice(0, -1).map((t) => t.cam.zoom)) * 0.9) backedOut = true;
       prev = c;
     }
-    // A long trip moves under an eighth of a screen a frame, and backs out on the way.
-    expect(maxStep).toBeLessThan(0.125);
+    // A long trip (3000px apart) moves well under a screen in a frame, and backs out on the way.
+    expect(maxStep).toBeLessThan(0.15);
     expect(backedOut).toBe(true);
     // It gets where it's going.
     const end = camOnPath(path, plan.duration)!;

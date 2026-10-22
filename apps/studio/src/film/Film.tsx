@@ -27,15 +27,15 @@ import {
 } from "@ponzu/react";
 import { type CSSProperties, memo, useLayoutEffect, useMemo, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { type FilmModel, fallbackCam, pinSpot, schemeFor } from "./model.ts";
+import { type FilmModel, fallbackCam, pinSpot, type Swap, schemeFor } from "./model.ts";
 
 /** How long one piece takes to rise in, and how far. */
 export const STREAM_MS = 500;
 export const STREAM_RISE = 6;
 /** The gap between pieces of one change, at most. */
 const STAGGER = 0.07;
-/** A change made in place crossfades over this long. */
-const CROSSFADE = 0.3;
+/** The old look of a changed part hands over to the new in this long. */
+const HANDOFF = 0.12;
 const PIN_IN = 0.32;
 const PIN_OUT = 0.34;
 
@@ -67,6 +67,7 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
     const el = root.current;
     if (!el) return;
     applyStream(el, model, f);
+    keepCardsInFrame(el, view);
   });
 
   // Pins: open ones, plus ones leaving after their thread resolved.
@@ -102,8 +103,11 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
                   top: ab.y,
                   width: w,
                   height: h ?? undefined,
-                  opacity: appear,
-                  translate: `0 ${(1 - appear) * STREAM_RISE * 2}px`,
+                  // A new board arrives solid (a dark one never passes through grey): it grows
+                  // in from slightly smaller, behind a quick fade of the first few frames.
+                  opacity: Math.min(1, appear * 2.5),
+                  scale: String(0.97 + 0.03 * appear),
+                  transformOrigin: "50% 40%",
                 }}
               >
                 <div
@@ -122,7 +126,12 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
                 {ghost && (
                   <div
                     className="pz:pointer-events-none pz:absolute pz:inset-0"
-                    style={{ opacity: ghost.opacity }}
+                    style={{
+                      opacity: ghost.opacity,
+                      clipPath: ghost.box
+                        ? `inset(${ghost.box.y}px ${w - ghost.box.x - ghost.box.w}px calc(100% - ${ghost.box.y + ghost.box.h}px) ${ghost.box.x}px)`
+                        : undefined,
+                    }}
                   >
                     <FilmBoard artboard={ghost.artboard} doc={ghost.doc} model={model} />
                   </div>
@@ -163,6 +172,7 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
                 </span>
                 {card && (
                   <div
+                    data-film-card
                     className={cn(
                       "pz-film-card",
                       flip && "pz-film-card-flip",
@@ -241,24 +251,34 @@ function boardAppear(model: FilmModel, id: string, f: number): number | null {
   return progress(f, born, born + STREAM_MS / 1000, ease.out);
 }
 
-/** The board as it was before a change made in place, fading out over the new one. */
+/**
+ * The board as it was before a change, over the new one. Never two layouts at
+ * once for long: a restyle holds the old picture whole and hands over in a
+ * blink; replaced contents keep the old picture of their box until the new
+ * pieces start to rise, then it clears quickly, so nothing dips to empty.
+ */
 function ghostFor(
   model: FilmModel,
   id: string,
   f: number,
-): { artboard: Artboard; doc: Doc; opacity: number } | null {
+): { artboard: Artboard; doc: Doc; opacity: number; box?: Swap["box"] } | null {
   const k = beatIndexAt(model.plan, f);
   for (let j = k; j >= 0 && j > k - 3; j--) {
     const b = model.plan.beats[j]!;
-    if (f - b.at > CROSSFADE) break;
-    if (!model.touched[j]!.includes(id)) continue;
+    const swap = model.touched[j]!.find((t) => t.board === id);
+    if (!swap) continue;
+    const start = b.at + swap.hold;
+    // A part swaps in a cut (the new pieces rise over it); a restyled board hands over quickly.
+    const handoff = swap.box ? 1 / 30 : HANDOFF;
+    if (f - start > handoff) return null;
     const prev = model.docs[j]!;
     const ab = prev.pages.flatMap((p) => p.artboards).find((a) => a.id === id);
     if (!ab) return null;
     return {
       artboard: ab,
       doc: prev,
-      opacity: 1 - progress(f, b.at, b.at + CROSSFADE, ease.inOut),
+      box: swap.box,
+      opacity: f < start ? 1 : 1 - progress(f, start, start + handoff, ease.in),
     };
   }
   return null;
@@ -408,6 +428,32 @@ function cardsAt(model: FilmModel, f: number) {
   return out;
 }
 
+/** Inside this far from the frame's edges, and below the wayfinding line. */
+const SAFE = 16;
+const SAFE_TOP = 56;
+
+/**
+ * Thread cards stay whole inside the frame: one that would run off an edge
+ * slides back in. Measured after layout, so it's the same on every render.
+ */
+function keepCardsInFrame(root: HTMLElement, view: { w: number; h: number }) {
+  const frame = root.getBoundingClientRect();
+  const k = frame.width / view.w || 1;
+  for (const wrap of root.querySelectorAll<HTMLElement>("[data-film-card]")) {
+    const card = wrap.firstElementChild as HTMLElement | null;
+    if (!card) continue;
+    card.style.translate = "";
+    const r = card.getBoundingClientRect();
+    const x = (r.left - frame.left) / k;
+    const y = (r.top - frame.top) / k;
+    const w = r.width / k;
+    const h = r.height / k;
+    const dx = Math.min(0, view.w - SAFE - (x + w)) || Math.max(0, SAFE - x);
+    const dy = Math.min(0, view.h - SAFE - (y + h)) || Math.max(0, SAFE_TOP - y);
+    if (dx || dy) card.style.translate = `${dx}px ${dy}px`;
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Wayfinding and the end card                                         */
 /* ------------------------------------------------------------------ */
@@ -469,9 +515,9 @@ function EndCard({ model, t, opacity }: { model: FilmModel; t: number; opacity: 
   const short = Math.min(model.view.w, model.view.h);
   const mark = Math.round(short * 0.13);
   const word = Math.round(mark * 0.62);
-  const turn = 60 * progress(t, 0.78, 1.12, ease.out);
-  const wipe = progress(t, 0.3, 0.72, ease.out);
-  const url = progress(t, 0.72, 1.0, ease.out);
+  const turn = 60 * progress(t, 0.7, 1.0, ease.out);
+  const wipe = progress(t, 0.26, 0.66, ease.out);
+  const url = progress(t, 0.62, 0.9, ease.out);
   return (
     <div
       className="pz:absolute pz:inset-0 pz:flex pz:flex-col pz:items-center pz:justify-center pz:bg-background"
@@ -528,12 +574,13 @@ function EndCard({ model, t, opacity }: { model: FilmModel; t: number; opacity: 
         </span>
       </div>
       <div
-        className="pz:absolute pz:left-0 pz:right-0 pz:text-center"
         style={{
-          bottom: model.view.h * 0.09,
-          font: `400 ${Math.round(short * 0.03)}px/1 "IBM Plex Mono", ui-monospace, monospace`,
-          color: model.theme === "dark" ? "#a9a59b" : "#807c73",
+          marginTop: mark * 0.42,
+          font: `500 ${Math.round(short * 0.042)}px/1 "IBM Plex Mono", ui-monospace, monospace`,
+          letterSpacing: "0.01em",
+          color: model.theme === "dark" ? "#c9c5bc" : "#4a4741",
           opacity: url,
+          transform: `translateY(${4 * (1 - url)}px)`,
         }}
       >
         ponzu.design

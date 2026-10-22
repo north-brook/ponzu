@@ -43,8 +43,12 @@ export interface FilmModel {
   docs: Doc[];
   /** Per beat: the pieces that stream in, in order. */
   units: string[][];
-  /** Per beat: boards whose look changed in place (crossfaded). */
-  touched: string[][];
+  /**
+   * Per beat: what to show of the old look while the new one arrives. A board
+   * restyled in place swaps with a quick dip; replaced parts hold their old
+   * picture (a snapshot of that box) until the new pieces rise over it.
+   */
+  touched: Swap[][];
   /** Board heights by beat index + 1 (as docs), for fit-content boards. */
   heights: Map<string, number>[];
   camera: CamPath;
@@ -61,6 +65,14 @@ export interface FilmModel {
   pinBorn: Map<string, number>;
   /** When an agent shows as working on a board, in film time. */
   working: { board: string; from: number; to: number; who: { name: string; client?: string } }[];
+}
+
+export interface Swap {
+  board: string;
+  /** The part of the board that changes, in board px; absent for the whole board. */
+  box?: Rect;
+  /** How long the old picture holds before it gives way, seconds. */
+  hold: number;
 }
 
 export interface FilmInput {
@@ -238,7 +250,7 @@ export async function buildFilm(input: FilmInput): Promise<FilmModel> {
   heights.push(first);
 
   const units: string[][] = [];
-  const touched: string[][] = [];
+  const touched: Swap[][] = [];
   const focus: (Focus | null)[] = [];
 
   for (let i = 0; i < plan.beats.length; i++) {
@@ -248,12 +260,12 @@ export async function buildFilm(input: FilmInput): Promise<FilmModel> {
     const h = new Map(heights[i]!);
     const entry = input.entries[beat.entry]!;
     const op = entry.kind === "op" ? entry.op : null;
-    const changed = op ? changedNodes(op) : { fresh: [], restyled: [] };
+    const changed = op ? changedNodes(op) : { fresh: [], restyled: [], replaced: [] };
     // A token change restyles every board on its page that uses it: crossfade them all.
     const tokensChanged =
       op && (op.op === "tokens" || (op.op === "batch" && op.ops.some((o) => o.op === "tokens")));
     const beatUnits: string[] = [];
-    const beatTouched = new Set<string>();
+    const beatTouched = new Map<string, Swap>();
     const details: Rect[] = [];
     let focusBoard: Artboard | undefined;
 
@@ -274,21 +286,35 @@ export async function buildFilm(input: FilmInput): Promise<FilmModel> {
         const r = measurer.box(shown, n);
         if (r) details.push({ x: ab.x + r.x, y: ab.y + r.y, w: r.w, h: r.h });
       }
-      const wasThere = findArtboard(prev, id);
+      const before = findArtboard(prev, id);
       for (const n of changed.restyled) {
         if (!findNode(ab.root, n)) continue;
-        if (wasThere) beatTouched.add(id);
+        if (before) beatTouched.set(id, { board: id, hold: 0 });
         if (n === ab.id) continue;
         const r = measurer.box(shown, n);
         if (r) details.push({ x: ab.x + r.x, y: ab.y + r.y, w: r.w, h: r.h });
       }
+      // Replaced contents: the old picture of that box stays until the new pieces rise.
+      if (before && !beatTouched.has(id)) {
+        const shownBefore = await measurer.show(prev, before.artboard);
+        const boxes = changed.replaced
+          .map((n) => (findNode(before.artboard.root, n) ? measurer.box(shownBefore, n) : null))
+          .filter((r): r is Rect => Boolean(r));
+        const box = union(boxes);
+        if (box) {
+          beatTouched.set(id, { board: id, box, hold: 0.12 });
+          details.push({ x: ab.x + box.x, y: ab.y + box.y, w: box.w, h: box.h });
+        }
+        await measurer.show(doc, ab);
+      }
     }
     if (tokensChanged)
       for (const p of doc.pages)
-        for (const ab of p.artboards) if (findArtboard(prev, ab.id)) beatTouched.add(ab.id);
+        for (const ab of p.artboards)
+          if (findArtboard(prev, ab.id)) beatTouched.set(ab.id, { board: ab.id, hold: 0 });
     heights.push(h);
     units.push(beatUnits);
-    touched.push([...beatTouched]);
+    touched.push([...beatTouched.values()]);
 
     const boardRect = (ab: Artboard): Rect => ({
       x: ab.x,
@@ -307,8 +333,16 @@ export async function buildFilm(input: FilmInput): Promise<FilmModel> {
         continue;
       }
       const ab = t.artboardId ? findArtboard(doc, t.artboardId)?.artboard : undefined;
-      // The pin and the card beside it, in canvas units at about the board's zoom.
-      const pinRect: Rect = { x: spot.x - 20, y: spot.y - 20, w: 200, h: 120 };
+      // What the comment is about: the node it's pinned to, else the area around the pin.
+      let pinRect: Rect = { x: spot.x - 160, y: spot.y - 120, w: 320, h: 240 };
+      if (ab && t.nodeId && findNode(ab.root, t.nodeId)) {
+        const r = measurer.box(await measurer.show(doc, ab), t.nodeId);
+        if (r && r.w * r.h > 0) {
+          const node = { x: ab.x + r.x, y: ab.y + r.y, w: r.w, h: r.h };
+          pinRect = union([node, { x: spot.x - 20, y: spot.y - 20, w: 40, h: 40 }])!;
+        }
+      }
+      const pin = beat.kind === "resolve" ? undefined : { x: spot.x, y: spot.y };
       const board: Rect = ab ? boardRect(ab) : pinRect;
       if (beat.kind === "comment") {
         // Your turn opens on every board it comments on at once, when that's still
@@ -317,18 +351,19 @@ export async function buildFilm(input: FilmInput): Promise<FilmModel> {
         if (run && run.page === spot.page) {
           // Only when the boards stay readable together; else each pin gets its board.
           const fit = Math.min(view.w / run.rect.w, view.h / run.rect.h);
-          if (fit >= framing.minZoom * 0.85) {
+          if (fit >= framing.minZoom) {
             focus.push({
               page: spot.page,
               board: run.rect,
               overview: true,
               key: `turn-${beat.turn}`,
             });
+            // Its cards: keep them in the frame (the card slides in, see keepCardsInFrame).
             continue;
           }
         }
       }
-      focus.push({ page: spot.page, board, detail: pinRect, key: ab?.id ?? t.id });
+      focus.push({ page: spot.page, board, detail: pinRect, key: ab?.id ?? t.id, pin });
       continue;
     }
     if (!focusBoard) {
@@ -340,6 +375,7 @@ export async function buildFilm(input: FilmInput): Promise<FilmModel> {
       page: page.id,
       board: boardRect(focusBoard),
       detail: union(details),
+      parts: details,
       key: focusBoard.id,
     });
   }
@@ -444,6 +480,8 @@ function turnFrame(
 ): { page: string; rect: Rect } | null {
   let last = i;
   while (plan.beats[last + 1]?.turn === turn) last++;
+  // The whole turn, from its first comment, so every pin in it gets the same frame.
+  while (i > 0 && plan.beats[i - 1]?.turn === turn) i--;
   const doc = docs[last + 1]!;
   const h = heights[i] ?? new Map<string, number>();
   const rects: Rect[] = [];

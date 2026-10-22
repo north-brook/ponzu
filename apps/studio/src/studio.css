@@ -186,3 +186,8 @@
   top: auto;
   bottom: -12px;
 }
+
+/* The wayfinding pill reads over any design: a more solid bar than the canvas's own. */
+.pz-film .pz-film-way {
+  background: color-mix(in srgb, var(--pz-surface) 90%, transparent);
+}
