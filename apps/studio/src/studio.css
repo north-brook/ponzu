@@ -152,3 +152,32 @@
   --pz-comment: #ffc81e;
   --pz-comment-ink: #111110;
 }
+
+/* The timelapse nudge: the clock glows yuzu once, then settles. */
+.tl-nudge {
+  animation: tl-nudge 1.6s cubic-bezier(0.2, 0.8, 0.2, 1) 0.3s both;
+}
+@keyframes tl-nudge {
+  0% {
+    background: transparent;
+    box-shadow: 0 0 0 0 rgba(255, 200, 30, 0);
+  }
+  25% {
+    background: #ffc81e;
+    color: #111110;
+    box-shadow: 0 0 0 6px rgba(255, 200, 30, 0.28);
+  }
+  100% {
+    background: color-mix(in srgb, #ffc81e 22%, transparent);
+    box-shadow: 0 0 0 0 rgba(255, 200, 30, 0);
+  }
+}
+.tl-nudge-tip {
+  animation: tl-tip 0.25s ease-out both;
+}
+@keyframes tl-tip {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}

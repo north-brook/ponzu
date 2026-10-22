@@ -1,8 +1,19 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { cloneTarget, parseOpenUrl, spawnGit } from "@ponzu/server/clone";
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  ClipboardItem,
+  clipboard,
+  dialog,
+  ipcMain,
+  Menu,
+  nativeTheme,
+  shell,
+} from "electron";
 import { renderToken, startRenderHost } from "./render-host";
 import { smoke, watchSmoke } from "./smoke";
 import { checkForUpdatesNow, installUpdater } from "./updater";
@@ -264,6 +275,17 @@ ipcMain.on("ponzu:reveal", (_e, path: string) => shell.showItemInFolder(path));
 ipcMain.handle("ponzu:whats-new", () => pendingWhatsNew());
 ipcMain.on("ponzu:whats-new-seen", () => markWhatsNewSeen());
 ipcMain.on("ponzu:close-window", (e) => BrowserWindow.fromWebContents(e.sender)?.close());
+// A file URL on the pasteboard, as Finder's Copy writes it: pastes as the video in X, Slack and Messages.
+ipcMain.handle("ponzu:copy-file", async (_e, path: string) => {
+  if (typeof path !== "string" || !/\.(mp4|webm)$/.test(path)) return;
+  const url = pathToFileURL(path).href;
+  await clipboard.write([
+    new ClipboardItem({
+      'electron application/osclipboard;format="public.file-url"': new Blob([url]),
+      "text/plain": url,
+    }),
+  ]);
+});
 
 function buildMenu() {
   const template: Electron.MenuItemConstructorOptions[] = [

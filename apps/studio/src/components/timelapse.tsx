@@ -1,0 +1,1104 @@
+import {
+  FILM_LENGTHS,
+  FILM_SHAPES,
+  type FilmLength,
+  type FilmShape,
+  lastSession,
+  parseJournal,
+  type Range,
+} from "@ponzu/core";
+import { Icon, type SocketSource, Tip, useSource } from "@ponzu/react";
+import { Dialog as DialogPrimitive } from "radix-ui";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { Film } from "@/film/Film";
+import { buildFilm, type FilmModel } from "@/film/model";
+import { journalText } from "@/film/page";
+import { cn } from "@/lib/utils";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "./ui/hover-card";
+
+/*
+ * Timelapse in the studio: one clock button at the start of the canvas's
+ * Controls bar. It opens the composer; while a film renders it shows a ring
+ * and a percentage, and hovering it shows the poster filling in; once done
+ * it shows a check and opens the film. The film itself is made by the
+ * server (packages/server/src/timelapse.ts), so it carries on with the sheet closed.
+ */
+
+type JobState =
+  | { status: "rendering"; done: number; started: number; left?: number }
+  | { status: "done"; path: string; mime: string; codec: string; bytes: number; duration: number }
+  | { status: "failed"; error: string }
+  | { status: "cancelled" };
+
+export interface TimelapseJob {
+  id: string;
+  file: string;
+  request: { shape: FilmShape; length: number; range?: Range; theme: "light" | "dark" };
+  state: JobState;
+  poster: boolean;
+}
+
+const NUDGE_MS = 4000;
+
+/** The latest film for a file, polled while one renders. */
+function useJob(origin: string, file: string) {
+  const [job, setJob] = useState<TimelapseJob | null>(null);
+  const refresh = useCallback(async () => {
+    const res = await fetch(`${origin}/api/timelapse/status?file=${encodeURIComponent(file)}`);
+    if (res.ok) setJob((await res.json()) as TimelapseJob | null);
+  }, [origin, file]);
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+  const rendering = job?.state.status === "rendering";
+  useEffect(() => {
+    if (!rendering) return;
+    const t = setInterval(() => void refresh(), 400);
+    return () => clearInterval(t);
+  }, [rendering, refresh]);
+  return { job, setJob, refresh };
+}
+
+/**
+ * The nudge: when an agent resolves the last open comment a person left, once
+ * per session per file, the clock glows yuzu and says what it's for.
+ */
+function useNudge(source: SocketSource, file: string): boolean {
+  const state = useSource(source);
+  const [on, setOn] = useState(false);
+  const open = useRef<number | null>(null);
+  useEffect(() => {
+    const doc = state.doc;
+    if (!doc) return;
+    const count = doc.threads.filter(
+      (t) => t.status === "open" && t.messages[0]?.author.kind === "user",
+    ).length;
+    const before = open.current;
+    open.current = count;
+    if (before === null || before === 0 || count !== 0) return;
+    if (state.lastOrigin?.kind !== "agent") return;
+    const key = `ponzu.timelapse.nudged:${file}`;
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, "1");
+    setOn(true);
+  }, [state.doc, state.lastOrigin, file]);
+  useEffect(() => {
+    if (!on) return;
+    const t = setTimeout(() => setOn(false), NUDGE_MS);
+    return () => clearTimeout(t);
+  }, [on]);
+  return on;
+}
+
+/** The Controls bar's clock: composer, progress, and the finished film. */
+export function TimelapseButton({
+  origin,
+  file,
+  name,
+  source,
+  theme,
+}: {
+  origin: string;
+  file: string;
+  name: string;
+  source: SocketSource;
+  theme: "light" | "dark";
+}) {
+  const { job, setJob, refresh } = useJob(origin, file);
+  const [composing, setComposing] = useState(false);
+  const [viewing, setViewing] = useState(false);
+  const [seen, setSeen] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const nudge = useNudge(source, file);
+  const state = job?.state;
+  const rendering = state?.status === "rendering";
+  // A finished film shows its check until it's been opened, or a new one is started.
+  const ready = state?.status === "done" && seen !== job?.id;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || !e.shiftKey || e.code !== "KeyT") return;
+      e.preventDefault();
+      if (ready) setViewing(true);
+      else if (!rendering) setComposing(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [ready, rendering]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const start = async (req: TimelapseJob["request"]) => {
+    const res = await fetch(`${origin}/api/timelapse?file=${encodeURIComponent(file)}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(req),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      setToast((body as { error: string }).error);
+      return;
+    }
+    setJob(body as TimelapseJob);
+    setComposing(false);
+  };
+  const cancel = async () => {
+    if (!job) return;
+    await fetch(`${origin}/api/timelapse/cancel?id=${job.id}`, { method: "POST" });
+    await refresh();
+  };
+
+  const onClick = () => {
+    if (ready) {
+      setViewing(true);
+      return;
+    }
+    if (!rendering) setComposing(true);
+  };
+
+  const button = (
+    <button
+      type="button"
+      aria-label="Timelapse"
+      data-timelapse-button
+      data-state-kind={rendering ? "rendering" : ready ? "ready" : nudge ? "nudge" : "rest"}
+      onClick={onClick}
+      className={cn(
+        "pz:relative pz:flex pz:h-7 pz:items-center pz:gap-1.5 pz:rounded-lg pz:text-muted-foreground pz:outline-none pz:hover:bg-accent pz:hover:text-foreground",
+        rendering || ready ? "pz:pr-2 pz:pl-1" : "pz:w-7 pz:justify-center",
+        nudge && "tl-nudge pz:text-foreground",
+      )}
+    >
+      {rendering ? (
+        <>
+          <Ring done={state.done} />
+          <span className="pz:text-[12px] pz:text-foreground pz:tabular-nums">
+            {Math.floor(state.done * 100)}%
+          </span>
+        </>
+      ) : ready ? (
+        <>
+          <span className="pz:grid pz:size-5 pz:place-items-center pz:rounded-full pz:bg-[#ffc81e] pz:text-[#111110]">
+            <Icon name="check" size={13} strokeWidth={2.2} />
+          </span>
+          <span className="pz:text-[12px] pz:font-medium pz:text-foreground">Timelapse</span>
+        </>
+      ) : (
+        <Icon name="clock" size={16} />
+      )}
+    </button>
+  );
+
+  return (
+    <>
+      {rendering && job ? (
+        <HoverCard openDelay={120} closeDelay={160}>
+          <HoverCardTrigger asChild>{button}</HoverCardTrigger>
+          <HoverCardContent side="top" align="start" sideOffset={10} className="w-[264px] p-2.5">
+            <RenderingCard origin={origin} job={job} onCancel={cancel} />
+          </HoverCardContent>
+        </HoverCard>
+      ) : nudge ? (
+        <NudgeTip>{button}</NudgeTip>
+      ) : (
+        <Tip label="Timelapse" keys={["⇧", "⌘", "T"]}>
+          {button}
+        </Tip>
+      )}
+      <Composer
+        open={composing}
+        onOpenChange={setComposing}
+        origin={origin}
+        file={file}
+        name={name}
+        theme={theme}
+        onExport={start}
+      />
+      {job && state?.status === "done" && (
+        <Ready
+          open={viewing}
+          onOpenChange={(o) => {
+            setViewing(o);
+            if (!o) setSeen(job.id);
+          }}
+          origin={origin}
+          job={job}
+          name={name}
+          onToast={setToast}
+        />
+      )}
+      {(toast || state?.status === "failed") && (
+        <Toast
+          text={toast ?? (state?.status === "failed" ? `Timelapse failed: ${state.error}` : "")}
+          onClose={() => {
+            setToast(null);
+            if (state?.status === "failed") setJob(null);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+/** The nudge's tip: up on its own for a few seconds, no hover needed. */
+function NudgeTip({ children }: { children: ReactNode }) {
+  return (
+    <span className="pz:relative pz:inline-flex">
+      {children}
+      <span
+        role="status"
+        className="pz-tip tl-nudge-tip pz:pointer-events-none pz:absolute pz:bottom-[calc(100%+8px)] pz:left-0 pz:z-50 pz:flex pz:h-[26px] pz:items-center pz:gap-2 pz:whitespace-nowrap pz:rounded-[7px] pz:bg-[#1c1c1b] pz:pr-1.5 pz:pl-[9px] pz:text-[12px] pz:text-white pz:shadow-[0_0_0_0.5px_rgba(255,255,255,0.1),0_4px_14px_rgba(0,0,0,0.18)]"
+      >
+        Make a timelapse of this session
+        <span className="pz:flex pz:gap-0.5">
+          {["⇧", "⌘", "T"].map((k) => (
+            <kbd
+              key={k}
+              className="pz:min-w-4 pz:rounded pz:bg-white/15 pz:px-1 pz:text-center pz:text-[11px] pz:text-white/85 pz:leading-4"
+            >
+              {k}
+            </kbd>
+          ))}
+        </span>
+      </span>
+    </span>
+  );
+}
+
+function Ring({ done }: { done: number }) {
+  const r = 7;
+  const c = 2 * Math.PI * r;
+  return (
+    <svg width={18} height={18} viewBox="0 0 18 18" aria-hidden className="pz:-rotate-90">
+      <circle
+        cx={9}
+        cy={9}
+        r={r}
+        fill="none"
+        stroke="currentColor"
+        strokeOpacity={0.18}
+        strokeWidth={2}
+      />
+      <circle
+        cx={9}
+        cy={9}
+        r={r}
+        fill="none"
+        stroke="#ffc81e"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeDasharray={c}
+        strokeDashoffset={c * (1 - done)}
+        style={{ transition: "stroke-dashoffset .35s linear" }}
+      />
+    </svg>
+  );
+}
+
+function RenderingCard({
+  origin,
+  job,
+  onCancel,
+}: {
+  origin: string;
+  job: TimelapseJob;
+  onCancel: () => void;
+}) {
+  const state = job.state.status === "rendering" ? job.state : null;
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 1500);
+    return () => clearInterval(t);
+  }, []);
+  const [w, h] = aspect(job.request.shape);
+  const done = state?.done ?? 1;
+  return (
+    <div className="flex flex-col gap-2.5">
+      <div
+        className="relative overflow-hidden rounded-lg bg-canvas"
+        style={{
+          aspectRatio: `${w} / ${h}`,
+          maxHeight: 280,
+          margin: "0 auto",
+          width: w >= h ? "100%" : undefined,
+          height: w < h ? 280 : undefined,
+        }}
+      >
+        {job.poster && (
+          <img
+            alt=""
+            src={`${origin}/api/timelapse/poster?id=${job.id}&t=${tick}`}
+            className="absolute inset-0 size-full object-cover"
+          />
+        )}
+        {/* The film fills in: what's still to render sits under a veil. */}
+        <div
+          className="absolute inset-y-0 right-0 bg-canvas/70 backdrop-blur-[2px] transition-[width] duration-300"
+          style={{ width: `${(1 - done) * 100}%` }}
+        />
+      </div>
+      <div className="flex items-center gap-2 px-0.5">
+        <span className="text-[12.5px] text-muted-foreground tabular-nums">
+          Rendering{state?.left ? ` · about ${state.left}s left` : ""}
+        </span>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="ml-auto h-7 rounded-lg px-2.5 text-[12.5px] font-medium text-foreground hover:bg-accent"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function aspect(shape: FilmShape): [number, number] {
+  return shape === "1:1" ? [1, 1] : shape === "9:16" ? [9, 16] : [16, 9];
+}
+
+/* ------------------------------------------------------------------ */
+/* The sheet                                                           */
+/* ------------------------------------------------------------------ */
+
+function Sheet({
+  open,
+  onOpenChange,
+  title,
+  children,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  title: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/40 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
+        <DialogPrimitive.Content
+          aria-describedby={undefined}
+          className="fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100%-48px)] w-[min(992px,calc(100%-48px))] -translate-x-1/2 -translate-y-1/2 flex-col gap-4 rounded-2xl bg-card p-6 pt-5 text-foreground shadow-[0_1px_2px_rgba(17,17,16,0.08),0_24px_64px_rgba(17,17,16,0.18)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-[0.98]"
+        >
+          <div className="flex h-7 items-center gap-2">
+            <DialogPrimitive.Title className="flex min-w-0 items-baseline gap-2 text-[14px] font-semibold">
+              {title}
+            </DialogPrimitive.Title>
+            <DialogPrimitive.Close className="ml-auto grid size-7 place-items-center rounded-lg text-muted-foreground outline-none hover:bg-accent hover:text-foreground">
+              <Icon name="close" size={15} />
+              <span className="sr-only">Close</span>
+            </DialogPrimitive.Close>
+          </div>
+          {children}
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
+  );
+}
+
+/** Plays a film model in real time, or holds still. */
+function usePlayer(duration: number, playing: boolean, loop = true) {
+  const [t, setT] = useState(0);
+  const at = useRef(0);
+  useEffect(() => {
+    at.current = t;
+  }, [t]);
+  useEffect(() => {
+    if (!playing || !duration) return;
+    let raf = 0;
+    let last = performance.now();
+    const step = (now: number) => {
+      const dt = (now - last) / 1000;
+      last = now;
+      let next = at.current + dt;
+      if (next >= duration) next = loop ? 0 : duration;
+      at.current = next;
+      setT(next);
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, duration, loop]);
+  return [t, (v: number) => setT(Math.max(0, Math.min(duration, v)))] as const;
+}
+
+/** A film model fitted into a box, at its own size scaled down. */
+function Stage({ model, t }: { model: FilmModel; t: number }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [k, setK] = useState(0.5);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const fit = () => setK(Math.min(el.clientWidth / model.view.w, el.clientHeight / model.view.h));
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [model]);
+  return (
+    <div ref={box} className="relative grid min-h-0 flex-1 place-items-center overflow-hidden">
+      <div
+        className="overflow-hidden rounded-[10px] shadow-[0_0_0_1px_var(--hairline)]"
+        style={{ width: model.view.w * k, height: model.view.h * k }}
+      >
+        <div
+          style={{
+            width: model.view.w,
+            height: model.view.h,
+            transform: `scale(${k})`,
+            transformOrigin: "0 0",
+          }}
+        >
+          <Film model={model} f={t} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function fmt(s: number) {
+  const v = Math.max(0, Math.round(s));
+  return `${Math.floor(v / 60)}:${String(v % 60).padStart(2, "0")}`;
+}
+
+function Composer({
+  open,
+  onOpenChange,
+  origin,
+  file,
+  name,
+  theme,
+  onExport,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  origin: string;
+  file: string;
+  name: string;
+  theme: "light" | "dark";
+  onExport: (req: TimelapseJob["request"]) => void;
+}) {
+  const [shape, setShape] = useState<FilmShape>("16:9");
+  const [length, setLength] = useState<FilmLength>(30);
+  const [journal, setJournal] = useState<string | null>(null);
+  const [range, setRange] = useState<Range | null>(null);
+  const [model, setModel] = useState<FilmModel | null>(null);
+  const [playing, setPlaying] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const entries = useMemo(() => (journal ? parseJournal(journal) : []), [journal]);
+  const ops = useMemo(() => entries.filter((e) => e.kind === "op").map((e) => e.t), [entries]);
+  const bounds = ops.length ? { from: ops[0]!, to: ops[ops.length - 1]! } : null;
+
+  useEffect(() => {
+    if (!open) return;
+    setError(null);
+    void journalText(file)
+      .then((text) => {
+        setJournal(text);
+        const all = parseJournal(text);
+        setRange(lastSession(all));
+      })
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+  }, [open, file]);
+
+  useEffect(() => {
+    if (!open || !entries.length || !range) return;
+    let live = true;
+    const t = setTimeout(() => {
+      void buildFilm({
+        name,
+        entries,
+        shape,
+        length,
+        range,
+        theme,
+        assetBase: `${origin}/files/${encodeURIComponent(file)}`,
+      }).then((m) => live && setModel(m));
+    }, 120);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [open, entries, range, shape, length, theme, origin, file, name]);
+
+  const duration = model?.plan.duration ?? length;
+  const [t, seek] = usePlayer(duration, open && playing && Boolean(model));
+  const empty = journal !== null && !ops.length;
+
+  return (
+    <Sheet
+      open={open}
+      onOpenChange={onOpenChange}
+      title={
+        <>
+          Timelapse<span className="truncate font-normal text-muted-foreground">{name}</span>
+        </>
+      }
+    >
+      <div className="flex h-[min(520px,calc(100vh-260px))] flex-col rounded-xl bg-canvas p-3">
+        {model ? (
+          <Stage model={model} t={t} />
+        ) : (
+          <div className="grid flex-1 place-items-center text-[13px] text-muted-foreground">
+            {error ??
+              (empty ? "Nothing to film yet: this file has no history." : "Loading the history…")}
+          </div>
+        )}
+      </div>
+      {bounds && range && (
+        <Track
+          bounds={bounds}
+          ops={ops}
+          ticks={model?.ticks ?? []}
+          range={range}
+          onRange={setRange}
+          playhead={model ? playheadReal(model, t) : null}
+          onSeek={(real) => model && seek(filmTimeAt(model, real))}
+        />
+      )}
+      <div className="flex items-center gap-2">
+        <PlayButton playing={playing} onClick={() => setPlaying((p) => !p)} />
+        <span className="font-mono text-[12px] tabular-nums">
+          {fmt(t)} <span className="text-faint">/ {fmt(duration)}</span>
+        </span>
+        <div className="ml-auto flex items-center gap-2">
+          <Segments
+            items={FILM_SHAPES.map((s) => ({
+              value: s,
+              label: (
+                <>
+                  <ShapeGlyph shape={s} />
+                  {s}
+                </>
+              ),
+            }))}
+            value={shape}
+            onChange={setShape}
+          />
+          <Segments
+            items={FILM_LENGTHS.map((l) => ({ value: l, label: `${l}s` }))}
+            value={length}
+            onChange={setLength}
+          />
+          <button
+            type="button"
+            disabled={!model || !range}
+            onClick={() => range && onExport({ shape, length, range, theme })}
+            className="flex h-8 items-center gap-1.5 rounded-[9px] bg-foreground px-3 text-[13px] font-medium text-background hover:bg-foreground/90 disabled:opacity-40"
+          >
+            <Icon name="download" size={15} />
+            Export
+          </button>
+        </div>
+      </div>
+    </Sheet>
+  );
+}
+
+function PlayButton({ playing, onClick }: { playing: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-label={playing ? "Pause" : "Play"}
+      onClick={onClick}
+      className="grid size-8 place-items-center rounded-lg text-foreground hover:bg-accent"
+    >
+      <Icon name={playing ? "pause" : "play"} size={16} />
+    </button>
+  );
+}
+
+function ShapeGlyph({ shape }: { shape: FilmShape }) {
+  const [w, h] = shape === "1:1" ? [10, 10] : shape === "9:16" ? [8, 13] : [14, 9];
+  return (
+    <span
+      aria-hidden
+      className="inline-block rounded-[2.5px] border-[1.5px] border-current"
+      style={{ width: w, height: h }}
+    />
+  );
+}
+
+function Segments<T extends string | number>({
+  items,
+  value,
+  onChange,
+}: {
+  items: { value: T; label: ReactNode }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      className="flex h-8 items-center gap-0.5 rounded-[9px] bg-secondary p-0.5"
+    >
+      {items.map((it) => (
+        <button
+          key={String(it.value)}
+          type="button"
+          role="radio"
+          aria-checked={it.value === value}
+          onClick={() => onChange(it.value)}
+          className={cn(
+            "flex h-7 items-center gap-1.5 rounded-[7px] px-2.5 text-[12.5px] text-muted-foreground tabular-nums hover:text-foreground",
+            it.value === value &&
+              "bg-card text-foreground shadow-[0_0_0_0.5px_var(--hairline-strong),0_1px_2px_rgba(0,0,0,0.08)]",
+          )}
+        >
+          {it.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* The activity track                                                  */
+/* ------------------------------------------------------------------ */
+
+/** Real time under the film's playhead. */
+function playheadReal(model: FilmModel, t: number): number | null {
+  const beats = model.plan.beats;
+  if (!beats.length) return null;
+  if (t >= model.plan.pullback) return beats[beats.length - 1]!.t;
+  let i = 0;
+  while (i + 1 < beats.length && beats[i + 1]!.at <= t) i++;
+  const b = beats[i]!;
+  const n = beats[i + 1];
+  if (!n || t < b.at) return b.t;
+  return b.t + ((n.t - b.t) * (t - b.at)) / Math.max(0.001, n.at - b.at);
+}
+
+/** Film time of a real moment: the beat that landed by then. */
+function filmTimeAt(model: FilmModel, real: number): number {
+  const beats = model.plan.beats;
+  let f = 0;
+  for (const b of beats) if (b.t <= real) f = b.at;
+  return f;
+}
+
+/**
+ * The file's history along a line, cut down to where something happened:
+ * idle stretches are squeezed so a day of gaps doesn't hide a session.
+ * Activity as a soft hill, yuzu ticks for your comments, trim ends and a playhead.
+ */
+function Track({
+  bounds,
+  ops,
+  ticks,
+  range,
+  onRange,
+  playhead,
+  onSeek,
+  trims = true,
+}: {
+  bounds: Range;
+  ops: number[];
+  ticks: number[];
+  range?: Range;
+  onRange?: (r: Range) => void;
+  playhead: number | null;
+  onSeek: (real: number) => void;
+  trims?: boolean;
+}) {
+  const line = useRef<HTMLDivElement>(null);
+  const scale = useMemo(() => compressedScale(ops), [ops]);
+  const x = (t: number) => scale.toX(t) * 100;
+  const fromX = (px: number) => {
+    const el = line.current!;
+    const r = el.getBoundingClientRect();
+    return scale.fromX(Math.min(1, Math.max(0, (px - r.left) / r.width)));
+  };
+  const drag = (which: "from" | "to" | "seek") => (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    (e.target as Element).setPointerCapture(e.pointerId);
+    const move = (ev: PointerEvent) => {
+      const real = fromX(ev.clientX);
+      if (which === "seek") onSeek(real);
+      else if (range && onRange) {
+        if (which === "from") onRange({ from: Math.min(real, range.to - 1000), to: range.to });
+        else onRange({ from: range.from, to: Math.max(real, range.from + 1000) });
+      }
+    };
+    move(e.nativeEvent);
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+  const hill = useMemo(() => activityPath(ops, scale), [ops, scale]);
+  void bounds;
+  return (
+    <div
+      ref={line}
+      className="relative h-10 cursor-pointer select-none rounded-[10px] bg-secondary"
+      onPointerDown={drag("seek")}
+    >
+      <svg
+        className="absolute inset-0 size-full overflow-visible"
+        viewBox="0 0 100 10"
+        preserveAspectRatio="none"
+        aria-hidden
+      >
+        <path d={hill} fill="var(--hairline-strong)" />
+      </svg>
+      {range && trims && (
+        <>
+          <div
+            className="absolute inset-y-0 left-0 rounded-l-[10px] bg-background/55"
+            style={{ width: `${x(range.from)}%` }}
+          />
+          <div
+            className="absolute inset-y-0 right-0 rounded-r-[10px] bg-background/55"
+            style={{ width: `${100 - x(range.to)}%` }}
+          />
+          <div
+            className="absolute inset-y-0 rounded-[8px] shadow-[inset_0_0_0_1.5px_var(--foreground)]"
+            style={{ left: `${x(range.from)}%`, width: `${x(range.to) - x(range.from)}%` }}
+          />
+          {(["from", "to"] as const).map((w) => (
+            <div
+              key={w}
+              role="slider"
+              aria-label={w === "from" ? "Start" : "End"}
+              aria-valuenow={range[w]}
+              tabIndex={0}
+              onPointerDown={drag(w)}
+              className="absolute inset-y-0 z-[2] w-3 -translate-x-1/2 cursor-ew-resize"
+              style={{ left: `${x(range[w])}%` }}
+            >
+              <span className="absolute inset-y-1.5 left-1/2 w-[5px] -translate-x-1/2 rounded-full bg-foreground" />
+            </div>
+          ))}
+        </>
+      )}
+      {ticks.map((t) => (
+        <span
+          key={t}
+          className="absolute top-1.5 size-2 -translate-x-1/2 rounded-full bg-[#ffc81e] shadow-[0_0_0_1px_rgba(17,17,16,0.18)]"
+          style={{ left: `${x(t)}%` }}
+        />
+      ))}
+      {playhead !== null && (
+        <span
+          className="pointer-events-none absolute -inset-y-1 z-[1] w-[2px] -translate-x-1/2 rounded-full bg-foreground"
+          style={{ left: `${x(playhead)}%` }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** A time scale where gaps over a minute count as a minute, so sessions get the room. */
+function compressedScale(ops: number[]) {
+  const CAP = 60_000;
+  const marks: { t: number; u: number }[] = [];
+  let u = 0;
+  for (let i = 0; i < ops.length; i++) {
+    if (i > 0) u += Math.min(CAP, ops[i]! - ops[i - 1]!);
+    marks.push({ t: ops[i]!, u });
+  }
+  const total = Math.max(1, u);
+  const pad = 0.02;
+  const toX = (t: number) => {
+    if (!marks.length) return 0;
+    if (t <= marks[0]!.t) return pad;
+    for (let i = 1; i < marks.length; i++) {
+      const a = marks[i - 1]!;
+      const b = marks[i]!;
+      if (t <= b.t) {
+        const p = b.t === a.t ? 1 : (t - a.t) / (b.t - a.t);
+        return pad + ((a.u + (b.u - a.u) * p) / total) * (1 - 2 * pad);
+      }
+    }
+    return 1 - pad;
+  };
+  const fromX = (x: number) => {
+    if (!marks.length) return 0;
+    const target = ((x - pad) / (1 - 2 * pad)) * total;
+    if (target <= 0) return marks[0]!.t;
+    for (let i = 1; i < marks.length; i++) {
+      const a = marks[i - 1]!;
+      const b = marks[i]!;
+      if (target <= b.u) {
+        const p = b.u === a.u ? 1 : (target - a.u) / (b.u - a.u);
+        return a.t + (b.t - a.t) * p;
+      }
+    }
+    return marks[marks.length - 1]!.t;
+  };
+  return { toX, fromX };
+}
+
+function activityPath(ops: number[], scale: { toX: (t: number) => number }): string {
+  const N = 80;
+  const bins = new Array(N).fill(0);
+  for (const t of ops) bins[Math.min(N - 1, Math.floor(scale.toX(t) * N))]++;
+  // Smooth.
+  const sm = bins.map((_, i) => {
+    let s = 0;
+    let w = 0;
+    for (let k = -3; k <= 3; k++) {
+      const v = bins[i + k];
+      if (v === undefined) continue;
+      const wt = 4 - Math.abs(k);
+      s += v * wt;
+      w += wt;
+    }
+    return s / w;
+  });
+  const max = Math.max(1, ...sm);
+  const pts = sm.map((v, i) => `${((i + 0.5) / N) * 100},${10 - (v / max) * 5.5}`);
+  return `M0,10 L${pts.join(" L")} L100,10 Z`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Done                                                                */
+/* ------------------------------------------------------------------ */
+
+function Ready({
+  open,
+  onOpenChange,
+  origin,
+  job,
+  name,
+  onToast,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  origin: string;
+  job: TimelapseJob;
+  name: string;
+  onToast: (s: string) => void;
+}) {
+  const video = useRef<HTMLVideoElement>(null);
+  const [playing, setPlaying] = useState(true);
+  const [t, setT] = useState(0);
+  const [ticks, setTicks] = useState<{ ticks: number[]; model: FilmModel | null }>({
+    ticks: [],
+    model: null,
+  });
+  const state = job.state.status === "done" ? job.state : null;
+  const src = `${origin}/api/timelapse/video?id=${job.id}`;
+  const desktop = window.ponzuDesktop;
+
+  // Ticks on the film's own clock: where each comment lands in it.
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    void journalText(job.file).then(async (text) => {
+      const entries = parseJournal(text);
+      const m = await buildFilm({
+        name,
+        entries,
+        shape: job.request.shape,
+        length: job.request.length,
+        range: job.request.range ?? lastSession(entries) ?? undefined,
+        theme: job.request.theme,
+      }).catch(() => null);
+      if (live && m)
+        setTicks({
+          ticks: m.plan.beats.filter((b) => b.kind === "comment").map((b) => b.at),
+          model: m,
+        });
+    });
+    return () => {
+      live = false;
+    };
+  }, [open, job, name]);
+
+  const duration = state?.duration ?? job.request.length;
+  const copy = async (): Promise<boolean> => {
+    if (desktop?.copyFile && state) {
+      await desktop.copyFile(state.path);
+      return true;
+    }
+    try {
+      const blob = await (await fetch(src)).blob();
+      await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange} title="Timelapse ready">
+      <div className="flex h-[min(520px,calc(100vh-260px))] items-center justify-center rounded-xl bg-canvas p-3">
+        {/* biome-ignore lint/a11y/useMediaCaption: a film of a canvas, no speech */}
+        <video
+          ref={video}
+          src={src}
+          autoPlay
+          loop
+          playsInline
+          muted
+          onTimeUpdate={(e) => setT(e.currentTarget.currentTime)}
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+          className="max-h-full max-w-full rounded-[10px] shadow-[0_0_0_1px_var(--hairline)]"
+        />
+      </div>
+      <FilmTrack
+        duration={duration}
+        t={t}
+        ticks={ticks.ticks}
+        onSeek={(s) => {
+          if (video.current) video.current.currentTime = s;
+          setT(s);
+        }}
+      />
+      <div className="flex items-center gap-2">
+        <PlayButton
+          playing={playing}
+          onClick={() => {
+            const v = video.current;
+            if (!v) return;
+            if (v.paused) void v.play();
+            else v.pause();
+          }}
+        />
+        <span className="font-mono text-[12px] tabular-nums">
+          {fmt(t)} <span className="text-faint">/ {fmt(duration)}</span>
+        </span>
+        <div className="ml-auto flex items-center gap-2">
+          {desktop && state ? (
+            <button
+              type="button"
+              onClick={() => desktop.reveal(state.path)}
+              className="flex h-8 items-center gap-1.5 rounded-[9px] px-3 text-[13px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              <Icon name="folderOpen" size={15} />
+              Show in Finder
+            </button>
+          ) : (
+            <a
+              href={src}
+              download={state?.path.split("/").pop()}
+              className="flex h-8 items-center gap-1.5 rounded-[9px] px-3 text-[13px] font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              <Icon name="download" size={15} />
+              Download
+            </a>
+          )}
+          <button
+            type="button"
+            onClick={async () => {
+              const copied = await copy();
+              const text = encodeURIComponent(`Made in Ponzu: ${name}`);
+              window.open(`https://x.com/intent/post?text=${text}`, "_blank", "noopener");
+              onToast(
+                copied
+                  ? "Video copied, paste it into your post"
+                  : "Download the video, then attach it to your post",
+              );
+            }}
+            className="flex h-8 items-center gap-1.5 rounded-[9px] bg-secondary px-3 text-[13px] font-medium text-foreground shadow-[0_0_0_0.5px_var(--hairline-strong)] hover:bg-accent"
+          >
+            <Icon name="x" size={14} />
+            Post
+          </button>
+          <button
+            type="button"
+            onClick={async () =>
+              onToast(
+                (await copy()) ? "Video copied" : "This browser can’t copy video; use Download",
+              )
+            }
+            className="flex h-8 items-center gap-1.5 rounded-[9px] bg-foreground px-3 text-[13px] font-medium text-background hover:bg-foreground/90"
+          >
+            <Icon name="copy" size={15} />
+            Copy video
+          </button>
+        </div>
+      </div>
+    </Sheet>
+  );
+}
+
+/** The done dialog's track: the film's own time, comment ticks and a playhead, no trims. */
+function FilmTrack({
+  duration,
+  t,
+  ticks,
+  onSeek,
+}: {
+  duration: number;
+  t: number;
+  ticks: number[];
+  onSeek: (s: number) => void;
+}) {
+  const line = useRef<HTMLDivElement>(null);
+  const at = (clientX: number) => {
+    const r = line.current!.getBoundingClientRect();
+    return Math.min(1, Math.max(0, (clientX - r.left) / r.width)) * duration;
+  };
+  return (
+    <div
+      ref={line}
+      role="slider"
+      aria-label="Seek"
+      aria-valuenow={t}
+      tabIndex={0}
+      className="relative h-10 cursor-pointer select-none rounded-[10px] bg-secondary"
+      onPointerDown={(e) => {
+        (e.target as Element).setPointerCapture(e.pointerId);
+        onSeek(at(e.clientX));
+        const move = (ev: PointerEvent) => onSeek(at(ev.clientX));
+        const up = () => {
+          window.removeEventListener("pointermove", move);
+          window.removeEventListener("pointerup", up);
+        };
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", up);
+      }}
+    >
+      <div
+        className="absolute inset-y-0 left-0 rounded-l-[10px] bg-foreground/[0.06]"
+        style={{ width: `${(t / Math.max(0.001, duration)) * 100}%` }}
+      />
+      {ticks.map((s) => (
+        <span
+          key={s}
+          className="absolute top-1.5 size-2 -translate-x-1/2 rounded-full bg-[#ffc81e] shadow-[0_0_0_1px_rgba(17,17,16,0.18)]"
+          style={{ left: `${(s / duration) * 100}%` }}
+        />
+      ))}
+      <span
+        className="pointer-events-none absolute -inset-y-1 w-[2px] -translate-x-1/2 rounded-full bg-foreground"
+        style={{ left: `${(t / Math.max(0.001, duration)) * 100}%` }}
+      />
+    </div>
+  );
+}
+
+function Toast({ text, onClose }: { text: string; onClose: () => void }) {
+  return (
+    <div
+      role="status"
+      className="fixed bottom-6 left-1/2 z-[60] flex h-10 -translate-x-1/2 items-center gap-3.5 rounded-xl bg-foreground pr-2 pl-3.5 text-[13px] text-home shadow-[0_1px_2px_rgba(0,0,0,0.06),0_8px_28px_rgba(0,0,0,0.1)]"
+    >
+      <span>{text}</span>
+      <button type="button" aria-label="Dismiss" onClick={onClose} className="px-1.5 opacity-70">
+        <Icon name="close" size={13} />
+      </button>
+    </div>
+  );
+}
