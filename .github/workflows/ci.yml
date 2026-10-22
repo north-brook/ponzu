@@ -8,7 +8,10 @@ on:
 permissions:
   contents: read
 
-# Merging into main requires every job here (ruleset "Protect main").
+# Merging into main requires (ruleset "Protect main") the commits, checks and
+# desktop package jobs. Each reports on every pull request: a suite a change
+# can't affect (scripts/ci/scope.ts) passes without doing its work, rather
+# than never reporting.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   # A newer push to a pull request supersedes the old head; main keeps every run.
@@ -48,6 +51,35 @@ jobs:
           TITLE: ${{ github.event.pull_request.title }}
           BODY: ${{ github.event.pull_request.body }}
 
+  scope:
+    # Which suites this pull request can affect (scripts/ci/scope.ts). A push
+    # to main runs everything. A suite whose scope is unknown runs: the jobs
+    # below skip only when this job answered false, so its failing never
+    # passes them.
+    name: Test scope
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    outputs:
+      desktop: ${{ steps.scope.outputs.desktop || 'true' }}
+      mobile: ${{ steps.scope.outputs.mobile || 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+        if: github.event_name == 'pull_request'
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: oven-sh/setup-bun@v2
+        if: github.event_name == 'pull_request'
+        with:
+          bun-version-file: package.json
+      - id: scope
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          bun scripts/ci/scope.ts "origin/$BASE_REF" > "$RUNNER_TEMP/scope"
+          tee -a "$GITHUB_OUTPUT" < "$RUNNER_TEMP/scope"
+
   test:
     name: Check, typecheck, test
     runs-on: blacksmith-8vcpu-ubuntu-2404
@@ -83,13 +115,14 @@ jobs:
           check() { name=$1; shift; { "$@" > "$RUNNER_TEMP/$name.log" 2>&1; echo $? > "$RUNNER_TEMP/$name.status"; } & }
           check lint bunx biome check .
           check typecheck bunx tsc -p tsconfig.json --noEmit
+          check typecheck-mobile bunx tsc -p apps/mobile/tsconfig.json --noEmit
           check typecheck-desktop bunx tsc -p apps/desktop/tsconfig.json --noEmit
           check studio bun run --filter @ponzu/studio build
           check web bun run --filter @ponzu/web build
           failed=0
           bun test --parallel || failed=1
           wait
-          for name in lint typecheck typecheck-desktop studio web; do
+          for name in lint typecheck typecheck-mobile typecheck-desktop studio web; do
             echo "::group::$name"
             cat "$RUNNER_TEMP/$name.log"
             echo "::endgroup::"
@@ -102,6 +135,66 @@ jobs:
 
   desktop:
     name: Desktop package
+    needs: scope
+    # Always reports, as the ruleset requires it; a change the package can't
+    # see (the phone, the site, prose) passes without building it.
+    if: ${{ !cancelled() }}
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 15
+    env:
+      RUN: ${{ needs.scope.outputs.desktop != 'false' }}
+    steps:
+      - name: Out of scope
+        if: env.RUN != 'true'
+        run: echo "This change can't affect the desktop package (scripts/ci/scope.ts)."
+      - uses: actions/checkout@v4
+        if: env.RUN == 'true'
+      - uses: oven-sh/setup-bun@v2
+        if: env.RUN == 'true'
+        with:
+          bun-version-file: package.json
+      - uses: actions/cache@v4
+        if: env.RUN == 'true'
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - uses: actions/cache@v4
+        if: env.RUN == 'true'
+        with:
+          path: ~/.cache/electron
+          key: electron-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: electron-${{ runner.os }}-
+      - run: bun install --frozen-lockfile
+        if: env.RUN == 'true'
+      - name: Xvfb, for the smoke test
+        if: env.RUN == 'true'
+        # Alongside the package. Most images already have it; the package
+        # index is refreshed only when the install can't find it.
+        run: |
+          command -v xvfb-run && exit 0
+          sudo apt-get install -y --no-install-recommends xvfb ||
+            { sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb; }
+      - name: Unsigned, unpublished package
+        if: env.RUN == 'true'
+        run: bun run package:dir
+        working-directory: apps/desktop
+      - name: The packaged app starts its server and paints the studio
+        if: env.RUN == 'true'
+        # A main process that fails to load hangs on Electron's error dialog
+        # and trips the timeout; a server or renderer failure exits 1. See
+        # src/smoke.ts. The release workflow runs the same check on the
+        # signed Mac build before publishing it.
+        run: PONZU_SMOKE=1 timeout 120 xvfb-run -a out/linux-unpacked/ponzu --no-sandbox
+        working-directory: apps/desktop
+
+  mobile-checks:
+    # The iPhone app on its own: its typecheck and tests (which "Check,
+    # typecheck, test" also runs, with everything), and an iOS export, which
+    # proves Metro, NativeWind and every import resolve without a Mac.
+    name: Mobile checks
+    needs: scope
+    if: ${{ !cancelled() && needs.scope.outputs.mobile != 'false' }}
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
     steps:
@@ -114,26 +207,51 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
-      - uses: actions/cache@v4
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bunx tsc -p apps/mobile/tsconfig.json --noEmit
+      - run: bun test apps/mobile
+      - name: The JavaScript bundle builds for iOS
+        run: bunx expo export --platform ios --output-dir "$RUNNER_TEMP/export"
+        working-directory: apps/mobile
+
+  mobile-ios:
+    # Maestro flows (apps/mobile/maestro) on the iOS Simulator, on the
+    # self-hosted Macs. Only pull requests from this repository: a fork's
+    # code never runs on them. A job no runner can take waits a day in the
+    # queue, so this one runs only once the repository variable MOBILE_IOS is
+    # "true", set when the spare-ios runners serve this repository.
+    name: Mobile iOS
+    needs: scope
+    if: >-
+      ${{ !cancelled() && github.event_name == 'pull_request'
+      && vars.MOBILE_IOS == 'true'
+      && needs.scope.outputs.mobile != 'false'
+      && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: [self-hosted, macOS, ARM64, spare-ios]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
         with:
-          path: ~/.cache/electron
-          key: electron-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-          restore-keys: electron-${{ runner.os }}-
-      - run: bun install --frozen-lockfile
-      - name: Xvfb, for the smoke test
-        # Alongside the package. Most images already have it; the package
-        # index is refreshed only when the install can't find it.
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Maestro flows
+        # The build and flow runner come in a later change; until then this
+        # only confirms the job reaches a Mac. See apps/mobile/maestro/README.md.
+        run: ls apps/mobile/maestro/*.yaml
+
+  mobile:
+    # One name for the phone's suites, which reports on every pull request:
+    # a part the change can't affect is skipped, and passes.
+    name: Mobile
+    needs: [scope, mobile-checks, mobile-ios]
+    if: ${{ !cancelled() }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    steps:
+      - env:
+          SCOPE: ${{ needs.scope.result }}
+          CHECKS: ${{ needs.mobile-checks.result }}
+          IOS: ${{ needs.mobile-ios.result }}
         run: |
-          command -v xvfb-run && exit 0
-          sudo apt-get install -y --no-install-recommends xvfb ||
-            { sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb; }
-      - name: Unsigned, unpublished package
-        run: bun run package:dir
-        working-directory: apps/desktop
-      - name: The packaged app starts its server and paints the studio
-        # A main process that fails to load hangs on Electron's error dialog
-        # and trips the timeout; a server or renderer failure exits 1. See
-        # src/smoke.ts. The release workflow runs the same check on the
-        # signed Mac build before publishing it.
-        run: PONZU_SMOKE=1 timeout 120 xvfb-run -a out/linux-unpacked/ponzu --no-sandbox
-        working-directory: apps/desktop
+          echo "scope: $SCOPE; checks: $CHECKS; iOS: $IOS"
+          [ "$SCOPE" = success ] && [[ "$CHECKS" =~ ^(success|skipped)$ ]] && [[ "$IOS" =~ ^(success|skipped)$ ]]

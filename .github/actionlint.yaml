@@ -1,6 +1,8 @@
 self-hosted-runner:
-  # Blacksmith runners, installed on the north-brook org.
+  # Blacksmith runners on the north-brook org, and the self-hosted Macs with
+  # iOS simulators (apps/mobile/maestro/README.md).
   labels:
     - blacksmith-2vcpu-ubuntu-2404
     - blacksmith-4vcpu-ubuntu-2404
     - blacksmith-8vcpu-ubuntu-2404
+    - spare-ios

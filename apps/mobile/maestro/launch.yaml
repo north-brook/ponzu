@@ -1,0 +1,12 @@
+appId: design.ponzu.app
+---
+# A fresh install opens on the launch screen: the slice on yuzu and the
+# wordmark, while Ponzu looks for a Mac.
+- launchApp:
+    clearState: true
+- assertVisible:
+    id: launch
+- extendedWaitUntil:
+    visible: ponzu
+    timeout: 5000
+- assertVisible: Ponzu
