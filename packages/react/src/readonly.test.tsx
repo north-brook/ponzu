@@ -54,3 +54,20 @@ test("a read-only canvas has no comment tool or new-page button", () => {
   expect(readOnly).toContain('aria-label="Zoom to fit"');
   expect(readOnly).toContain('aria-label="Hand"');
 });
+
+test("a host can pick the page", () => {
+  const d = doc();
+  const { artboard } = parseArtboardFile(
+    `<section data-artboard data-id="ab_b" data-name="Hero" style="width:400px;height:300px"></section>`,
+    { id: "ab_b", name: "Hero" },
+  );
+  d.pages.push({ id: "pg_b", name: "Website", artboards: [artboard] });
+  const source = new MemorySource(d);
+  const first = renderToStaticMarkup(<Canvas source={source} footer={false} />);
+  const second = renderToStaticMarkup(<Canvas source={source} footer={false} page="pg_b" />);
+  expect(first).toContain('data-artboard-host="ab_a"');
+  expect(second).toContain('data-artboard-host="ab_b"');
+  expect(second).not.toContain('data-artboard-host="ab_a"');
+  // Without the footer, no page tabs.
+  expect(second).not.toContain('aria-label="Pages"');
+});

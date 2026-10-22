@@ -49,6 +49,13 @@ export interface CanvasProps {
    * like one on GitHub. Default false.
    */
   readOnly?: boolean;
+  /**
+   * The page shown, for a host that picks pages itself (with `footer` off, say). Without it the
+   * canvas keeps its own, starting on the first.
+   */
+  page?: string;
+  /** Called whenever the canvas changes page: a tab, a shortcut, an agent's focus. */
+  onPageChange?: (id: string) => void;
   className?: string;
 }
 
@@ -83,13 +90,20 @@ export function Canvas({
   footer = true,
   footerExtra,
   readOnly = false,
+  page: pageProp,
+  onPageChange,
   className,
 }: CanvasProps) {
   // Read-only hides the controls that edit; this catches anything they missed.
   const source = useMemo(() => (readOnly ? viewOnly(given) : given), [given, readOnly]);
   const state = useSource(source);
   const doc = state.doc;
-  const [pageId, setPageId] = useState<string | null>(null);
+  const [ownPageId, setOwnPageId] = useState<string | null>(null);
+  const pageId = pageProp ?? ownPageId;
+  const setPageId = (id: string) => {
+    setOwnPageId(id);
+    onPageChange?.(id);
+  };
   const page = doc?.pages.find((p) => p.id === pageId) ?? doc?.pages[0];
   const [mode, setMode] = useState<Mode>("select");
   const space = useKeyHeld("Space");
