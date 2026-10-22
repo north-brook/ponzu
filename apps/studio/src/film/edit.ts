@@ -615,9 +615,17 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
       // Frame: the board whole if it reads, else everything that changed, never cutting text.
       // A fix is framed on what it answers: the commented subject and the changes in it.
       // The comments read out in the turn this answers, on this board: the shot is about them.
-      const turnOf = story.find(
-        (x): x is Extract<Moment, { kind: "turn" }> => x.kind === "turn" && x.round === m.answers,
-      );
+      // The beat of that turn whose card is on this board (a turn is told a card at a time).
+      const turnOf =
+        story.find(
+          (x): x is Extract<Moment, { kind: "turn" }> =>
+            x.kind === "turn" &&
+            x.round === m.answers &&
+            x.comments.some((c) => x.featured?.includes(c.thread) && c.board === m.board),
+        ) ??
+        story.find(
+          (x): x is Extract<Moment, { kind: "turn" }> => x.kind === "turn" && x.round === m.answers,
+        );
       const readOut = (turnOf?.featured ?? [])
         .map((id) => turnOf!.comments.find((c) => c.thread === id))
         .filter((c) => c?.board === m.board)
@@ -759,29 +767,31 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
           if (!b) continue;
           const bH = endHeights.get(b.id) ?? 900;
           const bw = artboardSize(b).w;
-          let r: Rect = { x: 0, y: 0, w: bw, h: Math.min(bH, (bw * view.h) / view.w) };
-          if (view.h > view.w && bw > 700) {
-            const host = await lab.show(endDocOfBuild, b, 1);
-            const top = lab.texts(host).filter((t) => t.y < 900 && t.w > t.h);
-            const most = Math.max(0, ...top.map((t) => t.h));
-            const head = union(top.filter((t) => t.h >= most * 0.7));
-            if (head) {
-              const w = Math.min(bw, Math.max(head.w + 96, 480));
-              const x = Math.max(0, Math.min(bw - w, head.x + head.w / 2 - w / 2));
-              r = { x, y: 0, w, h: Math.min(bH, (w * view.h) / view.w) };
-            }
-          }
+          // The whole board when it reads at this shape; else its full width from the top, so
+          // the build shows the board, never a slice of it. A phone screen fills the frame.
+          const fitW = (view.w - 2 * framing.pad) / bw;
+          const fitH = (view.h - 2 * framing.pad - framing.top) / bH;
+          const r: Rect =
+            Math.min(fitW, fitH) >= framing.minZoom * 0.9
+              ? { x: 0, y: 0, w: bw, h: bH }
+              : {
+                  x: 0,
+                  y: 0,
+                  w: bw,
+                  h: Math.min(
+                    bH,
+                    (bw * (view.h - 2 * framing.pad - framing.top)) / (view.w - 2 * framing.pad),
+                  ),
+                };
           const rect = offset(r, b);
           buildCams.set(
             st.board,
             frameFocus(
               {
                 page: findArtboard(endDocOfBuild, b.id)!.page.id,
-                board: boardRect(b, endHeights),
-                detail: rect,
-                parts: [rect],
+                board: rect,
+                overview: true,
                 texts: await textsOf(endDocOfBuild, [b]),
-                keep: rect,
                 key: b.id,
               },
               view,
@@ -1030,11 +1040,20 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
       (view.h - 2 * framing.pad - framing.top) / fixedAll.h,
     ) >=
       framing.minZoom * (view.h > view.w ? 0.9 : 0.8);
+  // The reveal: a long film ends on everything that was made on the page, together (a reveal, not
+  // a read, so it may be small); a short one on its board, whole.
+  const revealAll = input.length > 15 && pageAll !== undefined;
   const wholeCam = heroAb
     ? frameFocus(
         {
           page: findArtboard(endDoc, heroAb.id)!.page.id,
-          board: fixedReads ? fixedAll! : readsTogether ? pageAll! : boardRect(heroAb, endHeights),
+          board: revealAll
+            ? pageAll!
+            : fixedReads
+              ? fixedAll!
+              : readsTogether
+                ? pageAll!
+                : boardRect(heroAb, endHeights),
           overview: true,
           texts: await textsOf(endDoc, pageBoards(endDoc, heroAb.id)),
         },
@@ -1048,6 +1067,7 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
   const payoffCam = payoff?.cams[0];
   // A long film pulls back to show the result whole, when whole still reads at all.
   const pullback =
+    revealAll ||
     fixedReads ||
     (input.length > 15 &&
       wholeCam.zoom >= (view.h > view.w ? framing.comfort * 0.5 : framing.minZoom * 0.95));
@@ -1086,21 +1106,23 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
         heroAb && (resultCam === wholeCam || view.h > view.w)
           ? resultCam !== wholeCam
             ? [endBoard ?? heroAb.id]
-            : fixedReads
-              ? pageBoards(endDoc, heroAb.id)
-                  .filter((ab) => {
-                    const r = boardRect(ab, endHeights);
-                    return (
-                      r.x < fixedAll!.x + fixedAll!.w &&
-                      r.x + r.w > fixedAll!.x &&
-                      r.y < fixedAll!.y + fixedAll!.h &&
-                      r.y + r.h > fixedAll!.y
-                    );
-                  })
-                  .map((ab) => ab.id)
-              : readsTogether
-                ? pageBoards(endDoc, heroAb.id).map((ab) => ab.id)
-                : [heroAb.id]
+            : revealAll
+              ? pageBoards(endDoc, heroAb.id).map((ab) => ab.id)
+              : fixedReads
+                ? pageBoards(endDoc, heroAb.id)
+                    .filter((ab) => {
+                      const r = boardRect(ab, endHeights);
+                      return (
+                        r.x < fixedAll!.x + fixedAll!.w &&
+                        r.x + r.w > fixedAll!.x &&
+                        r.y < fixedAll!.y + fixedAll!.h &&
+                        r.y + r.h > fixedAll!.y
+                      );
+                    })
+                    .map((ab) => ab.id)
+                : readsTogether
+                  ? pageBoards(endDoc, heroAb.id).map((ab) => ab.id)
+                  : [heroAb.id]
           : [],
     },
     first: { doc: firstDoc, heights: firstHeights },

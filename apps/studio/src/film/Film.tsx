@@ -39,7 +39,10 @@ import type { Edit, Scene } from "./edit.ts";
 import { pinSpot, schemeFor } from "./model.ts";
 
 const PIN_IN = 0.32;
-const PIN_OUT = 0.3;
+/** How far a film's pin sits up and right of its spot, in film px. */
+const PIN_NUDGE = 11;
+/** A resolved pin: pops to a check, holds, then shrinks away. */
+const RESOLVE = 0.95;
 
 type FilmModel = Edit;
 
@@ -261,37 +264,44 @@ function promptState(span: { start: number; end: number }, f: number) {
   const d = span.end - span.start;
   const t = f - span.start;
   return {
-    typed: progress(t, 0.15, d * 0.52, (x) => x),
-    sent: progress(t, d * 0.66, d * 0.66 + 0.18, ease.out),
-    out: progress(t, d - 0.42, d, ease.in),
+    typed: progress(t, 0.1, d * 0.46, (x) => x),
+    sent: progress(t, d * 0.52, d * 0.52 + 0.18, ease.out),
+    out: progress(t, d - 0.38, d, ease.in),
   };
 }
 
-/** When each build step lands. A move to another board waits for the camera to get there. */
+/** Between boards in the build: a short glide. */
+const BUILD_GLIDE = 0.55;
+/** After a board's last piece has risen, a beat to see it whole before the camera moves on. */
+const BUILD_REST = 0.45;
+
+/**
+ * When each build step lands. Each board's writes come quicker as it fills; it's finished (its
+ * last piece fully risen) and rests a beat before the camera leaves for the next.
+ */
 function buildTimes(scene: Scene): number[] {
   const steps = scene.build ?? [];
   const s = scene.shot;
-  const GLIDE = 0.7;
-  const moves = steps.filter((st, i) => i > 0 && st.board !== steps[i - 1]!.board).length;
-  const span = Math.max(0.5, s.changed - s.change - ARRIVE_MS / 1000 - moves * GLIDE);
-  // Per board, its writes accelerate: patient at first, brisk by the end.
+  const rise = ARRIVE_MS / 1000;
   const runs: number[][] = [];
   steps.forEach((st, i) => {
     if (i === 0 || st.board !== steps[i - 1]!.board) runs.push([]);
     runs.at(-1)!.push(i);
   });
+  // Each run ends with its last rise and a rest; then a glide to the next.
+  const overhead = runs.length * (rise + BUILD_REST) + (runs.length - 1) * BUILD_GLIDE;
+  const span = Math.max(0.4 * runs.length, s.changed - s.change - overhead);
+  // The first board is where the viewer learns what's happening: it gets more time.
+  const weight = (i: number, n: number) => (i === 0 ? n * 1.6 + 1 : n + 1);
+  const total = runs.reduce((a, x, i) => a + weight(i, x.length), 0);
   const out: number[] = [];
   let t = s.change;
   for (const [r, run] of runs.entries()) {
-    if (r > 0) t += GLIDE;
-    // The first board is where the viewer learns what's happening: it gets more time.
-    const weight = (i: number, n: number) => (i === 0 ? n * 1.7 : n);
-    const total = runs.reduce((a, x, i) => a + weight(i, x.length), 0);
     const share = (span * weight(r, run.length)) / total;
     run.forEach((_, j) => {
-      out.push(t + share * (j / run.length) ** 1.35);
+      out.push(t + share * (run.length > 1 ? (j / (run.length - 1)) ** 1.35 : 0));
     });
-    t += share;
+    t += share + rise + BUILD_REST + BUILD_GLIDE;
   }
   return out;
 }
@@ -300,21 +310,21 @@ function buildTimes(scene: Scene): number[] {
 function buildCam(e: Edit, scene: Scene, f: number, times: number[]): Cam {
   const steps = scene.build!;
   const cams = scene.buildCams!;
-  const GLIDE = 0.7;
   let k = 0;
   while (k + 1 < steps.length && times[k + 1]! <= f) k++;
   const here = cams.get(steps[k]!.board) ?? scene.cams[0]!;
-  // The next write is on another board: glide there in the gap before it.
-  const next = steps[k + 1];
-  if (next && next.board !== steps[k]!.board && f > times[k + 1]! - GLIDE) {
-    const to = cams.get(next.board) ?? here;
-    const p = ease.inOut(clamp01((f - (times[k + 1]! - GLIDE)) / GLIDE));
-    return here.page === to.page ? flyTo(here, to, p, e.view) : p < 0.5 ? here : to;
-  }
   // At rest, a slow lean in, so the build never sits still.
   const run0 = steps.findIndex((st) => st.board === steps[k]!.board);
-  const lean = 1 + 0.025 * progress(f, times[run0]!, times[run0]! + 4, ease.inOut);
-  return { ...here, zoom: here.zoom * lean };
+  const leanAt = (t: number) => 1 + 0.025 * progress(t, times[run0]!, times[run0]! + 4, ease.inOut);
+  // The next write is on another board: glide there in the gap just before it lands.
+  const next = steps[k + 1];
+  if (next && next.board !== steps[k]!.board && f > times[k + 1]! - BUILD_GLIDE) {
+    const from = { ...here, zoom: here.zoom * leanAt(times[k + 1]! - BUILD_GLIDE) };
+    const to = cams.get(next.board) ?? here;
+    const p = ease.inOut(clamp01((f - (times[k + 1]! - BUILD_GLIDE)) / BUILD_GLIDE));
+    return from.page === to.page ? flyTo(from, to, p, e.view) : p < 0.5 ? from : to;
+  }
+  return { ...here, zoom: here.zoom * leanAt(f) };
 }
 
 const findNodeIn = (doc: Doc, id: string) =>
@@ -345,10 +355,9 @@ function workFrame(e: Edit, scene: Scene, f: number): Frame {
     const leaving = (scene.resolves ?? [])
       .map((id) => scene.before.threads.find((t) => t.id === id))
       .filter((t): t is Thread => Boolean(t));
-    // Resolved: a check for a beat, then it leaves.
-    // Off before the result holds, so the check never sits over the corrected piece.
-    const p = clamp01((f - s.change - 0.3) / PIN_OUT);
-    if (p < 1) out.pinsOut = leaving.map((thread) => ({ thread, p: ease.in(p) }));
+    // Resolved: as the change settles the pin pops to a check, holds a beat, then shrinks away.
+    const p = clamp01((f - s.change - 0.35) / RESOLVE);
+    if (p < 1) out.pinsOut = leaving.map((thread) => ({ thread, p }));
   }
   // The last fix: once it's landed, the boards around it fade, so the result stands alone.
   if (scene === e.scenes.at(-1) && scene.board && e.result.boards.includes(scene.board))
@@ -631,8 +640,14 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
             })),
             ...(fr.pinsOut ?? []).map(({ thread, p }) => ({
               t: thread,
-              scale: 1 - 0.7 * p,
-              opacity: 1 - p,
+              // A pop past full size, a hold, then away.
+              scale:
+                p < 0.25
+                  ? 1 + 0.32 * ease.out(p / 0.25)
+                  : p < 0.6
+                    ? 1.32 - 0.12 * ease.inOut((p - 0.25) / 0.35)
+                    : 1.2 * (1 - 0.75 * ease.in((p - 0.6) / 0.4)),
+              opacity: 1 - progress(p, 0.7, 1, ease.in),
               popping: false,
               done: true,
             })),
@@ -650,7 +665,10 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
                   : 1.14 - 0.14 * ease.inOut((p - 0.55) / 0.45);
               opacity = clamp01(p * 3);
             }
-            const sp = toScreen(spot.x, spot.y);
+            // Just up and right of the spot, so the pin points at what it's about without
+            // sitting on it (a pin on a headline reads as a stray letter).
+            const at = toScreen(spot.x, spot.y);
+            const sp = { x: at.x + PIN_NUDGE, y: at.y - PIN_NUDGE };
             const card = fr.card?.thread.id === t.id ? fr.card : undefined;
             return (
               <div
@@ -687,7 +705,7 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
                     className="pz-film-card"
                     style={{
                       // Read on a phone: the real card, a little larger than in the studio.
-                      zoom: view.w > view.h ? 1.5 : 1.22,
+                      zoom: view.w > view.h ? 1.75 : 1.6,
                     }}
                   >
                     <ThreadCard
@@ -1034,9 +1052,10 @@ function Prompt({
   const { view } = model;
   const text = model.prompt!.text;
   const tall = view.h > view.w;
-  const k = tall ? 1.18 : 1.08;
+  // Read on a phone: the frame shows at about 390px wide, so the words are set large.
+  const k = tall ? 1.55 : 1.6;
   const n = Math.round(text.length * state.typed);
-  const w = Math.min(view.w - 48, tall ? view.w - 40 : 620);
+  const w = Math.min(view.w - 40, tall ? view.w - 36 : 760);
   const sentAt = state.sent;
   // Sent: the message lifts into place above the composer, and the agent starts.
   const lift = ease.out(sentAt);
@@ -1044,7 +1063,7 @@ function Prompt({
     <div
       className="pz:pointer-events-none pz:absolute pz:inset-0 pz:z-[6] pz:flex pz:flex-col pz:items-center pz:justify-end"
       style={{
-        paddingBottom: tall ? 64 : 44,
+        paddingBottom: tall ? 120 : 56,
         opacity: 1 - state.out,
         filter: state.out > 0 ? `blur(${state.out * 4}px)` : undefined,
         translate: `0 ${-state.out * 14}px`,

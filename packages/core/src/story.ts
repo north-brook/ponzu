@@ -226,8 +226,8 @@ export const SHOT = {
   hold: 0.65,
   /** A comment landing, read. */
   comment: 1.35,
-  /** The end card. */
-  end: 1.6,
+  /** The end card: long enough to read ponzu.design. */
+  end: 2.1,
   /** The last look at the result: a short glide, then a still hold. */
   result: 2.2,
   /** The first frame, before anything moves. */
@@ -236,8 +236,8 @@ export const SHOT = {
   build: 4.2 as number,
   /** A short film's opening build. */
   buildShort: 2.4 as number,
-  /** The prompt the film opens on, typed into the agent's chat and sent. */
-  prompt: 2.3 as number,
+  /** The prompt the film opens on, typed into the agent's chat and sent, then a beat of the agent. */
+  prompt: 2.9 as number,
 };
 
 /**
@@ -262,7 +262,10 @@ export function commentTime(words: number, length: number): number {
 export function cardTime(words: number, length: number): number {
   const arrive = COMMENT_IN.cursor + COMMENT_IN.click + COMMENT_IN.open;
   // A short film can't afford the whole arrival: the cursor's glide is shortened, never the read.
-  return (length <= 15 ? arrive * 0.75 : arrive) + typeTime(words) + commentTime(words, length);
+  // The words are read as they type in: the hold after is what's left of the read, and a beat.
+  const typing = typeTime(words);
+  const after = Math.max(1.2, commentTime(words, length) - typing * 0.8);
+  return (length <= 15 ? arrive * 0.75 : arrive) + typing + after;
 }
 
 /**
@@ -372,21 +375,35 @@ export function chooseStory(all: Moment[], looks: Map<Moment, Look>, opts: Story
   const out = all
     .filter((m) => picked.has(m))
     .map((m) => (m.kind === "turn" ? { ...m, featured: featured.get(m) ?? [] } : m));
-  // The agent answers in the order you asked: each fix follows its card's place in the turn.
+  // One question, one answer: a turn with several cards read out becomes a beat per card, each
+  // followed straight away by its fix, in the order asked. The viewer never holds a comment in
+  // mind while another is read. (Pins for the rest of the turn land with the first card.)
+  const told: Moment[] = [];
   for (let i = 0; i < out.length; i++) {
     const t = out[i]!;
-    if (t.kind !== "turn") continue;
-    const asked = t.comments.filter((c) => t.featured?.includes(c.thread)).map((c) => c.board);
+    if (t.kind !== "turn") {
+      told.push(t);
+      continue;
+    }
     let j = i + 1;
     while (j < out.length && out[j]!.kind === "work") j++;
-    const fixes = out.slice(i + 1, j);
-    const rank = (m: Moment) => {
-      const n = m.kind === "work" ? asked.indexOf(m.board) : -1;
-      return n < 0 ? asked.length : n;
-    };
-    out.splice(i + 1, fixes.length, ...[...fixes].sort((a, b) => rank(a) - rank(b)));
+    const fixes = out.slice(i + 1, j) as Extract<Moment, { kind: "work" }>[];
+    const cards = t.comments.filter((c) => t.featured?.includes(c.thread));
+    const used = new Set<Moment>();
+    cards.forEach((c, n) => {
+      const others = n === 0 ? t.comments.filter((x) => !t.featured?.includes(x.thread)) : [];
+      told.push({ ...t, comments: [...others, c], featured: [c.thread] });
+      const fix = fixes.find((w) => !used.has(w) && w.board === c.board);
+      if (fix) {
+        used.add(fix);
+        told.push(fix);
+      }
+    });
+    if (!cards.length) told.push(t);
+    for (const w of fixes) if (!used.has(w)) told.push(w);
+    i = j - 1;
   }
-  return out;
+  return told;
 }
 
 /* ------------------------------------------------------------------ */
@@ -496,7 +513,8 @@ export function timeline(
   // The opening build is the first act: the board filling in, write by write.
   const first = raw[0];
   if (first && first.m.kind === "work" && first.m.answers === undefined) {
-    first.settle = 0.2;
+    // Straight from the prompt into the first pieces: no beat of empty canvas.
+    first.settle = 0;
     first.change = opts.length <= 15 ? SHOT.buildShort : SHOT.build;
   }
   const lead = opts.prompt ? SHOT.prompt : 0;
@@ -519,8 +537,8 @@ export function timeline(
     let spare = room - used;
     // The build is the magic: it takes spare time first, up to a calm pace for its length.
     if (first && first.m.kind === "work" && first.m.answers === undefined) {
-      const most = opts.length <= 15 ? 3.2 : opts.length <= 30 ? 6.5 : 11;
-      const extra = Math.max(0, Math.min(spare * 0.5, most - first.change));
+      const most = opts.length <= 15 ? 4.6 : opts.length <= 30 ? 11 : 20;
+      const extra = Math.max(0, Math.min(spare, most - first.change));
       first.change += extra;
       spare -= extra;
     }
