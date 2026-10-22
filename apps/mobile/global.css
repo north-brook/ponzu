@@ -1,0 +1,68 @@
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/preflight.css" layer(base);
+@import "tailwindcss/utilities.css";
+
+@import "nativewind/theme";
+
+/*
+ * The design's tokens (tokens.css in the iPhone design). lib/tokens.ts holds
+ * the same values for code that needs a literal; tokens.test.ts keeps them
+ * equal. Surfaces follow the system's light and dark.
+ */
+:root {
+  --c-bg: #faf9f6;
+  --c-canvas: #f4f3ef;
+  --c-card: #ffffff;
+  --c-ink: #111110;
+  --c-muted: #5e5b54;
+  --c-faint: #a9a59b;
+  --c-chip: #e8e6e0;
+  --c-hairline: rgba(17, 17, 16, 0.08);
+  --c-bar: rgba(250, 250, 249, 0.8);
+  --c-pin-soft: #fff4d1;
+  --c-yuzu-text: #7a4f00;
+
+  @media (prefers-color-scheme: dark) {
+    --c-bg: #0e0e0d;
+    --c-canvas: #121211;
+    --c-card: #1b1b1a;
+    --c-ink: #f4f3ef;
+    --c-muted: #a9a59b;
+    --c-faint: #6b6862;
+    --c-chip: #262523;
+    --c-hairline: rgba(255, 255, 255, 0.1);
+    --c-bar: rgba(28, 28, 28, 0.8);
+    --c-pin-soft: #2e2a1c;
+    --c-yuzu-text: #ffc81e;
+  }
+}
+
+/*
+ * Class names: brand colors as `bg-yuzu`, `text-ink`; surfaces keep the
+ * design's names, `bg-c-bg`, `text-c-muted`, `border-c-hairline`. Inline, so
+ * each class reads the light or dark variable above at runtime.
+ */
+@theme inline {
+  --color-yuzu: #ffc81e;
+  --color-ink: #111110;
+  --color-rind: #7a4f00;
+  --color-pith: #fff4d1;
+
+  --color-c-bg: var(--c-bg);
+  --color-c-canvas: var(--c-canvas);
+  --color-c-card: var(--c-card);
+  --color-c-ink: var(--c-ink);
+  --color-c-muted: var(--c-muted);
+  --color-c-faint: var(--c-faint);
+  --color-c-chip: var(--c-chip);
+  --color-c-hairline: var(--c-hairline);
+  --color-c-bar: var(--c-bar);
+  --color-c-pin-soft: var(--c-pin-soft);
+  --color-c-yuzu-text: var(--c-yuzu-text);
+
+  --font-sans: Inter;
+  --font-display: "Funnel Display";
+  --font-mono: "IBM Plex Mono";
+
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+}

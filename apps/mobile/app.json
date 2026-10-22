@@ -1,0 +1,93 @@
+{
+  "expo": {
+    "name": "Ponzu",
+    "slug": "ponzu",
+    "owner": "north-brook",
+    "version": "0.1.0",
+    "scheme": "ponzu",
+    "platforms": ["ios"],
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
+    "backgroundColor": "#ffc81e",
+    "experiments": {
+      "typedRoutes": true
+    },
+    "ios": {
+      "bundleIdentifier": "design.ponzu.app",
+      "appleTeamId": "R9352YFQL4",
+      "supportsTablet": false,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocalNetworkUsageDescription": "Ponzu looks for Macs running Ponzu on this Wi-Fi, so you don't have to scan a code.",
+        "NSBonjourServices": ["_ponzu._tcp"],
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true,
+          "NSExceptionDomains": {
+            "ts.net": {
+              "NSIncludesSubdomains": true,
+              "NSExceptionAllowsInsecureHTTPLoads": true
+            }
+          }
+        }
+      }
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-font",
+        {
+          "ios": {
+            "fonts": [
+              "./node_modules/@expo-google-fonts/inter/400Regular/Inter_400Regular.ttf",
+              "./node_modules/@expo-google-fonts/inter/500Medium/Inter_500Medium.ttf",
+              "./node_modules/@expo-google-fonts/inter/600SemiBold/Inter_600SemiBold.ttf",
+              "./node_modules/@expo-google-fonts/inter/700Bold/Inter_700Bold.ttf",
+              "./node_modules/@expo-google-fonts/funnel-display/700Bold/FunnelDisplay_700Bold.ttf",
+              "./node_modules/@expo-google-fonts/ibm-plex-mono/400Regular/IBMPlexMono_400Regular.ttf",
+              "./node_modules/@expo-google-fonts/ibm-plex-mono/500Medium/IBMPlexMono_500Medium.ttf"
+            ]
+          }
+        }
+      ],
+      "expo-image",
+      "expo-status-bar",
+      "expo-system-ui",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "imageWidth": 112,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffc81e"
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Ponzu uses the camera to scan the pairing code on your Mac.",
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "speechRecognitionPermission": "Ponzu turns what you say into comment text, on this iPhone.",
+          "microphonePermission": "Ponzu listens while you dictate a comment, and turns it into text on this iPhone."
+        }
+      ],
+      "expo-notifications"
+    ],
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "67e319ee-49ff-45aa-8029-28c78f63041e"
+      }
+    },
+    "updates": {
+      "url": "https://u.expo.dev/67e319ee-49ff-45aa-8029-28c78f63041e"
+    }
+  }
+}
