@@ -30,7 +30,8 @@ export const orientTools = [
       const { ws } = ctx;
       const { key, design } = await resolveFile(ctx, file);
       const doc = design.doc;
-      const lines = [docSummary(doc, { folderOf: (id) => design.folderOf(id) }), `Path: ${key}`];
+      const folders = design.pageFolders();
+      const lines = [docSummary(doc, { folderOf: (id) => folders.get(id) }), `Path: ${key}`];
       const tokens = parseTokens(doc.tokens);
       if (tokens.length) {
         const limit = 40;

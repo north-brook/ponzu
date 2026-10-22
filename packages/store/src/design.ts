@@ -286,12 +286,17 @@ export class Design {
   }
 
   /**
-   * The folder a page's artboard files live in, relative to the design root.
+   * Page id → the folder its artboard files live in, relative to the design root.
    * Follows from the page list alone, so it's right even before a rename is saved.
    */
+  pageFolders(): Map<string, string> {
+    const folders = pageFolders(this.doc.pages);
+    return new Map(this.doc.pages.map((p, i) => [p.id, `pages/${folders[i]}/`]));
+  }
+
+  /** One page's folder: see `pageFolders`. */
   folderOf(pageId: string): string | undefined {
-    const i = this.doc.pages.findIndex((p) => p.id === pageId);
-    return i < 0 ? undefined : `pages/${pageFolders(this.doc.pages)[i]}/`;
+    return this.pageFolders().get(pageId);
   }
 
   private async onOutsideChange(paths: string[]): Promise<void> {
