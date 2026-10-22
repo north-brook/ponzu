@@ -5,6 +5,7 @@ import {
   compactionPoint,
   compactJournal,
   type Doc,
+  intentLine,
   JOURNAL_FILE,
   JOURNAL_LIMIT,
   type JournalEntry,
@@ -71,6 +72,12 @@ export class JournalWriter {
       offOp();
       offReset();
     };
+  }
+
+  /** What the person asked for, in a line an agent distilled. */
+  intent(text: string, origin: JournalOrigin) {
+    const line = intentLine(text, origin, this.now);
+    this.run(() => this.append(line));
   }
 
   /** Everything written so far is on disk. */

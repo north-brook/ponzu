@@ -35,6 +35,8 @@ export interface Workspace {
   telemetry?: Telemetry;
   /** Make a timelapse film of a design's history. Hosts without a film page leave it out. */
   timelapse?(key: string, req: TimelapseRequest): Promise<TimelapseResult>;
+  /** Keep what the person asked for, as an agent distilled it, in the design's history. */
+  intent?(key: string, text: string, origin: Author): void;
 }
 
 export interface TimelapseRequest {

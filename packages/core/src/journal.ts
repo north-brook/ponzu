@@ -16,7 +16,12 @@ export type JournalOrigin = Origin & { client?: string };
 
 export type JournalEntry =
   | { v: 1; t: number; kind: "checkpoint"; doc: Doc }
-  | { v: 1; t: number; kind: "op"; op: Op; origin: JournalOrigin; artboards: string[] };
+  | { v: 1; t: number; kind: "op"; op: Op; origin: JournalOrigin; artboards: string[] }
+  /**
+   * What the person asked for, in a line the agent distilled: a timelapse opens on it. An agent
+   * says it with set_status when it takes on a request.
+   */
+  | { v: 1; t: number; kind: "intent"; text: string; origin: JournalOrigin };
 
 export type OpEntry = Extract<JournalEntry, { kind: "op" }>;
 
@@ -28,6 +33,28 @@ export function opLine(op: Op, origin: JournalOrigin, artboards: string[], t = D
   const o: JournalOrigin = { kind: origin.kind, name: origin.name };
   if (origin.client) o.client = origin.client;
   return `${JSON.stringify({ v: 1, t, kind: "op", op, origin: o, artboards } satisfies JournalEntry)}\n`;
+}
+
+export function intentLine(text: string, origin: JournalOrigin, t = Date.now()): string {
+  const o: JournalOrigin = { kind: origin.kind, name: origin.name };
+  if (origin.client) o.client = origin.client;
+  return `${JSON.stringify({ v: 1, t, kind: "intent", text, origin: o } satisfies JournalEntry)}\n`;
+}
+
+/** The longest intent a film shows: one line, read at a glance. */
+export const INTENT_MAX = 140;
+
+/** An agent may say what it's taking on a little before its first edit lands. */
+const INTENT_LEAD = 10 * 60_000;
+
+/**
+ * The request a stretch of history opens on: the first intent said in it, or just before it
+ * began. One said in an earlier session is about other work. Null when none was said.
+ */
+export function intentFor(entries: JournalEntry[], from: number, to: number): string | null {
+  for (const e of entries)
+    if (e.kind === "intent" && e.t >= from - INTENT_LEAD && e.t <= to) return e.text;
+  return null;
 }
 
 /**
@@ -55,6 +82,7 @@ function isEntry(e: unknown): e is JournalEntry {
   if (x.v !== 1 || typeof x.t !== "number") return false;
   if (x.kind === "checkpoint") return Boolean(x.doc && typeof x.doc === "object");
   if (x.kind === "op") return Boolean(x.op && x.origin && Array.isArray(x.artboards));
+  if (x.kind === "intent") return typeof x.text === "string" && Boolean(x.origin);
   return false;
 }
 

@@ -251,6 +251,13 @@ export class LocalWorkspace implements Workspace {
     await this.journalFlushed(key);
   }
 
+  intent(key: string, text: string, origin: { kind: "user" | "agent"; name: string }) {
+    const journal = this.entries.get(this.keyOf(key))?.journal;
+    if (!journal) return;
+    const o = { ...origin, client: this.clientOf(origin) };
+    journal.intent(text, o.client ? o : origin);
+  }
+
   /** Everything this design's journal has been told is on disk. */
   async journalFlushed(key: string): Promise<void> {
     await this.entries.get(this.keyOf(key))?.journal?.flush();

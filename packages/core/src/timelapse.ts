@@ -89,7 +89,7 @@ export function noteBoards(entries: JournalEntry[]): Set<string> {
   for (const e of entries) {
     if (e.kind === "checkpoint")
       for (const p of e.doc.pages) for (const ab of p.artboards) see(ab.id, ab.name);
-    else walk(e.op);
+    else if (e.kind === "op") walk(e.op);
   }
   return out;
 }
