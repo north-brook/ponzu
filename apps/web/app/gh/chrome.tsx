@@ -1,6 +1,8 @@
+import { targetPath } from "@ponzu/core/github";
+import { Icon as PageIcon } from "@ponzu/react/icons";
 import type { ReactNode, SVGProps } from "react";
 import { GitHub, Slice } from "@/components/icons";
-import { CopyBlock, CopyButton, CopyText } from "./copy";
+import { CopyButton, CopyCommand } from "./copy";
 import type { ListedDesign, RepoInfo, ViewerErrorKind } from "./github";
 import { type Repo, viewerPath } from "./target";
 
@@ -21,12 +23,13 @@ export function badgeMarkdown(repo: Repo, path = "", name?: string): string {
   return `[![${name ?? "open in"} | Ponzu](${src})](${SITE}${viewerPath(repo, path)})`;
 }
 
-/** Shell commands that open a design from the repo in Ponzu locally, one per line. */
-export function localCommands(repo: RepoInfo, ref: string | null, path: string): string {
-  const lines = [`git clone ${repo.url}`, `cd ${repo.repo}`];
-  if (ref) lines.push(`git checkout ${ref}`);
-  lines.push(`bunx ponzu serve ${/[\s'"$`\\]/.test(path) ? `'${path}'` : path}`);
-  return lines.join("\n");
+/**
+ * The command that clones the repo and opens the design in Ponzu: `ponzu open` takes the viewer's
+ * own path. Every segment is percent-encoded down to `[A-Za-z0-9_.~%-]`, so a ref or folder name
+ * can't smuggle shell syntax into what people paste.
+ */
+export function openCommand(repo: Repo, path: string): string {
+  return `bunx ponzu open ${targetPath(repo, path)}`;
 }
 
 const pill =
@@ -36,31 +39,56 @@ interface Crumb {
   label: string;
   href?: string;
   title?: string;
+  /** A design: a file icon before its name. */
+  file?: boolean;
 }
 
 /**
  * The bar over every viewer page: the slice home, `owner / repo / Design`, then GitHub as an icon
- * and the one primary action. A ref named in the URL rides on the repo, as `repo@ref`.
+ * and the one primary action. A ref named in the URL rides on the repo, as `repo@ref`. On a phone
+ * it's the slice, the last crumb, `mobile` (a design's page picker) and GitHub, nothing else.
  */
 export function TopBar({
   crumbs,
   githubUrl,
+  mobile,
   children,
 }: {
   /** From the owner down; the last is where you are. */
   crumbs: Crumb[];
   githubUrl?: string;
+  /** Shown after the last crumb on a phone only. */
+  mobile?: ReactNode;
+  /** Shown from tablet width up. */
   children?: ReactNode;
 }) {
   return (
-    <header className="flex h-[52px] shrink-0 items-center gap-1.5 border-b border-rule bg-ground pr-3 pl-[18px] text-sm">
-      <a href="/" className="mr-3 flex shrink-0 items-center" aria-label="Ponzu">
+    <header className="flex h-[52px] shrink-0 items-center gap-1.5 border-b border-rule bg-ground pr-3 pl-[18px] text-sm max-sm:gap-0 max-sm:pr-2.5">
+      <a href="/" className="mr-3 flex shrink-0 items-center max-sm:mr-3.5" aria-label="Ponzu">
         <Slice size={22} />
       </a>
-      <nav className="flex min-w-0 items-center gap-2 whitespace-nowrap" aria-label="Breadcrumb">
+      <nav
+        className="flex min-w-0 items-center gap-2 whitespace-nowrap max-sm:flex-1"
+        aria-label="Breadcrumb"
+      >
         {crumbs.map((c, i) => {
           const last = i === crumbs.length - 1;
-          const cls = last ? "truncate font-semibold text-ink" : "shrink-0 text-muted";
+          const cls = last
+            ? "flex min-w-0 items-center gap-[7px] font-semibold text-ink max-sm:text-[15px]"
+            : "shrink-0 text-muted";
+          const label = (
+            <>
+              {c.file ? (
+                <PageIcon
+                  name="blank"
+                  size={15}
+                  strokeWidth={1.5}
+                  className="shrink-0 text-muted max-sm:hidden"
+                />
+              ) : null}
+              <span className="truncate">{c.label}</span>
+            </>
+          );
           return (
             // On a phone only the last crumb shows; the rest are a tap away on GitHub.
             <span key={c.label} className={last ? "contents" : "contents max-sm:hidden"}>
@@ -71,21 +99,22 @@ export function TopBar({
               ) : null}
               {c.href && !last ? (
                 <a className={`${cls} hover:text-ink`} href={c.href} title={c.title}>
-                  {c.label}
+                  {label}
                 </a>
               ) : (
                 <span className={cls} title={c.title} aria-current={last ? "page" : undefined}>
-                  {c.label}
+                  {label}
                 </span>
               )}
             </span>
           );
         })}
+        {mobile ? <span className="contents sm:hidden">{mobile}</span> : null}
       </nav>
-      <span className="flex-1" />
+      <span className="flex-1 max-sm:hidden" />
       {githubUrl ? (
         <a
-          className="grid size-[34px] shrink-0 place-items-center rounded-full text-[17px] text-muted transition-colors hover:bg-chip hover:text-ink"
+          className="grid size-[34px] shrink-0 place-items-center rounded-full text-[17px] text-muted transition-colors hover:bg-chip hover:text-ink max-sm:text-[18px]"
           href={githubUrl}
           aria-label="View on GitHub"
           title="View on GitHub"
@@ -93,7 +122,7 @@ export function TopBar({
           <GitHub />
         </a>
       ) : null}
-      {children}
+      {children ? <span className="contents max-sm:hidden">{children}</span> : null}
     </header>
   );
 }
@@ -110,74 +139,42 @@ export function repoCrumbs(repo: RepoInfo, link: Repo): Crumb[] {
   ];
 }
 
-/** "Open in Ponzu", and the panel that says how. */
-export function OpenInPonzu({
-  name,
-  commands,
-  badge,
-}: {
-  name: string;
-  commands: string;
-  /** This design's README badge, as markdown. */
-  badge: string;
-}) {
+/**
+ * "Open in Ponzu", and the card that says why and how: change this design with your agent, by one
+ * command that clones the repo and opens it. The Mac app is a quiet line under it.
+ */
+export function OpenInPonzu({ name, command }: { name: string; command: string }) {
   return (
     <>
       <button
         type="button"
         popoverTarget="pz-open"
-        className={`${pill} bg-cta pr-[15px] pl-3 text-[13.5px] text-cta-ink transition-[translate] duration-150 ease-out hover:-translate-y-px`}
+        className={`${pill} bg-cta pr-[15px] pl-3 text-[13.5px] text-cta-ink transition-[translate,box-shadow] duration-150 ease-out hover:-translate-y-px [&:has(+:popover-open)]:shadow-[0_0_0_3px_color-mix(in_srgb,var(--text)_14%,transparent)]`}
       >
         <Slice size={15} className="[--slice:var(--yuzu)] dark:[--slice:var(--cta-ink)]" />
-        <span>
-          Open<span className="max-sm:hidden"> in Ponzu</span>
-        </span>
+        Open in Ponzu
       </button>
       <div
         id="pz-open"
         popover="auto"
-        className="fixed top-[62px] right-3 left-auto m-0 w-[min(484px,calc(100vw-24px))] rounded-2xl bg-ground p-1.5 text-[13.5px]/[1.45] text-text shadow-[0_0_0_1px_rgba(0,0,0,0.05),0_2px_4px_rgba(0,0,0,0.04),0_16px_48px_rgba(0,0,0,0.14)] dark:shadow-[0_0_0_1px_var(--rule),0_16px_48px_rgba(0,0,0,0.6)]"
+        className="fixed top-[62px] right-3.5 left-auto m-0 flex w-[min(480px,calc(100vw-24px))] flex-col gap-4 rounded-2xl bg-well p-5 text-[13.5px]/[1.5] text-text shadow-[0_0_0_1px_rgba(0,0,0,0.05),0_2px_4px_rgba(0,0,0,0.04),0_16px_48px_rgba(0,0,0,0.14)] dark:shadow-[0_0_0_1px_var(--well-rule),0_16px_48px_rgba(0,0,0,0.6)]"
       >
-        <div className="px-3.5 pt-3.5 pb-2.5">
-          <div className="text-[15px] font-semibold tracking-[-0.01em]">Make it yours</div>
-          <p className="m-0 mt-0.5 text-muted">
-            Open {name} on your Mac, then ask your agent for changes and leave comments right on the
-            canvas.
+        <div className="flex flex-col gap-1">
+          <div className="font-display text-[17px]/[1.25] font-semibold tracking-[-0.015em] text-ink">
+            Change {name} with your agent
+          </div>
+          <p className="m-0 text-muted">
+            One command clones the repo and opens {name} on your machine. Leave comments on the
+            canvas, your coding agent makes the changes, and you commit them like code.
           </p>
         </div>
-        <a className="flex gap-3 rounded-[11px] bg-chip px-3.5 py-3" href="/download">
-          <span className="grid size-9 shrink-0 place-items-center rounded-[9px] bg-ground shadow-[0_0_0_1px_var(--rule)]">
-            <Slice size={20} />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="flex items-center justify-between font-semibold">
-              Get the Mac app
-              <Icon d="M7 17 17 7M9 7h8v8" className="text-faint" />
-            </span>
-            <span className="block text-[13px] text-muted">
-              Opens .design folders like documents and sets up Claude Code, Codex and Cursor for
-              you.
-            </span>
-          </span>
-        </a>
-        <div className="flex gap-3 px-3.5 py-3">
-          <span className="grid size-9 shrink-0 place-items-center rounded-[9px] bg-chip text-[18px] text-text">
-            <Icon d="m5 8 4 4-4 4M12 16h7" />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block font-semibold">Run it from the terminal</span>
-            <span className="block text-[13px] text-muted">
-              Any OS, nothing to install beyond Bun. Your agent connects over MCP.
-            </span>
-            <span className="mt-2.5 block">
-              <CopyBlock value={commands} />
-            </span>
-          </span>
-        </div>
-        <div className="mx-2 mt-0.5 mb-1.5 flex items-center gap-1.5 border-t border-rule px-1.5 pt-2.5 text-[12.5px] whitespace-nowrap text-faint">
-          Free and open source · MIT
-          <span className="flex-1" />
-          <CopyText value={badge}>Copy README badge</CopyText>
+        <CopyCommand value={command} />
+        <div className="flex items-center gap-2.5 text-[13px] text-muted">
+          <Slice size={16} />
+          <span className="flex-1">Rather click than type? Ponzu for Mac</span>
+          <a className="font-medium text-text hover:text-ink" href="/download">
+            Download →
+          </a>
         </div>
       </div>
     </>

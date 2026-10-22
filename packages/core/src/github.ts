@@ -69,10 +69,21 @@ export function parseTarget(slug: string[]): Target | null {
   };
 }
 
+/**
+ * A segment encoded down to letters, digits and `-_.~%`: `encodeURIComponent` leaves `!'()*`,
+ * which a shell reads, so the path pastes into `ponzu open` without quoting.
+ */
+function encodeSegment(segment: string): string {
+  return encodeURIComponent(segment).replace(
+    /[!'()*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+}
+
 /** `owner/repo[@ref]/path`, each segment encoded: what follows /gh/ and `ponzu open`. */
 export function targetPath(repo: Repo, path = ""): string {
-  const head = repo.ref ? `${repo.repo}@${encodeURIComponent(repo.ref)}` : repo.repo;
-  const tail = path ? `/${path.split("/").map(encodeURIComponent).join("/")}` : "";
+  const head = repo.ref ? `${repo.repo}@${encodeSegment(repo.ref)}` : repo.repo;
+  const tail = path ? `/${path.split("/").map(encodeSegment).join("/")}` : "";
   return `${repo.owner}/${head}${tail}`;
 }
 

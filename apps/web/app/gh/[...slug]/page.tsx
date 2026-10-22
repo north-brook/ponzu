@@ -2,16 +2,16 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { share } from "@/components/share";
 import {
-  badgeMarkdown,
   DesignList,
-  localCommands,
   OpenInPonzu,
+  openCommand,
   repoCrumbs,
   TopBar,
   ViewerErrorPage,
 } from "../chrome";
 import { DesignCanvas } from "../design-canvas";
 import { type DesignView, loadDesign, loadRepo, type RepoView, ViewerError } from "../github";
+import { PagePicker, PagesProvider } from "../pages";
 import { parseTarget, type Target, viewerPath } from "../target";
 
 /*
@@ -79,22 +79,25 @@ export default async function Page(props: Props) {
 
   if ("doc" in loaded) {
     const link = { ...repo, ref: loaded.refInUrl ? loaded.ref : undefined };
+    const pages = loaded.doc.pages.map(({ id, name, icon }) => ({ id, name, icon }));
     return (
-      <div className="flex h-dvh flex-col">
-        <TopBar
-          crumbs={[...repoCrumbs(loaded.repo, link), { label: loaded.name, title: loaded.path }]}
-          githubUrl={loaded.githubUrl}
-        >
-          <OpenInPonzu
-            name={loaded.name}
-            commands={localCommands(loaded.repo, link.ref ?? null, loaded.path)}
-            badge={badgeMarkdown(link, loaded.path, loaded.name)}
-          />
-        </TopBar>
-        <div className="min-h-0 flex-1">
-          <DesignCanvas doc={loaded.doc} assetBase={loaded.assetBase} />
+      <PagesProvider pages={pages}>
+        <div className="flex h-dvh flex-col">
+          <TopBar
+            crumbs={[
+              ...repoCrumbs(loaded.repo, link),
+              { label: loaded.name, title: loaded.path, file: true },
+            ]}
+            githubUrl={loaded.githubUrl}
+            mobile={<PagePicker />}
+          >
+            <OpenInPonzu name={loaded.name} command={openCommand(link, loaded.path)} />
+          </TopBar>
+          <div className="min-h-0 flex-1">
+            <DesignCanvas doc={loaded.doc} assetBase={loaded.assetBase} />
+          </div>
         </div>
-      </div>
+      </PagesProvider>
     );
   }
 

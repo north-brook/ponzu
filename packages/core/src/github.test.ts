@@ -58,3 +58,16 @@ test("a target's path round-trips", () => {
   expect(path).toBe("o/r@feature%2Fx/My%20Designs/a.design");
   expect(parseOpenTarget(path)).toMatchObject({ ref: "feature/x", path: "My Designs/a.design" });
 });
+
+test("a target's path is safe to paste into a shell", () => {
+  // Refs and folders on GitHub can hold ; $ ` ' ( ) and more: none survive unencoded.
+  const path = targetPath(
+    { owner: "o", repo: "r", ref: "x;curl$IFS`id`|sh" },
+    "it's (v2);id.design",
+  );
+  expect(path).toMatch(/^[A-Za-z0-9_.~%@/-]+$/);
+  expect(parseOpenTarget(path)).toMatchObject({
+    ref: "x;curl$IFS`id`|sh",
+    path: "it's (v2);id.design",
+  });
+});

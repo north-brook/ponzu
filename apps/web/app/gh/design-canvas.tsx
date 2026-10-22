@@ -4,6 +4,7 @@ import type { Doc } from "@ponzu/core";
 import { Canvas, MemorySource } from "@ponzu/react";
 import "@ponzu/react/styles.css";
 import { useState, useSyncExternalStore } from "react";
+import { usePages } from "./pages";
 
 const DARK = "(prefers-color-scheme: dark)";
 
@@ -28,7 +29,20 @@ function useSystemTheme(): "light" | "dark" {
 export function DesignCanvas({ doc, assetBase }: { doc: Doc; assetBase: string }) {
   const [source] = useState(() => new MemorySource(doc, undefined, { assetBase }));
   const theme = useSystemTheme();
-  return <Canvas source={source} theme={theme} readOnly footerExtra={<Viewing />} />;
+  // The page is shared with the top bar's picker, which stands in for the bars on a phone.
+  const pages = usePages();
+  return (
+    <div className="h-full max-sm:[&_[data-slot=canvas-bar]]:hidden">
+      <Canvas
+        source={source}
+        theme={theme}
+        readOnly
+        footerExtra={<Viewing />}
+        page={pages?.page ?? undefined}
+        onPageChange={pages?.setPage}
+      />
+    </div>
+  );
 }
 
 /** Where the studio's tools sit, a calm word that this canvas only looks. */

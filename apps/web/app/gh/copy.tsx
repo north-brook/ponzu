@@ -36,23 +36,21 @@ function CopyIcon() {
   );
 }
 
-/** Commands on ink, a line each, with a copy button in the corner. */
-export function CopyBlock({ value }: { value: string }) {
+/** One command on ink, `$` first, cut short with an ellipsis, and a copy button at its end. */
+export function CopyCommand({ value }: { value: string }) {
   const [copied, copy] = useCopy(value);
   return (
-    <div className="relative rounded-[10px] bg-code py-2.5 pr-9 pl-3 font-mono text-[11.5px]/[1.7] text-code-ink">
-      <code className="block break-all whitespace-pre-wrap select-all">
-        {value.split("\n").map((line) => (
-          <span key={line} className="block pl-[2ch] -indent-[2ch]">
-            <span className="text-faint select-none">$ </span>
-            {line}
-          </span>
-        ))}
+    <div className="flex h-11 items-center gap-2.5 rounded-[11px] bg-code pr-1.5 pl-3.5 font-mono text-xs text-code-ink">
+      <span aria-hidden="true" className="text-faint select-none">
+        $
+      </span>
+      <code className="min-w-0 flex-1 truncate select-all" title={value}>
+        {value}
       </code>
       <button
         type="button"
-        aria-label={copied ? "Copied" : "Copy commands"}
-        className="absolute right-2 bottom-2 grid size-[26px] place-items-center rounded-[7px] bg-white/10 text-[12px] text-code-ink transition-colors hover:bg-white/20"
+        aria-label={copied ? "Copied" : "Copy command"}
+        className="grid size-8 shrink-0 place-items-center rounded-lg bg-white/10 text-[13px] text-code-ink transition-colors hover:bg-white/20"
         onClick={copy}
       >
         {copied ? <Check /> : <CopyIcon />}
@@ -68,21 +66,6 @@ export function CopyButton({ value, children }: { value: string; children: React
     <button
       type="button"
       className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-ground px-3 text-[13px] font-medium text-text shadow-[0_0_0_1px_var(--outline)] transition-colors hover:bg-chip"
-      onClick={copy}
-    >
-      {copied ? <Check /> : <CopyIcon />}
-      {copied ? "Copied" : children}
-    </button>
-  );
-}
-
-/** A muted text link that copies `value`. */
-export function CopyText({ value, children }: { value: string; children: ReactNode }) {
-  const [copied, copy] = useCopy(value);
-  return (
-    <button
-      type="button"
-      className="inline-flex items-center gap-1.5 text-muted transition-colors hover:text-ink"
       onClick={copy}
     >
       {copied ? <Check /> : <CopyIcon />}
