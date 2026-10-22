@@ -558,7 +558,8 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
           detail,
           parts: focusRects.map((r) => offset(r, ab)),
           texts,
-          context,
+          // A close look at an answer cuts the boards beside it at the edges; that's a close-up.
+          context: answering.length ? [] : context,
           keep: detail,
           close: answering.length > 0,
           // Where the comment points: its pin (a whole section may be pinned; the pin says where).
