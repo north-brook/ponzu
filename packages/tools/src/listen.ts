@@ -103,7 +103,7 @@ export const listenTools = [
     title: "Set status",
     group: "listen",
     description:
-      "Optional. Say in a few words what you're doing, e.g. 'tightening the hero'; the person reads it in the header of each artboard you're working on. Artboards you change already show as yours (their outline traces, their page and file tabs shimmer) until you go a minute without a tool call or call wait_for_activity. Pass artboards to claim them before your first edit.",
+      "Optional. Say in a few words what you're doing, e.g. 'tightening the hero'; the person reads it on hover over your mark in the header of each artboard you're working on. Artboards you change already show as yours (their outline traces, their page and file tabs shimmer) until you go a minute without a tool call or call wait_for_activity. Pass artboards to claim them before your first edit.",
     input: {
       file: fileArg,
       status: z.string().min(1).describe("A few words, lowercase, e.g. 'adding the autumn drop'."),
