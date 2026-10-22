@@ -17,3 +17,13 @@ test("the badge grows with its label and escapes it", () => {
   expect(badgeSvg('<a href="x">')).not.toContain("<a ");
   expect(badgeSvg("Kettle")).toContain('aria-label="Kettle | Ponzu"');
 });
+
+test("the slice sits with Ponzu, in ink on the yuzu half", () => {
+  const svg = badgeSvg("app");
+  const left = Number(/<rect width="(\d+)" height="20" fill="#1c1c1c"/.exec(svg)?.[1]);
+  const slice = /<g transform="translate\((\d+) 4\)[^>]*fill="(#[0-9a-f]+)"/.exec(svg);
+  expect(Number(slice?.[1])).toBe(left + 5);
+  expect(slice?.[2]).toBe("#111110");
+  // The label is plain text from the left edge, with no mark before it.
+  expect(svg).toContain('<text x="6" y="14" fill="#fff">app</text>');
+});
