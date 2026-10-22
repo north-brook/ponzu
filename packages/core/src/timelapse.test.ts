@@ -3,6 +3,7 @@ import { emptyDoc, type Op } from "./doc.ts";
 import type { JournalEntry } from "./journal.ts";
 import { checkpointLine, docAt, latestDoc, opLine, parseJournal } from "./journal.ts";
 import {
+  avoidCuts,
   bezier,
   cameraAt,
   cameraPath,
@@ -343,5 +344,36 @@ describe("follow camera", () => {
     // It gets where it's going.
     const end = camOnPath(path, plan.duration)!;
     expect(end.cx).toBeCloseTo(targets.at(-1)!.cam.cx, 0);
+  });
+});
+
+describe("framing never cuts text", () => {
+  test("a frame edge across a line moves to a gap", () => {
+    const view = { w: 540, h: 960 };
+    const f = framingFor("9:16");
+    // A long heading spanning the board, and the frame centred on its right half.
+    const texts = [
+      { x: 0, y: 100, w: 1000, h: 40 },
+      { x: 600, y: 300, w: 300, h: 20 },
+    ];
+    const cam = { page: "p", cx: 800, cy: 400, zoom: 1 };
+    const fixed = avoidCuts(cam, texts, view, f);
+    const x0 = fixed.cx - view.w / 2 / fixed.zoom;
+    const x1 = fixed.cx + view.w / 2 / fixed.zoom;
+    // The 1000px heading is too wide at zoom 1, so it pulls back to fit it whole.
+    expect(fixed.zoom).toBeLessThan(1);
+    for (const r of texts) {
+      expect(r.x >= x0 - 1e-6 || r.x + r.w <= x0 + 1e-6).toBe(true);
+      expect(r.x + r.w <= x1 + 1e-6 || r.x >= x1 - 1e-6).toBe(true);
+    }
+    // A line under the top edge moves fully in or out.
+    const top = avoidCuts(
+      { page: "p", cx: 800, cy: 560, zoom: 1 },
+      [{ x: 700, y: 70, w: 100, h: 40 }],
+      view,
+      f,
+    );
+    const y0 = top.cy - view.h / 2 + (f.top + 8);
+    expect(70 >= y0 - 1e-6 || 110 <= y0 + 1e-6).toBe(true);
   });
 });

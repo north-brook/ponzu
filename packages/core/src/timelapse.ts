@@ -574,6 +574,8 @@ export interface Focus {
   detail?: Rect;
   /** The separate pieces that changed, when the whole is too wide to read at once. */
   parts?: Rect[];
+  /** Lines of text on the board (canvas px): a resting frame never cuts one in half. */
+  texts?: Rect[];
   /** Show the whole of `board` even when that's below the shape's legible zoom. */
   overview?: boolean;
   /** What it's about (a board id), for debugging and tests. */
@@ -609,6 +611,109 @@ export function framingFor(shape: FilmShape): Framing {
  * canvas instead of re-laying it out.
  */
 export function frameFocus(focus: Focus, view: { w: number; h: number }, f: Framing): Cam {
+  const cam = frameFocusRaw(focus, view, f);
+  return focus.texts?.length ? avoidCuts(cam, focus.texts, view, f) : cam;
+}
+
+/** Text runs on one row (same top, touching) joined into the line they make. */
+function mergeRows(texts: Rect[]): Rect[] {
+  const sorted = [...texts].sort((a, b) => a.y - b.y || a.x - b.x);
+  const out: Rect[] = [];
+  for (const r of sorted) {
+    const last = out[out.length - 1];
+    if (last && Math.abs(last.y - r.y) < r.h * 0.4 && r.x - (last.x + last.w) < r.h * 0.8) {
+      const x1 = Math.max(last.x + last.w, r.x + r.w);
+      last.y = Math.min(last.y, r.y);
+      last.h = Math.max(last.h, r.h);
+      last.w = x1 - last.x;
+    } else out.push({ ...r });
+  }
+  return out;
+}
+
+/**
+ * Moves a camera the least it takes so no line of text sits across a frame
+ * edge: each edge lands in a gap between lines, the cut line fully in or out.
+ */
+export function avoidCuts(
+  cam: Cam,
+  texts: Rect[],
+  view: { w: number; h: number },
+  f: Framing,
+): Cam {
+  // Lines are measured as text runs; a heading's lines on one row make one line here.
+  const lines = mergeRows(texts);
+  // A line wider than the frame across it (a big heading): pull back to fit it whole while
+  // that stays readable; else frame below it, so it isn't cut at the sides.
+  const inFrame = (r: Rect, c: Cam) =>
+    r.y + r.h > c.cy - view.h / 2 / c.zoom &&
+    r.y < c.cy + view.h / 2 / c.zoom &&
+    r.x < c.cx + view.w / 2 / c.zoom &&
+    r.x + r.w > c.cx - view.w / 2 / c.zoom;
+  const usable = view.w - 2 * f.pad;
+  const widest = lines
+    .filter((r) => inFrame(r, cam) && r.w * cam.zoom > usable)
+    .sort((a, b) => b.w - a.w)[0];
+  if (widest) {
+    const fitZ = usable / widest.w;
+    if (fitZ >= f.minZoom * 0.5) cam = { ...cam, cx: widest.x + widest.w / 2, zoom: fitZ };
+    else {
+      const top = cam.cy - view.h / 2 / cam.zoom + (f.top + 8) / cam.zoom;
+      if (widest.y + widest.h > top) cam = { ...cam, cy: cam.cy + (widest.y + widest.h + 8 - top) };
+    }
+  }
+  texts = lines;
+  const z = cam.zoom;
+  const hw = view.w / 2 / z;
+  const hh = view.h / 2 / z;
+  const top = (f.top + 8) / z;
+  const m = 6 / z;
+  let { cx, cy } = cam;
+  for (let pass = 0; pass < 4; pass++) {
+    let moved = false;
+    const x0 = cx - hw;
+    const x1 = cx + hw;
+    const y0 = cy - hh + top;
+    const y1 = cy + hh;
+    for (const r of texts) {
+      if (r.x + r.w < x0 || r.x > x1) continue;
+      // Top edge (below the wayfinding line): bring the line in if it's mostly in, else push it out.
+      if (r.y < y0 && r.y + r.h > y0) {
+        const inside = (r.y + r.h - y0) / r.h;
+        cy += inside > 0.5 ? r.y - m - y0 : r.y + r.h + m - y0;
+        moved = true;
+        break;
+      }
+      if (r.y < y1 && r.y + r.h > y1) {
+        const inside = (y1 - r.y) / r.h;
+        cy += inside > 0.5 ? r.y + r.h + m - y1 : r.y - m - y1;
+        moved = true;
+        break;
+      }
+    }
+    if (!moved) {
+      for (const r of texts) {
+        if (r.y + r.h < cy - hh + top || r.y > cy + hh) continue;
+        // Side edges: only lines that could fit the frame's width.
+        if (r.w > 2 * hw - 2 * m) continue;
+        if (r.x < x0 && r.x + r.w > x0) {
+          cx += r.x - m - x0;
+          moved = true;
+          break;
+        }
+        if (r.x < x1 && r.x + r.w > x1) {
+          cx += r.x + r.w + m - x1;
+          moved = true;
+          break;
+        }
+      }
+    }
+    if (!moved) break;
+  }
+  return { ...cam, cx, cy };
+}
+
+function frameFocusRaw(focus: Focus, view: { w: number; h: number }, f: Framing): Cam {
   // Frame inside the view less its margins: more at the top, for the board's name.
   const vw = view.w - 2 * f.pad;
   const vh = view.h - 2 * f.pad - f.top;

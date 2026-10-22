@@ -173,6 +173,24 @@ class Measurer {
     return wrap.getBoundingClientRect().height;
   }
 
+  /** Every line of text on a board, in its pixels: elements with text of their own. */
+  texts(h: { wrap: HTMLDivElement; shadow: ShadowRoot }): Rect[] {
+    const b = h.wrap.getBoundingClientRect();
+    const out: Rect[] = [];
+    const walker = document.createTreeWalker(h.shadow, NodeFilter.SHOW_TEXT);
+    const range = document.createRange();
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (!n.textContent?.trim()) continue;
+      range.selectNodeContents(n);
+      for (const r of range.getClientRects()) {
+        if (r.width < 2 || r.height < 2) continue;
+        out.push({ x: r.left - b.left, y: r.top - b.top, w: r.width, h: r.height });
+      }
+      if (out.length > 600) break;
+    }
+    return out;
+  }
+
   /** A node's box in its board's pixels. */
   box(h: { wrap: HTMLDivElement; shadow: ShadowRoot }, id: string): Rect | null {
     const el = h.shadow.querySelector(`[data-id="${CSS.escape(id)}"]`);
@@ -330,6 +348,11 @@ export async function buildFilm(input: FilmInput): Promise<FilmModel> {
     settles.push(beatSettles);
     touched.push([...beatTouched.values()]);
 
+    // The lines of text on the board this beat looks at, for framing that never cuts one.
+    const textsOf = async (ab: Artboard): Promise<Rect[]> =>
+      measurer
+        .texts(await measurer.show(doc, ab))
+        .map((r) => ({ x: ab.x + r.x, y: ab.y + r.y, w: r.w, h: r.h }));
     const boardRect = (ab: Artboard): Rect => ({
       x: ab.x,
       y: ab.y,
@@ -377,7 +400,14 @@ export async function buildFilm(input: FilmInput): Promise<FilmModel> {
           }
         }
       }
-      focus.push({ page: spot.page, board, detail: pinRect, key: ab?.id ?? t.id, pin });
+      focus.push({
+        page: spot.page,
+        board,
+        detail: pinRect,
+        key: ab?.id ?? t.id,
+        pin,
+        texts: ab ? await textsOf(ab) : undefined,
+      });
       continue;
     }
     if (!focusBoard) {
@@ -390,6 +420,7 @@ export async function buildFilm(input: FilmInput): Promise<FilmModel> {
       board: boardRect(focusBoard),
       detail: union(details),
       parts: details,
+      texts: await textsOf(focusBoard),
       key: focusBoard.id,
     });
   }
@@ -418,7 +449,9 @@ export async function buildFilm(input: FilmInput): Promise<FilmModel> {
           (view.w - 2 * framing.pad) / all.w,
           (view.h - 2 * framing.pad - framing.top) / all.h,
         );
-        if (fit >= framing.minZoom * 0.55) return { page: endPage.id, board: all, overview: true };
+        const enough = view.h > view.w ? 0.8 : 0.55;
+        if (fit >= framing.minZoom * enough)
+          return { page: endPage.id, board: all, overview: true };
         const time = new Map<string, number>();
         for (const b of plan.beats)
           if (b.kind === "edit")
