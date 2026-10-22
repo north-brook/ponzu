@@ -121,3 +121,34 @@
 @utility app-no-drag {
   -webkit-app-region: no-drag;
 }
+
+/* The timelapse film (/film): the canvas without its chrome, at the film's size. */
+.pz-film {
+  position: relative;
+  overflow: hidden;
+}
+
+/* Cards in a film sit where the canvas puts them, beside the pin. */
+.pz-film-card {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+/* Near the right edge, the card goes on the pin's left instead. */
+.pz-film-card-flip > * {
+  left: auto;
+  right: 20px;
+}
+
+/* Pins and cards in a film carry an ink hairline, so a yuzu pin holds on a yellow design. */
+.pz-film .pz-film-pin {
+  box-shadow:
+    0 0 0 1px rgba(17, 17, 16, 0.18),
+    0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+.pz-film.pz-root {
+  --pz-comment: #ffc81e;
+  --pz-comment-ink: #111110;
+}

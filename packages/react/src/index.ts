@@ -1,4 +1,4 @@
-export { ArtboardView } from "./Artboard.tsx";
+export { ArtboardView, artboardMarkup, loadArtboardFonts } from "./Artboard.tsx";
 export {
   ARRIVE_EASING,
   ARRIVE_KEYFRAMES,
@@ -12,7 +12,17 @@ export {
   BOARD_MS,
   outermost,
 } from "./arrive.ts";
-export { Canvas, type CanvasProps, type Mode } from "./Canvas.tsx";
+export {
+  Canvas,
+  type CanvasProps,
+  type Mode,
+  pin as pinClass,
+  pinWrap as pinWrapClass,
+  size as artboardSize,
+  Trace,
+  type Worker,
+  WorkingStatus,
+} from "./Canvas.tsx";
 export { Avatar, Composer, ThreadCard, timeAgo } from "./Comments.tsx";
 export {
   type CanvasSource,

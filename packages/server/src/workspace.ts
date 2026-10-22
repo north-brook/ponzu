@@ -22,6 +22,7 @@ import {
 } from "@ponzu/tools";
 import { JournalWriter } from "./journal.ts";
 import { previewStale, writePreview } from "./preview.ts";
+import { Timelapses } from "./timelapse.ts";
 
 export interface WorkspaceOptions {
   /** Where relative paths resolve. Defaults to process.cwd(). */
@@ -62,6 +63,21 @@ export class LocalWorkspace implements Workspace {
   theme?: ColorScheme;
   /** The server that serves designs' assets, once there is one, so renders can load them. */
   assetOrigin?: string;
+  /** Where the studio's film page is served, when not at assetOrigin (the dev studio). */
+  filmOrigin?: string;
+  /** Timelapse films being made. */
+  readonly timelapses: Timelapses = (() => {
+    const ws = this;
+    return new Timelapses({
+      get renderer() {
+        return ws.renderer;
+      },
+      get origin() {
+        return ws.filmOrigin ?? process.env.PONZU_FILM_ORIGIN ?? ws.assetOrigin;
+      },
+      flush: (key) => ws.flushForFilm(key),
+    });
+  })();
   private entries = new Map<string, Entry>();
   private opening = new Map<string, Promise<Entry>>();
   private focusListeners = new Set<(key: string, artboard: string) => void>();
@@ -216,6 +232,23 @@ export class LocalWorkspace implements Workspace {
     for (const key of [...this.entries.keys()]) await this.close(key);
     await this.previewing;
     await this.renderer?.close();
+  }
+
+  /** Make a timelapse film of a design and wait for it. Resolves with where it was written. */
+  async timelapse(
+    key: string,
+    req: import("./timelapse.ts").TimelapseRequest,
+  ): Promise<{ path: string; codec: string; duration: number; bytes: number }> {
+    const job = this.timelapses.start(key, req);
+    const state = await job.promise;
+    if (state.status === "done")
+      return { path: state.path, codec: state.codec, duration: state.duration, bytes: state.bytes };
+    throw new ToolError(state.status === "failed" ? state.error : "The timelapse was cancelled.");
+  }
+
+  private async flushForFilm(key: string): Promise<void> {
+    await this.get(key)?.flush();
+    await this.journalFlushed(key);
   }
 
   /** Everything this design's journal has been told is on disk. */

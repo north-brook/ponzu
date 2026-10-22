@@ -5,6 +5,7 @@ import { checkpointLine, docAt, latestDoc, opLine, parseJournal } from "./journa
 import {
   bezier,
   cameraAt,
+  changedNodes,
   END_CARD,
   frameFocus,
   framingFor,
@@ -12,6 +13,7 @@ import {
   lastSession,
   planFilm,
   planShots,
+  streamUnits,
 } from "./timelapse.ts";
 import type { Thread } from "./types.ts";
 
@@ -210,23 +212,24 @@ describe("camera", () => {
 
   test("the same board frames whole in 16:9 and tighter, inside it, in 9:16", () => {
     const board = { x: 0, y: 0, w: 1440, h: 900 };
-    const wide = frameFocus({ page: "p", board }, { w: 1920, h: 1080 }, framingFor("16:9"));
+    const wide = frameFocus({ page: "p", board }, { w: 960, h: 540 }, framingFor("16:9"));
     expect(wide.cx).toBe(720);
-    expect(wide.zoom).toBeLessThan(1.1);
+    expect(wide.zoom).toBeLessThan(1);
+    const f = framingFor("9:16");
     const tall = frameFocus(
       { page: "p", board, detail: { x: 1200, y: 100, w: 200, h: 100 } },
-      { w: 1080, h: 1920 },
-      framingFor("9:16"),
+      { w: 540, h: 960 },
+      f,
     );
-    expect(tall.zoom).toBeGreaterThanOrEqual(framingFor("9:16").minZoom);
+    expect(tall.zoom).toBeGreaterThanOrEqual(f.minZoom);
     // Panned toward the detail, but the frame stays within the board (plus padding).
     expect(tall.cx).toBeGreaterThan(720);
-    expect(tall.cx + 1080 / tall.zoom / 2).toBeLessThanOrEqual(1440 + 56 / tall.zoom + 1e-6);
+    expect(tall.cx + 540 / tall.zoom / 2).toBeLessThanOrEqual(1440 + f.pad / tall.zoom + 1e-6);
   });
 
   test("the camera moves smoothly, arriving as each beat lands", () => {
     const plan = planFilm(session(), { length: 30 });
-    const view = { w: 1920, h: 1080 };
+    const view = { w: 960, h: 540 };
     const boards: Record<string, { x: number; y: number; w: number; h: number }> = {
       ab_a: { x: 0, y: 0, w: 800, h: 600 },
       ab_b: { x: 1000, y: 0, w: 800, h: 600 },
@@ -252,5 +255,41 @@ describe("camera", () => {
       const c = cameraAt(shots, s.arrive, view)!;
       expect(c.cx).toBeCloseTo(s.cam.cx, 0);
     }
+  });
+});
+
+describe("stream-in", () => {
+  test("inserted subtrees stream in; restyles are touched", () => {
+    const op: Op = {
+      op: "batch",
+      ops: [
+        { op: "insert", parent: "p", index: 0, nodes: [el("a"), { kind: "text", value: "x" }] },
+        { op: "style", id: "b", style: {} },
+      ],
+    };
+    expect(changedNodes(op)).toEqual({ fresh: ["a"], touched: ["p", "b"] });
+  });
+
+  test("one big section opens into its blocks", () => {
+    const tree = {
+      kind: "el",
+      id: "s",
+      children: [
+        { kind: "el", id: "h", children: [] },
+        { kind: "text" },
+        {
+          kind: "el",
+          id: "grid",
+          children: [1, 2, 3, 4].map((i) => ({ kind: "el", id: `c${i}`, children: [] })),
+        },
+      ],
+    };
+    const all = new Map<string, typeof tree>();
+    const index = (n: { id?: string; children?: unknown[] }) => {
+      if (n.id) all.set(n.id, n as typeof tree);
+      for (const c of (n.children ?? []) as { id?: string }[]) index(c);
+    };
+    index(tree);
+    expect(streamUnits((id) => all.get(id) ?? null, ["s"])).toEqual(["h", "c1", "c2", "c3", "c4"]);
   });
 });

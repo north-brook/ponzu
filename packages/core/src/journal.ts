@@ -131,3 +131,26 @@ export function compactionPoint(
   // The entry just before index i is the last one dropped.
   return entries[Math.max(0, i - 1)]?.t ?? 0;
 }
+
+/**
+ * The doc after entries[0..upto], by index: the latest checkpoint at or
+ * before `upto`, then the ops after it. Null with no checkpoint yet.
+ */
+export function replayTo(entries: JournalEntry[], upto: number): Doc | null {
+  let start = -1;
+  for (let i = Math.min(upto, entries.length - 1); i >= 0; i--) {
+    if (entries[i]!.kind === "checkpoint") {
+      start = i;
+      break;
+    }
+  }
+  if (start < 0) return null;
+  const doc = structuredClone(
+    (entries[start] as Extract<JournalEntry, { kind: "checkpoint" }>).doc,
+  );
+  for (let i = start + 1; i <= upto && i < entries.length; i++) {
+    const e = entries[i]!;
+    if (e.kind === "op") tryApply(doc, e.op);
+  }
+  return doc;
+}

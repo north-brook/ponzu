@@ -8,6 +8,7 @@ import type { Server, ServerWebSocket, WebSocketHandler } from "bun";
 import { CatalogFeed, type Scope } from "./feed.ts";
 import { Home, type OpenedBy } from "./home.ts";
 import { isTailnetAddress } from "./tailnet.ts";
+import { timelapseRoute } from "./timelapse-routes.ts";
 import type { LocalWorkspace } from "./workspace.ts";
 
 export interface ServeOptions {
@@ -274,6 +275,11 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
         open: true,
       }));
       return Response.json({ files: open, root: opts.root ?? null });
+    }
+
+    if (path.startsWith("/api/timelapse")) {
+      const res = await timelapseRoute(ws, req, url, path);
+      if (res) return res;
     }
 
     if (path === "/api/info") {

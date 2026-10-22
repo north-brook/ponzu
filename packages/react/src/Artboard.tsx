@@ -73,26 +73,46 @@ export const ArtboardView = memo(function ArtboardView({
     const el = host.current;
     if (!el) return;
     const root = el.shadowRoot ?? el.attachShadow({ mode: "open" });
-    const markup = serializeArtboardElement(artboard, {
-      rewriteUrl: (u) => resolveAsset(u, assetBase),
-    });
-    // The page's media preference is the system's; a canvas in its own theme decides them here.
-    const pin = (css: string) => (colorScheme ? pinColorScheme(css, colorScheme) : css);
-    const body = pin(markup);
-    const scheme = colorScheme ? `:host{color-scheme:${colorScheme}}` : "";
-    // Tokens' url()s resolve like the artboard's: an @font-face in tokens.css finds assets/ too.
-    const resolved = resolveTokenAssets(tokens, assetBase);
-    const html = `<style>${styleText(pin(hostTokens(resolved)))}${scheme}${ARTBOARD_BASE_CSS}</style>${body}`;
+    const { html, fonts, faces } = artboardMarkup(artboard, tokens, assetBase, colorScheme);
     if (html === last.current) return;
     last.current = html;
-    ensureFonts(googleFonts(body, tokens));
-    ensureFaces(fontFaceRules(resolved));
+    ensureFonts(fonts);
+    ensureFaces(faces);
     root.innerHTML = html;
     arrivals?.replay(root);
   }, [artboard, tokens, assetBase, colorScheme, arrivals]);
 
   return <div ref={host} data-artboard-host={artboard.id} style={{ display: "contents" }} />;
 });
+
+/**
+ * What an artboard's shadow root holds: its styles and markup, and the Google
+ * Fonts it needs. Shared with the timelapse film, which measures boards with it.
+ */
+export function artboardMarkup(
+  artboard: AB,
+  tokens: string,
+  assetBase?: string,
+  colorScheme?: "light" | "dark",
+): { html: string; fonts: GoogleFontRequest[]; faces: string[] } {
+  const markup = serializeArtboardElement(artboard, {
+    rewriteUrl: (u) => resolveAsset(u, assetBase),
+  });
+  // The page's media preference is the system's; a canvas in its own theme decides them here.
+  const pin = (css: string) => (colorScheme ? pinColorScheme(css, colorScheme) : css);
+  const body = pin(markup);
+  const scheme = colorScheme ? `:host{color-scheme:${colorScheme}}` : "";
+  // Tokens' url()s resolve like the artboard's: an @font-face in tokens.css finds assets/ too.
+  const resolved = resolveTokenAssets(tokens, assetBase);
+  const html = `<style>${styleText(pin(hostTokens(resolved)))}${scheme}${ARTBOARD_BASE_CSS}</style>${body}`;
+  return { html, fonts: googleFonts(body, tokens), faces: fontFaceRules(resolved) };
+}
+
+/** Load these Google Fonts and the design's own @font-face rules in the page, once each. */
+export function loadArtboardFonts(fonts: GoogleFontRequest[], faces: string[] = []) {
+  ensureFonts(fonts);
+  ensureFaces(faces);
+}
 
 /** Custom properties declared on :root apply to :host inside a shadow root. */
 function hostTokens(css: string): string {

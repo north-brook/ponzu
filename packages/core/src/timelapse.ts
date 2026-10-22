@@ -21,6 +21,18 @@ export function filmSize(shape: FilmShape): { w: number; h: number } {
   return { w: 1920, h: 1080 };
 }
 
+/**
+ * The film page's viewport in CSS pixels, and the device scale that makes it
+ * the output size. Overlays (pins, cards, the wayfinding line) are sized in
+ * CSS pixels, so a tall film shows them bigger relative to the frame, which
+ * is what keeps them legible on a phone.
+ */
+export function filmViewport(shape: FilmShape): { w: number; h: number; scale: number } {
+  if (shape === "1:1") return { w: 720, h: 720, scale: 1.5 };
+  if (shape === "9:16") return { w: 540, h: 960, scale: 2 };
+  return { w: 960, h: 540, scale: 2 };
+}
+
 /** A stretch of history: a session, or what the trims leave. Times in ms since the epoch. */
 export interface Range {
   from: number;
@@ -421,6 +433,8 @@ export interface Focus {
   detail?: Rect;
   /** Show the whole of `board` even when that's below the shape's legible zoom. */
   overview?: boolean;
+  /** What it's about (a board id), for debugging and tests. */
+  key?: string;
 }
 
 export interface Framing {
@@ -431,10 +445,11 @@ export interface Framing {
   pad: number;
 }
 
+/** In the film's CSS pixels (see filmViewport). */
 export function framingFor(shape: FilmShape): Framing {
-  if (shape === "9:16") return { minZoom: 1.05, maxZoom: 2.6, pad: 56 };
-  if (shape === "1:1") return { minZoom: 0.72, maxZoom: 2.4, pad: 64 };
-  return { minZoom: 0.6, maxZoom: 2.2, pad: 96 };
+  if (shape === "9:16") return { minZoom: 0.62, maxZoom: 1.6, pad: 28 };
+  if (shape === "1:1") return { minZoom: 0.5, maxZoom: 1.5, pad: 36 };
+  return { minZoom: 0.36, maxZoom: 1.3, pad: 48 };
 }
 
 /**
@@ -610,4 +625,88 @@ export function dipAt(shots: Shot[], f: number): number {
     if (x > 0) return ease.inOut(Math.min(1, x * 1.4));
   }
   return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* What changed                                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The nodes an op brings in (roots of new subtrees, which stream in) and the
+ * ones it changes in place (restyled, retexted), for the camera's detail.
+ */
+export function changedNodes(op: Op): { fresh: string[]; touched: string[] } {
+  const fresh: string[] = [];
+  const touched: string[] = [];
+  const walk = (o: Op) => {
+    switch (o.op) {
+      case "batch":
+        for (const x of o.ops) walk(x);
+        return;
+      case "insert":
+        for (const n of o.nodes) if (n.kind === "el") fresh.push(n.id);
+        // Text inserted straight into a parent changes the parent.
+        if (o.nodes.some((n) => n.kind === "text")) touched.push(o.parent);
+        return;
+      case "children": {
+        const els = o.children.filter((n) => n.kind === "el");
+        if (els.length) for (const n of els) fresh.push(n.id);
+        else touched.push(o.id);
+        return;
+      }
+      case "artboard.create":
+        for (const n of o.artboard.root.children) if (n.kind === "el") fresh.push(n.id);
+        touched.push(o.artboard.id);
+        return;
+      case "style":
+      case "attrs":
+      case "name":
+        touched.push(o.id);
+        return;
+      case "move":
+        touched.push(o.id);
+        return;
+      default:
+        return;
+    }
+  };
+  walk(op);
+  return { fresh, touched };
+}
+
+interface TreeNode {
+  kind: string;
+  id?: string;
+  children?: TreeNode[];
+}
+
+/**
+ * The pieces a new subtree streams in as: its roots, opened up while there
+ * are fewer than `want`, so a whole section arrives block by block and not
+ * as one slab. Document order, at most `max`.
+ */
+export function streamUnits(
+  find: (id: string) => TreeNode | null,
+  roots: string[],
+  want = 5,
+  max = 14,
+): string[] {
+  let units: TreeNode[] = roots.map(find).filter((n): n is TreeNode => Boolean(n));
+  for (let pass = 0; pass < 3 && units.length < want; pass++) {
+    const next: TreeNode[] = [];
+    let opened = false;
+    for (const u of units) {
+      const kids = (u.children ?? []).filter((c) => c.kind === "el");
+      if (kids.length > 1 && units.length - 1 + next.length + kids.length <= max * 2) {
+        next.push(...kids);
+        opened = true;
+      } else next.push(u);
+    }
+    units = next;
+    if (!opened) break;
+  }
+  return units
+    .map((u) => u.id)
+    .filter((id): id is string => Boolean(id))
+    .slice(0, max);
 }
