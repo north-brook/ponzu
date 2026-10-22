@@ -125,19 +125,20 @@ function workFrame(_e: Edit, scene: Scene, f: number): Frame {
     doc,
     heights,
     cam,
-    threads: open(doc),
+    // On a fix, only the pins it answers: other boards' pins wait their turn off this shot.
+    threads: open(doc).filter((t) => t.artboardId === scene.board),
     ...(scene.board && f < s.changed + 0.35
       ? { working: { board: scene.board, who: scene.who ?? { name: "Agent" } } }
       : {}),
   };
   // The pins this work answers stay up until it lands, then leave.
-  if (!changing) {
-    out.threads = open(doc);
-  } else {
+  if (changing) {
+    // Resolved: the pins it answers leave as soon as the change lands, so the result reads clean.
+    out.threads = out.threads.filter((t) => !(scene.resolves ?? []).includes(t.id));
     const leaving = (scene.resolves ?? [])
       .map((id) => scene.before.threads.find((t) => t.id === id))
       .filter((t): t is Thread => Boolean(t));
-    const p = clamp01((f - s.changed + 0.1) / PIN_OUT);
+    const p = clamp01((f - s.change - 0.15) / PIN_OUT);
     if (p < 1) out.pinsOut = leaving.map((thread) => ({ thread, p: ease.in(p) }));
   }
   if (changing && scene.born)
@@ -370,7 +371,7 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
                     style={{
                       opacity: card.opacity,
                       // Read on a phone: the real card, a little larger than in the studio.
-                      zoom: view.w > view.h ? 1.22 : 1.12,
+                      zoom: view.w > view.h ? 1.38 : 1.22,
                     }}
                   >
                     <ThreadCard

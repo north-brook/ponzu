@@ -324,6 +324,7 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
 
   // What each comment is about, in its board's px: the node it's pinned to, else around the pin.
   const askedSubjects = new Map<string, Rect[]>();
+  const threadSubject = new Map<string, Rect>();
   for (const m of all) {
     if (m.kind !== "turn") continue;
     for (const c of m.comments) {
@@ -338,6 +339,7 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
         if (box) r = box;
       }
       askedSubjects.set(c.board, [...(askedSubjects.get(c.board) ?? []), r]);
+      threadSubject.set(c.thread, r);
     }
   }
 
@@ -436,22 +438,54 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
   const pageBoards = (doc: Doc, id: string) =>
     findArtboard(doc, id)?.page.artboards.filter((a) => !notes.has(a.id)) ?? [];
 
+  // Continuity: what the viewer has seen of each board. A board keeps the look the film last
+  // showed it with until the film shows it change; nothing reverts and nothing changes off cue.
+  // Boards the film hasn't shown yet are taken as of the moment they first appear.
+  const shown = new Map<string, Artboard>();
+  const compose = (base: Doc, live: string[]): Doc => {
+    const doc = structuredClone(base);
+    for (const p of doc.pages)
+      p.artboards = p.artboards.map((ab) =>
+        !live.includes(ab.id) && shown.has(ab.id) ? structuredClone(shown.get(ab.id)!) : ab,
+      );
+    return doc;
+  };
+  const remember = (doc: Doc) => {
+    for (const p of doc.pages) for (const ab of p.artboards) shown.set(ab.id, structuredClone(ab));
+  };
+
   for (const [shotIndex, shot] of tl.shots.entries()) {
     const m = shot.moment;
     if (m.kind === "work") {
       const got = measured.get(m)!;
-      const { after } = got;
       // The film opens mid-build: the first shot starts with its board half made, not blank.
-      const before =
+      const rawBefore =
         shotIndex === 0 && m.indices.length > 2
           ? docAt(m.indices[Math.floor(m.indices.length * 0.55)]!)
           : got.before;
+      const before = compose(rawBefore, [m.board]);
+      const after = compose(got.after, [m.board]);
+      remember(after);
       const ab = findArtboard(after, m.board)!.artboard;
       const hB = await heightsOf(before);
       const hA = await heightsOf(after);
       // Frame: the board whole if it reads, else everything that changed, never cutting text.
       // A fix is framed on what it answers: the commented subject and the changes in it.
-      const asked = m.answers !== undefined ? (askedSubjects.get(m.board) ?? []) : [];
+      // The comments read out in the turn this answers, on this board: the shot is about them.
+      const turnOf = story.find(
+        (x): x is Extract<Moment, { kind: "turn" }> => x.kind === "turn" && x.round === m.answers,
+      );
+      const readOut = (turnOf?.featured ?? [])
+        .map((id) => turnOf!.comments.find((c) => c.thread === id))
+        .filter((c) => c?.board === m.board)
+        .map((c) => threadSubject.get(c!.thread))
+        .filter((r): r is Rect => Boolean(r));
+      const asked =
+        m.answers === undefined
+          ? []
+          : readOut.length
+            ? readOut
+            : (askedSubjects.get(m.board) ?? []);
       const answering = got.changed.filter((r) => asked.some((a) => overlap(r, a) > 0));
       const focusRects = answering.length
         ? [...answering, ...asked.filter((a) => answering.some((r) => overlap(r, a) > 0))]
@@ -480,6 +514,7 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
           parts: focusRects.map((r) => offset(r, ab)),
           texts,
           context,
+          keep: detail,
           key: m.board,
         },
         view,
@@ -527,8 +562,9 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
       continue;
     }
     if (m.kind === "turn") {
-      const before = docAt(m.comments[0]!.entry - 1);
-      const after = docAt(m.comments[m.comments.length - 1]!.entry);
+      const before = compose(docAt(m.comments[0]!.entry - 1), []);
+      const after = compose(docAt(m.comments[m.comments.length - 1]!.entry), []);
+      remember(after);
       const hA = await heightsOf(after);
       const threads: Thread[][] = [];
       const cams: Cam[] = [];
@@ -536,9 +572,19 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
       // Frame the turn's boards together when they read; else each comment's board in turn.
       const rects = turnFrames.get(m) ?? [];
       const all = union(rects.map((r) => ({ ...r, h: r.h })));
-      for (const [i, c] of m.comments.entries()) {
+      const landingOrder = (shot.landings ?? []).map((l) => l.comment);
+      for (const [i, c] of (landingOrder.length ? landingOrder : m.comments).entries()) {
+        // Threads as they stand once this and every comment before it in the order has landed.
         const d = docAt(c.entry);
-        threads.push(d.threads);
+        const landedSoFar = new Set(
+          (landingOrder.length ? landingOrder : m.comments).slice(0, i + 1).map((x) => x.thread),
+        );
+        const lastEntry = Math.max(...m.comments.map((x) => x.entry));
+        threads.push(
+          docAt(lastEntry).threads.filter(
+            (t) => landedSoFar.has(t.id) || !m.comments.some((x) => x.thread === t.id),
+          ),
+        );
         const ab = c.board ? findArtboard(d, c.board)?.artboard : undefined;
         if (!ab) {
           cams.push(cams[i - 1] ?? { page: d.pages[0]?.id ?? "", cx: 0, cy: 0, zoom: 1 });
@@ -555,7 +601,7 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
         subjects.push(subjectOnly);
         // Frame the subject with room for its card beside it (about 380×190 screen px): on the
         // side with more of the board, so the card lands on the board rather than off it.
-        const cardW = 380 / framing.comfort;
+        const cardW = 430 / framing.comfort;
         const roomRight = ab.x + artboardSize(ab).w - (subjectOnly.x + subjectOnly.w);
         const roomLeft = subjectOnly.x - ab.x;
         const subject =
@@ -563,16 +609,17 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
             ? roomRight >= roomLeft
               ? { ...subjectOnly, w: subjectOnly.w + cardW }
               : { ...subjectOnly, x: subjectOnly.x - cardW, w: subjectOnly.w + cardW }
-            : { ...subjectOnly, h: subjectOnly.h + 200 / framing.comfort };
+            : { ...subjectOnly, h: subjectOnly.h + 230 / framing.comfort };
         const texts = await textsOf(d, [ab]);
         const context = await textsOf(
           d,
           pageBoards(d, ab.id).filter((n) => n.id !== ab.id),
         );
-        // A comment that lands as a pin only doesn't move the camera: it lands where we are.
+        // A comment that lands as a pin only doesn't move the camera: it lands wherever the
+        // camera is for the card read out (filled in below).
         const landing = shot.landings?.[i];
-        if (i > 0 && landing && !landing.card) {
-          cams.push(cams[i - 1]!);
+        if (landing && !landing.card && (shot.landings ?? []).some((l) => l.card)) {
+          cams.push(null as unknown as Cam);
           continue;
         }
         const fitAll = all ? Math.min(view.w / all.w, view.h / all.h) : 0;
@@ -591,6 +638,7 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
                 detail: subject,
                 texts,
                 context,
+                keep: subjectOnly,
                 pin,
                 key: ab.id,
               },
@@ -599,6 +647,9 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
         );
         cams.push(cam);
       }
+      // Pin-only landings take the camera of the first card read out.
+      const firstCard = cams.find(Boolean);
+      for (let k = 0; k < cams.length; k++) if (!cams[k]) cams[k] = firstCard ?? cams[0]!;
       scenes.push({
         shot,
         before,

@@ -183,6 +183,8 @@ export interface Focus {
   texts?: Rect[];
   /** Lines on the boards around it: cutting these matters less (they're context). */
   context?: Rect[];
+  /** What must stay wholly in frame whatever else moves (the change being shown). */
+  keep?: Rect;
   /** Show the whole of `board` even when that's below the shape's legible zoom. */
   overview?: boolean;
   /** What it's about (a board id), for debugging and tests. */
@@ -225,7 +227,9 @@ export function framingFor(shape: FilmShape): Framing {
  */
 export function frameFocus(focus: Focus, view: { w: number; h: number }, f: Framing): Cam {
   const cam = frameFocusRaw(focus, view, f);
-  return focus.texts?.length ? avoidCuts(cam, focus.texts, view, f, focus.context) : cam;
+  return focus.texts?.length
+    ? avoidCuts(cam, focus.texts, view, f, focus.context, focus.keep)
+    : cam;
 }
 
 /** Text runs on one row (same top, touching) joined into the line they make. */
@@ -254,6 +258,7 @@ export function avoidCuts(
   view: { w: number; h: number },
   f: Framing,
   context: Rect[] = [],
+  keep?: Rect,
 ): Cam {
   // Lines are measured as text runs; a heading's lines on one row make one line here.
   const lines = mergeRows(texts);
@@ -276,7 +281,7 @@ export function avoidCuts(
       if (widest.y + widest.h > top) cam = { ...cam, cy: cam.cy + (widest.y + widest.h + 8 - top) };
     }
   }
-  return cleanFrame(cam, lines, view, f, mergeRows(context));
+  return cleanFrame(cam, lines, view, f, mergeRows(context), keep);
 }
 
 /** The corner wayfinding line, in screen px: text under it reads as cut too. Set per film. */
@@ -326,7 +331,22 @@ function cleanFrame(
   view: { w: number; h: number },
   f: Framing,
   context: Rect[] = [],
+  keep?: Rect,
 ): Cam {
+  // The change being shown stays wholly in frame (below the corner lines): never traded away.
+  const holds = (c: Cam) => {
+    if (!keep) return true;
+    const hw = view.w / 2 / c.zoom;
+    const hh = view.h / 2 / c.zoom;
+    const top = (f.top + 4) / c.zoom;
+    const m = 8 / c.zoom;
+    return (
+      keep.x >= c.cx - hw + m &&
+      keep.x + keep.w <= c.cx + hw - m &&
+      keep.y >= c.cy - hh + top &&
+      keep.y + keep.h <= c.cy + hh - m
+    );
+  };
   // A cut heading is far worse than a cut caption: weigh each cut line by its type size; the
   // subject's own lines count fully, the boards around it a quarter.
   const weight = (c: Cam) =>
@@ -337,6 +357,7 @@ function cleanFrame(
   let bestW = weight(cam);
   let bestCost = 0;
   const consider = (c: Cam, cost: number) => {
+    if (!holds(c)) return;
     const w = weight(c) + cost * 6;
     if (w < bestW + bestCost * 6 - 1e-6) {
       bestW = weight(c);

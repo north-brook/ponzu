@@ -398,11 +398,17 @@ export function timeline(
       const cards = opts.length <= 15 ? 2 : 4;
       const hops = opts.hops?.get(m) ?? [];
       const featured = m.featured ?? m.comments.slice(0, cards).map((c) => c.thread);
-      const shown = m.comments.map((c, i) => ({
+      // Pin-only comments land first, quickly, wherever the camera is; the comments read out come
+      // last, so the fix follows the card straight away.
+      const order = [
+        ...m.comments.map((c, i) => ({ c, i })).filter((x) => !featured.includes(x.c.thread)),
+        ...m.comments.map((c, i) => ({ c, i })).filter((x) => featured.includes(x.c.thread)),
+      ];
+      const shown = order.map(({ c, i }, k) => ({
         comment: c,
         card: featured.includes(c.thread),
-        hop: i > 0 && Boolean(hops[i]) && featured.includes(c.thread),
-        d: featured.includes(c.thread) ? commentTime(c.words, opts.length) : 0.4,
+        hop: k > 0 && Boolean(hops[i]) && featured.includes(c.thread),
+        d: featured.includes(c.thread) ? commentTime(c.words, opts.length) : 0.3,
       }));
       return {
         m,
@@ -437,7 +443,6 @@ export function timeline(
       for (const x of r.shown) x.d *= k;
     }
   } else {
-    // Spare time: longer looks at each result, then a calmer change, evenly across the work.
     // Spare time: a longer look at each result (never a long still), a calmer change, and
     // longer reads of the cards; what's left goes to the last look at the result.
     let spare = room - used;
@@ -450,7 +455,7 @@ export function timeline(
       const each = spare / slots;
       let usedNow = 0;
       for (const r of works) {
-        const h = Math.max(0, Math.min(each * 2 * 0.6, 1.5 - r.hold));
+        const h = Math.max(0, Math.min(each * 2 * 0.6, 1.3 - r.hold));
         const c = Math.max(0, Math.min(each * 2 * 0.4, 1.7 - r.change));
         r.hold += h;
         r.change += c;
@@ -459,7 +464,7 @@ export function timeline(
       for (const r of turns)
         for (const x of r.shown) {
           if (!x.card) continue;
-          const d = Math.max(0, Math.min(each, 2.4 - x.d));
+          const d = Math.max(0, Math.min(each * 1.5, 3.2 - x.d));
           x.d += d;
           r.change += d;
           usedNow += d;
