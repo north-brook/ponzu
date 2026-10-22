@@ -130,8 +130,9 @@ export const organizeTools = [
       if (args.tokens) doc.tokens = args.tokens.endsWith("\n") ? args.tokens : `${args.tokens}\n`;
       const { key, design } = await ws.create(args.path, doc);
       if (session) session.file = key;
+      const link = ws.link?.(key);
       return {
-        text: `Created ${key}\nPages: ${design.doc.pages.map((p) => `${p.id} "${p.name}"`).join(", ")}\nTokens: ${parseTokens(design.doc.tokens).length}`,
+        text: `Created ${key}${link ? `\nLink: ${link}` : ""}\nPages: ${design.doc.pages.map((p) => `${p.id} "${p.name}"`).join(", ")}\nTokens: ${parseTokens(design.doc.tokens).length}`,
       };
     },
   }),

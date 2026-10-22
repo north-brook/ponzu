@@ -4,6 +4,7 @@ import { basename, isAbsolute, join, resolve } from "node:path";
 import {
   type ColorScheme,
   type Doc,
+  designLink,
   findArtboard,
   locate,
   type Op,
@@ -58,6 +59,11 @@ export class LocalWorkspace implements Workspace {
   theme?: ColorScheme;
   /** The server that serves designs' assets, once there is one, so renders can load them. */
   assetOrigin?: string;
+  /**
+   * Where links to designs open: the Mac app, by ponzu://, or this server's canvas in a browser.
+   * Unset, as when `ponzu mcp` runs the tools itself, there's nothing to open and no links.
+   */
+  opensIn?: "app" | { origin: string };
   private entries = new Map<string, Entry>();
   private opening = new Map<string, Promise<Entry>>();
   private focusListeners = new Set<(key: string, artboard: string) => void>();
@@ -83,6 +89,12 @@ export class LocalWorkspace implements Workspace {
 
   focus(key: string, artboard: string): void {
     for (const l of this.focusListeners) l(key, artboard);
+  }
+
+  link(key: string, artboard?: string): string | undefined {
+    if (!this.opensIn) return undefined;
+    const origin = this.opensIn === "app" ? undefined : this.opensIn.origin;
+    return designLink(key, { artboard, origin });
   }
 
   onFocus(fn: (key: string, artboard: string) => void): () => void {

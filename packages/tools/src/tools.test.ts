@@ -54,6 +54,16 @@ test("find_nodes counts matches", async () => {
   expect((await call("find_nodes", { within: "n_card" })).text).toMatch(/^\d+ matches/);
 });
 
+test("get_basic_info gives the link that opens the design in Ponzu, when there is one", async () => {
+  const { call, ws } = await setup();
+  expect((await call("get_basic_info", {})).text).not.toContain("Link:");
+  ws.link = (key, artboard) =>
+    `ponzu://open?file=/d/${key}.design${artboard ? `&artboard=${artboard}` : ""}`;
+  const text = (await call("get_basic_info", {})).text;
+  expect(text).toContain("Link: ponzu://open?file=/d/fern.design (give the person this");
+  expect(text).toContain("&artboard=<id>");
+});
+
 test("get_basic_info says how many tokens it left out and where to see them", async () => {
   const { call } = await setup(57);
   const r = await call("get_basic_info", {});

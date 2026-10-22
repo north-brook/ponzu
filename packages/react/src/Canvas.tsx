@@ -62,6 +62,8 @@ export interface CanvasProps {
    * top-left board to the width, from its top, for a narrow screen to scroll down from.
    */
   initialFit?: "page" | "first";
+  /** An artboard to open on, from a link: its page shows with the board framed. */
+  artboard?: string;
   className?: string;
 }
 
@@ -135,6 +137,7 @@ export function Canvas({
   page: pageProp,
   onPageChange,
   initialFit = "page",
+  artboard: linked,
   className,
 }: CanvasProps) {
   // Read-only hides the controls that edit; this catches anything they missed.
@@ -259,19 +262,31 @@ export function Canvas({
     else fitPage();
   }, [page, bounds, fitPage, fitFirst, initialFit]);
 
+  /** Show a board's page with the board framed, in place of the page's own fit. */
+  const showBoard = (pageId: string, ab: Artboard | undefined) => {
+    if (pageId !== page?.id) {
+      fitted.current = `${pageId}:${initialFit}`;
+      setPageId(pageId);
+    }
+    if (ab) fit({ x: ab.x, y: ab.y, w: size(ab).w, h: boardHeight(ab) }, viewportSize(), 96, 1);
+  };
+
+  // Open on the board a link named, once the document is in. After the page's own fit, so the
+  // first frame painted is the board's.
+  const shownLink = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (!linked || !doc || shownLink.current === linked) return;
+    shownLink.current = linked;
+    const hit = findArtboard(doc, linked);
+    if (hit) showBoard(hit.page.id, hit.artboard);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linked, doc]);
+
   // Follow focus requests (agent created an artboard).
   useEffect(() => {
     const f = state.focus;
     if (!f || !doc) return;
-    if (f.page !== page?.id) {
-      fitted.current = `${f.page}:${initialFit}`;
-      setPageId(f.page);
-    }
-    const ab = findArtboard(doc, f.artboard)?.artboard;
-    if (ab) {
-      const { w } = size(ab);
-      fit({ x: ab.x, y: ab.y, w, h: boardHeight(ab) }, viewportSize(), 96, 1);
-    }
+    showBoard(f.page, findArtboard(doc, f.artboard)?.artboard);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.focus?.at]);
 

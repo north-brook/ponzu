@@ -32,6 +32,11 @@ export const orientTools = [
       const doc = design.doc;
       const folders = design.pageFolders();
       const lines = [docSummary(doc, { folderOf: (id) => folders.get(id) }), `Path: ${key}`];
+      const link = ws.link?.(key);
+      if (link)
+        lines.push(
+          `Link: ${link} (give the person this, not the path, to open it in Ponzu; add &artboard=<id> to open on one artboard)`,
+        );
       const tokens = parseTokens(doc.tokens);
       if (tokens.length) {
         const limit = 40;

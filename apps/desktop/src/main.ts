@@ -1,6 +1,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { parseDesignLink } from "@ponzu/core";
 import { cloneTarget, parseOpenUrl, spawnGit } from "@ponzu/server/clone";
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, shell } from "electron";
 import { renderToken, startRenderHost } from "./render-host";
@@ -198,7 +199,7 @@ function showWindow() {
   mainWindow.focus();
 }
 
-async function openDesign(path: string) {
+async function openDesign(path: string, artboard?: string) {
   if (!serverUrl) {
     pendingOpens.push(path);
     return;
@@ -210,17 +211,35 @@ async function openDesign(path: string) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ path, by: "person" }),
   });
-  await mainWindow.loadURL(`${serverUrl}/?file=${encodeURIComponent(path)}`);
+  const focus = artboard ? `&artboard=${encodeURIComponent(artboard)}` : "";
+  await mainWindow.loadURL(`${serverUrl}/?file=${encodeURIComponent(path)}${focus}`);
   app.addRecentDocument(path);
   mainWindow.focus();
 }
 
 /**
+ * A ponzu:// link. `ponzu://open?file=<path>.design&artboard=<id>`, from an agent handing over
+ * its work: open that design on this Mac, on that artboard. Only one that's already there: a link
+ * never makes a folder.
+ *
  * `ponzu://open?repo=<owner>/<repo>&ref=<ref>&path=<path>.design`, from ponzu.design's Open in
  * Ponzu button: clone the repo into ~/Ponzu (or fetch the clone there), check out the ref, and
  * open the design. The link is checked in @ponzu/server/clone before git sees any of it.
  */
 async function openLink(url: string) {
+  const local = parseDesignLink(url);
+  if (local) {
+    if (!serverUrl) {
+      pendingLinks.push(url);
+      return;
+    }
+    if (!existsSync(join(local.path, "design.json"))) {
+      dialog.showErrorBox("Ponzu can't find that design", local.path);
+      return;
+    }
+    await openDesign(local.path, local.artboard);
+    return;
+  }
   const target = parseOpenUrl(url);
   if (!target) {
     dialog.showErrorBox("Ponzu can't open that link", url);

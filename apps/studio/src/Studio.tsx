@@ -98,6 +98,16 @@ export function Studio() {
   const [active, setActive] = useState<string | null>(() =>
     new URLSearchParams(location.search).get("file"),
   );
+  /**
+   * The artboard a link opened the window on (ponzu://open?file=…&artboard=…), in its file.
+   * Dropped once the person moves to another tab, so coming back keeps where they were.
+   */
+  const [linked, setLinked] = useState(() => {
+    const q = new URLSearchParams(location.search);
+    const file = q.get("file");
+    const artboard = q.get("artboard");
+    return file && artboard ? { file, artboard } : null;
+  });
   const sources = useMemo(() => new Map<string, SocketSource>(), []);
   const source = (tab: string) => {
     let s = sources.get(tab);
@@ -134,6 +144,10 @@ export function Studio() {
     const url = new URL(location.href);
     if (active) url.searchParams.set("file", active);
     else url.searchParams.delete("file");
+    if (linked && active !== linked.file) {
+      setLinked(null);
+      url.searchParams.delete("artboard");
+    }
     history.replaceState(null, "", url);
   }, [tabs, active]);
 
@@ -292,7 +306,12 @@ export function Studio() {
       <main className="min-h-0 flex-1 px-2 pb-2">
         {active ? (
           <div className="h-full overflow-hidden rounded-xl bg-canvas" key={active}>
-            <Canvas source={source(active)} theme={theme} me={{ kind: "user", name: "You" }} />
+            <Canvas
+              source={source(active)}
+              theme={theme}
+              me={{ kind: "user", name: "You" }}
+              artboard={active === linked?.file ? linked.artboard : undefined}
+            />
           </div>
         ) : (
           <Dashboard
