@@ -297,7 +297,7 @@
     --pz-chip: #1f1f1e;
     --pz-surface: #1b1b1a;
     --pz-hover: rgba(255, 255, 255, 0.06);
-    --pz-comment: #f4f3ef;
+    --pz-comment: #ffc81e;
     --pz-comment-ink: #111110;
     --pz-comment-soft: #2e2a1c;
     --pz-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.5);
@@ -388,7 +388,7 @@
     --pz-rule: #262523;
     --pz-chip: #1f1f1e;
     --pz-surface: #1b1b1a;
-    --pz-comment: #f4f3ef;
+    --pz-comment: #ffc81e;
     --pz-comment-ink: #111110;
     --pz-comment-soft: #2e2a1c;
     --pz-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.5);

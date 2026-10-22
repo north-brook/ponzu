@@ -22,11 +22,12 @@
   --pz-hover: rgba(17, 17, 16, 0.05);
   /* Selection is neutral: color on the canvas belongs to the brand and the design. */
   --pz-select: var(--pz-ink);
-  /* Your pins are ink; yellow is kept for the agent. */
-  --pz-comment: #111110;
-  /* Yuzu: an agent's trace around the artboard it's working on. */
+  /* Pins are yuzu, the brand's color, so the conversation reads as Ponzu. Ink numbers. */
+  --pz-comment: #ffc81e;
+  /* Yuzu also traces the artboard an agent is working on. */
   --pz-rind: #ffc81e;
-  --pz-comment-ink: #ffffff;
+  --pz-comment-ink: #111110;
+  /* A pale yuzu behind the agent's avatar in a thread. */
   --pz-comment-soft: #fff4d1;
   --pz-danger: #d93a2b;
   --pz-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 28px rgba(0, 0, 0, 0.1);
@@ -63,7 +64,7 @@
   --pz-chip: #1f1f1e;
   --pz-surface: #1b1b1a;
   --pz-hover: rgba(255, 255, 255, 0.06);
-  --pz-comment: #f4f3ef;
+  --pz-comment: #ffc81e;
   --pz-rind: #ffc81e;
   --pz-comment-ink: #111110;
   --pz-comment-soft: #2e2a1c;
