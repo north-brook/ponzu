@@ -1,8 +1,10 @@
 import {
   type Catalog,
   type CatalogArtboard,
+  type CatalogCard,
   type CatalogFile,
   type CatalogMachine,
+  foldCopies,
   previewArtboard,
 } from "@ponzu/core";
 import {
@@ -16,7 +18,15 @@ import {
 } from "@ponzu/react";
 import Fuse, { type FuseResultMatch } from "fuse.js";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { agoShort, Device, folderOf, projectOf, WhereLine } from "@/components/file-info";
+import {
+  agoShort,
+  branchOf,
+  Device,
+  folderOf,
+  projectOf,
+  tilde,
+  WhereLine,
+} from "@/components/file-info";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -92,29 +102,40 @@ export function Dashboard({
     !(connected && files.length > 0);
   const q = query.trim();
   const live = useLive(files);
+  // Identical copies of a design in several checkouts are one card.
   const shelved = useMemo(() => {
     const by: Record<View, CatalogFile[]> = { recent: [], scratch: [], archived: [] };
     for (const f of files) by[f.shelf ?? "recent"].push(f);
-    return by;
+    return {
+      recent: foldCopies(by.recent),
+      scratch: foldCopies(by.scratch),
+      archived: foldCopies(by.archived),
+    };
   }, [files]);
   // Searching looks everywhere but the archive.
-  const searchable = useMemo(() => files.filter((f) => f.shelf !== "archived"), [files]);
+  const searchable = useMemo(
+    () => [...shelved.recent, ...shelved.scratch].sort((a, b) => b.file.modified - a.file.modified),
+    [shelved],
+  );
   const inView = shelved[view];
   const projects = useProjects(inView);
   // A filter for a project this view no longer has goes back to All.
   // NO_PROJECT is "", a scope like any other: compare with null, not truthiness.
   const scope = project !== null && projects.some((p) => p.id === project) ? project : null;
   const shown =
-    scope !== null ? inView.filter((f) => (projectOf(f)?.id ?? NO_PROJECT) === scope) : inView;
+    scope !== null ? inView.filter((c) => (projectOf(c.file)?.id ?? NO_PROJECT) === scope) : inView;
 
   // A shelf change that fails (another Mac offline, a newer Ponzu owning the catalog)
   // says why in the toast, and the card stays as it was.
   const failed = (err: unknown) =>
     setToast({ text: err instanceof Error && err.message ? err.message : "That didn’t work." });
+  // A card's copies go with it, so archiving one doesn't turn up the next.
   const shelve = onShelve
-    ? async (file: CatalogFile, action: ShelfAction) => {
+    ? async (card: CatalogCard, action: ShelfAction) => {
+        const all = (a: ShelfAction) =>
+          Promise.all([card.file, ...card.copies].map((f) => onShelve(f, a)));
         try {
-          await onShelve(file, action);
+          await all(action);
         } catch (err) {
           failed(err);
           return;
@@ -126,10 +147,10 @@ export function Dashboard({
           recent: "scratch",
         };
         setToast({
-          text: TOAST[action](file.name),
+          text: TOAST[action](card.file.name),
           undo: () => {
             setToast(null);
-            onShelve(file, undo[action]).catch(failed);
+            all(undo[action]).catch(failed);
           },
         });
       }
@@ -185,7 +206,7 @@ export function Dashboard({
         {q ? (
           <Results
             query={q}
-            files={searchable}
+            cards={searchable}
             machines={machines}
             onOpen={onOpen}
             onShelve={shelve}
@@ -215,14 +236,14 @@ export function Dashboard({
             {view !== "recent" && <ViewNote view={view} />}
             {shown.length ? (
               <Grid>
-                {shown.map((f) => (
+                {shown.map((c) => (
                   <FileCard
-                    key={f.id}
-                    file={f}
-                    machine={machines.get(f.machine)}
+                    key={c.file.id}
+                    card={c}
+                    machine={machines.get(c.file.machine)}
                     onOpen={onOpen}
                     onShelve={shelve}
-                    live={live.has(f.id)}
+                    live={live.has(c.file.id)}
                     short={Boolean(scope)}
                   />
                 ))}
@@ -308,11 +329,11 @@ interface Project {
 }
 
 /** The projects in a view, the busiest first, and the designs outside one last. */
-function useProjects(files: CatalogFile[]): Project[] {
+function useProjects(cards: CatalogCard[]): Project[] {
   return useMemo(() => {
     const by = new Map<string, Project>();
-    for (const f of files) {
-      const p = projectOf(f);
+    for (const { file } of cards) {
+      const p = projectOf(file);
       const id = p?.id ?? NO_PROJECT;
       const had = by.get(id);
       if (had) had.count++;
@@ -330,7 +351,7 @@ function useProjects(files: CatalogFile[]): Project[] {
         b.count - a.count ||
         a.name.localeCompare(b.name),
     );
-  }, [files]);
+  }, [cards]);
 }
 
 function Projects({
@@ -579,13 +600,13 @@ function Setup({
       <Heading left="Recent" />
       {files.length ? (
         <Grid>
-          {files.map((f) => (
+          {foldCopies(files).map((c) => (
             <FileCard
-              key={f.id}
-              file={f}
-              machine={machines.get(f.machine)}
+              key={c.file.id}
+              card={c}
+              machine={machines.get(c.file.machine)}
               onOpen={onOpen}
-              live={live.has(f.id)}
+              live={live.has(c.file.id)}
             />
           ))}
         </Grid>
@@ -680,7 +701,7 @@ function Grid({ children, columns = 4 }: { children: ReactNode; columns?: 3 | 4 
 }
 
 function FileCard({
-  file,
+  card,
   machine,
   onOpen,
   onShelve,
@@ -689,10 +710,10 @@ function FileCard({
   live,
   short,
 }: {
-  file: CatalogFile;
+  card: CatalogCard;
   machine?: CatalogMachine;
   onOpen: (target: OpenTarget) => void;
-  onShelve?: (file: CatalogFile, action: ShelfAction) => Promise<void>;
+  onShelve?: (card: CatalogCard, action: ShelfAction) => Promise<void>;
   /** Show the design itself, edits and all, over its preview. */
   live?: boolean;
   match?: readonly [number, number][];
@@ -701,6 +722,7 @@ function FileCard({
   /** Filtered to its project: the folder line can say less. */
   short?: boolean;
 }) {
+  const { file, copies } = card;
   const fresh = file.created !== undefined && Date.now() - file.created < 5 * 60_000;
   const working = Boolean(file.busy) || fresh;
   const archived = file.shelf === "archived";
@@ -736,7 +758,7 @@ function FileCard({
           {live && <LivePreview file={file} />}
         </div>
         {working && <CardTrace />}
-        {onShelve && <CardMenu file={file} onOpen={open} onShelve={onShelve} />}
+        {onShelve && <CardMenu card={card} onOpen={onOpen} onShelve={onShelve} />}
       </div>
       <div className="flex min-w-0 flex-col gap-0.5 px-0.5">
         <span className="flex min-w-0 items-baseline gap-2">
@@ -769,8 +791,12 @@ function FileCard({
           </span>
         ) : (
           <span className="flex min-w-0 items-center gap-[5px] text-muted-foreground text-xs">
-            <WhereLine file={file} className="min-w-0 shrink" />
-            {short && file.git && (
+            {copies.length ? (
+              <Checkouts card={card} />
+            ) : (
+              <WhereLine file={file} className="min-w-0 shrink" />
+            )}
+            {short && file.git && !copies.length && (
               <>
                 <span className="text-faint">·</span>
                 <span className="min-w-0 shrink-[2] truncate">
@@ -791,6 +817,30 @@ function FileCard({
       </div>
     </div>
   );
+}
+
+/** Where a card's copies are, all of them, with none picked out: "9 branches". */
+function Checkouts({ card }: { card: CatalogCard }) {
+  const all = labelled(card);
+  const branches = [card.file, ...card.copies].every((f) => f.git?.branch);
+  return (
+    <span
+      className="flex min-w-0 items-center gap-[5px] text-muted-foreground text-xs"
+      title={`The same design, unchanged, on ${all.map((c) => c.label).join(", ")}`}
+    >
+      <Icon name="branch" size={13} strokeWidth={1.7} className="shrink-0 text-faint" />
+      <span className="truncate">
+        {all.length} {branches ? "branches" : "checkouts"}
+      </span>
+    </span>
+  );
+}
+
+/** A card's design and its copies, each with the branch (or folder) it's on, in name order. */
+function labelled(card: CatalogCard): { file: CatalogFile; label: string }[] {
+  return [card.file, ...card.copies]
+    .map((file) => ({ file, label: branchOf(file) ?? tilde(folderOf(file)) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
 }
 
 /**
@@ -832,16 +882,20 @@ function CardTrace() {
   );
 }
 
-/** A card's "…": open it, find it, or put it away. Shows on hover, and stays while open. */
+/**
+ * A card's "…": open it (on any of its branches), find it, or put it away.
+ * Shows on hover, and stays while open.
+ */
 function CardMenu({
-  file,
+  card,
   onOpen,
   onShelve,
 }: {
-  file: CatalogFile;
-  onOpen: () => void;
-  onShelve: (file: CatalogFile, action: ShelfAction) => Promise<void>;
+  card: CatalogCard;
+  onOpen: (target: OpenTarget) => void;
+  onShelve: (card: CatalogCard, action: ShelfAction) => Promise<void>;
 }) {
+  const { file, copies } = card;
   const [open, setOpen] = useState(false);
   const desktop = window.ponzuDesktop;
   const here = file.machine === "local";
@@ -863,10 +917,29 @@ function CardMenu({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-        <DropdownMenuItem onSelect={onOpen}>
+        <DropdownMenuItem onSelect={() => onOpen({ key: file.key, base: file.base })}>
           <Icon name="folderOpen" size={15} />
           Open
         </DropdownMenuItem>
+        {copies.length > 0 && (
+          <>
+            <DropdownMenuSeparator />
+            <div className="px-2.5 pt-1 pb-0.5 text-[11.5px] text-faint">Open on</div>
+            <div className="max-h-[225px] overflow-y-auto">
+              {labelled(card).map(({ file: c, label }) => (
+                <DropdownMenuItem
+                  key={c.id}
+                  title={tilde(c.key)}
+                  onSelect={() => onOpen({ key: c.key, base: c.base })}
+                >
+                  <Icon name="branch" size={15} />
+                  <span className="min-w-0 max-w-[240px] truncate">{label}</span>
+                </DropdownMenuItem>
+              ))}
+            </div>
+            <DropdownMenuSeparator />
+          </>
+        )}
         {desktop && here && (
           <DropdownMenuItem onSelect={() => desktop.reveal(file.key)}>
             <Icon name="folder" size={15} />
@@ -879,19 +952,19 @@ function CardMenu({
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         {shelf === "archived" ? (
-          <DropdownMenuItem onSelect={() => void onShelve(file, "restore")}>
+          <DropdownMenuItem onSelect={() => void onShelve(card, "restore")}>
             <Icon name="unarchive" size={15} />
             Restore
           </DropdownMenuItem>
         ) : (
           <>
             <DropdownMenuItem
-              onSelect={() => void onShelve(file, shelf === "scratch" ? "recent" : "scratch")}
+              onSelect={() => void onShelve(card, shelf === "scratch" ? "recent" : "scratch")}
             >
               <Icon name={shelf === "scratch" ? "check" : "scratch"} size={15} />
               {shelf === "scratch" ? "Move to Recent" : "Move to Scratch"}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => void onShelve(file, "archive")}>
+            <DropdownMenuItem onSelect={() => void onShelve(card, "archive")}>
               <Icon name="archive" size={15} />
               Archive
             </DropdownMenuItem>
@@ -1064,41 +1137,42 @@ const FUSE = {
  */
 function Results({
   query,
-  files,
+  cards,
   machines,
   onOpen,
   onShelve,
   live,
 }: {
   query: string;
-  files: CatalogFile[];
+  cards: CatalogCard[];
   machines: Map<string, CatalogMachine>;
   onOpen: (target: OpenTarget) => void;
-  onShelve?: (file: CatalogFile, action: ShelfAction) => Promise<void>;
+  onShelve?: (card: CatalogCard, action: ShelfAction) => Promise<void>;
   /** Cards to show live (useLive). */
   live: Set<string>;
 }) {
   const fileFuse = useMemo(
     () =>
-      new Fuse(files, {
+      new Fuse(cards, {
         ...FUSE,
         keys: [
-          { name: "name", weight: 3 },
-          { name: "key", weight: 0.5 },
+          { name: "file.name", weight: 3 },
+          { name: "file.key", weight: 0.5 },
         ],
       }),
-    [files],
+    [cards],
   );
+  // A design's frames once, from the copy its card opens.
   const frames = useMemo<FrameHit[]>(
     () =>
-      files.flatMap((file) =>
+      cards.flatMap(({ file }) =>
         file.artboards.map((artboard) => ({
           file,
           artboard,
           page: file.pages.find((p) => p.id === artboard.page)?.name,
         })),
       ),
-    [files],
+    [cards],
   );
   const frameFuse = useMemo(
     () =>
@@ -1124,14 +1198,14 @@ function Results({
           <Grid>
             {fileHits.map(({ item, matches }) => (
               <FileCard
-                key={item.id}
-                file={item}
-                machine={machines.get(item.machine)}
+                key={item.file.id}
+                card={item}
+                machine={machines.get(item.file.machine)}
                 onOpen={onOpen}
                 onShelve={onShelve}
-                live={live.has(item.id)}
-                match={ranges(matches, "name")}
-                pathMatch={ranges(matches, "name") ? undefined : ranges(matches, "key")}
+                live={live.has(item.file.id)}
+                match={ranges(matches, "file.name")}
+                pathMatch={ranges(matches, "file.name") ? undefined : ranges(matches, "file.key")}
               />
             ))}
           </Grid>

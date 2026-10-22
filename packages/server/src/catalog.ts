@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
 import { mkdir, readdir, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -77,6 +78,8 @@ export interface CatalogSummary {
   shelf: CatalogShelf;
   /** When the person archived it, if it's archived. */
   archived?: number;
+  /** A hash of what's in it (CatalogFile's). Missing for a locked design. */
+  fingerprint?: string;
   /** The git checkout it's in, if any. */
   git?: CatalogGit;
   pages: CatalogFile["pages"];
@@ -693,6 +696,7 @@ async function lastEdit(key: string): Promise<number> {
 }
 
 async function readSummary(key: string, modified: number): Promise<CatalogSummary | null> {
+  let raw: string;
   let meta: {
     name?: string;
     example?: unknown;
@@ -700,7 +704,8 @@ async function readSummary(key: string, modified: number): Promise<CatalogSummar
     pages?: { id?: string; name?: string; icon?: string }[];
   };
   try {
-    meta = JSON.parse(await readFile(join(key, "design.json"), "utf8"));
+    raw = await readFile(join(key, "design.json"), "utf8");
+    meta = JSON.parse(raw);
   } catch {
     return null;
   }
@@ -710,6 +715,10 @@ async function readSummary(key: string, modified: number): Promise<CatalogSummar
     )
     .map(({ id, name, icon }) => (icon ? { id, name, icon } : { id, name }));
   const artboards: CatalogSummary["artboards"] = [];
+  // What the design is, not where it is: copies in several checkouts hash the same.
+  const hash = createHash("sha1").update(raw);
+  for (const f of ["tokens.css", "comments.json"])
+    hash.update(`\0${f}\0`).update(await readFile(join(key, f)).catch(() => ""));
   let folders: string[] = [];
   try {
     folders = (await readdir(join(key, "pages"), { withFileTypes: true }))
@@ -731,6 +740,7 @@ async function readSummary(key: string, modified: number): Promise<CatalogSummar
     for (const f of files.sort()) {
       try {
         const html = await readFile(join(key, "pages", folder, f), "utf8");
+        hash.update(`\0${folder}/${f}\0`).update(html);
         // The same fallback id the store gives a file without one.
         const id = hashedId("ab", `pages/${folder}/${f}`);
         const { artboard } = parseArtboardFile(html, { id, name: f.replace(/\.html$/, "") });
@@ -747,6 +757,7 @@ async function readSummary(key: string, modified: number): Promise<CatalogSummar
     example: meta.example === true,
     scratch: meta.scratch === true,
     shelf: "recent",
+    fingerprint: hash.digest("hex"),
     pages,
     artboards,
   };
@@ -801,6 +812,7 @@ export function catalogFile(
     ...(s.git ? { git: s.git } : {}),
     shelf: s.shelf,
     ...(s.archived ? { archived: s.archived } : {}),
+    ...(s.fingerprint ? { fingerprint: s.fingerprint } : {}),
     pages: s.pages,
     artboards: s.artboards.map((a) => ({
       ...a,
