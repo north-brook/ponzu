@@ -57,6 +57,8 @@ export interface Edit {
 }
 
 export interface Scene {
+  /** For a turn: per landing, the board its comment is on (a tall frame dims the others). */
+  subjectBoards?: string[][];
   shot: StoryShot;
   /** The canvas before this shot's change, and after it. */
   before: Doc;
@@ -730,6 +732,9 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
         cams,
         threads,
         subjects,
+        subjectBoards: (landingOrder.length ? landingOrder : m.comments).map((c) =>
+          c.board ? [c.board] : [],
+        ),
       });
     }
   }

@@ -61,6 +61,8 @@ interface Frame {
   end?: { fade: number; t: number };
   /** The last look: only these boards stay; the rest fade by `p`. */
   only?: { ids: string[]; p: number };
+  /** At rest in a tall frame: the boards beside the subject recede by `p` (0 → 1). */
+  dim?: { ids: string[]; p: number };
 }
 
 /** The canvas at film time `f`: one settled state, a camera, and what's animating. */
@@ -107,8 +109,34 @@ function frameAt(e: Edit, f: number): Frame {
       ),
     };
   }
-  if (scene.shot.moment.kind === "turn") return turnFrame(e, scene, f);
-  return workFrame(e, scene, f);
+  const fr = scene.shot.moment.kind === "turn" ? turnFrame(e, scene, f) : workFrame(e, scene, f);
+  // A tall frame shows one subject: once the camera rests, the boards beside it recede, and come
+  // back as it leaves.
+  if (e.view.h > e.view.w && !fr.only) {
+    // In a turn, the board of the card being read (pin-only comments land without moving it).
+    const l = scene.shot.landings ?? [];
+    const k = landingIndex(scene, f);
+    let card = l.findIndex((x, i) => x.card && i >= k);
+    for (let i = k; i >= 0; i--)
+      if (l[i]?.card) {
+        card = i;
+        break;
+      }
+    const ids = scene.board ? [scene.board] : (scene.subjectBoards?.[Math.max(0, card)] ?? []);
+    const next = e.scenes[index + 1];
+    const leaving = next ? next.shot.start : tl.result;
+    // Only a real rest: a quick beat doesn't flicker its neighbours down and back up.
+    if (ids.length && leaving - s.arrive >= 1.6) {
+      fr.dim = {
+        ids,
+        p: Math.min(
+          progress(f, s.arrive, s.arrive + 0.35, ease.out),
+          1 - progress(f, leaving - 0.3, leaving, ease.in),
+        ),
+      };
+    }
+  }
+  return fr;
 }
 
 /** Where a scene's camera is at time `f` (a turn's camera hops between its comments). */
@@ -174,6 +202,14 @@ function workFrame(e: Edit, scene: Scene, f: number): Frame {
     };
   }
   return out;
+}
+
+/** Which of a turn's comments has landed last at `f` (-1 before the first). */
+function landingIndex(scene: Scene, f: number): number {
+  const l = scene.shot.landings ?? [];
+  let k = -1;
+  for (let i = 0; i < l.length; i++) if (l[i]!.at <= f) k = i;
+  return k;
 }
 
 function turnFrame(e: Edit, scene: Scene, f: number): Frame {
@@ -255,7 +291,12 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
                 className="pz-film-board pz:absolute pz:shadow-board"
                 style={{
                   display: offscreen ? "none" : undefined,
-                  opacity: fr.only && !fr.only.ids.includes(ab.id) ? 1 - fr.only.p : undefined,
+                  opacity:
+                    fr.only && !fr.only.ids.includes(ab.id)
+                      ? 1 - fr.only.p
+                      : fr.dim && !fr.dim.ids.includes(ab.id)
+                        ? 1 - 0.75 * fr.dim.p
+                        : undefined,
                   left: 0,
                   top: 0,
                   transform: `translate(${ab.x * cam.zoom + tx}px, ${ab.y * cam.zoom + ty}px) scale(${cam.zoom})`,

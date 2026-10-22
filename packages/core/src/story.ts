@@ -235,8 +235,9 @@ export const SHOT = {
 /** Time to read a comment: about a second, plus a quarter second per four words. */
 export function commentTime(words: number, length: number): number {
   // About four words a second on a phone, plus a beat to find the card: a long note gets its read.
-  const base = Math.min(5, Math.max(1.6, 0.9 + words * 0.09));
-  return length <= 15 ? Math.min(4.6, base) : base;
+  const base = Math.min(8, Math.max(2, 0.7 + words * 0.25));
+  // A short film has one card and room for about five seconds of it.
+  return length <= 15 ? Math.min(4.9, base) : base;
 }
 
 /**
@@ -256,10 +257,14 @@ export function chooseStory(all: Moment[], looks: Map<Moment, Look>, opts: Story
   const score = (w: Extract<Moment, { kind: "work" }>) =>
     (looks.get(w)?.change ?? 0) * (w.answers !== undefined ? 2.5 : 1) + Math.min(0.3, w.ops * 0.01);
   const workCost = SHOT.travel + SHOT.settle + SHOT.change + SHOT.hold;
+  // What the timeline will spend on it: the glide, a settle, each card read (a hop between
+  // cards on different boards), the pin-only landings (none in a short film), a beat after.
   const turnCost = (t: Extract<Moment, { kind: "turn" }>, featured: CommentLanding[]) =>
     SHOT.travel +
+    0.25 +
     featured.reduce((a, c) => a + commentTime(c.words, opts.length), 0) +
-    (t.comments.length - featured.length) * 0.4;
+    Math.max(0, featured.length - 1) * 0.6 +
+    (short ? 0 : (t.comments.length - featured.length) * 0.3);
 
   const picked = new Set<Moment>();
   const featured = new Map<Moment, string[]>();
@@ -321,11 +326,13 @@ export function chooseStory(all: Moment[], looks: Map<Moment, Look>, opts: Story
 
   if (firstTurn) takeStory(firstTurn, short ? 1 : 3);
   if (!short) for (const t of turns.slice(1)) if (!takeStory(t, 3)) break;
-  // Leftover room in a long film: the biggest builds that weren't shown, before the first turn.
+  // Leftover room in a long film: one more build before the first turn, if it's big; the rest
+  // of the room goes to reading and holds, not a long tour before the story starts.
   if (!short)
     for (const w of before
-      .filter((x) => !picked.has(x) && visible(x))
-      .sort((a, b) => score(b) - score(a)))
+      .filter((x) => !picked.has(x) && visible(x) && (looks.get(x)?.change ?? 0) >= 0.2)
+      .sort((a, b) => score(b) - score(a))
+      .slice(0, 1))
       if (spent + workCost <= budget) {
         picked.add(w);
         spent += workCost;
@@ -472,7 +479,10 @@ export function timeline(
         for (const x of r.shown) {
           if (!x.card) continue;
           // A long comment reads at its own pace: cards take their share first in a short film.
-          const d = Math.max(0, Math.min(each * cardShare, 3.8 - x.d));
+          const d = Math.max(
+            0,
+            Math.min(each * cardShare, Math.min(9, commentTime(x.comment.words, 60) * 1.25) - x.d),
+          );
           x.d += d;
           r.change += d;
           usedNow += d;
