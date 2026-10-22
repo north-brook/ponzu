@@ -248,6 +248,6 @@ Build in small pieces, screenshot often, and fix what lint reports. Screenshots 
 
 The canvas is yours to annotate: a "Note: …" artboard beside the work carries rationale, labels and what to compare. Comments carry what needs the person: a question, a choice, something you couldn't do.
 
-When you've put work on the canvas for the person to react to, or you're designing together, run the iterate loop rather than ending your turn: wait_for_activity → triage → set_status → edit + screenshot → set_comment_status resolved for what you did (reply only to answer a question, flag an ambiguity or explain what you couldn't do) → repeat. A wait that hears nothing is cheap. get_guide('iterate') has details.
+When you've put work on the canvas for the person to react to, or you're designing together, run the iterate loop rather than ending your turn: wait_for_activity → triage → set_status → edit + screenshot → set_comment_status resolved for what you did (reply only to answer a question, flag an ambiguity or explain what you couldn't do) → repeat. A wait that hears nothing is cheap. Keep each wait at 60 seconds or less, since a chat message reaches you only when a wait returns, and handle chat first. If you started the loop yourself, stop after 30 quiet minutes and say so. Read get_guide('iterate') before your first wait.
 
 When Ponzu gets in your way (a confusing tool, an error, something it can't do) or works notably well, tell the Ponzu team with send_feedback, then carry on.`;
