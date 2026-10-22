@@ -1,12 +1,12 @@
 import { SLICE, SLICE_STROKE } from "@ponzu/react/slice";
-import type { CSSProperties } from "react";
-import { Lockup } from "./icons";
+import { Heart, Lockup } from "./icons";
 import { CONTRIBUTING, DOWNLOAD, LICENSE, RELEASES, REPO, SDK } from "./links";
 
 /**
  * The site footer. Its sign-off is a sunrise drawn in the mark: a field of tiny slices with a huge
- * one rising from the bottom edge in yuzu. The field fades in from the top, a ripple turns the big
- * slice every few seconds, and any unit turns when you point at it. See `.field` in globals.css.
+ * one rising from the bottom edge in yuzu. The field fades in from the top and holds still. The
+ * legal line sits on clearings of the page's ground that feather into it (`.field-clear`). See
+ * `.field` in globals.css.
  */
 export function Footer() {
   return (
@@ -38,12 +38,16 @@ export function Footer() {
 
       <div className="relative -mx-16 mt-16 max-[720px]:-mx-5">
         <Field />
-        {/* The legal line sits in the field, on a soft clearing of the page's own ground. */}
+        {/* The legal line sits in the field, each part on a clearing of the page's own ground. */}
         <div className="absolute inset-x-0 bottom-0 flex justify-between gap-4 px-16 pb-5 text-[13px] text-muted max-[720px]:static max-[720px]:flex-col max-[720px]:gap-1.5 max-[720px]:px-5 max-[720px]:py-6">
           <a className="footer-link field-clear w-fit hover:text-ink" href="https://northbrook.com">
             © 2026 Northbrook PBC
           </a>
-          <span className="field-clear">Free and open source, MIT licensed</span>
+          <span className="field-clear flex w-fit items-center gap-[5px]">
+            Made with
+            <Heart className="fill-yuzu text-yuzu" />
+            in Brooklyn NY
+          </span>
         </div>
       </div>
     </footer>
@@ -89,10 +93,7 @@ function inSlice(x: number, y: number) {
 const UNITS = Array.from({ length: COLS * ROWS }, (_, n) => {
   const x = (n % COLS) * CELL + CELL / 2;
   const y = Math.floor(n / COLS) * CELL + CELL / 2;
-  const on = inSlice(x, y);
-  // How far the ripple has to travel to reach this unit, in cells.
-  const d = Math.round(Math.hypot(x - W / 2, y - H) / CELL);
-  return { x, y, on, d };
+  return { x, y, on: inSlice(x, y) };
 });
 
 /** The field, drawn once on the server: 2,266 units, each a <use> of one slice. */
@@ -107,8 +108,6 @@ function Field() {
     >
       <defs>
         <symbol id="field-unit" viewBox="0 0 64 64">
-          {/* An invisible disc, so the whole unit answers the pointer: its centre is a gap. */}
-          <circle cx={32} cy={32} r={32} fill="transparent" />
           <g
             fill="currentColor"
             stroke="currentColor"
@@ -121,24 +120,17 @@ function Field() {
           </g>
         </symbol>
       </defs>
-      {UNITS.map(({ x, y, on, d }) => (
-        <g key={`${x},${y}`} transform={`translate(${x} ${y})`}>
-          {/* The ripple turns the group and hover turns the unit, so each keeps its own rotation. */}
-          <g
-            className="field-ripple"
-            data-on={on || undefined}
-            style={{ "--d": d } as CSSProperties}
-          >
-            <use
-              href="#field-unit"
-              className="field-unit"
-              x={-unit / 2}
-              y={-unit / 2}
-              width={unit}
-              height={unit}
-            />
-          </g>
-        </g>
+      {UNITS.map(({ x, y, on }) => (
+        <use
+          key={`${x},${y}`}
+          href="#field-unit"
+          className="field-unit"
+          data-on={on || undefined}
+          x={x - unit / 2}
+          y={y - unit / 2}
+          width={unit}
+          height={unit}
+        />
       ))}
     </svg>
   );

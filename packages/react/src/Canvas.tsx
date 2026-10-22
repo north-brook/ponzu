@@ -664,7 +664,13 @@ export function Canvas({
                       {ab.name}
                     </span>
                   )}
-                  {who && <WorkingStatus who={who} zoom={camera.zoom} />}
+                  {who && (
+                    <WorkingStatus
+                      who={who}
+                      zoom={camera.zoom}
+                      brief={w * camera.zoom < STATUS_ROOM}
+                    />
+                  )}
                 </div>
                 <ArtboardView
                   artboard={ab}
@@ -924,12 +930,17 @@ interface Worker {
   status?: string;
 }
 
+/** How wide, on screen, a working artboard has to be for its header to hold the agent's status. */
+const STATUS_ROOM = 280;
+
 /**
  * The right side of a working artboard's header: what the agent says it's
  * doing, in shimmering ink, and its mark in color. Several agents show the
- * first one's status and all their marks.
+ * first one's status and all their marks. A board too narrow on screen for
+ * both its name and the status (`brief`) keeps only the marks; the status
+ * stays in the tooltip.
  */
-function WorkingStatus({ who, zoom }: { who: Worker[]; zoom: number }) {
+function WorkingStatus({ who, zoom, brief }: { who: Worker[]; zoom: number; brief: boolean }) {
   const status = who.find((a) => a.status)?.status ?? "Working";
   return (
     <span
@@ -937,7 +948,7 @@ function WorkingStatus({ who, zoom }: { who: Worker[]; zoom: number }) {
       style={{ gap: 6 / zoom }}
       title={who.map((a) => `${a.name}: ${a.status ?? "working"}`).join("\n")}
     >
-      <span className="pz-shimmer pz:min-w-0 pz:truncate">{status}</span>
+      {!brief && <span className="pz-shimmer pz:min-w-0 pz:truncate">{status}</span>}
       <span className="pz:inline-flex pz:shrink-0" style={{ gap: 3 / zoom }}>
         {who.map((a) => (
           <span key={a.id} className="pz:inline-grid pz:place-items-center pz:text-foreground">
