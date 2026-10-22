@@ -241,9 +241,6 @@ export async function buildFilm(input: FilmInput): Promise<FilmModel> {
   const units: string[][] = [];
   const touched: string[][] = [];
   const focus: (Focus | null)[] = [];
-  const userTurn: { current: { turn: number; rect: Rect; page: string } | null } = {
-    current: null,
-  };
 
   for (let i = 0; i < plan.beats.length; i++) {
     const beat = plan.beats[i]!;
@@ -313,13 +310,24 @@ export async function buildFilm(input: FilmInput): Promise<FilmModel> {
       const ab = t.artboardId ? findArtboard(doc, t.artboardId)?.artboard : undefined;
       // The pin and the card beside it, in canvas units at about the board's zoom.
       const pinRect: Rect = { x: spot.x - 20, y: spot.y - 20, w: 200, h: 120 };
-      let board: Rect = ab ? boardRect(ab) : pinRect;
+      const board: Rect = ab ? boardRect(ab) : pinRect;
       if (beat.kind === "comment") {
-        // A run of your comments frames the boards they're on together, so pins land without hops.
-        const run = userTurn.current;
-        if (run && run.turn === beat.turn && run.page === spot.page)
-          board = union([run.rect, board])!;
-        userTurn.current = { turn: beat.turn, rect: board, page: spot.page };
+        // Your turn opens on every board it comments on at once, when that's still
+        // readable, so the pins land one after another without the camera hopping.
+        const run = turnFrame(plan, i, docs, heights, beat.turn);
+        if (run && run.page === spot.page) {
+          // Only when the boards stay readable together; else each pin gets its board.
+          const fit = Math.min(view.w / run.rect.w, view.h / run.rect.h);
+          if (fit >= framing.minZoom * 0.85) {
+            focus.push({
+              page: spot.page,
+              board: run.rect,
+              overview: true,
+              key: `turn-${beat.turn}`,
+            });
+            continue;
+          }
+        }
       }
       focus.push({ page: spot.page, board, detail: pinRect, key: ab?.id ?? t.id });
       continue;
@@ -421,6 +429,42 @@ export async function buildFilm(input: FilmInput): Promise<FilmModel> {
     pinBorn,
     working,
   };
+}
+
+/**
+ * The boards a run of your comments is on, as one rect, from the doc as the
+ * run ends (so later pins' boards are in it from the first). Null when they're
+ * on different pages.
+ */
+function turnFrame(
+  plan: Plan,
+  i: number,
+  docs: Doc[],
+  heights: Map<string, number>[],
+  turn: number,
+): { page: string; rect: Rect } | null {
+  let last = i;
+  while (plan.beats[last + 1]?.turn === turn) last++;
+  const doc = docs[last + 1]!;
+  const h = heights[i] ?? new Map<string, number>();
+  const rects: Rect[] = [];
+  let page: string | null = null;
+  for (let j = i; j <= last; j++) {
+    const b = plan.beats[j]!;
+    const t = doc.threads.find((x) => x.id === b.thread);
+    const ab = t?.artboardId ? findArtboard(doc, t.artboardId) : null;
+    if (!ab) continue;
+    if (page && page !== ab.page.id) return null;
+    page = ab.page.id;
+    rects.push({
+      x: ab.artboard.x,
+      y: ab.artboard.y,
+      w: artboardSize(ab.artboard).w,
+      h: h.get(ab.artboard.id) ?? artboardSize(ab.artboard).h ?? 900,
+    });
+  }
+  const rect = union(rects);
+  return page && rect ? { page, rect } : null;
 }
 
 /** A camera that shows the whole page when there's nothing to follow. */

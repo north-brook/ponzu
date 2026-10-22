@@ -14,7 +14,6 @@ import {
   framingFor,
   groupTurns,
   lastSession,
-  MIN_HOLD,
   planFilm,
   planShots,
   streamUnits,
@@ -316,14 +315,18 @@ describe("follow camera", () => {
       page: "pg",
       board: { x: 0, y: 0, w: 3800, h: 600 },
     });
+    // Each move starts after the last has (nearly) arrived.
     for (let i = 1; i < targets.length; i++)
       expect(targets[i]!.t).toBeGreaterThanOrEqual(
-        targets[i - 1]!.t +
-          targets[i - 1]!.travel +
-          (i === targets.length - 1 ? 0.3 : MIN_HOLD) -
-          1e-9,
+        targets[i - 1]!.t + targets[i - 1]!.travel * 0.8 - 1e-9,
       );
     const path = cameraPath(targets, view);
+    // Every comment has the camera on its board as the pin lands.
+    for (const b of plan.beats.filter((x) => x.kind === "comment")) {
+      const c = camOnPath(path, b.at + 0.16)!;
+      const board = boards[b.artboards[0]!]!;
+      expect(Math.abs(c.cx - (board.x + board.w / 2))).toBeLessThan(board.w / 2);
+    }
     let prev = camOnPath(path, 0)!;
     let maxStep = 0;
     let backedOut = false;

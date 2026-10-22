@@ -824,9 +824,11 @@ export function travelTime(a: Cam, b: Cam, view: { w: number; h: number }, slow 
 }
 
 /**
- * Targets from per-beat focus: one per change of subject. The camera sets off
- * a little before the beat lands, so it arrives as the change does; it never
- * leaves a subject before it has arrived and held there.
+ * Targets from per-beat focus: one per change of subject. Comments, replies
+ * and resolves are the plot, so they're placed first, arriving as their beat
+ * lands; the agent's edits fill the time between, each only where the camera
+ * can get there, hold, and still make the next plot beat. It never leaves a
+ * subject before it has arrived and held there.
  */
 export function camTargets(
   plan: Plan,
@@ -835,30 +837,68 @@ export function camTargets(
   framing: Framing,
   final: Focus | null,
 ): CamTarget[] {
+  const cams = focus.map((fo) => (fo ? frameFocus(fo, view, framing) : null));
+  const plot = (i: number) => plan.beats[i]!.kind !== "edit";
+  // Pass 1: the plot beats' arrivals, in order.
+  const fixed = new Map<number, number>(); // beat index → arrival time
+  let lastPlot: { cam: Cam; arrive: number } | null = null;
+  for (let i = 0; i < plan.beats.length; i++) {
+    const cam = cams[i];
+    if (!cam || !plot(i)) continue;
+    if (lastPlot && sameCam(lastPlot.cam, cam, view)) continue;
+    const arrive = plan.beats[i]!.at;
+    fixed.set(i, arrive);
+    lastPlot = { cam, arrive };
+  }
   const out: CamTarget[] = [];
   let prev: Cam | null = null;
   let prevKey: string | undefined;
+  let free = 0;
+  const nextFixed = (i: number) => {
+    for (let j = i + 1; j < plan.beats.length; j++) if (fixed.has(j)) return j;
+    return -1;
+  };
   for (let i = 0; i < plan.beats.length; i++) {
     const fo = focus[i];
-    if (!fo) continue;
-    const b = plan.beats[i]!;
-    const cam = frameFocus(fo, view, framing);
-    if (
+    const cam = cams[i];
+    if (!fo || !cam) continue;
+    const same =
       prev &&
       (sameCam(prev, cam, view) ||
-        (fo.key && fo.key === prevKey && camDistance(prev, cam, view) < 0.22))
-    )
-      continue;
+        (fo.key && fo.key === prevKey && camDistance(prev, cam, view) < 0.22));
+    if (same) continue;
     if (!prev) {
       out.push({ t: 0, cam, travel: 0 });
-    } else {
-      const last = out[out.length - 1]!;
+      prev = cam;
+      prevKey = fo.key;
+      free = MIN_HOLD;
+      continue;
+    }
+    if (plot(i)) {
+      if (!fixed.has(i)) continue;
       const travel = travelTime(prev, cam, view);
-      const free = last.t + last.travel + MIN_HOLD;
-      const t = Math.max(free, b.at - Math.min(LEAD, travel * 0.75));
+      // Arrive as it lands; if the last move is still underway, cut its hold short.
+      const t = Math.max(
+        out[out.length - 1]!.t + out[out.length - 1]!.travel * 0.8,
+        fixed.get(i)! - travel,
+      );
+      if (t + travel >= plan.pullback - 0.2) continue;
+      out.push({ t, cam, travel: Math.max(0.35, Math.min(travel, fixed.get(i)! - t + 0.15)) });
+    } else {
+      const travel = travelTime(prev, cam, view);
+      const t = Math.max(free, plan.beats[i]!.at - Math.min(LEAD, travel * 0.75));
+      // Only if there's time to arrive, hold and still leave for the next plot beat.
+      const nf = nextFixed(i);
+      if (nf >= 0) {
+        const nextCam = cams[nf]!;
+        const leave = fixed.get(nf)! - travelTime(cam, nextCam, view);
+        if (t + travel + MIN_HOLD > leave) continue;
+      }
       if (t + travel >= plan.pullback - 0.2) continue;
       out.push({ t, cam, travel });
     }
+    const last = out[out.length - 1]!;
+    free = last.t + last.travel + MIN_HOLD;
     prev = cam;
     prevKey = fo.key;
   }
