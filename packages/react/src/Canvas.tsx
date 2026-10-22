@@ -96,6 +96,21 @@ export function labelCovers(
   );
 }
 
+/** The boards a selection box drawn from one corner to the other touches, in page order. */
+export function boardsIn(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+  boxes: { id: string; x: number; y: number; w: number; h: number }[],
+): string[] {
+  const x0 = Math.min(a.x, b.x);
+  const x1 = Math.max(a.x, b.x);
+  const y0 = Math.min(a.y, b.y);
+  const y1 = Math.max(a.y, b.y);
+  return boxes
+    .filter((o) => o.x <= x1 && o.x + o.w >= x0 && o.y <= y1 && o.y + o.h >= y0)
+    .map((o) => o.id);
+}
+
 /** An artboard's size; h is null when it isn't a px length, so the canvas measures it. */
 export function size(ab: Artboard) {
   const w = Number.parseFloat(ab.root.style.width ?? "") || 1440;
@@ -380,6 +395,9 @@ export function Canvas({
         setPending(null);
         setOpenThread(null);
         setSelection([]);
+        // A selection box being drawn is dropped too, or the next move would select again.
+        if (drag.current?.kind === "marquee") drag.current = null;
+        setMarquee(null);
         switchMode("select");
       } else if (
         (e.key === "Backspace" || e.key === "Delete") &&
@@ -432,11 +450,15 @@ export function Canvas({
 
   // Pointer: pan, select, drag artboards by their title, place comments.
   const drag = useRef<{
-    kind: "pan" | "move";
+    kind: "pan" | "move" | "marquee";
     startX: number;
     startY: number;
     ids: string[];
     origin: { id: string; x: number; y: number }[];
+    /** Where a selection box started, in page coordinates. */
+    anchor?: { x: number; y: number };
+    /** The pointer's last position on screen, for the box to follow when the page scrolls. */
+    pointer?: { x: number; y: number };
     moved: boolean;
   } | null>(null);
 
@@ -475,13 +497,17 @@ export function Canvas({
     setPending(null);
     setOpenThread(null);
     if (!hit) {
-      setSelection([]);
+      // A finger on the open canvas pans, as it always has; a mouse draws a selection box.
+      const box = e.pointerType !== "touch";
+      const keep = box && e.shiftKey ? selection : [];
+      setSelection(keep);
       drag.current = {
-        kind: "pan",
+        kind: box ? "marquee" : "pan",
         startX: e.clientX,
         startY: e.clientY,
-        ids: [],
+        ids: keep,
         origin: [],
+        anchor: toWorld(e.clientX, e.clientY),
         moved: false,
       };
       (e.target as Element).setPointerCapture?.(e.pointerId);
@@ -525,6 +551,27 @@ export function Canvas({
   };
 
   const [ghost, setGhost] = useState<{ dx: number; dy: number } | null>(null);
+  /** The selection box's corners in page coordinates, so it holds its place if the camera moves. */
+  const [marquee, setMarquee] = useState<{
+    a: { x: number; y: number };
+    b: { x: number; y: number };
+  } | null>(null);
+
+  /** Draws the selection box from its anchor to the pointer and selects the boards it touches. */
+  const boxTo = (d: NonNullable<typeof drag.current>) => {
+    if (!d.anchor || !d.pointer) return;
+    const b = toWorld(d.pointer.x, d.pointer.y);
+    setMarquee({ a: d.anchor, b });
+    const inside = boardsIn(d.anchor, b, boxes);
+    setSelection([...d.ids, ...inside.filter((id) => !d.ids.includes(id))]);
+  };
+
+  // Scrolling mid-box moves the page under a pointer that stayed put; the box's corner follows it.
+  useEffect(() => {
+    const d = drag.current;
+    if (d?.kind === "marquee" && d.moved) boxTo(d);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [camera]);
 
   const onPointerMove = (e: React.PointerEvent) => {
     const d = drag.current;
@@ -534,6 +581,10 @@ export function Canvas({
     if (Math.abs(dx) + Math.abs(dy) > 2) d.moved = true;
     if (d.kind === "pan") {
       panBy(e.movementX, e.movementY);
+    } else if (d.kind === "marquee") {
+      if (!d.moved) return;
+      d.pointer = { x: e.clientX, y: e.clientY };
+      boxTo(d);
     } else if (d.moved) {
       setGhost({ dx: dx / camera.zoom, dy: dy / camera.zoom });
     }
@@ -552,6 +603,7 @@ export function Canvas({
       source.apply(ops.length === 1 ? ops[0]! : { op: "batch", ops });
     }
     setGhost(null);
+    setMarquee(null);
   };
 
   const createThread = (text: string) => {
@@ -831,6 +883,17 @@ export function Canvas({
               style={{ left: r.x, top: r.y, width: r.w, height: r.h }}
             />
           ))}
+          {marquee && (
+            <div
+              className="pz:pointer-events-none pz:absolute pz:bg-select/8 pz:outline-1 pz:outline-select"
+              style={{
+                left: Math.min(marquee.a.x, marquee.b.x) * camera.zoom + camera.x,
+                top: Math.min(marquee.a.y, marquee.b.y) * camera.zoom + camera.y,
+                width: Math.abs(marquee.b.x - marquee.a.x) * camera.zoom,
+                height: Math.abs(marquee.b.y - marquee.a.y) * camera.zoom,
+              }}
+            />
+          )}
           {pageThreads.map((t) => {
             const ab = boards.find((b) => b.id === t.artboardId);
             const dragging = pinDrag?.id === t.id && pinDrag.moved ? pinDrag : null;
