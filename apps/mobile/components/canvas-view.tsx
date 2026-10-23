@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react";
-import { View } from "react-native";
+import { useWindowDimensions, View } from "react-native";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
 import {
   type FromCanvas,
@@ -11,6 +11,7 @@ import {
   toCanvasScript,
 } from "../canvas/protocol";
 import type { DesignSession } from "../lib/design";
+import { displayRadius } from "../lib/screen";
 import { VERSION } from "../lib/ua";
 
 /**
@@ -26,9 +27,6 @@ function loadCanvasHtml(): string | null {
   }
 }
 const canvasHtml = loadCanvasHtml();
-
-/** The screen's corner radius on current iPhones, which a focused board's trace follows. */
-const SCREEN_RADIUS = 55;
 
 export interface CanvasHandle {
   /**
@@ -61,6 +59,11 @@ export const CanvasView = forwardRef<
     onMessage: (msg: FromCanvas) => void;
   }
 >(function CanvasView(props, ref) {
+  // The display's corner (lib/screen.ts), which a focused board's trace follows.
+  const { width, height } = useWindowDimensions();
+  const radius = displayRadius(width, height);
+  const latestRadius = useRef(radius);
+  latestRadius.current = radius;
   // The web view's instance methods; its typings declare a class the component isn't.
   const web = useRef<{ injectJavaScript(js: string): void; reload(): void }>(null);
   const ready = useRef(false);
@@ -101,7 +104,7 @@ export const CanvasView = forwardRef<
     const p = latest.current;
     const doc = docMessage();
     const msgs: ToCanvas[] = [
-      { t: "insets", insets: p.insets, sheet: p.sheet, radius: SCREEN_RADIUS },
+      { t: "insets", insets: p.insets, sheet: p.sheet, radius: latestRadius.current },
       ...(doc ? [doc] : []),
       { t: "presence", presence: p.session.getState().presence },
       { t: "pending", pin: p.pending },
@@ -134,8 +137,8 @@ export const CanvasView = forwardRef<
   }, [props.session]);
   useEffect(() => send({ t: "theme", theme: props.theme }), [props.theme]);
   useEffect(
-    () => send({ t: "insets", insets: props.insets, sheet: props.sheet, radius: SCREEN_RADIUS }),
-    [props.insets.top, props.insets.bottom, props.sheet],
+    () => send({ t: "insets", insets: props.insets, sheet: props.sheet, radius }),
+    [props.insets.top, props.insets.bottom, props.sheet, radius],
   );
   useEffect(() => send({ t: "pending", pin: props.pending }), [props.pending]);
   useEffect(() => send({ t: "thread", id: props.thread }), [props.thread]);

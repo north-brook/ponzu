@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect } from "react";
-import { type LayoutChangeEvent, View } from "react-native";
+import { type LayoutChangeEvent, useWindowDimensions, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import {
   KeyboardController,
@@ -13,6 +13,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
+import { concentric } from "../lib/screen";
 import { useTheme } from "../lib/theme";
 import { EASE_OUT } from "../lib/tokens";
 
@@ -20,7 +21,8 @@ const ease = Easing.bezier(...EASE_OUT);
 
 /**
  * A sheet over the canvas (comment, thread). Floating, 8pt in from the
- * screen's edges with a 38pt radius, until the keyboard is up: then it sits
+ * screen's edges, its top corners 38pt and its bottom ones concentric with
+ * the display's (lib/screen.ts), until the keyboard is up: then it sits
  * on the keyboard, full width, with 24pt top corners, as the type ⇄ voice
  * study shows. Its shape follows the keyboard's own frame, every frame on
  * the UI thread (react-native-keyboard-controller): as the keyboard drops
@@ -46,6 +48,9 @@ export function Sheet({
   gap?: number;
 }) {
   const { color } = useTheme();
+  const { width, height: screenH } = useWindowDimensions();
+  /** The bottom corners, floating: the display's less the 8pt inset. */
+  const foot = concentric(width, screenH, 8);
   // The keyboard's height (negative, as it lifts content) and how far up it is, 0 to 1.
   const keyboard = useReanimatedKeyboardAnimation();
   const drag = useSharedValue(0);
@@ -67,8 +72,8 @@ export function Sheet({
       bottom: Math.max(side, lift.value),
       borderTopLeftRadius: 38 - 14 * d,
       borderTopRightRadius: 38 - 14 * d,
-      borderBottomLeftRadius: 38 * (1 - d),
-      borderBottomRightRadius: 38 * (1 - d),
+      borderBottomLeftRadius: foot * (1 - d),
+      borderBottomRightRadius: foot * (1 - d),
       paddingHorizontal: 20 - 4 * d,
       paddingTop: 10 - 2 * d,
       paddingBottom: 40 - 28 * d,
