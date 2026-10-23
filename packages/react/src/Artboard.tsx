@@ -94,13 +94,16 @@ export const ArtboardView = memo(function ArtboardView({
     if (!root) return;
     holdLoops(root, hold);
     if (!hold) return;
-    // A loop that starts later holds too: a hover's, or a video that autoplays once it's loaded.
+    // A loop that starts later holds too: a hover's, a video that autoplays once it's loaded, an
+    // SVG loop that begins after a delay. Media and SMIL events don't bubble, so capture them.
     const onStart = () => holdLoops(root, true);
     root.addEventListener("animationstart", onStart);
     root.addEventListener("play", onStart, true);
+    root.addEventListener("beginEvent", onStart, true);
     return () => {
       root.removeEventListener("animationstart", onStart);
       root.removeEventListener("play", onStart, true);
+      root.removeEventListener("beginEvent", onStart, true);
     };
   }, [hold, artboard, tokens, assetBase, colorScheme]);
 
@@ -139,7 +142,7 @@ const LOOPING_SMIL = '[repeatCount="indefinite"], [repeatDur="indefinite"]';
 const heldVideos = new WeakSet<HTMLVideoElement>();
 const heldSmil = new WeakSet<SVGAnimationElement>();
 
-/** Whether a SMIL animation is playing now: one waiting on a click or a time is left to it. */
+/** Whether a SMIL animation is playing now. One waiting on a click or a time holds when it begins. */
 function smilActive(el: SVGAnimationElement): boolean {
   try {
     return el.getStartTime() <= el.getCurrentTime();
