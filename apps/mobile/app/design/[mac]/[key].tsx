@@ -414,7 +414,7 @@ export default function Canvas() {
             <BarButton
               label={`${agent.name}'s session`}
               onPress={() => setCard((c) => !c)}
-              ring={card}
+              held={card}
             >
               <AgentMark client={agent.client} size={20} color={color.ink} />
             </BarButton>

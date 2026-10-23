@@ -22,15 +22,15 @@ export function Glass({
   children,
   style,
   interactive = false,
-  ring = false,
+  held = false,
   testID,
 }: {
   children?: ReactNode;
   style?: StyleProp<ViewStyle>;
   /** A control: the glass responds to touch. */
   interactive?: boolean;
-  /** Held open (the agent button while its card shows): a 1.5pt ink ring. */
-  ring?: boolean;
+  /** Held open (the agent button while its card shows): the glass a step darker. */
+  held?: boolean;
   testID?: string;
 }) {
   const { color, scheme, shadow } = useTheme();
@@ -38,13 +38,14 @@ export function Glass({
     <GlassView
       testID={testID}
       colorScheme={scheme}
+      tintColor={held ? HELD[scheme] : undefined}
       isInteractive={interactive}
       style={[
         styles.shell,
         liquid
           ? null
           : {
-              backgroundColor: color.bar,
+              backgroundColor: held ? HELD[scheme] : color.bar,
               boxShadow: shadow.pop,
               borderWidth: StyleSheet.hairlineWidth,
               borderColor: color.hairline,
@@ -53,15 +54,6 @@ export function Glass({
       ]}
     >
       <View style={[styles.clip, inner(style)]}>{children}</View>
-      {ring && (
-        <View
-          pointerEvents="none"
-          style={[
-            StyleSheet.absoluteFill,
-            { borderRadius: radius(style), borderWidth: 1.5, borderColor: color.ink },
-          ]}
-        />
-      )}
     </GlassView>
   );
 }
@@ -121,10 +113,8 @@ function inner(style: StyleProp<ViewStyle>): ViewStyle {
   return out as ViewStyle;
 }
 
-function radius(style: StyleProp<ViewStyle>): number {
-  const r = StyleSheet.flatten([styles.shell, style])?.borderRadius;
-  return typeof r === "number" ? r : 999;
-}
+/** Held glass, a step darker: ink at 10% in light, white at 20% in dark. */
+const HELD = { light: "rgba(17,17,16,0.10)", dark: "rgba(255,255,255,0.20)" } as const;
 
 const styles = StyleSheet.create({
   clip: { overflow: "hidden" },

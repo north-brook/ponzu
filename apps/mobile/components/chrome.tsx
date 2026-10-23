@@ -14,15 +14,15 @@ export function BarButton({
   onPress,
   children,
   label,
-  ring = false,
+  held = false,
   style,
   testID,
 }: {
   onPress?: () => void;
   children: ReactNode;
   label: string;
-  /** The agent button while its card is open: a 1.5pt ink ring. */
-  ring?: boolean;
+  /** The agent button while its card is open: the glass a step darker. */
+  held?: boolean;
   style?: ViewStyle;
   testID?: string;
 }) {
@@ -36,7 +36,7 @@ export function BarButton({
     >
       <Glass
         interactive
-        ring={ring}
+        held={held}
         style={[{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }, style]}
       >
         {children}
