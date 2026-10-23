@@ -8,6 +8,10 @@ bun run lint && bun run typecheck && bun test
 
 The desktop app: `cd apps/desktop && bun run start`.
 
+`serve` from a checkout listens on that checkout's own port in 7800–7999 (it
+prints it) and stays off the tailnet, so it never takes 7777 or the iPhone's
+Bonjour advert from the installed app. `--tailnet` opts back in.
+
 ## Pull requests
 
 PRs are squash-merged, and **the PR title becomes the commit on `main`**, so it

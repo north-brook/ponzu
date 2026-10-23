@@ -2,8 +2,12 @@ import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+import { checkoutPort, sourceCheckout } from "../cli/src/source.ts";
 
-const target = process.env.PONZU_SERVER ?? "http://127.0.0.1:7777";
+// The server `bun run dev` starts from this checkout listens on the checkout's own port.
+const checkout = sourceCheckout(fileURLToPath(import.meta.url));
+const target =
+  process.env.PONZU_SERVER ?? `http://127.0.0.1:${checkout ? checkoutPort(checkout) : 7777}`;
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
