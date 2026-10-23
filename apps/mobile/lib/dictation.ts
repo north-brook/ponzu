@@ -1,6 +1,8 @@
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { AppState } from "react-native";
 import { useSharedValue } from "react-native-reanimated";
+import { Listener, type ListenState } from "./listen";
 
 /**
  * Dictation for a comment, on this iPhone only (`requiresOnDeviceRecognition`):
@@ -12,50 +14,58 @@ export function useDictation(active: boolean) {
   const [said, setSaid] = useState("");
   const [partial, setPartial] = useState("");
   const [muted, setMuted] = useState(false);
-  const [state, setState] = useState<"idle" | "listening" | "denied" | "unavailable">("idle");
+  const [state, setState] = useState<ListenState>("idle");
   /** 0 (silent) to 1, from the volume events, eased on the UI thread by the waveform. */
   const level = useSharedValue(0);
   const base = useRef("");
 
-  const start = useCallback(async () => {
-    if (!ExpoSpeechRecognitionModule.isRecognitionAvailable()) {
-      setState("unavailable");
-      return;
-    }
-    const perm = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-    if (!perm.granted) {
-      setState("denied");
-      return;
-    }
-    const onDevice = ExpoSpeechRecognitionModule.supportsOnDeviceRecognition();
-    if (!onDevice) {
-      // The design promises dictation stays on the phone; without an on-device model, don't send audio away.
-      setState("unavailable");
-      return;
-    }
-    ExpoSpeechRecognitionModule.start({
-      lang: "en-US",
-      interimResults: true,
-      continuous: true,
-      requiresOnDeviceRecognition: true,
-      addsPunctuation: true,
-      volumeChangeEventOptions: { enabled: true, intervalMillis: 60 },
-    });
-  }, []);
-
-  const stop = useCallback(() => {
-    ExpoSpeechRecognitionModule.abort();
-    level.value = 0;
-  }, []);
+  // One listener for the sheet's life: its starts and stops survive the
+  // re-renders the permission prompts cause (lib/listen.ts).
+  const listener = useRef<Listener | null>(null);
+  listener.current ??= new Listener(
+    {
+      available: () => ExpoSpeechRecognitionModule.isRecognitionAvailable(),
+      requestPermissions: () => ExpoSpeechRecognitionModule.requestPermissionsAsync(),
+      onDevice: () => ExpoSpeechRecognitionModule.supportsOnDeviceRecognition(),
+      start: () =>
+        ExpoSpeechRecognitionModule.start({
+          lang: "en-US",
+          interimResults: true,
+          continuous: true,
+          requiresOnDeviceRecognition: true,
+          addsPunctuation: true,
+          volumeChangeEventOptions: { enabled: true, intervalMillis: 60 },
+        }),
+      abort: () => ExpoSpeechRecognitionModule.abort(),
+    },
+    setState,
+    // Development: Metro's log says when the recognizer starts, for checking the first use.
+    __DEV__ ? (msg) => console.log(`[dictation] ${msg}`) : undefined,
+  );
 
   useEffect(() => {
-    if (active && !muted) start();
-    else stop();
-    return stop;
+    const l = listener.current!;
+    if (active && !muted) l.start();
+    else {
+      l.stop();
+      level.value = 0;
+    }
+    return () => {
+      l.stop();
+      level.value = 0;
+    };
   }, [active, muted]);
+  // Back from the permission prompts (or anything else over the app): listen if still asked to.
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s === "active") listener.current!.resumed();
+    });
+    return () => sub.remove();
+  }, []);
 
   useSpeechRecognitionEvent("start", () => setState("listening"));
   useSpeechRecognitionEvent("end", () => {
+    listener.current!.ended();
     // Keep what was said; a new start adds to it.
     setSaid((s) => join(s, partialRef.current));
     setPartial("");
