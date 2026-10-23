@@ -16,14 +16,15 @@ import { MacIcon } from "../components/icons";
 import { boot } from "../lib/boot";
 import { LAUNCH } from "../lib/mark";
 import { reachAll, reaching, useMacs } from "../lib/reach";
-import { Slice } from "../lib/slice";
+import { BLOOM_IN_MS, Slice } from "../lib/slice";
 import { useHideSplash } from "../lib/splash";
 import { EASE_OUT } from "../lib/tokens";
 
 /**
- * Launch (the iPhone design's Connect › 1 Launch): the slice on yuzu where
- * the native splash left it, blooming while Ponzu looks for your Macs, with
- * the wordmark rising in under it. Yuzu in light and dark alike.
+ * Launch (the iPhone design's Connect › 1 Launch): on the native splash's
+ * yuzu, the slice blooms in from nothing (`bloomin`), then keeps blooming
+ * while Ponzu looks for your Macs, with the wordmark rising in under it.
+ * Yuzu in light and dark alike.
  *
  * It asks every saved Mac where it stands, then goes on: no Macs → Connect;
  * one answers → Designs; none on the tailnet → Tailscale; all asleep → "Your
@@ -43,6 +44,8 @@ export default function Launch() {
   const ready = booted && !restoring;
   const gone = useRef(false);
   const still = useReducedMotion();
+  /** When the slice started blooming in: the handoff never leaves before it's whole. */
+  const mounted = useRef(Date.now());
   useEffect(() => {
     let on = true;
     boot().then(() => {
@@ -64,9 +67,12 @@ export default function Launch() {
       if (!still) startHandoff(to === "/designs" ? "designs" : "tile", lifted.current);
       router.replace(to);
     };
-    // Hold the bloom a beat, so a fast answer doesn't flash the launch screen.
+    // Hold the bloom a beat, so a fast answer doesn't flash the launch screen,
+    // and never leave before the bloom-in has landed: the handoff carries the
+    // whole slice on. Under Reduce Motion the slice is whole from the start.
+    const landed = still ? 0 : mounted.current + BLOOM_IN_MS - Date.now();
     const later = (to: Parameters<typeof go>[0]) => {
-      const t = setTimeout(() => go(to), 600);
+      const t = setTimeout(() => go(to), Math.max(600, landed));
       return () => clearTimeout(t);
     };
     switch (overall.state) {
@@ -111,7 +117,7 @@ export default function Launch() {
           lift,
         ]}
       >
-        <Slice size={LAUNCH.mark} bloom="loop" />
+        <Slice size={LAUNCH.mark} bloom="inThenLoop" />
         <Animated.View
           entering={FadeInDown.delay(500)
             .duration(500)

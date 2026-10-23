@@ -2,9 +2,9 @@ import { hideAsync, preventAutoHideAsync, setOptions } from "expo-splash-screen"
 import { useEffect } from "react";
 
 /**
- * The native splash (yuzu, the slice) stays up until the first screen has
- * drawn. The launch screen draws the same picture in the same place, so the
- * splash leaves at once, without a fade.
+ * The native splash (yuzu alone) stays up until the first screen has drawn.
+ * The launch screen draws the same yuzu and blooms the slice in on it, so
+ * the splash leaves at once, without a fade.
  */
 export function holdSplash() {
   preventAutoHideAsync();
