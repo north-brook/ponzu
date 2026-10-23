@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.39.3](https://github.com/north-brook/ponzu/compare/v1.39.2...v1.39.3) (2026-10-23)
+
+
+### Bug Fixes
+
+* update electron to 44.9.3 for the emudhra certificate mitigation ([#158](https://github.com/north-brook/ponzu/issues/158)) ([01ba774](https://github.com/north-brook/ponzu/commit/01ba7743abeeb8a8483af348c54803d4f5989050))
+
 ## [1.39.2](https://github.com/north-brook/ponzu/compare/v1.39.1...v1.39.2) (2026-10-23)
 
 
