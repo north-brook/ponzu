@@ -1,7 +1,7 @@
-import { router, useFocusEffect, useLocalSearchParams, useNavigation } from "expo-router";
+import { router, Stack, useFocusEffect, useLocalSearchParams, useNavigation } from "expo-router";
 import { useCallback, useRef } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { HeaderTitle } from "../../../components/chrome";
 import { AgentMark } from "../../../components/icons";
 import { MacImage } from "../../../components/preview";
 import { type ActivityItem, changeTarget, shortAgent, title } from "../../../lib/activity";
@@ -23,7 +23,6 @@ import { brand } from "../../../lib/tokens";
  */
 export default function Activity() {
   const { color } = useTheme();
-  const insets = useSafeAreaInsets();
   const files = useFiles();
   const docs = useThreadDocs();
   // Development: `ponzu://activity?since=<ms>` shows what's new since then.
@@ -73,25 +72,15 @@ export default function Activity() {
 
   return (
     <View testID="activity" style={{ flex: 1, backgroundColor: color.bg }}>
+      <Stack.Toolbar placement="left">
+        <Stack.Toolbar.View hidesSharedBackground>
+          <HeaderTitle color={color.ink}>Activity</HeaderTitle>
+        </Stack.Toolbar.View>
+      </Stack.Toolbar>
       <ScrollView
-        contentContainerStyle={{ paddingTop: insets.top, paddingBottom: insets.bottom + 24 }}
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerStyle={{ paddingTop: 8, paddingBottom: 24 }}
       >
-        <Text
-          style={{
-            // Where the back button's row was, now that it's a tab: the title in its place.
-            paddingTop: 18,
-            paddingBottom: 12,
-            paddingHorizontal: 20,
-            fontFamily: "Funnel Display",
-            fontWeight: "700",
-            fontSize: 34,
-            lineHeight: 37.4,
-            letterSpacing: -0.03 * 34,
-            color: color.ink,
-          }}
-        >
-          Activity
-        </Text>
         <View style={{ paddingTop: 4, paddingHorizontal: 20, gap: 12 }}>
           {shown.fresh.length > 0 && (
             <>

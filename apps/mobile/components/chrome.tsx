@@ -75,6 +75,29 @@ export function Lockup({ color }: { color: string }) {
   );
 }
 
+/**
+ * A tab's title in the header's row, where Designs has its lockup: Funnel
+ * Display bold, 26pt, so Search and Activity read as Designs does.
+ */
+export function HeaderTitle({ children, color }: { children: string; color: string }) {
+  return (
+    <Text
+      accessibilityRole="header"
+      style={{
+        paddingLeft: 4,
+        fontFamily: "Funnel Display",
+        fontWeight: "700",
+        fontSize: 26,
+        lineHeight: 28,
+        letterSpacing: -0.03 * 26,
+        color,
+      }}
+    >
+      {children}
+    </Text>
+  );
+}
+
 /** The yuzu app tile, 64pt, that starts each Connect screen's marks. */
 export function AppTile({
   size = 64,

@@ -3,7 +3,8 @@ import { useTheme } from "../../../lib/theme";
 
 /**
  * The tab's page first, under anything opened from it. Search shows the
- * system's header, for the system's search field; it has no title.
+ * system's header, its title where Designs has its lockup, and the
+ * system's search field in the tab bar.
  */
 export const unstable_settings = { anchor: "search" };
 
@@ -17,6 +18,7 @@ export default function Layout() {
         headerTransparent: true,
         headerTitle: "",
         headerTintColor: color.ink,
+        scrollEdgeEffects: { top: "soft" },
       }}
     />
   );
