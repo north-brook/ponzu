@@ -215,6 +215,7 @@ test("a design in a git checkout carries its root, branch and project; a worktre
   // Without a remote, the project is the main checkout.
   expect(await gitOf(join(repo, "design/app.design"))).toEqual({
     root: repo,
+    worktree: false,
     branch: "feat/hover-card",
     project: repo,
     projectName: "repo",
@@ -233,11 +234,17 @@ test("a design in a git checkout carries its root, branch and project; a worktre
   await writeFile(join(repo, ".git/worktrees/tree/commondir"), "../..\n");
   await mkdir(tree, { recursive: true });
   await writeFile(join(tree, ".git"), `gitdir: ${join(repo, ".git/worktrees/tree")}\n`);
-  expect(await gitOf(join(tree, "x.design"))).toEqual({ root: tree, branch: "t3/abc", ...project });
+  expect(await gitOf(join(tree, "x.design"))).toEqual({
+    root: tree,
+    worktree: true,
+    branch: "t3/abc",
+    ...project,
+  });
 
   await writeFile(join(repo, ".git/worktrees/tree/HEAD"), "8f1dcad0123456789abcdef\n");
   expect(await gitOf(join(tree, "x.design"))).toEqual({
     root: tree,
+    worktree: true,
     commit: "8f1dcad",
     ...project,
   });
@@ -246,7 +253,12 @@ test("a design in a git checkout carries its root, branch and project; a worktre
 
   const catalog = new LocalCatalog({ roots: [repo], spotlight: "roots" });
   const [app] = await catalog.files(new Map());
-  expect(app?.git).toEqual({ root: repo, branch: "feat/hover-card", ...project });
+  expect(app?.git).toEqual({
+    root: repo,
+    worktree: false,
+    branch: "feat/hover-card",
+    ...project,
+  });
 });
 
 test("every worktree of a repository a design is known in is walked", async () => {
@@ -306,6 +318,62 @@ test("copies of a design in a repository's checkouts share a fingerprint until o
   );
   const [c, d] = await print();
   expect(c).not.toBe(d);
+});
+
+test("a worktree's copy is untouched until its branch changes it, committed or not", async () => {
+  const { changedDesignFiles } = await import("./catalog.ts");
+  const run = (args: string[], cwd: string) => {
+    const r = Bun.spawnSync(["git", ...args], {
+      cwd,
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: "t",
+        GIT_AUTHOR_EMAIL: "t@t",
+        GIT_COMMITTER_NAME: "t",
+        GIT_COMMITTER_EMAIL: "t@t",
+      },
+    });
+    if (r.exitCode !== 0) throw new Error(r.stderr.toString());
+  };
+  const main = join(dir, "wt-main");
+  await mkdir(main, { recursive: true });
+  run(["init", "-q", "-b", "main"], main);
+  await design(join(main, "design/app.design"), "App", { Home: ["Hero"] });
+  await design(join(main, "design/brand.design"), "Brand", { Logos: ["Mark"] });
+  run(["add", "-A"], main);
+  run(["commit", "-qm", "designs"], main);
+  const tree = join(dir, "wt-agent");
+  run(["worktree", "add", "-q", "-b", "agent", tree], main);
+  const untouched = async (key: string) => {
+    const catalog = new LocalCatalog({ roots: [main, tree], spotlight: "roots" });
+    return (await catalog.files(new Map())).find((f) => f.key === key)?.git?.untouched;
+  };
+  const app = join(tree, "design/app.design");
+  expect(await changedDesignFiles(tree)).toEqual([]);
+  expect(await untouched(app)).toBe(true);
+  // The main checkout's own copy is no worktree's, and says nothing either way.
+  expect(await untouched(join(main, "design/app.design"))).toBeUndefined();
+  // A drawn preview is no change.
+  await mkdir(join(app, ".ponzu"), { recursive: true });
+  await writeFile(join(app, ".ponzu/preview.png"), "png");
+  expect(await untouched(app)).toBe(true);
+
+  // An agent draws an artboard: a new file, not yet committed.
+  const page = join(app, "pages/home/new.html");
+  await writeFile(page, '<section data-artboard data-id="ab_new" data-name="New"></section>');
+  expect(await untouched(app)).toBe(false);
+  expect(await untouched(join(tree, "design/brand.design"))).toBe(true);
+  // Committed on the branch, it's still the branch's own.
+  run(["add", "-A"], tree);
+  run(["commit", "-qm", "new artboard"], tree);
+  expect(await changedDesignFiles(tree)).toEqual(["design/app.design/pages/home/new.html"]);
+  expect(await untouched(app)).toBe(false);
+
+  // Main moving on after the branch began isn't the branch changing anything.
+  await writeFile(join(main, "design/brand.design/tokens.css"), ":root{}");
+  run(["add", "-A"], main);
+  run(["commit", "-qm", "tokens"], main);
+  expect(await untouched(join(tree, "design/brand.design"))).toBe(true);
 });
 
 test("remotes name a project the same however they're written", async () => {
