@@ -37,7 +37,7 @@ const SHELVES: { id: Shelf; label: string }[] = [
  * phone. The lockup and a filter in the system's glass header, the grid
  * scrolling under it; every Mac's designs as cards, newest first. The
  * filter is the system's menu: the shelf (Recent, Scratch, Archived) and
- * the project, each with its count, the current one checked; the button
+ * the project, the current one checked; the button
  * wears a yuzu badge with how many filters are on. Search and Activity are tabs of
  * their own beside it. Macs that didn't answer keep their cards from last
  * time, dimmed, under a note.
@@ -56,11 +56,6 @@ export default function Designs() {
   useEffect(syncFeeds, []);
 
   const onShelf = useMemo(() => files.filter((f) => shelfOf(f) === shelf), [files, shelf]);
-  const counts = useMemo(() => {
-    const c: Record<Shelf, number> = { recent: 0, scratch: 0, archived: 0 };
-    for (const f of files) c[shelfOf(f)]++;
-    return c;
-  }, [files]);
   const chips = useMemo(() => projects(onShelf), [onShelf]);
   const shown =
     project === undefined
@@ -125,7 +120,6 @@ export default function Designs() {
         subactions: SHELVES.map((s) => ({
           id: `shelf:${s.id}`,
           title: s.label,
-          subtitle: String(counts[s.id]),
           image: s.id === "recent" ? "hi-home" : s.id === "scratch" ? "hi-scratch" : "hi-archive",
           state: s.id === shelf ? "on" : "off",
         })),
@@ -138,21 +132,19 @@ export default function Designs() {
           {
             id: "project:*",
             title: "All",
-            subtitle: String(onShelf.length),
             image: "hi-grid",
             state: project === undefined ? "on" : "off",
           },
           ...chips.map((c) => ({
             id: `project:${c.name ?? ""}`,
             title: c.name ?? "Not in a project",
-            subtitle: String(c.count),
             image: c.name ? "hi-branch" : "hi-folder",
             state: project === c.name ? ("on" as const) : ("off" as const),
           })),
         ],
       },
     ],
-    [shelf, project, counts, onShelf.length, chips],
+    [shelf, project, chips],
   );
   const pickFilter = (id: string) => {
     selectionAsync().catch(() => {});
