@@ -58,6 +58,7 @@ const GAP = 14;
  * button: in voice, the keyboard (switch to typing) until something is said,
  * then send; in typing, the mic (switch to voice) until something is typed,
  * then send. Voice shows what's heard, a live waveform and a neutral mute.
+ * The field and the waveform share one glass capsule, the buttons' height.
  *
  * Switching is one sheet changing shape (Flow › 8 ⇄ 7), never two screens:
  * every part stays mounted and moves on one clock on the UI thread
@@ -217,53 +218,60 @@ export function Composer({
           </Animated.View>
         </Animated.View>
         <Animated.View style={[{ flex: 1, minWidth: 0, justifyContent: "center" }, middleStyle]}>
-          <Animated.View
-            style={[
-              { transformOrigin: "left center", overflow: "hidden", borderRadius: 22 },
-              fieldStyle,
-            ]}
-            pointerEvents={voice ? "none" : "auto"}
-            accessibilityElementsHidden={voice}
-            importantForAccessibility={voice ? "no-hide-descendants" : "auto"}
+          {/* One glass capsule, the buttons' height and glass: the field in typing, the waveform in voice. */}
+          <Glass
+            testID="comment-field"
+            style={{ minHeight: 44, borderRadius: 22, justifyContent: "center" }}
           >
-            <TextInput
-              ref={input}
-              value={typed}
-              onChangeText={setTyped}
-              placeholder={placeholder}
-              placeholderTextColor={color.faint}
-              selectionColor={brand.yuzu}
-              cursorColor={brand.yuzu}
-              multiline
-              editable={!voice}
-              testID={voice ? undefined : "comment-input"}
-              style={{
-                minHeight: 44,
-                maxHeight: 140,
-                paddingTop: 11,
-                paddingBottom: 11,
-                paddingHorizontal: 14,
-                borderRadius: 22,
-                backgroundColor: color.canvas,
-                fontFamily: "Inter",
-                fontSize: 17,
-                lineHeight: 22.95,
-                color: color.ink,
-              }}
-            />
-          </Animated.View>
-          <Animated.View
-            pointerEvents="none"
-            accessibilityElementsHidden={!voice}
-            importantForAccessibility={voice ? "auto" : "no-hide-descendants"}
-            style={[{ position: "absolute", left: 4, right: 4, bottom: 4, height: 36 }, waveStyle]}
-          >
-            <Waveform
-              level={dictation.level}
-              active={voice && spoken}
-              quiet={!voice || quiet || dictation.muted}
-            />
-          </Animated.View>
+            <Animated.View
+              style={[
+                { transformOrigin: "left center", overflow: "hidden", borderRadius: 22 },
+                fieldStyle,
+              ]}
+              pointerEvents={voice ? "none" : "auto"}
+              accessibilityElementsHidden={voice}
+              importantForAccessibility={voice ? "no-hide-descendants" : "auto"}
+            >
+              <TextInput
+                ref={input}
+                value={typed}
+                onChangeText={setTyped}
+                placeholder={placeholder}
+                placeholderTextColor={color.faint}
+                selectionColor={brand.yuzu}
+                cursorColor={brand.yuzu}
+                multiline
+                editable={!voice}
+                testID={voice ? undefined : "comment-input"}
+                style={{
+                  minHeight: 44,
+                  maxHeight: 140,
+                  paddingTop: 11,
+                  paddingBottom: 11,
+                  paddingHorizontal: 14,
+                  fontFamily: "Inter",
+                  fontSize: 17,
+                  lineHeight: 22.95,
+                  color: color.ink,
+                }}
+              />
+            </Animated.View>
+            <Animated.View
+              pointerEvents="none"
+              accessibilityElementsHidden={!voice}
+              importantForAccessibility={voice ? "auto" : "no-hide-descendants"}
+              style={[
+                { position: "absolute", left: 4, right: 4, bottom: 4, height: 36 },
+                waveStyle,
+              ]}
+            >
+              <Waveform
+                level={dictation.level}
+                active={voice && spoken}
+                quiet={!voice || quiet || dictation.muted}
+              />
+            </Animated.View>
+          </Glass>
         </Animated.View>
         {has ? (
           <RoundButton tone="ink" label="Send" onPress={send} disabled={sending} testID="send">

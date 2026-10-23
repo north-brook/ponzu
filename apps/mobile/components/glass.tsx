@@ -23,6 +23,7 @@ export function Glass({
   style,
   interactive = false,
   ring = false,
+  testID,
 }: {
   children?: ReactNode;
   style?: StyleProp<ViewStyle>;
@@ -30,10 +31,12 @@ export function Glass({
   interactive?: boolean;
   /** Held open (the agent button while its card shows): a 1.5pt ink ring. */
   ring?: boolean;
+  testID?: string;
 }) {
   const { color, scheme, shadow } = useTheme();
   return (
     <GlassView
+      testID={testID}
       colorScheme={scheme}
       isInteractive={interactive}
       style={[
