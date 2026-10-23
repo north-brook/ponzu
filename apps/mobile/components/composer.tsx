@@ -166,10 +166,15 @@ export function Composer({
     const p = phase(clock.value, toVoice.value, PARTS.mute);
     return { width: 56 * p };
   });
+  // The mute slides and grows in; its glass appears natively (never faded,
+  // components/glass.tsx) and only its glyph fades.
   const muteStyle = useAnimatedStyle(() => {
     const p = phase(clock.value, toVoice.value, PARTS.mute);
-    return { opacity: p, transform: [{ translateX: -16 * (1 - p) }, { scale: 0.6 + 0.4 * p }] };
+    return { transform: [{ translateX: -16 * (1 - p) }, { scale: 0.6 + 0.4 * p }] };
   });
+  const muteGlyph = useAnimatedStyle(() => ({
+    opacity: phase(clock.value, toVoice.value, PARTS.mute),
+  }));
   const middleStyle = useAnimatedStyle(() => ({
     marginRight: 8 + 4 * phase(clock.value, toVoice.value, PARTS.sheet),
   }));
@@ -217,9 +222,12 @@ export function Composer({
             <RoundButton
               label={dictation.muted ? "Unmute" : "Mute"}
               onPress={() => dictation.setMuted(!dictation.muted)}
+              shown={voice}
               testID="mute"
             >
-              {dictation.muted ? <MicOff color={color.ink} /> : <Mic color={color.ink} />}
+              <Animated.View style={muteGlyph}>
+                {dictation.muted ? <MicOff color={color.ink} /> : <Mic color={color.ink} />}
+              </Animated.View>
             </RoundButton>
           </Animated.View>
         </Animated.View>
@@ -370,6 +378,7 @@ export function RoundButton({
   label,
   tone = "glass",
   disabled,
+  shown = true,
   testID,
 }: {
   children: React.ReactNode;
@@ -377,6 +386,8 @@ export function RoundButton({
   label: string;
   tone?: "glass" | "ink";
   disabled?: boolean;
+  /** Glass: there, or dissolved (components/glass.tsx). */
+  shown?: boolean;
   testID?: string;
 }) {
   const { color } = useTheme();
@@ -389,7 +400,8 @@ export function RoundButton({
       testID={testID}
       style={({ pressed }) => ({
         transform: [{ scale: pressed && tone === "ink" ? 0.9 : 1 }],
-        opacity: disabled ? 0.6 : 1,
+        // Only the ink button dims: glass under a dimmed view isn't drawn.
+        opacity: disabled && tone === "ink" ? 0.6 : 1,
       })}
     >
       {tone === "ink" ? (
@@ -401,7 +413,7 @@ export function RoundButton({
           {children}
         </Animated.View>
       ) : (
-        <Glass interactive style={round}>
+        <Glass interactive shown={shown} style={round}>
           <Animated.View
             key={label}
             entering={FadeIn.duration(180)}

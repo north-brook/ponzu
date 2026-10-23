@@ -16,14 +16,17 @@ export function BarButton({
   children,
   label,
   held = false,
+  shown = true,
   style,
   testID,
 }: {
   onPress?: () => void;
   children: ReactNode;
   label: string;
-  /** The agent button while its card is open: the glass a step darker. */
+  /** Held open: the glass a step darker. */
   held?: boolean;
+  /** The glass is there; false dissolves it (components/glass.tsx). */
+  shown?: boolean;
   style?: ViewStyle;
   testID?: string;
 }) {
@@ -38,6 +41,7 @@ export function BarButton({
       <Glass
         interactive
         held={held}
+        shown={shown}
         style={[{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }, style]}
       >
         {children}

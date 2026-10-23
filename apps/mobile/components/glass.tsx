@@ -17,12 +17,19 @@ export const liquid = isLiquidGlassAvailable();
  * The glass itself is never clipped: Liquid Glass draws its rim and its
  * shadow just past its bounds. What it holds is clipped instead, to the same
  * corners.
+ *
+ * Nor is it ever faded: UIGlassEffect isn't drawn under a view whose opacity
+ * is below 1, so a fade on the glass or any parent drops it and leaves its
+ * contents bare. Glass that comes and goes takes `shown`: the system's own
+ * glass appears and dissolves (its style "regular" ⇄ "none", animated), and
+ * only what it holds is faded, by the caller.
  */
 export function Glass({
   children,
   style,
   interactive = false,
   held = false,
+  shown = true,
   testID,
 }: {
   children?: ReactNode;
@@ -31,6 +38,8 @@ export function Glass({
   interactive?: boolean;
   /** Held open (the agent button while its card shows): the glass a step darker. */
   held?: boolean;
+  /** The glass is there; false dissolves it with the system's animation, never a fade. */
+  shown?: boolean;
   testID?: string;
 }) {
   const { color, scheme, shadow } = useTheme();
@@ -38,6 +47,11 @@ export function Glass({
     <GlassView
       testID={testID}
       colorScheme={scheme}
+      glassEffectStyle={{
+        style: shown ? "regular" : "none",
+        animate: true,
+        animationDuration: 0.25,
+      }}
       tintColor={held ? HELD[scheme] : undefined}
       isInteractive={interactive}
       style={[
@@ -45,9 +59,9 @@ export function Glass({
         liquid
           ? null
           : {
-              backgroundColor: held ? HELD[scheme] : color.bar,
-              boxShadow: shadow.pop,
-              borderWidth: StyleSheet.hairlineWidth,
+              backgroundColor: shown ? (held ? HELD[scheme] : color.bar) : "transparent",
+              boxShadow: shown ? shadow.pop : undefined,
+              borderWidth: shown ? StyleSheet.hairlineWidth : 0,
               borderColor: color.hairline,
             },
         outer(style),

@@ -5,13 +5,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import Animated, {
   Easing,
-  FadeIn,
-  FadeOut,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
   withSequence,
   withTiming,
+  ZoomIn,
+  ZoomOut,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { scheduleOnRN } from "react-native-worklets";
@@ -279,6 +279,8 @@ export default function Canvas() {
   useEffect(() => {
     chrome.value = withTiming(bare ? 0 : 1, { duration: bare ? 220 : 160, easing: ease });
   }, [bare]);
+  // The bar's glass dissolves as the system's does (never faded, components/glass.tsx); what it
+  // holds fades on this clock.
   const chromeStyle = useAnimatedStyle(() => ({ opacity: chrome.value }));
   // The gesture hint, once each time a design opens: never again after a focus.
   const [hinted, setHinted] = useState(false);
@@ -335,11 +337,11 @@ export default function Canvas() {
       )}
       <Animated.View
         pointerEvents={bare ? "none" : "box-none"}
+        // Gone while bare: out of reach of touch and VoiceOver as well as sight.
+        accessibilityElementsHidden={bare}
+        importantForAccessibility={bare ? "no-hide-descendants" : "auto"}
         testID={bare ? "chrome-hidden" : "chrome"}
-        style={[
-          { position: "absolute", left: 0, right: 0, top: insets.top, zIndex: 8 },
-          chromeStyle,
-        ]}
+        style={{ position: "absolute", left: 0, right: 0, top: insets.top, zIndex: 8 }}
       >
         <GlassGroup
           style={{
@@ -352,12 +354,15 @@ export default function Canvas() {
         >
           <BarButton
             label="Back"
+            shown={!bare}
             onPress={() => {
               tick();
               router.back();
             }}
           >
-            <Back color={color.ink} />
+            <Animated.View style={chromeStyle}>
+              <Back color={color.ink} />
+            </Animated.View>
           </BarButton>
           {/* The file, in the middle: an agent's mark in place of its icon while one is here, and its session card on a tap. */}
           <View style={{ flex: 1, minWidth: 0, alignItems: "center" }}>
@@ -380,35 +385,38 @@ export default function Canvas() {
               testID="title"
               style={{ maxWidth: "100%" }}
             >
-              <Glass
-                interactive={Boolean(agent)}
-                held={card}
-                style={{
-                  height: 44,
-                  paddingLeft: 12,
-                  paddingRight: 14,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 7,
-                }}
-              >
-                {agent ? (
-                  <AgentMark client={agent.client} size={18} color={color.ink} />
-                ) : (
-                  <FileIcon size={17} color={color.ink} />
-                )}
-                {working ? (
-                  <Shimmer
-                    text={doc?.name ?? file?.name ?? ""}
-                    style={titleText}
-                    color={color.ink}
-                    surface={color.bar}
-                  />
-                ) : (
-                  <Text numberOfLines={1} style={[titleText, { color: color.ink }]}>
-                    {doc?.name ?? file?.name ?? ""}
-                  </Text>
-                )}
+              <Glass interactive={Boolean(agent)} held={card} shown={!bare} style={{ height: 44 }}>
+                <Animated.View
+                  style={[
+                    {
+                      height: 44,
+                      paddingLeft: 12,
+                      paddingRight: 14,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 7,
+                    },
+                    chromeStyle,
+                  ]}
+                >
+                  {agent ? (
+                    <AgentMark client={agent.client} size={18} color={color.ink} />
+                  ) : (
+                    <FileIcon size={17} color={color.ink} />
+                  )}
+                  {working ? (
+                    <Shimmer
+                      text={doc?.name ?? file?.name ?? ""}
+                      style={titleText}
+                      color={color.ink}
+                      surface={color.bar}
+                    />
+                  ) : (
+                    <Text numberOfLines={1} style={[titleText, { color: color.ink }]}>
+                      {doc?.name ?? file?.name ?? ""}
+                    </Text>
+                  )}
+                </Animated.View>
               </Glass>
             </Pressable>
           </View>
@@ -428,9 +436,12 @@ export default function Canvas() {
               >
                 <Glass
                   interactive
+                  shown={!bare}
                   style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}
                 >
-                  <PageIcon name={page?.icon} size={20} color={color.ink} />
+                  <Animated.View style={chromeStyle}>
+                    <PageIcon name={page?.icon} size={20} color={color.ink} />
+                  </Animated.View>
                 </Glass>
               </View>
             </MenuView>
@@ -507,12 +518,17 @@ function Missing({ message }: { message: string }) {
  * "Hold to comment · Double-tap a screen to focus", once each time a design
  * opens: it rises in over 0.4s, holds, and sinks out by 3.6s. A focus before
  * then sends it away at once. Either way it doesn't come back until the
- * design is opened again.
+ * design is opened again. The glass is never faded (components/glass.tsx):
+ * it appears and dissolves as the system's glass does, and only the words
+ * fade, while the whole rises and sinks.
  */
 function Hint({ bottom, away, onDone }: { bottom: number; away: boolean; onDone: () => void }) {
   const { color } = useTheme();
   const t = useSharedValue(0);
+  const [shown, setShown] = useState(false);
   useEffect(() => {
+    const on = setTimeout(() => setShown(true), 400);
+    const off = setTimeout(() => setShown(false), 400 + 400 + 2_100);
     t.value = withDelay(
       400,
       withSequence(
@@ -525,32 +541,43 @@ function Hint({ bottom, away, onDone }: { bottom: number; away: boolean; onDone:
         ),
       ),
     );
+    return () => {
+      clearTimeout(on);
+      clearTimeout(off);
+    };
   }, []);
   useEffect(() => {
     if (!away) return;
+    setShown(false);
     t.value = withTiming(0, { duration: 160, easing: ease }, (done) => {
       if (done) scheduleOnRN(onDone);
     });
   }, [away]);
-  const style = useAnimatedStyle(() => ({
-    opacity: t.value,
+  const move = useAnimatedStyle(() => ({
     transform: [{ translateY: 12 * (1 - t.value) }, { scale: 0.96 + 0.04 * t.value }],
   }));
+  const words = useAnimatedStyle(() => ({ opacity: t.value }));
   return (
     <Animated.View
       pointerEvents="none"
       testID="hint"
       style={[
         { position: "absolute", bottom: Math.max(34, bottom), alignSelf: "center", zIndex: 8 },
-        style,
+        move,
       ]}
     >
       <Glass
+        shown={shown}
         style={{ height: 32, paddingHorizontal: 14, flexDirection: "row", alignItems: "center" }}
       >
-        <Text style={{ fontFamily: "Inter", fontWeight: "500", fontSize: 13, color: color.ink }}>
+        <Animated.Text
+          style={[
+            { fontFamily: "Inter", fontWeight: "500", fontSize: 13, color: color.ink },
+            words,
+          ]}
+        >
           Hold to comment · Double-tap a screen to focus
-        </Text>
+        </Animated.Text>
       </Glass>
     </Animated.View>
   );
@@ -639,12 +666,19 @@ function SessionCard({
     ]);
   return (
     <Animated.View
-      entering={FadeIn.duration(180)}
-      exiting={FadeOut.duration(120)}
+      // Dropping from the title: it grows from under it, its glass never faded (components/glass.tsx).
+      entering={ZoomIn.duration(220).easing(ease)}
+      exiting={ZoomOut.duration(140)}
       testID="session-card"
-      style={{ position: "absolute", alignSelf: "center", top, width: 318, zIndex: 12 }}
+      style={{
+        position: "absolute",
+        alignSelf: "center",
+        top,
+        width: 318,
+        zIndex: 12,
+        transformOrigin: "top center",
+      }}
     >
-      {/* Dropping from the title, under it. */}
       <Glass style={{ borderRadius: 24, padding: 16, gap: 14 }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
           <AgentAvatar

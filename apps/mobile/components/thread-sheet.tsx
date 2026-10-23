@@ -60,17 +60,12 @@ export function ThreadSheet({
           {resolved ? " · Resolved" : ""}
         </Text>
         {/* Glass, as the other floating controls; held a step darker while pressed. */}
-        <Pressable
-          onPress={toggle}
-          disabled={busy}
-          accessibilityRole="button"
-          testID="resolve"
-          style={{ opacity: busy ? 0.6 : 1 }}
-        >
+        <Pressable onPress={toggle} disabled={busy} accessibilityRole="button" testID="resolve">
           {({ pressed }) => (
+            // Held while pressed or while it's being sent; never dimmed, as glass under a dimmed view isn't drawn.
             <Glass
               interactive
-              held={pressed}
+              held={pressed || busy}
               style={{
                 height: 36,
                 paddingLeft: 10,
