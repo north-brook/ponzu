@@ -396,6 +396,14 @@ test("renders default to the person's theme and say so when the design has one",
   }
 });
 
+test("agents learn that the person's canvas plays a load animation once", () => {
+  // The canvas never replays a finite load on hover, so agents mustn't promise it.
+  expect(GUIDES.motion).toContain("plays once when the artboard appears");
+  expect(GUIDES.motion).toContain("doesn't replay it");
+  expect(GUIDES.motion).toContain("looping copy");
+  expect(getTool("record")!.description).toContain("plays the load once");
+});
+
 test("the format guide's example files load as it describes", async () => {
   for (const text of Object.values(FORMAT_EXAMPLE)) expect(GUIDES.format).toContain(text);
   const { design, call } = await withFiles(FORMAT_EXAMPLE);
