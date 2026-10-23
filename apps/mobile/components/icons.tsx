@@ -3,6 +3,7 @@ import {
   ArrowLeft01Icon,
   ArrowUp02Icon,
   Cancel01Icon,
+  Clock01Icon,
   ComputerIcon,
   DashboardSquare01Icon,
   File01Icon,
@@ -48,6 +49,7 @@ export const ICONS = {
   /** check */
   check: Tick02Icon,
   bell: Notification01Icon,
+  clock: Clock01Icon,
   search: Search01Icon,
   branch: GitBranchIcon,
   folder: Folder01Icon,
@@ -81,6 +83,7 @@ export const Close = icon(ICONS.close, 20, 2);
 export const Chevron = icon(ICONS.chevron, 14, 2);
 export const Check = icon(ICONS.check, 16, 2.2);
 export const Bell = icon(ICONS.bell, 20, 1.8);
+export const Clock = icon(ICONS.clock, 14, 1.7);
 export const Search = icon(ICONS.search, 18, 1.8);
 export const Branch = icon(ICONS.branch, 13, 1.7);
 export const Folder = icon(ICONS.folder, 13, 1.7);

@@ -33,6 +33,7 @@ import { Sheet } from "../../../components/sheet";
 import { ThreadSheet } from "../../../components/thread-sheet";
 import { useFile } from "../../../lib/catalog";
 import { useDesignSession, useSessionState } from "../../../lib/design";
+import { noteOpened } from "../../../lib/lately";
 import { baseUrl } from "../../../lib/mac";
 import { findMac } from "../../../lib/macs";
 import { MENU_ICONS } from "../../../lib/menu-icons";
@@ -94,6 +95,11 @@ export default function Canvas() {
   useEffect(() => {
     track("canvas opened");
   }, []);
+  // Search's "Opened lately", with the page it's on.
+  const pageNow = pageId ?? doc?.pages[0]?.id;
+  useEffect(() => {
+    if (doc) noteOpened({ mac: params.mac, key: params.key, page: pageNow, at: Date.now() });
+  }, [Boolean(doc), pageNow]);
   // Seen as of now, and kept for Activity as the doc changes.
   useEffect(() => {
     if (file) markSeen(file.mac, file.key, file.modified);
