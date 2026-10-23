@@ -86,7 +86,7 @@ function Layer({ kind, target, lift }: { kind: HandoffKind; target: Target | nul
   const insets = useSafeAreaInsets();
   const { color } = useTheme();
   const times = kind === "tile" ? TO_TILE : TO_DESIGNS;
-  // The launch screen's ink on the status bar until the yuzu has mostly gone.
+  // The launch screen's ink on the status bar while the yuzu is under it.
   const [inked, setInked] = useState(true);
   // Where the launch screen draws the slice (lib/mark.ts) and the wordmark under it.
   const from = { cx: W / 2, cy: H / 2 - LAUNCH_LIFT - lift, size: LAUNCH.mark };
@@ -113,7 +113,11 @@ function Layer({ kind, target, lift }: { kind: HandoffKind; target: Target | nul
           if (done) runOnJS(finish)();
         },
       );
-      setTimeout(() => setInked(false), (times.ink[0] + times.ink[1]) / 2);
+      // Onto a tile the yuzu leaves the status bar as it starts to shrink;
+      // onto Designs it fades, so the bar turns halfway through.
+      const turn =
+        kind === "tile" ? TO_TILE.shrink[0] + 80 : (TO_DESIGNS.ink[0] + TO_DESIGNS.ink[1]) / 2;
+      setTimeout(() => setInked(false), turn);
     };
     if (target) go();
     const t = setTimeout(go, 700);

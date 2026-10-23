@@ -11,12 +11,12 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import Animated, { Easing, FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 import { Lockup } from "../../../components/chrome";
 import { FileCard } from "../../../components/file-card";
 import { Glass } from "../../../components/glass";
+import { HandoffRise } from "../../../components/handoff";
 import { Bell, Branch, Check, Chevron, Folder, Moon, Search } from "../../../components/icons";
 import { useActivityCount } from "../../../lib/activity-store";
 import { refreshFeeds, syncFeeds, useCatalogs, useFiles, useShelve } from "../../../lib/catalog";
@@ -26,7 +26,7 @@ import { SLICE, SLICE_STROKE } from "../../../lib/mark";
 import { reachAll, useMacs } from "../../../lib/reach";
 import { isUnseen, useSeen } from "../../../lib/seen";
 import { useTheme } from "../../../lib/theme";
-import { brand, EASE_OUT } from "../../../lib/tokens";
+import { brand } from "../../../lib/tokens";
 
 const SHELVES: { id: Shelf; label: string }[] = [
   { id: "recent", label: "Recent" },
@@ -132,7 +132,8 @@ export default function Designs() {
           />
         }
       >
-        <Rise i={0}>
+        {/* The lockup arrives by itself: its slice from the launch screen, then its word. */}
+        <View>
           <View
             style={{
               flexDirection: "row",
@@ -186,8 +187,8 @@ export default function Designs() {
               )}
             </Pressable>
           </View>
-        </Rise>
-        <Rise i={1}>
+        </View>
+        <HandoffRise kind="designs" i={0}>
           <Pressable
             onPress={() => router.push("/search")}
             accessibilityRole="search"
@@ -209,8 +210,8 @@ export default function Designs() {
               Search designs
             </Text>
           </Pressable>
-        </Rise>
-        <Rise i={2}>
+        </HandoffRise>
+        <HandoffRise kind="designs" i={0}>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -278,7 +279,7 @@ export default function Designs() {
               />
             ))}
           </ScrollView>
-        </Rise>
+        </HandoffRise>
         {arriving.length > 0 && files.length > 0 && (
           <Notice>
             <Juice color={color.faint} />
@@ -340,7 +341,7 @@ export default function Designs() {
           }}
         >
           {shown.map((f, i) => (
-            <Rise key={f.id} i={3 + Math.min(i, 6) * 0.5}>
+            <HandoffRise key={f.id} kind="designs" i={1 + i}>
               <FileCard
                 file={f}
                 width={cardWidth}
@@ -348,7 +349,7 @@ export default function Designs() {
                 onPress={() => open(f)}
                 onLongPress={() => actions(f)}
               />
-            </Rise>
+            </HandoffRise>
           ))}
         </View>
         {shown.length === 0 && (
@@ -392,20 +393,6 @@ export default function Designs() {
 function listNames(names: string[]): string {
   if (names.length <= 1) return names[0] ?? "";
   return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-}
-
-/** The page rises in a stagger as it arrives from the launch screen. */
-function Rise({ i, children }: { i: number; children: React.ReactNode }) {
-  return (
-    <Animated.View
-      entering={FadeInDown.delay(80 + i * 60)
-        .duration(500)
-        .withInitialValues({ transform: [{ translateY: 16 }] })
-        .easing(Easing.bezier(...EASE_OUT))}
-    >
-      {children}
-    </Animated.View>
-  );
 }
 
 function Notice({ children, gap = 10 }: { children: React.ReactNode; gap?: number }) {

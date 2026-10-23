@@ -60,11 +60,12 @@ export const TO_DESIGNS = {
   /** rise 38% → 52%, each part a little after the one before: 16pt up. */
   rise: [900, 1600],
   /**
-   * The study's delays, part by part: the bell, search, the filter row, then
-   * the cards, about 55ms apart.
+   * The study's delays from the filter row on: the row, then the cards 55ms
+   * apart (its bell and search field are the tab bar's now, so they're gone
+   * from the page and the row goes first).
    */
-  delays: [0, 40, 90, 140, 195, 250, 305, 360, 415],
-  end: 1600 + 415,
+  delays: [0, 50, 105, 160, 215, 270, 325],
+  end: 1600 + 325,
 } as const;
 
 /** The clock when no handoff runs: every part in place. */
