@@ -1,0 +1,70 @@
+appId: design.ponzu.app
+name: comment
+tags: [dev-host]
+---
+# A comment round trip on Kettle's Logo: write it, find it in its thread,
+# resolve it, then delete it with the development link so the example is
+# left as it was.
+- runFlow: shared/start.yaml
+# Anything left by a run that stopped halfway.
+- openLink: ponzu://design/dev/${KETTLE}?uncomment=Maestro
+- extendedWaitUntil:
+    visible:
+      id: uncommented
+    timeout: 20000
+- tapOn: "Back"
+- openLink: ponzu://design/dev/${KETTLE}?page=Brand&comment=Logo
+# The sheet opens in the last mode used; this writes by typing.
+- extendedWaitUntil:
+    visible:
+      id: "(comment-input|to-type)"
+    timeout: 20000
+- runFlow:
+    when:
+      visible:
+        id: to-type
+    commands:
+      - tapOn:
+          id: to-type
+- extendedWaitUntil:
+    visible:
+      id: comment-input
+    timeout: 5000
+- tapOn:
+    id: comment-input
+- inputText: "Maestro: tighten the logo lockup"
+- extendedWaitUntil:
+    visible:
+      id: send
+    timeout: 5000
+- tapOn:
+    id: send
+- extendedWaitUntil:
+    notVisible:
+      id: comment-sheet
+    timeout: 10000
+# Its pin, with one message, opens the thread.
+- extendedWaitUntil:
+    visible: "1"
+    timeout: 10000
+- tapOn: "1"
+- extendedWaitUntil:
+    visible:
+      id: thread-sheet
+    timeout: 10000
+- assertVisible: "Maestro: tighten the logo lockup"
+- assertVisible: "Resolve"
+- tapOn:
+    id: resolve
+- extendedWaitUntil:
+    notVisible:
+      id: thread-sheet
+    timeout: 15000
+# Clean up.
+- tapOn: "Back"
+- openLink: ponzu://design/dev/${KETTLE}?uncomment=Maestro
+- extendedWaitUntil:
+    visible:
+      id: uncommented
+    timeout: 20000
+- assertNotVisible: ".*Cannot update a component.*"

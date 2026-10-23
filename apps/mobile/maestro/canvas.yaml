@@ -1,0 +1,34 @@
+appId: design.ponzu.app
+name: canvas
+tags: [dev-host]
+---
+# Kettle opens on its canvas: the bar, then the boards drawn in the web view.
+- runFlow: shared/start.yaml
+- scrollUntilVisible:
+    element:
+      id: card-Kettle
+    timeout: 60000
+- tapOn:
+    id: card-Kettle
+- extendedWaitUntil:
+    visible:
+      id: canvas
+    timeout: 15000
+- extendedWaitUntil:
+    visible:
+      id: title
+    timeout: 15000
+- assertVisible: "Kettle"
+# The boards, drawn in the web view: Brand's first board's label, and text from inside it.
+- extendedWaitUntil:
+    visible: "Logo"
+    timeout: 20000
+- extendedWaitUntil:
+    visible: ".*kettle.*"
+    timeout: 20000
+- tapOn: "Back"
+- extendedWaitUntil:
+    visible:
+      id: designs
+    timeout: 10000
+- assertNotVisible: ".*Cannot update a component.*"

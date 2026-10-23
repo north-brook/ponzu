@@ -1,0 +1,23 @@
+appId: design.ponzu.app
+name: designs
+tags: [dev-host]
+---
+# The dev host's three examples come up on Designs, with the bell and search.
+- runFlow: shared/start.yaml
+- assertVisible:
+    id: bell
+- assertVisible:
+    id: search-field
+- scrollUntilVisible:
+    element:
+      id: card-Kettle
+    timeout: 60000
+- scrollUntilVisible:
+    element:
+      id: card-Halon
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: card-Weft
+    timeout: 30000
+- assertNotVisible: ".*Cannot update a component.*"

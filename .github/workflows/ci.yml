@@ -234,10 +234,27 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
       - name: Maestro flows
-        # The build and flow runner come in a later change; until then this
-        # only confirms the job reaches a Mac. See apps/mobile/maestro/README.md.
-        run: ls apps/mobile/maestro/*.yaml
+        # A Debug development client built from this checkout, on the
+        # simulator the runner assigns (IOS_SIMULATOR_UDID), against a Ponzu
+        # serving the examples and Metro. Xcode, Java and Maestro come with
+        # the runner. See apps/mobile/maestro/README.md.
+        env:
+          MAESTRO_CLI_NO_ANALYTICS: "1"
+          MAESTRO_OUTPUT: ${{ runner.temp }}/maestro.xml
+        run: apps/mobile/maestro/run.sh "${IOS_SIMULATOR_UDID:?the runner assigns a simulator}"
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: maestro
+          path: |
+            ${{ runner.temp }}/maestro.xml
+            ~/.maestro/tests/
+          if-no-files-found: ignore
 
   mobile:
     # One name for the phone's suites, which reports on every pull request:

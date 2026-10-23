@@ -32,6 +32,7 @@ export default function Dev() {
   }, [forget]);
   return (
     <View
+      testID="dev"
       className="flex-1 items-center justify-center bg-yuzu"
       style={{ paddingTop: LAUNCH.top, paddingBottom: LAUNCH.bottom, gap: LAUNCH.gap }}
     >

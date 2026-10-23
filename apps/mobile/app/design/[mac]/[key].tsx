@@ -54,6 +54,8 @@ export default function Canvas() {
     page?: string;
     /** Development: open the comment sheet as if held at the middle of this artboard. */
     comment?: string;
+    /** Development: delete the person's threads that start with this text, so a test leaves the file as it was. */
+    uncomment?: string;
   }>();
   const { color, scheme } = useTheme();
   const insets = useSafeAreaInsets();
@@ -120,6 +122,17 @@ export default function Canvas() {
       canvas.current?.post({ t: "focus", artboardId: found.a.id });
     }, 900);
     return () => clearTimeout(t);
+  }, [Boolean(doc)]);
+  const [uncommented, setUncommented] = useState(false);
+  useEffect(() => {
+    if (!__DEV__ || !doc || !session || !params.uncomment || uncommented) return;
+    const mine = doc.threads.filter(
+      (t) =>
+        t.messages[0]?.author.kind === "user" && t.messages[0].text.startsWith(params.uncomment!),
+    );
+    Promise.all(mine.map((t) => session.send({ op: "thread.delete", id: t.id })))
+      .catch(() => {})
+      .finally(() => setUncommented(true));
   }, [Boolean(doc)]);
   const agents = useMemo(
     () => state.presence.filter((p) => agentActivity(p, session?.file ?? params.key) !== null),
@@ -345,6 +358,9 @@ export default function Canvas() {
         <SessionCard presence={agent} top={insets.top + 58} doc={doc} file={params.key} />
       )}
       {doc && !focusedBoard && <Hint bottom={insets.bottom} />}
+      {uncommented && (
+        <View testID="uncommented" style={{ position: "absolute", width: 1, height: 1 }} />
+      )}
       {doc && focusedBoard && (
         <WhereYouAre
           key={focusedBoard}

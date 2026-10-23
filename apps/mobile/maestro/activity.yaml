@@ -1,0 +1,26 @@
+appId: design.ponzu.app
+name: activity
+tags: [dev-host]
+---
+# The bell opens Activity, and Back comes home. No development warning along the way.
+- runFlow: shared/start.yaml
+- tapOn:
+    id: bell
+- extendedWaitUntil:
+    visible:
+      id: activity
+    timeout: 10000
+- assertVisible: "Activity"
+- assertNotVisible: ".*Cannot update a component.*"
+- tapOn: "Back"
+- extendedWaitUntil:
+    visible:
+      id: bell
+    timeout: 10000
+# And with ?since=, which shows what's new since then.
+- openLink: ponzu://activity?since=1
+- extendedWaitUntil:
+    visible:
+      id: activity
+    timeout: 10000
+- assertNotVisible: ".*Cannot update a component.*"

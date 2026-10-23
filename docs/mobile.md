@@ -103,8 +103,12 @@ Macs from it. Screens open by URL, with `xcrun simctl openurl booted
 ponzu://<route>`: `designs`, `search?q=kettle`, `activity`, `connect`,
 `connect/scan`, `tailscale`, `asleep`, `pair?host=<name>&v=1`, and a design
 with `design/<mac id>/<encoded key>?page=App` (`thread=<id>` opens a thread,
-`artboard=<id>` focuses a frame). `dev?forget=all` forgets every Mac, for a
-first launch; `forget=dev` or `forget=<id>,<id>` forgets those.
+`artboard=<id>` focuses a frame). In development a design also takes
+`comment=<artboard>` (opens a new comment's sheet on that board) and
+`uncomment=<text>` (deletes your threads that start with it), and
+`activity?since=<ms>` shows what's new since then. `dev?forget=all` forgets
+every Mac, for a first launch; `forget=dev` or `forget=<id>,<id>` forgets
+those.
 
 ## On your iPhone, over the tailnet
 
@@ -220,5 +224,6 @@ The Apple ID is the number under App Information in App Store Connect.
 scope` job (`scripts/ci/scope.ts`) decides what a pull request can affect;
 `Mobile checks` (typecheck, tests and `expo export --platform ios`) runs when
 it touches the phone or what it bundles, and `Mobile` reports for every pull
-request. `Mobile iOS` runs the Maestro flows on the self-hosted Macs; see
+request. `Mobile iOS` runs the Maestro flows on the self-hosted Macs
+(`apps/mobile/maestro/run.sh <simulator>` runs them here); see
 [`apps/mobile/maestro/README.md`](../apps/mobile/maestro/README.md).

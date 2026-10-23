@@ -112,7 +112,9 @@ export default function Search() {
       >
         {results.files.length > 0 && (
           <>
-            <Text style={label}>Files</Text>
+            <Text style={label} testID="search-files">
+              Files
+            </Text>
             <View
               style={{
                 paddingHorizontal: 20,
@@ -143,7 +145,9 @@ export default function Search() {
         {results.frames.length > 0 && (
           <>
             {results.files.length > 0 && <View style={{ height: 8 }} />}
-            <Text style={label}>Frames</Text>
+            <Text style={label} testID="search-frames">
+              Frames
+            </Text>
             <View
               style={{
                 paddingHorizontal: 20,

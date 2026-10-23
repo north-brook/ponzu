@@ -1,0 +1,22 @@
+appId: design.ponzu.app
+name: search
+tags: [dev-host]
+---
+# "brand" finds designs by name and frames by page: both sections show.
+- runFlow: shared/start.yaml
+- tapOn:
+    id: search-field
+- extendedWaitUntil:
+    visible:
+      id: search-input
+    timeout: 10000
+- inputText: "brand"
+- extendedWaitUntil:
+    visible:
+      id: search-files
+    timeout: 10000
+- extendedWaitUntil:
+    visible:
+      id: search-frames
+    timeout: 10000
+- assertNotVisible: ".*Cannot update a component.*"
