@@ -78,6 +78,7 @@ export async function resolveFile(
     note: moved ? `\nNow in ${label(picked, all)}; calls without file use it.` : undefined,
   };
   if (session) session.file = picked.key;
+  ws.presence.saw(ctx.caller, picked.key);
   return picked;
 }
 

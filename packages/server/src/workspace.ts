@@ -323,6 +323,11 @@ export class LocalWorkspace implements Workspace {
   private bridge(key: string, design: Design): () => void {
     const offOp = design.onOp((e) => {
       this.emitFor(key, design.doc, e);
+      if (e.origin.kind === "disk" && e.artboards.length) {
+        const gone = e.artboards.filter((id) => !findArtboard(design.doc, id));
+        const artboards = e.artboards.filter((id) => !gone.includes(id));
+        this.presence.wroteOnDisk(key, { artboards, gone });
+      }
       if (e.artboards.length || touchesStructure(e.op)) this.schedulePreview(key);
     });
     const offReset = design.onReset(() => {

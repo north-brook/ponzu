@@ -239,6 +239,10 @@ test("edits made in a text editor show up as file.changed", async () => {
   const events = await ws.events.wait(cursor, 3000, { types: ["file.changed"] });
   expect(events.length).toBeGreaterThan(0);
   expect(JSON.stringify(design.doc)).toContain("Ferns");
+  // The agent connected here wrote it: the canvas shows it working on the board.
+  const hero = design.doc.pages[0]!.artboards.find((a) => a.name === "Hero")!;
+  const claude = ws.presence.list().find((p) => p.name === "Claude")!;
+  expect(claude.working).toContain(hero.id);
 });
 
 test("an agent watches its animation through screenshot and record", async () => {

@@ -203,13 +203,22 @@ function authorOf(e: PonzuEvent): string | undefined {
   return undefined;
 }
 
-/** How long an agent can go without a tool call before it stops showing as working. */
-export const WORKING_IDLE = 60_000;
+/**
+ * How long an agent can go without a tool call before it stops showing as
+ * working. Writing one large artboard, by tool or straight to its file, can
+ * take a model a minute or more, all of it work.
+ */
+export const WORKING_IDLE = 2 * 60_000;
+
+/** How recently an agent must have made a call for an edit on disk to count as its own. */
+const DISK_CREDIT = 5 * 60_000;
 
 export class PresenceHub {
   private map = new Map<string, Presence>();
   private listeners = new Set<(p: Presence[]) => void>();
   private idle = new Map<string, ReturnType<typeof setTimeout>>();
+  /** The design each agent's calls last resolved to, read or written: where its disk edits go. */
+  private seenIn = new Map<string, string>();
 
   constructor(private idleMs = WORKING_IDLE) {}
 
@@ -263,6 +272,46 @@ export class PresenceHub {
     this.touch(caller, { file, working, status });
   }
 
+  /** A call by this agent worked on `file`, even if only to read it. */
+  saw(caller: ToolCaller, file: string): void {
+    this.seenIn.set(caller.id, file);
+  }
+
+  /**
+   * These artboards in `file` changed on disk. An agent writing the files
+   * itself makes no tool call, so credit the agent most likely behind it:
+   * the one seen most recently in this design, or in the project that holds
+   * it, that isn't waiting for activity (a waiting agent is watching for the
+   * person's edits). With none, it was the person.
+   */
+  wroteOnDisk(file: string, change: { artboards: string[]; gone: string[] }): void {
+    const now = Date.now();
+    const writer = [...this.map.values()]
+      .filter(
+        (p) =>
+          p.kind === "agent" &&
+          !p.listening &&
+          now - p.lastSeen < DISK_CREDIT &&
+          (this.seenIn.get(p.id) === file ||
+            p.file === file ||
+            (p.origin?.cwd && within(file, p.origin.cwd))),
+      )
+      .sort((a, b) => b.lastSeen - a.lastSeen)[0];
+    if (!writer) {
+      if (change.gone.length) this.drop("", file, change.gone);
+      return;
+    }
+    const caller: ToolCaller = {
+      id: writer.id,
+      author: { kind: "agent", name: writer.name },
+      client: writer.client,
+      origin: writer.origin,
+    };
+    // Counts as a tool call: each write keeps it working for another idle window.
+    this.touch(caller);
+    this.worked(caller, file, change);
+  }
+
   /** Deleted artboards are no longer anyone's: take them from the other agents in `file`. */
   private drop(except: string, file: string, gone: string[]): void {
     let changed = false;
@@ -278,6 +327,7 @@ export class PresenceHub {
   leave(id: string): void {
     clearTimeout(this.idle.get(id));
     this.idle.delete(id);
+    this.seenIn.delete(id);
     if (this.map.delete(id)) this.notify();
   }
 
@@ -306,6 +356,12 @@ export class PresenceHub {
     const list = this.list();
     for (const l of this.listeners) l(list);
   }
+}
+
+/** Whether `path` is in the folder `dir`, on either kind of separator. `/` holds everything. */
+export function within(path: string, dir: string): boolean {
+  const base = dir.replace(/[\\/]+$/, "");
+  return path.startsWith(`${base}/`) || path.startsWith(`${base}\\`);
 }
 
 function sameIds(a: string[], b: string[]): boolean {

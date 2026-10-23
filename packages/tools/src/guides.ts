@@ -162,7 +162,7 @@ The .design folder is the spec. Read it directly from disk; don't screenshot and
 
   format: `# The .design format
 
-Write the files yourself only to bring in or generate a lot at once: a design ported from another tool, a diagram from a script, dozens of artboards. Ponzu picks them up live. For an artboard you made with create_artboard, write its file once the call returns, at the path it gives. Then open the design with get_basic_info (it lists anything Ponzu couldn't use), screenshot each artboard and fix what lint reports. For everything else use the tools: they lint as you go, the person can undo them, and the canvas shows who's working.
+Write the files yourself only to bring in or generate a lot at once: a design ported from another tool, a diagram from a script, dozens of artboards. Ponzu picks them up live. For an artboard you made with create_artboard, write its file once the call returns, at the path it gives. Then open the design with get_basic_info (it lists anything Ponzu couldn't use), screenshot each artboard and fix what lint reports. For everything else use the tools: they lint as you go and the person can undo them.
 
 name.design/
   design.json                   name and pages
