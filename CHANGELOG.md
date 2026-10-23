@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.40.1](https://github.com/north-brook/ponzu/compare/v1.40.0...v1.40.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* keep servers run from a checkout off the tailnet and the app's port ([#160](https://github.com/north-brook/ponzu/issues/160)) ([ab2e50a](https://github.com/north-brook/ponzu/commit/ab2e50a98d3021df22985bf3580e337b80434aef))
+
 ## [1.40.0](https://github.com/north-brook/ponzu/compare/v1.39.3...v1.40.0) (2026-10-23)
 
 
