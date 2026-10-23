@@ -517,9 +517,14 @@ test("an agent's links open where it reached Ponzu, or the Mac app", async () =>
     expect(canvas.searchParams.get("file")).toBe(key);
     ws.opensIn = "app";
     const app = await link();
-    expect(`${app.origin}${app.pathname}`).toBe("https://ponzu.design/open");
+    expect(`${app.origin}${app.pathname}`).toBe("https://ponzu.design/local");
     expect(new URLSearchParams(app.hash.slice(1)).get("file")).toBe(key);
+    expect(new URLSearchParams(app.hash.slice(1)).has("mac")).toBe(false);
+    // On a tailnet, it names this Mac, so the person's other Macs open it from here.
+    ws.mac = "workstation";
+    expect(new URLSearchParams((await link()).hash.slice(1)).get("mac")).toBe("workstation");
   } finally {
     ws.opensIn = undefined;
+    ws.mac = undefined;
   }
 });

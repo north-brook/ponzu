@@ -2,7 +2,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { parseDesignLink } from "@ponzu/core";
+import { type Catalog, parseDesignLink } from "@ponzu/core";
 import { cloneTarget, parseOpenUrl, spawnGit } from "@ponzu/server/clone";
 import {
   app,
@@ -256,9 +256,51 @@ async function openDesign(path: string, artboard?: string) {
 }
 
 /**
- * A ponzu:// link. `ponzu://open?file=<path>.design&artboard=<id>`, from an agent handing over
- * its work: open that design on this Mac, on that artboard. Only one that's already there: a link
- * never makes a folder.
+ * A design on another of the person's Macs, in a tab through this Mac's relay to it: the studio
+ * names those tabs `/peers/<name>` and the path, a line apart.
+ */
+async function openPeerDesign(mac: string, path: string, artboard?: string) {
+  showWindow();
+  if (!mainWindow) return;
+  const tab = `/peers/${encodeURIComponent(mac)}\n${path}`;
+  const focus = artboard ? `&artboard=${encodeURIComponent(artboard)}` : "";
+  await mainWindow.loadURL(`${serverUrl}/?file=${encodeURIComponent(tab)}${focus}`);
+  mainWindow.focus();
+}
+
+/**
+ * Which Mac a link's design is on: "local" for this one, another's tailnet name, or null when
+ * none Ponzu can reach has it. A link names its Mac; one from before links did is looked for here
+ * first, then on the person's other Macs. `reached` says whether the named Mac answered: this
+ * one, or one listed in the catalog.
+ */
+async function locate(
+  mac: string | undefined,
+  path: string,
+): Promise<{ at: string | null; reached: boolean }> {
+  const here = existsSync(join(path, "design.json"));
+  const get = <T>(route: string) =>
+    fetch(`${serverUrl}${route}`)
+      .then((r) => r.json() as Promise<T>)
+      .catch(() => null);
+  const [catalog, info] = await Promise.all([
+    get<Catalog>("/api/catalog"),
+    get<{ machine?: { name?: string | null } }>("/api/info"),
+  ]);
+  const reached =
+    !mac || mac === info?.machine?.name || Boolean(catalog?.machines.some((m) => m.id === mac));
+  const on = new Set(catalog?.files.filter((f) => f.key === path).map((f) => f.machine));
+  if (mac && on.has(mac)) return { at: mac, reached };
+  if (here) return { at: "local", reached };
+  // Its Mac is off or not on this tailnet: another of the person's Macs may have the same folder.
+  return { at: [...on].find((m) => m !== "local") ?? null, reached };
+}
+
+/**
+ * A ponzu:// link. `ponzu://open?mac=<name>&file=<path>.design&artboard=<id>`, from an agent
+ * handing over its work: open that design, on that artboard, from the Mac it's on: this one, or
+ * another of the person's over Tailscale. Only one that's already there: a link never makes a
+ * folder.
  *
  * `ponzu://open?repo=<owner>/<repo>&ref=<ref>&path=<path>.design`, from ponzu.design's Open in
  * Ponzu button: clone the repo into ~/Ponzu (or fetch the clone there), check out the ref, and
@@ -271,11 +313,20 @@ async function openLink(url: string) {
       pendingLinks.push(url);
       return;
     }
-    if (!existsSync(join(local.path, "design.json"))) {
-      dialog.showErrorBox("Ponzu can't find that design", local.path);
-      return;
-    }
-    await openDesign(local.path, local.artboard);
+    const { at, reached } = await locate(local.mac, local.path);
+    if (at === "local") await openDesign(local.path, local.artboard);
+    else if (at) await openPeerDesign(at, local.path, local.artboard);
+    // Only a Mac that didn't answer is unreachable; one that did just doesn't have it.
+    else if (local.mac && !reached)
+      dialog.showErrorBox(
+        `Ponzu can't reach ${local.mac}`,
+        `${local.path} is on ${local.mac}. Open it once that Mac is on and running Tailscale.`,
+      );
+    else
+      dialog.showErrorBox(
+        "Ponzu can't find that design",
+        local.mac ? `${local.path} isn't on ${local.mac}.` : local.path,
+      );
     return;
   }
   const target = parseOpenUrl(url);

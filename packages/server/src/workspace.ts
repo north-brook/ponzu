@@ -65,11 +65,13 @@ export class LocalWorkspace implements Workspace {
   /** The server that serves designs' assets, once there is one, so renders can load them. */
   assetOrigin?: string;
   /**
-   * Where links to designs open: the Mac app, by ponzu.design/open, or this server's canvas in a
+   * Where links to designs open: the Mac app, by ponzu.design/local, or this server's canvas in a
    * browser, at the origin the agent reached it at when there is one. Unset, as when `ponzu mcp`
    * runs the tools itself, there's nothing to open and no links.
    */
   opensIn?: "app" | { origin: string };
+  /** This Mac's tailnet name, while Tailscale runs: links to the Mac app name it. */
+  mac?: string;
   /** Where the studio's film page is served, when not at assetOrigin (the dev studio). */
   filmOrigin?: string;
   /** Timelapse films being made. */
@@ -114,7 +116,7 @@ export class LocalWorkspace implements Workspace {
 
   link(key: string, opts: { artboard?: string; origin?: string } = {}): string | undefined {
     if (!this.opensIn) return undefined;
-    if (this.opensIn === "app") return designLink(key, { artboard: opts.artboard });
+    if (this.opensIn === "app") return designLink(key, { artboard: opts.artboard, mac: this.mac });
     return designLink(key, { artboard: opts.artboard, origin: opts.origin ?? this.opensIn.origin });
   }
 

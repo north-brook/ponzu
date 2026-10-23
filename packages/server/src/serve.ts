@@ -634,10 +634,15 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
     if (!opts.tailnet) return;
     const net = await home.net();
     if (stopped) return;
-    if (!net) return updateAdvert(null);
+    if (!net) {
+      ws.mac = undefined;
+      return updateAdvert(null);
+    }
     // Not when the main listener already hears the tailnet address on the tailnet port: it
     // checks tailnet callers itself, and a second bind there would fail.
     if (!onTailnet(net.ip)) bindTailnet(net.ip);
+    // Links agents hand out name this Mac, so the person's other Macs open them through theirs.
+    ws.mac = onTailnet(net.ip) ? net.name : undefined;
     updateAdvert(onTailnet(net.ip) && net.dns ? net : null);
   };
   const bindTailnet = (ip: string) => {
