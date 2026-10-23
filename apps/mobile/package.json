@@ -60,6 +60,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",
+    "@resvg/resvg-js": "^2.6.2",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/bun": "latest",
     "@types/react": "~19.3.0",
