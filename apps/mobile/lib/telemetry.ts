@@ -1,6 +1,7 @@
 import PostHog from "posthog-react-native";
 import type { MacInfo } from "./mac";
-import { infos } from "./macs";
+import { cachedInfos } from "./macs";
+import { queryClient } from "./query";
 import { VERSION } from "./ua";
 
 /**
@@ -38,7 +39,7 @@ export function decide(all: Record<string, MacInfo>): { on: false } | { on: true
 
 function apply() {
   if (!KEY) return;
-  const all = infos.get();
+  const all = cachedInfos();
   if (!Object.keys(all).length) return;
   decided = true;
   const d = decide(all);
@@ -64,7 +65,11 @@ function apply() {
   queue = [];
 }
 
-infos.subscribe(apply);
+// Whenever a Mac's info comes in or changes.
+queryClient.getQueryCache().subscribe((e) => {
+  if (e.type === "updated" && e.action.type === "success" && e.query.queryKey[2] === "info")
+    apply();
+});
 
 export function track(...event: Event) {
   if (!KEY) return;

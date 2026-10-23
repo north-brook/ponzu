@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
-import { pair, pairMessage } from "../lib/macs";
+import { pairMessage, usePair } from "../lib/macs";
 import { reachAll } from "../lib/reach";
 import { Slice } from "../lib/slice";
 import { track } from "../lib/telemetry";
@@ -15,12 +15,13 @@ import { brand } from "../lib/tokens";
 export default function PairLink() {
   const { host, v } = useLocalSearchParams<{ host?: string; v?: string }>();
   const [error, setError] = useState<string | null>(null);
+  const { mutateAsync: pair } = usePair();
   useEffect(() => {
     if (!host || (v && v !== "1")) {
       router.replace("/connect");
       return;
     }
-    pair(host, "qr")
+    pair({ host, via: "qr" })
       .then(() => {
         track("mac paired", { via: "qr" });
         reachAll();

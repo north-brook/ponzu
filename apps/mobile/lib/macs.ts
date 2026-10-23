@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { getJson } from "./http";
+import { useMutation } from "@tanstack/react-query";
+import { getJson, NetError } from "./http";
 import {
   baseUrl,
   hostOf,
@@ -10,16 +11,20 @@ import {
   PROTOCOL,
   upsertMac,
 } from "./mac";
+import { keys } from "./mac-queries";
+import { queryClient } from "./query";
 import { Store, useStore } from "./store";
 
 export type { Mac } from "./mac";
 
 const KEY = "ponzu.macs";
 
-/** The saved Macs, in the order the phone learned them. */
+/**
+ * The saved Macs, in the order the phone learned them. Kept on the phone
+ * (AsyncStorage), not asked of anyone, so a store rather than a query; what
+ * each Mac says of itself is its info query (`keys.info`).
+ */
 export const macs = new Store<Mac[]>([]);
-/** Each Mac's last `/api/info`, by id. */
-export const infos = new Store<Record<string, MacInfo>>({});
 let loaded: Promise<void> | null = null;
 
 /** Reads the saved Macs once. Every screen that needs them awaits this. */
@@ -48,9 +53,8 @@ export function findMac(id: string): Mac | undefined {
   return macs.get().find((m) => m.id === id);
 }
 
-/** A Mac answered: keep its info, and its name and kind as it reports them now. */
+/** A Mac answered: keep its name and kind as it reports them now. */
 export function noteAnswer(mac: Mac, info: MacInfo) {
-  infos.set((all) => ({ ...all, [mac.id]: info }));
   // A Mac forgotten while it was being asked stays forgotten.
   const current = macs.get().find((m) => m.id === mac.id);
   if (!current) return;
@@ -75,19 +79,39 @@ export class PairError extends Error {
 }
 
 /**
+ * `/api/info` from `base`. Fails with how it failed (see net.ts): something
+ * that answers but isn't Ponzu is an `http` failure without a status.
+ */
+export async function fetchInfo(base: string, timeout: number): Promise<MacInfo> {
+  const info = await getJson<MacInfo>(`${base}/api/info`, timeout);
+  if (typeof info?.version !== "string") throw new NetError("http", "Not Ponzu");
+  return info;
+}
+
+/** Every saved Mac's last `/api/info`, from the cache, by id. */
+export function cachedInfos(): Record<string, MacInfo> {
+  const all: Record<string, MacInfo> = {};
+  for (const m of macs.get()) {
+    const info = queryClient.getQueryData<MacInfo>(keys.info(m.id));
+    if (info) all[m.id] = info;
+  }
+  return all;
+}
+
+/**
  * Pairs with the Ponzu at `host` (a MagicDNS name, or `host:port`): asks
  * `/api/info`, checks it speaks this app's protocol, saves it, then saves the
  * other Macs it names. Returns the paired Mac.
  */
-export async function pair(host: string, via: Mac["via"]): Promise<Mac> {
+async function pair(host: string, via: Mac["via"]): Promise<Mac> {
   const address = host.includes(":") ? host : `${host}:${PORT}`;
   let info: MacInfo;
   try {
-    info = await getJson<MacInfo>(`http://${address}/api/info`, 6_000);
+    info = await fetchInfo(`http://${address}`, 6_000);
   } catch (err) {
-    throw new PairError("unreachable", String(err));
+    const notPonzu = err instanceof NetError && err.kind === "http" && err.status === undefined;
+    throw new PairError(notPonzu ? "notPonzu" : "unreachable", String(err));
   }
-  if (typeof info?.version !== "string") throw new PairError("notPonzu", "Not a Ponzu");
   if (info.protocol === undefined || info.protocol < PROTOCOL)
     throw new PairError("tooOld", `Ponzu ${info.version} on that Mac is too old`);
   if (info.protocol > PROTOCOL) throw new PairError("tooNew", "Update Ponzu on this iPhone");
@@ -104,16 +128,33 @@ export async function pair(host: string, via: Mac["via"]): Promise<Mac> {
     ...(dev || host.includes(":") ? { address } : {}),
   };
   macs.set((all) => upsertMac(all, mac));
-  infos.set((all) => ({ ...all, [mac.id]: info }));
+  queryClient.setQueryData(keys.info(mac.id), info);
   save();
-  await learnPeers(mac).catch(() => {});
   return mac;
+}
+
+/**
+ * Pairing, from the Wi-Fi list, a scanned code or a pairing link. Once
+ * paired, the Mac's info is in the cache and the Macs it names are asked for.
+ */
+export function usePair() {
+  return useMutation({
+    mutationFn: ({ host, via }: { host: string; via: Mac["via"] }) => pair(host, via),
+    onSuccess: (mac) => {
+      queryClient.invalidateQueries({ queryKey: keys.mac(mac.id) });
+      learnPeers(mac).catch(() => {});
+    },
+  });
 }
 
 /** Saves the Macs `mac` names on the tailnet. Gossip: each answering Mac may name more. */
 export async function learnPeers(mac: Mac): Promise<Mac[]> {
   if (devForgotten) return [];
-  const list = await getJson<MacList>(`${baseUrl(mac)}/api/macs`, 4_000);
+  const list = await queryClient.fetchQuery({
+    queryKey: keys.macs(mac.id),
+    queryFn: () => getJson<MacList>(`${baseUrl(mac)}/api/macs`, 4_000),
+    staleTime: 0,
+  });
   const learned: Mac[] = [];
   for (const m of list.macs ?? []) {
     // This Mac is already saved; a peer without a MagicDNS name can't be reached from iOS.
@@ -137,6 +178,7 @@ export async function learnPeers(mac: Mac): Promise<Mac[]> {
 
 export function forgetMac(id: string) {
   macs.set((all) => all.filter((m) => m.id !== id));
+  queryClient.removeQueries({ queryKey: keys.mac(id) });
   save();
 }
 

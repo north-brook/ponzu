@@ -42,6 +42,7 @@ export function FileCard({
   unseen,
   name,
   onPress,
+  onLongPress,
 }: {
   file: PhoneFile;
   width: number;
@@ -49,6 +50,8 @@ export function FileCard({
   /** The name with search matches marked. */
   name?: Run[];
   onPress: () => void;
+  /** Its actions: the shelf it's on. */
+  onLongPress?: () => void;
 }) {
   const { color, scheme } = useTheme();
   const markColor = useMarkColor();
@@ -60,6 +63,7 @@ export function FileCard({
   return (
     <Pressable
       onPress={onPress}
+      onLongPress={onLongPress}
       accessibilityRole="button"
       accessibilityLabel={file.name}
       testID={`card-${file.name}`}

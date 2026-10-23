@@ -12,7 +12,7 @@ design's `notes/brief.md`.
 | Path | What it is |
 | --- | --- |
 | `app/` | Screens, by Expo Router. `_layout.tsx` is the root. |
-| `lib/` | Shared code: `tokens.ts` (the design's colors and fonts), `theme.ts`, `slice.tsx` (the mark and its bloom), `ua.ts` (the User-Agent), `polyfills.ts`; and the data layer: `macs.ts` (paired Macs), `reach.ts` (who answers), `catalog.ts` (every Mac's designs), `design.ts` (one design's socket), `seen.ts`, `activity.ts`, `telemetry.ts`. |
+| `lib/` | Shared code: `tokens.ts` (the design's colors and fonts), `theme.ts`, `slice.tsx` (the mark and its bloom), `ua.ts` (the User-Agent), `polyfills.ts`; and the data layer (see below): `query.tsx` and `mac-queries.ts` (the query cache), `macs.ts` (paired Macs), `reach.ts` (who answers), `catalog.ts` (every Mac's designs), `design.ts` (one design's socket), `seen.ts`, `activity.ts`, `telemetry.ts`. |
 | `components/` | Shared views: the file card, the canvas web view (`canvas-view.tsx`), the comment composer and sheets. |
 | `global.css` | Tailwind and the design's tokens as class names (`bg-yuzu`, `text-c-muted`, light and dark). |
 | `modules/bonjour` | A small Expo module that browses for `_ponzu._tcp` with Network.framework. |
@@ -26,6 +26,27 @@ design's `notes/brief.md`.
 Code here may import `@ponzu/core`, never `@ponzu/react`, `@ponzu/render` or
 `@ponzu/server`, which need a browser or Node. `lib/polyfills.ts`, imported
 first, gives core what Hermes lacks.
+
+### Data
+
+What the phone asks a Mac for goes through one TanStack Query cache
+(`lib/query.tsx`), keyed per Mac (`lib/mac-queries.ts`): `["mac", id,
+"info"]` (`/api/info`), `["mac", id, "macs"]` (`/api/macs`) and `["mac", id,
+"catalog"]` (its designs). Info and catalogs are kept in AsyncStorage for a
+week (dropped on a new version or protocol), so the app opens onto the last
+list and an asleep Mac keeps its cards, dimmed. While a Mac answers, its
+catalog socket (`/api/catalog/stream`) writes the snapshot and each patch
+into its catalog query; nothing else holds a copy. Search, Activity and the
+cards are read from those queries. Pairing and shelf changes (`POST
+/api/shelf`, by holding a card) are mutations; a shelf change moves the card
+at once and puts it back if the Mac refuses.
+
+Live state stays in small stores (`lib/store.ts`): who answers and the wake
+knock (`reach.ts`, which asks for info through the query cache), which
+catalog sockets are open, the paired Macs (kept on the phone, never asked
+for), what you've seen, and the open design's socket (`design.ts`). Preview
+images are files in `Documents/cache` (`lib/cache.ts`), not in the query
+cache.
 
 ### Styling
 

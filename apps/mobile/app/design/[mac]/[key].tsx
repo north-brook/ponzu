@@ -20,7 +20,7 @@ import { Composer, initialMode, type Mode } from "../../../components/composer";
 import { AgentMark, Back, Check, Chevron, FileIcon, PageIcon } from "../../../components/icons";
 import { Sheet } from "../../../components/sheet";
 import { ThreadSheet } from "../../../components/thread-sheet";
-import { findFile } from "../../../lib/catalog";
+import { useFile } from "../../../lib/catalog";
 import { useDesignSession, useSessionState } from "../../../lib/design";
 import { baseUrl } from "../../../lib/mac";
 import { findMac } from "../../../lib/macs";
@@ -61,7 +61,7 @@ export default function Canvas() {
   const session = useDesignSession(base, params.key);
   const state = useSessionState(session);
   const doc = state.doc;
-  const file = findFile(params.mac, params.key);
+  const file = useFile(params.mac, params.key);
   const canvas = useRef<CanvasHandle>(null);
 
   const [pageId, setPageId] = useState<string | null>(null);

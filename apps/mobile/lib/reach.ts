@@ -1,8 +1,10 @@
 import { useEffect } from "react";
 import { AppState } from "react-native";
-import { getJson, NetError, request } from "./http";
+import { NetError, request } from "./http";
 import { baseUrl, type Mac, type MacInfo, wakeUrl } from "./mac";
-import { infos, learnPeers, loadMacs, macs, noteAnswer } from "./macs";
+import { keys } from "./mac-queries";
+import { fetchInfo, learnPeers, loadMacs, macs, noteAnswer } from "./macs";
+import { queryClient } from "./query";
 import { ASK_TIMEOUT, afterFirstAsk, type Reach, settle, WAKE } from "./reach-rules";
 import { Store, useStore } from "./store";
 
@@ -17,9 +19,13 @@ function setReach(id: string, r: Reach) {
   reach.set((all) => (all[id] === r ? all : { ...all, [id]: r }));
 }
 
+/** Asks `mac` for its info, through the cache, so an answer is the info every screen reads. */
 async function ask(mac: Mac, timeout = ASK_TIMEOUT): Promise<MacInfo> {
-  const info = await getJson<MacInfo>(`${baseUrl(mac)}/api/info`, timeout);
-  if (typeof info?.version !== "string") throw new NetError("http", "Not Ponzu");
+  const info = await queryClient.fetchQuery({
+    queryKey: keys.info(mac.id),
+    queryFn: () => fetchInfo(baseUrl(mac), timeout),
+    staleTime: 0,
+  });
   noteAnswer(mac, info);
   return info;
 }
@@ -129,13 +135,12 @@ export function overall(saved: Mac[], r: Record<string, Reach>): Overall {
   return { state: "asleep" };
 }
 
-/** The saved Macs, each one's reach and last `/api/info`. Asks again on each return to the app. */
+/** The saved Macs and each one's reach. */
 export function useMacs() {
   const saved = useStore(macs);
   const r = useStore(reach);
-  const info = useStore(infos);
   const busy = useStore(reaching);
-  return { macs: saved, reach: r, info, reaching: busy, overall: overall(saved, r) };
+  return { macs: saved, reach: r, reaching: busy, overall: overall(saved, r) };
 }
 
 /** Mounted once, at the root: asks every Mac again when the app comes back to the foreground. */

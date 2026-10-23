@@ -6,7 +6,7 @@ import { ActivityIndicator, Linking, Pressable, Text, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Close } from "../../components/icons";
 import { parsePairUrl } from "../../lib/mac";
-import { pair, pairMessage } from "../../lib/macs";
+import { pairMessage, usePair } from "../../lib/macs";
 import { reachAll } from "../../lib/reach";
 import { track } from "../../lib/telemetry";
 import { brand } from "../../lib/tokens";
@@ -21,6 +21,7 @@ export default function Scan() {
   const [permission, request] = useCameraPermissions();
   const [state, setState] = useState<"looking" | "pairing" | { error: string }>("looking");
   const busy = useRef(false);
+  const { mutateAsync: pair } = usePair();
   useEffect(() => {
     if (permission && !permission.granted && permission.canAskAgain) request();
   }, [permission]);
@@ -32,7 +33,7 @@ export default function Scan() {
     busy.current = true;
     setState("pairing");
     try {
-      await pair(host, "qr");
+      await pair({ host, via: "qr" });
       track("mac paired", { via: "qr" });
       reachAll();
       router.dismissAll();

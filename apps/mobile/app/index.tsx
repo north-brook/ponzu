@@ -1,3 +1,4 @@
+import { useIsRestoring } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useRef, useState } from "react";
@@ -25,13 +26,16 @@ export default function Launch() {
   useHideSplash();
   const { overall } = useMacs();
   const { height } = useWindowDimensions();
-  const [ready, setReady] = useState(false);
+  const [booted, setBooted] = useState(false);
+  // Designs opens onto the cached catalogs, so wait until they're back.
+  const restoring = useIsRestoring();
+  const ready = booted && !restoring;
   const gone = useRef(false);
   useEffect(() => {
     let on = true;
     boot().then(() => {
       if (!on) return;
-      setReady(true);
+      setBooted(true);
       // Coming back here (Try again, or a fresh start in development) asks again.
       if (!reaching.get()) reachAll();
     });

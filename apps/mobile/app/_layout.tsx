@@ -8,6 +8,7 @@ import { setBackgroundColorAsync } from "expo-system-ui";
 import { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { boot } from "../lib/boot";
+import { QueryProvider } from "../lib/query";
 import { useReachOnForeground } from "../lib/reach";
 import { holdSplash } from "../lib/splash";
 import { track } from "../lib/telemetry";
@@ -36,29 +37,33 @@ export default function RootLayout() {
     setBackgroundColorAsync(color.bg);
   }, [color.bg]);
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeProvider value={navigationTheme(scheme)}>
-        <StatusBar style="auto" />
-        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: color.bg } }}>
-          <Stack.Screen name="index" options={{ animation: "none" }} />
-          <Stack.Screen
-            name="connect/index"
-            options={{ animation: "fade", gestureEnabled: false }}
-          />
-          <Stack.Screen
-            name="connect/scan"
-            options={{ presentation: "fullScreenModal", animation: "slide_from_bottom" }}
-          />
-          <Stack.Screen name="tailscale" options={{ animation: "fade", gestureEnabled: false }} />
-          <Stack.Screen name="asleep" options={{ animation: "fade", gestureEnabled: false }} />
-          <Stack.Screen name="designs" options={{ animation: "none", gestureEnabled: false }} />
-          <Stack.Screen name="search" options={{ animation: "fade" }} />
-          <Stack.Screen name="design/[mac]/[key]" options={{ animation: "default" }} />
-          <Stack.Screen name="activity" options={{ animation: "default" }} />
-          <Stack.Screen name="pair" options={{ animation: "none" }} />
-          <Stack.Screen name="dev" options={{ animation: "none" }} />
-        </Stack>
-      </ThemeProvider>
-    </GestureHandlerRootView>
+    <QueryProvider>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <ThemeProvider value={navigationTheme(scheme)}>
+          <StatusBar style="auto" />
+          <Stack
+            screenOptions={{ headerShown: false, contentStyle: { backgroundColor: color.bg } }}
+          >
+            <Stack.Screen name="index" options={{ animation: "none" }} />
+            <Stack.Screen
+              name="connect/index"
+              options={{ animation: "fade", gestureEnabled: false }}
+            />
+            <Stack.Screen
+              name="connect/scan"
+              options={{ presentation: "fullScreenModal", animation: "slide_from_bottom" }}
+            />
+            <Stack.Screen name="tailscale" options={{ animation: "fade", gestureEnabled: false }} />
+            <Stack.Screen name="asleep" options={{ animation: "fade", gestureEnabled: false }} />
+            <Stack.Screen name="designs" options={{ animation: "none", gestureEnabled: false }} />
+            <Stack.Screen name="search" options={{ animation: "fade" }} />
+            <Stack.Screen name="design/[mac]/[key]" options={{ animation: "default" }} />
+            <Stack.Screen name="activity" options={{ animation: "default" }} />
+            <Stack.Screen name="pair" options={{ animation: "none" }} />
+            <Stack.Screen name="dev" options={{ animation: "none" }} />
+          </Stack>
+        </ThemeProvider>
+      </GestureHandlerRootView>
+    </QueryProvider>
   );
 }

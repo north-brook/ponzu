@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
@@ -18,9 +19,9 @@ import {
 } from "../../components/connect-layout";
 import { Laptop, QR, Swap } from "../../components/icons";
 import { type NearbyMac, useNearbyMacs } from "../../lib/bonjour";
-import { getJson } from "../../lib/http";
-import { type MacInfo, PORT } from "../../lib/mac";
-import { pair, pairMessage } from "../../lib/macs";
+import { fetchCatalog } from "../../lib/catalog";
+import { PORT } from "../../lib/mac";
+import { fetchInfo, pairMessage, usePair } from "../../lib/macs";
 import { reachAll } from "../../lib/reach";
 import { track } from "../../lib/telemetry";
 import { useTheme } from "../../lib/theme";
@@ -135,41 +136,33 @@ function Found({
   onError: (message: string | null) => void;
 }) {
   const { color } = useTheme();
-  const [info, setInfo] = useState<(MacInfo & { designs?: number }) | null>(null);
-  const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    let on = true;
-    const base = `http://${mac.host}:${PORT}`;
-    getJson<MacInfo>(`${base}/api/info`, 4_000)
-      .then(async (i) => {
-        if (!on) return;
-        setInfo(i);
-        const c = await getJson<{ files: unknown[] }>(`${base}/api/catalog`, 4_000).catch(
-          () => null,
-        );
-        if (on && c) setInfo({ ...i, designs: c.files.length });
-      })
-      .catch(() => {});
-    return () => {
-      on = false;
-    };
-  }, [mac.host]);
+  // Not saved yet, so asked by host: the queries under "nearby" aren't kept.
+  const address = { dns: mac.host, address: `${mac.host}:${PORT}` };
+  const info = useQuery({
+    queryKey: ["nearby", mac.host, "info"],
+    queryFn: () => fetchInfo(`http://${address.address}`, 4_000),
+  });
+  const designs = useQuery({
+    queryKey: ["nearby", mac.host, "catalog"],
+    queryFn: () => fetchCatalog(address),
+    enabled: info.isSuccess,
+    select: (c) => c.files.length,
+  });
+  const pair = usePair();
+  const busy = pair.isPending;
   const connect = async () => {
-    setBusy(true);
     onError(null);
     try {
-      await pair(mac.host, "bonjour");
+      await pair.mutateAsync({ host: mac.host, via: "bonjour" });
       track("mac paired", { via: "bonjour" });
       reachAll();
       router.replace("/designs");
     } catch (err) {
       onError(pairMessage(err, mac.name));
-    } finally {
-      setBusy(false);
     }
   };
-  const detail = info
-    ? `Ponzu ${info.version.replace(/\.0$/, "")}${info.designs !== undefined ? ` · ${info.designs} designs` : ""}`
+  const detail = info.data
+    ? `Ponzu ${info.data.version.replace(/\.0$/, "")}${designs.data !== undefined ? ` · ${designs.data} designs` : ""}`
     : "Ponzu";
   return (
     <View

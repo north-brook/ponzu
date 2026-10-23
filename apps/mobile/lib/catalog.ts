@@ -1,17 +1,33 @@
-import { applyCatalogPatch, type Catalog, type CatalogMessage } from "@ponzu/core";
-import { readJson, writeJson } from "./cache";
+import type { Catalog, CatalogMessage } from "@ponzu/core";
+import { useMutation, useQueries } from "@tanstack/react-query";
+import { useCallback, useMemo } from "react";
 import { type MacCatalog, mergeCatalogs, type PhoneFile } from "./files";
+import { getJson, request } from "./http";
 import { baseUrl, type Mac } from "./mac";
-import { loadMacs, macs } from "./macs";
+import { keys, type ShelfChange, shelfMutation, writeCatalogMessage } from "./mac-queries";
+import { findMac, macs } from "./macs";
+import { queryClient } from "./query";
 import { reach, reachOne } from "./reach";
 import { baselineSeen } from "./seen";
 import { Store, useStore } from "./store";
 import { USER_AGENT } from "./ua";
 
-/** Each Mac's catalog, live or from the cache, by Mac id. */
-export const catalogs = new Store<Record<string, MacCatalog>>({});
-/** Macs whose catalog socket is open now. */
+/**
+ * Each Mac's designs. The catalog query (`keys.catalog`) is the one copy,
+ * kept on disk by the query cache: Designs shows it the moment the app
+ * opens, and a Mac that's asleep keeps its cards, dimmed. While a Mac
+ * answers, its catalog socket keeps the query current, a snapshot and then
+ * a patch per change. The phone asks each Mac for its own designs only
+ * (`scope=local`), since it asks every Mac itself.
+ */
+
+/** Macs whose catalog socket is open now: their cards are live. */
 export const live = new Store<Record<string, boolean>>({});
+
+/** `GET /api/catalog`: what the Mac has now, when there's no socket to say. */
+export function fetchCatalog(mac: Pick<Mac, "dns" | "address">): Promise<Catalog> {
+  return getJson<Catalog>(`${baseUrl(mac)}/api/catalog?scope=local`, 8_000);
+}
 
 interface Feed {
   socket: WebSocket;
@@ -20,42 +36,16 @@ interface Feed {
 }
 const feeds = new Map<string, Feed>();
 
-function setCatalog(mac: Mac, catalog: Catalog) {
-  catalogs.set((all) => ({ ...all, [mac.id]: { catalog, at: Date.now() } }));
-  baselineSeen(mac.id, catalog.files);
-  saveSoon(mac);
-}
-
-const saving = new Map<string, ReturnType<typeof setTimeout>>();
-/** Writes a Mac's catalog to the cache, at most every couple of seconds. */
-function saveSoon(mac: Mac) {
-  if (saving.has(mac.id)) return;
-  saving.set(
-    mac.id,
-    setTimeout(() => {
-      saving.delete(mac.id);
-      const c = catalogs.get()[mac.id];
-      if (c) writeJson(mac.id, "catalog", c);
-    }, 2_000),
-  );
-}
-
-/** The cached catalogs, so Designs has something to show before any Mac answers. */
-export async function loadCachedCatalogs() {
-  await loadMacs();
-  const next: Record<string, MacCatalog> = {};
-  for (const mac of macs.get()) {
-    const c = readJson<MacCatalog>(mac.id, "catalog");
-    if (c?.catalog?.files) next[mac.id] = c;
-  }
-  catalogs.set((all) => ({ ...next, ...all }));
+function onMessage(mac: Mac, msg: CatalogMessage) {
+  const catalog = writeCatalogMessage(queryClient, mac.id, msg);
+  if (catalog && msg.t !== "ping") baselineSeen(mac.id, catalog.files);
 }
 
 /** Opens `mac`'s catalog stream if it isn't open: a snapshot, then a patch per change. */
 function open(mac: Mac) {
   const existing = feeds.get(mac.id);
   if (existing && !existing.closed) return;
-  const url = `${baseUrl(mac).replace(/^http/, "ws")}/api/catalog/stream`;
+  const url = `${baseUrl(mac).replace(/^http/, "ws")}/api/catalog/stream?scope=local`;
   // React Native's WebSocket takes headers as a third argument.
   const socket = new (
     WebSocket as unknown as new (
@@ -77,11 +67,7 @@ function open(mac: Mac) {
     } catch {
       return;
     }
-    if (msg.t === "snapshot") setCatalog(mac, msg.catalog);
-    else if (msg.t === "patch") {
-      const prev = catalogs.get()[mac.id]?.catalog ?? { machines: [], files: [], agents: [] };
-      setCatalog(mac, applyCatalogPatch(prev, msg.patch));
-    }
+    onMessage(mac, msg);
   };
   socket.onclose = () => {
     if (feed.closed) return;
@@ -118,35 +104,69 @@ export function refreshFeeds() {
     feed.socket.close();
     feeds.delete(id);
   }
+  live.set({});
   syncFeeds();
 }
 
 reach.subscribe(syncFeeds);
 
+/** Each saved Mac's catalog as the cache holds it, with when it last came from the Mac. */
+export function useCatalogs(): Record<string, MacCatalog> {
+  const saved = useStore(macs);
+  const combine = useCallback(
+    (results: { data?: Catalog; dataUpdatedAt: number }[]) => {
+      const all: Record<string, MacCatalog> = {};
+      results.forEach((q, i) => {
+        if (q.data?.files) all[saved[i]!.id] = { catalog: q.data, at: q.dataUpdatedAt };
+      });
+      return all;
+    },
+    [saved],
+  );
+  return useQueries({
+    queries: saved.map((m) => ({
+      queryKey: keys.catalog(m.id),
+      queryFn: () => fetchCatalog(m),
+      // The socket keeps it current; nothing here asks the Mac.
+      enabled: false,
+    })),
+    combine,
+  });
+}
+
 /** Every design on every Mac, newest edit first. */
 export function useFiles(): PhoneFile[] {
   const saved = useStore(macs);
-  const all = useStore(catalogs);
+  const all = useCatalogs();
   const on = useStore(live);
-  return useMemoFiles(saved, all, on);
-}
-
-let memo: { key: unknown[]; files: PhoneFile[] } | null = null;
-function useMemoFiles(
-  saved: Mac[],
-  all: Record<string, MacCatalog>,
-  on: Record<string, boolean>,
-): PhoneFile[] {
-  if (memo && memo.key[0] === saved && memo.key[1] === all && memo.key[2] === on) return memo.files;
-  const files = mergeCatalogs(
-    saved.map((m) => ({ id: m.id, name: m.name, kind: m.kind, base: baseUrl(m) })),
-    all,
-    (id) => Boolean(on[id]),
+  return useMemo(
+    () =>
+      mergeCatalogs(
+        saved.map((m) => ({ id: m.id, name: m.name, kind: m.kind, base: baseUrl(m) })),
+        all,
+        (id) => Boolean(on[id]),
+      ),
+    [saved, all, on],
   );
-  memo = { key: [saved, all, on], files };
-  return files;
 }
 
-export function findFile(mac: string, key: string): PhoneFile | undefined {
-  return memo?.files.find((f) => f.mac === mac && f.key === key);
+/** One design, as Designs shows it. */
+export function useFile(mac: string, key: string): PhoneFile | undefined {
+  const files = useFiles();
+  return useMemo(() => files.find((f) => f.mac === mac && f.key === key), [files, mac, key]);
+}
+
+/** Archive, restore, or move a design between Recent and Scratch, on its Mac. */
+export function useShelve() {
+  return useMutation(
+    shelfMutation(queryClient, async ({ mac, key, action }: ShelfChange) => {
+      const m = findMac(mac);
+      if (!m) throw new Error("This Mac isn't paired anymore.");
+      await request(`${baseUrl(m)}/api/shelf`, {
+        method: "POST",
+        body: { key, action },
+        timeout: 6_000,
+      });
+    }),
+  );
 }

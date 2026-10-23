@@ -1,6 +1,8 @@
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ActionSheetIOS,
+  Alert,
   Modal,
   Pressable,
   RefreshControl,
@@ -16,12 +18,12 @@ import { Lockup } from "../components/chrome";
 import { FileCard } from "../components/file-card";
 import { Bell, Branch, Check, Chevron, Folder, Moon, Search } from "../components/icons";
 import { useActivityCount } from "../lib/activity-store";
-import { catalogs, refreshFeeds, syncFeeds, useFiles } from "../lib/catalog";
+import { refreshFeeds, syncFeeds, useCatalogs, useFiles, useShelve } from "../lib/catalog";
 import { clock, type PhoneFile, projects, type Shelf, shelfOf } from "../lib/files";
+import type { ShelfAction } from "../lib/mac-queries";
 import { SLICE, SLICE_STROKE } from "../lib/mark";
 import { reachAll, useMacs } from "../lib/reach";
 import { isUnseen, useSeen } from "../lib/seen";
-import { useStore } from "../lib/store";
 import { useTheme } from "../lib/theme";
 import { brand, EASE_OUT } from "../lib/tokens";
 
@@ -44,12 +46,13 @@ export default function Designs() {
   const files = useFiles();
   const seen = useSeen();
   const { macs, reach } = useMacs();
-  const all = useStore(catalogs);
+  const all = useCatalogs();
   const [shelf, setShelf] = useState<Shelf>("recent");
   const [project, setProject] = useState<string | null | undefined>(undefined);
   const [menu, setMenu] = useState(false);
   const [pulled, setPulled] = useState(false);
   const count = useActivityCount();
+  const shelve = useShelve();
   useEffect(syncFeeds, []);
   // The menu is a modal over the whole app: it goes when Designs does.
   useFocusEffect(useCallback(() => () => setMenu(false), []));
@@ -75,6 +78,42 @@ export default function Designs() {
   const cardWidth = (width - 40 - 16) / 2;
   const open = (f: PhoneFile) =>
     router.push({ pathname: "/design/[mac]/[key]", params: { mac: f.mac, key: f.key } });
+  // Hold a card for its shelf, as desktop's card menu: the card moves at once.
+  const actions = (f: PhoneFile) => {
+    const on = shelfOf(f);
+    const choices: { label: string; action: ShelfAction }[] =
+      on === "archived"
+        ? [{ label: "Restore", action: "restore" }]
+        : [
+            on === "scratch"
+              ? { label: "Move to Recent", action: "recent" }
+              : { label: "Move to Scratch", action: "scratch" },
+            { label: "Archive", action: "archive" },
+          ];
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        title: f.name,
+        options: [...choices.map((c) => c.label), "Cancel"],
+        cancelButtonIndex: choices.length,
+      },
+      (i) => {
+        const choice = choices[i];
+        if (!choice) return;
+        shelve.mutate(
+          { mac: f.mac, key: f.key, action: choice.action },
+          {
+            onError: () =>
+              Alert.alert(
+                `Couldn't move “${f.name}”`,
+                f.stale
+                  ? `${f.macName} isn't answering. Try again once it's back.`
+                  : `${f.macName} didn't take the change.`,
+              ),
+          },
+        );
+      },
+    );
+  };
 
   return (
     <View testID="designs" style={{ flex: 1, backgroundColor: color.bg }}>
@@ -310,6 +349,7 @@ export default function Designs() {
                 width={cardWidth}
                 unseen={isUnseen(seen, f.mac, f.key, f.modified)}
                 onPress={() => open(f)}
+                onLongPress={() => actions(f)}
               />
             </Rise>
           ))}
