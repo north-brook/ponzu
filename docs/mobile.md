@@ -59,10 +59,11 @@ cache.
 
 ### Floating controls
 
-What floats over the canvas and on pushed screens (back, the title pill, the
-agent's mark and its card, the bell, the hint and focus pills, the comment
-sheet's round buttons) is Liquid Glass (`expo-glass-effect`) on iOS 26, in
-the app's light or dark. Before iOS 26 it falls back to the design's bar:
+What floats over the canvas (back, the file's title, the page button, the
+agent's session card, the hint, the comment sheet's field and round buttons,
+Resolve) is Liquid Glass (`expo-glass-effect`) on iOS 26, in the app's light
+or dark; a control held open (the title while the session card shows) is
+the glass a step darker, never a ring. Before iOS 26 it falls back to the design's bar:
 `--c-bar`, a hairline and the pop shadow. `components/glass.tsx` has the
 rules: the glass itself is never clipped, its content is.
 
@@ -75,9 +76,27 @@ of each part, both ways, is in `lib/morph.ts`. The sheet's own shape (its
 corners, side insets and bottom edge) follows the keyboard's frame, read
 every frame from `react-native-keyboard-controller`, so it rides the
 keyboard down and up with the system's animation, interactive dismissal
-included. The mic, keyboard and send glyphs are SF Symbols (`expo-symbols`),
-the round buttons interactive glass, and switching taps a selection haptic,
-sending a light one.
+included. The field and, in voice, the waveform share one glass capsule the
+buttons' height; the glyphs are Hugeicons, as everywhere in the app.
+
+### Haptics
+
+One vocabulary, `lib/haptics.ts` (as augmenter's): each gesture gets one,
+never a stream, and none for scrolling or for motion the person didn't
+cause. They follow the system's haptics setting. In development each is
+logged to Metro as `[haptic] <kind>`, since the simulator can't buzz.
+
+| Haptic | When |
+| --- | --- |
+| `select` | A tab changing; a native menu opening (the page button, a card's hold); a filter, page or shelf picked; a recent search tapped; typing ⇄ voice |
+| `tick` | A design opened (a card, a search or Activity row); Back; the session card opening; a board coming into focus or leaving it; a comment's pin dropped; pull to refresh |
+| `success` | A comment or reply sent; a thread resolved; a Mac paired; a Mac answering after "Waking Ponzu" |
+| `thud` | A design archived |
+| `fail` | A pairing error; a comment that didn't send; a shelf change a Mac didn't take; a Mac that didn't wake |
+
+The filter's native menu opens with the system's own feedback, so it adds
+none. The canvas's gestures come from the web view as messages (`focused`,
+`longpress`, canvas/protocol.ts); the haptic is the app's, never the page's.
 
 ### Styling
 

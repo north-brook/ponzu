@@ -1,5 +1,4 @@
 import type { MenuAction } from "@react-native-menu/menu";
-import { selectionAsync } from "expo-haptics";
 import { router, Stack } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -20,6 +19,7 @@ import { HandoffRise, holding } from "../../../components/handoff";
 import { Moon } from "../../../components/icons";
 import { refreshFeeds, syncFeeds, useCatalogs, useFiles, useShelve } from "../../../lib/catalog";
 import { clock, type PhoneFile, projects, type Shelf, shelfOf } from "../../../lib/files";
+import { fail, select, thud, tick } from "../../../lib/haptics";
 import type { ShelfAction } from "../../../lib/mac-queries";
 import { LOCKUP_INK, measureMargin, useMargin } from "../../../lib/margin";
 import { SLICE, SLICE_STROKE } from "../../../lib/mark";
@@ -76,8 +76,10 @@ export default function Designs() {
   const m = useMargin();
   const header = useRef<HostInstance>(null);
   const cardWidth = (width - 2 * m - 16) / 2;
-  const open = (f: PhoneFile) =>
+  const open = (f: PhoneFile) => {
+    tick();
     router.push({ pathname: "/design/[mac]/[key]", params: { mac: f.mac, key: f.key } });
+  };
   // Hold a card for its shelf, as desktop's card menu: the card moves at once.
   const actions = (f: PhoneFile) => {
     const on = shelfOf(f);
@@ -90,6 +92,8 @@ export default function Designs() {
               : { label: "Move to Scratch", action: "scratch" },
             { label: "Archive", action: "archive" },
           ];
+    // The sheet is the app's, not the system's context menu: it has no haptic of its own.
+    select();
     ActionSheetIOS.showActionSheetWithOptions(
       {
         title: f.name,
@@ -99,16 +103,20 @@ export default function Designs() {
       (i) => {
         const choice = choices[i];
         if (!choice) return;
+        if (choice.action === "archive") thud();
+        else select();
         shelve.mutate(
           { mac: f.mac, key: f.key, action: choice.action },
           {
-            onError: () =>
+            onError: () => {
+              fail();
               Alert.alert(
                 `Couldn't move “${f.name}”`,
                 f.stale
                   ? `${f.macName} isn't answering. Try again once it's back.`
                   : `${f.macName} didn't take the change.`,
-              ),
+              );
+            },
           },
         );
       },
@@ -154,7 +162,7 @@ export default function Designs() {
     [shelf, project, chips],
   );
   const pickFilter = (id: string) => {
-    selectionAsync().catch(() => {});
+    select();
     if (id.startsWith("shelf:")) {
       setShelf(id.slice(6) as Shelf);
       setProject(undefined);
@@ -207,6 +215,8 @@ export default function Designs() {
           <RefreshControl
             refreshing={pulled}
             onRefresh={() => {
+              // The pull crossed its threshold.
+              tick();
               setPulled(true);
               refreshFeeds();
               reachAll().finally(() => setPulled(false));

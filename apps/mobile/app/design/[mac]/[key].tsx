@@ -1,6 +1,5 @@
 import { agentActivity, findArtboard, newId, type Presence, type Thread } from "@ponzu/core";
 import { type MenuAction, MenuView, type NativeActionEvent } from "@react-native-menu/menu";
-import { selectionAsync } from "expo-haptics";
 import { router, useLocalSearchParams, useNavigation } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
@@ -27,6 +26,7 @@ import { Shimmer } from "../../../components/shimmer";
 import { ThreadSheet } from "../../../components/thread-sheet";
 import { useFile } from "../../../lib/catalog";
 import { useDesignSession, useSessionState } from "../../../lib/design";
+import { select, success, tick } from "../../../lib/haptics";
 import { noteOpened } from "../../../lib/lately";
 import { baseUrl } from "../../../lib/mac";
 import { findMac } from "../../../lib/macs";
@@ -157,9 +157,13 @@ export default function Canvas() {
   const working = agent ? agentActivity(agent, session?.file ?? params.key) === "working" : false;
   const thread = doc?.threads.find((t) => t.id === threadId) ?? null;
 
+  /** The board focused as the canvas last said: a haptic marks going into or out of focus, not a gesture settling. */
+  const wasFocused = useRef<string | null>(null);
   const onMessage = useCallback((msg: FromCanvas) => {
     switch (msg.t) {
       case "longpress":
+        // The comment's pin is dropped.
+        tick();
         setThreadId(null);
         setCard(false);
         setPending({
@@ -178,6 +182,8 @@ export default function Canvas() {
         setPageId(msg.pageId);
         break;
       case "focused":
+        if (Boolean(msg.artboardId) !== Boolean(wasFocused.current)) tick();
+        wasFocused.current = msg.artboardId;
         setFocusedBoard(msg.artboardId);
         setMoving(false);
         break;
@@ -224,6 +230,7 @@ export default function Canvas() {
     if (!session || !thread) return;
     await session.send({ op: "thread.update", id: thread.id, status });
     if (status === "resolved") {
+      success();
       setThreadId(null);
       setSheet(0);
     }
@@ -247,6 +254,7 @@ export default function Canvas() {
   );
   const pickPage = ({ nativeEvent }: NativeActionEvent) => {
     const id = nativeEvent.event;
+    select();
     if (id === page?.id) return;
     setPageId(id);
     canvas.current?.post({ t: "page", pageId: id });
@@ -342,13 +350,26 @@ export default function Canvas() {
             gap: 10,
           }}
         >
-          <BarButton label="Back" onPress={() => router.back()}>
+          <BarButton
+            label="Back"
+            onPress={() => {
+              tick();
+              router.back();
+            }}
+          >
             <Back color={color.ink} />
           </BarButton>
           {/* The file, in the middle: an agent's mark in place of its icon while one is here, and its session card on a tap. */}
           <View style={{ flex: 1, minWidth: 0, alignItems: "center" }}>
             <Pressable
-              onPress={agent ? () => setCard((c) => !c) : undefined}
+              onPress={
+                agent
+                  ? () => {
+                      if (!card) tick();
+                      setCard((c) => !c);
+                    }
+                  : undefined
+              }
               disabled={!agent}
               accessibilityRole={agent ? "button" : "text"}
               accessibilityLabel={
@@ -396,7 +417,7 @@ export default function Canvas() {
             <MenuView
               actions={pageActions}
               onPressAction={pickPage}
-              onOpenMenu={() => selectionAsync().catch(() => {})}
+              onOpenMenu={select}
               themeVariant={scheme}
             >
               <View

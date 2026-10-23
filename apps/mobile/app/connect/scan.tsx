@@ -1,6 +1,5 @@
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { GlassView } from "expo-glass-effect";
-import { NotificationFeedbackType, notificationAsync } from "expo-haptics";
 import { router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useRef, useState } from "react";
@@ -9,6 +8,7 @@ import Animated, { Easing, FadeIn, FadeOut, LinearTransition } from "react-nativ
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { liquid } from "../../components/glass";
 import { Close } from "../../components/icons";
+import { fail as failHaptic, success } from "../../lib/haptics";
 import { PairError, parsePairUrl } from "../../lib/mac";
 import { pairMessage, usePair } from "../../lib/macs";
 import { reachAll } from "../../lib/reach";
@@ -44,7 +44,7 @@ export default function Scan() {
   }, [permission]);
 
   const fail = (message: string) => {
-    notificationAsync(NotificationFeedbackType.Error);
+    failHaptic();
     setState({ error: message });
     setTimeout(() => {
       busy.current = false;
@@ -66,7 +66,7 @@ export default function Scan() {
     setState("pairing");
     try {
       await pair({ host, via: "qr" });
-      notificationAsync(NotificationFeedbackType.Success);
+      success();
       track("mac paired", { via: "qr" });
       reachAll();
       router.dismissAll();

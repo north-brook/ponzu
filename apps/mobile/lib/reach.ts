@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { AppState } from "react-native";
+import { fail, success } from "./haptics";
 import { NetError, request } from "./http";
 import { baseUrl, type Mac, type MacInfo, wakeUrl } from "./mac";
 import { keys } from "./mac-queries";
@@ -40,11 +41,14 @@ async function wake(mac: Mac): Promise<boolean> {
     await new Promise((r) => setTimeout(r, WAKE.every));
     try {
       await ask(mac, 1_500);
+      // "Waking Ponzu…" was on screen: it's felt when the Mac answers, and when it doesn't.
+      success();
       return true;
     } catch {
       // Not yet.
     }
   }
+  fail();
   return false;
 }
 

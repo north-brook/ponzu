@@ -8,6 +8,7 @@ import { type ActivityItem, changeTarget, shortAgent, title } from "../../../lib
 import { markActivitySeen, useActivity } from "../../../lib/activity-store";
 import { useFiles } from "../../../lib/catalog";
 import { shortAgo } from "../../../lib/files";
+import { tick } from "../../../lib/haptics";
 import { baseUrl } from "../../../lib/mac";
 import { findMac } from "../../../lib/macs";
 import { useMargin } from "../../../lib/margin";
@@ -60,6 +61,7 @@ export default function Activity() {
   );
 
   const open = (item: ActivityItem) => {
+    tick();
     const artboard = item.kind === "change" ? changeTarget(item) : undefined;
     router.push({
       pathname: "/design/[mac]/[key]",

@@ -1,7 +1,7 @@
-import { selectionAsync } from "expo-haptics";
 import { NativeTabs } from "expo-router/native-tabs";
 import { holding } from "../../components/handoff";
 import { useActivityCount } from "../../lib/activity-store";
+import { select } from "../../lib/haptics";
 import { useStore } from "../../lib/store";
 import { useTheme } from "../../lib/theme";
 import { brand } from "../../lib/tokens";
@@ -28,11 +28,7 @@ const MARKS = {
 };
 
 /** A tab changing is felt, as a selection: each press, the current tab's again too. */
-const TAB_LISTENERS = {
-  tabPress: () => {
-    selectionAsync().catch(() => {});
-  },
-};
+const TAB_LISTENERS = { tabPress: select };
 
 /**
  * The app once connected, in the system's tab bar: Designs, Search and

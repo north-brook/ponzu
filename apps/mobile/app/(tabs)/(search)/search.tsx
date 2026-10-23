@@ -1,4 +1,3 @@
-import { selectionAsync } from "expo-haptics";
 import { router, Stack, useFocusEffect, useLocalSearchParams, useNavigation } from "expo-router";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
@@ -9,6 +8,7 @@ import { Clock, MacIcon, PageIcon, Search as SearchGlyph } from "../../../compon
 import { MacImage } from "../../../components/preview";
 import { useFiles } from "../../../lib/catalog";
 import type { PhoneFile } from "../../../lib/files";
+import { select, tick } from "../../../lib/haptics";
 import { lately, noteSearch, type Opened } from "../../../lib/lately";
 import { useMargin } from "../../../lib/margin";
 import { useMacs } from "../../../lib/reach";
@@ -84,11 +84,12 @@ export default function Search() {
     ),
   );
   const again = (s: string) => {
-    selectionAsync().catch(() => {});
+    select();
     bar.current?.setText(s);
     setQuery(s);
   };
   const go = (pathname: "/design/[mac]/[key]", p: Record<string, string>) => {
+    tick();
     if (found) noteSearch(q);
     router.push({ pathname, params: p as { mac: string; key: string } });
   };

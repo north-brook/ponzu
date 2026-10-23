@@ -1,5 +1,4 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { ImpactFeedbackStyle, impactAsync, selectionAsync } from "expo-haptics";
 import { useEffect, useRef, useState } from "react";
 import {
   type LayoutChangeEvent,
@@ -24,6 +23,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { useDictation } from "../lib/dictation";
+import { fail, select, success } from "../lib/haptics";
 import { PARTS, phase, SWITCH_MS } from "../lib/morph";
 import { useTheme } from "../lib/theme";
 import { brand, EASE_OUT } from "../lib/tokens";
@@ -101,7 +101,7 @@ export function Composer({
   const still = useReducedMotion();
 
   const switchTo = (m: Mode) => {
-    selectionAsync().catch(() => {});
+    select();
     // What was said carries into typing, and back.
     if (m === "type") setTyped(dictation.text);
     else {
@@ -126,11 +126,14 @@ export function Composer({
   const send = async () => {
     if (!has || sending) return;
     setSending(true);
-    impactAsync(ImpactFeedbackStyle.Light).catch(() => {});
     try {
       await onSend(text.trim(), mode);
+      success();
       setTyped("");
       dictation.setText("");
+    } catch {
+      // The screen says what went wrong; this says it didn't go.
+      fail();
     } finally {
       setSending(false);
     }
