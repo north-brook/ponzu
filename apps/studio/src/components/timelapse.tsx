@@ -46,9 +46,11 @@ interface FilmView {
   path: string;
   src: string;
   duration?: number;
-  /** What it covered, when it was just made here (for its comment ticks). */
+  /** What it covered (for its comment ticks), when known. */
   range?: Range;
   theme?: "light" | "dark";
+  /** Just made: the dialog says it's ready. A past film is titled by its file. */
+  fresh?: boolean;
 }
 
 /** A film in the design's exports/ folder. */
@@ -150,6 +152,7 @@ export function TimelapseButton({
         duration: done.duration,
         range: job.request.range,
         theme: job.request.theme,
+        fresh: true,
       });
     }
   }, [job, origin]);
@@ -935,8 +938,8 @@ function Ready({
   const src = film.src;
   const desktop = window.ponzuDesktop;
 
-  // Ticks on the film's own clock, where the comments sweep in: known for a film just made
-  // here (a past one's range isn't kept, so it plays without them).
+  // Ticks on the film's own clock, where the comments sweep in (a film made before ranges were
+  // kept beside it plays without them).
   useEffect(() => {
     if (!open || !film.range) return;
     let live = true;
@@ -976,7 +979,7 @@ function Ready({
       open={open}
       onOpenChange={onOpenChange}
       title={
-        film.range ? (
+        film.fresh ? (
           "Timelapse ready"
         ) : (
           <>
