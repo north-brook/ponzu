@@ -60,16 +60,25 @@ const out = [...CURVES.out] as const;
 const easeIn = [...CURVES.in] as const;
 const ease = [...CURVES.ease] as const;
 
+/**
+ * Onto Designs, the native parts that can't ride the clock (the header's
+ * filter button, the tab bar) stay away until the page rises in, then
+ * arrive with the system's own animation.
+ */
+export const holding = new Store(false);
+
 /** Starts a handoff. The launch screen calls it just before it replaces itself. */
 export function startHandoff(kind: HandoffKind, lift = 0) {
   cancelAnimation(clock);
   clock.value = 0;
   running.value = KINDS[kind];
+  holding.set(kind === "designs");
   handoff.set({ kind, target: null, lift });
 }
 
 function finish() {
   handoff.set(null);
+  holding.set(false);
   running.value = 0;
   clock.value = IDLE;
 }
@@ -118,6 +127,7 @@ function Layer({ kind, target, lift }: { kind: HandoffKind; target: Target | nul
       const turn =
         kind === "tile" ? TO_TILE.shrink[0] + 80 : (TO_DESIGNS.ink[0] + TO_DESIGNS.ink[1]) / 2;
       setTimeout(() => setInked(false), turn);
+      if (kind === "designs") setTimeout(() => holding.set(false), TO_DESIGNS.rise[0]);
     };
     if (target) go();
     const t = setTimeout(go, 700);
@@ -230,7 +240,9 @@ const SCREEN_RADIUS = 55;
 /**
  * Where a handoff lands: the yuzu tile, or the lockup's mark. It tells the
  * layer where it is, and stays hidden while the handoff runs: the layer's
- * last frame is exactly what it draws.
+ * last frame is exactly what it draws. A mark in the native header is
+ * placed by the header after the screen's own layout, so it measures again
+ * over the next frames and the latest place wins, until it has settled.
  */
 export function HandoffTarget({
   kind,
@@ -245,18 +257,29 @@ export function HandoffTarget({
   const ref = useRef<HostInstance>(null);
   const waiting = h?.kind === kind;
   const measure = () => {
-    if (!waiting || h?.target) return;
     ref.current?.measureInWindow((x, y) => {
       const now = handoff.get();
-      if (now?.kind === kind && !now.target) handoff.set({ ...now, target: { x, y, size } });
+      if (now?.kind !== kind) return;
+      const t = now.target;
+      if (t && Math.abs(t.x - x) < 0.25 && Math.abs(t.y - y) < 0.25) return;
+      handoff.set({ ...now, target: { x, y, size } });
     });
   };
-  // A screen that's already laid out when the handoff starts measures now.
-  useEffect(measure, [waiting]);
+  // Measured now, on each layout, and again as the header places it.
+  useEffect(() => {
+    if (!waiting) return;
+    measure();
+    const frame = requestAnimationFrame(() => requestAnimationFrame(measure));
+    const later = [60, 150, 300, 500].map((ms) => setTimeout(measure, ms));
+    return () => {
+      cancelAnimationFrame(frame);
+      for (const t of later) clearTimeout(t);
+    };
+  }, [waiting]);
   return (
     <View
       ref={ref}
-      onLayout={measure}
+      onLayout={() => waiting && measure()}
       style={{ width: size, height: size, opacity: waiting ? 0 : 1 }}
     >
       {children}

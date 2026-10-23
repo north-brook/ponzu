@@ -15,7 +15,7 @@ import Svg, { Path } from "react-native-svg";
 import { barMenuItems } from "../../../components/bar-menu";
 import { Lockup } from "../../../components/chrome";
 import { FileCard } from "../../../components/file-card";
-import { HandoffRise } from "../../../components/handoff";
+import { HandoffRise, holding } from "../../../components/handoff";
 import { Moon } from "../../../components/icons";
 import { refreshFeeds, syncFeeds, useCatalogs, useFiles, useShelve } from "../../../lib/catalog";
 import { clock, type PhoneFile, projects, type Shelf, shelfOf } from "../../../lib/files";
@@ -23,6 +23,7 @@ import type { ShelfAction } from "../../../lib/mac-queries";
 import { SLICE, SLICE_STROKE } from "../../../lib/mark";
 import { reachAll, useMacs } from "../../../lib/reach";
 import { isUnseen, useSeen } from "../../../lib/seen";
+import { useStore } from "../../../lib/store";
 import { useTheme } from "../../../lib/theme";
 import { brand } from "../../../lib/tokens";
 
@@ -53,6 +54,8 @@ export default function Designs() {
   const [project, setProject] = useState<string | null | undefined>(undefined);
   const [pulled, setPulled] = useState(false);
   const shelve = useShelve();
+  // Arriving from the launch screen, the filter comes in with the page (components/handoff.tsx).
+  const held = useStore(holding);
   useEffect(syncFeeds, []);
 
   const onShelf = useMemo(() => files.filter((f) => shelfOf(f) === shelf), [files, shelf]);
@@ -169,6 +172,7 @@ export default function Designs() {
       </Stack.Toolbar>
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Menu
+          hidden={held}
           accessibilityLabel={
             on ? `Filter: ${[shelfLabel, projectLabel].filter(Boolean).join(", ")}` : "Filter"
           }

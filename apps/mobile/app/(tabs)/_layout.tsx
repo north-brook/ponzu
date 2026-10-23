@@ -1,6 +1,8 @@
 import { selectionAsync } from "expo-haptics";
 import { NativeTabs } from "expo-router/native-tabs";
+import { holding } from "../../components/handoff";
 import { useActivityCount } from "../../lib/activity-store";
+import { useStore } from "../../lib/store";
 import { useTheme } from "../../lib/theme";
 import { brand } from "../../lib/tokens";
 
@@ -46,6 +48,8 @@ const TAB_LISTENERS = {
 export default function TabsLayout() {
   const { color } = useTheme();
   const count = useActivityCount();
+  // Arriving from the launch screen, the bar comes in with the page (components/handoff.tsx).
+  const held = useStore(holding);
   return (
     <NativeTabs
       minimizeBehavior="never"
@@ -54,6 +58,7 @@ export default function TabsLayout() {
       // The brand's yuzu, not the system's red. iOS draws the count in white
       // on it; only Android takes a text color.
       badgeBackgroundColor={brand.yuzu}
+      hidden={held}
     >
       <NativeTabs.Trigger
         name="(designs)"

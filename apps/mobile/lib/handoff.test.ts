@@ -24,8 +24,15 @@ test("a part waits for its stretch, then settles in place", () => {
 test("the studies' order: the wordmark leaves first, the content comes last", () => {
   expect(TO_TILE.word[0]).toBeLessThan(TO_TILE.shrink[0]);
   expect(TO_TILE.shrink[1]).toBeLessThan(TO_TILE.rise[1]);
-  expect(TO_DESIGNS.glide[1]).toBeLessThan(TO_DESIGNS.end);
   expect(TO_DESIGNS.rise[1] + TO_DESIGNS.delays.at(-1)!).toBe(TO_DESIGNS.end);
-  // About 1.1s from the slice setting off to it landing in the lockup.
-  expect(TO_DESIGNS.glide[1] - TO_DESIGNS.glide[0]).toBe(1100);
+});
+
+test("onto Designs the beats follow one another: hold, glide, word, then the rest", () => {
+  expect(TO_DESIGNS.glide[0]).toBe(TO_DESIGNS.hold);
+  expect(TO_DESIGNS.glide[1] - TO_DESIGNS.glide[0]).toBe(600);
+  // The word waits for the slice to land, and the rest for the word.
+  expect(TO_DESIGNS.lockup[0]).toBe(TO_DESIGNS.glide[1]);
+  expect(TO_DESIGNS.rise[0]).toBe(TO_DESIGNS.lockup[1]);
+  // The yuzu has gone by the time the slice lands.
+  expect(TO_DESIGNS.yuzu[1]).toBeLessThanOrEqual(TO_DESIGNS.glide[1]);
 });

@@ -40,32 +40,31 @@ export const TO_TILE = {
 } as const;
 
 /**
- * Launch → Designs: the slice glides into the lockup (and turns from ink to
- * the page's ink), the launch wordmark lifts away, the yuzu fades (growing
- * 4%), the lockup's word slides in from the left, and the page rises in a
- * 55ms stagger. The study loops in 5s; its handoff starts at 20%, so each
- * stretch is (% − 20) × 50ms.
+ * Launch → Designs, in clear beats after the launch screen's bloom-in has
+ * landed: a short hold with the slice whole, then the slice glides into the
+ * header's lockup (turning from ink to the page's ink) as the yuzu fades
+ * under it and the launch wordmark lifts away; once it has landed, the
+ * lockup's word slides out from behind the mark; then the rest arrives: the
+ * filter button and the tab bar, and the cards in a 55ms stagger.
  */
 export const TO_DESIGNS = {
-  /** wordout 20% → 30%, ease-in: fades, 6pt up. */
-  word: [0, 500],
-  /** yz 24% → 40%, ease-in. */
-  yuzu: [200, 1000],
-  /** glide 24% → 46%, ease-out. */
-  glide: [200, 1300],
-  /** ink 26% → 44%. */
-  ink: [300, 1200],
-  /** wordin 36% → 48%: 14pt from the left. */
-  lockup: [800, 1400],
-  /** rise 38% → 52%, each part a little after the one before: 16pt up. */
-  rise: [900, 1600],
-  /**
-   * The study's delays for the page under the header: the cards 55ms apart
-   * (the bell and search field are the tab bar's now, and the filter is the
-   * header's, so the first card goes first).
-   */
-  delays: [0, 50, 105, 160, 215, 270, 325],
-  end: 1600 + 325,
+  /** The slice held whole before it moves. */
+  hold: 150,
+  /** The launch wordmark fades, 6pt up, ease-in, as the glide starts. */
+  word: [150, 500],
+  /** The yuzu fades under the glide, ease-in. */
+  yuzu: [150, 750],
+  /** The glide into the lockup, ease-out. */
+  glide: [150, 750],
+  /** The slice's ink turns to the page's. */
+  ink: [300, 750],
+  /** The lockup's word slides out from behind the mark, after the glide. */
+  lockup: [750, 1100],
+  /** The rest rises 16pt, each part a little after the one before. */
+  rise: [1100, 1600],
+  /** The cards' stagger, 55ms apart. */
+  delays: [0, 55, 110, 165, 220, 275, 330],
+  end: 1600 + 330,
 } as const;
 
 /** The clock when no handoff runs: every part in place. */
