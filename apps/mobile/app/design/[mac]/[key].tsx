@@ -1,8 +1,9 @@
 import { agentActivity, findArtboard, newId, type Presence, type Thread } from "@ponzu/core";
+import { type MenuAction, MenuView, type NativeActionEvent } from "@react-native-menu/menu";
 import { selectionAsync } from "expo-haptics";
 import { router, useLocalSearchParams, useNavigation } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActionSheetIOS, ActivityIndicator, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import Animated, {
   Easing,
   FadeIn,
@@ -27,6 +28,7 @@ import { useFile } from "../../../lib/catalog";
 import { useDesignSession, useSessionState } from "../../../lib/design";
 import { baseUrl } from "../../../lib/mac";
 import { findMac } from "../../../lib/macs";
+import { MENU_ICONS } from "../../../lib/menu-icons";
 import { markSeen } from "../../../lib/seen";
 import { track } from "../../../lib/telemetry";
 import { useTheme } from "../../../lib/theme";
@@ -218,28 +220,28 @@ export default function Canvas() {
   };
 
   /**
-   * The title pill's page menu: the system's sheet, as Designs' card menu,
-   * the open page ticked.
+   * The title pill's page menu: the system's menu, dropping from the pill
+   * as augmenter's do (@react-native-menu/menu), each page with its icon
+   * from the asset catalog (`hi-*`, scripts/tab-icons.ts) and the open one
+   * checked.
    */
-  const pickPage = () => {
-    if (!doc) return;
-    selectionAsync().catch(() => {});
-    const list = doc.pages;
-    ActionSheetIOS.showActionSheetWithOptions(
-      {
-        title: doc.name,
-        options: [...list.map((p) => (p.id === page?.id ? `${p.name}  ✓` : p.name)), "Cancel"],
-        cancelButtonIndex: list.length,
-        userInterfaceStyle: scheme,
-      },
-      (i) => {
-        const to = list[i];
-        if (!to || to.id === page?.id) return;
-        setPageId(to.id);
-        canvas.current?.post({ t: "page", pageId: to.id });
-      },
-    );
+  const pageActions = useMemo<MenuAction[]>(
+    () =>
+      (doc?.pages ?? []).map((p) => ({
+        id: p.id,
+        title: p.name,
+        image: `hi-${p.icon && MENU_ICONS.has(p.icon) ? p.icon : "board"}`,
+        state: p.id === page?.id ? "on" : "off",
+      })),
+    [doc?.pages, page?.id],
+  );
+  const pickPage = ({ nativeEvent }: NativeActionEvent) => {
+    const id = nativeEvent.event;
+    if (id === page?.id) return;
+    setPageId(id);
+    canvas.current?.post({ t: "page", pageId: id });
   };
+  const manyPages = (doc?.pages.length ?? 0) > 1;
 
   // The chrome covers the status bar and the top bar (54 + 56), and the home indicator.
   const top = insets.top + 56;
@@ -334,64 +336,72 @@ export default function Canvas() {
             <Back color={color.ink} />
           </BarButton>
           <View style={{ flex: 1, alignItems: "center" }}>
-            <Pressable
-              onPress={() => doc && doc.pages.length > 1 && pickPage()}
-              accessibilityRole="button"
-              accessibilityLabel={`${file?.name ?? doc?.name ?? ""}, page ${page?.name ?? ""}`}
-              testID="title"
+            <MenuView
+              actions={manyPages ? pageActions : []}
+              onPressAction={pickPage}
+              onOpenMenu={() => selectionAsync().catch(() => {})}
+              title={doc?.name}
+              themeVariant={scheme}
             >
-              <Glass
-                interactive
-                style={{
-                  height: 44,
-                  paddingHorizontal: 14,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 6,
-                  maxWidth: 236,
-                }}
+              <View
+                accessible
+                accessibilityRole={manyPages ? "button" : "text"}
+                accessibilityLabel={`${file?.name ?? doc?.name ?? ""}, page ${page?.name ?? ""}`}
+                testID="title"
               >
-                <FileIcon size={16} color={color.ink} />
-                <Text
-                  numberOfLines={1}
+                <Glass
+                  interactive
                   style={{
-                    flexShrink: 1,
-                    fontFamily: "Inter",
-                    fontWeight: "600",
-                    fontSize: 15,
-                    color: color.ink,
+                    height: 44,
+                    paddingHorizontal: 14,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 6,
+                    maxWidth: 236,
                   }}
                 >
-                  {doc?.name ?? file?.name ?? ""}
-                </Text>
-                {page && (
-                  <>
-                    <View
-                      style={{
-                        width: 1,
-                        height: 14,
-                        backgroundColor: color.hairline,
-                        marginHorizontal: 2,
-                      }}
-                    />
-                    <PageIcon name={page.icon} size={16} color={color.muted} />
-                    <Text
-                      numberOfLines={1}
-                      style={{
-                        flexShrink: 1,
-                        fontFamily: "Inter",
-                        fontWeight: "500",
-                        fontSize: 15,
-                        color: color.muted,
-                      }}
-                    >
-                      {page.name}
-                    </Text>
-                    {(doc?.pages.length ?? 0) > 1 && <Chevron size={16} color={color.muted} />}
-                  </>
-                )}
-              </Glass>
-            </Pressable>
+                  <FileIcon size={16} color={color.ink} />
+                  <Text
+                    numberOfLines={1}
+                    style={{
+                      flexShrink: 1,
+                      fontFamily: "Inter",
+                      fontWeight: "600",
+                      fontSize: 15,
+                      color: color.ink,
+                    }}
+                  >
+                    {doc?.name ?? file?.name ?? ""}
+                  </Text>
+                  {page && (
+                    <>
+                      <View
+                        style={{
+                          width: 1,
+                          height: 14,
+                          backgroundColor: color.hairline,
+                          marginHorizontal: 2,
+                        }}
+                      />
+                      <PageIcon name={page.icon} size={16} color={color.muted} />
+                      <Text
+                        numberOfLines={1}
+                        style={{
+                          flexShrink: 1,
+                          fontFamily: "Inter",
+                          fontWeight: "500",
+                          fontSize: 15,
+                          color: color.muted,
+                        }}
+                      >
+                        {page.name}
+                      </Text>
+                      {(doc?.pages.length ?? 0) > 1 && <Chevron size={16} color={color.muted} />}
+                    </>
+                  )}
+                </Glass>
+              </View>
+            </MenuView>
           </View>
           {agent ? (
             <BarButton

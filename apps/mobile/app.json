@@ -51,6 +51,234 @@
         }
       ],
       "expo-image",
+      "./plugins/template-icons",
+      [
+        "expo-native-asset",
+        {
+          "assets": [
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-add.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-archive.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-blank.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-board.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-book.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-branch.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-calendar.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-cart.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-chart.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-check.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-chevronDown.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-close.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-code.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-comment.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-copy.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-desktop.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-edit.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-file.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-flow.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-folder.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-folderOpen.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-grid.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-hand.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-home.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-image.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-laptop.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-layout.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-list.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-mail.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-map.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-minus.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-moon.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-more.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-note.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-page.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-palette.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-phone.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-plus.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-redo.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-refresh.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-repo.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-resolved.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-scratch.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-search.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-select.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-send.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-settings.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-star.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-sun.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-tablet.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-trash.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-type.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-unarchive.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-undo.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-user.png"
+            }
+          ]
+        }
+      ],
       "expo-status-bar",
       "expo-system-ui",
       [

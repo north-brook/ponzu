@@ -22,5 +22,8 @@
     "@types/bun": "latest",
     "typescript": "^5.9.3"
   },
+  "patchedDependencies": {
+    "@react-native-menu/menu@2.0.0": "patches/@react-native-menu%2Fmenu@2.0.0.patch"
+  },
   "packageManager": "bun@1.4.2"
 }

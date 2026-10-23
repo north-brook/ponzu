@@ -1,0 +1,31 @@
+diff --git a/ios/MenuViewManager.mm b/ios/MenuViewManager.mm
+index 3d149b3..6816e94 100644
+--- a/ios/MenuViewManager.mm
++++ b/ios/MenuViewManager.mm
+@@ -1,6 +1,6 @@
+ #import <React/RCTViewManager.h>
+ #import <React/RCTUIManager.h>
+-#import "RCTBridge.h"
++#import <React/RCTBridge.h>
+ 
+ #ifdef RCT_NEW_ARCH_ENABLED
+ // NEW ARCH
+diff --git a/ios/Shared/RCTMenuItem.swift b/ios/Shared/RCTMenuItem.swift
+index bb6bb2b..1468c2d 100644
+--- a/ios/Shared/RCTMenuItem.swift
++++ b/ios/Shared/RCTMenuItem.swift
+@@ -32,8 +32,13 @@ class RCTMenuAction {
+             if self.image === nil {
+                 self.image = UIImage(named: image as String)
+             }
+-            if let imageColor = details["imageColor"] {
++            // The new architecture sends every colour, an unset one as 0
++            // (clear): only a colour given tints. An image without one keeps
++            // its own colours, as a logo must.
++            if let imageColor = details["imageColor"] as? NSNumber, imageColor.intValue != 0 {
+                 self.image = self.image?.withTintColor(RCTConvert.uiColor(imageColor), renderingMode: .alwaysOriginal)
++            } else if self.image?.renderingMode != .alwaysTemplate {
++                self.image = self.image?.withRenderingMode(.alwaysOriginal)
+             }
+         }
+ 
