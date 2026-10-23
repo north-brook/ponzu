@@ -210,6 +210,12 @@ See it
 - hover, focus or press (a node id) on either tool puts that node in the state first. record then shows the transition into it, starting from the settled page.
 - scroll (a scroll container's id) on record steps through its scroll range, for animation-timeline: scroll() and view(). The container needs a fixed height and overflow: auto.
 
+What the person sees
+- On their canvas, the load plays once when the artboard appears: when they open its page, and each time you edit it. Then a finite animation holds its end. Hovering or clicking the artboard doesn't replay it, so never tell them it will.
+- A hint that fades out ends hidden, so the canvas shows nothing once it has played.
+- When they need to watch the motion (an entrance to review, a hint that leaves), put a looping copy on an artboard beside the real one: animation-iteration-count: infinite, with a beat of about a second held at the end of the keyframes so each cycle reads as one play. Keep the real one finite, and say which is which in a note.
+- If the motion answers something the person does, put it on :hover or :focus, so they can set it off themselves.
+
 Write it
 - Put @keyframes and state rules in a <style> inside the artboard. Name a class on the element (class="cta") and target it: .cta:hover { … }.
 - Inline styles beat <style> rules. A state rule that changes a property the element also sets inline needs !important. Lint tells you when a state changes nothing.
@@ -224,7 +230,8 @@ Check
 1. screenshot: the settled page is what people see most. Lint it like any other.
 2. record the load: does each thing arrive in order, and nothing jump or overlap?
 3. record hover/focus/press on every interactive element you styled. A state without a transition snaps; that's fine for focus rings, rarely for hover.
-4. Read the motion list: delays and durations should add up to the rhythm you meant.`,
+4. Read the motion list: delays and durations should add up to the rhythm you meant.
+5. A finite load the person should judge needs a looping copy beside it; they can't replay the original.`,
 
   mobile: `# Mobile
 
