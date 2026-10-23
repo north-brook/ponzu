@@ -2,6 +2,7 @@ import { selectionAsync } from "expo-haptics";
 import { NativeTabs } from "expo-router/native-tabs";
 import { useActivityCount } from "../../lib/activity-store";
 import { useTheme } from "../../lib/theme";
+import { brand } from "../../lib/tokens";
 
 /**
  * Each tab's mark, as Hugeicons (scripts/tab-icons.ts): the outline, and
@@ -46,7 +47,14 @@ export default function TabsLayout() {
   const { color } = useTheme();
   const count = useActivityCount();
   return (
-    <NativeTabs minimizeBehavior="never" screenListeners={TAB_LISTENERS} tintColor={color.ink}>
+    <NativeTabs
+      minimizeBehavior="never"
+      screenListeners={TAB_LISTENERS}
+      tintColor={color.ink}
+      // The brand's yuzu, not the system's red. iOS draws the count in white
+      // on it; only Android takes a text color.
+      badgeBackgroundColor={brand.yuzu}
+    >
       <NativeTabs.Trigger
         name="(designs)"
         accessibilityLabel="Designs"
