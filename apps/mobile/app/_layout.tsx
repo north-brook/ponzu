@@ -8,6 +8,7 @@ import { setBackgroundColorAsync } from "expo-system-ui";
 import { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
+import { HandoffLayer } from "../components/handoff";
 import { boot } from "../lib/boot";
 import { QueryProvider } from "../lib/query";
 import { useReachOnForeground } from "../lib/reach";
@@ -68,6 +69,8 @@ export default function RootLayout() {
               <Stack.Screen name="pair" options={{ animation: "none" }} />
               <Stack.Screen name="dev" options={{ animation: "none" }} />
             </Stack>
+            {/* The launch screen's yuzu and slice, carried into the first screen. */}
+            <HandoffLayer />
           </ThemeProvider>
         </KeyboardProvider>
       </GestureHandlerRootView>

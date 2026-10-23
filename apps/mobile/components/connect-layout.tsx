@@ -3,6 +3,7 @@ import { Pressable, ScrollView, Text, View, type ViewStyle } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "../lib/theme";
 import { AppTile } from "./chrome";
+import { HandoffRise, HandoffTarget } from "./handoff";
 
 /**
  * The Connect pages' frame: two marks joined by a link, a display title,
@@ -10,20 +11,19 @@ import { AppTile } from "./chrome";
  * actions pinned to the bottom, 58pt above the screen's edge (Actions). One
  * column that scrolls when the text is large; the actions follow the content
  * then, instead of covering it.
+ *
+ * Coming from the launch screen, the yuzu tile is where the launch's yuzu
+ * lands, and the rest rises in after it (components/handoff.tsx).
  */
 export function ConnectLayout({
-  tile,
   other,
   link,
   title,
   body,
   children,
   actions,
-  rise,
   testID,
 }: {
-  /** The left-hand tile, the yuzu app tile unless the launch handoff draws its own. */
-  tile?: ReactNode;
   /** The right-hand mark's tile. */
   other: ReactNode;
   link: ReactNode;
@@ -31,13 +31,10 @@ export function ConnectLayout({
   body: string;
   children?: ReactNode;
   actions: ReactNode;
-  /** Wraps the parts that rise in after the launch handoff (Content's text and Actions). */
-  rise?: (part: ReactNode, key: "content" | "actions") => ReactNode;
   testID?: string;
 }) {
   const { color } = useTheme();
   const insets = useSafeAreaInsets();
-  const wrap = rise ?? ((part: ReactNode) => part);
   return (
     <View testID={testID} style={{ flex: 1, backgroundColor: color.bg }}>
       <ScrollView
@@ -47,50 +44,48 @@ export function ConnectLayout({
       >
         <View style={{ flexGrow: 1, paddingHorizontal: 28, paddingBottom: 24 }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-            {tile ?? <AppTile />}
-            {wrap(
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-                {link}
-                {other}
-              </View>,
-              "content",
-            )}
+            <HandoffTarget kind="tile" size={64}>
+              <AppTile />
+            </HandoffTarget>
+            <HandoffRise
+              kind="tile"
+              style={{ flexDirection: "row", alignItems: "center", gap: 12 }}
+            >
+              {link}
+              {other}
+            </HandoffRise>
           </View>
-          {wrap(
-            <View>
-              <Text
-                style={{
-                  marginTop: 28,
-                  fontFamily: "Funnel Display",
-                  fontWeight: "700",
-                  fontSize: 34,
-                  lineHeight: 34 * 1.08,
-                  letterSpacing: -0.03 * 34,
-                  color: color.ink,
-                }}
-              >
-                {title}
-              </Text>
-              <Text
-                style={{
-                  marginTop: 14,
-                  fontFamily: "Inter",
-                  fontSize: 17,
-                  lineHeight: 17 * 1.5,
-                  color: color.muted,
-                }}
-              >
-                {body}
-              </Text>
-              {children}
-            </View>,
-            "content",
-          )}
+          <HandoffRise kind="tile">
+            <Text
+              style={{
+                marginTop: 28,
+                fontFamily: "Funnel Display",
+                fontWeight: "700",
+                fontSize: 34,
+                lineHeight: 34 * 1.08,
+                letterSpacing: -0.03 * 34,
+                color: color.ink,
+              }}
+            >
+              {title}
+            </Text>
+            <Text
+              style={{
+                marginTop: 14,
+                fontFamily: "Inter",
+                fontSize: 17,
+                lineHeight: 17 * 1.5,
+                color: color.muted,
+              }}
+            >
+              {body}
+            </Text>
+            {children}
+          </HandoffRise>
         </View>
-        {wrap(
-          <View style={{ paddingHorizontal: 20, paddingBottom: 58, gap: 10 }}>{actions}</View>,
-          "actions",
-        )}
+        <HandoffRise kind="tile" style={{ paddingHorizontal: 20, paddingBottom: 58, gap: 10 }}>
+          {actions}
+        </HandoffRise>
       </ScrollView>
     </View>
   );

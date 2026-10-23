@@ -3,7 +3,8 @@ import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useRef, useState } from "react";
 import { Text, useWindowDimensions, View } from "react-native";
-import Animated, { Easing, FadeIn, FadeInDown } from "react-native-reanimated";
+import Animated, { Easing, FadeIn, FadeInDown, useReducedMotion } from "react-native-reanimated";
+import { startHandoff } from "../components/handoff";
 import { MacIcon } from "../components/icons";
 import { boot } from "../lib/boot";
 import { LAUNCH } from "../lib/mark";
@@ -31,6 +32,7 @@ export default function Launch() {
   const restoring = useIsRestoring();
   const ready = booted && !restoring;
   const gone = useRef(false);
+  const still = useReducedMotion();
   useEffect(() => {
     let on = true;
     boot().then(() => {
@@ -48,6 +50,8 @@ export default function Launch() {
     if (!ready || gone.current) return;
     const go = (to: "/connect" | "/designs" | "/tailscale" | "/asleep") => {
       gone.current = true;
+      // The yuzu and its slice carry on into the next screen's tile or lockup.
+      if (!still) startHandoff(to === "/designs" ? "designs" : "tile");
       router.replace(to);
     };
     // Hold the bloom a beat, so a fast answer doesn't flash the launch screen.
