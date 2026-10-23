@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.42.0](https://github.com/north-brook/ponzu/compare/v1.41.2...v1.42.0) (2026-10-23)
+
+
+### Features
+
+* rename the iterate loop to watch, and nudge agents into it ([#174](https://github.com/north-brook/ponzu/issues/174)) ([300610f](https://github.com/north-brook/ponzu/commit/300610fb3040f6a73aa1e0a1f4da55fcce32ad46))
+
 ## [1.41.2](https://github.com/north-brook/ponzu/compare/v1.41.1...v1.41.2) (2026-10-23)
 
 
