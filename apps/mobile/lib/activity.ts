@@ -22,8 +22,8 @@ export type ActivityItem =
       change: AgentChange;
       author: string;
       client?: string;
-      /** The pages its artboards are on, by name. */
-      pageNames: string[];
+      /** The pages its artboards are on, with their icons. */
+      pages: Place[];
       at: number;
     }
   | {
@@ -34,7 +34,8 @@ export type ActivityItem =
       author: string;
       client?: string;
       text: string;
-      boardName?: string;
+      /** The board it's pinned to, with its page's icon. */
+      board?: Place;
       at: number;
     }
   | {
@@ -44,7 +45,7 @@ export type ActivityItem =
       threads: Thread[];
       author: string;
       client?: string;
-      boards: { id: string; name: string }[];
+      boards: (Place & { id: string })[];
       at: number;
     }
   | {
@@ -56,6 +57,12 @@ export type ActivityItem =
       boards: { id: string; name: string }[];
       at: number;
     };
+
+/** A page or a board in an item's where-line: its name, and the page's icon (design.json's names). */
+export interface Place {
+  name: string;
+  icon?: string;
+}
 
 export interface ActivityInput {
   files: PhoneFile[];
@@ -88,9 +95,11 @@ export function shortAgent(name: string): string {
   return name.split(/[\s-]/)[0] ?? name;
 }
 
-function boardName(doc: Pick<Doc, "pages">, id?: string): string | undefined {
+/** A board by id, with its page's icon. */
+function board(doc: Pick<Doc, "pages">, id?: string): Place | undefined {
   if (!id) return undefined;
-  for (const p of doc.pages) for (const a of p.artboards) if (a.id === id) return a.name;
+  for (const p of doc.pages)
+    for (const a of p.artboards) if (a.id === id) return { name: a.name, icon: p.icon };
   return undefined;
 }
 
@@ -102,11 +111,10 @@ export function buildActivity(input: ActivityInput): ActivityItem[] {
       // A design this phone doesn't list (archived away, or gone) has nowhere to open.
       const file = byKey.get(`${mac}:${change.file}`);
       if (!file || !change.artboards.length) continue;
-      const pageNames = [
-        ...new Set(
-          change.artboards.map((a) => file.pages.find((p) => p.id === a.page)?.name ?? ""),
-        ),
-      ].filter(Boolean);
+      const pages = [...new Set(change.artboards.map((a) => a.page))]
+        .map((id) => file.pages.find((p) => p.id === id))
+        .filter((p) => p !== undefined)
+        .map((p) => ({ name: p.name, icon: p.icon }));
       out.push({
         kind: "change",
         id: `change:${mac}:${change.id}`,
@@ -114,7 +122,7 @@ export function buildActivity(input: ActivityInput): ActivityItem[] {
         change,
         author: shortAgent(change.agent.name),
         client: change.agent.client ?? clientOf(change.agent.name),
-        pageNames,
+        pages,
         at: change.at,
       });
     }
@@ -141,7 +149,7 @@ export function buildActivity(input: ActivityInput): ActivityItem[] {
             author: shortAgent(reply.author.name),
             client: clientOf(reply.author.name),
             text: reply.text,
-            boardName: boardName(doc, t.artboardId),
+            board: board(doc, t.artboardId),
             at: reply.createdAt,
           });
         if (t.status === "resolved" && t.messages[0]?.author.kind === "user") {
@@ -157,9 +165,9 @@ export function buildActivity(input: ActivityInput): ActivityItem[] {
           ...new Map(
             threads
               .filter((t) => t.artboardId)
-              .map((t) => [t.artboardId!, boardName(doc, t.artboardId) ?? ""] as const),
+              .map((t) => [t.artboardId!, board(doc, t.artboardId) ?? { name: "" }] as const),
           ),
-        ].map(([id, name]) => ({ id, name }));
+        ].map(([id, place]) => ({ id, ...place }));
         out.push({
           kind: "resolved",
           id: `resolved:${k}:${author}`,
@@ -227,6 +235,24 @@ export function title(item: ActivityItem): string {
         return item.agent.activity === "working" ? `${who} is working` : `${who} is iterating`;
       }
       return "Changed since you looked";
+  }
+}
+
+/**
+ * Where an item is, as its second line reads: the file, then each page (a
+ * change) or board (a reply, a resolve) with its page's icon. Work in a
+ * design now reads as the agent's status instead, so it has none.
+ */
+export function where(item: ActivityItem): { file: string; places: Place[] } | null {
+  switch (item.kind) {
+    case "change":
+      return { file: item.file.name, places: item.pages };
+    case "reply":
+      return { file: item.file.name, places: item.board ? [item.board] : [] };
+    case "resolved":
+      return { file: item.file.name, places: item.boards.filter((b) => b.name) };
+    case "work":
+      return null;
   }
 }
 

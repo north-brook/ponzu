@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { AgentChange, Catalog, CatalogFile, Doc, Thread } from "@ponzu/core";
-import { buildActivity, changeTarget, isNew, title } from "./activity";
+import { buildActivity, changeTarget, isNew, title, where } from "./activity";
 import { mergeCatalogs, type PhoneFile, projects, shortAgo, whereLine } from "./files";
 import { mark, search } from "./search";
 
@@ -157,7 +157,7 @@ test("activity: an agent's reply after yours, your comments it resolved, its wor
     ["reply", "Claude replied to you"],
   ]);
   const reply = items.find((i) => i.kind === "reply")!;
-  expect(reply.kind === "reply" && reply.boardName).toBe("6 Money");
+  expect(reply.kind === "reply" && reply.board?.name).toBe("6 Money");
   // The reply came after Activity was last opened; the resolve (at 500) too; the work is unseen.
   expect(items.map((i) => isNew(i, input))).toEqual([true, true, true]);
   expect(isNew(reply, { ...input, activitySeenAt: 300 })).toBe(false);
@@ -172,8 +172,8 @@ test("activity: what agents changed, from each Mac's history", () => {
           file({
             modified: 5000,
             pages: [
-              { id: "pg_1", name: "Brand" },
-              { id: "pg_2", name: "App" },
+              { id: "pg_1", name: "Brand", icon: "palette" },
+              { id: "pg_2", name: "App", icon: "phone" },
             ],
             artboards: [
               { id: "ab_1", name: "Logo", page: "pg_1", thumb: "/t1" },
@@ -234,8 +234,13 @@ test("activity: what agents changed, from each Mac's history", () => {
     "Codex added 3 artboards",
   ]);
   const [claude, codex] = items as Extract<(typeof items)[number], { kind: "change" }>[];
-  expect(claude!.pageNames).toEqual(["App"]);
-  expect(codex!.pageNames).toEqual(["Brand", "App"]);
+  expect(claude!.pages).toEqual([{ name: "App", icon: "phone" }]);
+  expect(codex!.pages).toEqual([
+    { name: "Brand", icon: "palette" },
+    { name: "App", icon: "phone" },
+  ]);
+  // The where-line: the file, then each page with its own icon.
+  expect(where(codex!)).toEqual({ file: "Kettle", places: codex!.pages });
   // It opens on the first changed artboard still in the design.
   expect(changeTarget(claude!)).toBe("ab_2");
   // With a history, a design that changed since you looked isn't a separate item.

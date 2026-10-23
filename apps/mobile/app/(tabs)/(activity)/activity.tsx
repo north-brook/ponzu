@@ -1,10 +1,10 @@
 import { router, Stack, useFocusEffect, useLocalSearchParams, useNavigation } from "expo-router";
-import { useCallback, useRef } from "react";
+import { Fragment, useCallback, useRef } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { HeaderTitle } from "../../../components/chrome";
-import { AgentMark } from "../../../components/icons";
+import { AgentMark, FileIcon, PageIcon } from "../../../components/icons";
 import { MacImage } from "../../../components/preview";
-import { type ActivityItem, changeTarget, shortAgent, title } from "../../../lib/activity";
+import { type ActivityItem, changeTarget, shortAgent, title, where } from "../../../lib/activity";
 import { markActivitySeen, useActivity } from "../../../lib/activity-store";
 import { useFiles } from "../../../lib/catalog";
 import { shortAgo } from "../../../lib/files";
@@ -184,14 +184,6 @@ function Item({
 }) {
   const { color } = useTheme();
   const client = item.kind === "work" ? item.agent?.client : item.client;
-  const where =
-    item.kind === "change"
-      ? [item.file.name, item.pageNames.join(", ")].filter(Boolean).join(" · ")
-      : item.kind === "reply"
-        ? [item.file.name, item.boardName].filter(Boolean).join(" · ")
-        : item.kind === "resolved"
-          ? [item.file.name, item.boards.map((b) => b.name).join(", ")].filter(Boolean).join(" · ")
-          : (item.agent?.status ?? `On ${item.file.macName}`);
   const workTitle =
     item.kind === "work" && item.agent
       ? `${shortAgent(item.agent.name)} ${item.agent.activity === "working" ? "is working on" : "is iterating on"} ${item.file.name}`
@@ -246,12 +238,7 @@ function Item({
               />
             )}
           </View>
-          <Text
-            numberOfLines={1}
-            style={{ fontFamily: "Inter", fontSize: 13, lineHeight: 16.9, color: color.muted }}
-          >
-            {where}
-          </Text>
+          <Where item={item} />
         </View>
         {item.kind === "reply" && (
           <Text
@@ -320,6 +307,43 @@ function Item({
         )}
       </View>
     </Pressable>
+  );
+}
+
+/**
+ * The item's second line, as the cards and Search's rows read: the file's
+ * icon and name, then each page with its own icon (or, for a reply, the
+ * board), 13pt, the icons faint, "·" between. Work in a design now reads as
+ * the agent's status.
+ */
+function Where({ item }: { item: ActivityItem }) {
+  const { color } = useTheme();
+  const line = where(item);
+  const text = { fontFamily: "Inter", fontSize: 13, lineHeight: 16.9, color: color.muted };
+  if (!line) {
+    const status = item.kind === "work" ? item.agent?.status : undefined;
+    return (
+      <Text numberOfLines={1} style={text}>
+        {status ?? `On ${item.file.macName}`}
+      </Text>
+    );
+  }
+  return (
+    <View testID="activity-where" style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+      <FileIcon size={13} color={color.faint} width={1.5} />
+      <Text numberOfLines={1} style={[text, { flexShrink: 0, maxWidth: "60%" }]}>
+        {line.file}
+      </Text>
+      {line.places.map((p) => (
+        <Fragment key={p.name}>
+          <Text style={[text, { color: color.faint }]}>·</Text>
+          <PageIcon name={p.icon} size={13} color={color.faint} width={1.5} />
+          <Text numberOfLines={1} style={[text, { flexShrink: 1 }]}>
+            {p.name}
+          </Text>
+        </Fragment>
+      ))}
+    </View>
   );
 }
 
