@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { StyleSheet, View, type ViewStyle } from "react-native";
 import Animated, {
   cancelAnimation,
@@ -156,4 +156,30 @@ function useBloomStyle(phase: SharedValue<Phase>) {
       { scale: 1 - Math.abs(phase.value - WHOLE) },
     ],
   }));
+}
+
+/** The slice's segments fading in turn: "still looking". Reduce Motion holds it whole. */
+export function Juice({ size, color }: { size: number; color: string }) {
+  const [i, setI] = useState(0);
+  const still = useReducedMotion();
+  useEffect(() => {
+    if (still) return;
+    const t = setInterval(() => setI((n) => (n + 1) % 6), 200);
+    return () => clearInterval(t);
+  }, [still]);
+  return (
+    <Svg width={size} height={size} viewBox="0 0 64 64" accessibilityLabel="Loading">
+      {SLICE.map((d, k) => (
+        <Path
+          key={d}
+          d={d}
+          fill={color}
+          stroke={color}
+          strokeWidth={SLICE_STROKE}
+          strokeLinejoin="round"
+          opacity={still ? 1 : (k - i + 6) % 6 < 3 ? 0.16 + ((k - i + 6) % 6) * 0.28 : 1}
+        />
+      ))}
+    </Svg>
+  );
 }

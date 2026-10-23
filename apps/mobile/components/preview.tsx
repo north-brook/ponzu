@@ -16,6 +16,7 @@ export function MacImage({
   style,
   contentFit = "cover",
   contentPosition = "top",
+  onSize,
 }: {
   mac: string;
   url: string | null;
@@ -23,6 +24,8 @@ export function MacImage({
   style?: StyleProp<ImageStyle>;
   contentFit?: "cover" | "contain";
   contentPosition?: "top" | "center";
+  /** The image's own size in pixels, once it's loaded. */
+  onSize?: (width: number, height: number) => void;
 }) {
   const [uri, setUri] = useState<string | null>(() => (url ? cachedImage(mac, url) : null));
   useEffect(() => {
@@ -50,6 +53,7 @@ export function MacImage({
       contentPosition={contentPosition}
       transition={150}
       cachePolicy="memory"
+      onLoad={onSize ? (e) => onSize(e.source.width, e.source.height) : undefined}
     />
   );
 }

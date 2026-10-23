@@ -11,7 +11,6 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import Svg, { Path } from "react-native-svg";
 import { barMenuItems } from "../../../components/bar-menu";
 import { Lockup } from "../../../components/chrome";
 import { FileCard } from "../../../components/file-card";
@@ -22,9 +21,9 @@ import { clock, type PhoneFile, projects, type Shelf, shelfOf } from "../../../l
 import { fail, select, thud, tick } from "../../../lib/haptics";
 import type { ShelfAction } from "../../../lib/mac-queries";
 import { LOCKUP_INK, measureMargin, useMargin } from "../../../lib/margin";
-import { SLICE, SLICE_STROKE } from "../../../lib/mark";
 import { reachAll, useMacs } from "../../../lib/reach";
 import { isUnseen, useSeen } from "../../../lib/seen";
+import { Juice } from "../../../lib/slice";
 import { useStore } from "../../../lib/store";
 import { useTheme } from "../../../lib/theme";
 import { brand } from "../../../lib/tokens";
@@ -227,7 +226,7 @@ export default function Designs() {
       >
         {arriving.length > 0 && files.length > 0 && (
           <Notice>
-            <Juice color={color.faint} />
+            <Juice size={16} color={color.faint} />
             <Text
               style={{
                 flex: 1,
@@ -348,29 +347,5 @@ function Notice({ children, gap = 10 }: { children: React.ReactNode; gap?: numbe
     >
       {children}
     </View>
-  );
-}
-
-/** The slice's segments fading in turn: "still looking". */
-function Juice({ color }: { color: string }) {
-  const [i, setI] = useState(0);
-  useEffect(() => {
-    const t = setInterval(() => setI((n) => (n + 1) % 6), 200);
-    return () => clearInterval(t);
-  }, []);
-  return (
-    <Svg width={16} height={16} viewBox="0 0 64 64">
-      {SLICE.map((d, k) => (
-        <Path
-          key={d}
-          d={d}
-          fill={color}
-          stroke={color}
-          strokeWidth={SLICE_STROKE}
-          strokeLinejoin="round"
-          opacity={(k - i + 6) % 6 < 3 ? 0.16 + ((k - i + 6) % 6) * 0.28 : 1}
-        />
-      ))}
-    </Svg>
   );
 }

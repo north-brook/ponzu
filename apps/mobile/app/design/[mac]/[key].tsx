@@ -2,7 +2,7 @@ import { agentActivity, findArtboard, newId, type Presence, type Thread } from "
 import { type MenuAction, MenuView, type NativeActionEvent } from "@react-native-menu/menu";
 import { router, useLocalSearchParams, useNavigation } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -16,6 +16,7 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { scheduleOnRN } from "react-native-worklets";
 import type { FromCanvas, PendingPin } from "../../../canvas/protocol";
+import { CanvasPlaceholder } from "../../../components/canvas-placeholder";
 import { type CanvasHandle, CanvasView } from "../../../components/canvas-view";
 import { BarButton } from "../../../components/chrome";
 import { Composer, initialMode, type Mode } from "../../../components/composer";
@@ -86,6 +87,8 @@ export default function Canvas() {
   /** A pan or pinch is under way on the focused board: the chrome is back while it lasts. */
   const [moving, setMoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The canvas has drawn its first page: the placeholder gives way. */
+  const [drawn, setDrawn] = useState(false);
 
   useEffect(() => {
     track("canvas opened");
@@ -189,6 +192,9 @@ export default function Canvas() {
         break;
       case "gesture":
         setMoving(true);
+        break;
+      case "drawn":
+        setDrawn(true);
         break;
     }
   }, []);
@@ -303,26 +309,16 @@ export default function Canvas() {
           page={asked}
         />
       )}
-      {!doc && (
-        <View
-          pointerEvents="none"
-          style={{
-            position: "absolute",
-            inset: 0,
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 12,
-          }}
-        >
-          {state.status === "offline" ? (
-            <Text style={{ fontFamily: "Inter", fontSize: 15, color: color.muted }}>
-              {mac.name} isn't answering. Trying again…
-            </Text>
-          ) : (
-            <ActivityIndicator color={color.faint} />
-          )}
-        </View>
-      )}
+      {/* Until the canvas has drawn: the design as the phone already has it (its preview). */}
+      <CanvasPlaceholder
+        file={file ?? null}
+        drawn={drawn}
+        top={insets.top + 56}
+        bottom={insets.bottom}
+        offline={
+          !doc && state.status === "offline" ? `${mac.name} isn't answering. Trying again…` : null
+        }
+      />
       {card && (
         <Pressable
           style={{

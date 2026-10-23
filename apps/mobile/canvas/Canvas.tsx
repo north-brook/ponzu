@@ -180,6 +180,7 @@ export function PhoneCanvas() {
   // size before anyone has touched it. Not under a comment or thread sheet, whose camera keeps
   // its board up while the keyboard comes and goes.
   const fitted = useRef<string | null>(null);
+  const drew = useRef(false);
   const touched = useRef(false);
   const fitKey = page ? `${page.id}:${boxes.length > 0}` : null;
   const sheetOpen = Boolean(s.pending || s.thread);
@@ -193,6 +194,11 @@ export function PhoneCanvas() {
     if (!c) return;
     stop();
     setCam(c);
+    // The first page on screen, framed: the app's placeholder can go (two frames on, once painted).
+    if (!drew.current) {
+      drew.current = true;
+      requestAnimationFrame(() => requestAnimationFrame(() => send({ t: "drawn" })));
+    }
     if (fresh && focused) {
       setFocused(null);
       before.current = null;

@@ -71,6 +71,8 @@ export type FromCanvas =
   | { t: "focused"; artboardId: string | null }
   /** A pan or pinch began on the focused board: the app shows its chrome while it lasts. */
   | { t: "gesture" }
+  /** The first page is drawn and framed: the app's loading placeholder can give way to it. */
+  | { t: "drawn" }
   /** Where the zoom settled after a gesture. */
   | { t: "camera"; zoom: number }
   /** The canvas changed page itself, to focus an artboard on another one. */
