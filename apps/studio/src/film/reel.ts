@@ -8,6 +8,7 @@ import {
   intentFor,
   type JournalEntry,
   noteBoards,
+  type Op,
   type PNode,
   type Range,
   type Rect,
@@ -19,82 +20,111 @@ import type { Edit } from "./edit.ts";
 import { schemeFor, settleAssets } from "./model.ts";
 
 /*
- * The reel: a 15-second film of a design being made. What the person asked for, typed and sent;
- * then the design arriving piece by piece, as the agent wrote it, under a camera that holds still;
- * then the session's revisions landing quickly on the same frame; the result; the end card. No
- * comments, no pins, no cursor: the making is the film.
+ * The reel: a 15-second film of a design being made. The prompt; then each screen arriving piece
+ * by piece, as the agent wrote it, one quick shot per group of screens that fit a frame together;
+ * then the comments left on them sweep in and the revisions land; all the screens together; the
+ * bloom. Every board is drawn at the layout it reaches, so pieces arrive in place and nothing
+ * reflows under them.
  */
 
-/** Seconds per beat of a reel. */
+/** Seconds, and the pace of a reel. */
 export const REEL = {
-  /** Before anything moves. */
-  open: 0.15,
-  /** The prompt: typed, sent, gone. */
-  prompt: 1.45,
-  /** The design arriving. */
-  build: 8.4,
-  /** A beat on the finished first pass before revisions start. */
-  rest: 0.35,
-  /** Each revision landing (its pieces swap, then a beat to see it), at most. */
-  revision: 0.95,
-  /** All the revisions together, about. */
-  revisions: 3.2,
-  /** The result, still, before the end card. */
-  hold: 0.9,
-  /** The end card. */
-  end: 1.9,
+  /** The prompt, typed and sent; the first screen starts as it goes. */
+  prompt: 1.05,
+  /** One group of screens revising: its comments sweep in, then the changes land. */
+  revise: 2.1,
+  /** At most this many groups revise; the rest show their final look in the last shot. */
+  maxRevise: 2,
+  /** All the screens together. */
+  result: 1.05,
+  /** The bloom. */
+  end: 1.6,
+  /** A build shot is never shorter than this. */
+  minShot: 1.0,
 } as const;
 
-/** A piece arriving: the element, which board it's on, when its write landed (film s). */
-export interface ReelPiece {
-  id: string;
-  board: string;
-  at: number;
+/** The frame's insets (film px): room for the logo and board names on top. */
+const INSET = { x: 34, top: 46, bottom: 28 };
+
+type El = Extract<PNode, { kind: "el" }>;
+
+export interface ReelState {
+  ab: Artboard;
+  /** Carries the tokens the board is drawn with (and its theme). */
+  doc: Doc;
+  h: number;
 }
 
-/** One revision: the canvas before and after, what it took away and what it brought. */
-export interface ReelRevision {
-  board: string;
-  before: Doc;
-  after: Doc;
-  at: number;
-  /** Pieces of the before taken away or replaced: they fade off first. */
-  gone: string[];
-  /** Pieces of the after that are new: they arrive once the old have gone. */
-  fresh: string[];
+export interface ReelBoard {
+  id: string;
+  name: string;
+  w: number;
+  /** As the agent first finished it, and as the session left it. */
+  before: ReelState;
+  after: ReelState;
 }
+
+/** Boards seen together, each placed (film canvas px), and the camera on them. */
+export interface ReelShot {
+  boards: string[];
+  place: Map<string, { x: number; y: number }>;
+  cam: Cam;
+}
+
+export interface ReelRevision {
+  at: number;
+  /** Pieces of the before taken away, replaced or restyled: they fade off over the after. */
+  gone: string[];
+  /** Pieces of the after that are new: they arrive. */
+  fresh: string[];
+  /** The board's colours changed (its tokens): the whole of it crossfades. */
+  recolor: boolean;
+}
+
+export interface ReelComment {
+  thread: string;
+  board: string;
+  /** On its board, in board px. */
+  x: number;
+  y: number;
+  /** A glimpse of it: the person's own words, cut short. */
+  text: string;
+  at: number;
+  /** Its card leaves; later its pin checks off. */
+  cardOut: number;
+  resolveAt: number;
+}
+
+export type ReelSegment = {
+  kind: "build" | "revise" | "result";
+  shot: number;
+  t0: number;
+  t1: number;
+};
 
 export interface Reel extends Pick<Edit, "name" | "prompt" | "view" | "theme" | "assetBase"> {
   kind: "reel";
   shape: FilmShape;
-  /** The boards the film is about, in the order first written, and the one frame that holds them. */
-  boards: string[];
-  cam: Cam;
-  /** The canvas as each write left it (only the film's boards), with the film time it lands. */
-  steps: { doc: Doc; at: number }[];
-  pieces: ReelPiece[];
-  revisions: ReelRevision[];
-  /** How long each revision has. */
-  revisionLen: number;
-  /** The canvas at the end, with every revision. */
-  result: Doc;
-  /** Each board's height (canvas px) at the end of the build and at the end. */
-  heights: Map<string, number>;
-  /** When each board's sheet arrives: with its first piece. */
+  boards: Map<string, ReelBoard>;
+  shots: ReelShot[];
+  segments: ReelSegment[];
+  /** Per board: its pieces and when each arrives. */
+  pieces: Map<string, { id: string; at: number }[]>;
+  /** When each board's sheet arrives (with its first piece) and its last piece lands. */
   boardAt: Map<string, number>;
-  /** When the build starts, the revisions start, the result holds, the end card starts. */
-  times: { build: number; revise: number; result: number; endCard: number; duration: number };
+  lastAt: Map<string, number>;
+  revisions: Map<string, ReelRevision>;
+  comments: ReelComment[];
+  times: { prompt: number; build: number; endCard: number; duration: number };
 }
 
 /** Whether to make a reel: the 15s film. */
 export const isReel = (length: number) => length <= 15;
 
-type El = Extract<PNode, { kind: "el" }>;
-
 /**
  * The pieces a write brings, opened up so the design arrives in readable bits: a section's
- * heading, its text, each card, each image. A piece is opened when it holds several elements and
- * isn't itself a leaf of reading (a paragraph, a button, a picture), up to a depth.
+ * heading, its text, each card, each image. A container with a surface of its own (a card, a band)
+ * arrives first, then what's in it; one that's only layout isn't a piece.
  */
 function openPieces(nodes: El[], depth = 0): El[] {
   const out: El[] = [];
@@ -105,8 +135,6 @@ function openPieces(nodes: El[], depth = 0): El[] {
       kids.length < 2 ||
       /^(p|h[1-6]|button|a|img|svg|video|picture|span|label|li|input|textarea|select)$/.test(n.tag);
     if (leaf) out.push(n);
-    // An opened container with a surface of its own (a card, a band) arrives first, then what's
-    // in it; one that's only layout isn't a piece (it would arrive as nothing to see).
     else {
       if (surface(n)) out.push(n);
       out.push(...openPieces(kids, depth + 1));
@@ -115,7 +143,7 @@ function openPieces(nodes: El[], depth = 0): El[] {
   return out;
 }
 
-/** Whether an element draws something itself: a fill, a border, a shadow, an image. */
+/** Whether an element draws something itself: a fill, a border, a shadow. */
 function surface(n: El): boolean {
   return Object.entries(n.style).some(
     ([k, v]) =>
@@ -125,22 +153,22 @@ function surface(n: El): boolean {
   );
 }
 
-function findEl(doc: Doc, id: string): El | null {
-  const walk = (n: El): El | null => {
-    if (n.id === id) return n;
-    for (const c of n.children) {
-      if (c.kind !== "el") continue;
-      const hit = walk(c);
-      if (hit) return hit;
-    }
-    return null;
-  };
-  for (const p of doc.pages)
-    for (const ab of p.artboards) {
-      const hit = walk(ab.root);
-      if (hit) return hit;
-    }
+function findIn(root: El, id: string): El | null {
+  if (root.id === id) return root;
+  for (const c of root.children) {
+    if (c.kind !== "el") continue;
+    const hit = findIn(c, id);
+    if (hit) return hit;
+  }
   return null;
+}
+
+function walkEls(root: El, fn: (n: El) => void) {
+  for (const c of root.children) {
+    if (c.kind !== "el") continue;
+    fn(c);
+    walkEls(c, fn);
+  }
 }
 
 const union = (rects: Rect[]): Rect | undefined => {
@@ -152,13 +180,33 @@ const union = (rects: Rect[]): Rect | undefined => {
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 };
 
-/** Measures a board's height as the film draws it. */
+const leaves = (op: Op): Op[] => (op.op === "batch" ? op.ops.flatMap(leaves) : [op]);
+
+/** A glimpse of a comment: a short sentence of it whole, else its first words. */
+export function glimpse(text: string, n = 9): string {
+  const sentences = text
+    .trim()
+    .split(/(?<=[.!?])\s+/)
+    .filter(Boolean);
+  const words = (s: string) => s.split(/\s+/).length;
+  const first = sentences[0] ?? text;
+  if (words(first) <= n + 2) return first;
+  const ask = sentences.find((s) => s.endsWith("?") && words(s) <= n + 2);
+  if (ask) return ask;
+  return `${first
+    .split(/\s+/)
+    .slice(0, n)
+    .join(" ")
+    .replace(/[,;:]$/, "")}…`;
+}
+
+/** A board's height as the film draws it. */
 async function heightOf(
   doc: Doc,
   ab: Artboard,
   assetBase: string | undefined,
   theme: "light" | "dark",
-) {
+): Promise<number> {
   const fixed = artboardSize(ab).h;
   if (fixed) return fixed;
   const wrap = document.createElement("div");
@@ -190,10 +238,6 @@ export interface ReelInput {
   assetBase?: string;
 }
 
-/**
- * The reel of a session. The film is about the page the agent first built on, and on it the
- * boards that fill one frame best: the first board, and its neighbours while they still read.
- */
 export async function buildReel(input: ReelInput): Promise<Reel> {
   const { entries } = input;
   const view = filmViewport(input.shape);
@@ -203,98 +247,250 @@ export async function buildReel(input: ReelInput): Promise<Reel> {
     0,
     entries.findIndex((e) => e.kind === "op" && inRange(e.t)),
   );
-  const endAt = (() => {
-    for (let i = entries.length - 1; i >= 0; i--) {
-      const e = entries[i]!;
-      if (e.kind === "op" && inRange(e.t)) return i;
-    }
-    return entries.length - 1;
-  })();
-  const blank = (): Doc => ({ name: input.name, pages: [], tokens: "", threads: [], notes: {} });
-  const start = replayTo(entries, startAt - 1) ?? blank();
-  const end = replayTo(entries, endAt) ?? blank();
-
-  // The first pass: the agent's writes up to the first time the person steps in (a comment or
-  // their own edit). What comes after is revision.
-  const firstTouch = entries.findIndex(
-    (e, i) => i >= startAt && i <= endAt && e.kind === "op" && e.origin.kind === "user",
-  );
-  const passEnd = firstTouch > 0 ? firstTouch - 1 : endAt;
-
-  // The boards written in the first pass, in the order first written, on its first page.
-  const order: string[] = [];
-  let page: string | undefined;
-  {
-    const doc = structuredClone(start);
-    for (let i = startAt; i <= passEnd; i++) {
-      const e = entries[i]!;
-      if (e.kind !== "op" || e.origin.kind !== "agent") continue;
-      if (!tryApply(doc, e.op)) continue;
-      for (const id of e.artboards) {
-        if (notes.has(id) || order.includes(id)) continue;
-        const pg = findArtboard(doc, id)?.page.id;
-        page ??= pg;
-        if (pg === page && arrivals(e.op).length) order.push(id);
-      }
+  let endAt = entries.length - 1;
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const e = entries[i]!;
+    if (e.kind === "op" && inRange(e.t)) {
+      endAt = i;
+      break;
     }
   }
+  const blank = (): Doc => ({ name: input.name, pages: [], tokens: "", threads: [], notes: {} });
+  const tokensDoc = (tokens: string): Doc => ({ ...blank(), tokens });
 
-  // The frame: the first board, then its neighbours while the group still reads at this size.
-  const pad = view.w > view.h ? 36 : 22;
-  const top = 50;
-  const vw = view.w - 2 * pad;
-  const vh = view.h - 2 * pad - top;
-  const rectOf = async (doc: Doc, id: string): Promise<Rect | null> => {
-    const ab = findArtboard(doc, id)?.artboard;
-    if (!ab) return null;
+  // Walk the session once. A board's build is the agent's writes on it until the person next
+  // steps in (a comment, an edit); what the agent does to it after that is its revision.
+  const doc = replayTo(entries, startAt - 1) ?? blank();
+  let page: string | undefined;
+  const order: string[] = [];
+  const writes: { board: string; ids: string[] }[] = [];
+  const frozen = new Map<string, { ab: Artboard; tokens: string; at: number }>();
+  const comments: {
+    thread: string;
+    board: string;
+    x: number;
+    y: number;
+    text: string;
+    i: number;
+  }[] = [];
+  for (let i = startAt; i <= endAt; i++) {
+    const e = entries[i]!;
+    if (e.kind !== "op") continue;
+    if (e.origin.kind === "user") {
+      // The person steps in: every board the agent has started is, as it stands, its first pass.
+      for (const id of order)
+        if (!frozen.has(id)) {
+          const ab = findArtboard(doc, id)?.artboard;
+          if (ab) frozen.set(id, { ab: structuredClone(ab), tokens: doc.tokens, at: i });
+        }
+      for (const o of leaves(e.op))
+        if (o.op === "thread.create" && o.thread.artboardId)
+          comments.push({
+            thread: o.thread.id,
+            board: o.thread.artboardId,
+            x: o.thread.x,
+            y: o.thread.y,
+            text: o.thread.messages[0]?.text ?? "",
+            i,
+          });
+    }
+    if (!tryApply(doc, e.op)) continue;
+    if (e.origin.kind !== "agent") continue;
+    const brought = arrivals(e.op);
+    for (const id of e.artboards) {
+      if (notes.has(id) || frozen.has(id)) continue;
+      const pg = findArtboard(doc, id)?.page.id;
+      if (!pg) continue;
+      page ??= pg;
+      if (pg !== page) continue;
+      const ab = findArtboard(doc, id)!.artboard;
+      const mine = brought.filter((x) => findIn(ab.root, x));
+      if (!mine.length) continue;
+      if (!order.includes(id)) order.push(id);
+      const opened = openPieces(
+        mine.map((x) => findIn(ab.root, x)).filter((n): n is El => Boolean(n)),
+      ).map((n) => n.id);
+      writes.push({ board: id, ids: opened });
+    }
+  }
+  for (const id of order)
+    if (!frozen.has(id)) {
+      const ab = findArtboard(doc, id)?.artboard;
+      if (ab) frozen.set(id, { ab: structuredClone(ab), tokens: doc.tokens, at: endAt + 1 });
+    }
+
+  // Each board as first finished and as left.
+  const boards = new Map<string, ReelBoard>();
+  for (const id of order) {
+    const f = frozen.get(id);
+    const ab1 = findArtboard(doc, id)?.artboard;
+    if (!f || !ab1) continue;
+    const d0 = tokensDoc(f.tokens);
+    const d1 = tokensDoc(doc.tokens);
+    boards.set(id, {
+      id,
+      name: ab1.name,
+      w: artboardSize(ab1).w,
+      before: { ab: f.ab, doc: d0, h: await heightOf(d0, f.ab, input.assetBase, input.theme) },
+      after: {
+        ab: structuredClone(ab1),
+        doc: d1,
+        h: await heightOf(d1, ab1, input.assetBase, input.theme),
+      },
+    });
+  }
+  const ids = order.filter((id) => boards.has(id));
+  const canvasAt = (id: string) => {
+    const ab = findArtboard(doc, id)!.artboard;
+    return { x: ab.x, y: ab.y };
+  };
+  const rectAt = (id: string, p = canvasAt(id)): Rect => {
+    const b = boards.get(id)!;
+    return { x: p.x, y: p.y, w: b.w, h: Math.max(b.before.h, b.after.h) };
+  };
+
+  // Framing: whole boards, padded, never cut.
+  const vw = view.w - 2 * INSET.x;
+  const vh = view.h - INSET.top - INSET.bottom;
+  const zoomFor = (r: Rect) => Math.min(1.15, vw / r.w, vh / r.h);
+  const camFor = (r: Rect): Cam => {
+    const zoom = zoomFor(r);
     return {
-      x: ab.x,
-      y: ab.y,
-      w: artboardSize(ab).w,
-      h: await heightOf(doc, ab, input.assetBase, input.theme),
+      page: page ?? "",
+      cx: r.x + r.w / 2,
+      cy: r.y + r.h / 2 - (INSET.top - INSET.bottom) / 2 / zoom,
+      zoom,
     };
   };
-  const firstDone = replayTo(entries, passEnd) ?? end;
-  const rects = new Map<string, Rect>();
-  for (const id of order) {
-    const r = await rectOf(firstDone, id);
-    if (r) rects.set(id, r);
-  }
-  // A board alone reads at its own zoom; with others it must keep most of that, and the group
-  // must use the frame (a tall stack in a wide frame doesn't).
-  const zoomFor = (r: Rect) => Math.min(vw / r.w, vh / r.h);
-  const boards: string[] = order.slice(0, 1);
-  const lead = rects.get(order[0] ?? "");
-  if (lead) {
-    const alone = zoomFor(lead);
-    for (const id of order.slice(1)) {
-      const r = rects.get(id);
-      if (!r) continue;
-      const group = union([...boards.map((b) => rects.get(b)!), r])!;
-      const z = zoomFor(group);
-      // Together only while each board keeps nearly its own size (phone screens side by side).
-      if (z >= Math.min(alone, 1) * 0.85) boards.push(id);
+  const shotOf = (members: string[], place: Map<string, { x: number; y: number }>): ReelShot => ({
+    boards: members,
+    place,
+    cam: camFor(union(members.map((id) => rectAt(id, place.get(id))))!),
+  });
+
+  // Build shots: screens written one after another share a shot while each keeps nearly its own
+  // size together (phone screens side by side), and nothing else sits between them.
+  const groups: string[][] = [];
+  for (const id of ids) {
+    const g = groups.at(-1);
+    if (g) {
+      const together = union([...g, id].map((x) => rectAt(x)))!;
+      const alone = Math.min(zoomFor(rectAt(id)), zoomFor(union(g.map((x) => rectAt(x)))!));
+      const between = ids.some((o) => {
+        if ([...g, id].includes(o)) return false;
+        const r = rectAt(o);
+        return (
+          r.x < together.x + together.w &&
+          r.x + r.w > together.x &&
+          r.y < together.y + together.h &&
+          r.y + r.h > together.y
+        );
+      });
+      if (!between && zoomFor(together) >= alone * 0.82) {
+        g.push(id);
+        continue;
+      }
     }
+    groups.push([id]);
   }
-  // Too tall to read whole (a long page): the top of it, at the frame's width.
-  let frame = union(boards.map((b) => rects.get(b)!).filter(Boolean)) ?? { x: 0, y: 0, w: 1, h: 1 };
-  const fitW = vw / frame.w;
-  if (frame.h * fitW > vh && fitW > zoomFor(frame) * 1.25)
-    frame = { ...frame, h: Math.min(frame.h, vh / Math.max(zoomFor(frame), Math.min(fitW, 0.6))) };
-  const zoom = Math.min(1.25, zoomFor(frame));
-  const cam: Cam = {
-    page: page ?? start.pages[0]?.id ?? "",
-    cx: frame.x + frame.w / 2,
-    cy: frame.y + frame.h / 2 - top / 2 / zoom,
-    zoom,
-  };
-  const inFrame = new Set(boards);
-  const only = (doc: Doc): Doc => {
-    const d = structuredClone(doc);
-    for (const p of d.pages) p.artboards = p.artboards.filter((ab) => inFrame.has(ab.id));
-    d.threads = [];
-    return d;
-  };
+  const shots: ReelShot[] = groups.map((g) =>
+    shotOf(g, new Map(g.map((id) => [id, canvasAt(id)]))),
+  );
+
+  // The last shot: every screen together, as the canvas has them when that fills the frame,
+  // else packed into rows in the order made.
+  const resultShot = (() => {
+    const canvas = shotOf(ids, new Map(ids.map((id) => [id, canvasAt(id)])));
+    let best: ReelShot | null = null;
+    const GAP = 90;
+    for (let rows = 1; rows <= ids.length; rows++) {
+      const total = ids.reduce((a, id) => a + boards.get(id)!.w, 0);
+      const target = total / rows;
+      const lines: string[][] = [[]];
+      let w = 0;
+      for (const id of ids) {
+        const bw = boards.get(id)!.w;
+        if (lines.at(-1)!.length && w + bw / 2 > target && lines.length < rows) {
+          lines.push([]);
+          w = 0;
+        }
+        lines.at(-1)!.push(id);
+        w += bw;
+      }
+      const widths = lines.map(
+        (l) => l.reduce((a, id) => a + boards.get(id)!.w, 0) + GAP * (l.length - 1),
+      );
+      const widest = Math.max(...widths);
+      const place = new Map<string, { x: number; y: number }>();
+      let y = 0;
+      lines.forEach((l, k) => {
+        let x = (widest - widths[k]!) / 2;
+        const rowH = Math.max(...l.map((id) => rectAt(id).h));
+        for (const id of l) {
+          place.set(id, { x, y });
+          x += boards.get(id)!.w + GAP;
+        }
+        y += rowH + GAP * 1.4;
+      });
+      const s = shotOf(ids, place);
+      if (!best || s.cam.zoom > best.cam.zoom) best = s;
+    }
+    return best && best.cam.zoom > canvas.cam.zoom * 1.12 ? best : canvas;
+  })();
+
+  // Revisions: per board, what changed between its first pass and the end.
+  const sig = (n: El) =>
+    JSON.stringify([n.tag, n.attrs, n.style, n.children.filter((c) => c.kind === "text")]);
+  const revisions = new Map<string, ReelRevision>();
+  const reviseSize = new Map<string, number>();
+  for (const [id, b] of boards) {
+    const A = new Map<string, El>();
+    const B = new Map<string, El>();
+    walkEls(b.before.ab.root, (n) => A.set(n.id, n));
+    walkEls(b.after.ab.root, (n) => B.set(n.id, n));
+    const added: string[] = [];
+    const removed: string[] = [];
+    // A changed leaf is swapped (it fades off and the new arrives).
+    const swapped: string[] = [];
+    for (const [nid, n] of B) {
+      const was = A.get(nid);
+      if (!was) added.push(nid);
+      else if (sig(was) !== sig(n)) {
+        // Its own words changed (a headline with an emphasis in it): it's swapped whole, so it
+        // never shows half old, half new. A container only restyled keeps what's in it.
+        const own = (x: El) => JSON.stringify(x.children.filter((c) => c.kind === "text"));
+        if (!n.children.some((c) => c.kind === "el") || own(was) !== own(n)) swapped.push(nid);
+      }
+    }
+    for (const nid of A.keys()) if (!B.has(nid)) removed.push(nid);
+    const outer = (list: string[], root: El) => {
+      const set = new Set(list);
+      const out: string[] = [];
+      const walk = (n: El, under: boolean) => {
+        for (const c of n.children) {
+          if (c.kind !== "el") continue;
+          const hit = set.has(c.id);
+          if (hit && !under) out.push(c.id);
+          walk(c, under || hit);
+        }
+      };
+      walk(root, false);
+      return out;
+    };
+    const fresh = openPieces(
+      outer([...added, ...swapped], b.after.ab.root)
+        .map((x) => findIn(b.after.ab.root, x))
+        .filter((n): n is El => Boolean(n)),
+    ).map((n) => n.id);
+    const gone = outer([...removed, ...swapped], b.before.ab.root);
+    const recolor =
+      b.before.doc.tokens !== b.after.doc.tokens &&
+      artboardMarkup(b.after.ab, b.before.doc.tokens, input.assetBase).html !==
+        artboardMarkup(b.after.ab, b.after.doc.tokens, input.assetBase).html;
+    if (!fresh.length && !gone.length && !recolor) continue;
+    revisions.set(id, { at: 0, gone, fresh, recolor });
+    reviseSize.set(id, fresh.length + gone.length + (recolor ? 6 : 0));
+  }
 
   // The prompt.
   const intent = intentFor(entries, entries[startAt]?.t ?? 0, entries[endAt]?.t ?? 0);
@@ -304,174 +500,104 @@ export async function buildReel(input: ReelInput): Promise<Reel> {
     ? { text: intent, who: { name: origin?.name ?? "Agent", client: origin?.client } }
     : undefined;
 
-  // Revisions: per board in frame, every change after the first pass, as one before → after.
-  // The biggest few, in the order made.
-  const revs: { board: string; from: number; to: number; size: number }[] = [];
-  {
-    const open = new Map<string, { from: number; to: number }>();
-    for (let i = passEnd + 1; i <= endAt; i++) {
-      const e = entries[i]!;
-      if (e.kind !== "op" || e.origin.kind !== "agent") continue;
-      for (const id of e.artboards) {
-        if (!inFrame.has(id)) continue;
-        const o = open.get(id);
-        if (o) o.to = i;
-        else open.set(id, { from: i, to: i });
-      }
-      // A person's turn between closes the agent's runs: each run is one revision.
-      const next = entries[i + 1];
-      if (next?.kind === "op" && next.origin.kind === "user") {
-        for (const [board, o] of open) revs.push({ board, ...o, size: 0 });
-        open.clear();
-      }
-    }
-    for (const [board, o] of open) revs.push({ board, ...o, size: 0 });
-  }
-
-  // Measure each revision: what it took away and brought, by element.
-  const ids = (doc: Doc, board: string) => {
-    const out = new Map<string, string>();
-    const ab = findArtboard(doc, board)?.artboard;
-    const walk = (n: El) => {
-      for (const c of n.children) {
-        if (c.kind !== "el") continue;
-        out.set(
-          c.id,
-          JSON.stringify([c.tag, c.attrs, c.style, c.children.filter((x) => x.kind === "text")]),
-        );
-        walk(c);
-      }
-    };
-    if (ab) walk(ab.root);
-    return out;
-  };
-  const measured: (ReelRevision & { size: number; order: number })[] = [];
-  for (const [k, r] of revs.entries()) {
-    const before = replayTo(entries, r.from - 1);
-    const after = replayTo(entries, r.to);
-    if (!before || !after) continue;
-    const A = ids(before, r.board);
-    const B = ids(after, r.board);
-    const changed = [...B].filter(([id, sig]) => A.get(id) !== sig).map(([id]) => id);
-    const removed = [...A.keys()].filter((id) => !B.has(id));
-    if (!changed.length && !removed.length) continue;
-    // Outermost only: a changed element's descendants come with it.
-    const outer = (list: string[], doc: Doc) => {
-      const set = new Set(list);
-      return list.filter((id) => {
-        const ab = findArtboard(doc, r.board)?.artboard;
-        if (!ab) return false;
-        let found = false;
-        let inside = false;
-        const walk = (n: El, under: boolean) => {
-          for (const c of n.children) {
-            if (c.kind !== "el" || found) continue;
-            if (c.id === id) {
-              found = true;
-              inside = under;
-              return;
-            }
-            walk(c, under || set.has(c.id));
-          }
-        };
-        walk(ab.root, false);
-        return !inside;
-      });
-    };
-    // A container that's only restyled (a column widened, a gap changed) isn't replaced: what's
-    // in it stays, and only what's new or reworded inside it swaps. Otherwise a headline edit
-    // would blank the whole hero and sweep it back.
-    const isContainer = (doc: Doc, id: string) =>
-      (findEl(doc, id)?.children ?? []).some((c) => c.kind === "el");
-    const swapped = changed.filter((id) => !A.has(id) || !isContainer(after, id));
-    // What it brings arrives in readable bits, as the build did.
-    const fresh = openPieces(
-      outer(swapped, after)
-        .map((id) => findEl(after, id))
-        .filter((n): n is El => Boolean(n)),
-    ).map((n) => n.id);
-    const gone = outer([...removed, ...swapped.filter((id) => A.has(id))], before);
-    measured.push({
-      board: r.board,
-      before,
-      after,
-      at: 0,
-      gone,
-      fresh,
-      size: fresh.length + gone.length,
-      order: k,
-    });
-  }
-  // Every revision to the boards in frame, in the order made: leaving one out would make the next
-  // one's "before" jump. They come quicker the more there are.
-  const chosen = measured.sort((a, b) => a.order - b.order);
-  const each = chosen.length
-    ? Math.min(REEL.revision, Math.max(0.5, REEL.revisions / chosen.length))
-    : 0;
-
-  // The clock. Spare time (few revisions) goes to the build, never to a long hold at the end.
+  // The clock. The groups that revise most get a shot each, in the order built.
+  const reviseShots = shots
+    .map((s, k) => ({ k, size: s.boards.reduce((a, id) => a + (reviseSize.get(id) ?? 0), 0) }))
+    .filter((x) => x.size > 0)
+    .sort((a, b) => b.size - a.size)
+    .slice(0, REEL.maxRevise)
+    .sort((a, b) => a.k - b.k)
+    .map((x) => x.k);
   const duration = 15;
-  const build = REEL.open + (prompt ? REEL.prompt : 0);
   const endCard = duration - REEL.end;
-  const buildLen = Math.max(
-    REEL.build,
-    endCard - REEL.hold - chosen.length * each - REEL.rest - build,
-  );
-  const reviseAt = build + buildLen + REEL.rest;
+  const resultAt = endCard - REEL.result;
+  const reviseAt = resultAt - reviseShots.length * REEL.revise;
+  const promptEnd = prompt ? REEL.prompt : 0.1;
+  // The first screen starts as the prompt lifts away: never a beat of empty canvas.
+  const buildAt = Math.max(0.1, promptEnd - 0.22);
+  const buildLen = reviseAt - buildAt;
 
-  // The build's writes, in frame, as the canvas stood after each, and its pieces.
-  const steps: Reel["steps"] = [];
-  const pieces: ReelPiece[] = [];
-  {
-    const doc = structuredClone(start);
-    const writes: { doc: Doc; bring: { id: string; board: string }[] }[] = [];
-    for (let i = startAt; i <= passEnd; i++) {
-      const e = entries[i]!;
-      if (e.kind !== "op") continue;
-      if (!tryApply(doc, e.op)) continue;
-      if (e.origin.kind !== "agent" || !e.artboards.some((id) => inFrame.has(id))) continue;
-      const bring = arrivals(e.op)
-        .map((id) => findEl(doc, id))
-        .filter((n): n is El => Boolean(n));
-      const board = e.artboards.find((id) => inFrame.has(id))!;
-      const opened = openPieces(bring).map((n) => ({ id: n.id, board }));
-      if (!opened.length && writes.length) {
-        writes.at(-1)!.doc = only(doc);
-        continue;
-      }
-      writes.push({ doc: only(doc), bring: opened });
+  // Build shots share the build by how much each brings (less than in proportion).
+  const piecesOf = (g: string[]) => writes.filter((w) => g.includes(w.board));
+  const weights = groups.map(
+    (g) => Math.sqrt(piecesOf(g).reduce((a, w) => a + w.ids.length, 0)) + 1.5,
+  );
+  const total = weights.reduce((a, b) => a + b, 0);
+  const lens = weights.map((w) => Math.max(REEL.minShot, (buildLen * w) / total));
+  const scale = buildLen / lens.reduce((a, b) => a + b, 0);
+  const segments: ReelSegment[] = [];
+  const pieces = new Map<string, { id: string; at: number }[]>();
+  let t = buildAt;
+  groups.forEach((g, k) => {
+    const len = lens[k]! * scale;
+    segments.push({ kind: "build", shot: k, t0: t, t1: t + len });
+    // Its writes in the order made, each a beat by how much it brings, front-loaded within.
+    const ws = piecesOf(g).map((w) => ({
+      ...w,
+      ids: w.ids.filter((id) => findIn(boards.get(w.board)!.before.ab.root, id)),
+    }));
+    const wt = (w: (typeof ws)[number]) => Math.sqrt(Math.max(1, w.ids.length)) + 0.5;
+    const sum = ws.reduce((a, w) => a + wt(w), 0);
+    // The last pieces have landed with a beat to spare before the cut.
+    const span = Math.max(0.3, len - 0.55);
+    let c = t + 0.02;
+    for (const w of ws) {
+      const share = (span * wt(w)) / sum;
+      const n = w.ids.length;
+      const list = pieces.get(w.board) ?? [];
+      w.ids.forEach((id, j) => {
+        list.push({ id, at: c + share * 0.85 * (n > 1 ? (j / (n - 1)) ** 1.5 : 0) });
+      });
+      pieces.set(w.board, list);
+      c += share;
     }
-    // Each write gets time by how much it brings, but less than in proportion (a big write pours
-    // in, a small one still gets its beat), and within a write its pieces come quicker as it goes.
-    const weight = (w: (typeof writes)[number]) => Math.sqrt(Math.max(1, w.bring.length)) + 0.6;
-    const total = writes.reduce((a, w) => a + weight(w), 0);
-    const arriveTail = 0.5;
-    const span = Math.max(1, buildLen - arriveTail);
-    let t = build;
-    for (const w of writes) {
-      const share = (span * weight(w)) / total;
-      steps.push({ doc: w.doc, at: t });
-      const n = w.bring.length;
-      // A write's pieces arrive over most of its share, front-loaded.
-      w.bring.forEach((p, i) =>
-        pieces.push({ ...p, at: t + share * 0.8 * (n > 1 ? (i / (n - 1)) ** 1.6 : 0) }),
-      );
-      t += share;
-    }
-  }
-  chosen.forEach((r, i) => {
-    r.at = reviseAt + i * each;
-    r.before = only(r.before);
-    r.after = only(r.after);
+    t += len;
   });
-  const resultDoc = only(chosen.at(-1)?.after ?? firstDone);
-  const heights = new Map<string, number>();
-  for (const id of boards) {
-    const r = await rectOf(resultDoc, id);
-    if (r) heights.set(id, r.h);
-  }
   const boardAt = new Map<string, number>();
-  for (const p of pieces) if (!boardAt.has(p.board)) boardAt.set(p.board, p.at);
+  const lastAt = new Map<string, number>();
+  for (const [id, list] of pieces) {
+    boardAt.set(id, Math.min(...list.map((p) => p.at)));
+    lastAt.set(id, Math.max(...list.map((p) => p.at)));
+  }
+
+  // Revise shots: the comments left on its screens sweep in left to right, then the changes land
+  // and each pin checks off.
+  const sweep: ReelComment[] = [];
+  reviseShots.forEach((k, n) => {
+    const t0 = reviseAt + n * REEL.revise;
+    segments.push({ kind: "revise", shot: k, t0, t1: t0 + REEL.revise });
+    const shot = shots[k]!;
+    const zoom = shot.cam.zoom;
+    const mine = comments
+      .filter((c) => shot.boards.includes(c.board) && c.i >= (frozen.get(c.board)?.at ?? 0))
+      .map((c) => ({ ...c, sx: (shot.place.get(c.board)!.x + c.x) * zoom }))
+      .sort((a, b) => a.sx - b.sx);
+    const changeAt = t0 + 1.2;
+    shot.boards.forEach((id, j) => {
+      const r = revisions.get(id);
+      if (r) r.at = changeAt + j * 0.08;
+    });
+    // The sweep: pins land left to right; each one's words show while the sweep is on it, so
+    // cards never pile up.
+    const step = mine.length > 1 ? Math.min(0.36, 0.95 / (mine.length - 1)) : 0;
+    mine.forEach((c, j) => {
+      const at = t0 + 0.08 + j * step;
+      sweep.push({
+        thread: c.thread,
+        board: c.board,
+        x: c.x,
+        y: c.y,
+        text: glimpse(c.text),
+        at,
+        cardOut:
+          j === mine.length - 1 ? changeAt - 0.05 : Math.min(changeAt - 0.05, at + step + 0.12),
+        resolveAt: changeAt + 0.6 + j * 0.04,
+      });
+    });
+  });
+  shots.push(resultShot);
+  segments.push({ kind: "result", shot: shots.length - 1, t0: resultAt, t1: endCard });
+  segments.sort((a, b) => a.t0 - b.t0);
 
   return {
     kind: "reel",
@@ -482,20 +608,13 @@ export async function buildReel(input: ReelInput): Promise<Reel> {
     theme: input.theme,
     assetBase: input.assetBase,
     boards,
-    cam,
-    steps,
+    shots,
+    segments,
     pieces,
-    revisions: chosen.map(({ size: _s, order: _o, ...r }) => r),
-    revisionLen: each,
-    result: resultDoc,
-    heights,
     boardAt,
-    times: {
-      build,
-      revise: reviseAt,
-      result: reviseAt + chosen.length * each,
-      endCard,
-      duration,
-    },
+    lastAt,
+    revisions,
+    comments: sweep,
+    times: { prompt: promptEnd, build: buildAt, endCard, duration },
   };
 }
