@@ -3,10 +3,10 @@ import { appLink, designLink, parseDesignLink } from "./link.ts";
 
 test("a design link opens ponzu.design's open page, or a server's canvas", () => {
   expect(designLink("/Users/sam/app/design/app.design")).toBe(
-    "https://ponzu.design/open#file=/Users/sam/app/design/app.design",
+    "https://ponzu.design/local#file=/Users/sam/app/design/app.design",
   );
   expect(designLink("/Users/sam/app.design", { artboard: "ab_hero" })).toBe(
-    "https://ponzu.design/open#file=/Users/sam/app.design&artboard=ab_hero",
+    "https://ponzu.design/local#file=/Users/sam/app.design&artboard=ab_hero",
   );
   expect(designLink("/d/a.design", { origin: "http://localhost:7777" })).toBe(
     "http://localhost:7777/?file=/d/a.design",
@@ -18,6 +18,23 @@ test("the open page hands the Mac app the same design, by ponzu://", () => {
   const app = appLink("/Users/sam/app.design", { artboard: "ab_hero" });
   expect(app).toBe("ponzu://open?file=/Users/sam/app.design&artboard=ab_hero");
   expect(`ponzu://open?${new URL(link).hash.slice(1)}`).toBe(app);
+});
+
+test("a design link names the Mac it's on, for the person's other Macs to open it from", () => {
+  const link = designLink("/Users/sam/app.design", { artboard: "ab_hero", mac: "workstation" });
+  expect(link).toBe(
+    "https://ponzu.design/local#mac=workstation&file=/Users/sam/app.design&artboard=ab_hero",
+  );
+  expect(parseDesignLink(`ponzu://open?${new URL(link).hash.slice(1)}`)).toEqual({
+    path: "/Users/sam/app.design",
+    artboard: "ab_hero",
+    mac: "workstation",
+  });
+  // A canvas link is its own server's: no Mac to name. A name that isn't one is left out.
+  expect(designLink("/d/a.design", { origin: "http://localhost:7777", mac: "air" })).toBe(
+    "http://localhost:7777/?file=/d/a.design",
+  );
+  expect(appLink("/d/a.design", { mac: "Sam's Mac" })).toBe("ponzu://open?file=/d/a.design");
 });
 
 test("a design link escapes what would end it in chat or in a query", () => {
@@ -55,6 +72,9 @@ test("refuses links that aren't one design, by absolute path", () => {
     "ponzu://open?file=/d/a.design&artboard=",
     "ponzu://open?file=/d/a.design&artboard=ab%20x",
     "ponzu://open?file=/d/a.design&artboard=../x",
+    "ponzu://open?mac=&file=/d/a.design",
+    "ponzu://open?mac=air.evil.com&file=/d/a.design",
+    "ponzu://open?mac=../air&file=/d/a.design",
   ])
     expect(parseDesignLink(raw)).toBeNull();
 });

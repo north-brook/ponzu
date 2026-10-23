@@ -57,10 +57,10 @@ test("find_nodes counts matches", async () => {
 test("get_basic_info gives the link that opens the design in Ponzu, when there is one", async () => {
   const { call, ws } = await setup();
   expect((await call("get_basic_info", {})).text).not.toContain("Link:");
-  ws.link = (key) => `https://ponzu.design/open#file=/d/${key}.design`;
+  ws.link = (key) => `https://ponzu.design/local#file=/d/${key}.design`;
   const text = (await call("get_basic_info", {})).text;
   expect(text).toContain(
-    "Link: https://ponzu.design/open#file=/d/fern.design (give the person this",
+    "Link: https://ponzu.design/local#file=/d/fern.design (give the person this",
   );
   expect(text).toContain("&artboard=<id>");
 });

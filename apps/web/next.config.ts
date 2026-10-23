@@ -14,6 +14,11 @@ const nextConfig: NextConfig = {
       { source: "/ingest/:path*", destination: "https://us.i.posthog.com/:path*" },
     ];
   },
+  // Agents' links to a design on the person's Mac were /open#…: the browser keeps the # across
+  // the redirect.
+  async redirects() {
+    return [{ source: "/open", destination: "/local", permanent: true }];
+  },
   async headers() {
     return [
       {
