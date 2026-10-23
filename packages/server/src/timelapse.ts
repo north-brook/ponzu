@@ -140,6 +140,9 @@ export class Timelapses {
     job.promise = (async (): Promise<TimelapseState> => {
       try {
         await this.host.flush(key);
+        // The stretch this film covers, fixed before it renders: work done while it renders is
+        // the next film's, so the film and its sidecar agree on what it showed.
+        const range = request.range ?? lastSession(await readEntries(key)) ?? undefined;
         const driver = await renderer.filmDriver!();
         const out = await driveFilm(
           driver,
@@ -148,7 +151,7 @@ export class Timelapses {
             file: key,
             shape: request.shape,
             length: request.length,
-            range: request.range,
+            range,
             theme: request.theme,
           },
           {
@@ -170,10 +173,9 @@ export class Timelapses {
         await mkdir(join(key, "exports"), { recursive: true });
         await writeFile(path, out.bytes);
         // What it covered, beside it: the composer places past films on the history by it.
-        const covered = request.range ?? lastSession(await readEntries(key)) ?? undefined;
         await writeFile(
           filmSidecar(path),
-          `${JSON.stringify({ range: covered, duration: out.duration }, null, 2)}\n`,
+          `${JSON.stringify({ range, duration: out.duration }, null, 2)}\n`,
         ).catch(() => {});
         job.state = {
           status: "done",

@@ -85,7 +85,8 @@ export interface ReelRevision {
   gone: string[];
   /** Pieces of the after that are new: they arrive. */
   fresh: string[];
-  /** The board's colours changed (its tokens): the whole of it crossfades. */
+  /** The board's look changed beyond its pieces (its tokens, a container restyled): the whole of
+   * it crossfades. */
   recolor: boolean;
 }
 
@@ -286,7 +287,24 @@ export async function buildReel(input: ReelInput): Promise<Reel> {
   // Walk the session once. A board's build is the agent's writes on it until the person next
   // steps in (a comment, an edit); what the agent does to it after that is its revision.
   const doc = replayTo(entries, startAt - 1) ?? blank();
-  let page: string | undefined;
+  const start = structuredClone(doc);
+  // A reel is one canvas: the page the agent did the most on. Each page is a canvas of its own,
+  // so its screens can't share a camera with another page's.
+  const page = (() => {
+    const d = structuredClone(doc);
+    const work = new Map<string, number>();
+    for (let i = startAt; i <= endAt; i++) {
+      const e = entries[i]!;
+      if (e.kind !== "op" || !tryApply(d, e.op) || e.origin.kind !== "agent") continue;
+      const n = Math.max(1, arrivals(e.op).length);
+      for (const id of e.artboards) {
+        if (notes.has(id)) continue;
+        const pg = findArtboard(d, id)?.page.id;
+        if (pg) work.set(pg, (work.get(pg) ?? 0) + n);
+      }
+    }
+    return [...work].sort((a, b) => b[1] - a[1])[0]?.[0];
+  })();
   const order: string[] = [];
   const writes: { board: string; ids: string[]; weights: number[] }[] = [];
   const frozen = new Map<string, { ab: Artboard; tokens: string; at: number }>();
@@ -325,12 +343,19 @@ export async function buildReel(input: ReelInput): Promise<Reel> {
     for (const id of e.artboards) {
       if (notes.has(id) || frozen.has(id)) continue;
       const pg = findArtboard(doc, id)?.page.id;
-      if (!pg) continue;
-      page ??= pg;
-      if (pg !== page) continue;
+      if (!pg || pg !== page) continue;
       const ab = findArtboard(doc, id)!.artboard;
       const mine = brought.filter((x) => findIn(ab.root, x));
-      if (!mine.length) continue;
+      if (!mine.length) {
+        // A screen that was already there and is only edited in this stretch: it's in the film as
+        // it stood at the start, and its edits are its revision.
+        const was = findArtboard(start, id)?.artboard;
+        if (was && !order.includes(id)) {
+          order.push(id);
+          frozen.set(id, { ab: structuredClone(was), tokens: start.tokens, at: startAt });
+        }
+        continue;
+      }
       if (!order.includes(id)) order.push(id);
       const opened = openPieces(
         mine.map((x) => findIn(ab.root, x)).filter((n): n is El => Boolean(n)),
@@ -365,6 +390,7 @@ export async function buildReel(input: ReelInput): Promise<Reel> {
     });
   }
   const ids = order.filter((id) => boards.has(id));
+  if (!ids.length) throw new Error("Nothing was made or changed on the canvas in this stretch.");
   const canvasAt = (id: string) => {
     const ab = findArtboard(doc, id)!.artboard;
     return { x: ab.x, y: ab.y };
@@ -438,8 +464,11 @@ export async function buildReel(input: ReelInput): Promise<Reel> {
     walkEls(b.after.ab.root, (n) => B.set(n.id, n));
     const added: string[] = [];
     const removed: string[] = [];
-    // A changed leaf is swapped (it fades off and the new arrives).
+    // A changed leaf is swapped (it fades off and the new arrives). A container only restyled (a
+    // card's fill, its padding, a layout) keeps what's in it, and the board crossfades to its new
+    // look.
     const swapped: string[] = [];
+    let restyled = false;
     for (const [nid, n] of B) {
       const was = A.get(nid);
       if (!was) added.push(nid);
@@ -448,6 +477,7 @@ export async function buildReel(input: ReelInput): Promise<Reel> {
         // never shows half old, half new. A container only restyled keeps what's in it.
         const own = (x: El) => JSON.stringify(x.children.filter((c) => c.kind === "text"));
         if (!n.children.some((c) => c.kind === "el") || own(was) !== own(n)) swapped.push(nid);
+        else restyled = true;
       }
     }
     for (const nid of A.keys()) if (!B.has(nid)) removed.push(nid);
@@ -472,9 +502,10 @@ export async function buildReel(input: ReelInput): Promise<Reel> {
     ).map((n) => n.id);
     const gone = outer([...removed, ...swapped], b.before.ab.root);
     const recolor =
-      b.before.doc.tokens !== b.after.doc.tokens &&
-      artboardMarkup(b.after.ab, b.before.doc.tokens, input.assetBase).html !==
-        artboardMarkup(b.after.ab, b.after.doc.tokens, input.assetBase).html;
+      restyled ||
+      (b.before.doc.tokens !== b.after.doc.tokens &&
+        artboardMarkup(b.after.ab, b.before.doc.tokens, input.assetBase).html !==
+          artboardMarkup(b.after.ab, b.after.doc.tokens, input.assetBase).html);
     if (!fresh.length && !gone.length && !recolor) continue;
     revisions.set(id, { at: 0, gone, fresh, recolor });
     reviseSize.set(id, fresh.length + gone.length + (recolor ? 6 : 0));
