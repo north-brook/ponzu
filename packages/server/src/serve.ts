@@ -278,6 +278,9 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
     }
 
     if (path.startsWith("/api/timelapse")) {
+      // Starting and cancelling films write and cost: never from another site's page.
+      if (req.method !== "GET" && !sameHostOk(req, url))
+        return new Response("Forbidden", { status: 403 });
       const res = await timelapseRoute(ws, req, url, path);
       if (res) return res;
     }

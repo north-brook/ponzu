@@ -8,6 +8,7 @@ import { BrowserWindow } from "electron";
 // Shared with the server's own renderers. It imports nothing, so the bundle takes just this file.
 import { captureScale, IMAGES_READY_SCRIPT } from "../../../packages/render/src/capture.ts";
 import {
+  FILM_STEP_MS,
   RenderError,
   type RenderStage,
   STAGE_BUDGET_MS,
@@ -276,6 +277,8 @@ async function renderJob(job: Job) {
 interface Session {
   win: BrowserWindow;
   timer: NodeJS.Timeout;
+  /** A film page: its steps (building the reel, finishing the encode) get the film's budget. */
+  film?: boolean;
 }
 
 const sessions = new Map<string, Session>();
@@ -285,7 +288,8 @@ function keepAlive(id: string) {
   const s = sessions.get(id);
   if (!s) throw new Error(`No render session ${id}.`);
   clearTimeout(s.timer);
-  s.timer = setTimeout(() => closeSession(id), 60_000);
+  // Abandoned means idle past the longest step it could be running.
+  s.timer = setTimeout(() => closeSession(id), s.film ? FILM_STEP_MS + 60_000 : 60_000);
   return s;
 }
 
@@ -313,9 +317,19 @@ async function sessionOp(op: SessionOp) {
         }
         return { session: id, ...(loaded ? {} : { assetsTimedOut: true }) };
       });
-    case "eval":
+    case "eval": {
       // Recording's evals seek and wait for frames; lint and settling are the slowest of them.
-      return { value: await run(keepAlive(op.session).win, "prepare", op.expression) };
+      // A film's build and encode take longer, and the session stays alive while they run.
+      const s = keepAlive(op.session);
+      const value = s.film
+        ? await withBudget(
+            "prepare",
+            s.win.webContents.executeJavaScript(op.expression) as Promise<unknown>,
+            FILM_STEP_MS,
+          ).finally(() => keepAlive(op.session))
+        : await run(s.win, "prepare", op.expression);
+      return { value };
+    }
     // Captures and pages take the same turns as renders: they're what costs
     // memory and GPU. A session doesn't hold a turn between them, so a long
     // recording can't keep previews and screenshots out.
@@ -356,7 +370,11 @@ async function openFilm(op: Extract<SessionOp, { op: "film" }>) {
     throw new Error("Films only load from this Mac's Ponzu server.");
   const id = randomBytes(8).toString("hex");
   const win = renderWindow(op.width, op.height);
-  sessions.set(id, { win, timer: setTimeout(() => closeSession(id), 60_000) });
+  sessions.set(id, {
+    win,
+    film: true,
+    timer: setTimeout(() => closeSession(id), FILM_STEP_MS + 60_000),
+  });
   try {
     await withBudget("load", win.loadURL(url.href));
     await withBudget(

@@ -318,6 +318,12 @@ export async function buildReel(input: ReelInput): Promise<Reel> {
   }[] = [];
   for (let i = startAt; i <= endAt; i++) {
     const e = entries[i]!;
+    // A checkpoint inside the range (the folder changed in a way that isn't ops): the canvas is
+    // as it says from here on, so later writes apply to what's really there.
+    if (e.kind === "checkpoint") {
+      Object.assign(doc, structuredClone(e.doc));
+      continue;
+    }
     if (e.kind !== "op") continue;
     if (e.origin.kind === "user") {
       // The person steps in: every board the agent has started is, as it stands, its first pass.

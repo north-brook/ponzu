@@ -111,6 +111,41 @@ describe("reel", () => {
     ).rejects.toThrow("Nothing was made or changed");
   });
 
+  test("a checkpoint inside the stretch is the canvas from then on", async () => {
+    const entries = journal({ op: board("ab_one") });
+    // The folder changed outside ops: a checkpoint brings a board the ops never made.
+    const reset = structuredClone(
+      (entries[0] as Extract<JournalEntry, { kind: "checkpoint" }>).doc,
+    );
+    reset.pages[0]!.artboards.push({
+      id: "ab_two",
+      name: "ab_two",
+      x: 500,
+      y: 0,
+      root: {
+        kind: "el",
+        id: "ab_two_root",
+        tag: "section",
+        attrs: {},
+        style: { width: "400px", height: "300px" },
+        children: [],
+      },
+    });
+    entries.push(
+      { v: 1, t: 5_000, kind: "checkpoint", doc: reset },
+      {
+        v: 1,
+        t: 6_000,
+        kind: "op",
+        op: insert("ab_two_root", [el("n_x", [text("After the reset")])]),
+        origin: agent,
+        artboards: ["ab_two"],
+      },
+    );
+    const reel = await buildReel({ name: "Test", entries, shape: "16:9", theme: "light" });
+    expect(reel.boards.has("ab_two")).toBe(true);
+  });
+
   test("a container restyled after a comment is a revision of its own", async () => {
     const entries: JournalEntry[] = [
       ...journal(

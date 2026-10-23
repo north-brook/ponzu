@@ -579,7 +579,17 @@ function Composer({
         range,
         theme,
         assetBase: `${origin}/files/${encodeURIComponent(file)}`,
-      }).then((m) => live && setModel(m));
+      })
+        .then((m) => {
+          if (!live) return;
+          setModel(m);
+          setError(null);
+        })
+        .catch((e) => {
+          if (!live) return;
+          setModel(null);
+          setError(e instanceof Error ? e.message : String(e));
+        });
     }, 120);
     return () => {
       live = false;

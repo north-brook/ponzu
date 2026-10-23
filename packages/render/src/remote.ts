@@ -20,7 +20,13 @@ import {
   type RenderRequest,
   type RenderResult,
 } from "./renderer.ts";
-import { HOST_DEADLINE_MS, RENDER_FAILURES, RenderError, type RenderStage } from "./stages.ts";
+import {
+  FILM_STEP_MS,
+  HOST_DEADLINE_MS,
+  RENDER_FAILURES,
+  RenderError,
+  type RenderStage,
+} from "./stages.ts";
 
 /**
  * What a render host receives: a complete page plus where to look. The
@@ -125,7 +131,7 @@ export class RemoteRenderer implements Renderer {
    * the call until the runtime's own fetch timeout, six minutes, which said
    * nothing about why.
    */
-  private async post<T>(url: string, body: unknown): Promise<T> {
+  private async post<T>(url: string, body: unknown, deadlineMs = this.deadlineMs): Promise<T> {
     let res: Response;
     try {
       res = await fetch(url, {
@@ -135,10 +141,10 @@ export class RemoteRenderer implements Renderer {
           ...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(this.deadlineMs),
+        signal: AbortSignal.timeout(deadlineMs),
       });
     } catch (err) {
-      throw unreachable(err, this.deadlineMs);
+      throw unreachable(err, deadlineMs);
     }
     if (!res.ok) throw await failed(res);
     // The deadline covers the body too: a host can answer, then stall mid-reply.
@@ -146,7 +152,7 @@ export class RemoteRenderer implements Renderer {
       return (await res.json()) as T;
     } catch (err) {
       const name = (err as Error | null)?.name;
-      if (name === "TimeoutError" || name === "AbortError") throw unreachable(err, this.deadlineMs);
+      if (name === "TimeoutError" || name === "AbortError") throw unreachable(err, deadlineMs);
       throw err;
     }
   }
@@ -182,11 +188,11 @@ export class RemoteRenderer implements Renderer {
     };
   }
 
-  private sessionCall(cant: string) {
+  private sessionCall(cant: string, deadlineMs = this.deadlineMs) {
     const url = new URL("session", this.endpoint).href;
     return async (op: RemoteSessionRequest): Promise<RemoteSessionReply> => {
       try {
-        return await this.post<RemoteSessionReply>(url, op);
+        return await this.post<RemoteSessionReply>(url, op, deadlineMs);
       } catch (err) {
         if (err instanceof RenderError && err.status === 404) throw new Error(cant);
         throw err;
@@ -253,8 +259,10 @@ export class RemoteRenderer implements Renderer {
 
   /** A film page in the host, over the session API (desktop: an offscreen window). */
   async filmDriver(): Promise<FilmDriver> {
+    // A film step can run past a render's deadline (see FILM_STEP_MS): wait for it, and a bit.
     const call = this.sessionCall(
       "This version of the Ponzu app can't make timelapses. Update it.",
+      Math.max(this.deadlineMs, FILM_STEP_MS + 15_000),
     );
     let session: string | undefined;
     return {

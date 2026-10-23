@@ -53,6 +53,19 @@ describe("timelapse", () => {
       expect(await one.text()).toBe("old");
       expect((await fetch(`${base}/film${q}&name=board.png`)).status).toBe(404);
       expect((await fetch(`${base}/film${q}&name=..%2Fdesign.json`)).status).toBe(404);
+
+      // Another site's page can't start or cancel a film (a no-cors POST needs no preflight).
+      const cross = await fetch(`${base}${q}`, {
+        method: "POST",
+        headers: { origin: "https://evil.example", "content-type": "text/plain" },
+        body: "{}",
+      });
+      expect(cross.status).toBe(403);
+      const cancel = await fetch(`${base}/cancel?id=tl_1`, {
+        method: "POST",
+        headers: { origin: "https://evil.example" },
+      });
+      expect(cancel.status).toBe(403);
     } finally {
       server.stop(true);
       await ws.closeAll();

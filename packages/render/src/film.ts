@@ -79,8 +79,9 @@ export async function driveFilm(
   opts: { signal?: AbortSignal; onProgress?: (p: FilmProgress) => void } = {},
 ): Promise<FilmResult> {
   const size = filmPageSize(job.shape);
-  await driver.open(job.url, size.w, size.h, size.scale);
   try {
+    // Inside the try: a page that fails to open (the studio isn't built, say) is still closed.
+    await driver.open(job.url, size.w, size.h, size.scale);
     const spec = {
       file: job.file,
       shape: job.shape,

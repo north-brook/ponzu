@@ -617,6 +617,11 @@ export async function buildEdit(input: EditInput): Promise<Edit> {
     const hasContent = (ab: Artboard) => ab.root.children.some((c) => c.kind === "el");
     for (let i = startAt; i <= last; i++) {
       const e = entries[i]!;
+      // A checkpoint inside the build: the canvas is as it says from here on.
+      if (e.kind === "checkpoint") {
+        Object.assign(doc, structuredClone(e.doc));
+        continue;
+      }
       if (e.kind !== "op" || e.origin.kind !== "agent") continue;
       if (!tryApply(doc, e.op)) continue;
       const boards = e.artboards.filter(
