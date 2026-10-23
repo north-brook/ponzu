@@ -31,7 +31,7 @@ import {
   useState,
 } from "react";
 import { Dashboard, type OpenTarget, type ShelfAction } from "@/components/dashboard";
-import { FileDetails, fileOf } from "@/components/file-info";
+import { FileDetails, fileOf, tilde } from "@/components/file-info";
 import { PairIphone } from "@/components/pair-iphone";
 import { TimelapseButton } from "@/components/timelapse";
 import { Button } from "@/components/ui/button";
@@ -644,7 +644,7 @@ function SessionCard({
     facts.push([
       "Project",
       <span key="cwd" className={cn(code, "truncate")} title={p.origin.cwd}>
-        {p.origin.cwd.replace(/^\/Users\/[^/]+/, "~")}
+        {tilde(p.origin.cwd)}
       </span>,
     ]);
   facts.push([

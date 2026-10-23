@@ -10,9 +10,14 @@ export function fileOf(
   return catalog?.files.find((f) => f.key === target.key && f.base === target.base);
 }
 
-/** A path with the home folder as ~. */
+/**
+ * A path as you'd type it: the home folder as ~, and /tmp, /var and /etc
+ * without the /private macOS resolves them into.
+ */
 export function tilde(path: string): string {
-  return path.replace(/^\/(Users|home)\/[^/]+/, "~");
+  return path
+    .replace(/^\/private(?=\/(tmp|var|etc)(\/|$))/, "")
+    .replace(/^\/(Users|home)\/[^/]+/, "~");
 }
 
 /** The folder a design is worked on in: its git checkout, or the folder it's in. */
