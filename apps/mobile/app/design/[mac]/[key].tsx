@@ -21,7 +21,14 @@ import { type CanvasHandle, CanvasView } from "../../../components/canvas-view";
 import { BarButton } from "../../../components/chrome";
 import { Composer, initialMode, type Mode } from "../../../components/composer";
 import { Glass, GlassGroup } from "../../../components/glass";
-import { AgentMark, Back, Chevron, FileIcon, PageIcon } from "../../../components/icons";
+import {
+  AgentAvatar,
+  AgentMark,
+  Back,
+  Chevron,
+  FileIcon,
+  PageIcon,
+} from "../../../components/icons";
 import { Sheet } from "../../../components/sheet";
 import { ThreadSheet } from "../../../components/thread-sheet";
 import { useFile } from "../../../lib/catalog";
@@ -615,18 +622,13 @@ function SessionCard({
     >
       <Glass style={{ borderRadius: 18, padding: 16, gap: 14 }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-          <View
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 10,
-              backgroundColor: color.canvas,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <AgentMark client={p.client} size={20} color={color.ink} />
-          </View>
+          <AgentAvatar
+            name={p.name}
+            client={p.client}
+            size={28}
+            color={color.ink}
+            soft={color.pinSoft}
+          />
           <View style={{ flex: 1, gap: 2 }}>
             <Text
               style={{

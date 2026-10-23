@@ -25,6 +25,7 @@ import {
   Tick02Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react-native";
+import { Text, View } from "react-native";
 import Svg, { Circle, Path } from "react-native-svg";
 import { SLICE, SLICE_STROKE } from "../lib/mark";
 
@@ -203,5 +204,54 @@ export function AgentMark({
       <Circle cx="12" cy="12" r="9" fill="none" stroke={color} strokeWidth={1.8} />
       <Circle cx="12" cy="12" r="3.5" fill={color} />
     </Svg>
+  );
+}
+
+/**
+ * An agent as its comments show it, as desktop's Avatar: a known agent's
+ * mark on its own at the avatar's size, with no circle behind it; any
+ * other agent's initials on the soft circle.
+ */
+export function AgentAvatar({
+  name,
+  client,
+  size = 28,
+  color,
+  soft,
+}: {
+  name: string;
+  client?: string;
+  size?: number;
+  color: string;
+  /** The soft circle behind an unknown agent's initials. */
+  soft: string;
+}) {
+  if (client === "claude" || client === "openai")
+    return (
+      <View style={{ width: size, height: size, alignItems: "center", justifyContent: "center" }}>
+        <AgentMark client={client} size={size} color={color} />
+      </View>
+    );
+  const initials = name
+    .split(/[\s-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]!.toUpperCase())
+    .join("");
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: 999,
+        backgroundColor: soft,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <Text style={{ fontFamily: "Inter", fontWeight: "600", fontSize: size * 0.42, color }}>
+        {initials}
+      </Text>
+    </View>
   );
 }

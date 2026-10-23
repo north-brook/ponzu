@@ -5,7 +5,7 @@ import { clientOf, shortAgent } from "../lib/activity";
 import { shortAgo } from "../lib/files";
 import { useTheme } from "../lib/theme";
 import { Composer, type Mode } from "./composer";
-import { AgentMark, Check } from "./icons";
+import { AgentAvatar, Check } from "./icons";
 import { Sheet } from "./sheet";
 
 /**
@@ -90,19 +90,24 @@ export function ThreadSheet({
           const agent = m.author.kind === "agent";
           return (
             <View key={m.id} style={{ flexDirection: "row", gap: 10 }}>
-              <View
-                style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: 999,
-                  backgroundColor: agent ? color.pinSoft : color.ink,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                {agent ? (
-                  <AgentMark client={clientOf(m.author.name)} size={15} color={color.ink} />
-                ) : (
+              {agent ? (
+                <AgentAvatar
+                  name={m.author.name}
+                  client={clientOf(m.author.name)}
+                  color={color.ink}
+                  soft={color.pinSoft}
+                />
+              ) : (
+                <View
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 999,
+                    backgroundColor: color.ink,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
                   <Text
                     style={{
                       fontFamily: "Inter",
@@ -113,8 +118,8 @@ export function ThreadSheet({
                   >
                     {me}
                   </Text>
-                )}
-              </View>
+                </View>
+              )}
               <View style={{ flex: 1, gap: 3 }}>
                 <View style={{ flexDirection: "row", gap: 6, alignItems: "baseline" }}>
                   <Text
