@@ -96,13 +96,16 @@ export default function Search() {
   const answering = macs.map((m) => m.name);
 
   return (
-    <View testID="search" style={{ flex: 1, backgroundColor: color.bg }}>
+    <>
       <Stack.Toolbar placement="left">
         <Stack.Toolbar.View hidesSharedBackground>
           <HeaderTitle color={color.ink}>Search</HeaderTitle>
         </Stack.Toolbar.View>
       </Stack.Toolbar>
+      {/* The screen's first view, so the header's soft scroll edge finds it. */}
       <ScrollView
+        testID="search"
+        style={{ flex: 1, backgroundColor: color.bg }}
         keyboardDismissMode="on-drag"
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{ gap: 14, paddingTop: 8, paddingBottom: 24 }}
@@ -231,7 +234,7 @@ export default function Search() {
         )}
         {q && !found && <NoMatches query={q} count={files.length} macs={answering} />}
       </ScrollView>
-    </View>
+    </>
   );
 }
 

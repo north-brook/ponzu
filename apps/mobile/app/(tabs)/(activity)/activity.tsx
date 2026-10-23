@@ -71,13 +71,16 @@ export default function Activity() {
   };
 
   return (
-    <View testID="activity" style={{ flex: 1, backgroundColor: color.bg }}>
+    <>
       <Stack.Toolbar placement="left">
         <Stack.Toolbar.View hidesSharedBackground>
           <HeaderTitle color={color.ink}>Activity</HeaderTitle>
         </Stack.Toolbar.View>
       </Stack.Toolbar>
+      {/* The screen's first view, so the header's soft scroll edge finds it. */}
       <ScrollView
+        testID="activity"
+        style={{ flex: 1, backgroundColor: color.bg }}
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{ paddingTop: 8, paddingBottom: 24 }}
       >
@@ -110,7 +113,7 @@ export default function Activity() {
           )}
         </View>
       </ScrollView>
-    </View>
+    </>
   );
 }
 

@@ -161,7 +161,7 @@ export default function Designs() {
   const on = (shelf !== "recent" ? 1 : 0) + (project !== undefined ? 1 : 0);
 
   return (
-    <View testID="designs" style={{ flex: 1, backgroundColor: color.bg }}>
+    <>
       {/* The lockup and the filter in the system's header, over the grid as it scrolls. */}
       <Stack.Toolbar placement="left">
         <Stack.Toolbar.View hidesSharedBackground>
@@ -187,7 +187,11 @@ export default function Designs() {
           {barMenuItems(filters, pickFilter)}
         </Stack.Toolbar.Menu>
       </Stack.Toolbar>
+      {/* The screen's first view, so the header's soft scroll edge finds it (react-native-screens
+          looks down the first-subview chain). */}
       <ScrollView
+        testID="designs"
+        style={{ flex: 1, backgroundColor: color.bg }}
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{ paddingTop: 8, paddingBottom: 24 }}
         refreshControl={
@@ -296,7 +300,7 @@ export default function Designs() {
           </Text>
         )}
       </ScrollView>
-    </View>
+    </>
   );
 }
 
