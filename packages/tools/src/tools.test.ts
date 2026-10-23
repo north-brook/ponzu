@@ -396,6 +396,14 @@ test("renders default to the person's theme and say so when the design has one",
   }
 });
 
+test("agents learn that the person's canvas plays a load animation once", () => {
+  // The canvas never replays a finite load on hover, so agents mustn't promise it.
+  expect(GUIDES.motion).toContain("plays once when the artboard appears");
+  expect(GUIDES.motion).toContain("doesn't replay it");
+  expect(GUIDES.motion).toContain("looping copy");
+  expect(getTool("record")!.description).toContain("plays the load once");
+});
+
 test("the format guide's example files load as it describes", async () => {
   for (const text of Object.values(FORMAT_EXAMPLE)) expect(GUIDES.format).toContain(text);
   const { design, call } = await withFiles(FORMAT_EXAMPLE);
@@ -721,4 +729,24 @@ test("list_files filters by name or path", async () => {
   expect((await call("list_files", { query: "kettle" })).text).toBe(
     'No open file matches "kettle" (1 file open).',
   );
+});
+
+test("timelapse films the file and says where it went", async () => {
+  const { ws, call } = await setup();
+  const asked: unknown[] = [];
+  ws.timelapse = async (key, req) => {
+    asked.push({ key, ...req });
+    return {
+      path: "/x/exports/timelapse-2026-10-22.mp4",
+      codec: "avc1.640028",
+      duration: 30,
+      bytes: 4_200_000,
+    };
+  };
+  const r = await call("timelapse", {});
+  expect(r.text).toBe("Wrote /x/exports/timelapse-2026-10-22.mp4 (30s, H.264, 4.0 MB).");
+  expect(asked).toEqual([{ key: "fern", shape: "16:9", range: undefined, theme: "light" }]);
+  expect((await call("timelapse", { from: 5, to: 2 })).isError).toBe(true);
+  ws.timelapse = undefined;
+  expect((await call("timelapse", {})).text).toContain("can't make them");
 });

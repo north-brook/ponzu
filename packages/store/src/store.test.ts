@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { type PElement, parseArtboardFile, parseHtml } from "@ponzu/core";
+import { FsAdapter } from "./fs.ts";
 import { Design, MemoryAdapter } from "./index.ts";
 
 const seed = {
@@ -502,5 +506,34 @@ describe("design", () => {
       const missing = await Design.open(new MemoryAdapter(seed), { watch: false });
       expect(missing.problems).toEqual([]);
     });
+  });
+});
+
+describe("opening assets", () => {
+  const bytes = new Uint8Array(Array.from({ length: 200 }, (_, i) => i));
+
+  test("memory assets open as blobs that slice", async () => {
+    const mem = new MemoryAdapter();
+    await mem.writeAsset("assets/clip.webm", bytes);
+    const blob = (await mem.openAsset("assets/clip.webm"))!;
+    expect(blob.size).toBe(200);
+    expect([...new Uint8Array(await blob.slice(10, 13).arrayBuffer())]).toEqual([10, 11, 12]);
+    expect(await mem.openAsset("assets/none.webm")).toBeNull();
+  });
+
+  test("files on disk open as blobs, and nothing outside the design does", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ponzu-assets-"));
+    try {
+      const fs = new FsAdapter(root);
+      await fs.writeAsset("assets/clip.webm", bytes);
+      const blob = (await fs.openAsset("assets/clip.webm"))!;
+      expect(blob.size).toBe(200);
+      expect([...new Uint8Array(await blob.slice(197).arrayBuffer())]).toEqual([197, 198, 199]);
+      expect(await fs.openAsset("assets/none.webm")).toBeNull();
+      expect(await fs.openAsset("assets")).toBeNull();
+      expect(await fs.openAsset("../outside.webm")).toBeNull();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

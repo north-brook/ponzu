@@ -148,7 +148,7 @@ export const seeTools = [
     group: "see",
     readOnly: true,
     description:
-      "Watch an animation. Steps through the timeline frame by frame (paused and seeked, so frames are exact and repeatable) and returns one contact sheet with every frame labeled by its time, plus what animates: node, keyframes, duration, delay, easing, iterations. By default it covers the whole page load once, or one cycle of anything that loops. Use hover, focus or press to watch a transition into that state, and scroll to step through a scroll container for scroll-driven animation. Lint runs on the last frame. Use it after writing @keyframes, transitions or hover styles, and check easing, overlap and the end state.",
+      "Watch an animation. Steps through the timeline frame by frame (paused and seeked, so frames are exact and repeatable) and returns one contact sheet with every frame labeled by its time, plus what animates: node, keyframes, duration, delay, easing, iterations. By default it covers the whole page load once, or one cycle of anything that loops. Use hover, focus or press to watch a transition into that state, and scroll to step through a scroll container for scroll-driven animation. Lint runs on the last frame. Use it after writing @keyframes, transitions or hover styles, and check easing, overlap and the end state. The person's canvas plays the load once when the artboard appears and then holds the end; hovering doesn't replay it.",
     input: {
       file: fileArg,
       id: z.string().describe("Artboard or node id. Frames show this area."),
@@ -291,6 +291,47 @@ export const seeTools = [
       await writeFile(path, out.bytes);
       return {
         text: `Wrote ${path} (${Math.round(out.width)}×${Math.round(out.height)} at ${shownScale(args.scale ?? 2, out.scale)}${theme.line ? `, ${theme.colorScheme}` : ""}, ${Math.round(out.bytes.length / 1024)} KB).`,
+      };
+    },
+  }),
+
+  tool({
+    name: "timelapse",
+    title: "Timelapse",
+    group: "see",
+    readOnly: true,
+    description:
+      "Make a timelapse film of the work in a file: a 16:9 MP4 of the design being made, from the person's request to every screen assembled piece by piece, the comments they left and the changes that answered them, ending on Ponzu's mark. It's as long as the work takes at its pace (usually 15 to 25 seconds). Writes it to the design's exports/ folder (timelapse-YYYY-MM-DD.mp4) and returns the path. Covers the last session (since the last hour-long break) unless you pass from and to. Takes about twice as long as the film to make. Only when the person asks for one.",
+    input: {
+      file: fileArg,
+      from: z
+        .number()
+        .optional()
+        .describe("Start of the range, ms since the epoch. Default: the last session's start."),
+      to: z.number().optional().describe("End of the range, ms since the epoch. Default: now."),
+      colorScheme: colorSchemeArg,
+    },
+    async handler(args, ctx) {
+      const { ws } = ctx;
+      if (!ws.timelapse)
+        throw new ToolError(
+          "Timelapses need the Ponzu app or `ponzu serve` with Chrome installed; this host can't make them.",
+        );
+      const { key } = await resolveFile(ctx, args.file);
+      if (args.from !== undefined && args.to !== undefined && args.to <= args.from)
+        throw new ToolError("to has to be after from.");
+      const range =
+        args.from !== undefined || args.to !== undefined
+          ? { from: args.from ?? 0, to: args.to ?? Date.now() }
+          : undefined;
+      const out = await ws.timelapse(key, {
+        shape: "16:9",
+        range,
+        theme: args.colorScheme ?? ws.theme ?? "light",
+      });
+      return {
+        text: `Wrote ${out.path} (${Math.round(out.duration)}s, ${out.codec.startsWith("avc") ? "H.264" : "VP9"}, ${(out.bytes / 1_048_576).toFixed(1)} MB).`,
+        data: out,
       };
     },
   }),

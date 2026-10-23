@@ -53,7 +53,7 @@ Workflow
 2. Before building something new, settle a direction: palette, type scale, spacing. Put it in tokens with set_tokens. Write the brief to a note.
 3. Build in small pieces. One write_html call per visual group: a header, then a row, then a card. The person watches the canvas as you work.
 4. screenshot after every few writes. Read the lint lines. Fix clipped text and overflow before moving on. When you add motion or states, record them (get_guide('motion')). If a screenshot fails, its error says why: a renderer that didn't answer means the Ponzu app is busy or showing a dialog, so ask the person; one that isn't running is restarting, so try again shortly. Keep working in Ponzu rather than rendering the page some other way.
-5. The canvas shows which artboards you're changing on its own. To tell the person what you're doing, set_status with a few words.
+5. The canvas shows which artboards you're changing on its own. To tell the person what you're doing, set_status with a few words. When you take on a new request, pass intent too: what they asked for, in one plain line. A timelapse of the work opens on it.
 6. When you point the person at your work in chat, give them the Link from get_basic_info, not the folder path: a path opens their editor, the link opens Ponzu. Add &artboard=<id> to open on one artboard.
 7. Explain your work on the canvas itself. A small artboard beside the work, named "Note: …" with height fit-content, holds rationale, labels, a flow's arrows or what to compare. The canvas is infinite, so annotate generously. Comments are for what needs the person: a question, a decision, something you couldn't do.
 
@@ -210,12 +210,19 @@ See it
 - hover, focus or press (a node id) on either tool puts that node in the state first. record then shows the transition into it, starting from the settled page.
 - scroll (a scroll container's id) on record steps through its scroll range, for animation-timeline: scroll() and view(). The container needs a fixed height and overflow: auto.
 
+What the person sees
+- On their canvas, the load plays once when the artboard appears: when they open its page, and each time you edit it. Then a finite animation holds its end. Hovering or clicking the artboard doesn't replay it, so never tell them it will.
+- A hint that fades out ends hidden, so the canvas shows nothing once it has played.
+- When they need to watch the motion (an entrance to review, a hint that leaves), put a looping copy on an artboard beside the real one: animation-iteration-count: infinite, with a beat of about a second held at the end of the keyframes so each cycle reads as one play. Keep the real one finite, and say which is which in a note.
+- If the motion answers something the person does, put it on :hover or :focus, so they can set it off themselves.
+
 Write it
 - Put @keyframes and state rules in a <style> inside the artboard. Name a class on the element (class="cta") and target it: .cta:hover { … }.
 - Inline styles beat <style> rules. A state rule that changes a property the element also sets inline needs !important. Lint tells you when a state changes nothing.
 - Entrance animations that start hidden (opacity: 0) need animation-fill-mode: forwards (or both), or the element snaps back to hidden when they end. Lint catches this.
 - Put the transition on the base rule, not the :hover rule, so it eases both ways.
 - Keep entrances short: 200–600ms, staggered 50–100ms. Use ease-out for things arriving and ease-in for things leaving. Loops should be slow and subtle.
+- A <video> from assets/ (muted, loop to repeat) is paused and seeked like any animation, so record and at show its real frames.
 - Animate transform and opacity. Animating width, height, top or margin moves the layout around it.
 - Keep fewer than 100 elements animating at once, counting loops and entrances that hold their end with forwards. Each is its own layer, and past that the whole canvas drops frames. For a field of dots, animate one HTML wrapper per row, or one around the lot, not every dot; an SVG <g> repaints everything in it each frame. Lint counts them.
 
@@ -223,7 +230,8 @@ Check
 1. screenshot: the settled page is what people see most. Lint it like any other.
 2. record the load: does each thing arrive in order, and nothing jump or overlap?
 3. record hover/focus/press on every interactive element you styled. A state without a transition snaps; that's fine for focus rings, rarely for hover.
-4. Read the motion list: delays and durations should add up to the rhythm you meant.`,
+4. Read the motion list: delays and durations should add up to the rhythm you meant.
+5. A finite load the person should judge needs a looping copy beside it; they can't replay the original.`,
 
   mobile: `# Mobile
 
@@ -246,7 +254,7 @@ export const SERVER_INSTRUCTIONS = `Ponzu is a design canvas you drive with HTML
 
 Start every session with get_basic_info, then read_notes, then get_guide('basics') if you haven't read it. When the person says "this", look for the comment they pinned to it.
 
-Build in small pieces, screenshot often, and fix what lint reports. Screenshots show the theme the person's canvas is in; a design with both themes uses light-dark() tokens for every color. record shows animation and hover states frame by frame. Put design decisions in tokens and notes. Variations go next to the original, never over it. The canvas shows which artboards you're changing; set_status tells the person what you're doing.
+Build in small pieces, screenshot often, and fix what lint reports. Screenshots show the theme the person's canvas is in; a design with both themes uses light-dark() tokens for every color. record shows animation and hover states frame by frame. Put design decisions in tokens and notes. Variations go next to the original, never over it. The canvas shows which artboards you're changing; set_status tells the person what you're doing, and its intent, set once per request, is the line a timelapse of the work opens on.
 
 The canvas is yours to annotate: a "Note: …" artboard beside the work carries rationale, labels and what to compare. Comments carry what needs the person: a question, a choice, something you couldn't do.
 

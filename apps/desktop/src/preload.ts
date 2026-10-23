@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld("ponzuDesktop", {
     return () => ipcRenderer.removeListener("ponzu:close-tab", listener);
   },
   closeWindow: () => ipcRenderer.send("ponzu:close-window"),
+  /** A timelapse onto the clipboard as a file, so it pastes into a post or a chat. */
+  copyFile: (path: string): Promise<void> => ipcRenderer.invoke("ponzu:copy-file", path),
   /** Ponzu › Pair iPhone…, including a click from before the studio was listening. */
   onPairIphone: (handler: () => void) => {
     const listener = () => handler();

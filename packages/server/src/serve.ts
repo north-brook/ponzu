@@ -8,7 +8,9 @@ import type { Server, ServerWebSocket, WebSocketHandler } from "bun";
 import { advertise, type Bonjour } from "./bonjour.ts";
 import { CatalogFeed, type Scope } from "./feed.ts";
 import { Home, type OpenedBy } from "./home.ts";
+import { assetResponse } from "./range.ts";
 import { isTailnetAddress } from "./tailnet.ts";
+import { timelapseRoute } from "./timelapse-routes.ts";
 import type { LocalWorkspace } from "./workspace.ts";
 
 export interface ServeOptions {
@@ -351,6 +353,14 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
       return Response.json({ files: open, root: opts.root ?? null });
     }
 
+    if (path.startsWith("/api/timelapse")) {
+      // Starting and cancelling films write and cost: never from another site's page.
+      if (req.method !== "GET" && !sameHostOk(req, url))
+        return new Response("Forbidden", { status: 403 });
+      const res = await timelapseRoute(ws, req, url, path);
+      if (res) return res;
+    }
+
     if (path === "/api/info") {
       const net = await home.net();
       const telemetry = (await opts.telemetry?.()) ?? { on: false, owner: null };
@@ -404,14 +414,12 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
         ws.get(key)?.storage ?? ((await home.listed(key)) ? new FsAdapter(key) : null);
       if (!storage) return new Response("Not found", { status: 404 });
       const rel = decodeURIComponent(assetMatch[2]!);
-      const bytes = await storage.readAsset(rel);
-      if (!bytes) return new Response("Not found", { status: 404 });
-      return new Response(bytes as BodyInit, {
-        headers: {
-          "content-type": MIME[extname(rel).toLowerCase()] ?? "application/octet-stream",
-          "cache-control": "no-cache",
-        },
-      });
+      const blob = storage.openAsset
+        ? await storage.openAsset(rel)
+        : await storage.readAsset(rel).then((b) => b && new Blob([b as BlobPart]));
+      if (!blob) return new Response("Not found", { status: 404 });
+      const type = MIME[extname(rel).toLowerCase()] ?? "application/octet-stream";
+      return assetResponse(blob, type, req.headers.get("range"));
     }
 
     if (req.method === "POST" && /^\/files\/([^/]+)\/upload$/.test(url.pathname)) {

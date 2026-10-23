@@ -11,8 +11,8 @@ const meta = "pz:text-[11.5px] pz:text-muted-foreground";
 const messageText =
   "pz:whitespace-pre-wrap pz:text-[13.5px] pz:leading-[1.55] pz:[overflow-wrap:anywhere]";
 
-export function timeAgo(ms: number): string {
-  const s = Math.max(1, Math.round((Date.now() - ms) / 1000));
+export function timeAgo(ms: number, now = Date.now()): string {
+  const s = Math.max(1, Math.round((now - ms) / 1000));
   if (s < 60) return "now";
   const m = Math.round(s / 60);
   if (m < 60) return `${m}m`;
@@ -184,6 +184,8 @@ export function ThreadCard({
   me,
   readOnly = false,
   onClose,
+  bare = false,
+  now,
 }: {
   thread: Thread;
   source: CanvasSource;
@@ -191,6 +193,10 @@ export function ThreadCard({
   /** Only the messages: no reply, resolve, edit or delete. */
   readOnly?: boolean;
   onClose: () => void;
+  /** Just the conversation: no Resolve, More or reply box. For films and previews. */
+  bare?: boolean;
+  /** The moment "now" means in message times. Default: the clock. */
+  now?: number;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [scrolled, setScrolled] = useState(false);
@@ -251,7 +257,7 @@ export function ThreadCard({
     i > 0 && mine(m.author) && editing !== m.id;
   return (
     <div className={threadCard} onPointerDown={(e) => e.stopPropagation()}>
-      {!readOnly && (
+      {!readOnly && !bare && (
         <div className="pz:absolute pz:top-1.5 pz:right-1.5 pz:z-[1] pz:flex pz:gap-0.5 pz:rounded-lg pz:bg-card">
           <Button variant="ghost" size="icon" onClick={resolve} title="Resolve">
             <Icon name="check" size={15} />
@@ -309,23 +315,23 @@ export function ThreadCard({
             key={m.id}
             className={cn(
               "pz:group pz:flex pz:flex-col pz:gap-1 pz:rounded-lg pz:px-2 pz:py-1.5",
-              hoverActions(m, i) && "pz:hover:bg-accent",
+              !bare && hoverActions(m, i) && "pz:hover:bg-accent",
             )}
           >
             {/* At the top, only the first row sits beside the card's buttons. */}
             <div
               className={cn(
                 "pz:flex pz:h-6 pz:items-center pz:gap-1.5",
-                i === 0 && !readOnly && "pz:pr-14",
+                i === 0 && !readOnly && !bare && "pz:pr-14",
               )}
             >
               <Avatar author={m.author} size={18} />
               <span className="pz:truncate pz:font-medium">{m.author.name}</span>
               <span className={cn(meta, "pz:shrink-0")}>
-                {timeAgo(m.createdAt)}
+                {timeAgo(m.createdAt, now)}
                 {m.editedAt ? " · edited" : ""}
               </span>
-              {hoverActions(m, i) && (
+              {!bare && hoverActions(m, i) && (
                 <div className="pz:ml-auto pz:flex pz:shrink-0 pz:opacity-0 pz:group-hover:opacity-100 pz:focus-within:opacity-100">
                   <Button
                     variant="ghost"
@@ -353,12 +359,14 @@ export function ThreadCard({
                 onCancel={() => setEditing(null)}
               />
             ) : (
-              <div className={messageText}>{m.text}</div>
+              <div className={messageText} data-message-text>
+                {m.text}
+              </div>
             )}
           </div>
         ))}
       </div>
-      {!readOnly && <Composer onSubmit={reply} onCancel={onClose} placeholder="Reply…" />}
+      {!readOnly && !bare && <Composer onSubmit={reply} onCancel={onClose} placeholder="Reply…" />}
     </div>
   );
 }

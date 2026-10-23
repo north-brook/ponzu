@@ -21,7 +21,9 @@ import {
   ToolError,
   type Workspace,
 } from "@ponzu/tools";
+import { JournalWriter } from "./journal.ts";
 import { previewStale, writePreview } from "./preview.ts";
+import { Timelapses } from "./timelapse.ts";
 
 export interface WorkspaceOptions {
   /** Where relative paths resolve. Defaults to process.cwd(). */
@@ -35,6 +37,8 @@ export interface WorkspaceOptions {
    * for Finder's icons. Default: on macOS.
    */
   previews?: boolean;
+  /** Keep each design's .ponzu/journal.ndjson, the history timelapses are made from. Default true. */
+  journal?: boolean;
 }
 
 /** How long the canvas has to sit still before the preview is redrawn. */
@@ -44,6 +48,7 @@ interface Entry {
   key: string;
   design: Design;
   stop: () => void;
+  journal?: JournalWriter;
 }
 
 /**
@@ -65,6 +70,21 @@ export class LocalWorkspace implements Workspace {
    * tools itself, there's nothing to open and no links.
    */
   opensIn?: "app" | { origin: string };
+  /** Where the studio's film page is served, when not at assetOrigin (the dev studio). */
+  filmOrigin?: string;
+  /** Timelapse films being made. */
+  readonly timelapses: Timelapses = (() => {
+    const ws = this;
+    return new Timelapses({
+      get renderer() {
+        return ws.renderer;
+      },
+      get origin() {
+        return ws.filmOrigin ?? process.env.PONZU_FILM_ORIGIN ?? ws.assetOrigin;
+      },
+      flush: (key) => ws.flushForFilm(key),
+    });
+  })();
   private entries = new Map<string, Entry>();
   private opening = new Map<string, Promise<Entry>>();
   private focusListeners = new Set<(key: string, artboard: string) => void>();
@@ -125,7 +145,16 @@ export class LocalWorkspace implements Workspace {
         await mkdir(key, { recursive: true });
         const design = await Design.open(new FsAdapter(key));
         const entry: Entry = { key, design, stop: () => {} };
-        entry.stop = this.bridge(key, design);
+        const offBridge = this.bridge(key, design);
+        let offJournal = () => {};
+        if (this.opts.journal !== false) {
+          entry.journal = new JournalWriter(key);
+          offJournal = entry.journal.start(design, (o) => this.clientOf(o));
+        }
+        entry.stop = () => {
+          offBridge();
+          offJournal();
+        };
         this.entries.set(key, entry);
         for (const l of this.openListeners) l(key);
         // In the background: the walk shouldn't hold up opening the file.
@@ -208,6 +237,7 @@ export class LocalWorkspace implements Workspace {
     clearTimeout(this.previewTimers.get(key));
     this.previewTimers.delete(key);
     await e.design.close();
+    await e.journal?.close();
     this.entries.delete(key);
   }
 
@@ -215,6 +245,41 @@ export class LocalWorkspace implements Workspace {
     for (const key of [...this.entries.keys()]) await this.close(key);
     await this.previewing;
     await this.renderer?.close();
+  }
+
+  /** Make a timelapse film of a design and wait for it. Resolves with where it was written. */
+  timelapse = async (
+    key: string,
+    req: import("./timelapse.ts").TimelapseRequest,
+  ): Promise<{ path: string; codec: string; duration: number; bytes: number }> => {
+    const job = this.timelapses.start(key, req);
+    const state = await job.promise;
+    if (state.status === "done")
+      return { path: state.path, codec: state.codec, duration: state.duration, bytes: state.bytes };
+    throw new ToolError(state.status === "failed" ? state.error : "The timelapse was cancelled.");
+  };
+
+  private async flushForFilm(key: string): Promise<void> {
+    await this.get(key)?.flush();
+    await this.journalFlushed(key);
+  }
+
+  intent(key: string, text: string, origin: { kind: "user" | "agent"; name: string }) {
+    const journal = this.entries.get(this.keyOf(key))?.journal;
+    if (!journal) return;
+    const o = { ...origin, client: this.clientOf(origin) };
+    journal.intent(text, o.client ? o : origin);
+  }
+
+  /** Everything this design's journal has been told is on disk. */
+  async journalFlushed(key: string): Promise<void> {
+    await this.entries.get(this.keyOf(key))?.journal?.flush();
+  }
+
+  /** The product of the agent behind an origin, for its mark in a timelapse. */
+  private clientOf(o: { kind: string; name: string }): string | undefined {
+    if (o.kind !== "agent") return undefined;
+    return this.presence.list().find((p) => p.kind === "agent" && p.name === o.name)?.client;
   }
 
   assetBase(key: string): string | undefined {

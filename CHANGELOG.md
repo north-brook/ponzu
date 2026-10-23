@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.39.2](https://github.com/north-brook/ponzu/compare/v1.39.1...v1.39.2) (2026-10-23)
+
+
+### Bug Fixes
+
+* tell agents a load animation plays once on the person's canvas ([#154](https://github.com/north-brook/ponzu/issues/154)) ([5c89441](https://github.com/north-brook/ponzu/commit/5c89441b56e2fd186e14640be35f2c08a626061c))
+
+## [1.39.1](https://github.com/north-brook/ponzu/compare/v1.39.0...v1.39.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* let screenshot and record seek videos from a design's assets ([#153](https://github.com/north-brook/ponzu/issues/153)) ([2e8bb04](https://github.com/north-brook/ponzu/commit/2e8bb04eb9b55734a0c54c82430b237eaf2c82fc))
+
+## [1.39.0](https://github.com/north-brook/ponzu/compare/v1.38.0...v1.39.0) (2026-10-23)
+
+
+### Features
+
+* make a timelapse of a design being made ([#149](https://github.com/north-brook/ponzu/issues/149)) ([4003691](https://github.com/north-brook/ponzu/commit/4003691f60da01ca2a86b923085bc78e2fd0880b))
+
+## [1.38.0](https://github.com/north-brook/ponzu/compare/v1.37.0...v1.38.0) (2026-10-23)
+
+
+### Features
+
+* let the iphone app pair with, reach and wake a mac ([#150](https://github.com/north-brook/ponzu/issues/150)) ([69d0869](https://github.com/north-brook/ponzu/commit/69d0869028622fc96bd55d98aebdd1652da0f0c1))
+
 ## [1.37.0](https://github.com/north-brook/ponzu/compare/v1.36.0...v1.37.0) (2026-10-23)
 
 

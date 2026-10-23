@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Renderer } from "@ponzu/render";
-import { LocalWorkspace, serve } from "./index.ts";
+import { LocalWorkspace, readJournal, serve } from "./index.ts";
 
 let dir: string;
 let ws: LocalWorkspace;
@@ -84,6 +84,31 @@ test("an agent builds a file through MCP and it lands on disk", async () => {
   expect(html).toContain("Plants");
   expect(html).not.toContain("onclick");
   expect(await readFile(join(dir, "shop.design/tokens.css"), "utf8")).toContain("--ink");
+});
+
+test("an agent's intent goes into the design's history, for a timelapse to open on", async () => {
+  const ab = await client.callTool({
+    name: "create_artboard",
+    arguments: { file: "shop.design", name: "Intent", width: 400, height: 300 },
+  });
+  const abId = /artboard (ab_\w+)/.exec(text(ab))![1]!;
+  await client.callTool({
+    name: "set_status",
+    arguments: {
+      file: "shop.design",
+      status: "drawing the shop",
+      intent: "A houseplant shop: a logo and a landing page.",
+      artboards: [abId],
+    },
+  });
+  const key = join(dir, "shop.design");
+  await ws.journalFlushed(key);
+  const intents = (await readJournal(key)).filter((e) => e.kind === "intent");
+  expect(intents).toHaveLength(1);
+  expect(intents[0]).toMatchObject({
+    text: "A houseplant shop: a logo and a landing page.",
+    origin: { kind: "agent" },
+  });
 });
 
 test("self-closing svg children written with write_html stay siblings", async () => {
@@ -280,6 +305,34 @@ test("screenshots load the design's assets/ images", async () => {
     const abId = /artboard (ab_\w+)/.exec(text(ab))![1]!;
     const shot = text(await client.callTool({ name: "screenshot", arguments: { id: abId } }));
     expect(shot).not.toContain("failed to load");
+  } finally {
+    ws.renderer = undefined;
+  }
+}, 30_000);
+
+test("screenshots seek a video from the design's assets/", async () => {
+  ws.renderer = await chromium();
+  if (!ws.renderer) return;
+  try {
+    // Two seconds, red then blue (VP8, which every Chromium plays).
+    const clip = await readFile(join(import.meta.dir, "fixtures/red-blue.webm"));
+    await ws.designs()[0]!.design.storage.writeAsset("assets/red-blue.webm", new Uint8Array(clip));
+    const ab = await client.callTool({
+      name: "create_artboard",
+      arguments: {
+        name: "Clip",
+        width: 64,
+        height: 64,
+        html: `<video data-name="Clip" src="assets/red-blue.webm" muted loop style="width:64px;height:64px;display:block"></video>`,
+      },
+    });
+    const abId = /artboard (ab_\w+)/.exec(text(ab))![1]!;
+    const image = async (at: number) => {
+      const shot = await client.callTool({ name: "screenshot", arguments: { id: abId, at } });
+      return (shot.content as { type: string; data?: string }[]).find((c) => c.type === "image")!
+        .data;
+    };
+    expect(await image(300)).not.toBe(await image(1500));
   } finally {
     ws.renderer = undefined;
   }

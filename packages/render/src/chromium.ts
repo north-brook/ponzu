@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { Browser, BrowserContext, Page } from "playwright-core";
 import { captureScale, clampScale, IMAGES_READY_SCRIPT } from "./capture.ts";
 import { artboardPage } from "./document.ts";
+import type { FilmDriver } from "./film.ts";
 import {
   type FrameDriver,
   FULL_LINT_SCRIPT,
@@ -315,6 +316,49 @@ export class ChromiumRenderer implements Renderer {
     // Give up on what's still coming, so fonts fall back and the page settles.
     if (!all) await page.evaluate("window.stop()").catch(() => {});
     return all;
+  }
+
+  /**
+   * A page for the timelapse film. Its own context, at the film's device
+   * scale, and a real navigation to the server: WebCodecs needs a secure
+   * origin, which http://127.0.0.1 is.
+   */
+  async filmDriver(): Promise<FilmDriver> {
+    await this.ctx();
+    const browser = await this.browser!;
+    let context: BrowserContext | null = null;
+    let page: Page | null = null;
+    let cdp: import("playwright-core").CDPSession | null = null;
+    return {
+      async open(url, width, height, scale) {
+        context = await browser.newContext({
+          viewport: { width, height },
+          deviceScaleFactor: scale,
+        });
+        page = await context.newPage();
+        page.setDefaultTimeout(120_000);
+        await page.goto(url, { waitUntil: "load", timeout: 60_000 });
+        await page.waitForFunction("Boolean(window.ponzuFilm)", undefined, { timeout: 60_000 });
+        cdp = await context.newCDPSession(page);
+      },
+      async evaluate<T>(expression: string) {
+        if (!page) throw new Error("Open the film page first.");
+        return (await page.evaluate(expression)) as T;
+      },
+      async capture(format) {
+        if (!cdp) throw new Error("Open the film page first.");
+        const shot = await cdp.send("Page.captureScreenshot", {
+          format,
+          ...(format === "jpeg" ? { quality: 70 } : {}),
+        });
+        return shot.data;
+      },
+      async close() {
+        await context?.close().catch(() => {});
+        context = null;
+        page = null;
+      },
+    };
   }
 
   async close(): Promise<void> {

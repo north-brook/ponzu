@@ -1,4 +1,4 @@
-import { type FSWatcher, watch as fsWatch } from "node:fs";
+import { type FSWatcher, watch as fsWatch, openAsBlob } from "node:fs";
 import { mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import type { StorageAdapter } from "./adapter.ts";
@@ -46,6 +46,17 @@ export class FsAdapter implements StorageAdapter {
     if (!abs) return null;
     try {
       return new Uint8Array(await readFile(abs));
+    } catch {
+      return null;
+    }
+  }
+
+  async openAsset(path: string): Promise<Blob | null> {
+    const abs = this.resolveInside(path);
+    if (!abs) return null;
+    try {
+      if (!(await stat(abs)).isFile()) return null;
+      return await openAsBlob(abs);
     } catch {
       return null;
     }
