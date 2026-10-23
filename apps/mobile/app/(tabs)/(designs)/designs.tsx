@@ -186,7 +186,6 @@ export default function Designs() {
           accessibilityLabel={
             on ? `Filter: ${[shelfLabel, projectLabel].filter(Boolean).join(", ")}` : "Filter"
           }
-          title="Show"
         >
           <Stack.Toolbar.Icon renderingMode="template" xcasset="bar-filter" />
           {on > 0 && (
