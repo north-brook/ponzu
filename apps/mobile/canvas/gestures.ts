@@ -23,6 +23,14 @@ export interface GestureHandlers {
   longPress(p: Point): void;
 }
 
+/**
+ * What a double-tap does: focuses the board under it, and nothing while a board is focused. A
+ * focused board is left by pinching out or panning past it, never by another double-tap.
+ */
+export function doubleTapFocus(focused: string | null, hit: string | null): string | null {
+  return focused ? null : hit;
+}
+
 /** px a finger may wander and still be tapping or holding. */
 export const SLOP = 10;
 /** A hold this long, still, is a long-press. */

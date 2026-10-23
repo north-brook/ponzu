@@ -1,5 +1,5 @@
 import { agentActivity, findArtboard, newId, type Presence, type Thread } from "@ponzu/core";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams, useNavigation } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, Text, View } from "react-native";
 import Animated, {
@@ -13,6 +13,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { scheduleOnRN } from "react-native-worklets";
 import type { FromCanvas, PendingPin } from "../../../canvas/protocol";
 import { type CanvasHandle, CanvasView } from "../../../components/canvas-view";
 import { BarButton } from "../../../components/chrome";
@@ -40,7 +41,8 @@ const ME = { kind: "user" as const, name: "You" };
  * draws it, and React Native's chrome over it: back, the title pill (file and
  * page, with the page menu) and the agent's mark when one is here, which
  * opens its session card (4 Agent). Hold to comment (6–9), tap a pin for its
- * thread (11), double-tap a board to focus it (5).
+ * thread (11), double-tap a board to focus it (5): the chrome fades away
+ * while a board is focused, and comes back as a pan or pinch begins.
  */
 export default function Canvas() {
   const params = useLocalSearchParams<{
@@ -74,8 +76,10 @@ export default function Canvas() {
   const [sheet, setSheet] = useState(0);
   const [card, setCard] = useState(false);
   const [pages, setPages] = useState(false);
-  /** The focused board, for the "where you are" pill. */
+  /** The focused board: the chrome steps aside for it. */
   const [focusedBoard, setFocusedBoard] = useState<string | null>(null);
+  /** A pan or pinch is under way on the focused board: the chrome is back while it lasts. */
+  const [moving, setMoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -163,6 +167,10 @@ export default function Canvas() {
         break;
       case "focused":
         setFocusedBoard(msg.artboardId);
+        setMoving(false);
+        break;
+      case "gesture":
+        setMoving(true);
         break;
     }
   }, []);
@@ -216,6 +224,22 @@ export default function Canvas() {
     [top, insets.bottom],
   );
 
+  // Focused, the board has the screen: no bar, and the home indicator fades as the system's
+  // full-screen views do. Writing or reading a comment, or the agent's card, keeps the bar.
+  const bare = Boolean(focusedBoard) && !moving && !pending && !thread && !card;
+  const navigation = useNavigation();
+  useEffect(() => {
+    navigation.setOptions({ autoHideHomeIndicator: bare });
+  }, [bare]);
+  const chrome = useSharedValue(1);
+  useEffect(() => {
+    chrome.value = withTiming(bare ? 0 : 1, { duration: bare ? 220 : 160, easing: ease });
+  }, [bare]);
+  const chromeStyle = useAnimatedStyle(() => ({ opacity: chrome.value }));
+  // The gesture hint, once each time a design opens: never again after a focus.
+  const [hinted, setHinted] = useState(false);
+  const hint = Boolean(doc) && !hinted;
+
   if (!mac || !base) return <Missing message="This Mac isn't paired anymore." />;
   return (
     <View testID="canvas" style={{ flex: 1, backgroundColor: color.canvas }}>
@@ -265,110 +289,107 @@ export default function Canvas() {
           accessibilityLabel="Close"
         />
       )}
-      <GlassGroup
-        style={{
-          position: "absolute",
-          left: 0,
-          right: 0,
-          top: insets.top,
-          paddingVertical: 6,
-          paddingHorizontal: 16,
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 10,
-          zIndex: 8,
-        }}
+      <Animated.View
+        pointerEvents={bare ? "none" : "box-none"}
+        testID={bare ? "chrome-hidden" : "chrome"}
+        style={[
+          { position: "absolute", left: 0, right: 0, top: insets.top, zIndex: 8 },
+          chromeStyle,
+        ]}
       >
-        <BarButton label="Back" onPress={() => router.back()}>
-          <Back color={color.ink} />
-        </BarButton>
-        <View style={{ flex: 1, alignItems: "center" }}>
-          <Pressable
-            onPress={() => doc && doc.pages.length > 1 && setPages(true)}
-            accessibilityRole="button"
-            accessibilityLabel={`${file?.name ?? doc?.name ?? ""}, page ${page?.name ?? ""}`}
-            testID="title"
-          >
-            <Glass
-              interactive
-              style={{
-                height: 44,
-                paddingHorizontal: 14,
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 6,
-                maxWidth: 236,
-              }}
+        <GlassGroup
+          style={{
+            paddingVertical: 6,
+            paddingHorizontal: 16,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 10,
+          }}
+        >
+          <BarButton label="Back" onPress={() => router.back()}>
+            <Back color={color.ink} />
+          </BarButton>
+          <View style={{ flex: 1, alignItems: "center" }}>
+            <Pressable
+              onPress={() => doc && doc.pages.length > 1 && setPages(true)}
+              accessibilityRole="button"
+              accessibilityLabel={`${file?.name ?? doc?.name ?? ""}, page ${page?.name ?? ""}`}
+              testID="title"
             >
-              <FileIcon size={16} color={color.ink} />
-              <Text
-                numberOfLines={1}
+              <Glass
+                interactive
                 style={{
-                  flexShrink: 1,
-                  fontFamily: "Inter",
-                  fontWeight: "600",
-                  fontSize: 15,
-                  color: color.ink,
+                  height: 44,
+                  paddingHorizontal: 14,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 6,
+                  maxWidth: 236,
                 }}
               >
-                {doc?.name ?? file?.name ?? ""}
-              </Text>
-              {page && (
-                <>
-                  <View
-                    style={{
-                      width: 1,
-                      height: 14,
-                      backgroundColor: color.hairline,
-                      marginHorizontal: 2,
-                    }}
-                  />
-                  <PageIcon name={page.icon} size={16} color={color.muted} />
-                  <Text
-                    numberOfLines={1}
-                    style={{
-                      flexShrink: 1,
-                      fontFamily: "Inter",
-                      fontWeight: "500",
-                      fontSize: 15,
-                      color: color.muted,
-                    }}
-                  >
-                    {page.name}
-                  </Text>
-                  {(doc?.pages.length ?? 0) > 1 && <Chevron size={16} color={color.muted} />}
-                </>
-              )}
-            </Glass>
-          </Pressable>
-        </View>
-        {agent ? (
-          <BarButton
-            label={`${agent.name}'s session`}
-            onPress={() => setCard((c) => !c)}
-            ring={card}
-          >
-            <AgentMark client={agent.client} size={20} color={color.ink} />
-          </BarButton>
-        ) : (
-          <View style={{ width: 44 }} />
-        )}
-      </GlassGroup>
+                <FileIcon size={16} color={color.ink} />
+                <Text
+                  numberOfLines={1}
+                  style={{
+                    flexShrink: 1,
+                    fontFamily: "Inter",
+                    fontWeight: "600",
+                    fontSize: 15,
+                    color: color.ink,
+                  }}
+                >
+                  {doc?.name ?? file?.name ?? ""}
+                </Text>
+                {page && (
+                  <>
+                    <View
+                      style={{
+                        width: 1,
+                        height: 14,
+                        backgroundColor: color.hairline,
+                        marginHorizontal: 2,
+                      }}
+                    />
+                    <PageIcon name={page.icon} size={16} color={color.muted} />
+                    <Text
+                      numberOfLines={1}
+                      style={{
+                        flexShrink: 1,
+                        fontFamily: "Inter",
+                        fontWeight: "500",
+                        fontSize: 15,
+                        color: color.muted,
+                      }}
+                    >
+                      {page.name}
+                    </Text>
+                    {(doc?.pages.length ?? 0) > 1 && <Chevron size={16} color={color.muted} />}
+                  </>
+                )}
+              </Glass>
+            </Pressable>
+          </View>
+          {agent ? (
+            <BarButton
+              label={`${agent.name}'s session`}
+              onPress={() => setCard((c) => !c)}
+              ring={card}
+            >
+              <AgentMark client={agent.client} size={20} color={color.ink} />
+            </BarButton>
+          ) : (
+            <View style={{ width: 44 }} />
+          )}
+        </GlassGroup>
+      </Animated.View>
       {card && agent && doc && (
         <SessionCard presence={agent} top={insets.top + 58} doc={doc} file={params.key} />
       )}
-      {doc && !focusedBoard && <Hint bottom={insets.bottom} />}
+      {hint && (
+        <Hint bottom={insets.bottom} away={Boolean(focusedBoard)} onDone={() => setHinted(true)} />
+      )}
       {uncommented && (
         <View testID="uncommented" style={{ position: "absolute", width: 1, height: 1 }} />
-      )}
-      {doc && focusedBoard && (
-        <WhereYouAre
-          key={focusedBoard}
-          doc={doc}
-          artboardId={focusedBoard}
-          agent={agents.find((a) => a.working.includes(focusedBoard))}
-          bottom={insets.bottom}
-        />
       )}
       {pending && (
         <Sheet
@@ -440,10 +461,12 @@ function Missing({ message }: { message: string }) {
 }
 
 /**
- * "Hold to comment · Double-tap a screen to focus", each time a design opens:
- * it rises in over 0.4s, holds, and sinks out by 3.6s.
+ * "Hold to comment · Double-tap a screen to focus", once each time a design
+ * opens: it rises in over 0.4s, holds, and sinks out by 3.6s. A focus before
+ * then sends it away at once. Either way it doesn't come back until the
+ * design is opened again.
  */
-function Hint({ bottom }: { bottom: number }) {
+function Hint({ bottom, away, onDone }: { bottom: number; away: boolean; onDone: () => void }) {
   const { color } = useTheme();
   const t = useSharedValue(0);
   useEffect(() => {
@@ -451,10 +474,21 @@ function Hint({ bottom }: { bottom: number }) {
       400,
       withSequence(
         withTiming(1, { duration: 400, easing: ease }),
-        withDelay(2_100, withTiming(0, { duration: 400, easing: ease })),
+        withDelay(
+          2_100,
+          withTiming(0, { duration: 400, easing: ease }, (done) => {
+            if (done) scheduleOnRN(onDone);
+          }),
+        ),
       ),
     );
   }, []);
+  useEffect(() => {
+    if (!away) return;
+    t.value = withTiming(0, { duration: 160, easing: ease }, (done) => {
+      if (done) scheduleOnRN(onDone);
+    });
+  }, [away]);
   const style = useAnimatedStyle(() => ({
     opacity: t.value,
     transform: [{ translateY: 12 * (1 - t.value) }, { scale: 0.96 + 0.04 * t.value }],
@@ -462,6 +496,7 @@ function Hint({ bottom }: { bottom: number }) {
   return (
     <Animated.View
       pointerEvents="none"
+      testID="hint"
       style={[
         { position: "absolute", bottom: Math.max(34, bottom), alignSelf: "center", zIndex: 8 },
         style,
@@ -472,67 +507,6 @@ function Hint({ bottom }: { bottom: number }) {
       >
         <Text style={{ fontFamily: "Inter", fontWeight: "500", fontSize: 13, color: color.ink }}>
           Hold to comment · Double-tap a screen to focus
-        </Text>
-      </Glass>
-    </Animated.View>
-  );
-}
-
-/**
- * Where you are (Flow › 5 Focus), each time a board is focused: its name,
- * which of the page's boards it is, and how to zoom out; the agent's mark
- * when one works on it. It holds, then fades by 2.4s.
- */
-function WhereYouAre({
-  doc,
-  artboardId,
-  agent,
-  bottom,
-}: {
-  doc: NonNullable<ReturnType<typeof useSessionState>["doc"]>;
-  artboardId: string;
-  agent?: Presence;
-  bottom: number;
-}) {
-  const { color } = useTheme();
-  const t = useSharedValue(1);
-  useEffect(() => {
-    t.value = withDelay(1_680, withTiming(0, { duration: 720, easing: ease }));
-  }, []);
-  const style = useAnimatedStyle(() => ({ opacity: t.value }));
-  const page = doc.pages.find((p) => p.artboards.some((a) => a.id === artboardId));
-  const i = page?.artboards.findIndex((a) => a.id === artboardId) ?? -1;
-  if (!page || i < 0) return null;
-  return (
-    <Animated.View
-      pointerEvents="none"
-      testID="where-you-are"
-      style={[
-        {
-          position: "absolute",
-          bottom: Math.max(104, bottom + 70),
-          alignSelf: "center",
-          zIndex: 8,
-        },
-        style,
-      ]}
-    >
-      <Glass
-        style={{
-          height: 36,
-          paddingLeft: agent ? 10 : 14,
-          paddingRight: 14,
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 8,
-        }}
-      >
-        {agent && <AgentMark client={agent.client} size={14} color={color.ink} />}
-        <Text style={{ fontFamily: "Inter", fontWeight: "600", fontSize: 13, color: color.ink }}>
-          {page.artboards[i]!.name}
-        </Text>
-        <Text style={{ fontFamily: "Inter", fontWeight: "500", fontSize: 13, color: color.muted }}>
-          {i + 1} of {page.artboards.length} · double-tap to zoom out
         </Text>
       </Glass>
     </Animated.View>

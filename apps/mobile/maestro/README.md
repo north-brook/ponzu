@@ -22,7 +22,7 @@ prompt in the way. Every flow checks no development warning
 
 Flows find views by `testID` (`id:` in Maestro) or by text: `launch`,
 `designs`, `card-<name>`, `bell`, `search-field`, `search-input`,
-`search-files`, `search-frames`, `canvas`, `title`, `where-you-are`,
+`search-files`, `search-frames`, `canvas`, `title`, `chrome`, `chrome-hidden`, `hint`,
 `comment-sheet`, `comment-input`, `to-type`, `to-voice`, `mute`, `transcript`, `send`, `thread-sheet`,
 `resolve`, `activity`, `connect`. Give a new screen a `testID` named after it.
 Wait with `extendedWaitUntil`, never a fixed sleep.

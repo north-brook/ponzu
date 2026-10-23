@@ -11,7 +11,7 @@ renderer. The app posts it messages; it posts back gestures.
 | `protocol.ts` | The messages, both ways. Types only; the app imports it. |
 | `Canvas.tsx` | The canvas: boards, labels, pins, traces, the camera and the gestures. |
 | `camera.ts` | Framing, focus, pins and momentum, as plain math. |
-| `gestures.ts` | Touches turned into pan, pinch, tap, double-tap and hold. |
+| `gestures.ts` | Touches turned into pan, pinch, tap, double-tap and hold. A double-tap focuses a board; pinching out or panning past it leaves. |
 | `store.ts` | What the app has said; ops applied here with `applyOp` on echo. |
 | `build.ts` | Builds `dist/index.html` and `dist/bundle.ts`. |
 | `dev.html`, `dev.ts` | A harness that plays the app's part against a running Ponzu. |
@@ -54,6 +54,9 @@ On `ready`, send `insets`, then `doc`; after that, every socket `op` (with its `
 `presence`. A `longpress` means: show the comment sheet, send `pending` with the pin and `insets`
 with `sheet` set to the sheet's height; when the `thread.create` echo arrives, send `pending: null`.
 `openThread` means: show the thread sheet and send `thread` with its id.
+`focused` with a board means the board has the screen: hide the chrome. A pan or pinch on it sends
+`gesture` as it begins (show the chrome), then `focused` again as it settles, with the board if it's
+still focused (hide it again) or `null` if the fingers left it.
 
 ### Why `baseUrl` is the Mac
 

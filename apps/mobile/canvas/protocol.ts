@@ -64,8 +64,13 @@ export type FromCanvas =
   | { t: "longpress"; pageId: string; artboardId?: string; nodeId?: string; x: number; y: number }
   /** A pin was tapped. */
   | { t: "openThread"; id: string }
-  /** An artboard is focused, or none is: by a double-tap, a pinch away or a `focus` message. */
+  /**
+   * An artboard is focused, or none is: by a double-tap, a pinch away or a `focus` message. Sent
+   * again with the same board when a pan or pinch on it settles and it's still focused.
+   */
   | { t: "focused"; artboardId: string | null }
+  /** A pan or pinch began on the focused board: the app shows its chrome while it lasts. */
+  | { t: "gesture" }
   /** Where the zoom settled after a gesture. */
   | { t: "camera"; zoom: number }
   /** The canvas changed page itself, to focus an artboard on another one. */

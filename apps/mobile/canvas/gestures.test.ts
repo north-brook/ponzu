@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { type GestureHandlers, Gestures, HOLD_MS } from "./gestures.ts";
+import { doubleTapFocus, type GestureHandlers, Gestures, HOLD_MS } from "./gestures.ts";
 
 /** A recorder for what the fingers meant, with a clock the test moves. */
 function setup() {
@@ -104,4 +104,12 @@ test("two fingers pinch about their centre, and lifting one carries on as a pan"
   g.touchEnd([{ id: 1 }], at());
   expect(events.at(-1)![0]).toBe("release");
   expect(names(events)).not.toContain("longPress");
+});
+
+test("a double-tap focuses the board under it, and never leaves a focused one", () => {
+  expect(doubleTapFocus(null, "ab1")).toBe("ab1");
+  expect(doubleTapFocus(null, null)).toBe(null);
+  // Focused: no zoom out, and no jump to the board under the finger. Pinch out or pan past instead.
+  expect(doubleTapFocus("ab1", "ab1")).toBe(null);
+  expect(doubleTapFocus("ab1", "ab2")).toBe(null);
 });

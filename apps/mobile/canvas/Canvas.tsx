@@ -1,7 +1,8 @@
 /*
  * The phone's canvas: a page of artboards drawn exactly as desktop draws them (each in its own
  * shadow root, with the design's tokens and fonts), on a plane a finger pans and two fingers
- * pinch. Double-tap a board to focus it, hold to comment, tap a pin to read its thread. Labels,
+ * pinch. Double-tap a board to focus it (pinch out, or pan past it, to leave), hold to comment, tap
+ * a pin to read its thread. Labels,
  * pins and traces sit on screen above the boards, so they stay a fixed size at any zoom. No
  * chrome: the app draws that around the web view.
  */
@@ -34,7 +35,7 @@ import {
   toWorld,
   zoomAt,
 } from "./camera.ts";
-import { Gestures, type Point } from "./gestures.ts";
+import { doubleTapFocus, Gestures, type Point } from "./gestures.ts";
 import { arrivals, getState, send, setPage, subscribe } from "./store.ts";
 
 /** How long a focus, or a snap back, takes. */
@@ -382,12 +383,21 @@ export function PhoneCanvas() {
     const el = viewport.current;
     if (!el) return;
     let pinchBase: { cam: Camera; center: Point } | null = null;
+    /** This touch has told the app a gesture began on a focused board, which brings its chrome back. */
+    let told = false;
+    const moving = () => {
+      if (told || !latest.current.focused) return;
+      told = true;
+      send({ t: "gesture" });
+    };
     const g = new Gestures({
       down() {
         touched.current = true;
+        told = false;
         latest.current.stop();
       },
       pan(dx, dy) {
+        moving();
         const { focused, boxes, screen } = latest.current;
         const c = camRef.current;
         let next = { ...c, x: c.x + dx, y: c.y + dy };
@@ -400,6 +410,7 @@ export function PhoneCanvas() {
         setCam(next);
       },
       pinchStart(center) {
+        moving();
         pinchBase = { cam: camRef.current, center };
       },
       pinch(scale, center) {
@@ -418,7 +429,7 @@ export function PhoneCanvas() {
       },
       release(v, moved) {
         pinchBase = null;
-        const { focused, boxes, screen, focus, animateTo, coast } = latest.current;
+        const { focused, boxes, screen, focus, unfocus, animateTo, coast } = latest.current;
         const box = focused ? boxes.find((b) => b.id === focused) : undefined;
         const c = camRef.current;
         if (!box) return coast(v, null);
@@ -431,6 +442,8 @@ export function PhoneCanvas() {
             send({ t: "focused", artboardId: null });
             return coast({ x: 0, y: 0 }, null);
           }
+          // Still on the board: the app hides its chrome again.
+          send({ t: "focused", artboardId: box.id });
           return animateTo(c.zoom < home.zoom ? home : clampToBox(c, box, screen));
         }
         if (Math.abs(c.zoom - home.zoom) < home.zoom * 0.01) {
@@ -443,10 +456,15 @@ export function PhoneCanvas() {
             const order = readingOrder(boxes);
             const next = order[order.findIndex((b) => b.id === box.id) + (moved.x < 0 ? 1 : -1)];
             if (next) return focus(next.id);
+            // Past the first or last board: out of focus, back to where the canvas was.
+            return unfocus();
           }
+          send({ t: "focused", artboardId: box.id });
           if (Math.abs(c.x - home.x) > 0.5)
             return animateTo({ ...clampToBox(c, box, screen), x: home.x });
         }
+        if (Math.abs(c.zoom - home.zoom) >= home.zoom * 0.01)
+          send({ t: "focused", artboardId: box.id });
         coast(v, box);
       },
       tap(p) {
@@ -454,10 +472,9 @@ export function PhoneCanvas() {
         if (hit) send({ t: "openThread", id: hit.id });
       },
       doubleTap(p) {
-        const { focused, hitTest, focus, unfocus } = latest.current;
-        if (focused) return unfocus();
-        const hit = hitTest(p);
-        if (hit) focus(hit.box.id);
+        const { focused, hitTest, focus } = latest.current;
+        const id = doubleTapFocus(focused, focused ? null : (hitTest(p)?.box.id ?? null));
+        if (id) focus(id);
       },
       longPress(p) {
         const { hitTest, page } = latest.current;
