@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.40.0](https://github.com/north-brook/ponzu/compare/v1.39.3...v1.40.0) (2026-10-23)
+
+
+### Features
+
+* hide worktree copies of a design that their branch hasn't changed ([#159](https://github.com/north-brook/ponzu/issues/159)) ([87d97ba](https://github.com/north-brook/ponzu/commit/87d97ba31d070fb7983374cd2043bddd6fa87c43))
+
+
+### Bug Fixes
+
+* catch up a canvas that misses an agent's changes instead of waiting for a reload ([#162](https://github.com/north-brook/ponzu/issues/162)) ([5d8a83e](https://github.com/north-brook/ponzu/commit/5d8a83e6085a38446c1ba91699c88324757e5723))
+
 ## [1.39.3](https://github.com/north-brook/ponzu/compare/v1.39.2...v1.39.3) (2026-10-23)
 
 
