@@ -10,6 +10,7 @@ import { MacImage } from "../../../components/preview";
 import { useFiles } from "../../../lib/catalog";
 import type { PhoneFile } from "../../../lib/files";
 import { lately, noteSearch, type Opened } from "../../../lib/lately";
+import { useMargin } from "../../../lib/margin";
 import { useMacs } from "../../../lib/reach";
 import { search } from "../../../lib/search";
 import { isUnseen, useSeen } from "../../../lib/seen";
@@ -36,13 +37,14 @@ export default function Search() {
   const seen = useSeen();
   const markColor = useMarkColor();
   const results = useMemo(() => search(files, query), [files, query]);
-  const cardWidth = (width - 40 - 16) / 2;
+  const m = useMargin();
+  const cardWidth = (width - 2 * m - 16) / 2;
   const label = {
     fontFamily: "Inter",
     fontWeight: "600" as const,
     fontSize: 13,
     color: color.muted,
-    paddingHorizontal: 22,
+    paddingHorizontal: m,
   };
   // The system's search field, in the native header: glass on iOS 26, and the
   // search tab's own (role="search" in the tabs layout).
@@ -117,7 +119,7 @@ export default function Search() {
             </Text>
             <View
               style={{
-                paddingHorizontal: 20,
+                paddingHorizontal: m,
                 flexDirection: "row",
                 flexWrap: "wrap",
                 columnGap: 16,
@@ -145,7 +147,7 @@ export default function Search() {
             </Text>
             <View
               style={{
-                paddingHorizontal: 20,
+                paddingHorizontal: m,
                 flexDirection: "row",
                 flexWrap: "wrap",
                 columnGap: 16,
@@ -242,7 +244,6 @@ const sectionLabel = {
   fontFamily: "Inter",
   fontWeight: "600" as const,
   fontSize: 13,
-  paddingHorizontal: 22,
 };
 
 /** Before anything's typed: recent searches as chips, then the designs opened lately. */
@@ -258,13 +259,16 @@ function Before({
   onOpen: (x: { o: Opened; file: PhoneFile }) => void;
 }) {
   const { color, scheme } = useTheme();
+  const m = useMargin();
   const edge = scheme === "dark" ? "rgba(255,255,255,0.2)" : "rgba(17,17,16,0.12)";
   return (
     <View testID="search-before" style={{ gap: 14 }}>
       {searches.length > 0 && (
         <>
-          <Text style={[sectionLabel, { color: color.muted }]}>Recent searches</Text>
-          <View style={{ paddingHorizontal: 20, flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          <Text style={[sectionLabel, { color: color.muted, paddingHorizontal: m }]}>
+            Recent searches
+          </Text>
+          <View style={{ paddingHorizontal: m, flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             {searches.map((s) => (
               <Pressable
                 key={s}
@@ -296,11 +300,14 @@ function Before({
       {opened.length > 0 && (
         <>
           <Text
-            style={[sectionLabel, { color: color.muted, paddingTop: searches.length ? 10 : 0 }]}
+            style={[
+              sectionLabel,
+              { color: color.muted, paddingHorizontal: m, paddingTop: searches.length ? 10 : 0 },
+            ]}
           >
             Opened lately
           </Text>
-          <View style={{ paddingHorizontal: 20, gap: 10 }}>
+          <View style={{ paddingHorizontal: m, gap: 10 }}>
             {opened.map((x) => {
               const page = x.file.pages.find((p) => p.id === x.o.page) ?? x.file.pages[0];
               const thumb = x.file.artboards?.find((a) => a.page === page?.id)?.thumb;

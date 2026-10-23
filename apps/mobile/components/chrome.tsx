@@ -1,5 +1,6 @@
-import type { ReactNode } from "react";
-import { Pressable, Text, View, type ViewStyle } from "react-native";
+import { type ReactNode, useRef } from "react";
+import { type HostInstance, Pressable, Text, View, type ViewStyle } from "react-native";
+import { BAR_ITEM_INSET, measureMargin } from "../lib/margin";
 import { brand } from "../lib/tokens";
 import { Glass } from "./glass";
 import { HandoffTarget, HandoffWord } from "./handoff";
@@ -80,11 +81,16 @@ export function Lockup({ color }: { color: string }) {
  * Display bold, 26pt, so Search and Activity read as Designs does.
  */
 export function HeaderTitle({ children, color }: { children: string; color: string }) {
+  const ref = useRef<HostInstance>(null);
   return (
     <Text
+      ref={ref}
+      // Where the header puts it is the margin (lib/margin.ts).
+      onLayout={() => ref.current?.measureInWindow((x) => measureMargin(x + BAR_ITEM_INSET))}
       accessibilityRole="header"
       style={{
-        paddingLeft: 4,
+        // The bar puts its view 4pt inside the margin: the title's letters sit on it.
+        marginLeft: -BAR_ITEM_INSET,
         fontFamily: "Funnel Display",
         fontWeight: "700",
         fontSize: 26,

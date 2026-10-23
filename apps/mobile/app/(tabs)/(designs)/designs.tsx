@@ -1,10 +1,11 @@
 import type { MenuAction } from "@react-native-menu/menu";
 import { selectionAsync } from "expo-haptics";
 import { router, Stack } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActionSheetIOS,
   Alert,
+  type HostInstance,
   RefreshControl,
   ScrollView,
   Text,
@@ -20,6 +21,7 @@ import { Moon } from "../../../components/icons";
 import { refreshFeeds, syncFeeds, useCatalogs, useFiles, useShelve } from "../../../lib/catalog";
 import { clock, type PhoneFile, projects, type Shelf, shelfOf } from "../../../lib/files";
 import type { ShelfAction } from "../../../lib/mac-queries";
+import { LOCKUP_INK, measureMargin, useMargin } from "../../../lib/margin";
 import { SLICE, SLICE_STROKE } from "../../../lib/mark";
 import { reachAll, useMacs } from "../../../lib/reach";
 import { isUnseen, useSeen } from "../../../lib/seen";
@@ -71,7 +73,9 @@ export default function Designs() {
     (m) => (reach[m.id] === "asleep" || reach[m.id] === "noTailnet") && all[m.id],
   );
 
-  const cardWidth = (width - 40 - 16) / 2;
+  const m = useMargin();
+  const header = useRef<HostInstance>(null);
+  const cardWidth = (width - 2 * m - 16) / 2;
   const open = (f: PhoneFile) =>
     router.push({ pathname: "/design/[mac]/[key]", params: { mac: f.mac, key: f.key } });
   // Hold a card for its shelf, as desktop's card menu: the card moves at once.
@@ -165,8 +169,14 @@ export default function Designs() {
       {/* The lockup and the filter in the system's header, over the grid as it scrolls. */}
       <Stack.Toolbar placement="left">
         <Stack.Toolbar.View hidesSharedBackground>
-          <View style={{ paddingLeft: 4 }}>
-            <Lockup color={color.ink} />
+          {/* Where the header puts it is the margin (lib/margin.ts); the slice's ink sits on it. */}
+          <View
+            ref={header}
+            onLayout={() => header.current?.measureInWindow((x) => measureMargin(x))}
+          >
+            <View style={{ marginLeft: -LOCKUP_INK }}>
+              <Lockup color={color.ink} />
+            </View>
           </View>
         </Stack.Toolbar.View>
       </Stack.Toolbar>
@@ -259,7 +269,7 @@ export default function Designs() {
         ))}
         <View
           style={{
-            paddingHorizontal: 20,
+            paddingHorizontal: m,
             flexDirection: "row",
             flexWrap: "wrap",
             columnGap: 16,
@@ -311,10 +321,11 @@ function listNames(names: string[]): string {
 
 function Notice({ children, gap = 10 }: { children: React.ReactNode; gap?: number }) {
   const { color, shadow } = useTheme();
+  const m = useMargin();
   return (
     <View
       style={{
-        marginHorizontal: 20,
+        marginHorizontal: m,
         marginBottom: 16,
         paddingVertical: gap === 12 ? 12 : 10,
         paddingHorizontal: 14,

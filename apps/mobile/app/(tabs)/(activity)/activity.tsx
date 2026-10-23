@@ -10,6 +10,7 @@ import { useFiles } from "../../../lib/catalog";
 import { shortAgo } from "../../../lib/files";
 import { baseUrl } from "../../../lib/mac";
 import { findMac } from "../../../lib/macs";
+import { useMargin } from "../../../lib/margin";
 import { track } from "../../../lib/telemetry";
 import { useTheme } from "../../../lib/theme";
 import { refreshThreads, useThreadDocs } from "../../../lib/threads";
@@ -25,6 +26,7 @@ export default function Activity() {
   const { color } = useTheme();
   const files = useFiles();
   const docs = useThreadDocs();
+  const m = useMargin();
   // Development: `ponzu://activity?since=<ms>` shows what's new since then.
   const { since } = useLocalSearchParams<{ since?: string }>();
   const { fresh, old } = useActivity(__DEV__ && since ? Number(since) : undefined);
@@ -84,7 +86,7 @@ export default function Activity() {
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{ paddingTop: 8, paddingBottom: 24 }}
       >
-        <View style={{ paddingTop: 4, paddingHorizontal: 20, gap: 12 }}>
+        <View style={{ paddingTop: 4, paddingHorizontal: m, gap: 12 }}>
           {shown.fresh.length > 0 && (
             <>
               <Label text="New" />
