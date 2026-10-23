@@ -126,8 +126,13 @@ export function Studio() {
   // A design an agent creates opens in a tab as soon as it exists, once. Not one it made
   // for its own use: scratch stays out of the way.
   const [seen] = useState(() => new Set<string>());
+  const firstCatalog = useRef(true);
   useEffect(() => {
     if (!catalog) return;
+    // A link the window opened on keeps its tab in front: designs made before the window, and
+    // any made while the linked one loads, join the tabs beside it.
+    const keepLinked = !!linked && (firstCatalog.current || !source(linked.file).getState().doc);
+    firstCatalog.current = false;
     for (const f of catalog.files) {
       if (f.machine !== "local" || !f.created || seen.has(f.key)) continue;
       seen.add(f.key);
@@ -135,9 +140,7 @@ export function Studio() {
       if (f.shelf && f.shelf !== "recent") continue;
       if (Date.now() - f.created > 60_000 || tabs.includes(f.key)) continue;
       setTabs((t) => (t.includes(f.key) ? t : [...t, f.key]));
-      // A link the window opened on keeps its tab in front until its board is up; a design
-      // created meanwhile waits beside it.
-      if (!linked || source(linked.file).getState().doc) setActive(f.key);
+      if (!keepLinked) setActive(f.key);
     }
   }, [catalog]);
 

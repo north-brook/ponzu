@@ -449,11 +449,19 @@ test("an agent's links open where it reached Ponzu, or the Mac app", async () =>
   try {
     // `ponzu serve`: the canvas, at the address this agent connected to.
     ws.opensIn = { origin: "http://localhost:7777" };
-    const info = text(await client.callTool({ name: "get_basic_info", arguments: { file: key } }));
-    expect(info).toContain(`Link: http://127.0.0.1:${server.port}/?file=${key}`);
+    const link = async () => {
+      const info = text(
+        await client.callTool({ name: "get_basic_info", arguments: { file: key } }),
+      );
+      return new URL(/^Link: (\S+)/m.exec(info)![1]!);
+    };
+    const canvas = await link();
+    expect(canvas.origin).toBe(`http://127.0.0.1:${server.port}`);
+    expect(canvas.searchParams.get("file")).toBe(key);
     ws.opensIn = "app";
-    const app = text(await client.callTool({ name: "get_basic_info", arguments: { file: key } }));
-    expect(app).toContain(`Link: ponzu://open?file=${key} `);
+    const app = await link();
+    expect(`${app.protocol}//${app.host}`).toBe("ponzu://open");
+    expect(app.searchParams.get("file")).toBe(key);
   } finally {
     ws.opensIn = undefined;
   }
