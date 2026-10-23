@@ -50,6 +50,9 @@ function rememberMode(m: Mode) {
 }
 
 const ease = Easing.bezier(...EASE_OUT);
+/** The comment field's tallest, and the padding that centres one line of Inter 17 (20.57pt) in 44. */
+const FIELD_MAX = 140;
+const FIELD_PAD = (44 - 20.57) / 2;
 /** Between "Listening…" (or what's said) and the row under it. */
 const GAP = 14;
 
@@ -245,13 +248,14 @@ export function Composer({
                 testID={voice ? undefined : "comment-input"}
                 style={{
                   minHeight: 44,
-                  maxHeight: 140,
-                  paddingTop: 11,
-                  paddingBottom: 11,
+                  maxHeight: FIELD_MAX,
+                  // One line of Inter 17 (its own 20.57pt, no extra leading, which a
+                  // multiline field puts above the first line) centred in 44.
+                  paddingTop: FIELD_PAD,
+                  paddingBottom: FIELD_PAD,
                   paddingHorizontal: 14,
                   fontFamily: "Inter",
                   fontSize: 17,
-                  lineHeight: 22.95,
                   color: color.ink,
                 }}
               />
