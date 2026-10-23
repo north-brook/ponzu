@@ -44,7 +44,7 @@ export const listenTools = [
     group: "listen",
     readOnly: true,
     description:
-      "Long-poll for what people do in the canvas: new comments and replies, edits made in a text editor, other agents' changes. Returns immediately if anything happened after `since`; otherwise waits up to `timeout` seconds. Pass back the returned cursor next time so nothing is missed. This is the heart of the iterate loop (get_guide('iterate')).",
+      "Watch the canvas. Call this instead of ending your turn whenever the person might react to your work there: after you put something up for review, or while you design together. Calling it again and again is the loop (get_guide('watch')). Long-polls for what people do in the canvas: new comments and replies, edits made in a text editor, other agents' changes. Returns immediately if anything happened after `since`; otherwise waits up to `timeout` seconds. Pass back the returned cursor next time so nothing is missed. The person's chat messages still reach you between waits.",
     input: {
       file: fileArg,
       since: z
@@ -90,7 +90,10 @@ export const listenTools = [
         : Math.max(cursor, ws.events.cursor);
       ws.presence.touch(caller, { listening: false, listenedAt: Date.now() });
       if (!events.length)
-        return { text: `Nothing new. cursor=${next}`, data: { cursor: next, events: [] } };
+        return {
+          text: `Nothing new. Wait again with cursor=${next}. The person's chat messages reach you between waits, so keep watching.`,
+          data: { cursor: next, events: [] },
+        };
       return {
         text: `${events.map((e) => describeEvent(design.doc, e.event)).join("\n")}\ncursor=${next}`,
         data: { cursor: next, events: events.map((e) => e.event) },
@@ -190,7 +193,7 @@ export const listenTools = [
     group: "listen",
     readOnly: true,
     description:
-      "House rules and workflows for designing in Ponzu. Read 'basics' once per session before writing. Topics: basics, layout, typography, iterate, variations, implement, format (writing the files directly), motion, mobile.",
+      "House rules and workflows for designing in Ponzu. Read 'basics' once per session before writing. Topics: basics, layout, typography, watch (the comment loop), variations, implement, format (writing the files directly), motion, mobile.",
     input: { topic: z.enum(Object.keys(GUIDES) as [GuideTopic, ...GuideTopic[]]) },
     handler({ topic }) {
       return { text: GUIDES[topic] };

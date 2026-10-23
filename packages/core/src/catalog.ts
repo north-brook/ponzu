@@ -46,7 +46,7 @@ export interface CatalogFile {
   locked?: boolean;
   /** The agent editing it right now (its client: claude, openai, …). */
   busy?: string;
-  /** The agents in it now, working or iterating. Missing from Macs on older versions. */
+  /** The agents in it now, working or watching. Missing from Macs on older versions. */
   agents?: CatalogFileAgent[];
   /** When an agent created it, if that happened since this server started. */
   created?: number;
@@ -184,7 +184,7 @@ export interface CatalogFileAgent {
   client?: string;
   /** What it said it's doing, from set_status. */
   status?: string;
-  activity: "working" | "iterating";
+  activity: "working" | "watching";
 }
 
 /**

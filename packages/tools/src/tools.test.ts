@@ -8,6 +8,7 @@ import { Design, MemoryAdapter } from "@ponzu/store";
 import { EventHub, PresenceHub, type ToolContext, type Workspace, within } from "./context.ts";
 import { FORMAT_EXAMPLE, GUIDES } from "./guides.ts";
 import { getTool, runTool } from "./index.ts";
+import { WATCH_REMINDER } from "./see.ts";
 import { plural } from "./util.ts";
 
 async function setup(tokens = 3, renderer?: Renderer) {
@@ -327,6 +328,28 @@ test("screenshot says when fonts or images ran out of time", async () => {
   const r = await call("screenshot", { id: "ab_hero" });
   expect(r.isError).toBeFalsy();
   expect(r.text).toContain("still loading when time ran out");
+});
+
+test("a screenshot reminds an agent that isn't watching to watch the canvas, now and then", async () => {
+  const { renderer } = fakeRenderer({});
+  const { call } = await setup(3, renderer);
+  expect((await call("screenshot", { id: "ab_hero" })).text).toContain(WATCH_REMINDER);
+  // Not on every check of a long build.
+  expect((await call("screenshot", { id: "ab_hero" })).text).not.toContain(WATCH_REMINDER);
+});
+
+test("an agent watching the canvas isn't reminded to", async () => {
+  const { renderer } = fakeRenderer({});
+  const { call } = await setup(3, renderer);
+  await call("wait_for_activity", { timeout: 0 });
+  expect((await call("screenshot", { id: "ab_hero" })).text).not.toContain(WATCH_REMINDER);
+});
+
+test("a wait that hears nothing says to wait again", async () => {
+  const { call } = await setup();
+  const r = await call("wait_for_activity", { timeout: 0 });
+  expect(r.text).toMatch(/^Nothing new\. Wait again with cursor=\d+\./);
+  expect(r.text).toContain("chat messages reach you between waits");
 });
 
 test("screenshot checks hover, focus and press ids before rendering", async () => {

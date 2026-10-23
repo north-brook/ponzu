@@ -107,9 +107,9 @@ export function createMcpServer(ws: Workspace, opts: McpOptions = {}): McpServer
   }
 
   server.registerPrompt(
-    "iterate",
+    "watch",
     {
-      title: "Iterate on comments",
+      title: "Watch my comments",
       description:
         "Watch the canvas: pick up comments as the person leaves them, make the changes, and resolve them.",
       argsSchema: { file: z.string().optional() },
@@ -120,7 +120,7 @@ export function createMcpServer(ws: Workspace, opts: McpOptions = {}): McpServer
           role: "user",
           content: {
             type: "text",
-            text: `Run the Ponzu iterate loop${file ? ` on ${file}` : ""}. Read get_guide('iterate'), then call wait_for_activity in a loop and handle each comment until I tell you to stop.`,
+            text: `Watch the Ponzu canvas${file ? ` for ${file}` : ""}. Read get_guide('watch'), then call wait_for_activity in a loop and handle each comment until I tell you to stop.`,
           },
         },
       ],
@@ -140,7 +140,7 @@ export function createMcpServer(ws: Workspace, opts: McpOptions = {}): McpServer
           role: "user",
           content: {
             type: "text",
-            text: `Design this in Ponzu: ${brief}\n\nRead get_guide('basics'). Write the brief and your direction to a note, set tokens, then build the first artboard in small pieces, screenshotting as you go. Offer two or three variations of the key screen side by side.`,
+            text: `Design this in Ponzu: ${brief}\n\nRead get_guide('basics'). Write the brief and your direction to a note, set tokens, then build the first artboard in small pieces, screenshotting as you go. Offer two or three variations of the key screen side by side, then watch the canvas for my comments (get_guide('watch')).`,
           },
         },
       ],

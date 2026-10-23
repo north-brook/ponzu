@@ -1,6 +1,7 @@
 import { type Artboard, findArtboard, findNode, isThemed, locate } from "@ponzu/core";
 import type { Interaction, MotionAnimation, MotionInfo } from "@ponzu/render";
 import { z } from "zod";
+import type { ToolContext } from "./context.ts";
 import { fileArg, ToolError, type ToolImage, tool } from "./define.ts";
 import { footprintsAround, overlapIssues, overlaps } from "./overlap.ts";
 import { resolveFile } from "./util.ts";
@@ -45,6 +46,17 @@ const interactionArgs = {
     .optional()
     .describe("Node id to press (pointer down) first. :active and :hover apply."),
 };
+
+/**
+ * Checking work is the moment before an agent hands it back, and so the moment
+ * it decides whether to end its turn or watch for the person's comments.
+ */
+export const WATCH_REMINDER =
+  "Once this pass is done, watch the canvas (wait_for_activity) instead of ending your turn: the person can steer with comments, and chat still reaches you between waits.";
+
+function remindToWatch({ ws, caller }: ToolContext): boolean {
+  return caller.author.kind === "agent" && ws.presence.shouldRemindToWatch(caller.id);
+}
 
 export const seeTools = [
   tool({
@@ -134,6 +146,7 @@ export const seeTools = [
         lines.push(`Content height: ${out.contentHeight}px.`);
       lines.push(lint);
       if (out.motion?.animations.length) lines.push(motionText(out.motion));
+      if (remindToWatch(ctx)) lines.push(WATCH_REMINDER);
       return {
         text: lines.join("\n"),
         images: [image],
@@ -236,6 +249,7 @@ export const seeTools = [
       if (out.issues.length)
         lines.push(`${at}:\n${out.issues.map((i) => `  ${i.id}: ${i.message}`).join("\n")}`);
       else lines.push(`${at}: clean.`);
+      if (remindToWatch(ctx)) lines.push(WATCH_REMINDER);
       return {
         text: lines.join("\n"),
         images: [{ data: toBase64(out.bytes), mime: out.mime }],
