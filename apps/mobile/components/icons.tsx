@@ -1,95 +1,119 @@
-import Svg, { Circle, Path, Rect } from "react-native-svg";
+import {
+  ArrowDown01Icon,
+  ArrowLeft01Icon,
+  ArrowUp02Icon,
+  Cancel01Icon,
+  ComputerIcon,
+  DashboardSquare01Icon,
+  File01Icon,
+  FlowConnectionIcon,
+  Folder01Icon,
+  GitBranchIcon,
+  KeyboardIcon,
+  LaptopIcon,
+  Layout01Icon,
+  Mic01Icon,
+  MicOff01Icon,
+  Moon02Icon,
+  Notification01Icon,
+  PaintBoardIcon,
+  QrCodeIcon,
+  RefreshIcon,
+  Search01Icon,
+  SmartPhone01Icon,
+  Tablet01Icon,
+  Tick02Icon,
+} from "@hugeicons/core-free-icons";
+import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react-native";
+import Svg, { Circle, Path } from "react-native-svg";
 import { SLICE, SLICE_STROKE } from "../lib/mark";
 
 /**
- * The design's line icons, drawn on a 24-unit grid as its artboards draw
- * them. `color` is the stroke; sizes and stroke widths come from each use.
+ * The app's icons: Hugeicons, the set the brand and desktop draw with
+ * (packages/react/src/icons.tsx), by desktop's names where the concept is
+ * the same. `color` is the stroke; sizes and stroke widths come from each
+ * use. The Ponzu slice, Tailscale's dots and the agents' marks are brand
+ * marks, drawn as their owners draw them, at the end of this file.
  */
 type P = { size?: number; color: string; width?: number };
 
-const line = (size: number, color: string, width: number) => ({
-  width: size,
-  height: size,
-  viewBox: "0 0 24 24",
-  fill: "none",
-  stroke: color,
-  strokeWidth: width,
-  strokeLinecap: "round" as const,
-  strokeLinejoin: "round" as const,
-});
+/** The Hugeicons each icon below draws; desktop's `Icons` names in comments. */
+export const ICONS = {
+  back: ArrowLeft01Icon,
+  /** close */
+  close: Cancel01Icon,
+  /** chevronDown */
+  chevron: ArrowDown01Icon,
+  /** check */
+  check: Tick02Icon,
+  bell: Notification01Icon,
+  search: Search01Icon,
+  branch: GitBranchIcon,
+  folder: Folder01Icon,
+  laptop: LaptopIcon,
+  desktop: ComputerIcon,
+  moon: Moon02Icon,
+  qr: QrCodeIcon,
+  refresh: RefreshIcon,
+  mic: Mic01Icon,
+  micOff: MicOff01Icon,
+  keyboard: KeyboardIcon,
+  send: ArrowUp02Icon,
+  file: File01Icon,
+  phone: SmartPhone01Icon,
+  tablet: Tablet01Icon,
+  palette: PaintBoardIcon,
+  flow: FlowConnectionIcon,
+  layout: Layout01Icon,
+  /** board: a page with no icon of its own. */
+  board: DashboardSquare01Icon,
+} as const satisfies Record<string, IconSvgElement>;
 
-export const Back = ({ size = 20, color, width = 1.8 }: P) => (
-  <Svg {...line(size, color, width)}>
-    <Path d="M14 6l-6 6 6 6" />
-  </Svg>
-);
-export const Close = ({ size = 20, color, width = 2 }: P) => (
-  <Svg {...line(size, color, width)}>
-    <Path d="M6 6l12 12M18 6L6 18" />
-  </Svg>
-);
-export const Chevron = ({ size = 14, color, width = 2 }: P) => (
-  <Svg {...line(size, color, width)}>
-    <Path d="M7 10l5 5 5-5" />
-  </Svg>
-);
-export const Check = ({ size = 16, color, width = 2.2 }: P) => (
-  <Svg {...line(size, color, width)}>
-    <Path d="M5 12.5l4.5 4.5L19 7.5" />
-  </Svg>
-);
-export const Bell = ({ size = 20, color, width = 1.8 }: P) => (
-  <Svg {...line(size, color, width)}>
-    <Path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z" />
-    <Path d="M10 20.5a2.2 2.2 0 0 0 4 0" />
-  </Svg>
-);
-export const Search = ({ size = 18, color, width = 1.8 }: P) => (
-  <Svg {...line(size, color, width)}>
-    <Circle cx="11" cy="11" r="6.5" />
-    <Path d="M16 16l4.5 4.5" />
-  </Svg>
-);
-export const Branch = ({ size = 13, color, width = 1.7 }: P) => (
-  <Svg {...line(size, color, width)}>
-    <Circle cx="7" cy="5.5" r="2" />
-    <Circle cx="7" cy="18.5" r="2" />
-    <Circle cx="17" cy="8" r="2" />
-    <Path d="M7 7.5v9M17 10c0 4-10 2.5-10 6.5" />
-  </Svg>
-);
-export const Folder = ({ size = 13, color, width = 1.7 }: P) => (
-  <Svg {...line(size, color, width)}>
-    <Path d="M3.5 7.5A1.5 1.5 0 0 1 5 6h4.2l2 2H19a1.5 1.5 0 0 1 1.5 1.5v8A1.5 1.5 0 0 1 19 19H5a1.5 1.5 0 0 1-1.5-1.5z" />
-  </Svg>
-);
-export const Laptop = ({ size = 13, color, width = 1.7 }: P) => (
-  <Svg {...line(size, color, width)}>
-    <Rect width="15" height="10.5" x="4.5" y="5" rx="1.5" />
-    <Path d="M2.5 18.5h19" />
-  </Svg>
-);
-export const Desktop = ({ size = 13, color, width = 1.7 }: P) => (
-  <Svg {...line(size, color, width)}>
-    <Rect width="18" height="12.5" x="3" y="4" rx="2" />
-    <Path d="M9 20.5h6M12 16.5v4" />
-  </Svg>
-);
+function icon(svg: IconSvgElement, size: number, width: number) {
+  return ({ size: s = size, color, width: w = width }: P) => (
+    <HugeiconsIcon icon={svg} size={s} color={color} strokeWidth={w} />
+  );
+}
+
+export const Back = icon(ICONS.back, 20, 1.8);
+export const Close = icon(ICONS.close, 20, 2);
+export const Chevron = icon(ICONS.chevron, 14, 2);
+export const Check = icon(ICONS.check, 16, 2.2);
+export const Bell = icon(ICONS.bell, 20, 1.8);
+export const Search = icon(ICONS.search, 18, 1.8);
+export const Branch = icon(ICONS.branch, 13, 1.7);
+export const Folder = icon(ICONS.folder, 13, 1.7);
+export const Laptop = icon(ICONS.laptop, 13, 1.7);
+export const Desktop = icon(ICONS.desktop, 13, 1.7);
 export const MacIcon = ({ kind, ...p }: P & { kind: "laptop" | "desktop" }) =>
   kind === "desktop" ? <Desktop {...p} /> : <Laptop {...p} />;
-export const Moon = ({ size = 12, color, width = 2 }: P) => (
-  <Svg {...line(size, color, width)}>
-    <Path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" />
-  </Svg>
-);
-export const QR = ({ size = 20, color, width = 1.8 }: P) => (
-  <Svg {...line(size, color, width)}>
-    <Rect width="6.5" height="6.5" x="3.5" y="3.5" rx="1.2" />
-    <Rect width="6.5" height="6.5" x="14" y="3.5" rx="1.2" />
-    <Rect width="6.5" height="6.5" x="3.5" y="14" rx="1.2" />
-    <Path d="M14 14h2.5v2.5H14zM18 18h2.5v2.5H18zM14 18.5v2M18.5 14h2" />
-  </Svg>
-);
+export const Moon = icon(ICONS.moon, 12, 2);
+export const QR = icon(ICONS.qr, 20, 1.8);
+export const Refresh = icon(ICONS.refresh, 20, 2);
+export const Mic = icon(ICONS.mic, 20, 1.8);
+export const MicOff = icon(ICONS.micOff, 20, 1.8);
+export const Keyboard = icon(ICONS.keyboard, 20, 1.8);
+export const Send = icon(ICONS.send, 20, 2.4);
+export const FileIcon = icon(ICONS.file, 16, 1.7);
+
+/** A page's icon, by the names design.json uses (the studio's Icons). */
+export function PageIcon({ name, size = 16, color, width = 1.7 }: P & { name?: string }) {
+  const svg =
+    name === "phone" ||
+    name === "desktop" ||
+    name === "tablet" ||
+    name === "palette" ||
+    name === "flow" ||
+    name === "layout"
+      ? ICONS[name]
+      : ICONS.board;
+  return <HugeiconsIcon icon={svg} size={size} color={color} strokeWidth={width} />;
+}
+
+/**
+ * The connector between the marks on Connect and Tailscale: arrows both
+ * ways, 22×10. A line drawing of the design's, not an icon.
+ */
 export const Swap = ({ size = 22, color, width = 1.8 }: P) => (
   <Svg width={size} height={(size * 10) / 22} viewBox="0 0 22 10" fill="none" stroke={color}>
     <Path
@@ -100,98 +124,12 @@ export const Swap = ({ size = 22, color, width = 1.8 }: P) => (
     />
   </Svg>
 );
+/** The broken connector to a Mac that isn't answering. */
 export const Dashes = ({ size = 22, color, width = 1.8 }: P) => (
   <Svg width={size} height={(size * 10) / 22} viewBox="0 0 22 10" fill="none" stroke={color}>
     <Path d="M1 5h20" strokeWidth={width} strokeDasharray="3 3" />
   </Svg>
 );
-export const Refresh = ({ size = 20, color, width = 2 }: P) => (
-  <Svg {...line(size, color, width)}>
-    <Path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4h-4" />
-  </Svg>
-);
-export const Mic = ({ size = 20, color, width = 1.8 }: P) => (
-  <Svg {...line(size, color, width)}>
-    <Rect width="6" height="11" x="9" y="3" rx="3" />
-    <Path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" />
-  </Svg>
-);
-export const MicOff = ({ size = 20, color, width = 1.8 }: P) => (
-  <Svg {...line(size, color, width)}>
-    <Rect width="6" height="11" x="9" y="3" rx="3" />
-    <Path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M4 4l16 16" />
-  </Svg>
-);
-export const Keyboard = ({ size = 20, color, width = 1.8 }: P) => (
-  <Svg {...line(size, color, width)}>
-    <Rect width="19" height="12" x="2.5" y="6" rx="2" />
-    <Path d="M6 9.5h.01M9.3 9.5h.01M12.6 9.5h.01M15.9 9.5h.01M18 9.5h.01M7 14.5h10" />
-  </Svg>
-);
-export const Send = ({ size = 20, color, width = 2.4 }: P) => (
-  <Svg {...line(size, color, width)}>
-    <Path d="M12 19V5M6 11l6-6 6 6" />
-  </Svg>
-);
-export const FileIcon = ({ size = 16, color, width = 1.7 }: P) => (
-  <Svg {...line(size, color, width)}>
-    <Path d="M13.5 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.5z" />
-    <Path d="M13.5 3v5.5H19" />
-  </Svg>
-);
-
-/** A page's icon, by the names design.json uses (the studio's Icons). */
-export function PageIcon({ name, ...p }: P & { name?: string }) {
-  switch (name) {
-    case "phone":
-      return (
-        <Svg {...line(p.size ?? 16, p.color, p.width ?? 1.7)}>
-          <Rect width="11" height="19" x="6.5" y="2.5" rx="3" />
-          <Path d="M10.5 5.5h3" />
-        </Svg>
-      );
-    case "desktop":
-      return <Desktop size={p.size ?? 16} color={p.color} width={p.width ?? 1.7} />;
-    case "tablet":
-      return (
-        <Svg {...line(p.size ?? 16, p.color, p.width ?? 1.7)}>
-          <Rect width="15" height="19" x="4.5" y="2.5" rx="2.5" />
-          <Path d="M11 18.5h2" />
-        </Svg>
-      );
-    case "palette":
-      return (
-        <Svg {...line(p.size ?? 16, p.color, p.width ?? 1.7)}>
-          <Path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.6-.8 1.6-1.6 0-.9-.7-1.3-.7-2.2 0-.9.7-1.7 1.7-1.7H17a4 4 0 0 0 4-4C21 6.6 17 3 12 3z" />
-          <Circle cx="7.5" cy="11" r="1" />
-          <Circle cx="10" cy="7" r="1" />
-          <Circle cx="15" cy="7.5" r="1" />
-        </Svg>
-      );
-    case "flow":
-      return (
-        <Svg {...line(p.size ?? 16, p.color, p.width ?? 1.7)}>
-          <Rect width="6" height="5" x="3" y="3.5" rx="1.2" />
-          <Rect width="6" height="5" x="15" y="15.5" rx="1.2" />
-          <Path d="M6 8.5v4a2 2 0 0 0 2 2h7" />
-        </Svg>
-      );
-    case "layout":
-      return (
-        <Svg {...line(p.size ?? 16, p.color, p.width ?? 1.7)}>
-          <Rect width="17" height="17" x="3.5" y="3.5" rx="2" />
-          <Path d="M3.5 9h17M9.5 9v11.5" />
-        </Svg>
-      );
-    default:
-      return (
-        <Svg {...line(p.size ?? 16, p.color, p.width ?? 1.7)}>
-          <Rect width="17" height="17" x="3.5" y="3.5" rx="2" />
-          <Path d="M3.5 12h17M12 3.5v17" />
-        </Svg>
-      );
-  }
-}
 
 /** The Ponzu slice, flat (no bloom): for marks, the lockup and small places. */
 export function SliceMark({ size, color }: { size: number; color: string }) {

@@ -1,6 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ImpactFeedbackStyle, impactAsync, selectionAsync } from "expo-haptics";
-import { SymbolView } from "expo-symbols";
 import { useEffect, useRef, useState } from "react";
 import {
   type LayoutChangeEvent,
@@ -213,9 +212,7 @@ export function Composer({
               onPress={() => dictation.setMuted(!dictation.muted)}
               testID="mute"
             >
-              <Glyph name={dictation.muted ? "mic.slash" : "mic"} color={color.ink}>
-                {dictation.muted ? <MicOff color={color.ink} /> : <Mic color={color.ink} />}
-              </Glyph>
+              {dictation.muted ? <MicOff color={color.ink} /> : <Mic color={color.ink} />}
             </RoundButton>
           </Animated.View>
         </Animated.View>
@@ -270,9 +267,7 @@ export function Composer({
         </Animated.View>
         {has ? (
           <RoundButton tone="ink" label="Send" onPress={send} disabled={sending} testID="send">
-            <Glyph name="arrow.up" weight="semibold" color={color.bg}>
-              <Send color={color.bg} />
-            </Glyph>
+            <Send color={color.bg} />
           </RoundButton>
         ) : (
           <SwitchButton
@@ -322,42 +317,14 @@ function SwitchButton({
       <Glass interactive style={round}>
         <View style={{ width: 24, height: 24 }}>
           <Animated.View style={[centered, mic]}>
-            <Glyph name="mic" color={color.ink}>
-              <Mic color={color.ink} />
-            </Glyph>
+            <Mic color={color.ink} />
           </Animated.View>
           <Animated.View style={[centered, keys]}>
-            <Glyph name="keyboard" color={color.ink}>
-              <Keyboard color={color.ink} />
-            </Glyph>
+            <Keyboard color={color.ink} />
           </Animated.View>
         </View>
       </Glass>
     </Pressable>
-  );
-}
-
-/** A system concept's SF Symbol, 20pt; the design's line icon where there are no symbols. */
-function Glyph({
-  name,
-  color,
-  weight = "regular",
-  children,
-}: {
-  name: "mic" | "mic.slash" | "keyboard" | "arrow.up";
-  color: string;
-  weight?: "regular" | "semibold";
-  children: React.ReactNode;
-}) {
-  return (
-    <SymbolView
-      name={name}
-      size={20}
-      weight={weight}
-      tintColor={color}
-      fallback={children}
-      style={{ width: 22, height: 22 }}
-    />
   );
 }
 

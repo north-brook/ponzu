@@ -14,7 +14,7 @@
     },
     "apps/cli": {
       "name": "ponzu",
-      "version": "1.36.0",
+      "version": "1.37.0",
       "bin": {
         "ponzu": "./src/index.ts",
       },
@@ -30,7 +30,7 @@
     },
     "apps/desktop": {
       "name": "@ponzu/desktop",
-      "version": "1.36.0",
+      "version": "1.37.0",
       "dependencies": {
         "electron-updater": "6.8.9",
       },
@@ -49,6 +49,8 @@
         "@expo-google-fonts/funnel-display": "^0.4.1",
         "@expo-google-fonts/ibm-plex-mono": "^0.4.1",
         "@expo-google-fonts/inter": "^0.4.2",
+        "@hugeicons/core-free-icons": "^4.3.5",
+        "@hugeicons/react-native": "^1.0.16",
         "@ponzu/core": "workspace:*",
         "@react-native-async-storage/async-storage": "2.2.0",
         "@tanstack/query-async-storage-persister": "^5.102.8",
@@ -558,6 +560,8 @@
     "@hugeicons/core-free-icons": ["@hugeicons/core-free-icons@4.3.5", "", {}, "sha512-Sv+NjHRPnQk+yZsGCMcGznCHdTfJR9PMMOEKcJYAQU4gy90dmlc9PwdtvYOImBZIjiheMsTLL5eMn2DmHxUiUg=="],
 
     "@hugeicons/react": ["@hugeicons/react@1.1.10", "", { "peerDependencies": { "react": ">=16.0.0" } }, "sha512-9tAsd92yMVVGP+E+d8cM+wc0VnXuYZHNbWQi7TOe8k2neawmhiaFmVFbzyruejhOMa197/LbgvSED32ayUo3ZA=="],
+
+    "@hugeicons/react-native": ["@hugeicons/react-native@1.0.16", "", { "peerDependencies": { "react": ">=16.0.0", "react-native": ">=0.60.0", "react-native-svg": ">=12.0.0" } }, "sha512-566CkIQPK82oa2Q3sadoNrGgxlsFH7JBz+mXZ8cqelm1o+KFfNhXXgJAII5+OI4nilEBSH2qPQzo9H80uNRUOA=="],
 
     "@img/colour": ["@img/colour@1.1.0", "", {}, "sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ=="],
 
