@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import Animated, {
@@ -35,7 +35,11 @@ import { brand, EASE_OUT } from "../../lib/tokens";
  */
 export default function Connect() {
   const { color } = useTheme();
-  const nearby = useNearbyMacs();
+  const found = useNearbyMacs();
+  // Development: `ponzu://connect?nearby=none` shows 4b while this Mac advertises.
+  const params = useLocalSearchParams<{ nearby?: string }>();
+  const nearby =
+    __DEV__ && params.nearby === "none" ? { ...found, macs: [], settled: true } : found;
   const [error, setError] = useState<string | null>(null);
   const nothing = nearby.settled;
   const scan = () => router.push("/connect/scan");
@@ -67,7 +71,13 @@ export default function Connect() {
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 4 }}>
           <Ping on={!nothing} />
           <Text
-            style={{ fontFamily: "Inter", fontWeight: "600", fontSize: 13, color: color.muted }}
+            style={{
+              fontFamily: "Inter",
+              fontWeight: "600",
+              fontSize: 13,
+              lineHeight: 13,
+              color: color.muted,
+            }}
           >
             On this Wi-Fi
           </Text>

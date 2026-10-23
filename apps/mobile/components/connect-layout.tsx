@@ -6,19 +6,24 @@ import { AppTile } from "./chrome";
 
 /**
  * The Connect pages' frame: two marks joined by a link, a display title,
- * body text, then the screen's own content, and the actions straight under
- * it (the design's Content and Actions, in one column that scrolls when the
- * text is large).
+ * body text and the screen's own content (the design's Content), then the
+ * actions pinned to the bottom, 58pt above the screen's edge (Actions). One
+ * column that scrolls when the text is large; the actions follow the content
+ * then, instead of covering it.
  */
 export function ConnectLayout({
+  tile,
   other,
   link,
   title,
   body,
   children,
   actions,
+  rise,
   testID,
 }: {
+  /** The left-hand tile, the yuzu app tile unless the launch handoff draws its own. */
+  tile?: ReactNode;
   /** The right-hand mark's tile. */
   other: ReactNode;
   link: ReactNode;
@@ -26,48 +31,66 @@ export function ConnectLayout({
   body: string;
   children?: ReactNode;
   actions: ReactNode;
+  /** Wraps the parts that rise in after the launch handoff (Content's text and Actions). */
+  rise?: (part: ReactNode, key: "content" | "actions") => ReactNode;
   testID?: string;
 }) {
   const { color } = useTheme();
   const insets = useSafeAreaInsets();
+  const wrap = rise ?? ((part: ReactNode) => part);
   return (
     <View testID={testID} style={{ flex: 1, backgroundColor: color.bg }}>
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingTop: insets.top + 56, paddingHorizontal: 28 }}
+        contentContainerStyle={{ flexGrow: 1, paddingTop: insets.top + 56 }}
         bounces={false}
       >
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-          <AppTile />
-          {link}
-          {other}
+        <View style={{ flexGrow: 1, paddingHorizontal: 28, paddingBottom: 24 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+            {tile ?? <AppTile />}
+            {wrap(
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                {link}
+                {other}
+              </View>,
+              "content",
+            )}
+          </View>
+          {wrap(
+            <View>
+              <Text
+                style={{
+                  marginTop: 28,
+                  fontFamily: "Funnel Display",
+                  fontWeight: "700",
+                  fontSize: 34,
+                  lineHeight: 34 * 1.08,
+                  letterSpacing: -0.03 * 34,
+                  color: color.ink,
+                }}
+              >
+                {title}
+              </Text>
+              <Text
+                style={{
+                  marginTop: 14,
+                  fontFamily: "Inter",
+                  fontSize: 17,
+                  lineHeight: 17 * 1.5,
+                  color: color.muted,
+                }}
+              >
+                {body}
+              </Text>
+              {children}
+            </View>,
+            "content",
+          )}
         </View>
-        <Text
-          style={{
-            marginTop: 28,
-            fontFamily: "Funnel Display",
-            fontWeight: "700",
-            fontSize: 34,
-            lineHeight: 34 * 1.08,
-            letterSpacing: -0.03 * 34,
-            color: color.ink,
-          }}
-        >
-          {title}
-        </Text>
-        <Text
-          style={{
-            marginTop: 14,
-            fontFamily: "Inter",
-            fontSize: 17,
-            lineHeight: 17 * 1.5,
-            color: color.muted,
-          }}
-        >
-          {body}
-        </Text>
-        {children}
-        <View style={{ marginHorizontal: -8, paddingBottom: 58, gap: 10 }}>{actions}</View>
+        {wrap(
+          <View style={{ paddingHorizontal: 20, paddingBottom: 58, gap: 10 }}>{actions}</View>,
+          "actions",
+        )}
       </ScrollView>
     </View>
   );
