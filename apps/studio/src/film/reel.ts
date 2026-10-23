@@ -307,6 +307,8 @@ export async function buildReel(input: ReelInput): Promise<Reel> {
   })();
   const order: string[] = [];
   const writes: { board: string; ids: string[]; weights: number[] }[] = [];
+  /** Per board, the journal index of the agent's last change to it. */
+  const lastAgentEdit = new Map<string, number>();
   const frozen = new Map<string, { ab: Artboard; tokens: string; at: number }>();
   const comments: {
     thread: string;
@@ -345,6 +347,7 @@ export async function buildReel(input: ReelInput): Promise<Reel> {
     }
     if (!tryApply(doc, e.op)) continue;
     if (e.origin.kind !== "agent") continue;
+    for (const id of e.artboards) lastAgentEdit.set(id, i);
     const brought = arrivals(e.op);
     for (const id of e.artboards) {
       if (notes.has(id) || frozen.has(id)) continue;
@@ -353,13 +356,10 @@ export async function buildReel(input: ReelInput): Promise<Reel> {
       const ab = findArtboard(doc, id)!.artboard;
       const mine = brought.filter((x) => findIn(ab.root, x));
       if (!mine.length) {
-        // A screen that was already there and is only edited in this stretch: it's in the film as
-        // it stood at the start, and its edits are its revision.
-        const was = findArtboard(start, id)?.artboard;
-        if (was && !order.includes(id)) {
-          order.push(id);
-          frozen.set(id, { ab: structuredClone(was), tokens: start.tokens, at: startAt });
-        }
+        // A screen that was already there and is only edited in this stretch is in the film like
+        // any other: its first pass is how it stands when the person next steps in (so edits
+        // before a comment are part of it, never presented as that comment's answer).
+        if (findArtboard(start, id) && !order.includes(id)) order.push(id);
         continue;
       }
       if (!order.includes(id)) order.push(id);
@@ -530,7 +530,10 @@ export async function buildReel(input: ReelInput): Promise<Reel> {
   // shot, in the order built. A change nobody asked for (a tweak on the agent's own) just shows
   // in the last shot.
   const asked = (id: string) =>
-    comments.some((c) => c.board === id && c.i >= (frozen.get(id)?.at ?? 0));
+    comments.some(
+      (c) =>
+        c.board === id && c.i >= (frozen.get(id)?.at ?? 0) && (lastAgentEdit.get(id) ?? -1) > c.i,
+    );
   const reviseShots = shots
     .map((s, k) => ({
       k,

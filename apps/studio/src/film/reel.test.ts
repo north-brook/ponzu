@@ -99,6 +99,55 @@ describe("reel", () => {
     expect([...reel.boards.keys()]).toEqual(["ab_one"]);
   });
 
+  test("an edit before a comment isn't shown as that comment's answer", async () => {
+    const before = journal(
+      { op: board("ab_one") },
+      { op: insert("ab_one_root", [el("n_card", [el("n_title", [text("Hello")])])]) },
+    );
+    // In the filmed stretch: the agent restyles the card, then the person comments, and the
+    // agent does nothing more. The comment is unanswered: no revise shot, no pin checked off.
+    const entries: JournalEntry[] = [
+      ...before,
+      {
+        v: 1,
+        t: 60_000,
+        kind: "op",
+        op: { op: "style", id: "n_card", style: { background: "red" } },
+        origin: agent,
+        artboards: ["ab_one"],
+      },
+      {
+        v: 1,
+        t: 61_000,
+        kind: "op",
+        op: {
+          op: "thread.create",
+          thread: {
+            id: "th_1",
+            artboardId: "ab_one",
+            x: 10,
+            y: 10,
+            status: "open",
+            createdAt: 61_000,
+            updatedAt: 61_000,
+            messages: [{ id: "m1", author: person, text: "Make it bluer.", createdAt: 61_000 }],
+          },
+        },
+        origin: person,
+        artboards: ["ab_one"],
+      },
+    ];
+    const reel = await buildReel({
+      name: "Test",
+      entries,
+      shape: "16:9",
+      range: { from: 50_000, to: 70_000 },
+      theme: "light",
+    });
+    expect(reel.segments.some((s) => s.kind === "revise")).toBe(false);
+    expect(reel.comments).toEqual([]);
+  });
+
   test("nothing made or changed in the stretch says so rather than crashing", async () => {
     await expect(
       buildReel({
