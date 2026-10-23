@@ -65,9 +65,9 @@ export class LocalWorkspace implements Workspace {
   /** The server that serves designs' assets, once there is one, so renders can load them. */
   assetOrigin?: string;
   /**
-   * Where links to designs open: the Mac app, by ponzu://, or this server's canvas in a browser,
-   * at the origin the agent reached it at when there is one. Unset, as when `ponzu mcp` runs the
-   * tools itself, there's nothing to open and no links.
+   * Where links to designs open: the Mac app, by ponzu.design/open, or this server's canvas in a
+   * browser, at the origin the agent reached it at when there is one. Unset, as when `ponzu mcp`
+   * runs the tools itself, there's nothing to open and no links.
    */
   opensIn?: "app" | { origin: string };
   /** Where the studio's film page is served, when not at assetOrigin (the dev studio). */
