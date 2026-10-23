@@ -57,6 +57,7 @@ export function createMcpServer(ws: Workspace, opts: McpOptions = {}): McpServer
       id,
       author: { kind: "agent", name: displayName(info?.name) },
       client: clientKind(info?.name),
+      reachedAt: opts.caller?.reachedAt,
       origin: {
         clientName: info?.name,
         clientVersion: info?.version,
@@ -227,7 +228,13 @@ export function createHttpHandler(
     };
     const server = createMcpServer(ws, {
       ...opts,
-      caller: { id: callerId, ...opts.caller, origin: originFrom(req) },
+      // Links it hands the person use the address it reached us at, not this machine's localhost.
+      caller: {
+        id: callerId,
+        ...opts.caller,
+        origin: originFrom(req),
+        reachedAt: new URL(req.url).origin,
+      },
     });
     await server.connect(transport);
     return transport.handleRequest(req);

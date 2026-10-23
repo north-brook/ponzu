@@ -441,3 +441,28 @@ test("a home screen card's watch socket hears an agent's edits and can't make an
   expect(design.seq).toBe(before + 1);
   card.close();
 });
+
+test("an agent's links open where it reached Ponzu, or the Mac app", async () => {
+  const key = join(dir, "linked.design");
+  const created = text(await client.callTool({ name: "create_file", arguments: { path: key } }));
+  expect(created).not.toContain("Link:");
+  try {
+    // `ponzu serve`: the canvas, at the address this agent connected to.
+    ws.opensIn = { origin: "http://localhost:7777" };
+    const link = async () => {
+      const info = text(
+        await client.callTool({ name: "get_basic_info", arguments: { file: key } }),
+      );
+      return new URL(/^Link: (\S+)/m.exec(info)![1]!);
+    };
+    const canvas = await link();
+    expect(canvas.origin).toBe(`http://127.0.0.1:${server.port}`);
+    expect(canvas.searchParams.get("file")).toBe(key);
+    ws.opensIn = "app";
+    const app = await link();
+    expect(`${app.protocol}//${app.host}`).toBe("ponzu://open");
+    expect(app.searchParams.get("file")).toBe(key);
+  } finally {
+    ws.opensIn = undefined;
+  }
+});
