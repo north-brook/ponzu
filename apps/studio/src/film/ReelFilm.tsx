@@ -1,31 +1,16 @@
 import { bezier, clamp01, ease, progress } from "@ponzu/core";
-import {
-  ARRIVE_EASING,
-  ARRIVE_LAG_MS,
-  ARRIVE_MS,
-  Icon,
-  pinClass,
-  pinWrapClass,
-  SLICE,
-  SLICE_STROKE,
-  Trace,
-} from "@ponzu/react";
+import { Icon, pinClass, pinWrapClass, SLICE, SLICE_STROKE, Trace } from "@ponzu/react";
 import { useLayoutEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { applyRise, FilmBoard } from "./Film.tsx";
-import type { Reel, ReelComment } from "./reel.ts";
+import { PIECE_MS, type Reel, type ReelComment, SHEET_LEAD } from "./reel.ts";
 
+/** Between one new piece of a revision and the next (s). */
+const REV_STEP = 0.07;
 /** A revision's old pieces fade off over this long while the new arrive. */
 const OUT = 0.15;
 /** A shot's lean runs on a touch past its cut (s). */
 const CUT = 0.16;
-
-const arriveEase = (() => {
-  const m = ARRIVE_EASING.match(/[\d.]+/g)!.map(Number) as [number, number, number, number];
-  return bezier(...m);
-})();
-/** How far a sheet's sweep has got, `ms` after its first piece's write. */
-const sweep = (ms: number) => arriveEase(clamp01((ms - ARRIVE_LAG_MS) / ARRIVE_MS));
 
 /** The segment playing at `f`. Shots cut: a dissolve between two compositions is a muddy frame. */
 function segmentAt(r: Reel, f: number) {
@@ -84,22 +69,29 @@ function Shot({ r, k, f, live }: { r: Reel; k: number; f: number; live: boolean 
     else if (rev && !result && f < rev.at + 1.2)
       rev.fresh.forEach((id2, j) => {
         ids.push(id2);
-        at.push((f - rev.at - 0.05 - Math.min(j, 8) * 0.04) * 1000);
+        at.push((f - rev.at - 0.05 - j * REV_STEP) * 1000);
       });
     const fading = rev && !result && revised ? progress(f, rev.at, rev.at + OUT, ease.in) : 1;
-    const sheet = result ? 1 : sweep((f - (r.boardAt.get(id) ?? 0)) * 1000);
-    const working =
-      !result && f >= (r.boardAt.get(id) ?? 0) && f < (r.lastAt.get(id) ?? 0) + ARRIVE_MS / 1000;
+    // The blank sheet is just there a beat before its first piece (no sweep or fade of its own:
+    // a dark one would pass through grey), then the screen is assembled on it.
+    const from = (r.boardAt.get(id) ?? 0) - SHEET_LEAD;
+    const sheet = result ? 1 : f >= from ? 1 : 0;
+    // Working: the trace runs from the sheet until its last piece has landed, and again from a
+    // beat before a revision lands until its last new piece has.
+    const piece = PIECE_MS / 1000;
+    const building = f >= from && f < (r.lastAt.get(id) ?? 0) + piece;
+    const revising =
+      rev &&
+      f >= rev.at - 0.4 &&
+      f < rev.at + 0.05 + Math.max(0, rev.fresh.length - 1) * REV_STEP + piece;
+    const working = !result && (building || Boolean(revising));
     return { id, b, rev, look, ids, at, fading, sheet, working };
   });
 
   useLayoutEffect(() => {
     const el = root.current;
     if (!el) return;
-    applyRise(el, {
-      ids: states.flatMap((s) => s.ids),
-      at: states.flatMap((s) => s.at),
-    });
+    applyRise(el, { ids: states.flatMap((s) => s.ids), at: states.flatMap((s) => s.at) }, PIECE_MS);
   });
 
   const pins = live && !result ? r.comments.filter((c) => shot.boards.includes(c.board)) : [];
@@ -119,7 +111,7 @@ function Shot({ r, k, f, live }: { r: Reel; k: number; f: number; live: boolean 
               transformOrigin: "0 0",
               width: b.w,
               height: look.h,
-              clipPath: sheet < 1 ? `inset(-40px ${(1 - sheet) * 100}% -40px -40px)` : undefined,
+              opacity: sheet < 1 ? sheet : undefined,
             }}
           >
             <div
@@ -147,7 +139,7 @@ function Shot({ r, k, f, live }: { r: Reel; k: number; f: number; live: boolean 
       {live && (
         <div className="pz:pointer-events-none pz:absolute pz:inset-0">
           {states
-            .filter((s) => s.working && s.sheet >= 1)
+            .filter((s) => s.working && s.sheet > 0)
             .map(({ id, b, look }) => {
               const p = shot.place.get(id)!;
               return (

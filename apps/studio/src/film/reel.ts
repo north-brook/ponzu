@@ -43,6 +43,11 @@ export const REEL = {
   minShot: 1.0,
 } as const;
 
+/** One piece's arrival in a reel (ms): quicker than the canvas, so pieces read one by one. */
+export const PIECE_MS = 380;
+/** A screen's blank sheet and its trace show this long before its first piece (s): working. */
+export const SHEET_LEAD = 0.3;
+
 /** The frame's insets (film px): room for the logo and board names on top. */
 const INSET = { x: 34, top: 46, bottom: 28 };
 
@@ -131,9 +136,11 @@ function openPieces(nodes: El[], depth = 0): El[] {
   for (const n of nodes) {
     const kids = n.children.filter((c): c is El => c.kind === "el");
     const leaf =
-      depth >= 3 ||
-      kids.length < 2 ||
-      /^(p|h[1-6]|button|a|img|svg|video|picture|span|label|li|input|textarea|select)$/.test(n.tag);
+      depth >= 6 ||
+      !kids.length ||
+      /^(p|h[1-6]|button|a|img|svg|video|picture|label|input|textarea|select)$/.test(n.tag) ||
+      // A line of text with a word set apart in it (a headline's emphasis) is one piece.
+      n.children.some((c) => c.kind === "text" && c.value.trim());
     if (leaf) out.push(n);
     else {
       if (surface(n)) out.push(n);
@@ -513,8 +520,9 @@ export async function buildReel(input: ReelInput): Promise<Reel> {
   const resultAt = endCard - REEL.result;
   const reviseAt = resultAt - reviseShots.length * REEL.revise;
   const promptEnd = prompt ? REEL.prompt : 0.1;
-  // The first screen starts as the prompt lifts away: never a beat of empty canvas.
-  const buildAt = Math.max(0.1, promptEnd - 0.22);
+  // The first screen's sheet lands as the prompt finishes lifting away: never under it, never
+  // a beat of empty canvas after it.
+  const buildAt = Math.max(0.1, promptEnd - 0.06);
   const buildLen = reviseAt - buildAt;
 
   // Build shots share the build by how much each brings (less than in proportion).
@@ -531,26 +539,22 @@ export async function buildReel(input: ReelInput): Promise<Reel> {
   groups.forEach((g, k) => {
     const len = lens[k]! * scale;
     segments.push({ kind: "build", shot: k, t0: t, t1: t + len });
-    // Its writes in the order made, each a beat by how much it brings, front-loaded within.
+    // The screen is assembled: its pieces one after another, in the order written, on an even
+    // beat that quickens a little as it fills. A new write starts when the last one's pieces
+    // have started, so the agent's rhythm shows, never a whole screen at once.
     const ws = piecesOf(g).map((w) => ({
       ...w,
       ids: w.ids.filter((id) => findIn(boards.get(w.board)!.before.ab.root, id)),
     }));
-    const wt = (w: (typeof ws)[number]) => Math.sqrt(Math.max(1, w.ids.length)) + 0.5;
-    const sum = ws.reduce((a, w) => a + wt(w), 0);
-    // The last pieces have landed with a beat to spare before the cut.
-    const span = Math.max(0.3, len - 0.55);
-    let c = t + 0.02;
-    for (const w of ws) {
-      const share = (span * wt(w)) / sum;
-      const n = w.ids.length;
-      const list = pieces.get(w.board) ?? [];
-      w.ids.forEach((id, j) => {
-        list.push({ id, at: c + share * 0.85 * (n > 1 ? (j / (n - 1)) ** 1.5 : 0) });
-      });
-      pieces.set(w.board, list);
-      c += share;
-    }
+    const all = ws.flatMap((w) => w.ids.map((id) => ({ id, board: w.board })));
+    // The last piece has landed with a beat to spare before the cut.
+    const span = Math.max(0.3, len - SHEET_LEAD - PIECE_MS / 1000 - 0.22);
+    const n = all.length;
+    all.forEach((p, j) => {
+      const list = pieces.get(p.board) ?? [];
+      list.push({ id: p.id, at: t + SHEET_LEAD + span * (n > 1 ? (j / (n - 1)) ** 1.12 : 0) });
+      pieces.set(p.board, list);
+    });
     t += len;
   });
   const boardAt = new Map<string, number>();

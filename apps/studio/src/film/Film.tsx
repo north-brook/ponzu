@@ -922,12 +922,13 @@ export const FilmBoard = memo(function FilmBoard({
 const rising = new Set<Element>();
 const anims = new WeakMap<Element, Animation>();
 
-export function applyRise(root: HTMLElement, r: Frame["rising"]) {
+/** `ms`: how long each arrival takes (the canvas's own pace unless a film quickens it). */
+export function applyRise(root: HTMLElement, r: Frame["rising"], ms = ARRIVE_MS) {
   const live = new Set<Element>();
   if (r)
     r.ids.forEach((id, n) => {
       const local = r.at[n]!;
-      if (local >= ARRIVE_MS) return;
+      if (local >= ms) return;
       for (const host of root.querySelectorAll("[data-artboard-host]")) {
         const el = host.shadowRoot?.querySelector(`[data-id="${CSS.escape(id)}"]`);
         if (!el || live.has(el)) continue;
@@ -936,7 +937,7 @@ export function applyRise(root: HTMLElement, r: Frame["rising"]) {
         if (!a) {
           // The canvas's own arrival (the shimmer slide), seeked: the film shows what the person saw.
           a = el.animate(ARRIVE_KEYFRAMES, {
-            duration: ARRIVE_MS,
+            duration: ms,
             easing: ARRIVE_EASING,
             fill: "both",
           });
