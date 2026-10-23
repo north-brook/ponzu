@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ActionSheetIOS,
   Alert,
-  Pressable,
   RefreshControl,
   ScrollView,
   Text,
@@ -17,7 +16,7 @@ import { barMenuItems } from "../../../components/bar-menu";
 import { Lockup } from "../../../components/chrome";
 import { FileCard } from "../../../components/file-card";
 import { HandoffRise } from "../../../components/handoff";
-import { Close, Moon } from "../../../components/icons";
+import { Moon } from "../../../components/icons";
 import { refreshFeeds, syncFeeds, useCatalogs, useFiles, useShelve } from "../../../lib/catalog";
 import { clock, type PhoneFile, projects, type Shelf, shelfOf } from "../../../lib/files";
 import type { ShelfAction } from "../../../lib/mac-queries";
@@ -25,6 +24,7 @@ import { SLICE, SLICE_STROKE } from "../../../lib/mark";
 import { reachAll, useMacs } from "../../../lib/reach";
 import { isUnseen, useSeen } from "../../../lib/seen";
 import { useTheme } from "../../../lib/theme";
+import { brand } from "../../../lib/tokens";
 
 const SHELVES: { id: Shelf; label: string }[] = [
   { id: "recent", label: "Recent" },
@@ -37,8 +37,8 @@ const SHELVES: { id: Shelf; label: string }[] = [
  * phone. The lockup and a filter in the system's glass header, the grid
  * scrolling under it; every Mac's designs as cards, newest first. The
  * filter is the system's menu: the shelf (Recent, Scratch, Archived) and
- * the project, each with its count; anything but all of Recent shows as a
- * line over the grid, which clears it. Search and Activity are tabs of
+ * the project, each with its count, the current one checked; the button
+ * wears a yuzu badge with how many filters are on. Search and Activity are tabs of
  * their own beside it. Macs that didn't answer keep their cards from last
  * time, dimmed, under a note.
  */
@@ -162,7 +162,8 @@ export default function Designs() {
     } else if (id === "project:*") setProject(undefined);
     else if (id.startsWith("project:")) setProject(id.slice(8) || null);
   };
-  const filtered = shelf !== "recent" || project !== undefined;
+  /** Filters on: a shelf other than Recent, a project other than All. The button's badge counts them. */
+  const on = (shelf !== "recent" ? 1 : 0) + (project !== undefined ? 1 : 0);
 
   return (
     <View testID="designs" style={{ flex: 1, backgroundColor: color.bg }}>
@@ -177,11 +178,16 @@ export default function Designs() {
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Menu
           accessibilityLabel={
-            filtered ? `Filter: ${[shelfLabel, projectLabel].filter(Boolean).join(", ")}` : "Filter"
+            on ? `Filter: ${[shelfLabel, projectLabel].filter(Boolean).join(", ")}` : "Filter"
           }
           title="Show"
         >
           <Stack.Toolbar.Icon renderingMode="template" xcasset="bar-filter" />
+          {on > 0 && (
+            <Stack.Toolbar.Badge style={{ backgroundColor: brand.yuzu, color: brand.ink }}>
+              {String(on)}
+            </Stack.Toolbar.Badge>
+          )}
           {barMenuItems(filters, pickFilter)}
         </Stack.Toolbar.Menu>
       </Stack.Toolbar>
@@ -200,35 +206,6 @@ export default function Designs() {
           />
         }
       >
-        {/* What the filter shows, when it isn't everything recent: never hidden. */}
-        {filtered && (
-          <Pressable
-            onPress={() => {
-              selectionAsync().catch(() => {});
-              setShelf("recent");
-              setProject(undefined);
-            }}
-            accessibilityRole="button"
-            accessibilityLabel={`Showing ${[shelfLabel, projectLabel].filter(Boolean).join(", ")}. Show all recent`}
-            testID="filter-line"
-            hitSlop={8}
-            style={{
-              marginHorizontal: 20,
-              marginBottom: 14,
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 6,
-              alignSelf: "flex-start",
-            }}
-          >
-            <Text
-              style={{ fontFamily: "Inter", fontWeight: "500", fontSize: 14, color: color.muted }}
-            >
-              {[shelf === "recent" ? null : shelfLabel, projectLabel].filter(Boolean).join(" · ")}
-            </Text>
-            <Close size={13} color={color.faint} width={2} />
-          </Pressable>
-        )}
         {arriving.length > 0 && files.length > 0 && (
           <Notice>
             <Juice color={color.faint} />

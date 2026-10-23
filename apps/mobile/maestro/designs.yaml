@@ -23,21 +23,19 @@ tags: [dev-host]
     element:
       id: card-Weft
     timeout: 30000
-# The filter is the header's native menu: Scratch shows as a line over the
-# grid, and the line clears it.
+# The filter is the header's native menu: Scratch is checked once picked,
+# and the button says one filter is on; Recent clears it.
 - tapOn: "Filter"
 - extendedWaitUntil:
     visible: "Scratch.*"
     timeout: 5000
 - tapOn: "Scratch.*"
 - extendedWaitUntil:
-    visible:
-      id: filter-line
+    visible: "Filter: Scratch"
     timeout: 5000
-- tapOn:
-    id: filter-line
+- tapOn: "Filter.*"
+- tapOn: "Recent.*"
 - extendedWaitUntil:
-    notVisible:
-      id: filter-line
+    visible: "Filter"
     timeout: 5000
 - assertNotVisible: ".*Cannot update a component.*"
