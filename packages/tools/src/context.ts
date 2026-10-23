@@ -294,7 +294,7 @@ export class PresenceHub {
           now - p.lastSeen < DISK_CREDIT &&
           (this.seenIn.get(p.id) === file ||
             p.file === file ||
-            (p.origin?.cwd && file.startsWith(`${p.origin.cwd}/`))),
+            (p.origin?.cwd && within(file, p.origin.cwd))),
       )
       .sort((a, b) => b.lastSeen - a.lastSeen)[0];
     if (!writer) {
@@ -356,6 +356,12 @@ export class PresenceHub {
     const list = this.list();
     for (const l of this.listeners) l(list);
   }
+}
+
+/** Whether `path` is in the folder `dir`, on either kind of separator. `/` holds everything. */
+export function within(path: string, dir: string): boolean {
+  const base = dir.replace(/[\\/]+$/, "");
+  return path.startsWith(`${base}/`) || path.startsWith(`${base}\\`);
 }
 
 function sameIds(a: string[], b: string[]): boolean {

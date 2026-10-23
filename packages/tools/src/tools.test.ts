@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { locate, threadPage } from "@ponzu/core";
 import type { Renderer, RenderResult } from "@ponzu/render";
 import { Design, MemoryAdapter } from "@ponzu/store";
-import { EventHub, PresenceHub, type ToolContext, type Workspace } from "./context.ts";
+import { EventHub, PresenceHub, type ToolContext, type Workspace, within } from "./context.ts";
 import { FORMAT_EXAMPLE, GUIDES } from "./guides.ts";
 import { getTool, runTool } from "./index.ts";
 import { plural } from "./util.ts";
@@ -574,6 +574,14 @@ test("an edit on disk counts for the agent working in that project", () => {
   // A sibling folder that merely shares the prefix isn't its project.
   presence.wroteOnDisk("/code/shopfront/x.design", { artboards: ["ab_2"], gone: [] });
   expect(presence.list()[0]!.working).toEqual(["ab_1"]);
+});
+
+test("a project folder holds what's under it, however it's spelled", () => {
+  expect(within("/code/shop/app.design", "/code/shop")).toBe(true);
+  expect(within("/code/shop/app.design", "/code/shop/")).toBe(true);
+  expect(within("/code/app.design", "/")).toBe(true);
+  expect(within("C:\\code\\shop\\app.design", "C:\\code\\shop")).toBe(true);
+  expect(within("/code/shopfront/app.design", "/code/shop")).toBe(false);
 });
 
 test("deleting an artboard takes it from another agent working on it", async () => {
