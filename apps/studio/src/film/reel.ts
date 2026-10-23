@@ -20,11 +20,11 @@ import type { Edit } from "./edit.ts";
 import { schemeFor, settleAssets } from "./model.ts";
 
 /*
- * The reel: a 15-second film of a design being made. The prompt; then each screen arriving piece
- * by piece, as the agent wrote it, one quick shot per group of screens that fit a frame together;
- * then the comments left on them sweep in and the revisions land; all the screens together; the
- * bloom. Every board is drawn at the layout it reaches, so pieces arrive in place and nothing
- * reflows under them.
+ * The reel: a film of a design being made. The prompt; then each screen arriving piece by piece,
+ * as the agent wrote it, under one camera that pans across the canvas from each group of screens
+ * to the next; then the comments left on them sweep in and the revisions land; the camera zooms
+ * out to every screen; the bloom. Every board is drawn at the layout it reaches, so pieces arrive
+ * in place and nothing reflows under them.
  */
 
 /**
@@ -37,11 +37,11 @@ export const REEL = {
   /** Between one piece and the next, for a piece of ordinary weight. */
   beat: 0.046,
   /** After a screen's last piece starts: its arrival, and a beat to see it whole. */
-  rest: 0.2,
+  rest: 0.3,
   /** One group of screens revising: its comments sweep in, then the changes land. */
   revise: 1.5,
-  /** All the screens together. */
-  result: 1.05,
+  /** The zoom out to every screen, and a beat on them all. */
+  result: 1.7,
   /** The bloom. */
   end: 1.6,
 } as const;
@@ -422,46 +422,9 @@ export async function buildReel(input: ReelInput): Promise<Reel> {
     shotOf(g, new Map(g.map((id) => [id, canvasAt(id)]))),
   );
 
-  // The last shot: every screen together, as the canvas has them when that fills the frame,
-  // else packed into rows in the order made.
-  const resultShot = (() => {
-    const canvas = shotOf(ids, new Map(ids.map((id) => [id, canvasAt(id)])));
-    let best: ReelShot | null = null;
-    const GAP = 90;
-    for (let rows = 1; rows <= ids.length; rows++) {
-      const total = ids.reduce((a, id) => a + boards.get(id)!.w, 0);
-      const target = total / rows;
-      const lines: string[][] = [[]];
-      let w = 0;
-      for (const id of ids) {
-        const bw = boards.get(id)!.w;
-        if (lines.at(-1)!.length && w + bw / 2 > target && lines.length < rows) {
-          lines.push([]);
-          w = 0;
-        }
-        lines.at(-1)!.push(id);
-        w += bw;
-      }
-      const widths = lines.map(
-        (l) => l.reduce((a, id) => a + boards.get(id)!.w, 0) + GAP * (l.length - 1),
-      );
-      const widest = Math.max(...widths);
-      const place = new Map<string, { x: number; y: number }>();
-      let y = 0;
-      lines.forEach((l, k) => {
-        let x = (widest - widths[k]!) / 2;
-        const rowH = Math.max(...l.map((id) => rectAt(id).h));
-        for (const id of l) {
-          place.set(id, { x, y });
-          x += boards.get(id)!.w + GAP;
-        }
-        y += rowH + GAP * 1.4;
-      });
-      const s = shotOf(ids, place);
-      if (!best || s.cam.zoom > best.cam.zoom) best = s;
-    }
-    return best && best.cam.zoom > canvas.cam.zoom * 1.12 ? best : canvas;
-  })();
+  // The last shot: every screen together, where they sit on the canvas. The camera zooms out
+  // to it from the last screen it was on, so it reads as one canvas, never a re-laid-out grid.
+  const resultShot = shotOf(ids, new Map(ids.map((id) => [id, canvasAt(id)])));
 
   // Revisions: per board, what changed between its first pass and the end.
   const sig = (n: El) =>

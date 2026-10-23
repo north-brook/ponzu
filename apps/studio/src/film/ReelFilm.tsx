@@ -1,4 +1,4 @@
-import { bezier, clamp01, ease, progress } from "@ponzu/core";
+import { bezier, type Cam, clamp01, ease, flyTo, progress } from "@ponzu/core";
 import { Icon, pinClass, pinWrapClass, SLICE, SLICE_STROKE, Trace } from "@ponzu/react";
 import { useLayoutEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
@@ -9,52 +9,98 @@ import { PIECE_MS, type Reel, type ReelComment, SHEET_LEAD } from "./reel.ts";
 const REV_STEP = 0.07;
 /** A revision's old pieces fade off over this long while the new arrive. */
 const OUT = 0.15;
-/** A shot's lean runs on a touch past its cut (s). */
-const CUT = 0.16;
+/** A pan from one group of screens to the next, through the canvas (s). */
+const PAN = 0.7;
+/** The zoom out to every screen at the end (s). */
+const ZOOM_OUT = 1.1;
 
-/** The segment playing at `f`. Shots cut: a dissolve between two compositions is a muddy frame. */
+/** The segment playing at `f`. */
 function segmentAt(r: Reel, f: number) {
   let i = 0;
   while (i + 1 < r.segments.length && r.segments[i + 1]!.t0 <= f) i++;
-  return r.segments[i]!;
+  return i;
 }
 
-/** One shot of the reel, at film time `f`. */
-function Shot({ r, k, f, live }: { r: Reel; k: number; f: number; live: boolean }) {
-  const root = useRef<HTMLDivElement>(null);
+/** Where a shot's camera rests: on its screens, leaning in a touch while it's on (never a still). */
+function restingCam(r: Reel, k: number, f: number): Cam {
   const shot = r.shots[k]!;
-  const { view } = r;
-  const cam = shot.cam;
   const segs = r.segments.filter((s) => s.shot === k);
   const t0 = Math.min(...segs.map((s) => s.t0));
   const t1 = Math.max(...segs.map((s) => s.t1));
-  // A shot leans in a touch while it's on, so it never sits still.
-  const zoom = cam.zoom * (1 + 0.022 * progress(f, t0, t1 + CUT, ease.inOut));
+  const cam = shot.cam;
+  const zoom = cam.zoom * (1 + 0.022 * progress(f, t0, t1, ease.inOut));
   // Screens that share a shot arrive one after another: the frame centres what's there so far,
   // easing across as each next one comes, so the first is never alone at the edge.
-  const cx = (() => {
-    const build = segs.find((s) => s.kind === "build");
-    if (shot.boards.length < 2 || !build || f >= build.t1) return cam.cx;
-    const centre = (n: number) => {
-      const xs = shot.boards.slice(0, n).map((id) => shot.place.get(id)!.x);
-      const x1s = shot.boards.slice(0, n).map((id) => shot.place.get(id)!.x + r.boards.get(id)!.w);
-      return (Math.min(...xs) + Math.max(...x1s)) / 2;
-    };
-    let x = centre(1);
-    shot.boards.forEach((id, j) => {
-      if (j === 0) return;
-      const a = (r.boardAt.get(id) ?? 0) - 0.25;
-      const p = ease.inOut(clamp01((f - a) / 0.45));
-      x += (centre(j + 1) - centre(j)) * p;
-    });
-    return x;
-  })();
-  const tx = view.w / 2 - cx * zoom;
+  const build = segs.find((s) => s.kind === "build");
+  if (shot.boards.length < 2 || !build || f >= build.t1) return { ...cam, zoom };
+  const centre = (n: number) => {
+    const xs = shot.boards.slice(0, n).map((id) => shot.place.get(id)!.x);
+    const x1s = shot.boards.slice(0, n).map((id) => shot.place.get(id)!.x + r.boards.get(id)!.w);
+    return (Math.min(...xs) + Math.max(...x1s)) / 2;
+  };
+  let cx = centre(1);
+  shot.boards.forEach((id, j) => {
+    if (j === 0) return;
+    const a = (r.boardAt.get(id) ?? 0) - 0.25;
+    cx += (centre(j + 1) - centre(j)) * ease.inOut(clamp01((f - a) / 0.45));
+  });
+  return { ...cam, cx, zoom };
+}
+
+/**
+ * The one camera: at rest on the shot that's on, and between shots a glide across the canvas to
+ * the next, landing as its first screen appears. Into the last shot it zooms out to every screen.
+ */
+function camAt(r: Reel, f: number): Cam {
+  const i = segmentAt(r, f);
+  const seg = r.segments[i]!;
+  const next = r.segments[i + 1];
+  if (next && next.shot !== seg.shot) {
+    const last = next.kind === "result";
+    const span = last ? ZOOM_OUT : PAN;
+    const start = next.t0 - (last ? 0 : span * 0.55);
+    if (f >= start) {
+      const p = ease.inOut(clamp01((f - start) / span));
+      return flyTo(
+        restingCam(r, seg.shot, start),
+        restingCam(r, next.shot, start + span),
+        p,
+        r.view,
+      );
+    }
+  }
+  const prev = r.segments[i - 1];
+  if (prev && prev.shot !== seg.shot) {
+    const last = seg.kind === "result";
+    const span = last ? ZOOM_OUT : PAN;
+    const start = seg.t0 - (last ? 0 : span * 0.55);
+    if (f < start + span) {
+      const p = ease.inOut(clamp01((f - start) / span));
+      return flyTo(
+        restingCam(r, prev.shot, start),
+        restingCam(r, seg.shot, start + span),
+        p,
+        r.view,
+      );
+    }
+  }
+  return restingCam(r, seg.shot, f);
+}
+
+/** The canvas at film time `f`: every screen at its place, under the one camera. */
+function Canvas({ r, f }: { r: Reel; f: number }) {
+  const root = useRef<HTMLDivElement>(null);
+  const { view } = r;
+  const cam = camAt(r, f);
+  const zoom = cam.zoom;
+  const tx = view.w / 2 - cam.cx * zoom;
   const ty = view.h / 2 - cam.cy * zoom;
-  const result = segs.some((s) => s.kind === "result");
+  const seg = r.segments[segmentAt(r, f)]!;
+  const result = seg.kind === "result";
+  const home = r.shots.at(-1)!;
 
   // Per board: which look, which pieces are still arriving, what's fading off.
-  const states = shot.boards.map((id) => {
+  const states = home.boards.map((id) => {
     const b = r.boards.get(id)!;
     const rev = r.revisions.get(id);
     const revised = result || Boolean(rev && f >= rev.at);
@@ -71,11 +117,20 @@ function Shot({ r, k, f, live }: { r: Reel; k: number; f: number; live: boolean 
         ids.push(id2);
         at.push((f - rev.at - 0.05 - j * REV_STEP) * 1000);
       });
-    const fading = rev && !result && revised ? progress(f, rev.at, rev.at + OUT, ease.in) : 1;
+    // A board changed later with no revise shot of its own settles into its final look as the
+    // camera zooms out (a crossfade, never a pop).
+    const fading =
+      rev && !result && revised
+        ? progress(f, rev.at, rev.at + OUT, ease.in)
+        : result && !rev
+          ? progress(f, seg.t0, seg.t0 + 0.5, ease.inOut)
+          : 1;
     // The blank sheet is just there a beat before its first piece (no sweep or fade of its own:
     // a dark one would pass through grey), then the screen is assembled on it.
     const from = (r.boardAt.get(id) ?? 0) - SHEET_LEAD;
-    const sheet = result ? 1 : f >= from ? 1 : 0;
+    // The sheet is on the canvas by the time the camera heads for it: a pan lands on it, it
+    // never pops in mid-glide.
+    const sheet = result ? 1 : f >= from - PAN * 0.6 ? 1 : 0;
     // Working: the trace runs from the sheet until its last piece has landed, and again from a
     // beat before a revision lands until its last new piece has.
     const piece = PIECE_MS / 1000;
@@ -87,6 +142,8 @@ function Shot({ r, k, f, live }: { r: Reel; k: number; f: number; live: boolean 
     const working = !result && (building || Boolean(revising));
     return { id, b, rev, look, ids, at, fading, sheet, working };
   });
+  // The comments of the shot that's revising, if one is.
+  const revising = seg.kind === "revise" ? r.shots[seg.shot]!.boards : [];
 
   useLayoutEffect(() => {
     const el = root.current;
@@ -94,12 +151,22 @@ function Shot({ r, k, f, live }: { r: Reel; k: number; f: number; live: boolean 
     applyRise(el, { ids: states.flatMap((s) => s.ids), at: states.flatMap((s) => s.at) }, PIECE_MS);
   });
 
-  const pins = live && !result ? r.comments.filter((c) => shot.boards.includes(c.board)) : [];
+  const pins = r.comments.filter((c) => revising.includes(c.board));
   return (
     <div ref={root} className="pz:absolute pz:inset-0">
       {states.map(({ id, b, rev, look, fading, sheet }) => {
         if (sheet <= 0) return null;
-        const p = shot.place.get(id)!;
+        const p = home.place.get(id)!;
+        // Off the frame: not drawn (a board is drawn once it comes into view).
+        const x0 = p.x * zoom + tx;
+        const y0 = p.y * zoom + ty;
+        if (
+          x0 > view.w + 40 ||
+          y0 > view.h + 40 ||
+          x0 + b.w * zoom < -40 ||
+          y0 + look.h * zoom < -40
+        )
+          return null;
         return (
           <div
             key={id}
@@ -121,7 +188,7 @@ function Shot({ r, k, f, live }: { r: Reel; k: number; f: number; live: boolean 
               {b.name}
             </div>
             <FilmBoard artboard={look.ab} doc={look.doc} model={r} />
-            {rev && fading < 1 && (
+            {fading < 1 && (
               <div
                 style={{ position: "absolute", left: 0, top: 0, width: b.w, opacity: 1 - fading }}
               >
@@ -129,43 +196,41 @@ function Shot({ r, k, f, live }: { r: Reel; k: number; f: number; live: boolean 
                   artboard={b.before.ab}
                   doc={b.before.doc}
                   model={r}
-                  only={rev.recolor ? undefined : rev.gone}
+                  only={rev && !rev.recolor ? rev.gone : undefined}
                 />
               </div>
             )}
           </div>
         );
       })}
-      {live && (
-        <div className="pz:pointer-events-none pz:absolute pz:inset-0">
-          {states
-            .filter((s) => s.working && s.sheet > 0)
-            .map(({ id, b, look }) => {
-              const p = shot.place.get(id)!;
-              return (
-                <Trace
-                  key={id}
-                  x={p.x * zoom + tx}
-                  y={p.y * zoom + ty}
-                  w={b.w * zoom}
-                  h={look.h * zoom}
-                />
-              );
-            })}
-          {pins.map((c) => (
-            <Pin
-              key={c.thread}
-              c={c}
-              f={f}
-              at={{
-                x: (shot.place.get(c.board)!.x + c.x) * zoom + tx,
-                y: (shot.place.get(c.board)!.y + c.y) * zoom + ty,
-              }}
-              view={view}
-            />
-          ))}
-        </div>
-      )}
+      <div className="pz:pointer-events-none pz:absolute pz:inset-0">
+        {states
+          .filter((s) => s.working && s.sheet > 0)
+          .map(({ id, b, look }) => {
+            const p = home.place.get(id)!;
+            return (
+              <Trace
+                key={id}
+                x={p.x * zoom + tx}
+                y={p.y * zoom + ty}
+                w={b.w * zoom}
+                h={look.h * zoom}
+              />
+            );
+          })}
+        {pins.map((c) => (
+          <Pin
+            key={c.thread}
+            c={c}
+            f={f}
+            at={{
+              x: (home.place.get(c.board)!.x + c.x) * zoom + tx,
+              y: (home.place.get(c.board)!.y + c.y) * zoom + ty,
+            }}
+            view={view}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -361,7 +426,6 @@ function Bloom({ r, t, opacity }: { r: Reel; t: number; opacity: number }) {
 export function ReelFilm({ model: r, f }: { model: Reel; f: number }) {
   const { view, times } = r;
   const ink = r.theme === "dark" ? "#f4f3ef" : "#111110";
-  const seg = segmentAt(r, Math.max(f, times.build));
   const showing = f >= times.build;
   return (
     <div
@@ -370,7 +434,7 @@ export function ReelFilm({ model: r, f }: { model: Reel; f: number }) {
       data-film-frame={Math.round(f * 1000)}
     >
       <div className="pz:absolute pz:inset-0 pz:overflow-hidden">
-        {showing && <Shot key={seg.shot} r={r} k={seg.shot} f={f} live />}
+        {showing && <Canvas r={r} f={f} />}
         {/* Just the mark, top left: whose canvas this is. */}
         <div className="pz:absolute" style={{ left: 18, top: 16, opacity: 0.92 }}>
           <Mark size={20} ink={ink} />
