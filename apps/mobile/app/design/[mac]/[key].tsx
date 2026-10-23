@@ -1,7 +1,8 @@
 import { agentActivity, findArtboard, newId, type Presence, type Thread } from "@ponzu/core";
+import { selectionAsync } from "expo-haptics";
 import { router, useLocalSearchParams, useNavigation } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Modal, Pressable, Text, View } from "react-native";
+import { ActionSheetIOS, ActivityIndicator, Pressable, Text, View } from "react-native";
 import Animated, {
   Easing,
   FadeIn,
@@ -19,7 +20,7 @@ import { type CanvasHandle, CanvasView } from "../../../components/canvas-view";
 import { BarButton } from "../../../components/chrome";
 import { Composer, initialMode, type Mode } from "../../../components/composer";
 import { Glass, GlassGroup } from "../../../components/glass";
-import { AgentMark, Back, Check, Chevron, FileIcon, PageIcon } from "../../../components/icons";
+import { AgentMark, Back, Chevron, FileIcon, PageIcon } from "../../../components/icons";
 import { Sheet } from "../../../components/sheet";
 import { ThreadSheet } from "../../../components/thread-sheet";
 import { useFile } from "../../../lib/catalog";
@@ -75,7 +76,6 @@ export default function Canvas() {
   const [mode, setMode] = useState<Mode>(initialMode);
   const [sheet, setSheet] = useState(0);
   const [card, setCard] = useState(false);
-  const [pages, setPages] = useState(false);
   /** The focused board: the chrome steps aside for it. */
   const [focusedBoard, setFocusedBoard] = useState<string | null>(null);
   /** A pan or pinch is under way on the focused board: the chrome is back while it lasts. */
@@ -217,6 +217,30 @@ export default function Canvas() {
     }
   };
 
+  /**
+   * The title pill's page menu: the system's sheet, as Designs' card menu,
+   * the open page ticked.
+   */
+  const pickPage = () => {
+    if (!doc) return;
+    selectionAsync().catch(() => {});
+    const list = doc.pages;
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        title: doc.name,
+        options: [...list.map((p) => (p.id === page?.id ? `${p.name}  ✓` : p.name)), "Cancel"],
+        cancelButtonIndex: list.length,
+        userInterfaceStyle: scheme,
+      },
+      (i) => {
+        const to = list[i];
+        if (!to || to.id === page?.id) return;
+        setPageId(to.id);
+        canvas.current?.post({ t: "page", pageId: to.id });
+      },
+    );
+  };
+
   // The chrome covers the status bar and the top bar (54 + 56), and the home indicator.
   const top = insets.top + 56;
   const canvasInsets = useMemo(
@@ -311,7 +335,7 @@ export default function Canvas() {
           </BarButton>
           <View style={{ flex: 1, alignItems: "center" }}>
             <Pressable
-              onPress={() => doc && doc.pages.length > 1 && setPages(true)}
+              onPress={() => doc && doc.pages.length > 1 && pickPage()}
               accessibilityRole="button"
               accessibilityLabel={`${file?.name ?? doc?.name ?? ""}, page ${page?.name ?? ""}`}
               testID="title"
@@ -418,20 +442,6 @@ export default function Canvas() {
             setSheet(0);
           }}
           onHeight={setSheet}
-        />
-      )}
-      {doc && (
-        <PageMenu
-          open={pages}
-          top={insets.top + 58}
-          pages={doc.pages}
-          current={page?.id}
-          onPick={(id) => {
-            setPageId(id);
-            canvas.current?.post({ t: "page", pageId: id });
-            setPages(false);
-          }}
-          onClose={() => setPages(false)}
         />
       )}
     </View>
@@ -648,77 +658,5 @@ function SessionCard({
         </View>
       </Glass>
     </Animated.View>
-  );
-}
-
-/** The title pill's page menu. */
-function PageMenu({
-  open,
-  top,
-  pages,
-  current,
-  onPick,
-  onClose,
-}: {
-  open: boolean;
-  top: number;
-  pages: { id: string; name: string; icon?: string }[];
-  current?: string;
-  onPick: (id: string) => void;
-  onClose: () => void;
-}) {
-  const { color, shadow, scheme } = useTheme();
-  return (
-    <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable
-        style={{
-          flex: 1,
-          backgroundColor: scheme === "dark" ? "rgba(0,0,0,0.35)" : "rgba(17,17,16,0.12)",
-        }}
-        onPress={onClose}
-      />
-      <View
-        testID="page-menu"
-        style={{
-          position: "absolute",
-          alignSelf: "center",
-          top,
-          width: 240,
-          paddingVertical: 6,
-          borderRadius: 14,
-          backgroundColor: color.card,
-          boxShadow: `${shadow.pop}, 0 0 0 1px ${color.hairline}`,
-        }}
-      >
-        {pages.map((p) => (
-          <Pressable
-            key={p.id}
-            onPress={() => onPick(p.id)}
-            style={({ pressed }) => ({
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 10,
-              height: 44,
-              paddingHorizontal: 14,
-              backgroundColor: pressed ? color.canvas : "transparent",
-            })}
-          >
-            <PageIcon name={p.icon} size={16} color={color.muted} />
-            <Text
-              style={{
-                flex: 1,
-                fontFamily: "Inter",
-                fontWeight: "500",
-                fontSize: 16,
-                color: color.ink,
-              }}
-            >
-              {p.name}
-            </Text>
-            {p.id === current && <Check size={16} color={color.ink} />}
-          </Pressable>
-        ))}
-      </View>
-    </Modal>
   );
 }
