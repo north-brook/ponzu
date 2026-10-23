@@ -211,6 +211,13 @@
   animation-delay: calc(var(--i) * 0.4s - 2.4s);
 }
 
+/* The window's away (hidden, or unfocused on battery): the canvas's own loops hold too. */
+.pz-still .pz-shimmer,
+.pz-still .pz-trace,
+.pz-still .pz-juice-seg {
+  animation-play-state: paused;
+}
+
 @keyframes pz-appear {
   from {
     opacity: 0;

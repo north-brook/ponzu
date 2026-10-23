@@ -22,6 +22,7 @@ import { Arrivals, arriveBoard } from "./arrive.ts";
 import { Composer, ThreadCard, threadCard } from "./Comments.tsx";
 import { type CanvasSource, viewOnly } from "./connection.ts";
 import { AgentMark, Icon, Icons } from "./icons.tsx";
+import { useWindowStill } from "./still.ts";
 import { Button, cn, Tip, TipProvider, ToggleGroup } from "./ui.tsx";
 import {
   isTyping,
@@ -98,6 +99,26 @@ export function labelCovers(
   );
 }
 
+/** Below this many screen px on its longer side, a board is a thumbnail: its loops hold. */
+export const TINY_BOARD = 160;
+
+/**
+ * Whether a board is out of sight or too small on screen to watch, so its loops can hold. A page
+ * of looping boards zoomed out to fit drew as much as one at full size, for nothing anyone sees.
+ */
+export function outOfSight(
+  box: { x: number; y: number; w: number; h: number },
+  camera: { x: number; y: number; zoom: number },
+  viewport: { w: number; h: number },
+): boolean {
+  const x = box.x * camera.zoom + camera.x;
+  const y = box.y * camera.zoom + camera.y;
+  const w = box.w * camera.zoom;
+  const h = box.h * camera.zoom;
+  if (x + w <= 0 || y + h <= 0 || x >= viewport.w || y >= viewport.h) return true;
+  return Math.max(w, h) < TINY_BOARD;
+}
+
 /** The boards a selection box drawn from one corner to the other touches, in page order. */
 export function boardsIn(
   a: { x: number; y: number },
@@ -156,6 +177,7 @@ export function Canvas({
   const panning = mode === "hand" || space;
   const { camera, setCamera, zoomAt, panBy, fit } = useCamera();
   const moving = useMoving(camera);
+  const still = useWindowStill();
   const viewport = useRef<HTMLDivElement>(null);
   const [measured, setMeasured] = useState<Record<string, number>>({});
   const [pending, setPending] = useState<Pending | null>(null);
@@ -312,6 +334,18 @@ export function Canvas({
   // Wheel: pan; pinch or modifier: zoom. The viewport only mounts once the doc
   // arrives, so attach again then.
   const mounted = !!(doc && page);
+
+  // The viewport's size, so a board a bigger window brings into view starts moving.
+  const [view, setView] = useState({ w: 1200, h: 800 });
+  useEffect(() => {
+    const el = viewport.current;
+    if (!mounted || !el) return;
+    const measure = () => setView({ w: el.clientWidth, h: el.clientHeight });
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [mounted]);
   useEffect(() => {
     if (!mounted) return;
     const el = viewport.current;
@@ -761,7 +795,7 @@ export function Canvas({
   const selectedRects = rectsFor(selection);
 
   return (
-    <div className={cn("pz-root", `pz-${theme}`, className)}>
+    <div className={cn("pz-root", `pz-${theme}`, still && "pz-still", className)}>
       <div
         ref={viewport}
         className={cn(
@@ -860,6 +894,8 @@ export function Canvas({
                   assetBase={source.assetBase}
                   colorScheme={isThemed(doc.tokens, ab.root) ? theme : "light"}
                   arrivals={arrivals}
+                  // Mid-gesture too: a loop under a blur redraws it every frame of a pan.
+                  hold={moving || outOfSight({ x, y, w, h: h ?? boardHeight(ab) }, camera, view)}
                 />
               </div>
             );

@@ -12,6 +12,7 @@ import {
 } from "@ponzu/render";
 import { memo, useLayoutEffect, useRef } from "react";
 import type { Arrivals } from "./arrive.ts";
+import { useWindowStill } from "./still.ts";
 
 interface Props {
   artboard: AB;
@@ -20,6 +21,8 @@ interface Props {
   colorScheme?: "light" | "dark";
   /** An agent's new pieces, which arrive as they render. */
   arrivals?: Arrivals;
+  /** Nobody can see it move (off screen, tiny, mid-gesture, window away): its loops hold. */
+  hold?: boolean;
 }
 
 const loadedFonts = new Set<string>();
@@ -65,9 +68,12 @@ export const ArtboardView = memo(function ArtboardView({
   assetBase,
   colorScheme,
   arrivals,
+  hold: held = false,
 }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const last = useRef("");
+  // Every board, the home screen's previews too, holds while nobody can be watching the window.
+  const hold = useWindowStill() || held;
 
   useLayoutEffect(() => {
     const el = host.current;
@@ -82,8 +88,49 @@ export const ArtboardView = memo(function ArtboardView({
     arrivals?.replay(root);
   }, [artboard, tokens, assetBase, colorScheme, arrivals]);
 
+  // After the markup above: a re-render brings fresh loops, held again here.
+  useLayoutEffect(() => {
+    const root = host.current?.shadowRoot;
+    if (!root) return;
+    holdLoops(root, hold);
+    if (!hold) return;
+    // A loop that starts later (a hover's, say) holds too.
+    const onStart = () => holdLoops(root, true);
+    root.addEventListener("animationstart", onStart);
+    return () => root.removeEventListener("animationstart", onStart);
+  }, [hold, artboard, tokens, assetBase, colorScheme]);
+
   return <div ref={host} data-artboard-host={artboard.id} style={{ display: "contents" }} />;
 });
+
+/**
+ * Stop or restart a board's infinite animations where they stand. Each loop redraws its board
+ * every frame, and a page of them, under backdrop blurs, kept a MacBook Air's GPU busy all
+ * afternoon. One-off entrances play out, so a board that's held still shows its settled page.
+ * The rate, not pause(): pausing from script overrides the design's own animation-play-state
+ * from then on, and a loop meant to run on :hover would stop answering it.
+ */
+function holdLoops(root: ShadowRoot, hold: boolean) {
+  for (const a of root.getAnimations()) {
+    if (a.effect?.getTiming().iterations === Number.POSITIVE_INFINITY)
+      a.playbackRate = hold ? 0 : 1;
+  }
+  // SVG's own loops, and looping videos: only the ones that loop, and only what this held.
+  for (const svg of root.querySelectorAll("svg")) {
+    if (svg.parentElement?.closest("svg") || !svg.querySelector(LOOPING_SMIL)) continue;
+    if (hold) svg.pauseAnimations();
+    else svg.unpauseAnimations();
+  }
+  for (const v of root.querySelectorAll("video")) {
+    if (hold && v.loop && !v.paused) {
+      v.pause();
+      heldVideos.add(v);
+    } else if (!hold && heldVideos.delete(v)) void v.play().catch(() => {});
+  }
+}
+
+const LOOPING_SMIL = '[repeatCount="indefinite"], [repeatDur="indefinite"]';
+const heldVideos = new WeakSet<HTMLVideoElement>();
 
 /**
  * What an artboard's shadow root holds: its styles and markup, and the Google

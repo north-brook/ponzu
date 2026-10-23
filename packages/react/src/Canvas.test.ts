@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Artboard } from "@ponzu/core";
-import { boardsIn, labelCovers, size } from "./Canvas.tsx";
+import { boardsIn, labelCovers, outOfSight, size } from "./Canvas.tsx";
 
 const board = (style: Record<string, string>) =>
   ({ id: "ab_1", name: "A", x: 0, y: 0, root: { style } }) as unknown as Artboard;
@@ -39,4 +39,19 @@ test("a selection box takes every board it touches, drawn either way", () => {
   expect(boardsIn({ x: 550, y: 50 }, { x: -50, y: -50 }, boards)).toEqual(["a", "b"]);
   // The gap between boards takes none.
   expect(boardsIn({ x: 420, y: 320 }, { x: 480, y: 380 }, boards)).toEqual([]);
+});
+
+test("a board's loops hold off screen and as a thumbnail, and play in view", () => {
+  const view = { w: 1280, h: 800 };
+  const phone = { x: 0, y: 0, w: 393, h: 852 };
+  // At 100% on screen it plays; panned past any edge, it holds.
+  expect(outOfSight(phone, { x: 100, y: 0, zoom: 1 }, view)).toBe(false);
+  expect(outOfSight(phone, { x: -400, y: 0, zoom: 1 }, view)).toBe(true);
+  expect(outOfSight(phone, { x: 1280, y: 0, zoom: 1 }, view)).toBe(true);
+  expect(outOfSight(phone, { x: 0, y: -900, zoom: 1 }, view)).toBe(true);
+  // Partly in view is in view.
+  expect(outOfSight(phone, { x: -300, y: -700, zoom: 1 }, view)).toBe(false);
+  // iphone.design's Connect page fit to the window: 36 phones about 96px tall. Thumbnails.
+  expect(outOfSight(phone, { x: 0, y: 0, zoom: 0.11 }, view)).toBe(true);
+  expect(outOfSight(phone, { x: 0, y: 0, zoom: 0.25 }, view)).toBe(false);
 });
