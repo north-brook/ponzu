@@ -2,14 +2,14 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { FileCard, Marked, useMarkColor } from "../components/file-card";
-import { Close, Search as SearchIcon } from "../components/icons";
-import { MacImage } from "../components/preview";
-import { useFiles } from "../lib/catalog";
-import { search } from "../lib/search";
-import { isUnseen, useSeen } from "../lib/seen";
-import { useTheme } from "../lib/theme";
-import { brand } from "../lib/tokens";
+import { FileCard, Marked, useMarkColor } from "../../../components/file-card";
+import { Close, Search as SearchIcon } from "../../../components/icons";
+import { MacImage } from "../../../components/preview";
+import { useFiles } from "../../../lib/catalog";
+import { search } from "../../../lib/search";
+import { isUnseen, useSeen } from "../../../lib/seen";
+import { useTheme } from "../../../lib/theme";
+import { brand } from "../../../lib/tokens";
 
 /**
  * Search (Flow › 2 Search): one field with the yuzu focus ring, and results

@@ -62,10 +62,8 @@ export default function RootLayout() {
                 options={{ animation: "fade", gestureEnabled: false }}
               />
               <Stack.Screen name="asleep" options={{ animation: "fade", gestureEnabled: false }} />
-              <Stack.Screen name="designs" options={{ animation: "none", gestureEnabled: false }} />
-              <Stack.Screen name="search" options={{ animation: "fade" }} />
+              <Stack.Screen name="(tabs)" options={{ animation: "none", gestureEnabled: false }} />
               <Stack.Screen name="design/[mac]/[key]" options={{ animation: "default" }} />
-              <Stack.Screen name="activity" options={{ animation: "default" }} />
               <Stack.Screen name="pair" options={{ animation: "none" }} />
               <Stack.Screen name="dev" options={{ animation: "none" }} />
             </Stack>

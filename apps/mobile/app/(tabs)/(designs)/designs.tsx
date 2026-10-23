@@ -14,19 +14,19 @@ import {
 import Animated, { Easing, FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
-import { Lockup } from "../components/chrome";
-import { FileCard } from "../components/file-card";
-import { Glass } from "../components/glass";
-import { Bell, Branch, Check, Chevron, Folder, Moon, Search } from "../components/icons";
-import { useActivityCount } from "../lib/activity-store";
-import { refreshFeeds, syncFeeds, useCatalogs, useFiles, useShelve } from "../lib/catalog";
-import { clock, type PhoneFile, projects, type Shelf, shelfOf } from "../lib/files";
-import type { ShelfAction } from "../lib/mac-queries";
-import { SLICE, SLICE_STROKE } from "../lib/mark";
-import { reachAll, useMacs } from "../lib/reach";
-import { isUnseen, useSeen } from "../lib/seen";
-import { useTheme } from "../lib/theme";
-import { brand, EASE_OUT } from "../lib/tokens";
+import { Lockup } from "../../../components/chrome";
+import { FileCard } from "../../../components/file-card";
+import { Glass } from "../../../components/glass";
+import { Bell, Branch, Check, Chevron, Folder, Moon, Search } from "../../../components/icons";
+import { useActivityCount } from "../../../lib/activity-store";
+import { refreshFeeds, syncFeeds, useCatalogs, useFiles, useShelve } from "../../../lib/catalog";
+import { clock, type PhoneFile, projects, type Shelf, shelfOf } from "../../../lib/files";
+import type { ShelfAction } from "../../../lib/mac-queries";
+import { SLICE, SLICE_STROKE } from "../../../lib/mark";
+import { reachAll, useMacs } from "../../../lib/reach";
+import { isUnseen, useSeen } from "../../../lib/seen";
+import { useTheme } from "../../../lib/theme";
+import { brand, EASE_OUT } from "../../../lib/tokens";
 
 const SHELVES: { id: Shelf; label: string }[] = [
   { id: "recent", label: "Recent" },

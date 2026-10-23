@@ -2,19 +2,19 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BarButton } from "../components/chrome";
-import { AgentMark, Back } from "../components/icons";
-import { MacImage } from "../components/preview";
-import { type ActivityItem, changeTarget, shortAgent, title } from "../lib/activity";
-import { markActivitySeen, useActivity } from "../lib/activity-store";
-import { useFiles } from "../lib/catalog";
-import { shortAgo } from "../lib/files";
-import { baseUrl } from "../lib/mac";
-import { findMac } from "../lib/macs";
-import { track } from "../lib/telemetry";
-import { useTheme } from "../lib/theme";
-import { refreshThreads, useThreadDocs } from "../lib/threads";
-import { brand } from "../lib/tokens";
+import { BarButton } from "../../../components/chrome";
+import { AgentMark, Back } from "../../../components/icons";
+import { MacImage } from "../../../components/preview";
+import { type ActivityItem, changeTarget, shortAgent, title } from "../../../lib/activity";
+import { markActivitySeen, useActivity } from "../../../lib/activity-store";
+import { useFiles } from "../../../lib/catalog";
+import { shortAgo } from "../../../lib/files";
+import { baseUrl } from "../../../lib/mac";
+import { findMac } from "../../../lib/macs";
+import { track } from "../../../lib/telemetry";
+import { useTheme } from "../../../lib/theme";
+import { refreshThreads, useThreadDocs } from "../../../lib/threads";
+import { brand } from "../../../lib/tokens";
 
 /**
  * Activity (Flow › 10, from the bell): what agents changed in your designs,
