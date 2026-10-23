@@ -537,6 +537,45 @@ test("waiting for activity ends a pass", async () => {
   expect(me().status).toBeUndefined();
 });
 
+test("an agent that writes the files itself shows as working on them", async () => {
+  const { call, ws } = await setup();
+  const me = () => ws.presence.list().find((p) => p.id === "t")!;
+  // A read is enough to place it in the design.
+  await call("get_tree", {});
+  ws.presence.wroteOnDisk("fern", { artboards: ["ab_hero"], gone: [] });
+  expect(me()).toMatchObject({ working: ["ab_hero"], file: "fern" });
+  ws.presence.wroteOnDisk("fern", { artboards: [], gone: ["ab_hero"] });
+  expect(me().working).toEqual([]);
+
+  // In another design, or waiting for the person's edits: not its doing.
+  ws.presence.wroteOnDisk("other", { artboards: ["ab_x"], gone: [] });
+  expect(me().working).toEqual([]);
+  await call("wait_for_activity", { timeout: 0.05 });
+  const waiting = call("wait_for_activity", { timeout: 0.2 });
+  await Bun.sleep(20);
+  ws.presence.wroteOnDisk("fern", { artboards: ["ab_hero"], gone: [] });
+  expect(me().working).toEqual([]);
+  await waiting;
+});
+
+test("an edit on disk counts for the agent working in that project", () => {
+  const presence = new PresenceHub();
+  const caller = {
+    id: "a",
+    author: { kind: "agent" as const, name: "Claude" },
+    origin: { cwd: "/code/shop" },
+  };
+  presence.touch(caller);
+  presence.wroteOnDisk("/code/shop/design/app.design", { artboards: ["ab_1"], gone: [] });
+  expect(presence.list()[0]).toMatchObject({
+    working: ["ab_1"],
+    file: "/code/shop/design/app.design",
+  });
+  // A sibling folder that merely shares the prefix isn't its project.
+  presence.wroteOnDisk("/code/shopfront/x.design", { artboards: ["ab_2"], gone: [] });
+  expect(presence.list()[0]!.working).toEqual(["ab_1"]);
+});
+
 test("deleting an artboard takes it from another agent working on it", async () => {
   const { call, ws } = await setup();
   const other: ToolContext = { ws, caller: { id: "o", author: { kind: "agent", name: "other" } } };
