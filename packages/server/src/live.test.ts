@@ -256,8 +256,10 @@ test("a canvas on another Mac that falls behind a burst of changes catches up on
       10_000,
       () => `remote canvas caught up (resyncs: ${JSON.stringify(resyncs)})`,
     );
-    // Some of it was dropped on the way and the canvas got the whole doc, not every op.
-    expect(resyncs).toContainEqual(expect.objectContaining({ reason: "backpressure" }));
+    // Some of it was dropped on the way and the canvas got the whole doc, not every op: once.
+    // The doc is far bigger than the buffer, so what's sent with it mustn't be dropped and
+    // send the doc round again.
+    expect(resyncs).toEqual([{ reason: "backpressure", watch: false, relayed: false }]);
   } finally {
     m.spareWs.telemetry = undefined;
     await m.close();

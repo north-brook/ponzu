@@ -501,9 +501,10 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
       if (!s.data.behind || s.getBufferedAmount() > 0) return;
       s.data.behind = false;
       resynced("backpressure", s);
+      // Who's here may have changed while it heard nothing: before the doc, so a doc that
+      // fills the buffer again doesn't drop it and send the whole doc round once more.
+      send(s, { t: "presence", presence: ws.presence.list() });
       resend(s);
-      // Who's here may have changed while it heard nothing.
-      deliver(s, JSON.stringify({ t: "presence", presence: ws.presence.list() }));
     },
     close(s) {
       if (s.data.phone) {
