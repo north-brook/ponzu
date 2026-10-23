@@ -3,7 +3,7 @@ name: designs
 tags: [dev-host]
 ---
 # The dev host's three examples come up on Designs, under the tab bar's
-# Designs, Activity and Search.
+# Designs, Activity and Search, with the filter in the header.
 - runFlow: shared/start.yaml
 - assertVisible:
     id: tab-designs
@@ -23,4 +23,21 @@ tags: [dev-host]
     element:
       id: card-Weft
     timeout: 30000
+# The filter is the header's native menu: Scratch shows as a line over the
+# grid, and the line clears it.
+- tapOn: "Filter"
+- extendedWaitUntil:
+    visible: "Scratch.*"
+    timeout: 5000
+- tapOn: "Scratch.*"
+- extendedWaitUntil:
+    visible:
+      id: filter-line
+    timeout: 5000
+- tapOn:
+    id: filter-line
+- extendedWaitUntil:
+    notVisible:
+      id: filter-line
+    timeout: 5000
 - assertNotVisible: ".*Cannot update a component.*"

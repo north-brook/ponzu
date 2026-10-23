@@ -9,15 +9,21 @@
  *   names design.json uses, desktop's `Icons` (packages/react/src/icons.tsx).
  *   app.json puts these in the asset catalog (expo-native-asset), where the
  *   native menu finds them by name; lib/menu-icons.ts lists them for the app.
+ * - `bar-<name>.png`, 22pt: a header bar button's glyph (Designs' filter).
  *
- * Rerun when a mark or desktop's icons change, and add a new `hi-*` to
- * app.json's expo-native-asset list:
+ * Rerun when a mark or desktop's icons change, and add a new `hi-*` or
+ * `bar-*` to app.json's expo-native-asset list:
  *
  *   bun apps/mobile/scripts/tab-icons.ts
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Home01Icon, Notification01Icon, Search01Icon } from "@hugeicons/core-free-icons";
+import {
+  FilterHorizontalIcon,
+  Home01Icon,
+  Notification01Icon,
+  Search01Icon,
+} from "@hugeicons/core-free-icons";
 import { Resvg } from "@resvg/resvg-js";
 import { Icons } from "../../../packages/react/src/icons.tsx";
 
@@ -68,6 +74,9 @@ for (const [name, icon] of Object.entries(MARKS)) {
   draw(`tab-${name}`, icon, 25, 1.6);
   draw(`tab-${name}-fill`, icon, 25, 2.2);
 }
+// The header's bar buttons, 22pt as the system's: Designs' filter menu.
+const BAR: Record<string, IconSvg> = { filter: FilterHorizontalIcon };
+for (const [name, icon] of Object.entries(BAR)) draw(`bar-${name}`, icon, 22, 1.6);
 // The menu's icons at the weight desktop draws them.
 for (const [name, icon] of Object.entries(Icons)) draw(`hi-${name}`, icon as IconSvg, 22, 1.6);
 // Their names, for the app to know which a page may name (lib/menu-icons.ts).

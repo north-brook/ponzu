@@ -2,8 +2,8 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { withDangerousMod } = require("expo/config-plugins");
 
-/** The Hugeicons images the native menus name: `hi-*` (scripts/tab-icons.ts). */
-const ICON = /^hi-.+\.imageset$/;
+/** The Hugeicons images native menus and bar buttons name: `hi-*`, `bar-*` (scripts/tab-icons.ts). */
+const ICON = /^(hi|bar)-.+\.imageset$/;
 
 /** Sets one imageset's rendering intent in its Contents.json. */
 async function intend(file, intent) {

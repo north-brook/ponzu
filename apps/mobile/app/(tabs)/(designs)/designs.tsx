@@ -1,9 +1,10 @@
-import { router, useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import type { MenuAction } from "@react-native-menu/menu";
+import { selectionAsync } from "expo-haptics";
+import { router, Stack } from "expo-router";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActionSheetIOS,
   Alert,
-  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -11,12 +12,12 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
+import { barMenuItems } from "../../../components/bar-menu";
 import { Lockup } from "../../../components/chrome";
 import { FileCard } from "../../../components/file-card";
 import { HandoffRise } from "../../../components/handoff";
-import { Branch, Check, Chevron, Folder, Moon } from "../../../components/icons";
+import { Close, Moon } from "../../../components/icons";
 import { refreshFeeds, syncFeeds, useCatalogs, useFiles, useShelve } from "../../../lib/catalog";
 import { clock, type PhoneFile, projects, type Shelf, shelfOf } from "../../../lib/files";
 import type { ShelfAction } from "../../../lib/mac-queries";
@@ -33,14 +34,16 @@ const SHELVES: { id: Shelf; label: string }[] = [
 
 /**
  * Designs (Flow › 1 Designs), the first tab: the desktop dashboard for a
- * phone. The lockup, one filter row (the shelf menu, then a chip per
- * project), and every Mac's designs as cards, newest first. Search and
- * Activity are tabs of their own beside it. Macs that
- * didn't answer keep their cards from last time, dimmed, under a note.
+ * phone. The lockup and a filter in the system's glass header, the grid
+ * scrolling under it; every Mac's designs as cards, newest first. The
+ * filter is the system's menu: the shelf (Recent, Scratch, Archived) and
+ * the project, each with its count; anything but all of Recent shows as a
+ * line over the grid, which clears it. Search and Activity are tabs of
+ * their own beside it. Macs that didn't answer keep their cards from last
+ * time, dimmed, under a note.
  */
 export default function Designs() {
-  const { color, shadow } = useTheme();
-  const insets = useSafeAreaInsets();
+  const { color } = useTheme();
   const { width } = useWindowDimensions();
   const files = useFiles();
   const seen = useSeen();
@@ -48,12 +51,9 @@ export default function Designs() {
   const all = useCatalogs();
   const [shelf, setShelf] = useState<Shelf>("recent");
   const [project, setProject] = useState<string | null | undefined>(undefined);
-  const [menu, setMenu] = useState(false);
   const [pulled, setPulled] = useState(false);
   const shelve = useShelve();
   useEffect(syncFeeds, []);
-  // The menu is a modal over the whole app: it goes when Designs does.
-  useFocusEffect(useCallback(() => () => setMenu(false), []));
 
   const onShelf = useMemo(() => files.filter((f) => shelfOf(f) === shelf), [files, shelf]);
   const counts = useMemo(() => {
@@ -113,10 +113,81 @@ export default function Designs() {
     );
   };
 
+  // The filter menu: the shelf, then the project, each the current one checked.
+  const shelfLabel = SHELVES.find((s) => s.id === shelf)!.label;
+  const projectLabel = project === undefined ? null : (project ?? "Not in a project");
+  const filters = useMemo<MenuAction[]>(
+    () => [
+      {
+        id: "shelves",
+        title: "Shelf",
+        displayInline: true,
+        subactions: SHELVES.map((s) => ({
+          id: `shelf:${s.id}`,
+          title: s.label,
+          subtitle: String(counts[s.id]),
+          image: s.id === "recent" ? "hi-home" : s.id === "scratch" ? "hi-scratch" : "hi-archive",
+          state: s.id === shelf ? "on" : "off",
+        })),
+      },
+      {
+        id: "projects",
+        title: "Project",
+        displayInline: true,
+        subactions: [
+          {
+            id: "project:*",
+            title: "All",
+            subtitle: String(onShelf.length),
+            image: "hi-grid",
+            state: project === undefined ? "on" : "off",
+          },
+          ...chips.map((c) => ({
+            id: `project:${c.name ?? ""}`,
+            title: c.name ?? "Not in a project",
+            subtitle: String(c.count),
+            image: c.name ? "hi-branch" : "hi-folder",
+            state: project === c.name ? ("on" as const) : ("off" as const),
+          })),
+        ],
+      },
+    ],
+    [shelf, project, counts, onShelf.length, chips],
+  );
+  const pickFilter = (id: string) => {
+    selectionAsync().catch(() => {});
+    if (id.startsWith("shelf:")) {
+      setShelf(id.slice(6) as Shelf);
+      setProject(undefined);
+    } else if (id === "project:*") setProject(undefined);
+    else if (id.startsWith("project:")) setProject(id.slice(8) || null);
+  };
+  const filtered = shelf !== "recent" || project !== undefined;
+
   return (
     <View testID="designs" style={{ flex: 1, backgroundColor: color.bg }}>
+      {/* The lockup and the filter in the system's header, over the grid as it scrolls. */}
+      <Stack.Toolbar placement="left">
+        <Stack.Toolbar.View hidesSharedBackground>
+          <View style={{ paddingLeft: 4 }}>
+            <Lockup color={color.ink} />
+          </View>
+        </Stack.Toolbar.View>
+      </Stack.Toolbar>
+      <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Menu
+          accessibilityLabel={
+            filtered ? `Filter: ${[shelfLabel, projectLabel].filter(Boolean).join(", ")}` : "Filter"
+          }
+          title="Show"
+        >
+          <Stack.Toolbar.Icon renderingMode="template" xcasset="bar-filter" />
+          {barMenuItems(filters, pickFilter)}
+        </Stack.Toolbar.Menu>
+      </Stack.Toolbar>
       <ScrollView
-        contentContainerStyle={{ paddingTop: insets.top, paddingBottom: insets.bottom + 24 }}
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerStyle={{ paddingTop: 8, paddingBottom: 24 }}
         refreshControl={
           <RefreshControl
             refreshing={pulled}
@@ -129,90 +200,35 @@ export default function Designs() {
           />
         }
       >
-        {/* The lockup arrives by itself: its slice from the launch screen, then its word. */}
-        <View>
-          <View
+        {/* What the filter shows, when it isn't everything recent: never hidden. */}
+        {filtered && (
+          <Pressable
+            onPress={() => {
+              selectionAsync().catch(() => {});
+              setShelf("recent");
+              setProject(undefined);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={`Showing ${[shelfLabel, projectLabel].filter(Boolean).join(", ")}. Show all recent`}
+            testID="filter-line"
+            hitSlop={8}
             style={{
+              marginHorizontal: 20,
+              marginBottom: 14,
               flexDirection: "row",
               alignItems: "center",
-              justifyContent: "space-between",
-              paddingTop: 10,
-              paddingBottom: 12,
-              paddingHorizontal: 20,
-            }}
-          >
-            <Lockup color={color.ink} />
-          </View>
-        </View>
-        <HandoffRise kind="designs" i={0}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{
-              paddingTop: 16,
-              paddingBottom: 18,
-              paddingHorizontal: 20,
               gap: 6,
-              alignItems: "center",
+              alignSelf: "flex-start",
             }}
           >
-            <Pressable
-              onPress={() => setMenu(true)}
-              accessibilityRole="button"
-              accessibilityLabel={`Shelf: ${SHELVES.find((s) => s.id === shelf)!.label}`}
-              testID="shelf"
-              style={{
-                height: 32,
-                paddingLeft: 12,
-                paddingRight: 10,
-                borderRadius: 999,
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 6,
-                backgroundColor: color.card,
-                boxShadow: shadow.board,
-              }}
+            <Text
+              style={{ fontFamily: "Inter", fontWeight: "500", fontSize: 14, color: color.muted }}
             >
-              <Text
-                style={{ fontFamily: "Inter", fontWeight: "600", fontSize: 13, color: color.ink }}
-              >
-                {SHELVES.find((s) => s.id === shelf)!.label}
-              </Text>
-              <Text
-                style={{
-                  fontFamily: "Inter",
-                  fontWeight: "500",
-                  fontSize: 13,
-                  color: color.ink,
-                  opacity: 0.5,
-                  fontVariant: ["tabular-nums"],
-                }}
-              >
-                {counts[shelf]}
-              </Text>
-              <Chevron color={color.muted} />
-            </Pressable>
-            <View
-              style={{ width: 1, height: 18, backgroundColor: color.hairline, marginHorizontal: 4 }}
-            />
-            <Chip
-              label="All"
-              count={onShelf.length}
-              on={project === undefined}
-              onPress={() => setProject(undefined)}
-            />
-            {chips.map((p) => (
-              <Chip
-                key={p.name ?? "none"}
-                label={p.name ?? "Not in a project"}
-                icon={p.name ? "branch" : "folder"}
-                count={p.count}
-                on={project === p.name}
-                onPress={() => setProject(project === p.name ? undefined : p.name)}
-              />
-            ))}
-          </ScrollView>
-        </HandoffRise>
+              {[shelf === "recent" ? null : shelfLabel, projectLabel].filter(Boolean).join(" · ")}
+            </Text>
+            <Close size={13} color={color.faint} width={2} />
+          </Pressable>
+        )}
         {arriving.length > 0 && files.length > 0 && (
           <Notice>
             <Juice color={color.faint} />
@@ -274,7 +290,7 @@ export default function Designs() {
           }}
         >
           {shown.map((f, i) => (
-            <HandoffRise key={f.id} kind="designs" i={1 + i}>
+            <HandoffRise key={f.id} kind="designs" i={i}>
               <FileCard
                 file={f}
                 width={cardWidth}
@@ -307,18 +323,6 @@ export default function Designs() {
           </Text>
         )}
       </ScrollView>
-      <ShelfMenu
-        open={menu}
-        top={insets.top + 226 - 54 + 6 - 44}
-        shelf={shelf}
-        counts={counts}
-        onPick={(s) => {
-          setShelf(s);
-          setProject(undefined);
-          setMenu(false);
-        }}
-        onClose={() => setMenu(false)}
-      />
     </View>
   );
 }
@@ -371,155 +375,5 @@ function Juice({ color }: { color: string }) {
         />
       ))}
     </Svg>
-  );
-}
-
-function Chip({
-  label,
-  count,
-  on,
-  icon,
-  onPress,
-}: {
-  label: string;
-  count: number;
-  on: boolean;
-  icon?: "branch" | "folder";
-  onPress: () => void;
-}) {
-  const { color, scheme } = useTheme();
-  const fg = on ? color.bg : color.muted;
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityState={{ selected: on }}
-      style={{
-        height: 32,
-        paddingHorizontal: 12,
-        borderRadius: 999,
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 6,
-        backgroundColor: on ? color.ink : "transparent",
-        boxShadow: on
-          ? undefined
-          : `inset 0 0 0 1px ${scheme === "dark" ? "rgba(255,255,255,0.2)" : "rgba(17,17,16,0.12)"}`,
-      }}
-    >
-      {icon === "branch" && <Branch size={14} color={fg} width={1.6} />}
-      {icon === "folder" && <Folder size={14} color={fg} width={1.6} />}
-      <Text style={{ fontFamily: "Inter", fontWeight: "500", fontSize: 13, color: fg }}>
-        {label}
-      </Text>
-      <Text
-        style={{
-          fontFamily: "Inter",
-          fontWeight: "500",
-          fontSize: 13,
-          color: fg,
-          opacity: 0.6,
-          fontVariant: ["tabular-nums"],
-        }}
-      >
-        {count}
-      </Text>
-    </Pressable>
-  );
-}
-
-/** Recent ▾ (Flow › 1 Designs · shelf menu): the three shelves with their counts. */
-function ShelfMenu({
-  open,
-  top,
-  shelf,
-  counts,
-  onPick,
-  onClose,
-}: {
-  open: boolean;
-  top: number;
-  shelf: Shelf;
-  counts: Record<Shelf, number>;
-  onPick: (s: Shelf) => void;
-  onClose: () => void;
-}) {
-  const { color, shadow, scheme } = useTheme();
-  return (
-    <Modal visible={open} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable
-        style={{
-          flex: 1,
-          backgroundColor: scheme === "dark" ? "rgba(0,0,0,0.35)" : "rgba(17,17,16,0.12)",
-        }}
-        onPress={onClose}
-        accessibilityLabel="Close"
-      />
-      <View
-        testID="shelf-menu"
-        style={{
-          position: "absolute",
-          left: 20,
-          top,
-          width: 220,
-          paddingVertical: 6,
-          borderRadius: 14,
-          backgroundColor: color.card,
-          boxShadow: `${shadow.pop}, 0 0 0 1px ${color.hairline}`,
-        }}
-      >
-        {SHELVES.map((s, i) => (
-          <View key={s.id}>
-            <Pressable
-              onPress={() => onPick(s.id)}
-              accessibilityRole="menuitem"
-              testID={`shelf-${s.id}`}
-              style={({ pressed }) => ({
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 10,
-                height: 44,
-                paddingHorizontal: 14,
-                backgroundColor: pressed ? color.canvas : "transparent",
-              })}
-            >
-              <View style={{ width: 16 }}>{s.id === shelf && <Check color={color.ink} />}</View>
-              <Text
-                style={{
-                  flex: 1,
-                  fontFamily: "Inter",
-                  fontWeight: "500",
-                  fontSize: 16,
-                  color: color.ink,
-                }}
-              >
-                {s.label}
-              </Text>
-              <Text
-                style={{
-                  fontFamily: "Inter",
-                  fontWeight: "500",
-                  fontSize: 16,
-                  color: color.faint,
-                  fontVariant: ["tabular-nums"],
-                }}
-              >
-                {counts[s.id]}
-              </Text>
-            </Pressable>
-            {i === 0 && (
-              <View
-                style={{
-                  height: 1,
-                  marginVertical: 2,
-                  marginHorizontal: 14,
-                  backgroundColor: color.hairline,
-                }}
-              />
-            )}
-          </View>
-        ))}
-      </View>
-    </Modal>
   );
 }

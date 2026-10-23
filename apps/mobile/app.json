@@ -58,6 +58,10 @@
           "assets": [
             {
               "type": "imageset",
+              "path": "./assets/native/bar-filter.png"
+            },
+            {
+              "type": "imageset",
               "path": "./assets/native/hi-add.png"
             },
             {
