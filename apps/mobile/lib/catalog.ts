@@ -4,7 +4,13 @@ import { useCallback, useMemo } from "react";
 import { type MacCatalog, mergeCatalogs, type PhoneFile } from "./files";
 import { getJson, request } from "./http";
 import { baseUrl, type Mac } from "./mac";
-import { keys, type ShelfChange, shelfMutation, writeCatalogMessage } from "./mac-queries";
+import {
+  agentEdited,
+  keys,
+  type ShelfChange,
+  shelfMutation,
+  writeCatalogMessage,
+} from "./mac-queries";
 import { findMac, macs } from "./macs";
 import { queryClient } from "./query";
 import { reach, reachOne } from "./reach";
@@ -36,7 +42,15 @@ interface Feed {
 }
 const feeds = new Map<string, Feed>();
 
+/** Told when an agent changed a design on a Mac (activity-store.ts asks it what). */
+let onAgentEdit: (mac: string) => void = () => {};
+export function whenAgentEdits(fn: (mac: string) => void) {
+  onAgentEdit = fn;
+}
+
 function onMessage(mac: Mac, msg: CatalogMessage) {
+  if (agentEdited(queryClient.getQueryData<Catalog>(keys.catalog(mac.id)), msg))
+    onAgentEdit(mac.id);
   const catalog = writeCatalogMessage(queryClient, mac.id, msg);
   if (catalog && msg.t !== "ping") baselineSeen(mac.id, catalog.files);
 }

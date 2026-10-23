@@ -31,13 +31,22 @@ first, gives core what Hermes lacks.
 
 What the phone asks a Mac for goes through one TanStack Query cache
 (`lib/query.tsx`), keyed per Mac (`lib/mac-queries.ts`): `["mac", id,
-"info"]` (`/api/info`), `["mac", id, "macs"]` (`/api/macs`) and `["mac", id,
-"catalog"]` (its designs). Info and catalogs are kept in AsyncStorage for a
-week (dropped on a new version or protocol), so the app opens onto the last
-list and an asleep Mac keeps its cards, dimmed. While a Mac answers, its
+"info"]` (`/api/info`), `["mac", id, "macs"]` (`/api/macs`), `["mac", id,
+"catalog"]` (its designs) and `["mac", id, "activity"]` (`/api/activity`,
+what agents changed). Info, catalogs and activity are kept in AsyncStorage
+for a week (dropped on a new version or protocol), so the app opens onto the
+last list and an asleep Mac keeps its cards, dimmed. While a Mac answers, its
 catalog socket (`/api/catalog/stream`) writes the snapshot and each patch
 into its catalog query; nothing else holds a copy. Search, Activity and the
-cards are read from those queries. Pairing and shelf changes (`POST
+cards are read from those queries. Activity asks each Mac again when the
+app comes back to the foreground and when its catalog stream says an agent
+edited a design.
+
+Each Mac keeps a history of what agents changed (`packages/server/src/changes.ts`):
+an agent's edits to artboards in one design, a couple of minutes apart at
+most, are one change ("Claude changed 12 artboards"), with the artboards and
+whether they were added, removed or changed. The last 200 per design live in
+the catalog database (`~/.ponzu/ponzu.db`), so a restart keeps them. Pairing and shelf changes (`POST
 /api/shelf`, by holding a card) are mutations; a shelf change moves the card
 at once and puts it back if the Mac refuses.
 

@@ -17,10 +17,27 @@ tags: [dev-host]
     visible:
       id: bell
     timeout: 10000
-# And with ?since=, which shows what's new since then.
+# And with ?since=, which shows what's new since then: run.sh's agent (agent.ts)
+# added three artboards to a design, which the Mac's history names, with their thumbnails.
 - openLink: ponzu://activity?since=1
 - extendedWaitUntil:
     visible:
       id: activity
     timeout: 10000
+# A row reads as one element: its title, where, and when.
+- extendedWaitUntil:
+    visible: "Claude added 3 artboards.*Maestro · Home.*"
+    timeout: 20000
+- assertVisible:
+    id: activity-thumbs
+- assertNotVisible: ".*Cannot update a component.*"
+# It opens the design on the first of them.
+- tapOn: "Claude added 3 artboards.*"
+- extendedWaitUntil:
+    visible:
+      id: canvas
+    timeout: 15000
+- extendedWaitUntil:
+    visible: "Step 1"
+    timeout: 20000
 - assertNotVisible: ".*Cannot update a component.*"

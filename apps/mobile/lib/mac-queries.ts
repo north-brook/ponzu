@@ -16,22 +16,40 @@ import type { MutationOptions, Query, QueryClient } from "@tanstack/react-query"
  * - `["mac", id, "catalog"]`: its designs. Persisted, so launch shows the
  *   last list at once and an asleep Mac keeps its cards. The catalog socket
  *   writes its snapshot and patches here; there is no other copy.
+ * - `["mac", id, "activity"]`: `/api/activity`, what agents changed in its
+ *   designs. Persisted, so Activity reads the same with the Mac asleep.
  */
 export const keys = {
   mac: (id: string) => ["mac", id] as const,
   info: (id: string) => ["mac", id, "info"] as const,
   macs: (id: string) => ["mac", id, "macs"] as const,
   catalog: (id: string) => ["mac", id, "catalog"] as const,
+  activity: (id: string) => ["mac", id, "activity"] as const,
 };
 
 /** How long a persisted cache is worth showing. Queries live at least as long. */
 export const PERSIST_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 
-/** Only each Mac's info and catalog go to disk, once they've read. */
+/** Each Mac's info, catalog and activity go to disk, once they've read. */
 export function persistable(query: Pick<Query, "queryKey" | "state">): boolean {
   const [scope, , what] = query.queryKey;
   return (
-    scope === "mac" && (what === "info" || what === "catalog") && query.state.status === "success"
+    scope === "mac" &&
+    (what === "info" || what === "catalog" || what === "activity") &&
+    query.state.status === "success"
+  );
+}
+
+/**
+ * Whether a catalog patch says an agent changed something: a design it put
+ * whose edit is newer than the one the catalog held. Activity asks the Mac
+ * again when it does.
+ */
+export function agentEdited(prev: Catalog | undefined, msg: CatalogMessage): boolean {
+  if (msg.t !== "patch" || !msg.patch.put?.length) return false;
+  const was = new Map(prev?.files.map((f) => [f.key, f.modified]));
+  return msg.patch.put.some(
+    (f) => (f.agents?.length || f.busy) && f.modified > (was.get(f.key) ?? 0),
   );
 }
 

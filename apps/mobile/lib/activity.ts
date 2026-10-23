@@ -1,21 +1,31 @@
-import type { CatalogFileAgent, Doc, Thread } from "@ponzu/core";
+import type { AgentChange, CatalogFileAgent, Doc, Thread } from "@ponzu/core";
 import type { PhoneFile } from "./files";
 
 /**
  * What Activity lists, newest first, split into New (since the person last
  * looked) and Seen. Built from what the phone can know:
  *
+ * - Changes: what agents changed, from each Mac's history (`/api/activity`):
+ *   "Claude changed 12 artboards", with the first few as thumbnails.
  * - Replies: an agent's messages in a thread after the person's own last
  *   message there, from the docs of designs opened on this phone.
  * - Resolved: threads the person started that an agent resolved.
- * - Work: a design an agent is in now, or that changed since the person last
- *   opened it here, from each Mac's catalog. The catalog says a design changed
- *   and which agents are in it, not which artboards an agent changed or how
- *   many: that needs the op history, which no server route offers yet. So
- *   these read "Claude is working on Kettle" or "Kettle changed", not
- *   "Claude changed 12 artboards".
+ * - Work: a design an agent is in right now, from each Mac's catalog. A Mac
+ *   too old to keep a history also lists a design that changed since the
+ *   person last opened it here.
  */
 export type ActivityItem =
+  | {
+      kind: "change";
+      id: string;
+      file: PhoneFile;
+      change: AgentChange;
+      author: string;
+      client?: string;
+      /** The pages its artboards are on, by name. */
+      pageNames: string[];
+      at: number;
+    }
   | {
       kind: "reply";
       id: string;
@@ -49,6 +59,11 @@ export type ActivityItem =
 
 export interface ActivityInput {
   files: PhoneFile[];
+  /**
+   * What agents changed, by Mac, thumbnail URLs absolute. Null for a Mac too
+   * old to keep a history; missing while it hasn't said.
+   */
+  changes?: Record<string, AgentChange[] | null>;
   /** Threads and artboard names of designs opened on the phone, by `<mac>:<key>`. */
   docs: Record<string, Pick<Doc, "threads" | "pages">>;
   /** When the person last looked, by `<mac>:<key>` (see seen.ts). */
@@ -81,6 +96,29 @@ function boardName(doc: Pick<Doc, "pages">, id?: string): string | undefined {
 
 export function buildActivity(input: ActivityInput): ActivityItem[] {
   const out: ActivityItem[] = [];
+  const byKey = new Map(input.files.map((f) => [`${f.mac}:${f.key}`, f]));
+  for (const [mac, changes] of Object.entries(input.changes ?? {})) {
+    for (const change of changes ?? []) {
+      // A design this phone doesn't list (archived away, or gone) has nowhere to open.
+      const file = byKey.get(`${mac}:${change.file}`);
+      if (!file || !change.artboards.length) continue;
+      const pageNames = [
+        ...new Set(
+          change.artboards.map((a) => file.pages.find((p) => p.id === a.page)?.name ?? ""),
+        ),
+      ].filter(Boolean);
+      out.push({
+        kind: "change",
+        id: `change:${mac}:${change.id}`,
+        file,
+        change,
+        author: shortAgent(change.agent.name),
+        client: change.agent.client ?? clientOf(change.agent.name),
+        pageNames,
+        at: change.at,
+      });
+    }
+  }
   for (const file of input.files) {
     const k = `${file.mac}:${file.key}`;
     const doc = input.docs[k];
@@ -136,7 +174,9 @@ export function buildActivity(input: ActivityInput): ActivityItem[] {
     }
     const agent = file.agents?.find((a) => a.activity === "working") ?? file.agents?.[0];
     const seenAt = input.seen[k];
-    const changed = seenAt !== undefined && file.modified > seenAt + 1000;
+    // A Mac with a history says what changed; one without says only that something did.
+    const history = input.changes?.[file.mac] !== null;
+    const changed = !history && seenAt !== undefined && file.modified > seenAt + 1000;
     if (agent || changed) {
       out.push({
         kind: "work",
@@ -148,11 +188,16 @@ export function buildActivity(input: ActivityInput): ActivityItem[] {
       });
     }
   }
-  return out.sort((a, b) => b.at - a.at);
+  // An agent at work right now leads; the rest, newest first.
+  const live = (i: ActivityItem) => (i.kind === "work" && i.agent ? 1 : 0);
+  return out.sort((a, b) => live(b) - live(a) || b.at - a.at);
 }
 
 /** New: since the person last opened Activity, or unseen work in a design. */
 export function isNew(item: ActivityItem, input: Pick<ActivityInput, "seen" | "activitySeenAt">) {
+  // A design the phone first hears of counts as seen as it stands (seen.ts), changes and all:
+  // what an agent changed is new until Activity is opened.
+  if (item.kind === "change") return item.at > input.activitySeenAt;
   if (item.kind === "work") {
     // An agent at work now is news until you've looked at the design.
     const seenAt = input.seen[`${item.file.mac}:${item.file.key}`];
@@ -165,6 +210,11 @@ export function isNew(item: ActivityItem, input: Pick<ActivityInput, "seen" | "a
 /** The title an item reads as. */
 export function title(item: ActivityItem): string {
   switch (item.kind) {
+    case "change": {
+      const n = item.change.artboards.length;
+      const verb = { added: "added", removed: "removed", changed: "changed" }[item.change.kind];
+      return `${item.author} ${verb} ${n} ${n === 1 ? "artboard" : "artboards"}`;
+    }
     case "reply":
       return `${item.author} replied to you`;
     case "resolved":
@@ -178,4 +228,9 @@ export function title(item: ActivityItem): string {
       }
       return "Changed since you looked";
   }
+}
+
+/** The artboard a change opens on: its first one still there. */
+export function changeTarget(item: Extract<ActivityItem, { kind: "change" }>): string | undefined {
+  return item.change.artboards.find((a) => item.file.artboards.some((b) => b.id === a.id))?.id;
 }

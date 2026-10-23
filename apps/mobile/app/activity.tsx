@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BarButton } from "../components/chrome";
 import { AgentMark, Back } from "../components/icons";
 import { MacImage } from "../components/preview";
-import { type ActivityItem, shortAgent, title } from "../lib/activity";
+import { type ActivityItem, changeTarget, shortAgent, title } from "../lib/activity";
 import { markActivitySeen, useActivity } from "../lib/activity-store";
 import { useFiles } from "../lib/catalog";
 import { shortAgo } from "../lib/files";
@@ -17,9 +17,10 @@ import { refreshThreads, useThreadDocs } from "../lib/threads";
 import { brand } from "../lib/tokens";
 
 /**
- * Activity (Flow › 10, from the bell): replies to you in threads, agents'
- * work in your designs, and comments of yours they resolved; New since you
- * last looked, then Seen. See lib/activity.ts for what each is built from.
+ * Activity (Flow › 10, from the bell): what agents changed in your designs,
+ * their replies to you in threads, and comments of yours they resolved; New
+ * since you last looked, then Seen. An agent at work right now leads. See
+ * lib/activity.ts for what each is built from.
  */
 export default function Activity() {
   const { color } = useTheme();
@@ -46,15 +47,18 @@ export default function Activity() {
     return () => markActivitySeen();
   }, []);
 
-  const open = (item: ActivityItem) =>
+  const open = (item: ActivityItem) => {
+    const artboard = item.kind === "change" ? changeTarget(item) : undefined;
     router.push({
       pathname: "/design/[mac]/[key]",
       params: {
         mac: item.file.mac,
         key: item.file.key,
         ...(item.kind === "reply" ? { thread: item.thread.id } : {}),
+        ...(artboard ? { artboard } : {}),
       },
     });
+  };
 
   return (
     <View testID="activity" style={{ flex: 1, backgroundColor: color.bg }}>
@@ -180,11 +184,13 @@ function Item({
   const { color } = useTheme();
   const client = item.kind === "work" ? item.agent?.client : item.client;
   const where =
-    item.kind === "reply"
-      ? [item.file.name, item.boardName].filter(Boolean).join(" · ")
-      : item.kind === "resolved"
-        ? [item.file.name, item.boards.map((b) => b.name).join(", ")].filter(Boolean).join(" · ")
-        : (item.agent?.status ?? `On ${item.file.macName}`);
+    item.kind === "change"
+      ? [item.file.name, item.pageNames.join(", ")].filter(Boolean).join(" · ")
+      : item.kind === "reply"
+        ? [item.file.name, item.boardName].filter(Boolean).join(" · ")
+        : item.kind === "resolved"
+          ? [item.file.name, item.boards.map((b) => b.name).join(", ")].filter(Boolean).join(" · ")
+          : (item.agent?.status ?? `On ${item.file.macName}`);
   const workTitle =
     item.kind === "work" && item.agent
       ? `${shortAgent(item.agent.name)} ${item.agent.activity === "working" ? "is working on" : "is iterating on"} ${item.file.name}`
@@ -195,6 +201,7 @@ function Item({
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
+      testID={`activity-${item.kind}`}
       style={({ pressed }) => ({
         flexDirection: "row",
         gap: 12,
@@ -279,7 +286,14 @@ function Item({
             })}
           </View>
         )}
-        {item.kind === "work" && item.file.artboards.length > 0 && (
+        {item.kind === "change" && (
+          <Strip
+            mac={item.file.mac}
+            live={!item.file.stale}
+            boards={item.change.artboards.filter((a) => a.thumb).slice(0, 3)}
+          />
+        )}
+        {item.kind === "work" && !item.agent && item.file.artboards.length > 0 && (
           <View style={{ flexDirection: "row", gap: 6 }}>
             {item.file.artboards.slice(0, 3).map((a) => (
               <View
@@ -305,5 +319,43 @@ function Item({
         )}
       </View>
     </Pressable>
+  );
+}
+
+/** Up to three of a change's artboards, side by side (the design's 58pt strip). */
+function Strip({
+  mac,
+  live,
+  boards,
+}: {
+  mac: string;
+  live: boolean;
+  boards: { id: string; thumb?: string }[];
+}) {
+  const { color } = useTheme();
+  if (!boards.length) return null;
+  return (
+    <View testID="activity-thumbs" style={{ flexDirection: "row", gap: 6 }}>
+      {boards.map((a) => (
+        <View
+          key={a.id}
+          style={{
+            flex: 1,
+            height: 58,
+            borderRadius: 6,
+            overflow: "hidden",
+            backgroundColor: color.canvas,
+            boxShadow: `0 0 0 1px ${color.hairline}`,
+          }}
+        >
+          <MacImage
+            mac={mac}
+            url={a.thumb ?? null}
+            live={live}
+            style={{ width: "100%", height: "100%" }}
+          />
+        </View>
+      ))}
+    </View>
   );
 }

@@ -10,7 +10,7 @@ Ponzu serving the three examples. They run in this order (`config.yaml`):
 | `designs.yaml` | Designs lists Kettle, Halon and Weft, with the bell and search. |
 | `canvas.yaml` | Kettle opens on its canvas: the bar, then its boards drawn in the web view. |
 | `search.yaml` | "brand" shows Files and Frames. |
-| `activity.yaml` | The bell opens Activity, and `ponzu://activity?since=1` opens it too. |
+| `activity.yaml` | The bell opens Activity; `ponzu://activity?since=1` shows "Claude added 3 artboards" with thumbnails, which opens that design. |
 | `comment.yaml` | A comment on Kettle's Logo (the `?comment=` link), its pin and thread sheet, Resolve, then `?uncomment=` deletes it. |
 
 `shared/start.yaml` opens the client onto Metro, closes the development
@@ -25,6 +25,13 @@ Flows find views by `testID` (`id:` in Maestro) or by text: `launch`,
 `comment-sheet`, `comment-input`, `to-type`, `send`, `thread-sheet`,
 `resolve`, `activity`, `connect`. Give a new screen a `testID` named after it.
 Wait with `extendedWaitUntil`, never a fixed sleep.
+
+Before the flows, `run.sh` has an agent make a change for Activity:
+`agent.ts` connects to the server's MCP as `claude-code`, creates a design in
+a temporary folder and adds three artboards. The server keeps its catalog
+database and history in that folder too (`PONZU_HOME`), never this Mac's.
+Already running a server, run it yourself first:
+`bun apps/mobile/maestro/agent.ts <port> $(mktemp -d)`.
 
 The comment flow leaves `examples/` as it was: it deletes its comment with
 the development link `ponzu://design/dev/<key>?uncomment=Maestro` (every

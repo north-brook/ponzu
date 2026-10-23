@@ -7,7 +7,9 @@
 # Starts the server and Metro on free ports unless PONZU_PORT / METRO_PORT
 # say they're already running there, builds and installs the client unless
 # SKIP_BUILD=1, then runs every flow (a JUnit report to MAESTRO_OUTPUT, if
-# set). Fails if examples/ isn't left as it was found.
+# set). Before the flows, an agent (agent.ts, over the server's MCP) adds three
+# artboards to a design in a temporary folder, for Activity. Fails if
+# examples/ isn't left as it was found.
 set -euo pipefail
 
 UDID=${1:?simulator udid}
@@ -16,7 +18,11 @@ MOBILE="$ROOT/apps/mobile"
 PONZU_PORT=${PONZU_PORT:-}
 METRO_PORT=${METRO_PORT:-}
 pids=()
-cleanup() { for p in "${pids[@]}"; do kill "$p" 2>/dev/null || true; done; }
+SCRATCH=$(mktemp -d -t ponzu-maestro)
+cleanup() {
+  for p in "${pids[@]}"; do kill "$p" 2>/dev/null || true; done
+  rm -rf "$SCRATCH"
+}
 trap cleanup EXIT
 
 free_port() { python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])'; }
@@ -24,7 +30,8 @@ wait_for() { for _ in $(seq 1 120); do curl -sf -m 2 "$1" >/dev/null && return 0
 
 if [ -z "$PONZU_PORT" ]; then
   PONZU_PORT=$(free_port)
-  (cd "$ROOT" && PONZU_TELEMETRY=0 PONZU_BONJOUR=0 exec bun apps/cli/src/index.ts serve \
+  # Its own catalog database and agents' history, not this Mac's.
+  (cd "$ROOT" && PONZU_HOME="$SCRATCH/home" PONZU_TELEMETRY=0 PONZU_BONJOUR=0 exec bun apps/cli/src/index.ts serve \
     examples/halon.design examples/kettle.design examples/weft.design --port "$PONZU_PORT") &
   pids+=($!)
 fi
@@ -46,6 +53,9 @@ if [ "${SKIP_BUILD:-}" != 1 ]; then
   xcrun simctl boot "$UDID" 2>/dev/null || true
   xcrun simctl install "$UDID" "$MOBILE/ios/build/dd/Build/Products/Debug-iphonesimulator/Ponzu.app"
 fi
+
+mkdir -p "$SCRATCH/designs"
+bun "$MOBILE/maestro/agent.ts" "$PONZU_PORT" "$SCRATCH/designs"
 
 KETTLE=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' \
   "$ROOT/examples/kettle.design")

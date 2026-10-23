@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { Catalog, CatalogFile } from "@ponzu/core";
 import { MutationObserver, QueryClient } from "@tanstack/react-query";
-import { keys, persistable, shelfMutation, writeCatalogMessage } from "./mac-queries";
+import { agentEdited, keys, persistable, shelfMutation, writeCatalogMessage } from "./mac-queries";
 
 const file = (key: string, modified: number, over: Partial<CatalogFile> = {}): CatalogFile => ({
   id: `local:${key}`,
@@ -61,6 +61,7 @@ test("only each Mac's info and catalog go to disk", () => {
   const ok = { status: "success" } as const;
   expect(persistable({ queryKey: ["mac", "mbp", "catalog"], state: ok } as never)).toBe(true);
   expect(persistable({ queryKey: ["mac", "mbp", "info"], state: ok } as never)).toBe(true);
+  expect(persistable({ queryKey: ["mac", "mbp", "activity"], state: ok } as never)).toBe(true);
   expect(persistable({ queryKey: ["mac", "mbp", "macs"], state: ok } as never)).toBe(false);
   expect(persistable({ queryKey: ["nearby", "x", "info"], state: ok } as never)).toBe(false);
   expect(
@@ -131,4 +132,15 @@ test("an archive the Mac refuses puts a Recent design back with no shelf", async
   );
   await m.mutate({ mac: "mbp", key: "/a/kettle.design", action: "archive" }).catch(() => {});
   expect(shelfOf(qc, "/a/kettle.design")).toBeUndefined();
+});
+
+test("a patch with an agent's newer edit asks for activity again; the person's own doesn't", () => {
+  const before = catalog([file("/a/kettle.design", 10)]);
+  const agent = [{ id: "s1", name: "Claude", client: "claude", activity: "working" as const }];
+  const put = (f: CatalogFile) => ({ t: "patch" as const, patch: { put: [f] } });
+  expect(agentEdited(before, put(file("/a/kettle.design", 20, { agents: agent })))).toBe(true);
+  expect(agentEdited(before, put(file("/a/kettle.design", 20)))).toBe(false);
+  // The agent's still there, but nothing new was written.
+  expect(agentEdited(before, put(file("/a/kettle.design", 10, { agents: agent })))).toBe(false);
+  expect(agentEdited(before, { t: "snapshot", catalog: before })).toBe(false);
 });

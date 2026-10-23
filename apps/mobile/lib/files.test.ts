@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import type { Catalog, CatalogFile, Doc, Thread } from "@ponzu/core";
-import { buildActivity, isNew, title } from "./activity";
+import type { AgentChange, Catalog, CatalogFile, Doc, Thread } from "@ponzu/core";
+import { buildActivity, changeTarget, isNew, title } from "./activity";
 import { mergeCatalogs, type PhoneFile, projects, shortAgo, whereLine } from "./files";
 import { mark, search } from "./search";
 
@@ -161,4 +161,93 @@ test("activity: an agent's reply after yours, your comments it resolved, its wor
   // The reply came after Activity was last opened; the resolve (at 500) too; the work is unseen.
   expect(items.map((i) => isNew(i, input))).toEqual([true, true, true]);
   expect(isNew(reply, { ...input, activitySeenAt: 300 })).toBe(false);
+});
+
+test("activity: what agents changed, from each Mac's history", () => {
+  const [kettle] = mergeCatalogs(
+    macs.slice(0, 1),
+    {
+      mbp: {
+        catalog: catalog([
+          file({
+            modified: 5000,
+            pages: [
+              { id: "pg_1", name: "Brand" },
+              { id: "pg_2", name: "App" },
+            ],
+            artboards: [
+              { id: "ab_1", name: "Logo", page: "pg_1", thumb: "/t1" },
+              { id: "ab_2", name: "2 Home", page: "pg_2", thumb: "/t2" },
+            ],
+          }),
+        ]),
+        at: 0,
+      },
+    },
+    () => true,
+  );
+  const change = (over: Partial<AgentChange>): AgentChange => ({
+    id: "ch_1",
+    file: "/a/kettle.design",
+    name: "Kettle",
+    start: 3000,
+    at: 4000,
+    agent: { name: "Claude", client: "claude" },
+    artboards: [],
+    summary: "",
+    kind: "changed",
+    ...over,
+  });
+  const twelve = Array.from({ length: 12 }, (_, i) => ({
+    id: i === 0 ? "ab_gone" : `ab_${i + 1}`,
+    name: `B${i}`,
+    page: "pg_2",
+    thumb: `/t${i}`,
+  }));
+  const input = {
+    files: [kettle!],
+    changes: {
+      mbp: [
+        change({ artboards: twelve }),
+        change({
+          id: "ch_2",
+          at: 2000,
+          agent: { name: "Codex", client: "openai" },
+          kind: "added",
+          artboards: [
+            { id: "ab_1", name: "Logo", page: "pg_1" },
+            { id: "ab_2", name: "2 Home", page: "pg_2" },
+            { id: "ab_3", name: "3", page: "pg_2" },
+          ],
+        }),
+        // A design the phone doesn't list.
+        change({ id: "ch_3", file: "/elsewhere.design", artboards: twelve }),
+      ],
+    },
+    docs: {},
+    seen: { "mbp:/a/kettle.design": 5000 },
+    activitySeenAt: 1000,
+  };
+  const items = buildActivity(input);
+  expect(items.map((i) => title(i))).toEqual([
+    "Claude changed 12 artboards",
+    "Codex added 3 artboards",
+  ]);
+  const [claude, codex] = items as Extract<(typeof items)[number], { kind: "change" }>[];
+  expect(claude!.pageNames).toEqual(["App"]);
+  expect(codex!.pageNames).toEqual(["Brand", "App"]);
+  // It opens on the first changed artboard still in the design.
+  expect(changeTarget(claude!)).toBe("ab_2");
+  // With a history, a design that changed since you looked isn't a separate item.
+  expect(items.some((i) => i.kind === "work")).toBe(false);
+  // New since Activity was last opened, even in a design the phone counts as seen.
+  expect(isNew(claude!, input)).toBe(true);
+  expect(isNew(claude!, { seen: {}, activitySeenAt: 4500 })).toBe(false);
+  // A Mac too old to keep a history: the design that changed shows instead.
+  const old = buildActivity({
+    ...input,
+    changes: { mbp: null },
+    seen: { "mbp:/a/kettle.design": 10 },
+  });
+  expect(old.map((i) => i.kind)).toEqual(["work"]);
 });
