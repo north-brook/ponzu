@@ -42,6 +42,8 @@ test("the phone reaches what the home screen and a canvas need, and nothing else
   expect(ok("/api/info")).toBe(true);
   expect(ok("/api/macs")).toBe(true);
   expect(ok("/api/catalog")).toBe(true);
+  expect(ok("/api/activity")).toBe(true);
+  expect(ok("/api/activity", "POST")).toBe(false);
   expect(ok("/ws")).toBe(true);
   expect(ok("/files/abc/assets/a.png")).toBe(true);
   expect(ok("/mcp", "POST")).toBe(false);

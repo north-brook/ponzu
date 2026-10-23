@@ -299,6 +299,18 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
       return Response.json({ ok: true });
     }
 
+    // What agents changed in this Mac's designs, for the phone's Activity.
+    if (path === "/api/activity") {
+      const since = Number(url.searchParams.get("since") ?? 0);
+      const limit = Number(url.searchParams.get("limit") ?? 100);
+      const entries = await home.activity({
+        since: Number.isFinite(since) ? since : 0,
+        file: url.searchParams.get("file") ?? undefined,
+        limit: Number.isFinite(limit) ? Math.max(1, Math.min(200, limit)) : 100,
+      });
+      return Response.json({ entries });
+    }
+
     if (path === "/api/preview" || path === "/api/thumb") {
       const key = url.searchParams.get("file");
       if (!key) return new Response("file required", { status: 400 });
@@ -622,8 +634,8 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
 }
 
 /**
- * What another Mac may ask for: the catalog and its stream, previews, thumbnails, a design's
- * socket and its assets. Not MCP, uploads or the studio, and nothing from a
+ * What another Mac may ask for: the catalog and its stream, what agents changed, previews,
+ * thumbnails, a design's socket and its assets. Not MCP, uploads or the studio, and nothing from a
  * browser page: only another Ponzu server sends these, without an Origin.
  */
 export function peerAllowed(req: Request, pathname: string): boolean {
@@ -634,6 +646,7 @@ export function peerAllowed(req: Request, pathname: string): boolean {
     [
       "/api/catalog",
       "/api/catalog/stream",
+      "/api/activity",
       "/api/preview",
       "/api/thumb",
       "/api/info",
