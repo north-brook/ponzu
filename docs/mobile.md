@@ -13,7 +13,7 @@ design's `notes/brief.md`.
 | --- | --- |
 | `app/` | Screens, by Expo Router. `_layout.tsx` is the root. |
 | `lib/` | Shared code: `tokens.ts` (the design's colors and fonts), `theme.ts`, `slice.tsx` (the mark and its bloom), `ua.ts` (the User-Agent), `polyfills.ts`; and the data layer (see below): `query.tsx` and `mac-queries.ts` (the query cache), `macs.ts` (paired Macs), `reach.ts` (who answers), `catalog.ts` (every Mac's designs), `design.ts` (one design's socket), `seen.ts`, `activity.ts`, `telemetry.ts`. |
-| `components/` | Shared views: the file card, the canvas web view (`canvas-view.tsx`), the comment composer and sheets. |
+| `components/` | Shared views: the file card, the canvas web view (`canvas-view.tsx`), the comment composer and sheets, and `glass.tsx`, the floating controls' Liquid Glass. |
 | `global.css` | Tailwind and the design's tokens as class names (`bg-yuzu`, `text-c-muted`, light and dark). |
 | `modules/bonjour` | A small Expo module that browses for `_ponzu._tcp` with Network.framework. |
 | `canvas/` | The canvas web view's page, a browser bundle with its own tsconfig. |
@@ -47,6 +47,15 @@ catalog sockets are open, the paired Macs (kept on the phone, never asked
 for), what you've seen, and the open design's socket (`design.ts`). Preview
 images are files in `Documents/cache` (`lib/cache.ts`), not in the query
 cache.
+
+### Floating controls
+
+What floats over the canvas and on pushed screens (back, the title pill, the
+agent's mark and its card, the bell, the hint and focus pills, the comment
+sheet's round buttons) is Liquid Glass (`expo-glass-effect`) on iOS 26, in
+the app's light or dark. Before iOS 26 it falls back to the design's bar:
+`--c-bar`, a hairline and the pop shadow. `components/glass.tsx` has the
+rules: the glass itself is never clipped, its content is.
 
 ### Styling
 

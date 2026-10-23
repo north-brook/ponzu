@@ -15,8 +15,9 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { FromCanvas, PendingPin } from "../../../canvas/protocol";
 import { type CanvasHandle, CanvasView } from "../../../components/canvas-view";
-import { Bar, BarButton } from "../../../components/chrome";
+import { BarButton } from "../../../components/chrome";
 import { Composer, initialMode, type Mode } from "../../../components/composer";
+import { Glass, GlassGroup } from "../../../components/glass";
 import { AgentMark, Back, Check, Chevron, FileIcon, PageIcon } from "../../../components/icons";
 import { Sheet } from "../../../components/sheet";
 import { ThreadSheet } from "../../../components/thread-sheet";
@@ -71,6 +72,8 @@ export default function Canvas() {
   const [sheet, setSheet] = useState(0);
   const [card, setCard] = useState(false);
   const [pages, setPages] = useState(false);
+  /** The focused board, for the "where you are" pill. */
+  const [focusedBoard, setFocusedBoard] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -144,6 +147,9 @@ export default function Canvas() {
         break;
       case "page":
         setPageId(msg.pageId);
+        break;
+      case "focused":
+        setFocusedBoard(msg.artboardId);
         break;
     }
   }, []);
@@ -246,7 +252,7 @@ export default function Canvas() {
           accessibilityLabel="Close"
         />
       )}
-      <View
+      <GlassGroup
         style={{
           position: "absolute",
           left: 0,
@@ -270,7 +276,8 @@ export default function Canvas() {
             accessibilityLabel={`${file?.name ?? doc?.name ?? ""}, page ${page?.name ?? ""}`}
             testID="title"
           >
-            <Bar
+            <Glass
+              interactive
               style={{
                 height: 44,
                 paddingHorizontal: 14,
@@ -319,7 +326,7 @@ export default function Canvas() {
                   {(doc?.pages.length ?? 0) > 1 && <Chevron size={16} color={color.muted} />}
                 </>
               )}
-            </Bar>
+            </Glass>
           </Pressable>
         </View>
         {agent ? (
@@ -333,11 +340,20 @@ export default function Canvas() {
         ) : (
           <View style={{ width: 44 }} />
         )}
-      </View>
+      </GlassGroup>
       {card && agent && doc && (
         <SessionCard presence={agent} top={insets.top + 58} doc={doc} file={params.key} />
       )}
-      {doc && <Hint bottom={insets.bottom} />}
+      {doc && !focusedBoard && <Hint bottom={insets.bottom} />}
+      {doc && focusedBoard && (
+        <WhereYouAre
+          key={focusedBoard}
+          doc={doc}
+          artboardId={focusedBoard}
+          agent={agents.find((a) => a.working.includes(focusedBoard))}
+          bottom={insets.bottom}
+        />
+      )}
       {pending && (
         <Sheet
           testID="comment-sheet"
@@ -412,7 +428,7 @@ function Missing({ message }: { message: string }) {
  * it rises in over 0.4s, holds, and sinks out by 3.6s.
  */
 function Hint({ bottom }: { bottom: number }) {
-  const { scheme, color } = useTheme();
+  const { color } = useTheme();
   const t = useSharedValue(0);
   useEffect(() => {
     t.value = withDelay(
@@ -431,24 +447,78 @@ function Hint({ bottom }: { bottom: number }) {
     <Animated.View
       pointerEvents="none"
       style={[
+        { position: "absolute", bottom: Math.max(34, bottom), alignSelf: "center", zIndex: 8 },
+        style,
+      ]}
+    >
+      <Glass
+        style={{ height: 32, paddingHorizontal: 14, flexDirection: "row", alignItems: "center" }}
+      >
+        <Text style={{ fontFamily: "Inter", fontWeight: "500", fontSize: 13, color: color.ink }}>
+          Hold to comment · Double-tap a screen to focus
+        </Text>
+      </Glass>
+    </Animated.View>
+  );
+}
+
+/**
+ * Where you are (Flow › 5 Focus), each time a board is focused: its name,
+ * which of the page's boards it is, and how to zoom out; the agent's mark
+ * when one works on it. It holds, then fades by 2.4s.
+ */
+function WhereYouAre({
+  doc,
+  artboardId,
+  agent,
+  bottom,
+}: {
+  doc: NonNullable<ReturnType<typeof useSessionState>["doc"]>;
+  artboardId: string;
+  agent?: Presence;
+  bottom: number;
+}) {
+  const { color } = useTheme();
+  const t = useSharedValue(1);
+  useEffect(() => {
+    t.value = withDelay(1_680, withTiming(0, { duration: 720, easing: ease }));
+  }, []);
+  const style = useAnimatedStyle(() => ({ opacity: t.value }));
+  const page = doc.pages.find((p) => p.artboards.some((a) => a.id === artboardId));
+  const i = page?.artboards.findIndex((a) => a.id === artboardId) ?? -1;
+  if (!page || i < 0) return null;
+  return (
+    <Animated.View
+      pointerEvents="none"
+      testID="where-you-are"
+      style={[
         {
           position: "absolute",
-          bottom: Math.max(34, bottom + 0),
+          bottom: Math.max(104, bottom + 70),
           alignSelf: "center",
-          height: 32,
-          paddingHorizontal: 14,
-          borderRadius: 999,
-          flexDirection: "row",
-          alignItems: "center",
-          backgroundColor: scheme === "dark" ? "rgba(244,243,239,0.9)" : "rgba(17,17,16,0.82)",
           zIndex: 8,
         },
         style,
       ]}
     >
-      <Text style={{ fontFamily: "Inter", fontWeight: "500", fontSize: 13, color: color.bg }}>
-        Hold to comment · Double-tap a screen to focus
-      </Text>
+      <Glass
+        style={{
+          height: 36,
+          paddingLeft: agent ? 10 : 14,
+          paddingRight: 14,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        {agent && <AgentMark client={agent.client} size={14} color={color.ink} />}
+        <Text style={{ fontFamily: "Inter", fontWeight: "600", fontSize: 13, color: color.ink }}>
+          {page.artboards[i]!.name}
+        </Text>
+        <Text style={{ fontFamily: "Inter", fontWeight: "500", fontSize: 13, color: color.muted }}>
+          {i + 1} of {page.artboards.length} · double-tap to zoom out
+        </Text>
+      </Glass>
     </Animated.View>
   );
 }
@@ -488,7 +558,7 @@ function SessionCard({
   doc: NonNullable<ReturnType<typeof useSessionState>["doc"]>;
   file: string;
 }) {
-  const { color, shadow } = useTheme();
+  const { color } = useTheme();
   const activity = agentActivity(p, file);
   const boards = p.working.map((id) => findArtboard(doc, id)?.artboard.name).filter(Boolean);
   const facts: [string, React.ReactNode][] = [];
@@ -531,71 +601,62 @@ function SessionCard({
       entering={FadeIn.duration(180)}
       exiting={FadeOut.duration(120)}
       testID="session-card"
-      style={{
-        position: "absolute",
-        right: 16,
-        top,
-        width: 300,
-        padding: 16,
-        borderRadius: 18,
-        backgroundColor: color.card,
-        boxShadow: `${shadow.pop}, 0 0 0 1px ${color.hairline}`,
-        gap: 14,
-        zIndex: 12,
-      }}
+      style={{ position: "absolute", right: 16, top, width: 300, zIndex: 12 }}
     >
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-        <View
-          style={{
-            width: 36,
-            height: 36,
-            borderRadius: 10,
-            backgroundColor: color.canvas,
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <AgentMark client={p.client} size={20} color={color.ink} />
-        </View>
-        <View style={{ flex: 1, gap: 2 }}>
-          <Text
+      <Glass style={{ borderRadius: 18, padding: 16, gap: 14 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+          <View
             style={{
-              fontFamily: "Inter",
-              fontWeight: "600",
-              fontSize: 16,
-              lineHeight: 20.8,
-              color: color.ink,
+              width: 36,
+              height: 36,
+              borderRadius: 10,
+              backgroundColor: color.canvas,
+              alignItems: "center",
+              justifyContent: "center",
             }}
           >
-            {productName(p)}
-          </Text>
-          <Text
-            style={{ fontFamily: "Inter", fontSize: 13, lineHeight: 17.55, color: color.muted }}
-          >
-            {activity === "working"
-              ? `Working${p.status ? ` · ${p.status}` : ""}`
-              : "Iterating · watching for your comments"}
-          </Text>
-        </View>
-      </View>
-      <View style={{ paddingTop: 12, borderTopWidth: 1, borderTopColor: color.hairline, gap: 8 }}>
-        {facts.map(([label, value]) => (
-          <View key={label} style={{ flexDirection: "row", gap: 10 }}>
+            <AgentMark client={p.client} size={20} color={color.ink} />
+          </View>
+          <View style={{ flex: 1, gap: 2 }}>
             <Text
               style={{
-                width: 62,
                 fontFamily: "Inter",
-                fontSize: 14,
-                lineHeight: 19.6,
-                color: color.muted,
+                fontWeight: "600",
+                fontSize: 16,
+                lineHeight: 20.8,
+                color: color.ink,
               }}
             >
-              {label}
+              {productName(p)}
             </Text>
-            <View style={{ flex: 1, minWidth: 0 }}>{value}</View>
+            <Text
+              style={{ fontFamily: "Inter", fontSize: 13, lineHeight: 17.55, color: color.muted }}
+            >
+              {activity === "working"
+                ? `Working${p.status ? ` · ${p.status}` : ""}`
+                : "Iterating · watching for your comments"}
+            </Text>
           </View>
-        ))}
-      </View>
+        </View>
+        <View style={{ paddingTop: 12, borderTopWidth: 1, borderTopColor: color.hairline, gap: 8 }}>
+          {facts.map(([label, value]) => (
+            <View key={label} style={{ flexDirection: "row", gap: 10 }}>
+              <Text
+                style={{
+                  width: 62,
+                  fontFamily: "Inter",
+                  fontSize: 14,
+                  lineHeight: 19.6,
+                  color: color.muted,
+                }}
+              >
+                {label}
+              </Text>
+              <View style={{ flex: 1, minWidth: 0 }}>{value}</View>
+            </View>
+          ))}
+        </View>
+      </Glass>
     </Animated.View>
   );
 }

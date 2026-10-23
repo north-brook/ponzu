@@ -17,6 +17,7 @@ import Animated, {
 import { useDictation } from "../lib/dictation";
 import { useTheme } from "../lib/theme";
 import { brand, EASE_OUT } from "../lib/tokens";
+import { Glass } from "./glass";
 import { Keyboard, Mic, MicOff, Send } from "./icons";
 
 export type Mode = "voice" | "type";
@@ -197,19 +198,22 @@ function Caret() {
   );
 }
 
-/** A 44pt round button: chip (switch, mute) or ink (send). */
+/**
+ * A 44pt round button: glass (switch to typing or voice, mute) or ink (send).
+ * The glass ones float on the sheet as the canvas bar's controls do.
+ */
 export function RoundButton({
   children,
   onPress,
   label,
-  tone = "chip",
+  tone = "glass",
   disabled,
   testID,
 }: {
   children: React.ReactNode;
   onPress: () => void;
   label: string;
-  tone?: "chip" | "ink";
+  tone?: "glass" | "ink";
   disabled?: boolean;
   testID?: string;
 }) {
@@ -222,22 +226,42 @@ export function RoundButton({
       accessibilityLabel={label}
       testID={testID}
       style={({ pressed }) => ({
-        width: 44,
-        height: 44,
-        borderRadius: 999,
-        backgroundColor: tone === "ink" ? color.ink : color.chip,
-        alignItems: "center",
-        justifyContent: "center",
-        transform: [{ scale: pressed ? 0.9 : 1 }],
+        transform: [{ scale: pressed && tone === "ink" ? 0.9 : 1 }],
         opacity: disabled ? 0.6 : 1,
       })}
     >
-      <Animated.View key={label} entering={FadeIn.duration(180)} exiting={FadeOut.duration(120)}>
-        {children}
-      </Animated.View>
+      {tone === "ink" ? (
+        <View style={[round, { backgroundColor: color.ink }]}>
+          <Animated.View
+            key={label}
+            entering={FadeIn.duration(180)}
+            exiting={FadeOut.duration(120)}
+          >
+            {children}
+          </Animated.View>
+        </View>
+      ) : (
+        <Glass interactive style={round}>
+          <Animated.View
+            key={label}
+            entering={FadeIn.duration(180)}
+            exiting={FadeOut.duration(120)}
+          >
+            {children}
+          </Animated.View>
+        </Glass>
+      )}
     </Pressable>
   );
 }
+
+const round = {
+  width: 44,
+  height: 44,
+  borderRadius: 999,
+  alignItems: "center",
+  justifyContent: "center",
+} as const;
 
 /** The design's 34 bars: their resting heights, which the voice level scales. */
 const BARS = [

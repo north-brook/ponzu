@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 import { Lockup } from "../components/chrome";
 import { FileCard } from "../components/file-card";
+import { Glass } from "../components/glass";
 import { Bell, Branch, Check, Chevron, Folder, Moon, Search } from "../components/icons";
 import { useActivityCount } from "../lib/activity-store";
 import { refreshFeeds, syncFeeds, useCatalogs, useFiles, useShelve } from "../lib/catalog";
@@ -148,17 +149,13 @@ export default function Designs() {
               accessibilityRole="button"
               accessibilityLabel={count ? `Activity, ${count} new` : "Activity"}
               testID="bell"
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: 999,
-                alignItems: "center",
-                justifyContent: "center",
-                backgroundColor: color.card,
-                boxShadow: shadow.board,
-              }}
             >
-              <Bell color={color.ink} />
+              <Glass
+                interactive
+                style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}
+              >
+                <Bell color={color.ink} />
+              </Glass>
               {count > 0 && (
                 <View
                   style={{

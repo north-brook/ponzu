@@ -1,14 +1,13 @@
 import type { ReactNode } from "react";
 import { Pressable, Text, View, type ViewStyle } from "react-native";
-import { useTheme } from "../lib/theme";
 import { brand } from "../lib/tokens";
+import { Glass } from "./glass";
 import { SliceMark } from "./icons";
 
 /**
- * The floating 44pt controls over the canvas and on pushed screens: the
- * translucent bar color, the pop shadow and a half-point hairline (`--c-bar`,
- * `--c-pop`). The design blurs what's behind; that needs expo-blur, a native
- * module this build doesn't carry yet, and at 80% the bar reads the same.
+ * A floating 44pt control over the canvas and on pushed screens (back, the
+ * agent's mark, the bell): a circle of interactive Liquid Glass, or the bar's
+ * surface before iOS 26 (see glass.tsx).
  */
 export function BarButton({
   onPress,
@@ -16,55 +15,32 @@ export function BarButton({
   label,
   ring = false,
   style,
+  testID,
 }: {
   onPress?: () => void;
   children: ReactNode;
   label: string;
-  /** The agent button while its card is open: a 1.5px ink ring. */
+  /** The agent button while its card is open: a 1.5pt ink ring. */
   ring?: boolean;
   style?: ViewStyle;
+  testID?: string;
 }) {
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label} hitSlop={6}>
-      <Bar
-        style={[
-          { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
-          style ?? {},
-        ]}
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      hitSlop={6}
+      testID={testID}
+    >
+      <Glass
+        interactive
         ring={ring}
+        style={[{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }, style]}
       >
         {children}
-      </Bar>
+      </Glass>
     </Pressable>
-  );
-}
-
-/** The bar's surface, for a button or the title pill. */
-export function Bar({
-  children,
-  style,
-  ring = false,
-}: {
-  children: ReactNode;
-  style?: ViewStyle | ViewStyle[];
-  ring?: boolean;
-}) {
-  const { color, shadow } = useTheme();
-  return (
-    <View
-      style={[
-        {
-          borderRadius: 999,
-          backgroundColor: color.bar,
-          boxShadow: shadow.pop,
-          borderWidth: ring ? 1.5 : 0.5,
-          borderColor: ring ? color.ink : color.hairline,
-        },
-        ...(Array.isArray(style) ? style : [style]),
-      ]}
-    >
-      {children}
-    </View>
   );
 }
 
