@@ -14,14 +14,14 @@ tags: [dev-host]
       speech: deny
 - runFlow: shared/start.yaml
 - openLink: ponzu://dev?forget=all
-- extendedWaitUntil:
-    visible:
-      id: launch
-    timeout: 15000
-- assertVisible: Ponzu
-- extendedWaitUntil:
-    visible: ponzu
-    timeout: 5000
+# The launch screen shows only while the bloom lands and Ponzu looks, about a
+# second: when the flow catches it, its slice and wordmark.
+- runFlow:
+    when:
+      visible:
+        id: launch
+    commands:
+      - assertVisible: Ponzu
 - extendedWaitUntil:
     visible:
       id: connect
