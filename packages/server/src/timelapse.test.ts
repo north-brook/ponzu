@@ -36,6 +36,23 @@ describe("timelapse", () => {
       expect(start.status).toBe(409);
       expect(((await start.json()) as { error: string }).error).toContain("renderer");
       expect(existsSync(join(key, ".ponzu/journal.ndjson"))).toBe(true);
+
+      // Past films: what's in exports/, newest first, and only those by name.
+      expect(await (await fetch(`${base}/films${q}`)).json()).toEqual([]);
+      await mkdir(join(key, "exports"), { recursive: true });
+      await writeFile(join(key, "exports/timelapse-2026-10-21.mp4"), "old");
+      await new Promise((r) => setTimeout(r, 20));
+      await writeFile(join(key, "exports/timelapse-2026-10-22.mp4"), "new");
+      await writeFile(join(key, "exports/board.png"), "not a film");
+      const films = (await (await fetch(`${base}/films${q}`)).json()) as { name: string }[];
+      expect(films.map((f) => f.name)).toEqual([
+        "timelapse-2026-10-22.mp4",
+        "timelapse-2026-10-21.mp4",
+      ]);
+      const one = await fetch(`${base}/film${q}&name=timelapse-2026-10-21.mp4`);
+      expect(await one.text()).toBe("old");
+      expect((await fetch(`${base}/film${q}&name=board.png`)).status).toBe(404);
+      expect((await fetch(`${base}/film${q}&name=..%2Fdesign.json`)).status).toBe(404);
     } finally {
       server.stop(true);
       await ws.closeAll();

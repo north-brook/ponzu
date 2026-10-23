@@ -1,5 +1,5 @@
-import { readFile, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { readdir, readFile, stat } from "node:fs/promises";
+import { basename, join } from "node:path";
 import {
   FILM_LENGTHS,
   FILM_SHAPES,
@@ -18,6 +18,8 @@ import type { LocalWorkspace } from "./workspace.ts";
  *   GET  /api/timelapse/status?file=       the latest film's state
  *   GET  /api/timelapse/poster?id=         its latest frame, JPEG
  *   GET  /api/timelapse/video?id=          the finished film
+ *   GET  /api/timelapse/films?file=        the films in its exports/ folder, newest first
+ *   GET  /api/timelapse/film?file=&name=   one of them
  *   POST /api/timelapse/cancel?id=
  */
 export async function timelapseRoute(
@@ -79,6 +81,25 @@ export async function timelapseRoute(
     const job = ws.timelapses.latest(key);
     return Response.json(job ? jobJson(job) : null);
   }
+  if (path === "/api/timelapse/films") {
+    if (!key) return new Response("Not open", { status: 404 });
+    return Response.json(await films(key));
+  }
+  if (path === "/api/timelapse/film") {
+    const name = url.searchParams.get("name") ?? "";
+    // Only a film by its own name in exports/: never a path out of it.
+    if (!key || !FILM_NAME.test(name) || basename(name) !== name)
+      return new Response("Not found", { status: 404 });
+    const at = join(key, "exports", name);
+    if (!(await stat(at).catch(() => null))) return new Response("Not found", { status: 404 });
+    return new Response(Bun.file(at), {
+      headers: {
+        "content-type": name.endsWith(".webm") ? "video/webm" : "video/mp4",
+        "content-disposition": `inline; filename="${name}"`,
+        "cache-control": "no-store",
+      },
+    });
+  }
   const job = id ? ws.timelapses.get(id) : undefined;
   if (path === "/api/timelapse/poster") {
     if (!job?.poster) return new Response("Not yet", { status: 404 });
@@ -102,6 +123,22 @@ export async function timelapseRoute(
     return Response.json({ cancelled: Boolean(id && ws.timelapses.cancel(id)) });
   }
   return null;
+}
+
+/** A timelapse's file name in exports/, as timelapsePath names them. */
+const FILM_NAME = /^timelapse-\d{4}-\d{2}-\d{2}(-\d+)?\.(mp4|webm)$/;
+
+/** The timelapses made of a design, from its exports/ folder, newest first. */
+export async function films(key: string) {
+  const dir = join(key, "exports");
+  const names = (await readdir(dir).catch(() => [] as string[])).filter((n) => FILM_NAME.test(n));
+  const out = await Promise.all(
+    names.map(async (name) => {
+      const s = await stat(join(dir, name)).catch(() => null);
+      return s ? { name, path: join(dir, name), bytes: s.size, at: s.mtimeMs } : null;
+    }),
+  );
+  return out.filter((f) => f !== null).sort((a, b) => b.at - a.at);
 }
 
 export function jobJson(job: TimelapseJob) {
