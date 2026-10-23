@@ -169,7 +169,8 @@ export async function learnPeers(mac: Mac): Promise<Mac[]> {
       via: "peer",
     });
   }
-  if (learned.length) {
+  // Development may have forgotten every Mac while this one was being asked.
+  if (learned.length && !devForgotten) {
     macs.set((all) => learned.reduce(upsertMac, all));
     save();
   }

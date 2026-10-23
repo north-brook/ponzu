@@ -6,7 +6,7 @@ import { BarButton } from "../components/chrome";
 import { AgentMark, Back } from "../components/icons";
 import { MacImage } from "../components/preview";
 import { type ActivityItem, shortAgent, title } from "../lib/activity";
-import { activitySeenAt, markActivitySeen, useActivity } from "../lib/activity-store";
+import { markActivitySeen, useActivity } from "../lib/activity-store";
 import { useFiles } from "../lib/catalog";
 import { shortAgo } from "../lib/files";
 import { baseUrl } from "../lib/mac";
@@ -28,10 +28,7 @@ export default function Activity() {
   const docs = useThreadDocs();
   // Development: `ponzu://activity?since=<ms>` shows what's new since then.
   const { since } = useLocalSearchParams<{ since?: string }>();
-  useEffect(() => {
-    if (__DEV__ && since) activitySeenAt.set(Number(since));
-  }, [since]);
-  const { fresh, old } = useActivity();
+  const { fresh, old } = useActivity(__DEV__ && since ? Number(since) : undefined);
   // What was new when the screen opened stays under New while it's open.
   const opened = useRef<{ fresh: ActivityItem[]; old: ActivityItem[] } | null>(null);
   opened.current ??= fresh.length || old.length ? { fresh, old } : null;

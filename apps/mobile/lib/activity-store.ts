@@ -20,12 +20,18 @@ export function markActivitySeen() {
   AsyncStorage.setItem(KEY, String(now)).catch(() => {});
 }
 
-/** Activity's items, split into New and Seen. */
-export function useActivity(): { fresh: ActivityItem[]; old: ActivityItem[] } {
+/**
+ * Activity's items, split into New and Seen. `since` stands in for when the
+ * person last looked (development's `ponzu://activity?since=`), read here
+ * rather than written to the store: a write while Activity renders would
+ * update Designs' bell mid-render.
+ */
+export function useActivity(since?: number): { fresh: ActivityItem[]; old: ActivityItem[] } {
   const files = useFiles();
   const seen = useSeen();
   const docs = useThreadDocs();
-  const at = useStore(activitySeenAt);
+  const stored = useStore(activitySeenAt);
+  const at = since ?? stored;
   return useMemo(() => {
     const items = buildActivity({
       files,

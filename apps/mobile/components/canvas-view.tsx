@@ -31,7 +31,10 @@ const canvasHtml = loadCanvasHtml();
 const SCREEN_RADIUS = 55;
 
 export interface CanvasHandle {
-  /** Tells the canvas something. Dropped before it's ready: `ready` sends everything. */
+  /**
+   * Tells the canvas something the screen asks for (a page, a focus). Before
+   * the page is ready it waits, and goes once `ready` has sent everything.
+   */
   post(msg: ToCanvas): void;
 }
 
@@ -67,7 +70,16 @@ export const CanvasView = forwardRef<
   const send = useCallback((msg: ToCanvas) => {
     if (ready.current) web.current?.injectJavaScript(toCanvasScript(msg));
   }, []);
-  useImperativeHandle(ref, () => ({ post: send }), [send]);
+  // What the screen asked for before the page could hear it.
+  const waiting = useRef<ToCanvas[]>([]);
+  const post = useCallback(
+    (msg: ToCanvas) => {
+      if (ready.current) send(msg);
+      else waiting.current.push(msg);
+    },
+    [send],
+  );
+  useImperativeHandle(ref, () => ({ post }), [post]);
 
   const docMessage = useCallback((): ToCanvas | null => {
     const p = latest.current;
@@ -134,6 +146,7 @@ export const CanvasView = forwardRef<
     if (msg.t === "ready") {
       ready.current = true;
       sendAll();
+      for (const m of waiting.current.splice(0)) send(m);
     }
     if (msg.t === "error") console.warn("[canvas]", msg.message);
     props.onMessage(msg);
