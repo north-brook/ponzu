@@ -12,7 +12,8 @@ design's `notes/brief.md`.
 | Path | What it is |
 | --- | --- |
 | `app/` | Screens, by Expo Router. `_layout.tsx` is the root. |
-| `lib/` | Shared code: `tokens.ts` (the design's colors and fonts), `theme.ts`, `slice.tsx` (the mark and its bloom), `ua.ts` (the User-Agent), `polyfills.ts`. |
+| `lib/` | Shared code: `tokens.ts` (the design's colors and fonts), `theme.ts`, `slice.tsx` (the mark and its bloom), `ua.ts` (the User-Agent), `polyfills.ts`; and the data layer: `macs.ts` (paired Macs), `reach.ts` (who answers), `catalog.ts` (every Mac's designs), `design.ts` (one design's socket), `seen.ts`, `activity.ts`, `telemetry.ts`. |
+| `components/` | Shared views: the file card, the canvas web view (`canvas-view.tsx`), the comment composer and sheets. |
 | `global.css` | Tailwind and the design's tokens as class names (`bg-yuzu`, `text-c-muted`, light and dark). |
 | `modules/bonjour` | A small Expo module that browses for `_ponzu._tcp` with Network.framework. |
 | `canvas/` | The canvas web view's page, a browser bundle with its own tsconfig. |
@@ -58,6 +59,22 @@ section, a font, or `modules/`.
 
 A Mac running Ponzu on the tailnet is what the app talks to; the simulator
 uses the Mac's own Tailscale.
+
+To try a branch's server while the installed Ponzu holds port 7777, run it
+on another port and point the app at it in `apps/mobile/.env.local`:
+
+```sh
+PONZU_TELEMETRY=0 PONZU_BONJOUR=0 bun apps/cli/src/index.ts serve examples/*.design --port 7792
+echo EXPO_PUBLIC_PONZU_DEV_HOST=127.0.0.1:7792 > apps/mobile/.env.local
+```
+
+Development builds save it as a paired Mac ("This Mac") and learn your other
+Macs from it. Screens open by URL, with `xcrun simctl openurl booted
+ponzu://<route>`: `designs`, `search?q=kettle`, `activity`, `connect`,
+`connect/scan`, `tailscale`, `asleep`, `pair?host=<name>&v=1`, and a design
+with `design/<mac id>/<encoded key>?page=App` (`thread=<id>` opens a thread,
+`artboard=<id>` focuses a frame). `dev?forget=all` forgets every Mac, for a
+first launch; `forget=dev` or `forget=<id>,<id>` forgets those.
 
 ## On your iPhone, over the tailnet
 
