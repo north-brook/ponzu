@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.40.2](https://github.com/north-brook/ponzu/compare/v1.40.1...v1.40.2) (2026-10-23)
+
+
+### Bug Fixes
+
+* show /tmp paths without macOS's /private prefix ([#165](https://github.com/north-brook/ponzu/issues/165)) ([854a9c8](https://github.com/north-brook/ponzu/commit/854a9c85a9d0eb87fe37b8dfe652bbf45fd0b840))
+* show placeholder cards while the home screen loads ([#166](https://github.com/north-brook/ponzu/issues/166)) ([5d43e78](https://github.com/north-brook/ponzu/commit/5d43e78aaad664830c41a79a55ac461ecd94986e))
+
 ## [1.40.1](https://github.com/north-brook/ponzu/compare/v1.40.0...v1.40.1) (2026-10-23)
 
 
