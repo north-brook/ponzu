@@ -2,20 +2,21 @@ appId: design.ponzu.app
 name: activity
 tags: [dev-host]
 ---
-# The bell opens Activity, and Back comes home. No development warning along the way.
+# The Activity tab, then back to Designs by its tab. No development warning along the way.
 - runFlow: shared/start.yaml
 - tapOn:
-    id: bell
+    id: tab-activity
 - extendedWaitUntil:
     visible:
       id: activity
     timeout: 10000
 - assertVisible: "Activity"
 - assertNotVisible: ".*Cannot update a component.*"
-- tapOn: "Back"
+- tapOn:
+    id: tab-designs
 - extendedWaitUntil:
     visible:
-      id: bell
+      id: designs
     timeout: 10000
 # And with ?since=, which shows what's new since then: run.sh's agent (agent.ts)
 # added three artboards to a design, which the Mac's history names, with their thumbnails.
@@ -31,13 +32,21 @@ tags: [dev-host]
 - assertVisible:
     id: activity-thumbs
 - assertNotVisible: ".*Cannot update a component.*"
-# It opens the design on the first of them.
+# It opens the design focused on the first of them: the board has the
+# screen, its label and the canvas's bar out of the way until a finger moves.
 - tapOn: "Claude added 3 artboards.*"
 - extendedWaitUntil:
     visible:
       id: canvas
     timeout: 15000
 - extendedWaitUntil:
-    visible: "Step 1"
+    notVisible:
+      id: title
     timeout: 20000
+- swipe:
+    start: "50%,60%"
+    end: "50%,45%"
+    duration: 800
+- assertNotVisible:
+    id: tab-designs
 - assertNotVisible: ".*Cannot update a component.*"

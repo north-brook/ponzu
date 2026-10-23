@@ -26,9 +26,14 @@ tags: [dev-host]
 - extendedWaitUntil:
     visible: ".*kettle.*"
     timeout: 20000
+# No tab bar over the canvas: it's pushed over the tabs.
+- assertNotVisible:
+    id: tab-designs
 - tapOn: "Back"
 - extendedWaitUntil:
     visible:
       id: designs
     timeout: 10000
+- assertVisible:
+    id: tab-designs
 - assertNotVisible: ".*Cannot update a component.*"

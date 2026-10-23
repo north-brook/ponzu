@@ -2,13 +2,14 @@ appId: design.ponzu.app
 name: search
 tags: [dev-host]
 ---
-# "brand" finds designs by name and frames by page: both sections show.
+# The search tab opens on the system's search field; "brand" finds designs
+# by name and frames by page: both sections show.
 - runFlow: shared/start.yaml
 - tapOn:
-    id: search-field
+    id: tab-search
 - extendedWaitUntil:
     visible:
-      id: search-input
+      id: search
     timeout: 10000
 - inputText: "brand"
 - extendedWaitUntil:
@@ -20,3 +21,16 @@ tags: [dev-host]
       id: search-frames
     timeout: 10000
 - assertNotVisible: ".*Cannot update a component.*"
+# The field closes with its ✕, and the tab bar, folded while it was open, comes back;
+# then Designs by its tab.
+- tapOn: "Close"
+- extendedWaitUntil:
+    visible:
+      id: tab-designs
+    timeout: 10000
+- tapOn:
+    id: tab-designs
+- extendedWaitUntil:
+    visible:
+      id: designs
+    timeout: 10000

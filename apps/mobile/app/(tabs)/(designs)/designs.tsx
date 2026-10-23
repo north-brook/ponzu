@@ -15,10 +15,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 import { Lockup } from "../../../components/chrome";
 import { FileCard } from "../../../components/file-card";
-import { Glass } from "../../../components/glass";
 import { HandoffRise } from "../../../components/handoff";
-import { Bell, Branch, Check, Chevron, Folder, Moon, Search } from "../../../components/icons";
-import { useActivityCount } from "../../../lib/activity-store";
+import { Branch, Check, Chevron, Folder, Moon } from "../../../components/icons";
 import { refreshFeeds, syncFeeds, useCatalogs, useFiles, useShelve } from "../../../lib/catalog";
 import { clock, type PhoneFile, projects, type Shelf, shelfOf } from "../../../lib/files";
 import type { ShelfAction } from "../../../lib/mac-queries";
@@ -26,7 +24,6 @@ import { SLICE, SLICE_STROKE } from "../../../lib/mark";
 import { reachAll, useMacs } from "../../../lib/reach";
 import { isUnseen, useSeen } from "../../../lib/seen";
 import { useTheme } from "../../../lib/theme";
-import { brand } from "../../../lib/tokens";
 
 const SHELVES: { id: Shelf; label: string }[] = [
   { id: "recent", label: "Recent" },
@@ -35,9 +32,10 @@ const SHELVES: { id: Shelf; label: string }[] = [
 ];
 
 /**
- * Designs (Flow › 1 Designs): the desktop dashboard for a phone. The lockup
- * and the Activity bell, search, one filter row (the shelf menu, then a chip
- * per project), and every Mac's designs as cards, newest first. Macs that
+ * Designs (Flow › 1 Designs), the first tab: the desktop dashboard for a
+ * phone. The lockup, one filter row (the shelf menu, then a chip per
+ * project), and every Mac's designs as cards, newest first. Search and
+ * Activity are tabs of their own beside it. Macs that
  * didn't answer keep their cards from last time, dimmed, under a note.
  */
 export default function Designs() {
@@ -52,7 +50,6 @@ export default function Designs() {
   const [project, setProject] = useState<string | null | undefined>(undefined);
   const [menu, setMenu] = useState(false);
   const [pulled, setPulled] = useState(false);
-  const count = useActivityCount();
   const shelve = useShelve();
   useEffect(syncFeeds, []);
   // The menu is a modal over the whole app: it goes when Designs does.
@@ -145,72 +142,8 @@ export default function Designs() {
             }}
           >
             <Lockup color={color.ink} />
-            <Pressable
-              onPress={() => router.push("/activity")}
-              accessibilityRole="button"
-              accessibilityLabel={count ? `Activity, ${count} new` : "Activity"}
-              testID="bell"
-            >
-              <Glass
-                interactive
-                style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}
-              >
-                <Bell color={color.ink} />
-              </Glass>
-              {count > 0 && (
-                <View
-                  style={{
-                    position: "absolute",
-                    top: -3,
-                    right: -3,
-                    minWidth: 18,
-                    height: 18,
-                    paddingHorizontal: 5,
-                    borderRadius: 999,
-                    backgroundColor: brand.yuzu,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    boxShadow: `0 0 0 2px ${color.bg}`,
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontFamily: "Inter",
-                      fontWeight: "700",
-                      fontSize: 11,
-                      color: brand.ink,
-                    }}
-                  >
-                    {count > 99 ? "99+" : count}
-                  </Text>
-                </View>
-              )}
-            </Pressable>
           </View>
         </View>
-        <HandoffRise kind="designs" i={0}>
-          <Pressable
-            onPress={() => router.push("/search")}
-            accessibilityRole="search"
-            testID="search-field"
-            style={{
-              marginHorizontal: 20,
-              height: 44,
-              borderRadius: 12,
-              backgroundColor: color.card,
-              boxShadow: shadow.board,
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 10,
-              paddingHorizontal: 14,
-            }}
-          >
-            <Search color={color.faint} />
-            <Text style={{ fontFamily: "Inter", fontSize: 16, color: color.faint }}>
-              Search designs
-            </Text>
-          </Pressable>
-        </HandoffRise>
         <HandoffRise kind="designs" i={0}>
           <ScrollView
             horizontal
@@ -376,7 +309,7 @@ export default function Designs() {
       </ScrollView>
       <ShelfMenu
         open={menu}
-        top={insets.top + 226 - 54 + 6}
+        top={insets.top + 226 - 54 + 6 - 44}
         shelf={shelf}
         counts={counts}
         onPick={(s) => {

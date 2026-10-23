@@ -1,9 +1,7 @@
-import { router, useLocalSearchParams } from "expo-router";
-import { useMemo, useState } from "react";
-import { Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { router, useLocalSearchParams, useNavigation } from "expo-router";
+import { useLayoutEffect, useMemo, useState } from "react";
+import { Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import { FileCard, Marked, useMarkColor } from "../../../components/file-card";
-import { Close, Search as SearchIcon } from "../../../components/icons";
 import { MacImage } from "../../../components/preview";
 import { useFiles } from "../../../lib/catalog";
 import { search } from "../../../lib/search";
@@ -12,13 +10,12 @@ import { useTheme } from "../../../lib/theme";
 import { brand } from "../../../lib/tokens";
 
 /**
- * Search (Flow › 2 Search): one field with the yuzu focus ring, and results
- * as Files (cards) and Frames (artboards, with the page and design they're
- * in), matches marked.
+ * Search (Flow › 2 Search), the search tab: the system's search field, and
+ * results as Files (cards) and Frames (artboards, with the page and design
+ * they're in), matches marked. `?q=` starts it with a query.
  */
 export default function Search() {
-  const { color, scheme } = useTheme();
-  const insets = useSafeAreaInsets();
+  const { color } = useTheme();
   const { width } = useWindowDimensions();
   const params = useLocalSearchParams<{ q?: string }>();
   const [query, setQuery] = useState(params.q ?? "");
@@ -34,81 +31,29 @@ export default function Search() {
     color: color.muted,
     paddingHorizontal: 22,
   };
+  // The system's search field, in the native header: glass on iOS 26, and the
+  // search tab's own (role="search" in the tabs layout).
+  const navigation = useNavigation();
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerSearchBarOptions: {
+        placeholder: "Search designs",
+        autoCapitalize: "none",
+        autoFocus: true,
+        hideWhenScrolling: false,
+        tintColor: brand.yuzu,
+        textColor: color.ink,
+        onChangeText: (e: { nativeEvent: { text: string } }) => setQuery(e.nativeEvent.text),
+        onCancelButtonPress: () => setQuery(""),
+      },
+    });
+  }, [navigation, color.ink]);
   return (
-    <View testID="search" style={{ flex: 1, backgroundColor: color.bg, paddingTop: insets.top }}>
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 12,
-          paddingTop: 10,
-          paddingBottom: 18,
-          paddingHorizontal: 20,
-        }}
-      >
-        <View
-          style={{
-            flex: 1,
-            height: 44,
-            borderRadius: 12,
-            backgroundColor: color.card,
-            boxShadow: `0 0 0 1px ${brand.yuzu}, 0 0 0 4px ${scheme === "dark" ? "rgba(255,200,30,0.22)" : "rgba(255,200,30,0.22)"}`,
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 10,
-            paddingLeft: 14,
-            paddingRight: 10,
-          }}
-        >
-          <SearchIcon color={color.faint} />
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            autoFocus
-            placeholder="Search designs"
-            placeholderTextColor={color.faint}
-            selectionColor={brand.yuzu}
-            cursorColor={brand.yuzu}
-            returnKeyType="search"
-            autoCorrect={false}
-            autoCapitalize="none"
-            testID="search-input"
-            style={{
-              flex: 1,
-              fontFamily: "Inter",
-              fontSize: 16,
-              color: color.ink,
-              height: 44,
-              padding: 0,
-            }}
-          />
-          {query.length > 0 && (
-            <Pressable
-              onPress={() => setQuery("")}
-              accessibilityLabel="Clear"
-              hitSlop={8}
-              style={{
-                width: 22,
-                height: 22,
-                borderRadius: 999,
-                backgroundColor: color.chip,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <Close size={12} color={color.muted} width={2.4} />
-            </Pressable>
-          )}
-        </View>
-        <Pressable onPress={() => router.back()} accessibilityRole="button" hitSlop={8}>
-          <Text style={{ fontFamily: "Inter", fontWeight: "500", fontSize: 16, color: color.ink }}>
-            Cancel
-          </Text>
-        </Pressable>
-      </View>
+    <View testID="search" style={{ flex: 1, backgroundColor: color.bg }}>
       <ScrollView
         keyboardDismissMode="on-drag"
-        contentContainerStyle={{ gap: 14, paddingBottom: insets.bottom + 24 }}
+        contentInsetAdjustmentBehavior="automatic"
+        contentContainerStyle={{ gap: 14, paddingTop: 8, paddingBottom: 24 }}
       >
         {results.files.length > 0 && (
           <>

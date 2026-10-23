@@ -7,10 +7,10 @@ Ponzu serving the three examples. They run in this order (`config.yaml`):
 | Flow | What it checks |
 | --- | --- |
 | `launch.yaml` | A clean install with every Mac forgotten: the slice and wordmark on yuzu, then Connect. |
-| `designs.yaml` | Designs lists Kettle, Halon and Weft, with the bell and search. |
-| `canvas.yaml` | Kettle opens on its canvas: the bar, then its boards drawn in the web view. |
-| `search.yaml` | "brand" shows Files and Frames. |
-| `activity.yaml` | The bell opens Activity; `ponzu://activity?since=1` shows "Claude added 3 artboards" with thumbnails, which opens that design. |
+| `designs.yaml` | Designs lists Kettle, Halon and Weft, under the tab bar (Designs, Activity, Search). |
+| `canvas.yaml` | Kettle opens on its canvas, with no tab bar over it: the bar, then its boards drawn in the web view. |
+| `search.yaml` | The search tab's system field: "brand" shows Files and Frames. |
+| `activity.yaml` | The Activity tab; `ponzu://activity?since=1` shows "Claude added 3 artboards" with thumbnails, which opens that design. |
 | `comment.yaml` | A comment on Kettle's Logo (the `?comment=` link), its pin and thread sheet, Resolve, then `?uncomment=` deletes it. |
 | `comment-modes.yaml` | The comment sheet switches typing → voice → typing (the field, then "Listening…", the mute and the keyboard button, then the field again) and sends. |
 
@@ -21,7 +21,7 @@ prompt in the way. Every flow checks no development warning
 ("Cannot update a component…") is on screen.
 
 Flows find views by `testID` (`id:` in Maestro) or by text: `launch`,
-`designs`, `card-<name>`, `bell`, `search-field`, `search-input`,
+`designs`, `card-<name>`, `tab-designs`, `tab-activity`, `tab-search`, `search`,
 `search-files`, `search-frames`, `canvas`, `title`, `chrome`, `chrome-hidden`, `hint`,
 `comment-sheet`, `comment-input`, `to-type`, `to-voice`, `mute`, `transcript`, `send`, `thread-sheet`,
 `resolve`, `activity`, `connect`. Give a new screen a `testID` named after it.

@@ -2,12 +2,15 @@ appId: design.ponzu.app
 name: designs
 tags: [dev-host]
 ---
-# The dev host's three examples come up on Designs, with the bell and search.
+# The dev host's three examples come up on Designs, under the tab bar's
+# Designs, Activity and Search.
 - runFlow: shared/start.yaml
 - assertVisible:
-    id: bell
+    id: tab-designs
 - assertVisible:
-    id: search-field
+    id: tab-activity
+- assertVisible:
+    id: tab-search
 - scrollUntilVisible:
     element:
       id: card-Kettle

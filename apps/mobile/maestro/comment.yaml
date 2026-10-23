@@ -60,8 +60,12 @@ tags: [dev-host]
     notVisible:
       id: thread-sheet
     timeout: 15000
-# Clean up.
-- tapOn: "Back"
+# Clean up. The board is still focused, its bar out of the way: home by link.
+- openLink: ponzu://designs
+- extendedWaitUntil:
+    visible:
+      id: designs
+    timeout: 10000
 - openLink: ponzu://design/dev/${KETTLE}?uncomment=Maestro
 - extendedWaitUntil:
     visible:

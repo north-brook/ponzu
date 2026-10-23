@@ -1,9 +1,8 @@
-import { router, useLocalSearchParams } from "expo-router";
-import { useEffect, useRef } from "react";
+import { router, useFocusEffect, useLocalSearchParams, useNavigation } from "expo-router";
+import { useCallback, useRef } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { BarButton } from "../../../components/chrome";
-import { AgentMark, Back } from "../../../components/icons";
+import { AgentMark } from "../../../components/icons";
 import { MacImage } from "../../../components/preview";
 import { type ActivityItem, changeTarget, shortAgent, title } from "../../../lib/activity";
 import { markActivitySeen, useActivity } from "../../../lib/activity-store";
@@ -17,7 +16,7 @@ import { refreshThreads, useThreadDocs } from "../../../lib/threads";
 import { brand } from "../../../lib/tokens";
 
 /**
- * Activity (Flow › 10, from the bell): what agents changed in your designs,
+ * Activity (Flow › 10), the Activity tab: what agents changed in your designs,
  * their replies to you in threads, and comments of yours they resolved; New
  * since you last looked, then Seen. An agent at work right now leads. See
  * lib/activity.ts for what each is built from.
@@ -30,22 +29,34 @@ export default function Activity() {
   // Development: `ponzu://activity?since=<ms>` shows what's new since then.
   const { since } = useLocalSearchParams<{ since?: string }>();
   const { fresh, old } = useActivity(__DEV__ && since ? Number(since) : undefined);
-  // What was new when the screen opened stays under New while it's open.
+  // What was new when the tab came to the front stays under New while it's there.
   const opened = useRef<{ fresh: ActivityItem[]; old: ActivityItem[] } | null>(null);
   opened.current ??= fresh.length || old.length ? { fresh, old } : null;
   const shown = opened.current && fresh.length === 0 ? opened.current : { fresh, old };
 
-  useEffect(() => {
-    track("activity opened");
-    // Fetch the threads of designs the person has commented in, from Macs that answer.
-    for (const f of files) {
-      const k = `${f.mac}:${f.key}`;
-      const mac = findMac(f.mac);
-      if (!mac || f.stale || !docs[k]) continue;
-      refreshThreads(f, baseUrl(mac));
-    }
-    return () => markActivitySeen();
-  }, []);
+  // A tab stays mounted: each time it comes to the front is an opening. It's
+  // seen once another tab takes its place; a design opened from it, over the
+  // tabs, comes back to it as it was.
+  // The tabs navigator itself (app/(tabs)/_layout.tsx), to tell which tab took the front.
+  const tabs = useNavigation("/(tabs)");
+  useFocusEffect(
+    useCallback(() => {
+      track("activity opened");
+      // Fetch the threads of designs the person has commented in, from Macs that answer.
+      for (const f of files) {
+        const k = `${f.mac}:${f.key}`;
+        const mac = findMac(f.mac);
+        if (!mac || f.stale || !docs[k]) continue;
+        refreshThreads(f, baseUrl(mac));
+      }
+      return () => {
+        const state = tabs.getState();
+        if (state && state.routes[state.index]?.name === "(activity)") return;
+        markActivitySeen();
+        opened.current = null;
+      };
+    }, []),
+  );
 
   const open = (item: ActivityItem) => {
     const artboard = item.kind === "change" ? changeTarget(item) : undefined;
@@ -65,16 +76,10 @@ export default function Activity() {
       <ScrollView
         contentContainerStyle={{ paddingTop: insets.top, paddingBottom: insets.bottom + 24 }}
       >
-        <View
-          style={{ paddingTop: 6, paddingBottom: 4, paddingHorizontal: 16, flexDirection: "row" }}
-        >
-          <BarButton label="Back" onPress={() => router.back()}>
-            <Back color={color.ink} />
-          </BarButton>
-        </View>
         <Text
           style={{
-            paddingTop: 8,
+            // Where the back button's row was, now that it's a tab: the title in its place.
+            paddingTop: 18,
             paddingBottom: 12,
             paddingHorizontal: 20,
             fontFamily: "Funnel Display",
