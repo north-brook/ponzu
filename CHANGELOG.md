@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.41.1](https://github.com/north-brook/ponzu/compare/v1.41.0...v1.41.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* show an agent as working when it writes design files itself ([#170](https://github.com/north-brook/ponzu/issues/170)) ([e3b7c21](https://github.com/north-brook/ponzu/commit/e3b7c2161fd1c8ce3bbb90217b57decc9c9d7d9d))
+
 ## [1.41.0](https://github.com/north-brook/ponzu/compare/v1.40.2...v1.41.0) (2026-10-23)
 
 
