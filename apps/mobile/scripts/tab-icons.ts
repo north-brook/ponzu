@@ -19,8 +19,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  DashboardSquare01Icon,
   FilterHorizontalIcon,
-  Home01Icon,
   Notification01Icon,
   Search01Icon,
 } from "@hugeicons/core-free-icons";
@@ -31,8 +31,8 @@ type IconSvg = readonly (readonly [string, Record<string, string | number>])[];
 
 /** Each tab's mark: desktop's names for the same concepts. */
 const MARKS: Record<string, IconSvg> = {
-  /** Designs, home: desktop's `home`. */
-  designs: Home01Icon,
+  /** Designs: desktop's `board`. */
+  designs: DashboardSquare01Icon,
   search: Search01Icon,
   /** Activity: the bell it was on Designs. */
   activity: Notification01Icon,
