@@ -7,6 +7,7 @@ import {
   type Origin,
   type Presence,
   type ServerMessage,
+  type SyncReason,
 } from "@ponzu/core";
 
 /**
@@ -55,6 +56,10 @@ export class SocketSource implements CanvasSource {
   private retry = 0;
   private closed = false;
   private theme?: ColorScheme;
+  /** The server's seq for the doc shown: each op must be the next one. */
+  private seq = 0;
+  /** Asked for the whole doc and waiting for it: ops until then are on a doc we don't have. */
+  private syncing = false;
   readonly assetBase: string;
 
   /**
@@ -100,6 +105,8 @@ export class SocketSource implements CanvasSource {
   private onMessage(msg: ServerMessage) {
     switch (msg.t) {
       case "hello":
+        this.seq = msg.seq;
+        this.syncing = false;
         this.set({
           status: "ready",
           doc: msg.doc,
@@ -111,15 +118,17 @@ export class SocketSource implements CanvasSource {
         break;
       case "op": {
         const doc = this.state.doc;
-        if (!doc) return;
-        // Ops from this client were applied optimistically; the server echoes
-        // every op, so apply on a fresh copy only if it isn't already reflected.
+        if (!doc || this.syncing) return;
+        // Missed one (the server dropped it, say, on a slow link): this doc would stay
+        // behind for good, so ask for the whole of it.
+        if (msg.seq !== this.seq + 1) return this.sync("gap");
         const next = structuredClone(doc);
         try {
           applyOp(next, msg.op);
         } catch {
-          return;
+          return this.sync("apply");
         }
+        this.seq = msg.seq;
         // Motion only: a listener that fails must never hold the document back.
         for (const l of this.opListeners)
           try {
@@ -131,6 +140,8 @@ export class SocketSource implements CanvasSource {
         break;
       }
       case "reset":
+        this.seq = msg.seq;
+        this.syncing = false;
         this.set({ doc: msg.doc });
         break;
       case "presence":
@@ -143,6 +154,13 @@ export class SocketSource implements CanvasSource {
         this.set({ error: msg.message });
         break;
     }
+  }
+
+  /** Ask for the whole doc again, once until it comes. */
+  private sync(reason: SyncReason) {
+    if (this.syncing) return;
+    this.syncing = true;
+    this.send({ t: "sync", reason });
   }
 
   private send(msg: ClientMessage) {

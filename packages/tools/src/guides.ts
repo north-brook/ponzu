@@ -79,7 +79,7 @@ The person may have their canvas in dark mode; get_basic_info says which. Artboa
 
 Results are lean: ids of what you created, and what was dropped. Use get_tree to see structure, get_node for one node's detail.
 
-Big generated content (a long table, a diagram from a script) can go straight into the artboard's file, pages/<page>/<artboard>.html, instead of through write_html. Ponzu picks the edit up live. Elements without a data-id get one: ids from get_tree keep pointing at the same element across later edits to the file, and Ponzu writes them in when it needs to. get_guide('format') has the files and their fields.
+A whole artboard's content can go in one write_html call: target the artboard with mode replace-children. Content too big for a call (a long table, a diagram from a script) can go straight into the artboard's file instead, at the path create_artboard returns. Ponzu picks the edit up live. Elements without a data-id get one: ids from get_tree keep pointing at the same element across later edits to the file, and Ponzu writes them in when it needs to. get_guide('format') has the files and their fields.
 
 Don't
 - Don't rebuild what exists. duplicate it and edit the copy.
@@ -162,7 +162,7 @@ The .design folder is the spec. Read it directly from disk; don't screenshot and
 
   format: `# The .design format
 
-Write the files yourself only to bring in or generate a lot at once: a design ported from another tool, a diagram from a script, dozens of artboards. Ponzu picks them up live. Then open the design with get_basic_info (it lists anything Ponzu couldn't use), screenshot each artboard and fix what lint reports. For everything else use the tools: they lint as you go, the person can undo them, and the canvas shows who's working.
+Write the files yourself only to bring in or generate a lot at once: a design ported from another tool, a diagram from a script, dozens of artboards. Ponzu picks them up live. For an artboard you made with create_artboard, write its file once the call returns, at the path it gives. Then open the design with get_basic_info (it lists anything Ponzu couldn't use), screenshot each artboard and fix what lint reports. For everything else use the tools: they lint as you go, the person can undo them, and the canvas shows who's working.
 
 name.design/
   design.json                   name and pages
