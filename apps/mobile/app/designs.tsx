@@ -553,6 +553,7 @@ function ShelfMenu({
             <Pressable
               onPress={() => onPick(s.id)}
               accessibilityRole="menuitem"
+              testID={`shelf-${s.id}`}
               style={({ pressed }) => ({
                 flexDirection: "row",
                 alignItems: "center",
