@@ -271,18 +271,29 @@ async function openPeerDesign(mac: string, path: string, artboard?: string) {
 /**
  * Which Mac a link's design is on: "local" for this one, another's tailnet name, or null when
  * none Ponzu can reach has it. A link names its Mac; one from before links did is looked for here
- * first, then on the person's other Macs.
+ * first, then on the person's other Macs. `reached` says whether the named Mac answered: this
+ * one, or one listed in the catalog.
  */
-async function locate(mac: string | undefined, path: string): Promise<string | null> {
+async function locate(
+  mac: string | undefined,
+  path: string,
+): Promise<{ at: string | null; reached: boolean }> {
   const here = existsSync(join(path, "design.json"));
-  const catalog = (await fetch(`${serverUrl}/api/catalog`)
-    .then((r) => r.json())
-    .catch(() => null)) as Catalog | null;
+  const get = <T>(route: string) =>
+    fetch(`${serverUrl}${route}`)
+      .then((r) => r.json() as Promise<T>)
+      .catch(() => null);
+  const [catalog, info] = await Promise.all([
+    get<Catalog>("/api/catalog"),
+    get<{ machine?: { name?: string | null } }>("/api/info"),
+  ]);
+  const reached =
+    !mac || mac === info?.machine?.name || Boolean(catalog?.machines.some((m) => m.id === mac));
   const on = new Set(catalog?.files.filter((f) => f.key === path).map((f) => f.machine));
-  if (mac && on.has(mac)) return mac;
-  if (here) return "local";
+  if (mac && on.has(mac)) return { at: mac, reached };
+  if (here) return { at: "local", reached };
   // Its Mac is off or not on this tailnet: another of the person's Macs may have the same folder.
-  return [...on].find((m) => m !== "local") ?? null;
+  return { at: [...on].find((m) => m !== "local") ?? null, reached };
 }
 
 /**
@@ -302,15 +313,19 @@ async function openLink(url: string) {
       pendingLinks.push(url);
       return;
     }
-    const where = await locate(local.mac, local.path);
-    if (where === "local") await openDesign(local.path, local.artboard);
-    else if (where) await openPeerDesign(where, local.path, local.artboard);
+    const { at, reached } = await locate(local.mac, local.path);
+    if (at === "local") await openDesign(local.path, local.artboard);
+    else if (at) await openPeerDesign(at, local.path, local.artboard);
+    // Only a Mac that didn't answer is unreachable; one that did just doesn't have it.
+    else if (local.mac && !reached)
+      dialog.showErrorBox(
+        `Ponzu can't reach ${local.mac}`,
+        `${local.path} is on ${local.mac}. Open it once that Mac is on and running Tailscale.`,
+      );
     else
       dialog.showErrorBox(
-        local.mac ? `Ponzu can't reach ${local.mac}` : "Ponzu can't find that design",
-        local.mac
-          ? `${local.path} is on ${local.mac}. Open it once that Mac is on and running Tailscale.`
-          : local.path,
+        "Ponzu can't find that design",
+        local.mac ? `${local.path} isn't on ${local.mac}.` : local.path,
       );
     return;
   }
