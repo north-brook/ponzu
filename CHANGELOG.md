@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.41.2](https://github.com/north-brook/ponzu/compare/v1.41.1...v1.41.2) (2026-10-23)
+
+
+### Bug Fixes
+
+* pause looping animations nobody can see ([#172](https://github.com/north-brook/ponzu/issues/172)) ([7d29720](https://github.com/north-brook/ponzu/commit/7d297200d43726fe350e5e902016fce926866673))
+
 ## [1.41.1](https://github.com/north-brook/ponzu/compare/v1.41.0...v1.41.1) (2026-10-23)
 
 
