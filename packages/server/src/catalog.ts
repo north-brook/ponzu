@@ -452,18 +452,17 @@ export class LocalCatalog {
     modified: number,
   ): Promise<boolean | undefined> {
     const head = git.branch ?? git.commit;
-    const had = this.changes.get(git.root);
-    let hit = had;
+    let hit = this.changes.get(git.root);
     if (!hit || hit.head !== head || hit.at < modified || Date.now() - hit.at > CHANGES_TTL) {
-      const fresh = { at: Date.now(), head, paths: changedDesignFiles(git.root) };
+      // Only a minute old, on the same branch, with nothing edited: the last answer stands
+      // while git is asked again, so the listing doesn't wait on every worktree at once.
+      const last = hit && hit.head === head && hit.at >= modified ? hit.last : undefined;
+      const fresh = { at: Date.now(), head, paths: changedDesignFiles(git.root), last };
       void fresh.paths.then((p) => Object.assign(fresh, { last: p }));
       this.changes.set(git.root, fresh);
       hit = fresh;
     }
-    // Only a minute old, on the same branch, with nothing edited: the last answer stands
-    // while git is asked again, so the listing doesn't wait on every worktree at once.
-    const stale = had && had !== hit && had.head === head && had.at >= modified;
-    const paths = stale && had.last !== undefined ? had.last : await hit.paths;
+    const paths = hit.last !== undefined ? hit.last : await hit.paths;
     if (!paths) return undefined;
     const inside = `${relative(git.root, key)}/`;
     return !paths.some((p) => p.startsWith(inside));
@@ -536,7 +535,8 @@ export async function changedDesignFiles(root: string): Promise<string[] | null>
   if (!fork) return null;
   const designs = ["--", ":(glob)**/*.design/**", ":(glob,exclude)**/*.design/.ponzu/**"];
   const [changed, added] = await Promise.all([
-    gitOut(["diff", "--name-only", "-z", fork, ...designs], root),
+    // Both ends of a move: an artboard moved out of a design changes it too.
+    gitOut(["diff", "--no-renames", "--name-only", "-z", fork, ...designs], root),
     gitOut(["ls-files", "-z", "--others", "--exclude-standard", ...designs], root),
   ]);
   if (changed === null || added === null) return null;
@@ -545,10 +545,13 @@ export async function changedDesignFiles(root: string): Promise<string[] | null>
 
 /** The branch a checkout's branches come off: origin's HEAD, else main or master. */
 async function defaultBranch(root: string): Promise<string | null> {
-  const origin = await gitOut(["symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"], root);
-  if (origin?.trim()) return origin.trim();
-  for (const b of ["origin/main", "origin/master", "main", "master"])
-    if ((await gitOut(["rev-parse", "--verify", "-q", `${b}^{commit}`], root)) !== null) return b;
+  // origin's HEAD can name a branch since pruned: each is checked before it's used.
+  const origin = (
+    await gitOut(["symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"], root)
+  )?.trim();
+  for (const b of [origin, "origin/main", "origin/master", "main", "master"])
+    if (b && (await gitOut(["rev-parse", "--verify", "-q", `${b}^{commit}`], root)) !== null)
+      return b;
   return null;
 }
 

@@ -383,6 +383,24 @@ test("a worktree's copy is untouched until its branch changes it, committed or n
   run(["add", "-A"], main);
   run(["commit", "-qm", "tokens"], main);
   expect(await untouched(join(tree, "design/brand.design"))).toBe(true);
+
+  // An artboard moved from one design to another changes both.
+  const moved = join(dir, "wt-move");
+  run(["worktree", "add", "-q", "-b", "move", moved], main);
+  run(
+    ["mv", "design/brand.design/pages/logos/mark.html", "design/app.design/pages/home/mark.html"],
+    moved,
+  );
+  run(["commit", "-qm", "move"], moved);
+  expect((await changedDesignFiles(moved))?.sort()).toEqual([
+    "design/app.design/pages/home/mark.html",
+    "design/brand.design/pages/logos/mark.html",
+  ]);
+
+  // origin's HEAD naming a pruned branch falls back to one that's there.
+  run(["update-ref", "refs/remotes/origin/main", "main"], main);
+  run(["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/gone"], main);
+  expect(await changedDesignFiles(tree)).toEqual(["design/app.design/pages/home/new.html"]);
 });
 
 test("remotes name a project the same however they're written", async () => {
