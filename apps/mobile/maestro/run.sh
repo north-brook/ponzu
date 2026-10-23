@@ -30,8 +30,9 @@ wait_for() { for _ in $(seq 1 120); do curl -sf -m 2 "$1" >/dev/null && return 0
 
 if [ -z "$PONZU_PORT" ]; then
   PONZU_PORT=$(free_port)
-  # Its own catalog database and agents' history, not this Mac's.
-  (cd "$ROOT" && PONZU_HOME="$SCRATCH/home" PONZU_TELEMETRY=0 PONZU_BONJOUR=0 exec bun apps/cli/src/index.ts serve \
+  # Its own catalog database and agents' history, not this Mac's; never on the
+  # tailnet (it would take the tailnet port from the installed Ponzu).
+  (cd "$ROOT" && PONZU_HOME="$SCRATCH/home" PONZU_TAILSCALE=none PONZU_TELEMETRY=0 PONZU_BONJOUR=0 exec bun apps/cli/src/index.ts serve \
     examples/halon.design examples/kettle.design examples/weft.design --port "$PONZU_PORT") &
   pids+=($!)
 fi

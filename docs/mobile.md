@@ -113,10 +113,12 @@ A Mac running Ponzu on the tailnet is what the app talks to; the simulator
 uses the Mac's own Tailscale.
 
 To try a branch's server while the installed Ponzu holds port 7777, run it
-on another port and point the app at it in `apps/mobile/.env.local`:
+on another port and point the app at it in `apps/mobile/.env.local`.
+`PONZU_TAILSCALE=none` keeps it off the tailnet: a server otherwise takes the
+tailnet's port 7777 whenever it's free, and your phone would pair with it.
 
 ```sh
-PONZU_TELEMETRY=0 PONZU_BONJOUR=0 bun apps/cli/src/index.ts serve examples/*.design --port 7792
+PONZU_TAILSCALE=none PONZU_TELEMETRY=0 PONZU_BONJOUR=0 bun apps/cli/src/index.ts serve examples/*.design --port 7792
 echo EXPO_PUBLIC_PONZU_DEV_HOST=127.0.0.1:7792 > apps/mobile/.env.local
 ```
 
