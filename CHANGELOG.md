@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.41.0](https://github.com/north-brook/ponzu/compare/v1.40.2...v1.41.0) (2026-10-23)
+
+
+### Features
+
+* give agents an https link that opens a design in ponzu ([#168](https://github.com/north-brook/ponzu/issues/168)) ([42d3af0](https://github.com/north-brook/ponzu/commit/42d3af001d83b056dfd54476ef77dfa021839d05))
+
 ## [1.40.2](https://github.com/north-brook/ponzu/compare/v1.40.1...v1.40.2) (2026-10-23)
 
 
