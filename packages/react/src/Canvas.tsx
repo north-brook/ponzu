@@ -765,7 +765,7 @@ export function Canvas({
       .pop()
       ?.replace(/\.design$/, "");
     return (
-      <div className={cn("pz-root", `pz-${theme}`, className)}>
+      <div className={cn("pz-root", `pz-${theme}`, still && "pz-still", className)}>
         {opening && (
           <div className="pz-appear pz:pointer-events-none pz:absolute pz:inset-0 pz:flex pz:flex-col pz:items-center pz:justify-center pz:gap-3 pz:text-muted-foreground">
             <Juice size={44} dark={theme === "dark"} dry={offline} />

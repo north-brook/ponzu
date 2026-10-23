@@ -94,10 +94,14 @@ export const ArtboardView = memo(function ArtboardView({
     if (!root) return;
     holdLoops(root, hold);
     if (!hold) return;
-    // A loop that starts later (a hover's, say) holds too.
+    // A loop that starts later holds too: a hover's, or a video that autoplays once it's loaded.
     const onStart = () => holdLoops(root, true);
     root.addEventListener("animationstart", onStart);
-    return () => root.removeEventListener("animationstart", onStart);
+    root.addEventListener("play", onStart, true);
+    return () => {
+      root.removeEventListener("animationstart", onStart);
+      root.removeEventListener("play", onStart, true);
+    };
   }, [hold, artboard, tokens, assetBase, colorScheme]);
 
   return <div ref={host} data-artboard-host={artboard.id} style={{ display: "contents" }} />;
@@ -116,10 +120,12 @@ function holdLoops(root: ShadowRoot, hold: boolean) {
       a.playbackRate = hold ? 0 : 1;
   }
   // SVG's own loops, and looping videos: only the ones that loop, and only what this held.
-  for (const svg of root.querySelectorAll("svg")) {
-    if (svg.parentElement?.closest("svg") || !svg.querySelector(LOOPING_SMIL)) continue;
-    if (hold) svg.pauseAnimations();
-    else svg.unpauseAnimations();
+  // Each SMIL loop on its own: pausing its <svg> would stop a one-off entrance in it too.
+  for (const el of root.querySelectorAll<SVGAnimationElement>(LOOPING_SMIL)) {
+    if (hold && !heldSmil.has(el) && smilActive(el)) {
+      el.endElement();
+      heldSmil.add(el);
+    } else if (!hold && heldSmil.delete(el)) el.beginElement();
   }
   for (const v of root.querySelectorAll("video")) {
     if (hold && v.loop && !v.paused) {
@@ -131,6 +137,16 @@ function holdLoops(root: ShadowRoot, hold: boolean) {
 
 const LOOPING_SMIL = '[repeatCount="indefinite"], [repeatDur="indefinite"]';
 const heldVideos = new WeakSet<HTMLVideoElement>();
+const heldSmil = new WeakSet<SVGAnimationElement>();
+
+/** Whether a SMIL animation is playing now: one waiting on a click or a time is left to it. */
+function smilActive(el: SVGAnimationElement): boolean {
+  try {
+    return el.getStartTime() <= el.getCurrentTime();
+  } catch {
+    return false;
+  }
+}
 
 /**
  * What an artboard's shadow root holds: its styles and markup, and the Google
