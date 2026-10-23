@@ -13,6 +13,10 @@ export interface Tailnet {
   ip: string;
   /** This Mac's Tailscale user id. */
   user: string;
+  /** This Mac's host name, e.g. "workstation". */
+  name: string;
+  /** This Mac's MagicDNS name, e.g. "workstation.tail023d74.ts.net". Missing without MagicDNS. */
+  dns?: string;
   peers: TailnetPeer[];
 }
 
@@ -21,6 +25,8 @@ export interface TailnetPeer {
   name: string;
   ip: string;
   online: boolean;
+  /** MagicDNS name, e.g. "spare.tail023d74.ts.net". Missing without MagicDNS. */
+  dns?: string;
 }
 
 const CLI = [
@@ -83,7 +89,12 @@ interface StatusNode {
 export async function readTailnet(): Promise<Tailnet | null> {
   const text = await cli(["status", "--json"]);
   if (!text) return null;
-  let status: { BackendState?: string; Self?: StatusNode; Peer?: Record<string, StatusNode> };
+  let status: {
+    BackendState?: string;
+    Self?: StatusNode;
+    Peer?: Record<string, StatusNode>;
+    CurrentTailnet?: { MagicDNSEnabled?: boolean };
+  };
   try {
     status = JSON.parse(text);
   } catch {
@@ -92,14 +103,25 @@ export async function readTailnet(): Promise<Tailnet | null> {
   const self = status.Self;
   const ip = ipv4(self);
   if (status.BackendState !== "Running" || !self || !ip || self.UserID === undefined) return null;
+  // A node keeps a fully qualified DNSName with MagicDNS off, but nothing resolves it then:
+  // only hand out names the tailnet says it serves.
+  const magic = status.CurrentTailnet?.MagicDNSEnabled === true;
   const peers: TailnetPeer[] = [];
   for (const p of Object.values(status.Peer ?? {})) {
     const pip = ipv4(p);
     if (!pip || p.UserID !== self.UserID || p.ShareeNode || p.OS !== "macOS") continue;
-    peers.push({ name: peerName(p), ip: pip, online: Boolean(p.Online) });
+    const dns = magic ? magicDns(p) : undefined;
+    peers.push({ name: peerName(p), ip: pip, online: Boolean(p.Online), ...(dns ? { dns } : {}) });
   }
   peers.sort((a, b) => a.name.localeCompare(b.name));
-  return { ip, user: String(self.UserID), peers };
+  const dns = magic ? magicDns(self) : undefined;
+  return { ip, user: String(self.UserID), name: peerName(self), ...(dns ? { dns } : {}), peers };
+}
+
+/** A node's MagicDNS name without the trailing dot. */
+function magicDns(n: StatusNode): string | undefined {
+  const d = n.DNSName?.replace(/\.$/, "");
+  return d?.includes(".") ? d : undefined;
 }
 
 function ipv4(n?: StatusNode): string | undefined {

@@ -225,7 +225,9 @@ export class Design {
       !sameMap(this.layout.artboards, next.artboards) || !sameMap(this.layout.pages, next.pages);
     if (scopes.has("meta") || layoutChanged) writes.set("design.json", serializeMeta(this.doc));
     if (scopes.has("tokens")) writes.set("tokens.css", this.doc.tokens);
-    if (scopes.has("threads"))
+    // A design with no comments has no comments.json, as a new one doesn't.
+    const noThreads = !this.doc.threads.length && !this.read.unreadable.length;
+    if (scopes.has("threads") && !noThreads)
       writes.set("comments.json", serializeThreads(this.doc, this.read.unreadable));
     if (scopes.has("notes"))
       for (const [name, content] of Object.entries(this.doc.notes))
@@ -242,6 +244,8 @@ export class Design {
     const keep = new Set(next.artboards.values());
     const removals: string[] = [];
     for (const path of this.layout.artboards.values()) if (!keep.has(path)) removals.push(path);
+    if (scopes.has("threads") && noThreads && this.written.has("comments.json"))
+      removals.push("comments.json");
     if (scopes.has("notes")) {
       for (const path of this.written.keys()) {
         const m = /^notes\/(.+)\.md$/.exec(path);

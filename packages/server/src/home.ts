@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  type AgentChange,
   type Artboard,
   agentActivity,
   type Catalog,
@@ -17,6 +18,7 @@ import type { Renderer } from "@ponzu/render";
 import { Design } from "@ponzu/store";
 import { FsAdapter } from "@ponzu/store/fs";
 import { catalogFile, LocalCatalog, machineKind } from "./catalog.ts";
+import { ChangeLog } from "./changes.ts";
 import {
   PREVIEW_FILE,
   type PreviewTheme,
@@ -66,6 +68,8 @@ export type OpenedBy = "person" | "agent";
  */
 export class Home {
   readonly catalog: LocalCatalog;
+  /** What agents changed here, for the phone's Activity. */
+  readonly changes: ChangeLog;
   private tailnet: Promise<Tailnet | null> | null = null;
   private tailnetAt = 0;
   private owner: Promise<string | null> = Promise.resolve(null);
@@ -86,6 +90,7 @@ export class Home {
       dbFile: opts.dbFile,
       stateFile: opts.stateFile,
     });
+    this.changes = new ChangeLog(this.catalog.db, () => ws.presence.list());
     for (const { key } of ws.designs()) this.watch(key);
     for (const key of opts.opened ?? []) this.catalog.opened(key);
     ws.onOpen((key) => this.watch(key));
@@ -107,8 +112,37 @@ export class Home {
     this.catalog.add(key);
     const design = this.ws.get(key);
     design?.onOp((e) => {
-      if (e.origin.kind === "agent") this.catalog.edited(key);
+      if (e.origin.kind !== "agent") return;
+      this.catalog.edited(key);
+      this.changes.record(key, design.doc, e);
     });
+  }
+
+  /**
+   * What agents changed in this Mac's designs since `since`, newest first,
+   * with a thumbnail URL for each artboard that's still there.
+   */
+  async activity(opts: { since?: number; file?: string; limit?: number }): Promise<AgentChange[]> {
+    const listed = new Map<string, Promise<boolean>>();
+    const out: AgentChange[] = [];
+    for (const c of this.changes.list(opts)) {
+      if (!listed.has(c.file)) listed.set(c.file, this.listed(c.file));
+      if (!(await listed.get(c.file))) continue;
+      const doc = this.ws.get(c.file)?.doc;
+      const enc = encodeURIComponent(c.file);
+      out.push({
+        ...c,
+        artboards: c.artboards.map((a) =>
+          doc && !findArtboard(doc, a.id)
+            ? a
+            : {
+                ...a,
+                thumb: `/api/thumb?file=${enc}&artboard=${encodeURIComponent(a.id)}&v=${Math.round(c.at)}`,
+              },
+        ),
+      });
+    }
+    return out;
   }
 
   /**
@@ -211,6 +245,11 @@ export class Home {
   /** The agent that last called Ponzu here. */
   lastAgent(): Catalog["agent"] {
     return this.agent;
+  }
+
+  /** Laptop or desktop, for the icon other devices show for this Mac. */
+  machineKind(): Promise<"laptop" | "desktop"> {
+    return this.kind;
   }
 
   /** The port the owner's other Macs serve their designs on. */

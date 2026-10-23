@@ -391,6 +391,30 @@ describe("design", () => {
       expect(mem.files["pages/components/diagram-one.html"]).toBe(edited);
     });
 
+    test("deleting the last comment removes comments.json, as a design that never had one", async () => {
+      const at = 1767225600000;
+      const mem = new MemoryAdapter(seed);
+      const d = await Design.open(mem, { saveDelay: 0 });
+      const thread = {
+        id: "th_1",
+        pageId: "pg_home",
+        x: 10,
+        y: 10,
+        status: "open" as const,
+        createdAt: at,
+        updatedAt: at,
+        messages: [
+          { id: "m_1", author: { kind: "user" as const, name: "Sam" }, text: "Hi", createdAt: at },
+        ],
+      };
+      d.apply({ op: "thread.create", thread }, { kind: "user", name: "t" });
+      await d.flush();
+      expect(JSON.parse(mem.files["comments.json"]!).threads).toHaveLength(1);
+      d.apply({ op: "thread.delete", id: "th_1" }, { kind: "user", name: "t" });
+      await d.flush();
+      expect(mem.files["comments.json"]).toBeUndefined();
+    });
+
     test("a comment thread missing fields is reported and kept in the file, not shown", async () => {
       const at = 1767225600000;
       const whole = {

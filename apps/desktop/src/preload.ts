@@ -17,4 +17,11 @@ contextBridge.exposeInMainWorld("ponzuDesktop", {
     return () => ipcRenderer.removeListener("ponzu:close-tab", listener);
   },
   closeWindow: () => ipcRenderer.send("ponzu:close-window"),
+  /** Ponzu › Pair iPhone…, including a click from before the studio was listening. */
+  onPairIphone: (handler: () => void) => {
+    const listener = () => handler();
+    ipcRenderer.on("ponzu:pair-iphone", listener);
+    void ipcRenderer.invoke("ponzu:pair-iphone-pending").then((pending) => pending && handler());
+    return () => ipcRenderer.removeListener("ponzu:pair-iphone", listener);
+  },
 });

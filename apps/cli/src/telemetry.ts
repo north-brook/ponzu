@@ -137,6 +137,18 @@ function tailscaleOwner(): () => Promise<string | null> {
   };
 }
 
+/**
+ * What the phone app needs to report as the same person this Mac does: whether
+ * telemetry is on here, and the owner hash. Off here means off on the phone.
+ */
+export function phoneTelemetry(): () => Promise<{ on: boolean; owner: string | null }> {
+  const owner = tailscaleOwner();
+  return async () => {
+    if (offBecause()) return { on: false, owner: null };
+    return { on: true, owner: await owner() };
+  };
+}
+
 export const ownerHash = (user: string) =>
   createHash("sha256").update(`ponzu:tailscale:${user}`).digest("hex").slice(0, 32);
 

@@ -9,5 +9,5 @@ export {
 } from "./clone.ts";
 export * from "./preview.ts";
 export * from "./serve.ts";
-export { readTailnet } from "./tailnet.ts";
+export { isTailnetAddress, ownerOf, readTailnet } from "./tailnet.ts";
 export * from "./workspace.ts";

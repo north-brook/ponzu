@@ -25,7 +25,7 @@ test("runs the app bundle's Tailscale as the CLI, not the GUI", async () => {
     bin,
     `#!/bin/sh
 if [ "$TAILSCALE_BE_CLI" != "1" ]; then echo "The Tailscale GUI failed to start"; exit 0; fi
-echo '{"BackendState":"Running","Self":{"TailscaleIPs":["100.64.0.1"],"UserID":7},"Peer":{"a":{"HostName":"Air","TailscaleIPs":["100.64.0.2"],"UserID":7,"OS":"macOS","Online":true}}}'
+echo '{"BackendState":"Running","CurrentTailnet":{"MagicDNSEnabled":true},"Self":{"HostName":"Studio","DNSName":"studio.tail1.ts.net.","TailscaleIPs":["100.64.0.1"],"UserID":7},"Peer":{"a":{"HostName":"Air","DNSName":"air.tail1.ts.net.","TailscaleIPs":["100.64.0.2"],"UserID":7,"OS":"macOS","Online":true}}}'
 `,
   );
   await chmod(bin, 0o755);
@@ -35,8 +35,35 @@ echo '{"BackendState":"Running","Self":{"TailscaleIPs":["100.64.0.1"],"UserID":7
     expect(await readTailnet()).toEqual({
       ip: "100.64.0.1",
       user: "7",
-      peers: [{ name: "air", ip: "100.64.0.2", online: true }],
+      name: "studio",
+      dns: "studio.tail1.ts.net",
+      peers: [{ name: "air", ip: "100.64.0.2", online: true, dns: "air.tail1.ts.net" }],
     });
+  } finally {
+    if (before === undefined) delete process.env.PONZU_TAILSCALE;
+    else process.env.PONZU_TAILSCALE = before;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("leaves out MagicDNS names when the tailnet doesn't serve them", async () => {
+  // With MagicDNS off, Tailscale still reports a fully qualified DNSName that nothing resolves.
+  const dir = await mkdtemp(join(tmpdir(), "ponzu-tailnet-"));
+  const bin = join(dir, "tailscale");
+  await writeFile(
+    bin,
+    `#!/bin/sh
+echo '{"BackendState":"Running","CurrentTailnet":{"MagicDNSEnabled":false},"Self":{"HostName":"Studio","DNSName":"studio.tail1.ts.net.","TailscaleIPs":["100.64.0.1"],"UserID":7},"Peer":{"a":{"HostName":"Air","DNSName":"air.tail1.ts.net.","TailscaleIPs":["100.64.0.2"],"UserID":7,"OS":"macOS","Online":true}}}'
+`,
+  );
+  await chmod(bin, 0o755);
+  const before = process.env.PONZU_TAILSCALE;
+  process.env.PONZU_TAILSCALE = bin;
+  try {
+    const net = await readTailnet();
+    expect(net?.dns).toBeUndefined();
+    expect(net?.peers[0]?.dns).toBeUndefined();
+    expect(net?.name).toBe("studio");
   } finally {
     if (before === undefined) delete process.env.PONZU_TAILSCALE;
     else process.env.PONZU_TAILSCALE = before;

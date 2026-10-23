@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 
 /** The schema this build writes. */
-export const SCHEMA = 1;
+export const SCHEMA = 2;
 /**
  * The oldest schema whose builds can still use a database at SCHEMA. Raise it
  * only with a migration older builds would misread; they open the database
@@ -31,6 +31,15 @@ const MIGRATIONS = [
   );
   CREATE TABLE grants (folder TEXT PRIMARY KEY, at INTEGER NOT NULL);
   CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);`,
+  // What agents changed, for the phone's Activity (see changes.ts).
+  `CREATE TABLE changes (
+    id TEXT PRIMARY KEY,
+    path TEXT NOT NULL,
+    at INTEGER NOT NULL,
+    body TEXT NOT NULL
+  );
+  CREATE INDEX changes_at ON changes (at);
+  CREATE INDEX changes_path ON changes (path, at);`,
 ];
 
 /** How a design came to be known. */
@@ -52,6 +61,14 @@ export interface DesignRow {
   /** When the person opened it themselves, which lists an example. */
   opened_at: number | null;
   shelf: Shelf | null;
+}
+
+/** One agent change as stored: its design, when it last grew, and the rest as JSON. */
+export interface ChangeRow {
+  id: string;
+  path: string;
+  at: number;
+  body: string;
 }
 
 /** Archived until it's opened, restored or edited again. */
@@ -197,6 +214,47 @@ export class CatalogDb {
           "INSERT INTO meta (key, value) VALUES (?1, ?2) ON CONFLICT (key) DO UPDATE SET value = ?2",
         )
         .run(key, value),
+    );
+  }
+
+  /**
+   * Write one of an agent's changes (see changes.ts), new or grown, keeping
+   * the last `keep` of its design's.
+   */
+  putChange(row: ChangeRow, keep: number): void {
+    this.write(() =>
+      this.db.transaction(() => {
+        this.db
+          .query(
+            `INSERT INTO changes (id, path, at, body) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT (id) DO UPDATE SET at = ?3, body = ?4`,
+          )
+          .run(row.id, row.path, row.at, row.body);
+        this.db
+          .query(
+            `DELETE FROM changes WHERE path = ?1 AND id NOT IN
+             (SELECT id FROM changes WHERE path = ?1 ORDER BY at DESC LIMIT ?2)`,
+          )
+          .run(row.path, keep);
+      })(),
+    );
+  }
+
+  dropChange(id: string): void {
+    this.write(() => this.db.query("DELETE FROM changes WHERE id = ?").run(id));
+  }
+
+  /** Agents' changes since `since`, newest first, in one design or all. */
+  changes(opts: { since?: number; path?: string; limit: number }): ChangeRow[] {
+    return this.read(
+      () =>
+        this.db
+          .query(
+            `SELECT id, path, at, body FROM changes
+             WHERE at > ?1 AND (?2 IS NULL OR path = ?2) ORDER BY at DESC LIMIT ?3`,
+          )
+          .all(opts.since ?? 0, opts.path ?? null, opts.limit) as ChangeRow[],
+      [],
     );
   }
 
