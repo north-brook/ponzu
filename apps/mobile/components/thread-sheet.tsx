@@ -5,6 +5,7 @@ import { clientOf, shortAgent } from "../lib/activity";
 import { shortAgo } from "../lib/files";
 import { useTheme } from "../lib/theme";
 import { Composer, type Mode } from "./composer";
+import { Glass } from "./glass";
 import { AgentAvatar, Check } from "./icons";
 import { Sheet } from "./sheet";
 
@@ -58,27 +59,35 @@ export function ThreadSheet({
           {n === 1 ? "1 message" : `${n} messages`}
           {resolved ? " · Resolved" : ""}
         </Text>
+        {/* Glass, as the other floating controls; held a step darker while pressed. */}
         <Pressable
           onPress={toggle}
           disabled={busy}
           accessibilityRole="button"
           testID="resolve"
-          style={({ pressed }) => ({
-            height: 36,
-            paddingLeft: 10,
-            paddingRight: 14,
-            borderRadius: 999,
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 6,
-            backgroundColor: color.chip,
-            opacity: busy ? 0.6 : pressed ? 0.8 : 1,
-          })}
+          style={{ opacity: busy ? 0.6 : 1 }}
         >
-          <Check size={17} color={color.ink} />
-          <Text style={{ fontFamily: "Inter", fontWeight: "600", fontSize: 14, color: color.ink }}>
-            {resolved ? "Reopen" : "Resolve"}
-          </Text>
+          {({ pressed }) => (
+            <Glass
+              interactive
+              held={pressed}
+              style={{
+                height: 36,
+                paddingLeft: 10,
+                paddingRight: 14,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 6,
+              }}
+            >
+              <Check size={17} color={color.ink} />
+              <Text
+                style={{ fontFamily: "Inter", fontWeight: "600", fontSize: 14, color: color.ink }}
+              >
+                {resolved ? "Reopen" : "Resolve"}
+              </Text>
+            </Glass>
+          )}
         </Pressable>
       </View>
       <ScrollView
