@@ -32,6 +32,7 @@ import {
 } from "react";
 import { Dashboard, type OpenTarget, type ShelfAction } from "@/components/dashboard";
 import { FileDetails, fileOf } from "@/components/file-info";
+import { PairIphone } from "@/components/pair-iphone";
 import { TimelapseButton } from "@/components/timelapse";
 import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
@@ -68,6 +69,8 @@ declare global {
       /** ⌘W from the app menu. Returns the unsubscribe. Missing from builds before tab closing. */
       onCloseTab?(handler: () => void): () => void;
       closeWindow?(): void;
+      /** Ponzu › Pair iPhone…. Returns the unsubscribe. Missing from builds before pairing. */
+      onPairIphone?(handler: () => void): () => void;
       /** Put a file on the clipboard, as Finder's Copy does. Missing from builds before timelapses. */
       copyFile?(path: string): Promise<void>;
     };
@@ -359,6 +362,7 @@ export function Studio() {
         )}
       </main>
       <WhatsNew />
+      <PairIphone />
     </div>
   );
 }

@@ -19,4 +19,11 @@ contextBridge.exposeInMainWorld("ponzuDesktop", {
   closeWindow: () => ipcRenderer.send("ponzu:close-window"),
   /** A timelapse onto the clipboard as a file, so it pastes into a post or a chat. */
   copyFile: (path: string): Promise<void> => ipcRenderer.invoke("ponzu:copy-file", path),
+  /** Ponzu › Pair iPhone…, including a click from before the studio was listening. */
+  onPairIphone: (handler: () => void) => {
+    const listener = () => handler();
+    ipcRenderer.on("ponzu:pair-iphone", listener);
+    void ipcRenderer.invoke("ponzu:pair-iphone-pending").then((pending) => pending && handler());
+    return () => ipcRenderer.removeListener("ponzu:pair-iphone", listener);
+  },
 });

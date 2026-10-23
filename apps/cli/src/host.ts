@@ -59,7 +59,7 @@ export async function runningHost(): Promise<string | null> {
   }
 }
 
-const SERVER = "Contents/Resources/server/ponzu";
+export const SERVER = "Contents/Resources/server/ponzu";
 
 /**
  * The Ponzu.app this binary ships inside, if it does. Not when it runs from
@@ -94,29 +94,41 @@ export function findApp(): string | null {
  * update) when agents go quiet.
  */
 export async function launchApp(app: string, timeoutMs = 30_000): Promise<string | null> {
-  const env = { ...process.env };
-  delete env.ELECTRON_RUN_AS_NODE;
-  // Through Launch Services, so it runs as the app, not as this agent's child. -g keeps
-  // focus where it is; -n means a running app gets our argv (and ignores it) rather
-  // than a reopen, which would show its window.
-  const [cmd, args] = app.endsWith(".app")
-    ? ["open", ["-n", "-g", "-a", app, "--args", "--background"]]
-    : [app, ["--background"]];
-  const start = () => {
-    try {
-      spawn(cmd, args, { detached: true, stdio: "ignore", env }).unref();
-    } catch {}
-  };
   // Asked again after 10s: right after an update quits the app, the new bundle
   // may not have been in place yet.
   const deadline = Date.now() + timeoutMs;
   for (let tick = 0; Date.now() < deadline; tick++) {
-    if (tick % 40 === 0) start();
+    if (tick % 40 === 0) startApp(app);
     const url = await runningHost();
     if (url) return url;
     await Bun.sleep(250);
   }
   return null;
+}
+
+/**
+ * Ask for the desktop app with no window, and don't wait for it. Through Launch
+ * Services, so it runs as the app, not as this process's child. -g keeps focus
+ * where it is; -n means a running app gets our argv (and ignores it) rather
+ * than a reopen, which would show its window. Resolves once it has started;
+ * detached, it outlives this process.
+ */
+export function startApp(app: string): Promise<void> {
+  const env = { ...process.env };
+  delete env.ELECTRON_RUN_AS_NODE;
+  const [cmd, args] = app.endsWith(".app")
+    ? ["open", ["-n", "-g", "-a", app, "--args", "--background"]]
+    : [app, ["--background"]];
+  return new Promise((resolve) => {
+    try {
+      const child = spawn(cmd, args, { detached: true, stdio: "ignore", env });
+      child.on("error", () => resolve());
+      child.on("spawn", () => resolve());
+      child.unref();
+    } catch {
+      resolve();
+    }
+  });
 }
 
 let launching: Promise<string | null> | null = null;

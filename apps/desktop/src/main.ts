@@ -121,6 +121,18 @@ function setupAgents() {
   child.on("error", () => {});
 }
 
+/**
+ * The wake helper (`ponzu wake install`): a LaunchAgent that starts Ponzu in the
+ * background when the iPhone app knocks on port 7778. Installed builds only, on
+ * every launch, so it follows the app when it moves; unchanged, it's left alone.
+ */
+function setupWake() {
+  if (process.platform !== "darwin" || isDev) return;
+  if (!existsSync(paths.server)) return;
+  const child = spawn(paths.server, ["wake", "install"], { stdio: "ignore" });
+  child.on("error", () => {});
+}
+
 /** With no window open, quit once agents have been quiet a while. Updates install on quit. */
 const IDLE_QUIT = 15 * 60_000;
 const IDLE_QUIT_UPDATE = 60_000;
@@ -210,6 +222,21 @@ function showWindow() {
   mainWindow.focus();
 }
 
+/**
+ * Ponzu › Pair iPhone… before the studio could hear it: a window just created, or still
+ * on the splash. The studio claims it as it starts listening.
+ */
+let pairPending = false;
+
+/** Ponzu › Pair iPhone…: the studio shows a code the phone app scans. */
+function pairIphone() {
+  showWindow();
+  const win = mainWindow;
+  if (serverUrl && win && !splashing && !win.webContents.isLoading())
+    win.webContents.send("ponzu:pair-iphone");
+  else pairPending = true;
+}
+
 async function openDesign(path: string, artboard?: string) {
   if (!serverUrl) {
     pendingOpens.push(path);
@@ -293,6 +320,11 @@ ipcMain.handle("ponzu:new-file", () => newDesign());
 ipcMain.on("ponzu:reveal", (_e, path: string) => shell.showItemInFolder(path));
 ipcMain.handle("ponzu:whats-new", () => pendingWhatsNew());
 ipcMain.on("ponzu:whats-new-seen", () => markWhatsNewSeen());
+ipcMain.handle("ponzu:pair-iphone-pending", () => {
+  const pending = pairPending;
+  pairPending = false;
+  return pending;
+});
 ipcMain.on("ponzu:close-window", (e) => BrowserWindow.fromWebContents(e.sender)?.close());
 // A file URL on the pasteboard, as Finder's Copy writes it: pastes as the video in X, Slack and Messages.
 ipcMain.handle("ponzu:copy-file", async (_e, path: string) => {
@@ -321,6 +353,7 @@ function buildMenu() {
                   if (mainWindow) void checkForUpdatesNow(mainWindow);
                 },
               },
+              { label: "Pair iPhone…", click: () => pairIphone() },
               { type: "separator" as const },
               { role: "services" as const },
               { type: "separator" as const },
@@ -454,6 +487,7 @@ if (!app.requestSingleInstanceLock()) {
     if (!smoke) {
       installUpdater({ window: () => mainWindow, onReady: () => (updateReady = true) });
       setupAgents();
+      setupWake();
       watchIdle();
     }
     for (const p of pendingOpens.splice(0)) await openDesign(p);

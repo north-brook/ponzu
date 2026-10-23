@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.38.0](https://github.com/north-brook/ponzu/compare/v1.37.0...v1.38.0) (2026-10-23)
+
+
+### Features
+
+* let the iphone app pair with, reach and wake a mac ([#150](https://github.com/north-brook/ponzu/issues/150)) ([69d0869](https://github.com/north-brook/ponzu/commit/69d0869028622fc96bd55d98aebdd1652da0f0c1))
+
 ## [1.37.0](https://github.com/north-brook/ponzu/compare/v1.36.0...v1.37.0) (2026-10-23)
 
 

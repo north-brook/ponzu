@@ -13,7 +13,8 @@ import { FsAdapter } from "@ponzu/store/fs";
 import pkg from "../package.json" with { type: "json" };
 import { announceHost, findHost, ponzuHome } from "./host.ts";
 import { agentStatus, installAgent } from "./install.ts";
-import { startTelemetry, telemetryCommand, telemetryNotice } from "./telemetry.ts";
+import { phoneTelemetry, startTelemetry, telemetryCommand, telemetryNotice } from "./telemetry.ts";
+import { wakeCommand } from "./wake.ts";
 
 const VERSION = pkg.version;
 const here = dirname(fileURLToPath(import.meta.url));
@@ -31,6 +32,9 @@ Usage
   ponzu init [name.design]      Create a new .design folder
   ponzu install [agent]         Add Ponzu to claude, codex and cursor (all found by default)
   ponzu telemetry [on|off]      Show or change usage reporting
+  ponzu wake [install|uninstall]
+                                The helper that lets the iPhone app start Ponzu on this
+                                Mac. The app installs it; uninstall removes it
 
 Options
   -p, --port <n>       Port for serve (default 7777)
@@ -96,6 +100,8 @@ async function main() {
       return installAgent(files[0], { url: values.url, auto: values.auto });
     case "telemetry":
       return telemetryCommand(files[0]);
+    case "wake":
+      return wakeCommand(files[0]);
     default:
       if (cmd.endsWith(".design"))
         return runServe([cmd, ...files], {
@@ -174,6 +180,8 @@ async function runServe(
     spotlight: process.env.PONZU_SPOTLIGHT === "0" ? false : undefined,
     agents: async () => agents(),
     opened: named,
+    version: VERSION,
+    telemetry: phoneTelemetry(),
   });
   const local = `http://${o.host === "0.0.0.0" ? "localhost" : o.host}:${server.port}`;
   // Links agents hand the person open the Mac app, or this canvas.

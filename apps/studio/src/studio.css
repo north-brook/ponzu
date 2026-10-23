@@ -47,6 +47,7 @@
 
 @theme inline {
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-display: "Funnel Display", "Inter", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
