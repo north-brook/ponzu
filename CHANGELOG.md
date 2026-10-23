@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.37.0](https://github.com/north-brook/ponzu/compare/v1.36.0...v1.37.0) (2026-10-23)
+
+
+### Features
+
+* give agents a ponzu:// link that opens a design in the app ([#147](https://github.com/north-brook/ponzu/issues/147)) ([cd95369](https://github.com/north-brook/ponzu/commit/cd953695c47bdf12b49fb94c4cf1f18188922071))
+
 ## [1.36.0](https://github.com/north-brook/ponzu/compare/v1.35.0...v1.36.0) (2026-10-22)
 
 
