@@ -6,6 +6,8 @@ import { buildEdit, type Edit } from "./edit.ts";
 import { createEncoder, type FilmEncoder } from "./encode.ts";
 import { Film } from "./Film.tsx";
 import { settleAssets } from "./model.ts";
+import { ReelFilm } from "./ReelFilm.tsx";
+import { buildReel, isReel, type Reel } from "./reel.ts";
 
 /**
  * The film page, at /film: renders one timelapse frame-exactly for a host
@@ -63,14 +65,22 @@ export function startFilmPage(el: HTMLElement) {
   document.body.style.margin = "0";
   document.body.style.overflow = "hidden";
   const root = createRoot(el);
-  let model: Edit | null = null;
+  let model: Edit | Reel | null = null;
   let fps = 30;
   let encoder: FilmEncoder | null = null;
 
   const draw = async (t: number) => {
     if (!model) throw new Error("Call load first.");
     const m = model;
-    flushSync(() => root.render(<Film model={m} f={t} />));
+    flushSync(() =>
+      root.render(
+        "kind" in m && m.kind === "reel" ? (
+          <ReelFilm model={m} f={t} />
+        ) : (
+          <Film model={m as Edit} f={t} />
+        ),
+      ),
+    );
     await settleAssets(document, 6000);
     for (const host of document.querySelectorAll("[data-artboard-host]"))
       if (host.shadowRoot) await settleAssets(host.shadowRoot, 6000);
@@ -87,17 +97,29 @@ export function startFilmPage(el: HTMLElement) {
       await document.fonts.load('700 40px "Funnel Display"').catch(() => {});
       await document.fonts.load('400 12px "IBM Plex Mono"').catch(() => {});
       await document.fonts.load('500 12px "Inter"').catch(() => {});
-      model = await buildEdit({
-        name,
-        entries,
-        shape: spec.shape,
-        length: spec.length,
-        range: spec.range,
-        theme: spec.theme,
-        assetBase: `${location.origin}/files/${encodeURIComponent(spec.file)}`,
-      });
-      (window as unknown as { __film?: Edit }).__film = model;
-      const frames = Math.round(model.timeline.duration * fps);
+      const assetBase = `${location.origin}/files/${encodeURIComponent(spec.file)}`;
+      // A 15s film is a reel: the design being made, then revised. Longer films tell the story.
+      model = isReel(spec.length)
+        ? await buildReel({
+            name,
+            entries,
+            shape: spec.shape,
+            range: spec.range,
+            theme: spec.theme,
+            assetBase,
+          })
+        : await buildEdit({
+            name,
+            entries,
+            shape: spec.shape,
+            length: spec.length,
+            range: spec.range,
+            theme: spec.theme,
+            assetBase,
+          });
+      (window as unknown as { __film?: Edit | Reel }).__film = model;
+      const duration = "kind" in model ? model.times.duration : model.timeline.duration;
+      const frames = Math.round(duration * fps);
       await draw(0);
       return {
         frames,
@@ -105,7 +127,7 @@ export function startFilmPage(el: HTMLElement) {
         width: Math.round(model.view.w * model.view.scale),
         height: Math.round(model.view.h * model.view.scale),
         scale: model.view.scale,
-        duration: model.timeline.duration,
+        duration,
       };
     },
     frame: (i) => draw(i / fps),

@@ -48,6 +48,9 @@ const RESOLVE = 0.95;
 
 type FilmModel = Edit;
 
+/** What the film's shared pieces (boards, prompt, wayfinding, end card) need of a film. */
+export type FilmLook = Pick<Edit, "name" | "prompt" | "view" | "theme" | "assetBase">;
+
 interface Frame {
   doc: Doc;
   heights: Map<string, number>;
@@ -277,7 +280,7 @@ function buildFrame(e: Edit, scene: Scene, f: number): Frame | null {
  * The prompt's beats: it rises in, types itself, a moment to read, sent (the button presses and
  * the agent's mark lights), then it lifts away as the canvas begins.
  */
-function promptState(span: { start: number; end: number }, f: number) {
+export function promptState(span: { start: number; end: number }, f: number) {
   const d = span.end - span.start;
   const t = f - span.start;
   return {
@@ -877,7 +880,7 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
 }
 
 /** One artboard, drawn the way the canvas draws it. Replaces its markup only when it changed. */
-const FilmBoard = memo(function FilmBoard({
+export const FilmBoard = memo(function FilmBoard({
   artboard,
   doc,
   model,
@@ -885,7 +888,7 @@ const FilmBoard = memo(function FilmBoard({
 }: {
   artboard: Artboard;
   doc: Doc;
-  model: FilmModel;
+  model: FilmLook;
   /** Draw just these pieces (and what's in them); the rest of the board is there but unseen. */
   only?: string[];
 }) {
@@ -919,7 +922,7 @@ const FilmBoard = memo(function FilmBoard({
 const rising = new Set<Element>();
 const anims = new WeakMap<Element, Animation>();
 
-function applyRise(root: HTMLElement, r: Frame["rising"]) {
+export function applyRise(root: HTMLElement, r: Frame["rising"]) {
   const live = new Set<Element>();
   if (r)
     r.ids.forEach((id, n) => {
@@ -1135,7 +1138,7 @@ function keepCardsInFrame(root: HTMLElement, view: { w: number; h: number }) {
 /* ------------------------------------------------------------------ */
 
 /** The one overlay: the slice / file / page, in the corner. */
-function Wayfinding({ model, doc, pageId }: { model: FilmModel; doc: Doc; pageId: string }) {
+export function Wayfinding({ model, doc, pageId }: { model: FilmLook; doc: Doc; pageId: string }) {
   const page = doc.pages.find((p) => p.id === pageId);
   const k = model.view.w < model.view.h ? 1.08 : 1;
   return (
@@ -1187,11 +1190,11 @@ function Slice({ size, dark, style }: { size: number; dark: boolean; style?: CSS
  * composer at the bottom of an empty frame and sent. Ponzu's own surfaces, not an agent's app:
  * the bar the canvas uses, the agent's mark, the person's words.
  */
-function Prompt({
+export function Prompt({
   model,
   state,
 }: {
-  model: FilmModel;
+  model: FilmLook;
   state: { typed: number; sent: number; out: number };
 }) {
   const { view } = model;
@@ -1283,7 +1286,7 @@ function Prompt({
  * The brand's bloom on the canvas colour: the six segments bloom in, "ponzu"
  * wipes on, the slice turns one segment, then ponzu.design fades in.
  */
-function EndCard({ model, t, opacity }: { model: FilmModel; t: number; opacity: number }) {
+export function EndCard({ model, t, opacity }: { model: FilmLook; t: number; opacity: number }) {
   const ink = model.theme === "dark" ? "#f4f3ef" : "#111110";
   const short = Math.min(model.view.w, model.view.h);
   const mark = Math.round(short * 0.13);
