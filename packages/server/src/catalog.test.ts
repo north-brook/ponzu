@@ -102,6 +102,15 @@ test("the server's catalog is newest first, and serves nothing it doesn't list",
     await writeFile(join(brand, "assets/logo.png"), "png");
     const logo = await fetch(`${base}/files/${encodeURIComponent(brand)}/assets/logo.png`);
     expect(await logo.text()).toBe("png");
+    // Videos seek only when their bytes come in ranges.
+    await writeFile(join(brand, "assets/clip.webm"), "0123456789");
+    const clip = `${base}/files/${encodeURIComponent(brand)}/assets/clip.webm`;
+    const part = await fetch(clip, { headers: { range: "bytes=2-5" } });
+    expect(part.status).toBe(206);
+    expect(part.headers.get("accept-ranges")).toBe("bytes");
+    expect(part.headers.get("content-range")).toBe("bytes 2-5/10");
+    expect(await part.text()).toBe("2345");
+    expect((await fetch(clip, { headers: { range: "bytes=10-" } })).status).toBe(416);
     expect(ws.get(brand)).toBeUndefined();
     expect(ws.assetBase(brand)).toBe(`${base}/files/${encodeURIComponent(brand)}`);
     expect((await fetch(`${base}/peers/spare/api/catalog`)).status).toBe(404);

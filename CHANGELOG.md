@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.39.2](https://github.com/north-brook/ponzu/compare/v1.39.1...v1.39.2) (2026-10-23)
+
+
+### Bug Fixes
+
+* tell agents a load animation plays once on the person's canvas ([#154](https://github.com/north-brook/ponzu/issues/154)) ([5c89441](https://github.com/north-brook/ponzu/commit/5c89441b56e2fd186e14640be35f2c08a626061c))
+
+## [1.39.1](https://github.com/north-brook/ponzu/compare/v1.39.0...v1.39.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* let screenshot and record seek videos from a design's assets ([#153](https://github.com/north-brook/ponzu/issues/153)) ([2e8bb04](https://github.com/north-brook/ponzu/commit/2e8bb04eb9b55734a0c54c82430b237eaf2c82fc))
+
 ## [1.39.0](https://github.com/north-brook/ponzu/compare/v1.38.0...v1.39.0) (2026-10-23)
 
 

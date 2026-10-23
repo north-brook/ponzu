@@ -310,6 +310,34 @@ test("screenshots load the design's assets/ images", async () => {
   }
 }, 30_000);
 
+test("screenshots seek a video from the design's assets/", async () => {
+  ws.renderer = await chromium();
+  if (!ws.renderer) return;
+  try {
+    // Two seconds, red then blue (VP8, which every Chromium plays).
+    const clip = await readFile(join(import.meta.dir, "fixtures/red-blue.webm"));
+    await ws.designs()[0]!.design.storage.writeAsset("assets/red-blue.webm", new Uint8Array(clip));
+    const ab = await client.callTool({
+      name: "create_artboard",
+      arguments: {
+        name: "Clip",
+        width: 64,
+        height: 64,
+        html: `<video data-name="Clip" src="assets/red-blue.webm" muted loop style="width:64px;height:64px;display:block"></video>`,
+      },
+    });
+    const abId = /artboard (ab_\w+)/.exec(text(ab))![1]!;
+    const image = async (at: number) => {
+      const shot = await client.callTool({ name: "screenshot", arguments: { id: abId, at } });
+      return (shot.content as { type: string; data?: string }[]).find((c) => c.type === "image")!
+        .data;
+    };
+    expect(await image(300)).not.toBe(await image(1500));
+  } finally {
+    ws.renderer = undefined;
+  }
+}, 30_000);
+
 test("get_node gives rendered boxes, and the height an artboard's content needs", async () => {
   const ab = await client.callTool({
     name: "create_artboard",

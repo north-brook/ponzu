@@ -40,7 +40,7 @@ jobs:
         run: '[ -n "$RELEASE_TOKEN" ] || { echo "Set the RELEASE_TOKEN repository secret (see CONTRIBUTING.md#releases)"; exit 1; }'
         env:
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-      - uses: googleapis/release-please-action@v5
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         id: release
         with:
           # A PAT, not GITHUB_TOKEN: CI must run on the release PR, which the
@@ -85,7 +85,7 @@ jobs:
     env:
       TAG: ${{ inputs.tag || needs.release-please.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ env.TAG }}
           # The app bundles every release's notes for What's new, read from
@@ -93,7 +93,7 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
           persist-credentials: false
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
@@ -163,7 +163,7 @@ jobs:
         working-directory: apps/desktop
         env:
           GH_TOKEN: ${{ github.token }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: macos-arm64
           path: |
