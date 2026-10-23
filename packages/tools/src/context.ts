@@ -1,12 +1,13 @@
-import type {
-  Author,
-  ColorScheme,
-  Doc,
-  EventType,
-  Op,
-  PonzuEvent,
-  Presence,
-  PresenceOrigin,
+import {
+  type Author,
+  type ColorScheme,
+  type Doc,
+  type EventType,
+  isWatching,
+  type Op,
+  type PonzuEvent,
+  type Presence,
+  type PresenceOrigin,
 } from "@ponzu/core";
 import type { Renderer } from "@ponzu/render";
 import type { Design } from "@ponzu/store";
@@ -213,18 +214,41 @@ export const WORKING_IDLE = 2 * 60_000;
 /** How recently an agent must have made a call for an edit on disk to count as its own. */
 const DISK_CREDIT = 5 * 60_000;
 
+/** How often an agent that isn't watching the canvas hears it should, at most. */
+const REMIND_EVERY = 10 * 60_000;
+
 export class PresenceHub {
   private map = new Map<string, Presence>();
   private listeners = new Set<(p: Presence[]) => void>();
   private idle = new Map<string, ReturnType<typeof setTimeout>>();
   /** The design each agent's calls last resolved to, read or written: where its disk edits go. */
   private seenIn = new Map<string, string>();
+  /** When each agent was last reminded to watch the canvas. */
+  private reminded = new Map<string, number>();
 
   constructor(private idleMs = WORKING_IDLE) {}
 
   list(): Presence[] {
     const cutoff = Date.now() - 10 * 60_000;
     return [...this.map.values()].filter((p) => p.lastSeen > cutoff);
+  }
+
+  /** Whether this agent is watching the canvas. */
+  watching(id: string, now = Date.now()): boolean {
+    const p = this.map.get(id);
+    return !!p && isWatching(p, now);
+  }
+
+  /**
+   * Whether to remind this agent to watch the canvas once it's done: it
+   * isn't watching, and hasn't been reminded in a while.
+   */
+  shouldRemindToWatch(id: string, now = Date.now()): boolean {
+    if (this.watching(id, now)) return false;
+    const last = this.reminded.get(id);
+    if (last && now - last < REMIND_EVERY) return false;
+    this.reminded.set(id, now);
+    return true;
   }
 
   touch(
@@ -328,6 +352,7 @@ export class PresenceHub {
     clearTimeout(this.idle.get(id));
     this.idle.delete(id);
     this.seenIn.delete(id);
+    this.reminded.delete(id);
     if (this.map.delete(id)) this.notify();
   }
 

@@ -128,10 +128,10 @@ test("an agent's work on another Mac reaches this Mac's home screen as it happen
       expect.stringMatching(/^\/peers\/spare\/api\/thumb\?/),
     ]);
 
-    // The agent waits for comments: iterating, not working.
+    // The agent waits for comments: watching, not working.
     spareWs.presence.touch(caller, { listening: true, working: [], status: undefined });
     await home.until(
-      (c) => c.files.find((f) => f.id === kiosk.id)?.agents?.[0]?.activity === "iterating",
+      (c) => c.files.find((f) => f.id === kiosk.id)?.agents?.[0]?.activity === "watching",
     );
 
     // The other Mac goes away: its designs leave at once, not on a timeout.

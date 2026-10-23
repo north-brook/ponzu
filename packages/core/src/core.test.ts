@@ -540,7 +540,7 @@ describe("foldCopies", () => {
   test("an agent in a copy keeps it a card of its own, as one at work does", () => {
     const cards = foldCopies([
       file("/a/design/x"),
-      file("/b/design/x", { agents: [{ id: "s", name: "Claude", activity: "iterating" }] }),
+      file("/b/design/x", { agents: [{ id: "s", name: "Claude", activity: "watching" }] }),
     ]);
     expect(cards.map((c) => c.copies.length)).toEqual([0, 0]);
   });
@@ -576,7 +576,7 @@ describe("withoutUntouched", () => {
   test("one with an agent in it stays, and so does one in another place or Mac", () => {
     expect(
       keys([
-        at("/t1", { untouched: true }, { agents: [{ id: "s", name: "C", activity: "iterating" }] }),
+        at("/t1", { untouched: true }, { agents: [{ id: "s", name: "C", activity: "watching" }] }),
         at("/t2", { untouched: true }, { busy: "claude" }),
         at("/t3", { untouched: true }, { machine: "air" }),
         at("/t4", { untouched: true, project: "github.com/a/other" }),

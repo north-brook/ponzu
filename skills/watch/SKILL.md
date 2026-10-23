@@ -1,13 +1,15 @@
 ---
-name: ponzu-iterate
-description: Iterate with a person on designs in Ponzu. Watch for their canvas comments, make each change, and resolve the thread. Use after putting work up for them to review, when designing together, or when they say "iterate", "watch my comments", or "pair with me on the design".
+name: ponzu-watch
+description: Watch a Ponzu canvas for a person's comments, make each change, and resolve the thread. Use instead of ending your turn after putting work up for them to review, when designing together, or when they say "watch my comments", "iterate with me", or "pair with me on the design".
 ---
 
-# Iterate on a Ponzu canvas
+# Watch a Ponzu canvas
 
-You sit next to the person while they review. They comment in the canvas; you act on each comment and resolve it there. Don't ask them to repeat feedback in chat, and don't end your turn to wait for it: a wait that hears nothing is cheap.
+You sit next to the person while they review. They comment in the canvas; you act on each comment and resolve it there. Don't ask them to repeat feedback in chat, and never end your turn asking them to comment or to tell you when they have: watch instead. A wait that hears nothing is cheap.
 
-1. `get_basic_info`, `read_notes`, and `get_guide('iterate')` once.
+Watching doesn't cut you off from chat. Their messages reach you between waits, within a minute, and you can write to them in chat (a link, a recommendation) and keep watching.
+
+1. `get_basic_info`, `read_notes`, and `get_guide('watch')` once.
 2. Handle what's already open: `list_comments`.
 3. Loop:
    - `wait_for_activity` with the cursor from the previous call (start without one).
@@ -23,4 +25,4 @@ You sit next to the person while they review. They comment in the canvas; you ac
 Most comments end resolved with no reply. Reply only when the person needs to read something; then keep it to one or two sentences and leave the thread open, since resolved threads leave the canvas.
 Variations go next to the original (`duplicate`), never over it.
 A chat message from the person comes first; it reaches you once the current wait returns.
-Keep looping until the person says stop. If you started the loop yourself and half an hour passes with nothing, stop and say you'll pick their comments up when they ask.
+Keep watching until the person says stop. If you started watching yourself and half an hour passes with nothing, stop and say you'll pick their comments up when they ask.
