@@ -8,7 +8,7 @@ Ponzu serving the three examples. They run in this order (`config.yaml`):
 | --- | --- |
 | `launch.yaml` | A clean install with every Mac forgotten: the slice and wordmark on yuzu, then Connect. |
 | `designs.yaml` | Designs lists Kettle, Halon and Weft, under the tab bar (Designs, Activity, Search); the header's filter menu picks Scratch, then Recent again. |
-| `canvas.yaml` | Kettle opens on its canvas, with no tab bar over it: the bar, then its boards drawn in the web view. |
+| `canvas.yaml` | Kettle opens on its canvas, with no tab bar over it: the bar, its boards drawn in the web view, and the page button's menu turning it to Website. |
 | `search.yaml` | The search tab's system field: "brand" shows Files and Frames. |
 | `activity.yaml` | The Activity tab; `ponzu://activity?since=1` shows "Claude added 3 artboards" with thumbnails, which opens that design. |
 | `comment.yaml` | A comment on Kettle's Logo (the `?comment=` link), its pin and thread sheet, Resolve, then `?uncomment=` deletes it. |
@@ -22,7 +22,7 @@ prompt in the way. Every flow checks no development warning
 
 Flows find views by `testID` (`id:` in Maestro) or by text: `launch`,
 `designs`, `card-<name>`, `tab-designs`, `tab-activity`, `tab-search`, `search`,
-`search-files`, `search-frames`, `canvas`, `title`, `chrome`, `chrome-hidden`, `hint`,
+`search-files`, `search-frames`, `canvas`, `title`, `page-menu`, `chrome`, `chrome-hidden`, `hint`,
 `comment-sheet`, `comment-input`, `to-type`, `to-voice`, `mute`, `transcript`, `send`, `thread-sheet`,
 `resolve`, `activity`, `connect`. Give a new screen a `testID` named after it.
 Wait with `extendedWaitUntil`, never a fixed sleep.

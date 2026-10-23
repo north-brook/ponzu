@@ -26,6 +26,16 @@ tags: [dev-host]
 - extendedWaitUntil:
     visible: ".*kettle.*"
     timeout: 20000
+# The page button holds the pages' native menu; picking one turns the canvas to it.
+- tapOn:
+    id: page-menu
+- extendedWaitUntil:
+    visible: "Website"
+    timeout: 5000
+- tapOn: "Website"
+- extendedWaitUntil:
+    visible: "Page: Website"
+    timeout: 5000
 # No tab bar over the canvas: it's pushed over the tabs.
 - assertNotVisible:
     id: tab-designs

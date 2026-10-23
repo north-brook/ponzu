@@ -21,15 +21,9 @@ import { type CanvasHandle, CanvasView } from "../../../components/canvas-view";
 import { BarButton } from "../../../components/chrome";
 import { Composer, initialMode, type Mode } from "../../../components/composer";
 import { Glass, GlassGroup } from "../../../components/glass";
-import {
-  AgentAvatar,
-  AgentMark,
-  Back,
-  Chevron,
-  FileIcon,
-  PageIcon,
-} from "../../../components/icons";
+import { AgentAvatar, AgentMark, Back, FileIcon, PageIcon } from "../../../components/icons";
 import { Sheet } from "../../../components/sheet";
+import { Shimmer } from "../../../components/shimmer";
 import { ThreadSheet } from "../../../components/thread-sheet";
 import { useFile } from "../../../lib/catalog";
 import { useDesignSession, useSessionState } from "../../../lib/design";
@@ -49,9 +43,10 @@ const ME = { kind: "user" as const, name: "You" };
 
 /**
  * The canvas (Flow › 3 Canvas): the design in a web view, drawn as desktop
- * draws it, and React Native's chrome over it: back, the title pill (file and
- * page, with the page menu) and the agent's mark when one is here, which
- * opens its session card (4 Agent). Hold to comment (6–9), tap a pin for its
+ * draws it, and React Native's chrome over it: back, the file's title in the
+ * middle and the page button with the pages' native menu. While an agent is
+ * here its mark takes the file icon's place (the name shimmering while it
+ * works), and the title opens its session card (4 Agent). Hold to comment (6–9), tap a pin for its
  * thread (11), double-tap a board to focus it (5): the chrome fades away
  * while a board is focused, and comes back as a pan or pinch begins.
  */
@@ -158,6 +153,8 @@ export default function Canvas() {
     [state.presence],
   );
   const agent = agents[0];
+  /** The agent here is at work (its name shimmers in the title), not just watching for comments. */
+  const working = agent ? agentActivity(agent, session?.file ?? params.key) === "working" : false;
   const thread = doc?.threads.find((t) => t.id === threadId) ?? null;
 
   const onMessage = useCallback((msg: FromCanvas) => {
@@ -348,82 +345,74 @@ export default function Canvas() {
           <BarButton label="Back" onPress={() => router.back()}>
             <Back color={color.ink} />
           </BarButton>
-          <View style={{ flex: 1, alignItems: "center" }}>
+          {/* The file, in the middle: an agent's mark in place of its icon while one is here, and its session card on a tap. */}
+          <View style={{ flex: 1, minWidth: 0, alignItems: "center" }}>
+            <Pressable
+              onPress={agent ? () => setCard((c) => !c) : undefined}
+              disabled={!agent}
+              accessibilityRole={agent ? "button" : "text"}
+              accessibilityLabel={
+                agent
+                  ? `${file?.name ?? doc?.name ?? ""}, ${agent.name}'s session`
+                  : (file?.name ?? doc?.name ?? "")
+              }
+              testID="title"
+              style={{ maxWidth: "100%" }}
+            >
+              <Glass
+                interactive={Boolean(agent)}
+                held={card}
+                style={{
+                  height: 44,
+                  paddingLeft: 12,
+                  paddingRight: 14,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 7,
+                }}
+              >
+                {agent ? (
+                  <AgentMark client={agent.client} size={18} color={color.ink} />
+                ) : (
+                  <FileIcon size={17} color={color.ink} />
+                )}
+                {working ? (
+                  <Shimmer
+                    text={doc?.name ?? file?.name ?? ""}
+                    style={titleText}
+                    color={color.ink}
+                    surface={color.bar}
+                  />
+                ) : (
+                  <Text numberOfLines={1} style={[titleText, { color: color.ink }]}>
+                    {doc?.name ?? file?.name ?? ""}
+                  </Text>
+                )}
+              </Glass>
+            </Pressable>
+          </View>
+          {/* The page: its icon alone, and the pages' menu from it. */}
+          {manyPages ? (
             <MenuView
-              actions={manyPages ? pageActions : []}
+              actions={pageActions}
               onPressAction={pickPage}
               onOpenMenu={() => selectionAsync().catch(() => {})}
-              title={doc?.name}
               themeVariant={scheme}
             >
               <View
                 accessible
-                accessibilityRole={manyPages ? "button" : "text"}
-                accessibilityLabel={`${file?.name ?? doc?.name ?? ""}, page ${page?.name ?? ""}`}
-                testID="title"
+                accessibilityRole="button"
+                accessibilityLabel={`Page: ${page?.name ?? ""}`}
+                testID="page-menu"
               >
                 <Glass
                   interactive
-                  style={{
-                    height: 44,
-                    paddingHorizontal: 14,
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 6,
-                    maxWidth: 236,
-                  }}
+                  style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}
                 >
-                  <FileIcon size={16} color={color.ink} />
-                  <Text
-                    numberOfLines={1}
-                    style={{
-                      flexShrink: 1,
-                      fontFamily: "Inter",
-                      fontWeight: "600",
-                      fontSize: 15,
-                      color: color.ink,
-                    }}
-                  >
-                    {doc?.name ?? file?.name ?? ""}
-                  </Text>
-                  {page && (
-                    <>
-                      <View
-                        style={{
-                          width: 1,
-                          height: 14,
-                          backgroundColor: color.hairline,
-                          marginHorizontal: 2,
-                        }}
-                      />
-                      <PageIcon name={page.icon} size={16} color={color.muted} />
-                      <Text
-                        numberOfLines={1}
-                        style={{
-                          flexShrink: 1,
-                          fontFamily: "Inter",
-                          fontWeight: "500",
-                          fontSize: 15,
-                          color: color.muted,
-                        }}
-                      >
-                        {page.name}
-                      </Text>
-                      {(doc?.pages.length ?? 0) > 1 && <Chevron size={16} color={color.muted} />}
-                    </>
-                  )}
+                  <PageIcon name={page?.icon} size={20} color={color.ink} />
                 </Glass>
               </View>
             </MenuView>
-          </View>
-          {agent ? (
-            <BarButton
-              label={`${agent.name}'s session`}
-              onPress={() => setCard((c) => !c)}
-              held={card}
-            >
-              <AgentMark client={agent.client} size={20} color={color.ink} />
-            </BarButton>
           ) : (
             <View style={{ width: 44 }} />
           )}
@@ -546,6 +535,14 @@ function Hint({ bottom, away, onDone }: { bottom: number; away: boolean; onDone:
   );
 }
 
+/** The file's name in the title capsule: Inter 600 16, cut short only when it really doesn't fit. */
+const titleText = {
+  flexShrink: 1,
+  fontFamily: "Inter",
+  fontWeight: "600",
+  fontSize: 16,
+} as const;
+
 /** "Claude Code 2.1.0", from the MCP client's own name, as desktop's session card says it. */
 function productName(p: Presence): string {
   const raw = p.origin?.clientName;
@@ -624,9 +621,10 @@ function SessionCard({
       entering={FadeIn.duration(180)}
       exiting={FadeOut.duration(120)}
       testID="session-card"
-      style={{ position: "absolute", right: 16, top, width: 300, zIndex: 12 }}
+      style={{ position: "absolute", alignSelf: "center", top, width: 318, zIndex: 12 }}
     >
-      <Glass style={{ borderRadius: 18, padding: 16, gap: 14 }}>
+      {/* Dropping from the title, under it. */}
+      <Glass style={{ borderRadius: 24, padding: 16, gap: 14 }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
           <AgentAvatar
             name={p.name}
@@ -648,11 +646,10 @@ function SessionCard({
               {productName(p)}
             </Text>
             <Text
-              style={{ fontFamily: "Inter", fontSize: 13, lineHeight: 17.55, color: color.muted }}
+              numberOfLines={1}
+              style={{ fontFamily: "Inter", fontSize: 14, lineHeight: 18.2, color: color.muted }}
             >
-              {activity === "working"
-                ? `Working${p.status ? ` · ${p.status}` : ""}`
-                : "Iterating · watching for your comments"}
+              {activity === "working" ? (p.status ?? "Working") : "Watching for comments"}
             </Text>
           </View>
         </View>
