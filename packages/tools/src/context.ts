@@ -41,7 +41,8 @@ export interface Workspace {
 
 export interface TimelapseRequest {
   shape: "16:9" | "1:1" | "9:16";
-  length: number;
+  /** Leave out for the timelapse (its length follows from what was made). */
+  length?: number;
   range?: { from: number; to: number };
   theme: "light" | "dark";
 }

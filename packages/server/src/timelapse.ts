@@ -13,7 +13,8 @@ import { driveFilm, FilmCancelled, type FilmProgress, type Renderer } from "@pon
 
 export interface TimelapseRequest {
   shape: FilmShape;
-  length: number;
+  /** Leave out for the timelapse (its length follows from what was made). */
+  length?: number;
   range?: Range;
   theme: "light" | "dark";
 }

@@ -27,20 +27,23 @@ import { schemeFor, settleAssets } from "./model.ts";
  * reflows under them.
  */
 
-/** Seconds, and the pace of a reel. */
+/**
+ * Seconds, and the pace of a reel. A reel isn't a set length: it plays at this pace, and is as
+ * long as what was made takes at it.
+ */
 export const REEL = {
   /** The prompt, typed and sent; the first screen starts as it goes. */
   prompt: 1.05,
+  /** Between one piece and the next, for a piece of ordinary weight. */
+  beat: 0.046,
+  /** After a screen's last piece starts: its arrival, and a beat to see it whole. */
+  rest: 0.2,
   /** One group of screens revising: its comments sweep in, then the changes land. */
-  revise: 2.1,
-  /** At most this many groups revise; the rest show their final look in the last shot. */
-  maxRevise: 2,
+  revise: 1.5,
   /** All the screens together. */
   result: 1.05,
   /** The bloom. */
   end: 1.6,
-  /** A build shot is never shorter than this. */
-  minShot: 1.0,
 } as const;
 
 /** One piece's arrival in a reel (ms): quicker than the canvas, so pieces read one by one. */
@@ -123,8 +126,11 @@ export interface Reel extends Pick<Edit, "name" | "prompt" | "view" | "theme" | 
   times: { prompt: number; build: number; endCard: number; duration: number };
 }
 
-/** Whether to make a reel: the 15s film. */
-export const isReel = (length: number) => length <= 15;
+/**
+ * Whether to make a reel. It's the timelapse: its length follows from what was made. The longer
+ * story cut (30 or 60s, comments read out) is only made when asked for by length.
+ */
+export const isReel = (length?: number) => !length || length <= 15;
 
 /**
  * The pieces a write brings, opened up so the design arrives in readable bits: a section's
@@ -148,6 +154,18 @@ function openPieces(nodes: El[], depth = 0): El[] {
     }
   }
   return out;
+}
+
+/**
+ * How much of the beat a piece takes: a headline, a picture or a card's surface a full beat and
+ * a bit; a line of copy or a button a beat; a small label, icon or chip less, so the little
+ * things pour in and the big ones land.
+ */
+function weight(n: El): number {
+  if (/^(h1|h2|img|picture|video)$/.test(n.tag) || (surface(n) && n.children.length > 1))
+    return 1.3;
+  if (/^(h3|h4|p|button|a|input|textarea|select)$/.test(n.tag)) return 1;
+  return 0.6;
 }
 
 /** Whether an element draws something itself: a fill, a border, a shadow. */
@@ -270,7 +288,7 @@ export async function buildReel(input: ReelInput): Promise<Reel> {
   const doc = replayTo(entries, startAt - 1) ?? blank();
   let page: string | undefined;
   const order: string[] = [];
-  const writes: { board: string; ids: string[] }[] = [];
+  const writes: { board: string; ids: string[]; weights: number[] }[] = [];
   const frozen = new Map<string, { ab: Artboard; tokens: string; at: number }>();
   const comments: {
     thread: string;
@@ -316,8 +334,8 @@ export async function buildReel(input: ReelInput): Promise<Reel> {
       if (!order.includes(id)) order.push(id);
       const opened = openPieces(
         mine.map((x) => findIn(ab.root, x)).filter((n): n is El => Boolean(n)),
-      ).map((n) => n.id);
-      writes.push({ board: id, ids: opened });
+      );
+      writes.push({ board: id, ids: opened.map((n) => n.id), weights: opened.map(weight) });
     }
   }
   for (const id of order)
@@ -507,56 +525,53 @@ export async function buildReel(input: ReelInput): Promise<Reel> {
     ? { text: intent, who: { name: origin?.name ?? "Agent", client: origin?.client } }
     : undefined;
 
-  // The clock. The groups that revise most get a shot each, in the order built.
+  // The clock.
+  // Every group of screens that was revised in answer to the person's comments gets a revise
+  // shot, in the order built. A change nobody asked for (a tweak on the agent's own) just shows
+  // in the last shot.
+  const asked = (id: string) =>
+    comments.some((c) => c.board === id && c.i >= (frozen.get(id)?.at ?? 0));
   const reviseShots = shots
-    .map((s, k) => ({ k, size: s.boards.reduce((a, id) => a + (reviseSize.get(id) ?? 0), 0) }))
+    .map((s, k) => ({
+      k,
+      size: s.boards.reduce((a, id) => a + (asked(id) ? (reviseSize.get(id) ?? 0) : 0), 0),
+    }))
     .filter((x) => x.size > 0)
-    .sort((a, b) => b.size - a.size)
-    .slice(0, REEL.maxRevise)
-    .sort((a, b) => a.k - b.k)
     .map((x) => x.k);
-  const duration = 15;
-  const endCard = duration - REEL.end;
-  const resultAt = endCard - REEL.result;
-  const reviseAt = resultAt - reviseShots.length * REEL.revise;
   const promptEnd = prompt ? REEL.prompt : 0.1;
   // The first screen's sheet lands as the prompt finishes lifting away: never under it, never
   // a beat of empty canvas after it.
   const buildAt = Math.max(0.1, promptEnd - 0.06);
-  const buildLen = reviseAt - buildAt;
 
-  // Build shots share the build by how much each brings (less than in proportion).
-  const piecesOf = (g: string[]) => writes.filter((w) => g.includes(w.board));
-  const weights = groups.map(
-    (g) => Math.sqrt(piecesOf(g).reduce((a, w) => a + w.ids.length, 0)) + 1.5,
-  );
-  const total = weights.reduce((a, b) => a + b, 0);
-  const lens = weights.map((w) => Math.max(REEL.minShot, (buildLen * w) / total));
-  const scale = buildLen / lens.reduce((a, b) => a + b, 0);
+  // Each build shot: the sheet a beat early, then its pieces one after another in the order
+  // written, each its share of the beat; then the last one's arrival and a beat to see it.
   const segments: ReelSegment[] = [];
   const pieces = new Map<string, { id: string; at: number }[]>();
   let t = buildAt;
   groups.forEach((g, k) => {
-    const len = lens[k]! * scale;
-    segments.push({ kind: "build", shot: k, t0: t, t1: t + len });
-    // The screen is assembled: its pieces one after another, in the order written, on an even
-    // beat that quickens a little as it fills. A new write starts when the last one's pieces
-    // have started, so the agent's rhythm shows, never a whole screen at once.
-    const ws = piecesOf(g).map((w) => ({
-      ...w,
-      ids: w.ids.filter((id) => findIn(boards.get(w.board)!.before.ab.root, id)),
-    }));
-    const all = ws.flatMap((w) => w.ids.map((id) => ({ id, board: w.board })));
-    // The last piece has landed with a beat to spare before the cut.
-    const span = Math.max(0.3, len - SHEET_LEAD - PIECE_MS / 1000 - 0.22);
-    const n = all.length;
-    all.forEach((p, j) => {
+    const all = writes
+      .filter((w) => g.includes(w.board))
+      .flatMap((w) =>
+        w.ids
+          .map((id, j) => ({ id, board: w.board, w: w.weights[j]! }))
+          .filter((p) => findIn(boards.get(p.board)!.before.ab.root, p.id)),
+      );
+    let c = t + SHEET_LEAD;
+    for (const p of all) {
       const list = pieces.get(p.board) ?? [];
-      list.push({ id: p.id, at: t + SHEET_LEAD + span * (n > 1 ? (j / (n - 1)) ** 1.12 : 0) });
+      list.push({ id: p.id, at: c });
       pieces.set(p.board, list);
-    });
-    t += len;
+      c += REEL.beat * p.w;
+    }
+    const end = c + PIECE_MS / 1000 + REEL.rest;
+    segments.push({ kind: "build", shot: k, t0: t, t1: end });
+    t = end;
   });
+  const reviseAt = t;
+  const resultAt = reviseAt + reviseShots.length * REEL.revise;
+  const endCard = resultAt + REEL.result;
+  // Whole frames: the film ends on one.
+  const duration = Math.ceil((endCard + REEL.end) * 30) / 30;
   const boardAt = new Map<string, number>();
   const lastAt = new Map<string, number>();
   for (const [id, list] of pieces) {
@@ -576,14 +591,14 @@ export async function buildReel(input: ReelInput): Promise<Reel> {
       .filter((c) => shot.boards.includes(c.board) && c.i >= (frozen.get(c.board)?.at ?? 0))
       .map((c) => ({ ...c, sx: (shot.place.get(c.board)!.x + c.x) * zoom }))
       .sort((a, b) => a.sx - b.sx);
-    const changeAt = t0 + 1.2;
+    const changeAt = t0 + 0.8;
     shot.boards.forEach((id, j) => {
       const r = revisions.get(id);
       if (r) r.at = changeAt + j * 0.08;
     });
     // The sweep: pins land left to right; each one's words show while the sweep is on it, so
     // cards never pile up.
-    const step = mine.length > 1 ? Math.min(0.36, 0.95 / (mine.length - 1)) : 0;
+    const step = mine.length > 1 ? Math.min(0.3, 0.68 / (mine.length - 1)) : 0;
     mine.forEach((c, j) => {
       const at = t0 + 0.08 + j * step;
       sweep.push({
@@ -595,10 +610,13 @@ export async function buildReel(input: ReelInput): Promise<Reel> {
         at,
         cardOut:
           j === mine.length - 1 ? changeAt - 0.05 : Math.min(changeAt - 0.05, at + step + 0.12),
-        resolveAt: changeAt + 0.6 + j * 0.04,
+        resolveAt: changeAt + 0.45 + j * 0.04,
       });
     });
   });
+  // A revision only plays in its own shot; anywhere else the board is as first made, and the
+  // last shot shows every screen as the session left it.
+  for (const [id, r] of revisions) if (!r.at) revisions.delete(id);
   shots.push(resultShot);
   segments.push({ kind: "result", shot: shots.length - 1, t0: resultAt, t1: endCard });
   segments.sort((a, b) => a.t0 - b.t0);

@@ -19,7 +19,8 @@ export interface FilmSpec {
   /** The design's key, its path on the server. */
   file: string;
   shape: FilmShape;
-  length: number;
+  /** Leave out for the timelapse (its length follows from what was made). */
+  length?: number;
   range?: Range;
   theme: "light" | "dark";
   fps?: number;
@@ -98,25 +99,27 @@ export function startFilmPage(el: HTMLElement) {
       await document.fonts.load('400 12px "IBM Plex Mono"').catch(() => {});
       await document.fonts.load('500 12px "Inter"').catch(() => {});
       const assetBase = `${location.origin}/files/${encodeURIComponent(spec.file)}`;
-      // A 15s film is a reel: the design being made, then revised. Longer films tell the story.
-      model = isReel(spec.length)
-        ? await buildReel({
-            name,
-            entries,
-            shape: spec.shape,
-            range: spec.range,
-            theme: spec.theme,
-            assetBase,
-          })
-        : await buildEdit({
-            name,
-            entries,
-            shape: spec.shape,
-            length: spec.length,
-            range: spec.range,
-            theme: spec.theme,
-            assetBase,
-          });
+      // The timelapse is a reel: the design being made, then revised, as long as that takes. A
+      // set length of 30s or more makes the older story cut, with comments read out.
+      model =
+        isReel(spec.length) || !spec.length
+          ? await buildReel({
+              name,
+              entries,
+              shape: spec.shape,
+              range: spec.range,
+              theme: spec.theme,
+              assetBase,
+            })
+          : await buildEdit({
+              name,
+              entries,
+              shape: spec.shape,
+              length: spec.length!,
+              range: spec.range,
+              theme: spec.theme,
+              assetBase,
+            });
       (window as unknown as { __film?: Edit | Reel }).__film = model;
       const duration = "kind" in model ? model.times.duration : model.timeline.duration;
       const frames = Math.round(duration * fps);

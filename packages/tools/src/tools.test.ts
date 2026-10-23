@@ -726,11 +726,9 @@ test("timelapse films the file and says where it went", async () => {
       bytes: 4_200_000,
     };
   };
-  const r = await call("timelapse", { shape: "9:16", length: 15 });
-  expect(r.text).toBe("Wrote /x/exports/timelapse-2026-10-22.mp4 (9:16, 30s, H.264, 4.0 MB).");
-  expect(asked).toEqual([
-    { key: "fern", shape: "9:16", length: 15, range: undefined, theme: "light" },
-  ]);
+  const r = await call("timelapse", {});
+  expect(r.text).toBe("Wrote /x/exports/timelapse-2026-10-22.mp4 (30s, H.264, 4.0 MB).");
+  expect(asked).toEqual([{ key: "fern", shape: "16:9", range: undefined, theme: "light" }]);
   expect((await call("timelapse", { from: 5, to: 2 })).isError).toBe(true);
   ws.timelapse = undefined;
   expect((await call("timelapse", {})).text).toContain("can't make them");

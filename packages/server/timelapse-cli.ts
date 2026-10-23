@@ -4,7 +4,10 @@
  * the page with WebCodecs and writes the film.
  *
  *   bun packages/server/timelapse-cli.ts path/to/file.design [--shape 16:9|1:1|9:16]
- *     [--length 15|30|60] [--theme light|dark] [--out film.mp4] [--all]
+ *     [--length 30|60] [--theme light|dark] [--out film.mp4] [--all]
+ *
+ * Without --length it makes the timelapse, as long as what was made takes; --length makes the
+ * older story cut (comments read out), for comparison.
  *
  * --all films the whole journal rather than the last session. Needs
  * `bun run --filter @ponzu/studio build` first.
@@ -53,7 +56,7 @@ const started = Date.now();
 let last = 0;
 const job = ws.timelapses.start(key, {
   shape: (values.shape ?? "16:9") as FilmShape,
-  length: Number(values.length ?? 30),
+  ...(values.length ? { length: Number(values.length) } : {}),
   theme: values.theme === "dark" ? "dark" : "light",
   range,
 });

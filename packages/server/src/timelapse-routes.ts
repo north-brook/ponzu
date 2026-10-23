@@ -14,7 +14,7 @@ import type { LocalWorkspace } from "./workspace.ts";
  * The studio's timelapse API, for this Mac only:
  *   GET  /api/timelapse/journal?file=      the journal, for the film page
  *   GET  /api/timelapse/info?file=         range, last session and comment times
- *   POST /api/timelapse?file=              start a film { shape, length, range?, theme }
+ *   POST /api/timelapse?file=              start a film { range?, theme }
  *   GET  /api/timelapse/status?file=       the latest film's state
  *   GET  /api/timelapse/poster?id=         its latest frame, JPEG
  *   GET  /api/timelapse/video?id=          the finished film
@@ -54,7 +54,10 @@ export async function timelapseRoute(
     const shape = FILM_SHAPES.includes(body.shape as FilmShape)
       ? (body.shape as FilmShape)
       : "16:9";
-    const length = FILM_LENGTHS.includes(body.length as FilmLength) ? (body.length as number) : 30;
+    // No length: the timelapse, as long as what was made takes at its pace.
+    const length = FILM_LENGTHS.includes(body.length as FilmLength)
+      ? (body.length as number)
+      : undefined;
     const theme = body.theme === "dark" ? "dark" : "light";
     const r = body.range as { from?: unknown; to?: unknown } | undefined;
     const range =

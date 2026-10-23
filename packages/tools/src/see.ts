@@ -301,17 +301,9 @@ export const seeTools = [
     group: "see",
     readOnly: true,
     description:
-      "Make a timelapse film of the work in a file: a 15, 30 or 60 second MP4 of the canvas replaying its history, your turns and the person's comments, ending on Ponzu's mark. Writes it to the design's exports/ folder (timelapse-YYYY-MM-DD.mp4) and returns the path. Covers the last session (since the last hour-long break) unless you pass from and to. Takes about as long as the film, or a little more. Only when the person asks for one.",
+      "Make a timelapse film of the work in a file: a 16:9 MP4 of the design being made, from the person's request to every screen assembled piece by piece, the comments they left and the changes that answered them, ending on Ponzu's mark. It's as long as the work takes at its pace (usually 15 to 25 seconds). Writes it to the design's exports/ folder (timelapse-YYYY-MM-DD.mp4) and returns the path. Covers the last session (since the last hour-long break) unless you pass from and to. Takes about twice as long as the film to make. Only when the person asks for one.",
     input: {
       file: fileArg,
-      shape: z
-        .enum(["16:9", "1:1", "9:16"])
-        .optional()
-        .describe("Default 16:9. 9:16 is for phones and stories; 1:1 for feeds."),
-      length: z
-        .union([z.literal(15), z.literal(30), z.literal(60)])
-        .optional()
-        .describe("Seconds. Default 30."),
       from: z
         .number()
         .optional()
@@ -333,13 +325,12 @@ export const seeTools = [
           ? { from: args.from ?? 0, to: args.to ?? Date.now() }
           : undefined;
       const out = await ws.timelapse(key, {
-        shape: args.shape ?? "16:9",
-        length: args.length ?? 30,
+        shape: "16:9",
         range,
         theme: args.colorScheme ?? ws.theme ?? "light",
       });
       return {
-        text: `Wrote ${out.path} (${args.shape ?? "16:9"}, ${Math.round(out.duration)}s, ${out.codec.startsWith("avc") ? "H.264" : "VP9"}, ${(out.bytes / 1_048_576).toFixed(1)} MB).`,
+        text: `Wrote ${out.path} (${Math.round(out.duration)}s, ${out.codec.startsWith("avc") ? "H.264" : "VP9"}, ${(out.bytes / 1_048_576).toFixed(1)} MB).`,
         data: out,
       };
     },

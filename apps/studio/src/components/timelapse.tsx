@@ -1,13 +1,4 @@
-import {
-  FILM_LENGTHS,
-  FILM_SHAPES,
-  type FilmLength,
-  type FilmShape,
-  lastSession,
-  parseJournal,
-  type Range,
-  realTimeOf,
-} from "@ponzu/core";
+import { type FilmShape, lastSession, parseJournal, type Range } from "@ponzu/core";
 import { Icon, type SocketSource, Tip, useSource } from "@ponzu/react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import {
@@ -19,9 +10,9 @@ import {
   useRef,
   useState,
 } from "react";
-import { buildEdit, type Edit as FilmModel } from "@/film/edit";
-import { Film } from "@/film/Film";
 import { journalText } from "@/film/page";
+import { ReelFilm } from "@/film/ReelFilm";
+import { buildReel, type Reel } from "@/film/reel";
 import { cn } from "@/lib/utils";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "./ui/hover-card";
 
@@ -42,7 +33,7 @@ type JobState =
 export interface TimelapseJob {
   id: string;
   file: string;
-  request: { shape: FilmShape; length: number; range?: Range; theme: "light" | "dark" };
+  request: { shape: FilmShape; length?: number; range?: Range; theme: "light" | "dark" };
   state: JobState;
   poster: boolean;
 }
@@ -436,7 +427,7 @@ function usePlayer(duration: number, playing: boolean, loop = true) {
 }
 
 /** A film model fitted into a box, at its own size scaled down. */
-function Stage({ model, t }: { model: FilmModel; t: number }) {
+function Stage({ model, t }: { model: Reel; t: number }) {
   const box = useRef<HTMLDivElement>(null);
   const [k, setK] = useState(0.5);
   useLayoutEffect(() => {
@@ -462,10 +453,22 @@ function Stage({ model, t }: { model: FilmModel; t: number }) {
             transformOrigin: "0 0",
           }}
         >
-          <Film model={model} f={t} />
+          <ReelFilm model={model} f={t} />
         </div>
       </div>
     </div>
+  );
+}
+
+/** When the person left each of their comments (real time). */
+function commentTimes(entries: ReturnType<typeof parseJournal>): number[] {
+  return entries.flatMap((e) =>
+    e.kind === "op" &&
+    e.origin.kind === "user" &&
+    (e.op.op === "thread.create" ||
+      (e.op.op === "batch" && e.op.ops.some((o) => o.op === "thread.create")))
+      ? [e.t]
+      : [],
   );
 }
 
@@ -491,16 +494,15 @@ function Composer({
   theme: "light" | "dark";
   onExport: (req: TimelapseJob["request"]) => void;
 }) {
-  const [shape, setShape] = useState<FilmShape>("16:9");
-  const [length, setLength] = useState<FilmLength>(30);
   const [journal, setJournal] = useState<string | null>(null);
   const [range, setRange] = useState<Range | null>(null);
-  const [model, setModel] = useState<FilmModel | null>(null);
+  const [model, setModel] = useState<Reel | null>(null);
   const [playing, setPlaying] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const entries = useMemo(() => (journal ? parseJournal(journal) : []), [journal]);
   const ops = useMemo(() => entries.filter((e) => e.kind === "op").map((e) => e.t), [entries]);
+  const comments = useMemo(() => commentTimes(entries), [entries]);
   const bounds = ops.length ? { from: ops[0]!, to: ops[ops.length - 1]! } : null;
 
   useEffect(() => {
@@ -519,11 +521,10 @@ function Composer({
     if (!open || !entries.length || !range) return;
     let live = true;
     const t = setTimeout(() => {
-      void buildEdit({
+      void buildReel({
         name,
         entries,
-        shape,
-        length,
+        shape: "16:9",
         range,
         theme,
         assetBase: `${origin}/files/${encodeURIComponent(file)}`,
@@ -533,9 +534,9 @@ function Composer({
       live = false;
       clearTimeout(t);
     };
-  }, [open, entries, range, shape, length, theme, origin, file, name]);
+  }, [open, entries, range, theme, origin, file, name]);
 
-  const duration = model?.timeline.duration ?? length;
+  const duration = model?.times.duration ?? 0;
   const [t, seek] = usePlayer(duration, open && playing && Boolean(model));
   const empty = journal !== null && !ops.length;
 
@@ -563,41 +564,28 @@ function Composer({
         <Track
           bounds={bounds}
           ops={ops}
-          ticks={model?.ticks ?? []}
+          ticks={comments}
           range={range}
           onRange={setRange}
-          playhead={model ? playheadReal(model, t) : null}
-          onSeek={(real) => model && seek(filmTimeAt(model, real))}
+          playhead={null}
+          onSeek={() => {}}
         />
       )}
       <div className="flex items-center gap-2">
         <PlayButton playing={playing} onClick={() => setPlaying((p) => !p)} />
-        <span className="font-mono text-[12px] tabular-nums">
+        <button
+          type="button"
+          aria-label="From the start"
+          onClick={() => seek(0)}
+          className="font-mono text-[12px] tabular-nums"
+        >
           {fmt(t)} <span className="text-faint">/ {fmt(duration)}</span>
-        </span>
+        </button>
         <div className="ml-auto flex items-center gap-2">
-          <Segments
-            items={FILM_SHAPES.map((s) => ({
-              value: s,
-              label: (
-                <>
-                  <ShapeGlyph shape={s} />
-                  {s}
-                </>
-              ),
-            }))}
-            value={shape}
-            onChange={setShape}
-          />
-          <Segments
-            items={FILM_LENGTHS.map((l) => ({ value: l, label: `${l}s` }))}
-            value={length}
-            onChange={setLength}
-          />
           <button
             type="button"
             disabled={!model || !range}
-            onClick={() => range && onExport({ shape, length, range, theme })}
+            onClick={() => range && onExport({ shape: "16:9", range, theme })}
             className="flex h-8 items-center gap-1.5 rounded-[9px] bg-foreground px-3 text-[13px] font-medium text-background hover:bg-foreground/90 disabled:opacity-40"
           >
             <Icon name="download" size={15} />
@@ -622,69 +610,9 @@ function PlayButton({ playing, onClick }: { playing: boolean; onClick: () => voi
   );
 }
 
-function ShapeGlyph({ shape }: { shape: FilmShape }) {
-  const [w, h] = shape === "1:1" ? [10, 10] : shape === "9:16" ? [8, 13] : [14, 9];
-  return (
-    <span
-      aria-hidden
-      className="inline-block rounded-[2.5px] border-[1.5px] border-current"
-      style={{ width: w, height: h }}
-    />
-  );
-}
-
-function Segments<T extends string | number>({
-  items,
-  value,
-  onChange,
-}: {
-  items: { value: T; label: ReactNode }[];
-  value: T;
-  onChange: (v: T) => void;
-}) {
-  return (
-    <div
-      role="radiogroup"
-      className="flex h-8 items-center gap-0.5 rounded-[9px] bg-secondary p-0.5"
-    >
-      {items.map((it) => (
-        <button
-          key={String(it.value)}
-          type="button"
-          aria-pressed={it.value === value}
-          onClick={() => onChange(it.value)}
-          className={cn(
-            "flex h-7 items-center gap-1.5 rounded-[7px] px-2.5 text-[12.5px] text-muted-foreground tabular-nums hover:text-foreground",
-            it.value === value &&
-              "bg-card text-foreground shadow-[0_0_0_0.5px_var(--hairline-strong),0_1px_2px_rgba(0,0,0,0.08)]",
-          )}
-        >
-          {it.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 /* ------------------------------------------------------------------ */
 /* The activity track                                                  */
 /* ------------------------------------------------------------------ */
-
-/** Real time under the film's playhead. */
-function playheadReal(model: FilmModel, t: number): number | null {
-  return realTimeOf(model.timeline, t);
-}
-
-/** Film time of a real moment: the shot that shows it. */
-function filmTimeAt(model: FilmModel, real: number): number {
-  let f = 0;
-  for (const s of model.timeline.shots) {
-    const m = s.moment;
-    const from = m.kind === "work" || m.kind === "turn" ? m.from : m.t;
-    if (from <= real) f = s.start;
-  }
-  return f;
-}
 
 /**
  * The file's history along a line, cut down to where something happened:
@@ -901,36 +829,32 @@ function Ready({
   const video = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(true);
   const [t, setT] = useState(0);
-  const [ticks, setTicks] = useState<{ ticks: number[]; model: FilmModel | null }>({
-    ticks: [],
-    model: null,
-  });
+  const [ticks, setTicks] = useState<number[]>([]);
   const state = job.state.status === "done" ? job.state : null;
   const src = `${origin}/api/timelapse/video?id=${job.id}`;
   const desktop = window.ponzuDesktop;
 
-  // Ticks on the film's own clock: where each comment lands in it.
+  // Ticks on the film's own clock: where the comments sweep in.
   useEffect(() => {
     if (!open) return;
     let live = true;
     void journalText(job.file).then(async (text) => {
       const entries = parseJournal(text);
-      const m = await buildEdit({
+      const m = await buildReel({
         name,
         entries,
-        shape: job.request.shape,
-        length: job.request.length,
+        shape: "16:9",
         range: job.request.range ?? lastSession(entries) ?? undefined,
         theme: job.request.theme,
       }).catch(() => null);
-      if (live && m) setTicks({ ticks: m.filmTicks, model: m });
+      if (live && m) setTicks(m.comments.map((c) => c.at));
     });
     return () => {
       live = false;
     };
   }, [open, job, name]);
 
-  const duration = state?.duration ?? job.request.length;
+  const duration = state?.duration ?? job.request.length ?? 0;
   const copy = async (): Promise<boolean> => {
     if (desktop?.copyFile && state) {
       await desktop.copyFile(state.path);
@@ -964,7 +888,7 @@ function Ready({
       <FilmTrack
         duration={duration}
         t={t}
-        ticks={ticks.ticks}
+        ticks={ticks}
         onSeek={(s) => {
           if (video.current) video.current.currentTime = s;
           setT(s);
