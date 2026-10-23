@@ -1,7 +1,7 @@
 "use client";
 
 import { appLink, parseDesignLink } from "@ponzu/core";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Apple, Slice } from "@/components/icons";
 import { DOWNLOAD } from "@/components/links";
 
@@ -27,37 +27,49 @@ function linkFromHash(hash: string): string | null {
 export function OpenDesign() {
   const [link, setLink] = useState<string | null>(null);
   const [state, setState] = useState<State>("opening");
+  /** Stops the attempt in flight: its timer and its watch for the app taking focus. */
+  const stop = useRef<() => void>(undefined);
 
   const open = useCallback((to: string) => {
+    stop.current?.();
     setState("opening");
-    let settled = false;
     const away = () => {
-      if (settled) return;
-      settled = true;
+      end();
       setState("opened");
-      cleanup();
     };
     const onVisibility = () => document.hidden && away();
-    const cleanup = () => {
+    const timer = setTimeout(() => {
+      if (document.hasFocus()) setState("missing");
+    }, WAIT);
+    const end = () => {
+      clearTimeout(timer);
       window.removeEventListener("blur", away);
       document.removeEventListener("visibilitychange", onVisibility);
+      stop.current = undefined;
     };
+    stop.current = end;
     window.addEventListener("blur", away);
     document.addEventListener("visibilitychange", onVisibility);
     window.location.href = to;
-    setTimeout(() => {
-      if (!settled && document.hasFocus()) setState("missing");
-    }, WAIT);
   }, []);
 
+  // The fragment can change without a reload, when another link opens in this tab.
   useEffect(() => {
-    const to = linkFromHash(window.location.hash);
-    if (!to) {
-      setState("invalid");
-      return;
-    }
-    setLink(to);
-    open(to);
+    const read = () => {
+      const to = linkFromHash(window.location.hash);
+      setLink(to);
+      if (to) open(to);
+      else {
+        stop.current?.();
+        setState("invalid");
+      }
+    };
+    read();
+    window.addEventListener("hashchange", read);
+    return () => {
+      window.removeEventListener("hashchange", read);
+      stop.current?.();
+    };
   }, [open]);
 
   const retry = link ? () => open(link) : undefined;
