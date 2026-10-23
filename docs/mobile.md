@@ -66,6 +66,19 @@ the app's light or dark. Before iOS 26 it falls back to the design's bar:
 `--c-bar`, a hairline and the pop shadow. `components/glass.tsx` has the
 rules: the glass itself is never clipped, its content is.
 
+### The comment sheet
+
+A comment or reply is written by voice or typing in one sheet that changes
+shape between them (the design's Flow › 8 ⇄ 7), never two screens. Every part
+stays mounted and moves on one Reanimated clock on the UI thread; the timing
+of each part, both ways, is in `lib/morph.ts`. The sheet's own shape (its
+corners, side insets and bottom edge) follows the keyboard's frame, read
+every frame from `react-native-keyboard-controller`, so it rides the
+keyboard down and up with the system's animation, interactive dismissal
+included. The mic, keyboard and send glyphs are SF Symbols (`expo-symbols`),
+the round buttons interactive glass, and switching taps a selection haptic,
+sending a light one.
+
 ### Styling
 
 Class names are NativeWind 5 (`nativewind@5.0.0-rc.0` with

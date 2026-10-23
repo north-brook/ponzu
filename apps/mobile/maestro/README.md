@@ -12,6 +12,7 @@ Ponzu serving the three examples. They run in this order (`config.yaml`):
 | `search.yaml` | "brand" shows Files and Frames. |
 | `activity.yaml` | The bell opens Activity; `ponzu://activity?since=1` shows "Claude added 3 artboards" with thumbnails, which opens that design. |
 | `comment.yaml` | A comment on Kettle's Logo (the `?comment=` link), its pin and thread sheet, Resolve, then `?uncomment=` deletes it. |
+| `comment-modes.yaml` | The comment sheet switches typing → voice → typing (the field, then "Listening…", the mute and the keyboard button, then the field again) and sends. |
 
 `shared/start.yaml` opens the client onto Metro, closes the development
 menu if it shows, and waits for Designs. It refuses the microphone and
@@ -22,7 +23,7 @@ prompt in the way. Every flow checks no development warning
 Flows find views by `testID` (`id:` in Maestro) or by text: `launch`,
 `designs`, `card-<name>`, `bell`, `search-field`, `search-input`,
 `search-files`, `search-frames`, `canvas`, `title`, `where-you-are`,
-`comment-sheet`, `comment-input`, `to-type`, `send`, `thread-sheet`,
+`comment-sheet`, `comment-input`, `to-type`, `to-voice`, `mute`, `transcript`, `send`, `thread-sheet`,
 `resolve`, `activity`, `connect`. Give a new screen a `testID` named after it.
 Wait with `extendedWaitUntil`, never a fixed sleep.
 

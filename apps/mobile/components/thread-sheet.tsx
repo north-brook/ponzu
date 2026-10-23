@@ -81,7 +81,11 @@ export function ThreadSheet({
           </Text>
         </Pressable>
       </View>
-      <ScrollView style={{ flex: 1, minHeight: 0 }} contentContainerStyle={{ gap: 18 }}>
+      <ScrollView
+        style={{ flex: 1, minHeight: 0 }}
+        contentContainerStyle={{ gap: 18 }}
+        keyboardDismissMode="interactive"
+      >
         {thread.messages.map((m) => {
           const agent = m.author.kind === "agent";
           return (

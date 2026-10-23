@@ -1,10 +1,13 @@
 import { type ReactNode, useEffect } from "react";
-import { type LayoutChangeEvent, Keyboard as RNKeyboard, View } from "react-native";
+import { type LayoutChangeEvent, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import {
+  KeyboardController,
+  useReanimatedKeyboardAnimation,
+} from "react-native-keyboard-controller";
 import Animated, {
   Easing,
   runOnJS,
-  useAnimatedKeyboard,
   useAnimatedStyle,
   useDerivedValue,
   useSharedValue,
@@ -14,13 +17,16 @@ import { useTheme } from "../lib/theme";
 import { EASE_OUT } from "../lib/tokens";
 
 const ease = Easing.bezier(...EASE_OUT);
-const MORPH = { duration: 420, easing: ease };
 
 /**
  * A sheet over the canvas (comment, thread). Floating, 8pt in from the
  * screen's edges with a 38pt radius, until the keyboard is up: then it sits
  * on the keyboard, full width, with 24pt top corners, as the type ⇄ voice
- * study shows. Swipe down to cancel, with no confirm.
+ * study shows. Its shape follows the keyboard's own frame, every frame on
+ * the UI thread (react-native-keyboard-controller): as the keyboard drops
+ * the sheet's bottom edge follows it down and its corners round, and as it
+ * rises the sheet rides it, interactive dismissal included. Swipe down to
+ * cancel, with no confirm.
  */
 export function Sheet({
   children,
@@ -40,7 +46,8 @@ export function Sheet({
   gap?: number;
 }) {
   const { color } = useTheme();
-  const keyboard = useAnimatedKeyboard();
+  // The keyboard's height (negative, as it lifts content) and how far up it is, 0 to 1.
+  const keyboard = useReanimatedKeyboardAnimation();
   const drag = useSharedValue(0);
   const enter = useSharedValue(1);
   const h = useSharedValue(0);
@@ -48,16 +55,16 @@ export function Sheet({
     enter.value = withTiming(0, { duration: 380, easing: ease });
   }, []);
 
-  /** 0 floating, 1 on the keyboard. */
-  const docked = useDerivedValue(() => withTiming(keyboard.height.value > 40 ? 1 : 0, MORPH));
+  /** 0 floating, 1 on the keyboard: wherever the keyboard is on its way. */
+  const docked = useDerivedValue(() => Math.min(1, Math.max(0, keyboard.progress.value)));
+  const lift = useDerivedValue(() => Math.max(0, -keyboard.height.value));
   const style = useAnimatedStyle(() => {
     const d = docked.value;
     const side = 8 * (1 - d);
-    const bottom = d > 0 ? keyboard.height.value : 0;
     return {
       left: side,
       right: side,
-      bottom: Math.max(side, bottom),
+      bottom: Math.max(side, lift.value),
       borderTopLeftRadius: 38 - 14 * d,
       borderTopRightRadius: 38 - 14 * d,
       borderBottomLeftRadius: 38 * (1 - d),
@@ -65,13 +72,15 @@ export function Sheet({
       paddingHorizontal: 20 - 4 * d,
       paddingTop: 10 - 2 * d,
       paddingBottom: 40 - 28 * d,
+      // The design's sheet spaces its rows 14pt floating, 10pt on the keyboard.
+      gap: gap - (gap - 10) * d,
       transform: [{ translateY: Math.max(0, drag.value) + enter.value * (h.value + 40) }],
     };
   });
 
   const report = (px: number) => onHeight?.(px);
   useDerivedValue(() => {
-    const rise = h.value + Math.max(8 * (1 - docked.value), keyboard.height.value);
+    const rise = h.value + Math.max(8 * (1 - docked.value), lift.value);
     runOnJS(report)(Math.round(rise));
   });
 
@@ -87,7 +96,7 @@ export function Sheet({
       } else drag.value = withTiming(0, { duration: 220, easing: ease });
     });
   function close() {
-    RNKeyboard.dismiss();
+    KeyboardController.dismiss().catch(() => {});
     onDismiss();
   }
 
@@ -104,7 +113,6 @@ export function Sheet({
             position: "absolute",
             backgroundColor: color.card,
             boxShadow: `0 -1px 0 ${color.hairline}, 0 -12px 40px rgba(0,0,0,0.12)`,
-            gap,
             zIndex: 9,
             ...(height ? { height } : {}),
           },

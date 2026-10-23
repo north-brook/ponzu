@@ -176,13 +176,15 @@ export function PhoneCanvas() {
   };
 
   // A page frames itself when it first shows, before it paints, and again if the chrome changes
-  // size before anyone has touched it.
+  // size before anyone has touched it. Not under a comment or thread sheet, whose camera keeps
+  // its board up while the keyboard comes and goes.
   const fitted = useRef<string | null>(null);
   const touched = useRef(false);
   const fitKey = page ? `${page.id}:${boxes.length > 0}` : null;
+  const sheetOpen = Boolean(s.pending || s.thread);
   useLayoutEffect(() => {
     if (!page || !fitKey) return;
-    if (fitted.current === fitKey && touched.current) return;
+    if (fitted.current === fitKey && (touched.current || sheetOpen)) return;
     const fresh = fitted.current !== fitKey;
     fitted.current = fitKey;
     if (fresh) touched.current = false;

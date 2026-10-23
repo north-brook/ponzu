@@ -10,3 +10,4 @@ executionOrder:
     - search
     - activity
     - comment
+    - comment-modes

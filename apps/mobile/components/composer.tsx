@@ -1,6 +1,16 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { ImpactFeedbackStyle, impactAsync, selectionAsync } from "expo-haptics";
+import { SymbolView } from "expo-symbols";
 import { useEffect, useRef, useState } from "react";
-import { Pressable, Text, TextInput, type TextInputInstance, View } from "react-native";
+import {
+  type LayoutChangeEvent,
+  Pressable,
+  Text,
+  TextInput,
+  type TextInputInstance,
+  View,
+} from "react-native";
+import { KeyboardController } from "react-native-keyboard-controller";
 import Animated, {
   cancelAnimation,
   Easing,
@@ -15,6 +25,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { useDictation } from "../lib/dictation";
+import { PARTS, phase, SWITCH_MS } from "../lib/morph";
 import { useTheme } from "../lib/theme";
 import { brand, EASE_OUT } from "../lib/tokens";
 import { Glass } from "./glass";
@@ -40,12 +51,22 @@ function rememberMode(m: Mode) {
 }
 
 const ease = Easing.bezier(...EASE_OUT);
+/** Between "Listening…" (or what's said) and the row under it. */
+const GAP = 14;
 
 /**
  * Writing a comment or reply, by voice or typing (Flow › 6–9). One action
  * button: in voice, the keyboard (switch to typing) until something is said,
  * then send; in typing, the mic (switch to voice) until something is typed,
  * then send. Voice shows what's heard, a live waveform and a neutral mute.
+ *
+ * Switching is one sheet changing shape (Flow › 8 ⇄ 7), never two screens:
+ * every part stays mounted and moves on one clock on the UI thread
+ * (lib/morph.ts has the timing). The field narrows and fades while the
+ * waveform grows in, "Listening…" opens above, the mute slides in from the
+ * left and the button's mic turns into the keyboard. The keyboard itself
+ * drops or rises with the system's animation, and the sheet (sheet.tsx)
+ * rides it.
  */
 export function Composer({
   mode,
@@ -63,17 +84,28 @@ export function Composer({
   autoFocus?: boolean;
 }) {
   const { color } = useTheme();
-  const dictation = useDictation(mode === "voice");
+  const voice = mode === "voice";
+  const dictation = useDictation(voice);
   const [typed, setTyped] = useState("");
   const [sending, setSending] = useState(false);
   const input = useRef<TextInputInstance>(null);
-  const text = mode === "voice" ? dictation.text : typed;
+  const text = voice ? dictation.text : typed;
   const has = text.trim().length > 0;
 
+  /** 0 typing, 1 voice, and which way it's going. */
+  const clock = useSharedValue(voice ? 1 : 0);
+  const toVoice = useSharedValue(voice);
+  const still = useReducedMotion();
+
   const switchTo = (m: Mode) => {
+    selectionAsync().catch(() => {});
     // What was said carries into typing, and back.
     if (m === "type") setTyped(dictation.text);
-    else dictation.setText(typed);
+    else {
+      dictation.setText(typed);
+      // The keyboard goes down with the system's own animation; the sheet follows it.
+      KeyboardController.dismiss().catch(() => {});
+    }
     rememberMode(m);
     onMode(m);
   };
@@ -81,12 +113,17 @@ export function Composer({
   useEffect(() => {
     const was = first.current;
     first.current = false;
-    if (mode === "type" && (autoFocus || !was)) setTimeout(() => input.current?.focus(), 60);
+    const to = voice ? 1 : 0;
+    toVoice.value = voice;
+    clock.value = still ? to : withTiming(to, { duration: SWITCH_MS, easing: Easing.linear });
+    // The keyboard comes up as the field comes back, and the sheet rides it.
+    if (!voice && (autoFocus || !was)) setTimeout(() => input.current?.focus(), was ? 60 : 0);
   }, [mode]);
 
   const send = async () => {
     if (!has || sending) return;
     setSending(true);
+    impactAsync(ImpactFeedbackStyle.Light).catch(() => {});
     try {
       await onSend(text.trim(), mode);
       setTyped("");
@@ -96,54 +133,40 @@ export function Composer({
     }
   };
 
-  const action = has ? (
-    <RoundButton tone="ink" label="Send" onPress={send} disabled={sending} testID="send">
-      <Send color={color.bg} />
-    </RoundButton>
-  ) : mode === "voice" ? (
-    <RoundButton label="Type instead" onPress={() => switchTo("type")} testID="to-type">
-      <Keyboard color={color.ink} />
-    </RoundButton>
-  ) : (
-    <RoundButton label="Speak instead" onPress={() => switchTo("voice")} testID="to-voice">
-      <Mic color={color.ink} />
-    </RoundButton>
-  );
-
-  if (mode === "type")
-    return (
-      <Animated.View
-        entering={FadeIn.duration(200)}
-        style={{ flexDirection: "row", alignItems: "flex-end", gap: 8 }}
-      >
-        <TextInput
-          ref={input}
-          value={typed}
-          onChangeText={setTyped}
-          placeholder={placeholder}
-          placeholderTextColor={color.faint}
-          selectionColor={brand.yuzu}
-          cursorColor={brand.yuzu}
-          multiline
-          testID="comment-input"
-          style={{
-            flex: 1,
-            minHeight: 44,
-            maxHeight: 140,
-            paddingTop: 11,
-            paddingBottom: 11,
-            paddingHorizontal: 14,
-            borderRadius: 22,
-            backgroundColor: color.canvas,
-            fontFamily: "Inter",
-            fontSize: 17,
-            lineHeight: 22.95,
-            color: color.ink,
-          }}
-        />
-        {action}
-      </Animated.View>
-    );
+  // What's heard, or "Listening…", above the row: opens to its own height.
+  const tall = useSharedValue(0);
+  const onTranscript = (e: LayoutChangeEvent) => {
+    const h = e.nativeEvent.layout.height;
+    tall.value = tall.value ? withTiming(h, { duration: 160, easing: ease }) : h;
+  };
+  const listenStyle = useAnimatedStyle(() => {
+    const p = phase(clock.value, toVoice.value, PARTS.listen);
+    return { height: tall.value * p, opacity: p, marginBottom: -GAP * (1 - p) };
+  });
+  const fieldStyle = useAnimatedStyle(() => {
+    const p = phase(clock.value, toVoice.value, PARTS.field);
+    return {
+      opacity: 1 - p,
+      // Down to one line as it goes, so the row is the waveform's height in voice.
+      maxHeight: 140 - 96 * p,
+      transform: [{ scaleX: 1 - 0.04 * p }],
+    };
+  });
+  const waveStyle = useAnimatedStyle(() => {
+    const p = phase(clock.value, toVoice.value, PARTS.wave);
+    return { opacity: p, transform: [{ scaleY: 0.2 + 0.8 * p }] };
+  });
+  const muteSlot = useAnimatedStyle(() => {
+    const p = phase(clock.value, toVoice.value, PARTS.mute);
+    return { width: 56 * p };
+  });
+  const muteStyle = useAnimatedStyle(() => {
+    const p = phase(clock.value, toVoice.value, PARTS.mute);
+    return { opacity: p, transform: [{ translateX: -16 * (1 - p) }, { scale: 0.6 + 0.4 * p }] };
+  });
+  const middleStyle = useAnimatedStyle(() => ({
+    marginRight: 8 + 4 * phase(clock.value, toVoice.value, PARTS.sheet),
+  }));
 
   const quiet = dictation.state !== "listening" && !dictation.muted;
   const note =
@@ -152,32 +175,189 @@ export function Composer({
       : dictation.state === "unavailable"
         ? "Dictation isn't available on this iPhone. Type instead."
         : null;
+  const spoken = dictation.text.trim().length > 0;
+
   return (
-    <Animated.View entering={FadeIn.duration(250)} style={{ gap: 14 }}>
-      <Text
-        testID="transcript"
-        style={{
-          fontFamily: "Inter",
-          fontSize: 19,
-          lineHeight: 27.55,
-          color: has ? color.ink : color.faint,
-        }}
+    <View>
+      <Animated.View
+        style={[{ overflow: "hidden" }, listenStyle]}
+        accessibilityElementsHidden={!voice}
+        importantForAccessibility={voice ? "auto" : "no-hide-descendants"}
       >
-        {has ? text : <Caret />}
-        {has ? <Caret /> : (note ?? (dictation.muted ? "Muted" : "Listening…"))}
-      </Text>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-        <RoundButton
-          label={dictation.muted ? "Unmute" : "Mute"}
-          onPress={() => dictation.setMuted(!dictation.muted)}
-          testID="mute"
+        <View onLayout={onTranscript} style={{ position: "absolute", top: 0, left: 0, right: 0 }}>
+          <Text
+            testID={voice ? "transcript" : undefined}
+            style={{
+              paddingHorizontal: 4,
+              fontFamily: "Inter",
+              fontSize: 19,
+              lineHeight: 27.55,
+              color: spoken ? color.ink : color.faint,
+            }}
+          >
+            {spoken ? dictation.text : <Caret />}
+            {spoken ? <Caret /> : (note ?? (dictation.muted ? "Muted" : "Listening…"))}
+          </Text>
+        </View>
+      </Animated.View>
+      <View style={{ marginTop: GAP, flexDirection: "row", alignItems: "flex-end" }}>
+        <Animated.View
+          style={[{ height: 44 }, muteSlot]}
+          pointerEvents={voice ? "auto" : "none"}
+          accessibilityElementsHidden={!voice}
+          importantForAccessibility={voice ? "auto" : "no-hide-descendants"}
         >
-          {dictation.muted ? <MicOff color={color.ink} /> : <Mic color={color.ink} />}
-        </RoundButton>
-        <Waveform level={dictation.level} active={has} quiet={quiet || dictation.muted} />
-        {action}
+          <Animated.View style={[{ position: "absolute", left: 0, top: 0 }, muteStyle]}>
+            <RoundButton
+              label={dictation.muted ? "Unmute" : "Mute"}
+              onPress={() => dictation.setMuted(!dictation.muted)}
+              testID="mute"
+            >
+              <Glyph name={dictation.muted ? "mic.slash" : "mic"} color={color.ink}>
+                {dictation.muted ? <MicOff color={color.ink} /> : <Mic color={color.ink} />}
+              </Glyph>
+            </RoundButton>
+          </Animated.View>
+        </Animated.View>
+        <Animated.View style={[{ flex: 1, minWidth: 0, justifyContent: "center" }, middleStyle]}>
+          <Animated.View
+            style={[
+              { transformOrigin: "left center", overflow: "hidden", borderRadius: 22 },
+              fieldStyle,
+            ]}
+            pointerEvents={voice ? "none" : "auto"}
+            accessibilityElementsHidden={voice}
+            importantForAccessibility={voice ? "no-hide-descendants" : "auto"}
+          >
+            <TextInput
+              ref={input}
+              value={typed}
+              onChangeText={setTyped}
+              placeholder={placeholder}
+              placeholderTextColor={color.faint}
+              selectionColor={brand.yuzu}
+              cursorColor={brand.yuzu}
+              multiline
+              editable={!voice}
+              testID={voice ? undefined : "comment-input"}
+              style={{
+                minHeight: 44,
+                maxHeight: 140,
+                paddingTop: 11,
+                paddingBottom: 11,
+                paddingHorizontal: 14,
+                borderRadius: 22,
+                backgroundColor: color.canvas,
+                fontFamily: "Inter",
+                fontSize: 17,
+                lineHeight: 22.95,
+                color: color.ink,
+              }}
+            />
+          </Animated.View>
+          <Animated.View
+            pointerEvents="none"
+            accessibilityElementsHidden={!voice}
+            importantForAccessibility={voice ? "auto" : "no-hide-descendants"}
+            style={[{ position: "absolute", left: 4, right: 4, bottom: 4, height: 36 }, waveStyle]}
+          >
+            <Waveform
+              level={dictation.level}
+              active={voice && spoken}
+              quiet={!voice || quiet || dictation.muted}
+            />
+          </Animated.View>
+        </Animated.View>
+        {has ? (
+          <RoundButton tone="ink" label="Send" onPress={send} disabled={sending} testID="send">
+            <Glyph name="arrow.up" weight="semibold" color={color.bg}>
+              <Send color={color.bg} />
+            </Glyph>
+          </RoundButton>
+        ) : (
+          <SwitchButton
+            voice={voice}
+            clock={clock}
+            toVoice={toVoice}
+            onPress={() => switchTo(voice ? "type" : "voice")}
+          />
+        )}
       </View>
-    </Animated.View>
+    </View>
+  );
+}
+
+/**
+ * The button that switches: the mic in typing, the keyboard in voice. Its
+ * glyph turns over as the sheet changes, the mic rotating away as the
+ * keyboard rotates in (Flow › 8 ⇄ 7).
+ */
+function SwitchButton({
+  voice,
+  clock,
+  toVoice,
+  onPress,
+}: {
+  voice: boolean;
+  clock: SharedValue<number>;
+  toVoice: SharedValue<boolean>;
+  onPress: () => void;
+}) {
+  const { color } = useTheme();
+  const mic = useAnimatedStyle(() => {
+    const p = phase(clock.value, toVoice.value, PARTS.mic);
+    return { opacity: 1 - p, transform: [{ rotate: `${-90 * p}deg` }, { scale: 1 - 0.4 * p }] };
+  });
+  const keys = useAnimatedStyle(() => {
+    const p = phase(clock.value, toVoice.value, PARTS.keys);
+    return { opacity: p, transform: [{ rotate: `${90 * (1 - p)}deg` }, { scale: 0.6 + 0.4 * p }] };
+  });
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={voice ? "Type instead" : "Speak instead"}
+      testID={voice ? "to-type" : "to-voice"}
+    >
+      <Glass interactive style={round}>
+        <View style={{ width: 24, height: 24 }}>
+          <Animated.View style={[centered, mic]}>
+            <Glyph name="mic" color={color.ink}>
+              <Mic color={color.ink} />
+            </Glyph>
+          </Animated.View>
+          <Animated.View style={[centered, keys]}>
+            <Glyph name="keyboard" color={color.ink}>
+              <Keyboard color={color.ink} />
+            </Glyph>
+          </Animated.View>
+        </View>
+      </Glass>
+    </Pressable>
+  );
+}
+
+/** A system concept's SF Symbol, 20pt; the design's line icon where there are no symbols. */
+function Glyph({
+  name,
+  color,
+  weight = "regular",
+  children,
+}: {
+  name: "mic" | "mic.slash" | "keyboard" | "arrow.up";
+  color: string;
+  weight?: "regular" | "semibold";
+  children: React.ReactNode;
+}) {
+  return (
+    <SymbolView
+      name={name}
+      size={20}
+      weight={weight}
+      tintColor={color}
+      fallback={children}
+      style={{ width: 22, height: 22 }}
+    />
   );
 }
 
@@ -231,15 +411,13 @@ export function RoundButton({
       })}
     >
       {tone === "ink" ? (
-        <View style={[round, { backgroundColor: color.ink }]}>
-          <Animated.View
-            key={label}
-            entering={FadeIn.duration(180)}
-            exiting={FadeOut.duration(120)}
-          >
-            {children}
-          </Animated.View>
-        </View>
+        <Animated.View
+          entering={FadeIn.duration(180)}
+          exiting={FadeOut.duration(120)}
+          style={[round, { backgroundColor: color.ink }]}
+        >
+          {children}
+        </Animated.View>
       ) : (
         <Glass interactive style={round}>
           <Animated.View
@@ -259,6 +437,16 @@ const round = {
   width: 44,
   height: 44,
   borderRadius: 999,
+  alignItems: "center",
+  justifyContent: "center",
+} as const;
+
+const centered = {
+  position: "absolute",
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
   alignItems: "center",
   justifyContent: "center",
 } as const;
