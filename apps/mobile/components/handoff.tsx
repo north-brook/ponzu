@@ -18,7 +18,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { at, CURVES, IDLE, TO_DESIGNS, TO_TILE } from "../lib/handoff";
-import { LAUNCH, LAUNCH_LIFT } from "../lib/mark";
+import { LAUNCH, LAUNCH_LIFT, LOCKUP_MARK_LIFT } from "../lib/mark";
 import { Store, useStore } from "../lib/store";
 import { useTheme } from "../lib/theme";
 import { brand } from "../lib/tokens";
@@ -105,7 +105,7 @@ function Layer({ kind, target, lift }: { kind: HandoffKind; target: Target | nul
     target ??
     (kind === "tile"
       ? { x: 28, y: insets.top + 56, size: 64 }
-      : { x: 20, y: insets.top + 18, size: 28 });
+      : { x: 20, y: insets.top + 18 - LOCKUP_MARK_LIFT, size: 28 });
   const markSize = kind === "tile" ? 40 : 28;
   const to = { cx: land.x + land.size / 2, cy: land.y + land.size / 2 };
 

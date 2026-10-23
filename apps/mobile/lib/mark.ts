@@ -24,3 +24,11 @@ export const SLICE_STROKE = 3.4;
 export const LAUNCH = { mark: 112, gap: 22, word: 44, top: 54, bottom: 60 } as const;
 export const LAUNCH_LIFT =
   (LAUNCH.mark + LAUNCH.gap + LAUNCH.word) / 2 - LAUNCH.mark / 2 + (LAUNCH.bottom - LAUNCH.top) / 2;
+
+/**
+ * How far the lockup's slice (components/chrome.tsx) sits above the row's
+ * middle, so it centers on the word's x-height (its "onzu") rather than on
+ * the line box. Measured on the simulator at 402 and 390pt: the slice was
+ * 1pt below the x-height's middle.
+ */
+export const LOCKUP_MARK_LIFT = 1;
