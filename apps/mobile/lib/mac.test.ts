@@ -1,5 +1,14 @@
 import { expect, test } from "bun:test";
-import { baseUrl, hostOf, type Mac, parsePairUrl, upsertMac, wakeUrl } from "./mac";
+import {
+  baseUrl,
+  hostOf,
+  type Mac,
+  PairError,
+  pairMessage,
+  parsePairUrl,
+  upsertMac,
+  wakeUrl,
+} from "./mac";
 import { classify } from "./net";
 import { afterFirstAsk, settle } from "./reach-rules";
 
@@ -71,4 +80,11 @@ test("no tailnet only when no Mac could even be tried", () => {
   expect(settle(["unreachable", "asleep"])).toBe("asleep");
   expect(settle(["wake"])).toBe("asleep");
   expect(settle([])).toBe("asleep");
+});
+
+test("a Mac too old to pair says which Ponzu answered", () => {
+  const msg = pairMessage(new PairError("tooOld", "old", "0.1.0"), "workstation");
+  expect(msg).toStartWith("workstation answered with Ponzu 0.1.0, which can't pair yet.");
+  expect(pairMessage(new PairError("unreachable", "x"), "spare")).toContain("didn't answer");
+  expect(pairMessage(new Error("x"), "spare")).toBe("Couldn't connect to spare.");
 });

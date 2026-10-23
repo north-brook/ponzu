@@ -95,3 +95,34 @@ export function upsertMac(macs: Mac[], next: Mac): Mac[] {
   };
   return macs.map((m, j) => (j === i ? merged : m));
 }
+
+/** Pairing failed: the Mac didn't answer, isn't Ponzu, or speaks another protocol. */
+export class PairError extends Error {
+  constructor(
+    readonly reason: "unreachable" | "notPonzu" | "tooOld" | "tooNew",
+    message: string,
+    /** The version the Mac reported, when it answered. */
+    readonly version?: string,
+  ) {
+    super(message);
+  }
+}
+
+/** What to tell the person when pairing with `name` failed. */
+export function pairMessage(err: unknown, name: string): string {
+  if (err instanceof PairError) {
+    switch (err.reason) {
+      // It answered without the phone's protocol. That may not be the installed
+      // app: another Ponzu (an old one, or one run by hand) can hold the port.
+      case "tooOld":
+        return `${name} answered with Ponzu ${err.version ?? "of an older version"}, which can't pair yet. Update Ponzu on that Mac, or quit any other Ponzu running there.`;
+      case "tooNew":
+        return "Update Ponzu on this iPhone, then connect again.";
+      case "notPonzu":
+        return `${name} answered, but not as Ponzu.`;
+      default:
+        return `${name} didn't answer over Tailscale. Check Tailscale is on here and on the Mac.`;
+    }
+  }
+  return `Couldn't connect to ${name}.`;
+}

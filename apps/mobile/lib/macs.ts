@@ -7,6 +7,7 @@ import {
   type Mac,
   type MacInfo,
   type MacList,
+  PairError,
   PORT,
   PROTOCOL,
   upsertMac,
@@ -16,6 +17,7 @@ import { queryClient } from "./query";
 import { Store, useStore } from "./store";
 
 export type { Mac } from "./mac";
+export { PairError, pairMessage } from "./mac";
 
 const KEY = "ponzu.macs";
 
@@ -69,15 +71,6 @@ export function noteAnswer(mac: Mac, info: MacInfo) {
   save();
 }
 
-export class PairError extends Error {
-  constructor(
-    readonly reason: "unreachable" | "notPonzu" | "tooOld" | "tooNew",
-    message: string,
-  ) {
-    super(message);
-  }
-}
-
 /**
  * `/api/info` from `base`. Fails with how it failed (see net.ts): something
  * that answers but isn't Ponzu is an `http` failure without a status.
@@ -113,7 +106,7 @@ async function pair(host: string, via: Mac["via"]): Promise<Mac> {
     throw new PairError(notPonzu ? "notPonzu" : "unreachable", String(err));
   }
   if (info.protocol === undefined || info.protocol < PROTOCOL)
-    throw new PairError("tooOld", `Ponzu ${info.version} on that Mac is too old`);
+    throw new PairError("tooOld", `Ponzu ${info.version} on that Mac is too old`, info.version);
   if (info.protocol > PROTOCOL) throw new PairError("tooNew", "Update Ponzu on this iPhone");
   const dns = info.machine?.dns ?? hostOf(host);
   const dev = via === "dev";
@@ -277,21 +270,4 @@ function seedDevMac() {
       address: host,
     }),
   );
-}
-
-/** What to tell the person when pairing with `name` failed. */
-export function pairMessage(err: unknown, name: string): string {
-  if (err instanceof PairError) {
-    switch (err.reason) {
-      case "tooOld":
-        return `Update Ponzu on ${name}, then connect again.`;
-      case "tooNew":
-        return "Update Ponzu on this iPhone, then connect again.";
-      case "notPonzu":
-        return `${name} answered, but not as Ponzu.`;
-      default:
-        return `${name} didn't answer over Tailscale. Check Tailscale is on here and on the Mac.`;
-    }
-  }
-  return `Couldn't connect to ${name}.`;
 }
