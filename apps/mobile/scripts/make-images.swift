@@ -1,4 +1,5 @@
-// Draws the phone's icon and splash image from the slice (lib/mark.ts).
+// Draws the phone's icon from the slice (lib/mark.ts). The native splash is
+// yuzu alone (app.json), and the launch screen blooms the slice in on it.
 // macOS only (AppKit renders the SVG). Rerun when the mark changes:
 //
 //   swift apps/mobile/scripts/make-images.swift apps/mobile/assets
@@ -6,10 +7,7 @@
 // icon.png: the brand's app icon (design/brand.design, logo 05) made for
 // iOS, which masks the corners itself and refuses transparency: a full-bleed
 // flat yuzu square, the ink slice 56% of its width, opaque.
-//
-// splash.png: the slice alone, transparent, with room below it so that
-// centred on the screen (app.json's splash, 112pt wide) it sits where the
-// launch screen draws it: LAUNCH_LIFT above the middle.
+
 import AppKit
 
 let out = URL(fileURLWithPath: CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : ".")
@@ -60,16 +58,3 @@ render(
   <g fill="\(ink)" stroke="\(ink)" stroke-width="3.4" stroke-linejoin="round">\(paths())</g>
   </svg>
   """, width: 1024, height: 1024, opaque: true, to: "icon.png")
-
-// Splash: 112pt of slice, then 2 × LAUNCH_LIFT (36) of empty room below.
-let lift = 36.0
-let mark = 112.0
-let tall = 64 * (mark + 2 * lift) / mark
-let scale = 4
-render(
-  """
-  <svg xmlns="http://www.w3.org/2000/svg" width="\(Int(mark) * scale)" height="\(Int(mark + 2 * lift) * scale)" viewBox="0 0 64 \(tall)">
-  <g fill="\(ink)" stroke="\(ink)" stroke-width="3.4" stroke-linejoin="round">\(paths())</g>
-  </svg>
-  """, width: Int(mark) * scale, height: Int(mark + 2 * lift) * scale, opaque: false,
-  to: "splash.png")

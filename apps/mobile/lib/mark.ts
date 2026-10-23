@@ -19,8 +19,7 @@ export const SLICE_STROKE = 3.4;
  * and the wordmark in a column centred between a 54pt status bar and 60pt
  * of room below. That puts the slice's centre LAUNCH_LIFT above the middle
  * of any screen, (mark + gap + word) / 2 - mark / 2 + (bottom - top) / 2.
- * The splash image (scripts/make-images.swift) carries the same offset, so
- * the native splash hands off to the first frame without a jump.
+ * The handoff (components/handoff.tsx) starts the slice from there.
  */
 export const LAUNCH = { mark: 112, gap: 22, word: 44, top: 54, bottom: 60 } as const;
 export const LAUNCH_LIFT =
