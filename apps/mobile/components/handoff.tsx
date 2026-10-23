@@ -44,7 +44,12 @@ interface Target {
 }
 
 /** The handoff running now, and where it lands once the next screen has drawn. */
-export const handoff = new Store<{ kind: HandoffKind; target: Target | null } | null>(null);
+export const handoff = new Store<{
+  kind: HandoffKind;
+  target: Target | null;
+  /** How far above its usual place the launch screen had the slice (lifted for a waking Mac). */
+  lift: number;
+} | null>(null);
 /** Milliseconds into the handoff; IDLE when none runs, so every part sits in place. */
 const clock = makeMutable(IDLE);
 /** Which handoff the clock runs: 0 none, 1 onto a tile, 2 onto Designs. */
@@ -56,11 +61,11 @@ const easeIn = [...CURVES.in] as const;
 const ease = [...CURVES.ease] as const;
 
 /** Starts a handoff. The launch screen calls it just before it replaces itself. */
-export function startHandoff(kind: HandoffKind) {
+export function startHandoff(kind: HandoffKind, lift = 0) {
   cancelAnimation(clock);
   clock.value = 0;
   running.value = KINDS[kind];
-  handoff.set({ kind, target: null });
+  handoff.set({ kind, target: null, lift });
 }
 
 function finish() {
@@ -73,10 +78,10 @@ function finish() {
 export function HandoffLayer() {
   const h = useStore(handoff);
   if (!h) return null;
-  return <Layer kind={h.kind} target={h.target} />;
+  return <Layer kind={h.kind} target={h.target} lift={h.lift} />;
 }
 
-function Layer({ kind, target }: { kind: HandoffKind; target: Target | null }) {
+function Layer({ kind, target, lift }: { kind: HandoffKind; target: Target | null; lift: number }) {
   const { width: W, height: H } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const { color } = useTheme();
@@ -84,7 +89,7 @@ function Layer({ kind, target }: { kind: HandoffKind; target: Target | null }) {
   // The launch screen's ink on the status bar until the yuzu has mostly gone.
   const [inked, setInked] = useState(true);
   // Where the launch screen draws the slice (lib/mark.ts) and the wordmark under it.
-  const from = { cx: W / 2, cy: H / 2 - LAUNCH_LIFT, size: LAUNCH.mark };
+  const from = { cx: W / 2, cy: H / 2 - LAUNCH_LIFT - lift, size: LAUNCH.mark };
   const wordTop = from.cy + LAUNCH.mark / 2 + LAUNCH.gap;
   // If the next screen never says, its design's place.
   const land =
@@ -239,7 +244,7 @@ export function HandoffTarget({
     if (!waiting || h?.target) return;
     ref.current?.measureInWindow((x, y) => {
       const now = handoff.get();
-      if (now?.kind === kind && !now.target) handoff.set({ kind, target: { x, y, size } });
+      if (now?.kind === kind && !now.target) handoff.set({ ...now, target: { x, y, size } });
     });
   };
   // A screen that's already laid out when the handoff starts measures now.
