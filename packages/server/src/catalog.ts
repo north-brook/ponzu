@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
 import { mkdir, readdir, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import {
   type CatalogArtboard,
   type CatalogFile,
@@ -23,6 +23,10 @@ const DISCOVER_EVERY = 30_000;
 const EDIT_TTL = 3_000;
 /** How long a design's git checkout and branch stay fresh. */
 const GIT_TTL = 10_000;
+/** How long what a worktree changed stays fresh, unless a design in it is edited sooner. */
+const CHANGES_TTL = 60_000;
+/** git processes at a time: a repository can have dozens of worktrees. */
+const GIT_AT_ONCE = 4;
 /** How long a design whose folder is gone is remembered, in case it comes back. */
 const FORGET_AFTER = 30 * 24 * 60 * 60 * 1000;
 /** How deep a known checkout is walked for designs Spotlight can't see. */
@@ -110,6 +114,11 @@ export class LocalCatalog {
   private edits = new Map<string, { at: number; modified: number }>();
   private summaries = new Map<string, { modified: number; summary: CatalogSummary | null }>();
   private gits = new Map<string, { at: number; git: CatalogGit | null }>();
+  /** What each worktree's designs changed since its branch began, by its root. */
+  private changes = new Map<
+    string,
+    { at: number; head?: string; paths: Promise<string[] | null>; last?: string[] | null }
+  >();
   private granted: Set<string>;
   /** Designs the person opened while this runs, by key and by real path. */
   private shown = new Set<string>();
@@ -244,6 +253,7 @@ export class LocalCatalog {
           ),
           this.git(key),
         ]);
+        const untouched = git?.worktree ? await this.untouched(key, git, s.modified) : undefined;
         const archived = archivedAt(row);
         const listed: CatalogSummary = {
           ...s,
@@ -251,7 +261,7 @@ export class LocalCatalog {
           shelf: this.shelfOf(row, scratch),
           ...(archived ? { archived } : {}),
           previewAt,
-          ...(git ? { git } : {}),
+          ...(git ? { git: untouched === undefined ? git : { ...git, untouched } } : {}),
         };
         out.push(doc ? { ...listed, ...fromDoc(doc) } : listed);
       }),
@@ -430,6 +440,34 @@ export class LocalCatalog {
     return git;
   }
 
+  /**
+   * Whether a worktree's copy of a design is as its branch found it. Asked of
+   * git once per worktree, again when it moves to another branch or a design
+   * in it is edited, and every minute for what neither shows (a commit
+   * checked out over it). Undefined when git can't say.
+   */
+  private async untouched(
+    key: string,
+    git: CatalogGit,
+    modified: number,
+  ): Promise<boolean | undefined> {
+    const head = git.branch ?? git.commit;
+    let hit = this.changes.get(git.root);
+    if (!hit || hit.head !== head || hit.at < modified || Date.now() - hit.at > CHANGES_TTL) {
+      // Only a minute old, on the same branch, with nothing edited: the last answer stands
+      // while git is asked again, so the listing doesn't wait on every worktree at once.
+      const last = hit && hit.head === head && hit.at >= modified ? hit.last : undefined;
+      const fresh = { at: Date.now(), head, paths: changedDesignFiles(git.root), last };
+      void fresh.paths.then((p) => Object.assign(fresh, { last: p }));
+      this.changes.set(git.root, fresh);
+      hit = fresh;
+    }
+    const paths = hit.last !== undefined ? hit.last : await hit.paths;
+    if (!paths) return undefined;
+    const inside = `${relative(git.root, key)}/`;
+    return !paths.some((p) => p.startsWith(inside));
+  }
+
   private async lastEdit(key: string): Promise<number> {
     const hit = this.edits.get(key);
     // Still there? A deleted worktree's design drops off on the next listing.
@@ -474,19 +512,80 @@ export async function gitOf(key: string): Promise<CatalogGit | null> {
         gitdir = resolve(dir, m[1]!.trim());
       }
       // A worktree's own folder names the repository's shared one.
-      const common = await readFile(join(gitdir, "commondir"), "utf8").then(
-        (c) => resolve(gitdir, c.trim()),
-        () => gitdir,
-      );
-      const project = await projectOf(common);
+      const commondir = await readFile(join(gitdir, "commondir"), "utf8").catch(() => null);
+      const common = commondir === null ? gitdir : resolve(gitdir, commondir.trim());
+      const at = { root: dir, worktree: commondir !== null, ...(await projectOf(common)) };
       const head = (await readFile(join(gitdir, "HEAD"), "utf8")).trim();
       const ref = /^ref:\s*refs\/heads\/(.+)$/.exec(head);
-      if (ref) return { root: dir, branch: ref[1]!, ...project };
-      return /^[0-9a-f]{7,}$/.test(head)
-        ? { root: dir, commit: head.slice(0, 7), ...project }
-        : { root: dir, ...project };
+      if (ref) return { ...at, branch: ref[1]! };
+      return /^[0-9a-f]{7,}$/.test(head) ? { ...at, commit: head.slice(0, 7) } : at;
     }
     if (dirname(dir) === dir) return null;
+  }
+}
+
+/**
+ * The files in a checkout's designs that differ from where its branch left the
+ * default one: committed, staged, edited or new. Previews don't count: drawing
+ * one changes nothing. Null when git can't say.
+ */
+export async function changedDesignFiles(root: string): Promise<string[] | null> {
+  const base = await defaultBranch(root);
+  const fork = base && (await gitOut(["merge-base", "HEAD", base], root))?.trim();
+  if (!fork) return null;
+  const designs = ["--", ":(glob)**/*.design/**", ":(glob,exclude)**/*.design/.ponzu/**"];
+  const [changed, added] = await Promise.all([
+    // Both ends of a move: an artboard moved out of a design changes it too.
+    gitOut(["diff", "--no-renames", "--name-only", "-z", fork, ...designs], root),
+    gitOut(["ls-files", "-z", "--others", "--exclude-standard", ...designs], root),
+  ]);
+  if (changed === null || added === null) return null;
+  return `${changed}${added}`.split("\0").filter(Boolean);
+}
+
+/** The branch a checkout's branches come off: origin's HEAD, else main or master. */
+async function defaultBranch(root: string): Promise<string | null> {
+  // origin's HEAD can name a branch since pruned: each is checked before it's used.
+  const origin = (
+    await gitOut(["symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"], root)
+  )?.trim();
+  for (const b of [origin, "origin/main", "origin/master", "main", "master"])
+    if (b && (await gitOut(["rev-parse", "--verify", "-q", `${b}^{commit}`], root)) !== null)
+      return b;
+  return null;
+}
+
+let gitRunning = 0;
+const gitWaiting: (() => void)[] = [];
+
+/** What a git command prints, or null when it fails. A few at a time, and never holding a lock. */
+async function gitOut(args: string[], cwd: string): Promise<string | null> {
+  if (gitRunning < GIT_AT_ONCE) gitRunning++;
+  else await new Promise<void>((go) => gitWaiting.push(go));
+  try {
+    return await new Promise((done) => {
+      let out = "";
+      const child = spawn("git", args, {
+        cwd,
+        stdio: ["ignore", "pipe", "ignore"],
+        // Reading only: no index refresh to collide with an agent's own git.
+        env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
+      });
+      const timer = setTimeout(() => child.kill(), 10_000);
+      child.stdout.on("data", (d: Buffer) => {
+        out += d.toString();
+      });
+      child.on("error", () => done(null));
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        done(code === 0 ? out : null);
+      });
+    });
+  } finally {
+    // The slot goes straight to the next in line.
+    const next = gitWaiting.shift();
+    if (next) next();
+    else gitRunning--;
   }
 }
 

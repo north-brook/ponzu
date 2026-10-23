@@ -6,6 +6,7 @@ import {
   type CatalogMachine,
   foldCopies,
   previewArtboard,
+  withoutUntouched,
 } from "@ponzu/core";
 import {
   AgentMark,
@@ -95,7 +96,8 @@ export function Dashboard({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const files = catalog?.files ?? [];
+  // A worktree's copy nobody touched is the main checkout's design: no card of its own.
+  const files = useMemo(() => withoutUntouched(catalog?.files ?? []), [catalog?.files]);
   const machines = useMemo(
     () => new Map((catalog?.machines ?? []).map((m) => [m.id, m])),
     [catalog?.machines],
