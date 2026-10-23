@@ -1,7 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
-import type { CatalogAgent, ClientMessage, Origin, ServerMessage } from "@ponzu/core";
+import type { CatalogAgent, ClientMessage, Origin, ServerMessage, SyncReason } from "@ponzu/core";
 import { createHttpHandler } from "@ponzu/mcp";
 import { FsAdapter } from "@ponzu/store/fs";
 import type { Server, ServerWebSocket, WebSocketHandler } from "bun";
@@ -56,6 +56,8 @@ export interface ServeOptions {
    * at all when the person turned it off. Asked on each /api/info.
    */
   telemetry?: () => Promise<{ on: boolean; owner: string | null }>;
+  /** Bytes a socket may have waiting before a message to it is dropped. Bun's 16 MB by default. */
+  backpressureLimit?: number;
 }
 
 /**
@@ -95,6 +97,11 @@ interface SocketData {
   watch?: boolean;
   /** Set when this socket relays to a design on another Mac. */
   relay?: { url: string; upstream?: WebSocket; queue: string[] };
+  /**
+   * A message to this canvas was dropped: its buffer was full, as on a slow link to another
+   * Mac. It hears nothing more until the buffer drains, then gets the whole doc again.
+   */
+  behind?: boolean;
   /** Set when this socket is a catalog stream: this Mac's home screen, or another Mac's server. */
   feed?: { scope: Scope; peerIp?: string; stop?: () => void; closed?: boolean };
   /** Opened by the phone app. While one is open, this Mac counts as in use. */
@@ -140,7 +147,33 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
   const send = (s: ServerWebSocket<SocketData>, msg: ServerMessage) => s.send(JSON.stringify(msg));
   const broadcast = (key: string | null, msg: ServerMessage) => {
     const text = JSON.stringify(msg);
-    for (const s of sockets) if (key === null || s.data.key === key) s.send(text);
+    for (const s of sockets) if (key === null || s.data.key === key) deliver(s, text);
+  };
+  /**
+   * Send to a canvas that has to hear every op. Bun drops a message, without closing the
+   * socket, once the socket has more than `backpressureLimit` waiting: the canvas would show
+   * an old doc for good. So it waits for the buffer to drain and gets the whole doc then.
+   * A relayed canvas reconnects instead, and its hello brings the doc from the other Mac.
+   */
+  const deliver = (s: ServerWebSocket<SocketData>, text: string) => {
+    if (s.data.behind) return;
+    // A closing socket drops it too, and is gone: no catching up to do.
+    if (s.send(text) !== 0 || s.readyState !== WebSocket.OPEN) return;
+    if (s.data.relay) {
+      resynced("backpressure", s);
+      s.close();
+    } else s.data.behind = true;
+  };
+  const resynced = (reason: SyncReason | "backpressure", s: ServerWebSocket<SocketData>) =>
+    ws.telemetry?.capture("canvas resynced", {
+      reason,
+      watch: Boolean(s.data.watch),
+      relayed: Boolean(s.data.relay),
+    });
+  /** The whole doc, to a canvas that missed some of it. Dropped in turn, it waits again. */
+  const resend = (s: ServerWebSocket<SocketData>) => {
+    const design = ws.get(s.data.key);
+    if (design) deliver(s, JSON.stringify({ t: "reset", doc: design.doc, seq: design.seq }));
   };
 
   const subscribed = new Set<string>();
@@ -441,6 +474,7 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
   };
 
   const websocket: WebSocketHandler<SocketData> = {
+    ...(opts.backpressureLimit ? { backpressureLimit: opts.backpressureLimit } : {}),
     open(s) {
       if (s.data.phone) phones.add(s);
       if (s.data.feed) return openFeed(s);
@@ -461,6 +495,16 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
         canUndo: design.canUndo,
         canRedo: design.canRedo,
       });
+    },
+    drain(s) {
+      // Once what's waiting has gone: the whole doc on top of it could be dropped again.
+      if (!s.data.behind || s.getBufferedAmount() > 0) return;
+      s.data.behind = false;
+      resynced("backpressure", s);
+      // Who's here may have changed while it heard nothing: before the doc, so a doc that
+      // fills the buffer again doesn't drop it and send the whole doc round once more.
+      send(s, { t: "presence", presence: ws.presence.list() });
+      resend(s);
     },
     close(s) {
       if (s.data.phone) {
@@ -485,13 +529,19 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
         else relayed.queue.push(text);
         return;
       }
-      if (s.data.watch) return;
       let msg: ClientMessage;
       try {
         msg = JSON.parse(String(raw));
       } catch {
         return;
       }
+      // Asked by a canvas that missed an op, or has one that doesn't fit: watching ones too.
+      if (msg.t === "sync") {
+        resynced(msg.reason === "apply" ? "apply" : "gap", s);
+        if (!s.data.behind) resend(s);
+        return;
+      }
+      if (s.data.watch) return;
       const design = ws.get(s.data.key);
       if (!design) return;
       try {
@@ -542,7 +592,7 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
     upstream.onopen = () => {
       for (const m of relayed.queue.splice(0)) upstream.send(m);
     };
-    upstream.onmessage = (e) => s.send(String(e.data));
+    upstream.onmessage = (e) => deliver(s, String(e.data));
     upstream.onclose = () => s.close();
     upstream.onerror = () => s.close();
   };

@@ -107,6 +107,14 @@ export type ClientMessage =
   | { t: "redo"; req: number }
   | { t: "viewport"; viewport: Viewport }
   /** The canvas's appearance, so agents render artboards the way the person sees them. */
-  | { t: "theme"; theme: ColorScheme };
+  | { t: "theme"; theme: ColorScheme }
+  /**
+   * The canvas missed an op (its seq skipped one) or has one that doesn't fit its doc:
+   * send the whole doc again. A watching canvas may send this too.
+   */
+  | { t: "sync"; reason: SyncReason };
+
+/** Why a canvas asked for the whole doc again. */
+export type SyncReason = "gap" | "apply";
 
 export type ColorScheme = "light" | "dark";
