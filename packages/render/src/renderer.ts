@@ -14,6 +14,7 @@ export interface LintIssue {
     | "low-contrast"
     | "missing-keyframes"
     | "hidden-after-animation"
+    | "animation-budget"
     | "no-state-style"
     | "missing-font"
     | "wrapped-text"

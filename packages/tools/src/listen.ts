@@ -44,7 +44,7 @@ export const listenTools = [
     group: "listen",
     readOnly: true,
     description:
-      "Long-poll for what people do in the canvas: new comments and replies, edits made in a text editor, other agents' changes. Returns immediately if anything happened after `since`; otherwise waits up to `timeout` seconds. Pass back the returned cursor next time so nothing is missed. This is the heart of the collaborate loop (get_guide('collaborate')).",
+      "Long-poll for what people do in the canvas: new comments and replies, edits made in a text editor, other agents' changes. Returns immediately if anything happened after `since`; otherwise waits up to `timeout` seconds. Pass back the returned cursor next time so nothing is missed. This is the heart of the iterate loop (get_guide('iterate')).",
     input: {
       file: fileArg,
       since: z
@@ -190,7 +190,7 @@ export const listenTools = [
     group: "listen",
     readOnly: true,
     description:
-      "House rules and workflows for designing in Ponzu. Read 'basics' once per session before writing. Topics: basics, layout, typography, collaborate, variations, implement, format (writing the files directly), motion, mobile.",
+      "House rules and workflows for designing in Ponzu. Read 'basics' once per session before writing. Topics: basics, layout, typography, iterate, variations, implement, format (writing the files directly), motion, mobile.",
     input: { topic: z.enum(Object.keys(GUIDES) as [GuideTopic, ...GuideTopic[]]) },
     handler({ topic }) {
       return { text: GUIDES[topic] };

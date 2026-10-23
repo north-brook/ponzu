@@ -101,6 +101,16 @@ export function Studio() {
   const [active, setActive] = useState<string | null>(() =>
     new URLSearchParams(location.search).get("file"),
   );
+  /**
+   * The artboard a link opened the window on (ponzu://open?file=…&artboard=…), in its file.
+   * Dropped once the person moves to another tab, so coming back keeps where they were.
+   */
+  const [linked, setLinked] = useState(() => {
+    const q = new URLSearchParams(location.search);
+    const file = q.get("file");
+    const artboard = q.get("artboard");
+    return file && artboard ? { file, artboard } : null;
+  });
   const sources = useMemo(() => new Map<string, SocketSource>(), []);
   const source = (tab: string) => {
     let s = sources.get(tab);
@@ -119,8 +129,13 @@ export function Studio() {
   // A design an agent creates opens in a tab as soon as it exists, once. Not one it made
   // for its own use: scratch stays out of the way.
   const [seen] = useState(() => new Set<string>());
+  const firstCatalog = useRef(true);
   useEffect(() => {
     if (!catalog) return;
+    // A link the window opened on keeps its tab in front: designs made before the window, and
+    // any made while the linked one loads, join the tabs beside it.
+    const keepLinked = !!linked && (firstCatalog.current || !source(linked.file).getState().doc);
+    firstCatalog.current = false;
     for (const f of catalog.files) {
       if (f.machine !== "local" || !f.created || seen.has(f.key)) continue;
       seen.add(f.key);
@@ -128,7 +143,7 @@ export function Studio() {
       if (f.shelf && f.shelf !== "recent") continue;
       if (Date.now() - f.created > 60_000 || tabs.includes(f.key)) continue;
       setTabs((t) => (t.includes(f.key) ? t : [...t, f.key]));
-      setActive(f.key);
+      if (!keepLinked) setActive(f.key);
     }
   }, [catalog]);
 
@@ -137,6 +152,10 @@ export function Studio() {
     const url = new URL(location.href);
     if (active) url.searchParams.set("file", active);
     else url.searchParams.delete("file");
+    if (linked && active !== linked.file) {
+      setLinked(null);
+      url.searchParams.delete("artboard");
+    }
     history.replaceState(null, "", url);
   }, [tabs, active]);
 
@@ -299,6 +318,7 @@ export function Studio() {
               source={source(active)}
               theme={theme}
               me={{ kind: "user", name: "You" }}
+              artboard={active === linked?.file ? linked.artboard : undefined}
               footerExtra={
                 // A design on another Mac films there; its server has the journal.
                 !targetOf(active).base && (
@@ -567,12 +587,12 @@ function useTabDrag(tabs: string[], setTabs: (tabs: string[]) => void) {
 
 /**
  * The agents with you in this file: full color while working, half while
- * collaborating (waiting on your comments). Agents that are connected but
+ * iterating (watching for your comments). Agents that are connected but
  * idle, or busy in another file, don't show.
  */
 function ActiveAgents({ source }: { source: SocketSource }) {
   const { presence, path, doc } = useSource(source);
-  // A collaborate loop counts as active for a while after each wait; re-check as time passes.
+  // An iterate loop counts as active for a while after each wait; re-check as time passes.
   const now = useNow(15_000);
   const agents = presence
     .map((p) => ({ p, activity: agentActivity(p, path, now) }))
@@ -586,7 +606,7 @@ function ActiveAgents({ source }: { source: SocketSource }) {
             <span
               className={cn(
                 "app-no-drag grid size-6 cursor-default place-items-center rounded-md transition-opacity duration-200 hover:bg-accent",
-                activity === "collaborating" && "opacity-50",
+                activity === "iterating" && "opacity-50",
               )}
             >
               <AgentMark client={p.client} size={16} />
@@ -646,7 +666,7 @@ function SessionCard({
           <span className="truncate text-muted-foreground text-xs">
             {activity === "working"
               ? `Working${p.status ? ` · ${p.status}` : ""}`
-              : "Collaborating · waiting for your comments"}
+              : "Iterating · watching for your comments"}
           </span>
         </div>
       </div>

@@ -176,6 +176,8 @@ async function runServe(
     opened: named,
   });
   const local = `http://${o.host === "0.0.0.0" ? "localhost" : o.host}:${server.port}`;
+  // Links agents hand the person open the Mac app, or this canvas.
+  ws.opensIn = process.env.PONZU_DESKTOP ? "app" : { origin: local };
   const unannounce = await announceHost(local, { takeOver: Boolean(process.env.PONZU_DESKTOP) });
   // The desktop app reads this line to find the server.
   if (process.env.PONZU_DESKTOP)

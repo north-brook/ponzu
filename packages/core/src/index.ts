@@ -6,6 +6,7 @@ export * from "./github.ts";
 export * from "./html.ts";
 export * from "./ids.ts";
 export * from "./journal.ts";
+export * from "./link.ts";
 export * from "./outline.ts";
 export * from "./preview.ts";
 export * from "./protocol.ts";

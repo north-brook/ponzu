@@ -1,5 +1,41 @@
 # Changelog
 
+## [1.37.0](https://github.com/north-brook/ponzu/compare/v1.36.0...v1.37.0) (2026-10-23)
+
+
+### Features
+
+* give agents a ponzu:// link that opens a design in the app ([#147](https://github.com/north-brook/ponzu/issues/147)) ([cd95369](https://github.com/north-brook/ponzu/commit/cd953695c47bdf12b49fb94c4cf1f18188922071))
+
+## [1.36.0](https://github.com/north-brook/ponzu/compare/v1.35.0...v1.36.0) (2026-10-22)
+
+
+### Features
+
+* drag on the empty canvas to select boards with a box ([#143](https://github.com/north-brook/ponzu/issues/143)) ([196f36f](https://github.com/north-brook/ponzu/commit/196f36f79b3591e3c948477ffbe7cf73f8a5f330))
+* warn agents when a design animates more than the canvas can keep smooth ([#146](https://github.com/north-brook/ponzu/issues/146)) ([84990ad](https://github.com/north-brook/ponzu/commit/84990ad5b63069931e52e51355e24d42b5b15cbf))
+
+## [1.35.0](https://github.com/north-brook/ponzu/compare/v1.34.1...v1.35.0) (2026-10-22)
+
+
+### Features
+
+* rename the collaborate loop to iterate and start it by default ([#142](https://github.com/north-brook/ponzu/issues/142)) ([f4b5086](https://github.com/north-brook/ponzu/commit/f4b5086634c2cc95cea74ebe85be414dbe165462))
+
+## [1.34.1](https://github.com/north-brook/ponzu/compare/v1.34.0...v1.34.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* scroll to a new comment in a long thread ([#139](https://github.com/north-brook/ponzu/issues/139)) ([fb4fb7b](https://github.com/north-brook/ponzu/commit/fb4fb7b6391436c69dec43834d135bbaab405a37))
+
+## [1.34.0](https://github.com/north-brook/ponzu/compare/v1.33.1...v1.34.0) (2026-10-22)
+
+
+### Features
+
+* an agent's work arrives on the canvas with a shimmer slide ([#138](https://github.com/north-brook/ponzu/issues/138)) ([401b1df](https://github.com/north-brook/ponzu/commit/401b1dfe6b32aa9102f8a58eebd96b6ca75d235f))
+
 ## [1.33.1](https://github.com/north-brook/ponzu/compare/v1.33.0...v1.33.1) (2026-10-22)
 
 

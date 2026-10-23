@@ -57,6 +57,7 @@ export function createMcpServer(ws: Workspace, opts: McpOptions = {}): McpServer
       id,
       author: { kind: "agent", name: displayName(info?.name) },
       client: clientKind(info?.name),
+      reachedAt: opts.caller?.reachedAt,
       origin: {
         clientName: info?.name,
         clientVersion: info?.version,
@@ -106,11 +107,11 @@ export function createMcpServer(ws: Workspace, opts: McpOptions = {}): McpServer
   }
 
   server.registerPrompt(
-    "collaborate",
+    "iterate",
     {
-      title: "Collaborate on comments",
+      title: "Iterate on comments",
       description:
-        "Sit with the person: pick up canvas comments as they leave them, make the changes, and reply.",
+        "Watch the canvas: pick up comments as the person leaves them, make the changes, and resolve them.",
       argsSchema: { file: z.string().optional() },
     },
     ({ file }) => ({
@@ -119,7 +120,7 @@ export function createMcpServer(ws: Workspace, opts: McpOptions = {}): McpServer
           role: "user",
           content: {
             type: "text",
-            text: `Run the Ponzu collaborate loop${file ? ` on ${file}` : ""}. Read get_guide('collaborate'), then call wait_for_activity in a loop and handle each comment until I tell you to stop.`,
+            text: `Run the Ponzu iterate loop${file ? ` on ${file}` : ""}. Read get_guide('iterate'), then call wait_for_activity in a loop and handle each comment until I tell you to stop.`,
           },
         },
       ],
@@ -227,7 +228,13 @@ export function createHttpHandler(
     };
     const server = createMcpServer(ws, {
       ...opts,
-      caller: { id: callerId, ...opts.caller, origin: originFrom(req) },
+      // Links it hands the person use the address it reached us at, not this machine's localhost.
+      caller: {
+        id: callerId,
+        ...opts.caller,
+        origin: originFrom(req),
+        reachedAt: new URL(req.url).origin,
+      },
     });
     await server.connect(transport);
     return transport.handleRequest(req);

@@ -18,7 +18,7 @@ const EDIT_DELAY = 1000;
 const MIN_GAP = 150;
 /**
  * How often the listing runs anyway, for what no event reports: a change on disk,
- * a redrawn preview, a design found, a collaborate loop going quiet.
+ * a redrawn preview, a design found, an iterate loop going quiet.
  */
 const RESYNC = 3000;
 /** How often each stream hears it's alive. */
