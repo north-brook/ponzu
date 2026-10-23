@@ -1,4 +1,5 @@
 import { type Artboard, ROOT_DIRECTION_NOTE } from "@ponzu/core";
+import type { FilmDriver } from "./film.ts";
 import type { FrameStep, Interaction, MotionInfo } from "./motion.ts";
 
 export interface LintIssue {
@@ -141,6 +142,8 @@ export interface Renderer {
   record?(req: RecordRequest): Promise<RecordResult>;
   /** Rendered boxes of some nodes, at rest. Renderers without it can't measure. */
   measure?(req: MeasureRequest): Promise<MeasureResult>;
+  /** A page to run a timelapse film in (see film.ts). Renderers without it can't make films. */
+  filmDriver?(): Promise<FilmDriver>;
   close(): Promise<void>;
 }
 

@@ -9,6 +9,7 @@ import { advertise, type Bonjour } from "./bonjour.ts";
 import { CatalogFeed, type Scope } from "./feed.ts";
 import { Home, type OpenedBy } from "./home.ts";
 import { isTailnetAddress } from "./tailnet.ts";
+import { timelapseRoute } from "./timelapse-routes.ts";
 import type { LocalWorkspace } from "./workspace.ts";
 
 export interface ServeOptions {
@@ -349,6 +350,14 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
         open: true,
       }));
       return Response.json({ files: open, root: opts.root ?? null });
+    }
+
+    if (path.startsWith("/api/timelapse")) {
+      // Starting and cancelling films write and cost: never from another site's page.
+      if (req.method !== "GET" && !sameHostOk(req, url))
+        return new Response("Forbidden", { status: 403 });
+      const res = await timelapseRoute(ws, req, url, path);
+      if (res) return res;
     }
 
     if (path === "/api/info") {

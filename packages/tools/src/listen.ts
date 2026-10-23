@@ -1,4 +1,4 @@
-import { type Doc, describeNode, findArtboard, type PonzuEvent } from "@ponzu/core";
+import { type Doc, describeNode, findArtboard, INTENT_MAX, type PonzuEvent } from "@ponzu/core";
 import { z } from "zod";
 import { fileArg, ToolError, tool } from "./define.ts";
 import { GUIDES, type GuideTopic } from "./guides.ts";
@@ -107,6 +107,14 @@ export const listenTools = [
     input: {
       file: fileArg,
       status: z.string().min(1).describe("A few words, lowercase, e.g. 'adding the autumn drop'."),
+      intent: z
+        .string()
+        .min(1)
+        .max(INTENT_MAX)
+        .optional()
+        .describe(
+          "When you take on a new request: what the person asked for, distilled to one plain line in their voice, e.g. 'A fitness app: today, workout and progress screens.' A timelapse of the work opens on it. Not your plan, and only once per request.",
+        ),
       artboards: z
         .array(z.string())
         .optional()
@@ -122,6 +130,7 @@ export const listenTools = [
       if (args.artboards)
         ws.presence.touch(caller, { file: key, working: args.artboards, status: args.status });
       else ws.presence.worked(caller, key, { status: args.status });
+      if (args.intent) ws.intent?.(key, args.intent.trim(), caller.author);
       return { text: `Status: ${args.status}.` };
     },
   }),

@@ -1124,7 +1124,7 @@ function Bar({
   );
 }
 
-interface Worker {
+export interface Worker {
   /** Presence id: two sessions of one agent share a name. */
   id: string;
   name: string;
@@ -1137,7 +1137,7 @@ interface Worker {
  * it. What they say they're doing is in the tooltip; written out, one pass
  * repeated the same status over every board it touched.
  */
-function WorkingStatus({ who, zoom }: { who: Worker[]; zoom: number }) {
+export function WorkingStatus({ who, zoom }: { who: Worker[]; zoom: number }) {
   return (
     <span
       className="pz:ml-auto pz:inline-flex pz:shrink-0 pz:items-center pz:text-foreground"
@@ -1159,7 +1159,7 @@ function WorkingStatus({ who, zoom }: { who: Worker[]; zoom: number }) {
  * overlay so it's 3px at any zoom, and never part of the design: screenshots
  * and exports don't see it.
  */
-function Trace({ x, y, w, h }: { x: number; y: number; w: number; h: number }) {
+export function Trace({ x, y, w, h }: { x: number; y: number; w: number; h: number }) {
   return (
     <svg
       className="pz:pointer-events-none pz:absolute pz:overflow-visible pz:text-[var(--pz-rind)]"
@@ -1189,12 +1189,12 @@ function Trace({ x, y, w, h }: { x: number; y: number; w: number; h: number }) {
 }
 
 /** Open pins sit a level above the rest, so another pin never covers their card. */
-const pinWrap = "pz:pointer-events-auto pz:absolute pz:size-0";
+export const pinWrap = "pz:pointer-events-auto pz:absolute pz:size-0";
 /**
  * A circle centred on the comment's spot, holding its message count. The hairline keeps a yuzu pin
  * visible on a yellow design.
  */
-const pin =
+export const pin =
   "pz:absolute pz:top-0 pz:left-0 pz:grid pz:size-6 pz:-translate-1/2 pz:place-items-center pz:rounded-full pz:font-semibold pz:text-[11px] pz:tabular-nums pz:shadow-[0_0_0_1px_rgba(17,17,16,0.18),0_1px_3px_rgba(0,0,0,0.25)] pz:transition-transform pz:duration-[120ms] pz:hover:scale-112";
 
 function PageTab({

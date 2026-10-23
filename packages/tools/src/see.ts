@@ -294,6 +294,47 @@ export const seeTools = [
       };
     },
   }),
+
+  tool({
+    name: "timelapse",
+    title: "Timelapse",
+    group: "see",
+    readOnly: true,
+    description:
+      "Make a timelapse film of the work in a file: a 16:9 MP4 of the design being made, from the person's request to every screen assembled piece by piece, the comments they left and the changes that answered them, ending on Ponzu's mark. It's as long as the work takes at its pace (usually 15 to 25 seconds). Writes it to the design's exports/ folder (timelapse-YYYY-MM-DD.mp4) and returns the path. Covers the last session (since the last hour-long break) unless you pass from and to. Takes about twice as long as the film to make. Only when the person asks for one.",
+    input: {
+      file: fileArg,
+      from: z
+        .number()
+        .optional()
+        .describe("Start of the range, ms since the epoch. Default: the last session's start."),
+      to: z.number().optional().describe("End of the range, ms since the epoch. Default: now."),
+      colorScheme: colorSchemeArg,
+    },
+    async handler(args, ctx) {
+      const { ws } = ctx;
+      if (!ws.timelapse)
+        throw new ToolError(
+          "Timelapses need the Ponzu app or `ponzu serve` with Chrome installed; this host can't make them.",
+        );
+      const { key } = await resolveFile(ctx, args.file);
+      if (args.from !== undefined && args.to !== undefined && args.to <= args.from)
+        throw new ToolError("to has to be after from.");
+      const range =
+        args.from !== undefined || args.to !== undefined
+          ? { from: args.from ?? 0, to: args.to ?? Date.now() }
+          : undefined;
+      const out = await ws.timelapse(key, {
+        shape: "16:9",
+        range,
+        theme: args.colorScheme ?? ws.theme ?? "light",
+      });
+      return {
+        text: `Wrote ${out.path} (${Math.round(out.duration)}s, ${out.codec.startsWith("avc") ? "H.264" : "VP9"}, ${(out.bytes / 1_048_576).toFixed(1)} MB).`,
+        data: out,
+      };
+    },
+  }),
 ];
 
 const ASSETS_LATE =
