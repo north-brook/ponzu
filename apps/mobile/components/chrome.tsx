@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Pressable, Text, View, type ViewStyle } from "react-native";
 import { brand } from "../lib/tokens";
 import { Glass } from "./glass";
+import { HandoffTarget, HandoffWord } from "./handoff";
 import { SliceMark } from "./icons";
 
 /**
@@ -44,24 +45,32 @@ export function BarButton({
   );
 }
 
-/** The lockup: the slice and the wordmark, 24pt, as Designs' header draws it. */
+/**
+ * The lockup: the slice and the wordmark, 24pt, as Designs' header draws
+ * it. Coming from the launch screen, its slice is where the launch's slice
+ * lands, and the word slides in after it (components/handoff.tsx).
+ */
 export function Lockup({ color }: { color: string }) {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-      <SliceMark size={28} color={color} />
-      <Text
-        style={{
-          fontFamily: "Funnel Display",
-          fontWeight: "700",
-          fontSize: 24,
-          lineHeight: 24,
-          letterSpacing: -0.05 * 24,
-          color,
-          transform: [{ translateY: -1 }],
-        }}
-      >
-        ponzu
-      </Text>
+      <HandoffTarget kind="designs" size={28}>
+        <SliceMark size={28} color={color} />
+      </HandoffTarget>
+      <HandoffWord>
+        <Text
+          style={{
+            fontFamily: "Funnel Display",
+            fontWeight: "700",
+            fontSize: 24,
+            lineHeight: 24,
+            letterSpacing: -0.05 * 24,
+            color,
+            transform: [{ translateY: -1 }],
+          }}
+        >
+          ponzu
+        </Text>
+      </HandoffWord>
     </View>
   );
 }
