@@ -26,7 +26,7 @@ interface Run {
 export class ChangeLog {
   /** Each design's recent changes, oldest first. */
   private recent = new Map<string, AgentChange[]>();
-  /** Each design's latest change, while it can still grow. */
+  /** Each agent's latest change in each design, while it can still grow. */
   private runs = new Map<string, Run>();
 
   constructor(
@@ -40,8 +40,11 @@ export class ChangeLog {
     if (e.origin.kind !== "agent" || !e.artboards.length) return null;
     const at = this.now();
     const name = e.origin.name;
-    let run = this.runs.get(key);
-    if (!run || run.change.agent.name !== name || at - run.change.at > CHANGE_GAP) {
+    // Keyed by design and agent: another agent editing the same design in between
+    // doesn't split this one's run.
+    const slot = `${key}\0${name}`;
+    let run = this.runs.get(slot);
+    if (!run || at - run.change.at > CHANGE_GAP) {
       run = {
         change: {
           id: `ch_${crypto.randomUUID().slice(0, 13)}`,
@@ -57,7 +60,7 @@ export class ChangeLog {
         added: new Set(),
         removed: new Set(),
       };
-      this.runs.set(key, run);
+      this.runs.set(slot, run);
     }
     const { added, removed } = created(e.op, e.inverse);
     for (const id of added) run.added.add(id);

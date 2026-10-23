@@ -116,6 +116,26 @@ test("an agent's run of edits in a design is one change, and another agent's is 
   }
 });
 
+test("two agents editing one design in turn each keep a single change", async () => {
+  const t = await setUp("interleaved");
+  try {
+    const a = await t.board("Home");
+    t.tick(5_000);
+    const b = await t.board("Pricing", codex);
+    t.tick(5_000);
+    // Claude again seconds later, after Codex's edit: still Claude's one change.
+    await t.tool("write_html", { target: a, html: "<div>Hi</div>" });
+    t.tick(5_000);
+    await t.tool("write_html", { target: b, html: "<p>Plans</p>" }, codex);
+    const list = t.log.list();
+    expect(list.map((c) => c.agent.name).sort()).toEqual(["Claude", "Codex"]);
+    expect(list.find((c) => c.agent.name === "Claude")!.artboards.map((x) => x.id)).toEqual([a]);
+    expect(list.find((c) => c.agent.name === "Codex")!.artboards.map((x) => x.id)).toEqual([b]);
+  } finally {
+    await t.ws.closeAll();
+  }
+});
+
 test("the person's edits and comments aren't agents' changes", async () => {
   const t = await setUp("person");
   try {
