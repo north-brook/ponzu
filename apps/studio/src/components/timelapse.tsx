@@ -57,6 +57,9 @@ interface PastFilm {
   path: string;
   bytes: number;
   at: number;
+  /** The stretch of history it covered, when kept beside it. */
+  range?: Range;
+  duration?: number;
 }
 
 /** The latest film for a file, polled while one renders. */
@@ -466,10 +469,7 @@ function Stage({ model, t }: { model: Reel; t: number }) {
   }, [model]);
   return (
     <div ref={box} className="relative grid min-h-0 flex-1 place-items-center overflow-hidden">
-      <div
-        className="overflow-hidden rounded-[10px] shadow-[0_0_0_1px_var(--hairline)]"
-        style={{ width: model.view.w * k, height: model.view.h * k }}
-      >
+      <div style={{ width: model.view.w * k, height: model.view.h * k }}>
         <div
           style={{
             width: model.view.w,
@@ -483,6 +483,21 @@ function Stage({ model, t }: { model: Reel; t: number }) {
       </div>
     </div>
   );
+}
+
+/**
+ * Where a new film starts: the newest stretch of history no film has covered yet (from the end
+ * of the latest film's range to now), so the next film picks up where the last left off. With no
+ * films, or nothing new since, the last session.
+ */
+function nextRange(entries: ReturnType<typeof parseJournal>, films: PastFilm[]): Range | null {
+  const session = lastSession(entries);
+  const ops = entries.filter((e) => e.kind === "op");
+  const end = ops.at(-1)?.t;
+  const covered = Math.max(0, ...films.map((f) => f.range?.to ?? 0));
+  if (!session || end === undefined || !covered || covered >= end) return session;
+  const from = ops.find((e) => e.t > covered)?.t;
+  return from !== undefined ? { from, to: end } : session;
 }
 
 /** When the person left each of their comments (real time). */
@@ -535,23 +550,20 @@ function Composer({
 
   useEffect(() => {
     if (!open) return;
-    void fetch(`${origin}/api/timelapse/films?file=${encodeURIComponent(file)}`)
-      .then((r) => (r.ok ? (r.json() as Promise<PastFilm[]>) : []))
-      .then(setPast)
-      .catch(() => setPast([]));
-  }, [open, origin, file]);
-
-  useEffect(() => {
-    if (!open) return;
     setError(null);
-    void journalText(file)
-      .then((text) => {
+    void Promise.all([
+      journalText(file),
+      fetch(`${origin}/api/timelapse/films?file=${encodeURIComponent(file)}`)
+        .then((r) => (r.ok ? (r.json() as Promise<PastFilm[]>) : []))
+        .catch(() => [] as PastFilm[]),
+    ])
+      .then(([text, films]) => {
         setJournal(text);
-        const all = parseJournal(text);
-        setRange(lastSession(all));
+        setPast(films);
+        setRange(nextRange(parseJournal(text), films));
       })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
-  }, [open, file]);
+  }, [open, origin, file]);
 
   useEffect(() => {
     if (!open || !entries.length || !range) return;
@@ -586,7 +598,8 @@ function Composer({
         </>
       }
     >
-      <div className="flex h-[min(520px,calc(100vh-260px))] flex-col rounded-xl bg-canvas p-3">
+      {/* The film is always 16:9: its box is the film, edge to edge. */}
+      <div className="relative mx-auto flex aspect-video max-h-[calc(100vh-300px)] w-full max-w-[calc((100vh-300px)*16/9)] flex-col overflow-hidden rounded-[10px] bg-canvas shadow-[0_0_0_1px_var(--hairline)]">
         {model ? (
           <Stage model={model} t={t} />
         ) : (
@@ -603,22 +616,18 @@ function Composer({
           ticks={comments}
           range={range}
           onRange={setRange}
-          playhead={null}
-          onSeek={() => {}}
-        />
-      )}
-      {past.length > 0 && (
-        <PastFilms
-          origin={origin}
-          file={file}
-          films={past}
+          films={past.filter((f) => f.range)}
           onWatch={(f) =>
             onWatch({
               name: f.name,
               path: f.path,
               src: `${origin}/api/timelapse/film?file=${encodeURIComponent(file)}&name=${encodeURIComponent(f.name)}`,
+              duration: f.duration,
+              range: f.range,
             })
           }
+          playhead={null}
+          onSeek={() => {}}
         />
       )}
       <div className="flex items-center gap-2">
@@ -645,76 +654,6 @@ function Composer({
       </div>
     </Sheet>
   );
-}
-
-/**
- * The films already made of this design, newest first: each its first frames as a little
- * thumbnail, its date and length. One click watches it.
- */
-function PastFilms({
-  origin,
-  file,
-  films,
-  onWatch,
-}: {
-  origin: string;
-  file: string;
-  films: PastFilm[];
-  onWatch: (f: PastFilm) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      <span className="text-[12px] font-medium text-muted-foreground">
-        Made before
-        {films.length > PAST_SHOWN && (
-          <span className="font-normal text-faint">
-            {" "}
-            · {films.length - PAST_SHOWN} older in exports/
-          </span>
-        )}
-      </span>
-      <div className="flex gap-2 overflow-x-auto pb-0.5">
-        {films.slice(0, PAST_SHOWN).map((f) => (
-          <button
-            key={f.name}
-            type="button"
-            onClick={() => onWatch(f)}
-            className="group flex shrink-0 flex-col gap-1.5 rounded-[10px] p-1 text-left hover:bg-accent"
-          >
-            <video
-              src={`${origin}/api/timelapse/film?file=${encodeURIComponent(file)}&name=${encodeURIComponent(f.name)}`}
-              muted
-              playsInline
-              preload="metadata"
-              // Its middle: the design mostly made, never the empty opening.
-              onLoadedMetadata={(e) => {
-                e.currentTarget.currentTime = e.currentTarget.duration * 0.55;
-              }}
-              className="h-[72px] w-[128px] rounded-[7px] bg-canvas object-cover shadow-[0_0_0_1px_var(--hairline)]"
-            />
-            <span className="px-0.5 text-[12px] text-foreground tabular-nums">
-              {filmDate(f.at)}
-            </span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/** The newest past films shown; the rest are in the design's exports/ folder. */
-const PAST_SHOWN = 6;
-
-/** “Today, 4:12 PM”, “Yesterday”, else “Oct 18”. */
-function filmDate(at: number): string {
-  const d = new Date(at);
-  const now = new Date();
-  const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const days = Math.round((day(now) - day(d)) / 86_400_000);
-  const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  if (days === 0) return `Today, ${time}`;
-  if (days === 1) return `Yesterday, ${time}`;
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function PlayButton({ playing, onClick }: { playing: boolean; onClick: () => void }) {
@@ -748,6 +687,8 @@ function Track({
   playhead,
   onSeek,
   trims = true,
+  films = [],
+  onWatch,
 }: {
   bounds: Range;
   ops: number[];
@@ -757,6 +698,9 @@ function Track({
   playhead: number | null;
   onSeek: (real: number) => void;
   trims?: boolean;
+  /** Films already made, each over the stretch it covered. */
+  films?: PastFilm[];
+  onWatch?: (f: PastFilm) => void;
 }) {
   const line = useRef<HTMLDivElement>(null);
   const scale = useMemo(() => compressedScale(ops), [ops]);
@@ -789,65 +733,102 @@ function Track({
   const hill = useMemo(() => activityPath(ops, scale), [ops, scale]);
   void bounds;
   return (
-    <div
-      ref={line}
-      className="relative h-10 cursor-pointer select-none rounded-[10px] bg-secondary"
-      onPointerDown={drag("seek")}
-    >
-      <svg
-        className="absolute inset-0 size-full overflow-visible"
-        viewBox="0 0 100 10"
-        preserveAspectRatio="none"
-        aria-hidden
+    <div className="flex flex-col gap-1.5">
+      <div
+        ref={line}
+        className="relative h-10 cursor-pointer select-none rounded-[10px] bg-secondary"
+        onPointerDown={drag("seek")}
       >
-        <path d={hill} fill="var(--hairline-strong)" />
-      </svg>
-      {range && trims && (
-        <>
-          <div
-            className="absolute inset-y-0 left-0 rounded-l-[10px] bg-background/55"
-            style={{ width: `${x(range.from)}%` }}
-          />
-          <div
-            className="absolute inset-y-0 right-0 rounded-r-[10px] bg-background/55"
-            style={{ width: `${100 - x(range.to)}%` }}
-          />
-          <div
-            className="absolute inset-y-0 rounded-[8px] shadow-[inset_0_0_0_1.5px_var(--foreground)]"
-            style={{ left: `${x(range.from)}%`, width: `${x(range.to) - x(range.from)}%` }}
-          />
-          {(["from", "to"] as const).map((w) => (
+        <svg
+          className="absolute inset-0 size-full overflow-visible"
+          viewBox="0 0 100 10"
+          preserveAspectRatio="none"
+          aria-hidden
+        >
+          <path d={hill} fill="var(--hairline-strong)" />
+        </svg>
+        {range && trims && (
+          <>
             <div
-              key={w}
-              role="slider"
-              aria-label={w === "from" ? "Start" : "End"}
-              aria-valuenow={range[w]}
-              tabIndex={0}
-              onPointerDown={drag(w)}
-              className="absolute inset-y-0 z-[2] w-3 -translate-x-1/2 cursor-ew-resize"
-              style={{ left: `${x(range[w])}%` }}
-            >
-              <span className="absolute inset-y-1.5 left-1/2 w-[5px] -translate-x-1/2 rounded-full bg-foreground" />
-            </div>
-          ))}
-        </>
-      )}
-      {clusterTicks(ticks.map(x)).map((c) => (
-        <span
-          key={c.at}
-          className="absolute top-1.5 h-2 -translate-x-1/2 rounded-full bg-[#ffc81e] shadow-[0_0_0_1px_rgba(17,17,16,0.18)]"
-          style={{ left: `${c.at}%`, width: `calc(0.5rem + ${c.span}%)` }}
-          title={c.n > 1 ? `${c.n} comments` : "A comment"}
-        />
-      ))}
-      {playhead !== null && (
-        <span
-          className="pointer-events-none absolute -inset-y-1 z-[1] w-[2px] -translate-x-1/2 rounded-full bg-foreground"
-          style={{ left: `${x(playhead)}%` }}
-        />
+              className="absolute inset-y-0 left-0 rounded-l-[10px] bg-background/55"
+              style={{ width: `${x(range.from)}%` }}
+            />
+            <div
+              className="absolute inset-y-0 right-0 rounded-r-[10px] bg-background/55"
+              style={{ width: `${100 - x(range.to)}%` }}
+            />
+            <div
+              className="absolute inset-y-0 rounded-[8px] shadow-[inset_0_0_0_1.5px_var(--foreground)]"
+              style={{ left: `${x(range.from)}%`, width: `${x(range.to) - x(range.from)}%` }}
+            />
+            {(["from", "to"] as const).map((w) => (
+              <div
+                key={w}
+                role="slider"
+                aria-label={w === "from" ? "Start" : "End"}
+                aria-valuenow={range[w]}
+                tabIndex={0}
+                onPointerDown={drag(w)}
+                className="absolute inset-y-0 z-[2] w-3 -translate-x-1/2 cursor-ew-resize"
+                style={{ left: `${x(range[w])}%` }}
+              >
+                <span className="absolute inset-y-1.5 left-1/2 w-[5px] -translate-x-1/2 rounded-full bg-foreground" />
+              </div>
+            ))}
+          </>
+        )}
+        {clusterTicks(ticks.map(x)).map((c) => (
+          <span
+            key={c.at}
+            className="absolute top-1.5 h-2 -translate-x-1/2 rounded-full bg-[#ffc81e] shadow-[0_0_0_1px_rgba(17,17,16,0.18)]"
+            style={{ left: `${c.at}%`, width: `calc(0.5rem + ${c.span}%)` }}
+            title={c.n > 1 ? `${c.n} comments` : "A comment"}
+          />
+        ))}
+        {playhead !== null && (
+          <span
+            className="pointer-events-none absolute -inset-y-1 z-[1] w-[2px] -translate-x-1/2 rounded-full bg-foreground"
+            style={{ left: `${x(playhead)}%` }}
+          />
+        )}
+      </div>
+      {films.length > 0 && (
+        // The films already made, each under the stretch it covered: click one to watch it.
+        <div className="relative h-6">
+          {films.map((f) => {
+            const r = f.range!;
+            const left = x(r.from);
+            const w = Math.max(1.2, x(r.to) - left);
+            return (
+              <Tip key={f.name} label={`Watch the ${filmDate(f.at)} film`}>
+                <button
+                  type="button"
+                  onClick={() => onWatch?.(f)}
+                  className="absolute inset-y-0 flex min-w-6 items-center justify-center gap-1 overflow-hidden rounded-[7px] bg-secondary px-1.5 text-[11px] text-muted-foreground shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:bg-accent hover:text-foreground"
+                  style={{ left: `${left}%`, width: `${w}%` }}
+                >
+                  <Icon name="play" size={10} />
+                  <span className="truncate tabular-nums">{filmDate(f.at)}</span>
+                </button>
+              </Tip>
+            );
+          })}
+        </div>
       )}
     </div>
   );
+}
+
+/** “Today, 4:12 PM”, “Yesterday, 9:02 AM”, else “Oct 18”. */
+function filmDate(at: number): string {
+  const d = new Date(at);
+  const now = new Date();
+  const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((day(now) - day(d)) / 86_400_000);
+  const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  if (days === 0) return `Today, ${time}`;
+  if (days === 1) return `Yesterday, ${time}`;
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 /** Ticks closer than about a tick's width merge into one longer mark, so a run of comments reads as a run. */
@@ -1005,7 +986,7 @@ function Ready({
         )
       }
     >
-      <div className="flex h-[min(520px,calc(100vh-260px))] items-center justify-center rounded-xl bg-canvas p-3">
+      <div className="relative mx-auto aspect-video max-h-[calc(100vh-300px)] w-full max-w-[calc((100vh-300px)*16/9)] overflow-hidden rounded-[10px] bg-canvas shadow-[0_0_0_1px_var(--hairline)]">
         <video
           ref={video}
           src={src}
@@ -1017,7 +998,7 @@ function Ready({
           onLoadedMetadata={(e) => setLength(e.currentTarget.duration || length)}
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
-          className="max-h-full max-w-full rounded-[10px] shadow-[0_0_0_1px_var(--hairline)]"
+          className="block size-full"
         />
       </div>
       <FilmTrack

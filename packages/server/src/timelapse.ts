@@ -44,6 +44,19 @@ export function timelapsePath(root: string, ext: "mp4" | "webm", now = new Date(
   for (let n = 2; ; n++) if (!existsSync(`${base}-${n}.${ext}`)) return `${base}-${n}.${ext}`;
 }
 
+/** A film's sidecar: `timelapse-2026-10-22.mp4` → `timelapse-2026-10-22.json`. */
+export function filmSidecar(path: string): string {
+  return path.replace(/\.(mp4|webm)$/, ".json");
+}
+
+async function readEntries(root: string) {
+  return parseJournal(
+    await Bun.file(join(root, JOURNAL_FILE))
+      .text()
+      .catch(() => ""),
+  );
+}
+
 /** What the composer needs about a design's history: its range and comment ticks. */
 export async function timelapseInfo(root: string) {
   const text = await Bun.file(join(root, JOURNAL_FILE))
@@ -156,6 +169,12 @@ export class Timelapses {
         const path = timelapsePath(key, out.mime === "video/mp4" ? "mp4" : "webm");
         await mkdir(join(key, "exports"), { recursive: true });
         await writeFile(path, out.bytes);
+        // What it covered, beside it: the composer places past films on the history by it.
+        const covered = request.range ?? lastSession(await readEntries(key)) ?? undefined;
+        await writeFile(
+          filmSidecar(path),
+          `${JSON.stringify({ range: covered, duration: out.duration }, null, 2)}\n`,
+        ).catch(() => {});
         job.state = {
           status: "done",
           path,

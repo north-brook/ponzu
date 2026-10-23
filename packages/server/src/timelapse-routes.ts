@@ -7,7 +7,7 @@ import {
   type FilmShape,
   JOURNAL_FILE,
 } from "@ponzu/core";
-import { type TimelapseJob, timelapseInfo } from "./timelapse.ts";
+import { filmSidecar, type TimelapseJob, timelapseInfo } from "./timelapse.ts";
 import type { LocalWorkspace } from "./workspace.ts";
 
 /**
@@ -134,8 +134,22 @@ export async function films(key: string) {
   const names = (await readdir(dir).catch(() => [] as string[])).filter((n) => FILM_NAME.test(n));
   const out = await Promise.all(
     names.map(async (name) => {
-      const s = await stat(join(dir, name)).catch(() => null);
-      return s ? { name, path: join(dir, name), bytes: s.size, at: s.mtimeMs } : null;
+      const path = join(dir, name);
+      const s = await stat(path).catch(() => null);
+      if (!s) return null;
+      // What it covered, when it was made with a sidecar (older films play without one).
+      const side =
+        (await readFile(filmSidecar(path), "utf8")
+          .then((t) => JSON.parse(t) as { range?: { from: number; to: number }; duration?: number })
+          .catch(() => null)) ?? {};
+      return {
+        name,
+        path,
+        bytes: s.size,
+        at: s.mtimeMs,
+        ...(side.range ? { range: side.range } : {}),
+        ...(side.duration ? { duration: side.duration } : {}),
+      };
     }),
   );
   return out.filter((f) => f !== null).sort((a, b) => b.at - a.at);
