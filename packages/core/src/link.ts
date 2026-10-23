@@ -2,14 +2,21 @@
  * A link to a design on this Mac, for an agent to hand the person: clicking it opens the design
  * in Ponzu, optionally on one artboard, where a path would open their editor.
  *
- *   ponzu://open?file=/Users/sam/app/design/app.design&artboard=ab_hero    the Mac app
- *   http://localhost:7777/?file=/Users/sam/app/design/app.design           a `ponzu serve` canvas
+ *   https://ponzu.design/open#file=/Users/sam/app/design/app.design&artboard=ab_hero   the Mac app
+ *   http://localhost:7777/?file=/Users/sam/app/design/app.design            a `ponzu serve` canvas
+ *
+ * Chats drop links in schemes they don't know, so agents hand out ponzu.design/open, which passes
+ * the design on to the app as `ponzu://open?file=…` (appLink) or offers the download. The path
+ * rides after the #, which browsers never send, so it stays on the person's Mac.
  *
  * The Mac app also takes `ponzu://open?repo=…` for a design on GitHub (@ponzu/server/clone).
  */
 
 /** Artboard ids are newId's: a prefix, an underscore and base-36. Leave room for older ones. */
 const ARTBOARD = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** The page on ponzu.design that opens a design in the Mac app (apps/web/app/open). */
+export const OPEN_PAGE = "https://ponzu.design/open";
 
 export interface DesignLink {
   /** The .design folder, absolute. */
@@ -18,14 +25,23 @@ export interface DesignLink {
 }
 
 /**
- * The link that opens `path` in Ponzu: the Mac app's ponzu:// link, or with `origin`, that
- * server's canvas. Slashes stay readable; anything else that could end a link is escaped,
- * parentheses too, since a markdown link ends at one.
+ * The link that opens `path` in Ponzu: ponzu.design's open page, or with `origin`, that server's
+ * canvas. Slashes stay readable; anything else that could end a link is escaped, parentheses
+ * too, since a markdown link ends at one.
  */
 export function designLink(path: string, opts: { artboard?: string; origin?: string } = {}) {
+  const q = designQuery(path, opts.artboard);
+  return opts.origin ? `${opts.origin}/?${q}` : `${OPEN_PAGE}#${q}`;
+}
+
+/** The Mac app's own link to `path`, `ponzu://open?file=…`, which the open page hands it. */
+export function appLink(path: string, opts: { artboard?: string } = {}) {
+  return `ponzu://open?${designQuery(path, opts.artboard)}`;
+}
+
+function designQuery(path: string, artboard?: string) {
   const file = encodePart(path).replace(/%2F/g, "/");
-  const artboard = opts.artboard ? `&artboard=${encodePart(opts.artboard)}` : "";
-  return `${opts.origin ? `${opts.origin}/` : "ponzu://open"}?file=${file}${artboard}`;
+  return `file=${file}${artboard ? `&artboard=${encodePart(artboard)}` : ""}`;
 }
 
 function encodePart(s: string): string {
@@ -36,7 +52,7 @@ function encodePart(s: string): string {
 }
 
 /**
- * `ponzu://open?file=<absolute path>.design&artboard=<id>`, as designLink writes it. Null for
+ * `ponzu://open?file=<absolute path>.design&artboard=<id>`, as appLink writes it. Null for
  * anything else: a repo link, a relative path, one that climbs with `..`, or a bad artboard id.
  * Whether a design is there is for the opener to check.
  */

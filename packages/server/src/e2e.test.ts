@@ -513,8 +513,8 @@ test("an agent's links open where it reached Ponzu, or the Mac app", async () =>
     expect(canvas.searchParams.get("file")).toBe(key);
     ws.opensIn = "app";
     const app = await link();
-    expect(`${app.protocol}//${app.host}`).toBe("ponzu://open");
-    expect(app.searchParams.get("file")).toBe(key);
+    expect(`${app.origin}${app.pathname}`).toBe("https://ponzu.design/open");
+    expect(new URLSearchParams(app.hash.slice(1)).get("file")).toBe(key);
   } finally {
     ws.opensIn = undefined;
   }
