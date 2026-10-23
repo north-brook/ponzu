@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.39.2](https://github.com/north-brook/ponzu/compare/v1.39.1...v1.39.2) (2026-10-23)
+
+
+### Bug Fixes
+
+* tell agents a load animation plays once on the person's canvas ([#154](https://github.com/north-brook/ponzu/issues/154)) ([5c89441](https://github.com/north-brook/ponzu/commit/5c89441b56e2fd186e14640be35f2c08a626061c))
+
 ## [1.39.1](https://github.com/north-brook/ponzu/compare/v1.39.0...v1.39.1) (2026-10-23)
 
 
