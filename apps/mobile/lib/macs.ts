@@ -201,6 +201,61 @@ export async function devForget(which: string) {
 }
 
 /**
+ * Development: save made-up Macs that don't answer, to look at the states
+ * the design draws with them. `asleep` is a MacBook and spare that time out
+ * (Connect › R3, or R2 beside a Mac that answers); `waking` is a MacBook
+ * whose Ponzu refuses, so the launch screen knocks (R1).
+ */
+export async function devSeed(which: string) {
+  await loadMacs();
+  const now = new Date();
+  const at = (h: number, m: number, daysAgo = 0) =>
+    new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysAgo, h, m).getTime();
+  // Loopback ports: 7796 for a listener that holds connections and never
+  // answers (or, with none there, a refusal that knocks and reads as asleep
+  // 12s later), and 9, closed, so Ponzu "has quit".
+  const silent = "127.0.0.1:7796";
+  const refuses = "127.0.0.1:9";
+  const seed: Mac[] =
+    which === "waking"
+      ? [
+          {
+            id: "seed-macbook",
+            name: "MacBook",
+            dns: "macbook.seed",
+            kind: "laptop",
+            addedAt: 0,
+            via: "qr",
+            address: refuses,
+          },
+        ]
+      : [
+          {
+            id: "seed-macbook",
+            name: "MacBook",
+            dns: "macbook.seed",
+            kind: "laptop",
+            addedAt: 0,
+            lastAnsweredAt: at(21, 12),
+            via: "qr",
+            address: silent,
+          },
+          {
+            id: "seed-spare",
+            name: "spare",
+            dns: "spare.seed",
+            kind: "desktop",
+            addedAt: 0,
+            lastAnsweredAt: at(18, 0, 1),
+            via: "peer",
+            address: silent,
+          },
+        ];
+  macs.set((all) => seed.reduce(upsertMac, all));
+  save();
+}
+
+/**
  * In development, `EXPO_PUBLIC_PONZU_DEV_HOST=127.0.0.1:7792` pairs a branch
  * server on this Mac, which the simulator reaches on loopback. Release builds
  * never read it.
