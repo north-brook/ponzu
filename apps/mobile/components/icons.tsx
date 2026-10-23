@@ -5,30 +5,25 @@ import {
   Cancel01Icon,
   Clock01Icon,
   ComputerIcon,
-  DashboardSquare01Icon,
   File01Icon,
-  FlowConnectionIcon,
   Folder01Icon,
   GitBranchIcon,
   KeyboardIcon,
   LaptopIcon,
-  Layout01Icon,
   Mic01Icon,
   MicOff01Icon,
   Moon02Icon,
   Notification01Icon,
-  PaintBoardIcon,
   QrCodeIcon,
   RefreshIcon,
   Search01Icon,
-  SmartPhone01Icon,
-  Tablet01Icon,
   Tick02Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react-native";
 import { Text, View } from "react-native";
 import Svg, { Circle, Path } from "react-native-svg";
 import { SLICE, SLICE_STROKE } from "../lib/mark";
+import { pageIcon } from "../lib/page-icons";
 
 /**
  * The app's icons: Hugeicons, the set the brand and desktop draw with
@@ -63,13 +58,6 @@ export const ICONS = {
   keyboard: KeyboardIcon,
   send: ArrowUp02Icon,
   file: File01Icon,
-  phone: SmartPhone01Icon,
-  tablet: Tablet01Icon,
-  palette: PaintBoardIcon,
-  flow: FlowConnectionIcon,
-  layout: Layout01Icon,
-  /** board: a page with no icon of its own. */
-  board: DashboardSquare01Icon,
 } as const satisfies Record<string, IconSvgElement>;
 
 function icon(svg: IconSvgElement, size: number, width: number) {
@@ -100,18 +88,9 @@ export const Keyboard = icon(ICONS.keyboard, 20, 1.8);
 export const Send = icon(ICONS.send, 20, 2.4);
 export const FileIcon = icon(ICONS.file, 16, 1.7);
 
-/** A page's icon, by the names design.json uses (the studio's Icons). */
+/** A page's icon, by the names design.json uses (lib/page-icons.ts): the same glyph as its menu's. */
 export function PageIcon({ name, size = 16, color, width = 1.7 }: P & { name?: string }) {
-  const svg =
-    name === "phone" ||
-    name === "desktop" ||
-    name === "tablet" ||
-    name === "palette" ||
-    name === "flow" ||
-    name === "layout"
-      ? ICONS[name]
-      : ICONS.board;
-  return <HugeiconsIcon icon={svg} size={size} color={color} strokeWidth={width} />;
+  return <HugeiconsIcon icon={pageIcon(name)} size={size} color={color} strokeWidth={width} />;
 }
 
 /**

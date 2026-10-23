@@ -36,7 +36,7 @@ import { useDesignSession, useSessionState } from "../../../lib/design";
 import { noteOpened } from "../../../lib/lately";
 import { baseUrl } from "../../../lib/mac";
 import { findMac } from "../../../lib/macs";
-import { MENU_ICONS } from "../../../lib/menu-icons";
+import { pageIconImage } from "../../../lib/page-icons";
 import { markSeen } from "../../../lib/seen";
 import { track } from "../../../lib/telemetry";
 import { useTheme } from "../../../lib/theme";
@@ -243,7 +243,7 @@ export default function Canvas() {
       (doc?.pages ?? []).map((p) => ({
         id: p.id,
         title: p.name,
-        image: `hi-${p.icon && MENU_ICONS.has(p.icon) ? p.icon : "board"}`,
+        image: pageIconImage(p.icon),
         state: p.id === page?.id ? "on" : "off",
       })),
     [doc?.pages, page?.id],
