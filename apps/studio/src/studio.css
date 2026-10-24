@@ -192,3 +192,22 @@
 .pz-film .pz-film-way {
   background: color-mix(in srgb, var(--pz-surface) 90%, transparent);
 }
+
+/* Update, in the title bar: three slow pulses when it appears, then still. */
+@keyframes update-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--flesh) 55%, transparent);
+  }
+  60% {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--flesh) 0%, transparent);
+  }
+}
+.update-pill {
+  animation: update-pulse 2.4s cubic-bezier(0.2, 0.8, 0.2, 1) 3;
+}
+@media (prefers-reduced-motion: reduce) {
+  .update-pill {
+    animation: none;
+  }
+}

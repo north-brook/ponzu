@@ -1,3 +1,5 @@
+import type { MachineUpdate } from "./update.ts";
+
 /**
  * What the home screen shows: every .design on this Mac and on the person's
  * other Macs in their tailnet, newest edit first. `GET /api/catalog`, or as it
@@ -18,6 +20,8 @@ export interface CatalogMachine {
   /** "This Mac", or the tailnet host name. */
   name: string;
   kind: "laptop" | "desktop";
+  /** Its Mac app's updater. Missing for `ponzu serve`, and from apps before updates spread. */
+  update?: MachineUpdate;
 }
 
 export interface CatalogFile {

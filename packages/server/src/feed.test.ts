@@ -2,11 +2,17 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { applyCatalogPatch, type Catalog, type CatalogMessage } from "@ponzu/core";
+import {
+  applyCatalogPatch,
+  type Catalog,
+  type CatalogMessage,
+  type MachineUpdate,
+  updatePlan,
+} from "@ponzu/core";
 import { getTool, runTool, type ToolCaller } from "@ponzu/tools";
 import { CatalogFeed } from "./feed.ts";
 import { Home } from "./home.ts";
-import { LocalWorkspace, serve } from "./index.ts";
+import { LocalWorkspace, serve, type Updater } from "./index.ts";
 
 const caller: ToolCaller = {
   id: "agent_spare",
@@ -297,3 +303,82 @@ test("streams that join share a listing rather than each starting one", async ()
     await ws.closeAll();
   }
 });
+
+/** An app's updater that installs when asked, and says who asked it in what order. */
+function fakeUpdater(
+  name: string,
+  order: string[],
+  state: MachineUpdate,
+): Updater & {
+  set(s: MachineUpdate): void;
+} {
+  let now = state;
+  return {
+    state: () => now,
+    set: (s) => {
+      now = s;
+    },
+    install: async () => {
+      order.push(name);
+      now = { ...now, installing: true };
+      return now;
+    },
+    stop: () => {},
+  };
+}
+
+test("one Update installs on each of the person's Macs, this one last", async () => {
+  await fakeTailnet();
+  const order: string[] = [];
+  const spareDir = join(dir, "spare-update");
+  const spareWs = new LocalWorkspace({ cwd: spareDir });
+  const spareUpdater = fakeUpdater("spare", order, { version: "1.43.0" });
+  const spare = serve(spareWs, {
+    port: 0,
+    root: spareDir,
+    spotlight: "roots",
+    updater: spareUpdater,
+  });
+  const hereDir = join(dir, "here-update");
+  const hereWs = new LocalWorkspace({ cwd: hereDir });
+  const here = serve(hereWs, {
+    port: 0,
+    root: hereDir,
+    spotlight: "roots",
+    tailnet: true,
+    tailnetPort: spare.port,
+    updater: fakeUpdater("here", order, {
+      version: "1.43.0",
+      ready: { version: "1.44.0", notes: ["Faster."] },
+    }),
+  });
+  const home = stream(`ws://127.0.0.1:${here.port}/api/catalog/stream`);
+  try {
+    // This Mac's download is offered for both.
+    let c = await home.until((c) => c.machines.length === 2);
+    expect(updatePlan(c.machines)).toMatchObject({ version: "1.44.0", macs: ["local", "spare"] });
+
+    // The other Mac finds it too: that reaches this Mac's home screen without a restart.
+    spareUpdater.set({ version: "1.43.0", ready: { version: "1.44.0", notes: ["Faster."] } });
+    // Within a listing's resync, as for any change no event reports.
+    c = await home.until(
+      (c) => Boolean(c.machines.find((m) => m.id === "spare")?.update?.ready),
+      8000,
+    );
+
+    const res = await fetch(`http://127.0.0.1:${here.port}/api/update`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ macs: ["local", "spare"] }),
+    });
+    expect(await res.json()).toEqual({ macs: { spare: true, local: true } });
+    expect(order).toEqual(["spare", "here"]);
+    c = await home.until((c) => updatePlan(c.machines)?.installing === true);
+  } finally {
+    home.close();
+    here.stop(true);
+    spare.stop(true);
+    await hereWs.closeAll();
+    await spareWs.closeAll();
+  }
+}, 15_000);

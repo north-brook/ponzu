@@ -58,7 +58,11 @@ function serverCwd(): string {
   return app.getPath("userData");
 }
 
-function startServer(renderEndpoint: string, port: number): Promise<string> {
+function startServer(
+  renderEndpoint: string,
+  port: number,
+  updater: { endpoint: string; token: string } | null,
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const bin = paths.server;
     const [cmd, args] = existsSync(bin)
@@ -79,6 +83,9 @@ function startServer(renderEndpoint: string, port: number): Promise<string> {
           ...(smoke ? { PONZU_DB_STRICT: "1" } : {}),
           PONZU_RENDER_ENDPOINT: renderEndpoint,
           PONZU_RENDER_TOKEN: renderToken,
+          ...(updater
+            ? { PONZU_APP_ENDPOINT: updater.endpoint, PONZU_APP_TOKEN: updater.token }
+            : {}),
         },
         stdio: ["ignore", "pipe", "pipe"],
       },
@@ -517,10 +524,16 @@ if (!app.requestSingleInstanceLock()) {
       splashing = true;
     }
     const render = await startRenderHost();
+    // The server lists what the updater has and asks it to install, so it starts first.
+    const updater = smoke
+      ? null
+      : await installUpdater({ window: () => mainWindow, onReady: () => (updateReady = true) });
     try {
       // Agents find the server through ~/.ponzu/host.json on any port. 7777 is
       // for anything pointed at a fixed URL.
-      serverUrl = await startServer(render, 7777).catch(() => startServer(render, 0));
+      serverUrl = await startServer(render, 7777, updater).catch(() =>
+        startServer(render, 0, updater),
+      );
     } catch (err) {
       if (smoke) {
         console.error(`smoke: server failed to start (${err})`);
@@ -536,7 +549,6 @@ if (!app.requestSingleInstanceLock()) {
     if (!background || pendingOpens.length || pendingLinks.length || smoke) showWindow();
     else app.dock?.hide();
     if (!smoke) {
-      installUpdater({ window: () => mainWindow, onReady: () => (updateReady = true) });
       setupAgents();
       setupWake();
       watchIdle();
