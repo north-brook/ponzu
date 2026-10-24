@@ -21,8 +21,6 @@ export interface Stretch {
 export const PARTS = {
   /** The sheet's shape: corners, insets, padding, its gaps. */
   sheet: { toVoice: [0, 1], toType: [0, 1] },
-  /** The text field: fades and narrows (scaleX 0.96). */
-  field: { toVoice: [0, 0.6], toType: [0, 0.6] },
   /** The waveform: grows in from scaleY 0.2. */
   wave: { toVoice: [0.2, 1], toType: [0.4, 1] },
   /** "Listening…" above the row. */

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   type LayoutChangeEvent,
   Pressable,
+  StyleSheet,
   Text,
   TextInput,
   type TextInputInstance,
@@ -65,6 +66,22 @@ const ease = Easing.bezier(...EASE_OUT);
 const FIELD_LINE = 22;
 const FIELD_PAD = (44 - FIELD_LINE) / 2;
 const FIELD_MAX = FIELD_PAD * 2 + FIELD_LINE * 5;
+
+const styles = StyleSheet.create({
+  field: {
+    minHeight: 44,
+    maxHeight: FIELD_MAX,
+    paddingTop: FIELD_PAD,
+    paddingBottom: FIELD_PAD,
+    paddingHorizontal: 14,
+    fontFamily: "Inter",
+    fontSize: 17,
+    lineHeight: FIELD_LINE,
+  },
+  fieldEmpty: { height: 44 },
+  // Out of view, never faded: Liquid Glass draws as a plain view under a parent with opacity.
+  hidden: { position: "absolute", left: -10_000, width: 300 },
+});
 /** Between "Listening…" (or what's said) and the row under it. */
 const GAP = 14;
 
@@ -73,12 +90,13 @@ const GAP = 14;
  * button: in voice, the keyboard (switch to typing) until something is said,
  * then send; in typing, the mic (switch to voice) until something is typed,
  * then send. Voice shows what's heard, a live waveform and a neutral mute.
- * The field and the waveform share one glass capsule, the buttons' height.
+ * The field and the waveform share one glass capsule, the buttons' height;
+ * the field sizes itself, as iOS does a multiline text view, up to five lines.
  *
  * Switching is one sheet changing shape (Flow › 8 ⇄ 7), never two screens:
  * every part stays mounted and moves on one clock on the UI thread
- * (lib/morph.ts has the timing). The field narrows and fades while the
- * waveform grows in, "Listening…" opens above, the mute slides in from the
+ * (lib/morph.ts has the timing). The field steps out of view and the
+ * waveform grows in its place, "Listening…" opens above, the mute slides in from the
  * left and the button's mic turns into the keyboard. The keyboard itself
  * drops or rises with the system's animation, and the sheet (sheet.tsx)
  * rides it.
@@ -169,24 +187,6 @@ export function Composer({
     const p = phase(clock.value, toVoice.value, PARTS.listen);
     return { height: tall.value * p, opacity: p, marginBottom: -GAP * (1 - p) };
   });
-  // The field's height, grown line by line as the text wraps (160ms, ease-out), up to
-  // FIELD_MAX, past which it scrolls. A capsule at one line, a rounded rect above.
-  const fieldH = useSharedValue(44);
-  const [scrolls, setScrolls] = useState(false);
-  const onFieldSize = (h: number) => {
-    const next = Math.min(FIELD_MAX, Math.max(44, Math.round(h)));
-    fieldH.value = still ? next : withTiming(next, { duration: 160, easing: ease });
-    setScrolls(h > FIELD_MAX + 0.5);
-  };
-  const fieldStyle = useAnimatedStyle(() => {
-    const p = phase(clock.value, toVoice.value, PARTS.field);
-    return {
-      opacity: 1 - p,
-      // Down to one line as it goes, so the row is the waveform's height in voice.
-      height: fieldH.value + (44 - fieldH.value) * p,
-      transform: [{ scaleX: 1 - 0.04 * p }],
-    };
-  });
   const waveStyle = useAnimatedStyle(() => {
     const p = phase(clock.value, toVoice.value, PARTS.wave);
     return { opacity: p, transform: [{ scaleY: 0.2 + 0.8 * p }] };
@@ -264,13 +264,16 @@ export function Composer({
           {/* One glass capsule, the buttons' height and glass: the field in typing, the waveform in voice. */}
           <Glass
             testID="comment-field"
-            style={{ minHeight: 44, borderRadius: 22, justifyContent: "center" }}
+            style={{ minHeight: 44, borderRadius: 22, justifyContent: "flex-end" }}
           >
-            <Animated.View
-              style={[
-                { transformOrigin: "left center", overflow: "hidden", borderRadius: 22 },
-                fieldStyle,
-              ]}
+            {/*
+              The field sizes itself, as iOS sizes a multiline text view: one line at 44, a
+              line taller for each line of text up to FIELD_MAX, then it scrolls in itself
+              and iOS keeps the line being typed in view. In voice it steps out of view (moved,
+              never faded: glass breaks under opacity) and the waveform takes the row.
+            */}
+            <View
+              style={voice ? styles.hidden : null}
               pointerEvents={voice ? "none" : "auto"}
               accessibilityElementsHidden={voice}
               importantForAccessibility={voice ? "no-hide-descendants" : "auto"}
@@ -284,30 +287,18 @@ export function Composer({
                 selectionColor={brand.yuzu}
                 cursorColor={brand.yuzu}
                 multiline
+                scrollEnabled
                 editable={!voice}
                 testID={voice ? undefined : "comment-input"}
-                // Its own height, padding included, as the text wraps: the capsule grows to it.
-                onContentSizeChange={(e) => onFieldSize(e.nativeEvent.contentSize.height)}
-                scrollEnabled={scrolls}
-                style={{
-                  // Pinned to the capsule's top, as tall as its text (up to FIELD_MAX): the
-                  // capsule's animated height follows it; the same padding at every line count.
-                  position: "absolute",
-                  left: 0,
-                  right: 0,
-                  top: 0,
-                  minHeight: 44,
-                  maxHeight: FIELD_MAX,
-                  paddingTop: FIELD_PAD,
-                  paddingBottom: FIELD_PAD,
-                  paddingHorizontal: 14,
-                  fontFamily: "Inter",
-                  fontSize: 17,
-                  lineHeight: FIELD_LINE,
-                  color: color.ink,
-                }}
+                style={[
+                  styles.field,
+                  { color: color.ink },
+                  // iOS keeps a multiline field's last height after it's emptied by a send:
+                  // empty, it's one line (as augmenter's composer does).
+                  (voice || typed === "") && styles.fieldEmpty,
+                ]}
               />
-            </Animated.View>
+            </View>
             <Animated.View
               pointerEvents="none"
               accessibilityElementsHidden={!voice}
