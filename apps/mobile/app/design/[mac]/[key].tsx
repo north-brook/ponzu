@@ -224,10 +224,13 @@ export default function Canvas() {
   const onMessage = useCallback((msg: FromCanvas) => {
     switch (msg.t) {
       case "longpress":
-        // The comment's pin is dropped.
+        // The comment's pin is dropped: the composer takes the sheet, so whatever was up (a
+        // thread, the list of comments as a sheet or panel, the session card) gives way to it.
+        // Folded, the comments are their own half, not this toggle, and stay.
         tick();
         setThreadId(null);
         setCard(false);
+        setCommentsOpen(false);
         setPending({
           pageId: msg.pageId,
           artboardId: msg.artboardId,
