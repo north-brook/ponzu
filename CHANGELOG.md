@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.47.0](https://github.com/north-brook/ponzu/compare/v1.46.2...v1.47.0) (2026-10-24)
+
+
+### Features
+
+* yuzu rain on a home card waiting for its first canvas write ([#190](https://github.com/north-brook/ponzu/issues/190)) ([992a253](https://github.com/north-brook/ponzu/commit/992a253df38f99f71705435493e57be19532d581))
+
 ## [1.46.2](https://github.com/north-brook/ponzu/compare/v1.46.1...v1.46.2) (2026-10-24)
 
 

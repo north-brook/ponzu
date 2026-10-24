@@ -2,7 +2,7 @@
   "name": "@ponzu/desktop",
   "productName": "Ponzu",
   "private": true,
-  "version": "1.46.2",
+  "version": "1.47.0",
   "description": "Ponzu desktop app",
   "type": "module",
   "main": "dist/main.cjs",
