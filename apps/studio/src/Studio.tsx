@@ -36,6 +36,7 @@ import { PairIphone } from "@/components/pair-iphone";
 import { TimelapseButton } from "@/components/timelapse";
 import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import { UpdateButton } from "@/components/update";
 import { WhatsNew } from "@/components/whats-new";
 import { watchCatalog } from "@/lib/catalog";
 import { cn } from "@/lib/utils";
@@ -311,6 +312,7 @@ export function Studio() {
           ))}
         </div>
         <div className="ml-auto flex items-center gap-1.5">
+          <UpdateButton machines={catalog?.machines} origin={ORIGIN} />
           {active && <ActiveAgents source={source(active)} />}
         </div>
       </header>

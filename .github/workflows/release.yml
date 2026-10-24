@@ -147,7 +147,9 @@ jobs:
             --jq "[.[] | select(.tag_name == \"$TAG\")][0].id")
           [ -n "$id" ] && [ "$id" != "null" ] || { echo "no release for $TAG"; exit 1; }
           have=$(gh api "repos/$GITHUB_REPOSITORY/releases/$id/assets?per_page=100" --jq '.[].name')
-          for file in out/*.dmg out/*.zip out/*.blockmap out/latest-mac.yml; do
+          # release-notes.json: what's new, which an app about to update shows in its title bar.
+          cp dist/release-notes.json out/release-notes.json
+          for file in out/*.dmg out/*.zip out/*.blockmap out/latest-mac.yml out/release-notes.json; do
             name=$(basename "$file")
             if ! grep -qx "$name" <<<"$have"; then
               echo "uploading missing $name"
@@ -155,7 +157,7 @@ jobs:
             fi
           done
           have=$(gh api "repos/$GITHUB_REPOSITORY/releases/$id/assets?per_page=100" --jq '.[].name')
-          for name in Ponzu-arm64.dmg $(sed -n 's/^ *- url: //p; s/^path: //p' out/latest-mac.yml | sort -u); do
+          for name in Ponzu-arm64.dmg release-notes.json $(sed -n 's/^ *- url: //p; s/^path: //p' out/latest-mac.yml | sort -u); do
             grep -qx "$name" <<<"$have" || { echo "the release lacks $name"; exit 1; }
           done
           gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$id" \

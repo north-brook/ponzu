@@ -1,0 +1,127 @@
+{
+  "threads": [
+    {
+      "id": "th_it2ue",
+      "artboardId": "ab_gex7l",
+      "nodeId": "n_3pbykhk",
+      "x": 1193,
+      "y": 689,
+      "status": "resolved",
+      "createdAt": 1792816637782,
+      "updatedAt": 1792816674537,
+      "messages": [
+        {
+          "id": "m_oa6hm",
+          "author": {
+            "kind": "user",
+            "name": "You"
+          },
+          "text": "do we need waits for claude. i thought we had graceful behavior for updating with a running agent",
+          "createdAt": 1792816637782
+        }
+      ]
+    },
+    {
+      "id": "th_c74sc",
+      "artboardId": "ab_gex7l",
+      "nodeId": "n_66cl1jf",
+      "x": 1253,
+      "y": 842,
+      "status": "resolved",
+      "createdAt": 1792816673208,
+      "updatedAt": 1792816715496,
+      "messages": [
+        {
+          "id": "m_k8jzb",
+          "author": {
+            "kind": "user",
+            "name": "You"
+          },
+          "text": "behind the scenes, this would update all macs on your tailnet. but from the user's perspective, maybe we should just call this update",
+          "createdAt": 1792816673208
+        }
+      ]
+    },
+    {
+      "id": "th_hb9ih",
+      "artboardId": "ab_gex7l",
+      "nodeId": "n_lvh9b5j",
+      "x": 1083,
+      "y": 494,
+      "status": "resolved",
+      "createdAt": 1792816703816,
+      "updatedAt": 1792816729354,
+      "messages": [
+        {
+          "id": "m_wp203",
+          "author": {
+            "kind": "user",
+            "name": "You"
+          },
+          "text": "remove this whats new label",
+          "createdAt": 1792816703816
+        }
+      ]
+    },
+    {
+      "id": "th_ifhq3",
+      "artboardId": "ab_gex7l",
+      "nodeId": "n_lg1jqs6",
+      "x": 1037,
+      "y": 614,
+      "status": "resolved",
+      "createdAt": 1792816808068,
+      "updatedAt": 1792843387912,
+      "messages": [
+        {
+          "id": "m_ppwrs",
+          "author": {
+            "kind": "user",
+            "name": "You"
+          },
+          "text": "maybe a small note here (bottom left of update popover footer) about how it updates all macs \"Updates 4 instances\" (you can probably think of better copy) shows if >1 instance",
+          "createdAt": 1792816808068
+        },
+        {
+          "id": "m_woyo3",
+          "author": {
+            "kind": "agent",
+            "name": "Claude"
+          },
+          "text": "I went with \"On all 4 of your Macs\" and a laptop glyph. \"Instances\" reads like servers, and the home screen already calls them Macs. Step 2's caption now says the line only shows with more than one.",
+          "createdAt": 1792816833496
+        }
+      ]
+    },
+    {
+      "id": "th_ifg01",
+      "artboardId": "ab_gex7l",
+      "nodeId": "n_dvga02z",
+      "x": 1198,
+      "y": 337,
+      "status": "resolved",
+      "createdAt": 1792816869233,
+      "updatedAt": 1792822112565,
+      "messages": [
+        {
+          "id": "m_d689a",
+          "author": {
+            "kind": "user",
+            "name": "You"
+          },
+          "text": "great. lets implement this. not sure exactly how you're going to do the update for an offline mac, but i trust your judgement",
+          "createdAt": 1792816869233
+        },
+        {
+          "id": "m_kxqfx",
+          "author": {
+            "kind": "agent",
+            "name": "Claude"
+          },
+          "text": "On it. I'll report in chat when it's built.",
+          "createdAt": 1792816886564
+        }
+      ]
+    }
+  ]
+}

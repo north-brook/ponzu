@@ -48,6 +48,9 @@ test("the phone reaches what the home screen and a canvas need, and nothing else
   expect(ok("/files/abc/assets/a.png")).toBe(true);
   expect(ok("/mcp", "POST")).toBe(false);
   expect(ok("/api/files", "POST")).toBe(false);
+  // Another Mac asks this one to install its update; the phone can't tell from another Mac.
+  expect(ok("/api/update/install", "POST")).toBe(true);
+  expect(ok("/api/update", "POST")).toBe(false);
   expect(ok("/files/abc/upload", "POST")).toBe(false);
   expect(ok("/")).toBe(false);
 });

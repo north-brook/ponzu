@@ -1,7 +1,14 @@
 import { existsSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
-import type { CatalogAgent, ClientMessage, Origin, ServerMessage, SyncReason } from "@ponzu/core";
+import {
+  type CatalogAgent,
+  type ClientMessage,
+  compareVersions,
+  type Origin,
+  type ServerMessage,
+  type SyncReason,
+} from "@ponzu/core";
 import { createHttpHandler } from "@ponzu/mcp";
 import { FsAdapter } from "@ponzu/store/fs";
 import type { Server, ServerWebSocket, WebSocketHandler } from "bun";
@@ -11,6 +18,7 @@ import { Home, type OpenedBy } from "./home.ts";
 import { assetResponse } from "./range.ts";
 import { isTailnetAddress } from "./tailnet.ts";
 import { timelapseRoute } from "./timelapse-routes.ts";
+import type { Updater } from "./updater.ts";
 import type { LocalWorkspace } from "./workspace.ts";
 
 export interface ServeOptions {
@@ -58,6 +66,8 @@ export interface ServeOptions {
   telemetry?: () => Promise<{ on: boolean; owner: string | null }>;
   /** Bytes a socket may have waiting before a message to it is dropped. Bun's 16 MB by default. */
   backpressureLimit?: number;
+  /** The Mac app's updater: the catalog lists what it has, and Update installs it. */
+  updater?: Updater;
 }
 
 /**
@@ -211,6 +221,7 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
     agents: opts.agents,
     peerPort: opts.tailnetPort ?? 7777,
     opened: opts.opened,
+    updater: opts.updater,
   });
   const feed = new CatalogFeed(home, ws);
 
@@ -332,6 +343,56 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
       else home.catalog.shelve(body.key, body.action === "scratch" ? "scratch" : "recent");
       feed.poke(0);
       return Response.json({ ok: true });
+    }
+
+    // The title bar's Update: install on each of the person's Macs it names, this one last, so
+    // it hears every other Mac's answer before it restarts. A Mac that's off catches up later.
+    if (path === "/api/update") {
+      if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
+      if (caller !== "local" || !sameHostOk(req, url))
+        return new Response("Forbidden", { status: 403 });
+      const body = (await req.json().catch(() => null)) as {
+        macs?: unknown;
+        version?: unknown;
+      } | null;
+      const macs = Array.isArray(body?.macs)
+        ? body.macs.filter((m): m is string => typeof m === "string")
+        : [];
+      // The version the title bar offered: a Mac holding an older download fetches it first.
+      const version = typeof body?.version === "string" ? body.version : undefined;
+      const others = await Promise.all(
+        macs
+          .filter((m) => m !== "local")
+          .map(async (mac) => {
+            const ip = await home.peerIp(mac);
+            const ok = ip !== null && (await installOn(ip, opts.tailnetPort ?? 7777, version));
+            return [mac, ok] as const;
+          }),
+      );
+      const here =
+        macs.includes("local") && opts.updater ? await opts.updater.install({ version }) : null;
+      feed.poke(0);
+      return Response.json({
+        macs: Object.fromEntries([
+          ...others,
+          ...(macs.includes("local") ? [["local", Boolean(here?.installing)] as const] : []),
+        ]),
+      });
+    }
+
+    // Another of the person's Macs asks this one to install its update, for the person. No more
+    // than /api/update lets this Mac's own studio do, so the same check holds here.
+    if (path === "/api/update/install") {
+      if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
+      if (caller === "local" && !sameHostOk(req, url))
+        return new Response("Forbidden", { status: 403 });
+      if (!opts.updater) return new Response("Not found", { status: 404 });
+      const body = (await req.json().catch(() => null)) as { version?: unknown } | null;
+      const update = await opts.updater.install(
+        typeof body?.version === "string" ? { version: body.version } : {},
+      );
+      feed.poke(0);
+      return Response.json(update ?? null);
     }
 
     // What agents changed in this Mac's designs, for the phone's Activity.
@@ -682,10 +743,34 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
     timer = setInterval(() => void listenOnTailnet(), 60_000);
     timer.unref?.();
   }
+  // A Mac that was off when the person updated the others: once it has the update too, and
+  // another of their Macs already runs it, it installs as soon as nobody is using it.
+  let catchUp: ReturnType<typeof setInterval> | undefined;
+  const updater = opts.updater;
+  if (updater && opts.tailnet) {
+    catchUp = setInterval(async () => {
+      const ready = updater.state()?.ready;
+      if (!ready || updater.state()?.installing) return;
+      const peers = ((await home.net())?.peers ?? []).filter((p) => p.online);
+      const versions = await Promise.all(
+        peers.map((p) => peerVersion(p.ip, opts.tailnetPort ?? 7777)),
+      );
+      // The newest any of them runs: a download older than it is fetched again before installing.
+      const newest = versions
+        .filter((v): v is string => Boolean(v))
+        .sort(compareVersions)
+        .at(-1);
+      if (newest && compareVersions(newest, ready.version) >= 0)
+        await updater.install({ quiet: true, version: newest });
+    }, CATCH_UP_EVERY);
+    catchUp.unref?.();
+  }
   const stop = server.stop.bind(server);
   server.stop = (force?: boolean) => {
     stopped = true;
     clearInterval(timer);
+    clearInterval(catchUp);
+    updater?.stop();
     feed.stop();
     advert?.stop();
     advert = null;
@@ -698,12 +783,13 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
 
 /**
  * What another Mac may ask for: the catalog and its stream, what agents changed, previews,
- * thumbnails, a design's socket and its assets. Not MCP, uploads or the studio, and nothing from a
- * browser page: only another Ponzu server sends these, without an Origin.
+ * thumbnails, a design's socket and its assets, and to install its update. Not MCP, uploads or
+ * the studio, and nothing from a browser page: only another Ponzu server sends these, without an
+ * Origin.
  */
 export function peerAllowed(req: Request, pathname: string): boolean {
   if (isPage(req)) return false;
-  if (pathname === "/api/shelf") return req.method === "POST";
+  if (pathname === "/api/shelf" || pathname === "/api/update/install") return req.method === "POST";
   if (req.method !== "GET") return false;
   return (
     [
@@ -785,6 +871,37 @@ async function relay(req: Request, target: string): Promise<Response> {
     return new Response(res.body, { status: res.status, headers });
   } catch {
     return new Response("That Mac isn't answering", { status: 502 });
+  }
+}
+
+/** How often a Mac with an update waiting checks whether the person's other Macs moved on. */
+const CATCH_UP_EVERY = 60_000;
+
+/** Ask another of the person's Macs to install its update. Whether it said it would. */
+async function installOn(ip: string, port: number, version?: string): Promise<boolean> {
+  try {
+    const res = await fetch(`http://${ip}:${port}/api/update/install`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(version ? { version } : {}),
+      signal: AbortSignal.timeout(5_000),
+    });
+    const update = res.ok ? ((await res.json()) as { installing?: boolean } | null) : null;
+    return Boolean(update?.installing);
+  } catch {
+    return false;
+  }
+}
+
+/** The Ponzu another Mac runs, or null when it doesn't answer. */
+async function peerVersion(ip: string, port: number): Promise<string | null> {
+  try {
+    const res = await fetch(`http://${ip}:${port}/api/info`, {
+      signal: AbortSignal.timeout(2_500),
+    });
+    return res.ok ? (((await res.json()) as { version?: string }).version ?? null) : null;
+  } catch {
+    return null;
   }
 }
 

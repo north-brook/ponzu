@@ -1,0 +1,12 @@
+{
+  "ponzu": 1,
+  "name": "Updates",
+  "icon": "star",
+  "pages": [
+    {
+      "id": "pg_8d1w5",
+      "name": "Update every Mac",
+      "icon": "flow"
+    }
+  ]
+}

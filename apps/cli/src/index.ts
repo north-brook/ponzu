@@ -7,7 +7,14 @@ import { parseArgs } from "node:util";
 import { emptyDoc, newId } from "@ponzu/core";
 import { serveBridge } from "@ponzu/mcp/bridge";
 import { RemoteRenderer, type Renderer } from "@ponzu/render";
-import { findDesigns, LocalWorkspace, openFromGitHub, serve, spawnGit } from "@ponzu/server";
+import {
+  findDesigns,
+  LocalWorkspace,
+  openFromGitHub,
+  remoteUpdater,
+  serve,
+  spawnGit,
+} from "@ponzu/server";
 import { Design } from "@ponzu/store";
 import { FsAdapter } from "@ponzu/store/fs";
 import pkg from "../package.json" with { type: "json" };
@@ -196,6 +203,10 @@ async function runServe(
     opened: named,
     version: VERSION,
     telemetry: phoneTelemetry(),
+    // The Mac app's updater, which the catalog lists and the title bar's Update drives.
+    ...(process.env.PONZU_APP_ENDPOINT && process.env.PONZU_APP_TOKEN
+      ? { updater: remoteUpdater(process.env.PONZU_APP_ENDPOINT, process.env.PONZU_APP_TOKEN) }
+      : {}),
   });
   const local = `http://${o.host === "0.0.0.0" ? "localhost" : o.host}:${server.port}`;
   // Links agents hand the person open the Mac app, or this canvas.
