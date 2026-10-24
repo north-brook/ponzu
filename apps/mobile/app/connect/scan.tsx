@@ -123,8 +123,9 @@ export default function Scan() {
       </View>
       <Frame pairing={state === "pairing"} />
       {/* The design's hint text ends 70pt above the bottom edge; the pill pads it 12. */}
+      {/* box-none: the camera behind stays touchable, and the denied state's Settings link works. */}
       <View
-        pointerEvents="none"
+        pointerEvents="box-none"
         style={{ position: "absolute", left: 24, right: 24, bottom: 58, alignItems: "center" }}
       >
         <Animated.View
