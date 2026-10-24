@@ -127,7 +127,14 @@ test("production runs on a mobile tag and sends a new binary to the Alpha group"
 test("preview runs on main when the phone or what it bundles changes", () => {
   const { on } = workflow("preview.yml");
   expect(on.push.branches).toEqual(["main"]);
-  expect(on.push.paths).toEqual(["apps/mobile/**", "packages/core/**", "bun.lock"]);
+  // The canvas and icons import packages/react's and packages/render's source by path.
+  expect(on.push.paths).toEqual([
+    "apps/mobile/**",
+    "packages/core/**",
+    "packages/react/**",
+    "packages/render/**",
+    "bun.lock",
+  ]);
 });
 
 describe("app.json", () => {

@@ -9,6 +9,9 @@ on:
     paths:
       - apps/mobile/**
       - packages/core/**
+      # The canvas and icons import these packages' source by path.
+      - packages/react/**
+      - packages/render/**
       - bun.lock
 
 # The Bun package.json pins (`packageManager`); the image's own Bun writes a
