@@ -163,6 +163,57 @@ test("activity: an agent's reply after yours, your comments it resolved, its wor
   expect(isNew(reply, { ...input, activitySeenAt: 300 })).toBe(false);
 });
 
+test("activity: a comment counts as an agent's resolve only when its reply came with it", () => {
+  const T = 1_800_000_000_000;
+  const msg = (kind: "user" | "agent", createdAt: number) => ({
+    id: `m_${createdAt}`,
+    author: { kind, name: kind === "agent" ? "Claude Code" : "You" },
+    text: "x",
+    createdAt,
+  });
+  const thread = (id: string, updatedAt: number, messages: Thread["messages"]): Thread => ({
+    id,
+    artboardId: "ab_1",
+    x: 0,
+    y: 0,
+    status: "resolved",
+    createdAt: T,
+    updatedAt,
+    messages,
+  });
+  const doc: Pick<Doc, "threads" | "pages"> = {
+    pages: [{ id: "pg_1", name: "App", artboards: [{ id: "ab_1", name: "6 Money" } as never] }],
+    threads: [
+      // The agent replied and resolved in one go.
+      thread("th_agent", T + 2_000, [msg("user", T), msg("agent", T + 1_000)]),
+      // The agent replied; the person resolved it an hour later.
+      thread("th_you", T + 3_600_000, [msg("user", T), msg("agent", T + 1_000)]),
+      // The person had the last word, then resolved it.
+      thread("th_last", T + 5_000, [
+        msg("user", T),
+        msg("agent", T + 1_000),
+        msg("user", T + 4_000),
+      ]),
+    ],
+  };
+  const [kettle] = mergeCatalogs(
+    macs.slice(0, 1),
+    { mbp: { catalog: catalog([file({ modified: T })]), at: 0 } },
+    () => true,
+  );
+  const items = buildActivity({
+    files: [kettle!],
+    docs: { "mbp:/a/kettle.design": doc },
+    seen: { "mbp:/a/kettle.design": T },
+    activitySeenAt: 0,
+  });
+  const resolved = items.filter((i) => i.kind === "resolved");
+  expect(resolved).toHaveLength(1);
+  expect(resolved[0]!.kind === "resolved" && resolved[0]!.threads.map((t) => t.id)).toEqual([
+    "th_agent",
+  ]);
+});
+
 test("activity: what agents changed, from each Mac's history", () => {
   const [kettle] = mergeCatalogs(
     macs.slice(0, 1),

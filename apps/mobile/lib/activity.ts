@@ -153,8 +153,14 @@ export function buildActivity(input: ActivityInput): ActivityItem[] {
             at: reply.createdAt,
           });
         if (t.status === "resolved" && t.messages[0]?.author.kind === "user") {
-          const by = [...t.messages].reverse().find((m) => m.author.kind === "agent");
-          if (!by) continue;
+          // The thread records no resolver, only its messages. An agent resolves by replying
+          // then resolving, so its message is the last; one the person resolved after an
+          // agent's reply (or after replying again) has the person's last word, or the
+          // agent's reply long before. Credit the agent only when its reply is last and the
+          // resolution came with it (the thread last changed within a minute of that reply).
+          const by = t.messages[t.messages.length - 1];
+          if (by?.author.kind !== "agent" || t.updatedAt - by.createdAt > RESOLVED_WITH_REPLY_MS)
+            continue;
           const name = shortAgent(by.author.name);
           resolved.set(name, [...(resolved.get(name) ?? []), t]);
         }
@@ -202,6 +208,9 @@ export function buildActivity(input: ActivityInput): ActivityItem[] {
 }
 
 /** New: since the person last opened Activity, or unseen work in a design. */
+/** An agent's resolution comes right after its reply: within this, the reply and the resolve are one act. */
+export const RESOLVED_WITH_REPLY_MS = 60_000;
+
 export function isNew(item: ActivityItem, input: Pick<ActivityInput, "seen" | "activitySeenAt">) {
   // A design the phone first hears of counts as seen as it stands (seen.ts), changes and all:
   // what an agent changed is new until Activity is opened.
