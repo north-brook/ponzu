@@ -12,6 +12,8 @@ on:
       # The canvas and icons import these packages' source by path.
       - packages/react/**
       - packages/render/**
+      # Bun's patches to the phone's native dependencies.
+      - patches/**
       - bun.lock
 
 # The Bun package.json pins (`packageManager`); the image's own Bun writes a

@@ -133,6 +133,7 @@ test("preview runs on main when the phone or what it bundles changes", () => {
     "packages/core/**",
     "packages/react/**",
     "packages/render/**",
+    "patches/**",
     "bun.lock",
   ]);
 });

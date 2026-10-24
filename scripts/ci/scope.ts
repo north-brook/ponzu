@@ -140,7 +140,8 @@ if (import.meta.main) {
     if (out.status !== 0) throw new Error(`git ${args.join(" ")} failed: ${out.stderr}`);
     return out.stdout;
   };
-  const files = git("diff", "--name-only", `${base}...HEAD`)
+  // No rename detection: a file moved between packages lists both its old and its new path.
+  const files = git("diff", "--name-only", "--no-renames", `${base}...HEAD`)
     .split("\n")
     .filter(Boolean)
     .filter(
