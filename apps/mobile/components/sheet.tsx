@@ -37,6 +37,7 @@ export function Sheet({
   height,
   testID,
   gap = 14,
+  right = 0,
 }: {
   children: ReactNode;
   onDismiss: () => void;
@@ -46,6 +47,8 @@ export function Sheet({
   height?: number;
   testID?: string;
   gap?: number;
+  /** Kept clear on the right: iPhone Duo's rail, where the system puts its bars. */
+  right?: number;
 }) {
   const { color } = useTheme();
   const { width, height: screenH } = useWindowDimensions();
@@ -68,7 +71,7 @@ export function Sheet({
     const side = 8 * (1 - d);
     return {
       left: side,
-      right: side,
+      right: right + side,
       bottom: Math.max(side, lift.value),
       borderTopLeftRadius: 38 - 14 * d,
       borderTopRightRadius: 38 - 14 * d,

@@ -4,6 +4,7 @@ import {
   ArrowUp02Icon,
   Cancel01Icon,
   Clock01Icon,
+  Comment01Icon,
   ComputerIcon,
   File01Icon,
   Folder01Icon,
@@ -58,6 +59,7 @@ export const ICONS = {
   keyboard: KeyboardIcon,
   send: ArrowUp02Icon,
   file: File01Icon,
+  comment: Comment01Icon,
 } as const satisfies Record<string, IconSvgElement>;
 
 function icon(svg: IconSvgElement, size: number, width: number) {
@@ -87,6 +89,7 @@ export const MicOff = icon(ICONS.micOff, 20, 1.8);
 export const Keyboard = icon(ICONS.keyboard, 20, 1.8);
 export const Send = icon(ICONS.send, 20, 2.4);
 export const FileIcon = icon(ICONS.file, 16, 1.7);
+export const CommentIcon = icon(ICONS.comment, 20, 1.8);
 
 /** A page's icon, by the names design.json uses (lib/page-icons.ts): the same glyph as its menu's. */
 export function PageIcon({ name, size = 16, color, width = 1.7 }: P & { name?: string }) {

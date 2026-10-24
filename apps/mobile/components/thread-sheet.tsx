@@ -1,5 +1,5 @@
 import type { Thread } from "@ponzu/core";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { clientOf, shortAgent } from "../lib/activity";
 import { shortAgo } from "../lib/files";
@@ -9,27 +9,45 @@ import { Glass } from "./glass";
 import { AgentAvatar, Check } from "./icons";
 import { Sheet } from "./sheet";
 
+export interface ThreadProps {
+  thread: Thread;
+  /** The person's initial, for their avatar. */
+  me: string;
+  onReply: (text: string, mode: Mode) => Promise<void>;
+  onStatus: (status: Thread["status"]) => Promise<void>;
+}
+
 /**
  * A thread (Flow › 11 Thread): a 450pt sheet over the canvas with the pin in
  * view above it. The message count and Resolve (Reopen, once resolved), the
  * messages, and a reply field with the same voice ⇄ type button.
  */
 export function ThreadSheet({
-  thread,
-  me,
-  onReply,
-  onStatus,
   onDismiss,
   onHeight,
-}: {
-  thread: Thread;
-  /** The person's initial, for their avatar. */
-  me: string;
-  onReply: (text: string, mode: Mode) => Promise<void>;
-  onStatus: (status: Thread["status"]) => Promise<void>;
-  onDismiss: () => void;
-  onHeight: (px: number) => void;
-}) {
+  right,
+  ...thread
+}: ThreadProps & { onDismiss: () => void; onHeight: (px: number) => void; right?: number }) {
+  return (
+    <Sheet
+      testID="thread-sheet"
+      onDismiss={onDismiss}
+      onHeight={onHeight}
+      height={450}
+      gap={16}
+      right={right}
+    >
+      <ThreadView {...thread} />
+    </Sheet>
+  );
+}
+
+/**
+ * A thread's body, wherever it shows: in its sheet, or in the comments
+ * panel or half on iPhone Duo (components/comments.tsx), under that
+ * surface's own header.
+ */
+export function ThreadView({ thread, me, onReply, onStatus }: ThreadProps) {
   const { color } = useTheme();
   // The reply field shows first, unfocused (the design's 11); the mic switches to voice.
   const [mode, setMode] = useState<Mode>("type");
@@ -45,7 +63,7 @@ export function ThreadSheet({
     }
   };
   return (
-    <Sheet testID="thread-sheet" onDismiss={onDismiss} onHeight={onHeight} height={450} gap={16}>
+    <>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
         <Text
           style={{
@@ -102,27 +120,7 @@ export function ThreadSheet({
                   soft={color.pinSoft}
                 />
               ) : (
-                <View
-                  style={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: 999,
-                    backgroundColor: color.ink,
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontFamily: "Inter",
-                      fontWeight: "600",
-                      fontSize: 12,
-                      color: color.bg,
-                    }}
-                  >
-                    {me}
-                  </Text>
-                </View>
+                <Initial letter={me} />
               )}
               <View style={{ flex: 1, gap: 3 }}>
                 <View style={{ flexDirection: "row", gap: 6, alignItems: "baseline" }}>
@@ -157,7 +155,30 @@ export function ThreadSheet({
         placeholder="Reply"
         onSend={onReply}
         autoFocus={false}
+        draft={`thread:${thread.id}`}
       />
-    </Sheet>
+    </>
+  );
+}
+
+/** The person's avatar: their initial on ink, 28pt. */
+export function Initial({ letter, children }: { letter: string; children?: ReactNode }) {
+  const { color } = useTheme();
+  return (
+    <View
+      style={{
+        width: 28,
+        height: 28,
+        borderRadius: 999,
+        backgroundColor: color.ink,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <Text style={{ fontFamily: "Inter", fontWeight: "600", fontSize: 12, color: color.bg }}>
+        {letter}
+      </Text>
+      {children}
+    </View>
   );
 }

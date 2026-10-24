@@ -31,6 +31,13 @@ import { Glass } from "./glass";
 import { Keyboard, Mic, MicOff, Send } from "./icons";
 
 export type Mode = "voice" | "type";
+/**
+ * Unsent text, by what it's for (a new comment's pin, or a thread): kept
+ * while the composer moves, as iPhone Duo folds and opens it from the sheet
+ * to the panel or the half beside the design, and gone once it's sent.
+ */
+const drafts = new Map<string, string>();
+
 const MODE_KEY = "ponzu.commentMode";
 let lastMode: Mode = "voice";
 AsyncStorage.getItem(MODE_KEY)
@@ -77,6 +84,7 @@ export function Composer({
   placeholder,
   onSend,
   autoFocus = true,
+  draft,
 }: {
   mode: Mode;
   onMode: (m: Mode) => void;
@@ -85,11 +93,18 @@ export function Composer({
   onSend: (text: string, mode: Mode) => Promise<void> | void;
   /** Focus the field when typing starts. A thread's reply field waits for a tap. */
   autoFocus?: boolean;
+  /** What the unsent text is kept under (a pin's place, a thread's id) as the composer moves. */
+  draft?: string;
 }) {
   const { color } = useTheme();
   const voice = mode === "voice";
   const dictation = useDictation(voice);
-  const [typed, setTyped] = useState("");
+  const [typed, setTypedState] = useState(() => (draft ? (drafts.get(draft) ?? "") : ""));
+  const setTyped = (t: string) => {
+    if (draft && t) drafts.set(draft, t);
+    else if (draft) drafts.delete(draft);
+    setTypedState(t);
+  };
   const [sending, setSending] = useState(false);
   const input = useRef<TextInputInstance>(null);
   const text = voice ? dictation.text : typed;
