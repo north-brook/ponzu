@@ -108,6 +108,16 @@ test("a new board's pieces wait for its frame to draw", () => {
   expect(starts.get("n_x")).toBe(ARRIVE_LAG_MS + BOARD_DRAW_MS);
 });
 
+test("pieces written into a new board a moment later still wait for its frame", () => {
+  const board = { id: "ab_new", name: "N", x: 0, y: 0, root: el("ab_new") };
+  const a = new Arrivals();
+  a.add({ op: "artboard.create", page: "pg", index: 0, artboard: board }, doc(board.root), 0);
+  const filled = doc(el("ab_new", [el("n_x")]));
+  a.add({ op: "insert", parent: "ab_new", index: 0, nodes: [el("n_x")] }, filled, 100);
+  const starts = (a as unknown as { pieces: Map<string, number> }).pieces;
+  expect(starts.get("n_x")).toBe(ARRIVE_LAG_MS + BOARD_DRAW_MS);
+});
+
 test("a file saved straight to disk brings in only what's new", () => {
   // The save rewrote the board's children; the header and the card it left alone kept their ids.
   const before = doc(el("ab", [el("n_head"), el("n_card", [el("n_title")])]));

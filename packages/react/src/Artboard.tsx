@@ -23,6 +23,8 @@ interface Props {
   arrivals?: Arrivals;
   /** Nobody can see it move (off screen, tiny, mid-gesture, window away): its loops hold. */
   hold?: boolean;
+  /** Rounded as the canvas rounds its boards, by `--pz-board-radius` on a parent. */
+  rounded?: boolean;
 }
 
 const loadedFonts = new Set<string>();
@@ -69,6 +71,7 @@ export const ArtboardView = memo(function ArtboardView({
   colorScheme,
   arrivals,
   hold: held = false,
+  rounded = false,
 }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const last = useRef("");
@@ -79,14 +82,20 @@ export const ArtboardView = memo(function ArtboardView({
     const el = host.current;
     if (!el) return;
     const root = el.shadowRoot ?? el.attachShadow({ mode: "open" });
-    const { html, fonts, faces } = artboardMarkup(artboard, tokens, assetBase, colorScheme);
+    const { html, fonts, faces } = artboardMarkup(
+      artboard,
+      tokens,
+      assetBase,
+      colorScheme,
+      rounded,
+    );
     if (html === last.current) return;
     last.current = html;
     ensureFonts(fonts);
     ensureFaces(faces);
     root.innerHTML = html;
     arrivals?.replay(root);
-  }, [artboard, tokens, assetBase, colorScheme, arrivals]);
+  }, [artboard, tokens, assetBase, colorScheme, arrivals, rounded]);
 
   // After the markup above: a re-render brings fresh loops, held again here.
   useLayoutEffect(() => {
@@ -160,6 +169,7 @@ export function artboardMarkup(
   tokens: string,
   assetBase?: string,
   colorScheme?: "light" | "dark",
+  rounded = false,
 ): { html: string; fonts: GoogleFontRequest[]; faces: string[] } {
   const markup = serializeArtboardElement(artboard, {
     rewriteUrl: (u) => resolveAsset(u, assetBase),
@@ -168,8 +178,9 @@ export function artboardMarkup(
   const pin = (css: string) => (colorScheme ? pinColorScheme(css, colorScheme) : css);
   const body = pin(markup);
   const scheme = colorScheme ? `:host{color-scheme:${colorScheme}}` : "";
-  // The canvas rounds its boards a touch; screenshots and exports, which don't set it, don't.
-  const round = "[data-artboard]{border-radius:var(--pz-board-radius,0)}";
+  // The canvas rounds its boards a touch, over whatever radius the design gave its root: the
+  // corners are the canvas's. Thumbnails, screenshots and exports keep the design's own.
+  const round = rounded ? "[data-artboard]{border-radius:var(--pz-board-radius)!important}" : "";
   // Tokens' url()s resolve like the artboard's: an @font-face in tokens.css finds assets/ too.
   const resolved = resolveTokenAssets(tokens, assetBase);
   const html = `<style>${styleText(pin(hostTokens(resolved)))}${scheme}${round}${ARTBOARD_BASE_CSS}</style>${body}`;

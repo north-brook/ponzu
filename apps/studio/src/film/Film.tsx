@@ -903,7 +903,7 @@ export const FilmBoard = memo(function FilmBoard({
       html: board,
       fonts,
       faces,
-    } = artboardMarkup(artboard, doc.tokens, model.assetBase, scheme);
+    } = artboardMarkup(artboard, doc.tokens, model.assetBase, scheme, true);
     const ids = onlyKey ? onlyKey.split(" ") : onlyKey === "" ? [] : undefined;
     const sel = (ids ?? []).map((id) => `[data-id="${CSS.escape(id)}"]`);
     const html = ids

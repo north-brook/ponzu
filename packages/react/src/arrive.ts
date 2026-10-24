@@ -260,20 +260,25 @@ export class Arrivals {
   add(op: Op, doc: Doc, now = performance.now(), before?: Doc | null) {
     if (reducedMotion()) return;
     this.prune(now);
-    const made = createdBoards(op);
-    for (const id of made) this.boards.set(id, { at: now, taken: false });
+    for (const id of createdBoards(op)) this.boards.set(id, { at: now, taken: false });
     const known = before ? idsIn(before) : undefined;
     const ids = outermost(doc, arrivals(op, known && ((id) => known.has(id)))).filter(
       (id) => !this.pieces.has(id),
     );
-    // A new board's pieces wait for its frame to draw.
-    const beat = ARRIVE_LAG_MS + (made.length ? BOARD_DRAW_MS : 0);
+    if (!ids.length) return;
+    // A new board's pieces wait for its frame to draw, whether they came with it or a moment
+    // after, in the agent's next write.
+    let floor = now + ARRIVE_LAG_MS;
+    for (const board of boardsHolding(doc, ids)) {
+      const b = this.boards.get(board);
+      if (b) floor = Math.max(floor, b.at + ARRIVE_LAG_MS + BOARD_DRAW_MS);
+    }
     // The first piece shows a beat after the write lands, or one stagger after whatever is still
     // arriving, whichever is later: the beat is a floor, never paid twice. Every piece starts
     // within ten staggers of that beat, so a long write still lands in about a second.
-    let first = now + beat;
+    let first = floor;
     for (const start of this.pieces.values()) first = Math.max(first, start + ARRIVE_STAGGER_MS);
-    const latest = now + beat + ARRIVE_MAX_STAGGER * ARRIVE_STAGGER_MS;
+    const latest = floor + ARRIVE_MAX_STAGGER * ARRIVE_STAGGER_MS;
     ids.forEach((id, i) => this.pieces.set(id, Math.min(latest, first + i * ARRIVE_STAGGER_MS)));
   }
 
@@ -324,6 +329,14 @@ export class Arrivals {
     // A board made on a page that isn't showing arrives as it is when that page opens later.
     for (const [id, b] of this.boards) if (now - b.at > BOARD_MS + 1000) this.boards.delete(id);
   }
+}
+
+/** The artboards holding any of these ids. */
+function boardsHolding(doc: Doc, ids: string[]): string[] {
+  const want = new Set(ids);
+  const holds = (el: PElement): boolean =>
+    el.children.some((c) => c.kind === "el" && (want.has(c.id) || holds(c)));
+  return doc.pages.flatMap((p) => p.artboards.filter((ab) => holds(ab.root)).map((ab) => ab.id));
 }
 
 /** Artboards an op makes, through nested batches. */
