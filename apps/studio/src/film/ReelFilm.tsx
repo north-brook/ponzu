@@ -1,5 +1,5 @@
 import { bezier, type Cam, clamp01, ease, flyTo, progress } from "@ponzu/core";
-import { Icon, pinClass, pinWrapClass, SLICE, SLICE_STROKE, Trace } from "@ponzu/react";
+import { Icon, pinClass, pinWrapClass, Ring, SLICE, SLICE_STROKE } from "@ponzu/react";
 import { useLayoutEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { applyRise, FilmBoard } from "./Film.tsx";
@@ -131,7 +131,7 @@ function Canvas({ r, f }: { r: Reel; f: number }) {
     // The sheet is on the canvas by the time the camera heads for it: a pan lands on it, it
     // never pops in mid-glide.
     const sheet = result ? 1 : f >= from - PAN * 0.6 ? 1 : 0;
-    // Working: the trace runs from the sheet until its last piece has landed, and again from a
+    // Working: the ring is up from the sheet until its last piece has landed, and again from a
     // beat before a revision lands until its last new piece has.
     const piece = PIECE_MS / 1000;
     const building = f >= from && f < (r.lastAt.get(id) ?? 0) + piece;
@@ -179,6 +179,9 @@ function Canvas({ r, f }: { r: Reel; f: number }) {
               width: b.w,
               height: look.h,
               opacity: sheet < 1 ? sheet : undefined,
+              // Rounded as on the canvas: a few px on screen.
+              borderRadius: 4 / zoom,
+              ["--pz-board-radius" as string]: `${4 / zoom}px`,
             }}
           >
             <div
@@ -209,7 +212,7 @@ function Canvas({ r, f }: { r: Reel; f: number }) {
           .map(({ id, b, look }) => {
             const p = home.place.get(id)!;
             return (
-              <Trace
+              <Ring
                 key={id}
                 x={p.x * zoom + tx}
                 y={p.y * zoom + ty}

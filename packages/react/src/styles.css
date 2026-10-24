@@ -189,6 +189,73 @@
   animation: pz-trace 9.6s linear infinite;
 }
 
+/*
+ * The ring round a working artboard: it comes in, then breathes slowly in width and glow, so it
+ * reads against a light canvas as well as a dark one. Subtle: it says someone's here, no more.
+ */
+@keyframes pz-ring-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes pz-ring {
+  from {
+    box-shadow:
+      0 0 0 2px rgb(255 200 30 / 0.7),
+      0 0 10px 3px rgb(255 200 30 / 0.32);
+  }
+  to {
+    box-shadow:
+      0 0 0 1px rgb(255 200 30 / 0.4),
+      0 0 4px 1px rgb(255 200 30 / 0.18);
+  }
+}
+
+.pz-ring {
+  animation:
+    pz-ring-in 0.4s ease-out both,
+    pz-ring 1.5s ease-in-out infinite alternate both;
+}
+
+/*
+ * The rain in a working artboard's header: columns of yuzu dots, each falling at its own pace
+ * (--fall) from its own start (--drift), coming in left to right. In em, so it's the label's size.
+ */
+@keyframes pz-fall {
+  from {
+    mask-position: 0 100%;
+  }
+  to {
+    mask-position: 0 0;
+  }
+}
+
+.pz-rain {
+  gap: 0.17em;
+  height: 1em;
+}
+
+.pz-rain > span {
+  width: 0.25em;
+  height: 0.67em;
+  background:
+    radial-gradient(circle, var(--pz-rind) 0.125em, transparent calc(0.125em + 0.5px)) 0 0 / 0.25em
+    0.42em repeat-y;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    #000 30%,
+    rgb(0 0 0 / 0.6) 45%,
+    transparent 66%
+  );
+  mask-size: 100% 300%;
+  mask-repeat: no-repeat;
+  animation:
+    pz-fall var(--fall) linear var(--drift) infinite,
+    pz-appear 0.3s ease-out calc(var(--i) * 16ms) both;
+}
+
 @keyframes pz-juice {
   0%,
   100% {
@@ -214,6 +281,8 @@
 /* The window's away (hidden, or unfocused on battery): the canvas's own loops hold too. */
 .pz-still .pz-shimmer,
 .pz-still .pz-trace,
+.pz-still .pz-ring,
+.pz-still .pz-rain > span,
 .pz-still .pz-juice-seg {
   animation-play-state: paused;
 }
@@ -237,6 +306,14 @@
   .pz-trace {
     animation: none;
     stroke-dasharray: none;
+  }
+
+  .pz-ring {
+    animation: pz-ring 1s both paused;
+  }
+
+  .pz-rain > span {
+    animation: none;
   }
 
   .pz-juice-seg {
