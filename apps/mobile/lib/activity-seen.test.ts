@@ -3,8 +3,10 @@ import {
   type ActivityItem,
   isUnseen,
   markSeenItems,
+  OLD_LIMIT,
   pruneSeenItems,
   SEEN_KEEP_MS,
+  splitActivity,
   wasSeen,
   whileInFront,
 } from "./activity";
@@ -74,4 +76,18 @@ test("coming back to the front shows only what's unseen then", () => {
   const now = whileInFront(snapshot, { fresh: [b], old: [a] });
   expect(now.fresh.map((i) => i.id)).toEqual(["b"]);
   expect(now.old.map((i) => i.id)).toEqual(["a"]);
+});
+
+test("the seen part is cut to its limit, but never a row this visit still shows", () => {
+  // OLD_LIMIT + 5 seen items, newest first, and none unseen.
+  const many = Array.from({ length: OLD_LIMIT + 5 }, (_, n) => item("change", `s${n}`, 1000 - n));
+  const plain = splitActivity(many, () => false);
+  expect(plain.old).toHaveLength(OLD_LIMIT);
+  // The visit's snapshot holds the oldest one (seen during this visit): it stays.
+  const oldest = many[many.length - 1]!.id;
+  const kept = splitActivity(many, () => false, new Set([oldest]));
+  expect(kept.old).toHaveLength(OLD_LIMIT + 1);
+  expect(kept.old.some((i) => i.id === oldest)).toBe(true);
+  // Unseen items are New, never cut.
+  expect(splitActivity(many, (i) => i.id === "s0").fresh.map((i) => i.id)).toEqual(["s0"]);
 });

@@ -11,6 +11,7 @@ import {
   markSeenItems,
   pruneSeenItems,
   type SeenItems,
+  splitActivity,
 } from "./activity";
 import { useFiles, whenAgentEdits } from "./catalog";
 import { getJson, NetError } from "./http";
@@ -189,7 +190,11 @@ function useChanges(): Record<string, AgentChange[] | null> {
  * rather than written to the store: a write while Activity renders would
  * update Designs' bell mid-render.
  */
-export function useActivity(since?: number): { fresh: ActivityItem[]; old: ActivityItem[] } {
+export function useActivity(
+  since?: number,
+  /** Rows the current visit shows (its snapshot): kept past the old part's cap. */
+  keep?: ReadonlySet<string>,
+): { fresh: ActivityItem[]; old: ActivityItem[] } {
   const files = useFiles();
   const changes = useChanges();
   const seen = useSeen();
@@ -207,12 +212,8 @@ export function useActivity(since?: number): { fresh: ActivityItem[]; old: Activ
       seen,
       activitySeenAt: at,
     });
-    const fresh: ActivityItem[] = [];
-    const old: ActivityItem[] = [];
-    for (const item of all)
-      (isUnseen(item, { seen, activitySeenAt: at }, items) ? fresh : old).push(item);
-    return { fresh, old: old.slice(0, 30) };
-  }, [files, changes, seen, docs, at, items]);
+    return splitActivity(all, (item) => isUnseen(item, { seen, activitySeenAt: at }, items), keep);
+  }, [files, changes, seen, docs, at, items, keep]);
 }
 
 const NONE: SeenItems = {};

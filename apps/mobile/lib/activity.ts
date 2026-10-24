@@ -377,6 +377,26 @@ export function isUnseen(
   return isNew(item, input) && !wasSeen(seen, item);
 }
 
+/** How many seen items Everything keeps beyond what's new. */
+export const OLD_LIMIT = 30;
+
+/**
+ * Splits Activity's items into New (unseen) and the seen rest, newest first,
+ * the rest cut to `OLD_LIMIT`. What `keep` names (the visit's snapshot)
+ * always stays, however old: a row seen in this visit keeps its place.
+ */
+export function splitActivity(
+  all: ActivityItem[],
+  unseen: (item: ActivityItem) => boolean,
+  keep: ReadonlySet<string> = new Set(),
+): { fresh: ActivityItem[]; old: ActivityItem[] } {
+  const fresh: ActivityItem[] = [];
+  const old: ActivityItem[] = [];
+  for (const item of all) (unseen(item) ? fresh : old).push(item);
+  const kept = old.filter((i, n) => n < OLD_LIMIT || keep.has(i.id));
+  return { fresh, old: kept };
+}
+
 /**
  * What New shows while Activity is in front: what was unseen when the tab
  * came to the front (`snapshot`, its ids), so a row just seen keeps its

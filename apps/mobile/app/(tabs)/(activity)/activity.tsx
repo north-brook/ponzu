@@ -67,22 +67,28 @@ export default function Activity() {
   const m = useMargin();
   // Development: `ponzu://activity?since=<ms>` shows what's new since then.
   const { since } = useLocalSearchParams<{ since?: string }>();
-  const { fresh, old } = useActivity(__DEV__ && since ? Number(since) : undefined);
   // New is what was unseen when the tab came to the front, rebuilt each time it does (a tab
   // stays mounted, and a design opened from it comes back to it). While it's in front, a row
-  // just seen keeps its place, its dot fading, and anything unseen that arrives joins it.
+  // just seen keeps its place, its dot fading, and anything unseen that arrives joins it. The
+  // snapshot also keeps those rows past the seen part's cap. Null until the tab first comes to
+  // the front (the focus effect below sets it); until then, New is what's unseen now.
+  const [snapshot, setSnapshot] = useState<ReadonlySet<string> | null>(null);
+  const { fresh, old } = useActivity(
+    __DEV__ && since ? Number(since) : undefined,
+    snapshot ?? undefined,
+  );
   const freshNow = useRef(fresh);
   freshNow.current = fresh;
-  const [snapshot, setSnapshot] = useState<ReadonlySet<string>>(
-    () => new Set(fresh.map((i) => i.id)),
-  );
   // Anything unseen that arrives while the tab is in front joins the snapshot, so it too
   // keeps its row once seen.
   useEffect(() => {
-    if (fresh.some((i) => !snapshot.has(i.id)))
-      setSnapshot((now) => new Set([...now, ...fresh.map((i) => i.id)]));
+    if (snapshot && fresh.some((i) => !snapshot.has(i.id)))
+      setSnapshot((now) => new Set([...(now ?? []), ...fresh.map((i) => i.id)]));
   }, [fresh]);
-  const shown = useMemo(() => whileInFront(snapshot, { fresh, old }), [snapshot, fresh, old]);
+  const shown = useMemo(
+    () => whileInFront(snapshot ?? new Set(fresh.map((i) => i.id)), { fresh, old }),
+    [snapshot, fresh, old],
+  );
   const filter = useStore(activityFilter);
   const list = filterActivity(shown, filter);
   const empty = activityEmpty(shown, filter);
