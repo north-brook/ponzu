@@ -240,8 +240,9 @@ export class LocalCatalog {
       [...byReal].map(async ([real, { key }]) => {
         const doc = open.get(key);
         const row = this.row(real);
+        const temp = this.temp.some((d) => real.startsWith(`${d}/`));
         if (!doc && !this.readable(key)) {
-          out.push(lockedSummary(key, this.indexed.get(key) ?? 0, this.shelfOf(row, false)));
+          out.push(lockedSummary(key, this.indexed.get(key) ?? 0, this.shelfOf(row, temp)));
           return;
         }
         const s = await this.summary(key);
@@ -253,7 +254,6 @@ export class LocalCatalog {
         const opened = this.shown.has(key) || this.shown.has(real) || Boolean(row?.opened_at);
         if (example && !opened) return;
         const scratch = doc ? Boolean(doc.scratch) : s.scratch;
-        const temp = this.temp.some((d) => real.startsWith(`${d}/`));
         // One from an older version counts as none: the server redraws it when asked.
         const [previewAt, git] = await Promise.all([
           previewCurrent(key).then((current) =>
