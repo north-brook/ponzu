@@ -30,6 +30,8 @@ export const MAX_ZOOM = 8;
 export const SIDE = 16;
 /** A board's title sits this far above it, on screen. */
 export const LABEL = 20;
+/** The widest window a page opens on as a phone does: iPhone Duo's outer display. */
+export const PHONE_W = 466;
 /** How wide a page's first board opens, as a share of the screen: 150 of 390 in the design. */
 export const READABLE = 150 / 390;
 /** How wide a board shows while it's commented on: 290 of 390 in the design. */
@@ -118,7 +120,9 @@ export function overview(boxes: Box[], screen: Screen): Camera | null {
   };
   const fit = fitInto(all, area, 1);
   const first = [...boxes].sort((a, b) => a.y - b.y || a.x - b.x)[0]!;
-  const readable = Math.min(1, (screen.w * READABLE) / first.w);
+  // A phone's share of the screen, however wide the window: iPhone Duo's inner display opens
+  // on boards the size the outer one shows, with more of the page beside them.
+  const readable = Math.min(1, (Math.min(safe.w, PHONE_W) * READABLE) / first.w);
   if (fit.zoom >= readable) return fit;
   const zoom = readable;
   const tall = all.h * zoom > area.h;
@@ -224,12 +228,19 @@ export function commentCamera(
   sheet: number,
 ) {
   const above: Screen = { ...s, insets: { ...s.insets, bottom: Math.max(s.insets.bottom, sheet) } };
-  const target = clampZoom(Math.min(1, (COMMENT_WIDTH * s.w) / board.w));
+  // The canvas's own part of the screen: clear of a rail at the side or a half past the fold.
+  const area = safeArea(s);
+  // Short of room above the sheet (iPhone Duo's outer display, and folded halves), the board
+  // fits the room there rather than three quarters of the width.
+  const room = Math.max(1, s.h - above.insets.bottom - s.insets.top - COMMENT_TOP - 16);
+  const target = clampZoom(
+    Math.min(1, (COMMENT_WIDTH * area.w) / board.w, Math.max(room, area.h * 0.35) / board.h),
+  );
   let next = c;
-  if (c.zoom < target * 0.98) {
+  if (c.zoom < target * 0.98 || c.zoom > target * 1.5) {
     next = {
       zoom: target,
-      x: (s.w - board.w * target) / 2 - board.x * target,
+      x: area.x + (area.w - board.w * target) / 2 - board.x * target,
       y: s.insets.top + COMMENT_TOP - board.y * target,
     };
   }
@@ -260,6 +271,20 @@ export function between(a: Camera, b: Camera, t: number, screen: Screen): Camera
   const wx = ca.x + (cb.x - ca.x) * t;
   const wy = ca.y + (cb.y - ca.y) * t;
   return { zoom, x: cx - wx * zoom, y: cy - wy * zoom };
+}
+
+/**
+ * Where standby's camera rests on a board an agent touches: the whole board in view, with a
+ * margin of a tenth of the screen around it, up to 1:1.
+ */
+export function followCamera(board: Box, screen: Screen): Camera {
+  const m = Math.min(screen.w, screen.h) * 0.1;
+  return fitInto(board, { x: m, y: m, w: screen.w - 2 * m, h: screen.h - 2 * m }, 1);
+}
+
+/** cubic-bezier(0.45, 0, 0.2, 1): standby's slow ease, in and out, as the Duo board draws it. */
+export function easeFollow(t: number): number {
+  return bezier(0.45, 0, 0.2, 1, t);
 }
 
 /** cubic-bezier(0.2, 0.8, 0.2, 1), the brand's ease-out (`--ease-out`). */

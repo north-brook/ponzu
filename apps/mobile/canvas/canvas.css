@@ -157,3 +157,11 @@ body {
     transition: none;
   }
 }
+
+/* Standby: the page alone on black, its boards' hairlines quiet; the traces stay. */
+.viewport.standby {
+  background: #0b0b0a;
+}
+.viewport.standby .ring {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05);
+}

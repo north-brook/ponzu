@@ -56,6 +56,8 @@ export const CanvasView = forwardRef<
     pending: PendingPin | null;
     thread: string | null;
     page?: string;
+    /** Standby: the page alone on black (iPhone Duo set down while an agent works). */
+    standby?: boolean;
     onMessage: (msg: FromCanvas) => void;
   }
 >(function CanvasView(props, ref) {
@@ -109,6 +111,7 @@ export const CanvasView = forwardRef<
       { t: "presence", presence: p.session.getState().presence },
       { t: "pending", pin: p.pending },
       { t: "thread", id: p.thread },
+      { t: "standby", on: Boolean(p.standby) },
     ];
     for (const m of msgs) send(m);
   }, [send, docMessage]);
@@ -138,10 +141,18 @@ export const CanvasView = forwardRef<
   useEffect(() => send({ t: "theme", theme: props.theme }), [props.theme]);
   useEffect(
     () => send({ t: "insets", insets: props.insets, sheet: props.sheet, radius }),
-    [props.insets.top, props.insets.bottom, props.sheet, radius],
+    [
+      props.insets.top,
+      props.insets.right,
+      props.insets.bottom,
+      props.insets.left,
+      props.sheet,
+      radius,
+    ],
   );
   useEffect(() => send({ t: "pending", pin: props.pending }), [props.pending]);
   useEffect(() => send({ t: "thread", id: props.thread }), [props.thread]);
+  useEffect(() => send({ t: "standby", on: Boolean(props.standby) }), [props.standby]);
 
   const onMessage = (e: WebViewMessageEvent) => {
     const msg = parseFromCanvas(e.nativeEvent.data);

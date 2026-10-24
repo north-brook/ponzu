@@ -44,6 +44,16 @@ export type ToCanvas =
   | { t: "thread"; id: string | null }
   /** Focus an artboard at 1:1, or go back to where the canvas was. */
   | { t: "focus"; artboardId: string | null }
+  /**
+   * Standby (iPhone Duo set down while an agent works): the page alone on black, no labels or
+   * pins, traces kept. Off, the canvas is as it was.
+   */
+  | { t: "standby"; on: boolean }
+  /**
+   * Ease the camera to frame an artboard, as standby follows an agent: `ms` long on the slow
+   * ease (cubic-bezier(.45,0,.2,1)), or a cut with `ms` 0 (Reduce Motion). Not a focus.
+   */
+  | { t: "follow"; artboardId: string; ms: number }
   | { t: "theme"; theme: Theme }
   | { t: "page"; pageId: string }
   /**

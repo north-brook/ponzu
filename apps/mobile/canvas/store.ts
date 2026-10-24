@@ -26,6 +26,10 @@ export interface CanvasState {
   thread: string | null;
   /** The last focus the app asked for; `n` tells two asks for the same board apart. */
   focus: { id: string | null; n: number } | null;
+  /** Standby: the page alone, on black. */
+  standby: boolean;
+  /** The board standby's camera eases to, and how long it takes; `n` as `focus`. */
+  follow: { id: string; ms: number; n: number } | null;
   insets: Insets;
   /** How far a sheet over the canvas rises, in px from the bottom. */
   sheet: number;
@@ -44,6 +48,8 @@ export let state: CanvasState = {
   pending: null,
   thread: null,
   focus: null,
+  standby: false,
+  follow: null,
   // The canvas's top bar and the home indicator, until the app says.
   insets: { top: 110, right: 0, bottom: 34, left: 0 },
   sheet: 0,
@@ -116,6 +122,12 @@ export function receive(msg: ToCanvas) {
       break;
     case "theme":
       set({ theme: msg.theme });
+      break;
+    case "standby":
+      set({ standby: msg.on });
+      break;
+    case "follow":
+      set({ follow: { id: msg.artboardId, ms: msg.ms, n: ++n } });
       break;
     case "page":
       set({ pageId: msg.pageId });

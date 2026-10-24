@@ -20,8 +20,10 @@ import {
   type Camera,
   clampToBox,
   commentCamera,
+  easeFollow,
   easeOut,
   focusCamera,
+  followCamera,
   glide,
   LABEL,
   labelCovers,
@@ -112,13 +114,18 @@ export function PhoneCanvas() {
     motion.current = 0;
   };
   const reportZoom = () => send({ t: "camera", zoom: camRef.current.zoom });
-  const animateTo = (to: Camera, ms = MOVE_MS) => {
+  const animateTo = (to: Camera, ms = MOVE_MS, ease = easeOut) => {
     stop();
+    if (ms <= 0) {
+      setCam(to);
+      reportZoom();
+      return;
+    }
     const from = camRef.current;
     const t0 = performance.now();
     const step = (now: number) => {
       const t = Math.min(1, (now - t0) / ms);
-      setCam(between(from, to, easeOut(t), screen));
+      setCam(between(from, to, ease(t), screen));
       if (t < 1) motion.current = requestAnimationFrame(step);
       else {
         motion.current = 0;
@@ -184,9 +191,14 @@ export function PhoneCanvas() {
   const touched = useRef(false);
   const fitKey = page ? `${page.id}:${boxes.length > 0}` : null;
   const sheetOpen = Boolean(s.pending || s.thread);
+  // The window changing size (iPhone Duo opening, closing or turning) keeps the camera: the
+  // boards stay where they were and the rest of the page lays out beside them.
+  const lastSize = useRef(screenSize);
   useLayoutEffect(() => {
+    const resized = lastSize.current.w !== screenSize.w || lastSize.current.h !== screenSize.h;
+    lastSize.current = screenSize;
     if (!page || !fitKey) return;
-    if (fitted.current === fitKey && (touched.current || sheetOpen)) return;
+    if (fitted.current === fitKey && (touched.current || sheetOpen || resized)) return;
     const fresh = fitted.current !== fitKey;
     fitted.current = fitKey;
     if (fresh) touched.current = false;
@@ -229,6 +241,23 @@ export function PhoneCanvas() {
     pendingFocus.current = null;
     focus(id);
   });
+
+  // Standby: the camera eases to each board the agent touches and rests there.
+  const followAsk = s.follow;
+  useEffect(() => {
+    if (!followAsk) return;
+    const box = boxOf(followAsk.id);
+    if (box) animateTo(followCamera(box, screen), followAsk.ms, easeFollow);
+  }, [followAsk]);
+  // Out of standby the page is framed again, as it opens.
+  const wasStandby = useRef(false);
+  useEffect(() => {
+    if (wasStandby.current && !s.standby) {
+      const c = overview(boxes, screen);
+      if (c) animateTo(c);
+    }
+    wasStandby.current = s.standby;
+  }, [s.standby]);
 
   // A focused board that goes away lets go.
   useEffect(() => {
@@ -547,11 +576,12 @@ export function PhoneCanvas() {
   }, [!!doc]);
 
   if (!doc || !page) return <div ref={viewport} className="viewport" />;
+  const standby = s.standby;
 
   const scheme = (ab: Artboard) => (isThemed(doc.tokens, ab.root) ? s.theme : "light");
 
   return (
-    <div ref={viewport} className="viewport">
+    <div ref={viewport} className={standby ? "viewport standby" : "viewport"}>
       <div
         ref={world}
         className="world"
@@ -603,21 +633,22 @@ export function PhoneCanvas() {
               w={w}
               h={h}
               who={who}
-              label={showLabel && b.id !== focused}
+              label={showLabel && b.id !== focused && !standby}
               screen={screen}
               radius={s.radius}
             />
           );
         })}
-        {pins.map((p) => (
-          <span
-            key={p.id}
-            className={`pin${p.id === s.thread ? " open" : ""}`}
-            style={{ translate: `${p.x}px ${p.y}px` }}
-          >
-            {doc.threads.find((t) => t.id === p.id)?.messages.length ?? 0}
-          </span>
-        ))}
+        {!standby &&
+          pins.map((p) => (
+            <span
+              key={p.id}
+              className={`pin${p.id === s.thread ? " open" : ""}`}
+              style={{ translate: `${p.x}px ${p.y}px` }}
+            >
+              {doc.threads.find((t) => t.id === p.id)?.messages.length ?? 0}
+            </span>
+          ))}
         {s.pending &&
           (() => {
             const at = pinWorld(s.pending);
