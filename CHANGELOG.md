@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.43.0](https://github.com/north-brook/ponzu/compare/v1.42.0...v1.43.0) (2026-10-24)
+
+
+### Features
+
+* let agents choose from a much wider set of page and file icons ([#178](https://github.com/north-brook/ponzu/issues/178)) ([86d591d](https://github.com/north-brook/ponzu/commit/86d591de1d88d5a6c60cfcaed9f42529a4b34a37))
+
+
+### Bug Fixes
+
+* open agents' design links from your other macs ([#175](https://github.com/north-brook/ponzu/issues/175)) ([5e46414](https://github.com/north-brook/ponzu/commit/5e46414c4596af91384a1a7ecb14006811bbb630))
+
 ## [1.42.0](https://github.com/north-brook/ponzu/compare/v1.41.2...v1.42.0) (2026-10-23)
 
 
