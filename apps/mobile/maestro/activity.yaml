@@ -4,6 +4,10 @@ tags: [dev-host]
 ---
 # The Activity tab, then back to Designs by its tab. No development warning along the way.
 - runFlow: shared/start.yaml
+# run.sh's agent added three artboards, which is new: the tab's badge says so.
+- extendedWaitUntil:
+    visible: "Activity, 1 new"
+    timeout: 20000
 - tapOn:
     id: tab-activity
 - extendedWaitUntil:
@@ -11,27 +15,41 @@ tags: [dev-host]
       id: activity
     timeout: 10000
 - assertVisible: "Activity"
+# Looking at it clears it: a moment on screen and its dot fades, the badge drops,
+# and the row stays where it is while Activity is in front.
+- extendedWaitUntil:
+    notVisible:
+      id: activity-unread
+    timeout: 5000
+- assertVisible: "Activity"
+- assertNotVisible: "Activity, 1 new"
+- assertVisible: "Claude added 3 artboards.*"
+# Back to the tab: what was seen is gone, and it's caught up.
+- tapOn:
+    id: tab-designs
+- tapOn:
+    id: tab-activity
+- extendedWaitUntil:
+    visible:
+      id: activity-empty-caughtUp
+    timeout: 5000
+- assertNotVisible: "Claude added 3 artboards.*"
 # One list with a filter, New by default. Everything, from its menu, puts a
-# count on the button; New again clears it. What's new (run.sh's agent added
-# three artboards) shows as a row; with nothing new, it says you're caught up.
+# count on the button and shows the seen row again; New again clears it.
 - assertVisible: "Filter"
 - tapOn: "Filter"
 - tapOn: "Everything"
 - extendedWaitUntil:
     visible: "Filter, 1 on"
     timeout: 5000
+- assertVisible: "Claude added 3 artboards.*"
 - tapOn: "Filter, 1 on"
 - tapOn: "New"
 - extendedWaitUntil:
     visible: "Filter"
     timeout: 5000
-- runFlow:
-    when:
-      visible:
-        id: activity-empty-caughtUp
-    commands:
-      - assertVisible:
-          id: activity-show-everything
+- assertVisible:
+    id: activity-show-everything
 - assertNotVisible: ".*Cannot update a component.*"
 - tapOn:
     id: tab-designs
