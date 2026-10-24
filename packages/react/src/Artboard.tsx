@@ -162,7 +162,7 @@ function smilActive(el: SVGAnimationElement): boolean {
 
 /**
  * What an artboard's shadow root holds: its styles and markup, and the Google
- * Fonts it needs. Shared with the timelapse film, which measures boards with it.
+ * Fonts it needs.
  */
 export function artboardMarkup(
   artboard: AB,
@@ -185,12 +185,6 @@ export function artboardMarkup(
   const resolved = resolveTokenAssets(tokens, assetBase);
   const html = `<style>${styleText(pin(hostTokens(resolved)))}${scheme}${round}${ARTBOARD_BASE_CSS}</style>${body}`;
   return { html, fonts: googleFonts(body, tokens), faces: fontFaceRules(resolved) };
-}
-
-/** Load these Google Fonts and the design's own @font-face rules in the page, once each. */
-export function loadArtboardFonts(fonts: GoogleFontRequest[], faces: string[] = []) {
-  ensureFonts(fonts);
-  ensureFaces(faces);
 }
 
 /** Custom properties declared on :root apply to :host inside a shadow root. */

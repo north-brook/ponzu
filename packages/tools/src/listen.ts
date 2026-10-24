@@ -116,7 +116,7 @@ export const listenTools = [
         .max(INTENT_MAX)
         .optional()
         .describe(
-          "When you take on a new request: what the person asked for, distilled to one plain line in their voice, e.g. 'A fitness app: today, workout and progress screens.' A timelapse of the work opens on it. Not your plan, and only once per request.",
+          "When you take on a new request: what the person asked for, distilled to one plain line in their voice, e.g. 'A fitness app: today, workout and progress screens.' It's kept in the design's history. Not your plan, and only once per request.",
         ),
       artboards: z
         .array(z.string())

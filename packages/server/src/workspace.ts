@@ -23,7 +23,6 @@ import {
 } from "@ponzu/tools";
 import { JournalWriter } from "./journal.ts";
 import { previewStale, writePreview } from "./preview.ts";
-import { Timelapses } from "./timelapse.ts";
 
 export interface WorkspaceOptions {
   /** Where relative paths resolve. Defaults to process.cwd(). */
@@ -37,7 +36,7 @@ export interface WorkspaceOptions {
    * for Finder's icons. Default: on macOS.
    */
   previews?: boolean;
-  /** Keep each design's .ponzu/journal.ndjson, the history timelapses are made from. Default true. */
+  /** Keep each design's .ponzu/journal.ndjson, its history of every change. Default true. */
   journal?: boolean;
 }
 
@@ -72,21 +71,6 @@ export class LocalWorkspace implements Workspace {
   opensIn?: "app" | { origin: string };
   /** This Mac's tailnet name, while Tailscale runs: links to the Mac app name it. */
   mac?: string;
-  /** Where the studio's film page is served, when not at assetOrigin (the dev studio). */
-  filmOrigin?: string;
-  /** Timelapse films being made. */
-  readonly timelapses: Timelapses = (() => {
-    const ws = this;
-    return new Timelapses({
-      get renderer() {
-        return ws.renderer;
-      },
-      get origin() {
-        return ws.filmOrigin ?? process.env.PONZU_FILM_ORIGIN ?? ws.assetOrigin;
-      },
-      flush: (key) => ws.flushForFilm(key),
-    });
-  })();
   private entries = new Map<string, Entry>();
   private opening = new Map<string, Promise<Entry>>();
   private focusListeners = new Set<(key: string, artboard: string) => void>();
@@ -249,23 +233,6 @@ export class LocalWorkspace implements Workspace {
     await this.renderer?.close();
   }
 
-  /** Make a timelapse film of a design and wait for it. Resolves with where it was written. */
-  timelapse = async (
-    key: string,
-    req: import("./timelapse.ts").TimelapseRequest,
-  ): Promise<{ path: string; codec: string; duration: number; bytes: number }> => {
-    const job = this.timelapses.start(key, req);
-    const state = await job.promise;
-    if (state.status === "done")
-      return { path: state.path, codec: state.codec, duration: state.duration, bytes: state.bytes };
-    throw new ToolError(state.status === "failed" ? state.error : "The timelapse was cancelled.");
-  };
-
-  private async flushForFilm(key: string): Promise<void> {
-    await this.get(key)?.flush();
-    await this.journalFlushed(key);
-  }
-
   intent(key: string, text: string, origin: { kind: "user" | "agent"; name: string }) {
     const journal = this.entries.get(this.keyOf(key))?.journal;
     if (!journal) return;
@@ -278,7 +245,7 @@ export class LocalWorkspace implements Workspace {
     await this.entries.get(this.keyOf(key))?.journal?.flush();
   }
 
-  /** The product of the agent behind an origin, for its mark in a timelapse. */
+  /** The product of the agent behind an origin, kept with its changes in the journal. */
   private clientOf(o: { kind: string; name: string }): string | undefined {
     if (o.kind !== "agent") return undefined;
     return this.presence.list().find((p) => p.kind === "agent" && p.name === o.name)?.client;

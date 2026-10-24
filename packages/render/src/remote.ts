@@ -1,6 +1,5 @@
 import { clampScale } from "./capture.ts";
 import { artboardPage } from "./document.ts";
-import type { FilmDriver } from "./film.ts";
 import {
   type Box,
   type FrameDriver,
@@ -20,13 +19,7 @@ import {
   type RenderRequest,
   type RenderResult,
 } from "./renderer.ts";
-import {
-  FILM_STEP_MS,
-  HOST_DEADLINE_MS,
-  RENDER_FAILURES,
-  RenderError,
-  type RenderStage,
-} from "./stages.ts";
+import { HOST_DEADLINE_MS, RENDER_FAILURES, RenderError, type RenderStage } from "./stages.ts";
 
 /**
  * What a render host receives: a complete page plus where to look. The
@@ -90,15 +83,7 @@ export type RemoteSessionRequest =
   /** Reply data: base64 PNG of `box` (CSS px) at `scale` device px per CSS px. */
   | { op: "capture"; session: string; box: Box; scale: number }
   | { op: "show"; session: string; html: string; width: number; height: number }
-  | { op: "close"; session: string }
-  /**
-   * A timelapse film page: a real URL on the server, at a device scale, kept
-   * until closed. Evals then drive it; `frame` captures the viewport. Hosts
-   * from before timelapses answer 404 or an unknown-op error.
-   */
-  | { op: "film"; url: string; width: number; height: number; scale: number }
-  /** Reply data: the whole viewport, base64, at the film's scale. */
-  | { op: "frame"; session: string; format: "png" | "jpeg" };
+  | { op: "close"; session: string };
 
 export interface RemoteSessionReply {
   session?: string;
@@ -131,7 +116,7 @@ export class RemoteRenderer implements Renderer {
    * the call until the runtime's own fetch timeout, six minutes, which said
    * nothing about why.
    */
-  private async post<T>(url: string, body: unknown, deadlineMs = this.deadlineMs): Promise<T> {
+  private async post<T>(url: string, body: unknown): Promise<T> {
     let res: Response;
     try {
       res = await fetch(url, {
@@ -141,10 +126,10 @@ export class RemoteRenderer implements Renderer {
           ...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(deadlineMs),
+        signal: AbortSignal.timeout(this.deadlineMs),
       });
     } catch (err) {
-      throw unreachable(err, deadlineMs);
+      throw unreachable(err, this.deadlineMs);
     }
     if (!res.ok) throw await failed(res);
     // The deadline covers the body too: a host can answer, then stall mid-reply.
@@ -152,7 +137,7 @@ export class RemoteRenderer implements Renderer {
       return (await res.json()) as T;
     } catch (err) {
       const name = (err as Error | null)?.name;
-      if (name === "TimeoutError" || name === "AbortError") throw unreachable(err, deadlineMs);
+      if (name === "TimeoutError" || name === "AbortError") throw unreachable(err, this.deadlineMs);
       throw err;
     }
   }
@@ -188,11 +173,11 @@ export class RemoteRenderer implements Renderer {
     };
   }
 
-  private sessionCall(cant: string, deadlineMs = this.deadlineMs) {
+  private sessionCall(cant: string) {
     const url = new URL("session", this.endpoint).href;
     return async (op: RemoteSessionRequest): Promise<RemoteSessionReply> => {
       try {
-        return await this.post<RemoteSessionReply>(url, op, deadlineMs);
+        return await this.post<RemoteSessionReply>(url, op);
       } catch (err) {
         if (err instanceof RenderError && err.status === 404) throw new Error(cant);
         throw err;
@@ -255,32 +240,6 @@ export class RemoteRenderer implements Renderer {
     } finally {
       await call({ op: "close", session }).catch(() => {});
     }
-  }
-
-  /** A film page in the host, over the session API (desktop: an offscreen window). */
-  async filmDriver(): Promise<FilmDriver> {
-    // A film step can run past a render's deadline (see FILM_STEP_MS): wait for it, and a bit.
-    const call = this.sessionCall(
-      "This version of the Ponzu app can't make timelapses. Update it.",
-      Math.max(this.deadlineMs, FILM_STEP_MS + 15_000),
-    );
-    let session: string | undefined;
-    return {
-      async open(url, width, height, scale) {
-        session = (await call({ op: "film", url, width, height, scale })).session;
-        if (!session) throw new Error("Render host didn't open a film page.");
-      },
-      async evaluate<T>(expression: string) {
-        return (await call({ op: "eval", session: session!, expression })).value as T;
-      },
-      async capture(format) {
-        return (await call({ op: "frame", session: session!, format })).data ?? "";
-      },
-      async close() {
-        if (session) await call({ op: "close", session }).catch(() => {});
-        session = undefined;
-      },
-    };
   }
 
   private page(req: {

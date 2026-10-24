@@ -1,8 +1,5 @@
 /*
  * The canvas's own Tailwind build (pz-prefixed), compiled separately from the studio's. It
- * scans @ponzu/react; the timelapse film and its button use the same utilities, so they're
- * scanned too.
+ * scans @ponzu/react.
  */
 @import "@ponzu/react/tailwind.css";
-@source "./film";
-@source "./components/timelapse.tsx";

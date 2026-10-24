@@ -146,7 +146,7 @@ About thirty tools in six groups. `get_guide` serves the house rules.
 | --- | --- |
 | Orient | `get_basic_info` `get_tree` `get_node` `get_html` `find_nodes` |
 | Write | `create_artboard` `write_html` `update_styles` `set_text` `set_attributes` `duplicate` `move_nodes` `delete` `rename` `update_artboard` |
-| See | `screenshot` (with lint) `record` `export` `timelapse` |
+| See | `screenshot` (with lint) `record` `export` |
 | Organize | `list_files` `create_file` `update_file` `create_page` `update_page` `archive` `get_tokens` `set_tokens` |
 | Converse | `list_comments` `get_comment` `create_comment` `reply` `set_comment_status` `send_feedback` |
 | Listen + remember | `wait_for_activity` `set_status` `write_note` `read_notes` `get_guide` |

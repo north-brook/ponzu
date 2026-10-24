@@ -20,9 +20,8 @@ export { JOURNAL_FILE } from "@ponzu/core";
 
 /**
  * Keeps a design's `.ponzu/journal.ndjson`: every op the design applies, with
- * when and who, so a timelapse can be made from any stretch of its history.
- * Appends run one at a time, in order. A journal that grows past the limit is
- * rewritten to its newer half, starting with a checkpoint.
+ * when and who. Appends run one at a time, in order. A journal that grows past
+ * the limit is rewritten to its newer half, starting with a checkpoint.
  */
 export class JournalWriter {
   private queue: Promise<void> = Promise.resolve();

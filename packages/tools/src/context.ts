@@ -40,25 +40,8 @@ export interface Workspace {
   presence: PresenceHub;
   /** Usage events and agent feedback for the Ponzu team. Without it nothing is sent. */
   telemetry?: Telemetry;
-  /** Make a timelapse film of a design's history. Hosts without a film page leave it out. */
-  timelapse?(key: string, req: TimelapseRequest): Promise<TimelapseResult>;
   /** Keep what the person asked for, as an agent distilled it, in the design's history. */
   intent?(key: string, text: string, origin: Author): void;
-}
-
-export interface TimelapseRequest {
-  shape: "16:9" | "1:1" | "9:16";
-  /** Leave out for the timelapse (its length follows from what was made). */
-  length?: number;
-  range?: { from: number; to: number };
-  theme: "light" | "dark";
-}
-
-export interface TimelapseResult {
-  path: string;
-  codec: string;
-  duration: number;
-  bytes: number;
 }
 
 /**

@@ -6,8 +6,7 @@ import type { Origin } from "./protocol.ts";
  * every op with when it happened and who made it, across every session, plus
  * a full copy of the doc wherever replaying the ops alone can't be trusted
  * (when the journal starts, after the folder was changed in a way that
- * couldn't become ops, and when the file opens and doesn't match). Timelapses
- * are made from it afterwards.
+ * couldn't become ops, and when the file opens and doesn't match).
  */
 export const JOURNAL_FILE = ".ponzu/journal.ndjson";
 
@@ -18,8 +17,8 @@ export type JournalEntry =
   | { v: 1; t: number; kind: "checkpoint"; doc: Doc }
   | { v: 1; t: number; kind: "op"; op: Op; origin: JournalOrigin; artboards: string[] }
   /**
-   * What the person asked for, in a line the agent distilled: a timelapse opens on it. An agent
-   * says it with set_status when it takes on a request.
+   * What the person asked for, in a line the agent distilled. An agent says it with set_status
+   * when it takes on a request.
    */
   | { v: 1; t: number; kind: "intent"; text: string; origin: JournalOrigin };
 
@@ -41,21 +40,8 @@ export function intentLine(text: string, origin: JournalOrigin, t = Date.now()):
   return `${JSON.stringify({ v: 1, t, kind: "intent", text, origin: o } satisfies JournalEntry)}\n`;
 }
 
-/** The longest intent a film shows: one line, read at a glance. */
+/** The longest intent: one line, read at a glance. */
 export const INTENT_MAX = 140;
-
-/** An agent may say what it's taking on a little before its first edit lands. */
-const INTENT_LEAD = 10 * 60_000;
-
-/**
- * The request a stretch of history opens on: the first intent said in it, or just before it
- * began. One said in an earlier session is about other work. Null when none was said.
- */
-export function intentFor(entries: JournalEntry[], from: number, to: number): string | null {
-  for (const e of entries)
-    if (e.kind === "intent" && e.t >= from - INTENT_LEAD && e.t <= to) return e.text;
-  return null;
-}
 
 /**
  * Entries in order. A line that doesn't parse is skipped: the last one may be
@@ -143,7 +129,7 @@ export function compactJournal(entries: JournalEntry[], t: number): string {
 /**
  * Where to cut a journal of `bytes` that's over the limit: the time of the
  * entry where the newer half (by size) begins, moved back to the start of
- * that session so a film of it is whole. Sizes are each line's length.
+ * that session so it stays whole. Sizes are each line's length.
  */
 export function compactionPoint(
   entries: JournalEntry[],
