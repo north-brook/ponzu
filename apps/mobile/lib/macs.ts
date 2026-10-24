@@ -4,6 +4,7 @@ import { getJson, NetError } from "./http";
 import {
   baseUrl,
   hostOf,
+  isMagicDns,
   type Mac,
   type MacInfo,
   type MacList,
@@ -97,7 +98,13 @@ export function cachedInfos(): Record<string, MacInfo> {
  * other Macs it names. Returns the paired Mac.
  */
 async function pair(host: string, via: Mac["via"]): Promise<Mac> {
-  const address = host.includes(":") ? host : `${host}:${PORT}`;
+  const dev = via === "dev";
+  const name = host.trim().replace(/\.$/, "");
+  // Only the development override dials an address. Any other Mac is reached by its MagicDNS
+  // name: a pairing link or a Wi-Fi advert naming an address could point the phone, and a
+  // Mac it already knows, at any host on the network.
+  if (!dev && !isMagicDns(name)) throw new PairError("unreachable", `Not a tailnet name: ${name}`);
+  const address = dev && name.includes(":") ? name : `${name}:${PORT}`;
   let info: MacInfo;
   try {
     info = await fetchInfo(`http://${address}`, 6_000);
@@ -108,17 +115,18 @@ async function pair(host: string, via: Mac["via"]): Promise<Mac> {
   if (info.protocol === undefined || info.protocol < PROTOCOL)
     throw new PairError("tooOld", `Ponzu ${info.version} on that Mac is too old`, info.version);
   if (info.protocol > PROTOCOL) throw new PairError("tooNew", "Update Ponzu on this iPhone");
-  const dns = info.machine?.dns ?? hostOf(host);
-  const dev = via === "dev";
+  // The Mac is saved under the name the phone dialled, never one the answer claims: an answer
+  // naming another Mac could otherwise take its place.
+  const dns = dev ? (info.machine?.dns ?? hostOf(name)) : name;
   const mac: Mac = {
     id: dev ? DEV_ID : dns,
-    name: info.machine?.name ?? hostOf(host).split(".")[0]!,
+    name: info.machine?.name ?? hostOf(name).split(".")[0]!,
     dns,
     kind: info.machine?.kind ?? "laptop",
     addedAt: Date.now(),
     lastAnsweredAt: Date.now(),
     via,
-    ...(dev || host.includes(":") ? { address } : {}),
+    ...(dev ? { address } : {}),
   };
   macs.set((all) => upsertMac(all, mac));
   queryClient.setQueryData(keys.info(mac.id), info);

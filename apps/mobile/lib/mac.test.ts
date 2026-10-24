@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   baseUrl,
   hostOf,
+  isMagicDns,
   type Mac,
   PairError,
   pairMessage,
@@ -32,6 +33,26 @@ test("the pairing code names a Mac by its MagicDNS name", () => {
   expect(parsePairUrl("https://example.com/?host=x")).toBeNull();
   expect(parsePairUrl("ponzu://pair?host=a%20b")).toBeNull();
   expect(parsePairUrl("ponzu://pair?v=1")).toBeNull();
+  // An address is no Mac: a link naming one could point the phone at anyone on the Wi-Fi.
+  for (const host of ["192.168.1.50:8080", "10.0.0.5", "workstation.local", "evil.example.com"])
+    expect(parsePairUrl(`ponzu://pair?host=${host}&v=1`)).toBeNull();
+  // Tailscale's trailing dot is fine.
+  expect(parsePairUrl("ponzu://pair?host=air.tail1.ts.net.&v=1")).toBe("air.tail1.ts.net");
+});
+
+test("a tailnet name is one ending in ts.net, and nothing else", () => {
+  for (const host of ["workstation.tail023d74.ts.net", "a.b.ts.net", "air.tail1.ts.net."])
+    expect(isMagicDns(host)).toBe(true);
+  for (const host of [
+    "192.168.1.50",
+    "192.168.1.50:7777",
+    "workstation.tail1.ts.net:7777",
+    "ts.net",
+    "workstation.ts.net.evil.com",
+    "workstation.local",
+    "",
+  ])
+    expect(isMagicDns(host)).toBe(false);
 });
 
 test("a Mac is reached on 7777 and woken on 7778, or at the development address", () => {

@@ -48,6 +48,15 @@ export interface MacList {
 /** The server protocol this app speaks; `/api/info` reports the Mac's. */
 export const PROTOCOL = 1;
 export const PORT = 7777;
+
+/**
+ * A tailnet MagicDNS name (`workstation.tail023d74.ts.net`), with or without Tailscale's
+ * trailing dot. The tailnet authenticates these names, so the phone only ever pairs with one:
+ * a LAN address or another domain could be anyone on the Wi-Fi.
+ */
+export function isMagicDns(host: string): boolean {
+  return /^[a-z0-9-]+(\.[a-z0-9-]+)*\.ts\.net\.?$/i.test(host.trim());
+}
 /** The wake helper's port: a connection there starts Ponzu in the background. */
 export const WAKE_PORT = 7778;
 
@@ -76,8 +85,8 @@ export function parsePairUrl(url: string): string | null {
   const params = new URLSearchParams(m[1]);
   const v = params.get("v");
   if (v && v !== "1") return null;
-  const host = params.get("host")?.trim();
-  return host && /^[\w.-]+(:\d+)?$/.test(host) ? host : null;
+  const host = params.get("host")?.trim().replace(/\.$/, "");
+  return host && isMagicDns(host) ? host : null;
 }
 
 /** Save `next` into `macs`, keeping what the phone already knew about it. */
