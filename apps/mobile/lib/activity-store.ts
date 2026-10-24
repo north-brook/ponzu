@@ -2,7 +2,13 @@ import type { AgentChange } from "@ponzu/core";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
-import { type ActivityItem, buildActivity, isNew } from "./activity";
+import {
+  type ActivityFilter,
+  type ActivityItem,
+  buildActivity,
+  DEFAULT_FILTER,
+  isNew,
+} from "./activity";
 import { useFiles, whenAgentEdits } from "./catalog";
 import { getJson, NetError } from "./http";
 import { baseUrl, type Mac } from "./mac";
@@ -21,6 +27,19 @@ export const activitySeenAt = new Store<number>(0);
 AsyncStorage.getItem(KEY)
   .then((v) => v && activitySeenAt.set(Number(v)))
   .catch(() => {});
+
+const FILTER_KEY = "ponzu.activityFilter";
+
+/** Activity's filter, kept across launches: New or Everything, every kind or one. */
+export const activityFilter = new Store<ActivityFilter>(DEFAULT_FILTER);
+AsyncStorage.getItem(FILTER_KEY)
+  .then((v) => v && activityFilter.set({ ...DEFAULT_FILTER, ...JSON.parse(v) }))
+  .catch(() => {});
+
+export function setActivityFilter(f: ActivityFilter) {
+  activityFilter.set(f);
+  AsyncStorage.setItem(FILTER_KEY, JSON.stringify(f)).catch(() => {});
+}
 
 export function markActivitySeen() {
   const now = Date.now();

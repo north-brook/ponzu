@@ -1,28 +1,59 @@
+import type { MenuAction } from "@react-native-menu/menu";
 import { router, Stack, useFocusEffect, useLocalSearchParams, useNavigation } from "expo-router";
-import { Fragment, useCallback, useRef } from "react";
+import { Fragment, useCallback, useMemo, useRef } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
+import { barMenuItems } from "../../../components/bar-menu";
 import { HeaderTitle } from "../../../components/chrome";
-import { AgentMark, FileIcon, PageIcon } from "../../../components/icons";
+import { Glass } from "../../../components/glass";
+import { AgentMark, Done, FileIcon, Inbox, PageIcon, Quiet } from "../../../components/icons";
 import { MacImage } from "../../../components/preview";
-import { type ActivityItem, changeTarget, shortAgent, title, where } from "../../../lib/activity";
-import { markActivitySeen, useActivity } from "../../../lib/activity-store";
+import {
+  type ActivityFilter,
+  type ActivityItem,
+  type ActivityKind,
+  activityEmpty,
+  changeTarget,
+  filterActivity,
+  filtersOn,
+  shortAgent,
+  title,
+  where,
+} from "../../../lib/activity";
+import {
+  activityFilter,
+  markActivitySeen,
+  setActivityFilter,
+  useActivity,
+} from "../../../lib/activity-store";
 import { useFiles } from "../../../lib/catalog";
 import { shortAgo } from "../../../lib/files";
-import { tick } from "../../../lib/haptics";
+import { select, tick } from "../../../lib/haptics";
 import { baseUrl } from "../../../lib/mac";
 import { findMac } from "../../../lib/macs";
 import { useMargin } from "../../../lib/margin";
+import { useStore } from "../../../lib/store";
 import { track } from "../../../lib/telemetry";
 import { useTheme } from "../../../lib/theme";
 import { refreshThreads, useThreadDocs } from "../../../lib/threads";
 import { brand } from "../../../lib/tokens";
 import { useWindowInsets } from "../../../lib/window-insets";
 
+/** The kinds in the filter's menu, with their images from the asset catalog. */
+const KINDS: { id: ActivityKind; label: string; image: string; none: string }[] = [
+  { id: "all", label: "All kinds", image: "", none: "" },
+  { id: "changes", label: "Changes", image: "hi-edit", none: "No changes yet" },
+  { id: "replies", label: "Replies", image: "hi-comment", none: "No replies yet" },
+  { id: "resolved", label: "Resolved", image: "hi-resolved", none: "Nothing resolved yet" },
+];
+
 /**
- * Activity (Flow › 10), the Activity tab: what agents changed in your designs,
- * their replies to you in threads, and comments of yours they resolved; New
- * since you last looked, then Seen. An agent at work right now leads. See
- * lib/activity.ts for what each is built from.
+ * Activity (the iPhone design's Activity page), the Activity tab: what agents
+ * changed in your designs, their replies to you in threads, and comments of
+ * yours they resolved, as one list, newest first, with the yuzu dot on what's
+ * unread. The glass filter top right, as Designs', shows New (the default)
+ * or Everything, and every kind or one; off the default, it wears a count.
+ * An agent at work right now leads, and always counts as new. See
+ * lib/activity.ts for what each is built from and how the filter picks.
  */
 export default function Activity() {
   const rail = useWindowInsets();
@@ -33,10 +64,23 @@ export default function Activity() {
   // Development: `ponzu://activity?since=<ms>` shows what's new since then.
   const { since } = useLocalSearchParams<{ since?: string }>();
   const { fresh, old } = useActivity(__DEV__ && since ? Number(since) : undefined);
-  // What was new when the tab came to the front stays under New while it's there.
+  // What was new when the tab came to the front stays new while it's there, so rows don't
+  // vanish under a thumb: the items as they were then, with anything newer since.
   const opened = useRef<{ fresh: ActivityItem[]; old: ActivityItem[] } | null>(null);
   opened.current ??= fresh.length || old.length ? { fresh, old } : null;
-  const shown = opened.current && fresh.length === 0 ? opened.current : { fresh, old };
+  const shown = useMemo(() => {
+    const then = opened.current;
+    if (!then) return { fresh, old };
+    const wasNew = new Set(then.fresh.map((i) => i.id));
+    return {
+      fresh: [...fresh, ...old.filter((i) => wasNew.has(i.id))],
+      old: old.filter((i) => !wasNew.has(i.id)),
+    };
+  }, [fresh, old]);
+  const filter = useStore(activityFilter);
+  const list = filterActivity(shown, filter);
+  const empty = activityEmpty(shown, filter);
+  const unread = useMemo(() => new Set(shown.fresh.map((i) => i.id)), [shown]);
 
   // A tab stays mounted: each time it comes to the front is an opening. It's
   // seen once another tab takes its place; a design opened from it, over the
@@ -76,12 +120,67 @@ export default function Activity() {
     });
   };
 
+  // The filter menu: New or Everything, then every kind or one, the current ones checked.
+  const filters = useMemo<MenuAction[]>(
+    () => [
+      {
+        id: "show",
+        title: "Show",
+        displayInline: true,
+        subactions: [
+          // bar-new and bar-everything join the asset catalog with the next native build;
+          // until then the menu draws these two without an image.
+          { id: "show:new", title: "New", image: "bar-new", state: on(filter.show === "new") },
+          {
+            id: "show:all",
+            title: "Everything",
+            image: "bar-everything",
+            state: on(filter.show === "all"),
+          },
+        ],
+      },
+      {
+        id: "kinds",
+        title: "Kind",
+        displayInline: true,
+        subactions: KINDS.map((k) => ({
+          id: `kind:${k.id}`,
+          title: k.label,
+          ...(k.image ? { image: k.image } : {}),
+          state: on(filter.kind === k.id),
+        })),
+      },
+    ],
+    [filter],
+  );
+  const pick = (next: Partial<ActivityFilter>) => {
+    select();
+    setActivityFilter({ ...filter, ...next });
+  };
+  const pickFilter = (id: string) => {
+    if (id.startsWith("show:")) pick({ show: id.slice(5) as ActivityFilter["show"] });
+    else if (id.startsWith("kind:")) pick({ kind: id.slice(5) as ActivityKind });
+  };
+  const count = filtersOn(filter);
+
   return (
     <>
       <Stack.Toolbar placement="left">
         <Stack.Toolbar.View hidesSharedBackground>
           <HeaderTitle color={color.ink}>Activity</HeaderTitle>
         </Stack.Toolbar.View>
+      </Stack.Toolbar>
+      {/* The filter, as Designs': the system's menu from a glass button, a count when one's on. */}
+      <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Menu accessibilityLabel={count ? `Filter, ${count} on` : "Filter"}>
+          <Stack.Toolbar.Icon renderingMode="template" xcasset="bar-filter" />
+          {count > 0 && (
+            <Stack.Toolbar.Badge style={{ backgroundColor: brand.yuzu, color: brand.ink }}>
+              {String(count)}
+            </Stack.Toolbar.Badge>
+          )}
+          {barMenuItems(filters, pickFilter)}
+        </Stack.Toolbar.Menu>
       </Stack.Toolbar>
       {/* The screen's first view, so the header's soft scroll edge finds it. */}
       <ScrollView
@@ -96,64 +195,152 @@ export default function Activity() {
           paddingBottom: 24,
         }}
       >
-        <View style={{ paddingTop: 4, paddingHorizontal: m, gap: 12 }}>
-          {shown.fresh.length > 0 && (
-            <>
-              <Label text="New" />
-              <Group items={shown.fresh} fresh onOpen={open} />
-            </>
-          )}
-          {shown.old.length > 0 && (
-            <>
-              <Label text="Seen" top={shown.fresh.length ? 6 : 0} />
-              <Group items={shown.old} onOpen={open} />
-            </>
-          )}
-          {!shown.fresh.length && !shown.old.length && (
-            <Text
-              style={{
-                marginTop: 24,
-                textAlign: "center",
-                fontFamily: "Inter",
-                fontSize: 15,
-                lineHeight: 22,
-                color: color.muted,
-              }}
-            >
-              Nothing yet. When an agent replies to you or works in your designs, it shows here.
-            </Text>
-          )}
+        <View style={{ paddingTop: 4, paddingHorizontal: m }}>
+          {list.length > 0 && <Group items={list} unread={unread} onOpen={open} />}
         </View>
       </ScrollView>
+      {empty && (
+        <Empty
+          kind={empty}
+          none={KINDS.find((k) => k.id === filter.kind)?.none ?? ""}
+          onEverything={() => pick({ show: "all" })}
+          onAllKinds={() => pick({ kind: "all" })}
+        />
+      )}
     </>
   );
 }
 
-function Label({ text, top = 0 }: { text: string; top?: number }) {
+const on = (b: boolean) => (b ? ("on" as const) : ("off" as const));
+
+/**
+ * An empty list, centered in the screen, over it (so nothing moves): caught
+ * up, with the way to everything; nothing ever, on a first run; or none of
+ * the kind picked, with the way back to all kinds.
+ */
+function Empty({
+  kind,
+  none,
+  onEverything,
+  onAllKinds,
+}: {
+  kind: "caughtUp" | "never" | "noKind";
+  none: string;
+  onEverything: () => void;
+  onAllKinds: () => void;
+}) {
   const { color } = useTheme();
+  const copy = {
+    caughtUp: {
+      title: "You're all caught up",
+      body: "When an agent changes your designs or replies to you, it shows up here.",
+    },
+    never: {
+      title: "Nothing yet",
+      body: "Ask an agent on your Mac to work in a design. What it changes, and its replies to your comments, will show up here.",
+    },
+    noKind: { title: none, body: "" },
+  }[kind];
+  const action =
+    kind === "caughtUp"
+      ? { label: "Show everything", onPress: onEverything, id: "activity-show-everything" }
+      : kind === "noKind"
+        ? { label: "Show all kinds", onPress: onAllKinds, id: "activity-show-all-kinds" }
+        : null;
   return (
-    <Text
+    <View
+      pointerEvents="box-none"
+      testID={`activity-empty-${kind}`}
       style={{
-        paddingTop: top,
-        paddingHorizontal: 4,
-        fontFamily: "Inter",
-        fontWeight: "600",
-        fontSize: 13,
-        color: color.muted,
+        position: "absolute",
+        inset: 0,
+        alignItems: "center",
+        justifyContent: "center",
+        paddingHorizontal: 40,
+        gap: 10,
       }}
     >
-      {text}
-    </Text>
+      <View
+        style={{
+          width: 64,
+          height: 64,
+          borderRadius: 999,
+          backgroundColor: color.chip,
+          alignItems: "center",
+          justifyContent: "center",
+          marginBottom: 6,
+        }}
+      >
+        {kind === "never" ? <Quiet color={color.muted} /> : <Done color={color.muted} />}
+      </View>
+      <Text
+        style={{
+          fontFamily: "Funnel Display",
+          fontWeight: "700",
+          fontSize: 22,
+          lineHeight: 26.4,
+          letterSpacing: -0.03 * 22,
+          color: color.ink,
+          textAlign: "center",
+        }}
+      >
+        {copy.title}
+      </Text>
+      {copy.body ? (
+        <Text
+          style={{
+            maxWidth: 280,
+            fontFamily: "Inter",
+            fontSize: 15,
+            lineHeight: 21.75,
+            color: color.muted,
+            textAlign: "center",
+          }}
+        >
+          {copy.body}
+        </Text>
+      ) : null}
+      {action && (
+        <Pressable
+          onPress={action.onPress}
+          accessibilityRole="button"
+          testID={action.id}
+          style={{ marginTop: 6 }}
+        >
+          {({ pressed }) => (
+            <Glass
+              interactive
+              held={pressed}
+              style={{
+                height: 40,
+                paddingHorizontal: 16,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 7,
+              }}
+            >
+              {kind === "caughtUp" && <Inbox color={color.ink} />}
+              <Text
+                style={{ fontFamily: "Inter", fontWeight: "600", fontSize: 14, color: color.ink }}
+              >
+                {action.label}
+              </Text>
+            </Glass>
+          )}
+        </Pressable>
+      )}
+    </View>
   );
 }
 
 function Group({
   items,
-  fresh = false,
+  unread,
   onOpen,
 }: {
   items: ActivityItem[];
-  fresh?: boolean;
+  /** Ids of what's new: those rows wear the yuzu dot. */
+  unread: Set<string>;
   onOpen: (item: ActivityItem) => void;
 }) {
   const { color, shadow } = useTheme();
@@ -170,7 +357,7 @@ function Group({
         <Item
           key={item.id}
           item={item}
-          fresh={fresh}
+          fresh={unread.has(item.id)}
           last={i === items.length - 1}
           onPress={() => onOpen(item)}
         />
@@ -210,7 +397,7 @@ function Item({
         paddingHorizontal: 16,
         borderBottomWidth: last ? 0 : 1,
         borderBottomColor: color.hairline,
-        opacity: pressed ? 0.7 : fresh ? 1 : 0.7,
+        opacity: pressed ? 0.7 : 1,
       })}
     >
       <View style={{ width: 24, height: 22, alignItems: "center", justifyContent: "center" }}>

@@ -260,3 +260,58 @@ export function where(item: ActivityItem): { file: string; places: Place[] } | n
 export function changeTarget(item: Extract<ActivityItem, { kind: "change" }>): string | undefined {
   return item.change.artboards.find((a) => item.file.artboards.some((b) => b.id === a.id))?.id;
 }
+
+/** Activity's filter: what's new or everything, and every kind or one. */
+export type ActivityShow = "new" | "all";
+export type ActivityKind = "all" | "changes" | "replies" | "resolved";
+export interface ActivityFilter {
+  show: ActivityShow;
+  kind: ActivityKind;
+}
+export const DEFAULT_FILTER: ActivityFilter = { show: "new", kind: "all" };
+
+/** The kinds the filter offers, by the items they hold. */
+const KINDS: Record<Exclude<ActivityKind, "all">, ActivityItem["kind"][]> = {
+  changes: ["change", "work"],
+  replies: ["reply"],
+  resolved: ["resolved"],
+};
+
+/** How many of the filter's choices aren't the default: the button's badge. */
+export function filtersOn(f: ActivityFilter): number {
+  return (f.show !== "new" ? 1 : 0) + (f.kind !== "all" ? 1 : 0);
+}
+
+/**
+ * Activity as one list, newest first, as the filter shows it. New is what
+ * the person hasn't looked at (`fresh`); an agent at work in a design right
+ * now always counts as new. A kind keeps only its items; work counts as a
+ * change.
+ */
+export function filterActivity(
+  items: { fresh: ActivityItem[]; old: ActivityItem[] },
+  f: ActivityFilter,
+): ActivityItem[] {
+  const live = (i: ActivityItem) => i.kind === "work" && Boolean(i.agent);
+  const pool =
+    f.show === "new" ? [...items.fresh, ...items.old.filter(live)] : [...items.fresh, ...items.old];
+  const kinds = f.kind === "all" ? null : KINDS[f.kind];
+  const shown = kinds ? pool.filter((i) => kinds.includes(i.kind)) : pool;
+  // An agent at work now leads; the rest, newest first.
+  const rank = (i: ActivityItem) => (live(i) ? 1 : 0);
+  return [...new Map(shown.map((i) => [i.id, i])).values()].sort(
+    (a, b) => rank(b) - rank(a) || b.at - a.at,
+  );
+}
+
+/** What an empty list says: caught up, nothing ever, or none of a kind. */
+export function activityEmpty(
+  items: { fresh: ActivityItem[]; old: ActivityItem[] },
+  f: ActivityFilter,
+): "caughtUp" | "never" | "noKind" | null {
+  if (filterActivity(items, f).length) return null;
+  if (!items.fresh.length && !items.old.length) return "never";
+  if (f.kind !== "all" && filterActivity(items, { ...f, kind: "all" }).length) return "noKind";
+  if (f.show === "new") return "caughtUp";
+  return "noKind";
+}
