@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.45.0](https://github.com/north-brook/ponzu/compare/v1.44.0...v1.45.0) (2026-10-24)
+
+
+### Features
+
+* list designs in temporary folders under scratch ([#180](https://github.com/north-brook/ponzu/issues/180)) ([81bf3b5](https://github.com/north-brook/ponzu/commit/81bf3b5cc0f845136113327ee52be23c8818750c))
+
 ## [1.44.0](https://github.com/north-brook/ponzu/compare/v1.43.0...v1.44.0) (2026-10-24)
 
 
