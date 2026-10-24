@@ -57,9 +57,14 @@ function rememberMode(m: Mode) {
 }
 
 const ease = Easing.bezier(...EASE_OUT);
-/** The comment field's tallest, and the padding that centres one line of Inter 17 (20.57pt) in 44. */
-const FIELD_MAX = 140;
-const FIELD_PAD = (44 - 20.57) / 2;
+/**
+ * The comment field: lines of Inter 17 on a 22pt line, the padding that
+ * centres one in the buttons' 44, and the tallest it grows (five lines)
+ * before it scrolls.
+ */
+const FIELD_LINE = 22;
+const FIELD_PAD = (44 - FIELD_LINE) / 2;
+const FIELD_MAX = FIELD_PAD * 2 + FIELD_LINE * 5;
 /** Between "Listening…" (or what's said) and the row under it. */
 const GAP = 14;
 
@@ -164,12 +169,21 @@ export function Composer({
     const p = phase(clock.value, toVoice.value, PARTS.listen);
     return { height: tall.value * p, opacity: p, marginBottom: -GAP * (1 - p) };
   });
+  // The field's height, grown line by line as the text wraps (160ms, ease-out), up to
+  // FIELD_MAX, past which it scrolls. A capsule at one line, a rounded rect above.
+  const fieldH = useSharedValue(44);
+  const [scrolls, setScrolls] = useState(false);
+  const onFieldSize = (h: number) => {
+    const next = Math.min(FIELD_MAX, Math.max(44, Math.round(h)));
+    fieldH.value = still ? next : withTiming(next, { duration: 160, easing: ease });
+    setScrolls(h > FIELD_MAX + 0.5);
+  };
   const fieldStyle = useAnimatedStyle(() => {
     const p = phase(clock.value, toVoice.value, PARTS.field);
     return {
       opacity: 1 - p,
       // Down to one line as it goes, so the row is the waveform's height in voice.
-      maxHeight: 140 - 96 * p,
+      height: fieldH.value + (44 - fieldH.value) * p,
       transform: [{ scaleX: 1 - 0.04 * p }],
     };
   });
@@ -272,16 +286,24 @@ export function Composer({
                 multiline
                 editable={!voice}
                 testID={voice ? undefined : "comment-input"}
+                // Its own height, padding included, as the text wraps: the capsule grows to it.
+                onContentSizeChange={(e) => onFieldSize(e.nativeEvent.contentSize.height)}
+                scrollEnabled={scrolls}
                 style={{
+                  // Pinned to the capsule's top, as tall as its text (up to FIELD_MAX): the
+                  // capsule's animated height follows it; the same padding at every line count.
+                  position: "absolute",
+                  left: 0,
+                  right: 0,
+                  top: 0,
                   minHeight: 44,
                   maxHeight: FIELD_MAX,
-                  // One line of Inter 17 (its own 20.57pt, no extra leading, which a
-                  // multiline field puts above the first line) centred in 44.
                   paddingTop: FIELD_PAD,
                   paddingBottom: FIELD_PAD,
                   paddingHorizontal: 14,
                   fontFamily: "Inter",
                   fontSize: 17,
+                  lineHeight: FIELD_LINE,
                   color: color.ink,
                 }}
               />
