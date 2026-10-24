@@ -74,6 +74,8 @@ export type FromCanvas =
   | { t: "longpress"; pageId: string; artboardId?: string; nodeId?: string; x: number; y: number }
   /** A pin was tapped. */
   | { t: "openThread"; id: string }
+  /** A tap that wasn't on a pin: the app puts its keyboard down, if it's up. */
+  | { t: "tap" }
   /**
    * An artboard is focused, or none is: by a double-tap, a pinch away or a `focus` message. Sent
    * again with the same board when a pan or pinch on it settles and it's still focused.

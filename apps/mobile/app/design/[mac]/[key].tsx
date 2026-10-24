@@ -4,6 +4,7 @@ import { router, Stack, useLocalSearchParams, useNavigation } from "expo-router"
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
+import { KeyboardController } from "react-native-keyboard-controller";
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -234,6 +235,10 @@ export default function Canvas() {
           x: msg.x,
           y: msg.y,
         });
+        break;
+      case "tap":
+        // Writing, a tap on the design puts the keyboard down; the sheet rides it.
+        KeyboardController.dismiss().catch(() => {});
         break;
       case "openThread":
         setPending(null);

@@ -504,7 +504,7 @@ export function PhoneCanvas() {
       },
       tap(p) {
         const hit = nearestPin(latest.current.pins, p);
-        if (hit) send({ t: "openThread", id: hit.id });
+        send(hit ? { t: "openThread", id: hit.id } : { t: "tap" });
       },
       doubleTap(p) {
         const { focused, hitTest, focus } = latest.current;
