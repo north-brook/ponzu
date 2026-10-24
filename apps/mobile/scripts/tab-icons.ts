@@ -1,0 +1,97 @@
+/**
+ * Draws the app's native images from Hugeicons into assets/native/, at @1x,
+ * @2x and @3x, black on clear (the system tints them as templates):
+ *
+ * - `tab-<name>.png`, 25pt: the tab bar's marks, the outline for a tab in
+ *   the back and `tab-<name>-fill.png`, the same outline heavier, for the one
+ *   in front (the free set has outline icons only).
+ * - `hi-<name>.png`, 22pt: a page's icon in the canvas's page menu, by the
+ *   names design.json uses, desktop's `Icons` (packages/react/src/icons.tsx).
+ *   app.json puts these in the asset catalog (expo-native-asset), where the
+ *   native menu finds them by name (lib/page-icons.ts reads the same map).
+ * - `bar-<name>.png`, 22pt: a header bar button's glyph (Designs' filter,
+ *   the canvas's Back and comments), and Activity's filter menu (New,
+ *   Everything).
+ *
+ * Rerun when a mark or desktop's icons change, and add a new `hi-*` or
+ * `bar-*` to app.json's expo-native-asset list:
+ *
+ *   bun apps/mobile/scripts/tab-icons.ts
+ */
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import {
+  ArrowLeft01Icon,
+  Comment01Icon,
+  DashboardSquare01Icon,
+  FilterHorizontalIcon,
+  InboxIcon,
+  Notification01Icon,
+  Notification03Icon,
+  Search01Icon,
+} from "@hugeicons/core-free-icons";
+import { Resvg } from "@resvg/resvg-js";
+import { Icons } from "../../../packages/react/src/icons.tsx";
+
+type IconSvg = readonly (readonly [string, Record<string, string | number>])[];
+
+/** Each tab's mark: desktop's names for the same concepts. */
+const MARKS: Record<string, IconSvg> = {
+  /** Designs: desktop's `board`. */
+  designs: DashboardSquare01Icon,
+  search: Search01Icon,
+  /** Activity: the bell it was on Designs. */
+  activity: Notification01Icon,
+};
+
+function svg(icon: IconSvg, size: number, stroke: number): string {
+  const parts = icon.map(([tag, attrs]) => {
+    const a = Object.entries(attrs)
+      .filter(([k]) => k !== "key")
+      .map(([k, v]) => {
+        const name = k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
+        if (name === "stroke-width") return `${name}="${stroke}"`;
+        return `${name}="${v === "currentColor" ? "#000" : v}"`;
+      })
+      .join(" ");
+    return `<${tag} ${a}/>`;
+  });
+  // A half-unit margin, as the system's own glyphs sit in their box.
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="-0.5 -0.5 25 25" fill="none">${parts.join("")}</svg>`;
+}
+
+const out = join(import.meta.dir, "../assets/native");
+mkdirSync(out, { recursive: true });
+let count = 0;
+function draw(name: string, icon: IconSvg, size: number, stroke: number) {
+  for (const scale of [1, 2, 3]) {
+    const png = new Resvg(svg(icon, size, stroke), {
+      fitTo: { mode: "width", value: size * scale },
+      background: "rgba(0,0,0,0)",
+    })
+      .render()
+      .asPng();
+    writeFileSync(join(out, `${name}${scale > 1 ? `@${scale}x` : ""}.png`), png);
+    count++;
+  }
+}
+
+for (const [name, icon] of Object.entries(MARKS)) {
+  draw(`tab-${name}`, icon, 25, 1.6);
+  draw(`tab-${name}-fill`, icon, 25, 2.2);
+}
+// The header's bar buttons, 22pt as the system's: Designs' filter menu, and
+// the canvas's Back and comments where they're the system's items (iPhone
+// Duo's rail and its horizontal bars).
+const BAR: Record<string, IconSvg> = {
+  filter: FilterHorizontalIcon,
+  back: ArrowLeft01Icon,
+  comments: Comment01Icon,
+  // Activity's filter: New and Everything.
+  new: Notification03Icon,
+  everything: InboxIcon,
+};
+for (const [name, icon] of Object.entries(BAR)) draw(`bar-${name}`, icon, 22, 1.6);
+// The menu's icons at the weight desktop draws them.
+for (const [name, icon] of Object.entries(Icons)) draw(`hi-${name}`, icon as IconSvg, 22, 1.6);
+console.log(`native images: ${count} files in assets/native`);

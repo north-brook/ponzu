@@ -1,14 +1,18 @@
 name: Release
 
-# Release Please keeps one open release PR on main ("chore(main): release
-# X.Y.Z"). Every push to main enables auto-merge on it, so once CI passes it
-# lands, and the next run of this workflow tags the version and opens a
-# draft GitHub release with its notes. The mac job builds, signs and
-# notarizes Ponzu into that draft, launches the exact signed app, and only
-# then publishes it. electron-updater and the site's download link only see
-# published releases, so a failed build never reaches anyone. A fix or
-# feature merged to main reaches installed apps without anyone touching a
-# release PR.
+# Release Please keeps one open release PR per app on main: the Mac app and
+# CLI ("chore(main): release X.Y.Z", tags vX.Y.Z) and the iPhone app
+# ("chore(main): release mobile X.Y.Z", tags mobile-vX.Y.Z). Every push to
+# main enables auto-merge on both, so once CI passes they land, and the next
+# run of this workflow tags the version and opens a draft GitHub release with
+# its notes. For vX.Y.Z, the mac job builds, signs and notarizes Ponzu into
+# that draft, launches the exact signed app, and only then publishes it.
+# electron-updater and the site's download link only see the latest
+# published release, so a failed build never reaches anyone. A mobile-vX.Y.Z
+# tag starts EAS's production workflow (apps/mobile/.eas/workflows), and its
+# release is published here without becoming the latest, which stays the
+# Mac app's. A fix or feature merged to main reaches installed apps without
+# anyone touching a release PR.
 on:
   push:
     branches: [main]
@@ -16,7 +20,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing tag to rebuild (vX.Y.Z)
+        description: Existing desktop tag to rebuild (vX.Y.Z)
         required: true
         type: string
 
@@ -32,9 +36,13 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Release Please names the root package's outputs plainly and the
+    # phone's by its path.
     outputs:
       released: ${{ steps.release.outputs.release_created }}
       tag: ${{ steps.release.outputs.tag_name }}
+      mobile_released: ${{ steps.release.outputs['apps/mobile--release_created'] }}
+      mobile_tag: ${{ steps.release.outputs['apps/mobile--tag_name'] }}
     steps:
       - name: Require the release token
         run: '[ -n "$RELEASE_TOKEN" ] || { echo "Set the RELEASE_TOKEN repository secret (see CONTRIBUTING.md#releases)"; exit 1; }'
@@ -48,20 +56,25 @@ jobs:
           token: ${{ secrets.RELEASE_TOKEN }}
 
   # Auto-merge is idempotent: an updated release PR keeps it and merges once
-  # its new head is green.
+  # its new head is green. Each app's release PR has its own branch.
   auto-merge:
-    name: Auto-merge the release PR
+    name: Auto-merge the ${{ matrix.app }} release PR
     needs: release-please
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    strategy:
+      matrix:
+        # The branch's component: the root package's name, or the phone's.
+        app: [ponzu, mobile]
     steps:
       - name: Enable squash auto-merge on the open release PR
         run: |
           pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+            --head "release-please--branches--main--components--$APP" \
             --label "autorelease: pending" \
             --json number,autoMergeRequest --jq '.[0]')
           if [ -z "$pr" ] || [ "$pr" = "null" ]; then
-            echo "no open release PR"; exit 0
+            echo "no open $APP release PR"; exit 0
           fi
           number=$(jq -r .number <<<"$pr")
           if [ "$(jq -r .autoMergeRequest <<<"$pr")" != "null" ]; then
@@ -70,8 +83,35 @@ jobs:
           gh pr merge "$number" --repo "$GITHUB_REPOSITORY" --squash --auto
           echo "auto-merge enabled on #$number"
         env:
+          APP: ${{ matrix.app }}
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
 
+  # The phone's release is built by EAS from its tag, which Release Please
+  # has already pushed. Its GitHub release only carries the notes: publish
+  # it, but never as the latest, which the Mac app's updater and the site's
+  # download link read.
+  mobile:
+    name: Publish the iPhone release notes
+    needs: release-please
+    if: ${{ needs.release-please.outputs.mobile_released == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Publish, not as the latest
+        run: |
+          id=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=30" \
+            --jq "[.[] | select(.tag_name == \"$TAG\")][0].id")
+          [ -n "$id" ] && [ "$id" != "null" ] || { echo "no release for $TAG"; exit 1; }
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$id" \
+            -F draft=false -f make_latest=false --jq '"published \(.tag_name) \(.html_url)"'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release-please.outputs.mobile_tag }}
+
+  # Only the root package's release (vX.Y.Z): `released` is never set by a
+  # phone release, and a mobile-v tag doesn't start with "v".
   mac:
     name: Desktop macOS arm64
     needs: release-please

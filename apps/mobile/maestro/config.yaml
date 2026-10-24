@@ -1,0 +1,13 @@
+# Flows run in name order: a fresh launch first, then against the dev host.
+flows:
+  - "*.yaml"
+executionOrder:
+  continueOnFailure: false
+  flowsOrder:
+    - launch
+    - designs
+    - canvas
+    - search
+    - activity
+    - comment
+    - comment-modes

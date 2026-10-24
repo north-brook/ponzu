@@ -1,0 +1,59 @@
+name: Production
+
+# Fires when Release Please tags a phone release (mobile-vX.Y.Z, when the
+# "release mobile" PR merges on main). iOS only. A release that changed
+# native code (a new native fingerprint) builds a binary and sends it to
+# TestFlight's external Alpha group for Beta App Review; any other release
+# ships over the air to the binaries already installed. Can also be re-run
+# by hand with `eas workflow:run production.yml`. Before upload succeeds, a
+# failed submission can use EAS's "Re-run from failed jobs" with the same
+# binary. After upload succeeds, recover with a TestFlight job's
+# asc_build_id instead: retrying build_id uploads again, which Apple rejects
+# as a duplicate. A full rerun finds the existing build and publishes an
+# update; it does not retry submission.
+# See https://docs.expo.dev/eas/workflows/pre-packaged-jobs/#testflight.
+on:
+  push:
+    tags: ["mobile-v*"]
+  workflow_dispatch: {}
+
+# The Bun package.json pins (`packageManager`); the image's own Bun writes a
+# different lockfile, and a frozen install then refuses it. Every job's
+# install uses this one, builds included.
+defaults:
+  tools:
+    bun: 1.4.2
+
+jobs:
+  fingerprint:
+    type: fingerprint
+    environment: production
+  ios_build_exists:
+    needs: [fingerprint]
+    type: get-build
+    params:
+      fingerprint_hash: ${{ needs.fingerprint.outputs.ios_fingerprint_hash }}
+      profile: production
+  build_ios:
+    needs: [ios_build_exists]
+    if: ${{ !needs.ios_build_exists.outputs.build_id }}
+    type: build
+    params:
+      platform: ios
+      profile: production
+  submit_ios:
+    needs: [build_ios]
+    type: testflight
+    params:
+      build_id: ${{ needs.build_ios.outputs.build_id }}
+      external_groups: ["Alpha"]
+      submit_beta_review: true
+      changelog: "Bug fixes and improvements."
+  update_ios:
+    needs: [ios_build_exists]
+    if: ${{ needs.ios_build_exists.outputs.build_id }}
+    type: update
+    environment: production
+    params:
+      branch: production
+      platform: ios

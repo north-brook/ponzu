@@ -6,7 +6,8 @@ bun run dev          # the studio with hot reload, on the three examples/
 bun run lint && bun run typecheck && bun test
 ```
 
-The desktop app: `cd apps/desktop && bun run start`.
+The desktop app: `cd apps/desktop && bun run start`. The iPhone app:
+`cd apps/mobile && bunx expo run:ios`, see [docs/mobile.md](docs/mobile.md).
 
 `serve` from a checkout listens on that checkout's own port in 7800–7999 (it
 prints it) and stays off the tailnet, so it never takes 7777 or the iPhone's
@@ -32,16 +33,27 @@ Scopes are optional: `fix(desktop): …`, `feat(react): …`.
 A change users would notice ends its PR description with a `## Release note`
 section: one plain sentence per change, written for someone who uses Ponzu.
 The squash merge carries it into the commit, and the next release shows it in
-the app's What's new after the update. No section means no note. See
-[docs/release-notes.md](docs/release-notes.md).
+the app's What's new after the update. No section means no note. In a PR that
+changes both the Mac and the iPhone app, start each note with `Mac:` or
+`iPhone:`. See [docs/release-notes.md](docs/release-notes.md).
 
 ## Releases
 
 Nobody bumps versions or pushes tags by hand.
-[Release Please](https://github.com/googleapis/release-please) keeps one open
-release PR (`chore(main): release X.Y.Z`) that collects every `feat` and `fix`
-on `main` into `CHANGELOG.md`, and the release workflow turns on auto-merge for
-it. Once its checks pass it merges, and then
+[Release Please](https://github.com/googleapis/release-please) releases two
+components, each with its own release PR:
+
+- **The Mac app and CLI** (the root package, tags `vX.Y.Z`): `chore(main):
+  release X.Y.Z` collects every `feat` and `fix` on `main` into `CHANGELOG.md`.
+  Changes only under `apps/mobile` don't count.
+- **The iPhone app** (`apps/mobile`, tags `mobile-vX.Y.Z`): `chore(main):
+  release mobile X.Y.Z` collects those that touch `apps/mobile` into
+  `apps/mobile/CHANGELOG.md`. Its tag starts EAS's production workflow, which
+  ships over the air or builds for TestFlight; see
+  [docs/mobile.md](docs/mobile.md#releases).
+
+The release workflow turns on auto-merge for both. Once a release PR's checks
+pass it merges, and for the Mac app
 [`release.yml`](.github/workflows/release.yml):
 
 1. Tags `vX.Y.Z` and opens a draft GitHub release with the changelog.
@@ -55,7 +67,7 @@ it. Once its checks pass it merges, and then
    installed apps see it.
 
 So a merged `fix:` or `feat:` reaches everyone without anyone touching the
-release PR. To hold a release, close the release PR; the next push to `main`
+release PR. To hold a release, close its release PR; the next push to `main`
 reopens it. To rebuild an existing release after a build-only fix, run the
 Release workflow by hand with its tag.
 

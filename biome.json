@@ -10,7 +10,11 @@
       "!.context",
       "!**/.next",
       "!**/next-env.d.ts",
-      "!.release-please-manifest.json"
+      "!.release-please-manifest.json",
+      "!apps/mobile/ios",
+      "!apps/mobile/android",
+      "!**/.expo",
+      "!apps/mobile/expo-env.d.ts"
     ]
   },
   "formatter": {

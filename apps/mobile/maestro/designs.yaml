@@ -1,0 +1,41 @@
+appId: design.ponzu.app
+name: designs
+tags: [dev-host]
+---
+# The dev host's three examples come up on Designs, under the tab bar's
+# Designs, Activity and Search, with the filter in the header.
+- runFlow: shared/start.yaml
+- assertVisible:
+    id: tab-designs
+- assertVisible:
+    id: tab-activity
+- assertVisible:
+    id: tab-search
+- scrollUntilVisible:
+    element:
+      id: card-Kettle
+    timeout: 60000
+- scrollUntilVisible:
+    element:
+      id: card-Halon
+    timeout: 30000
+- scrollUntilVisible:
+    element:
+      id: card-Weft
+    timeout: 30000
+# The filter is the header's native menu: Scratch is checked once picked,
+# and the button says one filter is on; Recent clears it.
+- tapOn: "Filter"
+- extendedWaitUntil:
+    visible: "Scratch.*"
+    timeout: 5000
+- tapOn: "Scratch.*"
+- extendedWaitUntil:
+    visible: "Filter: Scratch"
+    timeout: 5000
+- tapOn: "Filter.*"
+- tapOn: "Recent.*"
+- extendedWaitUntil:
+    visible: "Filter"
+    timeout: 5000
+- assertNotVisible: ".*Cannot update a component.*"

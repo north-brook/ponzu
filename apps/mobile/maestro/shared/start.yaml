@@ -1,0 +1,28 @@
+appId: design.ponzu.app
+---
+# The development client, onto this checkout's JavaScript from Metro
+# (DEV_CLIENT: exp+ponzu://expo-development-client/?url=<Metro, encoded>).
+# Its menu shows on a first open; close it. Then Designs, once a Mac answers.
+# The microphone and speech recognition are refused up front, so a comment
+# sheet in voice says so and offers typing, with no system prompt in the way.
+- launchApp:
+    permissions:
+      microphone: deny
+      speech: deny
+- openLink: ${DEV_CLIENT}
+- extendedWaitUntil:
+    visible:
+      id: "(launch|designs|xmark)"
+    timeout: 90000
+- runFlow:
+    when:
+      visible:
+        id: xmark
+    commands:
+      - tapOn:
+          id: xmark
+- openLink: ponzu://designs
+- extendedWaitUntil:
+    visible:
+      id: designs
+    timeout: 60000

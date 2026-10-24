@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+    <link rel="icon" href="data:," />
+    <title>Ponzu canvas, as the app drives it</title>
+    <!--
+      Plays the app's part: holds the design's socket and posts the canvas web view (the iframe)
+      the same messages the app does. Query: ?server=http://127.0.0.1:7791&file=<key>&page=App
+      &theme=light|dark&log=1. window.harness has the log and send(), for scripts.
+    -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #f4f3ef;
+      }
+      iframe {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        border: 0;
+      }
+      #log {
+        position: fixed;
+        left: 8px;
+        right: 8px;
+        bottom: 8px;
+        max-height: 30%;
+        overflow: auto;
+        margin: 0;
+        padding: 6px 8px;
+        border-radius: 8px;
+        background: rgba(17, 17, 16, 0.8);
+        color: #f4f3ef;
+        font: 11px/1.4 ui-monospace, monospace;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <iframe id="canvas" src="/canvas.html" title="Canvas"></iframe>
+    <pre id="log" hidden></pre>
+    <script type="module">
+      const q = new URLSearchParams(location.search);
+      const server = q.get("server") ?? "http://127.0.0.1:7791";
+      const theme = q.get("theme") ?? "light";
+      const frame = document.getElementById("canvas");
+      const logEl = document.getElementById("log");
+      logEl.hidden = q.get("log") !== "1";
+
+      const harness = {
+        /** Every message from the canvas, in order. */
+        log: [],
+        doc: null,
+        file: q.get("file"),
+        ready: false,
+        socket: null,
+        send(msg) {
+          frame.contentWindow.postMessage(JSON.stringify(msg), "*");
+        },
+        /** Send an op to the server, as the app does when a comment is written. */
+        apply(op) {
+          harness.socket.send(JSON.stringify({ t: "op", req: Date.now(), op }));
+        },
+      };
+      window.harness = harness;
+
+      const assetBase = () => `${server}/files/${encodeURIComponent(harness.file)}`;
+      const pageId = () => {
+        const want = q.get("page");
+        return want
+          ? harness.doc?.pages.find((p) => p.id === want || p.name === want)?.id
+          : undefined;
+      };
+      const sendDoc = () => {
+        if (!harness.ready || !harness.doc) return;
+        harness.send({ t: "insets", insets: { top: 110, right: 0, bottom: 34, left: 0 } });
+        harness.send({
+          t: "doc",
+          doc: harness.doc,
+          assetBase: assetBase(),
+          theme,
+          file: harness.file,
+          page: pageId(),
+        });
+      };
+
+      window.addEventListener("message", (e) => {
+        if (e.source !== frame.contentWindow || typeof e.data !== "string") return;
+        const msg = JSON.parse(e.data);
+        harness.log.push({ ...msg, at: performance.now() });
+        logEl.textContent = harness.log
+          .slice(-8)
+          .map((m) => JSON.stringify(m))
+          .join("\n");
+        if (msg.t === "ready") {
+          harness.ready = true;
+          sendDoc();
+        } else if (msg.t === "longpress") {
+          // The app opens the comment sheet and shows the "+" pin where the finger was.
+          const { pageId: page, artboardId, x, y } = msg;
+          harness.send({ t: "pending", pin: artboardId ? { artboardId, x, y } : { pageId: page, x, y } });
+        } else if (msg.t === "openThread") {
+          harness.send({ t: "thread", id: msg.id });
+        }
+      });
+
+      async function connect() {
+        if (!harness.file) {
+          const catalog = await (await fetch(`/catalog?server=${encodeURIComponent(server)}`)).json();
+          harness.file = catalog.files.find((f) => /kettle/i.test(f.key))?.key ?? catalog.files[0]?.key;
+        }
+        const socket = new WebSocket(
+          `${server.replace(/^http/, "ws")}/ws?file=${encodeURIComponent(harness.file)}`,
+        );
+        harness.socket = socket;
+        socket.onmessage = (e) => {
+          const msg = JSON.parse(e.data);
+          if (msg.t === "hello" || msg.t === "reset") {
+            harness.doc = msg.doc;
+            sendDoc();
+            if (msg.presence) harness.send({ t: "presence", presence: msg.presence });
+          } else if (msg.t === "op") {
+            harness.send({ t: "op", op: msg.op, origin: msg.origin });
+          } else if (msg.t === "presence") {
+            harness.send({ t: "presence", presence: msg.presence });
+          }
+        };
+        socket.onclose = () => setTimeout(connect, 1000);
+      }
+      connect();
+    </script>
+  </body>
+</html>

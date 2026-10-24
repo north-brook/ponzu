@@ -1,0 +1,167 @@
+/*
+ * The phone canvas. No chrome: the app draws it. Colors are the studio's and the iPhone design's
+ * (`--c-*`), light and dark; the trace's march is desktop's `.pz-trace`.
+ */
+:root {
+  --c-canvas: #f4f3ef;
+  --c-muted: #5e5b54;
+  --c-yuzu-text: #7a4f00;
+  --c-board: 0 0 0 1px rgba(0, 0, 0, 0.06);
+  --yuzu: #ffc81e;
+  --ink: #111110;
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  color-scheme: light;
+}
+
+:root.dark {
+  --c-canvas: #121211;
+  --c-muted: #a9a59b;
+  --c-yuzu-text: #ffc81e;
+  --c-board: 0 0 0 1px rgba(255, 255, 255, 0.06);
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--c-canvas);
+  overscroll-behavior: none;
+}
+
+body {
+  font: 500 12px / 14px var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: none;
+}
+
+.viewport {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  touch-action: none;
+}
+
+.world {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+
+.board {
+  position: absolute;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* A board's edge, drawn on screen so it's a hairline at any zoom. */
+.ring {
+  position: absolute;
+  border-radius: 2px;
+  box-shadow: var(--c-board);
+}
+
+.label {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--c-muted);
+  font: 500 12px / 14px var(--font-sans);
+}
+
+.label > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.label.working {
+  color: var(--c-yuzu-text);
+}
+
+.label .mark {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-left: 2px;
+}
+
+.trace {
+  position: absolute;
+  overflow: visible;
+}
+
+/*
+ * A circle centred on the comment's spot, holding its message count. Placed with `translate`, not
+ * `transform`: `scale` applies before a transform, and would scale where the pin is, too.
+ */
+.pin {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin: -12px 0 0 -12px;
+  border-radius: 999px;
+  background: var(--yuzu);
+  color: var(--ink);
+  font: 600 11px / 1 var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  box-shadow:
+    0 0 0 1px rgba(17, 17, 16, 0.18),
+    0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: scale 120ms;
+}
+
+.pin.open {
+  scale: 1.12;
+}
+
+@keyframes pz-trace {
+  to {
+    stroke-dashoffset: -100;
+  }
+}
+
+/*
+ * On a path with pathLength="100": six dashes, one for each segment of the
+ * slice, march around the outline, a dash-length per beat of the loader.
+ */
+.pz-trace {
+  stroke-dasharray: 10.67 6;
+  animation: pz-trace 9.6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pz-trace {
+    animation: none;
+    stroke-dasharray: none;
+  }
+
+  .pin {
+    transition: none;
+  }
+}
+
+/* Standby: the page alone on black, its boards' hairlines quiet; the traces stay. */
+.viewport.standby {
+  background: #0b0b0a;
+}
+.viewport.standby .ring {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05);
+}

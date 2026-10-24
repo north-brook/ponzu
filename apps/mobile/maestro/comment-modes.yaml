@@ -1,0 +1,80 @@
+appId: design.ponzu.app
+name: comment-modes
+tags: [dev-host]
+---
+# The comment sheet changes shape between typing and voice, both ways, and
+# sends what was typed. The microphone is refused (shared/start.yaml), so
+# voice says it can't hear you. The comment is deleted after.
+- runFlow: shared/start.yaml
+- openLink: ponzu://design/dev/${KETTLE}?uncomment=Maestro
+- extendedWaitUntil:
+    visible:
+      id: uncommented
+    timeout: 20000
+- tapOn: "Back"
+- openLink: ponzu://design/dev/${KETTLE}?page=Brand&comment=Logo
+- extendedWaitUntil:
+    visible:
+      id: "(comment-input|to-type)"
+    timeout: 20000
+# Start from typing, whichever mode it opened in.
+- runFlow:
+    when:
+      visible:
+        id: to-type
+    commands:
+      - tapOn:
+          id: to-type
+- extendedWaitUntil:
+    visible:
+      id: to-voice
+    timeout: 5000
+# Typing → voice: the field gives way to "Listening…" and the waveform, the mute
+# comes in, and the button turns to the keyboard.
+- tapOn:
+    id: to-voice
+- extendedWaitUntil:
+    visible:
+      id: to-type
+    timeout: 5000
+- assertVisible:
+    id: mute
+- assertVisible:
+    id: transcript
+- assertNotVisible:
+    id: comment-input
+# Voice → typing: back to the field, with the keyboard.
+- tapOn:
+    id: to-type
+- extendedWaitUntil:
+    visible:
+      id: comment-input
+    timeout: 5000
+- assertNotVisible:
+    id: mute
+- inputText: "Maestro: both ways"
+- extendedWaitUntil:
+    visible:
+      id: send
+    timeout: 5000
+- tapOn:
+    id: send
+- extendedWaitUntil:
+    notVisible:
+      id: comment-sheet
+    timeout: 10000
+- extendedWaitUntil:
+    visible: "1"
+    timeout: 10000
+# Clean up. The board is still focused, its bar out of the way: home by link.
+- openLink: ponzu://designs
+- extendedWaitUntil:
+    visible:
+      id: designs
+    timeout: 10000
+- openLink: ponzu://design/dev/${KETTLE}?uncomment=Maestro
+- extendedWaitUntil:
+    visible:
+      id: uncommented
+    timeout: 20000
+- assertNotVisible: ".*Cannot update a component.*"

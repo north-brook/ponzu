@@ -176,7 +176,7 @@ For studio work, run `bun run dev`: the studio with hot reload on all three exam
 
 Run from a checkout, `serve` stays out of the installed app's way: it listens on a port in 7800–7999 derived from the checkout's path (the same every run, different per worktree, the next free one if it's taken), and not on the tailnet, so your iPhone and other Macs keep finding the app, not a dev server. `--port` picks a port; `--tailnet` answers the phone and other Macs too, for testing against them (the app's tailnet port must be free). The studio's dev server proxies to the checkout's port; `PONZU_SERVER=<url>` points it elsewhere.
 
-Desktop: `cd apps/desktop && bun run start`.
+Desktop: `cd apps/desktop && bun run start`. iPhone: `cd apps/mobile && bunx expo run:ios` ([docs/mobile.md](docs/mobile.md)).
 
 PR titles are Conventional Commits, and merging a `feat` or `fix` ships a signed release on its own. See [CONTRIBUTING.md](CONTRIBUTING.md).
 

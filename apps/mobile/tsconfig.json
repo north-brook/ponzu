@@ -1,0 +1,13 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    // @ponzu/core imports its own modules by their .ts names.
+    "allowImportingTsExtensions": true,
+    "types": ["bun"]
+  },
+  "include": ["**/*.ts", "**/*.tsx", "nativewind-env.d.ts", ".expo/types/**/*.ts", "expo-env.d.ts"],
+  // canvas/ is the web view's page, a browser bundle with its own tsconfig.
+  "exclude": ["node_modules", "ios", "android", "canvas"]
+}

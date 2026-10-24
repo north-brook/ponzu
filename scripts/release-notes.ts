@@ -5,7 +5,8 @@
  * description into the commit message, so the notes travel with the commit.
  * The desktop build reads them back out of main's history, grouped by the
  * release tag that shipped them, and bundles them for What's new
- * (docs/release-notes.md).
+ * (docs/release-notes.md). A note that starts `iPhone:` is about the phone
+ * app and left out; one that starts `Mac:` keeps its words without the label.
  *
  *   bun scripts/release-notes.ts <out.json>
  *       write `{ "releases": [{ version, notes }] }`, newest first
@@ -32,12 +33,16 @@ const NOTHING = /^(none|n\/a|-|no)\.?$/i;
 const TRAILER = /^(?:[a-z][\w-]*-by|cc):\s/i;
 /** A tool's sign-off line at the foot of a description, such as "🤖 Generated with …". */
 const SIGN_OFF = /^\W*generated (with|by)\b/i;
+/** A note about the phone only: not for the Mac's What's new. */
+const IPHONE = /^iphone:\s*/i;
+/** A note about the Mac only, in a pull request that also changed the phone. */
+const MAC = /^mac:\s*/i;
 /** A first word in lowercase only, so `macOS` or `iPhone` keeps its case. */
 const LOWERCASE_WORD = /^[a-z]+\b/;
 const RELEASE_COMMIT = /^chore\(main\): release /;
 const TAG = /^v(\d+)\.(\d+)\.(\d+)$/;
 
-/** The user-facing lines a commit message or pull request description carries. */
+/** The Mac app's user-facing lines a commit message or pull request description carries. */
 export function extractNotes(message: string): string[] {
   const lines = message.replace(COMMENT, "").split("\n");
   const start = lines.findIndex((line) => HEADING.test(line.trim()));
@@ -45,8 +50,10 @@ export function extractNotes(message: string): string[] {
   const notes: string[] = [];
   let paragraph: string[] = [];
   const flush = () => {
-    const text = paragraph.join(" ").trim();
+    const joined = paragraph.join(" ").trim();
     paragraph = [];
+    if (IPHONE.test(joined)) return;
+    const text = joined.replace(MAC, "");
     if (text && !NOTHING.test(text)) {
       notes.push(LOWERCASE_WORD.test(text) ? text[0]!.toUpperCase() + text.slice(1) : text);
     }
@@ -68,6 +75,15 @@ export function extractNotes(message: string): string[] {
   }
   flush();
   return notes;
+}
+
+/**
+ * A commit that changed only the phone app, which ships on its own tags
+ * (mobile-vX.Y.Z). Release Please leaves it out of the Mac's release too
+ * (`exclude-paths` in release-please-config.json).
+ */
+export function phoneOnly(files: string[]): boolean {
+  return files.length > 0 && files.every((file) => file.startsWith("apps/mobile/"));
 }
 
 /** Orders `x.y.z` versions; anything unparsable sorts first. */
@@ -97,18 +113,21 @@ export async function releases(cwd = process.cwd()): Promise<Release[]> {
   for (const tag of tags) {
     const range = previous ? `${previous}..${tag}` : tag;
     previous = tag;
-    // A record separator between commits, a unit separator between fields.
-    const log = await $`git log --reverse --first-parent --format=${"%s%x1f%B%x1e"} ${range}`
-      .cwd(cwd)
-      .quiet()
-      .text();
+    // A record separator before each commit, a unit separator between its
+    // subject and message, and a group separator before the files it changed.
+    const log =
+      await $`git log --reverse --first-parent --name-only --format=${"%x1e%s%x1f%B%x1d"} ${range}`
+        .cwd(cwd)
+        .quiet()
+        .text();
     const notes = log
       .split("\x1e")
-      .map((entry) => entry.trim())
-      .filter(Boolean)
+      .filter((entry) => entry.trim())
       .flatMap((entry) => {
-        const [subject = "", message = ""] = entry.split("\x1f");
-        return RELEASE_COMMIT.test(subject) ? [] : extractNotes(message);
+        const [head = "", list = ""] = entry.split("\x1d");
+        const [subject = "", message = ""] = head.split("\x1f");
+        const files = list.split("\n").filter(Boolean);
+        return RELEASE_COMMIT.test(subject) || phoneOnly(files) ? [] : extractNotes(message);
       });
     if (notes.length) out.push({ version: tag.slice(1), notes });
   }

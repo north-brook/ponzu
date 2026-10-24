@@ -1,0 +1,30 @@
+appId: design.ponzu.app
+name: launch
+tags: [dev-host]
+---
+# A first launch: every Mac forgotten, the slice on yuzu and the wordmark
+# while Ponzu looks for one. In development the dev host pairs itself
+# again on the next launch; here it stays forgotten, so launch goes on to
+# Connect.
+# From a clean install. The rest of the flows start from where this leaves the app.
+- launchApp:
+    clearState: true
+    permissions:
+      microphone: deny
+      speech: deny
+- runFlow: shared/start.yaml
+- openLink: ponzu://dev?forget=all
+# The launch screen shows only while the bloom lands and Ponzu looks, about a
+# second: when the flow catches it, its slice and wordmark.
+- runFlow:
+    when:
+      visible:
+        id: launch
+    commands:
+      - assertVisible: Ponzu
+- extendedWaitUntil:
+    visible:
+      id: connect
+    timeout: 30000
+- assertVisible: "Connect a Mac running Ponzu."
+- assertNotVisible: ".*Cannot update a component.*"

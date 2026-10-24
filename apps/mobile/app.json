@@ -1,0 +1,1021 @@
+{
+  "expo": {
+    "name": "Ponzu",
+    "slug": "ponzu",
+    "owner": "north-brook",
+    "version": "0.1.0",
+    "scheme": "ponzu",
+    "platforms": ["ios"],
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
+    "backgroundColor": "#ffc81e",
+    "experiments": {
+      "typedRoutes": true
+    },
+    "ios": {
+      "bundleIdentifier": "design.ponzu.app",
+      "appleTeamId": "R9352YFQL4",
+      "supportsTablet": false,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocalNetworkUsageDescription": "Ponzu looks for Macs running Ponzu on this Wi-Fi, so you don't have to scan a code.",
+        "NSBonjourServices": ["_ponzu._tcp"],
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true,
+          "NSExceptionDomains": {
+            "ts.net": {
+              "NSIncludesSubdomains": true,
+              "NSExceptionAllowsInsecureHTTPLoads": true
+            }
+          }
+        }
+      }
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-font",
+        {
+          "ios": {
+            "fonts": [
+              "./node_modules/@expo-google-fonts/inter/400Regular/Inter_400Regular.ttf",
+              "./node_modules/@expo-google-fonts/inter/500Medium/Inter_500Medium.ttf",
+              "./node_modules/@expo-google-fonts/inter/600SemiBold/Inter_600SemiBold.ttf",
+              "./node_modules/@expo-google-fonts/inter/700Bold/Inter_700Bold.ttf",
+              "./node_modules/@expo-google-fonts/funnel-display/700Bold/FunnelDisplay_700Bold.ttf",
+              "./node_modules/@expo-google-fonts/ibm-plex-mono/400Regular/IBMPlexMono_400Regular.ttf",
+              "./node_modules/@expo-google-fonts/ibm-plex-mono/500Medium/IBMPlexMono_500Medium.ttf"
+            ]
+          }
+        }
+      ],
+      "expo-image",
+      "./plugins/template-icons",
+      [
+        "expo-native-asset",
+        {
+          "assets": [
+            {
+              "type": "imageset",
+              "path": "./assets/native/bar-filter.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/bar-back.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/bar-comments.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/bar-new.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/bar-everything.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-accessibility.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-add.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-ai.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-alarm.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-album.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-alert.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-analytics.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-api.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-archive.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-award.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-baby.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-bag.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-bank.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-bars.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-battery.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-beach.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-bike.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-blank.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-board.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-book.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-bookmark.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-bot.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-branch.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-browser.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-brush.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-bug.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-building.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-bus.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-calculator.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-calendar.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-call.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-camera.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-car.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-card.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-carousel.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-cart.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-cat.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-chart.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-chat.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-check.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-chevronDown.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-clock.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-close.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-cloud.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-code.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-coffee.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-coins.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-colors.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-columns.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-comment.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-compare.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-compass.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-components.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-contacts.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-contrast.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-cookie.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-copy.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-crop.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-crown.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-cube.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-cursor.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-dashboard.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-database.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-delivery.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-desktop.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-diamond.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-discount.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-dna.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-done.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-download.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-drink.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-dropper.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-edit.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-experiment.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-figma.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-file.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-film.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-filter.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-fingerprint.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-fire.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-fitness.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-flag.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-flash.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-flow.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-folder.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-folderOpen.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-food.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-form.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-game.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-gift.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-github.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-globe.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-grid.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-growth.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-hand.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-header.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-headphones.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-health.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-heart.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-help.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-history.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-home.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-hotel.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-hourglass.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-idea.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-image.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-inbox.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-info.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-input.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-invoice.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-kanban.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-key.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-keyboard.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-laptop.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-layers.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-layout.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-leaf.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-legal.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-link.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-list.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-loading.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-lock.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-login.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-magic.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-mail.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-map.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-medicine.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-megaphone.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-menu.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-mic.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-minus.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-money.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-moon.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-more.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-motion.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-mountain.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-music.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-navigation.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-news.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-note.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-notification.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-office.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-package.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-page.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-palette.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-party.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-pen.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-pet.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-phone.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-pie.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-pin.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-pizza.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-plane.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-plant.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-play.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-plug.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-plus.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-podcast.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-profile.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-qr.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-quote.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-receipt.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-redo.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-refresh.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-repo.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-resolved.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-rocket.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-route.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-ruler.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-scan.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-school.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-science.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-scratch.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-search.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-select.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-send.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-server.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-settings.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-shapes.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-share.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-shield.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-sidebar.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-sitemap.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-sketch.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-sliders.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-smile.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-sparkle.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-speaker.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-sport.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-star.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-store.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-sun.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-table.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-tablet.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-tag.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-target.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-team.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-tent.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-terminal.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-ticket.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-timer.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-todo.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-toggle.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-tools.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-touch.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-train.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-translate.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-trash.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-trophy.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-tv.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-type.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-unarchive.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-undo.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-upload.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-user.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-video.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-vote.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-vr.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-wallet.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-watch.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-weather.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-webhook.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-wifi.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-work.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-yoga.png"
+            }
+          ]
+        }
+      ],
+      "expo-status-bar",
+      "expo-system-ui",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "imageWidth": 1,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffc81e"
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Ponzu uses the camera to scan the pairing code on your Mac.",
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-speech-recognition",
+        {
+          "speechRecognitionPermission": "Ponzu turns what you say into comment text, on this iPhone.",
+          "microphonePermission": "Ponzu listens while you dictate a comment, and turns it into text on this iPhone."
+        }
+      ],
+      "expo-notifications"
+    ],
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "67e319ee-49ff-45aa-8029-28c78f63041e"
+      }
+    },
+    "updates": {
+      "url": "https://u.expo.dev/67e319ee-49ff-45aa-8029-28c78f63041e"
+    }
+  }
+}
