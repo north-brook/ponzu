@@ -208,7 +208,9 @@ export function PhoneCanvas() {
     const resized = lastSize.current.w !== screenSize.w || lastSize.current.h !== screenSize.h;
     lastSize.current = screenSize;
     if (!page || !fitKey) return;
-    if (fitted.current === fitKey && (touched.current || sheetOpen || resized)) return;
+    // A focused board keeps the camera too: a measurement or an inset changing doesn't pull it
+    // back out to the page. A new page still reframes (and drops the focus, below).
+    if (fitted.current === fitKey && (touched.current || sheetOpen || resized || focused)) return;
     const fresh = fitted.current !== fitKey;
     fitted.current = fitKey;
     if (fresh) touched.current = false;
@@ -362,6 +364,8 @@ export function PhoneCanvas() {
   // Writing a comment, or reading a thread: its board comes up and its pin stays above the sheet.
   const openThread = s.thread ? doc?.threads.find((t) => t.id === s.thread) : undefined;
   const about = s.pending ?? openThread ?? null;
+  // Keyed on the pin, not the thread: every op rebuilds the doc, and a new thread object would
+  // pull the camera back while someone pans. A pin that moves still reframes.
   useEffect(() => {
     if (!about) return;
     const at = pinWorld(about);
@@ -380,7 +384,7 @@ export function PhoneCanvas() {
     const next = commentCamera(at.box, at, camRef.current, screen, s.sheet);
     const c = camRef.current;
     if (next.x !== c.x || next.y !== c.y || next.zoom !== c.zoom) animateTo(next);
-  }, [about, s.sheet]);
+  }, [s.pending, s.thread, about?.artboardId, about?.x, about?.y, s.sheet]);
 
   /** The board under a screen point, the deepest node there, and the point in its px. */
   const hitTest = (p: Point) => {
