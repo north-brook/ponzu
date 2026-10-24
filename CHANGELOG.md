@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.46.1](https://github.com/north-brook/ponzu/compare/v1.46.0...v1.46.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* the home screen's filters fit on one row ([#186](https://github.com/north-brook/ponzu/issues/186)) ([6bac42f](https://github.com/north-brook/ponzu/commit/6bac42ffb85c167671975196601c28e0fcb417c5))
+
 ## [1.46.0](https://github.com/north-brook/ponzu/compare/v1.45.0...v1.46.0) (2026-10-24)
 
 
