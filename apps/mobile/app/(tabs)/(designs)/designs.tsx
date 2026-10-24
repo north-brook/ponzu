@@ -190,7 +190,7 @@ export default function Designs() {
           >
             <View style={{ marginLeft: -LOCKUP_INK }}>
               {/* Looking for Macs: its slice juices in place, the word where it is. */}
-              <Lockup color={color.ink} busy={arriving.length > 0} />
+              <Lockup color={color.ink} busy={arriving.length > 0 || pulled} />
             </View>
           </View>
         </Stack.Toolbar.View>
@@ -219,8 +219,11 @@ export default function Designs() {
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{ paddingTop: 8, paddingBottom: 24 }}
         refreshControl={
+          // The system's pull, but not its spinner: loading is the lockup's slice juicing in
+          // place. The control ends its refresh at once, so the grid springs back; the slice
+          // juices until the Macs have answered.
           <RefreshControl
-            refreshing={pulled}
+            refreshing={false}
             onRefresh={() => {
               // The pull crossed its threshold.
               tick();
@@ -228,7 +231,7 @@ export default function Designs() {
               refreshFeeds();
               reachAll().finally(() => setPulled(false));
             }}
-            tintColor={color.faint}
+            tintColor="transparent"
           />
         }
       >
