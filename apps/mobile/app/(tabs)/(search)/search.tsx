@@ -40,7 +40,8 @@ export default function Search() {
   const markColor = useMarkColor();
   const results = useMemo(() => search(files, query), [files, query]);
   const m = useMargin();
-  const cardWidth = (width - 2 * m - 16) / 2;
+  // The page's width less the system's rail at the side (iPhone Duo), as Designs does.
+  const cardWidth = (width - rail.left - rail.right - 2 * m - 16) / 2;
   const label = {
     fontFamily: "Inter",
     fontWeight: "600" as const,
