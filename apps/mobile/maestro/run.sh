@@ -20,7 +20,8 @@ METRO_PORT=${METRO_PORT:-}
 pids=()
 SCRATCH=$(mktemp -d -t ponzu-maestro)
 cleanup() {
-  for p in "${pids[@]}"; do kill "$p" 2>/dev/null || true; done
+  # ${a[@]+...}: an empty array is "unbound" under set -u in macOS's bash 3.2.
+  for p in ${pids[@]+"${pids[@]}"}; do kill "$p" 2>/dev/null || true; done
   rm -rf "$SCRATCH"
 }
 trap cleanup EXIT
