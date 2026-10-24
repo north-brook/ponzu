@@ -351,20 +351,26 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
       if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
       if (caller !== "local" || !sameHostOk(req, url))
         return new Response("Forbidden", { status: 403 });
-      const body = (await req.json().catch(() => null)) as { macs?: unknown } | null;
+      const body = (await req.json().catch(() => null)) as {
+        macs?: unknown;
+        version?: unknown;
+      } | null;
       const macs = Array.isArray(body?.macs)
         ? body.macs.filter((m): m is string => typeof m === "string")
         : [];
+      // The version the title bar offered: a Mac holding an older download fetches it first.
+      const version = typeof body?.version === "string" ? body.version : undefined;
       const others = await Promise.all(
         macs
           .filter((m) => m !== "local")
           .map(async (mac) => {
             const ip = await home.peerIp(mac);
-            const ok = ip !== null && (await installOn(ip, opts.tailnetPort ?? 7777));
+            const ok = ip !== null && (await installOn(ip, opts.tailnetPort ?? 7777, version));
             return [mac, ok] as const;
           }),
       );
-      const here = macs.includes("local") && opts.updater ? await opts.updater.install() : null;
+      const here =
+        macs.includes("local") && opts.updater ? await opts.updater.install({ version }) : null;
       feed.poke(0);
       return Response.json({
         macs: Object.fromEntries([
@@ -381,7 +387,10 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
       if (caller === "local" && !sameHostOk(req, url))
         return new Response("Forbidden", { status: 403 });
       if (!opts.updater) return new Response("Not found", { status: 404 });
-      const update = await opts.updater.install();
+      const body = (await req.json().catch(() => null)) as { version?: unknown } | null;
+      const update = await opts.updater.install(
+        typeof body?.version === "string" ? { version: body.version } : {},
+      );
       feed.poke(0);
       return Response.json(update ?? null);
     }
@@ -746,8 +755,13 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
       const versions = await Promise.all(
         peers.map((p) => peerVersion(p.ip, opts.tailnetPort ?? 7777)),
       );
-      if (versions.some((v) => v && compareVersions(v, ready.version) >= 0))
-        await updater.install({ quiet: true });
+      // The newest any of them runs: a download older than it is fetched again before installing.
+      const newest = versions
+        .filter((v): v is string => Boolean(v))
+        .sort(compareVersions)
+        .at(-1);
+      if (newest && compareVersions(newest, ready.version) >= 0)
+        await updater.install({ quiet: true, version: newest });
     }, CATCH_UP_EVERY);
     catchUp.unref?.();
   }
@@ -864,10 +878,12 @@ async function relay(req: Request, target: string): Promise<Response> {
 const CATCH_UP_EVERY = 60_000;
 
 /** Ask another of the person's Macs to install its update. Whether it said it would. */
-async function installOn(ip: string, port: number): Promise<boolean> {
+async function installOn(ip: string, port: number, version?: string): Promise<boolean> {
   try {
     const res = await fetch(`http://${ip}:${port}/api/update/install`, {
       method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(version ? { version } : {}),
       signal: AbortSignal.timeout(5_000),
     });
     const update = res.ok ? ((await res.json()) as { installing?: boolean } | null) : null;

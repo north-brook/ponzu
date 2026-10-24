@@ -309,6 +309,7 @@ function fakeUpdater(
   name: string,
   order: string[],
   state: MachineUpdate,
+  asked: (string | undefined)[] = [],
 ): Updater & {
   set(s: MachineUpdate): void;
 } {
@@ -318,8 +319,9 @@ function fakeUpdater(
     set: (s) => {
       now = s;
     },
-    install: async () => {
+    install: async (o) => {
       order.push(name);
+      asked.push(o?.version);
       now = { ...now, installing: true };
       return now;
     },
@@ -330,9 +332,10 @@ function fakeUpdater(
 test("one Update installs on each of the person's Macs, this one last", async () => {
   await fakeTailnet();
   const order: string[] = [];
+  const versions: (string | undefined)[] = [];
   const spareDir = join(dir, "spare-update");
   const spareWs = new LocalWorkspace({ cwd: spareDir });
-  const spareUpdater = fakeUpdater("spare", order, { version: "1.43.0" });
+  const spareUpdater = fakeUpdater("spare", order, { version: "1.43.0" }, versions);
   const spare = serve(spareWs, {
     port: 0,
     root: spareDir,
@@ -347,10 +350,12 @@ test("one Update installs on each of the person's Macs, this one last", async ()
     spotlight: "roots",
     tailnet: true,
     tailnetPort: spare.port,
-    updater: fakeUpdater("here", order, {
-      version: "1.43.0",
-      ready: { version: "1.44.0", notes: ["Faster."] },
-    }),
+    updater: fakeUpdater(
+      "here",
+      order,
+      { version: "1.43.0", ready: { version: "1.44.0", notes: ["Faster."] } },
+      versions,
+    ),
   });
   const home = stream(`ws://127.0.0.1:${here.port}/api/catalog/stream`);
   try {
@@ -369,10 +374,12 @@ test("one Update installs on each of the person's Macs, this one last", async ()
     const res = await fetch(`http://127.0.0.1:${here.port}/api/update`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ macs: ["local", "spare"] }),
+      body: JSON.stringify({ macs: ["local", "spare"], version: "1.44.0" }),
     });
     expect(await res.json()).toEqual({ macs: { spare: true, local: true } });
     expect(order).toEqual(["spare", "here"]);
+    // Each Mac hears which version, so one holding an older download fetches that one first.
+    expect(versions).toEqual(["1.44.0", "1.44.0"]);
     c = await home.until((c) => updatePlan(c.machines)?.installing === true);
   } finally {
     home.close();

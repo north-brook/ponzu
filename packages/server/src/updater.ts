@@ -9,10 +9,11 @@ export interface Updater {
   /** What it has, as last heard. Undefined until the app first answers. */
   state(): MachineUpdate | undefined;
   /**
-   * Install the newer Ponzu: restart into it, or download it and then restart. `quiet` is
-   * Ponzu's own idea rather than the person's, and the app declines it while they're using it.
+   * Install `version`, or a newer Ponzu: restart into it, downloading it first when what's here
+   * is older. `quiet` is Ponzu's own idea rather than the person's, and the app declines it
+   * while they're using it.
    */
-  install(opts?: { quiet?: boolean }): Promise<MachineUpdate | undefined>;
+  install(opts?: { quiet?: boolean; version?: string }): Promise<MachineUpdate | undefined>;
   stop(): void;
 }
 

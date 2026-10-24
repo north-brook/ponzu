@@ -1,6 +1,6 @@
 import { type CatalogMachine, type UpdatePlan, updatePlan } from "@ponzu/core";
 import { Icon } from "@ponzu/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -21,21 +21,31 @@ export function UpdateButton({
   const plan = updatePlan(machines ?? []);
   const [asked, setAsked] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
-  // A new version to offer: what was asked for before was for another.
+  /** Whether a Mac said it was installing what was asked for, since it was asked. */
+  const started = useRef(false);
+  const installing = Boolean(plan?.installing);
   useEffect(() => {
+    // A new version to offer: what was asked for before was for another.
     if (plan && asked && asked !== plan.version) setAsked(null);
-  }, [plan, asked]);
+    else if (asked && installing) started.current = true;
+    // It started and stopped without the version changing: the download failed. Offer it again.
+    else if (asked && started.current && !installing) setAsked(null);
+  }, [plan, asked, installing]);
   if (!plan) return null;
   const updating = plan.installing || asked === plan.version;
 
   const update = async () => {
+    started.current = false;
     setAsked(plan.version);
     try {
-      await fetch(`${origin}/api/update`, {
+      const res = await fetch(`${origin}/api/update`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ macs: plan.macs }),
+        body: JSON.stringify({ macs: plan.macs, version: plan.version }),
       });
+      const body = res.ok ? ((await res.json()) as { macs?: Record<string, boolean> }) : null;
+      // No Mac said it would: offer Update again rather than spin.
+      if (!Object.values(body?.macs ?? {}).some(Boolean)) setAsked(null);
     } catch {
       // This Mac restarting can cut its own answer short; the catalog says how it went.
     }

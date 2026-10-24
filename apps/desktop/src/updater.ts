@@ -28,7 +28,8 @@ const REPO = "https://github.com/north-brook/ponzu";
 /**
  * What's new between this Ponzu and an update: the release notes its pull requests wrote, from
  * the release-notes.json each release publishes beside its build (docs/release-notes.md), or,
- * for a release without one, its changelog.
+ * for a release without one, its changelog. A release whose file lists no notes shows none: no
+ * section means no note.
  */
 async function notesOf(info: UpdateInfo): Promise<string[]> {
   try {
@@ -47,7 +48,7 @@ async function notesOf(info: UpdateInfo): Promise<string[]> {
             compareVersions(r.version, info.version) <= 0,
         )
         .flatMap((r) => r.notes);
-      if (notes.length) return notes;
+      if (Array.isArray(releases)) return notes;
     }
   } catch {}
   const changelog = info.releaseNotes;
@@ -79,6 +80,10 @@ export async function installUpdater(opts: {
   let ready: MachineUpdate["ready"];
   /** The person asked for it: restart as soon as it's downloaded. */
   let installing = false;
+  /** The version they asked for: a download older than it isn't the one to restart into. */
+  let target: string | undefined;
+  const readyFor = (version?: string) =>
+    Boolean(ready && (!version || compareVersions(ready.version, version) >= 0));
   const state = (): MachineUpdate => ({
     version: app.getVersion(),
     ...(ready ? { ready } : {}),
@@ -92,28 +97,40 @@ export async function installUpdater(opts: {
       else app.quit();
     }, RESTART_DELAY);
 
+  /** Fetch the newest release: one newer than what's downloaded replaces it. */
+  const fetchNewest = () =>
+    void autoUpdater.checkForUpdates().catch(() => {
+      installing = false;
+    });
+
   /**
-   * `quiet`: Ponzu's own idea, for a Mac that was off when the person updated the others. Only
-   * once it's downloaded, and only with nobody at this Mac: no window, or untouched a while.
+   * Install `version`, or a newer one: restart into it once it's downloaded, fetching it first
+   * when what's here is older. `quiet`: Ponzu's own idea, for a Mac that was off when the person
+   * updated the others. Only once it's downloaded, and only with nobody at this Mac: no window,
+   * or untouched a while.
    */
-  const install = (quiet: boolean): MachineUpdate => {
-    if (quiet) {
+  const install = (o: { quiet?: boolean; version?: string }): MachineUpdate => {
+    if (o.quiet) {
+      if (installing) return state();
+      if (!readyFor(o.version)) {
+        // What the other Macs moved on to isn't here yet: fetch it, and install on a later turn.
+        if (ready) fetchNewest();
+        return state();
+      }
       const away = !opts.window() || powerMonitor.getSystemIdleTime() >= AWAY_SECONDS;
-      if (!ready || installing || !away) return state();
+      if (!away) return state();
     }
     installing = true;
-    if (ready) restart();
-    else
-      void autoUpdater.checkForUpdates().catch(() => {
-        installing = false;
-      });
+    target = o.version;
+    if (readyFor(target)) restart();
+    else fetchNewest();
     return state();
   };
 
   autoUpdater.on("update-downloaded", async (info) => {
     ready = { version: info.version, notes: await notesOf(info) };
     opts.onReady();
-    if (installing) restart();
+    if (installing && readyFor(target)) restart();
   });
   autoUpdater.on("update-not-available", () => {
     installing = false;
@@ -136,9 +153,12 @@ export async function installUpdater(opts: {
       let out: MachineUpdate;
       if (req.method === "POST" && req.url === "/update/install") {
         const body = await read(req)
-          .then((text) => JSON.parse(text || "{}") as { quiet?: unknown } | null)
+          .then((text) => JSON.parse(text || "{}") as { quiet?: unknown; version?: unknown } | null)
           .catch(() => null);
-        out = install(body?.quiet === true);
+        out = install({
+          quiet: body?.quiet === true,
+          ...(typeof body?.version === "string" ? { version: body.version } : {}),
+        });
       } else if (req.method === "GET" && req.url === "/update") out = state();
       else {
         res.writeHead(404).end();
