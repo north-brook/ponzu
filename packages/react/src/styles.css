@@ -221,6 +221,7 @@
 /*
  * The rain in a working artboard's header: columns of yuzu dots, each falling at its own pace
  * (--fall) from its own start (--drift), coming in left to right. In em, so it's the label's size.
+ * The studio's home rains on a card still being drawn, outside any .pz-root: yuzu by default.
  */
 @keyframes pz-fall {
   from {
@@ -239,9 +240,14 @@
 .pz-rain > span {
   width: 0.25em;
   height: 0.67em;
+  /* Each dot sits at the top of its tile, so the second ends right at the column's foot. */
   background:
-    radial-gradient(circle, var(--pz-rind) 0.125em, transparent calc(0.125em + 0.5px)) 0 0 / 0.25em
-    0.42em repeat-y;
+    radial-gradient(
+      circle at 50% 0.125em,
+      var(--pz-rind, #ffc81e) 0.125em,
+      transparent calc(0.125em + 0.5px)
+    )
+    0 0 / 0.25em 0.42em repeat-y;
   mask-image: linear-gradient(
     to bottom,
     transparent 0%,

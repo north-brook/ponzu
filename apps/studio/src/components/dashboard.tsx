@@ -12,6 +12,7 @@ import {
   AgentMark,
   ArtboardView,
   Icon,
+  Rain,
   SocketSource,
   Tip,
   TipProvider,
@@ -53,6 +54,8 @@ export interface OpenTarget {
 
 const mod = navigator.userAgent.includes("Mac") ? "⌘" : "Ctrl+";
 
+/** How wide the rain runs on a card that has no preview yet. */
+const RAIN_COLUMNS = 8;
 /** Cards shown live at once. Each holds its design's first page in the page. */
 const LIVE_CARDS = 4;
 /** How long a card stays live after its agent stops: about as long as its preview takes to redraw. */
@@ -824,7 +827,7 @@ function FileCard({
         )}
       >
         <div className={cn("absolute inset-0", archived && "opacity-55 grayscale")}>
-          <Preview src={file.preview} />
+          <Preview src={file.preview} working={working} />
           {live && <LivePreview file={file} />}
         </div>
         {working && <CardTrace />}
@@ -1105,16 +1108,21 @@ function CardMenuItems({
 
 /**
  * The canvas preview, or an empty canvas while it's drawn (or when there's
- * none). Previews are drawn on the light and the dark canvas; the studio's
- * theme follows the system's, and so does the one shown.
+ * none): yuzu rain while an agent is at it, a blank page otherwise. Previews
+ * are drawn on the light and the dark canvas; the studio's theme follows the
+ * system's, and so does the one shown.
  */
-function Preview({ src }: { src: string | null }) {
+function Preview({ src, working }: { src: string | null; working?: boolean }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [src]);
   if (!src || failed)
     return (
       <span className="absolute inset-0 grid place-items-center text-faint">
-        <Icon name="blank" size={28} strokeWidth={1.3} />
+        {working ? (
+          <Rain columns={RAIN_COLUMNS} className="text-[30px]" />
+        ) : (
+          <Icon name="blank" size={28} strokeWidth={1.3} />
+        )}
       </span>
     );
   return (

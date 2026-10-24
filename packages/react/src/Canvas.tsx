@@ -34,7 +34,7 @@ import {
   useMoving,
   useSource,
 } from "./useCanvas.ts";
-import { Juice, useDelayed } from "./working.tsx";
+import { Juice, Rain, useDelayed } from "./working.tsx";
 
 export type Mode = "select" | "hand" | "comment";
 
@@ -1201,28 +1201,13 @@ interface Worker {
  */
 function WorkingStatus({ who }: { who: Worker[]; zoom?: number }) {
   return (
-    <span
-      className="pz-rain pz:ml-auto pz:inline-flex pz:shrink-0 pz:items-center"
-      role="img"
-      aria-label="Working"
+    <Rain
+      className="pz:ml-auto"
+      label="Working"
       title={who.map((a) => `${a.name}: ${a.status ?? "working"}`).join("\n")}
-    >
-      {RAIN.map((c, i) => (
-        <span
-          // biome-ignore lint/suspicious/noArrayIndexKey: a fixed set of columns
-          key={i}
-          style={{ "--i": i, "--fall": `${c.fall}s`, "--drift": `${c.drift}s` } as CSSProperties}
-        />
-      ))}
-    </span>
+    />
   );
 }
-
-/** The rain's columns: each falls at its own pace from its own start, the same every time. */
-const RAIN = Array.from({ length: 24 }, (_, i) => {
-  const r = (n: number) => (((Math.sin((i + 1) * n) * 43758.5453) % 1) + 1) % 1;
-  return { fall: (1.05 + r(12.9898) * 0.5).toFixed(2), drift: (-r(78.233) * 1.5).toFixed(2) };
-});
 
 /**
  * A yuzu ring round a working artboard, a few px off its edge so it never touches the design,
