@@ -15,14 +15,28 @@ test("a change to the Mac app, its server or its studio runs only the desktop su
     "apps/cli/src/index.ts",
     "apps/studio/src/App.tsx",
     "packages/server/src/serve.ts",
-    "packages/render/src/lint.ts",
   ]) {
     expect(suites(file)).toEqual({ desktop: true, mobile: false });
   }
 });
 
-test("the core both apps bundle runs both", () => {
-  expect(suites("packages/core/src/doc.ts")).toEqual({ desktop: true, mobile: true });
+test("what both apps bundle runs both", () => {
+  // The phone's canvas draws artboards with the studio's Artboard, which renders through
+  // @ponzu/render, so render reaches the phone as well as the Mac.
+  for (const file of ["packages/core/src/doc.ts", "packages/render/src/lint.ts"]) {
+    expect(suites(file)).toEqual({ desktop: true, mobile: true });
+  }
+});
+
+test("the studio's components the phone reads by path run the phone too", () => {
+  // The phone can't depend on @ponzu/react, but its canvas and icons import its source.
+  for (const file of [
+    "packages/react/src/icon-names.ts",
+    "packages/react/src/Artboard.tsx",
+    "packages/react/src/arrive.ts",
+  ]) {
+    expect(suites(file).mobile).toBe(true);
+  }
 });
 
 test("the site runs neither", () => {
