@@ -129,7 +129,15 @@ export default function Activity() {
 
   // Seeing a row: at least 60% of it on screen for 600ms while Activity is in front.
   const scrollY = useRef(0);
+  /** The height of what's unobscured: the frame less the header's and the tab bar's insets. */
   const viewH = useRef(0);
+  const frameH = useRef(0);
+  // The header's and tab bar's insets: estimated (status bar, the 56pt bar; the 62pt tab bar
+  // 21pt up) until the first scroll event reports the real ones.
+  const insets = useRef({ top: rail.top + 56, bottom: 62 + 21 });
+  const unobscured = () => {
+    viewH.current = Math.max(0, frameH.current - insets.current.top - insets.current.bottom);
+  };
   const rows = useRef(new Map<string, { y: number; h: number }>());
   const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const byId = useRef(new Map<string, ActivityItem>());
@@ -249,12 +257,16 @@ export default function Activity() {
         testID="activity"
         style={{ flex: 1, backgroundColor: color.bg }}
         onLayout={(e) => {
-          viewH.current = e.nativeEvent.layout.height;
+          frameH.current = e.nativeEvent.layout.height;
+          unobscured();
           look();
         }}
         onScroll={(e) => {
+          const { contentInset, contentOffset } = e.nativeEvent;
           // The offset under the header's inset: the top of what's on screen, in content.
-          scrollY.current = e.nativeEvent.contentOffset.y + e.nativeEvent.contentInset.top;
+          scrollY.current = contentOffset.y + contentInset.top;
+          insets.current = { top: contentInset.top, bottom: contentInset.bottom };
+          unobscured();
           look();
         }}
         scrollEventThrottle={100}
