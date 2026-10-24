@@ -168,9 +168,11 @@ export function artboardMarkup(
   const pin = (css: string) => (colorScheme ? pinColorScheme(css, colorScheme) : css);
   const body = pin(markup);
   const scheme = colorScheme ? `:host{color-scheme:${colorScheme}}` : "";
+  // The canvas rounds its boards a touch; screenshots and exports, which don't set it, don't.
+  const round = "[data-artboard]{border-radius:var(--pz-board-radius,0)}";
   // Tokens' url()s resolve like the artboard's: an @font-face in tokens.css finds assets/ too.
   const resolved = resolveTokenAssets(tokens, assetBase);
-  const html = `<style>${styleText(pin(hostTokens(resolved)))}${scheme}${ARTBOARD_BASE_CSS}</style>${body}`;
+  const html = `<style>${styleText(pin(hostTokens(resolved)))}${scheme}${round}${ARTBOARD_BASE_CSS}</style>${body}`;
   return { html, fonts: googleFonts(body, tokens), faces: fontFaceRules(resolved) };
 }
 

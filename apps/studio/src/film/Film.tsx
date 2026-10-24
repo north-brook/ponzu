@@ -16,23 +16,23 @@ import {
 } from "@ponzu/core";
 import {
   AgentMark,
-  ARRIVE_EASING,
-  ARRIVE_KEYFRAMES,
   ARRIVE_LAG_MS,
   ARRIVE_MS,
-  ARRIVE_SLIDE,
   arriveDelay,
+  arriveLayer,
   artboardMarkup,
   artboardSize,
+  type Develop,
+  develop,
   Icon,
   loadArtboardFonts,
   MemorySource,
   pinClass,
   pinWrapClass,
+  Ring,
   SLICE,
   SLICE_STROKE,
   ThreadCard,
-  Trace,
   WorkingStatus,
 } from "@ponzu/react";
 import { type CSSProperties, memo, useLayoutEffect, useMemo, useRef } from "react";
@@ -254,8 +254,8 @@ function buildFrame(e: Edit, scene: Scene, f: number): Frame | null {
       at.push((f - times[j]!) * 1000 - arriveDelay(i));
     });
   }
-  // New boards: a sheet is uncovered with its first pieces, the same sweep at the same moment,
-  // so it's never seen bare (a dark one never a black slab).
+  // New boards: a sheet is uncovered top first as its first pieces start, so it's never seen bare
+  // (a dark one never a black slab).
   const sheets: { id: string; p: number }[] = [];
   for (let j = Math.max(0, k - 3); j <= k; j++)
     for (const id of steps[j]!.boards) {
@@ -633,18 +633,19 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
                   boxShadow: veil > 0.5 ? "none" : undefined,
                   left: 0,
                   top: 0,
-                  transform: `translate(${(ab.x - ARRIVE_SLIDE * (1 - sheet)) * cam.zoom + tx}px, ${ab.y * cam.zoom + ty}px) scale(${cam.zoom})`,
+                  transform: `translate(${ab.x * cam.zoom + tx}px, ${ab.y * cam.zoom + ty}px) scale(${cam.zoom})`,
                   transformOrigin: "0 0",
                   width: w,
                   height: h ?? undefined,
+                  // Rounded as on the canvas: a few px on screen.
+                  borderRadius: 4 / cam.zoom,
+                  ["--pz-board-radius" as string]: `${4 / cam.zoom}px`,
                   // A new board is drawn in from the top, solid: a dark one never passes through grey.
-                  // A new sheet is uncovered left to right with its first pieces (the shimmer slide).
+                  // A new sheet is uncovered top first with its first pieces (the develop).
                   clipPath:
-                    drawing < 1
-                      ? `inset(-40px -40px ${(1 - drawing) * 100}% -40px)`
-                      : sheet < 1
-                        ? `inset(-40px ${(1 - sheet) * 100}% -40px -40px)`
-                        : undefined,
+                    Math.min(drawing, sheet) < 1
+                      ? `inset(-40px -40px ${(1 - Math.min(drawing, sheet)) * 100}% -40px)`
+                      : undefined,
                 }}
               >
                 <div
@@ -654,9 +655,7 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
                   )}
                   style={{ fontSize: 12 / cam.zoom, top: -22 / cam.zoom, opacity: 1 - veil }}
                 >
-                  <span className={cn("pz:min-w-0 pz:truncate", who && "pz-shimmer")}>
-                    {ab.name}
-                  </span>
+                  <span className="pz:min-w-0 pz:truncate">{ab.name}</span>
                   {who && (
                     <WorkingStatus
                       who={[{ id: who.name, name: who.name, client: who.client }]}
@@ -716,7 +715,7 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
               const pinned = (headerY < 14 || p.x < 0) && p.y + h * cam.zoom > 120;
               return (
                 <>
-                  <Trace x={p.x} y={p.y} w={w} h={h * cam.zoom} />
+                  <Ring x={p.x} y={p.y} w={w} h={h * cam.zoom} />
                   {pinned && (
                     <div
                       className="pz-film-badge pz:absolute pz:flex pz:items-center pz:gap-[0.5em] pz:whitespace-nowrap pz:rounded-xl pz:bg-bar pz:text-foreground pz:leading-none pz:shadow-bar pz:backdrop-blur-[18px] pz:backdrop-saturate-[1.6]"
@@ -728,7 +727,7 @@ export function Film({ model, f }: { model: FilmModel; f: number }) {
                         fontSize: 12.5 * (view.w < view.h ? 1.08 : 1),
                       }}
                     >
-                      <span className="pz:min-w-0 pz:truncate pz-shimmer">{ab.name}</span>
+                      <span className="pz:min-w-0 pz:truncate">{ab.name}</span>
                       <WorkingStatus
                         who={[
                           {
@@ -918,9 +917,8 @@ export const FilmBoard = memo(function FilmBoard({
   return <div ref={host} data-artboard-host={artboard.id} style={{ display: "contents" }} />;
 });
 
-/** New pieces rise 6px and fade in, staggered, over 500ms; driven from film time. */
-const rising = new Set<Element>();
-const anims = new WeakMap<Element, Animation>();
+/** New pieces developing; driven from film time. */
+const developing = new Map<Element, Develop>();
 
 /** `ms`: how long each arrival takes (the canvas's own pace unless a film quickens it). */
 export function applyRise(root: HTMLElement, r: Frame["rising"], ms = ARRIVE_MS) {
@@ -930,30 +928,25 @@ export function applyRise(root: HTMLElement, r: Frame["rising"], ms = ARRIVE_MS)
       const local = r.at[n]!;
       if (local >= ms) return;
       for (const host of root.querySelectorAll("[data-artboard-host]")) {
-        const el = host.shadowRoot?.querySelector(`[data-id="${CSS.escape(id)}"]`);
-        if (!el || live.has(el)) continue;
+        const shadow = host.shadowRoot;
+        const el = shadow?.querySelector(`[data-id="${CSS.escape(id)}"]`);
+        if (!shadow || !el || live.has(el)) continue;
         live.add(el);
-        let a = anims.get(el);
-        if (!a) {
-          // The canvas's own arrival (the shimmer slide), seeked: the film shows what the person saw.
-          a = el.animate(ARRIVE_KEYFRAMES, {
-            duration: ms,
-            easing: ARRIVE_EASING,
-            fill: "both",
-          });
-          a.pause();
-          anims.set(el, a);
-          rising.add(el);
+        let d = developing.get(el);
+        if (!d) {
+          // The canvas's own arrival (the develop), seeked: the film shows what the person saw.
+          d = develop(el, arriveLayer(shadow), ms);
+          for (const a of d.animations) a.pause();
+          developing.set(el, d);
         }
         // Before its turn (the beat after its write, its place in the stagger) it waits hidden.
-        a.currentTime = Math.max(0, local);
+        for (const a of d.animations) a.currentTime = Math.max(0, local);
       }
     });
-  for (const el of rising) {
+  for (const [el, d] of developing) {
     if (live.has(el)) continue;
-    anims.get(el)?.cancel();
-    anims.delete(el);
-    rising.delete(el);
+    d.cancel();
+    developing.delete(el);
   }
 }
 

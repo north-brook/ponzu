@@ -6,6 +6,8 @@ import {
   ARRIVE_STAGGER_MS,
   Arrivals,
   arrivals,
+  BOARD_DRAW_MS,
+  idsIn,
   outermost,
 } from "./arrive.ts";
 
@@ -90,8 +92,41 @@ test("a board made inside a nested batch settles in; one never shown is forgotte
     ops: [{ op: "batch", ops: [{ op: "artboard.create", page: "pg", index: 0, artboard: board }] }],
   };
   a.add(nested, doc(board.root), 0);
-  expect(a.takeBoard("ab_new", 10)).toBe(true);
+  expect(a.takeBoard("ab_new", 10)).toBe(0);
+  // Once: a re-mount mid-arrival doesn't start it over.
+  expect(a.takeBoard("ab_new", 20)).toBeUndefined();
   a.add(nested, doc(board.root), 0);
   // Its page opened long after: it arrives as it is.
-  expect(a.takeBoard("ab_new", 60_000)).toBe(false);
+  expect(a.takeBoard("ab_new", 60_000)).toBeUndefined();
+});
+
+test("a new board's pieces wait for its frame to draw", () => {
+  const board = { id: "ab_new", name: "N", x: 0, y: 0, root: el("ab_new", [el("n_x")]) };
+  const a = new Arrivals();
+  a.add({ op: "artboard.create", page: "pg", index: 0, artboard: board }, doc(board.root), 0);
+  const starts = (a as unknown as { pieces: Map<string, number> }).pieces;
+  expect(starts.get("n_x")).toBe(ARRIVE_LAG_MS + BOARD_DRAW_MS);
+});
+
+test("a file saved straight to disk brings in only what's new", () => {
+  // The save rewrote the board's children; the header and the card it left alone kept their ids.
+  const before = doc(el("ab", [el("n_head"), el("n_card", [el("n_title")])]));
+  const after = doc(
+    el("ab", [el("n_head"), el("n_card", [el("n_title"), el("n_badge")]), el("n_foot")]),
+  );
+  const op: Op = {
+    op: "children",
+    id: "ab",
+    children: after.pages[0]!.artboards[0]!.root.children,
+  };
+  const known = idsIn(before);
+  expect(arrivals(op, (id) => known.has(id))).toEqual(["n_badge", "n_foot"]);
+  const a = new Arrivals();
+  a.add(op, after, 0, before);
+  const starts = (a as unknown as { pieces: Map<string, number> }).pieces;
+  expect([...starts.keys()]).toEqual(["n_badge", "n_foot"]);
+  // A save that changed nothing new: nothing arrives.
+  const b = new Arrivals();
+  b.add(op, after, 0, after);
+  expect((b as unknown as { pieces: Map<string, number> }).pieces.size).toBe(0);
 });

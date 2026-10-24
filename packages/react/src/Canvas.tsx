@@ -9,6 +9,8 @@ import {
   threadPage,
 } from "@ponzu/core";
 import {
+  type CSSProperties,
+  Fragment,
   type ReactNode,
   useCallback,
   useEffect,
@@ -18,10 +20,10 @@ import {
   useState,
 } from "react";
 import { ArtboardView } from "./Artboard.tsx";
-import { Arrivals, arriveBoard } from "./arrive.ts";
+import { Arrivals, arriveBoard, drawFrame, RING_OUT_MS, ringDelay } from "./arrive.ts";
 import { Composer, ThreadCard, threadCard } from "./Comments.tsx";
 import { type CanvasSource, viewOnly } from "./connection.ts";
-import { AgentMark, Icon, Icons } from "./icons.tsx";
+import { Icon, Icons } from "./icons.tsx";
 import { useWindowStill } from "./still.ts";
 import { Button, cn, Tip, TipProvider, ToggleGroup } from "./ui.tsx";
 import {
@@ -83,6 +85,10 @@ const FIRST_SIDE = 16;
 const FIRST_TOP = 16 + 22;
 /** A board's title sits this many screen px above it (the label's `top`). */
 const LABEL = 22;
+/** Boards are ever so slightly rounded: screen px, at any zoom. */
+const BOARD_RADIUS = 4;
+/** The ring round a working board sits this many screen px off its edge. */
+const RING_GAP = 4;
 
 /**
  * Whether a board's title, a fixed size on screen above it, would lie over another board: zoomed
@@ -211,16 +217,22 @@ export function Canvas({
   // Agents' screenshots default to how this canvas shows artboards.
   useEffect(() => source.setTheme?.(theme), [source, theme]);
 
-  // An agent's work arrives with the shimmer slide; the person's own edits just appear.
-  // One per source: what's arriving in one document never arrives in another.
+  // An agent's work, and files saved straight into the design, develop onto the canvas; the
+  // person's own edits here just appear. Only what's new arrives: a save that rewrote a whole board
+  // brings in just the pieces it added. One per source: what's arriving in one document never
+  // arrives in another.
   const arrivals = useMemo(() => new Arrivals(), [source]);
   useEffect(
     () =>
       source.onOp?.((op, origin, next) => {
-        if (origin.kind === "agent") arrivals.add(op, next);
+        // Listeners hear an op before the state takes it: the doc there is the one before.
+        if (origin.kind === "agent" || origin.kind === "disk")
+          arrivals.add(op, next, undefined, source.getState().doc);
       }),
     [source, arrivals],
   );
+  // A board stays ringed a moment after its agent leaves, so the ring can fade.
+  const ringed = useLingering(working, RING_OUT_MS);
 
   const boards = page?.artboards ?? [];
   const boardHeight = (ab: Artboard) => size(ab).h ?? measured[ab.id] ?? 900;
@@ -836,10 +848,21 @@ export function Canvas({
               <div
                 key={ab.id}
                 ref={(el) => {
-                  if (el && arrivals.takeBoard(ab.id)) arriveBoard(el);
+                  const at = el ? arrivals.takeBoard(ab.id) : undefined;
+                  if (el && at !== undefined) arriveBoard(el, at);
                 }}
                 className="pz:absolute pz:shadow-board"
-                style={{ left: x, top: y, width: w, height: h ?? undefined }}
+                style={
+                  {
+                    left: x,
+                    top: y,
+                    width: w,
+                    height: h ?? undefined,
+                    // Slightly rounded, the same few px on screen at any zoom.
+                    borderRadius: BOARD_RADIUS / camera.zoom,
+                    "--pz-board-radius": `${BOARD_RADIUS / camera.zoom}px`,
+                  } as CSSProperties
+                }
               >
                 <div
                   className={cn(
@@ -879,14 +902,11 @@ export function Canvas({
                       }}
                     />
                   ) : (
-                    <span
-                      className={cn("pz:min-w-0 pz:truncate", who && "pz-shimmer")}
-                      title={ab.name}
-                    >
+                    <span data-board-name className="pz:min-w-0 pz:truncate" title={ab.name}>
                       {ab.name}
                     </span>
                   )}
-                  {who && <WorkingStatus who={who} zoom={camera.zoom} />}
+                  {who && <WorkingStatus who={who} />}
                 </div>
                 <ArtboardView
                   artboard={ab}
@@ -905,18 +925,21 @@ export function Canvas({
         {/* Overlays in screen space so they stay crisp at any zoom. */}
         <div className="pz:pointer-events-none pz:absolute pz:inset-0">
           {boards.map((ab) => {
-            if (!working.has(ab.id)) return null;
+            const drawn = arrivals.boardAt(ab.id);
+            const ring = ringed.get(ab.id);
+            if (drawn === undefined && ring === undefined) return null;
             const g = ghostFor(ab.id);
-            const w = size(ab).w * camera.zoom;
-            const h = boardHeight(ab) * camera.zoom;
+            const box = {
+              x: (ab.x + (g?.dx ?? 0)) * camera.zoom + camera.x,
+              y: (ab.y + (g?.dy ?? 0)) * camera.zoom + camera.y,
+              w: size(ab).w * camera.zoom,
+              h: boardHeight(ab) * camera.zoom,
+            };
             return (
-              <Trace
-                key={ab.id}
-                x={(ab.x + (g?.dx ?? 0)) * camera.zoom + camera.x}
-                y={(ab.y + (g?.dy ?? 0)) * camera.zoom + camera.y}
-                w={w}
-                h={h}
-              />
+              <Fragment key={ab.id}>
+                {ring !== undefined && <Ring {...box} leaving={ring} delay={ringDelay(drawn)} />}
+                {drawn !== undefined && <Frame {...box} at={drawn} />}
+              </Fragment>
             );
           })}
           {pinDrag?.moved &&
@@ -1169,59 +1192,138 @@ export interface Worker {
 }
 
 /**
- * The right side of a working artboard's header: the mark of each agent on
- * it. What they say they're doing is in the tooltip; written out, one pass
- * repeated the same status over every board it touched.
+ * The right side of a working artboard's header: yuzu rain, columns of dots falling at their own
+ * pace, Paper's way of saying "at work here" without anyone's face on the board. The columns come
+ * in left to right. Sized in em, so it's the label's size at any zoom. Who's working and what they
+ * say they're doing is in the tooltip; written out, one pass repeated the same status over every
+ * board it touched.
  */
-export function WorkingStatus({ who, zoom }: { who: Worker[]; zoom: number }) {
+export function WorkingStatus({ who }: { who: Worker[]; zoom?: number }) {
   return (
     <span
-      className="pz:ml-auto pz:inline-flex pz:shrink-0 pz:items-center pz:text-foreground"
-      style={{ gap: 3 / zoom }}
+      className="pz-rain pz:ml-auto pz:inline-flex pz:shrink-0 pz:items-center"
+      role="img"
+      aria-label="Working"
       title={who.map((a) => `${a.name}: ${a.status ?? "working"}`).join("\n")}
     >
-      {who.map((a) => (
-        <span key={a.id} className="pz:inline-grid pz:place-items-center">
-          <AgentMark client={a.client} size={12 / zoom} />
-        </span>
+      {RAIN.map((c, i) => (
+        <span
+          // biome-ignore lint/suspicious/noArrayIndexKey: a fixed set of columns
+          key={i}
+          style={{ "--i": i, "--fall": `${c.fall}s`, "--drift": `${c.drift}s` } as CSSProperties}
+        />
       ))}
     </span>
   );
 }
 
+/** The rain's columns: each falls at its own pace from its own start, the same every time. */
+const RAIN = Array.from({ length: 24 }, (_, i) => {
+  const r = (n: number) => (((Math.sin((i + 1) * n) * 43758.5453) % 1) + 1) % 1;
+  return { fall: (1.05 + r(12.9898) * 0.5).toFixed(2), drift: (-r(78.233) * 1.5).toFixed(2) };
+});
+
 /**
- * Yuzu tracing a working artboard's outline: six dashes, one per segment of
- * the slice, marching over a faint full outline. Drawn in the screen-space
- * overlay so it's 3px at any zoom, and never part of the design: screenshots
- * and exports don't see it.
+ * A yuzu ring round a working artboard, a few px off its edge so it never touches the design,
+ * breathing slowly in width and glow so it reads on a light canvas as well as a dark one. It
+ * fades in after `delay` ms (a new board's frame is still drawing) and fades out when `leaving`.
+ * Drawn in the screen-space overlay so it's the same on screen at any zoom, and never part of the
+ * design: screenshots and exports don't see it.
  */
-export function Trace({ x, y, w, h }: { x: number; y: number; w: number; h: number }) {
+export function Ring({
+  x,
+  y,
+  w,
+  h,
+  leaving = false,
+  delay = 0,
+}: {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  leaving?: boolean;
+  delay?: number;
+}) {
+  // Fixed when it mounts: a running animation whose delay changed would jump.
+  const [wait] = useState(delay);
+  return (
+    <div
+      className="pz:pointer-events-none pz:absolute pz:transition-opacity pz:duration-500"
+      style={{
+        left: x - RING_GAP,
+        top: y - RING_GAP,
+        width: w + 2 * RING_GAP,
+        height: h + 2 * RING_GAP,
+        opacity: leaving ? 0 : 1,
+      }}
+      aria-hidden
+    >
+      <div
+        className="pz-ring pz:absolute pz:inset-0"
+        style={{ borderRadius: BOARD_RADIUS + RING_GAP, animationDelay: `${wait}ms, ${wait}ms` }}
+      />
+    </div>
+  );
+}
+
+/**
+ * A new artboard's frame drawing itself round its final bounds where the ring will be, from when
+ * the board landed, then fading as the ring takes over.
+ */
+function Frame({ x, y, w, h, at }: { x: number; y: number; w: number; h: number; at: number }) {
+  const rect = useRef<SVGRectElement>(null);
+  useLayoutEffect(() => {
+    if (rect.current) drawFrame(rect.current, at);
+  }, [at]);
   return (
     <svg
       className="pz:pointer-events-none pz:absolute pz:overflow-visible pz:text-[var(--pz-rind)]"
-      style={{ left: x, top: y, width: w, height: h }}
+      style={{
+        left: x - RING_GAP,
+        top: y - RING_GAP,
+        width: w + 2 * RING_GAP,
+        height: h + 2 * RING_GAP,
+      }}
       aria-hidden
     >
       <rect
-        width={w}
-        height={h}
-        fill="none"
-        stroke="currentColor"
-        strokeOpacity={0.6}
-        strokeWidth={1}
-      />
-      <rect
-        className="pz-trace"
-        width={w}
-        height={h}
+        ref={rect}
+        x={1}
+        y={1}
+        width={Math.max(0, w + 2 * RING_GAP - 2)}
+        height={Math.max(0, h + 2 * RING_GAP - 2)}
+        rx={BOARD_RADIUS + RING_GAP}
         pathLength={100}
         fill="none"
         stroke="currentColor"
-        strokeWidth={3}
-        strokeLinecap="round"
+        strokeWidth={2}
+        strokeDasharray="100 100"
+        strokeDashoffset={100}
       />
     </svg>
   );
+}
+
+/**
+ * The ids in `live`, false, and for `ms` after each one leaves it, true: long enough for whatever
+ * marks it to fade out.
+ */
+function useLingering(live: Map<string, unknown>, ms: number): Map<string, boolean> {
+  const [leaving, setLeaving] = useState<ReadonlySet<string>>(new Set());
+  const last = useRef<string[]>([]);
+  useEffect(() => {
+    const gone = last.current.filter((id) => !live.has(id));
+    last.current = [...live.keys()];
+    if (!gone.length) return;
+    setLeaving((l) => new Set([...l, ...gone]));
+    // Not cleared when `live` changes again: presence changes often, and the ring must still go.
+    setTimeout(() => setLeaving((l) => new Set([...l].filter((id) => !gone.includes(id)))), ms);
+  }, [live, ms]);
+  const out = new Map<string, boolean>();
+  for (const id of leaving) out.set(id, true);
+  for (const id of live.keys()) out.set(id, false);
+  return out;
 }
 
 /** Open pins sit a level above the rest, so another pin never covers their card. */
