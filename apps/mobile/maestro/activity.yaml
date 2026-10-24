@@ -25,10 +25,13 @@ tags: [dev-host]
     visible:
       id: activity
     timeout: 10000
-# A row reads as one element: its title, where, and when.
+# A row reads as one element: its title, when, then where: the file and each
+# page, each with its icon, a "·" between.
 - extendedWaitUntil:
-    visible: "Claude added 3 artboards.*Maestro · Home.*"
+    visible: "Claude added 3 artboards.*Maestro, ·, Home.*"
     timeout: 20000
+- assertVisible:
+    id: activity-where
 - assertVisible:
     id: activity-thumbs
 - assertNotVisible: ".*Cannot update a component.*"
