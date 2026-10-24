@@ -62,7 +62,6 @@
     {
       "id": "th_y6zmr",
       "artboardId": "ab_brd_d",
-      "nodeId": "n_py874ty",
       "x": 300,
       "y": 245,
       "status": "open",
@@ -92,7 +91,6 @@
     {
       "id": "th_sr03c",
       "artboardId": "ab_brd_d2",
-      "nodeId": "n_ythhif7",
       "x": 385,
       "y": 219,
       "status": "open",
@@ -122,7 +120,6 @@
     {
       "id": "th_bd3bp",
       "artboardId": "ab_brd_d3",
-      "nodeId": "n_y53wahr",
       "x": 448,
       "y": 199,
       "status": "resolved",
@@ -143,7 +140,6 @@
     {
       "id": "th_5y8jx",
       "artboardId": "ab_brd_d3",
-      "nodeId": "n_ncfw0x1",
       "x": 439,
       "y": 179,
       "status": "open",
@@ -173,7 +169,6 @@
     {
       "id": "th_0fxe8",
       "artboardId": "ab_brd_d3",
-      "nodeId": "n_y53wahr",
       "x": 446,
       "y": 216,
       "status": "resolved",
@@ -194,7 +189,6 @@
     {
       "id": "th_f8z1o",
       "artboardId": "ab_brd_d3",
-      "nodeId": "n_7z4kr9b",
       "x": 453,
       "y": 435,
       "status": "resolved",
@@ -218,9 +212,9 @@
       "nodeId": "n_5700vgq",
       "x": 354,
       "y": 57,
-      "status": "resolved",
+      "status": "open",
       "createdAt": 1792815551879,
-      "updatedAt": 1792819281949,
+      "updatedAt": 1792819656002,
       "messages": [
         {
           "id": "m_ilruu",
