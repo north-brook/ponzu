@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.46.0](https://github.com/north-brook/ponzu/compare/v1.45.0...v1.46.0) (2026-10-24)
+
+
+### Features
+
+* update every mac from one button in the title bar ([#182](https://github.com/north-brook/ponzu/issues/182)) ([324c202](https://github.com/north-brook/ponzu/commit/324c20264c550a6c4c6d0ba1b703ce4625ec4b65))
+
 ## [1.45.0](https://github.com/north-brook/ponzu/compare/v1.44.0...v1.45.0) (2026-10-24)
 
 
