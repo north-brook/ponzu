@@ -11,6 +11,27 @@ tags: [dev-host]
       id: activity
     timeout: 10000
 - assertVisible: "Activity"
+# One list with a filter, New by default. Everything, from its menu, puts a
+# count on the button; New again clears it. What's new (run.sh's agent added
+# three artboards) shows as a row; with nothing new, it says you're caught up.
+- assertVisible: "Filter"
+- tapOn: "Filter"
+- tapOn: "Everything"
+- extendedWaitUntil:
+    visible: "Filter, 1 on"
+    timeout: 5000
+- tapOn: "Filter, 1 on"
+- tapOn: "New"
+- extendedWaitUntil:
+    visible: "Filter"
+    timeout: 5000
+- runFlow:
+    when:
+      visible:
+        id: activity-empty-caughtUp
+    commands:
+      - assertVisible:
+          id: activity-show-everything
 - assertNotVisible: ".*Cannot update a component.*"
 - tapOn:
     id: tab-designs
