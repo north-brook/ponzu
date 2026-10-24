@@ -41,15 +41,22 @@ async function wake(mac: Mac): Promise<boolean> {
     await new Promise((r) => setTimeout(r, WAKE.every));
     try {
       await ask(mac, 1_500);
-      // "Waking Ponzu…" was on screen: it's felt when the Mac answers, and when it doesn't.
-      success();
       return true;
     } catch {
       // Not yet.
     }
   }
-  fail();
   return false;
+}
+
+/**
+ * "Waking Ponzu…" was on screen: it's felt once, when the waking is over, however many Macs
+ * woke. Success if any answered, failure if none did.
+ */
+function feltWake(woke: boolean[]) {
+  if (!woke.length) return;
+  if (woke.some(Boolean)) success();
+  else fail();
 }
 
 let pass: Promise<void> | null = null;
@@ -67,6 +74,7 @@ export function reachAll(): Promise<void> {
       const asked = new Set<string>();
       const outcomes: ReturnType<typeof afterFirstAsk>[] = [];
       const unreachable: string[] = [];
+      const woke: boolean[] = [];
       const one = async (mac: Mac) => {
         asked.add(mac.id);
         setReach(mac.id, "asking");
@@ -87,12 +95,15 @@ export function reachAll(): Promise<void> {
           const learned = await learnPeers(mac).catch(() => []);
           await Promise.all(learned.filter((m) => !asked.has(m.id)).map(one));
         } else if (outcome === "wake") {
-          setReach(mac.id, (await wake(mac)) ? "answer" : "asleep");
+          const up = await wake(mac);
+          woke.push(up);
+          setReach(mac.id, up ? "answer" : "asleep");
         } else if (outcome === "asleep") {
           setReach(mac.id, "asleep");
         }
       };
       await Promise.all(macs.get().map(one));
+      feltWake(woke);
       // Unreachable Macs: no tailnet if none could be tried at all, else asleep.
       const verdict = settle(outcomes);
       for (const id of unreachable) setReach(id, verdict);
@@ -114,7 +125,11 @@ export async function reachOne(mac: Mac): Promise<Reach> {
       ok: false,
       failure: err instanceof NetError ? err.kind : "other",
     });
-    setReach(mac.id, next === "wake" ? ((await wake(mac)) ? "answer" : "asleep") : "asleep");
+    if (next === "wake") {
+      const up = await wake(mac);
+      feltWake([up]);
+      setReach(mac.id, up ? "answer" : "asleep");
+    } else setReach(mac.id, "asleep");
   }
   return reach.get()[mac.id]!;
 }
