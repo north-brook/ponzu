@@ -7,6 +7,7 @@ import { Pressable, Text, View } from "react-native";
 import Animated, {
   Easing,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withDelay,
   withSequence,
@@ -36,6 +37,7 @@ import { AgentAvatar, AgentMark, Back, FileIcon, PageIcon } from "../../../compo
 import { Sheet } from "../../../components/sheet";
 import { Shimmer } from "../../../components/shimmer";
 import { ThreadSheet } from "../../../components/thread-sheet";
+import { useMacChanges } from "../../../lib/activity-store";
 import { useFile } from "../../../lib/catalog";
 import { useDesignSession, useSessionState } from "../../../lib/design";
 import { useDuoLayout } from "../../../lib/duo";
@@ -47,10 +49,12 @@ import { findMac } from "../../../lib/macs";
 import { pageIconImage } from "../../../lib/page-icons";
 import { markSeen, seen } from "../../../lib/seen";
 import { Juice } from "../../../lib/slice";
+import { FOLLOW, standbyPath } from "../../../lib/standby";
 import { track } from "../../../lib/telemetry";
 import { useTheme } from "../../../lib/theme";
 import { keepThreads } from "../../../lib/threads";
 import { EASE_OUT } from "../../../lib/tokens";
+import { StandbyAwake, useFollow, useStandby } from "../../../lib/use-standby";
 import { useWindowInsets } from "../../../lib/window-insets";
 
 const ease = Easing.bezier(...EASE_OUT);
@@ -80,6 +84,8 @@ export default function Canvas() {
     comment?: string;
     /** Development: delete the person's threads that start with this text, so a test leaves the file as it was. */
     uncomment?: string;
+    /** Development: standby on, as if set down while an agent works (the simulator has no motion). */
+    standby?: string;
   }>();
   const { color, scheme } = useTheme();
   const screenInsets = useSafeAreaInsets();
@@ -194,7 +200,23 @@ export default function Canvas() {
   const working = agent ? agentActivity(agent, session?.file ?? params.key) === "working" : false;
   const thread = doc?.threads.find((t) => t.id === threadId) ?? null;
 
-  const standby = false;
+  // Standby (iPhone Duo set down while an agent works): the page alone on black, the camera
+  // easing to each board the agent touches. Development's `?standby=1` forces it on the simulator.
+  const fileKey = session?.file ?? params.key;
+  const standby = useStandby(state.presence, fileKey, __DEV__ && params.standby === "1");
+  const changes = useMacChanges(params.mac);
+  const onPage = useMemo(() => new Set(page?.artboards.map((a) => a.id) ?? []), [page]);
+  const path = useMemo(
+    () => standbyPath({ presence: state.presence, changes, file: fileKey, page: onPage }),
+    // Presence is a new array on every message; the path changes only with what's worked on.
+    [JSON.stringify(state.presence.map((p) => p.working)), changes, fileKey, onPage],
+  );
+  const still = useReducedMotion();
+  const following = useFollow(path, standby, FOLLOW);
+  useEffect(() => {
+    if (standby && following)
+      canvas.current?.post({ t: "follow", artboardId: following, ms: still ? 0 : FOLLOW.move });
+  }, [standby, following]);
 
   /** The board focused as the canvas last said: a haptic marks going into or out of focus, not a gesture settling. */
   const wasFocused = useRef<string | null>(null);
@@ -429,6 +451,7 @@ export default function Canvas() {
       testID={standby ? "standby" : "canvas"}
       style={{ flex: 1, backgroundColor: standby ? "#0b0b0a" : color.canvas }}
     >
+      {standby && <StandbyAwake />}
       {/*
         Standby is the page alone, the full width of the display: the status bar's vertical rail
         is turned horizontal for it, then hidden (Apple's "full width for immersive interfaces

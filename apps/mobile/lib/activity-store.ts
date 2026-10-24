@@ -1,6 +1,6 @@
 import type { AgentChange } from "@ponzu/core";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useQueries } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import { type ActivityItem, buildActivity, isNew } from "./activity";
 import { useFiles, whenAgentEdits } from "./catalog";
@@ -65,6 +65,22 @@ export function changesMoved(mac: string) {
 }
 
 whenAgentEdits(changesMoved);
+
+/**
+ * One Mac's change log, as the cache holds it: standby's camera falls back
+ * to it when an agent goes quiet between edits.
+ */
+export function useMacChanges(id: string | undefined): AgentChange[] {
+  const saved = useStore(macs);
+  const mac = saved.find((m) => m.id === id);
+  const q = useQuery({
+    queryKey: keys.activity(id ?? ""),
+    queryFn: () => fetchChanges(mac!),
+    enabled: Boolean(mac),
+    staleTime: 10_000,
+  });
+  return q.data ?? [];
+}
 
 /** Each Mac's changes, as the cache holds them, with thumbnails on the Mac's address. */
 function useChanges(): Record<string, AgentChange[] | null> {
