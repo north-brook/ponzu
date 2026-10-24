@@ -1,28 +1,26 @@
 import { useEffect, useState } from "react";
 import { type LayoutChangeEvent, StyleSheet, Text, View } from "react-native";
 import Animated, {
-  cancelAnimation,
   Easing,
+  FadeIn,
   useAnimatedStyle,
-  useReducedMotion,
   useSharedValue,
-  withRepeat,
   withTiming,
 } from "react-native-reanimated";
-import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import type { PhoneFile } from "../lib/files";
-import { Juice } from "../lib/slice";
 import { useScheme, useTheme } from "../lib/theme";
+import { Glass } from "./glass";
 import { MacImage } from "./preview";
 
 /**
  * What the canvas shows while its page loads: what the phone already has.
  * The design's preview (its Designs card's, from the cache) framed as the
  * canvas frames a page, in the space between the bar and the home indicator,
- * with a board's corners and hairline and a soft shimmer sweeping across.
- * With no preview, the slice juicing in the middle. It cross-fades into the
- * live canvas once the canvas has drawn (`drawn`). A Mac that isn't
- * answering says so over it.
+ * with a board's corners and hairline. It's content, not a loader: the
+ * loading signal is the file pill's slice juicing (app/design/[mac]/[key].tsx).
+ * With no preview, the canvas's color alone. It cross-fades into the live
+ * canvas once the canvas has drawn (`drawn`). A Mac that isn't answering is
+ * a problem, so it says so in a glass card over it.
  */
 export function CanvasPlaceholder({
   file,
@@ -91,53 +89,32 @@ export function CanvasPlaceholder({
                 onSize={(iw, ih) => iw > 0 && ih > 0 && setAspect(iw / ih)}
                 style={{ width: "100%", height: "100%" }}
               />
-              <Sweep width={w} color={color.canvas} />
             </View>
           </View>
-        ) : (
-          <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-            <Juice size={40} color={color.faint} />
-          </View>
-        )}
+        ) : null}
         {offline && (
-          <View
+          <Animated.View
+            entering={FadeIn.duration(220)}
+            testID="canvas-offline"
             style={{ position: "absolute", left: 24, right: 24, bottom: 24, alignItems: "center" }}
           >
-            <Text
-              style={{ fontFamily: "Inter", fontSize: 15, color: color.muted, textAlign: "center" }}
-            >
-              {offline}
-            </Text>
-          </View>
+            <Glass style={{ borderRadius: 18, paddingVertical: 12, paddingHorizontal: 16 }}>
+              <Text
+                style={{
+                  fontFamily: "Inter",
+                  fontWeight: "500",
+                  fontSize: 14,
+                  lineHeight: 19,
+                  color: color.ink,
+                  textAlign: "center",
+                }}
+              >
+                {offline}
+              </Text>
+            </Glass>
+          </Animated.View>
         )}
       </View>
-    </Animated.View>
-  );
-}
-
-/** A soft band of the canvas's color sweeping across the preview every 1.6s, as a loading shimmer. */
-function Sweep({ width, color }: { width: number; color: string }) {
-  const x = useSharedValue(0);
-  const still = useReducedMotion();
-  useEffect(() => {
-    if (still) return;
-    x.value = withRepeat(withTiming(1, { duration: 1600, easing: Easing.linear }), -1);
-    return () => cancelAnimation(x);
-  }, [still]);
-  const band = useAnimatedStyle(() => ({ transform: [{ translateX: (x.value * 2 - 1) * width }] }));
-  if (still) return null;
-  return (
-    <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, band]}>
-      <Svg width={width} height="100%">
-        <Defs>
-          <LinearGradient id="sweep" x1="0" y1="0" x2="1" y2="0">
-            <Stop offset="0.3" stopColor={color} stopOpacity={0} />
-            <Stop offset="0.5" stopColor={color} stopOpacity={0.55} />
-            <Stop offset="0.7" stopColor={color} stopOpacity={0} />
-          </LinearGradient>
-        </Defs>
-        <Rect x="0" y="0" width={width} height="100%" fill="url(#sweep)" />
-      </Svg>
     </Animated.View>
   );
 }

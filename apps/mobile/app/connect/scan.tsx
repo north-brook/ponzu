@@ -3,7 +3,7 @@ import { GlassView } from "expo-glass-effect";
 import { router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Linking, Pressable, Text, View } from "react-native";
+import { Linking, Pressable, Text, View } from "react-native";
 import Animated, { Easing, FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { liquid } from "../../components/glass";
@@ -12,6 +12,7 @@ import { fail as failHaptic, success } from "../../lib/haptics";
 import { PairError, parsePairUrl } from "../../lib/mac";
 import { pairMessage, usePair } from "../../lib/macs";
 import { reachAll } from "../../lib/reach";
+import { Juice } from "../../lib/slice";
 import { track } from "../../lib/telemetry";
 import { brand, EASE_OUT } from "../../lib/tokens";
 
@@ -224,7 +225,7 @@ function Frame({ pairing }: { pairing: boolean }) {
               justifyContent: "center",
             }}
           >
-            <ActivityIndicator color={brand.yuzu} />
+            <Juice size={28} color={brand.yuzu} />
           </View>
         )}
       </View>

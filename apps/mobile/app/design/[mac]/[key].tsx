@@ -33,6 +33,7 @@ import { baseUrl } from "../../../lib/mac";
 import { findMac } from "../../../lib/macs";
 import { pageIconImage } from "../../../lib/page-icons";
 import { markSeen } from "../../../lib/seen";
+import { Juice } from "../../../lib/slice";
 import { track } from "../../../lib/telemetry";
 import { useTheme } from "../../../lib/theme";
 import { keepThreads } from "../../../lib/threads";
@@ -395,7 +396,12 @@ export default function Canvas() {
                     chromeStyle,
                   ]}
                 >
-                  {agent ? (
+                  {/* Loading, the file icon's slot holds the slice juicing; an agent's mark once one's here. */}
+                  {!drawn ? (
+                    <View testID="canvas-loading">
+                      <Juice size={17} color={color.ink} />
+                    </View>
+                  ) : agent ? (
                     <AgentMark client={agent.client} size={18} color={color.ink} />
                   ) : (
                     <FileIcon size={17} color={color.ink} />

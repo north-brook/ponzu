@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -23,6 +23,7 @@ import { fetchCatalog } from "../../lib/catalog";
 import { PORT } from "../../lib/mac";
 import { fetchInfo, pairMessage, usePair } from "../../lib/macs";
 import { reachAll } from "../../lib/reach";
+import { Juice } from "../../lib/slice";
 import { track } from "../../lib/telemetry";
 import { useTheme } from "../../lib/theme";
 import { brand, EASE_OUT } from "../../lib/tokens";
@@ -91,7 +92,7 @@ export default function Connect() {
               <NothingHere denied={nearby.state === "denied"} />
             ) : (
               <View style={{ height: 68, alignItems: "center", justifyContent: "center" }}>
-                <ActivityIndicator color={color.faint} />
+                <Juice size={20} color={color.faint} />
               </View>
             ))}
         </Card>
@@ -232,12 +233,29 @@ function Found({
           opacity: busy ? 0.6 : pressed ? 0.8 : 1,
         })}
       >
-        {busy ? (
-          <ActivityIndicator color={color.bg} size="small" />
-        ) : (
-          <Text style={{ fontFamily: "Inter", fontWeight: "600", fontSize: 14, color: color.bg }}>
-            Connect
-          </Text>
+        {/* The label keeps the button's width while the slice juices over it. */}
+        <Text
+          style={{
+            fontFamily: "Inter",
+            fontWeight: "600",
+            fontSize: 14,
+            color: color.bg,
+            opacity: busy ? 0 : 1,
+          }}
+        >
+          Connect
+        </Text>
+        {busy && (
+          <View
+            style={{
+              position: "absolute",
+              inset: 0,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Juice size={16} color={color.bg} />
+          </View>
         )}
       </Pressable>
     </View>

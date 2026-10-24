@@ -1,6 +1,6 @@
 import { router } from "expo-router";
 import { useEffect } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import {
   Card,
   ConnectLayout,
@@ -11,6 +11,7 @@ import {
 import { Dashes, MacIcon, Moon, Refresh } from "../components/icons";
 import { lastAnswered } from "../lib/files";
 import { reachAll, useMacs } from "../lib/reach";
+import { Juice } from "../lib/slice";
 import { useTheme } from "../lib/theme";
 
 /**
@@ -42,7 +43,8 @@ export default function Asleep() {
             label="Try again"
             icon={
               reaching ? (
-                <ActivityIndicator color={color.bg} size="small" />
+                // The slice juicing in the icon's own slot: the button keeps its width.
+                <Juice size={20} color={color.bg} />
               ) : (
                 <Refresh color={color.bg} />
               )
