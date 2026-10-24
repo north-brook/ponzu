@@ -1,4 +1,4 @@
-import { type Doc, describeNode, findArtboard, type PonzuEvent } from "@ponzu/core";
+import { type Doc, describeNode, findArtboard, INTENT_MAX, type PonzuEvent } from "@ponzu/core";
 import { z } from "zod";
 import { fileArg, ToolError, tool } from "./define.ts";
 import { GUIDES, type GuideTopic } from "./guides.ts";
@@ -44,7 +44,7 @@ export const listenTools = [
     group: "listen",
     readOnly: true,
     description:
-      "Long-poll for what people do in the canvas: new comments and replies, edits made in a text editor, other agents' changes. Returns immediately if anything happened after `since`; otherwise waits up to `timeout` seconds. Pass back the returned cursor next time so nothing is missed. This is the heart of the iterate loop (get_guide('iterate')).",
+      "Watch the canvas. Call this instead of ending your turn whenever the person might react to your work there: after you put something up for review, or while you design together. Calling it again and again is the loop (get_guide('watch')). Long-polls for what people do in the canvas: new comments and replies, edits made in a text editor, other agents' changes. Returns immediately if anything happened after `since`; otherwise waits up to `timeout` seconds. Pass back the returned cursor next time so nothing is missed. The person's chat messages still reach you between waits.",
     input: {
       file: fileArg,
       since: z
@@ -90,7 +90,10 @@ export const listenTools = [
         : Math.max(cursor, ws.events.cursor);
       ws.presence.touch(caller, { listening: false, listenedAt: Date.now() });
       if (!events.length)
-        return { text: `Nothing new. cursor=${next}`, data: { cursor: next, events: [] } };
+        return {
+          text: `Nothing new. Wait again with cursor=${next}. The person's chat messages reach you between waits, so keep watching.`,
+          data: { cursor: next, events: [] },
+        };
       return {
         text: `${events.map((e) => describeEvent(design.doc, e.event)).join("\n")}\ncursor=${next}`,
         data: { cursor: next, events: events.map((e) => e.event) },
@@ -103,10 +106,18 @@ export const listenTools = [
     title: "Set status",
     group: "listen",
     description:
-      "Optional. Say in a few words what you're doing, e.g. 'tightening the hero'; the person reads it on hover over your mark in the header of each artboard you're working on. Artboards you change already show as yours (their outline traces, their page and file tabs shimmer) until you go a minute without a tool call or call wait_for_activity. Pass artboards to claim them before your first edit.",
+      "Optional. Say in a few words what you're doing, e.g. 'tightening the hero'; the person reads it on hover over the yuzu rain in the header of each artboard you're working on. Artboards you change already show as worked on (a yuzu ring breathes round them, their page and file tabs shimmer) until you go two minutes without a tool call or call wait_for_activity. Pass artboards to claim them before your first edit.",
     input: {
       file: fileArg,
       status: z.string().min(1).describe("A few words, lowercase, e.g. 'adding the autumn drop'."),
+      intent: z
+        .string()
+        .min(1)
+        .max(INTENT_MAX)
+        .optional()
+        .describe(
+          "When you take on a new request: what the person asked for, distilled to one plain line in their voice, e.g. 'A fitness app: today, workout and progress screens.' It's kept in the design's history. Not your plan, and only once per request.",
+        ),
       artboards: z
         .array(z.string())
         .optional()
@@ -122,6 +133,7 @@ export const listenTools = [
       if (args.artboards)
         ws.presence.touch(caller, { file: key, working: args.artboards, status: args.status });
       else ws.presence.worked(caller, key, { status: args.status });
+      if (args.intent) ws.intent?.(key, args.intent.trim(), caller.author);
       return { text: `Status: ${args.status}.` };
     },
   }),
@@ -181,7 +193,7 @@ export const listenTools = [
     group: "listen",
     readOnly: true,
     description:
-      "House rules and workflows for designing in Ponzu. Read 'basics' once per session before writing. Topics: basics, layout, typography, iterate, variations, implement, format (writing the files directly), motion, mobile.",
+      "House rules and workflows for designing in Ponzu. Read 'basics' once per session before writing. Topics: basics, layout, typography, watch (the comment loop), variations, implement, format (writing the files directly), motion, mobile.",
     input: { topic: z.enum(Object.keys(GUIDES) as [GuideTopic, ...GuideTopic[]]) },
     handler({ topic }) {
       return { text: GUIDES[topic] };

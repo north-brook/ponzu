@@ -9,6 +9,10 @@ bun run lint && bun run typecheck && bun test
 The desktop app: `cd apps/desktop && bun run start`. The iPhone app:
 `cd apps/mobile && bunx expo run:ios`, see [docs/mobile.md](docs/mobile.md).
 
+`serve` from a checkout listens on that checkout's own port in 7800–7999 (it
+prints it) and stays off the tailnet, so it never takes 7777 or the iPhone's
+Bonjour advert from the installed app. `--tailnet` opts back in.
+
 ## Pull requests
 
 PRs are squash-merged, and **the PR title becomes the commit on `main`**, so it
@@ -68,8 +72,11 @@ reopens it. To rebuild an existing release after a build-only fix, run the
 Release workflow by hand with its tag.
 
 Installed apps check for a newer release at launch and every four hours,
-download it in the background, and install it on restart or quit
-(`apps/desktop/src/updater.ts`). The DMG keeps one name across versions, so
+download it in the background, and show Update in the title bar once it's
+ready. One click installs it on every one of the person's Macs on their
+tailnet, the clicked one last; a Mac that was off catches up once it's back
+and nobody is using it. It also installs on quit (`apps/desktop/src/updater.ts`,
+`packages/core/src/update.ts`). The DMG keeps one name across versions, so
 <https://github.com/north-brook/ponzu/releases/latest/download/Ponzu-arm64.dmg>
 always downloads the newest build.
 

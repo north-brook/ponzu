@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   applyOp,
   type CatalogFile,
+  type CatalogGit,
   carryIds,
   type Doc,
   emptyDoc,
@@ -18,6 +19,7 @@ import {
   serializeNodes,
   setTokens,
   toKebab,
+  withoutUntouched,
 } from "./index.ts";
 
 describe("css", () => {
@@ -533,5 +535,66 @@ describe("foldCopies", () => {
       file("/i/design/x"),
     ]);
     expect(cards.map((c) => c.copies.length)).toEqual([1, 0, 0, 0, 0, 0, 0, 0]);
+  });
+
+  test("an agent in a copy keeps it a card of its own, as one at work does", () => {
+    const cards = foldCopies([
+      file("/a/design/x"),
+      file("/b/design/x", { agents: [{ id: "s", name: "Claude", activity: "watching" }] }),
+    ]);
+    expect(cards.map((c) => c.copies.length)).toEqual([0, 0]);
+  });
+});
+
+describe("withoutUntouched", () => {
+  const at = (root: string, git: Partial<CatalogGit> = {}, extra: Partial<CatalogFile> = {}) => ({
+    id: `local:${root}/design/x`,
+    key: `${root}/design/x`,
+    name: "App",
+    machine: "local",
+    base: "",
+    modified: 0,
+    preview: null,
+    git: { root, branch: root, worktree: true, project: "github.com/a/app", ...git },
+    pages: [],
+    artboards: [],
+    ...extra,
+  });
+  const keys = (files: CatalogFile[]) => withoutUntouched(files).map((f) => f.git?.root);
+
+  test("worktrees' untouched copies go while the main checkout holds the design", () => {
+    expect(
+      keys([
+        at("/t1", { untouched: true }),
+        at("/t2", { untouched: false }),
+        at("/t3"),
+        at("/main", { worktree: false }),
+      ]),
+    ).toEqual(["/t2", "/t3", "/main"]);
+  });
+
+  test("one with an agent in it stays, and so does one in another place or Mac", () => {
+    expect(
+      keys([
+        at("/t1", { untouched: true }, { agents: [{ id: "s", name: "C", activity: "watching" }] }),
+        at("/t2", { untouched: true }, { busy: "claude" }),
+        at("/t3", { untouched: true }, { machine: "air" }),
+        at("/t4", { untouched: true, project: "github.com/a/other" }),
+        at("/main", { worktree: false }),
+      ]),
+    ).toEqual(["/t1", "/t2", "/t3", "/t4", "/main"]);
+  });
+
+  test("an untouched copy goes when a changed one is the same, and stays when it isn't", () => {
+    const changed = at("/t2", { untouched: false }, { fingerprint: "a" });
+    expect(keys([at("/t1", { untouched: true }, { fingerprint: "a" }), changed])).toEqual(["/t2"]);
+    expect(keys([at("/t1", { untouched: true }, { fingerprint: "b" }), changed])).toEqual([
+      "/t1",
+      "/t2",
+    ]);
+  });
+
+  test("without the main checkout's copy, the newest untouched one stands for the rest", () => {
+    expect(keys([at("/t1", { untouched: true }), at("/t2", { untouched: true })])).toEqual(["/t1"]);
   });
 });

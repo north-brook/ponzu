@@ -31,10 +31,11 @@ import {
   useState,
 } from "react";
 import { Dashboard, type OpenTarget, type ShelfAction } from "@/components/dashboard";
-import { FileDetails, fileOf } from "@/components/file-info";
+import { FileDetails, fileOf, tilde } from "@/components/file-info";
 import { PairIphone } from "@/components/pair-iphone";
 import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import { UpdateButton } from "@/components/update";
 import { WhatsNew } from "@/components/whats-new";
 import { watchCatalog } from "@/lib/catalog";
 import { cn } from "@/lib/utils";
@@ -308,6 +309,7 @@ export function Studio() {
           ))}
         </div>
         <div className="ml-auto flex items-center gap-1.5">
+          <UpdateButton machines={catalog?.machines} origin={ORIGIN} />
           {active && <ActiveAgents source={source(active)} />}
         </div>
       </header>
@@ -573,12 +575,12 @@ function useTabDrag(tabs: string[], setTabs: (tabs: string[]) => void) {
 
 /**
  * The agents with you in this file: full color while working, half while
- * iterating (watching for your comments). Agents that are connected but
- * idle, or busy in another file, don't show.
+ * watching for your comments. Agents that are connected but idle, or busy in
+ * another file, don't show.
  */
 function ActiveAgents({ source }: { source: SocketSource }) {
   const { presence, path, doc } = useSource(source);
-  // An iterate loop counts as active for a while after each wait; re-check as time passes.
+  // An agent watching counts as active for a while after each wait; re-check as time passes.
   const now = useNow(15_000);
   const agents = presence
     .map((p) => ({ p, activity: agentActivity(p, path, now) }))
@@ -592,7 +594,7 @@ function ActiveAgents({ source }: { source: SocketSource }) {
             <span
               className={cn(
                 "app-no-drag grid size-6 cursor-default place-items-center rounded-md transition-opacity duration-200 hover:bg-accent",
-                activity === "iterating" && "opacity-50",
+                activity === "watching" && "opacity-50",
               )}
             >
               <AgentMark client={p.client} size={16} />
@@ -626,7 +628,7 @@ function SessionCard({
     facts.push([
       "Project",
       <span key="cwd" className={cn(code, "truncate")} title={p.origin.cwd}>
-        {p.origin.cwd.replace(/^\/Users\/[^/]+/, "~")}
+        {tilde(p.origin.cwd)}
       </span>,
     ]);
   facts.push([
@@ -652,7 +654,7 @@ function SessionCard({
           <span className="truncate text-muted-foreground text-xs">
             {activity === "working"
               ? `Working${p.status ? ` · ${p.status}` : ""}`
-              : "Iterating · watching for your comments"}
+              : "Watching for your comments"}
           </span>
         </div>
       </div>

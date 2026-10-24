@@ -1,3 +1,5 @@
+import type { MachineUpdate } from "./update.ts";
+
 /**
  * What the home screen shows: every .design on this Mac and on the person's
  * other Macs in their tailnet, newest edit first. `GET /api/catalog`, or as it
@@ -18,6 +20,8 @@ export interface CatalogMachine {
   /** "This Mac", or the tailnet host name. */
   name: string;
   kind: "laptop" | "desktop";
+  /** Its Mac app's updater. Missing for `ponzu serve`, and from apps before updates spread. */
+  update?: MachineUpdate;
 }
 
 export interface CatalogFile {
@@ -46,7 +50,7 @@ export interface CatalogFile {
   locked?: boolean;
   /** The agent editing it right now (its client: claude, openai, …). */
   busy?: string;
-  /** The agents in it now, working or iterating. Missing from Macs on older versions. */
+  /** The agents in it now, working or watching. Missing from Macs on older versions. */
   agents?: CatalogFileAgent[];
   /** When an agent created it, if that happened since this server started. */
   created?: number;
@@ -79,6 +83,14 @@ export interface CatalogGit {
   branch?: string;
   /** HEAD's short commit, when it's detached. */
   commit?: string;
+  /** A linked worktree, not the repository's main checkout. Missing from Macs on older versions. */
+  worktree?: boolean;
+  /**
+   * A worktree's copy as its branch found it: nothing in the design has
+   * changed there since the branch left the default one, committed or not.
+   * Missing until git has said, and from Macs on older versions.
+   */
+  untouched?: boolean;
   /**
    * The repository every checkout of it shares: its origin remote, as
    * `host/owner/name`, or without one, the main checkout's folder.
@@ -114,12 +126,37 @@ export interface CatalogCard {
 }
 
 /**
- * One card per design, however many checkouts of its repository hold it. Every
- * worktree of a repository carries its designs, so a run of agents in eight
- * worktrees would list one design nine times. Copies fold together while
- * they're identical, on the same Mac and shelf; the newest is the card. A copy
- * someone changes, or an agent is working in, gets its own card again.
- * `files` is newest first, and so is what comes back.
+ * The designs worth a card. Every worktree of a repository carries its
+ * designs, so a run of agents in eight worktrees would list each nine times.
+ * A worktree's copy nobody has touched since its branch began, with no agent
+ * in it, is the repository's design and nothing more. It isn't listed while
+ * the main checkout holds the design (on any shelf) or another copy is the
+ * same; failing both, the newest such copy stands for the rest.
+ */
+export function withoutUntouched(files: CatalogFile[]): CatalogFile[] {
+  const quiet = (f: CatalogFile) => f.git?.untouched && !f.busy && !f.agents?.length;
+  // Where a design is in its repository, on its Mac.
+  const place = (f: CatalogFile) =>
+    f.git && [f.machine, f.git.project ?? f.git.root, f.key.slice(f.git.root.length)].join("\0");
+  const covered = new Set<string | undefined>();
+  for (const f of files) {
+    if (f.git?.worktree === false) covered.add(place(f));
+    if (!quiet(f) && f.fingerprint) covered.add(`${place(f)}\0${f.fingerprint}`);
+  }
+  return files.filter((f) => {
+    if (!quiet(f)) return true;
+    const at = place(f);
+    if (covered.has(at) || covered.has(`${at}\0${f.fingerprint}`)) return false;
+    covered.add(at);
+    return true;
+  });
+}
+
+/**
+ * One card per design, however many checkouts of its repository hold it.
+ * Copies fold together while they're identical, on the same Mac and shelf; the
+ * newest is the card. A copy someone changes, or an agent is in, gets its own
+ * card. `files` is newest first, and so is what comes back.
  */
 export function foldCopies(files: CatalogFile[]): CatalogCard[] {
   const cards: CatalogCard[] = [];
@@ -127,7 +164,7 @@ export function foldCopies(files: CatalogFile[]): CatalogCard[] {
   for (const file of files) {
     const project = file.git?.project ?? file.git?.root;
     const key =
-      project && file.fingerprint && !file.busy && !file.locked
+      project && file.fingerprint && !file.busy && !file.agents?.length && !file.locked
         ? [file.machine, project, file.shelf ?? "recent", file.fingerprint].join("\0")
         : null;
     const card = key ? by.get(key) : undefined;
@@ -151,7 +188,7 @@ export interface CatalogFileAgent {
   client?: string;
   /** What it said it's doing, from set_status. */
   status?: string;
-  activity: "working" | "iterating";
+  activity: "working" | "watching";
 }
 
 /**

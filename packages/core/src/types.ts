@@ -40,7 +40,7 @@ export interface PageMeta {
 export interface DesignMeta {
   ponzu: 1;
   name: string;
-  /** Shown on the file's tab. One of the page icons. */
+  /** Shown on the file's tab. One of PAGE_ICONS, as a page's is. */
   icon?: string;
   /**
    * A sample design, like the ones in Ponzu's repo. The home screen lists it

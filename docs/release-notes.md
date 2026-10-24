@@ -57,7 +57,10 @@ label. A note with neither label shows on the Mac.
    leaving out the iPhone's. The result,
    `dist/release-notes.json`, is bundled into the app. Commits after the newest
    tag are not in any release yet and are left out.
-4. Launched into a newer version, the app shows **What's new** once, with the
+4. The release publishes the same file as `release-notes.json` beside its
+   build, so an app that has downloaded the update shows what's new in its
+   title bar's Update before anyone installs it.
+5. Launched into a newer version, the app shows **What's new** once, with the
    notes of every release since the one whose notes it last showed
    (`apps/desktop/src/whats-new.ts`). A first install shows nothing. Closing
    the dialog marks the notes seen; if the app quits before then, they show

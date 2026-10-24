@@ -1,5 +1,128 @@
 # Changelog
 
+## [1.46.0](https://github.com/north-brook/ponzu/compare/v1.45.0...v1.46.0) (2026-10-24)
+
+
+### Features
+
+* update every mac from one button in the title bar ([#182](https://github.com/north-brook/ponzu/issues/182)) ([324c202](https://github.com/north-brook/ponzu/commit/324c20264c550a6c4c6d0ba1b703ce4625ec4b65))
+
+## [1.45.0](https://github.com/north-brook/ponzu/compare/v1.44.0...v1.45.0) (2026-10-24)
+
+
+### Features
+
+* list designs in temporary folders under scratch ([#180](https://github.com/north-brook/ponzu/issues/180)) ([81bf3b5](https://github.com/north-brook/ponzu/commit/81bf3b5cc0f845136113327ee52be23c8818750c))
+
+## [1.44.0](https://github.com/north-brook/ponzu/compare/v1.43.0...v1.44.0) (2026-10-24)
+
+
+### Features
+
+* develop new work onto the canvas, with a yuzu ring and rain while agents work ([#179](https://github.com/north-brook/ponzu/issues/179)) ([1274eed](https://github.com/north-brook/ponzu/commit/1274eed5b0c8937df5acf7c3ac308b5b59398333))
+
+## [1.43.0](https://github.com/north-brook/ponzu/compare/v1.42.0...v1.43.0) (2026-10-24)
+
+
+### Features
+
+* let agents choose from a much wider set of page and file icons ([#178](https://github.com/north-brook/ponzu/issues/178)) ([86d591d](https://github.com/north-brook/ponzu/commit/86d591de1d88d5a6c60cfcaed9f42529a4b34a37))
+
+
+### Bug Fixes
+
+* open agents' design links from your other macs ([#175](https://github.com/north-brook/ponzu/issues/175)) ([5e46414](https://github.com/north-brook/ponzu/commit/5e46414c4596af91384a1a7ecb14006811bbb630))
+
+## [1.42.0](https://github.com/north-brook/ponzu/compare/v1.41.2...v1.42.0) (2026-10-23)
+
+
+### Features
+
+* rename the iterate loop to watch, and nudge agents into it ([#174](https://github.com/north-brook/ponzu/issues/174)) ([300610f](https://github.com/north-brook/ponzu/commit/300610fb3040f6a73aa1e0a1f4da55fcce32ad46))
+
+## [1.41.2](https://github.com/north-brook/ponzu/compare/v1.41.1...v1.41.2) (2026-10-23)
+
+
+### Bug Fixes
+
+* pause looping animations nobody can see ([#172](https://github.com/north-brook/ponzu/issues/172)) ([7d29720](https://github.com/north-brook/ponzu/commit/7d297200d43726fe350e5e902016fce926866673))
+
+## [1.41.1](https://github.com/north-brook/ponzu/compare/v1.41.0...v1.41.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* show an agent as working when it writes design files itself ([#170](https://github.com/north-brook/ponzu/issues/170)) ([e3b7c21](https://github.com/north-brook/ponzu/commit/e3b7c2161fd1c8ce3bbb90217b57decc9c9d7d9d))
+
+## [1.41.0](https://github.com/north-brook/ponzu/compare/v1.40.2...v1.41.0) (2026-10-23)
+
+
+### Features
+
+* give agents an https link that opens a design in ponzu ([#168](https://github.com/north-brook/ponzu/issues/168)) ([42d3af0](https://github.com/north-brook/ponzu/commit/42d3af001d83b056dfd54476ef77dfa021839d05))
+
+## [1.40.2](https://github.com/north-brook/ponzu/compare/v1.40.1...v1.40.2) (2026-10-23)
+
+
+### Bug Fixes
+
+* show /tmp paths without macOS's /private prefix ([#165](https://github.com/north-brook/ponzu/issues/165)) ([854a9c8](https://github.com/north-brook/ponzu/commit/854a9c85a9d0eb87fe37b8dfe652bbf45fd0b840))
+* show placeholder cards while the home screen loads ([#166](https://github.com/north-brook/ponzu/issues/166)) ([5d43e78](https://github.com/north-brook/ponzu/commit/5d43e78aaad664830c41a79a55ac461ecd94986e))
+
+## [1.40.1](https://github.com/north-brook/ponzu/compare/v1.40.0...v1.40.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* keep servers run from a checkout off the tailnet and the app's port ([#160](https://github.com/north-brook/ponzu/issues/160)) ([ab2e50a](https://github.com/north-brook/ponzu/commit/ab2e50a98d3021df22985bf3580e337b80434aef))
+
+## [1.40.0](https://github.com/north-brook/ponzu/compare/v1.39.3...v1.40.0) (2026-10-23)
+
+
+### Features
+
+* hide worktree copies of a design that their branch hasn't changed ([#159](https://github.com/north-brook/ponzu/issues/159)) ([87d97ba](https://github.com/north-brook/ponzu/commit/87d97ba31d070fb7983374cd2043bddd6fa87c43))
+
+
+### Bug Fixes
+
+* catch up a canvas that misses an agent's changes instead of waiting for a reload ([#162](https://github.com/north-brook/ponzu/issues/162)) ([5d8a83e](https://github.com/north-brook/ponzu/commit/5d8a83e6085a38446c1ba91699c88324757e5723))
+
+## [1.39.3](https://github.com/north-brook/ponzu/compare/v1.39.2...v1.39.3) (2026-10-23)
+
+
+### Bug Fixes
+
+* update electron to 44.9.3 for the emudhra certificate mitigation ([#158](https://github.com/north-brook/ponzu/issues/158)) ([01ba774](https://github.com/north-brook/ponzu/commit/01ba7743abeeb8a8483af348c54803d4f5989050))
+
+## [1.39.2](https://github.com/north-brook/ponzu/compare/v1.39.1...v1.39.2) (2026-10-23)
+
+
+### Bug Fixes
+
+* tell agents a load animation plays once on the person's canvas ([#154](https://github.com/north-brook/ponzu/issues/154)) ([5c89441](https://github.com/north-brook/ponzu/commit/5c89441b56e2fd186e14640be35f2c08a626061c))
+
+## [1.39.1](https://github.com/north-brook/ponzu/compare/v1.39.0...v1.39.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* let screenshot and record seek videos from a design's assets ([#153](https://github.com/north-brook/ponzu/issues/153)) ([2e8bb04](https://github.com/north-brook/ponzu/commit/2e8bb04eb9b55734a0c54c82430b237eaf2c82fc))
+
+## [1.39.0](https://github.com/north-brook/ponzu/compare/v1.38.0...v1.39.0) (2026-10-23)
+
+
+### Features
+
+* make a timelapse of a design being made ([#149](https://github.com/north-brook/ponzu/issues/149)) ([4003691](https://github.com/north-brook/ponzu/commit/4003691f60da01ca2a86b923085bc78e2fd0880b))
+
+## [1.38.0](https://github.com/north-brook/ponzu/compare/v1.37.0...v1.38.0) (2026-10-23)
+
+
+### Features
+
+* let the iphone app pair with, reach and wake a mac ([#150](https://github.com/north-brook/ponzu/issues/150)) ([69d0869](https://github.com/north-brook/ponzu/commit/69d0869028622fc96bd55d98aebdd1652da0f0c1))
+
 ## [1.37.0](https://github.com/north-brook/ponzu/compare/v1.36.0...v1.37.0) (2026-10-23)
 
 

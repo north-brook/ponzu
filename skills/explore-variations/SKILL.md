@@ -10,4 +10,4 @@ description: Generate and compare design variations in Ponzu. Use when asked for
 3. Change one idea per copy: layout, type, color, or density. Don't change everything at once.
 4. Screenshot each and fix lint.
 5. Beside the set, `create_artboard` a "Note: Hero options" (height `fit-content`) with one line per variation and what to compare.
-6. Ask the person to pick in your reply. When they do, `archive` the rest.
+6. Ask the person to pick in chat, then watch the canvas for their comments (the `ponzu-watch` skill) instead of ending your turn. When they pick, `archive` the rest.

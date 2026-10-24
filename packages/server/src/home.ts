@@ -27,6 +27,7 @@ import {
   writePreview,
 } from "./preview.ts";
 import { ownerOf, readTailnet, type Tailnet } from "./tailnet.ts";
+import type { Updater } from "./updater.ts";
 import type { LocalWorkspace } from "./workspace.ts";
 
 /** How long the tailnet's peer list stays fresh. */
@@ -52,6 +53,8 @@ export interface HomeOptions {
   peerPort: number;
   /** Designs the person named when starting the server, listed even if they're examples. */
   opened?: string[];
+  /** The Mac app's updater, listed on this Mac's machine. */
+  updater?: Updater;
 }
 
 /**
@@ -214,7 +217,16 @@ export class Home {
         created: this.created.get(s.key),
       }),
     );
-    return { machine: { id: "local", name: "This Mac", kind: await this.kind }, files };
+    const update = this.opts.updater?.state();
+    return {
+      machine: {
+        id: "local",
+        name: "This Mac",
+        kind: await this.kind,
+        ...(update ? { update } : {}),
+      },
+      files,
+    };
   }
 
   /** Everything the home screen lists: this Mac first, then each reachable peer. */

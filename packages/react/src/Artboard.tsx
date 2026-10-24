@@ -12,6 +12,7 @@ import {
 } from "@ponzu/render";
 import { memo, useLayoutEffect, useRef } from "react";
 import type { Arrivals } from "./arrive.ts";
+import { useWindowStill } from "./still.ts";
 
 interface Props {
   artboard: AB;
@@ -20,6 +21,10 @@ interface Props {
   colorScheme?: "light" | "dark";
   /** An agent's new pieces, which arrive as they render. */
   arrivals?: Arrivals;
+  /** Nobody can see it move (off screen, tiny, mid-gesture, window away): its loops hold. */
+  hold?: boolean;
+  /** Rounded as the canvas rounds its boards, by `--pz-board-radius` on a parent. */
+  rounded?: boolean;
 }
 
 const loadedFonts = new Set<string>();
@@ -65,34 +70,122 @@ export const ArtboardView = memo(function ArtboardView({
   assetBase,
   colorScheme,
   arrivals,
+  hold: held = false,
+  rounded = false,
 }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const last = useRef("");
+  // Every board, the home screen's previews too, holds while nobody can be watching the window.
+  const hold = useWindowStill() || held;
 
   useLayoutEffect(() => {
     const el = host.current;
     if (!el) return;
     const root = el.shadowRoot ?? el.attachShadow({ mode: "open" });
-    const markup = serializeArtboardElement(artboard, {
-      rewriteUrl: (u) => resolveAsset(u, assetBase),
-    });
-    // The page's media preference is the system's; a canvas in its own theme decides them here.
-    const pin = (css: string) => (colorScheme ? pinColorScheme(css, colorScheme) : css);
-    const body = pin(markup);
-    const scheme = colorScheme ? `:host{color-scheme:${colorScheme}}` : "";
-    // Tokens' url()s resolve like the artboard's: an @font-face in tokens.css finds assets/ too.
-    const resolved = resolveTokenAssets(tokens, assetBase);
-    const html = `<style>${styleText(pin(hostTokens(resolved)))}${scheme}${ARTBOARD_BASE_CSS}</style>${body}`;
+    const { html, fonts, faces } = artboardMarkup(
+      artboard,
+      tokens,
+      assetBase,
+      colorScheme,
+      rounded,
+    );
     if (html === last.current) return;
     last.current = html;
-    ensureFonts(googleFonts(body, tokens));
-    ensureFaces(fontFaceRules(resolved));
+    ensureFonts(fonts);
+    ensureFaces(faces);
     root.innerHTML = html;
     arrivals?.replay(root);
-  }, [artboard, tokens, assetBase, colorScheme, arrivals]);
+  }, [artboard, tokens, assetBase, colorScheme, arrivals, rounded]);
+
+  // After the markup above: a re-render brings fresh loops, held again here.
+  useLayoutEffect(() => {
+    const root = host.current?.shadowRoot;
+    if (!root) return;
+    holdLoops(root, hold);
+    if (!hold) return;
+    // A loop that starts later holds too: a hover's, a video that autoplays once it's loaded, an
+    // SVG loop that begins after a delay. Media and SMIL events don't bubble, so capture them.
+    const onStart = () => holdLoops(root, true);
+    root.addEventListener("animationstart", onStart);
+    root.addEventListener("play", onStart, true);
+    root.addEventListener("beginEvent", onStart, true);
+    return () => {
+      root.removeEventListener("animationstart", onStart);
+      root.removeEventListener("play", onStart, true);
+      root.removeEventListener("beginEvent", onStart, true);
+    };
+  }, [hold, artboard, tokens, assetBase, colorScheme]);
 
   return <div ref={host} data-artboard-host={artboard.id} style={{ display: "contents" }} />;
 });
+
+/**
+ * Stop or restart a board's infinite animations where they stand. Each loop redraws its board
+ * every frame, and a page of them, under backdrop blurs, kept a MacBook Air's GPU busy all
+ * afternoon. One-off entrances play out, so a board that's held still shows its settled page.
+ * The rate, not pause(): pausing from script overrides the design's own animation-play-state
+ * from then on, and a loop meant to run on :hover would stop answering it.
+ */
+function holdLoops(root: ShadowRoot, hold: boolean) {
+  for (const a of root.getAnimations()) {
+    if (a.effect?.getTiming().iterations === Number.POSITIVE_INFINITY)
+      a.playbackRate = hold ? 0 : 1;
+  }
+  // SVG's own loops, and looping videos: only the ones that loop, and only what this held.
+  // Each SMIL loop on its own: pausing its <svg> would stop a one-off entrance in it too.
+  for (const el of root.querySelectorAll<SVGAnimationElement>(LOOPING_SMIL)) {
+    if (hold && !heldSmil.has(el) && smilActive(el)) {
+      el.endElement();
+      heldSmil.add(el);
+    } else if (!hold && heldSmil.delete(el)) el.beginElement();
+  }
+  for (const v of root.querySelectorAll("video")) {
+    if (hold && v.loop && !v.paused) {
+      v.pause();
+      heldVideos.add(v);
+    } else if (!hold && heldVideos.delete(v)) void v.play().catch(() => {});
+  }
+}
+
+const LOOPING_SMIL = '[repeatCount="indefinite"], [repeatDur="indefinite"]';
+const heldVideos = new WeakSet<HTMLVideoElement>();
+const heldSmil = new WeakSet<SVGAnimationElement>();
+
+/** Whether a SMIL animation is playing now. One waiting on a click or a time holds when it begins. */
+function smilActive(el: SVGAnimationElement): boolean {
+  try {
+    return el.getStartTime() <= el.getCurrentTime();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * What an artboard's shadow root holds: its styles and markup, and the Google
+ * Fonts it needs.
+ */
+export function artboardMarkup(
+  artboard: AB,
+  tokens: string,
+  assetBase?: string,
+  colorScheme?: "light" | "dark",
+  rounded = false,
+): { html: string; fonts: GoogleFontRequest[]; faces: string[] } {
+  const markup = serializeArtboardElement(artboard, {
+    rewriteUrl: (u) => resolveAsset(u, assetBase),
+  });
+  // The page's media preference is the system's; a canvas in its own theme decides them here.
+  const pin = (css: string) => (colorScheme ? pinColorScheme(css, colorScheme) : css);
+  const body = pin(markup);
+  const scheme = colorScheme ? `:host{color-scheme:${colorScheme}}` : "";
+  // The canvas rounds its boards a touch, over whatever radius the design gave its root: the
+  // corners are the canvas's. Thumbnails, screenshots and exports keep the design's own.
+  const round = rounded ? "[data-artboard]{border-radius:var(--pz-board-radius)!important}" : "";
+  // Tokens' url()s resolve like the artboard's: an @font-face in tokens.css finds assets/ too.
+  const resolved = resolveTokenAssets(tokens, assetBase);
+  const html = `<style>${styleText(pin(hostTokens(resolved)))}${scheme}${round}${ARTBOARD_BASE_CSS}</style>${body}`;
+  return { html, fonts: googleFonts(body, tokens), faces: fontFaceRules(resolved) };
+}
 
 /** Custom properties declared on :root apply to :host inside a shadow root. */
 function hostTokens(css: string): string {

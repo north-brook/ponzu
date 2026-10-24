@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { LocalWorkspace, serve } from "./index.ts";
 import { isTailnetAddress, readTailnet } from "./tailnet.ts";
 
 test("only Tailscale's ranges count as tailnet addresses", () => {
@@ -65,6 +66,51 @@ echo '{"BackendState":"Running","CurrentTailnet":{"MagicDNSEnabled":false},"Self
     expect(net?.peers[0]?.dns).toBeUndefined();
     expect(net?.name).toBe("studio");
   } finally {
+    if (before === undefined) delete process.env.PONZU_TAILSCALE;
+    else process.env.PONZU_TAILSCALE = before;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a server with the tailnet off never asks Tailscale or takes the tailnet port", async () => {
+  // A Tailscale that puts this Mac's tailnet address on loopback, so binding it is safe here,
+  // and notes each time it's asked. No MagicDNS, so no Bonjour advert either way.
+  const dir = await mkdtemp(join(tmpdir(), "ponzu-tailnet-"));
+  const bin = join(dir, "tailscale");
+  const calls = join(dir, "calls");
+  await writeFile(
+    bin,
+    `#!/bin/sh
+echo "$1" >> '${calls}'
+echo '{"BackendState":"Running","Self":{"HostName":"studio","TailscaleIPs":["127.0.0.1"],"UserID":7},"Peer":{}}'
+`,
+  );
+  await chmod(bin, 0o755);
+  const before = process.env.PONZU_TAILSCALE;
+  process.env.PONZU_TAILSCALE = bin;
+  const free = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
+  const tailnetPort = free.port;
+  free.stop(true);
+  const answers = () =>
+    fetch(`http://127.0.0.1:${tailnetPort}/api/info`).then(
+      () => true,
+      () => false,
+    );
+  const ws = new LocalWorkspace({ cwd: dir });
+  try {
+    const off = serve(ws, { port: 0, root: dir, spotlight: "roots", tailnet: false, tailnetPort });
+    await Bun.sleep(300);
+    expect(await answers()).toBe(false);
+    expect(await Bun.file(calls).exists()).toBe(false);
+    off.stop(true);
+
+    // On, the same server takes it: the check above is the one that matters.
+    const on = serve(ws, { port: 0, root: dir, spotlight: "roots", tailnet: true, tailnetPort });
+    for (let i = 0; i < 40 && !(await answers()); i++) await Bun.sleep(50);
+    expect(await answers()).toBe(true);
+    on.stop(true);
+  } finally {
+    await ws.closeAll();
     if (before === undefined) delete process.env.PONZU_TAILSCALE;
     else process.env.PONZU_TAILSCALE = before;
     await rm(dir, { recursive: true, force: true });

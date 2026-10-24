@@ -19,7 +19,7 @@ export interface Presence {
   file?: string;
   /** Waiting in wait_for_activity right now. */
   listening?: boolean;
-  /** When it last came back from wait_for_activity, to tell an iterate loop from one look. */
+  /** When it last came back from wait_for_activity, to tell an agent watching the canvas from one look. */
   listenedAt?: number;
   /** Where the session comes from, for the studio's hover card. */
   origin?: PresenceOrigin;
@@ -107,6 +107,14 @@ export type ClientMessage =
   | { t: "redo"; req: number }
   | { t: "viewport"; viewport: Viewport }
   /** The canvas's appearance, so agents render artboards the way the person sees them. */
-  | { t: "theme"; theme: ColorScheme };
+  | { t: "theme"; theme: ColorScheme }
+  /**
+   * The canvas missed an op (its seq skipped one) or has one that doesn't fit its doc:
+   * send the whole doc again. A watching canvas may send this too.
+   */
+  | { t: "sync"; reason: SyncReason };
+
+/** Why a canvas asked for the whole doc again. */
+export type SyncReason = "gap" | "apply";
 
 export type ColorScheme = "light" | "dark";

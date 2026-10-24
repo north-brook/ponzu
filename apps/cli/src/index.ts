@@ -7,12 +7,20 @@ import { parseArgs } from "node:util";
 import { emptyDoc, newId } from "@ponzu/core";
 import { serveBridge } from "@ponzu/mcp/bridge";
 import { RemoteRenderer, type Renderer } from "@ponzu/render";
-import { findDesigns, LocalWorkspace, openFromGitHub, serve, spawnGit } from "@ponzu/server";
+import {
+  findDesigns,
+  LocalWorkspace,
+  openFromGitHub,
+  remoteUpdater,
+  serve,
+  spawnGit,
+} from "@ponzu/server";
 import { Design } from "@ponzu/store";
 import { FsAdapter } from "@ponzu/store/fs";
 import pkg from "../package.json" with { type: "json" };
 import { announceHost, findHost, ponzuHome } from "./host.ts";
 import { agentStatus, installAgent } from "./install.ts";
+import { firstFree, serveDefaults, sourceCheckout } from "./source.ts";
 import { phoneTelemetry, startTelemetry, telemetryCommand, telemetryNotice } from "./telemetry.ts";
 import { wakeCommand } from "./wake.ts";
 
@@ -37,10 +45,13 @@ Usage
                                 Mac. The app installs it; uninstall removes it
 
 Options
-  -p, --port <n>       Port for serve (default 7777)
+  -p, --port <n>       Port for serve (default 7777; from a checkout, one in
+                       7800-7999 for that checkout)
   -H, --host <addr>    Address to bind (default 127.0.0.1). Use 0.0.0.0 or your
                        tailnet IP to reach the canvas from other machines.
       --no-open        Don't open a browser
+      --tailnet        From a checkout: answer the owner's iPhone and other Macs
+                       on the tailnet, as the installed app does
       --url <url>      With install: register this MCP URL instead of the command
   -h, --help
   -v, --version
@@ -65,16 +76,18 @@ async function main() {
       url: { type: "string" },
       studio: { type: "string" },
       auto: { type: "boolean" },
+      tailnet: { type: "boolean" },
     },
   });
   const [cmd = "serve", ...files] = positionals;
   if (values.version) return console.log(VERSION);
   if (values.help || cmd === "help") return console.log(HELP);
+  const listen = serveDefaults(values, sourceCheckout());
 
   switch (cmd) {
     case "serve":
       return runServe(files, {
-        port: Number(values.port ?? 7777),
+        ...listen,
         host: values.host ?? "127.0.0.1",
         open: !values["no-open"] && !values.dev,
         dev: Boolean(values.dev),
@@ -85,7 +98,7 @@ async function main() {
       console.log(`Opening ${path.slice(clone.length + 1) || "every design"} in ${clone}`);
       process.chdir(clone);
       return runServe(path === clone ? [] : [path], {
-        port: Number(values.port ?? 7777),
+        ...listen,
         host: values.host ?? "127.0.0.1",
         open: !values["no-open"],
         dev: false,
@@ -105,7 +118,7 @@ async function main() {
     default:
       if (cmd.endsWith(".design"))
         return runServe([cmd, ...files], {
-          port: Number(values.port ?? 7777),
+          ...listen,
           host: values.host ?? "127.0.0.1",
           open: !values["no-open"],
           dev: false,
@@ -161,18 +174,26 @@ async function openWorkspace(files: string[], log: (s: string) => void) {
 
 async function runServe(
   files: string[],
-  o: { port: number; host: string; open: boolean; dev: boolean; studio?: string },
+  o: {
+    ports: number[];
+    tailnet: boolean;
+    host: string;
+    open: boolean;
+    dev: boolean;
+    studio?: string;
+  },
 ) {
   const { ws, telemetry, named } = await openWorkspace(files, (s) => console.log(s));
   const studioDir = o.studio ?? findStudio();
   const server = serve(ws, {
-    port: o.port,
+    port: firstFree(o.ports, o.host),
     hostname: o.host,
     studioDir,
     root: process.cwd(),
     // The owner's other Macs list this one's designs, and it lists theirs, whenever
-    // Tailscale runs. PONZU_TAILSCALE=none turns that off.
-    tailnet: true,
+    // Tailscale runs. PONZU_TAILSCALE=none turns that off. Off from a checkout (see
+    // serveDefaults): the tailnet port and the iPhone's Bonjour advert are the app's.
+    tailnet: o.tailnet,
     tailnetPort: 7777,
     dbFile: join(ponzuHome(), "ponzu.db"),
     stateFile: join(ponzuHome(), "catalog.json"),
@@ -182,6 +203,10 @@ async function runServe(
     opened: named,
     version: VERSION,
     telemetry: phoneTelemetry(),
+    // The Mac app's updater, which the catalog lists and the title bar's Update drives.
+    ...(process.env.PONZU_APP_ENDPOINT && process.env.PONZU_APP_TOKEN
+      ? { updater: remoteUpdater(process.env.PONZU_APP_ENDPOINT, process.env.PONZU_APP_TOKEN) }
+      : {}),
   });
   const local = `http://${o.host === "0.0.0.0" ? "localhost" : o.host}:${server.port}`;
   // Links agents hand the person open the Mac app, or this canvas.

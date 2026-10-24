@@ -10,6 +10,11 @@ export interface StorageAdapter {
   write(path: string, content: string): Promise<void>;
   remove(path: string): Promise<void>;
   readAsset(path: string): Promise<Uint8Array | null>;
+  /**
+   * An asset as a Blob that reads only the bytes asked for, so a server can
+   * answer a range of a big video without loading all of it.
+   */
+  openAsset?(path: string): Promise<Blob | null>;
   writeAsset(path: string, bytes: Uint8Array): Promise<void>;
   listAssets(): Promise<string[]>;
   /** Report outside changes. Returns a stop function. */
@@ -43,6 +48,11 @@ export class MemoryAdapter implements StorageAdapter {
 
   async readAsset(path: string): Promise<Uint8Array | null> {
     return this.assets.get(path) ?? null;
+  }
+
+  async openAsset(path: string): Promise<Blob | null> {
+    const bytes = this.assets.get(path);
+    return bytes ? new Blob([bytes as BlobPart]) : null;
   }
 
   async writeAsset(path: string, bytes: Uint8Array): Promise<void> {

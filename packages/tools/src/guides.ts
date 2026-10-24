@@ -1,3 +1,10 @@
+import { PAGE_ICON_GROUPS } from "@ponzu/core";
+
+/** The icons a file or page can carry, a line per group. */
+const ICON_LIST = Object.entries(PAGE_ICON_GROUPS)
+  .map(([group, names]) => `  ${group}: ${names.join(", ")}`)
+  .join("\n");
+
 /** The files the format guide shows, one small design. Tests load them as written. */
 export const FORMAT_EXAMPLE = {
   "design.json": `{
@@ -53,7 +60,7 @@ Workflow
 2. Before building something new, settle a direction: palette, type scale, spacing. Put it in tokens with set_tokens. Write the brief to a note.
 3. Build in small pieces. One write_html call per visual group: a header, then a row, then a card. The person watches the canvas as you work.
 4. screenshot after every few writes. Read the lint lines. Fix clipped text and overflow before moving on. When you add motion or states, record them (get_guide('motion')). If a screenshot fails, its error says why: a renderer that didn't answer means the Ponzu app is busy or showing a dialog, so ask the person; one that isn't running is restarting, so try again shortly. Keep working in Ponzu rather than rendering the page some other way.
-5. The canvas shows which artboards you're changing on its own. To tell the person what you're doing, set_status with a few words.
+5. The canvas shows which artboards you're changing on its own. To tell the person what you're doing, set_status with a few words. When you take on a new request, pass intent too: what they asked for, in one plain line.
 6. When you point the person at your work in chat, give them the Link from get_basic_info, not the folder path: a path opens their editor, the link opens Ponzu. Add &artboard=<id> to open on one artboard.
 7. Explain your work on the canvas itself. A small artboard beside the work, named "Note: …" with height fit-content, holds rationale, labels, a flow's arrows or what to compare. The canvas is infinite, so annotate generously. Comments are for what needs the person: a question, a decision, something you couldn't do.
 
@@ -79,7 +86,7 @@ The person may have their canvas in dark mode; get_basic_info says which. Artboa
 
 Results are lean: ids of what you created, and what was dropped. Use get_tree to see structure, get_node for one node's detail.
 
-Big generated content (a long table, a diagram from a script) can go straight into the artboard's file, pages/<page>/<artboard>.html, instead of through write_html. Ponzu picks the edit up live. Elements without a data-id get one: ids from get_tree keep pointing at the same element across later edits to the file, and Ponzu writes them in when it needs to. get_guide('format') has the files and their fields.
+A whole artboard's content can go in one write_html call: target the artboard with mode replace-children. Content too big for a call (a long table, a diagram from a script) can go straight into the artboard's file instead, at the path create_artboard returns. Ponzu picks the edit up live. Elements without a data-id get one: ids from get_tree keep pointing at the same element across later edits to the file, and Ponzu writes them in when it needs to. get_guide('format') has the files and their fields.
 
 Don't
 - Don't rebuild what exists. duplicate it and edit the copy.
@@ -109,11 +116,13 @@ Don't
 - Set text-wrap: balance on headings and text-wrap: pretty on paragraphs.
 - Measure: body text 45–75 characters per line (max-width ~ 34em).`,
 
-  iterate: `# The iterate loop
+  watch: `# Watching the canvas
 
 The person comments in the canvas; you pick each comment up, make the change and resolve it. No chatting required.
 
-When to run it: whenever you expect the person to react to the work on the canvas. That's after you've put up something new for them to review, when you're designing together, or when they ask you to watch their comments. Don't end your turn to wait for feedback; start the loop instead. A wait that hears nothing costs next to nothing.
+When to watch: whenever the person might react to the work on the canvas. That's after you've put up something new for them to review, when you're designing together, or when they ask you to watch their comments. Watch instead of ending your turn. Never end a turn asking them to comment on the canvas, or to tell you once they have: they shouldn't have to come back to chat to hand you work that's already on the canvas. A wait that hears nothing costs next to nothing.
+
+Watching doesn't cut you off from chat. A message the person types reaches you as soon as the current wait returns, within a minute. To tell them something (here's the link, which option you'd pick), write it in chat, then keep watching.
 
 1. listen: wait_for_activity with the cursor from your last call. Start with types comment.created, comment.replied, comment.edited, file.changed. An edit replaces what the comment asks; work from the new text.
 2. triage each comment:
@@ -121,10 +130,10 @@ When to run it: whenever you expect the person to react to the work on the canva
    - question ("why this font?"): reply with an answer, leave it open.
    - decision ("A or B?"): reply with your recommendation, leave it open for them.
    Batch comments that touch the same artboard.
-3. say what you're doing: set_status with a few words ("adding the autumn drop") and the artboards you're about to touch. The person sees your mark in the artboard's header while its outline traces, and your status when they hover it.
+3. say what you're doing: set_status with a few words ("adding the autumn drop") and the artboards you're about to touch. The person sees a yuzu ring round the artboard and rain in its header, and your status when they hover the rain.
 4. do + check: edit, screenshot, fix lint. Variations go next to the original, never over it.
 5. close: for a change you made, set_comment_status resolved. That hides the pin; the canvas already shows the change, so don't reply.
-6. Go back to 1 with the new cursor. Waiting again clears your working indicator. Keep looping until the person says stop or you're interrupted.
+6. Go back to 1 with the new cursor. Waiting again clears your working indicator. Keep watching until the person says stop or you're interrupted.
 
 Reply only when the person needs to read something:
 - they asked a question, or asked for your recommendation;
@@ -133,8 +142,8 @@ Reply only when the person needs to read something:
 Leave a thread you replied to open: resolved threads leave the canvas, so a reply on one is never seen. The person resolves it once they've read it.
 Replies are one or two sentences. A reply that just says "Done" or restates the change is noise.
 
-Keep each wait at the default 60 seconds or less: a message the person types in chat reaches you only once the wait returns. When one arrives, it comes first; go back to the loop once it's handled, unless it moved you on to something else.
-If you started the loop yourself and nothing has come in for half an hour, stop and tell the person in a sentence that you'll pick their comments up when they ask.
+Keep each wait at the default 60 seconds or less, so a chat message never sits for long. When one arrives, it comes first; go back to watching once it's handled, unless it moved you on to something else.
+If you started watching yourself and nothing has come in for half an hour, stop and tell the person in a sentence that you'll pick their comments up when they ask.
 
 file.changed means someone edited the HTML outside Ponzu (an editor, another agent). Re-read before editing that artboard.
 Never resolve a question or decision for the person. Never resolve a comment you didn't address.`,
@@ -145,7 +154,7 @@ Never resolve a question or decision for the person. Never resolve a comment you
 - Change one idea per variation, and say what it is in the name. Three is usually enough.
 - Keep the original untouched so the person can compare.
 - Put the rationale on the canvas: a "Note: Hero options" artboard beside the set, one line per variation ("B: tighter type, warmer palette") and what to compare.
-- Ask the person to pick in your reply to them.
+- Ask the person to pick in chat, then watch the canvas (get_guide('watch')) for their answer.
 - When the person picks one, move the others to the Archive with archive.`,
 
   implement: `# Implementing a design in code
@@ -162,7 +171,7 @@ The .design folder is the spec. Read it directly from disk; don't screenshot and
 
   format: `# The .design format
 
-Write the files yourself only to bring in or generate a lot at once: a design ported from another tool, a diagram from a script, dozens of artboards. Ponzu picks them up live. Then open the design with get_basic_info (it lists anything Ponzu couldn't use), screenshot each artboard and fix what lint reports. For everything else use the tools: they lint as you go, the person can undo them, and the canvas shows who's working.
+Write the files yourself only to bring in or generate a lot at once: a design ported from another tool, a diagram from a script, dozens of artboards. Ponzu picks them up live. For an artboard you made with create_artboard, write its file once the call returns, at the path it gives. Then open the design with get_basic_info (it lists anything Ponzu couldn't use), screenshot each artboard and fix what lint reports. For everything else use the tools: they lint as you go and the person can undo them.
 
 name.design/
   design.json                   name and pages
@@ -178,7 +187,8 @@ ${FORMAT_EXAMPLE["design.json"]}
 \`\`\`
 - Give every page an id. Without one it gets a new id each time the design loads, and comments on its canvas lose their page.
 - A page's folder is its name, lowercase with dashes: "Home screens" lives in pages/home-screens/. Pages sharing a name get -2, -3 in list order. Renaming or reordering pages moves their folders, so take each page's folder from get_basic_info before writing into it. A folder no page names becomes a page of its own.
-- icon is optional, on the file and on each page: page, home, phone, desktop, flow, palette and the rest of create_file's list.
+- icon is optional, on the file and on each page. Name what's inside as specifically as the list allows, and give pages in one file different icons. One of:
+${ICON_LIST}
 
 An artboard, pages/flow/cart.html
 \`\`\`html
@@ -210,12 +220,19 @@ See it
 - hover, focus or press (a node id) on either tool puts that node in the state first. record then shows the transition into it, starting from the settled page.
 - scroll (a scroll container's id) on record steps through its scroll range, for animation-timeline: scroll() and view(). The container needs a fixed height and overflow: auto.
 
+What the person sees
+- On their canvas, the load plays once when the artboard appears: when they open its page, and each time you edit it. Then a finite animation holds its end. Hovering or clicking the artboard doesn't replay it, so never tell them it will.
+- A hint that fades out ends hidden, so the canvas shows nothing once it has played.
+- When they need to watch the motion (an entrance to review, a hint that leaves), put a looping copy on an artboard beside the real one: animation-iteration-count: infinite, with a beat of about a second held at the end of the keyframes so each cycle reads as one play. Keep the real one finite, and say which is which in a note.
+- If the motion answers something the person does, put it on :hover or :focus, so they can set it off themselves.
+
 Write it
 - Put @keyframes and state rules in a <style> inside the artboard. Name a class on the element (class="cta") and target it: .cta:hover { … }.
 - Inline styles beat <style> rules. A state rule that changes a property the element also sets inline needs !important. Lint tells you when a state changes nothing.
 - Entrance animations that start hidden (opacity: 0) need animation-fill-mode: forwards (or both), or the element snaps back to hidden when they end. Lint catches this.
 - Put the transition on the base rule, not the :hover rule, so it eases both ways.
 - Keep entrances short: 200–600ms, staggered 50–100ms. Use ease-out for things arriving and ease-in for things leaving. Loops should be slow and subtle.
+- A <video> from assets/ (muted, loop to repeat) is paused and seeked like any animation, so record and at show its real frames.
 - Animate transform and opacity. Animating width, height, top or margin moves the layout around it.
 - Keep fewer than 100 elements animating at once, counting loops and entrances that hold their end with forwards. Each is its own layer, and past that the whole canvas drops frames. For a field of dots, animate one HTML wrapper per row, or one around the lot, not every dot; an SVG <g> repaints everything in it each frame. Lint counts them.
 
@@ -223,7 +240,8 @@ Check
 1. screenshot: the settled page is what people see most. Lint it like any other.
 2. record the load: does each thing arrive in order, and nothing jump or overlap?
 3. record hover/focus/press on every interactive element you styled. A state without a transition snaps; that's fine for focus rings, rarely for hover.
-4. Read the motion list: delays and durations should add up to the rhythm you meant.`,
+4. Read the motion list: delays and durations should add up to the rhythm you meant.
+5. A finite load the person should judge needs a looping copy beside it; they can't replay the original.`,
 
   mobile: `# Mobile
 
@@ -244,14 +262,14 @@ export type GuideTopic = keyof typeof GUIDES;
  */
 export const SERVER_INSTRUCTIONS = `Ponzu is a design canvas you drive with HTML and CSS. Use it when showing beats describing: a screen or flow before you build it, options to pick from, a diagram. The person sees it live and steers with comments.
 
+Once you've put work on the canvas for the person to react to, or you're designing together, watch the canvas instead of ending your turn: wait_for_activity → triage → set_status → edit + screenshot → set_comment_status resolved for what you did (reply only to answer a question, flag an ambiguity or explain what you couldn't do) → wait again. Never end a turn asking the person to comment on the canvas or to tell you when they have; watch for their comments instead. Watching doesn't cut you off from chat: their messages reach you between waits, within a minute, and you can write to them in chat and keep watching. Handle chat first. A wait that hears nothing is cheap. If you started watching yourself, stop after 30 quiet minutes and say so. Read get_guide('watch') before your first wait.
+
 Start every session with get_basic_info, then read_notes, then get_guide('basics') if you haven't read it. When the person says "this", look for the comment they pinned to it.
 
-Build in small pieces, screenshot often, and fix what lint reports. Screenshots show the theme the person's canvas is in; a design with both themes uses light-dark() tokens for every color. record shows animation and hover states frame by frame. Put design decisions in tokens and notes. Variations go next to the original, never over it. The canvas shows which artboards you're changing; set_status tells the person what you're doing.
+Build in small pieces, screenshot often, and fix what lint reports. Screenshots show the theme the person's canvas is in; a design with both themes uses light-dark() tokens for every color. record shows animation and hover states frame by frame. Put design decisions in tokens and notes. Variations go next to the original, never over it. The canvas shows which artboards you're changing; set_status tells the person what you're doing, and its intent, set once per request, says what they asked for.
 
 The canvas is yours to annotate: a "Note: …" artboard beside the work carries rationale, labels and what to compare. Comments carry what needs the person: a question, a choice, something you couldn't do.
 
 To send the person to a design in chat, give them the Link from get_basic_info (with &artboard=<id> for one board), never the folder path: a path opens their editor, the link opens Ponzu.
-
-When you've put work on the canvas for the person to react to, or you're designing together, run the iterate loop rather than ending your turn: wait_for_activity → triage → set_status → edit + screenshot → set_comment_status resolved for what you did (reply only to answer a question, flag an ambiguity or explain what you couldn't do) → repeat. A wait that hears nothing is cheap. Keep each wait at 60 seconds or less, since a chat message reaches you only when a wait returns, and handle chat first. If you started the loop yourself, stop after 30 quiet minutes and say so. Read get_guide('iterate') before your first wait.
 
 When Ponzu gets in your way (a confusing tool, an error, something it can't do) or works notably well, tell the Ponzu team with send_feedback, then carry on.`;

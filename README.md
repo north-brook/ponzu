@@ -51,9 +51,9 @@ Then ask for something:
 
 > Design a landing page for a houseplant shop in a new `design/shop.design`. Give me three takes on the hero.
 
-When an agent points you at a design, it gives you a link rather than a folder path, so it opens in Ponzu instead of your editor: `ponzu://open?file=/path/to/app.design&artboard=ab_hero` for the Mac app, or the canvas's own `http://localhost:7777/?file=…` under `ponzu serve`. `artboard` is optional and opens on that board.
+When an agent points you at a design, it gives you a link rather than a folder path, so it opens in Ponzu instead of your editor: `https://ponzu.design/local#mac=workstation&file=/path/to/app.design&artboard=ab_hero` for the Mac app, or the canvas's own `http://localhost:7777/?file=…` under `ponzu serve`. `artboard` is optional and opens on that board. `mac` is the Mac the design is on, by its Tailscale name, so the link opens on your other Macs too, through Ponzu's link between them; without Tailscale it's left out and the link opens the path on the Mac you click it on. The ponzu.design page hands the design to the app as `ponzu://open?mac=…&file=…` (chats drop links in schemes they don't know) or offers the download if Ponzu isn't installed; the path stays after the `#`, which browsers never send to the site. `/local` sits beside `/gh` for designs on GitHub.
 
-To go back and forth on a design, use the `iterate` prompt (or say "iterate with me in Ponzu"). The agent watches for your comments, handles each one and resolves it, replying only to answer a question or flag something. Agents also start iterating on their own once they've put work up for you to review.
+To go back and forth on a design, use the `watch` prompt (or say "watch my comments in Ponzu"). The agent watches the canvas for your comments, handles each one and resolves it, replying only to answer a question or flag something. Agents also start watching on their own once they've put work up for you to review, and you can still chat with them while they do.
 
 ### Reach it from another machine
 
@@ -173,6 +173,8 @@ bun apps/cli/src/index.ts serve examples/halon.design examples/kettle.design exa
 [`examples/`](examples) holds three made-up companies to try Ponzu on: Halon (incident response for engineering teams), Kettle (an iPhone app for people who live together) and Weft (a sync platform for developers). Each has a brand, architecture diagrams, a website and an app, with its brief in `notes/brief.md`.
 
 For studio work, run `bun run dev`: the studio with hot reload on all three examples.
+
+Run from a checkout, `serve` stays out of the installed app's way: it listens on a port in 7800–7999 derived from the checkout's path (the same every run, different per worktree, the next free one if it's taken), and not on the tailnet, so your iPhone and other Macs keep finding the app, not a dev server. `--port` picks a port; `--tailnet` answers the phone and other Macs too, for testing against them (the app's tailnet port must be free). The studio's dev server proxies to the checkout's port; `PONZU_SERVER=<url>` points it elsewhere.
 
 Desktop: `cd apps/desktop && bun run start`. iPhone: `cd apps/mobile && bunx expo run:ios` ([docs/mobile.md](docs/mobile.md)).
 

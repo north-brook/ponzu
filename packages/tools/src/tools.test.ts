@@ -5,9 +5,10 @@ import { join } from "node:path";
 import { locate, threadPage } from "@ponzu/core";
 import type { Renderer, RenderResult } from "@ponzu/render";
 import { Design, MemoryAdapter } from "@ponzu/store";
-import { EventHub, PresenceHub, type ToolContext, type Workspace } from "./context.ts";
+import { EventHub, PresenceHub, type ToolContext, type Workspace, within } from "./context.ts";
 import { FORMAT_EXAMPLE, GUIDES } from "./guides.ts";
 import { getTool, runTool } from "./index.ts";
+import { WATCH_REMINDER } from "./see.ts";
 import { plural } from "./util.ts";
 
 async function setup(tokens = 3, renderer?: Renderer) {
@@ -57,9 +58,11 @@ test("find_nodes counts matches", async () => {
 test("get_basic_info gives the link that opens the design in Ponzu, when there is one", async () => {
   const { call, ws } = await setup();
   expect((await call("get_basic_info", {})).text).not.toContain("Link:");
-  ws.link = (key) => `ponzu://open?file=/d/${key}.design`;
+  ws.link = (key) => `https://ponzu.design/local#file=/d/${key}.design`;
   const text = (await call("get_basic_info", {})).text;
-  expect(text).toContain("Link: ponzu://open?file=/d/fern.design (give the person this");
+  expect(text).toContain(
+    "Link: https://ponzu.design/local#file=/d/fern.design (give the person this",
+  );
   expect(text).toContain("&artboard=<id>");
 });
 
@@ -281,6 +284,8 @@ test("update_file renames the file and sets or clears its icon", async () => {
   await call("update_file", { icon: null });
   expect(design.doc.icon).toBeUndefined();
   expect(design.doc.name).toBe("Fern app");
+  const wrong = await call("update_file", { icon: "sparkles" });
+  expect(wrong.isError).toBe(true);
 });
 
 /** A renderer that answers every render with `out`, and counts its calls. */
@@ -325,6 +330,28 @@ test("screenshot says when fonts or images ran out of time", async () => {
   const r = await call("screenshot", { id: "ab_hero" });
   expect(r.isError).toBeFalsy();
   expect(r.text).toContain("still loading when time ran out");
+});
+
+test("a screenshot reminds an agent that isn't watching to watch the canvas, now and then", async () => {
+  const { renderer } = fakeRenderer({});
+  const { call } = await setup(3, renderer);
+  expect((await call("screenshot", { id: "ab_hero" })).text).toContain(WATCH_REMINDER);
+  // Not on every check of a long build.
+  expect((await call("screenshot", { id: "ab_hero" })).text).not.toContain(WATCH_REMINDER);
+});
+
+test("an agent watching the canvas isn't reminded to", async () => {
+  const { renderer } = fakeRenderer({});
+  const { call } = await setup(3, renderer);
+  await call("wait_for_activity", { timeout: 0 });
+  expect((await call("screenshot", { id: "ab_hero" })).text).not.toContain(WATCH_REMINDER);
+});
+
+test("a wait that hears nothing says to wait again", async () => {
+  const { call } = await setup();
+  const r = await call("wait_for_activity", { timeout: 0 });
+  expect(r.text).toMatch(/^Nothing new\. Wait again with cursor=\d+\./);
+  expect(r.text).toContain("chat messages reach you between waits");
 });
 
 test("screenshot checks hover, focus and press ids before rendering", async () => {
@@ -394,6 +421,14 @@ test("renders default to the person's theme and say so when the design has one",
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("agents learn that the person's canvas plays a load animation once", () => {
+  // The canvas never replays a finite load on hover, so agents mustn't promise it.
+  expect(GUIDES.motion).toContain("plays once when the artboard appears");
+  expect(GUIDES.motion).toContain("doesn't replay it");
+  expect(GUIDES.motion).toContain("looping copy");
+  expect(getTool("record")!.description).toContain("plays the load once");
 });
 
 test("the format guide's example files load as it describes", async () => {
@@ -525,6 +560,53 @@ test("waiting for activity ends a pass", async () => {
   await call("wait_for_activity", { timeout: 0 });
   expect(me().working).toEqual([]);
   expect(me().status).toBeUndefined();
+});
+
+test("an agent that writes the files itself shows as working on them", async () => {
+  const { call, ws } = await setup();
+  const me = () => ws.presence.list().find((p) => p.id === "t")!;
+  // A read is enough to place it in the design.
+  await call("get_tree", {});
+  ws.presence.wroteOnDisk("fern", { artboards: ["ab_hero"], gone: [] });
+  expect(me()).toMatchObject({ working: ["ab_hero"], file: "fern" });
+  ws.presence.wroteOnDisk("fern", { artboards: [], gone: ["ab_hero"] });
+  expect(me().working).toEqual([]);
+
+  // In another design, or waiting for the person's edits: not its doing.
+  ws.presence.wroteOnDisk("other", { artboards: ["ab_x"], gone: [] });
+  expect(me().working).toEqual([]);
+  await call("wait_for_activity", { timeout: 0.05 });
+  const waiting = call("wait_for_activity", { timeout: 0.2 });
+  await Bun.sleep(20);
+  ws.presence.wroteOnDisk("fern", { artboards: ["ab_hero"], gone: [] });
+  expect(me().working).toEqual([]);
+  await waiting;
+});
+
+test("an edit on disk counts for the agent working in that project", () => {
+  const presence = new PresenceHub();
+  const caller = {
+    id: "a",
+    author: { kind: "agent" as const, name: "Claude" },
+    origin: { cwd: "/code/shop" },
+  };
+  presence.touch(caller);
+  presence.wroteOnDisk("/code/shop/design/app.design", { artboards: ["ab_1"], gone: [] });
+  expect(presence.list()[0]).toMatchObject({
+    working: ["ab_1"],
+    file: "/code/shop/design/app.design",
+  });
+  // A sibling folder that merely shares the prefix isn't its project.
+  presence.wroteOnDisk("/code/shopfront/x.design", { artboards: ["ab_2"], gone: [] });
+  expect(presence.list()[0]!.working).toEqual(["ab_1"]);
+});
+
+test("a project folder holds what's under it, however it's spelled", () => {
+  expect(within("/code/shop/app.design", "/code/shop")).toBe(true);
+  expect(within("/code/shop/app.design", "/code/shop/")).toBe(true);
+  expect(within("/code/app.design", "/")).toBe(true);
+  expect(within("C:\\code\\shop\\app.design", "C:\\code\\shop")).toBe(true);
+  expect(within("/code/shopfront/app.design", "/code/shop")).toBe(false);
 });
 
 test("deleting an artboard takes it from another agent working on it", async () => {

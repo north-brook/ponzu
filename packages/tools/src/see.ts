@@ -1,6 +1,7 @@
 import { type Artboard, findArtboard, findNode, isThemed, locate } from "@ponzu/core";
 import type { Interaction, MotionAnimation, MotionInfo } from "@ponzu/render";
 import { z } from "zod";
+import type { ToolContext } from "./context.ts";
 import { fileArg, ToolError, type ToolImage, tool } from "./define.ts";
 import { footprintsAround, overlapIssues, overlaps } from "./overlap.ts";
 import { resolveFile } from "./util.ts";
@@ -45,6 +46,17 @@ const interactionArgs = {
     .optional()
     .describe("Node id to press (pointer down) first. :active and :hover apply."),
 };
+
+/**
+ * Checking work is the moment before an agent hands it back, and so the moment
+ * it decides whether to end its turn or watch for the person's comments.
+ */
+export const WATCH_REMINDER =
+  "Once this pass is done, watch the canvas (wait_for_activity) instead of ending your turn: the person can steer with comments, and chat still reaches you between waits.";
+
+function remindToWatch({ ws, caller }: ToolContext): boolean {
+  return caller.author.kind === "agent" && ws.presence.shouldRemindToWatch(caller.id);
+}
 
 export const seeTools = [
   tool({
@@ -134,6 +146,7 @@ export const seeTools = [
         lines.push(`Content height: ${out.contentHeight}px.`);
       lines.push(lint);
       if (out.motion?.animations.length) lines.push(motionText(out.motion));
+      if (remindToWatch(ctx)) lines.push(WATCH_REMINDER);
       return {
         text: lines.join("\n"),
         images: [image],
@@ -148,7 +161,7 @@ export const seeTools = [
     group: "see",
     readOnly: true,
     description:
-      "Watch an animation. Steps through the timeline frame by frame (paused and seeked, so frames are exact and repeatable) and returns one contact sheet with every frame labeled by its time, plus what animates: node, keyframes, duration, delay, easing, iterations. By default it covers the whole page load once, or one cycle of anything that loops. Use hover, focus or press to watch a transition into that state, and scroll to step through a scroll container for scroll-driven animation. Lint runs on the last frame. Use it after writing @keyframes, transitions or hover styles, and check easing, overlap and the end state.",
+      "Watch an animation. Steps through the timeline frame by frame (paused and seeked, so frames are exact and repeatable) and returns one contact sheet with every frame labeled by its time, plus what animates: node, keyframes, duration, delay, easing, iterations. By default it covers the whole page load once, or one cycle of anything that loops. Use hover, focus or press to watch a transition into that state, and scroll to step through a scroll container for scroll-driven animation. Lint runs on the last frame. Use it after writing @keyframes, transitions or hover styles, and check easing, overlap and the end state. The person's canvas plays the load once when the artboard appears and then holds the end; hovering doesn't replay it.",
     input: {
       file: fileArg,
       id: z.string().describe("Artboard or node id. Frames show this area."),
@@ -236,6 +249,7 @@ export const seeTools = [
       if (out.issues.length)
         lines.push(`${at}:\n${out.issues.map((i) => `  ${i.id}: ${i.message}`).join("\n")}`);
       else lines.push(`${at}: clean.`);
+      if (remindToWatch(ctx)) lines.push(WATCH_REMINDER);
       return {
         text: lines.join("\n"),
         images: [{ data: toBase64(out.bytes), mime: out.mime }],

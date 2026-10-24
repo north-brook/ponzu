@@ -1,5 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "types": ["vite/client"], "paths": { "@/*": ["./src/*"] } },
-  "include": ["src"]
+  "include": ["src"],
+  // Tests run under bun and are typechecked by the root config, which has bun's types.
+  "exclude": ["src/**/*.test.ts"]
 }

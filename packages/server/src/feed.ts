@@ -18,7 +18,7 @@ const EDIT_DELAY = 1000;
 const MIN_GAP = 150;
 /**
  * How often the listing runs anyway, for what no event reports: a change on disk,
- * a redrawn preview, a design found, an iterate loop going quiet.
+ * a redrawn preview, a design found, an agent that stops watching.
  */
 const RESYNC = 3000;
 /** How often each stream hears it's alive. */
@@ -66,7 +66,8 @@ export class CatalogFeed {
   private subs = new Set<Subscriber>();
   private local: Side = { machine: null, files: new Map(), json: new Map() };
   private peers = new Map<string, PeerLink>();
-  private sent: { machines: string; agents: string; agent: string } = {
+  private sent: { machine: string; machines: string; agents: string; agent: string } = {
+    machine: "",
     machines: "",
     agents: "",
     agent: "",
@@ -252,9 +253,14 @@ export class CatalogFeed {
     this.agents = agents;
     this.agent = this.home.lastAgent();
     this.listed = wantFull ? "full" : "local";
-    // This Mac's own designs go to every stream; the rest only to its home screens.
-    if (patch.put?.length || patch.drop?.length)
-      this.broadcast((s) => (s === "local" ? { t: "patch", patch } : null));
+    // This Mac's own designs, and this Mac itself (its update, say), go to every stream; the
+    // rest only to its home screens.
+    const machine = JSON.stringify(here.machine);
+    const toLocal: CatalogPatch =
+      machine !== this.sent.machine ? { ...patch, machines: [here.machine] } : patch;
+    this.sent.machine = machine;
+    if (toLocal.put?.length || toLocal.drop?.length || toLocal.machines)
+      this.broadcast((s) => (s === "local" ? { t: "patch", patch: toLocal } : null));
     this.toFull(patch);
   }
 

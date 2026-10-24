@@ -109,10 +109,14 @@ export const writeTools = [
         ctx,
       );
       ctx.ws.focus?.(key, id);
+      // On disk before this returns: an agent may write the file next, and a save still
+      // waiting would put the empty artboard back over it.
+      await design.flush();
+      const file = design.pathOf(id);
       const kids = elementsIn(nodes);
       const overlap = await pageOverlaps(ctx, key, design, [id]);
       return {
-        text: `Created artboard ${id} "${args.name}" ${width}×${height} at (${artboard.x}, ${artboard.y}) on "${page.name}".${kids.length ? `\n${reportIds(nodes)}` : ""}${droppedNote(dropped)}${directionNote([id], () => style)}${overlap}`,
+        text: `Created artboard ${id} "${args.name}" ${width}×${height} at (${artboard.x}, ${artboard.y}) on "${page.name}"${file ? ` · file ${file}` : ""}.${kids.length ? `\n${reportIds(nodes)}` : ""}${droppedNote(dropped)}${directionNote([id], () => style)}${overlap}`,
         data: { id },
       };
     },
@@ -123,7 +127,7 @@ export const writeTools = [
     title: "Write HTML",
     group: "write",
     description:
-      "Insert HTML into a node, or replace a node with HTML. Use inline styles, flexbox/grid, and var(--token) values. Write in small visual pieces (a header, then a row, then a card) and screenshot as you go. Name important layers with data-name. Returns the new ids. For big generated content (a long table, a diagram from a script), write the artboard's HTML file directly instead (get_node on the artboard shows its path); Ponzu picks the change up live.",
+      "Insert HTML into a node, or replace a node with HTML. Use inline styles, flexbox/grid, and var(--token) values. Write in small visual pieces (a header, then a row, then a card) and screenshot as you go. Name important layers with data-name. Returns the new ids. To set a whole artboard's content in one call, target the artboard with mode replace-children. For content too big for a call (a long table, a diagram from a script), write the artboard's HTML file directly instead, at the path create_artboard or get_node gives; Ponzu picks the change up live.",
     input: {
       file: fileArg,
       target: z.string().describe("Artboard or node id."),

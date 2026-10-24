@@ -1,0 +1,5 @@
+/*
+ * The canvas's own Tailwind build (pz-prefixed), compiled separately from the studio's. It
+ * scans @ponzu/react.
+ */
+@import "@ponzu/react/tailwind.css";

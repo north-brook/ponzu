@@ -2,7 +2,7 @@
   "name": "@ponzu/desktop",
   "productName": "Ponzu",
   "private": true,
-  "version": "1.37.0",
+  "version": "1.46.0",
   "description": "Ponzu desktop app",
   "type": "module",
   "main": "dist/main.cjs",
@@ -17,7 +17,7 @@
     "@ponzu/core": "workspace:*",
     "@ponzu/server": "workspace:*",
     "@types/node": "^26.6.5",
-    "electron": "^44.9.0",
+    "electron": "^44.9.3",
     "electron-builder": "^26.15.3"
   },
   "build": {

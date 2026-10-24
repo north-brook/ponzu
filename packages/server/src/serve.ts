@@ -1,14 +1,23 @@
 import { existsSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
-import type { CatalogAgent, ClientMessage, Origin, ServerMessage } from "@ponzu/core";
+import {
+  type CatalogAgent,
+  type ClientMessage,
+  compareVersions,
+  type Origin,
+  type ServerMessage,
+  type SyncReason,
+} from "@ponzu/core";
 import { createHttpHandler } from "@ponzu/mcp";
 import { FsAdapter } from "@ponzu/store/fs";
 import type { Server, ServerWebSocket, WebSocketHandler } from "bun";
 import { advertise, type Bonjour } from "./bonjour.ts";
 import { CatalogFeed, type Scope } from "./feed.ts";
 import { Home, type OpenedBy } from "./home.ts";
+import { assetResponse } from "./range.ts";
 import { isTailnetAddress } from "./tailnet.ts";
+import type { Updater } from "./updater.ts";
 import type { LocalWorkspace } from "./workspace.ts";
 
 export interface ServeOptions {
@@ -54,6 +63,10 @@ export interface ServeOptions {
    * at all when the person turned it off. Asked on each /api/info.
    */
   telemetry?: () => Promise<{ on: boolean; owner: string | null }>;
+  /** Bytes a socket may have waiting before a message to it is dropped. Bun's 16 MB by default. */
+  backpressureLimit?: number;
+  /** The Mac app's updater: the catalog lists what it has, and Update installs it. */
+  updater?: Updater;
 }
 
 /**
@@ -93,6 +106,11 @@ interface SocketData {
   watch?: boolean;
   /** Set when this socket relays to a design on another Mac. */
   relay?: { url: string; upstream?: WebSocket; queue: string[] };
+  /**
+   * A message to this canvas was dropped: its buffer was full, as on a slow link to another
+   * Mac. It hears nothing more until the buffer drains, then gets the whole doc again.
+   */
+  behind?: boolean;
   /** Set when this socket is a catalog stream: this Mac's home screen, or another Mac's server. */
   feed?: { scope: Scope; peerIp?: string; stop?: () => void; closed?: boolean };
   /** Opened by the phone app. While one is open, this Mac counts as in use. */
@@ -138,7 +156,33 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
   const send = (s: ServerWebSocket<SocketData>, msg: ServerMessage) => s.send(JSON.stringify(msg));
   const broadcast = (key: string | null, msg: ServerMessage) => {
     const text = JSON.stringify(msg);
-    for (const s of sockets) if (key === null || s.data.key === key) s.send(text);
+    for (const s of sockets) if (key === null || s.data.key === key) deliver(s, text);
+  };
+  /**
+   * Send to a canvas that has to hear every op. Bun drops a message, without closing the
+   * socket, once the socket has more than `backpressureLimit` waiting: the canvas would show
+   * an old doc for good. So it waits for the buffer to drain and gets the whole doc then.
+   * A relayed canvas reconnects instead, and its hello brings the doc from the other Mac.
+   */
+  const deliver = (s: ServerWebSocket<SocketData>, text: string) => {
+    if (s.data.behind) return;
+    // A closing socket drops it too, and is gone: no catching up to do.
+    if (s.send(text) !== 0 || s.readyState !== WebSocket.OPEN) return;
+    if (s.data.relay) {
+      resynced("backpressure", s);
+      s.close();
+    } else s.data.behind = true;
+  };
+  const resynced = (reason: SyncReason | "backpressure", s: ServerWebSocket<SocketData>) =>
+    ws.telemetry?.capture("canvas resynced", {
+      reason,
+      watch: Boolean(s.data.watch),
+      relayed: Boolean(s.data.relay),
+    });
+  /** The whole doc, to a canvas that missed some of it. Dropped in turn, it waits again. */
+  const resend = (s: ServerWebSocket<SocketData>) => {
+    const design = ws.get(s.data.key);
+    if (design) deliver(s, JSON.stringify({ t: "reset", doc: design.doc, seq: design.seq }));
   };
 
   const subscribed = new Set<string>();
@@ -176,6 +220,7 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
     agents: opts.agents,
     peerPort: opts.tailnetPort ?? 7777,
     opened: opts.opened,
+    updater: opts.updater,
   });
   const feed = new CatalogFeed(home, ws);
 
@@ -299,6 +344,56 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
       return Response.json({ ok: true });
     }
 
+    // The title bar's Update: install on each of the person's Macs it names, this one last, so
+    // it hears every other Mac's answer before it restarts. A Mac that's off catches up later.
+    if (path === "/api/update") {
+      if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
+      if (caller !== "local" || !sameHostOk(req, url))
+        return new Response("Forbidden", { status: 403 });
+      const body = (await req.json().catch(() => null)) as {
+        macs?: unknown;
+        version?: unknown;
+      } | null;
+      const macs = Array.isArray(body?.macs)
+        ? body.macs.filter((m): m is string => typeof m === "string")
+        : [];
+      // The version the title bar offered: a Mac holding an older download fetches it first.
+      const version = typeof body?.version === "string" ? body.version : undefined;
+      const others = await Promise.all(
+        macs
+          .filter((m) => m !== "local")
+          .map(async (mac) => {
+            const ip = await home.peerIp(mac);
+            const ok = ip !== null && (await installOn(ip, opts.tailnetPort ?? 7777, version));
+            return [mac, ok] as const;
+          }),
+      );
+      const here =
+        macs.includes("local") && opts.updater ? await opts.updater.install({ version }) : null;
+      feed.poke(0);
+      return Response.json({
+        macs: Object.fromEntries([
+          ...others,
+          ...(macs.includes("local") ? [["local", Boolean(here?.installing)] as const] : []),
+        ]),
+      });
+    }
+
+    // Another of the person's Macs asks this one to install its update, for the person. No more
+    // than /api/update lets this Mac's own studio do, so the same check holds here.
+    if (path === "/api/update/install") {
+      if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
+      if (caller === "local" && !sameHostOk(req, url))
+        return new Response("Forbidden", { status: 403 });
+      if (!opts.updater) return new Response("Not found", { status: 404 });
+      const body = (await req.json().catch(() => null)) as { version?: unknown } | null;
+      const update = await opts.updater.install(
+        typeof body?.version === "string" ? { version: body.version } : {},
+      );
+      feed.poke(0);
+      return Response.json(update ?? null);
+    }
+
     // What agents changed in this Mac's designs, for the phone's Activity.
     if (path === "/api/activity") {
       const since = Number(url.searchParams.get("since") ?? 0);
@@ -404,14 +499,12 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
         ws.get(key)?.storage ?? ((await home.listed(key)) ? new FsAdapter(key) : null);
       if (!storage) return new Response("Not found", { status: 404 });
       const rel = decodeURIComponent(assetMatch[2]!);
-      const bytes = await storage.readAsset(rel);
-      if (!bytes) return new Response("Not found", { status: 404 });
-      return new Response(bytes as BodyInit, {
-        headers: {
-          "content-type": MIME[extname(rel).toLowerCase()] ?? "application/octet-stream",
-          "cache-control": "no-cache",
-        },
-      });
+      const blob = storage.openAsset
+        ? await storage.openAsset(rel)
+        : await storage.readAsset(rel).then((b) => b && new Blob([b as BlobPart]));
+      if (!blob) return new Response("Not found", { status: 404 });
+      const type = MIME[extname(rel).toLowerCase()] ?? "application/octet-stream";
+      return assetResponse(blob, type, req.headers.get("range"));
     }
 
     if (req.method === "POST" && /^\/files\/([^/]+)\/upload$/.test(url.pathname)) {
@@ -433,6 +526,7 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
   };
 
   const websocket: WebSocketHandler<SocketData> = {
+    ...(opts.backpressureLimit ? { backpressureLimit: opts.backpressureLimit } : {}),
     open(s) {
       if (s.data.phone) phones.add(s);
       if (s.data.feed) return openFeed(s);
@@ -453,6 +547,16 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
         canUndo: design.canUndo,
         canRedo: design.canRedo,
       });
+    },
+    drain(s) {
+      // Once what's waiting has gone: the whole doc on top of it could be dropped again.
+      if (!s.data.behind || s.getBufferedAmount() > 0) return;
+      s.data.behind = false;
+      resynced("backpressure", s);
+      // Who's here may have changed while it heard nothing: before the doc, so a doc that
+      // fills the buffer again doesn't drop it and send the whole doc round once more.
+      send(s, { t: "presence", presence: ws.presence.list() });
+      resend(s);
     },
     close(s) {
       if (s.data.phone) {
@@ -477,13 +581,19 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
         else relayed.queue.push(text);
         return;
       }
-      if (s.data.watch) return;
       let msg: ClientMessage;
       try {
         msg = JSON.parse(String(raw));
       } catch {
         return;
       }
+      // Asked by a canvas that missed an op, or has one that doesn't fit: watching ones too.
+      if (msg.t === "sync") {
+        resynced(msg.reason === "apply" ? "apply" : "gap", s);
+        if (!s.data.behind) resend(s);
+        return;
+      }
+      if (s.data.watch) return;
       const design = ws.get(s.data.key);
       if (!design) return;
       try {
@@ -534,7 +644,7 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
     upstream.onopen = () => {
       for (const m of relayed.queue.splice(0)) upstream.send(m);
     };
-    upstream.onmessage = (e) => s.send(String(e.data));
+    upstream.onmessage = (e) => deliver(s, String(e.data));
     upstream.onclose = () => s.close();
     upstream.onerror = () => s.close();
   };
@@ -576,10 +686,15 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
     if (!opts.tailnet) return;
     const net = await home.net();
     if (stopped) return;
-    if (!net) return updateAdvert(null);
+    if (!net) {
+      ws.mac = undefined;
+      return updateAdvert(null);
+    }
     // Not when the main listener already hears the tailnet address on the tailnet port: it
     // checks tailnet callers itself, and a second bind there would fail.
     if (!onTailnet(net.ip)) bindTailnet(net.ip);
+    // Links agents hand out name this Mac, so the person's other Macs open them through theirs.
+    ws.mac = onTailnet(net.ip) ? net.name : undefined;
     updateAdvert(onTailnet(net.ip) && net.dns ? net : null);
   };
   const bindTailnet = (ip: string) => {
@@ -619,10 +734,34 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
     timer = setInterval(() => void listenOnTailnet(), 60_000);
     timer.unref?.();
   }
+  // A Mac that was off when the person updated the others: once it has the update too, and
+  // another of their Macs already runs it, it installs as soon as nobody is using it.
+  let catchUp: ReturnType<typeof setInterval> | undefined;
+  const updater = opts.updater;
+  if (updater && opts.tailnet) {
+    catchUp = setInterval(async () => {
+      const ready = updater.state()?.ready;
+      if (!ready || updater.state()?.installing) return;
+      const peers = ((await home.net())?.peers ?? []).filter((p) => p.online);
+      const versions = await Promise.all(
+        peers.map((p) => peerVersion(p.ip, opts.tailnetPort ?? 7777)),
+      );
+      // The newest any of them runs: a download older than it is fetched again before installing.
+      const newest = versions
+        .filter((v): v is string => Boolean(v))
+        .sort(compareVersions)
+        .at(-1);
+      if (newest && compareVersions(newest, ready.version) >= 0)
+        await updater.install({ quiet: true, version: newest });
+    }, CATCH_UP_EVERY);
+    catchUp.unref?.();
+  }
   const stop = server.stop.bind(server);
   server.stop = (force?: boolean) => {
     stopped = true;
     clearInterval(timer);
+    clearInterval(catchUp);
+    updater?.stop();
     feed.stop();
     advert?.stop();
     advert = null;
@@ -635,12 +774,13 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
 
 /**
  * What another Mac may ask for: the catalog and its stream, what agents changed, previews,
- * thumbnails, a design's socket and its assets. Not MCP, uploads or the studio, and nothing from a
- * browser page: only another Ponzu server sends these, without an Origin.
+ * thumbnails, a design's socket and its assets, and to install its update. Not MCP, uploads or
+ * the studio, and nothing from a browser page: only another Ponzu server sends these, without an
+ * Origin.
  */
 export function peerAllowed(req: Request, pathname: string): boolean {
   if (isPage(req)) return false;
-  if (pathname === "/api/shelf") return req.method === "POST";
+  if (pathname === "/api/shelf" || pathname === "/api/update/install") return req.method === "POST";
   if (req.method !== "GET") return false;
   return (
     [
@@ -722,6 +862,37 @@ async function relay(req: Request, target: string): Promise<Response> {
     return new Response(res.body, { status: res.status, headers });
   } catch {
     return new Response("That Mac isn't answering", { status: 502 });
+  }
+}
+
+/** How often a Mac with an update waiting checks whether the person's other Macs moved on. */
+const CATCH_UP_EVERY = 60_000;
+
+/** Ask another of the person's Macs to install its update. Whether it said it would. */
+async function installOn(ip: string, port: number, version?: string): Promise<boolean> {
+  try {
+    const res = await fetch(`http://${ip}:${port}/api/update/install`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(version ? { version } : {}),
+      signal: AbortSignal.timeout(5_000),
+    });
+    const update = res.ok ? ((await res.json()) as { installing?: boolean } | null) : null;
+    return Boolean(update?.installing);
+  } catch {
+    return false;
+  }
+}
+
+/** The Ponzu another Mac runs, or null when it doesn't answer. */
+async function peerVersion(ip: string, port: number): Promise<string | null> {
+  try {
+    const res = await fetch(`http://${ip}:${port}/api/info`, {
+      signal: AbortSignal.timeout(2_500),
+    });
+    return res.ok ? (((await res.json()) as { version?: string }).version ?? null) : null;
+  } catch {
+    return null;
   }
 }
 

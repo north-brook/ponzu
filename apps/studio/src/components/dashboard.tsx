@@ -6,6 +6,7 @@ import {
   type CatalogMachine,
   foldCopies,
   previewArtboard,
+  withoutUntouched,
 } from "@ponzu/core";
 import {
   AgentMark,
@@ -14,6 +15,7 @@ import {
   SocketSource,
   Tip,
   TipProvider,
+  useDelayed,
   useSource,
 } from "@ponzu/react";
 import Fuse, { type FuseResultMatch } from "fuse.js";
@@ -95,7 +97,8 @@ export function Dashboard({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const files = catalog?.files ?? [];
+  // A worktree's copy nobody touched is the main checkout's design: no card of its own.
+  const files = useMemo(() => withoutUntouched(catalog?.files ?? []), [catalog?.files]);
   const machines = useMemo(
     () => new Map((catalog?.machines ?? []).map((m) => [m.id, m])),
     [catalog?.machines],
@@ -210,7 +213,9 @@ export function Dashboard({
           </div>
         </TipProvider>
 
-        {q ? (
+        {catalog === null ? (
+          <Loading />
+        ) : q ? (
           <Results
             query={q}
             cards={searchable}
@@ -425,6 +430,42 @@ function Chip({
       {children}
       <span className="opacity-60 tabular-nums">{count}</span>
     </button>
+  );
+}
+
+/** Name widths for the placeholder cards, so they don't read as one card repeated. */
+const LOADING_NAMES = ["62%", "48%", "71%", "55%", "44%", "66%", "52%", "60%"];
+
+/**
+ * The catalog on its way: the first snapshot waits a moment for the person's other Macs.
+ * Placeholder cards where the designs will be, not an empty Recent that then fills.
+ * Nothing at all for a wait too short to notice.
+ */
+function Loading() {
+  const shown = useDelayed(true);
+  if (!shown) return null;
+  return (
+    <div className="pz-appear flex flex-col gap-7" role="status" aria-label="Loading designs">
+      <div className="-mb-3.5 flex text-[13px]">
+        <span className="font-medium text-foreground">Recent</span>
+      </div>
+      <Grid>
+        {LOADING_NAMES.map((w, i) => (
+          <div
+            // biome-ignore lint/suspicious/noArrayIndexKey: fixed placeholders
+            key={i}
+            className="flex flex-col gap-2.5 motion-safe:animate-pulse"
+            style={{ animationDelay: `${i * 90}ms` }}
+          >
+            <div className="aspect-[16/11] rounded-xl bg-preview shadow-[0_0_0_1px_var(--hairline)]" />
+            <div className="flex flex-col gap-[7px] px-0.5 pt-[3px]">
+              <span className="h-[11px] rounded-full bg-secondary" style={{ width: w }} />
+              <span className="h-[9px] w-[38%] rounded-full bg-secondary" />
+            </div>
+          </div>
+        ))}
+      </Grid>
+    </div>
   );
 }
 
