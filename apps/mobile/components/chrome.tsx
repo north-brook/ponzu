@@ -2,6 +2,7 @@ import { type ReactNode, useRef } from "react";
 import { type HostInstance, Pressable, Text, View, type ViewStyle } from "react-native";
 import { BAR_ITEM_INSET, measureMargin } from "../lib/margin";
 import { LOCKUP_MARK_LIFT } from "../lib/mark";
+import { Juice } from "../lib/slice";
 import { brand } from "../lib/tokens";
 import { Glass } from "./glass";
 import { HandoffTarget, HandoffWord } from "./handoff";
@@ -53,17 +54,19 @@ export function BarButton({
 
 /**
  * The lockup: the slice and the wordmark, 24pt, as Designs' header draws
- * it, the slice centered on the word's x-height. Coming from the launch
+ * it, the slice centered on the word's x-height. `busy` (Macs still being
+ * asked) juices the slice where it is: the app's one loading signal. Coming from the launch
  * screen, its slice is where the launch's slice lands (measured where it
  * is, lift and all), and the word slides in after it (components/handoff.tsx).
  */
-export function Lockup({ color }: { color: string }) {
+export function Lockup({ color, busy = false }: { color: string; busy?: boolean }) {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
       {/* A layout offset, not a transform: the handoff measures the place it lands on. */}
       <View style={{ top: -LOCKUP_MARK_LIFT }}>
         <HandoffTarget kind="designs" size={28}>
-          <SliceMark size={28} color={color} />
+          {/* Still looking for Macs: the slice juices in its own box; nothing moves. */}
+          {busy ? <Juice size={28} color={color} /> : <SliceMark size={28} color={color} />}
         </HandoffTarget>
       </View>
       <HandoffWord>

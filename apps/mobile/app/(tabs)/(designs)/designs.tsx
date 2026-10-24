@@ -11,6 +11,7 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
+import Animated, { FadeIn, FadeOut, LinearTransition } from "react-native-reanimated";
 import { barMenuItems } from "../../../components/bar-menu";
 import { Lockup } from "../../../components/chrome";
 import { FileCard } from "../../../components/file-card";
@@ -23,7 +24,6 @@ import type { ShelfAction } from "../../../lib/mac-queries";
 import { LOCKUP_INK, measureMargin, useMargin } from "../../../lib/margin";
 import { reachAll, useMacs } from "../../../lib/reach";
 import { isUnseen, useSeen } from "../../../lib/seen";
-import { Juice } from "../../../lib/slice";
 import { useStore } from "../../../lib/store";
 import { useTheme } from "../../../lib/theme";
 import { brand } from "../../../lib/tokens";
@@ -182,7 +182,8 @@ export default function Designs() {
             onLayout={() => header.current?.measureInWindow((x) => measureMargin(x))}
           >
             <View style={{ marginLeft: -LOCKUP_INK }}>
-              <Lockup color={color.ink} />
+              {/* Looking for Macs: its slice juices in place, the word where it is. */}
+              <Lockup color={color.ink} busy={arriving.length > 0} />
             </View>
           </View>
         </Stack.Toolbar.View>
@@ -224,25 +225,8 @@ export default function Designs() {
           />
         }
       >
-        {arriving.length > 0 && files.length > 0 && (
-          <Notice>
-            <Juice size={16} color={color.faint} />
-            <Text
-              style={{
-                flex: 1,
-                fontFamily: "Inter",
-                fontWeight: "500",
-                fontSize: 14,
-                lineHeight: 18.2,
-                color: color.muted,
-              }}
-            >
-              Finding {listNames(arriving.map((m) => m.name))} on your tailnet…
-            </Text>
-          </Notice>
-        )}
         {asleep.map((m) => (
-          <Notice key={m.id} gap={12}>
+          <Notice key={m.id}>
             <View
               style={{
                 width: 32,
@@ -275,7 +259,9 @@ export default function Designs() {
             </View>
           </Notice>
         ))}
-        <View
+        {/* Glides down as a problem card arrives above it, and back as it goes. */}
+        <Animated.View
+          layout={LinearTransition.duration(260)}
           style={{
             paddingHorizontal: m,
             flexDirection: "row",
@@ -295,8 +281,9 @@ export default function Designs() {
               />
             </HandoffRise>
           ))}
-        </View>
-        {shown.length === 0 && (
+        </Animated.View>
+        {/* Nothing to say while Macs are still being asked: the lockup's slice says it. */}
+        {shown.length === 0 && (files.length > 0 || arriving.length === 0) && (
           <Text
             style={{
               marginTop: 40,
@@ -309,9 +296,7 @@ export default function Designs() {
             }}
           >
             {files.length === 0
-              ? arriving.length
-                ? "Finding your designs…"
-                : "No designs yet. Ask an agent on your Mac to make one."
+              ? "No designs yet. Ask an agent on your Mac to make one."
               : shelf === "recent"
                 ? "Nothing here."
                 : `Nothing in ${SHELVES.find((s) => s.id === shelf)!.label}.`}
@@ -322,30 +307,33 @@ export default function Designs() {
   );
 }
 
-function listNames(names: string[]): string {
-  if (names.length <= 1) return names[0] ?? "";
-  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-}
-
-function Notice({ children, gap = 10 }: { children: React.ReactNode; gap?: number }) {
+/**
+ * A problem above the grid (a Mac asleep): the only card Designs shows
+ * while it reaches. It grows in, and the grid glides down to make room,
+ * rather than jumping; it shrinks away the same way.
+ */
+function Notice({ children }: { children: React.ReactNode }) {
   const { color, shadow } = useTheme();
   const m = useMargin();
   return (
-    <View
+    <Animated.View
+      entering={FadeIn.duration(220)}
+      exiting={FadeOut.duration(160)}
+      layout={LinearTransition.duration(260)}
       style={{
         marginHorizontal: m,
         marginBottom: 16,
-        paddingVertical: gap === 12 ? 12 : 10,
+        paddingVertical: 12,
         paddingHorizontal: 14,
         borderRadius: 12,
         backgroundColor: color.card,
         boxShadow: shadow.board,
         flexDirection: "row",
         alignItems: "center",
-        gap,
+        gap: 12,
       }}
     >
       {children}
-    </View>
+    </Animated.View>
   );
 }

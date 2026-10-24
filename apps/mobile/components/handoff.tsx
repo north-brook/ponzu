@@ -44,12 +44,7 @@ interface Target {
 }
 
 /** The handoff running now, and where it lands once the next screen has drawn. */
-export const handoff = new Store<{
-  kind: HandoffKind;
-  target: Target | null;
-  /** How far above its usual place the launch screen had the slice (lifted for a waking Mac). */
-  lift: number;
-} | null>(null);
+export const handoff = new Store<{ kind: HandoffKind; target: Target | null } | null>(null);
 /** Milliseconds into the handoff; IDLE when none runs, so every part sits in place. */
 const clock = makeMutable(IDLE);
 /** Which handoff the clock runs: 0 none, 1 onto a tile, 2 onto Designs. */
@@ -68,12 +63,12 @@ const ease = [...CURVES.ease] as const;
 export const holding = new Store(false);
 
 /** Starts a handoff. The launch screen calls it just before it replaces itself. */
-export function startHandoff(kind: HandoffKind, lift = 0) {
+export function startHandoff(kind: HandoffKind) {
   cancelAnimation(clock);
   clock.value = 0;
   running.value = KINDS[kind];
   holding.set(kind === "designs");
-  handoff.set({ kind, target: null, lift });
+  handoff.set({ kind, target: null });
 }
 
 function finish() {
@@ -87,10 +82,10 @@ function finish() {
 export function HandoffLayer() {
   const h = useStore(handoff);
   if (!h) return null;
-  return <Layer kind={h.kind} target={h.target} lift={h.lift} />;
+  return <Layer kind={h.kind} target={h.target} />;
 }
 
-function Layer({ kind, target, lift }: { kind: HandoffKind; target: Target | null; lift: number }) {
+function Layer({ kind, target }: { kind: HandoffKind; target: Target | null }) {
   const { width: W, height: H } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const { color } = useTheme();
@@ -98,7 +93,7 @@ function Layer({ kind, target, lift }: { kind: HandoffKind; target: Target | nul
   // The launch screen's ink on the status bar while the yuzu is under it.
   const [inked, setInked] = useState(true);
   // Where the launch screen draws the slice (lib/mark.ts) and the wordmark under it.
-  const from = { cx: W / 2, cy: H / 2 - LAUNCH_LIFT - lift, size: LAUNCH.mark };
+  const from = { cx: W / 2, cy: H / 2 - LAUNCH_LIFT, size: LAUNCH.mark };
   const wordTop = from.cy + LAUNCH.mark / 2 + LAUNCH.gap;
   // If the next screen never says, its design's place.
   const land =
