@@ -1,6 +1,7 @@
 import { agentActivity, findArtboard, newId, type Presence, type Thread } from "@ponzu/core";
 import { type MenuAction, MenuView, type NativeActionEvent } from "@react-native-menu/menu";
-import { router, useLocalSearchParams, useNavigation } from "expo-router";
+import { router, Stack, useLocalSearchParams, useNavigation } from "expo-router";
+import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import Animated, {
@@ -19,7 +20,17 @@ import type { FromCanvas, PendingPin } from "../../../canvas/protocol";
 import { CanvasPlaceholder } from "../../../components/canvas-placeholder";
 import { type CanvasHandle, CanvasView } from "../../../components/canvas-view";
 import { BarButton } from "../../../components/chrome";
+import { Comments, openThreads } from "../../../components/comments";
 import { Composer, initialMode, type Mode } from "../../../components/composer";
+import {
+  CommentsHalf,
+  CommentsPanel,
+  Fold,
+  Glide,
+  NativeBarItems,
+  PagePill,
+  useOpening,
+} from "../../../components/duo-chrome";
 import { Glass, GlassGroup } from "../../../components/glass";
 import { AgentAvatar, AgentMark, Back, FileIcon, PageIcon } from "../../../components/icons";
 import { Sheet } from "../../../components/sheet";
@@ -27,17 +38,20 @@ import { Shimmer } from "../../../components/shimmer";
 import { ThreadSheet } from "../../../components/thread-sheet";
 import { useFile } from "../../../lib/catalog";
 import { useDesignSession, useSessionState } from "../../../lib/design";
+import { useDuoLayout } from "../../../lib/duo";
+import { CREASE, foldAt } from "../../../lib/duo-layout";
 import { select, success, tick } from "../../../lib/haptics";
 import { noteOpened } from "../../../lib/lately";
 import { baseUrl } from "../../../lib/mac";
 import { findMac } from "../../../lib/macs";
 import { pageIconImage } from "../../../lib/page-icons";
-import { markSeen } from "../../../lib/seen";
+import { markSeen, seen } from "../../../lib/seen";
 import { Juice } from "../../../lib/slice";
 import { track } from "../../../lib/telemetry";
 import { useTheme } from "../../../lib/theme";
 import { keepThreads } from "../../../lib/threads";
 import { EASE_OUT } from "../../../lib/tokens";
+import { useWindowInsets } from "../../../lib/window-insets";
 
 const ease = Easing.bezier(...EASE_OUT);
 /** The person, as their comments name them. */
@@ -68,7 +82,10 @@ export default function Canvas() {
     uncomment?: string;
   }>();
   const { color, scheme } = useTheme();
-  const insets = useSafeAreaInsets();
+  const screenInsets = useSafeAreaInsets();
+  // The window's, the rail included: a screen under a native header gets its own, without it.
+  const windowInsets = useWindowInsets();
+  const insets = { ...screenInsets, left: windowInsets.left, right: windowInsets.right };
   const mac = findMac(params.mac);
   const base = mac ? baseUrl(mac) : null;
   const session = useDesignSession(base, params.key);
@@ -80,6 +97,10 @@ export default function Canvas() {
   const [pageId, setPageId] = useState<string | null>(null);
   const [pending, setPending] = useState<(PendingPin & { nodeId?: string }) | null>(null);
   const [threadId, setThreadId] = useState<string | null>(params.thread ?? null);
+  // A link to a thread on the design already open (Activity, a push) opens it there.
+  useEffect(() => {
+    if (params.thread) setThreadId(params.thread);
+  }, [params.thread]);
   const [mode, setMode] = useState<Mode>(initialMode);
   const [sheet, setSheet] = useState(0);
   const [card, setCard] = useState(false);
@@ -90,6 +111,18 @@ export default function Canvas() {
   const [error, setError] = useState<string | null>(null);
   /** The canvas has drawn its first page: the placeholder gives way. */
   const [drawn, setDrawn] = useState(false);
+  /**
+   * The comments surface is open (the sheet, or the panel open sideways). A
+   * thread opened from it shows in it, with ← back to the list; folded, it's
+   * always there.
+   */
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const duo = useDuoLayout();
+  const nativeBars = duo.bars !== "phone";
+  /** Comments always there, past the fold. */
+  const split = duo.split;
+  // When the person last looked here, for the comments list's unread dots: as the canvas opened.
+  const seenAt = useRef(file ? (seen.get()[`${file.mac}:${file.key}`] ?? 0) : 0).current;
 
   useEffect(() => {
     track("canvas opened");
@@ -160,6 +193,8 @@ export default function Canvas() {
   /** The agent here is at work (its name shimmers in the title), not just watching for comments. */
   const working = agent ? agentActivity(agent, session?.file ?? params.key) === "working" : false;
   const thread = doc?.threads.find((t) => t.id === threadId) ?? null;
+
+  const standby = false;
 
   /** The board focused as the canvas last said: a haptic marks going into or out of focus, not a gesture settling. */
   const wasFocused = useRef<string | null>(null);
@@ -239,7 +274,8 @@ export default function Canvas() {
     if (status === "resolved") {
       success();
       setThreadId(null);
-      setSheet(0);
+      // Resolved from the comments surface, it goes back to the list; from its own sheet, it closes.
+      if (!commentsOpen && !split) setSheet(0);
     }
   };
 
@@ -268,12 +304,82 @@ export default function Canvas() {
   };
   const manyPages = (doc?.pages.length ?? 0) > 1;
 
-  // The chrome covers the status bar and the top bar (54 + 56), and the home indicator.
-  const top = insets.top + 56;
+  // Where the canvas is and what covers it. On a phone the chrome covers the status bar and the
+  // top bar (54 + 56), and the home indicator. On iPhone Duo the system's bars are a rail at the
+  // side (closed, and open sideways) or horizontal (open upright): the canvas keeps clear of the
+  // rail, and its pills sit 16pt down on the canvas. Folded, the design keeps one half and the
+  // comments the other, 12pt either side of the fold kept clear.
+  const W = duo.width;
+  const H = duo.height;
+  const fold = split ? foldAt({ width: W, height: H }, split) : 0;
+  const area =
+    split === "beside"
+      ? { left: 0, top: 0, width: fold - CREASE, height: H }
+      : split === "below"
+        ? { left: 0, top: 0, width: W, height: fold - CREASE }
+        : { left: 0, top: 0, width: W - insets.right, height: H };
+  // Upright the system's bar is the top row, Back at its left: the file pill sits in that row,
+  // centered, as the board's top bar (the safe area's top is the bar's foot, 56pt below its top).
+  const pillTop =
+    duo.bars === "upright" ? Math.max(8, insets.top - 56) : nativeBars ? 16 : insets.top + 6;
+  const top = duo.bars === "upright" ? insets.top + 6 : pillTop + 50;
+  /** The comments panel shows, open sideways: the canvas frames its boards left of it. */
+  const panelShown = duo.panel && Boolean(commentsOpen || thread);
   const canvasInsets = useMemo(
-    () => ({ top, right: 0, bottom: insets.bottom, left: 0 }),
-    [top, insets.bottom],
+    () =>
+      standby
+        ? { top: 0, right: 0, bottom: 0, left: 0 }
+        : {
+            top,
+            right: W - area.width + (panelShown ? 344 + 20 : 0),
+            bottom:
+              split === "below"
+                ? H - area.height
+                : nativeBars && duo.bars === "upright"
+                  ? insets.bottom + 56
+                  : insets.bottom,
+            left: 0,
+          },
+    [
+      standby,
+      top,
+      W,
+      H,
+      area.width,
+      area.height,
+      split,
+      nativeBars,
+      duo.bars,
+      insets.bottom,
+      panelShown,
+    ],
   );
+  // Loading, the file icon's slot holds the slice juicing; an agent's mark once one's here.
+  const titleIcon = !drawn ? (
+    <View testID="canvas-loading">
+      <Juice size={17} color={color.ink} />
+    </View>
+  ) : agent ? (
+    <AgentMark client={agent.client} size={18} color={color.ink} />
+  ) : (
+    <FileIcon size={17} color={color.ink} />
+  );
+  /** The pages' native menu around a control (the page pill open sideways). */
+  const pageMenu = (pill: React.ReactNode) =>
+    manyPages ? (
+      <MenuView
+        actions={pageActions}
+        onPressAction={pickPage}
+        onOpenMenu={select}
+        themeVariant={scheme}
+      >
+        <View testID="page-menu">{pill}</View>
+      </MenuView>
+    ) : (
+      pill
+    );
+  /** The page's open threads: the count on the comments button. */
+  const open = openThreads(doc, page?.id);
 
   // Focused, the board has the screen: no bar, and the home indicator fades as the system's
   // full-screen views do. Writing or reading a comment, or the agent's card, keeps the bar.
@@ -293,9 +399,47 @@ export default function Canvas() {
   const [hinted, setHinted] = useState(false);
   const hint = Boolean(doc) && !hinted;
 
+  const close = () => {
+    setCommentsOpen(false);
+    setThreadId(null);
+    setSheet(0);
+  };
+  /** The comments surface's content, with × where it can close. */
+  const comments = (onClose: (() => void) | undefined) => (
+    <Comments
+      doc={doc}
+      pageId={page?.id}
+      thread={thread}
+      onOpen={(id) => {
+        setPending(null);
+        setThreadId(id);
+      }}
+      onBack={() => setThreadId(null)}
+      onClose={onClose}
+      seen={seenAt}
+      me="Y"
+      onReply={reply}
+      onStatus={setStatus}
+    />
+  );
+
   if (!mac || !base) return <Missing message="This Mac isn't paired anymore." />;
   return (
-    <View testID="canvas" style={{ flex: 1, backgroundColor: color.canvas }}>
+    <View
+      testID={standby ? "standby" : "canvas"}
+      style={{ flex: 1, backgroundColor: standby ? "#0b0b0a" : color.canvas }}
+    >
+      {/*
+        Standby is the page alone, the full width of the display: the status bar's vertical rail
+        is turned horizontal for it, then hidden (Apple's "full width for immersive interfaces
+        that don't scroll"), and the home indicator fades.
+      */}
+      {standby && (
+        <>
+          <Stack.Screen options={{ headerShown: false, autoHideHomeIndicator: true }} />
+          <StatusBar hidden verticalBarBehaviorIOS="disabled" />
+        </>
+      )}
       {session && (
         <CanvasView
           ref={canvas}
@@ -308,18 +452,21 @@ export default function Canvas() {
           thread={threadId}
           onMessage={onMessage}
           page={asked}
+          standby={standby}
         />
       )}
       {/* Until the canvas has drawn: the design as the phone already has it (its preview). */}
-      <CanvasPlaceholder
-        file={file ?? null}
-        drawn={drawn}
-        top={insets.top + 56}
-        bottom={insets.bottom}
-        offline={
-          !doc && state.status === "offline" ? `${mac.name} isn't answering. Trying again…` : null
-        }
-      />
+      {!standby && (
+        <CanvasPlaceholder
+          file={file ?? null}
+          drawn={drawn}
+          top={insets.top + 56}
+          bottom={insets.bottom}
+          offline={
+            !doc && state.status === "offline" ? `${mac.name} isn't answering. Trying again…` : null
+          }
+        />
+      )}
       {card && (
         <Pressable
           style={{
@@ -332,130 +479,176 @@ export default function Canvas() {
           accessibilityLabel="Close"
         />
       )}
-      <Animated.View
-        pointerEvents={bare ? "none" : "box-none"}
-        // Gone while bare: out of reach of touch and VoiceOver as well as sight.
-        accessibilityElementsHidden={bare}
-        importantForAccessibility={bare ? "no-hide-descendants" : "auto"}
-        testID={bare ? "chrome-hidden" : "chrome"}
-        style={{ position: "absolute", left: 0, right: 0, top: insets.top, zIndex: 8 }}
-      >
-        <GlassGroup
-          style={{
-            paddingVertical: 6,
-            paddingHorizontal: 16,
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 10,
-          }}
+      {nativeBars && !standby && (
+        <>
+          <Stack.Screen
+            options={{
+              headerShown: true,
+              headerTransparent: true,
+              headerTitle: "",
+              headerBackVisible: false,
+              headerShadowVisible: false,
+            }}
+          />
+          <NativeBarItems
+            page={page}
+            pages={pageActions}
+            onPage={(id) => pickPage({ nativeEvent: { event: id } } as NativeActionEvent)}
+            count={open.length}
+            onComments={() => {
+              setThreadId(null);
+              setCommentsOpen((o) => !o);
+            }}
+            onBack={() => router.back()}
+            pageOnBar={duo.bars === "upright" || (!duo.panel && !split)}
+            commentsShown={Boolean(split)}
+          />
+        </>
+      )}
+      {standby ? null : nativeBars ? (
+        <DuoPills
+          file={file?.name ?? doc?.name ?? ""}
+          icon={titleIcon}
+          working={working}
+          agentName={agent?.name}
+          card={card}
+          onCard={agent ? () => setCard((c) => !c) : undefined}
+          page={page}
+          pageMenu={duo.panel || split === "beside" ? pageMenu : null}
+          // With the panel open the page pill keeps to the canvas left of it (the board's 6).
+          area={panelShown ? { ...area, width: area.width - 344 - 10 - 10 } : area}
+          top={pillTop}
+          bare={bare}
+          chromeStyle={chromeStyle}
+          split={Boolean(split)}
+        />
+      ) : (
+        <Animated.View
+          pointerEvents={bare ? "none" : "box-none"}
+          // Gone while bare: out of reach of touch and VoiceOver as well as sight.
+          accessibilityElementsHidden={bare}
+          importantForAccessibility={bare ? "no-hide-descendants" : "auto"}
+          testID={bare ? "chrome-hidden" : "chrome"}
+          style={{ position: "absolute", left: 0, right: 0, top: insets.top, zIndex: 8 }}
         >
-          <BarButton
-            label="Back"
-            shown={!bare}
-            onPress={() => {
-              tick();
-              router.back();
+          <GlassGroup
+            style={{
+              paddingVertical: 6,
+              paddingHorizontal: 16,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 10,
             }}
           >
-            <Animated.View style={chromeStyle}>
-              <Back color={color.ink} />
-            </Animated.View>
-          </BarButton>
-          {/* The file, in the middle: an agent's mark in place of its icon while one is here, and its session card on a tap. */}
-          <View style={{ flex: 1, minWidth: 0, alignItems: "center" }}>
-            <Pressable
-              onPress={
-                agent
-                  ? () => {
-                      if (!card) tick();
-                      setCard((c) => !c);
-                    }
-                  : undefined
-              }
-              disabled={!agent}
-              accessibilityRole={agent ? "button" : "text"}
-              accessibilityLabel={
-                agent
-                  ? `${file?.name ?? doc?.name ?? ""}, ${agent.name}'s session`
-                  : (file?.name ?? doc?.name ?? "")
-              }
-              testID="title"
-              style={{ maxWidth: "100%" }}
+            <BarButton
+              label="Back"
+              shown={!bare}
+              onPress={() => {
+                tick();
+                router.back();
+              }}
             >
-              <Glass interactive={Boolean(agent)} held={card} shown={!bare} style={{ height: 44 }}>
-                <Animated.View
-                  style={[
-                    {
-                      height: 44,
-                      paddingLeft: 12,
-                      paddingRight: 14,
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: 7,
-                    },
-                    chromeStyle,
-                  ]}
-                >
-                  {/* Loading, the file icon's slot holds the slice juicing; an agent's mark once one's here. */}
-                  {!drawn ? (
-                    <View testID="canvas-loading">
-                      <Juice size={17} color={color.ink} />
-                    </View>
-                  ) : agent ? (
-                    <AgentMark client={agent.client} size={18} color={color.ink} />
-                  ) : (
-                    <FileIcon size={17} color={color.ink} />
-                  )}
-                  {working ? (
-                    <Shimmer
-                      text={doc?.name ?? file?.name ?? ""}
-                      style={titleText}
-                      color={color.ink}
-                      surface={color.bar}
-                    />
-                  ) : (
-                    <Text numberOfLines={1} style={[titleText, { color: color.ink }]}>
-                      {doc?.name ?? file?.name ?? ""}
-                    </Text>
-                  )}
-                </Animated.View>
-              </Glass>
-            </Pressable>
-          </View>
-          {/* The page: its icon alone, and the pages' menu from it. */}
-          {manyPages ? (
-            <MenuView
-              actions={pageActions}
-              onPressAction={pickPage}
-              onOpenMenu={select}
-              themeVariant={scheme}
-            >
-              <View
-                accessible
-                accessibilityRole="button"
-                accessibilityLabel={`Page: ${page?.name ?? ""}`}
-                testID="page-menu"
+              <Animated.View style={chromeStyle}>
+                <Back color={color.ink} />
+              </Animated.View>
+            </BarButton>
+            {/* The file, in the middle: an agent's mark in place of its icon while one is here, and its session card on a tap. */}
+            <View style={{ flex: 1, minWidth: 0, alignItems: "center" }}>
+              <Pressable
+                onPress={
+                  agent
+                    ? () => {
+                        if (!card) tick();
+                        setCard((c) => !c);
+                      }
+                    : undefined
+                }
+                disabled={!agent}
+                accessibilityRole={agent ? "button" : "text"}
+                accessibilityLabel={
+                  agent
+                    ? `${file?.name ?? doc?.name ?? ""}, ${agent.name}'s session`
+                    : (file?.name ?? doc?.name ?? "")
+                }
+                testID="title"
+                style={{ maxWidth: "100%" }}
               >
                 <Glass
-                  interactive
+                  interactive={Boolean(agent)}
+                  held={card}
                   shown={!bare}
-                  style={{ width: 44, height: 44, alignItems: "center", justifyContent: "center" }}
+                  style={{ height: 44 }}
                 >
-                  <Animated.View style={chromeStyle}>
-                    <PageIcon name={page?.icon} size={20} color={color.ink} />
+                  <Animated.View
+                    style={[
+                      {
+                        height: 44,
+                        paddingLeft: 12,
+                        paddingRight: 14,
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 7,
+                      },
+                      chromeStyle,
+                    ]}
+                  >
+                    {titleIcon}
+                    {working ? (
+                      <Shimmer
+                        text={doc?.name ?? file?.name ?? ""}
+                        style={titleText}
+                        color={color.ink}
+                        surface={color.bar}
+                      />
+                    ) : (
+                      <Text numberOfLines={1} style={[titleText, { color: color.ink }]}>
+                        {doc?.name ?? file?.name ?? ""}
+                      </Text>
+                    )}
                   </Animated.View>
                 </Glass>
-              </View>
-            </MenuView>
-          ) : (
-            <View style={{ width: 44 }} />
-          )}
-        </GlassGroup>
-      </Animated.View>
+              </Pressable>
+            </View>
+            {/* The page: its icon alone, and the pages' menu from it. */}
+            {manyPages ? (
+              <MenuView
+                actions={pageActions}
+                onPressAction={pickPage}
+                onOpenMenu={select}
+                themeVariant={scheme}
+              >
+                <View
+                  accessible
+                  accessibilityRole="button"
+                  accessibilityLabel={`Page: ${page?.name ?? ""}`}
+                  testID="page-menu"
+                >
+                  <Glass
+                    interactive
+                    shown={!bare}
+                    style={{
+                      width: 44,
+                      height: 44,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Animated.View style={chromeStyle}>
+                      <PageIcon name={page?.icon} size={20} color={color.ink} />
+                    </Animated.View>
+                  </Glass>
+                </View>
+              </MenuView>
+            ) : (
+              <View style={{ width: 44 }} />
+            )}
+          </GlassGroup>
+        </Animated.View>
+      )}
       {card && agent && doc && (
         <SessionCard presence={agent} top={insets.top + 58} doc={doc} file={params.key} />
       )}
-      {hint && (
+      {hint && !standby && (
         <Hint bottom={insets.bottom} away={Boolean(focusedBoard)} onDone={() => setHinted(true)} />
       )}
       {uncommented && (
@@ -464,32 +657,72 @@ export default function Canvas() {
       {pending && (
         <Sheet
           testID="comment-sheet"
+          right={insets.right}
           onDismiss={() => {
             setPending(null);
             setSheet(0);
           }}
           onHeight={setSheet}
         >
-          <Composer mode={mode} onMode={setMode} placeholder="Comment" onSend={createComment} />
+          <Composer
+            mode={mode}
+            onMode={setMode}
+            placeholder="Comment"
+            onSend={createComment}
+            draft={`pin:${pending.artboardId ?? pending.pageId}:${pending.x}:${pending.y}`}
+          />
           {error && (
             <Text style={{ fontFamily: "Inter", fontSize: 13, color: color.muted }}>{error}</Text>
           )}
         </Sheet>
       )}
-      {thread && (
-        <ThreadSheet
-          key={thread.id}
-          thread={thread}
-          me="Y"
-          onReply={reply}
-          onStatus={setStatus}
-          onDismiss={() => {
-            setThreadId(null);
-            setSheet(0);
-          }}
+      {/*
+        Comments, one surface in every pose: the list of this page's open threads, or a thread
+        opened from it or its pin. Folded it's half the display, always there; open sideways
+        an inset panel; on a phone, closed and upright the system's sheet. A pin tapped with no
+        list open is the thread's own sheet, as on an iPhone.
+      */}
+      {standby ? null : split ? (
+        <CommentsHalf
+          style={
+            split === "beside"
+              ? { left: fold + CREASE, top: 0, width: W - insets.right - fold - CREASE, height: H }
+              : { left: 0, top: fold + CREASE, width: W, height: H - fold - CREASE }
+          }
+        >
+          {comments(undefined)}
+        </CommentsHalf>
+      ) : duo.panel && (commentsOpen || thread) ? (
+        <CommentsPanel right={insets.right}>{comments(close)}</CommentsPanel>
+      ) : commentsOpen ? (
+        <Sheet
+          testID="comments-sheet"
+          right={insets.right}
+          onDismiss={close}
           onHeight={setSheet}
-        />
+          height={Math.min(450, H * 0.62)}
+          gap={14}
+        >
+          {comments(close)}
+        </Sheet>
+      ) : (
+        thread && (
+          <ThreadSheet
+            key={thread.id}
+            right={insets.right}
+            thread={thread}
+            me="Y"
+            onReply={reply}
+            onStatus={setStatus}
+            onDismiss={() => {
+              setThreadId(null);
+              setSheet(0);
+            }}
+            onHeight={setSheet}
+          />
+        )
       )}
+      {split && !standby && <Fold axis={split === "below" ? "across" : "down"} at={fold} />}
     </View>
   );
 }
@@ -730,5 +963,125 @@ function SessionCard({
         </View>
       </Glass>
     </Animated.View>
+  );
+}
+
+/**
+ * The file and page pills on iPhone Duo, where the system's bars hold Back
+ * (and the page, closed and upright). The file pill is centered on the
+ * canvas closed and upright, and top left open sideways and in the book
+ * pose, with the page pill top right (the board's 5). Each glides between
+ * its places as the phone opens and closes (`Glide`), and they morph as
+ * glass does, together in one GlassGroup.
+ */
+function DuoPills({
+  file,
+  icon,
+  working,
+  agentName,
+  card,
+  onCard,
+  page,
+  pageMenu,
+  area,
+  top,
+  bare,
+  chromeStyle,
+  split,
+}: {
+  file: string;
+  icon: React.ReactNode;
+  working: boolean;
+  agentName?: string;
+  card: boolean;
+  onCard?: () => void;
+  page: { name: string; icon?: string } | undefined;
+  /** The page pill and its menu, open sideways; null where the page is a bar item. */
+  pageMenu: ((pill: React.ReactNode) => React.ReactNode) | null;
+  /** The canvas's part of the window. */
+  area: { left: number; top: number; width: number; height: number };
+  top: number;
+  bare: boolean;
+  chromeStyle: ReturnType<typeof useAnimatedStyle>;
+  /** Folded: the pills are at the book's corners, not opening. */
+  split: boolean;
+}) {
+  const { color } = useTheme();
+  // Measured widths, so a centered pill's left edge can glide like the rest.
+  const [fileW, setFileW] = useState(120);
+  const [pageW, setPageW] = useState(112);
+  const corners = Boolean(pageMenu);
+  const fileX = corners ? area.left + 20 : area.left + (area.width - fileW) / 2;
+  const pageX = area.left + area.width - 16 - pageW;
+  // Where the file pill was before it went to the corner (closed: centered beside the rail), and
+  // the page's place on the rail, which the page pill comes from as the phone opens.
+  const centered = useRef(fileX);
+  if (!corners) centered.current = fileX;
+  const opening = useOpening(corners && !split);
+  return (
+    <GlassGroup style={{ position: "absolute", inset: 0, zIndex: 8 }} spacing={10}>
+      <View pointerEvents={bare ? "none" : "box-none"} style={{ flex: 1 }}>
+        <Glide
+          x={fileX}
+          y={top}
+          from={{ x: centered.current, y: top }}
+          opening={opening}
+          testID="title"
+        >
+          <Pressable
+            onPress={
+              onCard
+                ? () => {
+                    if (!card) tick();
+                    onCard();
+                  }
+                : undefined
+            }
+            disabled={!onCard}
+            accessibilityRole={onCard ? "button" : "text"}
+            accessibilityLabel={agentName ? `${file}, ${agentName}'s session` : file}
+            onLayout={(e) => setFileW(e.nativeEvent.layout.width)}
+          >
+            <Glass interactive={Boolean(onCard)} held={card} shown={!bare} style={{ height: 44 }}>
+              <Animated.View
+                style={[
+                  {
+                    height: 44,
+                    paddingLeft: 13,
+                    paddingRight: 16,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 7,
+                  },
+                  chromeStyle,
+                ]}
+              >
+                {icon}
+                {working ? (
+                  <Shimmer text={file} style={titleText} color={color.ink} surface={color.bar} />
+                ) : (
+                  <Text numberOfLines={1} style={[titleText, { color: color.ink }]}>
+                    {file}
+                  </Text>
+                )}
+              </Animated.View>
+            </Glass>
+          </Pressable>
+        </Glide>
+        {pageMenu && (
+          <Glide
+            x={pageX}
+            y={top}
+            from={{ x: area.left + area.width, y: top + 104 }}
+            opening={opening}
+            testID="page-pill"
+          >
+            <View onLayout={(e) => setPageW(e.nativeEvent.layout.width)}>
+              <PagePill page={page} menu={pageMenu} shown={!bare} />
+            </View>
+          </Glide>
+        )}
+      </View>
+    </GlassGroup>
   );
 }
