@@ -1,7 +1,7 @@
 "use client";
 
 import { appLink, parseDesignLink } from "@ponzu/core";
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Apple, Slice } from "@/components/icons";
 import { DOWNLOAD } from "@/components/links";
 
@@ -10,6 +10,7 @@ import { DOWNLOAD } from "@/components/links";
  * nothing when no app takes the link, so the page watches: launching an app takes the page's focus
  * or hides it. If neither happens in two seconds, Ponzu isn't installed and the page offers the
  * download. Focus that leaves later, once the person answers the browser's prompt, still counts.
+ * Once Ponzu has it the page closes itself; a browser that won't let it says the tab can go.
  */
 
 /** How long the app has to take focus before the page offers the download. */
@@ -36,6 +37,7 @@ export function OpenDesign() {
     const away = () => {
       end();
       setState("opened");
+      window.close();
     };
     const onVisibility = () => document.hidden && away();
     const timer = setTimeout(() => {
@@ -114,21 +116,7 @@ export function OpenDesign() {
   }
 
   if (state === "opened") {
-    return (
-      <Message slice title="Opened in Ponzu." body="You can close this tab.">
-        <span className="inline-flex flex-wrap items-center justify-center gap-x-[5px]">
-          Didn't open?{" "}
-          <button type="button" className={inlineLink} onClick={retry}>
-            Try again
-          </button>{" "}
-          or{" "}
-          <a className={`${inlineLink} inline-flex items-center gap-1`} href={DOWNLOAD}>
-            <Apple className="size-[13px] shrink-0 -translate-y-px fill-current" />
-            download for Mac
-          </a>
-        </span>
-      </Message>
-    );
+    return <Message slice title="Opened in Ponzu." body="You can close this tab." />;
   }
 
   return (
@@ -139,17 +127,7 @@ export function OpenDesign() {
 const inlineLink =
   "cursor-pointer text-ink underline decoration-outline underline-offset-4 hover:decoration-ink";
 
-function Message({
-  slice,
-  title,
-  body,
-  children,
-}: {
-  slice?: boolean;
-  title: string;
-  body?: string;
-  children?: ReactNode;
-}) {
+function Message({ slice, title, body }: { slice?: boolean; title: string; body?: string }) {
   return (
     <div className="flex flex-col items-center gap-7 text-center animate-swap" role="status">
       {slice ? <Slice size={56} /> : null}
@@ -159,7 +137,6 @@ function Message({
         </h1>
         {body ? <p className="m-0 text-[15px]/6 text-muted">{body}</p> : null}
       </div>
-      {children ? <div className="text-sm/5 text-faint">{children}</div> : null}
     </div>
   );
 }

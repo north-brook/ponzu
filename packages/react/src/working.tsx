@@ -34,6 +34,46 @@ export function Juice({
   );
 }
 
+/**
+ * Yuzu rain: columns of dots falling at their own pace, Paper's way of saying "at work here"
+ * without anyone's face on it. The columns come in left to right. Sized in em, so it's the
+ * size of the text around it; `columns` sets how wide it runs.
+ */
+export function Rain({
+  columns = 24,
+  className,
+  label,
+  title,
+}: {
+  columns?: number;
+  className?: string;
+  /** Read out in its place; without one it's decoration. */
+  label?: string;
+  title?: string;
+}) {
+  return (
+    <span
+      className={`pz-rain pz:inline-flex pz:shrink-0 pz:items-center${className ? ` ${className}` : ""}`}
+      {...(label ? { role: "img", "aria-label": label } : { "aria-hidden": true })}
+      title={title}
+    >
+      {RAIN.slice(0, columns).map((c, i) => (
+        <span
+          // biome-ignore lint/suspicious/noArrayIndexKey: a fixed set of columns
+          key={i}
+          style={{ "--i": i, "--fall": `${c.fall}s`, "--drift": `${c.drift}s` } as CSSProperties}
+        />
+      ))}
+    </span>
+  );
+}
+
+/** The rain's columns: each falls at its own pace from its own start, the same every time. */
+const RAIN = Array.from({ length: 24 }, (_, i) => {
+  const r = (n: number) => (((Math.sin((i + 1) * n) * 43758.5453) % 1) + 1) % 1;
+  return { fall: (1.05 + r(12.9898) * 0.5).toFixed(2), drift: (-r(78.233) * 1.5).toFixed(2) };
+});
+
 /** True once `on` has held for `ms`: loading states for waits too short to notice show nothing. */
 export function useDelayed(on: boolean, ms = 300): boolean {
   const [shown, setShown] = useState(false);

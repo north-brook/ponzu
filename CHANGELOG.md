@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.46.2](https://github.com/north-brook/ponzu/compare/v1.46.1...v1.46.2) (2026-10-24)
+
+
+### Bug Fixes
+
+* close the open-in-ponzu tab once the app has the design ([#189](https://github.com/north-brook/ponzu/issues/189)) ([a6f47d8](https://github.com/north-brook/ponzu/commit/a6f47d879269f70a27f2124f9eb64ff0bdf21a86))
+
 ## [1.46.1](https://github.com/north-brook/ponzu/compare/v1.46.0...v1.46.1) (2026-10-24)
 
 
