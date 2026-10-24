@@ -1,6 +1,7 @@
 import { GlassContainer, GlassView, isLiquidGlassAvailable } from "expo-glass-effect";
 import type { ReactNode } from "react";
 import { type StyleProp, StyleSheet, View, type ViewStyle } from "react-native";
+import { innerStyle, outerStyle } from "../lib/glass-split";
 import { useTheme } from "../lib/theme";
 
 /** Before iOS 26 the glass is a plain view; it gets the bar's surface instead. */
@@ -93,38 +94,14 @@ export function GlassGroup({
   );
 }
 
-const LAYOUT = [
-  "alignItems",
-  "flexDirection",
-  "gap",
-  "justifyContent",
-  "padding",
-  "paddingBottom",
-  "paddingHorizontal",
-  "paddingLeft",
-  "paddingRight",
-  "paddingTop",
-  "paddingVertical",
-] as const;
-
-/**
- * The glass: the caller's style less the layout and padding its inner view
- * takes. Left on the glass, a row would shrink the inner view to its
- * content, and a spacer in it would have nothing to fill.
- */
+/** The glass: the caller's style less what its inner view takes (lib/glass-split.ts). */
 function outer(style: StyleProp<ViewStyle>): ViewStyle {
-  const rest: Record<string, unknown> = { ...StyleSheet.flatten(style) };
-  for (const k of LAYOUT) delete rest[k];
-  return rest as ViewStyle;
+  return outerStyle({ ...StyleSheet.flatten(style) }) as ViewStyle;
 }
 
 /** What the glass holds is laid out as the caller asked, and clipped to its corners. */
 function inner(style: StyleProp<ViewStyle>): ViewStyle {
-  const flat: ViewStyle = StyleSheet.flatten([styles.shell, style]) ?? {};
-  const out: Record<string, unknown> = { borderRadius: flat.borderRadius };
-  for (const k of LAYOUT) if (flat[k] !== undefined) out[k] = flat[k];
-  if (flat.height !== undefined) out.height = "100%";
-  return out as ViewStyle;
+  return innerStyle({ ...StyleSheet.flatten([styles.shell, style]) }) as ViewStyle;
 }
 
 /** Held glass, a step darker: ink at 10% in light, white at 20% in dark. */
