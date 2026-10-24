@@ -228,23 +228,26 @@ export function Dashboard({
           <Setup catalog={catalog} files={files} machines={machines} onOpen={onOpen} live={live} />
         ) : (
           <>
-            <Views
-              view={view}
-              counts={{
-                recent: shelved.recent.length,
-                scratch: shelved.scratch.length,
-                archived: shelved.archived.length,
-              }}
-              onView={setView}
-            />
-            {projects.length > 1 && (
-              <Projects
-                projects={projects}
-                total={inView.length}
-                scope={scope}
-                onScope={setProject}
+            {/* One row: the views at the left, the project at the right. */}
+            <div className="-mb-3.5 flex h-7 items-center justify-between gap-4">
+              <Views
+                view={view}
+                counts={{
+                  recent: shelved.recent.length,
+                  scratch: shelved.scratch.length,
+                  archived: shelved.archived.length,
+                }}
+                onView={setView}
               />
-            )}
+              {projects.length > 1 && (
+                <Projects
+                  projects={projects}
+                  total={inView.length}
+                  scope={scope}
+                  onScope={setProject}
+                />
+              )}
+            </div>
             {view !== "recent" && <ViewNote view={view} />}
             {shown.length ? (
               <Grid>
@@ -308,7 +311,7 @@ function Views({
   onView: (view: View) => void;
 }) {
   return (
-    <div className="-mb-3.5 flex items-baseline gap-4 text-[13px]" role="tablist">
+    <div className="flex items-baseline gap-4 text-[13px]" role="tablist">
       {VIEWS.map((v) =>
         // Scratch and Archived show once there's something in them, or while they're open.
         v.id === "recent" || counts[v.id] || view === v.id ? (
@@ -377,59 +380,76 @@ function Projects({
   scope: string | null;
   onScope: (id: string | null) => void;
 }) {
+  const on = projects.find((p) => p.id === scope);
   return (
-    <div className="flex flex-wrap gap-1.5">
-      <Chip on={scope === null} onClick={() => onScope(null)} count={total}>
-        All
-      </Chip>
-      {projects.map((p) => (
-        <Chip
-          key={p.id}
-          on={scope === p.id}
-          onClick={() => onScope(scope === p.id ? null : p.id)}
-          count={p.count}
-          icon={p.id === NO_PROJECT ? "folder" : "branch"}
-          title={p.id || undefined}
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={`Project: ${on ? on.name : "All projects"}`}
+          className="flex h-7 items-center gap-1.5 whitespace-nowrap rounded-[7px] pr-2 pl-2.5 font-medium text-[13px] text-foreground outline-none hover:bg-accent focus-visible:shadow-[0_0_0_2px_var(--ring)] data-[state=open]:bg-accent"
         >
-          {p.name}
-        </Chip>
-      ))}
-    </div>
+          <Icon
+            name={on?.id === NO_PROJECT ? "folder" : "branch"}
+            size={14}
+            strokeWidth={1.6}
+            className="text-muted-foreground"
+          />
+          {on ? on.name : "All projects"}
+          <span className="font-normal text-[11px] text-faint tabular-nums">
+            {on ? on.count : total}
+          </span>
+          <Icon name="chevronDown" size={13} strokeWidth={2} className="text-faint" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-56">
+        <ProjectItem on={scope === null} onSelect={() => onScope(null)} count={total}>
+          All projects
+        </ProjectItem>
+        <DropdownMenuSeparator />
+        {projects.map((p) => (
+          <ProjectItem
+            key={p.id}
+            on={scope === p.id}
+            onSelect={() => onScope(p.id)}
+            count={p.count}
+            icon={p.id === NO_PROJECT ? "folder" : "branch"}
+            title={p.id || undefined}
+          >
+            {p.name}
+          </ProjectItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
-function Chip({
+function ProjectItem({
   on,
-  onClick,
+  onSelect,
   count,
   icon,
   title,
   children,
 }: {
   on: boolean;
-  onClick: () => void;
+  onSelect: () => void;
   count: number;
   icon?: string;
   title?: string;
   children: ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      aria-pressed={on}
-      title={title}
-      onClick={onClick}
-      className={cn(
-        "flex h-7 items-center gap-1.5 whitespace-nowrap rounded-full px-[11px] text-xs",
-        on
-          ? "bg-foreground text-home"
-          : "text-muted-foreground shadow-[inset_0_0_0_1px_var(--hairline-strong)] hover:text-foreground",
-      )}
-    >
-      {icon && <Icon name={icon} size={13} strokeWidth={1.6} className="opacity-80" />}
-      {children}
-      <span className="opacity-60 tabular-nums">{count}</span>
-    </button>
+    <DropdownMenuItem onSelect={onSelect} title={title} aria-checked={on} role="menuitemcheckbox">
+      <span className="grid w-3.5 place-items-center">
+        {on && <Icon name="check" size={14} strokeWidth={2} />}
+      </span>
+      <span className="grid w-3.5 place-items-center text-muted-foreground">
+        {icon && <Icon name={icon} size={14} strokeWidth={1.6} />}
+      </span>
+      <span className="min-w-0 flex-1 truncate">{children}</span>
+      <span className="text-[11px] text-faint tabular-nums">{count}</span>
+    </DropdownMenuItem>
   );
 }
 
@@ -529,7 +549,7 @@ function IconButton({
         type="button"
         aria-label={label}
         onClick={onClick}
-        className="grid size-10 place-items-center rounded-[10px] text-foreground hover:bg-accent"
+        className="grid size-10 place-items-center rounded-[10px] text-muted-foreground hover:bg-accent hover:text-foreground"
       >
         <Icon name={icon} size={20} strokeWidth={1.5} />
       </button>
