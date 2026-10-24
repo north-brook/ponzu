@@ -86,7 +86,7 @@ test("an agent builds a file through MCP and it lands on disk", async () => {
   expect(await readFile(join(dir, "shop.design/tokens.css"), "utf8")).toContain("--ink");
 });
 
-test("an agent's intent goes into the design's history, for a timelapse to open on", async () => {
+test("an agent's intent goes into the design's history", async () => {
   const ab = await client.callTool({
     name: "create_artboard",
     arguments: { file: "shop.design", name: "Intent", width: 400, height: 300 },

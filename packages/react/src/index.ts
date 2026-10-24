@@ -1,4 +1,4 @@
-export { ArtboardView, artboardMarkup, loadArtboardFonts } from "./Artboard.tsx";
+export { ArtboardView } from "./Artboard.tsx";
 export {
   ARRIVE_LAG_MS,
   ARRIVE_MAX_STAGGER,
@@ -6,23 +6,10 @@ export {
   ARRIVE_STAGGER_MS,
   arrivals,
   arriveDelay,
-  arriveLayer,
   BOARD_MS,
-  type Develop,
-  develop,
   outermost,
 } from "./arrive.ts";
-export {
-  Canvas,
-  type CanvasProps,
-  type Mode,
-  pin as pinClass,
-  pinWrap as pinWrapClass,
-  Ring,
-  size as artboardSize,
-  type Worker,
-  WorkingStatus,
-} from "./Canvas.tsx";
+export { Canvas, type CanvasProps, type Mode } from "./Canvas.tsx";
 export { Avatar, Composer, ThreadCard, timeAgo } from "./Comments.tsx";
 export {
   type CanvasSource,

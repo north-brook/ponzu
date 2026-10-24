@@ -804,23 +804,3 @@ test("list_files filters by name or path", async () => {
     'No open file matches "kettle" (1 file open).',
   );
 });
-
-test("timelapse films the file and says where it went", async () => {
-  const { ws, call } = await setup();
-  const asked: unknown[] = [];
-  ws.timelapse = async (key, req) => {
-    asked.push({ key, ...req });
-    return {
-      path: "/x/exports/timelapse-2026-10-22.mp4",
-      codec: "avc1.640028",
-      duration: 30,
-      bytes: 4_200_000,
-    };
-  };
-  const r = await call("timelapse", {});
-  expect(r.text).toBe("Wrote /x/exports/timelapse-2026-10-22.mp4 (30s, H.264, 4.0 MB).");
-  expect(asked).toEqual([{ key: "fern", shape: "16:9", range: undefined, theme: "light" }]);
-  expect((await call("timelapse", { from: 5, to: 2 })).isError).toBe(true);
-  ws.timelapse = undefined;
-  expect((await call("timelapse", {})).text).toContain("can't make them");
-});

@@ -12,8 +12,6 @@ export * from "./page-icons.ts";
 export * from "./preview.ts";
 export * from "./protocol.ts";
 export * from "./reconcile.ts";
-export * from "./story.ts";
-export * from "./timelapse.ts";
 export * from "./tree.ts";
 export * from "./types.ts";
 export * from "./update.ts";

@@ -7,9 +7,8 @@ import type { Doc, Op, PElement, PNode } from "@ponzu/core";
  * fade. Nothing slides: the layout is where it will stay from the first frame. A new artboard
  * draws its frame before it fills in. An agent's writes arrive this way, and so do files saved
  * straight into the design, though only what's new in them. The person's own edits on the
- * canvas, undo and redo just appear. The studio plays it live; the timelapse film seeks the same
- * animations frame by frame. It never holds the agent up: it runs after a write has landed, in
- * the page only.
+ * canvas, undo and redo just appear. It never holds the agent up: it runs after a write has
+ * landed, in the page only.
  */
 
 /** One piece, from its first outline to fully developed. */
@@ -174,23 +173,14 @@ export function arriveLayer(root: ShadowRoot): HTMLElement {
   return layer;
 }
 
-/** One piece developing: its animations, and a way to take it all back. */
-export interface Develop {
-  animations: Animation[];
-  cancel(): void;
-}
-
 /**
  * Develop one piece: it's hidden while yuzu outlines draw it and the first few boxes inside it,
  * then it's uncovered top first as they fade. The outlines go in `layer`, measured where the
- * pieces lie now; they're 1.5 screen px at any zoom. `ms` scales the whole develop, for a film
- * that runs quicker than the canvas. The animations run from now: set their currentTime to put
- * them where they should be.
+ * pieces lie now; they're 1.5 screen px at any zoom. The animations run from now: set their
+ * currentTime to put them where they should be.
  */
-export function develop(el: Element, layer: HTMLElement, ms = ARRIVE_MS): Develop {
-  const k = ms / ARRIVE_MS;
-  const animations = [el.animate(ARRIVE_KEYFRAMES, { duration: ms, fill: "backwards" })];
-  const boxes: HTMLElement[] = [];
+export function develop(el: Element, layer: HTMLElement): Animation[] {
+  const animations = [el.animate(ARRIVE_KEYFRAMES, { duration: ARRIVE_MS, fill: "backwards" })];
   const origin = layer.getBoundingClientRect();
   const scale = layer.offsetWidth ? origin.width / layer.offsetWidth : 0;
   if (scale > 0) {
@@ -206,12 +196,11 @@ export function develop(el: Element, layer: HTMLElement, ms = ARRIVE_MS): Develo
         `border:${line}px solid ${ARRIVE_LINE};border-radius:${getComputedStyle(target).borderRadius}`,
       ].join(";");
       layer.append(box);
-      boxes.push(box);
       const a = box.animate(outlineKeyframes(i, lines.length), {
-        duration: (ARRIVE_PLAN_MS + OUTLINE_HOLD + OUTLINE_OUT) * k,
+        duration: ARRIVE_PLAN_MS + OUTLINE_HOLD + OUTLINE_OUT,
         fill: "backwards",
       });
-      // Played out on the canvas, it's gone; a film seeking it cancels it instead.
+      // Played out, it's gone; cancelled by a re-render, it goes with the old shadow root.
       a.finished.then(
         () => box.remove(),
         () => {},
@@ -219,13 +208,7 @@ export function develop(el: Element, layer: HTMLElement, ms = ARRIVE_MS): Develo
       animations.push(a);
     });
   }
-  return {
-    animations,
-    cancel() {
-      for (const a of animations) a.cancel();
-      for (const b of boxes) b.remove();
-    },
-  };
+  return animations;
 }
 
 /** The piece and the first few boxes inside it worth outlining, breadth first. */
@@ -320,7 +303,7 @@ export class Arrivals {
       if (!el) continue;
       layer ??= arriveLayer(root);
       // Negative while it waits its turn in the stagger: held at the start until then.
-      for (const a of develop(el, layer).animations) a.currentTime = now - start;
+      for (const a of develop(el, layer)) a.currentTime = now - start;
     }
   }
 

@@ -33,7 +33,6 @@ import {
 import { Dashboard, type OpenTarget, type ShelfAction } from "@/components/dashboard";
 import { FileDetails, fileOf, tilde } from "@/components/file-info";
 import { PairIphone } from "@/components/pair-iphone";
-import { TimelapseButton } from "@/components/timelapse";
 import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { UpdateButton } from "@/components/update";
@@ -72,8 +71,6 @@ declare global {
       closeWindow?(): void;
       /** Ponzu › Pair iPhone…. Returns the unsubscribe. Missing from builds before pairing. */
       onPairIphone?(handler: () => void): () => void;
-      /** Put a file on the clipboard, as Finder's Copy does. Missing from builds before timelapses. */
-      copyFile?(path: string): Promise<void>;
     };
   }
 }
@@ -324,21 +321,6 @@ export function Studio() {
               theme={theme}
               me={{ kind: "user", name: "You" }}
               artboard={active === linked?.file ? linked.artboard : undefined}
-              footerExtra={
-                // A design on another Mac films there; its server has the journal.
-                !targetOf(active).base && (
-                  <>
-                    <TimelapseButton
-                      origin={ORIGIN}
-                      file={targetOf(active).key}
-                      name={fileOf(catalog, targetOf(active))?.name ?? nameFromKey(active)}
-                      source={source(active)}
-                      theme={theme}
-                    />
-                    <span aria-hidden className="pz:mx-1.5 pz:h-4 pz:w-px pz:bg-foreground/10" />
-                  </>
-                )
-              }
             />
           </div>
         ) : (
@@ -713,12 +695,3 @@ function useNow(every: number): number {
 }
 
 const code = "font-mono text-xs";
-
-function nameFromKey(key: string): string {
-  return (
-    key
-      .split("/")
-      .pop()
-      ?.replace(/\.design$/, "") ?? "Untitled"
-  );
-}

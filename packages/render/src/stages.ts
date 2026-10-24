@@ -55,12 +55,6 @@ export const STAGE_BUDGET_MS: Record<RenderStage, number> = {
 /** How long a client waits for a render host to answer one request. */
 export const HOST_DEADLINE_MS = 60_000;
 
-/**
- * One step of a film page: building a reel (laying out and measuring every board) or finishing
- * its encode takes longer than a render's settling, and grows with the design.
- */
-export const FILM_STEP_MS = 180_000;
-
 const DOING: Record<RenderStage, string> = {
   queue: "waiting for other renders to finish",
   load: "loading the page",

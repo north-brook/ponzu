@@ -1184,7 +1184,7 @@ function Bar({
   );
 }
 
-export interface Worker {
+interface Worker {
   /** Presence id: two sessions of one agent share a name. */
   id: string;
   name: string;
@@ -1199,7 +1199,7 @@ export interface Worker {
  * say they're doing is in the tooltip; written out, one pass repeated the same status over every
  * board it touched.
  */
-export function WorkingStatus({ who }: { who: Worker[]; zoom?: number }) {
+function WorkingStatus({ who }: { who: Worker[]; zoom?: number }) {
   return (
     <span
       className="pz-rain pz:ml-auto pz:inline-flex pz:shrink-0 pz:items-center"
@@ -1231,7 +1231,7 @@ const RAIN = Array.from({ length: 24 }, (_, i) => {
  * Drawn in the screen-space overlay so it's the same on screen at any zoom, and never part of the
  * design: screenshots and exports don't see it.
  */
-export function Ring({
+function Ring({
   x,
   y,
   w,
@@ -1343,12 +1343,12 @@ function useLingering(live: Map<string, unknown>, ms: number): Map<string, boole
 }
 
 /** Open pins sit a level above the rest, so another pin never covers their card. */
-export const pinWrap = "pz:pointer-events-auto pz:absolute pz:size-0";
+const pinWrap = "pz:pointer-events-auto pz:absolute pz:size-0";
 /**
  * A circle centred on the comment's spot, holding its message count. The hairline keeps a yuzu pin
  * visible on a yellow design.
  */
-export const pin =
+const pin =
   "pz:absolute pz:top-0 pz:left-0 pz:grid pz:size-6 pz:-translate-1/2 pz:place-items-center pz:rounded-full pz:font-semibold pz:text-[11px] pz:tabular-nums pz:shadow-[0_0_0_1px_rgba(17,17,16,0.18),0_1px_3px_rgba(0,0,0,0.25)] pz:transition-transform pz:duration-[120ms] pz:hover:scale-112";
 
 function PageTab({

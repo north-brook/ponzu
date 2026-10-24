@@ -8,7 +8,6 @@ import { BrowserWindow } from "electron";
 // Shared with the server's own renderers. It imports nothing, so the bundle takes just this file.
 import { captureScale, IMAGES_READY_SCRIPT } from "../../../packages/render/src/capture.ts";
 import {
-  FILM_STEP_MS,
   RenderError,
   type RenderStage,
   STAGE_BUDGET_MS,
@@ -58,9 +57,7 @@ type SessionOp =
   | { op: "eval"; session: string; expression: string }
   | { op: "capture"; session: string; box: Box; scale: number }
   | { op: "show"; session: string; html: string; width: number; height: number }
-  | { op: "close"; session: string }
-  | { op: "film"; url: string; width: number; height: number; scale: number }
-  | { op: "frame"; session: string; format: "png" | "jpeg" };
+  | { op: "close"; session: string };
 
 export const renderToken = randomBytes(24).toString("hex");
 let renderDir: string | null = null;
@@ -277,8 +274,6 @@ async function renderJob(job: Job) {
 interface Session {
   win: BrowserWindow;
   timer: NodeJS.Timeout;
-  /** A film page: its steps (building the reel, finishing the encode) get the film's budget. */
-  film?: boolean;
 }
 
 const sessions = new Map<string, Session>();
@@ -288,8 +283,7 @@ function keepAlive(id: string) {
   const s = sessions.get(id);
   if (!s) throw new Error(`No render session ${id}.`);
   clearTimeout(s.timer);
-  // Abandoned means idle past the longest step it could be running.
-  s.timer = setTimeout(() => closeSession(id), s.film ? FILM_STEP_MS + 60_000 : 60_000);
+  s.timer = setTimeout(() => closeSession(id), 60_000);
   return s;
 }
 
@@ -317,19 +311,9 @@ async function sessionOp(op: SessionOp) {
         }
         return { session: id, ...(loaded ? {} : { assetsTimedOut: true }) };
       });
-    case "eval": {
+    case "eval":
       // Recording's evals seek and wait for frames; lint and settling are the slowest of them.
-      // A film's build and encode take longer, and the session stays alive while they run.
-      const s = keepAlive(op.session);
-      const value = s.film
-        ? await withBudget(
-            "prepare",
-            s.win.webContents.executeJavaScript(op.expression) as Promise<unknown>,
-            FILM_STEP_MS,
-          ).finally(() => keepAlive(op.session))
-        : await run(s.win, "prepare", op.expression);
-      return { value };
-    }
+      return { value: await run(keepAlive(op.session).win, "prepare", op.expression) };
     // Captures and pages take the same turns as renders: they're what costs
     // memory and GPU. A session doesn't hold a turn between them, so a long
     // recording can't keep previews and screenshots out.
@@ -347,66 +331,7 @@ async function sessionOp(op: SessionOp) {
     case "close":
       closeSession(op.session);
       return {};
-    case "film":
-      return turn(() => openFilm(op));
-    case "frame":
-      return turn(async () => {
-        const s = keepAlive(op.session);
-        return {
-          data: (await withBudget("capture", captureFilm(s.win, op.format))).toString("base64"),
-        };
-      });
   }
-}
-
-/**
- * A timelapse film page: the server's /film at the film's viewport, drawn at
- * its device scale. It loads from the server (not a file) so the page has a
- * secure origin and WebCodecs, and only from this Mac's own server.
- */
-async function openFilm(op: Extract<SessionOp, { op: "film" }>) {
-  const url = new URL(op.url);
-  if (url.hostname !== "127.0.0.1" && url.hostname !== "localhost")
-    throw new Error("Films only load from this Mac's Ponzu server.");
-  const id = randomBytes(8).toString("hex");
-  const win = renderWindow(op.width, op.height);
-  sessions.set(id, {
-    win,
-    film: true,
-    timer: setTimeout(() => closeSession(id), FILM_STEP_MS + 60_000),
-  });
-  try {
-    await withBudget("load", win.loadURL(url.href));
-    await withBudget(
-      "load",
-      win.webContents.executeJavaScript(
-        "new Promise((r) => { const go = () => window.ponzuFilm ? r(true) : setTimeout(go, 50); go(); })",
-      ),
-    );
-    const cdp = win.webContents.debugger;
-    if (!cdp.isAttached()) cdp.attach("1.3");
-    await cdp.sendCommand("Emulation.setDeviceMetricsOverride", {
-      width: op.width,
-      height: op.height,
-      deviceScaleFactor: op.scale,
-      mobile: false,
-    });
-  } catch (err) {
-    closeSession(id);
-    throw err;
-  }
-  return { session: id };
-}
-
-/** The whole viewport of a film page, at its device scale. */
-async function captureFilm(win: BrowserWindow, format: "png" | "jpeg"): Promise<Buffer> {
-  const cdp = win.webContents.debugger;
-  if (!cdp.isAttached()) cdp.attach("1.3");
-  const shot = (await cdp.sendCommand("Page.captureScreenshot", {
-    format,
-    ...(format === "jpeg" ? { quality: 70 } : {}),
-  })) as { data: string };
-  return Buffer.from(shot.data, "base64");
 }
 
 /** The contact sheet: a new page at its own size. */
