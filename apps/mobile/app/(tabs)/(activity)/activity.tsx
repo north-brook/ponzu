@@ -79,6 +79,11 @@ export default function Activity() {
   );
   const freshNow = useRef(fresh);
   freshNow.current = fresh;
+  // The focus effect below runs once per mount; these keep what it reads current.
+  const filesNow = useRef(files);
+  filesNow.current = files;
+  const docsNow = useRef(docs);
+  docsNow.current = docs;
   // Anything unseen that arrives while the tab is in front joins the snapshot, so it too
   // keeps its row once seen.
   useEffect(() => {
@@ -104,10 +109,10 @@ export default function Activity() {
       setSnapshot(new Set(freshNow.current.map((i) => i.id)));
       setInFront(true);
       // Fetch the threads of designs the person has commented in, from Macs that answer.
-      for (const f of files) {
+      for (const f of filesNow.current) {
         const k = `${f.mac}:${f.key}`;
         const mac = findMac(f.mac);
-        if (!mac || f.stale || !docs[k]) continue;
+        if (!mac || f.stale || !docsNow.current[k]) continue;
         refreshThreads(f, baseUrl(mac));
       }
       return () => {
