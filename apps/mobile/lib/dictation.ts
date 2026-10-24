@@ -66,8 +66,10 @@ export function useDictation(active: boolean) {
   useSpeechRecognitionEvent("start", () => setState("listening"));
   useSpeechRecognitionEvent("end", () => {
     listener.current!.ended();
-    // Keep what was said; a new start adds to it.
-    setSaid((s) => join(s, partialRef.current));
+    // Keep what was said; a new start adds to it. The words are read now: the updater can run
+    // after the ref is cleared below.
+    const heard = partialRef.current;
+    setSaid((s) => join(s, heard));
     setPartial("");
     partialRef.current = "";
     base.current = "";
