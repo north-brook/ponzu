@@ -17,6 +17,7 @@ import { isUnseen, useSeen } from "../../../lib/seen";
 import { useStore } from "../../../lib/store";
 import { useTheme } from "../../../lib/theme";
 import { brand } from "../../../lib/tokens";
+import { useWindowInsets } from "../../../lib/window-insets";
 
 /**
  * Search (Flow › 2 Search), the search tab: the system's search field, and
@@ -26,6 +27,7 @@ import { brand } from "../../../lib/tokens";
  * searched. `?q=` starts it with a query.
  */
 export default function Search() {
+  const rail = useWindowInsets();
   const { color } = useTheme();
   const { width } = useWindowDimensions();
   const params = useLocalSearchParams<{ q?: string }>();
@@ -111,7 +113,14 @@ export default function Search() {
         style={{ flex: 1, backgroundColor: color.bg }}
         keyboardDismissMode="on-drag"
         contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={{ gap: 14, paddingTop: 8, paddingBottom: 24 }}
+        contentContainerStyle={{
+          gap: 14,
+          paddingTop: 8,
+          // Clear of the system's rail at the side (iPhone Duo), as Designs' cards are.
+          marginLeft: rail.left,
+          marginRight: rail.right,
+          paddingBottom: 24,
+        }}
       >
         {results.files.length > 0 && (
           <>

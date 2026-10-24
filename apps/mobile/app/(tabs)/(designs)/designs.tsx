@@ -18,6 +18,7 @@ import { FileCard } from "../../../components/file-card";
 import { HandoffRise, holding } from "../../../components/handoff";
 import { Moon } from "../../../components/icons";
 import { refreshFeeds, syncFeeds, useCatalogs, useFiles, useShelve } from "../../../lib/catalog";
+import { designColumns } from "../../../lib/duo-layout";
 import { clock, type PhoneFile, projects, type Shelf, shelfOf } from "../../../lib/files";
 import { fail, select, thud, tick } from "../../../lib/haptics";
 import type { ShelfAction } from "../../../lib/mac-queries";
@@ -27,6 +28,7 @@ import { isUnseen, useSeen } from "../../../lib/seen";
 import { useStore } from "../../../lib/store";
 import { useTheme } from "../../../lib/theme";
 import { brand } from "../../../lib/tokens";
+import { useWindowInsets } from "../../../lib/window-insets";
 
 const SHELVES: { id: Shelf; label: string }[] = [
   { id: "recent", label: "Recent" },
@@ -74,7 +76,12 @@ export default function Designs() {
 
   const m = useMargin();
   const header = useRef<HostInstance>(null);
-  const cardWidth = (width - 2 * m - 16) / 2;
+  // The page's width less the system's rail at the side (iPhone Duo): two
+  // columns on a phone and closed, three on the inner display (lib/duo-layout.ts).
+  const rail = useWindowInsets();
+  const page = width - rail.left - rail.right;
+  const columns = designColumns(page);
+  const cardWidth = (page - 2 * m - 16 * (columns - 1)) / columns;
   const open = (f: PhoneFile) => {
     tick();
     router.push({ pathname: "/design/[mac]/[key]", params: { mac: f.mac, key: f.key } });

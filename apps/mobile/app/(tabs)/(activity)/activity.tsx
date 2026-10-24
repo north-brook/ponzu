@@ -16,6 +16,7 @@ import { track } from "../../../lib/telemetry";
 import { useTheme } from "../../../lib/theme";
 import { refreshThreads, useThreadDocs } from "../../../lib/threads";
 import { brand } from "../../../lib/tokens";
+import { useWindowInsets } from "../../../lib/window-insets";
 
 /**
  * Activity (Flow › 10), the Activity tab: what agents changed in your designs,
@@ -24,6 +25,7 @@ import { brand } from "../../../lib/tokens";
  * lib/activity.ts for what each is built from.
  */
 export default function Activity() {
+  const rail = useWindowInsets();
   const { color } = useTheme();
   const files = useFiles();
   const docs = useThreadDocs();
@@ -86,7 +88,13 @@ export default function Activity() {
         testID="activity"
         style={{ flex: 1, backgroundColor: color.bg }}
         contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={{ paddingTop: 8, paddingBottom: 24 }}
+        contentContainerStyle={{
+          paddingTop: 8,
+          // Clear of the system's rail at the side (iPhone Duo), as Designs' cards are.
+          marginLeft: rail.left,
+          marginRight: rail.right,
+          paddingBottom: 24,
+        }}
       >
         <View style={{ paddingTop: 4, paddingHorizontal: m, gap: 12 }}>
           {shown.fresh.length > 0 && (

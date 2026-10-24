@@ -15,6 +15,7 @@ import { useReachOnForeground } from "../lib/reach";
 import { holdSplash } from "../lib/splash";
 import { track } from "../lib/telemetry";
 import { navigationTheme, useTheme } from "../lib/theme";
+import { WindowInsetsProvider } from "../lib/window-insets";
 
 holdSplash();
 boot();
@@ -43,33 +44,42 @@ export default function RootLayout() {
       <GestureHandlerRootView style={{ flex: 1 }}>
         {/* The keyboard's frame on the UI thread, for sheets that ride it. */}
         <KeyboardProvider>
-          <ThemeProvider value={navigationTheme(scheme)}>
-            <StatusBar style="auto" />
-            <Stack
-              screenOptions={{ headerShown: false, contentStyle: { backgroundColor: color.bg } }}
-            >
-              <Stack.Screen name="index" options={{ animation: "none" }} />
-              <Stack.Screen
-                name="connect/index"
-                options={{ animation: "fade", gestureEnabled: false }}
-              />
-              <Stack.Screen
-                name="connect/scan"
-                options={{ presentation: "fullScreenModal", animation: "slide_from_bottom" }}
-              />
-              <Stack.Screen
-                name="tailscale"
-                options={{ animation: "fade", gestureEnabled: false }}
-              />
-              <Stack.Screen name="asleep" options={{ animation: "fade", gestureEnabled: false }} />
-              <Stack.Screen name="(tabs)" options={{ animation: "none", gestureEnabled: false }} />
-              <Stack.Screen name="design/[mac]/[key]" options={{ animation: "default" }} />
-              <Stack.Screen name="pair" options={{ animation: "none" }} />
-              <Stack.Screen name="dev" options={{ animation: "none" }} />
-            </Stack>
-            {/* The launch screen's yuzu and slice, carried into the first screen. */}
-            <HandoffLayer />
-          </ThemeProvider>
+          {/* The window's safe area, the rail at the side included, read above the tabs. */}
+          <WindowInsetsProvider>
+            <ThemeProvider value={navigationTheme(scheme)}>
+              <StatusBar style="auto" />
+              <Stack
+                screenOptions={{ headerShown: false, contentStyle: { backgroundColor: color.bg } }}
+              >
+                <Stack.Screen name="index" options={{ animation: "none" }} />
+                <Stack.Screen
+                  name="connect/index"
+                  options={{ animation: "fade", gestureEnabled: false }}
+                />
+                <Stack.Screen
+                  name="connect/scan"
+                  options={{ presentation: "fullScreenModal", animation: "slide_from_bottom" }}
+                />
+                <Stack.Screen
+                  name="tailscale"
+                  options={{ animation: "fade", gestureEnabled: false }}
+                />
+                <Stack.Screen
+                  name="asleep"
+                  options={{ animation: "fade", gestureEnabled: false }}
+                />
+                <Stack.Screen
+                  name="(tabs)"
+                  options={{ animation: "none", gestureEnabled: false }}
+                />
+                <Stack.Screen name="design/[mac]/[key]" options={{ animation: "default" }} />
+                <Stack.Screen name="pair" options={{ animation: "none" }} />
+                <Stack.Screen name="dev" options={{ animation: "none" }} />
+              </Stack>
+              {/* The launch screen's yuzu and slice, carried into the first screen. */}
+              <HandoffLayer />
+            </ThemeProvider>
+          </WindowInsetsProvider>
         </KeyboardProvider>
       </GestureHandlerRootView>
     </QueryProvider>
