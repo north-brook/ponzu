@@ -7,7 +7,10 @@ import {
   type ActivityItem,
   buildActivity,
   DEFAULT_FILTER,
-  isNew,
+  isUnseen,
+  markSeenItems,
+  pruneSeenItems,
+  type SeenItems,
 } from "./activity";
 import { useFiles, whenAgentEdits } from "./catalog";
 import { getJson, NetError } from "./http";
@@ -41,10 +44,54 @@ export function setActivityFilter(f: ActivityFilter) {
   AsyncStorage.setItem(FILTER_KEY, JSON.stringify(f)).catch(() => {});
 }
 
-export function markActivitySeen() {
-  const now = Date.now();
-  activitySeenAt.set(now);
-  AsyncStorage.setItem(KEY, String(now)).catch(() => {});
+const SEEN_KEY = "ponzu.activitySeenItems";
+
+/**
+ * What the person has seen in Activity, item by item (lib/activity.ts
+ * `SeenItems`), as rows come into view or are opened. `activitySeenAt`,
+ * when Activity was last left, stays the floor below them: where items were
+ * only seen a whole visit at a time, before this, it keeps what was old old.
+ */
+export const activitySeenItems = new Store<SeenItems>({});
+AsyncStorage.getItem(SEEN_KEY)
+  .then((v) => v && activitySeenItems.set((now) => ({ ...JSON.parse(v), ...now })))
+  .catch(() => {});
+
+function saveSeenItems() {
+  AsyncStorage.setItem(SEEN_KEY, JSON.stringify(activitySeenItems.get())).catch(() => {});
+}
+
+/** These items are seen: a row in view a moment, or opened. Their dots go, the bell drops. */
+export function markItemsSeen(items: ActivityItem[]) {
+  const before = activitySeenItems.get();
+  const next = markSeenItems(before, items);
+  if (next === before) return;
+  activitySeenItems.set(next);
+  saveSeenItems();
+}
+
+/** Drops marks the floor covers, or older than anything Activity could still show. */
+export function pruneItemsSeen(items: ActivityItem[]) {
+  const before = activitySeenItems.get();
+  const oldest = items.length ? Math.min(...items.map((i) => i.at)) : null;
+  const next = pruneSeenItems(before, activitySeenAt.get(), oldest);
+  if (next === before) return;
+  activitySeenItems.set(next);
+  saveSeenItems();
+}
+
+/**
+ * Activity was left. The floor rises to now only over what the person saw:
+ * it's the time of the newest item seen in full, so anything unseen stays new.
+ */
+export function markActivitySeen(items: ActivityItem[] = []) {
+  const seen = activitySeenItems.get();
+  const unseen = items.filter((i) => !(seen[i.id] !== undefined && seen[i.id]! >= i.at));
+  // Up to just before the oldest unseen item; everything if all of it was seen.
+  const floor = unseen.length ? Math.min(...unseen.map((i) => i.at)) - 1 : Date.now();
+  if (floor <= activitySeenAt.get()) return;
+  activitySeenAt.set(floor);
+  AsyncStorage.setItem(KEY, String(floor)).catch(() => {});
 }
 
 /**
@@ -148,9 +195,12 @@ export function useActivity(since?: number): { fresh: ActivityItem[]; old: Activ
   const seen = useSeen();
   const docs = useThreadDocs();
   const stored = useStore(activitySeenAt);
+  const marks = useStore(activitySeenItems);
+  // Development's `?since=` asks what's new since then, whatever has been seen.
+  const items = since === undefined ? marks : NONE;
   const at = since ?? stored;
   return useMemo(() => {
-    const items = buildActivity({
+    const all = buildActivity({
       files,
       changes,
       docs,
@@ -159,12 +209,15 @@ export function useActivity(since?: number): { fresh: ActivityItem[]; old: Activ
     });
     const fresh: ActivityItem[] = [];
     const old: ActivityItem[] = [];
-    for (const item of items) (isNew(item, { seen, activitySeenAt: at }) ? fresh : old).push(item);
+    for (const item of all)
+      (isUnseen(item, { seen, activitySeenAt: at }, items) ? fresh : old).push(item);
     return { fresh, old: old.slice(0, 30) };
-  }, [files, changes, seen, docs, at]);
+  }, [files, changes, seen, docs, at, items]);
 }
 
-/** The bell's count: what's new in Activity. */
+const NONE: SeenItems = {};
+
+/** The bell's count: what's new in Activity, less what's been seen since, as it's seen. */
 export function useActivityCount(): number {
   return useActivity().fresh.length;
 }

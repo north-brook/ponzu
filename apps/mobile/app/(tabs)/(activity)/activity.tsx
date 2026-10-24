@@ -1,7 +1,8 @@
 import type { MenuAction } from "@react-native-menu/menu";
 import { router, Stack, useFocusEffect, useLocalSearchParams, useNavigation } from "expo-router";
-import { Fragment, useCallback, useMemo, useRef } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { barMenuItems } from "../../../components/bar-menu";
 import { HeaderTitle } from "../../../components/chrome";
 import { Glass } from "../../../components/glass";
@@ -18,10 +19,13 @@ import {
   shortAgent,
   title,
   where,
+  whileInFront,
 } from "../../../lib/activity";
 import {
   activityFilter,
   markActivitySeen,
+  markItemsSeen,
+  pruneItemsSeen,
   setActivityFilter,
   useActivity,
 } from "../../../lib/activity-store";
@@ -40,7 +44,7 @@ import { useWindowInsets } from "../../../lib/window-insets";
 
 /** The kinds in the filter's menu, with their images from the asset catalog. */
 const KINDS: { id: ActivityKind; label: string; image: string; none: string }[] = [
-  { id: "all", label: "All kinds", image: "", none: "" },
+  { id: "all", label: "All kinds", image: "hi-grid", none: "" },
   { id: "changes", label: "Changes", image: "hi-edit", none: "No changes yet" },
   { id: "replies", label: "Replies", image: "hi-comment", none: "No replies yet" },
   { id: "resolved", label: "Resolved", image: "hi-resolved", none: "Nothing resolved yet" },
@@ -64,32 +68,35 @@ export default function Activity() {
   // Development: `ponzu://activity?since=<ms>` shows what's new since then.
   const { since } = useLocalSearchParams<{ since?: string }>();
   const { fresh, old } = useActivity(__DEV__ && since ? Number(since) : undefined);
-  // What was new when the tab came to the front stays new while it's there, so rows don't
-  // vanish under a thumb: the items as they were then, with anything newer since.
-  const opened = useRef<{ fresh: ActivityItem[]; old: ActivityItem[] } | null>(null);
-  opened.current ??= fresh.length || old.length ? { fresh, old } : null;
-  const shown = useMemo(() => {
-    const then = opened.current;
-    if (!then) return { fresh, old };
-    const wasNew = new Set(then.fresh.map((i) => i.id));
-    return {
-      fresh: [...fresh, ...old.filter((i) => wasNew.has(i.id))],
-      old: old.filter((i) => !wasNew.has(i.id)),
-    };
-  }, [fresh, old]);
+  // New is what was unseen when the tab came to the front, rebuilt each time it does (a tab
+  // stays mounted, and a design opened from it comes back to it). While it's in front, a row
+  // just seen keeps its place, its dot fading, and anything unseen that arrives joins it.
+  const freshNow = useRef(fresh);
+  freshNow.current = fresh;
+  const [snapshot, setSnapshot] = useState<ReadonlySet<string>>(
+    () => new Set(fresh.map((i) => i.id)),
+  );
+  // Anything unseen that arrives while the tab is in front joins the snapshot, so it too
+  // keeps its row once seen.
+  useEffect(() => {
+    if (fresh.some((i) => !snapshot.has(i.id)))
+      setSnapshot((now) => new Set([...now, ...fresh.map((i) => i.id)]));
+  }, [fresh]);
+  const shown = useMemo(() => whileInFront(snapshot, { fresh, old }), [snapshot, fresh, old]);
   const filter = useStore(activityFilter);
   const list = filterActivity(shown, filter);
   const empty = activityEmpty(shown, filter);
-  const unread = useMemo(() => new Set(shown.fresh.map((i) => i.id)), [shown]);
+  // Dots: what's unseen right now.
+  const unread = useMemo(() => new Set(fresh.map((i) => i.id)), [fresh]);
 
-  // A tab stays mounted: each time it comes to the front is an opening. It's
-  // seen once another tab takes its place; a design opened from it, over the
-  // tabs, comes back to it as it was.
   // The tabs navigator itself (app/(tabs)/_layout.tsx), to tell which tab took the front.
   const tabs = useNavigation("/(tabs)");
+  const [inFront, setInFront] = useState(false);
   useFocusEffect(
     useCallback(() => {
       track("activity opened");
+      setSnapshot(new Set(freshNow.current.map((i) => i.id)));
+      setInFront(true);
       // Fetch the threads of designs the person has commented in, from Macs that answer.
       for (const f of files) {
         const k = `${f.mac}:${f.key}`;
@@ -98,16 +105,62 @@ export default function Activity() {
         refreshThreads(f, baseUrl(mac));
       }
       return () => {
+        setInFront(false);
         const state = tabs.getState();
+        // A design opened from Activity covers it: not a leaving, but it's rebuilt on return.
         if (state && state.routes[state.index]?.name === "(activity)") return;
-        markActivitySeen();
-        opened.current = null;
+        const all = [...freshNow.current];
+        markActivitySeen(all);
+        pruneItemsSeen(all);
       };
     }, []),
   );
 
+  // Seeing a row: at least 60% of it on screen for 600ms while Activity is in front.
+  const scrollY = useRef(0);
+  const viewH = useRef(0);
+  const rows = useRef(new Map<string, { y: number; h: number }>());
+  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const byId = useRef(new Map<string, ActivityItem>());
+  byId.current = new Map(list.map((i) => [i.id, i]));
+  const look = useCallback(() => {
+    for (const [id, r] of rows.current) {
+      const top = Math.max(r.y, scrollY.current);
+      const bottom = Math.min(r.y + r.h, scrollY.current + viewH.current);
+      const inView = inFront && r.h > 0 && (bottom - top) / r.h >= SEEN_SHARE;
+      const waiting = timers.current.get(id);
+      if (inView && !waiting && unread.has(id)) {
+        timers.current.set(
+          id,
+          setTimeout(() => {
+            timers.current.delete(id);
+            const item = byId.current.get(id);
+            if (item) markItemsSeen([item]);
+          }, SEEN_MS),
+        );
+      } else if (!inView && waiting) {
+        clearTimeout(waiting);
+        timers.current.delete(id);
+      }
+    }
+  }, [inFront, unread]);
+  useEffect(() => {
+    look();
+  }, [look, list]);
+  useEffect(
+    () => () => {
+      for (const t of timers.current.values()) clearTimeout(t);
+    },
+    [],
+  );
+  const onRow = (id: string, y: number, h: number) => {
+    rows.current.set(id, { y, h });
+    look();
+  };
+
   const open = (item: ActivityItem) => {
     tick();
+    markItemsSeen([item]);
     const artboard = item.kind === "change" ? changeTarget(item) : undefined;
     router.push({
       pathname: "/design/[mac]/[key]",
@@ -128,8 +181,6 @@ export default function Activity() {
         title: "Show",
         displayInline: true,
         subactions: [
-          // bar-new and bar-everything join the asset catalog with the next native build;
-          // until then the menu draws these two without an image.
           { id: "show:new", title: "New", image: "bar-new", state: on(filter.show === "new") },
           {
             id: "show:all",
@@ -186,6 +237,16 @@ export default function Activity() {
       <ScrollView
         testID="activity"
         style={{ flex: 1, backgroundColor: color.bg }}
+        onLayout={(e) => {
+          viewH.current = e.nativeEvent.layout.height;
+          look();
+        }}
+        onScroll={(e) => {
+          // The offset under the header's inset: the top of what's on screen, in content.
+          scrollY.current = e.nativeEvent.contentOffset.y + e.nativeEvent.contentInset.top;
+          look();
+        }}
+        scrollEventThrottle={100}
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{
           paddingTop: 8,
@@ -196,7 +257,9 @@ export default function Activity() {
         }}
       >
         <View style={{ paddingTop: 4, paddingHorizontal: m }}>
-          {list.length > 0 && <Group items={list} unread={unread} onOpen={open} />}
+          {list.length > 0 && (
+            <Group items={list} unread={unread} onOpen={open} onRow={onRow} top={GROUP_TOP} />
+          )}
         </View>
       </ScrollView>
       {empty && (
@@ -212,6 +275,36 @@ export default function Activity() {
 }
 
 const on = (b: boolean) => (b ? ("on" as const) : ("off" as const));
+
+/** A row counts as seen once this much of it has been on screen this long. */
+const SEEN_SHARE = 0.6;
+const SEEN_MS = 600;
+/** The list's top padding above the group, in its content (the ScrollView's 8 and the View's 4). */
+const GROUP_TOP = 12;
+
+/** The unread dot: there while unread, fading out as it's seen. */
+function Dot({ on: shown }: { on: boolean }) {
+  const o = useSharedValue(shown ? 1 : 0);
+  useEffect(() => {
+    o.value = withTiming(shown ? 1 : 0, { duration: 250 });
+  }, [shown]);
+  const style = useAnimatedStyle(() => ({ opacity: o.value }));
+  return (
+    <Animated.View
+      testID={shown ? "activity-unread" : undefined}
+      style={[
+        {
+          width: 8,
+          height: 8,
+          borderRadius: 999,
+          backgroundColor: brand.yuzu,
+          boxShadow: "0 0 0 1px rgba(17,17,16,0.18)",
+        },
+        style,
+      ]}
+    />
+  );
+}
 
 /**
  * An empty list, centered in the screen, over it (so nothing moves): caught
@@ -337,11 +430,17 @@ function Group({
   items,
   unread,
   onOpen,
+  onRow,
+  top,
 }: {
   items: ActivityItem[];
   /** Ids of what's new: those rows wear the yuzu dot. */
   unread: Set<string>;
   onOpen: (item: ActivityItem) => void;
+  /** Where each row is in the list's content, for what's on screen. */
+  onRow: (id: string, y: number, h: number) => void;
+  /** The group's top in the list's content. */
+  top: number;
 }) {
   const { color, shadow } = useTheme();
   return (
@@ -360,6 +459,7 @@ function Group({
           fresh={unread.has(item.id)}
           last={i === items.length - 1}
           onPress={() => onOpen(item)}
+          onLayout={(y, h) => onRow(item.id, top + y, h)}
         />
       ))}
     </View>
@@ -371,9 +471,11 @@ function Item({
   fresh,
   last,
   onPress,
+  onLayout,
 }: {
   item: ActivityItem;
   fresh: boolean;
+  onLayout: (y: number, h: number) => void;
   last: boolean;
   onPress: () => void;
 }) {
@@ -388,6 +490,7 @@ function Item({
   return (
     <Pressable
       onPress={onPress}
+      onLayout={(e) => onLayout(e.nativeEvent.layout.y, e.nativeEvent.layout.height)}
       accessibilityRole="button"
       testID={`activity-${item.kind}`}
       style={({ pressed }) => ({
@@ -421,17 +524,8 @@ function Item({
             <Text style={{ fontFamily: "Inter", fontSize: 13, color: color.faint }}>
               {shortAgo(item.at)}
             </Text>
-            {fresh && (
-              <View
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: 999,
-                  backgroundColor: brand.yuzu,
-                  boxShadow: "0 0 0 1px rgba(17,17,16,0.18)",
-                }}
-              />
-            )}
+            {/* Unread: the dot. Once seen it fades (250ms) but keeps its place, so nothing moves. */}
+            <Dot on={fresh} />
           </View>
           <Where item={item} />
         </View>

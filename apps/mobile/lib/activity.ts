@@ -315,3 +315,78 @@ export function activityEmpty(
   if (f.show === "new") return "caughtUp";
   return "noKind";
 }
+
+/**
+ * The items the person has seen, one by one: each id with the item's time
+ * when it was seen, so an entry that grows afterwards (an agent's run of
+ * edits goes on) reads as new again. Older than what the set remembers,
+ * `activitySeenAt` decides, as it did before items were tracked one by one.
+ */
+export type SeenItems = Record<string, number>;
+
+/** Seen as it stands now. */
+export function wasSeen(seen: SeenItems, item: Pick<ActivityItem, "id" | "at">): boolean {
+  const at = seen[item.id];
+  return at !== undefined && at >= item.at;
+}
+
+/** The set with these items marked seen as they stand. */
+export function markSeenItems(
+  seen: SeenItems,
+  items: Pick<ActivityItem, "id" | "at">[],
+): SeenItems {
+  let next = seen;
+  for (const i of items) {
+    if (wasSeen(next, i)) continue;
+    if (next === seen) next = { ...seen };
+    next[i.id] = i.at;
+  }
+  return next;
+}
+
+/** A week: how long a mark outlives the items it could still show, while a Mac is away. */
+export const SEEN_KEEP_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * The set without what it no longer needs: marks the floor already covers,
+ * and marks older than the oldest item Activity could still show (once a
+ * week has passed, so a Mac that's away a while keeps its marks).
+ */
+export function pruneSeenItems(
+  seen: SeenItems,
+  floor: number,
+  oldest: number | null,
+  now = Date.now(),
+): SeenItems {
+  const out: SeenItems = {};
+  let dropped = false;
+  for (const [id, at] of Object.entries(seen)) {
+    const old = at <= floor || (oldest !== null && at < oldest && at < now - SEEN_KEEP_MS);
+    if (old) dropped = true;
+    else out[id] = at;
+  }
+  return dropped ? out : seen;
+}
+
+/** New: new by the rules above (`isNew`), and not seen since. */
+export function isUnseen(
+  item: ActivityItem,
+  input: Pick<ActivityInput, "seen" | "activitySeenAt">,
+  seen: SeenItems,
+): boolean {
+  return isNew(item, input) && !wasSeen(seen, item);
+}
+
+/**
+ * What New shows while Activity is in front: what was unseen when the tab
+ * came to the front (`snapshot`, its ids), so a row just seen keeps its
+ * place until the person leaves, and anything unseen that arrived since.
+ * Everything else is the old part, for Everything.
+ */
+export function whileInFront(
+  snapshot: ReadonlySet<string>,
+  items: { fresh: ActivityItem[]; old: ActivityItem[] },
+): { fresh: ActivityItem[]; old: ActivityItem[] } {
+  const fresh = [...items.fresh, ...items.old.filter((i) => snapshot.has(i.id))];
+  return { fresh, old: items.old.filter((i) => !snapshot.has(i.id)) };
+}
