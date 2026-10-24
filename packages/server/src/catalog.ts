@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
 import { mkdir, readdir, readFile, realpath, rename, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import {
   type CatalogArtboard,
@@ -44,6 +44,13 @@ const FALLBACK_DIRS = ["code", "src", "git", "Projects", "dev", "Developer"];
  */
 const GUARDED = ["Desktop", "Documents", "Downloads", "Library/Mobile Documents"];
 
+/**
+ * Folders the system empties on its own (/tmp, and the per-user one Node's tmpdir names
+ * under /var/folders). A design in one is someone's throwaway, so it lists under Scratch
+ * until the person says otherwise. By real path: /tmp is /private/tmp.
+ */
+const TEMP_DIRS = ["/tmp", tmpdir()];
+
 export interface CatalogOptions {
   /** Folders always scanned (the server's cwd, for one). */
   roots?: string[];
@@ -64,6 +71,8 @@ export interface CatalogOptions {
    * folders the person let Ponzu read.
    */
   stateFile?: string;
+  /** Folders whose designs list under Scratch: the system's temporary folders by default. */
+  temp?: string[];
 }
 
 /** A design as the home screen lists it, read from disk without opening it. */
@@ -128,9 +137,12 @@ export class LocalCatalog {
   private extra = new Set<string>();
   /** The path each design was found at, by its real path: listed under the path it was found at. */
   private foundAt = new Map<string, string>();
+  /** The temporary folders, by real path. */
+  private temp: string[];
 
   constructor(private opts: CatalogOptions = {}) {
     this.db = new CatalogDb(opts.dbFile);
+    this.temp = (opts.temp ?? TEMP_DIRS).map((d) => realpathOr(d).replace(/\/+$/, ""));
     this.importState();
     this.granted = new Set(this.db.grants());
   }
@@ -241,6 +253,7 @@ export class LocalCatalog {
         const opened = this.shown.has(key) || this.shown.has(real) || Boolean(row?.opened_at);
         if (example && !opened) return;
         const scratch = doc ? Boolean(doc.scratch) : s.scratch;
+        const temp = this.temp.some((d) => real.startsWith(`${d}/`));
         // One from an older version counts as none: the server redraws it when asked.
         const [previewAt, git] = await Promise.all([
           previewCurrent(key).then((current) =>
@@ -258,7 +271,7 @@ export class LocalCatalog {
         const listed: CatalogSummary = {
           ...s,
           scratch,
-          shelf: this.shelfOf(row, scratch),
+          shelf: this.shelfOf(row, scratch || temp),
           ...(archived ? { archived } : {}),
           previewAt,
           ...(git ? { git: untouched === undefined ? git : { ...git, untouched } } : {}),

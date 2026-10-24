@@ -180,7 +180,8 @@ test("over HTTP: the studio archives and restores a design it lists, and nothing
     expect((await shelf({ key, action: "archive" })).status).toBe(200);
     expect(await shop()).toMatchObject({ shelf: "archived", archived: expect.any(Number) });
     expect((await shelf({ key, action: "restore" })).status).toBe(200);
-    expect((await shop())?.shelf).toBe("recent");
+    // Back where it was: Scratch, since it's in the system's temporary folder.
+    expect((await shop())?.shelf).toBe("scratch");
     expect((await shelf({ key: join(tmpdir(), "else.design"), action: "archive" })).status).toBe(
       404,
     );
@@ -189,7 +190,7 @@ test("over HTTP: the studio archives and restores a design it lists, and nothing
     expect((await shelf({ key, action: "archive" })).status).toBe(200);
     const { design: d } = await ws.open(key);
     d.apply({ op: "file.icon", icon: "star" }, { kind: "agent", name: "t" });
-    expect((await shop())?.shelf).toBe("recent");
+    expect((await shop())?.shelf).toBe("scratch");
     d.apply({ op: "file.icon", icon: null }, { kind: "agent", name: "t" });
     // A page on another site can't.
     expect(
@@ -435,7 +436,7 @@ test("a checkout's hidden folders are walked once a design in it is known", asyn
 test("archiving, restoring and shelving are remembered; an agent's edit restores", async () => {
   const dbFile = join(dir, "state/shelf.db");
   const key = join(dir, "nested/deep/brand.design");
-  const catalog = new LocalCatalog({ roots: [], spotlight: "roots", dbFile });
+  const catalog = new LocalCatalog({ roots: [], spotlight: "roots", dbFile, temp: [] });
   catalog.add(key);
   const shelf = async (c: LocalCatalog) =>
     (await c.files(new Map())).find((f) => f.key === key)?.shelf;
@@ -443,7 +444,7 @@ test("archiving, restoring and shelving are remembered; an agent's edit restores
   catalog.archive(key);
   expect(await shelf(catalog)).toBe("archived");
   // Another process on the same database sees it, and its restore wins once it's later.
-  const other = new LocalCatalog({ roots: [], spotlight: "roots", dbFile });
+  const other = new LocalCatalog({ roots: [], spotlight: "roots", dbFile, temp: [] });
   other.add(key);
   expect(await shelf(other)).toBe("archived");
   await new Promise((r) => setTimeout(r, 5));
@@ -467,6 +468,26 @@ test("a scratch design lists under Scratch until the person keeps it", async () 
   expect(await probe()).toMatchObject({ scratch: true, shelf: "scratch" });
   catalog.shelve(key, "recent");
   expect(await probe()).toMatchObject({ scratch: true, shelf: "recent" });
+});
+
+test("a design in a temporary folder lists under Scratch until the person keeps it", async () => {
+  const key = join(dir, "temp/mock.design");
+  await design(key, "Mock", { Home: ["A"] });
+  const kept = join(dir, "kept/mock.design");
+  await design(kept, "Kept", { Home: ["A"] });
+  // Reached through a symlink, as /tmp is /private/tmp.
+  await symlink(join(dir, "temp"), join(dir, "temp-link"));
+  const catalog = new LocalCatalog({
+    roots: [join(dir, "temp"), join(dir, "kept")],
+    spotlight: "roots",
+    temp: [join(dir, "temp-link")],
+  });
+  const listed = async (k: string) => (await catalog.files(new Map())).find((f) => f.key === k);
+  expect(await listed(key)).toMatchObject({ scratch: false, shelf: "scratch" });
+  expect((await listed(kept))?.shelf).toBe("recent");
+  catalog.shelve(key, "recent");
+  expect((await listed(key))?.shelf).toBe("recent");
+  catalog.close();
 });
 
 test("a design whose folder is gone drops off, and comes back with its archive state", async () => {
