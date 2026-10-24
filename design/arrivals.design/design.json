@@ -1,0 +1,12 @@
+{
+  "ponzu": 1,
+  "name": "Arrivals",
+  "icon": "star",
+  "pages": [
+    {
+      "id": "pg_lyyxa",
+      "name": "Arrivals",
+      "icon": "star"
+    }
+  ]
+}

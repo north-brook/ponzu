@@ -130,7 +130,7 @@ Watching doesn't cut you off from chat. A message the person types reaches you a
    - question ("why this font?"): reply with an answer, leave it open.
    - decision ("A or B?"): reply with your recommendation, leave it open for them.
    Batch comments that touch the same artboard.
-3. say what you're doing: set_status with a few words ("adding the autumn drop") and the artboards you're about to touch. The person sees your mark in the artboard's header while its outline traces, and your status when they hover it.
+3. say what you're doing: set_status with a few words ("adding the autumn drop") and the artboards you're about to touch. The person sees a yuzu ring round the artboard and rain in its header, and your status when they hover the rain.
 4. do + check: edit, screenshot, fix lint. Variations go next to the original, never over it.
 5. close: for a change you made, set_comment_status resolved. That hides the pin; the canvas already shows the change, so don't reply.
 6. Go back to 1 with the new cursor. Waiting again clears your working indicator. Keep watching until the person says stop or you're interrupted.
