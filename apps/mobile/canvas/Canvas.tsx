@@ -190,6 +190,16 @@ export function PhoneCanvas() {
   const drew = useRef(false);
   const touched = useRef(false);
   const fitKey = page ? `${page.id}:${boxes.length > 0}` : null;
+  // The page's fit-content boards, once measured: the first fit used a stand-in height, so a
+  // measurement reframes the page until someone has touched it.
+  const sized = useMemo(
+    () =>
+      boards
+        .filter((ab) => boardSize(ab.root).h === null)
+        .map((ab) => `${ab.id}=${measured[ab.id] ?? ""}`)
+        .join(","),
+    [boards, measured],
+  );
   const sheetOpen = Boolean(s.pending || s.thread);
   // The window changing size (iPhone Duo opening, closing or turning) keeps the camera: the
   // boards stay where they were and the rest of the page lays out beside them.
@@ -216,7 +226,7 @@ export function PhoneCanvas() {
       before.current = null;
       send({ t: "focused", artboardId: null });
     }
-  }, [fitKey, screen]);
+  }, [fitKey, screen, sized]);
 
   // The app asks for a focus: a board, maybe on another page, or none.
   const pendingFocus = useRef<string | null>(null);

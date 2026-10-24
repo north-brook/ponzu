@@ -176,3 +176,16 @@ test("labels hide when they'd lie over the board above", () => {
   expect(labelCovers(below, [above, below], 1)).toBe(false);
   expect(labelCovers(below, [above, below], 0.5)).toBe(true);
 });
+
+test("a fit-content board frames by its measured height, not the stand-in", () => {
+  // Canvas.tsx frames a page before its fit-content boards are measured, with a 900px
+  // stand-in, then again once they are: the two framings differ, so the refit matters.
+  const standIn = overview([{ id: "page", x: 0, y: 0, w: 1440, h: 900 }], phone);
+  const measured = overview([{ id: "page", x: 0, y: 0, w: 1440, h: 5200 }], phone);
+  expect(standIn).not.toBeNull();
+  expect(measured).not.toBeNull();
+  expect(measured!.zoom).toBeLessThan(standIn!.zoom);
+  // The whole of the long page fits on screen once it's measured.
+  const bottom = toScreen(measured!, 0, 5200);
+  expect(bottom.y).toBeLessThanOrEqual(phone.h - phone.insets.bottom + 0.5);
+});
