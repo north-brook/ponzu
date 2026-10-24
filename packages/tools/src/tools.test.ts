@@ -284,6 +284,8 @@ test("update_file renames the file and sets or clears its icon", async () => {
   await call("update_file", { icon: null });
   expect(design.doc.icon).toBeUndefined();
   expect(design.doc.name).toBe("Fern app");
+  const wrong = await call("update_file", { icon: "sparkles" });
+  expect(wrong.isError).toBe(true);
 });
 
 /** A renderer that answers every render with `out`, and counts its calls. */

@@ -1,3 +1,10 @@
+import { PAGE_ICON_GROUPS } from "@ponzu/core";
+
+/** The icons a file or page can carry, a line per group. */
+const ICON_LIST = Object.entries(PAGE_ICON_GROUPS)
+  .map(([group, names]) => `  ${group}: ${names.join(", ")}`)
+  .join("\n");
+
 /** The files the format guide shows, one small design. Tests load them as written. */
 export const FORMAT_EXAMPLE = {
   "design.json": `{
@@ -180,7 +187,8 @@ ${FORMAT_EXAMPLE["design.json"]}
 \`\`\`
 - Give every page an id. Without one it gets a new id each time the design loads, and comments on its canvas lose their page.
 - A page's folder is its name, lowercase with dashes: "Home screens" lives in pages/home-screens/. Pages sharing a name get -2, -3 in list order. Renaming or reordering pages moves their folders, so take each page's folder from get_basic_info before writing into it. A folder no page names becomes a page of its own.
-- icon is optional, on the file and on each page: page, home, phone, desktop, flow, palette and the rest of create_file's list.
+- icon is optional, on the file and on each page. Name what's inside as specifically as the list allows, and give pages in one file different icons. One of:
+${ICON_LIST}
 
 An artboard, pages/flow/cart.html
 \`\`\`html

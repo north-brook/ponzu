@@ -8,6 +8,7 @@ export * from "./ids.ts";
 export * from "./journal.ts";
 export * from "./link.ts";
 export * from "./outline.ts";
+export * from "./page-icons.ts";
 export * from "./preview.ts";
 export * from "./protocol.ts";
 export * from "./reconcile.ts";
