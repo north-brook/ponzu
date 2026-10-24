@@ -1,35 +1,21 @@
-import { emptyDoc, findPage, newId, type Op, parseTokens, setTokens } from "@ponzu/core";
+import {
+  emptyDoc,
+  findPage,
+  newId,
+  type Op,
+  PAGE_ICONS,
+  parseTokens,
+  setTokens,
+} from "@ponzu/core";
 import { z } from "zod";
 import { fileArg, ToolError, tool } from "./define.ts";
 import { apply, plural, resolveFile } from "./util.ts";
 
-const PAGE_ICONS = [
-  "page",
-  "file",
-  "home",
-  "layout",
-  "phone",
-  "tablet",
-  "desktop",
-  "palette",
-  "type",
-  "image",
-  "grid",
-  "list",
-  "chart",
-  "flow",
-  "star",
-  "archive",
-  "note",
-  "code",
-  "settings",
-  "user",
-  "cart",
-  "mail",
-  "map",
-  "calendar",
-  "book",
-] as const;
+/** What an icon is for, on every field that takes one. */
+const ICON_HINT =
+  'Name what\'s inside, as specifically as the list allows: phone for a mobile app, palette for tokens, login for sign-in, cart for checkout, layers or compare for variations, idea for explorations, sitemap for information architecture. Pages in one file read best with different icons. star means a favourite, not "interesting".';
+
+const icon = z.enum(PAGE_ICONS);
 
 export const organizeTools = [
   tool({
@@ -88,7 +74,7 @@ export const organizeTools = [
         .describe(
           'Shown as the tab title, e.g. "Onboarding" or "Checkout flow". Default: the folder name without .design, case unchanged.',
         ),
-      icon: z.enum(PAGE_ICONS).optional().describe("Shown on the file's tab."),
+      icon: icon.optional().describe(`Shown on the file's tab. ${ICON_HINT}`),
       scratch: z
         .boolean()
         .optional()
@@ -96,7 +82,7 @@ export const organizeTools = [
           "For a file you make for your own use (an experiment, a test fixture), not for the person: Ponzu lists it under Scratch, out of their Recent designs.",
         ),
       pages: z
-        .array(z.object({ name: z.string(), icon: z.enum(PAGE_ICONS).optional() }))
+        .array(z.object({ name: z.string(), icon: icon.optional().describe(ICON_HINT) }))
         .optional()
         .describe("Default: one page called Home."),
       tokens: z
@@ -146,7 +132,7 @@ export const organizeTools = [
     input: {
       file: fileArg,
       name: z.string().min(1).optional(),
-      icon: z.enum(PAGE_ICONS).nullable().optional().describe("null removes it."),
+      icon: icon.nullable().optional().describe(`${ICON_HINT} null removes it.`),
       scratch: z
         .boolean()
         .optional()
@@ -175,7 +161,7 @@ export const organizeTools = [
     input: {
       file: fileArg,
       name: z.string(),
-      icon: z.enum(PAGE_ICONS).optional(),
+      icon: icon.optional().describe(ICON_HINT),
       index: z
         .number()
         .int()
@@ -209,7 +195,7 @@ export const organizeTools = [
       file: fileArg,
       page: z.string().describe("Page id or name."),
       name: z.string().optional(),
-      icon: z.enum(PAGE_ICONS).nullable().optional(),
+      icon: icon.nullable().optional().describe(`${ICON_HINT} null removes it.`),
       index: z.number().int().min(0).optional(),
       delete: z.boolean().optional(),
     },
