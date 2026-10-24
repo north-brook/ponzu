@@ -360,6 +360,10 @@ export const SEEN_KEEP_MS = 7 * 24 * 60 * 60 * 1000;
  * The set without what it no longer needs: marks the floor already covers,
  * and marks older than the oldest item Activity could still show (once a
  * week has passed, so a Mac that's away a while keeps its marks).
+ *
+ * The floor never covers an agent's work in a design (`work:`): `isNew` counts a working
+ * agent as news whatever the floor, until the design is opened. Its mark is the only thing
+ * that says it was seen, so it stays until the week has passed.
  */
 export function pruneSeenItems(
   seen: SeenItems,
@@ -370,7 +374,8 @@ export function pruneSeenItems(
   const out: SeenItems = {};
   let dropped = false;
   for (const [id, at] of Object.entries(seen)) {
-    const old = at <= floor || (oldest !== null && at < oldest && at < now - SEEN_KEEP_MS);
+    const covered = at <= floor && !id.startsWith("work:");
+    const old = covered || (oldest !== null && at < oldest && at < now - SEEN_KEEP_MS);
     if (old) dropped = true;
     else out[id] = at;
   }

@@ -91,3 +91,13 @@ test("the seen part is cut to its limit, but never a row this visit still shows"
   // Unseen items are New, never cut.
   expect(splitActivity(many, (i) => i.id === "s0").fresh.map((i) => i.id)).toEqual(["s0"]);
 });
+
+test("a working agent's row stays seen after the floor passes it", () => {
+  // isNew counts an agent at work as news whatever the floor, so its mark is what keeps it seen.
+  const now = 10_000;
+  const seen = { "work:m:/k.design": 5000, "change:a": 4000 };
+  const kept = pruneSeenItems(seen, 9000, 4000, now);
+  expect(kept["work:m:/k.design"]).toBe(5000);
+  // An ordinary item the floor covers goes.
+  expect(kept["change:a"]).toBeUndefined();
+});
