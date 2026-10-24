@@ -1,20 +1,8 @@
 import { useEffect, useState } from "react";
-import { type BrowseState, type Service, useBonjour } from "../modules/bonjour";
+import { type BrowseState, useBonjour } from "../modules/bonjour";
+import { type NearbyMac, nearbyMac } from "./nearby";
 
-/** A Mac advertising Ponzu on this Wi-Fi. */
-export interface NearbyMac {
-  /** Its host name, from the TXT record (or the instance name). */
-  name: string;
-  /** Its MagicDNS name, where the phone connects. Never the LAN address. */
-  host: string;
-}
-
-/** A Ponzu advertisement's Mac, or null when it doesn't say where it is on the tailnet. */
-export function nearbyMac(s: Service): NearbyMac | null {
-  const host = s.txt.host?.trim();
-  if (!host) return null;
-  return { name: s.txt.name?.trim() || s.name, host };
-}
+export type { NearbyMac } from "./nearby";
 
 /**
  * Ponzus on this Wi-Fi, while mounted, and whether the search is over: after
