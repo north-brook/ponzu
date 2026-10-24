@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.48.0](https://github.com/north-brook/ponzu/compare/v1.47.0...v1.48.0) (2026-10-24)
+
+
+### Features
+
+* ponzu for iphone ([#187](https://github.com/north-brook/ponzu/issues/187)) ([5875c21](https://github.com/north-brook/ponzu/commit/5875c21b3e6ab047f6e000086e9f0cf8a57e7f17))
+
 ## [1.47.0](https://github.com/north-brook/ponzu/compare/v1.46.2...v1.47.0) (2026-10-24)
 
 
