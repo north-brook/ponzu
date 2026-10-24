@@ -70,6 +70,14 @@
             },
             {
               "type": "imageset",
+              "path": "./assets/native/bar-new.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/bar-everything.png"
+            },
+            {
+              "type": "imageset",
               "path": "./assets/native/hi-add.png"
             },
             {

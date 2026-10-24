@@ -1,0 +1,28 @@
+diff --git a/build/native-tabs/appearance.ios.js b/build/native-tabs/appearance.ios.js
+index cc9c2924d88a744912b9747ba9d8eb6c154f049e..a8bce7375a3824ae7cada29e629af87689643f80 100644
+--- a/build/native-tabs/appearance.ios.js
++++ b/build/native-tabs/appearance.ios.js
+@@ -51,6 +51,7 @@ function createStandardAppearanceFromOptions(options) {
+         backgroundColor: options.backgroundColor,
+         blurEffect,
+         badgeBackgroundColor: options.badgeBackgroundColor,
++        badgeTextColor: options.badgeTextColor,
+         titlePositionAdjustment: options.titlePositionAdjustment,
+         shadowColor: options.shadowColor
+     }, {}, [
+@@ -78,6 +79,7 @@ function createScrollEdgeAppearanceFromOptions(options) {
+         backgroundColor: options.disableTransparentOnScrollEdge ? options.backgroundColor : null,
+         shadowColor: options.disableTransparentOnScrollEdge ? options.shadowColor : 'transparent',
+         badgeBackgroundColor: options.badgeBackgroundColor,
++        badgeTextColor: options.badgeTextColor,
+         titlePositionAdjustment: options.titlePositionAdjustment
+     }, {}, [
+         'normal',
+@@ -157,6 +159,7 @@ function convertStyleToItemStateAppearance(style) {
+     }
+     const stateAppearance = {
+         tabBarItemBadgeBackgroundColor: style.badgeBackgroundColor,
++        tabBarItemBadgeTextColor: style.badgeTextColor,
+         tabBarItemTitlePositionAdjustment: style.titlePositionAdjustment,
+         tabBarItemIconColor: style.iconColor,
+         tabBarItemTitleFontFamily: style.fontFamily,

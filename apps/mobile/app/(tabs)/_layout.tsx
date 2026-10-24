@@ -51,9 +51,11 @@ export default function TabsLayout() {
       minimizeBehavior="never"
       screenListeners={TAB_LISTENERS}
       tintColor={color.ink}
-      // The brand's yuzu, not the system's red. iOS draws the count in white
-      // on it; only Android takes a text color.
+      // The brand's yuzu, not the system's red, with the count in ink: iOS
+      // would draw it white, about 1.6:1 on yuzu. The text color reaches iOS
+      // through patches to expo-router and react-native-screens.
       badgeBackgroundColor={brand.yuzu}
+      badgeTextColor={brand.ink}
       hidden={held}
     >
       <NativeTabs.Trigger
