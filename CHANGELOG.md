@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.44.0](https://github.com/north-brook/ponzu/compare/v1.43.0...v1.44.0) (2026-10-24)
+
+
+### Features
+
+* develop new work onto the canvas, with a yuzu ring and rain while agents work ([#179](https://github.com/north-brook/ponzu/issues/179)) ([1274eed](https://github.com/north-brook/ponzu/commit/1274eed5b0c8937df5acf7c3ac308b5b59398333))
+
 ## [1.43.0](https://github.com/north-brook/ponzu/compare/v1.42.0...v1.43.0) (2026-10-24)
 
 
