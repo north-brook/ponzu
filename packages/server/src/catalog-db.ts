@@ -120,8 +120,9 @@ export class CatalogDb {
     );
   }
 
-  all(): DesignRow[] {
-    return this.read(() => this.db.query("SELECT * FROM designs").all() as DesignRow[], []);
+  /** Every design, or null when the read failed: a busy database is not an empty one. */
+  all(): DesignRow[] | null {
+    return this.read(() => this.db.query("SELECT * FROM designs").all() as DesignRow[], null);
   }
 
   get(path: string): DesignRow | undefined {

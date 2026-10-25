@@ -11,14 +11,9 @@ export interface Updater {
   /**
    * Install `version`, or a newer Ponzu: restart into it, downloading it first when what's here
    * is older. `quiet` is Ponzu's own idea rather than the person's, and the app declines it
-   * while they're using it. `here`: the person clicked Update on this Mac and read its notes, so
-   * What's new needn't show them again.
+   * while they're using it.
    */
-  install(opts?: {
-    quiet?: boolean;
-    here?: boolean;
-    version?: string;
-  }): Promise<MachineUpdate | undefined>;
+  install(opts?: { quiet?: boolean; version?: string }): Promise<MachineUpdate | undefined>;
   stop(): void;
 }
 

@@ -7,7 +7,6 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, shel
 import { renderToken, startRenderHost } from "./render-host";
 import { smoke, watchSmoke } from "./smoke";
 import { checkForUpdatesNow, installUpdater } from "./updater";
-import { markWhatsNewSeen, pendingWhatsNew } from "./whats-new";
 
 const isDev = !app.isPackaged;
 /** The built main/preload live in <app>/dist, in development and inside the bundle. */
@@ -365,8 +364,6 @@ async function newDesign(): Promise<string | null> {
 ipcMain.handle("ponzu:open-folder", () => pickDesign());
 ipcMain.handle("ponzu:new-file", () => newDesign());
 ipcMain.on("ponzu:reveal", (_e, path: string) => shell.showItemInFolder(path));
-ipcMain.handle("ponzu:whats-new", () => pendingWhatsNew());
-ipcMain.on("ponzu:whats-new-seen", () => markWhatsNewSeen());
 ipcMain.handle("ponzu:pair-iphone-pending", () => {
   const pending = pairPending;
   pairPending = false;
@@ -505,7 +502,15 @@ if (!app.requestSingleInstanceLock()) {
     // The server lists what the updater has and asks it to install, so it starts first.
     const updater = smoke
       ? null
-      : await installUpdater({ window: () => mainWindow, onReady: () => (updateReady = true) });
+      : await installUpdater({
+          window: () => mainWindow,
+          onReady: () => (updateReady = true),
+          agentWorking: async () => {
+            if (!serverUrl) return false;
+            const res = await fetch(`${serverUrl}/api/info`, { signal: AbortSignal.timeout(2000) });
+            return Boolean(((await res.json()) as { working?: string }).working);
+          },
+        });
     try {
       // Agents find the server through ~/.ponzu/host.json on any port. 7777 is
       // for anything pointed at a fixed URL.

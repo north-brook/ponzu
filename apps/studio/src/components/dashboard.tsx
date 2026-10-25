@@ -112,10 +112,9 @@ export function Dashboard({
   // Setup shows until this Mac has a design, read yet or not, or until its agents are
   // connected and the person's other Macs have designs to list.
   const connected = catalog?.agents.some((a) => a.found && a.connected) ?? false;
-  const setup =
-    catalog !== null &&
-    !files.some((f) => f.machine === "local") &&
-    !(connected && files.length > 0);
+  const local = files.some((f) => f.machine === "local");
+  const setUp = useSetUp(catalog, local);
+  const setup = catalog !== null && !local && !(connected && files.length > 0);
   const q = query.trim();
   const live = useLive(files);
   // Identical copies of a design in several checkouts are one card.
@@ -210,7 +209,7 @@ export function Dashboard({
           </div>
         </TipProvider>
 
-        {catalog === null ? (
+        {catalog === null || (setup && setUp) ? (
           <Loading />
         ) : q ? (
           <Results
@@ -455,6 +454,50 @@ function ProjectItem({
       <span className="text-[11px] text-faint tabular-nums">{count}</span>
     </DropdownMenuItem>
   );
+}
+
+/** Remembers that this Mac has listed a design of its own. */
+const SET_UP_KEY = "ponzu.setUp";
+/** How long a Mac that had designs waits for them before showing the first steps after all. */
+const SET_UP_GRACE = 15_000;
+
+/**
+ * Whether to show placeholder cards for an empty catalog rather than the first steps: this Mac
+ * has listed designs of its own, in this session or an earlier one, and they've been missing for
+ * less than the grace period. A catalog that comes back empty, as one read while an update
+ * restarts can, waits for them; one still empty after the grace period is really empty (every
+ * design deleted), so the first steps show then.
+ */
+function useSetUp(catalog: Catalog | null, local: boolean): boolean {
+  const [had, setHad] = useState(() => {
+    try {
+      return localStorage.getItem(SET_UP_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  /** When this Mac's designs went missing from a catalog that arrived; null while they're there. */
+  const [missingSince, setMissingSince] = useState<number | null>(null);
+  const [, setNow] = useState(0);
+  const empty = catalog !== null && !local;
+  useEffect(() => {
+    if (!local) return;
+    setHad(true);
+    try {
+      localStorage.setItem(SET_UP_KEY, "1");
+    } catch {}
+  }, [local]);
+  useEffect(() => {
+    setMissingSince((at) => (empty ? (at ?? Date.now()) : null));
+  }, [empty]);
+  useEffect(() => {
+    if (missingSince === null) return;
+    const t = setTimeout(() => setNow(Date.now()), missingSince + SET_UP_GRACE - Date.now());
+    return () => clearTimeout(t);
+  }, [missingSince]);
+  if (!had || !empty) return false;
+  // Before the effect above notes when they went missing, they've only just gone.
+  return missingSince === null || Date.now() - missingSince < SET_UP_GRACE;
 }
 
 /** Name widths for the placeholder cards, so they don't read as one card repeated. */

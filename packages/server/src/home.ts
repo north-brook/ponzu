@@ -55,6 +55,8 @@ export interface HomeOptions {
   opened?: string[];
   /** The Mac app's updater, listed on this Mac's machine. */
   updater?: Updater;
+  /** The client of an agent mid-change on this Mac, which an update waits for. */
+  agentWorking?: () => string | undefined;
 }
 
 /**
@@ -217,7 +219,10 @@ export class Home {
         created: this.created.get(s.key),
       }),
     );
-    const update = this.opts.updater?.state();
+    const state = this.opts.updater?.state();
+    // An agent mid-change here: an update waits for it, and every Mac's Update says so.
+    const waitsFor = this.opts.agentWorking?.();
+    const update = state && (waitsFor ? { ...state, waitsFor } : state);
     return {
       machine: {
         id: "local",

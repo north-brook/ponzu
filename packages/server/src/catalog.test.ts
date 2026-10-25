@@ -581,6 +581,26 @@ test("a design whose folder is gone drops off, and comes back with its archive s
   expect((await again.files(new Map())).find((f) => f.key === key)?.shelf).toBe("archived");
 });
 
+test("a database read that fails lists what's known, and the next listing reads again", async () => {
+  const dbFile = join(dir, "state/busy.db");
+  const key = join(dir, "busy/kept.design");
+  await design(key, "Kept", { Home: ["A"] });
+  // Known from an earlier run: this run finds it in the database, not by looking.
+  const earlier = new LocalCatalog({ roots: [join(dir, "busy")], spotlight: "roots", dbFile });
+  await earlier.rescan();
+  earlier.close();
+  const catalog = new LocalCatalog({ roots: [], spotlight: "roots", dbFile });
+  const all = catalog.db.all.bind(catalog.db);
+  let busy = true;
+  catalog.db.all = () => (busy ? null : all());
+  // Another Ponzu holds the database as this one starts: nothing to list yet, and no harm done.
+  expect(await catalog.files(new Map())).toEqual([]);
+  busy = false;
+  // Nothing was written in between, and still the next listing has it.
+  expect((await catalog.files(new Map())).map((f) => f.name)).toContain("Kept");
+  catalog.close();
+});
+
 describe("example designs", () => {
   let root: string;
   const sample = () => join(root, "repo/examples/sample.design");

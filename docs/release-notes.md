@@ -34,7 +34,7 @@ block: some fixes are invisible.
 Ponzu ships two apps that release apart: the Mac app (`vX.Y.Z`) and the
 iPhone app (`mobile-vX.Y.Z`, [mobile.md](mobile.md)). A pull request that
 changes only `apps/mobile` is the iPhone's: its notes never reach the Mac's
-What's new, and Release Please leaves it out of the Mac's release. A pull
+release notes, and Release Please leaves it out of the Mac's release. A pull
 request that changes both says which app each note is about:
 
 ```md
@@ -44,7 +44,7 @@ request that changes both says which app each note is about:
 - iPhone: Find the Macs on your Wi-Fi without scanning a code.
 ```
 
-The Mac's What's new drops `iPhone:` notes and shows `Mac:` notes without the
+The Mac's release notes drop `iPhone:` notes and shows `Mac:` notes without the
 label. A note with neither label shows on the Mac.
 
 ## How it travels
@@ -54,23 +54,16 @@ label. A note with neither label shows on the Mac.
 2. Release Please tags the release (`vX.Y.Z`) as usual.
 3. The Mac build runs `scripts/release-notes.ts`, which reads main's history
    and groups every commit's notes under the `vX.Y.Z` tag that shipped it,
-   leaving out the iPhone's. The result,
-   `dist/release-notes.json`, is bundled into the app. Commits after the newest
-   tag are not in any release yet and are left out.
+   leaving out the iPhone's, into `dist/release-notes.json`. Commits after the
+   newest tag are not in any release yet and are left out.
 4. The release publishes the same file as `release-notes.json` beside its
-   build, so an app that has downloaded the update shows what's new in its
-   title bar's Update before anyone installs it.
-5. Launched into a newer version, the app shows **What's new** once, with the
-   notes of every release since the one whose notes it last showed
-   (`apps/desktop/src/whats-new.ts`). A first install shows nothing. Closing
-   the dialog marks the notes seen; if the app quits before then, they show
-   again next launch. Clicking Update marks the notes it listed seen, so an
-   update installed that way shows only notes it didn't list, usually none;
-   the dialog is for an update installed on quit.
+   build. An app that has downloaded the update shows the notes of every
+   release since the one it runs in its title bar's update popover, before
+   anyone installs it. That popover is the only place they show: nothing
+   repeats them after the restart.
 
-To preview it in development, start the app with
-`PONZU_WHATS_NEW_SINCE=<an older version>`. A checkout without tags or history
-(a shallow clone) bundles no notes and warns, marking the file incomplete.
+A checkout without tags or history (a shallow clone) writes no notes and
+warns, marking the file incomplete.
 
 ## Fixing a note
 

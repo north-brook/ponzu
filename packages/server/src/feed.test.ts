@@ -310,7 +310,6 @@ function fakeUpdater(
   order: string[],
   state: MachineUpdate,
   asked: (string | undefined)[] = [],
-  here: boolean[] = [],
 ): Updater & {
   set(s: MachineUpdate): void;
 } {
@@ -323,7 +322,6 @@ function fakeUpdater(
     install: async (o) => {
       order.push(name);
       asked.push(o?.version);
-      here.push(Boolean(o?.here));
       now = { ...now, installing: true };
       return now;
     },
@@ -335,10 +333,9 @@ test("one Update installs on each of the person's Macs, this one last", async ()
   await fakeTailnet();
   const order: string[] = [];
   const versions: (string | undefined)[] = [];
-  const clickedHere: boolean[] = [];
   const spareDir = join(dir, "spare-update");
   const spareWs = new LocalWorkspace({ cwd: spareDir });
-  const spareUpdater = fakeUpdater("spare", order, { version: "1.43.0" }, versions, clickedHere);
+  const spareUpdater = fakeUpdater("spare", order, { version: "1.43.0" }, versions);
   const spare = serve(spareWs, {
     port: 0,
     root: spareDir,
@@ -358,7 +355,6 @@ test("one Update installs on each of the person's Macs, this one last", async ()
       order,
       { version: "1.43.0", ready: { version: "1.44.0", notes: ["Faster."] } },
       versions,
-      clickedHere,
     ),
   });
   const home = stream(`ws://127.0.0.1:${here.port}/api/catalog/stream`);
@@ -384,8 +380,6 @@ test("one Update installs on each of the person's Macs, this one last", async ()
     expect(order).toEqual(["spare", "here"]);
     // Each Mac hears which version, so one holding an older download fetches that one first.
     expect(versions).toEqual(["1.44.0", "1.44.0"]);
-    // Only this Mac showed the popover, so only its What's new can skip the notes.
-    expect(clickedHere).toEqual([false, true]);
     c = await home.until((c) => updatePlan(c.machines)?.installing === true);
   } finally {
     home.close();
@@ -395,3 +389,59 @@ test("one Update installs on each of the person's Macs, this one last", async ()
     await spareWs.closeAll();
   }
 }, 15_000);
+
+test("an agent working on a Mac shows on every Mac's update, and its app hears it", async () => {
+  await fakeTailnet();
+  const order: string[] = [];
+  const spareDir = join(dir, "spare-busy");
+  const spareWs = new LocalWorkspace({ cwd: spareDir });
+  const spare = serve(spareWs, {
+    port: 0,
+    root: spareDir,
+    spotlight: "roots",
+    updater: fakeUpdater("spare", order, {
+      version: "1.43.0",
+      ready: { version: "1.44.0", notes: ["Faster."] },
+    }),
+  });
+  const hereDir = join(dir, "here-busy");
+  const hereWs = new LocalWorkspace({ cwd: hereDir });
+  const here = serve(hereWs, {
+    port: 0,
+    root: hereDir,
+    spotlight: "roots",
+    tailnet: true,
+    tailnetPort: spare.port,
+    updater: fakeUpdater("here", order, { version: "1.43.0" }),
+  });
+  const home = stream(`ws://127.0.0.1:${here.port}/api/catalog/stream`);
+  const info = async () =>
+    (await (await fetch(`http://127.0.0.1:${spare.port}/api/info`)).json()) as {
+      working?: string;
+    };
+  try {
+    expect((await info()).working).toBeUndefined();
+    // An agent is mid-change on the other Mac.
+    await runTool(getTool("create_file")!, { path: "kiosk.design" }, { ws: spareWs, caller });
+    await runTool(
+      getTool("create_artboard")!,
+      { name: "Hero", width: 400, height: 300 },
+      { ws: spareWs, caller },
+    );
+    const busy = (c: Catalog) => c.machines.find((m) => m.id === "spare")?.update?.waitsFor;
+    await home.until((c) => busy(c) === "claude", 8000);
+    // Its app, which holds the restart until the agent is done, hears the same.
+    expect((await info()).working).toBe("claude");
+
+    // The agent is done: both clear.
+    spareWs.presence.touch(caller, { working: [], status: undefined });
+    await home.until((c) => !busy(c), 8000);
+    expect((await info()).working).toBeUndefined();
+  } finally {
+    home.close();
+    here.stop(true);
+    spare.stop(true);
+    await hereWs.closeAll();
+    await spareWs.closeAll();
+  }
+}, 25_000);

@@ -4,7 +4,6 @@ import type { AddressInfo } from "node:net";
 import { changelogNotes, compareVersions, type MachineUpdate } from "@ponzu/core";
 import { app, type BrowserWindow, dialog, type MessageBoxOptions, powerMonitor } from "electron";
 import electronUpdater, { type UpdateInfo } from "electron-updater";
-import { markWhatsNewSeen } from "./whats-new";
 
 const { autoUpdater } = electronUpdater;
 const FOUR_HOURS = 4 * 60 * 60 * 1000;
@@ -12,6 +11,13 @@ const FOUR_HOURS = 4 * 60 * 60 * 1000;
 const AWAY_SECONDS = 5 * 60;
 /** Time for the answer to reach the server, and the other Macs, before this one restarts. */
 const RESTART_DELAY = 500;
+/** How often a restart held for a working agent asks again whether it's done. */
+const AGENT_CHECK_EVERY = 2000;
+/**
+ * How long the server may fail to say whether an agent is working before the restart goes ahead
+ * anyway: a server that can't answer for this long has no agent working through it.
+ */
+const AGENT_CHECK_GIVE_UP = 60_000;
 
 /**
  * A message as a sheet on `win`, once it's on screen. Never a free-standing
@@ -27,21 +33,19 @@ async function ask(win: BrowserWindow, options: MessageBoxOptions) {
 const REPO = "https://github.com/north-brook/ponzu";
 
 /**
- * What's new between this Ponzu and an update: the release notes its pull requests wrote, from
- * the release-notes.json each release publishes beside its build (docs/release-notes.md), or,
- * for a release without one, its changelog. A release whose file lists no notes shows none: no
- * section means no note. `complete` when they cover every release since this one: a changelog
- * may have only the newest's, and a build that couldn't read history marks its file incomplete.
+ * What's new between this Ponzu and an update, for the title bar's popover: the release notes its
+ * pull requests wrote, from the release-notes.json each release publishes beside its build
+ * (docs/release-notes.md), or, for a release without one, its changelog. A release whose file
+ * lists no notes shows none: no section means no note.
  */
-async function notesOf(info: UpdateInfo): Promise<{ notes: string[]; complete: boolean }> {
+async function notesOf(info: UpdateInfo): Promise<string[]> {
   try {
     const res = await fetch(`${REPO}/releases/download/v${info.version}/release-notes.json`, {
       signal: AbortSignal.timeout(10_000),
     });
     if (res.ok) {
-      const { releases, incomplete } = (await res.json()) as {
+      const { releases } = (await res.json()) as {
         releases?: { version: string; notes: string[] }[];
-        incomplete?: boolean;
       };
       const current = app.getVersion();
       const notes = (releases ?? [])
@@ -51,15 +55,13 @@ async function notesOf(info: UpdateInfo): Promise<{ notes: string[]; complete: b
             compareVersions(r.version, info.version) <= 0,
         )
         .flatMap((r) => r.notes);
-      if (Array.isArray(releases)) return { notes, complete: incomplete !== true };
+      if (Array.isArray(releases)) return notes;
     }
   } catch {}
   const changelog = info.releaseNotes;
-  const notes =
-    typeof changelog === "string"
-      ? changelogNotes(changelog)
-      : (changelog ?? []).flatMap((n) => (n.note ? changelogNotes(n.note) : []));
-  return { notes, complete: false };
+  return typeof changelog === "string"
+    ? changelogNotes(changelog)
+    : (changelog ?? []).flatMap((n) => (n.note ? changelogNotes(n.note) : []));
 }
 
 /**
@@ -79,19 +81,17 @@ async function notesOf(info: UpdateInfo): Promise<{ notes: string[]; complete: b
 export async function installUpdater(opts: {
   window: () => BrowserWindow | null;
   onReady: () => void;
+  /** Whether an agent is mid-change on this Mac, from its server: a restart waits for it. */
+  agentWorking: () => Promise<boolean>;
 }): Promise<{ endpoint: string; token: string } | null> {
   if (!app.isPackaged) return null;
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   let ready: MachineUpdate["ready"];
-  /** Whether `ready`'s notes cover every release since this one. */
-  let readyComplete = false;
   /** The person asked for it: restart as soon as it's downloaded. */
   let installing = false;
   /** The version they asked for: a download older than it isn't the one to restart into. */
   let target: string | undefined;
-  /** The version whose notes this Mac's Update listed in full, as the person asked for it. */
-  let shown: string | undefined;
   const readyFor = (version?: string) =>
     Boolean(ready && (!version || compareVersions(ready.version, version) >= 0));
   const state = (): MachineUpdate => ({
@@ -100,16 +100,31 @@ export async function installUpdater(opts: {
     ...(installing ? { installing } : {}),
   });
 
+  /** A restart on its way: waiting for an agent, or for its answer to get out. */
+  let restarting = false;
   /**
-   * A window open restarts into it; with none, quitting installs it and nothing reopens. What's
-   * new needn't repeat what Update's popover listed.
+   * A window open restarts into it; with none, quitting installs it and nothing reopens. Never
+   * while an agent is mid-change here, even one that started while the update downloaded: it
+   * waits until the agent is done.
    */
   const restart = () => {
-    if (shown) markWhatsNewSeen(shown);
-    setTimeout(() => {
-      if (opts.window()) autoUpdater.quitAndInstall();
-      else app.quit();
-    }, RESTART_DELAY);
+    if (restarting) return;
+    restarting = true;
+    /** When the server last answered: a check that fails isn't an agent that's done. */
+    let answered = Date.now();
+    const go = async () => {
+      const working = await opts.agentWorking().catch(() => null);
+      if (working !== null) answered = Date.now();
+      if (working || (working === null && Date.now() - answered < AGENT_CHECK_GIVE_UP)) {
+        setTimeout(go, AGENT_CHECK_EVERY);
+        return;
+      }
+      setTimeout(() => {
+        if (opts.window()) autoUpdater.quitAndInstall();
+        else app.quit();
+      }, RESTART_DELAY);
+    };
+    void go();
   };
 
   /** Fetch the newest release: one newer than what's downloaded replaces it. */
@@ -122,9 +137,10 @@ export async function installUpdater(opts: {
    * Install `version`, or a newer one: restart into it once it's downloaded, fetching it first
    * when what's here is older. `quiet`: Ponzu's own idea, for a Mac that was off when the person
    * updated the others. Only once it's downloaded, and only with nobody at this Mac: no window,
-   * or untouched a while. `here`: the person clicked Update on this Mac, so saw its popover.
+   * or untouched a while. (The server holds an install the person asked for while an agent is
+   * mid-change here, so a restart never cuts one off.)
    */
-  const install = (o: { quiet?: boolean; here?: boolean; version?: string }): MachineUpdate => {
+  const install = (o: { quiet?: boolean; version?: string }): MachineUpdate => {
     if (o.quiet) {
       if (installing) return state();
       if (!readyFor(o.version)) {
@@ -137,21 +153,13 @@ export async function installUpdater(opts: {
     }
     installing = true;
     target = o.version;
-    // Update here listed this Mac's notes, all of them, when its download is the version it
-    // offered and they're complete. Clicked on another Mac, or quiet, it listed none of this one's.
-    shown =
-      o.here && target && ready && readyComplete && ready.version === target
-        ? ready.version
-        : undefined;
     if (readyFor(target)) restart();
     else fetchNewest();
     return state();
   };
 
   autoUpdater.on("update-downloaded", async (info) => {
-    const { notes, complete } = await notesOf(info);
-    ready = { version: info.version, notes };
-    readyComplete = complete;
+    ready = { version: info.version, notes: await notesOf(info) };
     opts.onReady();
     if (installing && readyFor(target)) restart();
   });
@@ -176,18 +184,10 @@ export async function installUpdater(opts: {
       let out: MachineUpdate;
       if (req.method === "POST" && req.url === "/update/install") {
         const body = await read(req)
-          .then(
-            (text) =>
-              JSON.parse(text || "{}") as {
-                quiet?: unknown;
-                here?: unknown;
-                version?: unknown;
-              } | null,
-          )
+          .then((text) => JSON.parse(text || "{}") as { quiet?: unknown; version?: unknown } | null)
           .catch(() => null);
         out = install({
           quiet: body?.quiet === true,
-          here: body?.here === true,
           ...(typeof body?.version === "string" ? { version: body.version } : {}),
         });
       } else if (req.method === "GET" && req.url === "/update") out = state();
@@ -215,7 +215,7 @@ function read(req: IncomingMessage): Promise<string> {
 
 /**
  * The menu's Check for Updates: unlike the scheduled check, it reports nothing new. An update
- * it finds shows as Update in the title bar once it's downloaded.
+ * it finds shows in the title bar once it's downloaded.
  */
 export async function checkForUpdatesNow(win: BrowserWindow) {
   if (!app.isPackaged) {
@@ -228,7 +228,7 @@ export async function checkForUpdatesNow(win: BrowserWindow) {
       await ask(win, {
         type: "info",
         message: `Ponzu ${result.updateInfo.version} is on its way`,
-        detail: "It's downloading. Click Update in the title bar once it's ready.",
+        detail: "It's downloading. Click the dot in the title bar once it's ready.",
       });
       return;
     }

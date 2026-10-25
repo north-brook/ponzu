@@ -37,7 +37,6 @@ import { PairIphone } from "@/components/pair-iphone";
 import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { UpdateButton } from "@/components/update";
-import { WhatsNew } from "@/components/whats-new";
 import { watchCatalog } from "@/lib/catalog";
 import { cn } from "@/lib/utils";
 
@@ -64,9 +63,6 @@ declare global {
       openFolder(): Promise<string | null>;
       newFile(): Promise<string | null>;
       reveal(path: string): void;
-      /** Missing from builds before What's new. */
-      whatsNew?(): Promise<{ version: string; notes: string[] } | null>;
-      whatsNewSeen?(): void;
       /** ⌘W from the app menu. Returns the unsubscribe. Missing from builds before tab closing. */
       onCloseTab?(handler: () => void): () => void;
       closeWindow?(): void;
@@ -338,7 +334,6 @@ export function Studio() {
           />
         )}
       </main>
-      <WhatsNew />
       <PairIphone />
     </div>
   );
