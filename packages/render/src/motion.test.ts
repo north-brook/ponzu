@@ -60,6 +60,8 @@ describe.skipIf(!chromium)("motion in Chromium", () => {
     expect(m.settled).toBe(1000);
     expect(m.loops).toBe(true);
     expect(m.cycle).toBe(1000);
+    // The 24px spinner is the biggest thing that loops.
+    expect(m.loopSize).toBe(24);
     expect(m.at).toBe(1000);
     const head = m.animations.find((a) => a.id === "n_head")!;
     expect(head).toMatchObject({ name: "rise", delay: 200, duration: 800, end: 1000 });

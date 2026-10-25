@@ -18,6 +18,7 @@ import { advertise, type Bonjour } from "./bonjour.ts";
 import { defaultCacheDir, trimAtStart } from "./cache.ts";
 import { CatalogFeed, type Scope } from "./feed.ts";
 import { Home, type OpenedBy } from "./home.ts";
+import { Pictures, pictureRoute } from "./pictures.ts";
 import { assetResponse } from "./range.ts";
 import { RemoteImages } from "./remote-images.ts";
 import { fileSource, type ImageSource, MEDIA_HEADERS, Renditions } from "./renditions.ts";
@@ -72,7 +73,7 @@ export interface ServeOptions {
   backpressureLimit?: number;
   /** The Mac app's updater: the catalog lists what it has, and Update installs it. */
   updater?: Updater;
-  /** Where image copies and remote images are kept. Default ~/.ponzu/cache. */
+  /** Where pictures, loops, image copies and remote images are kept. Default ~/.ponzu/cache. */
   cacheDir?: string;
 }
 
@@ -228,9 +229,14 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
 
   const renditions = new Renditions({ dir: opts.cacheDir });
   const remoteImages = new RemoteImages(opts.cacheDir ?? defaultCacheDir());
+  // Pictures and motion loops of artboards, on disk in ~/.ponzu/cache, made in the background.
+  // An agent's screenshots share the renderer: while one has a call running, they wait. Not
+  // while it only waits for the person: an agent watching the canvas waits almost all the time.
+  const pictures = new Pictures(ws, { dir: opts.cacheDir, agentBusy: () => mcp.working() });
   trimAtStart([
     { dir: renditions.dir, max: renditions.maxBytes },
     { dir: remoteImages.dir, max: remoteImages.maxBytes },
+    ...pictures.budgets(),
   ]);
   const home = new Home(ws, {
     roots: opts.root ? [opts.root] : [],
@@ -457,6 +463,16 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
         headers: { "content-type": "image/png", "cache-control": "private, max-age=31536000" },
       });
     }
+
+    const picture = await pictureRoute(
+      pictures,
+      path,
+      url,
+      (key) => home.listed(key),
+      req.headers.get("range"),
+      req.headers.get("if-none-match"),
+    );
+    if (picture) return picture;
 
     if (path === "/api/files") {
       if (req.method === "POST") {

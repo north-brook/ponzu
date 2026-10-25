@@ -44,6 +44,12 @@ export interface MotionInfo {
   loops: boolean;
   /** One full cycle of the longest loop, in ms. */
   cycle: number;
+  /**
+   * The longest side, in CSS px, of the biggest thing that animates forever
+   * (CSS or SVG; videos aside), 0 when nothing does. An animated part of an
+   * SVG counts as the whole SVG: that's the motion you see.
+   */
+  loopSize: number;
   /** Where a recording ends by default: settled, or one loop past it. */
   end: number;
   /** The time currently shown, in ms. */
@@ -242,6 +248,28 @@ function motionRuntime() {
     return out;
   }
 
+  function loopSize(): number {
+    const els = new Set<Element>();
+    for (const e of entries) {
+      if (e.trigger !== trigger || !e.time || e.paused) continue;
+      const effect = e.anim.effect as KeyframeEffect | null;
+      if (effect?.target && !Number.isFinite(effect.getComputedTiming().iterations))
+        els.add(effect.target);
+    }
+    // Not video: a board's picture can play its video, so video alone isn't worth its live DOM.
+    if (trigger === "load")
+      for (const el of smil())
+        if (el.parentElement && describeSmil(el).iterations === null) els.add(el.parentElement);
+    let size = 0;
+    for (const el of els) {
+      let group = el;
+      for (let p: Element | null = el; p instanceof SVGElement; p = p.parentElement) group = p;
+      const r = group.getBoundingClientRect();
+      size = Math.max(size, r.width, r.height);
+    }
+    return round(size);
+  }
+
   function info(): MotionInfo {
     const animations = list();
     let settled = 0;
@@ -265,6 +293,7 @@ function motionRuntime() {
       settled: round(settled),
       loops,
       cycle: round(cycle),
+      loopSize: loops ? loopSize() : 0,
       end: round(Math.max(settled, loopEnd)),
       at: round(now),
     };

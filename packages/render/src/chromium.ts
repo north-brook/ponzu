@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { Browser, BrowserContext, Page } from "playwright-core";
 import { captureScale, clampScale, IMAGES_READY_SCRIPT } from "./capture.ts";
 import { artboardPage, cssPx } from "./document.ts";
+import { filmLoops, type LoopRequest, type LoopResult } from "./loop.ts";
 import {
   type FrameDriver,
   FULL_LINT_SCRIPT,
@@ -42,6 +43,7 @@ export interface ChromiumOptions {
 export class ChromiumRenderer implements Renderer {
   private browser: Promise<Browser> | null = null;
   private context: Promise<BrowserContext> | null = null;
+  private film: Promise<BrowserContext> | null = null;
 
   constructor(private opts: ChromiumOptions = {}) {}
 
@@ -245,6 +247,76 @@ export class ChromiumRenderer implements Renderer {
     }
   }
 
+  /**
+   * Filming gets a browser of its own, launched when first needed: without a
+   * frame rate limit a capture takes 13-25 ms instead of waiting for the next
+   * frame at 30 fps, which halves filming time. Screenshots keep paced frames.
+   */
+  private filmContext(): Promise<BrowserContext> {
+    if (!this.film) {
+      const executablePath = this.opts.executablePath ?? findChromium();
+      if (!executablePath)
+        return Promise.reject(new Error("No Chrome or Chromium found to film loops."));
+      this.film = import("playwright-core")
+        .then(({ chromium }) =>
+          chromium.launch({
+            executablePath,
+            headless: true,
+            args: [
+              "--hide-scrollbars",
+              "--font-render-hinting=none",
+              // Render pages are served at this origin; secure, they get WebCodecs to encode.
+              `--unsafely-treat-insecure-origin-as-secure=${RENDER_ORIGIN}`,
+              "--disable-frame-rate-limit",
+              "--disable-gpu-vsync",
+            ],
+          }),
+        )
+        .then((b) => b.newContext({ deviceScaleFactor: 1 }));
+      this.film.catch(() => {
+        this.film = null;
+      });
+    }
+    return this.film;
+  }
+
+  async loop(req: LoopRequest): Promise<LoopResult> {
+    const page = await (await this.filmContext()).newPage();
+    // Given up on: closing the page fails whatever it's waiting on, and frees it.
+    const abort = () => void page.close().catch(() => {});
+    req.signal?.addEventListener("abort", abort, { once: true });
+    if (req.signal?.aborted) abort();
+    try {
+      const loaded = await this.load(page, req, req.thumbnail ? req.scale : undefined);
+      const cdp = await page.context().newCDPSession(page);
+      const v = page.viewportSize();
+      if (v)
+        await cdp.send("Emulation.setDeviceMetricsOverride", {
+          ...v,
+          deviceScaleFactor: 0,
+          mobile: false,
+        });
+      const driver: FrameDriver = {
+        evaluate: (expression) => page.evaluate(expression),
+        async capture(box, scale) {
+          const shot = await cdp.send("Page.captureScreenshot", {
+            format: "png",
+            clip: { ...box, scale: captureScale(box.width, box.height, scale) },
+            captureBeyondViewport: true,
+          });
+          return new Uint8Array(Buffer.from(shot.data, "base64"));
+        },
+        async show() {},
+      };
+      const out = await filmLoops(driver, req);
+      await cdp.detach().catch(() => {});
+      return loaded ? out : { ...out, assetsTimedOut: true };
+    } finally {
+      req.signal?.removeEventListener("abort", abort);
+      await page.close().catch(() => {});
+    }
+  }
+
   async measure(req: MeasureRequest): Promise<MeasureResult> {
     const page = await (await this.ctx()).newPage();
     try {
@@ -321,11 +393,17 @@ export class ChromiumRenderer implements Renderer {
 
   async close(): Promise<void> {
     const b = this.browser;
+    const film = this.film;
     this.browser = null;
     this.context = null;
+    this.film = null;
     if (b) await (await b).close().catch(() => {});
+    if (film) await film.then((c) => c.browser()?.close()).catch(() => {});
   }
 }
+
+/** Where render pages are served from (routed, never fetched). */
+const RENDER_ORIGIN = "http://ponzu.render";
 
 /** A capture straight through the DevTools protocol, which doesn't wait for fonts the way page.screenshot does. */
 async function captureNow(
@@ -368,7 +446,7 @@ async function captureNow(
  * DOM is ready: fonts and images get their own time limit after this.
  */
 async function show(page: Page, html: string): Promise<void> {
-  const url = "http://ponzu.render/";
+  const url = `${RENDER_ORIGIN}/`;
   await page.unroute(url).catch(() => {});
   await page.route(url, (route) =>
     route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: html }),

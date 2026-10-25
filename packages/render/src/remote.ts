@@ -1,5 +1,6 @@
 import { clampScale } from "./capture.ts";
 import { artboardPage } from "./document.ts";
+import { filmLoops, type LoopRequest, type LoopResult } from "./loop.ts";
 import {
   type Box,
   type FrameDriver,
@@ -238,6 +239,37 @@ export class RemoteRenderer implements Renderer {
       });
       return { ...out, mime: "image/png", ...(assetsTimedOut ? { assetsTimedOut } : {}) };
     } finally {
+      await call({ op: "close", session }).catch(() => {});
+    }
+  }
+
+  /** Over the recording session API: filming needs only evaluate and capture. */
+  async loop(req: LoopRequest): Promise<LoopResult> {
+    const call = this.sessionCall("This render host can't film loops.");
+    const { session, assetsTimedOut } = await call({
+      op: "open",
+      html: this.page(req, req.thumbnail ? clampScale(req.scale) : undefined),
+      ...size(req.artboard.root.style),
+      colorScheme: req.colorScheme,
+    });
+    if (!session) throw new Error("Render host didn't open a session.");
+    // Given up on: close the session now, which fails whatever the film waits on.
+    const abort = () => void call({ op: "close", session }).catch(() => {});
+    req.signal?.addEventListener("abort", abort, { once: true });
+    try {
+      const out = await filmLoops(
+        {
+          evaluate: async <T>(expression: string) =>
+            (await call({ op: "eval", session, expression })).value as T,
+          capture: async (box, scale) =>
+            fromBase64((await call({ op: "capture", session, box, scale })).data ?? ""),
+          show: async () => {},
+        },
+        req,
+      );
+      return assetsTimedOut ? { ...out, assetsTimedOut } : out;
+    } finally {
+      req.signal?.removeEventListener("abort", abort);
       await call({ op: "close", session }).catch(() => {});
     }
   }

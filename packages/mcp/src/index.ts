@@ -172,6 +172,9 @@ export async function serveStdio(ws: Workspace, opts: McpOptions = {}): Promise<
  * Streamable HTTP handler with sessions. Mount it at /mcp:
  *   const mcp = createHttpHandler(ws); Bun.serve({ fetch: (req) => mcp(req) })
  * `mcp.idleMs()` is how long it's been since an agent last had a call running.
+ * `mcp.working()` is whether one has a call running that does work now: not
+ * one only waiting for the person (wait_for_activity holds a call open for
+ * minutes).
  */
 export function createHttpHandler(
   ws: Workspace,
@@ -179,13 +182,17 @@ export function createHttpHandler(
 ) {
   const sessions = new Map<string, WebStandardStreamableHTTPServerTransport>();
   let running = 0;
+  let working = 0;
   let lastActive = Date.now();
   // POSTs carry calls; a GET is a listening stream that stays open while the agent idles.
   const tracked = async (req: Request, res: Promise<Response>): Promise<Response> => {
     if (req.method !== "POST") return res;
+    const waits = await onlyWaits(req);
     running++;
+    if (!waits) working++;
     const done = once(() => {
       running--;
+      if (!waits) working--;
       lastActive = Date.now();
     });
     try {
@@ -195,7 +202,8 @@ export function createHttpHandler(
       throw err;
     }
   };
-  const handle = (req: Request) => tracked(req, route(req));
+  // The body is read twice: once here to see what it calls, once by the transport.
+  const handle = (req: Request) => tracked(req, route(req.method === "POST" ? req.clone() : req));
   const route = async (req: Request): Promise<Response> => {
     const sid = req.headers.get("mcp-session-id");
     const existing = sid ? sessions.get(sid) : undefined;
@@ -240,8 +248,28 @@ export function createHttpHandler(
     return transport.handleRequest(req);
   };
   const idleMs = () => (running > 0 ? 0 : Date.now() - lastActive);
-  return Object.assign(handle, { idleMs });
+  return Object.assign(handle, { idleMs, working: () => working > 0 });
 }
+
+/** Whether a POST only calls tools that wait for the person. */
+export async function onlyWaits(req: Request): Promise<boolean> {
+  try {
+    const body = (await req.clone().json()) as unknown;
+    const msgs = Array.isArray(body) ? body : [body];
+    return (
+      msgs.length > 0 &&
+      msgs.every(
+        (m) =>
+          (m as { method?: string })?.method === "tools/call" &&
+          WAITING_TOOLS.has((m as { params?: { name?: string } }).params?.name ?? ""),
+      )
+    );
+  } catch {
+    return false;
+  }
+}
+
+const WAITING_TOOLS = new Set(["wait_for_activity"]);
 
 /**
  * Headers `ponzu mcp` sends when it relays an agent to a running Ponzu, so
