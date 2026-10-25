@@ -15,6 +15,7 @@ import {
   Icon,
   Juice,
   Logo,
+  ShortcutHint,
   SocketSource,
   timeAgo,
   useDelayed,
@@ -43,6 +44,8 @@ import { cn } from "@/lib/utils";
 /** Where `ponzu serve` lives. Same origin in production; the dev server proxies. */
 const ORIGIN = window.location.origin;
 const mac = navigator.userAgent.includes("Mac");
+/** The key the tab shortcuts go with, as their hints write it. */
+const mod = mac ? "⌘" : "Ctrl";
 
 /**
  * A tab names its design and the server in front of it: the key alone for a
@@ -272,10 +275,15 @@ export function Studio() {
           variant="ghost"
           size="icon"
           aria-label="Home"
-          className={cn("w-8", active === null && "bg-secondary hover:bg-secondary")}
+          className={cn(
+            "w-8",
+            active === null && "bg-secondary text-foreground hover:bg-secondary",
+          )}
           onClick={() => setActive(null)}
         >
-          {hint ? <ShortcutDigit n={0} /> : <Logo size={18} dark={theme === "dark"} />}
+          <ShortcutHint modifier={mod} n={0} shown={hint} center>
+            <Logo size={18} dark={theme === "dark"} />
+          </ShortcutHint>
         </Button>
         <div
           ref={strip}
@@ -358,7 +366,7 @@ function FileTab({
   file?: CatalogFile;
   machines?: CatalogMachine[];
   shortcut?: number;
-  /** ⌘ is held: the shortcut takes the icon's place. */
+  /** ⌘ is held: the shortcut eases in over the icon. */
   showShortcut: boolean;
   active: boolean;
   theme: "light" | "dark";
@@ -396,20 +404,23 @@ function FileTab({
       }}
       onPointerLeave={() => setHeld(false)}
     >
-      {/* The close button sits over the end of the label, which fades out under it. */}
-      <span className="flex min-w-0 items-center gap-[7px] group-focus-visible:[mask-image:linear-gradient(to_left,transparent_14px,#000_32px)] group-hover:[mask-image:linear-gradient(to_left,transparent_14px,#000_32px)]">
-        {showShortcut && shortcut ? (
-          <ShortcutDigit n={shortcut} />
-        ) : waiting ? (
-          <span
-            className="grid size-3.5 shrink-0 place-items-center"
-            title={offline ? "Reconnecting" : "Opening"}
-          >
-            <Juice size={14} dark={theme === "dark"} dry={offline} />
-          </span>
-        ) : (
-          <Icon name={state.doc?.icon ?? "blank"} size={14} />
-        )}
+      {/*
+       * The close button sits over the end of the label, which fades out under it. The padding,
+       * taken back by the margin, keeps the mask clear of a shortcut hint wider than the icon.
+       */}
+      <span className="-ml-1.5 flex min-w-0 items-center gap-[7px] pl-1.5 group-focus-visible:[mask-image:linear-gradient(to_left,transparent_14px,#000_32px)] group-hover:[mask-image:linear-gradient(to_left,transparent_14px,#000_32px)]">
+        <ShortcutHint modifier={mod} n={shortcut} shown={showShortcut} index={shortcut}>
+          {waiting ? (
+            <span
+              className="grid size-3.5 shrink-0 place-items-center"
+              title={offline ? "Reconnecting" : "Opening"}
+            >
+              <Juice size={14} dark={theme === "dark"} dry={offline} />
+            </span>
+          ) : (
+            <Icon name={state.doc?.icon ?? "blank"} size={14} />
+          )}
+        </ShortcutHint>
         <span className={cn("truncate", working && "pz-shimmer")}>{name}</span>
       </span>
       <button
@@ -446,18 +457,6 @@ function FileTab({
         />
       </HoverCardContent>
     </HoverCard>
-  );
-}
-
-/** A tab's shortcut digit, in its icon's place while ⌘ is held. */
-function ShortcutDigit({ n }: { n: number }) {
-  return (
-    <span
-      aria-hidden
-      className="grid size-3.5 shrink-0 place-items-center font-medium text-[12px] text-foreground tabular-nums leading-none"
-    >
-      {n}
-    </span>
   );
 }
 

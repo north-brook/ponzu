@@ -329,7 +329,88 @@
   animation: pz-appear 0.3s ease-out both;
 }
 
+/*
+ * ShortcutHint: a tab's icon, and the faint ⌘1 that takes its place while the modifier is held.
+ * Both stay mounted so it eases out as well as in. It arrives tab after tab (--i) and leaves all
+ * at once, quicker, since the key is already up. Colors come from the tab's own text, so it
+ * reads in the studio's title bar and on the canvas's bars alike.
+ */
+.pz-hint {
+  position: relative;
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+}
+
+.pz-hint-icon {
+  display: grid;
+  transition:
+    opacity 120ms ease-out,
+    transform 120ms ease-out;
+}
+
+.pz-hint-keys {
+  position: absolute;
+  top: 50%;
+  right: -2.5px;
+  display: flex;
+  height: 16px;
+  margin-top: -8px;
+  align-items: center;
+  gap: 1px;
+  padding: 0 3px;
+  border-radius: 4px;
+  /* The tint mixes the tab's own text color; the glyphs, a child, halve it for themselves. */
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  font: 500 10.5px / 1 var(--pz-font, "Inter", system-ui, -apple-system, sans-serif);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(2px) scale(0.96);
+  transition:
+    opacity 90ms ease-in,
+    transform 90ms ease-in;
+}
+
+.pz-hint-center .pz-hint-keys {
+  right: 50%;
+  translate: 50% 0;
+}
+
+.pz-hint-label {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  color: color-mix(in srgb, currentColor 50%, transparent);
+}
+
+.pz-hint-mod {
+  font-size: 10px;
+}
+
+.pz-hint[data-shown] .pz-hint-icon {
+  opacity: 0;
+  transform: scale(0.7);
+  transition-delay: calc(var(--i, 0) * 18ms);
+}
+
+.pz-hint[data-shown] .pz-hint-keys {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 160ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition-delay: calc(var(--i, 0) * 18ms);
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .pz-hint-icon,
+  .pz-hint-keys,
+  .pz-hint[data-shown] .pz-hint-icon,
+  .pz-hint[data-shown] .pz-hint-keys {
+    transition: none;
+  }
   .pz-shimmer {
     animation: none;
     -webkit-text-fill-color: currentColor;
