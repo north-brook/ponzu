@@ -170,7 +170,7 @@ export function useFile(mac: string, key: string): PhoneFile | undefined {
   return useMemo(() => files.find((f) => f.mac === mac && f.key === key), [files, mac, key]);
 }
 
-/** Archive, restore, or move a design between Recent and Scratch, on its Mac. */
+/** Archive or restore a design, on its Mac. */
 export function useShelve() {
   return useMutation(
     shelfMutation(queryClient, async ({ mac, key, action }: ShelfChange) => {

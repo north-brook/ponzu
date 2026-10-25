@@ -7,7 +7,7 @@ Ponzu serving the three examples. They run in this order (`config.yaml`):
 | Flow | What it checks |
 | --- | --- |
 | `launch.yaml` | A clean install with every Mac forgotten: the slice and wordmark on yuzu, then Connect. |
-| `designs.yaml` | Designs lists Kettle, Halon and Weft, under the tab bar (Designs, Activity, Search); the header's filter menu picks Scratch, then Recent again. |
+| `designs.yaml` | Designs lists Kettle, Halon and Weft, under the tab bar (Designs, Activity, Search); the header's filter menu picks Archived, then Recent again. |
 | `canvas.yaml` | Kettle opens on its canvas, with no tab bar over it: the bar, its boards drawn in the web view, and the page button's menu turning it to Website. |
 | `search.yaml` | The search tab's system field: "brand" shows Files and Frames. |
 | `activity.yaml` | The Activity tab: one list, its filter (New by default, Show everything), and `ponzu://activity?since=1` shows "Claude added 3 artboards" with thumbnails, which opens that design. |

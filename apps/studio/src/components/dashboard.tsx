@@ -6,6 +6,7 @@ import {
   type CatalogMachine,
   foldCopies,
   previewArtboard,
+  viewOf,
   withoutUntouched,
 } from "@ponzu/core";
 import {
@@ -78,7 +79,7 @@ export function Dashboard({
   onOpen: (target: OpenTarget) => void;
   onOpenFolder?: () => void;
   onNew?: () => void;
-  /** Archive, restore or move a design between Recent and Scratch. Resolves once it's done. */
+  /** Archive or restore a design. Resolves once it's done. */
   onShelve?: (file: CatalogFile, action: ShelfAction) => Promise<void>;
 }) {
   const [query, setQuery] = useState("");
@@ -117,19 +118,12 @@ export function Dashboard({
   const live = useLive(files);
   // Identical copies of a design in several checkouts are one card.
   const shelved = useMemo(() => {
-    const by: Record<View, CatalogFile[]> = { recent: [], scratch: [], archived: [] };
-    for (const f of files) by[f.shelf ?? "recent"].push(f);
-    return {
-      recent: foldCopies(by.recent),
-      scratch: foldCopies(by.scratch),
-      archived: foldCopies(by.archived),
-    };
+    const by: Record<View, CatalogFile[]> = { recent: [], archived: [] };
+    for (const f of files) by[viewOf(f)].push(f);
+    return { recent: foldCopies(by.recent), archived: foldCopies(by.archived) };
   }, [files]);
   // Searching looks everywhere but the archive.
-  const searchable = useMemo(
-    () => [...shelved.recent, ...shelved.scratch].sort((a, b) => b.file.modified - a.file.modified),
-    [shelved],
-  );
+  const searchable = shelved.recent;
   const inView = shelved[view];
   const projects = useProjects(inView);
   // A filter for a project this view no longer has goes back to All.
@@ -153,12 +147,7 @@ export function Dashboard({
           failed(err);
           return;
         }
-        const undo: Record<ShelfAction, ShelfAction> = {
-          archive: "restore",
-          restore: "archive",
-          scratch: "recent",
-          recent: "scratch",
-        };
+        const undo: Record<ShelfAction, ShelfAction> = { archive: "restore", restore: "archive" };
         setToast({
           text: TOAST[action](card.file.name),
           undo: () => {
@@ -235,11 +224,7 @@ export function Dashboard({
             <div className="-mb-3.5 flex h-7 items-center justify-between gap-4">
               <Views
                 view={view}
-                counts={{
-                  recent: shelved.recent.length,
-                  scratch: shelved.scratch.length,
-                  archived: shelved.archived.length,
-                }}
+                counts={{ recent: shelved.recent.length, archived: shelved.archived.length }}
                 onView={setView}
               />
               {projects.length > 1 && (
@@ -251,7 +236,6 @@ export function Dashboard({
                 />
               )}
             </div>
-            {view !== "recent" && <ViewNote view={view} />}
             {shown.length ? (
               <Grid>
                 {shown.map((c) => (
@@ -277,28 +261,28 @@ export function Dashboard({
   );
 }
 
-/** Which designs the home screen lists: the person's, an agent's scratch, or put away. */
-type View = "recent" | "scratch" | "archived";
+/**
+ * Which designs the home screen lists: what the person or an agent touched
+ * lately, or everything put away (by the person, by going idle, or made by an
+ * agent for its own use).
+ */
+type View = "recent" | "archived";
 
-export type ShelfAction = "archive" | "restore" | "scratch" | "recent";
+export type ShelfAction = "archive" | "restore";
 
-const VIEWS: { id: View; label: string }[] = [
-  { id: "recent", label: "Recent" },
-  { id: "scratch", label: "Scratch" },
-  { id: "archived", label: "Archived" },
+const VIEWS: { id: View; label: string; icon: string }[] = [
+  { id: "recent", label: "Recent", icon: "clock" },
+  { id: "archived", label: "Archived", icon: "shelved" },
 ];
 
 const EMPTY: Record<View, string> = {
   recent: "Nothing here yet.",
-  scratch: "No scratch files. Agents put the files they make for themselves here.",
   archived: "Nothing archived.",
 };
 
 const TOAST: Record<ShelfAction, (name: string) => string> = {
   archive: (n) => `Archived “${n}”. It comes back when you open it or an agent edits it.`,
   restore: (n) => `Restored “${n}”.`,
-  scratch: (n) => `Moved “${n}” to Scratch.`,
-  recent: (n) => `Moved “${n}” to Recent.`,
 };
 
 /** The chip for designs outside any git checkout. */
@@ -314,9 +298,9 @@ function Views({
   onView: (view: View) => void;
 }) {
   return (
-    <div className="flex items-baseline gap-4 text-[13px]" role="tablist">
+    <div className="flex items-center gap-[18px] text-[13px]" role="tablist">
       {VIEWS.map((v) =>
-        // Scratch and Archived show once there's something in them, or while they're open.
+        // Archived shows once there's something in it, or while it's open.
         v.id === "recent" || counts[v.id] || view === v.id ? (
           <button
             key={v.id}
@@ -325,12 +309,19 @@ function Views({
             aria-selected={view === v.id}
             onClick={() => onView(v.id)}
             className={cn(
-              "flex items-baseline gap-[5px]",
+              "group flex items-center gap-1.5",
               view === v.id
                 ? "font-medium text-foreground"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
+            <Icon
+              name={v.icon}
+              size={14}
+              className={
+                view === v.id ? "text-foreground" : "text-faint group-hover:text-muted-foreground"
+              }
+            />
             {v.label}
             <span className="font-normal text-[11px] text-faint tabular-nums">{counts[v.id]}</span>
           </button>
@@ -393,7 +384,7 @@ function Projects({
           className="flex h-7 items-center gap-1.5 whitespace-nowrap rounded-[7px] pr-2 pl-2.5 font-medium text-[13px] text-foreground outline-none hover:bg-accent focus-visible:shadow-[0_0_0_2px_var(--ring)] data-[state=open]:bg-accent"
         >
           <Icon
-            name={on?.id === NO_PROJECT ? "folder" : "branch"}
+            name={!on ? "folders" : on.id === NO_PROJECT ? "loose" : "folder"}
             size={14}
             strokeWidth={1.6}
             className="text-muted-foreground"
@@ -406,7 +397,12 @@ function Projects({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-56">
-        <ProjectItem on={scope === null} onSelect={() => onScope(null)} count={total}>
+        <ProjectItem
+          on={scope === null}
+          onSelect={() => onScope(null)}
+          count={total}
+          icon="folders"
+        >
           All projects
         </ProjectItem>
         <DropdownMenuSeparator />
@@ -416,7 +412,7 @@ function Projects({
             on={scope === p.id}
             onSelect={() => onScope(p.id)}
             count={p.count}
-            icon={p.id === NO_PROJECT ? "folder" : "branch"}
+            icon={p.id === NO_PROJECT ? "loose" : "folder"}
             title={p.id || undefined}
           >
             {p.name}
@@ -488,17 +484,6 @@ function Loading() {
           </div>
         ))}
       </Grid>
-    </div>
-  );
-}
-
-function ViewNote({ view }: { view: "scratch" | "archived" }) {
-  return (
-    <div className="flex items-center gap-2.5 rounded-[10px] bg-secondary px-3.5 py-2.5 text-[12.5px] text-muted-foreground">
-      <Icon name={view === "scratch" ? "scratch" : "archive"} size={16} className="text-faint" />
-      {view === "scratch"
-        ? "Files agents made for their own use, like experiments and test fixtures. They stay out of Recent unless you move one there."
-        : "Archived designs come back to Recent when you open one or an agent edits it. Designs whose folder is gone, like a deleted worktree’s, drop off by themselves."}
     </div>
   );
 }
@@ -796,7 +781,7 @@ function FileCard({
   const { file, copies } = card;
   const fresh = file.created !== undefined && Date.now() - file.created < 5 * 60_000;
   const working = Boolean(file.busy) || fresh;
-  const archived = file.shelf === "archived";
+  const archived = viewOf(file) === "archived";
   const open = () => onOpen({ key: file.key, base: file.base });
   // Right-clicked: the same menu at the pointer, and no "…" beside it.
   const [context, setContext] = useState(false);
@@ -865,7 +850,9 @@ function FileCard({
             )}
           </span>
         </span>
-        {pathMatch ? (
+        {archived && !pathMatch ? (
+          <ArchivedFor file={file} />
+        ) : pathMatch ? (
           <span className="truncate font-mono text-[11px] text-muted-foreground" dir="rtl">
             {/* Right to left, so a long path keeps its end; the marks stay on their letters. */}
             <bdi>
@@ -916,6 +903,37 @@ function FileCard({
       </ContextMenuContent>
     </ContextMenu>
   );
+}
+
+/** Why an archived card is archived, in the line its folder takes in Recent. */
+function ArchivedFor({ file }: { file: CatalogFile }) {
+  const [icon, text] =
+    file.archivedFor === "idle"
+      ? ["clock", `Not opened since ${since(file.active ?? file.modified)}`]
+      : file.archivedFor === "scratch" || file.shelf === "scratch"
+        ? ["bot", "Made by an agent"]
+        : file.archivedFor === "temp"
+          ? ["bot", "In a temporary folder"]
+          : ["shelved", "You archived it"];
+  return (
+    <span
+      className="flex min-w-0 items-center gap-[5px] text-muted-foreground text-xs"
+      title={file.archived ? `Archived ${new Date(file.archived).toLocaleString()}` : undefined}
+    >
+      <Icon name={icon} size={13} strokeWidth={1.7} className="shrink-0 text-faint" />
+      <span className="truncate">{text}</span>
+    </span>
+  );
+}
+
+/** "Oct 9", or "Oct 9, 2025" from another year. */
+function since(ms: number): string {
+  const d = new Date(ms);
+  return d.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    ...(d.getFullYear() === new Date().getFullYear() ? {} : { year: "numeric" }),
+  });
 }
 
 /** Where a card's copies are, all of them, with none picked out: "9 branches". */
@@ -1048,7 +1066,6 @@ function CardMenuItems({
   const { file, copies } = card;
   const desktop = window.ponzuDesktop;
   const here = file.machine === "local";
-  const shelf = file.shelf ?? "recent";
   return (
     <>
       <Item onSelect={() => onOpen({ key: file.key, base: file.base })}>
@@ -1085,22 +1102,16 @@ function CardMenuItems({
         Copy path
       </Item>
       <Separator />
-      {shelf === "archived" ? (
+      {viewOf(file) === "archived" ? (
         <Item onSelect={() => void onShelve(card, "restore")}>
           <Icon name="unarchive" size={15} />
           Restore
         </Item>
       ) : (
-        <>
-          <Item onSelect={() => void onShelve(card, shelf === "scratch" ? "recent" : "scratch")}>
-            <Icon name={shelf === "scratch" ? "check" : "scratch"} size={15} />
-            {shelf === "scratch" ? "Move to Recent" : "Move to Scratch"}
-          </Item>
-          <Item onSelect={() => void onShelve(card, "archive")}>
-            <Icon name="archive" size={15} />
-            Archive
-          </Item>
-        </>
+        <Item onSelect={() => void onShelve(card, "archive")}>
+          <Icon name="shelved" size={15} />
+          Archive
+        </Item>
       )}
     </>
   );

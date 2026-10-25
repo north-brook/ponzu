@@ -45,7 +45,10 @@ const MIGRATIONS = [
 /** How a design came to be known. */
 export type FoundBy = "spotlight" | "walk" | "opened" | "created";
 
-/** The person's override of where a design is listed. */
+/**
+ * The person's override of where a design is listed: "recent" keeps a scratch
+ * or /tmp design in Recent; "scratch", from older versions, put it away.
+ */
 export type Shelf = "recent" | "scratch";
 
 export interface DesignRow {
