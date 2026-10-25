@@ -1,4 +1,4 @@
-import type { Catalog, CatalogMessage } from "@ponzu/core";
+import { type Catalog, type CatalogMessage, shelfRequest } from "@ponzu/core";
 import { useMutation, useQueries } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import { type MacCatalog, mergeCatalogs, type PhoneFile } from "./files";
@@ -173,12 +173,12 @@ export function useFile(mac: string, key: string): PhoneFile | undefined {
 /** Archive or restore a design, on its Mac. */
 export function useShelve() {
   return useMutation(
-    shelfMutation(queryClient, async ({ mac, key, action }: ShelfChange) => {
+    shelfMutation(queryClient, async ({ mac, key, action, shelf }: ShelfChange) => {
       const m = findMac(mac);
       if (!m) throw new Error("This Mac isn't paired anymore.");
       await request(`${baseUrl(m)}/api/shelf`, {
         method: "POST",
-        body: { key, action },
+        body: { key, action: shelfRequest({ shelf }, action) },
         timeout: 6_000,
       });
     }),

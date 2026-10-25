@@ -92,6 +92,18 @@ export function viewOf(file: Pick<CatalogFile, "shelf">): "recent" | "archived" 
   return file.shelf && file.shelf !== "recent" ? "archived" : "recent";
 }
 
+/**
+ * What to send `/api/shelf` to archive or restore a design. An older Mac's
+ * restore leaves a scratch design on Scratch; its "recent" is what brings one
+ * to Recent, and this version takes "recent" as a restore too.
+ */
+export function shelfRequest(
+  file: Pick<CatalogFile, "shelf">,
+  action: "archive" | "restore",
+): "archive" | "restore" | "recent" {
+  return action === "restore" && file.shelf === "scratch" ? "recent" : action;
+}
+
 export interface CatalogGit {
   /** The checkout's top folder (a worktree's own, for a worktree). */
   root: string;

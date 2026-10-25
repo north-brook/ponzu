@@ -5,6 +5,7 @@ import {
   type Doc,
   findArtboard,
   type Presence,
+  shelfRequest,
 } from "@ponzu/core";
 import {
   type AgentActivity,
@@ -166,7 +167,7 @@ export function Studio() {
     const res = await fetch(`${ORIGIN}${file.base}/api/shelf`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ key: file.key, action }),
+      body: JSON.stringify({ key: file.key, action: shelfRequest(file, action) }),
     });
     if (!res.ok)
       throw new Error(

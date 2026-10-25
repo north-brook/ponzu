@@ -106,7 +106,7 @@ export default function Designs() {
         if (choice.action === "archive") thud();
         else select();
         shelve.mutate(
-          { mac: f.mac, key: f.key, action: choice.action },
+          { mac: f.mac, key: f.key, action: choice.action, shelf: f.shelf },
           {
             onError: () => {
               fail();

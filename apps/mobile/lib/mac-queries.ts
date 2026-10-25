@@ -98,6 +98,8 @@ export interface ShelfChange {
   mac: string;
   key: string;
   action: ShelfAction;
+  /** The shelf it's on now: an older Mac's Scratch restores with "recent" (shelfRequest). */
+  shelf?: CatalogShelf;
 }
 
 /**
