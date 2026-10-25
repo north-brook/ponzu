@@ -53,17 +53,35 @@ export function Device({ machine }: { machine?: CatalogMachine }) {
 }
 
 /**
- * Where a design lives, in one quiet line: the branch it's on, or for a design
- * outside git, the folder it's in. The full path is its tooltip.
+ * Where a design lives, in one quiet line: the project and the branch it's on, or for a design
+ * outside git, the folder it's in. Which Mac it's on matters less, so it's left to the details.
+ * The full path is its tooltip.
  */
-export function WhereLine({ file, className }: { file: CatalogFile; className?: string }) {
+export function WhereLine({
+  file,
+  className,
+  project = true,
+}: {
+  file: CatalogFile;
+  className?: string;
+  /** Show the project: off when the list is already filtered to it. */
+  project?: boolean;
+}) {
   const branch = branchOf(file);
+  const repo = project ? projectOf(file) : null;
   const label = branch ?? tilde(folderOf(file));
   return (
     <span
       className={cn("flex min-w-0 items-center gap-[5px] text-muted-foreground text-xs", className)}
       title={tilde(file.key)}
     >
+      {repo && (
+        <>
+          <Icon name="repo" size={13} strokeWidth={1.7} className="shrink-0 text-faint" />
+          <span className="min-w-0 shrink-0 truncate">{repo.name}</span>
+          <span className="text-faint">·</span>
+        </>
+      )}
       <Icon
         name={branch ? "branch" : "folder"}
         size={13}

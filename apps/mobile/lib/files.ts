@@ -92,13 +92,22 @@ export function projects(files: PhoneFile[]): Project[] {
     );
 }
 
-/** The line under a card's name: branch (or folder) and Mac. */
-export function whereLine(f: PhoneFile): { branch: string | null; folder: string } {
-  const branch = f.git?.branch ?? f.git?.commit ?? null;
+/**
+ * The line under a card's name: the project and the branch it's on, or for a design outside git,
+ * the folder it's in. Which Mac it's on matters less; the design's details say.
+ */
+export function whereLine(f: PhoneFile): {
+  project: string | null;
+  branch: string | null;
+  folder: string;
+} {
+  const g = f.git;
+  const project = g ? (g.projectName ?? (g.project ?? g.root).split("/").pop() ?? null) : null;
+  const branch = g?.branch ?? g?.commit ?? null;
   const parts = f.key.split("/").filter(Boolean);
   // The folder a design lives in, without .design: "examples" for examples/kettle.design.
   const folder = parts.length > 1 ? parts[parts.length - 2]! : f.name;
-  return { branch, folder };
+  return { project, branch, folder };
 }
 
 /** "now", "4m", "2h", "1d", or "Oct 14" for anything older than a week. */

@@ -59,9 +59,20 @@ test("project chips: biggest first, then the designs in no project", () => {
   ]);
 });
 
-test("a card's line: the branch, or the folder outside git", () => {
-  expect(whereLine(file({ git: { root: "/r", branch: "main" } }) as PhoneFile).branch).toBe("main");
+test("a card's line: the project and branch, or the folder outside git", () => {
+  expect(
+    whereLine(
+      file({
+        git: { root: "/w/t3", branch: "fix/x", project: "north-brook/ponzu", projectName: "ponzu" },
+      }) as PhoneFile,
+    ),
+  ).toMatchObject({ project: "ponzu", branch: "fix/x" });
+  // A repository with no remote is named by its folder.
+  expect(
+    whereLine(file({ git: { root: "/Users/b/git/seekle", branch: "main" } }) as PhoneFile),
+  ).toMatchObject({ project: "seekle", branch: "main" });
   expect(whereLine(file({ key: "/Users/b/examples/kettle.design" }) as PhoneFile)).toEqual({
+    project: null,
     branch: null,
     folder: "examples",
   });

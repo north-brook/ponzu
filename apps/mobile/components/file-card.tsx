@@ -3,7 +3,7 @@ import { type PhoneFile, shortAgo, whereLine } from "../lib/files";
 import type { Run } from "../lib/search";
 import { useScheme, useTheme } from "../lib/theme";
 import { brand } from "../lib/tokens";
-import { AgentMark, Branch, Folder, MacIcon } from "./icons";
+import { AgentMark, Branch, Folder, Repo } from "./icons";
 import { MacImage } from "./preview";
 import { Shimmer } from "./shimmer";
 import { Trace } from "./trace";
@@ -33,7 +33,7 @@ export function Marked({ runs, color }: { runs: Run[]; color: string }) {
 /**
  * A design's card, as desktop's home screen draws it: the preview at 16:11,
  * the name with its time (or the working agent's mark, the name shimmering),
- * and the branch (or folder) and Mac it's on. The yuzu trace runs round it
+ * and the project and branch (or the folder) it's on. The yuzu trace runs round it
  * while an agent works in it; the yuzu dot marks changes since you looked.
  */
 export function FileCard({
@@ -41,6 +41,7 @@ export function FileCard({
   width,
   unseen,
   name,
+  project: showProject = true,
   onPress,
   onLongPress,
 }: {
@@ -49,6 +50,8 @@ export function FileCard({
   unseen: boolean;
   /** The name with search matches marked. */
   name?: Run[];
+  /** Show the project: off when Designs is already filtered to one. */
+  project?: boolean;
   onPress: () => void;
   /** Its actions: the shelf it's on. */
   onLongPress?: () => void;
@@ -57,7 +60,8 @@ export function FileCard({
   const markColor = useMarkColor();
   const working = file.agents?.find((a) => a.activity === "working") ?? null;
   const agent = working ?? file.agents?.[0] ?? null;
-  const { branch, folder } = whereLine(file);
+  const where = whereLine(file);
+  const project = showProject ? where.project : null;
   const height = Math.round((width * 11) / 16);
   const dim = file.stale;
   return (
@@ -159,18 +163,22 @@ export function FileCard({
           )}
         </View>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-          {branch ? (
+          {project && (
+            <>
+              <Repo size={13} color={color.faint} />
+              <Text numberOfLines={1} style={[meta(color.muted), { flexShrink: 1, minWidth: 24 }]}>
+                {project}
+              </Text>
+              <Text style={meta(color.faint)}>·</Text>
+            </>
+          )}
+          {where.branch ? (
             <Branch size={13} color={color.faint} />
           ) : (
             <Folder size={13} color={color.faint} />
           )}
-          <Text numberOfLines={1} style={[meta(color.muted), { flexShrink: 1, minWidth: 24 }]}>
-            {branch ?? folder}
-          </Text>
-          <Text style={meta(color.faint)}>·</Text>
-          <MacIcon kind={file.macKind} size={13} color={color.faint} />
-          <Text numberOfLines={1} style={[meta(color.muted), { flexShrink: 2 }]}>
-            {file.macName}
+          <Text numberOfLines={1} style={[meta(color.muted), { flexShrink: 2, minWidth: 24 }]}>
+            {where.branch ?? where.folder}
           </Text>
         </View>
       </View>
