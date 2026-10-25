@@ -5,12 +5,14 @@ import {
   isThemed,
   locate,
   newId,
+  serializeArtboardElement,
   type Thread,
   threadPage,
 } from "@ponzu/core";
 import {
   type CSSProperties,
   Fragment,
+  memo,
   type ReactNode,
   useCallback,
   useEffect,
@@ -20,19 +22,28 @@ import {
   useState,
 } from "react";
 import { ArtboardView } from "./Artboard.tsx";
-import { Arrivals, arriveBoard, drawFrame, RING_OUT_MS, ringDelay } from "./arrive.ts";
+import { Arrivals, arriveBoard, arriveName, drawFrame, RING_OUT_MS, ringDelay } from "./arrive.ts";
 import { Composer, ThreadCard, threadCard } from "./Comments.tsx";
+import { boardCost, coldLive, coldSkeleton, placeholderFill } from "./coldopen.ts";
 import { type CanvasSource, viewOnly } from "./connection.ts";
 import { Icon, Icons } from "./icons.tsx";
+import { centreDistance, detailScale, onScreen, visibleBand } from "./lod.ts";
+import { playing } from "./loops.tsx";
+import { Pacer } from "./pacer.tsx";
+import { TieredBoard, thawed, versionOf } from "./snapshot.tsx";
 import { useWindowStill } from "./still.ts";
 import { Button, cn, ShortcutHint, Tip, TipProvider, ToggleGroup } from "./ui.tsx";
 import {
+  type CameraStore,
   isTyping,
-  useCamera,
+  PLANE,
+  useCameraLayers,
+  useCameraStore,
+  useCameraView,
   useKeyHeld,
   useModifierHint,
-  useMoving,
   useSource,
+  useZoomPercent,
 } from "./useCanvas.ts";
 import { Juice, Rain, useDelayed } from "./working.tsx";
 
@@ -78,6 +89,20 @@ interface Pending {
   /** Offset inside the artboard in artboard px, or the page position without one. */
   x: number;
   y: number;
+}
+
+/**
+ * Whether a board follows the theme. isThemed stringifies the whole board,
+ * which on a 2 MB board costs more than a frame: once per board object (an
+ * edit makes a new one) and tokens.
+ */
+const themedCache = new WeakMap<Artboard, { tokens: string; themed: boolean }>();
+function themed(tokens: string, ab: Artboard): boolean {
+  const hit = themedCache.get(ab);
+  if (hit && hit.tokens === tokens) return hit.themed;
+  const t = isThemed(tokens, ab.root);
+  themedCache.set(ab, { tokens, themed: t });
+  return t;
 }
 
 /** "first" framing: px either side of the board, and above it, under its label. */
@@ -181,10 +206,12 @@ export function Canvas({
   const [mode, setMode] = useState<Mode>("select");
   const space = useKeyHeld("Space");
   const panning = mode === "hand" || space;
-  const { camera, setCamera, zoomAt, panBy, fit } = useCamera();
-  const moving = useMoving(camera);
+  const { camera, zoomAt, panBy, fit } = useCameraStore();
   const still = useWindowStill();
   const viewport = useRef<HTMLDivElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
+  const layer = useRef<HTMLDivElement>(null);
+  const overlay = useRef<HTMLDivElement>(null);
   const [measured, setMeasured] = useState<Record<string, number>>({});
   const [pending, setPending] = useState<Pending | null>(null);
   const [openThread, setOpenThread] = useState<string | null>(null);
@@ -222,20 +249,41 @@ export function Canvas({
   // brings in just the pieces it added. One per source: what's arriving in one document never
   // arrives in another.
   const arrivals = useMemo(() => new Arrivals(), [source]);
-  useEffect(
-    () =>
-      source.onOp?.((op, origin, next) => {
-        // Listeners hear an op before the state takes it: the doc there is the one before.
-        if (origin.kind === "agent" || origin.kind === "disk")
-          arrivals.add(op, next, undefined, source.getState().doc);
-      }),
-    [source, arrivals],
-  );
+  // A board with pieces arriving is live for them (see `attention`): once they've landed, it
+  // may go back to its picture.
+  const [, settled] = useState(0);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const off = source.onOp?.((op, origin, next) => {
+      // Listeners hear an op before the state takes it: the doc there is the one before.
+      if (origin.kind !== "agent" && origin.kind !== "disk") return;
+      arrivals.add(op, next, undefined, source.getState().doc);
+      clearTimeout(timer);
+      timer = setTimeout(() => settled((n) => n + 1), arrivals.until());
+    });
+    return () => {
+      off?.();
+      clearTimeout(timer);
+    };
+  }, [source, arrivals]);
   // A board stays ringed a moment after its agent leaves, so the ring can fade.
   const ringed = useLingering(working, RING_OUT_MS);
 
   const boards = page?.artboards ?? [];
+  // On a cold open, boards cheap enough to show live while their picture is made, and
+  // boards that show as a skeleton meanwhile (see coldopen.ts).
+  const cold = useMemo(() => coldLive(boards), [boards]);
+  const skeletons = useMemo(() => coldSkeleton(boards), [boards]);
   const boardHeight = (ab: Artboard) => size(ab).h ?? measured[ab.id] ?? 900;
+
+  // Resolved threads leave the board.
+  const pageThreads = useMemo(
+    () =>
+      doc && page
+        ? doc.threads.filter((t) => t.status === "open" && threadPage(doc, t)?.id === page.id)
+        : [],
+    [doc, page],
+  );
 
   const bounds = useMemo(() => {
     if (!boards.length) return null;
@@ -254,8 +302,8 @@ export function Canvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boards, measured]);
 
-  /** Every board's box, for labels to keep off one another. */
-  const boxes = useMemo(
+  /** Every board's box, in page px: for labels to keep off one another, and the selection box. */
+  const boardBoxes = useMemo(
     () => boards.map((ab) => ({ id: ab.id, x: ab.x, y: ab.y, w: size(ab).w, h: boardHeight(ab) })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [boards, measured],
@@ -277,13 +325,16 @@ export function Canvas({
     const v = viewportSize();
     const zoom = Math.min(1, (v.w - FIRST_SIDE * 2) / size(first).w);
     if (!(zoom > 0)) return;
-    setCamera({
-      zoom,
-      x: (v.w - size(first).w * zoom) / 2 - first.x * zoom,
-      y: FIRST_TOP - first.y * zoom,
-    });
+    camera.set(
+      {
+        zoom,
+        x: (v.w - size(first).w * zoom) / 2 - first.x * zoom,
+        y: FIRST_TOP - first.y * zoom,
+      },
+      true,
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [boards, setCamera]);
+  }, [boards, camera]);
 
   // Fit when a page first shows, before it paints: after, its first frame is at the old page's
   // camera. A change of framing (a window crossing a host's breakpoint) frames it again.
@@ -328,36 +379,76 @@ export function Canvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.focus?.at]);
 
-  // Measure artboards with fit-content height, before paint like the fit.
-  useLayoutEffect(() => {
+  // Measure artboards with fit-content height when the boards change, and
+  // whenever one resizes on its own (a font or image arriving). Not on every
+  // render: reading offsetHeight forces a layout that playing videos have
+  // dirtied, every frame.
+  useEffect(() => {
     const el = viewport.current;
     if (!el) return;
-    const next: Record<string, number> = {};
+    const roots = new Map<string, ShadowRoot>();
     for (const ab of boards) {
       if (size(ab).h !== null) continue;
       const host = el.querySelector(`[data-artboard-host="${ab.id}"]`) as HTMLElement | null;
-      const inner = host?.shadowRoot?.querySelector("[data-artboard]") as HTMLElement | null;
-      if (inner) next[ab.id] = inner.offsetHeight;
+      if (host?.shadowRoot) roots.set(ab.id, host.shadowRoot);
     }
-    if (Object.keys(next).some((k) => next[k] !== measured[k]))
-      setMeasured((m) => ({ ...m, ...next }));
-  });
+    if (!roots.size) return;
+    // A board's content is replaced whole (an edit, a theme): its section is found
+    // again each time, and watched once it's new.
+    const watched = new Map<string, Element>();
+    const ro = new ResizeObserver(() => measure());
+    const measure = () => {
+      const next: Record<string, number> = {};
+      for (const [id, root] of roots) {
+        const inner = root.querySelector("[data-artboard]") as HTMLElement | null;
+        if (!inner) continue;
+        if (watched.get(id) !== inner) {
+          const old = watched.get(id);
+          if (old) ro.unobserve(old);
+          ro.observe(inner);
+          watched.set(id, inner);
+        }
+        next[id] = inner.offsetHeight;
+      }
+      setMeasured((m) => (Object.keys(next).some((k) => next[k] !== m[k]) ? { ...m, ...next } : m));
+    };
+    measure();
+    // A board drawn as a picture skips layout (content-visibility: hidden), so
+    // no resize is observed when its images or fonts arrive: it would keep the
+    // height it had at mount, its picture squashed into it, and jump when it
+    // goes live. Measure again when they arrive, or its content is replaced;
+    // layout still answers.
+    let frame = 0;
+    const again = () => {
+      if (!frame)
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          measure();
+        });
+    };
+    const replaced = new MutationObserver(again);
+    for (const r of roots.values()) {
+      r.addEventListener("load", again, true);
+      r.addEventListener("error", again, true);
+      replaced.observe(r, { childList: true });
+    }
+    document.fonts?.addEventListener("loadingdone", again);
+    return () => {
+      ro.disconnect();
+      replaced.disconnect();
+      cancelAnimationFrame(frame);
+      for (const r of roots.values()) {
+        r.removeEventListener("load", again, true);
+        r.removeEventListener("error", again, true);
+      }
+      document.fonts?.removeEventListener("loadingdone", again);
+    };
+    // Content is replaced per artboard object and tokens; new boards mean new hosts.
+  }, [boards, doc?.tokens]);
 
   // Wheel: pan; pinch or modifier: zoom. The viewport only mounts once the doc
   // arrives, so attach again then.
   const mounted = !!(doc && page);
-
-  // The viewport's size, so a board a bigger window brings into view starts moving.
-  const [view, setView] = useState({ w: 1200, h: 800 });
-  useEffect(() => {
-    const el = viewport.current;
-    if (!mounted || !el) return;
-    const measure = () => setView({ w: el.clientWidth, h: el.clientHeight });
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [mounted]);
   useEffect(() => {
     if (!mounted) return;
     const el = viewport.current;
@@ -370,10 +461,16 @@ export function Canvas({
         return;
       }
       // An open thread scrolls its own messages; the canvas stays put under it.
-      if (e.composedPath().some((n) => n instanceof Element && n.hasAttribute("data-comment-open")))
+      const path = e.composedPath();
+      const card = path.findIndex(
+        (n) => n instanceof Element && n.hasAttribute("data-comment-open"),
+      );
+      // The canvas is a scroller too, so a wheel that nothing in the card can
+      // take would chain to it and pan: stop it.
+      if (card >= 0 && path.slice(0, card).some((n) => n instanceof HTMLElement && canScroll(n, e)))
         return;
       e.preventDefault();
-      panBy(-e.deltaX, -e.deltaY);
+      if (card < 0) panBy(-e.deltaX, -e.deltaY);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
@@ -487,9 +584,10 @@ export function Canvas({
 
   const toWorld = (clientX: number, clientY: number) => {
     const r = viewport.current!.getBoundingClientRect();
+    const cam = camera.get();
     return {
-      x: (clientX - r.left - camera.x) / camera.zoom,
-      y: (clientY - r.top - camera.y) / camera.zoom,
+      x: (clientX - r.left - cam.x) / cam.zoom,
+      y: (clientY - r.top - cam.y) / cam.zoom,
     };
   };
 
@@ -508,7 +606,9 @@ export function Canvas({
     const host = viewport.current!.querySelector(
       `[data-artboard-host="${ab.id}"]`,
     ) as HTMLElement | null;
-    const els = host?.shadowRoot?.elementsFromPoint(e.clientX, e.clientY) ?? [];
+    const els = thawed(host?.parentElement, () =>
+      host?.shadowRoot ? host.shadowRoot.elementsFromPoint(e.clientX, e.clientY) : [],
+    );
     const el = els.find((x) => x.hasAttribute("data-id") && !x.hasAttribute("data-artboard"));
     return { artboard: ab, nodeId: el?.getAttribute("data-id") ?? undefined };
   };
@@ -627,16 +727,37 @@ export function Canvas({
     if (!d.anchor || !d.pointer) return;
     const b = toWorld(d.pointer.x, d.pointer.y);
     setMarquee({ a: d.anchor, b });
-    const inside = boardsIn(d.anchor, b, boxes);
+    // Board boxes from layout, not the DOM: a board drawn as a picture is selected the same.
+    const inside = boardsIn(d.anchor, b, boardBoxes);
     setSelection([...d.ids, ...inside.filter((id) => !d.ids.includes(id))]);
   };
 
   // Scrolling mid-box moves the page under a pointer that stayed put; the box's corner follows it.
-  useEffect(() => {
-    const d = drag.current;
-    if (d?.kind === "marquee" && d.moved) boxTo(d);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [camera]);
+  const boxToRef = useRef(boxTo);
+  boxToRef.current = boxTo;
+  useEffect(
+    () =>
+      camera.subscribe(() => {
+        const d = drag.current;
+        if (d?.kind === "marquee" && d.moved) boxToRef.current(d);
+      }),
+    [camera],
+  );
+
+  // Titles are memoized; their handlers stay the same object and call the latest closures.
+  const rename = (id: string | null) => {
+    if (!readOnly || id === null) setRenaming(id);
+  };
+  const titleHandlers = useRef({ startMove, setRenaming: rename, apply: source.apply });
+  titleHandlers.current = { startMove, setRenaming: rename, apply: (op) => source.apply(op) };
+  const titleEvents = useMemo<TitleEvents>(
+    () => ({
+      down: (e, ab) => titleHandlers.current.startMove(e, ab),
+      rename: (id) => titleHandlers.current.setRenaming(id),
+      apply: (op) => titleHandlers.current.apply(op),
+    }),
+    [],
+  );
 
   const onPointerMove = (e: React.PointerEvent) => {
     const d = drag.current;
@@ -651,7 +772,8 @@ export function Canvas({
       d.pointer = { x: e.clientX, y: e.clientY };
       boxTo(d);
     } else if (d.moved) {
-      setGhost({ dx: dx / camera.zoom, dy: dy / camera.zoom });
+      const { zoom } = camera.get();
+      setGhost({ dx: dx / zoom, dy: dy / zoom });
     }
   };
 
@@ -696,7 +818,7 @@ export function Canvas({
     startX: number;
     startY: number;
     moved: boolean;
-    /** Pointer position in the viewport, and what it's over. */
+    /** Pointer position on the page, and what it's over. */
     x: number;
     y: number;
     target?: string;
@@ -707,14 +829,12 @@ export function Canvas({
     if (panning || e.button !== 0) return;
     e.stopPropagation();
     (e.target as Element).setPointerCapture?.(e.pointerId);
-    const r = viewport.current!.getBoundingClientRect();
     setPinDrag({
       id: t.id,
       startX: e.clientX,
       startY: e.clientY,
       moved: false,
-      x: e.clientX - r.left,
-      y: e.clientY - r.top,
+      ...toWorld(e.clientX, e.clientY),
     });
   };
 
@@ -725,13 +845,11 @@ export function Canvas({
       pinDrag.moved ||
       Math.abs(e.clientX - pinDrag.startX) + Math.abs(e.clientY - pinDrag.startY) > 3;
     if (!moved) return;
-    const r = viewport.current!.getBoundingClientRect();
     const hit = hitTest(e);
     setPinDrag({
       ...pinDrag,
       moved,
-      x: e.clientX - r.left,
-      y: e.clientY - r.top,
+      ...toWorld(e.clientX, e.clientY),
       target: hit ? (hit.nodeId ?? hit.artboard.id) : undefined,
     });
   };
@@ -770,6 +888,71 @@ export function Canvas({
     );
   };
 
+  // Boxes of the nodes that pins and outlines sit on, in artboard px. Measured
+  // when what they depend on changes and when the camera settles, never per
+  // frame: measuring forces style and layout across every board.
+  const [boxes, setBoxes] = useState<Record<string, NodeBox>>({});
+  const measureBoxes = useRef(() => {});
+  measureBoxes.current = () => {
+    const vp = viewport.current;
+    if (!vp) return;
+    const next: Record<string, NodeBox> = {};
+    const want = (id: string, ab?: Artboard) => {
+      if (next[id] || boards.some((b) => b.id === id)) return;
+      for (const b of ab ? [ab] : boards) {
+        const box = nodeBox(vp, b, id);
+        if (box) {
+          next[id] = { ...box, artboardId: b.id };
+          return;
+        }
+      }
+    };
+    for (const id of selection) want(id);
+    if (pinDrag?.moved && pinDrag.target) want(pinDrag.target);
+    for (const t of pageThreads) {
+      const ab = boards.find((b) => b.id === t.artboardId);
+      if (ab && t.nodeId) want(t.nodeId, ab);
+    }
+    setBoxes((prev) => (sameBoxes(prev, next) ? prev : next));
+  };
+  const pinTarget = pinDrag?.moved ? pinDrag.target : undefined;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- what the boxes depend on
+  useLayoutEffect(() => measureBoxes.current(), [doc, page, selection, measured, pinTarget]);
+
+  // The camera moves the layers directly, once a frame, without rendering.
+  useCameraLayers(camera, scroller, layer, overlay, mounted, () => measureBoxes.current());
+
+  // What the boards' tiers and detail go by changes in steps (a quarter octave of zoom, a
+  // board coming on or off screen, a tall board's band, a gesture starting or stopping):
+  // the canvas renders only then, and each board only when its own inputs change.
+  const dpr = typeof window === "undefined" ? 1 : window.devicePixelRatio || 1;
+  // Boards go live nearest the middle of the view first. Asked only when one
+  // queues to, so it reads the camera then; stable, so boards don't re-render.
+  const rankRef = useRef<(id: string) => number>(() => 0);
+  rankRef.current = (id: string) => {
+    const ab = boards.find((b) => b.id === id);
+    if (!ab) return 0;
+    return centreDistance(
+      { x: ab.x, y: ab.y, w: size(ab).w, h: boardHeight(ab) },
+      camera.get(),
+      viewportSize(),
+    );
+  };
+  const rankOf = useCallback((id: string) => rankRef.current(id), []);
+  const view = useCameraView(camera, (c) => {
+    const vp = viewportSize();
+    let k = String(detailScale(c.zoom, dpr));
+    for (const ab of boards) {
+      const r = { x: ab.x, y: ab.y, w: size(ab).w, h: boardHeight(ab) };
+      const band = visibleBand(r, c, vp);
+      k += onScreen(r, c, vp) ? `+${band ? `${band.y0}:${band.y1}` : ""}` : "-";
+    }
+    return k;
+  });
+  // Videos over pictures hold their frame while the camera moves, and while nobody can be
+  // watching the window, as boards' own loops do.
+  useEffect(() => playing.hold(view.moving || still), [view.moving, still]);
+
   if (!doc || !page) {
     const offline = state.status === "offline";
     const name = state.path
@@ -796,18 +979,16 @@ export function Canvas({
     );
   }
 
-  // Resolved threads leave the board.
-  const pageThreads = doc.threads.filter(
-    (t) => t.status === "open" && threadPage(doc, t)?.id === page.id,
-  );
-  const zoomPct = Math.round(camera.zoom * 100);
   const ghostFor = (id: string) => (ghost && drag.current?.ids.includes(id) ? ghost : null);
-  const rectsFor = (ids: string[]) =>
-    selectionRects(ids, boards, boardHeight, ghostFor, viewport.current, camera);
+  const rectsFor = (ids: string[]) => selectionRects(ids, boards, boardHeight, ghostFor, boxes);
   const selectedRects = rectsFor(selection);
+  const vpSize = viewportSize();
+  const scale = detailScale(view.zoom, dpr);
+  const arriving = arrivals.boardsArriving(boards);
 
   return (
     <div className={cn("pz-root", `pz-${theme}`, still && "pz-still", className)}>
+      <Pacer />
       <div
         ref={viewport}
         className={cn(
@@ -824,221 +1005,212 @@ export function Canvas({
         onPointerCancel={onPointerUp}
         onDragOver={(e) => e.preventDefault()}
       >
+        {/*
+         * The scroll plane: the camera pans by scrolling it and zooms by
+         * scaling the layer, both written by useCameraLayers.
+         */}
         <div
-          className={cn(
-            "pz:absolute pz:top-0 pz:left-0 pz:origin-top-left",
-            // Only mid-gesture: left on, the boards stay a bitmap drawn at an old zoom.
-            moving && "pz:will-change-transform",
-          )}
-          style={{ transform: `translate(${camera.x}px, ${camera.y}px) scale(${camera.zoom})` }}
+          ref={scroller}
+          className="pz:absolute pz:inset-0 pz:touch-none pz:overflow-scroll pz:overscroll-none pz:[overflow-anchor:none] pz:[scrollbar-width:none]"
+          // Not a tab stop: Chromium makes scrollers focusable, and Space would scroll it.
+          tabIndex={-1}
+          // A middle press pans the canvas, not the browser's autoscroll.
+          onMouseDown={(e) => e.button === 1 && e.preventDefault()}
         >
-          {boards.map((ab) => {
-            const { w, h } = size(ab);
-            const g = ghostFor(ab.id);
-            const x = ab.x + (g?.dx ?? 0);
-            const y = ab.y + (g?.dy ?? 0);
-            const who = working.get(ab.id);
-            // Kept while it's named, worked on, renamed or selected: those need it in view.
-            const hideLabel =
-              !who &&
-              renaming !== ab.id &&
-              !selection.includes(ab.id) &&
-              labelCovers({ id: ab.id, x, y, w }, boxes, camera.zoom);
-            return (
-              <div
-                key={ab.id}
-                ref={(el) => {
-                  const at = el ? arrivals.takeBoard(ab.id) : undefined;
-                  if (el && at !== undefined) arriveBoard(el, at);
-                }}
-                className="pz:absolute pz:shadow-board"
-                style={
-                  {
-                    left: x,
-                    top: y,
-                    width: w,
-                    height: h ?? undefined,
-                    // Slightly rounded, the same few px on screen at any zoom.
-                    borderRadius: BOARD_RADIUS / camera.zoom,
-                    "--pz-board-radius": `${BOARD_RADIUS / camera.zoom}px`,
-                  } as CSSProperties
-                }
-              >
-                <div
-                  className={cn(
-                    "pz:absolute pz:left-0 pz:flex pz:cursor-default pz:items-center pz:gap-[0.5em] pz:whitespace-nowrap pz:leading-[1.4]",
-                    // Zoomed out, the title would run into the next board; clip it to this one.
-                    renaming !== ab.id && "pz:max-w-full",
-                    // Spans the board so an agent's status can sit on the right.
-                    who && "pz:right-0",
-                    selection.includes(ab.id)
-                      ? "pz:text-select"
-                      : "pz:text-muted-foreground pz:hover:text-foreground",
-                  )}
-                  style={{
-                    fontSize: 12 / camera.zoom,
-                    top: -LABEL / camera.zoom,
-                    visibility: hideLabel ? "hidden" : undefined,
-                  }}
-                  onPointerDown={(e) => startMove(e, ab)}
-                  onDoubleClick={() => !readOnly && setRenaming(ab.id)}
-                >
-                  {renaming === ab.id ? (
-                    <input
-                      autoFocus
-                      className="pz:rounded-[3px] pz:bg-card pz:px-[0.3em] pz:outline-1 pz:outline-select"
-                      defaultValue={ab.name}
-                      style={{ fontSize: 12 / camera.zoom }}
-                      onPointerDown={(e) => e.stopPropagation()}
-                      onBlur={(e) => {
-                        const v = e.target.value.trim();
-                        if (v && v !== ab.name)
-                          source.apply({ op: "artboard.update", id: ab.id, name: v });
-                        setRenaming(null);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-                        if (e.key === "Escape") setRenaming(null);
-                      }}
-                    />
-                  ) : (
-                    <span data-board-name className="pz:min-w-0 pz:truncate" title={ab.name}>
-                      {ab.name}
-                    </span>
-                  )}
-                  {who && <WorkingStatus who={who} />}
-                </div>
-                <ArtboardView
+          <div aria-hidden style={{ width: PLANE, height: PLANE }} />
+          <div ref={layer} className="pz:absolute pz:top-0 pz:left-0 pz:origin-top-left">
+            {boards.map((ab) => {
+              const g = ghostFor(ab.id);
+              const r = { x: ab.x, y: ab.y, w: size(ab).w, h: boardHeight(ab) };
+              const band = visibleBand(r, view, vpSize);
+              return (
+                <Board
+                  key={ab.id}
                   artboard={ab}
+                  dx={g?.dx ?? 0}
+                  dy={g?.dy ?? 0}
+                  h={r.h}
                   tokens={doc.tokens}
-                  assetBase={source.assetBase}
-                  colorScheme={isThemed(doc.tokens, ab.root) ? theme : "light"}
+                  source={source}
+                  colorScheme={themed(doc.tokens, ab) ? theme : "light"}
+                  zoom={view.zoom * dpr}
+                  scale={scale}
+                  onScreen={onScreen(r, view, vpSize)}
+                  moving={view.moving}
+                  y0={band?.y0}
+                  y1={band?.y1}
+                  // Dragged, selected, renamed, worked on or an agent's work arriving: live,
+                  // wherever it is.
+                  attention={
+                    !!g ||
+                    selection.includes(ab.id) ||
+                    working.has(ab.id) ||
+                    renaming === ab.id ||
+                    arriving.has(ab.id)
+                  }
+                  cheap={cold.has(ab.id)}
+                  skeleton={skeletons.has(ab.id)}
+                  rankOf={rankOf}
                   arrivals={arrivals}
-                  rounded
-                  // Mid-gesture too: a loop under a blur redraws it every frame of a pan.
-                  hold={moving || outOfSight({ x, y, w, h: h ?? boardHeight(ab) }, camera, view)}
+                  // Slightly rounded, the same few px on screen at any zoom (to a quarter octave).
+                  radius={(BOARD_RADIUS * dpr) / scale}
+                  // Its loops hold mid-gesture too: a loop under a blur redraws it every frame
+                  // of a pan.
+                  hold={
+                    view.moving ||
+                    outOfSight({ ...r, x: r.x + (g?.dx ?? 0), y: r.y + (g?.dy ?? 0) }, view, vpSize)
+                  }
                 />
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
 
-        {/* Overlays in screen space so they stay crisp at any zoom. */}
-        <div className="pz:pointer-events-none pz:absolute pz:inset-0">
-          {boards.map((ab) => {
-            const drawn = arrivals.boardAt(ab.id);
-            const ring = ringed.get(ab.id);
-            if (drawn === undefined && ring === undefined) return null;
-            const g = ghostFor(ab.id);
-            const box = {
-              x: (ab.x + (g?.dx ?? 0)) * camera.zoom + camera.x,
-              y: (ab.y + (g?.dy ?? 0)) * camera.zoom + camera.y,
-              w: size(ab).w * camera.zoom,
-              h: boardHeight(ab) * camera.zoom,
-            };
-            return (
-              <Fragment key={ab.id}>
-                {ring !== undefined && <Ring {...box} leaving={ring} delay={ringDelay(drawn)} />}
-                {drawn !== undefined && <Frame {...box} at={drawn} />}
-              </Fragment>
-            );
-          })}
-          {pinDrag?.moved &&
-            pinDrag.target &&
-            rectsFor([pinDrag.target]).map((r) => (
+          {/*
+           * Overlays in screen space so they stay crisp at any zoom. The layer
+           * scrolls with the plane but never scales; each overlay sits at page
+           * coordinates times --z, so a pan restyles nothing.
+           */}
+          <div
+            ref={overlay}
+            className="pz:pointer-events-none pz:absolute pz:top-0 pz:left-0 pz:origin-top-left"
+          >
+            {boards.map((ab) => {
+              const g = ghostFor(ab.id);
+              return (
+                <BoardTitle
+                  key={ab.id}
+                  artboard={ab}
+                  dx={g?.dx ?? 0}
+                  dy={g?.dy ?? 0}
+                  who={working.get(ab.id)}
+                  selected={selection.includes(ab.id)}
+                  renaming={renaming === ab.id}
+                  covered={labelCovers(
+                    { id: ab.id, x: ab.x + (g?.dx ?? 0), y: ab.y + (g?.dy ?? 0), w: size(ab).w },
+                    boardBoxes,
+                    view.zoom,
+                  )}
+                  events={titleEvents}
+                  arrivedAt={arrivals.boardAt(ab.id)}
+                />
+              );
+            })}
+            {boards.map((ab) => {
+              const drawn = arrivals.boardAt(ab.id);
+              const ring = ringed.get(ab.id);
+              if (drawn === undefined && ring === undefined) return null;
+              const g = ghostFor(ab.id);
+              const box = {
+                x: ab.x + (g?.dx ?? 0),
+                y: ab.y + (g?.dy ?? 0),
+                w: size(ab).w,
+                h: boardHeight(ab),
+              };
+              return (
+                <Fragment key={ab.id}>
+                  {ring !== undefined && <Ring {...box} leaving={ring} delay={ringDelay(drawn)} />}
+                  {drawn !== undefined && <Frame {...box} at={drawn} />}
+                </Fragment>
+              );
+            })}
+            {pinDrag?.moved &&
+              pinDrag.target &&
+              rectsFor([pinDrag.target]).map((r) => (
+                <div
+                  key={r.id}
+                  className="pz:pointer-events-none pz:absolute pz:outline-[1.5px] pz:outline-select"
+                  style={worldRect(r)}
+                />
+              ))}
+            {selectedRects.map((r) => (
               <div
                 key={r.id}
-                className="pz:pointer-events-none pz:absolute pz:outline-[1.5px] pz:outline-select"
-                style={{ left: r.x, top: r.y, width: r.w, height: r.h }}
+                className={cn(
+                  "pz:pointer-events-none pz:absolute pz:outline-select",
+                  r.artboard ? "pz:outline-2" : "pz:outline-[1.5px]",
+                )}
+                style={worldRect(r)}
               />
             ))}
-          {selectedRects.map((r) => (
-            <div
-              key={r.id}
-              className={cn(
-                "pz:pointer-events-none pz:absolute pz:outline-select",
-                r.artboard ? "pz:outline-2" : "pz:outline-[1.5px]",
-              )}
-              style={{ left: r.x, top: r.y, width: r.w, height: r.h }}
-            />
-          ))}
-          {marquee && (
-            <div
-              className="pz:pointer-events-none pz:absolute pz:bg-select/8 pz:outline-1 pz:outline-select"
-              style={{
-                left: Math.min(marquee.a.x, marquee.b.x) * camera.zoom + camera.x,
-                top: Math.min(marquee.a.y, marquee.b.y) * camera.zoom + camera.y,
-                width: Math.abs(marquee.b.x - marquee.a.x) * camera.zoom,
-                height: Math.abs(marquee.b.y - marquee.a.y) * camera.zoom,
-              }}
-            />
-          )}
-          {pageThreads.map((t) => {
-            const ab = boards.find((b) => b.id === t.artboardId);
-            const dragging = pinDrag?.id === t.id && pinDrag.moved ? pinDrag : null;
-            const p = dragging ?? pinPoint(t, ab, viewport.current, camera);
-            const open = openThread === t.id;
-            return (
+            {marquee && (
               <div
-                key={t.id}
-                className={cn(pinWrap, open ? "pz:z-[3]" : "pz:z-[2]")}
-                style={{ left: p.x, top: p.y }}
-                data-comment-open={open || undefined}
-              >
-                <button
-                  type="button"
-                  title={readOnly ? "Open thread" : "Drag to move"}
-                  className={cn(
-                    pin,
-                    "pz:bg-comment pz:text-comment-foreground",
-                    panning ? "pz:cursor-grab" : "pz:cursor-pointer",
-                    (open || dragging) && "pz:scale-112",
-                    dragging &&
-                      "pz:cursor-grabbing pz:shadow-[0_0_0_1px_rgba(17,17,16,0.18),0_4px_12px_rgba(0,0,0,0.25)]",
-                  )}
-                  onPointerDown={(e) => pinDown(e, t)}
-                  onPointerMove={pinMove}
-                  onPointerUp={(e) => pinUp(e, t)}
-                  onPointerCancel={() => setPinDrag(null)}
-                  // A press opens the thread in pinUp; this is for the keyboard.
-                  onClick={(e) => e.detail === 0 && setOpenThread(open ? null : t.id)}
-                >
-                  {t.messages.length}
-                </button>
-                {open && (
-                  <ThreadCard
-                    thread={t}
-                    source={source}
-                    me={me}
-                    readOnly={readOnly}
-                    onClose={() => setOpenThread(null)}
-                  />
-                )}
-              </div>
-            );
-          })}
-          {pending &&
-            (() => {
-              const ab = boards.find((b) => b.id === pending.artboardId);
-              const x = ((ab?.x ?? 0) + pending.x) * camera.zoom + camera.x;
-              const y = ((ab?.y ?? 0) + pending.y) * camera.zoom + camera.y;
+                className="pz:pointer-events-none pz:absolute pz:bg-select/8 pz:outline-1 pz:outline-select"
+                style={worldRect({
+                  x: Math.min(marquee.a.x, marquee.b.x),
+                  y: Math.min(marquee.a.y, marquee.b.y),
+                  w: Math.abs(marquee.b.x - marquee.a.x),
+                  h: Math.abs(marquee.b.y - marquee.a.y),
+                })}
+              />
+            )}
+            {pageThreads.map((t) => {
+              const ab = boards.find((b) => b.id === t.artboardId);
+              const dragging = pinDrag?.id === t.id && pinDrag.moved ? pinDrag : null;
+              const open = openThread === t.id;
+              const p = dragging ?? pinPoint(t, ab, boxes);
               return (
                 <div
-                  className={cn(pinWrap, "pz:z-[3]")}
-                  style={{ left: x, top: y }}
-                  data-comment-open
+                  key={t.id}
+                  className={cn(pinWrap, open ? "pz:z-[3]" : "pz:z-[2]")}
+                  style={{ left: wpx(p.x), top: wpx(p.y) }}
+                  data-comment-open={open || undefined}
                 >
-                  <span
-                    className={cn(pin, "pz:scale-112 pz:bg-comment pz:text-comment-foreground")}
+                  <button
+                    type="button"
+                    title={readOnly ? "Open thread" : "Drag to move"}
+                    className={cn(
+                      pin,
+                      "pz:bg-comment pz:text-comment-foreground",
+                      panning ? "pz:cursor-grab" : "pz:cursor-pointer",
+                      (open || dragging) && "pz:scale-112",
+                      dragging &&
+                        "pz:cursor-grabbing pz:shadow-[0_0_0_1px_rgba(17,17,16,0.18),0_4px_12px_rgba(0,0,0,0.25)]",
+                    )}
+                    onPointerDown={(e) => pinDown(e, t)}
+                    onPointerMove={pinMove}
+                    onPointerUp={(e) => pinUp(e, t)}
+                    onPointerCancel={() => setPinDrag(null)}
+                    // A press opens the thread in pinUp; this is for the keyboard.
+                    onClick={(e) => e.detail === 0 && setOpenThread(open ? null : t.id)}
                   >
-                    +
-                  </span>
-                  <div className={threadCard}>
-                    <Composer onSubmit={createThread} onCancel={() => setPending(null)} />
-                  </div>
+                    {t.messages.length}
+                  </button>
+                  {open && (
+                    <ThreadCard
+                      thread={t}
+                      source={source}
+                      me={me}
+                      readOnly={readOnly}
+                      onClose={() => setOpenThread(null)}
+                    />
+                  )}
                 </div>
               );
-            })()}
+            })}
+            {pending &&
+              (() => {
+                const ab = boards.find((b) => b.id === pending.artboardId);
+                return (
+                  <div
+                    className={cn(pinWrap, "pz:z-[3]")}
+                    style={{
+                      left: wpx((ab?.x ?? 0) + pending.x),
+                      top: wpx((ab?.y ?? 0) + pending.y),
+                    }}
+                    data-comment-open
+                  >
+                    <span
+                      className={cn(pin, "pz:scale-112 pz:bg-comment pz:text-comment-foreground")}
+                    >
+                      +
+                    </span>
+                    <div className={threadCard}>
+                      <Composer onSubmit={createThread} onCancel={() => setPending(null)} />
+                    </div>
+                  </div>
+                );
+              })()}
+          </div>
         </div>
       </div>
 
@@ -1123,7 +1295,7 @@ export function Canvas({
                   aria-label="Zoom to fit"
                   onClick={fitPage}
                 >
-                  {zoomPct}%
+                  <ZoomPercent camera={camera} />
                 </Button>
               </Tip>
               <Tip label="Zoom in" keys={["⌘", "+"]}>
@@ -1236,13 +1408,7 @@ function Ring({
   return (
     <div
       className="pz:pointer-events-none pz:absolute pz:transition-opacity pz:duration-500"
-      style={{
-        left: x - RING_GAP,
-        top: y - RING_GAP,
-        width: w + 2 * RING_GAP,
-        height: h + 2 * RING_GAP,
-        opacity: leaving ? 0 : 1,
-      }}
+      style={{ ...ringBox({ x, y, w, h }), opacity: leaving ? 0 : 1 }}
       aria-hidden
     >
       <div
@@ -1265,20 +1431,14 @@ function Frame({ x, y, w, h, at }: { x: number; y: number; w: number; h: number;
   return (
     <svg
       className="pz:pointer-events-none pz:absolute pz:overflow-visible pz:text-[var(--pz-rind)]"
-      style={{
-        left: x - RING_GAP,
-        top: y - RING_GAP,
-        width: w + 2 * RING_GAP,
-        height: h + 2 * RING_GAP,
-      }}
+      style={ringBox({ x, y, w, h })}
       aria-hidden
     >
       <rect
         ref={rect}
         x={1}
         y={1}
-        width={Math.max(0, w + 2 * RING_GAP - 2)}
-        height={Math.max(0, h + 2 * RING_GAP - 2)}
+        style={{ width: "calc(100% - 2px)", height: "calc(100% - 2px)" }}
         rx={BOARD_RADIUS + RING_GAP}
         pathLength={100}
         fill="none"
@@ -1398,27 +1558,301 @@ function PageTab({
   );
 }
 
-function pinPoint(
-  t: Thread,
-  ab: Artboard | undefined,
-  vp: HTMLElement | null,
-  cam: { x: number; y: number; zoom: number },
-) {
+/**
+ * One artboard on the plane, in its tier (see snapshot.tsx). Renders only when
+ * its own inputs change: the camera reaches it in steps (useCameraView).
+ */
+const Board = memo(function Board({
+  artboard: ab,
+  dx,
+  dy,
+  h,
+  tokens,
+  source,
+  colorScheme,
+  zoom,
+  scale,
+  onScreen,
+  moving,
+  y0,
+  y1,
+  attention,
+  cheap,
+  skeleton,
+  rankOf,
+  arrivals,
+  radius,
+  hold,
+}: {
+  artboard: Artboard;
+  dx: number;
+  dy: number;
+  /** Its height, measured when it's fit-content. */
+  h: number;
+  tokens: string;
+  source: CanvasSource;
+  colorScheme: "light" | "dark";
+  /** Device px per artboard px. */
+  zoom: number;
+  /** The same in quarter octaves, for detail inside the board. */
+  scale: number;
+  onScreen: boolean;
+  moving: boolean;
+  /** The part of a tall board in view (see visibleBand). */
+  y0?: number;
+  y1?: number;
+  attention: boolean;
+  /** On a cold open: live while its picture is made, or a skeleton of it. */
+  cheap: boolean;
+  skeleton: boolean;
+  /** Its distance from the middle of the view, for which board goes live first. */
+  rankOf: (id: string) => number;
+  /** An agent's new pieces, which arrive as they render. */
+  arrivals: Arrivals;
+  /** Its corners' radius, in its own px. */
+  radius: number;
+  /** Nobody can see it move: its loops hold (see outOfSight). */
+  hold: boolean;
+}) {
+  const { w, h: fixed } = size(ab);
+  const rank = useCallback(() => rankOf(ab.id), [rankOf, ab.id]);
+  // Its picture and loops, named by its content and theme.
+  const version = versionOf(ab, tokens, () => serializeArtboardElement(ab));
+  const snapshotUrl = useMemo(
+    () =>
+      source.snapshotUrl &&
+      ((id: string, s: number) => source.snapshotUrl!(id, s, version, colorScheme)),
+    [source, version, colorScheme],
+  );
+  const loopsUrl = useMemo(
+    () => source.loopsUrl && ((id: string) => source.loopsUrl!(id, version, colorScheme)),
+    [source, version, colorScheme],
+  );
+  const visible = y0 === undefined || y1 === undefined ? undefined : { y0, y1 };
+  return (
+    <div
+      ref={(el) => {
+        const at = el ? arrivals.takeBoard(ab.id) : undefined;
+        if (el && at !== undefined) arriveBoard(el, at);
+      }}
+      className="pz:absolute pz:shadow-board"
+      style={
+        {
+          left: ab.x + dx,
+          top: ab.y + dy,
+          width: w,
+          height: fixed ?? undefined,
+          borderRadius: radius,
+          "--pz-board-radius": `${radius}px`,
+        } as CSSProperties
+      }
+    >
+      <TieredBoard
+        id={ab.id}
+        w={w}
+        h={h}
+        scale={zoom}
+        onScreen={onScreen}
+        moving={moving}
+        attention={attention}
+        snapshotUrl={snapshotUrl}
+        loopsUrl={loopsUrl}
+        cheap={cheap}
+        rank={rank}
+        cost={boardCost(ab).elements}
+        skeleton={skeleton}
+        fill={placeholderFill(ab)}
+      >
+        {(hidden) => (
+          <ArtboardView
+            artboard={ab}
+            tokens={tokens}
+            assetBase={source.assetBase}
+            renditions={source.renditions}
+            colorScheme={colorScheme}
+            detail={{ hidden, scale, moving, visible }}
+            arrivals={arrivals}
+            rounded
+            hold={hold}
+          />
+        )}
+      </TieredBoard>
+    </div>
+  );
+});
+
+interface TitleEvents {
+  down: (e: React.PointerEvent, ab: Artboard) => void;
+  /** Start renaming an artboard, or stop with null. */
+  rename: (id: string | null) => void;
+  apply: CanvasSource["apply"];
+}
+
+/**
+ * An artboard's name above its top-left corner, at 12 screen px whatever the
+ * zoom: it sits in the overlay layer, placed in page px times --z.
+ */
+const BoardTitle = memo(function BoardTitle({
+  artboard: ab,
+  dx,
+  dy,
+  who,
+  selected,
+  renaming,
+  covered,
+  events,
+  arrivedAt,
+}: {
+  artboard: Artboard;
+  dx: number;
+  dy: number;
+  who?: Worker[];
+  selected: boolean;
+  renaming: boolean;
+  /** It would lie over another board (see labelCovers): hidden, unless it's needed. */
+  covered: boolean;
+  events: TitleEvents;
+  /** When its board landed, while it's still arriving: the name develops with it. */
+  arrivedAt?: number;
+}) {
+  // Kept while it's named, worked on, renamed or selected: those need it in view.
+  const hide = covered && !who && !renaming && !selected;
+  const name = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    if (name.current && arrivedAt !== undefined) arriveName(name.current, arrivedAt);
+  }, [arrivedAt]);
+  return (
+    <div
+      className="pz:absolute pz:h-0"
+      style={{
+        left: wpx(ab.x + dx),
+        top: wpx(ab.y + dy),
+        width: wpx(size(ab).w),
+        visibility: hide ? "hidden" : undefined,
+      }}
+    >
+      <div
+        className={cn(
+          "pz:pointer-events-auto pz:absolute pz:top-[-22px] pz:left-0 pz:flex pz:cursor-default pz:items-center pz:gap-[0.5em] pz:whitespace-nowrap pz:text-[12px] pz:leading-[1.4]",
+          // Zoomed out, the title would run into the next board; clip it to this one.
+          !renaming && "pz:max-w-full",
+          // Spans the board so an agent's status can sit on the right.
+          who && "pz:right-0",
+          selected ? "pz:text-select" : "pz:text-muted-foreground pz:hover:text-foreground",
+        )}
+        onPointerDown={(e) => events.down(e, ab)}
+        onDoubleClick={() => events.rename(ab.id)}
+      >
+        {renaming ? (
+          <input
+            autoFocus
+            className="pz:rounded-[3px] pz:bg-card pz:px-[0.3em] pz:text-[12px] pz:outline-1 pz:outline-select"
+            defaultValue={ab.name}
+            onPointerDown={(e) => e.stopPropagation()}
+            onBlur={(e) => {
+              const v = e.target.value.trim();
+              if (v && v !== ab.name) events.apply({ op: "artboard.update", id: ab.id, name: v });
+              events.rename(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              if (e.key === "Escape") events.rename(null);
+            }}
+          />
+        ) : (
+          <span ref={name} data-board-name className="pz:min-w-0 pz:truncate" title={ab.name}>
+            {ab.name}
+          </span>
+        )}
+        {who && <WorkingStatus who={who} />}
+      </div>
+    </div>
+  );
+});
+
+/** Whether a wheel would scroll this element. */
+function canScroll(el: HTMLElement, e: WheelEvent) {
+  const s = getComputedStyle(el);
+  const y =
+    /auto|scroll/.test(s.overflowY) &&
+    ((e.deltaY > 0 && el.scrollTop + el.clientHeight < el.scrollHeight) ||
+      (e.deltaY < 0 && el.scrollTop > 0));
+  const x =
+    /auto|scroll/.test(s.overflowX) &&
+    ((e.deltaX > 0 && el.scrollLeft + el.clientWidth < el.scrollWidth) ||
+      (e.deltaX < 0 && el.scrollLeft > 0));
+  return y || x;
+}
+
+/**
+ * A length in page px as screen px, for the overlay layer: it follows the
+ * camera's translation and carries its zoom as --z (see useCameraLayers).
+ */
+function wpx(n: number) {
+  return `calc(var(--z) * ${n}px)`;
+}
+
+function worldRect(r: { x: number; y: number; w: number; h: number }) {
+  return { left: wpx(r.x), top: wpx(r.y), width: wpx(r.w), height: wpx(r.h) };
+}
+
+/** A board's box in page px, grown by the ring's gap in screen px, for the overlay layer. */
+function ringBox(r: { x: number; y: number; w: number; h: number }) {
+  return {
+    left: `calc(var(--z) * ${r.x}px - ${RING_GAP}px)`,
+    top: `calc(var(--z) * ${r.y}px - ${RING_GAP}px)`,
+    width: `calc(var(--z) * ${r.w}px + ${2 * RING_GAP}px)`,
+    height: `calc(var(--z) * ${r.h}px + ${2 * RING_GAP}px)`,
+  };
+}
+
+/** The zoom label, the only text that changes with the camera; it renders on its own. */
+function ZoomPercent({ camera }: { camera: CameraStore }) {
+  return <>{useZoomPercent(camera)}%</>;
+}
+
+/** A node's box in its artboard's px, and which artboard it was found in. */
+interface NodeBox {
+  artboardId: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+function sameBoxes(a: Record<string, NodeBox>, b: Record<string, NodeBox>) {
+  const ka = Object.keys(a);
+  if (ka.length !== Object.keys(b).length) return false;
+  return ka.every((k) => {
+    const p = a[k]!;
+    const q = b[k];
+    return (
+      !!q &&
+      p.artboardId === q.artboardId &&
+      Math.abs(p.x - q.x) < 0.5 &&
+      Math.abs(p.y - q.y) < 0.5 &&
+      Math.abs(p.w - q.w) < 0.5 &&
+      Math.abs(p.h - q.h) < 0.5
+    );
+  });
+}
+
+/** Where a pin sits, in page px. */
+function pinPoint(t: Thread, ab: Artboard | undefined, boxes: Record<string, NodeBox>) {
   let { x, y } = t;
   // Pins were placed in artboard coordinates; keep them on their node as it moves or resizes.
-  const box = ab && t.nodeId && vp ? nodeBox(vp, ab, t.nodeId) : null;
-  if (box) {
+  const box = ab && t.nodeId ? boxes[t.nodeId] : undefined;
+  if (box && box.artboardId === ab?.id) {
     x = Math.min(Math.max(x, box.x), box.x + box.w);
     y = Math.min(Math.max(y, box.y), box.y + box.h);
   }
   // On the open canvas, x and y are already page coordinates.
-  return { x: ((ab?.x ?? 0) + x) * cam.zoom + cam.x, y: ((ab?.y ?? 0) + y) * cam.zoom + cam.y };
+  return { x: (ab?.x ?? 0) + x, y: (ab?.y ?? 0) + y };
 }
 
 /**
  * A node's box in its artboard's pixels. Measured against the artboard rather
- * than the viewport: the DOM still shows the last frame's camera while a pan
- * renders, so mixing it with the new camera makes pins jump.
+ * than the viewport, so it holds whatever the camera does next.
  */
 function nodeBox(vp: HTMLElement, ab: Artboard, nodeId: string) {
   const host = vp.querySelector(`[data-artboard-host="${CSS.escape(ab.id)}"]`);
@@ -1433,39 +1867,36 @@ function nodeBox(vp: HTMLElement, ab: Artboard, nodeId: string) {
 }
 
 /**
- * Outlines for selected artboards and nodes, in viewport pixels. Placed from
- * the model like pins: the DOM still shows the last frame, so after a move it
- * would put the outline where the board used to be.
+ * Outlines for selected artboards and nodes, in page px. Placed from the model
+ * and the measured node boxes: the DOM may still show the last frame, so after
+ * a move it would put the outline where the board used to be.
  */
 function selectionRects(
   ids: string[],
   boards: Artboard[],
   boardHeight: (ab: Artboard) => number,
   offset: (id: string) => { dx: number; dy: number } | null,
-  vp: HTMLElement | null,
-  cam: { x: number; y: number; zoom: number },
+  boxes: Record<string, NodeBox>,
 ) {
   const out: { id: string; x: number; y: number; w: number; h: number; artboard: boolean }[] = [];
   for (const id of ids) {
     let ab = boards.find((b) => b.id === id);
-    let box = ab ? { x: 0, y: 0, w: size(ab).w, h: boardHeight(ab) } : null;
-    if (!box && vp) {
-      for (const b of boards) {
-        box = nodeBox(vp, b, id);
-        if (box) {
-          ab = b;
-          break;
-        }
-      }
+    let box: { x: number; y: number; w: number; h: number } | undefined = ab
+      ? { x: 0, y: 0, w: size(ab).w, h: boardHeight(ab) }
+      : undefined;
+    if (!box) {
+      const nb = boxes[id];
+      ab = nb && boards.find((b) => b.id === nb.artboardId);
+      box = nb;
     }
     if (!ab || !box) continue;
     const g = offset(ab.id);
     out.push({
       id,
-      x: (ab.x + (g?.dx ?? 0) + box.x) * cam.zoom + cam.x,
-      y: (ab.y + (g?.dy ?? 0) + box.y) * cam.zoom + cam.y,
-      w: box.w * cam.zoom,
-      h: box.h * cam.zoom,
+      x: ab.x + (g?.dx ?? 0) + box.x,
+      y: ab.y + (g?.dy ?? 0) + box.y,
+      w: box.w,
+      h: box.h,
       artboard: ab.id === id,
     });
   }

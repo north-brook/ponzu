@@ -1,4 +1,4 @@
-import type { Doc, Op, PElement, PNode } from "@ponzu/core";
+import type { Artboard, Doc, Op, PElement, PNode } from "@ponzu/core";
 
 /*
  * How work arrives on the canvas: the develop. A beat after a write lands, each new piece shows
@@ -307,6 +307,29 @@ export class Arrivals {
     ids.forEach((id, i) => this.pieces.set(id, Math.min(latest, first + i * ARRIVE_STAGGER_MS)));
   }
 
+  /**
+   * Which of these artboards have pieces still arriving. A board drawn as a picture goes live for
+   * them, so the slide plays on the board itself.
+   */
+  boardsArriving(artboards: Artboard[], now = performance.now()): Set<string> {
+    this.prune(now);
+    const out = new Set<string>();
+    if (!this.pieces.size && !this.boards.size) return out;
+    const want = new Set(this.pieces.keys());
+    for (const ab of artboards)
+      if (this.boards.has(ab.id) || holds(ab.root.children, want)) out.add(ab.id);
+    return out;
+  }
+
+  /** How long until everything arriving now has landed, in ms: boards may be pictures again then. */
+  until(now = performance.now()): number {
+    let end = now;
+    for (const start of this.pieces.values()) end = Math.max(end, start + ARRIVE_MS);
+    for (const b of this.boards.values()) end = Math.max(end, b.at + BOARD_MS + 1000);
+    // A beat after the last prune would drop them.
+    return end - now + 50;
+  }
+
   /** When this artboard landed, if it's new and its wrapper hasn't started arriving. Once. */
   takeBoard(id: string, now = performance.now()): number | undefined {
     this.prune(now);
@@ -359,9 +382,14 @@ export class Arrivals {
 /** The artboards holding any of these ids. */
 function boardsHolding(doc: Doc, ids: string[]): string[] {
   const want = new Set(ids);
-  const holds = (el: PElement): boolean =>
-    el.children.some((c) => c.kind === "el" && (want.has(c.id) || holds(c)));
-  return doc.pages.flatMap((p) => p.artboards.filter((ab) => holds(ab.root)).map((ab) => ab.id));
+  return doc.pages.flatMap((p) =>
+    p.artboards.filter((ab) => holds(ab.root.children, want)).map((ab) => ab.id),
+  );
+}
+
+/** Whether any of these nodes, or anything inside them, has one of these ids. */
+function holds(nodes: PNode[], ids: Set<string>): boolean {
+  return nodes.some((n) => n.kind === "el" && (ids.has(n.id) || holds(n.children, ids)));
 }
 
 /** Artboards an op makes, through nested batches. */
@@ -372,8 +400,8 @@ function createdBoards(op: Op): string[] {
 }
 
 /**
- * A new artboard's wrapper, from when it landed: its shadow comes in with the sheet, and its name
- * develops left to right while the frame draws. The sheet itself is in `Arrivals.replay`.
+ * A new artboard's wrapper, from when it landed: its shadow comes in with the sheet, and a name
+ * inside it develops (arriveName). The sheet itself is in `Arrivals.replay`.
  */
 export function arriveBoard(el: HTMLElement, at: number, now = performance.now()) {
   if (reducedMotion()) return;
@@ -386,7 +414,12 @@ export function arriveBoard(el: HTMLElement, at: number, now = performance.now()
   );
   shadow.currentTime = now - at;
   const name = el.querySelector("[data-board-name]");
-  if (!name) return;
+  if (name) arriveName(name, at, now);
+}
+
+/** A new artboard's name, wherever it's drawn: it develops left to right while the frame draws. */
+export function arriveName(name: Element, at: number, now = performance.now()) {
+  if (reducedMotion()) return;
   const mask = {
     maskImage: "linear-gradient(90deg,#000 0 45%,transparent 55%)",
     maskSize: "220% 100%",

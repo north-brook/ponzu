@@ -316,6 +316,8 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
       const resolved = (await ws.resolve(key)).key;
       subscribe(resolved);
       const watch = url.searchParams.get("watch") === "1";
+      // A canvas, not a home screen card: draw its boards' pictures in the background.
+      if (!watch) pictures.opened(resolved);
       if (
         srv.upgrade(req, {
           data: {
