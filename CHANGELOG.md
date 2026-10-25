@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.53.0](https://github.com/north-brook/ponzu/compare/v1.52.0...v1.53.0) (2026-10-25)
+
+
+### Features
+
+* show quiet ⌘ and ⌥ hints that ease in over tab icons ([#211](https://github.com/north-brook/ponzu/issues/211)) ([9fb1b6a](https://github.com/north-brook/ponzu/commit/9fb1b6af0ada898a54358cc845ae6f3990a407a6))
+
 ## [1.52.0](https://github.com/north-brook/ponzu/compare/v1.51.0...v1.52.0) (2026-10-25)
 
 
