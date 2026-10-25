@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.48.3](https://github.com/north-brook/ponzu/compare/v1.48.2...v1.48.3) (2026-10-25)
+
+
+### Bug Fixes
+
+* big writes arrive in a few pieces instead of thousands ([#197](https://github.com/north-brook/ponzu/issues/197)) ([510e06f](https://github.com/north-brook/ponzu/commit/510e06f0523bdb57056c6a4f202acd405f5c16cb))
+
 ## [1.48.2](https://github.com/north-brook/ponzu/compare/v1.48.1...v1.48.2) (2026-10-25)
 
 
