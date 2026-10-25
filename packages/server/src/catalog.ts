@@ -168,7 +168,9 @@ export class LocalCatalog {
 
   /**
    * The person opened this design themselves, so it's listed even if it's an
-   * example, and out of the archive if it was in it. `remember` keeps an
+   * example, and back in Recent whatever archived it: a scratch file or one in
+   * /tmp they open is theirs now. An agent's edit doesn't do that for those, as
+   * agents edit their own scratch files all the time. `remember` keeps an
    * example listed after a restart, as opening it in the app does; the designs
    * named to `ponzu serve` are listed while it runs.
    */
@@ -179,6 +181,7 @@ export class LocalCatalog {
     this.shown.add(key);
     this.shown.add(real);
     this.db.revive(real);
+    this.db.shelve(real, "recent");
     if (opts.remember) this.db.opened(real);
   }
 

@@ -476,6 +476,15 @@ test("a scratch design starts out archived until the person restores it", async 
   catalog.restore(key);
   expect(await probe()).toMatchObject({ scratch: true, shelf: "recent" });
   expect((await probe())?.archivedFor).toBeUndefined();
+  // An agent editing its own scratch file leaves it put away; the person opening one keeps it.
+  catalog.archive(key);
+  catalog.shelve(key, null);
+  await new Promise((r) => setTimeout(r, 5));
+  catalog.edited(key);
+  expect(await probe()).toMatchObject({ shelf: "archived", archivedFor: "scratch" });
+  catalog.opened(key);
+  expect((await probe())?.shelf).toBe("recent");
+  catalog.close();
 });
 
 test("a design in a temporary folder starts out archived until the person restores it", async () => {
