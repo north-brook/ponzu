@@ -143,21 +143,23 @@ export function UpdateBody({
 /** How many Macs Restart updates. Hovering it lists each, and when it updates. */
 function MacCount({ plan, machines }: { plan: UpdatePlan; machines: CatalogMachine[] }) {
   const behind = plan.macs.flatMap((id) => machines.find((m) => m.id === id) ?? []);
+  const count =
+    plan.macs.length === plan.of
+      ? `On all ${plan.of} of your Macs`
+      : `On ${plan.macs.length} of your Macs`;
+  // The list is in the name too: the card opens on focus, but a screen reader can't reach it.
+  const each = behind.map((m) => `${m.name}, ${when(m)}`).join("; ");
   return (
     <HoverCard openDelay={150} closeDelay={100}>
       <HoverCardTrigger asChild>
-        <span
-          role="img"
-          aria-label={
-            plan.macs.length === plan.of
-              ? `On all ${plan.of} of your Macs`
-              : `On ${plan.macs.length} of your Macs`
-          }
-          className="-ml-1.5 inline-flex h-6 cursor-default items-center gap-[5px] whitespace-nowrap rounded-md px-1.5 text-[12px] text-muted-foreground tabular-nums hover:bg-secondary hover:text-foreground"
+        <button
+          type="button"
+          aria-label={each ? `${count}: ${each}` : count}
+          className="-ml-1.5 inline-flex h-6 cursor-default items-center gap-[5px] whitespace-nowrap rounded-md px-1.5 text-[12px] text-muted-foreground tabular-nums outline-none hover:bg-secondary hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
         >
           <Icon name="laptop" size={13} />
           {plan.macs.length}
-        </span>
+        </button>
       </HoverCardTrigger>
       <HoverCardContent align="start" side="bottom" className="w-[248px] p-1.5">
         <ul className="m-0 flex list-none flex-col p-0 text-[12.5px]">

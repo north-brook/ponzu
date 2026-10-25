@@ -17,7 +17,7 @@ import { CatalogFeed, type Scope } from "./feed.ts";
 import { Home, type OpenedBy } from "./home.ts";
 import { assetResponse } from "./range.ts";
 import { isTailnetAddress } from "./tailnet.ts";
-import { type Updater, waitForAgents } from "./updater.ts";
+import type { Updater } from "./updater.ts";
 import type { LocalWorkspace } from "./workspace.ts";
 
 export interface ServeOptions {
@@ -211,12 +211,13 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
     if (page) broadcast(key, { t: "focus", artboard, page: page.id });
   });
 
-  // An update the person asks for waits for an agent mid-change here, and Home lists that it does.
+  // An agent mid-change here: the app holds an update's restart for it (`/api/info`), and the
+  // catalog lists that it does, so every Mac's Update can say so.
   const agentWorking = () => {
     const agent = ws.presence.list().find((p) => p.kind === "agent" && p.working.length > 0);
     return agent && (agent.client ?? "other");
   };
-  const updater = opts.updater && waitForAgents(opts.updater, agentWorking);
+  const updater = opts.updater;
   const home = new Home(ws, {
     roots: opts.root ? [opts.root] : [],
     spotlight: opts.spotlight,
@@ -465,6 +466,8 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
          * asking for something. The desktop app quits a windowless Ponzu after a while.
          */
         idle: Math.floor(idleMs() / 1000),
+        /** An agent mid-change here (its client): the desktop app holds an update's restart for it. */
+        ...(agentWorking() ? { working: agentWorking() } : {}),
         /** This Mac on the tailnet: what the phone saves to find it again. */
         machine: {
           name: net?.name ?? null,

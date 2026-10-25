@@ -112,7 +112,7 @@ export function Dashboard({
   // connected and the person's other Macs have designs to list.
   const connected = catalog?.agents.some((a) => a.found && a.connected) ?? false;
   const local = files.some((f) => f.machine === "local");
-  const setUp = useSetUp(local);
+  const setUp = useSetUp(catalog, local);
   const setup = catalog !== null && !local && !(connected && files.length > 0);
   const q = query.trim();
   const live = useLive(files);
@@ -466,32 +466,42 @@ const SET_UP_KEY = "ponzu.setUp";
 const SET_UP_GRACE = 15_000;
 
 /**
- * Whether this Mac listed designs of its own before, and the time to find them again hasn't run
- * out. A catalog that comes back empty, as one read while an update restarts can, shows the
- * placeholder cards rather than the first steps; one still empty after the grace period is
- * really empty (every design deleted), so the first steps show then.
+ * Whether to show placeholder cards for an empty catalog rather than the first steps: this Mac
+ * has listed designs of its own, in this session or an earlier one, and they've been missing for
+ * less than the grace period. A catalog that comes back empty, as one read while an update
+ * restarts can, waits for them; one still empty after the grace period is really empty (every
+ * design deleted), so the first steps show then.
  */
-function useSetUp(local: boolean): boolean {
-  const [before] = useState(() => {
+function useSetUp(catalog: Catalog | null, local: boolean): boolean {
+  const [had, setHad] = useState(() => {
     try {
       return localStorage.getItem(SET_UP_KEY) === "1";
     } catch {
       return false;
     }
   });
-  const [waiting, setWaiting] = useState(before);
+  /** When this Mac's designs went missing from a catalog that arrived; null while they're there. */
+  const [missingSince, setMissingSince] = useState<number | null>(null);
+  const [, setNow] = useState(0);
+  const empty = catalog !== null && !local;
   useEffect(() => {
     if (!local) return;
+    setHad(true);
     try {
       localStorage.setItem(SET_UP_KEY, "1");
     } catch {}
   }, [local]);
   useEffect(() => {
-    if (!waiting) return;
-    const t = setTimeout(() => setWaiting(false), SET_UP_GRACE);
+    setMissingSince((at) => (empty ? (at ?? Date.now()) : null));
+  }, [empty]);
+  useEffect(() => {
+    if (missingSince === null) return;
+    const t = setTimeout(() => setNow(Date.now()), missingSince + SET_UP_GRACE - Date.now());
     return () => clearTimeout(t);
-  }, [waiting]);
-  return before && waiting;
+  }, [missingSince]);
+  if (!had || !empty) return false;
+  // Before the effect above notes when they went missing, they've only just gone.
+  return missingSince === null || Date.now() - missingSince < SET_UP_GRACE;
 }
 
 /** Name widths for the placeholder cards, so they don't read as one card repeated. */

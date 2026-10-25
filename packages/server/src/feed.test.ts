@@ -390,7 +390,7 @@ test("one Update installs on each of the person's Macs, this one last", async ()
   }
 }, 15_000);
 
-test("an Update waits for an agent working on that Mac, and every Mac's home screen says so", async () => {
+test("an agent working on a Mac shows on every Mac's update, and its app hears it", async () => {
   await fakeTailnet();
   const order: string[] = [];
   const spareDir = join(dir, "spare-busy");
@@ -415,7 +415,12 @@ test("an Update waits for an agent working on that Mac, and every Mac's home scr
     updater: fakeUpdater("here", order, { version: "1.43.0" }),
   });
   const home = stream(`ws://127.0.0.1:${here.port}/api/catalog/stream`);
+  const info = async () =>
+    (await (await fetch(`http://127.0.0.1:${spare.port}/api/info`)).json()) as {
+      working?: string;
+    };
   try {
+    expect((await info()).working).toBeUndefined();
     // An agent is mid-change on the other Mac.
     await runTool(getTool("create_file")!, { path: "kiosk.design" }, { ws: spareWs, caller });
     await runTool(
@@ -425,28 +430,13 @@ test("an Update waits for an agent working on that Mac, and every Mac's home scr
     );
     const busy = (c: Catalog) => c.machines.find((m) => m.id === "spare")?.update?.waitsFor;
     await home.until((c) => busy(c) === "claude", 8000);
+    // Its app, which holds the restart until the agent is done, hears the same.
+    expect((await info()).working).toBe("claude");
 
-    const res = await fetch(`http://127.0.0.1:${here.port}/api/update`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ macs: ["spare", "local"], version: "1.44.0" }),
-    });
-    // Both said yes, and this Mac, with no agent at work, restarts; the other waits for its agent.
-    expect(await res.json()).toEqual({ macs: { spare: true, local: true } });
-    expect(order).toEqual(["here"]);
-    const c = await home.until(
-      (c) => c.machines.find((m) => m.id === "spare")?.update?.installing === true,
-      8000,
-    );
-    expect(busy(c)).toBe("claude");
-
-    // The agent is done: the other Mac installs.
+    // The agent is done: both clear.
     spareWs.presence.touch(caller, { working: [], status: undefined });
     await home.until((c) => !busy(c), 8000);
-    const until = Date.now() + 5000;
-    while (!order.includes("spare") && Date.now() < until)
-      await new Promise((r) => setTimeout(r, 50));
-    expect(order).toEqual(["here", "spare"]);
+    expect((await info()).working).toBeUndefined();
   } finally {
     home.close();
     here.stop(true);

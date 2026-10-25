@@ -11,6 +11,8 @@ const FOUR_HOURS = 4 * 60 * 60 * 1000;
 const AWAY_SECONDS = 5 * 60;
 /** Time for the answer to reach the server, and the other Macs, before this one restarts. */
 const RESTART_DELAY = 500;
+/** How often a restart held for a working agent asks again whether it's done. */
+const AGENT_CHECK_EVERY = 2000;
 
 /**
  * A message as a sheet on `win`, once it's on screen. Never a free-standing
@@ -74,6 +76,8 @@ async function notesOf(info: UpdateInfo): Promise<string[]> {
 export async function installUpdater(opts: {
   window: () => BrowserWindow | null;
   onReady: () => void;
+  /** Whether an agent is mid-change on this Mac, from its server: a restart waits for it. */
+  agentWorking: () => Promise<boolean>;
 }): Promise<{ endpoint: string; token: string } | null> {
   if (!app.isPackaged) return null;
   autoUpdater.autoDownload = true;
@@ -91,12 +95,27 @@ export async function installUpdater(opts: {
     ...(installing ? { installing } : {}),
   });
 
-  /** A window open restarts into it; with none, quitting installs it and nothing reopens. */
+  /** A restart on its way: waiting for an agent, or for its answer to get out. */
+  let restarting = false;
+  /**
+   * A window open restarts into it; with none, quitting installs it and nothing reopens. Never
+   * while an agent is mid-change here, even one that started while the update downloaded: it
+   * waits until the agent is done.
+   */
   const restart = () => {
-    setTimeout(() => {
-      if (opts.window()) autoUpdater.quitAndInstall();
-      else app.quit();
-    }, RESTART_DELAY);
+    if (restarting) return;
+    restarting = true;
+    const go = async () => {
+      if (await opts.agentWorking().catch(() => false)) {
+        setTimeout(go, AGENT_CHECK_EVERY);
+        return;
+      }
+      setTimeout(() => {
+        if (opts.window()) autoUpdater.quitAndInstall();
+        else app.quit();
+      }, RESTART_DELAY);
+    };
+    void go();
   };
 
   /** Fetch the newest release: one newer than what's downloaded replaces it. */
