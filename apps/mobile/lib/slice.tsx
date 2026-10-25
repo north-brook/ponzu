@@ -13,6 +13,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import Svg, { Path } from "react-native-svg";
+import { useAppActive } from "./app-active";
 import { SLICE, SLICE_STROKE } from "./mark";
 import { brand, EASE_OUT } from "./tokens";
 
@@ -162,11 +163,12 @@ function useBloomStyle(phase: SharedValue<Phase>) {
 export function Juice({ size, color }: { size: number; color: string }) {
   const [i, setI] = useState(0);
   const still = useReducedMotion();
+  const awake = useAppActive();
   useEffect(() => {
-    if (still) return;
+    if (still || !awake) return;
     const t = setInterval(() => setI((n) => (n + 1) % 6), 200);
     return () => clearInterval(t);
-  }, [still]);
+  }, [still, awake]);
   return (
     <Svg width={size} height={size} viewBox="0 0 64 64" accessibilityLabel="Loading">
       {SLICE.map((d, k) => (

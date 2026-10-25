@@ -5,20 +5,35 @@ import { useEffect, useRef, useState } from "react";
 import { useWindowDimensions } from "react-native";
 import { SensorType, useAnimatedReaction, useAnimatedSensor } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
-import { agentWorking, isStill, standbyOn, standbyPose } from "./standby";
+import { agentWorking, isStill, listenForStill, standbyOn, standbyPose } from "./standby";
 
 /**
  * Whether standby shows (lib/standby.ts): the pose from the window and the
  * hinge, the phone set down from gravity (Reanimated's sensor, CoreMotion
  * underneath), and an agent working here from presence. `force` is
  * development's `?standby=1`, for the simulator, which has no motion.
+ *
+ * Gravity is read only while the pose and an agent already hold (`listen`,
+ * which the screen answers by rendering `<StillSensor>`): an iPhone is never
+ * in the pose, so it never runs the sensor, which otherwise wakes the UI and
+ * JS threads ten times a second for as long as a design is open.
  */
-export function useStandby(presence: Presence[], file: string, force = false): boolean {
+export function useStandby(
+  presence: Presence[],
+  file: string,
+  force = false,
+): { standby: boolean; listen: boolean; setStill: (still: boolean) => void } {
   const window = useWindowDimensions();
   const hinge = useHinge();
-  const still = useStill();
+  const [still, setStill] = useState(false);
   const pose = standbyPose(window, hinge?.status ?? null);
-  return force || standbyOn(pose, still, agentWorking(presence, file));
+  const working = agentWorking(presence, file);
+  const listen = listenForStill(pose, working);
+  // Not listening, the last reading means nothing: picked up and set down again, it's read anew.
+  useEffect(() => {
+    if (!listen) setStill(false);
+  }, [listen]);
+  return { standby: force || standbyOn(pose, still, working), listen, setStill };
 }
 
 /** The display stays on while standby shows, as StandBy keeps it. */
@@ -28,23 +43,27 @@ export function StandbyAwake() {
 }
 
 /**
- * The phone set down: gravity steady for a moment. Readings come every
- * 100ms on the UI thread and are judged on the JS thread; a phone without
- * the sensor (the simulator) reads as still.
+ * Reads gravity while it's mounted, and says when the phone is set down or
+ * picked up. Readings come every 100ms on the UI thread and are judged on the
+ * JS thread; a phone without the sensor (the simulator) reads as still.
  */
-function useStill(): boolean {
+export function StillSensor({ onStill }: { onStill: (still: boolean) => void }) {
   const sensor = useAnimatedSensor(SensorType.GRAVITY, { interval: 100 });
   const samples = useRef<[number, number, number, number][]>([]);
-  const [still, setStill] = useState(false);
+  const last = useRef<boolean | null>(null);
   const seen = useRef(false);
+  const say = (next: boolean) => {
+    if (last.current === next) return;
+    last.current = next;
+    onStill(next);
+  };
   const take = (x: number, y: number, z: number) => {
     seen.current = true;
     const now = Date.now();
     const s = samples.current;
     s.push([now, x / 9.81, y / 9.81, z / 9.81]);
     while (s.length && s[0]![0] < now - 3000) s.shift();
-    const next = isStill(s);
-    setStill((was) => (was === next ? was : next));
+    say(isStill(s));
   };
   useAnimatedReaction(
     () => sensor.sensor.value,
@@ -55,11 +74,11 @@ function useStill(): boolean {
   useEffect(() => {
     // No readings at all: a device without the sensor, which is never in a hand.
     const t = setTimeout(() => {
-      if (!seen.current) setStill(true);
+      if (!seen.current) say(true);
     }, 2000);
     return () => clearTimeout(t);
   }, []);
-  return still;
+  return null;
 }
 
 /**

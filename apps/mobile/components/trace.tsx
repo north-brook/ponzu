@@ -11,6 +11,7 @@ import Animated, {
 } from "react-native-reanimated";
 import Svg, { Rect } from "react-native-svg";
 import { brand } from "../lib/tokens";
+import { useSeen } from "../lib/use-seen";
 
 const ARect = Animated.createAnimatedComponent(Rect);
 
@@ -36,12 +37,19 @@ export function Trace({
   const [size, setSize] = useState({ w: 0, h: 0 });
   const offset = useSharedValue(0);
   const still = useReducedMotion();
+  // Holds where it is while nobody can see it (the app away, or its screen under another);
+  // it picks up from there.
+  const awake = useSeen();
   useEffect(() => {
-    if (still) return;
-    offset.value = 0;
-    offset.value = withRepeat(withTiming(-100, { duration: 9600, easing: Easing.linear }), -1);
+    if (still || !awake) return;
+    // The pattern repeats every 100 units, so a lap from wherever it stands is seamless.
+    const from = offset.value % 100;
+    offset.value = withRepeat(
+      withTiming(from - 100, { duration: 9600, easing: Easing.linear }),
+      -1,
+    );
     return () => cancelAnimation(offset);
-  }, [still]);
+  }, [still, awake]);
   const w = size.w - inset * 2;
   const h = size.h - inset * 2;
   const r = radius - inset;

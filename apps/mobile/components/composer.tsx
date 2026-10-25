@@ -23,6 +23,7 @@ import Animated, {
   withRepeat,
   withTiming,
 } from "react-native-reanimated";
+import { useAppActive } from "../lib/app-active";
 import { useDictation } from "../lib/dictation";
 import { fail, select, success } from "../lib/haptics";
 import { PARTS, phase, SWITCH_MS } from "../lib/morph";
@@ -312,6 +313,7 @@ export function Composer({
                 level={dictation.level}
                 active={voice && spoken}
                 quiet={!voice || quiet || dictation.muted}
+                shown={voice && dictation.state !== "denied" && dictation.state !== "unavailable"}
               />
             </Animated.View>
           </Glass>
@@ -493,10 +495,17 @@ function Waveform({
   level,
   active,
   quiet,
+  shown,
 }: {
   level: SharedValue<number>;
   active: boolean;
   quiet: boolean;
+  /**
+   * In voice, and able to hear. Typing, the waveform is out of sight; refused the microphone, it
+   * has nothing to follow. Either way its clock stops and the line rests: left running, it
+   * restyled all 34 bars on the UI thread every frame for as long as the sheet was open.
+   */
+  shown: boolean;
 }) {
   const { color } = useTheme();
   const smooth = useDerivedValue(() =>
@@ -505,11 +514,12 @@ function Waveform({
   // The design's wave: 0.9s, each bar 0.13s behind the one before.
   const clock = useSharedValue(0);
   const still = useReducedMotion();
+  const awake = useAppActive();
   useEffect(() => {
-    if (still) return;
+    if (still || !shown || !awake) return;
     clock.value = withRepeat(withTiming(1, { duration: 900, easing: Easing.linear }), -1);
     return () => cancelAnimation(clock);
-  }, [still]);
+  }, [still, shown, awake]);
   return (
     <View
       testID="waveform"

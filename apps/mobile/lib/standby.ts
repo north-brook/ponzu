@@ -28,6 +28,15 @@ export function standbyOn(pose: boolean, still: boolean, working: boolean): bool
   return pose && still && working;
 }
 
+/**
+ * Whether to read gravity at all: only once the pose and an agent hold, so
+ * the phone being set down is the last thing standby waits on. Otherwise the
+ * sensor would run the whole time a design is open, on any phone.
+ */
+export function listenForStill(pose: boolean, working: boolean): boolean {
+  return pose && working;
+}
+
 /** A phone set down: gravity within this of steady (in g) for `STILL_MS`. */
 export const STILL_G = 0.04;
 export const STILL_MS = 1500;
