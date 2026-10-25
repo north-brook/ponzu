@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.48.1](https://github.com/north-brook/ponzu/compare/v1.48.0...v1.48.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* skip what's new after updating from the title bar ([#195](https://github.com/north-brook/ponzu/issues/195)) ([8de47bb](https://github.com/north-brook/ponzu/commit/8de47bb7ad93db1453017c1969e09d3e603183f8))
+
 ## [1.48.0](https://github.com/north-brook/ponzu/compare/v1.47.0...v1.48.0) (2026-10-24)
 
 
