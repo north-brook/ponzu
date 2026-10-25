@@ -9,6 +9,7 @@ Ponzu serving the three examples. They run in this order (`config.yaml`):
 | `launch.yaml` | A clean install with every Mac forgotten: the slice and wordmark on yuzu, then Connect. |
 | `designs.yaml` | Designs lists Kettle, Halon and Weft, under the tab bar (Designs, Activity, Search); the header's filter menu picks Archived, then Recent again. |
 | `canvas.yaml` | Kettle opens on its canvas, with no tab bar over it: the bar, its boards drawn in the web view, and the page button's menu turning it to Website. |
+| `open-link.yaml` | An agent's `ponzu://open?file=…` link (and iOS's `ponzu:///open?…`) opens Kettle on its canvas. |
 | `search.yaml` | The search tab's system field: "brand" shows Files and Frames. |
 | `activity.yaml` | The Activity tab: one list, its filter (New by default, Show everything), and `ponzu://activity?since=1` shows "Claude added 3 artboards" with thumbnails, which opens that design. |
 | `comment.yaml` | A comment on Kettle's Logo (the `?comment=` link), its pin and thread sheet, Resolve, then `?uncomment=` deletes it. |

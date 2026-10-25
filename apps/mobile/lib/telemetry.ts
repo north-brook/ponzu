@@ -17,7 +17,8 @@ export type Event =
   | ["mac paired", { via: "bonjour" | "qr" }]
   | ["canvas opened", Record<string, never>?]
   | ["comment left", { reply: boolean; mode: "voice" | "type" }]
-  | ["activity opened", Record<string, never>?];
+  | ["activity opened", Record<string, never>?]
+  | ["link opened", { kind: "design" | "unpaired" | "missing" | "invalid" }];
 
 const KEY = process.env.EXPO_PUBLIC_POSTHOG_KEY;
 const HOST = process.env.EXPO_PUBLIC_POSTHOG_HOST ?? "https://us.i.posthog.com";

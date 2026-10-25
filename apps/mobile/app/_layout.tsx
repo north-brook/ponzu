@@ -74,6 +74,7 @@ export default function RootLayout() {
                 />
                 <Stack.Screen name="design/[mac]/[key]" options={{ animation: "default" }} />
                 <Stack.Screen name="pair" options={{ animation: "none" }} />
+                <Stack.Screen name="open" options={{ animation: "none" }} />
                 <Stack.Screen name="dev" options={{ animation: "none" }} />
               </Stack>
               {/* The launch screen's yuzu and slice, carried into the first screen. */}

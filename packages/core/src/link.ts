@@ -82,7 +82,16 @@ export function parseDesignLink(raw: string): DesignLink | null {
   // `ponzu://open?…` puts "open" in the host; `ponzu:open?…` in the path.
   const action = url.hostname || url.pathname.replace(/^\/+|\/+$/g, "");
   if (action !== "open") return null;
-  const path = (url.searchParams.get("file") ?? "").replace(/\/+$/, "");
+  return designFromParams((name) => url.searchParams.get(name));
+}
+
+/**
+ * The design an open link's query names (`file`, `artboard`, `mac`), checked as parseDesignLink
+ * checks it. For a reader that has the query without the URL: the phone's router hands it over
+ * parsed, and React Native's URL reads no host from a ponzu:// link.
+ */
+export function designFromParams(get: (name: string) => string | null): DesignLink | null {
+  const path = (get("file") ?? "").replace(/\/+$/, "");
   const segments = path.split("/").slice(1);
   if (
     !path.startsWith("/") ||
@@ -91,9 +100,9 @@ export function parseDesignLink(raw: string): DesignLink | null {
     segments.some((s) => s === "" || s === "." || s === "..")
   )
     return null;
-  const artboard = url.searchParams.get("artboard") ?? undefined;
+  const artboard = get("artboard") ?? undefined;
   if (artboard !== undefined && !ARTBOARD.test(artboard)) return null;
-  const mac = url.searchParams.get("mac") ?? undefined;
+  const mac = get("mac") ?? undefined;
   if (mac !== undefined && !MAC.test(mac)) return null;
   return { path, ...(artboard ? { artboard } : {}), ...(mac ? { mac } : {}) };
 }
