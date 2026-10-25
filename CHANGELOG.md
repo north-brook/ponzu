@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.49.0](https://github.com/north-brook/ponzu/compare/v1.48.3...v1.49.0) (2026-10-25)
+
+
+### Features
+
+* focus home search with cmd+f and leave it with esc ([#201](https://github.com/north-brook/ponzu/issues/201)) ([b277231](https://github.com/north-brook/ponzu/commit/b277231f4d619b7ce89670efac4502fb313cef04))
+
 ## [1.48.3](https://github.com/north-brook/ponzu/compare/v1.48.2...v1.48.3) (2026-10-25)
 
 
