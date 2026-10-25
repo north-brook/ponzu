@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.53.1](https://github.com/north-brook/ponzu/compare/v1.53.0...v1.53.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* the iphone opens an agent's link to a design ([#214](https://github.com/north-brook/ponzu/issues/214)) ([b875cee](https://github.com/north-brook/ponzu/commit/b875ceee5a9a7ed322016f97a5284f808e9773de))
+
 ## [1.53.0](https://github.com/north-brook/ponzu/compare/v1.52.0...v1.53.0) (2026-10-25)
 
 
