@@ -20,18 +20,18 @@ test("what's new, and one Update", () => {
   expect(html).toContain(">Later</button>");
 });
 
-test("names the Macs only when there's more than this one", () => {
+test("counts the Macs only when there's more than this one", () => {
   expect(renderToStaticMarkup(<UpdateBody plan={plan()} updating={false} />)).not.toContain(
     "your Macs",
   );
   const all = plan({ macs: ["local", "air", "spare", "mini"], of: 4 });
-  expect(renderToStaticMarkup(<UpdateBody plan={all} updating={false} />)).toContain(
-    "On all 4 of your Macs",
-  );
+  const allHtml = renderToStaticMarkup(<UpdateBody plan={all} updating={false} />);
+  expect(allHtml).toContain('title="On all 4 of your Macs"');
+  expect(allHtml).toMatch(/<\/svg>4<\/span>/);
   const some = plan({ macs: ["local", "air"], of: 3 });
-  expect(renderToStaticMarkup(<UpdateBody plan={some} updating={false} />)).toContain(
-    "On 2 of your Macs",
-  );
+  const someHtml = renderToStaticMarkup(<UpdateBody plan={some} updating={false} />);
+  expect(someHtml).toContain('title="On 2 of your Macs"');
+  expect(someHtml).toMatch(/<\/svg>2<\/span>/);
 });
 
 test("while it installs, it says what happens next", () => {
