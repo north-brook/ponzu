@@ -120,11 +120,16 @@ export function UpdateBody({
       )}
       <div className="flex items-center gap-2">
         {plan.macs.length > 1 && (
-          <span className="inline-flex items-center gap-[5px] whitespace-nowrap text-[12px] text-muted-foreground">
+          <span
+            title={
+              plan.macs.length === plan.of
+                ? `On all ${plan.of} of your Macs`
+                : `On ${plan.macs.length} of your Macs`
+            }
+            className="inline-flex items-center gap-[5px] whitespace-nowrap text-[12px] text-muted-foreground tabular-nums"
+          >
             <Icon name="laptop" size={13} />
-            {plan.macs.length === plan.of
-              ? `On all ${plan.of} of your Macs`
-              : `On ${plan.macs.length} of your Macs`}
+            {plan.macs.length}
           </span>
         )}
         <span className="flex-1" />
