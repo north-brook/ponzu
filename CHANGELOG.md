@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.51.0](https://github.com/north-brook/ponzu/compare/v1.50.1...v1.51.0) (2026-10-25)
+
+
+### Features
+
+* lap a working design's home card with the artboard frame draw ([#208](https://github.com/north-brook/ponzu/issues/208)) ([3112067](https://github.com/north-brook/ponzu/commit/3112067b85f4dfbbd78505df2062d1df02c0f362))
+
 ## [1.50.1](https://github.com/north-brook/ponzu/compare/v1.50.0...v1.50.1) (2026-10-25)
 
 
