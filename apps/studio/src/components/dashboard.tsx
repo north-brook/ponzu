@@ -53,7 +53,8 @@ export interface OpenTarget {
   base: string;
 }
 
-const mod = navigator.userAgent.includes("Mac") ? "⌘" : "Ctrl+";
+const mac = navigator.userAgent.includes("Mac");
+const mod = mac ? "⌘" : "Ctrl+";
 
 /** How wide the rain runs on a card that has no preview yet. */
 const RAIN_COLUMNS = 8;
@@ -88,10 +89,11 @@ export function Dashboard({
   const [toast, setToast] = useState<{ text: string; undo?: () => void } | null>(null);
   const search = useRef<HTMLInputElement>(null);
 
-  // ⌘K, or typing anywhere on the home screen, goes to search.
+  // ⌘F (Ctrl+F off a Mac) goes to search; with any other modifier it's some other shortcut.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      const plain = e.metaKey === mac && e.ctrlKey === !mac && !e.shiftKey && !e.altKey;
+      if (plain && e.key.toLowerCase() === "f") {
         e.preventDefault();
         search.current?.focus();
         search.current?.select();
@@ -175,7 +177,10 @@ export function Dashboard({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Escape") setQuery("");
+                  if (e.key === "Escape") {
+                    setQuery("");
+                    e.currentTarget.blur();
+                  }
                 }}
                 placeholder="Search designs"
                 spellCheck={false}
@@ -194,7 +199,7 @@ export function Dashboard({
                   <Icon name="close" size={14} strokeWidth={1.8} />
                 </button>
               ) : (
-                <span className="text-faint text-xs">{mod}K</span>
+                <span className="text-faint text-xs">{mod}F</span>
               )}
             </label>
             <span className="w-1.5" />
