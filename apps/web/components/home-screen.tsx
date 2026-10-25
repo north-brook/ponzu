@@ -139,7 +139,7 @@ function Chip({
   );
 }
 
-/** The trace around the card of the design an agent is in: six yuzu dashes marching round it. */
+/** Round the card of the design an agent is in: a new artboard's yuzu frame drawing itself, on a loop. */
 function Trace() {
   return (
     <svg
@@ -147,27 +147,16 @@ function Trace() {
       className="pointer-events-none absolute inset-0 size-full overflow-visible text-yuzu"
     >
       <rect
-        x="0.75"
-        y="0.75"
-        width="calc(100% - 1.5px)"
-        height="calc(100% - 1.5px)"
-        rx="11.25"
-        fill="none"
-        stroke="currentColor"
-        strokeOpacity={0.6}
-        strokeWidth={1}
-      />
-      <rect
-        className="pz-trace"
-        x="0.75"
-        y="0.75"
-        width="calc(100% - 1.5px)"
-        height="calc(100% - 1.5px)"
-        rx="11.25"
+        className="pz-lap"
+        x="1"
+        y="1"
+        width="calc(100% - 2px)"
+        height="calc(100% - 2px)"
+        rx="11"
         pathLength={100}
         fill="none"
         stroke="currentColor"
-        strokeWidth={2.5}
+        strokeWidth={2}
         strokeLinecap="round"
       />
     </svg>

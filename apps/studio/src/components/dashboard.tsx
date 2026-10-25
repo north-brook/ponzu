@@ -966,9 +966,9 @@ function labelled(card: CatalogCard): { file: CatalogFile; label: string }[] {
 }
 
 /**
- * The trace an agent's artboard gets on the canvas, around the card of the
- * design it's working in: six yuzu dashes marching round the edge. Drawn
- * over the preview, which is rounded, so the path is too.
+ * Round the card of the design an agent is working in: a new artboard's yuzu
+ * frame drawing itself, over and over. Drawn over the preview, which is
+ * rounded, so the path is too.
  */
 function CardTrace() {
   return (
@@ -977,27 +977,16 @@ function CardTrace() {
       className="pointer-events-none absolute inset-0 size-full overflow-visible text-[var(--rind)]"
     >
       <rect
-        x="0.75"
-        y="0.75"
-        width="calc(100% - 1.5px)"
-        height="calc(100% - 1.5px)"
-        rx="11.25"
-        fill="none"
-        stroke="currentColor"
-        strokeOpacity={0.6}
-        strokeWidth={1}
-      />
-      <rect
-        className="pz-trace"
-        x="0.75"
-        y="0.75"
-        width="calc(100% - 1.5px)"
-        height="calc(100% - 1.5px)"
-        rx="11.25"
+        className="pz-lap"
+        x="1"
+        y="1"
+        width="calc(100% - 2px)"
+        height="calc(100% - 2px)"
+        rx="11"
         pathLength={100}
         fill="none"
         stroke="currentColor"
-        strokeWidth={2.5}
+        strokeWidth={2}
         strokeLinecap="round"
       />
     </svg>
