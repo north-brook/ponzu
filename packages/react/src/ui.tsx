@@ -168,8 +168,10 @@ export function ShortcutHint({
     >
       <span className="pz-hint-icon">{children}</span>
       <span aria-hidden className="pz-hint-keys">
-        <span className="pz-hint-mod">{modifier}</span>
-        {n}
+        <span className="pz-hint-label">
+          <span className="pz-hint-mod">{modifier}</span>
+          {n}
+        </span>
       </span>
     </span>
   );

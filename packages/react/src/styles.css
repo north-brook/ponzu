@@ -360,8 +360,8 @@
   gap: 1px;
   padding: 0 3px;
   border-radius: 4px;
+  /* The tint mixes the tab's own text color; the glyphs, a child, halve it for themselves. */
   background: color-mix(in srgb, currentColor 8%, transparent);
-  color: color-mix(in srgb, currentColor 50%, transparent);
   font: 500 10.5px / 1 var(--pz-font, "Inter", system-ui, -apple-system, sans-serif);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -376,6 +376,13 @@
 .pz-hint-center .pz-hint-keys {
   right: 50%;
   translate: 50% 0;
+}
+
+.pz-hint-label {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  color: color-mix(in srgb, currentColor 50%, transparent);
 }
 
 .pz-hint-mod {
