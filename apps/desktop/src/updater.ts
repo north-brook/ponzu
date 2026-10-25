@@ -31,7 +31,7 @@ const REPO = "https://github.com/north-brook/ponzu";
  * the release-notes.json each release publishes beside its build (docs/release-notes.md), or,
  * for a release without one, its changelog. A release whose file lists no notes shows none: no
  * section means no note. `complete` when they cover every release since this one: a changelog
- * may have only the newest's.
+ * may have only the newest's, and a build that couldn't read history marks its file incomplete.
  */
 async function notesOf(info: UpdateInfo): Promise<{ notes: string[]; complete: boolean }> {
   try {
@@ -39,8 +39,9 @@ async function notesOf(info: UpdateInfo): Promise<{ notes: string[]; complete: b
       signal: AbortSignal.timeout(10_000),
     });
     if (res.ok) {
-      const { releases } = (await res.json()) as {
+      const { releases, incomplete } = (await res.json()) as {
         releases?: { version: string; notes: string[] }[];
+        incomplete?: boolean;
       };
       const current = app.getVersion();
       const notes = (releases ?? [])
@@ -50,7 +51,7 @@ async function notesOf(info: UpdateInfo): Promise<{ notes: string[]; complete: b
             compareVersions(r.version, info.version) <= 0,
         )
         .flatMap((r) => r.notes);
-      if (Array.isArray(releases)) return { notes, complete: true };
+      if (Array.isArray(releases)) return { notes, complete: incomplete !== true };
     }
   } catch {}
   const changelog = info.releaseNotes;
@@ -136,10 +137,10 @@ export async function installUpdater(opts: {
     }
     installing = true;
     target = o.version;
-    // Update here listed this Mac's notes, all of them, when its download is the version asked
-    // for and they're complete. Clicked on another Mac, or quiet, it listed none of this one's.
+    // Update here listed this Mac's notes, all of them, when its download is the version it
+    // offered and they're complete. Clicked on another Mac, or quiet, it listed none of this one's.
     shown =
-      o.here && ready && readyComplete && (!target || ready.version === target)
+      o.here && target && ready && readyComplete && ready.version === target
         ? ready.version
         : undefined;
     if (readyFor(target)) restart();

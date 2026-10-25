@@ -70,7 +70,7 @@ label. A note with neither label shows on the Mac.
 
 To preview it in development, start the app with
 `PONZU_WHATS_NEW_SINCE=<an older version>`. A checkout without tags or history
-(a shallow clone) bundles no notes and warns.
+(a shallow clone) bundles no notes and warns, marking the file incomplete.
 
 ## Fixing a note
 
