@@ -30,9 +30,10 @@ const REPO = "https://github.com/north-brook/ponzu";
  * What's new between this Ponzu and an update: the release notes its pull requests wrote, from
  * the release-notes.json each release publishes beside its build (docs/release-notes.md), or,
  * for a release without one, its changelog. A release whose file lists no notes shows none: no
- * section means no note.
+ * section means no note. `complete` when they cover every release since this one: a changelog
+ * may have only the newest's.
  */
-async function notesOf(info: UpdateInfo): Promise<string[]> {
+async function notesOf(info: UpdateInfo): Promise<{ notes: string[]; complete: boolean }> {
   try {
     const res = await fetch(`${REPO}/releases/download/v${info.version}/release-notes.json`, {
       signal: AbortSignal.timeout(10_000),
@@ -49,12 +50,15 @@ async function notesOf(info: UpdateInfo): Promise<string[]> {
             compareVersions(r.version, info.version) <= 0,
         )
         .flatMap((r) => r.notes);
-      if (Array.isArray(releases)) return notes;
+      if (Array.isArray(releases)) return { notes, complete: true };
     }
   } catch {}
   const changelog = info.releaseNotes;
-  if (typeof changelog === "string") return changelogNotes(changelog);
-  return (changelog ?? []).flatMap((n) => (n.note ? changelogNotes(n.note) : []));
+  const notes =
+    typeof changelog === "string"
+      ? changelogNotes(changelog)
+      : (changelog ?? []).flatMap((n) => (n.note ? changelogNotes(n.note) : []));
+  return { notes, complete: false };
 }
 
 /**
@@ -79,10 +83,14 @@ export async function installUpdater(opts: {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   let ready: MachineUpdate["ready"];
+  /** Whether `ready`'s notes cover every release since this one. */
+  let readyComplete = false;
   /** The person asked for it: restart as soon as it's downloaded. */
   let installing = false;
   /** The version they asked for: a download older than it isn't the one to restart into. */
   let target: string | undefined;
+  /** Ponzu's own idea rather than the person's: nobody saw Update's notes. */
+  let quiet = false;
   const readyFor = (version?: string) =>
     Boolean(ready && (!version || compareVersions(ready.version, version) >= 0));
   const state = (): MachineUpdate => ({
@@ -93,11 +101,12 @@ export async function installUpdater(opts: {
 
   /**
    * A window open restarts into it; with none, quitting installs it and nothing reopens. Update's
-   * popover listed what's new in the version asked for, so What's new needn't again.
+   * popover listed what's new in the version asked for, so What's new needn't again, unless the
+   * install was quiet or the notes missed releases.
    */
   const restart = () => {
     const seen = target ?? ready?.version;
-    if (seen) markWhatsNewSeen(seen);
+    if (seen && !quiet && readyComplete) markWhatsNewSeen(seen);
     setTimeout(() => {
       if (opts.window()) autoUpdater.quitAndInstall();
       else app.quit();
@@ -129,13 +138,16 @@ export async function installUpdater(opts: {
     }
     installing = true;
     target = o.version;
+    quiet = Boolean(o.quiet);
     if (readyFor(target)) restart();
     else fetchNewest();
     return state();
   };
 
   autoUpdater.on("update-downloaded", async (info) => {
-    ready = { version: info.version, notes: await notesOf(info) };
+    const { notes, complete } = await notesOf(info);
+    ready = { version: info.version, notes };
+    readyComplete = complete;
     opts.onReady();
     if (installing && readyFor(target)) restart();
   });
