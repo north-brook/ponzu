@@ -208,9 +208,21 @@ function sanitizeCssText(css: string, dropped: Dropped[]): string {
   return css;
 }
 
+/** Where a URL being rewritten sits: an element's attribute, or CSS (`attr` "style"). */
+export interface UrlContext {
+  /** The element's tag, or "style" for a style sheet's text. */
+  tag: string;
+  /** The attribute, lowercased: src, href, srcset, style... */
+  attr: string;
+}
+
 export interface SerializeOptions {
-  /** Rewrite relative URLs, for example to resolve assets while rendering. */
-  rewriteUrl?: (url: string) => string;
+  /**
+   * Rewrite URLs, for example to resolve assets while rendering: attribute
+   * URLs, each candidate of a srcset, and every url() or image-set() string
+   * in CSS.
+   */
+  rewriteUrl?: (url: string, ctx: UrlContext) => string;
   /** Leave out data-id attributes (cleaner HTML for agents that don't need them). */
   omitIds?: boolean;
 }
@@ -236,13 +248,20 @@ export function serializeNode(
   let out = `<${node.tag}`;
   if (!opts.omitIds) out += ` data-id="${node.id}"`;
   if (node.name !== undefined) out += ` data-name="${escapeAttr(node.name)}"`;
+  const rewrite = opts.rewriteUrl;
   for (const [k, v] of Object.entries(node.attrs)) {
-    const value = opts.rewriteUrl && URL_ATTRS.has(k.toLowerCase()) ? opts.rewriteUrl(v) : v;
+    const attr = k.toLowerCase();
+    let value = v;
+    if (rewrite && URL_ATTRS.has(attr)) value = rewrite(v, { tag: node.tag, attr });
+    else if (rewrite && SRCSET_ATTRS.has(attr))
+      value = rewriteSrcset(v, (u) => rewrite(u, { tag: node.tag, attr }));
     out += v === "" && isBooleanish(k) ? ` ${k}` : ` ${k}="${escapeAttr(value)}"`;
   }
   const style = serializeStyle(node.style);
   if (style)
-    out += ` style="${escapeAttr(opts.rewriteUrl ? rewriteCssUrls(style, opts.rewriteUrl) : style)}"`;
+    out += ` style="${escapeAttr(
+      rewrite ? rewriteCssUrls(style, (u) => rewrite(u, { tag: node.tag, attr: "style" })) : style,
+    )}"`;
   if (!node.ns && VOID.has(node.tag)) return `${out}>`;
   // HTML parsers honor `/>` on <svg> and <math> anywhere, and on any element
   // inside foreign content. Elsewhere it would be ignored and the element
@@ -255,8 +274,8 @@ export function serializeNode(
   const raw = RAW_TEXT.has(node.tag);
   const foreign = parsedForeign && childrenAreForeign(node);
   for (const c of node.children) {
-    if (raw && c.kind === "text" && opts.rewriteUrl)
-      out += rewriteCssUrls(c.value, opts.rewriteUrl);
+    if (raw && c.kind === "text" && rewrite)
+      out += rewriteCssUrls(c.value, (u) => rewrite(u, { tag: node.tag, attr: "style" }));
     else out += serializeNode(c, opts, raw, foreign);
   }
   return `${out}</${node.tag}>`;
@@ -300,11 +319,74 @@ function isBooleanish(attr: string): boolean {
   ].includes(attr);
 }
 
+/** Every url() in CSS, and every bare string image in an image-set(). */
 export function rewriteCssUrls(css: string, rewrite: (url: string) => string): string {
-  return css.replace(
+  const urls = css.replace(
     /url\(\s*(['"]?)([^'")]+)\1\s*\)/g,
     (_m, q: string, url: string) => `url(${q}${rewrite(url)}${q})`,
   );
+  if (!/image-set\(/i.test(urls)) return urls;
+  // image-set("a.png" 1x, "b.png" 2x) names images by bare strings too.
+  return urls.replace(/((?:-webkit-)?image-set\()([^;{}]*)/gi, (_m, open: string, rest: string) => {
+    let depth = 1;
+    let end = rest.length;
+    for (let i = 0; i < rest.length; i++) {
+      if (rest[i] === "(") depth++;
+      else if (rest[i] === ")" && --depth === 0) {
+        end = i;
+        break;
+      }
+    }
+    const inner = rest
+      .slice(0, end)
+      // Strings that aren't inside a url(), which was rewritten above.
+      .replace(
+        /(^|[,\s(])(['"])([^'"]+)\2/g,
+        (_s, pre: string, q: string, url: string) => `${pre}${q}${rewrite(url)}${q}`,
+      );
+    return `${open}${inner}${rest.slice(end)}`;
+  });
+}
+
+/** Attributes holding a list of image candidates. */
+const SRCSET_ATTRS = new Set(["srcset", "imagesrcset"]);
+
+/** Rewrite each candidate URL in a srcset, keeping its descriptors. */
+export function rewriteSrcset(srcset: string, rewrite: (url: string) => string): string {
+  return parseSrcset(srcset)
+    .map((c) => (c.descriptor ? `${rewrite(c.url)} ${c.descriptor}` : rewrite(c.url)))
+    .join(", ");
+}
+
+/** The candidates of a srcset, as the HTML spec splits them. */
+export function parseSrcset(srcset: string): { url: string; descriptor: string }[] {
+  const out: { url: string; descriptor: string }[] = [];
+  let i = 0;
+  const n = srcset.length;
+  while (i < n) {
+    while (i < n && (/\s/.test(srcset[i]!) || srcset[i] === ",")) i++;
+    if (i >= n) break;
+    let j = i;
+    while (j < n && !/\s/.test(srcset[j]!)) j++;
+    let url = srcset.slice(i, j);
+    let descriptor = "";
+    if (url.endsWith(",")) {
+      url = url.replace(/,+$/, "");
+      i = j;
+    } else {
+      let k = j;
+      let paren = false;
+      while (k < n && (paren || srcset[k] !== ",")) {
+        if (srcset[k] === "(") paren = true;
+        else if (srcset[k] === ")") paren = false;
+        k++;
+      }
+      descriptor = srcset.slice(j, k).trim();
+      i = k + 1;
+    }
+    if (url) out.push({ url, descriptor });
+  }
+  return out;
 }
 
 function escapeText(s: string): string {

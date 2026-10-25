@@ -405,6 +405,7 @@ async function drawThumb(
     tokens,
     scale,
     assetBase,
+    thumbnail: true,
   });
   return out.bytes;
 }

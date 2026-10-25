@@ -61,6 +61,7 @@ export async function writePreview(
       scale: SCALE,
       colorScheme: theme,
       assetBase,
+      thumbnail: true,
     });
     // Write then rename, so Finder never reads half an image.
     const file = join(root, previewFile(theme));

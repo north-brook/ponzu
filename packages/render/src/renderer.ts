@@ -69,6 +69,13 @@ export interface RenderRequest {
   interact?: Interaction;
   /** Base URL for this design's assets/ paths, when it differs from the renderer's own. */
   assetBase?: string;
+  /**
+   * A small picture (a thumbnail, a preview, a canvas snapshot), not a
+   * screenshot: the design's big images load as copies sized to the render
+   * (see RENDITION_WIDTHS), which is much faster. Screenshots, exports and
+   * agents' tools leave it out and get the originals.
+   */
+  thumbnail?: boolean;
 }
 
 export interface RecordRequest {

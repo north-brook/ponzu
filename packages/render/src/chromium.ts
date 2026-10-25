@@ -89,7 +89,7 @@ export class ChromiumRenderer implements Renderer {
     const own = scale !== 1 ? await browser.newContext({ deviceScaleFactor: scale }) : null;
     const page = await (own ?? context).newPage();
     try {
-      const loaded = await this.load(page, req);
+      const loaded = await this.load(page, req, req.thumbnail ? scale : undefined);
       const assetsTimedOut = loaded ? undefined : true;
       const motion = await withBudget(
         "prepare",
@@ -274,6 +274,7 @@ export class ChromiumRenderer implements Renderer {
       colorScheme?: "light" | "dark";
       assetBase?: string;
     },
+    imageScale?: number,
   ): Promise<boolean> {
     const width = cssPx(req.artboard.root.style.width) ?? 1440;
     const height = cssPx(req.artboard.root.style.height) ?? 900;
@@ -303,6 +304,7 @@ export class ChromiumRenderer implements Renderer {
       tokens: req.tokens,
       assetBase,
       colorScheme: req.colorScheme,
+      imageScale,
     });
     await show(page, html);
     const all = await within(
