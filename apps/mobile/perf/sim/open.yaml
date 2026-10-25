@@ -1,0 +1,10 @@
+appId: design.ponzu.app
+name: perf-open
+---
+# A link opened (LINK), and iOS's "Open in “Ponzu”?" accepted if a clean simulator asks.
+- openLink: ${LINK}
+- runFlow:
+    when:
+      visible: "Open in.*"
+    commands:
+      - tapOn: "Open"

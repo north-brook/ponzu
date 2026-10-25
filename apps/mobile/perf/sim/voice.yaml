@@ -1,0 +1,24 @@
+appId: design.ponzu.app
+name: perf-voice
+---
+# The comment sheet in voice (the microphone refused, so it says it can't hear), left alone.
+- runFlow: start.yaml
+- runFlow:
+    file: open.yaml
+    env:
+      LINK: ponzu://design/dev/${KETTLE}?page=Brand&comment=Logo
+- extendedWaitUntil:
+    visible:
+      id: "(comment-input|to-type)"
+    timeout: 30000
+- runFlow:
+    when:
+      visible:
+        id: to-voice
+    commands:
+      - tapOn:
+          id: to-voice
+- extendedWaitUntil:
+    visible:
+      id: to-type
+    timeout: 5000
