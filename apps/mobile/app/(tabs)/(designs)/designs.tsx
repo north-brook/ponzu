@@ -280,6 +280,7 @@ export default function Designs() {
                 file={f}
                 width={cardWidth}
                 unseen={isUnseen(seen, f.mac, f.key, f.modified)}
+                project={project === undefined}
                 onPress={() => open(f)}
                 onLongPress={() => actions(f)}
               />

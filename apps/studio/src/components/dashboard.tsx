@@ -3,7 +3,6 @@ import {
   type CatalogArtboard,
   type CatalogCard,
   type CatalogFile,
-  type CatalogMachine,
   foldCopies,
   previewArtboard,
   viewOf,
@@ -22,15 +21,7 @@ import {
 } from "@ponzu/react";
 import Fuse, { type FuseResultMatch } from "fuse.js";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import {
-  agoShort,
-  branchOf,
-  Device,
-  folderOf,
-  projectOf,
-  tilde,
-  WhereLine,
-} from "@/components/file-info";
+import { agoShort, branchOf, folderOf, projectOf, tilde, WhereLine } from "@/components/file-info";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -105,10 +96,6 @@ export function Dashboard({
 
   // A worktree's copy nobody touched is the main checkout's design: no card of its own.
   const files = useMemo(() => withoutUntouched(catalog?.files ?? []), [catalog?.files]);
-  const machines = useMemo(
-    () => new Map((catalog?.machines ?? []).map((m) => [m.id, m])),
-    [catalog?.machines],
-  );
   // Setup shows until this Mac has a design, read yet or not, or until its agents are
   // connected and the person's other Macs have designs to list.
   const connected = catalog?.agents.some((a) => a.found && a.connected) ?? false;
@@ -212,16 +199,9 @@ export function Dashboard({
         {catalog === null || (setup && setUp) ? (
           <Loading />
         ) : q ? (
-          <Results
-            query={q}
-            cards={searchable}
-            machines={machines}
-            onOpen={onOpen}
-            onShelve={shelve}
-            live={live}
-          />
+          <Results query={q} cards={searchable} onOpen={onOpen} onShelve={shelve} live={live} />
         ) : setup ? (
-          <Setup catalog={catalog} files={files} machines={machines} onOpen={onOpen} live={live} />
+          <Setup catalog={catalog} files={files} onOpen={onOpen} live={live} />
         ) : (
           <>
             {/* One row: the views at the left, the project at the right. */}
@@ -246,7 +226,6 @@ export function Dashboard({
                   <FileCard
                     key={c.file.id}
                     card={c}
-                    machine={machines.get(c.file.machine)}
                     onOpen={onOpen}
                     onShelve={shelve}
                     live={live.has(c.file.id)}
@@ -602,13 +581,11 @@ const PROMPT = "Design a landing page for my app in Ponzu.";
 function Setup({
   catalog,
   files,
-  machines,
   onOpen,
   live,
 }: {
   catalog: Catalog | null;
   files: CatalogFile[];
-  machines: Map<string, CatalogMachine>;
   onOpen: (target: OpenTarget) => void;
   /** Cards to show live (useLive). */
   live: Set<string>;
@@ -705,13 +682,7 @@ function Setup({
       {files.length ? (
         <Grid>
           {foldCopies(files).map((c) => (
-            <FileCard
-              key={c.file.id}
-              card={c}
-              machine={machines.get(c.file.machine)}
-              onOpen={onOpen}
-              live={live.has(c.file.id)}
-            />
+            <FileCard key={c.file.id} card={c} onOpen={onOpen} live={live.has(c.file.id)} />
           ))}
         </Grid>
       ) : (
@@ -806,7 +777,6 @@ function Grid({ children, columns = 4 }: { children: ReactNode; columns?: 3 | 4 
 
 function FileCard({
   card,
-  machine,
   onOpen,
   onShelve,
   match,
@@ -815,7 +785,6 @@ function FileCard({
   short,
 }: {
   card: CatalogCard;
-  machine?: CatalogMachine;
   onOpen: (target: OpenTarget) => void;
   onShelve?: (card: CatalogCard, action: ShelfAction) => Promise<void>;
   /** Show the design itself, edits and all, over its preview. */
@@ -912,21 +881,13 @@ function FileCard({
             {copies.length ? (
               <Checkouts card={card} />
             ) : (
-              <WhereLine file={file} className="min-w-0 shrink" />
+              <WhereLine file={file} project={!short} className="min-w-0 shrink" />
             )}
             {short && file.git && !copies.length && (
               <>
                 <span className="text-faint">·</span>
                 <span className="min-w-0 shrink-[2] truncate">
                   {folderOf(file).split("/").pop()}
-                </span>
-              </>
-            )}
-            {machine && machine.id !== "local" && (
-              <>
-                <span className="text-faint">·</span>
-                <span className="shrink-0">
-                  <Device machine={machine} />
                 </span>
               </>
             )}
@@ -1322,14 +1283,12 @@ const FUSE = {
 function Results({
   query,
   cards,
-  machines,
   onOpen,
   onShelve,
   live,
 }: {
   query: string;
   cards: CatalogCard[];
-  machines: Map<string, CatalogMachine>;
   onOpen: (target: OpenTarget) => void;
   onShelve?: (card: CatalogCard, action: ShelfAction) => Promise<void>;
   /** Cards to show live (useLive). */
@@ -1384,7 +1343,6 @@ function Results({
               <FileCard
                 key={item.file.id}
                 card={item}
-                machine={machines.get(item.file.machine)}
                 onOpen={onOpen}
                 onShelve={onShelve}
                 live={live.has(item.file.id)}
@@ -1403,7 +1361,6 @@ function Results({
               <FrameCard
                 key={`${item.file.id}:${item.artboard.id}`}
                 hit={item}
-                machine={machines.get(item.file.machine)}
                 match={ranges(matches, "artboard.name")}
                 pageMatch={ranges(matches, "page")}
                 onOpen={onOpen}
@@ -1418,13 +1375,11 @@ function Results({
 
 function FrameCard({
   hit,
-  machine,
   match,
   pageMatch,
   onOpen,
 }: {
   hit: FrameHit;
-  machine?: CatalogMachine;
   match?: readonly [number, number][];
   pageMatch?: readonly [number, number][];
   onOpen: (target: OpenTarget) => void;
@@ -1459,8 +1414,6 @@ function FrameCard({
             {hit.page ? <Highlight text={hit.page} ranges={pageMatch} /> : "Artboard"} in{" "}
             {hit.file.name}
           </span>
-          <span className="text-faint">·</span>
-          <Device machine={machine} />
         </span>
       </div>
     </button>
