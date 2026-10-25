@@ -87,10 +87,10 @@ export function Dashboard({
   const [toast, setToast] = useState<{ text: string; undo?: () => void } | null>(null);
   const search = useRef<HTMLInputElement>(null);
 
-  // ⌘K, or typing anywhere on the home screen, goes to search.
+  // ⌘F goes to search.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
         e.preventDefault();
         search.current?.focus();
         search.current?.select();
@@ -186,7 +186,10 @@ export function Dashboard({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Escape") setQuery("");
+                  if (e.key === "Escape") {
+                    setQuery("");
+                    e.currentTarget.blur();
+                  }
                 }}
                 placeholder="Search designs"
                 spellCheck={false}
@@ -205,7 +208,7 @@ export function Dashboard({
                   <Icon name="close" size={14} strokeWidth={1.8} />
                 </button>
               ) : (
-                <span className="text-faint text-xs">{mod}K</span>
+                <span className="text-faint text-xs">{mod}F</span>
               )}
             </label>
             <span className="w-1.5" />

@@ -28,7 +28,7 @@ export function HomeScreen() {
         <div className="flex h-10 flex-1 items-center gap-2.5 rounded-[10px] bg-well px-3.5 text-[14px] text-faint shadow-[0_0_0_1px_var(--home-rule)]">
           <Icon name="search" size={18} className="shrink-0" />
           <span className="flex-1">Search designs</span>
-          <span className="text-xs">⌘K</span>
+          <span className="text-xs">⌘F</span>
         </div>
         <span className="w-1.5" />
         <span className="grid size-10 place-items-center text-muted max-sm:hidden">
