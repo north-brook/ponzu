@@ -89,8 +89,8 @@ export async function installUpdater(opts: {
   let installing = false;
   /** The version they asked for: a download older than it isn't the one to restart into. */
   let target: string | undefined;
-  /** Ponzu's own idea rather than the person's: nobody saw Update's notes. */
-  let quiet = false;
+  /** The version whose notes this Mac's Update listed in full, as the person asked for it. */
+  let shown: string | undefined;
   const readyFor = (version?: string) =>
     Boolean(ready && (!version || compareVersions(ready.version, version) >= 0));
   const state = (): MachineUpdate => ({
@@ -100,13 +100,11 @@ export async function installUpdater(opts: {
   });
 
   /**
-   * A window open restarts into it; with none, quitting installs it and nothing reopens. Update's
-   * popover listed what's new in the version asked for, so What's new needn't again, unless the
-   * install was quiet or the notes missed releases.
+   * A window open restarts into it; with none, quitting installs it and nothing reopens. What's
+   * new needn't repeat what Update's popover listed.
    */
   const restart = () => {
-    const seen = target ?? ready?.version;
-    if (seen && !quiet && readyComplete) markWhatsNewSeen(seen);
+    if (shown) markWhatsNewSeen(shown);
     setTimeout(() => {
       if (opts.window()) autoUpdater.quitAndInstall();
       else app.quit();
@@ -123,9 +121,9 @@ export async function installUpdater(opts: {
    * Install `version`, or a newer one: restart into it once it's downloaded, fetching it first
    * when what's here is older. `quiet`: Ponzu's own idea, for a Mac that was off when the person
    * updated the others. Only once it's downloaded, and only with nobody at this Mac: no window,
-   * or untouched a while.
+   * or untouched a while. `here`: the person clicked Update on this Mac, so saw its popover.
    */
-  const install = (o: { quiet?: boolean; version?: string }): MachineUpdate => {
+  const install = (o: { quiet?: boolean; here?: boolean; version?: string }): MachineUpdate => {
     if (o.quiet) {
       if (installing) return state();
       if (!readyFor(o.version)) {
@@ -138,7 +136,12 @@ export async function installUpdater(opts: {
     }
     installing = true;
     target = o.version;
-    quiet = Boolean(o.quiet);
+    // Update here listed this Mac's notes, all of them, when its download is the version asked
+    // for and they're complete. Clicked on another Mac, or quiet, it listed none of this one's.
+    shown =
+      o.here && ready && readyComplete && (!target || ready.version === target)
+        ? ready.version
+        : undefined;
     if (readyFor(target)) restart();
     else fetchNewest();
     return state();
@@ -172,10 +175,18 @@ export async function installUpdater(opts: {
       let out: MachineUpdate;
       if (req.method === "POST" && req.url === "/update/install") {
         const body = await read(req)
-          .then((text) => JSON.parse(text || "{}") as { quiet?: unknown; version?: unknown } | null)
+          .then(
+            (text) =>
+              JSON.parse(text || "{}") as {
+                quiet?: unknown;
+                here?: unknown;
+                version?: unknown;
+              } | null,
+          )
           .catch(() => null);
         out = install({
           quiet: body?.quiet === true,
+          here: body?.here === true,
           ...(typeof body?.version === "string" ? { version: body.version } : {}),
         });
       } else if (req.method === "GET" && req.url === "/update") out = state();
