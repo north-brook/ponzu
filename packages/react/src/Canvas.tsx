@@ -25,7 +25,7 @@ import { Composer, ThreadCard, threadCard } from "./Comments.tsx";
 import { type CanvasSource, viewOnly } from "./connection.ts";
 import { Icon, Icons } from "./icons.tsx";
 import { useWindowStill } from "./still.ts";
-import { Button, cn, Tip, TipProvider, ToggleGroup } from "./ui.tsx";
+import { Button, cn, ShortcutHint, Tip, TipProvider, ToggleGroup } from "./ui.tsx";
 import {
   isTyping,
   useCamera,
@@ -1348,7 +1348,7 @@ function PageTab({
 }: {
   name: string;
   shortcut?: number;
-  /** ⌥ is held: the shortcut takes the icon's place. */
+  /** ⌥ is held: the shortcut eases in over the icon. */
   showShortcut: boolean;
   icon?: string;
   active: boolean;
@@ -1371,16 +1371,9 @@ function PageTab({
       onClick={onClick}
       onDoubleClick={() => onRename && setEditing(true)}
     >
-      {showShortcut && shortcut ? (
-        <span
-          aria-hidden
-          className="pz:grid pz:size-3.5 pz:shrink-0 pz:place-items-center pz:font-medium pz:text-[12px] pz:text-foreground pz:tabular-nums pz:leading-none"
-        >
-          {shortcut}
-        </span>
-      ) : (
+      <ShortcutHint modifier="⌥" n={shortcut} shown={showShortcut} index={shortcut}>
         <Icon name={icon && icon in Icons ? icon : "board"} size={14} />
-      )}
+      </ShortcutHint>
       {editing ? (
         <input
           autoFocus

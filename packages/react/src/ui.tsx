@@ -7,6 +7,7 @@ import {
 } from "radix-ui";
 import {
   type ComponentProps,
+  type CSSProperties,
   createContext,
   type ReactElement,
   type ReactNode,
@@ -136,6 +137,42 @@ export function Tip({
     </TooltipPrimitive.Root>
   );
   return useContext(TipScope) ? tip : <TipProvider>{tip}</TipProvider>;
+}
+
+/**
+ * A tab's icon, which gives way to the shortcut that jumps to it (⌘1, ⌥2…) while `shown`, the
+ * modifier held. The hint overlays the icon's end, so the tab keeps its width. `index` staggers
+ * a row of them; `center` centres the hint on a lone icon, like the studio's Home button.
+ */
+export function ShortcutHint({
+  modifier,
+  n,
+  shown,
+  index = 0,
+  center = false,
+  children,
+}: {
+  modifier: string;
+  n?: number;
+  shown: boolean;
+  index?: number;
+  center?: boolean;
+  children: ReactNode;
+}) {
+  if (n === undefined) return children;
+  return (
+    <span
+      className={cn("pz-hint", center && "pz-hint-center")}
+      data-shown={shown || undefined}
+      style={{ "--i": index } as CSSProperties}
+    >
+      <span className="pz-hint-icon">{children}</span>
+      <span aria-hidden className="pz-hint-keys">
+        <span className="pz-hint-mod">{modifier}</span>
+        {n}
+      </span>
+    </span>
+  );
 }
 
 const toggleGroupVariants = cva("pz:flex pz:gap-0.5 pz:p-0.5", {
