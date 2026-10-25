@@ -54,7 +54,7 @@ test("the Mac count's name lists each Mac and when it updates", () => {
     />,
   );
   expect(html).toContain(
-    'aria-label="On all 2 of your Macs: This Mac, restarts last; air, after Codex finishes"',
+    'aria-label="On all 2 of your Macs: This Mac, 1.43.0, restarts last; air, 1.43.0, after Codex finishes"',
   );
 });
 

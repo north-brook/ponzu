@@ -148,7 +148,9 @@ function MacCount({ plan, machines }: { plan: UpdatePlan; machines: CatalogMachi
       ? `On all ${plan.of} of your Macs`
       : `On ${plan.macs.length} of your Macs`;
   // The list is in the name too: the card opens on focus, but a screen reader can't reach it.
-  const each = behind.map((m) => `${m.name}, ${when(m)}`).join("; ");
+  const each = behind
+    .map((m) => [m.name, m.update?.version, when(m)].filter(Boolean).join(", "))
+    .join("; ");
   return (
     <HoverCard openDelay={150} closeDelay={100}>
       <HoverCardTrigger asChild>
