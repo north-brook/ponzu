@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.52.0](https://github.com/north-brook/ponzu/compare/v1.51.0...v1.52.0) (2026-10-25)
+
+
+### Features
+
+* a quiet update button, release notes up front, and no restart mid-agent ([#204](https://github.com/north-brook/ponzu/issues/204)) ([27f062a](https://github.com/north-brook/ponzu/commit/27f062a84fa27d8f8bbacf317355acd83f35e778))
+
 ## [1.51.0](https://github.com/north-brook/ponzu/compare/v1.50.1...v1.51.0) (2026-10-25)
 
 
