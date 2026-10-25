@@ -369,7 +369,9 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
           }),
       );
       const here =
-        macs.includes("local") && opts.updater ? await opts.updater.install({ version }) : null;
+        macs.includes("local") && opts.updater
+          ? await opts.updater.install({ here: true, version })
+          : null;
       feed.poke(0);
       return Response.json({
         macs: Object.fromEntries([

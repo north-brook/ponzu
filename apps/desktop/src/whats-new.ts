@@ -13,6 +13,8 @@ interface Release {
  * with the version whose notes Ponzu last showed, kept in userData. A first
  * install shows nothing and starts counting from here. The renderer marks the
  * notes seen when they're dismissed, so a crash before then shows them again.
+ * Update in the title bar already listed them, so restarting into it marks
+ * them seen beforehand (updater.ts); only an update installed on quit shows them.
  * PONZU_WHATS_NEW_SINCE=<version> previews the notes as if updating from it.
  */
 const seenFile = () => join(app.getPath("userData"), "whats-new.json");
@@ -47,9 +49,9 @@ function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-export function markWhatsNewSeen() {
+export function markWhatsNewSeen(version = app.getVersion()) {
   try {
-    writeFileSync(seenFile(), JSON.stringify({ version: app.getVersion() }));
+    writeFileSync(seenFile(), JSON.stringify({ version }));
   } catch {
     // Unwritable userData: the notes show again next launch, which is harmless.
   }

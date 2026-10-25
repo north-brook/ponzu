@@ -13,7 +13,8 @@
  *
  * A checkout without history or tags (CI's shallow clone) writes no releases
  * and warns instead of failing: the build still works, it just has nothing
- * to show.
+ * to show. It marks the file `"incomplete": true`, so an app about to update
+ * doesn't take the empty list for every release's notes.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
@@ -141,15 +142,20 @@ if (import.meta.main) {
     process.exit(1);
   }
   let found: Release[] = [];
+  let incomplete = false;
   try {
     const shallow = (await $`git rev-parse --is-shallow-repository`.quiet().text()).trim();
     if (shallow === "true") throw new Error("shallow checkout");
     found = await releases();
     if (!found.length) console.warn("release-notes: no tagged release has notes");
   } catch (err) {
+    incomplete = true;
     console.warn(`release-notes: bundling none (${err instanceof Error ? err.message : err})`);
   }
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify({ releases: found }, null, 2)}\n`);
+  writeFileSync(
+    path,
+    `${JSON.stringify({ releases: found, ...(incomplete ? { incomplete } : {}) }, null, 2)}\n`,
+  );
   console.log(`release-notes: ${found.length} releases → ${path}`);
 }
