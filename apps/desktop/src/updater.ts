@@ -13,6 +13,11 @@ const AWAY_SECONDS = 5 * 60;
 const RESTART_DELAY = 500;
 /** How often a restart held for a working agent asks again whether it's done. */
 const AGENT_CHECK_EVERY = 2000;
+/**
+ * How long the server may fail to say whether an agent is working before the restart goes ahead
+ * anyway: a server that can't answer for this long has no agent working through it.
+ */
+const AGENT_CHECK_GIVE_UP = 60_000;
 
 /**
  * A message as a sheet on `win`, once it's on screen. Never a free-standing
@@ -105,8 +110,12 @@ export async function installUpdater(opts: {
   const restart = () => {
     if (restarting) return;
     restarting = true;
+    /** When the server last answered: a check that fails isn't an agent that's done. */
+    let answered = Date.now();
     const go = async () => {
-      if (await opts.agentWorking().catch(() => false)) {
+      const working = await opts.agentWorking().catch(() => null);
+      if (working !== null) answered = Date.now();
+      if (working || (working === null && Date.now() - answered < AGENT_CHECK_GIVE_UP)) {
         setTimeout(go, AGENT_CHECK_EVERY);
         return;
       }
