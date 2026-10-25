@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.48.2](https://github.com/north-brook/ponzu/compare/v1.48.1...v1.48.2) (2026-10-25)
+
+
+### Bug Fixes
+
+* show the update popover's mac count as an icon and number ([#198](https://github.com/north-brook/ponzu/issues/198)) ([20cb7ab](https://github.com/north-brook/ponzu/commit/20cb7abb1040c17acedfe73893f310174f677187))
+
 ## [1.48.1](https://github.com/north-brook/ponzu/compare/v1.48.0...v1.48.1) (2026-10-25)
 
 
