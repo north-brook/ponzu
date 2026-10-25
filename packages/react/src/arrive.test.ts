@@ -2,11 +2,13 @@ import { expect, test } from "bun:test";
 import type { Doc, Op, PElement, PNode } from "@ponzu/core";
 import {
   ARRIVE_LAG_MS,
+  ARRIVE_MAX_PIECES,
   ARRIVE_MAX_STAGGER,
   ARRIVE_STAGGER_MS,
   Arrivals,
   arrivals,
   BOARD_DRAW_MS,
+  chunk,
   idsIn,
   outermost,
 } from "./arrive.ts";
@@ -139,4 +141,51 @@ test("a file saved straight to disk brings in only what's new", () => {
   const b = new Arrivals();
   b.add(op, after, 0, after);
   expect((b as unknown as { pieces: Map<string, number> }).pieces.size).toBe(0);
+});
+
+test("thousands of small new things arrive as the boxes that hold them", () => {
+  // An SVG drawn as thousands of lines and dots, the way a generated network or star field is.
+  const lines = Array.from({ length: 3000 }, (_, i) => el(`n_l${i}`));
+  const dots = Array.from({ length: 1700 }, (_, i) => el(`n_d${i}`));
+  const d = doc(
+    el("ab", [
+      el("n_head"),
+      el("n_art", [el("n_svg", [el("n_lines", lines), el("n_dots", dots)])]),
+    ]),
+  );
+  const ids = [...lines, ...dots].map((n) => n.id);
+  expect(chunk(d, ids)).toEqual(["n_lines", "n_dots"]);
+  const a = new Arrivals();
+  a.add({ op: "children", id: "n_lines", children: lines }, d, 0);
+  const starts = (a as unknown as { pieces: Map<string, number> }).pieces;
+  expect([...starts.keys()]).toEqual(["n_lines"]);
+});
+
+test("a write of a few pieces arrives piece by piece", () => {
+  const few = Array.from({ length: ARRIVE_MAX_PIECES }, (_, i) => el(`n_${i}`));
+  const d = doc(el("ab", [el("n_list", few)]));
+  const ids = few.map((n) => n.id);
+  expect(chunk(d, ids)).toEqual(ids);
+});
+
+test("crowded pieces in many boxes chunk to those boxes, in the order written", () => {
+  // Forty cards, each with a dozen new rows: the cards arrive, not 480 rows.
+  const cards = Array.from({ length: 40 }, (_, c) =>
+    el(
+      `n_c${c}`,
+      Array.from({ length: 12 }, (_, r) => el(`n_c${c}r${r}`)),
+    ),
+  );
+  const d = doc(el("ab", [el("n_grid", cards)]));
+  const rows = cards.flatMap((c) => c.children.map((r) => (r as PElement).id));
+  const out = chunk(d, rows);
+  expect(out.length).toBeLessThanOrEqual(ARRIVE_MAX_PIECES);
+  expect(out).toEqual(["n_grid"]);
+});
+
+test("a board's own sections are never chunked into the board", () => {
+  const sections = Array.from({ length: 40 }, (_, i) => el(`n_s${i}`));
+  const d = doc(el("ab", sections));
+  const ids = sections.map((n) => n.id);
+  expect(chunk(d, ids)).toEqual(ids);
 });
