@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import { changelogNotes, compareVersions, type MachineUpdate } from "@ponzu/core";
 import { app, type BrowserWindow, dialog, type MessageBoxOptions, powerMonitor } from "electron";
 import electronUpdater, { type UpdateInfo } from "electron-updater";
+import { markWhatsNewSeen } from "./whats-new";
 
 const { autoUpdater } = electronUpdater;
 const FOUR_HOURS = 4 * 60 * 60 * 1000;
@@ -90,12 +91,18 @@ export async function installUpdater(opts: {
     ...(installing ? { installing } : {}),
   });
 
-  /** A window open restarts into it; with none, quitting installs it and nothing reopens. */
-  const restart = () =>
+  /**
+   * A window open restarts into it; with none, quitting installs it and nothing reopens. Update's
+   * popover listed what's new in the version asked for, so What's new needn't again.
+   */
+  const restart = () => {
+    const seen = target ?? ready?.version;
+    if (seen) markWhatsNewSeen(seen);
     setTimeout(() => {
       if (opts.window()) autoUpdater.quitAndInstall();
       else app.quit();
     }, RESTART_DELAY);
+  };
 
   /** Fetch the newest release: one newer than what's downloaded replaces it. */
   const fetchNewest = () =>

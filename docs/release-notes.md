@@ -64,7 +64,9 @@ label. A note with neither label shows on the Mac.
    notes of every release since the one whose notes it last showed
    (`apps/desktop/src/whats-new.ts`). A first install shows nothing. Closing
    the dialog marks the notes seen; if the app quits before then, they show
-   again next launch.
+   again next launch. Clicking Update marks the notes it listed seen, so an
+   update installed that way shows only notes it didn't list, usually none;
+   the dialog is for an update installed on quit.
 
 To preview it in development, start the app with
 `PONZU_WHATS_NEW_SINCE=<an older version>`. A checkout without tags or history
