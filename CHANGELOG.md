@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.50.1](https://github.com/north-brook/ponzu/compare/v1.50.0...v1.50.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* show a home card as working only while an agent is in it ([#206](https://github.com/north-brook/ponzu/issues/206)) ([ea1e863](https://github.com/north-brook/ponzu/commit/ea1e8632bc2e695baa4e35bf0e9adf040ae6acf1))
+
 ## [1.50.0](https://github.com/north-brook/ponzu/compare/v1.49.0...v1.50.0) (2026-10-25)
 
 
