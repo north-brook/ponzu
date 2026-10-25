@@ -40,7 +40,7 @@ export interface ServeOptions {
   tailnetPort?: number;
   /**
    * Where the home screen remembers the designs it found and what the person
-   * did with them: archived, kept out of Scratch, the folders let in.
+   * did with them: archived, restored, the folders let in.
    */
   dbFile?: string;
   /** What versions before the database remembered, read once and kept for going back. */
@@ -325,8 +325,9 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
       return Response.json(await home.full());
     }
 
-    // The person archives, restores or shelves a design. Another Mac's studio asks this
-    // Mac for its own designs, so every Mac shows the same.
+    // The person archives or restores a design. Another Mac's studio asks this Mac for its
+    // own designs, so every Mac shows the same. "scratch" and "recent" are older studios'
+    // Move to Scratch and Move to Recent: archive and restore now.
     if (path === "/api/shelf") {
       if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
       if (caller === "local" && !sameHostOk(req, url))
@@ -337,9 +338,8 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
       if (!(await home.catalog.has(body.key))) return new Response("Not found", { status: 404 });
       if (home.catalog.db.readOnly)
         return new Response("A newer Ponzu owns this Mac's catalog", { status: 409 });
-      if (body.action === "archive") home.catalog.archive(body.key);
-      else if (body.action === "restore") home.catalog.restore(body.key);
-      else home.catalog.shelve(body.key, body.action === "scratch" ? "scratch" : "recent");
+      if (body.action === "archive" || body.action === "scratch") home.catalog.archive(body.key);
+      else home.catalog.restore(body.key);
       feed.poke(0);
       return Response.json({ ok: true });
     }

@@ -1,4 +1,4 @@
-import { type Catalog, type CatalogFile, foldCopies } from "@ponzu/core";
+import { type Catalog, type CatalogFile, foldCopies, viewOf } from "@ponzu/core";
 
 /**
  * A design on one of the phone's Macs: the catalog's file, with the Mac it's
@@ -60,10 +60,11 @@ export function mergeCatalogs(
   return out.sort((a, b) => b.modified - a.modified);
 }
 
-export type Shelf = "recent" | "scratch" | "archived";
+export type Shelf = "recent" | "archived";
 
+/** Recent, or Archived: an older Mac's Scratch shows as Archived. */
 export function shelfOf(f: CatalogFile): Shelf {
-  return f.shelf ?? "recent";
+  return viewOf(f);
 }
 
 /** A project chip: "ponzu", or the designs in no git checkout. */

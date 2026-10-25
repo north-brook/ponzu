@@ -418,6 +418,18 @@
             },
             {
               "type": "imageset",
+              "path": "./assets/native/hi-folders.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-loose.png"
+            },
+            {
+              "type": "imageset",
+              "path": "./assets/native/hi-shelved.png"
+            },
+            {
+              "type": "imageset",
               "path": "./assets/native/hi-folderOpen.png"
             },
             {

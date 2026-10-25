@@ -49,7 +49,7 @@ export interface DesignMeta {
   example?: true;
   /**
    * An agent made it for its own use (an experiment, a test fixture): the
-   * home screen lists it under Scratch, out of Recent.
+   * home screen keeps it archived, out of Recent.
    */
   scratch?: true;
   pages: PageMeta[];

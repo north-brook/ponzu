@@ -5,6 +5,7 @@ import {
   type Doc,
   findArtboard,
   type Presence,
+  shelfRequest,
 } from "@ponzu/core";
 import {
   type AgentActivity,
@@ -128,7 +129,7 @@ export function Studio() {
   useEffect(() => watchCatalog(ORIGIN, setCatalog), []);
 
   // A design an agent creates opens in a tab as soon as it exists, once. Not one it made
-  // for its own use: scratch stays out of the way.
+  // for its own use: that starts out archived, out of the way.
   const [seen] = useState(() => new Set<string>());
   const firstCatalog = useRef(true);
   useEffect(() => {
@@ -160,13 +161,13 @@ export function Studio() {
     history.replaceState(null, "", url);
   }, [tabs, active]);
 
-  // Archive, restore or move between Recent and Scratch, on the Mac the design is on: its
-  // server relays to another Mac's. Shown now; the stream confirms it.
+  // Archive or restore, on the Mac the design is on: its server relays to another Mac's.
+  // Shown now; the stream confirms it.
   const shelve = async (file: CatalogFile, action: ShelfAction) => {
     const res = await fetch(`${ORIGIN}${file.base}/api/shelf`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ key: file.key, action }),
+      body: JSON.stringify({ key: file.key, action: shelfRequest(file, action) }),
     });
     if (!res.ok)
       throw new Error(
@@ -182,16 +183,8 @@ export function Studio() {
             f.id === file.id
               ? {
                   ...f,
-                  shelf:
-                    action === "archive"
-                      ? "archived"
-                      : action === "scratch"
-                        ? "scratch"
-                        : action === "recent"
-                          ? "recent"
-                          : file.shelf === "archived"
-                            ? "recent"
-                            : f.shelf,
+                  shelf: action === "archive" ? "archived" : "recent",
+                  archivedFor: action === "archive" ? "person" : undefined,
                 }
               : f,
           ),

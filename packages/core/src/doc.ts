@@ -10,7 +10,7 @@ export interface Doc {
   icon?: string;
   /** From design.json: a sample design the home screen hides until it's opened. */
   example?: true;
-  /** An agent made it for its own use: the home screen lists it under Scratch, not Recent. */
+  /** An agent made it for its own use: the home screen keeps it archived, not in Recent. */
   scratch?: true;
   pages: PageState[];
   tokens: string;

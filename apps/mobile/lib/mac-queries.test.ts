@@ -98,7 +98,7 @@ test("a shelf change the Mac refuses goes back, and a patch meanwhile stands", a
   const qc = client();
   qc.setQueryData(
     keys.catalog("mbp"),
-    catalog([file("/a/kettle.design", 2, { shelf: "scratch" }), file("/a/halon.design", 1)]),
+    catalog([file("/a/kettle.design", 2, { shelf: "archived" }), file("/a/halon.design", 1)]),
   );
   let fail!: (err: Error) => void;
   const posted = new Promise<void>((_, reject) => {
@@ -108,7 +108,7 @@ test("a shelf change the Mac refuses goes back, and a patch meanwhile stands", a
     qc,
     shelfMutation(qc, () => posted),
   );
-  const done = m.mutate({ mac: "mbp", key: "/a/kettle.design", action: "recent" }).catch(() => {});
+  const done = m.mutate({ mac: "mbp", key: "/a/kettle.design", action: "restore" }).catch(() => {});
   await Bun.sleep(0);
   expect(shelfOf(qc, "/a/kettle.design")).toBe("recent");
   // The stream says halon changed while the request is out.
@@ -118,7 +118,7 @@ test("a shelf change the Mac refuses goes back, and a patch meanwhile stands", a
   });
   fail(new Error("409"));
   await done;
-  expect(shelfOf(qc, "/a/kettle.design")).toBe("scratch");
+  expect(shelfOf(qc, "/a/kettle.design")).toBe("archived");
   expect(qc.getQueryData<Catalog>(keys.catalog("mbp"))!.files[0]!.name).toBe("Halon 2");
   expect(m.getCurrentResult().status).toBe("error");
 });

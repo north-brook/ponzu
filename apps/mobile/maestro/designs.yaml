@@ -23,15 +23,15 @@ tags: [dev-host]
     element:
       id: card-Weft
     timeout: 30000
-# The filter is the header's native menu: Scratch is checked once picked,
+# The filter is the header's native menu: Archived is checked once picked,
 # and the button says one filter is on; Recent clears it.
 - tapOn: "Filter"
 - extendedWaitUntil:
-    visible: "Scratch.*"
+    visible: "Archived.*"
     timeout: 5000
-- tapOn: "Scratch.*"
+- tapOn: "Archived.*"
 - extendedWaitUntil:
-    visible: "Filter: Scratch"
+    visible: "Filter: Archived"
     timeout: 5000
 - tapOn: "Filter.*"
 - tapOn: "Recent.*"

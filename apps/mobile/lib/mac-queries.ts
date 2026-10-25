@@ -74,11 +74,11 @@ export function writeCatalogMessage(
   return client.setQueryData<Catalog>(keys.catalog(mac), (prev) => applyCatalogMessage(prev, msg));
 }
 
-export type ShelfAction = "archive" | "restore" | "scratch" | "recent";
+export type ShelfAction = "archive" | "restore";
 
 /** The shelf a design lands on, as desktop shows it before the stream confirms. */
 export function shelfAfter(action: ShelfAction): CatalogShelf {
-  return action === "archive" ? "archived" : action === "scratch" ? "scratch" : "recent";
+  return action === "archive" ? "archived" : "recent";
 }
 
 /** `catalog` with design `key` on `shelf` (missing means Recent). */
@@ -98,11 +98,12 @@ export interface ShelfChange {
   mac: string;
   key: string;
   action: ShelfAction;
+  /** The shelf it's on now: an older Mac's Scratch restores with "recent" (shelfRequest). */
+  shelf?: CatalogShelf;
 }
 
 /**
- * Archive, restore, or move a design between Recent and Scratch
- * (`POST /api/shelf`): the card moves at once; if the Mac says no, it goes
+ * Archive or restore a design (`POST /api/shelf`): the card moves at once; if the Mac says no, it goes
  * back to the shelf it was on. Only that design's shelf goes back, so a patch
  * from the stream in the meantime stands. The stream confirms either way.
  */

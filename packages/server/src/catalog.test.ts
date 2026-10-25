@@ -10,10 +10,10 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { Catalog } from "@ponzu/core";
 import type { Renderer } from "@ponzu/render";
-import { LocalCatalog } from "./catalog.ts";
+import { type CatalogSummary, IDLE_AFTER, idle, KEEP_RECENT, LocalCatalog } from "./catalog.ts";
 import { LocalWorkspace, serve } from "./index.ts";
 
 let dir: string;
@@ -180,17 +180,23 @@ test("over HTTP: the studio archives and restores a design it lists, and nothing
     expect((await shelf({ key, action: "archive" })).status).toBe(200);
     expect(await shop()).toMatchObject({ shelf: "archived", archived: expect.any(Number) });
     expect((await shelf({ key, action: "restore" })).status).toBe(200);
-    // Back where it was: Scratch, since it's in the system's temporary folder.
-    expect((await shop())?.shelf).toBe("scratch");
+    // Restored means Recent, though it's in the system's temporary folder.
+    expect((await shop())?.shelf).toBe("recent");
     expect((await shelf({ key: join(tmpdir(), "else.design"), action: "archive" })).status).toBe(
       404,
     );
     expect((await shelf({ key, action: "delete" })).status).toBe(400);
     // An agent's edit brings it back; the person's own edits don't need to.
     expect((await shelf({ key, action: "archive" })).status).toBe(200);
+    expect(await shop()).toMatchObject({ shelf: "archived", archivedFor: "person" });
     const { design: d } = await ws.open(key);
     d.apply({ op: "file.icon", icon: "star" }, { kind: "agent", name: "t" });
-    expect((await shop())?.shelf).toBe("scratch");
+    expect((await shop())?.shelf).toBe("recent");
+    // An older studio's Move to Scratch archives.
+    expect((await shelf({ key, action: "scratch" })).status).toBe(200);
+    expect((await shop())?.shelf).toBe("archived");
+    expect((await shelf({ key, action: "recent" })).status).toBe(200);
+    expect((await shop())?.shelf).toBe("recent");
     d.apply({ op: "file.icon", icon: null }, { kind: "agent", name: "t" });
     // A page on another site can't.
     expect(
@@ -450,27 +456,38 @@ test("archiving, restoring and shelving are remembered; an agent's edit restores
   await new Promise((r) => setTimeout(r, 5));
   other.edited(key);
   expect(await shelf(catalog)).toBe("recent");
+  // An older version's Move to Scratch put it away.
   catalog.shelve(key, "scratch");
-  expect(await shelf(other)).toBe("scratch");
+  expect(await shelf(other)).toBe("archived");
   catalog.shelve(key, null);
   expect(await shelf(other)).toBe("recent");
   catalog.close();
   other.close();
 });
 
-test("a scratch design lists under Scratch until the person keeps it", async () => {
+test("a scratch design starts out archived until the person restores it", async () => {
   const key = join(dir, "scratch/probe.design");
   await design(key, "Probe", { Home: ["A"] });
   const meta = JSON.parse(await readFile(join(key, "design.json"), "utf8"));
   await writeFile(join(key, "design.json"), JSON.stringify({ ...meta, scratch: true }));
   const catalog = new LocalCatalog({ roots: [join(dir, "scratch")], spotlight: "roots" });
   const probe = async () => (await catalog.files(new Map())).find((f) => f.key === key);
-  expect(await probe()).toMatchObject({ scratch: true, shelf: "scratch" });
-  catalog.shelve(key, "recent");
+  expect(await probe()).toMatchObject({ scratch: true, shelf: "archived", archivedFor: "scratch" });
+  catalog.restore(key);
   expect(await probe()).toMatchObject({ scratch: true, shelf: "recent" });
+  expect((await probe())?.archivedFor).toBeUndefined();
+  // An agent editing its own scratch file leaves it put away; the person opening one keeps it.
+  catalog.archive(key);
+  catalog.shelve(key, null);
+  await new Promise((r) => setTimeout(r, 5));
+  catalog.edited(key);
+  expect(await probe()).toMatchObject({ shelf: "archived", archivedFor: "scratch" });
+  catalog.opened(key);
+  expect((await probe())?.shelf).toBe("recent");
+  catalog.close();
 });
 
-test("a design in a temporary folder lists under Scratch until the person keeps it", async () => {
+test("a design in a temporary folder starts out archived until the person restores it", async () => {
   const key = join(dir, "temp/mock.design");
   await design(key, "Mock", { Home: ["A"] });
   const kept = join(dir, "kept/mock.design");
@@ -483,10 +500,65 @@ test("a design in a temporary folder lists under Scratch until the person keeps 
     temp: [join(dir, "temp-link")],
   });
   const listed = async (k: string) => (await catalog.files(new Map())).find((f) => f.key === k);
-  expect(await listed(key)).toMatchObject({ scratch: false, shelf: "scratch" });
+  expect(await listed(key)).toMatchObject({
+    scratch: false,
+    shelf: "archived",
+    archivedFor: "temp",
+  });
   expect((await listed(kept))?.shelf).toBe("recent");
-  catalog.shelve(key, "recent");
+  catalog.restore(key);
   expect((await listed(key))?.shelf).toBe("recent");
+  catalog.close();
+});
+
+test("designs nobody touched in two weeks archive, keeping the last few however old", () => {
+  const now = 1_000 * IDLE_AFTER;
+  const day = 24 * 60 * 60 * 1000;
+  const summary = (key: string, daysAgo: number, shelf: CatalogSummary["shelf"] = "recent") =>
+    ({ key, modified: now - daysAgo * day, shelf }) as CatalogSummary;
+  const fresh = summary("fresh", 1);
+  const week = summary("week", 7);
+  const old = [summary("a", 20), summary("b", 30), summary("c", 40), summary("d", 50)];
+  const put = summary("put", 60, "archived");
+  idle([fresh, week, ...old, put], (s) => s.modified, now);
+  expect([fresh, week].map((s) => s.shelf)).toEqual(["recent", "recent"]);
+  // Two lately, so one more of the old ones stays to keep three in Recent.
+  expect(KEEP_RECENT).toBe(3);
+  expect(old.map((s) => s.shelf)).toEqual(["recent", "archived", "archived", "archived"]);
+  expect(old[1]).toMatchObject({ archivedFor: "idle", active: now - 30 * day });
+  expect(put.archivedFor).toBeUndefined();
+
+  // Back after a break: everything is old, and the three last touched stay.
+  const away = [summary("x", 21), summary("y", 22), summary("z", 23), summary("w", 24)];
+  idle(away, (s) => s.modified, now);
+  expect(away.map((s) => s.shelf)).toEqual(["recent", "recent", "recent", "archived"]);
+});
+
+test("opening an idle design brings it back to Recent", async () => {
+  const dbFile = join(dir, "state/idle.db");
+  const keys = ["one", "two", "three", "four"].map((n) => join(dir, `idle/${n}.design`));
+  for (const k of keys) await design(k, basename(k), { Home: ["A"] });
+  const long = (Date.now() - IDLE_AFTER - 60_000) / 1000;
+  // "four" is the oldest; the others keep Recent at three.
+  for (const [i, k] of keys.entries()) {
+    const at = long - i * 60;
+    await utimes(join(k, "design.json"), at, at);
+    await utimes(join(k, "pages/home/a.html"), at, at);
+    await utimes(join(k, "pages/home"), at, at);
+    await utimes(join(k, "pages"), at, at);
+    await utimes(k, at, at);
+  }
+  const catalog = new LocalCatalog({
+    roots: [join(dir, "idle")],
+    spotlight: "roots",
+    dbFile,
+    temp: [],
+  });
+  const four = async () =>
+    (await catalog.files(new Map())).find((f) => f.key.endsWith("four.design"));
+  expect(await four()).toMatchObject({ shelf: "archived", archivedFor: "idle" });
+  catalog.opened(keys[3]!);
+  expect((await four())?.shelf).toBe("recent");
   catalog.close();
 });
 

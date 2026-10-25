@@ -79,7 +79,7 @@ export const organizeTools = [
         .boolean()
         .optional()
         .describe(
-          "For a file you make for your own use (an experiment, a test fixture), not for the person: Ponzu lists it under Scratch, out of their Recent designs.",
+          "For a file you make for your own use (an experiment, a test fixture), not for the person: Ponzu keeps it archived, out of their Recent designs.",
         ),
       pages: z
         .array(z.object({ name: z.string(), icon: icon.optional().describe(ICON_HINT) }))
@@ -136,9 +136,7 @@ export const organizeTools = [
       scratch: z
         .boolean()
         .optional()
-        .describe(
-          "true lists it under Scratch, out of the person's Recent designs; false brings it back.",
-        ),
+        .describe("true archives it, out of the person's Recent designs; false brings it back."),
     },
     async handler(args, ctx) {
       const { key, design } = await resolveFile(ctx, args.file);

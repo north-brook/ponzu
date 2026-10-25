@@ -57,13 +57,17 @@ export interface CatalogFile {
   /** The git checkout it's in, if any. Not read for a locked design. */
   git?: CatalogGit;
   /**
-   * Which view lists it: Recent, Scratch (made by an agent for its own use) or
-   * Archived (put away by the person). Missing from Macs on older versions,
-   * which means Recent.
+   * Which view lists it: Recent, or Archived (see `archivedFor`). Missing from
+   * Macs on older versions, which means Recent. Older versions also send
+   * Scratch, for a file an agent made for its own use, which shows as Archived.
    */
   shelf?: CatalogShelf;
+  /** Why an archived design is archived. Missing from Macs on older versions. */
+  archivedFor?: ArchiveReason;
   /** When the person archived it, on an archived design. */
   archived?: number;
+  /** When it was last opened or edited, on a design archived for being idle. */
+  active?: number;
   /**
    * A hash of what's in it: design.json, tokens, comments and artboards.
    * Checkouts of one repository carry identical copies of its designs, and
@@ -75,6 +79,30 @@ export interface CatalogFile {
 }
 
 export type CatalogShelf = "recent" | "scratch" | "archived";
+
+/**
+ * How a design came to be archived: the person put it away, nobody opened or
+ * edited it for a while, an agent made it for its own use (`"scratch": true`),
+ * or it's in a folder the system empties (/tmp).
+ */
+export type ArchiveReason = "person" | "idle" | "scratch" | "temp";
+
+/** The view a design shows in. An older Mac's Scratch is Archived. */
+export function viewOf(file: Pick<CatalogFile, "shelf">): "recent" | "archived" {
+  return file.shelf && file.shelf !== "recent" ? "archived" : "recent";
+}
+
+/**
+ * What to send `/api/shelf` to archive or restore a design. An older Mac's
+ * restore leaves a scratch design on Scratch; its "recent" is what brings one
+ * to Recent, and this version takes "recent" as a restore too.
+ */
+export function shelfRequest(
+  file: Pick<CatalogFile, "shelf">,
+  action: "archive" | "restore",
+): "archive" | "restore" | "recent" {
+  return action === "restore" && file.shelf === "scratch" ? "recent" : action;
+}
 
 export interface CatalogGit {
   /** The checkout's top folder (a worktree's own, for a worktree). */

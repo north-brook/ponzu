@@ -30,17 +30,16 @@ import { useTheme } from "../../../lib/theme";
 import { brand } from "../../../lib/tokens";
 import { useWindowInsets } from "../../../lib/window-insets";
 
-const SHELVES: { id: Shelf; label: string }[] = [
-  { id: "recent", label: "Recent" },
-  { id: "scratch", label: "Scratch" },
-  { id: "archived", label: "Archived" },
+const SHELVES: { id: Shelf; label: string; image: string }[] = [
+  { id: "recent", label: "Recent", image: "hi-clock" },
+  { id: "archived", label: "Archived", image: "hi-shelved" },
 ];
 
 /**
  * Designs (Flow › 1 Designs), the first tab: the desktop dashboard for a
  * phone. The lockup and a filter in the system's glass header, the grid
  * scrolling under it; every Mac's designs as cards, newest first. The
- * filter is the system's menu: the shelf (Recent, Scratch, Archived) and
+ * filter is the system's menu: the shelf (Recent or Archived) and
  * the project, the current one checked; the button
  * wears a yuzu badge with how many filters are on. Search and Activity are tabs of
  * their own beside it. Macs that didn't answer keep their cards from last
@@ -92,12 +91,7 @@ export default function Designs() {
     const choices: { label: string; action: ShelfAction }[] =
       on === "archived"
         ? [{ label: "Restore", action: "restore" }]
-        : [
-            on === "scratch"
-              ? { label: "Move to Recent", action: "recent" }
-              : { label: "Move to Scratch", action: "scratch" },
-            { label: "Archive", action: "archive" },
-          ];
+        : [{ label: "Archive", action: "archive" }];
     // The sheet is the app's, not the system's context menu: it has no haptic of its own.
     select();
     ActionSheetIOS.showActionSheetWithOptions(
@@ -112,7 +106,7 @@ export default function Designs() {
         if (choice.action === "archive") thud();
         else select();
         shelve.mutate(
-          { mac: f.mac, key: f.key, action: choice.action },
+          { mac: f.mac, key: f.key, action: choice.action, shelf: f.shelf },
           {
             onError: () => {
               fail();
@@ -141,7 +135,7 @@ export default function Designs() {
         subactions: SHELVES.map((s) => ({
           id: `shelf:${s.id}`,
           title: s.label,
-          image: s.id === "recent" ? "hi-home" : s.id === "scratch" ? "hi-scratch" : "hi-archive",
+          image: s.image,
           state: s.id === shelf ? "on" : "off",
         })),
       },
@@ -153,13 +147,13 @@ export default function Designs() {
           {
             id: "project:*",
             title: "All",
-            image: "hi-grid",
+            image: "hi-folders",
             state: project === undefined ? "on" : "off",
           },
           ...chips.map((c) => ({
             id: `project:${c.name ?? ""}`,
             title: c.name ?? "Not in a project",
-            image: c.name ? "hi-branch" : "hi-folder",
+            image: c.name ? "hi-folder" : "hi-loose",
             state: project === c.name ? ("on" as const) : ("off" as const),
           })),
         ],

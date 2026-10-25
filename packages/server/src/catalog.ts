@@ -5,6 +5,7 @@ import { mkdir, readdir, readFile, realpath, rename, stat, writeFile } from "nod
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import {
+  type ArchiveReason,
   type CatalogArtboard,
   type CatalogFile,
   type CatalogFileAgent,
@@ -29,6 +30,10 @@ const CHANGES_TTL = 60_000;
 const GIT_AT_ONCE = 4;
 /** How long a design whose folder is gone is remembered, in case it comes back. */
 const FORGET_AFTER = 30 * 24 * 60 * 60 * 1000;
+/** How long a design goes unopened and unedited before it's archived. */
+export const IDLE_AFTER = 14 * 24 * 60 * 60 * 1000;
+/** Recent never drops below this many designs, however long they've been idle. */
+export const KEEP_RECENT = 3;
 /** How deep a known checkout is walked for designs Spotlight can't see. */
 const CHECKOUT_DEPTH = 4;
 
@@ -46,8 +51,8 @@ const GUARDED = ["Desktop", "Documents", "Downloads", "Library/Mobile Documents"
 
 /**
  * Folders the system empties on its own (/tmp, and the per-user one Node's tmpdir names
- * under /var/folders). A design in one is someone's throwaway, so it lists under Scratch
- * until the person says otherwise. By real path: /tmp is /private/tmp.
+ * under /var/folders). A design in one is someone's throwaway, so it starts out archived
+ * until the person restores it. By real path: /tmp is /private/tmp.
  */
 const TEMP_DIRS = ["/tmp", tmpdir()];
 
@@ -71,7 +76,7 @@ export interface CatalogOptions {
    * folders the person let Ponzu read.
    */
   stateFile?: string;
-  /** Folders whose designs list under Scratch: the system's temporary folders by default. */
+  /** Folders whose designs start out archived: the system's temporary folders by default. */
   temp?: string[];
 }
 
@@ -90,8 +95,12 @@ export interface CatalogSummary {
   scratch: boolean;
   /** The view it's listed in, after the person's say. */
   shelf: CatalogShelf;
-  /** When the person archived it, if it's archived. */
+  /** Why it's archived, if it is. */
+  archivedFor?: ArchiveReason;
+  /** When the person archived it, if they did. */
   archived?: number;
+  /** When it was last opened or edited, if it's archived for being idle. */
+  active?: number;
   /** A hash of what's in it (CatalogFile's). Missing for a locked design. */
   fingerprint?: string;
   /** The git checkout it's in, if any. */
@@ -159,7 +168,9 @@ export class LocalCatalog {
 
   /**
    * The person opened this design themselves, so it's listed even if it's an
-   * example, and out of the archive if it was in it. `remember` keeps an
+   * example, and back in Recent whatever archived it: a scratch file or one in
+   * /tmp they open is theirs now. An agent's edit doesn't do that for those, as
+   * agents edit their own scratch files all the time. `remember` keeps an
    * example listed after a restart, as opening it in the app does; the designs
    * named to `ponzu serve` are listed while it runs.
    */
@@ -170,6 +181,7 @@ export class LocalCatalog {
     this.shown.add(key);
     this.shown.add(real);
     this.db.revive(real);
+    this.db.shelve(real, "recent");
     if (opts.remember) this.db.opened(real);
   }
 
@@ -184,8 +196,11 @@ export class LocalCatalog {
     this.db.archive(realpathOr(key));
   }
 
+  /** Back to Recent, whatever put it away: a scratch file or one in /tmp stays there too. */
   restore(key: string): void {
-    this.db.revive(realpathOr(key));
+    const real = realpathOr(key);
+    this.db.revive(real);
+    this.db.shelve(real, "recent");
   }
 
   /** The person's say on where it's listed: Recent or Scratch, or (null) what its file says. */
@@ -236,13 +251,20 @@ export class LocalCatalog {
     }
     const out: CatalogSummary[] = [];
     const gone: string[] = [];
+    // When each was last opened or edited; one open now is in use.
+    const active = new Map<CatalogSummary, number>();
+    const touched = (s: CatalogSummary, row: DesignRow | undefined, open: boolean) =>
+      active.set(s, open ? Date.now() : Math.max(s.modified, row?.revived_at ?? 0));
     await Promise.all(
       [...byReal].map(async ([real, { key }]) => {
         const doc = open.get(key);
         const row = this.row(real);
         const temp = this.temp.some((d) => real.startsWith(`${d}/`));
         if (!doc && !this.readable(key)) {
-          out.push(lockedSummary(key, this.indexed.get(key) ?? 0, this.shelfOf(row, temp)));
+          const modified = this.indexed.get(key) ?? 0;
+          const locked = { ...lockedSummary(key, modified), ...this.shelfOf(row, false, temp) };
+          touched(locked, row, false);
+          out.push(locked);
           return;
         }
         const s = await this.summary(key);
@@ -267,20 +289,21 @@ export class LocalCatalog {
           this.git(key),
         ]);
         const untouched = git?.worktree ? await this.untouched(key, git, s.modified) : undefined;
-        const archived = archivedAt(row);
         const listed: CatalogSummary = {
           ...s,
           scratch,
-          shelf: this.shelfOf(row, scratch || temp),
-          ...(archived ? { archived } : {}),
+          ...this.shelfOf(row, scratch, temp),
           previewAt,
           ...(git ? { git: untouched === undefined ? git : { ...git, untouched } } : {}),
         };
-        out.push(doc ? { ...listed, ...fromDoc(doc) } : listed);
+        const summary = doc ? { ...listed, ...fromDoc(doc) } : listed;
+        touched(summary, row, Boolean(doc));
+        out.push(summary);
       }),
     );
     // Gone since it was found, like a deleted worktree's: hidden now, forgotten in a while.
     if (gone.length) this.db.missing(gone);
+    idle(out, (s) => active.get(s) ?? s.modified);
     return out.sort((a, b) => b.modified - a.modified);
   }
 
@@ -296,10 +319,22 @@ export class LocalCatalog {
     this.db.close();
   }
 
-  private shelfOf(row: DesignRow | undefined, scratch: boolean): CatalogShelf {
-    if (archivedAt(row)) return "archived";
-    if (row?.shelf) return row.shelf;
-    return scratch ? "scratch" : "recent";
+  /**
+   * Where a design is listed, before idleness: archived if the person put it
+   * away, or if an agent made it for its own use or it's in /tmp and the person
+   * hasn't kept it. An older version's "Move to Scratch" counts as putting it away.
+   */
+  private shelfOf(
+    row: DesignRow | undefined,
+    scratch: boolean,
+    temp: boolean,
+  ): Pick<CatalogSummary, "shelf" | "archivedFor" | "archived"> {
+    const archived = archivedAt(row);
+    if (archived) return { shelf: "archived", archivedFor: "person", archived };
+    if (row?.shelf === "scratch") return { shelf: "archived", archivedFor: "person" };
+    if (row?.shelf !== "recent" && (scratch || temp))
+      return { shelf: "archived", archivedFor: scratch ? "scratch" : "temp" };
+    return { shelf: "recent" };
   }
 
   private row(path: string): DesignRow | undefined {
@@ -685,7 +720,7 @@ function realpathOr(key: string): string {
   }
 }
 
-function lockedSummary(key: string, modified: number, shelf: CatalogShelf): CatalogSummary {
+function lockedSummary(key: string, modified: number): CatalogSummary {
   return {
     key,
     name: basename(key).replace(/\.design$/, ""),
@@ -694,10 +729,29 @@ function lockedSummary(key: string, modified: number, shelf: CatalogShelf): Cata
     previewAt: null,
     example: false,
     scratch: false,
-    shelf,
+    shelf: "recent",
     pages: [],
     artboards: [],
   };
+}
+
+/**
+ * Archive what's in Recent but nobody has opened or edited in IDLE_AFTER,
+ * keeping the KEEP_RECENT last touched however old, so Recent never opens
+ * empty after a break. Opening one, or an agent's edit, brings it back.
+ */
+export function idle(
+  summaries: CatalogSummary[],
+  activeAt: (s: CatalogSummary) => number,
+  now = Date.now(),
+): void {
+  const recent = summaries
+    .filter((s) => s.shelf === "recent")
+    .map((s) => ({ s, active: activeAt(s) }))
+    .sort((a, b) => b.active - a.active);
+  for (const { s, active } of recent.slice(KEEP_RECENT))
+    if (now - active > IDLE_AFTER)
+      Object.assign(s, { shelf: "archived", archivedFor: "idle", active });
 }
 
 /** .design folders Spotlight knows of, with their last change. Null when Spotlight can't answer. */
@@ -925,7 +979,9 @@ export function catalogFile(
     ...(opts.created ? { created: opts.created } : {}),
     ...(s.git ? { git: s.git } : {}),
     shelf: s.shelf,
+    ...(s.archivedFor ? { archivedFor: s.archivedFor } : {}),
     ...(s.archived ? { archived: s.archived } : {}),
+    ...(s.active ? { active: s.active } : {}),
     ...(s.fingerprint ? { fingerprint: s.fingerprint } : {}),
     pages: s.pages,
     artboards: s.artboards.map((a) => ({

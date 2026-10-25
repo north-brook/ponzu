@@ -18,7 +18,9 @@ import {
   serializeArtboardFile,
   serializeNodes,
   setTokens,
+  shelfRequest,
   toKebab,
+  viewOf,
   withoutUntouched,
 } from "./index.ts";
 
@@ -496,6 +498,18 @@ describe("outline", () => {
     expect(rootDirectionUnset({ display: "flex", "flex-flow": "wrap" })).toBe(false);
     expect(rootDirectionUnset({})).toBe(false);
     expect(rootDirectionUnset({ display: "grid" })).toBe(false);
+  });
+});
+
+describe("shelves", () => {
+  test("an older Mac's Scratch shows as Archived, and restores with recent", () => {
+    expect(viewOf({})).toBe("recent");
+    expect(viewOf({ shelf: "recent" })).toBe("recent");
+    expect(viewOf({ shelf: "archived" })).toBe("archived");
+    expect(viewOf({ shelf: "scratch" })).toBe("archived");
+    expect(shelfRequest({ shelf: "scratch" }, "restore")).toBe("recent");
+    expect(shelfRequest({ shelf: "archived" }, "restore")).toBe("restore");
+    expect(shelfRequest({ shelf: "scratch" }, "archive")).toBe("archive");
   });
 });
 

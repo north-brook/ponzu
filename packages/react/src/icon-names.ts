@@ -13,6 +13,7 @@ import {
   Analytics01Icon,
   ApiIcon,
   Archive01Icon,
+  Archive02Icon,
   ArrowDown01Icon,
   ArrowTurnBackwardIcon,
   ArrowTurnForwardIcon,
@@ -82,6 +83,7 @@ import {
   FigmaIcon,
   File01Icon,
   FileEmpty02Icon,
+  FilesIcon,
   Film02Icon,
   FilterHorizontalIcon,
   FingerPrintIcon,
@@ -92,6 +94,7 @@ import {
   Folder01Icon,
   FolderGitIcon,
   FolderOpenIcon,
+  FoldersIcon,
   FootballIcon,
   FormIcon,
   FrameIcon,
@@ -255,6 +258,12 @@ export const Icons = {
   flow: FlowConnectionIcon,
   folder: Folder01Icon,
   folderOpen: FolderOpenIcon,
+  /** Every project at once. */
+  folders: FoldersIcon,
+  /** Designs outside any project: loose pages. */
+  loose: FilesIcon,
+  /** The Archived view: the tray designs are put away in. */
+  shelved: Archive02Icon,
   /** A git repository: a project. */
   repo: FolderGitIcon,
   branch: GitBranchIcon,
