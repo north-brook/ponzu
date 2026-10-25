@@ -95,7 +95,7 @@ test("an unreadable database is moved aside and started over", async () => {
   await writeFile(file, "this is not a database, just some bytes that look nothing like one");
   const db = new CatalogDb(file);
   db.seen([["/a.design", "walk"]]);
-  expect(db.all().map((r) => r.path)).toEqual(["/a.design"]);
+  expect(db.all()?.map((r) => r.path)).toEqual(["/a.design"]);
   expect(readdirSync(dir).some((f) => f.startsWith("corrupt.db.corrupt-"))).toBe(true);
   db.close();
 });
@@ -107,7 +107,7 @@ test("two processes recovering the same unreadable database share the one that r
   const b = new CatalogDb(file);
   a.seen([["/a.design", "walk"]]);
   // The first moved it and started over; the second found it started and opened it.
-  expect(b.all().map((r) => r.path)).toEqual(["/a.design"]);
+  expect(b.all()?.map((r) => r.path)).toEqual(["/a.design"]);
   b.archive("/a.design", 5);
   expect(archivedAt(a.get("/a.design"))).toBe(5);
   a.close();
@@ -135,7 +135,7 @@ test("recovery that loses the race opens the database the winner started", async
   } as typeof original;
   try {
     const loser = new CatalogDb(file);
-    expect(loser.all().map((r) => r.path)).toEqual(["/winner.design"]);
+    expect(loser.all()?.map((r) => r.path)).toEqual(["/winner.design"]);
     loser.close();
   } finally {
     Database.prototype.exec = original;
@@ -151,7 +151,7 @@ test("two processes starting at once both end up on the current schema", () => {
   expect(
     a
       .all()
-      .map((r) => r.path)
+      ?.map((r) => r.path)
       .sort(),
   ).toEqual(["/one.design", "/two.design"]);
   expect(existsSync(`${file}-wal`)).toBe(true);

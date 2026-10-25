@@ -111,10 +111,9 @@ export function Dashboard({
   // Setup shows until this Mac has a design, read yet or not, or until its agents are
   // connected and the person's other Macs have designs to list.
   const connected = catalog?.agents.some((a) => a.found && a.connected) ?? false;
-  const setup =
-    catalog !== null &&
-    !files.some((f) => f.machine === "local") &&
-    !(connected && files.length > 0);
+  const local = files.some((f) => f.machine === "local");
+  const setUp = useSetUp(local);
+  const setup = catalog !== null && !local && !(connected && files.length > 0);
   const q = query.trim();
   const live = useLive(files);
   // Identical copies of a design in several checkouts are one card.
@@ -221,7 +220,7 @@ export function Dashboard({
           </div>
         </TipProvider>
 
-        {catalog === null ? (
+        {catalog === null || (setup && setUp) ? (
           <Loading />
         ) : q ? (
           <Results
@@ -459,6 +458,40 @@ function ProjectItem({
       <span className="text-[11px] text-faint tabular-nums">{count}</span>
     </DropdownMenuItem>
   );
+}
+
+/** Remembers that this Mac has listed a design of its own. */
+const SET_UP_KEY = "ponzu.setUp";
+/** How long a Mac that had designs waits for them before showing the first steps after all. */
+const SET_UP_GRACE = 15_000;
+
+/**
+ * Whether this Mac listed designs of its own before, and the time to find them again hasn't run
+ * out. A catalog that comes back empty, as one read while an update restarts can, shows the
+ * placeholder cards rather than the first steps; one still empty after the grace period is
+ * really empty (every design deleted), so the first steps show then.
+ */
+function useSetUp(local: boolean): boolean {
+  const [before] = useState(() => {
+    try {
+      return localStorage.getItem(SET_UP_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [waiting, setWaiting] = useState(before);
+  useEffect(() => {
+    if (!local) return;
+    try {
+      localStorage.setItem(SET_UP_KEY, "1");
+    } catch {}
+  }, [local]);
+  useEffect(() => {
+    if (!waiting) return;
+    const t = setTimeout(() => setWaiting(false), SET_UP_GRACE);
+    return () => clearTimeout(t);
+  }, [waiting]);
+  return before && waiting;
 }
 
 /** Name widths for the placeholder cards, so they don't read as one card repeated. */

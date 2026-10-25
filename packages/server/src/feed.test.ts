@@ -310,7 +310,6 @@ function fakeUpdater(
   order: string[],
   state: MachineUpdate,
   asked: (string | undefined)[] = [],
-  here: boolean[] = [],
 ): Updater & {
   set(s: MachineUpdate): void;
 } {
@@ -323,7 +322,6 @@ function fakeUpdater(
     install: async (o) => {
       order.push(name);
       asked.push(o?.version);
-      here.push(Boolean(o?.here));
       now = { ...now, installing: true };
       return now;
     },
@@ -335,10 +333,9 @@ test("one Update installs on each of the person's Macs, this one last", async ()
   await fakeTailnet();
   const order: string[] = [];
   const versions: (string | undefined)[] = [];
-  const clickedHere: boolean[] = [];
   const spareDir = join(dir, "spare-update");
   const spareWs = new LocalWorkspace({ cwd: spareDir });
-  const spareUpdater = fakeUpdater("spare", order, { version: "1.43.0" }, versions, clickedHere);
+  const spareUpdater = fakeUpdater("spare", order, { version: "1.43.0" }, versions);
   const spare = serve(spareWs, {
     port: 0,
     root: spareDir,
@@ -358,7 +355,6 @@ test("one Update installs on each of the person's Macs, this one last", async ()
       order,
       { version: "1.43.0", ready: { version: "1.44.0", notes: ["Faster."] } },
       versions,
-      clickedHere,
     ),
   });
   const home = stream(`ws://127.0.0.1:${here.port}/api/catalog/stream`);
@@ -384,8 +380,6 @@ test("one Update installs on each of the person's Macs, this one last", async ()
     expect(order).toEqual(["spare", "here"]);
     // Each Mac hears which version, so one holding an older download fetches that one first.
     expect(versions).toEqual(["1.44.0", "1.44.0"]);
-    // Only this Mac showed the popover, so only its What's new can skip the notes.
-    expect(clickedHere).toEqual([false, true]);
     c = await home.until((c) => updatePlan(c.machines)?.installing === true);
   } finally {
     home.close();
@@ -395,3 +389,69 @@ test("one Update installs on each of the person's Macs, this one last", async ()
     await spareWs.closeAll();
   }
 }, 15_000);
+
+test("an Update waits for an agent working on that Mac, and every Mac's home screen says so", async () => {
+  await fakeTailnet();
+  const order: string[] = [];
+  const spareDir = join(dir, "spare-busy");
+  const spareWs = new LocalWorkspace({ cwd: spareDir });
+  const spare = serve(spareWs, {
+    port: 0,
+    root: spareDir,
+    spotlight: "roots",
+    updater: fakeUpdater("spare", order, {
+      version: "1.43.0",
+      ready: { version: "1.44.0", notes: ["Faster."] },
+    }),
+  });
+  const hereDir = join(dir, "here-busy");
+  const hereWs = new LocalWorkspace({ cwd: hereDir });
+  const here = serve(hereWs, {
+    port: 0,
+    root: hereDir,
+    spotlight: "roots",
+    tailnet: true,
+    tailnetPort: spare.port,
+    updater: fakeUpdater("here", order, { version: "1.43.0" }),
+  });
+  const home = stream(`ws://127.0.0.1:${here.port}/api/catalog/stream`);
+  try {
+    // An agent is mid-change on the other Mac.
+    await runTool(getTool("create_file")!, { path: "kiosk.design" }, { ws: spareWs, caller });
+    await runTool(
+      getTool("create_artboard")!,
+      { name: "Hero", width: 400, height: 300 },
+      { ws: spareWs, caller },
+    );
+    const busy = (c: Catalog) => c.machines.find((m) => m.id === "spare")?.update?.waitsFor;
+    await home.until((c) => busy(c) === "claude", 8000);
+
+    const res = await fetch(`http://127.0.0.1:${here.port}/api/update`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ macs: ["spare", "local"], version: "1.44.0" }),
+    });
+    // Both said yes, and this Mac, with no agent at work, restarts; the other waits for its agent.
+    expect(await res.json()).toEqual({ macs: { spare: true, local: true } });
+    expect(order).toEqual(["here"]);
+    const c = await home.until(
+      (c) => c.machines.find((m) => m.id === "spare")?.update?.installing === true,
+      8000,
+    );
+    expect(busy(c)).toBe("claude");
+
+    // The agent is done: the other Mac installs.
+    spareWs.presence.touch(caller, { working: [], status: undefined });
+    await home.until((c) => !busy(c), 8000);
+    const until = Date.now() + 5000;
+    while (!order.includes("spare") && Date.now() < until)
+      await new Promise((r) => setTimeout(r, 50));
+    expect(order).toEqual(["here", "spare"]);
+  } finally {
+    home.close();
+    here.stop(true);
+    spare.stop(true);
+    await hereWs.closeAll();
+    await spareWs.closeAll();
+  }
+}, 25_000);

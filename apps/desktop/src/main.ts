@@ -7,7 +7,6 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, shel
 import { renderToken, startRenderHost } from "./render-host";
 import { smoke, watchSmoke } from "./smoke";
 import { checkForUpdatesNow, installUpdater } from "./updater";
-import { markWhatsNewSeen, pendingWhatsNew } from "./whats-new";
 
 const isDev = !app.isPackaged;
 /** The built main/preload live in <app>/dist, in development and inside the bundle. */
@@ -365,8 +364,6 @@ async function newDesign(): Promise<string | null> {
 ipcMain.handle("ponzu:open-folder", () => pickDesign());
 ipcMain.handle("ponzu:new-file", () => newDesign());
 ipcMain.on("ponzu:reveal", (_e, path: string) => shell.showItemInFolder(path));
-ipcMain.handle("ponzu:whats-new", () => pendingWhatsNew());
-ipcMain.on("ponzu:whats-new-seen", () => markWhatsNewSeen());
 ipcMain.handle("ponzu:pair-iphone-pending", () => {
   const pending = pairPending;
   pairPending = false;

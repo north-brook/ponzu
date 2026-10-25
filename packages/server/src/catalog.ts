@@ -310,8 +310,12 @@ export class LocalCatalog {
   private refresh(): void {
     const v = this.db.dataVersion();
     if (v === this.dataVersion && v !== -1) return;
+    // A read that failed (another Ponzu holding the database while it quits, say) keeps the rows
+    // already read, and the next listing tries again, rather than listing nothing until a write.
+    const all = this.db.all();
+    if (!all) return;
     this.dataVersion = v;
-    this.rows = new Map(this.db.all().map((r) => [r.path, r]));
+    this.rows = new Map(all.map((r) => [r.path, r]));
     for (const g of this.db.grants()) this.granted.add(g);
   }
 
@@ -355,7 +359,7 @@ export class LocalCatalog {
     for (const dir of dirs) for (const k of await walk(dir, 4, enter)) found.set(k, "walk");
     // Every checkout of every repository a design is known in, worktrees included, and
     // hidden folders and all: Spotlight skips them.
-    const known = [...found.keys(), ...this.db.all().map((r) => r.path)];
+    const known = [...found.keys(), ...(this.db.all() ?? []).map((r) => r.path)];
     const repos = new Set<string>();
     for (const k of known) {
       if (!this.readable(k)) continue;

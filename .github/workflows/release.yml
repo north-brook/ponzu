@@ -128,7 +128,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ env.TAG }}
-          # The app bundles every release's notes for What's new, read from
+          # The app bundles every release's notes, read from
           # main's history between tags (scripts/release-notes.ts).
           fetch-depth: 0
           fetch-tags: true

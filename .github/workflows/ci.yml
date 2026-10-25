@@ -39,7 +39,7 @@ jobs:
         env:
           TITLE: ${{ github.event.pull_request.title }}
       # A feature or fix usually changes something a user notices; its note is
-      # what the app's What's new says about it (docs/release-notes.md). Some
+      # what the app's update popover says about it (docs/release-notes.md). Some
       # fixes are invisible, so this warns.
       - name: A feature or fix says what users will notice
         if: github.event_name == 'pull_request'

@@ -16,6 +16,11 @@ export interface MachineUpdate {
   ready?: { version: string; notes: string[] };
   /** Installing, as the person asked: restarting into it, or downloading it first. */
   installing?: boolean;
+  /**
+   * The agent (its client: claude, openai, …) working on this Mac right now. Its restart waits
+   * until the agent is done, so the agent isn't cut off mid-change.
+   */
+  waitsFor?: string;
 }
 
 /** What one click of Update does. */

@@ -198,7 +198,7 @@ The phone is its own Release Please component. A `feat` or `fix` that touches
 `apps/mobile` goes into a separate release PR (`chore(main): release mobile
 X.Y.Z`), which merges itself like the Mac's once CI passes and tags
 `mobile-vX.Y.Z`. Changes only under `apps/mobile` never bump the Mac app
-(`exclude-paths` in `release-please-config.json`), and its What's new leaves
+(`exclude-paths` in `release-please-config.json`), and its release notes leave
 them out. Nobody edits `apps/mobile/app.json`'s version or pushes a tag.
 
 What a release ships depends on the native fingerprint (`runtimeVersion:

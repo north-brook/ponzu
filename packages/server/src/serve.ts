@@ -17,7 +17,7 @@ import { CatalogFeed, type Scope } from "./feed.ts";
 import { Home, type OpenedBy } from "./home.ts";
 import { assetResponse } from "./range.ts";
 import { isTailnetAddress } from "./tailnet.ts";
-import type { Updater } from "./updater.ts";
+import { type Updater, waitForAgents } from "./updater.ts";
 import type { LocalWorkspace } from "./workspace.ts";
 
 export interface ServeOptions {
@@ -211,6 +211,12 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
     if (page) broadcast(key, { t: "focus", artboard, page: page.id });
   });
 
+  // An update the person asks for waits for an agent mid-change here, and Home lists that it does.
+  const agentWorking = () => {
+    const agent = ws.presence.list().find((p) => p.kind === "agent" && p.working.length > 0);
+    return agent && (agent.client ?? "other");
+  };
+  const updater = opts.updater && waitForAgents(opts.updater, agentWorking);
   const home = new Home(ws, {
     roots: opts.root ? [opts.root] : [],
     spotlight: opts.spotlight,
@@ -220,7 +226,8 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
     agents: opts.agents,
     peerPort: opts.tailnetPort ?? 7777,
     opened: opts.opened,
-    updater: opts.updater,
+    updater,
+    agentWorking,
   });
   const feed = new CatalogFeed(home, ws);
 
@@ -368,10 +375,7 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
             return [mac, ok] as const;
           }),
       );
-      const here =
-        macs.includes("local") && opts.updater
-          ? await opts.updater.install({ here: true, version })
-          : null;
+      const here = macs.includes("local") && updater ? await updater.install({ version }) : null;
       feed.poke(0);
       return Response.json({
         macs: Object.fromEntries([
@@ -387,9 +391,9 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
       if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
       if (caller === "local" && !sameHostOk(req, url))
         return new Response("Forbidden", { status: 403 });
-      if (!opts.updater) return new Response("Not found", { status: 404 });
+      if (!updater) return new Response("Not found", { status: 404 });
       const body = (await req.json().catch(() => null)) as { version?: unknown } | null;
-      const update = await opts.updater.install(
+      const update = await updater.install(
         typeof body?.version === "string" ? { version: body.version } : {},
       );
       feed.poke(0);
@@ -739,7 +743,6 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
   // A Mac that was off when the person updated the others: once it has the update too, and
   // another of their Macs already runs it, it installs as soon as nobody is using it.
   let catchUp: ReturnType<typeof setInterval> | undefined;
-  const updater = opts.updater;
   if (updater && opts.tailnet) {
     catchUp = setInterval(async () => {
       const ready = updater.state()?.ready;

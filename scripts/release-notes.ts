@@ -4,8 +4,8 @@
  * `## Release note` heading in its description. The squash merge copies the
  * description into the commit message, so the notes travel with the commit.
  * The desktop build reads them back out of main's history, grouped by the
- * release tag that shipped them, and bundles them for What's new
- * (docs/release-notes.md). A note that starts `iPhone:` is about the phone
+ * release tag that shipped them; the release publishes the result beside its
+ * build for the title bar's update popover (docs/release-notes.md). A note that starts `iPhone:` is about the phone
  * app and left out; one that starts `Mac:` keeps its words without the label.
  *
  *   bun scripts/release-notes.ts <out.json>
@@ -34,7 +34,7 @@ const NOTHING = /^(none|n\/a|-|no)\.?$/i;
 const TRAILER = /^(?:[a-z][\w-]*-by|cc):\s/i;
 /** A tool's sign-off line at the foot of a description, such as "🤖 Generated with …". */
 const SIGN_OFF = /^\W*generated (with|by)\b/i;
-/** A note about the phone only: not for the Mac's What's new. */
+/** A note about the phone only: not for the Mac's release notes. */
 const IPHONE = /^iphone:\s*/i;
 /** A note about the Mac only, in a pull request that also changed the phone. */
 const MAC = /^mac:\s*/i;
