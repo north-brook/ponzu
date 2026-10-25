@@ -29,6 +29,8 @@ export const ARRIVE_LAG_MS = 90;
 export const ARRIVE_STAGGER_MS = 55;
 /** A long write still starts within about half a second: past this many pieces, the rest come together. */
 export const ARRIVE_MAX_STAGGER = 10;
+/** Past this many pieces in one write, crowded siblings arrive as the box that holds them. */
+export const ARRIVE_MAX_PIECES = 24;
 export const ARRIVE_EASING = "cubic-bezier(.3,.7,.25,1)";
 
 /** How long a new artboard's frame takes to draw; its pieces start once it's drawn. */
@@ -151,6 +153,42 @@ export function outermost(doc: Doc, ids: string[]): string[] {
   return out.sort((a, b) => order.get(a)! - order.get(b)!);
 }
 
+/**
+ * The pieces these ids arrive as: the outermost of them, chunked so a write of thousands of small
+ * things (an SVG's every line, a grid's every dot) develops as a few. Past ARRIVE_MAX_PIECES, each
+ * box holding several of them arrives in their place, until they're few enough; when none share a
+ * box, each moves up one. A board's own sections stay as they are.
+ */
+export function chunk(doc: Doc, ids: string[]): string[] {
+  let out = outermost(doc, ids);
+  if (out.length <= ARRIVE_MAX_PIECES) return out;
+  const parent = new Map<string, string>();
+  const visit = (el: PElement, board: boolean) => {
+    for (const c of el.children) {
+      if (c.kind !== "el") continue;
+      if (!board) parent.set(c.id, el.id);
+      visit(c, false);
+    }
+  };
+  for (const page of doc.pages) for (const ab of page.artboards) visit(ab.root, true);
+  while (out.length > ARRIVE_MAX_PIECES) {
+    const count = new Map<string, number>();
+    for (const id of out) {
+      const p = parent.get(id);
+      if (p) count.set(p, (count.get(p) ?? 0) + 1);
+    }
+    if (!count.size) break;
+    const crowded = [...count.values()].some((n) => n > 1);
+    const lift = (id: string) => {
+      const p = parent.get(id);
+      return p && (!crowded || count.get(p)! > 1) ? p : id;
+    };
+    // First mention keeps its place, so a box arrives where its first piece would have.
+    out = outermost(doc, [...new Set(out.map(lift))]);
+  }
+  return out;
+}
+
 /** Whether the person has asked for less motion. */
 export function reducedMotion(): boolean {
   return typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -185,15 +223,19 @@ export function develop(el: Element, layer: HTMLElement): Animation[] {
   const scale = layer.offsetWidth ? origin.width / layer.offsetWidth : 0;
   if (scale > 0) {
     const line = 1.5 / scale;
-    const lines = outlined(el);
-    lines.forEach((target, i) => {
-      const r = target.getBoundingClientRect();
+    // Measure every outline before adding any: each box added would make the next measure lay
+    // the board out again.
+    const lines = outlined(el).map((target) => ({
+      r: target.getBoundingClientRect(),
+      radius: getComputedStyle(target).borderRadius,
+    }));
+    lines.forEach(({ r, radius }, i) => {
       const box = document.createElement("div");
       box.style.cssText = [
         "all:initial;position:absolute;box-sizing:border-box;pointer-events:none;opacity:0",
         `left:${(r.left - origin.left) / scale - line}px;top:${(r.top - origin.top) / scale - line}px`,
         `width:${r.width / scale + 2 * line}px;height:${r.height / scale + 2 * line}px`,
-        `border:${line}px solid ${ARRIVE_LINE};border-radius:${getComputedStyle(target).borderRadius}`,
+        `border:${line}px solid ${ARRIVE_LINE};border-radius:${radius}`,
       ].join(";");
       layer.append(box);
       const a = box.animate(outlineKeyframes(i, lines.length), {
@@ -245,7 +287,7 @@ export class Arrivals {
     this.prune(now);
     for (const id of createdBoards(op)) this.boards.set(id, { at: now, taken: false });
     const known = before ? idsIn(before) : undefined;
-    const ids = outermost(doc, arrivals(op, known && ((id) => known.has(id)))).filter(
+    const ids = chunk(doc, arrivals(op, known && ((id) => known.has(id)))).filter(
       (id) => !this.pieces.has(id),
     );
     if (!ids.length) return;
