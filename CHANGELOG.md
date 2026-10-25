@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.50.1](https://github.com/north-brook/ponzu/compare/v1.50.0...v1.50.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* show a home card as working only while an agent is in it ([#206](https://github.com/north-brook/ponzu/issues/206)) ([ea1e863](https://github.com/north-brook/ponzu/commit/ea1e8632bc2e695baa4e35bf0e9adf040ae6acf1))
+
+## [1.50.0](https://github.com/north-brook/ponzu/compare/v1.49.0...v1.50.0) (2026-10-25)
+
+
+### Features
+
+* fold scratch into archived, auto-archive idle designs, add view and project icons ([#203](https://github.com/north-brook/ponzu/issues/203)) ([d8be630](https://github.com/north-brook/ponzu/commit/d8be630f9b054745d75bc9ce2834b070348e6d2c))
+
 ## [1.49.0](https://github.com/north-brook/ponzu/compare/v1.48.3...v1.49.0) (2026-10-25)
 
 

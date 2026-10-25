@@ -784,8 +784,8 @@ function FileCard({
   short?: boolean;
 }) {
   const { file, copies } = card;
-  const fresh = file.created !== undefined && Date.now() - file.created < 5 * 60_000;
-  const working = Boolean(file.busy) || fresh;
+  // Only an agent at work in it, as its tab has it: a design just made isn't one.
+  const working = Boolean(file.busy);
   const archived = viewOf(file) === "archived";
   const open = () => onOpen({ key: file.key, base: file.base });
   // Right-clicked: the same menu at the pointer, and no "…" beside it.
