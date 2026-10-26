@@ -1,8 +1,7 @@
-import type { MenuAction } from "@react-native-menu/menu";
+import { type MenuAction, MenuView } from "@react-native-menu/menu";
 import { router, Stack } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActionSheetIOS,
   Alert,
   type HostInstance,
   RefreshControl,
@@ -46,7 +45,7 @@ const SHELVES: { id: Shelf; label: string; image: string }[] = [
  * time, dimmed, under a note.
  */
 export default function Designs() {
-  const { color } = useTheme();
+  const { color, scheme } = useTheme();
   const { width } = useWindowDimensions();
   const files = useFiles();
   const seen = useSeen();
@@ -85,40 +84,27 @@ export default function Designs() {
     tick();
     router.push({ pathname: "/design/[mac]/[key]", params: { mac: f.mac, key: f.key } });
   };
-  // Hold a card for its shelf, as desktop's card menu: the card moves at once.
-  const actions = (f: PhoneFile) => {
-    const on = shelfOf(f);
-    const choices: { label: string; action: ShelfAction }[] =
-      on === "archived"
-        ? [{ label: "Restore", action: "restore" }]
-        : [{ label: "Archive", action: "archive" }];
-    // The sheet is the app's, not the system's context menu: it has no haptic of its own.
-    select();
-    ActionSheetIOS.showActionSheetWithOptions(
+  // Hold a card for its shelf, as desktop's card menu: the system's context menu, and the
+  // card moves at once.
+  const cardActions = (f: PhoneFile): MenuAction[] =>
+    shelfOf(f) === "archived"
+      ? [{ id: "restore", title: "Restore", image: "hi-unarchive" }]
+      : [{ id: "archive", title: "Archive", image: "hi-archive" }];
+  const move = (f: PhoneFile, action: ShelfAction) => {
+    if (action === "archive") thud();
+    else select();
+    shelve.mutate(
+      { mac: f.mac, key: f.key, action, shelf: f.shelf },
       {
-        title: f.name,
-        options: [...choices.map((c) => c.label), "Cancel"],
-        cancelButtonIndex: choices.length,
-      },
-      (i) => {
-        const choice = choices[i];
-        if (!choice) return;
-        if (choice.action === "archive") thud();
-        else select();
-        shelve.mutate(
-          { mac: f.mac, key: f.key, action: choice.action, shelf: f.shelf },
-          {
-            onError: () => {
-              fail();
-              Alert.alert(
-                `Couldn't move “${f.name}”`,
-                f.stale
-                  ? `${f.macName} isn't answering. Try again once it's back.`
-                  : `${f.macName} didn't take the change.`,
-              );
-            },
-          },
-        );
+        onError: () => {
+          fail();
+          Alert.alert(
+            `Couldn't move “${f.name}”`,
+            f.stale
+              ? `${f.macName} isn't answering. Try again once it's back.`
+              : `${f.macName} didn't take the change.`,
+          );
+        },
       },
     );
   };
@@ -276,14 +262,20 @@ export default function Designs() {
         >
           {shown.map((f, i) => (
             <HandoffRise key={f.id} kind="designs" i={i}>
-              <FileCard
-                file={f}
-                width={cardWidth}
-                unseen={isUnseen(seen, f.mac, f.key, f.modified)}
-                project={project === undefined}
-                onPress={() => open(f)}
-                onLongPress={() => actions(f)}
-              />
+              <MenuView
+                actions={cardActions(f)}
+                onPressAction={({ nativeEvent }) => move(f, nativeEvent.event as ShelfAction)}
+                shouldOpenOnLongPress
+                themeVariant={scheme}
+              >
+                <FileCard
+                  file={f}
+                  width={cardWidth}
+                  unseen={isUnseen(seen, f.mac, f.key, f.modified)}
+                  project={project === undefined}
+                  onPress={() => open(f)}
+                />
+              </MenuView>
             </HandoffRise>
           ))}
         </Animated.View>
