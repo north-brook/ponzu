@@ -4,7 +4,8 @@ import { Slice } from "@/components/icons";
 
 /**
  * The share card, at exactly 1200×630. Not linked from the site: `scripts/share-image.ts` screenshots
- * it into `app/opengraph-image.png`, so the card shows the real demo in the site's own type.
+ * it into `app/opengraph-image.jpg` and `app/twitter-image.jpg`, so the card shows the real demo in
+ * the site's own type.
  */
 export const metadata: Metadata = {
   title: "Share card",

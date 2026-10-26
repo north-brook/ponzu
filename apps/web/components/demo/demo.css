@@ -80,7 +80,8 @@
 .dm-lights {
   display: flex;
   gap: 8px;
-  margin-right: 18px;
+  /* With the home button's own inset, the mark sits 19px clear of the lights, as in the app. */
+  margin-right: 12px;
 }
 
 .dm-lights i {
@@ -178,22 +179,14 @@
   transition: transform 1300ms cubic-bezier(0.65, 0, 0.25, 1);
 }
 
-.dm .dm-board {
-  animation: dm-board-in 500ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
-}
-
-@keyframes dm-board-in {
-  from {
-    opacity: 0;
-    scale: 0.97;
-  }
-}
-
 .dm .dm-board-title {
   transition: font-size 1300ms cubic-bezier(0.65, 0, 0.25, 1);
 }
 
-/* Pieces of a design arrive in the order the agent writes them. */
+/*
+ * Pieces of a design arrive in the order the agent writes them. Each is hidden until then; the
+ * develop itself (arrive.ts) runs from the script, with its outlines drawn in `.dm-arrive`.
+ */
 .dm-board-body {
   position: relative;
   overflow: hidden;
@@ -201,24 +194,20 @@
 
 .dm-board-body [data-r] {
   opacity: 0;
-  translate: 0 28px;
-  filter: blur(6px);
-  transition:
-    opacity 600ms ease-out,
-    translate 800ms cubic-bezier(0.2, 0.7, 0.2, 1),
-    filter 600ms ease-out;
 }
 
-.dm-board-body [data-revision] {
-  animation: dm-revision 900ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+.dm-arrive {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
 }
 
-@keyframes dm-revision {
-  from {
-    opacity: 0;
-    translate: 0 -16px;
-    filter: blur(8px);
-  }
+/* A board's frame and ring: a box in screen px round it, scaled back into the world. */
+.dm-halo {
+  position: absolute;
+  pointer-events: none;
+  transform-origin: 0 0;
 }
 
 /* The person's cursor. */

@@ -1,11 +1,25 @@
 "use client";
 
-import { AgentMark, Icon, Logo } from "@ponzu/react";
+import {
+  AgentMark,
+  ARRIVE_LAG_MS,
+  ARRIVE_STAGGER_MS,
+  arriveBoard,
+  BOARD_DRAW_MS,
+  BOARD_MS,
+  develop,
+  drawFrame,
+  Icon,
+  Logo,
+  Rain,
+  RING_OUT_MS,
+  SHEET_KEYFRAMES,
+} from "@ponzu/react";
 import "./ponzu.css";
 import "./demo.css";
-import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ClaudeApp } from "./claude-app";
-import { BOARDS } from "./registry";
+import { BOARDS, type BoardMeta } from "./registry";
 import { BEATS, type BeatId, COMMENT, index, LAST } from "./script";
 
 /**
@@ -19,6 +33,10 @@ const NARROW = { width: 1000, height: 1000 };
 const NARROW_AT = 860;
 /** How often the clock re-renders the scene within a beat. */
 const TICK_MS = 33;
+/** As on the canvas (Canvas.tsx): boards are this rounded, and a working one's ring sits this far
+ * off its edge, in screen px at any zoom. */
+const BOARD_RADIUS = 4;
+const RING_GAP = 4;
 
 export type PageId = "brand" | "landing" | "app";
 
@@ -46,6 +64,12 @@ const PLACES: Record<
   "app-shop": { page: "app", x: 1530, y: 0, beat: "app", offset: 3 },
 };
 
+/**
+ * The share of a build beat its pieces are written in. The rest of the beat lets the last of them
+ * develop and settle before the camera moves on.
+ */
+const WRITE = 0.4;
+
 /** How many of a board's pieces are written by now. Siblings on one beat start in a cascade. */
 function stepsFor(id: string, total: number, beat: number, t: number) {
   const place = PLACES[id];
@@ -53,8 +77,8 @@ function stepsFor(id: string, total: number, beat: number, t: number) {
   const start = index(place.beat);
   if (beat < start) return 0;
   if (beat > start) return total;
-  const lead = (place.offset ?? 0) * 0.16;
-  const local = Math.max(0, Math.min(1, (t - lead) / (1 - lead * 0.6)));
+  const lead = (place.offset ?? 0) * 0.07;
+  const local = Math.max(0, Math.min(1, (t - lead) / WRITE));
   return t < lead ? 0 : Math.max(1, Math.ceil(local * total));
 }
 
@@ -89,6 +113,8 @@ export function ProductDemo() {
   const [beat, setBeat] = useState(0);
   const [t, setT] = useState(0);
   const [cycle, setCycle] = useState(0);
+  /** Held on one beat or showing the finished story: everything is just there, nothing arrives. */
+  const [still, setStill] = useState(false);
 
   useEffect(() => {
     const el = wrap.current;
@@ -111,11 +137,13 @@ export function ProductDemo() {
     // `?demo=<beat>` holds the story on one beat, for screenshots, the share card and review.
     const hold = new URLSearchParams(location.search).get("demo");
     if (hold && index(hold as BeatId) >= 0) {
+      setStill(true);
       setBeat(index(hold as BeatId));
       setT(1);
       return;
     }
     if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setStill(true);
       setBeat(LAST);
       setT(1);
       return;
@@ -184,7 +212,7 @@ export function ProductDemo() {
               className="dm-studio-wrap absolute top-0 left-0 grid"
               style={{ width: 1000, height: 820 }}
             >
-              <Studio key={cycle} beat={beat} t={t} />
+              <Studio key={cycle} beat={beat} t={t} still={still} />
             </div>
             <div
               className="dm-float absolute right-0 bottom-0 grid"
@@ -205,7 +233,7 @@ export function ProductDemo() {
               gridTemplateColumns: `${WIDE.studio}px 1fr`,
             }}
           >
-            <Studio key={cycle} beat={beat} t={t} />
+            <Studio key={cycle} beat={beat} t={t} still={still} />
             <ClaudeApp beat={beat} t={t} big={false} />
           </div>
         ))}
@@ -225,7 +253,7 @@ function terminalInFront(beat: number) {
   return false;
 }
 
-function Studio({ beat, t }: { beat: number; t: number }) {
+function Studio({ beat, t, still }: { beat: number; t: number; still: boolean }) {
   const at = (id: BeatId) => beat >= index(id);
   const during = (id: BeatId) => beat === index(id);
   const viewport = useRef<HTMLDivElement>(null);
@@ -251,9 +279,19 @@ function Studio({ beat, t }: { beat: number; t: number }) {
   const page = pageAt(beat);
   const pages = PAGES.filter((p) => at(p.from));
   const busy = at("think") && !at("recommend") ? true : at("heard") && !at("resolve");
-  const working = (id: string) =>
-    (PLACES[id] && during(PLACES[id].beat)) ||
-    (id === "sunroom" && (during("heard") || during("revise")));
+  const workingOn = (id: string, b: number) => {
+    const on = (beatId: BeatId) => b === index(beatId);
+    const place = PLACES[id];
+    return Boolean(place && on(place.beat)) || (id === "sunroom" && (on("heard") || on("revise")));
+  };
+  const working = (id: string) => workingOn(id, beat);
+  // A board's ring fades out over RING_OUT_MS once its work is done, as on the canvas.
+  const ring = (id: string): Ring =>
+    working(id)
+      ? "on"
+      : beat > 0 && workingOn(id, beat - 1) && t * (BEATS[beat]?.ms ?? 0) < RING_OUT_MS
+        ? "leaving"
+        : null;
 
   // The pin sits on the Sunroom headline; the cursor travels to exactly that point.
   const sunroom = PLACES.sunroom!;
@@ -304,71 +342,20 @@ function Studio({ beat, t }: { beat: number; t: number }) {
                 if (!place || place.page !== page) return null;
                 const steps = stepsFor(board.id, board.steps, beat, t);
                 if (!steps) return null;
-                const Component = board.Component;
                 return (
-                  <div
+                  <Board
                     key={board.id}
-                    className="dm-board pz:absolute pz:shadow-board"
-                    style={{
-                      left: place.x,
-                      top: place.y,
-                      width: board.width,
-                      height: board.height,
-                    }}
-                  >
-                    <div
-                      className="dm-board-title pz:absolute pz:right-0 pz:left-0 pz:flex pz:items-center pz:gap-[0.5em] pz:whitespace-nowrap pz:leading-[1.4] pz:text-muted-foreground"
-                      style={{ fontSize: 12 / zoom, top: -22 / zoom }}
-                    >
-                      <span
-                        className={`pz:min-w-0 pz:truncate ${working(board.id) ? "pz-shimmer" : ""}`}
-                      >
-                        {board.name}
-                      </span>
-                      {working(board.id) && (
-                        <span className="pz:ml-auto pz:inline-grid pz:shrink-0 pz:place-items-center">
-                          <AgentMark client="claude" size={12 / zoom} />
-                        </span>
-                      )}
-                    </div>
-                    {working(board.id) && (
-                      <svg
-                        className="dm-trace pz:pointer-events-none pz:absolute pz:inset-0 pz:overflow-visible pz:text-[var(--pz-rind)]"
-                        width={board.width}
-                        height={board.height}
-                        aria-hidden
-                      >
-                        <rect
-                          width={board.width}
-                          height={board.height}
-                          fill="none"
-                          stroke="currentColor"
-                          strokeOpacity={0.6}
-                          strokeWidth={1 / zoom}
-                        />
-                        <rect
-                          className="pz-trace"
-                          width={board.width}
-                          height={board.height}
-                          pathLength={100}
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth={3 / zoom}
-                          strokeLinecap="round"
-                        />
-                      </svg>
-                    )}
-                    <div
-                      className="dm-board-body"
-                      style={
-                        { width: board.width, height: board.height, "--p": steps } as CSSProperties
-                      }
-                    >
-                      <Reveal steps={steps}>
-                        <Component revised={board.id === "sunroom" && at("revise")} />
-                      </Reveal>
-                    </div>
-                  </div>
+                    board={board}
+                    x={place.x}
+                    y={place.y}
+                    zoom={zoom}
+                    steps={steps}
+                    landing={!still && during(place.beat)}
+                    working={working(board.id)}
+                    ring={ring(board.id)}
+                    revised={board.id === "sunroom" && at("revise")}
+                    still={still}
+                  />
                 );
               })}
             </div>
@@ -406,20 +393,172 @@ function Studio({ beat, t }: { beat: number; t: number }) {
   );
 }
 
-/** Hides each `[data-r]` piece until the agent has written it. */
-function Reveal({ steps, children }: { steps: number; children: ReactNode }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    for (const el of ref.current?.querySelectorAll<HTMLElement>("[data-r]") ?? []) {
-      const shown = Number(el.dataset.r) <= steps;
-      el.style.opacity = shown ? "1" : "";
-      el.style.translate = shown ? "0 0" : "";
-      el.style.filter = shown ? "none" : "";
+type Ring = "on" | "leaving" | null;
+
+/**
+ * One artboard, as the canvas draws it. A board written while you watch develops as it does in
+ * the app (packages/react/src/arrive.ts): its frame draws round it and its sheet develops inside,
+ * then each `[data-r]` piece, in the order the agent writes them, shows its plan in yuzu outlines
+ * and develops top first. While the agent works on it, a yuzu ring breathes round it and rain falls
+ * in its header. A board on a page you come back to is just there.
+ */
+function Board({
+  board,
+  x,
+  y,
+  zoom,
+  steps,
+  landing,
+  working,
+  ring,
+  revised,
+  still,
+}: {
+  board: BoardMeta;
+  x: number;
+  y: number;
+  zoom: number;
+  steps: number;
+  /** It's being written now, rather than already there when its page opened. */
+  landing: boolean;
+  working: boolean;
+  ring: Ring;
+  revised: boolean;
+  still: boolean;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  const sheet = useRef<HTMLDivElement>(null);
+  const layer = useRef<HTMLDivElement>(null);
+  const frame = useRef<SVGRectElement>(null);
+  // When it landed, fixed as it mounts: everything it does on arriving runs from then.
+  const [landed] = useState(() => (landing ? performance.now() : undefined));
+  /** The pieces on it, and the revision, already shown or on their way. */
+  const shown = useRef(landed === undefined ? steps : 0);
+  const wasRevised = useRef(landed === undefined && revised);
+  /** When the last piece to arrive started, so the next waits a stagger behind it. */
+  const lastStart = useRef(Number.NEGATIVE_INFINITY);
+
+  useLayoutEffect(() => {
+    if (landed === undefined) return;
+    if (box.current) arriveBoard(box.current, landed);
+    if (frame.current) drawFrame(frame.current, landed);
+    const a = sheet.current?.animate(SHEET_KEYFRAMES, { duration: BOARD_MS, fill: "backwards" });
+    if (a) a.currentTime = performance.now() - landed;
+  }, [landed]);
+
+  useLayoutEffect(() => {
+    const root = sheet.current;
+    if (!root) return;
+    const fresh: Element[] = [];
+    for (const el of root.querySelectorAll<HTMLElement>("[data-r]")) {
+      const r = Number(el.dataset.r);
+      el.style.opacity = r <= steps ? "1" : "";
+      if (r <= steps && r > shown.current) fresh.push(el);
     }
-  }, [steps]);
+    shown.current = Math.max(shown.current, steps);
+    if (revised && !wasRevised.current) fresh.push(...root.querySelectorAll("[data-revision]"));
+    wasRevised.current = revised;
+    if (still || !layer.current) return;
+    // As on the canvas: a beat after the write, once a new board's frame has drawn, and a stagger
+    // behind whatever is still arriving.
+    const now = performance.now();
+    let floor = now + ARRIVE_LAG_MS;
+    if (landed !== undefined) floor = Math.max(floor, landed + ARRIVE_LAG_MS + BOARD_DRAW_MS);
+    for (const el of fresh) {
+      const start = Math.max(floor, lastStart.current + ARRIVE_STAGGER_MS);
+      lastStart.current = start;
+      // Negative while it waits its turn: held hidden until then.
+      for (const a of develop(el, layer.current)) a.currentTime = now - start;
+    }
+  }, [steps, revised, still, landed]);
+
+  const Component = board.Component;
+  const radius = BOARD_RADIUS / zoom;
   return (
-    <div ref={ref} className="contents">
-      {children}
+    <div
+      ref={box}
+      className="dm-board pz:absolute pz:shadow-board"
+      style={{ left: x, top: y, width: board.width, height: board.height, borderRadius: radius }}
+    >
+      <div
+        className="dm-board-title pz:absolute pz:right-0 pz:left-0 pz:flex pz:items-center pz:gap-[0.5em] pz:whitespace-nowrap pz:leading-[1.4] pz:text-muted-foreground"
+        style={{ fontSize: 12 / zoom, top: -22 / zoom }}
+      >
+        <span data-board-name className="pz:min-w-0 pz:truncate">
+          {board.name}
+        </span>
+        {/* As on the canvas: yuzu rain at the right of a working board's header. */}
+        {working && <Rain className="pz:ml-auto" />}
+      </div>
+      <div
+        ref={sheet}
+        className="dm-board-body"
+        style={{ width: board.width, height: board.height, borderRadius: radius }}
+      >
+        <Component revised={revised} />
+        <div ref={layer} className="dm-arrive" />
+      </div>
+      {/* The frame and the ring are drawn in screen px, so they're the same at any zoom. */}
+      {(landed !== undefined || ring) && (
+        <div
+          className="dm-halo"
+          style={{
+            left: -RING_GAP / zoom,
+            top: -RING_GAP / zoom,
+            width: board.width * zoom + 2 * RING_GAP,
+            height: board.height * zoom + 2 * RING_GAP,
+            transform: `scale(${1 / zoom})`,
+          }}
+        >
+          {ring && <BoardRing leaving={ring === "leaving"} landed={landed} />}
+          {landed !== undefined && (
+            <svg
+              className="pz:absolute pz:inset-0 pz:overflow-visible pz:text-[var(--pz-rind)]"
+              width="100%"
+              height="100%"
+              aria-hidden
+            >
+              <rect
+                ref={frame}
+                x={1}
+                y={1}
+                style={{ width: "calc(100% - 2px)", height: "calc(100% - 2px)" }}
+                rx={BOARD_RADIUS + RING_GAP}
+                pathLength={100}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeDasharray="100 100"
+                strokeDashoffset={100}
+              />
+            </svg>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The canvas's ring round a working board (`.pz-ring`, Canvas.tsx's Ring). On a new board it waits
+ * until the frame has nearly drawn; it fades out when `leaving`.
+ */
+function BoardRing({ leaving, landed }: { leaving: boolean; landed?: number }) {
+  // Fixed when it mounts: a running animation whose delay changed would jump.
+  const [wait] = useState(() =>
+    landed === undefined
+      ? 0
+      : Math.max(0, landed + ARRIVE_LAG_MS + BOARD_DRAW_MS - 100 - performance.now()),
+  );
+  return (
+    <div
+      className="pz:absolute pz:inset-0 pz:transition-opacity pz:duration-500"
+      style={{ opacity: leaving ? 0 : 1 }}
+    >
+      <div
+        className="pz-ring pz:absolute pz:inset-0"
+        style={{ borderRadius: BOARD_RADIUS + RING_GAP, animationDelay: `${wait}ms` }}
+      />
     </div>
   );
 }
@@ -568,15 +707,7 @@ function Footer({
 }
 
 /** The studio's slice: ink in light mode, paper in dark, following the page's color scheme. */
+/** As in the app: the home button's mark is quiet, like the other tabs, until Home is open. */
 function LogoMark() {
-  return (
-    <>
-      <span className="dark:hidden">
-        <Logo size={18} />
-      </span>
-      <span className="hidden dark:inline">
-        <Logo size={18} dark />
-      </span>
-    </>
-  );
+  return <Logo size={18} color="currentColor" />;
 }

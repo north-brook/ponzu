@@ -6,13 +6,13 @@ import { OpenDesign } from "./open-design";
  * Where an agent's link to a design on the person's Macs lands:
  * https://ponzu.design/local#mac=<name>&file=<path>&artboard=<id>, beside /gh for one on GitHub.
  * Chats drop ponzu:// links, so agents hand out this page, which passes the design on to the Mac
- * app or offers the download. Links from before it was /local come through /open's redirect. As
- * designed in .context/open-link.design.
+ * or iPhone app, or offers the app. Links from before it was /local come through /open's redirect.
+ * As designed in .context/open-link.design.
  */
 
 export const metadata: Metadata = {
   title: "Open in Ponzu",
-  description: "Open a design your agent made in Ponzu for Mac.",
+  description: "Open a design your agent made in Ponzu.",
   robots: { index: false, follow: false },
 };
 

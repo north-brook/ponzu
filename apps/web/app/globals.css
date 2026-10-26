@@ -186,6 +186,62 @@
 }
 
 /*
+ * The iPhone app, in its tile on the home page: apps/mobile's own colors (`lib/tokens.ts`), light
+ * and dark with the page. The waveform breathes and the caret blinks while you look.
+ */
+.phone {
+  --phone-canvas: #f4f3ef;
+  --phone-sheet: #ffffff;
+  --phone-ink: #111110;
+  --phone-glass: rgb(17 17 16 / 0.06);
+  --phone-hairline: rgb(17 17 16 / 0.08);
+  --phone-bezel-rule: transparent;
+}
+
+@media (prefers-color-scheme: dark) {
+  .phone {
+    --phone-canvas: #121211;
+    --phone-sheet: #1b1b1a;
+    --phone-ink: #f4f3ef;
+    --phone-glass: rgb(255 255 255 / 0.08);
+    --phone-hairline: rgb(255 255 255 / 0.1);
+    --phone-bezel-rule: rgb(255 255 255 / 0.12);
+  }
+}
+
+.phone-bar {
+  transform-origin: center;
+  animation: phone-bar 1.4s ease-in-out infinite alternate;
+  animation-delay: calc(var(--i) * -170ms);
+}
+
+@keyframes phone-bar {
+  from {
+    scale: 1 0.45;
+  }
+  to {
+    scale: 1 1;
+  }
+}
+
+.phone-caret {
+  animation: phone-caret 1.1s steps(1) infinite;
+}
+
+@keyframes phone-caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .phone-bar,
+  .phone-caret {
+    animation: none;
+  }
+}
+
+/*
  * Syntax colors, one palette per color scheme: warm paper in light mode, citrus on ink in dark.
  * Every code block on the page uses them, so they all switch together.
  */

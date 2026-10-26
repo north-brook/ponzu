@@ -6,7 +6,7 @@
  * page and an app. It names that page Brand and draws the logo, adds a Landing page with a hero and
  * three directions, then an App page with four screens, and recommends a direction. You pin one
  * comment on the one you like; Claude makes exactly that change and resolves the thread, which
- * takes the pin off the canvas. As in Ponzu 1.4, it doesn't reply to a change it simply made.
+ * takes the pin off the canvas. As in the app, it doesn't reply to a change it simply made.
  */
 
 export const PROMPT =
@@ -52,13 +52,13 @@ export const BEATS: Beat[] = [
   { id: "send", ms: 500 },
   { id: "think", ms: 1000 },
   { id: "brand-page", ms: 1000 },
-  { id: "logo", ms: 2200 },
-  { id: "palette", ms: 1600 },
+  { id: "logo", ms: 3800 },
+  { id: "palette", ms: 3400 },
   { id: "landing-page", ms: 800 },
-  { id: "hero", ms: 2400 },
-  { id: "variants", ms: 2700 },
+  { id: "hero", ms: 4200 },
+  { id: "variants", ms: 4400 },
   { id: "app-page", ms: 800 },
-  { id: "app", ms: 2700 },
+  { id: "app", ms: 4600 },
   { id: "shot", ms: 800 },
   { id: "recommend", ms: 2400 },
   { id: "listen", ms: 600 },
@@ -67,7 +67,7 @@ export const BEATS: Beat[] = [
   { id: "comment", ms: COMMENT.length * TYPING_MS.comment + 300 },
   { id: "post", ms: 700 },
   { id: "heard", ms: 900 },
-  { id: "revise", ms: 1900 },
+  { id: "revise", ms: 2400 },
   { id: "resolve", ms: 1300 },
   { id: "rest", ms: 3600 },
 ];
