@@ -438,6 +438,10 @@ export default function Canvas() {
     ) : (
       pill
     );
+  /** A new comment's unsent words are kept under its pin's place. */
+  const pinDraft = pending
+    ? `pin:${pending.artboardId ?? pending.pageId}:${pending.x}:${pending.y}`
+    : undefined;
   /** The page's open threads: the count on the comments button. */
   const open = openThreads(doc, page?.id);
 
@@ -738,7 +742,10 @@ export default function Canvas() {
             placeholder="Comment"
             onSend={createComment}
             leaves
-            draft={`pin:${pending.artboardId ?? pending.pageId}:${pending.x}:${pending.y}`}
+            // One composer per pin: a pin dropped while the last comment is still sending gets
+            // its own, which that send's ack can't empty.
+            key={pinDraft}
+            draft={pinDraft}
           />
           {error && (
             <Text style={{ fontFamily: "Inter", fontSize: 13, color: color.muted }}>{error}</Text>

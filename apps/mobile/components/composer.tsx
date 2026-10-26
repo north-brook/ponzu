@@ -165,9 +165,10 @@ export function Composer({
     if (!voice && (autoFocus || !was)) setTimeout(() => input.current?.focus(), was ? 60 : 0);
   }, [mode]);
 
-  // What's typed now, for a send that fails to go back in ahead of it.
-  const typedNow = useRef(typed);
-  typedNow.current = typed;
+  // The mode and the words now, for a send that fails: its words go back into whichever
+  // the person is using by then, ahead of anything they've added since.
+  const now = useRef({ voice, typed, said: dictation.text });
+  now.current = { voice, typed, said: dictation.text };
   const send = async () => {
     if (!has || sending) return;
     const words = text.trim();
@@ -187,10 +188,14 @@ export function Composer({
         dictation.setText("");
       }
     } catch {
-      if (leaves) {
-        // Still in the field.
-      } else if (voice) dictation.setText(words);
-      else setTyped(typedNow.current ? `${words} ${typedNow.current}` : words);
+      if (!leaves) {
+        // A sheet that leaves still has them.
+        const n = now.current;
+        const since = (n.voice ? n.said : n.typed).trim();
+        const back = since ? `${words} ${since}` : words;
+        if (n.voice) dictation.setText(back);
+        else setTyped(back);
+      }
       // The screen says what went wrong; this says it didn't go.
       fail();
     } finally {
