@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { parseArtboardFile } from "@ponzu/core";
 import {
   artboardPage,
+  cssPx,
   fontFaceRules,
   pinColorScheme,
   resolveTokenAssets,
@@ -125,4 +126,22 @@ test("tokens' relative url()s resolve against the design's assets", () => {
     { id: "ab_f", name: "F" },
   ).artboard;
   expect(artboardPage(ab, { tokens, assetBase: base })).toContain(`${base}/assets/brand.woff2`);
+});
+
+test("image copies follow a board's px width, and a board in other units draws 1440 px", () => {
+  const base = "http://127.0.0.1:7777/d/brand.design";
+  const page = (width: string) =>
+    artboardPage(
+      parseArtboardFile(
+        `<section data-artboard data-id="ab_w" data-name="W" style="width:${width};height:100px"><img src="assets/a.png"></section>`,
+        { id: "ab_w", name: "W" },
+      ).artboard,
+      { tokens: "", assetBase: base, imageScale: 1 },
+    );
+  expect(page("200px")).toContain(`${base}/assets/a.png?w=256`);
+  // 100% isn't 100 px: Chromium lays it out at 1440.
+  expect(page("100%")).toContain(`${base}/assets/a.png?w=2048`);
+  expect(page("80rem")).toContain(`${base}/assets/a.png?w=2048`);
+  expect(cssPx(" 12.5px ")).toBe(12.5);
+  expect(cssPx("12em")).toBeNull();
 });

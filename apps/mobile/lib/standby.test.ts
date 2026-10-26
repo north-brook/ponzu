@@ -1,6 +1,14 @@
 import { expect, test } from "bun:test";
 import type { AgentChange, Presence } from "@ponzu/core";
-import { agentWorking, isStill, STILL_MS, standbyOn, standbyPath, standbyPose } from "./standby";
+import {
+  agentWorking,
+  isStill,
+  listenForStill,
+  STILL_MS,
+  standbyOn,
+  standbyPath,
+  standbyPose,
+} from "./standby";
 
 const inner = { width: 951, height: 669 };
 const innerUpright = { width: 669, height: 951 };
@@ -26,6 +34,13 @@ test("it needs the pose, the phone set down, and an agent working", () => {
   expect(standbyOn(true, false, true)).toBe(false);
   expect(standbyOn(true, true, false)).toBe(false);
   expect(standbyOn(false, true, true)).toBe(false);
+});
+
+test("gravity is read only once the pose and an agent hold: never on an iPhone", () => {
+  expect(listenForStill(true, true)).toBe(true);
+  expect(listenForStill(standbyPose({ width: 402, height: 874 }, null), true)).toBe(false);
+  expect(listenForStill(true, false)).toBe(false);
+  expect(listenForStill(false, false)).toBe(false);
 });
 
 test("still: gravity steady for the last moment; picked up: it moves", () => {

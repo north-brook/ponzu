@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.53.4](https://github.com/north-brook/ponzu/compare/v1.53.3...v1.53.4) (2026-10-26)
+
+
+### Performance Improvements
+
+* smaller image copies for the canvas, and a guarded proxy for web images ([#218](https://github.com/north-brook/ponzu/issues/218)) ([a5e9588](https://github.com/north-brook/ponzu/commit/a5e958880c03b8a47b83f69d6636991cb8572c40))
+
+## [1.53.3](https://github.com/north-brook/ponzu/compare/v1.53.2...v1.53.3) (2026-10-26)
+
+
+### Bug Fixes
+
+* update popover shows release notes when another mac already runs the update ([#224](https://github.com/north-brook/ponzu/issues/224)) ([200c7f1](https://github.com/north-brook/ponzu/commit/200c7f1055f390c66643527e232dd4a6df33af7c))
+
+## [1.53.2](https://github.com/north-brook/ponzu/compare/v1.53.1...v1.53.2) (2026-10-26)
+
+
+### Performance Improvements
+
+* cap the desktop app's gpu tile memory ([#217](https://github.com/north-brook/ponzu/issues/217)) ([233d191](https://github.com/north-brook/ponzu/commit/233d191c34bcfec62301a01dbaf0c261c4d5a364))
+
+## [1.53.1](https://github.com/north-brook/ponzu/compare/v1.53.0...v1.53.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* the iphone opens an agent's link to a design ([#214](https://github.com/north-brook/ponzu/issues/214)) ([b875cee](https://github.com/north-brook/ponzu/commit/b875ceee5a9a7ed322016f97a5284f808e9773de))
+
 ## [1.53.0](https://github.com/north-brook/ponzu/compare/v1.52.0...v1.53.0) (2026-10-25)
 
 

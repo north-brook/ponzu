@@ -59,6 +59,31 @@ export function toScreen(c: Camera, wx: number, wy: number) {
   return { x: wx * c.zoom + c.x, y: wy * c.zoom + c.y };
 }
 
+/** The world's CSS transform for a camera. */
+export function transformOf(c: Camera) {
+  return `translate(${c.x}px, ${c.y}px) scale(${c.zoom})`;
+}
+
+/**
+ * The camera, held outside React: the canvas moves its world's transform each frame itself, and
+ * what follows the camera on screen (the overlay) subscribes here, so a frame never re-renders
+ * the boards.
+ */
+export class CameraStore {
+  private listeners = new Set<() => void>();
+  constructor(private ref: { current: Camera }) {}
+  subscribe = (l: () => void) => {
+    this.listeners.add(l);
+    return () => {
+      this.listeners.delete(l);
+    };
+  };
+  get = () => this.ref.current;
+  emit() {
+    for (const l of this.listeners) l();
+  }
+}
+
 /** Zoom to `zoom`, keeping the world point under (sx, sy) where it is. */
 export function zoomAt(c: Camera, zoom: number, sx: number, sy: number): Camera {
   const z = clampZoom(zoom);

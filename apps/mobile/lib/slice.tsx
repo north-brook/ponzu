@@ -15,6 +15,7 @@ import Animated, {
 import Svg, { Path } from "react-native-svg";
 import { SLICE, SLICE_STROKE } from "./mark";
 import { brand, EASE_OUT } from "./tokens";
+import { useSeen } from "./use-seen";
 
 /**
  * The brand's bloom (design/brand.design, motion 04): each segment grows
@@ -165,8 +166,10 @@ function useBloomStyle(phase: SharedValue<Phase>) {
 export function Juice({ size, color }: { size: number; color: string }) {
   const turn = useSharedValue(0);
   const still = useReducedMotion();
+  // Holds while nobody can see it: the app away, or its screen under another.
+  const awake = useSeen();
   useEffect(() => {
-    if (still) return;
+    if (still || !awake) return;
     // Each turn starts again from 0°, which looks the same as 60°.
     turn.value = withRepeat(
       withSequence(
@@ -177,7 +180,7 @@ export function Juice({ size, color }: { size: number; color: string }) {
       -1,
     );
     return () => cancelAnimation(turn);
-  }, [still]);
+  }, [still, awake]);
   const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${turn.value}deg` }] }));
   return (
     <Animated.View style={[{ width: size, height: size }, style]}>

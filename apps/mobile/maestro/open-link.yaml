@@ -1,0 +1,30 @@
+appId: design.ponzu.app
+name: open-link
+tags: [dev-host]
+---
+# An agent's link to a design (ponzu.design/local hands it on as ponzu://open) opens it on the
+# canvas, in both forms iOS hands over. Back goes to Designs.
+- runFlow: shared/start.yaml
+- openLink: ponzu://open?file=${KETTLE}
+- extendedWaitUntil:
+    visible:
+      id: canvas
+    timeout: 20000
+- extendedWaitUntil:
+    visible:
+      id: title
+    timeout: 15000
+- assertVisible: "Kettle"
+- assertNotVisible: "Unmatched Route"
+- openLink: ponzu://designs
+- extendedWaitUntil:
+    visible:
+      id: designs
+    timeout: 15000
+- openLink: ponzu:///open?file=${KETTLE}
+- extendedWaitUntil:
+    visible:
+      id: canvas
+    timeout: 20000
+- assertVisible: "Kettle"
+- assertNotVisible: "Cannot update a component.*"

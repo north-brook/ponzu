@@ -29,6 +29,11 @@ export interface UpdatePlan {
   version: string;
   /** What's new in it, from a Mac that downloaded it: this one when it did. Empty if none has. */
   notes: string[];
+  /**
+   * The Ponzu the notes start after: this Mac's when it's behind, else the oldest behind. When no
+   * Mac downloaded it (one already runs it), the studio reads the notes from here to `version`.
+   */
+  since: string;
   /** The Macs behind it, by machine id: "local" for this one. */
   macs: string[];
   /** Every Mac with an updater, behind or not. */
@@ -55,13 +60,36 @@ export function updatePlan(machines: CatalogMachine[]): UpdatePlan | null {
   if (!behind.length) return null;
   // This Mac comes first, so its notes win: they start from the version it runs.
   const notes = apps.find((a) => a.ready?.version === target)?.ready?.notes ?? [];
+  const since =
+    behind.find((a) => a.id === "local")?.version ??
+    behind.map((a) => a.version).sort(compareVersions)[0]!;
   return {
     version: target,
     notes,
+    since,
     macs: behind.map((a) => a.id),
     of: apps.length,
     installing: behind.some((a) => a.installing),
   };
+}
+
+/** Where a release publishes its notes, beside its build (docs/release-notes.md). */
+export function releaseNotesUrl(version: string): string {
+  return `https://github.com/north-brook/ponzu/releases/download/v${version}/release-notes.json`;
+}
+
+/**
+ * The notes of every release after `since` up to `version`, from a release-notes.json. Null when
+ * it isn't one: the caller falls back to what else it has.
+ */
+export function notesBetween(file: unknown, since: string, version: string): string[] | null {
+  const releases = (file as { releases?: unknown } | null)?.releases;
+  if (!Array.isArray(releases)) return null;
+  return (releases as { version: string; notes: string[] }[])
+    .filter(
+      (r) => compareVersions(r.version, since) > 0 && compareVersions(r.version, version) <= 0,
+    )
+    .flatMap((r) => r.notes);
 }
 
 /** Orders `x.y.z` versions. */

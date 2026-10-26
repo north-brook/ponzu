@@ -4,10 +4,10 @@ import { Pressable, ScrollView, Text, useWindowDimensions, View } from "react-na
 import type { SearchBarCommands } from "react-native-screens";
 import { HeaderTitle } from "../../../components/chrome";
 import { FileCard, Marked, useMarkColor } from "../../../components/file-card";
-import { Clock, MacIcon, PageIcon, Search as SearchGlyph } from "../../../components/icons";
+import { Branch, Clock, Folder, PageIcon, Search as SearchGlyph } from "../../../components/icons";
 import { MacImage } from "../../../components/preview";
 import { useFiles } from "../../../lib/catalog";
-import type { PhoneFile } from "../../../lib/files";
+import { type PhoneFile, whereLine } from "../../../lib/files";
 import { select, tick } from "../../../lib/haptics";
 import { lately, noteSearch, type Opened } from "../../../lib/lately";
 import { useMargin } from "../../../lib/margin";
@@ -322,6 +322,7 @@ function Before({
             {opened.map((x) => {
               const page = x.file.pages.find((p) => p.id === x.o.page) ?? x.file.pages[0];
               const thumb = x.file.artboards?.find((a) => a.page === page?.id)?.thumb;
+              const where = whereLine(x.file);
               return (
                 <Pressable
                   key={`${x.o.mac}:${x.o.key}`}
@@ -388,7 +389,11 @@ function Before({
                           </Text>
                         </>
                       )}
-                      <MacIcon kind={x.file.macKind} size={13} color={color.faint} />
+                      {where.branch ? (
+                        <Branch size={13} color={color.faint} />
+                      ) : (
+                        <Folder size={13} color={color.faint} />
+                      )}
                       <Text
                         numberOfLines={1}
                         style={{
@@ -398,7 +403,7 @@ function Before({
                           color: color.muted,
                         }}
                       >
-                        {x.file.macName}
+                        {where.branch ?? where.folder}
                       </Text>
                     </View>
                   </View>
