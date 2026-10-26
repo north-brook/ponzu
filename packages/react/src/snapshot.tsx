@@ -123,6 +123,8 @@ export interface Picture {
   loops: boolean;
   /** The longest side, in CSS px, of the board's biggest looping animation. */
   loopSize: number;
+  /** Drawn before its fonts or images came: shown until a full one replaces it. */
+  partial?: boolean;
 }
 
 /** Not made yet: the server is making it, at the front of its queue. */
@@ -250,9 +252,9 @@ function loadPicture(src: string, first = false): Promise<Loaded> {
         await img.decode();
         blobs.set(src, url);
         // Drawn before its fonts or images came: shown, but not this URL's for good.
-        if (res.headers.get("x-pz-partial") === "1")
-          setTimeout(() => forget(src), PARTIAL_RETRY_MS);
-        resolve({ url, version: asked ?? "", loops, loopSize });
+        const partial = res.headers.get("x-pz-partial") === "1";
+        if (partial) setTimeout(() => forget(src), PARTIAL_RETRY_MS);
+        resolve({ url, version: asked ?? "", loops, loopSize, partial });
       } catch {
         // No server, a dropped connection or a picture that won't decode: for now, not for good.
         if (url) URL.revokeObjectURL(url);
@@ -481,6 +483,8 @@ function useTier(opts: {
       if (!p) return setFailed(true);
       setMissing(false);
       setPicture((cur) => (cur?.url === p.url ? cur : p));
+      // Drawn too early: kept on screen, and asked for again once it's let go (just after).
+      if (p.partial) timer = setTimeout(() => setRetry((n) => n + 1), PARTIAL_RETRY_MS + 50);
     });
     return () => {
       live = false;

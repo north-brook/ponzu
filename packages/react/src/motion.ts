@@ -409,11 +409,15 @@ function styleText(root: ShadowRoot): string {
  */
 function imageSafe(svg: SVGSVGElement, css: string): boolean {
   if (svg.querySelector("text, foreignObject, image, feImage, video, audio, iframe")) return false;
+  // Every #fragment must be in this SVG: one in another SVG on the board is gone from the image.
+  const ids = new Set([...svg.querySelectorAll("[id]")].map((e) => e.id));
   for (const u of svg.querySelectorAll("use")) {
     const href = u.getAttribute("href") ?? u.getAttribute("xlink:href") ?? "";
-    if (!href.startsWith("#")) return false;
+    if (!href.startsWith("#") || !ids.has(decodeURIComponent(href.slice(1)))) return false;
   }
   if (/url\(\s*["']?(?!#)/.test(svg.outerHTML)) return false;
+  for (const m of svg.outerHTML.matchAll(/url\(\s*["']?#([^"')\s]+)/g))
+    if (!ids.has(decodeURIComponent(m[1]!))) return false;
   if (getComputedStyle(svg).overflow === "visible") return false;
   const vb = svg.viewBox.baseVal;
   if (!vb || !vb.width || !vb.height) return false;

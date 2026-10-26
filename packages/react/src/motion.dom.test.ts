@@ -189,6 +189,28 @@ describe.skipIf(!chromium)("motion in Chromium", () => {
     expect(r.runs).toBeGreaterThan(150);
   });
 
+  test("an SVG whose parts point at another SVG on the board stays live", async () => {
+    const uses = Array.from(
+      { length: 60 },
+      (_, i) => `<use class=r href="#shared" x="${(i % 10) * 20}" y="${Math.floor(i / 10) * 20}"/>`,
+    ).join("");
+    await board(
+      `<style>@keyframes r{to{transform:rotate(60deg)}}.r{animation:r 2s infinite}</style><svg width=0 height=0 style="position:absolute"><defs><circle id=shared r=8 cx=8 cy=8 fill="#fc3"/></defs></svg><svg viewBox="0 0 200 120" width=400 height=240 style="overflow:hidden">${uses}</svg>`,
+    );
+    await frames(6);
+    const state = await page.evaluate(() => {
+      const w = window as any;
+      const root = document.getElementById("host")!.shadowRoot!;
+      return {
+        image: !!root.querySelector("[data-pz-field]"),
+        running: w.motion.running.size as number,
+      };
+    });
+    // Drawn as an image it would lose the circle, and the grid would vanish.
+    expect(state.image).toBe(false);
+    expect(state.running).toBe(60);
+  });
+
   test("a handoff leaves an animation the design paused paused, after the next thaw too", async () => {
     await board(
       `<style>@keyframes spin{to{transform:rotate(1turn)}}.s{width:40px;height:40px;animation:spin 1s linear infinite}.p{animation-play-state:paused}</style><div class=s data-id=n_run></div><div class="s p" data-id=n_paused></div>`,
