@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.56.0](https://github.com/north-brook/ponzu/compare/v1.55.10...v1.56.0) (2026-10-26)
+
+
+### Features
+
+* walk new iPhones through tailscale, then the code on the mac ([#266](https://github.com/north-brook/ponzu/issues/266)) ([cc3620c](https://github.com/north-brook/ponzu/commit/cc3620c65b2158433a1bd0e0c1113af62e768efa))
+
 ## [1.55.10](https://github.com/north-brook/ponzu/compare/v1.55.9...v1.55.10) (2026-10-26)
 
 
