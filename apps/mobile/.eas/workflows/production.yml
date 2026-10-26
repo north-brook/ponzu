@@ -4,13 +4,17 @@ name: Production
 # "release mobile" PR merges on main). iOS only. A release that changed
 # native code (a new native fingerprint) builds a binary and sends it to
 # TestFlight's external Alpha group for Beta App Review; any other release
-# ships over the air to the binaries already installed. Can also be re-run
-# by hand with `eas workflow:run production.yml`. Before upload succeeds, a
-# failed submission can use EAS's "Re-run from failed jobs" with the same
-# binary. After upload succeeds, recover with a TestFlight job's
-# asc_build_id instead: retrying build_id uploads again, which Apple rejects
-# as a duplicate. A full rerun finds the existing build and publishes an
-# update; it does not retry submission.
+# ships over the air to the binaries already installed. A store build
+# therefore carries the JavaScript of the last native release, and its
+# first launch fetches the current release behind the splash
+# (apps/mobile/lib/first-launch.ts), so a new install still starts on
+# current code. Can also be re-run by hand with `eas workflow:run
+# production.yml`. Before upload succeeds, a failed submission can use
+# EAS's "Re-run from failed jobs" with the same binary. After upload
+# succeeds, recover with a TestFlight job's asc_build_id instead: retrying
+# build_id uploads again, which Apple rejects as a duplicate. A full rerun
+# finds the existing build and publishes an update; it does not retry
+# submission.
 # See https://docs.expo.dev/eas/workflows/pre-packaged-jobs/#testflight.
 on:
   push:
@@ -57,3 +61,8 @@ jobs:
     params:
       branch: production
       platform: ios
+    hooks:
+      after_update:
+        # Native builds upload Hermes source maps from Xcode; an update has
+        # to do it here, where the exported dist/ still exists.
+        - uses: eas/posthog_upload_sourcemaps
