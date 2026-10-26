@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.55.7](https://github.com/north-brook/ponzu/compare/v1.55.6...v1.55.7) (2026-10-26)
+
+
+### Bug Fixes
+
+* an agent hears comments on every design it's working on, and keeps its file across reconnects ([#250](https://github.com/north-brook/ponzu/issues/250)) ([ac525a2](https://github.com/north-brook/ponzu/commit/ac525a226ffb734e3bd53c3ba2a97ae3d687a95e))
+* watching the canvas never skips a comment after a restart ([#249](https://github.com/north-brook/ponzu/issues/249)) ([d09bf9b](https://github.com/north-brook/ponzu/commit/d09bf9b82bfb43f885a571eeb26486d391bd9530))
+
 ## [1.55.6](https://github.com/north-brook/ponzu/compare/v1.55.5...v1.55.6) (2026-10-26)
 
 
