@@ -7,17 +7,27 @@
  * chrome: the app draws that around the web view.
  */
 import { type Artboard, isThemed, threadPage } from "@ponzu/core";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  memo,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 // Desktop's own pieces, from source: the app doesn't depend on @ponzu/react, whose index pulls
 // in the whole studio canvas.
 import { ArtboardView } from "../../../packages/react/src/Artboard.tsx";
 import { arriveBoard } from "../../../packages/react/src/arrive.ts";
 import { AgentMark } from "../../../packages/react/src/icons.tsx";
+import { useWindowStill } from "../../../packages/react/src/still.ts";
 import {
   type Box,
   between,
   boardSize,
   type Camera,
+  CameraStore,
   clampToBox,
   commentCamera,
   easeFollow,
@@ -35,6 +45,7 @@ import {
   threadPoint,
   toScreen,
   toWorld,
+  transformOf,
   zoomAt,
 } from "./camera.ts";
 import { doubleTapFocus, Gestures, type Point } from "./gestures.ts";
@@ -72,7 +83,6 @@ export function PhoneCanvas() {
     [screenSize, s.insets],
   );
   const [measured, setMeasured] = useState<Record<string, number>>({});
-  const [cam, setCamState] = useState<Camera>({ x: 0, y: 0, zoom: 0.4 });
   const [focused, setFocused] = useState<string | null>(null);
   /** Node boxes for pins on nodes, in artboard px: measured once per change, not per frame. */
   const [nodes, setNodes] = useState<Record<string, Box>>({});
@@ -88,8 +98,12 @@ export function PhoneCanvas() {
     [boards, measured],
   );
 
-  // The camera lives in a ref and paints once a frame, however many touches arrive in one.
-  const camRef = useRef(cam);
+  const byId = useMemo(() => new Map(boxes.map((b) => [b.id, b])), [boxes]);
+
+  // The camera isn't React state: a frame moves the world's transform and the overlay above it,
+  // never the boards, which re-render only when what they show (or whether they hold) changes.
+  const camRef = useRef<Camera>({ x: 0, y: 0, zoom: 0.4 });
+  const camera = useMemo(() => new CameraStore(camRef), []);
   const frame = useRef(0);
   const settle = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const setCam = (c: Camera) => {
@@ -100,10 +114,12 @@ export function PhoneCanvas() {
     if (world.current) world.current.style.willChange = "transform";
     clearTimeout(settle.current);
     settle.current = setTimeout(() => world.current?.style.removeProperty("will-change"), 150);
+    // Once a frame, however many touches arrive in one.
     if (!frame.current)
       frame.current = requestAnimationFrame(() => {
         frame.current = 0;
-        setCamState(camRef.current);
+        if (world.current) world.current.style.transform = transformOf(camRef.current);
+        camera.emit();
       });
   };
 
@@ -165,7 +181,7 @@ export function PhoneCanvas() {
 
   // Where to go back to when a focus ends.
   const before = useRef<Camera | null>(null);
-  const boxOf = (id: string | null) => (id ? (boxes.find((b) => b.id === id) ?? null) : null);
+  const boxOf = (id: string | null) => (id ? (byId.get(id) ?? null) : null);
 
   const focus = (id: string, from?: Camera) => {
     const box = boxOf(id);
@@ -345,15 +361,12 @@ export function PhoneCanvas() {
     if (!same) setNodes(next);
   }, [threads, boards, measured]);
 
-  const pins: PinAt[] = threads.map((t) => ({
-    id: t.id,
-    ...pinPoint(
-      t,
-      boards.find((b) => b.id === t.artboardId),
-      nodes[t.id] ?? null,
-      cam,
-    ),
-  }));
+  /** Where each open thread's pin is on screen, for a camera. */
+  const pinsAt = (c: Camera): PinAt[] =>
+    threads.map((t) => ({
+      id: t.id,
+      ...pinPoint(t, t.artboardId ? byId.get(t.artboardId) : undefined, nodes[t.id] ?? null, c),
+    }));
 
   /** Where a thread or a new comment's pin is on the page. */
   const pinWorld = (t: { artboardId?: string; x: number; y: number }) => {
@@ -402,7 +415,7 @@ export function PhoneCanvas() {
 
   // Gestures read the latest render through a ref: one listener for the canvas's life.
   const latest = useRef({
-    pins,
+    pinsAt,
     focused,
     boxes,
     screen,
@@ -415,7 +428,7 @@ export function PhoneCanvas() {
     stop,
   });
   latest.current = {
-    pins,
+    pinsAt,
     focused,
     boxes,
     screen,
@@ -517,7 +530,7 @@ export function PhoneCanvas() {
         coast(v, box);
       },
       tap(p) {
-        const hit = nearestPin(latest.current.pins, p);
+        const hit = nearestPin(latest.current.pinsAt(camRef.current), p);
         send(hit ? { t: "openThread", id: hit.id } : { t: "tap" });
       },
       doubleTap(p) {
@@ -596,84 +609,148 @@ export function PhoneCanvas() {
 
   return (
     <div ref={viewport} className={standby ? "viewport standby" : "viewport"}>
-      <div
-        ref={world}
-        className="world"
-        style={{ transform: `translate(${cam.x}px, ${cam.y}px) scale(${cam.zoom})` }}
-      >
-        {boards.map((ab) => {
-          const box = boxes.find((b) => b.id === ab.id)!;
-          return (
-            <div
-              key={ab.id}
-              ref={(el) => {
-                if (el && arrivals.takeBoard(ab.id)) arriveBoard(el);
-              }}
-              className="board"
-              style={{
-                left: ab.x,
-                top: ab.y,
-                width: box.w,
-                height: boardSize(ab.root).h ?? undefined,
-              }}
-            >
-              <ArtboardView
-                artboard={ab}
-                tokens={doc.tokens}
-                assetBase={s.assetBase}
-                colorScheme={scheme(ab)}
-                arrivals={arrivals}
-              />
-            </div>
-          );
-        })}
+      <div ref={world} className="world" style={{ transform: transformOf(camRef.current) }}>
+        {boards.map((ab) => (
+          <Board
+            key={ab.id}
+            artboard={ab}
+            width={byId.get(ab.id)!.w}
+            tokens={doc.tokens}
+            assetBase={s.assetBase}
+            colorScheme={scheme(ab)}
+          />
+        ))}
       </div>
 
       {/* On screen, so they stay crisp and a fixed size at any zoom. */}
-      <div className="overlay">
-        {boxes.map((b) => {
-          const p = toScreen(cam, b.x, b.y);
-          const w = b.w * cam.zoom;
-          const h = b.h * cam.zoom;
-          if (offscreen(p, w, h, screen)) return null;
-          const who = working.get(b.id);
-          const showLabel = !!who || !labelCovers(b, boxes, cam.zoom);
+      <Overlay
+        camera={camera}
+        boards={boards}
+        boxes={boxes}
+        working={working}
+        focused={focused}
+        standby={standby}
+        screen={screen}
+        radius={s.radius}
+        pinsAt={pinsAt}
+        threads={doc.threads}
+        open={s.thread}
+        pending={s.pending ? pinWorld(s.pending) : null}
+      />
+    </div>
+  );
+}
+
+/** One artboard on the page: rendered when it, the tokens or its theme change, never because the camera moved. */
+const Board = memo(function Board({
+  artboard: ab,
+  width,
+  tokens,
+  assetBase,
+  colorScheme,
+}: {
+  artboard: Artboard;
+  width: number;
+  tokens: string;
+  assetBase?: string;
+  colorScheme: "light" | "dark";
+}) {
+  return (
+    <div
+      ref={(el) => {
+        // An agent's new board draws in from when it landed, as on desktop.
+        const at = el ? arrivals.takeBoard(ab.id) : undefined;
+        if (el && at !== undefined) arriveBoard(el, at);
+      }}
+      className="board"
+      style={{ left: ab.x, top: ab.y, width, height: boardSize(ab.root).h ?? undefined }}
+    >
+      <ArtboardView
+        artboard={ab}
+        tokens={tokens}
+        assetBase={assetBase}
+        colorScheme={colorScheme}
+        arrivals={arrivals}
+      />
+    </div>
+  );
+});
+
+/** Labels, rings, traces and pins: on screen above the boards, following the camera each frame. */
+function Overlay({
+  camera,
+  boards,
+  boxes,
+  working,
+  focused,
+  standby,
+  screen,
+  radius,
+  pinsAt,
+  threads,
+  open,
+  pending,
+}: {
+  camera: CameraStore;
+  boards: Artboard[];
+  boxes: (Box & { id: string })[];
+  working: Map<string, Worker[]>;
+  focused: string | null;
+  standby: boolean;
+  screen: Screen;
+  radius: number;
+  pinsAt: (c: Camera) => PinAt[];
+  threads: { id: string; messages: unknown[] }[];
+  open: string | null;
+  pending: { x: number; y: number } | null;
+}) {
+  const cam = useSyncExternalStore(camera.subscribe, camera.get);
+  const still = useWindowStill();
+  const names = useMemo(() => new Map(boards.map((a) => [a.id, a.name])), [boards]);
+  const counts = useMemo(() => new Map(threads.map((t) => [t.id, t.messages.length])), [threads]);
+  return (
+    <div className={still ? "overlay still" : "overlay"}>
+      {boxes.map((b) => {
+        const p = toScreen(cam, b.x, b.y);
+        const w = b.w * cam.zoom;
+        const h = b.h * cam.zoom;
+        if (offscreen(p, w, h, screen)) return null;
+        const who = working.get(b.id);
+        const showLabel = !!who || !labelCovers(b, boxes, cam.zoom);
+        return (
+          <BoardChrome
+            key={b.id}
+            name={names.get(b.id) ?? ""}
+            x={p.x}
+            y={p.y}
+            w={w}
+            h={h}
+            who={who}
+            label={showLabel && b.id !== focused && !standby}
+            screen={screen}
+            radius={radius}
+          />
+        );
+      })}
+      {!standby &&
+        pinsAt(cam).map((p) => (
+          <span
+            key={p.id}
+            className={`pin${p.id === open ? " open" : ""}`}
+            style={{ translate: `${p.x}px ${p.y}px` }}
+          >
+            {counts.get(p.id) ?? 0}
+          </span>
+        ))}
+      {pending &&
+        (() => {
+          const p = toScreen(cam, pending.x, pending.y);
           return (
-            <BoardChrome
-              key={b.id}
-              name={boards.find((a) => a.id === b.id)?.name ?? ""}
-              x={p.x}
-              y={p.y}
-              w={w}
-              h={h}
-              who={who}
-              label={showLabel && b.id !== focused && !standby}
-              screen={screen}
-              radius={s.radius}
-            />
-          );
-        })}
-        {!standby &&
-          pins.map((p) => (
-            <span
-              key={p.id}
-              className={`pin${p.id === s.thread ? " open" : ""}`}
-              style={{ translate: `${p.x}px ${p.y}px` }}
-            >
-              {doc.threads.find((t) => t.id === p.id)?.messages.length ?? 0}
+            <span className="pin open" style={{ translate: `${p.x}px ${p.y}px` }}>
+              +
             </span>
-          ))}
-        {s.pending &&
-          (() => {
-            const at = pinWorld(s.pending);
-            const p = toScreen(cam, at.x, at.y);
-            return (
-              <span className="pin open" style={{ translate: `${p.x}px ${p.y}px` }}>
-                +
-              </span>
-            );
-          })()}
-      </div>
+          );
+        })()}
     </div>
   );
 }

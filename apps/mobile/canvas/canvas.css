@@ -141,10 +141,18 @@ body {
 /*
  * On a path with pathLength="100": six dashes, one for each segment of the
  * slice, march around the outline, a dash-length per beat of the loader.
+ * In ten steps a second rather than every frame: the march reads the same, and
+ * WebKit redraws the canvas's whole overlay for each step, which at 60 a second
+ * kept the web view and its GPU process busy for as long as an agent worked.
  */
 .pz-trace {
   stroke-dasharray: 10.67 6;
-  animation: pz-trace 9.6s linear infinite;
+  animation: pz-trace 9.6s steps(96) infinite;
+}
+
+/* The app's away (in the background, the phone locked): the trace holds. */
+.overlay.still .pz-trace {
+  animation-play-state: paused;
 }
 
 @media (prefers-reduced-motion: reduce) {
