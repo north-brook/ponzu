@@ -13,9 +13,9 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import Svg, { Path } from "react-native-svg";
-import { useAppActive } from "./app-active";
 import { SLICE, SLICE_STROKE } from "./mark";
 import { brand, EASE_OUT } from "./tokens";
+import { useSeen } from "./use-seen";
 
 /**
  * The brand's bloom (design/brand.design, motion 04): each segment grows
@@ -163,7 +163,8 @@ function useBloomStyle(phase: SharedValue<Phase>) {
 export function Juice({ size, color }: { size: number; color: string }) {
   const [i, setI] = useState(0);
   const still = useReducedMotion();
-  const awake = useAppActive();
+  // Holds while nobody can see it: the app away, or its screen under another.
+  const awake = useSeen();
   useEffect(() => {
     if (still || !awake) return;
     const t = setInterval(() => setI((n) => (n + 1) % 6), 200);

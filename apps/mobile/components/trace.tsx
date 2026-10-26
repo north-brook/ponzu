@@ -42,8 +42,11 @@ export function Trace({
   const awake = useSeen();
   useEffect(() => {
     if (still || !awake) return;
-    // The pattern repeats every 100 units, so a lap from wherever it stands is seamless.
+    // The pattern repeats every 100 units, so a lap from wherever it stands is seamless. It
+    // starts from there too: the repeat runs from the value it finds, and left past -100 a lap
+    // would go from where it is to where it is, and the trace would stand still.
     const from = offset.value % 100;
+    offset.value = from;
     offset.value = withRepeat(
       withTiming(from - 100, { duration: 9600, easing: Easing.linear }),
       -1,

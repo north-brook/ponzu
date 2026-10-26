@@ -517,6 +517,9 @@ function Waveform({
   const awake = useAppActive();
   useEffect(() => {
     if (still || !shown || !awake) return;
+    // From 0: the repeat runs from the value it finds, and stopped near 1 every lap would be
+    // a sliver of one.
+    clock.value = 0;
     clock.value = withRepeat(withTiming(1, { duration: 900, easing: Easing.linear }), -1);
     return () => cancelAnimation(clock);
   }, [still, shown, awake]);
