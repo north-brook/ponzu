@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/north-brook/ponzu/compare/mobile-v0.2.0...mobile-v0.3.0) (2026-10-26)
+
+
+### Features
+
+* a new iPhone install opens on the latest release ([#257](https://github.com/north-brook/ponzu/issues/257)) ([195c6ef](https://github.com/north-brook/ponzu/commit/195c6ef33d9f5d51c2b9b97075d0e31e698dbd41))
+
 ## [0.2.0](https://github.com/north-brook/ponzu/compare/mobile-v0.1.0...mobile-v0.2.0) (2026-10-26)
 
 
