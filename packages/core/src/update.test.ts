@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { CatalogMachine } from "./catalog.ts";
-import { changelogNotes, updatePlan } from "./update.ts";
+import { changelogNotes, notesBetween, updatePlan } from "./update.ts";
 
 const mac = (id: string, update?: CatalogMachine["update"]): CatalogMachine => ({
   id,
@@ -27,6 +27,7 @@ test("one Mac's download is offered for every Mac behind it", () => {
   expect(plan).toEqual({
     version: "1.44.0",
     notes: ["Faster."],
+    since: "1.43.0",
     macs: ["local", "air", "spare"],
     of: 3,
     installing: false,
@@ -35,7 +36,37 @@ test("one Mac's download is offered for every Mac behind it", () => {
 
 test("a Mac that already updated still offers it to the rest, with no notes of its own", () => {
   const plan = updatePlan([mac("local", { version: "1.43.0" }), mac("air", { version: "1.44.0" })]);
-  expect(plan).toMatchObject({ version: "1.44.0", notes: [], macs: ["local"], of: 2 });
+  expect(plan).toMatchObject({
+    version: "1.44.0",
+    notes: [],
+    since: "1.43.0",
+    macs: ["local"],
+    of: 2,
+  });
+});
+
+test("notes start after this Mac's Ponzu, or the oldest behind when it's up to date", () => {
+  const plan = updatePlan([
+    mac("local", { version: "1.45.0" }),
+    mac("air", { version: "1.44.0" }),
+    mac("spare", { version: "1.42.0" }),
+  ]);
+  expect(plan).toMatchObject({ since: "1.42.0", macs: ["air", "spare"] });
+});
+
+test("a release-notes.json gives every release's notes after one Ponzu, up to another", () => {
+  const file = {
+    releases: [
+      { version: "1.46.0", notes: ["Later still."] },
+      { version: "1.45.0", notes: ["Newest."] },
+      { version: "1.44.0", notes: ["Middle."] },
+      { version: "1.43.0", notes: ["Already here."] },
+    ],
+  };
+  expect(notesBetween(file, "1.43.0", "1.45.0")).toEqual(["Newest.", "Middle."]);
+  expect(notesBetween({ releases: [], incomplete: true }, "1.43.0", "1.45.0")).toEqual([]);
+  expect(notesBetween(null, "1.43.0", "1.45.0")).toBeNull();
+  expect(notesBetween({ nope: true }, "1.43.0", "1.45.0")).toBeNull();
 });
 
 test("the newest download wins, and an install under way shows", () => {

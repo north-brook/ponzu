@@ -6,6 +6,7 @@ import { UpdateBody } from "./update.tsx";
 const plan = (p: Partial<UpdatePlan> = {}): UpdatePlan => ({
   version: "1.44.0",
   notes: ["Comments sync as you type."],
+  since: "1.43.0",
   macs: ["local"],
   of: 1,
   installing: false,

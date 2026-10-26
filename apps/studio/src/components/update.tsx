@@ -34,6 +34,7 @@ export function UpdateButton({
     // It started and stopped without the version changing: the download failed. Offer it again.
     else if (asked && started.current && !installing) setAsked(null);
   }, [plan, asked, installing]);
+  const notes = useReleaseNotes(plan, origin);
   if (!plan) return null;
   const updating = plan.installing || asked === plan.version;
 
@@ -77,7 +78,7 @@ export function UpdateButton({
       </PopoverTrigger>
       <PopoverContent className="w-[320px]">
         <UpdateBody
-          plan={plan}
+          plan={notes ? { ...plan, notes } : plan}
           machines={machines ?? []}
           updating={updating}
           onUpdate={update}
@@ -86,6 +87,30 @@ export function UpdateButton({
       </PopoverContent>
     </Popover>
   );
+}
+
+/**
+ * The notes for an update no Mac downloaded, which happens when one of them already runs it, so
+ * none has its notes: this Mac's server reads them from the release. Null while the plan has its
+ * own, or until they arrive.
+ */
+function useReleaseNotes(plan: UpdatePlan | null, origin: string): string[] | null {
+  const want = plan && !plan.notes.length ? `since=${plan.since}&version=${plan.version}` : null;
+  const [got, setGot] = useState<{ want: string; notes: string[] } | null>(null);
+  useEffect(() => {
+    if (!want) return;
+    let live = true;
+    fetch(`${origin}/api/update/notes?${want}`)
+      .then((res) => (res.ok ? (res.json() as Promise<{ notes: string[] | null }>) : null))
+      .then((body) => {
+        if (live && body?.notes) setGot({ want, notes: body.notes });
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [want, origin]);
+  return want && got?.want === want ? got.notes : null;
 }
 
 /** The popover's contents, apart for tests. */
