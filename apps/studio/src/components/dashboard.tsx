@@ -102,8 +102,8 @@ export function Dashboard({
   // connected and the person's other Macs have designs to list.
   const connected = catalog?.agents.some((a) => a.found && a.connected) ?? false;
   const local = files.some((f) => f.machine === "local");
-  const setUp = useSetUp(catalog, local);
   const setup = catalog !== null && !local && !(connected && files.length > 0);
+  const setUp = useSetUp(catalog !== null, setup);
   const q = query.trim();
   const live = useLive(files);
   // Identical copies of a design in several checkouts are one card.
@@ -443,19 +443,23 @@ function ProjectItem({
   );
 }
 
-/** Remembers that this Mac has listed a design of its own. */
+/** Remembers that this Mac has been past the first steps: a design of its own, or its other Macs'. */
 const SET_UP_KEY = "ponzu.setUp";
-/** How long a Mac that had designs waits for them before showing the first steps after all. */
-const SET_UP_GRACE = 15_000;
+/**
+ * How long a Mac that was set up waits for its designs before showing the first steps after all.
+ * Long enough for another Mac restarting for the same update to come back and be linked again.
+ */
+const SET_UP_GRACE = 30_000;
 
 /**
- * Whether to show placeholder cards for an empty catalog rather than the first steps: this Mac
- * has listed designs of its own, in this session or an earlier one, and they've been missing for
- * less than the grace period. A catalog that comes back empty, as one read while an update
- * restarts can, waits for them; one still empty after the grace period is really empty (every
- * design deleted), so the first steps show then.
+ * Whether to show placeholder cards rather than the first steps: this Mac has been past them, in
+ * this session or an earlier one, and has been back on them for less than the grace period. A
+ * catalog read while an update restarts can come back empty, or, on a Mac whose designs are all
+ * on the person's other Macs, before those Macs are linked again; it waits for them. One still
+ * empty after the grace period is really empty (every design deleted, the other Macs off), so the
+ * first steps show then.
  */
-function useSetUp(catalog: Catalog | null, local: boolean): boolean {
+function useSetUp(arrived: boolean, setup: boolean): boolean {
   const [had, setHad] = useState(() => {
     try {
       return localStorage.getItem(SET_UP_KEY) === "1";
@@ -463,45 +467,49 @@ function useSetUp(catalog: Catalog | null, local: boolean): boolean {
       return false;
     }
   });
-  /** When this Mac's designs went missing from a catalog that arrived; null while they're there. */
+  /** When the first steps came back in a catalog that arrived; null while they're not shown. */
   const [missingSince, setMissingSince] = useState<number | null>(null);
   const [, setNow] = useState(0);
-  const empty = catalog !== null && !local;
+  const past = arrived && !setup;
   useEffect(() => {
-    if (!local) return;
+    if (!past) return;
     setHad(true);
     try {
       localStorage.setItem(SET_UP_KEY, "1");
     } catch {}
-  }, [local]);
+  }, [past]);
   useEffect(() => {
-    setMissingSince((at) => (empty ? (at ?? Date.now()) : null));
-  }, [empty]);
+    setMissingSince((at) => (setup ? (at ?? Date.now()) : null));
+  }, [setup]);
   useEffect(() => {
     if (missingSince === null) return;
     const t = setTimeout(() => setNow(Date.now()), missingSince + SET_UP_GRACE - Date.now());
     return () => clearTimeout(t);
   }, [missingSince]);
-  if (!had || !empty) return false;
-  // Before the effect above notes when they went missing, they've only just gone.
+  if (!had || !setup) return false;
+  // Before the effect above notes when they came back, they've only just come back.
   return missingSince === null || Date.now() - missingSince < SET_UP_GRACE;
 }
 
-/** Name widths for the placeholder cards, so they don't read as one card repeated. */
+/** Name and project widths for the placeholder cards, so they don't read as one card repeated. */
 const LOADING_NAMES = ["62%", "48%", "71%", "55%", "44%", "66%", "52%", "60%"];
+const LOADING_PROJECTS = ["34%", "26%", "40%", "30%", "24%", "36%", "28%", "32%"];
 
 /**
  * The catalog on its way: the first snapshot waits a moment for the person's other Macs.
- * Placeholder cards where the designs will be, not an empty Recent that then fills.
- * Nothing at all for a wait too short to notice.
+ * The Recent tab and placeholder cards laid out like the real ones, not an empty Recent that
+ * then fills. Nothing at all for a wait too short to notice.
  */
 function Loading() {
   const shown = useDelayed(true);
   if (!shown) return null;
   return (
     <div className="pz-appear flex flex-col gap-7" role="status" aria-label="Loading designs">
-      <div className="-mb-3.5 flex text-[13px]">
-        <span className="font-medium text-foreground">Recent</span>
+      <div className="-mb-3.5 flex h-7 items-center text-[13px]">
+        <span className="flex items-center gap-1.5 font-medium text-foreground">
+          <Icon name="clock" size={14} className="text-foreground" />
+          Recent
+        </span>
       </div>
       <Grid>
         {LOADING_NAMES.map((w, i) => (
@@ -512,9 +520,23 @@ function Loading() {
             style={{ animationDelay: `${i * 90}ms` }}
           >
             <div className="aspect-[16/11] rounded-xl bg-preview shadow-[0_0_0_1px_var(--hairline)]" />
-            <div className="flex flex-col gap-[7px] px-0.5 pt-[3px]">
-              <span className="h-[11px] rounded-full bg-secondary" style={{ width: w }} />
-              <span className="h-[9px] w-[38%] rounded-full bg-secondary" />
+            {/* The name and when, then the project and branch, each where the card has it. */}
+            <div className="flex flex-col gap-0.5 px-0.5">
+              <span className="flex h-5 items-center gap-2">
+                <span className="flex-1">
+                  <span className="block h-[11px] rounded-full bg-secondary" style={{ width: w }} />
+                </span>
+                <span className="h-[9px] w-5 rounded-full bg-secondary" />
+              </span>
+              <span className="flex h-4 items-center gap-[5px]">
+                <span className="size-[11px] shrink-0 rounded-[3px] bg-secondary" />
+                <span
+                  className="h-[9px] rounded-full bg-secondary"
+                  style={{ width: LOADING_PROJECTS[i] }}
+                />
+                <span className="size-[11px] shrink-0 rounded-[3px] bg-secondary" />
+                <span className="h-[9px] w-[22%] rounded-full bg-secondary" />
+              </span>
             </div>
           </div>
         ))}
