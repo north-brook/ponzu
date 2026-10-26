@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.53.3](https://github.com/north-brook/ponzu/compare/v1.53.2...v1.53.3) (2026-10-26)
+
+
+### Bug Fixes
+
+* update popover shows release notes when another mac already runs the update ([#224](https://github.com/north-brook/ponzu/issues/224)) ([200c7f1](https://github.com/north-brook/ponzu/commit/200c7f1055f390c66643527e232dd4a6df33af7c))
+
 ## [1.53.2](https://github.com/north-brook/ponzu/compare/v1.53.1...v1.53.2) (2026-10-26)
 
 
