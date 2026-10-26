@@ -32,6 +32,20 @@ const pendingLinks: string[] = [];
 const background = process.argv.includes("--background");
 let updateReady = false;
 
+/*
+ * GPU memory. Chromium sizes the tile budget from the whole screen, not the
+ * window: about 1.2 GB per 2056×1329@2x screen, up to a quarter of RAM, so a
+ * big display hands one canvas several GB of tiles it never needs (a tall
+ * page can hold over 2 GB). 512 MB is Chromium's own floor and
+ * still covers a full-screen 6K window's visible tiles. The discardable limit
+ * caps Skia's glyph, path and image caches in the GPU process (256 MB by
+ * default, and Graphite keeps a copy per backend).
+ * Skia Graphite stays on: on macOS, turning it off doesn't fall back to GPU
+ * raster but to software compositing, which halves frame rates on filters.
+ */
+app.commandLine.appendSwitch("force-gpu-mem-available-mb", "512");
+app.commandLine.appendSwitch("force-gpu-mem-discardable-limit-mb", "64");
+
 /* ------------------------------------------------------------------ */
 /* The local Ponzu server                                             */
 /* ------------------------------------------------------------------ */
