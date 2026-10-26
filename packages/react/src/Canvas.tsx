@@ -1011,8 +1011,9 @@ export function Canvas({
          */}
         <div
           ref={scroller}
-          className="pz:absolute pz:inset-0 pz:touch-none pz:overflow-scroll pz:overscroll-none pz:[overflow-anchor:none] pz:[scrollbar-width:none]"
+          className="pz:absolute pz:inset-0 pz:touch-none pz:overflow-scroll pz:overscroll-none pz:outline-none pz:[overflow-anchor:none] pz:[scrollbar-width:none]"
           // Not a tab stop: Chromium makes scrollers focusable, and Space would scroll it.
+          // Still focusable by a click, so no ring: Chromium's would frame the whole canvas.
           tabIndex={-1}
           // A middle press pans the canvas, not the browser's autoscroll.
           onMouseDown={(e) => e.button === 1 && e.preventDefault()}
