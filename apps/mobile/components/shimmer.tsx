@@ -10,6 +10,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
+import { useSeen } from "../lib/use-seen";
 
 /**
  * A name an agent is working in, with desktop's shimmer: a soft band where
@@ -32,12 +33,14 @@ export function Shimmer({
   const x = useSharedValue(0);
   const still = useReducedMotion();
   const [w, setW] = useState(0);
+  // Holds while nobody can see it: the app away, or its screen under another.
+  const awake = useSeen();
   useEffect(() => {
-    if (still || !w) return;
+    if (still || !w || !awake) return;
     x.value = 0;
     x.value = withRepeat(withTiming(1, { duration: 1800, easing: Easing.linear }), -1);
     return () => cancelAnimation(x);
-  }, [still, w]);
+  }, [still, w, awake]);
   // desktop: a 200%-wide gradient, 40% ink, 50% faded, 60% ink, moved from 100% to -100%.
   const band = useAnimatedStyle(() => ({ transform: [{ translateX: (x.value * 2 - 1) * w }] }));
   const onLayout = (e: LayoutChangeEvent) => setW(e.nativeEvent.layout.width);

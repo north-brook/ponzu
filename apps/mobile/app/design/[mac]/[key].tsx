@@ -55,7 +55,7 @@ import { track } from "../../../lib/telemetry";
 import { useTheme } from "../../../lib/theme";
 import { keepThreads } from "../../../lib/threads";
 import { EASE_OUT } from "../../../lib/tokens";
-import { StandbyAwake, useFollow, useStandby } from "../../../lib/use-standby";
+import { StandbyAwake, StillSensor, useFollow, useStandby } from "../../../lib/use-standby";
 import { useWindowInsets } from "../../../lib/window-insets";
 
 const ease = Easing.bezier(...EASE_OUT);
@@ -204,7 +204,11 @@ export default function Canvas() {
   // Standby (iPhone Duo set down while an agent works): the page alone on black, the camera
   // easing to each board the agent touches. Development's `?standby=1` forces it on the simulator.
   const fileKey = session?.file ?? params.key;
-  const standby = useStandby(state.presence, fileKey, __DEV__ && params.standby === "1");
+  const { standby, listen, setStill } = useStandby(
+    state.presence,
+    fileKey,
+    __DEV__ && params.standby === "1",
+  );
   const changes = useMacChanges(params.mac);
   const onPage = useMemo(() => new Set(page?.artboards.map((a) => a.id) ?? []), [page]);
   const path = useMemo(
@@ -459,6 +463,7 @@ export default function Canvas() {
       testID={standby ? "standby" : "canvas"}
       style={{ flex: 1, backgroundColor: standby ? "#0b0b0a" : color.canvas }}
     >
+      {listen && <StillSensor onStill={setStill} />}
       {standby && <StandbyAwake />}
       {/*
         Standby is the page alone, the full width of the display: the status bar's vertical rail
