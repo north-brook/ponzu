@@ -16,7 +16,7 @@ Where this file and the code differ, the code wins. Update this file to match.
 - Yuzu `#FFC81E` on warm neutrals, ink `#111110`. Yuzu fills; it is never text on light (1.6:1 on white). Rind `#7A4F00` is yellow's text color.
 - Yuzu means Ponzu is present and something is happening: comment pins (yuzu, ink count, faint ink hairline), the agent's trace, the loader, CTAs on dark, the stage behind product shots. Selection is ink.
 - Inter for UI, Funnel Display for display and the wordmark (Bold, −5%), IBM Plex Mono for code.
-- Motion moves whole segments: turn one (60°, 600ms), chase (1.2s), trace (six dashes, 9.6s lap), bloom (3.2s).
+- Motion moves whole segments: turn one (60°, 600ms), ratchet (a 60° turn and a rest, 1.2s), trace (six dashes, 9.6s lap), bloom (3.2s).
 - **Ponzu** in sentences, **ponzu** in the wordmark, `ponzu` in commands.
 
 ## History

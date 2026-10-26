@@ -13,7 +13,6 @@ import {
   agentActivity,
   Canvas,
   Icon,
-  Juice,
   Logo,
   ShortcutHint,
   SocketSource,
@@ -282,7 +281,8 @@ export function Studio() {
           onClick={() => setActive(null)}
         >
           <ShortcutHint modifier={mod} n={0} shown={hint} center>
-            <Logo size={18} dark={theme === "dark"} />
+            {/* In the button's colour: quiet like the other tabs until it's the one you're on. */}
+            <Logo size={18} color="currentColor" />
           </ShortcutHint>
         </Button>
         <div
@@ -298,7 +298,6 @@ export function Studio() {
               shortcut={i < 8 ? i + 1 : i === tabs.length - 1 ? 9 : undefined}
               showShortcut={hint}
               active={key === active}
-              theme={theme}
               onClick={() => setActive(key)}
               onClose={() => closeTab(key)}
               {...dragProps(key)}
@@ -356,7 +355,6 @@ function FileTab({
   shortcut,
   showShortcut,
   active,
-  theme,
   onClick,
   onClose,
   ...drag
@@ -369,14 +367,14 @@ function FileTab({
   /** ⌘ is held: the shortcut eases in over the icon. */
   showShortcut: boolean;
   active: boolean;
-  theme: "light" | "dark";
   onClick: () => void;
   onClose: () => void;
 } & DragProps) {
   const state = useSource(source);
   const working = state.presence.some((p) => agentActivity(p, state.path) === "working");
   const offline = state.status === "offline";
-  // Quick loads and blips show nothing; only a wait you'd notice gets the slice.
+  // Quick loads and blips show nothing; only a wait you'd notice gets the spinner. A plain ring,
+  // not the slice: a row of loading tabs would be a row of logos.
   const waiting = useDelayed(!state.doc || offline);
   const [held, setHeld] = useState(false);
   const name =
@@ -415,7 +413,12 @@ function FileTab({
               className="grid size-3.5 shrink-0 place-items-center"
               title={offline ? "Reconnecting" : "Opening"}
             >
-              <Juice size={14} dark={theme === "dark"} dry={offline} />
+              <span
+                className={cn(
+                  "size-3 animate-spin rounded-full border-[1.5px] border-current border-r-transparent text-faint motion-reduce:animate-none",
+                  offline && "[animation-duration:2s]",
+                )}
+              />
             </span>
           ) : (
             <Icon name={state.doc?.icon ?? "blank"} size={14} />

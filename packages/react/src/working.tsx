@@ -2,9 +2,10 @@ import { type CSSProperties, useEffect, useState } from "react";
 import { SLICE, SLICE_STROKE } from "./slice.ts";
 
 /**
- * The slice with its six segments fading in turn, clockwise: Ponzu is loading
- * a file or a screen. `dry` is grey at half speed, for waiting rather than
- * working (reconnecting). Agents at work never use it; see `.pz-shimmer`.
+ * The slice turning a segment at a time: a sixth of a turn, a rest, again. It's symmetric, so
+ * every rest is the mark itself, whole. Ponzu is loading a file or a screen. `dry` is grey at
+ * half speed, for waiting rather than working (reconnecting). Agents at work never use it;
+ * see `.pz-shimmer`.
  */
 export function Juice({
   size = 20,
@@ -23,11 +24,11 @@ export function Juice({
       viewBox="0 0 64 64"
       role="img"
       aria-label="Loading"
-      className={dry ? "pz-juice-slow" : undefined}
+      className={dry ? "pz-juice pz-juice-slow" : "pz-juice"}
     >
       <g fill={fill} stroke={fill} strokeWidth={SLICE_STROKE} strokeLinejoin="round">
-        {SLICE.map((d, i) => (
-          <path key={d} d={d} className="pz-juice-seg" style={{ "--i": i } as CSSProperties} />
+        {SLICE.map((d) => (
+          <path key={d} d={d} />
         ))}
       </g>
     </svg>
