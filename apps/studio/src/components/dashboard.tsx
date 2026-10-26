@@ -366,13 +366,19 @@ function Projects({
         <button
           type="button"
           aria-label={`Project: ${on ? on.name : "All projects"}`}
-          className="flex h-7 items-center gap-1.5 whitespace-nowrap rounded-[7px] pr-2 pl-2.5 font-medium text-[13px] text-foreground outline-none hover:bg-accent focus-visible:shadow-[0_0_0_2px_var(--ring)] data-[state=open]:bg-accent"
+          className={cn(
+            "flex h-7 items-center gap-1.5 whitespace-nowrap rounded-[7px] pr-2 pl-2.5 text-[13px] outline-none hover:bg-accent focus-visible:shadow-[0_0_0_2px_var(--ring)] data-[state=open]:bg-accent",
+            // Like the view tabs: all projects stays muted, a chosen one lights up.
+            on
+              ? "font-medium text-foreground"
+              : "text-muted-foreground hover:text-foreground data-[state=open]:text-foreground",
+          )}
         >
           <Icon
             name={!on ? "folders" : on.id === NO_PROJECT ? "loose" : "folder"}
             size={14}
             strokeWidth={1.6}
-            className="text-muted-foreground"
+            className={on ? "text-foreground" : undefined}
           />
           {on ? on.name : "All projects"}
           <span className="font-normal text-[11px] text-faint tabular-nums">
