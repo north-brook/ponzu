@@ -125,7 +125,9 @@ export function Composer({
 }) {
   const { color } = useTheme();
   const voice = mode === "voice";
-  const dictation = useDictation(voice);
+  /** Sent from a sheet that leaves: the microphone stops with the tap, not when the Mac answers. */
+  const [gone, setGone] = useState(false);
+  const dictation = useDictation(voice && !gone);
   const [typed, setTypedState] = useState(() => (draft ? (drafts.get(draft) ?? "") : ""));
   const setTyped = (t: string) => {
     if (draft && t) drafts.set(draft, t);
@@ -176,7 +178,8 @@ export function Composer({
     // Something answers the tap at once, not when the Mac does: over the tailnet that's long
     // enough to read as a tap that didn't take. A sheet that leaves takes the words with it; a
     // reply's leave the field. A send that fails puts them back.
-    if (!leaves) {
+    if (leaves) setGone(true);
+    else {
       setTyped("");
       dictation.setText("");
     }
@@ -188,8 +191,9 @@ export function Composer({
         dictation.setText("");
       }
     } catch {
-      if (!leaves) {
-        // A sheet that leaves still has them.
+      // A sheet that leaves comes back with its words, listening again as it did when it opened.
+      if (leaves) setGone(false);
+      else {
         const n = now.current;
         const since = (n.voice ? n.said : n.typed).trim();
         const back = since ? `${words} ${since}` : words;
