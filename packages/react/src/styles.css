@@ -287,26 +287,24 @@
     pz-appear 0.3s ease-out calc(var(--i) * 16ms) both;
 }
 
+/* A sixth of a turn, then a rest as long: the slice lands on itself each time. */
 @keyframes pz-juice {
-  0%,
-  100% {
-    opacity: 1;
+  from {
+    transform: rotate(0);
   }
-  70% {
-    opacity: 0.16;
+  50%,
+  to {
+    transform: rotate(60deg);
   }
 }
 
-/* Each segment carries its place as --i, so the fade runs clockwise. */
-.pz-juice-seg {
-  animation: pz-juice 1.2s linear infinite both;
-  animation-delay: calc(var(--i) * 0.2s - 1.2s);
+.pz-juice {
+  animation: pz-juice 1.2s cubic-bezier(0.65, 0, 0.2, 1) infinite;
 }
 
 /* Waiting rather than working: half speed. */
-.pz-juice-slow .pz-juice-seg {
+.pz-juice-slow {
   animation-duration: 2.4s;
-  animation-delay: calc(var(--i) * 0.4s - 2.4s);
 }
 
 /* The window's away (hidden, or unfocused on battery): the canvas's own loops hold too. */
@@ -315,7 +313,7 @@
 .pz-still .pz-lap,
 .pz-still .pz-ring,
 .pz-still .pz-rain > span,
-.pz-still .pz-juice-seg {
+.pz-still .pz-juice {
   animation-play-state: paused;
 }
 
@@ -430,9 +428,8 @@
     animation: none;
   }
 
-  .pz-juice-seg {
+  .pz-juice {
     animation: none;
-    opacity: 1;
   }
 
   .pz-appear {

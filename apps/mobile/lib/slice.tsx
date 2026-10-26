@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { StyleSheet, View, type ViewStyle } from "react-native";
 import Animated, {
   cancelAnimation,
@@ -158,28 +158,45 @@ function useBloomStyle(phase: SharedValue<Phase>) {
   }));
 }
 
-/** The slice's segments fading in turn: "still looking". Reduce Motion holds it whole. */
+/**
+ * The slice turning a sixth at a time, then resting as long: "still looking". It's symmetric,
+ * so every rest is the mark, whole. Reduce Motion holds it still.
+ */
 export function Juice({ size, color }: { size: number; color: string }) {
-  const [i, setI] = useState(0);
+  const turn = useSharedValue(0);
   const still = useReducedMotion();
   useEffect(() => {
     if (still) return;
-    const t = setInterval(() => setI((n) => (n + 1) % 6), 200);
-    return () => clearInterval(t);
+    // Each turn starts again from 0°, which looks the same as 60°.
+    turn.value = withRepeat(
+      withSequence(
+        withTiming(0, { duration: 0 }),
+        withTiming(60, { duration: JUICE_TURN, easing: juiceEase }),
+        withTiming(60, { duration: JUICE_TURN }),
+      ),
+      -1,
+    );
+    return () => cancelAnimation(turn);
   }, [still]);
+  const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${turn.value}deg` }] }));
   return (
-    <Svg width={size} height={size} viewBox="0 0 64 64" accessibilityLabel="Loading">
-      {SLICE.map((d, k) => (
-        <Path
-          key={d}
-          d={d}
-          fill={color}
-          stroke={color}
-          strokeWidth={SLICE_STROKE}
-          strokeLinejoin="round"
-          opacity={still ? 1 : (k - i + 6) % 6 < 3 ? 0.16 + ((k - i + 6) % 6) * 0.28 : 1}
-        />
-      ))}
-    </Svg>
+    <Animated.View style={[{ width: size, height: size }, style]}>
+      <Svg width={size} height={size} viewBox="0 0 64 64" accessibilityLabel="Loading">
+        {SLICE.map((d) => (
+          <Path
+            key={d}
+            d={d}
+            fill={color}
+            stroke={color}
+            strokeWidth={SLICE_STROKE}
+            strokeLinejoin="round"
+          />
+        ))}
+      </Svg>
+    </Animated.View>
   );
 }
+
+/** The Juice's turn, and its rest after: as on the Mac (`.pz-juice`). */
+const JUICE_TURN = 600;
+const juiceEase = Easing.bezier(0.65, 0, 0.2, 1);
