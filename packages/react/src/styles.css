@@ -190,31 +190,6 @@
 }
 
 /*
- * A new artboard's frame drawing itself (drawFrame in arrive.ts), on a loop, round the card of a
- * design an agent is in: on a path with pathLength="100", the line draws round from the top left
- * with the same ease, then its tail follows it off, and it starts again.
- */
-@keyframes pz-lap {
-  0% {
-    stroke-dashoffset: 100;
-    animation-timing-function: cubic-bezier(0.5, 0, 0.2, 1);
-  }
-  42% {
-    stroke-dashoffset: 0;
-    animation-timing-function: cubic-bezier(0.5, 0, 0.2, 1);
-  }
-  84%,
-  100% {
-    stroke-dashoffset: -100;
-  }
-}
-
-.pz-lap {
-  stroke-dasharray: 100 100;
-  animation: pz-lap 2.6s infinite both;
-}
-
-/*
  * The ring round a working artboard: it comes in, then breathes slowly in width and glow, so it
  * reads against a light canvas as well as a dark one. Subtle: it says someone's here, no more.
  */
@@ -312,7 +287,6 @@
 /* The window's away (hidden, or unfocused on battery): the canvas's own loops hold too. */
 .pz-still .pz-shimmer,
 .pz-still .pz-trace,
-.pz-still .pz-lap,
 .pz-still .pz-ring,
 .pz-still .pz-rain > span,
 .pz-still .pz-juice-seg {
@@ -416,8 +390,7 @@
     -webkit-text-fill-color: currentColor;
   }
 
-  .pz-trace,
-  .pz-lap {
+  .pz-trace {
     animation: none;
     stroke-dasharray: none;
   }

@@ -1,12 +1,13 @@
 import { Pressable, Text, View } from "react-native";
+import { shortAgent } from "../lib/activity";
 import { type PhoneFile, shortAgo, whereLine } from "../lib/files";
 import type { Run } from "../lib/search";
 import { useScheme, useTheme } from "../lib/theme";
 import { brand } from "../lib/tokens";
 import { AgentMark, Branch, Folder, Repo } from "./icons";
 import { MacImage } from "./preview";
+import { Rain } from "./rain";
 import { Shimmer } from "./shimmer";
-import { Trace } from "./trace";
 
 /** The search's highlight: `#ffe89a` in light, yuzu at 32% in dark. */
 export function useMarkColor() {
@@ -32,9 +33,9 @@ export function Marked({ runs, color }: { runs: Run[]; color: string }) {
 
 /**
  * A design's card, as desktop's home screen draws it: the preview at 16:11,
- * the name with its time (or the working agent's mark, the name shimmering),
- * and the project and branch (or the folder) it's on. The yuzu trace runs round it
- * while an agent works in it; the yuzu dot marks changes since you looked.
+ * the name with its time (or the agent's mark), and the project and branch
+ * (or the folder) it's on. While an agent works in it, yuzu rain stands in for
+ * the mark and the name shimmers; the yuzu dot marks changes since you looked.
  */
 export function FileCard({
   file,
@@ -98,7 +99,6 @@ export function FileCard({
             }}
           />
         </View>
-        {working && !dim && <Trace radius={12} />}
         {unseen && (
           <View
             accessibilityLabel="Changed since you looked"
@@ -146,7 +146,9 @@ export function FileCard({
               {name ? <Marked runs={name} color={markColor} /> : file.name}
             </Text>
           )}
-          {agent ? (
+          {working && !dim ? (
+            <Rain columns={6} size={19} label={`${shortAgent(working.name)} is working`} />
+          ) : agent ? (
             <AgentMark client={agent.client} size={14} color={color.ink} />
           ) : (
             <Text
