@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.53.6](https://github.com/north-brook/ponzu/compare/v1.53.5...v1.53.6) (2026-10-26)
+
+
+### Performance Improvements
+
+* draw pictures of boards and film their loops in the background ([#219](https://github.com/north-brook/ponzu/issues/219)) ([66b29ea](https://github.com/north-brook/ponzu/commit/66b29ea071b7dc826578ad5e04b18f71d4b9c434))
+
 ## [1.53.5](https://github.com/north-brook/ponzu/compare/v1.53.4...v1.53.5) (2026-10-26)
 
 
