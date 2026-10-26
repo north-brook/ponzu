@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.55.2](https://github.com/north-brook/ponzu/compare/v1.55.1...v1.55.2) (2026-10-26)
+
+
+### Bug Fixes
+
+* no focus ring around the whole canvas ([#239](https://github.com/north-brook/ponzu/issues/239)) ([cb1c604](https://github.com/north-brook/ponzu/commit/cb1c604ff54aa8b959feaeed134cc9a868b4a00c))
+
 ## [1.55.1](https://github.com/north-brook/ponzu/compare/v1.55.0...v1.55.1) (2026-10-26)
 
 
