@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/north-brook/ponzu/compare/mobile-v0.3.0...mobile-v0.4.0) (2026-10-26)
+
+
+### Features
+
+* walk new iPhones through tailscale, then the code on the mac ([#266](https://github.com/north-brook/ponzu/issues/266)) ([cc3620c](https://github.com/north-brook/ponzu/commit/cc3620c65b2158433a1bd0e0c1113af62e768efa))
+
+
+### Bug Fixes
+
+* install the PostHog CLI on EAS so iPhone production builds can upload source maps ([#262](https://github.com/north-brook/ponzu/issues/262)) ([634fb80](https://github.com/north-brook/ponzu/commit/634fb8097586e346e20ec59891a2edb33e26505a))
+
 ## [0.3.0](https://github.com/north-brook/ponzu/compare/mobile-v0.2.0...mobile-v0.3.0) (2026-10-26)
 
 
