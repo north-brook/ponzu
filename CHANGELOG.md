@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.54.0](https://github.com/north-brook/ponzu/compare/v1.53.6...v1.54.0) (2026-10-26)
+
+
+### Features
+
+* working design cards rain instead of tracing ([#228](https://github.com/north-brook/ponzu/issues/228)) ([6555179](https://github.com/north-brook/ponzu/commit/655517982ea2f85e0f90eee69139d3e22aa33930))
+
 ## [1.53.6](https://github.com/north-brook/ponzu/compare/v1.53.5...v1.53.6) (2026-10-26)
 
 
