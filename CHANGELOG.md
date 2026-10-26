@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.55.4](https://github.com/north-brook/ponzu/compare/v1.55.3...v1.55.4) (2026-10-26)
+
+
+### Bug Fixes
+
+* a mac with no ponzu window comes back after updating ([#243](https://github.com/north-brook/ponzu/issues/243)) ([4be47ac](https://github.com/north-brook/ponzu/commit/4be47acee699cbbff93c2316b8d9ccfa7a0835c7))
+
 ## [1.55.3](https://github.com/north-brook/ponzu/compare/v1.55.2...v1.55.3) (2026-10-26)
 
 
