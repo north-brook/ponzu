@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.53.2](https://github.com/north-brook/ponzu/compare/v1.53.1...v1.53.2) (2026-10-26)
+
+
+### Performance Improvements
+
+* cap the desktop app's gpu tile memory ([#217](https://github.com/north-brook/ponzu/issues/217)) ([233d191](https://github.com/north-brook/ponzu/commit/233d191c34bcfec62301a01dbaf0c261c4d5a364))
+
 ## [1.53.1](https://github.com/north-brook/ponzu/compare/v1.53.0...v1.53.1) (2026-10-25)
 
 
