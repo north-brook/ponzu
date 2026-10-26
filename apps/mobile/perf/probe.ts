@@ -9,6 +9,7 @@
  *   scan()            what the page holds: boards, elements in every shadow root, images, videos,
  *                     running animations (and how many of them are held)
  *   ready, drawn      when the canvas told the app `ready` and `drawn` (performance.now())
+ *   onDrawn           the host's, called once `drawn` comes
  *   messages          every FromCanvas message, with its time
  */
 export const PROBE = `(() => {
@@ -64,7 +65,10 @@ export const PROBE = `(() => {
     try {
       const m = JSON.parse(data);
       S.messages.push({ ...m, at: performance.now() });
-      if (m.t === 'drawn' && S.drawn == null) S.drawn = performance.now();
+      if (m.t === 'drawn' && S.drawn == null) {
+        S.drawn = performance.now();
+        if (S.onDrawn) S.onDrawn();
+      }
       if (m.t === 'ready' && S.ready == null) S.ready = performance.now();
       if (m.t === 'error') S.errors.push(m.message);
     } catch {}

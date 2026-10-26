@@ -43,11 +43,15 @@ bun apps/mobile/perf/canvas.ts http://127.0.0.1:7861 <label> --file stress.desig
 apps/mobile/perf/suite.sh http://127.0.0.1:7861 <label> [out]   # every page
 ```
 
+Each page's row goes into `<out>/<label>.jsonl` (`results/` by default) and `<label>.md` is the table
+of every row under the label; `suite.sh` starts its label afresh.
+
 Serve copies of the designs from a scratch folder with `HOME` and `PONZU_HOME` pointed at scratch
 and `PONZU_SPOTLIGHT=0`: otherwise the server lists every design on the Mac, and its previews get
 redrawn into other checkouts.
 
-`canvas.ts` needs Playwright's WebKit (`bunx playwright install webkit`, or `PONZU_WEBKIT=<its
+`canvas.ts` needs the WebKit of the `playwright-core` it launches it with (`cd apps/mobile && bunx
+playwright-core install webkit`, which runs the workspace's own version, or `PONZU_WEBKIT=<its
 pw_run.sh>` for another build). It launches one browser per page, so a page's memory is its own.
 It loads the built page (or `--html <file>`, another build of it) with the server as its origin,
 as the app's `baseUrl` does, takes the doc from the design's socket and posts it in over the bridge
@@ -61,8 +65,8 @@ does not. Each page gets:
 
 - **drawn**: from the doc arriving to the canvas's `drawn` message. **ready**: every board mounted,
   its images loaded, its videos showing a frame, its fonts in. **settled**: five frames in a row
-  under 50 ms; nothing is measured before then. A page of blurs can draw once and then stop
-  drawing for seconds.
+  under 50 ms after drawn, watched alongside ready, not after it; nothing is measured before then. A
+  page of blurs can draw once and then stop drawing for seconds.
 - **idle**: four seconds with nothing of the harness's running in the page, for the CPU of the
   WebContent process and of WebKit's GPU process; then two seconds of frames.
 - **pan**: four one-finger flicks, each left to glide to rest. **pinch**: in 2.5×, out, in 1.6×.
@@ -71,7 +75,8 @@ does not. Each page gets:
   has stopped drawing is stalled, not at rest.
   For each: rAF fps, **moves/s** and the longest gap between moves (`cameraMoves`), counting only
   inside gestures. For pinch, **first frame after the last lift** and the longest frame in the
-  second after (`settle`).
+  second after, and the first frame past it, so a stall over its end shows (`settle`). The lift is
+  when the last touch went out, on the page's clock, not when the page next answered.
 - **stages**: main-thread self time by stage (script, style, layout, paint) from Web Inspector's
   timeline, per phase.
 - **memory**: WebKit's own breakdown (JS, images, layers, page) and the WebContent process's
@@ -122,7 +127,10 @@ It starts a Ponzu on a copy of Kettle and `phone.design`, Metro, and a Debug dev
 state in `STATES`, a flow puts the app there, then nothing touches it for `SAMPLE` seconds (30)
 while `ps` reads the CPU time of the app and of the simulator's WebKit processes
 (`WebContentExtension.appex`, `GPUExtension.appex`), and `sample` records where the app's time goes
-(`<state>.sample.txt`). A screenshot of each state shows it was where it should be.
+(`<state>.sample.txt`). Each process is compared only with itself: one that started during the
+sample counts all its time, one that exited is reported as replaced (WebContent) or **app
+exited**, and the run goes on to the next state. A screenshot of each state shows it was where it
+should be.
 
 | state | what it is |
 | --- | --- |

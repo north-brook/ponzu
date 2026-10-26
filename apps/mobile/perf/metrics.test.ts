@@ -30,7 +30,14 @@ describe("cameraMoves", () => {
 
 describe("settle", () => {
   test("first frame after the lift and the longest in the next second", () => {
-    expect(settle([90, 110, 126, 300, 316, 2000], 100)).toEqual({ firstMs: 10, maxMs: 174 });
+    expect(settle([90, 110, 126, 300, 316, 1090, 1106, 1122], 100)).toEqual({
+      firstMs: 10,
+      maxMs: 774,
+    });
+  });
+  test("a stall that runs past the second still counts", () => {
+    expect(settle([110, 1500], 100)).toEqual({ firstMs: 10, maxMs: 1390 });
+    expect(settle([90, 1500, 1516], 100)).toEqual({ firstMs: 1400, maxMs: 1400 });
   });
   test("nothing drawn", () => {
     expect(settle([], 100)).toEqual({ firstMs: null, maxMs: null });

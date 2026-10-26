@@ -54,16 +54,30 @@ ${list}
 </section>`;
 }
 
+/**
+ * A screen's height, a little over: the status bar (54), the header (60), the card (94), the tab
+ * bar (71) and 65 a row.
+ */
+const screenHeight = (rows: number) => 300 + rows * 65;
+
 const pages: { id: string; name: string; boards: string[] }[] = [];
 // start: one small board, where the design opens.
 pages.push({ id: "pg_phone0", name: "start", boards: [screen(9000, 0, 0, 3, false)] });
-// filmstrip: 60 fit-content phone screens, 6 rows of 10, lists of 6 to 30 rows.
+// filmstrip: 60 fit-content phone screens, 6 rows of 10, lists of 6 to 30 rows. Each row of the
+// grid starts 80 below the tallest screen above it, so none overlap.
 {
   const boards: string[] = [];
-  for (let i = 0; i < 60; i++)
-    boards.push(
-      screen(i, (i % 10) * 470, Math.floor(i / 10) * 1500, 6 + Math.floor(rand() * 24), false),
-    );
+  let y = 0;
+  let tallest = 0;
+  for (let i = 0; i < 60; i++) {
+    if (i > 0 && i % 10 === 0) {
+      y += tallest + 80;
+      tallest = 0;
+    }
+    const rows = 6 + Math.floor(rand() * 24);
+    tallest = Math.max(tallest, screenHeight(rows));
+    boards.push(screen(i, (i % 10) * 470, y, rows, false));
+  }
   pages.push({ id: "pg_phone1", name: "filmstrip", boards });
 }
 // loops: 24 screens, every one with a spinner and a pulse.

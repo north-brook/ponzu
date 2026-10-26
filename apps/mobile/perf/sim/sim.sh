@@ -73,8 +73,9 @@ DEV_CLIENT="exp+ponzu://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A$M
 DEVICE="$HOME/Library/Developer/CoreSimulator/Devices/$UDID"
 
 # The processes of this simulator: the app, and the web content and GPU processes WebKit runs
-# for it (WebContentExtension.appex, GPUExtension.appex, children of its launchd_sim).
-app_pid() { pgrep -f "$DEVICE/data/Containers/Bundle/Application/.*/Ponzu.app/Ponzu" | head -1; }
+# for it (WebContentExtension.appex, GPUExtension.appex, children of its launchd_sim). Each
+# prints nothing, and succeeds, when there's none: an app that died is a result, not an error.
+app_pid() { pgrep -f "$DEVICE/data/Containers/Bundle/Application/.*/Ponzu.app/Ponzu" | head -1 || true; }
 sim_children() {
   local launchd
   launchd=$(pgrep -f "launchd_sim.*$UDID" | head -1)
@@ -83,17 +84,10 @@ sim_children() {
 }
 web_pids() { sim_children "WebContentExtension.appex"; }
 gpu_pids() { sim_children "GPUExtension.appex"; }
-# CPU time in centiseconds and resident memory in KB for a list of pids, summed.
-read_ps() { [ -n "$1" ] && ps -o time=,rss= -p "$1" | python3 -c '
-import sys
-cs=0; kb=0
-for l in sys.stdin:
-  t, r = l.split()
-  p = t.replace("-", ":").split(":")
-  s = 0
-  for x in p: s = s * 60 + float(x)
-  cs += s * 100; kb += int(r)
-print(int(cs), kb)' || echo "0 0"; }
+# Each live process of a comma-separated list, a line each: pid, CPU time, resident KB. A process
+# is only ever compared with itself: one that's gone by the second read, or new in it, is told
+# apart from one that ran throughout (see the results below).
+snap() { [ -z "$1" ] || ps -o pid=,time=,rss= -p "$1" || true; }
 join() { tr '\n' ',' | sed 's/,$//'; }
 
 # An agent claims Kettle's Brand boards over MCP: the canvas traces them and the title shimmers.
@@ -134,29 +128,54 @@ for state in $STATES; do
       ;;
   esac
   sleep 5
-  app=$(app_pid)
-  webs=$(web_pids | join)
-  gpus=$(gpu_pids | join)
-  read -r a0 _ <<<"$(read_ps "$app")"
-  read -r w0 _ <<<"$(read_ps "$webs")"
-  read -r g0 _ <<<"$(read_ps "$gpus")"
+  snaps="$SCRATCH/ps-$state"
+  mkdir -p "$snaps"
+  snap "$(app_pid)" >"$snaps/app0"
+  snap "$(web_pids | join)" >"$snaps/web0"
+  snap "$(gpu_pids | join)" >"$snaps/gpu0"
   sleep "$SAMPLE"
+  # Found again: a process that iOS replaced, or that started, during the sample is another pid.
   app2=$(app_pid)
-  webs2=$(web_pids | join)
-  read -r a1 arss <<<"$(read_ps "$app2")"
-  read -r w1 wrss <<<"$(read_ps "$webs2")"
-  read -r g1 _ <<<"$(read_ps "$gpus")"
+  snap "$app2" >"$snaps/app1"
+  snap "$(web_pids | join)" >"$snaps/web1"
+  snap "$(gpu_pids | join)" >"$snaps/gpu1"
   # Where the app's time goes, for the states that cost something.
   [ -n "$app2" ] && sample "$app2" 3 -file "$OUT/$state.sample.txt" >/dev/null 2>&1 || true
   xcrun simctl io "$UDID" screenshot "$OUT/$state.png" >/dev/null 2>&1 || true
-  killed=$([ "$webs" = "$webs2" ] && echo false || echo true)
-  python3 - "$state" "$a0" "$a1" "$w0" "$w1" "$arss" "$wrss" "$SAMPLE" "$killed" "$(uptime | sed 's/.*averages: //' | cut -d' ' -f1)" "$g0" "$g1" >>"$results" <<'PY'
-import json, sys
-s, a0, a1, w0, w1, arss, wrss, sec, killed, load, g0, g1 = sys.argv[1:]
-pct = lambda a, b: round((int(b) - int(a)) / float(sec), 1)
-print(json.dumps({"state": s, "appCpuPct": pct(a0, a1), "webCpuPct": pct(w0, w1), "gpuCpuPct": pct(g0, g1),
-  "appMB": round(int(arss) / 1024), "webMB": round(int(wrss) / 1024),
-  "webReplaced": killed == "true", "load1": float(load.rstrip(","))}))
+  python3 - "$state" "$snaps" "$SAMPLE" "$(uptime | sed 's/.*averages: //' | cut -d' ' -f1)" >>"$results" <<'PY'
+import json, os, sys
+state, snaps, sec, load = sys.argv[1:]
+sec = float(sec)
+
+def read(name):
+  procs = {}
+  for l in open(os.path.join(snaps, name)):
+    pid, t, kb = l.split()
+    s = 0.0
+    for x in t.replace("-", ":").split(":"): s = s * 60 + float(x)
+    procs[pid] = (s * 1000, int(kb))
+  return procs
+
+def cpu(name):
+  """CPU % over the sample: each process that ran throughout against itself, and all of a process
+  that started during it (its whole time is inside). One that exited took its last time with it:
+  it's counted in `exited`, not guessed at."""
+  a, b = read(name + "0"), read(name + "1")
+  ms = sum(b[p][0] - a[p][0] for p in b if p in a) + sum(b[p][0] for p in b if p not in a)
+  exited = sum(1 for p in a if p not in b)
+  started = sum(1 for p in b if p not in a)
+  mb = round(sum(kb for _, kb in b.values()) / 1024) if b else None
+  return round(ms / sec / 10, 1), mb, exited, started
+
+app, appMB, appGone, _ = cpu("app")
+if not read("app1"): app = None
+web, webMB, webGone, webNew = cpu("web")
+gpu, _, _, _ = cpu("gpu")
+print(json.dumps({"state": state, "appCpuPct": app, "webCpuPct": web, "gpuCpuPct": gpu,
+  "appMB": appMB, "webMB": webMB,
+  # The app wasn't running at the end, or was another process: it died, or iOS killed it.
+  "appExited": app is None or appGone > 0,
+  "webReplaced": webGone > 0 or webNew > 0, "load1": float(load.rstrip(","))}))
 PY
   tail -1 "$results"
   [ -n "$agent" ] && kill "$agent" 2>/dev/null || true
@@ -166,9 +185,10 @@ done
 python3 - "$results" >"$OUT/sim-$LABEL.md" <<'PY'
 import json, sys
 rows = [json.loads(l) for l in open(sys.argv[1])]
-print("| state | app CPU % | WebContent CPU % | WebKit GPU CPU % | app MB | WebContent MB | web content replaced | load1 |")
-print("|---|---|---|---|---|---|---|---|")
+print("| state | app CPU % | WebContent CPU % | WebKit GPU CPU % | app MB | WebContent MB | app exited | web content replaced | load1 |")
+print("|---|---|---|---|---|---|---|---|---|")
+v = lambda x: "–" if x is None else x
 for r in rows:
-  print(f"| {r['state']} | {r['appCpuPct']} | {r['webCpuPct']} | {r['gpuCpuPct']} | {r['appMB']} | {r['webMB']} | {r['webReplaced']} | {r['load1']} |")
+  print(f"| {r['state']} | {v(r['appCpuPct'])} | {v(r['webCpuPct'])} | {v(r['gpuCpuPct'])} | {v(r['appMB'])} | {v(r['webMB'])} | {'**yes**' if r['appExited'] else 'no'} | {r['webReplaced']} | {r['load1']} |")
 PY
 cat "$OUT/sim-$LABEL.md"

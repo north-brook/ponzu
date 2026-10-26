@@ -10,6 +10,7 @@
  *   bun apps/mobile/perf/canvas.ts <server> <label> [--file <key>] [--pages a,b] [--out dir]
  *     [--working] [--html <page>] [--no-trace] [--theme dark]
  *
+ * Each page's row is added to <out>/<label>.jsonl, and <label>.md is the table of all of them.
  * See README.md for the pages, the metrics and the targets. Numbers are this Mac's, not an
  * iPhone's: compare runs with each other, never with a phone.
  */
@@ -155,10 +156,40 @@ async function runPage(key: string, doc: Doc, pageName: string, presence: Presen
     await page.waitForFunction(() => (window as any).__ponzuCanvas, null, { timeout: 30_000 });
     const assetBase = `${server}/files/${encodeURIComponent(key)}`;
     await send({ t: "insets", insets: INSETS, sheet: 0, radius: 55 });
-    // Drawn is timed from the doc arriving, as the app's placeholder waits on it.
+    // Drawn is timed from the doc arriving, as the app's placeholder waits on it. Settled: five
+    // frames in a row under 50 ms once it's drawn, watched from here whatever the page's media are
+    // doing. A page of blurs can draw its first frame and then stop drawing for seconds while
+    // WebKit rasterizes it; nothing is measured until then. It gives up 30 s after drawn and
+    // leaves no frame loop running when it does.
     await page.evaluate(
       (m) => {
-        (window as any).__pzPerf.docAt = performance.now();
+        const S = (window as any).__pzPerf;
+        S.docAt = performance.now();
+        let last = 0;
+        let run = 0;
+        let give: ReturnType<typeof setTimeout> | undefined;
+        let raf = 0;
+        S.stopSettle = () => {
+          cancelAnimationFrame(raf);
+          clearTimeout(give);
+        };
+        const f = (t: number) => {
+          run = last && t - last < 50 ? run + 1 : 0;
+          last = t;
+          if (run >= 5) {
+            clearTimeout(give);
+            S.settled = t;
+            return;
+          }
+          raf = requestAnimationFrame(f);
+        };
+        S.onDrawn = () => {
+          give = setTimeout(() => {
+            cancelAnimationFrame(raf);
+            S.settled = null;
+          }, 30_000);
+          raf = requestAnimationFrame(f);
+        };
         (window as any).__ponzuCanvas.receive(m);
       },
       { t: "doc", doc, assetBase, theme, file: key, page: page0.id } as any,
@@ -187,29 +218,20 @@ async function runPage(key: string, doc: Doc, pageName: string, presence: Presen
     result.readyMs = ready
       ? await page.evaluate(() => Math.round(performance.now() - (window as any).__pzPerf.docAt))
       : null;
-    // Settled: five frames in a row under 50 ms. A page of blurs can draw its first frame and
-    // then stop drawing for seconds while WebKit rasterizes it; nothing is measured until then.
     result.settleMs = await page
-      .evaluate(
-        () =>
-          new Promise<number | null>((done) => {
-            const S = (window as any).__pzPerf;
-            let last = 0;
-            let run = 0;
-            const give = setTimeout(() => done(null), 30_000);
-            const f = (t: number) => {
-              run = last && t - last < 50 ? run + 1 : 0;
-              last = t;
-              if (run >= 5) {
-                clearTimeout(give);
-                return done(Math.round(t - S.docAt));
-              }
-              requestAnimationFrame(f);
-            };
-            requestAnimationFrame(f);
-          }),
+      .waitForFunction(() => (window as any).__pzPerf.settled !== undefined, null, {
+        timeout: 35_000,
+        polling: 100,
+      })
+      .then(() =>
+        page.evaluate(() => {
+          const S = (window as any).__pzPerf;
+          return S.settled == null ? null : Math.round(S.settled - S.docAt);
+        }),
       )
       .catch(() => null);
+    // Whatever came of it, nothing of the settle watch runs into the idle measurement.
+    await page.evaluate(() => (window as any).__pzPerf.stopSettle());
     await sleep(500);
     result.scan = await page.evaluate(() => (window as any).__pzPerf.scan());
     result.shot = join(out, `shot-${label}-${pageName}.png`);
@@ -248,16 +270,34 @@ async function runPage(key: string, doc: Doc, pageName: string, presence: Presen
           touchPoints: points.map((p) => ({ x: Math.round(p.x), y: Math.round(p.y), id: p.id })),
         })
         .catch(() => {});
+    /** Plays the steps; resolves, once the page has taken them all, with when the last went out. */
     const play = async (steps: { type: string; points: Finger[] }[]) => {
       const start = performance.now();
       const sent: Promise<unknown>[] = [];
+      let lastAt = start;
       for (let i = 0; i < steps.length; i++) {
         const due = start + i * STEP;
         const wait = due - performance.now();
         if (wait > 1) await sleep(wait);
+        lastAt = performance.now();
         sent.push(touch(steps[i]!.type, steps[i]!.points));
       }
       await Promise.all(sent);
+      return lastAt;
+    };
+    /**
+     * This clock against the page's, for a moment the page can't time itself: asked while it's at
+     * rest, the round trip that came back quickest, its page time against its midpoint here.
+     */
+    const pageOffset = async () => {
+      let best = { rtt: Number.POSITIVE_INFINITY, offset: 0 };
+      for (let i = 0; i < 5; i++) {
+        const a = performance.now();
+        const p = await now();
+        const b = performance.now();
+        if (b - a < best.rtt) best = { rtt: b - a, offset: p - (a + b) / 2 };
+      }
+      return best.offset;
     };
     /**
      * Wait for the camera to stop (a glide or an ease) and the page to draw again, up to `max`
@@ -361,15 +401,17 @@ async function runPage(key: string, doc: Doc, pageName: string, presence: Presen
       return { ...frames(f.t), ...cameraMoves(f.moves, spans) };
     });
 
-    // Pinch: in 2.5×, out again, in 1.6×. Settle is the first frame after the last lift.
+    // Pinch: in 2.5×, out again, in 1.6×. Settle is the first frame after the last lift, timed
+    // from when the fingers went up, not from when the page next answered: a page that stalls on
+    // the lift would otherwise hide the stall.
     result.pinch = await traced("pinch", async () => {
       await page.evaluate(() => (window as any).__pzPerf.start());
       const spans: [number, number][] = [];
       let lift = 0;
       for (const s of [2.5, 0.4, 1.6]) {
+        const offset = await pageOffset();
         const a = await now();
-        await play(pinch(s));
-        lift = await now();
+        lift = (await play(pinch(s))) + offset;
         await rest();
         spans.push([a, await now()]);
       }
@@ -558,7 +600,12 @@ for (const name of pages) {
   appendFileSync(join(out, `${label}.jsonl`), `${JSON.stringify(r)}\n`);
   rows.push(r);
 }
-writeFileSync(join(out, `${label}.md`), table(rows));
+// The report is every row under this label, as suite.sh runs this once per design.
+const all = readFileSync(join(out, `${label}.jsonl`), "utf8")
+  .split("\n")
+  .filter(Boolean)
+  .map((l) => JSON.parse(l) as Record<string, unknown>);
+writeFileSync(join(out, `${label}.md`), table(all));
 console.log(table(rows));
 
 function table(rs: Record<string, any>[]) {

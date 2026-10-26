@@ -38,10 +38,13 @@ export function cameraMoves(moves: number[], spans: [number, number][]) {
 /**
  * The frames after fingers lift from a pinch: when the first one came, and the longest one in
  * the following second (the canvas drops `will-change` 150 ms after the camera stops, and the
- * boards redraw sharp at the new zoom).
+ * boards redraw sharp at the new zoom). The first frame past the second counts too: a stall that
+ * runs over its end is still a stall.
  */
 export function settle(t: number[], lift: number, windowMs = 1000) {
-  const after = t.filter((v) => v >= lift && v <= lift + windowMs);
+  const later = t.filter((v) => v >= lift);
+  const inside = later.filter((v) => v <= lift + windowMs).length;
+  const after = later.slice(0, inside + 1);
   if (!after.length) return { firstMs: null, maxMs: null };
   const all = [lift, ...after];
   let max = 0;

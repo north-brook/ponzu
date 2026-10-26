@@ -12,6 +12,9 @@ LABEL=${2:?label}
 OUT=${3:-$(dirname "$0")/results}
 HERE=$(cd "$(dirname "$0")" && pwd)
 bun "$HERE/../canvas/build.ts"
+# Every run below adds its rows to <label>.jsonl and rewrites <label>.md from all of them: start
+# the label afresh, so a rerun doesn't keep the last one's rows.
+mkdir -p "$OUT" && rm -f "$OUT/$LABEL.jsonl"
 run() {
   if [ -n "${BENCH_LOCK:-}" ]; then "$BENCH_LOCK" "mobile-perf:$LABEL" bun "$HERE/canvas.ts" "$@"
   else bun "$HERE/canvas.ts" "$@"; fi
