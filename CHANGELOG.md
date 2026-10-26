@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.56.1](https://github.com/north-brook/ponzu/compare/v1.56.0...v1.56.1) (2026-10-26)
+
+
+### Bug Fixes
+
+* show the pair iphone dialog's description again ([#269](https://github.com/north-brook/ponzu/issues/269)) ([f56cd59](https://github.com/north-brook/ponzu/commit/f56cd596b2d42ae0e8b5534fa8e80ec16d4c4bb6))
+
 ## [1.56.0](https://github.com/north-brook/ponzu/compare/v1.55.10...v1.56.0) (2026-10-26)
 
 
