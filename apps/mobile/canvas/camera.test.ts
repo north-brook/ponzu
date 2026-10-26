@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   between,
   type Camera,
+  CameraStore,
   clampToBox,
   easeOut,
   focusCamera,
@@ -16,6 +17,7 @@ import {
   threadPoint,
   toScreen,
   toWorld,
+  transformOf,
   zoomAt,
 } from "./camera.ts";
 import { velocity } from "./gestures.ts";
@@ -180,12 +182,27 @@ test("labels hide when they'd lie over the board above", () => {
 test("a fit-content board frames by its measured height, not the stand-in", () => {
   // Canvas.tsx frames a page before its fit-content boards are measured, with a 900px
   // stand-in, then again once they are: the two framings differ, so the refit matters.
-  const standIn = overview([{ id: "page", x: 0, y: 0, w: 1440, h: 900 }], phone);
-  const measured = overview([{ id: "page", x: 0, y: 0, w: 1440, h: 5200 }], phone);
+  const standIn = overview([{ x: 0, y: 0, w: 1440, h: 900 }], phone);
+  const measured = overview([{ x: 0, y: 0, w: 1440, h: 5200 }], phone);
   expect(standIn).not.toBeNull();
   expect(measured).not.toBeNull();
   expect(measured!.zoom).toBeLessThan(standIn!.zoom);
   // The whole of the long page fits on screen once it's measured.
   const bottom = toScreen(measured!, 0, 5200);
   expect(bottom.y).toBeLessThanOrEqual(phone.h - phone.insets.bottom + 0.5);
+});
+
+test("the camera store reads the ref and tells its subscribers, until they leave", () => {
+  const ref = { current: { x: 0, y: 0, zoom: 1 } };
+  const store = new CameraStore(ref);
+  let calls = 0;
+  const off = store.subscribe(() => calls++);
+  ref.current = { x: 10, y: -4, zoom: 0.5 };
+  store.emit();
+  expect(calls).toBe(1);
+  expect(store.get()).toEqual({ x: 10, y: -4, zoom: 0.5 });
+  expect(transformOf(store.get())).toBe("translate(10px, -4px) scale(0.5)");
+  off();
+  store.emit();
+  expect(calls).toBe(1);
 });
