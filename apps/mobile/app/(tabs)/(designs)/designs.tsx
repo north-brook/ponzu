@@ -265,6 +265,7 @@ export default function Designs() {
               <MenuView
                 actions={cardActions(f)}
                 onPressAction={({ nativeEvent }) => move(f, nativeEvent.event as ShelfAction)}
+                onOpenMenu={select}
                 shouldOpenOnLongPress
                 themeVariant={scheme}
               >
