@@ -211,6 +211,9 @@ fingerprint`; `fingerprint.config.js` leaves the version out of it):
 
 - **The same native code as an existing build:** an over-the-air update to
   that build's channel. Installed apps pick it up at their next launch.
+  A build installed later still carries its own release's JavaScript, so
+  its first launch fetches the current release behind the splash and
+  restarts into it, waiting at most six seconds (`lib/first-launch.ts`).
 - **New native code** (a native dependency, a plugin, `app.json`'s native
   config, a font): a new build, sent to TestFlight.
 
@@ -256,9 +259,11 @@ new leaves out `iPhone:` notes and every commit that changed only
   filled in under TestFlight > Test Information.
 - **EAS environment variables:** `EXPO_PUBLIC_POSTHOG_KEY` (and optionally
   `EXPO_PUBLIC_POSTHOG_HOST`) in `production` only, so preview and
-  development builds send nothing. To upload source maps from production
-  builds, add `POSTHOG_CLI_API_KEY` and `POSTHOG_CLI_PROJECT_ID` there too
-  (they turn on PostHog's build plugin in `app.config.ts`).
+  development builds send nothing. `POSTHOG_CLI_API_KEY` (secret) and
+  `POSTHOG_CLI_PROJECT_ID` (PostHog project `677204`) there too upload
+  source maps: from production builds through PostHog's build plugin in
+  `app.config.ts`, and from production updates through
+  `eas/posthog_upload_sourcemaps` in `production.yml`.
 
 ## Checks
 

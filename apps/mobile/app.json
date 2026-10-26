@@ -3,9 +3,11 @@
     "name": "Ponzu",
     "slug": "ponzu",
     "owner": "north-brook",
-    "version": "0.1.0",
+    "version": "0.3.0",
     "scheme": "ponzu",
-    "platforms": ["ios"],
+    "platforms": [
+      "ios"
+    ],
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",

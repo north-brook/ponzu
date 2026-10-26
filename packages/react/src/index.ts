@@ -5,9 +5,15 @@ export {
   ARRIVE_MS,
   ARRIVE_STAGGER_MS,
   arrivals,
+  arriveBoard,
   arriveDelay,
+  BOARD_DRAW_MS,
   BOARD_MS,
+  develop,
+  drawFrame,
   outermost,
+  RING_OUT_MS,
+  SHEET_KEYFRAMES,
 } from "./arrive.ts";
 export { Canvas, type CanvasProps, type Mode } from "./Canvas.tsx";
 export { Avatar, Composer, ThreadCard, timeAgo } from "./Comments.tsx";

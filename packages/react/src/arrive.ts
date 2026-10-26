@@ -72,6 +72,9 @@ function developKeyframes(plan: number): Keyframe[] {
 /** A piece's own part of the develop: hidden through the plan, then uncovered. */
 export const ARRIVE_KEYFRAMES = developKeyframes(ARRIVE_PLAN_MS / ARRIVE_MS);
 
+/** A new artboard's sheet, over BOARD_MS from when it landed: it develops as its frame draws. */
+export const SHEET_KEYFRAMES = developKeyframes((ARRIVE_LAG_MS + SHEET_FROM) / BOARD_MS);
+
 /** The `i`th of `n` outlines: in on its turn through the plan, held just past it, then out. */
 function outlineKeyframes(i: number, n: number): Keyframe[] {
   const end = ARRIVE_PLAN_MS + OUTLINE_HOLD + OUTLINE_OUT;
@@ -356,7 +359,7 @@ export class Arrivals {
     if (!sheet) return;
     const board = this.boards.get((root.host as HTMLElement).dataset.artboardHost ?? "");
     if (board) {
-      const a = sheet.animate(developKeyframes((ARRIVE_LAG_MS + SHEET_FROM) / BOARD_MS), {
+      const a = sheet.animate(SHEET_KEYFRAMES, {
         duration: BOARD_MS,
         fill: "backwards",
       });

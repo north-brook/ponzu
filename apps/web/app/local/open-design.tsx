@@ -3,14 +3,15 @@
 import { appLink, parseDesignLink } from "@ponzu/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Apple, Slice } from "@/components/icons";
-import { DOWNLOAD } from "@/components/links";
+import { DOWNLOAD, TESTFLIGHT } from "@/components/links";
 
 /*
- * Hands the design in the page's #fragment to the Mac app as a ponzu://open link. A browser says
- * nothing when no app takes the link, so the page watches: launching an app takes the page's focus
- * or hides it. If neither happens in two seconds, Ponzu isn't installed and the page offers the
- * download. Focus that leaves later, once the person answers the browser's prompt, still counts.
- * Once Ponzu has it the page closes itself; a browser that won't let it says the tab can go.
+ * Hands the design in the page's #fragment to Ponzu as a ponzu://open link, which the Mac app and
+ * the iPhone app both take. A browser says nothing when no app takes the link, so the page watches:
+ * launching an app takes the page's focus or hides it. If neither happens in two seconds, Ponzu
+ * isn't installed and the page offers it: the Mac download, or on an iPhone, word of the TestFlight
+ * beta. Focus that leaves later, once the person answers the browser's prompt, still counts. Once
+ * Ponzu has it the page closes itself; a browser that won't let it says the tab can go.
  */
 
 /** How long the app has to take focus before the page offers the download. */
@@ -18,7 +19,7 @@ const WAIT = 2000;
 
 type State = "opening" | "opened" | "missing" | "invalid";
 
-/** The ponzu:// link for the design the fragment names, checked as the Mac app checks it. */
+/** The ponzu:// link for the design the fragment names, checked as the apps check it. */
 function linkFromHash(hash: string): string | null {
   const raw = `ponzu://open?${hash.replace(/^#/, "")}`;
   const design = parseDesignLink(raw);
@@ -85,22 +86,44 @@ export function OpenDesign() {
     );
   }
 
+  if (state === "missing" && onIPhone()) {
+    return (
+      <div className="flex flex-col items-center gap-8 text-center animate-swap">
+        <div className="flex flex-col items-center gap-3.5">
+          <h1 className={missingTitle}>Open this design in Ponzu.</h1>
+          <p className={missingBody}>
+            Your agent made it with Ponzu, the design canvas for agents. Ponzu for iPhone, which
+            opens the designs on your Macs, is in a TestFlight beta.
+          </p>
+        </div>
+        <div className="flex flex-col items-center gap-3.5">
+          {TESTFLIGHT ? (
+            <a className={cta} href={TESTFLIGHT}>
+              Join the beta
+            </a>
+          ) : null}
+          <p className="m-0 text-sm/5 text-faint">
+            Already have it?{" "}
+            <button type="button" className={inlineLink} onClick={retry}>
+              Open in Ponzu
+            </button>
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (state === "missing") {
     return (
       <div className="flex flex-col items-center gap-8 text-center animate-swap">
         <div className="flex flex-col items-center gap-3.5">
-          <h1 className="m-0 text-[clamp(32px,4.4vw,44px)] leading-[1.09] font-semibold tracking-[-0.035em] text-balance text-ink">
-            Open this design in Ponzu.
-          </h1>
-          <p className="m-0 max-w-[480px] text-[17px]/[27px] text-balance text-muted">
+          <h1 className={missingTitle}>Open this design in Ponzu.</h1>
+          <p className={missingBody}>
             Your agent made it with Ponzu, the design canvas for agents. Get the Mac app to see it.
           </p>
         </div>
         <div className="flex flex-col items-center gap-3.5">
-          <a
-            className="inline-flex items-center gap-[9px] rounded-full bg-cta py-[15px] pr-6 pl-5 text-base font-semibold whitespace-nowrap text-cta-ink transition-[translate] duration-150 ease-out hover:-translate-y-px"
-            href={DOWNLOAD}
-          >
+          <a className={cta} href={DOWNLOAD}>
             <Apple />
             Download for Mac
           </a>
@@ -123,6 +146,20 @@ export function OpenDesign() {
     <Message slice title="Opening in Ponzu…" body="If your browser asks, choose Open Ponzu." />
   );
 }
+
+/**
+ * An iPhone, where the Mac download is no use. Read only once the page has given up on the app,
+ * which is after hydration, so the server's render never depends on it.
+ */
+function onIPhone() {
+  return /iPhone|iPod/.test(navigator.userAgent);
+}
+
+const missingTitle =
+  "m-0 text-[clamp(32px,4.4vw,44px)] leading-[1.09] font-semibold tracking-[-0.035em] text-balance text-ink";
+const missingBody = "m-0 max-w-[480px] text-[17px]/[27px] text-balance text-muted";
+const cta =
+  "inline-flex items-center gap-[9px] rounded-full bg-cta py-[15px] pr-6 pl-5 text-base font-semibold whitespace-nowrap text-cta-ink transition-[translate] duration-150 ease-out hover:-translate-y-px";
 
 const inlineLink =
   "cursor-pointer text-ink underline decoration-outline underline-offset-4 hover:decoration-ink";

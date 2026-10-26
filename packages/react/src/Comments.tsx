@@ -273,7 +273,7 @@ export function ThreadCard({
                   ]
                 : []),
               {
-                label: "Delete thread",
+                label: "Delete",
                 icon: <Icon name="trash" size={14} />,
                 danger: true,
                 onSelect: remove,

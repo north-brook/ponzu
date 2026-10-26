@@ -1,6 +1,6 @@
 {
   "name": "@ponzu/mobile",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
@@ -8,6 +8,7 @@
     "ios": "expo run:ios",
     "build": "expo export --platform ios",
     "prebuild": "expo prebuild --platform ios --clean",
+    "eas-build-post-install": "[ -z \"$POSTHOG_CLI_API_KEY\" ] || npm install -g @posthog/cli@0.16.2",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "bun test"
   },
@@ -64,6 +65,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",
+    "@posthog/cli": "0.16.2",
     "@resvg/resvg-js": "^2.6.2",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/bun": "latest",
