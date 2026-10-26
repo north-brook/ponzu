@@ -1,6 +1,6 @@
 import { existsSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { extname, join, normalize } from "node:path";
+import { extname, join, normalize, resolve, sep } from "node:path";
 import {
   type CatalogAgent,
   type ClientMessage,
@@ -15,9 +15,12 @@ import { createHttpHandler } from "@ponzu/mcp";
 import { FsAdapter } from "@ponzu/store/fs";
 import type { Server, ServerWebSocket, WebSocketHandler } from "bun";
 import { advertise, type Bonjour } from "./bonjour.ts";
+import { defaultCacheDir, trimAtStart } from "./cache.ts";
 import { CatalogFeed, type Scope } from "./feed.ts";
 import { Home, type OpenedBy } from "./home.ts";
 import { assetResponse } from "./range.ts";
+import { RemoteImages } from "./remote-images.ts";
+import { fileSource, type ImageSource, MEDIA_HEADERS, Renditions } from "./renditions.ts";
 import { isTailnetAddress } from "./tailnet.ts";
 import type { Updater } from "./updater.ts";
 import type { LocalWorkspace } from "./workspace.ts";
@@ -69,6 +72,8 @@ export interface ServeOptions {
   backpressureLimit?: number;
   /** The Mac app's updater: the catalog lists what it has, and Update installs it. */
   updater?: Updater;
+  /** Where image copies and remote images are kept. Default ~/.ponzu/cache. */
+  cacheDir?: string;
 }
 
 /**
@@ -220,6 +225,13 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
     return agent && (agent.client ?? "other");
   };
   const updater = opts.updater;
+
+  const renditions = new Renditions({ dir: opts.cacheDir });
+  const remoteImages = new RemoteImages(opts.cacheDir ?? defaultCacheDir());
+  trimAtStart([
+    { dir: renditions.dir, max: renditions.maxBytes },
+    { dir: remoteImages.dir, max: remoteImages.maxBytes },
+  ]);
   const home = new Home(ws, {
     roots: opts.root ? [opts.root] : [],
     spotlight: opts.spotlight,
@@ -523,12 +535,53 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
         ws.get(key)?.storage ?? ((await home.listed(key)) ? new FsAdapter(key) : null);
       if (!storage) return new Response("Not found", { status: 404 });
       const rel = decodeURIComponent(assetMatch[2]!);
+      const type = MIME[extname(rel).toLowerCase()] ?? "application/octet-stream";
+      // ?w= asks for a copy about that wide, for a canvas showing the image small.
+      const w = Number(url.searchParams.get("w"));
+      if (w > 0 && type.startsWith("image/")) {
+        const src = await storageSource(storage, rel);
+        if (!src) return new Response("Not found", { status: 404 });
+        const etag = `"${src.v}-${w}"`;
+        if (req.headers.get("if-none-match") === etag) return new Response(null, { status: 304 });
+        const copy = await renditions.get(src, w);
+        const body = copy?.bytes ?? src.bytes ?? Bun.file(src.path!);
+        return new Response(body as BodyInit, {
+          headers: {
+            "content-type": copy?.type ?? type,
+            "cache-control": "no-cache",
+            etag,
+            ...MEDIA_HEADERS,
+          },
+        });
+      }
       const blob = storage.openAsset
         ? await storage.openAsset(rel)
         : await storage.readAsset(rel).then((b) => b && new Blob([b as BlobPart]));
       if (!blob) return new Response("Not found", { status: 404 });
-      const type = MIME[extname(rel).toLowerCase()] ?? "application/octet-stream";
       return assetResponse(blob, type, req.headers.get("range"));
+    }
+
+    // A remote image a design links to, through this server, for the canvas: a
+    // copy sized to how it's drawn (?w=), kept for offline. Only to a client on
+    // this Mac, as an image (never a page: a browser that navigates here gets
+    // nothing), and only raster images (see RemoteImages).
+    if (path === "/api/image") {
+      const fail = (status: number) => new Response(null, { status, headers: MEDIA_HEADERS });
+      if (!imageRequestOk(req, url, caller, srv.requestIP(req)?.address)) return fail(403);
+      const fetched = await remoteImages.get(url.searchParams.get("url") ?? "");
+      // Can't have it: the canvas shows the image from where it is instead.
+      if (!fetched) return fail(404);
+      const src = await fileSource(fetched.path);
+      if (!src) return fail(404);
+      const w = Number(url.searchParams.get("w"));
+      const copy = w > 0 ? await renditions.get(src, w) : null;
+      return new Response((copy?.bytes ?? Bun.file(fetched.path)) as BodyInit, {
+        headers: {
+          "content-type": copy?.type ?? fetched.type,
+          "cache-control": "private, max-age=3600",
+          ...MEDIA_HEADERS,
+        },
+      });
     }
 
     if (req.method === "POST" && /^\/files\/([^/]+)\/upload$/.test(url.pathname)) {
@@ -942,6 +995,28 @@ function isLoopback(host: string): boolean {
   return host === "127.0.0.1" || host === "localhost" || host === "::1";
 }
 
+/**
+ * Whether /api/image may answer: a client on this Mac (whatever address the
+ * server listens on), from its own pages, loading an image. A page navigated
+ * here (`sec-fetch-dest: document`), one embedding it as anything but an
+ * image, or another site's page (`sec-fetch-site`, which an `<img>` sends where
+ * it sends no Origin) gets nothing.
+ */
+export function imageRequestOk(
+  req: Request,
+  url: URL,
+  caller: "local" | "peer",
+  ip: string | undefined,
+): boolean {
+  if (caller !== "local" || !sameHostOk(req, url)) return false;
+  const a = (ip ?? "").toLowerCase();
+  if (a !== "127.0.0.1" && a !== "::1" && a !== "::ffff:127.0.0.1") return false;
+  const site = req.headers.get("sec-fetch-site");
+  if (site && site !== "same-origin" && site !== "none") return false;
+  const dest = req.headers.get("sec-fetch-dest");
+  return !dest || dest === "image" || dest === "empty";
+}
+
 /** Block cross-site requests to MCP from browsers (DNS rebinding, drive-by pages). */
 function sameHostOk(req: Request, url: URL): boolean {
   const origin = req.headers.get("origin");
@@ -974,4 +1049,20 @@ async function serveStudio(path: string, dir?: string): Promise<Response> {
       "cache-control": ext === ".html" ? "no-cache" : "public, max-age=31536000, immutable",
     },
   });
+}
+
+/** A design's asset as the source of smaller copies: its file on disk when it has one. */
+async function storageSource(
+  storage: { root?: string; readAsset(rel: string): Promise<Uint8Array | null> },
+  rel: string,
+): Promise<ImageSource | null> {
+  if (storage.root) {
+    const assets = resolve(storage.root, "assets");
+    const abs = resolve(storage.root, rel);
+    if (!abs.startsWith(assets + sep)) return null;
+    return fileSource(abs);
+  }
+  const bytes = await storage.readAsset(rel);
+  if (!bytes) return null;
+  return { bytes, v: Bun.hash(bytes).toString(36) };
 }

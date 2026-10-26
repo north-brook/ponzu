@@ -14,6 +14,7 @@ import {
   parseHtml,
   parseStyle,
   parseTokens,
+  rewriteCssUrls,
   rootDirectionUnset,
   serializeArtboardFile,
   serializeNodes,
@@ -120,6 +121,30 @@ describe("html", () => {
       "javascript: URL in href on <a>",
       "<iframe>",
     ]);
+  });
+
+  test("rewrites each image in an image-set() once, and nothing else", () => {
+    const tag = (u: string) => `/r/${u}`;
+    expect(rewriteCssUrls(`background:image-set(url("a.png") 1x, "b.png" 2x)`, tag)).toBe(
+      `background:image-set(url("/r/a.png") 1x, "/r/b.png" 2x)`,
+    );
+    // A type() hint is a MIME type, not an image.
+    expect(rewriteCssUrls(`b:image-set("a.avif" type("image/avif"), 'b.jpg' 1x)`, tag)).toBe(
+      `b:image-set("/r/a.avif" type("image/avif"), '/r/b.jpg' 1x)`,
+    );
+    // Comments between candidates are skipped.
+    expect(rewriteCssUrls(`b:image-set(/* std */ "a.png" 1x, /* "x" */ "b.png" 2x)`, tag)).toBe(
+      `b:image-set(/* std */ "/r/a.png" 1x, /* "x" */ "/r/b.png" 2x)`,
+    );
+    // Every image-set() in a declaration, and in the next one.
+    expect(
+      rewriteCssUrls(
+        `a{background-image:image-set("a.png" 1x),-webkit-image-set("b.png" 1x);mask:image-set("c.png" 1x)}`,
+        tag,
+      ),
+    ).toBe(
+      `a{background-image:image-set("/r/a.png" 1x),-webkit-image-set("/r/b.png" 1x);mask:image-set("/r/c.png" 1x)}`,
+    );
   });
 
   test("keeps svg casing and self-closes empty svg children", () => {

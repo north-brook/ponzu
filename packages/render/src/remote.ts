@@ -144,7 +144,7 @@ export class RemoteRenderer implements Renderer {
 
   async render(req: RenderRequest): Promise<RenderResult> {
     const job: RemoteRenderJob = {
-      html: this.page(req),
+      html: this.page(req, req.thumbnail ? clampScale(req.scale) : undefined),
       ...size(req.artboard.root.style),
       selector: selectorFor(req.nodeId),
       scale: clampScale(req.scale),
@@ -242,16 +242,20 @@ export class RemoteRenderer implements Renderer {
     }
   }
 
-  private page(req: {
-    artboard: RenderRequest["artboard"];
-    tokens: string;
-    colorScheme?: "light" | "dark";
-    assetBase?: string;
-  }) {
+  private page(
+    req: {
+      artboard: RenderRequest["artboard"];
+      tokens: string;
+      colorScheme?: "light" | "dark";
+      assetBase?: string;
+    },
+    imageScale?: number,
+  ) {
     return artboardPage(req.artboard, {
       tokens: req.tokens,
       assetBase: req.assetBase ?? this.assetBase,
       colorScheme: req.colorScheme,
+      imageScale,
     });
   }
 
