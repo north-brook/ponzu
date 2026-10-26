@@ -295,3 +295,14 @@ test("after Ponzu restarts, an agent keeps the files it was working in", async (
   expect(text(r)).toContain("shop");
   expect(hostWs!.designs()).toHaveLength(2);
 });
+
+test("a design the agent moves to while Ponzu is down is the one it's in when Ponzu is back", async () => {
+  await stopHost();
+  // The bridge runs this itself, and the agent is now in the café.
+  await agent.callTool({ name: "get_basic_info", arguments: { file: join(dir, "cafe.design") } });
+  await startHost();
+  await hostWs!.open(join(dir, "shop.design"));
+  const r = await agent.callTool({ name: "get_basic_info", arguments: {} });
+  expect(r.isError).toBeFalsy();
+  expect(text(r)).toContain("cafe");
+});

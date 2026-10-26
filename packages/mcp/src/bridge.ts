@@ -239,10 +239,13 @@ export async function serveBridge(
       }
     }
     await opts.prepareLocal?.();
-    return (await localClient()).request(
-      { method: "tools/call", params },
-      CallToolResultSchema,
-      options,
+    // Files it moves to while the host is down count too, for when the host comes back.
+    return remember(
+      await (await localClient()).request(
+        { method: "tools/call", params },
+        CallToolResultSchema,
+        options,
+      ),
     );
   });
 

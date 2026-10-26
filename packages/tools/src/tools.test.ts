@@ -547,7 +547,7 @@ async function threeFiles() {
   ];
   const captured: Record<string, unknown>[] = [];
   const ws: Workspace = {
-    designs: () => files,
+    designs: () => [...files],
     resolve: async (file) => {
       const hit = files.find((f) => f.key === file);
       if (!hit) throw new Error(`no ${file}`);
@@ -564,7 +564,7 @@ async function threeFiles() {
   };
   const call = (name: string, args: unknown) => runTool(getTool(name)!, args, ctx);
   const [fern, moss, reed] = files.map((f) => f.design);
-  return { ws, ctx, call, captured, fern: fern!, moss: moss!, reed: reed! };
+  return { ws, ctx, call, captured, open, files, fern: fern!, moss: moss!, reed: reed! };
 }
 
 test("a wait hears comments on the file the agent worked in before it moved to a new one", async () => {
@@ -592,6 +592,18 @@ test("comments in a design the agent never touched are counted, not told", async
   expect(r.text).toContain("th_m");
   expect(r.text).not.toContain("th_r");
   expect(captured.at(-1)).toMatchObject({ events: 1, scope_files: 1, missed_elsewhere: 1 });
+});
+
+test("comments in a design opened while the wait runs are counted too", async () => {
+  const { ws, call, captured, open, files } = await threeFiles();
+  const since = ws.events.cursor;
+  const waiting = call("wait_for_activity", { since, timeout: 0.3 });
+  while (!ws.presence.list().some((p) => p.listening)) await Bun.sleep(1);
+  const sage = await open("sage", "Sage");
+  files.push(sage);
+  personComments(sage.design, ws.events, "th_s", "over here", "sage");
+  await waiting;
+  expect(captured.at(-1)).toMatchObject({ events: 0, missed_elsewhere: 1 });
 });
 
 test("after a restart, waiting threads from every file the agent worked in are listed", async () => {

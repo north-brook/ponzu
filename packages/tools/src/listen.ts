@@ -167,11 +167,13 @@ export const listenTools = [
         ? events[events.length - 1]!.event.seq
         : Math.max(cursor, ws.events.cursor);
       ws.presence.touch(caller, { listening: false, listenedAt: Date.now() });
+      // Designs can open while the wait runs: look again, so their comments are counted and named.
+      const open = ws.designs();
       const metrics = {
         cursor: args.since === undefined ? "none" : "ok",
         events: events.length,
         scope_files: files.length,
-        missed_elsewhere: missedElsewhere(ws.events.since(cursor, { excludeAuthor }), scope, all),
+        missed_elsewhere: missedElsewhere(ws.events.since(cursor, { excludeAuthor }), scope, open),
       };
       if (!events.length)
         return {
@@ -180,8 +182,8 @@ export const listenTools = [
           metrics,
         };
       const line = (e: KeyedEvent) => {
-        const f = all.find((d) => d.key === e.key);
-        const where = f && e.key !== key ? ` (in ${label(f, all)})` : "";
+        const f = open.find((d) => d.key === e.key);
+        const where = f && e.key !== key ? ` (in ${label(f, open)})` : "";
         return describeEvent(f?.design.doc, e.event) + where;
       };
       return {
