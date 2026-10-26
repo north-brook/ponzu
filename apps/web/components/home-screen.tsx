@@ -1,6 +1,6 @@
 "use client";
 
-import { AgentMark, Icon } from "@ponzu/react";
+import { Icon, Rain } from "@ponzu/react";
 import type { ReactNode } from "react";
 import "./demo/ponzu.css";
 
@@ -8,7 +8,7 @@ import "./demo/ponzu.css";
  * The "Your Macs. One home screen." tile: the app's home screen (apps/studio's dashboard) as it
  * looks while an agent works, with the repo's example designs. Same parts as the app: search with
  * Open and New, the Recent tab, project chips, and cards that show where each design lives. The
- * one an agent is in gets the canvas's yuzu trace, a shimmering name and the agent's mark. Previews are the canvas
+ * one an agent is in gets a shimmering name and yuzu rain where its time would be. Previews are the canvas
  * renders Ponzu writes to `.ponzu/preview.png` and `preview-dark.png`; the one shown follows the
  * color scheme, as in the app.
  */
@@ -71,7 +71,6 @@ export function HomeScreen() {
                   width={800}
                 />
               </picture>
-              {file.agent && <Trace />}
             </div>
             <div className="flex min-w-0 flex-col gap-0.5 px-0.5">
               <span className="flex min-w-0 items-baseline gap-2">
@@ -82,11 +81,9 @@ export function HomeScreen() {
                 >
                   {file.name}
                 </span>
-                {/* As in the app: while an agent edits it, its mark stands in for the time. */}
+                {/* As in the app: while an agent edits it, yuzu rain stands in for the time. */}
                 {file.agent ? (
-                  <span className="grid shrink-0 place-items-center self-center">
-                    <AgentMark client={file.agent} size={13} />
-                  </span>
+                  <Rain columns={12} className="self-center text-[17px]" />
                 ) : (
                   <span className="shrink-0 text-xs text-faint tabular-nums">{file.ago}</span>
                 )}
@@ -136,29 +133,5 @@ function Chip({
       {children}
       <span className="opacity-60 tabular-nums">{count}</span>
     </span>
-  );
-}
-
-/** Round the card of the design an agent is in: a new artboard's yuzu frame drawing itself, on a loop. */
-function Trace() {
-  return (
-    <svg
-      aria-hidden
-      className="pointer-events-none absolute inset-0 size-full overflow-visible text-yuzu"
-    >
-      <rect
-        className="pz-lap"
-        x="1"
-        y="1"
-        width="calc(100% - 2px)"
-        height="calc(100% - 2px)"
-        rx="11"
-        pathLength={100}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={2}
-        strokeLinecap="round"
-      />
-    </svg>
   );
 }

@@ -49,6 +49,8 @@ const mod = mac ? "⌘" : "Ctrl+";
 
 /** How wide the rain runs on a card that has no preview yet. */
 const RAIN_COLUMNS = 8;
+/** How wide the rain runs beside the name of a card an agent is working in. */
+const CARD_RAIN_COLUMNS = 12;
 /** Cards shown live at once. Each holds its design's first page in the page. */
 const LIVE_CARDS = 4;
 /** How long a card stays live after its agent stops: about as long as its preview takes to redraw. */
@@ -820,19 +822,11 @@ function FileCard({
       }}
       title={file.locked ? "Open it to let Ponzu read this folder." : undefined}
     >
-      <div
-        className={cn(
-          "relative aspect-[16/11] overflow-hidden rounded-xl bg-preview transition-shadow group-focus-visible:shadow-[0_0_0_2px_var(--ring)]",
-          working
-            ? "shadow-[0_0_0_1px_var(--hairline)]"
-            : "shadow-[0_0_0_1px_var(--hairline)] group-hover:shadow-[0_0_0_1px_var(--hairline-strong),0_4px_14px_rgba(0,0,0,0.06)]",
-        )}
-      >
+      <div className="relative aspect-[16/11] overflow-hidden rounded-xl bg-preview shadow-[0_0_0_1px_var(--hairline)] transition-shadow group-hover:shadow-[0_0_0_1px_var(--hairline-strong),0_4px_14px_rgba(0,0,0,0.06)] group-focus-visible:shadow-[0_0_0_2px_var(--ring)]">
         <div className={cn("absolute inset-0", archived && "opacity-55 grayscale")}>
           <Preview src={file.preview} working={working} />
           {live && <LivePreview file={file} />}
         </div>
-        {working && <CardTrace />}
         {onShelve && <CardMenu card={card} onOpen={onOpen} onShelve={onShelve} hidden={context} />}
       </div>
       <div className="flex min-w-0 flex-col gap-0.5 px-0.5">
@@ -854,14 +848,14 @@ function FileCard({
                 : undefined
             }
           >
-            {/* While an agent edits it, its mark stands in for "now". */}
+            {/* While an agent edits it, yuzu rain stands in for "now". */}
             {file.busy ? (
-              <span
-                className="grid h-full place-items-center self-center"
-                title="An agent is working"
-              >
-                <AgentMark client={file.busy} size={13} />
-              </span>
+              <Rain
+                columns={CARD_RAIN_COLUMNS}
+                className="self-center text-[17px]"
+                label={`${agentName(file.busy)} is working`}
+                title={`${agentName(file.busy)} is working`}
+              />
             ) : (
               agoShort(file.modified)
             )}
@@ -967,34 +961,6 @@ function labelled(card: CatalogCard): { file: CatalogFile; label: string }[] {
   return [card.file, ...card.copies]
     .map((file) => ({ file, label: branchOf(file) ?? tilde(folderOf(file)) }))
     .sort((a, b) => a.label.localeCompare(b.label));
-}
-
-/**
- * Round the card of the design an agent is working in: a new artboard's yuzu
- * frame drawing itself, over and over. Drawn over the preview, which is
- * rounded, so the path is too.
- */
-function CardTrace() {
-  return (
-    <svg
-      aria-hidden
-      className="pointer-events-none absolute inset-0 size-full overflow-visible text-[var(--rind)]"
-    >
-      <rect
-        className="pz-lap"
-        x="1"
-        y="1"
-        width="calc(100% - 2px)"
-        height="calc(100% - 2px)"
-        rx="11"
-        pathLength={100}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={2}
-        strokeLinecap="round"
-      />
-    </svg>
-  );
 }
 
 /**
