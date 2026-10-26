@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.54.1](https://github.com/north-brook/ponzu/compare/v1.54.0...v1.54.1) (2026-10-26)
+
+
+### Performance Improvements
+
+* keep the canvas smooth on big pages with pictures, loops and a scrolling camera ([#220](https://github.com/north-brook/ponzu/issues/220)) ([2271184](https://github.com/north-brook/ponzu/commit/2271184addd1f968d97172f96bdabfa2b5e50860))
+
 ## [1.54.0](https://github.com/north-brook/ponzu/compare/v1.53.6...v1.54.0) (2026-10-26)
 
 
