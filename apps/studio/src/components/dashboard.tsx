@@ -802,11 +802,9 @@ function FileCard({
   const working = Boolean(file.busy);
   const archived = viewOf(file) === "archived";
   const open = () => onOpen({ key: file.key, base: file.base });
-  // Right-clicked: the same menu at the pointer, and no "…" beside it.
-  const [context, setContext] = useState(false);
   const body = (
-    // A div, not a button: the menu's button sits inside it.
-    // biome-ignore lint/a11y/useSemanticElements: holds the menu's own button
+    // A div, not a button: a button can't hold the preview's divs.
+    // biome-ignore lint/a11y/useSemanticElements: holds block content
     <div
       role="button"
       tabIndex={0}
@@ -827,7 +825,6 @@ function FileCard({
           <Preview src={file.preview} working={working} />
           {live && <LivePreview file={file} />}
         </div>
-        {onShelve && <CardMenu card={card} onOpen={onOpen} onShelve={onShelve} hidden={context} />}
       </div>
       <div className="flex min-w-0 flex-col gap-0.5 px-0.5">
         <span className="flex min-w-0 items-baseline gap-2">
@@ -892,17 +889,11 @@ function FileCard({
   );
   if (!onShelve) return body;
   return (
-    <ContextMenu onOpenChange={setContext}>
+    <ContextMenu>
       <ContextMenuTrigger asChild>{body}</ContextMenuTrigger>
       {/* Portaled, but its clicks still bubble to the card, which would open it. */}
       <ContextMenuContent onClick={(e) => e.stopPropagation()}>
-        <CardMenuItems
-          card={card}
-          onOpen={onOpen}
-          onShelve={onShelve}
-          Item={ContextMenuItem}
-          Separator={ContextMenuSeparator}
-        />
+        <CardMenuItems card={card} onOpen={onOpen} onShelve={onShelve} />
       </ContextMenuContent>
     </ContextMenu>
   );
@@ -963,119 +954,65 @@ function labelled(card: CatalogCard): { file: CatalogFile; label: string }[] {
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 
-/**
- * A card's "…": open it (on any of its branches), find it, or put it away.
- * Shows on hover, and stays while open; hidden while the same menu is open
- * from a right-click.
- */
-function CardMenu({
-  card,
-  onOpen,
-  onShelve,
-  hidden,
-}: {
-  card: CatalogCard;
-  onOpen: (target: OpenTarget) => void;
-  onShelve: (card: CatalogCard, action: ShelfAction) => Promise<void>;
-  hidden?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label="More"
-          onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
-          className={cn(
-            "absolute top-2 right-2 grid size-7 place-items-center rounded-lg bg-card text-foreground shadow-[0_0_0_1px_var(--hairline-strong),0_2px_6px_rgba(0,0,0,0.08)] transition-opacity",
-            open
-              ? "opacity-100"
-              : hidden
-                ? "opacity-0"
-                : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
-          )}
-        >
-          <Icon name="more" size={16} />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-        <CardMenuItems
-          card={card}
-          onOpen={onOpen}
-          onShelve={onShelve}
-          Item={DropdownMenuItem}
-          Separator={DropdownMenuSeparator}
-        />
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-/** The card menu's items, for the "…" and the right-click alike. */
+/** The card's right-click menu: open it (on any of its branches), find it, or put it away. */
 function CardMenuItems({
   card,
   onOpen,
   onShelve,
-  Item,
-  Separator,
 }: {
   card: CatalogCard;
   onOpen: (target: OpenTarget) => void;
   onShelve: (card: CatalogCard, action: ShelfAction) => Promise<void>;
-  Item: typeof DropdownMenuItem | typeof ContextMenuItem;
-  Separator: typeof DropdownMenuSeparator | typeof ContextMenuSeparator;
 }) {
   const { file, copies } = card;
   const desktop = window.ponzuDesktop;
   const here = file.machine === "local";
   return (
     <>
-      <Item onSelect={() => onOpen({ key: file.key, base: file.base })}>
+      <ContextMenuItem onSelect={() => onOpen({ key: file.key, base: file.base })}>
         <Icon name="folderOpen" size={15} />
         Open
-      </Item>
+      </ContextMenuItem>
       {copies.length > 0 && (
         <>
-          <Separator />
+          <ContextMenuSeparator />
           <div className="px-2.5 pt-1 pb-0.5 text-[11.5px] text-faint">Open on</div>
           <div className="max-h-[225px] overflow-y-auto">
             {labelled(card).map(({ file: c, label }) => (
-              <Item
+              <ContextMenuItem
                 key={c.id}
                 title={tilde(c.key)}
                 onSelect={() => onOpen({ key: c.key, base: c.base })}
               >
                 <Icon name="branch" size={15} />
                 <span className="min-w-0 max-w-[240px] truncate">{label}</span>
-              </Item>
+              </ContextMenuItem>
             ))}
           </div>
-          <Separator />
+          <ContextMenuSeparator />
         </>
       )}
       {desktop && here && (
-        <Item onSelect={() => desktop.reveal(file.key)}>
+        <ContextMenuItem onSelect={() => desktop.reveal(file.key)}>
           <Icon name="folder" size={15} />
           Show in Finder
-        </Item>
+        </ContextMenuItem>
       )}
-      <Item onSelect={() => void navigator.clipboard.writeText(file.key)}>
+      <ContextMenuItem onSelect={() => void navigator.clipboard.writeText(file.key)}>
         <Icon name="copy" size={15} />
         Copy path
-      </Item>
-      <Separator />
+      </ContextMenuItem>
+      <ContextMenuSeparator />
       {viewOf(file) === "archived" ? (
-        <Item onSelect={() => void onShelve(card, "restore")}>
+        <ContextMenuItem onSelect={() => void onShelve(card, "restore")}>
           <Icon name="unarchive" size={15} />
           Restore
-        </Item>
+        </ContextMenuItem>
       ) : (
-        <Item onSelect={() => void onShelve(card, "archive")}>
+        <ContextMenuItem onSelect={() => void onShelve(card, "archive")}>
           <Icon name="shelved" size={15} />
           Archive
-        </Item>
+        </ContextMenuItem>
       )}
     </>
   );
