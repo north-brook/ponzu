@@ -57,5 +57,13 @@
     "parser": {
       "tailwindDirectives": true
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["apps/mobile/app.json"],
+      "formatter": {
+        "enabled": false
+      }
+    }
+  ]
 }
