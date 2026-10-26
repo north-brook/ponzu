@@ -4,10 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { cn } from "@/lib/utils";
 
 /**
- * A quiet button in the title bar, with a yuzu dot, once any of the person's Macs has a newer
+ * A yuzu circle in the title bar, with an arrow up, once any of the person's Macs has a newer
  * Ponzu downloaded. Its popover has the release notes, which are what's new: nothing shows them
  * again after the restart. Restart installs it on every Mac behind: the server asks each of the
  * others, then restarts this one into it (`POST /api/update`). A Mac whose agent is mid-change
@@ -63,16 +62,24 @@ export function UpdateButton({
           aria-label={
             updating ? `Updating to Ponzu ${plan.version}` : `Ponzu ${plan.version} is ready`
           }
-          className="app-no-drag relative grid size-7 shrink-0 place-items-center rounded-lg bg-secondary text-foreground outline-none transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="app-no-drag grid size-7 shrink-0 place-items-center rounded-full bg-flesh text-[#0e0e0e] outline-none transition-[filter] hover:brightness-95 focus-visible:ring-[3px] focus-visible:ring-ring/50"
         >
-          <Icon
-            name={updating ? "loading" : "upload"}
-            size={15}
-            strokeWidth={1.9}
-            className={cn(updating && "animate-spin")}
-          />
-          {!updating && (
-            <span className="absolute top-[3px] right-[3px] size-[7px] rounded-full bg-flesh shadow-[0_0_0_2px_var(--background)]" />
+          {updating ? (
+            <Icon name="loading" size={15} strokeWidth={2} className="animate-spin" />
+          ) : (
+            <svg
+              aria-hidden
+              width={15}
+              height={15}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2.4}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 19V5M6 11l6-6 6 6" />
+            </svg>
           )}
         </button>
       </PopoverTrigger>
