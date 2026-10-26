@@ -38,6 +38,8 @@ export function PairIphone() {
     let stopped = false;
     /** The last pairing before this opened: a later one is the phone scanning this code. */
     let before: number | undefined;
+    // No code until the first answer sets `before`, or a scan before it would become the baseline.
+    setMachine(null);
     const ask = async () => {
       try {
         const res = await fetch("/api/info");
