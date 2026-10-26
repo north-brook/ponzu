@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.55.1](https://github.com/north-brook/ponzu/compare/v1.55.0...v1.55.1) (2026-10-26)
+
+
+### Bug Fixes
+
+* **mobile:** a sent comment leaves at once with the keyboard ([#237](https://github.com/north-brook/ponzu/issues/237)) ([fc34496](https://github.com/north-brook/ponzu/commit/fc344961ad761db8e0782667ecf07be65d136fcc))
+
 ## [1.55.0](https://github.com/north-brook/ponzu/compare/v1.54.1...v1.55.0) (2026-10-26)
 
 
