@@ -9,3 +9,6 @@ apps/desktop/dist
 apps/desktop/out
 examples/**/exports
 .context
+
+# Results of the phone harness (apps/mobile/perf).
+apps/mobile/perf/results

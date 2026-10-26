@@ -1,0 +1,9 @@
+appId: design.ponzu.app
+name: perf-designs
+---
+# The Designs list, left alone for sim.sh to sample.
+- runFlow: start.yaml
+- scrollUntilVisible:
+    element:
+      id: card-Kettle
+    timeout: 60000

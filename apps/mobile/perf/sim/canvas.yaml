@@ -1,0 +1,18 @@
+appId: design.ponzu.app
+name: perf-canvas
+---
+# A design's page on the canvas (DESIGN, PAGE: Kettle's Brand by default), drawn, then left
+# alone for sim.sh to sample.
+- runFlow: start.yaml
+- runFlow:
+    file: open.yaml
+    env:
+      LINK: ponzu://design/dev/${DESIGN}?page=${PAGE}${EXTRA}
+- extendedWaitUntil:
+    visible:
+      id: "(canvas|standby)"
+    timeout: 30000
+- extendedWaitUntil:
+    notVisible:
+      id: canvas-loading
+    timeout: 60000
