@@ -139,9 +139,10 @@ export class EventHub {
 
   constructor(
     private capacity = 500,
-    started = Date.now(),
+    /** In milliseconds, to the fraction: two Ponzus that start in one millisecond start apart. */
+    started = performance.timeOrigin + performance.now(),
   ) {
-    const base = started * 1000;
+    const base = Math.floor(started * 1000);
     this.base = base;
     this.seq = base;
     this.dropped = base;
