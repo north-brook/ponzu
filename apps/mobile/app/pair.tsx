@@ -1,6 +1,7 @@
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import { Text, View } from "react-native";
+import { boot } from "../lib/boot";
 import { pairMessage, usePair } from "../lib/macs";
 import { reachAll } from "../lib/reach";
 import { Slice } from "../lib/slice";
@@ -17,8 +18,10 @@ export default function PairLink() {
   const [error, setError] = useState<string | null>(null);
   const { mutateAsync: pair } = usePair();
   useEffect(() => {
+    // After the saved Macs load: Tailscale tells a paired phone from a new one by them.
+    const back = () => boot().then(() => router.replace("/tailscale"));
     if (!host || (v && v !== "1")) {
-      router.replace("/tailscale");
+      void back();
       return;
     }
     pair({ host, via: "qr" })
@@ -29,7 +32,7 @@ export default function PairLink() {
       })
       .catch((err) => {
         setError(pairMessage(err, host.split(".")[0]!));
-        setTimeout(() => router.replace("/tailscale"), 2_500);
+        setTimeout(back, 2_500);
       });
   }, [host, v]);
   return (

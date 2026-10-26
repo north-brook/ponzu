@@ -108,7 +108,7 @@ async function pair(host: string, via: Mac["via"]): Promise<Mac> {
   const address = dev && name.includes(":") ? name : `${name}:${PORT}`;
   let info: MacInfo;
   try {
-    info = await fetchInfo(`http://${address}`, 6_000, true);
+    info = await fetchInfo(`http://${address}`, 6_000);
   } catch (err) {
     const notPonzu = err instanceof NetError && err.kind === "http" && err.status === undefined;
     throw new PairError(notPonzu ? "notPonzu" : "unreachable", String(err));
@@ -116,6 +116,8 @@ async function pair(host: string, via: Mac["via"]): Promise<Mac> {
   if (info.protocol === undefined || info.protocol < PROTOCOL)
     throw new PairError("tooOld", `Ponzu ${info.version} on that Mac is too old`, info.version);
   if (info.protocol > PROTOCOL) throw new PairError("tooNew", "Update Ponzu on this iPhone");
+  // Only now that this phone takes the Mac: the Mac's Pair iPhone… dialog closes on it.
+  void fetchInfo(`http://${address}`, 6_000, true).catch(() => {});
   // The Mac is saved under the name the phone dialled, never one the answer claims: an answer
   // naming another Mac could otherwise take its place.
   const dns = dev ? (info.machine?.dns ?? hostOf(name)) : name;

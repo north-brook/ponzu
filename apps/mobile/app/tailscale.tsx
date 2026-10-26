@@ -32,8 +32,8 @@ const ON = "#2fa36b";
  *
  * First launch comes here only when Tailscale is off; once it's on, the row
  * turns green for a beat and the code on your Mac follows by itself
- * (connect/index.tsx). "Already on? Continue" goes on anyway, should the
- * check ever be wrong. A paired phone whose Macs can't be reached at all
+ * (connect/index.tsx). "Already on? Continue" goes on anyway (or, for a
+ * paired phone, asks its Macs again), should the check ever be wrong. A paired phone whose Macs can't be reached at all
  * lands here too; once Tailscale is on it asks the Macs again and goes where
  * they say.
  */
@@ -114,7 +114,7 @@ export default function Tailscale() {
                 onPress={open}
                 testID="open-tailscale"
               />
-              {first && state !== "checking" ? (
+              {state !== "checking" ? (
                 <TextButton
                   label="Already on? Continue"
                   onPress={next}
