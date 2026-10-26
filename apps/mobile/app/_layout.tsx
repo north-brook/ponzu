@@ -15,6 +15,7 @@ import { useReachOnForeground } from "../lib/reach";
 import { holdSplash } from "../lib/splash";
 import { track } from "../lib/telemetry";
 import { navigationTheme, useTheme } from "../lib/theme";
+import { useFirstLaunch } from "../lib/use-first-launch";
 import { WindowInsetsProvider } from "../lib/window-insets";
 
 holdSplash();
@@ -27,18 +28,23 @@ track("app opened");
  * them. Screens draw their own safe areas; Expo Router provides the context.
  */
 export default function RootLayout() {
+  // A store build's first launch catches up to the current release behind
+  // the splash before anything of the embedded one runs.
+  const current = useFirstLaunch();
   const { scheme, color } = useTheme();
   useReachOnForeground();
   // A deep link opens straight onto its screen; the launch screen hides the splash itself sooner.
   useEffect(() => {
+    if (!current) return;
     const t = setTimeout(() => hideAsync(), 400);
     return () => clearTimeout(t);
-  }, []);
+  }, [current]);
   useEffect(() => {
     // The root view's color shows behind a sheet as it opens and while the
     // keyboard moves.
     setBackgroundColorAsync(color.bg);
   }, [color.bg]);
+  if (!current) return null;
   return (
     <QueryProvider>
       <GestureHandlerRootView style={{ flex: 1 }}>
