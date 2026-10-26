@@ -109,6 +109,7 @@ export function Composer({
   onSend,
   autoFocus = true,
   draft,
+  leaves = false,
 }: {
   mode: Mode;
   onMode: (m: Mode) => void;
@@ -119,10 +120,14 @@ export function Composer({
   autoFocus?: boolean;
   /** What the unsent text is kept under (a pin's place, a thread's id) as the composer moves. */
   draft?: string;
+  /** Sending takes the sheet away (a new comment): the words go with it, never emptied first. */
+  leaves?: boolean;
 }) {
   const { color } = useTheme();
   const voice = mode === "voice";
-  const dictation = useDictation(voice);
+  /** Sent from a sheet that leaves: the microphone stops with the tap, not when the Mac answers. */
+  const [gone, setGone] = useState(false);
+  const dictation = useDictation(voice && !gone);
   const [typed, setTypedState] = useState(() => (draft ? (drafts.get(draft) ?? "") : ""));
   const setTyped = (t: string) => {
     if (draft && t) drafts.set(draft, t);
@@ -162,15 +167,39 @@ export function Composer({
     if (!voice && (autoFocus || !was)) setTimeout(() => input.current?.focus(), was ? 60 : 0);
   }, [mode]);
 
+  // The mode and the words now, for a send that fails: its words go back into whichever
+  // the person is using by then, ahead of anything they've added since.
+  const now = useRef({ voice, typed, said: dictation.text });
+  now.current = { voice, typed, said: dictation.text };
   const send = async () => {
     if (!has || sending) return;
+    const words = text.trim();
     setSending(true);
-    try {
-      await onSend(text.trim(), mode);
-      success();
+    // Something answers the tap at once, not when the Mac does: over the tailnet that's long
+    // enough to read as a tap that didn't take. A sheet that leaves takes the words with it; a
+    // reply's leave the field. A send that fails puts them back.
+    if (leaves) setGone(true);
+    else {
       setTyped("");
       dictation.setText("");
+    }
+    try {
+      await onSend(words, mode);
+      success();
+      if (leaves) {
+        setTyped("");
+        dictation.setText("");
+      }
     } catch {
+      // A sheet that leaves comes back with its words, listening again as it did when it opened.
+      if (leaves) setGone(false);
+      else {
+        const n = now.current;
+        const since = (n.voice ? n.said : n.typed).trim();
+        const back = since ? `${words} ${since}` : words;
+        if (n.voice) dictation.setText(back);
+        else setTyped(back);
+      }
       // The screen says what went wrong; this says it didn't go.
       fail();
     } finally {
