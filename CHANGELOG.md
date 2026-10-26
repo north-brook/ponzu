@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.55.8](https://github.com/north-brook/ponzu/compare/v1.55.7...v1.55.8) (2026-10-26)
+
+
+### Bug Fixes
+
+* let Release Please bump the iPhone app's version without failing lint ([#254](https://github.com/north-brook/ponzu/issues/254)) ([ec73d3b](https://github.com/north-brook/ponzu/commit/ec73d3b09404df24aaa76dcb448464d9cb03b35c))
+
 ## [1.55.7](https://github.com/north-brook/ponzu/compare/v1.55.6...v1.55.7) (2026-10-26)
 
 
