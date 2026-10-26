@@ -177,6 +177,8 @@ export class BoardDetail {
     if (d.hidden) return;
     // Every update while held: animations that started since (motion's onStart) hold too.
     if (d.hold || this.held) holdLoops(this.root, !!d.hold, this.motion.running);
+    // Fields' loops run in their images, which holdLoops can't reach.
+    this.motion.hold(!!d.hold);
     this.held = !!d.hold;
     const section = this.root.querySelector<HTMLElement>("[data-artboard]");
     if (!section) return;

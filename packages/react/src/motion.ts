@@ -73,6 +73,8 @@ interface Field {
   wake(): void;
   /** Stop the image's animations while the board isn't rendered, or start them again. */
   sleep(on: boolean): void;
+  /** Hold the image's animations where they are while nobody can see them move, or go on. */
+  hold(on: boolean): void;
   stop(): void;
   /** The board's time the image shows now, in ms, or null before it has loaded. */
   time(): number | null;
@@ -107,6 +109,7 @@ export class Motion {
   private frame = 0;
   private calmed = false;
   private asleep = false;
+  private held = false;
   /** Its animations were made and taken while the board was hidden (warm). */
   private warmed = false;
 
@@ -191,6 +194,13 @@ export class Motion {
     if (on === this.asleep) return;
     this.asleep = on;
     for (const f of this.fields.values()) f.sleep(on);
+  }
+
+  /** While its loops hold (lod.ts holdLoops), fields' images hold where they are too. */
+  hold(on: boolean) {
+    if (on === this.held) return;
+    this.held = on;
+    for (const f of this.fields.values()) f.hold(on);
   }
 
   private clear() {
@@ -294,6 +304,7 @@ export class Motion {
           this.fields.set(svg, f);
           if (this.calmed) f.still();
           if (this.asleep) f.sleep(true);
+          if (this.held) f.hold(true);
           continue;
         }
       }
@@ -526,6 +537,39 @@ function field(
   let phased: (() => void) | undefined;
   /** The pointer is over the SVG. */
   let pointed = false;
+  /** Not rendered: the image has no document. */
+  let asleep = false;
+  /** Held: the board time the image stands still at. */
+  let heldAt: number | undefined;
+  /**
+   * Load the image again showing board time `t`, running on from there or
+   * standing still at it. Resolves once it shows (or at once while asleep:
+   * it shows when it wakes).
+   */
+  const draw = (t: number, still: boolean) =>
+    new Promise<void>((resolve) => {
+      // Each animation keeps its offset from the first; all of them move to t.
+      for (const p of phases) {
+        p.copy.style.animationDelay = p.delays
+          .map((d, k) => {
+            const a = p.at[k];
+            return `${a === null || a === undefined ? d : d - (a - first + t)}ms`;
+          })
+          .join(",");
+        p.copy.style.animationPlayState = still ? "paused" : "";
+      }
+      from = t;
+      const old = url;
+      url = blob();
+      phased?.();
+      phased = resolve;
+      if (asleep) {
+        image.removeAttribute("href");
+        phased = undefined;
+        resolve();
+      } else image.setAttribute("href", url);
+      URL.revokeObjectURL(old);
+    });
   image.addEventListener("load", () => {
     started = performance.now();
     phased?.();
@@ -550,7 +594,7 @@ function field(
   const goLive = () => {
     pointed = true;
     clearTimeout(timer);
-    if (calmed() || !svg.hasAttribute("data-pz-field") || tiny()) return;
+    if (calmed() || heldAt !== undefined || !svg.hasAttribute("data-pz-field") || tiny()) return;
     const shift = from - first + performance.now() - started;
     for (const p of phases)
       (p.el as SVGElement).style.animationDelay = p.delays
@@ -580,8 +624,22 @@ function field(
       // Content skipped by `content-visibility` still runs an image's animations. Without
       // its document they stop; back, it loads again (the blob's cached) and fires `load`,
       // which restarts the clock the live elements are phased from.
+      asleep = on;
       if (on) image.removeAttribute("href");
       else if (!image.hasAttribute("href")) image.setAttribute("href", url);
+    },
+    hold: (on) => {
+      // The image's document can't be paused from here: drawn again standing still at
+      // the pose it shows now, and again running on from that pose once let go.
+      if (on === (heldAt !== undefined)) return;
+      const running = loaded && image.hasAttribute("href");
+      const t = heldAt ?? (running ? from + performance.now() - started : from);
+      heldAt = on ? t : undefined;
+      if (on) {
+        clearTimeout(timer);
+        if (loaded) svg.setAttribute("data-pz-field", "");
+      }
+      void draw(t, on).then(() => !on && pointed && goLive());
     },
     stop: () => {
       clearTimeout(timer);
@@ -590,25 +648,15 @@ function field(
       URL.revokeObjectURL(url);
       phased?.();
     },
-    time: () => (loaded && image.hasAttribute("href") ? from + performance.now() - started : null),
-    phase: (t) =>
-      new Promise<void>((resolve) => {
-        // Each animation keeps its offset from the first; all of them move to t.
-        for (const p of phases)
-          p.copy.style.animationDelay = p.delays
-            .map((d, k) => {
-              const a = p.at[k];
-              return `${a === null || a === undefined ? d : d - (a - first + t)}ms`;
-            })
-            .join(",");
-        from = t;
-        const old = url;
-        url = blob();
-        phased?.();
-        phased = resolve;
-        image.setAttribute("href", url);
-        URL.revokeObjectURL(old);
-      }),
+    time: () => {
+      if (!loaded || !image.hasAttribute("href")) return null;
+      return heldAt ?? from + performance.now() - started;
+    },
+    phase: (t) => {
+      // Held, it stands still at the pose it's given.
+      if (heldAt !== undefined) heldAt = t;
+      return draw(t, heldAt !== undefined);
+    },
   };
 }
 

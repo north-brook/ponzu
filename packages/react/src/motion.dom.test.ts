@@ -23,7 +23,8 @@ setDefaultTimeout(30_000);
 const ENTRY = `
 import { fieldsOf, Motion, MOTION_CSS } from "./motion.ts";
 import { BoardDetail, STILL_CSS } from "./lod.ts";
-window.pz = { fieldsOf, Motion, MOTION_CSS, BoardDetail, STILL_CSS };
+import { handoffToVideos, reload, syncLiveToVideos, unload } from "./loops.tsx";
+window.pz = { fieldsOf, Motion, MOTION_CSS, BoardDetail, STILL_CSS, handoffToVideos, syncLiveToVideos, unload, reload };
 `;
 
 describe.skipIf(!chromium)("motion in Chromium", () => {
@@ -145,6 +146,116 @@ describe.skipIf(!chromium)("motion in Chromium", () => {
     expect(clock!.ticks).toBeLessThan(400);
     expect(clock!.at).toBeGreaterThanOrEqual(5000);
     expect(clock!.at).toBeLessThan(5300);
+  });
+
+  test("a held board's field image holds its pose, and goes on from it when let go", async () => {
+    // The field from the tests before.
+    const r = await page.evaluate(async () => {
+      const w = window as any;
+      const root = document.getElementById("host")!.shadowRoot!;
+      const [f] = w.pz.fieldsOf(root, ["n_use"]);
+      const lod = new w.pz.BoardDetail(root, w.motion);
+      const wait = (ms: number) => new Promise((res) => setTimeout(res, ms));
+      const loaded = () =>
+        new Promise((res) =>
+          root.querySelector("image[data-pz-image]")!.addEventListener("load", res, { once: true }),
+        );
+      const shown = loaded();
+      lod.update({ hidden: false, scale: 4, moving: false, hold: true });
+      await shown;
+      const a = f.time() as number;
+      await wait(250);
+      const b = f.time() as number;
+      const href = root.querySelector("image[data-pz-image]")!.getAttribute("href")!;
+      const blob = await (await fetch(href)).text();
+      const back = loaded();
+      lod.update({ hidden: false, scale: 4, moving: false, hold: false });
+      await back;
+      const c = f.time() as number;
+      await wait(250);
+      const d = f.time() as number;
+      return {
+        still: b - a,
+        paused: blob.includes("animation-play-state: paused"),
+        from: c - b,
+        runs: d - c,
+      };
+    });
+    // Held: no time passes in the image, which is drawn with its animations paused.
+    expect(r.still).toBe(0);
+    expect(r.paused).toBe(true);
+    // Let go: from the pose it held, running again.
+    expect(Math.abs(r.from)).toBeLessThan(50);
+    expect(r.runs).toBeGreaterThan(150);
+  });
+
+  test("a handoff leaves an animation the design paused paused, after the next thaw too", async () => {
+    await board(
+      `<style>@keyframes spin{to{transform:rotate(1turn)}}.s{width:40px;height:40px;animation:spin 1s linear infinite}.p{animation-play-state:paused}</style><div class=s data-id=n_run></div><div class="s p" data-id=n_paused></div>`,
+    );
+    await frames(2);
+    const r = await page.evaluate(async () => {
+      const w = window as any;
+      const root = document.getElementById("host")!.shadowRoot!;
+      const layer = document.createElement("div");
+      layer.append(document.createElement("video"), document.createElement("video"));
+      const loops = {
+        t0: 0,
+        regions: [
+          { x: 0, y: 0, width: 40, height: 40, period: 1000, src: "", ids: ["n_run"] },
+          { x: 0, y: 40, width: 40, height: 40, period: 1000, src: "", ids: ["n_paused"] },
+        ],
+      };
+      // The videos have no source: the handoff doesn't wait on them.
+      for (const v of layer.querySelectorAll("video"))
+        Object.defineProperty(v, "readyState", { value: 1 });
+      await w.pz.handoffToVideos(
+        root,
+        layer,
+        loops,
+        () => {},
+        () => false,
+      );
+      const [run, held] = ["n_run", "n_paused"].map(
+        (id) => root.querySelector(`[data-id=${id}]`)!.getAnimations()[0]!,
+      );
+      const during = [run!.playState, held!.playState];
+      w.pz.syncLiveToVideos(root, null);
+      return { during, after: [run!.playState, held!.playState] };
+    });
+    expect(r.during).toEqual(["paused", "paused"]);
+    expect(r.after).toEqual(["running", "paused"]);
+  });
+
+  test("a board's video unloaded to save its decoder goes on where it was", async () => {
+    const r = await page.evaluate(async () => {
+      const w = window as any;
+      const v = document.createElement("video");
+      let at = 2.5;
+      // A video at 2.5 s, without a real file: the time it's set to is what's checked.
+      Object.defineProperty(v, "readyState", { get: () => 1 });
+      Object.defineProperty(v, "currentTime", {
+        get: () => at,
+        set: (t: number) => {
+          at = t;
+        },
+      });
+      v.load = () => {
+        at = 0;
+      };
+      w.pz.unload(v);
+      const reset = at;
+      w.pz.reload(v, "about:blank#v");
+      v.dispatchEvent(new Event("loadedmetadata"));
+      const first = at;
+      // And again, the next time it loses its turn.
+      at = 4;
+      w.pz.unload(v);
+      w.pz.reload(v, "about:blank#v");
+      v.dispatchEvent(new Event("loadedmetadata"));
+      return { reset, first, second: at };
+    });
+    expect(r).toEqual({ reset: 0, first: 2.5, second: 4 });
   });
 
   test("a finished fill-forwards animation whose end is the element's own style lets go", async () => {

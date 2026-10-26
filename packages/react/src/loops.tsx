@@ -48,48 +48,64 @@ const layerLoops = new WeakMap<HTMLElement, Loops>();
 const MAX_PLAYING = 4;
 /** How often to ask again for loops still being filmed. */
 const POLL_MS = 3000;
+/** Longest wait before asking again after the server failed or couldn't be reached. */
+const RETRY_MAX_MS = 60_000;
 /** How far ahead of the live board the videos seek at a handoff, ms. Doubles when a seek is slower. */
 const LEAD_MS = 160;
 
-/** Manifests by URL, least recently asked for first; a few pages' boards' worth. */
-const manifests = new Map<string, Promise<Loops | null | "pending">>();
+/**
+ * Manifests by URL, least recently asked for first; a few pages' boards' worth.
+ * "failed" is the server failing, or not there: not kept, asked again later.
+ */
+const manifests = new Map<string, Promise<Loops | null | "pending" | "failed">>();
 const MANIFESTS_KEPT = 512;
 
-/** A board's loops: null when it has none, "pending" while being filmed. Polls until known. */
+/**
+ * One ask for a board's loops. "pending" while being filmed, failed for now,
+ * or filmed for another version (an edit raced it); "failed" when the server
+ * errs or can't be reached. Both are asked again later; only an answer is kept.
+ */
+export async function askLoops(
+  url: string,
+  fetcher: typeof fetch = fetch,
+): Promise<Loops | null | "pending" | "failed"> {
+  try {
+    const res = await fetcher(`${url}${url.includes("?") ? "&" : "?"}wait=0`);
+    const made = res.headers.get("x-pz-version");
+    const asked = new URL(url, globalThis.location?.href).searchParams.get("v");
+    if (res.status === 202 || (made && asked && made !== asked)) return "pending";
+    if (res.status >= 500 || res.status === 429) return "failed";
+    if (res.status === 204 || !res.ok) return null;
+    const m = (await res.json()) as Loops;
+    // Video URLs are relative to the server.
+    return { ...m, regions: m.regions.map((r) => ({ ...r, src: new URL(r.src, url).href })) };
+  } catch {
+    return "failed";
+  }
+}
+
+/** A board's loops: null when it has none, "pending" while being filmed or failed for now. Polls until known. */
 export function useLoops(url: string | null): Loops | null | "pending" {
   const [loops, setLoops] = useState<Loops | null | "pending">("pending");
   useEffect(() => {
     if (!url) return setLoops(null);
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let failures = 0;
     const ask = () => {
       let p = manifests.get(url);
-      if (!p) {
-        p = fetch(`${url}${url.includes("?") ? "&" : "?"}wait=0`)
-          .then(async (res) => {
-            // Being filmed, filming failed for now, or filmed for another version (an edit
-            // raced it): ask again later.
-            const made = res.headers.get("x-pz-version");
-            const asked = new URL(url, location.href).searchParams.get("v");
-            if (res.status === 202 || (made && asked && made !== asked)) return "pending" as const;
-            if (res.status === 204 || !res.ok) return null;
-            const m = (await res.json()) as Loops;
-            // Video URLs are relative to the server.
-            return {
-              ...m,
-              regions: m.regions.map((r) => ({ ...r, src: new URL(r.src, url).href })),
-            };
-          })
-          .catch(() => null);
-      } else manifests.delete(url);
+      if (!p) p = askLoops(url);
+      else manifests.delete(url);
       manifests.set(url, p);
       if (manifests.size > MANIFESTS_KEPT) manifests.delete(manifests.keys().next().value!);
       void p.then((m) => {
         if (!live) return;
-        setLoops(m);
-        if (m === "pending") {
+        // The server failing is like a film failing for now: asked again, less often each time.
+        setLoops(m === "failed" ? "pending" : m);
+        if (m === "pending" || m === "failed") {
           manifests.delete(url);
-          timer = setTimeout(ask, POLL_MS);
+          failures = m === "failed" ? failures + 1 : 0;
+          timer = setTimeout(ask, Math.min(RETRY_MAX_MS, POLL_MS * 2 ** failures));
         }
       });
     };
@@ -268,8 +284,11 @@ export async function handoffToVideos(
       if (t === null || t === undefined) return null;
       return liveTimeFor(t, loops.t0, x.r.period, (timeOf(x) ?? 0) - x.r.period / 2);
     });
+    // Only what's running: one the design paused (a loop that plays on hover) isn't in the
+    // video, and is left as it is, so the next thaw doesn't start it.
+    const running = regions.map(({ anims }) => anims.filter((a) => a.playState === "running"));
     const paused = new Set<Animation>();
-    regions.forEach(({ anims }, i) => {
+    running.forEach((anims, i) => {
       const pose = poses[i];
       if (pose === null || pose === undefined) return;
       for (const a of anims) {
@@ -289,11 +308,30 @@ export async function handoffToVideos(
   return true;
 }
 
-/** Let a video's decoder and frames go: it shows nothing until it loads again. */
-function unload(v: HTMLVideoElement) {
+/** Where an unloaded video was, to go on from when it loads again. */
+const resumeAt = new WeakMap<HTMLVideoElement, number>();
+
+/** Let a video's decoder and frames go: it shows nothing until it loads again (`reload`). */
+export function unload(v: HTMLVideoElement) {
+  if (v.readyState >= 1 && v.currentTime > 0) resumeAt.set(v, v.currentTime);
   v.pause();
   v.removeAttribute("src");
   v.load();
+}
+
+/** Load an unloaded video again, at the time it was at. */
+export function reload(v: HTMLVideoElement, src: string) {
+  const at = resumeAt.get(v);
+  resumeAt.delete(v);
+  if (at)
+    v.addEventListener(
+      "loadedmetadata",
+      () => {
+        v.currentTime = at;
+      },
+      { once: true },
+    );
+  v.src = src;
 }
 
 /** Of `videos` on screen with their area, which may play: the biggest, up to `max`. */
@@ -327,7 +365,7 @@ export const playing = (() => {
     for (const [v, src] of wanted) {
       const on = play.has(v);
       if (on) {
-        if (src && !v.getAttribute("src")) v.src = src;
+        if (src && !v.getAttribute("src")) reload(v, src);
         if (v.paused) void v.play().catch(() => {});
       } else if (src) {
         if (v.getAttribute("src")) unload(v);
@@ -357,6 +395,8 @@ export const playing = (() => {
       io?.unobserve(v);
       if (src) unload(v);
       else v.pause();
+      // Asked for again, it starts where it's asked to.
+      resumeAt.delete(v);
       update();
     },
     /** Hold every video's frame while the camera moves; play again once it rests. */

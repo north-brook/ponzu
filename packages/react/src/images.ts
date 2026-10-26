@@ -397,7 +397,7 @@ export class BoardImages {
       return chosen ? [at(chosen)] : [];
     }
     if (t.kind === "svg") return [at(t.url)];
-    return t.urls.map(at);
+    return cssCopies(t.urls, this.assetBase, t.el.localName, step);
   }
 
   private apply(t: Target, step: number) {
@@ -471,6 +471,20 @@ function originals(t: Target): string[] {
     ].filter((u): u is string => !!u);
   if (t.kind === "svg") return [t.url];
   return t.urls;
+}
+
+/**
+ * The copies CSS shows at `step`, as `apply` writes them: only its images
+ * that have copies. A font, or a remote background (left as written), isn't
+ * one, and wouldn't decode as an image.
+ */
+export function cssCopies(urls: string[], assetBase: string, tag: string, step: number): string[] {
+  const out: string[] = [];
+  for (const u of urls) {
+    const copy = markupUrl(u, assetBase, { tag, attr: "style" }, step);
+    if (copy !== u) out.push(copy);
+  }
+  return out;
 }
 
 function srcsetUrls(srcset: string | undefined): string[] {
