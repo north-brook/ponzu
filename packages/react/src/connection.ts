@@ -22,10 +22,23 @@ export interface CanvasSource {
   redo(): void;
   /** Base URL for this design's assets/ folder. */
   assetBase?: string;
+  /**
+   * The host makes smaller copies of images (`?w=` on an asset, /api/image for a
+   * remote one): a Ponzu server does, a plain file host doesn't.
+   */
+  renditions?: boolean;
   /** Upload a file into assets/, returning its relative path. */
   upload?(file: File): Promise<string>;
   /** Tell the host how the canvas looks, so agents can see artboards that way. */
   setTheme?(theme: ColorScheme): void;
+  /**
+   * Where to get a picture of an artboard at `scale` device px per CSS px, in
+   * a color scheme. `version` names its content. Without it, boards on
+   * screen are always live DOM.
+   */
+  snapshotUrl?(artboardId: string, scale: number, version: string, scheme: ColorScheme): string;
+  /** Where to get a board's motion loops (videos of its looping parts), by content version. */
+  loopsUrl?(artboardId: string, version: string, scheme: ColorScheme): string;
   /** Each change as it lands, with who made it and the doc after it: for motion. */
   onOp?(listener: (op: Op, origin: Origin, doc: Doc) => void): () => void;
 }
@@ -61,6 +74,7 @@ export class SocketSource implements CanvasSource {
   /** Asked for the whole doc and waiting for it: ops until then are on a doc we don't have. */
   private syncing = false;
   readonly assetBase: string;
+  readonly renditions = true;
 
   /**
    * `watch` only listens: the home screen's live cards show a design without
@@ -81,6 +95,22 @@ export class SocketSource implements CanvasSource {
     };
     this.assetBase = `${origin}/files/${encodeURIComponent(file)}`;
     this.connect();
+  }
+
+  snapshotUrl(artboardId: string, scale: number, version: string, scheme: ColorScheme): string {
+    const q = new URLSearchParams({
+      file: this.file,
+      artboard: artboardId,
+      scale: String(scale),
+      v: version,
+      scheme,
+    });
+    return `${this.origin}/api/snapshot?${q}`;
+  }
+
+  loopsUrl(artboardId: string, version: string, scheme: ColorScheme): string {
+    const q = new URLSearchParams({ file: this.file, artboard: artboardId, v: version, scheme });
+    return `${this.origin}/api/loops?${q}`;
   }
 
   private connect() {
@@ -234,8 +264,12 @@ export function viewOnly(source: CanvasSource): CanvasSource {
     undo() {},
     redo() {},
     assetBase: source.assetBase,
+    renditions: source.renditions,
     setTheme: source.setTheme ? (theme) => source.setTheme?.(theme) : undefined,
     onOp: source.onOp ? (listener) => source.onOp!(listener) : undefined,
+    // Pictures and loops are reads: a read-only canvas draws small boards the same way.
+    snapshotUrl: source.snapshotUrl?.bind(source),
+    loopsUrl: source.loopsUrl?.bind(source),
   };
 }
 

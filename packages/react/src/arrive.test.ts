@@ -189,3 +189,29 @@ test("a board's own sections are never chunked into the board", () => {
   const ids = sections.map((n) => n.id);
   expect(chunk(d, ids)).toEqual(ids);
 });
+
+test("a board with pieces still arriving is told apart, until they've landed", () => {
+  const root = el("ab", [el("n_old")]);
+  const d = doc(root);
+  const ab = d.pages[0]!.artboards[0]!;
+  const other = { ...ab, id: "ab_2", root: el("ab_2", [el("n_x")]) };
+  const a = new Arrivals();
+  expect(a.boardsArriving([ab, other], 0).size).toBe(0);
+  root.children.push(el("n_new"));
+  a.add({ op: "insert", parent: "ab", index: 1, nodes: [el("n_new")] }, d, 0);
+  expect([...a.boardsArriving([ab, other], 10)]).toEqual(["ab"]);
+  // Once its reveal has played, the board may be a picture again.
+  expect(a.boardsArriving([ab, other], 5000).size).toBe(0);
+});
+
+test("a canvas knows when what's arriving has all landed", () => {
+  const root = el("ab", [el("n_old")]);
+  const d = doc(root);
+  const ab = d.pages[0]!.artboards[0]!;
+  const a = new Arrivals();
+  root.children.push(el("n_new"));
+  a.add({ op: "insert", parent: "ab", index: 1, nodes: [el("n_new")] }, d, 0);
+  const done = a.until(0);
+  expect(a.boardsArriving([ab], done - 100).size).toBe(1);
+  expect(a.boardsArriving([ab], done).size).toBe(0);
+});
