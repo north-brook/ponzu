@@ -1,6 +1,6 @@
 import { SLICE, SLICE_STROKE } from "@ponzu/react/slice";
 import { Heart, Lockup } from "./icons";
-import { CONTRIBUTING, DOWNLOAD, LICENSE, RELEASES, REPO, SDK } from "./links";
+import { CONTRIBUTING, DOWNLOAD, LICENSE, PRIVACY, RELEASES, REPO, SDK } from "./links";
 
 /**
  * The site footer. Its sign-off is a sunrise drawn in the mark: a field of tiny slices with a huge
@@ -24,6 +24,7 @@ export function Footer() {
             ["Download for Mac", DOWNLOAD],
             ["Releases", RELEASES],
             ["GitHub", REPO],
+            ["Privacy", PRIVACY],
           ]}
         />
         <FooterLinks

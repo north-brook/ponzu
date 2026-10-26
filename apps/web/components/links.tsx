@@ -10,6 +10,7 @@ export const DOWNLOAD = "/download?start=1";
 export const SDK = `${REPO}/tree/main/packages/react`;
 export const CONTRIBUTING = `${REPO}/blob/main/CONTRIBUTING.md`;
 export const LICENSE = `${REPO}/blob/main/LICENSE`;
+export const PRIVACY = "/privacy";
 
 const btn =
   "inline-flex items-center gap-[9px] whitespace-nowrap rounded-full font-semibold transition-[translate,opacity] duration-150 ease-out hover:-translate-y-px";
