@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.53.5](https://github.com/north-brook/ponzu/compare/v1.53.4...v1.53.5) (2026-10-26)
+
+
+### Bug Fixes
+
+* the update button is a yuzu circle with an arrow ([#227](https://github.com/north-brook/ponzu/issues/227)) ([9b46b23](https://github.com/north-brook/ponzu/commit/9b46b23f1ec4e7351a3ed9a820b2ba9d93552ef2))
+
 ## [1.53.4](https://github.com/north-brook/ponzu/compare/v1.53.3...v1.53.4) (2026-10-26)
 
 
