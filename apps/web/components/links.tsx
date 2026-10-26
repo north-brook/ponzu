@@ -11,6 +11,13 @@ export const SDK = `${REPO}/tree/main/packages/react`;
 export const CONTRIBUTING = `${REPO}/blob/main/CONTRIBUTING.md`;
 export const LICENSE = `${REPO}/blob/main/LICENSE`;
 export const PRIVACY = "/privacy";
+/**
+ * Ponzu for iPhone's public TestFlight link: the app is in TestFlight only. Null hides the link and
+ * the site just says it's in beta.
+ */
+export const TESTFLIGHT: string | null = "https://testflight.apple.com/join/JXpn8sP5";
+/** The iPhone tile on the home page. */
+export const IPHONE = "/#iphone";
 
 const btn =
   "inline-flex items-center gap-[9px] whitespace-nowrap rounded-full font-semibold transition-[translate,opacity] duration-150 ease-out hover:-translate-y-px";

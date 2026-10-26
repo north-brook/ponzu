@@ -8,8 +8,9 @@ import { CssTileVisual } from "@/components/css-tile";
 import { CommentThread } from "@/components/demo/comment-thread";
 import { ProductDemo } from "@/components/demo/product-demo";
 import { HomeScreen } from "@/components/home-screen";
-import { Slice } from "@/components/icons";
-import { DownloadButton, GitHubButton } from "@/components/links";
+import { Apple, Slice } from "@/components/icons";
+import { IPhone } from "@/components/iphone";
+import { DownloadButton, GitHubButton, TESTFLIGHT } from "@/components/links";
 import { DESCRIPTION, share, TITLE } from "@/components/share";
 import { SLICE_CSS } from "@/components/slice-demo";
 
@@ -60,9 +61,9 @@ export default function Home() {
       </div>
 
       {/*
-        Two rows, each a wide tile beside a narrow one, flipped on the second row, then the home
-        screen across the full width. Tiles in a row share a height, so each pair holds proofs of
-        about the same size: a thread beside a diff, a grid of agents beside a stylesheet.
+        Three rows, each a wide tile beside a narrow one, flipped on the second row. Tiles in a row
+        share a height, so each pair holds proofs of about the same size: a thread beside a diff, a
+        grid of agents beside a stylesheet, the home screen beside the phone.
       */}
       <section className="grid gap-4 pb-[120px] md:grid-cols-12">
         <Tile
@@ -76,7 +77,7 @@ export default function Home() {
         <Tile
           className="md:col-span-6 lg:col-span-5"
           title="Designs you can commit."
-          body="Each artboard is an HTML file you review and commit alongside your code."
+          body="Every artboard is just an HTML file, so you can review it and commit it next to your code if you like."
         >
           <div className="flex flex-col gap-2">
             <CodeWell className={codeWell}>
@@ -126,11 +127,35 @@ export default function Home() {
         </Tile>
 
         <Tile
-          className="md:col-span-12"
-          title="Your Macs. One home screen."
+          className="md:col-span-12 lg:col-span-7"
+          title="All your designs, on every Mac."
           body="Find designs across your Macs on Tailscale and watch your agent's edits live."
         >
           <HomeScreen />
+        </Tile>
+
+        <Tile
+          id="iphone"
+          className="scroll-mt-24 overflow-hidden pb-0 sm:pb-0 md:col-span-12 lg:col-span-5"
+          title="And in your pocket."
+          body={
+            <>
+              Cook with your agents on the go.{" "}
+              {TESTFLIGHT ? (
+                <a
+                  className="inline-flex items-baseline gap-1.5 font-semibold whitespace-nowrap text-ink hover:underline"
+                  href={TESTFLIGHT}
+                >
+                  <Apple className="size-[0.95em] shrink-0 translate-y-[0.08em] fill-current" />
+                  Join the beta
+                </a>
+              ) : (
+                <span className="font-semibold text-ink">In beta on TestFlight.</span>
+              )}
+            </>
+          }
+        >
+          <IPhone />
         </Tile>
       </section>
 
@@ -154,18 +179,23 @@ export default function Home() {
 
 /** A bento cell: a short claim, then its proof, which grows to fill the rest of the tile. */
 function Tile({
+  id,
   title,
   body,
   className = "",
   children,
 }: {
+  id?: string;
   title: string;
-  body: string;
+  body: ReactNode;
   className?: string;
   children: ReactNode;
 }) {
   return (
-    <div className={`flex min-w-0 flex-col gap-7 rounded-3xl bg-tile p-6 sm:p-8 ${className}`}>
+    <div
+      id={id}
+      className={`flex min-w-0 flex-col gap-7 rounded-3xl bg-tile p-6 sm:p-8 ${className}`}
+    >
       <div className="flex max-w-[480px] flex-col gap-2">
         <h2 className="m-0 font-display text-[26px]/[32px] font-semibold tracking-[-0.022em] text-ink md:text-[28px]/[34px]">
           {title}

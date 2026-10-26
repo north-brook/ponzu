@@ -78,8 +78,9 @@ export default function Page() {
 
         <Section title="Ponzu for iPhone">
           <p>
-            The iPhone app talks to Ponzu on your own Macs, over your Wi-Fi or your Tailscale
-            network, and shows their designs. What it keeps (the Macs you paired, recent designs and
+            The iPhone app talks to Ponzu on your own Macs over your Tailscale network, and shows
+            their designs. It looks on your Wi-Fi only to find a Mac to pair with; it always reaches
+            a Mac by its Tailscale name. What it keeps (the Macs you paired, recent designs and
             their previews) stays on the phone.
           </p>
           <p>
@@ -89,10 +90,11 @@ export default function Page() {
           </p>
           <p>
             It sends the same kind of pseudonymous usage data as the Mac app (the app opening, a Mac
-            paired, a design opened, a comment left, with no comment text). It decides from the Macs
-            it has heard from: it sends only when they all have telemetry on, and stops as soon as
-            it hears from one that has it off. Events from before any Mac answers wait until one
-            does. App updates come from Expo, which delivers them.
+            paired, a design opened, a comment left with no comment text, the Activity tab opened,
+            an agent’s link opened). It decides from the Macs it has heard from: it sends only when
+            they all have telemetry on, and stops as soon as it hears from one that has it off.
+            Events from before any Mac answers wait until one does. App updates come from Expo,
+            which delivers them.
           </p>
         </Section>
 
