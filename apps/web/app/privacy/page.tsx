@@ -89,9 +89,10 @@ export default function Page() {
           </p>
           <p>
             It sends the same kind of pseudonymous usage data as the Mac app (the app opening, a Mac
-            paired, a design opened, a comment left, with no comment text), and only when every Mac
-            you paired has telemetry on. Turn it off on your Macs and the phone sends nothing. App
-            updates come from Expo, which delivers them.
+            paired, a design opened, a comment left, with no comment text). It decides from the Macs
+            it has heard from: it sends only when they all have telemetry on, and stops as soon as
+            it hears from one that has it off. Events from before any Mac answers wait until one
+            does. App updates come from Expo, which delivers them.
           </p>
         </Section>
 
