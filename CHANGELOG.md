@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.53.4](https://github.com/north-brook/ponzu/compare/v1.53.3...v1.53.4) (2026-10-26)
+
+
+### Performance Improvements
+
+* smaller image copies for the canvas, and a guarded proxy for web images ([#218](https://github.com/north-brook/ponzu/issues/218)) ([a5e9588](https://github.com/north-brook/ponzu/commit/a5e958880c03b8a47b83f69d6636991cb8572c40))
+
 ## [1.53.3](https://github.com/north-brook/ponzu/compare/v1.53.2...v1.53.3) (2026-10-26)
 
 
