@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.55.0](https://github.com/north-brook/ponzu/compare/v1.54.1...v1.55.0) (2026-10-26)
+
+
+### Features
+
+* design cards drop the hover menu button; right-click opens their menu ([#235](https://github.com/north-brook/ponzu/issues/235)) ([30a4c36](https://github.com/north-brook/ponzu/commit/30a4c3693ba7e4718090e7ba92268fcf035c4c4d))
+
 ## [1.54.1](https://github.com/north-brook/ponzu/compare/v1.54.0...v1.54.1) (2026-10-26)
 
 
