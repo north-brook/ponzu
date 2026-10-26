@@ -415,7 +415,7 @@ function FileTab({
             >
               <span
                 className={cn(
-                  "size-3 animate-spin rounded-full border-[1.5px] border-current border-r-transparent text-faint",
+                  "size-3 animate-spin rounded-full border-[1.5px] border-current border-r-transparent text-faint motion-reduce:animate-none",
                   offline && "[animation-duration:2s]",
                 )}
               />
