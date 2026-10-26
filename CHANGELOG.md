@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.55.10](https://github.com/north-brook/ponzu/compare/v1.55.9...v1.55.10) (2026-10-26)
+
+
+### Bug Fixes
+
+* install the PostHog CLI on EAS so iPhone production builds can upload source maps ([#262](https://github.com/north-brook/ponzu/issues/262)) ([634fb80](https://github.com/north-brook/ponzu/commit/634fb8097586e346e20ec59891a2edb33e26505a))
+
 ## [1.55.9](https://github.com/north-brook/ponzu/compare/v1.55.8...v1.55.9) (2026-10-26)
 
 
