@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { pairUrl, qrPath } from "@/lib/pair";
-import { cn } from "@/lib/utils";
 
 /** This Mac on the tailnet, from /api/info. */
 export interface PairMachine {
@@ -85,10 +84,7 @@ export function PairBody({ machine }: { machine: PairMachine | null }) {
         <DialogTitle className="font-bold font-display text-2xl leading-[1.15] tracking-[-0.02em]">
           Pair your iPhone
         </DialogTitle>
-        {/* With a code, the code says it all: the words are for screen readers. */}
-        <DialogDescription
-          className={cn("m-0 text-sm leading-normal", (host || !machine) && "sr-only")}
-        >
+        <DialogDescription className="m-0 text-sm leading-normal">
           {host || !machine
             ? "Open Ponzu on your iPhone and scan this code. Both need Tailscale, signed in to the same account."
             : machine.name
