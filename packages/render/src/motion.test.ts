@@ -60,6 +60,8 @@ describe.skipIf(!chromium)("motion in Chromium", () => {
     expect(m.settled).toBe(1000);
     expect(m.loops).toBe(true);
     expect(m.cycle).toBe(1000);
+    // The 24px spinner is the biggest thing that loops.
+    expect(m.loopSize).toBe(24);
     expect(m.at).toBe(1000);
     const head = m.animations.find((a) => a.id === "n_head")!;
     expect(head).toMatchObject({ name: "rise", delay: 200, duration: 800, end: 1000 });
@@ -72,6 +74,21 @@ describe.skipIf(!chromium)("motion in Chromium", () => {
     expect(kinds).not.toContain("n_head hidden-after-animation");
     // A fade-out is meant to end hidden.
     expect(kinds).not.toContain("n_leave hidden-after-animation");
+  });
+
+  test("a loop that starts late settles once it has started", async () => {
+    // A loop's film starts at `settled` (loop.ts), so a delayed spinner is filmed spinning.
+    const late = parseArtboardFile(
+      `<section data-artboard data-id="ab_d" style="width:200px;height:200px">
+<style>@keyframes spin { to { transform: rotate(360deg) } }</style>
+<div data-id="n_late" style="width:24px;height:24px;background:#111;animation:spin 1s linear 2s infinite"></div>
+</section>`,
+      { id: "ab_d", name: "Late" },
+    ).artboard;
+    const m = (await renderer.render({ artboard: late, tokens: "" })).motion!;
+    expect(m.loops).toBe(true);
+    expect(m.settled).toBe(2000);
+    expect(m.end).toBe(3000);
   });
 
   test("`at` picks a moment on the timeline", async () => {

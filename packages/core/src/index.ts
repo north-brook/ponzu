@@ -15,3 +15,4 @@ export * from "./reconcile.ts";
 export * from "./tree.ts";
 export * from "./types.ts";
 export * from "./update.ts";
+export * from "./version.ts";

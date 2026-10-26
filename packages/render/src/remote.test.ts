@@ -177,3 +177,24 @@ test("the theme goes to the host, so prefers-color-scheme follows it there", asy
   expect(sent.map((s) => s.colorScheme)).toEqual(["dark", "dark"]);
   expect(sent[0]!.html).toContain(":root{color-scheme:dark}");
 });
+
+test("a film given up on while its session opens never starts", async () => {
+  const ops: string[] = [];
+  const stop = new AbortController();
+  const endpoint = host(async (r) => {
+    const body = (await r.json()) as { op: string };
+    ops.push(body.op);
+    if (body.op === "open") {
+      // Given up on while the host is still opening the page.
+      stop.abort();
+      return json({ session: "s1" });
+    }
+    return json({});
+  });
+  const err = await new RemoteRenderer(endpoint)
+    .loop({ artboard, tokens: "", scale: 1, signal: stop.signal })
+    .catch((e) => e);
+  expect(err).toBeInstanceOf(Error);
+  expect(ops).not.toContain("eval");
+  expect(ops).toContain("close");
+});
