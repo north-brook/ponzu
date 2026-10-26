@@ -3,7 +3,7 @@ import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { trim } from "./cache.ts";
-import { fileSource, imageKind, Renditions, renditionWidth } from "./renditions.ts";
+import { fileSource, imageKind, MEDIA_HEADERS, Renditions, renditionWidth } from "./renditions.ts";
 
 let dir: string;
 beforeAll(async () => {
@@ -66,6 +66,10 @@ test("an image with transparency gets a WebP in an SVG of the original's size", 
     expect(svg).toContain('width="2000" height="1000"');
     expect(svg).toContain("data:image/webp;base64,");
   }
+  // The headers it's served with let it draw that WebP, and nothing else.
+  const csp = MEDIA_HEADERS["content-security-policy"].split(/;\s*/);
+  expect(csp).toContain("img-src data:");
+  expect(csp).toContain("default-src 'none'");
 });
 
 test("animated images and small ones serve as they are", async () => {

@@ -138,8 +138,11 @@ export class RemoteImages {
       await writeFile(`${path}.json`, JSON.stringify({ ...kept, at: Date.now() }));
       return { path, type: kept.type };
     }
-    if (!res.ok) return null;
-    if (Number(res.headers.get("content-length") ?? 0) > MAX_BYTES) return null;
+    if (!res.ok || Number(res.headers.get("content-length") ?? 0) > MAX_BYTES) {
+      // Let go of the connection before the slot does.
+      await res.body?.cancel().catch(() => {});
+      return null;
+    }
     const bytes = await readCapped(res, MAX_BYTES);
     if (!bytes) return null;
     const type = rasterType(bytes);

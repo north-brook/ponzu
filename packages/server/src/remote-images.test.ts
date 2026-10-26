@@ -129,6 +129,25 @@ test("a few fetches at a time", async () => {
   expect(most).toBeLessThanOrEqual(4);
 });
 
+test("a refused response lets go of its connection before the next fetch", async () => {
+  const cancelled: string[] = [];
+  const body = (name: string) =>
+    new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelled.push(name);
+      },
+    });
+  const { fetcher } = fake({
+    "https://cdn.example/gone.png": () => new Response(body("gone"), { status: 500 }),
+    "https://cdn.example/huge.png": () =>
+      new Response(body("huge"), { headers: { "content-length": String(1024 ** 3) } }),
+  });
+  const r = new RemoteImages(join(dir, "e"), { fetcher, resolver: publicDns });
+  expect(await r.get("https://cdn.example/gone.png")).toBeNull();
+  expect(await r.get("https://cdn.example/huge.png")).toBeNull();
+  expect(cancelled).toEqual(["gone", "huge"]);
+});
+
 test("/api/image answers only this Mac's own pages, loading an image", () => {
   const url = new URL("http://127.0.0.1:7777/api/image?url=https://x/y.png");
   const req = (headers: Record<string, string>) => new Request(url, { headers });

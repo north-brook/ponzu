@@ -3,7 +3,7 @@ import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import type { Browser, BrowserContext, Page } from "playwright-core";
 import { captureScale, clampScale, IMAGES_READY_SCRIPT } from "./capture.ts";
-import { artboardPage } from "./document.ts";
+import { artboardPage, cssPx } from "./document.ts";
 import {
   type FrameDriver,
   FULL_LINT_SCRIPT,
@@ -359,12 +359,6 @@ async function captureNow(
   } finally {
     await cdp.detach().catch(() => {});
   }
-}
-
-function cssPx(v: string | undefined): number | null {
-  if (!v) return null;
-  const m = /^(-?\d+(?:\.\d+)?)px$/.exec(v.trim());
-  return m ? Number(m[1]) : null;
 }
 
 /**

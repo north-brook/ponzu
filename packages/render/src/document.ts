@@ -38,12 +38,19 @@ export function styleText(css: string): string {
   return css.replace(/<\/(style)/gi, "<\\/$1");
 }
 
+/** A length in px, or null for any other unit (or none). */
+export function cssPx(v: string | undefined): number | null {
+  if (!v) return null;
+  const m = /^(-?\d+(?:\.\d+)?)px$/.exec(v.trim());
+  return m ? Number(m[1]) : null;
+}
+
 /** A standalone HTML page that renders one artboard at the origin. */
 export function artboardPage(ab: Artboard, opts: PageOptions): string {
   const base = opts.assetBase;
   const step =
     base && opts.imageScale
-      ? renditionStep((Number.parseFloat(ab.root.style.width ?? "") || 1440) * opts.imageScale)
+      ? renditionStep((cssPx(ab.root.style.width) ?? 1440) * opts.imageScale)
       : 0;
   const body = serializeArtboardElement(ab, {
     rewriteUrl: (u) => {

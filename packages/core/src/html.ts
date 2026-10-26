@@ -326,26 +326,38 @@ export function rewriteCssUrls(css: string, rewrite: (url: string) => string): s
     (_m, q: string, url: string) => `url(${q}${rewrite(url)}${q})`,
   );
   if (!/image-set\(/i.test(urls)) return urls;
-  // image-set("a.png" 1x, "b.png" 2x) names images by bare strings too.
-  return urls.replace(/((?:-webkit-)?image-set\()([^;{}]*)/gi, (_m, open: string, rest: string) => {
+  // image-set("a.png" 1x, "b.png" 2x) names images by bare strings too: a
+  // string that starts a candidate. One in a url() (rewritten above) or a
+  // type("image/avif") doesn't, and every image-set() in the CSS counts.
+  const open = /(?:-webkit-)?image-set\(/gi;
+  let out = "";
+  let from = 0;
+  for (let m = open.exec(urls); m; m = open.exec(urls)) {
     let depth = 1;
-    let end = rest.length;
-    for (let i = 0; i < rest.length; i++) {
-      if (rest[i] === "(") depth++;
-      else if (rest[i] === ")" && --depth === 0) {
-        end = i;
-        break;
-      }
+    let candidate = true;
+    let i = m.index + m[0].length;
+    for (; i < urls.length && depth > 0; i++) {
+      const c = urls[i]!;
+      if (c === '"' || c === "'") {
+        const close = urls.indexOf(c, i + 1);
+        if (close < 0) break;
+        if (candidate && depth === 1 && close > i + 1) {
+          out += urls.slice(from, i + 1) + rewrite(urls.slice(i + 1, close));
+          from = close;
+        }
+        i = close;
+        candidate = false;
+      } else if (c === "(") {
+        depth++;
+        candidate = false;
+      } else if (c === ")") depth--;
+      else if (c === "," && depth === 1) candidate = true;
+      else if (c === ";" || c === "{" || c === "}") break;
+      else if (!/\s/.test(c)) candidate = false;
     }
-    const inner = rest
-      .slice(0, end)
-      // Strings that aren't inside a url(), which was rewritten above.
-      .replace(
-        /(^|[,\s(])(['"])([^'"]+)\2/g,
-        (_s, pre: string, q: string, url: string) => `${pre}${q}${rewrite(url)}${q}`,
-      );
-    return `${open}${inner}${rest.slice(end)}`;
-  });
+    open.lastIndex = i;
+  }
+  return out + urls.slice(from);
 }
 
 /** Attributes holding a list of image candidates. */

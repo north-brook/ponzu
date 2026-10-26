@@ -31,10 +31,11 @@ import { defaultCacheDir, touch, trim } from "./cache.ts";
 /**
  * Headers every image copy, picture and loop goes out with: it's only ever
  * an image or a video, never a page that could run script on Ponzu's origin.
+ * A transparent copy is an SVG drawing a data: WebP, which it may load.
  */
 export const MEDIA_HEADERS = {
   "x-content-type-options": "nosniff",
-  "content-security-policy": "default-src 'none'; sandbox",
+  "content-security-policy": "default-src 'none'; img-src data:; sandbox",
 } as const;
 
 /** The copy width for a request: the step at or above it, or null for the original. */
