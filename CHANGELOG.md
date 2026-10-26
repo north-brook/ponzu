@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.55.6](https://github.com/north-brook/ponzu/compare/v1.55.5...v1.55.6) (2026-10-26)
+
+
+### Bug Fixes
+
+* working boards stay smooth while you pan and zoom ([#247](https://github.com/north-brook/ponzu/issues/247)) ([8916a07](https://github.com/north-brook/ponzu/commit/8916a07e57610034385c7b51a855e6c3e939cb6c))
+
 ## [1.55.5](https://github.com/north-brook/ponzu/compare/v1.55.4...v1.55.5) (2026-10-26)
 
 
