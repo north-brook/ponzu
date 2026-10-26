@@ -1,4 +1,5 @@
 import {
+  AlertCircleIcon,
   ArrowDown01Icon,
   ArrowLeft01Icon,
   ArrowUp02Icon,
@@ -69,6 +70,8 @@ export const ICONS = {
   done: CheckmarkCircle01Icon,
   inbox: InboxIcon,
   quiet: Notification03Icon,
+  /** Tailscale isn't on */
+  alert: AlertCircleIcon,
 } as const satisfies Record<string, IconSvgElement>;
 
 function icon(svg: IconSvgElement, size: number, width: number) {
@@ -103,6 +106,7 @@ export const CommentIcon = icon(ICONS.comment, 20, 1.8);
 export const Done = icon(ICONS.done, 28, 1.6);
 export const Inbox = icon(ICONS.inbox, 17, 1.7);
 export const Quiet = icon(ICONS.quiet, 28, 1.6);
+export const AlertCircle = icon(ICONS.alert, 18, 2);
 
 /** A page's icon, by the names design.json uses (lib/page-icons.ts): the same glyph as its menu's. */
 export function PageIcon({ name, size = 16, color, width = 1.7 }: P & { name?: string }) {

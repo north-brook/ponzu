@@ -15,7 +15,7 @@ design's `notes/brief.md`.
 | `lib/` | Shared code: `tokens.ts` (the design's colors and fonts), `theme.ts`, `slice.tsx` (the mark and its bloom), `ua.ts` (the User-Agent), `polyfills.ts`; and the data layer (see below): `query.tsx` and `mac-queries.ts` (the query cache), `macs.ts` (paired Macs), `reach.ts` (who answers), `catalog.ts` (every Mac's designs), `design.ts` (one design's socket), `seen.ts`, `activity.ts`, `telemetry.ts`. |
 | `components/` | Shared views: the file card, the canvas web view (`canvas-view.tsx`), the comment composer and sheets, and `glass.tsx`, the floating controls' Liquid Glass. |
 | `global.css` | Tailwind and the design's tokens as class names (`bg-yuzu`, `text-c-muted`, light and dark). |
-| `modules/bonjour` | A small Expo module that browses for `_ponzu._tcp` with Network.framework. |
+| `modules/tailnet` | A small Expo module that lists the phone's interface addresses, so `lib/tailnet.ts` can tell whether Tailscale is on. |
 | `canvas/` | The canvas web view's page, a browser bundle with its own tsconfig. |
 | `maestro/` | End-to-end flows. |
 | `app.json`, `app.config.ts` | The app's config. Release Please bumps `app.json`'s version. |
@@ -183,16 +183,19 @@ http: the tailnet already encrypts and authenticates the connection, and the
 Mac answers by Tailscale identity. iOS's App Transport Security allows plain
 http only to `*.ts.net` (an exception domain in `app.json`) and to the local
 network. A raw tailnet address (`100.x.y.z`) can't be an exception domain, so
-the app always uses a Mac's MagicDNS name, which `/api/info`, `/api/macs`, the
-Bonjour advertisement and the pairing code all carry. Don't widen this to
+the app always uses a Mac's MagicDNS name, which `/api/info`, `/api/macs` and
+the pairing code all carry. Don't widen this to
 `NSAllowsArbitraryLoads`.
 
 Every request and socket sends `User-Agent: Ponzu-iOS/<version>` (`lib/ua.ts`);
 the server tells the phone from a browser by it.
 
-On the same Wi-Fi the app finds Macs by Bonjour (`_ponzu._tcp`, with the Mac's
-MagicDNS name in the TXT record's `host`). The first browse shows iOS's local
-network prompt; `useBonjour()` reports `denied` if it's refused.
+First launch is two steps, the same for everyone: Tailscale (`tailscale.tsx`),
+then the code from Ponzu › Pair iPhone… on the Mac (`connect/index.tsx`, then
+the camera). iOS doesn't tell an app whether a VPN is up, so the phone looks
+for Tailscale's own address on its interfaces (`modules/tailnet`,
+`lib/tailnet.ts`): 100.64.0.0/10 on a `utun` tunnel, or fd7a:115c:a1e0::/48.
+The phone doesn't browse the Wi-Fi, so it never asks for local network access.
 
 ## Releases
 

@@ -6,7 +6,7 @@ Ponzu serving the three examples. They run in this order (`config.yaml`):
 
 | Flow | What it checks |
 | --- | --- |
-| `launch.yaml` | A clean install with every Mac forgotten: the slice and wordmark on yuzu, then Connect. |
+| `launch.yaml` | A clean install with every Mac forgotten: the slice and wordmark on yuzu, then the code on your Mac (by way of Tailscale, when this Mac's is off). |
 | `designs.yaml` | Designs lists Kettle, Halon and Weft, under the tab bar (Designs, Activity, Search); the header's filter menu picks Archived, then Recent again. |
 | `canvas.yaml` | Kettle opens on its canvas, with no tab bar over it: the bar, its boards drawn in the web view, and the page button's menu turning it to Website. |
 | `open-link.yaml` | An agent's `ponzu://open?file=…` link (and iOS's `ponzu:///open?…`) opens Kettle on its canvas. |
@@ -25,7 +25,7 @@ Flows find views by `testID` (`id:` in Maestro) or by text: `launch`,
 `designs`, `card-<name>`, `tab-designs`, `tab-activity`, `tab-search`, `search`,
 `search-files`, `search-frames`, `canvas`, `title`, `page-menu`, `chrome`, `chrome-hidden`, `hint`,
 `comment-sheet`, `comment-input`, `to-type`, `to-voice`, `mute`, `transcript`, `send`, `thread-sheet`,
-`resolve`, `activity`, `activity-empty-<caughtUp|never|noKind>`, `activity-show-everything`, `activity-show-all-kinds`, `activity-where`, `connect`. Give a new screen a `testID` named after it.
+`resolve`, `activity`, `activity-empty-<caughtUp|never|noKind>`, `activity-show-everything`, `activity-show-all-kinds`, `activity-where`, `tailscale`, `tailscale-continue`, `connect`. Give a new screen a `testID` named after it.
 Wait with `extendedWaitUntil`, never a fixed sleep.
 
 Before the flows, `run.sh` has an agent make a change for Activity:

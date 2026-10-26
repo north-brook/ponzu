@@ -1,6 +1,6 @@
 {
   "platforms": ["apple"],
   "apple": {
-    "modules": ["BonjourModule"]
+    "modules": ["TailnetModule"]
   }
 }

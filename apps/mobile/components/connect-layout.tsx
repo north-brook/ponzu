@@ -28,7 +28,7 @@ export function ConnectLayout({
   other: ReactNode;
   link: ReactNode;
   title: string;
-  body: string;
+  body?: string;
   children?: ReactNode;
   actions: ReactNode;
   testID?: string;
@@ -69,17 +69,19 @@ export function ConnectLayout({
             >
               {title}
             </Text>
-            <Text
-              style={{
-                marginTop: 14,
-                fontFamily: "Inter",
-                fontSize: 17,
-                lineHeight: 17 * 1.5,
-                color: color.muted,
-              }}
-            >
-              {body}
-            </Text>
+            {body && (
+              <Text
+                style={{
+                  marginTop: 14,
+                  fontFamily: "Inter",
+                  fontSize: 17,
+                  lineHeight: 17 * 1.5,
+                  color: color.muted,
+                }}
+              >
+                {body}
+              </Text>
+            )}
             {children}
           </HandoffRise>
         </View>

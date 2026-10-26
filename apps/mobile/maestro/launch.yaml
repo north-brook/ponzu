@@ -5,7 +5,7 @@ tags: [dev-host]
 # A first launch: every Mac forgotten, the slice on yuzu and the wordmark
 # while Ponzu looks for one. In development the dev host pairs itself
 # again on the next launch; here it stays forgotten, so launch goes on to
-# Connect.
+# the code on your Mac, by way of Tailscale when it's off.
 # From a clean install. The rest of the flows start from where this leaves the app.
 - launchApp:
     clearState: true
@@ -22,9 +22,26 @@ tags: [dev-host]
         id: launch
     commands:
       - assertVisible: Ponzu
+# The simulator shares this Mac's interfaces: with Tailscale on here, launch
+# goes straight to the code; without it, to Tailscale, which "Already on?
+# Continue" passes.
+- extendedWaitUntil:
+    visible: "Scan the code on your Mac.|Turn on Tailscale on this iPhone."
+    timeout: 30000
+- runFlow:
+    when:
+      visible:
+        id: tailscale
+    commands:
+      - extendedWaitUntil:
+          visible:
+            id: tailscale-continue
+          timeout: 10000
+      - tapOn:
+          id: tailscale-continue
 - extendedWaitUntil:
     visible:
       id: connect
-    timeout: 30000
-- assertVisible: "Connect a Mac running Ponzu."
+    timeout: 10000
+- assertVisible: "Scan the code on your Mac."
 - assertNotVisible: ".*Cannot update a component.*"

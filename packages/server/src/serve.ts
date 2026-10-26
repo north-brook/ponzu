@@ -157,6 +157,8 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
   const mcp = createHttpHandler(ws, { onClose: (id) => ws.presence.leave(id) });
   /** When a phone last asked this Mac for anything, so the app doesn't quit under it. */
   let phoneAt = 0;
+  /** When a phone last paired with this Mac, so Pair iPhone… can close once it has. */
+  let pairedAt = 0;
   /** The phone's open sockets: a canvas, or its catalog stream (which `sockets` doesn't hold). */
   const phones = new Set<ServerWebSocket<SocketData>>();
   const phoneSockets = () => phones.size;
@@ -499,6 +501,8 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
     }
 
     if (path === "/api/info") {
+      // The phone asks with ?pair when it pairs, as opposed to checking in.
+      if (phone && url.searchParams.has("pair")) pairedAt = Date.now();
       const net = await home.net();
       const telemetry = (await opts.telemetry?.()) ?? { on: false, owner: null };
       return Response.json({
@@ -521,6 +525,8 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
         },
         /** Whether this Mac reports usage, and the person it reports as (a hash). */
         telemetry,
+        /** When a phone last paired with this Mac (ms), or null: Pair iPhone… closes when it moves. */
+        pairedAt: pairedAt || null,
       });
     }
 

@@ -14,7 +14,7 @@ import { VERSION } from "./ua";
  */
 export type Event =
   | ["app opened", Record<string, never>?]
-  | ["mac paired", { via: "bonjour" | "qr" }]
+  | ["mac paired", { via: "qr" }]
   | ["canvas opened", Record<string, never>?]
   | ["comment left", { reply: boolean; mode: "voice" | "type" }]
   | ["activity opened", Record<string, never>?]

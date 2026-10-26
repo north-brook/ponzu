@@ -54,7 +54,7 @@ export default function OpenLink() {
             ? "None of your Macs has that design."
             : "Ponzu on iPhone can't open that link.",
       );
-      setTimeout(() => router.replace(saved.length ? "/designs" : "/connect"), 2_500);
+      setTimeout(() => router.replace(saved.length ? "/designs" : "/tailscale"), 2_500);
     });
     return () => {
       on = false;

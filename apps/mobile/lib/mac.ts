@@ -15,7 +15,10 @@ export interface Mac {
   addedAt: number;
   /** When it last answered `/api/info`. */
   lastAnsweredAt?: number;
-  /** How the phone learned of it: found on the Wi-Fi, a scanned code, or named by another Mac. */
+  /**
+   * How the phone learned of it: a scanned code, or named by another Mac.
+   * `bonjour` (found on the Wi-Fi) is from builds before the code was the only way.
+   */
   via: "bonjour" | "qr" | "peer" | "dev";
   /**
    * `host:port` to dial instead of `<dns>:7777`. Only the development override

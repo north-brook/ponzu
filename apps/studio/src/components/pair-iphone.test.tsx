@@ -16,7 +16,6 @@ test("the code says where this Mac is on the tailnet, and nothing else", () => {
   const html = render({ name: "macbook", dns: "macbook.tail1.ts.net" });
   expect(html).toContain('data-pair="ponzu://pair?host=macbook.tail1.ts.net&amp;v=1"');
   expect(html).toContain("Open Ponzu on your iPhone and scan this code.");
-  expect(html).toContain("On your tailnet as macbook");
 });
 
 test("a QR code is square, with a finder pattern in its corner", () => {
