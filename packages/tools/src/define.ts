@@ -20,6 +20,8 @@ export interface ToolResult {
    */
   failure?: ErrorClass;
   stage?: "queue" | "load" | "assets" | "prepare" | "lint" | "capture";
+  /** Names and counts about how the call went, added to its telemetry. Never content. */
+  metrics?: Record<string, string | number | boolean>;
 }
 
 /**
@@ -106,6 +108,7 @@ export async function runTool(
   const track = (
     outcome: "ok" | "invalid_args" | "tool_error" | "mistake" | "crash",
     why?: { error_class: ErrorClass; stage?: string },
+    metrics?: ToolResult["metrics"],
   ) => {
     try {
       ctx.ws.telemetry?.capture("tool called", {
@@ -115,6 +118,7 @@ export async function runTool(
         duration_ms: Date.now() - started,
         client: ctx.caller.client,
         ...(call.resolved ? { file_from: call.resolved.from } : {}),
+        ...metrics,
         ...why,
       });
     } catch {
@@ -131,9 +135,9 @@ export async function runTool(
   }
   try {
     ctx.ws.presence.touch(ctx.caller);
-    const { failure, stage, ...result } = await def.handler(parsed.data, call);
-    if (failure) track("crash", { error_class: failure, ...(stage ? { stage } : {}) });
-    else track(result.isError ? "tool_error" : "ok");
+    const { failure, stage, metrics, ...result } = await def.handler(parsed.data, call);
+    if (failure) track("crash", { error_class: failure, ...(stage ? { stage } : {}) }, metrics);
+    else track(result.isError ? "tool_error" : "ok", undefined, metrics);
     const note = call.resolved?.note;
     return note ? { ...result, text: result.text + note } : result;
   } catch (err) {

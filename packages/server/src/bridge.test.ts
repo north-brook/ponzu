@@ -186,3 +186,74 @@ test("calls racing a takeover all land on the new Ponzu", async () => {
     await appWs.closeAll();
   }
 });
+
+/** The person leaves a comment in the host's canvas. */
+function personComments(ws: LocalWorkspace, id: string) {
+  const design = ws.designs()[0]!.design;
+  const now = Date.now();
+  const person = { kind: "user" as const, name: "Sam" };
+  design.apply(
+    {
+      op: "thread.create",
+      thread: {
+        id,
+        pageId: design.doc.pages[0]!.id,
+        x: 0,
+        y: 0,
+        status: "open",
+        createdAt: now,
+        updatedAt: now,
+        messages: [{ id: `m_${id}`, author: person, text: "bigger", createdAt: now }],
+      },
+    },
+    person,
+  );
+}
+
+const cursorOf = (r: any) => Number(/cursor=(\d+)/.exec(text(r))![1]);
+
+test("comments left while Ponzu restarts reach the agent watching", async () => {
+  if (!host) await startHost();
+  const file = join(dir, "shop.design");
+  const before = cursorOf(
+    await agent.callTool({ name: "wait_for_activity", arguments: { file, timeout: 0 } }),
+  );
+  // An update restarts Ponzu, and the person comments before the agent waits again.
+  await stopHost();
+  await startHost();
+  await agent.callTool({ name: "get_basic_info", arguments: { file } });
+  personComments(hostWs!, "th_restart");
+  const r = text(
+    await agent.callTool({
+      name: "wait_for_activity",
+      arguments: { file, since: before, timeout: 5 },
+    }),
+  );
+  expect(r).toStartWith("Ponzu restarted since your last wait");
+  expect(r).toContain("th_restart [open]");
+});
+
+test("a wait that ran in the bridge while the host was down doesn't skip the host's comments", async () => {
+  const file = join(dir, "shop.design");
+  const onHost = cursorOf(
+    await agent.callTool({ name: "wait_for_activity", arguments: { file, timeout: 0 } }),
+  );
+  await stopHost();
+  // The bridge's own Ponzu can't tell what the host had: it says so at once.
+  const there = await agent.callTool({
+    name: "wait_for_activity",
+    arguments: { file, since: onHost, timeout: 5 },
+  });
+  expect(text(there)).toStartWith("Ponzu restarted since your last wait");
+  const inBridge = cursorOf(there);
+  await startHost();
+  await agent.callTool({ name: "get_basic_info", arguments: { file } });
+  personComments(hostWs!, "th_back");
+  const r = text(
+    await agent.callTool({
+      name: "wait_for_activity",
+      arguments: { file, since: inBridge, timeout: 5 },
+    }),
+  );
+  expect(r).toContain("th_back [open]");
+});
