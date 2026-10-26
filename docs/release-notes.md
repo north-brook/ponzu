@@ -59,8 +59,10 @@ label. A note with neither label shows on the Mac.
 4. The release publishes the same file as `release-notes.json` beside its
    build. An app that has downloaded the update shows the notes of every
    release since the one it runs in its title bar's update popover, before
-   anyone installs it. That popover is the only place they show: nothing
-   repeats them after the restart.
+   anyone installs it. A Mac offered an update only because another of the
+   person's Macs already runs it has downloaded nothing, so its server reads
+   the same file from that release instead. That popover is the only place
+   they show: nothing repeats them after the restart.
 
 A checkout without tags or history (a shallow clone) writes no notes and
 warns, marking the file incomplete.

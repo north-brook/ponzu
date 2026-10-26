@@ -1,7 +1,13 @@
 import { randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
-import { changelogNotes, compareVersions, type MachineUpdate } from "@ponzu/core";
+import {
+  changelogNotes,
+  compareVersions,
+  type MachineUpdate,
+  notesBetween,
+  releaseNotesUrl,
+} from "@ponzu/core";
 import { app, type BrowserWindow, dialog, type MessageBoxOptions, powerMonitor } from "electron";
 import electronUpdater, { type UpdateInfo } from "electron-updater";
 
@@ -30,8 +36,6 @@ async function ask(win: BrowserWindow, options: MessageBoxOptions) {
   return dialog.showMessageBox(win, options);
 }
 
-const REPO = "https://github.com/north-brook/ponzu";
-
 /**
  * What's new between this Ponzu and an update, for the title bar's popover: the release notes its
  * pull requests wrote, from the release-notes.json each release publishes beside its build
@@ -40,22 +44,10 @@ const REPO = "https://github.com/north-brook/ponzu";
  */
 async function notesOf(info: UpdateInfo): Promise<string[]> {
   try {
-    const res = await fetch(`${REPO}/releases/download/v${info.version}/release-notes.json`, {
-      signal: AbortSignal.timeout(10_000),
-    });
+    const res = await fetch(releaseNotesUrl(info.version), { signal: AbortSignal.timeout(10_000) });
     if (res.ok) {
-      const { releases } = (await res.json()) as {
-        releases?: { version: string; notes: string[] }[];
-      };
-      const current = app.getVersion();
-      const notes = (releases ?? [])
-        .filter(
-          (r) =>
-            compareVersions(r.version, current) > 0 &&
-            compareVersions(r.version, info.version) <= 0,
-        )
-        .flatMap((r) => r.notes);
-      if (Array.isArray(releases)) return notes;
+      const notes = notesBetween(await res.json(), app.getVersion(), info.version);
+      if (notes) return notes;
     }
   } catch {}
   const changelog = info.releaseNotes;

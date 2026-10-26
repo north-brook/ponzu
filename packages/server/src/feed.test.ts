@@ -390,6 +390,24 @@ test("one Update installs on each of the person's Macs, this one last", async ()
   }
 }, 15_000);
 
+test("an update's notes are this Mac's studio's to ask for, by version", async () => {
+  const notesDir = join(dir, "here-notes");
+  const notesWs = new LocalWorkspace({ cwd: notesDir });
+  const here = serve(notesWs, { port: 0, root: notesDir, spotlight: "roots" });
+  const at = (query: string, headers: Record<string, string> = {}) =>
+    fetch(`http://127.0.0.1:${here.port}/api/update/notes?${query}`, { headers });
+  try {
+    expect((await at("since=1.43.0")).status).toBe(400);
+    expect((await at("since=1.43.0&version=../../x")).status).toBe(400);
+    expect(
+      (await at("since=1.43.0&version=1.44.0", { origin: "https://evil.example" })).status,
+    ).toBe(403);
+  } finally {
+    here.stop(true);
+    await notesWs.closeAll();
+  }
+});
+
 test("an agent working on a Mac shows on every Mac's update, and its app hears it", async () => {
   await fakeTailnet();
   const order: string[] = [];
