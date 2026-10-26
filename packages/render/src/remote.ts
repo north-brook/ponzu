@@ -257,6 +257,8 @@ export class RemoteRenderer implements Renderer {
     const abort = () => void call({ op: "close", session }).catch(() => {});
     req.signal?.addEventListener("abort", abort, { once: true });
     try {
+      // Given up on while the session opened: its lane is already someone else's.
+      req.signal?.throwIfAborted();
       const out = await filmLoops(
         {
           evaluate: async <T>(expression: string) =>

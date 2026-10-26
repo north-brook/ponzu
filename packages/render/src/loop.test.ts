@@ -55,6 +55,25 @@ describe.skipIf(!chromium)("motion loops in Chromium", () => {
     }
   });
 
+  test("a loop is filmed where its entrance left it", async () => {
+    const { artboard: entering } = parseArtboardFile(
+      `<section data-artboard data-id="ab_in" data-name="In" style="width:600px;height:200px">
+<style>
+@keyframes enter { from { transform: translateX(0) } to { transform: translateX(400px) } }
+@keyframes spin { to { transform: rotate(360deg) } }
+.in { width: 60px; height: 60px; animation: enter 300ms ease-out forwards }
+.dot { width: 40px; height: 40px; background: #e33; animation: spin 1s linear infinite }
+</style>
+<div class="in" data-id="n_in"><div class="dot" data-id="n_dot"></div></div>
+</section>`,
+      { id: "ab_in", name: "In" },
+    );
+    const out = await renderer.loop({ artboard: entering, tokens: "", scale: 0.5 });
+    expect(out.regions).toHaveLength(1);
+    // Where the entrance settled it, 400 px in: not where it started.
+    expect(out.regions[0]!.x).toBeGreaterThan(350);
+  });
+
   test("a board without endless animation has nothing to film", async () => {
     const { artboard: still } = parseArtboardFile(
       `<section data-artboard data-id="ab_still" style="width:200px;height:100px"><p>hi</p></section>`,

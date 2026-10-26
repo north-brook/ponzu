@@ -80,7 +80,10 @@ export interface LoopResult {
    */
   t0: number;
   regions: LoopRegion[];
-  /** Animated parts left still, and why: their period is too long, or nothing could encode. */
+  /**
+   * Animated parts left still, and why: their period is too long, they're past
+   * the budget, or this page has no encoder. A film whose encoding fails throws.
+   */
   still: {
     x: number;
     y: number;
@@ -264,6 +267,9 @@ function loopRuntime() {
     };
     // SVG documents keep one clock each: sample them across the longest SMIL cycle.
     const smilCycle = Math.max(1000, ...items.filter((it) => !it.anim).map((it) => it.cycle));
+    // Entrances where they settled first: one that moves a loop, or its
+    // parent, would otherwise leave the box where the loop started out.
+    setTime(opts.t0);
     // Boxes over a whole cycle: each animation sampled across its own.
     for (let s = 0; s < opts.samples; s++) {
       for (const it of items)
@@ -703,10 +709,9 @@ export async function filmLoops(page: FrameDriver, opts: LoopRequestOptions): Pr
     const e = encoded[i]!;
     const spec = specs[i]!;
     const samples = e.samples.map(fromBase64);
-    if (e.error || !e.description || samples.length !== spec.frames * 2) {
-      still.push({ ...r, reason: e.error ?? "encoder dropped frames" });
-      return;
-    }
+    // A film that broke isn't a board that can't loop: it fails, and is tried again.
+    if (e.error || !e.description || samples.length !== spec.frames * 2)
+      throw new Error(`Filming a loop failed: ${e.error ?? "the encoder dropped frames"}`);
     // Timescale: 2N samples in P ms, exactly.
     const bytes = muxH264({
       width: spec.w,

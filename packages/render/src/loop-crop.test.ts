@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { MAX_CAPTURE_PX } from "./capture.ts";
-import { cropsFor, shareCaptures } from "./loop.ts";
+import { cropsFor, filmLoops, shareCaptures } from "./loop.ts";
+import type { FrameDriver } from "./motion.ts";
 
 test("crops follow the scale a capture is actually taken at", () => {
   const box = { x: 0, y: 100, width: 400, height: 300 };
@@ -30,4 +31,29 @@ test("regions too far apart to share a capture are each charged their own", () =
   // Side by side they fit one capture, and share it.
   const near = tall.map((r, i) => ({ ...r, x: i * 50, y: 0, width: 40, height: 40 }));
   expect(shareCaptures(near, 1, 30).captures).toBe(60);
+});
+
+test("a film whose encoder fails fails, rather than leaving its loops still", async () => {
+  // A page with one loop, whose encoder errors: answers by the call it gets.
+  const page = (finish: unknown): FrameDriver => ({
+    evaluate: async <T>(expression: string) => {
+      const call = /__ponzu(?:Loop|Motion)\.(\w+)\([^)]*\)\)?$/.exec(expression)?.[1];
+      if (call === "prepare") return { settled: 0, loops: true } as T;
+      if (call === "plan")
+        return {
+          regions: [{ x: 0, y: 0, width: 40, height: 40, period: 100, ids: ["n"], animations: 1 }],
+          still: [],
+        } as T;
+      if (call === "open") return "" as T;
+      if (call === "finish") return finish as T;
+      if (expression.includes("[data-artboard]")) return { x: 0, y: 0 } as T;
+      return undefined as T;
+    },
+    capture: async () => new Uint8Array([1]),
+    show: async () => {},
+  });
+  const broken = [{ error: "EncodingError: boom", description: "", samples: [], keys: [] }];
+  await expect(filmLoops(page(broken), { scale: 1 })).rejects.toThrow("boom");
+  const dropped = [{ error: null, description: "AA==", samples: ["AA=="], keys: [true] }];
+  await expect(filmLoops(page(dropped), { scale: 1 })).rejects.toThrow("dropped frames");
 });
