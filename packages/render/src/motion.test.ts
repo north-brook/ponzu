@@ -76,6 +76,21 @@ describe.skipIf(!chromium)("motion in Chromium", () => {
     expect(kinds).not.toContain("n_leave hidden-after-animation");
   });
 
+  test("a loop that starts late settles once it has started", async () => {
+    // A loop's film starts at `settled` (loop.ts), so a delayed spinner is filmed spinning.
+    const late = parseArtboardFile(
+      `<section data-artboard data-id="ab_d" style="width:200px;height:200px">
+<style>@keyframes spin { to { transform: rotate(360deg) } }</style>
+<div data-id="n_late" style="width:24px;height:24px;background:#111;animation:spin 1s linear 2s infinite"></div>
+</section>`,
+      { id: "ab_d", name: "Late" },
+    ).artboard;
+    const m = (await renderer.render({ artboard: late, tokens: "" })).motion!;
+    expect(m.loops).toBe(true);
+    expect(m.settled).toBe(2000);
+    expect(m.end).toBe(3000);
+  });
+
   test("`at` picks a moment on the timeline", async () => {
     const first = await renderer.render({ ...base, at: 0 });
     expect(first.motion?.at).toBe(0);
