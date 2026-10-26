@@ -162,6 +162,8 @@ export function Sheet({
   });
 
   const pan = Gesture.Pan()
+    // Leaving, the sheet is the slide's: a drag would stop it short of `onAway`.
+    .enabled(!away)
     .activeOffsetY(8)
     .failOffsetX([-20, 20])
     .onUpdate((e) => {

@@ -311,11 +311,12 @@ export default function Canvas() {
         if (leave.current.away) left();
       }
     } catch (err) {
+      // A pin dropped since has its own sheet: this one's error isn't its to show.
       if (leave.current?.pin === pin) {
         leave.current = null;
         setLeaving(false);
+        setError(String((err as Error).message ?? err));
       }
-      setError(String((err as Error).message ?? err));
       throw err;
     }
   };
