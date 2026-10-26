@@ -62,6 +62,8 @@ const MISSING_RETRY_MS = 700;
 const PARTIAL_RETRY_MS = 30_000;
 /** A board with no picture this long after mounting shows something else meanwhile. */
 const MISSING_AFTER_MS = 250;
+/** Longest wait before asking again after the server failed or couldn't be reached. */
+const FAILED_RETRY_MAX_MS = 60_000;
 
 export type Tier = "live" | "picture" | "away";
 
@@ -125,7 +127,25 @@ export interface Picture {
 
 /** Not made yet: the server is making it, at the front of its queue. */
 const MISSING = "missing" as const;
-type Loaded = Picture | null | typeof MISSING;
+/** The server erred or couldn't be reached: not kept, asked again later, less often each time. */
+const FAILED = "failed" as const;
+type Loaded = Picture | null | typeof MISSING | typeof FAILED;
+
+/**
+ * What a picture response means before its body is read: "draw" it; MISSING
+ * when it's still being made, or was made for another version (an edit raced
+ * it); FAILED when the server errs (5xx, 429); null when there's none to have,
+ * for good (no renderer, no such board).
+ */
+export function pictureAnswer(
+  res: Pick<Response, "status" | "ok" | "headers">,
+  asked: string | null,
+): "draw" | typeof MISSING | typeof FAILED | null {
+  const made = res.headers.get("x-pz-version");
+  if (res.status === 202 || (res.ok && made && asked && made !== asked)) return MISSING;
+  if (res.status >= 500 || res.status === 429) return FAILED;
+  return res.ok ? "draw" : null;
+}
 
 /** Pictures by URL, least recently asked for first. */
 const pictures = new Map<string, Promise<Loaded>>();
@@ -200,8 +220,10 @@ function next() {
 
 /**
  * Fetch and decode a picture, once per URL. Resolves to null when the server
- * can't draw one (no renderer), and to MISSING when it hasn't yet: it's
- * making it, and a later call asks again. `first` jumps the queue.
+ * can't draw one (no renderer), to MISSING when it hasn't yet (it's making
+ * it), and to FAILED when it erred, couldn't be reached or sent a picture that
+ * won't decode. Neither of the last two is kept: a later call asks again.
+ * `first` jumps the queue.
  */
 function loadPicture(src: string, first = false): Promise<Loaded> {
   const hit = pictures.get(src);
@@ -211,19 +233,18 @@ function loadPicture(src: string, first = false): Promise<Loaded> {
   }
   const p = new Promise<Loaded>((resolve) => {
     const run = async () => {
+      let url: string | undefined;
       try {
         const res = await fetch(`${src}&wait=0`);
-        // Not made yet, or made from content other than this version (an edit raced it).
-        const made = res.headers.get("x-pz-version");
         const asked = new URL(src, location.href).searchParams.get("v");
-        if (res.status === 202 || (res.ok && made && asked && made !== asked)) {
-          pictures.delete(src);
-          return resolve(MISSING);
+        const answer = pictureAnswer(res, asked);
+        if (answer !== "draw") {
+          if (answer !== null) pictures.delete(src);
+          return resolve(answer);
         }
-        if (!res.ok) return resolve(null);
         const loops = res.headers.get("x-pz-loops") === "1";
         const loopSize = Number(res.headers.get("x-pz-loop-size")) || 0;
-        const url = URL.createObjectURL(await res.blob());
+        url = URL.createObjectURL(await res.blob());
         const img = new Image();
         img.src = url;
         await img.decode();
@@ -233,7 +254,10 @@ function loadPicture(src: string, first = false): Promise<Loaded> {
           setTimeout(() => forget(src), PARTIAL_RETRY_MS);
         resolve({ url, version: asked ?? "", loops, loopSize });
       } catch {
-        resolve(null);
+        // No server, a dropped connection or a picture that won't decode: for now, not for good.
+        if (url) URL.revokeObjectURL(url);
+        pictures.delete(src);
+        resolve(FAILED);
       } finally {
         running--;
         next();
@@ -388,6 +412,8 @@ function useTier(opts: {
   const [failed, setFailed] = useState(false);
   const [missing, setMissing] = useState(false);
   const [retry, setRetry] = useState(0);
+  /** Asks in a row the server failed: the next waits longer. */
+  const failures = useRef(0);
   const pictureRef = useRef<Picture | null>(null);
   pictureRef.current = picture;
   const bucket = bucketFor(scale);
@@ -444,11 +470,14 @@ function useTier(opts: {
     if (upSrc) void loadPicture(upSrc);
     void loadPicture(src, onScreen).then((p) => {
       if (!live) return;
-      if (p === MISSING) {
+      if (p === MISSING || p === FAILED) {
         setMissing(true);
-        timer = setTimeout(() => setRetry((n) => n + 1), MISSING_RETRY_MS);
+        failures.current = p === FAILED ? failures.current + 1 : 0;
+        const wait = MISSING_RETRY_MS * 2 ** failures.current;
+        timer = setTimeout(() => setRetry((n) => n + 1), Math.min(FAILED_RETRY_MAX_MS, wait));
         return;
       }
+      failures.current = 0;
       if (!p) return setFailed(true);
       setMissing(false);
       setPicture((cur) => (cur?.url === p.url ? cur : p));

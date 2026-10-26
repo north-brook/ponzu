@@ -89,6 +89,8 @@ export function useLoops(url: string | null): Loops | null | "pending" {
   const [loops, setLoops] = useState<Loops | null | "pending">("pending");
   useEffect(() => {
     if (!url) return setLoops(null);
+    // Unknown again until this URL answers: a board that loops stays live meanwhile.
+    setLoops("pending");
     let live = true;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let failures = 0;

@@ -7,6 +7,7 @@ import {
   overCap,
   PICTURE_AGAIN,
   PICTURE_SCALE,
+  pictureAnswer,
   THAW_BUDGET,
   takeThaws,
   tierFor,
@@ -120,4 +121,24 @@ test("the picture cache drops the least recently used, never one on screen", () 
   expect(overCap(keys, 5, 8, () => false)).toEqual([]);
   // Everything on screen: nothing, over the cap or not.
   expect(overCap(keys, 5, 1, () => true)).toEqual([]);
+});
+
+test("a server error is asked again; only a picture, or none for good, is kept", () => {
+  const at = (status: number, version?: string) =>
+    pictureAnswer(
+      new Response(status === 204 ? null : "", {
+        status,
+        headers: version ? { "x-pz-version": version } : {},
+      }),
+      "v1",
+    );
+  expect(at(200, "v1")).toBe("draw");
+  expect(at(202)).toBe("missing");
+  // Made for another version: an edit raced it.
+  expect(at(200, "v0")).toBe("missing");
+  expect(at(500)).toBe("failed");
+  expect(at(503)).toBe("failed");
+  expect(at(429)).toBe("failed");
+  // No renderer, or no such board: none, for good.
+  expect(at(404)).toBeNull();
 });
