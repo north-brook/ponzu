@@ -470,6 +470,24 @@ test("a busy Ponzu that restarted quickly doesn't hand its cursors to the next o
   expect(now.gap(before.cursor)).toBe("restart");
 });
 
+test("Ponzus that start in the same millisecond still number their events apart", async () => {
+  // Same millisecond, half of it apart: the earlier one's cursors are below the later one's.
+  const started = Date.now();
+  const before = new EventHub(500, started + 0.2);
+  const now = new EventHub(500, started + 0.7);
+  for (let i = 0; i < 100; i++)
+    before.emit("fern", {
+      type: "change",
+      origin: { kind: "agent", name: "test" },
+      artboards: [],
+      summary: "edit",
+    });
+  expect(now.gap(before.cursor)).toBe("restart");
+  // And by default a hub's clock reads finer than the millisecond.
+  const bases = Array.from({ length: 5 }, () => new EventHub().base);
+  expect(bases.some((b) => b % 1000 !== 0)).toBe(true);
+});
+
 test("a wait says so when the ring lets go of what came in while it settled", async () => {
   const { call, design, ws, captured } = await onHub(new EventHub(500));
   const since = ws.events.cursor;
