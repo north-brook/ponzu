@@ -132,6 +132,10 @@ describe("html", () => {
     expect(rewriteCssUrls(`b:image-set("a.avif" type("image/avif"), 'b.jpg' 1x)`, tag)).toBe(
       `b:image-set("/r/a.avif" type("image/avif"), '/r/b.jpg' 1x)`,
     );
+    // Comments between candidates are skipped.
+    expect(rewriteCssUrls(`b:image-set(/* std */ "a.png" 1x, /* "x" */ "b.png" 2x)`, tag)).toBe(
+      `b:image-set(/* std */ "/r/a.png" 1x, /* "x" */ "/r/b.png" 2x)`,
+    );
     // Every image-set() in a declaration, and in the next one.
     expect(
       rewriteCssUrls(

@@ -338,7 +338,12 @@ export function rewriteCssUrls(css: string, rewrite: (url: string) => string): s
     let i = m.index + m[0].length;
     for (; i < urls.length && depth > 0; i++) {
       const c = urls[i]!;
-      if (c === '"' || c === "'") {
+      // A comment changes nothing: the candidate's string may still come after it.
+      if (c === "/" && urls[i + 1] === "*") {
+        const close = urls.indexOf("*/", i + 2);
+        if (close < 0) break;
+        i = close + 1;
+      } else if (c === '"' || c === "'") {
         const close = urls.indexOf(c, i + 1);
         if (close < 0) break;
         if (candidate && depth === 1 && close > i + 1) {
