@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.55.3](https://github.com/north-brook/ponzu/compare/v1.55.2...v1.55.3) (2026-10-26)
+
+
+### Bug Fixes
+
+* all projects picker stays muted until a project is chosen ([#241](https://github.com/north-brook/ponzu/issues/241)) ([f7ff1d6](https://github.com/north-brook/ponzu/commit/f7ff1d66adee6a45a75106850ccb06c9eff50667))
+
 ## [1.55.2](https://github.com/north-brook/ponzu/compare/v1.55.1...v1.55.2) (2026-10-26)
 
 
