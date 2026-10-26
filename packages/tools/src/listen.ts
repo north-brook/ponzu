@@ -6,11 +6,13 @@ import {
   type PonzuEvent,
   type Thread,
 } from "@ponzu/core";
+import type { Design } from "@ponzu/store";
 import { z } from "zod";
+import type { KeyedEvent } from "./context.ts";
 import { threadLine } from "./converse.ts";
 import { fileArg, ToolError, tool } from "./define.ts";
 import { GUIDES, type GuideTopic } from "./guides.ts";
-import { apply, resolveFile } from "./util.ts";
+import { apply, label, resolveFile } from "./util.ts";
 
 const EVENT_TYPES = [
   "change",
@@ -60,18 +62,42 @@ function waitingOn(threads: Thread[]): Thread[] {
   );
 }
 
-function waitingText(doc: Doc, waiting: Thread[]): string {
-  if (!waiting.length) return "No open threads are waiting on you.";
-  // threadLine ends "last from Sam" on a thread with replies: say what they said last.
-  const lines = waiting
-    .slice(0, WAITING_SHOWN)
-    .map(
-      (t) =>
-        `${threadLine(doc, t)}${t.messages.length > 1 ? `: "${t.messages.at(-1)!.text}"` : ""}`,
-    );
-  if (waiting.length > WAITING_SHOWN)
-    lines.push(`… and ${waiting.length - WAITING_SHOWN} more (list_comments)`);
-  return `Open threads waiting on you; handle these first:\n${lines.join("\n")}`;
+type Open = { key: string; design: Design };
+
+/** The waiting threads in each design, naming the design for any but the one the call is on. */
+function waitingText(files: Open[], all: Open[]): { text: string; ids: string[] } {
+  const lines: string[] = [];
+  const ids: string[] = [];
+  for (const [i, f] of files.entries()) {
+    for (const t of waitingOn(f.design.doc.threads)) {
+      ids.push(t.id);
+      // threadLine ends "last from Sam" on a thread with replies: say what they said last.
+      const latest = t.messages.length > 1 ? `: "${t.messages.at(-1)!.text}"` : "";
+      lines.push(`${threadLine(f.design.doc, t)}${latest}${i ? ` (in ${label(f, all)})` : ""}`);
+    }
+  }
+  if (!lines.length) return { text: "No open threads are waiting on you.", ids };
+  const shown = lines.slice(0, WAITING_SHOWN);
+  if (lines.length > WAITING_SHOWN)
+    shown.push(`… and ${lines.length - WAITING_SHOWN} more (list_comments)`);
+  return { text: `Open threads waiting on you; handle these first:\n${shown.join("\n")}`, ids };
+}
+
+const COMMENT_EVENTS = new Set(["comment.created", "comment.replied"]);
+
+/**
+ * Comments the person left after `cursor` in designs the wait didn't hear
+ * from: what a wider watch would have caught. Counted, never shown.
+ */
+function missedElsewhere(events: KeyedEvent[], scope: string[], all: Open[]): number {
+  return events.filter((e) => {
+    if (scope.includes(e.key) || !COMMENT_EVENTS.has(e.event.type) || !("thread" in e.event))
+      return false;
+    const { thread, author } = e.event as { thread: string; author: string };
+    const doc = all.find((d) => d.key === e.key)?.design.doc;
+    const t = doc?.threads.find((x) => x.id === thread);
+    return !!t?.messages.some((m) => m.author.kind === "user" && m.author.name === author);
+  }).length;
 }
 
 export const listenTools = [
@@ -81,7 +107,7 @@ export const listenTools = [
     group: "listen",
     readOnly: true,
     description:
-      "Watch the canvas. Call this instead of ending your turn whenever the person might react to your work there: after you put something up for review, or while you design together. Calling it again and again is the loop (get_guide('watch')). Long-polls for what people do in the canvas: new comments and replies, edits made in a text editor, other agents' changes. Returns immediately if anything happened after `since`; otherwise waits up to `timeout` seconds. Pass back the returned cursor next time so nothing is missed. If Ponzu restarted or lost track since then, it returns at once with the open threads waiting on you. The person's chat messages still reach you between waits.",
+      "Watch the canvas. Call this instead of ending your turn whenever the person might react to your work there: after you put something up for review, or while you design together. Calling it again and again is the loop (get_guide('watch')). Long-polls for what people do in the canvas: new comments and replies, edits made in a text editor, other agents' changes, in this file and the others you've worked in this session, saying which file each is in. Returns immediately if anything happened after `since`; otherwise waits up to `timeout` seconds. Pass back the returned cursor next time so nothing is missed. If Ponzu restarted or lost track since then, it returns at once with the open threads waiting on you. The person's chat messages still reach you between waits.",
     input: {
       file: fileArg,
       since: z
@@ -99,7 +125,7 @@ export const listenTools = [
     },
     async handler(args, ctx) {
       const { ws, caller, signal } = ctx;
-      const { key, design } = await resolveFile(ctx, args.file);
+      const { key } = await resolveFile(ctx, args.file);
       const gap = args.since === undefined ? undefined : ws.events.gap(args.since);
       const types = args.types ?? [
         "comment.created",
@@ -110,27 +136,28 @@ export const listenTools = [
       ];
       // Going back to listening ends a pass: what it was working on is done.
       ws.presence.touch(caller, { file: key, listening: true, working: [], status: undefined });
+      // Every design this agent has worked in, so moving to a new one doesn't deafen it to the last.
+      const all = ws.designs();
+      const scope = [key, ...(ctx.session?.files ?? []).filter((k) => k !== key)];
+      const files = scope.flatMap((k) => all.filter((d) => d.key === k));
       // What happened after the cursor can't all be told: say so, with what still needs the agent.
       const recover = (gap: "restart" | "dropped") => {
         const next = ws.events.cursor;
         ws.presence.touch(caller, { listening: false, listenedAt: Date.now() });
-        const waiting = waitingOn(design.doc.threads);
+        const waiting = waitingText(files, all);
         return {
-          text: `${GAP_NOTE[gap]} ${waitingText(design.doc, waiting)}\nWait again with cursor=${next}.`,
-          data: { cursor: next, events: [], gap, waiting: waiting.map((t) => t.id) },
-          metrics: { cursor: gap, events: 0 },
+          text: `${GAP_NOTE[gap]} ${waiting.text}\nWait again with cursor=${next}.`,
+          data: { cursor: next, events: [], gap, waiting: waiting.ids },
+          metrics: { cursor: gap, events: 0, scope_files: files.length },
         };
       };
       if (gap) return recover(gap);
       const cursor = args.since ?? ws.events.cursor;
+      const excludeAuthor = args.include_own ? undefined : caller.author.name;
       const events = await ws.events.wait(
         cursor,
         (args.timeout ?? 60) * 1000,
-        {
-          keys: [key],
-          types: [...types],
-          excludeAuthor: args.include_own ? undefined : caller.author.name,
-        },
+        { keys: scope, types: [...types], excludeAuthor },
         signal,
       );
       // The ring can let go of what came in while the wait settled, too.
@@ -140,16 +167,28 @@ export const listenTools = [
         ? events[events.length - 1]!.event.seq
         : Math.max(cursor, ws.events.cursor);
       ws.presence.touch(caller, { listening: false, listenedAt: Date.now() });
-      const metrics = { cursor: args.since === undefined ? "none" : "ok", events: events.length };
+      // Designs can open while the wait runs: look again, so their comments are counted and named.
+      const open = ws.designs();
+      const metrics = {
+        cursor: args.since === undefined ? "none" : "ok",
+        events: events.length,
+        scope_files: files.length,
+        missed_elsewhere: missedElsewhere(ws.events.since(cursor, { excludeAuthor }), scope, open),
+      };
       if (!events.length)
         return {
           text: `Nothing new. Wait again with cursor=${next}. The person's chat messages reach you between waits, so keep watching.`,
           data: { cursor: next, events: [] },
           metrics,
         };
+      const line = (e: KeyedEvent) => {
+        const f = open.find((d) => d.key === e.key);
+        const where = f && e.key !== key ? ` (in ${label(f, open)})` : "";
+        return describeEvent(f?.design.doc, e.event) + where;
+      };
       return {
-        text: `${events.map((e) => describeEvent(design.doc, e.event)).join("\n")}\ncursor=${next}`,
-        data: { cursor: next, events: events.map((e) => e.event) },
+        text: `${events.map(line).join("\n")}\ncursor=${next}`,
+        data: { cursor: next, events: events.map((e) => ({ ...e.event, file: e.key })) },
         metrics,
       };
     },

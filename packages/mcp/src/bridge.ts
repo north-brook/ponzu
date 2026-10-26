@@ -21,7 +21,7 @@ import {
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { SERVER_INSTRUCTIONS, tools, type Workspace } from "@ponzu/tools";
-import { createMcpServer, ORIGIN_HEADERS } from "./index.ts";
+import { createMcpServer, FILES_META, ORIGIN_HEADERS } from "./index.ts";
 
 export interface BridgeOptions {
   name?: string;
@@ -65,6 +65,16 @@ export async function serveBridge(
   const agent = () => {
     const info = server.getClientVersion();
     return { name: info?.name ?? "agent", version: info?.version ?? "0" };
+  };
+
+  // Which agent this is, to every host it reaches, so a new connection resumes its session.
+  const agentId = crypto.randomUUID();
+  // The designs it has worked in, as the last answer said: a host that restarted starts from them.
+  let files: string[] = [];
+  const remember = (result: CallToolResult) => {
+    const listed = result._meta?.[FILES_META];
+    if (Array.isArray(listed) && listed.every((f) => typeof f === "string")) files = listed;
+    return result;
   };
 
   let local: Promise<Client> | undefined;
@@ -117,7 +127,11 @@ export async function serveBridge(
       requestInit: {
         headers: {
           [ORIGIN_HEADERS.via]: "bridge",
+          [ORIGIN_HEADERS.agent]: agentId,
           ...(opts.cwd ? { [ORIGIN_HEADERS.cwd]: encodeURIComponent(opts.cwd) } : {}),
+          ...(files.length
+            ? { [ORIGIN_HEADERS.files]: encodeURIComponent(JSON.stringify(files)) }
+            : {}),
         },
       },
     });
@@ -197,8 +211,10 @@ export async function serveBridge(
       const client = await hostClient();
       if (!client) break;
       try {
-        return await using(client, () =>
-          client.request({ method: "tools/call", params }, CallToolResultSchema, options),
+        return remember(
+          await using(client, () =>
+            client.request({ method: "tools/call", params }, CallToolResultSchema, options),
+          ),
         );
       } catch (err) {
         // The host answered with an error: that's the answer.
@@ -223,10 +239,13 @@ export async function serveBridge(
       }
     }
     await opts.prepareLocal?.();
-    return (await localClient()).request(
-      { method: "tools/call", params },
-      CallToolResultSchema,
-      options,
+    // Files it moves to while the host is down count too, for when the host comes back.
+    return remember(
+      await (await localClient()).request(
+        { method: "tools/call", params },
+        CallToolResultSchema,
+        options,
+      ),
     );
   });
 

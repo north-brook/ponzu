@@ -80,7 +80,12 @@ export interface ToolCaller {
 export interface ToolSession {
   /** The design this agent last created, named or reached by id: calls without `file` use it. */
   file?: string;
+  /** The designs it has worked in, most recent first: waits hear from all of them. */
+  files?: string[];
 }
+
+/** How many designs a session remembers working in. */
+export const SESSION_FILES = 8;
 
 /** How a call found its design: named, by the ids it passed, the session's file, or the only one. */
 export type FileSource = "arg" | "ids" | "session" | "only";

@@ -124,7 +124,7 @@ When to watch: whenever the person might react to the work on the canvas. That's
 
 Watching doesn't cut you off from chat. A message the person types reaches you as soon as the current wait returns, within a minute. To tell them something (here's the link, which option you'd pick), write it in chat, then keep watching.
 
-1. listen: wait_for_activity with the cursor from your last call. Start with types comment.created, comment.replied, comment.edited, file.changed. An edit replaces what the comment asks; work from the new text. If the wait says Ponzu restarted or lost track, it lists the open threads waiting on you instead: work through those, then carry on with the cursor it gives.
+1. listen: wait_for_activity with the cursor from your last call. Start with types comment.created, comment.replied, comment.edited, file.changed. An edit replaces what the comment asks; work from the new text. If the wait says Ponzu restarted or lost track, it lists the open threads waiting on you instead: work through those, then carry on with the cursor it gives. The wait hears from every file you've worked in this session and names the file for any event outside the one you passed: pass that file when you act on it.
 2. triage each comment:
    - change ("make this bigger", "try blue"): do it.
    - question ("why this font?"): reply with an answer, leave it open.
