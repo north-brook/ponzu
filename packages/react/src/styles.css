@@ -192,6 +192,8 @@
 /*
  * The ring round a working artboard: it comes in, then breathes slowly in width and glow, so it
  * reads against a light canvas as well as a dark one. Subtle: it says someone's here, no more.
+ * The breath is a brighter ring fading over a fainter one: only opacity moves, so the compositor
+ * runs it without repainting a glow the size of the board every frame.
  */
 @keyframes pz-ring-in {
   from {
@@ -200,66 +202,84 @@
 }
 
 @keyframes pz-ring {
-  from {
-    box-shadow:
-      0 0 0 2px rgb(255 200 30 / 0.7),
-      0 0 10px 3px rgb(255 200 30 / 0.32);
-  }
   to {
-    box-shadow:
-      0 0 0 1px rgb(255 200 30 / 0.4),
-      0 0 4px 1px rgb(255 200 30 / 0.18);
+    opacity: 0;
   }
 }
 
 .pz-ring {
-  animation:
-    pz-ring-in 0.4s ease-out both,
-    pz-ring 1.5s ease-in-out infinite alternate both;
+  box-shadow:
+    0 0 0 1px rgb(255 200 30 / 0.4),
+    0 0 4px 1px rgb(255 200 30 / 0.18);
+  animation: pz-ring-in 0.4s ease-out both;
+}
+
+.pz-ring::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow:
+    0 0 0 2px rgb(255 200 30 / 0.7),
+    0 0 10px 3px rgb(255 200 30 / 0.28);
+  animation: pz-ring 1.5s ease-in-out infinite alternate both;
+  animation-delay: inherit;
 }
 
 /*
  * The rain in a working artboard's header: columns of yuzu dots, each falling at its own pace
  * (--fall) from its own start (--drift), coming in left to right. In em, so it's the label's size.
  * The studio's home rains on a card still being drawn, outside any .pz-root: yuzu by default.
+ *
+ * The dots are a still mask over the whole rain; behind each column a band of yuzu slides down
+ * through them. Only transforms move, so the compositor runs it: a mask moving every frame
+ * repainted every column of every working board on the main thread, and panning stuttered.
  */
 @keyframes pz-fall {
   from {
-    mask-position: 0 100%;
-  }
-  to {
-    mask-position: 0 0;
+    transform: translateY(-66.667%);
   }
 }
 
 .pz-rain {
   gap: 0.17em;
   height: 1em;
+  /* A dot per column in each of two rows, a tile apart: each sits at the top of its tile, so the
+   * second ends right at the column's foot. Tiles are a column and a gap wide. */
+  --pz-rain-dot: radial-gradient(
+    circle at 0.125em 0.125em,
+    #000 0.125em,
+    transparent calc(0.125em + 0.5px)
+  );
+  mask:
+    var(--pz-rain-dot) 0 0.165em / 0.42em 0.42em repeat-x,
+    var(--pz-rain-dot) 0 0.585em / 0.42em 0.42em repeat-x;
 }
 
 .pz-rain > span {
+  position: relative;
   width: 0.25em;
   height: 0.67em;
-  /* Each dot sits at the top of its tile, so the second ends right at the column's foot. */
-  background:
-    radial-gradient(
-      circle at 50% 0.125em,
-      var(--pz-rind, #ffc81e) 0.125em,
-      transparent calc(0.125em + 0.5px)
-    )
-    0 0 / 0.25em 0.42em repeat-y;
-  mask-image: linear-gradient(
+  animation: pz-appear 0.3s ease-out calc(var(--i) * 16ms) both;
+}
+
+/* Three columns tall, sliding two down; a little wider than its column, so it covers its dots
+ * wherever they round to, and short of its neighbours'. */
+.pz-rain > span::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: -0.08em;
+  left: -0.08em;
+  height: 300%;
+  background: linear-gradient(
     to bottom,
     transparent 0%,
-    #000 30%,
-    rgb(0 0 0 / 0.6) 45%,
+    var(--pz-rind, #ffc81e) 30%,
+    color-mix(in srgb, var(--pz-rind, #ffc81e) 60%, transparent) 45%,
     transparent 66%
   );
-  mask-size: 100% 300%;
-  mask-repeat: no-repeat;
-  animation:
-    pz-fall var(--fall) linear var(--drift) infinite,
-    pz-appear 0.3s ease-out calc(var(--i) * 16ms) both;
+  animation: pz-fall var(--fall) linear var(--drift) infinite;
 }
 
 /* A sixth of a turn, then a rest as long: the slice lands on itself each time. */
@@ -286,7 +306,9 @@
 .pz-still .pz-shimmer,
 .pz-still .pz-trace,
 .pz-still .pz-ring,
+.pz-still .pz-ring::after,
 .pz-still .pz-rain > span,
+.pz-still .pz-rain > span::before,
 .pz-still .pz-juice {
   animation-play-state: paused;
 }
@@ -393,11 +415,13 @@
     stroke-dasharray: none;
   }
 
-  .pz-ring {
-    animation: pz-ring 1s both paused;
+  .pz-ring,
+  .pz-ring::after {
+    animation: none;
   }
 
-  .pz-rain > span {
+  .pz-rain > span,
+  .pz-rain > span::before {
     animation: none;
   }
 

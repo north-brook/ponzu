@@ -1414,7 +1414,7 @@ function Ring({
     >
       <div
         className="pz-ring pz:absolute pz:inset-0"
-        style={{ borderRadius: BOARD_RADIUS + RING_GAP, animationDelay: `${wait}ms, ${wait}ms` }}
+        style={{ borderRadius: BOARD_RADIUS + RING_GAP, animationDelay: `${wait}ms` }}
       />
     </div>
   );
