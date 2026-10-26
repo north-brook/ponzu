@@ -9,8 +9,8 @@ import { brand } from "../lib/tokens";
 
 /**
  * `ponzu://pair?host=<MagicDNS name>&v=1`, opened from the Camera app's
- * scan of the Mac's pairing code: pairs, then Designs. A failure goes to
- * Connect, which says what went wrong.
+ * scan of the Mac's pairing code: pairs, then Designs. A failure says what
+ * went wrong, then goes to Tailscale, where pairing starts.
  */
 export default function PairLink() {
   const { host, v } = useLocalSearchParams<{ host?: string; v?: string }>();
@@ -18,7 +18,7 @@ export default function PairLink() {
   const { mutateAsync: pair } = usePair();
   useEffect(() => {
     if (!host || (v && v !== "1")) {
-      router.replace("/connect");
+      router.replace("/tailscale");
       return;
     }
     pair({ host, via: "qr" })
@@ -29,7 +29,7 @@ export default function PairLink() {
       })
       .catch((err) => {
         setError(pairMessage(err, host.split(".")[0]!));
-        setTimeout(() => router.replace("/connect"), 2_500);
+        setTimeout(() => router.replace("/tailscale"), 2_500);
       });
   }, [host, v]);
   return (

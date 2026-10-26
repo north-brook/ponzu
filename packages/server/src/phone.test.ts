@@ -139,6 +139,18 @@ esac
     expect(await info()).toBe(0);
     setSystemTime(start + 100 * MIN);
     expect(await info()).toBeGreaterThanOrEqual(8 * 60 - 1);
+
+    // Pair iPhone… closes when a phone pairs: only the phone's ?pair moves pairedAt.
+    const pairedAt = async (query: string, ua?: string) => {
+      const res = await fetch(`${base}/api/info${query}`, {
+        headers: ua ? { "user-agent": ua } : {},
+      });
+      return ((await res.json()) as { pairedAt: number | null }).pairedAt;
+    };
+    expect(await pairedAt("", PHONE)).toBeNull();
+    expect(await pairedAt("?pair=1")).toBeNull();
+    setSystemTime(start + 101 * MIN);
+    expect(await pairedAt("?pair=1", PHONE)).toBe(start + 101 * MIN);
   } finally {
     setSystemTime();
     server.stop(true);

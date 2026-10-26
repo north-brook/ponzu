@@ -10,7 +10,9 @@ import { LAUNCH } from "../lib/mark";
 import { reachAll, reaching, useMacs } from "../lib/reach";
 import { BLOOM_IN_MS, Slice } from "../lib/slice";
 import { useHideSplash } from "../lib/splash";
+import { tailnet } from "../lib/tailnet";
 import { EASE_OUT } from "../lib/tokens";
+import { interfaces } from "../modules/tailnet";
 
 /**
  * Launch (the iPhone design's Connect › 1 Launch): on the native splash's
@@ -18,8 +20,9 @@ import { EASE_OUT } from "../lib/tokens";
  * while Ponzu looks for your Macs, with the wordmark rising in under it.
  * Yuzu in light and dark alike.
  *
- * It asks every saved Mac where it stands, then goes on: no Macs → Connect;
- * one answers → Designs; none on the tailnet → Tailscale; all asleep → "Your
+ * It asks every saved Mac where it stands, then goes on: no Macs → the code
+ * on your Mac, or Tailscale first when this iPhone isn't on a tailnet; one
+ * answers → Designs; none on the tailnet → Tailscale; all asleep → "Your
  * Macs aren't answering". While a Mac's Ponzu starts, the slice simply keeps
  * blooming: loading is the slice moving where it already is, and nothing
  * joins or moves the column. A Mac that doesn't wake is the asleep screen.
@@ -66,7 +69,7 @@ export default function Launch() {
     };
     switch (overall.state) {
       case "none":
-        return later("/connect");
+        return later(tailnet(interfaces()) === "on" ? "/connect" : "/tailscale");
       case "answer":
         return later("/designs");
       case "noTailnet":

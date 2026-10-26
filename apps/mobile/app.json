@@ -19,9 +19,7 @@
       "supportsTablet": false,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSLocalNetworkUsageDescription": "Ponzu looks for Macs running Ponzu on this Wi-Fi, so you don't have to scan a code.",
         "NSPhotoLibraryUsageDescription": "Ponzu doesn't read your photo library. Apple asks for this because a library Ponzu uses can load images from Photos.",
-        "NSBonjourServices": ["_ponzu._tcp"],
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true,
           "NSExceptionDomains": {

@@ -175,7 +175,7 @@ export default function Scan() {
             {error ??
               (denied
                 ? "Turn on Camera for Ponzu in Settings."
-                : "On your Mac: Ponzu › Pair iPhone…")}
+                : "Mac menu bar: Ponzu › Pair iPhone…")}
           </Text>
         </Animated.View>
       </View>

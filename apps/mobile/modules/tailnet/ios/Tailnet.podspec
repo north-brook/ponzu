@@ -1,7 +1,7 @@
 Pod::Spec.new do |s|
-  s.name           = 'Bonjour'
+  s.name           = 'Tailnet'
   s.version        = '1.0.0'
-  s.summary        = 'Finds Macs running Ponzu on the local network.'
+  s.summary        = 'Reads the network addresses that show whether Tailscale is on.'
   s.description    = s.summary
   s.license        = 'MIT'
   s.author         = 'Northbrook PBC'

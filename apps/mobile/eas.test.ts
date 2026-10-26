@@ -158,10 +158,11 @@ describe("app.json", () => {
     expect(expo.ios.bundleIdentifier).toBe("design.ponzu.app");
   });
 
-  test("Bonjour browses only Ponzu's service, and plain http reaches only the tailnet", () => {
+  test("no Bonjour browsing, and plain http reaches only the tailnet", () => {
     const plist = expo.ios.infoPlist;
-    expect(plist.NSBonjourServices).toEqual(["_ponzu._tcp"]);
-    expect(plist.NSLocalNetworkUsageDescription).toBeString();
+    // Pairing is the code alone: the phone never browses the Wi-Fi.
+    expect(plist.NSBonjourServices).toBeUndefined();
+    expect(plist.NSLocalNetworkUsageDescription).toBeUndefined();
     const ats = plist.NSAppTransportSecurity;
     expect(ats.NSAllowsArbitraryLoads).toBeUndefined();
     expect(ats.NSAllowsLocalNetworking).toBe(true);

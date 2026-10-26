@@ -1,15 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
-import { router, useLocalSearchParams } from "expo-router";
-import { useEffect, useState } from "react";
-import { Pressable, Text, View } from "react-native";
-import Animated, {
-  Easing,
-  useAnimatedStyle,
-  useReducedMotion,
-  useSharedValue,
-  withRepeat,
-  withTiming,
-} from "react-native-reanimated";
+import { router } from "expo-router";
+import type { ReactNode } from "react";
+import { Linking, Text, View } from "react-native";
+import Svg, { Path } from "react-native-svg";
 import {
   Card,
   ConnectLayout,
@@ -17,33 +9,19 @@ import {
   PillButton,
   TextButton,
 } from "../../components/connect-layout";
-import { Laptop, QR, Swap } from "../../components/icons";
-import { type NearbyMac, useNearbyMacs } from "../../lib/bonjour";
-import { fetchCatalog } from "../../lib/catalog";
-import { PORT } from "../../lib/mac";
-import { fetchInfo, pairMessage, usePair } from "../../lib/macs";
-import { reachAll } from "../../lib/reach";
-import { Juice } from "../../lib/slice";
-import { track } from "../../lib/telemetry";
+import { Laptop, QR, SliceMark, Swap } from "../../components/icons";
 import { useTheme } from "../../lib/theme";
-import { brand, EASE_OUT } from "../../lib/tokens";
+import { brand } from "../../lib/tokens";
 
 /**
- * Connect a Mac (Connect › 4 Mac found on Wi-Fi, 4b Nothing on this Wi-Fi):
- * Macs running Ponzu on this Wi-Fi, found by Bonjour, each with Connect; or
- * the code from Ponzu › Pair iPhone… on the Mac. The first browse raises
- * iOS's local network prompt (3 Allow local network is the system's).
+ * Scan the code on your Mac (the onboarding design's 3), first launch's
+ * second step: where Pair iPhone… is, drawn as the Mac's menu bar with
+ * Ponzu's menu open on it, and three numbered steps to get there. Scan the
+ * code opens the camera (connect/scan.tsx), which pairs and lands on Designs.
  */
 export default function Connect() {
   const { color } = useTheme();
-  const found = useNearbyMacs();
-  // Development: `ponzu://connect?nearby=none` shows 4b while this Mac advertises.
-  const params = useLocalSearchParams<{ nearby?: string }>();
-  const nearby =
-    __DEV__ && params.nearby === "none" ? { ...found, macs: [], settled: true } : found;
-  const [error, setError] = useState<string | null>(null);
-  const nothing = nearby.settled;
-  const scan = () => router.push("/connect/scan");
+  const bold = { fontWeight: "600" as const };
   return (
     <ConnectLayout
       testID="connect"
@@ -53,135 +31,47 @@ export default function Connect() {
         </OtherTile>
       }
       link={<Swap color={color.faint} />}
-      title="Connect a Mac running Ponzu."
-      body="Once one Mac is connected, Ponzu finds your others on its own."
+      title="Scan the code on your Mac."
       actions={
         <>
           <PillButton
-            label="Scan the code on your Mac"
-            tone={nothing ? "primary" : "secondary"}
-            icon={<QR color={nothing ? color.bg : color.ink} />}
-            onPress={scan}
+            label="Scan the code"
+            icon={<QR color={color.bg} />}
+            onPress={() => router.push("/connect/scan")}
             testID="scan"
           />
-          <TextButton label="On your Mac: Ponzu › Pair iPhone…" />
+          <TextButton
+            label="No Ponzu on your Mac? Get it at ponzu.design"
+            onPress={() => Linking.openURL("https://ponzu.design")}
+          />
         </>
       }
     >
-      <View style={{ marginTop: 28, gap: 10 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 4 }}>
-          <Ping on={!nothing} />
-          <Text
-            style={{
-              fontFamily: "Inter",
-              fontWeight: "600",
-              fontSize: 13,
-              lineHeight: 13,
-              color: color.muted,
-            }}
-          >
-            On this Wi-Fi
-          </Text>
-        </View>
-        <Card>
-          {nearby.macs.map((m, i) => (
-            <Found key={m.host} mac={m} last={i === nearby.macs.length - 1} onError={setError} />
-          ))}
-          {nearby.macs.length === 0 &&
-            (nothing ? (
-              <NothingHere denied={nearby.state === "denied"} />
-            ) : (
-              <View style={{ height: 68, alignItems: "center", justifyContent: "center" }}>
-                <Juice size={20} color={color.faint} />
-              </View>
-            ))}
-        </Card>
-        {error && (
-          <Text
-            style={{
-              fontFamily: "Inter",
-              fontSize: 14,
-              lineHeight: 20,
-              color: color.muted,
-              paddingHorizontal: 4,
-            }}
-          >
-            {error}
-          </Text>
-        )}
-      </View>
+      <Card style={{ marginTop: 24 }}>
+        <MenuBar />
+        <Instruction n={1}>
+          Open <Text style={bold}>Ponzu</Text> on your Mac
+        </Instruction>
+        <Instruction n={2}>
+          Click <Text style={bold}>Ponzu</Text> in the menu bar, top left
+        </Instruction>
+        <Instruction n={3} last>
+          Choose <Text style={bold}>Pair iPhone…</Text>
+        </Instruction>
+      </Card>
     </ConnectLayout>
   );
 }
 
-/** The yuzu dot that pings while the phone looks; grey once it's done looking. */
-function Ping({ on }: { on: boolean }) {
+function Instruction({ n, last, children }: { n: number; last?: boolean; children: ReactNode }) {
   const { color } = useTheme();
-  const t = useSharedValue(0);
-  const still = useReducedMotion();
-  useEffect(() => {
-    if (!on || still) return;
-    t.value = withRepeat(withTiming(1, { duration: 1600, easing: Easing.bezier(...EASE_OUT) }), -1);
-  }, [on, still]);
-  const ring = useAnimatedStyle(() => ({
-    opacity: 0.55 * (1 - t.value),
-    transform: [{ scale: 1 + 1.6 * t.value }],
-  }));
-  const dot = { position: "absolute" as const, inset: 0, borderRadius: 999 };
-  return (
-    <View style={{ width: 8, height: 8 }}>
-      {on && <Animated.View style={[dot, { backgroundColor: brand.yuzu }, ring]} />}
-      <View style={[dot, { backgroundColor: on ? brand.yuzu : color.faint }]} />
-    </View>
-  );
-}
-
-/** A Mac on this Wi-Fi: its name, Ponzu's version and design count, and Connect. */
-function Found({
-  mac,
-  last,
-  onError,
-}: {
-  mac: NearbyMac;
-  last: boolean;
-  onError: (message: string | null) => void;
-}) {
-  const { color } = useTheme();
-  // Not saved yet, so asked by host: the queries under "nearby" aren't kept.
-  const address = { dns: mac.host, address: `${mac.host}:${PORT}` };
-  const info = useQuery({
-    queryKey: ["nearby", mac.host, "info"],
-    queryFn: () => fetchInfo(`http://${address.address}`, 4_000),
-  });
-  const designs = useQuery({
-    queryKey: ["nearby", mac.host, "catalog"],
-    queryFn: () => fetchCatalog(address),
-    enabled: info.isSuccess,
-    select: (c) => c.files.length,
-  });
-  const pair = usePair();
-  const busy = pair.isPending;
-  const connect = async () => {
-    onError(null);
-    try {
-      await pair.mutateAsync({ host: mac.host, via: "bonjour" });
-      track("mac paired", { via: "bonjour" });
-      reachAll();
-      router.replace("/designs");
-    } catch (err) {
-      onError(pairMessage(err, mac.name));
-    }
-  };
-  const detail = info.data
-    ? `Ponzu ${info.data.version.replace(/\.0$/, "")}${designs.data !== undefined ? ` · ${designs.data} designs` : ""}`
-    : "Ponzu";
   return (
     <View
       style={{
         flexDirection: "row",
         alignItems: "center",
-        gap: 14,
-        paddingVertical: 14,
+        gap: 12,
+        paddingVertical: 12,
         paddingHorizontal: 16,
         borderBottomWidth: last ? 0 : 1,
         borderBottomColor: color.hairline,
@@ -189,115 +79,143 @@ function Found({
     >
       <View
         style={{
-          width: 40,
-          height: 40,
-          borderRadius: 10,
+          width: 24,
+          height: 24,
+          borderRadius: 999,
           backgroundColor: color.chip,
           alignItems: "center",
           justifyContent: "center",
         }}
       >
-        <Laptop size={22} color={color.ink} />
-      </View>
-      <View style={{ flex: 1, minWidth: 0 }}>
-        <Text
-          numberOfLines={1}
-          style={{
-            fontFamily: "Inter",
-            fontWeight: "600",
-            fontSize: 16,
-            lineHeight: 21.6,
-            color: color.ink,
-          }}
-        >
-          {mac.name}
-        </Text>
-        <Text
-          numberOfLines={1}
-          style={{ fontFamily: "Inter", fontSize: 13, lineHeight: 18.2, color: color.muted }}
-        >
-          {detail}
+        <Text style={{ fontFamily: "Inter", fontWeight: "600", fontSize: 13, color: color.ink }}>
+          {n}
         </Text>
       </View>
-      <Pressable
-        onPress={connect}
-        disabled={busy}
-        accessibilityRole="button"
-        accessibilityLabel={`Connect ${mac.name}`}
-        style={({ pressed }) => ({
-          height: 34,
-          paddingHorizontal: 14,
-          borderRadius: 999,
-          backgroundColor: color.ink,
-          justifyContent: "center",
-          opacity: busy ? 0.6 : pressed ? 0.8 : 1,
-        })}
+      <Text
+        style={{ flex: 1, fontFamily: "Inter", fontSize: 15, lineHeight: 20.25, color: color.ink }}
       >
-        {/* The label keeps the button's width while the slice juices over it. */}
-        <Text
-          style={{
-            fontFamily: "Inter",
-            fontWeight: "600",
-            fontSize: 14,
-            color: color.bg,
-            opacity: busy ? 0 : 1,
-          }}
-        >
-          Connect
-        </Text>
-        {busy && (
-          <View
-            style={{
-              position: "absolute",
-              inset: 0,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Juice size={16} color={color.bg} />
-          </View>
-        )}
-      </Pressable>
+        {children}
+      </Text>
     </View>
   );
 }
 
-/** 4b: nothing found, or local network access refused. */
-function NothingHere({ denied }: { denied: boolean }) {
-  const { color } = useTheme();
+/**
+ * The Mac's desktop as the site draws it (apps/web's `.stage`): yuzu with the big slice in ink
+ * at 12% on light; soy with the slice in yuzu at 10% on dark. The slice's color here is that
+ * mix, made solid. The menus follow the phone's theme, as a Mac's follow its own.
+ */
+const DESK = {
+  light: {
+    desk: brand.yuzu,
+    slice: "#e2b21c",
+    ink: "#111110",
+    bar: "rgba(255,251,238,0.5)",
+    chosen: "rgba(17,17,16,0.12)",
+    menu: "rgba(250,249,246,0.96)",
+    rule: "rgba(17,17,16,0.1)",
+    shadow: "0 0 0 0.5px rgba(0,0,0,0.18), 0 10px 28px rgba(90,60,0,0.3)",
+  },
+  dark: {
+    desk: "#1d1a13",
+    slice: "#342b14",
+    ink: "#f4f3ef",
+    bar: "rgba(20,18,14,0.55)",
+    chosen: "rgba(255,255,255,0.16)",
+    menu: "rgba(40,38,34,0.96)",
+    rule: "rgba(255,255,255,0.12)",
+    shadow: "0 0 0 0.5px rgba(255,255,255,0.14), 0 10px 28px rgba(0,0,0,0.5)",
+  },
+} as const;
+/** The highlighted menu item: macOS's own blue. */
+const PICK = "#0a84ff";
+const APPLE =
+  "M11.6 9c0-2 1.7-3 1.8-3-1-1.4-2.5-1.6-3-1.6-1.3-.1-2.5.7-3.1.7-.7 0-1.7-.7-2.7-.7C3.2 4.4 1.9 5.2 1.2 6.5c-1.5 2.6-.4 6.4 1 8.5.7 1 1.5 2.2 2.6 2.1 1 0 1.4-.7 2.7-.7s1.6.7 2.7.6c1.1 0 1.8-1 2.5-2 .8-1.2 1.1-2.3 1.1-2.4 0 0-2.2-.8-2.2-3.6zM9.6 3c.6-.7 1-1.7.9-2.6-.8 0-1.8.5-2.4 1.2-.5.6-1 1.6-.9 2.5.9.1 1.8-.4 2.4-1.1z";
+
+/** The Mac's menu bar on its desktop, Ponzu's menu open with Pair iPhone… picked. */
+function MenuBar() {
+  const { scheme } = useTheme();
+  const mac = DESK[scheme];
+  const menuText = { fontSize: 12, color: mac.ink };
   return (
-    <View style={{ padding: 16, flexDirection: "row", gap: 12, alignItems: "flex-start" }}>
+    <View
+      accessibilityLabel="On your Mac, the Ponzu menu in the menu bar, with Pair iPhone… in it"
+      accessible
+      style={{ height: 150, backgroundColor: mac.desk, overflow: "hidden" }}
+    >
+      <View style={{ position: "absolute", right: -90, top: -100 }}>
+        <SliceMark size={300} color={mac.slice} />
+      </View>
       <View
         style={{
-          width: 32,
-          height: 32,
-          borderRadius: 8,
-          backgroundColor: color.chip,
+          height: 26,
+          flexDirection: "row",
           alignItems: "center",
-          justifyContent: "center",
+          gap: 14,
+          paddingHorizontal: 12,
+          backgroundColor: mac.bar,
         }}
       >
-        <Laptop size={18} color={color.muted} width={1.8} />
-      </View>
-      <View style={{ flex: 1, gap: 4 }}>
+        <Svg width={11} height={13} viewBox="0 0 14 17">
+          <Path d={APPLE} fill={mac.ink} />
+        </Svg>
         <Text
           style={{
-            fontFamily: "Inter",
-            fontWeight: "600",
-            fontSize: 15,
-            lineHeight: 20.25,
-            color: color.ink,
+            ...menuText,
+            fontWeight: "700",
+            paddingVertical: 3,
+            paddingHorizontal: 7,
+            marginHorizontal: -7,
+            borderRadius: 5,
+            overflow: "hidden",
+            backgroundColor: mac.chosen,
           }}
         >
-          {denied ? "Ponzu can't look on this Wi-Fi" : "No Mac on this Wi-Fi"}
+          Ponzu
         </Text>
-        <Text style={{ fontFamily: "Inter", fontSize: 14, lineHeight: 20.3, color: color.muted }}>
-          {denied ? "Local network access is off for Ponzu in Settings. " : ""}On your Mac, open
-          Ponzu and choose{" "}
-          <Text style={{ color: color.ink, fontWeight: "600" }}>Ponzu › Pair iPhone…</Text>, then
-          scan the code.
-        </Text>
+        {["File", "Edit", "View", "Window"].map((m) => (
+          <Text key={m} style={menuText}>
+            {m}
+          </Text>
+        ))}
       </View>
+      <View
+        style={{
+          position: "absolute",
+          left: 30,
+          top: 28,
+          width: 168,
+          paddingVertical: 4,
+          borderRadius: 9,
+          backgroundColor: mac.menu,
+          boxShadow: mac.shadow,
+        }}
+      >
+        <MenuItem label="About Ponzu" ink={mac.ink} />
+        <MenuItem label="Check for Updates…" ink={mac.ink} />
+        <MenuItem label="Pair iPhone…" ink={mac.ink} picked />
+        <View
+          style={{ height: 1, marginVertical: 4, marginHorizontal: 9, backgroundColor: mac.rule }}
+        />
+        <MenuItem label="Services" ink={mac.ink} />
+      </View>
+    </View>
+  );
+}
+
+function MenuItem({ label, ink, picked }: { label: string; ink: string; picked?: boolean }) {
+  return (
+    <View
+      style={{
+        height: 22,
+        justifyContent: "center",
+        paddingHorizontal: 10,
+        marginHorizontal: 4,
+        borderRadius: 5,
+        backgroundColor: picked ? PICK : undefined,
+      }}
+    >
+      <Text style={{ fontSize: 12, color: picked ? "#ffffff" : ink }}>{label}</Text>
     </View>
   );
 }

@@ -76,8 +76,9 @@ export function noteAnswer(mac: Mac, info: MacInfo) {
  * `/api/info` from `base`. Fails with how it failed (see net.ts): something
  * that answers but isn't Ponzu is an `http` failure without a status.
  */
-export async function fetchInfo(base: string, timeout: number): Promise<MacInfo> {
-  const info = await getJson<MacInfo>(`${base}/api/info`, timeout);
+export async function fetchInfo(base: string, timeout: number, pairing = false): Promise<MacInfo> {
+  // ?pair tells the Mac a phone is pairing, so its Pair iPhone… dialog closes.
+  const info = await getJson<MacInfo>(`${base}/api/info${pairing ? "?pair=1" : ""}`, timeout);
   if (typeof info?.version !== "string") throw new NetError("http", "Not Ponzu");
   return info;
 }
@@ -101,13 +102,13 @@ async function pair(host: string, via: Mac["via"]): Promise<Mac> {
   const dev = via === "dev";
   const name = host.trim().replace(/\.$/, "");
   // Only the development override dials an address. Any other Mac is reached by its MagicDNS
-  // name: a pairing link or a Wi-Fi advert naming an address could point the phone, and a
-  // Mac it already knows, at any host on the network.
+  // name: a pairing link naming an address could point the phone, and a Mac it already
+  // knows, at any host on the network.
   if (!dev && !isMagicDns(name)) throw new PairError("unreachable", `Not a tailnet name: ${name}`);
   const address = dev && name.includes(":") ? name : `${name}:${PORT}`;
   let info: MacInfo;
   try {
-    info = await fetchInfo(`http://${address}`, 6_000);
+    info = await fetchInfo(`http://${address}`, 6_000, true);
   } catch (err) {
     const notPonzu = err instanceof NetError && err.kind === "http" && err.status === undefined;
     throw new PairError(notPonzu ? "notPonzu" : "unreachable", String(err));
@@ -135,8 +136,8 @@ async function pair(host: string, via: Mac["via"]): Promise<Mac> {
 }
 
 /**
- * Pairing, from the Wi-Fi list, a scanned code or a pairing link. Once
- * paired, the Mac's info is in the cache and the Macs it names are asked for.
+ * Pairing, from a scanned code or a pairing link. Once paired, the Mac's
+ * info is in the cache and the Macs it names are asked for.
  */
 export function usePair() {
   return useMutation({
