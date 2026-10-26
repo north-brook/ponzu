@@ -216,7 +216,7 @@ build by fingerprint first:
 
 | Workflow | Runs on | Channel | A new build goes to |
 | --- | --- | --- | --- |
-| `preview.yml` | a push to `main` touching `apps/mobile`, `packages/core` or `bun.lock` | `preview` | TestFlight, internal testers |
+| `preview.yml` | a push to `main` touching `apps/mobile`, `packages/core` or `bun.lock` | `preview` | TestFlight's internal **Team** group |
 | `production.yml` | a `mobile-v*` tag | `production` | TestFlight's external **Alpha** group, through Beta App Review |
 
 EAS owns build numbers (`appVersionSource: remote`, `autoIncrement`). Run a
@@ -238,30 +238,24 @@ new leaves out `iPhone:` notes and every commit that changed only
 
 - **Expo:** project `@north-brook/ponzu`
   (`67e319ee-49ff-45aa-8029-28c78f63041e`), owner `north-brook`. The EAS
-  GitHub integration starts the workflows; link the repository under the
+  GitHub integration starts the workflows: the repository is linked under the
   project's GitHub settings, with `apps/mobile` as its base directory.
 - **Apple:** team `R9352YFQL4`. EAS manages the distribution certificate and
-  provisioning profile (`eas credentials`). TestFlight needs an App Store
-  Connect API key on the Expo account and an external group named `Alpha`.
+  the App Store provisioning profile (`eas credentials`). Submissions use the
+  App Store Connect API key `3UDC454AX2`, set on the project's iOS
+  credentials.
+- **App Store Connect:** the app is "Ponzu: AI Canvas", Apple ID
+  `6827217192` (`ascAppId` in `eas.json`). TestFlight has two groups: the
+  internal **Team**, which gets every build automatically, and the external
+  **Alpha**, which `production.yml` names. External testing needs the test
+  information (description, feedback email, privacy policy
+  `https://ponzu.design/privacy`) and Beta App Review's contact details,
+  filled in under TestFlight > Test Information.
 - **EAS environment variables:** `EXPO_PUBLIC_POSTHOG_KEY` (and optionally
   `EXPO_PUBLIC_POSTHOG_HOST`) in `production` only, so preview and
   development builds send nothing. To upload source maps from production
   builds, add `POSTHOG_CLI_API_KEY` and `POSTHOG_CLI_PROJECT_ID` there too
   (they turn on PostHog's build plugin in `app.config.ts`).
-
-### Adding the App Store Connect app
-
-There is no App Store Connect app yet. Once there is, add its Apple ID to
-`eas.json` so `submit` and `testflight` jobs don't ask:
-
-```json
-"submit": {
-  "preview": { "ios": { "ascAppId": "<Apple ID>" } },
-  "production": { "ios": { "ascAppId": "<Apple ID>" } }
-}
-```
-
-The Apple ID is the number under App Information in App Store Connect.
 
 ## Checks
 
