@@ -257,3 +257,41 @@ test("a wait that ran in the bridge while the host was down doesn't skip the hos
   );
   expect(r).toContain("th_back [open]");
 });
+
+test("an agent keeps its file and its place on the canvas when its connection drops", async () => {
+  if (!host) await startHost();
+  const shop = join(dir, "shop.design");
+  await agent.callTool({ name: "create_file", arguments: { path: join(dir, "cafe.design") } });
+  await agent.callTool({ name: "get_basic_info", arguments: { file: shop } });
+  expect(hostWs!.designs()).toHaveLength(2);
+  const before = hostWs!.presence.list().filter((p) => p.name === "Claude");
+  const connected: Record<string, unknown>[] = [];
+  hostWs!.telemetry = {
+    capture: (event, p) => event === "agent connected" && connected.push(p ?? {}),
+    feedback: async () => false,
+  };
+  // The same Ponzu at another address: the bridge opens a new connection, as when its stream drops.
+  announced = `http://127.0.0.1:${host!.port}/mcp?again`;
+  try {
+    const r = await agent.callTool({ name: "get_basic_info", arguments: {} });
+    expect(r.isError).toBeFalsy();
+    expect(text(r)).toContain("shop");
+    expect(connected).toEqual([expect.objectContaining({ resumed: true })]);
+    await Bun.sleep(100);
+    const after = hostWs!.presence.list().filter((p) => p.name === "Claude");
+    expect(after.map((p) => p.id)).toEqual(before.map((p) => p.id));
+  } finally {
+    announced = null;
+  }
+});
+
+test("after Ponzu restarts, an agent keeps the files it was working in", async () => {
+  await stopHost();
+  await startHost();
+  // The new Ponzu has another design open; the agent's next call doesn't name one.
+  await hostWs!.open(join(dir, "cafe.design"));
+  const r = await agent.callTool({ name: "get_basic_info", arguments: {} });
+  expect(r.isError).toBeFalsy();
+  expect(text(r)).toContain("shop");
+  expect(hostWs!.designs()).toHaveLength(2);
+});

@@ -475,6 +475,92 @@ test("a wait with a cursor still in the ring hears what came after it", async ()
   expect(captured.at(-1)).toMatchObject({ cursor: "none" });
 });
 
+/** Three open designs, and an agent whose session started in the first. */
+async function threeFiles() {
+  const open = async (key: string, name: string) => {
+    const design = await Design.open(
+      new MemoryAdapter({
+        "design.json": JSON.stringify({ ponzu: 1, name, pages: [{ id: "pg_home", name: "Home" }] }),
+        "pages/home/hero.html": `<section data-artboard data-id="ab_hero" data-name="Hero" data-x="0" data-y="0" style="width:800px;height:600px"></section>\n`,
+      }),
+      { saveDelay: 0 },
+    );
+    return { key, design };
+  };
+  const files = [
+    await open("fern", "Fern"),
+    await open("moss", "Moss"),
+    await open("reed", "Reed"),
+  ];
+  const captured: Record<string, unknown>[] = [];
+  const ws: Workspace = {
+    designs: () => files,
+    resolve: async (file) => {
+      const hit = files.find((f) => f.key === file);
+      if (!hit) throw new Error(`no ${file}`);
+      return hit;
+    },
+    events: new EventHub(),
+    presence: new PresenceHub(),
+    telemetry: { capture: (_e, p) => captured.push(p ?? {}), feedback: async () => false },
+  };
+  const ctx: ToolContext = {
+    ws,
+    caller: { id: "t", author: { kind: "agent", name: "test" } },
+    session: { file: "fern" },
+  };
+  const call = (name: string, args: unknown) => runTool(getTool(name)!, args, ctx);
+  const [fern, moss, reed] = files.map((f) => f.design);
+  return { ws, ctx, call, captured, fern: fern!, moss: moss!, reed: reed! };
+}
+
+test("a wait hears comments on the file the agent worked in before it moved to a new one", async () => {
+  const { ws, call, fern } = await threeFiles();
+  await call("get_tree", { file: "fern" });
+  // The agent moves on to a new design, and the person keeps commenting on the first.
+  await call("get_tree", { file: "moss" });
+  const since = ws.events.cursor;
+  personComments(fern, ws.events, "th_1", "bigger", "fern");
+  const r = await call("wait_for_activity", { since, timeout: 0 });
+  expect(r.text).toStartWith('new comment th_1 on "Hero" from Sam: "bigger" (in "Fern")');
+  expect((r.data as { events: { file: string }[] }).events[0]!.file).toBe("fern");
+  // Passing the new file doesn't narrow it either.
+  const named = await call("wait_for_activity", { file: "moss", since, timeout: 0 });
+  expect(named.text).toContain('(in "Fern")');
+});
+
+test("comments in a design the agent never touched are counted, not told", async () => {
+  const { ws, call, captured, reed, moss } = await threeFiles();
+  await call("get_tree", { file: "moss" });
+  const since = ws.events.cursor;
+  personComments(reed, ws.events, "th_r", "not yours", "reed");
+  personComments(moss, ws.events, "th_m", "yours", "moss");
+  const r = await call("wait_for_activity", { since, timeout: 0 });
+  expect(r.text).toContain("th_m");
+  expect(r.text).not.toContain("th_r");
+  expect(captured.at(-1)).toMatchObject({ events: 1, scope_files: 1, missed_elsewhere: 1 });
+});
+
+test("after a restart, waiting threads from every file the agent worked in are listed", async () => {
+  const { ws, call, fern, moss } = await threeFiles();
+  personComments(fern, ws.events, "th_f", "on fern", "fern");
+  await call("get_tree", { file: "fern" });
+  await call("get_tree", { file: "moss" });
+  personComments(moss, ws.events, "th_m", "on moss", "moss");
+  const r = await call("wait_for_activity", { since: 1, timeout: 0 });
+  expect(r.text).toStartWith("Ponzu restarted");
+  expect(r.text).toContain("th_m [open]");
+  expect(r.text).toMatch(/th_f \[open\].*\(in "Fern"\)/);
+});
+
+test("a session remembers the designs it worked in, most recent first", async () => {
+  const { ctx, call } = await threeFiles();
+  await call("get_tree", { file: "fern" });
+  await call("get_tree", { file: "moss" });
+  await call("get_tree", { file: "fern" });
+  expect(ctx.session!.files).toEqual(["fern", "moss"]);
+});
+
 test("screenshot checks hover, focus and press ids before rendering", async () => {
   const { renderer, calls } = fakeRenderer({});
   const { call } = await setup(3, renderer);

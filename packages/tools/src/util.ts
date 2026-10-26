@@ -11,7 +11,7 @@ import {
   walk,
 } from "@ponzu/core";
 import type { Design } from "@ponzu/store";
-import type { FileSource, ToolContext } from "./context.ts";
+import { type FileSource, SESSION_FILES, type ToolContext } from "./context.ts";
 import { ToolError } from "./define.ts";
 
 /**
@@ -77,13 +77,19 @@ export async function resolveFile(
     from,
     note: moved ? `\nNow in ${label(picked, all)}; calls without file use it.` : undefined,
   };
-  if (session) session.file = picked.key;
+  if (session) {
+    session.file = picked.key;
+    session.files = [picked.key, ...(session.files ?? []).filter((k) => k !== picked.key)].slice(
+      0,
+      SESSION_FILES,
+    );
+  }
   ws.presence.saw(ctx.caller, picked.key);
   return picked;
 }
 
 /** A design's name, with its path when another open file shares the name. */
-function label(
+export function label(
   picked: { key: string; design: Design },
   all: { key: string; design: Design }[],
 ): string {
