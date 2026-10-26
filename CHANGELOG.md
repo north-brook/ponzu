@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.55.5](https://github.com/north-brook/ponzu/compare/v1.55.4...v1.55.5) (2026-10-26)
+
+
+### Bug Fixes
+
+* a mac whose designs are on another mac shows loading cards after updating, not get started ([#245](https://github.com/north-brook/ponzu/issues/245)) ([1499ed6](https://github.com/north-brook/ponzu/commit/1499ed6d9c6f2a4c2d54fb48d8e1d7a0b3fcaced))
+
 ## [1.55.4](https://github.com/north-brook/ponzu/compare/v1.55.3...v1.55.4) (2026-10-26)
 
 
