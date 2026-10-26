@@ -1,0 +1,28 @@
+appId: design.ponzu.app
+name: perf-comment
+---
+# The comment sheet in typing on Kettle's Logo, text in its field and the keyboard up, as the
+# lead left it: then nobody touches it while sim.sh samples.
+- runFlow: start.yaml
+- runFlow:
+    file: open.yaml
+    env:
+      LINK: ponzu://design/dev/${KETTLE}?page=Brand&comment=Logo
+- extendedWaitUntil:
+    visible:
+      id: "(comment-input|to-type)"
+    timeout: 30000
+- runFlow:
+    when:
+      visible:
+        id: to-type
+    commands:
+      - tapOn:
+          id: to-type
+- extendedWaitUntil:
+    visible:
+      id: comment-input
+    timeout: 5000
+- tapOn:
+    id: comment-input
+- inputText: "Perf: a comment left half written"

@@ -14,6 +14,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { brand } from "../lib/tokens";
+import { useSeen } from "../lib/use-seen";
 
 /**
  * Yuzu rain, as desktop's `Rain` (packages/react's working.tsx): columns of
@@ -65,12 +66,14 @@ function Column({
 }) {
   const p = useSharedValue(0);
   const still = useReducedMotion();
+  // Holds while nobody can see it: the app away, or its screen under another.
+  const awake = useSeen();
   useEffect(() => {
-    if (still) return;
+    if (still || !awake) return;
     p.value = 0;
     p.value = withRepeat(withTiming(1, { duration: fall * 1000, easing: Easing.linear }), -1);
     return () => cancelAnimation(p);
-  }, [still, fall]);
+  }, [still, awake, fall]);
   const d = 0.25 * size;
   return (
     <Animated.View

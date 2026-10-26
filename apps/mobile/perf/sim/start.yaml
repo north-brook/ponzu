@@ -1,0 +1,32 @@
+appId: design.ponzu.app
+name: perf-start
+---
+# The development client onto Metro, as maestro/shared/start.yaml, on a clean simulator: its
+# links go through open.yaml, which answers iOS's prompt to open them.
+- launchApp:
+    permissions:
+      microphone: deny
+      speech: deny
+- runFlow:
+    file: open.yaml
+    env:
+      LINK: ${DEV_CLIENT}
+- extendedWaitUntil:
+    visible:
+      id: "(launch|designs|xmark)"
+    timeout: 120000
+- runFlow:
+    when:
+      visible:
+        id: xmark
+    commands:
+      - tapOn:
+          id: xmark
+- runFlow:
+    file: open.yaml
+    env:
+      LINK: ponzu://designs
+- extendedWaitUntil:
+    visible:
+      id: designs
+    timeout: 60000

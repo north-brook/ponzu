@@ -14,7 +14,7 @@
     },
     "apps/cli": {
       "name": "ponzu",
-      "version": "1.37.0",
+      "version": "1.51.0",
       "bin": {
         "ponzu": "./src/index.ts",
       },
@@ -30,7 +30,7 @@
     },
     "apps/desktop": {
       "name": "@ponzu/desktop",
-      "version": "1.37.0",
+      "version": "1.51.0",
       "dependencies": {
         "electron-updater": "6.8.9",
       },
@@ -105,6 +105,7 @@
         "@types/ungap__structured-clone": "^1.2.0",
         "babel-preset-expo": "~58.0.17",
         "lightningcss": "1.30.1",
+        "playwright-core": "^1.64.1",
         "postcss": "^8.5.6",
         "tailwindcss": "^4.3.3",
       },

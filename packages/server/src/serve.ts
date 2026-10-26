@@ -5,7 +5,9 @@ import {
   type CatalogAgent,
   type ClientMessage,
   compareVersions,
+  notesBetween,
   type Origin,
+  releaseNotesUrl,
   type ServerMessage,
   type SyncReason,
 } from "@ponzu/core";
@@ -384,6 +386,19 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
           ...(macs.includes("local") ? [["local", Boolean(here?.installing)] as const] : []),
         ]),
       });
+    }
+
+    // What's new from `since` to `version`, for an update no Mac downloaded (one already runs
+    // it), so none has its notes. Read from the release, which the studio can't fetch itself.
+    if (path === "/api/update/notes") {
+      if (caller !== "local" || !sameHostOk(req, url))
+        return new Response("Forbidden", { status: 403 });
+      const since = url.searchParams.get("since") ?? "";
+      const version = url.searchParams.get("version") ?? "";
+      if (!VERSION.test(since) || !VERSION.test(version))
+        return new Response("since and version required", { status: 400 });
+      const notes = notesBetween(await releaseNotes(version), since, version);
+      return Response.json({ notes });
     }
 
     // Another of the person's Macs asks this one to install its update, for the person. No more
@@ -875,6 +890,25 @@ async function relay(req: Request, target: string): Promise<Response> {
 
 /** How often a Mac with an update waiting checks whether the person's other Macs moved on. */
 const CATCH_UP_EVERY = 60_000;
+
+const VERSION = /^\d+\.\d+\.\d+$/;
+
+/** Each release's release-notes.json, once read: a published release's never changes. */
+const releaseNotesRead = new Map<string, unknown>();
+
+/** A release's release-notes.json, or null when it can't be read (offline, none published). */
+async function releaseNotes(version: string): Promise<unknown> {
+  if (releaseNotesRead.has(version)) return releaseNotesRead.get(version);
+  try {
+    const res = await fetch(releaseNotesUrl(version), { signal: AbortSignal.timeout(10_000) });
+    if (!res.ok) return null;
+    const file: unknown = await res.json();
+    releaseNotesRead.set(version, file);
+    return file;
+  } catch {
+    return null;
+  }
+}
 
 /** Ask another of the person's Macs to install its update. Whether it said it would. */
 async function installOn(ip: string, port: number, version?: string): Promise<boolean> {
