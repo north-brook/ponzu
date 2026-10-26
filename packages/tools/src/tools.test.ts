@@ -354,6 +354,127 @@ test("a wait that hears nothing says to wait again", async () => {
   expect(r.text).toContain("chat messages reach you between waits");
 });
 
+/** The person leaves a comment on the hero: in the doc, and as the event a host would emit. */
+function personComments(design: Design, events: EventHub, id: string, text: string, key = "fern") {
+  const now = Date.now();
+  const person = { kind: "user" as const, name: "Sam" };
+  design.apply(
+    {
+      op: "thread.create",
+      thread: {
+        id,
+        artboardId: "ab_hero",
+        x: 10,
+        y: 10,
+        status: "open",
+        createdAt: now,
+        updatedAt: now,
+        messages: [{ id: `m_${id}`, author: person, text, createdAt: now }],
+      },
+    },
+    person,
+  );
+  events.emit(key, {
+    type: "comment.created",
+    thread: id,
+    artboard: "ab_hero",
+    text,
+    author: person.name,
+  });
+}
+
+/** A workspace like setup's, on a hub of our choosing, counting what telemetry hears. */
+async function onHub(events: EventHub) {
+  const t = await setup();
+  t.ws.events = events;
+  const captured: Record<string, unknown>[] = [];
+  t.ws.telemetry = {
+    capture: (_event, properties) => captured.push(properties ?? {}),
+    feedback: async () => false,
+  };
+  return { ...t, captured };
+}
+
+test("a cursor from before Ponzu restarted returns the threads waiting on the agent at once", async () => {
+  // The agent watched an earlier Ponzu for a while.
+  const before = new EventHub(500, Date.now() - 60_000);
+  for (let i = 0; i < 40; i++)
+    before.emit("fern", {
+      type: "change",
+      origin: { kind: "agent", name: "test" },
+      artboards: [],
+      summary: "edit",
+    });
+  const old = before.cursor;
+  // Then Ponzu restarted, and the person left six comments before the agent waited again.
+  const { call, design, ws, captured } = await onHub(new EventHub());
+  for (let i = 1; i <= 6; i++) personComments(design, ws.events, `th_${i}`, `fix ${i}`);
+  const started = Date.now();
+  const r = await call("wait_for_activity", { since: old, timeout: 5 });
+  expect(Date.now() - started).toBeLessThan(1000);
+  expect(r.text).toStartWith("Ponzu restarted since your last wait");
+  for (let i = 1; i <= 6; i++) expect(r.text).toContain(`th_${i} [open]`);
+  expect(r.text).toEndWith(`Wait again with cursor=${ws.events.cursor}.`);
+  expect(captured.at(-1)).toMatchObject({ tool: "wait_for_activity", cursor: "restart" });
+
+  // With that cursor, the next wait is an ordinary one.
+  const again = await call("wait_for_activity", { since: ws.events.cursor, timeout: 0 });
+  expect(again.text).toStartWith("Nothing new.");
+  expect(captured.at(-1)).toMatchObject({ cursor: "ok", events: 0 });
+});
+
+test("a cursor from a Ponzu that started later is caught too, without replaying anything", async () => {
+  // The host, which the person comments in, and the bridge's own Ponzu, started while the host was down.
+  const host = new EventHub(500, Date.now() - 60_000);
+  const { call, design } = await onHub(host);
+  personComments(design, host, "th_seen", "seen already");
+  const local = new EventHub();
+  const r = await call("wait_for_activity", { since: local.cursor, timeout: 5 });
+  expect(r.text).toStartWith("Ponzu restarted since your last wait");
+  // The one waiting thread, not the event the agent may already have heard, again.
+  expect(r.text).toContain("th_seen [open]");
+  expect(r.text).not.toContain("new comment");
+});
+
+test("a wait says so when more happened than Ponzu keeps", async () => {
+  const { call, design, ws, captured } = await onHub(new EventHub(500));
+  const since = ws.events.cursor;
+  personComments(design, ws.events, "th_1", "bigger");
+  // The agent's own edits push the comment out of the ring before it waits again.
+  for (let i = 0; i < 500; i++)
+    ws.events.emit("fern", {
+      type: "change",
+      origin: { kind: "agent", name: "test" },
+      artboards: ["ab_hero"],
+      summary: "edit",
+    });
+  const r = await call("wait_for_activity", { since, timeout: 5 });
+  expect(r.text).toStartWith("More happened since your last wait than Ponzu keeps");
+  expect(r.text).toContain("th_1 [open]");
+  expect(captured.at(-1)).toMatchObject({ cursor: "dropped" });
+});
+
+test("only threads where the person spoke last count as waiting", async () => {
+  const { call, design, ws } = await onHub(new EventHub(500, Date.now() - 60_000));
+  personComments(design, ws.events, "th_asked", "why this font?");
+  personComments(design, ws.events, "th_done", "make it blue");
+  await call("reply", { thread: "th_asked", text: "It matches the logo." });
+  await call("set_comment_status", { thread: "th_done", status: "resolved" });
+  const r = await call("wait_for_activity", { since: 1, timeout: 0 });
+  expect(r.text).toContain("No open threads are waiting on you.");
+});
+
+test("a wait with a cursor still in the ring hears what came after it", async () => {
+  const { call, design, ws, captured } = await onHub(new EventHub());
+  const since = ws.events.cursor;
+  personComments(design, ws.events, "th_1", "tighter");
+  const r = await call("wait_for_activity", { since, timeout: 0 });
+  expect(r.text).toStartWith('new comment th_1 on "Hero" from Sam: "tighter"');
+  expect(captured.at(-1)).toMatchObject({ cursor: "ok", events: 1 });
+  await call("wait_for_activity", { timeout: 0 });
+  expect(captured.at(-1)).toMatchObject({ cursor: "none" });
+});
+
 test("screenshot checks hover, focus and press ids before rendering", async () => {
   const { renderer, calls } = fakeRenderer({});
   const { call } = await setup(3, renderer);

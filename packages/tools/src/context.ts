@@ -110,17 +110,40 @@ export interface KeyedEvent {
   event: PonzuEvent;
 }
 
+export interface EventFilter {
+  /** The designs to hear from. All of them when absent. */
+  keys?: string[];
+  types?: EventType[];
+  excludeAuthor?: string;
+}
+
 /**
  * A ring buffer of recent events with cursors, so agents can long-poll
  * (`wait_for_activity`) without missing anything between calls.
+ *
+ * Events are numbered from the moment this hub started, not from 0, so a
+ * cursor says which Ponzu handed it out: one from before a restart is below
+ * `base`, one from a Ponzu that started later (the bridge running tools
+ * itself while the host is down) is past `cursor`.
  */
 export class EventHub {
   private buffer: KeyedEvent[] = [];
-  private seq = 0;
+  /** Where this hub's numbering starts. */
+  readonly base: number;
+  private seq: number;
+  /** The newest event the ring has let go of. */
+  private dropped: number;
   private waiters = new Set<() => void>();
   private listeners = new Set<(e: KeyedEvent) => void>();
 
-  constructor(private capacity = 500) {}
+  constructor(
+    private capacity = 500,
+    base = Date.now(),
+  ) {
+    this.base = base;
+    this.seq = base;
+    this.dropped = base;
+  }
 
   get cursor(): number {
     return this.seq;
@@ -130,7 +153,7 @@ export class EventHub {
     const event = { ...input, seq: ++this.seq } as PonzuEvent;
     const item = { key, event };
     this.buffer.push(item);
-    if (this.buffer.length > this.capacity) this.buffer.shift();
+    if (this.buffer.length > this.capacity) this.dropped = this.buffer.shift()!.event.seq;
     for (const w of this.waiters) w();
     for (const l of this.listeners) l(item);
     return event;
@@ -141,14 +164,23 @@ export class EventHub {
     return () => this.listeners.delete(fn);
   }
 
-  since(
-    cursor: number,
-    filter?: { key?: string; types?: EventType[]; excludeAuthor?: string },
-  ): KeyedEvent[] {
+  /**
+   * Why events after `cursor` can't all be told: it came from another Ponzu
+   * (this one restarted, or it's a different one), or the ring has let some
+   * go. Undefined when everything after it is still here. 0 asks for all of it.
+   */
+  gap(cursor: number): "restart" | "dropped" | undefined {
+    if (cursor === 0) return undefined;
+    if (cursor < this.base || cursor > this.seq) return "restart";
+    if (cursor < this.dropped) return "dropped";
+    return undefined;
+  }
+
+  since(cursor: number, filter?: EventFilter): KeyedEvent[] {
     return this.buffer.filter(
       (e) =>
         e.event.seq > cursor &&
-        (!filter?.key || e.key === filter.key) &&
+        (!filter?.keys || filter.keys.includes(e.key)) &&
         (!filter?.types?.length || filter.types.includes(e.event.type)) &&
         !(filter?.excludeAuthor && authorOf(e.event) === filter.excludeAuthor),
     );
@@ -158,7 +190,7 @@ export class EventHub {
   async wait(
     cursor: number,
     timeoutMs: number,
-    filter?: Parameters<EventHub["since"]>[1],
+    filter?: EventFilter,
     signal?: AbortSignal,
   ): Promise<KeyedEvent[]> {
     const ready = this.since(cursor, filter);

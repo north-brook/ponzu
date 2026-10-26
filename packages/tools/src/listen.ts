@@ -1,5 +1,13 @@
-import { type Doc, describeNode, findArtboard, INTENT_MAX, type PonzuEvent } from "@ponzu/core";
+import {
+  type Doc,
+  describeNode,
+  findArtboard,
+  INTENT_MAX,
+  type PonzuEvent,
+  type Thread,
+} from "@ponzu/core";
 import { z } from "zod";
+import { threadLine } from "./converse.ts";
 import { fileArg, ToolError, tool } from "./define.ts";
 import { GUIDES, type GuideTopic } from "./guides.ts";
 import { apply, resolveFile } from "./util.ts";
@@ -19,22 +27,45 @@ export function describeEvent(doc: Doc | undefined, e: PonzuEvent): string {
   const ab = (id: string) => (doc ? (findArtboard(doc, id)?.artboard.name ?? id) : id);
   switch (e.type) {
     case "change":
-      return `#${e.seq} change by ${e.origin.name}: ${e.summary}${e.artboards.length ? ` (${e.artboards.map((a) => `"${ab(a)}"`).join(", ")})` : ""}`;
+      return `change by ${e.origin.name}: ${e.summary}${e.artboards.length ? ` (${e.artboards.map((a) => `"${ab(a)}"`).join(", ")})` : ""}`;
     case "comment.created":
-      return `#${e.seq} new comment ${e.thread} on ${e.artboard ? `"${ab(e.artboard)}"` : "the canvas"} from ${e.author}: "${e.text}"`;
+      return `new comment ${e.thread} on ${e.artboard ? `"${ab(e.artboard)}"` : "the canvas"} from ${e.author}: "${e.text}"`;
     case "comment.replied":
-      return `#${e.seq} reply in ${e.thread} from ${e.author}: "${e.text}"`;
+      return `reply in ${e.thread} from ${e.author}: "${e.text}"`;
     case "comment.edited":
-      return `#${e.seq} ${e.author} edited a message in ${e.thread}, now: "${e.text}"`;
+      return `${e.author} edited a message in ${e.thread}, now: "${e.text}"`;
     case "comment.resolved":
-      return `#${e.seq} ${e.author} resolved ${e.thread}`;
+      return `${e.author} resolved ${e.thread}`;
     case "comment.reopened":
-      return `#${e.seq} ${e.author} reopened ${e.thread}`;
+      return `${e.author} reopened ${e.thread}`;
     case "file.changed":
-      return `#${e.seq} ${e.path} changed on disk${e.artboards.length ? ` (${e.artboards.map((a) => `"${ab(a)}"`).join(", ")})` : ""}`;
+      return `${e.path} changed on disk${e.artboards.length ? ` (${e.artboards.map((a) => `"${ab(a)}"`).join(", ")})` : ""}`;
     case "presence":
-      return `#${e.seq} presence: ${e.presence.map((p) => p.name).join(", ")}`;
+      return `presence: ${e.presence.map((p) => p.name).join(", ")}`;
   }
+}
+
+const GAP_NOTE = {
+  restart: "Ponzu restarted since your last wait, so what happened before then isn't here.",
+  dropped: "More happened since your last wait than Ponzu keeps, so some of it isn't here.",
+} as const;
+
+/** How many waiting threads a wait spells out; list_comments has the rest. */
+const WAITING_SHOWN = 10;
+
+/** Open threads where the person spoke last: each still needs the agent. */
+function waitingOn(threads: Thread[]): Thread[] {
+  return threads.filter(
+    (t) => t.status === "open" && t.messages[t.messages.length - 1]?.author.kind === "user",
+  );
+}
+
+function waitingText(doc: Doc, waiting: Thread[]): string {
+  if (!waiting.length) return "No open threads are waiting on you.";
+  const lines = waiting.slice(0, WAITING_SHOWN).map((t) => threadLine(doc, t));
+  if (waiting.length > WAITING_SHOWN)
+    lines.push(`… and ${waiting.length - WAITING_SHOWN} more (list_comments)`);
+  return `Open threads waiting on you; handle these first:\n${lines.join("\n")}`;
 }
 
 export const listenTools = [
@@ -44,7 +75,7 @@ export const listenTools = [
     group: "listen",
     readOnly: true,
     description:
-      "Watch the canvas. Call this instead of ending your turn whenever the person might react to your work there: after you put something up for review, or while you design together. Calling it again and again is the loop (get_guide('watch')). Long-polls for what people do in the canvas: new comments and replies, edits made in a text editor, other agents' changes. Returns immediately if anything happened after `since`; otherwise waits up to `timeout` seconds. Pass back the returned cursor next time so nothing is missed. The person's chat messages still reach you between waits.",
+      "Watch the canvas. Call this instead of ending your turn whenever the person might react to your work there: after you put something up for review, or while you design together. Calling it again and again is the loop (get_guide('watch')). Long-polls for what people do in the canvas: new comments and replies, edits made in a text editor, other agents' changes. Returns immediately if anything happened after `since`; otherwise waits up to `timeout` seconds. Pass back the returned cursor next time so nothing is missed. If Ponzu restarted or lost track since then, it returns at once with the open threads waiting on you. The person's chat messages still reach you between waits.",
     input: {
       file: fileArg,
       since: z
@@ -63,9 +94,7 @@ export const listenTools = [
     async handler(args, ctx) {
       const { ws, caller, signal } = ctx;
       const { key, design } = await resolveFile(ctx, args.file);
-      // A cursor past the end came from a Ponzu that has since restarted: start from now.
-      const cursor =
-        args.since !== undefined && args.since <= ws.events.cursor ? args.since : ws.events.cursor;
+      const gap = args.since === undefined ? undefined : ws.events.gap(args.since);
       const types = args.types ?? [
         "comment.created",
         "comment.replied",
@@ -75,11 +104,23 @@ export const listenTools = [
       ];
       // Going back to listening ends a pass: what it was working on is done.
       ws.presence.touch(caller, { file: key, listening: true, working: [], status: undefined });
+      if (gap) {
+        // What happened after the cursor can't all be told: say so, with what still needs the agent.
+        const next = ws.events.cursor;
+        ws.presence.touch(caller, { listening: false, listenedAt: Date.now() });
+        const waiting = waitingOn(design.doc.threads);
+        return {
+          text: `${GAP_NOTE[gap]} ${waitingText(design.doc, waiting)}\nWait again with cursor=${next}.`,
+          data: { cursor: next, events: [], gap, waiting: waiting.map((t) => t.id) },
+          metrics: { cursor: gap, events: 0 },
+        };
+      }
+      const cursor = args.since ?? ws.events.cursor;
       const events = await ws.events.wait(
         cursor,
         (args.timeout ?? 60) * 1000,
         {
-          key,
+          keys: [key],
           types: [...types],
           excludeAuthor: args.include_own ? undefined : caller.author.name,
         },
@@ -89,14 +130,17 @@ export const listenTools = [
         ? events[events.length - 1]!.event.seq
         : Math.max(cursor, ws.events.cursor);
       ws.presence.touch(caller, { listening: false, listenedAt: Date.now() });
+      const metrics = { cursor: args.since === undefined ? "none" : "ok", events: events.length };
       if (!events.length)
         return {
           text: `Nothing new. Wait again with cursor=${next}. The person's chat messages reach you between waits, so keep watching.`,
           data: { cursor: next, events: [] },
+          metrics,
         };
       return {
         text: `${events.map((e) => describeEvent(design.doc, e.event)).join("\n")}\ncursor=${next}`,
         data: { cursor: next, events: events.map((e) => e.event) },
+        metrics,
       };
     },
   }),
