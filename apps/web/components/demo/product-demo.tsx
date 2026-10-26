@@ -77,8 +77,9 @@ function stepsFor(id: string, total: number, beat: number, t: number) {
   const start = index(place.beat);
   if (beat < start) return 0;
   if (beat > start) return total;
+  // Each sibling starts a little later and finishes sooner, so every write ends by WRITE.
   const lead = (place.offset ?? 0) * 0.07;
-  const local = Math.max(0, Math.min(1, (t - lead) / WRITE));
+  const local = Math.max(0, Math.min(1, (t - lead) / (WRITE - lead)));
   return t < lead ? 0 : Math.max(1, Math.ceil(local * total));
 }
 
