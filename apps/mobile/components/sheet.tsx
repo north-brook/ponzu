@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import { type LayoutChangeEvent, useWindowDimensions, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { KeyboardController, useKeyboardHandler } from "react-native-keyboard-controller";
@@ -41,9 +41,17 @@ export function Sheet({
   testID,
   gap = 14,
   right = 0,
+  away = false,
+  onAway,
 }: {
   children: ReactNode;
   onDismiss: () => void;
+  /**
+   * Leaving (a comment sent): the keyboard goes down and the sheet rides it off the bottom
+   * of the screen, then `onAway`. Back to false, it comes back up.
+   */
+  away?: boolean;
+  onAway?: () => void;
   /** How far the sheet rises from the bottom of the screen, as it changes. */
   onHeight?: (px: number) => void;
   /** A fixed height (the thread sheet's 450). */
@@ -93,6 +101,24 @@ export function Sheet({
   useEffect(() => {
     enter.value = withTiming(0, { duration: 380, easing: ease });
   }, []);
+  const gone = () => onAway?.();
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    if (!away) {
+      drag.value = withTiming(0, { duration: 260, easing: ease });
+      return;
+    }
+    // One motion with the keyboard: it drops with the system's animation, the sheet's bottom
+    // edge follows it, and the sheet slides on past the screen's edge on about the same clock.
+    KeyboardController.dismiss().catch(() => {});
+    drag.value = withTiming(h.value + 60, { duration: 300, easing: ease }, (done) => {
+      if (done) runOnJS(gone)();
+    });
+  }, [away]);
 
   const lift = useDerivedValue(() => Math.max(0, keyboardTop.value));
   /**

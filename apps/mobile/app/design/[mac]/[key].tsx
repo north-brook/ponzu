@@ -103,6 +103,9 @@ export default function Canvas() {
 
   const [pageId, setPageId] = useState<string | null>(null);
   const [pending, setPending] = useState<(PendingPin & { nodeId?: string }) | null>(null);
+  /** A sent comment's sheet on its way out: whose pin, and whether the send and the slide are done. */
+  const leave = useRef<{ pin: PendingPin; sent: boolean; away: boolean } | null>(null);
+  const [leaving, setLeaving] = useState(false);
   const [threadId, setThreadId] = useState<string | null>(params.thread ?? null);
   // A link to a thread on the design already open (Activity, a push) opens it there.
   useEffect(() => {
@@ -235,6 +238,9 @@ export default function Canvas() {
         setThreadId(null);
         setCard(false);
         setCommentsOpen(false);
+        // A sent comment's sheet still on its way out comes back up for this one.
+        leave.current = null;
+        setLeaving(false);
         setPending({
           pageId: msg.pageId,
           artboardId: msg.artboardId,
@@ -269,6 +275,14 @@ export default function Canvas() {
     }
   }, []);
 
+  const left = () => {
+    const pin = leave.current?.pin;
+    leave.current = null;
+    setLeaving(false);
+    // A pin dropped since stays.
+    setPending((p) => (p === pin ? null : p));
+    setSheet(0);
+  };
   const createComment = async (text: string, m: Mode) => {
     if (!session || !pending) return;
     const now = Date.now();
@@ -283,12 +297,24 @@ export default function Canvas() {
       updatedAt: now,
       messages: [{ id: newId("m"), author: ME, text, createdAt: now }],
     };
+    // The sheet leaves with the keyboard as soon as it's sent, not once the Mac answers; it's
+    // gone for good when both are done, and comes back up with the words if the Mac refuses.
+    const pin = pending;
+    leave.current = { pin, sent: false, away: false };
+    setError(null);
+    setLeaving(true);
     try {
       await session.send({ op: "thread.create", thread });
       track("comment left", { reply: false, mode: m });
-      setPending(null);
-      setSheet(0);
+      if (leave.current?.pin === pin) {
+        leave.current.sent = true;
+        if (leave.current.away) left();
+      }
     } catch (err) {
+      if (leave.current?.pin === pin) {
+        leave.current = null;
+        setLeaving(false);
+      }
       setError(String((err as Error).message ?? err));
       throw err;
     }
@@ -699,12 +725,19 @@ export default function Canvas() {
             setSheet(0);
           }}
           onHeight={setSheet}
+          away={leaving}
+          onAway={() => {
+            if (!leave.current) return;
+            leave.current.away = true;
+            if (leave.current.sent) left();
+          }}
         >
           <Composer
             mode={mode}
             onMode={setMode}
             placeholder="Comment"
             onSend={createComment}
+            leaves
             draft={`pin:${pending.artboardId ?? pending.pageId}:${pending.x}:${pending.y}`}
           />
           {error && (

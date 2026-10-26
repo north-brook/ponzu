@@ -109,6 +109,7 @@ export function Composer({
   onSend,
   autoFocus = true,
   draft,
+  leaves = false,
 }: {
   mode: Mode;
   onMode: (m: Mode) => void;
@@ -119,6 +120,8 @@ export function Composer({
   autoFocus?: boolean;
   /** What the unsent text is kept under (a pin's place, a thread's id) as the composer moves. */
   draft?: string;
+  /** Sending takes the sheet away (a new comment): the words go with it, never emptied first. */
+  leaves?: boolean;
 }) {
   const { color } = useTheme();
   const voice = mode === "voice";
@@ -162,15 +165,32 @@ export function Composer({
     if (!voice && (autoFocus || !was)) setTimeout(() => input.current?.focus(), was ? 60 : 0);
   }, [mode]);
 
+  // What's typed now, for a send that fails to go back in ahead of it.
+  const typedNow = useRef(typed);
+  typedNow.current = typed;
   const send = async () => {
     if (!has || sending) return;
+    const words = text.trim();
     setSending(true);
-    try {
-      await onSend(text.trim(), mode);
-      success();
+    // Something answers the tap at once, not when the Mac does: over the tailnet that's long
+    // enough to read as a tap that didn't take. A sheet that leaves takes the words with it; a
+    // reply's leave the field. A send that fails puts them back.
+    if (!leaves) {
       setTyped("");
       dictation.setText("");
+    }
+    try {
+      await onSend(words, mode);
+      success();
+      if (leaves) {
+        setTyped("");
+        dictation.setText("");
+      }
     } catch {
+      if (leaves) {
+        // Still in the field.
+      } else if (voice) dictation.setText(words);
+      else setTyped(typedNow.current ? `${words} ${typedNow.current}` : words);
       // The screen says what went wrong; this says it didn't go.
       fail();
     } finally {

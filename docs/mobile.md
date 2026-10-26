@@ -76,7 +76,9 @@ of each part, both ways, is in `lib/morph.ts`. The sheet's own shape (its
 corners, side insets and bottom edge) follows the keyboard's frame, read
 every frame from `react-native-keyboard-controller`, so it rides the
 keyboard down and up with the system's animation, interactive dismissal
-included. The field and, in voice, the waveform share one glass capsule the
+included. Sent, a new comment's sheet leaves at once with the keyboard
+rather than when the Mac answers (a reply's field empties at once); a send
+the Mac refuses brings the words back. The field and, in voice, the waveform share one glass capsule the
 buttons' height; the glyphs are Hugeicons, as everywhere in the app.
 
 ### Haptics
