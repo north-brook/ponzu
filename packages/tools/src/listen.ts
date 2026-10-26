@@ -62,7 +62,13 @@ function waitingOn(threads: Thread[]): Thread[] {
 
 function waitingText(doc: Doc, waiting: Thread[]): string {
   if (!waiting.length) return "No open threads are waiting on you.";
-  const lines = waiting.slice(0, WAITING_SHOWN).map((t) => threadLine(doc, t));
+  // threadLine ends "last from Sam" on a thread with replies: say what they said last.
+  const lines = waiting
+    .slice(0, WAITING_SHOWN)
+    .map(
+      (t) =>
+        `${threadLine(doc, t)}${t.messages.length > 1 ? `: "${t.messages.at(-1)!.text}"` : ""}`,
+    );
   if (waiting.length > WAITING_SHOWN)
     lines.push(`… and ${waiting.length - WAITING_SHOWN} more (list_comments)`);
   return `Open threads waiting on you; handle these first:\n${lines.join("\n")}`;
@@ -104,8 +110,8 @@ export const listenTools = [
       ];
       // Going back to listening ends a pass: what it was working on is done.
       ws.presence.touch(caller, { file: key, listening: true, working: [], status: undefined });
-      if (gap) {
-        // What happened after the cursor can't all be told: say so, with what still needs the agent.
+      // What happened after the cursor can't all be told: say so, with what still needs the agent.
+      const recover = (gap: "restart" | "dropped") => {
         const next = ws.events.cursor;
         ws.presence.touch(caller, { listening: false, listenedAt: Date.now() });
         const waiting = waitingOn(design.doc.threads);
@@ -114,7 +120,8 @@ export const listenTools = [
           data: { cursor: next, events: [], gap, waiting: waiting.map((t) => t.id) },
           metrics: { cursor: gap, events: 0 },
         };
-      }
+      };
+      if (gap) return recover(gap);
       const cursor = args.since ?? ws.events.cursor;
       const events = await ws.events.wait(
         cursor,
@@ -126,6 +133,9 @@ export const listenTools = [
         },
         signal,
       );
+      // The ring can let go of what came in while the wait settled, too.
+      const lost = ws.events.gap(cursor);
+      if (lost) return recover(lost);
       const next = events.length
         ? events[events.length - 1]!.event.seq
         : Math.max(cursor, ws.events.cursor);

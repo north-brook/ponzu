@@ -454,6 +454,59 @@ test("a wait says so when more happened than Ponzu keeps", async () => {
   expect(captured.at(-1)).toMatchObject({ cursor: "dropped" });
 });
 
+test("a busy Ponzu that restarted quickly doesn't hand its cursors to the next one", async () => {
+  // An earlier Ponzu told 100 events in its 50ms; the next one started then and told 60.
+  const started = Date.now() - 60_000;
+  const before = new EventHub(500, started);
+  const now = new EventHub(500, started + 50);
+  const edit = {
+    type: "change" as const,
+    origin: { kind: "agent" as const, name: "test" },
+    artboards: [],
+    summary: "edit",
+  };
+  for (let i = 0; i < 100; i++) before.emit("fern", edit);
+  for (let i = 0; i < 60; i++) now.emit("fern", edit);
+  expect(now.gap(before.cursor)).toBe("restart");
+});
+
+test("a wait says so when the ring lets go of what came in while it settled", async () => {
+  const { call, design, ws, captured } = await onHub(new EventHub(500));
+  const since = ws.events.cursor;
+  const waiting = call("wait_for_activity", { since, timeout: 5 });
+  while (!ws.presence.list().some((p) => p.listening)) await Bun.sleep(1);
+  // The comment wakes the wait, and a burst of edits pushes it out before the wait returns.
+  personComments(design, ws.events, "th_1", "bigger");
+  for (let i = 0; i < 500; i++)
+    ws.events.emit("fern", {
+      type: "change",
+      origin: { kind: "agent", name: "test" },
+      artboards: ["ab_hero"],
+      summary: "edit",
+    });
+  const r = await waiting;
+  expect(r.text).toStartWith("More happened since your last wait than Ponzu keeps");
+  expect(r.text).toContain("th_1 [open]");
+  expect(captured.at(-1)).toMatchObject({ cursor: "dropped" });
+});
+
+test("a waiting thread shows what the person said last", async () => {
+  const { call, design, ws } = await onHub(new EventHub(500, Date.now() - 60_000));
+  personComments(design, ws.events, "th_1", "make it blue");
+  await call("reply", { thread: "th_1", text: "Which blue?" });
+  const now = Date.now();
+  design.apply(
+    {
+      op: "thread.message",
+      id: "th_1",
+      message: { id: "m_2", author: { kind: "user", name: "Sam" }, text: "navy", createdAt: now },
+    },
+    { kind: "user", name: "Sam" },
+  );
+  const r = await call("wait_for_activity", { since: 1, timeout: 0 });
+  expect(r.text).toContain('2 replies, last from Sam: "navy"');
+});
+
 test("only threads where the person spoke last count as waiting", async () => {
   const { call, design, ws } = await onHub(new EventHub(500, Date.now() - 60_000));
   personComments(design, ws.events, "th_asked", "why this font?");
