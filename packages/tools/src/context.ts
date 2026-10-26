@@ -126,10 +126,11 @@ export interface EventFilter {
  * A ring buffer of recent events with cursors, so agents can long-poll
  * (`wait_for_activity`) without missing anything between calls.
  *
- * Events are numbered from the moment this hub started, not from 0, so a
+ * Events are numbered from the microsecond this hub started, not from 0, so a
  * cursor says which Ponzu handed it out: one from before a restart is below
  * `base`, one from a Ponzu that started later (the bridge running tools
- * itself while the host is down) is past `cursor`.
+ * itself while the host is down) is past `cursor`. Two Ponzus' numbers could
+ * only meet if one told more than a thousand events a millisecond.
  */
 export class EventHub {
   private buffer: KeyedEvent[] = [];
@@ -143,8 +144,9 @@ export class EventHub {
 
   constructor(
     private capacity = 500,
-    base = Date.now(),
+    started = Date.now(),
   ) {
+    const base = started * 1000;
     this.base = base;
     this.seq = base;
     this.dropped = base;
