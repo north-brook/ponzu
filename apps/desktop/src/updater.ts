@@ -1,6 +1,8 @@
 import { randomBytes } from "node:crypto";
+import { rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
+import { join } from "node:path";
 import {
   changelogNotes,
   compareVersions,
@@ -95,7 +97,10 @@ export async function installUpdater(opts: {
   /** A restart on its way: waiting for an agent, or for its answer to get out. */
   let restarting = false;
   /**
-   * A window open restarts into it; with none, quitting installs it and nothing reopens. Never
+   * Restart into the update, as Ponzu was: a window open comes back with one, none comes back in
+   * the background, still serving agents, the phone and the person's other Macs. Always through
+   * quitAndInstall: `update-downloaded` fires before Squirrel has unpacked the update, and it waits
+   * for that where a plain quit would leave a half-unpacked bundle and nothing to reopen it. Never
    * while an agent is mid-change here, even one that started while the update downloaded: it
    * waits until the agent is done.
    */
@@ -112,8 +117,8 @@ export async function installUpdater(opts: {
         return;
       }
       setTimeout(() => {
-        if (opts.window()) autoUpdater.quitAndInstall();
-        else app.quit();
+        if (!opts.window()) markBackgroundRelaunch();
+        autoUpdater.quitAndInstall();
       }, RESTART_DELAY);
     };
     void go();
@@ -194,6 +199,31 @@ export async function installUpdater(opts: {
       resolve({ endpoint: `http://127.0.0.1:${port}/update`, token });
     });
   });
+}
+
+/**
+ * Squirrel reopens Ponzu after an update with no arguments, so a Ponzu that had no window says so
+ * in a file the next launch reads (`relaunchedInBackground`). Only a launch soon after counts: one
+ * whose install failed, and the person opening Ponzu later, opens as usual.
+ */
+const relaunchMarker = () => join(app.getPath("userData"), "relaunch-in-background");
+const RELAUNCH_WITHIN = 2 * 60_000;
+
+function markBackgroundRelaunch() {
+  try {
+    writeFileSync(relaunchMarker(), "");
+  } catch {}
+}
+
+/** Whether this launch is the restart into an update of a Ponzu with no window. Reads it once. */
+export function relaunchedInBackground(): boolean {
+  try {
+    const fresh = Date.now() - statSync(relaunchMarker()).mtimeMs < RELAUNCH_WITHIN;
+    rmSync(relaunchMarker(), { force: true });
+    return fresh;
+  } catch {
+    return false;
+  }
 }
 
 function read(req: IncomingMessage): Promise<string> {

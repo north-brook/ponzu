@@ -6,7 +6,7 @@ import { cloneTarget, parseOpenUrl, spawnGit } from "@ponzu/server/clone";
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, shell } from "electron";
 import { renderToken, startRenderHost } from "./render-host";
 import { smoke, watchSmoke } from "./smoke";
-import { checkForUpdatesNow, installUpdater } from "./updater";
+import { checkForUpdatesNow, installUpdater, relaunchedInBackground } from "./updater";
 
 const isDev = !app.isPackaged;
 /** The built main/preload live in <app>/dist, in development and inside the bundle. */
@@ -26,10 +26,11 @@ const pendingOpens: string[] = [];
 /** ponzu:// links that arrived before the server was up. */
 const pendingLinks: string[] = [];
 /**
- * Started by an agent (`ponzu mcp`), not the person: serve without a window
- * or dock icon until they open Ponzu themselves.
+ * Started by an agent (`ponzu mcp`), not the person, or restarted into an
+ * update while it had no window: serve without a window or dock icon until
+ * they open Ponzu themselves.
  */
-const background = process.argv.includes("--background");
+let background = process.argv.includes("--background");
 let updateReady = false;
 
 /*
@@ -505,6 +506,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(async () => {
+    if (!smoke && relaunchedInBackground()) background = true;
     buildMenu();
     // Opened by the person: a window now, on the splash, rather than a bouncing dock icon.
     // The smoke check must see the studio itself paint, and agents start us without one.
