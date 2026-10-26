@@ -6,15 +6,8 @@ import {
   reloadAsync,
 } from "expo-updates";
 import { useEffect, useState } from "react";
-import { type FirstLaunchOutcome, firstLaunch } from "./first-launch";
+import { type FirstLaunchOutcome, firstLaunch, RESTART_WAIT_MS } from "./first-launch";
 import { brand } from "./tokens";
-
-/**
- * How long the splash waits for a restart to land before giving up on it:
- * the restart is asked for, not promised, and a splash that never lifts is
- * worse than the embedded release.
- */
-const RESTART_WAIT_MS = 5000;
 
 // Started on import, beside the splash's hold, so the wait overlaps the
 // rest of the launch rather than following it.

@@ -8,6 +8,7 @@ function updates(found: {
   isNew?: boolean;
   checkFails?: boolean;
   reloadFails?: boolean;
+  reloadHangs?: boolean;
   never?: boolean;
 }) {
   const calls: string[] = [];
@@ -25,6 +26,7 @@ function updates(found: {
     },
     reload: () => {
       calls.push("reload");
+      if (found.reloadHangs) return new Promise(() => undefined);
       return found.reloadFails ? Promise.reject(new Error("no runtime")) : Promise.resolve();
     },
   };
@@ -66,4 +68,12 @@ test("offline or slow, the splash waits a bounded time, then goes on", async () 
 test("a restart that cannot happen goes on with the embedded release", async () => {
   const { api } = updates({ available: true, reloadFails: true });
   expect(await firstLaunch(embedded, api)).toBe("failed");
+});
+
+test("a restart that never lands lets the splash go after a bounded wait", async () => {
+  const { api, calls } = updates({ available: true, reloadHangs: true });
+  const began = Date.now();
+  expect(await firstLaunch(embedded, api, 1000, 20)).toBe("timed_out");
+  expect(Date.now() - began).toBeLessThan(1000);
+  expect(calls).toEqual(["check", "fetch", "reload"]);
 });
