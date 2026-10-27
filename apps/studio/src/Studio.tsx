@@ -25,6 +25,7 @@ import {
   Fragment,
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
+  type RefObject,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -253,6 +254,7 @@ export function Studio() {
   }, [tabs, active]);
 
   const { strip, dragProps } = useTabDrag(tabs, setTabs);
+  useEdgeFade(strip, tabs);
   // Holding ⌘ turns the tabs' icons into the numbers that jump to them.
   const hint = useModifierHint(mac ? "Meta" : "Control");
 
@@ -287,7 +289,7 @@ export function Studio() {
         </Button>
         <div
           ref={strip}
-          className="relative flex min-w-0 gap-0.5 overflow-x-auto [scrollbar-width:none]"
+          className="relative flex min-w-0 gap-0.5 overflow-x-auto [mask-image:linear-gradient(to_right,transparent,#000_var(--fade-start,0px),#000_calc(100%_-_var(--fade-end,0px)),transparent)] [scrollbar-width:none]"
         >
           {tabs.map((key, i) => (
             <FileTab
@@ -561,6 +563,37 @@ function useTabDrag(tabs: string[], setTabs: (tabs: string[]) => void) {
   });
 
   return { strip, dragProps };
+}
+
+/** How far in the strip's edges fade once tabs are hidden past them. */
+const FADE = 32;
+
+/**
+ * Fade the strip's edges where tabs are scrolled out of sight. Each fade grows with what's
+ * hidden on its side, up to `FADE`, so it eases in and out as you scroll instead of snapping.
+ */
+function useEdgeFade(strip: RefObject<HTMLDivElement | null>, tabs: string[]) {
+  useLayoutEffect(() => {
+    const s = strip.current;
+    if (!s) return;
+    const update = () => {
+      // A quarter of the strip at most: squeezed narrow, the fades would meet and hide it all.
+      const most = Math.min(FADE, s.clientWidth / 4);
+      const end = s.scrollWidth - s.clientWidth - s.scrollLeft;
+      s.style.setProperty("--fade-start", `${Math.min(Math.max(s.scrollLeft, 0), most)}px`);
+      s.style.setProperty("--fade-end", `${Math.min(Math.max(end, 0), most)}px`);
+    };
+    update();
+    s.addEventListener("scroll", update, { passive: true });
+    // The window resizing the strip, and tabs growing as their names load.
+    const resize = new ResizeObserver(update);
+    resize.observe(s);
+    for (const c of s.children) resize.observe(c);
+    return () => {
+      s.removeEventListener("scroll", update);
+      resize.disconnect();
+    };
+  }, [strip, tabs]);
 }
 
 /**
