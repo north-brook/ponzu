@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "ponzu": {
+      "command": "${HOME}/.ponzu/bin/ponzu",
+      "args": ["mcp"]
+    }
+  }
+}

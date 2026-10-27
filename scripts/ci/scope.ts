@@ -42,7 +42,9 @@ const IGNORED = [
   /^\.release-please-manifest\.json$/,
   /^release-please-config\.json$/,
   /^commitlint\.config\.mjs$/,
-  /^(design|examples|skills)\//,
+  /^(design|examples|plugin)\//,
+  /^\.claude-plugin\//,
+  /^\.agents\/plugins\//,
   /(^|\/)CHANGELOG\.md$/,
 ];
 
