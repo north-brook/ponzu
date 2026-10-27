@@ -15,7 +15,7 @@ export const DESCRIPTION =
   "Open source and local. Your coding agent designs in plain HTML and CSS on an infinite canvas, and you steer with comments.";
 
 export const SHARE_ALT =
-  "Ponzu: the design canvas for your coding agent. Claude designs a houseplant shop's landing page on the Ponzu canvas while you pin a comment on the headline.";
+  "Ponzu: the design canvas for your coding agent. Designs made in Ponzu, from a landing page to brand guidelines and an app screen, recede across a dark canvas.";
 
 const IMAGE = { width: 2400, height: 1260, alt: SHARE_ALT };
 
