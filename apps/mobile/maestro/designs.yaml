@@ -38,8 +38,8 @@ tags: [dev-host]
 - extendedWaitUntil:
     visible: "Filter"
     timeout: 5000
-# Holding a card lifts it into the system's context menu: Archive moves it
-# to Archived, where holding it offers Restore. (Tapping a card to open it is
+# Holding a card offers its shelf: Archive moves it to Archived, where
+# holding it offers Restore. (Tapping a card to open it is
 # canvas.yaml's.)
 - longPressOn:
     id: card-Weft

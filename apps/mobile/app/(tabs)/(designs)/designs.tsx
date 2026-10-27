@@ -1,8 +1,8 @@
 import type { MenuAction } from "@react-native-menu/menu";
-import { useImage } from "expo-image";
-import { Link, Stack } from "expo-router";
+import { router, Stack } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActionSheetIOS,
   Alert,
   type HostInstance,
   RefreshControl,
@@ -81,25 +81,44 @@ export default function Designs() {
   const page = width - rail.left - rail.right;
   const columns = designColumns(page);
   const cardWidth = (page - 2 * m - 16 * (columns - 1)) / columns;
-  // Hold a card for its shelf, as desktop's card menu: the system's context menu lifts the
-  // card itself, and the card moves at once. Its icons are the app's Hugeicons.
-  const archiveIcon = useImage(require("../../../assets/native/hi-archive.png"));
-  const restoreIcon = useImage(require("../../../assets/native/hi-unarchive.png"));
-  const move = (f: PhoneFile, action: ShelfAction) => {
-    if (action === "archive") thud();
-    else select();
-    shelve.mutate(
-      { mac: f.mac, key: f.key, action, shelf: f.shelf },
+  const open = (f: PhoneFile) => {
+    tick();
+    router.push({ pathname: "/design/[mac]/[key]", params: { mac: f.mac, key: f.key } });
+  };
+  // Hold a card for its shelf, as desktop's card menu: the card moves at once.
+  const actions = (f: PhoneFile) => {
+    const on = shelfOf(f);
+    const choices: { label: string; action: ShelfAction }[] =
+      on === "archived"
+        ? [{ label: "Restore", action: "restore" }]
+        : [{ label: "Archive", action: "archive" }];
+    // The sheet is the app's, not the system's context menu: it has no haptic of its own.
+    select();
+    ActionSheetIOS.showActionSheetWithOptions(
       {
-        onError: () => {
-          fail();
-          Alert.alert(
-            `Couldn't move “${f.name}”`,
-            f.stale
-              ? `${f.macName} isn't answering. Try again once it's back.`
-              : `${f.macName} didn't take the change.`,
-          );
-        },
+        title: f.name,
+        options: [...choices.map((c) => c.label), "Cancel"],
+        cancelButtonIndex: choices.length,
+      },
+      (i) => {
+        const choice = choices[i];
+        if (!choice) return;
+        if (choice.action === "archive") thud();
+        else select();
+        shelve.mutate(
+          { mac: f.mac, key: f.key, action: choice.action, shelf: f.shelf },
+          {
+            onError: () => {
+              fail();
+              Alert.alert(
+                `Couldn't move “${f.name}”`,
+                f.stale
+                  ? `${f.macName} isn't answering. Try again once it's back.`
+                  : `${f.macName} didn't take the change.`,
+              );
+            },
+          },
+        );
       },
     );
   };
@@ -257,41 +276,14 @@ export default function Designs() {
         >
           {shown.map((f, i) => (
             <HandoffRise key={f.id} kind="designs" i={i}>
-              {/* A link, not a button: a UIButton around the card would take its taps. */}
-              <Link
-                href={{ pathname: "/design/[mac]/[key]", params: { mac: f.mac, key: f.key } }}
-                push
-                asChild
-                onPress={tick}
-              >
-                <Link.Trigger>
-                  <FileCard
-                    file={f}
-                    width={cardWidth}
-                    unseen={isUnseen(seen, f.mac, f.key, f.modified)}
-                    project={project === undefined}
-                  />
-                </Link.Trigger>
-                <Link.Menu>
-                  {shelfOf(f) === "archived" ? (
-                    <Link.MenuAction
-                      image={restoreIcon}
-                      imageRenderingMode="template"
-                      onPress={() => move(f, "restore")}
-                    >
-                      Restore
-                    </Link.MenuAction>
-                  ) : (
-                    <Link.MenuAction
-                      image={archiveIcon}
-                      imageRenderingMode="template"
-                      onPress={() => move(f, "archive")}
-                    >
-                      Archive
-                    </Link.MenuAction>
-                  )}
-                </Link.Menu>
-              </Link>
+              <FileCard
+                file={f}
+                width={cardWidth}
+                unseen={isUnseen(seen, f.mac, f.key, f.modified)}
+                project={project === undefined}
+                onPress={() => open(f)}
+                onLongPress={() => actions(f)}
+              />
             </HandoffRise>
           ))}
         </Animated.View>

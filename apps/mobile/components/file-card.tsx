@@ -44,6 +44,7 @@ export function FileCard({
   name,
   project: showProject = true,
   onPress,
+  onLongPress,
 }: {
   file: PhoneFile;
   width: number;
@@ -52,8 +53,9 @@ export function FileCard({
   name?: Run[];
   /** Show the project: off when Designs is already filtered to one. */
   project?: boolean;
-  /** Opening it: on Designs, the card's link passes this in (Link.Trigger). */
-  onPress?: () => void;
+  onPress: () => void;
+  /** Its actions: the shelf it's on. */
+  onLongPress?: () => void;
 }) {
   const { color, scheme } = useTheme();
   const markColor = useMarkColor();
@@ -66,6 +68,7 @@ export function FileCard({
   return (
     <Pressable
       onPress={onPress}
+      onLongPress={onLongPress}
       accessibilityRole="button"
       accessibilityLabel={file.name}
       testID={`card-${file.name}`}
