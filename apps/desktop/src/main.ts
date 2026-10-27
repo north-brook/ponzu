@@ -1,5 +1,5 @@
 import { type ChildProcess, execFile, spawn } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { type Catalog, parseDesignLink } from "@ponzu/core";
@@ -178,7 +178,7 @@ async function installCommand() {
     });
     return;
   }
-  if (existsSync(link)) {
+  if (lstatSync(link, { throwIfNoEntry: false })) {
     const { response } = await dialog.showMessageBox({
       type: "warning",
       message: `Replace ${link}?`,

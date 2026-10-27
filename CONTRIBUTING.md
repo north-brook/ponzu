@@ -97,6 +97,9 @@ start no workflows).
 npm takes the `ponzu` package from the release workflow by [trusted
 publishing](https://docs.npmjs.com/trusted-publishers): on npmjs.com, the
 package's settings name `north-brook/ponzu` and `release.yml` as its
-publisher, so no token is stored. Until that's set up (npm needs the package
-to exist first), an automation token in the `NPM_TOKEN` repository secret
-publishes instead.
+publisher, so no token is stored. For the first publish, sign in interactively
+with `npm login`, build the studio and npm package, run its smoke test, then
+run `npm publish ./apps/cli/npm --access public` and complete the 2FA prompt.
+Once the package exists, configure its trusted publisher before the next
+release. Future releases publish from GitHub Actions with provenance; no
+`NPM_TOKEN` repository secret is needed.

@@ -139,7 +139,6 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
       - run: bun install --frozen-lockfile --ignore-scripts
       - name: Build the package
         run: |
@@ -159,8 +158,6 @@ jobs:
           # Trusted publishing needs npm 11.5.1 or later.
           npm install -g npm@11
           npm publish apps/cli/npm --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   # Only the root package's release (vX.Y.Z): `released` is never set by a
   # phone release, and a mobile-v tag doesn't start with "v".
