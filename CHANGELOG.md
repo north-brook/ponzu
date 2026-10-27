@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.57.0](https://github.com/north-brook/ponzu/compare/v1.56.1...v1.57.0) (2026-10-27)
+
+
+### Features
+
+* install ponzu as a plugin in claude code and codex ([#275](https://github.com/north-brook/ponzu/issues/275)) ([514bc2b](https://github.com/north-brook/ponzu/commit/514bc2bd30b23a4feeefcf0633d0d8d3adffe2ea))
+* put ponzu on the path and publish the cli to npm ([#277](https://github.com/north-brook/ponzu/issues/277)) ([be45eb6](https://github.com/north-brook/ponzu/commit/be45eb613ee056ee4f5f6d05f53b12ad28255aea))
+
+
+### Bug Fixes
+
+* accept generated release metadata formatting ([#283](https://github.com/north-brook/ponzu/issues/283)) ([fb56c95](https://github.com/north-brook/ponzu/commit/fb56c95a08be050cf574b0f347f3adbdcc768cf9))
+* bring the iphone canvas's arrival and working animations up to desktop ([#279](https://github.com/north-brook/ponzu/issues/279)) ([0e286a5](https://github.com/north-brook/ponzu/commit/0e286a58c2a5ad381a683cf775e21802313f1a79))
+* keep ponzu in the mac's light or dark mode after auto switches ([#274](https://github.com/north-brook/ponzu/issues/274)) ([b701304](https://github.com/north-brook/ponzu/commit/b701304b332d8f395b7317f463b183dece0b75f3))
+
 ## [1.56.1](https://github.com/north-brook/ponzu/compare/v1.56.0...v1.56.1) (2026-10-26)
 
 

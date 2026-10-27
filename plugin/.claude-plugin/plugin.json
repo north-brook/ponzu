@@ -1,13 +1,23 @@
 {
   "name": "ponzu",
   "displayName": "Ponzu",
-  "version": "1.56.1",
+  "version": "1.57.0",
   "description": "A design canvas your agent draws on in HTML and CSS. You steer with comments. Needs the Ponzu Mac app.",
-  "author": { "name": "Northbrook", "url": "https://ponzu.design" },
+  "author": {
+    "name": "Northbrook",
+    "url": "https://ponzu.design"
+  },
   "homepage": "https://ponzu.design",
   "repository": "https://github.com/north-brook/ponzu",
   "license": "MIT",
-  "keywords": ["design", "canvas", "html", "css", "mockups", "prototyping"],
+  "keywords": [
+    "design",
+    "canvas",
+    "html",
+    "css",
+    "mockups",
+    "prototyping"
+  ],
   "icon": "./assets/icon.png",
   "privacyPolicyUrl": "https://ponzu.design/privacy"
 }

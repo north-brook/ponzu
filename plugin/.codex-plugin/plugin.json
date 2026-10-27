@@ -1,6 +1,6 @@
 {
   "name": "ponzu",
-  "version": "1.56.1",
+  "version": "1.57.0",
   "description": "A design canvas your agent draws on in HTML and CSS. You steer with comments. Needs the Ponzu Mac app.",
   "author": {
     "name": "Northbrook",
@@ -9,7 +9,14 @@
   "homepage": "https://ponzu.design",
   "repository": "https://github.com/north-brook/ponzu",
   "license": "MIT",
-  "keywords": ["design", "canvas", "html", "css", "mockups", "prototyping"],
+  "keywords": [
+    "design",
+    "canvas",
+    "html",
+    "css",
+    "mockups",
+    "prototyping"
+  ],
   "skills": "./skills/",
   "mcpServers": "./.codex-plugin/mcp.json",
   "interface": {
@@ -18,7 +25,11 @@
     "longDescription": "Ponzu is an open-source design canvas on your Mac. Your agent designs screens, flows and brands in plain HTML and CSS, you watch it live and steer with comments, and the agent implements what you settle on. Designs are .design folders you keep next to your code. Needs the Ponzu Mac app from ponzu.design.",
     "developerName": "Northbrook",
     "category": "Creativity",
-    "capabilities": ["Interactive", "Read", "Write"],
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
     "websiteURL": "https://ponzu.design",
     "privacyPolicyURL": "https://ponzu.design/privacy",
     "defaultPrompt": [
