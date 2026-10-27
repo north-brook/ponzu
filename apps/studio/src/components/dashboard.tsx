@@ -6,6 +6,7 @@ import {
   foldCopies,
   type Idea,
   previewArtboard,
+  STARTED_FOR,
   settled,
   startedFrom,
   viewOf,
@@ -117,7 +118,13 @@ export function Dashboard({
 
   // Suggested shows with an agent to ask. It looks again each time it's opened.
   const [looking, setLooking] = useState(false);
-  const suggestions = useSuggestions(looking);
+  // Installing an agent while the home screen is open brings Suggested in without a restart.
+  const installed =
+    catalog?.agents
+      .filter((a) => a.found)
+      .map((a) => a.id)
+      .join(" ") ?? "";
+  const suggestions = useSuggestions(looking, installed);
   const suggest = Boolean(suggestions?.agent);
   const view: View =
     picked === "suggested" && !suggest
@@ -127,15 +134,28 @@ export function Dashboard({
   const open = !loading && !q && view === "suggested";
   useEffect(() => setLooking(open), [open]);
   // An idea the person started shows as its design in its place while the design is new, and
-  // then lives in Recent alone.
+  // then lives in Recent alone. The catalog may not change when it settles, so the clock wakes
+  // at the next design's deadline.
+  const [clock, setClock] = useState(() => Date.now());
   const ideas = useMemo(() => {
     const here = files.filter((f) => f.machine === "local");
-    const now = Date.now();
+    const now = Math.max(clock, Date.now());
     return (suggestions?.ideas ?? []).flatMap((idea) => {
       const file = startedFrom(idea, here);
       return file && settled(file, now) ? [] : [{ idea, file }];
     });
-  }, [suggestions?.ideas, files]);
+  }, [suggestions?.ideas, files, clock]);
+  useEffect(() => {
+    const due = ideas.flatMap(({ file }) =>
+      file?.created && !file.busy ? [file.created + STARTED_FOR] : [],
+    );
+    if (!due.length) return;
+    const t = setTimeout(
+      () => setClock(Date.now()),
+      Math.max(0, Math.min(...due) - Date.now()) + 50,
+    );
+    return () => clearTimeout(t);
+  }, [ideas]);
   const [idea, setIdea] = useState<{ idea: Idea | null; open: boolean }>({
     idea: null,
     open: false,

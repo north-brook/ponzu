@@ -13,9 +13,10 @@ let last: Suggestions | null = null;
 /**
  * What the person's agent suggests designing (`/api/suggestions`). Each time `open` turns true,
  * the Suggested tab asks it to look again with the latest context; what it had shows meanwhile,
- * and what it finds arrives while the run goes. Failures leave what it had.
+ * and what it finds arrives while the run goes. Failures leave what it had. It asks again when
+ * `installed`, the agents found on this Mac, changes: an agent installed later brings the tab in.
  */
-export function useSuggestions(open: boolean): Suggestions | null {
+export function useSuggestions(open: boolean, installed = ""): Suggestions | null {
   const [state, setState] = useState<Suggestions | null>(last);
   /** A refresh is on its way: count it as running, so the tab doesn't show "nothing" first. */
   const [asking, setAsking] = useState(false);
@@ -25,13 +26,14 @@ export function useSuggestions(open: boolean): Suggestions | null {
     setState(s);
   };
 
+  // `installed` is a dependency only to say when to ask again.
   useEffect(() => {
     let live = true;
     ask("GET").then((s) => live && got(s ?? last ?? NONE));
     return () => {
       live = false;
     };
-  }, []);
+  }, [installed]);
 
   useEffect(() => {
     if (!open) return;
