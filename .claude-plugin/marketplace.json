@@ -1,0 +1,15 @@
+{
+  "name": "ponzu",
+  "description": "Ponzu, the design canvas for your coding agent.",
+  "owner": {
+    "name": "Northbrook",
+    "url": "https://ponzu.design"
+  },
+  "plugins": [
+    {
+      "name": "ponzu",
+      "source": "./plugin",
+      "description": "A design canvas your agent draws on in HTML and CSS. You steer with comments."
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "ponzu",
+  "interface": { "displayName": "Ponzu" },
+  "plugins": [
+    {
+      "name": "ponzu",
+      "source": { "source": "local", "path": "./plugin" },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL",
+        "products": ["CODEX"]
+      },
+      "category": "Creativity"
+    }
+  ]
+}

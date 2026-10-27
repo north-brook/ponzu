@@ -47,6 +47,17 @@ Agents get a command to launch, `ponzu mcp`, rather than a URL. It finds the run
 
 Any other MCP client can launch `ponzu mcp` over stdio, or use `http://127.0.0.1:7777/mcp` while Ponzu runs. `ponzu install claude --url <url>` registers a URL, e.g. a Ponzu on another machine.
 
+### The plugin
+
+Claude Code and Codex can also install Ponzu as a plugin. It adds Ponzu's skills (start a design from a brief, bring a screen into Ponzu, explore variations, implement a design, watch your comments) and the same server the app sets up. It launches the Mac app's server, so open the app once first.
+
+```sh
+claude plugin marketplace add north-brook/ponzu && claude plugin install ponzu@ponzu
+codex plugin marketplace add north-brook/ponzu && codex plugin add ponzu@ponzu
+```
+
+With the app's own setup there too, each agent keeps one Ponzu server, not two. The plugin lives in [`plugin/`](plugin).
+
 Then ask for something:
 
 > Design a landing page for a houseplant shop in a new `design/shop.design`. Give me three takes on the hero.
@@ -153,7 +164,7 @@ About thirty tools in six groups. `get_guide` serves the house rules.
 | Converse | `list_comments` `get_comment` `create_comment` `reply` `set_comment_status` `send_feedback` |
 | Listen + remember | `wait_for_activity` `set_status` `write_note` `read_notes` `get_guide` |
 
-Skills for agents that support them live in [`skills/`](skills).
+Skills for agents that support them ship in [the plugin](#the-plugin), in [`plugin/skills/`](plugin/skills).
 
 ## Telemetry
 
