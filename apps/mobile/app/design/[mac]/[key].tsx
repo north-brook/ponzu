@@ -41,7 +41,7 @@ import { ThreadSheet } from "../../../components/thread-sheet";
 import { useMacChanges } from "../../../lib/activity-store";
 import { useFile } from "../../../lib/catalog";
 import { useDesignSession, useSessionState } from "../../../lib/design";
-import { draftKey, getDraft, unsent, useDrafts } from "../../../lib/drafts";
+import { draftFile, draftKey, getDraft, unsent, useDrafts } from "../../../lib/drafts";
 import { useDuoLayout } from "../../../lib/duo";
 import { CREASE, foldAt } from "../../../lib/duo-layout";
 import { select, success, tick } from "../../../lib/haptics";
@@ -207,14 +207,18 @@ export default function Canvas() {
 
   // While a thread here has an unsent reply in it, the Mac's agents leave it open.
   const drafts = useDrafts();
+  /** What this design's drafts are kept under: copies of a design share its thread ids. */
+  const draftsFile = draftFile(params.mac, params.key);
   const writing = useMemo(() => {
     const ids = new Set(doc?.threads.map((t) => t.id));
     return [
       ...new Set(
-        drafts.flatMap(([, d]) => (d.thread && unsent(d) && ids.has(d.thread) ? [d.thread] : [])),
+        drafts.flatMap(([, d]) =>
+          d.file === draftsFile && d.thread && unsent(d) && ids.has(d.thread) ? [d.thread] : [],
+        ),
       ),
     ].join(" ");
-  }, [drafts, doc]);
+  }, [drafts, doc, draftsFile]);
   const writingIds = useMemo(() => (writing ? writing.split(" ") : []), [writing]);
   useEffect(() => session?.setWriting(writingIds), [session, writingIds]);
 
@@ -473,12 +477,13 @@ export default function Canvas() {
       pill
     );
   /** A new comment's unsent words are kept under its pin's place. */
-  const pinDraft = pending ? draftKey.comment(pending) : undefined;
+  const pinDraft = pending ? draftKey.comment(draftsFile, pending) : undefined;
   /** New comments on this page left unsent, but the one being written: their pins stay. */
   const unsentPins = useMemo(
     () =>
       page
         ? drafts.flatMap(([key, d]) =>
+            d.file === draftsFile &&
             d.pin &&
             unsent(d) &&
             key !== pinDraft &&
@@ -489,7 +494,7 @@ export default function Canvas() {
               : [],
           )
         : [],
-    [drafts, page, pinDraft],
+    [drafts, page, pinDraft, draftsFile],
   );
   /** The page's open threads: the count on the comments button. */
   const open = openThreads(doc, page?.id);
@@ -531,6 +536,7 @@ export default function Canvas() {
       onClose={onClose}
       seen={seenAt}
       me="Y"
+      file={draftsFile}
       onReply={reply}
       onStatus={setStatus}
     />
@@ -796,7 +802,7 @@ export default function Canvas() {
             // One composer per pin: a pin dropped while the last comment is still sending gets
             // its own, which that send's ack can't empty.
             key={pinDraft}
-            draft={{ key: pinDraft!, pin: pending }}
+            draft={{ key: pinDraft!, file: draftsFile, pin: pending }}
           />
           {error && (
             <Text style={{ fontFamily: "Inter", fontSize: 13, color: color.muted }}>{error}</Text>
@@ -839,6 +845,7 @@ export default function Canvas() {
             right={insets.right}
             thread={thread}
             me="Y"
+            file={draftsFile}
             onReply={reply}
             onStatus={setStatus}
             onDismiss={() => {

@@ -2,6 +2,8 @@ import { useSyncExternalStore } from "react";
 import type { PendingPin } from "../canvas/protocol";
 
 export interface Draft {
+  /** The design it's in: its Mac and key, as `draftFile` makes it. Copies share thread ids. */
+  file: string;
   text: string;
   /** The thread a reply is in. */
   thread?: string;
@@ -26,9 +28,13 @@ function subscribe(listener: () => void) {
   };
 }
 
+/** A design, by its Mac and key: what its drafts belong to. */
+export const draftFile = (mac: string, key: string) => `${mac}\0${key}`;
+
 export const draftKey = {
-  comment: (p: PendingPin) => `pin:${p.artboardId ?? p.pageId}:${p.x}:${p.y}`,
-  reply: (thread: string) => `thread:${thread}`,
+  comment: (file: string, p: PendingPin) =>
+    `${file}\0pin:${p.artboardId ?? p.pageId}:${p.x}:${p.y}`,
+  reply: (file: string, thread: string) => `${file}\0thread:${thread}`,
 };
 
 export function getDraft(key: string): Draft | undefined {

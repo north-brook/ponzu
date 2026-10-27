@@ -127,7 +127,8 @@ export function Composer({
   const [gone, setGone] = useState(false);
   const [kept] = useState(() => (draft ? (getDraft(draft.key)?.text ?? "") : ""));
   const keep = (t: string) => {
-    if (draft) setDraft(draft.key, { thread: draft.thread, pin: draft.pin, text: t });
+    if (draft)
+      setDraft(draft.key, { file: draft.file, thread: draft.thread, pin: draft.pin, text: t });
   };
   // Opened in voice, it goes on from what was said or typed before.
   const dictation = useDictation(voice && !gone, voice ? kept : "");
