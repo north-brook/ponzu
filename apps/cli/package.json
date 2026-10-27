@@ -7,6 +7,9 @@
   "bin": {
     "ponzu": "./src/index.ts"
   },
+  "imports": {
+    "#chromium": "@ponzu/render/chromium"
+  },
   "dependencies": {
     "@ponzu/core": "workspace:*",
     "@ponzu/mcp": "workspace:*",

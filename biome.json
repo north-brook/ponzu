@@ -5,6 +5,7 @@
       "**",
       "!**/dist",
       "!**/out",
+      "!apps/cli/npm",
       "!**/node_modules",
       "!examples",
       "!apps/web/public/demo/seekle.design",

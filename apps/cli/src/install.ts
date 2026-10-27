@@ -3,7 +3,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
-import { findApp, ponzuHome, writeShim } from "./host.ts";
+import { linkCommand } from "./command.ts";
+import { findApp, ponzuHome, shimPath, writeShim } from "./host.ts";
 
 /** How an agent reaches Ponzu: a command it launches, or a URL. */
 type Entry = { command: string; args: string[] } | { url: string };
@@ -139,6 +140,8 @@ Or launch \`ponzu mcp\` over stdio from any MCP client.`);
     if (!opts.auto) console.error("Move Ponzu to your Applications folder, then try again.");
     return;
   }
+  if ("command" in entry && entry.command === shimPath())
+    await linkCommand(entry.command, { auto: opts.auto, path: loginPath() });
   const done = readDone();
   const targets = AGENTS.filter((a) => (id ? a.id === id : a.detect()));
   if (!targets.length && !opts.auto)
@@ -277,7 +280,17 @@ function agentPath(): string {
     join(home, ".npm-global/bin"),
     "/opt/homebrew/bin",
     "/usr/local/bin",
+    ...loginPath(),
   ];
+  searchPath = [...new Set(dirs.filter(Boolean))].join(delimiter);
+  return searchPath;
+}
+
+/** The login shell's PATH: where a terminal looks for commands. */
+let shellPath: string[] | undefined;
+function loginPath(): string[] {
+  if (shellPath) return shellPath;
+  shellPath = [];
   const shell = process.env.SHELL;
   if (shell) {
     const login = spawnSync(shell, ["-ilc", 'printf %s "$PATH"'], {
@@ -286,10 +299,9 @@ function agentPath(): string {
     });
     // Interactive shells can print a greeting first; the PATH is the last line.
     if (login.status === 0)
-      dirs.push(...(login.stdout.trim().split("\n").pop() ?? "").split(delimiter));
+      shellPath = (login.stdout.trim().split("\n").pop() ?? "").split(delimiter).filter(Boolean);
   }
-  searchPath = [...new Set(dirs.filter(Boolean))].join(delimiter);
-  return searchPath;
+  return shellPath;
 }
 
 function which(cmd: string): string | null {

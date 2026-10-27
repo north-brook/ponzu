@@ -135,7 +135,8 @@ async function pickRenderer(): Promise<Renderer | undefined> {
   if (endpoint) return new RemoteRenderer(endpoint, process.env.PONZU_RENDER_TOKEN);
   try {
     // Kept as a runtime specifier so the desktop build doesn't bundle Playwright.
-    const mod = "@ponzu/render/chromium";
+    // #chromium is @ponzu/render/chromium here, and the bundle beside the CLI on npm.
+    const mod = "#chromium";
     const { ChromiumRenderer, findChromium } = (await import(
       mod
     )) as typeof import("@ponzu/render/chromium");
