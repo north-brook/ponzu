@@ -1,11 +1,11 @@
 /*
  * The phone canvas. No chrome: the app draws it. Colors are the studio's and the iPhone design's
- * (`--c-*`), light and dark; the trace's march is desktop's `.pz-trace`.
+ * (`--c-*`), light and dark; the ring, the rain and the frame are desktop's (packages/react's
+ * styles.css), copied here: the page doesn't load desktop's stylesheet.
  */
 :root {
   --c-canvas: #f4f3ef;
   --c-muted: #5e5b54;
-  --c-yuzu-text: #7a4f00;
   --c-board: 0 0 0 1px rgba(0, 0, 0, 0.06);
   --yuzu: #ffc81e;
   --ink: #111110;
@@ -16,7 +16,6 @@
 :root.dark {
   --c-canvas: #121211;
   --c-muted: #a9a59b;
-  --c-yuzu-text: #ffc81e;
   --c-board: 0 0 0 1px rgba(255, 255, 255, 0.06);
   color-scheme: dark;
 }
@@ -67,9 +66,9 @@ body {
 }
 
 /* A board's edge, drawn on screen so it's a hairline at any zoom. */
-.ring {
+.edge {
   position: absolute;
-  border-radius: 2px;
+  border-radius: 4px;
   box-shadow: var(--c-board);
 }
 
@@ -84,23 +83,29 @@ body {
   font: 500 12px / 14px var(--font-sans);
 }
 
-.label > span {
+.label .name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.label.working {
-  color: var(--c-yuzu-text);
+.label .pz-rain {
+  margin-left: auto;
 }
 
-.label .mark {
-  display: inline-flex;
-  flex-shrink: 0;
-  margin-left: 2px;
-}
-
-.trace {
+/* The ring's and a new board's frame's box: RING_GAP outside the board. */
+.ring-box,
+.frame {
   position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.ring-box {
+  transition: opacity 500ms;
+}
+
+.frame {
   overflow: visible;
 }
 
@@ -132,33 +137,117 @@ body {
   scale: 1.12;
 }
 
-@keyframes pz-trace {
-  to {
-    stroke-dashoffset: -100;
+/*
+ * The ring round a working artboard: it comes in, then breathes slowly in width and glow, so it
+ * reads against a light canvas as well as a dark one. Subtle: it says someone's here, no more.
+ * The breath is a brighter ring fading over a fainter one: only opacity moves, so the compositor
+ * runs it without repainting a glow the size of the board every frame.
+ */
+@keyframes pz-ring-in {
+  from {
+    opacity: 0;
   }
 }
 
-/*
- * On a path with pathLength="100": six dashes, one for each segment of the
- * slice, march around the outline, a dash-length per beat of the loader.
- * In ten steps a second rather than every frame: the march reads the same, and
- * WebKit redraws the canvas's whole overlay for each step, which at 60 a second
- * kept the web view and its GPU process busy for as long as an agent worked.
- */
-.pz-trace {
-  stroke-dasharray: 10.67 6;
-  animation: pz-trace 9.6s steps(96) infinite;
+@keyframes pz-ring {
+  to {
+    opacity: 0;
+  }
 }
 
-/* The app's away (in the background, the phone locked): the trace holds. */
-.overlay.still .pz-trace {
+.pz-ring {
+  position: absolute;
+  inset: 0;
+  box-shadow:
+    0 0 0 1px rgb(255 200 30 / 0.4),
+    0 0 4px 1px rgb(255 200 30 / 0.18);
+  animation: pz-ring-in 0.4s ease-out both;
+}
+
+.pz-ring::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow:
+    0 0 0 2px rgb(255 200 30 / 0.7),
+    0 0 10px 3px rgb(255 200 30 / 0.28);
+  animation: pz-ring 1.5s ease-in-out infinite alternate both;
+  animation-delay: inherit;
+}
+
+/*
+ * The rain in a working artboard's label: columns of yuzu dots, each falling at its own pace
+ * (--fall) from its own start (--drift), coming in left to right. In em, so it's the label's size.
+ * The dots are a still mask over the whole rain; behind each column a band of yuzu slides down
+ * through them. Only transforms move, so the compositor runs it.
+ */
+@keyframes pz-fall {
+  from {
+    transform: translateY(-66.667%);
+  }
+}
+
+@keyframes pz-appear {
+  from {
+    opacity: 0;
+  }
+}
+
+.pz-rain {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.17em;
+  height: 1em;
+  --pz-rain-dot: radial-gradient(
+    circle at 0.125em 0.125em,
+    #000 0.125em,
+    transparent calc(0.125em + 0.5px)
+  );
+  mask:
+    var(--pz-rain-dot) 0 0.165em / 0.42em 0.42em repeat-x,
+    var(--pz-rain-dot) 0 0.585em / 0.42em 0.42em repeat-x;
+}
+
+.pz-rain > span {
+  position: relative;
+  width: 0.25em;
+  height: 0.67em;
+  animation: pz-appear 0.3s ease-out calc(var(--i) * 16ms) both;
+}
+
+.pz-rain > span::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: -0.08em;
+  left: -0.08em;
+  height: 300%;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    var(--yuzu) 30%,
+    color-mix(in srgb, var(--yuzu) 60%, transparent) 45%,
+    transparent 66%
+  );
+  animation: pz-fall var(--fall) linear var(--drift) infinite;
+}
+
+/* The app's away (in the background, the phone locked): the ring and rain hold. */
+.overlay.still .pz-ring,
+.overlay.still .pz-ring::after,
+.overlay.still .pz-rain > span,
+.overlay.still .pz-rain > span::before {
   animation-play-state: paused;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pz-trace {
+  .pz-ring,
+  .pz-ring::after,
+  .pz-rain > span,
+  .pz-rain > span::before {
     animation: none;
-    stroke-dasharray: none;
   }
 
   .pin {
@@ -166,10 +255,10 @@ body {
   }
 }
 
-/* Standby: the page alone on black, its boards' hairlines quiet; the traces stay. */
+/* Standby: the page alone on black, its boards' hairlines quiet; the rings stay. */
 .viewport.standby {
   background: #0b0b0a;
 }
-.viewport.standby .ring {
+.viewport.standby .edge {
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05);
 }

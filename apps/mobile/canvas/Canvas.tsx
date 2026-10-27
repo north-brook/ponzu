@@ -3,11 +3,12 @@
  * shadow root, with the design's tokens and fonts), on a plane a finger pans and two fingers
  * pinch. Double-tap a board to focus it (pinch out, or pan past it, to leave), hold to comment, tap
  * a pin to read its thread. Labels,
- * pins and traces sit on screen above the boards, so they stay a fixed size at any zoom. No
+ * pins and rings sit on screen above the boards, so they stay a fixed size at any zoom. No
  * chrome: the app draws that around the web view.
  */
 import { type Artboard, isThemed, threadPage } from "@ponzu/core";
 import {
+  type CSSProperties,
   memo,
   useEffect,
   useLayoutEffect,
@@ -19,9 +20,16 @@ import {
 // Desktop's own pieces, from source: the app doesn't depend on @ponzu/react, whose index pulls
 // in the whole studio canvas.
 import { ArtboardView } from "../../../packages/react/src/Artboard.tsx";
-import { arriveBoard } from "../../../packages/react/src/arrive.ts";
-import { AgentMark } from "../../../packages/react/src/icons.tsx";
+import {
+  type Arrivals,
+  arriveBoard,
+  arriveName,
+  drawFrame,
+  RING_OUT_MS,
+  ringDelay,
+} from "../../../packages/react/src/arrive.ts";
 import { useWindowStill } from "../../../packages/react/src/still.ts";
+import { Rain, useLingering } from "../../../packages/react/src/working.tsx";
 import {
   type Box,
   between,
@@ -57,6 +65,17 @@ const MOVE_MS = 420;
 const LET_GO = 0.85;
 /** A tap this close to a pin opens it: a 24px pin, a 44px target. */
 const PIN_TARGET = 22;
+/** Boards are ever so slightly rounded: screen px, at any zoom. As desktop. */
+const BOARD_RADIUS = 4;
+/** The ring round a working board sits this many screen px off its edge. As desktop. */
+const RING_GAP = 4;
+/** A column of rain and its gap, in em of the label's 12px. */
+const RAIN_PITCH = 0.42 * 12;
+
+/** The board radius in page px for a zoom: the same few px on screen, to a quarter octave. */
+function boardRadius(zoom: number) {
+  return BOARD_RADIUS / 2 ** (Math.round(Math.log2(zoom) * 4) / 4);
+}
 
 interface Worker {
   id: string;
@@ -118,7 +137,14 @@ export function PhoneCanvas() {
     if (!frame.current)
       frame.current = requestAnimationFrame(() => {
         frame.current = 0;
-        if (world.current) world.current.style.transform = transformOf(camRef.current);
+        const w = world.current;
+        if (w) {
+          w.style.transform = transformOf(camRef.current);
+          // Only when it crosses a quarter octave: each change restyles every board.
+          const r = `${boardRadius(camRef.current.zoom)}px`;
+          if (w.style.getPropertyValue("--pz-board-radius") !== r)
+            w.style.setProperty("--pz-board-radius", r);
+        }
         camera.emit();
       });
   };
@@ -321,7 +347,8 @@ export function PhoneCanvas() {
       setMeasured((m) => ({ ...m, ...next }));
   });
 
-  // Which boards agents are working on, and who.
+  // Which boards agents are working on, and who. A board stays ringed a moment after its agent
+  // leaves, so the ring can fade.
   const working = useMemo(() => {
     const map = new Map<string, Worker[]>();
     for (const p of s.presence) {
@@ -331,6 +358,7 @@ export function PhoneCanvas() {
     }
     return map;
   }, [s.presence, s.file]);
+  const ringed = useLingering(working, RING_OUT_MS);
 
   // Resolved threads leave the board.
   const threads = useMemo(
@@ -609,7 +637,16 @@ export function PhoneCanvas() {
 
   return (
     <div ref={viewport} className={standby ? "viewport standby" : "viewport"}>
-      <div ref={world} className="world" style={{ transform: transformOf(camRef.current) }}>
+      <div
+        ref={world}
+        className="world"
+        style={
+          {
+            transform: transformOf(camRef.current),
+            "--pz-board-radius": `${boardRadius(camRef.current.zoom)}px`,
+          } as CSSProperties
+        }
+      >
         {boards.map((ab) => (
           <Board
             key={ab.id}
@@ -628,6 +665,8 @@ export function PhoneCanvas() {
         boards={boards}
         boxes={boxes}
         working={working}
+        ringed={ringed}
+        arrivals={arrivals}
         focused={focused}
         standby={standby}
         screen={screen}
@@ -671,17 +710,23 @@ const Board = memo(function Board({
         assetBase={assetBase}
         colorScheme={colorScheme}
         arrivals={arrivals}
+        rounded
       />
     </div>
   );
 });
 
-/** Labels, rings, traces and pins: on screen above the boards, following the camera each frame. */
+/**
+ * Labels, hairlines, rings, new boards' frames and pins: on screen above the boards, following
+ * the camera each frame.
+ */
 function Overlay({
   camera,
   boards,
   boxes,
   working,
+  ringed,
+  arrivals,
   focused,
   standby,
   screen,
@@ -695,6 +740,8 @@ function Overlay({
   boards: Artboard[];
   boxes: (Box & { id: string })[];
   working: Map<string, Worker[]>;
+  ringed: Map<string, boolean>;
+  arrivals: Arrivals;
   focused: string | null;
   standby: boolean;
   screen: Screen;
@@ -726,6 +773,8 @@ function Overlay({
             w={w}
             h={h}
             who={who}
+            ring={ringed.get(b.id)}
+            arrivedAt={arrivals.boardAt(b.id)}
             label={showLabel && b.id !== focused && !standby}
             screen={screen}
             radius={radius}
@@ -756,9 +805,11 @@ function Overlay({
 }
 
 /**
- * A board's hairline, its title above it (yuzu-dark with the agent's mark while one works on
- * it), and the trace. Focused on a whole screen, the trace follows the screen's corners, inset
- * so none of it is lost off the edge; it blends there as the board grows to fill the screen.
+ * A board's hairline, its title above it (with yuzu rain on the right while an agent works on
+ * it), and the ring: yuzu, a few px off its edge, breathing slowly, fading out once the agent
+ * leaves. Focused on a whole screen, the ring follows the screen's corners, inset so none of it
+ * is lost off the edge; it blends there as the board grows to fill the screen. A new board's
+ * frame draws itself where the ring will be, and its name develops with it. As desktop's.
  */
 function BoardChrome({
   name,
@@ -767,6 +818,8 @@ function BoardChrome({
   w,
   h,
   who,
+  ring,
+  arrivedAt,
   label,
   screen,
   radius,
@@ -777,60 +830,107 @@ function BoardChrome({
   w: number;
   h: number;
   who?: Worker[];
+  /** Ringed: false while an agent works on it, true as the ring fades. */
+  ring?: boolean;
+  /** When the board landed, while it's still arriving. */
+  arrivedAt?: number;
   label: boolean;
   screen: Screen;
   radius: number;
 }) {
+  const edge = useRef<HTMLDivElement>(null);
+  const title = useRef<HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    if (edge.current && arrivedAt !== undefined) arriveBoard(edge.current, arrivedAt);
+  }, [arrivedAt]);
+  useLayoutEffect(() => {
+    if (title.current && arrivedAt !== undefined) arriveName(title.current, arrivedAt);
+  }, [arrivedAt, label]);
   const k = Math.min(1, Math.max(0, (w / screen.w - 0.8) / 0.2));
-  // On the canvas: 3px outside the board, 2px wide, round 4. Focused: 2px in, 3px wide.
-  const off = -3 + 5 * k;
-  const stroke = 2 + k;
-  const rx = 4 + k * Math.max(0, radius - 3 - 4);
+  // On the canvas: RING_GAP outside the board. Focused: 3px in, round with the screen.
+  const off = -RING_GAP + (RING_GAP + 3) * k;
+  const rx = BOARD_RADIUS + RING_GAP + k * Math.max(0, radius - 3 - BOARD_RADIUS - RING_GAP);
+  // The rain takes at most half the board's width, so the name still reads on a narrow one; on
+  // a board too narrow for a column, the ring alone says it's being worked on.
+  const rain = Math.min(24, Math.floor(w / 2 / RAIN_PITCH));
+  const ringBox = {
+    transform: `translate(${x + off}px, ${y + off}px)`,
+    width: Math.max(0, w - 2 * off),
+    height: Math.max(0, h - 2 * off),
+  };
   return (
     <>
       <div
-        className="ring"
+        ref={edge}
+        className="edge"
         style={{ transform: `translate(${x}px, ${y}px)`, width: w, height: h }}
       />
       {label && (
         <div
-          className={`label${who ? " working" : ""}`}
-          style={{ transform: `translate(${x}px, ${y - LABEL}px)`, maxWidth: Math.max(0, w) }}
-        >
-          <span>{name}</span>
-          {who?.map((a) => (
-            <span key={a.id} className="mark">
-              <AgentMark client={a.client} size={11} />
-            </span>
-          ))}
-        </div>
-      )}
-      {who && (
-        <svg
-          aria-hidden
-          className="trace"
+          className="label"
           style={{
-            transform: `translate(${x + off - stroke / 2}px, ${y + off - stroke / 2}px)`,
-            width: w - 2 * off + stroke,
-            height: h - 2 * off + stroke,
+            transform: `translate(${x}px, ${y - LABEL}px)`,
+            // Spans the board so the rain can sit on the right.
+            ...(who ? { width: Math.max(0, w) } : { maxWidth: Math.max(0, w) }),
           }}
         >
-          <rect
-            className="pz-trace"
-            x={stroke / 2}
-            y={stroke / 2}
-            width={Math.max(0, w - 2 * off)}
-            height={Math.max(0, h - 2 * off)}
-            rx={rx}
-            pathLength={100}
-            fill="none"
-            stroke="var(--yuzu)"
-            strokeWidth={stroke}
-            strokeLinecap="round"
-          />
-        </svg>
+          <span ref={title} className="name">
+            {name}
+          </span>
+          {who && rain > 0 && <Rain columns={rain} label="Working" />}
+        </div>
       )}
+      {ring !== undefined && (
+        <Ring box={ringBox} rx={rx} leaving={ring} delay={ringDelay(arrivedAt)} />
+      )}
+      {arrivedAt !== undefined && <Frame box={ringBox} rx={rx} at={arrivedAt} />}
     </>
+  );
+}
+
+/** The ring round a working board. It fades in after `delay` ms (a new board's frame is still drawing). */
+function Ring({
+  box,
+  rx,
+  leaving,
+  delay,
+}: {
+  box: CSSProperties;
+  rx: number;
+  leaving: boolean;
+  delay: number;
+}) {
+  // Fixed when it mounts: a running animation whose delay changed would jump.
+  const [wait] = useState(delay);
+  return (
+    <div aria-hidden className="ring-box" style={{ ...box, opacity: leaving ? 0 : 1 }}>
+      <div className="pz-ring" style={{ borderRadius: rx, animationDelay: `${wait}ms` }} />
+    </div>
+  );
+}
+
+/** A new board's frame drawing itself round its bounds from when it landed, then fading as the ring takes over. */
+function Frame({ box, rx, at }: { box: CSSProperties; rx: number; at: number }) {
+  const rect = useRef<SVGRectElement>(null);
+  useLayoutEffect(() => {
+    if (rect.current) drawFrame(rect.current, at);
+  }, [at]);
+  return (
+    <svg aria-hidden className="frame" style={box}>
+      <rect
+        ref={rect}
+        x={1}
+        y={1}
+        style={{ width: "calc(100% - 2px)", height: "calc(100% - 2px)" }}
+        rx={rx}
+        pathLength={100}
+        fill="none"
+        stroke="var(--yuzu)"
+        strokeWidth={2}
+        strokeDasharray="100 100"
+        strokeDashoffset={100}
+      />
+    </svg>
   );
 }
 

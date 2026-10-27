@@ -26,7 +26,11 @@ try {
     colorScheme: "light",
     reducedMotion: "reduce",
   });
-  await page.goto(`${BASE}/share?demo=comment`, { waitUntil: "networkidle" });
+  // Hold the demo on your first comment, typed and posted.
+  await page.addInitScript(() => {
+    (window as { ponzuDemoBeat?: string }).ponzuDemoBeat = "c1-post";
+  });
+  await page.goto(`${BASE}/share`, { waitUntil: "networkidle" });
   // Let fonts, photos and the canvas's camera settle, and drop the dev-only overlay.
   await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(2500);
