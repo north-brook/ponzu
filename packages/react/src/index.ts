@@ -3,6 +3,7 @@ export {
   ARRIVE_LAG_MS,
   ARRIVE_MAX_STAGGER,
   ARRIVE_MS,
+  ARRIVE_PLAN_MS,
   ARRIVE_STAGGER_MS,
   arrivals,
   arriveBoard,
