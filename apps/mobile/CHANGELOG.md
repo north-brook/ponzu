@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/north-brook/ponzu/compare/mobile-v0.4.1...mobile-v0.4.2) (2026-10-27)
+
+
+### Bug Fixes
+
+* bring the iphone canvas's arrival and working animations up to desktop ([#279](https://github.com/north-brook/ponzu/issues/279)) ([0e286a5](https://github.com/north-brook/ponzu/commit/0e286a58c2a5ad381a683cf775e21802313f1a79))
+
 ## [0.4.1](https://github.com/north-brook/ponzu/compare/mobile-v0.4.0...mobile-v0.4.1) (2026-10-27)
 
 

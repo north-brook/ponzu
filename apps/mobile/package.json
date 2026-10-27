@@ -1,6 +1,6 @@
 {
   "name": "@ponzu/mobile",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
