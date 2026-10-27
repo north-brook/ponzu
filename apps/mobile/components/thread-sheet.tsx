@@ -2,6 +2,7 @@ import type { Thread } from "@ponzu/core";
 import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { clientOf, shortAgent } from "../lib/activity";
+import { draftKey } from "../lib/drafts";
 import { shortAgo } from "../lib/files";
 import { useTheme } from "../lib/theme";
 import { Composer, type Mode } from "./composer";
@@ -152,10 +153,10 @@ export function ThreadView({ thread, me, onReply, onStatus }: ThreadProps) {
       <Composer
         mode={mode}
         onMode={setMode}
-        placeholder="Reply"
+        placeholder={resolved ? "Reply to reopen" : "Reply"}
         onSend={onReply}
         autoFocus={false}
-        draft={`thread:${thread.id}`}
+        draft={{ key: draftKey.reply(thread.id), thread: thread.id }}
       />
     </>
   );

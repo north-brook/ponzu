@@ -25,6 +25,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { useAppActive } from "../lib/app-active";
 import { useDictation } from "../lib/dictation";
+import { type Draft, getDraft, setDraft } from "../lib/drafts";
 import { fail, select, success } from "../lib/haptics";
 import { PARTS, phase, SWITCH_MS } from "../lib/morph";
 import { useTheme } from "../lib/theme";
@@ -33,12 +34,6 @@ import { Glass } from "./glass";
 import { Keyboard, Mic, MicOff, Send } from "./icons";
 
 export type Mode = "voice" | "type";
-/**
- * Unsent text, by what it's for (a new comment's pin, or a thread): kept
- * while the composer moves, as iPhone Duo folds and opens it from the sheet
- * to the panel or the half beside the design, and gone once it's sent.
- */
-const drafts = new Map<string, string>();
 
 const MODE_KEY = "ponzu.commentMode";
 let lastMode: Mode = "voice";
@@ -118,8 +113,11 @@ export function Composer({
   onSend: (text: string, mode: Mode) => Promise<void> | void;
   /** Focus the field when typing starts. A thread's reply field waits for a tap. */
   autoFocus?: boolean;
-  /** What the unsent text is kept under (a pin's place, a thread's id) as the composer moves. */
-  draft?: string;
+  /**
+   * What the unsent words are kept under (lib/drafts.ts: a pin's place, a thread's id), so
+   * they come back wherever the composer opens next.
+   */
+  draft?: { key: string } & Omit<Draft, "text">;
   /** Sending takes the sheet away (a new comment): the words go with it, never emptied first. */
   leaves?: boolean;
 }) {
@@ -127,13 +125,21 @@ export function Composer({
   const voice = mode === "voice";
   /** Sent from a sheet that leaves: the microphone stops with the tap, not when the Mac answers. */
   const [gone, setGone] = useState(false);
-  const dictation = useDictation(voice && !gone);
-  const [typed, setTypedState] = useState(() => (draft ? (drafts.get(draft) ?? "") : ""));
+  const [kept] = useState(() => (draft ? (getDraft(draft.key)?.text ?? "") : ""));
+  const keep = (t: string) => {
+    if (draft) setDraft(draft.key, { thread: draft.thread, pin: draft.pin, text: t });
+  };
+  // Opened in voice, it goes on from what was said or typed before.
+  const dictation = useDictation(voice && !gone, voice ? kept : "");
+  const [typed, setTypedState] = useState(voice ? "" : kept);
   const setTyped = (t: string) => {
-    if (draft && t) drafts.set(draft, t);
-    else if (draft) drafts.delete(draft);
+    keep(t);
     setTypedState(t);
   };
+  // What's heard is kept as it comes, as typing is.
+  useEffect(() => {
+    if (voice) keep(dictation.text);
+  }, [voice, dictation.text]);
   const [sending, setSending] = useState(false);
   const input = useRef<TextInputInstance>(null);
   const text = voice ? dictation.text : typed;

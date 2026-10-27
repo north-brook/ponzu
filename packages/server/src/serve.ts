@@ -671,6 +671,7 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
         return;
       }
       sockets.delete(s);
+      ws.setWriting(s, s.data.key, []);
       s.data.relay?.upstream?.close();
     },
     message(s, raw) {
@@ -711,6 +712,12 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
           send(s, { t: "ack", req: msg.req });
         } else if (msg.t === "theme" && (msg.theme === "light" || msg.theme === "dark")) {
           ws.theme = msg.theme;
+        } else if (msg.t === "writing" && Array.isArray(msg.threads)) {
+          ws.setWriting(
+            s,
+            s.data.key,
+            msg.threads.filter((t) => typeof t === "string"),
+          );
         }
       } catch (err) {
         const req = "req" in msg ? msg.req : undefined;

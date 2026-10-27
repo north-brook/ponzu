@@ -41,6 +41,7 @@ import { ThreadSheet } from "../../../components/thread-sheet";
 import { useMacChanges } from "../../../lib/activity-store";
 import { useFile } from "../../../lib/catalog";
 import { useDesignSession, useSessionState } from "../../../lib/design";
+import { draftKey, getDraft, unsent, useDrafts } from "../../../lib/drafts";
 import { useDuoLayout } from "../../../lib/duo";
 import { CREASE, foldAt } from "../../../lib/duo-layout";
 import { select, success, tick } from "../../../lib/haptics";
@@ -204,6 +205,19 @@ export default function Canvas() {
   const working = agent ? agentActivity(agent, session?.file ?? params.key) === "working" : false;
   const thread = doc?.threads.find((t) => t.id === threadId) ?? null;
 
+  // While a thread here has an unsent reply in it, the Mac's agents leave it open.
+  const drafts = useDrafts();
+  const writing = useMemo(() => {
+    const ids = new Set(doc?.threads.map((t) => t.id));
+    return [
+      ...new Set(
+        drafts.flatMap(([, d]) => (d.thread && unsent(d) && ids.has(d.thread) ? [d.thread] : [])),
+      ),
+    ].join(" ");
+  }, [drafts, doc]);
+  const writingIds = useMemo(() => (writing ? writing.split(" ") : []), [writing]);
+  useEffect(() => session?.setWriting(writingIds), [session, writingIds]);
+
   // Standby (iPhone Duo set down while an agent works): the page alone on black, the camera
   // easing to each board the agent touches. Development's `?standby=1` forces it on the simulator.
   const fileKey = session?.file ?? params.key;
@@ -257,6 +271,19 @@ export default function Canvas() {
         setPending(null);
         setThreadId(msg.id);
         break;
+      case "openUnsent": {
+        // A comment left unsent: its sheet comes back with its words, as a long press would.
+        const pin = getDraft(msg.key)?.pin;
+        if (!pin) break;
+        tick();
+        setThreadId(null);
+        setCard(false);
+        setCommentsOpen(false);
+        leave.current = null;
+        setLeaving(false);
+        setPending(pin);
+        break;
+      }
       case "page":
         setPageId(msg.pageId);
         break;
@@ -322,11 +349,17 @@ export default function Canvas() {
   };
   const reply = async (text: string, m: Mode) => {
     if (!session || !thread) return;
-    await session.send({
-      op: "thread.message",
+    const message = {
+      op: "thread.message" as const,
       id: thread.id,
       message: { id: newId("m"), author: ME, text, createdAt: Date.now() },
-    });
+    };
+    // Resolved while it was open, a reply is something more to do: it opens again.
+    await session.send(
+      thread.status === "resolved"
+        ? { op: "batch", ops: [message, { op: "thread.update", id: thread.id, status: "open" }] }
+        : message,
+    );
     track("comment left", { reply: true, mode: m });
   };
   const setStatus = async (status: Thread["status"]) => {
@@ -440,9 +473,24 @@ export default function Canvas() {
       pill
     );
   /** A new comment's unsent words are kept under its pin's place. */
-  const pinDraft = pending
-    ? `pin:${pending.artboardId ?? pending.pageId}:${pending.x}:${pending.y}`
-    : undefined;
+  const pinDraft = pending ? draftKey.comment(pending) : undefined;
+  /** New comments on this page left unsent, but the one being written: their pins stay. */
+  const unsentPins = useMemo(
+    () =>
+      page
+        ? drafts.flatMap(([key, d]) =>
+            d.pin &&
+            unsent(d) &&
+            key !== pinDraft &&
+            (d.pin.artboardId
+              ? page.artboards.some((a) => a.id === d.pin!.artboardId)
+              : d.pin.pageId === page.id)
+              ? [{ key, ...d.pin }]
+              : [],
+          )
+        : [],
+    [drafts, page, pinDraft],
+  );
   /** The page's open threads: the count on the comments button. */
   const open = openThreads(doc, page?.id);
 
@@ -516,6 +564,8 @@ export default function Canvas() {
           insets={canvasInsets}
           sheet={sheet}
           pending={pending}
+          unsent={unsentPins}
+          writing={writingIds}
           thread={threadId}
           onMessage={onMessage}
           page={asked}
@@ -746,7 +796,7 @@ export default function Canvas() {
             // One composer per pin: a pin dropped while the last comment is still sending gets
             // its own, which that send's ack can't empty.
             key={pinDraft}
-            draft={pinDraft}
+            draft={{ key: pinDraft!, pin: pending }}
           />
           {error && (
             <Text style={{ fontFamily: "Inter", fontSize: 13, color: color.muted }}>{error}</Text>

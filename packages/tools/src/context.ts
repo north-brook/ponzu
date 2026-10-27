@@ -34,6 +34,8 @@ export interface Workspace {
    * Absent, or undefined, when there's no canvas for one to open.
    */
   link?(key: string, opts?: { artboard?: string; origin?: string }): string | undefined;
+  /** Whether an open canvas has an unsent reply in this thread: agents leave it open. */
+  writing?(key: string, thread: string): boolean;
   /** How the person's canvas looks, once one has said. Renders default to it. */
   theme?: ColorScheme;
   events: EventHub;
