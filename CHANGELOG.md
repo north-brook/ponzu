@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.1](https://github.com/north-brook/ponzu/compare/v1.58.0...v1.58.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* keep the canvas moving while you pan and zoom over a few boards ([#288](https://github.com/north-brook/ponzu/issues/288)) ([b294ae6](https://github.com/north-brook/ponzu/commit/b294ae68bcd82c24802f4a12b19e253a33deeaf0))
+
 ## [1.58.0](https://github.com/north-brook/ponzu/compare/v1.57.0...v1.58.0) (2026-10-27)
 
 
