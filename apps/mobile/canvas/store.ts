@@ -17,7 +17,7 @@ import {
 export interface CanvasState {
   doc: Doc | null;
   assetBase?: string;
-  /** The design's key: presence from other designs doesn't trace this one's boards. */
+  /** The design's key: presence from other designs doesn't ring this one's boards. */
   file?: string;
   theme: Theme;
   pageId: string | null;
@@ -33,7 +33,7 @@ export interface CanvasState {
   insets: Insets;
   /** How far a sheet over the canvas rises, in px from the bottom. */
   sheet: number;
-  /** The screen's corner radius, which a focused board's trace follows. */
+  /** The screen's corner radius, which a focused board's ring follows. */
   radius: number;
 }
 
@@ -57,7 +57,7 @@ export let state: CanvasState = {
   radius: 55,
 };
 
-/** An agent's work arrives with the shimmer slide, as on desktop. One per open design. */
+/** An agent's work develops onto the canvas, as on desktop. One per open design. */
 export let arrivals = new Arrivals();
 
 function set(patch: Partial<CanvasState>) {
@@ -98,9 +98,11 @@ export function receive(msg: ToCanvas) {
         // The app sends the doc again after a reconnect; an op that doesn't fit is dropped.
         return;
       }
-      if (msg.origin?.kind === "agent") {
+      // An agent's work, and files saved straight into the design, develop; only what's new to
+      // the canvas arrives. As desktop does.
+      if (msg.origin?.kind === "agent" || msg.origin?.kind === "disk") {
         try {
-          arrivals.add(msg.op, next);
+          arrivals.add(msg.op, next, undefined, doc);
         } catch (err) {
           send({ t: "error", message: `arrival: ${String(err)}` });
         }

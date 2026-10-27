@@ -61,7 +61,7 @@ export const CanvasView = forwardRef<
     onMessage: (msg: FromCanvas) => void;
   }
 >(function CanvasView(props, ref) {
-  // The display's corner (lib/screen.ts), which a focused board's trace follows.
+  // The display's corner (lib/screen.ts), which a focused board's ring follows.
   const { width, height } = useWindowDimensions();
   const radius = displayRadius(width, height);
   const latestRadius = useRef(radius);

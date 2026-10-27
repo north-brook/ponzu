@@ -56,7 +56,7 @@ pw_run.sh>` for another build). It launches one browser per page, so a page's me
 It loads the built page (or `--html <file>`, another build of it) with the server as its origin,
 as the app's `baseUrl` does, takes the doc from the design's socket and posts it in over the bridge
 with insets for the app's bar (118 pt) and home indicator. `--working` adds an agent working on
-every board of the page, so each draws its trace.
+every board of the page, so each draws its ring and rain.
 
 Fingers are trusted touch events from WebKit's own input protocol (`Input.dispatchTouchEvent`,
 through the page proxy Playwright already holds), sent on a fixed 60 Hz clock and never awaited one
