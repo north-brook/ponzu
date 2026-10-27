@@ -235,6 +235,24 @@ describe("the Suggested tab's state", () => {
     expect(runner.jobs).toHaveLength(0);
   });
 
+  test("an agent whose CLI can't run isolated isn't run at all", async () => {
+    const runner = fakeRunner();
+    const make = (isolated: string[]) =>
+      new SuggestionService({
+        bin: (a) => `/bin/${a}`,
+        isolated: async (a) => isolated.includes(a),
+        run: runner.run,
+        home,
+      });
+    expect((await make(["codex"]).state()).agent).toBe("codex");
+    const none = make([]);
+    expect(await none.refresh()).toEqual({ agent: null, ideas: [], running: false });
+    expect(runner.jobs).toHaveLength(0);
+    // The agent's own CLI is asked for its flags: one that doesn't answer has none of them.
+    const missing = new SuggestionService({ bin: () => join(home, "no-such-cli"), home });
+    expect((await missing.state()).agent).toBeNull();
+  });
+
   test("ideas arrive at the front project by project, one run at a time, kept for next time", async () => {
     const file = join(home, "ponzu", "suggestions.json");
     const runner = fakeRunner();
@@ -304,6 +322,40 @@ describe("the Suggested tab's state", () => {
     ]);
   });
 
+  test("two refreshes at once start one run", async () => {
+    let jobs = 0;
+    const held: (() => void)[] = [];
+    const service = new SuggestionService({
+      bin: () => "/bin/claude",
+      // Each look for the agent waits to be let through.
+      agents: () =>
+        new Promise((done) =>
+          held.push(() =>
+            done([{ id: "claude", label: "Claude Code", found: true, connected: false }]),
+          ),
+        ),
+      run: async () => {
+        jobs++;
+        return { ideas: [] };
+      },
+      home,
+    });
+    const first = service.refresh();
+    const second = service.refresh();
+    await until(() => held.length === 2);
+    // The first finds the agent, and its run is over before the second has.
+    held.shift()!();
+    await until(() => jobs === 2);
+    await Bun.sleep(20);
+    const rest = setInterval(() => {
+      while (held.length) held.shift()!();
+    }, 1);
+    await Promise.all([first, second]);
+    await until(async () => !(await service.state()).running);
+    clearInterval(rest);
+    expect(jobs).toBe(2);
+  });
+
   test("an idea the person started drops out", async () => {
     const runner = fakeRunner();
     const designs: {
@@ -338,9 +390,10 @@ describe("the Suggested tab's state", () => {
     ]);
     // A design called what an idea is, by name or by folder, means it's started. While an
     // agent makes it, or for a while after, the idea stays for its card to show the design.
-    const started: { name: string; key: string; busy?: string } = {
+    const started: { name: string; key: string; git: { project: string }; busy?: string } = {
       name: "Untitled",
       key: "/x/every-alpha-screen.design",
+      git: { project: "github.com/me/alpha" },
       busy: "claude",
     };
     designs.push(started);
@@ -350,6 +403,45 @@ describe("the Suggested tab's state", () => {
     ]);
     delete started.busy;
     expect((await service.state()).ideas.map((i) => i.name)).toEqual(["Alpha flow"]);
+  });
+
+  test("a design in another project doesn't stand for an idea", async () => {
+    let now = 1_000_000;
+    const runner = fakeRunner();
+    // alpha has a "Brand" and a "Beta map" of its own; beta's ideas have those names too.
+    const designs = [
+      { name: "Brand", key: "/a/brand.design", git: { project: "github.com/me/alpha" } },
+      { name: "Beta map", key: "/a/beta-map.design", git: { project: "github.com/me/alpha" } },
+    ];
+    const service = new SuggestionService({
+      bin: () => "/bin/claude",
+      run: runner.run,
+      home,
+      designs: async () => designs,
+      now: () => now,
+    });
+    await service.refresh();
+    await until(() => runner.jobs.length === 2);
+    runner.answer("alpha", ["Brand", "Alpha flow"]);
+    runner.answer("beta", ["Brand", "Beta map"]);
+    await until(async () => !(await service.state()).running);
+    const ideas = (await service.state()).ideas;
+    expect(ideas.map((i) => [i.projectName, i.name]).sort()).toEqual([
+      ["alpha", "Alpha flow"],
+      ["beta", "Beta map"],
+      ["beta", "Brand"],
+    ]);
+    // Once beta has its own "Brand", that idea is started, and later drops out.
+    designs.push({
+      name: "Brand",
+      key: "/b/brand.design",
+      git: { project: "github.com/me/beta" },
+    });
+    now += 60_000;
+    expect((await service.state()).ideas.map((i) => [i.projectName, i.name]).sort()).toEqual([
+      ["alpha", "Alpha flow"],
+      ["beta", "Beta map"],
+    ]);
   });
 
   test("a run that takes too long is stopped, quietly", async () => {

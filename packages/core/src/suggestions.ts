@@ -56,12 +56,15 @@ export function startedAs(idea: Pick<Idea, "name">, file: { name: string; key: s
 /** How long a design started from an idea keeps the idea's place in Suggested, as its real card. */
 export const STARTED_FOR = 10 * 60_000;
 
-/** The design an idea became, if one is called what it is. */
-export function startedFrom<F extends { name: string; key: string }>(
-  idea: Pick<Idea, "name">,
+/**
+ * The design an idea became, if one in the idea's project is called what it is. A "Brand" in
+ * another repository is another design.
+ */
+export function startedFrom<F extends { name: string; key: string; git?: { project?: string } }>(
+  idea: Pick<Idea, "name" | "projectId">,
   files: readonly F[],
 ): F | undefined {
-  return files.find((f) => startedAs(idea, f));
+  return files.find((f) => f.git?.project === idea.projectId && startedAs(idea, f));
 }
 
 /**

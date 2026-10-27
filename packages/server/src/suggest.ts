@@ -70,6 +70,13 @@ export interface SuggestJob {
 /** Runs one project's job and gives back the agent's answer, parsed: `{ ideas: [...] }`. */
 export type SuggestRunner = (job: SuggestJob) => Promise<unknown>;
 
+/** Whether an agent's CLI can run a job cut off from everything but reading the project. */
+export type SuggestCheck = (
+  agent: SuggestionAgent,
+  bin: string,
+  env: SuggestJob["env"],
+) => Promise<boolean>;
+
 export interface SuggestOptions {
   /** The path of an agent's CLI on this Mac, or null when it isn't installed. */
   bin(agent: SuggestionAgent): string | null;
@@ -81,6 +88,11 @@ export interface SuggestOptions {
   file?: string;
   /** Runs one project's job. Default: the agent's CLI. */
   run?: SuggestRunner;
+  /**
+   * Whether an agent can be run at all: one that can't is treated as not installed. Default,
+   * for the agent's CLI: its version has every flag that keeps the run isolated.
+   */
+  isolated?: SuggestCheck;
   /** Whose agent histories to read. Default: the person's home folder. */
   home?: string;
   /** The environment the agent runs in: a PATH that finds what it needs. */
@@ -169,9 +181,11 @@ export class SuggestionService {
    */
   async refresh(): Promise<Suggestions> {
     await this.loaded;
-    if (!this.running && this.now() - this.ran >= this.every) {
+    const due = () => !this.running && this.now() - this.ran >= this.every;
+    if (due()) {
       const agent = await this.agent();
-      if (agent && !this.running) {
+      // Asked again: another refresh may have run while this one looked for the agent.
+      if (agent && due()) {
         this.running = true;
         this.ran = this.now();
         void this.run(agent).finally(() => {
@@ -187,15 +201,23 @@ export class SuggestionService {
     this.stopped.abort();
   }
 
-  /** Claude Code if it's here, else Codex. */
+  /** Claude Code if it's here and can run isolated, else Codex. */
   private async agent(): Promise<{ id: SuggestionAgent; bin: string } | null> {
     const listed = this.opts.agents ? await this.opts.agents().catch(() => []) : null;
+    // A runner of one's own keeps its own runs apart.
+    const isolated = this.opts.isolated ?? (this.opts.run ? null : isolates);
     for (const id of ["claude", "codex"] as const) {
       if (listed && !listed.some((a) => a.id === id && a.found)) continue;
       const bin = this.opts.bin(id);
-      if (bin) return { id, bin };
+      if (!bin) continue;
+      if (isolated && !(await isolated(id, bin, this.env()).catch(() => false))) continue;
+      return { id, bin };
     }
     return null;
+  }
+
+  private env() {
+    return { ...process.env, ...this.opts.env };
   }
 
   private async designs() {
@@ -226,7 +248,7 @@ export class SuggestionService {
           this.stopped.signal,
           AbortSignal.timeout(this.opts.timeout ?? RUN_TIMEOUT),
         ]),
-        env: { ...process.env, ...this.opts.env },
+        env: this.env(),
       };
       let answer: unknown;
       try {
@@ -240,7 +262,7 @@ export class SuggestionService {
         count: counts[i]!,
         found: this.now(),
         home: this.opts.home,
-      }).filter((idea) => !designs.some((d) => startedAs(idea, d)));
+      }).filter((idea) => !startedFrom(idea, designs));
       if (!found.length) return;
       this.ideas = [
         ...found,
@@ -523,33 +545,64 @@ function clean(v: unknown): string {
   return typeof v === "string" ? v.replace(/\s+/g, " ").trim() : "";
 }
 
-/** The agent's CLI, headless and read-only, in the project's folder. */
+/** The agent's CLI, headless and read-only. */
 export const runAgent: SuggestRunner = async (job) => {
   if (job.agent === "claude") return runClaude(job);
   return runCodex(job);
 };
 
 /**
+ * The flags a run can't go without, each agent's: no MCP servers (so not Ponzu's own), no
+ * hooks, and no session saved into the history the projects come from. Hooks are turned off
+ * with Claude Code's `--settings` and Codex's `-c`, which every version has.
+ */
+const ISOLATION: Record<SuggestionAgent, string[]> = {
+  claude: ["--strict-mcp-config", "--no-session-persistence", "--settings", "--setting-sources"],
+  codex: ["--ephemeral"],
+};
+
+/**
+ * Whether this version of the agent's CLI has every flag that keeps a run isolated. One that
+ * doesn't isn't run at all, rather than run with the person's MCP servers, hooks or history.
+ */
+export const isolates: SuggestCheck = async (agent, bin, env) => {
+  const has = flagsOf(await helpOf(bin, agent === "codex" ? ["exec", "--help"] : ["--help"], env));
+  return ISOLATION[agent].every(has);
+};
+
+/** Whether a CLI's help lists a flag, as an option of its own, not in another's text. */
+function flagsOf(help: string): (flag: string) => boolean {
+  return (flag) => new RegExp(`^\\s*(?:-\\w, )?${flag}\\b`, "m").test(help);
+}
+
+/**
  * `claude -p`, its tools cut to Read, Glob and Grep and everything else denied, with no MCP
- * servers (so not Ponzu's own), and no session saved into the history the projects come from.
+ * servers, no hooks, none of the project's settings, and no session saved.
  */
 async function runClaude(job: SuggestJob): Promise<unknown> {
   const help = await helpOf(job.bin, ["--help"], job.env);
-  const has = (flag: string) => help.includes(flag);
+  const has = flagsOf(help);
+  if (!ISOLATION.claude.every(has)) throw new Error("Claude Code can't run isolated");
   const tools = "Read,Glob,Grep";
   const args = [
     "-p",
     "--output-format",
     "json",
     ...(has("--json-schema") ? ["--json-schema", JSON.stringify(job.schema)] : []),
-    ...(has("--tools ") ? ["--tools", tools] : []),
+    ...(has("--tools") ? ["--tools", tools] : []),
     "--allowedTools",
     tools,
     "--disallowedTools",
     "Bash,Edit,Write,MultiEdit,NotebookEdit,WebFetch,WebSearch,Task",
-    ...(has("dontAsk") ? ["--permission-mode", "dontAsk"] : []),
-    ...(has("--strict-mcp-config") ? ["--strict-mcp-config"] : []),
-    ...(has("--no-session-persistence") ? ["--no-session-persistence"] : []),
+    ...(help.includes("dontAsk") ? ["--permission-mode", "dontAsk"] : []),
+    // Only the person's own settings, for how they sign in: a repository's can bring hooks,
+    // plugins and permissions. And no hooks at all, the person's included.
+    "--setting-sources",
+    "user",
+    "--settings",
+    JSON.stringify({ disableAllHooks: true }),
+    "--strict-mcp-config",
+    "--no-session-persistence",
     // Quick enough to look around a repository while the person watches.
     "--model",
     "sonnet",
@@ -571,16 +624,22 @@ async function runClaude(job: SuggestJob): Promise<unknown> {
 
 /**
  * `codex exec` in its read-only sandbox, never asking, with an output schema, without the
- * person's config (so no MCP servers) and without saving a session.
+ * person's config (so no MCP servers), hooks, plugins or apps, and without saving a session.
+ * It starts in an empty folder, so no project's config, hooks or rules load; its sandbox still
+ * reads the project.
  */
 async function runCodex(job: SuggestJob): Promise<unknown> {
   const help = await helpOf(job.bin, ["exec", "--help"], job.env);
-  const has = (flag: string) => help.includes(flag);
+  const has = flagsOf(help);
+  if (!ISOLATION.codex.every(has)) throw new Error("Codex can't run isolated");
   const dir = await mkdtemp(join(tmpdir(), "ponzu-suggest-"));
   try {
+    const work = join(dir, "work");
     const schema = join(dir, "schema.json");
     const last = join(dir, "answer.json");
+    await mkdir(work);
     await writeFile(schema, JSON.stringify(job.schema));
+    const off = (feature: string) => ["-c", `features.${feature}=false`];
     const args = [
       "exec",
       "--sandbox",
@@ -589,19 +648,26 @@ async function runCodex(job: SuggestJob): Promise<unknown> {
       "--color",
       "never",
       "-C",
-      job.project.root,
+      work,
       "--output-schema",
       schema,
       "-o",
       last,
       "-c",
       'approval_policy="never"',
-      ...(has("--ignore-user-config") ? ["--ignore-user-config"] : ["-c", "mcp_servers={}"]),
-      ...(has("--ephemeral") ? ["--ephemeral"] : []),
+      ...off("hooks"),
+      ...off("plugins"),
+      ...off("apps"),
+      ...off("memories"),
+      ...(has("--ignore-user-config")
+        ? ["--ignore-user-config"]
+        : ["-c", "mcp_servers={}", "-c", "notify=[]"]),
+      ...(has("--ignore-rules") ? ["--ignore-rules"] : []),
+      "--ephemeral",
       "-",
     ];
     const out = await exec(job.bin, args, {
-      cwd: job.project.root,
+      cwd: work,
       input: job.prompt,
       env: job.env,
       signal: job.signal,
