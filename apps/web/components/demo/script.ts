@@ -48,7 +48,9 @@ export interface Script {
   /** The tab's name and Hugeicon, in the bar above the demo. */
   name: string;
   icon: string;
-  /** What you asked Claude, shown in the bar and sent in the Claude window. */
+  /** What the tab does, said of any product, in the bar above the demo. */
+  blurb: string;
+  /** What you asked Claude about Seekle, sent in the Claude window. */
   prompt: string;
   /** The Claude window's title. */
   title: string;
@@ -163,6 +165,7 @@ const BRAND: Script = {
   id: "brand",
   name: "Brand",
   icon: "palette",
+  blurb: "Explore directions for a logo, colour and type, side by side.",
   prompt: "Explore three directions for Seekle's mark, colour and type.",
   title: "Seekle brand directions",
   label:
@@ -264,8 +267,9 @@ const C3: Comment = {
 
 const APP: Script = {
   id: "app",
-  name: "App",
+  name: "Build",
   icon: "phone",
+  blurb: "Rebuild every screen of your app from its source.",
   prompt: "Rebuild every Seekle screen from source, in the new brand.",
   title: "Rebuild Seekle in Ponzu",
   label:
@@ -416,6 +420,7 @@ const LAUNCH: Script = {
   id: "launch",
   name: "Launch",
   icon: "rocket",
+  blurb: "Make the website hero and App Store screenshots.",
   prompt: "Make Seekle's website hero and App Store screenshots.",
   title: "Launch Seekle",
   label:
@@ -518,6 +523,7 @@ const EXPLAIN: Script = {
   id: "explain",
   name: "Explain",
   icon: "flow",
+  blurb: "Draw how your code works, straight from the code.",
   prompt: "Draw how a Seekle game is dealt and scored, from the code.",
   title: "How a Seekle game works",
   label:
@@ -600,6 +606,7 @@ const OPERATE: Script = {
   id: "operate",
   name: "Operate",
   icon: "chart",
+  blurb: "Turn last week's numbers and feedback into a one-page update.",
   prompt: "Turn last week's players and reviews into a one-page update.",
   title: "Seekle weekly update",
   label:
