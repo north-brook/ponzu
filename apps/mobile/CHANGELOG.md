@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/north-brook/ponzu/compare/mobile-v0.4.0...mobile-v0.4.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* open a design by tapping its card on iphone again ([#271](https://github.com/north-brook/ponzu/issues/271)) ([f69d430](https://github.com/north-brook/ponzu/commit/f69d430ad27975d2b66c073fe4baee0c3ed85f14))
+
 ## [0.4.0](https://github.com/north-brook/ponzu/compare/mobile-v0.3.0...mobile-v0.4.0) (2026-10-26)
 
 
