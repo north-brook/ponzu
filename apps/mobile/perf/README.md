@@ -98,7 +98,7 @@ Kettle's Brand and App pages, and `phone.design` from `corpus.ts`:
 | --- | --- |
 | `filmstrip` | 60 fit-content phone screens, 6 rows of 10: each measured before the page frames itself |
 | `loops` | 24 phone screens, each with a spinner and a pulse; most are off screen at the opening zoom |
-| `loops+trace` | the same with an agent working on every board: each draws the trace |
+| `loops+trace` | the same with an agent working on every board: each draws its ring and rain (named for the trace it drew before) |
 | `pins` | 12 screens with 8 open threads each, half pinned to nodes |
 
 ### The desktop mechanisms
@@ -138,7 +138,7 @@ should be.
 | `canvas` | Kettle's Brand page, drawn |
 | `comment` | the comment sheet in typing, text in it, the keyboard up |
 | `voice` | the comment sheet in voice (the microphone refused) |
-| `working` | Kettle's canvas while an agent works on four of its boards: traces, the title's shimmer |
+| `working` | Kettle's canvas while an agent works on four of its boards: rings and rain, the title's shimmer |
 | `standby` | the same, in standby (`?standby=1`) |
 | `background` | Kettle's canvas with Settings brought to the front |
 | `loops`, `loops-working`, `loops-background` | `phone.design`'s loops page, at rest, with an agent, behind Settings |
