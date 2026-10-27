@@ -9,8 +9,9 @@ import { Slice } from "@/components/icons";
  *
  * Designed in .context/share.design (Directions › AD3c): the canvas at night, the lockup at the top
  * left and the headline low, under real boards from the example designs receding on a tilted plane.
- * Every board is dark, so nothing outshouts the yuzu slice. The bottom 96px stay empty, because X
- * stamps the domain in the bottom left.
+ * Every board is dark, so nothing outshouts the yuzu slice. The headline sits 96px off the bottom
+ * and the plane starts well to its right, so the bottom left, where X stamps the domain, stays
+ * empty; the boards run off the right and bottom edges only on the right.
  */
 export const metadata: Metadata = {
   title: "Share card",
