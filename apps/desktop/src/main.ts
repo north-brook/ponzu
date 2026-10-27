@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { type Catalog, parseDesignLink } from "@ponzu/core";
 import { cloneTarget, parseOpenUrl, spawnGit } from "@ponzu/server/clone";
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, shell } from "electron";
+import { followAppearance } from "./appearance";
 import { renderToken, startRenderHost } from "./render-host";
 import { smoke, watchSmoke } from "./smoke";
 import { checkForUpdatesNow, installUpdater, relaunchedInBackground } from "./updater";
@@ -551,6 +552,7 @@ if (!app.requestSingleInstanceLock()) {
       setupAgents();
       setupWake();
       watchIdle();
+      followAppearance();
     }
     for (const p of pendingOpens.splice(0)) await openDesign(p);
     for (const url of pendingLinks.splice(0)) await openLink(url);
