@@ -12,13 +12,16 @@
  *   none` instead, through an attribute and one rule per board, and comes
  *   back at the phase it would have reached by then. Fields (SVGs drawn as an
  *   image of themselves) keep moving at any size: the image costs no layers.
- * - While the camera moves, every animation in a busy board stops the same
- *   way: with thousands of animated layers, Chromium re-layerizes all of them
- *   on every camera frame. Fields show their image.
+ * - While the camera moves over a crowded view (`hold`), every animation in a
+ *   busy board stops too: with thousands of animated layers, Chromium
+ *   re-layerizes all of them on every camera frame. These freeze where they
+ *   are, pinned to the frame they'd reached, and go on from it once the camera
+ *   stops. Fields show their image.
  * - A tall board's top-level sections outside the visible band skip
  *   rendering.
- * - While nobody can see the board move (off screen, a thumbnail, mid-gesture,
- *   the window away: `hold`), its loops hold where they are (holdLoops).
+ * - While nobody can see the board move (off screen, a thumbnail, the window
+ *   away) or the camera moves over a crowded view (`hold`), its loops hold
+ *   where they are (holdLoops).
  */
 
 import { isCSSAnimation, type Motion, nameOf, STILL_PX } from "./motion.ts";
@@ -41,6 +44,9 @@ const CULL_MARGIN = 0.5;
 
 /** Marks an element whose animations are held still. */
 const STILL = "data-pz-still";
+
+/** Marks an element frozen mid-gesture, naming its rule in the board's pin sheet. */
+const PIN = "data-pz-pin";
 
 /** Goes in every artboard's shadow root. */
 export const STILL_CSS = `[${STILL}],[${STILL}]::before,[${STILL}]::after{animation:none!important}`;
@@ -101,7 +107,10 @@ export interface Detail {
    * rounded out to {@link BAND} so a pan doesn't change it every frame.
    */
   visible?: { y0: number; y1: number };
-  /** Nobody can see it move: its loops hold where they are (holdLoops). */
+  /**
+   * Nobody can see it move, or the camera moves over a crowded view: its loops
+   * hold where they are (holdLoops), and mid-gesture a busy board's animations freeze.
+   */
   hold?: boolean;
 }
 
@@ -147,6 +156,10 @@ export class BoardDetail {
   private last: Detail | null = null;
   /** Its loops are held (holdLoops). */
   private held = false;
+  /** Frozen elements' rules, pinning each to the frame it had reached. */
+  private pins = new Map<Element, string>();
+  private pinSheet: HTMLStyleElement | null = null;
+  private pinId = 0;
 
   constructor(
     private root: ShadowRoot,
@@ -166,6 +179,8 @@ export class BoardDetail {
     this.culled.clear();
     this.videos.clear();
     this.held = false;
+    this.pins.clear();
+    this.pinSheet = null;
   }
 
   update(d: Detail) {
@@ -200,17 +215,27 @@ export class BoardDetail {
     for (const m of this.still.values()) count += m.size;
     for (const m of this.releasing.values()) count += m.size;
     for (const a of this.motion.running) if (a.playState !== "idle") count++;
-    const freeze = d.moving && count >= BUSY;
+    const freeze = d.moving && !!d.hold && count >= BUSY;
     const hold = new Map<Element, Map<string, Phase>>();
+    const frozen = new Map<Element, CSSAnimation[]>();
     for (const a of this.motion.running) {
       const t = (a.effect as KeyframeEffect).target;
       if (!t || a.playState === "idle" || this.still.has(t) || this.releasing.has(t)) continue;
-      // Too small to see stops anywhere; mid-gesture, everything in a busy board does.
-      if (!freeze && !small(t)) continue;
+      // Too small to see stops anywhere, as its own style; mid-gesture, everything in a busy
+      // board does, where it is.
+      const tiny = small(t);
+      if (!freeze && !tiny) continue;
       const m = hold.get(t) ?? new Map<string, Phase>();
       hold.set(t, m);
-      m.set(nameOf(a), phase(a));
+      if (tiny) m.set(nameOf(a), phase(a));
+      else {
+        m.set(nameOf(a), { start: null, current: a.currentTime as number | null });
+        frozen.set(t, [...(frozen.get(t) ?? []), a]);
+      }
     }
+    // Every frame read before any element lets go of its animations.
+    for (const [t, anims] of frozen) this.pin(t, anims);
+    this.writePins();
     for (const [t, m] of hold) {
       t.setAttribute(STILL, "");
       this.still.set(t, m);
@@ -225,11 +250,51 @@ export class BoardDetail {
     // Let go of what's big enough to see now.
     const back = new Map<Element, Map<string, Phase>>();
     for (const [t, m] of this.still) {
-      if (!t.isConnected) this.still.delete(t);
-      else if (!small(t, RELEASE)) back.set(t, m);
+      if (!t.isConnected) {
+        this.still.delete(t);
+        this.pins.delete(t);
+      } else if (!small(t, RELEASE)) back.set(t, m);
     }
     for (const t of back.keys()) this.still.delete(t);
     this.release(back);
+    this.writePins();
+  }
+
+  /**
+   * Pin an element, and its pseudo-elements, to the frame its animations have
+   * reached: a rule holding each animated property at its value now, so taking
+   * the animations away (and their layers) shows the same frame.
+   */
+  private pin(t: Element, anims: CSSAnimation[]) {
+    const by = new Map<string, Set<string>>();
+    for (const a of anims) {
+      const effect = a.effect as KeyframeEffect;
+      const pseudo = effect.pseudoElement ?? "";
+      const props = by.get(pseudo) ?? new Set<string>();
+      by.set(pseudo, props);
+      for (const k of effect.getKeyframes())
+        for (const p of Object.keys(k)) if (!KEYFRAME_KEYS.has(p)) props.add(cssName(p));
+    }
+    const id = String(++this.pinId);
+    let rule = "";
+    for (const [pseudo, props] of by) {
+      const cs = getComputedStyle(t, pseudo || null);
+      const decls = [...props].map((p) => `${p}:${cs.getPropertyValue(p)}!important`).join(";");
+      rule += `[${PIN}="${id}"]${pseudo}{${decls}}`;
+    }
+    t.setAttribute(PIN, id);
+    this.pins.set(t, rule);
+  }
+
+  /** The pin sheet, from the pins there are now. */
+  private writePins() {
+    if (!this.pinSheet?.isConnected) {
+      if (!this.pins.size) return;
+      this.pinSheet = document.createElement("style");
+      this.root.appendChild(this.pinSheet);
+    }
+    const text = [...this.pins.values()].join("");
+    if (this.pinSheet.textContent !== text) this.pinSheet.textContent = text;
   }
 
   /**
@@ -248,10 +313,14 @@ export class BoardDetail {
         now.set(t, m);
         this.releasing.delete(t);
         t.removeAttribute(STILL);
+        t.removeAttribute(PIN);
+        this.pins.delete(t);
       }
-      // They restart as new animations: put each where it would be had it never stopped,
-      // and hand them to motion now so their start events don't send it looking. One ask
-      // for the root's: each element's would walk every animation in the document again.
+      this.writePins();
+      // They restart as new animations: a tiny one where it would be had it never stopped, a
+      // frozen one from the frame it was pinned to. Hand them to motion now so their start
+      // events don't send it looking. One ask for the root's: each element's would walk every
+      // animation in the document again.
       const back: CSSAnimation[] = [];
       for (const a of this.root.getAnimations()) {
         if (!isCSSAnimation(a)) continue;
@@ -386,6 +455,17 @@ export function holdLoops(root: ShadowRoot, hold: boolean, anims: Iterable<Anima
       heldVideos.add(v);
     } else if (!hold && heldVideos.delete(v)) void v.play().catch(() => {});
   }
+}
+
+/** What a keyframe carries besides properties. */
+const KEYFRAME_KEYS = new Set(["offset", "computedOffset", "easing", "composite"]);
+
+/** A keyframe's property as CSS names it: strokeDashoffset is stroke-dashoffset. */
+function cssName(p: string): string {
+  if (p.startsWith("--")) return p;
+  if (p === "cssFloat") return "float";
+  if (p === "cssOffset") return "offset";
+  return p.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
 }
 
 const LOOPING_SMIL = '[repeatCount="indefinite"], [repeatDur="indefinite"]';
