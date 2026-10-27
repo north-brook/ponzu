@@ -2,7 +2,7 @@
 
 <h1 align="center">Ponzu</h1>
 
-<p align="center">The design canvas for your coding agent.<br>Open source. Runs on your machine. Your agent designs in plain HTML and CSS, and you steer with comments.</p>
+<p align="center">The open source canvas for your agent.<br>Brands, apps, launch pages, diagrams, dashboards. Your agent draws them in plain HTML and CSS on your machine, and you steer with comments.</p>
 
 <p align="center"><a href="https://ponzu.design">ponzu.design</a> · <a href="#connect-an-agent">Connect an agent</a> · <a href="#the-design-format">The .design format</a> · <a href="#embed-it">Embed it</a></p>
 

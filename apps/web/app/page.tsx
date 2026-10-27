@@ -24,7 +24,7 @@ export const metadata: Metadata = share({
   title: TITLE,
   description: DESCRIPTION,
   xDescription:
-    "Open source and local. Your agent designs in HTML and CSS; you steer with comments.",
+    "Your agent draws brands, apps and more in HTML and CSS on your Mac; you steer with comments.",
 });
 
 export default function Home() {
@@ -33,12 +33,14 @@ export default function Home() {
       <Nav />
 
       <header className="flex flex-col items-center gap-6 pt-14 pb-16 text-center md:pt-[104px]">
+        {/* "open source" holds together once it fits: it's 352px at the smallest size. */}
         <h1 className="m-0 max-w-[1040px] font-display text-5xl leading-[1.02] font-semibold tracking-[-0.035em] text-balance text-ink sm:text-6xl md:text-7xl lg:text-8xl">
-          The design canvas for your coding agent.
+          The <span className="min-[400px]:whitespace-nowrap">open source</span> canvas for your
+          agent.
         </h1>
-        <p className="m-0 max-w-[620px] text-lg/[29px] text-pretty text-muted md:text-[20px]/[32px]">
-          Open source. Runs on your machine. Your agent designs in HTML and CSS. You steer with
-          comments.
+        <p className="m-0 max-w-[760px] text-lg/[29px] text-balance text-muted md:text-[20px]/[32px]">
+          Brands, apps, launch pages, diagrams, dashboards. Your agent draws them in HTML and CSS on
+          your Mac, and you steer with comments.
         </p>
         <div className="flex flex-wrap justify-center gap-3 pt-3">
           <DownloadButton>Download for Mac</DownloadButton>
