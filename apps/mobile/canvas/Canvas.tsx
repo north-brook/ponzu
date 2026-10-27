@@ -850,6 +850,9 @@ function BoardChrome({
   // On the canvas: RING_GAP outside the board. Focused: 3px in, round with the screen.
   const off = -RING_GAP + (RING_GAP + 3) * k;
   const rx = BOARD_RADIUS + RING_GAP + k * Math.max(0, radius - 3 - BOARD_RADIUS - RING_GAP);
+  // The rain takes at most half the board's width, so the name still reads on a narrow one; on
+  // a board too narrow for a column, the ring alone says it's being worked on.
+  const rain = Math.min(24, Math.floor(w / 2 / RAIN_PITCH));
   const ringBox = {
     transform: `translate(${x + off}px, ${y + off}px)`,
     width: Math.max(0, w - 2 * off),
@@ -874,13 +877,7 @@ function BoardChrome({
           <span ref={title} className="name">
             {name}
           </span>
-          {who && (
-            // At most half the board's width, so the name still reads on a narrow one.
-            <Rain
-              columns={Math.max(4, Math.min(24, Math.floor(w / 2 / RAIN_PITCH)))}
-              label="Working"
-            />
-          )}
+          {who && rain > 0 && <Rain columns={rain} label="Working" />}
         </div>
       )}
       {ring !== undefined && (
