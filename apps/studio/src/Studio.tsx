@@ -577,9 +577,11 @@ function useEdgeFade(strip: RefObject<HTMLDivElement | null>, tabs: string[]) {
     const s = strip.current;
     if (!s) return;
     const update = () => {
+      // A quarter of the strip at most: squeezed narrow, the fades would meet and hide it all.
+      const most = Math.min(FADE, s.clientWidth / 4);
       const end = s.scrollWidth - s.clientWidth - s.scrollLeft;
-      s.style.setProperty("--fade-start", `${Math.min(Math.max(s.scrollLeft, 0), FADE)}px`);
-      s.style.setProperty("--fade-end", `${Math.min(Math.max(end, 0), FADE)}px`);
+      s.style.setProperty("--fade-start", `${Math.min(Math.max(s.scrollLeft, 0), most)}px`);
+      s.style.setProperty("--fade-end", `${Math.min(Math.max(end, 0), most)}px`);
     };
     update();
     s.addEventListener("scroll", update, { passive: true });
