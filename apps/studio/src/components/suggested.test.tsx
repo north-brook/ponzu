@@ -1,8 +1,8 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import type { Idea } from "@ponzu/core";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Dialog } from "@/components/ui/dialog";
-import { ARRIVAL_STAGGER_MS, arrivalOf } from "@/lib/suggestions";
+import { ARRIVAL_STAGGER_MS, arrivalOf, land } from "@/lib/suggestions";
 import { IdeaBody, SuggestionCard, Thinking } from "./suggested.tsx";
 
 const idea = (name: string): Idea => ({
@@ -28,12 +28,32 @@ test("a card holds what the design would show, with its name and project where a
   expect(html).not.toMatch(/\bago\b|branch/);
 });
 
-test("ideas landing together trace in one after another, each at the same time every render", () => {
-  const a = arrivalOf(idea("First"));
-  const b = arrivalOf(idea("Second"));
-  expect(b - a).toBeGreaterThanOrEqual(ARRIVAL_STAGGER_MS);
-  expect(arrivalOf(idea("First"))).toBe(a);
-  expect(arrivalOf({ ...idea("first"), card: "changed" })).toBe(a);
+test("ideas are timed from when they landed, together ones one after another", () => {
+  // What the server had when the studio first asked was there from the start.
+  land([idea("Old")]);
+  expect(arrivalOf(idea("Old"))).toBe(0);
+  land([idea("First"), idea("Second"), idea("Old")], 1_000);
+  expect(arrivalOf(idea("First"))).toBe(1_000);
+  expect(arrivalOf(idea("Second"))).toBe(1_000 + ARRIVAL_STAGGER_MS);
+  expect(arrivalOf(idea("Old"))).toBe(0);
+  // The same every answer and render after.
+  land([idea("First")], 90_000);
+  expect(arrivalOf({ ...idea("first"), card: "changed" })).toBe(1_000);
+});
+
+test("a card first shown after its idea landed traces in only if it's still arriving", () => {
+  const card = (name: string) =>
+    renderToStaticMarkup(<SuggestionCard idea={idea(name)} onPick={() => {}} />);
+  const clock = spyOn(performance, "now").mockReturnValue(500_000);
+  try {
+    // Landed a minute ago, while Recent was open or its project filtered out: already arrived.
+    land([idea("While away")], 440_000);
+    expect(card("While away")).not.toContain("pz-rain");
+    land([idea("Just now")]);
+    expect(card("Just now")).toContain("pz-rain");
+  } finally {
+    clock.mockRestore();
+  }
 });
 
 test("thinking is the rain alone", () => {

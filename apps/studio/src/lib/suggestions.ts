@@ -21,7 +21,7 @@ export function useSuggestions(open: boolean): Suggestions | null {
   const [asking, setAsking] = useState(false);
   const got = (s: Suggestions) => {
     last = s;
-    prime(s.ideas);
+    land(s.ideas);
     setState(s);
   };
 
@@ -84,7 +84,7 @@ async function ask(method: "GET" | "POST"): Promise<Suggestions | null> {
 /** Between one idea tracing in and the next, when several land together. */
 export const ARRIVAL_STAGGER_MS = 700;
 
-/** When each idea arrived on screen, by `ideaKey`; 0 for one that was there from the start. */
+/** When each idea arrived, by `ideaKey`; 0 for one that was there from the start. */
 const arrived = new Map<string, number>();
 let primed = false;
 let latest = 0;
@@ -93,25 +93,31 @@ export function ideaKey(idea: Pick<Idea, "name" | "project">): string {
   return `${idea.project}\n${idea.name.toLowerCase()}`;
 }
 
-/** The ideas the server had when the studio first asked show at once: they're not new. */
-function prime(ideas: Idea[]) {
-  if (primed) return;
+/**
+ * Notes when the server's answer brought each idea, in `performance.now()` time, whether or not
+ * its card is on screen: now, for one not seen before, or a beat after the last to arrive, so
+ * several landing together trace in one by one. The ideas the server had when the studio first
+ * asked are 0: they're not new.
+ */
+export function land(ideas: readonly Idea[], now = performance.now()) {
+  for (const i of ideas) {
+    const key = ideaKey(i);
+    if (arrived.has(key)) continue;
+    if (!primed) {
+      arrived.set(key, 0);
+      continue;
+    }
+    latest = Math.max(now, latest + ARRIVAL_STAGGER_MS);
+    arrived.set(key, latest);
+  }
   primed = true;
-  for (const i of ideas) arrived.set(ideaKey(i), 0);
 }
 
 /**
- * When an idea arrives on screen, in `performance.now()` time: now, for one not seen before, or
- * a beat after the last to arrive, so several landing together trace in one by one. The same
- * time every render after, so a card that remounts picks up mid-trace. 0 for one already there.
+ * When an idea arrived, as `land` noted it: the same every render, so a card that first shows
+ * after its trace would have finished shows it arrived, and one that remounts picks up mid-trace.
+ * 0 for one that was there from the start.
  */
 export function arrivalOf(idea: Idea): number {
-  const key = ideaKey(idea);
-  let at = arrived.get(key);
-  if (at === undefined) {
-    at = Math.max(performance.now(), latest + ARRIVAL_STAGGER_MS);
-    latest = at;
-    arrived.set(key, at);
-  }
-  return at;
+  return arrived.get(ideaKey(idea)) ?? 0;
 }

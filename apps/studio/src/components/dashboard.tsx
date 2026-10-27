@@ -112,7 +112,8 @@ export function Dashboard({
     return { recent: foldCopies(by.recent), archived: foldCopies(by.archived) };
   }, [files]);
   const empty = catalog !== null && shelved.recent.length === 0;
-  const waiting = useSetUp(catalog !== null, empty);
+  // Designs missing from both shelves, not just Recent: an archive alone is a catalog that came.
+  const waiting = useSetUp(catalog !== null, catalog !== null && files.length === 0);
 
   // Suggested shows with an agent to ask. It looks again each time it's opened.
   const [looking, setLooking] = useState(false);
@@ -122,7 +123,7 @@ export function Dashboard({
     picked === "suggested" && !suggest
       ? "recent"
       : (picked ?? (empty && suggest ? "suggested" : "recent"));
-  const loading = catalog === null || (empty && (waiting || suggestions === null));
+  const loading = catalog === null || waiting || (empty && suggestions === null);
   const open = !loading && !q && view === "suggested";
   useEffect(() => setLooking(open), [open]);
   // An idea the person started shows as its design in its place while the design is new, and
@@ -502,7 +503,7 @@ function ProjectItem({
   );
 }
 
-/** Remembers that this Mac has had designs in Recent: its own, or its other Macs'. */
+/** Remembers that this Mac has had designs: its own, or its other Macs'. */
 const SET_UP_KEY = "ponzu.setUp";
 /**
  * How long a Mac that had designs waits for them before showing an empty Recent after all.
@@ -512,7 +513,8 @@ const SET_UP_GRACE = 30_000;
 
 /**
  * Whether to show placeholder cards rather than an empty Recent: this Mac has had designs, in
- * this session or an earlier one, and has been empty for less than the grace period. A
+ * this session or an earlier one, and has had none, archived or not, for less than the grace
+ * period. A
  * catalog read while an update restarts can come back empty, or, on a Mac whose designs are all
  * on the person's other Macs, before those Macs are linked again; it waits for them. One still
  * empty after the grace period is really empty (every design deleted, the other Macs off), so
@@ -526,7 +528,7 @@ function useSetUp(arrived: boolean, setup: boolean): boolean {
       return false;
     }
   });
-  /** When Recent came back empty in a catalog that arrived; null while it isn't. */
+  /** When the designs went missing from a catalog that arrived; null while they're there. */
   const [missingSince, setMissingSince] = useState<number | null>(null);
   const [, setNow] = useState(0);
   const past = arrived && !setup;
