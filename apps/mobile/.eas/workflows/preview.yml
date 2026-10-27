@@ -52,5 +52,7 @@ jobs:
     type: update
     environment: preview
     params:
-      branch: preview
+      # The channel its builds listen on (eas.json), not a branch: an update on
+      # a branch no channel points at reaches no phone.
+      channel: preview
       platform: ios

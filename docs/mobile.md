@@ -225,6 +225,12 @@ build by fingerprint first:
 | `preview.yml` | a push to `main` touching `apps/mobile`, `packages/core` or `bun.lock` | `preview` | TestFlight's internal **Team** group |
 | `production.yml` | a `mobile-v*` tag | `production` | TestFlight's external **Alpha** group, through Beta App Review |
 
+Updates are published to a channel (`preview`, `production`, the build
+profile's `channel` in `eas.json`), which EAS maps to the branch of the same
+name; `eas channel:view <name>` shows the mapping. A channel pointing at no
+branch serves nothing, so installed phones never update: link it with
+`eas channel:edit <name> --branch <name>`.
+
 EAS owns build numbers (`appVersionSource: remote`, `autoIncrement`). Run a
 workflow by hand with `eas workflow:run production.yml` from `apps/mobile`.
 
