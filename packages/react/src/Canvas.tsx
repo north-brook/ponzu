@@ -320,12 +320,14 @@ export function Canvas({
 
   // New comments left unsent keep their "+" pin, to open again.
   const drafts = useDrafts();
+  // Drafts belong to this design on this host: another Mac's design can share its path.
+  const draftsFile = source.assetBase ?? state.path;
   const unsentPins = useMemo(
     () =>
       readOnly || !page
         ? []
         : drafts.flatMap((d) =>
-            d.file === state.path &&
+            d.file === draftsFile &&
             d.pin &&
             unsent(d) &&
             (d.pin.artboardId
@@ -334,7 +336,7 @@ export function Canvas({
               ? [d.pin]
               : [],
           ),
-    [drafts, state.path, readOnly, page, boards],
+    [drafts, draftsFile, readOnly, page, boards],
   );
   // While a thread has unsent words in it, agents can't resolve it.
   const writing = useMemo(
@@ -344,11 +346,11 @@ export function Canvas({
         : [
             ...new Set(
               drafts.flatMap((d) =>
-                d.file === state.path && d.thread && unsent(d) ? [d.thread] : [],
+                d.file === draftsFile && d.thread && unsent(d) ? [d.thread] : [],
               ),
             ),
           ],
-    [drafts, state.path, readOnly],
+    [drafts, draftsFile, readOnly],
   );
   const writingKey = writing.join(" ");
   useEffect(() => {
@@ -1260,7 +1262,7 @@ export function Canvas({
                       thread={t}
                       source={source}
                       me={me}
-                      file={state.path}
+                      file={draftsFile}
                       readOnly={readOnly}
                       onClose={() => setOpenThread(null)}
                     />
@@ -1269,8 +1271,8 @@ export function Canvas({
               );
             })}
             {unsentPins.map((p) => {
-              const key = draftKey.comment(state.path, p);
-              if (pending && key === draftKey.comment(state.path, pending)) return null;
+              const key = draftKey.comment(draftsFile, p);
+              if (pending && key === draftKey.comment(draftsFile, pending)) return null;
               const ab = boards.find((b) => b.id === p.artboardId);
               return (
                 <div
@@ -1321,12 +1323,12 @@ export function Canvas({
                     </span>
                     <div className={threadCard}>
                       <Composer
-                        key={draftKey.comment(state.path, pending)}
+                        key={draftKey.comment(draftsFile, pending)}
                         onSubmit={createThread}
                         onCancel={() => setPending(null)}
                         draft={{
-                          key: draftKey.comment(state.path, pending),
-                          file: state.path,
+                          key: draftKey.comment(draftsFile, pending),
+                          file: draftsFile,
                           pin: pending,
                         }}
                       />

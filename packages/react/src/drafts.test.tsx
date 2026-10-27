@@ -47,6 +47,19 @@ test("a new comment left unsent keeps its pin, until its words are gone", () => 
   expect(getDraft(key)).toBeUndefined();
 });
 
+test("a design on another Mac at the same path keeps its own drafts", () => {
+  const here = new MemorySource(doc(), undefined, { assetBase: "http://127.0.0.1:7777/files/k" });
+  const there = new MemorySource(doc(), undefined, {
+    assetBase: "http://127.0.0.1:7777/mac/laptop/files/k",
+  });
+  const pin: DraftPin = { artboardId: "ab_a", pageId: "pg_a", x: 40, y: 60 };
+  const key = draftKey.comment(here.assetBase!, pin);
+  setDraft(key, { file: here.assetBase!, pin, text: "tighter" });
+  expect(renderToStaticMarkup(<Canvas source={here} />)).toContain('title="Unsent comment"');
+  expect(renderToStaticMarkup(<Canvas source={there} />)).not.toContain("Unsent comment");
+  setDraft(key, null);
+});
+
 test("a thread opens again with the reply that was being written", () => {
   const source = new MemorySource(doc());
   const key = draftKey.reply("kettle", "th_1");
