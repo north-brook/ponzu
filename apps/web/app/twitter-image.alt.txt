@@ -1,1 +1,1 @@
-Ponzu: the design canvas for your coding agent. Claude explores how Seekle, an iPhone game, should feel in twelve animated studies on the Ponzu canvas while you pin a comment on one.
+Ponzu: the design canvas for your coding agent. Designs made in Ponzu, from a landing page to brand guidelines and an app screen, recede across a dark canvas.

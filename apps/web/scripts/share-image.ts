@@ -4,8 +4,8 @@
  *   bun run dev                  # in apps/web, in another terminal
  *   bun scripts/share-image.ts   # writes app/opengraph-image.jpg and app/twitter-image.jpg
  *
- * The card holds the real product demo on the moment you comment on a design, so rerun this after
- * the demo or the brand changes. Output is 2400×1260 (2× the 1200×630 card) for sharp previews on
+ * The card shows real boards from the example designs (public/share), so rerun this after they or
+ * the brand change. Output is 2400×1260 (2× the 1200×630 card) for sharp previews on
  * high-density screens; X, LinkedIn, Slack, iMessage and Facebook all accept that size.
  */
 import { fileURLToPath } from "node:url";
@@ -26,17 +26,13 @@ try {
     colorScheme: "light",
     reducedMotion: "reduce",
   });
-  // Hold the demo on your first comment, typed and posted.
-  await page.addInitScript(() => {
-    (window as { ponzuDemoBeat?: string }).ponzuDemoBeat = "c1-post";
-  });
   await page.goto(`${BASE}/share`, { waitUntil: "networkidle" });
-  // Let fonts, photos and the canvas's camera settle, and drop the dev-only overlay.
+  // Let fonts and the boards settle, and drop the dev-only overlay.
   await page.evaluate(() => document.fonts.ready);
-  await page.waitForTimeout(2500);
+  await page.waitForTimeout(500);
   await page.evaluate(() => document.querySelector("nextjs-portal")?.remove());
 
-  // JPEG at high quality: about a third the size of a PNG of the photo-heavy card, so previews
+  // JPEG at high quality: a fraction the size of a PNG of the screenshot-heavy card, so previews
   // load fast in the feed, with no visible loss.
   const card = page.locator("[data-share-card]");
   for (const name of ["opengraph-image.jpg", "twitter-image.jpg"]) {

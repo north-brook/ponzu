@@ -358,14 +358,6 @@ export function ProductDemo() {
   useEffect(() => {
     const el = wrap.current;
     if (!el || !design) return;
-    // The share card's script holds the story on one beat (scripts/share-image.ts).
-    const hold = (window as { ponzuDemoBeat?: string }).ponzuDemoBeat;
-    if (hold && index(hold as BeatId) >= 0) {
-      setStill(true);
-      setBeat(index(hold as BeatId));
-      setT(1);
-      return;
-    }
     if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
       setStill(true);
       setBeat(LAST);
