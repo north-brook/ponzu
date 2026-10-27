@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.3](https://github.com/north-brook/ponzu/compare/mobile-v0.4.2...mobile-v0.4.3) (2026-10-27)
+
+
+### Bug Fixes
+
+* draw the iphone canvas again after switching back to ponzu ([#278](https://github.com/north-brook/ponzu/issues/278)) ([194330c](https://github.com/north-brook/ponzu/commit/194330c8f5286fb18497489b5a0ee08e1e0940fc))
+
 ## [0.4.2](https://github.com/north-brook/ponzu/compare/mobile-v0.4.1...mobile-v0.4.2) (2026-10-27)
 
 
