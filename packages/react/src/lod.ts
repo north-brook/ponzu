@@ -247,13 +247,19 @@ export class BoardDetail {
       return;
     }
 
-    // Let go of what's big enough to see now.
+    // Let go of what's big enough to see now. One frozen mid-gesture was never held for its
+    // size, so it goes at STILL_PX; if it's tiny now, it stays held, as its own style.
     const back = new Map<Element, Map<string, Phase>>();
     for (const [t, m] of this.still) {
+      const pinned = this.pins.has(t);
       if (!t.isConnected) {
         this.still.delete(t);
         this.pins.delete(t);
-      } else if (!small(t, RELEASE)) back.set(t, m);
+      } else if (!small(t, pinned ? STILL_PX : RELEASE)) back.set(t, m);
+      else if (pinned) {
+        this.pins.delete(t);
+        t.removeAttribute(PIN);
+      }
     }
     for (const t of back.keys()) this.still.delete(t);
     this.release(back);

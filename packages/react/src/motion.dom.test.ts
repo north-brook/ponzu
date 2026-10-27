@@ -354,4 +354,30 @@ describe.skipIf(!chromium)("motion in Chromium", () => {
     });
     expect(r).toEqual({ free: true, frozen: true, none: 0, still: true, back: true, from: true });
   });
+
+  test("a frozen element zoomed out to tiny shows its own style, not the frame it froze at", async () => {
+    const dots = Array.from({ length: 70 }, () => "<i class=d></i>").join("");
+    await board(
+      `<style>@keyframes slide{to{transform:translateX(100px)}}.d{display:block;width:20px;height:20px;animation:slide 1s linear infinite}</style>${dots}`,
+    );
+    await frames(2);
+    const r = await page.evaluate(async () => {
+      const w = window as any;
+      const root = document.getElementById("host")!.shadowRoot!;
+      const lod = new w.pz.BoardDetail(root, w.motion);
+      const el = root.querySelector(".d")!;
+      await new Promise((res) => setTimeout(res, 200));
+      lod.update({ hidden: false, scale: 1, moving: true, hold: true });
+      const pinned = getComputedStyle(el).transform !== "none";
+      // The zoom ends with the 20 px dots at 5 device px: under STILL_PX.
+      lod.update({ hidden: false, scale: 0.25, moving: false });
+      return {
+        pinned,
+        held: el.hasAttribute("data-pz-still"),
+        unpinned: !root.querySelector("[data-pz-pin]"),
+        own: getComputedStyle(el).transform,
+      };
+    });
+    expect(r).toEqual({ pinned: true, held: true, unpinned: true, own: "none" });
+  });
 });
