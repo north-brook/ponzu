@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { useWindowDimensions, View } from "react-native";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
 import {
@@ -41,7 +41,7 @@ export interface CanvasHandle {
  * holds the design's socket (`session`) and tells the page what to draw
  * (`ToCanvas`, canvas/protocol.ts): the doc on every hello, each op with who
  * made it, presence. The page reports gestures back (`FromCanvas`). On
- * `ready`, and again if iOS reloads the page, it gets everything at once.
+ * `ready`, and again if iOS ends the page, it gets everything at once.
  */
 export const CanvasView = forwardRef<
   CanvasHandle,
@@ -67,8 +67,14 @@ export const CanvasView = forwardRef<
   const latestRadius = useRef(radius);
   latestRadius.current = radius;
   // The web view's instance methods; its typings declare a class the component isn't.
-  const web = useRef<{ injectJavaScript(js: string): void; reload(): void }>(null);
+  const web = useRef<{ injectJavaScript(js: string): void }>(null);
   const ready = useRef(false);
+  /**
+   * Bumped when iOS ends the page's process (it does, in the background, to
+   * save memory): a new web view loads the page again. `reload()` can't, since
+   * a page loaded from a string reloads its base URL, the Mac's `/`.
+   */
+  const [generation, setGeneration] = useState(0);
   const latest = useRef(props);
   latest.current = props;
 
@@ -170,6 +176,7 @@ export const CanvasView = forwardRef<
   const origin = `${props.base}/`;
   return (
     <WebView
+      key={generation}
       ref={web as never}
       testID="canvas-web"
       source={{ html: canvasHtml, baseUrl: origin }}
@@ -182,7 +189,7 @@ export const CanvasView = forwardRef<
       onMessage={onMessage}
       onContentProcessDidTerminate={() => {
         ready.current = false;
-        web.current?.reload();
+        setGeneration((g) => g + 1);
       }}
       scrollEnabled={false}
       bounces={false}
