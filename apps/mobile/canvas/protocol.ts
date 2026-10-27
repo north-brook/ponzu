@@ -40,6 +40,11 @@ export type ToCanvas =
   | { t: "presence"; presence: Presence[] }
   /** The "+" pin of a comment being written, or none. Its board comes into view. */
   | { t: "pending"; pin: PendingPin | null }
+  /**
+   * New comments left unsent, by their draft's key: each keeps a pin, to tap and go on. `threads`
+   * have a reply left unsent: their pins are ringed, dashed.
+   */
+  | { t: "unsent"; pins: (PendingPin & { key: string })[]; threads: string[] }
   /** The thread whose sheet is open: its pin stands out, and its board comes into view. */
   | { t: "thread"; id: string | null }
   /** Focus an artboard at 1:1, or go back to where the canvas was. */
@@ -74,6 +79,8 @@ export type FromCanvas =
   | { t: "longpress"; pageId: string; artboardId?: string; nodeId?: string; x: number; y: number }
   /** A pin was tapped. */
   | { t: "openThread"; id: string }
+  /** An unsent comment's pin was tapped: its sheet comes back, with its words. */
+  | { t: "openUnsent"; key: string }
   /** A tap that wasn't on a pin: the app puts its keyboard down, if it's up. */
   | { t: "tap" }
   /**

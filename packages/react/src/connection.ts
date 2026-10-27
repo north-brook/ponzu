@@ -31,6 +31,8 @@ export interface CanvasSource {
   upload?(file: File): Promise<string>;
   /** Tell the host how the canvas looks, so agents can see artboards that way. */
   setTheme?(theme: ColorScheme): void;
+  /** Tell the host which threads have an unsent reply here, so agents leave them open. */
+  setWriting?(threads: string[]): void;
   /**
    * Where to get a picture of an artboard at `scale` device px per CSS px, in
    * a color scheme. `version` names its content. Without it, boards on
@@ -69,6 +71,8 @@ export class SocketSource implements CanvasSource {
   private retry = 0;
   private closed = false;
   private theme?: ColorScheme;
+  /** Threads with an unsent reply here, told again on every reconnect. */
+  private writing: string[] = [];
   /** The server's seq for the doc shown: each op must be the next one. */
   private seq = 0;
   /** Asked for the whole doc and waiting for it: ops until then are on a doc we don't have. */
@@ -122,6 +126,7 @@ export class SocketSource implements CanvasSource {
     socket.onopen = () => {
       this.retry = 0;
       if (this.theme) this.send({ t: "theme", theme: this.theme });
+      if (this.writing.length) this.send({ t: "writing", threads: this.writing });
     };
     socket.onclose = () => {
       if (this.closed) return;
@@ -235,6 +240,12 @@ export class SocketSource implements CanvasSource {
     if (this.opts.watch || theme === this.theme) return;
     this.theme = theme;
     this.send({ t: "theme", theme });
+  }
+
+  setWriting(threads: string[]) {
+    if (this.opts.watch || threads.join(" ") === this.writing.join(" ")) return;
+    this.writing = threads;
+    this.send({ t: "writing", threads });
   }
 
   async upload(file: File): Promise<string> {

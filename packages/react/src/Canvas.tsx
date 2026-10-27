@@ -26,6 +26,7 @@ import { Arrivals, arriveBoard, arriveName, drawFrame, RING_OUT_MS, ringDelay } 
 import { Composer, ThreadCard, threadCard } from "./Comments.tsx";
 import { boardCost, coldLive, coldSkeleton, placeholderFill } from "./coldopen.ts";
 import { type CanvasSource, viewOnly } from "./connection.ts";
+import { type DraftPin, draftKey, unsent, useDrafts } from "./drafts.ts";
 import { Icon, Icons } from "./icons.tsx";
 import { centreDistance, detailScale, onScreen, visibleBand } from "./lod.ts";
 import { playing } from "./loops.tsx";
@@ -81,15 +82,8 @@ export interface CanvasProps {
   className?: string;
 }
 
-interface Pending {
-  /** Absent for a comment on the open canvas. */
-  artboardId?: string;
-  pageId: string;
-  nodeId?: string;
-  /** Offset inside the artboard in artboard px, or the page position without one. */
-  x: number;
-  y: number;
-}
+/** Where a new comment is being written: an offset inside the artboard in its px, or a page position. */
+type Pending = DraftPin;
 
 /**
  * Whether a board follows the theme. isThemed stringifies the whole board,
@@ -312,14 +306,56 @@ export function Canvas({
   const skeletons = useMemo(() => coldSkeleton(boards), [boards]);
   const boardHeight = (ab: Artboard) => size(ab).h ?? measured[ab.id] ?? 900;
 
-  // Resolved threads leave the board.
+  // Resolved threads leave the board, but not from under the person reading one.
   const pageThreads = useMemo(
     () =>
       doc && page
-        ? doc.threads.filter((t) => t.status === "open" && threadPage(doc, t)?.id === page.id)
+        ? doc.threads.filter(
+            (t) =>
+              (t.status === "open" || t.id === openThread) && threadPage(doc, t)?.id === page.id,
+          )
         : [],
-    [doc, page],
+    [doc, page, openThread],
   );
+
+  // New comments left unsent keep their "+" pin, to open again.
+  const drafts = useDrafts();
+  // Drafts belong to this design on this host: another Mac's design can share its path.
+  const draftsFile = source.assetBase ?? state.path;
+  const unsentPins = useMemo(
+    () =>
+      readOnly || !page
+        ? []
+        : drafts.flatMap((d) =>
+            d.file === draftsFile &&
+            d.pin &&
+            unsent(d) &&
+            (d.pin.artboardId
+              ? boards.some((b) => b.id === d.pin!.artboardId)
+              : d.pin.pageId === page.id)
+              ? [d.pin]
+              : [],
+          ),
+    [drafts, draftsFile, readOnly, page, boards],
+  );
+  // While a thread has unsent words in it, agents can't resolve it.
+  const writing = useMemo(
+    () =>
+      readOnly
+        ? []
+        : [
+            ...new Set(
+              drafts.flatMap((d) =>
+                d.file === draftsFile && d.thread && unsent(d) ? [d.thread] : [],
+              ),
+            ),
+          ],
+    [drafts, draftsFile, readOnly],
+  );
+  const writingKey = writing.join(" ");
+  useEffect(() => {
+    source.setWriting?.(writingKey ? writingKey.split(" ") : []);
+  }, [source, writingKey]);
 
   const bounds = useMemo(() => {
     if (!boards.length) return null;
@@ -1194,10 +1230,19 @@ export function Canvas({
                 >
                   <button
                     type="button"
-                    title={readOnly ? "Open thread" : "Drag to move"}
+                    title={
+                      readOnly
+                        ? "Open thread"
+                        : writing.includes(t.id)
+                          ? "Unsent reply · Drag to move"
+                          : "Drag to move"
+                    }
                     className={cn(
                       pin,
                       "pz:bg-comment pz:text-comment-foreground",
+                      // A reply left unsent, dashed as an unsent comment's pin is.
+                      writing.includes(t.id) &&
+                        "pz:outline-[1.5px] pz:outline-dashed pz:outline-offset-2 pz:outline-comment",
                       panning ? "pz:cursor-grab" : "pz:cursor-pointer",
                       (open || dragging) && "pz:scale-112",
                       dragging &&
@@ -1217,10 +1262,45 @@ export function Canvas({
                       thread={t}
                       source={source}
                       me={me}
+                      file={draftsFile}
                       readOnly={readOnly}
                       onClose={() => setOpenThread(null)}
                     />
                   )}
+                </div>
+              );
+            })}
+            {unsentPins.map((p) => {
+              const key = draftKey.comment(draftsFile, p);
+              if (pending && key === draftKey.comment(draftsFile, pending)) return null;
+              const ab = boards.find((b) => b.id === p.artboardId);
+              return (
+                <div
+                  key={key}
+                  className={cn(pinWrap, "pz:z-[2]")}
+                  style={{ left: wpx((ab?.x ?? 0) + p.x), top: wpx((ab?.y ?? 0) + p.y) }}
+                >
+                  <button
+                    type="button"
+                    title="Unsent comment"
+                    className={cn(
+                      pin,
+                      "pz:cursor-pointer pz:bg-card pz:text-foreground pz:outline-[1.5px] pz:outline-dashed pz:outline-comment",
+                    )}
+                    onPointerDown={(e) => {
+                      if (panning || e.button !== 0) return;
+                      e.stopPropagation();
+                      setOpenThread(null);
+                      setPending(p);
+                    }}
+                    onClick={(e) => {
+                      if (e.detail !== 0) return;
+                      setOpenThread(null);
+                      setPending(p);
+                    }}
+                  >
+                    +
+                  </button>
                 </div>
               );
             })}
@@ -1242,7 +1322,16 @@ export function Canvas({
                       +
                     </span>
                     <div className={threadCard}>
-                      <Composer onSubmit={createThread} onCancel={() => setPending(null)} />
+                      <Composer
+                        key={draftKey.comment(draftsFile, pending)}
+                        onSubmit={createThread}
+                        onCancel={() => setPending(null)}
+                        draft={{
+                          key: draftKey.comment(draftsFile, pending),
+                          file: draftsFile,
+                          pin: pending,
+                        }}
+                      />
                     </div>
                   </div>
                 );
