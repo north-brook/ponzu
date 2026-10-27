@@ -1,0 +1,12 @@
+{
+  "ponzu": 1,
+  "name": "Seekle",
+  "icon": "phone",
+  "pages": [
+    { "id": "pg_app", "name": "App", "icon": "phone" },
+    { "id": "pg_bp3im", "name": "Motion", "icon": "motion" },
+    { "id": "pg_g13sx", "name": "Gameplay exploration", "icon": "experiment" },
+    { "id": "pg_ea4v6", "name": "Website redesign", "icon": "browser" },
+    { "id": "pg_g1zbi", "name": "Screenshot directions", "icon": "image" }
+  ]
+}

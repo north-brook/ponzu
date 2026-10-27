@@ -1,11 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import {
-  Funnel_Display,
-  IBM_Plex_Mono,
-  Instrument_Serif,
-  Inter,
-  JetBrains_Mono,
-} from "next/font/google";
+import { Funnel_Display, IBM_Plex_Mono, Inter } from "next/font/google";
 import type { ReactNode } from "react";
 import { DESCRIPTION, TITLE } from "@/components/share";
 import "./globals.css";
@@ -28,21 +22,6 @@ const plexMono = IBM_Plex_Mono({
   subsets: ["latin"],
   weight: ["400", "500"],
   variable: "--font-plex-mono",
-});
-
-// Fernwood's display face, for the artboards in the product demo.
-const instrumentSerif = Instrument_Serif({
-  subsets: ["latin"],
-  weight: "400",
-  style: ["normal", "italic"],
-  variable: "--font-instrument-serif",
-});
-
-// Fernwood's mono, also only inside the demo's artboards.
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500"],
-  variable: "--font-jetbrains-mono",
 });
 
 // Site-wide defaults. Each page sets its own share tags with `share()` (components/share.ts).
@@ -82,10 +61,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html
-      lang="en"
-      className={`${inter.variable} ${funnelDisplay.variable} ${plexMono.variable} ${instrumentSerif.variable} ${jetbrainsMono.variable}`}
-    >
+    <html lang="en" className={`${inter.variable} ${funnelDisplay.variable} ${plexMono.variable}`}>
       <body>{children}</body>
     </html>
   );

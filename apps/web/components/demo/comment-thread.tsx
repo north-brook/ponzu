@@ -13,9 +13,9 @@ const GHOST =
   "pz:inline-flex pz:size-[26px] pz:items-center pz:justify-center pz:rounded-[7px] pz:text-muted-foreground";
 
 /**
- * The "Steer with comments" tile: a question on the canvas and Claude's answer, in Ponzu's
- * comment card. Claude replies here because you asked for its pick; a change it simply makes gets
- * resolved without a reply.
+ * The "Steer with comments" tile: a real thread from designing Seekle's website, in Ponzu's comment
+ * card. You asked Claude to get another model's take on the copy; it answers with where to find it,
+ * and you're typing your reply. A change it simply makes gets resolved without a reply.
  */
 export function CommentThread() {
   return (
@@ -39,7 +39,9 @@ export function CommentThread() {
               <span className="pz:font-medium">You</span>
               <span className="pz:text-[11.5px] pz:text-muted-foreground">2m</span>
             </div>
-            <div className={TEXT}>Sunroom or Night Garden for the launch? Your call.</div>
+            <div className={TEXT}>
+              this copy should be revised. please ask gpt 6.1 sol for copy input
+            </div>
           </div>
           <div className="pz:flex pz:flex-col pz:gap-1">
             <div className="pz:flex pz:items-center pz:gap-1.5">
@@ -48,14 +50,15 @@ export function CommentThread() {
               <span className="pz:text-[11.5px] pz:text-muted-foreground">now</span>
             </div>
             <div className={TEXT}>
-              Sunroom. It reads as a shop at a glance, and the warm light suits an autumn launch.
-              Night Garden is better kept for the late-hours event page.
+              GPT 6.1 Sol's pick is on the board now: "Same board. / Who scores higher?" with "Scan
+              to get Seekle". Its four other options are in the "Website copy options" note to the
+              right. Comment a number to swap one in.
             </div>
           </div>
         </div>
         <div className="pz:flex pz:items-end pz:gap-2 pz:border-t pz:py-2 pz:pr-2 pz:pl-3.5">
           <span className="pz:min-h-7 pz:flex-1 pz:py-1 pz:text-[13.5px] pz:leading-[1.55]">
-            Thanks, going with Sunroom.
+            same board is not really the point. this copy needs another pass
             <span className="dm-text-caret" />
           </span>
           <span className="pz:inline-flex pz:size-7 pz:shrink-0 pz:items-center pz:justify-center pz:rounded-lg pz:bg-primary pz:text-primary-foreground">
