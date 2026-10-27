@@ -63,7 +63,11 @@
   },
   "overrides": [
     {
-      "includes": ["apps/mobile/app.json"],
+      "includes": [
+        "apps/mobile/app.json",
+        "plugin/.claude-plugin/plugin.json",
+        "plugin/.codex-plugin/plugin.json"
+      ],
       "formatter": {
         "enabled": false
       }
