@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.58.0](https://github.com/north-brook/ponzu/compare/v1.57.0...v1.58.0) (2026-10-27)
+
+
+### Features
+
+* a new share card for ponzu.design ([#284](https://github.com/north-brook/ponzu/issues/284)) ([813cc70](https://github.com/north-brook/ponzu/commit/813cc704473ad03392667e0eb7a1e4256b144a86))
+* fade the tab strip's edges when tabs overflow ([#285](https://github.com/north-brook/ponzu/issues/285)) ([3361c97](https://github.com/north-brook/ponzu/commit/3361c9707589b6e5404e1c8dbfba458d9e704985))
+
 ## [1.57.0](https://github.com/north-brook/ponzu/compare/v1.56.1...v1.57.0) (2026-10-27)
 
 
