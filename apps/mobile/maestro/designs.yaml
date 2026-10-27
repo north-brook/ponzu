@@ -38,4 +38,33 @@ tags: [dev-host]
 - extendedWaitUntil:
     visible: "Filter"
     timeout: 5000
+# Holding a card offers its shelf: Archive moves it to Archived, where
+# holding it offers Restore. (Tapping a card to open it is
+# canvas.yaml's.)
+- longPressOn:
+    id: card-Weft
+- tapOn: "Archive"
+- extendedWaitUntil:
+    notVisible:
+      id: card-Weft
+    timeout: 10000
+- tapOn: "Filter"
+- tapOn: "Archived.*"
+- extendedWaitUntil:
+    visible:
+      id: card-Weft
+    timeout: 10000
+- longPressOn:
+    id: card-Weft
+- tapOn: "Restore"
+- extendedWaitUntil:
+    notVisible:
+      id: card-Weft
+    timeout: 10000
+- tapOn: "Filter.*"
+- tapOn: "Recent.*"
+- scrollUntilVisible:
+    element:
+      id: card-Weft
+    timeout: 10000
 - assertNotVisible: ".*Cannot update a component.*"
