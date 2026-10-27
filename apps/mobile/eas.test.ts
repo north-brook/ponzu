@@ -105,7 +105,10 @@ for (const [name, profile] of [
     // biome-ignore lint/suspicious/noTemplateCurlyInString: EAS resolves this workflow expression.
     expect(update?.if).toBe("${{ needs.ios_build_exists.outputs.build_id }}");
     expect(update?.environment).toBe(profile);
-    expect(update?.params).toMatchObject({ branch: profile, platform: "ios" });
+    // Published to the channel the profile's builds listen on: a branch alone reaches only the
+    // phones whose channel happens to point at it.
+    expect(update?.params).toMatchObject({ channel: resolved(profile).channel, platform: "ios" });
+    expect(update?.params.branch).toBeUndefined();
   });
 }
 
