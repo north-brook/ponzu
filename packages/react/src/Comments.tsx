@@ -1,7 +1,7 @@
 import { type Author, newId, type Thread } from "@ponzu/core";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CanvasSource } from "./connection.ts";
-import { type Draft, draftKey, getDraft, setDraft, useDraft } from "./drafts.ts";
+import { type Draft, draftKey, getDraft, setDraft, unsent, useDraft } from "./drafts.ts";
 import { AgentMark, Icon } from "./icons.tsx";
 import { Button, cn, Menu, Textarea } from "./ui.tsx";
 
@@ -160,6 +160,14 @@ function EditField({
   const [text, setText] = useDraft(draft.key, draft, initial);
   const ref = useRef<HTMLTextAreaElement>(null);
   useAutofocus(ref);
+  // Emptied while open is fine; put away empty, there's no edit to keep.
+  useEffect(
+    () => () => {
+      const d = getDraft(draft.key);
+      if (d && !unsent(d)) setDraft(draft.key, null);
+    },
+    [draft.key],
+  );
   const cancel = () => {
     setText(initial);
     onClose();
@@ -211,9 +219,14 @@ export function ThreadCard({
   onClose: () => void;
 }) {
   // An edit left unsaved when the card closed opens again where it was.
-  const [editing, setEditing] = useState<string | null>(
-    () => thread.messages.find((m) => getDraft(draftKey.edit(file, m.id)))?.id ?? null,
-  );
+  const [editing, setEditing] = useState<string | null>(() => {
+    if (readOnly) return null;
+    const kept = (id: string) => {
+      const d = getDraft(draftKey.edit(file, id));
+      return Boolean(d && unsent(d));
+    };
+    return thread.messages.find((m) => kept(m.id))?.id ?? null;
+  });
   const [scrolled, setScrolled] = useState(false);
   const list = useRef<HTMLDivElement>(null);
   // Whether the list was at its end before the latest render.
@@ -389,7 +402,7 @@ export function ThreadCard({
                 </div>
               )}
             </div>
-            {editing === m.id ? (
+            {!readOnly && editing === m.id ? (
               <EditField
                 initial={m.text}
                 draft={{ key: draftKey.edit(file, m.id), file, thread: thread.id }}

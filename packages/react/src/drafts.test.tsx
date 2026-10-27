@@ -79,6 +79,30 @@ test("a thread resolved while it's open offers a reply that reopens it", () => {
   expect(html).toContain('title="Resolved · Reopen"');
 });
 
+test("an unsaved edit opens again, but not emptied, and never read-only", () => {
+  const source = new MemorySource(doc());
+  const key = draftKey.edit("kettle", "m_1");
+  const card = (readOnly: boolean) =>
+    renderToStaticMarkup(
+      <ThreadCard
+        thread={thread("open")}
+        source={source}
+        me={me}
+        file="kettle"
+        readOnly={readOnly}
+        onClose={() => {}}
+      />,
+    );
+  setDraft(key, { file: "kettle", thread: "th_1", text: "make it navy" });
+  expect(card(false)).toContain('aria-label="Edit message"');
+  expect(card(false)).toContain("make it navy");
+  expect(card(true)).not.toContain('aria-label="Edit message"');
+  expect(card(true)).toContain("make it blue");
+  setDraft(key, { file: "kettle", thread: "th_1", text: "" });
+  expect(card(false)).not.toContain('aria-label="Edit message"');
+  setDraft(key, null);
+});
+
 test("only words count as unsent", () => {
   expect(unsent({ file: "f", text: "  \n" })).toBe(false);
   expect(unsent({ file: "f", text: " a" })).toBe(true);
