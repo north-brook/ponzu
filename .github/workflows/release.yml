@@ -6,7 +6,8 @@ name: Release
 # main enables auto-merge on both, so once CI passes they land, and the next
 # run of this workflow tags the version and opens a draft GitHub release with
 # its notes. For vX.Y.Z, the mac job builds, signs and notarizes Ponzu into
-# that draft, launches the exact signed app, and only then publishes it.
+# that draft, launches the exact signed app, and only then publishes it, and
+# the npm job publishes the same version of the CLI to npm.
 # electron-updater and the site's download link only see the latest
 # published release, so a failed build never reaches anyone. A mobile-vX.Y.Z
 # tag starts EAS's production workflow (apps/mobile/.eas/workflows), and its
@@ -109,6 +110,57 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.release-please.outputs.mobile_tag }}
+
+  # The CLI on npm, which `bunx ponzu` runs: the Mac app's version, from its
+  # tag. Built and installed as CI's desktop job does (scripts/npm-package.ts,
+  # scripts/npm-smoke.ts), then published unless npm already has that version,
+  # so a rebuild by hand is safe. npm trusts this workflow as the package's
+  # publisher, or takes the NPM_TOKEN secret (CONTRIBUTING.md#releases).
+  npm:
+    name: CLI on npm
+    needs: release-please
+    if: ${{ !cancelled() && (needs.release-please.outputs.released == 'true' || startsWith(inputs.tag, 'v')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # Trusted publishing and the provenance statement.
+      id-token: write
+    env:
+      TAG: ${{ inputs.tag || needs.release-please.outputs.tag }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ env.TAG }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Build the package
+        run: |
+          bun run --filter @ponzu/studio build
+          bun scripts/npm-package.ts
+        env:
+          # As in the Mac app's server: release builds report anonymous usage.
+          PONZU_POSTHOG_KEY: ${{ vars.PONZU_POSTHOG_KEY }}
+      - name: It installs, creates a design and serves the studio
+        run: bun scripts/npm-smoke.ts
+      - name: Publish
+        run: |
+          version=$(jq -r .version apps/cli/npm/package.json)
+          if [ "$(npm view "ponzu@$version" version 2>/dev/null)" = "$version" ]; then
+            echo "ponzu@$version is already on npm"; exit 0
+          fi
+          # Trusted publishing needs npm 11.5.1 or later.
+          npm install -g npm@11
+          npm publish apps/cli/npm --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   # Only the root package's release (vX.Y.Z): `released` is never set by a
   # phone release, and a mobile-v tag doesn't start with "v".

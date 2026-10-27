@@ -1,5 +1,6 @@
-import { type ChildProcess, spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { type ChildProcess, execFile, spawn } from "node:child_process";
+import { existsSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { type Catalog, parseDesignLink } from "@ponzu/core";
 import { cloneTarget, parseOpenUrl, spawnGit } from "@ponzu/server/clone";
@@ -141,6 +142,66 @@ function setupWake() {
   if (!existsSync(paths.server)) return;
   const child = spawn(paths.server, ["wake", "install"], { stdio: "ignore" });
   child.on("error", () => {});
+}
+
+/**
+ * Ponzu › Install Terminal Command…: `ponzu` in /usr/local/bin, which macOS asks
+ * an admin's password to write. The launch check links it without asking where
+ * the person's shell searches a folder of their own (apps/cli/src/command.ts);
+ * this is for a Mac where none does. It links the shim that check writes, so
+ * the command updates with the app.
+ */
+async function installCommand() {
+  const shim = join(process.env.PONZU_HOME ?? join(homedir(), ".ponzu"), "bin/ponzu");
+  const link = "/usr/local/bin/ponzu";
+  const ours = (p: string) => {
+    try {
+      return realpathSync(p) === realpathSync(shim);
+    } catch {
+      return false;
+    }
+  };
+  if (!existsSync(shim)) {
+    dialog.showErrorBox(
+      "Ponzu can't install its command yet",
+      "Move Ponzu to your Applications folder and open it from there, then try again.",
+    );
+    return;
+  }
+  const installed = [join(homedir(), ".local/bin/ponzu"), join(homedir(), "bin/ponzu"), link].find(
+    ours,
+  );
+  if (installed) {
+    await dialog.showMessageBox({
+      message: "The ponzu command is installed",
+      detail: `It's at ${installed}. Open a new terminal window and run ponzu.`,
+    });
+    return;
+  }
+  if (existsSync(link)) {
+    const { response } = await dialog.showMessageBox({
+      type: "warning",
+      message: `Replace ${link}?`,
+      detail: "Another ponzu command is installed there.",
+      buttons: ["Replace", "Cancel"],
+      defaultId: 1,
+      cancelId: 1,
+    });
+    if (response !== 0) return;
+  }
+  const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
+  const command = `mkdir -p /usr/local/bin && ln -sf ${quote(shim)} ${link}`;
+  const script = `do shell script "${command.replace(/[\\"]/g, "\\$&")}" with administrator privileges`;
+  execFile("osascript", ["-e", script], async (err, _out, stderr) => {
+    // -128: the person cancelled the password prompt.
+    if (err && !stderr.includes("(-128)"))
+      dialog.showErrorBox("Ponzu couldn't install its command", stderr || String(err));
+    else if (!err)
+      await dialog.showMessageBox({
+        message: "The ponzu command is installed",
+        detail: "Open a new terminal window and run ponzu.",
+      });
+  });
 }
 
 /** With no window open, quit once agents have been quiet a while. Updates install on quit. */
@@ -402,6 +463,7 @@ function buildMenu() {
                 },
               },
               { label: "Pair iPhone…", click: () => pairIphone() },
+              { label: "Install Terminal Command…", click: () => void installCommand() },
               { type: "separator" as const },
               { role: "services" as const },
               { type: "separator" as const },

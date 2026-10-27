@@ -22,7 +22,7 @@ Ponzu is an infinite canvas of artboards. Agents draw on it over MCP, writing HT
 bunx ponzu serve
 ```
 
-This opens the canvas in your browser and serves MCP at `http://127.0.0.1:7777/mcp`. Every `.design` folder under the current directory is opened.
+This opens the canvas in your browser and serves MCP at `http://127.0.0.1:7777/mcp`. Every `.design` folder under the current directory is opened. It needs [Bun](https://bun.sh); `bun add -g ponzu` keeps a `ponzu` command around.
 
 To change a design someone committed to GitHub, open it by its path:
 
@@ -33,6 +33,8 @@ bunx ponzu open north-brook/ponzu/examples/kettle.design
 This clones the repo into `~/Ponzu/north-brook/ponzu` (or reuses the clone there) and serves that design. It takes the same path as the [web viewer](#share-it-from-github), with `@branch` after the repo, or a `ponzu.design/gh` or `github.com` link.
 
 Or [download the Mac app](https://ponzu.design/download) (Apple silicon, signed and notarized; it updates itself). It opens `.design` folders like documents, and on first launch it sets up Claude Code, Codex and Cursor for you. There's nothing else to install or keep running.
+
+The app also puts `ponzu` in your terminal, running from inside the app so it updates with it. It links the command into a folder your shell already searches that you can write to (`~/.local/bin`, `~/bin` or `/usr/local/bin`), never over another `ponzu`. If there's no such folder, choose **Ponzu › Install Terminal Command…**, which asks for your password to add it to `/usr/local/bin`.
 
 ## Connect an agent
 
@@ -157,7 +159,7 @@ Skills for agents that support them live in [`skills/`](skills).
 
 ## Telemetry
 
-The Mac app sends pseudonymous usage to the Ponzu team: which tools agents call and whether they fail (with a coarse reason, like a timeout), which agents connect, how often the canvas opens, and the Ponzu version and OS. Each install is a random id in `~/.ponzu/telemetry.json`. When Tailscale is running, Ponzu also links that id to a hash of your Tailscale user id, which is the same on each of your Macs, so the team counts people rather than machines. Your Tailscale id, name and email are never sent, but someone with the hash could check guessed ids against it. Nothing about your designs leaves your machine: no HTML, file names, paths, comment text or tool arguments.
+The Mac app and the `ponzu` package send pseudonymous usage to the Ponzu team: which tools agents call and whether they fail (with a coarse reason, like a timeout), which agents connect, how often the canvas opens, and the Ponzu version and OS. Each install is a random id in `~/.ponzu/telemetry.json`. When Tailscale is running, Ponzu also links that id to a hash of your Tailscale user id, which is the same on each of your Macs, so the team counts people rather than machines. Your Tailscale id, name and email are never sent, but someone with the hash could check guessed ids against it. Nothing about your designs leaves your machine: no HTML, file names, paths, comment text or tool arguments.
 
 Agents can also tell us how Ponzu is working for them with `send_feedback`. That's the one event with words in it, and it's about Ponzu, not your work.
 

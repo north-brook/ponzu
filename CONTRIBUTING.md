@@ -66,6 +66,12 @@ pass it merges, and for the Mac app
 4. Publishes the release. Only now can the site's download link and
    installed apps see it.
 
+Beside the Mac build, the same version of the CLI goes to npm as `ponzu`, which
+`bunx ponzu` runs: bundled for Bun with the studio
+(`scripts/npm-package.ts`), installed from its tarball and checked to serve
+the studio (`scripts/npm-smoke.ts`, which CI's desktop job also runs), then
+published with provenance. A version npm already has is skipped.
+
 So a merged `fix:` or `feat:` reaches everyone without anyone touching the
 release PR. To hold a release, close its release PR; the next push to `main`
 reopens it. To rebuild an existing release after a build-only fix, run the
@@ -87,3 +93,10 @@ key), `APPLE_API_KEY_ID` and `APPLE_API_ISSUER`. `RELEASE_TOKEN` is a
 repository secret: a token that can open and merge pull requests, so the
 release PR's checks run (pull requests opened with the workflow's own token
 start no workflows).
+
+npm takes the `ponzu` package from the release workflow by [trusted
+publishing](https://docs.npmjs.com/trusted-publishers): on npmjs.com, the
+package's settings name `north-brook/ponzu` and `release.yml` as its
+publisher, so no token is stored. Until that's set up (npm needs the package
+to exist first), an automation token in the `NPM_TOKEN` repository secret
+publishes instead.

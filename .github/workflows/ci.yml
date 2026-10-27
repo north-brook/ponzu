@@ -187,6 +187,11 @@ jobs:
         # signed Mac build before publishing it.
         run: PONZU_SMOKE=1 timeout 120 xvfb-run -a out/linux-unpacked/ponzu --no-sandbox
         working-directory: apps/desktop
+      - name: The npm package installs, creates a design and serves the studio
+        if: env.RUN == 'true'
+        # What the release workflow publishes for `bunx ponzu`, with the studio
+        # the package above built.
+        run: bun scripts/npm-package.ts && bun scripts/npm-smoke.ts
 
   mobile-checks:
     # The iPhone app on its own: its typecheck and tests (which "Check,
