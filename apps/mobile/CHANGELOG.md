@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/north-brook/ponzu/compare/mobile-v0.4.3...mobile-v0.5.0) (2026-10-27)
+
+
+### Features
+
+* never lose an unsent comment ([#289](https://github.com/north-brook/ponzu/issues/289)) ([bce04d8](https://github.com/north-brook/ponzu/commit/bce04d8aea4d8861e0643711ed59ab49864c8d7b))
+
 ## [0.4.3](https://github.com/north-brook/ponzu/compare/mobile-v0.4.2...mobile-v0.4.3) (2026-10-27)
 
 
