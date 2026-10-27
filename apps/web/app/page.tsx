@@ -49,13 +49,13 @@ export default function Home() {
       </header>
 
       {/*
-        The demo on a desktop, with room on every side: yuzu on light, soy on dark (`.stage`). The
-        big slice behind it holds still.
+        The demo on an ink desktop, with room on every side and its use cases along the top
+        (`.demo-stage`). The big slice behind it holds still.
       */}
-      <div className="stage relative mt-4 mb-28 overflow-hidden rounded-[28px] p-14 max-[720px]:rounded-2xl max-[720px]:p-4">
+      <div className="demo-stage relative mt-4 mb-28 overflow-hidden rounded-[28px] px-14 pt-11 pb-14 max-[720px]:rounded-2xl max-[720px]:p-4 max-[720px]:pt-5">
         <Slice
           size={620}
-          className="pointer-events-none absolute -top-[200px] -right-[180px] opacity-(--stage-slice-opacity) [--slice:var(--stage-slice)] max-[720px]:hidden"
+          className="pointer-events-none absolute -top-[200px] -right-[180px] opacity-(--demo-stage-slice-opacity) [--slice:var(--yuzu)] max-[720px]:hidden"
         />
         <div className="dm-frame-host relative">
           <ProductDemo />
