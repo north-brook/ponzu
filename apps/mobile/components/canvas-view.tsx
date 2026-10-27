@@ -113,6 +113,8 @@ export const CanvasView = forwardRef<
     const doc = docMessage();
     const msgs: ToCanvas[] = [
       { t: "insets", insets: p.insets, sheet: p.sheet, radius: latestRadius.current },
+      // Before the socket's first hello there's no doc to carry it.
+      { t: "theme", theme: p.theme },
       ...(doc ? [doc] : []),
       { t: "presence", presence: p.session.getState().presence },
       { t: "pending", pin: p.pending },
