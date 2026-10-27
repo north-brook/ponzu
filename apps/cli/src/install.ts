@@ -308,6 +308,15 @@ function which(cmd: string): string | null {
   return Bun.which(cmd, { PATH: agentPath() });
 }
 
+/** Where an agent's CLI is on this Mac, and the PATH it runs with, for the Suggested tab's runs. */
+export function agentCli(cmd: string): string | null {
+  return which(cmd);
+}
+
+export function agentEnv(): Record<string, string> {
+  return { PATH: agentPath() };
+}
+
 function capture(cmd: string[]): string | null {
   const bin = which(cmd[0]!);
   if (!bin) return null;

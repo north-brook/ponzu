@@ -19,7 +19,7 @@ import { Design } from "@ponzu/store";
 import { FsAdapter } from "@ponzu/store/fs";
 import pkg from "../package.json" with { type: "json" };
 import { announceHost, findHost, ponzuHome } from "./host.ts";
-import { agentStatus, installAgent } from "./install.ts";
+import { agentCli, agentEnv, agentStatus, installAgent } from "./install.ts";
 import { firstFree, serveDefaults, sourceCheckout } from "./source.ts";
 import { phoneTelemetry, startTelemetry, telemetryCommand, telemetryNotice } from "./telemetry.ts";
 import { wakeCommand } from "./wake.ts";
@@ -201,6 +201,12 @@ async function runServe(
     // PONZU_SPOTLIGHT=0 lists only designs under the current folder, as a fresh Mac would.
     spotlight: process.env.PONZU_SPOTLIGHT === "0" ? false : undefined,
     agents: async () => agents(),
+    // The home screen's Suggested tab runs the person's own agent, read-only, for ideas.
+    suggest: {
+      bin: (agent) => agentCli(agent),
+      env: agentEnv(),
+      file: join(ponzuHome(), "suggestions.json"),
+    },
     opened: named,
     version: VERSION,
     telemetry: phoneTelemetry(),
