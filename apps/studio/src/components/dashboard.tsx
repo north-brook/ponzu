@@ -4,12 +4,14 @@ import {
   type CatalogCard,
   type CatalogFile,
   foldCopies,
+  type Idea,
   previewArtboard,
+  settled,
+  startedFrom,
   viewOf,
   withoutUntouched,
 } from "@ponzu/core";
 import {
-  AgentMark,
   ArtboardView,
   Icon,
   Rain,
@@ -22,6 +24,7 @@ import {
 import Fuse, { type FuseResultMatch } from "fuse.js";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { agoShort, branchOf, folderOf, projectOf, tilde, WhereLine } from "@/components/file-info";
+import { SuggestionCard, SuggestionDialog, Thinking } from "@/components/suggested";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -36,6 +39,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useSuggestions } from "@/lib/suggestions";
 import { cn } from "@/lib/utils";
 
 /** What opening a design needs: its key on its own Mac, and the server path in front of it. */
@@ -57,10 +61,10 @@ const LIVE_CARDS = 4;
 const LIVE_LINGER = 10_000;
 
 /**
- * The home screen. Until this Mac has a design of its own, or is set up and can
- * list designs from the person's other Macs, it walks through the first steps;
- * after that it's the catalog: every design on this Mac and the
- * person's other Macs, newest first, with search over files and their frames.
+ * The home screen: every design on this Mac and the person's other Macs, newest
+ * first, with search over files and their frames, and designs the person's agent
+ * suggests for their recent projects. Until Recent has a design, Suggested is
+ * the open tab.
  */
 export function Dashboard({
   catalog,
@@ -77,7 +81,8 @@ export function Dashboard({
   onShelve?: (file: CatalogFile, action: ShelfAction) => Promise<void>;
 }) {
   const [query, setQuery] = useState("");
-  const [view, setView] = useState<View>("recent");
+  /** The view the person picked; until they pick one, Recent, or Suggested while Recent is empty. */
+  const [picked, setPicked] = useState<View | null>(null);
   const [project, setProject] = useState<string | null>(null);
   const [toast, setToast] = useState<{ text: string; undo?: () => void } | null>(null);
   const search = useRef<HTMLInputElement>(null);
@@ -98,29 +103,60 @@ export function Dashboard({
 
   // A worktree's copy nobody touched is the main checkout's design: no card of its own.
   const files = useMemo(() => withoutUntouched(catalog?.files ?? []), [catalog?.files]);
-  // Setup shows until this Mac has a design, read yet or not, or until its agents are
-  // connected and the person's other Macs have designs to list.
-  const connected = catalog?.agents.some((a) => a.found && a.connected) ?? false;
-  const local = files.some((f) => f.machine === "local");
-  const setup = catalog !== null && !local && !(connected && files.length > 0);
-  const setUp = useSetUp(catalog !== null, setup);
   const q = query.trim();
   const live = useLive(files);
   // Identical copies of a design in several checkouts are one card.
   const shelved = useMemo(() => {
-    const by: Record<View, CatalogFile[]> = { recent: [], archived: [] };
+    const by: Record<Shelf, CatalogFile[]> = { recent: [], archived: [] };
     for (const f of files) by[viewOf(f)].push(f);
     return { recent: foldCopies(by.recent), archived: foldCopies(by.archived) };
   }, [files]);
+  const empty = catalog !== null && shelved.recent.length === 0;
+  const waiting = useSetUp(catalog !== null, empty);
+
+  // Suggested shows with an agent to ask. It looks again each time it's opened.
+  const [looking, setLooking] = useState(false);
+  const suggestions = useSuggestions(looking);
+  const suggest = Boolean(suggestions?.agent);
+  const view: View =
+    picked === "suggested" && !suggest
+      ? "recent"
+      : (picked ?? (empty && suggest ? "suggested" : "recent"));
+  const loading = catalog === null || (empty && (waiting || suggestions === null));
+  const open = !loading && !q && view === "suggested";
+  useEffect(() => setLooking(open), [open]);
+  // An idea the person started shows as its design in its place while the design is new, and
+  // then lives in Recent alone.
+  const ideas = useMemo(() => {
+    const here = files.filter((f) => f.machine === "local");
+    const now = Date.now();
+    return (suggestions?.ideas ?? []).flatMap((idea) => {
+      const file = startedFrom(idea, here);
+      return file && settled(file, now) ? [] : [{ idea, file }];
+    });
+  }, [suggestions?.ideas, files]);
+  const [idea, setIdea] = useState<{ idea: Idea | null; open: boolean }>({
+    idea: null,
+    open: false,
+  });
+
   // Searching looks everywhere but the archive.
   const searchable = shelved.recent;
-  const inView = shelved[view];
-  const projects = useProjects(inView);
+  const inView = view === "suggested" ? NO_CARDS : shelved[view];
+  const refs = useMemo(
+    () =>
+      view === "suggested"
+        ? ideas.map(({ idea }) => ({ id: idea.projectId, name: idea.projectName }))
+        : inView.map((c) => projectOf(c.file)),
+    [view, ideas, inView],
+  );
+  const projects = useProjects(refs);
   // A filter for a project this view no longer has goes back to All.
   // NO_PROJECT is "", a scope like any other: compare with null, not truthiness.
   const scope = project !== null && projects.some((p) => p.id === project) ? project : null;
   const shown =
     scope !== null ? inView.filter((c) => (projectOf(c.file)?.id ?? NO_PROJECT) === scope) : inView;
+  const suggested = scope !== null ? ideas.filter(({ idea }) => idea.projectId === scope) : ideas;
 
   // A shelf change that fails (another Mac offline, a newer Ponzu owning the catalog)
   // says why in the toast, and the card stays as it was.
@@ -198,26 +234,55 @@ export function Dashboard({
           </div>
         </TipProvider>
 
-        {catalog === null || (setup && setUp) ? (
+        {loading ? (
           <Loading />
         ) : q ? (
           <Results query={q} cards={searchable} onOpen={onOpen} onShelve={shelve} live={live} />
-        ) : setup ? (
-          <Setup catalog={catalog} files={files} onOpen={onOpen} live={live} />
         ) : (
           <>
             {/* One row: the views at the left, the project at the right. */}
             <div className="-mb-3.5 flex h-7 items-center justify-between gap-4">
               <Views
                 view={view}
-                has={{ recent: true, archived: shelved.archived.length > 0 }}
-                onView={setView}
+                has={{
+                  recent: true,
+                  suggested: suggest,
+                  archived: shelved.archived.length > 0,
+                }}
+                onView={setPicked}
               />
               {projects.length > 1 && (
                 <Projects projects={projects} scope={scope} onScope={setProject} />
               )}
             </div>
-            {shown.length ? (
+            {view === "suggested" ? (
+              suggested.length ? (
+                <Grid>
+                  {suggested.map(({ idea, file }) =>
+                    file ? (
+                      // Started: the design in the idea's place, while it's new.
+                      <FileCard
+                        key={file.id}
+                        card={{ file, copies: [] }}
+                        onOpen={onOpen}
+                        onShelve={shelve}
+                        live={live.has(file.id)}
+                      />
+                    ) : (
+                      <SuggestionCard
+                        key={`${idea.project}:${idea.name}`}
+                        idea={idea}
+                        onPick={(idea) => setIdea({ idea, open: true })}
+                      />
+                    ),
+                  )}
+                </Grid>
+              ) : suggestions?.running ? (
+                <Thinking />
+              ) : (
+                <p className="mt-6 text-center text-muted-foreground">{EMPTY[view]}</p>
+              )
+            ) : shown.length ? (
               <Grid>
                 {shown.map((c) => (
                   <FileCard
@@ -237,6 +302,11 @@ export function Dashboard({
         )}
       </div>
       {toast && <Toast text={toast.text} onUndo={toast.undo} onClose={() => setToast(null)} />}
+      <SuggestionDialog
+        idea={idea.idea}
+        open={idea.open}
+        onClose={() => setIdea((i) => ({ ...i, open: false }))}
+      />
     </div>
   );
 }
@@ -246,17 +316,22 @@ export function Dashboard({
  * lately, or everything put away (by the person, by going idle, or made by an
  * agent for its own use).
  */
-type View = "recent" | "archived";
+type Shelf = "recent" | "archived";
+
+/** The home screen's tabs: the shelves, and designs the person's agent suggests. */
+type View = Shelf | "suggested";
 
 export type ShelfAction = "archive" | "restore";
 
 const VIEWS: { id: View; label: string; icon: string }[] = [
   { id: "recent", label: "Recent", icon: "clock" },
+  { id: "suggested", label: "Suggested", icon: "sparkle" },
   { id: "archived", label: "Archived", icon: "shelved" },
 ];
 
 const EMPTY: Record<View, string> = {
   recent: "Nothing here yet.",
+  suggested: "Nothing to suggest yet.",
   archived: "Nothing archived.",
 };
 
@@ -264,6 +339,9 @@ const TOAST: Record<ShelfAction, (name: string) => string> = {
   archive: (n) => `Archived “${n}”. It comes back when you open it or an agent edits it.`,
   restore: (n) => `Restored “${n}”.`,
 };
+
+/** Suggested lists ideas, not designs. */
+const NO_CARDS: CatalogCard[] = [];
 
 /** The chip for designs outside any git checkout. */
 const NO_PROJECT = "";
@@ -281,8 +359,9 @@ function Views({
   return (
     <div className="flex items-center gap-[18px] text-[13px]" role="tablist">
       {VIEWS.map((v) =>
-        // Archived shows once there's something in it, or while it's open.
-        v.id === "recent" || has[v.id] || view === v.id ? (
+        // Suggested shows with an agent to ask; Archived once there's something in it, or while
+        // it's open.
+        has[v.id] || view === v.id ? (
           <button
             key={v.id}
             type="button"
@@ -318,11 +397,10 @@ interface Project {
 }
 
 /** The projects in a view, the busiest first, and the designs outside one last. */
-function useProjects(cards: CatalogCard[]): Project[] {
+function useProjects(refs: ({ id: string; name: string } | null)[]): Project[] {
   return useMemo(() => {
     const by = new Map<string, Project>();
-    for (const { file } of cards) {
-      const p = projectOf(file);
+    for (const p of refs) {
       const id = p?.id ?? NO_PROJECT;
       const had = by.get(id);
       if (had) had.count++;
@@ -340,7 +418,7 @@ function useProjects(cards: CatalogCard[]): Project[] {
         b.count - a.count ||
         a.name.localeCompare(b.name),
     );
-  }, [cards]);
+  }, [refs]);
 }
 
 function Projects({
@@ -424,21 +502,21 @@ function ProjectItem({
   );
 }
 
-/** Remembers that this Mac has been past the first steps: a design of its own, or its other Macs'. */
+/** Remembers that this Mac has had designs in Recent: its own, or its other Macs'. */
 const SET_UP_KEY = "ponzu.setUp";
 /**
- * How long a Mac that was set up waits for its designs before showing the first steps after all.
+ * How long a Mac that had designs waits for them before showing an empty Recent after all.
  * Long enough for another Mac restarting for the same update to come back and be linked again.
  */
 const SET_UP_GRACE = 30_000;
 
 /**
- * Whether to show placeholder cards rather than the first steps: this Mac has been past them, in
- * this session or an earlier one, and has been back on them for less than the grace period. A
+ * Whether to show placeholder cards rather than an empty Recent: this Mac has had designs, in
+ * this session or an earlier one, and has been empty for less than the grace period. A
  * catalog read while an update restarts can come back empty, or, on a Mac whose designs are all
  * on the person's other Macs, before those Macs are linked again; it waits for them. One still
- * empty after the grace period is really empty (every design deleted, the other Macs off), so the
- * first steps show then.
+ * empty after the grace period is really empty (every design deleted, the other Macs off), so
+ * Suggested opens then.
  */
 function useSetUp(arrived: boolean, setup: boolean): boolean {
   const [had, setHad] = useState(() => {
@@ -448,7 +526,7 @@ function useSetUp(arrived: boolean, setup: boolean): boolean {
       return false;
     }
   });
-  /** When the first steps came back in a catalog that arrived; null while they're not shown. */
+  /** When Recent came back empty in a catalog that arrived; null while it isn't. */
   const [missingSince, setMissingSince] = useState<number | null>(null);
   const [, setNow] = useState(0);
   const past = arrived && !setup;
@@ -468,7 +546,7 @@ function useSetUp(arrived: boolean, setup: boolean): boolean {
     return () => clearTimeout(t);
   }, [missingSince]);
   if (!had || !setup) return false;
-  // Before the effect above notes when they came back, they've only just come back.
+  // Before the effect above notes when it emptied, it's only just emptied.
   return missingSince === null || Date.now() - missingSince < SET_UP_GRACE;
 }
 
@@ -583,184 +661,11 @@ function IconButton({
   );
 }
 
-/* ------------------------------------------------------------------ */
-/* First steps                                                        */
-/* ------------------------------------------------------------------ */
-
-const PROMPT = "Design a landing page for my app in Ponzu.";
-
-function Setup({
-  catalog,
-  files,
-  onOpen,
-  live,
-}: {
-  catalog: Catalog | null;
-  files: CatalogFile[];
-  onOpen: (target: OpenTarget) => void;
-  /** Cards to show live (useLive). */
-  live: Set<string>;
-}) {
-  const [copied, setCopied] = useState(false);
-  const agents = catalog?.agents.filter((a) => a.found) ?? [];
-  const connected = agents.some((a) => a.connected);
-  // Step 2 is done once an agent is designing something here, not when one merely
-  // connects: until then the prompt stays to copy.
-  const working = files.find((f) => f.busy && f.machine === "local");
-  const asked = Boolean(working);
-  return (
-    <>
-      <div className="mt-3 flex max-w-[640px] flex-col gap-4">
-        <h1 className="m-0 font-semibold text-[22px] leading-7 tracking-[-0.02em]">Get started</h1>
-        <div className="flex flex-col rounded-[14px] bg-card shadow-[0_0_0_1px_var(--hairline),0_1px_2px_rgba(0,0,0,0.03)]">
-          <Step
-            n={1}
-            done={connected}
-            active={!connected}
-            title={
-              agents.length
-                ? connected
-                  ? "Your agents are connected"
-                  : window.ponzuDesktop
-                    ? "Connecting your agents…"
-                    : "Connect your agents"
-                : "Install a coding agent"
-            }
-          >
-            {agents.length ? (
-              <div className="flex flex-wrap items-center gap-2">
-                {agents.map((a) => (
-                  <span
-                    key={a.id}
-                    className="flex h-[30px] items-center gap-2 rounded-lg bg-secondary pr-2.5 pl-[9px] text-[12.5px]"
-                  >
-                    <AgentMark client={a.id === "codex" ? "openai" : a.id} size={14} />
-                    {a.label}
-                    {a.connected ? (
-                      <Icon name="check" size={13} strokeWidth={2} className="text-online" />
-                    ) : window.ponzuDesktop ? (
-                      // The app registers agents as it starts.
-                      <span className="size-3 animate-spin rounded-full border-[1.5px] border-current border-r-transparent text-faint" />
-                    ) : (
-                      <span className="text-faint">not set up</span>
-                    )}
-                  </span>
-                ))}
-                {!connected && !window.ponzuDesktop && (
-                  <span className="text-[12.5px] text-muted-foreground">
-                    Run <code className="font-mono text-xs">ponzu install</code>
-                  </span>
-                )}
-              </div>
-            ) : (
-              <p className="m-0 text-[12.5px] text-muted-foreground">
-                Ponzu works with Claude Code, Codex and Cursor. Install one and it connects on its
-                own.
-              </p>
-            )}
-          </Step>
-          <i className="mx-5 block h-px bg-hairline" />
-          <Step n={2} done={asked} active={connected && !asked} title="Ask one for a design">
-            {asked ? (
-              <p className="m-0 text-[12.5px] text-muted-foreground">
-                {agentName(working?.busy, catalog?.agent?.name)} is designing{" "}
-                <b className="font-medium text-foreground">{working?.name}</b>.
-              </p>
-            ) : (
-              <div className="flex h-11 items-center gap-3 rounded-[10px] bg-secondary pr-3 pl-3.5 shadow-[inset_0_0_0_1px_var(--hairline)]">
-                <span className="flex-1 font-mono text-[12.5px]">{PROMPT}</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void navigator.clipboard.writeText(PROMPT);
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 1400);
-                  }}
-                  className={cn(
-                    "flex items-center gap-1.5 text-[12.5px]",
-                    copied ? "text-online" : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  <Icon name={copied ? "check" : "copy"} size={15} />
-                  {copied ? "Copied" : "Copy"}
-                </button>
-              </div>
-            )}
-          </Step>
-        </div>
-      </div>
-      <Heading left="Recent" />
-      {files.length ? (
-        <Grid>
-          {foldCopies(files).map((c) => (
-            <FileCard key={c.file.id} card={c} onOpen={onOpen} live={live.has(c.file.id)} />
-          ))}
-        </Grid>
-      ) : (
-        <Grid>
-          {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="flex flex-col gap-2.5">
-              <div className="ghost aspect-[16/11] rounded-xl" />
-              <div className="flex flex-col gap-1.5 px-0.5">
-                <i className="block h-[9px] w-[46%] rounded bg-secondary" />
-                <i className="block h-2 w-[30%] rounded bg-secondary/70" />
-              </div>
-            </div>
-          ))}
-        </Grid>
-      )}
-    </>
-  );
-}
-
-function Step({
-  n,
-  done,
-  active,
-  title,
-  children,
-}: {
-  n: number;
-  done: boolean;
-  active: boolean;
-  title: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="flex gap-3.5 px-5 py-[18px]">
-      {done ? (
-        <span className="grid size-[22px] shrink-0 place-items-center rounded-full bg-foreground text-background">
-          <Icon name="check" size={13} strokeWidth={2.2} />
-        </span>
-      ) : (
-        <span
-          className={cn(
-            "grid size-[22px] shrink-0 place-items-center rounded-full font-semibold text-xs",
-            active
-              ? "bg-flesh text-[#0e0e0e]"
-              : "text-faint shadow-[inset_0_0_0_1.5px_var(--hairline-strong)]",
-          )}
-        >
-          {n}
-        </span>
-      )}
-      <div className="flex min-w-0 flex-1 flex-col gap-2.5 pt-0.5">
-        <span
-          className={cn("font-medium text-[14px]", !done && !active && "text-muted-foreground")}
-        >
-          {title}
-        </span>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function agentName(client?: string, fallback?: string): string {
+function agentName(client?: string): string {
   if (client === "claude") return "Claude";
   if (client === "openai") return "Codex";
   if (client === "cursor") return "Cursor";
-  return fallback ?? "Your agent";
+  return "Your agent";
 }
 
 /* ------------------------------------------------------------------ */
