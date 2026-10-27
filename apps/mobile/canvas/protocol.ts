@@ -34,9 +34,9 @@ export type ToCanvas =
    * `http://<mac>:7777/files/<key>`; `file` is its key, so presence from other designs is ignored.
    */
   | { t: "doc"; doc: Doc; assetBase: string; theme: Theme; page?: string; file?: string }
-  /** One change from the socket, applied on echo. With `origin`, an agent's work arrives in motion. */
+  /** One change from the socket, applied on echo. With an agent's or a disk save's `origin`, it develops in. */
   | { t: "op"; op: Op; origin?: Origin }
-  /** Who's here: agents' `working` artboards get the trace and the mark on their label. */
+  /** Who's here: agents' `working` artboards get the yuzu ring and rain in their label. */
   | { t: "presence"; presence: Presence[] }
   /** The "+" pin of a comment being written, or none. Its board comes into view. */
   | { t: "pending"; pin: PendingPin | null }
@@ -46,7 +46,7 @@ export type ToCanvas =
   | { t: "focus"; artboardId: string | null }
   /**
    * Standby (iPhone Duo set down while an agent works): the page alone on black, no labels or
-   * pins, traces kept. Off, the canvas is as it was.
+   * pins, rings kept. Off, the canvas is as it was.
    */
   | { t: "standby"; on: boolean }
   /**
@@ -59,7 +59,7 @@ export type ToCanvas =
   /**
    * What the chrome covers. `sheet` is how far a comment or thread sheet rises from the bottom:
    * the pin it's about stays above it. `radius` is the screen's corner, which a focused board's
-   * trace follows.
+   * ring follows.
    */
   | { t: "insets"; insets: Insets; sheet?: number; radius?: number };
 

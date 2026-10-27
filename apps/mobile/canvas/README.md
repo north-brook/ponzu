@@ -2,14 +2,15 @@
 
 The phone's canvas is a web page inside a `react-native-webview`. It draws a design exactly as
 desktop does: each artboard in its own shadow root through `@ponzu/react`'s `ArtboardView`, with
-the design's tokens and Google fonts, and an agent's work arriving with the same shimmer slide.
+the design's tokens and Google fonts, an agent's work developing in the same way, and the same
+yuzu ring and rain round a board an agent is working on.
 React Native owns everything else: the design's socket, the doc, and all the chrome. The page is a
 renderer. The app posts it messages; it posts back gestures.
 
 | File | What it is |
 | --- | --- |
 | `protocol.ts` | The messages, both ways. Types only; the app imports it. |
-| `Canvas.tsx` | The canvas: boards, labels, pins, traces, the camera and the gestures. |
+| `Canvas.tsx` | The canvas: boards, labels, pins, rings, the camera and the gestures. |
 | `camera.ts` | Framing, focus, pins and momentum, as plain math. |
 | `gestures.ts` | Touches turned into pan, pinch, tap, double-tap and hold. A double-tap focuses a board; pinching out or panning past it leaves. |
 | `store.ts` | What the app has said; ops applied here with `applyOp` on echo. |

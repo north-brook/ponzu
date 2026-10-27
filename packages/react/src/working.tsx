@@ -89,4 +89,40 @@ export function useDelayed(on: boolean, ms = 300): boolean {
   return on && shown;
 }
 
+/**
+ * The ids in `live`, false, and for `ms` after each one leaves it, true: long enough for whatever
+ * marks it to fade out. Worked out as it renders, so a mark is never unmounted between the two:
+ * it stays the same element and fades.
+ */
+export function useLingering(live: Map<string, unknown>, ms: number): Map<string, boolean> {
+  const [prev, setPrev] = useState(live);
+  /** Id → when it's done fading (performance.now()). */
+  const [leaving, setLeaving] = useState<ReadonlyMap<string, number>>(new Map());
+  if (live !== prev) {
+    setPrev(live);
+    const gone = [...prev.keys()].filter((id) => !live.has(id));
+    if (gone.length) {
+      const until = performance.now() + ms;
+      setLeaving((l) => new Map([...l, ...gone.map((id) => [id, until] as const)]));
+    }
+  }
+  // Presence changes often: each fade still ends on time, whatever else comes and goes.
+  useEffect(() => {
+    if (!leaving.size) return;
+    const next = Math.min(...leaving.values());
+    const t = setTimeout(
+      () => {
+        const now = performance.now();
+        setLeaving((l) => new Map([...l].filter(([, until]) => until > now)));
+      },
+      Math.max(0, next - performance.now()),
+    );
+    return () => clearTimeout(t);
+  }, [leaving]);
+  const out = new Map<string, boolean>();
+  for (const id of leaving.keys()) out.set(id, true);
+  for (const id of live.keys()) out.set(id, false);
+  return out;
+}
+
 export { type AgentActivity, agentActivity } from "@ponzu/core";

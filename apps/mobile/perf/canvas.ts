@@ -576,7 +576,7 @@ mkdirSync(out, { recursive: true });
 const rows: Record<string, unknown>[] = [];
 for (const name of pages) {
   const p = doc.pages.find((x) => x.name === name || x.id === name);
-  // --working: an agent working on every board of the page, as presence says, so each traces.
+  // --working: an agent working on every board of the page, as presence says, so each is ringed.
   const presence: Presence[] =
     working && p
       ? [
