@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Artboard } from "@ponzu/core";
-import { boardsIn, labelCovers, outOfSight, size } from "./Canvas.tsx";
+import { boardsIn, CROWD, crowded, labelCovers, outOfSight, size } from "./Canvas.tsx";
 
 const board = (style: Record<string, string>) =>
   ({ id: "ab_1", name: "A", x: 0, y: 0, root: { style } }) as unknown as Artboard;
@@ -54,4 +54,30 @@ test("a board's loops hold off screen and as a thumbnail, and play in view", () 
   // iphone.design's Connect page fit to the window: 36 phones about 96px tall. Thumbnails.
   expect(outOfSight(phone, { x: 0, y: 0, zoom: 0.11 }, view)).toBe(true);
   expect(outOfSight(phone, { x: 0, y: 0, zoom: 0.25 }, view)).toBe(false);
+});
+
+test("a view is crowded past a few boards in sight, not counting thumbnails or those away", () => {
+  const view = { w: 1280, h: 800 };
+  // A row of phones, 100 px apart.
+  const row = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({ x: i * 493, y: 0, w: 393, h: 852 }));
+  // Zoomed in on a few: nothing holds while the camera moves.
+  expect(crowded(row(20), { x: 0, y: 0, zoom: 1 }, view)).toBe(false);
+  expect(crowded(row(CROWD), { x: 0, y: 0, zoom: 0.5 }, view)).toBe(false);
+  // Zoomed out over more of them: crowded.
+  expect(crowded(row(20), { x: 0, y: 0, zoom: 0.5 }, view)).toBe(true);
+  // Fit so far out they're thumbnails: they hold anyway, and don't count.
+  expect(crowded(row(20), { x: 0, y: 0, zoom: 0.11 }, view)).toBe(false);
+});
+
+test("boards peeking in at the edges don't crowd the view", () => {
+  const view = { w: 1280, h: 800 };
+  const board = { x: 0, y: 0, w: 1000, h: 700 };
+  // Zoomed in on one board, its neighbours on every side showing a strip of it.
+  const around = [-1, 0, 1].flatMap((i) =>
+    [-1, 0, 1].map((j) => ({ ...board, x: i * 1080, y: j * 730 })),
+  );
+  expect(crowded(around, { x: 140, y: 50, zoom: 1 }, view)).toBe(false);
+  // Zoomed out over the same nine, each is wholly in view.
+  expect(crowded(around, { x: 640, y: 400, zoom: 0.3 }, view)).toBe(true);
 });

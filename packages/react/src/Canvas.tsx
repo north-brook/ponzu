@@ -144,6 +144,42 @@ export function outOfSight(
   return Math.max(w, h) < TINY_BOARD;
 }
 
+/**
+ * More boards in view than this and the view is crowded: while the camera moves over it, loops
+ * hold. Over a few boards, everything keeps moving.
+ */
+export const CROWD = 4;
+
+/**
+ * A board is in view with at least this share of it on screen. Zoomed in on one board, the
+ * edges of its neighbours peeking in don't count.
+ */
+export const IN_VIEW = 0.25;
+
+/**
+ * Whether more than {@link CROWD} boards are in view (a quarter of each on screen, and bigger
+ * than a thumbnail), so loops hold while the camera moves.
+ */
+export function crowded(
+  boxes: Iterable<{ x: number; y: number; w: number; h: number }>,
+  camera: { x: number; y: number; zoom: number },
+  viewport: { w: number; h: number },
+): boolean {
+  let n = 0;
+  for (const b of boxes) {
+    if (outOfSight(b, camera, viewport)) continue;
+    const x = b.x * camera.zoom + camera.x;
+    const y = b.y * camera.zoom + camera.y;
+    const w = b.w * camera.zoom;
+    const h = b.h * camera.zoom;
+    const seen =
+      (Math.min(x + w, viewport.w) - Math.max(x, 0)) *
+      (Math.min(y + h, viewport.h) - Math.max(y, 0));
+    if (seen >= w * h * IN_VIEW && ++n > CROWD) return true;
+  }
+  return false;
+}
+
 /** The boards a selection box drawn from one corner to the other touches, in page order. */
 export function boardsIn(
   a: { x: number; y: number },
@@ -983,9 +1019,11 @@ export function Canvas({
     }
     return k;
   });
-  // Videos over pictures hold their frame while the camera moves, and while nobody can be
-  // watching the window, as boards' own loops do.
-  useEffect(() => playing.hold(view.moving || still), [view.moving, still]);
+  // A pan or zoom over a crowded view: every board's loops hold until the camera stops, as do
+  // videos over pictures. A loop under a blur redraws it every frame of the gesture.
+  const crowd = view.moving && crowded(boardBoxes, view, viewportSize());
+  // Videos over pictures also hold while nobody can be watching the window, as boards' loops do.
+  useEffect(() => playing.hold(crowd || still), [crowd, still]);
 
   if (!doc || !page) {
     const offline = state.status === "offline";
@@ -1089,10 +1127,8 @@ export function Canvas({
                   arrivals={arrivals}
                   // Slightly rounded, the same few px on screen at any zoom (to a quarter octave).
                   radius={(BOARD_RADIUS * dpr) / scale}
-                  // Its loops hold mid-gesture too: a loop under a blur redraws it every frame
-                  // of a pan.
                   hold={
-                    view.moving ||
+                    crowd ||
                     outOfSight({ ...r, x: r.x + (g?.dx ?? 0), y: r.y + (g?.dy ?? 0) }, view, vpSize)
                   }
                 />
@@ -1663,7 +1699,7 @@ const Board = memo(function Board({
   arrivals: Arrivals;
   /** Its corners' radius, in its own px. */
   radius: number;
-  /** Nobody can see it move: its loops hold (see outOfSight). */
+  /** Nobody can see it move, or the camera moves over a crowded view: its loops hold. */
   hold: boolean;
 }) {
   const { w, h: fixed } = size(ab);
