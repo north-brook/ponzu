@@ -52,7 +52,8 @@ export function FileCard({
   name?: Run[];
   /** Show the project: off when Designs is already filtered to one. */
   project?: boolean;
-  onPress: () => void;
+  /** Opening it: on Designs, the card's link passes this in (Link.Trigger). */
+  onPress?: () => void;
 }) {
   const { color, scheme } = useTheme();
   const markColor = useMarkColor();

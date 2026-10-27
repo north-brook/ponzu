@@ -90,14 +90,14 @@ logged to Metro as `[haptic] <kind>`, since the simulator can't buzz.
 
 | Haptic | When |
 | --- | --- |
-| `select` | A tab changing; a native menu opening (the page button, a card's hold); a filter, page or shelf picked; a recent search tapped; typing ⇄ voice |
+| `select` | A tab changing; a native menu opening (the page button); a filter, page or shelf picked; a recent search tapped; typing ⇄ voice |
 | `tick` | A design opened (a card, a search or Activity row); Back; the session card opening; a board coming into focus or leaving it; a comment's pin dropped; pull to refresh |
 | `success` | A comment or reply sent; a thread resolved; a Mac paired; a Mac answering after "Waking Ponzu" |
 | `thud` | A design archived |
 | `fail` | A pairing error; a comment that didn't send; a shelf change a Mac didn't take; a Mac that didn't wake |
 
-The filter's native menu opens with the system's own feedback, so it adds
-none. The canvas's gestures come from the web view as messages (`focused`,
+The filter's native menu and a card's hold (the system's context menu) open
+with the system's own feedback, so they add none. The canvas's gestures come from the web view as messages (`focused`,
 `longpress`, canvas/protocol.ts); the haptic is the app's, never the page's.
 
 ### Styling

@@ -1,5 +1,6 @@
-import { type MenuAction, MenuView } from "@react-native-menu/menu";
-import { router, Stack } from "expo-router";
+import type { MenuAction } from "@react-native-menu/menu";
+import { useImage } from "expo-image";
+import { Link, Stack } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
@@ -45,7 +46,7 @@ const SHELVES: { id: Shelf; label: string; image: string }[] = [
  * time, dimmed, under a note.
  */
 export default function Designs() {
-  const { color, scheme } = useTheme();
+  const { color } = useTheme();
   const { width } = useWindowDimensions();
   const files = useFiles();
   const seen = useSeen();
@@ -80,16 +81,10 @@ export default function Designs() {
   const page = width - rail.left - rail.right;
   const columns = designColumns(page);
   const cardWidth = (page - 2 * m - 16 * (columns - 1)) / columns;
-  const open = (f: PhoneFile) => {
-    tick();
-    router.push({ pathname: "/design/[mac]/[key]", params: { mac: f.mac, key: f.key } });
-  };
-  // Hold a card for its shelf, as desktop's card menu: the system's context menu, and the
-  // card moves at once.
-  const cardActions = (f: PhoneFile): MenuAction[] =>
-    shelfOf(f) === "archived"
-      ? [{ id: "restore", title: "Restore", image: "hi-unarchive" }]
-      : [{ id: "archive", title: "Archive", image: "hi-archive" }];
+  // Hold a card for its shelf, as desktop's card menu: the system's context menu lifts the
+  // card itself, and the card moves at once. Its icons are the app's Hugeicons.
+  const archiveIcon = useImage(require("../../../assets/native/hi-archive.png"));
+  const restoreIcon = useImage(require("../../../assets/native/hi-unarchive.png"));
   const move = (f: PhoneFile, action: ShelfAction) => {
     if (action === "archive") thud();
     else select();
@@ -262,21 +257,41 @@ export default function Designs() {
         >
           {shown.map((f, i) => (
             <HandoffRise key={f.id} kind="designs" i={i}>
-              <MenuView
-                actions={cardActions(f)}
-                onPressAction={({ nativeEvent }) => move(f, nativeEvent.event as ShelfAction)}
-                onOpenMenu={select}
-                shouldOpenOnLongPress
-                themeVariant={scheme}
+              {/* A link, not a button: a UIButton around the card would take its taps. */}
+              <Link
+                href={{ pathname: "/design/[mac]/[key]", params: { mac: f.mac, key: f.key } }}
+                push
+                asChild
+                onPress={tick}
               >
-                <FileCard
-                  file={f}
-                  width={cardWidth}
-                  unseen={isUnseen(seen, f.mac, f.key, f.modified)}
-                  project={project === undefined}
-                  onPress={() => open(f)}
-                />
-              </MenuView>
+                <Link.Trigger>
+                  <FileCard
+                    file={f}
+                    width={cardWidth}
+                    unseen={isUnseen(seen, f.mac, f.key, f.modified)}
+                    project={project === undefined}
+                  />
+                </Link.Trigger>
+                <Link.Menu>
+                  {shelfOf(f) === "archived" ? (
+                    <Link.MenuAction
+                      image={restoreIcon}
+                      imageRenderingMode="template"
+                      onPress={() => move(f, "restore")}
+                    >
+                      Restore
+                    </Link.MenuAction>
+                  ) : (
+                    <Link.MenuAction
+                      image={archiveIcon}
+                      imageRenderingMode="template"
+                      onPress={() => move(f, "archive")}
+                    >
+                      Archive
+                    </Link.MenuAction>
+                  )}
+                </Link.Menu>
+              </Link>
             </HandoffRise>
           ))}
         </Animated.View>
