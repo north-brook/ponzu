@@ -3,6 +3,9 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // PostHog's API paths end in a slash; redirecting them breaks ingestion.
   skipTrailingSlashRedirect: true,
+  // PostHog fetches public source maps to turn errors' minified stack traces back into our source,
+  // so nothing needs uploading. The source is on GitHub anyway.
+  productionBrowserSourceMaps: true,
   // The share cards read their fonts from disk (app/gh/og.tsx).
   outputFileTracingIncludes: { "/og/gh/[...slug]": ["./assets/og/*.ttf"] },
   async rewrites() {
