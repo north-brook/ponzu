@@ -62,6 +62,19 @@ const token = process.env.BLOB_READ_WRITE_TOKEN;
 if (!local && !token)
   throw new Error("Set BLOB_READ_WRITE_TOKEN to upload, or pass --local to keep the files here.");
 
+/**
+ * Chromium flags that have each frame drawn whole before it's shown, rather than painted in tiles
+ * and decoded images as they're ready, as a screen would: a capture shows the frame as it is.
+ */
+const STEADY = [
+  "--run-all-compositor-stages-before-draw",
+  "--disable-checker-imaging",
+  "--disable-new-content-rendering-timeout",
+  "--disable-threaded-animation",
+  "--disable-threaded-scrolling",
+  "--disable-image-animation-resync",
+];
+
 /** Runs in the page: every animation, the artboards' shadow roots included. */
 const ANIMATIONS = `(() => {
   const all = new Set(document.getAnimations());
@@ -302,6 +315,14 @@ async function record(browser: Browser, story: (typeof STORIES)[number], scheme:
     // An image that never decodes shouldn't stall the recording.
     await Promise.race([page.evaluate(IMAGES), new Promise((r) => setTimeout(r, 2000))]);
     last = await capture(95);
+    // A capture can come before the frame's done drawing: tiles still to paint, a board blank, a
+    // board ahead of its entrance. It plays as a flash, so capture until two agree.
+    for (let tries = 1; tries < 8; tries++) {
+      await page.evaluate(SETTLE);
+      const again = await capture(95);
+      if (again.equals(last)) break;
+      last = again;
+    }
     if (i === 0) first = await capture(80);
     if (!ffmpeg.stdin.write(last)) await new Promise((r) => ffmpeg.stdin.once("drain", r));
     if (i % (FPS * 5) === 0)
@@ -368,7 +389,7 @@ const site = await serve();
 const BASE = site.base;
 const executablePath = findChromium();
 if (!executablePath) throw new Error("No Chromium-based browser found. Set PONZU_CHROMIUM.");
-const browser = await chromium.launch({ executablePath });
+const browser = await chromium.launch({ executablePath, args: STEADY });
 const manifest: Record<string, Partial<Record<Scheme, DemoRecording>>> = JSON.parse(
   readFileSync(MANIFEST, "utf8"),
 );
