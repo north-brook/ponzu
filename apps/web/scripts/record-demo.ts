@@ -372,6 +372,10 @@ const browser = await chromium.launch({ executablePath });
 const manifest: Record<string, Partial<Record<Scheme, DemoRecording>>> = JSON.parse(
   readFileSync(MANIFEST, "utf8"),
 );
+// Recording them all, a story the demo no longer has goes from the manifest too.
+if (!named.length)
+  for (const id of Object.keys(manifest))
+    if (!STORIES.some((s) => s.id === id)) delete manifest[id];
 try {
   for (const story of stories) {
     // Light and dark side by side: each is its own page on its own held clock.
