@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.66.0](https://github.com/north-brook/ponzu/compare/v1.65.0...v1.66.0) (2026-10-28)
+
+
+### Features
+
+* wake ponzu from the iphone on linux ([#321](https://github.com/north-brook/ponzu/issues/321)) ([4a08ee7](https://github.com/north-brook/ponzu/commit/4a08ee70bd815d149a1ad0acf544636875f94d40))
+
 ## [1.65.0](https://github.com/north-brook/ponzu/compare/v1.64.0...v1.65.0) (2026-10-28)
 
 
