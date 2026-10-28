@@ -1,20 +1,22 @@
 {
   "seekle": {
     "light": {
-      "src": "https://vcxln54oqizmrjgh.public.blob.vercel-storage.com/demo/seekle-light-3311a2214949a4e9.mp4",
-      "poster": "https://vcxln54oqizmrjgh.public.blob.vercel-storage.com/demo/seekle-light-42891367b1f57715.jpg",
+      "src": "https://vcxln54oqizmrjgh.public.blob.vercel-storage.com/demo/seekle-light-37b4a01bcabf438c.mp4",
+      "poster": "https://vcxln54oqizmrjgh.public.blob.vercel-storage.com/demo/seekle-light-d0cbf58af29d1867.jpg",
+      "still": "https://vcxln54oqizmrjgh.public.blob.vercel-storage.com/demo/seekle-light-still-938f9bb47dc51c22.jpg",
       "width": 900,
       "height": 900,
       "ms": 87422,
-      "bytes": 6233683
+      "bytes": 11537856
     },
     "dark": {
-      "src": "https://vcxln54oqizmrjgh.public.blob.vercel-storage.com/demo/seekle-dark-bb96d88cb7362e08.mp4",
-      "poster": "https://vcxln54oqizmrjgh.public.blob.vercel-storage.com/demo/seekle-dark-51b96ec861b613ea.jpg",
+      "src": "https://vcxln54oqizmrjgh.public.blob.vercel-storage.com/demo/seekle-dark-b39d15289323cd31.mp4",
+      "poster": "https://vcxln54oqizmrjgh.public.blob.vercel-storage.com/demo/seekle-dark-abea9e09a86c0d67.jpg",
+      "still": "https://vcxln54oqizmrjgh.public.blob.vercel-storage.com/demo/seekle-dark-still-cdbee5012581b24a.jpg",
       "width": 900,
       "height": 900,
       "ms": 87422,
-      "bytes": 6192882
+      "bytes": 11526848
     }
   }
 }
