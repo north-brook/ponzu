@@ -157,7 +157,8 @@ export function DownloadSplit({ testflight }: { testflight: string | null }) {
           onClick={() => setOpen((o) => !o)}
         >
           <Chevron
-            className={`size-3 transition-[rotate] duration-200 ${open ? "rotate-180" : ""}`}
+            strokeWidth={2}
+            className={`size-[18px] transition-[rotate] duration-200 ${open ? "rotate-180" : ""}`}
           />
         </button>
       </div>

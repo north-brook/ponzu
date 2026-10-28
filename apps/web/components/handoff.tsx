@@ -12,7 +12,7 @@ import {
 import { btn } from "./button";
 import { type Phone, phone } from "./device";
 import { OsIcon } from "./download-button";
-import { Check, Slice } from "./icons";
+import { Check, CopyIcon, ShareIcon, Slice } from "./icons";
 import { TESTFLIGHT } from "./links";
 import { guide, OSES, type Os, PLATFORMS } from "./platforms";
 
@@ -221,7 +221,11 @@ export function Handoff() {
                   key={canShare ? os : "copy"}
                   className="handoff-roll flex items-center gap-[9px]"
                 >
-                  {canShare ? <ShareIcon /> : <CopyIcon />}
+                  {canShare ? (
+                    <ShareIcon className="size-[18px]" />
+                  ) : (
+                    <CopyIcon className="size-[17px]" />
+                  )}
                   {canShare ? `Send to my ${p.machine}` : "Copy link"}
                 </span>
               </button>
@@ -238,7 +242,7 @@ export function Handoff() {
                       className="handoff-draw size-[1em] shrink-0 fill-none stroke-current"
                     />
                   ) : (
-                    <CopyIcon />
+                    <CopyIcon className="size-[17px]" />
                   )}
                   <span aria-live="polite">{copied ? "Link copied" : "Copy link"}</span>
                 </button>
@@ -311,39 +315,3 @@ export function Handoff() {
 }
 
 type Style = CSSProperties & Record<`--${string}`, number>;
-
-function ShareIcon() {
-  return (
-    <svg viewBox="0 0 18 18" width={17} height={17} fill="none" aria-hidden="true">
-      <path
-        d="M9 11.5V2m-3.5 3.5L9 2l3.5 3.5M5 8H4a1.5 1.5 0 0 0-1.5 1.5v5A1.5 1.5 0 0 0 4 16h10a1.5 1.5 0 0 0 1.5-1.5v-5A1.5 1.5 0 0 0 14 8h-1"
-        stroke="currentColor"
-        strokeWidth={1.6}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function CopyIcon() {
-  return (
-    <svg viewBox="0 0 16 16" width={16} height={16} fill="none" aria-hidden="true">
-      <rect
-        x="5.5"
-        y="5.5"
-        width="8.5"
-        height="8.5"
-        rx="2"
-        stroke="currentColor"
-        strokeWidth={1.5}
-      />
-      <path
-        d="M10.5 3.5V3a1.5 1.5 0 0 0-1.5-1.5H3.5A1.5 1.5 0 0 0 2 3v5.5A1.5 1.5 0 0 0 3.5 10H4"
-        stroke="currentColor"
-        strokeWidth={1.5}
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
