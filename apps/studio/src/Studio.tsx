@@ -260,6 +260,7 @@ export function Studio() {
 
   const desktop = window.ponzuDesktop;
   const isMac = desktop?.platform === "darwin";
+  const isWindows = desktop?.platform === "win32";
 
   return (
     <div className="flex h-full flex-col bg-background text-foreground">
@@ -270,6 +271,9 @@ export function Studio() {
           // Electron on macOS: room for the traffic lights. Since macOS 26 they end at x=76;
           // this keeps the logo 19px clear of them.
           isMac && "pl-[88px]",
+          // Electron on Windows: room for the caption buttons it draws over the header's right.
+          isWindows &&
+            "pr-[calc(100vw-env(titlebar-area-x,0px)-env(titlebar-area-width,100vw)+8px)]",
         )}
       >
         <Button

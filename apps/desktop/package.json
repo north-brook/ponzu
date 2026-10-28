@@ -128,8 +128,30 @@
       "repo": "ponzu",
       "releaseType": "draft"
     },
+    "win": {
+      "extraResources": [
+        {
+          "from": "build",
+          "to": "tray",
+          "filter": [
+            "tray.png",
+            "tray@2x.png"
+          ]
+        }
+      ]
+    },
     "linux": {
       "executableName": "ponzu",
+      "extraResources": [
+        {
+          "from": "build",
+          "to": "tray",
+          "filter": [
+            "tray.png",
+            "tray@2x.png"
+          ]
+        }
+      ],
       "target": [
         "dir"
       ]

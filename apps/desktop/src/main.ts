@@ -4,7 +4,18 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { type Catalog, parseDesignLink } from "@ponzu/core";
 import { cloneTarget, parseOpenUrl, spawnGit } from "@ponzu/server/clone";
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  Menu,
+  nativeImage,
+  nativeTheme,
+  shell,
+  Tray,
+} from "electron";
 import { followAppearance } from "./appearance";
 import { renderToken, startRenderHost } from "./render-host";
 import { smoke, watchSmoke } from "./smoke";
@@ -22,6 +33,8 @@ const paths = {
   server: join(isDev ? here : process.resourcesPath, SERVER_BIN),
   studio: isDev ? join(here, "../../studio/dist") : join(process.resourcesPath, "studio"),
   preload: join(here, "preload.cjs"),
+  /** Windows and Linux: the tray icon, tray.png and tray@2x.png. */
+  tray: isDev ? join(here, "../build") : join(process.resourcesPath, "tray"),
 };
 
 let server: ChildProcess | null = null;
@@ -260,14 +273,35 @@ path{animation:juice 1.2s linear infinite both}
 /** A window on the splash, until the server is up. */
 let splashing = false;
 
+/**
+ * Windows draws its caption buttons over the studio's title bar, in its colours: the studio's
+ * `--background` and `--foreground`, and its header's 40px.
+ */
+const titleBarOverlay = (): Electron.TitleBarOverlayOptions => ({
+  color: nativeTheme.shouldUseDarkColors ? "#0e0e0d" : "#e8e6e0",
+  symbolColor: nativeTheme.shouldUseDarkColors ? "#f4f3ef" : "#111110",
+  height: 40,
+});
+
+/**
+ * The window's frame. The Mac's traffic lights and Windows' caption buttons sit in the
+ * studio's title bar, which leaves room for them; Linux keeps its own title bar and menus.
+ */
+function chrome(): Electron.BrowserWindowConstructorOptions {
+  if (process.platform === "darwin")
+    return { titleBarStyle: "hiddenInset", trafficLightPosition: { x: 16, y: 13 } };
+  if (process.platform === "win32")
+    return { titleBarStyle: "hidden", titleBarOverlay: titleBarOverlay() };
+  return {};
+}
+
 function createWindow(url: string) {
   const win = new BrowserWindow({
     width: 1440,
     height: 900,
     minWidth: 720,
     minHeight: 480,
-    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
-    trafficLightPosition: { x: 16, y: 13 },
+    ...chrome(),
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#0e0e0d" : "#e8e6e0",
     show: false,
     webPreferences: { preload: paths.preload, contextIsolation: true, sandbox: true },
@@ -451,6 +485,47 @@ ipcMain.handle("ponzu:pair-iphone-pending", () => {
 });
 ipcMain.on("ponzu:close-window", (e) => BrowserWindow.fromWebContents(e.sender)?.close());
 
+/** Check for Updates… and Pair iPhone…: the Mac's app menu, and Help and the tray elsewhere. */
+function appItems(): Electron.MenuItemConstructorOptions[] {
+  return [
+    {
+      label: "Check for Updates…",
+      click: () => {
+        showWindow();
+        if (mainWindow) void checkForUpdatesNow(mainWindow);
+      },
+    },
+    { label: "Pair iPhone…", click: () => pairIphone() },
+  ];
+}
+
+/**
+ * Windows and Linux: Ponzu in the tray. Closing its last window leaves it serving agents, the
+ * iPhone and the person's other computers, as the Mac's dock does, until they quit it here or
+ * agents go quiet (watchIdle).
+ */
+let tray: Tray | null = null;
+function createTray() {
+  if (process.platform === "darwin" || tray) return;
+  // Linux's trays scale the icon to the panel themselves; Windows' takes 16px, and @2x beside it.
+  const icon = nativeImage.createFromPath(
+    join(paths.tray, process.platform === "win32" ? "tray.png" : "tray@2x.png"),
+  );
+  tray = new Tray(icon);
+  tray.setToolTip("Ponzu");
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: "Open Ponzu", click: () => showWindow() },
+      { type: "separator" },
+      ...appItems(),
+      { type: "separator" },
+      { label: "Quit Ponzu", click: () => app.quit() },
+    ]),
+  );
+  // Windows: a click opens the window, as the right-click menu's first item does.
+  tray.on("click", () => showWindow());
+}
+
 function buildMenu() {
   const template: Electron.MenuItemConstructorOptions[] = [
     ...(process.platform === "darwin"
@@ -459,14 +534,7 @@ function buildMenu() {
             label: app.name,
             submenu: [
               { role: "about" as const },
-              {
-                label: "Check for Updates…",
-                click: () => {
-                  showWindow();
-                  if (mainWindow) void checkForUpdatesNow(mainWindow);
-                },
-              },
-              { label: "Pair iPhone…", click: () => pairIphone() },
+              ...appItems(),
               { label: "Install Terminal Command…", click: () => void installCommand() },
               { type: "separator" as const },
               { role: "services" as const },
@@ -532,7 +600,11 @@ function buildMenu() {
     { role: "windowMenu" },
     {
       role: "help",
-      submenu: [{ label: "ponzu.design", click: () => shell.openExternal("https://ponzu.design") }],
+      submenu: [
+        { label: "ponzu.design", click: () => shell.openExternal("https://ponzu.design") },
+        // Off the Mac, there's no app menu to hold these.
+        ...(process.platform === "darwin" ? [] : [{ type: "separator" as const }, ...appItems()]),
+      ],
     },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
@@ -613,6 +685,7 @@ if (!app.requestSingleInstanceLock()) {
     if (fromArgv) pendingOpens.push(fromArgv);
     if (!background || pendingOpens.length || pendingLinks.length || smoke) showWindow();
     else app.dock?.hide();
+    createTray();
     if (!smoke) {
       setupAgents();
       setupWake();
@@ -625,9 +698,15 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on("activate", () => showWindow());
 
+  // Ponzu keeps serving with no window: in the dock on a Mac, in the tray elsewhere.
   app.on("window-all-closed", () => {
     mainWindow = null;
-    if (process.platform !== "darwin") app.quit();
+  });
+
+  // Windows' caption buttons follow the light or dark mode, as the studio does.
+  nativeTheme.on("updated", () => {
+    if (process.platform !== "win32") return;
+    for (const win of BrowserWindow.getAllWindows()) win.setTitleBarOverlay(titleBarOverlay());
   });
 
   app.on("before-quit", () => {
