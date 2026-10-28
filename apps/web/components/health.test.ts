@@ -94,6 +94,31 @@ test("the marker follows pages that change without a load", () => {
   expect(t.load("/privacy").sent).toEqual([["page crashed", { page: "/privacy", ready: false }]]);
 });
 
+test("a page reached without a load counts to ready on its own", () => {
+  const t = tab();
+  const page = t.load("/");
+  // Before the first page is ready: the count starts again for the new one.
+  jest.advanceTimersByTime(READY_MS - 1000);
+  page.win.location.pathname = "/download";
+  page.mark();
+  jest.advanceTimersByTime(1000);
+  expect(page.sent).toEqual([]);
+  jest.advanceTimersByTime(READY_MS - 1000);
+  expect(page.sent).toEqual([["page ready", { page: "/download" }]]);
+
+  // After it: the next page gets its own, and a crash before then says it wasn't ready.
+  page.win.location.pathname = "/privacy";
+  page.mark();
+  expect(t.load("/privacy").sent).toEqual([["page crashed", { page: "/privacy", ready: false }]]);
+  jest.advanceTimersByTime(READY_MS);
+  expect(page.sent.at(-1)).toEqual(["page ready", { page: "/privacy" }]);
+
+  // The same path again (a pageview for a query or hash change) doesn't restart anything.
+  page.mark();
+  jest.advanceTimersByTime(READY_MS);
+  expect(page.sent).toHaveLength(2);
+});
+
 test("blocked or broken storage only turns the signal off", () => {
   const throwing = Object.assign(new EventTarget(), {
     document: Object.assign(new EventTarget(), {

@@ -8,8 +8,9 @@
  * the page clears it whenever it's hidden or left. A load that finds the marker still there in the
  * same tab follows a crash, and says so with `page crashed`.
  *
- * `page ready` is the other half: the page stayed open and on screen for READY_MS after loading.
- * Pageviews against it, by OS and browser, show where pages die before then.
+ * `page ready` is the other half: the page stayed open and on screen for READY_MS after loading,
+ * once per page, including pages reached without a load. Pageviews against it, by OS and browser,
+ * show where pages die before then.
  */
 
 export const MARKER = "ponzu:alive";
@@ -19,10 +20,14 @@ export type Capture = (event: string, properties: Record<string, string | boolea
 
 type Marker = { page: string; ready: boolean };
 
-/** Starts watching this page. Returns a function that moves the marker to the current path. */
+/**
+ * Starts watching this page. Returns a function to call when the path may have changed without a
+ * load: the marker follows it, and a new page counts to ready afresh.
+ */
 export function watchHealth(capture: Capture, win: Window = window): () => void {
   const storage = sessionStorageOf(win);
   const doc = win.document;
+  let page = win.location.pathname;
   let ready = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -30,8 +35,13 @@ export function watchHealth(capture: Capture, win: Window = window): () => void 
   if (left) capture("page crashed", { page: left.page, ready: left.ready });
 
   const mark = () => {
+    if (win.location.pathname !== page) {
+      page = win.location.pathname;
+      ready = false;
+      countToReady();
+    }
     if (doc.visibilityState === "hidden") return;
-    write(storage, { page: win.location.pathname, ready });
+    write(storage, { page, ready });
   };
   const clear = () => {
     try {
@@ -45,7 +55,7 @@ export function watchHealth(capture: Capture, win: Window = window): () => void 
     if (ready || doc.readyState !== "complete" || doc.visibilityState === "hidden") return;
     timer = setTimeout(() => {
       ready = true;
-      capture("page ready", { page: win.location.pathname });
+      capture("page ready", { page });
       mark();
     }, READY_MS);
   };
