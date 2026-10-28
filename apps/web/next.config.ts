@@ -3,6 +3,10 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // PostHog's API paths end in a slash; redirecting them breaks ingestion.
   skipTrailingSlashRedirect: true,
+  // Source maps, so PostHog can turn errors' minified stack traces back into our source (the source
+  // is on GitHub anyway). It fetches them itself, but only once the Vercel project's Protected Source
+  // Maps is off; until then .map files need a Vercel login and traces stay minified.
+  productionBrowserSourceMaps: true,
   // The share cards read their fonts from disk (app/gh/og.tsx).
   outputFileTracingIncludes: { "/og/gh/[...slug]": ["./assets/og/*.ttf"] },
   async rewrites() {

@@ -100,10 +100,20 @@ export default function Page() {
 
         <Section title="This website">
           <p>
-            ponzu.design is hosted on Vercel and counts page views and download clicks with PostHog,
-            which keeps a cookie to tell visits apart. It honors Do Not Track. Pages that show a
-            design from GitHub read it from GitHub’s public servers. The site has no sign-in and
-            doesn’t sell or share data with advertisers.
+            ponzu.design is hosted on Vercel and counts page views (with how far down you scrolled)
+            and download clicks with PostHog, which keeps a cookie to tell visits apart.
+          </p>
+          <p>
+            So we know when the site breaks, it also sends errors in its own code, with their stack
+            traces; how fast each page loads and responds (Core Web Vitals); and whether a page
+            stayed open for a few seconds or was closed by the browser running out of memory. That
+            last one keeps a marker in the tab’s session storage while the page is open, and no
+            more. These events carry the page, browser, operating system and type of device, never
+            anything you type. The site makes no session recordings.
+          </p>
+          <p>
+            It all honors Do Not Track. Pages that show a design from GitHub read it from GitHub’s
+            public servers. The site has no sign-in and doesn’t sell or share data with advertisers.
           </p>
         </Section>
 
@@ -120,7 +130,7 @@ export default function Page() {
             <Link href={ISSUES}>GitHub</Link>. If this policy changes, the change shows up here and
             in the repository’s history.
           </p>
-          <p className="text-[13px]/[19px] text-faint">Last updated October 26, 2026.</p>
+          <p className="text-[13px]/[19px] text-faint">Last updated October 27, 2026.</p>
         </Section>
       </article>
 
