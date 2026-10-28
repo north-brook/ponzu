@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.59.1](https://github.com/north-brook/ponzu/compare/v1.59.0...v1.59.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* play the homepage demo as a video on phones ([#298](https://github.com/north-brook/ponzu/issues/298)) ([b426d60](https://github.com/north-brook/ponzu/commit/b426d60732c81f986544f3a7688133a019c44274))
+
 ## [1.59.0](https://github.com/north-brook/ponzu/compare/v1.58.1...v1.59.0) (2026-10-28)
 
 
