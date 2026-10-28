@@ -2,7 +2,15 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { designPath, desktopEntry, launchArgs, mimeXml, registryCommands } from "./designs.ts";
+import { pathToFileURL } from "node:url";
+import {
+  designPath,
+  desktopEntry,
+  launchArgs,
+  mimeXml,
+  registered,
+  registryCommands,
+} from "./designs.ts";
 
 let dir: string;
 
@@ -45,6 +53,12 @@ test("a launch's links and designs, relative to where it was launched", () => {
   ).toEqual({
     links: ["ponzu://open?file=/a.design"],
     designs: [join(dir, "Logo.design"), join(dir, "plain")],
+  });
+  // A file manager hands a desktop entry's %U a file:// URL.
+  const url = pathToFileURL(join(dir, "Logo.design/design.json")).href;
+  expect(launchArgs(["ponzu", url], "/")).toEqual({
+    links: [],
+    designs: [join(dir, "Logo.design")],
   });
   // The executable itself is never a design, even one in a folder that holds one.
   expect(launchArgs([join(dir, "plain")], dir)).toEqual({ links: [], designs: [] });
@@ -91,4 +105,16 @@ test("Windows: Ponzu joins design.json's Open with, leaving .json's default alon
   expect(commands.some((c) => c[1] === "HKCU\\Software\\Classes\\.json" && c[2] === "/ve")).toBe(
     false,
   );
+});
+
+test("Windows: a registration that's already there isn't written again", () => {
+  const exe = "C:\\Users\\me\\AppData\\Local\\Programs\\ponzu\\Ponzu.exe";
+  const command = `\r\nHKEY_CURRENT_USER\\Software\\Classes\\Ponzu.Design\\shell\\open\\command\r\n    (Default)    REG_SZ    "${exe}" "%1"\r\n`;
+  const openWith =
+    "\r\nHKEY_CURRENT_USER\\Software\\Classes\\.json\\OpenWithProgids\r\n    Ponzu.Design    REG_NONE    \r\n";
+  expect(registered(exe, command, openWith)).toBe(true);
+  // Moved, missing, or never there: written.
+  expect(registered("D:\\Ponzu\\Ponzu.exe", command, openWith)).toBe(false);
+  expect(registered(exe, command, null)).toBe(false);
+  expect(registered(exe, null, null)).toBe(false);
 });

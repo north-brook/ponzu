@@ -3,6 +3,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 /*
  * Opening designs on Windows and Linux. A .design is a folder, which only the
@@ -26,8 +27,9 @@ export function designPath(arg: string): string | null {
 }
 
 /**
- * What a launch's arguments ask to open: ponzu:// links and designs, a relative path from the
- * folder it was launched in. Skips the executable and switches.
+ * What a launch's arguments ask to open: ponzu:// links and designs, as a path (relative to the
+ * folder it was launched in) or a file:// URL, which desktop entries' %U hands over. Skips the
+ * executable and switches.
  */
 export function launchArgs(
   argv: readonly string[],
@@ -37,7 +39,14 @@ export function launchArgs(
   const designs: string[] = [];
   for (const arg of argv.slice(1)) {
     if (/^ponzu:/i.test(arg)) links.push(arg);
-    else if (!arg.startsWith("-")) {
+    else if (/^file:/i.test(arg)) {
+      let path: string | null = null;
+      try {
+        path = fileURLToPath(arg);
+      } catch {}
+      const design = path && designPath(path);
+      if (design) designs.push(design);
+    } else if (!arg.startsWith("-")) {
       const design = designPath(resolve(cwd, arg));
       if (design) designs.push(design);
     }
@@ -108,6 +117,19 @@ export function registryCommands(exe: string): string[][] {
 const run = (cmd: string, args: string[]) =>
   new Promise<boolean>((resolve) => execFile(cmd, args, { windowsHide: true }, (e) => resolve(!e)));
 
+const output = (cmd: string, args: string[]) =>
+  new Promise<string | null>((resolve) =>
+    execFile(cmd, args, { windowsHide: true }, (e, out) => resolve(e ? null : out)),
+  );
+
+/**
+ * Windows: whether what registryCommands writes is already there, from `reg query` of its open
+ * command and the Open with entry.
+ */
+export function registered(exe: string, command: string | null, openWith: string | null): boolean {
+  return Boolean(command?.includes(`"${exe}" "%1"`) && openWith?.includes(PROG_ID));
+}
+
 /** Writes `path` unless it already says `content`. Whether it changed. */
 async function write(path: string, content: string): Promise<boolean> {
   try {
@@ -125,6 +147,12 @@ async function write(path: string, content: string): Promise<boolean> {
  */
 export async function associateDesigns(exe: string, env = process.env): Promise<void> {
   if (process.platform === "win32") {
+    const classes = "HKCU\\Software\\Classes";
+    const [command, openWith] = await Promise.all([
+      output("reg.exe", ["query", `${classes}\\${PROG_ID}\\shell\\open\\command`, "/ve"]),
+      output("reg.exe", ["query", `${classes}\\.json\\OpenWithProgids`, "/v", PROG_ID]),
+    ]);
+    if (registered(exe, command, openWith)) return;
     for (const args of registryCommands(exe)) await run("reg.exe", args);
     return;
   }
