@@ -129,26 +129,40 @@ function CLOCK() {
     realRaf(pump);
   };
   realRaf(pump);
-  const timer = (
-    real: typeof setTimeout,
-    fn: TimerHandler,
-    ms = 0,
-    args: unknown[],
-    every: boolean,
-  ) => {
-    if (!held || typeof fn !== "function") return real(fn, ms, ...args);
+  // Every timer is ours from the start: on the browser's clock until the hold, then only as frames
+  // reach it, so none set while the page loaded fires on wall-clock time during the recording.
+  const wake = (n: number) => {
+    const t = timers.get(n);
+    if (!t) return;
+    realSetTimeout(
+      () => {
+        // Held since: the frame that reaches it runs it.
+        if (held || timers.get(n) !== t) return;
+        if (t.every) {
+          t.due += t.every;
+          wake(n);
+        } else timers.delete(n);
+        t.run();
+      },
+      Math.max(0, t.due - realNow()),
+    );
+  };
+  const timer = (fn: TimerHandler, ms: number | undefined, args: unknown[], every: boolean) => {
+    if (typeof fn !== "function")
+      return (every ? realSetInterval : realSetTimeout)(fn, ms, ...args) as unknown as number;
     const wait = Math.max(0, Number(ms) || 0);
     timers.set(++id, {
       due: now() + wait,
       run: () => fn(...args),
       every: every ? Math.max(1, wait) : undefined,
     });
+    if (!held) wake(id);
     return id;
   };
   w.setTimeout = ((fn: TimerHandler, ms?: number, ...args: unknown[]) =>
-    timer(realSetTimeout, fn, ms, args, false)) as typeof setTimeout;
+    timer(fn, ms, args, false)) as typeof setTimeout;
   w.setInterval = ((fn: TimerHandler, ms?: number, ...args: unknown[]) =>
-    timer(realSetInterval as typeof setTimeout, fn, ms, args, true)) as typeof setInterval;
+    timer(fn, ms, args, true)) as typeof setInterval;
   w.clearTimeout = ((n?: number) =>
     n !== undefined && n > OWN ? timers.delete(n) : realClearTimeout(n)) as typeof clearTimeout;
   w.clearInterval = ((n?: number) =>
