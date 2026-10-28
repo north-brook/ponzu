@@ -42,7 +42,7 @@ Usage
   ponzu telemetry [on|off]      Show or change usage reporting
   ponzu wake [install|uninstall]
                                 The helper that lets the iPhone app start Ponzu on this
-                                Mac. The app installs it; uninstall removes it
+                                Mac or Linux PC. The app installs it; uninstall removes it
 
 Options
   -p, --port <n>       Port for serve (default 7777; from a checkout, one in

@@ -10,6 +10,7 @@ import {
   appLauncher,
   appServer,
   findApp,
+  launchCommand,
   ownBundle,
   shimPath,
   shimScript,
@@ -65,6 +66,18 @@ test("starting the app with no window", async () => {
     "/home/me/Ponzu-x64.AppImage",
     ["--background"],
   ]);
+});
+
+test("the wake helper starts the app as a service of its own, which outlives the knock", () => {
+  const appimage = "/home/me/Ponzu-x64.AppImage";
+  expect(launchCommand(appimage, "linux", { INVOCATION_ID: "abc" })).toEqual([
+    "systemd-run",
+    ["--user", "--collect", "--quiet", "--", appimage, "--background"],
+  ]);
+  expect(launchCommand(appimage, "linux", {})).toEqual([appimage, ["--background"]]);
+  expect(launchCommand("/Applications/Ponzu.app", "darwin", { INVOCATION_ID: "abc" })[0]).toBe(
+    "open",
+  );
 });
 
 test("the app this binary ships in", () => {
