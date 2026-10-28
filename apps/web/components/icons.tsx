@@ -100,3 +100,113 @@ export function Heart({ className, ...props }: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+export function Windows(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className="size-[0.92em] shrink-0 fill-current"
+      {...props}
+    >
+      <path d="M2 4.2 10.2 3v8.3H2zM11.3 2.9 22 1.3v10H11.3zM2 12.4h8.2v8.4L2 19.6zM11.3 12.4H22v10.3l-10.7-1.6z" />
+    </svg>
+  );
+}
+
+/** Tux, drawn as a silhouette with its belly and eyes cut out, so it takes `currentColor` alone. */
+export function Linux(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className="size-[1em] shrink-0 fill-current"
+      fillRule="evenodd"
+      {...props}
+    >
+      <path d="M12 1.5c-2.6 0-4.3 2.1-4.3 5 0 1.4.3 2.3-.4 3.6-1 1.8-3 4.3-3 7.6 0 .8.2 1.5.5 2.1-.9.3-1.6.9-1.3 1.6.4.9 2.4.5 4.3 1 1.3.4 2.2.3 2.8-.4.5.2 1 .3 1.4.3s.9-.1 1.4-.3c.6.7 1.5.8 2.8.4 1.9-.5 3.9-.1 4.3-1 .3-.7-.4-1.3-1.3-1.6.3-.6.5-1.3.5-2.1 0-3.3-2-5.8-3-7.6-.7-1.3-.4-2.2-.4-3.6 0-2.9-1.7-5-4.3-5zM12 10.8c-2 0-3.6 2.2-3.6 4.8s1.6 4.8 3.6 4.8 3.6-2.2 3.6-4.8-1.6-4.8-3.6-4.8zM10.4 5.15a1.05 1.05 0 1 0 0 2.1 1.05 1.05 0 0 0 0-2.1zM13.6 5.15a1.05 1.05 0 1 0 0 2.1 1.05 1.05 0 0 0 0-2.1z" />
+    </svg>
+  );
+}
+
+/** A tray arrow: a download whose platform we can't name. */
+export function DownloadArrow(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      className="size-[1em] shrink-0 fill-none stroke-current"
+      strokeWidth={1.7}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M8 2v8.5m-3.5-3.5L8 10.5 11.5 7M3 13.5h10" />
+    </svg>
+  );
+}
+
+export function Chevron(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 12 12"
+      aria-hidden="true"
+      className="size-3 shrink-0 fill-none stroke-current"
+      strokeWidth={1.6}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M2.5 4.5 6 8l3.5-3.5" />
+    </svg>
+  );
+}
+
+export function PhoneIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 14 16"
+      aria-hidden="true"
+      className="h-[1em] w-[0.8em] shrink-0 fill-none stroke-current"
+      strokeWidth={1.5}
+      {...props}
+    >
+      <rect x="2.5" y="0.8" width="9" height="14.4" rx="2.2" />
+      <path d="M5.8 2.9h2.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function Terminal(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 16 14"
+      aria-hidden="true"
+      className="size-[1em] shrink-0 fill-none stroke-current"
+      strokeWidth={1.6}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M2 3l4 4-4 4M8.5 11.5H14" />
+    </svg>
+  );
+}
+
+export function CopyIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      className="size-[1em] shrink-0 fill-none stroke-current"
+      strokeWidth={1.5}
+      {...props}
+    >
+      <rect x="5.5" y="5.5" width="8.5" height="8.5" rx="2" />
+      <path
+        d="M10.5 3.5V3a1.5 1.5 0 0 0-1.5-1.5H3.5A1.5 1.5 0 0 0 2 3v5.5A1.5 1.5 0 0 0 3.5 10H4"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}

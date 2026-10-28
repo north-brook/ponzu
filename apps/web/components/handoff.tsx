@@ -11,8 +11,10 @@ import {
 } from "react";
 import { btn } from "./button";
 import { type Phone, phone } from "./device";
+import { OsIcon } from "./download-button";
 import { Check, Slice } from "./icons";
 import { TESTFLIGHT } from "./links";
+import { guide, OSES, type Os, PLATFORMS } from "./platforms";
 
 /*
  * The handoff: a phone can't run Ponzu, so its Download buttons open this sheet, which sends the
@@ -24,9 +26,6 @@ import { TESTFLIGHT } from "./links";
  * is the house ease and short travel (`.handoff` in globals.css).
  */
 
-/** Where the link lands: the Mac install steps, which start the download as they open. */
-const PATH = "/download?start=1&via=handoff";
-const SHARE_TITLE = "Download Ponzu for Mac";
 const EASE = "cubic-bezier(0.2, 0.8, 0.2, 1)";
 
 type State = "send" | "sent";
@@ -51,10 +50,15 @@ export function Handoff() {
   const [leaving, setLeaving] = useState(false);
   const [copied, setCopied] = useState(false);
   const [closing, setClosing] = useState(false);
+  const [os, setOs] = useState<Os>("mac");
+  const p = PLATFORMS[os];
 
   useEffect(() => {
-    const open = () => {
-      setKind(phone());
+    const open = (e: Event) => {
+      const kind = phone();
+      setKind(kind);
+      // The desktop the button named, else the one a phone's owner most likely has.
+      setOs((e as CustomEvent<Os | undefined>).detail ?? (kind === "android" ? "windows" : "mac"));
       setCanShare(typeof navigator.share === "function");
       setState("send");
       setCopied(false);
@@ -103,7 +107,8 @@ export function Handoff() {
     from.current = null;
   }, [state]);
 
-  const url = () => `${location.origin}${PATH}`;
+  /** The desktop's install steps, which start its download as they open. */
+  const url = () => `${location.origin}${guide(os)}&via=handoff`;
 
   const copy = async () => {
     try {
@@ -120,7 +125,7 @@ export function Handoff() {
   const send = async () => {
     if (!canShare) return copy();
     try {
-      await navigator.share({ title: SHARE_TITLE, url: url() });
+      await navigator.share({ title: `Download Ponzu for ${p.name}`, url: url() });
     } catch (e) {
       // Dismissing the share sheet rejects with AbortError: stay as we were.
       if ((e as DOMException).name !== "AbortError") await copy();
@@ -183,14 +188,42 @@ export function Handoff() {
                 </svg>
               </button>
             </div>
-            <div className="handoff-rise flex flex-col gap-2.5" style={{ "--k": 1 } as Style}>
+            {/* One pill slides under the desktops; the send button names the one picked. */}
+            <fieldset
+              className="handoff-rise handoff-picker"
+              style={{ "--k": 1, "--at": OSES.indexOf(os) } as Style}
+            >
+              <legend className="sr-only">Your computer</legend>
+              <span className="handoff-pill" aria-hidden="true" />
+              {OSES.map((o) => (
+                <button
+                  key={o}
+                  type="button"
+                  aria-pressed={o === os}
+                  className="handoff-os"
+                  onClick={() => {
+                    setOs(o);
+                    setCopied(false);
+                  }}
+                >
+                  <OsIcon os={o} />
+                  {PLATFORMS[o].name}
+                </button>
+              ))}
+            </fieldset>
+            <div className="handoff-rise flex flex-col gap-2.5" style={{ "--k": 2 } as Style}>
               <button
                 type="button"
-                className={`${btn} h-[54px] justify-center bg-cta text-[17px] text-cta-ink`}
+                className={`${btn} h-[54px] justify-center overflow-hidden bg-cta text-[17px] text-cta-ink`}
                 onClick={send}
               >
-                {canShare ? <ShareIcon /> : <CopyIcon />}
-                {canShare ? "Send to my Mac" : "Copy link"}
+                <span
+                  key={canShare ? os : "copy"}
+                  className="handoff-roll flex items-center gap-[9px]"
+                >
+                  {canShare ? <ShareIcon /> : <CopyIcon />}
+                  {canShare ? `Send to my ${p.machine}` : "Copy link"}
+                </span>
               </button>
               {canShare ? (
                 <button
@@ -218,7 +251,7 @@ export function Handoff() {
             {TESTFLIGHT && kind !== "android" ? (
               <p
                 className="handoff-rise m-0 flex items-center justify-center gap-1.5 text-sm text-faint"
-                style={{ "--k": 2 } as Style}
+                style={{ "--k": 3 } as Style}
               >
                 Already use Ponzu?
                 <a
@@ -244,7 +277,7 @@ export function Handoff() {
                 className="handoff-rise m-0 font-display text-[26px]/[1.15] font-semibold tracking-[-0.02em] text-ink"
                 style={{ "--k": 2 } as Style}
               >
-                On its way to your Mac
+                On its way to your {p.machine}
               </h2>
               <p
                 className="handoff-rise m-0 text-[15px]/[22px] text-muted"

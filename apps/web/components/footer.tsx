@@ -21,7 +21,7 @@ export function Footer() {
         <FooterLinks
           title="Product"
           links={[
-            ["Download for Mac", DOWNLOAD],
+            ["Download", DOWNLOAD],
             ["Ponzu for iPhone", IPHONE],
             ["Releases", RELEASES],
             ["GitHub", REPO],

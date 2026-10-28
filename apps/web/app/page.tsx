@@ -7,10 +7,11 @@ import { CodeWell } from "@/components/code-well";
 import { CssTileVisual } from "@/components/css-tile";
 import { CommentThread } from "@/components/demo/comment-thread";
 import { ProductDemo } from "@/components/demo/product-demo";
+import { DownloadSplit, PhonePlatforms } from "@/components/download-button";
 import { HomeScreen } from "@/components/home-screen";
 import { Apple, Slice } from "@/components/icons";
 import { IPhone } from "@/components/iphone";
-import { DownloadButton, GitHubButton, PhonePlatforms, TESTFLIGHT } from "@/components/links";
+import { GitHubButton, TESTFLIGHT } from "@/components/links";
 import { DESCRIPTION, share, TITLE } from "@/components/share";
 import { SLICE_CSS } from "@/components/slice-demo";
 
@@ -24,7 +25,7 @@ export const metadata: Metadata = share({
   title: TITLE,
   description: DESCRIPTION,
   xDescription:
-    "Your agent draws brands, apps and more in HTML and CSS on your Mac; you steer with comments.",
+    "Your agent draws brands, apps and more in HTML and CSS on your computer; you steer with comments.",
 });
 
 export default function Home() {
@@ -40,13 +41,13 @@ export default function Home() {
         </h1>
         <p className="m-0 max-w-[760px] text-lg/[29px] text-balance text-muted md:text-[20px]/[32px]">
           Brands, apps, launch pages, diagrams, dashboards. Your agent draws them in HTML and CSS on
-          your Mac, and you steer with comments.
+          your computer, and you steer with comments.
         </p>
         <div className="flex flex-wrap justify-center gap-3 pt-3">
-          <DownloadButton>Download for Mac</DownloadButton>
+          <DownloadSplit testflight={TESTFLIGHT} />
           <GitHubButton className="desktop-only">View on GitHub</GitHubButton>
         </div>
-        <PhonePlatforms />
+        <PhonePlatforms testflight={TESTFLIGHT} />
       </header>
 
       {/*
@@ -166,10 +167,10 @@ export default function Home() {
           Give your agent a canvas.
         </h2>
         <div className="flex flex-wrap justify-center gap-3 pt-3">
-          <DownloadButton>Download for Mac</DownloadButton>
+          <DownloadSplit testflight={TESTFLIGHT} />
           <GitHubButton className="desktop-only">View on GitHub</GitHubButton>
         </div>
-        <PhonePlatforms />
+        <PhonePlatforms testflight={TESTFLIGHT} />
       </section>
 
       <Footer />

@@ -40,6 +40,7 @@
   --m2: #ffc81e;
   /* The handoff sheet's quiet buttons, a step off the sheet; and "done" green. */
   --sheet-chip: #f4f3ef;
+  --sheet-pill: #ffffff;
   --sheet-scrim: rgb(0 0 0 / 0.36);
   --sheet-shadow: rgb(17 17 16 / 0.14);
   --ok: #1f8a4c;
@@ -76,6 +77,7 @@
     --m1: #ffc81e;
     --m2: #ffc81e;
     --sheet-chip: #2a2927;
+    --sheet-pill: #3d3b37;
     --sheet-scrim: rgb(0 0 0 / 0.55);
     --sheet-shadow: rgb(0 0 0 / 0.6);
     --ok: #4cc27a;
@@ -577,6 +579,102 @@ html:not([data-device="phone"]) .phone-only,
 }
 
 /*
+ * Computers (components/device.ts marks `data-os` before the first paint): each desktop sees its own
+ * Download, and the index outlines its own card and lists it first. Without the script, or on an
+ * iPhone or iPad, pages read as the Mac's. Android names no desktop (its handoff sheet picks
+ * Windows) and leads the index with Windows.
+ */
+html:is([data-os="windows"], [data-os="linux"], [data-os="other"], [data-phone="android"]) .os-mac,
+html:not([data-os="windows"]) .os-windows,
+html:not([data-os="linux"]) .os-linux,
+html:not([data-os="other"]):not([data-phone="android"]) .os-other {
+  display: none;
+}
+html:not([data-os]):not([data-phone="android"]) [data-card="mac"],
+html[data-phone="android"] [data-card="windows"],
+html[data-os="mac"] [data-card="mac"],
+html[data-os="windows"] [data-card="windows"],
+html[data-os="linux"] [data-card="linux"] {
+  order: -1;
+  box-shadow: inset 0 0 0 1.5px var(--ink);
+}
+html:not([data-os]):not([data-phone="android"]) [data-card="mac"] .card-cta,
+html[data-phone="android"] [data-card="windows"] .card-cta,
+html[data-os="mac"] [data-card="mac"] .card-cta,
+html[data-os="windows"] [data-card="windows"] .card-cta,
+html[data-os="linux"] [data-card="linux"] .card-cta {
+  background: var(--cta);
+  color: var(--cta-ink);
+  box-shadow: none;
+}
+
+/* The split Download button's menu: every other way to get Ponzu. */
+.download-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 40;
+  display: flex;
+  width: 360px;
+  flex-direction: column;
+  padding: 6px;
+  border-radius: 18px;
+  background: var(--well);
+  text-align: left;
+  box-shadow:
+    inset 0 0 0 1px var(--well-rule),
+    0 24px 56px var(--sheet-shadow),
+    0 2px 8px var(--sheet-shadow);
+  animation: download-menu-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  transform-origin: top left;
+}
+.download-row {
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+}
+.download-row:hover,
+.download-row:focus-visible,
+html:not([data-os]) .os-row-mac,
+html[data-os="mac"] .os-row-mac,
+html[data-os="windows"] .os-row-windows,
+html[data-os="linux"] .os-row-linux {
+  background: var(--chip);
+}
+.download-row-icon {
+  display: flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: var(--ground);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--well-rule);
+}
+.download-all {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 12px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.download-all:hover {
+  color: var(--ink);
+}
+@keyframes download-menu-in {
+  from {
+    opacity: 0;
+    scale: 0.97;
+    translate: 0 -4px;
+  }
+}
+
+/*
  * The handoff sheet (components/handoff.tsx): a phone sends the download to its computer. It rises
  * on the house ease while its slice blooms, and the pieces under it rise after it. A send swaps
  * the pane: the old one leaves upward, the sheet eases to its new height (in the component), and
@@ -722,6 +820,60 @@ html:not([data-device="phone"]) .phone-only,
   animation: handoff-ring 680ms var(--ease) 1050ms both;
 }
 
+/* The sheet's desktops: one pill slides under the three, to the one picked (`--at`). */
+.handoff-picker {
+  position: relative;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding: 4px;
+  border-radius: 16px;
+  background: var(--sheet-chip);
+}
+.handoff-pill {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: calc((100% - 16px) / 3);
+  height: 42px;
+  border-radius: 12px;
+  background: var(--sheet-pill);
+  box-shadow:
+    0 1px 3px var(--sheet-shadow),
+    inset 0 0 0 1px var(--well-rule);
+  translate: calc(var(--at) * (100% + 4px)) 0;
+  transition: translate 360ms var(--ease);
+}
+.handoff-os {
+  position: relative;
+  display: flex;
+  height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  opacity: 0.5;
+  transition: opacity 200ms ease-out;
+}
+.handoff-os[aria-pressed="true"] {
+  opacity: 1;
+}
+/* The send button's label rolls up to the new desktop's. */
+.handoff-roll {
+  animation: handoff-roll 300ms var(--ease) both;
+}
+@keyframes handoff-roll {
+  from {
+    opacity: 0;
+    translate: 0 60%;
+  }
+}
+
 @keyframes handoff-fade {
   from {
     opacity: 0;
@@ -781,8 +933,12 @@ html:not([data-device="phone"]) .phone-only,
   .handoff-rise,
   .handoff-pane[data-leaving],
   .handoff-ring,
+  .handoff-roll,
   .handoff-draw path {
     animation: none;
+  }
+  .handoff-pill {
+    transition: none;
   }
   .handoff-draw path {
     stroke-dashoffset: 0;

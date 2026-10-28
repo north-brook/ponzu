@@ -187,14 +187,14 @@ export function OpenInPonzu({
             Change {name} with your agent
           </div>
           <p className="m-0 text-muted">
-            Ponzu clones the repo and opens {name} on your Mac. Leave comments on the canvas, your
-            coding agent makes the changes, and you commit them like code.
+            Ponzu clones the repo and opens {name} on your computer. Leave comments on the canvas,
+            your coding agent makes the changes, and you commit them like code.
           </p>
         </div>
         <OpenAppButton link={link} />
         <div className="flex flex-col gap-2 border-t border-rule pt-3.5 dark:border-well-rule">
           <div className="flex items-center justify-between gap-3 text-[12.5px] text-faint">
-            <span>Not on a Mac, or prefer the terminal</span>
+            <span>Prefer the terminal</span>
             <span className="shrink-0 text-muted">
               No app yet?{" "}
               <a className="font-medium text-text hover:text-ink" href="/download">
@@ -334,7 +334,7 @@ const MESSAGES: Record<ViewerErrorKind | "url", { title: string; body: string; g
   },
   "too-big": {
     title: "This one's too big for the browser",
-    body: "It has more files than the web viewer reads. It opens fine in Ponzu on your Mac.",
+    body: "It has more files than the web viewer reads. It opens fine in the Ponzu app.",
     glyph:
       "M6 3h12a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3ZM14 3v4M3 10h4M21 14h-4M10 21v-4",
   },
