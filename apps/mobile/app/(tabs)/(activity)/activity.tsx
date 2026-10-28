@@ -353,7 +353,7 @@ function Empty({
     },
     never: {
       title: "Nothing yet",
-      body: "Ask an agent on your Mac to work in a design. What it changes, and its replies to your comments, will show up here.",
+      body: "Ask an agent on your computer to work in a design. What it changes, and its replies to your comments, will show up here.",
     },
     noKind: { title: none, body: "" },
   }[kind];

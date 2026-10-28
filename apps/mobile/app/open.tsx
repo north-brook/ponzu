@@ -49,9 +49,9 @@ export default function OpenLink() {
       }
       setError(
         to.kind === "unpaired"
-          ? `That design is on ${to.mac}, which isn't paired with this iPhone. Pair it from Ponzu on that Mac.`
+          ? `That design is on ${to.mac}, which isn't paired with this iPhone. Pair it from Ponzu on that computer.`
           : to.kind === "missing"
-            ? "None of your Macs has that design."
+            ? "None of your computers has that design."
             : "Ponzu on iPhone can't open that link.",
       );
       setTimeout(() => router.replace(saved.length ? "/designs" : "/tailscale"), 2_500);

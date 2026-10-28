@@ -23,7 +23,7 @@ import { interfaces } from "../modules/tailnet";
  * It asks every saved Mac where it stands, then goes on: no Macs → the code
  * on your Mac, or Tailscale first when this iPhone isn't on a tailnet; one
  * answers → Designs; none on the tailnet → Tailscale; all asleep → "Your
- * Macs aren't answering". While a Mac's Ponzu starts, the slice simply keeps
+ * computers aren't answering". While a Mac's Ponzu starts, the slice simply keeps
  * blooming: loading is the slice moving where it already is, and nothing
  * joins or moves the column. A Mac that doesn't wake is the asleep screen.
  */

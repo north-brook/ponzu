@@ -542,7 +542,7 @@ export default function Canvas() {
     />
   );
 
-  if (!mac || !base) return <Missing message="This Mac isn't paired anymore." />;
+  if (!mac || !base) return <Missing message="This computer isn't paired anymore." />;
   return (
     <View
       testID={standby ? "standby" : "canvas"}

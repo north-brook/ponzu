@@ -422,7 +422,7 @@ function NoMatches({ query, count, macs }: { query: string; count: number; macs:
   const { color } = useTheme();
   const where =
     macs.length <= 1
-      ? (macs[0] ?? "your Mac")
+      ? (macs[0] ?? "your computer")
       : `${macs.slice(0, -1).join(", ")} and ${macs.at(-1)}`;
   return (
     <View
