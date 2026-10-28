@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.65.0](https://github.com/north-brook/ponzu/compare/v1.64.0...v1.65.0) (2026-10-28)
+
+
+### Features
+
+* open designs from design.json on windows and linux ([#319](https://github.com/north-brook/ponzu/issues/319)) ([f49f1ee](https://github.com/north-brook/ponzu/commit/f49f1ee9c241ab96c8674c5175354bb0f513d9e3))
+
 ## [1.64.0](https://github.com/north-brook/ponzu/compare/v1.63.0...v1.64.0) (2026-10-28)
 
 
