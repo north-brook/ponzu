@@ -96,7 +96,7 @@ export function SuggestionCard({ idea, onPick }: { idea: Idea; onPick: (idea: Id
       <div className="relative aspect-[16/11]">
         <div
           ref={card}
-          className="absolute inset-0 overflow-hidden text-pretty rounded-xl border border-foreground/18 border-dashed px-4 py-3.5 text-[13px] text-foreground/80 leading-5 transition-[border-color,box-shadow] group-hover:border-foreground/30 group-focus-visible:shadow-[0_0_0_2px_var(--ring)]"
+          className="absolute inset-0 overflow-hidden text-pretty wrap-break-word rounded-xl border border-foreground/18 border-dashed px-4 py-3.5 text-[13px] text-foreground/80 leading-5 transition-[border-color,box-shadow] group-hover:border-foreground/30 group-focus-visible:shadow-[0_0_0_2px_var(--ring)]"
         >
           {idea.card}
         </div>
@@ -224,7 +224,7 @@ export function IdeaBody({
         <DialogTitle>{idea.name}</DialogTitle>
         <ProjectLine idea={idea} />
       </DialogHeader>
-      <div className="select-text rounded-[10px] bg-secondary px-3.5 py-3 text-[13px] leading-5 shadow-[inset_0_0_0_1px_var(--hairline)]">
+      <div className="select-text wrap-break-word rounded-[10px] bg-secondary px-3.5 py-3 text-[13px] leading-5 shadow-[inset_0_0_0_1px_var(--hairline)]">
         {idea.prompt}
       </div>
       <div className="flex items-center gap-2">
