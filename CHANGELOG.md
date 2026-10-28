@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.67.0](https://github.com/north-brook/ponzu/compare/v1.66.0...v1.67.0) (2026-10-28)
+
+
+### Features
+
+* release windows and linux builds beside the mac ([#324](https://github.com/north-brook/ponzu/issues/324)) ([36bd86f](https://github.com/north-brook/ponzu/commit/36bd86f9dfc94306dd1ea3c43bf37ed61d82c5ef))
+
 ## [1.66.0](https://github.com/north-brook/ponzu/compare/v1.65.0...v1.66.0) (2026-10-28)
 
 
