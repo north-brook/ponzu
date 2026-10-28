@@ -1513,14 +1513,15 @@ interface Worker {
 /**
  * The right side of a working artboard's header: yuzu rain, columns of dots falling at their own
  * pace, Paper's way of saying "at work here" without anyone's face on the board. The columns come
- * in left to right. Sized in em, so it's the label's size at any zoom. Who's working and what they
- * say they're doing is in the tooltip; written out, one pass repeated the same status over every
- * board it touched.
+ * in left to right. Sized in em, so it's the label's size at any zoom; it runs as many columns as
+ * fit in half the board (see .pz-rain-fit), so zoomed out it never runs past the board's edge or
+ * crowds out its name. Who's working and what they say they're doing is in the tooltip; written
+ * out, one pass repeated the same status over every board it touched.
  */
-function WorkingStatus({ who }: { who: Worker[]; zoom?: number }) {
+function WorkingStatus({ who }: { who: Worker[] }) {
   return (
     <Rain
-      className="pz:ml-auto"
+      className="pz-rain-fit pz:ml-auto"
       label="Working"
       title={who.map((a) => `${a.name}: ${a.status ?? "working"}`).join("\n")}
     />
