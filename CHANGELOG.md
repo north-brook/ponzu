@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.59.0](https://github.com/north-brook/ponzu/compare/v1.58.1...v1.59.0) (2026-10-28)
+
+
+### Features
+
+* never lose an unsent comment ([#289](https://github.com/north-brook/ponzu/issues/289)) ([bce04d8](https://github.com/north-brook/ponzu/commit/bce04d8aea4d8861e0643711ed59ab49864c8d7b))
+* track errors, web vitals and page crashes on ponzu.design ([#297](https://github.com/north-brook/ponzu/issues/297)) ([6798cd7](https://github.com/north-brook/ponzu/commit/6798cd76adfeb2fc2ff813258548ac379d13f83e))
+
 ## [1.58.1](https://github.com/north-brook/ponzu/compare/v1.58.0...v1.58.1) (2026-10-27)
 
 
