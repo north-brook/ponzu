@@ -68,54 +68,54 @@ export async function linkCommand(
 }
 
 /**
- * The user's PATH with `dir` added at the end, or null when it's already
- * there. Windows compares paths without case or a trailing backslash.
+ * Windows: whether `dir` is on the user's PATH (HKCU\Environment), adding it
+ * at the end with `add`. The PATH never leaves PowerShell, so nothing in it is
+ * re-encoded: it's read and written as the registry holds it, so entries like
+ * %USERPROFILE%\bin stay unexpanded, and compared without case or a trailing
+ * backslash. Once it changes, Windows tells running programs, so terminals
+ * opened from now on find `ponzu`. PONZU_ENVIRONMENT_KEY moves it, for tests.
  */
-export function withDir(path: string, dir: string): string | null {
-  const norm = (p: string) =>
-    p
-      .trim()
-      .replace(/[\\/]+$/, "")
-      .toLowerCase();
-  const entries = path.split(";").filter((p) => p.trim());
-  if (entries.some((p) => norm(p) === norm(dir))) return null;
-  return [...entries, dir].join(";");
-}
-
-/**
- * Reads and writes HKCU\Environment's Path as the registry holds it, so
- * entries like %USERPROFILE%\bin stay unexpanded, then has Windows tell
- * running programs, so terminals opened from now on find `ponzu`.
- */
-const USER_PATH = `
-$key = Get-Item -LiteralPath 'HKCU:Environment'
-$path = $key.GetValue('Path', '', 'DoNotExpandEnvironmentNames')
-if ($env:PONZU_PATH_SET) {
-  $kind = if ($key.GetValueNames() -contains 'Path') { $key.GetValueKind('Path') } else { 'ExpandString' }
-  Set-ItemProperty -LiteralPath 'HKCU:Environment' -Name Path -Value $env:PONZU_PATH_SET -Type $kind
+const USER_PATH = String.raw`
+$at = if ($env:PONZU_ENVIRONMENT_KEY) { $env:PONZU_ENVIRONMENT_KEY } else { 'HKCU:\Environment' }
+$key = Get-Item -LiteralPath $at
+$norm = { param($p) $p.Trim().TrimEnd('\', '/') }
+$entries = @(([string]$key.GetValue('Path', '', 'DoNotExpandEnvironmentNames')) -split ';' | Where-Object { $_.Trim() })
+if ($entries | Where-Object { (& $norm $_) -ieq (& $norm $env:PONZU_BIN) }) { exit 0 }
+if (-not $env:PONZU_ADD) { exit 3 }
+$kind = if ($key.GetValueNames() -contains 'Path') { $key.GetValueKind('Path') } else { 'ExpandString' }
+Set-ItemProperty -LiteralPath $at -Name Path -Value (($entries + $env:PONZU_BIN) -join ';') -Type $kind
+if (-not $env:PONZU_ENVIRONMENT_KEY) {
   [Environment]::SetEnvironmentVariable('PONZU_PATH_CHANGED', '1', 'User')
   [Environment]::SetEnvironmentVariable('PONZU_PATH_CHANGED', $null, 'User')
-} else { [Console]::Out.Write($path) }
+}
+exit 2
 `;
 
-function powershell(env: Record<string, string> = {}): { ok: boolean; out: string } {
+export type UserPath = "on" | "off" | "added" | "failed";
+
+export function userPath(dir: string, add: boolean, env: Record<string, string> = {}): UserPath {
   const out = spawnSync(
     "powershell.exe",
     ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", USER_PATH],
-    { encoding: "utf8", timeout: 15_000, env: { ...process.env, ...env }, windowsHide: true },
+    {
+      stdio: "ignore",
+      timeout: 15_000,
+      env: { ...process.env, ...env, PONZU_BIN: dir, ...(add ? { PONZU_ADD: "1" } : {}) },
+      windowsHide: true,
+    },
   );
-  return { ok: out.status === 0, out: out.stdout ?? "" };
+  return (
+    ({ 0: "on", 3: "off", 2: "added" } as Record<number, UserPath>)[out.status ?? -1] ?? "failed"
+  );
 }
 
 /** Windows: put the shim's folder on the person's PATH, once, as linkCommand links it. */
 async function addToUserPath(dir: string, auto: boolean | undefined, say: (s: string) => void) {
-  const read = powershell();
-  if (!read.ok) return say(`To run ponzu from a terminal, add ${dir} to your PATH.`);
-  const next = withDir(read.out, dir);
-  if (!next) return say(`The ponzu command is on your PATH: ${dir}`);
-  const state = readState();
-  if (auto && state.linked) return;
-  if (!powershell({ PONZU_PATH_SET: next }).ok)
+  const now = userPath(dir, false);
+  if (now === "on") return say(`The ponzu command is on your PATH: ${dir}`);
+  if (now === "failed") return say(`To run ponzu from a terminal, add ${dir} to your PATH.`);
+  if (auto && readState().linked) return;
+  if (userPath(dir, true) !== "added")
     return say(`Couldn't add ${dir} to your PATH. Add it yourself to run ponzu from a terminal.`);
   await mkdir(dirname(stateFile()), { recursive: true });
   await writeFile(stateFile(), `${JSON.stringify({ linked: dir }, null, 2)}\n`);
