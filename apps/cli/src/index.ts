@@ -27,7 +27,7 @@ import { wakeCommand } from "./wake.ts";
 const VERSION = pkg.version;
 const here = dirname(fileURLToPath(import.meta.url));
 
-const HELP = `Ponzu ${VERSION}: a design canvas your coding agent drives with HTML and CSS.
+const HELP = `Ponzu ${VERSION}: the open source canvas your agent draws on in HTML and CSS.
 
 Usage
   ponzu serve [files.design…]   Open the canvas in your browser and serve MCP at /mcp

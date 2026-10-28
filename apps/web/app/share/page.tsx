@@ -72,7 +72,7 @@ export default function ShareCard() {
         <span className="-translate-y-[0.04em] leading-none">ponzu</span>
       </div>
       <h1 className="relative m-0 mt-auto w-[580px] font-display text-[80px] leading-none font-semibold tracking-[-0.035em]">
-        The design canvas for your coding agent.
+        The open source canvas for your agent.
       </h1>
     </div>
   );
