@@ -253,7 +253,7 @@ export default function Designs() {
                   color: color.ink,
                 }}
               >
-                {m.name} is asleep
+                {m.name} isn't answering
               </Text>
               <Text
                 style={{ fontFamily: "Inter", fontSize: 13, lineHeight: 17.55, color: color.muted }}
@@ -301,7 +301,7 @@ export default function Designs() {
             }}
           >
             {files.length === 0
-              ? "No designs yet. Ask an agent on your Mac to make one."
+              ? "No designs yet. Ask an agent on your computer to make one."
               : shelf === "recent"
                 ? "Nothing here."
                 : `Nothing in ${SHELVES.find((s) => s.id === shelf)!.label}.`}

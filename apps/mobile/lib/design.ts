@@ -73,7 +73,7 @@ export class DesignSession {
     };
     socket.onclose = () => {
       if (this.socket !== socket) return;
-      for (const p of this.pending.values()) p.reject(new Error("The Mac stopped answering"));
+      for (const p of this.pending.values()) p.reject(new Error("The computer stopped answering"));
       this.pending.clear();
       if (this.closed) return;
       this.set({ status: "offline", presence: [] });
@@ -167,7 +167,7 @@ export class DesignSession {
   send(op: Op): Promise<void> {
     return new Promise((resolve, reject) => {
       if (this.socket?.readyState !== WebSocket.OPEN)
-        return reject(new Error("The Mac isn't answering"));
+        return reject(new Error("The computer isn't answering"));
       const req = ++this.req;
       this.pending.set(req, { resolve, reject });
       this.socket.send(JSON.stringify({ t: "op", req, op } satisfies ClientMessage));

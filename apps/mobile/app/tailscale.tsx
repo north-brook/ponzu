@@ -93,7 +93,7 @@ export default function Tailscale() {
         }
         link={<Swap color={color.faint} />}
         title={on ? "Tailscale is on." : "Turn on Tailscale on this iPhone."}
-        body="Ponzu talks straight to your Macs over your tailnet. No account, and your designs never pass through a server."
+        body="Ponzu talks straight to your computers over your tailnet. No account, and your designs never pass through a server."
         actions={
           on ? (
             <>
@@ -169,7 +169,7 @@ export default function Tailscale() {
                 <Laptop size={18} color={color.ink} width={1.8} />
               </Tile>
             }
-            title="Your Mac needs it too"
+            title="Your computer needs it too"
             detail="Signed in to the same Tailscale account"
           />
         </Card>
@@ -287,11 +287,11 @@ function WhySheet({ open, onClose }: { open: boolean; onClose: () => void }) {
         </Text>
         <Text style={p}>
           Ponzu has no accounts and no servers of its own. Your iPhone talks straight to the Ponzu
-          on each of your Macs, over your tailnet, so your designs never leave your devices.
+          on each of your computers, over your tailnet, so your designs never leave your devices.
         </Text>
         <Text style={p}>
-          Tailscale already knows which devices are yours. Each Mac answers only your own devices,
-          and the connection is encrypted end to end.
+          Tailscale already knows which devices are yours. Each computer answers only your own
+          devices, and the connection is encrypted end to end.
         </Text>
         <PillButton label="Done" tone="secondary" onPress={onClose} />
       </View>

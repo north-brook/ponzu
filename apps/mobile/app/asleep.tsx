@@ -15,7 +15,7 @@ import { Juice } from "../lib/slice";
 import { useTheme } from "../lib/theme";
 
 /**
- * Your Macs aren't answering (Connect › R3): the phone reaches the tailnet
+ * Your computers aren't answering (Connect › R3): the phone reaches the tailnet
  * but no Mac's Ponzu replied, even after a knock on the wake port. Try again,
  * or show the designs from the cache.
  */
@@ -35,8 +35,8 @@ export default function Asleep() {
         </OtherTile>
       }
       link={<Dashes color={color.faint} />}
-      title="Your Macs aren't answering."
-      body="Tailscale is on, but no Mac replied. They're probably asleep or off. If a Mac is awake, Ponzu starts on its own."
+      title="Your computers aren't answering."
+      body="Tailscale is on, but no computer replied. They're probably asleep or off. Wake one, and open Ponzu on it if it doesn't start on its own."
       actions={
         <>
           <PillButton

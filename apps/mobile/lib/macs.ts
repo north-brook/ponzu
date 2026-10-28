@@ -114,7 +114,11 @@ async function pair(host: string, via: Mac["via"]): Promise<Mac> {
     throw new PairError(notPonzu ? "notPonzu" : "unreachable", String(err));
   }
   if (info.protocol === undefined || info.protocol < PROTOCOL)
-    throw new PairError("tooOld", `Ponzu ${info.version} on that Mac is too old`, info.version);
+    throw new PairError(
+      "tooOld",
+      `Ponzu ${info.version} on that computer is too old`,
+      info.version,
+    );
   if (info.protocol > PROTOCOL) throw new PairError("tooNew", "Update Ponzu on this iPhone");
   // Only now that this phone takes the Mac: the Mac's Pair iPhone… dialog closes on it.
   void fetchInfo(`http://${address}`, 6_000, true).catch(() => {});
