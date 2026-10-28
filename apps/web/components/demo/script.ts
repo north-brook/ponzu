@@ -165,7 +165,7 @@ const BRAND: Script = {
   id: "brand",
   name: "Brand",
   icon: "palette",
-  blurb: "Explore directions for a logo, colour and type, side by side.",
+  blurb: "Explore and refine an identity, from the mark to the whole system.",
   prompt: "Explore three directions for Seekle's mark, colour and type.",
   title: "Seekle brand directions",
   label:
@@ -269,7 +269,7 @@ const APP: Script = {
   id: "app",
   name: "Build",
   icon: "phone",
-  blurb: "Rebuild every screen of your app from its source.",
+  blurb: "Design screens and flows, then have your agent build them.",
   prompt: "Rebuild every Seekle screen from source, in the new brand.",
   title: "Rebuild Seekle in Ponzu",
   label:
@@ -420,7 +420,7 @@ const LAUNCH: Script = {
   id: "launch",
   name: "Launch",
   icon: "rocket",
-  blurb: "Make the website hero and App Store screenshots.",
+  blurb: "Design your site, store pages and posts before your agent ships them.",
   prompt: "Make Seekle's website hero and App Store screenshots.",
   title: "Launch Seekle",
   label:
@@ -523,7 +523,7 @@ const EXPLAIN: Script = {
   id: "explain",
   name: "Explain",
   icon: "flow",
-  blurb: "Draw how your code works, straight from the code.",
+  blurb: "Diagram any system, flow or idea so anyone can follow it.",
   prompt: "Draw how a Seekle game is dealt and scored, from the code.",
   title: "How a Seekle game works",
   label:
@@ -606,7 +606,7 @@ const OPERATE: Script = {
   id: "operate",
   name: "Operate",
   icon: "chart",
-  blurb: "Turn last week's numbers and feedback into a one-page update.",
+  blurb: "Design dashboards and reports from your real data and feedback.",
   prompt: "Turn last week's players and reviews into a one-page update.",
   title: "Seekle weekly update",
   label:
