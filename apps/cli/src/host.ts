@@ -284,11 +284,15 @@ export function shimScript(app: string, os = process.platform): string {
       "%LOCALAPPDATA%\\Programs\\ponzu\\resources\\server\\ponzu.exe",
       "%ProgramFiles%\\Ponzu\\resources\\server\\ponzu.exe",
     ];
+    // Outside any ( ) block, %ERRORLEVEL% is read after the CLI exits, so its exit code passes on.
     return `@echo off\r
 rem Written by Ponzu. Runs the server inside the installed Ponzu, so it updates with the app.\r
 setlocal\r
-${candidates.map((c) => `if exist "${c}" (\r\n  "${c}" %*\r\n  exit /b\r\n)\r\n`).join("")}echo Ponzu isn't installed. Download it from https://ponzu.design 1>&2\r
+${candidates.map((c) => `if exist "${c}" (\r\n  set "bin=${c}"\r\n  goto run\r\n)\r\n`).join("")}echo Ponzu isn't installed. Download it from https://ponzu.design 1>&2\r
 exit /b 1\r
+:run\r
+"%bin%" %*\r
+exit /b %ERRORLEVEL%\r
 `;
   }
   const quote = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
