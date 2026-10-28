@@ -143,8 +143,9 @@ async function write(path: string, content: string): Promise<boolean> {
 }
 
 /**
- * Write a file the desktop reads through a database, and update that database. When the update
- * fails (its tool missing, say), the file goes again, so the next launch tries both again.
+ * Write a file the desktop reads only through a database (shared-mime-info's), and update that
+ * database. When the update fails (its tool missing, say), the file goes again, so the next
+ * launch tries both again.
  */
 export async function install(
   path: string,
@@ -177,8 +178,8 @@ export async function associateDesigns(exe: string, env = process.env): Promise<
   );
   if (env.APPIMAGE) {
     const apps = join(data, "applications");
-    await install(join(apps, "ponzu.desktop"), desktopEntry(env.APPIMAGE), () =>
-      run("update-desktop-database", [apps]),
-    );
+    // Read as it is; the database only caches which entries open which types.
+    if (await write(join(apps, "ponzu.desktop"), desktopEntry(env.APPIMAGE)))
+      await run("update-desktop-database", [apps]);
   }
 }
