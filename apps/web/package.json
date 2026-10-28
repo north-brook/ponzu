@@ -8,7 +8,8 @@
     "dev": "next dev --port 4321",
     "prebuild": "bun run --cwd ../../packages/react build",
     "build": "next build",
-    "start": "next start --port 4321"
+    "start": "next start --port 4321",
+    "record-demo": "bun scripts/record-demo.ts"
   },
   "dependencies": {
     "@ponzu/core": "workspace:*",
@@ -26,6 +27,7 @@
     "@types/node": "^24",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@vercel/blob": "^2.8.2",
     "playwright-core": "^1.64.1",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3"

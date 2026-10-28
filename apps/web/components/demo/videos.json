@@ -1,0 +1,20 @@
+{
+  "seekle": {
+    "light": {
+      "src": "https://vcxln54oqizmrjgh.public.blob.vercel-storage.com/demo/seekle-light-3311a2214949a4e9.mp4",
+      "poster": "https://vcxln54oqizmrjgh.public.blob.vercel-storage.com/demo/seekle-light-42891367b1f57715.jpg",
+      "width": 900,
+      "height": 900,
+      "ms": 87422,
+      "bytes": 6233683
+    },
+    "dark": {
+      "src": "https://vcxln54oqizmrjgh.public.blob.vercel-storage.com/demo/seekle-dark-bb96d88cb7362e08.mp4",
+      "poster": "https://vcxln54oqizmrjgh.public.blob.vercel-storage.com/demo/seekle-dark-51b96ec861b613ea.jpg",
+      "width": 900,
+      "height": 900,
+      "ms": 87422,
+      "bytes": 6192882
+    }
+  }
+}

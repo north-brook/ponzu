@@ -19,6 +19,10 @@
 export const PROMPT =
   "Rebuild Seekle from apps/native, every screen and animation. Then explore the game feel, the website hero and App Store screenshots.";
 
+/** What the demo shows, for screen readers. */
+export const LABEL =
+  "Claude Code rebuilds Seekle, an iPhone game, on the Ponzu canvas from the app's source: its screens, then every one of its animations, looping. It explores the game's feel in twelve animated studies; you comment on two, it combines them into three full directions, and you pick one. It designs the website hero; you ask for friends round the phone and it adds them, orbiting. Last, it makes fifteen App Store screenshots in three directions.";
+
 /** What you say on the canvas, word for word as it was said, and where each pin went. */
 export const COMMENTS = [
   {
@@ -172,6 +176,12 @@ export const BEATS = [
 export type BeatId = (typeof BEATS)[number]["id"];
 
 export const LAST = BEATS.length - 1;
+
+/**
+ * The stories the demo plays and how long each runs. Phones play each as a video recorded from the
+ * live demo (scripts/record-demo.ts), one per story and color scheme. There's one story for now.
+ */
+export const STORIES = [{ id: "seekle", ms: BEATS.reduce((sum, b) => sum + b.ms, 0) }] as const;
 export const index = (id: BeatId) => BEATS.findIndex((b) => b.id === id);
 
 /** The beats of one comment, from the cursor setting off to the comment posted. */
