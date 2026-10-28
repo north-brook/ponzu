@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.61.1](https://github.com/north-brook/ponzu/compare/v1.61.0...v1.61.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* fit working rain to the artboard at any zoom ([#306](https://github.com/north-brook/ponzu/issues/306)) ([65bd6c4](https://github.com/north-brook/ponzu/commit/65bd6c4815ac21c56c77585f63c19e8d6d1721a6))
+
 ## [1.61.0](https://github.com/north-brook/ponzu/compare/v1.60.0...v1.61.0) (2026-10-28)
 
 
