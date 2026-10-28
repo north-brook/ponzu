@@ -222,7 +222,8 @@ function aimAt(s: Shot, view: { w: number; h: number }): Aim {
 
 /**
  * Recording the phones' videos (`?demo=record`, scripts/record-demo.ts): the camera holds steady
- * between moves. A few px of wander every frame costs a video more than all the rest of the motion.
+ * between moves, as a few px of wander every frame costs a video more than all the rest of the
+ * motion, and the scene moves on every frame recorded rather than ~30 times a second.
  */
 const RECORDING =
   typeof location !== "undefined" && new URLSearchParams(location.search).get("demo") === "record";
@@ -413,7 +414,10 @@ function LiveDemo() {
         setBeat(current);
         setT(0);
         painted = now;
-      } else if (now - painted >= (/type$/.test(BEATS[current]?.id ?? "") ? 0 : TICK_MS)) {
+      } else if (
+        RECORDING ||
+        now - painted >= (/type$/.test(BEATS[current]?.id ?? "") ? 0 : TICK_MS)
+      ) {
         // Everything that reads `t` moves in steps (a piece of a board, the camera's next shot),
         // so ~30 updates a second look the same as 60 and halve the renders. Typing is the
         // exception: at 30 a second, keys a few ms apart would land two at a time.

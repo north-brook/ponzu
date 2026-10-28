@@ -16,10 +16,12 @@
  * `--local` skips the upload and leaves the files in .context/demo-videos to look at;
  * `--seconds=5` with it records only the start, to check the framing quickly.
  *
- * The demo runs on a clock, so it's recorded frame by frame rather than in real time: the page's
- * clock is faked and held (Date, performance.now, timers and requestAnimationFrame), the document's
- * animation timeline is frozen, and each frame moves both on by exactly 1/30 s before capturing.
- * Every frame is what the demo shows at that moment, however long it takes to capture.
+ * The demo runs on a clock, so it's recorded frame by frame rather than in real time. Once the
+ * page has loaded its clock is held (`CLOCK`: performance.now, Date.now, timers and
+ * requestAnimationFrame) and so is the document's animation timeline. Frame i is at exactly
+ * i/60 s: the animations step on to it, then the clock does, running the timers due and every
+ * animation-frame callback once, with that time. Everything drawn agrees on when the frame is,
+ * however long it takes to capture, so motion is as even on video as the demo means it to be.
  */
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -34,13 +36,16 @@ import { STORIES } from "../components/demo/script";
 const APP = fileURLToPath(new URL("..", import.meta.url));
 const MANIFEST = new URL("../components/demo/videos.json", import.meta.url);
 const LOCAL = new URL("../../../.context/demo-videos/", import.meta.url);
-const FPS = 30;
+/** Phones draw at 60 Hz or more; at 30 a pan across small text steps. */
+const FPS = 60;
 /**
  * The demo's width in CSS px as it's recorded, at 2×: 900 px square, sharp on a phone, a few MB for
  * the whole story. It's the narrow layout, as phones show it.
  */
 const WIDTH = 450;
 const SCALE = 2;
+/** Small text stays crisp as it moves; the whole story comes to about 11 MB. */
+const CRF = Number(process.argv.find((a) => a.startsWith("--crf="))?.split("=")[1] ?? 26);
 const SCHEMES = ["light", "dark"] as const;
 type Scheme = (typeof SCHEMES)[number];
 
@@ -82,8 +87,103 @@ const IMAGES = `(() => {
 })()`;
 
 /**
+ * Installed before the page's own scripts: its clock, real until `__record.hold()`, then moved only
+ * by `__record.frame(ms)`, which sets the time to `ms` after the hold, runs the timers due by then
+ * and flushes the animation-frame callbacks waiting, once, with that time. Callbacks they request
+ * wait for the next frame, as in a browser.
+ */
+function CLOCK() {
+  type Timer = { due: number; run: () => void; every?: number };
+  const w = window as unknown as Record<string, unknown> & typeof window;
+  const realNow = performance.now.bind(performance);
+  const realDate = Date.now;
+  const realRaf = requestAnimationFrame.bind(window);
+  const realSetTimeout = setTimeout.bind(window);
+  const realClearTimeout = clearTimeout.bind(window);
+  const realSetInterval = setInterval.bind(window);
+  const realClearInterval = clearInterval.bind(window);
+  /** Ids of our own timers, clear of the browser's. */
+  const OWN = 1e9;
+  let held: { now: number; date: number; at: number } | null = null;
+  let id = OWN;
+  let callbacks = new Map<number, FrameRequestCallback>();
+  const timers = new Map<number, Timer>();
+  const now = () => (held ? held.now + held.at : realNow());
+
+  Object.defineProperty(performance, "now", { value: now, configurable: true });
+  Date.now = () => (held ? held.date + held.at : realDate());
+  w.requestAnimationFrame = (cb: FrameRequestCallback) => {
+    callbacks.set(++id, cb);
+    return id;
+  };
+  w.cancelAnimationFrame = (n: number) => void callbacks.delete(n);
+  const flush = (time: number) => {
+    const due = callbacks;
+    callbacks = new Map();
+    for (const cb of due.values()) cb(time);
+  };
+  // Until it's held, callbacks run on the browser's own frames.
+  const pump = (time: number) => {
+    if (held) return;
+    flush(time);
+    realRaf(pump);
+  };
+  realRaf(pump);
+  const timer = (
+    real: typeof setTimeout,
+    fn: TimerHandler,
+    ms = 0,
+    args: unknown[],
+    every: boolean,
+  ) => {
+    if (!held || typeof fn !== "function") return real(fn, ms, ...args);
+    const wait = Math.max(0, Number(ms) || 0);
+    timers.set(++id, {
+      due: now() + wait,
+      run: () => fn(...args),
+      every: every ? Math.max(1, wait) : undefined,
+    });
+    return id;
+  };
+  w.setTimeout = ((fn: TimerHandler, ms?: number, ...args: unknown[]) =>
+    timer(realSetTimeout, fn, ms, args, false)) as typeof setTimeout;
+  w.setInterval = ((fn: TimerHandler, ms?: number, ...args: unknown[]) =>
+    timer(realSetInterval as typeof setTimeout, fn, ms, args, true)) as typeof setInterval;
+  w.clearTimeout = ((n?: number) =>
+    n !== undefined && n > OWN ? timers.delete(n) : realClearTimeout(n)) as typeof clearTimeout;
+  w.clearInterval = ((n?: number) =>
+    n !== undefined && n > OWN ? timers.delete(n) : realClearInterval(n)) as typeof clearInterval;
+
+  w.__record = {
+    hold() {
+      held = { now: realNow(), date: realDate(), at: 0 };
+    },
+    frame(at: number) {
+      if (!held) return;
+      held.at = at;
+      const end = now();
+      for (;;) {
+        let next: [number, Timer] | undefined;
+        for (const entry of timers)
+          if (entry[1].due <= end && (!next || entry[1].due < next[1].due)) next = entry;
+        if (!next) break;
+        const [n, t] = next;
+        if (t.every) t.due += t.every;
+        else timers.delete(n);
+        try {
+          t.run();
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      flush(end);
+    },
+  };
+}
+
+/**
  * Runs in the page: lets React render what the clock just changed. Its scheduler works in message
- * tasks, which the fake clock doesn't hold, so a few of our own go after them.
+ * tasks, which the clock doesn't hold, so a few of our own go after them.
  */
 const SETTLE = `new Promise((resolve) => {
   const c = new MessageChannel();
@@ -109,7 +209,7 @@ async function record(browser: Browser, story: (typeof STORIES)[number], scheme:
     await held;
     await route.continue();
   });
-  await page.clock.install();
+  await page.addInitScript(CLOCK);
   await page.goto(`${BASE}/?demo=record&story=${story.id}`, { waitUntil: "load" });
   await page.evaluate(() => document.fonts.ready);
   const frame = page.locator(".dm-frame");
@@ -126,12 +226,18 @@ async function record(browser: Browser, story: (typeof STORIES)[number], scheme:
   const cdp = await context.newCDPSession(page);
   await cdp.send("Animation.enable");
   await cdp.send("Animation.setPlaybackRate", { playbackRate: 0 });
-  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1000);
+  await page.evaluate(() => (window as unknown as { __record: { hold(): void } }).__record.hold());
   const loaded = page.waitForResponse("**/demo/seekle.json");
   release();
   await loaded;
   // The design's in, and the story starts at this moment on the held clock.
   await page.waitForTimeout(500);
+  await page.evaluate(SETTLE);
+  const frameAt = (ms: number) =>
+    page.evaluate((at) => {
+      (window as unknown as { __record: { frame(at: number): void } }).__record.frame(at);
+    }, ms);
+  await frameAt(0);
   await page.evaluate(SETTLE);
 
   // Where it sits on the page, which is what a capture's clip is measured from. The clip's scale
@@ -157,7 +263,7 @@ async function record(browser: Browser, story: (typeof STORIES)[number], scheme:
     "ffmpeg",
     [
       ...["-y", "-loglevel", "error", "-f", "image2pipe", "-framerate", String(FPS), "-i", "-"],
-      ...["-c:v", "libx264", "-preset", "slow", "-crf", "30", "-pix_fmt", "yuv420p"],
+      ...["-c:v", "libx264", "-preset", "slow", "-crf", String(CRF), "-pix_fmt", "yuv420p"],
       ...["-profile:v", "high", "-level", "4.0", "-movflags", "+faststart", "-an", out],
     ],
     { stdio: ["pipe", "inherit", "inherit"] },
@@ -169,30 +275,33 @@ async function record(browser: Browser, story: (typeof STORIES)[number], scheme:
 
   const frames = Math.round((Math.min(story.ms, seconds * 1000) / 1000) * FPS);
   let at = 0;
+  let first = Buffer.alloc(0);
   let last = Buffer.alloc(0);
   for (let i = 0; i < frames; i++) {
     if (i > 0) {
-      const next = Math.round((i * 1000) / FPS);
-      const ms = next - at;
+      const next = (i * 1000) / FPS;
+      await page.evaluate(step(next - at));
       at = next;
-      await page.evaluate(step(ms));
-      await page.clock.runFor(ms);
+      await frameAt(at);
       await page.evaluate(SETTLE);
     }
     // An image that never decodes shouldn't stall the recording.
     await Promise.race([page.evaluate(IMAGES), new Promise((r) => setTimeout(r, 2000))]);
-    last = await capture(92);
+    last = await capture(95);
+    if (i === 0) first = await capture(80);
     if (!ffmpeg.stdin.write(last)) await new Promise((r) => ffmpeg.stdin.once("drain", r));
     if (i % (FPS * 5) === 0)
       console.log(`${name}: ${Math.round(at / 1000)}s of ${Math.round(story.ms / 1000)}s`);
   }
   ffmpeg.stdin.end();
   await done;
-  // The poster is the last frame: the story finished, as reduced motion shows it.
-  const poster = await capture(80);
-  writeFileSync(fileURLToPath(new URL(`${name}.jpg`, LOCAL)), poster);
+  // The poster is the first frame, so the video takes over from it without a jump; the still is
+  // the last, the story finished, as reduced motion shows it.
+  const still = await capture(80);
+  writeFileSync(fileURLToPath(new URL(`${name}.jpg`, LOCAL)), first);
+  writeFileSync(fileURLToPath(new URL(`${name}-still.jpg`, LOCAL)), still);
   await context.close();
-  return { name, video: readFileSync(out), poster, ms: story.ms };
+  return { name, video: readFileSync(out), poster: first, still, ms: story.ms };
 }
 
 /** Uploads `body` under a name made from its content, unless it's there already. */
@@ -259,6 +368,7 @@ try {
       const entry: DemoRecording = {
         src: local ? "" : await upload(r.name, "mp4", r.video, "video/mp4"),
         poster: local ? "" : await upload(r.name, "jpg", r.poster, "image/jpeg"),
+        still: local ? "" : await upload(`${r.name}-still`, "jpg", r.still, "image/jpeg"),
         width: size,
         height: size,
         ms: Math.round(r.ms),

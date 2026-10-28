@@ -7,8 +7,10 @@ import VIDEOS from "./videos.json";
 /** A recording of one story in one color scheme, hosted on Vercel Blob (scripts/record-demo.ts). */
 export interface DemoRecording {
   src: string;
-  /** The story's last frame, finished: what it shows with reduced motion, and until it plays. */
+  /** Its first frame, shown until it plays, so the video takes over without a jump. */
   poster: string;
+  /** Its last frame, the story finished: what reduced motion shows. */
+  still: string;
   width: number;
   height: number;
   ms: number;
@@ -63,7 +65,7 @@ export function DemoVideo({ story, label }: { story: string; label: string }) {
         className="absolute inset-0 size-full"
         width={recording?.width}
         height={recording?.height}
-        poster={near ? recording?.poster : undefined}
+        poster={near ? (still ? recording?.still : recording?.poster) : undefined}
         src={near && !still ? recording?.src : undefined}
         muted
         playsInline
