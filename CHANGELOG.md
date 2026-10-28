@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.68.0](https://github.com/north-brook/ponzu/compare/v1.67.0...v1.68.0) (2026-10-28)
+
+
+### Features
+
+* download ponzu for windows and linux from ponzu.design ([#323](https://github.com/north-brook/ponzu/issues/323)) ([1464b1f](https://github.com/north-brook/ponzu/commit/1464b1f552075e2d95e016080265fc90875236eb))
+
 ## [1.67.0](https://github.com/north-brook/ponzu/compare/v1.66.0...v1.67.0) (2026-10-28)
 
 
