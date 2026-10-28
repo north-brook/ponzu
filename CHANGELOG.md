@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.68.1](https://github.com/north-brook/ponzu/compare/v1.68.0...v1.68.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* show the download menu's chevron ([#327](https://github.com/north-brook/ponzu/issues/327)) ([a3c12c5](https://github.com/north-brook/ponzu/commit/a3c12c5967840f4b0522e44df73c92c99da05038))
+
 ## [1.68.0](https://github.com/north-brook/ponzu/compare/v1.67.0...v1.68.0) (2026-10-28)
 
 
