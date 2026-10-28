@@ -583,6 +583,7 @@ export function Canvas({
   }, [pageKey]);
 
   const goToPage = (id: string) => {
+    takeCamera();
     setPageId(id);
     setPending(null);
     setOpenThread(null);
@@ -602,8 +603,6 @@ export function Canvas({
       const mod = e.metaKey || e.ctrlKey;
       // ⌥1–9: pages, by e.code since ⌥ changes e.key on a Mac. 9 is the last.
       const digit = /^Digit([1-9])$/.exec(e.code)?.[1];
-      if ((mod && ["=", "+", "-"].includes(e.key)) || (digit && (e.altKey || e.shiftKey)))
-        takeCamera();
       if (e.altKey && !mod && !e.shiftKey && digit && doc) {
         e.preventDefault();
         const p = digit === "9" ? doc.pages.at(-1) : doc.pages[Number(digit) - 1];
@@ -614,18 +613,22 @@ export function Canvas({
       } else if (mod && (e.key === "=" || e.key === "+")) {
         e.preventDefault();
         const v = viewportSize();
+        takeCamera();
         zoomAt(1.25, v.w / 2, v.h / 2);
       } else if (mod && e.key === "-") {
         e.preventDefault();
         const v = viewportSize();
+        takeCamera();
         zoomAt(0.8, v.w / 2, v.h / 2);
       } else if (e.shiftKey && !mod && !e.altKey && digit === "1") {
         // ⇧1 and ⇧2 by e.code too: ⇧ turns e.key into "!" and "@".
+        takeCamera();
         fitPage();
       } else if (e.shiftKey && !mod && !e.altKey && digit === "2" && selection[0] && doc) {
         const hit = locate(doc, selection[0]);
         if (hit) {
           const { w } = size(hit.artboard);
+          takeCamera();
           fit(
             { x: hit.artboard.x, y: hit.artboard.y, w, h: boardHeight(hit.artboard) },
             viewportSize(),
