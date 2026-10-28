@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.62.0](https://github.com/north-brook/ponzu/compare/v1.61.1...v1.62.0) (2026-10-28)
+
+
+### Features
+
+* send the download to your computer from a phone ([#310](https://github.com/north-brook/ponzu/issues/310)) ([11ed667](https://github.com/north-brook/ponzu/commit/11ed66714c00660ae6edc5e1315d5f4fd4045a13))
+
 ## [1.61.1](https://github.com/north-brook/ponzu/compare/v1.61.0...v1.61.1) (2026-10-28)
 
 
