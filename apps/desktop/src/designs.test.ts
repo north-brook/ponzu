@@ -7,6 +7,7 @@ import {
   designPath,
   desktopEntry,
   install,
+  installIcons,
   launchArgs,
   mimeXml,
   registered,
@@ -138,4 +139,23 @@ test("a database update that fails is tried again next launch", async () => {
   // Unchanged: no update.
   await install(path, "xml", update(true));
   expect(updates).toBe(2);
+});
+
+test("an AppImage's icons go where its desktop entry's Icon=ponzu finds them", async () => {
+  const hicolor = join(dir, "appdir/usr/share/icons/hicolor");
+  for (const size of ["32x32", "512x512"]) {
+    await mkdir(join(hicolor, size, "apps"), { recursive: true });
+    await writeFile(join(hicolor, size, "apps/ponzu.png"), `png ${size}`);
+  }
+  const data = join(dir, "share");
+  await installIcons(hicolor, data);
+  expect(await readFile(join(data, "icons/hicolor/512x512/apps/ponzu.png"), "utf8")).toBe(
+    "png 512x512",
+  );
+  expect(await readFile(join(data, "icons/hicolor/32x32/apps/ponzu.png"), "utf8")).toBe(
+    "png 32x32",
+  );
+  // An AppImage without its theme (or not mounted) leaves nothing behind.
+  await installIcons(join(dir, "nowhere"), join(dir, "share-none"));
+  expect(await Bun.file(join(dir, "share-none")).exists()).toBe(false);
 });
