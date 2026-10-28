@@ -14,43 +14,43 @@ import { DMG, DownloadButton } from "@/components/links";
  */
 export function Download({ installer, started: initial }: { installer: string; started: boolean }) {
   const [started, setStarted] = useState(initial);
-  // Nothing downloads on a phone (AutoStart below), so it keeps the button, which hands off.
-  useEffect(() => {
-    if (phone()) setStarted(false);
-  }, []);
 
-  if (!started) {
-    return (
-      <div className="flex flex-col items-center gap-3 animate-swap">
-        <DownloadButton href={DMG} onClick={() => setStarted(true)}>
-          Download for Mac
-        </DownloadButton>
-        <p className="m-0 flex items-center gap-2.5 text-sm/5 text-faint">
-          <span>Apple silicon</span>
-          <span aria-hidden="true" className="h-3 w-px bg-outline" />
-          <span>macOS 12+</span>
-        </p>
-      </div>
-    );
-  }
-  return (
+  const button = (
     <div className="flex flex-col items-center gap-3 animate-swap">
-      <p className="m-0 flex items-center gap-2 rounded-full bg-chip py-[15px] pr-6 pl-5 text-base font-semibold text-ink">
-        <Check />
-        Download started
-      </p>
-      <p className="m-0 max-w-[440px] text-center text-sm/5 text-pretty text-faint">
-        When it finishes, open <span className="text-ink">{installer}</span> from your Downloads
-        folder. If nothing downloaded,{" "}
-        <a
-          className="text-ink underline decoration-outline underline-offset-4 hover:decoration-ink"
-          href={DMG}
-        >
-          download it again
-        </a>
-        .
+      <DownloadButton href={DMG} onClick={() => setStarted(true)}>
+        Download for Mac
+      </DownloadButton>
+      <p className="m-0 flex items-center gap-2.5 text-sm/5 text-faint">
+        <span>Apple silicon</span>
+        <span aria-hidden="true" className="h-3 w-px bg-outline" />
+        <span>macOS 12+</span>
       </p>
     </div>
+  );
+  if (!started) return button;
+  // Nothing downloads on a phone (AutoStart below), so a phone keeps the button, which hands the
+  // link to a computer. The device classes decide before the first paint.
+  return (
+    <>
+      <div className="desktop-only flex flex-col items-center gap-3 animate-swap">
+        <p className="m-0 flex items-center gap-2 rounded-full bg-chip py-[15px] pr-6 pl-5 text-base font-semibold text-ink">
+          <Check />
+          Download started
+        </p>
+        <p className="m-0 max-w-[440px] text-center text-sm/5 text-pretty text-faint">
+          When it finishes, open <span className="text-ink">{installer}</span> from your Downloads
+          folder. If nothing downloaded,{" "}
+          <a
+            className="text-ink underline decoration-outline underline-offset-4 hover:decoration-ink"
+            href={DMG}
+          >
+            download it again
+          </a>
+          .
+        </p>
+      </div>
+      <div className="phone-only">{button}</div>
+    </>
   );
 }
 
