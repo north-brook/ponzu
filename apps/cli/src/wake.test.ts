@@ -145,15 +145,15 @@ test("who knocked, from the socket's address", () => {
 
   const v4 = new Uint8Array(16);
   v4.set([16, 2, 0x1e, 0x62, 100, 64, 0, 2]);
-  expect(sockaddrIp(v4)).toBe("100.64.0.2");
+  expect(sockaddrIp(v4, "darwin")).toBe("100.64.0.2");
   const v6 = new Uint8Array(28);
   v6.set([28, 30]);
   v6.set([0xfd, 0x7a, 0x11, 0x5c, 0xa1, 0xe0, 0, 0, 0, 0, 0, 0, 0x3e, 0x3b, 0xf4, 0x68], 8);
-  expect(sockaddrIp(v6)).toBe("fd7a:115c:a1e0:0:0:0:3e3b:f468");
+  expect(sockaddrIp(v6, "darwin")).toBe("fd7a:115c:a1e0:0:0:0:3e3b:f468");
   const mapped = new Uint8Array(28);
   mapped.set([28, 30]);
   mapped.set([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 100, 64, 0, 2], 8);
-  expect(sockaddrIp(mapped)).toBe("100.64.0.2");
+  expect(sockaddrIp(mapped, "darwin")).toBe("100.64.0.2");
 });
 
 test("the answer is a complete HTTP response the phone can read", () => {
@@ -221,6 +221,7 @@ test("Linux: a systemd socket on 7778 starts `ponzu wake` per connection", () =>
   const socket = units["ponzu-wake.socket"]!;
   const service = units["ponzu-wake@.service"]!;
   expect(socket).toContain("\nListenStream=7778\nAccept=yes\n");
+  expect(socket).toContain("\nBindIPv6Only=both\n");
   // Every interface, as on the Mac.
   expect(socket).not.toMatch(/BindToDevice|ListenStream=\S+:/);
   expect(socket).toContain("WantedBy=sockets.target");

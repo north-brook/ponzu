@@ -134,6 +134,8 @@ Description=Ponzu wake helper: starts Ponzu when the iPhone app knocks
 [Socket]
 ListenStream=${port}
 Accept=yes
+# IPv4 too, whatever net.ipv6.bindv6only says.
+BindIPv6Only=both
 
 [Install]
 WantedBy=sockets.target
