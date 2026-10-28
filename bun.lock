@@ -14,7 +14,7 @@
     },
     "apps/cli": {
       "name": "ponzu",
-      "version": "1.58.1",
+      "version": "1.51.0",
       "bin": {
         "ponzu": "./src/index.ts",
       },
@@ -30,7 +30,7 @@
     },
     "apps/desktop": {
       "name": "@ponzu/desktop",
-      "version": "1.58.1",
+      "version": "1.51.0",
       "dependencies": {
         "electron-updater": "6.8.9",
       },
@@ -44,7 +44,7 @@
     },
     "apps/mobile": {
       "name": "@ponzu/mobile",
-      "version": "0.5.0",
+      "version": "0.1.0",
       "dependencies": {
         "@expo-google-fonts/funnel-display": "^0.4.1",
         "@expo-google-fonts/ibm-plex-mono": "^0.4.1",
