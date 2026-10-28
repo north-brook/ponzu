@@ -23,12 +23,11 @@ contextBridge.exposeInMainWorld("ponzuDesktop", {
 });
 
 /**
- * Windows and Linux: a .design folder, or its design.json, dropped anywhere on the window opens
- * it, as the Mac's dock icon does. Anything else goes on to the studio, which takes images.
+ * Windows and Linux: a .design folder, its design.json, or a folder holding one, dropped
+ * anywhere on the window opens it, as the Mac's dock icon does. Anything else goes on to the
+ * studio, which takes images. Which is which, the main process says while the drop waits.
  */
 if (process.platform !== "darwin") {
-  const isDesign = (path: string) =>
-    /(\.design|[\\/]design\.json)$/i.test(path.replace(/[\\/]+$/, ""));
   window.addEventListener(
     "dragover",
     (e) => {
@@ -39,12 +38,15 @@ if (process.platform !== "darwin") {
   window.addEventListener(
     "drop",
     (e) => {
-      const paths = [...(e.dataTransfer?.files ?? [])].map((f) => webUtils.getPathForFile(f));
-      const designs = paths.filter(isDesign);
+      const paths = [...(e.dataTransfer?.files ?? [])]
+        .map((f) => webUtils.getPathForFile(f))
+        .filter(Boolean);
+      if (!paths.length) return;
+      const designs = ipcRenderer.sendSync("ponzu:designs", paths) as string[];
       if (!designs.length) return;
       e.preventDefault();
       e.stopPropagation();
-      ipcRenderer.send("ponzu:open-paths", designs);
+      ipcRenderer.send("ponzu:open-designs", designs);
     },
     true,
   );

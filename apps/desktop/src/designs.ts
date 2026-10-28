@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -74,11 +74,13 @@ export function mimeXml(): string {
  * launcher, opening designs and ponzu:// links. Named as the .deb's is, which it stands in for.
  */
 export function desktopEntry(exec: string): string {
-  const quoted = `"${exec.replace(/["`$\\]/g, "\\$&")}"`;
+  // Quoted as an Exec argument, then escaped as the string value that holds it, which is read
+  // first: so a backslash in the path is four in the file.
+  const argument = `"${exec.replace(/["`$\\]/g, "\\$&")}"`.replace(/%/g, "%%");
   return `[Desktop Entry]
 Name=Ponzu
 Comment=A design canvas you drive with HTML and CSS
-Exec=${quoted.replace(/%/g, "%%")} %U
+Exec=${argument.replace(/\\/g, "\\\\")} %U
 Terminal=false
 Type=Application
 Icon=ponzu
@@ -141,6 +143,18 @@ async function write(path: string, content: string): Promise<boolean> {
 }
 
 /**
+ * Write a file the desktop reads through a database, and update that database. When the update
+ * fails (its tool missing, say), the file goes again, so the next launch tries both again.
+ */
+export async function install(
+  path: string,
+  content: string,
+  update: () => Promise<boolean>,
+): Promise<void> {
+  if ((await write(path, content)) && !(await update())) await rm(path, { force: true });
+}
+
+/**
  * Register design.json with the desktop, for this person, on each launch of an installed build:
  * the registry on Windows, shared-mime-info (and, for an AppImage, a desktop entry) on Linux.
  * Unchanged, it's left alone. Nothing on a Mac, where .design itself is the document.
@@ -158,11 +172,13 @@ export async function associateDesigns(exe: string, env = process.env): Promise<
   }
   if (process.platform !== "linux") return;
   const data = env.XDG_DATA_HOME || join(homedir(), ".local/share");
-  if (await write(join(data, "mime/packages/ponzu-design.xml"), mimeXml()))
-    await run("update-mime-database", [join(data, "mime")]);
+  await install(join(data, "mime/packages/ponzu-design.xml"), mimeXml(), () =>
+    run("update-mime-database", [join(data, "mime")]),
+  );
   if (env.APPIMAGE) {
     const apps = join(data, "applications");
-    if (await write(join(apps, "ponzu.desktop"), desktopEntry(env.APPIMAGE)))
-      await run("update-desktop-database", [apps]);
+    await install(join(apps, "ponzu.desktop"), desktopEntry(env.APPIMAGE), () =>
+      run("update-desktop-database", [apps]),
+    );
   }
 }

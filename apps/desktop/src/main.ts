@@ -493,13 +493,16 @@ async function newDesign(): Promise<string | null> {
 ipcMain.handle("ponzu:open-folder", () => pickDesign());
 ipcMain.handle("ponzu:new-file", () => newDesign());
 ipcMain.on("ponzu:reveal", (_e, path: string) => shell.showItemInFolder(path));
-/** Windows and Linux: designs dropped on the window (preload.ts). */
-ipcMain.on("ponzu:open-paths", (_e, paths: string[]) => {
-  for (const p of paths) {
-    const design = designPath(p);
-    if (design) void openDesign(design);
-  }
+/** Windows and Linux: which of the paths dropped on the window are designs (preload.ts). */
+ipcMain.on("ponzu:designs", (e, paths: string[]) => {
+  e.returnValue = paths.map(designPath).filter((p): p is string => Boolean(p));
 });
+/** Then open them, one after another: each loads in the same window. */
+ipcMain.on("ponzu:open-designs", (_e, designs: string[]) => void openAll(designs));
+
+async function openAll(designs: readonly string[]) {
+  for (const design of designs) await openDesign(design);
+}
 ipcMain.handle("ponzu:pair-iphone-pending", () => {
   const pending = pairPending;
   pairPending = false;
@@ -645,7 +648,7 @@ if (!app.requestSingleInstanceLock()) {
     // Linux and Windows hand a second launch its ponzu:// link, or the design it opens, in argv.
     const { links, designs } = launchArgs(argv, cwd);
     if (links[0]) void openLink(links[0]);
-    else if (designs[0]) void openDesign(designs[0]);
+    else if (designs.length) void openAll(designs);
     else showWindow();
   });
 

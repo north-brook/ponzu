@@ -1,11 +1,12 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   designPath,
   desktopEntry,
+  install,
   launchArgs,
   mimeXml,
   registered,
@@ -73,7 +74,11 @@ test("Linux knows design.json by its whole name, ahead of *.json", () => {
 
 test("an AppImage's desktop entry opens designs and links with that AppImage", () => {
   const entry = desktopEntry('/home/me/Apps/Ponzu "x" 100%.AppImage');
-  expect(entry).toContain('Exec="/home/me/Apps/Ponzu \\"x\\" 100%%.AppImage" %U\n');
+  // Exec's quoting, \" for a quote, then the string's, \\ for each backslash.
+  expect(entry).toContain('Exec="/home/me/Apps/Ponzu \\\\"x\\\\" 100%%.AppImage" %U\n');
+  expect(desktopEntry("/home/a\\b/$P.AppImage")).toContain(
+    'Exec="/home/a\\\\\\\\b/\\\\$P.AppImage" %U\n',
+  );
   expect(entry).toContain("MimeType=application/x-ponzu-design;x-scheme-handler/ponzu;\n");
 });
 
@@ -117,4 +122,20 @@ test("Windows: a registration that's already there isn't written again", () => {
   expect(registered("D:\\Ponzu\\Ponzu.exe", command, openWith)).toBe(false);
   expect(registered(exe, command, null)).toBe(false);
   expect(registered(exe, null, null)).toBe(false);
+});
+
+test("a database update that fails is tried again next launch", async () => {
+  const path = join(dir, "share/mime/packages/ponzu-design.xml");
+  let updates = 0;
+  const update = (ok: boolean) => async () => {
+    updates++;
+    return ok;
+  };
+  await install(path, "xml", update(false));
+  expect(await Bun.file(path).exists()).toBe(false);
+  await install(path, "xml", update(true));
+  expect(await readFile(path, "utf8")).toBe("xml");
+  // Unchanged: no update.
+  await install(path, "xml", update(true));
+  expect(updates).toBe(2);
 });
