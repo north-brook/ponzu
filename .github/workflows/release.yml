@@ -1,35 +1,48 @@
 name: Release
 
-# Release Please keeps one open release PR per app on main: the Mac app and
-# CLI ("chore(main): release X.Y.Z", tags vX.Y.Z) and the iPhone app
+# Release Please keeps one open release PR per app on main: the desktop app
+# and CLI ("chore(main): release X.Y.Z", tags vX.Y.Z) and the iPhone app
 # ("chore(main): release mobile X.Y.Z", tags mobile-vX.Y.Z). Every push to
 # main enables auto-merge on both, so once CI passes they land, and the next
 # run of this workflow tags the version and opens a draft GitHub release with
-# its notes. For vX.Y.Z, the mac job builds, signs and notarizes Ponzu into
-# that draft, launches the exact signed app, and only then publishes it, and
-# the npm job publishes the same version of the CLI to npm.
-# electron-updater and the site's download link only see the latest
-# published release, so a failed build never reaches anyone. A mobile-vX.Y.Z
-# tag starts EAS's production workflow (apps/mobile/.eas/workflows), and its
-# release is published here without becoming the latest, which stays the
-# Mac app's. A fix or feature merged to main reaches installed apps without
-# anyone touching a release PR.
+# its notes. For vX.Y.Z, the mac, windows and linux jobs build Ponzu into that
+# draft and launch what they built; the mac job signs and notarizes first.
+# Only once all three have succeeded does the publish job check the draft has
+# every file each platform's feed names and every download the site links,
+# and publish it. A platform that fails leaves the draft a draft, so every
+# release ships on all three or on none. The npm job publishes the same
+# version of the CLI to npm. electron-updater and the site's download links
+# only see the latest published release, so a failed build never reaches
+# anyone. A mobile-vX.Y.Z tag starts EAS's production workflow
+# (apps/mobile/.eas/workflows), and its release is published here without
+# becoming the latest, which stays the desktop app's. A fix or feature merged
+# to main reaches installed apps without anyone touching a release PR.
 on:
   push:
     branches: [main]
-  # Rebuild an existing release, e.g. after a build-only fix.
   workflow_dispatch:
     inputs:
+      # Rebuild an existing release, e.g. after a build-only fix.
       tag:
-        description: Existing desktop tag to rebuild (vX.Y.Z)
-        required: true
+        description: Existing desktop tag to rebuild (vX.Y.Z). Empty, with publish off, builds the branch run from.
+        required: false
         type: string
+      # A dry run: build, launch and check every platform, keep the builds as
+      # this run's artifacts, and touch no release. Only main may sign the Mac
+      # (the release-signing environment), so a dry run from another branch
+      # builds Windows and Linux.
+      publish:
+        description: Upload into the tag's release and publish it
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: read
 
 concurrency:
-  group: release
+  # A dry run neither waits behind a release nor bumps one waiting its turn.
+  group: ${{ github.event_name == 'workflow_dispatch' && !inputs.publish && format('release-dry-run-{0}', github.run_id) || 'release' }}
   cancel-in-progress: false
 
 jobs:
@@ -89,8 +102,8 @@ jobs:
 
   # The phone's release is built by EAS from its tag, which Release Please
   # has already pushed. Its GitHub release only carries the notes: publish
-  # it, but never as the latest, which the Mac app's updater and the site's
-  # download link read.
+  # it, but never as the latest, which the desktop app's updater and the
+  # site's download links read.
   mobile:
     name: Publish the iPhone release notes
     needs: release-please
@@ -111,7 +124,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.release-please.outputs.mobile_tag }}
 
-  # The CLI on npm, which `bunx ponzu` runs: the Mac app's version, from its
+  # The CLI on npm, which `bunx ponzu` runs: the desktop app's version, from its
   # tag. Built and installed as CI's desktop job does (scripts/npm-package.ts,
   # scripts/npm-smoke.ts), then published unless npm already has that version,
   # so a rebuild by hand is safe. npm trusts this workflow as the package's
@@ -119,7 +132,9 @@ jobs:
   npm:
     name: CLI on npm
     needs: release-please
-    if: ${{ !cancelled() && (needs.release-please.outputs.released == 'true' || startsWith(inputs.tag, 'v')) }}
+    if: >-
+      ${{ !cancelled() && (needs.release-please.outputs.released == 'true'
+      || (github.event_name == 'workflow_dispatch' && inputs.publish && startsWith(inputs.tag, 'v'))) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -159,12 +174,21 @@ jobs:
           npm install -g npm@11
           npm publish apps/cli/npm --access public --provenance
 
-  # Only the root package's release (vX.Y.Z): `released` is never set by a
-  # phone release, and a mobile-v tag doesn't start with "v".
+
+  # The desktop app, one job per platform, for the root package's release
+  # (vX.Y.Z) only: `released` is never set by a phone release, and a mobile-v
+  # tag doesn't start with "v". Each builds the tag (a dry run: the branch run
+  # from, unless it names a tag), uploads into the draft unless it's a dry run,
+  # launches what it built and keeps it as this run's artifact. None publishes:
+  # the publish job does, once all three have succeeded.
   mac:
     name: Desktop macOS arm64
     needs: release-please
-    if: ${{ !cancelled() && (needs.release-please.outputs.released == 'true' || startsWith(inputs.tag, 'v')) }}
+    # The signing environment takes only main, so a dry run elsewhere skips the Mac.
+    if: >-
+      ${{ !cancelled() && (needs.release-please.outputs.released == 'true'
+      || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+      && (startsWith(inputs.tag, 'v') || !inputs.publish))) }}
     runs-on: macos-15
     # Holds the signing certificate and notarization key; only main may use it.
     environment: release-signing
@@ -173,6 +197,7 @@ jobs:
       contents: write
     env:
       TAG: ${{ inputs.tag || needs.release-please.outputs.tag }}
+      PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -185,6 +210,13 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: package.json
+      # The release tooling as this run of the workflow has it: a tag rebuilt by
+      # hand can predate it.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: release-tools
+          sparse-checkout: scripts
+          persist-credentials: false
       - run: bun install --frozen-lockfile
       - name: Write the App Store Connect API key
         run: |
@@ -196,7 +228,7 @@ jobs:
         run: |
           bun run --filter @ponzu/studio build
           bun run build
-          bunx electron-builder --mac --arm64 --publish always
+          bunx electron-builder --mac --arm64 --publish "$([ "$PUBLISH" = true ] && echo always || echo never)"
         working-directory: apps/desktop
         env:
           # electron-builder imports the base64 p12 into a temporary keychain itself.
@@ -226,31 +258,9 @@ jobs:
         # ELECTRON_RUN_AS_NODE, if a host sets it, would make the app plain Node.
         run: env -u ELECTRON_RUN_AS_NODE PONZU_SMOKE=1 perl -e 'alarm shift; exec @ARGV' 120 out/mac-arm64/Ponzu.app/Contents/MacOS/Ponzu
         working-directory: apps/desktop
-      # Release Please opened the draft and electron-builder uploaded into it.
-      # Upload anything missing, check every file latest-mac.yml names is
-      # present, then publish. electron-updater and the site's download link
-      # only see published releases.
-      - name: Publish the release
-        run: |
-          id=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=30" \
-            --jq "[.[] | select(.tag_name == \"$TAG\")][0].id")
-          [ -n "$id" ] && [ "$id" != "null" ] || { echo "no release for $TAG"; exit 1; }
-          have=$(gh api "repos/$GITHUB_REPOSITORY/releases/$id/assets?per_page=100" --jq '.[].name')
-          # release-notes.json: what's new, which an app about to update shows in its title bar.
-          cp dist/release-notes.json out/release-notes.json
-          for file in out/*.dmg out/*.zip out/*.blockmap out/latest-mac.yml out/release-notes.json; do
-            name=$(basename "$file")
-            if ! grep -qx "$name" <<<"$have"; then
-              echo "uploading missing $name"
-              gh release upload "$TAG" "$file" --repo "$GITHUB_REPOSITORY"
-            fi
-          done
-          have=$(gh api "repos/$GITHUB_REPOSITORY/releases/$id/assets?per_page=100" --jq '.[].name')
-          for name in Ponzu-arm64.dmg release-notes.json $(sed -n 's/^ *- url: //p; s/^path: //p' out/latest-mac.yml | sort -u); do
-            grep -qx "$name" <<<"$have" || { echo "the release lacks $name"; exit 1; }
-          done
-          gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$id" \
-            -F draft=false -f make_latest=true --jq '"published \(.tag_name) \(.html_url)"'
+      - name: Upload anything electron-builder didn't
+        if: env.PUBLISH == 'true'
+        run: bash "$GITHUB_WORKSPACE/release-tools/scripts/release-upload.sh" "$TAG" out/*.dmg out/*.zip out/*.blockmap out/latest-mac.yml
         working-directory: apps/desktop
         env:
           GH_TOKEN: ${{ github.token }}
@@ -263,3 +273,289 @@ jobs:
             apps/desktop/out/latest-mac.yml
           if-no-files-found: error
           retention-days: 30
+
+  # Unsigned for now: Windows' SmartScreen warns before the first launch. No
+  # signing secrets reach this job, so electron-builder signs nothing, and the
+  # app's feed names no publisher for the updater to check an update against.
+  windows:
+    name: Desktop Windows x64
+    needs: release-please
+    if: >-
+      ${{ !cancelled() && (needs.release-please.outputs.released == 'true'
+      || (github.event_name == 'workflow_dispatch' && (startsWith(inputs.tag, 'v') || !inputs.publish))) }}
+    runs-on: windows-2025
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ inputs.tag || needs.release-please.outputs.tag }}
+      PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ env.TAG }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      # The release tooling as this run of the workflow has it: a tag rebuilt by
+      # hand can predate it.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: release-tools
+          sparse-checkout: scripts
+          persist-credentials: false
+      - name: This tag builds for Windows
+        run: jq -e '.build.nsis' apps/desktop/package.json >/dev/null || { echo "::error::$TAG predates Windows builds, so it can't be rebuilt here."; exit 1; }
+      - run: bun install --frozen-lockfile
+      - name: Build the installer and upload it into the draft release
+        run: |
+          bun run --filter @ponzu/studio build
+          bun run build
+          bunx electron-builder --win --x64 --publish "$([ "$PUBLISH" = true ] && echo always || echo never)"
+        working-directory: apps/desktop
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PONZU_POSTHOG_KEY: ${{ vars.PONZU_POSTHOG_KEY }}
+      - name: The update feed names no publisher to check updates against
+        # electron-updater checks a Windows update's signature only against the
+        # publisher app-update.yml names, which an unsigned build has none of.
+        run: |
+          cat out/win-unpacked/resources/app-update.yml
+          ! grep -q publisherName out/win-unpacked/resources/app-update.yml
+        working-directory: apps/desktop
+      - name: The installer installs Ponzu, which starts its server and paints the studio
+        # As CI's "Desktop package (Windows)", on what the installer put in
+        # place: one click, for this person only, under %LOCALAPPDATA%\Programs.
+        shell: pwsh
+        run: |
+          $setup = Start-Process -FilePath out\Ponzu-x64.exe -ArgumentList '/S' -PassThru -Wait
+          if ($setup.ExitCode -ne 0) { Write-Host "::error::The installer exited $($setup.ExitCode)."; exit 1 }
+          $exe = Join-Path $env:LOCALAPPDATA 'Programs\ponzu\Ponzu.exe'
+          if (-not (Test-Path $exe)) { Write-Host "::error::The installer put nothing at $exe."; exit 1 }
+          $env:PONZU_SMOKE = "1"
+          $app = Start-Process -FilePath $exe -PassThru -NoNewWindow
+          $null = $app.Handle # Without a handle taken now, ExitCode reads empty.
+          if (-not $app.WaitForExit(120000)) {
+            taskkill /T /F /PID $app.Id
+            Write-Host "::error::The installed app didn't exit within 120s."
+            exit 1
+          }
+          exit $app.ExitCode
+        working-directory: apps/desktop
+      - name: Uninstalling removes Ponzu and what it wrote for the person
+        # What the app writes at launch (src/designs.ts, apps/cli/src/command.ts),
+        # which the uninstaller removes through build/uninstall.ps1.
+        shell: pwsh
+        run: |
+          $classes = 'HKCU:\Software\Classes'
+          New-Item -Path "$classes\Ponzu.Design\shell\open\command" -Force | Out-Null
+          if (-not (Test-Path "$classes\.json\OpenWithProgids")) { New-Item -Path "$classes\.json\OpenWithProgids" -Force | Out-Null }
+          New-ItemProperty -Path "$classes\.json\OpenWithProgids" -Name 'Ponzu.Design' -PropertyType None -Value ([byte[]]@()) -Force | Out-Null
+          $ponzu = Join-Path $env:USERPROFILE '.ponzu'
+          $bin = Join-Path $ponzu 'bin'
+          New-Item -ItemType Directory -Force $bin | Out-Null
+          [Environment]::SetEnvironmentVariable('Path', ([Environment]::GetEnvironmentVariable('Path', 'User') + ";$bin"), 'User')
+          @{ linked = $bin } | ConvertTo-Json | Set-Content (Join-Path $ponzu 'command.json')
+
+          $dir = Join-Path $env:LOCALAPPDATA 'Programs\ponzu'
+          Start-Process -FilePath (Join-Path $dir 'Uninstall Ponzu.exe') -ArgumentList '/S' -Wait
+          # The uninstaller hands over to a copy of itself and returns at once.
+          $deadline = (Get-Date).AddSeconds(120)
+          while ((Test-Path (Join-Path $dir 'Ponzu.exe')) -and ((Get-Date) -lt $deadline)) { Start-Sleep -Seconds 1 }
+
+          $failed = @()
+          if (Test-Path (Join-Path $dir 'Ponzu.exe')) { $failed += 'Ponzu is still installed.' }
+          if (Test-Path "$classes\Ponzu.Design") { $failed += 'The Ponzu Design type is still registered.' }
+          if ((Get-Item "$classes\.json\OpenWithProgids").GetValueNames() -contains 'Ponzu.Design') { $failed += "Ponzu is still under design.json's Open with." }
+          if (([Environment]::GetEnvironmentVariable('Path', 'User') -split ';') -contains $bin) { $failed += "$bin is still on the PATH." }
+          if (Test-Path (Join-Path $ponzu 'command.json')) { $failed += 'command.json still says the PATH has it.' }
+          $failed | ForEach-Object { Write-Host "::error::$_" }
+          if ($failed) { exit 1 }
+          Write-Host 'Uninstalled, and what Ponzu wrote for the person went with it.'
+      - name: Upload anything electron-builder didn't
+        if: env.PUBLISH == 'true'
+        run: bash "$GITHUB_WORKSPACE/release-tools/scripts/release-upload.sh" "$TAG" out/Ponzu-x64.exe out/Ponzu-x64.exe.blockmap out/latest.yml
+        working-directory: apps/desktop
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-x64
+          path: |
+            apps/desktop/out/Ponzu-x64.exe
+            apps/desktop/out/Ponzu-x64.exe.blockmap
+            apps/desktop/out/latest.yml
+          if-no-files-found: error
+          retention-days: 30
+
+  # The AppImage and the .deb, both updating in place: the AppImage replaces
+  # its own file, the .deb installs the next through dpkg.
+  linux:
+    name: Desktop Linux x64
+    needs: release-please
+    if: >-
+      ${{ !cancelled() && (needs.release-please.outputs.released == 'true'
+      || (github.event_name == 'workflow_dispatch' && (startsWith(inputs.tag, 'v') || !inputs.publish))) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ inputs.tag || needs.release-please.outputs.tag }}
+      PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ env.TAG }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      # The release tooling as this run of the workflow has it: a tag rebuilt by
+      # hand can predate it.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: release-tools
+          sparse-checkout: scripts
+          persist-credentials: false
+      - name: This tag builds for Linux
+        run: jq -e '.build.appImage' apps/desktop/package.json >/dev/null || { echo "::error::$TAG predates Linux builds, so it can't be rebuilt here."; exit 1; }
+      - run: bun install --frozen-lockfile
+      - name: Xvfb and FUSE, for the launches
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb libfuse2t64
+      - name: Build the AppImage and the .deb and upload them into the draft release
+        run: |
+          bun run --filter @ponzu/studio build
+          bun run build
+          bunx electron-builder --linux --x64 --publish "$([ "$PUBLISH" = true ] && echo always || echo never)"
+        working-directory: apps/desktop
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PONZU_POSTHOG_KEY: ${{ vars.PONZU_POSTHOG_KEY }}
+      - name: The AppImage starts its server and paints the studio
+        # As CI's "Desktop package", through the AppImage's own runtime. Its
+        # icons are where the app's desktop entry finds them (src/designs.ts).
+        run: |
+          cat out/latest-linux.yml
+          chmod +x out/Ponzu-x64.AppImage
+          PONZU_SMOKE=1 timeout 120 xvfb-run -a out/Ponzu-x64.AppImage --no-sandbox
+          (cd "$RUNNER_TEMP" && "$GITHUB_WORKSPACE/apps/desktop/out/Ponzu-x64.AppImage" --appimage-extract >/dev/null)
+          ls "$RUNNER_TEMP/squashfs-root/usr/share/icons/hicolor"
+          test -f "$RUNNER_TEMP/squashfs-root/usr/share/icons/hicolor/512x512/apps/ponzu.png"
+          test -f "$RUNNER_TEMP/squashfs-root/resources/app-update.yml"
+        working-directory: apps/desktop
+      - name: The .deb installs, starts, and removes itself and the wake helper
+        # Installed with its dependencies, launched from where it links
+        # `ponzu`. The wake helper's units are written as the app writes them
+        # at launch; the runner has no systemd user session, so only the files
+        # are there to remove (build/deb-after-remove.sh).
+        run: |
+          sudo apt-get install -y ./out/Ponzu-x64.deb
+          test "$(readlink -f /usr/bin/ponzu)" = /opt/Ponzu/ponzu
+          test -f /usr/share/icons/hicolor/512x512/apps/ponzu.png
+          grep '^Icon=ponzu$' /usr/share/applications/ponzu.desktop
+          PONZU_SMOKE=1 timeout 120 xvfb-run -a ponzu --no-sandbox
+          /opt/Ponzu/resources/server/ponzu wake install || true
+          test -f ~/.config/systemd/user/ponzu-wake@.service
+          sudo apt-get remove -y "$(dpkg-deb -f out/Ponzu-x64.deb Package)"
+          test ! -e /opt/Ponzu/ponzu
+          test ! -e /usr/bin/ponzu
+          test ! -e ~/.config/systemd/user/ponzu-wake@.service
+          test ! -e ~/.config/systemd/user/ponzu-wake.socket
+        working-directory: apps/desktop
+      - name: Upload anything electron-builder didn't
+        if: env.PUBLISH == 'true'
+        run: bash "$GITHUB_WORKSPACE/release-tools/scripts/release-upload.sh" "$TAG" out/Ponzu-x64.AppImage out/Ponzu-x64.deb out/latest-linux.yml
+        working-directory: apps/desktop
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: linux-x64
+          path: |
+            apps/desktop/out/Ponzu-x64.AppImage
+            apps/desktop/out/Ponzu-x64.deb
+            apps/desktop/out/latest-linux.yml
+          if-no-files-found: error
+          retention-days: 30
+
+  # The one gate: only once every platform built and launched. It adds the
+  # release's notes, which an app about to update shows in its title bar
+  # (docs/release-notes.md), downloads the draft as it would be published, and
+  # checks it has every file each feed names, unchanged, and every download the
+  # site links by name (scripts/release-assets.ts), before publishing it. A dry
+  # run checks its artifacts the same way, for the platforms it built.
+  publish:
+    name: Publish the desktop release
+    needs: [release-please, mac, windows, linux]
+    if: >-
+      ${{ !cancelled() && needs.windows.result == 'success' && needs.linux.result == 'success'
+      && (needs.mac.result == 'success'
+      || (needs.mac.result == 'skipped' && github.event_name == 'workflow_dispatch' && !inputs.publish)) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ inputs.tag || needs.release-please.outputs.tag }}
+      PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
+      MAC: ${{ needs.mac.result == 'success' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ env.TAG }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      # The release tooling as this run of the workflow has it: a tag rebuilt by
+      # hand can predate it.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          path: release-tools
+          sparse-checkout: scripts
+          persist-credentials: false
+      - name: The release's notes
+        run: bun scripts/release-notes.ts "$RUNNER_TEMP/release-notes.json"
+      - name: Upload the notes and download the draft
+        if: env.PUBLISH == 'true'
+        run: |
+          bash release-tools/scripts/release-upload.sh "$TAG" "$RUNNER_TEMP/release-notes.json"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$RUNNER_TEMP/release"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Gather the dry run's builds
+        if: env.PUBLISH != 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/release
+          merge-multiple: true
+      - name: Every platform's feed, files and downloads are there
+        run: |
+          [ "$PUBLISH" = true ] || cp "$RUNNER_TEMP/release-notes.json" "$RUNNER_TEMP/release/"
+          platforms=(windows linux)
+          [ "$MAC" = true ] && platforms=(mac "${platforms[@]}")
+          version=$(jq -r .version apps/desktop/package.json)
+          bun release-tools/scripts/release-assets.ts "$RUNNER_TEMP/release" "$version" "${platforms[@]}"
+      - name: Publish
+        if: env.PUBLISH == 'true'
+        run: |
+          id=$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=30" \
+            --jq "[.[] | select(.tag_name == \"$TAG\")][0].id")
+          [ -n "$id" ] && [ "$id" != "null" ] || { echo "no release for $TAG"; exit 1; }
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$id" \
+            -F draft=false -f make_latest=true --jq '"published \(.tag_name) \(.html_url)"'
+        env:
+          GH_TOKEN: ${{ github.token }}

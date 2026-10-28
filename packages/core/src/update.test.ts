@@ -77,6 +77,23 @@ test("the newest download wins, and an install under way shows", () => {
   expect(plan).toMatchObject({ version: "1.45.0", notes: ["b"], installing: true });
 });
 
+test("a computer that installs only for its own click is offered its update there alone", () => {
+  // The .deb asks for a password on its own computer: another's Update can't install it.
+  const deb = (id: string) =>
+    mac(id, {
+      version: "1.43.0",
+      ready: { version: "1.44.0", notes: ["Faster."] },
+      ownClick: true,
+    });
+  expect(updatePlan([mac("local", { version: "1.43.0" }), deb("linux")])).toMatchObject({
+    macs: ["local"],
+  });
+  expect(updatePlan([mac("local", { version: "1.44.0" }), deb("linux")])).toBeNull();
+  expect(updatePlan([deb("local"), mac("air", { version: "1.44.0" })])).toMatchObject({
+    macs: ["local"],
+  });
+});
+
 test("a changelog's items become sentences, without links", () => {
   const html = `<h2><a href="x">1.43.0</a> (2026-10-24)</h2>
 <h3>Features</h3>

@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -133,9 +133,9 @@ export function registered(exe: string, command: string | null, openWith: string
 }
 
 /** Writes `path` unless it already says `content`. Whether it changed. */
-async function write(path: string, content: string): Promise<boolean> {
+async function write(path: string, content: string | Uint8Array): Promise<boolean> {
   try {
-    if (readFileSync(path, "utf8") === content) return false;
+    if (readFileSync(path).equals(Buffer.from(content))) return false;
   } catch {}
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, content);
@@ -181,5 +181,17 @@ export async function associateDesigns(exe: string, env = process.env): Promise<
     // Read as it is; the database only caches which entries open which types.
     if (await write(join(apps, "ponzu.desktop"), desktopEntry(env.APPIMAGE)))
       await run("update-desktop-database", [apps]);
+    if (env.APPDIR) await installIcons(join(env.APPDIR, "usr/share/icons/hicolor"), data);
+  }
+}
+
+/**
+ * Linux, for an AppImage: its icons where the desktop entry's `Icon=ponzu` finds them, as the
+ * .deb installs its own in /usr/share/icons. From the AppImage's hicolor theme, every size.
+ */
+export async function installIcons(hicolor: string, data: string): Promise<void> {
+  for (const size of await readdir(hicolor).catch(() => [])) {
+    const icon = await readFile(join(hicolor, size, "apps/ponzu.png")).catch(() => null);
+    if (icon) await write(join(data, "icons/hicolor", size, "apps/ponzu.png"), icon);
   }
 }
