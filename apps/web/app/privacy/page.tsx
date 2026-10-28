@@ -6,7 +6,7 @@ import { share } from "@/components/share";
 
 const TITLE = "Privacy · Ponzu";
 const DESCRIPTION =
-  "What Ponzu for Mac, Ponzu for iPhone and ponzu.design collect, where it goes, and how to turn it off.";
+  "What the Ponzu desktop app, Ponzu for iPhone and ponzu.design collect, where it goes, and how to turn it off.";
 
 export const metadata: Metadata = {
   title: { absolute: TITLE },
@@ -35,9 +35,9 @@ export default function Page() {
       <article className="mx-auto flex max-w-[640px] flex-col gap-12 text-[16px]/[27px] text-pretty text-muted">
         <Section title="Who we are">
           <p>
-            Ponzu is made by Northbrook PBC (“we”). This policy covers Ponzu for Mac, the{" "}
-            <Code>ponzu</Code> command line, Ponzu for iPhone and this website. Ponzu is open
-            source, so everything here can be checked against{" "}
+            Ponzu is made by Northbrook PBC (“we”). This policy covers the Ponzu desktop app (Mac,
+            Windows and Linux), the <Code>ponzu</Code> command line, Ponzu for iPhone and this
+            website. Ponzu is open source, so everything here can be checked against{" "}
             <Link href={REPO}>the code on GitHub</Link>.
           </p>
         </Section>
@@ -45,19 +45,19 @@ export default function Page() {
         <Section title="Your designs">
           <p>
             A design is a folder of files on your disk. Ponzu never uploads it to us. Agents work on
-            it over MCP on the same Mac, and Ponzu never sees your prompts. A few things in a design
-            do reach other servers, because they would in any browser: fonts it names are loaded
-            from Google Fonts, and images it links to are fetched from wherever they live. Opening a
-            design from GitHub clones its repository from GitHub.
+            it over MCP on the same computer, and Ponzu never sees your prompts. A few things in a
+            design do reach other servers, because they would in any browser: fonts it names are
+            loaded from Google Fonts, and images it links to are fetched from wherever they live.
+            Opening a design from GitHub clones its repository from GitHub.
           </p>
         </Section>
 
-        <Section title="Ponzu for Mac">
+        <Section title="The desktop app">
           <p>
-            The Mac app sends pseudonymous usage data to us through PostHog, in the US: which tools
-            agents call and whether they fail (with a coarse reason, like a timeout), which agents
-            connect, how often the canvas opens and comments are left, and the Ponzu version and OS.
-            No HTML, file names, paths, comment text or tool arguments are sent.
+            The desktop app sends pseudonymous usage data to us through PostHog, in the US: which
+            tools agents call and whether they fail (with a coarse reason, like a timeout), which
+            agents connect, how often the canvas opens and comments are left, and the Ponzu version
+            and OS. No HTML, file names, paths, comment text or tool arguments are sent.
           </p>
           <p>
             Each install is a random id. When Tailscale is running, that id is linked to a hash of

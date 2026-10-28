@@ -1,5 +1,6 @@
+import { NavDownload } from "./download-button";
 import { GitHub, Lockup } from "./icons";
-import { DownloadButton, REPO } from "./links";
+import { REPO } from "./links";
 import { StickyBar } from "./sticky-bar";
 
 export { Footer } from "./footer";
@@ -29,9 +30,7 @@ export function Nav() {
         >
           <GitHub />
         </a>
-        <DownloadButton size="sm" className="desktop-only">
-          Download
-        </DownloadButton>
+        <NavDownload className="desktop-only" />
       </div>
     </StickyBar>
   );

@@ -21,7 +21,17 @@ const nextConfig: NextConfig = {
   // Agents' links to a design on the person's Mac were /open#…: the browser keeps the # across
   // the redirect.
   async redirects() {
-    return [{ source: "/open", destination: "/local", permanent: true }];
+    return [
+      { source: "/open", destination: "/local", permanent: true },
+      // /download was the Mac's install steps, and every Download button sent ?start=1 there.
+      // Those links (in apps and agents' messages) still mean the Mac. The query carries over.
+      {
+        source: "/download",
+        has: [{ type: "query", key: "start" }],
+        destination: "/download/mac",
+        permanent: false,
+      },
+    ];
   },
   async headers() {
     return [
