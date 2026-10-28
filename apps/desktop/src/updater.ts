@@ -112,6 +112,7 @@ export async function installUpdater(opts: {
     version: app.getVersion(),
     ...(ready ? { ready } : {}),
     ...(installing ? { installing } : {}),
+    ...(installer === "deb" ? { ownClick: true } : {}),
   });
 
   /** A restart on its way: waiting for an agent, or for its answer to get out. */
