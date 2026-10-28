@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.59.3](https://github.com/north-brook/ponzu/compare/v1.59.2...v1.59.3) (2026-10-28)
+
+
+### Bug Fixes
+
+* record the phone demo video smoothly at 60fps ([#301](https://github.com/north-brook/ponzu/issues/301)) ([8c88b18](https://github.com/north-brook/ponzu/commit/8c88b181d3cc8187d7848d5c7cd9ae64f3e6cc4b))
+
 ## [1.59.2](https://github.com/north-brook/ponzu/compare/v1.59.1...v1.59.2) (2026-10-28)
 
 
