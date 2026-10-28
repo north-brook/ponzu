@@ -580,23 +580,26 @@ html:not([data-device="phone"]) .phone-only,
 
 /*
  * Computers (components/device.ts marks `data-os` before the first paint): each desktop sees its own
- * Download, and the index outlines its own card and lists it first. Without the script, or on a
- * phone, pages read as the Mac's.
+ * Download, and the index outlines its own card and lists it first. Without the script, or on an
+ * iPhone or iPad, pages read as the Mac's. Android names no desktop (its handoff sheet picks
+ * Windows) and leads the index with Windows.
  */
-html:is([data-os="windows"], [data-os="linux"], [data-os="other"]) .os-mac,
+html:is([data-os="windows"], [data-os="linux"], [data-os="other"], [data-phone="android"]) .os-mac,
 html:not([data-os="windows"]) .os-windows,
 html:not([data-os="linux"]) .os-linux,
-html:not([data-os="other"]) .os-other {
+html:not([data-os="other"]):not([data-phone="android"]) .os-other {
   display: none;
 }
-html:not([data-os]) [data-card="mac"],
+html:not([data-os]):not([data-phone="android"]) [data-card="mac"],
+html[data-phone="android"] [data-card="windows"],
 html[data-os="mac"] [data-card="mac"],
 html[data-os="windows"] [data-card="windows"],
 html[data-os="linux"] [data-card="linux"] {
   order: -1;
   box-shadow: inset 0 0 0 1.5px var(--ink);
 }
-html:not([data-os]) [data-card="mac"] .card-cta,
+html:not([data-os]):not([data-phone="android"]) [data-card="mac"] .card-cta,
+html[data-phone="android"] [data-card="windows"] .card-cta,
 html[data-os="mac"] [data-card="mac"] .card-cta,
 html[data-os="windows"] [data-card="windows"] .card-cta,
 html[data-os="linux"] [data-card="linux"] .card-cta {

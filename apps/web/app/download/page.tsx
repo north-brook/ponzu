@@ -108,13 +108,14 @@ function Card({ os }: { os: Os }) {
             {os === "linux" ? "AppImage" : "Download"}
           </DownloadButton>
           {p.alt ? (
-            <a
-              className="inline-flex items-center gap-[9px] rounded-full px-5 py-[15px] text-base font-semibold text-ink shadow-[inset_0_0_0_1px_var(--outline)] transition-[translate] duration-150 ease-out hover:-translate-y-px"
+            <DownloadButton
+              os={os}
               href={asset(p.alt)}
+              icon={<DownloadArrow />}
+              className="text-ink shadow-[inset_0_0_0_1px_var(--outline)] hover:shadow-[inset_0_0_0_1px_var(--ink)]"
             >
-              <DownloadArrow />
               .deb
-            </a>
+            </DownloadButton>
           ) : null}
         </div>
         <span className="font-mono text-[13px] text-faint">{files.join(" · ")}</span>

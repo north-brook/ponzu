@@ -38,6 +38,7 @@ export function DownloadButton({
   size = "lg",
   onClick,
   className = "bg-cta text-cta-ink",
+  icon = <OsIcon os={os} />,
   children,
 }: {
   os: Os;
@@ -45,6 +46,8 @@ export function DownloadButton({
   size?: "sm" | "lg";
   onClick?: () => void;
   className?: string;
+  /** Defaults to the desktop's own mark. */
+  icon?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -55,7 +58,7 @@ export function DownloadButton({
         if (!handOff(e, os)) onClick?.();
       }}
     >
-      <OsIcon os={os} />
+      {icon}
       {children}
     </a>
   );
@@ -138,7 +141,8 @@ export function DownloadSplit({ testflight }: { testflight: string | null }) {
             {PLATFORMS[os].label}
           </a>
         ))}
-        <a className={`os-other ${half}`} href="/download">
+        {/* No desktop to name: ChromeOS and the like, and Android, whose sheet picks Windows. */}
+        <a className={`os-other ${half}`} href="/download" onClick={(e) => handOff(e)}>
           <DownloadArrow />
           Download Ponzu
         </a>
