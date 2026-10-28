@@ -113,4 +113,6 @@ test.skipIf(process.platform !== "win32")(
       ps("Remove-Item -Path 'HKCU:\\Software\\PonzuTest' -Recurse -Force");
     }
   },
+  // Each PowerShell takes a second or so to start.
+  60_000,
 );
