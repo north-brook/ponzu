@@ -85,8 +85,9 @@ async function notesOf(info: UpdateInfo): Promise<string[]> {
  * no title bar offers them one.
  *
  * The .deb installs through dpkg, which asks for an admin's password. So it
- * never installs on quit or on Ponzu's own idea, only when the person clicks
- * Update on this computer, where they can answer.
+ * never installs on quit, on Ponzu's own idea, or for a click on another of
+ * the person's computers (`remote`, from the server), only when they click
+ * Update on this one, where they can answer.
  */
 export async function installUpdater(opts: {
   window: () => BrowserWindow | null;
@@ -156,9 +157,9 @@ export async function installUpdater(opts: {
    * or untouched a while. (The server holds an install the person asked for while an agent is
    * mid-change here, so a restart never cuts one off.)
    */
-  const install = (o: { quiet?: boolean; version?: string }): MachineUpdate => {
-    // dpkg's password prompt needs the person here: their click in this computer's window.
-    if (installer === "deb" && (o.quiet || !opts.window()?.isFocused())) return state();
+  const install = (o: { quiet?: boolean; remote?: boolean; version?: string }): MachineUpdate => {
+    // dpkg's password prompt needs the person here: their click on this computer.
+    if (installer === "deb" && (o.quiet || o.remote)) return state();
     if (o.quiet) {
       if (installing) return state();
       if (!readyFor(o.version)) {
@@ -208,10 +209,18 @@ export async function installUpdater(opts: {
       let out: MachineUpdate;
       if (req.method === "POST" && req.url === "/update/install") {
         const body = await read(req)
-          .then((text) => JSON.parse(text || "{}") as { quiet?: unknown; version?: unknown } | null)
+          .then(
+            (text) =>
+              JSON.parse(text || "{}") as {
+                quiet?: unknown;
+                remote?: unknown;
+                version?: unknown;
+              } | null,
+          )
           .catch(() => null);
         out = install({
           quiet: body?.quiet === true,
+          remote: body?.remote === true,
           ...(typeof body?.version === "string" ? { version: body.version } : {}),
         });
       } else if (req.method === "GET" && req.url === "/update") out = state();

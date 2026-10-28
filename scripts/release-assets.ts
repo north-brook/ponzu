@@ -5,13 +5,11 @@
  * never changes, so a release that lacks any of them, or carries a file other than the one its
  * feed describes, isn't published at all (CONTRIBUTING.md#releases).
  *
- *   bun scripts/release-assets.ts <dir> [mac] [windows] [linux]
- *       check the release's files, downloaded into <dir>, for those platforms (all three when
- *       none is named): each feed is there and names this version, each file it names is there
- *       with its size and sha512, and so are the downloads, which the feed names too, and
- *       release-notes.json
- *
- * The version is the desktop app's, from the checkout the release was built from.
+ *   bun scripts/release-assets.ts <dir> <version> [mac] [windows] [linux]
+ *       check the release of <version>'s files, downloaded into <dir>, for those platforms (all
+ *       three when none is named): each feed is there and names <version>, each file it names
+ *       is there with its size and sha512, and so are the downloads, which the feed names too,
+ *       and release-notes.json
  */
 import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -77,7 +75,9 @@ export function problems(
       else if (file.size !== f.size || file.sha512 !== f.sha512)
         out.push(`${url} isn't the file ${name} describes`);
     }
-    if (typeof feed.path === "string" && !listed.some((f) => f.url === feed.path)) need(feed.path);
+    // Older updaters read `path`: it must be one of the files checked above.
+    if (feed.path !== undefined && !listed.some((f) => f.url === feed.path))
+      out.push(`${name}'s path, ${String(feed.path)}, isn't one of its files`);
     // The installed app updates from the same file: one its feed doesn't name never updates.
     for (const download of downloads)
       if (!listed.some((f) => f.url === download))
@@ -94,16 +94,13 @@ async function sha512(path: string): Promise<string> {
 }
 
 if (import.meta.main) {
-  const [dir, ...named] = process.argv.slice(2);
+  const [dir, version, ...named] = process.argv.slice(2);
   const unknown = named.filter((p) => !(p in PLATFORMS));
-  if (!dir || unknown.length) {
-    console.error("usage: bun scripts/release-assets.ts <dir> [mac] [windows] [linux]");
+  if (!dir || !version || unknown.length) {
+    console.error("usage: bun scripts/release-assets.ts <dir> <version> [mac] [windows] [linux]");
     process.exit(2);
   }
   const platforms = (named.length ? named : Object.keys(PLATFORMS)) as Platform[];
-  const version = JSON.parse(
-    readFileSync(join(import.meta.dir, "../apps/desktop/package.json"), "utf8"),
-  ).version as string;
   const files = new Map<string, File>();
   const feeds: Record<string, string> = {};
   for (const name of existsSync(dir) ? readdirSync(dir) : []) {

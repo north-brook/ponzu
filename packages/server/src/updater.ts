@@ -11,9 +11,14 @@ export interface Updater {
   /**
    * Install `version`, or a newer Ponzu: restart into it, downloading it first when what's here
    * is older. `quiet` is Ponzu's own idea rather than the person's, and the app declines it
-   * while they're using it.
+   * while they're using it. `remote`: the person clicked Update on another of their computers,
+   * not this one, which an install that asks for a password here declines.
    */
-  install(opts?: { quiet?: boolean; version?: string }): Promise<MachineUpdate | undefined>;
+  install(opts?: {
+    quiet?: boolean;
+    remote?: boolean;
+    version?: string;
+  }): Promise<MachineUpdate | undefined>;
   stop(): void;
 }
 

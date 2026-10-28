@@ -431,9 +431,10 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
         return new Response("Forbidden", { status: 403 });
       if (!updater) return new Response("Not found", { status: 404 });
       const body = (await req.json().catch(() => null)) as { version?: unknown } | null;
-      const update = await updater.install(
-        typeof body?.version === "string" ? { version: body.version } : {},
-      );
+      const update = await updater.install({
+        remote: true,
+        ...(typeof body?.version === "string" ? { version: body.version } : {}),
+      });
       feed.poke(0);
       return Response.json(update ?? null);
     }

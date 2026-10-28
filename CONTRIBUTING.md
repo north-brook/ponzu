@@ -92,7 +92,9 @@ published with provenance. A version npm already has is skipped.
 So a merged `fix:` or `feat:` reaches everyone without anyone touching the
 release PR. To hold a release, close its release PR; the next push to `main`
 reopens it. To rebuild an existing release after a build-only fix, run the
-Release workflow by hand with its tag.
+Release workflow by hand with its tag. It builds the tag with the workflow's
+own release scripts, so a tag from before Windows and Linux builds (v1.66.0
+and earlier) can't be rebuilt: those jobs stop and nothing is published.
 
 To try the pipeline without releasing, run it with **publish** off: it builds,
 launches and checks every platform and keeps the builds as the run's artifacts,

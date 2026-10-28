@@ -101,3 +101,12 @@ test("a download its feed doesn't name holds it back: nothing installed from it 
     "Ponzu-x64.deb isn't in latest-linux.yml, so nothing installed from it updates",
   ]);
 });
+
+test("a feed's path, which older updaters read, must be one of the files it checks", () => {
+  const { feeds, files } = release();
+  feeds["latest.yml"] = feed("1.66.0", "Ponzu-Setup.exe", ["Ponzu-x64.exe", 20]);
+  files.set("Ponzu-Setup.exe", file(20, "other"));
+  expect(problems("1.66.0", ["windows"], feeds, files)).toEqual([
+    "latest.yml's path, Ponzu-Setup.exe, isn't one of its files",
+  ]);
+});
