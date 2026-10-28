@@ -226,13 +226,27 @@ export async function launchApp(app: string, timeoutMs = 30_000): Promise<string
 }
 
 /**
+ * appLauncher's command, run as its own systemd service when this runs as one (Linux's wake
+ * helper): systemd stops what a service leaves behind once it exits.
+ */
+export function launchCommand(
+  app: string,
+  os = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+): [string, string[]] {
+  const [cmd, args] = appLauncher(app, os);
+  if (os !== "linux" || !env.INVOCATION_ID) return [cmd, args];
+  return ["systemd-run", ["--user", "--collect", "--quiet", "--", cmd, ...args]];
+}
+
+/**
  * Ask for the desktop app with no window, and don't wait for it. Resolves once
  * it has started; detached, it outlives this process.
  */
 export function startApp(app: string): Promise<void> {
   const env = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;
-  const [cmd, args] = appLauncher(app);
+  const [cmd, args] = launchCommand(app);
   return new Promise((resolve) => {
     try {
       const child = spawn(cmd, args, { detached: true, stdio: "ignore", env });

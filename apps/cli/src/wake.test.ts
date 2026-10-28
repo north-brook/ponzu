@@ -1,18 +1,21 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  installSystemdWake,
   installWake,
   peerKind,
   sockaddrIp,
+  uninstallSystemdWake,
   uninstallWake,
   type WakeDeps,
   wake,
   wakePlist,
   wakePlistPath,
   wakeResponse,
+  wakeUnits,
 } from "./wake.ts";
 
 let dir: string;
@@ -20,9 +23,11 @@ const env: Record<string, string | undefined> = {};
 
 beforeAll(async () => {
   dir = await mkdtemp(join(tmpdir(), "ponzu-wake-"));
-  for (const k of ["PONZU_LAUNCH_AGENTS", "PONZU_HOME", "PONZU_APP"]) env[k] = process.env[k];
-  // Never the real ~/Library/LaunchAgents or ~/.ponzu.
+  for (const k of ["PONZU_LAUNCH_AGENTS", "PONZU_SYSTEMD_USER", "PONZU_HOME", "PONZU_APP"])
+    env[k] = process.env[k];
+  // Never the real ~/Library/LaunchAgents, ~/.config/systemd/user or ~/.ponzu.
   process.env.PONZU_LAUNCH_AGENTS = join(dir, "LaunchAgents");
+  process.env.PONZU_SYSTEMD_USER = join(dir, "systemd");
   process.env.PONZU_HOME = join(dir, "home");
 });
 
@@ -140,15 +145,15 @@ test("who knocked, from the socket's address", () => {
 
   const v4 = new Uint8Array(16);
   v4.set([16, 2, 0x1e, 0x62, 100, 64, 0, 2]);
-  expect(sockaddrIp(v4)).toBe("100.64.0.2");
+  expect(sockaddrIp(v4, "darwin")).toBe("100.64.0.2");
   const v6 = new Uint8Array(28);
   v6.set([28, 30]);
   v6.set([0xfd, 0x7a, 0x11, 0x5c, 0xa1, 0xe0, 0, 0, 0, 0, 0, 0, 0x3e, 0x3b, 0xf4, 0x68], 8);
-  expect(sockaddrIp(v6)).toBe("fd7a:115c:a1e0:0:0:0:3e3b:f468");
+  expect(sockaddrIp(v6, "darwin")).toBe("fd7a:115c:a1e0:0:0:0:3e3b:f468");
   const mapped = new Uint8Array(28);
   mapped.set([28, 30]);
   mapped.set([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 100, 64, 0, 2], 8);
-  expect(sockaddrIp(mapped)).toBe("100.64.0.2");
+  expect(sockaddrIp(mapped, "darwin")).toBe("100.64.0.2");
 });
 
 test("the answer is a complete HTTP response the phone can read", () => {
@@ -207,4 +212,89 @@ test("`ponzu wake` doesn't start a second Ponzu when one answers", async () => {
   } finally {
     server.stop(true);
   }
+});
+
+const LINUX = "/opt/Ponzu/resources/server/ponzu";
+
+test("Linux: a systemd socket on 7778 starts `ponzu wake` per connection", () => {
+  const units = wakeUnits(LINUX);
+  const socket = units["ponzu-wake.socket"]!;
+  const service = units["ponzu-wake@.service"]!;
+  expect(socket).toContain("\nListenStream=7778\nAccept=yes\n");
+  expect(socket).toContain("\nBindIPv6Only=both\n");
+  // Every interface, as on the Mac.
+  expect(socket).not.toMatch(/BindToDevice|ListenStream=\S+:/);
+  expect(socket).toContain("WantedBy=sockets.target");
+  expect(service).toContain(`ExecStart="${LINUX}" wake\n`);
+  expect(service).toContain("StandardInput=socket\nStandardOutput=socket\n");
+  // systemd's own syntax in a path stays the path.
+  expect(wakeUnits('/home/a "b"/100%/$HOME/ponzu')["ponzu-wake@.service"]).toContain(
+    'ExecStart="/home/a \\"b\\"/100%%/$$HOME/ponzu" wake',
+  );
+});
+
+test.skipIf(!Bun.which("systemd-analyze"))("systemd reads the units as valid", async () => {
+  // An executable for ExecStart to name.
+  const program = join(dir, "ponzu");
+  await writeFile(program, "#!/bin/sh\n");
+  await Bun.spawn(["chmod", "+x", program]).exited;
+  const units = join(dir, "verify");
+  await mkdir(units, { recursive: true });
+  for (const [name, text] of Object.entries(wakeUnits(program)))
+    await writeFile(join(units, name), text);
+  const out = spawnSync(
+    "systemd-analyze",
+    ["verify", "--man=no", join(units, "ponzu-wake.socket"), join(units, "ponzu-wake@.service")],
+    { encoding: "utf8" },
+  );
+  expect(out.stderr.split("\n").filter((l) => /ponzu-wake/.test(l))).toEqual([]);
+});
+
+test("Linux: installing writes the units and listens, and does nothing more when current", async () => {
+  const calls: string[][] = [];
+  let listening = false;
+  const run = (args: string[]) => {
+    calls.push(args);
+    if (args[0] === "restart") listening = true;
+    if (args[0] === "disable") listening = false;
+    return args[0] === "is-active" ? listening : true;
+  };
+  expect(await installSystemdWake(LINUX, run)).toBe(true);
+  const units = join(dir, "systemd");
+  expect(await readFile(join(units, "ponzu-wake.socket"), "utf8")).toBe(
+    wakeUnits(LINUX)["ponzu-wake.socket"]!,
+  );
+  expect(calls.map((c) => c.join(" "))).toEqual([
+    "daemon-reload",
+    "enable ponzu-wake.socket",
+    "restart ponzu-wake.socket",
+  ]);
+
+  calls.length = 0;
+  expect(await installSystemdWake(LINUX, run)).toBe(false);
+  expect(calls.map((c) => c[0])).toEqual(["is-active"]);
+
+  // A new AppImage copy, or the .deb after an AppImage: the service follows.
+  const copy = "/home/me/.ponzu/app/ponzu";
+  expect(await installSystemdWake(copy, run)).toBe(true);
+  expect(await readFile(join(units, "ponzu-wake@.service"), "utf8")).toContain(copy);
+
+  await uninstallSystemdWake(run);
+  expect(listening).toBe(false);
+  expect(await Bun.file(join(units, "ponzu-wake.socket")).exists()).toBe(false);
+  expect(await Bun.file(join(units, "ponzu-wake@.service")).exists()).toBe(false);
+});
+
+test("Linux's sockaddr: a 16-bit family first, AF_INET6 10", () => {
+  const v4 = new Uint8Array(128);
+  v4.set([2, 0, 0x1e, 0x62, 100, 64, 0, 2]);
+  expect(sockaddrIp(v4, "linux")).toBe("100.64.0.2");
+  const v6 = new Uint8Array(128);
+  v6.set([10, 0, 0x1e, 0x62, 0, 0, 0, 0]);
+  v6.set([0xfd, 0x7a, 0x11, 0x5c, 0xa1, 0xe0, 0, 0, 0, 0, 0, 0, 0x3e, 0x3b, 0xf4, 0x68], 8);
+  expect(sockaddrIp(v6, "linux")).toBe("fd7a:115c:a1e0:0:0:0:3e3b:f468");
+  // The Mac's layout read as Linux's isn't mistaken for an address.
+  const bsd = new Uint8Array(128);
+  bsd.set([16, 2, 0x1e, 0x62, 100, 64, 0, 2]);
+  expect(sockaddrIp(bsd, "linux")).toBe(null);
 });

@@ -151,12 +151,12 @@ function setupAgents() {
 }
 
 /**
- * The wake helper (`ponzu wake install`): a LaunchAgent that starts Ponzu in the
- * background when the iPhone app knocks on port 7778. Installed builds only, on
- * every launch, so it follows the app when it moves; unchanged, it's left alone.
+ * The wake helper (`ponzu wake install`): a LaunchAgent, or on Linux a systemd user socket,
+ * that starts Ponzu in the background when the iPhone app knocks on port 7778. Installed builds
+ * only, on every launch, so it follows the app when it moves; unchanged, it's left alone.
  */
 function setupWake() {
-  if (process.platform !== "darwin" || isDev) return;
+  if ((process.platform !== "darwin" && process.platform !== "linux") || isDev) return;
   if (!existsSync(paths.server)) return;
   const child = spawn(paths.server, ["wake", "install"], { stdio: "ignore" });
   child.on("error", () => {});
