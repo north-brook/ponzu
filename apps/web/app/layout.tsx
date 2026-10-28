@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Funnel_Display, IBM_Plex_Mono, Inter } from "next/font/google";
 import type { ReactNode } from "react";
+import { DEVICE_SCRIPT } from "@/components/device";
+import { Handoff } from "@/components/handoff";
 import { DESCRIPTION, TITLE } from "@/components/share";
 import "./globals.css";
 
@@ -61,8 +63,20 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={`${inter.variable} ${funnelDisplay.variable} ${plexMono.variable}`}>
-      <body>{children}</body>
+    // The device script marks phones on <html> before it paints (components/device.ts).
+    <html
+      lang="en"
+      className={`${inter.variable} ${funnelDisplay.variable} ${plexMono.variable}`}
+      suppressHydrationWarning
+    >
+      <head>
+        {/* biome-ignore lint/security/noDangerouslySetInnerHtml: a fixed script of our own, run before paint */}
+        <script dangerouslySetInnerHTML={{ __html: DEVICE_SCRIPT }} />
+      </head>
+      <body>
+        {children}
+        <Handoff />
+      </body>
     </html>
   );
 }

@@ -14,11 +14,24 @@ export function Nav() {
     <StickyBar>
       <Lockup size={23} />
       <div className="flex items-center gap-7 text-sm text-muted">
-        <a className="flex items-center gap-2 hover:text-ink max-[720px]:hidden" href={REPO}>
+        <a
+          className="desktop-only flex items-center gap-2 hover:text-ink max-[720px]:hidden"
+          href={REPO}
+        >
           <GitHub />
           GitHub
         </a>
-        <DownloadButton size="sm">Download</DownloadButton>
+        {/* A phone can't run Ponzu: its header keeps GitHub, and the page's own button hands off. */}
+        <a
+          className="phone-only -mr-3 flex size-11 items-center justify-center text-[19px] hover:text-ink"
+          href={REPO}
+          aria-label="GitHub"
+        >
+          <GitHub />
+        </a>
+        <DownloadButton size="sm" className="desktop-only">
+          Download
+        </DownloadButton>
       </div>
     </StickyBar>
   );
