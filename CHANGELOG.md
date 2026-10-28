@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.61.0](https://github.com/north-brook/ponzu/compare/v1.60.0...v1.61.0) (2026-10-28)
+
+
+### Features
+
+* five use-case demos on the homepage ([#290](https://github.com/north-brook/ponzu/issues/290)) ([6a8bf39](https://github.com/north-brook/ponzu/commit/6a8bf39292bd585b5ef1544267e5b53ecfa842cc))
+
 ## [1.60.0](https://github.com/north-brook/ponzu/compare/v1.59.3...v1.60.0) (2026-10-28)
 
 
