@@ -43,7 +43,7 @@ Nobody bumps versions or pushes tags by hand.
 [Release Please](https://github.com/googleapis/release-please) releases two
 components, each with its own release PR:
 
-- **The Mac app and CLI** (the root package, tags `vX.Y.Z`): `chore(main):
+- **The desktop app and CLI** (the root package, tags `vX.Y.Z`): `chore(main):
   release X.Y.Z` collects every `feat` and `fix` on `main` into `CHANGELOG.md`.
   Changes only under `apps/mobile` don't count.
 - **The iPhone app** (`apps/mobile`, tags `mobile-vX.Y.Z`): `chore(main):
@@ -53,20 +53,37 @@ components, each with its own release PR:
   [docs/mobile.md](docs/mobile.md#releases).
 
 The release workflow turns on auto-merge for both. Once a release PR's checks
-pass it merges, and for the Mac app
+pass it merges, and for the desktop app
 [`release.yml`](.github/workflows/release.yml):
 
 1. Tags `vX.Y.Z` and opens a draft GitHub release with the changelog.
-2. Builds the Mac app on a macOS runner, signs it with Northbrook's Developer ID,
-   notarizes and staples it, and uploads the DMG, the update zip and
-   `latest-mac.yml` into the draft.
-3. Verifies the signature, the notarization ticket and Gatekeeper's verdict,
-   then launches the exact signed app and waits for it to start its server and
-   paint the studio (`PONZU_SMOKE=1`, see `apps/desktop/src/smoke.ts`).
-4. Publishes the release. Only now can the site's download link and
-   installed apps see it.
+2. Builds every platform from that tag at once, each uploading into the draft:
+   - **macOS** (Apple silicon): signs it with Northbrook's Developer ID,
+     notarizes and staples it, and uploads the DMG, the update zip and
+     `latest-mac.yml`. Then it verifies the signature, the notarization ticket
+     and Gatekeeper's verdict.
+   - **Windows** (x64, beta): a one-click NSIS installer that installs for the
+     person only, under `%LOCALAPPDATA%\Programs\ponzu`, and `latest.yml`.
+     It isn't signed yet, so SmartScreen asks before its first launch.
+     Uninstalling removes what the app registered for the person
+     (`apps/desktop/build/uninstall.ps1`).
+   - **Linux** (x64, beta): an AppImage, a `.deb` (which installs to
+     `/opt/Ponzu` and links `/usr/bin/ponzu`), and `latest-linux.yml`.
+     Removing the `.deb` removes the wake helper's units that ran it, from each
+     person's `~/.config/systemd/user` (`apps/desktop/build/deb-after-remove.sh`).
 
-Beside the Mac build, the same version of the CLI goes to npm as `ponzu`, which
+   Each launches what it built and waits for it to start its server and paint
+   the studio (`PONZU_SMOKE=1`, see `apps/desktop/src/smoke.ts`): the signed
+   Mac app, the Windows app as its installer installed it (then uninstalls
+   it), the AppImage, and the installed `.deb` (then removes it).
+3. Once all three have succeeded, adds `release-notes.json`, downloads the
+   draft, checks every file each platform's feed names is there and unchanged,
+   and that every download below is (`scripts/release-assets.ts`), then
+   publishes the release. Only now can the site's download links and installed
+   apps see it. A platform that fails leaves the draft a draft: every release
+   ships on all three or on none.
+
+Beside the desktop builds, the same version of the CLI goes to npm as `ponzu`, which
 `bunx ponzu` runs: bundled for Bun with the studio
 (`scripts/npm-package.ts`), installed from its tarball and checked to serve
 the studio (`scripts/npm-smoke.ts`, which CI's desktop job also runs), then
@@ -77,17 +94,35 @@ release PR. To hold a release, close its release PR; the next push to `main`
 reopens it. To rebuild an existing release after a build-only fix, run the
 Release workflow by hand with its tag.
 
+To try the pipeline without releasing, run it with **publish** off: it builds,
+launches and checks every platform and keeps the builds as the run's artifacts,
+touching no release. With no tag it builds the branch it runs from:
+`gh workflow run release.yml --ref <branch> -f publish=false`. Only `main` may
+sign the Mac, so from any other branch it builds Windows and Linux.
+
 Installed apps check for a newer release at launch and every four hours,
 download it in the background, and show Update in the title bar once it's
-ready. One click installs it on every one of the person's Macs on their
-tailnet, the clicked one last; a Mac that was off catches up once it's back
-and nobody is using it. It also installs on quit (`apps/desktop/src/updater.ts`,
-`packages/core/src/update.ts`). The DMG keeps one name across versions, so
-<https://github.com/north-brook/ponzu/releases/latest/download/Ponzu-arm64.dmg>
-always downloads the newest build.
+ready. One click installs it on every one of the person's computers on their
+tailnet, the clicked one last; one that was off catches up once it's back and
+nobody is using it. It also installs on quit (`apps/desktop/src/updater.ts`,
+`packages/core/src/update.ts`). The `.deb` is the exception: dpkg asks for an
+admin's password, so it installs only when the person clicks Update on that
+computer. A build run from an unpacked folder doesn't update itself and offers
+no Update. Each download keeps one name across versions, so these always fetch
+the newest build:
 
-Signing secrets live in the `release-signing` environment, which only `main`
-can use: `APPLE_CERTIFICATE` (the Developer ID `.p12`, base64),
+| Platform | Download |
+|---|---|
+| macOS, Apple silicon | <https://github.com/north-brook/ponzu/releases/latest/download/Ponzu-arm64.dmg> |
+| Windows x64 | <https://github.com/north-brook/ponzu/releases/latest/download/Ponzu-x64.exe> |
+| Linux x64, AppImage | <https://github.com/north-brook/ponzu/releases/latest/download/Ponzu-x64.AppImage> |
+| Linux x64, Debian and Ubuntu | <https://github.com/north-brook/ponzu/releases/latest/download/Ponzu-x64.deb> |
+
+The AppImage's name has no version, so an update replaces it at the same path,
+where agents and the desktop entry the app writes find it.
+
+Signing secrets (the Mac's; Windows and Linux builds aren't signed) live in
+the `release-signing` environment, which only `main` can use: `APPLE_CERTIFICATE` (the Developer ID `.p12`, base64),
 `APPLE_CERTIFICATE_PASSWORD`, `APPLE_API_KEY_BASE64` (an App Store Connect API
 key), `APPLE_API_KEY_ID` and `APPLE_API_ISSUER`. `RELEASE_TOKEN` is a
 repository secret: a token that can open and merge pull requests, so the

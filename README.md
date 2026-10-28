@@ -32,7 +32,7 @@ bunx ponzu open north-brook/ponzu/examples/kettle.design
 
 This clones the repo into `~/Ponzu/north-brook/ponzu` (or reuses the clone there) and serves that design. It takes the same path as the [web viewer](#share-it-from-github), with `@branch` after the repo, or a `ponzu.design/gh` or `github.com` link.
 
-Or [download the Mac app](https://ponzu.design/download) (Apple silicon, signed and notarized; it updates itself). It opens `.design` folders like documents, and on first launch it sets up Claude Code, Codex and Cursor for you. There's nothing else to install or keep running.
+Or [download the Mac app](https://ponzu.design/download) (Apple silicon, signed and notarized; it updates itself). Windows (x64) and Linux (x64, an AppImage or a `.deb`) builds are in beta, on the [releases page](https://github.com/north-brook/ponzu/releases/latest); they update themselves too, and the Windows one isn't signed yet, so SmartScreen asks before its first launch. It opens `.design` folders like documents, and on first launch it sets up Claude Code, Codex and Cursor for you. There's nothing else to install or keep running.
 
 The app also puts `ponzu` in your terminal, running from inside the app so it updates with it. It links the command into a folder your shell already searches that you can write to (`~/.local/bin`, `~/bin` or `/usr/local/bin`), never over another `ponzu`. If there's no such folder, choose **Ponzu › Install Terminal Command…**, which asks for your password to add it to `/usr/local/bin`.
 
