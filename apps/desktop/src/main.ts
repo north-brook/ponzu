@@ -14,9 +14,12 @@ const isDev = !app.isPackaged;
 /** The built main/preload live in <app>/dist, in development and inside the bundle. */
 const here = join(app.getAppPath(), "dist");
 
+/** The bundled CLI: `bun build --compile` names it ponzu.exe on Windows. */
+const SERVER_BIN = process.platform === "win32" ? "server/ponzu.exe" : "server/ponzu";
+
 /** Paths inside the app bundle, or the monorepo during development. */
 const paths = {
-  server: isDev ? join(here, "server/ponzu") : join(process.resourcesPath, "server/ponzu"),
+  server: join(isDev ? here : process.resourcesPath, SERVER_BIN),
   studio: isDev ? join(here, "../../studio/dist") : join(process.resourcesPath, "studio"),
   preload: join(here, "preload.cjs"),
 };
