@@ -443,10 +443,19 @@ export function Canvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linked, doc, measured]);
 
-  // Follow focus requests (agent created an artboard).
+  // Follow an agent to the boards it makes, until the person moves the camera themselves: then
+  // it's theirs, and an agent's new board doesn't pull them off the one they're on. Each file
+  // opened starts out following.
+  const tookCamera = useRef(false);
+  const takeCamera = () => {
+    tookCamera.current = true;
+  };
+  useEffect(() => {
+    tookCamera.current = false;
+  }, [given]);
   useEffect(() => {
     const f = state.focus;
-    if (!f || !doc) return;
+    if (!f || !doc || tookCamera.current) return;
     showBoard(f.page, findArtboard(doc, f.artboard)?.artboard);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.focus?.at]);
@@ -574,6 +583,7 @@ export function Canvas({
   }, [pageKey]);
 
   const goToPage = (id: string) => {
+    takeCamera();
     setPageId(id);
     setPending(null);
     setOpenThread(null);
@@ -603,18 +613,22 @@ export function Canvas({
       } else if (mod && (e.key === "=" || e.key === "+")) {
         e.preventDefault();
         const v = viewportSize();
+        takeCamera();
         zoomAt(1.25, v.w / 2, v.h / 2);
       } else if (mod && e.key === "-") {
         e.preventDefault();
         const v = viewportSize();
+        takeCamera();
         zoomAt(0.8, v.w / 2, v.h / 2);
       } else if (e.shiftKey && !mod && !e.altKey && digit === "1") {
         // ⇧1 and ⇧2 by e.code too: ⇧ turns e.key into "!" and "@".
+        takeCamera();
         fitPage();
       } else if (e.shiftKey && !mod && !e.altKey && digit === "2" && selection[0] && doc) {
         const hit = locate(doc, selection[0]);
         if (hit) {
           const { w } = size(hit.artboard);
+          takeCamera();
           fit(
             { x: hit.artboard.x, y: hit.artboard.y, w, h: boardHeight(hit.artboard) },
             viewportSize(),
@@ -1061,7 +1075,13 @@ export function Canvas({
   const arriving = arrivals.boardsArriving(boards);
 
   return (
-    <div className={cn("pz-root", `pz-${theme}`, still && "pz-still", className)}>
+    <div
+      className={cn("pz-root", `pz-${theme}`, still && "pz-still", className)}
+      onPointerDownCapture={takeCamera}
+      onWheelCapture={takeCamera}
+      // A control pressed from the keyboard clicks without a pointer.
+      onClickCapture={takeCamera}
+    >
       <Pacer />
       <div
         ref={viewport}
