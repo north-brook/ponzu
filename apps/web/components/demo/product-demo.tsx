@@ -22,6 +22,7 @@ import "./ponzu.css";
 import "./demo.css";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ClaudeApp } from "./claude-app";
+import { DemoVideo } from "./demo-video";
 import {
   BEATS,
   type BeatId,
@@ -29,11 +30,14 @@ import {
   COMMENTS,
   type Comment,
   index,
+  LABEL,
   LAST,
+  STORIES,
   TYPING_MS,
   typedAt,
 } from "./script";
 import type { DemoDesign } from "./seekle";
+import { useSystemTheme } from "./theme";
 
 /**
  * The scene is laid out at a fixed size and scaled to fit. Wide, the studio and the terminal sit
@@ -216,6 +220,13 @@ function aimAt(s: Shot, view: { w: number; h: number }): Aim {
   };
 }
 
+/**
+ * Recording the phones' videos (`?demo=record`, scripts/record-demo.ts): the camera holds steady
+ * between moves. A few px of wander every frame costs a video more than all the rest of the motion.
+ */
+const RECORDING =
+  typeof location !== "undefined" && new URLSearchParams(location.search).get("demo") === "record";
+
 /** The camera's spring: settles in about this long, a touch under critically damped. */
 const SPRING_PERIOD_S = 0.85;
 const SPRING_DAMPING = 0.88;
@@ -250,7 +261,7 @@ function useCamera(
       last = now;
       if (hold && state) return;
       const goal = aimAt(shotAt(beat, t), view);
-      if (!still) {
+      if (!still && !RECORDING) {
         // A hand on a trackpad: a few px of wander, never quite repeating.
         const s = now / 1000;
         const zoom = Math.exp(goal.lz);
@@ -289,23 +300,38 @@ function leaving(beat: number): Comment | undefined {
   });
 }
 
-const DARK = "(prefers-color-scheme: dark)";
+/**
+ * Where the demo plays as a video (DemoVideo) instead of live: on phones and tablets, and in narrow
+ * windows. The real boards loop hundreds of animations, and at a phone's pixel density that's more
+ * than iOS Safari lets a tab hold: it kills the page. `?demo=live` or `?demo=video` picks one, to
+ * check either anywhere; `?demo=record` is live, for recording the videos (scripts/record-demo.ts).
+ */
+const RECORDED = "(any-pointer: coarse), (max-width: 720px)";
 
-/** The system's color scheme, live, as the site follows it. Light on the server. */
-function useSystemTheme(): "light" | "dark" {
-  const dark = useSyncExternalStore(
+/** Whether the demo plays live here; unknown on the server, so neither mounts until we know. */
+function useLive(): boolean | null {
+  return useSyncExternalStore(
     (onChange) => {
-      const list = matchMedia(DARK);
+      const list = matchMedia(RECORDED);
       list.addEventListener("change", onChange);
       return () => list.removeEventListener("change", onChange);
     },
-    () => matchMedia(DARK).matches,
-    () => false,
+    () => {
+      const asked = new URLSearchParams(location.search).get("demo");
+      if (asked === "live" || asked === "record" || asked === "video") return asked !== "video";
+      return !matchMedia(RECORDED).matches;
+    },
+    () => null,
   );
-  return dark ? "dark" : "light";
 }
 
 export function ProductDemo() {
+  const live = useLive();
+  if (live === null) return <div className="dm-frame relative w-full" />;
+  return live ? <LiveDemo /> : <DemoVideo story={STORIES[0].id} label={LABEL} />;
+}
+
+function LiveDemo() {
   const wrap = useRef<HTMLDivElement>(null);
   /** The design it draws, fetched once the demo mounts: it's too big to ship in the page. */
   const [design, setDesign] = useState<DemoDesign | null>(null);
@@ -413,7 +439,7 @@ export function ProductDemo() {
     <div
       ref={wrap}
       role="img"
-      aria-label="Claude Code rebuilds Seekle, an iPhone game, on the Ponzu canvas from the app's source: its screens, then every one of its animations, looping. It explores the game's feel in twelve animated studies; you comment on two, it combines them into three full directions, and you pick one. It designs the website hero; you ask for friends round the phone and it adds them, orbiting. Last, it makes fifteen App Store screenshots in three directions."
+      aria-label={LABEL}
       className="dm-frame relative w-full"
       data-sized={fit ? "" : undefined}
       style={{ height: fit ? size.height * fit.scale : undefined }}
@@ -423,6 +449,7 @@ export function ProductDemo() {
           <div
             aria-hidden="true"
             className="dm absolute top-0 left-0 origin-top-left"
+            data-hold={onScreen ? undefined : ""}
             style={{ width: size.width, height: size.height, scale: String(fit.scale) }}
           >
             <div
@@ -450,6 +477,7 @@ export function ProductDemo() {
           <div
             aria-hidden="true"
             className="dm absolute top-0 left-0 grid origin-top-left gap-4"
+            data-hold={onScreen ? undefined : ""}
             style={{
               width: size.width,
               height: size.height,
