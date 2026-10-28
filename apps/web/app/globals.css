@@ -38,6 +38,11 @@
   /* Citrus highlights: the selected file and the cursor on the download page. */
   --m1: #ffc81e;
   --m2: #ffc81e;
+  /* The handoff sheet's quiet buttons, a step off the sheet; and "done" green. */
+  --sheet-chip: #f4f3ef;
+  --sheet-scrim: rgb(0 0 0 / 0.36);
+  --sheet-shadow: rgb(17 17 16 / 0.14);
+  --ok: #1f8a4c;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -70,6 +75,10 @@
     --nav-shadow: rgb(0 0 0 / 0.6);
     --m1: #ffc81e;
     --m2: #ffc81e;
+    --sheet-chip: #2a2927;
+    --sheet-scrim: rgb(0 0 0 / 0.55);
+    --sheet-shadow: rgb(0 0 0 / 0.6);
+    --ok: #4cc27a;
   }
 }
 
@@ -96,6 +105,7 @@
   /* Citrus highlights: the selected file and the cursor on the download page. */
   --color-m1: var(--m1);
   --color-m2: var(--m2);
+  --color-ok: var(--ok);
 
   --font-sans: var(--font-inter), system-ui, -apple-system, sans-serif;
   --font-display: var(--font-funnel-display), var(--font-inter), system-ui, sans-serif;
@@ -553,4 +563,228 @@
 .code-well[data-overflows] .code-well-fade {
   margin-right: -1.25rem;
   mask-image: linear-gradient(90deg, #000 calc(100% - 72px), transparent);
+}
+
+/*
+ * Phones and tablets (components/device.ts marks them before the first paint): each sees its own
+ * parts of a page and none of the other's.
+ */
+html:not([data-device="phone"]) .phone-only,
+[data-device="phone"] .desktop-only,
+[data-phone="android"] .ios-only {
+  /* Unlayered, so it wins over Tailwind's display utilities on the same element. */
+  display: none;
+}
+
+/*
+ * The handoff sheet (components/handoff.tsx): a phone sends the download to its computer. It rises
+ * on the house ease while its slice blooms, and the pieces under it rise after it. A send swaps
+ * the pane: the old one leaves upward, the sheet eases to its new height (in the component), and
+ * the slice blooms again on its tile while one yuzu ring breathes out. It drops on the way out.
+ */
+.handoff {
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 0.8, 0.2);
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  padding: 8px;
+  border: 0;
+  background: transparent;
+  overflow: hidden;
+}
+.handoff[open] {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.handoff::backdrop {
+  background: var(--sheet-scrim);
+  animation: handoff-fade 240ms ease-out both;
+}
+.handoff[data-closing]::backdrop {
+  animation: handoff-fade 280ms ease-in reverse both;
+}
+.handoff-sheet {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  overflow: hidden;
+  border-radius: 38px;
+  background: var(--well);
+  padding: 8px 20px max(30px, env(safe-area-inset-bottom));
+  box-shadow: 0 -12px 48px var(--sheet-shadow);
+  animation: handoff-rise 460ms var(--ease) both;
+}
+/* On an iPad it's a card in the middle of the screen. */
+.handoff[data-phone="ipad"][open] {
+  align-items: center;
+}
+.handoff[data-phone="ipad"] .handoff-sheet {
+  padding-bottom: 28px;
+}
+.handoff[data-closing] .handoff-sheet {
+  animation: handoff-drop 280ms var(--ease-in) both;
+}
+.handoff-grabber {
+  display: block;
+  width: 36px;
+  height: 5px;
+  margin: 0 auto 21px;
+  border-radius: 99px;
+  background: var(--outline);
+}
+.handoff-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.handoff-pane[data-leaving] {
+  animation: handoff-leave 180ms var(--ease-in) both;
+}
+.handoff-tile {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  background: #111110;
+}
+.handoff-bloom .slice-seg {
+  transform-origin: 32px 32px;
+  animation: handoff-bloom 700ms var(--ease) both;
+  animation-delay: calc(160ms + var(--i) * 50ms);
+}
+.handoff-sent-tile .slice-seg {
+  animation-duration: 900ms;
+  animation-delay: calc(150ms + var(--i) * 70ms);
+}
+.handoff-rise {
+  animation: handoff-in 380ms var(--ease) both;
+  animation-delay: calc(200ms + var(--k) * 45ms);
+}
+.handoff-close {
+  display: flex;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  margin: -2px -4px 0 0;
+  border-radius: 99px;
+  background: var(--sheet-chip);
+  color: var(--muted);
+}
+.handoff-copy {
+  display: flex;
+  height: 54px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border-radius: 999px;
+  background: var(--sheet-chip);
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 600;
+  transition:
+    background-color 200ms ease-out,
+    color 200ms ease-out,
+    scale 120ms ease-out;
+}
+.handoff-copy:active {
+  scale: 0.97;
+}
+.handoff-copy[data-copied] {
+  background: color-mix(in srgb, var(--ok) 14%, var(--well));
+  color: var(--ok);
+}
+.handoff-draw path {
+  /* The check's stroke is about 20 units long in its 24-unit box. */
+  stroke-dasharray: 22;
+  stroke-dashoffset: 22;
+  animation: handoff-draw 320ms var(--ease) 60ms both;
+}
+.handoff-mark {
+  position: relative;
+  display: block;
+  width: 64px;
+  height: 64px;
+}
+.handoff-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  box-shadow: 0 0 0 2px #ffc81e;
+  opacity: 0;
+  animation: handoff-ring 680ms var(--ease) 1050ms both;
+}
+
+@keyframes handoff-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes handoff-rise {
+  from {
+    translate: 0 105%;
+  }
+}
+@keyframes handoff-drop {
+  to {
+    translate: 0 105%;
+  }
+}
+@keyframes handoff-in {
+  from {
+    opacity: 0;
+    translate: 0 10px;
+  }
+}
+@keyframes handoff-leave {
+  to {
+    opacity: 0;
+    translate: 0 -6px;
+  }
+}
+@keyframes handoff-bloom {
+  from {
+    scale: 0;
+    rotate: -60deg;
+  }
+}
+@keyframes handoff-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes handoff-ring {
+  from {
+    opacity: 0.8;
+    scale: 1;
+  }
+  to {
+    opacity: 0;
+    scale: 1.45;
+  }
+}
+
+/* Reduced motion: the sheet and its scrim fade, and states swap in place. */
+@media (prefers-reduced-motion: reduce) {
+  .handoff-sheet,
+  .handoff[data-closing] .handoff-sheet {
+    animation: handoff-fade 200ms ease-out both;
+  }
+  .handoff-bloom .slice-seg,
+  .handoff-rise,
+  .handoff-pane[data-leaving],
+  .handoff-ring,
+  .handoff-draw path {
+    animation: none;
+  }
+  .handoff-draw path {
+    stroke-dashoffset: 0;
+  }
 }

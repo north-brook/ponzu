@@ -10,7 +10,7 @@ import { ProductDemo } from "@/components/demo/product-demo";
 import { HomeScreen } from "@/components/home-screen";
 import { Apple, Slice } from "@/components/icons";
 import { IPhone } from "@/components/iphone";
-import { DownloadButton, GitHubButton, TESTFLIGHT } from "@/components/links";
+import { DownloadButton, GitHubButton, PhonePlatforms, TESTFLIGHT } from "@/components/links";
 import { DESCRIPTION, share, TITLE } from "@/components/share";
 import { SLICE_CSS } from "@/components/slice-demo";
 
@@ -44,8 +44,9 @@ export default function Home() {
         </p>
         <div className="flex flex-wrap justify-center gap-3 pt-3">
           <DownloadButton>Download for Mac</DownloadButton>
-          <GitHubButton>View on GitHub</GitHubButton>
+          <GitHubButton className="desktop-only">View on GitHub</GitHubButton>
         </div>
+        <PhonePlatforms />
       </header>
 
       {/*
@@ -166,8 +167,9 @@ export default function Home() {
         </h2>
         <div className="flex flex-wrap justify-center gap-3 pt-3">
           <DownloadButton>Download for Mac</DownloadButton>
-          <GitHubButton>View on GitHub</GitHubButton>
+          <GitHubButton className="desktop-only">View on GitHub</GitHubButton>
         </div>
+        <PhonePlatforms />
       </section>
 
       <Footer />

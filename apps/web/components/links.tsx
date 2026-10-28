@@ -1,5 +1,7 @@
-import type { MouseEventHandler, ReactNode } from "react";
-import { Apple, GitHub } from "./icons";
+import type { ComponentProps, ReactNode } from "react";
+import { btn } from "./button";
+import { DownloadButton as ClientDownloadButton } from "./download-button";
+import { GitHub } from "./icons";
 
 export const REPO = "https://github.com/north-brook/ponzu";
 export const RELEASES = `${REPO}/releases/latest`;
@@ -19,35 +21,57 @@ export const TESTFLIGHT: string | null = "https://testflight.apple.com/join/JXpn
 /** The iPhone tile on the home page. */
 export const IPHONE = "/#iphone";
 
-const btn =
-  "inline-flex items-center gap-[9px] whitespace-nowrap rounded-full font-semibold transition-[translate,opacity] duration-150 ease-out hover:-translate-y-px";
-
+/** The Download button (components/download-button.tsx), to the install steps unless told otherwise. */
 export function DownloadButton({
-  size = "lg",
   href = DOWNLOAD,
-  onClick,
+  ...props
+}: Omit<ComponentProps<typeof ClientDownloadButton>, "href"> & { href?: string }) {
+  return <ClientDownloadButton href={href} {...props} />;
+}
+
+export function GitHubButton({
+  className = "",
   children,
 }: {
-  size?: "sm" | "lg";
-  href?: string;
-  onClick?: MouseEventHandler<HTMLAnchorElement>;
+  className?: string;
   children: ReactNode;
 }) {
-  const sizing =
-    size === "sm" ? "gap-[7px] py-[9px] pr-4 pl-3.5 text-sm" : "py-[15px] pr-6 pl-5 text-base";
   return (
-    <a className={`${btn} ${sizing} bg-cta text-cta-ink`} href={href} onClick={onClick}>
-      <Apple />
+    <a
+      className={`${btn} bg-chip py-[15px] pr-6 pl-5 text-base text-text ${className}`}
+      href={REPO}
+    >
+      <GitHub />
       {children}
     </a>
   );
 }
 
-export function GitHubButton({ children }: { children: ReactNode }) {
+/**
+ * Under the Download button on a phone, which hands the download to a computer: the other way to get
+ * Ponzu there, the iPhone beta. Hidden on Android, where it can't install.
+ */
+export function PhonePlatforms() {
+  if (!TESTFLIGHT) return null;
   return (
-    <a className={`${btn} bg-chip py-[15px] pr-6 pl-5 text-base text-text`} href={REPO}>
-      <GitHub />
-      {children}
-    </a>
+    <p className="phone-only ios-only m-0 -mt-2 flex items-center justify-center text-sm text-muted">
+      <a className="inline-flex h-11 items-center gap-1.5 px-1" href={TESTFLIGHT}>
+        <svg viewBox="0 0 14 16" width={11} height={14} fill="none" aria-hidden="true">
+          <rect
+            x="2.5"
+            y="0.8"
+            width="9"
+            height="14.4"
+            rx="2.2"
+            stroke="currentColor"
+            strokeWidth={1.6}
+          />
+        </svg>
+        <span className="underline decoration-outline underline-offset-4">iPhone beta</span>
+        <span aria-hidden="true" className="text-xs text-faint">
+          ↗
+        </span>
+      </a>
+    </p>
   );
 }
