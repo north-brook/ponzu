@@ -134,7 +134,8 @@ async function record(browser: Browser, story: (typeof STORIES)[number], scheme:
   await page.waitForTimeout(500);
   await page.evaluate(SETTLE);
 
-  // Where it sits on the page, which is what a capture's clip is measured from.
+  // Where it sits on the page, which is what a capture's clip is measured from. The clip's scale
+  // is from CSS px, whatever the device scale: SCALE gives 2× frames.
   const clip = await frame.evaluate((el, scale) => {
     const r = el.getBoundingClientRect();
     return { x: r.x + scrollX, y: r.y + scrollY, width: r.width, height: r.height, scale };
