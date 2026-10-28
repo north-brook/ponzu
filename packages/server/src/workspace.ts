@@ -33,7 +33,8 @@ export interface WorkspaceOptions {
   openAnything?: boolean;
   /**
    * Keep each design's .ponzu/preview.png current while a renderer is available,
-   * for Finder's icons. Default: on macOS.
+   * for Finder's icons and the home screen's cards. Default: on macOS, and in the
+   * desktop app anywhere, which renders in its own windows rather than a Chrome.
    */
   previews?: boolean;
   /** Keep each design's .ponzu/journal.ndjson, its history of every change. Default true. */
@@ -278,7 +279,10 @@ export class LocalWorkspace implements Workspace {
    * so a burst of edits across files doesn't open a window per file.
    */
   private get previewsOn(): boolean {
-    return Boolean(this.renderer) && (this.opts.previews ?? process.platform === "darwin");
+    return (
+      Boolean(this.renderer) &&
+      (this.opts.previews ?? (process.platform === "darwin" || process.env.PONZU_DESKTOP === "1"))
+    );
   }
 
   private schedulePreview(key: string): void {
