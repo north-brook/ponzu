@@ -443,10 +443,19 @@ export function Canvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linked, doc, measured]);
 
-  // Follow focus requests (agent created an artboard).
+  // Follow an agent to the boards it makes, until the person moves the camera themselves: then
+  // it's theirs, and an agent's new board doesn't pull them off the one they're on. Each file
+  // opened starts out following.
+  const tookCamera = useRef(false);
+  const takeCamera = () => {
+    tookCamera.current = true;
+  };
+  useEffect(() => {
+    tookCamera.current = false;
+  }, [source]);
   useEffect(() => {
     const f = state.focus;
-    if (!f || !doc) return;
+    if (!f || !doc || tookCamera.current) return;
     showBoard(f.page, findArtboard(doc, f.artboard)?.artboard);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.focus?.at]);
@@ -593,6 +602,8 @@ export function Canvas({
       const mod = e.metaKey || e.ctrlKey;
       // ⌥1–9: pages, by e.code since ⌥ changes e.key on a Mac. 9 is the last.
       const digit = /^Digit([1-9])$/.exec(e.code)?.[1];
+      if ((mod && ["=", "+", "-"].includes(e.key)) || (digit && (e.altKey || e.shiftKey)))
+        takeCamera();
       if (e.altKey && !mod && !e.shiftKey && digit && doc) {
         e.preventDefault();
         const p = digit === "9" ? doc.pages.at(-1) : doc.pages[Number(digit) - 1];
@@ -1061,7 +1072,11 @@ export function Canvas({
   const arriving = arrivals.boardsArriving(boards);
 
   return (
-    <div className={cn("pz-root", `pz-${theme}`, still && "pz-still", className)}>
+    <div
+      className={cn("pz-root", `pz-${theme}`, still && "pz-still", className)}
+      onPointerDownCapture={takeCamera}
+      onWheelCapture={takeCamera}
+    >
       <Pacer />
       <div
         ref={viewport}
