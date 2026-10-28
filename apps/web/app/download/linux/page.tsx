@@ -35,8 +35,9 @@ export default async function Page(props: PageProps<"/download/linux">) {
           Beta, for x64. On Debian or Ubuntu you can use the{" "}
           <FineLink href={asset(DEB)}>.deb</FineLink> instead:{" "}
           <code className="font-mono text-ink">sudo apt install ./{DEB}</code>. Both update
-          themselves. Some distributions need the AppImage started with{" "}
-          <code className="font-mono text-ink">--no-sandbox</code>.
+          themselves; the .deb asks for your password to. The AppImage needs libfuse2 (on Ubuntu
+          24.04 and later, <code className="font-mono text-ink">libfuse2t64</code>) and keeps its
+          name, since updates replace it in place.
         </>
       }
     />
