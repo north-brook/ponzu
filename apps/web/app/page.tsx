@@ -216,9 +216,9 @@ function AgentsVisual() {
           <li
             key={agent.id}
             title={agent.name}
-            className="grid aspect-square place-items-center rounded-[14px] bg-well text-ink shadow-[inset_0_0_0_1px_var(--well-rule)]"
+            className="@container grid aspect-square place-items-center rounded-[14px] bg-well text-ink shadow-[inset_0_0_0_1px_var(--well-rule)]"
           >
-            <AgentMark agent={agent.id} size={28} />
+            <AgentMark agent={agent.id} size="50cqw" />
             <span className="sr-only">{agent.name}</span>
           </li>
         ))}
