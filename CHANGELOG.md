@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.64.0](https://github.com/north-brook/ponzu/compare/v1.63.0...v1.64.0) (2026-10-28)
+
+
+### Features
+
+* keep ponzu running in the tray on windows and linux ([#317](https://github.com/north-brook/ponzu/issues/317)) ([cc5864d](https://github.com/north-brook/ponzu/commit/cc5864d4a5a64534d1a14644047794f991cfa2af))
+
 ## [1.63.0](https://github.com/north-brook/ponzu/compare/v1.62.0...v1.63.0) (2026-10-28)
 
 
