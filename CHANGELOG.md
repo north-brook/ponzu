@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.63.0](https://github.com/north-brook/ponzu/compare/v1.62.0...v1.63.0) (2026-10-28)
+
+
+### Features
+
+* broaden the use-case blurbs and enlarge the agent logos ([#314](https://github.com/north-brook/ponzu/issues/314)) ([1393968](https://github.com/north-brook/ponzu/commit/1393968069985f1fc42e8afd7e6c0dabd6083313))
+
+
+### Bug Fixes
+
+* find and wake the installed app on windows and linux ([#315](https://github.com/north-brook/ponzu/issues/315)) ([63cd333](https://github.com/north-brook/ponzu/commit/63cd33396347c2570a218082f08d8630a880a1fd))
+
 ## [1.62.0](https://github.com/north-brook/ponzu/compare/v1.61.1...v1.62.0) (2026-10-28)
 
 
