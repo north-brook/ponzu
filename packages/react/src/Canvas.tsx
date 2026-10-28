@@ -452,7 +452,7 @@ export function Canvas({
   };
   useEffect(() => {
     tookCamera.current = false;
-  }, [source]);
+  }, [given]);
   useEffect(() => {
     const f = state.focus;
     if (!f || !doc || tookCamera.current) return;
@@ -1079,6 +1079,8 @@ export function Canvas({
       className={cn("pz-root", `pz-${theme}`, still && "pz-still", className)}
       onPointerDownCapture={takeCamera}
       onWheelCapture={takeCamera}
+      // A control pressed from the keyboard clicks without a pointer.
+      onClickCapture={takeCamera}
     >
       <Pacer />
       <div
