@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.60.0](https://github.com/north-brook/ponzu/compare/v1.59.3...v1.60.0) (2026-10-28)
+
+
+### Features
+
+* reframe ponzu as the open source canvas for your agent ([#287](https://github.com/north-brook/ponzu/issues/287)) ([63adad4](https://github.com/north-brook/ponzu/commit/63adad43431b3ddeff21fcec27bf65ade10ea45b))
+
 ## [1.59.3](https://github.com/north-brook/ponzu/compare/v1.59.2...v1.59.3) (2026-10-28)
 
 
