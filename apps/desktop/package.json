@@ -142,6 +142,9 @@
     },
     "linux": {
       "executableName": "ponzu",
+      "mimeTypes": [
+        "application/x-ponzu-design"
+      ],
       "extraResources": [
         {
           "from": "build",
