@@ -230,6 +230,10 @@ jobs:
           restore-keys: electron-${{ runner.os }}-
       - run: bun install --frozen-lockfile
         if: env.RUN == 'true'
+      - name: The CLI finds an installed app and runs it through its shim
+        if: env.RUN == 'true'
+        # The tests that need Windows itself; "Check, typecheck, test" runs the rest.
+        run: bun test apps/cli/src/host.test.ts -t "on Windows"
       - name: Unsigned, unpublished package
         if: env.RUN == 'true'
         run: bun run package:dir

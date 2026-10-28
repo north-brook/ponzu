@@ -3,7 +3,7 @@ import { existsSync, readlinkSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { linkCommand } from "./command.ts";
+import { linkCommand, withDir } from "./command.ts";
 
 const saved = process.env.PONZU_HOME;
 let home: string;
@@ -63,4 +63,26 @@ test("a link the person removed stays removed at launch, and `ponzu install` put
   expect(existsSync(join(local, "ponzu"))).toBe(false);
   await linkCommand(shim, { path: [local], home });
   expect(readlinkSync(join(local, "ponzu"))).toBe(shim);
+});
+
+test("stands in front of the .deb's /usr/bin/ponzu, which opens the app", async () => {
+  const opt = join(home, "opt/Ponzu");
+  await executable(join(opt, "ponzu"));
+  await executable(join(opt, "resources/server/ponzu"));
+  const usrBin = join(home, "usr/bin");
+  await mkdir(usrBin, { recursive: true });
+  await symlink(join(opt, "ponzu"), join(usrBin, "ponzu"));
+  // Behind it on the PATH, a link would never run.
+  await linkCommand(shim, { auto: true, path: [usrBin, local], home });
+  expect(existsSync(join(local, "ponzu"))).toBe(false);
+  await linkCommand(shim, { path: [local, usrBin], home });
+  expect(readlinkSync(join(local, "ponzu"))).toBe(shim);
+});
+
+test("Windows: the shim's folder joins the PATH once, however it's written there", () => {
+  const bin = "C:\\Users\\me\\.ponzu\\bin";
+  expect(withDir("%USERPROFILE%\\bin;C:\\tools", bin)).toBe(`%USERPROFILE%\\bin;C:\\tools;${bin}`);
+  expect(withDir("", bin)).toBe(bin);
+  expect(withDir("C:\\tools;;", bin)).toBe(`C:\\tools;${bin}`);
+  expect(withDir("c:\\users\\ME\\.ponzu\\bin\\;C:\\tools", bin)).toBe(null);
 });
