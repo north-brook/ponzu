@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.71.1](https://github.com/north-brook/ponzu/compare/v1.71.0...v1.71.1) (2026-10-29)
+
+
+### Bug Fixes
+
+* play animations that start from nothing on the canvas ([#336](https://github.com/north-brook/ponzu/issues/336)) ([d54af1e](https://github.com/north-brook/ponzu/commit/d54af1e59a7af32f310b4f63edbfe58aa689f31f))
+
 ## [1.71.0](https://github.com/north-brook/ponzu/compare/v1.70.0...v1.71.0) (2026-10-29)
 
 
