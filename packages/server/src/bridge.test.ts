@@ -49,6 +49,7 @@ beforeAll(async () => {
         return url;
       },
       cwd: dir,
+      restartGrace: 1500,
     },
     theirs,
   );
@@ -115,9 +116,10 @@ test("a wait whose host quits and doesn't come back in time says nothing was che
   const since = cursorOf(
     await agent.callTool({ name: "wait_for_activity", arguments: { file, timeout: 0 } }),
   );
+  // Shorter than the grace the bridge gives Ponzu to come back by itself.
   const waiting = agent.callTool({
     name: "wait_for_activity",
-    arguments: { file, since, timeout: 2 },
+    arguments: { file, since, timeout: 1 },
   });
   await Bun.sleep(300);
   launches = 0;
@@ -130,6 +132,27 @@ test("a wait whose host quits and doesn't come back in time says nothing was che
   expect(r).not.toContain("No open threads");
   expect(cursorOf({ content: [{ type: "text", text: r }] })).toBe(since);
   expect(launches).toBe(0);
+});
+
+test("a wait whose Ponzu can't be started again doesn't answer from the bridge's own copy", async () => {
+  await startHost();
+  const file = join(dir, "shop.design");
+  const since = cursorOf(
+    await agent.callTool({ name: "wait_for_activity", arguments: { file, timeout: 0 } }),
+  );
+  const waiting = agent.callTool({
+    name: "wait_for_activity",
+    arguments: { file, since, timeout: 4 },
+  });
+  await Bun.sleep(300);
+  launches = 0;
+  await stopHost();
+  // Past the grace it asks for Ponzu to be started, which fails here.
+  const r = text(await waiting);
+  expect(launches).toBeGreaterThan(0);
+  expect(r).toContain("nothing was checked");
+  expect(r).not.toContain("Ponzu restarted");
+  expect(r).not.toContain("No open threads");
 });
 
 test("a wait cut off by Ponzu restarting carries on once it's back, and hears what comes next", async () => {

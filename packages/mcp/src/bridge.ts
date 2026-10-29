@@ -39,6 +39,8 @@ export interface BridgeOptions {
   mapArgs?: (tool: string, args: Record<string, unknown>) => Record<string, unknown>;
   /** The agent's working directory, shown in the studio's session card. */
   cwd?: string;
+  /** RESTART_GRACE, for tests. */
+  restartGrace?: number;
 }
 
 /** Longer than wait_for_activity's longest poll. */
@@ -213,7 +215,7 @@ export async function serveBridge(
    * True when one did.
    */
   const hostBack = async (until: number, signal: AbortSignal): Promise<boolean> => {
-    const giveUp = Math.min(until, Date.now() + RESTART_GRACE);
+    const giveUp = Math.min(until, Date.now() + (opts.restartGrace ?? RESTART_GRACE));
     while (!signal.aborted) {
       if (await opts.findHost(false).catch(() => null)) return true;
       if (Date.now() >= giveUp) return false;
@@ -254,7 +256,8 @@ export async function serveBridge(
         ],
       };
     }
-    // The Ponzu it came back to can't tell what happened before it started. With nothing waiting
+    // Only a Ponzu answers a wait that was cut off: the one it came back to, or a new one started
+    // once it didn't. It can't tell what happened before it started. With nothing waiting
     // on the agent, there's nothing to tell it: carry on from the new Ponzu's cursor.
     const wait = result._meta?.[WAIT_META] as { cursor: number; gap?: string; waiting?: number };
     if (!cutOff || wait?.gap !== "restart" || wait.waiting || !left()) return result;
@@ -275,7 +278,8 @@ export async function serveBridge(
 
   /**
    * Run a tool on the host, or else here. `cutOff`, for a read-only call, runs when the host went
-   * away with it, and says what to send again: null answers null.
+   * away with it, and says what to send again: null answers null. A call cut off that way only
+   * runs again on a host: never here, which can't tell what happened on the host meanwhile.
    */
   const call = async (
     params: CallToolRequest["params"],
@@ -321,6 +325,7 @@ export async function serveBridge(
         }
       }
     }
+    if (sent !== params) return null;
     await opts.prepareLocal?.();
     // Files it moves to while the host is down count too, for when the host comes back.
     return remember(
