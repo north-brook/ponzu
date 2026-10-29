@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.69.0](https://github.com/north-brook/ponzu/compare/v1.68.3...v1.69.0) (2026-10-29)
+
+
+### Features
+
+* **server:** find designs to suggest from the person's recent projects ([#292](https://github.com/north-brook/ponzu/issues/292)) ([c3298b6](https://github.com/north-brook/ponzu/commit/c3298b67302448327010222844b2b1cb1edaa0ad))
+
 ## [1.68.3](https://github.com/north-brook/ponzu/compare/v1.68.2...v1.68.3) (2026-10-29)
 
 
