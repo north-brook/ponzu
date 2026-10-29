@@ -217,19 +217,20 @@ fingerprint`; `fingerprint.config.js` leaves the version out of it):
 - **New native code** (a native dependency, a plugin, `app.json`'s native
   config, a font): a new build, sent to TestFlight.
 
-Two EAS workflows (`apps/mobile/.eas/workflows`) do this, each looking up a
-build by fingerprint first:
+One EAS workflow, `apps/mobile/.eas/workflows/production.yml`, does this on
+every `mobile-v*` tag, looking up a build by fingerprint first. There is one
+lane: every TestFlight build is a `production` build, and every installed
+phone listens on the `production` channel. A new build reaches TestFlight's
+internal **Team** group at once (the group distributes every build
+automatically, with no review) and the external **Alpha** group through Beta
+App Review. Release PRs merge themselves, so a fix reaches phones minutes
+after it merges.
 
-| Workflow | Runs on | Channel | A new build goes to |
-| --- | --- | --- | --- |
-| `preview.yml` | a push to `main` touching `apps/mobile`, `packages/core` or `bun.lock` | `preview` | TestFlight's internal **Team** group |
-| `production.yml` | a `mobile-v*` tag | `production` | TestFlight's external **Alpha** group, through Beta App Review |
-
-Updates are published to a channel (`preview`, `production`, the build
-profile's `channel` in `eas.json`), which EAS maps to the branch of the same
-name; `eas channel:view <name>` shows the mapping. A channel pointing at no
-branch serves nothing, so installed phones never update: link it with
-`eas channel:edit <name> --branch <name>`.
+Updates are published to the build profile's `channel` in `eas.json`, which
+EAS maps to the branch of the same name; `eas channel:view production` shows
+the mapping. A channel pointing at no branch serves nothing, so installed
+phones never update: link it with `eas channel:edit production --branch
+production`.
 
 EAS owns build numbers (`appVersionSource: remote`, `autoIncrement`). Run a
 workflow by hand with `eas workflow:run production.yml` from `apps/mobile`.
@@ -264,8 +265,8 @@ new leaves out `iPhone:` notes and every commit that changed only
   `https://ponzu.design/privacy`) and Beta App Review's contact details,
   filled in under TestFlight > Test Information.
 - **EAS environment variables:** `EXPO_PUBLIC_POSTHOG_KEY` (and optionally
-  `EXPO_PUBLIC_POSTHOG_HOST`) in `production` only, so preview and
-  development builds send nothing. `POSTHOG_CLI_API_KEY` (secret) and
+  `EXPO_PUBLIC_POSTHOG_HOST`) in `production` only, so development builds
+  send nothing. `POSTHOG_CLI_API_KEY` (secret) and
   `POSTHOG_CLI_PROJECT_ID` (PostHog project `677204`) there too upload
   source maps: from production builds through PostHog's build plugin in
   `app.config.ts`, and from production updates through

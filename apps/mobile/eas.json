@@ -17,37 +17,14 @@
       "distribution": "internal",
       "environment": "development"
     },
-    "preview": {
-      "extends": "base",
-      "autoIncrement": true,
-      "channel": "preview",
-      "environment": "preview",
-      "ios": {
-        "distribution": "store"
-      }
-    },
     "production": {
       "extends": "base",
       "autoIncrement": true,
       "channel": "production",
       "environment": "production"
-    },
-    "preview-simulator": {
-      "extends": "base",
-      "channel": "preview",
-      "distribution": "internal",
-      "environment": "preview",
-      "ios": {
-        "simulator": true
-      }
     }
   },
   "submit": {
-    "preview": {
-      "ios": {
-        "ascAppId": "6827217192"
-      }
-    },
     "production": {
       "ios": {
         "ascAppId": "6827217192"
