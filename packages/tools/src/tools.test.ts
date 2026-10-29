@@ -535,6 +535,27 @@ test("only threads where the person spoke last count as waiting", async () => {
   expect(r.text).toContain("No open threads are waiting on you.");
 });
 
+test("a thread the person is writing a reply in can't be resolved by an agent", async () => {
+  const { call, design, ws } = await onHub(new EventHub());
+  personComments(design, ws.events, "th_1", "make it blue");
+  let writing = true;
+  ws.writing = (key, thread) => writing && key === "fern" && thread === "th_1";
+  const r = await call("set_comment_status", { thread: "th_1", status: "resolved" });
+  expect(r.isError).toBe(true);
+  expect(r.text).toContain("writing a reply");
+  const replied = await call("reply", { thread: "th_1", text: "Navy?", resolve: true });
+  expect(replied.text).toContain("left it open");
+  const t = () => design.doc.threads.find((x) => x.id === "th_1")!;
+  expect(t().status).toBe("open");
+  expect(t().messages.at(-1)?.text).toBe("Navy?");
+  // Once it's sent, or put down, the agent resolves it as ever.
+  writing = false;
+  expect(
+    (await call("set_comment_status", { thread: "th_1", status: "resolved" })).isError,
+  ).toBeFalsy();
+  expect(t().status).toBe("resolved");
+});
+
 test("a wait with a cursor still in the ring hears what came after it", async () => {
   const { call, design, ws, captured } = await onHub(new EventHub());
   const since = ws.events.cursor;

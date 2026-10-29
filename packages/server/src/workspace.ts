@@ -33,7 +33,8 @@ export interface WorkspaceOptions {
   openAnything?: boolean;
   /**
    * Keep each design's .ponzu/preview.png current while a renderer is available,
-   * for Finder's icons. Default: on macOS.
+   * for Finder's icons and the home screen's cards. Default: on macOS, and in the
+   * desktop app anywhere, which renders in its own windows rather than a Chrome.
    */
   previews?: boolean;
   /** Keep each design's .ponzu/journal.ndjson, its history of every change. Default true. */
@@ -71,6 +72,8 @@ export class LocalWorkspace implements Workspace {
   opensIn?: "app" | { origin: string };
   /** This Mac's tailnet name, while Tailscale runs: links to the Mac app name it. */
   mac?: string;
+  /** Each canvas's threads with an unsent reply, by the socket that said so. */
+  private writers = new Map<object, { key: string; threads: Set<string> }>();
   private entries = new Map<string, Entry>();
   private opening = new Map<string, Promise<Entry>>();
   private focusListeners = new Set<(key: string, artboard: string) => void>();
@@ -92,6 +95,17 @@ export class LocalWorkspace implements Workspace {
 
   get(key: string): Design | undefined {
     return this.entries.get(key)?.design;
+  }
+
+  /** What a canvas is writing in now: none, as when it closes, forgets it. */
+  setWriting(canvas: object, key: string, threads: string[]): void {
+    if (threads.length) this.writers.set(canvas, { key, threads: new Set(threads) });
+    else this.writers.delete(canvas);
+  }
+
+  writing(key: string, thread: string): boolean {
+    for (const w of this.writers.values()) if (w.key === key && w.threads.has(thread)) return true;
+    return false;
   }
 
   focus(key: string, artboard: string): void {
@@ -265,7 +279,10 @@ export class LocalWorkspace implements Workspace {
    * so a burst of edits across files doesn't open a window per file.
    */
   private get previewsOn(): boolean {
-    return Boolean(this.renderer) && (this.opts.previews ?? process.platform === "darwin");
+    return (
+      Boolean(this.renderer) &&
+      (this.opts.previews ?? (process.platform === "darwin" || process.env.PONZU_DESKTOP === "1"))
+    );
   }
 
   private schedulePreview(key: string): void {

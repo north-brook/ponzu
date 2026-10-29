@@ -175,7 +175,7 @@ export function useShelve() {
   return useMutation(
     shelfMutation(queryClient, async ({ mac, key, action, shelf }: ShelfChange) => {
       const m = findMac(mac);
-      if (!m) throw new Error("This Mac isn't paired anymore.");
+      if (!m) throw new Error("This computer isn't paired anymore.");
       await request(`${baseUrl(m)}/api/shelf`, {
         method: "POST",
         body: { key, action: shelfRequest({ shelf }, action) },

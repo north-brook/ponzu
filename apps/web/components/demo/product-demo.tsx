@@ -22,18 +22,21 @@ import "./ponzu.css";
 import "./demo.css";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ClaudeApp } from "./claude-app";
+import { DemoVideo } from "./demo-video";
 import {
-  BEATS,
-  type BeatId,
   beatsOf,
-  COMMENTS,
   type Comment,
-  index,
-  LAST,
+  indexIn,
+  SCRIPTS,
+  type Script,
+  type Shot,
+  STORIES,
   TYPING_MS,
   typedAt,
 } from "./script";
 import type { DemoDesign } from "./seekle";
+import { TabBar } from "./tab-bar";
+import { useSystemTheme } from "./theme";
 
 /**
  * The scene is laid out at a fixed size and scaled to fit. Wide, the studio and the terminal sit
@@ -51,43 +54,6 @@ const TICK_MS = 33;
 const BOARD_RADIUS = 4;
 const RING_GAP = 4;
 
-export type PageId = "app" | "motion" | "explore" | "web" | "store";
-
-/**
- * The pages Claude makes, in order, each the design page it draws. The file starts with Ponzu's
- * default "Page 1". A page's boards are written on its `beat`, where they sit in the design.
- */
-const PAGES: { id: PageId; design: string; from: BeatId; beat: BeatId }[] = [
-  { id: "app", design: "pg_app", from: "app-page", beat: "app" },
-  { id: "motion", design: "pg_bp3im", from: "motion-page", beat: "motion" },
-  { id: "explore", design: "pg_g13sx", from: "explore-page", beat: "explore" },
-  { id: "web", design: "pg_ea4v6", from: "web-page", beat: "web" },
-  { id: "store", design: "pg_g1zbi", from: "store-page", beat: "store" },
-];
-
-/**
- * Boards Claude rewrites after your comments, and the beat it does it on: the studies you
- * commented on, then the three directions. Until then they're as they were (`DemoDesign.before`).
- */
-const REWORK: Record<string, BeatId> = {
-  ab_x_a2: "rework",
-  ab_x_b2: "rework",
-  ab_x_b3: "rework",
-  ab_x_b4: "rework",
-  ab_x_d1: "rework-2",
-  ab_x_d2: "rework-2",
-  ab_x_d3: "rework-2",
-};
-
-/**
- * What a comment asked for, on each board it changed: the friends orbiting the phone. Claude adds
- * them on the `revise` beat; until then they aren't there.
- */
-const REVISION: Record<string, string> = {
-  ab_w_desktop: ".orbitD",
-  ab_w_mobile: ".orbitM",
-};
-
 /**
  * The share of a build beat its boards are written in. The rest of the beat lets the last of them
  * develop and settle before the camera moves on.
@@ -98,8 +64,7 @@ const WRITE = 0.5;
  * How much of a board is written by now, from 0 (not yet) to 1. The boards written on one beat
  * start in a cascade across the first part of it, each finishing by WRITE.
  */
-function writtenFor(beatId: BeatId, i: number, n: number, beat: number, t: number) {
-  const start = index(beatId);
+function writtenFor(start: number, i: number, n: number, beat: number, t: number) {
   if (beat < start) return 0;
   if (beat > start) return 1;
   const lead = n > 1 ? (i / (n - 1)) * WRITE * 0.6 : 0;
@@ -107,90 +72,19 @@ function writtenFor(beatId: BeatId, i: number, n: number, beat: number, t: numbe
   return Math.max(0.001, Math.min(1, (t - lead) / (WRITE - lead)));
 }
 
-/** Which page is showing on a beat: the last one made. */
-function pageAt(beat: number): PageId | null {
-  return PAGES.findLast((p) => beat >= index(p.from))?.id ?? null;
+/** Which page is showing on a beat: the last one made, by its design page's id. */
+function pageAt(script: Script, beat: number): string | null {
+  return script.pages.findLast((p) => beat >= indexIn(script, p.from))?.design ?? null;
 }
-
-type Shot = { x: number; y: number; w: number; h: number };
-/** A shot the camera drifts across over its beat, as you'd scroll along a row to read it. */
-type Drift = { from: Shot; to: Shot };
-
-/**
- * What the camera frames, in world px on the current page, from each beat on until the next one
- * listed. A page is framed whole while it's written; then you move in close and drift across it,
- * as a person looks round, to watch the boards play.
- */
-const SHOTS: Partial<Record<BeatId, Shot | Drift>> = {
-  think: { x: -80, y: -110, w: 2490, h: 1060 },
-  // Along the five screens.
-  "app-look": {
-    from: { x: -40, y: -50, w: 964, h: 974 },
-    to: { x: 1406, y: -20, w: 980, h: 950 },
-  },
-  "motion-page": { x: -60, y: -90, w: 1872, h: 2550 },
-  // Claiming a handle, then Home, where you ask about it, then the end of a game.
-  "motion-look": {
-    from: { x: -30, y: -50, w: 910, h: 1000 },
-    to: { x: 420, y: 280, w: 900, h: 980 },
-  },
-  "motion-look-2": {
-    from: { x: 880, y: 640, w: 910, h: 1000 },
-    to: { x: 870, y: 880, w: 910, h: 1000 },
-  },
-  "motion-look-3": {
-    from: { x: -30, y: 1300, w: 910, h: 1100 },
-    to: { x: 420, y: 1480, w: 900, h: 1000 },
-  },
-  "explore-page": { x: -60, y: -60, w: 1920, h: 2560 },
-  // Along the found-set row, then the three directions.
-  "explore-look": {
-    from: { x: -20, y: 70, w: 904, h: 500 },
-    to: { x: 864, y: 70, w: 904, h: 500 },
-  },
-  "explore-look-2": {
-    from: { x: -20, y: 1500, w: 1000, h: 960 },
-    to: { x: 400, y: 1500, w: 1000, h: 960 },
-  },
-  // Back out to the first two rows to comment, then down to the directions to pick one.
-  "c1-cursor": { x: -40, y: 40, w: 1840, h: 1000 },
-  "c3-cursor": { x: -60, y: 1440, w: 1500, h: 1040 },
-  // In on the studies as Claude rewrites them, then on the directions.
-  rework: { x: 260, y: 60, w: 1160, h: 980 },
-  "rework-2": { x: -60, y: 1440, w: 1500, h: 1040 },
-  "web-page": { x: -80, y: -110, w: 2080, h: 1290 },
-  "web-look": {
-    from: { x: -20, y: -40, w: 1480, h: 1000 },
-    to: { x: 300, y: 0, w: 1300, h: 900 },
-  },
-  // On the hero's phone, with room to the right of the pin for the thread.
-  "c4-cursor": { x: 380, y: -40, w: 1500, h: 1000 },
-  // Pushing in on the friends orbiting it.
-  "revise-look": {
-    from: { x: 680, y: 40, w: 840, h: 860 },
-    to: { x: 750, y: 110, w: 760, h: 780 },
-  },
-  "store-page": { x: -60, y: -60, w: 2430, h: 3700 },
-  // Along the night table, then back along the close-ups.
-  "store-look": {
-    from: { x: -20, y: 150, w: 1410, h: 1000 },
-    to: { x: 900, y: 150, w: 1410, h: 1000 },
-  },
-  "store-look-2": {
-    from: { x: 900, y: 2610, w: 1410, h: 1000 },
-    to: { x: -20, y: 2610, w: 1410, h: 1000 },
-  },
-  rest: { x: -60, y: -60, w: 2430, h: 3700 },
-};
 
 /** Slow out, slow in. */
 const ease = (t: number) => 0.5 - Math.cos(Math.PI * Math.min(1, Math.max(0, t))) / 2;
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 /** Where the camera's headed `t` through `beat`: the shot, or how far along its drift. */
-function shotAt(beat: number, t: number): Shot {
+function shotAt(script: Script, beat: number, t: number): Shot {
   for (let b = beat; b >= 0; b--) {
-    const s = SHOTS[BEATS[b]!.id];
+    const s = script.shots[script.beats[b]!.id];
     if (!s) continue;
     if (!("from" in s)) return s;
     if (b < beat) return s.to;
@@ -202,7 +96,7 @@ function shotAt(beat: number, t: number): Shot {
       h: lerp(s.from.h, s.to.h, e),
     };
   }
-  return SHOTS.think as Shot;
+  return script.shots.think as Shot;
 }
 
 /** A camera as its centre in world px and its zoom's log, which a spring can follow. */
@@ -216,6 +110,20 @@ function aimAt(s: Shot, view: { w: number; h: number }): Aim {
   };
 }
 
+/**
+ * Recording the phones' videos (`?demo=record&story=<id>`, scripts/record-demo.ts): the story named
+ * plays over and over, the camera holds steady between moves, as a few px of wander every frame
+ * costs a video more than all the rest of the motion, and the scene moves on every frame recorded
+ * rather than ~30 times a second.
+ */
+const RECORD =
+  typeof location !== "undefined" && new URLSearchParams(location.search).get("demo") === "record"
+    ? Math.max(
+        0,
+        SCRIPTS.findIndex((s) => s.id === new URLSearchParams(location.search).get("story")),
+      )
+    : null;
+
 /** The camera's spring: settles in about this long, a touch under critically damped. */
 const SPRING_PERIOD_S = 0.85;
 const SPRING_DAMPING = 0.88;
@@ -226,31 +134,32 @@ const SPRING_DAMPING = 0.88;
  * from ever sitting dead still. A new page, a held beat or reduced motion puts it straight there.
  */
 function useCamera(
+  script: Script,
   beat: number,
   t: number,
   view: { w: number; h: number },
-  page: PageId | null,
+  page: string | null,
   still: boolean,
   hold: boolean,
 ) {
-  const latest = useRef({ beat, t, view, page, still, hold });
-  latest.current = { beat, t, view, page, still, hold };
-  const [aim, setAim] = useState<Aim>(() => aimAt(shotAt(beat, t), view));
+  const latest = useRef({ script, beat, t, view, page, still, hold });
+  latest.current = { script, beat, t, view, page, still, hold };
+  const [aim, setAim] = useState<Aim>(() => aimAt(shotAt(script, beat, t), view));
 
   useEffect(() => {
     let state: (Aim & { vx: number; vy: number; vz: number }) | null = null;
-    let shownPage: PageId | null | undefined;
+    let shownPage: string | null | undefined;
     let last = performance.now();
     let frame = 0;
     const k = (2 * Math.PI) / SPRING_PERIOD_S;
     const step = (now: number) => {
       frame = requestAnimationFrame(step);
-      const { beat, t, view, page, still, hold } = latest.current;
+      const { script, beat, t, view, page, still, hold } = latest.current;
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       if (hold && state) return;
-      const goal = aimAt(shotAt(beat, t), view);
-      if (!still) {
+      const goal = aimAt(shotAt(script, beat, t), view);
+      if (!still && RECORD === null) {
         // A hand on a trackpad: a few px of wander, never quite repeating.
         const s = now / 1000;
         const zoom = Math.exp(goal.lz);
@@ -282,41 +191,123 @@ function useCamera(
 }
 
 /** The comment being left on a beat, from the cursor setting off to the comment posted. */
-function leaving(beat: number): Comment | undefined {
-  return COMMENTS.find((c) => {
+function leaving(script: Script, beat: number): Comment | undefined {
+  return script.comments.find((c) => {
     const b = beatsOf(c);
-    return beat >= index(b.cursor) && beat <= index(b.post);
+    return beat >= indexIn(script, b.cursor) && beat <= indexIn(script, b.post);
   });
 }
 
-const DARK = "(prefers-color-scheme: dark)";
+/** How far through its script a tab is, from 0 to 1, `t` through `beat`. */
+function progressOf(script: Script, beat: number, t: number) {
+  let done = 0;
+  let total = 0;
+  script.beats.forEach((b, i) => {
+    total += b.ms;
+    if (i < beat) done += b.ms;
+    else if (i === beat) done += b.ms * t;
+  });
+  return total ? done / total : 0;
+}
 
-/** The system's color scheme, live, as the site follows it. Light on the server. */
-function useSystemTheme(): "light" | "dark" {
-  const dark = useSyncExternalStore(
+/**
+ * Where the demo plays as videos (PhoneDemo) instead of live: on phones and tablets, and in narrow
+ * windows. The real boards loop hundreds of animations, and at a phone's pixel density that's more
+ * than iOS Safari lets a tab hold: it kills the page. `?demo=live` or `?demo=video` picks one, to
+ * check either anywhere; `?demo=record` is live, for recording the videos (scripts/record-demo.ts).
+ */
+const RECORDED = "(any-pointer: coarse), (max-width: 720px)";
+
+/** Whether the demo plays live here; unknown on the server, so neither mounts until we know. */
+function useLive(): boolean | null {
+  return useSyncExternalStore(
     (onChange) => {
-      const list = matchMedia(DARK);
+      const list = matchMedia(RECORDED);
       list.addEventListener("change", onChange);
       return () => list.removeEventListener("change", onChange);
     },
-    () => matchMedia(DARK).matches,
-    () => false,
+    () => {
+      const asked = new URLSearchParams(location.search).get("demo");
+      if (asked === "live" || asked === "record" || asked === "video") return asked !== "video";
+      return !matchMedia(RECORDED).matches;
+    },
+    () => null,
   );
-  return dark ? "dark" : "light";
 }
 
+/**
+ * The homepage's product demo: five use cases, each its own story, with the tab bar that plays
+ * them in turn above it. Clicking a tab plays that one from the start.
+ */
 export function ProductDemo() {
+  const live = useLive();
+  if (live === null)
+    return (
+      <div className="flex flex-col gap-9 max-[720px]:gap-5">
+        <TabBar tabs={SCRIPTS} active={0} progress={0} onPick={() => {}} controls="product-demo" />
+        <div id="product-demo" className="dm-frame relative w-full" />
+      </div>
+    );
+  return live ? <LiveDemo /> : <PhoneDemo />;
+}
+
+/**
+ * The demo on a phone or tablet: each tab's story as a video, the active one playing. Its rule
+ * follows the video, and the next tab plays when it ends.
+ */
+function PhoneDemo() {
+  const [tab, setTab] = useState(0);
+  /** Counts every story started, so a tab picked again plays from the start. */
+  const [run, setRun] = useState(0);
+  const [progress, setProgress] = useState(0);
+  const [still] = useState(() => matchMedia("(prefers-reduced-motion: reduce)").matches);
+  const story = STORIES[tab]!;
+  const play = (next: number) => {
+    setTab(next);
+    setRun((r) => r + 1);
+    setProgress(0);
+  };
+  return (
+    <div className="flex flex-col gap-9 max-[720px]:gap-5">
+      <TabBar
+        tabs={SCRIPTS}
+        active={tab}
+        progress={still ? 1 : progress}
+        onPick={play}
+        controls="product-demo"
+      />
+      <DemoVideo
+        key={`${story.id}:${run}`}
+        id="product-demo"
+        story={story.id}
+        label={story.label}
+        onProgress={setProgress}
+        onEnded={() => play((tab + 1) % STORIES.length)}
+      />
+    </div>
+  );
+}
+
+function LiveDemo() {
   const wrap = useRef<HTMLDivElement>(null);
   /** The design it draws, fetched once the demo mounts: it's too big to ship in the page. */
   const [design, setDesign] = useState<DemoDesign | null>(null);
   const [fit, setFit] = useState<{ scale: number; narrow: boolean } | null>(null);
+  const [tab, setTab] = useState(RECORD ?? 0);
   const [beat, setBeat] = useState(0);
   const [t, setT] = useState(0);
+  /** Counts every story started, so each starts on a fresh studio. */
   const [cycle, setCycle] = useState(0);
   /** Held on one beat or showing the finished story: everything is just there, nothing arrives. */
   const [still, setStill] = useState(false);
   /** Off screen, the boards' own loops hold, as the canvas holds what nobody can see. */
   const [onScreen, setOnScreen] = useState(false);
+  /** Plays a tab from the start; the clock fills it in once it's running. */
+  const tabRef = useRef(RECORD ?? 0);
+  const play = useRef((next: number) => {
+    tabRef.current = next;
+    setTab(next);
+  });
 
   useEffect(() => {
     const el = wrap.current;
@@ -353,15 +344,20 @@ export function ProductDemo() {
     return () => observer.disconnect();
   }, []);
 
-  // One clock drives everything, from once the design is here. It pauses off screen; reduced
-  // motion shows the finished story.
+  // One clock drives everything, from once the design is here: each tab's story in turn, then
+  // round again. It pauses off screen; reduced motion shows each story finished.
   useEffect(() => {
     const el = wrap.current;
     if (!el || !design) return;
     if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
       setStill(true);
-      setBeat(LAST);
-      setT(1);
+      play.current = (next) => {
+        tabRef.current = next;
+        setTab(next);
+        setBeat(SCRIPTS[next]!.beats.length - 1);
+        setT(1);
+      };
+      play.current(tabRef.current);
       return;
     }
     let visible = false;
@@ -370,6 +366,17 @@ export function ProductDemo() {
     let last = started;
     let frame = 0;
     let painted = started;
+    const start = (next: number, now: number) => {
+      tabRef.current = next;
+      current = 0;
+      started = now;
+      painted = now;
+      setTab(next);
+      setBeat(0);
+      setT(0);
+      setCycle((c) => c + 1);
+    };
+    play.current = (next) => start(next, performance.now());
     const tick = (now: number) => {
       frame = requestAnimationFrame(tick);
       if (!visible) {
@@ -378,16 +385,23 @@ export function ProductDemo() {
         return;
       }
       last = now;
-      const beatMs = BEATS[current]?.ms ?? 1000;
+      const beats = SCRIPTS[tabRef.current]!.beats;
+      const beatMs = beats[current]?.ms ?? 1000;
       const elapsed = now - started;
       if (elapsed >= beatMs) {
+        if (current === beats.length - 1) {
+          start(RECORD ?? (tabRef.current + 1) % SCRIPTS.length, now);
+          return;
+        }
         started = now;
-        current = current === LAST ? 0 : current + 1;
-        if (current === 0) setCycle((c) => c + 1);
+        current += 1;
         setBeat(current);
         setT(0);
         painted = now;
-      } else if (now - painted >= (/type$/.test(BEATS[current]?.id ?? "") ? 0 : TICK_MS)) {
+      } else if (
+        RECORD !== null ||
+        now - painted >= (/type$/.test(beats[current]?.id ?? "") ? 0 : TICK_MS)
+      ) {
         // Everything that reads `t` moves in steps (a piece of a board, the camera's next shot),
         // so ~30 updates a second look the same as 60 and halve the renders. Typing is the
         // exception: at 30 a second, keys a few ms apart would land two at a time.
@@ -408,59 +422,76 @@ export function ProductDemo() {
 
   const narrow = fit?.narrow ?? false;
   const size = narrow ? NARROW : WIDE;
+  const script = SCRIPTS[tab]!;
+  const studio = (
+    <Studio
+      key={`${script.id}:${cycle}`}
+      script={script}
+      design={design}
+      beat={beat}
+      t={t}
+      still={still}
+      hold={!onScreen}
+    />
+  );
 
   return (
-    <div
-      ref={wrap}
-      role="img"
-      aria-label="Claude Code rebuilds Seekle, an iPhone game, on the Ponzu canvas from the app's source: its screens, then every one of its animations, looping. It explores the game's feel in twelve animated studies; you comment on two, it combines them into three full directions, and you pick one. It designs the website hero; you ask for friends round the phone and it adds them, orbiting. Last, it makes fifteen App Store screenshots in three directions."
-      className="dm-frame relative w-full"
-      data-sized={fit ? "" : undefined}
-      style={{ height: fit ? size.height * fit.scale : undefined }}
-    >
-      {fit &&
-        (narrow ? (
-          <div
-            aria-hidden="true"
-            className="dm absolute top-0 left-0 origin-top-left"
-            style={{ width: size.width, height: size.height, scale: String(fit.scale) }}
-          >
+    <div className="flex flex-col gap-9 max-[720px]:gap-5">
+      <TabBar
+        tabs={SCRIPTS}
+        active={tab}
+        progress={still ? 1 : progressOf(script, beat, t)}
+        onPick={(i) => play.current(i)}
+        controls="product-demo"
+      />
+      <div
+        ref={wrap}
+        id="product-demo"
+        role="img"
+        aria-label={script.label}
+        className="dm-frame relative w-full"
+        data-sized={fit ? "" : undefined}
+        style={{ height: fit ? size.height * fit.scale : undefined }}
+      >
+        {fit &&
+          (narrow ? (
             <div
-              className="dm-studio-wrap absolute top-0 left-0 grid"
-              style={{ width: 1000, height: 820 }}
+              aria-hidden="true"
+              className="dm absolute top-0 left-0 origin-top-left"
+              data-hold={onScreen ? undefined : ""}
+              style={{ width: size.width, height: size.height, scale: String(fit.scale) }}
             >
-              <Studio
-                key={cycle}
-                design={design}
-                beat={beat}
-                t={t}
-                still={still}
-                hold={!onScreen}
-              />
+              <div
+                className="dm-studio-wrap absolute top-0 left-0 grid"
+                style={{ width: 1000, height: 820 }}
+              >
+                {studio}
+              </div>
+              <div
+                className="dm-float absolute right-0 bottom-0 grid"
+                data-front={terminalInFront(script, beat)}
+                style={{ width: 640, height: 560 }}
+              >
+                <ClaudeApp key={script.id} script={script} beat={beat} t={t} big />
+              </div>
             </div>
+          ) : (
             <div
-              className="dm-float absolute right-0 bottom-0 grid"
-              data-front={terminalInFront(beat)}
-              style={{ width: 640, height: 560 }}
+              aria-hidden="true"
+              className="dm absolute top-0 left-0 grid origin-top-left gap-4"
+              data-hold={onScreen ? undefined : ""}
+              style={{
+                width: size.width,
+                height: size.height,
+                scale: String(fit.scale),
+                gridTemplateColumns: `${WIDE.studio}px 1fr`,
+              }}
             >
-              <ClaudeApp beat={beat} t={t} big />
+              {studio}
+              <ClaudeApp key={script.id} script={script} beat={beat} t={t} big={false} />
             </div>
-          </div>
-        ) : (
-          <div
-            aria-hidden="true"
-            className="dm absolute top-0 left-0 grid origin-top-left gap-4"
-            style={{
-              width: size.width,
-              height: size.height,
-              scale: String(fit.scale),
-              gridTemplateColumns: `${WIDE.studio}px 1fr`,
-            }}
-          >
-            <Studio key={cycle} design={design} beat={beat} t={t} still={still} hold={!onScreen} />
-            <ClaudeApp beat={beat} t={t} big={false} />
-          </div>
-        ))}
+          ))}
+      </div>
     </div>
   );
 }
@@ -469,25 +500,27 @@ export function ProductDemo() {
  * On narrow screens the terminal comes forward while you're talking to Claude, and steps back while
  * the canvas has something to show or you're commenting on it.
  */
-function terminalInFront(beat: number) {
-  const id = BEATS[beat]?.id;
-  return beat < index("app-page") || id === "c0-heard" || id === "c3-heard" || id === "c4-heard";
+function terminalInFront(script: Script, beat: number) {
+  const id = script.beats[beat]?.id ?? "";
+  return beat < indexIn(script, script.pages[0]!.from) || id.endsWith("-heard");
 }
 
 function Studio({
+  script,
   design,
   beat,
   t,
   still,
   hold,
 }: {
+  script: Script;
   design: DemoDesign | null;
   beat: number;
   t: number;
   still: boolean;
   hold: boolean;
 }) {
-  const at = (id: BeatId) => beat >= index(id);
+  const at = (id: string) => beat >= indexIn(script, id);
   const viewport = useRef<HTMLDivElement>(null);
   const [view, setView] = useState({ w: 920, h: 740 });
 
@@ -501,35 +534,42 @@ function Studio({
     return () => observer.disconnect();
   }, []);
 
-  const page = pageAt(beat);
-  const camera = useCamera(beat, t, view, page, still, hold);
+  const page = pageAt(script, beat);
+  const camera = useCamera(script, beat, t, view, page, still, hold);
   const zoom = camera.zoom;
   const scheme = useSystemTheme();
-  const pageMeta = (p: (typeof PAGES)[number]) => design?.pages.find((d) => d.id === p.design);
-  const tabs = PAGES.filter((p) => at(p.from)).map((p) => ({
-    id: p.id,
-    name: pageMeta(p)?.name ?? p.id,
-    icon: pageMeta(p)?.icon ?? "board",
-  }));
-  const showing = PAGES.find((p) => p.id === page);
-  const boards = (showing && pageMeta(showing)?.artboards) || [];
+  const pageMeta = (id: string) => design?.pages.find((d) => d.id === id);
+  const tabs = script.pages
+    .filter((p) => at(p.from))
+    .map((p) => ({
+      id: p.design,
+      name: pageMeta(p.design)?.name ?? p.design,
+      icon: pageMeta(p.design)?.icon ?? "board",
+    }));
+  const boards = (page && pageMeta(page)?.artboards) || [];
   /** The beat each board is written on: its page's. */
-  const writeBeat = (id: string): BeatId | undefined =>
-    PAGES.find((p) => pageMeta(p)?.artboards.some((a) => a.id === id))?.beat;
+  const writeBeat = (id: string) =>
+    script.pages.find((p) => pageMeta(p.design)?.artboards.some((a) => a.id === id))?.beat;
+  const rework = script.rework ?? {};
+  const revision = script.revision;
   /** A board as it is now: as it was before your comments, until Claude rewrites it. */
   const drawn = (a: Artboard) => {
     const was = design?.before[a.id];
-    const rework = REWORK[a.id];
-    return was && rework && !at(rework) ? was : a;
+    const on = rework[a.id];
+    return was && on && !at(on) ? was : a;
   };
-  const now = BEATS[beat]?.id;
-  const commenting = leaving(beat);
-  const busy = at("think") && !at("rest") && !commenting;
+  const now = script.beats[beat]?.id;
+  const commenting = leaving(script, beat);
+  const busy = !at("rest") && !commenting;
   const workingOn = (id: string, b: number) => {
-    const on = BEATS[b]?.id;
+    const on = script.beats[b]?.id;
+    if (on === undefined) return false;
+    if (on === writeBeat(id) || on === rework[id]) return true;
     return (
-      (on !== undefined && (on === writeBeat(id) || on === REWORK[id])) ||
-      (id in REVISION && (on === "c4-heard" || on === "revise"))
+      !!revision &&
+      id in revision.boards &&
+      b >= indexIn(script, revision.from) &&
+      b <= indexIn(script, revision.at)
     );
   };
   const working = (id: string) => workingOn(id, beat);
@@ -537,11 +577,11 @@ function Studio({
   const ring = (id: string): Ring =>
     working(id)
       ? "on"
-      : beat > 0 && workingOn(id, beat - 1) && t * (BEATS[beat]?.ms ?? 0) < RING_OUT_MS
+      : beat > 0 && workingOn(id, beat - 1) && t * (script.beats[beat]?.ms ?? 0) < RING_OUT_MS
         ? "leaving"
         : null;
   // The boards written on each beat, so they cascade in together.
-  const groups = new Map<BeatId, string[]>();
+  const groups = new Map<string, string[]>();
   for (const a of boards) {
     const w = writeBeat(a.id);
     if (w) groups.set(w, [...(groups.get(w) ?? []), a.id]);
@@ -554,22 +594,22 @@ function Studio({
     return { x: (board.x + c.x) * zoom + camera.x, y: (board.y + c.y) * zoom + camera.y };
   };
   const active = commenting && toScreen(commenting);
-  const pins = COMMENTS.flatMap((c, i) => {
+  const pins = script.comments.flatMap((c, i) => {
     const b = beatsOf(c);
     // Claude resolves a change it made without replying; resolved threads leave the canvas. A
     // question it answers stays open.
-    if (!at(b.click) || ("resolve" in c && at(c.resolve as BeatId))) return [];
+    if (!at(b.click) || (c.resolve && at(c.resolve))) return [];
     const spot = toScreen(c);
     if (!spot) return [];
     const posted = at(b.post);
     const typed =
       now === b.type
-        ? typedAt(c.text, TYPING_MS.comment, t * (BEATS[beat]?.ms ?? 0))
+        ? typedAt(c.text, TYPING_MS.comment, t * (script.beats[beat]?.ms ?? 0))
         : posted
           ? c.text
           : "";
     // A question's thread stays open while Claude reads it and answers, long enough to read.
-    const reply = "reply" in c ? c.reply : undefined;
+    const reply = c.reply;
     const answering = reply !== undefined && (now === `${c.id}-heard` || now === `${c.id}-reply`);
     const answered = reply !== undefined && now === `${c.id}-reply`;
     return [
@@ -623,9 +663,16 @@ function Studio({
                 const w = writeBeat(artboard.id);
                 const group = (w && groups.get(w)) || [];
                 const written = w
-                  ? writtenFor(w, group.indexOf(artboard.id), group.length, beat, t)
+                  ? writtenFor(
+                      indexIn(script, w),
+                      group.indexOf(artboard.id),
+                      group.length,
+                      beat,
+                      t,
+                    )
                   : 1;
                 if (!written || !design) return null;
+                const adds = revision?.boards[artboard.id];
                 return (
                   <Board
                     key={artboard.id}
@@ -640,7 +687,8 @@ function Studio({
                     landing={!still && now === w}
                     working={working(artboard.id)}
                     ring={ring(artboard.id)}
-                    revised={artboard.id in REVISION && at("revise")}
+                    adds={adds}
+                    revised={!!adds && at(revision!.at)}
                     still={still}
                     hold={hold}
                   />
@@ -658,7 +706,7 @@ function Studio({
                   </span>
                   {open && (
                     <div className={THREAD_CARD}>
-                      {posted && "reply" in c ? (
+                      {posted && c.reply !== undefined ? (
                         <Thread text={c.text} reply={reply} />
                       ) : (
                         <Composer text={typed} posted={posted} />
@@ -711,6 +759,7 @@ function Board({
   landing,
   working,
   ring,
+  adds,
   revised,
   still,
   hold,
@@ -728,6 +777,8 @@ function Board({
   landing: boolean;
   working: boolean;
   ring: Ring;
+  /** The elements a comment asked for, by selector, hidden until `revised`. */
+  adds?: string;
   revised: boolean;
   still: boolean;
   hold: boolean;
@@ -770,8 +821,7 @@ function Board({
       shown.current = 0;
     }
     if (parts.current?.section !== section) {
-      const selector = REVISION[artboard.id];
-      const revision = selector ? [...section.querySelectorAll(selector)] : [];
+      const revision = adds ? [...section.querySelectorAll(adds)] : [];
       parts.current = { section, pieces: piecesOf(section, revision, count), revision };
       // A board sized to its content is as tall as it renders.
       if (section instanceof HTMLElement && !fixedHeight) setMeasured(section.offsetHeight);
@@ -803,7 +853,7 @@ function Board({
         if (a instanceof CSSAnimation && a.effect?.getComputedTiming().iterations !== Infinity)
           a.currentTime = now - start - ARRIVE_PLAN_MS;
     }
-  }, [written, revised, still, landed, artboard, count, fixedHeight]);
+  }, [written, revised, adds, still, landed, artboard, count, fixedHeight]);
 
   const width = Number.parseFloat(artboard.root.style.width ?? "") || 1440;
   const height = fixedHeight || measured;
@@ -1070,10 +1120,10 @@ function Footer({
   mode,
 }: {
   zoom: number;
-  pages: { id: PageId; name: string; icon: string }[];
-  page: PageId | null;
+  pages: { id: string; name: string; icon: string }[];
+  page: string | null;
   /** The page Claude is working on, whose tab shimmers. */
-  busyPage: PageId | null;
+  busyPage: string | null;
   mode: "select" | "hand" | "comment";
 }) {
   const tabs = pages.length ? pages : [{ id: null, name: "Page 1", icon: "board" }];

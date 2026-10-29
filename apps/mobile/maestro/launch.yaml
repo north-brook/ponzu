@@ -26,7 +26,7 @@ tags: [dev-host]
 # goes straight to the code; without it, to Tailscale, which "Already on?
 # Continue" passes.
 - extendedWaitUntil:
-    visible: "Scan the code on your Mac.|Turn on Tailscale on this iPhone."
+    visible: "Scan the code on your computer.|Turn on Tailscale on this iPhone."
     timeout: 30000
 - runFlow:
     when:
@@ -43,5 +43,5 @@ tags: [dev-host]
     visible:
       id: connect
     timeout: 10000
-- assertVisible: "Scan the code on your Mac."
+- assertVisible: "Scan the code on your computer."
 - assertNotVisible: ".*Cannot update a component.*"

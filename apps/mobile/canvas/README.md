@@ -55,6 +55,8 @@ On `ready`, send `insets`, then `doc`; after that, every socket `op` (with its `
 `presence`. A `longpress` means: show the comment sheet, send `pending` with the pin and `insets`
 with `sheet` set to the sheet's height; when the `thread.create` echo arrives, send `pending: null`.
 `openThread` means: show the thread sheet and send `thread` with its id.
+A comment sheet dismissed with words in it leaves its pin: send `unsent` with every such pin, by its
+draft's key, and the threads with a reply left unsent. `openUnsent` means one was tapped: show its comment sheet again and send `pending`.
 `focused` with a board means the board has the screen: hide the chrome. A pan or pinch on it sends
 `gesture` as it begins (show the chrome), then `focused` again as it settles, with the board if it's
 still focused (hide it again) or `null` if the fingers left it.

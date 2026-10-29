@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
@@ -10,10 +11,20 @@ import {
   notesBetween,
   releaseNotesUrl,
 } from "@ponzu/core";
-import { app, type BrowserWindow, dialog, type MessageBoxOptions, powerMonitor } from "electron";
-import electronUpdater, { type UpdateInfo } from "electron-updater";
+import {
+  app,
+  type BrowserWindow,
+  dialog,
+  type MessageBoxOptions,
+  autoUpdater as nativeUpdater,
+  powerMonitor,
+} from "electron";
+import electronUpdater, { type AppUpdater, type UpdateInfo } from "electron-updater";
+import { type Installer, installerOf } from "./installer";
 
-const { autoUpdater } = electronUpdater;
+const { AppImageUpdater, DebUpdater } = electronUpdater;
+/** This build's updater, once installUpdater has made one: none for a build that can't update. */
+let updater: AppUpdater | null = null;
 const FOUR_HOURS = 4 * 60 * 60 * 1000;
 /** How long nobody has touched this Mac before Ponzu restarts into an update on its own. */
 const AWAY_SECONDS = 5 * 60;
@@ -59,18 +70,24 @@ async function notesOf(info: UpdateInfo): Promise<string[]> {
 }
 
 /**
- * Checks this repo's GitHub Releases for a newer signed build on launch and
+ * Checks this repo's GitHub Releases for a newer build on launch and
  * every four hours, and downloads it in the background. Nothing interrupts
- * the person: the server it starts lists what's ready on this Mac's machine
+ * the person: the server it starts lists what's ready on this computer's machine
  * in the catalog, the studio's title bar offers Update, and that installs it
- * here and on the person's other Macs (@ponzu/core's update.ts). It also
+ * here and on the person's other computers (@ponzu/core's update.ts). It also
  * installs the next time Ponzu quits; with no window open, main quits on its
  * own once agents go idle.
  *
  * The server reaches it on a local port with a token (`PONZU_APP_ENDPOINT`,
  * `PONZU_APP_TOKEN`): GET for what it has, POST /install to install. Only a
- * packaged build checks: development has no feed to compare against, and
- * lists no updater.
+ * build that can install an update checks (installer.ts): development and an
+ * unpacked folder have no feed or nothing to replace, and list no updater, so
+ * no title bar offers them one.
+ *
+ * The .deb installs through dpkg, which asks for an admin's password. So it
+ * never installs on quit, on Ponzu's own idea, or for a click on another of
+ * the person's computers (`remote`, from the server), only when they click
+ * Update on this one, where they can answer.
  */
 export async function installUpdater(opts: {
   window: () => BrowserWindow | null;
@@ -78,9 +95,12 @@ export async function installUpdater(opts: {
   /** Whether an agent is mid-change on this Mac, from its server: a restart waits for it. */
   agentWorking: () => Promise<boolean>;
 }): Promise<{ endpoint: string; token: string } | null> {
-  if (!app.isPackaged) return null;
+  const installer = app.isPackaged ? installerOf(process.resourcesPath) : null;
+  if (!installer) return null;
+  const autoUpdater = updaterFor(installer);
+  updater = autoUpdater;
   autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.autoInstallOnAppQuit = installer !== "deb";
   let ready: MachineUpdate["ready"];
   /** The person asked for it: restart as soon as it's downloaded. */
   let installing = false;
@@ -92,17 +112,18 @@ export async function installUpdater(opts: {
     version: app.getVersion(),
     ...(ready ? { ready } : {}),
     ...(installing ? { installing } : {}),
+    ...(installer === "deb" ? { ownClick: true } : {}),
   });
 
   /** A restart on its way: waiting for an agent, or for its answer to get out. */
   let restarting = false;
   /**
    * Restart into the update, as Ponzu was: a window open comes back with one, none comes back in
-   * the background, still serving agents, the phone and the person's other Macs. Always through
-   * quitAndInstall: `update-downloaded` fires before Squirrel has unpacked the update, and it waits
-   * for that where a plain quit would leave a half-unpacked bundle and nothing to reopen it. Never
-   * while an agent is mid-change here, even one that started while the update downloaded: it
-   * waits until the agent is done.
+   * the background, still serving agents, the phone and the person's other computers. Always
+   * through quitAndInstall: `update-downloaded` fires before Squirrel has unpacked the update, and
+   * it waits for that where a plain quit would leave a half-unpacked bundle and nothing to reopen
+   * it. Never while an agent is mid-change here, even one that started while the update
+   * downloaded: it waits until the agent is done.
    */
   const restart = () => {
     if (restarting) return;
@@ -118,7 +139,7 @@ export async function installUpdater(opts: {
       }
       setTimeout(() => {
         if (!opts.window()) markBackgroundRelaunch();
-        autoUpdater.quitAndInstall();
+        quitAndInstall(autoUpdater, installer);
       }, RESTART_DELAY);
     };
     void go();
@@ -137,7 +158,9 @@ export async function installUpdater(opts: {
    * or untouched a while. (The server holds an install the person asked for while an agent is
    * mid-change here, so a restart never cuts one off.)
    */
-  const install = (o: { quiet?: boolean; version?: string }): MachineUpdate => {
+  const install = (o: { quiet?: boolean; remote?: boolean; version?: string }): MachineUpdate => {
+    // dpkg's password prompt needs the person here: their click on this computer.
+    if (installer === "deb" && (o.quiet || o.remote)) return state();
     if (o.quiet) {
       if (installing) return state();
       if (!readyFor(o.version)) {
@@ -163,9 +186,15 @@ export async function installUpdater(opts: {
   autoUpdater.on("update-not-available", () => {
     installing = false;
   });
-  // A failed check (offline, rate limited) is not worth a word; the next one retries.
+  // A failed check (offline, rate limited) is not worth a word; the next one retries. A failed
+  // install (the .deb's password prompt dismissed) leaves Ponzu running, to try again.
   autoUpdater.on("error", () => {
     installing = false;
+    restarting = false;
+  });
+  // An AppImage the person renamed with a version in it is installed beside, under the new name.
+  autoUpdater.on("appimage-filename-updated", (path) => {
+    appImage = path;
   });
   const check = () => autoUpdater.checkForUpdates().catch(() => undefined);
   check();
@@ -181,10 +210,18 @@ export async function installUpdater(opts: {
       let out: MachineUpdate;
       if (req.method === "POST" && req.url === "/update/install") {
         const body = await read(req)
-          .then((text) => JSON.parse(text || "{}") as { quiet?: unknown; version?: unknown } | null)
+          .then(
+            (text) =>
+              JSON.parse(text || "{}") as {
+                quiet?: unknown;
+                remote?: unknown;
+                version?: unknown;
+              } | null,
+          )
           .catch(() => null);
         out = install({
           quiet: body?.quiet === true,
+          remote: body?.remote === true,
           ...(typeof body?.version === "string" ? { version: body.version } : {}),
         });
       } else if (req.method === "GET" && req.url === "/update") out = state();
@@ -199,6 +236,48 @@ export async function installUpdater(opts: {
       resolve({ endpoint: `http://127.0.0.1:${port}/update`, token });
     });
   });
+}
+
+/**
+ * electron-updater's own pick reads the package type from the resources, which an AppImage can
+ * share with the .deb (installer.ts), so each is made by the installer this build has.
+ */
+function updaterFor(installer: Installer): AppUpdater {
+  if (installer === "appimage") return new AppImageUpdater();
+  if (installer === "deb") return new DebUpdater();
+  return electronUpdater.autoUpdater;
+}
+
+/**
+ * Quit, install and reopen. Squirrel reopens Ponzu itself. The Windows installer runs silently
+ * and starts the new Ponzu once it's done; dpkg asks for the password, then Electron relaunches.
+ * The AppImage's file is replaced while this one still runs from it, and the new one is started
+ * once this one has gone: any sooner, it would find this one holding the single-instance lock and
+ * quit.
+ */
+function quitAndInstall(updater: AppUpdater, installer: Installer) {
+  if (installer === "squirrel") return updater.quitAndInstall();
+  if (installer !== "appimage") return updater.quitAndInstall(true, true);
+  // Only once it's installed: electron-updater says so just before it quits.
+  nativeUpdater.removeListener("before-quit-for-update", reopenAppImage);
+  nativeUpdater.once("before-quit-for-update", reopenAppImage);
+  updater.quitAndInstall(true, false);
+}
+
+/** The AppImage, as the update left it: its name has no version, so it keeps its path. */
+let appImage = process.env.APPIMAGE;
+
+/** Start the AppImage again once this process has exited, from a shell outside its mount. */
+function reopenAppImage() {
+  if (!appImage) return;
+  const env = { ...process.env };
+  for (const name of ["APPIMAGE", "APPDIR", "ARGV0", "OWD"]) delete env[name];
+  const wait = 'while kill -0 "$1" 2>/dev/null; do sleep 0.2; done; exec "$0"';
+  spawn("/bin/sh", ["-c", wait, appImage, String(process.pid)], {
+    detached: true,
+    stdio: "ignore",
+    env,
+  }).unref();
 }
 
 /**
@@ -244,8 +323,16 @@ export async function checkForUpdatesNow(win: BrowserWindow) {
     await ask(win, { message: "Updates are checked in the packaged app." });
     return;
   }
+  if (!updater) {
+    await ask(win, {
+      type: "info",
+      message: "This copy of Ponzu doesn't update itself",
+      detail: "Download the newest Ponzu from ponzu.design to install it.",
+    });
+    return;
+  }
   try {
-    const result = await autoUpdater.checkForUpdates();
+    const result = await updater.checkForUpdates();
     if (result?.isUpdateAvailable) {
       await ask(win, {
         type: "info",

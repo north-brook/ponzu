@@ -31,8 +31,9 @@ block: some fixes are invisible.
 
 ### The Mac and the iPhone
 
-Ponzu ships two apps that release apart: the Mac app (`vX.Y.Z`) and the
-iPhone app (`mobile-vX.Y.Z`, [mobile.md](mobile.md)). A pull request that
+Ponzu ships two apps that release apart: the desktop app (`vX.Y.Z`, built
+for the Mac, Windows and Linux from the same tag, which all show the same
+notes) and the iPhone app (`mobile-vX.Y.Z`, [mobile.md](mobile.md)). A pull request that
 changes only `apps/mobile` is the iPhone's: its notes never reach the Mac's
 release notes, and Release Please leaves it out of the Mac's release. A pull
 request that changes both says which app each note is about:
@@ -44,20 +45,21 @@ request that changes both says which app each note is about:
 - iPhone: Find the Macs on your Wi-Fi without scanning a code.
 ```
 
-The Mac's release notes drop `iPhone:` notes and shows `Mac:` notes without the
-label. A note with neither label shows on the Mac.
+The desktop app's release notes drop `iPhone:` notes and show `Mac:` notes
+without the label, on Windows and Linux too. A note with neither label shows
+on the desktop.
 
 ## How it travels
 
 1. The squash merge copies the pull request's description into the commit
    message, so the note lands on `main` with the change.
 2. Release Please tags the release (`vX.Y.Z`) as usual.
-3. The Mac build runs `scripts/release-notes.ts`, which reads main's history
+3. The desktop build runs `scripts/release-notes.ts`, which reads main's history
    and groups every commit's notes under the `vX.Y.Z` tag that shipped it,
    leaving out the iPhone's, into `dist/release-notes.json`. Commits after the
    newest tag are not in any release yet and are left out.
 4. The release publishes the same file as `release-notes.json` beside its
-   build. An app that has downloaded the update shows the notes of every
+   builds. An app that has downloaded the update shows the notes of every
    release since the one it runs in its title bar's update popover, before
    anyone installs it. A Mac offered an update only because another of the
    person's Macs already runs it has downloaded nothing, so its server reads

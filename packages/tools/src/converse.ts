@@ -123,9 +123,11 @@ export const converseTools = [
       resolve: z.boolean().optional(),
     },
     async handler(args, ctx) {
-      const { design } = await resolveFile(ctx, args.file, [args.thread]);
+      const { key, design } = await resolveFile(ctx, args.file, [args.thread]);
       const t = design.doc.threads.find((x) => x.id === args.thread);
       if (!t) throw new ToolError(`No thread ${args.thread}.`);
+      // Their reply would land in a thread gone from the canvas: it stays open for it.
+      const resolve = args.resolve && !ctx.ws.writing?.(key, t.id);
       const message = {
         id: newId("m"),
         author: ctx.caller.author,
@@ -134,7 +136,7 @@ export const converseTools = [
       };
       apply(
         design,
-        args.resolve
+        resolve
           ? {
               op: "batch",
               ops: [
@@ -145,7 +147,11 @@ export const converseTools = [
           : { op: "thread.message", id: t.id, message },
         ctx,
       );
-      return { text: `Replied${args.resolve ? " and resolved" : ""}.` };
+      if (args.resolve && !resolve)
+        return {
+          text: "Replied, and left it open: the person is writing a reply in this thread. Their reply comes through wait_for_activity.",
+        };
+      return { text: `Replied${resolve ? " and resolved" : ""}.` };
     },
   }),
 
@@ -157,9 +163,14 @@ export const converseTools = [
       "Resolve or reopen a thread without replying. Resolve a comment once you've done what it asked; that hides its pin from the canvas, and the change speaks for itself.",
     input: { file: fileArg, thread: z.string(), status: z.enum(["open", "resolved"]) },
     async handler(args, ctx) {
-      const { design } = await resolveFile(ctx, args.file, [args.thread]);
+      const { key, design } = await resolveFile(ctx, args.file, [args.thread]);
       if (!design.doc.threads.some((t) => t.id === args.thread))
         throw new ToolError(`No thread ${args.thread}.`);
+      if (args.status === "resolved" && ctx.ws.writing?.(key, args.thread))
+        throw new ToolError(
+          `The person is writing a reply in thread ${args.thread}, so it stays open. Their reply comes through wait_for_activity; resolve it once you've done what it asks.`,
+          "person_writing",
+        );
       apply(design, { op: "thread.update", id: args.thread, status: args.status }, ctx);
       return { text: `Thread ${args.thread} is ${args.status}.` };
     },

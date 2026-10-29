@@ -314,4 +314,70 @@ describe.skipIf(!chromium)("motion in Chromium", () => {
     });
     expect(r).toEqual({ held: true, back: true, same: true });
   });
+
+  test("a busy board freezes where it is over a crowded pan, and goes on from there", async () => {
+    const dots = Array.from({ length: 70 }, () => "<i class=d></i>").join("");
+    await board(
+      `<style>@keyframes slide{to{transform:translateX(100px)}}.d{display:block;width:20px;height:20px;animation:slide 1s linear infinite}.d::after{content:"";display:block;width:10px;height:10px;animation:slide 1s linear infinite}</style>${dots}`,
+    );
+    await frames(2);
+    const r = await page.evaluate(async () => {
+      const w = window as any;
+      const root = document.getElementById("host")!.shadowRoot!;
+      const lod = new w.pz.BoardDetail(root, w.motion);
+      const el = root.querySelector(".d")!;
+      const x = (pseudo?: string) => new DOMMatrix(getComputedStyle(el, pseudo).transform).e;
+      // Only a crowded view holds: a pan over a few boards keeps them moving.
+      lod.update({ hidden: false, scale: 1, moving: true });
+      const free = !root.querySelector("[data-pz-still]");
+      await new Promise((res) => setTimeout(res, 200));
+      const at = [x(), x("::after")];
+      lod.update({ hidden: false, scale: 1, moving: true, hold: true });
+      const pinned = [x(), x("::after")];
+      const none = root
+        .getAnimations()
+        .filter((a) => (a.effect as KeyframeEffect).target === el).length;
+      await new Promise((res) => setTimeout(res, 200));
+      const later = [x(), x("::after")];
+      // The camera stops: it goes on from the frame it froze at.
+      lod.update({ hidden: false, scale: 1, moving: false });
+      await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+      const a = root.getAnimations().find((a) => (a.effect as KeyframeEffect).target === el)!;
+      return {
+        free,
+        frozen: Math.abs(pinned[0]! - at[0]!) < 5 && Math.abs(pinned[1]! - at[1]!) < 5,
+        none,
+        still: later[0] === pinned[0] && later[1] === pinned[1],
+        back: !root.querySelector("[data-pz-still],[data-pz-pin]"),
+        from: Math.abs((Number(a.currentTime) % 1000) - pinned[0]! * 10) < 60,
+      };
+    });
+    expect(r).toEqual({ free: true, frozen: true, none: 0, still: true, back: true, from: true });
+  });
+
+  test("a frozen element zoomed out to tiny shows its own style, not the frame it froze at", async () => {
+    const dots = Array.from({ length: 70 }, () => "<i class=d></i>").join("");
+    await board(
+      `<style>@keyframes slide{to{transform:translateX(100px)}}.d{display:block;width:20px;height:20px;animation:slide 1s linear infinite}</style>${dots}`,
+    );
+    await frames(2);
+    const r = await page.evaluate(async () => {
+      const w = window as any;
+      const root = document.getElementById("host")!.shadowRoot!;
+      const lod = new w.pz.BoardDetail(root, w.motion);
+      const el = root.querySelector(".d")!;
+      await new Promise((res) => setTimeout(res, 200));
+      lod.update({ hidden: false, scale: 1, moving: true, hold: true });
+      const pinned = getComputedStyle(el).transform !== "none";
+      // The zoom ends with the 20 px dots at 5 device px: under STILL_PX.
+      lod.update({ hidden: false, scale: 0.25, moving: false });
+      return {
+        pinned,
+        held: el.hasAttribute("data-pz-still"),
+        unpinned: !root.querySelector("[data-pz-pin]"),
+        own: getComputedStyle(el).transform,
+      };
+    });
+    expect(r).toEqual({ pinned: true, held: true, unpinned: true, own: "none" });
+  });
 });

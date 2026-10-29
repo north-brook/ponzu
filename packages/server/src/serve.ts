@@ -397,7 +397,8 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
       const refresh = path === "/api/suggestions/refresh";
       if (refresh && req.method !== "POST")
         return new Response("Method not allowed", { status: 405 });
-      if (!suggestions) return Response.json({ agent: null, ideas: [], running: false });
+      if (!suggestions)
+        return Response.json({ agent: null, ideas: [], running: false, looking: [] });
       return Response.json(await (refresh ? suggestions.refresh() : suggestions.state()));
     }
 
@@ -456,9 +457,10 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
         return new Response("Forbidden", { status: 403 });
       if (!updater) return new Response("Not found", { status: 404 });
       const body = (await req.json().catch(() => null)) as { version?: unknown } | null;
-      const update = await updater.install(
-        typeof body?.version === "string" ? { version: body.version } : {},
-      );
+      const update = await updater.install({
+        remote: true,
+        ...(typeof body?.version === "string" ? { version: body.version } : {}),
+      });
       feed.poke(0);
       return Response.json(update ?? null);
     }
@@ -696,6 +698,7 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
         return;
       }
       sockets.delete(s);
+      ws.setWriting(s, s.data.key, []);
       s.data.relay?.upstream?.close();
     },
     message(s, raw) {
@@ -736,6 +739,12 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
           send(s, { t: "ack", req: msg.req });
         } else if (msg.t === "theme" && (msg.theme === "light" || msg.theme === "dark")) {
           ws.theme = msg.theme;
+        } else if (msg.t === "writing" && Array.isArray(msg.threads)) {
+          ws.setWriting(
+            s,
+            s.data.key,
+            msg.threads.filter((t) => typeof t === "string"),
+          );
         }
       } catch (err) {
         const req = "req" in msg ? msg.req : undefined;

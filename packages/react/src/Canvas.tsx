@@ -26,6 +26,7 @@ import { Arrivals, arriveBoard, arriveName, drawFrame, RING_OUT_MS, ringDelay } 
 import { Composer, ThreadCard, threadCard } from "./Comments.tsx";
 import { boardCost, coldLive, coldSkeleton, placeholderFill } from "./coldopen.ts";
 import { type CanvasSource, viewOnly } from "./connection.ts";
+import { type DraftPin, draftKey, unsent, useDrafts } from "./drafts.ts";
 import { Icon, Icons } from "./icons.tsx";
 import { centreDistance, detailScale, onScreen, visibleBand } from "./lod.ts";
 import { playing } from "./loops.tsx";
@@ -81,15 +82,8 @@ export interface CanvasProps {
   className?: string;
 }
 
-interface Pending {
-  /** Absent for a comment on the open canvas. */
-  artboardId?: string;
-  pageId: string;
-  nodeId?: string;
-  /** Offset inside the artboard in artboard px, or the page position without one. */
-  x: number;
-  y: number;
-}
+/** Where a new comment is being written: an offset inside the artboard in its px, or a page position. */
+type Pending = DraftPin;
 
 /**
  * Whether a board follows the theme. isThemed stringifies the whole board,
@@ -148,6 +142,42 @@ export function outOfSight(
   const h = box.h * camera.zoom;
   if (x + w <= 0 || y + h <= 0 || x >= viewport.w || y >= viewport.h) return true;
   return Math.max(w, h) < TINY_BOARD;
+}
+
+/**
+ * More boards in view than this and the view is crowded: while the camera moves over it, loops
+ * hold. Over a few boards, everything keeps moving.
+ */
+export const CROWD = 4;
+
+/**
+ * A board is in view with at least this share of it on screen. Zoomed in on one board, the
+ * edges of its neighbours peeking in don't count.
+ */
+export const IN_VIEW = 0.25;
+
+/**
+ * Whether more than {@link CROWD} boards are in view (a quarter of each on screen, and bigger
+ * than a thumbnail), so loops hold while the camera moves.
+ */
+export function crowded(
+  boxes: Iterable<{ x: number; y: number; w: number; h: number }>,
+  camera: { x: number; y: number; zoom: number },
+  viewport: { w: number; h: number },
+): boolean {
+  let n = 0;
+  for (const b of boxes) {
+    if (outOfSight(b, camera, viewport)) continue;
+    const x = b.x * camera.zoom + camera.x;
+    const y = b.y * camera.zoom + camera.y;
+    const w = b.w * camera.zoom;
+    const h = b.h * camera.zoom;
+    const seen =
+      (Math.min(x + w, viewport.w) - Math.max(x, 0)) *
+      (Math.min(y + h, viewport.h) - Math.max(y, 0));
+    if (seen >= w * h * IN_VIEW && ++n > CROWD) return true;
+  }
+  return false;
 }
 
 /** The boards a selection box drawn from one corner to the other touches, in page order. */
@@ -276,14 +306,56 @@ export function Canvas({
   const skeletons = useMemo(() => coldSkeleton(boards), [boards]);
   const boardHeight = (ab: Artboard) => size(ab).h ?? measured[ab.id] ?? 900;
 
-  // Resolved threads leave the board.
+  // Resolved threads leave the board, but not from under the person reading one.
   const pageThreads = useMemo(
     () =>
       doc && page
-        ? doc.threads.filter((t) => t.status === "open" && threadPage(doc, t)?.id === page.id)
+        ? doc.threads.filter(
+            (t) =>
+              (t.status === "open" || t.id === openThread) && threadPage(doc, t)?.id === page.id,
+          )
         : [],
-    [doc, page],
+    [doc, page, openThread],
   );
+
+  // New comments left unsent keep their "+" pin, to open again.
+  const drafts = useDrafts();
+  // Drafts belong to this design on this host: another Mac's design can share its path.
+  const draftsFile = source.assetBase ?? state.path;
+  const unsentPins = useMemo(
+    () =>
+      readOnly || !page
+        ? []
+        : drafts.flatMap((d) =>
+            d.file === draftsFile &&
+            d.pin &&
+            unsent(d) &&
+            (d.pin.artboardId
+              ? boards.some((b) => b.id === d.pin!.artboardId)
+              : d.pin.pageId === page.id)
+              ? [d.pin]
+              : [],
+          ),
+    [drafts, draftsFile, readOnly, page, boards],
+  );
+  // While a thread has unsent words in it, agents can't resolve it.
+  const writing = useMemo(
+    () =>
+      readOnly
+        ? []
+        : [
+            ...new Set(
+              drafts.flatMap((d) =>
+                d.file === draftsFile && d.thread && unsent(d) ? [d.thread] : [],
+              ),
+            ),
+          ],
+    [drafts, draftsFile, readOnly],
+  );
+  const writingKey = writing.join(" ");
+  useEffect(() => {
+    source.setWriting?.(writingKey ? writingKey.split(" ") : []);
+  }, [source, writingKey]);
 
   const bounds = useMemo(() => {
     if (!boards.length) return null;
@@ -371,10 +443,19 @@ export function Canvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [linked, doc, measured]);
 
-  // Follow focus requests (agent created an artboard).
+  // Follow an agent to the boards it makes, until the person moves the camera themselves: then
+  // it's theirs, and an agent's new board doesn't pull them off the one they're on. Each file
+  // opened starts out following.
+  const tookCamera = useRef(false);
+  const takeCamera = () => {
+    tookCamera.current = true;
+  };
+  useEffect(() => {
+    tookCamera.current = false;
+  }, [given]);
   useEffect(() => {
     const f = state.focus;
-    if (!f || !doc) return;
+    if (!f || !doc || tookCamera.current) return;
     showBoard(f.page, findArtboard(doc, f.artboard)?.artboard);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.focus?.at]);
@@ -502,6 +583,7 @@ export function Canvas({
   }, [pageKey]);
 
   const goToPage = (id: string) => {
+    takeCamera();
     setPageId(id);
     setPending(null);
     setOpenThread(null);
@@ -531,18 +613,22 @@ export function Canvas({
       } else if (mod && (e.key === "=" || e.key === "+")) {
         e.preventDefault();
         const v = viewportSize();
+        takeCamera();
         zoomAt(1.25, v.w / 2, v.h / 2);
       } else if (mod && e.key === "-") {
         e.preventDefault();
         const v = viewportSize();
+        takeCamera();
         zoomAt(0.8, v.w / 2, v.h / 2);
       } else if (e.shiftKey && !mod && !e.altKey && digit === "1") {
         // ⇧1 and ⇧2 by e.code too: ⇧ turns e.key into "!" and "@".
+        takeCamera();
         fitPage();
       } else if (e.shiftKey && !mod && !e.altKey && digit === "2" && selection[0] && doc) {
         const hit = locate(doc, selection[0]);
         if (hit) {
           const { w } = size(hit.artboard);
+          takeCamera();
           fit(
             { x: hit.artboard.x, y: hit.artboard.y, w, h: boardHeight(hit.artboard) },
             viewportSize(),
@@ -949,9 +1035,11 @@ export function Canvas({
     }
     return k;
   });
-  // Videos over pictures hold their frame while the camera moves, and while nobody can be
-  // watching the window, as boards' own loops do.
-  useEffect(() => playing.hold(view.moving || still), [view.moving, still]);
+  // A pan or zoom over a crowded view: every board's loops hold until the camera stops, as do
+  // videos over pictures. A loop under a blur redraws it every frame of the gesture.
+  const crowd = view.moving && crowded(boardBoxes, view, viewportSize());
+  // Videos over pictures also hold while nobody can be watching the window, as boards' loops do.
+  useEffect(() => playing.hold(crowd || still), [crowd, still]);
 
   if (!doc || !page) {
     const offline = state.status === "offline";
@@ -987,7 +1075,13 @@ export function Canvas({
   const arriving = arrivals.boardsArriving(boards);
 
   return (
-    <div className={cn("pz-root", `pz-${theme}`, still && "pz-still", className)}>
+    <div
+      className={cn("pz-root", `pz-${theme}`, still && "pz-still", className)}
+      onPointerDownCapture={takeCamera}
+      onWheelCapture={takeCamera}
+      // A control pressed from the keyboard clicks without a pointer.
+      onClickCapture={takeCamera}
+    >
       <Pacer />
       <div
         ref={viewport}
@@ -1055,10 +1149,8 @@ export function Canvas({
                   arrivals={arrivals}
                   // Slightly rounded, the same few px on screen at any zoom (to a quarter octave).
                   radius={(BOARD_RADIUS * dpr) / scale}
-                  // Its loops hold mid-gesture too: a loop under a blur redraws it every frame
-                  // of a pan.
                   hold={
-                    view.moving ||
+                    crowd ||
                     outOfSight({ ...r, x: r.x + (g?.dx ?? 0), y: r.y + (g?.dy ?? 0) }, view, vpSize)
                   }
                 />
@@ -1158,10 +1250,19 @@ export function Canvas({
                 >
                   <button
                     type="button"
-                    title={readOnly ? "Open thread" : "Drag to move"}
+                    title={
+                      readOnly
+                        ? "Open thread"
+                        : writing.includes(t.id)
+                          ? "Unsent reply · Drag to move"
+                          : "Drag to move"
+                    }
                     className={cn(
                       pin,
                       "pz:bg-comment pz:text-comment-foreground",
+                      // A reply left unsent, dashed as an unsent comment's pin is.
+                      writing.includes(t.id) &&
+                        "pz:outline-[1.5px] pz:outline-dashed pz:outline-offset-2 pz:outline-comment",
                       panning ? "pz:cursor-grab" : "pz:cursor-pointer",
                       (open || dragging) && "pz:scale-112",
                       dragging &&
@@ -1181,10 +1282,45 @@ export function Canvas({
                       thread={t}
                       source={source}
                       me={me}
+                      file={draftsFile}
                       readOnly={readOnly}
                       onClose={() => setOpenThread(null)}
                     />
                   )}
+                </div>
+              );
+            })}
+            {unsentPins.map((p) => {
+              const key = draftKey.comment(draftsFile, p);
+              if (pending && key === draftKey.comment(draftsFile, pending)) return null;
+              const ab = boards.find((b) => b.id === p.artboardId);
+              return (
+                <div
+                  key={key}
+                  className={cn(pinWrap, "pz:z-[2]")}
+                  style={{ left: wpx((ab?.x ?? 0) + p.x), top: wpx((ab?.y ?? 0) + p.y) }}
+                >
+                  <button
+                    type="button"
+                    title="Unsent comment"
+                    className={cn(
+                      pin,
+                      "pz:cursor-pointer pz:bg-card pz:text-foreground pz:outline-[1.5px] pz:outline-dashed pz:outline-comment",
+                    )}
+                    onPointerDown={(e) => {
+                      if (panning || e.button !== 0) return;
+                      e.stopPropagation();
+                      setOpenThread(null);
+                      setPending(p);
+                    }}
+                    onClick={(e) => {
+                      if (e.detail !== 0) return;
+                      setOpenThread(null);
+                      setPending(p);
+                    }}
+                  >
+                    +
+                  </button>
                 </div>
               );
             })}
@@ -1206,7 +1342,16 @@ export function Canvas({
                       +
                     </span>
                     <div className={threadCard}>
-                      <Composer onSubmit={createThread} onCancel={() => setPending(null)} />
+                      <Composer
+                        key={draftKey.comment(draftsFile, pending)}
+                        onSubmit={createThread}
+                        onCancel={() => setPending(null)}
+                        draft={{
+                          key: draftKey.comment(draftsFile, pending),
+                          file: draftsFile,
+                          pin: pending,
+                        }}
+                      />
                     </div>
                   </div>
                 );
@@ -1368,14 +1513,15 @@ interface Worker {
 /**
  * The right side of a working artboard's header: yuzu rain, columns of dots falling at their own
  * pace, Paper's way of saying "at work here" without anyone's face on the board. The columns come
- * in left to right. Sized in em, so it's the label's size at any zoom. Who's working and what they
- * say they're doing is in the tooltip; written out, one pass repeated the same status over every
- * board it touched.
+ * in left to right. Sized in em, so it's the label's size at any zoom; it runs as many columns as
+ * fit in half the board (see .pz-rain-fit), so zoomed out it never runs past the board's edge or
+ * crowds out its name. Who's working and what they say they're doing is in the tooltip; written
+ * out, one pass repeated the same status over every board it touched.
  */
-function WorkingStatus({ who }: { who: Worker[]; zoom?: number }) {
+function WorkingStatus({ who }: { who: Worker[] }) {
   return (
     <Rain
-      className="pz:ml-auto"
+      className="pz-rain-fit pz:ml-auto"
       label="Working"
       title={who.map((a) => `${a.name}: ${a.status ?? "working"}`).join("\n")}
     />
@@ -1576,7 +1722,7 @@ const Board = memo(function Board({
   arrivals: Arrivals;
   /** Its corners' radius, in its own px. */
   radius: number;
-  /** Nobody can see it move: its loops hold (see outOfSight). */
+  /** Nobody can see it move, or the camera moves over a crowded view: its loops hold. */
   hold: boolean;
 }) {
   const { w, h: fixed } = size(ab);

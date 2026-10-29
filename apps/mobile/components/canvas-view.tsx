@@ -54,6 +54,10 @@ export const CanvasView = forwardRef<
     /** How far a sheet over the canvas rises, px from the bottom. */
     sheet: number;
     pending: PendingPin | null;
+    /** New comments left unsent, by their draft's key: their pins stay, to tap. */
+    unsent: (PendingPin & { key: string })[];
+    /** Threads with a reply left unsent. */
+    writing: string[];
     thread: string | null;
     page?: string;
     /** Standby: the page alone on black (iPhone Duo set down while an agent works). */
@@ -118,6 +122,7 @@ export const CanvasView = forwardRef<
       ...(doc ? [doc] : []),
       { t: "presence", presence: p.session.getState().presence },
       { t: "pending", pin: p.pending },
+      { t: "unsent", pins: p.unsent, threads: p.writing },
       { t: "thread", id: p.thread },
       { t: "standby", on: Boolean(p.standby) },
     ];
@@ -159,6 +164,9 @@ export const CanvasView = forwardRef<
     ],
   );
   useEffect(() => send({ t: "pending", pin: props.pending }), [props.pending]);
+  // By value: the list is made again on every change to the doc.
+  const unsentKey = JSON.stringify([props.unsent, props.writing]);
+  useEffect(() => send({ t: "unsent", pins: props.unsent, threads: props.writing }), [unsentKey]);
   useEffect(() => send({ t: "thread", id: props.thread }), [props.thread]);
   useEffect(() => send({ t: "standby", on: Boolean(props.standby) }), [props.standby]);
 

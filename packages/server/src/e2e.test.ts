@@ -186,6 +186,37 @@ test("comments flow through wait_for_activity and reply", async () => {
   expect(t.messages[1]!.author).toEqual({ kind: "agent", name: "Claude" });
 });
 
+test("a thread with a reply being written on a canvas stays open until the canvas lets go", async () => {
+  const { key, design } = ws.designs()[0]!;
+  design.apply(
+    { op: "thread.update", id: "th_test1", status: "open" },
+    { kind: "user", name: "Bryce" },
+  );
+  const canvas = new WebSocket(`ws://127.0.0.1:${server.port}/ws?file=${encodeURIComponent(key)}`);
+  await new Promise((done) => canvas.addEventListener("message", done, { once: true }));
+  canvas.send(JSON.stringify({ t: "writing", threads: ["th_test1"] }));
+  // A socket's messages are handled in order: once the doc it asks for again is back, writing has landed.
+  const acked = new Promise((done) => canvas.addEventListener("message", done, { once: true }));
+  canvas.send(JSON.stringify({ t: "sync", reason: "gap" }));
+  await acked;
+  const refused = await client.callTool({
+    name: "set_comment_status",
+    arguments: { thread: "th_test1", status: "resolved" },
+  });
+  expect(refused.isError).toBe(true);
+  expect(text(refused)).toContain("writing a reply");
+  const closed = new Promise((done) => canvas.addEventListener("close", done, { once: true }));
+  canvas.close();
+  await closed;
+  await Bun.sleep(50);
+  const resolved = await client.callTool({
+    name: "set_comment_status",
+    arguments: { thread: "th_test1", status: "resolved" },
+  });
+  expect(resolved.isError).toBeFalsy();
+  expect(design.doc.threads.find((x) => x.id === "th_test1")!.status).toBe("resolved");
+});
+
 test("presence says what an agent is doing, and in which file", async () => {
   const { key, design } = ws.designs()[0]!;
   const ab = design.doc.pages[0]!.artboards[0]!;
