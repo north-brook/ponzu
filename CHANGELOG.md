@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.70.0](https://github.com/north-brook/ponzu/compare/v1.69.0...v1.70.0) (2026-10-29)
+
+
+### Features
+
+* suggest designs for your recent projects on the home screen ([#293](https://github.com/north-brook/ponzu/issues/293)) ([d7868bf](https://github.com/north-brook/ponzu/commit/d7868bfad338648748f9ddfe82d99c3a83979127))
+
 ## [1.69.0](https://github.com/north-brook/ponzu/compare/v1.68.3...v1.69.0) (2026-10-29)
 
 
