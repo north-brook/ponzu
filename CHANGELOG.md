@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.68.2](https://github.com/north-brook/ponzu/compare/v1.68.1...v1.68.2) (2026-10-29)
+
+
+### Bug Fixes
+
+* record the phone demo videos without flashing frames ([#329](https://github.com/north-brook/ponzu/issues/329)) ([f07d9e5](https://github.com/north-brook/ponzu/commit/f07d9e59d62ca46a3efe454c5199a1903e344dd1))
+
 ## [1.68.1](https://github.com/north-brook/ponzu/compare/v1.68.0...v1.68.1) (2026-10-28)
 
 

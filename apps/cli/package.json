@@ -1,6 +1,6 @@
 {
   "name": "ponzu",
-  "version": "1.68.1",
+  "version": "1.68.2",
   "description": "The open source canvas your agent draws on in HTML and CSS.",
   "type": "module",
   "license": "MIT",
