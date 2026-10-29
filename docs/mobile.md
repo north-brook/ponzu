@@ -223,8 +223,10 @@ lane: every TestFlight build is a `production` build, and every installed
 phone listens on the `production` channel. A new build reaches TestFlight's
 internal **Team** group at once (the group distributes every build
 automatically, with no review) and the external **Alpha** group through Beta
-App Review. Release PRs merge themselves, so a fix reaches phones minutes
-after it merges.
+App Review. Release PRs merge themselves once CI passes, and the tag starts
+the workflow: a JavaScript-only fix is an update a few minutes after it
+merges, which installed phones pick up at their next launch, while one that
+changes native code waits for its build to reach TestFlight.
 
 Updates are published to the build profile's `channel` in `eas.json`, which
 EAS maps to the branch of the same name; `eas channel:view production` shows

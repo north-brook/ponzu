@@ -78,11 +78,11 @@ test("store builds are plain release builds", () => {
 // `production`. A second store lane shares TestFlight's build numbers, so a phone gets
 // whichever lane built last, and with it that lane's channel.
 test("production is the only store build and the only release workflow", () => {
+  // `base` is only what the others extend: it's never built.
   const store = Object.keys(build).filter((name) => {
     const profile = resolved(name);
-    // `base` is only what the others extend: it has no channel and is never built.
     return (
-      profile.channel !== undefined &&
+      name !== "base" &&
       !profile.developmentClient &&
       !profile.ios?.simulator &&
       (profile.ios?.distribution ?? profile.distribution ?? "store") === "store"
