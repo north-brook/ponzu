@@ -637,11 +637,13 @@ describe("the Suggested tab's state", () => {
     runner.answer("alpha", ["Alpha 5"]);
     await until(async () => !(await service.state()).running);
 
-    // A week on, every idea makes way for new ones.
+    // A week on, every idea makes way for new ones, and the glances still hear them all.
     now += STALE;
     await service.refresh();
     await until(() => runner.jobs.length === 5);
     expect(glanceAt(runner, "alpha")!.prompt).toContain("suggest 4 designs");
+    expect(glanceAt(runner, "alpha")!.prompt).toContain("“Alpha 5”, “Alpha 1”");
+    expect(glanceAt(runner, "beta")!.prompt).toContain("“Beta 1”");
     runner.answer("alpha", ["Alpha fresh"]);
     runner.answer("beta", []);
     await until(async () => !(await service.state()).running);
@@ -687,6 +689,32 @@ describe("the Suggested tab's state", () => {
       ["Once", 2],
       ["Never", 2],
     ]);
+  });
+
+  test("an idea's second try has only what's left of its time", async () => {
+    const signals: AbortSignal[] = [];
+    const runner = fakeRunner({
+      prompt: (job) => {
+        signals.push(job.signal);
+        // The first try uses up its time; the second starts with none left, so it never runs.
+        return new Promise((_, reject) =>
+          job.signal.addEventListener("abort", () => reject(new Error("timed out"))),
+        );
+      },
+    });
+    const service = new SuggestionService({
+      bin: () => "/bin/claude",
+      run: runner.run,
+      home,
+      timeout: 30,
+    });
+    await service.refresh();
+    await until(() => runner.jobs.length === 2);
+    runner.answer("alpha", ["Slow"]);
+    runner.answer("beta", []);
+    await until(async () => !(await service.state()).running);
+    expect(signals).toHaveLength(1);
+    expect((await service.state()).ideas).toEqual([]);
   });
 
   test("a run that takes too long is stopped, quietly", async () => {
