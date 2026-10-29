@@ -1,6 +1,7 @@
 export { ArtboardView } from "./Artboard.tsx";
 export {
   ARRIVE_LAG_MS,
+  ARRIVE_LINE,
   ARRIVE_MAX_STAGGER,
   ARRIVE_MS,
   ARRIVE_PLAN_MS,
@@ -14,6 +15,7 @@ export {
   drawFrame,
   outermost,
   RING_OUT_MS,
+  reducedMotion,
   SHEET_KEYFRAMES,
 } from "./arrive.ts";
 export { Canvas, type CanvasProps, type Mode } from "./Canvas.tsx";
