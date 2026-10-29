@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { compareVersions } from "@ponzu/core";
@@ -35,11 +35,13 @@ function read(): Updating | null {
   }
 }
 
-/** Say an update to `to` is about to install. */
+/** Say an update to `to` is about to install. Renamed into place, so no reader sees half of it. */
 export function markUpdating(from: string, to: string, now = Date.now()) {
   try {
     mkdirSync(dirname(updatingFile()), { recursive: true });
-    writeFileSync(updatingFile(), `${JSON.stringify({ from, to, at: now })}\n`);
+    const temp = `${updatingFile()}.${process.pid}`;
+    writeFileSync(temp, `${JSON.stringify({ from, to, at: now })}\n`);
+    renameSync(temp, updatingFile());
   } catch {}
 }
 
@@ -60,13 +62,19 @@ export function replacedByUpdate(version: string, now = Date.now()): boolean {
 
 /**
  * At launch: whether the update before it installed (this is the version it went to) or was
- * interrupted (this is still older). Clears the marker. Undefined when no update came before.
+ * interrupted (this is still older). Undefined when no update came before. Clears the marker,
+ * except while an install it interrupted may still be going: the person opened the old Ponzu
+ * meanwhile, and if they quit it, agents still mustn't start it under the installer.
  */
-export function settleUpdate(version: string): "installed" | "interrupted" | undefined {
+export function settleUpdate(
+  version: string,
+  now = Date.now(),
+): "installed" | "interrupted" | undefined {
   const u = read();
   if (!u) return undefined;
-  clearUpdating();
-  return compareVersions(version, u.to) >= 0 ? "installed" : "interrupted";
+  const installed = compareVersions(version, u.to) >= 0;
+  if (installed || now - u.at >= UPDATING_WITHIN) clearUpdating();
+  return installed ? "installed" : "interrupted";
 }
 
 export function clearUpdating() {

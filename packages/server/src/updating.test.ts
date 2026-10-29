@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -52,6 +52,20 @@ test("the next launch says whether the update went in, once", () => {
   expect(settleUpdate("1.68.2")).toBe("installed");
   expect(existsSync(join(dir, "home/updating.json"))).toBe(false);
   expect(settleUpdate("1.68.2")).toBeUndefined();
+});
+
+test("the person opening the old Ponzu mid-install doesn't let agents start it after they quit", () => {
   markUpdating("1.59.1", "1.68.2");
   expect(settleUpdate("1.59.1")).toBe("interrupted");
+  // The install may still be going: a background launch of the old Ponzu still stays away.
+  expect(replacedByUpdate("1.59.1")).toBe(true);
+  // Once it's stale, the next launch clears it.
+  expect(settleUpdate("1.59.1", Date.now() + UPDATING_WITHIN)).toBe("interrupted");
+  expect(existsSync(join(dir, "home/updating.json"))).toBe(false);
+});
+
+test("the marker is never left half-written", () => {
+  markUpdating("1.59.1", "1.68.2");
+  expect(readdirSync(join(dir, "home"))).toEqual(["updating.json"]);
+  clearUpdating();
 });
