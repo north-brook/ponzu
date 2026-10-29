@@ -367,6 +367,20 @@ describe("the Suggested tab's state", () => {
     expect((await missing.state()).agent).toBeNull();
   });
 
+  test("a CLI that didn't answer for its flags is asked again", async () => {
+    const cli = join(home, "late-claude");
+    const service = new SuggestionService({ bin: (a) => (a === "claude" ? cli : null), home });
+    // Not there yet, then installed.
+    expect((await service.state()).agent).toBeNull();
+    await writeFile(
+      cli,
+      "#!/bin/sh\necho '  --strict-mcp-config\n  --no-session-persistence\n  --settings <file>\n  --setting-sources <sources>'\n",
+    );
+    await chmod(cli, 0o755);
+    await until(async () => (await service.state()).agent === "claude");
+    expect((await service.state()).agent).toBe("claude");
+  });
+
   test("ideas arrive at the front project by project, one run at a time, kept for next time", async () => {
     const file = join(home, "ponzu", "suggestions.json");
     const runner = fakeRunner();
