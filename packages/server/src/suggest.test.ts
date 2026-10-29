@@ -1,5 +1,15 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, readFile, realpath, rm, utimes, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  symlink,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LocalWorkspace } from "./index.ts";
@@ -270,6 +280,12 @@ describe("the run", () => {
       expect(listing.files.sort()).toEqual([".gitignore", "README.md", "src/app.tsx"]);
       expect(listing.count).toBe(3);
       expect(listing.notes).toBe("README.md:\n# Seekle\n\nA word game.");
+      // A note linked to a file outside the repository isn't read.
+      const secret = join(home, "secret.txt");
+      await writeFile(secret, "not for the glance");
+      await rm(join(dir, "README.md"));
+      await symlink(secret, join(dir, "README.md"));
+      expect((await listingOf(dir, process.env)).notes).toBe("");
       // Not a repository: nothing to list.
       expect((await listingOf(join(home, "notes"), process.env)).files).toEqual([]);
     } finally {

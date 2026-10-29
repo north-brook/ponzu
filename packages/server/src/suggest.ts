@@ -1,6 +1,16 @@
 import { spawn } from "node:child_process";
 import { createReadStream } from "node:fs";
-import { mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  realpath,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import {
@@ -603,7 +613,10 @@ const UNLISTED_DIR = /(^|\/)(node_modules|dist|build|out|\.next|vendor|Pods)\//;
 const UNLISTED_FILE = /\.(png|jpe?g|gif|svg|ico|icns|webp|avif|mp4|mov|woff2?|ttf|otf|lock|snap)$/i;
 const NOTES = ["README.md", "AGENTS.md", "CLAUDE.md"];
 
-/** The repository's files as git has them, tracked or not but not ignored, and its notes. */
+/**
+ * The repository's files as git has them, tracked or not but not ignored, and its notes. A note
+ * that links out of the repository is left out, so a checkout can't hand the glance another file.
+ */
 export async function listingOf(root: string, env: SuggestJob["env"]): Promise<Listing> {
   const out = await exec(
     "git",
@@ -614,9 +627,13 @@ export async function listingOf(root: string, env: SuggestJob["env"]): Promise<L
   // A big one keeps its shallower files: they say most about its shape.
   const files =
     all.length > LISTED ? all.filter((f) => f.split("/").length <= 5).slice(0, LISTED) : all;
+  // Only notes really in the repository: one linked to a file elsewhere isn't read.
+  const inside = await realpath(root).catch(() => root);
   const notes = await Promise.all(
     NOTES.map(async (name) => {
-      const text = await readFile(join(root, name), "utf8").catch(() => "");
+      const at = await realpath(join(root, name)).catch(() => null);
+      if (!at?.startsWith(`${inside}/`)) return "";
+      const text = await readFile(at, "utf8").catch(() => "");
       return text.trim() ? `${name}:\n${text.slice(0, NOTE_BYTES).trim()}` : "";
     }),
   );
