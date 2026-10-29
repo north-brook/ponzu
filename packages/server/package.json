@@ -5,7 +5,8 @@
   "license": "MIT",
   "exports": {
     ".": "./src/index.ts",
-    "./clone": "./src/clone.ts"
+    "./clone": "./src/clone.ts",
+    "./updating": "./src/updating.ts"
   },
   "dependencies": {
     "@ponzu/core": "workspace:*",

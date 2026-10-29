@@ -11,6 +11,7 @@ import {
   notesBetween,
   releaseNotesUrl,
 } from "@ponzu/core";
+import { clearUpdating, markUpdating } from "@ponzu/server/updating";
 import {
   app,
   type BrowserWindow,
@@ -123,7 +124,8 @@ export async function installUpdater(opts: {
    * through quitAndInstall: `update-downloaded` fires before Squirrel has unpacked the update, and
    * it waits for that where a plain quit would leave a half-unpacked bundle and nothing to reopen
    * it. Never while an agent is mid-change here, even one that started while the update
-   * downloaded: it waits until the agent is done.
+   * downloaded: it waits until the agent is done. Says an update is installing first, so an
+   * agent's `ponzu mcp`, cut off by the quit, doesn't start this Ponzu again under the installer.
    */
   const restart = () => {
     if (restarting) return;
@@ -139,6 +141,7 @@ export async function installUpdater(opts: {
       }
       setTimeout(() => {
         if (!opts.window()) markBackgroundRelaunch();
+        if (ready) markUpdating(app.getVersion(), ready.version);
         quitAndInstall(autoUpdater, installer);
       }, RESTART_DELAY);
     };
@@ -189,6 +192,7 @@ export async function installUpdater(opts: {
   // A failed check (offline, rate limited) is not worth a word; the next one retries. A failed
   // install (the .deb's password prompt dismissed) leaves Ponzu running, to try again.
   autoUpdater.on("error", () => {
+    if (restarting) clearUpdating();
     installing = false;
     restarting = false;
   });

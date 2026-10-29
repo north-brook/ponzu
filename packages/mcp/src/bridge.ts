@@ -8,6 +8,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import {
+  type CallToolRequest,
   CallToolRequestSchema,
   type CallToolResult,
   CallToolResultSchema,
@@ -21,7 +22,7 @@ import {
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { SERVER_INSTRUCTIONS, tools, type Workspace } from "@ponzu/tools";
-import { createMcpServer, FILES_META, ORIGIN_HEADERS } from "./index.ts";
+import { createMcpServer, FILES_META, ORIGIN_HEADERS, WAIT_META } from "./index.ts";
 
 export interface BridgeOptions {
   name?: string;
@@ -42,6 +43,11 @@ export interface BridgeOptions {
 
 /** Longer than wait_for_activity's longest poll. */
 const CALL_TIMEOUT = 15 * 60_000;
+/**
+ * How long a wait cut off by its host quitting looks for Ponzu to come back before starting it:
+ * an update restarts it in seconds, and starting the old one meanwhile would stop the install.
+ */
+const RESTART_GRACE = 10_000;
 const readOnly = new Set(tools.filter((t) => t.readOnly).map((t) => t.name));
 
 /**
@@ -202,26 +208,96 @@ export async function serveBridge(
       }
     };
 
-  server.setRequestHandler(CallToolRequestSchema, async (req, extra): Promise<CallToolResult> => {
-    const name = req.params.name;
-    const args = req.params.arguments ?? {};
-    const params = { ...req.params, arguments: opts.mapArgs ? opts.mapArgs(name, args) : args };
-    const options = { signal: extra.signal, timeout: CALL_TIMEOUT };
+  /**
+   * Look for a host to come back, without starting one, until `until` or RESTART_GRACE has passed.
+   * True when one did.
+   */
+  const hostBack = async (until: number, signal: AbortSignal): Promise<boolean> => {
+    const giveUp = Math.min(until, Date.now() + RESTART_GRACE);
+    while (!signal.aborted) {
+      if (await opts.findHost(false).catch(() => null)) return true;
+      if (Date.now() >= giveUp) return false;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    return false;
+  };
+
+  /**
+   * A wait rides out Ponzu restarting under it, as when it quits into an update: once Ponzu is
+   * back, it carries on there for the time it has left, rather than answering at once.
+   */
+  const waitThrough = async (
+    params: CallToolRequest["params"],
+    signal: AbortSignal,
+  ): Promise<CallToolResult> => {
+    const { since, timeout } = (params.arguments ?? {}) as { since?: unknown; timeout?: unknown };
+    const deadline = Date.now() + (typeof timeout === "number" ? timeout : 60) * 1000;
+    const left = () => Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+    const withArgs = (more: Record<string, unknown>) => ({
+      ...params,
+      arguments: { ...params.arguments, ...more },
+    });
+    let cutOff = false;
+    const result = await call(params, signal, async () => {
+      cutOff = true;
+      if (!(await hostBack(deadline, signal)) && Date.now() >= deadline) return null;
+      return withArgs({ timeout: left() });
+    });
+    if (!result) {
+      const again = typeof since === "number" ? `Wait again with cursor=${since}` : "Wait again";
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Ponzu stopped while you waited and isn't back yet, so nothing was checked. ${again}: it's most likely restarting into an update.`,
+          },
+        ],
+      };
+    }
+    // The Ponzu it came back to can't tell what happened before it started. With nothing waiting
+    // on the agent, there's nothing to tell it: carry on from the new Ponzu's cursor.
+    const wait = result._meta?.[WAIT_META] as { cursor: number; gap?: string; waiting?: number };
+    if (!cutOff || wait?.gap !== "restart" || wait.waiting || !left()) return result;
+    const again = (await call(withArgs({ since: wait.cursor, timeout: left() }), signal))!;
+    const first = again.content.findIndex((c) => c.type === "text");
+    return {
+      ...again,
+      content: again.content.map((c, i) =>
+        i === first && c.type === "text"
+          ? {
+              ...c,
+              text: `Ponzu restarted while you waited, with nothing waiting on you.\n${c.text}`,
+            }
+          : c,
+      ),
+    };
+  };
+
+  /**
+   * Run a tool on the host, or else here. `cutOff`, for a read-only call, runs when the host went
+   * away with it, and says what to send again: null answers null.
+   */
+  const call = async (
+    params: CallToolRequest["params"],
+    signal: AbortSignal,
+    cutOff?: () => Promise<CallToolRequest["params"] | null>,
+  ): Promise<CallToolResult | null> => {
+    const name = params.name;
+    let sent = params;
+    let ridden = cutOff;
+    const options = { signal, timeout: CALL_TIMEOUT };
     for (let attempt = 0; attempt < 2; attempt++) {
       const client = await hostClient();
       if (!client) break;
       try {
         return remember(
           await using(client, () =>
-            client.request({ method: "tools/call", params }, CallToolResultSchema, options),
+            client.request({ method: "tools/call", params: sent }, CallToolResultSchema, options),
           ),
         );
       } catch (err) {
         // The host answered with an error: that's the answer.
-        if (
-          extra.signal.aborted ||
-          (err instanceof McpError && err.code !== ErrorCode.ConnectionClosed)
-        )
+        if (signal.aborted || (err instanceof McpError && err.code !== ErrorCode.ConnectionClosed))
           throw err;
         await dropHost(client);
         // Sending a write again could apply it twice if the host got it before it went away.
@@ -236,17 +312,32 @@ export async function serveBridge(
             isError: true,
           };
         }
+        // A read-only call the host took with it: the caller says what to send again, if anything.
+        if (ridden && !neverArrived(err)) {
+          const next = await ridden();
+          if (!next) return null;
+          sent = next;
+          ridden = undefined;
+        }
       }
     }
     await opts.prepareLocal?.();
     // Files it moves to while the host is down count too, for when the host comes back.
     return remember(
       await (await localClient()).request(
-        { method: "tools/call", params },
+        { method: "tools/call", params: sent },
         CallToolResultSchema,
         options,
       ),
     );
+  };
+
+  server.setRequestHandler(CallToolRequestSchema, async (req, extra): Promise<CallToolResult> => {
+    const name = req.params.name;
+    const args = req.params.arguments ?? {};
+    const params = { ...req.params, arguments: opts.mapArgs ? opts.mapArgs(name, args) : args };
+    if (name === "wait_for_activity") return waitThrough(params, extra.signal);
+    return (await call(params, extra.signal))!;
   });
 
   server.setRequestHandler(ListToolsRequestSchema, (req, extra) =>

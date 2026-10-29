@@ -169,6 +169,8 @@ async function openWorkspace(files: string[], log: (s: string) => void) {
     launched_by: process.env.PONZU_LAUNCHED_BY ?? "person",
     designs: ws.designs().length,
     renderer: Boolean(renderer),
+    // The desktop app's launch after it quit into an update: whether the update went in.
+    ...(process.env.PONZU_UPDATE ? { update: process.env.PONZU_UPDATE } : {}),
   });
   return { ws, telemetry, named };
 }

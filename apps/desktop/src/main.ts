@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { type Catalog, parseDesignLink } from "@ponzu/core";
 import { cloneTarget, parseOpenUrl, spawnGit } from "@ponzu/server/clone";
+import { replacedByUpdate, settleUpdate } from "@ponzu/server/updating";
 import {
   app,
   BrowserWindow,
@@ -51,6 +52,8 @@ const pendingLinks: string[] = [];
  */
 let background = process.argv.includes("--background");
 let updateReady = false;
+/** Whether the update this launch follows installed, for the server's telemetry. */
+let update: ReturnType<typeof settleUpdate>;
 
 /*
  * GPU memory. Chromium sizes the tile budget from the whole screen, not the
@@ -99,6 +102,7 @@ function startServer(
           ...process.env,
           PONZU_DESKTOP: "1",
           PONZU_LAUNCHED_BY: background ? "agent" : "person",
+          ...(update ? { PONZU_UPDATE: update } : {}),
           // Development and the smoke check aren't anyone using Ponzu.
           ...(isDev || smoke ? { PONZU_TELEMETRY: "0" } : {}),
           // The smoke check proves the bundled server can open its catalog database.
@@ -639,7 +643,11 @@ function buildMenu() {
 /* Lifecycle                                                           */
 /* ------------------------------------------------------------------ */
 
-if (!app.requestSingleInstanceLock()) {
+// An agent's older `ponzu mcp` starts Ponzu again the moment an update quits it, which would stop
+// the installer (updating.ts): the updated Ponzu is on its way, and the agent finds that one.
+if (background && !smoke && replacedByUpdate(app.getVersion())) {
+  app.exit(0);
+} else if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on("second-instance", (_e, argv, cwd) => {
@@ -669,6 +677,7 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(async () => {
     if (!smoke && relaunchedInBackground()) background = true;
+    if (!smoke) update = settleUpdate(app.getVersion());
     buildMenu();
     // Opened by the person: a window now, on the splash, rather than a bouncing dock icon.
     // The smoke check must see the studio itself paint, and agents start us without one.
