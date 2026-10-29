@@ -397,7 +397,8 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
       const refresh = path === "/api/suggestions/refresh";
       if (refresh && req.method !== "POST")
         return new Response("Method not allowed", { status: 405 });
-      if (!suggestions) return Response.json({ agent: null, ideas: [], running: false });
+      if (!suggestions)
+        return Response.json({ agent: null, ideas: [], running: false, looking: [] });
       return Response.json(await (refresh ? suggestions.refresh() : suggestions.state()));
     }
 

@@ -1,7 +1,8 @@
 /**
  * Designs the person's own coding agent suggests for their recent projects, for the home
- * screen's Suggested tab. One headless, read-only run of the agent looks around each project
- * and proposes a few; `GET /api/suggestions` has what it found, and
+ * screen's Suggested tab. In two steps, each a headless, read-only run of the agent: one glance
+ * at each project names a few designs, then one run per design reads the code it starts from and
+ * writes its prompt. `GET /api/suggestions` has what they found, and
  * `POST /api/suggestions/refresh` looks again.
  */
 export interface Suggestions {
@@ -11,6 +12,18 @@ export interface Suggestions {
   ideas: Idea[];
   /** A run is looking now; what it finds arrives at the front, project by project. */
   running: boolean;
+  /** The projects a run is still naming designs for, the most recent first. */
+  looking: LookingAt[];
+}
+
+/** A project a run is looking around, before it names its designs. */
+export interface LookingAt {
+  /** Its folder: its main checkout. */
+  project: string;
+  projectId: string;
+  projectName: string;
+  /** Its folder as the prompts write it: "~/code/seekle". */
+  folder: string;
 }
 
 export type SuggestionAgent = "claude" | "codex";
@@ -25,12 +38,22 @@ export interface Idea {
   projectId: string;
   /** The project's folder's name, as the prompt names it: "seekle". */
   projectName: string;
-  /** The short text the card shows. */
-  card: string;
-  /** The whole prompt to copy. It names the folder and the design. */
+  /**
+   * The whole prompt to copy, which its card shows. It names the folder and the design. Empty
+   * while the agent reads the code to write it.
+   */
   prompt: string;
-  /** When the run that found it ended, ms since the epoch. */
+  /** While its prompt is being written: what the agent has read so far, the latest last. */
+  steps?: IdeaStep[];
+  /** When the run that named it did, ms since the epoch. */
   found: number;
+}
+
+/** One thing an idea's run did while it read the code: read a file, look for some, search. */
+export interface IdeaStep {
+  verb: "read" | "find" | "search";
+  /** The file (its last two parts), the files' pattern, or the words. */
+  what: string;
 }
 
 /** An idea and a design are the same one when their names are, ignoring case, spaces and marks. */
