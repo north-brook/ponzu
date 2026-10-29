@@ -1,6 +1,7 @@
 import { type Author, newId, type Thread } from "@ponzu/core";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CanvasSource } from "./connection.ts";
+import { type Draft, draftKey, getDraft, setDraft, unsent, useDraft } from "./drafts.ts";
 import { AgentMark, Icon } from "./icons.tsx";
 import { Button, cn, Menu, Textarea } from "./ui.tsx";
 
@@ -65,17 +66,17 @@ export function Avatar({ author, size = 20 }: { author: Author; size?: number })
   );
 }
 
-/** Enter sends, Shift+Enter breaks the line, Esc cancels. Keys stay out of the canvas. */
+/** Enter sends, Shift+Enter breaks the line, Esc puts it away. Keys stay out of the canvas. */
 function onFieldKey(
   e: React.KeyboardEvent<HTMLTextAreaElement>,
   submit: () => void,
-  cancel: () => void,
+  close: () => void,
 ) {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
     submit();
   }
-  if (e.key === "Escape") cancel();
+  if (e.key === "Escape") close();
   e.stopPropagation();
 }
 
@@ -101,12 +102,19 @@ export function Composer({
   onSubmit,
   onCancel,
   placeholder = "Leave a comment…",
+  draft,
 }: {
   onSubmit: (text: string) => void;
+  /** Esc. What's typed stays in its draft, if it has one. */
   onCancel: () => void;
   placeholder?: string;
+  /** Where unsent words are kept (drafts.ts), so closing the composer never loses them. */
+  draft?: { key: string } & Omit<Draft, "text">;
 }) {
-  const [text, setText] = useState("");
+  const [own, setOwn] = useState("");
+  const [kept, keep] = useDraft(draft?.key ?? "", draft ?? { file: "" });
+  const text = draft ? kept : own;
+  const setText = draft ? keep : setOwn;
   const ref = useRef<HTMLTextAreaElement>(null);
   useAutofocus(ref);
   const submit = () => {
@@ -137,23 +145,38 @@ export function Composer({
   );
 }
 
-/** Edits one of your messages in place. */
+/** Edits one of your messages in place. Esc puts it away, edit kept; Cancel drops the edit. */
 function EditField({
   initial,
+  draft,
   onSave,
-  onCancel,
+  onClose,
 }: {
   initial: string;
+  draft: { key: string } & Omit<Draft, "text">;
   onSave: (text: string) => void;
-  onCancel: () => void;
+  onClose: () => void;
 }) {
-  const [text, setText] = useState(initial);
+  const [text, setText] = useDraft(draft.key, draft, initial);
   const ref = useRef<HTMLTextAreaElement>(null);
   useAutofocus(ref);
+  // Emptied while open is fine; put away empty, there's no edit to keep.
+  useEffect(
+    () => () => {
+      const d = getDraft(draft.key);
+      if (d && !unsent(d)) setDraft(draft.key, null);
+    },
+    [draft.key],
+  );
+  const cancel = () => {
+    setText(initial);
+    onClose();
+  };
   const save = () => {
     const t = text.trim();
-    if (t && t !== initial) onSave(t);
-    else onCancel();
+    if (!t || t === initial) return cancel();
+    onSave(t);
+    setText(initial);
   };
   return (
     <div className="pz:flex pz:flex-col pz:gap-1.5">
@@ -163,11 +186,11 @@ function EditField({
         value={text}
         aria-label="Edit message"
         onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => onFieldKey(e, save, onCancel)}
+        onKeyDown={(e) => onFieldKey(e, save, onClose)}
       />
       <div className="pz:flex pz:items-center pz:justify-end pz:gap-1">
-        <span className={cn(meta, "pz:mr-auto")}>Enter to save · Esc to cancel</span>
-        <Button variant="ghost" className="pz:h-6 pz:rounded-md pz:px-2" onClick={onCancel}>
+        <span className={cn(meta, "pz:mr-auto")}>Enter to save</span>
+        <Button variant="ghost" className="pz:h-6 pz:rounded-md pz:px-2" onClick={cancel}>
           Cancel
         </Button>
         <Button className="pz:h-6 pz:rounded-md pz:px-2" disabled={!text.trim()} onClick={save}>
@@ -182,17 +205,28 @@ export function ThreadCard({
   thread,
   source,
   me,
+  file = "",
   readOnly = false,
   onClose,
 }: {
   thread: Thread;
   source: CanvasSource;
   me: Author;
+  /** The design it's in, by its key: what its unsent words are kept under. */
+  file?: string;
   /** Only the messages: no reply, resolve, edit or delete. */
   readOnly?: boolean;
   onClose: () => void;
 }) {
-  const [editing, setEditing] = useState<string | null>(null);
+  // An edit left unsaved when the card closed opens again where it was.
+  const [editing, setEditing] = useState<string | null>(() => {
+    if (readOnly) return null;
+    const kept = (id: string) => {
+      const d = getDraft(draftKey.edit(file, id));
+      return Boolean(d && unsent(d));
+    };
+    return thread.messages.find((m) => kept(m.id))?.id ?? null;
+  });
   const [scrolled, setScrolled] = useState(false);
   const list = useRef<HTMLDivElement>(null);
   // Whether the list was at its end before the latest render.
@@ -223,17 +257,31 @@ export function ThreadCard({
   const stopFollowing = () => {
     following.current = false;
   };
-  const reply = (text: string) =>
-    source.apply({
-      op: "thread.message",
+  const resolved = thread.status === "resolved";
+  const reply = (text: string) => {
+    const message = {
+      op: "thread.message" as const,
       id: thread.id,
       message: { id: newId("m"), author: me, text, createdAt: Date.now() },
-    });
+    };
+    // Resolved while it was open, a reply is something more to do: it opens again.
+    source.apply(
+      resolved
+        ? { op: "batch", ops: [message, { op: "thread.update", id: thread.id, status: "open" }] }
+        : message,
+    );
+  };
   const resolve = () => {
     source.apply({ op: "thread.update", id: thread.id, status: "resolved" });
     onClose();
   };
+  const reopen = () => source.apply({ op: "thread.update", id: thread.id, status: "open" });
   const remove = () => {
+    for (const k of [
+      draftKey.reply(file, thread.id),
+      ...thread.messages.map((m) => draftKey.edit(file, m.id)),
+    ])
+      setDraft(k, null);
     source.apply({ op: "thread.delete", id: thread.id });
     onClose();
   };
@@ -241,8 +289,10 @@ export function ThreadCard({
     source.apply({ op: "thread.edit", id: thread.id, messageId, text, editedAt: Date.now() });
     setEditing(null);
   };
-  const removeMessage = (messageId: string) =>
+  const removeMessage = (messageId: string) => {
+    setDraft(draftKey.edit(file, messageId), null);
     source.apply({ op: "thread.unmessage", id: thread.id, messageId });
+  };
   const mine = (a: Author) => !readOnly && a.kind === me.kind && a.name === me.name;
   // The first message is the comment itself. Its actions live in the card's
   // menu, so nothing appears on hover beside the Resolve and More buttons.
@@ -253,9 +303,15 @@ export function ThreadCard({
     <div className={threadCard} onPointerDown={(e) => e.stopPropagation()}>
       {!readOnly && (
         <div className="pz:absolute pz:top-1.5 pz:right-1.5 pz:z-[1] pz:flex pz:gap-0.5 pz:rounded-lg pz:bg-card">
-          <Button variant="ghost" size="icon" onClick={resolve} title="Resolve">
-            <Icon name="check" size={15} />
-          </Button>
+          {resolved ? (
+            <Button variant="ghost" size="icon" onClick={reopen} title="Resolved · Reopen">
+              <Icon name="undo" size={15} />
+            </Button>
+          ) : (
+            <Button variant="ghost" size="icon" onClick={resolve} title="Resolve">
+              <Icon name="check" size={15} />
+            </Button>
+          )}
           <Menu
             trigger={
               <Button variant="ghost" size="icon" title="More">
@@ -346,11 +402,12 @@ export function ThreadCard({
                 </div>
               )}
             </div>
-            {editing === m.id ? (
+            {!readOnly && editing === m.id ? (
               <EditField
                 initial={m.text}
+                draft={{ key: draftKey.edit(file, m.id), file, thread: thread.id }}
                 onSave={(text) => edit(m.id, text)}
-                onCancel={() => setEditing(null)}
+                onClose={() => setEditing(null)}
               />
             ) : (
               <div className={messageText}>{m.text}</div>
@@ -358,7 +415,14 @@ export function ThreadCard({
           </div>
         ))}
       </div>
-      {!readOnly && <Composer onSubmit={reply} onCancel={onClose} placeholder="Reply…" />}
+      {!readOnly && (
+        <Composer
+          onSubmit={reply}
+          onCancel={onClose}
+          placeholder={resolved ? "Reply to reopen…" : "Reply…"}
+          draft={{ key: draftKey.reply(file, thread.id), file, thread: thread.id }}
+        />
+      )}
     </div>
   );
 }

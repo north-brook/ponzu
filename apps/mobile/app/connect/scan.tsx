@@ -157,10 +157,10 @@ export default function Scan() {
             }}
           >
             {error
-              ? "Couldn't pair with that Mac"
+              ? "Couldn't pair with that computer"
               : denied
                 ? "Ponzu can't use the camera"
-                : "Point at the code on your Mac"}
+                : "Point at the code on your computer"}
           </Text>
           <Text
             onPress={denied && !error ? () => Linking.openSettings() : undefined}
@@ -175,7 +175,7 @@ export default function Scan() {
             {error ??
               (denied
                 ? "Turn on Camera for Ponzu in Settings."
-                : "Mac menu bar: Ponzu › Pair iPhone…")}
+                : "Pair iPhone… in the Ponzu or Help menu")}
           </Text>
         </Animated.View>
       </View>

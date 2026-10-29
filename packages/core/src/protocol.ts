@@ -109,6 +109,11 @@ export type ClientMessage =
   /** The canvas's appearance, so agents render artboards the way the person sees them. */
   | { t: "theme"; theme: ColorScheme }
   /**
+   * The threads this canvas has an unsent reply in, every time that changes. While one does,
+   * agents can't resolve it, so it can't leave the canvas under the person's words.
+   */
+  | { t: "writing"; threads: string[] }
+  /**
    * The canvas missed an op (its seq skipped one) or has one that doesn't fit its doc:
    * send the whole doc again. A watching canvas may send this too.
    */

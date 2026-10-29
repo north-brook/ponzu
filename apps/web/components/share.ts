@@ -10,12 +10,12 @@ import type { Metadata } from "next";
  */
 
 /** The site's name and line, used by the layout and the home page. */
-export const TITLE = "Ponzu — the design canvas for your coding agent";
+export const TITLE = "Ponzu — the open source canvas for your agent";
 export const DESCRIPTION =
-  "Open source and local. Your coding agent designs in plain HTML and CSS on an infinite canvas, and you steer with comments.";
+  "Brands, apps, launch pages, diagrams, dashboards. Your agent draws them in HTML and CSS on your Mac, and you steer with comments.";
 
 export const SHARE_ALT =
-  "Ponzu: the design canvas for your coding agent. Designs made in Ponzu, from a landing page to brand guidelines and an app screen, recede across a dark canvas.";
+  "Ponzu: the open source canvas for your agent. Designs made in Ponzu, from a landing page to brand guidelines and an app screen, recede across a dark canvas.";
 
 const IMAGE = { width: 2400, height: 1260, alt: SHARE_ALT };
 

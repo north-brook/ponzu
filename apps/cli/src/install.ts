@@ -4,7 +4,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { linkCommand } from "./command.ts";
-import { findApp, ponzuHome, shimPath, writeShim } from "./host.ts";
+import { adoptAppImage, appServer, findApp, ponzuHome, writeShim } from "./host.ts";
 
 /** How an agent reaches Ponzu: a command it launches, or a URL. */
 type Entry = { command: string; args: string[] } | { url: string };
@@ -135,13 +135,13 @@ export async function installAgent(
 Or launch \`ponzu mcp\` over stdio from any MCP client.`);
     process.exit(1);
   }
-  const entry = opts.url ? { url: opts.url } : await launchEntry();
+  const launch = opts.url ? { entry: { url: opts.url } } : await launchEntry();
+  const entry = launch?.entry;
   if (!entry) {
     if (!opts.auto) console.error("Move Ponzu to your Applications folder, then try again.");
     return;
   }
-  if ("command" in entry && entry.command === shimPath())
-    await linkCommand(entry.command, { auto: opts.auto, path: loginPath() });
+  if (launch.shim) await linkCommand(launch.shim, { auto: opts.auto, path: loginPath() });
   const done = readDone();
   const targets = AGENTS.filter((a) => (id ? a.id === id : a.detect()));
   if (!targets.length && !opts.auto)
@@ -198,19 +198,31 @@ function codexConfigured(): boolean {
 }
 
 /**
- * The command agents launch. With the desktop app installed, that's a shim
- * into the app, so it updates with it. Null when this binary runs from a
- * place that goes away (the disk image) and no installed app exists.
+ * The command agents launch, and the shim a terminal's `ponzu` runs. With the
+ * desktop app installed, agents run that shim too, so they update with the app.
+ * Not on Windows, which won't start a batch file without a shell: the CLI in
+ * the app's folder, which keeps its path across updates (the installer stops
+ * whatever runs from there first). Null when this binary runs from a place
+ * that goes away (the disk image) and no installed app exists.
  */
-async function launchEntry(): Promise<Entry | null> {
+async function launchEntry(): Promise<{ entry: Entry; shim?: string } | null> {
+  await adoptAppImage().catch(() => null);
   const app = findApp();
-  if (app?.endsWith(".app")) return { command: await writeShim(app), args: ["mcp"] };
+  // An app in its usual form; PONZU_APP may name any executable, which gets no shim.
+  const installed =
+    process.platform === "darwin" ? app?.endsWith(".app") : app && app !== process.env.PONZU_APP;
+  if (app && installed) {
+    const shim = await writeShim(app);
+    const command = process.platform === "win32" ? appServer(app) : shim;
+    return { entry: { command, args: ["mcp"] }, shim };
+  }
   if (/\.app\/Contents\//.test(process.execPath)) return null;
   // A compiled binary runs as itself, a checkout through bun. bunx unpacks into a temp folder.
-  if (Bun.main.startsWith("/$bunfs/")) return { command: process.execPath, args: ["mcp"] };
-  if (/\/bunx-[^/]+\//.test(Bun.main))
-    return { command: process.execPath, args: ["x", "ponzu", "mcp"] };
-  return { command: process.execPath, args: [Bun.main, "mcp"] };
+  if (Bun.main.startsWith("/$bunfs/") || Bun.main.startsWith("B:\\~BUN\\"))
+    return { entry: { command: process.execPath, args: ["mcp"] } };
+  if (/[\\/]bunx-[^\\/]+[\\/]/.test(Bun.main))
+    return { entry: { command: process.execPath, args: ["x", "ponzu", "mcp"] } };
+  return { entry: { command: process.execPath, args: [Bun.main, "mcp"] } };
 }
 
 function toEntry(raw?: { command?: string; args?: string[]; url?: string } | null): Entry | null {

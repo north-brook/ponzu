@@ -27,7 +27,7 @@ import { wakeCommand } from "./wake.ts";
 const VERSION = pkg.version;
 const here = dirname(fileURLToPath(import.meta.url));
 
-const HELP = `Ponzu ${VERSION}: a design canvas your coding agent drives with HTML and CSS.
+const HELP = `Ponzu ${VERSION}: the open source canvas your agent draws on in HTML and CSS.
 
 Usage
   ponzu serve [files.design…]   Open the canvas in your browser and serve MCP at /mcp
@@ -42,7 +42,7 @@ Usage
   ponzu telemetry [on|off]      Show or change usage reporting
   ponzu wake [install|uninstall]
                                 The helper that lets the iPhone app start Ponzu on this
-                                Mac. The app installs it; uninstall removes it
+                                Mac or Linux PC. The app installs it; uninstall removes it
 
 Options
   -p, --port <n>       Port for serve (default 7777; from a checkout, one in

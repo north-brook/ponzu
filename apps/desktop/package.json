@@ -2,8 +2,9 @@
   "name": "@ponzu/desktop",
   "productName": "Ponzu",
   "private": true,
-  "version": "1.58.0",
+  "version": "1.68.2",
   "description": "Ponzu desktop app",
+  "homepage": "https://ponzu.design",
   "type": "module",
   "main": "dist/main.cjs",
   "scripts": {
@@ -11,7 +12,8 @@
     "start": "bun run build && ./run-dev.sh",
     "dist": "bun run build && bun run --filter @ponzu/studio build && electron-builder --mac --arm64 --publish never",
     "package:dir": "bun run build && bun run --filter @ponzu/studio build && electron-builder --dir --publish never",
-    "icons:installer": "bash scripts/make-installer-icon.sh"
+    "icons:installer": "bash scripts/make-installer-icon.sh",
+    "icons:platforms": "swift scripts/make-platform-icons.swift build/icon-1024.png build"
   },
   "devDependencies": {
     "@ponzu/core": "workspace:*",
@@ -45,15 +47,6 @@
     ],
     "afterPack": "./scripts/quicklook.cjs",
     "afterSign": "./scripts/notarize.cjs",
-    "fileAssociations": [
-      {
-        "ext": "design",
-        "name": "Ponzu Design",
-        "role": "Editor",
-        "isPackage": true,
-        "icon": "build/icon.icns"
-      }
-    ],
     "protocols": [
       {
         "name": "Ponzu",
@@ -79,6 +72,15 @@
         }
       ],
       "icon": "build/icon.icns",
+      "fileAssociations": [
+        {
+          "ext": "design",
+          "name": "Ponzu Design",
+          "role": "Editor",
+          "isPackage": true,
+          "icon": "build/icon.icns"
+        }
+      ],
       "extendInfo": {
         "UTExportedTypeDeclarations": [
           {
@@ -128,11 +130,77 @@
       "repo": "ponzu",
       "releaseType": "draft"
     },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "extraResources": [
+        {
+          "from": "build",
+          "to": "tray",
+          "filter": [
+            "tray.png",
+            "tray@2x.png"
+          ]
+        },
+        {
+          "from": "build/uninstall.ps1",
+          "to": "uninstall.ps1"
+        }
+      ]
+    },
     "linux": {
       "executableName": "ponzu",
+      "icon": "build/icons",
+      "category": "Graphics",
+      "synopsis": "A design canvas you drive with HTML and CSS",
+      "maintainer": "Northbrook <https://ponzu.design>",
+      "mimeTypes": [
+        "application/x-ponzu-design"
+      ],
+      "extraResources": [
+        {
+          "from": "build",
+          "to": "tray",
+          "filter": [
+            "tray.png",
+            "tray@2x.png"
+          ]
+        }
+      ],
       "target": [
-        "dir"
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "artifactName": "${productName}-${arch}.${ext}",
+      "include": "build/installer.nsh"
+    },
+    "appImage": {
+      "artifactName": "${productName}-x64.${ext}"
+    },
+    "deb": {
+      "artifactName": "${productName}-x64.${ext}",
+      "afterRemove": "build/deb-after-remove.sh"
     }
   },
   "dependencies": {

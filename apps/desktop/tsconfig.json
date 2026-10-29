@@ -1,5 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "types": ["node"] },
-  "include": ["src"]
+  "include": ["src"],
+  // Tests run under Bun: the root tsconfig checks them.
+  "exclude": ["src/**/*.test.ts"]
 }

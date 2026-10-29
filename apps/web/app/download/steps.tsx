@@ -11,7 +11,7 @@ import type { ReactNode } from "react";
  */
 
 /** A macOS icon at its drawn size. Decorative: the caption carries the meaning. */
-function Glyph({ size, src }: { size: number; src: string }) {
+export function Glyph({ size, src }: { size: number; src: string }) {
   return (
     <Image alt="" className="shrink-0" draggable={false} height={size} src={src} width={size} />
   );
@@ -20,7 +20,7 @@ function Glyph({ size, src }: { size: number; src: string }) {
 const POINTER = "M1.4 1.2 1.4 17.6 5.7 13.7 8.4 19.9 11.1 18.7 8.4 12.6 13.6 12.5Z";
 
 /** The system pointer, over the row it selected. */
-function Pointer({ className }: { className?: string }) {
+export function Pointer({ className }: { className?: string }) {
   return (
     <svg
       aria-hidden="true"
@@ -88,7 +88,7 @@ function Arrow({ className }: { className?: string }) {
 }
 
 /** A window on the stage: the window's radius and its shadow. */
-function Window({ dark, children }: { dark?: boolean; children: ReactNode }) {
+export function Window({ dark, children }: { dark?: boolean; children: ReactNode }) {
   return (
     <div
       className={`w-full max-w-[300px] overflow-hidden rounded-xl text-left shadow-[inset_0_0_0_1px_var(--well-rule),0_24px_56px_var(--stage-shadow),0_2px_8px_var(--stage-shadow)] ${dark ? "bg-code" : "bg-well"}`}
@@ -189,11 +189,11 @@ function Terminal() {
 }
 
 /** The noun the step acts on, lifted out of the caption. */
-function Key({ children }: { children: ReactNode }) {
+export function Key({ children }: { children: ReactNode }) {
   return <span className="font-medium text-ink">{children}</span>;
 }
 
-function Step({
+export function Step({
   caption,
   index,
   children,
@@ -218,7 +218,7 @@ function Step({
 }
 
 /** The three steps, side by side on the desk and stacked on the phone. */
-export function Steps({ installer }: { installer: string }) {
+export function MacSteps({ installer }: { installer: string }) {
   return (
     <ol className="m-0 grid w-full max-w-[1200px] list-none grid-cols-3 gap-6 p-0 max-[1000px]:grid-cols-1 max-[1000px]:gap-10">
       <Step

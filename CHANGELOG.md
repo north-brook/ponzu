@@ -1,5 +1,130 @@
 # Changelog
 
+## [1.68.2](https://github.com/north-brook/ponzu/compare/v1.68.1...v1.68.2) (2026-10-29)
+
+
+### Bug Fixes
+
+* record the phone demo videos without flashing frames ([#329](https://github.com/north-brook/ponzu/issues/329)) ([f07d9e5](https://github.com/north-brook/ponzu/commit/f07d9e59d62ca46a3efe454c5199a1903e344dd1))
+
+## [1.68.1](https://github.com/north-brook/ponzu/compare/v1.68.0...v1.68.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* show the download menu's chevron ([#327](https://github.com/north-brook/ponzu/issues/327)) ([a3c12c5](https://github.com/north-brook/ponzu/commit/a3c12c5967840f4b0522e44df73c92c99da05038))
+
+## [1.68.0](https://github.com/north-brook/ponzu/compare/v1.67.0...v1.68.0) (2026-10-28)
+
+
+### Features
+
+* download ponzu for windows and linux from ponzu.design ([#323](https://github.com/north-brook/ponzu/issues/323)) ([1464b1f](https://github.com/north-brook/ponzu/commit/1464b1f552075e2d95e016080265fc90875236eb))
+
+## [1.67.0](https://github.com/north-brook/ponzu/compare/v1.66.0...v1.67.0) (2026-10-28)
+
+
+### Features
+
+* release windows and linux builds beside the mac ([#324](https://github.com/north-brook/ponzu/issues/324)) ([36bd86f](https://github.com/north-brook/ponzu/commit/36bd86f9dfc94306dd1ea3c43bf37ed61d82c5ef))
+
+## [1.66.0](https://github.com/north-brook/ponzu/compare/v1.65.0...v1.66.0) (2026-10-28)
+
+
+### Features
+
+* wake ponzu from the iphone on linux ([#321](https://github.com/north-brook/ponzu/issues/321)) ([4a08ee7](https://github.com/north-brook/ponzu/commit/4a08ee70bd815d149a1ad0acf544636875f94d40))
+
+## [1.65.0](https://github.com/north-brook/ponzu/compare/v1.64.0...v1.65.0) (2026-10-28)
+
+
+### Features
+
+* open designs from design.json on windows and linux ([#319](https://github.com/north-brook/ponzu/issues/319)) ([f49f1ee](https://github.com/north-brook/ponzu/commit/f49f1ee9c241ab96c8674c5175354bb0f513d9e3))
+
+## [1.64.0](https://github.com/north-brook/ponzu/compare/v1.63.0...v1.64.0) (2026-10-28)
+
+
+### Features
+
+* keep ponzu running in the tray on windows and linux ([#317](https://github.com/north-brook/ponzu/issues/317)) ([cc5864d](https://github.com/north-brook/ponzu/commit/cc5864d4a5a64534d1a14644047794f991cfa2af))
+
+## [1.63.0](https://github.com/north-brook/ponzu/compare/v1.62.0...v1.63.0) (2026-10-28)
+
+
+### Features
+
+* broaden the use-case blurbs and enlarge the agent logos ([#314](https://github.com/north-brook/ponzu/issues/314)) ([1393968](https://github.com/north-brook/ponzu/commit/1393968069985f1fc42e8afd7e6c0dabd6083313))
+
+
+### Bug Fixes
+
+* find and wake the installed app on windows and linux ([#315](https://github.com/north-brook/ponzu/issues/315)) ([63cd333](https://github.com/north-brook/ponzu/commit/63cd33396347c2570a218082f08d8630a880a1fd))
+
+## [1.62.0](https://github.com/north-brook/ponzu/compare/v1.61.1...v1.62.0) (2026-10-28)
+
+
+### Features
+
+* send the download to your computer from a phone ([#310](https://github.com/north-brook/ponzu/issues/310)) ([11ed667](https://github.com/north-brook/ponzu/commit/11ed66714c00660ae6edc5e1315d5f4fd4045a13))
+
+## [1.61.1](https://github.com/north-brook/ponzu/compare/v1.61.0...v1.61.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* fit working rain to the artboard at any zoom ([#306](https://github.com/north-brook/ponzu/issues/306)) ([65bd6c4](https://github.com/north-brook/ponzu/commit/65bd6c4815ac21c56c77585f63c19e8d6d1721a6))
+
+## [1.61.0](https://github.com/north-brook/ponzu/compare/v1.60.0...v1.61.0) (2026-10-28)
+
+
+### Features
+
+* five use-case demos on the homepage ([#290](https://github.com/north-brook/ponzu/issues/290)) ([6a8bf39](https://github.com/north-brook/ponzu/commit/6a8bf39292bd585b5ef1544267e5b53ecfa842cc))
+
+## [1.60.0](https://github.com/north-brook/ponzu/compare/v1.59.3...v1.60.0) (2026-10-28)
+
+
+### Features
+
+* reframe ponzu as the open source canvas for your agent ([#287](https://github.com/north-brook/ponzu/issues/287)) ([63adad4](https://github.com/north-brook/ponzu/commit/63adad43431b3ddeff21fcec27bf65ade10ea45b))
+
+## [1.59.3](https://github.com/north-brook/ponzu/compare/v1.59.2...v1.59.3) (2026-10-28)
+
+
+### Bug Fixes
+
+* record the phone demo video smoothly at 60fps ([#301](https://github.com/north-brook/ponzu/issues/301)) ([8c88b18](https://github.com/north-brook/ponzu/commit/8c88b181d3cc8187d7848d5c7cd9ae64f3e6cc4b))
+
+## [1.59.2](https://github.com/north-brook/ponzu/compare/v1.59.1...v1.59.2) (2026-10-28)
+
+
+### Bug Fixes
+
+* stop following the agent once you've moved the canvas ([#300](https://github.com/north-brook/ponzu/issues/300)) ([587cd8f](https://github.com/north-brook/ponzu/commit/587cd8f16cfa78091788d7d992a1c2cec81ae9d0))
+
+## [1.59.1](https://github.com/north-brook/ponzu/compare/v1.59.0...v1.59.1) (2026-10-28)
+
+
+### Bug Fixes
+
+* play the homepage demo as a video on phones ([#298](https://github.com/north-brook/ponzu/issues/298)) ([b426d60](https://github.com/north-brook/ponzu/commit/b426d60732c81f986544f3a7688133a019c44274))
+
+## [1.59.0](https://github.com/north-brook/ponzu/compare/v1.58.1...v1.59.0) (2026-10-28)
+
+
+### Features
+
+* never lose an unsent comment ([#289](https://github.com/north-brook/ponzu/issues/289)) ([bce04d8](https://github.com/north-brook/ponzu/commit/bce04d8aea4d8861e0643711ed59ab49864c8d7b))
+* track errors, web vitals and page crashes on ponzu.design ([#297](https://github.com/north-brook/ponzu/issues/297)) ([6798cd7](https://github.com/north-brook/ponzu/commit/6798cd76adfeb2fc2ff813258548ac379d13f83e))
+
+## [1.58.1](https://github.com/north-brook/ponzu/compare/v1.58.0...v1.58.1) (2026-10-27)
+
+
+### Bug Fixes
+
+* keep the canvas moving while you pan and zoom over a few boards ([#288](https://github.com/north-brook/ponzu/issues/288)) ([b294ae6](https://github.com/north-brook/ponzu/commit/b294ae68bcd82c24802f4a12b19e253a33deeaf0))
+
 ## [1.58.0](https://github.com/north-brook/ponzu/compare/v1.57.0...v1.58.0) (2026-10-27)
 
 

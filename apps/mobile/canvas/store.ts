@@ -23,6 +23,9 @@ export interface CanvasState {
   pageId: string | null;
   presence: Presence[];
   pending: PendingPin | null;
+  unsent: (PendingPin & { key: string })[];
+  /** Threads with a reply left unsent. */
+  writing: string[];
   thread: string | null;
   /** The last focus the app asked for; `n` tells two asks for the same board apart. */
   focus: { id: string | null; n: number } | null;
@@ -46,6 +49,8 @@ export let state: CanvasState = {
   pageId: null,
   presence: [],
   pending: null,
+  unsent: [],
+  writing: [],
   thread: null,
   focus: null,
   standby: false,
@@ -115,6 +120,9 @@ export function receive(msg: ToCanvas) {
       break;
     case "pending":
       set({ pending: msg.pin });
+      break;
+    case "unsent":
+      set({ unsent: msg.pins, writing: msg.threads ?? [] });
       break;
     case "thread":
       set({ thread: msg.id });

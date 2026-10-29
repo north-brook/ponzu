@@ -21,6 +21,11 @@ export interface MachineUpdate {
    * until the agent is done, so the agent isn't cut off mid-change.
    */
   waitsFor?: string;
+  /**
+   * It installs only for a click on its own computer: the .deb, which asks for an admin's
+   * password there. Another computer's Update leaves it out; its own offers it.
+   */
+  ownClick?: boolean;
 }
 
 /** What one click of Update does. */
@@ -56,7 +61,9 @@ export function updatePlan(machines: CatalogMachine[]): UpdatePlan | null {
     }
   }
   if (!target) return null;
-  const behind = apps.filter((a) => compareVersions(a.version, target) < 0);
+  const behind = apps.filter(
+    (a) => compareVersions(a.version, target) < 0 && (a.id === "local" || !a.ownClick),
+  );
   if (!behind.length) return null;
   // This Mac comes first, so its notes win: they start from the version it runs.
   const notes = apps.find((a) => a.ready?.version === target)?.ready?.notes ?? [];

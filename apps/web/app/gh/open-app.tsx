@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Apple } from "@/components/icons";
+import { Slice } from "@/components/icons";
 
 /*
  * "Open in Ponzu for Mac": hands the design to the Mac app as a ponzu://open link. A browser says
@@ -39,14 +39,14 @@ export function OpenAppButton({ link }: { link: string }) {
         className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-full bg-cta text-sm font-semibold text-cta-ink transition-[translate] duration-150 ease-out hover:-translate-y-px"
         onClick={open}
       >
-        <Apple className="size-[15px] shrink-0 fill-current" />
-        Open in Ponzu for Mac
+        <Slice size={16} className="[--slice:currentColor]" />
+        Open in Ponzu
       </button>
       {missing ? (
         <p className="m-0 text-center text-[12.5px] text-muted" role="status">
           Ponzu isn't installed.{" "}
           <a className="font-medium text-text hover:text-ink" href="/download">
-            Download for Mac →
+            Download Ponzu →
           </a>
         </p>
       ) : null}

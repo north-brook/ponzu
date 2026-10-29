@@ -1,5 +1,6 @@
+import { NavDownload } from "./download-button";
 import { GitHub, Lockup } from "./icons";
-import { DownloadButton, REPO } from "./links";
+import { REPO } from "./links";
 import { StickyBar } from "./sticky-bar";
 
 export { Footer } from "./footer";
@@ -14,11 +15,22 @@ export function Nav() {
     <StickyBar>
       <Lockup size={23} />
       <div className="flex items-center gap-7 text-sm text-muted">
-        <a className="flex items-center gap-2 hover:text-ink max-[720px]:hidden" href={REPO}>
+        <a
+          className="desktop-only flex items-center gap-2 hover:text-ink max-[720px]:hidden"
+          href={REPO}
+        >
           <GitHub />
           GitHub
         </a>
-        <DownloadButton size="sm">Download</DownloadButton>
+        {/* A phone can't run Ponzu: its header keeps GitHub, and the page's own button hands off. */}
+        <a
+          className="phone-only -mr-3 flex size-11 items-center justify-center text-[19px] hover:text-ink"
+          href={REPO}
+          aria-label="GitHub"
+        >
+          <GitHub />
+        </a>
+        <NavDownload className="desktop-only" />
       </div>
     </StickyBar>
   );

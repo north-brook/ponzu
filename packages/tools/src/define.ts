@@ -35,6 +35,7 @@ export type ErrorClass =
   | "file_ids_ambiguous"
   | "file_ids_split"
   | "file_not_found"
+  | "person_writing"
   | "host_unreachable"
   | "host_unresponsive"
   | "host_busy"

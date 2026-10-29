@@ -2,5 +2,11 @@
   "extends": "./tsconfig.base.json",
   // The studio's shadcn imports (apps/studio/components.json).
   "compilerOptions": { "paths": { "@/*": ["./apps/studio/src/*"] } },
-  "include": ["packages/*/src", "apps/cli/src", "apps/studio/src", "scripts"]
+  "include": [
+    "packages/*/src",
+    "apps/cli/src",
+    "apps/studio/src",
+    "apps/desktop/src/**/*.test.ts",
+    "scripts"
+  ]
 }

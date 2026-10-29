@@ -9,6 +9,8 @@
   --c-board: 0 0 0 1px rgba(0, 0, 0, 0.06);
   --yuzu: #ffc81e;
   --ink: #111110;
+  --c-surface: #ffffff;
+  --c-surface-ink: #111110;
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
   color-scheme: light;
 }
@@ -17,6 +19,8 @@
   --c-canvas: #121211;
   --c-muted: #a9a59b;
   --c-board: 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --c-surface: #1b1b1a;
+  --c-surface-ink: #f4f3ef;
   color-scheme: dark;
 }
 
@@ -135,6 +139,19 @@ body {
 
 .pin.open {
   scale: 1.12;
+}
+
+/* A thread with a reply left unsent: ringed, dashed, as an unsent comment's pin is. */
+.pin.writing {
+  outline: 1.5px dashed var(--yuzu);
+  outline-offset: 2px;
+}
+
+/* A new comment left unsent: hollow, so it doesn't read as a thread, and a tap goes on with it. */
+.pin.unsent {
+  background: var(--c-surface);
+  color: var(--c-surface-ink);
+  outline: 1.5px dashed var(--yuzu);
 }
 
 /*

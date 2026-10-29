@@ -6,7 +6,7 @@ import { share } from "@/components/share";
 
 const TITLE = "Privacy · Ponzu";
 const DESCRIPTION =
-  "What Ponzu for Mac, Ponzu for iPhone and ponzu.design collect, where it goes, and how to turn it off.";
+  "What the Ponzu desktop app, Ponzu for iPhone and ponzu.design collect, where it goes, and how to turn it off.";
 
 export const metadata: Metadata = {
   title: { absolute: TITLE },
@@ -35,9 +35,9 @@ export default function Page() {
       <article className="mx-auto flex max-w-[640px] flex-col gap-12 text-[16px]/[27px] text-pretty text-muted">
         <Section title="Who we are">
           <p>
-            Ponzu is made by Northbrook PBC (“we”). This policy covers Ponzu for Mac, the{" "}
-            <Code>ponzu</Code> command line, Ponzu for iPhone and this website. Ponzu is open
-            source, so everything here can be checked against{" "}
+            Ponzu is made by Northbrook PBC (“we”). This policy covers the Ponzu desktop app (Mac,
+            Windows and Linux), the <Code>ponzu</Code> command line, Ponzu for iPhone and this
+            website. Ponzu is open source, so everything here can be checked against{" "}
             <Link href={REPO}>the code on GitHub</Link>.
           </p>
         </Section>
@@ -45,19 +45,19 @@ export default function Page() {
         <Section title="Your designs">
           <p>
             A design is a folder of files on your disk. Ponzu never uploads it to us. Agents work on
-            it over MCP on the same Mac, and Ponzu never sees your prompts. A few things in a design
-            do reach other servers, because they would in any browser: fonts it names are loaded
-            from Google Fonts, and images it links to are fetched from wherever they live. Opening a
-            design from GitHub clones its repository from GitHub.
+            it over MCP on the same computer, and Ponzu never sees your prompts. A few things in a
+            design do reach other servers, because they would in any browser: fonts it names are
+            loaded from Google Fonts, and images it links to are fetched from wherever they live.
+            Opening a design from GitHub clones its repository from GitHub.
           </p>
         </Section>
 
-        <Section title="Ponzu for Mac">
+        <Section title="The desktop app">
           <p>
-            The Mac app sends pseudonymous usage data to us through PostHog, in the US: which tools
-            agents call and whether they fail (with a coarse reason, like a timeout), which agents
-            connect, how often the canvas opens and comments are left, and the Ponzu version and OS.
-            No HTML, file names, paths, comment text or tool arguments are sent.
+            The desktop app sends pseudonymous usage data to us through PostHog, in the US: which
+            tools agents call and whether they fail (with a coarse reason, like a timeout), which
+            agents connect, how often the canvas opens and comments are left, and the Ponzu version
+            and OS. No HTML, file names, paths, comment text or tool arguments are sent.
           </p>
           <p>
             Each install is a random id. When Tailscale is running, that id is linked to a hash of
@@ -100,10 +100,20 @@ export default function Page() {
 
         <Section title="This website">
           <p>
-            ponzu.design is hosted on Vercel and counts page views and download clicks with PostHog,
-            which keeps a cookie to tell visits apart. It honors Do Not Track. Pages that show a
-            design from GitHub read it from GitHub’s public servers. The site has no sign-in and
-            doesn’t sell or share data with advertisers.
+            ponzu.design is hosted on Vercel and counts page views (with how far down you scrolled)
+            and download clicks with PostHog, which keeps a cookie to tell visits apart.
+          </p>
+          <p>
+            So we know when the site breaks, it also sends errors in its own code, with their stack
+            traces; how fast each page loads and responds (Core Web Vitals); and whether a page
+            stayed open for a few seconds or was closed by the browser running out of memory. That
+            last one keeps a marker in the tab’s session storage while the page is open, and no
+            more. These events carry the page, browser, operating system and type of device, never
+            anything you type. The site makes no session recordings.
+          </p>
+          <p>
+            It all honors Do Not Track. Pages that show a design from GitHub read it from GitHub’s
+            public servers. The site has no sign-in and doesn’t sell or share data with advertisers.
           </p>
         </Section>
 
@@ -120,7 +130,7 @@ export default function Page() {
             <Link href={ISSUES}>GitHub</Link>. If this policy changes, the change shows up here and
             in the repository’s history.
           </p>
-          <p className="text-[13px]/[19px] text-faint">Last updated October 26, 2026.</p>
+          <p className="text-[13px]/[19px] text-faint">Last updated October 27, 2026.</p>
         </Section>
       </article>
 

@@ -14,7 +14,7 @@ import { useTheme } from "../../lib/theme";
 import { brand } from "../../lib/tokens";
 
 /**
- * Scan the code on your Mac (the onboarding design's 3), first launch's
+ * Scan the code on your computer (the onboarding design's 3), first launch's
  * second step: where Pair iPhone… is, drawn as the Mac's menu bar with
  * Ponzu's menu open on it, and three numbered steps to get there. Scan the
  * code opens the camera (connect/scan.tsx), which pairs and lands on Designs.
@@ -31,7 +31,7 @@ export default function Connect() {
         </OtherTile>
       }
       link={<Swap color={color.faint} />}
-      title="Scan the code on your Mac."
+      title="Scan the code on your computer."
       actions={
         <>
           <PillButton
@@ -41,7 +41,7 @@ export default function Connect() {
             testID="scan"
           />
           <TextButton
-            label="No Ponzu on your Mac? Get it at ponzu.design"
+            label="No Ponzu on your computer? Get it at ponzu.design"
             onPress={() => Linking.openURL("https://ponzu.design")}
           />
         </>
@@ -50,10 +50,11 @@ export default function Connect() {
       <Card style={{ marginTop: 24 }}>
         <MenuBar />
         <Instruction n={1}>
-          Open <Text style={bold}>Ponzu</Text> on your Mac
+          Open <Text style={bold}>Ponzu</Text> on your computer
         </Instruction>
         <Instruction n={2}>
-          Click <Text style={bold}>Ponzu</Text> in the menu bar, top left
+          Click <Text style={bold}>Ponzu</Text> in a Mac's menu bar, or{" "}
+          <Text style={bold}>Help</Text> on Windows and Linux
         </Instruction>
         <Instruction n={3} last>
           Choose <Text style={bold}>Pair iPhone…</Text>
@@ -139,7 +140,7 @@ function MenuBar() {
   const menuText = { fontSize: 12, color: mac.ink };
   return (
     <View
-      accessibilityLabel="On your Mac, the Ponzu menu in the menu bar, with Pair iPhone… in it"
+      accessibilityLabel="On a Mac, the Ponzu menu in the menu bar, with Pair iPhone… in it"
       accessible
       style={{ height: 150, backgroundColor: mac.desk, overflow: "hidden" }}
     >

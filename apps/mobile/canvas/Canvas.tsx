@@ -402,6 +402,13 @@ export function PhoneCanvas() {
     return { box, x: (box?.x ?? 0) + t.x, y: (box?.y ?? 0) + t.y };
   };
 
+  /** Where each unsent comment's pin is on screen, for a camera, by its draft's key. */
+  const unsentAt = (c: Camera): PinAt[] =>
+    s.unsent.map((u) => {
+      const w = pinWorld(u);
+      return { id: u.key, ...toScreen(c, w.x, w.y) };
+    });
+
   // Writing a comment, or reading a thread: its board comes up and its pin stays above the sheet.
   const openThread = s.thread ? doc?.threads.find((t) => t.id === s.thread) : undefined;
   const about = s.pending ?? openThread ?? null;
@@ -444,6 +451,7 @@ export function PhoneCanvas() {
   // Gestures read the latest render through a ref: one listener for the canvas's life.
   const latest = useRef({
     pinsAt,
+    unsentAt,
     focused,
     boxes,
     screen,
@@ -457,6 +465,7 @@ export function PhoneCanvas() {
   });
   latest.current = {
     pinsAt,
+    unsentAt,
     focused,
     boxes,
     screen,
@@ -558,8 +567,16 @@ export function PhoneCanvas() {
         coast(v, box);
       },
       tap(p) {
-        const hit = nearestPin(latest.current.pinsAt(camRef.current), p);
-        send(hit ? { t: "openThread", id: hit.id } : { t: "tap" });
+        const { pinsAt, unsentAt } = latest.current;
+        const unsentPins = unsentAt(camRef.current);
+        const hit = nearestPin([...pinsAt(camRef.current), ...unsentPins], p);
+        send(
+          !hit
+            ? { t: "tap" }
+            : unsentPins.includes(hit)
+              ? { t: "openUnsent", key: hit.id }
+              : { t: "openThread", id: hit.id },
+        );
       },
       doubleTap(p) {
         const { focused, hitTest, focus } = latest.current;
@@ -672,6 +689,8 @@ export function PhoneCanvas() {
         screen={screen}
         radius={s.radius}
         pinsAt={pinsAt}
+        unsentAt={unsentAt}
+        writing={s.writing}
         threads={doc.threads}
         open={s.thread}
         pending={s.pending ? pinWorld(s.pending) : null}
@@ -732,6 +751,8 @@ function Overlay({
   screen,
   radius,
   pinsAt,
+  unsentAt,
+  writing,
   threads,
   open,
   pending,
@@ -747,6 +768,8 @@ function Overlay({
   screen: Screen;
   radius: number;
   pinsAt: (c: Camera) => PinAt[];
+  unsentAt: (c: Camera) => PinAt[];
+  writing: string[];
   threads: { id: string; messages: unknown[] }[];
   open: string | null;
   pending: { x: number; y: number } | null;
@@ -785,10 +808,16 @@ function Overlay({
         pinsAt(cam).map((p) => (
           <span
             key={p.id}
-            className={`pin${p.id === open ? " open" : ""}`}
+            className={`pin${p.id === open ? " open" : ""}${writing.includes(p.id) ? " writing" : ""}`}
             style={{ translate: `${p.x}px ${p.y}px` }}
           >
             {counts.get(p.id) ?? 0}
+          </span>
+        ))}
+      {!standby &&
+        unsentAt(cam).map((p) => (
+          <span key={p.id} className="pin unsent" style={{ translate: `${p.x}px ${p.y}px` }}>
+            +
           </span>
         ))}
       {pending &&
