@@ -414,7 +414,7 @@ test("a cursor from before Ponzu restarted returns the threads waiting on the ag
   expect(Date.now() - started).toBeLessThan(1000);
   expect(r.text).toStartWith("Ponzu restarted since your last wait");
   for (let i = 1; i <= 6; i++) expect(r.text).toContain(`th_${i} [open]`);
-  expect(r.text).toEndWith(`Wait again with cursor=${ws.events.cursor}.`);
+  expect(r.text).toEndWith(`Keep watching: wait again with cursor=${ws.events.cursor}.`);
   expect(captured.at(-1)).toMatchObject({ tool: "wait_for_activity", cursor: "restart" });
 
   // With that cursor, the next wait is an ordinary one.

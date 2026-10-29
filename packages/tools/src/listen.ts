@@ -107,7 +107,7 @@ export const listenTools = [
     group: "listen",
     readOnly: true,
     description:
-      "Watch the canvas. Call this instead of ending your turn whenever the person might react to your work there: after you put something up for review, or while you design together. Calling it again and again is the loop (get_guide('watch')). Long-polls for what people do in the canvas: new comments and replies, edits made in a text editor, other agents' changes, in this file and the others you've worked in this session, saying which file each is in. Returns immediately if anything happened after `since`; otherwise waits up to `timeout` seconds. Pass back the returned cursor next time so nothing is missed. If Ponzu restarted or lost track since then, it returns at once with the open threads waiting on you. The person's chat messages still reach you between waits.",
+      "Watch the canvas. Call this instead of ending your turn whenever the person might react to your work there: after you put something up for review, or while you design together. Calling it again and again is the loop (get_guide('watch')). Long-polls for what people do in the canvas: new comments and replies, edits made in a text editor, other agents' changes, in this file and the others you've worked in this session, saying which file each is in. Returns immediately if anything happened after `since`; otherwise waits up to `timeout` seconds. Pass back the returned cursor next time so nothing is missed. If Ponzu restarts during the wait, the wait carries on once it's back. If it restarted or lost track before you waited, it returns at once with the open threads waiting on you: handle those, then keep watching with the cursor it gives. The person's chat messages still reach you between waits.",
     input: {
       file: fileArg,
       since: z
@@ -146,7 +146,7 @@ export const listenTools = [
         ws.presence.touch(caller, { listening: false, listenedAt: Date.now() });
         const waiting = waitingText(files, all);
         return {
-          text: `${GAP_NOTE[gap]} ${waiting.text}\nWait again with cursor=${next}.`,
+          text: `${GAP_NOTE[gap]} ${waiting.text}\nKeep watching: wait again with cursor=${next}.`,
           data: { cursor: next, events: [], gap, waiting: waiting.ids },
           metrics: { cursor: gap, events: 0, scope_files: files.length },
         };

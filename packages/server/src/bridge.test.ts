@@ -13,6 +13,8 @@ let hostWs: LocalWorkspace | null = null;
 let host: ReturnType<typeof serve> | null = null;
 /** What ~/.ponzu/host.json would say, when it isn't simply `host`. */
 let announced: string | null = null;
+/** How many times the bridge asked for Ponzu to be started, as `ponzu mcp` would launch the app. */
+let launches = 0;
 let bridge: Awaited<ReturnType<typeof serveBridge>>;
 let agent: Client;
 
@@ -41,8 +43,13 @@ beforeAll(async () => {
   bridge = await serveBridge(
     {
       local,
-      findHost: async () => announced ?? (host ? `http://127.0.0.1:${host.port}/mcp` : null),
+      findHost: async (launch) => {
+        const url = announced ?? (host ? `http://127.0.0.1:${host.port}/mcp` : null);
+        if (!url && launch) launches++;
+        return url;
+      },
       cwd: dir,
+      restartGrace: 1500,
     },
     theirs,
   );
@@ -104,18 +111,76 @@ test("a restarted host picks the agent up with a new session", async () => {
   expect(hostWs!.presence.list().map((p) => p.name)).toContain("Claude");
 });
 
-test("a long poll moves to the bridge when its host quits mid-wait", async () => {
+test("a wait whose host quits and doesn't come back in time says nothing was checked", async () => {
   const file = join(dir, "shop.design");
+  const since = cursorOf(
+    await agent.callTool({ name: "wait_for_activity", arguments: { file, timeout: 0 } }),
+  );
+  // Shorter than the grace the bridge gives Ponzu to come back by itself.
   const waiting = agent.callTool({
     name: "wait_for_activity",
-    arguments: { file, timeout: 2 },
+    arguments: { file, since, timeout: 1 },
   });
   await Bun.sleep(300);
+  launches = 0;
   await stopHost();
   const started = Date.now();
-  // Read-only, so it's retried locally: a fresh 2s wait, not a hang.
-  expect(text(await waiting)).toContain("Nothing new");
+  // It looks for Ponzu to come back for the rest of its time, without starting the old one.
+  const r = text(await waiting);
   expect(Date.now() - started).toBeLessThan(4000);
+  expect(r).toContain("nothing was checked");
+  expect(r).not.toContain("No open threads");
+  expect(cursorOf({ content: [{ type: "text", text: r }] })).toBe(since);
+  expect(launches).toBe(0);
+});
+
+test("a wait whose Ponzu can't be started again doesn't answer from the bridge's own copy", async () => {
+  await startHost();
+  const file = join(dir, "shop.design");
+  const since = cursorOf(
+    await agent.callTool({ name: "wait_for_activity", arguments: { file, timeout: 0 } }),
+  );
+  const waiting = agent.callTool({
+    name: "wait_for_activity",
+    arguments: { file, since, timeout: 4 },
+  });
+  await Bun.sleep(300);
+  launches = 0;
+  await stopHost();
+  // Past the grace it asks for Ponzu to be started, which fails here.
+  const r = text(await waiting);
+  expect(launches).toBeGreaterThan(0);
+  expect(r).toContain("nothing was checked");
+  expect(r).not.toContain("Ponzu restarted");
+  expect(r).not.toContain("No open threads");
+});
+
+test("a wait cut off by Ponzu restarting carries on once it's back, and hears what comes next", async () => {
+  await startHost();
+  const file = join(dir, "shop.design");
+  const since = cursorOf(
+    await agent.callTool({ name: "wait_for_activity", arguments: { file, timeout: 0 } }),
+  );
+  const started = Date.now();
+  const waiting = agent.callTool({
+    name: "wait_for_activity",
+    arguments: { file, since, timeout: 20 },
+  });
+  await Bun.sleep(300);
+  // An update quits Ponzu, and the updated one starts a moment later.
+  launches = 0;
+  await stopHost();
+  await Bun.sleep(1000);
+  await startHost();
+  // The wait is back on the new Ponzu, which reopened the agent's design for it.
+  while (!hostWs!.designs().length) await Bun.sleep(50);
+  await Bun.sleep(300);
+  personComments(hostWs!, "th_after_update");
+  const r = text(await waiting);
+  expect(r).toStartWith("Ponzu restarted while you waited");
+  expect(r).toContain("new comment th_after_update");
+  expect(Date.now() - started).toBeLessThan(10_000);
+  expect(launches).toBe(0);
 });
 
 test("a write cut off mid-call isn't sent again", async () => {

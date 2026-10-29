@@ -28,6 +28,11 @@ export interface McpOptions {
 
 /** Where a tool result lists the designs its session has worked in, for a bridge to carry over. */
 export const FILES_META = "ponzu.design/files";
+/**
+ * Where wait_for_activity's result gives its cursor, whether Ponzu restarted since the cursor it
+ * was given, and how many threads wait on the agent: a bridge rides out a restart with them.
+ */
+export const WAIT_META = "ponzu.design/wait";
 
 /** Map an MCP client name to an agent icon. */
 export function clientKind(name = ""): string {
@@ -105,6 +110,7 @@ export function createMcpServer(ws: Workspace, opts: McpOptions = {}): McpServer
         toMcp(
           await runTool(def, args, { ws, caller: getCaller(), signal: extra.signal, session }),
           session,
+          def.name,
         ),
     );
   }
@@ -162,7 +168,7 @@ export function createMcpServer(ws: Workspace, opts: McpOptions = {}): McpServer
   return server;
 }
 
-function toMcp(r: ToolResult, session: ToolSession) {
+function toMcp(r: ToolResult, session: ToolSession, tool?: string) {
   const content: (
     | { type: "text"; text: string }
     | { type: "image"; data: string; mimeType: string }
@@ -170,8 +176,13 @@ function toMcp(r: ToolResult, session: ToolSession) {
   for (const img of r.images ?? [])
     content.push({ type: "image", data: img.data, mimeType: img.mime });
   content.push({ type: "text", text: r.text });
-  const files = session.files?.length ? { _meta: { [FILES_META]: session.files } } : {};
-  return { content, isError: r.isError, ...files };
+  const meta: Record<string, unknown> = {};
+  if (session.files?.length) meta[FILES_META] = session.files;
+  if (tool === "wait_for_activity" && r.data) {
+    const { cursor, gap, waiting } = r.data as { cursor: number; gap?: string; waiting?: string[] };
+    meta[WAIT_META] = { cursor, ...(gap ? { gap, waiting: waiting?.length ?? 0 } : {}) };
+  }
+  return { content, isError: r.isError, ...(Object.keys(meta).length ? { _meta: meta } : {}) };
 }
 
 /** Serve MCP over stdio (for `ponzu mcp` launched by an agent). */

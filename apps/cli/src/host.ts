@@ -3,6 +3,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { chmod, copyFile, mkdir, rename, rm, utimes, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, posix, win32 } from "node:path";
+import { updating } from "@ponzu/server/updating";
 
 /**
  * A running Ponzu host (`ponzu serve`, which the desktop app runs too)
@@ -210,14 +211,15 @@ export async function adoptAppImage(
 /**
  * Start the desktop app with no window. It serves agents, shows its canvas
  * once the person opens Ponzu, and quits itself (installing any downloaded
- * update) when agents go quiet.
+ * update) when agents go quiet. Never while an update installs: the installer
+ * gives up if the old app is running, and starts the new one itself, so this
+ * waits for that one.
  */
 export async function launchApp(app: string, timeoutMs = 30_000): Promise<string | null> {
-  // Asked again after 10s: right after an update quits the app, the new bundle
-  // may not have been in place yet.
+  // Asked again every 10s, in case the first ask was lost.
   const deadline = Date.now() + timeoutMs;
   for (let tick = 0; Date.now() < deadline; tick++) {
-    if (tick % 40 === 0) startApp(app);
+    if (tick % 40 === 0 && !updating()) startApp(app);
     const url = await runningHost();
     if (url) return url;
     await Bun.sleep(250);

@@ -1,15 +1,17 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { chmod, copyFile, mkdir, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { markUpdating, UPDATING_WITHIN } from "@ponzu/server/updating";
 import {
   adoptAppImage,
   appImageServer,
   appLauncher,
   appServer,
   findApp,
+  launchApp,
   launchCommand,
   ownBundle,
   shimPath,
@@ -67,6 +69,58 @@ test("starting the app with no window", async () => {
     ["--background"],
   ]);
 });
+
+/** An install folder whose app only notes that it was started. */
+async function fakeApp(name: string): Promise<{ app: string; started: string }> {
+  const app = await installFolder(name, "ponzu");
+  const started = join(app, "started");
+  await writeFile(join(app, "ponzu"), `#!/bin/sh\ntouch '${started}'\n`);
+  await chmod(join(app, "ponzu"), 0o755);
+  return { app, started };
+}
+
+test.skipIf(process.platform === "win32")(
+  "an agent never starts the app while an update installs, and finds the updated one",
+  async () => {
+    const { app, started } = await fakeApp("updating-app");
+    // The app quit into an update: the installer gives up if the old app runs meanwhile.
+    markUpdating("1.59.1", "1.68.2");
+    expect(await launchApp(app, 600)).toBe(null);
+    expect(existsSync(started)).toBe(false);
+    // The installer starts the updated app, which announces itself.
+    const host = Bun.serve({
+      port: 0,
+      fetch: () => Response.json({ mcp: "http://127.0.0.1/mcp" }),
+    });
+    try {
+      const url = `http://127.0.0.1:${host.port}`;
+      await writeFile(
+        join(dir, "home/host.json"),
+        JSON.stringify({ url, mcp: `${url}/mcp`, pid: process.pid }),
+      );
+      expect(await launchApp(app, 2000)).toBe(`${url}/mcp`);
+      expect(existsSync(started)).toBe(false);
+    } finally {
+      host.stop(true);
+      await rm(join(dir, "home/host.json"), { force: true });
+      await rm(join(dir, "home/updating.json"), { force: true });
+    }
+  },
+);
+
+test.skipIf(process.platform === "win32")(
+  "an update that never finished installing doesn't keep agents from starting the app",
+  async () => {
+    const { app, started } = await fakeApp("stale-update-app");
+    markUpdating("1.59.1", "1.68.2", Date.now() - UPDATING_WITHIN - 1000);
+    try {
+      expect(await launchApp(app, 600)).toBe(null);
+      expect(existsSync(started)).toBe(true);
+    } finally {
+      await rm(join(dir, "home/updating.json"), { force: true });
+    }
+  },
+);
 
 test("the wake helper starts the app as a service of its own, which outlives the knock", () => {
   const appimage = "/home/me/Ponzu-x64.AppImage";
