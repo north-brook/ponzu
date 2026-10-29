@@ -310,6 +310,7 @@ function fakeUpdater(
   order: string[],
   state: MachineUpdate,
   asked: (string | undefined)[] = [],
+  remote: boolean[] = [],
 ): Updater & {
   set(s: MachineUpdate): void;
 } {
@@ -322,6 +323,7 @@ function fakeUpdater(
     install: async (o) => {
       order.push(name);
       asked.push(o?.version);
+      remote.push(Boolean(o?.remote));
       now = { ...now, installing: true };
       return now;
     },
@@ -333,9 +335,10 @@ test("one Update installs on each of the person's Macs, this one last", async ()
   await fakeTailnet();
   const order: string[] = [];
   const versions: (string | undefined)[] = [];
+  const remote: boolean[] = [];
   const spareDir = join(dir, "spare-update");
   const spareWs = new LocalWorkspace({ cwd: spareDir });
-  const spareUpdater = fakeUpdater("spare", order, { version: "1.43.0" }, versions);
+  const spareUpdater = fakeUpdater("spare", order, { version: "1.43.0" }, versions, remote);
   const spare = serve(spareWs, {
     port: 0,
     root: spareDir,
@@ -355,6 +358,7 @@ test("one Update installs on each of the person's Macs, this one last", async ()
       order,
       { version: "1.43.0", ready: { version: "1.44.0", notes: ["Faster."] } },
       versions,
+      remote,
     ),
   });
   const home = stream(`ws://127.0.0.1:${here.port}/api/catalog/stream`);
@@ -380,6 +384,8 @@ test("one Update installs on each of the person's Macs, this one last", async ()
     expect(order).toEqual(["spare", "here"]);
     // Each Mac hears which version, so one holding an older download fetches that one first.
     expect(versions).toEqual(["1.44.0", "1.44.0"]);
+    // The other Mac hears the click was elsewhere: one that asks for a password there declines.
+    expect(remote).toEqual([true, false]);
     c = await home.until((c) => updatePlan(c.machines)?.installing === true);
   } finally {
     home.close();

@@ -35,6 +35,7 @@ export class DesignSession {
   private req = 0;
   private retry = 0;
   private closed = false;
+  private writing: string[] = [];
   private pending = new Map<number, { resolve: () => void; reject: (err: Error) => void }>();
   readonly assetBase: string;
 
@@ -65,10 +66,14 @@ export class DesignSession {
     };
     socket.onopen = () => {
       this.retry = 0;
+      if (this.writing.length)
+        socket.send(
+          JSON.stringify({ t: "writing", threads: this.writing } satisfies ClientMessage),
+        );
     };
     socket.onclose = () => {
       if (this.socket !== socket) return;
-      for (const p of this.pending.values()) p.reject(new Error("The Mac stopped answering"));
+      for (const p of this.pending.values()) p.reject(new Error("The computer stopped answering"));
       this.pending.clear();
       if (this.closed) return;
       this.set({ status: "offline", presence: [] });
@@ -162,7 +167,7 @@ export class DesignSession {
   send(op: Op): Promise<void> {
     return new Promise((resolve, reject) => {
       if (this.socket?.readyState !== WebSocket.OPEN)
-        return reject(new Error("The Mac isn't answering"));
+        return reject(new Error("The computer isn't answering"));
       const req = ++this.req;
       this.pending.set(req, { resolve, reject });
       this.socket.send(JSON.stringify({ t: "op", req, op } satisfies ClientMessage));
@@ -172,6 +177,14 @@ export class DesignSession {
   setTheme(theme: "light" | "dark") {
     if (this.socket?.readyState === WebSocket.OPEN)
       this.socket.send(JSON.stringify({ t: "theme", theme } satisfies ClientMessage));
+  }
+
+  /** The threads with an unsent reply here: the Mac's agents leave them open. Told again on reconnect. */
+  setWriting(threads: string[]) {
+    if (threads.join(" ") === this.writing.join(" ")) return;
+    this.writing = threads;
+    if (this.socket?.readyState === WebSocket.OPEN)
+      this.socket.send(JSON.stringify({ t: "writing", threads } satisfies ClientMessage));
   }
 
   close() {

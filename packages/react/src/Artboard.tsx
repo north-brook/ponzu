@@ -33,7 +33,10 @@ interface Props {
   detail?: Detail;
   /** An agent's new pieces, which arrive as they render. */
   arrivals?: Arrivals;
-  /** Nobody can see it move (off screen, tiny, mid-gesture, window away): its loops hold. */
+  /**
+   * Nobody can see it move (off screen, tiny, window away), or the camera moves over a crowded
+   * view: its loops hold.
+   */
   hold?: boolean;
   /** Rounded as the canvas rounds its boards, by `--pz-board-radius` on a parent. */
   rounded?: boolean;

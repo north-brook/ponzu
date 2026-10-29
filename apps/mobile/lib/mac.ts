@@ -127,13 +127,13 @@ export function pairMessage(err: unknown, name: string): string {
       // It answered without the phone's protocol. That may not be the installed
       // app: another Ponzu (an old one, or one run by hand) can hold the port.
       case "tooOld":
-        return `${name} answered with Ponzu ${err.version ?? "of an older version"}, which can't pair yet. Update Ponzu on that Mac, or quit any other Ponzu running there.`;
+        return `${name} answered with Ponzu ${err.version ?? "of an older version"}, which can't pair yet. Update Ponzu on that computer, or quit any other Ponzu running there.`;
       case "tooNew":
         return "Update Ponzu on this iPhone, then connect again.";
       case "notPonzu":
         return `${name} answered, but not as Ponzu.`;
       default:
-        return `${name} didn't answer over Tailscale. Check Tailscale is on here and on the Mac.`;
+        return `${name} didn't answer over Tailscale. Check Tailscale is on here and on the computer.`;
     }
   }
   return `Couldn't connect to ${name}.`;

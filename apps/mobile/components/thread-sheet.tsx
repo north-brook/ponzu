@@ -2,6 +2,7 @@ import type { Thread } from "@ponzu/core";
 import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { clientOf, shortAgent } from "../lib/activity";
+import { draftKey } from "../lib/drafts";
 import { shortAgo } from "../lib/files";
 import { useTheme } from "../lib/theme";
 import { Composer, type Mode } from "./composer";
@@ -13,6 +14,8 @@ export interface ThreadProps {
   thread: Thread;
   /** The person's initial, for their avatar. */
   me: string;
+  /** The design it's in (lib/drafts.ts `draftFile`): what an unsent reply is kept under. */
+  file: string;
   onReply: (text: string, mode: Mode) => Promise<void>;
   onStatus: (status: Thread["status"]) => Promise<void>;
 }
@@ -47,7 +50,7 @@ export function ThreadSheet({
  * panel or half on iPhone Duo (components/comments.tsx), under that
  * surface's own header.
  */
-export function ThreadView({ thread, me, onReply, onStatus }: ThreadProps) {
+export function ThreadView({ thread, me, file, onReply, onStatus }: ThreadProps) {
   const { color } = useTheme();
   // The reply field shows first, unfocused (the design's 11); the mic switches to voice.
   const [mode, setMode] = useState<Mode>("type");
@@ -152,10 +155,10 @@ export function ThreadView({ thread, me, onReply, onStatus }: ThreadProps) {
       <Composer
         mode={mode}
         onMode={setMode}
-        placeholder="Reply"
+        placeholder={resolved ? "Reply to reopen" : "Reply"}
         onSend={onReply}
         autoFocus={false}
-        draft={`thread:${thread.id}`}
+        draft={{ key: draftKey.reply(file, thread.id), file, thread: thread.id }}
       />
     </>
   );

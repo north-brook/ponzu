@@ -27,7 +27,10 @@ export const AGENTS: { id: Agent; name: string }[] = [
   { id: "grok-bot", name: "Grok Bot" },
 ];
 
-export function AgentMark({ agent, size = 24 }: { agent: Agent; size?: number }) {
+/** Pixels, or any CSS length, so a mark can grow with its tile. */
+type Size = number | string;
+
+export function AgentMark({ agent, size = 24 }: { agent: Agent; size?: Size }) {
   switch (agent) {
     case "t3":
       return <AppIcon src="/agents/t3.png" size={size} />;
@@ -121,25 +124,31 @@ function Mark({
   children,
 }: {
   viewBox: string;
-  size: number;
+  size: Size;
   className?: string;
   children: ReactNode;
 }) {
   return (
-    <svg viewBox={viewBox} width={size} height={size} className={className} aria-hidden="true">
+    <svg
+      viewBox={viewBox}
+      style={{ width: size, height: size }}
+      className={className}
+      aria-hidden="true"
+    >
       {children}
     </svg>
   );
 }
 
-function AppIcon({ src, size }: { src: string; size: number }) {
+function AppIcon({ src, size }: { src: string; size: Size }) {
+  const icon = typeof size === "number" ? size * 1.3 : `calc(${size} * 1.3)`;
   return (
     <Image
       src={src}
       alt=""
-      width={96}
-      height={96}
-      style={{ width: size * 1.3, height: size * 1.3 }}
+      width={256}
+      height={256}
+      style={{ width: icon, height: icon }}
       className="object-contain"
     />
   );

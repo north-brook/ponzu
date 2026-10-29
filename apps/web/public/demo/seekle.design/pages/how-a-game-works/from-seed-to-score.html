@@ -1,0 +1,114 @@
+<section data-artboard data-id="ab_eudqi" data-name="From seed to score" data-x="0" data-y="0" style="width:1760px;height:1040px;background:var(--color-panel);color:var(--color-ink);font-family:var(--font-sans);padding:48px 56px;gap:36px">
+<style data-id="n_q474u">
+@keyframes rise { from { opacity:0; transform:translateY(14px) } to { opacity:1; transform:none } }
+@keyframes flow { from { stroke-dashoffset: 24 } to { stroke-dashoffset: 0 } }
+@keyframes found { 0%,30% { box-shadow: inset 0 0 0 1px #e2e8f0 } 40%,80% { box-shadow: inset 0 0 0 3px #FF0080 } 92%,100% { box-shadow: inset 0 0 0 1px #e2e8f0 } }
+.rise { animation: rise 460ms cubic-bezier(0.2,0.8,0.2,1) both }
+.mc { width:38px;height:54px;border-radius:7px;background:#fff;box-shadow:inset 0 0 0 1px #e2e8f0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px }
+.mc img { width:24px;display:block }
+.sm { width:30px;height:44px;border-radius:6px }
+.sm img { width:19px }
+.hit { animation: found 3.2s ease-in-out infinite }
+.st { flex:1;display:flex;flex-direction:column;gap:14px;min-width:0 }
+.vis { height:250px;border-radius:18px;background:var(--color-tint);display:flex;align-items:center;justify-content:center;color-scheme:light }
+.num { width:34px;height:34px;border-radius:50%;background:var(--color-pink);color:#fff;font-family:var(--font-display);font-weight:800;font-size:17px;display:grid;place-items:center;flex-shrink:0 }
+.ttl { font-family:var(--font-display);font-weight:800;font-size:30px;letter-spacing:-0.025em;line-height:1 }
+.src { font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:14px;color:var(--color-muted) }
+.txt { font-size:17px;line-height:25px;color:var(--color-body) }
+.arr { width:44px;flex-shrink:0;align-self:flex-start;margin-top:113px;color:var(--color-pink) }
+.arr path { stroke-dasharray: 6 6; animation: flow 900ms linear infinite }
+</style>
+<div data-id="n_63a9f" data-name="Heading" class="rise" style="display:flex;align-items:flex-end;justify-content:space-between;gap:40px">
+  <div data-id="n_iy86a" style="display:flex;flex-direction:column;gap:10px">
+    <div data-id="n_jrt2y" style="font-family:var(--font-display);font-size:15px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--color-pink)">How a game works</div>
+    <div data-id="n_pkltf" style="font-family:var(--font-display);font-size:52px;font-weight:800;letter-spacing:-0.035em;line-height:1">From seed to score</div>
+  </div>
+  <div data-id="n_z12b3" class="txt" style="max-width:560px;text-align:right">The phone deals and runs the whole game offline. Postgres checks every set when it’s over and keeps the score.</div>
+</div><div data-id="n_ktzhh" data-name="Pipeline" style="display:flex;gap:16px;align-items:stretch">
+  <div data-id="n_7m1v9" data-name="Seed" class="st rise" style="animation-delay:80ms">
+    <div data-id="n_2ypwn" class="vis" style="flex-direction:column;gap:14px">
+      <div data-id="n_uxig1" style="font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:24px;font-weight:600;letter-spacing:0.02em;color:#020617;background:#fff;padding:12px 16px;border-radius:12px;box-shadow:inset 0 0 0 1px #e2e8f0">9f3c07e2<br data-id="n_jk8nj">a1b4d685</div>
+      <div data-id="n_zha4i" style="font-size:14px;color:#64748b">8 random bytes</div>
+    </div>
+    <div data-id="n_98ppq" style="display:flex;align-items:center;gap:12px"><span data-id="n_y87d8" class="num">1</span><span data-id="n_dut1r" class="ttl">Seed</span></div>
+    <div data-id="n_g3kf8" class="src">app/game.tsx · mintSeed()</div>
+    <div data-id="n_cfmoc" class="txt">The phone mints the game’s id and seed itself, so a game starts with no round trip.</div>
+  </div>
+  <svg data-id="n_irm2z" class="arr" viewBox="0 0 44 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path data-id="n_kqowb" d="M2 12h34"/><polyline data-id="n_fj7go" points="30,5 39,12 30,19" style="animation:none;stroke-dasharray:none"/></svg>
+  <div data-id="n_lrrda" data-name="Deck" class="st rise" style="animation-delay:160ms">
+    <div data-id="n_o1rjh" class="vis" style="gap:22px">
+      <div data-id="n_55oit" style="position:relative;width:96px;height:80px">
+        <div data-id="n_nhwt0" class="mc" style="position:absolute;left:0;top:12px;transform:rotate(-16deg)"><img data-id="n_8n30e" src="assets/shapes/GZB.png" alt=""></div>
+        <div data-id="n_kojgb" class="mc" style="position:absolute;left:18px;top:4px;transform:rotate(-7deg)"><img data-id="n_fxx1j" src="assets/shapes/PYA.png" alt=""><img data-id="n_9dale" src="assets/shapes/PYA.png" alt=""></div>
+        <div data-id="n_cnnno" class="mc" style="position:absolute;left:38px;top:2px;transform:rotate(3deg)"><img data-id="n_4g0ee" src="assets/shapes/RXC.png" alt=""><img data-id="n_ze3hb" src="assets/shapes/RXC.png" alt=""><img data-id="n_qapjt" src="assets/shapes/RXC.png" alt=""></div>
+        <div data-id="n_q4m34" class="mc" style="position:absolute;left:58px;top:8px;transform:rotate(13deg)"><img data-id="n_plmp2" src="assets/shapes/GXA.png" alt=""></div>
+      </div>
+      <div data-id="n_7ujaq" style="display:flex;flex-direction:column;gap:4px;color:#020617"><span data-id="n_s1ly8" style="font-family:var(--font-display);font-size:44px;font-weight:800;line-height:1;letter-spacing:-0.03em">81</span><span data-id="n_masm5" style="font-size:14px;color:#64748b">3 × 3 × 3 × 3</span></div>
+    </div>
+    <div data-id="n_1sv1l" style="display:flex;align-items:center;gap:12px"><span data-id="n_jy29e" class="num">2</span><span data-id="n_2k59u" class="ttl">Deck</span></div>
+    <div data-id="n_1h71y" class="src">lib/game/seeded-deck.ts</div>
+    <div data-id="n_8ymrs" class="txt">FNV-1a folds the seed into a number; one LCG stream shuffles all 81 cards, so a game replays exactly.</div>
+  </div>
+  <svg data-id="n_a68ic" class="arr" viewBox="0 0 44 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path data-id="n_1w33y" d="M2 12h34"/><polyline data-id="n_3zv9r" points="30,5 39,12 30,19" style="animation:none;stroke-dasharray:none"/></svg>
+  <div data-id="n_ysvjw" data-name="Deal" class="st rise" style="animation-delay:240ms">
+    <div data-id="n_9rwv4" class="vis">
+      <div data-id="n_9xs1b" style="display:grid;grid-template-columns:repeat(4,38px);gap:6px">
+        <div data-id="n_7f0wd" class="mc hit"><img data-id="n_9pno2" src="assets/shapes/RXA.png" alt=""></div><div data-id="n_rkl2s" class="mc"><img data-id="n_82nm2" src="assets/shapes/GXA.png" alt=""></div><div data-id="n_i1nad" class="mc"><img data-id="n_1cfpo" src="assets/shapes/PYA.png" alt=""></div><div data-id="n_z0at5" class="mc"><img data-id="n_srenk" src="assets/shapes/RZB.png" alt=""></div>
+        <div data-id="n_kzdfr" class="mc"><img data-id="n_tb6q4" src="assets/shapes/GZA.png" alt=""></div><div data-id="n_f7150" class="mc hit"><img data-id="n_lqls0" src="assets/shapes/GYB.png" alt=""></div><div data-id="n_lv287" class="mc"><img data-id="n_h5adi" src="assets/shapes/RYC.png" alt=""></div><div data-id="n_osfnc" class="mc"><img data-id="n_1z3zo" src="assets/shapes/PXB.png" alt=""></div>
+        <div data-id="n_dgx0d" class="mc"><img data-id="n_kcjzk" src="assets/shapes/GXC.png" alt=""></div><div data-id="n_ne1s0" class="mc"><img data-id="n_tfu3c" src="assets/shapes/RYB.png" alt=""></div><div data-id="n_asd1x" class="mc hit"><img data-id="n_usv7s" src="assets/shapes/PZC.png" alt=""></div><div data-id="n_23b4f" class="mc"><img data-id="n_901pz" src="assets/shapes/PYC.png" alt=""></div>
+        <div data-id="n_u4g42" class="mc"><img data-id="n_orpwr" src="assets/shapes/GZB.png" alt=""></div><div data-id="n_urstr" class="mc"><img data-id="n_rq2zk" src="assets/shapes/RXC.png" alt=""></div><div data-id="n_bw38n" class="mc"><img data-id="n_m1vyu" src="assets/shapes/PXA.png" alt=""></div><div data-id="n_vjesp" class="mc"><img data-id="n_mvomp" src="assets/shapes/GYC.png" alt=""></div>
+      </div>
+    </div>
+    <div data-id="n_eefrv" style="display:flex;align-items:center;gap:12px"><span data-id="n_voexs" class="num">3</span><span data-id="n_2nwuo" class="ttl">Deal</span></div>
+    <div data-id="n_6o962" class="src">lib/game/deal.ts · dealTable()</div>
+    <div data-id="n_crg3r" class="txt">Sixteen cards can hold no set, so a table without one is dealt again, until there’s at least one.</div>
+  </div>
+  <svg data-id="n_evkdm" class="arr" viewBox="0 0 44 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path data-id="n_5sqqc" d="M2 12h34"/><polyline data-id="n_hpjy7" points="30,5 39,12 30,19" style="animation:none;stroke-dasharray:none"/></svg>
+  <div data-id="n_2dqng" data-name="Play" class="st rise" style="animation-delay:320ms">
+    <div data-id="n_n4mni" class="vis" style="flex-direction:column;gap:16px">
+      <div data-id="n_a4gux" style="font-family:var(--font-display);font-size:58px;font-weight:800;letter-spacing:-0.03em;line-height:1;color:#020617;font-variant-numeric:tabular-nums">3:00</div>
+      <div data-id="n_aoj8a" style="display:flex;align-items:center;gap:6px">
+        <div data-id="n_hirfg" class="mc" style="opacity:.35"><img data-id="n_wa468" src="assets/shapes/RXA.png" alt=""></div><div data-id="n_a34x6" class="mc" style="opacity:.35"><img data-id="n_kqvim" src="assets/shapes/GYB.png" alt=""></div><div data-id="n_9xkdh" class="mc" style="opacity:.35"><img data-id="n_8f3x3" src="assets/shapes/PZC.png" alt=""></div>
+        <span data-id="n_q644t" style="font-size:22px;font-weight:700;color:#FF0080;padding:0 6px">→</span>
+        <div data-id="n_qnt31" class="mc"><img data-id="n_j3gm8" src="assets/shapes/PXB.png" alt=""></div><div data-id="n_kp4kd" class="mc"><img data-id="n_e628f" src="assets/shapes/GZC.png" alt=""></div><div data-id="n_5tu4a" class="mc"><img data-id="n_vp279" src="assets/shapes/RYA.png" alt=""></div>
+      </div>
+    </div>
+    <div data-id="n_us375" style="display:flex;align-items:center;gap:12px"><span data-id="n_pjesq" class="num">4</span><span data-id="n_k6l41" class="ttl">Play</span></div>
+    <div data-id="n_t41ho" class="src">components/board.tsx · PLAY_MS</div>
+    <div data-id="n_fgqw9" class="txt">Three minutes. Each set found is replaced by three new cards that still leave a set on the table.</div>
+  </div>
+  <svg data-id="n_cmkeq" class="arr" viewBox="0 0 44 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path data-id="n_wbr7l" d="M2 12h34"/><polyline data-id="n_jb511" points="30,5 39,12 30,19" style="animation:none;stroke-dasharray:none"/></svg>
+  <div data-id="n_7eycj" data-name="Score" class="st rise" style="animation-delay:400ms">
+    <div data-id="n_rvo34" class="vis" style="flex-direction:column;gap:8px;align-items:stretch;padding:0 22px">
+      <div data-id="n_7fkjd" style="display:flex;align-items:center;gap:5px;height:46px"><div data-id="n_c3sfb" class="mc sm"><img data-id="n_kg3xl" src="assets/shapes/RXA.png" alt=""></div><div data-id="n_34wkd" class="mc sm"><img data-id="n_uh6tl" src="assets/shapes/GYB.png" alt=""></div><div data-id="n_vrtne" class="mc sm"><img data-id="n_77tn1" src="assets/shapes/PZC.png" alt=""></div><span data-id="n_h7b53" style="margin-left:10px;font-size:18px;white-space:nowrap;font-weight:700;color:#16a34a">✓ set</span></div>
+      <div data-id="n_p1psj" style="display:flex;align-items:center;gap:5px;height:46px"><div data-id="n_m2c2w" class="mc sm"><img data-id="n_tyrfu" src="assets/shapes/RXA.png" alt=""></div><div data-id="n_n8shn" class="mc sm"><img data-id="n_16ui9" src="assets/shapes/RYB.png" alt=""></div><div data-id="n_3tk4l" class="mc sm"><img data-id="n_0z1zz" src="assets/shapes/GZC.png" alt=""></div><span data-id="n_dtg8u" style="margin-left:10px;font-size:18px;white-space:nowrap;font-weight:700;color:#dc2626">✗ not a set</span></div>
+      <div data-id="n_dnkb7" style="display:flex;align-items:center;gap:5px;height:46px;opacity:.5"><div data-id="n_jyvmy" class="mc sm"><img data-id="n_mzank" src="assets/shapes/PZC.png" alt=""></div><div data-id="n_lxc98" class="mc sm"><img data-id="n_p3ew6" src="assets/shapes/RXA.png" alt=""></div><div data-id="n_ir6xe" class="mc sm"><img data-id="n_ellmo" src="assets/shapes/GYB.png" alt=""></div><span data-id="n_rkhl0" style="margin-left:10px;font-size:18px;white-space:nowrap;font-weight:700;color:#64748b;text-decoration:line-through">same set</span></div>
+    </div>
+    <div data-id="n_n4ons" style="display:flex;align-items:center;gap:12px"><span data-id="n_i64ya" class="num">5</span><span data-id="n_q7yh2" class="ttl">Score</span></div>
+    <div data-id="n_jp2ky" class="src">record_play → complete_play</div>
+    <div data-id="n_hl30w" class="txt">Postgres re-checks each trio with is_valid_set, drops repeats and counts the rest, up to 27.</div>
+  </div>
+</div>
+<style data-id="n_96t9l">
+.tb { flex:1;border-radius:16px;box-shadow:inset 0 0 0 1px var(--color-line);background:var(--color-panel);overflow:hidden;display:flex;flex-direction:column }
+.tbh { display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:var(--color-tint);font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:17px;font-weight:700 }
+.tbr { display:flex;justify-content:space-between;padding:8px 18px;font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:14px;color:var(--color-body);border-top:1px solid var(--color-line) }
+.tbr span:last-child { color:var(--color-muted) }
+</style>
+<div data-id="n_v2837" data-name="Where it lands" class="rise" style="animation-delay:480ms;display:flex;gap:20px;align-items:flex-start;padding-top:28px;border-top:1px solid var(--color-line)">
+  <div data-id="n_qn24c" style="width:250px;flex-shrink:0;display:flex;flex-direction:column;gap:10px">
+    <div data-id="n_pwmh1" class="ttl" style="font-size:26px">Where it lands</div>
+    <div data-id="n_xkozn" class="txt">One call writes three tables, under a lock per player. The day is the US-Eastern date the game started.</div>
+  </div>
+  <div data-id="n_8129s" data-name="plays" class="tb"><div data-id="n_meack" class="tbh">plays<span data-id="n_5u8o9" style="font-weight:400;font-size:13px;color:var(--color-muted)">every game</span></div><div data-id="n_0fext" class="tbr"><span data-id="n_39t11">seed</span><span data-id="n_i2uck">text</span></div><div data-id="n_14yot" class="tbr"><span data-id="n_8j3ak">score</span><span data-id="n_ckama">0–27</span></div><div data-id="n_lbgwc" class="tbr"><span data-id="n_lllap">sets</span><span data-id="n_8obbv">jsonb</span></div><div data-id="n_974no" class="tbr"><span data-id="n_3a175">day</span><span data-id="n_sptal">date, ET</span></div></div>
+  <div data-id="n_bhesh" data-name="daily_bests" class="tb"><div data-id="n_n2b7z" class="tbh">daily_bests<span data-id="n_92f5h" style="font-weight:400;font-size:13px;color:var(--color-muted)">today’s board</span></div><div data-id="n_6aym0" class="tbr"><span data-id="n_0l0f9">best_score</span><span data-id="n_pib2m">int</span></div><div data-id="n_toihy" class="tbr"><span data-id="n_w741b">achieved_at</span><span data-id="n_771pk">ties: earliest</span></div><div data-id="n_sikh8" class="tbr"><span data-id="n_pdw4i">plays_completed</span><span data-id="n_b4g9d">int</span></div><div data-id="n_14h2e" class="tbr"><span data-id="n_aylfv">day</span><span data-id="n_1dtbe">date, ET</span></div></div>
+  <div data-id="n_l9shy" data-name="account_stats" class="tb" style="flex:1.25"><div data-id="n_tkob4" class="tbh">account_stats<span data-id="n_tk48v" style="font-weight:400;font-size:13px;color:var(--color-muted)">you, all time</span></div><div data-id="n_s61s0" class="tbr"><span data-id="n_g5q01">best_score</span><span data-id="n_urs4o">int</span></div><div data-id="n_rljz0" class="tbr"><span data-id="n_h1s2v">current_streak</span><span data-id="n_dy0uv">days</span></div><div data-id="n_p3kdq" class="tbr"><span data-id="n_htih3">last_played_day</span><span data-id="n_2rvt8">date, ET</span></div><div data-id="n_lz9gt" class="tbr"><span data-id="n_mocoe">total_plays</span><span data-id="n_kpuph">int</span></div>
+    <div data-id="n_gecch" data-name="Streak rule" class="streak" style="margin:6px 12px 12px;padding:12px 14px;border-radius:12px;background:var(--color-pink-soft);box-shadow:inset 0 0 0 1px var(--color-pink-line);display:flex;flex-direction:column;gap:6px;font-size:14px;line-height:20px">
+      <div data-id="n_9i0w6" style="font-weight:700;color:var(--color-pink)">The streak</div>
+      <div data-id="n_psz5a" style="display:flex;justify-content:space-between;color:var(--color-body)"><span data-id="n_sfr34">Last played yesterday</span><b data-id="n_2zxun">+1</b></div>
+      <div data-id="n_bm5bz" style="display:flex;justify-content:space-between;color:var(--color-body)"><span data-id="n_rw56d">Already played that day, or later</span><b data-id="n_yx7y2">same</b></div>
+      <div data-id="n_0wj25" style="display:flex;justify-content:space-between;color:var(--color-body)"><span data-id="n_xbaqd">A day missed</span><b data-id="n_cn36h">back to 1</b></div>
+    </div>
+  </div>
+</div>
+</section>

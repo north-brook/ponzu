@@ -42,9 +42,37 @@
   }
 }
 
+/*
+ * Phones, tablets and narrow windows get the demo as a video of the square layout (DemoVideo),
+ * never taller than the screen.
+ */
+@media (any-pointer: coarse), (max-width: 720px) {
+  .dm-frame {
+    aspect-ratio: 1;
+    max-width: 80svh;
+    margin-inline: auto;
+  }
+}
+
+.dm-frame[data-video] {
+  aspect-ratio: 1;
+  max-width: 80svh;
+  margin-inline: auto;
+}
+
 /* Once measured, the script sets the exact height. */
 .dm-frame[data-sized] {
   aspect-ratio: auto;
+}
+
+/*
+ * Off screen, the demo's own loops hold (rain, rings, spinners, carets), as the boards' do in their
+ * artboard view.
+ */
+.dm[data-hold] *,
+.dm[data-hold] *::before,
+.dm[data-hold] *::after {
+  animation-play-state: paused;
 }
 
 .dm-window {

@@ -5,9 +5,10 @@ import { readBag } from "@ponzu/store";
 
 /**
  * The design the product demo draws: boards from Seekle, a game on the App Store, as Claude made
- * them in Ponzu, from the app's screens and animations to the App Store screenshots. They're the
- * real files, five pages of them, read at build time (app/demo/seekle.json) and drawn by Ponzu's
- * own artboard view, so the demo shows exactly what the canvas does.
+ * them in Ponzu, from its brand directions and the app's screens to the App Store screenshots, a
+ * diagram of how a game works and a weekly update. They're the real files, eight pages of them,
+ * read at build time (app/demo/seekle.json) and drawn by Ponzu's own artboard view, so the demo
+ * shows exactly what the canvas does.
  */
 const DIR = join(process.cwd(), "public/demo/seekle.design");
 

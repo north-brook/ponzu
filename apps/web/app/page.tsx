@@ -7,10 +7,11 @@ import { CodeWell } from "@/components/code-well";
 import { CssTileVisual } from "@/components/css-tile";
 import { CommentThread } from "@/components/demo/comment-thread";
 import { ProductDemo } from "@/components/demo/product-demo";
+import { DownloadSplit, PhonePlatforms } from "@/components/download-button";
 import { HomeScreen } from "@/components/home-screen";
 import { Apple, Slice } from "@/components/icons";
 import { IPhone } from "@/components/iphone";
-import { DownloadButton, GitHubButton, TESTFLIGHT } from "@/components/links";
+import { GitHubButton, TESTFLIGHT } from "@/components/links";
 import { DESCRIPTION, share, TITLE } from "@/components/share";
 import { SLICE_CSS } from "@/components/slice-demo";
 
@@ -24,7 +25,7 @@ export const metadata: Metadata = share({
   title: TITLE,
   description: DESCRIPTION,
   xDescription:
-    "Open source and local. Your agent designs in HTML and CSS; you steer with comments.",
+    "Your agent draws brands, apps and more in HTML and CSS on your computer; you steer with comments.",
 });
 
 export default function Home() {
@@ -33,28 +34,27 @@ export default function Home() {
       <Nav />
 
       <header className="flex flex-col items-center gap-6 pt-14 pb-16 text-center md:pt-[104px]">
+        {/* "open source" holds together once it fits: it's 352px at the smallest size. */}
         <h1 className="m-0 max-w-[1040px] font-display text-5xl leading-[1.02] font-semibold tracking-[-0.035em] text-balance text-ink sm:text-6xl md:text-7xl lg:text-8xl">
-          The design canvas for your coding agent.
+          The <span className="min-[400px]:whitespace-nowrap">open source</span> canvas for your
+          agent.
         </h1>
-        <p className="m-0 max-w-[620px] text-lg/[29px] text-pretty text-muted md:text-[20px]/[32px]">
-          Open source. Runs on your machine. Your agent designs in HTML and CSS. You steer with
-          comments.
+        <p className="m-0 max-w-[760px] text-lg/[29px] text-balance text-muted md:text-[20px]/[32px]">
+          Brands, apps, launch pages, diagrams, dashboards. Your agent draws them in HTML and CSS on
+          your computer, and you steer with comments.
         </p>
         <div className="flex flex-wrap justify-center gap-3 pt-3">
-          <DownloadButton>Download for Mac</DownloadButton>
-          <GitHubButton>View on GitHub</GitHubButton>
+          <DownloadSplit testflight={TESTFLIGHT} />
+          <GitHubButton className="desktop-only">View on GitHub</GitHubButton>
         </div>
+        <PhonePlatforms testflight={TESTFLIGHT} />
       </header>
 
       {/*
-        The demo on a desktop, with room on every side: yuzu on light, soy on dark (`.stage`). The
-        big slice behind it holds still.
+        The demo on an ink desktop, with room on every side and its use cases along the top
+        (`.demo-stage`).
       */}
-      <div className="stage relative mt-4 mb-28 overflow-hidden rounded-[28px] p-14 max-[720px]:rounded-2xl max-[720px]:p-4">
-        <Slice
-          size={620}
-          className="pointer-events-none absolute -top-[200px] -right-[180px] opacity-(--stage-slice-opacity) [--slice:var(--stage-slice)] max-[720px]:hidden"
-        />
+      <div className="demo-stage relative mt-4 mb-28 overflow-hidden rounded-[28px] px-14 pt-11 pb-14 max-[720px]:rounded-2xl max-[720px]:p-4 max-[720px]:pt-5">
         <div className="dm-frame-host relative">
           <ProductDemo />
         </div>
@@ -167,9 +167,10 @@ export default function Home() {
           Give your agent a canvas.
         </h2>
         <div className="flex flex-wrap justify-center gap-3 pt-3">
-          <DownloadButton>Download for Mac</DownloadButton>
-          <GitHubButton>View on GitHub</GitHubButton>
+          <DownloadSplit testflight={TESTFLIGHT} />
+          <GitHubButton className="desktop-only">View on GitHub</GitHubButton>
         </div>
+        <PhonePlatforms testflight={TESTFLIGHT} />
       </section>
 
       <Footer />
@@ -216,9 +217,9 @@ function AgentsVisual() {
           <li
             key={agent.id}
             title={agent.name}
-            className="grid aspect-square place-items-center rounded-[14px] bg-well text-ink shadow-[inset_0_0_0_1px_var(--well-rule)]"
+            className="@container grid aspect-square place-items-center rounded-[14px] bg-well text-ink shadow-[inset_0_0_0_1px_var(--well-rule)]"
           >
-            <AgentMark agent={agent.id} size={28} />
+            <AgentMark agent={agent.id} size="50cqw" />
             <span className="sr-only">{agent.name}</span>
           </li>
         ))}

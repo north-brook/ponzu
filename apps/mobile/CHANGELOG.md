@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.0](https://github.com/north-brook/ponzu/compare/mobile-v0.5.0...mobile-v0.6.0) (2026-10-28)
+
+
+### Features
+
+* pair the iphone with ponzu on any computer ([#309](https://github.com/north-brook/ponzu/issues/309)) ([d67b59f](https://github.com/north-brook/ponzu/commit/d67b59f2c6376ab21c64fd55a66da2f2eb0a1c49))
+
+## [0.5.0](https://github.com/north-brook/ponzu/compare/mobile-v0.4.3...mobile-v0.5.0) (2026-10-27)
+
+
+### Features
+
+* never lose an unsent comment ([#289](https://github.com/north-brook/ponzu/issues/289)) ([bce04d8](https://github.com/north-brook/ponzu/commit/bce04d8aea4d8861e0643711ed59ab49864c8d7b))
+
 ## [0.4.3](https://github.com/north-brook/ponzu/compare/mobile-v0.4.2...mobile-v0.4.3) (2026-10-27)
 
 

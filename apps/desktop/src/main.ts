@@ -4,8 +4,20 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { type Catalog, parseDesignLink } from "@ponzu/core";
 import { cloneTarget, parseOpenUrl, spawnGit } from "@ponzu/server/clone";
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  Menu,
+  nativeImage,
+  nativeTheme,
+  shell,
+  Tray,
+} from "electron";
 import { followAppearance } from "./appearance";
+import { associateDesigns, designPath, launchArgs } from "./designs";
 import { renderToken, startRenderHost } from "./render-host";
 import { smoke, watchSmoke } from "./smoke";
 import { checkForUpdatesNow, installUpdater, relaunchedInBackground } from "./updater";
@@ -14,11 +26,16 @@ const isDev = !app.isPackaged;
 /** The built main/preload live in <app>/dist, in development and inside the bundle. */
 const here = join(app.getAppPath(), "dist");
 
+/** The bundled CLI: `bun build --compile` names it ponzu.exe on Windows. */
+const SERVER_BIN = process.platform === "win32" ? "server/ponzu.exe" : "server/ponzu";
+
 /** Paths inside the app bundle, or the monorepo during development. */
 const paths = {
-  server: isDev ? join(here, "server/ponzu") : join(process.resourcesPath, "server/ponzu"),
+  server: join(isDev ? here : process.resourcesPath, SERVER_BIN),
   studio: isDev ? join(here, "../../studio/dist") : join(process.resourcesPath, "studio"),
   preload: join(here, "preload.cjs"),
+  /** Windows and Linux: the tray icon, tray.png and tray@2x.png. */
+  tray: isDev ? join(here, "../build") : join(process.resourcesPath, "tray"),
 };
 
 let server: ChildProcess | null = null;
@@ -134,12 +151,12 @@ function setupAgents() {
 }
 
 /**
- * The wake helper (`ponzu wake install`): a LaunchAgent that starts Ponzu in the
- * background when the iPhone app knocks on port 7778. Installed builds only, on
- * every launch, so it follows the app when it moves; unchanged, it's left alone.
+ * The wake helper (`ponzu wake install`): a LaunchAgent, or on Linux a systemd user socket,
+ * that starts Ponzu in the background when the iPhone app knocks on port 7778. Installed builds
+ * only, on every launch, so it follows the app when it moves; unchanged, it's left alone.
  */
 function setupWake() {
-  if (process.platform !== "darwin" || isDev) return;
+  if ((process.platform !== "darwin" && process.platform !== "linux") || isDev) return;
   if (!existsSync(paths.server)) return;
   const child = spawn(paths.server, ["wake", "install"], { stdio: "ignore" });
   child.on("error", () => {});
@@ -257,14 +274,35 @@ path{animation:juice 1.2s linear infinite both}
 /** A window on the splash, until the server is up. */
 let splashing = false;
 
+/**
+ * Windows draws its caption buttons over the studio's title bar, in its colours: the studio's
+ * `--background` and `--foreground`, and its header's 40px.
+ */
+const titleBarOverlay = (): Electron.TitleBarOverlayOptions => ({
+  color: nativeTheme.shouldUseDarkColors ? "#0e0e0d" : "#e8e6e0",
+  symbolColor: nativeTheme.shouldUseDarkColors ? "#f4f3ef" : "#111110",
+  height: 40,
+});
+
+/**
+ * The window's frame. The Mac's traffic lights and Windows' caption buttons sit in the
+ * studio's title bar, which leaves room for them; Linux keeps its own title bar and menus.
+ */
+function chrome(): Electron.BrowserWindowConstructorOptions {
+  if (process.platform === "darwin")
+    return { titleBarStyle: "hiddenInset", trafficLightPosition: { x: 16, y: 13 } };
+  if (process.platform === "win32")
+    return { titleBarStyle: "hidden", titleBarOverlay: titleBarOverlay() };
+  return {};
+}
+
 function createWindow(url: string) {
   const win = new BrowserWindow({
     width: 1440,
     height: 900,
     minWidth: 720,
     minHeight: 480,
-    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
-    trafficLightPosition: { x: 16, y: 13 },
+    ...chrome(),
     backgroundColor: nativeTheme.shouldUseDarkColors ? "#0e0e0d" : "#e8e6e0",
     show: false,
     webPreferences: { preload: paths.preload, contextIsolation: true, sandbox: true },
@@ -275,6 +313,11 @@ function createWindow(url: string) {
     if (mainWindow === win) mainWindow = null;
   });
   watchSmoke(win, () => server?.kill("SIGTERM"));
+  // A file dropped where nothing takes it would load in place of the studio.
+  if (process.platform !== "darwin")
+    win.webContents.on("will-navigate", (e, target) => {
+      if (target.startsWith("file:")) e.preventDefault();
+    });
   win.webContents.setWindowOpenHandler(({ url: target }) => {
     void shell.openExternal(target);
     return { action: "deny" };
@@ -419,6 +462,15 @@ async function openLink(url: string) {
 }
 
 async function pickDesign(): Promise<string | null> {
+  // Windows and Linux pick a file or a folder, not either: a design is a folder.
+  if (process.platform !== "darwin") {
+    const res = await dialog.showOpenDialog(mainWindow!, {
+      title: "Open a .design folder",
+      properties: ["openDirectory"],
+    });
+    const p = res.filePaths[0];
+    return p ? designPath(p) : null;
+  }
   const res = await dialog.showOpenDialog(mainWindow!, {
     title: "Open a .design",
     properties: ["openFile", "openDirectory"],
@@ -441,12 +493,63 @@ async function newDesign(): Promise<string | null> {
 ipcMain.handle("ponzu:open-folder", () => pickDesign());
 ipcMain.handle("ponzu:new-file", () => newDesign());
 ipcMain.on("ponzu:reveal", (_e, path: string) => shell.showItemInFolder(path));
+/** Windows and Linux: which of the paths dropped on the window are designs (preload.ts). */
+ipcMain.on("ponzu:designs", (e, paths: string[]) => {
+  e.returnValue = paths.map(designPath).filter((p): p is string => Boolean(p));
+});
+/** Then open them, one after another: each loads in the same window. */
+ipcMain.on("ponzu:open-designs", (_e, designs: string[]) => void openAll(designs));
+
+async function openAll(designs: readonly string[]) {
+  for (const design of designs) await openDesign(design);
+}
 ipcMain.handle("ponzu:pair-iphone-pending", () => {
   const pending = pairPending;
   pairPending = false;
   return pending;
 });
 ipcMain.on("ponzu:close-window", (e) => BrowserWindow.fromWebContents(e.sender)?.close());
+
+/** Check for Updates… and Pair iPhone…: the Mac's app menu, and Help and the tray elsewhere. */
+function appItems(): Electron.MenuItemConstructorOptions[] {
+  return [
+    {
+      label: "Check for Updates…",
+      click: () => {
+        showWindow();
+        if (mainWindow) void checkForUpdatesNow(mainWindow);
+      },
+    },
+    { label: "Pair iPhone…", click: () => pairIphone() },
+  ];
+}
+
+/**
+ * Windows and Linux: Ponzu in the tray. Closing its last window leaves it serving agents, the
+ * iPhone and the person's other computers, as the Mac's dock does, until they quit it here or
+ * agents go quiet (watchIdle).
+ */
+let tray: Tray | null = null;
+function createTray() {
+  if (process.platform === "darwin" || tray) return;
+  // Linux's trays scale the icon to the panel themselves; Windows' takes 16px, and @2x beside it.
+  const icon = nativeImage.createFromPath(
+    join(paths.tray, process.platform === "win32" ? "tray.png" : "tray@2x.png"),
+  );
+  tray = new Tray(icon);
+  tray.setToolTip("Ponzu");
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: "Open Ponzu", click: () => showWindow() },
+      { type: "separator" },
+      ...appItems(),
+      { type: "separator" },
+      { label: "Quit Ponzu", click: () => app.quit() },
+    ]),
+  );
+  // Windows: a click opens the window, as the right-click menu's first item does.
+  tray.on("click", () => showWindow());
+}
 
 function buildMenu() {
   const template: Electron.MenuItemConstructorOptions[] = [
@@ -456,14 +559,7 @@ function buildMenu() {
             label: app.name,
             submenu: [
               { role: "about" as const },
-              {
-                label: "Check for Updates…",
-                click: () => {
-                  showWindow();
-                  if (mainWindow) void checkForUpdatesNow(mainWindow);
-                },
-              },
-              { label: "Pair iPhone…", click: () => pairIphone() },
+              ...appItems(),
               { label: "Install Terminal Command…", click: () => void installCommand() },
               { type: "separator" as const },
               { role: "services" as const },
@@ -529,7 +625,11 @@ function buildMenu() {
     { role: "windowMenu" },
     {
       role: "help",
-      submenu: [{ label: "ponzu.design", click: () => shell.openExternal("https://ponzu.design") }],
+      submenu: [
+        { label: "ponzu.design", click: () => shell.openExternal("https://ponzu.design") },
+        // Off the Mac, there's no app menu to hold these.
+        ...(process.platform === "darwin" ? [] : [{ type: "separator" as const }, ...appItems()]),
+      ],
     },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
@@ -542,14 +642,13 @@ function buildMenu() {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on("second-instance", (_e, argv) => {
+  app.on("second-instance", (_e, argv, cwd) => {
     // Another agent asking for the app: it's already serving.
     if (argv.includes("--background")) return;
-    // Linux and Windows hand a second launch its ponzu:// link in argv.
-    const link = argv.find((a) => a.startsWith("ponzu:"));
-    const p = argv.find((a) => a.endsWith(".design"));
-    if (link) void openLink(link);
-    else if (p) void openDesign(p);
+    // Linux and Windows hand a second launch its ponzu:// link, or the design it opens, in argv.
+    const { links, designs } = launchArgs(argv, cwd);
+    if (links[0]) void openLink(links[0]);
+    else if (designs.length) void openAll(designs);
     else showWindow();
   });
 
@@ -606,13 +705,17 @@ if (!app.requestSingleInstanceLock()) {
       app.quit();
       return;
     }
-    const fromArgv = process.argv.find((a) => a.endsWith(".design"));
-    if (fromArgv) pendingOpens.push(fromArgv);
+    // Windows and Linux launch Ponzu with the design or link to open on its command line.
+    const { links, designs } = launchArgs(process.argv, process.cwd());
+    pendingOpens.push(...designs);
+    pendingLinks.push(...links);
     if (!background || pendingOpens.length || pendingLinks.length || smoke) showWindow();
     else app.dock?.hide();
+    createTray();
     if (!smoke) {
       setupAgents();
       setupWake();
+      if (!isDev) void associateDesigns(process.execPath).catch(() => {});
       watchIdle();
       followAppearance();
     }
@@ -622,9 +725,15 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on("activate", () => showWindow());
 
+  // Ponzu keeps serving with no window: in the dock on a Mac, in the tray elsewhere.
   app.on("window-all-closed", () => {
     mainWindow = null;
-    if (process.platform !== "darwin") app.quit();
+  });
+
+  // Windows' caption buttons follow the light or dark mode, as the studio does.
+  nativeTheme.on("updated", () => {
+    if (process.platform !== "win32") return;
+    for (const win of BrowserWindow.getAllWindows()) win.setTitleBarOverlay(titleBarOverlay());
   });
 
   app.on("before-quit", () => {

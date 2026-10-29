@@ -1,7 +1,7 @@
 "use client";
 
 import { type ReactNode, useLayoutEffect, useRef } from "react";
-import { BEATS, type BeatId, index, PROMPT } from "./script";
+import { type Entry, indexIn, type Script } from "./script";
 
 /*
  * The coding-agent app beside the canvas, rebuilt from reference screenshots in both color
@@ -9,65 +9,29 @@ import { BEATS, type BeatId, index, PROMPT } from "./script";
  * sampled from those screenshots; see `.dm-app` in demo.css.
  */
 
-type Segment = { from: BeatId; to: BeatId; tools: number };
-
-/** Runs of tool calls between Claude's messages. A finished run collapses to "Used N tools". */
-const SEGMENTS: Segment[] = [
-  { from: "app-page", to: "motion-page", tools: 6 },
-  { from: "motion-page", to: "c0-cursor", tools: 4 },
-  { from: "c0-cursor", to: "c0-reply", tools: 2 },
-  { from: "c0-reply", to: "explore-page", tools: 1 },
-  { from: "explore-page", to: "c1-cursor", tools: 5 },
-  { from: "c1-cursor", to: "c3-heard", tools: 1 },
-  { from: "rework", to: "web-page", tools: 4 },
-  { from: "web-page", to: "c4-cursor", tools: 3 },
-  { from: "c4-cursor", to: "c4-heard", tools: 1 },
-  { from: "revise", to: "store-page", tools: 3 },
-  { from: "store-page", to: "rest", tools: 4 },
-];
-
-/** The run of tools that starts on a beat. */
-const run = (from: BeatId) => SEGMENTS.find((s) => s.from === from);
-
-/** The Ponzu tool running on each beat, as the app names it. Comment beats wait for activity. */
-const TOOL: Partial<Record<BeatId, string>> = {
-  "app-page": "update page",
-  app: "write html",
-  "motion-page": "create page",
-  motion: "write html",
-  "explore-page": "create page",
-  explore: "write html",
-  rework: "write html",
-  "rework-2": "write html",
-  "web-page": "create page",
-  web: "write html",
-  revise: "write html",
-  "c0-heard": "reply",
-  "store-page": "create page",
-  store: "write html",
-};
-
-/** Looking round a page, Claude screenshots it; while you comment, it waits for you. */
-const toolOn = (id: BeatId | undefined) => {
+/** The Ponzu tool running on a beat: the script's, else a screenshot while you look round a page,
+ * or waiting for activity while you comment. */
+const toolOn = (script: Script, id: string | undefined) => {
   if (id === undefined) return undefined;
   if (/-look/.test(id)) return "screenshot";
-  return TOOL[id] ?? (/^c\d-/.test(id) ? "wait for activity" : undefined);
+  return script.tools[id] ?? (/^c\d-/.test(id) ? "wait for activity" : undefined);
 };
 
-/** Claude's plan for the first turn, and the beats between which each step is in progress. */
-const PLAN: { label: string; from: BeatId; to: BeatId }[] = [
-  { label: "Every screen and animation, from apps/native", from: "think", to: "explore-page" },
-  { label: "Game feel: studies and three directions", from: "explore-page", to: "web-page" },
-  { label: "Website hero, desktop and mobile", from: "web-page", to: "store-page" },
-  { label: "App Store screenshots, three directions", from: "store-page", to: "rest" },
-];
-
-export function ClaudeApp({ beat, t, big }: { beat: number; t: number; big: boolean }) {
-  const at = (id: BeatId) => beat >= index(id);
+export function ClaudeApp({
+  script,
+  beat,
+  t,
+  big,
+}: {
+  script: Script;
+  beat: number;
+  t: number;
+  big: boolean;
+}) {
+  const at = (id: string) => beat >= indexIn(script, id);
   // The story opens with your prompt already sent.
   const working = !at("rest");
-  const id = BEATS[beat]?.id;
-  const tool = toolOn(id);
+  const tool = toolOn(script, script.beats[beat]?.id);
   const tokens = 1.2 + beat * 0.9 + t * 0.8;
 
   // New messages arrive at the bottom; once the thread fills the window, it follows them. The
@@ -80,71 +44,13 @@ export function ClaudeApp({ beat, t, big }: { beat: number; t: number; big: bool
 
   return (
     <div className="dm-window dm-app min-h-0" style={{ fontSize: big ? 16 : 12.5 }}>
-      <TitleBar title="Rebuild Seekle in Ponzu" />
+      <TitleBar title={script.title} />
 
       <div ref={scroll} className="dm-app-thread">
-        <You>{PROMPT}</You>
-        {at("think") && (
-          <Say>
-            Reading apps/native first, so every size, string and timing comes from the source.
-          </Say>
-        )}
-        {at("think") && <Plan at={at} />}
-        <Tools segment={run("app-page")} at={at} tool={tool} />
-        {at("motion-page") && (
-          <Say>Five screens up. Now every animation, looping on the canvas.</Say>
-        )}
-        <Tools segment={run("motion-page")} at={at} tool={tool} />
-        <Tools segment={run("c0-cursor")} at={at} tool={tool} />
-        {at("c0-reply") && (
-          <Say>Answered your question on the Motion page: most screens already rise in.</Say>
-        )}
-        <Tools segment={run("c0-reply")} at={at} tool={tool} />
-        {at("explore-page") && (
-          <Say>
-            20 loops, timed from lib/motion.ts. Now the game feel: four takes each on the found set,
-            the score and the clock, and three full screens combining them.
-          </Say>
-        )}
-        <Tools segment={run("explore-page")} at={at} tool={tool} />
-        {at("c1-cursor") && (
-          <Say>
-            Everything loops on one 3.2s beat, so they compare fairly. Comment on any of them.
-          </Say>
-        )}
-        <Tools segment={run("c1-cursor")} at={at} tool={tool} />
-        {at("c3-heard") && (
-          <Say>
-            Three comments. Taking the “found” label and the green off Collect, moving the score to
-            the middle with the clock top right, then carrying both into the directions, D2 first.
-          </Say>
-        )}
-        <Tools segment={run("rework")} at={at} tool={tool} />
-        {at("web-page") && (
-          <Say>
-            D2 is the one: no label, no green, a rolling score and a quiet clock. Now the website
-            hero.
-          </Say>
-        )}
-        <Tools segment={run("web-page")} at={at} tool={tool} />
-        <Tools segment={run("c4-cursor")} at={at} tool={tool} />
-        {at("c4-heard") && (
-          <Say>
-            New comment on the hero. Five friends will orbit the phone: behind it at the top, in
-            front at the bottom.
-          </Say>
-        )}
-        <Tools segment={run("revise")} at={at} tool={tool} />
-        {at("store-page") && (
-          <Say>Orbiting on desktop and mobile. Last, the App Store screenshots.</Say>
-        )}
-        <Tools segment={run("store-page")} at={at} tool={tool} />
-        {at("rest") && (
-          <Say>
-            Done: night table, ink panorama and close-up, five frames each, built from the real
-            screens. Your four requests are resolved, and your question's answered.
-          </Say>
-        )}
+        <You>{script.prompt}</You>
+        {script.thread.map((entry) => (
+          <Line key={keyOf(entry)} entry={entry} at={at} tool={tool} />
+        ))}
       </div>
 
       <div className="dm-app-status">
@@ -160,6 +66,25 @@ export function ClaudeApp({ beat, t, big }: { beat: number; t: number; big: bool
       <Composer working={working} />
     </div>
   );
+}
+
+const keyOf = (entry: Entry) =>
+  "say" in entry ? entry.say : "plan" in entry ? `plan:${entry.at}` : `tools:${entry.from}`;
+
+/** One thing in the thread, once its beat has come. */
+function Line({
+  entry,
+  at,
+  tool,
+}: {
+  entry: Entry;
+  at: (id: string) => boolean;
+  tool: string | undefined;
+}) {
+  if ("tools" in entry) return <Tools segment={entry} at={at} tool={tool} />;
+  if (!at(entry.at)) return null;
+  if ("plan" in entry) return <Plan steps={entry.plan} at={at} />;
+  return <Say>{entry.say}</Say>;
 }
 
 function TitleBar({ title }: { title: string }) {
@@ -238,11 +163,11 @@ function Tools({
   at,
   tool,
 }: {
-  segment: Segment | undefined;
-  at: (id: BeatId) => boolean;
+  segment: { tools: number; from: string; to: string };
+  at: (id: string) => boolean;
   tool: string | undefined;
 }) {
-  if (!segment || !at(segment.from)) return null;
+  if (!at(segment.from)) return null;
   const done = at(segment.to);
   return (
     <div className="dm-line dm-app-muted flex items-center gap-[0.3em]">
@@ -255,10 +180,16 @@ function Tools({
 }
 
 /** Claude's to-do list for the turn: done, in progress, and still to do. */
-function Plan({ at }: { at: (id: BeatId) => boolean }) {
+function Plan({
+  steps,
+  at,
+}: {
+  steps: { label: string; from: string; to: string }[];
+  at: (id: string) => boolean;
+}) {
   return (
     <div className="dm-line dm-app-plan">
-      {PLAN.map((step) => {
+      {steps.map((step) => {
         const state = at(step.to) ? "done" : at(step.from) ? "active" : "todo";
         return (
           <div key={step.label} className="dm-app-step" data-state={state}>

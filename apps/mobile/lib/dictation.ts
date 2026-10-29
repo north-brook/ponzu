@@ -10,8 +10,8 @@ import { Listener, type ListenState } from "./listen";
  * mute that pauses listening without leaving voice. Text already said before
  * a pause is kept; listening again adds to it.
  */
-export function useDictation(active: boolean) {
-  const [said, setSaid] = useState("");
+export function useDictation(active: boolean, initial = "") {
+  const [said, setSaid] = useState(initial);
   const [partial, setPartial] = useState("");
   const [muted, setMuted] = useState(false);
   const [state, setState] = useState<ListenState>("idle");

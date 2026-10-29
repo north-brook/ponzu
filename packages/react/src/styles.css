@@ -282,6 +282,14 @@
   animation: pz-fall var(--fall) linear var(--drift) infinite;
 }
 
+/* In a working board's title: at most half the board, so the name still reads at any zoom, and
+ * whole columns only (a column and a gap per 0.42em, less the last gap). On a board too narrow
+ * for one, there's none: the ring alone says it's being worked on. */
+.pz-rain-fit {
+  max-width: calc(round(down, 50% + 0.17em, 0.42em) - 0.17em);
+  overflow: hidden;
+}
+
 /* A sixth of a turn, then a rest as long: the slice lands on itself each time. */
 @keyframes pz-juice {
   from {

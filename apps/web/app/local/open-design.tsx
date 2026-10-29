@@ -2,7 +2,7 @@
 
 import { appLink, parseDesignLink } from "@ponzu/core";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Apple, Slice } from "@/components/icons";
+import { DownloadArrow, Slice } from "@/components/icons";
 import { DOWNLOAD, TESTFLIGHT } from "@/components/links";
 
 /*
@@ -92,8 +92,8 @@ export function OpenDesign() {
         <div className="flex flex-col items-center gap-3.5">
           <h1 className={missingTitle}>Open this design in Ponzu.</h1>
           <p className={missingBody}>
-            Your agent made it with Ponzu, the design canvas for agents. Ponzu for iPhone, which
-            opens the designs on your Macs, is in a TestFlight beta.
+            Your agent made it with Ponzu, the open source canvas for agents. Ponzu for iPhone,
+            which opens the designs on your Macs, is in a TestFlight beta.
           </p>
         </div>
         <div className="flex flex-col items-center gap-3.5">
@@ -119,13 +119,13 @@ export function OpenDesign() {
         <div className="flex flex-col items-center gap-3.5">
           <h1 className={missingTitle}>Open this design in Ponzu.</h1>
           <p className={missingBody}>
-            Your agent made it with Ponzu, the design canvas for agents. Get the Mac app to see it.
+            Your agent made it with Ponzu, the open source canvas for agents. Get the app to see it.
           </p>
         </div>
         <div className="flex flex-col items-center gap-3.5">
           <a className={cta} href={DOWNLOAD}>
-            <Apple />
-            Download for Mac
+            <DownloadArrow />
+            Download Ponzu
           </a>
           <p className="m-0 text-sm/5 text-faint">
             Already have it?{" "}
