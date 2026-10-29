@@ -81,11 +81,7 @@ export function useElsewhere(open: boolean, macs: readonly CatalogMachine[]): El
   const [states, setStates] = useState<Record<string, Suggestions>>({});
   const got = (id: string, s: Suggestions | null) => {
     if (s) land(s.ideas);
-    setStates((all) => {
-      if (s) return { ...all, [id]: s };
-      const { [id]: _, ...rest } = all;
-      return rest;
-    });
+    setStates((all) => heard(all, id, s));
   };
   const ids = macs.map((m) => m.id).join(" ");
 
@@ -104,7 +100,7 @@ export function useElsewhere(open: boolean, macs: readonly CatalogMachine[]): El
     if (!open) return;
     let live = true;
     for (const id of ids.split(" ").filter(Boolean)) {
-      ask("POST", peerBase(id)).then((s) => live && s && got(id, s));
+      ask("POST", peerBase(id)).then((s) => live && got(id, s));
     }
     return () => {
       live = false;
@@ -120,7 +116,7 @@ export function useElsewhere(open: boolean, macs: readonly CatalogMachine[]): El
     let live = true;
     const t = setInterval(() => {
       for (const id of running.split(" ")) {
-        ask("GET", peerBase(id)).then((s) => live && s && got(id, s));
+        ask("GET", peerBase(id)).then((s) => live && got(id, s));
       }
     }, POLL_MS);
     return () => {
@@ -133,6 +129,20 @@ export function useElsewhere(open: boolean, macs: readonly CatalogMachine[]): El
     const s = states[machine.id];
     return s?.agent ? [{ ...s, machine }] : [];
   });
+}
+
+/**
+ * What's known of the other Macs once one answers: its suggestions, or, when it didn't answer
+ * (off, asleep, or too old to say), none, so its old ideas don't linger.
+ */
+export function heard(
+  all: Readonly<Record<string, Suggestions>>,
+  id: string,
+  s: Suggestions | null,
+): Record<string, Suggestions> {
+  if (s) return { ...all, [id]: s };
+  const { [id]: _, ...rest } = all;
+  return rest;
 }
 
 /** Where this Mac's server relays another Mac's, as a design on it has its `base`. */

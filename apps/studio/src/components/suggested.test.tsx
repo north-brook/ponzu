@@ -2,7 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 import type { Idea } from "@ponzu/core";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Dialog } from "@/components/ui/dialog";
-import { ARRIVAL_STAGGER_MS, arrivalOf, land } from "@/lib/suggestions";
+import { ARRIVAL_STAGGER_MS, arrivalOf, heard, land } from "@/lib/suggestions";
 import { IdeaBody, LookingCard, SuggestionCard, Thinking } from "./suggested.tsx";
 
 const idea = (name: string): Idea => ({
@@ -144,4 +144,12 @@ test("an idea for another Mac's project names that Mac", () => {
   expect(renderToStaticMarkup(<SuggestionCard idea={idea("x")} onPick={() => {}} />)).not.toContain(
     "·",
   );
+});
+
+test("another Mac that stops answering takes its suggestions with it", () => {
+  const s = { agent: "claude" as const, ideas: [idea("Old")], running: false, looking: [] };
+  const both = heard(heard({}, "workstation", s), "spare", s);
+  expect(Object.keys(both)).toEqual(["workstation", "spare"]);
+  expect(Object.keys(heard(both, "workstation", null))).toEqual(["spare"]);
+  expect(heard(both, "gone", null)).toEqual(both);
 });
