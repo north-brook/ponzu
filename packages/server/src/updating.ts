@@ -16,6 +16,8 @@ export interface Updating {
   from: string;
   to: string;
   at: number;
+  /** A launch already said how this install went, so no other launch says it again. */
+  told?: boolean;
 }
 
 /** Longer than any install takes: an older marker is an install that failed. */
@@ -29,18 +31,23 @@ function read(): Updating | null {
     const u = JSON.parse(readFileSync(updatingFile(), "utf8")) as Partial<Updating>;
     if (typeof u.from !== "string" || typeof u.to !== "string" || typeof u.at !== "number")
       return null;
-    return { from: u.from, to: u.to, at: u.at };
+    return { from: u.from, to: u.to, at: u.at, ...(u.told ? { told: true } : {}) };
   } catch {
     return null;
   }
 }
 
-/** Say an update to `to` is about to install. Renamed into place, so no reader sees half of it. */
+/** Say an update to `to` is about to install. */
 export function markUpdating(from: string, to: string, now = Date.now()) {
+  write({ from, to, at: now });
+}
+
+/** Renamed into place, so no reader sees half of it. */
+function write(u: Updating) {
   try {
     mkdirSync(dirname(updatingFile()), { recursive: true });
     const temp = `${updatingFile()}.${process.pid}`;
-    writeFileSync(temp, `${JSON.stringify({ from, to, at: now })}\n`);
+    writeFileSync(temp, `${JSON.stringify(u)}\n`);
     renameSync(temp, updatingFile());
   } catch {}
 }
@@ -62,9 +69,10 @@ export function replacedByUpdate(version: string, now = Date.now()): boolean {
 
 /**
  * At launch: whether the update before it installed (this is the version it went to) or was
- * interrupted (this is still older). Undefined when no update came before. Clears the marker,
- * except while an install it interrupted may still be going: the person opened the old Ponzu
- * meanwhile, and if they quit it, agents still mustn't start it under the installer.
+ * interrupted (this is still older), told once per install. Undefined when no update came before,
+ * or a launch already told. Clears the marker, except while an install it interrupted may still be
+ * going: the person opened the old Ponzu meanwhile, and if they quit it, agents still mustn't
+ * start it under the installer.
  */
 export function settleUpdate(
   version: string,
@@ -74,6 +82,8 @@ export function settleUpdate(
   if (!u) return undefined;
   const installed = compareVersions(version, u.to) >= 0;
   if (installed || now - u.at >= UPDATING_WITHIN) clearUpdating();
+  else if (!u.told) write({ ...u, told: true });
+  if (u.told) return undefined;
   return installed ? "installed" : "interrupted";
 }
 

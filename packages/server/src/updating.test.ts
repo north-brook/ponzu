@@ -59,7 +59,15 @@ test("the person opening the old Ponzu mid-install doesn't let agents start it a
   expect(settleUpdate("1.59.1")).toBe("interrupted");
   // The install may still be going: a background launch of the old Ponzu still stays away.
   expect(replacedByUpdate("1.59.1")).toBe(true);
-  // Once it's stale, the next launch clears it.
+  // Opening it again, or the update going in later, doesn't count the same install twice.
+  expect(settleUpdate("1.59.1")).toBeUndefined();
+  expect(replacedByUpdate("1.59.1")).toBe(true);
+  expect(settleUpdate("1.68.2")).toBeUndefined();
+  expect(existsSync(join(dir, "home/updating.json"))).toBe(false);
+});
+
+test("a marker that went stale is cleared by the next launch", () => {
+  markUpdating("1.59.1", "1.68.2");
   expect(settleUpdate("1.59.1", Date.now() + UPDATING_WITHIN)).toBe("interrupted");
   expect(existsSync(join(dir, "home/updating.json"))).toBe(false);
 });
