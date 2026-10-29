@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, realpath, rm, utimes, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LocalWorkspace } from "./index.ts";
@@ -365,6 +365,20 @@ describe("the Suggested tab's state", () => {
     // The agent's own CLI is asked for its flags: one that doesn't answer has none of them.
     const missing = new SuggestionService({ bin: () => join(home, "no-such-cli"), home });
     expect((await missing.state()).agent).toBeNull();
+  });
+
+  test("a CLI that didn't answer for its flags is asked again", async () => {
+    const cli = join(home, "late-claude");
+    const service = new SuggestionService({ bin: (a) => (a === "claude" ? cli : null), home });
+    // Not there yet, then installed.
+    expect((await service.state()).agent).toBeNull();
+    await writeFile(
+      cli,
+      "#!/bin/sh\necho '  --strict-mcp-config\n  --no-session-persistence\n  --settings <file>\n  --setting-sources <sources>'\n",
+    );
+    await chmod(cli, 0o755);
+    await until(async () => (await service.state()).agent === "claude");
+    expect((await service.state()).agent).toBe("claude");
   });
 
   test("ideas arrive at the front project by project, one run at a time, kept for next time", async () => {
