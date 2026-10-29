@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.68.3](https://github.com/north-brook/ponzu/compare/v1.68.2...v1.68.3) (2026-10-29)
+
+
+### Bug Fixes
+
+* drop counts from the home screen's tabs and projects menu ([#291](https://github.com/north-brook/ponzu/issues/291)) ([a36e672](https://github.com/north-brook/ponzu/commit/a36e672b4d91cacbe19bd1baf8a9acfb142c88eb))
+
 ## [1.68.2](https://github.com/north-brook/ponzu/compare/v1.68.1...v1.68.2) (2026-10-29)
 
 
