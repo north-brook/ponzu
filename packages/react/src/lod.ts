@@ -24,10 +24,19 @@
  *   where they are (holdLoops).
  */
 
-import { isCSSAnimation, type Motion, nameOf, STILL_PX } from "./motion.ts";
+import { isCSSAnimation, type Motion, nameOf, outermostSvg, STILL_PX } from "./motion.ts";
 
 /** A held element goes again from this size: a zoom hovering at the line doesn't flip it. */
 const RELEASE = STILL_PX / 0.8;
+
+/**
+ * An element smaller than this, in artboard px, counts what's in it too. Past it, it's big
+ * enough to see at any zoom short of an eighth.
+ */
+const PARTS_BELOW = STILL_PX * 8;
+
+/** Parts an element's size looks at, at most. */
+const PARTS = 64;
 
 /**
  * Only a board with at least this many animations outside fields holds them
@@ -148,8 +157,6 @@ export class BoardDetail {
   private videos = new Map<HTMLVideoElement, { at: number; time: number }>();
   /** Sections of a tall board that skip rendering. */
   private culled = new Set<HTMLElement>();
-  /** Artboard px per CSS px on screen, for the current update. */
-  private k = 0;
   /** Held elements waiting their turn to go. */
   private releasing = new Map<Element, Map<string, Phase>>();
   private frame = 0;
@@ -198,13 +205,13 @@ export class BoardDetail {
     const section = this.root.querySelector<HTMLElement>("[data-artboard]");
     if (!section) return;
     this.cull(section, d.visible);
-    this.k = 0;
-    const k = () => (this.k ||= section.offsetWidth / (section.getBoundingClientRect().width || 1));
+    // Artboard px per CSS px on screen.
+    let k = 0;
     const small = (t: Element, below = STILL_PX) => {
       let s = this.sizes.get(t);
       if (s === undefined) {
-        const r = t.getBoundingClientRect();
-        s = Math.max(r.width, r.height) * k();
+        k ||= section.offsetWidth / (section.getBoundingClientRect().width || 1);
+        s = sizeOf(t, k);
         this.sizes.set(t, s);
       }
       return s * d.scale < below;
@@ -417,6 +424,37 @@ export class BoardDetail {
       v.play().catch(() => {});
     }
   }
+}
+
+/**
+ * How big an animated element is, in artboard px (`k` per CSS px on screen). Its box on screen
+ * is whatever frame shows now, and an element that grows from nothing, or sits in one that pops
+ * in from scale 0, measures nothing on its first frame: held for that, it would never move. So
+ * it's the larger of that and its box as laid out, which no animation changes; only an element
+ * both call tiny is. The box on screen keeps what the design's own transforms make of it: a
+ * small element scaled up is as big as it's drawn. Part of an SVG counts as the whole SVG,
+ * that's the motion you see; a small element counts what's in it, so a zero-size wrapper that
+ * spins its parts around it is as big as they are.
+ */
+function sizeOf(el: Element, k: number): number {
+  const r = el.getBoundingClientRect();
+  return Math.max(Math.max(r.width, r.height) * k, laidOut(el));
+}
+
+function laidOut(el: Element): number {
+  const box = (e: Element) =>
+    e instanceof HTMLElement
+      ? Math.max(e.offsetWidth, e.offsetHeight)
+      : e instanceof SVGSVGElement
+        ? Math.max(e.clientWidth, e.clientHeight)
+        : 0;
+  const svg = el instanceof SVGElement ? outermostSvg(el) : null;
+  if (svg) return box(svg);
+  let s = box(el);
+  if (s >= PARTS_BELOW) return s;
+  const parts = el.getElementsByTagName("*");
+  for (let i = 0; i < parts.length && i < PARTS; i++) s = Math.max(s, box(parts[i]!));
+  return s;
 }
 
 /**

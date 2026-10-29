@@ -315,6 +315,111 @@ describe.skipIf(!chromium)("motion in Chromium", () => {
     expect(r).toEqual({ held: true, back: true, same: true });
   });
 
+  /** Detail as the canvas gives it on mounting: in the same task as Motion takes the board. */
+  const mounted = (html: string, scale = 2) =>
+    page.evaluate(
+      ({ html, scale }) => {
+        const w = window as any;
+        const host = document.getElementById("host")!;
+        const root = host.shadowRoot ?? host.attachShadow({ mode: "open" });
+        w.motion?.dispose();
+        root.innerHTML = `<style data-pz-base>${w.pz.MOTION_CSS}${w.pz.STILL_CSS}</style><section data-artboard style="width:400px">${html}</section>`;
+        w.motion = new w.pz.Motion(root);
+        w.motion.reset();
+        w.lod = new w.pz.BoardDetail(root, w.motion);
+        w.lod.update({ hidden: false, scale, moving: false });
+        return root.querySelectorAll("[data-pz-still]").length as number;
+      },
+      { html, scale },
+    );
+  /** Each `sel` element's computed `prop`, now and twice more 300 ms apart. */
+  const over = (sel: string, prop: string) =>
+    page.evaluate(
+      async ({ sel, prop }) => {
+        const root = document.getElementById("host")!.shadowRoot!;
+        const read = () =>
+          [...root.querySelectorAll(sel)].map((e) => getComputedStyle(e).getPropertyValue(prop));
+        const out = [read()];
+        for (let i = 0; i < 2; i++) {
+          await new Promise((r) => setTimeout(r, 300));
+          out.push(read());
+        }
+        return out;
+      },
+      { sel, prop },
+    );
+
+  test("a loop on SVG parts that grows from nothing, in a box that pops in from nothing, plays", async () => {
+    const petals = Array.from(
+      { length: 6 },
+      (_, i) =>
+        `<path style="--i:${i}" d="M32 32 L32 8 A6 6 0 0 1 38 14 Z" transform="rotate(${i * 60} 32 32)"/>`,
+    ).join("");
+    const held = await mounted(
+      `<style>@keyframes pop{from{opacity:0;scale:0}}@keyframes bloom{0%{scale:0;rotate:-40deg}50%{scale:1;rotate:0deg}100%{scale:0;rotate:40deg}}.p{animation:pop .5s both}path{fill:red;transform-box:view-box;transform-origin:32px 32px;animation:bloom 1.6s ease-in-out calc(var(--i) * 50ms) both infinite}</style><div class=p><svg viewBox="0 0 64 64" width="64" height="64">${petals}</svg></div>`,
+    );
+    expect(held).toBe(0);
+    const [a, b, c] = await over("path", "scale");
+    expect(a!.join() !== b!.join() && b!.join() !== c!.join()).toBe(true);
+  });
+
+  test("a part that draws in after a delay, in a box that pops in from nothing, waits for it", async () => {
+    const held = await mounted(
+      `<style>@keyframes pop{from{opacity:0;scale:0}}@keyframes draw{from{stroke-dashoffset:30;opacity:0}}.p{animation:pop .4s both}.ck{fill:none;stroke:green;stroke-width:3;stroke-dasharray:30;animation:draw .4s .8s both}</style><div class=p><svg viewBox="0 0 24 24" width="24" height="24"><path class=ck d="M4 12 L10 18 L20 6"/></svg></div>`,
+    );
+    expect(held).toBe(0);
+    // The box has popped in; the check's own delay hasn't passed.
+    const [, before] = await over(".ck", "opacity");
+    expect(before).toEqual(["0"]);
+  });
+
+  test("an HTML loop that grows from nothing plays", async () => {
+    expect(
+      await mounted(
+        `<style>@keyframes grow{0%{scale:0}50%{scale:1}100%{scale:0}}.g{width:40px;height:40px;background:red;animation:grow 1.6s infinite}</style><div class=g></div>`,
+      ),
+    ).toBe(0);
+  });
+
+  test("a zero-size wrapper spinning its parts around it plays", async () => {
+    expect(
+      await mounted(
+        `<style>@keyframes spin{to{rotate:1turn}}.o{position:relative;width:0;height:0;margin:60px;animation:spin 2s linear infinite}.o i{position:absolute;left:40px;width:16px;height:16px;background:red}</style><div class=o><i></i></div>`,
+      ),
+    ).toBe(0);
+  });
+
+  test("a small loop the design scales up is as big as it's drawn", async () => {
+    expect(
+      await mounted(
+        `<style>@keyframes spin{to{rotate:1turn}}.up{transform:scale(10);transform-origin:0 0}.s{width:2px;height:2px;background:red;animation:spin 1s linear infinite}</style><div class=up><div class=s></div></div>`,
+        1,
+      ),
+    ).toBe(0);
+  });
+
+  test("a loop caught near nothing on a later update plays", async () => {
+    // Mounted hidden (a picture) and made ahead of time, then drawn live, zoomed in, a few cycles on.
+    const held = await page.evaluate(async () => {
+      const w = window as any;
+      const root = document.getElementById("host")!.shadowRoot!;
+      w.motion?.dispose();
+      root.innerHTML = `<style data-pz-base>${w.pz.MOTION_CSS}${w.pz.STILL_CSS}</style><section data-artboard style="width:400px;content-visibility:hidden"><style>@keyframes grow{0%{scale:0}50%{scale:1}100%{scale:0}}svg *{transform-box:view-box;transform-origin:32px 32px;animation:grow 1.6s calc(var(--i) * 50ms) both infinite}</style><svg viewBox="0 0 64 64" width="64" height="64">${Array.from({ length: 6 }, (_, i) => `<circle style="--i:${i}" cx="${12 + i * 8}" cy="32" r="4"/>`).join("")}</svg></section>`;
+      w.motion = new w.pz.Motion(root);
+      w.motion.reset();
+      const lod = new w.pz.BoardDetail(root, w.motion);
+      lod.update({ hidden: true, scale: 2, moving: false });
+      w.motion.warm();
+      root.querySelector<HTMLElement>("[data-artboard]")!.style.contentVisibility = "";
+      // A later cycle's start, where every part has shrunk to nothing.
+      for (const a of root.getAnimations())
+        a.currentTime = 1600 + Number((a.effect as KeyframeEffect).getTiming().delay);
+      lod.update({ hidden: false, scale: 16, moving: false });
+      return root.querySelectorAll("[data-pz-still]").length;
+    });
+    expect(held).toBe(0);
+  });
+
   test("a busy board freezes where it is over a crowded pan, and goes on from there", async () => {
     const dots = Array.from({ length: 70 }, () => "<i class=d></i>").join("");
     await board(

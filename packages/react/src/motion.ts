@@ -364,7 +364,7 @@ export function nameOf(a: CSSAnimation) {
   return key((a.effect as KeyframeEffect).pseudoElement, a.animationName);
 }
 
-function outermostSvg(el: Element): SVGSVGElement | null {
+export function outermostSvg(el: Element): SVGSVGElement | null {
   let top: SVGSVGElement | null = null;
   for (let e: Element | null = el; e; e = e.parentElement)
     if (e instanceof SVGSVGElement) top = e;
