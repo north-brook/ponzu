@@ -25,7 +25,7 @@ import {
 import Fuse, { type FuseResultMatch } from "fuse.js";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { agoShort, branchOf, folderOf, projectOf, tilde, WhereLine } from "@/components/file-info";
-import { SuggestionCard, SuggestionDialog, Thinking } from "@/components/suggested";
+import { LookingCard, SuggestionCard, SuggestionDialog, Thinking } from "@/components/suggested";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -40,7 +40,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useSuggestions } from "@/lib/suggestions";
+import { ideaKey, useSuggestions } from "@/lib/suggestions";
 import { cn } from "@/lib/utils";
 
 /** What opening a design needs: its key on its own Mac, and the server path in front of it. */
@@ -160,6 +160,11 @@ export function Dashboard({
     idea: null,
     open: false,
   });
+  // The picked idea as it is now: its prompt may still be on its way.
+  const chosen = idea.idea;
+  const chosenNow = chosen
+    ? (suggestions?.ideas.find((i) => ideaKey(i) === ideaKey(chosen)) ?? chosen)
+    : null;
 
   // Searching looks everywhere but the archive.
   const searchable = shelved.recent;
@@ -167,9 +172,12 @@ export function Dashboard({
   const refs = useMemo(
     () =>
       view === "suggested"
-        ? ideas.map(({ idea }) => ({ id: idea.projectId, name: idea.projectName }))
+        ? [...ideas.map(({ idea }) => idea), ...(suggestions?.looking ?? [])].map((i) => ({
+            id: i.projectId,
+            name: i.projectName,
+          }))
         : inView.map((c) => projectOf(c.file)),
-    [view, ideas, inView],
+    [view, ideas, inView, suggestions?.looking],
   );
   const projects = useProjects(refs);
   // A filter for a project this view no longer has goes back to All.
@@ -178,6 +186,10 @@ export function Dashboard({
   const shown =
     scope !== null ? inView.filter((c) => (projectOf(c.file)?.id ?? NO_PROJECT) === scope) : inView;
   const suggested = scope !== null ? ideas.filter(({ idea }) => idea.projectId === scope) : ideas;
+  // Projects a run is still looking around, each a card until its ideas come.
+  const around = (suggestions?.looking ?? []).filter(
+    (l) => scope === null || l.projectId === scope,
+  );
 
   // A shelf change that fails (another Mac offline, a newer Ponzu owning the catalog)
   // says why in the toast, and the card stays as it was.
@@ -277,8 +289,11 @@ export function Dashboard({
               )}
             </div>
             {view === "suggested" ? (
-              suggested.length ? (
+              suggested.length || around.length ? (
                 <Grid>
+                  {around.map((at) => (
+                    <LookingCard key={`looking:${at.project}`} at={at} />
+                  ))}
                   {suggested.map(({ idea, file }) =>
                     file ? (
                       // Started: the design in the idea's place, while it's new.
@@ -324,7 +339,8 @@ export function Dashboard({
       </div>
       {toast && <Toast text={toast.text} onUndo={toast.undo} onClose={() => setToast(null)} />}
       <SuggestionDialog
-        idea={idea.idea}
+        idea={chosenNow}
+        agent={suggestions?.agent ?? null}
         open={idea.open}
         onClose={() => setIdea((i) => ({ ...i, open: false }))}
       />

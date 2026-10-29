@@ -1,11 +1,11 @@
 import type { Idea, Suggestions } from "@ponzu/core";
 import { useEffect, useState } from "react";
 
-/** How often to ask what a run has found while it looks. */
-const POLL_MS = 1500;
+/** How often to ask what a run has found while it looks: often, so its cards show it reading. */
+const POLL_MS = 500;
 
 /** Nothing to suggest: no agent to ask, or a server too old to. */
-const NONE: Suggestions = { agent: null, ideas: [], running: false };
+const NONE: Suggestions = { agent: null, ideas: [], running: false, looking: [] };
 
 /** What the server last said, so the home screen coming back shows it at once. */
 let last: Suggestions | null = null;
