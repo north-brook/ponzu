@@ -553,7 +553,41 @@ function isListed(key: string): boolean {
  * `.git` is a file pointing at its own HEAD, under the main checkout's.
  */
 export async function gitOf(key: string): Promise<CatalogGit | null> {
-  for (let dir = key; ; dir = dirname(dir)) {
+  const found = await checkoutOf(key);
+  if (!found) return null;
+  const { root, gitdir, common } = found;
+  const at = { root, worktree: common !== gitdir, ...(await projectOf(common)) };
+  const head = (await readFile(join(gitdir, "HEAD"), "utf8")).trim();
+  const ref = /^ref:\s*refs\/heads\/(.+)$/.exec(head);
+  if (ref) return { ...at, branch: ref[1]! };
+  return /^[0-9a-f]{7,}$/.test(head) ? { ...at, commit: head.slice(0, 7) } : at;
+}
+
+/**
+ * The repository a folder is in, whichever checkout of it: the main checkout's folder, and the
+ * project every checkout shares. A worktree's folder gives its main checkout. Null outside git,
+ * and for a worktree whose main checkout is gone or is a bare repository.
+ */
+export async function repositoryOf(
+  dir: string,
+): Promise<{ root: string; project: string; name: string } | null> {
+  const found = await checkoutOf(dir);
+  if (!found) return null;
+  const root = basename(found.common) === ".git" ? dirname(found.common) : null;
+  if (!root || !(await exists(root))) return null;
+  const { project, projectName } = await projectOf(found.common);
+  return { root, project: project ?? root, name: projectName ?? basename(root) };
+}
+
+/**
+ * The nearest folder up from `dir` with a `.git`, its git folder, and the folder every
+ * checkout of the repository shares. A worktree's `.git` is a file naming its own git folder,
+ * which names the shared one.
+ */
+async function checkoutOf(
+  dir: string,
+): Promise<{ root: string; gitdir: string; common: string } | null> {
+  for (; ; dir = dirname(dir)) {
     const dotgit = join(dir, ".git");
     const s = await stat(dotgit).catch(() => null);
     if (s) {
@@ -563,14 +597,9 @@ export async function gitOf(key: string): Promise<CatalogGit | null> {
         if (!m) return null;
         gitdir = resolve(dir, m[1]!.trim());
       }
-      // A worktree's own folder names the repository's shared one.
       const commondir = await readFile(join(gitdir, "commondir"), "utf8").catch(() => null);
       const common = commondir === null ? gitdir : resolve(gitdir, commondir.trim());
-      const at = { root: dir, worktree: commondir !== null, ...(await projectOf(common)) };
-      const head = (await readFile(join(gitdir, "HEAD"), "utf8")).trim();
-      const ref = /^ref:\s*refs\/heads\/(.+)$/.exec(head);
-      if (ref) return { ...at, branch: ref[1]! };
-      return /^[0-9a-f]{7,}$/.test(head) ? { ...at, commit: head.slice(0, 7) } : at;
+      return { root: dir, gitdir, common };
     }
     if (dirname(dir) === dir) return null;
   }

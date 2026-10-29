@@ -22,6 +22,7 @@ import { Pictures, pictureRoute } from "./pictures.ts";
 import { assetResponse } from "./range.ts";
 import { RemoteImages } from "./remote-images.ts";
 import { fileSource, type ImageSource, MEDIA_HEADERS, Renditions } from "./renditions.ts";
+import { SuggestionService, type SuggestOptions } from "./suggest.ts";
 import { isTailnetAddress } from "./tailnet.ts";
 import type { Updater } from "./updater.ts";
 import type { LocalWorkspace } from "./workspace.ts";
@@ -75,6 +76,11 @@ export interface ServeOptions {
   updater?: Updater;
   /** Where pictures, loops, image copies and remote images are kept. Default ~/.ponzu/cache. */
   cacheDir?: string;
+  /**
+   * The home screen's Suggested tab: how to run the person's agent for ideas, and where to keep
+   * them. Without it, there's no tab.
+   */
+  suggest?: Omit<SuggestOptions, "agents" | "designs">;
 }
 
 /**
@@ -253,6 +259,13 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
     agentWorking,
   });
   const feed = new CatalogFeed(home, ws);
+  const suggestions = opts.suggest
+    ? new SuggestionService({
+        ...opts.suggest,
+        agents: opts.agents,
+        designs: async () => (await home.local()).files,
+      })
+    : null;
 
   /** The idle the desktop app reads: no agent call and no phone for this long. */
   const idleMs = (): number =>
@@ -374,6 +387,19 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
       else home.catalog.restore(body.key);
       feed.poke(0);
       return Response.json({ ok: true });
+    }
+
+    // What the person's agent suggests designing, for this Mac's home screen alone: the ideas
+    // name its folders. Refresh looks again, unless it just did; what it finds arrives here.
+    if (path === "/api/suggestions" || path === "/api/suggestions/refresh") {
+      if (caller !== "local" || !sameHostOk(req, url))
+        return new Response("Forbidden", { status: 403 });
+      const refresh = path === "/api/suggestions/refresh";
+      if (refresh && req.method !== "POST")
+        return new Response("Method not allowed", { status: 405 });
+      if (!suggestions)
+        return Response.json({ agent: null, ideas: [], running: false, looking: [] });
+      return Response.json(await (refresh ? suggestions.refresh() : suggestions.state()));
     }
 
     // The title bar's Update: install on each of the person's Macs it names, this one last, so
@@ -871,6 +897,7 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
     clearInterval(catchUp);
     updater?.stop();
     feed.stop();
+    suggestions?.stop();
     advert?.stop();
     advert = null;
     tailnetServer?.stop(force);
