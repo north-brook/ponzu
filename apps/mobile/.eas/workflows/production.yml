@@ -3,8 +3,12 @@ name: Production
 # Fires when Release Please tags a phone release (mobile-vX.Y.Z, when the
 # "release mobile" PR merges on main). iOS only. A release that changed
 # native code (a new native fingerprint) builds a binary and sends it to
-# TestFlight's external Alpha group for Beta App Review; any other release
-# ships over the air to the binaries already installed. A store build
+# TestFlight's external Alpha group for Beta App Review; the internal Team
+# group distributes every build automatically, so it isn't named here (EAS
+# says to name only internal groups that don't). Any other release ships
+# over the air to the binaries already installed. This is the phone's only
+# lane: every TestFlight build is a production build (shared.yml only
+# publishes updates for the packages the phone bundles). A store build
 # therefore carries the JavaScript of the last native release, and its
 # first launch fetches the current release behind the splash
 # (apps/mobile/lib/first-launch.ts), so a new install still starts on
@@ -14,8 +18,8 @@ name: Production
 # succeeds, recover with a TestFlight job's asc_build_id instead: retrying
 # build_id uploads again, which Apple rejects as a duplicate. A full rerun
 # finds the existing build and publishes an update; it does not retry
-# submission.
-# See https://docs.expo.dev/eas/workflows/pre-packaged-jobs/#testflight.
+# submission. See
+# https://docs.expo.dev/eas/workflows/pre-packaged-jobs/#testflight.
 on:
   push:
     tags: ["mobile-v*"]

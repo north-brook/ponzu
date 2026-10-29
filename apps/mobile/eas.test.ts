@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { YAML } from "bun";
 
@@ -54,7 +54,7 @@ describe("EAS installs with the pinned Bun", () => {
   for (const name of Object.keys(build)) {
     test(`build profile ${name}`, () => expect(resolved(name).bun).toBe(pinned));
   }
-  for (const name of ["preview.yml", "production.yml"]) {
+  for (const name of ["production.yml", "shared.yml"]) {
     test(`workflow ${name}`, () => {
       expect(read(`./.eas/workflows/${name}`)).toMatch(
         new RegExp(`defaults:\\s+tools:\\s+bun: ${pinned.replaceAll(".", "\\.")}\\n`),
@@ -65,52 +65,69 @@ describe("EAS installs with the pinned Bun", () => {
 
 // What goes to TestFlight is what testers run: no dev client, no simulator
 // binary, no test switches, and a build number EAS raises every time.
-describe("store builds are plain release builds", () => {
-  for (const name of ["preview", "production"]) {
-    test(name, () => {
-      const profile = resolved(name);
-      expect(profile.developmentClient).toBeFalsy();
-      expect(profile.ios?.simulator).toBeFalsy();
-      expect(profile.ios?.distribution ?? profile.distribution ?? "store").toBe("store");
-      expect(profile.autoIncrement).toBe(true);
-      expect(profile.channel).toBe(name);
-      const env = { ...profile.env, ...profile.ios?.env };
-      expect(Object.keys(env).filter((key) => /TEST/.test(key))).toEqual([]);
-    });
-  }
+test("store builds are plain release builds", () => {
+  const profile = resolved("production");
+  expect(profile.developmentClient).toBeFalsy();
+  expect(profile.ios?.simulator).toBeFalsy();
+  expect(profile.ios?.distribution ?? profile.distribution ?? "store").toBe("store");
+  expect(profile.autoIncrement).toBe(true);
+  expect(profile.channel).toBe("production");
+  const env = { ...profile.env, ...profile.ios?.env };
+  expect(Object.keys(env).filter((key) => /TEST/.test(key))).toEqual([]);
+});
+
+// One lane: every TestFlight build is a production build and every phone listens on
+// `production`. A second store lane shares TestFlight's build numbers, so a phone gets
+// whichever lane built last, and with it that lane's channel.
+test("production is the only store build, and only production.yml builds", () => {
+  // `base` is only what the others extend: it's never built.
+  const store = Object.keys(build).filter((name) => {
+    const profile = resolved(name);
+    return (
+      name !== "base" &&
+      !profile.developmentClient &&
+      !profile.ios?.simulator &&
+      (profile.ios?.distribution ?? profile.distribution ?? "store") === "store"
+    );
+  });
+  expect(store).toEqual(["production"]);
+  expect(readdirSync(join(import.meta.dir, ".eas/workflows")).sort()).toEqual([
+    "production.yml",
+    "shared.yml",
+  ]);
+  const builds = Object.values(workflow("shared.yml").jobs).filter((job) =>
+    ["build", "submit", "testflight"].includes(job.type),
+  );
+  expect(builds).toEqual([]);
 });
 
 // A release builds a binary only when native code changed (a new
 // fingerprint); every other release ships over the air on its channel.
-for (const [name, profile] of [
-  ["preview.yml", "preview"],
-  ["production.yml", "production"],
-] as const) {
-  test(`${name}: a new fingerprint builds, an old one updates over the air`, () => {
-    const { jobs } = workflow(name);
-    const { ios_build_exists: lookup, build_ios: binary, update_ios: update } = jobs;
-    expect(lookup?.type).toBe("get-build");
-    expect(lookup?.params).toMatchObject({
-      // biome-ignore lint/suspicious/noTemplateCurlyInString: EAS resolves this workflow expression.
-      fingerprint_hash: "${{ needs.fingerprint.outputs.ios_fingerprint_hash }}",
-      profile,
-    });
-    expect(binary?.type).toBe("build");
-    expect(binary?.needs).toEqual(["ios_build_exists"]);
+test("production.yml: a new fingerprint builds, an old one updates over the air", () => {
+  const profile = "production";
+  const { jobs } = workflow("production.yml");
+  const { ios_build_exists: lookup, build_ios: binary, update_ios: update } = jobs;
+  expect(lookup?.type).toBe("get-build");
+  expect(lookup?.params).toMatchObject({
     // biome-ignore lint/suspicious/noTemplateCurlyInString: EAS resolves this workflow expression.
-    expect(binary?.if).toBe("${{ !needs.ios_build_exists.outputs.build_id }}");
-    expect(binary?.params).toMatchObject({ platform: "ios", profile });
-    expect(update?.type).toBe("update");
-    expect(update?.needs).toEqual(["ios_build_exists"]);
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: EAS resolves this workflow expression.
-    expect(update?.if).toBe("${{ needs.ios_build_exists.outputs.build_id }}");
-    expect(update?.environment).toBe(profile);
-    // Published to the channel the profile's builds listen on: a branch alone reaches only the
-    // phones whose channel happens to point at it.
-    expect(update?.params).toMatchObject({ channel: resolved(profile).channel, platform: "ios" });
-    expect(update?.params.branch).toBeUndefined();
+    fingerprint_hash: "${{ needs.fingerprint.outputs.ios_fingerprint_hash }}",
+    profile,
   });
-}
+  expect(binary?.type).toBe("build");
+  expect(binary?.needs).toEqual(["ios_build_exists"]);
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: EAS resolves this workflow expression.
+  expect(binary?.if).toBe("${{ !needs.ios_build_exists.outputs.build_id }}");
+  expect(binary?.params).toMatchObject({ platform: "ios", profile });
+  expect(update?.type).toBe("update");
+  expect(update?.needs).toEqual(["ios_build_exists"]);
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: EAS resolves this workflow expression.
+  expect(update?.if).toBe("${{ needs.ios_build_exists.outputs.build_id }}");
+  expect(update?.environment).toBe(profile);
+  // Published to the channel the profile's builds listen on: a branch alone reaches only the
+  // phones whose channel happens to point at it.
+  expect(update?.params).toMatchObject({ channel: resolved(profile).channel, platform: "ios" });
+  expect(update?.params.branch).toBeUndefined();
+});
 
 test("production runs on a mobile tag and sends a new binary to the Alpha group", () => {
   const { on, jobs } = workflow("production.yml");
@@ -127,18 +144,28 @@ test("production runs on a mobile tag and sends a new binary to the Alpha group"
   expect(String(submission?.params.changelog ?? "").trim()).not.toBe("");
 });
 
-test("preview runs on main when the phone or what it bundles changes", () => {
-  const { on } = workflow("preview.yml");
+// The phone bundles code from outside apps/mobile, which Release Please doesn't see: a change
+// there goes out over the air on the production channel as it merges.
+test("shared code the phone bundles goes out over the air on production", () => {
+  const { on, jobs } = workflow("shared.yml");
   expect(on.push.branches).toEqual(["main"]);
+  expect(on.push.tags).toBeUndefined();
   // The canvas and icons import packages/react's and packages/render's source by path.
   expect(on.push.paths).toEqual([
-    "apps/mobile/**",
     "packages/core/**",
     "packages/react/**",
     "packages/render/**",
     "patches/**",
     "bun.lock",
   ]);
+  expect(Object.keys(jobs)).toEqual(["update_ios"]);
+  expect(jobs.update_ios?.type).toBe("update");
+  expect(jobs.update_ios?.environment).toBe("production");
+  expect(jobs.update_ios?.params).toMatchObject({
+    channel: resolved("production").channel,
+    platform: "ios",
+  });
+  expect(jobs.update_ios?.params.branch).toBeUndefined();
 });
 
 describe("app.json", () => {

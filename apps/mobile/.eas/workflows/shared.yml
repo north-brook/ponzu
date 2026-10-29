@@ -1,0 +1,42 @@
+name: Shared code
+
+# The phone bundles code from outside apps/mobile: packages/core, and the
+# canvas and icons import packages/react's and packages/render's source by
+# path. Release Please releases the phone only for changes under
+# apps/mobile, so a fix in those packages alone would wait for the next
+# phone release. This publishes main as an over-the-air update on the
+# production channel whenever they change. It never builds: an update whose
+# native fingerprint matches no installed build reaches no phone, and a
+# native change (a patch, a dependency in bun.lock) still ships through
+# production.yml with the next phone release. iOS only.
+on:
+  push:
+    branches: [main]
+    paths:
+      - packages/core/**
+      - packages/react/**
+      - packages/render/**
+      # Bun's patches to the phone's native dependencies.
+      - patches/**
+      - bun.lock
+
+# The Bun package.json pins (`packageManager`); the image's own Bun writes a
+# different lockfile, and a frozen install then refuses it. Every job's
+# install uses this one.
+defaults:
+  tools:
+    bun: 1.4.2
+
+jobs:
+  update_ios:
+    type: update
+    environment: production
+    params:
+      # The channel the production builds listen on (eas.json), not a branch:
+      # an update on a branch no channel points at reaches no phone.
+      channel: production
+      platform: ios
+    hooks:
+      after_update:
+        # As production.yml's updates: Hermes source maps, from the exported dist/.
+        - uses: eas/posthog_upload_sourcemaps
