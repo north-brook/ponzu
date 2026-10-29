@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.71.0](https://github.com/north-brook/ponzu/compare/v1.70.0...v1.71.0) (2026-10-29)
+
+
+### Features
+
+* show suggestions from your other Macs on the home screen ([#331](https://github.com/north-brook/ponzu/issues/331)) ([4d7b8b2](https://github.com/north-brook/ponzu/commit/4d7b8b22d4b9aa45ecde5e5577b51a1e4620c0be))
+
 ## [1.70.0](https://github.com/north-brook/ponzu/compare/v1.69.0...v1.70.0) (2026-10-29)
 
 
