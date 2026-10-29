@@ -210,16 +210,11 @@ export function Dashboard({
             <div className="-mb-3.5 flex h-7 items-center justify-between gap-4">
               <Views
                 view={view}
-                counts={{ recent: shelved.recent.length, archived: shelved.archived.length }}
+                has={{ recent: true, archived: shelved.archived.length > 0 }}
                 onView={setView}
               />
               {projects.length > 1 && (
-                <Projects
-                  projects={projects}
-                  total={inView.length}
-                  scope={scope}
-                  onScope={setProject}
-                />
+                <Projects projects={projects} scope={scope} onScope={setProject} />
               )}
             </div>
             {shown.length ? (
@@ -275,18 +270,19 @@ const NO_PROJECT = "";
 
 function Views({
   view,
-  counts,
+  has,
   onView,
 }: {
   view: View;
-  counts: Record<View, number>;
+  /** Which views have something in them. */
+  has: Record<View, boolean>;
   onView: (view: View) => void;
 }) {
   return (
     <div className="flex items-center gap-[18px] text-[13px]" role="tablist">
       {VIEWS.map((v) =>
         // Archived shows once there's something in it, or while it's open.
-        v.id === "recent" || counts[v.id] || view === v.id ? (
+        v.id === "recent" || has[v.id] || view === v.id ? (
           <button
             key={v.id}
             type="button"
@@ -308,7 +304,6 @@ function Views({
               }
             />
             {v.label}
-            <span className="font-normal text-[11px] text-faint tabular-nums">{counts[v.id]}</span>
           </button>
         ) : null,
       )}
@@ -350,12 +345,10 @@ function useProjects(cards: CatalogCard[]): Project[] {
 
 function Projects({
   projects,
-  total,
   scope,
   onScope,
 }: {
   projects: Project[];
-  total: number;
   scope: string | null;
   onScope: (id: string | null) => void;
 }) {
@@ -381,19 +374,11 @@ function Projects({
             className={on ? "text-foreground" : undefined}
           />
           {on ? on.name : "All projects"}
-          <span className="font-normal text-[11px] text-faint tabular-nums">
-            {on ? on.count : total}
-          </span>
           <Icon name="chevronDown" size={13} strokeWidth={2} className="text-faint" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-56">
-        <ProjectItem
-          on={scope === null}
-          onSelect={() => onScope(null)}
-          count={total}
-          icon="folders"
-        >
+        <ProjectItem on={scope === null} onSelect={() => onScope(null)} icon="folders">
           All projects
         </ProjectItem>
         <DropdownMenuSeparator />
@@ -402,7 +387,6 @@ function Projects({
             key={p.id}
             on={scope === p.id}
             onSelect={() => onScope(p.id)}
-            count={p.count}
             icon={p.id === NO_PROJECT ? "loose" : "folder"}
             title={p.id || undefined}
           >
@@ -417,14 +401,12 @@ function Projects({
 function ProjectItem({
   on,
   onSelect,
-  count,
   icon,
   title,
   children,
 }: {
   on: boolean;
   onSelect: () => void;
-  count: number;
   icon?: string;
   title?: string;
   children: ReactNode;
@@ -438,7 +420,6 @@ function ProjectItem({
         {icon && <Icon name={icon} size={14} strokeWidth={1.6} />}
       </span>
       <span className="min-w-0 flex-1 truncate">{children}</span>
-      <span className="text-[11px] text-faint tabular-nums">{count}</span>
     </DropdownMenuItem>
   );
 }
