@@ -287,7 +287,9 @@ export class SuggestionService {
     const projects = await recentProjects({ home: this.opts.home }).catch(() => []);
     if (!projects.length) return;
     const designs = await this.designs();
-    // Ideas started stay for their cards; old ones make way. The rest it tops up.
+    // Ideas started stay for their cards; old ones make way. The rest it tops up. Each glance
+    // still hears every idea offered before, old ones too, so it doesn't offer them again.
+    const offered = this.ideas;
     const now = this.now();
     this.ideas = this.ideas.filter((i) => startedFrom(i, designs) || now - i.found < STALE);
     const open = this.ideas.filter((i) => !startedFrom(i, designs)).length;
@@ -305,7 +307,7 @@ export class SuggestionService {
           // What it has and what it was offered before, so this time brings new ones.
           const taken = {
             designs: designs.filter((d) => d.git?.project === project.project).map((d) => d.name),
-            suggested: this.ideas.filter((i) => i.project === project.root).map((i) => i.name),
+            suggested: offered.filter((i) => i.project === project.root).map((i) => i.name),
           };
           const listing = await listingOf(project.root, this.env());
           const ask = glanceFor(project, count, taken, listing, home);
@@ -332,7 +334,8 @@ export class SuggestionService {
 
   /**
    * Writes an idea's prompt, its card showing what the run reads meanwhile. A run that fails or
-   * goes quiet starts again once; an idea whose prompt can't be written is let go.
+   * goes quiet starts again once, in what's left of the idea's time; an idea whose prompt can't be
+   * written is let go.
    */
   private async write(
     agent: Agent,
@@ -346,12 +349,17 @@ export class SuggestionService {
     const onStep = (step: IdeaStep) => {
       idea.steps = [...(idea.steps ?? []), step].slice(-STEPS);
     };
+    // Its time counts from when its first try starts, the second try's included.
+    let deadline: AbortSignal | undefined;
     for (let tries = 0; tries < TRIES && !this.stopped.signal.aborted; tries++) {
+      if (deadline?.aborted) break;
       idea.steps = [];
       try {
-        const answer = await lane(() =>
-          runner(this.job(agent, project, "prompt", ask, { onStep, quiet: QUIET })),
-        );
+        const answer = await lane(() => {
+          deadline ??= AbortSignal.timeout(this.opts.timeout ?? RUN_TIMEOUT);
+          const signal = AbortSignal.any([this.stopped.signal, deadline]);
+          return runner(this.job(agent, project, "prompt", ask, { onStep, quiet: QUIET, signal }));
+        });
         const prompt = promptFrom(answer, idea, project, this.opts.home);
         if (!prompt) continue;
         idea.prompt = prompt;
