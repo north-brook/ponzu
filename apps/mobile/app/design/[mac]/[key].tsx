@@ -1105,8 +1105,13 @@ function SessionCard({
  * (and the page, closed and upright). The file pill is centered on the
  * canvas closed and upright, and top left open sideways and in the book
  * pose, with the page pill top right (the board's 5). Each glides between
- * its places as the phone opens and closes (`Glide`), and they morph as
- * glass does, together in one GlassGroup.
+ * its places as the phone opens and closes (`Glide`).
+ *
+ * Each pill is its own glass, never one GlassGroup over the window: the
+ * group's container is a UIVisualEffectView that takes every touch inside
+ * it, whatever `pointerEvents` says, so a group covering the canvas leaves
+ * it unable to pan or pinch. The pills sit at opposite corners, never near
+ * enough to merge.
  */
 function DuoPills({
   file,
@@ -1153,69 +1158,73 @@ function DuoPills({
   if (!corners) centered.current = fileX;
   const opening = useOpening(corners && !split);
   return (
-    <GlassGroup style={{ position: "absolute", inset: 0, zIndex: 8 }} spacing={10}>
-      <View pointerEvents={bare ? "none" : "box-none"} style={{ flex: 1 }}>
-        <Glide
-          x={fileX}
-          y={top}
-          from={{ x: centered.current, y: top }}
-          opening={opening}
-          testID="title"
+    <View
+      pointerEvents={bare ? "none" : "box-none"}
+      // Gone while bare: out of reach of touch and VoiceOver as well as sight.
+      accessibilityElementsHidden={bare}
+      importantForAccessibility={bare ? "no-hide-descendants" : "auto"}
+      style={{ position: "absolute", inset: 0, zIndex: 8 }}
+    >
+      <Glide
+        x={fileX}
+        y={top}
+        from={{ x: centered.current, y: top }}
+        opening={opening}
+        testID="title"
+      >
+        <Pressable
+          onPress={
+            onCard
+              ? () => {
+                  if (!card) tick();
+                  onCard();
+                }
+              : undefined
+          }
+          disabled={!onCard}
+          accessibilityRole={onCard ? "button" : "text"}
+          accessibilityLabel={agentName ? `${file}, ${agentName}'s session` : file}
+          onLayout={(e) => setFileW(e.nativeEvent.layout.width)}
         >
-          <Pressable
-            onPress={
-              onCard
-                ? () => {
-                    if (!card) tick();
-                    onCard();
-                  }
-                : undefined
-            }
-            disabled={!onCard}
-            accessibilityRole={onCard ? "button" : "text"}
-            accessibilityLabel={agentName ? `${file}, ${agentName}'s session` : file}
-            onLayout={(e) => setFileW(e.nativeEvent.layout.width)}
-          >
-            <Glass interactive={Boolean(onCard)} held={card} shown={!bare} style={{ height: 44 }}>
-              <Animated.View
-                style={[
-                  {
-                    height: 44,
-                    paddingLeft: 13,
-                    paddingRight: 16,
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 7,
-                  },
-                  chromeStyle,
-                ]}
-              >
-                {icon}
-                {working ? (
-                  <Shimmer text={file} style={titleText} color={color.ink} surface={color.bar} />
-                ) : (
-                  <Text numberOfLines={1} style={[titleText, { color: color.ink }]}>
-                    {file}
-                  </Text>
-                )}
-              </Animated.View>
-            </Glass>
-          </Pressable>
+          <Glass interactive={Boolean(onCard)} held={card} shown={!bare} style={{ height: 44 }}>
+            <Animated.View
+              style={[
+                {
+                  height: 44,
+                  paddingLeft: 13,
+                  paddingRight: 16,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 7,
+                },
+                chromeStyle,
+              ]}
+            >
+              {icon}
+              {working ? (
+                <Shimmer text={file} style={titleText} color={color.ink} surface={color.bar} />
+              ) : (
+                <Text numberOfLines={1} style={[titleText, { color: color.ink }]}>
+                  {file}
+                </Text>
+              )}
+            </Animated.View>
+          </Glass>
+        </Pressable>
+      </Glide>
+      {pageMenu && (
+        <Glide
+          x={pageX}
+          y={top}
+          from={{ x: area.left + area.width, y: top + 104 }}
+          opening={opening}
+          testID="page-pill"
+        >
+          <View onLayout={(e) => setPageW(e.nativeEvent.layout.width)}>
+            <PagePill page={page} menu={pageMenu} shown={!bare} />
+          </View>
         </Glide>
-        {pageMenu && (
-          <Glide
-            x={pageX}
-            y={top}
-            from={{ x: area.left + area.width, y: top + 104 }}
-            opening={opening}
-            testID="page-pill"
-          >
-            <View onLayout={(e) => setPageW(e.nativeEvent.layout.width)}>
-              <PagePill page={page} menu={pageMenu} shown={!bare} />
-            </View>
-          </Glide>
-        )}
-      </View>
-    </GlassGroup>
+      )}
+    </View>
   );
 }
