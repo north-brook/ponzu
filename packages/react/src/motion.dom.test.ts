@@ -389,6 +389,15 @@ describe.skipIf(!chromium)("motion in Chromium", () => {
     ).toBe(0);
   });
 
+  test("a small loop the design scales up is as big as it's drawn", async () => {
+    expect(
+      await mounted(
+        `<style>@keyframes spin{to{rotate:1turn}}.up{transform:scale(10);transform-origin:0 0}.s{width:2px;height:2px;background:red;animation:spin 1s linear infinite}</style><div class=up><div class=s></div></div>`,
+        1,
+      ),
+    ).toBe(0);
+  });
+
   test("a loop caught near nothing on a later update plays", async () => {
     // Mounted hidden (a picture) and made ahead of time, then drawn live, zoomed in, a few cycles on.
     const held = await page.evaluate(async () => {

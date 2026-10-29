@@ -205,10 +205,13 @@ export class BoardDetail {
     const section = this.root.querySelector<HTMLElement>("[data-artboard]");
     if (!section) return;
     this.cull(section, d.visible);
+    // Artboard px per CSS px on screen.
+    let k = 0;
     const small = (t: Element, below = STILL_PX) => {
       let s = this.sizes.get(t);
       if (s === undefined) {
-        s = laidOut(t);
+        k ||= section.offsetWidth / (section.getBoundingClientRect().width || 1);
+        s = sizeOf(t, k);
         this.sizes.set(t, s);
       }
       return s * d.scale < below;
@@ -424,13 +427,20 @@ export class BoardDetail {
 }
 
 /**
- * How big an animated element is, in artboard px: its box as laid out, which no animation
- * changes. Its box on screen is whatever frame shows now, and an element that grows from
- * nothing, or sits in one that pops in from scale 0, measures nothing on its first frame:
- * held for that, it would never move. Part of an SVG counts as the whole SVG, that's the motion
- * you see; a small element counts what's in it, so a zero-size wrapper that spins its parts
- * around it is as big as they are.
+ * How big an animated element is, in artboard px (`k` per CSS px on screen). Its box on screen
+ * is whatever frame shows now, and an element that grows from nothing, or sits in one that pops
+ * in from scale 0, measures nothing on its first frame: held for that, it would never move. So
+ * it's the larger of that and its box as laid out, which no animation changes; only an element
+ * both call tiny is. The box on screen keeps what the design's own transforms make of it: a
+ * small element scaled up is as big as it's drawn. Part of an SVG counts as the whole SVG,
+ * that's the motion you see; a small element counts what's in it, so a zero-size wrapper that
+ * spins its parts around it is as big as they are.
  */
+function sizeOf(el: Element, k: number): number {
+  const r = el.getBoundingClientRect();
+  return Math.max(Math.max(r.width, r.height) * k, laidOut(el));
+}
+
 function laidOut(el: Element): number {
   const box = (e: Element) =>
     e instanceof HTMLElement
