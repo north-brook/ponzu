@@ -932,17 +932,25 @@ export function parseJson(text: string): unknown {
   }
 }
 
-const helps = new Map<string, Promise<string>>();
+/** How long a CLI's help holds: one upgraded in place may have the flags it lacked. */
+const HELP_FOR = RUN_EVERY;
+const helps = new Map<string, { at: number; help: Promise<string> }>();
 
-/** A CLI's help, asked once: which flags this version has. */
+/**
+ * A CLI's help, asked once in a while: which flags this version has. One that fails or says
+ * nothing (slow to start, or briefly missing) is asked again next time, rather than hiding the
+ * agent until Ponzu restarts.
+ */
 function helpOf(bin: string, args: string[], env: SuggestJob["env"]): Promise<string> {
   const key = `${bin} ${args.join(" ")}`;
-  let h = helps.get(key);
-  if (!h) {
-    h = exec(bin, args, { env, signal: AbortSignal.timeout(15_000) }).catch(() => "");
-    helps.set(key, h);
-  }
-  return h;
+  const kept = helps.get(key);
+  if (kept && Date.now() - kept.at < HELP_FOR) return kept.help;
+  const help = exec(bin, args, { env, signal: AbortSignal.timeout(15_000) }).catch(() => "");
+  helps.set(key, { at: Date.now(), help });
+  void help.then((text) => {
+    if (!text && helps.get(key)?.help === help) helps.delete(key);
+  });
+  return help;
 }
 
 /**
