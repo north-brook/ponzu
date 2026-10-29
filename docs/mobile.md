@@ -217,16 +217,24 @@ fingerprint`; `fingerprint.config.js` leaves the version out of it):
 - **New native code** (a native dependency, a plugin, `app.json`'s native
   config, a font): a new build, sent to TestFlight.
 
-One EAS workflow, `apps/mobile/.eas/workflows/production.yml`, does this on
-every `mobile-v*` tag, looking up a build by fingerprint first. There is one
-lane: every TestFlight build is a `production` build, and every installed
-phone listens on the `production` channel. A new build reaches TestFlight's
-internal **Team** group at once (the group distributes every build
-automatically, with no review) and the external **Alpha** group through Beta
-App Review. Release PRs merge themselves once CI passes, and the tag starts
-the workflow: a JavaScript-only fix is an update a few minutes after it
-merges, which installed phones pick up at their next launch, while one that
-changes native code waits for its build to reach TestFlight.
+`apps/mobile/.eas/workflows/production.yml` does this on every `mobile-v*`
+tag, looking up a build by fingerprint first. There is one lane: every
+TestFlight build is a `production` build, and every installed phone listens
+on the `production` channel. A new build reaches TestFlight's internal
+**Team** group at once (the group distributes every build automatically, with
+no review) and the external **Alpha** group through Beta App Review. Release
+PRs merge themselves once CI passes, and the tag starts the workflow: a
+JavaScript-only change under `apps/mobile` is an update a few minutes after
+it merges, which installed phones pick up at their next launch, while one
+that changes native code waits for its build to reach TestFlight.
+
+Release Please releases the phone only for changes under `apps/mobile`, but
+the phone also bundles `packages/core`, and the canvas and icons import
+`packages/react`'s and `packages/render`'s source. `shared.yml` covers those:
+a push to `main` touching them (or `patches/**` or `bun.lock`) publishes
+`main` as an update on the same `production` channel, and never builds. A
+native change there reaches no phone until the next phone release builds
+for it.
 
 Updates are published to the build profile's `channel` in `eas.json`, which
 EAS maps to the branch of the same name; `eas channel:view production` shows

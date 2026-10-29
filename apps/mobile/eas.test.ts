@@ -54,11 +54,13 @@ describe("EAS installs with the pinned Bun", () => {
   for (const name of Object.keys(build)) {
     test(`build profile ${name}`, () => expect(resolved(name).bun).toBe(pinned));
   }
-  test("workflow production.yml", () => {
-    expect(read("./.eas/workflows/production.yml")).toMatch(
-      new RegExp(`defaults:\\s+tools:\\s+bun: ${pinned.replaceAll(".", "\\.")}\\n`),
-    );
-  });
+  for (const name of ["production.yml", "shared.yml"]) {
+    test(`workflow ${name}`, () => {
+      expect(read(`./.eas/workflows/${name}`)).toMatch(
+        new RegExp(`defaults:\\s+tools:\\s+bun: ${pinned.replaceAll(".", "\\.")}\\n`),
+      );
+    });
+  }
 });
 
 // What goes to TestFlight is what testers run: no dev client, no simulator
@@ -77,7 +79,7 @@ test("store builds are plain release builds", () => {
 // One lane: every TestFlight build is a production build and every phone listens on
 // `production`. A second store lane shares TestFlight's build numbers, so a phone gets
 // whichever lane built last, and with it that lane's channel.
-test("production is the only store build and the only release workflow", () => {
+test("production is the only store build, and only production.yml builds", () => {
   // `base` is only what the others extend: it's never built.
   const store = Object.keys(build).filter((name) => {
     const profile = resolved(name);
@@ -89,7 +91,14 @@ test("production is the only store build and the only release workflow", () => {
     );
   });
   expect(store).toEqual(["production"]);
-  expect(readdirSync(join(import.meta.dir, ".eas/workflows"))).toEqual(["production.yml"]);
+  expect(readdirSync(join(import.meta.dir, ".eas/workflows")).sort()).toEqual([
+    "production.yml",
+    "shared.yml",
+  ]);
+  const builds = Object.values(workflow("shared.yml").jobs).filter((job) =>
+    ["build", "submit", "testflight"].includes(job.type),
+  );
+  expect(builds).toEqual([]);
 });
 
 // A release builds a binary only when native code changed (a new
@@ -133,6 +142,30 @@ test("production runs on a mobile tag and sends a new binary to the Alpha group"
     submit_beta_review: true,
   });
   expect(String(submission?.params.changelog ?? "").trim()).not.toBe("");
+});
+
+// The phone bundles code from outside apps/mobile, which Release Please doesn't see: a change
+// there goes out over the air on the production channel as it merges.
+test("shared code the phone bundles goes out over the air on production", () => {
+  const { on, jobs } = workflow("shared.yml");
+  expect(on.push.branches).toEqual(["main"]);
+  expect(on.push.tags).toBeUndefined();
+  // The canvas and icons import packages/react's and packages/render's source by path.
+  expect(on.push.paths).toEqual([
+    "packages/core/**",
+    "packages/react/**",
+    "packages/render/**",
+    "patches/**",
+    "bun.lock",
+  ]);
+  expect(Object.keys(jobs)).toEqual(["update_ios"]);
+  expect(jobs.update_ios?.type).toBe("update");
+  expect(jobs.update_ios?.environment).toBe("production");
+  expect(jobs.update_ios?.params).toMatchObject({
+    channel: resolved("production").channel,
+    platform: "ios",
+  });
+  expect(jobs.update_ios?.params.branch).toBeUndefined();
 });
 
 describe("app.json", () => {

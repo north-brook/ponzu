@@ -7,7 +7,8 @@ name: Production
 # group distributes every build automatically, so it isn't named here (EAS
 # says to name only internal groups that don't). Any other release ships
 # over the air to the binaries already installed. This is the phone's only
-# lane: every TestFlight build is a production build. A store build
+# lane: every TestFlight build is a production build (shared.yml only
+# publishes updates for the packages the phone bundles). A store build
 # therefore carries the JavaScript of the last native release, and its
 # first launch fetches the current release behind the splash
 # (apps/mobile/lib/first-launch.ts), so a new install still starts on
