@@ -389,10 +389,11 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
       return Response.json({ ok: true });
     }
 
-    // What the person's agent suggests designing, for this Mac's home screen alone: the ideas
-    // name its folders. Refresh looks again, unless it just did; what it finds arrives here.
+    // What the person's agent suggests designing for this Mac's projects: for its home screen,
+    // and for their other Macs', which show them as this Mac's. Refresh looks again, unless it
+    // just did; what it finds arrives here.
     if (path === "/api/suggestions" || path === "/api/suggestions/refresh") {
-      if (caller !== "local" || !sameHostOk(req, url))
+      if (caller === "local" && !sameHostOk(req, url))
         return new Response("Forbidden", { status: 403 });
       const refresh = path === "/api/suggestions/refresh";
       if (refresh && req.method !== "POST")
@@ -915,7 +916,12 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
  */
 export function peerAllowed(req: Request, pathname: string): boolean {
   if (isPage(req)) return false;
-  if (pathname === "/api/shelf" || pathname === "/api/update/install") return req.method === "POST";
+  if (
+    pathname === "/api/shelf" ||
+    pathname === "/api/update/install" ||
+    pathname === "/api/suggestions/refresh"
+  )
+    return req.method === "POST";
   if (req.method !== "GET") return false;
   return (
     [
@@ -926,6 +932,7 @@ export function peerAllowed(req: Request, pathname: string): boolean {
       "/api/thumb",
       "/api/info",
       "/api/macs",
+      "/api/suggestions",
       "/ws",
     ].includes(pathname) || /^\/files\/[^/]+\/assets\/.+$/.test(pathname)
   );
@@ -976,12 +983,15 @@ interface ShelfRequest {
  * Origin: the other Mac only answers servers, never pages.
  */
 async function relay(req: Request, target: string): Promise<Response> {
-  const shelf = req.method === "POST" && new URL(target).pathname === "/api/shelf";
-  if (req.method !== "GET" && !shelf) return new Response("Method not allowed", { status: 405 });
+  // The POSTs another Mac takes: a shelf change, and asking its agent to look again.
+  const post =
+    req.method === "POST" &&
+    ["/api/shelf", "/api/suggestions/refresh"].includes(new URL(target).pathname);
+  if (req.method !== "GET" && !post) return new Response("Method not allowed", { status: 405 });
   try {
     const res = await fetch(target, {
-      signal: AbortSignal.timeout(shelf ? 5_000 : 30_000),
-      ...(shelf
+      signal: AbortSignal.timeout(post ? 5_000 : 30_000),
+      ...(post
         ? {
             method: "POST",
             headers: { "content-type": "application/json" },

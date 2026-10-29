@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, realpath, rm, utimes, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LocalWorkspace } from "./index.ts";
@@ -710,11 +710,14 @@ describe("the Suggested tab's state", () => {
   });
 });
 
-test("another Mac can't ask for this Mac's suggestions", () => {
-  const get = (path: string, method = "GET") =>
-    peerAllowed(new Request(`http://mac:7777${path}`, { method }), path);
-  expect(get("/api/suggestions")).toBe(false);
-  expect(get("/api/suggestions/refresh", "POST")).toBe(false);
+test("the person's other Macs can read this Mac's suggestions and ask it to look again", () => {
+  const ask = (path: string, method = "GET", headers: Record<string, string> = {}) =>
+    peerAllowed(new Request(`http://mac:7777${path}`, { method, headers }), path);
+  expect(ask("/api/suggestions")).toBe(true);
+  expect(ask("/api/suggestions/refresh", "POST")).toBe(true);
+  expect(ask("/api/suggestions/refresh")).toBe(false);
+  // Not a web page on the tailnet.
+  expect(ask("/api/suggestions", "GET", { "sec-fetch-site": "cross-site" })).toBe(false);
 });
 
 test("the home screen asks for them, and refreshes with a POST from its own page", async () => {
@@ -760,6 +763,57 @@ test("the home screen asks for them, and refreshes with a POST from its own page
     server.stop(true);
     bare.stop(true);
     await ws.closeAll();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("another Mac's home screen reads them, and asks for a look, through this Mac's relay", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ponzu-suggest-peer-"));
+  const before = process.env.PONZU_TAILSCALE;
+  // A Tailscale that lists one other Mac, "spare", at 127.0.0.1: a second server here.
+  const bin = join(root, "tailscale");
+  await writeFile(
+    bin,
+    `#!/bin/sh
+echo '{"BackendState":"Running","Self":{"TailscaleIPs":["100.64.0.1"],"UserID":7},"Peer":{"a":{"HostName":"spare","TailscaleIPs":["127.0.0.1"],"UserID":7,"OS":"macOS","Online":true}}}'
+`,
+  );
+  await chmod(bin, 0o755);
+  process.env.PONZU_TAILSCALE = bin;
+  const runner = fakeRunner();
+  const spareWs = new LocalWorkspace({ cwd: join(root, "spare") });
+  const hereWs = new LocalWorkspace({ cwd: join(root, "here") });
+  const spare = serve(spareWs, {
+    port: 0,
+    root,
+    spotlight: "roots",
+    suggest: { bin: () => "/bin/claude", run: runner.run, home },
+  });
+  const here = serve(hereWs, {
+    port: 0,
+    root,
+    spotlight: "roots",
+    tailnet: true,
+    tailnetPort: spare.port,
+  });
+  try {
+    const base = `http://127.0.0.1:${here.port}/peers/spare/api/suggestions`;
+    expect(await (await fetch(base)).json()).toMatchObject({ agent: "claude", ideas: [] });
+    const started = await fetch(`${base}/refresh`, { method: "POST" });
+    expect(((await started.json()) as { running: boolean }).running).toBe(true);
+    await until(() => runner.jobs.length === 2);
+    runner.answer("alpha", ["Alpha screens"]);
+    runner.answer("beta", []);
+    await until(async () => !((await (await fetch(base)).json()) as { running: boolean }).running);
+    const done = (await (await fetch(base)).json()) as { ideas: { name: string }[] };
+    expect(done.ideas.map((i) => i.name)).toEqual(["Alpha screens"]);
+  } finally {
+    here.stop(true);
+    spare.stop(true);
+    await spareWs.closeAll();
+    await hereWs.closeAll();
+    if (before === undefined) delete process.env.PONZU_TAILSCALE;
+    else process.env.PONZU_TAILSCALE = before;
     await rm(root, { recursive: true, force: true });
   }
 });

@@ -132,3 +132,16 @@ test("picked before its prompt is written, the dialog shows the reading and Copy
   expect(html).toMatch(/<button[^>]*disabled/);
   expect(html).toContain("Copy prompt works once it’s written.");
 });
+
+test("an idea for another Mac's project names that Mac", () => {
+  const machine = { id: "workstation", name: "workstation", kind: "desktop" as const };
+  const html = renderToStaticMarkup(
+    <SuggestionCard idea={idea("Every Seekle screen")} machine={machine} onPick={() => {}} />,
+  );
+  expect(html).toContain(">seekle<");
+  expect(html).toContain(">workstation<");
+  expect(html).toContain('title="/Users/me/code/seekle on workstation"');
+  expect(renderToStaticMarkup(<SuggestionCard idea={idea("x")} onPick={() => {}} />)).not.toContain(
+    "·",
+  );
+});

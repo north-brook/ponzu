@@ -1,4 +1,4 @@
-import type { Idea, IdeaStep, LookingAt, SuggestionAgent } from "@ponzu/core";
+import type { CatalogMachine, Idea, IdeaStep, LookingAt, SuggestionAgent } from "@ponzu/core";
 import { ARRIVE_LAG_MS, ARRIVE_LINE, drawFrame, Icon, Rain, reducedMotion } from "@ponzu/react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -42,7 +42,7 @@ export function Thinking() {
 }
 
 /** A project a run is still looking around, before it names its designs. */
-export function LookingCard({ at }: { at: LookingAt }) {
+export function LookingCard({ at, machine }: { at: LookingAt; machine?: CatalogMachine }) {
   return (
     <div
       className="pz-appear flex min-w-0 flex-col gap-2.5"
@@ -58,13 +58,22 @@ export function LookingCard({ at }: { at: LookingAt }) {
         <span className="flex h-5 items-center">
           <Rain columns={NAME_RAIN_COLUMNS} className="text-[17px]" />
         </span>
-        <ProjectLine project={at.project} name={at.projectName} />
+        <ProjectLine project={at.project} name={at.projectName} machine={machine} />
       </div>
     </div>
   );
 }
 
-export function SuggestionCard({ idea, onPick }: { idea: Idea; onPick: (idea: Idea) => void }) {
+export function SuggestionCard({
+  idea,
+  machine,
+  onPick,
+}: {
+  idea: Idea;
+  /** The other Mac it's for, whose folders its prompt names. */
+  machine?: CatalogMachine;
+  onPick: (idea: Idea) => void;
+}) {
   const at = arrivalOf(idea);
   // One that mounts while its prompt is written fades the prompt in when it comes.
   const [writing] = useState(() => !idea.prompt);
@@ -168,21 +177,42 @@ export function SuggestionCard({ idea, onPick }: { idea: Idea; onPick: (idea: Id
         )}
         <div ref={name} className="flex min-w-0 flex-col gap-0.5 px-0.5">
           <span className="min-w-0 truncate font-medium text-[13.5px]">{idea.name}</span>
-          <ProjectLine project={idea.project} name={idea.projectName} />
+          <ProjectLine project={idea.project} name={idea.projectName} machine={machine} />
         </div>
       </div>
     </div>
   );
 }
 
-function ProjectLine({ project, name }: { project: string; name: string }) {
+/** The project, and the other Mac it's on, as a design's card names its Mac. */
+function ProjectLine({
+  project,
+  name,
+  machine,
+}: {
+  project: string;
+  name: string;
+  machine?: CatalogMachine;
+}) {
   return (
     <span
       className="flex min-w-0 items-center gap-[5px] text-muted-foreground text-xs"
-      title={project}
+      title={machine ? `${project} on ${machine.name}` : project}
     >
       <Icon name="repo" size={13} strokeWidth={1.7} className="shrink-0 text-faint" />
       <span className="min-w-0 truncate">{name}</span>
+      {machine && (
+        <>
+          <span className="text-faint">·</span>
+          <Icon
+            name={machine.kind === "laptop" ? "laptop" : "desktop"}
+            size={13}
+            strokeWidth={1.7}
+            className="shrink-0 text-faint"
+          />
+          <span className="min-w-0 truncate">{machine.name}</span>
+        </>
+      )}
     </span>
   );
 }
@@ -259,12 +289,14 @@ function fadeIn(
  */
 export function SuggestionDialog({
   idea,
+  machine,
   agent,
   open,
   onClose,
 }: {
   /** The idea as it is now, kept while the dialog closes. */
   idea: Idea | null;
+  machine?: CatalogMachine;
   agent: SuggestionAgent | null;
   open: boolean;
   onClose: () => void;
@@ -288,7 +320,9 @@ export function SuggestionDialog({
       }}
     >
       <DialogContent aria-describedby={undefined}>
-        {idea && <IdeaBody idea={idea} agent={agent} copied={copied} onCopy={copy} />}
+        {idea && (
+          <IdeaBody idea={idea} machine={machine} agent={agent} copied={copied} onCopy={copy} />
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -297,11 +331,13 @@ export function SuggestionDialog({
 /** What the dialog holds. */
 export function IdeaBody({
   idea,
+  machine,
   agent = null,
   copied,
   onCopy,
 }: {
   idea: Idea;
+  machine?: CatalogMachine;
   agent?: SuggestionAgent | null;
   copied: boolean;
   onCopy: () => void;
@@ -311,7 +347,7 @@ export function IdeaBody({
     <>
       <DialogHeader className="gap-2 pr-8">
         <DialogTitle>{idea.name}</DialogTitle>
-        <ProjectLine project={idea.project} name={idea.projectName} />
+        <ProjectLine project={idea.project} name={idea.projectName} machine={machine} />
       </DialogHeader>
       <div
         className={cn(

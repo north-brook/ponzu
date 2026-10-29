@@ -3,6 +3,7 @@ import {
   type CatalogArtboard,
   type CatalogCard,
   type CatalogFile,
+  type CatalogMachine,
   foldCopies,
   type Idea,
   previewArtboard,
@@ -40,7 +41,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ideaKey, useSuggestions } from "@/lib/suggestions";
+import { ideaKey, useElsewhere, useSuggestions } from "@/lib/suggestions";
 import { cn } from "@/lib/utils";
 
 /** What opening a design needs: its key on its own Mac, and the server path in front of it. */
@@ -125,7 +126,13 @@ export function Dashboard({
       .map((a) => a.id)
       .join(" ") ?? "";
   const suggestions = useSuggestions(looking, installed);
-  const suggest = Boolean(suggestions?.agent);
+  // The person's other Macs suggest for their own projects, each card naming its Mac.
+  const macs = useMemo(
+    () => catalog?.machines.filter((m) => m.id !== "local") ?? [],
+    [catalog?.machines],
+  );
+  const elsewhere = useElsewhere(looking, macs);
+  const suggest = Boolean(suggestions?.agent) || elsewhere.length > 0;
   const view: View =
     picked === "suggested" && !suggest
       ? "recent"
@@ -138,13 +145,17 @@ export function Dashboard({
   // at the next design's deadline.
   const [clock, setClock] = useState(() => Date.now());
   const ideas = useMemo(() => {
-    const here = files.filter((f) => f.machine === "local");
     const now = Math.max(clock, Date.now());
-    return (suggestions?.ideas ?? []).flatMap((idea) => {
-      const file = startedFrom(idea, here);
-      return file && settled(file, now) ? [] : [{ idea, file }];
-    });
-  }, [suggestions?.ideas, files, clock]);
+    // Each Mac's ideas are started by a design on that Mac.
+    const of = (ideas: readonly Idea[], machine?: CatalogMachine) => {
+      const there = files.filter((f) => f.machine === (machine?.id ?? "local"));
+      return ideas.flatMap((idea) => {
+        const file = startedFrom(idea, there);
+        return file && settled(file, now) ? [] : [{ idea, file, machine }];
+      });
+    };
+    return [...of(suggestions?.ideas ?? []), ...elsewhere.flatMap((e) => of(e.ideas, e.machine))];
+  }, [suggestions?.ideas, elsewhere, files, clock]);
   useEffect(() => {
     const due = ideas.flatMap(({ file }) =>
       file?.created && !file.busy ? [file.created + STARTED_FOR] : [],
@@ -156,14 +167,16 @@ export function Dashboard({
     );
     return () => clearTimeout(t);
   }, [ideas]);
-  const [idea, setIdea] = useState<{ idea: Idea | null; open: boolean }>({
-    idea: null,
-    open: false,
-  });
+  const [idea, setIdea] = useState<{
+    idea: Idea | null;
+    machine?: CatalogMachine;
+    open: boolean;
+  }>({ idea: null, open: false });
   // The picked idea as it is now: its prompt may still be on its way.
   const chosen = idea.idea;
   const chosenNow = chosen
-    ? (suggestions?.ideas.find((i) => ideaKey(i) === ideaKey(chosen)) ?? chosen)
+    ? (ideas.find((i) => i.machine?.id === idea.machine?.id && ideaKey(i.idea) === ideaKey(chosen))
+        ?.idea ?? chosen)
     : null;
 
   // Searching looks everywhere but the archive.
@@ -172,12 +185,13 @@ export function Dashboard({
   const refs = useMemo(
     () =>
       view === "suggested"
-        ? [...ideas.map(({ idea }) => idea), ...(suggestions?.looking ?? [])].map((i) => ({
-            id: i.projectId,
-            name: i.projectName,
-          }))
+        ? [
+            ...ideas.map(({ idea }) => idea),
+            ...(suggestions?.looking ?? []),
+            ...elsewhere.flatMap((e) => e.looking),
+          ].map((i) => ({ id: i.projectId, name: i.projectName }))
         : inView.map((c) => projectOf(c.file)),
-    [view, ideas, inView, suggestions?.looking],
+    [view, ideas, inView, suggestions?.looking, elsewhere],
   );
   const projects = useProjects(refs);
   // A filter for a project this view no longer has goes back to All.
@@ -187,9 +201,11 @@ export function Dashboard({
     scope !== null ? inView.filter((c) => (projectOf(c.file)?.id ?? NO_PROJECT) === scope) : inView;
   const suggested = scope !== null ? ideas.filter(({ idea }) => idea.projectId === scope) : ideas;
   // Projects a run is still looking around, each a card until its ideas come.
-  const around = (suggestions?.looking ?? []).filter(
-    (l) => scope === null || l.projectId === scope,
-  );
+  const around = [
+    ...(suggestions?.looking ?? []).map((at) => ({ at, machine: undefined })),
+    ...elsewhere.flatMap((e) => e.looking.map((at) => ({ at, machine: e.machine }))),
+  ].filter(({ at }) => scope === null || at.projectId === scope);
+  const running = Boolean(suggestions?.running) || elsewhere.some((e) => e.running);
 
   // A shelf change that fails (another Mac offline, a newer Ponzu owning the catalog)
   // says why in the toast, and the card stays as it was.
@@ -291,10 +307,14 @@ export function Dashboard({
             {view === "suggested" ? (
               suggested.length || around.length ? (
                 <Grid>
-                  {around.map((at) => (
-                    <LookingCard key={`looking:${at.project}`} at={at} />
+                  {around.map(({ at, machine }) => (
+                    <LookingCard
+                      key={`looking:${machine?.id ?? "local"}:${at.project}`}
+                      at={at}
+                      machine={machine}
+                    />
                   ))}
-                  {suggested.map(({ idea, file }) =>
+                  {suggested.map(({ idea, file, machine }) =>
                     file ? (
                       // Started: the design in the idea's place, while it's new.
                       <FileCard
@@ -306,14 +326,15 @@ export function Dashboard({
                       />
                     ) : (
                       <SuggestionCard
-                        key={`${idea.project}:${idea.name}`}
+                        key={`${machine?.id ?? "local"}:${idea.project}:${idea.name}`}
                         idea={idea}
-                        onPick={(idea) => setIdea({ idea, open: true })}
+                        machine={machine}
+                        onPick={(idea) => setIdea({ idea, machine, open: true })}
                       />
                     ),
                   )}
                 </Grid>
-              ) : suggestions?.running ? (
+              ) : running ? (
                 <Thinking />
               ) : (
                 <p className="mt-6 text-center text-muted-foreground">{EMPTY[view]}</p>
@@ -340,7 +361,12 @@ export function Dashboard({
       {toast && <Toast text={toast.text} onUndo={toast.undo} onClose={() => setToast(null)} />}
       <SuggestionDialog
         idea={chosenNow}
-        agent={suggestions?.agent ?? null}
+        machine={idea.machine}
+        agent={
+          (idea.machine
+            ? elsewhere.find((e) => e.machine.id === idea.machine?.id)?.agent
+            : suggestions?.agent) ?? null
+        }
         open={idea.open}
         onClose={() => setIdea((i) => ({ ...i, open: false }))}
       />

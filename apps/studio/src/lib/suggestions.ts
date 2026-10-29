@@ -1,4 +1,4 @@
-import type { Idea, Suggestions } from "@ponzu/core";
+import type { CatalogMachine, Idea, Suggestions } from "@ponzu/core";
 import { useEffect, useState } from "react";
 
 /** How often to ask what a run has found while it looks: often, so its cards show it reading. */
@@ -67,13 +67,87 @@ export function useSuggestions(open: boolean, installed = ""): Suggestions | nul
   return asking && !state.running ? { ...state, running: true } : state;
 }
 
-async function ask(method: "GET" | "POST"): Promise<Suggestions | null> {
+/** Another Mac's suggestions, for its own projects. */
+export interface Elsewhere extends Suggestions {
+  machine: CatalogMachine;
+}
+
+/**
+ * What the person's agent suggests on their other Macs, for those Macs' projects, through this
+ * Mac's relay (`/peers/<mac>/api/suggestions`). Opening the tab asks each to look again, as it
+ * asks this one. A Mac that's off, or on a Ponzu too old to say, has none.
+ */
+export function useElsewhere(open: boolean, macs: readonly CatalogMachine[]): Elsewhere[] {
+  const [states, setStates] = useState<Record<string, Suggestions>>({});
+  const got = (id: string, s: Suggestions | null) => {
+    if (s) land(s.ideas);
+    setStates((all) => {
+      if (s) return { ...all, [id]: s };
+      const { [id]: _, ...rest } = all;
+      return rest;
+    });
+  };
+  const ids = macs.map((m) => m.id).join(" ");
+
+  // `ids` is a dependency only to say when to ask again.
+  useEffect(() => {
+    let live = true;
+    for (const id of ids.split(" ").filter(Boolean)) {
+      ask("GET", peerBase(id)).then((s) => live && got(id, s));
+    }
+    return () => {
+      live = false;
+    };
+  }, [ids]);
+
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    for (const id of ids.split(" ").filter(Boolean)) {
+      ask("POST", peerBase(id)).then((s) => live && s && got(id, s));
+    }
+    return () => {
+      live = false;
+    };
+  }, [open, ids]);
+
+  const running = Object.entries(states)
+    .filter(([, s]) => s.running)
+    .map(([id]) => id)
+    .join(" ");
+  useEffect(() => {
+    if (!running) return;
+    let live = true;
+    const t = setInterval(() => {
+      for (const id of running.split(" ")) {
+        ask("GET", peerBase(id)).then((s) => live && s && got(id, s));
+      }
+    }, POLL_MS);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, [running]);
+
+  return macs.flatMap((machine) => {
+    const s = states[machine.id];
+    return s?.agent ? [{ ...s, machine }] : [];
+  });
+}
+
+/** Where this Mac's server relays another Mac's, as a design on it has its `base`. */
+function peerBase(id: string): string {
+  return `/peers/${encodeURIComponent(id)}`;
+}
+
+async function ask(method: "GET" | "POST", base = ""): Promise<Suggestions | null> {
   const path = method === "POST" ? "/api/suggestions/refresh" : "/api/suggestions";
   try {
-    const res = await fetch(`${window.location.origin}${path}`, { method });
+    const res = await fetch(`${window.location.origin}${base}${path}`, { method });
     if (!res.ok) return null;
     const s = (await res.json()) as Suggestions;
-    return Array.isArray(s?.ideas) ? s : null;
+    // A Mac on a Ponzu from before projects were looked around has none.
+    return Array.isArray(s?.ideas) ? { ...s, looking: s.looking ?? [] } : null;
   } catch {
     return null;
   }
