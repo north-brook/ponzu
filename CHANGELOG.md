@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.71.2](https://github.com/north-brook/ponzu/compare/v1.71.1...v1.71.2) (2026-10-29)
+
+
+### Bug Fixes
+
+* install updates while an agent is watching the canvas ([#338](https://github.com/north-brook/ponzu/issues/338)) ([eff7a9c](https://github.com/north-brook/ponzu/commit/eff7a9c2b55648f1d611cf65aed097ceab89afa9))
+
 ## [1.71.1](https://github.com/north-brook/ponzu/compare/v1.71.0...v1.71.1) (2026-10-29)
 
 
