@@ -1160,6 +1160,9 @@ function DuoPills({
   return (
     <View
       pointerEvents={bare ? "none" : "box-none"}
+      // Gone while bare: out of reach of touch and VoiceOver as well as sight.
+      accessibilityElementsHidden={bare}
+      importantForAccessibility={bare ? "no-hide-descendants" : "auto"}
       style={{ position: "absolute", inset: 0, zIndex: 8 }}
     >
       <Glide
