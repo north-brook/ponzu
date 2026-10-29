@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/north-brook/ponzu/compare/mobile-v0.6.0...mobile-v0.6.1) (2026-10-29)
+
+
+### Bug Fixes
+
+* **mobile:** pan and pinch the canvas on iphone duo ([#340](https://github.com/north-brook/ponzu/issues/340)) ([4adcdad](https://github.com/north-brook/ponzu/commit/4adcdad5a45ddaf4be818cd7505899027027ae14))
+
 ## [0.6.0](https://github.com/north-brook/ponzu/compare/mobile-v0.5.0...mobile-v0.6.0) (2026-10-28)
 
 
