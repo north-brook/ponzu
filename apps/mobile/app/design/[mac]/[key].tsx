@@ -416,12 +416,17 @@ export default function Canvas() {
   // Under horizontal bars, the foot of the system's top bar. On iPhone Duo the safe area's top is
   // already there; on an iPad it stops at the status bar, a whole bar short of the header's foot.
   const header = useHeaderHeight();
-  const barFoot = duo.bars === "upright" && header - insets.top >= 44 ? header : insets.top;
+  /** The system's horizontal bars are outside the safe area (an iPad's), a whole bar short. */
+  const barsOutside = duo.bars === "upright" && header - insets.top >= 44;
+  const barFoot = barsOutside ? header : insets.top;
   const top = duo.bars === "upright" ? barFoot + 6 : pillTop + 50;
   /** The comments panel shows (open sideways, an iPad): the canvas frames its boards left of it. */
   const panelShown = duo.panel && Boolean(commentsOpen || thread);
-  /** What a floating sheet keeps above: the bottom bar, with Comments, under horizontal bars. */
-  const sheetFoot = duo.bars === "upright" ? insets.bottom + 56 : 0;
+  /**
+   * What a sheet keeps above: the bottom bar, with Comments, where the system's bars are outside
+   * the safe area (an iPad's), since that bar takes touches across its whole band.
+   */
+  const sheetFoot = barsOutside ? insets.bottom + 56 : 0;
   /** The page is a bar item; otherwise it's a pill on the canvas (the rail open sideways, the book). */
   const pageOnBar = duo.bars === "upright" || (!duo.panel && !split);
   const canvasInsets = useMemo(

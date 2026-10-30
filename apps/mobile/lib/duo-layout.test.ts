@@ -103,6 +103,14 @@ test("an iPad window as narrow as a phone's (Stage Manager, Split View) is laid 
   expect(duoLayout({ width: 507, height: 834 }, false, false).bars).toBe("phone");
 });
 
+test("a sideways iPad window too narrow for the panel beside the canvas keeps the sheet", () => {
+  expect(duoLayout({ width: 800, height: 650 }, false, false)).toEqual({
+    bars: "upright",
+    split: null,
+    panel: false,
+  });
+});
+
 test("like a book, the halves meet at the fold: the canvas frames short of the crease", () => {
   const { canvas, comments } = halves(innerSideways, "beside");
   const fold = innerSideways.width / 2;
@@ -165,6 +173,14 @@ test("Designs: more columns as an iPad's window widens, each card 230pt or more"
   expect(designColumns(pad13.width)).toBe(4);
   expect(designColumns(pad11Sideways.width)).toBe(4);
   expect(designColumns(pad13Sideways.width)).toBe(5);
+});
+
+test("Designs: an iPad window narrower than iPhone Duo's inner display keeps two columns", () => {
+  expect(designColumns(600)).toBe(2);
+  expect(designColumns(650)).toBe(2);
+  // Four only once each card, less margins and gaps, is 230pt or more.
+  expect(designColumns(990)).toBe(3);
+  expect(designColumns(1000)).toBe(4);
 });
 
 test("the rail is the side inset the system gives its bars (84pt), not a notch", () => {

@@ -57,7 +57,8 @@ export function duoLayout(
     return {
       bars: sideways && rail ? "rail" : "upright",
       split: null,
-      panel: sideways || width >= PANEL,
+      // Sideways with the rail, the inner display has room for it; elsewhere it takes the width.
+      panel: (sideways && rail) || width >= PANEL,
     };
   }
   return { bars: rail ? "rail" : "phone", split: null, panel: false };
@@ -141,16 +142,19 @@ export function halves(
 
 /**
  * How many columns of design cards fit the page's width (the window less
- * the rail): two on an iPhone and the outer display, three on the inner
- * display (the board's 7 upright, and beside the rail sideways), and wider
- * than that as many as keep each card about 230pt or more (an iPad's four
- * or five).
+ * the rail), less its 16pt margins and the 16pt between cards: two on an
+ * iPhone and the outer display; three once each can be 200pt, as on the
+ * inner display (the board's 7 upright, and beside the rail sideways); and
+ * more as long as each stays `CARD` or wider (an iPad's four or five).
  */
 export function designColumns(width: number): number {
-  if (width < INNER - 20) return 2;
-  return Math.max(3, Math.floor((width + 16) / (CARD + 16)));
+  const fits = (n: number, min: number) => (width - 2 * 16 - 16 * (n - 1)) / n >= min;
+  if (!fits(3, 200)) return 2;
+  let n = 3;
+  while (fits(n + 1, CARD)) n++;
+  return n;
 }
-/** The narrowest a card gets once there are more than three columns, with 16pt between. */
+/** The narrowest a card gets once there are more than three columns. */
 const CARD = 230;
 
 /**
