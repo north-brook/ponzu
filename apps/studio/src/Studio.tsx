@@ -131,6 +131,8 @@ export function Studio() {
   // person is looking at: switching to it would pull them out of their work. Not one it made
   // for its own use: that starts out archived, out of the way.
   const [seen] = useState(() => new Set<string>());
+  /** The last design an agent opened that way, for the strip to scroll to. */
+  const [arrived, setArrived] = useState<string | null>(null);
   useEffect(() => {
     if (!catalog) return;
     for (const f of catalog.files) {
@@ -140,6 +142,7 @@ export function Studio() {
       if (f.shelf && f.shelf !== "recent") continue;
       if (Date.now() - f.created > 60_000 || tabs.includes(f.key)) continue;
       setTabs((t) => (t.includes(f.key) ? t : [...t, f.key]));
+      setArrived(f.key);
     }
   }, [catalog]);
 
@@ -250,6 +253,12 @@ export function Studio() {
 
   const { strip, dragProps } = useTabDrag(tabs, setTabs);
   useEdgeFade(strip, tabs);
+  // A design opened behind the person's tab scrolls into sight at the strip's end, where it
+  // joined, so a full strip doesn't hide it.
+  useEffect(() => {
+    const s = strip.current;
+    if (arrived && s) s.scrollTo({ left: s.scrollWidth, behavior: "smooth" });
+  }, [arrived]);
   // Holding ⌘ turns the tabs' icons into the numbers that jump to them.
   const hint = useModifierHint(mac ? "Meta" : "Control");
 
