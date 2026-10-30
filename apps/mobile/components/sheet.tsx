@@ -34,10 +34,12 @@ const KEYBOARD_CORNER = 34;
  * cancel, with no confirm.
  *
  * Given a `maxWidth` (a window too wide for a sheet across it: iPhone Duo's
- * inner display sideways), it floats centred over the canvas at most that
- * wide, and keeps its floating shape on the keyboard too, 8pt above it with
- * every corner round: it no longer spans the keyboard's top, so it can't
- * dock on it. The keyboard still carries it, frame by frame.
+ * inner display sideways, an iPad), it floats centred over the canvas at
+ * most that wide, and keeps its floating shape on the keyboard too, 8pt
+ * above it with every corner round: it no longer spans the keyboard's top,
+ * so it can't dock on it. The keyboard still carries it, frame by frame.
+ * It stays above `bottomBar`, the system's bottom bar, until the keyboard
+ * rises past it.
  */
 export function Sheet({
   children,
@@ -48,6 +50,7 @@ export function Sheet({
   gap = 14,
   right = 0,
   maxWidth,
+  bottomBar = 0,
   away = false,
   onAway,
 }: {
@@ -69,6 +72,12 @@ export function Sheet({
   right?: number;
   /** The widest it gets, centred in what's left of `right` (lib/duo-layout.ts `sheetMax`). */
   maxWidth?: number;
+  /**
+   * What the system's bars take at the foot outside the safe area (an iPad's toolbar, with
+   * Comments): the sheet stays above it, where the toolbar can't take its touches, or above the
+   * keyboard once that's higher.
+   */
+  bottomBar?: number;
 }) {
   const { color } = useTheme();
   const { width, height: screenH } = useWindowDimensions();
@@ -127,7 +136,7 @@ export function Sheet({
     // One motion with the keyboard: it drops with the system's animation, the sheet's bottom
     // edge follows it, and the sheet slides on past the screen's edge on about the same clock.
     KeyboardController.dismiss().catch(() => {});
-    drag.value = withTiming(h.value + 60, { duration: 300, easing: ease }, (done) => {
+    drag.value = withTiming(h.value + bottomBar + 60, { duration: 300, easing: ease }, (done) => {
       if (done) runOnJS(gone)();
     });
   }, [away]);
@@ -155,7 +164,7 @@ export function Sheet({
       left: floats ? inset : side,
       right: right + (floats ? inset : side),
       // One continuous edge: 8pt off the bottom floating, the keyboard's top docked.
-      bottom: side + lift.value - under,
+      bottom: side + Math.max(bottomBar, lift.value) - under,
       borderTopLeftRadius: top,
       borderTopRightRadius: top,
       borderBottomLeftRadius: bottom,
@@ -165,7 +174,10 @@ export function Sheet({
       paddingBottom: 40 - 28 * d + under,
       // The design's sheet spaces its rows 14pt floating, 10pt on the keyboard.
       gap: gap - (gap - 10) * d,
-      transform: [{ translateY: Math.max(0, drag.value) + enter.value * (h.value + 40) }],
+      // Raised over a bottom bar, it has that much further to go to be off the screen.
+      transform: [
+        { translateY: Math.max(0, drag.value) + enter.value * (h.value + bottomBar + 40) },
+      ],
     };
   });
 
@@ -173,7 +185,8 @@ export function Sheet({
   useDerivedValue(() => {
     // The top of the sheet from the bottom of the screen: its bottom edge plus its height.
     const under = floats ? 0 : KEYBOARD_CORNER * docked.value;
-    const rise = (floats ? 8 : 8 * (1 - docked.value)) + lift.value - under + h.value;
+    const rise =
+      (floats ? 8 : 8 * (1 - docked.value)) + Math.max(bottomBar, lift.value) - under + h.value;
     runOnJS(report)(Math.round(Math.max(0, rise)));
   });
 
@@ -187,7 +200,9 @@ export function Sheet({
     })
     .onEnd((e) => {
       if (e.translationY > 80 || e.velocityY > 800) {
-        drag.value = withTiming(h.value + 60, { duration: 220 }, () => runOnJS(close)());
+        drag.value = withTiming(h.value + bottomBar + 60, { duration: 220 }, () =>
+          runOnJS(close)(),
+        );
       } else drag.value = withTiming(0, { duration: 220, easing: ease });
     });
   // Closing waits for the keyboard to finish going down, so the sheet rides it all the way

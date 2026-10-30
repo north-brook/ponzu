@@ -293,19 +293,31 @@ export function useOpening(active: boolean): SharedValue<number> {
 }
 
 /**
- * Comments as an inset panel over the canvas open sideways (the board's 6):
- * the sheet's look, 34pt corners, floating 10pt in from the canvas's right
- * edge (the rail beyond it), 344pt wide.
+ * Comments as an inset panel over the canvas open sideways (the board's 6),
+ * and on an iPad wide enough: the sheet's look, 34pt corners, floating 10pt
+ * in from the canvas's right edge (the rail beyond it, if there is one) and
+ * from the bars above and below it, 344pt wide.
  */
-export function CommentsPanel({ right, children }: { right: number; children: ReactNode }) {
+export function CommentsPanel({
+  right,
+  top = 0,
+  bottom = 0,
+  children,
+}: {
+  right: number;
+  /** What the system's bars take at the top and the foot (an iPad's), when they're horizontal. */
+  top?: number;
+  bottom?: number;
+  children: ReactNode;
+}) {
   const { color } = useTheme();
   return (
     <Animated.View
       testID="comments-panel"
       style={{
         position: "absolute",
-        top: 10,
-        bottom: 10,
+        top: top + 10,
+        bottom: bottom + 10,
         right: right + 10,
         width: 344,
         zIndex: 12,

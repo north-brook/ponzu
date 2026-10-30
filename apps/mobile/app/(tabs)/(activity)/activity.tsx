@@ -30,6 +30,7 @@ import {
   useActivity,
 } from "../../../lib/activity-store";
 import { useFiles } from "../../../lib/catalog";
+import { READABLE } from "../../../lib/duo-layout";
 import { shortAgo } from "../../../lib/files";
 import { select, tick } from "../../../lib/haptics";
 import { baseUrl } from "../../../lib/mac";
@@ -279,7 +280,16 @@ export default function Activity() {
           paddingBottom: 24,
         }}
       >
-        <View style={{ paddingTop: 4, paddingHorizontal: m }}>
+        {/* One readable column, centered in a window wider than it (an iPad's). */}
+        <View
+          style={{
+            paddingTop: 4,
+            paddingHorizontal: m,
+            width: "100%",
+            maxWidth: READABLE + 2 * m,
+            alignSelf: "center",
+          }}
+        >
           {list.length > 0 && (
             <Group items={list} unread={unread} onOpen={open} onRow={onRow} top={GROUP_TOP} />
           )}

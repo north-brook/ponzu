@@ -1,10 +1,10 @@
 # The iPhone app
 
-`apps/mobile` is Ponzu for iPhone: browse your designs, watch agents work and
-comment, from your phone. It talks straight to the Ponzu server on each of
-your Macs over your Tailscale tailnet. It's an Expo app (SDK 58, React Native
-0.88, Expo Router, NativeWind), iOS only, with the same bundle id as the Mac
-app, `design.ponzu.app`. The design it builds from is the spec; see the iPhone
+`apps/mobile` is Ponzu for iPhone and iPad: browse your designs, watch agents
+work and comment, from your phone or tablet. It talks straight to the Ponzu
+server on each of your Macs over your Tailscale tailnet. It's an Expo app (SDK
+58, React Native 0.88, Expo Router, NativeWind), iOS only, with the same bundle
+id as the Mac app, `design.ponzu.app`. The design it builds from is the spec; see the iPhone
 design's `notes/brief.md`.
 
 ## Layout
@@ -84,6 +84,38 @@ rather than when the Mac answers (a reply's field empties at once); a send
 the Mac refuses brings the words back. The field and, in voice, the waveform share one glass capsule the
 buttons' height; the glyphs are Hugeicons, as everywhere in the app.
 
+### iPhone Duo and iPad
+
+Layouts follow the window's size, never the model (`lib/duo-layout.ts`), so
+iPhone Duo's displays, an iPad and an iPad window in Stage Manager or Split
+View all take the layout their space calls for. An iPhone keeps to portrait;
+an iPad turns freely (`UISupportedInterfaceOrientations~ipad` in
+`app.json`).
+
+- **The canvas.** A window whose shorter side is under 600pt is a phone's:
+  the canvas's own bar and the comment sheet, and on iPhone Duo's outer
+  display the system's rail. Otherwise the system's bars hold Back, the
+  page and Comments: on a rail at the side where iPhone Duo puts one, and
+  otherwise across the top and the foot (iPhone Duo open upright, an iPad
+  either way up). Comments are an inset panel beside the canvas, between
+  the bars, rather than the sheet, in a window 900 points wide or more,
+  and sideways beside the rail.
+- **The sheet.** With the inner display sideways, and in any window 700pt
+  or wider (an iPad), a comment's or thread's sheet floats centred, at most
+  560pt wide (`sheetMax`), riding 8pt above the keyboard instead of docking
+  into it. Where the system's bottom bar is outside the safe area (an
+  iPad's), every sheet stays above it: the bar takes touches across its
+  band.
+- **Designs and Search** add columns as the page widens, counting its
+  margins and the gaps between cards: two on an iPhone, three once each
+  card can be 200pt (iPhone Duo's inner display), and more while each stays
+  230pt or wider (an iPad's four or five). **Activity** is one readable
+  column, at most 680pt, centered.
+- **The tabs** are named on an iPad, where the tab bar is a row of names
+  across the top that VoiceOver reads by name; on an iPhone they're marks.
+  An iPad's Search tab opens its header field when chosen, as an iPhone's
+  search tab does on its own.
+
 ### Haptics
 
 One vocabulary, `lib/haptics.ts` (as augmenter's): each gesture gets one,
@@ -132,6 +164,11 @@ Metro. After the first build, `bun run dev` starts Metro alone, and the
 installed client finds it. Rebuild (`bunx expo run:ios`) after any change to
 native code: a new native dependency, a config plugin, `app.json`'s `ios`
 section, a font, or `modules/`.
+
+On an iPad simulator (`--device "iPad Pro 13-inch (M5)"`), opening a
+`ponzu://` link asks "Open in “Ponzu”?" first. The Maestro flows are written
+for an iPhone: an iPad's tab bar doesn't carry the tabs' `testID`s, and the
+page menu and thread open in the system's bar and the comments panel there.
 
 A Mac running Ponzu on the tailnet is what the app talks to; the simulator
 uses the Mac's own Tailscale.
