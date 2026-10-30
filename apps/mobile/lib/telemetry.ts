@@ -20,7 +20,7 @@ export type Event =
   | ["comment left", { reply: boolean; mode: "voice" | "type" }]
   | ["activity opened", Record<string, never>?]
   | ["link opened", { kind: "design" | "unpaired" | "missing" | "invalid" }]
-  /** A sample of pans and pinches: how the canvas's frames kept up (lib/canvas-perf.ts). */
+  /** A sample of gestures on the canvas (pans, pinches, double-taps): how the canvas's frames kept up (lib/canvas-perf.ts). */
   | ["canvas gesture", GesturePerf];
 
 const KEY = process.env.EXPO_PUBLIC_POSTHOG_KEY;

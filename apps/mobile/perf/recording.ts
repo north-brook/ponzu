@@ -44,7 +44,13 @@ const json = flag("json");
 const csv = opt("csv");
 const shots = opt("shots");
 const [video] = argv;
-if (!video || crop.length !== 4 || crop.some((c) => !(c >= 0 && c < 1)) || size & (size - 1)) {
+if (
+  !video ||
+  crop.length !== 4 ||
+  crop.some((c) => !(c >= 0 && c < 1)) ||
+  // A power of two, at least 8.
+  !(Number.isInteger(size) && size >= 8 && !(size & (size - 1)))
+) {
   console.error(
     "usage: bun apps/mobile/perf/recording.ts <video> [--crop top,right,bottom,left] [--size 256] [--json] [--csv <file>] [--shots <dir>]",
   );
@@ -150,8 +156,9 @@ if (shots) {
   // For each of the worst three: the last frame before it, the first held frame, and the frame it ended on.
   mkdirSync(shots, { recursive: true });
   for (const [k, h] of worst.slice(0, 3).entries()) {
-    const frame = steps.findIndex((s) => s.t >= h.at);
-    const end = steps.findIndex((s) => s.t >= h.at + h.ms);
+    // `at` and `ms` are rounded to 0.1 ms: compare with a tolerance far below a frame.
+    const frame = steps.findIndex((s) => s.t >= h.at - 0.5);
+    const end = steps.findIndex((s) => s.t >= h.at + h.ms - 0.5);
     const pick = [frame, frame + 1, end].map((i) => `eq(n\\,${i})`).join("+");
     await run([
       "ffmpeg",

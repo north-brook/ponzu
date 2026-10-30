@@ -91,7 +91,7 @@ export default function Page() {
           <p>
             It sends the same kind of pseudonymous usage data as the Mac app (the app opening, a Mac
             paired, a design opened, a comment left with no comment text, the Activity tab opened,
-            an agent’s link opened), and, for one pan or pinch in twenty, how smoothly the canvas
+            an agent’s link opened), and, for one gesture on the canvas in twenty, how smoothly it
             moved: frame timings and how many boards the page has, nothing of the design. It decides
             from the Macs it has heard from: it sends only when they all have telemetry on, and
             stops as soon as it hears from one that has it off. Events from before any Mac answers

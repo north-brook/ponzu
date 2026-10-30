@@ -26,6 +26,7 @@ export function describe(g: GesturePerf): string {
 }
 
 export function measured(g: GesturePerf) {
-  if (dev) console.log(describe(g));
+  // Development only logs, even with a key set: telemetry is production's.
+  if (dev) return console.log(describe(g));
   track("canvas gesture", g);
 }
