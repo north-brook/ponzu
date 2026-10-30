@@ -68,6 +68,12 @@ export function extractNotes(message: string): string[] {
     if (BULLET.test(line)) {
       flush();
       paragraph.push(line.replace(BULLET, ""));
+    } else if (raw === raw.trimStart() && (IPHONE.test(line) || MAC.test(line))) {
+      // A labelled line is a note of its own even without a bullet, so an
+      // iPhone note never runs on into the Mac's above it. Indented, it's a
+      // wrapped line of the note above.
+      flush();
+      paragraph.push(line);
     } else if (line) {
       paragraph.push(line);
     } else {
