@@ -92,20 +92,25 @@ View all take the layout their space calls for. An iPhone keeps to portrait;
 an iPad turns freely (`UISupportedInterfaceOrientations~ipad` in
 `app.json`).
 
-- **The canvas.** A window narrower than 600pt is a phone's: the canvas's
-  own bar and the comment sheet. Wider, the system's bars hold Back, the
+- **The canvas.** A window whose shorter side is under 600pt is a phone's:
+  the canvas's own bar and the comment sheet, and on iPhone Duo's outer
+  display the system's rail. Otherwise the system's bars hold Back, the
   page and Comments: on a rail at the side where iPhone Duo puts one, and
   otherwise across the top and the foot (iPhone Duo open upright, an iPad
-  either way up). From 900pt wide, comments are an inset panel beside the
-  canvas, between the bars, rather than the sheet.
+  either way up). Comments are an inset panel beside the canvas, between
+  the bars, rather than the sheet, in a window 900 points wide or more,
+  and sideways beside the rail.
 - **The sheet.** With the inner display sideways, and in any window 700pt
   or wider (an iPad), a comment's or thread's sheet floats centred, at most
-  560pt wide (`sheetMax`), above the bottom bar or riding 8pt above the
-  keyboard, instead of docking into it.
-- **Designs and Search** add columns as the page widens: two on an iPhone,
-  three on iPhone Duo's inner display, and as many as keep a card 230pt or
-  wider on an iPad (four or five). **Activity** is one readable column, at
-  most 680pt, centered.
+  560pt wide (`sheetMax`), riding 8pt above the keyboard instead of docking
+  into it. Where the system's bottom bar is outside the safe area (an
+  iPad's), every sheet stays above it: the bar takes touches across its
+  band.
+- **Designs and Search** add columns as the page widens, counting its
+  margins and the gaps between cards: two on an iPhone, three once each
+  card can be 200pt (iPhone Duo's inner display), and more while each stays
+  230pt or wider (an iPad's four or five). **Activity** is one readable
+  column, at most 680pt, centered.
 - **The tabs** are named on an iPad, where the tab bar is a row of names
   across the top that VoiceOver reads by name; on an iPhone they're marks.
   An iPad's Search tab opens its header field when chosen, as an iPhone's
