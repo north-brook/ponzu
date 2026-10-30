@@ -31,6 +31,7 @@ import {
 import { useWindowStill } from "../../../packages/react/src/still.ts";
 import { Rain, useLingering } from "../../../packages/react/src/working.tsx";
 import {
+  BOARD_RADIUS,
   type Box,
   between,
   boardSize,
@@ -53,6 +54,7 @@ import {
   pinPoint,
   REST,
   readingOrder,
+  ringAround,
   type Screen,
   threadPoint,
   toScreen,
@@ -69,10 +71,6 @@ const MOVE_MS = 420;
 const LET_GO = 0.85;
 /** A tap this close to a pin opens it: a 24px pin, a 44px target. */
 const PIN_TARGET = 22;
-/** Boards are ever so slightly rounded: screen px, at any zoom. As desktop. */
-const BOARD_RADIUS = 4;
-/** The ring round a working board sits this many screen px off its edge. As desktop. */
-const RING_GAP = 4;
 /** A column of rain and its gap, in em of the label's 12px. */
 const RAIN_PITCH = 0.42 * 12;
 
@@ -446,6 +444,7 @@ export function PhoneCanvas() {
   useEffect(() => {
     if (!about) return;
     const at = pinWorld(about);
+    const held = Boolean(s.pending);
     if (!at.box) {
       animateTo(
         commentCamera(
@@ -454,11 +453,12 @@ export function PhoneCanvas() {
           camRef.current,
           screen,
           s.sheet,
+          held,
         ),
       );
       return;
     }
-    const next = commentCamera(at.box, at, camRef.current, screen, s.sheet);
+    const next = commentCamera(at.box, at, camRef.current, screen, s.sheet, held);
     const c = camRef.current;
     if (next.x !== c.x || next.y !== c.y || next.zoom !== c.zoom) animateTo(next);
   }, [s.pending, s.thread, about?.artboardId, about?.x, about?.y, s.sheet]);
@@ -941,8 +941,8 @@ function Overlay({
 /**
  * A board's hairline, its title above it (with yuzu rain on the right while an agent works on
  * it), and the ring: yuzu, a few px off its edge, breathing slowly, fading out once the agent
- * leaves. Focused on a whole screen, the ring follows the screen's corners, inset so none of it
- * is lost off the edge; it blends there as the board grows to fill the screen. A new board's
+ * leaves. Where the board reaches the screen's edges, the ring follows them, inset so none of it
+ * is lost, and rounds with the screen's corners where it reaches those (`ringAround`). A new board's
  * frame draws itself where the ring will be, and its name develops with it. As desktop's.
  */
 function BoardChrome({
@@ -980,17 +980,14 @@ function BoardChrome({
   useLayoutEffect(() => {
     if (title.current && arrivedAt !== undefined) arriveName(title.current, arrivedAt);
   }, [arrivedAt, label]);
-  const k = Math.min(1, Math.max(0, (w / screen.w - 0.8) / 0.2));
-  // On the canvas: RING_GAP outside the board. Focused: 3px in, round with the screen.
-  const off = -RING_GAP + (RING_GAP + 3) * k;
-  const rx = BOARD_RADIUS + RING_GAP + k * Math.max(0, radius - 3 - BOARD_RADIUS - RING_GAP);
+  const around = ringAround({ x, y, w, h }, screen, radius);
   // The rain takes at most half the board's width, so the name still reads on a narrow one; on
   // a board too narrow for a column, the ring alone says it's being worked on.
   const rain = Math.min(24, Math.floor(w / 2 / RAIN_PITCH));
   const ringBox = {
-    transform: `translate(${x + off}px, ${y + off}px)`,
-    width: Math.max(0, w - 2 * off),
-    height: Math.max(0, h - 2 * off),
+    transform: `translate(${around.x}px, ${around.y}px)`,
+    width: around.w,
+    height: around.h,
   };
   return (
     <>
@@ -1015,9 +1012,12 @@ function BoardChrome({
         </div>
       )}
       {ring !== undefined && (
-        <Ring box={ringBox} rx={rx} leaving={ring} delay={ringDelay(arrivedAt)} />
+        <Ring box={ringBox} corners={around.corners} leaving={ring} delay={ringDelay(arrivedAt)} />
       )}
-      {arrivedAt !== undefined && <Frame box={ringBox} rx={rx} at={arrivedAt} />}
+      {arrivedAt !== undefined && (
+        // An SVG rect has one radius: the tightest corner, so it hugs the board.
+        <Frame box={ringBox} rx={Math.min(...around.corners)} at={arrivedAt} />
+      )}
     </>
   );
 }
@@ -1025,12 +1025,13 @@ function BoardChrome({
 /** The ring round a working board. It fades in after `delay` ms (a new board's frame is still drawing). */
 function Ring({
   box,
-  rx,
+  corners,
   leaving,
   delay,
 }: {
   box: CSSProperties;
-  rx: number;
+  /** Top left, top right, bottom right, bottom left. */
+  corners: readonly number[];
   leaving: boolean;
   delay: number;
 }) {
@@ -1038,7 +1039,13 @@ function Ring({
   const [wait] = useState(delay);
   return (
     <div aria-hidden className="ring-box" style={{ ...box, opacity: leaving ? 0 : 1 }}>
-      <div className="pz-ring" style={{ borderRadius: rx, animationDelay: `${wait}ms` }} />
+      <div
+        className="pz-ring"
+        style={{
+          borderRadius: corners.map((r) => `${r}px`).join(" "),
+          animationDelay: `${wait}ms`,
+        }}
+      />
     </div>
   );
 }

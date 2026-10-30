@@ -5,6 +5,7 @@ import {
   CameraStore,
   CameraTrack,
   clampToBox,
+  commentCamera,
   easeOut,
   focusCamera,
   glide,
@@ -15,6 +16,7 @@ import {
   pinPoint,
   READABLE,
   reveal,
+  ringAround,
   type Screen,
   screenSized,
   threadPoint,
@@ -286,4 +288,48 @@ test("a glide goes as far at 120 frames a second as at 60", () => {
   const b = run(120);
   close(a.x, b.x, 3);
   close(a.v, b.v, 6);
+});
+
+test("a working board's ring rounds with the screen only where the board reaches its corners", () => {
+  const radius = 55;
+  // On the canvas: 4px outside the board, its corners the board's 4 and the gap.
+  const small = ringAround({ x: 100, y: 200, w: 200, h: 400 }, phone, radius);
+  expect(small).toEqual({ x: 96, y: 196, w: 208, h: 408, corners: [8, 8, 8, 8] });
+  // Focused edge to edge: 3px inside the screen, concentric with its corners.
+  const full = ringAround({ x: 0, y: 0, w: phone.w, h: phone.h }, phone, radius);
+  expect(full).toEqual({ x: 3, y: 3, w: phone.w - 6, h: phone.h - 6, corners: [52, 52, 52, 52] });
+  // Zoomed in past the screen's right edge only, as on iPhone Duo: the corners on screen stay
+  // small and the ring stays round the board's left, top and bottom.
+  const wide = ringAround({ x: 80, y: 260, w: 900, h: 480 }, phone, radius);
+  expect(wide.x).toBe(76);
+  expect(wide.y).toBe(256);
+  expect(wide.y + wide.h).toBe(744);
+  expect(wide.corners).toEqual([8, 8, 8, 8]);
+  // Focused across the width, shorter than the screen: its sides follow the screen's, but it
+  // reaches no corner, so none rounds with the screen.
+  const banner = ringAround({ x: 0, y: 300, w: phone.w, h: 200 }, phone, radius);
+  expect(banner.x).toBe(3);
+  expect(banner.w).toBe(phone.w - 6);
+  expect(banner.y).toBe(296);
+  expect(banner.corners).toEqual([8, 8, 8, 8]);
+});
+
+test("a held comment keeps the zoom it was dropped at and pans its pin above the keyboard", () => {
+  const board = row[0]!;
+  const pin = { x: 200, y: 700 };
+  // The keyboard and the comment sheet on it: about 450 of the screen.
+  const sheet = 450;
+  // Zoomed in close: no zooming out, the pin just comes up above the sheet.
+  const close2 = { zoom: 2, x: -100, y: -900 };
+  const kept = commentCamera(board, pin, close2, phone, sheet, true);
+  expect(kept.zoom).toBe(2);
+  const p = toScreen(kept, pin.x, pin.y);
+  expect(p.y).toBeLessThanOrEqual(phone.h - sheet - 48);
+  // A thread opened from the list still frames its board.
+  expect(commentCamera(board, pin, close2, phone, sheet).zoom).toBeLessThan(1);
+  // Too far out to read: it comes in to three quarters of the width, not to what fits above
+  // the keyboard.
+  const far = commentCamera(board, pin, { zoom: 0.1, x: 0, y: 0 }, phone, sheet, true);
+  close(far.zoom, (290 / 390) * (402 / 390));
+  expect(toScreen(far, pin.x, pin.y).y).toBeLessThanOrEqual(phone.h - sheet - 48);
 });

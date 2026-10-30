@@ -102,9 +102,9 @@ an iPad turns freely (`UISupportedInterfaceOrientations~ipad` in
 - **The sheet.** With the inner display sideways, and in any window 700pt
   or wider (an iPad), a comment's or thread's sheet floats centred, at most
   560pt wide (`sheetMax`), riding 8pt above the keyboard instead of docking
-  into it. Where the system's bottom bar is outside the safe area (an
-  iPad's), every sheet stays above it: the bar takes touches across its
-  band.
+  into it. Wherever the system's bars are horizontal (iPhone Duo open
+  upright, an iPad), every sheet stays above the bottom bar: the bar takes
+  touches across its band, so Send floating over it went to Comments.
 - **Designs and Search** add columns as the page widens, counting its
   margins and the gaps between cards: two on an iPhone, three once each
   card can be 200pt (iPhone Duo's inner display), and more while each stays

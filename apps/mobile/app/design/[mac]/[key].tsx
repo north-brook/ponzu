@@ -413,10 +413,11 @@ export default function Canvas() {
   /** The comments panel shows (open sideways, an iPad): the canvas frames its boards left of it. */
   const panelShown = duo.panel && Boolean(commentsOpen || thread);
   /**
-   * What a sheet keeps above: the bottom bar, with Comments, where the system's bars are outside
-   * the safe area (an iPad's), since that bar takes touches across its whole band.
+   * What a sheet keeps above: the system's bottom bar, with Comments, wherever the bars are
+   * horizontal (iPhone Duo open upright, an iPad), since that bar takes touches across its whole
+   * band. Floating over it, a sheet's Send sat on the bar's Comments, which took the tap.
    */
-  const sheetFoot = barsOutside ? insets.bottom + 56 : 0;
+  const sheetFoot = duo.bars === "upright" ? insets.bottom + 56 : 0;
   /** The page is a bar item; otherwise it's a pill on the canvas (the rail open sideways, the book). */
   const pageOnBar = duo.bars === "upright" || (!duo.panel && !split);
   const canvasInsets = useMemo(

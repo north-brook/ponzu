@@ -73,9 +73,9 @@ export function Sheet({
   /** The widest it gets, centred in what's left of `right` (lib/duo-layout.ts `sheetMax`). */
   maxWidth?: number;
   /**
-   * What the system's bars take at the foot outside the safe area (an iPad's toolbar, with
-   * Comments): the sheet stays above it, where the toolbar can't take its touches, or above the
-   * keyboard once that's higher.
+   * What the system's bottom bar takes at the foot (its toolbar, with Comments, on iPhone Duo
+   * open upright and an iPad): the sheet stays above it, where the toolbar can't take its
+   * touches, or above the keyboard once that's higher.
    */
   bottomBar?: number;
 }) {
