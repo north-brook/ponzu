@@ -36,15 +36,19 @@ import {
   boardSize,
   type Camera,
   CameraStore,
+  CameraTrack,
   clampToBox,
   commentCamera,
   easeFollow,
   easeOut,
   focusCamera,
   followCamera,
+  GLIDE_STEP_MS,
   glide,
   LABEL,
   labelCovers,
+  onPixels,
+  overlayCamera,
   overview,
   pinPoint,
   REST,
@@ -123,31 +127,52 @@ export function PhoneCanvas() {
   // never the boards, which re-render only when what they show (or whether they hold) changes.
   const camRef = useRef<Camera>({ x: 0, y: 0, zoom: 0.4 });
   const camera = useMemo(() => new CameraStore(camRef), []);
-  const frame = useRef(0);
+  /** The overlay's element: a layer that slides with the world's while the camera pans. */
+  const overlayEl = useRef<HTMLDivElement>(null);
+  /** The zoom the world's layer was drawn at. */
+  const layerZoom = useRef(0);
   const settle = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const layers = (on: boolean) => {
+    for (const el of [world.current, overlayEl.current]) {
+      if (on) el?.style.setProperty("will-change", "transform");
+      else el?.style.removeProperty("will-change");
+    }
+  };
+  // Set as it's asked for: a touch reaches here once a frame (the gestures' track), and a glide or
+  // an ease from its frame, so the camera shows in that frame rather than the next.
   const setCam = (c: Camera) => {
     if (!Number.isFinite(c.x + c.y + c.zoom)) return;
     camRef.current = c;
-    // A layer only while it moves: left on, the boards stay a bitmap drawn at an old zoom, blurry
-    // once zoomed in. Off, they redraw sharp.
-    if (world.current) world.current.style.willChange = "transform";
+    camera.resting = false;
+    const w = world.current;
+    // A layer while it moves, so a frame only moves it.
+    if (w && !w.style.willChange) {
+      layerZoom.current = c.zoom;
+      layers(true);
+    }
     clearTimeout(settle.current);
-    settle.current = setTimeout(() => world.current?.style.removeProperty("will-change"), 150);
-    // Once a frame, however many touches arrive in one.
-    if (!frame.current)
-      frame.current = requestAnimationFrame(() => {
-        frame.current = 0;
-        const w = world.current;
-        if (w) {
-          w.style.transform = transformOf(camRef.current);
-          // Only when it crosses a quarter octave: each change restyles every board.
-          const r = `${boardRadius(camRef.current.zoom)}px`;
-          if (w.style.getPropertyValue("--pz-board-radius") !== r)
-            w.style.setProperty("--pz-board-radius", r);
-        }
-        camera.emit();
-      });
+    settle.current = setTimeout(rest, 150);
+    // On the screen's own pixels: a layer kept at rest on a fraction of one draws soft.
+    if (w) w.style.transform = transformOf(onPixels(c, window.devicePixelRatio));
+    camera.emit();
   };
+  /** The camera has stopped. */
+  const rest = () => {
+    const w = world.current;
+    if (!w) return;
+    const c = camRef.current;
+    camera.resting = true;
+    // Zoomed while it was a layer, the boards are a bitmap drawn at the old zoom, blurry once
+    // zoomed in: off, they redraw sharp. Only panned, the layer is as sharp as it was and stays
+    // one, so the next pan doesn't start by drawing every board on screen into a new layer.
+    if (w.style.willChange && layerZoom.current !== c.zoom) layers(false);
+    // Only at rest, and when it crosses a quarter octave: each change restyles every board.
+    const r = `${boardRadius(c.zoom)}px`;
+    if (w.style.getPropertyValue("--pz-board-radius") !== r)
+      w.style.setProperty("--pz-board-radius", r);
+    camera.emit();
+  };
+  useEffect(() => () => clearTimeout(settle.current), []);
 
   /** A camera move under way (a focus, a snap, a glide), stopped by the next touch. */
   const motion = useRef(0);
@@ -176,13 +201,17 @@ export function PhoneCanvas() {
     };
     motion.current = requestAnimationFrame(step);
   };
-  /** A released pan keeps going and slows; on a focused board it stops at the board's edges. */
-  const coast = (v: Point, box: Box | null) => {
+  /**
+   * A released pan keeps going and slows; on a focused board it stops at the board's edges.
+   * `from` is the frame the finger was last shown in, so the first frame after the lift moves as
+   * far as any other rather than the sliver since the lift.
+   */
+  const coast = (v: Point, box: Box | null, from = performance.now()) => {
     stop();
     let vel = v;
-    let last = performance.now();
+    let last = from;
     const step = (now: number) => {
-      const dt = Math.min(32, now - last);
+      const dt = Math.min(GLIDE_STEP_MS, Math.max(0, now - last));
       last = now;
       const g = glide(vel, dt);
       vel = g.v;
@@ -489,16 +518,51 @@ export function PhoneCanvas() {
       told = true;
       send({ t: "gesture" });
     };
+    // The fingers move a target camera, at each touch's own time; each frame shows the track's
+    // camera for that frame, a touch's interval behind (camera.ts, CameraTrack).
+    const track = new CameraTrack();
+    let target = camRef.current;
+    /** The time of the touch being handled. */
+    let at = 0;
+    let follow = 0;
+    /** The frame the track last showed. */
+    let shownAt = 0;
+    const frame = (now: number) => {
+      follow = 0;
+      const t = now - track.lag;
+      const c = track.at(t);
+      const cur = camRef.current;
+      if (c && (c.x !== cur.x || c.y !== cur.y || c.zoom !== cur.zoom)) {
+        setCam(c);
+        shownAt = now;
+      }
+      if (track.newest > t) follow = requestAnimationFrame(frame);
+    };
+    const steer = (c: Camera) => {
+      target = c;
+      track.push(at, c);
+      if (!follow) follow = requestAnimationFrame(frame);
+    };
+    const halt = () => {
+      cancelAnimationFrame(follow);
+      follow = 0;
+      track.clear();
+    };
     const g = new Gestures({
       down() {
         touched.current = true;
         told = false;
         latest.current.stop();
+        halt();
+        target = camRef.current;
+        shownAt = 0;
+        // Where the camera was when the finger landed, so the first move eases out of it.
+        track.push(at, target);
       },
       pan(dx, dy) {
         moving();
         const { focused, boxes, screen } = latest.current;
-        const c = camRef.current;
+        const c = target;
         let next = { ...c, x: c.x + dx, y: c.y + dy };
         const box = focused ? boxes.find((b) => b.id === focused) : undefined;
         if (box) {
@@ -506,11 +570,11 @@ export function PhoneCanvas() {
           const held = clampToBox(next, box, screen);
           next = { ...held, x: atFocus(c, box, screen) ? next.x : held.x };
         }
-        setCam(next);
+        steer(next);
       },
       pinchStart(center) {
         moving();
-        pinchBase = { cam: camRef.current, center };
+        pinchBase = { cam: target, center };
       },
       pinch(scale, center) {
         if (!pinchBase) return;
@@ -520,7 +584,7 @@ export function PhoneCanvas() {
           pinchBase.center.x,
           pinchBase.center.y,
         );
-        setCam({
+        steer({
           ...z,
           x: z.x + center.x - pinchBase.center.x,
           y: z.y + center.y - pinchBase.center.y,
@@ -528,10 +592,14 @@ export function PhoneCanvas() {
       },
       release(v, moved) {
         pinchBase = null;
+        // The camera goes on from where it's shown, a touch behind the finger: what's left of
+        // the track is a few px a glide covers anyway.
+        halt();
+        const from = shownAt || performance.now();
         const { focused, boxes, screen, focus, unfocus, animateTo, coast } = latest.current;
         const box = focused ? boxes.find((b) => b.id === focused) : undefined;
         const c = camRef.current;
-        if (!box) return coast(v, null);
+        if (!box) return coast(v, null, from);
         const home = focusCamera(box, screen);
         if (moved.pinched) {
           if (c.zoom < home.zoom * LET_GO) {
@@ -564,7 +632,7 @@ export function PhoneCanvas() {
         }
         if (Math.abs(c.zoom - home.zoom) >= home.zoom * 0.01)
           send({ t: "focused", artboardId: box.id });
-        coast(v, box);
+        coast(v, box, from);
       },
       tap(p) {
         const { pinsAt, unsentAt } = latest.current;
@@ -599,30 +667,39 @@ export function PhoneCanvas() {
     });
     const points = (list: TouchList) =>
       Array.from(list, (t) => ({ id: t.identifier, x: t.clientX, y: t.clientY }));
+    /**
+     * When a touch happened: WebKit stamps it with UIKit's own time, not when the page got to it,
+     * so a busy page still reads a finger's speed (and a flick's glide) right. Else now.
+     */
+    const stamp = (e: Event) => {
+      const now = performance.now();
+      at = e.timeStamp > now - 1000 && e.timeStamp <= now + 1 ? e.timeStamp : now;
+      return at;
+    };
     const start = (e: TouchEvent) => {
       e.preventDefault();
-      g.touchStart(points(e.changedTouches), performance.now());
+      g.touchStart(points(e.changedTouches), stamp(e));
     };
     const move = (e: TouchEvent) => {
       e.preventDefault();
-      g.touchMove(points(e.changedTouches), performance.now());
+      g.touchMove(points(e.changedTouches), stamp(e));
     };
     const end = (e: TouchEvent) => {
       e.preventDefault();
-      g.touchEnd(points(e.changedTouches), performance.now());
+      g.touchEnd(points(e.changedTouches), stamp(e));
     };
     // A mouse, in the dev harness on a desktop, is one finger.
     let mouse = false;
     const mdown = (e: MouseEvent) => {
       mouse = true;
-      g.touchStart([{ id: -1, x: e.clientX, y: e.clientY }], performance.now());
+      g.touchStart([{ id: -1, x: e.clientX, y: e.clientY }], stamp(e));
     };
     const mmove = (e: MouseEvent) =>
-      mouse && g.touchMove([{ id: -1, x: e.clientX, y: e.clientY }], performance.now());
-    const mup = () => {
+      mouse && g.touchMove([{ id: -1, x: e.clientX, y: e.clientY }], stamp(e));
+    const mup = (e: MouseEvent) => {
       if (!mouse) return;
       mouse = false;
-      g.touchEnd([{ id: -1 }], performance.now());
+      g.touchEnd([{ id: -1 }], stamp(e));
     };
     // Safari's own pinch would zoom the page itself.
     const gesture = (e: Event) => e.preventDefault();
@@ -636,6 +713,7 @@ export function PhoneCanvas() {
     window.addEventListener("mouseup", mup);
     document.addEventListener("gesturestart", gesture, opts);
     return () => {
+      halt();
       el.removeEventListener("touchstart", start);
       el.removeEventListener("touchmove", move);
       el.removeEventListener("touchend", end);
@@ -659,7 +737,7 @@ export function PhoneCanvas() {
         className="world"
         style={
           {
-            transform: transformOf(camRef.current),
+            transform: transformOf(onPixels(camRef.current, window.devicePixelRatio)),
             "--pz-board-radius": `${boardRadius(camRef.current.zoom)}px`,
           } as CSSProperties
         }
@@ -678,6 +756,7 @@ export function PhoneCanvas() {
 
       {/* On screen, so they stay crisp and a fixed size at any zoom. */}
       <Overlay
+        layer={overlayEl}
         camera={camera}
         boards={boards}
         boxes={boxes}
@@ -737,9 +816,11 @@ const Board = memo(function Board({
 
 /**
  * Labels, hairlines, rings, new boards' frames and pins: on screen above the boards, following
- * the camera each frame.
+ * the camera. A pan slides the whole overlay as one layer; it's drawn again when the zoom
+ * changes, when it has slid half a screen, and when the camera rests (`overlayCamera`).
  */
 function Overlay({
+  layer,
   camera,
   boards,
   boxes,
@@ -757,6 +838,7 @@ function Overlay({
   open,
   pending,
 }: {
+  layer: { current: HTMLDivElement | null };
   camera: CameraStore;
   boards: Artboard[];
   boxes: (Box & { id: string })[];
@@ -774,17 +856,40 @@ function Overlay({
   open: string | null;
   pending: { x: number; y: number } | null;
 }) {
-  const cam = useSyncExternalStore(camera.subscribe, camera.get);
+  const drift = { x: screen.w / 2, y: screen.h / 2 };
+  const want = useRef<Camera | null>(null);
+  // The camera it's drawn for: the same one, so no render, while a pan only slides it.
+  const cam = useSyncExternalStore(camera.subscribe, () => {
+    want.current = overlayCamera(want.current, camera.get(), drift, camera.resting);
+    return want.current;
+  });
+  // Slid by however far the camera is from the one it was drawn for: each frame of a pan, and
+  // again once it's drawn anew.
+  const drawn = useRef(cam);
+  const slide = () => {
+    const el = layer.current;
+    if (!el) return;
+    const c = camera.get();
+    const dx = c.x - drawn.current.x;
+    const dy = c.y - drawn.current.y;
+    el.style.transform = dx || dy ? `translate(${dx}px, ${dy}px)` : "";
+  };
+  useLayoutEffect(() => {
+    drawn.current = cam;
+    slide();
+  });
+  useLayoutEffect(() => camera.subscribe(slide), [camera]);
   const still = useWindowStill();
   const names = useMemo(() => new Map(boards.map((a) => [a.id, a.name])), [boards]);
   const counts = useMemo(() => new Map(threads.map((t) => [t.id, t.messages.length])), [threads]);
   return (
-    <div className={still ? "overlay still" : "overlay"}>
+    <div ref={layer} className={still ? "overlay still" : "overlay"}>
       {boxes.map((b) => {
         const p = toScreen(cam, b.x, b.y);
         const w = b.w * cam.zoom;
         const h = b.h * cam.zoom;
-        if (offscreen(p, w, h, screen)) return null;
+        // Drawn as far past the screen as the overlay slides before it's drawn again.
+        if (offscreen(p, w, h, screen, drift)) return null;
         const who = working.get(b.id);
         const showLabel = !!who || !labelCovers(b, boxes, cam.zoom);
         return (
@@ -969,9 +1074,16 @@ function atFocus(c: Camera, box: Box, screen: Screen) {
   return Math.abs(c.zoom - home.zoom) < home.zoom * 0.01;
 }
 
-function offscreen(p: Point, w: number, h: number, screen: Screen) {
-  const m = 40;
-  return p.x > screen.w + m || p.y > screen.h + m || p.x + w < -m || p.y + h < -m;
+function offscreen(
+  p: Point,
+  w: number,
+  h: number,
+  screen: Screen,
+  past: { x: number; y: number } = { x: 0, y: 0 },
+) {
+  const mx = 40 + past.x;
+  const my = 40 + past.y;
+  return p.x > screen.w + mx || p.y > screen.h + my || p.x + w < -mx || p.y + h < -my;
 }
 
 function nearestPin(pins: PinAt[], p: Point): PinAt | null {

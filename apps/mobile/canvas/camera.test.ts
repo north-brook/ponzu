@@ -3,11 +3,14 @@ import {
   between,
   type Camera,
   CameraStore,
+  CameraTrack,
   clampToBox,
   easeOut,
   focusCamera,
   glide,
   labelCovers,
+  onPixels,
+  overlayCamera,
   overview,
   pinPoint,
   READABLE,
@@ -205,4 +208,82 @@ test("the camera store reads the ref and tells its subscribers, until they leave
   off();
   store.emit();
   expect(calls).toBe(1);
+});
+
+test("a frame shows the camera between the touches either side of it, a touch behind", () => {
+  const track = new CameraTrack();
+  // A finger at 120 Hz moving 2px a touch: the lag settles near a touch's interval.
+  for (let i = 0; i <= 20; i++) track.push(i * 8, { x: i * 2, y: 0, zoom: 1 });
+  expect(track.lag).toBeGreaterThan(8);
+  expect(track.lag).toBeLessThan(12);
+  expect(track.newest).toBe(160);
+  // Frames that land between touches get the finger's place at their time, not the last touch's.
+  close(track.at(100)!.x, 25);
+  close(track.at(117)!.x, 29.25);
+  // Before the first touch and past the last, the nearest one.
+  expect(track.at(-5)!.x).toBe(0);
+  expect(track.at(500)!.x).toBe(40);
+  // A touch stamped out of order doesn't run time backwards.
+  track.push(150, { x: 50, y: 0, zoom: 1 });
+  expect(track.newest).toBe(160);
+  track.clear();
+  expect(track.at(100)).toBeNull();
+  expect(track.newest).toBe(Number.NEGATIVE_INFINITY);
+});
+
+test("touches that arrive unevenly still move the camera evenly, frame to frame", () => {
+  // A finger moving at 1 px/ms, touched at 60 Hz, each touch stamped with its own time. The page
+  // gets them late and bunched, but the frames (every 16.7 ms) step the same each time.
+  const track = new CameraTrack();
+  const steps: number[] = [];
+  let last: number | null = null;
+  for (let f = 0; f < 30; f++) {
+    const now = f * (1000 / 60);
+    for (let i = 0; i * (1000 / 60) <= now - 3; i++)
+      if (i * (1000 / 60) > track.newest)
+        track.push(i * (1000 / 60), { x: i * (1000 / 60), y: 0, zoom: 1 });
+    const c = track.at(now - track.lag);
+    if (c && last !== null && now > 60) steps.push(c.x - last);
+    if (c) last = c.x;
+  }
+  for (const s of steps) close(s, 1000 / 60);
+});
+
+test("the overlay slides with a pan and is drawn again on a zoom, past its margin, or at rest", () => {
+  const drawn: Camera = { x: 0, y: 0, zoom: 0.5 };
+  const drift = { x: 200, y: 400 };
+  expect(overlayCamera(null, drawn, drift, false)).toBe(drawn);
+  const panned = { x: 150, y: -300, zoom: 0.5 };
+  expect(overlayCamera(drawn, panned, drift, false)).toBe(drawn);
+  expect(overlayCamera(drawn, panned, drift, true)).toBe(panned);
+  const far = { x: 250, y: 0, zoom: 0.5 };
+  expect(overlayCamera(drawn, far, drift, false)).toBe(far);
+  const zoomed = { x: 0, y: 0, zoom: 0.51 };
+  expect(overlayCamera(drawn, zoomed, drift, false)).toBe(zoomed);
+});
+
+test("a camera at rest sits on whole screen pixels", () => {
+  expect(onPixels({ x: 10.2, y: -3.9, zoom: 0.4 }, 3)).toEqual({
+    x: 31 / 3,
+    y: -12 / 3,
+    zoom: 0.4,
+  });
+  expect(onPixels({ x: 10.6, y: 2.2, zoom: 1 }, 0)).toEqual({ x: 11, y: 2, zoom: 1 });
+});
+
+test("a glide goes as far at 120 frames a second as at 60", () => {
+  const run = (hz: number) => {
+    let v = { x: 2, y: -1 };
+    let x = 0;
+    for (let f = 0; f < hz; f++) {
+      const g = glide(v, 1000 / hz);
+      x += g.dx;
+      v = g.v;
+    }
+    return { x, v: v.x };
+  };
+  const a = run(60);
+  const b = run(120);
+  close(a.x, b.x, 3);
+  close(a.v, b.v, 6);
 });
