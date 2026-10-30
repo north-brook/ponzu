@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.77.0](https://github.com/north-brook/ponzu/compare/v1.76.0...v1.77.0) (2026-10-30)
+
+
+### Features
+
+* open design links on a page ([#363](https://github.com/north-brook/ponzu/issues/363)) ([4a13116](https://github.com/north-brook/ponzu/commit/4a131168eff356b1e43ac24770b1089ceca5a3d5))
+
 ## [1.76.0](https://github.com/north-brook/ponzu/compare/v1.75.1...v1.76.0) (2026-10-30)
 
 
