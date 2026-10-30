@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.74.0](https://github.com/north-brook/ponzu/compare/v1.73.1...v1.74.0) (2026-10-30)
+
+
+### Features
+
+* canvas flashes when an agent screenshots or records a board ([#353](https://github.com/north-brook/ponzu/issues/353)) ([0728df7](https://github.com/north-brook/ponzu/commit/0728df77897614f55490f3a2503ad8ac2b3598ec))
+
 ## [1.73.1](https://github.com/north-brook/ponzu/compare/v1.73.0...v1.73.1) (2026-10-30)
 
 
