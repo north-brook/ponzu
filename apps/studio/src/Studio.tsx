@@ -104,14 +104,15 @@ export function Studio() {
     new URLSearchParams(location.search).get("file"),
   );
   /**
-   * The artboard a link opened the window on (ponzu://open?file=…&artboard=…), in its file.
-   * Dropped once the person moves to another tab, so coming back keeps where they were.
+   * The page or artboard a link opened the window on (ponzu://open?file=…&page=…&artboard=…),
+   * in its file. Dropped once the person moves to another tab, so coming back keeps where they were.
    */
   const [linked, setLinked] = useState(() => {
     const q = new URLSearchParams(location.search);
     const file = q.get("file");
-    const artboard = q.get("artboard");
-    return file && artboard ? { file, artboard } : null;
+    const page = q.get("page") ?? undefined;
+    const artboard = q.get("artboard") ?? undefined;
+    return file && (page || artboard) ? { file, at: { page, artboard } } : null;
   });
   const sources = useMemo(() => new Map<string, SocketSource>(), []);
   const source = (tab: string) => {
@@ -166,6 +167,7 @@ export function Studio() {
     else url.searchParams.delete("file");
     if (linked && active !== linked.file) {
       setLinked(null);
+      url.searchParams.delete("page");
       url.searchParams.delete("artboard");
     }
     history.replaceState(null, "", url);
@@ -339,7 +341,7 @@ export function Studio() {
               source={source(active)}
               theme={theme}
               me={{ kind: "user", name: "You" }}
-              artboard={active === linked?.file ? linked.artboard : undefined}
+              link={active === linked?.file ? linked.at : undefined}
             />
           </div>
         ) : (

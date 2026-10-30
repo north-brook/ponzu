@@ -3,6 +3,7 @@ import {
   type Author,
   findArtboard,
   isThemed,
+  linkTarget,
   locate,
   newId,
   serializeArtboardElement,
@@ -78,8 +79,11 @@ export interface CanvasProps {
    * top-left board to the width, from its top, for a narrow screen to scroll down from.
    */
   initialFit?: "page" | "first";
-  /** An artboard to open on, from a link: its page shows with the board framed. */
-  artboard?: string;
+  /**
+   * Where a link opens: an artboard, its page showing with the board framed, or a page. With
+   * both, the page wins when the board isn't on it (@ponzu/core's linkTarget).
+   */
+  link?: { page?: string; artboard?: string };
   className?: string;
 }
 
@@ -220,7 +224,7 @@ export function Canvas({
   page: pageProp,
   onPageChange,
   initialFit = "page",
-  artboard: linked,
+  link,
   className,
 }: CanvasProps) {
   // Read-only hides the controls that edit; this catches anything they missed.
@@ -431,20 +435,24 @@ export function Canvas({
     if (ab) fit({ x: ab.x, y: ab.y, w: size(ab).w, h: boardHeight(ab) }, viewportSize(), 96, 1);
   };
 
-  // Open on the board a link named, once the document is in. After the page's own fit, so the
-  // first frame painted is the board's. A fit-content board is framed again once it's measured,
-  // still before paint; after that the camera is the person's.
-  const shownLink = useRef<{ id: string; sized: boolean } | null>(null);
+  // Open where a link said, once the document is in: on its board, or on its page when the board
+  // isn't there. After the page's own fit, so the first frame painted is the board's. A
+  // fit-content board is framed again once it's measured, still before paint; after that the
+  // camera is the person's. A page alone takes its own fit.
+  const shownLink = useRef<{ key: string; sized: boolean } | null>(null);
   useLayoutEffect(() => {
-    if (!linked || !doc) return;
-    const hit = findArtboard(doc, linked);
-    const sized = !!hit && (size(hit.artboard).h !== null || measured[linked] !== undefined);
+    if (!link || !doc) return;
+    const to = linkTarget(doc, link);
+    const ab = to?.artboardId ? findArtboard(doc, to.artboardId)?.artboard : undefined;
+    const sized = !!ab && (size(ab).h !== null || measured[ab.id] !== undefined);
+    const key = `${link.page}:${link.artboard}`;
     const shown = shownLink.current;
-    if (shown?.id === linked && (shown.sized || !sized)) return;
-    shownLink.current = { id: linked, sized };
-    if (hit) showBoard(hit.page.id, hit.artboard);
+    if (shown?.key === key && (shown.sized || !sized)) return;
+    shownLink.current = { key, sized };
+    if (to && ab) showBoard(to.pageId, ab);
+    else if (to && to.pageId !== page?.id) setPageId(to.pageId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [linked, doc, measured]);
+  }, [link?.page, link?.artboard, doc, measured]);
 
   // Follow an agent to the boards it makes, until the person moves the camera themselves: then
   // it's theirs, and an agent's new board doesn't pull them off the one they're on. Each file

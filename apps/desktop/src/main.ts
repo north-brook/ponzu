@@ -356,7 +356,7 @@ function pairIphone() {
   else pairPending = true;
 }
 
-async function openDesign(path: string, artboard?: string) {
+async function openDesign(path: string, at: LinkAt = {}) {
   if (!serverUrl) {
     pendingOpens.push(path);
     return;
@@ -368,22 +368,31 @@ async function openDesign(path: string, artboard?: string) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ path, by: "person" }),
   });
-  const focus = artboard ? `&artboard=${encodeURIComponent(artboard)}` : "";
-  await mainWindow.loadURL(`${serverUrl}/?file=${encodeURIComponent(path)}${focus}`);
+  await mainWindow.loadURL(`${serverUrl}/?file=${encodeURIComponent(path)}${linkQuery(at)}`);
   app.addRecentDocument(path);
   mainWindow.focus();
+}
+
+/** Where in a design a link opens: a page, an artboard, or both (@ponzu/core's linkTarget). */
+type LinkAt = { page?: string; artboard?: string };
+
+/** The studio's query for a link's page and artboard, after its file. */
+function linkQuery({ page, artboard }: LinkAt): string {
+  return (
+    (page ? `&page=${encodeURIComponent(page)}` : "") +
+    (artboard ? `&artboard=${encodeURIComponent(artboard)}` : "")
+  );
 }
 
 /**
  * A design on another of the person's Macs, in a tab through this Mac's relay to it: the studio
  * names those tabs `/peers/<name>` and the path, a line apart.
  */
-async function openPeerDesign(mac: string, path: string, artboard?: string) {
+async function openPeerDesign(mac: string, path: string, at: LinkAt = {}) {
   showWindow();
   if (!mainWindow) return;
   const tab = `/peers/${encodeURIComponent(mac)}\n${path}`;
-  const focus = artboard ? `&artboard=${encodeURIComponent(artboard)}` : "";
-  await mainWindow.loadURL(`${serverUrl}/?file=${encodeURIComponent(tab)}${focus}`);
+  await mainWindow.loadURL(`${serverUrl}/?file=${encodeURIComponent(tab)}${linkQuery(at)}`);
   mainWindow.focus();
 }
 
@@ -416,9 +425,9 @@ async function locate(
 }
 
 /**
- * A ponzu:// link. `ponzu://open?mac=<name>&file=<path>.design&artboard=<id>`, from an agent
- * handing over its work: open that design, on that artboard, from the Mac it's on: this one, or
- * another of the person's over Tailscale. Only one that's already there: a link never makes a
+ * A ponzu:// link. `ponzu://open?mac=<name>&file=<path>.design&page=<id>&artboard=<id>`, from an
+ * agent handing over its work: open that design, on that page or artboard, from the Mac it's on:
+ * this one, or another of the person's over Tailscale. Only one that's already there: a link never makes a
  * folder.
  *
  * `ponzu://open?repo=<owner>/<repo>&ref=<ref>&path=<path>.design`, from ponzu.design's Open in
@@ -433,8 +442,8 @@ async function openLink(url: string) {
       return;
     }
     const { at, reached } = await locate(local.mac, local.path);
-    if (at === "local") await openDesign(local.path, local.artboard);
-    else if (at) await openPeerDesign(at, local.path, local.artboard);
+    if (at === "local") await openDesign(local.path, local);
+    else if (at) await openPeerDesign(at, local.path, local);
     // Only a Mac that didn't answer is unreachable; one that did just doesn't have it.
     else if (local.mac && !reached)
       dialog.showErrorBox(

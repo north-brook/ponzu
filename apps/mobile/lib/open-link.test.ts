@@ -24,6 +24,9 @@ test("an agent's link opens the design on the paired Mac it names", () => {
   expect(
     openTarget({ mac: "air", file: FILE, artboard: "ab_hero" }, [air, workstation], none),
   ).toEqual({ kind: "design", mac: "air.tail1.ts.net", key: FILE, artboard: "ab_hero" });
+  expect(
+    openTarget({ mac: "air", file: FILE, page: "pg_flow", artboard: "ab_hero" }, [air], none),
+  ).toEqual({ kind: "design", mac: air.id, key: FILE, page: "pg_flow", artboard: "ab_hero" });
 });
 
 test("a link to a Mac this phone hasn't paired says so", () => {
@@ -53,6 +56,9 @@ test("anything but a design link is refused, as the Mac app refuses it", () => {
   );
   expect(openTarget({ mac: "Work Station", file: FILE }, all, none).kind).toBe("invalid");
   expect(openTarget({ mac: "workstation", file: FILE, artboard: "a b" }, all, none).kind).toBe(
+    "invalid",
+  );
+  expect(openTarget({ mac: "workstation", file: FILE, page: "../x" }, all, none).kind).toBe(
     "invalid",
   );
 });

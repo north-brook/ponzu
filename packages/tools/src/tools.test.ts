@@ -64,6 +64,7 @@ test("get_basic_info gives the link that opens the design in Ponzu, when there i
     "Link: https://ponzu.design/local#file=/d/fern.design (give the person this",
   );
   expect(text).toContain("&artboard=<id>");
+  expect(text).toContain("&page=<id>");
 });
 
 test("get_basic_info says how many tokens it left out and where to see them", async () => {

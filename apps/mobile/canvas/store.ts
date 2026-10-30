@@ -105,7 +105,9 @@ export function setPage(pageId: string) {
 export function receive(msg: ToCanvas) {
   switch (msg.t) {
     case "doc": {
-      const keep = msg.page ?? state.pageId;
+      // The page asked for opens a design; the doc sent again (a reconnect) keeps the person's.
+      const fresh = !state.doc || msg.file !== state.file;
+      const keep = (fresh ? msg.page : undefined) ?? state.pageId;
       const pageId = msg.doc.pages.some((p) => p.id === keep) ? keep : null;
       if (msg.file !== state.file) arrivals = new Arrivals();
       set({ doc: msg.doc, assetBase: msg.assetBase, theme: msg.theme, file: msg.file, pageId });
