@@ -67,6 +67,21 @@ test("a labelled line starts its own note without a bullet", () => {
       ].join("\n"),
     ),
   ).toEqual(["Designs that changed show a dot."]);
+  expect(
+    extractNotes(
+      [
+        "## Release note",
+        "",
+        "- Comments pinned on the",
+        "  iPhone: show on the Mac too.",
+        "- Export keeps the",
+        "  Mac: fonts it found.",
+      ].join("\n"),
+    ),
+  ).toEqual([
+    "Comments pinned on the iPhone: show on the Mac too.",
+    "Export keeps the Mac: fonts it found.",
+  ]);
 });
 
 test("no section, an empty one, or none says nothing", () => {
