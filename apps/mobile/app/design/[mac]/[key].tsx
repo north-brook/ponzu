@@ -630,7 +630,7 @@ export default function Canvas() {
             onPage={(id) => pickPage({ nativeEvent: { event: id } } as NativeActionEvent)}
             pagePill={
               <BarPill bare={bare} testID="page-pill">
-                <PagePill page={page} menu={pageMenu} shown={!bare} />
+                <PagePill page={page} menu={pageMenu} shown={!bare} fade={chromeStyle} />
               </BarPill>
             }
             count={open.length}
@@ -653,6 +653,7 @@ export default function Canvas() {
           area={panelShown ? { ...area, width: area.width - 344 - 10 - 10 } : area}
           top={pillTop}
           bare={bare}
+          chromeStyle={chromeStyle}
           split={Boolean(split)}
         />
       ) : (
@@ -1239,6 +1240,7 @@ function DuoPills({
   area,
   top,
   bare,
+  chromeStyle,
   split,
 }: {
   /** The file pill (`FilePill`). */
@@ -1250,6 +1252,7 @@ function DuoPills({
   area: { left: number; top: number; width: number; height: number };
   top: number;
   bare: boolean;
+  chromeStyle: ReturnType<typeof useAnimatedStyle>;
   /** Folded: the pills are at the book's corners, not opening. */
   split: boolean;
 }) {
@@ -1290,7 +1293,7 @@ function DuoPills({
           testID="page-pill"
         >
           <View onLayout={(e) => setPageW(e.nativeEvent.layout.width)}>
-            <PagePill page={page} menu={pageMenu} shown={!bare} />
+            <PagePill page={page} menu={pageMenu} shown={!bare} fade={chromeStyle} />
           </View>
         </Glide>
       )}

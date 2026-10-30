@@ -162,47 +162,54 @@ export function NativeBarItems({
 /**
  * The page pill, on the canvas open sideways (the Duo board's 5) and in the
  * bar upright: the page's icon, name and a chevron, in glass, opening the
- * pages' native menu.
+ * pages' native menu. As the file pill, its glass dissolves while a board
+ * is focused and what it holds fades on the chrome's clock (`fade`).
  */
 export function PagePill({
   page,
   menu,
   shown,
+  fade,
 }: {
   page: { name: string; icon?: string } | undefined;
   /** Wraps the pill in the pages' menu. */
   menu: (pill: ReactNode) => ReactNode;
   shown: boolean;
+  /** The chrome's fade, for what the glass holds (the glass itself is never faded). */
+  fade: ReturnType<typeof useAnimatedStyle>;
 }) {
   const { color } = useTheme();
   return menu(
     <View accessible accessibilityRole="button" accessibilityLabel={`Page: ${page?.name ?? ""}`}>
-      <Glass
-        interactive
-        shown={shown}
-        style={{
-          height: 44,
-          paddingLeft: 13,
-          paddingRight: 12,
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 7,
-        }}
-      >
-        <PageIcon name={page?.icon} size={18} color={color.ink} />
-        <Text
-          numberOfLines={1}
-          style={{
-            maxWidth: 220,
-            fontFamily: "Inter",
-            fontWeight: "600",
-            fontSize: 16,
-            color: color.ink,
-          }}
+      <Glass interactive shown={shown} style={{ height: 44 }}>
+        <Animated.View
+          style={[
+            {
+              height: 44,
+              paddingLeft: 13,
+              paddingRight: 12,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 7,
+            },
+            fade,
+          ]}
         >
-          {page?.name ?? ""}
-        </Text>
-        <Chevron size={14} color={color.muted} />
+          <PageIcon name={page?.icon} size={18} color={color.ink} />
+          <Text
+            numberOfLines={1}
+            style={{
+              maxWidth: 220,
+              fontFamily: "Inter",
+              fontWeight: "600",
+              fontSize: 16,
+              color: color.ink,
+            }}
+          >
+            {page?.name ?? ""}
+          </Text>
+          <Chevron size={14} color={color.muted} />
+        </Animated.View>
       </Glass>
     </View>,
   );
