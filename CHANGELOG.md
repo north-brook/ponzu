@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.73.0](https://github.com/north-brook/ponzu/compare/v1.72.0...v1.73.0) (2026-10-30)
+
+
+### Features
+
+* **mobile:** ponzu for ipad ([#344](https://github.com/north-brook/ponzu/issues/344)) ([3b0a874](https://github.com/north-brook/ponzu/commit/3b0a874b841039c730bbac540a4e1938538cb838))
+
 ## [1.72.0](https://github.com/north-brook/ponzu/compare/v1.71.2...v1.72.0) (2026-10-30)
 
 
