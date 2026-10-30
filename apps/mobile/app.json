@@ -3,7 +3,7 @@
     "name": "Ponzu",
     "slug": "ponzu",
     "owner": "north-brook",
-    "version": "0.7.0",
+    "version": "0.8.0",
     "scheme": "ponzu",
     "platforms": [
       "ios"
