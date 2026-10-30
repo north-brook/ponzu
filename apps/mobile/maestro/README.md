@@ -7,11 +7,10 @@ Ponzu serving the three examples. They run in this order (`config.yaml`):
 | Flow | What it checks |
 | --- | --- |
 | `launch.yaml` | A clean install with every Mac forgotten: the slice and wordmark on yuzu, then the code on your computer (by way of Tailscale, when this Mac's is off). |
-| `designs.yaml` | Designs lists Kettle, Halon and Weft, under the tab bar (Designs, Activity, Search); the header's filter menu picks Archived, then Recent again; holding Weft archives it, and holding it under Archived restores it. |
+| `designs.yaml` | Designs lists Kettle, Halon and Weft, under the tab bar (Designs, Search); the header's filter menu picks Archived, then Recent again; holding Weft archives it, and holding it under Archived restores it. |
 | `canvas.yaml` | Kettle opens on its canvas, with no tab bar over it: the bar, its boards drawn in the web view, and the page button's menu turning it to Website. |
 | `open-link.yaml` | An agent's `ponzu://open?file=…` link (and iOS's `ponzu:///open?…`) opens Kettle on its canvas. |
 | `search.yaml` | The search tab's system field: "brand" shows Files and Frames. |
-| `activity.yaml` | The Activity tab: one list, its filter (New by default, Show everything), and `ponzu://activity?since=1` shows "Claude added 3 artboards" with thumbnails, which opens that design. |
 | `comment.yaml` | A comment on Kettle's Logo (the `?comment=` link), its pin and thread sheet, Resolve, then `?uncomment=` deletes it. |
 | `comment-modes.yaml` | The comment sheet switches typing → voice → typing (the field, then "Listening…", the mute and the keyboard button, then the field again) and sends. |
 
@@ -22,18 +21,11 @@ prompt in the way. Every flow checks no development warning
 ("Cannot update a component…") is on screen.
 
 Flows find views by `testID` (`id:` in Maestro) or by text: `launch`,
-`designs`, `card-<name>`, `tab-designs`, `tab-activity`, `tab-search`, `search`,
+`designs`, `card-<name>`, `tab-designs`, `tab-search`, `search`,
 `search-files`, `search-frames`, `canvas`, `title`, `page-menu`, `chrome`, `chrome-hidden`, `hint`,
 `comment-sheet`, `comment-input`, `to-type`, `to-voice`, `mute`, `transcript`, `send`, `thread-sheet`,
-`resolve`, `activity`, `activity-empty-<caughtUp|never|noKind>`, `activity-show-everything`, `activity-show-all-kinds`, `activity-where`, `tailscale`, `tailscale-continue`, `connect`. Give a new screen a `testID` named after it.
+`resolve`, `tailscale`, `tailscale-continue`, `connect`. Give a new screen a `testID` named after it.
 Wait with `extendedWaitUntil`, never a fixed sleep.
-
-Before the flows, `run.sh` has an agent make a change for Activity:
-`agent.ts` connects to the server's MCP as `claude-code`, creates a design in
-a temporary folder and adds three artboards. The server keeps its catalog
-database and history in that folder too (`PONZU_HOME`), never this Mac's.
-Already running a server, run it yourself first:
-`bun apps/mobile/maestro/agent.ts <port> $(mktemp -d)`.
 
 The comment flow leaves `examples/` as it was: it deletes its comment with
 the development link `ponzu://design/dev/<key>?uncomment=Maestro` (every

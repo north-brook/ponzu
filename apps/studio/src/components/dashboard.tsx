@@ -41,6 +41,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { isUnseen, type Seen } from "@/lib/seen";
 import { ideaKey, useElsewhere, useSuggestions } from "@/lib/suggestions";
 import { cn } from "@/lib/utils";
 
@@ -74,8 +75,11 @@ export function Dashboard({
   onOpenFolder,
   onNew,
   onShelve,
+  seen = {},
 }: {
   catalog: Catalog | null;
+  /** When the person last looked at each design: one changed since wears a dot. */
+  seen?: Seen;
   onOpen: (target: OpenTarget) => void;
   onOpenFolder?: () => void;
   onNew?: () => void;
@@ -286,7 +290,14 @@ export function Dashboard({
         {loading ? (
           <Loading />
         ) : q ? (
-          <Results query={q} cards={searchable} onOpen={onOpen} onShelve={shelve} live={live} />
+          <Results
+            query={q}
+            cards={searchable}
+            onOpen={onOpen}
+            onShelve={shelve}
+            live={live}
+            seen={seen}
+          />
         ) : (
           <>
             {/* One row: the views at the left, the project at the right. */}
@@ -323,6 +334,7 @@ export function Dashboard({
                         onOpen={onOpen}
                         onShelve={shelve}
                         live={live.has(file.id)}
+                        unseen={isUnseen(seen, file)}
                       />
                     ) : (
                       <SuggestionCard
@@ -348,6 +360,7 @@ export function Dashboard({
                     onOpen={onOpen}
                     onShelve={shelve}
                     live={live.has(c.file.id)}
+                    unseen={isUnseen(seen, c.file)}
                     short={Boolean(scope)}
                   />
                 ))}
@@ -762,6 +775,7 @@ function FileCard({
   match,
   pathMatch,
   live,
+  unseen,
   short,
 }: {
   card: CatalogCard;
@@ -769,6 +783,8 @@ function FileCard({
   onShelve?: (card: CatalogCard, action: ShelfAction) => Promise<void>;
   /** Show the design itself, edits and all, over its preview. */
   live?: boolean;
+  /** Changed since the person last looked: the yuzu dot. */
+  unseen?: boolean;
   match?: readonly [number, number][];
   /** Where a search matched the file's path, when it matched there and not in the name. */
   pathMatch?: readonly [number, number][];
@@ -803,6 +819,14 @@ function FileCard({
           <Preview src={file.preview} working={working} />
           {live && <LivePreview file={file} />}
         </div>
+        {unseen && (
+          <span
+            role="img"
+            aria-label="Changed since you looked"
+            title="Changed since you looked"
+            className="absolute top-2 left-2 z-[4] size-2.5 rounded-full bg-flesh shadow-[0_0_0_1.5px_var(--card),0_0_0_2.5px_rgba(17,17,16,0.18)]"
+          />
+        )}
       </div>
       <div className="flex min-w-0 flex-col gap-0.5 px-0.5">
         <span className="flex min-w-0 items-baseline gap-2">
@@ -1167,6 +1191,7 @@ function Results({
   onOpen,
   onShelve,
   live,
+  seen,
 }: {
   query: string;
   cards: CatalogCard[];
@@ -1174,6 +1199,7 @@ function Results({
   onShelve?: (card: CatalogCard, action: ShelfAction) => Promise<void>;
   /** Cards to show live (useLive). */
   live: Set<string>;
+  seen: Seen;
 }) {
   const fileFuse = useMemo(
     () =>
@@ -1227,6 +1253,7 @@ function Results({
                 onOpen={onOpen}
                 onShelve={onShelve}
                 live={live.has(item.file.id)}
+                unseen={isUnseen(seen, item.file)}
                 match={ranges(matches, "file.name")}
                 pathMatch={ranges(matches, "file.name") ? undefined : ranges(matches, "file.key")}
               />

@@ -17,7 +17,7 @@ import type { MutationOptions, Query, QueryClient } from "@tanstack/react-query"
  *   last list at once and an asleep Mac keeps its cards. The catalog socket
  *   writes its snapshot and patches here; there is no other copy.
  * - `["mac", id, "activity"]`: `/api/activity`, what agents changed in its
- *   designs. Persisted, so Activity reads the same with the Mac asleep.
+ *   designs, for standby's camera. Persisted, like the catalog.
  */
 export const keys = {
   mac: (id: string) => ["mac", id] as const,
@@ -42,8 +42,8 @@ export function persistable(query: Pick<Query, "queryKey" | "state">): boolean {
 
 /**
  * Whether a catalog patch says an agent changed something: a design it put
- * whose edit is newer than the one the catalog held. Activity asks the Mac
- * again when it does.
+ * whose edit is newer than the one the catalog held. The phone asks the Mac
+ * what changed when it does.
  */
 export function agentEdited(prev: Catalog | undefined, msg: CatalogMessage): boolean {
   if (msg.t !== "patch" || !msg.patch.put?.length) return false;

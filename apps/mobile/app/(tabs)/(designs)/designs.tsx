@@ -41,8 +41,8 @@ const SHELVES: { id: Shelf; label: string; image: string }[] = [
  * scrolling under it; every Mac's designs as cards, newest first. The
  * filter is the system's menu: the shelf (Recent or Archived) and
  * the project, the current one checked; the button
- * wears a yuzu badge with how many filters are on. Search and Activity are tabs of
- * their own beside it. Macs that didn't answer keep their cards from last
+ * wears a yuzu badge with how many filters are on. Search is a tab of its
+ * own beside it. Macs that didn't answer keep their cards from last
  * time, dimmed, under a note.
  */
 export default function Designs() {

@@ -158,12 +158,6 @@ export function designColumns(width: number): number {
 const CARD = 230;
 
 /**
- * The widest a column of reading runs (Activity's list), as Apple's readable
- * width: past it, a row's lines and thumbnails stretch thin across an iPad.
- */
-export const READABLE = 680;
-
-/**
  * Whether the system's bars are a rail at the side: the safe area's
  * leading or trailing inset is the rail's width (84pt measured on the
  * simulator), wider than any iPhone's landscape notch inset would be here.

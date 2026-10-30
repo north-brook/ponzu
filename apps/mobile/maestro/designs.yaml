@@ -3,12 +3,10 @@ name: designs
 tags: [dev-host]
 ---
 # The dev host's three examples come up on Designs, under the tab bar's
-# Designs, Activity and Search, with the filter in the header.
+# Designs and Search, with the filter in the header.
 - runFlow: shared/start.yaml
 - assertVisible:
     id: tab-designs
-- assertVisible:
-    id: tab-activity
 - assertVisible:
     id: tab-search
 - scrollUntilVisible:

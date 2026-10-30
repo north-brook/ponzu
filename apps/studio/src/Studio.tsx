@@ -39,6 +39,7 @@ import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { UpdateButton } from "@/components/update";
 import { watchCatalog } from "@/lib/catalog";
+import { loadSeen, look, saveSeen } from "@/lib/seen";
 import { cn } from "@/lib/utils";
 
 /** Where `ponzu serve` lives. Same origin in production; the dev server proxies. */
@@ -126,6 +127,18 @@ export function Studio() {
   // The home screen's catalog, pushed as it changes, here and on the person's other Macs, so a
   // design an agent creates opens in a tab whichever screen is showing.
   useEffect(() => watchCatalog(ORIGIN, setCatalog), []);
+
+  // What the person has looked at, for the home screen's dots: the design in front stays seen
+  // as it changes, and leaving it keeps it as it was.
+  const [looked, setLooked] = useState(loadSeen);
+  const front = active ? fileOf(catalog, targetOf(active))?.id : undefined;
+  useEffect(() => {
+    if (!catalog) return;
+    const next = look(looked, catalog.files, front);
+    if (next === looked) return;
+    saveSeen(next);
+    setLooked(next);
+  }, [catalog, front]);
 
   // A design an agent creates opens in a tab as soon as it exists, once, behind whatever the
   // person is looking at: switching to it would pull them out of their work. Not one it made
@@ -332,6 +345,7 @@ export function Studio() {
         ) : (
           <Dashboard
             catalog={catalog}
+            seen={looked}
             onOpen={(t) => void openFile(t)}
             onShelve={shelve}
             onOpenFolder={

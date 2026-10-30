@@ -38,14 +38,13 @@ import { AgentAvatar, AgentMark, Back, FileIcon, PageIcon } from "../../../compo
 import { Sheet } from "../../../components/sheet";
 import { Shimmer } from "../../../components/shimmer";
 import { ThreadSheet } from "../../../components/thread-sheet";
-import { useMacChanges } from "../../../lib/activity-store";
 import { useFile } from "../../../lib/catalog";
+import { useMacChanges } from "../../../lib/changes";
 import { useDesignSession, useSessionState } from "../../../lib/design";
 import { draftFile, draftKey, getDraft, unsent, useDrafts } from "../../../lib/drafts";
 import { useDuoLayout } from "../../../lib/duo";
 import { commentsButton, halves, sheetMax } from "../../../lib/duo-layout";
 import { select, success, tick } from "../../../lib/haptics";
-import { noteOpened } from "../../../lib/lately";
 import { baseUrl } from "../../../lib/mac";
 import { findMac } from "../../../lib/macs";
 import { pageIconImage } from "../../../lib/page-icons";
@@ -54,7 +53,6 @@ import { Juice } from "../../../lib/slice";
 import { FOLLOW, standbyPath } from "../../../lib/standby";
 import { track } from "../../../lib/telemetry";
 import { useTheme } from "../../../lib/theme";
-import { keepThreads } from "../../../lib/threads";
 import { EASE_OUT } from "../../../lib/tokens";
 import { StandbyAwake, StillSensor, useFollow, useStandby } from "../../../lib/use-standby";
 import { useWindowInsets } from "../../../lib/window-insets";
@@ -76,7 +74,7 @@ export default function Canvas() {
   const params = useLocalSearchParams<{
     mac: string;
     key: string;
-    /** Open a thread's sheet, from Activity or a push. */
+    /** Open a thread's sheet, from a link or a push. */
     thread?: string;
     /** Focus a frame, from search. */
     artboard?: string;
@@ -108,7 +106,7 @@ export default function Canvas() {
   const leave = useRef<{ pin: PendingPin; sent: boolean; away: boolean } | null>(null);
   const [leaving, setLeaving] = useState(false);
   const [threadId, setThreadId] = useState<string | null>(params.thread ?? null);
-  // A link to a thread on the design already open (Activity, a push) opens it there.
+  // A link to a thread on the design already open (a push, say) opens it there.
   useEffect(() => {
     if (params.thread) setThreadId(params.thread);
   }, [params.thread]);
@@ -138,18 +136,10 @@ export default function Canvas() {
   useEffect(() => {
     track("canvas opened");
   }, []);
-  // Search's "Opened lately", with the page it's on.
-  const pageNow = pageId ?? doc?.pages[0]?.id;
-  useEffect(() => {
-    if (doc) noteOpened({ mac: params.mac, key: params.key, page: pageNow, at: Date.now() });
-  }, [Boolean(doc), pageNow]);
-  // Seen as of now, and kept for Activity as the doc changes.
+  // Seen as of now, and kept seen as the doc changes.
   useEffect(() => {
     if (file) markSeen(file.mac, file.key, file.modified);
   }, [file?.modified]);
-  useEffect(() => {
-    if (doc) keepThreads(params.mac, params.key, doc);
-  }, [doc?.threads]);
   useEffect(() => {
     if (session) session.setTheme(scheme);
   }, [session, scheme, state.status]);

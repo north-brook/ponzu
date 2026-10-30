@@ -1,6 +1,6 @@
 import { type Doc, findArtboard, type Thread } from "@ponzu/core";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { clientOf, shortAgent } from "../lib/activity";
+import { clientOf, shortAgent } from "../lib/agents";
 import { shortAgo } from "../lib/files";
 import { tick } from "../lib/haptics";
 import { useTheme } from "../lib/theme";

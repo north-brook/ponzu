@@ -42,7 +42,7 @@ interface Feed {
 }
 const feeds = new Map<string, Feed>();
 
-/** Told when an agent changed a design on a Mac (activity-store.ts asks it what). */
+/** Told when an agent changed a design on a Mac (changes.ts asks it what). */
 let onAgentEdit: (mac: string) => void = () => {};
 export function whenAgentEdits(fn: (mac: string) => void) {
   onAgentEdit = fn;

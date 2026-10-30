@@ -9,6 +9,5 @@ executionOrder:
     - canvas
     - open-link
     - search
-    - activity
     - comment
     - comment-modes
