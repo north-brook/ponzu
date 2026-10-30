@@ -24,6 +24,7 @@ import {
 import { ArtboardView } from "./Artboard.tsx";
 import { Arrivals, arriveBoard, arriveName, drawFrame, RING_OUT_MS, ringDelay } from "./arrive.ts";
 import { Composer, ThreadCard, threadCard } from "./Comments.tsx";
+import { CaptureFlash, useCaptures } from "./capture.tsx";
 import { boardCost, coldLive, coldSkeleton, placeholderFill } from "./coldopen.ts";
 import { type CanvasSource, viewOnly } from "./connection.ts";
 import { type DraftPin, draftKey, unsent, useDrafts } from "./drafts.ts";
@@ -298,6 +299,8 @@ export function Canvas({
   }, [source, arrivals]);
   // A board stays ringed a moment after its agent leaves, so the ring can fade.
   const ringed = useLingering(working, RING_OUT_MS);
+  // A board an agent just screenshotted or recorded flashes, like a camera.
+  const captures = useCaptures(source);
 
   const boards = page?.artboards ?? [];
   // On a cold open, boards cheap enough to show live while their picture is made, and
@@ -1191,7 +1194,8 @@ export function Canvas({
             {boards.map((ab) => {
               const drawn = arrivals.boardAt(ab.id);
               const ring = ringed.get(ab.id);
-              if (drawn === undefined && ring === undefined) return null;
+              const shot = captures.get(ab.id);
+              if (drawn === undefined && ring === undefined && !shot) return null;
               const g = ghostFor(ab.id);
               const box = {
                 x: ab.x + (g?.dx ?? 0),
@@ -1199,10 +1203,30 @@ export function Canvas({
                 w: size(ab).w,
                 h: boardHeight(ab),
               };
+              const area = shot?.box
+                ? {
+                    x: box.x + shot.box.x,
+                    y: box.y + shot.box.y,
+                    w: shot.box.width,
+                    h: shot.box.height,
+                  }
+                : box;
               return (
                 <Fragment key={ab.id}>
-                  {ring !== undefined && <Ring {...box} leaving={ring} delay={ringDelay(drawn)} />}
+                  {ring !== undefined && (
+                    <Ring {...box} leaving={ring} dim={!!shot} delay={ringDelay(drawn)} />
+                  )}
                   {drawn !== undefined && <Frame {...box} at={drawn} />}
+                  {shot && (
+                    <CaptureFlash
+                      key={shot.id}
+                      capture={shot}
+                      ring={ringBox(box)}
+                      ringRadius={BOARD_RADIUS + RING_GAP}
+                      area={worldRect(area)}
+                      radius={BOARD_RADIUS}
+                    />
+                  )}
                 </Fragment>
               );
             })}
@@ -1531,7 +1555,8 @@ function WorkingStatus({ who }: { who: Worker[] }) {
 /**
  * A yuzu ring round a working artboard, a few px off its edge so it never touches the design,
  * breathing slowly in width and glow so it reads on a light canvas as well as a dark one. It
- * fades in after `delay` ms (a new board's frame is still drawing) and fades out when `leaving`.
+ * fades in after `delay` ms (a new board's frame is still drawing) and fades out when `leaving`,
+ * or while an agent's capture plays over the board (capture.tsx).
  * Drawn in the screen-space overlay so it's the same on screen at any zoom, and never part of the
  * design: screenshots and exports don't see it.
  */
@@ -1541,6 +1566,7 @@ function Ring({
   w,
   h,
   leaving = false,
+  dim = false,
   delay = 0,
 }: {
   x: number;
@@ -1548,6 +1574,8 @@ function Ring({
   w: number;
   h: number;
   leaving?: boolean;
+  /** An agent's capture is playing over it: it steps aside meanwhile. */
+  dim?: boolean;
   delay?: number;
 }) {
   // Fixed when it mounts: a running animation whose delay changed would jump.
@@ -1555,7 +1583,7 @@ function Ring({
   return (
     <div
       className="pz:pointer-events-none pz:absolute pz:transition-opacity pz:duration-500"
-      style={{ ...ringBox({ x, y, w, h }), opacity: leaving ? 0 : 1 }}
+      style={{ ...ringBox({ x, y, w, h }), opacity: leaving || dim ? 0 : 1 }}
       aria-hidden
     >
       <div

@@ -1,6 +1,6 @@
 import { type Artboard, ROOT_DIRECTION_NOTE } from "@ponzu/core";
 import type { LoopRequest, LoopResult } from "./loop.ts";
-import type { FrameStep, Interaction, MotionInfo } from "./motion.ts";
+import type { Box, FrameStep, Interaction, MotionInfo } from "./motion.ts";
 
 export interface LintIssue {
   id: string;
@@ -105,6 +105,10 @@ export interface RecordResult {
   height: number;
   /** What each frame shows, in order. */
   steps: FrameStep[];
+  /** Each frame on its own, as PNG, at the sheet's scale. */
+  frames: Uint8Array[];
+  /** The area the frames show, in the artboard's px. */
+  box: Box;
   motion: MotionInfo;
   /** Lint once everything has settled, in the requested state. */
   issues: LintIssue[];

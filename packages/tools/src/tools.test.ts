@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { locate, threadPage } from "@ponzu/core";
+import { type Capture, locate, threadPage } from "@ponzu/core";
 import type { Renderer, RenderResult } from "@ponzu/render";
 import { Design, MemoryAdapter } from "@ponzu/store";
 import { EventHub, PresenceHub, type ToolContext, type Workspace, within } from "./context.ts";
@@ -1082,6 +1082,40 @@ test("a copy in an empty row clears the page's widest artboard at its rendered w
   expect(r.text).toContain("at (3880, -5000)");
 });
 
+test("screenshot and record flash the board they captured on the canvas", async () => {
+  const { renderer } = fakeRenderer({});
+  renderer.record = async () => ({
+    bytes: new Uint8Array([1]),
+    mime: "image/png",
+    width: 10,
+    height: 10,
+    steps: [{ label: "0ms" }, { label: "1s" }] as never,
+    frames: [new Uint8Array([1]), new Uint8Array([2])],
+    box: { x: 4, y: 8, width: 100, height: 50 },
+    motion: { trigger: "load", animations: [], settled: 0, loops: false, cycle: 0 } as never,
+    issues: [],
+  });
+  const { call, ws } = await setup(3, renderer);
+  const seen: { key: string; capture: Capture }[] = [];
+  ws.capture = (key, capture) => seen.push({ key, capture });
+  await call("screenshot", { id: "n_h" });
+  await call("record", { id: "ab_hero" });
+  await call("record", { id: "n_card" });
+  expect(seen.map((s) => [s.key, s.capture.artboard, s.capture.kind])).toEqual([
+    ["fern", "ab_hero", "screenshot"],
+    ["fern", "ab_hero", "record"],
+    ["fern", "ab_hero", "record"],
+  ]);
+  expect(seen[1]!.capture.frames).toEqual([
+    "data:image/png;base64,AQ==",
+    "data:image/png;base64,Ag==",
+  ]);
+  // A node's frames sit over the node; the whole board's over the board.
+  expect(seen[1]!.capture.box).toBeUndefined();
+  expect(seen[2]!.capture.box).toEqual({ x: 4, y: 8, width: 100, height: 50 });
+  expect(new Set(seen.map((s) => s.capture.id)).size).toBe(3);
+});
+
 test("record says when fonts or images ran out of time", async () => {
   const { renderer } = fakeRenderer({});
   renderer.record = async () => ({
@@ -1090,6 +1124,8 @@ test("record says when fonts or images ran out of time", async () => {
     width: 10,
     height: 10,
     steps: [{ label: "0ms" }, { label: "1s" }] as never,
+    frames: [new Uint8Array([1]), new Uint8Array([2])],
+    box: { x: 0, y: 0, width: 10, height: 10 },
     motion: { trigger: "load", animations: [], settled: 0, loops: false, cycle: 0 } as never,
     issues: [],
     assetsTimedOut: true,

@@ -226,6 +226,7 @@ export function serve(ws: LocalWorkspace, opts: ServeOptions = {}) {
     const page = design?.doc.pages.find((p) => p.artboards.some((a) => a.id === artboard));
     if (page) broadcast(key, { t: "focus", artboard, page: page.id });
   });
+  ws.onCapture((key, capture) => broadcast(key, { t: "capture", capture }));
 
   // An agent mid-change here: the app holds an update's restart for it (`/api/info`), and the
   // catalog lists that it does, so every Mac's Update can say so.
