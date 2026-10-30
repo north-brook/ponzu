@@ -13,6 +13,7 @@ Ponzu serving the three examples. They run in this order (`config.yaml`):
 | `search.yaml` | The search tab's system field: "brand" shows Files and Frames. |
 | `comment.yaml` | A comment on Kettle's Logo (the `?comment=` link), its pin and thread sheet, Resolve, then `?uncomment=` deletes it. |
 | `comment-modes.yaml` | The comment sheet switches typing → voice → typing (the field, then "Listening…", the mute and the keyboard button, then the field again) and sends. |
+| `draft.yaml` | A comment left unsent on Kettle's Logo keeps a pin: held, its sheet moves it (the design pans under it, then Done), it opens again with its words, and Discard draft takes it away. |
 
 `shared/start.yaml` opens the client onto Metro, closes the development
 menu if it shows, and waits for Designs. It refuses the microphone and
@@ -24,7 +25,7 @@ Flows find views by `testID` (`id:` in Maestro) or by text: `launch`,
 `designs`, `card-<name>`, `tab-designs`, `tab-search`, `search`,
 `search-files`, `search-frames`, `canvas`, `title`, `page-menu`, `chrome`, `chrome-hidden`, `hint`,
 `comment-sheet`, `comment-input`, `to-type`, `to-voice`, `mute`, `transcript`, `send`, `thread-sheet`,
-`resolve`, `tailscale`, `tailscale-continue`, `connect`. Give a new screen a `testID` named after it.
+`resolve`, `draft-sheet`, `draft-open`, `draft-move`, `draft-discard`, `move-hint`, `move-done`, `tailscale`, `tailscale-continue`, `connect`. Give a new screen a `testID` named after it.
 Wait with `extendedWaitUntil`, never a fixed sleep.
 
 The comment flow leaves `examples/` as it was: it deletes its comment with

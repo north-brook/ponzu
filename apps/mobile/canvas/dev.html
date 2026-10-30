@@ -102,7 +102,7 @@
           harness.ready = true;
           sendDoc();
         } else if (msg.t === "longpress") {
-          // The app opens the comment sheet and shows the "+" pin where the finger was.
+          // The app opens the comment sheet and shows the pin where the finger was.
           const { pageId: page, artboardId, x, y } = msg;
           harness.send({ t: "pending", pin: artboardId ? { artboardId, x, y } : { pageId: page, x, y } });
         } else if (msg.t === "openThread") {
