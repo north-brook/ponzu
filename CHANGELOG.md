@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.73.1](https://github.com/north-brook/ponzu/compare/v1.73.0...v1.73.1) (2026-10-30)
+
+
+### Bug Fixes
+
+* open designs agents create in a background tab ([#351](https://github.com/north-brook/ponzu/issues/351)) ([78ab173](https://github.com/north-brook/ponzu/commit/78ab1738e9b496344f17fc3c2f11d717eb2256a4))
+
 ## [1.73.0](https://github.com/north-brook/ponzu/compare/v1.72.0...v1.73.0) (2026-10-30)
 
 
