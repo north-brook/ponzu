@@ -858,6 +858,10 @@ export interface Recording {
   width: number;
   height: number;
   steps: FrameStep[];
+  /** Each step on its own, as PNG, at the sheet's scale. */
+  frames: Uint8Array[];
+  /** The area the frames show, in the page's px. */
+  box: Box;
   motion: MotionInfo;
   issues: LintIssue[];
 }
@@ -883,9 +887,11 @@ export async function recordFrames(page: FrameDriver, opts: RecordOptions): Prom
   if (!box) throw new Error("That node isn't in this artboard.");
   const layout = sheetLayout(plan.steps.length, box.width, box.height);
   const frames: { label: string; src: string }[] = [];
+  const pngs: Uint8Array[] = [];
   for (const step of plan.steps) {
     await page.evaluate(motionCall("apply", step));
     const png = await page.capture(box, layout.scale);
+    pngs.push(png);
     frames.push({ label: step.label, src: `data:image/png;base64,${base64(png)}` });
   }
   await page.evaluate(motionCall("settle"));
@@ -902,6 +908,8 @@ export async function recordFrames(page: FrameDriver, opts: RecordOptions): Prom
     width: sheet.width,
     height: sheet.height,
     steps: plan.steps,
+    frames: pngs,
+    box,
     motion: prepared,
     issues,
   };

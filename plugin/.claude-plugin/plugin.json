@@ -1,7 +1,7 @@
 {
   "name": "ponzu",
   "displayName": "Ponzu",
-  "version": "1.73.0",
+  "version": "1.73.1",
   "description": "A design canvas your agent draws on in HTML and CSS. You steer with comments. Needs the Ponzu Mac app.",
   "author": {
     "name": "Northbrook",

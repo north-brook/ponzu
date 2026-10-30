@@ -136,6 +136,7 @@ export const seeTools = [
           failure: "capture_failed",
           stage: "capture",
         };
+      ws.capture?.(key, { id: crypto.randomUUID(), artboard: ab.id, kind: "screenshot" });
       const image: ToolImage = { data: toBase64(out.bytes), mime: out.mime };
       const lines = [
         `${nodeId ?? ab.id} rendered ${Math.round(out.width)}×${Math.round(out.height)} at ${shownScale(scale, out.scale)}${out.motion ? `, ${moment(out.motion, args.at)}` : ""}.`,
@@ -222,6 +223,13 @@ export const seeTools = [
         scroll: args.scroll,
         lint: true,
         assetBase: ws.assetBase?.(key),
+      });
+      ws.capture?.(key, {
+        id: crypto.randomUUID(),
+        artboard: ab.id,
+        kind: "record",
+        frames: out.frames.map((png) => `data:image/png;base64,${toBase64(png)}`),
+        ...(ab.id === args.id ? {} : { box: out.box }),
       });
       const m = out.motion;
       const first = out.steps[0]?.label ?? "";

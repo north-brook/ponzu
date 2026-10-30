@@ -1,5 +1,6 @@
 import {
   applyOp,
+  type Capture,
   type ClientMessage,
   type ColorScheme,
   type Doc,
@@ -43,6 +44,8 @@ export interface CanvasSource {
   loopsUrl?(artboardId: string, version: string, scheme: ColorScheme): string;
   /** Each change as it lands, with who made it and the doc after it: for motion. */
   onOp?(listener: (op: Op, origin: Origin, doc: Doc) => void): () => void;
+  /** Each screenshot or recording an agent takes of an artboard: the canvas flashes on it. */
+  onCapture?(listener: (capture: Capture) => void): () => void;
 }
 
 export interface CanvasState {
@@ -66,6 +69,7 @@ export class SocketSource implements CanvasSource {
   private state: CanvasState;
   private listeners = new Set<Listener>();
   private opListeners = new Set<(op: Op, origin: Origin, doc: Doc) => void>();
+  private captureListeners = new Set<(capture: Capture) => void>();
   private socket: WebSocket | null = null;
   private req = 0;
   private retry = 0;
@@ -185,6 +189,9 @@ export class SocketSource implements CanvasSource {
       case "focus":
         this.set({ focus: { artboard: msg.artboard, page: msg.page, at: Date.now() } });
         break;
+      case "capture":
+        for (const l of this.captureListeners) l(msg.capture);
+        break;
       case "error":
         this.set({ error: msg.message });
         break;
@@ -219,6 +226,11 @@ export class SocketSource implements CanvasSource {
   onOp(listener: (op: Op, origin: Origin, doc: Doc) => void) {
     this.opListeners.add(listener);
     return () => this.opListeners.delete(listener);
+  }
+
+  onCapture(listener: (capture: Capture) => void) {
+    this.captureListeners.add(listener);
+    return () => this.captureListeners.delete(listener);
   }
 
   // Edits go to the server, which applies them and echoes the op back.
@@ -278,6 +290,7 @@ export function viewOnly(source: CanvasSource): CanvasSource {
     renditions: source.renditions,
     setTheme: source.setTheme ? (theme) => source.setTheme?.(theme) : undefined,
     onOp: source.onOp ? (listener) => source.onOp!(listener) : undefined,
+    onCapture: source.onCapture ? (listener) => source.onCapture!(listener) : undefined,
     // Pictures and loops are reads: a read-only canvas draws small boards the same way.
     snapshotUrl: source.snapshotUrl?.bind(source),
     loopsUrl: source.loopsUrl?.bind(source),

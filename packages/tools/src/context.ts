@@ -1,5 +1,6 @@
 import {
   type Author,
+  type Capture,
   type ColorScheme,
   type Doc,
   type EventType,
@@ -28,6 +29,8 @@ export interface Workspace {
   assetBase?(key: string): string | undefined;
   /** Ask any open studio to show this artboard. */
   focus?(key: string, artboardId: string): void;
+  /** Tell any open studio an agent just captured an artboard, so it flashes on it. */
+  capture?(key: string, capture: Capture): void;
   /**
    * A link the person can click to open this design in Ponzu, on the artboard if one is given.
    * `origin` is where the agent reached this host, for a canvas link that works from its machine.
