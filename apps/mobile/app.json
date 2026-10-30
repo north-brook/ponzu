@@ -18,9 +18,15 @@
     "ios": {
       "bundleIdentifier": "design.ponzu.app",
       "appleTeamId": "R9352YFQL4",
-      "supportsTablet": false,
+      "supportsTablet": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
+        "UISupportedInterfaceOrientations~ipad": [
+          "UIInterfaceOrientationPortrait",
+          "UIInterfaceOrientationPortraitUpsideDown",
+          "UIInterfaceOrientationLandscapeLeft",
+          "UIInterfaceOrientationLandscapeRight"
+        ],
         "NSPhotoLibraryUsageDescription": "Ponzu doesn't read your photo library. Apple asks for this because a library Ponzu uses can load images from Photos.",
         "NSAppTransportSecurity": {
           "NSAllowsLocalNetworking": true,

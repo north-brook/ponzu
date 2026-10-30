@@ -1,22 +1,26 @@
 /**
  * How the canvas screen is laid out, from the window and the hinge alone,
- * as Apple asks of iPhone Duo: by the space there is, never by the model or
- * the pose's name. The app is portrait-only (app.json), which every iPhone
- * keeps to; only iPhone Duo's inner display turns with the hand whatever the
- * app asks, so only there is the window ever wider than tall.
+ * as Apple asks of iPhone Duo and iPad: by the space there is, never by the
+ * model or the pose's name. An iPhone keeps to portrait (app.json); iPhone
+ * Duo's inner display turns with the hand whatever the app asks, and an iPad
+ * turns and sizes its windows freely, so only there is the window ever wider
+ * than tall.
  *
- * - `phone`: an iPhone, and iPhone Duo closed (its outer display). The bars
- *   are the canvas's own: Back, the file, the page. Comments are the sheet.
+ * - `phone`: an iPhone, iPhone Duo closed (its outer display), and an iPad
+ *   window as narrow as one. The bars are the canvas's own: Back, the file,
+ *   the page. Comments are the sheet.
  * - `rail`: a window wide enough that the system puts its bars on a rail at
  *   the trailing edge (the outer display, and the inner one held sideways).
  *   Back, the page and comments are the rail's native items.
- * - `upright`: the inner display held upright and flat: horizontal bars,
- *   Back top left, the page top right, comments bottom right.
+ * - `upright`: horizontal system bars over a wide window: the inner display
+ *   held upright and flat, and an iPad either way up. Back top left, the page
+ *   top right, comments bottom right.
  *
  * Partly open, the design keeps one half and comments take the other
  * (`split`): `below` held upright (like a laptop), `beside` held sideways
- * (like a book). Flat, comments are the sheet (`phone`, `upright`) or an
- * inset panel (`rail`, the inner display sideways).
+ * (like a book). Flat, comments are the sheet or, in a window wide enough
+ * for both (the inner display sideways, an iPad sideways or a large one
+ * upright), an inset panel beside the canvas.
  */
 export interface DuoLayout {
   bars: "phone" | "rail" | "upright";
@@ -28,6 +32,8 @@ export interface DuoLayout {
 
 /** The narrowest window that's iPhone Duo's inner display: wider than any iPhone. */
 const INNER = 600;
+/** The narrowest window with room for the comments panel (344pt) beside the canvas. */
+const PANEL = 900;
 
 export function duoLayout(
   window: { width: number; height: number },
@@ -47,9 +53,12 @@ export function duoLayout(
     };
   }
   if (inner) {
-    return sideways
-      ? { bars: "rail", split: null, panel: true }
-      : { bars: "upright", split: null, panel: false };
+    // Sideways, iPhone Duo's bars are a rail at the side; an iPad's stay across the top.
+    return {
+      bars: sideways && rail ? "rail" : "upright",
+      split: null,
+      panel: sideways || width >= PANEL,
+    };
   }
   return { bars: rail ? "rail" : "phone", split: null, panel: false };
 }
@@ -68,11 +77,22 @@ export function foldAt(window: { width: number; height: number }, split: DuoLayo
 /**
  * How many columns of design cards fit the page's width (the window less
  * the rail): two on an iPhone and the outer display, three on the inner
- * display (the board's 7 upright, and beside the rail sideways).
+ * display (the board's 7 upright, and beside the rail sideways), and wider
+ * than that as many as keep each card about 230pt or more (an iPad's four
+ * or five).
  */
 export function designColumns(width: number): number {
-  return width >= INNER - 20 ? 3 : 2;
+  if (width < INNER - 20) return 2;
+  return Math.max(3, Math.floor((width + 16) / (CARD + 16)));
 }
+/** The narrowest a card gets once there are more than three columns, with 16pt between. */
+const CARD = 230;
+
+/**
+ * The widest a column of reading runs (Activity's list), as Apple's readable
+ * width: past it, a row's lines and thumbnails stretch thin across an iPad.
+ */
+export const READABLE = 680;
 
 /**
  * Whether the system's bars are a rail at the side: the safe area's

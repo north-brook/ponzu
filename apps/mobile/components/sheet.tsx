@@ -23,6 +23,17 @@ const ease = Easing.bezier(...EASE_OUT);
 const KEYBOARD_CORNER = 34;
 
 /**
+ * A window at least this wide (an iPad's) holds the sheet as a card `CARD`
+ * wide in the middle of it, rather than across it. iPhone Duo keeps its
+ * sheet: its inner display upright (669pt) is narrower, and sideways it has
+ * the rail.
+ */
+const WIDE = 700;
+const CARD = 540;
+/** The card's gap above the bottom of the window, or above the keyboard. */
+const CARD_GAP = 16;
+
+/**
  * A sheet over the canvas (comment, thread). Floating, 8pt in from the
  * screen's edges, its top corners 38pt and its bottom ones concentric with
  * the display's (lib/screen.ts), until the keyboard is up: then it sits
@@ -30,7 +41,9 @@ const KEYBOARD_CORNER = 34;
  * study shows. Its shape follows the keyboard's own frame, every frame on
  * the UI thread (react-native-keyboard-controller): as the keyboard drops
  * the sheet's bottom edge follows it down and its corners round, and as it
- * rises the sheet rides it, interactive dismissal included. Swipe down to
+ * rises the sheet rides it, interactive dismissal included. In a wide
+ * window (an iPad) it's a card in the middle instead, its corners all 38pt,
+ * riding 16pt above the keyboard rather than docking into it. Swipe down to
  * cancel, with no confirm.
  */
 export function Sheet({
@@ -41,6 +54,7 @@ export function Sheet({
   testID,
   gap = 14,
   right = 0,
+  foot = 0,
   away = false,
   onAway,
 }: {
@@ -60,11 +74,19 @@ export function Sheet({
   gap?: number;
   /** Kept clear on the right: iPhone Duo's rail, where the system puts its bars. */
   right?: number;
+  /**
+   * What the system's bars take at the foot (an iPad's toolbar, with Comments): a card stays
+   * above it, where the toolbar can't take its touches, or above the keyboard if that's higher.
+   */
+  foot?: number;
 }) {
   const { color } = useTheme();
   const { width, height: screenH } = useWindowDimensions();
   /** The bottom corners, floating: the display's less the 8pt inset. */
-  const foot = concentric(width, screenH, 8);
+  const corner = concentric(width, screenH, 8);
+  const wide = right === 0 && width >= WIDE;
+  /** Each side of the card, in a wide window. */
+  const aside = wide ? (width - CARD) / 2 : 0;
   // The keyboard's top, every frame on the UI thread, interactive dismissal included.
   // On iOS the provider's shared values (useReanimatedKeyboardAnimation) jump to where the
   // keyboard is going as it starts to move; onMove reports where it is, frame by frame.
@@ -127,10 +149,13 @@ export function Sheet({
    * and can't disagree (progress and height part ways during an interactive
    * dismissal).
    */
-  const docked = useDerivedValue(() => (full.value > 0 ? Math.min(1, lift.value / full.value) : 0));
+  const docked = useDerivedValue(() =>
+    // A card never docks: it rides above the keyboard.
+    !wide && full.value > 0 ? Math.min(1, lift.value / full.value) : 0,
+  );
   const style = useAnimatedStyle(() => {
     const d = docked.value;
-    const side = 8 * (1 - d);
+    const side = wide ? aside : 8 * (1 - d);
     // Docked, the sheet runs on behind the keyboard by the keyboard's own top corner
     // (KEYBOARD_CORNER), so the keyboard's curve sits over the sheet's color, never over
     // a square corner or the canvas. It grows in with the keyboard and is gone below it.
@@ -139,14 +164,15 @@ export function Sheet({
       left: side,
       right: right + side,
       // One continuous edge: 8pt off the bottom floating, the keyboard's top docked.
-      bottom: side + lift.value - under,
+      bottom: wide ? CARD_GAP + Math.max(foot, lift.value) : side + lift.value - under,
       borderTopLeftRadius: 38 - 14 * d,
       borderTopRightRadius: 38 - 14 * d,
-      borderBottomLeftRadius: foot * (1 - d),
-      borderBottomRightRadius: foot * (1 - d),
+      borderBottomLeftRadius: wide ? 38 : corner * (1 - d),
+      borderBottomRightRadius: wide ? 38 : corner * (1 - d),
       paddingHorizontal: 20 - 4 * d,
       paddingTop: 10 - 2 * d,
-      paddingBottom: 40 - 28 * d + under,
+      // Clear of the home indicator floating on a phone; a card's foot is its own.
+      paddingBottom: (wide ? 20 : 40) - 28 * d + under,
       // The design's sheet spaces its rows 14pt floating, 10pt on the keyboard.
       gap: gap - (gap - 10) * d,
       transform: [{ translateY: Math.max(0, drag.value) + enter.value * (h.value + 40) }],
@@ -157,7 +183,9 @@ export function Sheet({
   useDerivedValue(() => {
     // The top of the sheet from the bottom of the screen: its bottom edge plus its height.
     const under = KEYBOARD_CORNER * docked.value;
-    const rise = 8 * (1 - docked.value) + lift.value - under + h.value;
+    const rise =
+      (wide ? CARD_GAP + Math.max(foot, lift.value) : 8 * (1 - docked.value) + lift.value - under) +
+      h.value;
     runOnJS(report)(Math.round(Math.max(0, rise)));
   });
 

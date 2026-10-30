@@ -1,6 +1,7 @@
 import { agentActivity, findArtboard, newId, type Presence, type Thread } from "@ponzu/core";
 import { type MenuAction, MenuView, type NativeActionEvent } from "@react-native-menu/menu";
 import { router, Stack, useLocalSearchParams, useNavigation } from "expo-router";
+import { useHeaderHeight } from "expo-router/react-navigation";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
@@ -417,12 +418,28 @@ export default function Canvas() {
         ? { left: 0, top: 0, width: W, height: fold - CREASE }
         : { left: 0, top: 0, width: W - insets.right, height: H };
   // Upright the system's bar is the top row, Back at its left: the file pill sits in that row,
-  // centered, as the board's top bar (the safe area's top is the bar's foot, 56pt below its top).
+  // centered, as the board's top bar. On iPhone Duo the safe area's top is the bar's foot, 56pt
+  // below its top; on an iPad it stops at the status bar, a whole bar short of the header's foot,
+  // so the pill is centered between the two.
+  const header = useHeaderHeight();
+  const padBar = duo.bars === "upright" && header - insets.top >= 44;
+  /** The foot of the system's top bar, upright. */
+  const barFoot = padBar ? header : insets.top;
   const pillTop =
-    duo.bars === "upright" ? Math.max(8, insets.top - 56) : nativeBars ? 16 : insets.top + 6;
-  const top = duo.bars === "upright" ? insets.top + 6 : pillTop + 50;
-  /** The comments panel shows, open sideways: the canvas frames its boards left of it. */
+    duo.bars === "upright"
+      ? padBar
+        ? insets.top + (header - insets.top - 44) / 2
+        : Math.max(8, insets.top - 56)
+      : nativeBars
+        ? 16
+        : insets.top + 6;
+  const top = duo.bars === "upright" ? barFoot + 6 : pillTop + 50;
+  /** The comments panel shows (open sideways, an iPad): the canvas frames its boards left of it. */
   const panelShown = duo.panel && Boolean(commentsOpen || thread);
+  /** What a sheet keeps above: the bottom bar, with Comments, under horizontal bars. */
+  const sheetFoot = duo.bars === "upright" ? insets.bottom + 56 : 0;
+  /** The page is a bar item; otherwise it's a pill on the canvas (the rail open sideways, the book). */
+  const pageOnBar = duo.bars === "upright" || (!duo.panel && !split);
   const canvasInsets = useMemo(
     () =>
       standby
@@ -623,7 +640,7 @@ export default function Canvas() {
               setCommentsOpen((o) => !o);
             }}
             onBack={() => router.back()}
-            pageOnBar={duo.bars === "upright" || (!duo.panel && !split)}
+            pageOnBar={pageOnBar}
             commentsShown={Boolean(split)}
           />
         </>
@@ -637,7 +654,7 @@ export default function Canvas() {
           card={card}
           onCard={agent ? () => setCard((c) => !c) : undefined}
           page={page}
-          pageMenu={duo.panel || split === "beside" ? pageMenu : null}
+          pageMenu={pageOnBar ? null : pageMenu}
           // With the panel open the page pill keeps to the canvas left of it (the board's 6).
           area={panelShown ? { ...area, width: area.width - 344 - 10 - 10 } : area}
           top={pillTop}
@@ -781,6 +798,7 @@ export default function Canvas() {
         <Sheet
           testID="comment-sheet"
           right={insets.right}
+          foot={sheetFoot}
           onDismiss={() => {
             setPending(null);
             setSheet(0);
@@ -826,11 +844,18 @@ export default function Canvas() {
           {comments(undefined)}
         </CommentsHalf>
       ) : duo.panel && (commentsOpen || thread) ? (
-        <CommentsPanel right={insets.right}>{comments(close)}</CommentsPanel>
+        <CommentsPanel
+          right={insets.right}
+          // Under horizontal bars (an iPad), between the top bar and the bottom one.
+          {...(duo.bars === "upright" ? { top: barFoot, bottom: insets.bottom + 56 } : {})}
+        >
+          {comments(close)}
+        </CommentsPanel>
       ) : commentsOpen ? (
         <Sheet
           testID="comments-sheet"
           right={insets.right}
+          foot={sheetFoot}
           onDismiss={close}
           onHeight={setSheet}
           height={Math.min(450, H * 0.62)}
@@ -843,6 +868,7 @@ export default function Canvas() {
           <ThreadSheet
             key={thread.id}
             right={insets.right}
+            foot={sheetFoot}
             thread={thread}
             me="Y"
             file={draftsFile}

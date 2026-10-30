@@ -1,12 +1,13 @@
 import { router, Stack, useFocusEffect, useLocalSearchParams, useNavigation } from "expo-router";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
+import { Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native";
 import type { SearchBarCommands } from "react-native-screens";
 import { HeaderTitle } from "../../../components/chrome";
 import { FileCard, Marked, useMarkColor } from "../../../components/file-card";
 import { Branch, Clock, Folder, PageIcon, Search as SearchGlyph } from "../../../components/icons";
 import { MacImage } from "../../../components/preview";
 import { useFiles } from "../../../lib/catalog";
+import { designColumns } from "../../../lib/duo-layout";
 import { type PhoneFile, whereLine } from "../../../lib/files";
 import { select, tick } from "../../../lib/haptics";
 import { lately, noteSearch, type Opened } from "../../../lib/lately";
@@ -40,8 +41,10 @@ export default function Search() {
   const markColor = useMarkColor();
   const results = useMemo(() => search(files, query), [files, query]);
   const m = useMargin();
-  // The page's width less the system's rail at the side (iPhone Duo), as Designs does.
-  const cardWidth = (width - rail.left - rail.right - 2 * m - 16) / 2;
+  // The page's width less the system's rail at the side (iPhone Duo), in Designs' columns.
+  const page = width - rail.left - rail.right;
+  const columns = designColumns(page);
+  const cardWidth = (page - 2 * m - 16 * (columns - 1)) / columns;
   const label = {
     fontFamily: "Inter",
     fontWeight: "600" as const,
@@ -79,12 +82,18 @@ export default function Search() {
   const latest = useRef({ q, found });
   latest.current = { q, found };
   useFocusEffect(
-    useCallback(
-      () => () => {
+    useCallback(() => {
+      // An iPad's search field is in the header, and the tab doesn't open it as an iPhone's does:
+      // it's opened here, so choosing Search is ready to type, as it is on a phone.
+      const open =
+        Platform.OS === "ios" && Platform.isPad
+          ? setTimeout(() => bar.current?.focus(), 300)
+          : undefined;
+      return () => {
+        clearTimeout(open);
         if (latest.current.found) noteSearch(latest.current.q);
-      },
-      [],
-    ),
+      };
+    }, []),
   );
   const again = (s: string) => {
     select();

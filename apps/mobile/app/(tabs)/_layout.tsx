@@ -1,4 +1,5 @@
 import { NativeTabs } from "expo-router/native-tabs";
+import { Platform } from "react-native";
 import { holding } from "../../components/handoff";
 import { useActivityCount } from "../../lib/activity-store";
 import { select } from "../../lib/haptics";
@@ -26,6 +27,13 @@ const MARKS = {
     selected: require("../../assets/native/tab-activity-fill.png"),
   },
 };
+
+/**
+ * An iPad's tab bar is a row of names across the top, with no room for marks
+ * alone: there each tab says its name, which VoiceOver reads too (it doesn't
+ * read the trigger's label there). An iPhone's shows the marks only.
+ */
+const NAMES = Platform.OS === "ios" && Platform.isPad;
 
 /** A tab changing is felt, as a selection: each press, the current tab's again too. */
 const TAB_LISTENERS = { tabPress: select };
@@ -65,7 +73,7 @@ export default function TabsLayout() {
         disableAutomaticContentInsets
       >
         <NativeTabs.Trigger.Icon renderingMode="template" src={MARKS.designs} />
-        <NativeTabs.Trigger.Label hidden />
+        <NativeTabs.Trigger.Label hidden={!NAMES}>Designs</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger
         name="(activity)"
@@ -74,7 +82,7 @@ export default function TabsLayout() {
         disableAutomaticContentInsets
       >
         <NativeTabs.Trigger.Icon renderingMode="template" src={MARKS.activity} />
-        <NativeTabs.Trigger.Label hidden />
+        <NativeTabs.Trigger.Label hidden={!NAMES}>Activity</NativeTabs.Trigger.Label>
         {/* No badge at all with nothing new: a hidden one still draws "0". */}
         {count > 0 && (
           <NativeTabs.Trigger.Badge>{count > 99 ? "99+" : String(count)}</NativeTabs.Trigger.Badge>
@@ -90,7 +98,7 @@ export default function TabsLayout() {
         unstable_nativeProps={{ ios: { role: "search", automaticallyActivatesSearch: true } }}
       >
         <NativeTabs.Trigger.Icon renderingMode="template" src={MARKS.search} />
-        <NativeTabs.Trigger.Label hidden />
+        <NativeTabs.Trigger.Label hidden={!NAMES}>Search</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
     </NativeTabs>
   );
