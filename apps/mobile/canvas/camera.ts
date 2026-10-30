@@ -326,6 +326,10 @@ export function reveal(c: Camera, p: { x: number; y: number }, screen: Screen, m
  * Bring a board up for a comment on it, as the comment and thread sheets show it: about three
  * quarters of the screen wide, centred, its top just under the chrome, unless it's already that
  * close. Then the pin (a world point) is kept above the sheet.
+ *
+ * `held`: a comment being written where the person held. It never zooms out from what they were
+ * looking at, only in when they're too far out to read it, and then as far as the screen has room
+ * for, not the sliver over the keyboard; otherwise it just pans the pin above the sheet.
  */
 export function commentCamera(
   board: Box,
@@ -333,18 +337,21 @@ export function commentCamera(
   c: Camera,
   s: Screen,
   sheet: number,
+  held = false,
 ) {
   const above: Screen = { ...s, insets: { ...s.insets, bottom: Math.max(s.insets.bottom, sheet) } };
   // The canvas's own part of the screen: clear of a rail at the side or a half past the fold.
   const area = safeArea(s);
   // Short of room above the sheet (iPhone Duo's outer display, and folded halves), the board
-  // fits the room there rather than three quarters of the width.
-  const room = Math.max(1, s.h - above.insets.bottom - s.insets.top - COMMENT_TOP - 16);
+  // fits the room there rather than three quarters of the width. Held, the room the screen has:
+  // the keyboard and its sheet would leave a sliver, and the pin is kept above them anyway.
+  const foot = held ? s.insets.bottom : above.insets.bottom;
+  const room = Math.max(1, s.h - foot - s.insets.top - COMMENT_TOP - 16);
   const target = clampZoom(
     Math.min(1, (COMMENT_WIDTH * area.w) / board.w, Math.max(room, area.h * 0.35) / board.h),
   );
   let next = c;
-  if (c.zoom < target * 0.98 || c.zoom > target * 1.5) {
+  if (c.zoom < target * 0.98 || (!held && c.zoom > target * 1.5)) {
     next = {
       zoom: target,
       x: area.x + (area.w - board.w * target) / 2 - board.x * target,
@@ -453,4 +460,46 @@ export function labelCovers(
   return others.some(
     (o) => o.id !== ab.id && o.x < ab.x + ab.w && o.x + o.w > ab.x && o.y < ab.y && o.y + o.h > top,
   );
+}
+
+/** Boards are ever so slightly rounded: screen px, at any zoom. As desktop. */
+export const BOARD_RADIUS = 4;
+/** The ring round a working board sits this many screen px off its edge. As desktop. */
+export const RING_GAP = 4;
+/** Against the screen's edge, the ring sits this many px inside it, so none of it is lost. */
+const RING_INSET = 3;
+
+/**
+ * Where a working board's ring goes, for the board's box on screen. Each edge sits RING_GAP
+ * outside the board's until the board's edge nears the screen's (within a tenth of the screen's
+ * shorter side), then moves to RING_INSET inside it. A corner rounds with the screen's own
+ * `radius` only as both its edges reach the screen's: a board filling the screen is ringed in
+ * the screen's shape, and one zoomed past the screen on a side keeps its own small corners
+ * where it's still on screen. Corners run top left, top right, bottom right, bottom left.
+ */
+export function ringAround(b: Box, screen: Screen, radius: number) {
+  const fade = 0.1 * Math.min(screen.w, screen.h);
+  // 0 with the board's edge well inside the screen's, 1 at it or past it.
+  const near = (inside: number) => Math.min(1, Math.max(0, 1 - inside / fade));
+  const left = near(b.x);
+  const top = near(b.y);
+  const right = near(screen.w - b.x - b.w);
+  const bottom = near(screen.h - b.y - b.h);
+  const off = (k: number) => -RING_GAP + (RING_GAP + RING_INSET) * k;
+  const corner = (k: number) =>
+    BOARD_RADIUS + RING_GAP + k * Math.max(0, radius - RING_INSET - BOARD_RADIUS - RING_GAP);
+  const x = b.x + off(left);
+  const y = b.y + off(top);
+  return {
+    x,
+    y,
+    w: Math.max(0, b.x + b.w - off(right) - x),
+    h: Math.max(0, b.y + b.h - off(bottom) - y),
+    corners: [
+      corner(Math.min(top, left)),
+      corner(Math.min(top, right)),
+      corner(Math.min(bottom, right)),
+      corner(Math.min(bottom, left)),
+    ] as const,
+  };
 }
