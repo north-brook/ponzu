@@ -58,6 +58,10 @@ test("a new comment dragged to another spot takes its words with it", () => {
   moveDraft(a, b, to);
   expect(getDraft(a)).toBeUndefined();
   expect(getDraft(b)).toEqual({ file: "kettle", pin: to, text: "tighter" });
+  // Dropped back where it was, on another layer: the same key, the new layer.
+  const relayered = { ...to, nodeId: "n_lid" };
+  moveDraft(b, b, relayered);
+  expect(getDraft(b)?.pin).toEqual(relayered);
   // Nothing written at a spot, there's nothing to move.
   moveDraft(a, draftKey.comment("kettle", from), from);
   expect(getDraft(a)).toBeUndefined();

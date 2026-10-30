@@ -26,6 +26,10 @@ test("an unsent comment moved to another spot takes its words with it", () => {
   moveDraft(fromKey, toKey, to);
   expect(getDraft(fromKey)).toBeUndefined();
   expect(getDraft(toKey)).toEqual({ file, pin: to, text: "tighter gap under the title" });
+  // Put down where it was, on another layer: the same key, the new layer.
+  const relayered = { ...to, nodeId: "n_spout" };
+  moveDraft(toKey, toKey, relayered);
+  expect(getDraft(toKey)?.pin).toEqual(relayered);
   // Nothing written there, nothing to move.
   moveDraft(fromKey, draftKey.comment(file, from), from);
   expect(getDraft(fromKey)).toBeUndefined();

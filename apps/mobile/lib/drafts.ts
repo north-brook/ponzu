@@ -51,11 +51,11 @@ export function setDraft(key: string, draft: Draft) {
 
 /**
  * A new comment's draft moved to another spot: its words go with its pin, kept under the key the
- * new spot makes. As desktop's.
+ * new spot makes. Put down where it was, it still takes the layer now under it. As desktop's.
  */
 export function moveDraft(from: string, to: string, pin: NonNullable<Draft["pin"]>) {
   const d = drafts.get(from);
-  if (!d || from === to) return;
+  if (!d) return;
   drafts.delete(from);
   drafts.set(to, { ...d, pin });
   all = [...drafts];

@@ -60,11 +60,12 @@ export function setDraft(key: string, draft: Draft | null) {
 
 /**
  * A new comment's draft dragged to another spot: its words go with its pin, kept under the key
- * the new spot makes. Nothing written there yet, there's nothing to move.
+ * the new spot makes; put down where it was, it still takes the layer now under it. Nothing
+ * written there yet, there's nothing to move.
  */
 export function moveDraft(from: string, to: string, pin: DraftPin) {
   const d = drafts.get(from);
-  if (!d || from === to) return;
+  if (!d) return;
   drafts.delete(from);
   drafts.set(to, { ...d, pin });
   changed();

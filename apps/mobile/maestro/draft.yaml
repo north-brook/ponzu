@@ -25,16 +25,13 @@ tags: [dev-host]
 - tapOn:
     id: comment-input
 - inputText: "Maestro draft"
-- hideKeyboard
-# Swiped away, the words stay with a pin.
-- swipe:
-    from:
-      id: comment-sheet
-    direction: DOWN
+# Left unsent (back out, then open the design again), the words keep a pin.
+- tapOn: "Back"
 - extendedWaitUntil:
-    notVisible:
-      id: comment-sheet
+    visible:
+      id: designs
     timeout: 10000
+- openLink: ponzu://design/dev/${KETTLE}?page=Brand
 - extendedWaitUntil:
     visible: "Unsent comment"
     timeout: 10000
@@ -75,14 +72,14 @@ tags: [dev-host]
       id: comment-sheet
     timeout: 10000
 - assertVisible: "Maestro draft"
-- hideKeyboard
-- swipe:
-    from:
-      id: comment-sheet
-    direction: DOWN
+- tapOn: "Back"
 - extendedWaitUntil:
-    notVisible:
-      id: comment-sheet
+    visible:
+      id: designs
+    timeout: 10000
+- openLink: ponzu://design/dev/${KETTLE}?page=Brand
+- extendedWaitUntil:
+    visible: "Unsent comment"
     timeout: 10000
 # Discarded, no confirmation: the pin goes.
 - longPressOn: "Unsent comment"
