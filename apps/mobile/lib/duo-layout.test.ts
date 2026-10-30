@@ -1,5 +1,15 @@
 import { expect, test } from "bun:test";
-import { CREASE, designColumns, duoLayout, foldAt, hasRail } from "./duo-layout";
+import {
+  CREASE,
+  commentsButton,
+  designColumns,
+  duoLayout,
+  foldAt,
+  halves,
+  hasRail,
+  SHEET_MAX,
+  sheetMax,
+} from "./duo-layout";
 
 // iPhone Duo's windows, in points, and iPhones'.
 const outer = { width: 466, height: 678 };
@@ -57,6 +67,59 @@ test("the fold falls in the middle of the axis it divides, 24pt reserved", () =>
   expect(foldAt(innerUpright, "below")).toBe(951 / 2);
   expect(foldAt(innerSideways, "beside")).toBe(951 / 2);
   expect(CREASE * 2).toBe(24);
+});
+
+test("like a book, the halves meet at the fold: the canvas frames short of the crease", () => {
+  const { canvas, comments } = halves(innerSideways, "beside");
+  const fold = innerSideways.width / 2;
+  expect(canvas).toEqual({ left: 0, top: 0, width: fold - CREASE, height: innerSideways.height });
+  // Full bleed from the fold itself to the window's edge, under the rail: no band between.
+  expect(comments).toEqual({
+    left: fold,
+    top: 0,
+    width: innerSideways.width - fold,
+    height: innerSideways.height,
+  });
+  expect(comments.left + comments.width).toBe(innerSideways.width);
+});
+
+test("like a laptop, the comments half runs from the fold to the foot", () => {
+  const { canvas, comments } = halves(innerUpright, "below");
+  const fold = innerUpright.height / 2;
+  expect(canvas).toEqual({ left: 0, top: 0, width: innerUpright.width, height: fold - CREASE });
+  expect(comments).toEqual({
+    left: 0,
+    top: fold,
+    width: innerUpright.width,
+    height: innerUpright.height - fold,
+  });
+});
+
+test("comments' button joins Back on the rail, stays bottom right upright, and goes folded", () => {
+  expect(commentsButton(duoLayout(outer, true, false))).toBe("rail");
+  expect(commentsButton(duoLayout(innerSideways, true, false))).toBe("rail");
+  expect(commentsButton(duoLayout(innerUpright, false, false))).toBe("toolbar");
+  expect(commentsButton(duoLayout(innerSideways, true, true))).toBeNull();
+  expect(commentsButton(duoLayout(innerUpright, false, true))).toBeNull();
+  // A phone's bars are the canvas's own, not the system's.
+  expect(commentsButton(duoLayout(iphone, false, false))).toBeNull();
+});
+
+test("the comment sheet is centred and bounded only with the inner display sideways", () => {
+  expect(sheetMax(duoLayout(innerSideways, true, false))).toBe(SHEET_MAX);
+  expect(sheetMax(duoLayout(innerSideways, true, true))).toBe(SHEET_MAX);
+  // Narrower than the canvas beside the rail, wider than any iPhone's sheet.
+  expect(SHEET_MAX).toBeLessThan(innerSideways.width - 84);
+  expect(SHEET_MAX).toBeGreaterThan(iphone.width);
+  for (const layout of [
+    duoLayout(iphone, false, false),
+    duoLayout(small, false, false),
+    duoLayout(outer, true, false),
+    duoLayout(innerUpright, false, false),
+    duoLayout(innerUpright, false, true),
+  ]) {
+    expect(sheetMax(layout)).toBeUndefined();
+  }
 });
 
 test("Designs: two columns on a phone and closed, three inside", () => {

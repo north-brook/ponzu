@@ -76,7 +76,10 @@ of each part, both ways, is in `lib/morph.ts`. The sheet's own shape (its
 corners, side insets and bottom edge) follows the keyboard's frame, read
 every frame from `react-native-keyboard-controller`, so it rides the
 keyboard down and up with the system's animation, interactive dismissal
-included. Sent, a new comment's sheet leaves at once with the keyboard
+included. On iPhone Duo's inner display held sideways, too wide for a sheet
+across it, the sheet floats centred over the design at most 560pt wide
+(`SHEET_MAX` in `lib/duo-layout.ts`) and rides 8pt above the keyboard
+rather than docking on it. Sent, a new comment's sheet leaves at once with the keyboard
 rather than when the Mac answers (a reply's field empties at once); a send
 the Mac refuses brings the words back. The field and, in voice, the waveform share one glass capsule the
 buttons' height; the glyphs are Hugeicons, as everywhere in the app.

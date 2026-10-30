@@ -32,6 +32,12 @@ const KEYBOARD_CORNER = 34;
  * the sheet's bottom edge follows it down and its corners round, and as it
  * rises the sheet rides it, interactive dismissal included. Swipe down to
  * cancel, with no confirm.
+ *
+ * Given a `maxWidth` (a window too wide for a sheet across it: iPhone Duo's
+ * inner display sideways), it floats centred over the canvas at most that
+ * wide, and keeps its floating shape on the keyboard too, 8pt above it with
+ * every corner round: it no longer spans the keyboard's top, so it can't
+ * dock on it. The keyboard still carries it, frame by frame.
  */
 export function Sheet({
   children,
@@ -41,6 +47,7 @@ export function Sheet({
   testID,
   gap = 14,
   right = 0,
+  maxWidth,
   away = false,
   onAway,
 }: {
@@ -60,11 +67,16 @@ export function Sheet({
   gap?: number;
   /** Kept clear on the right: iPhone Duo's rail, where the system puts its bars. */
   right?: number;
+  /** The widest it gets, centred in what's left of `right` (lib/duo-layout.ts `sheetMax`). */
+  maxWidth?: number;
 }) {
   const { color } = useTheme();
   const { width, height: screenH } = useWindowDimensions();
   /** The bottom corners, floating: the display's less the 8pt inset. */
   const foot = concentric(width, screenH, 8);
+  /** Floats whatever the keyboard does, inset this far either side to be centred. */
+  const floats = maxWidth !== undefined;
+  const inset = floats ? Math.max(8, (width - right - maxWidth) / 2) : 0;
   // The keyboard's top, every frame on the UI thread, interactive dismissal included.
   // On iOS the provider's shared values (useReanimatedKeyboardAnimation) jump to where the
   // keyboard is going as it starts to move; onMove reports where it is, frame by frame.
@@ -130,20 +142,24 @@ export function Sheet({
   const docked = useDerivedValue(() => (full.value > 0 ? Math.min(1, lift.value / full.value) : 0));
   const style = useAnimatedStyle(() => {
     const d = docked.value;
-    const side = 8 * (1 - d);
+    const side = floats ? 8 : 8 * (1 - d);
     // Docked, the sheet runs on behind the keyboard by the keyboard's own top corner
     // (KEYBOARD_CORNER), so the keyboard's curve sits over the sheet's color, never over
     // a square corner or the canvas. It grows in with the keyboard and is gone below it.
-    const under = KEYBOARD_CORNER * d;
+    // Floating, it never docks: nothing runs under.
+    const under = floats ? 0 : KEYBOARD_CORNER * d;
+    const top = 38 - 14 * d;
+    // Floating on the keyboard, its bottom corners are its top ones, off the display's.
+    const bottom = floats ? foot + (top - foot) * d : foot * (1 - d);
     return {
-      left: side,
-      right: right + side,
+      left: floats ? inset : side,
+      right: right + (floats ? inset : side),
       // One continuous edge: 8pt off the bottom floating, the keyboard's top docked.
       bottom: side + lift.value - under,
-      borderTopLeftRadius: 38 - 14 * d,
-      borderTopRightRadius: 38 - 14 * d,
-      borderBottomLeftRadius: foot * (1 - d),
-      borderBottomRightRadius: foot * (1 - d),
+      borderTopLeftRadius: top,
+      borderTopRightRadius: top,
+      borderBottomLeftRadius: bottom,
+      borderBottomRightRadius: bottom,
       paddingHorizontal: 20 - 4 * d,
       paddingTop: 10 - 2 * d,
       paddingBottom: 40 - 28 * d + under,
@@ -156,8 +172,8 @@ export function Sheet({
   const report = (px: number) => onHeight?.(px);
   useDerivedValue(() => {
     // The top of the sheet from the bottom of the screen: its bottom edge plus its height.
-    const under = KEYBOARD_CORNER * docked.value;
-    const rise = 8 * (1 - docked.value) + lift.value - under + h.value;
+    const under = floats ? 0 : KEYBOARD_CORNER * docked.value;
+    const rise = (floats ? 8 : 8 * (1 - docked.value)) + lift.value - under + h.value;
     runOnJS(report)(Math.round(Math.max(0, rise)));
   });
 
