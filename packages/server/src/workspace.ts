@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readdir } from "node:fs/promises";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import {
+  type Capture,
   type ColorScheme,
   type Doc,
   designLink,
@@ -77,6 +78,7 @@ export class LocalWorkspace implements Workspace {
   private entries = new Map<string, Entry>();
   private opening = new Map<string, Promise<Entry>>();
   private focusListeners = new Set<(key: string, artboard: string) => void>();
+  private captureListeners = new Set<(key: string, capture: Capture) => void>();
   private openListeners = new Set<(key: string) => void>();
   private createListeners = new Set<(key: string) => void>();
   private previewTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -112,6 +114,10 @@ export class LocalWorkspace implements Workspace {
     for (const l of this.focusListeners) l(key, artboard);
   }
 
+  capture(key: string, capture: Capture): void {
+    for (const l of this.captureListeners) l(key, capture);
+  }
+
   link(key: string, opts: { artboard?: string; origin?: string } = {}): string | undefined {
     if (!this.opensIn) return undefined;
     if (this.opensIn === "app") return designLink(key, { artboard: opts.artboard, mac: this.mac });
@@ -121,6 +127,11 @@ export class LocalWorkspace implements Workspace {
   onFocus(fn: (key: string, artboard: string) => void): () => void {
     this.focusListeners.add(fn);
     return () => this.focusListeners.delete(fn);
+  }
+
+  onCapture(fn: (key: string, capture: Capture) => void): () => void {
+    this.captureListeners.add(fn);
+    return () => this.captureListeners.delete(fn);
   }
 
   onOpen(fn: (key: string) => void): () => void {

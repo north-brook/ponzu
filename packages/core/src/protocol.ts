@@ -82,6 +82,21 @@ export type PonzuEvent =
 
 export type EventType = PonzuEvent["type"];
 
+/**
+ * An agent took a screenshot of an artboard, or recorded it: the canvas flashes
+ * on it, like a camera, so the person sees the agent look.
+ */
+export interface Capture {
+  /** Unique, so each plays once. */
+  id: string;
+  artboard: string;
+  kind: "screenshot" | "record";
+  /** A recording's frames, in order, as data: URLs. */
+  frames?: string[];
+  /** The area the frames show, in the artboard's px, when it's a node rather than the board. */
+  box?: { x: number; y: number; width: number; height: number };
+}
+
 /** Server → studio. */
 export type ServerMessage =
   | {
@@ -97,6 +112,7 @@ export type ServerMessage =
   | { t: "reset"; doc: Doc; seq: number }
   | { t: "presence"; presence: Presence[] }
   | { t: "focus"; artboard: string; page: string }
+  | { t: "capture"; capture: Capture }
   | { t: "error"; message: string; req?: number }
   | { t: "ack"; req: number };
 
