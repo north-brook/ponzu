@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.72.0](https://github.com/north-brook/ponzu/compare/v1.71.2...v1.72.0) (2026-10-30)
+
+
+### Features
+
+* **mobile:** pan the canvas smoothly and polish iphone duo's poses ([#343](https://github.com/north-brook/ponzu/issues/343)) ([90bac03](https://github.com/north-brook/ponzu/commit/90bac034e64285173adafd072acd5e1b3d6c3704))
+
 ## [1.71.2](https://github.com/north-brook/ponzu/compare/v1.71.1...v1.71.2) (2026-10-29)
 
 
