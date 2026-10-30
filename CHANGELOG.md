@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.75.1](https://github.com/north-brook/ponzu/compare/v1.75.0...v1.75.1) (2026-10-30)
+
+
+### Bug Fixes
+
+* **mobile:** frame working boards, send comments in one tap on iphone duo, keep zoom when commenting ([#359](https://github.com/north-brook/ponzu/issues/359)) ([5b3b17b](https://github.com/north-brook/ponzu/commit/5b3b17b7e4537ded5940ad47585591078ece29de))
+
 ## [1.75.0](https://github.com/north-brook/ponzu/compare/v1.74.0...v1.75.0) (2026-10-30)
 
 
