@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { Canvas } from "./Canvas.tsx";
 import { ThreadCard } from "./Comments.tsx";
 import { MemorySource } from "./connection.ts";
-import { type DraftPin, draftKey, getDraft, setDraft, unsent } from "./drafts.ts";
+import { type DraftPin, draftKey, getDraft, moveDraft, setDraft, unsent } from "./drafts.ts";
 
 function doc(): Doc {
   const d = emptyDoc("Kettle");
@@ -37,7 +37,9 @@ test("a new comment left unsent keeps its pin, until its words are gone", () => 
   const key = draftKey.comment(file, pin);
   expect(renderToStaticMarkup(<Canvas source={source} />)).not.toContain("Unsent comment");
   setDraft(key, { file, pin, text: "tighter" });
-  expect(renderToStaticMarkup(<Canvas source={source} />)).toContain('title="Unsent comment"');
+  expect(renderToStaticMarkup(<Canvas source={source} />)).toContain(
+    'title="Unsent comment · Drag to move"',
+  );
   // Read-only, there's nothing to send it with.
   expect(renderToStaticMarkup(<Canvas source={source} readOnly />)).not.toContain("Unsent comment");
   // Another design's draft isn't this one's.
@@ -45,6 +47,25 @@ test("a new comment left unsent keeps its pin, until its words are gone", () => 
   expect(renderToStaticMarkup(<Canvas source={source} />)).not.toContain("Unsent comment");
   setDraft(key, null);
   expect(getDraft(key)).toBeUndefined();
+});
+
+test("a new comment dragged to another spot takes its words with it", () => {
+  const from: DraftPin = { artboardId: "ab_a", pageId: "pg_a", x: 40, y: 60 };
+  const to: DraftPin = { artboardId: "ab_a", pageId: "pg_a", nodeId: "n_b", x: 90, y: 20 };
+  const a = draftKey.comment("kettle", from);
+  const b = draftKey.comment("kettle", to);
+  setDraft(a, { file: "kettle", pin: from, text: "tighter" });
+  moveDraft(a, b, to);
+  expect(getDraft(a)).toBeUndefined();
+  expect(getDraft(b)).toEqual({ file: "kettle", pin: to, text: "tighter" });
+  // Dropped back where it was, on another layer: the same key, the new layer.
+  const relayered = { ...to, nodeId: "n_lid" };
+  moveDraft(b, b, relayered);
+  expect(getDraft(b)?.pin).toEqual(relayered);
+  // Nothing written at a spot, there's nothing to move.
+  moveDraft(a, draftKey.comment("kettle", from), from);
+  expect(getDraft(a)).toBeUndefined();
+  setDraft(b, null);
 });
 
 test("a design on another Mac at the same path keeps its own drafts", () => {
@@ -55,7 +76,9 @@ test("a design on another Mac at the same path keeps its own drafts", () => {
   const pin: DraftPin = { artboardId: "ab_a", pageId: "pg_a", x: 40, y: 60 };
   const key = draftKey.comment(here.assetBase!, pin);
   setDraft(key, { file: here.assetBase!, pin, text: "tighter" });
-  expect(renderToStaticMarkup(<Canvas source={here} />)).toContain('title="Unsent comment"');
+  expect(renderToStaticMarkup(<Canvas source={here} />)).toContain(
+    'title="Unsent comment · Drag to move"',
+  );
   expect(renderToStaticMarkup(<Canvas source={there} />)).not.toContain("Unsent comment");
   setDraft(key, null);
 });

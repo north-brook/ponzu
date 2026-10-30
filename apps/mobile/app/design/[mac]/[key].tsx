@@ -25,6 +25,7 @@ import { type CanvasHandle, CanvasView } from "../../../components/canvas-view";
 import { BarButton } from "../../../components/chrome";
 import { Comments, openThreads } from "../../../components/comments";
 import { Composer, initialMode, type Mode } from "../../../components/composer";
+import { DraftSheet } from "../../../components/draft-sheet";
 import {
   CommentsHalf,
   CommentsPanel,
@@ -34,17 +35,25 @@ import {
   useOpening,
 } from "../../../components/duo-chrome";
 import { Glass, GlassGroup } from "../../../components/glass";
-import { AgentAvatar, AgentMark, Back, FileIcon, PageIcon } from "../../../components/icons";
+import { AgentAvatar, AgentMark, Back, Check, FileIcon, PageIcon } from "../../../components/icons";
 import { Sheet } from "../../../components/sheet";
 import { Shimmer } from "../../../components/shimmer";
 import { ThreadSheet } from "../../../components/thread-sheet";
 import { useFile } from "../../../lib/catalog";
 import { useMacChanges } from "../../../lib/changes";
 import { useDesignSession, useSessionState } from "../../../lib/design";
-import { draftFile, draftKey, getDraft, unsent, useDrafts } from "../../../lib/drafts";
+import {
+  draftFile,
+  draftKey,
+  getDraft,
+  moveDraft,
+  setDraft,
+  unsent,
+  useDrafts,
+} from "../../../lib/drafts";
 import { useDuoLayout } from "../../../lib/duo";
 import { commentsButton, halves, sheetMax } from "../../../lib/duo-layout";
-import { select, success, tick } from "../../../lib/haptics";
+import { select, success, thud, tick } from "../../../lib/haptics";
 import { baseUrl } from "../../../lib/mac";
 import { findMac } from "../../../lib/macs";
 import { pageIconImage } from "../../../lib/page-icons";
@@ -53,7 +62,7 @@ import { Juice } from "../../../lib/slice";
 import { FOLLOW, standbyPath } from "../../../lib/standby";
 import { track } from "../../../lib/telemetry";
 import { useTheme } from "../../../lib/theme";
-import { EASE_OUT } from "../../../lib/tokens";
+import { brand, EASE_OUT } from "../../../lib/tokens";
 import { StandbyAwake, StillSensor, useFollow, useStandby } from "../../../lib/use-standby";
 import { useWindowInsets } from "../../../lib/window-insets";
 
@@ -102,6 +111,10 @@ export default function Canvas() {
 
   const [pageId, setPageId] = useState<string | null>(null);
   const [pending, setPending] = useState<(PendingPin & { nodeId?: string }) | null>(null);
+  /** An unsent comment's pin, held: its sheet of Open, Move and Discard draft, by its draft's key. */
+  const [holding, setHolding] = useState<string | null>(null);
+  /** An unsent comment's pin being moved, by its draft's key: it holds still, the design moves. */
+  const [movingDraft, setMovingDraft] = useState<string | null>(null);
   /** A sent comment's sheet on its way out: whose pin, and whether the send and the slide are done. */
   const leave = useRef<{ pin: PendingPin; sent: boolean; away: boolean } | null>(null);
   const [leaving, setLeaving] = useState(false);
@@ -234,6 +247,21 @@ export default function Canvas() {
       canvas.current?.post({ t: "follow", artboardId: following, ms: still ? 0 : FOLLOW.move });
   }, [standby, following]);
 
+  /** A comment left unsent: its sheet comes back with its words, as a long press would. */
+  const openDraft = (key: string) => {
+    const pin = getDraft(key)?.pin;
+    if (!pin) return;
+    tick();
+    setThreadId(null);
+    setCard(false);
+    setCommentsOpen(false);
+    leave.current = null;
+    setLeaving(false);
+    setPending(pin);
+  };
+  // Another page: a pin being moved stays where it was.
+  useEffect(() => setMovingDraft(null), [page?.id]);
+
   /** The board focused as the canvas last said: a haptic marks going into or out of focus, not a gesture settling. */
   const wasFocused = useRef<string | null>(null);
   const onMessage = useCallback((msg: FromCanvas) => {
@@ -265,17 +293,28 @@ export default function Canvas() {
         setPending(null);
         setThreadId(msg.id);
         break;
-      case "openUnsent": {
-        // A comment left unsent: its sheet comes back with its words, as a long press would.
-        const pin = getDraft(msg.key)?.pin;
-        if (!pin) break;
+      case "openUnsent":
+        openDraft(msg.key);
+        break;
+      case "holdUnsent":
+        // Its sheet takes the place of whatever was up, as a long press's composer does.
         tick();
         setThreadId(null);
         setCard(false);
         setCommentsOpen(false);
-        leave.current = null;
-        setLeaving(false);
-        setPending(pin);
+        setPending(null);
+        setHolding(msg.key);
+        break;
+      case "moved": {
+        // The draft's words go with its pin, kept under the key its new spot makes.
+        const to = {
+          pageId: msg.pageId,
+          ...(msg.artboardId ? { artboardId: msg.artboardId } : {}),
+          ...(msg.nodeId ? { nodeId: msg.nodeId } : {}),
+          x: msg.x,
+          y: msg.y,
+        };
+        moveDraft(msg.key, draftKey.comment(draftFile(params.mac, params.key), to), to);
         break;
       }
       case "page":
@@ -583,6 +622,7 @@ export default function Canvas() {
           unsent={unsentPins}
           writing={writingIds}
           thread={threadId}
+          moving={movingDraft}
           onMessage={onMessage}
           page={asked}
           standby={standby}
@@ -787,7 +827,7 @@ export default function Canvas() {
       {card && agent && doc && (
         <SessionCard presence={agent} top={insets.top + 58} doc={doc} file={params.key} />
       )}
-      {hint && !standby && (
+      {hint && !standby && !movingDraft && (
         <Hint
           // Over the design's part: folded, its half, never across the fold.
           bottom={split === "below" ? H - area.height + 16 : Math.max(34, insets.bottom)}
@@ -834,6 +874,47 @@ export default function Canvas() {
             <Text style={{ fontFamily: "Inter", fontSize: 13, color: color.muted }}>{error}</Text>
           )}
         </Sheet>
+      )}
+      {holding &&
+        (() => {
+          const d = getDraft(holding);
+          if (!d) return null;
+          return (
+            <DraftSheet
+              text={d.text}
+              right={split === "beside" ? W - area.width : insets.right}
+              maxWidth={sheetMax(duo, W)}
+              bottomBar={sheetFoot}
+              onOpen={() => {
+                setHolding(null);
+                openDraft(holding);
+              }}
+              onMove={() => {
+                select();
+                setHolding(null);
+                setMovingDraft(holding);
+              }}
+              onDiscard={() => {
+                thud();
+                setDraft(holding, { ...d, text: "" });
+                setHolding(null);
+              }}
+              onDismiss={() => setHolding(null)}
+            />
+          );
+        })()}
+      {movingDraft && !standby && (
+        <MoveBar
+          key={movingDraft}
+          bottom={split === "below" ? H - area.height + 16 : Math.max(34, insets.bottom)}
+          left={area.left}
+          width={area.width}
+          onDone={() => {
+            tick();
+            canvas.current?.post({ t: "place" });
+            setMovingDraft(null);
+          }}
+        />
       )}
       {/*
         Comments, one surface in every pose: the list of this page's open threads, or a thread
@@ -992,6 +1073,102 @@ function Hint({
         </Animated.Text>
       </Glass>
     </Animated.View>
+  );
+}
+
+/**
+ * Moving an unsent comment's pin: "Move the design under the pin" rises in where the canvas's
+ * first hint does, holds, and gives way to Done, which puts the pin down on the layer under it.
+ */
+function MoveBar({
+  bottom,
+  left,
+  width,
+  onDone,
+}: {
+  bottom: number;
+  /** The canvas's part of the window, which it's centred in. */
+  left: number;
+  width: number;
+  onDone: () => void;
+}) {
+  const { color } = useTheme();
+  const t = useSharedValue(0);
+  const [shown, setShown] = useState(true);
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    const off = setTimeout(() => setShown(false), 300 + 1_500);
+    t.value = withSequence(
+      withTiming(1, { duration: 300, easing: ease }),
+      withDelay(
+        1_500,
+        withTiming(0, { duration: 250, easing: ease }, (end) => {
+          if (end) scheduleOnRN(setDone, true);
+        }),
+      ),
+    );
+    return () => clearTimeout(off);
+  }, []);
+  const move = useAnimatedStyle(() => ({
+    transform: [{ translateY: 12 * (1 - t.value) }, { scale: 0.96 + 0.04 * t.value }],
+  }));
+  const words = useAnimatedStyle(() => ({ opacity: t.value }));
+  return (
+    <View
+      pointerEvents="box-none"
+      style={{ position: "absolute", bottom, left, width, alignItems: "center", zIndex: 8 }}
+    >
+      {done ? (
+        <Animated.View entering={ZoomIn.duration(220)}>
+          <Pressable
+            onPress={onDone}
+            accessibilityRole="button"
+            accessibilityLabel="Done"
+            testID="move-done"
+            style={({ pressed }) => ({
+              height: 48,
+              paddingLeft: 20,
+              paddingRight: 24,
+              borderRadius: 999,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 8,
+              backgroundColor: brand.yuzu,
+              boxShadow: "0 4px 14px rgba(0,0,0,0.12)",
+              opacity: pressed ? 0.85 : 1,
+            })}
+          >
+            <Check size={18} color={brand.ink} />
+            <Text
+              style={{ fontFamily: "Inter", fontWeight: "600", fontSize: 15, color: brand.ink }}
+            >
+              Done
+            </Text>
+          </Pressable>
+        </Animated.View>
+      ) : (
+        <Animated.View pointerEvents="none" testID="move-hint" style={move}>
+          <Glass
+            shown={shown}
+            style={{
+              height: 32,
+              paddingHorizontal: 14,
+              flexDirection: "row",
+              alignItems: "center",
+            }}
+          >
+            <Animated.Text
+              style={[
+                { fontFamily: "Inter", fontWeight: "500", fontSize: 13, color: color.ink },
+                words,
+              ]}
+            >
+              Move the design under the pin
+            </Animated.Text>
+          </Glass>
+        </Animated.View>
+      )}
+    </View>
   );
 }
 

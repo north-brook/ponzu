@@ -11,3 +11,4 @@ executionOrder:
     - search
     - comment
     - comment-modes
+    - draft

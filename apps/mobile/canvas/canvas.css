@@ -11,6 +11,8 @@
   --ink: #111110;
   --c-surface: #ffffff;
   --c-surface-ink: #111110;
+  /* A pale yuzu: an unsent comment's pin, as the app's pinSoft (lib/tokens.ts). */
+  --c-pin-soft: #fff4d1;
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
   color-scheme: light;
 }
@@ -21,6 +23,7 @@
   --c-board: 0 0 0 1px rgba(255, 255, 255, 0.06);
   --c-surface: #1b1b1a;
   --c-surface-ink: #f4f3ef;
+  --c-pin-soft: #2e2a1c;
   color-scheme: dark;
 }
 
@@ -141,17 +144,37 @@ body {
   scale: 1.12;
 }
 
-/* A thread with a reply left unsent: ringed, dashed, as an unsent comment's pin is. */
-.pin.writing {
-  outline: 1.5px dashed var(--yuzu);
-  outline-offset: 2px;
+/*
+ * A new comment left unsent: pale yuzu ringed in yuzu, with a pencil (a thread with a reply left
+ * unsent has the pencil on its own yuzu), so it reads as yours and unfinished. A tap goes on with it.
+ */
+.pin.unsent {
+  background: var(--c-pin-soft);
+  color: var(--c-surface-ink);
+  box-shadow:
+    0 0 0 1.5px var(--yuzu),
+    0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
-/* A new comment left unsent: hollow, so it doesn't read as a thread, and a tap goes on with it. */
-.pin.unsent {
-  background: var(--c-surface);
-  color: var(--c-surface-ink);
-  outline: 1.5px dashed var(--yuzu);
+/*
+ * A pin being moved: lifted, holding still on screen over the design moving under it. Not a
+ * target itself, so what's under it is what it lands on.
+ */
+.pin.held {
+  scale: 1.12;
+  pointer-events: none;
+  box-shadow:
+    0 0 0 1.5px var(--yuzu),
+    0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+/* The layer under a pin being moved: where it lands. */
+.target {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1.5px var(--yuzu);
 }
 
 /*
