@@ -91,10 +91,11 @@ export default function Page() {
           <p>
             It sends the same kind of pseudonymous usage data as the Mac app (the app opening, a Mac
             paired, a design opened, a comment left with no comment text, the Activity tab opened,
-            an agent’s link opened). It decides from the Macs it has heard from: it sends only when
-            they all have telemetry on, and stops as soon as it hears from one that has it off.
-            Events from before any Mac answers wait until one does. App updates come from Expo,
-            which delivers them.
+            an agent’s link opened), and, for one pan or pinch in twenty, how smoothly the canvas
+            moved: frame timings and how many boards the page has, nothing of the design. It decides
+            from the Macs it has heard from: it sends only when they all have telemetry on, and
+            stops as soon as it hears from one that has it off. Events from before any Mac answers
+            wait until one does. App updates come from Expo, which delivers them.
           </p>
         </Section>
 

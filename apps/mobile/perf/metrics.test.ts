@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { cameraMoves, cpuTime, frames, settle, stages } from "./metrics.ts";
+import { cameraMoves, cpuTime, frames, gesture, settle, stages } from "./metrics.ts";
 
 describe("frames", () => {
   test("fps and the longest gap", () => {
@@ -25,6 +25,28 @@ describe("cameraMoves", () => {
 
   test("no movement reads as none", () => {
     expect(cameraMoves([5], [[0, 100]])).toEqual({ movesPerS: 0, maxGapMs: 0 });
+  });
+});
+
+describe("gesture", () => {
+  test("from the touch to the last move: the still frames after it, at rest, aren't counted", () => {
+    // Touched at 0; frames every 16 ms, one held at 64; the camera still from 96.
+    const t = [8, 24, 40, 56, 88, 104, 120, 136];
+    const moves = [24, 40, 56, 88];
+    expect(gesture(t, moves, 0)).toEqual({
+      ms: 88,
+      fps: 50,
+      p95: 32,
+      max: 32,
+      jank: 0,
+      moves: 4,
+      movesPerS: 46.9,
+      maxGapMs: 32,
+    });
+  });
+
+  test("a touch that never moved the camera", () => {
+    expect(gesture([8, 24], [], 0)).toMatchObject({ ms: 0, moves: 0, movesPerS: 0 });
   });
 });
 

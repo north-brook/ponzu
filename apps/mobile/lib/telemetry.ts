@@ -1,4 +1,5 @@
 import PostHog from "posthog-react-native";
+import type { GesturePerf } from "../canvas/protocol";
 import type { MacInfo } from "./mac";
 import { cachedInfos } from "./macs";
 import { queryClient } from "./query";
@@ -18,10 +19,15 @@ export type Event =
   | ["canvas opened", Record<string, never>?]
   | ["comment left", { reply: boolean; mode: "voice" | "type" }]
   | ["activity opened", Record<string, never>?]
-  | ["link opened", { kind: "design" | "unpaired" | "missing" | "invalid" }];
+  | ["link opened", { kind: "design" | "unpaired" | "missing" | "invalid" }]
+  /** A sample of pans and pinches: how the canvas's frames kept up (lib/canvas-perf.ts). */
+  | ["canvas gesture", GesturePerf];
 
 const KEY = process.env.EXPO_PUBLIC_POSTHOG_KEY;
 const HOST = process.env.EXPO_PUBLIC_POSTHOG_HOST ?? "https://us.i.posthog.com";
+
+/** Whether this build could send anything: production, with the key. */
+export const canTrack = Boolean(KEY);
 
 let client: PostHog | null = null;
 let owner: string | null = null;

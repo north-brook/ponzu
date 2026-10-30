@@ -62,6 +62,10 @@ export let state: CanvasState = {
   radius: 55,
 };
 
+/** The share of gestures the canvas measures (probe.ts), as the app asked. */
+let rate = 0;
+export const probeRate = () => rate;
+
 /** An agent's work develops onto the canvas, as on desktop. One per open design. */
 export let arrivals = new Arrivals();
 
@@ -141,6 +145,9 @@ export function receive(msg: ToCanvas) {
       break;
     case "page":
       set({ pageId: msg.pageId });
+      break;
+    case "probe":
+      rate = msg.rate;
       break;
     case "insets":
       set({
