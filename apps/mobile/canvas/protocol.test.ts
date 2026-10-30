@@ -38,6 +38,24 @@ test("a measured gesture arrives whole, and the ask for it goes in as a script",
   );
 });
 
+test("an unsent comment's pin held, and where it landed once moved, arrive whole", () => {
+  const hold = { t: "holdUnsent", key: "studio\0/k.design\0pin:ab:4:8" } as const;
+  expect(parseFromCanvas(JSON.stringify(hold))).toEqual(hold);
+  const moved = {
+    t: "moved",
+    key: hold.key,
+    pageId: "pg",
+    artboardId: "ab_2",
+    nodeId: "n_lid",
+    x: 30,
+    y: 12,
+  } as const;
+  expect(parseFromCanvas(JSON.stringify(moved))).toEqual(moved);
+  expect(toCanvasScript({ t: "place" })).toBe(
+    'window.__ponzuCanvas&&window.__ponzuCanvas.receive({"t":"place"});true;',
+  );
+});
+
 test("anything else isn't ours", () => {
   expect(parseFromCanvas("not json")).toBeNull();
   expect(parseFromCanvas("42")).toBeNull();

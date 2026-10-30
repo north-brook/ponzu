@@ -58,6 +58,19 @@ export function setDraft(key: string, draft: Draft | null) {
   changed();
 }
 
+/**
+ * A new comment's draft dragged to another spot: its words go with its pin, kept under the key
+ * the new spot makes; put down where it was, it still takes the layer now under it. Nothing
+ * written there yet, there's nothing to move.
+ */
+export function moveDraft(from: string, to: string, pin: DraftPin) {
+  const d = drafts.get(from);
+  if (!d) return;
+  drafts.delete(from);
+  drafts.set(to, { ...d, pin });
+  changed();
+}
+
 /** Whether a draft holds anything worth keeping a place for. */
 export function unsent(d: Draft): boolean {
   return d.text.trim().length > 0;

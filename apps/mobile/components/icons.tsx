@@ -8,6 +8,7 @@ import {
   Clock01Icon,
   Comment01Icon,
   ComputerIcon,
+  Delete02Icon,
   File01Icon,
   Folder01Icon,
   FolderGitIcon,
@@ -18,6 +19,7 @@ import {
   Mic01Icon,
   MicOff01Icon,
   Moon02Icon,
+  MoveIcon,
   Notification01Icon,
   Notification03Icon,
   QrCodeIcon,
@@ -66,6 +68,8 @@ export const ICONS = {
   send: ArrowUp02Icon,
   file: File01Icon,
   comment: Comment01Icon,
+  move: MoveIcon,
+  trash: Delete02Icon,
   /** resolved */
   done: CheckmarkCircle01Icon,
   inbox: InboxIcon,
@@ -103,6 +107,8 @@ export const Keyboard = icon(ICONS.keyboard, 20, 1.8);
 export const Send = icon(ICONS.send, 20, 2.4);
 export const FileIcon = icon(ICONS.file, 16, 1.7);
 export const CommentIcon = icon(ICONS.comment, 20, 1.8);
+export const Move = icon(ICONS.move, 20, 1.8);
+export const Trash = icon(ICONS.trash, 20, 1.8);
 export const Done = icon(ICONS.done, 28, 1.6);
 export const Inbox = icon(ICONS.inbox, 17, 1.7);
 export const Quiet = icon(ICONS.quiet, 28, 1.6);

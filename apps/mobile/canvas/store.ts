@@ -26,6 +26,10 @@ export interface CanvasState {
   unsent: (PendingPin & { key: string })[];
   /** Threads with a reply left unsent. */
   writing: string[];
+  /** The unsent comment whose pin is being moved, by its draft's key. */
+  moving: string | null;
+  /** Counts `place` asks: done moving. */
+  place: number;
   thread: string | null;
   /** The last focus the app asked for; `n` tells two asks for the same board apart. */
   focus: { id: string | null; n: number } | null;
@@ -51,6 +55,8 @@ export let state: CanvasState = {
   pending: null,
   unsent: [],
   writing: [],
+  moving: null,
+  place: 0,
   thread: null,
   focus: null,
   standby: false,
@@ -81,6 +87,14 @@ export function subscribe(l: () => void) {
 
 export function getState() {
   return state;
+}
+
+/**
+ * An unsent comment's pin, moved: drawn at its new spot at once, before the app's `unsent` (with
+ * the draft's new key) catches up.
+ */
+export function placeUnsent(key: string, pin: PendingPin) {
+  set({ unsent: state.unsent.map((u) => (u.key === key ? { ...pin, key } : u)) });
 }
 
 /** The canvas changed page itself. */
@@ -129,6 +143,12 @@ export function receive(msg: ToCanvas) {
       break;
     case "unsent":
       set({ unsent: msg.pins, writing: msg.threads ?? [] });
+      break;
+    case "move":
+      set({ moving: msg.key });
+      break;
+    case "place":
+      set({ place: state.place + 1 });
       break;
     case "thread":
       set({ thread: msg.id });

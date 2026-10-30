@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.76.0](https://github.com/north-brook/ponzu/compare/v1.75.1...v1.76.0) (2026-10-30)
+
+
+### Features
+
+* drag and discard draft comments ([#362](https://github.com/north-brook/ponzu/issues/362)) ([1da975a](https://github.com/north-brook/ponzu/commit/1da975a8eae1668cd5160c803e20778751a40a7c))
+
 ## [1.75.1](https://github.com/north-brook/ponzu/compare/v1.75.0...v1.75.1) (2026-10-30)
 
 

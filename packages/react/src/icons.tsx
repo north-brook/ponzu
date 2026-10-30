@@ -1,6 +1,6 @@
 export { type IconName, Icons } from "./icon-names.ts";
 
-import { File01Icon } from "@hugeicons/core-free-icons";
+import { Edit03Icon, File01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { type IconName, Icons } from "./icon-names.ts";
 import { SLICE, SLICE_STROKE } from "./slice.ts";
@@ -18,6 +18,14 @@ export function Icon({
 }) {
   const icon = Icons[name as IconName] ?? File01Icon;
   return <HugeiconsIcon icon={icon} size={size} strokeWidth={strokeWidth} className={className} />;
+}
+
+/**
+ * The pencil on a comment being written: an unsent comment's pin, and a thread's while a reply to
+ * it is unsent. Not one of Icons, which a page can take: the iPhone would need its image too.
+ */
+export function Pencil({ size = 12 }: { size?: number }) {
+  return <HugeiconsIcon icon={Edit03Icon} size={size} strokeWidth={2} />;
 }
 
 /** The Ponzu slice, in one color: ink, or paper on dark. `color` overrides both. */
