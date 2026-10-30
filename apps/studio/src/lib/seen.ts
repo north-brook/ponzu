@@ -19,11 +19,16 @@ export function loadSeen(): Seen {
   }
 }
 
-/** Kept with what another window saved since: each design at the later of the two. */
+/**
+ * Kept with what another window saved since: each design at the later of the two. Storage
+ * that's full or unavailable only loses the dots' memory, so it never stops the app.
+ */
 export function saveSeen(seen: Seen) {
   const saved = loadSeen();
   for (const [id, at] of Object.entries(seen)) saved[id] = Math.max(saved[id] ?? 0, at);
-  localStorage.setItem(KEY, JSON.stringify(saved));
+  try {
+    localStorage.setItem(KEY, JSON.stringify(saved));
+  } catch {}
 }
 
 /**

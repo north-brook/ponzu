@@ -15,6 +15,11 @@ tags: [dev-host]
     visible:
       id: search-before
     timeout: 10000
+# The field focuses itself just after the tab opens: typing waits for it.
+- extendedWaitUntil:
+    visible:
+      focused: true
+    timeout: 10000
 - inputText: "brand"
 - extendedWaitUntil:
     visible:
