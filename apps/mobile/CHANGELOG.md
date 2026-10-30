@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/north-brook/ponzu/compare/mobile-v0.8.0...mobile-v0.8.1) (2026-10-30)
+
+
+### Bug Fixes
+
+* **mobile:** keep designs clear of the rail on the left of split view ([#349](https://github.com/north-brook/ponzu/issues/349)) ([c37083d](https://github.com/north-brook/ponzu/commit/c37083d3e125ce699100e311219382783891aa00))
+
 ## [0.8.0](https://github.com/north-brook/ponzu/compare/mobile-v0.7.0...mobile-v0.8.0) (2026-10-30)
 
 
