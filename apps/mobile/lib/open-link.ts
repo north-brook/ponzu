@@ -2,12 +2,13 @@ import { designFromParams } from "@ponzu/core";
 import type { Mac } from "./mac";
 
 /**
- * An agent's link to a design, `ponzu://open?mac=<name>&file=<path>.design&artboard=<id>`, as the
- * Mac app takes it (@ponzu/core's appLink, which ponzu.design/local hands on), read on the phone.
- * Pure, so tests run without React Native.
+ * An agent's link to a design,
+ * `ponzu://open?mac=<name>&file=<path>.design&page=<id>&artboard=<id>`, as the Mac app takes it
+ * (@ponzu/core's appLink, which ponzu.design/local hands on), read on the phone. Pure, so tests run
+ * without React Native.
  */
 export type OpenTarget =
-  | { kind: "design"; mac: string; key: string; artboard?: string }
+  | { kind: "design"; mac: string; key: string; page?: string; artboard?: string }
   /** The link's Mac isn't one this phone has paired. */
   | { kind: "unpaired"; mac: string }
   /** No paired Mac has it: a link without a Mac, and no catalog lists its path. */
@@ -31,7 +32,10 @@ export function openTarget(
     return typeof v === "string" ? v : null;
   });
   if (!link) return { kind: "invalid" };
-  const at = link.artboard ? { artboard: link.artboard } : {};
+  const at = {
+    ...(link.page ? { page: link.page } : {}),
+    ...(link.artboard ? { artboard: link.artboard } : {}),
+  };
   if (link.mac) {
     const mac = macs.find((m) => m.dns.split(".")[0]!.toLowerCase() === link.mac);
     return mac

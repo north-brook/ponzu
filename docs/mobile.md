@@ -187,8 +187,8 @@ Macs from it. Screens open by URL, with `xcrun simctl openurl booted
 ponzu://<route>`: `designs`, `search?q=kettle`, `connect`,
 `connect/scan`, `tailscale`, `asleep`, `pair?host=<name>&v=1`, and a design
 with `design/<mac id>/<encoded key>?page=App` (`thread=<id>` opens a thread,
-`artboard=<id>` focuses a frame). In development a design also takes
-`comment=<artboard>` (opens a new comment's sheet on that board) and
+`artboard=<id>` focuses a frame; with `page` too, only when it's on that
+page). In development a design also takes `comment=<artboard>` (opens a new comment's sheet on that board) and
 `uncomment=<text>` (deletes your threads that start with it). `dev?forget=all` forgets
 every Mac, for a first launch; `forget=dev` or `forget=<id>,<id>` forgets
 those.

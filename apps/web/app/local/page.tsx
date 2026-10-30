@@ -4,7 +4,8 @@ import { OpenDesign } from "./open-design";
 
 /*
  * Where an agent's link to a design on the person's Macs lands:
- * https://ponzu.design/local#mac=<name>&file=<path>&artboard=<id>, beside /gh for one on GitHub.
+ * https://ponzu.design/local#mac=<name>&file=<path>&page=<id>&artboard=<id>, beside /gh for one on
+ * GitHub.
  * Chats drop ponzu:// links, so agents hand out this page, which passes the design on to the Mac
  * or iPhone app, or offers the app. Links from before it was /local come through /open's redirect.
  * As designed in .context/open-link.design.

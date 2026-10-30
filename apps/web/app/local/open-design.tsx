@@ -23,7 +23,9 @@ type State = "opening" | "opened" | "missing" | "invalid";
 function linkFromHash(hash: string): string | null {
   const raw = `ponzu://open?${hash.replace(/^#/, "")}`;
   const design = parseDesignLink(raw);
-  return design ? appLink(design.path, { artboard: design.artboard, mac: design.mac }) : null;
+  return design
+    ? appLink(design.path, { page: design.page, artboard: design.artboard, mac: design.mac })
+    : null;
 }
 
 export function OpenDesign() {

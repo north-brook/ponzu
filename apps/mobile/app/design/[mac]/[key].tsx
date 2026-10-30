@@ -1,4 +1,11 @@
-import { agentActivity, findArtboard, newId, type Presence, type Thread } from "@ponzu/core";
+import {
+  agentActivity,
+  findArtboard,
+  linkTarget,
+  newId,
+  type Presence,
+  type Thread,
+} from "@ponzu/core";
 import { type MenuAction, MenuView, type NativeActionEvent } from "@react-native-menu/menu";
 import { router, Stack, useLocalSearchParams, useNavigation } from "expo-router";
 import { useHeaderHeight } from "expo-router/react-navigation";
@@ -76,9 +83,12 @@ export default function Canvas() {
     key: string;
     /** Open a thread's sheet, from a link or a push. */
     thread?: string;
-    /** Focus a frame, from search. */
+    /** Focus a frame, from search or a link. */
     artboard?: string;
-    /** Open on a page, by id or name (ponzu://design/<mac>/<key>?page=App). */
+    /**
+     * Open on a page, by id or name (ponzu://design/<mac>/<key>?page=App). With an artboard
+     * that isn't on it, the page wins and nothing is focused.
+     */
     page?: string;
     /** Development: open the comment sheet as if held at the middle of this artboard. */
     comment?: string;
@@ -143,18 +153,23 @@ export default function Canvas() {
   useEffect(() => {
     if (session) session.setTheme(scheme);
   }, [session, scheme, state.status]);
-  // From search: focus the frame once the canvas has the doc.
+  // Where search or a link opens, once the doc names it: the frame, on its page, or the page
+  // the link names when the frame isn't on it (@ponzu/core's linkTarget).
+  const opening =
+    doc && (params.page || params.artboard)
+      ? linkTarget(doc, { page: params.page, artboard: params.artboard })
+      : null;
+  // Focus the frame once the canvas has the doc.
   const focused = useRef(false);
   useEffect(() => {
-    if (!doc || !params.artboard || focused.current) return;
+    const id = opening?.artboardId;
+    if (!id || focused.current) return;
     focused.current = true;
-    setTimeout(() => canvas.current?.post({ t: "focus", artboardId: params.artboard! }), 400);
+    setTimeout(() => canvas.current?.post({ t: "focus", artboardId: id }), 400);
   }, [doc]);
 
-  // A page asked for by the link, once the doc names it.
-  const asked = params.page
-    ? doc?.pages.find((p) => p.id === params.page || p.name === params.page)?.id
-    : undefined;
+  // A page asked for by the link.
+  const asked = params.page ? opening?.pageId : undefined;
   useEffect(() => {
     if (asked && !pageId) {
       setPageId(asked);

@@ -61,7 +61,7 @@ Workflow
 3. Build in small pieces. One write_html call per visual group: a header, then a row, then a card. The person watches the canvas as you work.
 4. screenshot after every few writes. Read the lint lines. Fix clipped text and overflow before moving on. When you add motion or states, record them (get_guide('motion')). If a screenshot fails, its error says why: a renderer that didn't answer means the Ponzu app is busy or showing a dialog, so ask the person; one that isn't running is restarting, so try again shortly. Keep working in Ponzu rather than rendering the page some other way.
 5. The canvas shows which artboards you're changing on its own. To tell the person what you're doing, set_status with a few words. When you take on a new request, pass intent too: what they asked for, in one plain line.
-6. When you point the person at your work in chat, give them the Link from get_basic_info, not the folder path: a path opens their editor, the link opens Ponzu. Add &artboard=<id> to open on one artboard.
+6. When you point the person at your work in chat, give them the Link from get_basic_info, not the folder path: a path opens their editor, the link opens Ponzu. Point at the exact work: add &artboard=<id> to open on one artboard, or &page=<id> to open on a whole page (a flow, a set of options). With both, it opens on the artboard if it's on that page, otherwise on the page.
 7. Explain your work on the canvas itself. A small artboard beside the work, named "Note: …" with height fit-content, holds rationale, labels, a flow's arrows or what to compare. The canvas is infinite, so annotate generously. Comments are for what needs the person: a question, a decision, something you couldn't do.
 
 Several files open: a call without file goes to the file that holds the ids it passes, else the one you last created, named or edited. Pass file once to switch; list_files marks the current one.
@@ -271,6 +271,6 @@ Build in small pieces, screenshot often, and fix what lint reports. Screenshots 
 
 The canvas is yours to annotate: a "Note: …" artboard beside the work carries rationale, labels and what to compare. Comments carry what needs the person: a question, a choice, something you couldn't do.
 
-To send the person to a design in chat, give them the Link from get_basic_info (with &artboard=<id> for one board), never the folder path: a path opens their editor, the link opens Ponzu.
+To send the person to a design in chat, give them the Link from get_basic_info (with &page=<id> for a page, &artboard=<id> for one board), never the folder path: a path opens their editor, the link opens Ponzu.
 
 When Ponzu gets in your way (a confusing tool, an error, something it can't do) or works notably well, tell the Ponzu team with send_feedback, then carry on.`;
