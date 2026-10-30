@@ -127,16 +127,12 @@ export function Studio() {
   // design an agent creates opens in a tab whichever screen is showing.
   useEffect(() => watchCatalog(ORIGIN, setCatalog), []);
 
-  // A design an agent creates opens in a tab as soon as it exists, once. Not one it made
+  // A design an agent creates opens in a tab as soon as it exists, once, behind whatever the
+  // person is looking at: switching to it would pull them out of their work. Not one it made
   // for its own use: that starts out archived, out of the way.
   const [seen] = useState(() => new Set<string>());
-  const firstCatalog = useRef(true);
   useEffect(() => {
     if (!catalog) return;
-    // A link the window opened on keeps its tab in front: designs made before the window, and
-    // any made while the linked one loads, join the tabs beside it.
-    const keepLinked = !!linked && (firstCatalog.current || !source(linked.file).getState().doc);
-    firstCatalog.current = false;
     for (const f of catalog.files) {
       if (f.machine !== "local" || !f.created || seen.has(f.key)) continue;
       seen.add(f.key);
@@ -144,7 +140,6 @@ export function Studio() {
       if (f.shelf && f.shelf !== "recent") continue;
       if (Date.now() - f.created > 60_000 || tabs.includes(f.key)) continue;
       setTabs((t) => (t.includes(f.key) ? t : [...t, f.key]));
-      if (!keepLinked) setActive(f.key);
     }
   }, [catalog]);
 
