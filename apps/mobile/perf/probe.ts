@@ -5,34 +5,31 @@
  *
  * window.__pzPerf:
  *   start() / stop()  frames between them: rAF times, and the frames in which the camera (the
- *                     `.world` transform) actually changed
+ *                     `.world` transform) actually changed, as `frames.ts` counts them
  *   scan()            what the page holds: boards, elements in every shadow root, images, videos,
  *                     running animations (and how many of them are held)
  *   ready, drawn      when the canvas told the app `ready` and `drawn` (performance.now())
  *   onDrawn           the host's, called once `drawn` comes
  *   messages          every FromCanvas message, with its time
  */
+import { watchFrames } from "./frames.ts";
+
 export const PROBE = `(() => {
   if (window.__pzPerf) return;
-  const S = (window.__pzPerf = { on: false, t: [], moves: [], messages: [], drawn: null, errors: [] });
-  let world = null, last = '', gen = 0;
-  const loop = (g) => (t) => {
-    if (!S.on || g !== gen) return;
-    if (!world || !world.isConnected) world = document.querySelector('.world');
-    const c = world ? world.style.transform : '';
-    S.t.push(t);
-    if (c !== last) S.moves.push(t);
-    last = c;
-    requestAnimationFrame(loop(g));
-  };
+  const S = (window.__pzPerf = { messages: [], drawn: null, errors: [] });
+  const watchFrames = ${watchFrames};
+  let watch = null;
   S.start = () => {
-    S.t = []; S.moves = [];
-    world = document.querySelector('.world');
-    last = world ? world.style.transform : '';
-    S.on = true;
-    requestAnimationFrame(loop(++gen));
+    if (watch) watch.stop();
+    watch = watchFrames();
   };
-  S.stop = () => { S.on = false; return { t: S.t, moves: S.moves }; };
+  S.stop = () => {
+    if (!watch) return { t: [], moves: [] };
+    watch.stop();
+    const { t, moves } = watch;
+    watch = null;
+    return { t, moves };
+  };
   S.camera = () => {
     const w = document.querySelector('.world');
     const m = w && /translate\\(([-\\d.e]+)px, ([-\\d.e]+)px\\) scale\\(([-\\d.e]+)\\)/.exec(w.style.transform);

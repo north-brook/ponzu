@@ -36,6 +36,20 @@ export function cameraMoves(moves: number[], spans: [number, number][]) {
 }
 
 /**
+ * One gesture as the canvas measures it on the phone (`canvas/probe.ts`): from the first touch
+ * until the camera's last move, frames as `frames` counts them and moves as `cameraMoves` does.
+ */
+export function gesture(t: number[], moves: number[], start: number) {
+  const end = moves.at(-1) ?? start;
+  return {
+    ms: round(end - start),
+    ...frames(t.filter((v) => v >= start && v <= end)),
+    moves: moves.length,
+    ...cameraMoves(moves, [[start, end]]),
+  };
+}
+
+/**
  * The frames after fingers lift from a pinch: when the first one came, and the longest one in
  * the following second (the canvas drops `will-change` 150 ms after the camera stops, and the
  * boards redraw sharp at the new zoom). The first frame past the second counts too: a stall that

@@ -1,5 +1,15 @@
 import { expect, test } from "bun:test";
-import { CREASE, designColumns, duoLayout, foldAt, hasRail } from "./duo-layout";
+import {
+  CREASE,
+  commentsButton,
+  designColumns,
+  duoLayout,
+  foldAt,
+  halves,
+  hasRail,
+  SHEET_MAX,
+  sheetMax,
+} from "./duo-layout";
 
 // iPhone Duo's windows, in points, and iPhones'.
 const outer = { width: 466, height: 678 };
@@ -93,6 +103,55 @@ test("an iPad window as narrow as a phone's (Stage Manager, Split View) is laid 
   expect(duoLayout({ width: 507, height: 834 }, false, false).bars).toBe("phone");
 });
 
+test("like a book, the halves meet at the fold: the canvas frames short of the crease", () => {
+  const { canvas, comments } = halves(innerSideways, "beside");
+  const fold = innerSideways.width / 2;
+  expect(canvas).toEqual({ left: 0, top: 0, width: fold - CREASE, height: innerSideways.height });
+  // Full bleed from the fold itself to the window's edge, under the rail: no band between.
+  expect(comments).toEqual({
+    left: fold,
+    top: 0,
+    width: innerSideways.width - fold,
+    height: innerSideways.height,
+  });
+  expect(comments.left + comments.width).toBe(innerSideways.width);
+});
+
+test("like a laptop, the comments half runs from the fold to the foot", () => {
+  const { canvas, comments } = halves(innerUpright, "below");
+  const fold = innerUpright.height / 2;
+  expect(canvas).toEqual({ left: 0, top: 0, width: innerUpright.width, height: fold - CREASE });
+  expect(comments).toEqual({
+    left: 0,
+    top: fold,
+    width: innerUpright.width,
+    height: innerUpright.height - fold,
+  });
+});
+
+test("comments' button joins Back on the rail, stays bottom right upright, and goes folded", () => {
+  expect(commentsButton(duoLayout(outer, true, false))).toBe("rail");
+  expect(commentsButton(duoLayout(innerSideways, true, false))).toBe("rail");
+  expect(commentsButton(duoLayout(innerUpright, false, false))).toBe("toolbar");
+  expect(commentsButton(duoLayout(innerSideways, true, true))).toBeNull();
+  expect(commentsButton(duoLayout(innerUpright, false, true))).toBeNull();
+  // A phone's bars are the canvas's own, not the system's.
+  expect(commentsButton(duoLayout(iphone, false, false))).toBeNull();
+});
+
+test("the comment sheet is centred and bounded with the inner display sideways", () => {
+  expect(sheetMax(duoLayout(innerSideways, true, false), innerSideways.width)).toBe(SHEET_MAX);
+  expect(sheetMax(duoLayout(innerSideways, true, true), innerSideways.width)).toBe(SHEET_MAX);
+  // Narrower than the canvas beside the rail, wider than any iPhone's sheet.
+  expect(SHEET_MAX).toBeLessThan(innerSideways.width - 84);
+  expect(SHEET_MAX).toBeGreaterThan(iphone.width);
+  for (const w of [iphone, small, outer, innerUpright]) {
+    const rail = w === outer;
+    expect(sheetMax(duoLayout(w, rail, false), w.width)).toBeUndefined();
+  }
+  expect(sheetMax(duoLayout(innerUpright, false, true), innerUpright.width)).toBeUndefined();
+});
+
 test("Designs: two columns on a phone and closed, three inside", () => {
   expect(designColumns(iphone.width)).toBe(2);
   expect(designColumns(outer.width - 84)).toBe(2);
@@ -112,4 +171,17 @@ test("the rail is the side inset the system gives its bars (84pt), not a notch",
   expect(hasRail({ left: 0, right: 84 })).toBe(true);
   expect(hasRail({ left: 0, right: 0 })).toBe(false);
   expect(hasRail({ left: 47, right: 47 })).toBe(false);
+});
+
+test("an iPad's comment sheet floats centred, upright and sideways", () => {
+  for (const w of [mini, pad11, pad13, pad11Sideways, pad13Sideways]) {
+    expect(sheetMax(duoLayout(w, false, false), w.width)).toBe(SHEET_MAX);
+  }
+  // A Stage Manager window as narrow as a phone's keeps a phone's sheet.
+  expect(sheetMax(duoLayout({ width: 375, height: 1032 }, false, false), 375)).toBeUndefined();
+});
+
+test("an iPad's comments button is bottom right, under bars across the top", () => {
+  expect(commentsButton(duoLayout(pad13Sideways, false, false))).toBe("toolbar");
+  expect(commentsButton(duoLayout(pad11, false, false))).toBe("toolbar");
 });

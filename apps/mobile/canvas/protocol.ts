@@ -27,6 +27,32 @@ export interface PendingPin {
   y: number;
 }
 
+/**
+ * One gesture, measured by the page (canvas/probe.ts) from its first touch until the camera came
+ * to rest, as the harness measures them (apps/mobile/perf): rAF frames and camera moves. A type,
+ * not an interface, so it goes to telemetry as event properties as it is.
+ */
+export type GesturePerf = {
+  /** One finger dragged, two pinched, or neither: the camera moved after a tap (a double-tap's focus). */
+  kind: "pan" | "pinch" | "focus";
+  /** From the first touch to the camera's last move. */
+  ms: number;
+  /** rAF frames a second, the 95th percentile and longest frame (ms), and frames over 33 ms. */
+  fps: number;
+  p95: number;
+  max: number;
+  jank: number;
+  /** Frames in which the camera moved, per second of moving, and the longest wait between two. */
+  moves: number;
+  movesPerS: number;
+  maxGapMs: number;
+  /** Main-thread tasks over 50 ms and the longest, where WebKit reports them. */
+  longTasks?: number;
+  longestTaskMs?: number;
+  /** Boards on the page. */
+  boards: number;
+};
+
 /** App → web view. */
 export type ToCanvas =
   /**
@@ -66,7 +92,12 @@ export type ToCanvas =
    * the pin it's about stays above it. `radius` is the screen's corner, which a focused board's
    * ring follows.
    */
-  | { t: "insets"; insets: Insets; sheet?: number; radius?: number };
+  | { t: "insets"; insets: Insets; sheet?: number; radius?: number }
+  /**
+   * Measure this share of gestures, 0 (none, as it starts) to 1 (every one): each measured one
+   * comes back as `perf`.
+   */
+  | { t: "probe"; rate: number };
 
 /** Web view → app. */
 export type FromCanvas =
@@ -96,6 +127,8 @@ export type FromCanvas =
   | { t: "camera"; zoom: number }
   /** The canvas changed page itself, to focus an artboard on another one. */
   | { t: "page"; pageId: string }
+  /** A gesture measured, when the app asked for it (`probe`). */
+  | { t: "perf"; gesture: GesturePerf }
   | { t: "error"; message: string };
 
 /** The web view's entry point on `window`, for `injectJavaScript`. */

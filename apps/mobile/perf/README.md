@@ -1,15 +1,19 @@
 # The phone's performance harness
 
 How fast the iPhone app's canvas moves, how much it holds, and what the app burns while nobody
-touches it. Two halves: the canvas page in headless WebKit (`canvas.ts`), and the real app with its
-WKWebView in the iOS Simulator (`sim/`). There's no iPhone in it. Every number is this Mac's: compare
-runs with each other, before and after a change, never with a phone.
+touches it. The canvas page in headless WebKit (`canvas.ts`) and the real app with its WKWebView in
+the iOS Simulator (`sim/`) give this Mac's numbers: compare runs with each other, before and after a
+change, never with a phone. A real iPhone is measured on its own (see "On a real iPhone"), from a
+screen recording or the canvas's own count of its frames.
 
 | File | What it is |
 | --- | --- |
 | `canvas.ts` | The canvas page in Playwright's WebKit at an iPhone 17 Pro's size, played as the app plays it. |
 | `probe.ts` | What's measured inside the page: frames, camera moves, `drawn`, what the page holds. |
+| `frames.ts` | Frames and camera moves as both probes count them: this harness's, and the canvas's own on a phone. |
 | `metrics.ts` | The numbers, from what the probe saw. Tested in `metrics.test.ts`. |
+| `recording.ts` | Frame pacing from a screen recording of a real iPhone. |
+| `motion.ts` | Its numbers: how far the picture moved between two frames, held frames, waits, how evenly it stepped. Tested in `motion.test.ts`. |
 | `corpus.ts` | The phone's own stress pages, `phone.design`. |
 | `suite.sh` | Every page the targets cover, one run each. |
 | `sim/sim.sh` | The app in the Simulator: CPU and memory in each state, and whether WebKit was killed. |
@@ -145,3 +149,64 @@ should be.
 
 A locked screen isn't something `simctl` can do. A Debug build runs its JavaScript slower than a
 release does, and the Simulator's CPU is the Mac's: compare states and runs, not devices.
+
+## On a real iPhone
+
+How the canvas moves under a finger on the phone itself, two ways: a screen recording, or the
+canvas's own count of its frames. Either way, compare a change with main on the same phone, the
+same page and the same gesture (a pan across the same boards, at about the same speed), a few
+times each. A warm phone, or one in Low Power Mode, is slower.
+
+### A screen recording
+
+Record with Control Center's Screen Recording (60 fps), pan, stop, and send the file to the Mac:
+
+```sh
+bun apps/mobile/perf/recording.ts <recording.mov> [--shots <dir>] [--json] [--csv <file>]
+```
+
+It needs ffmpeg. Every frame is cropped to the canvas (`--crop top,right,bottom,left`, fractions of
+the frame; the default leaves out the status bar, the app's bar, the comment button and the iPhone
+Duo's side tab) and compared with the one before: how different it is, and how far its content
+moved (phase correlation, on the frame squeezed to 256 px).
+
+- **moved / held**: frames in which the picture changed, and frames inside a motion that repeated
+  the one before, which the person saw twice. A motion ends after a second of stillness, or at any
+  hold once it's slower than 150 px/s (a glide's last pixels land a frame here and there).
+- **moves/s** and **longest wait**: as `cameraMoves` counts them in WebKit, on the video's clock.
+- **waits**: how many holds of one frame, of two, of more, and the longest, with when they began,
+  to scrub to. `--shots` saves the worst three: the frame before, the first held one, the next.
+- **off a smooth curve**: each change's velocity (its step over the time since the last change, so
+  the catch-up after a hold lands where it should) against a smooth curve through its neighbours.
+  Near 0 is even. A camera moved by touches as they happen to arrive, rather than by the clock,
+  steps short, then long. **uneven** is the share of steps more than a quarter off.
+
+A recording is what the screen showed, recorded by a phone that's also encoding video, at 60 fps
+whatever the screen's rate: compare recordings with each other. Anything else moving on the canvas
+(an agent's rain, a spinner on a board) moves too. A pinch's scale isn't a shift: its holds and
+waits count, its steps aren't judged.
+
+### The canvas's own numbers
+
+The canvas measures its gestures itself (`canvas/probe.ts`): rAF frames and camera moves from the
+first touch until the camera is at rest, counted by `frames.ts` and `metrics.ts` as `canvas.ts`
+counts them in WebKit, one `perf` message per gesture. A development build measures every gesture
+and logs it to Metro:
+
+```
+[perf] pan 640 ms: 46.2 moves/s, longest wait 50 ms; 52.1 fps, longest frame 50 ms, 4 over 33 ms; 12 boards
+```
+
+A pan is one finger dragged, a pinch two, a focus neither (a double-tap). Long tasks are counted
+where WebKit reports them, which the phone's doesn't. Nothing is measured while nobody touches the
+canvas, or at all unless the app asks (`probe`). A production build measures one gesture in twenty
+and sends it as a `canvas gesture` event where telemetry is on (`lib/canvas-perf.ts`), so one
+release's pans can be compared with the last's.
+
+### Hill climbing
+
+1. Pick the page and the gesture that feels wrong. On main, record it three times, or read the
+   probe's lines for the same gestures.
+2. Change one thing; reload the development build.
+3. The same page and gesture, three times. Keep the change if held frames, moves/s, the longest
+   wait and the steps all move the right way, and `canvas.ts`'s rows in WebKit don't get worse.

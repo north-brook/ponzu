@@ -76,7 +76,10 @@ of each part, both ways, is in `lib/morph.ts`. The sheet's own shape (its
 corners, side insets and bottom edge) follows the keyboard's frame, read
 every frame from `react-native-keyboard-controller`, so it rides the
 keyboard down and up with the system's animation, interactive dismissal
-included. Sent, a new comment's sheet leaves at once with the keyboard
+included. On iPhone Duo's inner display held sideways, too wide for a sheet
+across it, the sheet floats centred over the design at most 560pt wide
+(`SHEET_MAX` in `lib/duo-layout.ts`) and rides 8pt above the keyboard
+rather than docking on it. Sent, a new comment's sheet leaves at once with the keyboard
 rather than when the Mac answers (a reply's field empties at once); a send
 the Mac refuses brings the words back. The field and, in voice, the waveform share one glass capsule the
 buttons' height; the glyphs are Hugeicons, as everywhere in the app.
@@ -95,9 +98,10 @@ an iPad turns freely (`UISupportedInterfaceOrientations~ipad` in
   otherwise across the top and the foot (iPhone Duo open upright, an iPad
   either way up). From 900pt wide, comments are an inset panel beside the
   canvas, between the bars, rather than the sheet.
-- **The sheet.** In a window 700pt or wider with no rail (an iPad), a
-  comment's or thread's sheet is a 540pt card in the middle, above the
-  bottom bar or riding 16pt above the keyboard, instead of docking into it.
+- **The sheet.** With the inner display sideways, and in any window 700pt
+  or wider (an iPad), a comment's or thread's sheet floats centred, at most
+  560pt wide (`sheetMax`), above the bottom bar or riding 8pt above the
+  keyboard, instead of docking into it.
 - **Designs and Search** add columns as the page widens: two on an iPhone,
   three on iPhone Duo's inner display, and as many as keep a card 230pt or
   wider on an iPad (four or five). **Activity** is one readable column, at

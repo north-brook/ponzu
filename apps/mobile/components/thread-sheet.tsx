@@ -29,13 +29,15 @@ export function ThreadSheet({
   onDismiss,
   onHeight,
   right,
-  foot,
+  maxWidth,
+  bottomBar,
   ...thread
 }: ThreadProps & {
   onDismiss: () => void;
   onHeight: (px: number) => void;
   right?: number;
-  foot?: number;
+  maxWidth?: number;
+  bottomBar?: number;
 }) {
   return (
     <Sheet
@@ -45,7 +47,8 @@ export function ThreadSheet({
       height={450}
       gap={16}
       right={right}
-      foot={foot}
+      maxWidth={maxWidth}
+      bottomBar={bottomBar}
     >
       <ThreadView {...thread} />
     </Sheet>
