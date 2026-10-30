@@ -4,7 +4,7 @@ import { Stack } from "expo-router";
 // The toolbar's native item, for a badge expo-router's Button leaves out at the bottom. By its
 // iOS file: the package's `./build/*` export maps to the bare file, the other platforms' stub.
 import { RouterToolbarItem } from "expo-router/build/toolbar/native.ios";
-import { type ReactNode, useEffect } from "react";
+import { type ReactElement, type ReactNode, useEffect } from "react";
 import { Text, View } from "react-native";
 import Animated, {
   Easing,
@@ -14,7 +14,6 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
-import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { CREASE } from "../lib/duo-layout";
 import { select, tick } from "../lib/haptics";
 import { useTheme } from "../lib/theme";
@@ -27,37 +26,53 @@ const ease = Easing.bezier(...EASE_OUT);
 
 /**
  * The canvas's bar items as the system's own (iPhone Duo's rail, and its
- * horizontal bars open upright): Back at the top, the page menu under it
- * where the page is on the rail, and comments at the foot, with the open
- * threads' count. Each has an icon and a title, which Apple needs for an
- * item to go vertical; a custom view never does.
+ * horizontal bars upright). On the rail each has an icon and a title, which
+ * Apple needs for an item to go vertical; a custom view never does. Upright
+ * the bar stays horizontal, so the file and the page are our pills in it,
+ * laid out by the system beside Back and clear of the status bar.
  *
- * - `rail` closed (the outer display): Back and the page on the rail, comments at its foot.
- * - `rail` open sideways: Back on top, comments at the foot; the page is a pill on the canvas.
- * - `upright`: Back top left, the page top right, comments bottom right.
+ * - `rail` closed (the outer display): Back and comments at the top, with
+ *   the open threads' count, and the page under them.
+ * - `rail` open sideways: Back and comments; the page is a pill on the canvas.
+ * - `upright`: Back and the file top left, the page top right (its icon,
+ *   name and chevron, as sideways), comments bottom right.
  */
 export function NativeBarItems({
+  bars,
+  file,
   page,
   pages,
   onPage,
+  pagePill,
   count,
   onComments,
   onBack,
   pageOnBar,
-  commentsShown,
+  comments,
 }: {
+  bars: "rail" | "upright";
+  /** The file pill: a bar item of its own beside Back while the bars are upright. */
+  file: ReactElement;
   page: { id: string; name: string; icon?: string } | undefined;
   pages: MenuAction[];
   onPage: (id: string) => void;
+  /** The page pill with its menu: the page's bar item upright. */
+  pagePill: ReactElement;
   count: number;
   onComments: () => void;
   onBack: () => void;
-  /** The page menu is a bar item (closed, upright), not a pill on the canvas (open sideways). */
+  /** The page is a bar item (closed, upright), not a pill on the canvas (open sideways). */
   pageOnBar: boolean;
-  /** Comments are already there (folded): no button for them. */
-  commentsShown: boolean;
+  /** Where comments' button is (lib/duo-layout.ts `commentsButton`); null while they're shown. */
+  comments: "rail" | "toolbar" | null;
 }) {
   const { color } = useTheme();
+  const upright = bars === "upright";
+  const label = count ? `Comments, ${count} open` : "Comments";
+  const openComments = () => {
+    tick();
+    onComments();
+  };
   return (
     <>
       <Stack.Toolbar placement="left">
@@ -71,23 +86,45 @@ export function NativeBarItems({
           <Stack.Toolbar.Icon renderingMode="template" xcasset="bar-back" />
           <Stack.Toolbar.Label>Back</Stack.Toolbar.Label>
         </Stack.Toolbar.Button>
+        {/* The pill draws its own glass, as on the canvas: none of the bar's behind it. */}
+        {upright && <Stack.Toolbar.View hidesSharedBackground>{file}</Stack.Toolbar.View>}
+        {comments === "rail" && (
+          <Stack.Toolbar.Button
+            onPress={openComments}
+            accessibilityLabel={label}
+            // Its own round glass under Back's, never one capsule with it.
+            separateBackground
+          >
+            <Stack.Toolbar.Icon renderingMode="template" xcasset="bar-comments" />
+            <Stack.Toolbar.Label>Comments</Stack.Toolbar.Label>
+            {count > 0 && (
+              <Stack.Toolbar.Badge style={{ backgroundColor: brand.yuzu, color: brand.ink }}>
+                {String(count)}
+              </Stack.Toolbar.Badge>
+            )}
+          </Stack.Toolbar.Button>
+        )}
       </Stack.Toolbar>
       {pageOnBar && pages.length > 1 && (
         <Stack.Toolbar placement="right">
-          <Stack.Toolbar.Menu accessibilityLabel={`Page: ${page?.name ?? ""}`} title="Pages">
-            <Stack.Toolbar.Icon
-              renderingMode="template"
-              xcasset={pages.find((p) => p.id === page?.id)?.image ?? "hi-board"}
-            />
-            <Stack.Toolbar.Label>{page?.name ?? "Page"}</Stack.Toolbar.Label>
-            {barMenuItems(pages, (id) => {
-              select();
-              onPage(id);
-            })}
-          </Stack.Toolbar.Menu>
+          {upright ? (
+            <Stack.Toolbar.View hidesSharedBackground>{pagePill}</Stack.Toolbar.View>
+          ) : (
+            <Stack.Toolbar.Menu accessibilityLabel={`Page: ${page?.name ?? ""}`} title="Pages">
+              <Stack.Toolbar.Icon
+                renderingMode="template"
+                xcasset={pages.find((p) => p.id === page?.id)?.image ?? "hi-board"}
+              />
+              <Stack.Toolbar.Label>{page?.name ?? "Page"}</Stack.Toolbar.Label>
+              {barMenuItems(pages, (id) => {
+                select();
+                onPage(id);
+              })}
+            </Stack.Toolbar.Menu>
+          )}
         </Stack.Toolbar>
       )}
-      {!commentsShown && (
+      {comments === "toolbar" && (
         <Stack.Toolbar placement="bottom">
           <Stack.Toolbar.Spacer />
           {/*
@@ -104,11 +141,8 @@ export function NativeBarItems({
             xcassetName="bar-comments"
             imageRenderingMode="template"
             tintColor={color.ink}
-            accessibilityLabel={count ? `Comments, ${count} open` : "Comments"}
-            onSelected={() => {
-              tick();
-              onComments();
-            }}
+            accessibilityLabel={label}
+            onSelected={openComments}
             {...(count > 0
               ? {
                   badgeConfiguration: {
@@ -126,39 +160,56 @@ export function NativeBarItems({
 }
 
 /**
- * The page pill on the canvas open sideways (the Duo board's 5): the page's
- * icon, name and a chevron, in glass, opening the pages' native menu.
+ * The page pill, on the canvas open sideways (the Duo board's 5) and in the
+ * bar upright: the page's icon, name and a chevron, in glass, opening the
+ * pages' native menu. As the file pill, its glass dissolves while a board
+ * is focused and what it holds fades on the chrome's clock (`fade`).
  */
 export function PagePill({
   page,
   menu,
   shown,
+  fade,
 }: {
   page: { name: string; icon?: string } | undefined;
   /** Wraps the pill in the pages' menu. */
   menu: (pill: ReactNode) => ReactNode;
   shown: boolean;
+  /** The chrome's fade, for what the glass holds (the glass itself is never faded). */
+  fade: ReturnType<typeof useAnimatedStyle>;
 }) {
   const { color } = useTheme();
   return menu(
     <View accessible accessibilityRole="button" accessibilityLabel={`Page: ${page?.name ?? ""}`}>
-      <Glass
-        interactive
-        shown={shown}
-        style={{
-          height: 44,
-          paddingLeft: 13,
-          paddingRight: 12,
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 7,
-        }}
-      >
-        <PageIcon name={page?.icon} size={18} color={color.ink} />
-        <Text style={{ fontFamily: "Inter", fontWeight: "600", fontSize: 16, color: color.ink }}>
-          {page?.name ?? ""}
-        </Text>
-        <Chevron size={14} color={color.muted} />
+      <Glass interactive shown={shown} style={{ height: 44 }}>
+        <Animated.View
+          style={[
+            {
+              height: 44,
+              paddingLeft: 13,
+              paddingRight: 12,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 7,
+            },
+            fade,
+          ]}
+        >
+          <PageIcon name={page?.icon} size={18} color={color.ink} />
+          <Text
+            numberOfLines={1}
+            style={{
+              maxWidth: 220,
+              fontFamily: "Inter",
+              fontWeight: "600",
+              fontSize: 16,
+              color: color.ink,
+            }}
+          >
+            {page?.name ?? ""}
+          </Text>
+          <Chevron size={14} color={color.muted} />
+        </Animated.View>
       </Glass>
     </View>,
   );
@@ -272,67 +323,39 @@ export function CommentsPanel({ right, children }: { right: number; children: Re
 }
 
 /**
- * The fold, partly open: a 24pt band where nothing to tap sits, shaded as
- * the board draws it, so the crease reads as the hinge, not as content.
+ * A full-bleed comments half (laptop and book): the card's color from the
+ * fold itself to the window's edges, under the rail too, so the two halves
+ * meet at the fold with nothing of ours between them. Inside, the board's
+ * padding, with what it holds kept `CREASE` clear of the fold and clear of
+ * the rail.
  */
-export function Fold({
-  axis,
-  at,
-}: {
-  /** The fold runs across (laptop: a horizontal band) or down (book: a vertical one). */
-  axis: "across" | "down";
-  at: number;
-}) {
-  const { scheme } = useTheme();
-  const dark = scheme === "dark";
-  const band = axis === "across";
-  return (
-    <View
-      pointerEvents="none"
-      testID="fold"
-      style={{
-        position: "absolute",
-        zIndex: 30,
-        ...(band
-          ? { left: 0, right: 0, top: at - CREASE, height: CREASE * 2 }
-          : { top: 0, bottom: 0, left: at - CREASE, width: CREASE * 2 }),
-      }}
-    >
-      <Svg width="100%" height="100%">
-        <Defs>
-          <LinearGradient id="fold" x1="0" y1="0" x2={band ? "0" : "1"} y2={band ? "1" : "0"}>
-            <Stop offset="0" stopColor="#000" stopOpacity={0} />
-            <Stop offset="0.45" stopColor="#000" stopOpacity={dark ? 0.35 : 0.07} />
-            <Stop offset="0.55" stopColor="#fff" stopOpacity={dark ? 0.05 : 0.5} />
-            <Stop offset="1" stopColor="#fff" stopOpacity={0} />
-          </LinearGradient>
-        </Defs>
-        <Rect x="0" y="0" width="100%" height="100%" fill="url(#fold)" />
-      </Svg>
-    </View>
-  );
-}
-
-/** A full-bleed comments half (laptop and book): the card's color, the board's padding. */
 export function CommentsHalf({
+  split,
   style,
+  right,
   children,
 }: {
+  split: "beside" | "below";
   style: { left: number; top: number; width: number; height: number };
+  /** The rail's width, which the half runs under. */
+  right: number;
   children: ReactNode;
 }) {
   const { color } = useTheme();
+  const below = split === "below";
   return (
     <View
       testID="comments-half"
       style={{
         position: "absolute",
         ...style,
-        zIndex: 11,
+        // Under a new comment's sheet (9), which the keyboard carries up over it like a laptop.
+        zIndex: 8,
         backgroundColor: color.card,
-        paddingTop: style.width > style.height ? 30 : 24,
-        paddingHorizontal: style.width > style.height ? 28 : 22,
-        paddingBottom: style.width > style.height ? 34 : 22,
+        paddingTop: below ? CREASE + 30 : 24,
+        paddingLeft: below ? 28 : CREASE + 22,
+        paddingRight: (below ? 28 : 22) + right,
+        paddingBottom: below ? 34 : 22,
       }}
     >
       {children}

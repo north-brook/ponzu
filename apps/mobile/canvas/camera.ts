@@ -71,6 +71,8 @@ export function transformOf(c: Camera) {
  */
 export class CameraStore {
   private listeners = new Set<() => void>();
+  /** The camera has stopped: the overlay draws itself again where it is. */
+  resting = false;
   constructor(private ref: { current: Camera }) {}
   subscribe = (l: () => void) => {
     this.listeners.add(l);
@@ -81,6 +83,86 @@ export class CameraStore {
   get = () => this.ref.current;
   emit() {
     for (const l of this.listeners) l();
+  }
+}
+
+/**
+ * The camera the overlay (labels, hairlines, rings, pins) is drawn for. A pan slides the overlay
+ * as one layer, as the world's is, rather than drawing every label again each frame: it's drawn
+ * again only when the zoom changes, when it has slid `drift` px from where it was drawn (it draws
+ * that far past the screen's edges), or when the camera rests.
+ */
+export function overlayCamera(
+  drawn: Camera | null,
+  c: Camera,
+  drift: { x: number; y: number },
+  resting: boolean,
+): Camera {
+  if (
+    resting ||
+    !drawn ||
+    drawn.zoom !== c.zoom ||
+    Math.abs(c.x - drawn.x) > drift.x ||
+    Math.abs(c.y - drawn.y) > drift.y
+  )
+    return c;
+  return drawn;
+}
+
+/**
+ * Where a finger put the camera, and when (the touch's own time, not when the page got to it).
+ * Touches come on their own clock, 60 or 120 a second and late whenever the page is busy, and
+ * frames on another: applied as they land, a frame gets none and the next two, and the page
+ * stutters at a steady finger. Each frame instead shows the camera where the finger had it a
+ * touch's interval ago, between the touches either side, so it moves as evenly as the finger.
+ */
+export class CameraTrack {
+  private samples: { t: number; c: Camera }[] = [];
+  /** The time between touches, smoothed. */
+  private interval = 1000 / 60;
+
+  push(t: number, c: Camera) {
+    const last = this.samples.at(-1);
+    if (last && t < last.t) t = last.t;
+    if (last) {
+      const dt = t - last.t;
+      if (dt > 0 && dt < 50) this.interval += (dt - this.interval) * 0.2;
+    }
+    this.samples.push({ t, c });
+    while (this.samples.length > 2 && this.samples[1]!.t < t - 250) this.samples.shift();
+  }
+
+  /** How far behind the newest touch a frame looks: a touch's interval, and a little for one that's late. */
+  get lag() {
+    return Math.min(24, Math.max(6, this.interval + 2));
+  }
+
+  /** When the newest touch was, or -Infinity with none. */
+  get newest() {
+    return this.samples.at(-1)?.t ?? Number.NEGATIVE_INFINITY;
+  }
+
+  /** The camera at `t`: between the touches either side, or the nearest one outside them. */
+  at(t: number): Camera | null {
+    const s = this.samples;
+    if (!s.length) return null;
+    if (t <= s[0]!.t) return s[0]!.c;
+    for (let i = 1; i < s.length; i++) {
+      const b = s[i]!;
+      if (t > b.t) continue;
+      const a = s[i - 1]!;
+      const k = b.t > a.t ? (t - a.t) / (b.t - a.t) : 1;
+      return {
+        x: a.c.x + (b.c.x - a.c.x) * k,
+        y: a.c.y + (b.c.y - a.c.y) * k,
+        zoom: a.c.zoom + (b.c.zoom - a.c.zoom) * k,
+      };
+    }
+    return s.at(-1)!.c;
+  }
+
+  clear() {
+    this.samples = [];
   }
 }
 
@@ -341,6 +423,14 @@ function bezier(x1: number, y1: number, x2: number, y2: number, t: number): numb
 export const DECELERATION = 0.998;
 /** px/ms below which a glide stops. */
 export const REST = 0.02;
+/** The longest step a glide takes in one frame, ms: past a stall it carries on, not jumps. */
+export const GLIDE_STEP_MS = 100;
+
+/** Snapped to the screen's pixels: a layer at rest on a fraction of one draws soft. */
+export function onPixels(c: Camera, dpr: number): Camera {
+  const k = dpr > 0 ? dpr : 1;
+  return { zoom: c.zoom, x: Math.round(c.x * k) / k, y: Math.round(c.y * k) / k };
+}
 
 /** How far a glide goes in `dt` ms at velocity `v` (px/ms), and its speed after. */
 export function glide(v: { x: number; y: number }, dt: number) {

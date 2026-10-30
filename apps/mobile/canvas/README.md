@@ -14,6 +14,7 @@ renderer. The app posts it messages; it posts back gestures.
 | `camera.ts` | Framing, focus, pins and momentum, as plain math. |
 | `gestures.ts` | Touches turned into pan, pinch, tap, double-tap and hold. A double-tap focuses a board; pinching out or panning past it leaves. |
 | `store.ts` | What the app has said; ops applied here with `applyOp` on echo. |
+| `probe.ts` | The canvas timing its own gestures, when the app asks: frames and camera moves, as `perf/` counts them. |
 | `build.ts` | Builds `dist/index.html` and `dist/bundle.ts`. |
 | `dev.html`, `dev.ts` | A harness that plays the app's part against a running Ponzu. |
 
@@ -57,6 +58,8 @@ with `sheet` set to the sheet's height; when the `thread.create` echo arrives, s
 `openThread` means: show the thread sheet and send `thread` with its id.
 A comment sheet dismissed with words in it leaves its pin: send `unsent` with every such pin, by its
 draft's key, and the threads with a reply left unsent. `openUnsent` means one was tapped: show its comment sheet again and send `pending`.
+`probe` with a rate has the page measure that share of gestures (`probe.ts`), each sent back as
+`perf` when the camera comes to rest; see `perf/README.md`.
 `focused` with a board means the board has the screen: hide the chrome. A pan or pinch on it sends
 `gesture` as it begins (show the chrome), then `focused` again as it settles, with the board if it's
 still focused (hide it again) or `null` if the fingers left it.

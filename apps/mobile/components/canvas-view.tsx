@@ -10,6 +10,7 @@ import {
   type ToCanvas,
   toCanvasScript,
 } from "../canvas/protocol";
+import { measured, PROBE_RATE } from "../lib/canvas-perf";
 import type { DesignSession } from "../lib/design";
 import { displayRadius } from "../lib/screen";
 import { VERSION } from "../lib/ua";
@@ -125,6 +126,8 @@ export const CanvasView = forwardRef<
       { t: "unsent", pins: p.unsent, threads: p.writing },
       { t: "thread", id: p.thread },
       { t: "standby", on: Boolean(p.standby) },
+      // How many gestures the page measures (lib/canvas-perf.ts); none unless asked.
+      ...(PROBE_RATE ? [{ t: "probe", rate: PROBE_RATE } as const] : []),
     ];
     for (const m of msgs) send(m);
   }, [send, docMessage]);
@@ -179,6 +182,7 @@ export const CanvasView = forwardRef<
       for (const m of waiting.current.splice(0)) send(m);
     }
     if (msg.t === "error") console.warn("[canvas]", msg.message);
+    if (msg.t === "perf") measured(msg.gesture);
     props.onMessage(msg);
   };
 

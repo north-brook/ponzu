@@ -27,7 +27,6 @@ import { Composer, initialMode, type Mode } from "../../../components/composer";
 import {
   CommentsHalf,
   CommentsPanel,
-  Fold,
   Glide,
   NativeBarItems,
   PagePill,
@@ -43,7 +42,7 @@ import { useFile } from "../../../lib/catalog";
 import { useDesignSession, useSessionState } from "../../../lib/design";
 import { draftFile, draftKey, getDraft, unsent, useDrafts } from "../../../lib/drafts";
 import { useDuoLayout } from "../../../lib/duo";
-import { CREASE, foldAt } from "../../../lib/duo-layout";
+import { commentsButton, halves, sheetMax } from "../../../lib/duo-layout";
 import { select, success, tick } from "../../../lib/haptics";
 import { noteOpened } from "../../../lib/lately";
 import { baseUrl } from "../../../lib/mac";
@@ -405,21 +404,14 @@ export default function Canvas() {
   // Where the canvas is and what covers it. On a phone the chrome covers the status bar and the
   // top bar (54 + 56), and the home indicator. On iPhone Duo the system's bars are a rail at the
   // side (closed, and open sideways) or horizontal (open upright): the canvas keeps clear of the
-  // rail, and its pills sit 16pt down on the canvas. Folded, the design keeps one half and the
-  // comments the other, 12pt either side of the fold kept clear.
+  // rail, and its pills sit 16pt down on the canvas; upright the file and page pills are in the
+  // system's bar. Folded, the design keeps one half and the comments the other, meeting at the
+  // fold, 12pt either side of it kept clear.
   const W = duo.width;
   const H = duo.height;
-  const fold = split ? foldAt({ width: W, height: H }, split) : 0;
-  const area =
-    split === "beside"
-      ? { left: 0, top: 0, width: fold - CREASE, height: H }
-      : split === "below"
-        ? { left: 0, top: 0, width: W, height: fold - CREASE }
-        : { left: 0, top: 0, width: W - insets.right, height: H };
-  // Upright the system's bar is the top row, Back at its left: the file pill sits in that row,
-  // centered, as the board's top bar (the safe area's top is the bar's foot, 56pt below its top).
-  const pillTop =
-    duo.bars === "upright" ? Math.max(8, insets.top - 56) : nativeBars ? 16 : insets.top + 6;
+  const folded = split ? halves({ width: W, height: H }, split) : null;
+  const area = folded?.canvas ?? { left: 0, top: 0, width: W - insets.right, height: H };
+  const pillTop = nativeBars ? 16 : insets.top + 6;
   const top = duo.bars === "upright" ? insets.top + 6 : pillTop + 50;
   /** The comments panel shows, open sideways: the canvas frames its boards left of it. */
   const panelShown = duo.panel && Boolean(commentsOpen || thread);
@@ -462,7 +454,7 @@ export default function Canvas() {
   ) : (
     <FileIcon size={17} color={color.ink} />
   );
-  /** The pages' native menu around a control (the page pill open sideways). */
+  /** The pages' native menu around a control (the page pill, open sideways and upright). */
   const pageMenu = (pill: React.ReactNode) =>
     manyPages ? (
       <MenuView
@@ -513,6 +505,19 @@ export default function Canvas() {
   // The bar's glass dissolves as the system's does (never faded, components/glass.tsx); what it
   // holds fades on this clock.
   const chromeStyle = useAnimatedStyle(() => ({ opacity: chrome.value }));
+  /** The file pill on iPhone Duo: on the canvas beside the rail, in the system's bar upright. */
+  const filePill = (
+    <FilePill
+      file={file?.name ?? doc?.name ?? ""}
+      icon={titleIcon}
+      working={working}
+      agentName={agent?.name}
+      card={card}
+      onCard={agent ? () => setCard((c) => !c) : undefined}
+      bare={bare}
+      chromeStyle={chromeStyle}
+    />
+  );
   // The gesture hint, once each time a design opens: never again after a focus.
   const [hinted, setHinted] = useState(false);
   const hint = Boolean(doc) && !hinted;
@@ -614,9 +619,20 @@ export default function Canvas() {
             }}
           />
           <NativeBarItems
+            bars={duo.bars === "upright" ? "upright" : "rail"}
+            file={
+              <BarPill bare={bare} testID="title">
+                {filePill}
+              </BarPill>
+            }
             page={page}
             pages={pageActions}
             onPage={(id) => pickPage({ nativeEvent: { event: id } } as NativeActionEvent)}
+            pagePill={
+              <BarPill bare={bare} testID="page-pill">
+                <PagePill page={page} menu={pageMenu} shown={!bare} fade={chromeStyle} />
+              </BarPill>
+            }
             count={open.length}
             onComments={() => {
               setThreadId(null);
@@ -624,18 +640,13 @@ export default function Canvas() {
             }}
             onBack={() => router.back()}
             pageOnBar={duo.bars === "upright" || (!duo.panel && !split)}
-            commentsShown={Boolean(split)}
+            comments={commentsButton(duo)}
           />
         </>
       )}
-      {standby ? null : nativeBars ? (
+      {standby || duo.bars === "upright" ? null : nativeBars ? (
         <DuoPills
-          file={file?.name ?? doc?.name ?? ""}
-          icon={titleIcon}
-          working={working}
-          agentName={agent?.name}
-          card={card}
-          onCard={agent ? () => setCard((c) => !c) : undefined}
+          filePill={filePill}
           page={page}
           pageMenu={duo.panel || split === "beside" ? pageMenu : null}
           // With the panel open the page pill keeps to the canvas left of it (the board's 6).
@@ -772,7 +783,14 @@ export default function Canvas() {
         <SessionCard presence={agent} top={insets.top + 58} doc={doc} file={params.key} />
       )}
       {hint && !standby && (
-        <Hint bottom={insets.bottom} away={Boolean(focusedBoard)} onDone={() => setHinted(true)} />
+        <Hint
+          // Over the design's part: folded, its half, never across the fold.
+          bottom={split === "below" ? H - area.height + 16 : Math.max(34, insets.bottom)}
+          left={area.left}
+          width={area.width}
+          away={Boolean(focusedBoard)}
+          onDone={() => setHinted(true)}
+        />
       )}
       {uncommented && (
         <View testID="uncommented" style={{ position: "absolute", width: 1, height: 1 }} />
@@ -780,7 +798,9 @@ export default function Canvas() {
       {pending && (
         <Sheet
           testID="comment-sheet"
-          right={insets.right}
+          // Like a book it stays on the design's half, clear of the crease and comments.
+          right={split === "beside" ? W - area.width : insets.right}
+          maxWidth={sheetMax(duo)}
           onDismiss={() => {
             setPending(null);
             setSheet(0);
@@ -815,13 +835,11 @@ export default function Canvas() {
         an inset panel; on a phone, closed and upright the system's sheet. A pin tapped with no
         list open is the thread's own sheet, as on an iPhone.
       */}
-      {standby ? null : split ? (
+      {standby ? null : split && folded ? (
         <CommentsHalf
-          style={
-            split === "beside"
-              ? { left: fold + CREASE, top: 0, width: W - insets.right - fold - CREASE, height: H }
-              : { left: 0, top: fold + CREASE, width: W, height: H - fold - CREASE }
-          }
+          split={split}
+          style={folded.comments}
+          right={split === "beside" ? insets.right : 0}
         >
           {comments(undefined)}
         </CommentsHalf>
@@ -856,7 +874,6 @@ export default function Canvas() {
           />
         )
       )}
-      {split && !standby && <Fold axis={split === "below" ? "across" : "down"} at={fold} />}
     </View>
   );
 }
@@ -891,7 +908,20 @@ function Missing({ message }: { message: string }) {
  * it appears and dissolves as the system's glass does, and only the words
  * fade, while the whole rises and sinks.
  */
-function Hint({ bottom, away, onDone }: { bottom: number; away: boolean; onDone: () => void }) {
+function Hint({
+  bottom,
+  left,
+  width,
+  away,
+  onDone,
+}: {
+  bottom: number;
+  /** The canvas's part of the window, which it's centred in. */
+  left: number;
+  width: number;
+  away: boolean;
+  onDone: () => void;
+}) {
   const { color } = useTheme();
   const t = useSharedValue(0);
   const [shown, setShown] = useState(false);
@@ -930,10 +960,7 @@ function Hint({ bottom, away, onDone }: { bottom: number; away: boolean; onDone:
     <Animated.View
       pointerEvents="none"
       testID="hint"
-      style={[
-        { position: "absolute", bottom: Math.max(34, bottom), alignSelf: "center", zIndex: 8 },
-        move,
-      ]}
+      style={[{ position: "absolute", bottom, left, width, alignItems: "center", zIndex: 8 }, move]}
     >
       <Glass
         shown={shown}
@@ -1101,11 +1128,104 @@ function SessionCard({
 }
 
 /**
- * The file and page pills on iPhone Duo, where the system's bars hold Back
- * (and the page, closed and upright). The file pill is centered on the
- * canvas closed and upright, and top left open sideways and in the book
- * pose, with the page pill top right (the board's 5). Each glides between
- * its places as the phone opens and closes (`Glide`).
+ * The file pill on iPhone Duo: the file's icon (an agent's mark while one is
+ * here, the slice juicing while it loads) and name, opening the agent's
+ * session card. On the canvas beside the rail, in the system's bar upright.
+ */
+function FilePill({
+  file,
+  icon,
+  working,
+  agentName,
+  card,
+  onCard,
+  bare,
+  chromeStyle,
+}: {
+  file: string;
+  icon: React.ReactNode;
+  working: boolean;
+  agentName?: string;
+  card: boolean;
+  onCard?: () => void;
+  bare: boolean;
+  chromeStyle: ReturnType<typeof useAnimatedStyle>;
+}) {
+  const { color } = useTheme();
+  return (
+    <Pressable
+      onPress={
+        onCard
+          ? () => {
+              if (!card) tick();
+              onCard();
+            }
+          : undefined
+      }
+      disabled={!onCard}
+      accessibilityRole={onCard ? "button" : "text"}
+      accessibilityLabel={agentName ? `${file}, ${agentName}'s session` : file}
+    >
+      <Glass interactive={Boolean(onCard)} held={card} shown={!bare} style={{ height: 44 }}>
+        <Animated.View
+          style={[
+            {
+              height: 44,
+              paddingLeft: 13,
+              paddingRight: 16,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 7,
+            },
+            chromeStyle,
+          ]}
+        >
+          {icon}
+          {working ? (
+            <Shimmer text={file} style={titleText} color={color.ink} surface={color.bar} />
+          ) : (
+            <Text numberOfLines={1} style={[titleText, { maxWidth: 240, color: color.ink }]}>
+              {file}
+            </Text>
+          )}
+        </Animated.View>
+      </Glass>
+    </Pressable>
+  );
+}
+
+/**
+ * A pill in the system's bar upright: out of reach of touch and VoiceOver
+ * while bare, as the pills on the canvas are.
+ */
+function BarPill({
+  bare,
+  testID,
+  children,
+}: {
+  bare: boolean;
+  testID: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <View
+      testID={testID}
+      pointerEvents={bare ? "none" : "auto"}
+      accessibilityElementsHidden={bare}
+      importantForAccessibility={bare ? "no-hide-descendants" : "auto"}
+    >
+      {children}
+    </View>
+  );
+}
+
+/**
+ * The file and page pills on the canvas beside iPhone Duo's rail, which
+ * holds Back and comments (and the page, closed). The file pill is centered
+ * on the canvas closed, and top left open sideways and in the book pose,
+ * with the page pill top right (the board's 5). Each glides between its
+ * places as the phone opens and closes (`Glide`). Upright both are in the
+ * system's bar instead (`NativeBarItems`).
  *
  * Each pill is its own glass, never one GlassGroup over the window: the
  * group's container is a UIVisualEffectView that takes every touch inside
@@ -1114,12 +1234,7 @@ function SessionCard({
  * enough to merge.
  */
 function DuoPills({
-  file,
-  icon,
-  working,
-  agentName,
-  card,
-  onCard,
+  filePill,
   page,
   pageMenu,
   area,
@@ -1128,12 +1243,8 @@ function DuoPills({
   chromeStyle,
   split,
 }: {
-  file: string;
-  icon: React.ReactNode;
-  working: boolean;
-  agentName?: string;
-  card: boolean;
-  onCard?: () => void;
+  /** The file pill (`FilePill`). */
+  filePill: React.ReactNode;
   page: { name: string; icon?: string } | undefined;
   /** The page pill and its menu, open sideways; null where the page is a bar item. */
   pageMenu: ((pill: React.ReactNode) => React.ReactNode) | null;
@@ -1145,7 +1256,6 @@ function DuoPills({
   /** Folded: the pills are at the book's corners, not opening. */
   split: boolean;
 }) {
-  const { color } = useTheme();
   // Measured widths, so a centered pill's left edge can glide like the rest.
   const [fileW, setFileW] = useState(120);
   const [pageW, setPageW] = useState(112);
@@ -1172,45 +1282,7 @@ function DuoPills({
         opening={opening}
         testID="title"
       >
-        <Pressable
-          onPress={
-            onCard
-              ? () => {
-                  if (!card) tick();
-                  onCard();
-                }
-              : undefined
-          }
-          disabled={!onCard}
-          accessibilityRole={onCard ? "button" : "text"}
-          accessibilityLabel={agentName ? `${file}, ${agentName}'s session` : file}
-          onLayout={(e) => setFileW(e.nativeEvent.layout.width)}
-        >
-          <Glass interactive={Boolean(onCard)} held={card} shown={!bare} style={{ height: 44 }}>
-            <Animated.View
-              style={[
-                {
-                  height: 44,
-                  paddingLeft: 13,
-                  paddingRight: 16,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 7,
-                },
-                chromeStyle,
-              ]}
-            >
-              {icon}
-              {working ? (
-                <Shimmer text={file} style={titleText} color={color.ink} surface={color.bar} />
-              ) : (
-                <Text numberOfLines={1} style={[titleText, { color: color.ink }]}>
-                  {file}
-                </Text>
-              )}
-            </Animated.View>
-          </Glass>
-        </Pressable>
+        <View onLayout={(e) => setFileW(e.nativeEvent.layout.width)}>{filePill}</View>
       </Glide>
       {pageMenu && (
         <Glide
@@ -1221,7 +1293,7 @@ function DuoPills({
           testID="page-pill"
         >
           <View onLayout={(e) => setPageW(e.nativeEvent.layout.width)}>
-            <PagePill page={page} menu={pageMenu} shown={!bare} />
+            <PagePill page={page} menu={pageMenu} shown={!bare} fade={chromeStyle} />
           </View>
         </Glide>
       )}
