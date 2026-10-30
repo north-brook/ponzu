@@ -211,7 +211,14 @@ export default function Designs() {
         testID="designs"
         style={{ flex: 1, backgroundColor: color.bg }}
         contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={{ paddingTop: 8, paddingBottom: 24 }}
+        contentContainerStyle={{
+          paddingTop: 8,
+          // Clear of the system's rail at the side, whichever side it's on (iPhone Duo, and an
+          // iPad's window on the left of Split View), as `page` leaves room for it.
+          marginLeft: rail.left,
+          marginRight: rail.right,
+          paddingBottom: 24,
+        }}
         refreshControl={
           // The system's pull, but not its spinner: loading is the lockup's slice juicing in
           // place. The control ends its refresh at once, so the grid springs back; the slice
