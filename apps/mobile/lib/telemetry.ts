@@ -18,7 +18,6 @@ export type Event =
   | ["mac paired", { via: "qr" }]
   | ["canvas opened", Record<string, never>?]
   | ["comment left", { reply: boolean; mode: "voice" | "type" }]
-  | ["activity opened", Record<string, never>?]
   | ["link opened", { kind: "design" | "unpaired" | "missing" | "invalid" }]
   /** A sample of gestures on the canvas (pans, pinches, double-taps): how the canvas's frames kept up (lib/canvas-perf.ts). */
   | ["canvas gesture", GesturePerf];

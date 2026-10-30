@@ -1,7 +1,7 @@
 import type { Thread } from "@ponzu/core";
 import { type ReactNode, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import { clientOf, shortAgent } from "../lib/activity";
+import { clientOf, shortAgent } from "../lib/agents";
 import { draftKey } from "../lib/drafts";
 import { shortAgo } from "../lib/files";
 import { useTheme } from "../lib/theme";

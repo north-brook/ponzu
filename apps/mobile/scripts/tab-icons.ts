@@ -10,8 +10,9 @@
  *   app.json puts these in the asset catalog (expo-native-asset), where the
  *   native menu finds them by name (lib/page-icons.ts reads the same map).
  * - `bar-<name>.png`, 22pt: a header bar button's glyph (Designs' filter,
- *   the canvas's Back and comments), and Activity's filter menu (New,
- *   Everything).
+ *   the canvas's Back and comments), and `new` and `everything`, from the
+ *   Activity tab's filter menu, kept in the app's asset catalog until the
+ *   next native build drops them.
  *
  * Rerun when a mark or desktop's icons change, and add a new `hi-*` or
  * `bar-*` to app.json's expo-native-asset list:
@@ -26,7 +27,6 @@ import {
   DashboardSquare01Icon,
   FilterHorizontalIcon,
   InboxIcon,
-  Notification01Icon,
   Notification03Icon,
   Search01Icon,
 } from "@hugeicons/core-free-icons";
@@ -40,8 +40,6 @@ const MARKS: Record<string, IconSvg> = {
   /** Designs: desktop's `board`. */
   designs: DashboardSquare01Icon,
   search: Search01Icon,
-  /** Activity: the bell it was on Designs. */
-  activity: Notification01Icon,
 };
 
 function svg(icon: IconSvg, size: number, stroke: number): string {
@@ -87,7 +85,7 @@ const BAR: Record<string, IconSvg> = {
   filter: FilterHorizontalIcon,
   back: ArrowLeft01Icon,
   comments: Comment01Icon,
-  // Activity's filter: New and Everything.
+  // The Activity tab's filter, gone with it; app.json still lists them.
   new: Notification03Icon,
   everything: InboxIcon,
 };

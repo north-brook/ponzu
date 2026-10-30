@@ -5,7 +5,7 @@ import type { Mac } from "./mac";
  * decides when to notify (only when the phone was the last thing the person
  * used) and posts a content-free push ("something happened in Kettle") to a
  * relay in apps/web, which holds the APNs key. The phone then fetches the
- * details over the tailnet, as it does now when Activity opens.
+ * details over the tailnet.
  *
  * What's missing is the Mac's side: a route to hand it this phone's APNs
  * token, and the relay. Once there is one, `registerPush` asks for permission

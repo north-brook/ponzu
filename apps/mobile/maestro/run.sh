@@ -7,9 +7,7 @@
 # Starts the server and Metro on free ports unless PONZU_PORT / METRO_PORT
 # say they're already running there, builds and installs the client unless
 # SKIP_BUILD=1, then runs every flow (a JUnit report to MAESTRO_OUTPUT, if
-# set). Before the flows, an agent (agent.ts, over the server's MCP) adds three
-# artboards to a design in a temporary folder, for Activity. Fails if
-# examples/ isn't left as it was found.
+# set). Fails if examples/ isn't left as it was found.
 set -euo pipefail
 
 UDID=${1:?simulator udid}
@@ -55,9 +53,6 @@ if [ "${SKIP_BUILD:-}" != 1 ]; then
   xcrun simctl boot "$UDID" 2>/dev/null || true
   xcrun simctl install "$UDID" "$MOBILE/ios/build/dd/Build/Products/Debug-iphonesimulator/Ponzu.app"
 fi
-
-mkdir -p "$SCRATCH/designs"
-bun "$MOBILE/maestro/agent.ts" "$PONZU_PORT" "$SCRATCH/designs"
 
 KETTLE=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' \
   "$ROOT/examples/kettle.design")

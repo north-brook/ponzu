@@ -4,18 +4,17 @@ import { Platform, Pressable, ScrollView, Text, useWindowDimensions, View } from
 import type { SearchBarCommands } from "react-native-screens";
 import { HeaderTitle } from "../../../components/chrome";
 import { FileCard, Marked, useMarkColor } from "../../../components/file-card";
-import { Branch, Clock, Folder, PageIcon, Search as SearchGlyph } from "../../../components/icons";
+import { Search as SearchGlyph } from "../../../components/icons";
 import { MacImage } from "../../../components/preview";
+import { shortAgent } from "../../../lib/agents";
 import { useFiles } from "../../../lib/catalog";
 import { designColumns } from "../../../lib/duo-layout";
-import { type PhoneFile, whereLine } from "../../../lib/files";
-import { select, tick } from "../../../lib/haptics";
-import { lately, noteSearch, type Opened } from "../../../lib/lately";
+import { type PhoneFile, shelfOf, shortAgo, whereLine } from "../../../lib/files";
+import { tick } from "../../../lib/haptics";
 import { useMargin } from "../../../lib/margin";
 import { useMacs } from "../../../lib/reach";
 import { search } from "../../../lib/search";
 import { isUnseen, useSeen } from "../../../lib/seen";
-import { useStore } from "../../../lib/store";
 import { useTheme } from "../../../lib/theme";
 import { brand } from "../../../lib/tokens";
 import { useWindowInsets } from "../../../lib/window-insets";
@@ -23,9 +22,8 @@ import { useWindowInsets } from "../../../lib/window-insets";
 /**
  * Search (Flow › 2 Search), the search tab: the system's search field, and
  * results as Files (cards) and Frames (artboards, with the page and design
- * they're in), matches marked. Before anything's typed, the last few
- * searches and the designs opened lately; with nothing found, what was
- * searched. `?q=` starts it with a query.
+ * they're in), matches marked. Before anything's typed, the designs
+ * changed lately; with nothing found, what was searched. `?q=` starts it with a query.
  */
 export default function Search() {
   const rail = useWindowInsets();
@@ -35,7 +33,6 @@ export default function Search() {
   const [query, setQuery] = useState(params.q ?? "");
   const files = useFiles();
   const { macs } = useMacs();
-  const { searches, opened } = useStore(lately);
   const bar = useRef<SearchBarCommands>(null);
   const seen = useSeen();
   const markColor = useMarkColor();
@@ -52,8 +49,7 @@ export default function Search() {
     color: color.muted,
     paddingHorizontal: m,
   };
-  // The system's search field, in the native header: glass on iOS 26, and the
-  // search tab's own (role="search" in the tabs layout).
+  // The system's search field, in the native header: glass on iOS 26.
   const navigation = useNavigation();
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -70,44 +66,27 @@ export default function Search() {
         textColor: color.ink,
         onChangeText: (e: { nativeEvent: { text: string } }) => setQuery(e.nativeEvent.text),
         onCancelButtonPress: () => setQuery(""),
-        // A search the person settled on: kept for next time.
-        onSearchButtonPress: (e: { nativeEvent: { text: string } }) =>
-          noteSearch(e.nativeEvent.text),
       },
     });
   }, [navigation, color.ink]);
   const q = query.trim();
   const found = results.files.length > 0 || results.frames.length > 0;
-  // Leaving with results on screen counts as settling on the search.
-  const latest = useRef({ q, found });
-  latest.current = { q, found };
   useFocusEffect(
     useCallback(() => {
-      // An iPad's search field is in the header, and the tab doesn't open it as an iPhone's does:
-      // it's opened here, so choosing Search is ready to type, as it is on a phone.
-      const open =
-        Platform.OS === "ios" && Platform.isPad
-          ? setTimeout(() => bar.current?.focus(), 300)
-          : undefined;
-      return () => {
-        clearTimeout(open);
-        if (latest.current.found) noteSearch(latest.current.q);
-      };
+      // The field is in the header, and a plain tab doesn't open it: it's opened here, so
+      // choosing Search is ready to type.
+      const open = Platform.OS === "ios" ? setTimeout(() => bar.current?.focus(), 300) : undefined;
+      return () => clearTimeout(open);
     }, []),
   );
-  const again = (s: string) => {
-    select();
-    bar.current?.setText(s);
-    setQuery(s);
-  };
   const go = (pathname: "/design/[mac]/[key]", p: Record<string, string>) => {
     tick();
-    if (found) noteSearch(q);
     router.push({ pathname, params: p as { mac: string; key: string } });
   };
-  const lately3 = opened
-    .map((o) => ({ o, file: files.find((f) => f.mac === o.mac && f.key === o.key) }))
-    .filter((x): x is { o: (typeof opened)[number]; file: PhoneFile } => Boolean(x.file));
+  const changed = useMemo(
+    () => files.filter((f) => shelfOf(f) === "recent" && !f.locked).slice(0, SUGGEST),
+    [files],
+  );
   const answering = macs.map((m) => m.name);
 
   return (
@@ -242,16 +221,8 @@ export default function Search() {
         )}
         {!q && (
           <Before
-            searches={searches}
-            opened={lately3}
-            onSearch={again}
-            onOpen={(x) =>
-              go("/design/[mac]/[key]", {
-                mac: x.file.mac,
-                key: x.file.key,
-                ...(x.o.page ? { page: x.o.page } : {}),
-              })
-            }
+            files={changed}
+            onOpen={(f) => go("/design/[mac]/[key]", { mac: f.mac, key: f.key })}
           />
         )}
         {q && !found && <NoMatches query={q} count={files.length} macs={answering} />}
@@ -260,168 +231,79 @@ export default function Search() {
   );
 }
 
-const sectionLabel = {
-  fontFamily: "Inter",
-  fontWeight: "600" as const,
-  fontSize: 13,
-};
+/** How many of the designs changed lately Search suggests. */
+const SUGGEST = 6;
 
-/** Before anything's typed: recent searches as chips, then the designs opened lately. */
-function Before({
-  searches,
-  opened,
-  onSearch,
-  onOpen,
-}: {
-  searches: string[];
-  opened: { o: Opened; file: PhoneFile }[];
-  onSearch: (s: string) => void;
-  onOpen: (x: { o: Opened; file: PhoneFile }) => void;
-}) {
-  const { color, scheme } = useTheme();
+/**
+ * Before anything's typed: the designs changed lately on any Mac, newest
+ * first, each with who's in it now, when it changed and its branch.
+ */
+function Before({ files, onOpen }: { files: PhoneFile[]; onOpen: (f: PhoneFile) => void }) {
+  const { color } = useTheme();
   const m = useMargin();
-  const edge = scheme === "dark" ? "rgba(255,255,255,0.2)" : "rgba(17,17,16,0.12)";
   return (
-    <View testID="search-before" style={{ gap: 14 }}>
-      {searches.length > 0 && (
-        <>
-          <Text style={[sectionLabel, { color: color.muted, paddingHorizontal: m }]}>
-            Recent searches
-          </Text>
-          <View style={{ paddingHorizontal: m, flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-            {searches.map((s) => (
-              <Pressable
-                key={s}
-                onPress={() => onSearch(s)}
-                accessibilityRole="button"
-                accessibilityLabel={`Search for ${s}`}
-                style={({ pressed }) => ({
-                  height: 34,
-                  paddingHorizontal: 12,
-                  borderRadius: 999,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 6,
-                  opacity: pressed ? 0.6 : 1,
-                  boxShadow: `inset 0 0 0 1px ${edge}`,
-                })}
-              >
-                <Clock size={14} color={color.faint} />
-                <Text
-                  style={{ fontFamily: "Inter", fontWeight: "500", fontSize: 14, color: color.ink }}
-                >
-                  {s}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        </>
-      )}
-      {opened.length > 0 && (
-        <>
-          <Text
-            style={[
-              sectionLabel,
-              { color: color.muted, paddingHorizontal: m, paddingTop: searches.length ? 10 : 0 },
-            ]}
-          >
-            Opened lately
-          </Text>
-          <View style={{ paddingHorizontal: m, gap: 10 }}>
-            {opened.map((x) => {
-              const page = x.file.pages.find((p) => p.id === x.o.page) ?? x.file.pages[0];
-              const thumb = x.file.artboards?.find((a) => a.page === page?.id)?.thumb;
-              const where = whereLine(x.file);
-              return (
-                <Pressable
-                  key={`${x.o.mac}:${x.o.key}`}
-                  onPress={() => onOpen(x)}
-                  accessibilityRole="button"
-                  testID={`opened-${x.file.name}`}
-                  style={({ pressed }) => ({
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 12,
-                    opacity: pressed ? 0.6 : x.file.stale ? 0.45 : 1,
-                  })}
-                >
-                  <View
-                    style={{
-                      width: 64,
-                      height: 48,
-                      borderRadius: 8,
-                      backgroundColor: color.canvas,
-                      boxShadow: `0 0 0 1px ${color.hairline}`,
-                      overflow: "hidden",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <MacImage
-                      mac={x.file.mac}
-                      url={thumb ?? x.file.preview}
-                      live={!x.file.stale}
-                      contentFit="contain"
-                      contentPosition="center"
-                      style={{ width: 56, height: 40 }}
-                    />
-                  </View>
-                  <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
-                    <Text
-                      numberOfLines={1}
-                      style={{
-                        fontFamily: "Inter",
-                        fontWeight: "500",
-                        fontSize: 15,
-                        color: color.ink,
-                      }}
-                    >
-                      {x.file.name}
-                    </Text>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                      {page && (
-                        <>
-                          <PageIcon name={page.icon} size={13} color={color.faint} />
-                          <Text
-                            numberOfLines={1}
-                            style={{
-                              flexShrink: 1,
-                              fontFamily: "Inter",
-                              fontSize: 13,
-                              color: color.muted,
-                            }}
-                          >
-                            {page.name}
-                          </Text>
-                          <Text style={{ fontFamily: "Inter", fontSize: 13, color: color.faint }}>
-                            ·
-                          </Text>
-                        </>
-                      )}
-                      {where.branch ? (
-                        <Branch size={13} color={color.faint} />
-                      ) : (
-                        <Folder size={13} color={color.faint} />
-                      )}
-                      <Text
-                        numberOfLines={1}
-                        style={{
-                          flexShrink: 1,
-                          fontFamily: "Inter",
-                          fontSize: 13,
-                          color: color.muted,
-                        }}
-                      >
-                        {where.branch ?? where.folder}
-                      </Text>
-                    </View>
-                  </View>
-                </Pressable>
-              );
+    <View testID="search-before" style={{ paddingHorizontal: m, gap: 10 }}>
+      {files.map((f) => {
+        const agent = f.agents?.find((a) => a.activity === "working") ?? f.agents?.[0];
+        const where = whereLine(f);
+        const thumb = f.artboards?.[0]?.thumb;
+        return (
+          <Pressable
+            key={f.id}
+            onPress={() => onOpen(f)}
+            accessibilityRole="button"
+            testID={`changed-${f.name}`}
+            style={({ pressed }) => ({
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 12,
+              opacity: pressed ? 0.6 : f.stale ? 0.45 : 1,
             })}
-          </View>
-        </>
-      )}
+          >
+            <View
+              style={{
+                width: 64,
+                height: 48,
+                borderRadius: 8,
+                backgroundColor: color.canvas,
+                boxShadow: `0 0 0 1px ${color.hairline}`,
+                overflow: "hidden",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <MacImage
+                mac={f.mac}
+                url={thumb ?? f.preview}
+                live={!f.stale}
+                contentFit="contain"
+                contentPosition="center"
+                style={{ width: 56, height: 40 }}
+              />
+            </View>
+            <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+              <Text
+                numberOfLines={1}
+                style={{ fontFamily: "Inter", fontWeight: "500", fontSize: 15, color: color.ink }}
+              >
+                {f.name}
+              </Text>
+              <Text
+                numberOfLines={1}
+                style={{ fontFamily: "Inter", fontSize: 13, color: color.muted }}
+              >
+                {[
+                  agent && shortAgent(agent.name),
+                  shortAgo(f.modified),
+                  where.branch ?? where.folder,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </Text>
+            </View>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }

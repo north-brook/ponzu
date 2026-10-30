@@ -90,7 +90,7 @@ export function Lockup({ color, busy = false }: { color: string; busy?: boolean 
 
 /**
  * A tab's title in the header's row, where Designs has its lockup: Funnel
- * Display bold, 26pt, so Search and Activity read as Designs does.
+ * Display bold, 26pt, so Search reads as Designs does.
  */
 export function HeaderTitle({ children, color }: { children: string; color: string }) {
   const ref = useRef<HostInstance>(null);

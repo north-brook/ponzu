@@ -5,8 +5,8 @@ import { Store, useStore } from "./store";
 /**
  * When the person last looked at each design on this phone: the design's
  * `modified` when they last opened it. A design changed since shows the
- * yuzu dot on its card and its changes under Activity's New. Designs the
- * phone sees for the first time count as seen, so a fresh install starts
+ * yuzu dot on its card, and its comments newer than that are unread. Designs
+ * the phone sees for the first time count as seen, so a fresh install starts
  * clean. Kept on this phone only; syncing it across devices is later work.
  */
 const KEY = "ponzu.seen";

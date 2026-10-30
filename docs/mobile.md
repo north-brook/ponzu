@@ -12,7 +12,7 @@ design's `notes/brief.md`.
 | Path | What it is |
 | --- | --- |
 | `app/` | Screens, by Expo Router. `_layout.tsx` is the root. |
-| `lib/` | Shared code: `tokens.ts` (the design's colors and fonts), `theme.ts`, `slice.tsx` (the mark and its bloom), `ua.ts` (the User-Agent), `polyfills.ts`; and the data layer (see below): `query.tsx` and `mac-queries.ts` (the query cache), `macs.ts` (paired Macs), `reach.ts` (who answers), `catalog.ts` (every Mac's designs), `design.ts` (one design's socket), `seen.ts`, `activity.ts`, `telemetry.ts`. |
+| `lib/` | Shared code: `tokens.ts` (the design's colors and fonts), `theme.ts`, `slice.tsx` (the mark and its bloom), `ua.ts` (the User-Agent), `polyfills.ts`; and the data layer (see below): `query.tsx` and `mac-queries.ts` (the query cache), `macs.ts` (paired Macs), `reach.ts` (who answers), `catalog.ts` (every Mac's designs), `design.ts` (one design's socket), `seen.ts`, `changes.ts`, `telemetry.ts`. |
 | `components/` | Shared views: the file card, the canvas web view (`canvas-view.tsx`), the comment composer and sheets, and `glass.tsx`, the floating controls' Liquid Glass. |
 | `global.css` | Tailwind and the design's tokens as class names (`bg-yuzu`, `text-c-muted`, light and dark). |
 | `modules/tailnet` | A small Expo module that lists the phone's interface addresses, so `lib/tailnet.ts` can tell whether Tailscale is on. |
@@ -33,14 +33,13 @@ What the phone asks a Mac for goes through one TanStack Query cache
 (`lib/query.tsx`), keyed per Mac (`lib/mac-queries.ts`): `["mac", id,
 "info"]` (`/api/info`), `["mac", id, "macs"]` (`/api/macs`), `["mac", id,
 "catalog"]` (its designs) and `["mac", id, "activity"]` (`/api/activity`,
-what agents changed). Info, catalogs and activity are kept in AsyncStorage
+what agents changed, for standby's camera). Info, catalogs and changes are kept in AsyncStorage
 for a week (dropped on a new version or protocol), so the app opens onto the
 last list and an asleep Mac keeps its cards, dimmed. While a Mac answers, its
 catalog socket (`/api/catalog/stream`) writes the snapshot and each patch
-into its catalog query; nothing else holds a copy. Search, Activity and the
-cards are read from those queries. Activity asks each Mac again when the
-app comes back to the foreground and when its catalog stream says an agent
-edited a design.
+into its catalog query; nothing else holds a copy. Search and the cards are
+read from those queries. A Mac's changes are asked again when its catalog
+stream says an agent edited a design.
 
 Each Mac keeps a history of what agents changed (`packages/server/src/changes.ts`):
 an agent's edits to artboards in one design, a couple of minutes apart at
@@ -109,12 +108,12 @@ an iPad turns freely (`UISupportedInterfaceOrientations~ipad` in
 - **Designs and Search** add columns as the page widens, counting its
   margins and the gaps between cards: two on an iPhone, three once each
   card can be 200pt (iPhone Duo's inner display), and more while each stays
-  230pt or wider (an iPad's four or five). **Activity** is one readable
-  column, at most 680pt, centered.
+  230pt or wider (an iPad's four or five).
 - **The tabs** are named on an iPad, where the tab bar is a row of names
-  across the top that VoiceOver reads by name; on an iPhone they're marks.
-  An iPad's Search tab opens its header field when chosen, as an iPhone's
-  search tab does on its own.
+  across the top that VoiceOver reads by name; on an iPhone they're marks,
+  together in one bar. Search is a plain tab, not the system's search tab
+  (which iOS 26 sets apart from the bar), and opens its header field when
+  chosen.
 
 ### Haptics
 
@@ -126,7 +125,7 @@ logged to Metro as `[haptic] <kind>`, since the simulator can't buzz.
 | Haptic | When |
 | --- | --- |
 | `select` | A tab changing; a native menu opening (the page button, a card's hold); a filter, page or shelf picked; a recent search tapped; typing ⇄ voice |
-| `tick` | A design opened (a card, a search or Activity row); Back; the session card opening; a board coming into focus or leaving it; a comment's pin dropped; pull to refresh |
+| `tick` | A design opened (a card or a search row); Back; the session card opening; a board coming into focus or leaving it; a comment's pin dropped; pull to refresh |
 | `success` | A comment or reply sent; a thread resolved; a Mac paired; a Mac answering after "Waking Ponzu" |
 | `thud` | A design archived |
 | `fail` | A pairing error; a comment that didn't send; a shelf change a Mac didn't take; a Mac that didn't wake |
@@ -185,13 +184,12 @@ echo EXPO_PUBLIC_PONZU_DEV_HOST=127.0.0.1:7792 > apps/mobile/.env.local
 
 Development builds save it as a paired Mac ("This Mac") and learn your other
 Macs from it. Screens open by URL, with `xcrun simctl openurl booted
-ponzu://<route>`: `designs`, `search?q=kettle`, `activity`, `connect`,
+ponzu://<route>`: `designs`, `search?q=kettle`, `connect`,
 `connect/scan`, `tailscale`, `asleep`, `pair?host=<name>&v=1`, and a design
 with `design/<mac id>/<encoded key>?page=App` (`thread=<id>` opens a thread,
 `artboard=<id>` focuses a frame). In development a design also takes
 `comment=<artboard>` (opens a new comment's sheet on that board) and
-`uncomment=<text>` (deletes your threads that start with it), and
-`activity?since=<ms>` shows what's new since then. `dev?forget=all` forgets
+`uncomment=<text>` (deletes your threads that start with it). `dev?forget=all` forgets
 every Mac, for a first launch; `forget=dev` or `forget=<id>,<id>` forgets
 those.
 

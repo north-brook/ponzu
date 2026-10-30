@@ -1,5 +1,5 @@
 import { Pressable, Text, View } from "react-native";
-import { shortAgent } from "../lib/activity";
+import { shortAgent } from "../lib/agents";
 import { type PhoneFile, shortAgo, whereLine } from "../lib/files";
 import type { Run } from "../lib/search";
 import { useScheme, useTheme } from "../lib/theme";

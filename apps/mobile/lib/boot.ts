@@ -1,7 +1,6 @@
-import { loadMacs, macs } from "./macs";
+import { loadMacs } from "./macs";
 import { reachAll } from "./reach";
 import { loadSeen } from "./seen";
-import { loadThreadDocs } from "./threads";
 
 let booted: Promise<void> | null = null;
 
@@ -14,7 +13,6 @@ let booted: Promise<void> | null = null;
 export function boot(): Promise<void> {
   booted ??= (async () => {
     await Promise.all([loadMacs(), loadSeen()]);
-    loadThreadDocs(macs.get().map((m) => m.id));
     reachAll();
   })();
   return booted;
