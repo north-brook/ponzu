@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/north-brook/ponzu/compare/mobile-v0.10.0...mobile-v0.11.0) (2026-10-30)
+
+
+### Features
+
+* open design links on a page ([#363](https://github.com/north-brook/ponzu/issues/363)) ([4a13116](https://github.com/north-brook/ponzu/commit/4a131168eff356b1e43ac24770b1089ceca5a3d5))
+
 ## [0.10.0](https://github.com/north-brook/ponzu/compare/mobile-v0.9.0...mobile-v0.10.0) (2026-10-30)
 
 
