@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.75.0](https://github.com/north-brook/ponzu/compare/v1.74.0...v1.75.0) (2026-10-30)
+
+
+### Features
+
+* show unseen designs on desktop and drop the iphone activity tab ([#355](https://github.com/north-brook/ponzu/issues/355)) ([3d6a1ab](https://github.com/north-brook/ponzu/commit/3d6a1ab956e9849be698573b96ea92dafffc9e66))
+
 ## [1.74.0](https://github.com/north-brook/ponzu/compare/v1.73.1...v1.74.0) (2026-10-30)
 
 
