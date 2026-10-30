@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/north-brook/ponzu/compare/mobile-v0.6.1...mobile-v0.7.0) (2026-10-30)
+
+
+### Features
+
+* **mobile:** pan the canvas smoothly and polish iphone duo's poses ([#343](https://github.com/north-brook/ponzu/issues/343)) ([90bac03](https://github.com/north-brook/ponzu/commit/90bac034e64285173adafd072acd5e1b3d6c3704))
+
 ## [0.6.1](https://github.com/north-brook/ponzu/compare/mobile-v0.6.0...mobile-v0.6.1) (2026-10-29)
 
 
