@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.10.0](https://github.com/north-brook/ponzu/compare/mobile-v0.9.0...mobile-v0.10.0) (2026-10-30)
+
+
+### Features
+
+* drag and discard draft comments ([#362](https://github.com/north-brook/ponzu/issues/362)) ([1da975a](https://github.com/north-brook/ponzu/commit/1da975a8eae1668cd5160c803e20778751a40a7c))
+
+
+### Bug Fixes
+
+* **mobile:** frame working boards, send comments in one tap on iphone duo, keep zoom when commenting ([#359](https://github.com/north-brook/ponzu/issues/359)) ([5b3b17b](https://github.com/north-brook/ponzu/commit/5b3b17b7e4537ded5940ad47585591078ece29de))
+
 ## [0.9.0](https://github.com/north-brook/ponzu/compare/mobile-v0.8.1...mobile-v0.9.0) (2026-10-30)
 
 
