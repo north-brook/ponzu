@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { appLink, designLink, parseDesignLink } from "./link.ts";
+import { type Artboard, type Doc, emptyDoc } from "./index.ts";
+import { appLink, designLink, linkTarget, parseDesignLink } from "./link.ts";
 
 test("a design link opens ponzu.design's open page, or a server's canvas", () => {
   expect(designLink("/Users/sam/app/design/app.design")).toBe(
@@ -37,6 +38,25 @@ test("a design link names the Mac it's on, for the person's other Macs to open i
   expect(appLink("/d/a.design", { mac: "Sam's Mac" })).toBe("ponzu://open?file=/d/a.design");
 });
 
+test("a design link can open on a page, the board on it or not", () => {
+  const link = designLink("/Users/sam/app.design", { page: "pg_flow", artboard: "ab_hero" });
+  expect(link).toBe(
+    "https://ponzu.design/local#file=/Users/sam/app.design&page=pg_flow&artboard=ab_hero",
+  );
+  expect(parseDesignLink(`ponzu://open?${new URL(link).hash.slice(1)}`)).toEqual({
+    path: "/Users/sam/app.design",
+    page: "pg_flow",
+    artboard: "ab_hero",
+  });
+  expect(designLink("/d/a.design", { origin: "http://localhost:7777", page: "pg_flow" })).toBe(
+    "http://localhost:7777/?file=/d/a.design&page=pg_flow",
+  );
+  expect(parseDesignLink("ponzu://open?file=/d/a.design&page=pg_flow")).toEqual({
+    path: "/d/a.design",
+    page: "pg_flow",
+  });
+});
+
 test("a design link escapes what would end it in chat or in a query", () => {
   const link = appLink("/Users/sam/My Designs/50% & up (v2).design", { artboard: "ab_1" });
   expect(link).toBe(
@@ -72,9 +92,54 @@ test("refuses links that aren't one design, by absolute path", () => {
     "ponzu://open?file=/d/a.design&artboard=",
     "ponzu://open?file=/d/a.design&artboard=ab%20x",
     "ponzu://open?file=/d/a.design&artboard=../x",
+    "ponzu://open?file=/d/a.design&page=",
+    "ponzu://open?file=/d/a.design&page=Flow%20one",
     "ponzu://open?mac=&file=/d/a.design",
     "ponzu://open?mac=air.evil.com&file=/d/a.design",
     "ponzu://open?mac=../air&file=/d/a.design",
   ])
     expect(parseDesignLink(raw)).toBeNull();
+});
+
+const board = (id: string): Artboard => ({
+  id,
+  name: id,
+  x: 0,
+  y: 0,
+  root: { kind: "el", id, tag: "div", attrs: {}, style: {}, children: [] },
+});
+const doc: Doc = {
+  ...emptyDoc("App"),
+  pages: [
+    { id: "pg_app", name: "App", artboards: [board("ab_home")] },
+    { id: "pg_flow", name: "Flow", artboards: [board("ab_step")] },
+  ],
+};
+
+test("a link opens on its board's page, framed on the board", () => {
+  expect(linkTarget(doc, { artboard: "ab_step" })).toEqual({
+    pageId: "pg_flow",
+    artboardId: "ab_step",
+  });
+  expect(linkTarget(doc, { page: "pg_flow", artboard: "ab_step" })).toEqual({
+    pageId: "pg_flow",
+    artboardId: "ab_step",
+  });
+});
+
+test("a link's page wins over a board that isn't on it", () => {
+  expect(linkTarget(doc, { page: "pg_flow" })).toEqual({ pageId: "pg_flow" });
+  expect(linkTarget(doc, { page: "pg_flow", artboard: "ab_home" })).toEqual({ pageId: "pg_flow" });
+  expect(linkTarget(doc, { page: "pg_flow", artboard: "ab_gone" })).toEqual({ pageId: "pg_flow" });
+  expect(linkTarget(doc, { page: "Flow" })).toEqual({ pageId: "pg_flow" });
+});
+
+test("a link to what isn't there leaves the doc's own first page", () => {
+  expect(linkTarget(doc, { page: "pg_gone", artboard: "ab_step" })).toEqual({
+    pageId: "pg_flow",
+    artboardId: "ab_step",
+  });
+  expect(linkTarget(doc, { page: "pg_gone" })).toBeNull();
+  expect(linkTarget(doc, { artboard: "ab_gone" })).toBeNull();
+  expect(linkTarget(doc, {})).toBeNull();
 });

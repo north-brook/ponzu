@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.78.0](https://github.com/north-brook/ponzu/compare/v1.77.0...v1.78.0) (2026-11-01)
+
+
+### Features
+
+* scene scripts and product shot guides ([#369](https://github.com/north-brook/ponzu/issues/369)) ([b1a4a72](https://github.com/north-brook/ponzu/commit/b1a4a72ee480a2a16daa9745c9ac44f9e11ae585))
+
+## [1.77.0](https://github.com/north-brook/ponzu/compare/v1.76.0...v1.77.0) (2026-10-30)
+
+
+### Features
+
+* open design links on a page ([#363](https://github.com/north-brook/ponzu/issues/363)) ([4a13116](https://github.com/north-brook/ponzu/commit/4a131168eff356b1e43ac24770b1089ceca5a3d5))
+
+## [1.76.0](https://github.com/north-brook/ponzu/compare/v1.75.1...v1.76.0) (2026-10-30)
+
+
+### Features
+
+* drag and discard draft comments ([#362](https://github.com/north-brook/ponzu/issues/362)) ([1da975a](https://github.com/north-brook/ponzu/commit/1da975a8eae1668cd5160c803e20778751a40a7c))
+
+## [1.75.1](https://github.com/north-brook/ponzu/compare/v1.75.0...v1.75.1) (2026-10-30)
+
+
+### Bug Fixes
+
+* **mobile:** frame working boards, send comments in one tap on iphone duo, keep zoom when commenting ([#359](https://github.com/north-brook/ponzu/issues/359)) ([5b3b17b](https://github.com/north-brook/ponzu/commit/5b3b17b7e4537ded5940ad47585591078ece29de))
+
 ## [1.75.0](https://github.com/north-brook/ponzu/compare/v1.74.0...v1.75.0) (2026-10-30)
 
 

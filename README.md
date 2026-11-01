@@ -53,7 +53,7 @@ Any other MCP client can launch `ponzu mcp` over stdio, or use `http://127.0.0.1
 
 ### The plugin
 
-Claude Code and Codex can also install Ponzu as a plugin. It adds Ponzu's skills (start a design from a brief, bring a screen into Ponzu, explore variations, implement a design, watch your comments) and the same server the app sets up. It launches the Mac app's server, so open the app once first.
+Claude Code and Codex can also install Ponzu as a plugin. It adds Ponzu's skills (start a design from a brief, bring a screen into Ponzu, explore variations, make a product shot, implement a design, watch your comments) and the same server the app sets up. It launches the Mac app's server, so open the app once first.
 
 ```sh
 claude plugin marketplace add north-brook/ponzu && claude plugin install ponzu@ponzu
@@ -66,7 +66,7 @@ Then ask for something:
 
 > Design a landing page for a houseplant shop in a new `design/shop.design`. Give me three takes on the hero.
 
-When an agent points you at a design, it gives you a link rather than a folder path, so it opens in Ponzu instead of your editor: `https://ponzu.design/local#mac=workstation&file=/path/to/app.design&artboard=ab_hero` for the Mac app, or the canvas's own `http://localhost:7777/?file=…` under `ponzu serve`. `artboard` is optional and opens on that board. `mac` is the Mac the design is on, by its Tailscale name, so the link opens on your other Macs too, through Ponzu's link between them; without Tailscale it's left out and the link opens the path on the Mac you click it on. The ponzu.design page hands the design to the app as `ponzu://open?mac=…&file=…` (chats drop links in schemes they don't know) or offers the download if Ponzu isn't installed; the path stays after the `#`, which browsers never send to the site. `/local` sits beside `/gh` for designs on GitHub.
+When an agent points you at a design, it gives you a link rather than a folder path, so it opens in Ponzu instead of your editor: `https://ponzu.design/local#mac=workstation&file=/path/to/app.design&artboard=ab_hero` for the Mac app, or the canvas's own `http://localhost:7777/?file=…` under `ponzu serve`. `page` and `artboard` are optional: `page=<id>` opens on that page, `artboard=<id>` on that board, and with both it opens on the board when it's on that page, otherwise on the page. `mac` is the Mac the design is on, by its Tailscale name, so the link opens on your other Macs too, through Ponzu's link between them; without Tailscale it's left out and the link opens the path on the Mac you click it on. The ponzu.design page hands the design to the app as `ponzu://open?mac=…&file=…` (chats drop links in schemes they don't know) or offers the download if Ponzu isn't installed; the path stays after the `#`, which browsers never send to the site. `/local` sits beside `/gh` for designs on GitHub.
 
 To go back and forth on a design, use the `watch` prompt (or say "watch my comments in Ponzu"). The agent watches the canvas for your comments, handles each one and resolves it, replying only to answer a question or flag something. Agents also start watching on their own once they've put work up for you to review, and you can still chat with them while they do.
 
@@ -105,13 +105,33 @@ Each artboard file holds one `<section data-artboard>`. Its size is the `width` 
 
 - **Edit it however you like.** Ponzu watches the folder. An edit from your editor, `sed` or another agent shows up live and becomes an event agents can react to.
 - **Ids are lazy.** Hand-written elements get stable ids derived from their position. Ponzu writes an id into a file only when something needs to point at it.
-- **Inert by default.** `<script>`, `on*` handlers and `javascript:` URLs are stripped on load.
+- **Inert by default.** `<script>`, `on*` handlers and `javascript:` URLs are stripped on load. The one script kept is a scene (below), which is data, never code.
 - **Comments are pins.** A thread in `comments.json` sits on an artboard (`artboardId`, plus `nodeId` for a node in it) or on a page's open canvas (`pageId`), at `x`/`y`. One missing a field isn't shown, and stays in the file until it's fixed.
 - **Agents can read the format too.** `get_guide('format')` gives them every file's fields, with examples, for importing or generating a design by writing it directly.
 - **Fonts just work.** Google Fonts named in `font-family` load automatically on the canvas and in screenshots.
 - **Examples stay off your home screen.** `"example": true` in `design.json` marks a sample design. The home screen lists an example only once you open it yourself (from Finder, the app, or `ponzu serve path/to/example.design`), not when it's merely found: by Spotlight, by a scan of your folders, or because an agent started in a folder that has one. Agents still open and use examples like any other design. The ones in [`examples/`](examples) are marked.
 
 To implement a design, point your coding agent at the folder. The HTML, tokens and comments are the spec.
+
+### Scenes
+
+An artboard can play itself as a product demo: a cursor that moves, clicks and types, a toast that rises, a total that rolls. The artboard's HTML holds the finished screen, and one `<script type="ponzu/act">` in it lists the beats:
+
+```html
+<script type="ponzu/act">
+click @Field
+type @Email placeholder=@Placeholder
+click @Invite
+show @"New member" grow
+& show @Toast rise
+count @Seats from 4
+poster
+wait 2000
+reset
+</script>
+```
+
+It never runs as code. Ponzu measures the board and turns each beat into Web Animations, so a scene pauses and seeks like any CSS animation: the canvas loops it, a screenshot shows its `poster` frame, and `record` films a storyboard with one frame per beat. Hover, press and focus come from the design's own `:hover`, `:active` and `:focus` rules and their transitions. `get_guide('act')` is the language; `get_guide('product')` is how to make a product shot worth looking at, adapted from [Stageshow](https://github.com/benjitaylor/skills) by Benji Taylor; [`examples/product-shots.design`](examples/product-shots.design) has three to start from.
 
 ### Share it from GitHub
 
@@ -167,6 +187,8 @@ About thirty tools in six groups. `get_guide` serves the house rules.
 | Organize | `list_files` `create_file` `update_file` `create_page` `update_page` `archive` `get_tokens` `set_tokens` |
 | Converse | `list_comments` `get_comment` `create_comment` `reply` `set_comment_status` `send_feedback` |
 | Listen + remember | `wait_for_activity` `set_status` `write_note` `read_notes` `get_guide` |
+
+Guides cover the basics, layout, type, motion, product shots, scenes and a kit of windows and phones at real geometry, among others.
 
 Skills for agents that support them ship in [the plugin](#the-plugin), in [`plugin/skills/`](plugin/skills).
 

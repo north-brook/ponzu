@@ -26,6 +26,10 @@ export interface CanvasState {
   unsent: (PendingPin & { key: string })[];
   /** Threads with a reply left unsent. */
   writing: string[];
+  /** The unsent comment whose pin is being moved, by its draft's key. */
+  moving: string | null;
+  /** Counts `place` asks: done moving. */
+  place: number;
   thread: string | null;
   /** The last focus the app asked for; `n` tells two asks for the same board apart. */
   focus: { id: string | null; n: number } | null;
@@ -51,6 +55,8 @@ export let state: CanvasState = {
   pending: null,
   unsent: [],
   writing: [],
+  moving: null,
+  place: 0,
   thread: null,
   focus: null,
   standby: false,
@@ -83,6 +89,14 @@ export function getState() {
   return state;
 }
 
+/**
+ * An unsent comment's pin, moved: drawn at its new spot at once, before the app's `unsent` (with
+ * the draft's new key) catches up.
+ */
+export function placeUnsent(key: string, pin: PendingPin) {
+  set({ unsent: state.unsent.map((u) => (u.key === key ? { ...pin, key } : u)) });
+}
+
 /** The canvas changed page itself. */
 export function setPage(pageId: string) {
   if (pageId !== state.pageId) set({ pageId });
@@ -91,7 +105,9 @@ export function setPage(pageId: string) {
 export function receive(msg: ToCanvas) {
   switch (msg.t) {
     case "doc": {
-      const keep = msg.page ?? state.pageId;
+      // The page asked for opens a design; the doc sent again (a reconnect) keeps the person's.
+      const fresh = !state.doc || msg.file !== state.file;
+      const keep = (fresh ? msg.page : undefined) ?? state.pageId;
       const pageId = msg.doc.pages.some((p) => p.id === keep) ? keep : null;
       if (msg.file !== state.file) arrivals = new Arrivals();
       set({ doc: msg.doc, assetBase: msg.assetBase, theme: msg.theme, file: msg.file, pageId });
@@ -127,6 +143,12 @@ export function receive(msg: ToCanvas) {
       break;
     case "unsent":
       set({ unsent: msg.pins, writing: msg.threads ?? [] });
+      break;
+    case "move":
+      set({ moving: msg.key });
+      break;
+    case "place":
+      set({ place: state.place + 1 });
       break;
     case "thread":
       set({ thread: msg.id });

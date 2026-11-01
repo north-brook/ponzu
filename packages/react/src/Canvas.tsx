@@ -3,6 +3,7 @@ import {
   type Author,
   findArtboard,
   isThemed,
+  linkTarget,
   locate,
   newId,
   serializeArtboardElement,
@@ -27,14 +28,14 @@ import { Composer, ThreadCard, threadCard } from "./Comments.tsx";
 import { CaptureFlash, useCaptures } from "./capture.tsx";
 import { boardCost, coldLive, coldSkeleton, placeholderFill } from "./coldopen.ts";
 import { type CanvasSource, viewOnly } from "./connection.ts";
-import { type DraftPin, draftKey, unsent, useDrafts } from "./drafts.ts";
-import { Icon, Icons } from "./icons.tsx";
+import { type DraftPin, draftKey, moveDraft, setDraft, unsent, useDrafts } from "./drafts.ts";
+import { Icon, Icons, Pencil } from "./icons.tsx";
 import { centreDistance, detailScale, onScreen, visibleBand } from "./lod.ts";
 import { playing } from "./loops.tsx";
 import { Pacer } from "./pacer.tsx";
 import { TieredBoard, thawed, versionOf } from "./snapshot.tsx";
 import { useWindowStill } from "./still.ts";
-import { Button, cn, ShortcutHint, Tip, TipProvider, ToggleGroup } from "./ui.tsx";
+import { Button, ContextMenu, cn, ShortcutHint, Tip, TipProvider, ToggleGroup } from "./ui.tsx";
 import {
   type CameraStore,
   isTyping,
@@ -78,8 +79,11 @@ export interface CanvasProps {
    * top-left board to the width, from its top, for a narrow screen to scroll down from.
    */
   initialFit?: "page" | "first";
-  /** An artboard to open on, from a link: its page shows with the board framed. */
-  artboard?: string;
+  /**
+   * Where a link opens: an artboard, its page showing with the board framed, or a page. With
+   * both, the page wins when the board isn't on it (@ponzu/core's linkTarget).
+   */
+  link?: { page?: string; artboard?: string };
   className?: string;
 }
 
@@ -220,7 +224,7 @@ export function Canvas({
   page: pageProp,
   onPageChange,
   initialFit = "page",
-  artboard: linked,
+  link,
   className,
 }: CanvasProps) {
   // Read-only hides the controls that edit; this catches anything they missed.
@@ -431,20 +435,24 @@ export function Canvas({
     if (ab) fit({ x: ab.x, y: ab.y, w: size(ab).w, h: boardHeight(ab) }, viewportSize(), 96, 1);
   };
 
-  // Open on the board a link named, once the document is in. After the page's own fit, so the
-  // first frame painted is the board's. A fit-content board is framed again once it's measured,
-  // still before paint; after that the camera is the person's.
-  const shownLink = useRef<{ id: string; sized: boolean } | null>(null);
+  // Open where a link said, once the document is in: on its board, or on its page when the board
+  // isn't there. After the page's own fit, so the first frame painted is the board's. A
+  // fit-content board is framed again once it's measured, still before paint; after that the
+  // camera is the person's. A page alone takes its own fit.
+  const shownLink = useRef<{ key: string; sized: boolean } | null>(null);
   useLayoutEffect(() => {
-    if (!linked || !doc) return;
-    const hit = findArtboard(doc, linked);
-    const sized = !!hit && (size(hit.artboard).h !== null || measured[linked] !== undefined);
+    if (!link || !doc) return;
+    const to = linkTarget(doc, link);
+    const ab = to?.artboardId ? findArtboard(doc, to.artboardId)?.artboard : undefined;
+    const sized = !!ab && (size(ab).h !== null || measured[ab.id] !== undefined);
+    const key = `${link.page}:${link.artboard}`;
     const shown = shownLink.current;
-    if (shown?.id === linked && (shown.sized || !sized)) return;
-    shownLink.current = { id: linked, sized };
-    if (hit) showBoard(hit.page.id, hit.artboard);
+    if (shown?.key === key && (shown.sized || !sized)) return;
+    shownLink.current = { key, sized };
+    if (to && ab) showBoard(to.pageId, ab);
+    else if (to && to.pageId !== page?.id) setPageId(to.pageId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [linked, doc, measured]);
+  }, [link?.page, link?.artboard, doc, measured]);
 
   // Follow an agent to the boards it makes, until the person moves the camera themselves: then
   // it's theirs, and an agent's new board doesn't pull them off the one they're on. Each file
@@ -702,6 +710,21 @@ export function Canvas({
     return { artboard: ab, nodeId: el?.getAttribute("data-id") ?? undefined };
   };
 
+  /** Where a comment dropped under the pointer goes: on the board it's over, or the open page. */
+  const spotAt = (e: { clientX: number; clientY: number }, hit = hitTest(e)): Pending | null => {
+    if (!page) return null;
+    const w = toWorld(e.clientX, e.clientY);
+    return hit
+      ? {
+          artboardId: hit.artboard.id,
+          pageId: page.id,
+          nodeId: hit.nodeId,
+          x: w.x - hit.artboard.x,
+          y: w.y - hit.artboard.y,
+        }
+      : { pageId: page.id, x: w.x, y: w.y };
+  };
+
   // Pointer: pan, select, drag artboards by their title, place comments.
   const drag = useRef<{
     kind: "pan" | "move" | "marquee";
@@ -732,20 +755,10 @@ export function Canvas({
     if (e.button !== 0 || !doc) return;
     const hit = hitTest(e);
     if (mode === "comment" && !readOnly) {
-      if (!page) return;
-      const w = toWorld(e.clientX, e.clientY);
+      const spot = spotAt(e, hit);
+      if (!spot) return;
       setOpenThread(null);
-      setPending(
-        hit
-          ? {
-              artboardId: hit.artboard.id,
-              pageId: page.id,
-              nodeId: hit.nodeId,
-              x: w.x - hit.artboard.x,
-              y: w.y - hit.artboard.y,
-            }
-          : { pageId: page.id, x: w.x, y: w.y },
-      );
+      setPending(spot);
       return;
     }
     setPending(null);
@@ -901,8 +914,10 @@ export function Canvas({
     setPending(null);
   };
 
-  // Pins drag to a new spot; a press that doesn't move opens the thread.
+  // Pins drag to a new spot; a press that doesn't move opens the thread. An unsent comment's pin
+  // drags the same way, by its draft's key.
   const [pinDrag, setPinDrag] = useState<{
+    /** A thread's id, or an unsent comment's draft key. */
     id: string;
     startX: number;
     startY: number;
@@ -913,13 +928,13 @@ export function Canvas({
     target?: string;
   } | null>(null);
 
-  const pinDown = (e: React.PointerEvent, t: Thread) => {
+  const pinDown = (e: React.PointerEvent, id: string) => {
     // Space or the hand tool pans right through pins.
     if (panning || e.button !== 0) return;
     e.stopPropagation();
     (e.target as Element).setPointerCapture?.(e.pointerId);
     setPinDrag({
-      id: t.id,
+      id,
       startX: e.clientX,
       startY: e.clientY,
       moved: false,
@@ -975,6 +990,34 @@ export function Canvas({
             y: Math.round(w.y),
           },
     );
+  };
+
+  /**
+   * An unsent comment's pin let go: a press opens its composer, or puts away the one that's
+   * open; a drag takes its words to the new spot, the composer with them if it's open.
+   */
+  const draftUp = (e: React.PointerEvent, p: Pending) => {
+    const d = pinDrag;
+    const key = draftKey.comment(draftsFile, p);
+    setPinDrag(null);
+    if (!d || d.id !== key) return;
+    const open = pending !== null && key === draftKey.comment(draftsFile, pending);
+    if (!d.moved) {
+      setOpenThread(null);
+      setPending(open ? null : p);
+      return;
+    }
+    const to = spotAt(e);
+    if (!to) return;
+    moveDraft(key, draftKey.comment(draftsFile, to), to);
+    if (open) setPending(to);
+  };
+
+  /** Throws an unsent comment's words away, and its composer if it's open. */
+  const discardDraft = (p: Pending) => {
+    const key = draftKey.comment(draftsFile, p);
+    setDraft(key, null);
+    if (pending && key === draftKey.comment(draftsFile, pending)) setPending(null);
   };
 
   // Boxes of the nodes that pins and outlines sit on, in artboard px. Measured
@@ -1284,22 +1327,19 @@ export function Canvas({
                     className={cn(
                       pin,
                       "pz:bg-comment pz:text-comment-foreground",
-                      // A reply left unsent, dashed as an unsent comment's pin is.
-                      writing.includes(t.id) &&
-                        "pz:outline-[1.5px] pz:outline-dashed pz:outline-offset-2 pz:outline-comment",
                       panning ? "pz:cursor-grab" : "pz:cursor-pointer",
                       (open || dragging) && "pz:scale-112",
-                      dragging &&
-                        "pz:cursor-grabbing pz:shadow-[0_0_0_1px_rgba(17,17,16,0.18),0_4px_12px_rgba(0,0,0,0.25)]",
+                      dragging && pinLifted,
                     )}
-                    onPointerDown={(e) => pinDown(e, t)}
+                    onPointerDown={(e) => pinDown(e, t.id)}
                     onPointerMove={pinMove}
                     onPointerUp={(e) => pinUp(e, t)}
                     onPointerCancel={() => setPinDrag(null)}
                     // A press opens the thread in pinUp; this is for the keyboard.
                     onClick={(e) => e.detail === 0 && setOpenThread(open ? null : t.id)}
                   >
-                    {t.messages.length}
+                    {/* A reply left unsent: the pencil an unsent comment's pin has, on the thread's yuzu. */}
+                    {writing.includes(t.id) ? <Pencil /> : t.messages.length}
                   </button>
                   {open && (
                     <ThreadCard
@@ -1318,63 +1358,108 @@ export function Canvas({
               const key = draftKey.comment(draftsFile, p);
               if (pending && key === draftKey.comment(draftsFile, pending)) return null;
               const ab = boards.find((b) => b.id === p.artboardId);
+              const dragging = pinDrag?.id === key && pinDrag.moved ? pinDrag : null;
+              const at = dragging ?? { x: (ab?.x ?? 0) + p.x, y: (ab?.y ?? 0) + p.y };
               return (
                 <div
                   key={key}
                   className={cn(pinWrap, "pz:z-[2]")}
-                  style={{ left: wpx((ab?.x ?? 0) + p.x), top: wpx((ab?.y ?? 0) + p.y) }}
+                  style={{ left: wpx(at.x), top: wpx(at.y) }}
                 >
-                  <button
-                    type="button"
-                    title="Unsent comment"
-                    className={cn(
-                      pin,
-                      "pz:cursor-pointer pz:bg-card pz:text-foreground pz:outline-[1.5px] pz:outline-dashed pz:outline-comment",
-                    )}
-                    onPointerDown={(e) => {
-                      if (panning || e.button !== 0) return;
-                      e.stopPropagation();
-                      setOpenThread(null);
-                      setPending(p);
-                    }}
-                    onClick={(e) => {
-                      if (e.detail !== 0) return;
-                      setOpenThread(null);
-                      setPending(p);
-                    }}
+                  <ContextMenu
+                    items={[
+                      {
+                        label: "Open",
+                        icon: <Icon name="comment" size={14} />,
+                        onSelect: () => {
+                          setOpenThread(null);
+                          setPending(p);
+                        },
+                      },
+                      {
+                        label: "Discard draft",
+                        icon: <Icon name="trash" size={14} />,
+                        danger: true,
+                        onSelect: () => discardDraft(p),
+                      },
+                    ]}
                   >
-                    +
-                  </button>
+                    <button
+                      type="button"
+                      title="Unsent comment · Drag to move"
+                      className={cn(
+                        pin,
+                        unsentPin,
+                        panning ? "pz:cursor-grab" : "pz:cursor-pointer",
+                        dragging && cn("pz:scale-112", pinLifted),
+                      )}
+                      onPointerDown={(e) => pinDown(e, key)}
+                      onPointerMove={pinMove}
+                      onPointerUp={(e) => draftUp(e, p)}
+                      onPointerCancel={() => setPinDrag(null)}
+                      // A press opens it in draftUp; this is for the keyboard.
+                      onClick={(e) => {
+                        if (e.detail !== 0) return;
+                        setOpenThread(null);
+                        setPending(p);
+                      }}
+                    >
+                      <Pencil />
+                    </button>
+                  </ContextMenu>
                 </div>
               );
             })}
             {pending &&
               (() => {
+                const key = draftKey.comment(draftsFile, pending);
                 const ab = boards.find((b) => b.id === pending.artboardId);
+                const dragging = pinDrag?.id === key && pinDrag.moved ? pinDrag : null;
+                const at = dragging ?? {
+                  x: (ab?.x ?? 0) + pending.x,
+                  y: (ab?.y ?? 0) + pending.y,
+                };
                 return (
                   <div
                     className={cn(pinWrap, "pz:z-[3]")}
-                    style={{
-                      left: wpx((ab?.x ?? 0) + pending.x),
-                      top: wpx((ab?.y ?? 0) + pending.y),
-                    }}
+                    style={{ left: wpx(at.x), top: wpx(at.y) }}
                     data-comment-open
                   >
-                    <span
-                      className={cn(pin, "pz:scale-112 pz:bg-comment pz:text-comment-foreground")}
+                    {/* The card rides along as its pin is dragged. */}
+                    <ContextMenu
+                      items={[
+                        {
+                          label: "Discard draft",
+                          icon: <Icon name="trash" size={14} />,
+                          danger: true,
+                          onSelect: () => discardDraft(pending),
+                        },
+                      ]}
                     >
-                      +
-                    </span>
+                      <button
+                        type="button"
+                        title="Drag to move"
+                        className={cn(
+                          pin,
+                          "pz:scale-112 pz:bg-comment pz:text-comment-foreground",
+                          panning ? "pz:cursor-grab" : "pz:cursor-pointer",
+                          dragging && pinLifted,
+                        )}
+                        onPointerDown={(e) => pinDown(e, key)}
+                        onPointerMove={pinMove}
+                        onPointerUp={(e) => draftUp(e, pending)}
+                        onPointerCancel={() => setPinDrag(null)}
+                        onClick={(e) => e.detail === 0 && setPending(null)}
+                      >
+                        <Pencil />
+                      </button>
+                    </ContextMenu>
                     <div className={threadCard}>
                       <Composer
-                        key={draftKey.comment(draftsFile, pending)}
+                        key={key}
                         onSubmit={createThread}
                         onCancel={() => setPending(null)}
-                        draft={{
-                          key: draftKey.comment(draftsFile, pending),
-                          file: draftsFile,
-                          pin: pending,
-                        }}
+                        draft={{ key, file: draftsFile, pin: pending }}
                       />
                     </div>
                   </div>
@@ -1634,6 +1719,15 @@ const pinWrap = "pz:pointer-events-auto pz:absolute pz:size-0";
  */
 const pin =
   "pz:absolute pz:top-0 pz:left-0 pz:grid pz:size-6 pz:-translate-1/2 pz:place-items-center pz:rounded-full pz:font-semibold pz:text-[11px] pz:tabular-nums pz:shadow-[0_0_0_1px_rgba(17,17,16,0.18),0_1px_3px_rgba(0,0,0,0.25)] pz:transition-transform pz:duration-[120ms] pz:hover:scale-112";
+/** A pin being dragged: lifted off the canvas. */
+const pinLifted =
+  "pz:cursor-grabbing pz:shadow-[0_0_0_1px_rgba(17,17,16,0.18),0_4px_12px_rgba(0,0,0,0.25)]";
+/**
+ * A new comment's pin while its words are unsent: pale yuzu ringed in yuzu, with a pencil, so it
+ * reads as yours and unfinished beside the full yuzu of a thread.
+ */
+const unsentPin =
+  "pz:bg-comment-soft pz:text-foreground pz:shadow-[0_0_0_1.5px_var(--pz-comment),0_1px_3px_rgba(0,0,0,0.2)]";
 
 function PageTab({
   name,

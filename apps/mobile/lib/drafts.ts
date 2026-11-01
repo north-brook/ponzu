@@ -49,6 +49,19 @@ export function setDraft(key: string, draft: Draft) {
   for (const l of listeners) l();
 }
 
+/**
+ * A new comment's draft moved to another spot: its words go with its pin, kept under the key the
+ * new spot makes. Put down where it was, it still takes the layer now under it. As desktop's.
+ */
+export function moveDraft(from: string, to: string, pin: NonNullable<Draft["pin"]>) {
+  const d = drafts.get(from);
+  if (!d) return;
+  drafts.delete(from);
+  drafts.set(to, { ...d, pin });
+  all = [...drafts];
+  for (const l of listeners) l();
+}
+
 /** Whether a draft holds anything worth keeping a place for. */
 export function unsent(d: Draft): boolean {
   return d.text.trim().length > 0;

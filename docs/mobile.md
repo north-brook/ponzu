@@ -102,9 +102,9 @@ an iPad turns freely (`UISupportedInterfaceOrientations~ipad` in
 - **The sheet.** With the inner display sideways, and in any window 700pt
   or wider (an iPad), a comment's or thread's sheet floats centred, at most
   560pt wide (`sheetMax`), riding 8pt above the keyboard instead of docking
-  into it. Where the system's bottom bar is outside the safe area (an
-  iPad's), every sheet stays above it: the bar takes touches across its
-  band.
+  into it. Wherever the system's bars are horizontal (iPhone Duo open
+  upright, an iPad), every sheet stays above the bottom bar: the bar takes
+  touches across its band, so Send floating over it went to Comments.
 - **Designs and Search** add columns as the page widens, counting its
   margins and the gaps between cards: two on an iPhone, three once each
   card can be 200pt (iPhone Duo's inner display), and more while each stays
@@ -124,15 +124,15 @@ logged to Metro as `[haptic] <kind>`, since the simulator can't buzz.
 
 | Haptic | When |
 | --- | --- |
-| `select` | A tab changing; a native menu opening (the page button, a card's hold); a filter, page or shelf picked; a recent search tapped; typing ⇄ voice |
-| `tick` | A design opened (a card or a search row); Back; the session card opening; a board coming into focus or leaving it; a comment's pin dropped; pull to refresh |
+| `select` | A tab changing; a native menu opening (the page button, a card's hold); a filter, page or shelf picked; a recent search tapped; typing ⇄ voice; Move on a held draft |
+| `tick` | A design opened (a card or a search row); Back; the session card opening; a board coming into focus or leaving it; a comment's pin dropped; an unsent comment's pin held, or put down after Move; pull to refresh |
 | `success` | A comment or reply sent; a thread resolved; a Mac paired; a Mac answering after "Waking Ponzu" |
-| `thud` | A design archived |
+| `thud` | A design archived; a draft discarded |
 | `fail` | A pairing error; a comment that didn't send; a shelf change a Mac didn't take; a Mac that didn't wake |
 
 The filter's native menu opens with the system's own feedback, so it adds
 none. The canvas's gestures come from the web view as messages (`focused`,
-`longpress`, canvas/protocol.ts); the haptic is the app's, never the page's.
+`longpress`, `holdUnsent`, canvas/protocol.ts); the haptic is the app's, never the page's.
 
 ### Styling
 
@@ -187,8 +187,8 @@ Macs from it. Screens open by URL, with `xcrun simctl openurl booted
 ponzu://<route>`: `designs`, `search?q=kettle`, `connect`,
 `connect/scan`, `tailscale`, `asleep`, `pair?host=<name>&v=1`, and a design
 with `design/<mac id>/<encoded key>?page=App` (`thread=<id>` opens a thread,
-`artboard=<id>` focuses a frame). In development a design also takes
-`comment=<artboard>` (opens a new comment's sheet on that board) and
+`artboard=<id>` focuses a frame; with `page` too, only when it's on that
+page). In development a design also takes `comment=<artboard>` (opens a new comment's sheet on that board) and
 `uncomment=<text>` (deletes your threads that start with it). `dev?forget=all` forgets
 every Mac, for a first launch; `forget=dev` or `forget=<id>,<id>` forgets
 those.

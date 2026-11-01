@@ -2,8 +2,8 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Capture, locate, threadPage } from "@ponzu/core";
-import type { Renderer, RenderResult } from "@ponzu/render";
+import { type Capture, locate, parseHtml, threadPage } from "@ponzu/core";
+import { actCore, type Renderer, type RenderResult } from "@ponzu/render";
 import { Design, MemoryAdapter } from "@ponzu/store";
 import { EventHub, PresenceHub, type ToolContext, type Workspace, within } from "./context.ts";
 import { FORMAT_EXAMPLE, GUIDES } from "./guides.ts";
@@ -64,6 +64,7 @@ test("get_basic_info gives the link that opens the design in Ponzu, when there i
     "Link: https://ponzu.design/local#file=/d/fern.design (give the person this",
   );
   expect(text).toContain("&artboard=<id>");
+  expect(text).toContain("&page=<id>");
 });
 
 test("get_basic_info says how many tokens it left out and where to see them", async () => {
@@ -740,6 +741,29 @@ test("agents learn that the person's canvas plays a load animation once", () => 
   expect(GUIDES.motion).toContain("doesn't replay it");
   expect(GUIDES.motion).toContain("looping copy");
   expect(getTool("record")!.description).toContain("plays the load once");
+});
+
+test("the scene guide's examples are scenes Ponzu can play", () => {
+  const blocks = [...GUIDES.act.matchAll(/```html\n([\s\S]*?)```/g)].map((m) => m[1]!);
+  expect(blocks.length).toBeGreaterThan(0);
+  for (const block of blocks) {
+    const { nodes, dropped } = parseHtml(block);
+    expect(dropped).toEqual([]);
+    const text = nodes.flatMap((n) => (n.kind === "el" ? n.children : []));
+    const script = text.map((c) => (c.kind === "text" ? c.value : "")).join("");
+    const parsed = actCore().parse(script);
+    expect(parsed.issues).toEqual([]);
+    expect(parsed.lines.length).toBeGreaterThan(5);
+  }
+  // Every beat the guide names is one the runtime knows.
+  const named = [...GUIDES.act.matchAll(/^- (\w+) @/gm)].map((m) => m[1]!);
+  for (const verb of named) expect(actCore().parse(`${verb} @X`).issues).toEqual([]);
+});
+
+test("the kit's parts survive the sanitizer as written", () => {
+  const blocks = [...GUIDES.kit.matchAll(/```html\n([\s\S]*?)```/g)].map((m) => m[1]!);
+  expect(blocks.length).toBeGreaterThanOrEqual(5);
+  for (const block of blocks) expect(parseHtml(block).dropped).toEqual([]);
 });
 
 test("the format guide's example files load as it describes", async () => {

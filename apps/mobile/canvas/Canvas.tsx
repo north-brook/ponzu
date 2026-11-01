@@ -6,6 +6,7 @@
  * pins and rings sit on screen above the boards, so they stay a fixed size at any zoom. No
  * chrome: the app draws that around the web view.
  */
+import { Edit03Icon } from "@hugeicons/core-free-icons";
 import { type Artboard, isThemed, threadPage } from "@ponzu/core";
 import {
   type CSSProperties,
@@ -31,6 +32,7 @@ import {
 import { useWindowStill } from "../../../packages/react/src/still.ts";
 import { Rain, useLingering } from "../../../packages/react/src/working.tsx";
 import {
+  BOARD_RADIUS,
   type Box,
   between,
   boardSize,
@@ -53,6 +55,7 @@ import {
   pinPoint,
   REST,
   readingOrder,
+  ringAround,
   type Screen,
   threadPoint,
   toScreen,
@@ -61,7 +64,7 @@ import {
   zoomAt,
 } from "./camera.ts";
 import { doubleTapFocus, Gestures, type Point } from "./gestures.ts";
-import { arrivals, getState, send, setPage, subscribe } from "./store.ts";
+import { arrivals, getState, placeUnsent, send, setPage, subscribe } from "./store.ts";
 
 /** How long a focus, or a snap back, takes. */
 const MOVE_MS = 420;
@@ -69,10 +72,6 @@ const MOVE_MS = 420;
 const LET_GO = 0.85;
 /** A tap this close to a pin opens it: a 24px pin, a 44px target. */
 const PIN_TARGET = 22;
-/** Boards are ever so slightly rounded: screen px, at any zoom. As desktop. */
-const BOARD_RADIUS = 4;
-/** The ring round a working board sits this many screen px off its edge. As desktop. */
-const RING_GAP = 4;
 /** A column of rain and its gap, in em of the label's 12px. */
 const RAIN_PITCH = 0.42 * 12;
 
@@ -431,11 +430,20 @@ export function PhoneCanvas() {
     return { box, x: (box?.x ?? 0) + t.x, y: (box?.y ?? 0) + t.y };
   };
 
+  /**
+   * The unsent comment whose pin is being moved: it holds still on screen, here, while the design
+   * moves under it.
+   */
+  const [held, setHeld] = useState<{ key: string; x: number; y: number } | null>(null);
+  /** The layer under the held pin, on the page: where it would land. */
+  const [target, setTarget] = useState<Box | null>(null);
+
   /** Where each unsent comment's pin is on screen, for a camera, by its draft's key. */
   const unsentAt = (c: Camera): PinAt[] =>
-    s.unsent.map((u) => {
+    s.unsent.flatMap((u) => {
+      if (u.key === held?.key) return [];
       const w = pinWorld(u);
-      return { id: u.key, ...toScreen(c, w.x, w.y) };
+      return [{ id: u.key, ...toScreen(c, w.x, w.y) }];
     });
 
   // Writing a comment, or reading a thread: its board comes up and its pin stays above the sheet.
@@ -446,6 +454,7 @@ export function PhoneCanvas() {
   useEffect(() => {
     if (!about) return;
     const at = pinWorld(about);
+    const held = Boolean(s.pending);
     if (!at.box) {
       animateTo(
         commentCamera(
@@ -454,11 +463,12 @@ export function PhoneCanvas() {
           camRef.current,
           screen,
           s.sheet,
+          held,
         ),
       );
       return;
     }
-    const next = commentCamera(at.box, at, camRef.current, screen, s.sheet);
+    const next = commentCamera(at.box, at, camRef.current, screen, s.sheet, held);
     const c = camRef.current;
     if (next.x !== c.x || next.y !== c.y || next.zoom !== c.zoom) animateTo(next);
   }, [s.pending, s.thread, about?.artboardId, about?.x, about?.y, s.sheet]);
@@ -477,8 +487,58 @@ export function PhoneCanvas() {
     return { box, nodeId: el?.getAttribute("data-id") ?? undefined };
   };
 
+  useEffect(() => {
+    const key = s.moving;
+    const at = key ? unsentAt(camRef.current).find((p) => p.id === key) : undefined;
+    setHeld(key && at ? { key, x: at.x, y: at.y } : null);
+  }, [s.moving]);
+
+  // Moving, the layer under the pin is outlined as the design passes under it.
+  useEffect(() => {
+    if (!held) return setTarget(null);
+    const aim = () => {
+      const hit = hitTest(held);
+      const ab = hit && boards.find((a) => a.id === hit.box.id);
+      const node =
+        ab && hit.nodeId && viewport.current ? nodeBox(viewport.current, ab, hit.nodeId) : null;
+      const r = !hit
+        ? null
+        : node
+          ? { x: hit.box.x + node.x, y: hit.box.y + node.y, w: node.w, h: node.h }
+          : { x: hit.box.x, y: hit.box.y, w: hit.box.w, h: hit.box.h };
+      setTarget((t) => (sameBox(t, r) ? t : r));
+    };
+    aim();
+    return camera.subscribe(aim);
+  }, [held, boxes]);
+
+  // Done: the pin lands on the layer under it, and the app moves the draft there.
+  const placed = useRef(s.place);
+  useEffect(() => {
+    if (s.place === placed.current) return;
+    placed.current = s.place;
+    if (!held || !page) return;
+    // Still gliding, the design stops where it is: the pin lands where it was shown.
+    stop();
+    const hit = hitTest(held);
+    const pin = {
+      ...(hit ? { artboardId: hit.box.id } : { pageId: page.id }),
+      ...threadPoint(camRef.current, held.x, held.y, hit?.box),
+    };
+    send({
+      t: "moved",
+      key: held.key,
+      pageId: page.id,
+      ...pin,
+      ...(hit?.nodeId ? { nodeId: hit.nodeId } : {}),
+    });
+    placeUnsent(held.key, pin);
+    setHeld(null);
+  }, [s.place]);
+
   // Gestures read the latest render through a ref: one listener for the canvas's life.
   const latest = useRef({
+    held,
     pinsAt,
     unsentAt,
     focused,
@@ -493,6 +553,7 @@ export function PhoneCanvas() {
     stop,
   });
   latest.current = {
+    held,
     pinsAt,
     unsentAt,
     focused,
@@ -635,7 +696,9 @@ export function PhoneCanvas() {
         coast(v, box, from);
       },
       tap(p) {
-        const { pinsAt, unsentAt } = latest.current;
+        const { held, pinsAt, unsentAt } = latest.current;
+        // Moving a pin, only the design moves.
+        if (held) return;
         const unsentPins = unsentAt(camRef.current);
         const hit = nearestPin([...pinsAt(camRef.current), ...unsentPins], p);
         send(
@@ -652,8 +715,14 @@ export function PhoneCanvas() {
         if (id) focus(id);
       },
       longPress(p) {
-        const { hitTest, page } = latest.current;
-        if (!page) return;
+        const { held, hitTest, page, unsentAt } = latest.current;
+        if (!page || held) return;
+        // An unsent comment's pin: the app offers to open, move or discard it.
+        const unsent = nearestPin(unsentAt(camRef.current), p);
+        if (unsent) {
+          send({ t: "holdUnsent", key: unsent.id });
+          return;
+        }
         const hit = hitTest(p);
         const c = camRef.current;
         send({
@@ -773,7 +842,18 @@ export function PhoneCanvas() {
         threads={doc.threads}
         open={s.thread}
         pending={s.pending ? pinWorld(s.pending) : null}
+        target={target}
       />
+      {held && (
+        <span
+          className="pin unsent held"
+          role="img"
+          aria-label="Moving comment"
+          style={{ translate: `${held.x}px ${held.y}px` }}
+        >
+          <Pencil />
+        </span>
+      )}
     </div>
   );
 }
@@ -837,6 +917,7 @@ function Overlay({
   threads,
   open,
   pending,
+  target,
 }: {
   layer: { current: HTMLDivElement | null };
   camera: CameraStore;
@@ -855,6 +936,8 @@ function Overlay({
   threads: { id: string; messages: unknown[] }[];
   open: string | null;
   pending: { x: number; y: number } | null;
+  /** The layer under a pin being moved, on the page. */
+  target: Box | null;
 }) {
   const drift = { x: screen.w / 2, y: screen.h / 2 };
   const want = useRef<Camera | null>(null);
@@ -909,20 +992,40 @@ function Overlay({
           />
         );
       })}
+      {target &&
+        (() => {
+          const p = toScreen(cam, target.x, target.y);
+          return (
+            <span
+              className="target"
+              style={{
+                translate: `${p.x}px ${p.y}px`,
+                width: target.w * cam.zoom,
+                height: target.h * cam.zoom,
+              }}
+            />
+          );
+        })()}
       {!standby &&
         pinsAt(cam).map((p) => (
           <span
             key={p.id}
-            className={`pin${p.id === open ? " open" : ""}${writing.includes(p.id) ? " writing" : ""}`}
+            className={`pin${p.id === open ? " open" : ""}`}
             style={{ translate: `${p.x}px ${p.y}px` }}
           >
-            {counts.get(p.id) ?? 0}
+            {writing.includes(p.id) ? <Pencil /> : (counts.get(p.id) ?? 0)}
           </span>
         ))}
       {!standby &&
         unsentAt(cam).map((p) => (
-          <span key={p.id} className="pin unsent" style={{ translate: `${p.x}px ${p.y}px` }}>
-            +
+          <span
+            key={p.id}
+            className="pin unsent"
+            role="img"
+            aria-label="Unsent comment"
+            style={{ translate: `${p.x}px ${p.y}px` }}
+          >
+            <Pencil />
           </span>
         ))}
       {pending &&
@@ -930,7 +1033,7 @@ function Overlay({
           const p = toScreen(cam, pending.x, pending.y);
           return (
             <span className="pin open" style={{ translate: `${p.x}px ${p.y}px` }}>
-              +
+              <Pencil />
             </span>
           );
         })()}
@@ -941,8 +1044,8 @@ function Overlay({
 /**
  * A board's hairline, its title above it (with yuzu rain on the right while an agent works on
  * it), and the ring: yuzu, a few px off its edge, breathing slowly, fading out once the agent
- * leaves. Focused on a whole screen, the ring follows the screen's corners, inset so none of it
- * is lost off the edge; it blends there as the board grows to fill the screen. A new board's
+ * leaves. Where the board reaches the screen's edges, the ring follows them, inset so none of it
+ * is lost, and rounds with the screen's corners where it reaches those (`ringAround`). A new board's
  * frame draws itself where the ring will be, and its name develops with it. As desktop's.
  */
 function BoardChrome({
@@ -980,17 +1083,14 @@ function BoardChrome({
   useLayoutEffect(() => {
     if (title.current && arrivedAt !== undefined) arriveName(title.current, arrivedAt);
   }, [arrivedAt, label]);
-  const k = Math.min(1, Math.max(0, (w / screen.w - 0.8) / 0.2));
-  // On the canvas: RING_GAP outside the board. Focused: 3px in, round with the screen.
-  const off = -RING_GAP + (RING_GAP + 3) * k;
-  const rx = BOARD_RADIUS + RING_GAP + k * Math.max(0, radius - 3 - BOARD_RADIUS - RING_GAP);
+  const around = ringAround({ x, y, w, h }, screen, radius);
   // The rain takes at most half the board's width, so the name still reads on a narrow one; on
   // a board too narrow for a column, the ring alone says it's being worked on.
   const rain = Math.min(24, Math.floor(w / 2 / RAIN_PITCH));
   const ringBox = {
-    transform: `translate(${x + off}px, ${y + off}px)`,
-    width: Math.max(0, w - 2 * off),
-    height: Math.max(0, h - 2 * off),
+    transform: `translate(${around.x}px, ${around.y}px)`,
+    width: around.w,
+    height: around.h,
   };
   return (
     <>
@@ -1015,9 +1115,12 @@ function BoardChrome({
         </div>
       )}
       {ring !== undefined && (
-        <Ring box={ringBox} rx={rx} leaving={ring} delay={ringDelay(arrivedAt)} />
+        <Ring box={ringBox} corners={around.corners} leaving={ring} delay={ringDelay(arrivedAt)} />
       )}
-      {arrivedAt !== undefined && <Frame box={ringBox} rx={rx} at={arrivedAt} />}
+      {arrivedAt !== undefined && (
+        // An SVG rect has one radius: the tightest corner, so it hugs the board.
+        <Frame box={ringBox} rx={Math.min(...around.corners)} at={arrivedAt} />
+      )}
     </>
   );
 }
@@ -1025,12 +1128,13 @@ function BoardChrome({
 /** The ring round a working board. It fades in after `delay` ms (a new board's frame is still drawing). */
 function Ring({
   box,
-  rx,
+  corners,
   leaving,
   delay,
 }: {
   box: CSSProperties;
-  rx: number;
+  /** Top left, top right, bottom right, bottom left. */
+  corners: readonly number[];
   leaving: boolean;
   delay: number;
 }) {
@@ -1038,7 +1142,13 @@ function Ring({
   const [wait] = useState(delay);
   return (
     <div aria-hidden className="ring-box" style={{ ...box, opacity: leaving ? 0 : 1 }}>
-      <div className="pz-ring" style={{ borderRadius: rx, animationDelay: `${wait}ms` }} />
+      <div
+        className="pz-ring"
+        style={{
+          borderRadius: corners.map((r) => `${r}px`).join(" "),
+          animationDelay: `${wait}ms`,
+        }}
+      />
     </div>
   );
 }
@@ -1084,6 +1194,36 @@ function offscreen(
   const mx = 40 + past.x;
   const my = 40 + past.y;
   return p.x > screen.w + mx || p.y > screen.h + my || p.x + w < -mx || p.y + h < -my;
+}
+
+/**
+ * The pencil on a comment being written: an unsent comment's pin, and a thread's while a reply to
+ * it is unsent. Hugeicons' Edit03, as desktop's (packages/react/src/icons.tsx, Pencil).
+ */
+function Pencil() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {Edit03Icon.map(([tag, a]) =>
+        tag === "path" ? <path key={String(a.d)} d={String(a.d)} /> : null,
+      )}
+    </svg>
+  );
+}
+
+function sameBox(a: Box | null, b: Box | null) {
+  if (!a || !b) return a === b;
+  const near = (m: number, n: number) => Math.abs(m - n) < 0.5;
+  return near(a.x, b.x) && near(a.y, b.y) && near(a.w, b.w) && near(a.h, b.h);
 }
 
 function nearestPin(pins: PinAt[], p: Point): PinAt | null {

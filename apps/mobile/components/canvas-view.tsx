@@ -60,6 +60,8 @@ export const CanvasView = forwardRef<
     /** Threads with a reply left unsent. */
     writing: string[];
     thread: string | null;
+    /** The unsent comment whose pin is being moved, by its draft's key. */
+    moving?: string | null;
     page?: string;
     /** Standby: the page alone on black (iPhone Duo set down while an agent works). */
     standby?: boolean;
@@ -125,6 +127,7 @@ export const CanvasView = forwardRef<
       { t: "pending", pin: p.pending },
       { t: "unsent", pins: p.unsent, threads: p.writing },
       { t: "thread", id: p.thread },
+      { t: "move", key: p.moving ?? null },
       { t: "standby", on: Boolean(p.standby) },
       // How many gestures the page measures (lib/canvas-perf.ts); none unless asked.
       ...(PROBE_RATE ? [{ t: "probe", rate: PROBE_RATE } as const] : []),
@@ -171,6 +174,7 @@ export const CanvasView = forwardRef<
   const unsentKey = JSON.stringify([props.unsent, props.writing]);
   useEffect(() => send({ t: "unsent", pins: props.unsent, threads: props.writing }), [unsentKey]);
   useEffect(() => send({ t: "thread", id: props.thread }), [props.thread]);
+  useEffect(() => send({ t: "move", key: props.moving ?? null }), [props.moving]);
   useEffect(() => send({ t: "standby", on: Boolean(props.standby) }), [props.standby]);
 
   const onMessage = (e: WebViewMessageEvent) => {

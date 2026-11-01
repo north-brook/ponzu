@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.11.1](https://github.com/north-brook/ponzu/compare/mobile-v0.11.0...mobile-v0.11.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* **mobile:** send comments in one tap after moving the caret, shimmer on glass ([#367](https://github.com/north-brook/ponzu/issues/367)) ([d4e3ea3](https://github.com/north-brook/ponzu/commit/d4e3ea3a672b9b578c03e09ebee517f7feb21a74))
+
+## [0.11.0](https://github.com/north-brook/ponzu/compare/mobile-v0.10.0...mobile-v0.11.0) (2026-10-30)
+
+
+### Features
+
+* open design links on a page ([#363](https://github.com/north-brook/ponzu/issues/363)) ([4a13116](https://github.com/north-brook/ponzu/commit/4a131168eff356b1e43ac24770b1089ceca5a3d5))
+
+## [0.10.0](https://github.com/north-brook/ponzu/compare/mobile-v0.9.0...mobile-v0.10.0) (2026-10-30)
+
+
+### Features
+
+* drag and discard draft comments ([#362](https://github.com/north-brook/ponzu/issues/362)) ([1da975a](https://github.com/north-brook/ponzu/commit/1da975a8eae1668cd5160c803e20778751a40a7c))
+
+
+### Bug Fixes
+
+* **mobile:** frame working boards, send comments in one tap on iphone duo, keep zoom when commenting ([#359](https://github.com/north-brook/ponzu/issues/359)) ([5b3b17b](https://github.com/north-brook/ponzu/commit/5b3b17b7e4537ded5940ad47585591078ece29de))
+
 ## [0.9.0](https://github.com/north-brook/ponzu/compare/mobile-v0.8.1...mobile-v0.9.0) (2026-10-30)
 
 

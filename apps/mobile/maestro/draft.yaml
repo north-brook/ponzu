@@ -1,0 +1,97 @@
+appId: design.ponzu.app
+name: draft
+tags: [dev-host]
+---
+# A comment left unsent on Kettle's Logo: held, its pin offers Open, Move and
+# Discard draft. Moved, it keeps its words; discarded, its pin goes. Drafts
+# live on the phone, so the example isn't touched.
+- runFlow: shared/start.yaml
+- openLink: ponzu://design/dev/${KETTLE}?page=Brand&comment=Logo
+- extendedWaitUntil:
+    visible:
+      id: "(comment-input|to-type)"
+    timeout: 20000
+- runFlow:
+    when:
+      visible:
+        id: to-type
+    commands:
+      - tapOn:
+          id: to-type
+- extendedWaitUntil:
+    visible:
+      id: comment-input
+    timeout: 5000
+- tapOn:
+    id: comment-input
+- inputText: "Maestro draft"
+# Left unsent (back out, then open the design again), the words keep a pin.
+- tapOn: "Back"
+- extendedWaitUntil:
+    visible:
+      id: designs
+    timeout: 10000
+- openLink: ponzu://design/dev/${KETTLE}?page=Brand
+- extendedWaitUntil:
+    visible: "Unsent comment"
+    timeout: 10000
+- longPressOn: "Unsent comment"
+- extendedWaitUntil:
+    visible:
+      id: draft-sheet
+    timeout: 10000
+- assertVisible: "Maestro draft"
+- tapOn:
+    id: draft-move
+# The design moves under the pin; the hint gives way to Done.
+- extendedWaitUntil:
+    visible: "Moving comment"
+    timeout: 5000
+- assertVisible:
+    id: move-hint
+- swipe:
+    start: 50%, 35%
+    end: 35%, 30%
+- extendedWaitUntil:
+    visible:
+      id: move-done
+    timeout: 10000
+- tapOn:
+    id: move-done
+- extendedWaitUntil:
+    notVisible:
+      id: move-done
+    timeout: 5000
+# It went with its words.
+- extendedWaitUntil:
+    visible: "Unsent comment"
+    timeout: 10000
+- tapOn: "Unsent comment"
+- extendedWaitUntil:
+    visible:
+      id: comment-sheet
+    timeout: 10000
+- assertVisible: "Maestro draft"
+- tapOn: "Back"
+- extendedWaitUntil:
+    visible:
+      id: designs
+    timeout: 10000
+- openLink: ponzu://design/dev/${KETTLE}?page=Brand
+- extendedWaitUntil:
+    visible: "Unsent comment"
+    timeout: 10000
+# Discarded, no confirmation: the pin goes.
+- longPressOn: "Unsent comment"
+- extendedWaitUntil:
+    visible:
+      id: draft-sheet
+    timeout: 10000
+- tapOn:
+    id: draft-discard
+- extendedWaitUntil:
+    notVisible: "Unsent comment"
+    timeout: 10000
+- assertNotVisible:
+    id: draft-sheet
+- assertNotVisible: ".*Cannot update a component.*"

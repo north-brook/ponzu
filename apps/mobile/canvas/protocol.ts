@@ -17,7 +17,7 @@ export interface Insets {
 }
 
 /**
- * Where a new comment's "+" pin sits, as a Thread has it: on an artboard, in its own px; on the
+ * Where a new comment's pin sits, as a Thread has it: on an artboard, in its own px; on the
  * open canvas, at a position on the page.
  */
 export interface PendingPin {
@@ -64,13 +64,21 @@ export type ToCanvas =
   | { t: "op"; op: Op; origin?: Origin }
   /** Who's here: agents' `working` artboards get the yuzu ring and rain in their label. */
   | { t: "presence"; presence: Presence[] }
-  /** The "+" pin of a comment being written, or none. Its board comes into view. */
+  /** The pin of a comment being written, or none. Its board comes into view. */
   | { t: "pending"; pin: PendingPin | null }
   /**
    * New comments left unsent, by their draft's key: each keeps a pin, to tap and go on. `threads`
-   * have a reply left unsent: their pins are ringed, dashed.
+   * have a reply left unsent: their pins show a pencil for their count.
    */
   | { t: "unsent"; pins: (PendingPin & { key: string })[]; threads: string[] }
+  /**
+   * Move an unsent comment's pin, by its draft's key: it holds still on screen while the design
+   * pans and pinches under it, the layer under it outlined, and taps and holds do nothing. Null
+   * ends it where it was.
+   */
+  | { t: "move"; key: string | null }
+  /** Done moving: the canvas answers with `moved`, where the pin landed. */
+  | { t: "place" }
   /** The thread whose sheet is open: its pin stands out, and its board comes into view. */
   | { t: "thread"; id: string | null }
   /** Focus an artboard at 1:1, or go back to where the canvas was. */
@@ -112,6 +120,18 @@ export type FromCanvas =
   | { t: "openThread"; id: string }
   /** An unsent comment's pin was tapped: its sheet comes back, with its words. */
   | { t: "openUnsent"; key: string }
+  /** An unsent comment's pin was held: the app offers to open, move or discard it. */
+  | { t: "holdUnsent"; key: string }
+  /** Where a moved unsent comment's pin landed, after `place`: as `longpress` has a spot. */
+  | {
+      t: "moved";
+      key: string;
+      pageId: string;
+      artboardId?: string;
+      nodeId?: string;
+      x: number;
+      y: number;
+    }
   /** A tap that wasn't on a pin: the app puts its keyboard down, if it's up. */
   | { t: "tap" }
   /**

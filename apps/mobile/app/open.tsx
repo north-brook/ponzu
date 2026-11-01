@@ -13,9 +13,10 @@ import { track } from "../lib/telemetry";
 import { brand } from "../lib/tokens";
 
 /**
- * `ponzu://open?mac=<name>&file=<path>.design&artboard=<id>`, an agent's link to its work, as
- * ponzu.design/local hands it to whichever Ponzu takes it: opens that design, on that artboard,
- * from the paired Mac it's on. A link this phone can't follow says why, then goes to Designs.
+ * `ponzu://open?mac=<name>&file=<path>.design&page=<id>&artboard=<id>`, an agent's link to its
+ * work, as ponzu.design/local hands it to whichever Ponzu takes it: opens that design, on that page
+ * or artboard, from the paired Mac it's on. A link this phone can't follow says why, then goes to
+ * Designs.
  */
 export default function OpenLink() {
   const params = useLocalSearchParams();
@@ -37,7 +38,12 @@ export default function OpenLink() {
       if (to.kind === "design") {
         const design = {
           pathname: "/design/[mac]/[key]" as const,
-          params: { mac: to.mac, key: to.key, ...(to.artboard ? { artboard: to.artboard } : {}) },
+          params: {
+            mac: to.mac,
+            key: to.key,
+            ...(to.page ? { page: to.page } : {}),
+            ...(to.artboard ? { artboard: to.artboard } : {}),
+          },
         };
         // Back from the design goes where the person was, or to Designs on a cold start.
         if (router.canGoBack()) router.replace(design);

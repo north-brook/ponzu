@@ -123,6 +123,35 @@ describe("html", () => {
     ]);
   });
 
+  test("keeps a scene script as data, and only as data", () => {
+    const { nodes, dropped } = parseHtml(
+      `<div><script type=" Ponzu/Act " src="x.js" onload="x()">move @Invite\nclick</script><script type="module">alert(1)</script><script type="text/javascript">alert(2)</script></div>`,
+    );
+    expect(dropped.map((d) => d.what)).toEqual([
+      "onload on <script>",
+      "src on <script>",
+      "<script>",
+      "<script>",
+    ]);
+    const html = serializeNodes(nodes, { omitIds: true });
+    expect(html).toBe('<div><script type="ponzu/act">move @Invite\nclick</script></div>');
+    // Whatever an edit does to its node, it's written out as data that can't end early.
+    const script = (nodes[0] as PElement).children[0] as PElement;
+    script.attrs = { type: "text/javascript", src: "evil.js" };
+    script.children = [{ kind: "text", value: "wait 1</script><script>alert(3)</script><!--" }];
+    const out = serializeNodes(nodes, { omitIds: true });
+    expect(out).toBe(
+      '<div><script type="ponzu/act">wait 1<\\/script><script>alert(3)<\\/script><\\!--</script></div>',
+    );
+    const again = parseHtml(out);
+    expect(again.dropped).toEqual([]);
+    const kept = ((again.nodes[0] as PElement).children[0] as PElement).children[0];
+    expect(kept).toEqual({
+      kind: "text",
+      value: "wait 1<\\/script><script>alert(3)<\\/script><\\!--",
+    });
+  });
+
   test("rewrites each image in an image-set() once, and nothing else", () => {
     const tag = (u: string) => `/r/${u}`;
     expect(rewriteCssUrls(`background:image-set(url("a.png") 1x, "b.png" 2x)`, tag)).toBe(
