@@ -6,8 +6,9 @@
 #
 # Starts the server and Metro on free ports unless PONZU_PORT / METRO_PORT
 # say they're already running there, builds and installs the client unless
-# SKIP_BUILD=1, then runs every flow (a JUnit report to MAESTRO_OUTPUT, if
-# set). Fails if examples/ isn't left as it was found.
+# SKIP_BUILD=1, then runs every flow (a JUnit report to MAESTRO_OUTPUT and
+# each flow's screenshots to MAESTRO_TEST_OUTPUT, if set). Fails if the
+# examples aren't left as they were found.
 set -euo pipefail
 
 UDID=${1:?simulator udid}
@@ -17,9 +18,11 @@ PONZU_PORT=${PONZU_PORT:-}
 METRO_PORT=${METRO_PORT:-}
 pids=()
 SCRATCH=$(mktemp -d -t ponzu-maestro)
+EXAMPLES="$ROOT/examples"
 cleanup() {
   # ${a[@]+...}: an empty array is "unbound" under set -u in macOS's bash 3.2.
   for p in ${pids[@]+"${pids[@]}"}; do kill "$p" 2>/dev/null || true; done
+  for p in ${pids[@]+"${pids[@]}"}; do wait "$p" 2>/dev/null || true; done
   rm -rf "$SCRATCH"
 }
 trap cleanup EXIT
@@ -29,10 +32,17 @@ wait_for() { for _ in $(seq 1 120); do curl -sf -m 2 "$1" >/dev/null && return 0
 
 if [ -z "$PONZU_PORT" ]; then
   PONZU_PORT=$(free_port)
-  # Its own catalog database and agents' history, not this Mac's; never on the
-  # tailnet (it would take the tailnet port from the installed Ponzu).
-  (cd "$ROOT" && PONZU_HOME="$SCRATCH/home" PONZU_TAILSCALE=none PONZU_TELEMETRY=0 PONZU_BONJOUR=0 exec bun apps/cli/src/index.ts serve \
-    examples/halon.design examples/kettle.design examples/weft.design --port "$PONZU_PORT") &
+  # Copies of the examples, outside any repository: the catalog folds a
+  # design's repository and its worktrees into one project, and would list and
+  # repaint every design in this checkout and its siblings. Its own catalog
+  # database and agents' history, not this Mac's; never on the tailnet (it
+  # would take the tailnet port from the installed Ponzu).
+  EXAMPLES="$SCRATCH/examples"
+  mkdir -p "$EXAMPLES"
+  for design in halon kettle weft; do cp -R "$ROOT/examples/$design.design" "$EXAMPLES/"; done
+  (cd "$SCRATCH" && PONZU_HOME="$SCRATCH/home" PONZU_TAILSCALE=none PONZU_TELEMETRY=0 PONZU_BONJOUR=0 \
+    exec bun "$ROOT/apps/cli/src/index.ts" serve \
+    "$EXAMPLES/halon.design" "$EXAMPLES/kettle.design" "$EXAMPLES/weft.design" --port "$PONZU_PORT") &
   pids+=($!)
 fi
 wait_for "http://127.0.0.1:$PONZU_PORT/api/info"
@@ -55,11 +65,16 @@ if [ "${SKIP_BUILD:-}" != 1 ]; then
 fi
 
 KETTLE=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' \
-  "$ROOT/examples/kettle.design")
+  "$EXAMPLES/kettle.design")
 DEV_CLIENT="exp+ponzu://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A$METRO_PORT"
 status=0
 maestro --device "$UDID" test -e KETTLE="$KETTLE" -e DEV_CLIENT="$DEV_CLIENT" \
-  ${MAESTRO_OUTPUT:+--format junit --output "$MAESTRO_OUTPUT"} "$MOBILE/maestro/" || status=$?
-git -C "$ROOT" diff --exit-code examples/
-test -z "$(git -C "$ROOT" status --porcelain --untracked-files=all examples/)"
+  ${MAESTRO_OUTPUT:+--format junit --output "$MAESTRO_OUTPUT"} \
+  ${MAESTRO_TEST_OUTPUT:+--test-output-dir "$MAESTRO_TEST_OUTPUT"} "$MOBILE/maestro/" || status=$?
+# The flows leave the examples as they found them; serving adds only .ponzu.
+for design in halon kettle weft; do
+  diff -r -x .ponzu "$ROOT/examples/$design.design" "$EXAMPLES/$design.design"
+done
+git -C "$ROOT" diff --exit-code -- examples/
+test -z "$(git -C "$ROOT" status --porcelain --untracked-files=all -- examples/)"
 exit "$status"

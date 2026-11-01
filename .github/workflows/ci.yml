@@ -286,11 +286,11 @@ jobs:
         working-directory: apps/mobile
 
   mobile-ios:
-    # Maestro flows (apps/mobile/maestro) on the iOS Simulator, on the
-    # self-hosted Macs. Only pull requests from this repository: a fork's
-    # code never runs on them. A job no runner can take waits a day in the
-    # queue, so this one runs only once the repository variable MOBILE_IOS is
-    # "true", set when the spare-ios runners serve this repository.
+    # Maestro flows (apps/mobile/maestro) on the iOS Simulator, on spare. Only
+    # pull requests from this repository: a fork's code never runs there. A
+    # job no runner can take waits a day in the queue, so this one runs only
+    # once the repository variable MOBILE_IOS is "true", set when the
+    # spare-ios runners serve this repository.
     name: Mobile iOS
     needs: scope
     if: >-
@@ -305,26 +305,24 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: package.json
-      - run: bun install --frozen-lockfile
+          # The network job receives this commit as a Git bundle.
+          fetch-depth: 0
       - name: Maestro flows
-        # A Debug development client built from this checkout, on the
-        # simulator the runner assigns (IOS_SIMULATOR_UDID), against a Ponzu
-        # serving the examples and Metro. Xcode, Java and Maestro come with
-        # the runner. See apps/mobile/maestro/README.md.
-        env:
-          MAESTRO_CLI_NO_ANALYTICS: "1"
-          MAESTRO_OUTPUT: ${{ runner.temp }}/maestro.xml
-        run: apps/mobile/maestro/run.sh "${IOS_SIMULATOR_UDID:?the runner assigns a simulator}"
+        # A network iOS job (scripts/ci/mobile-ios.sh): it waits for a
+        # pressure-aware iOS permit and a wiped simulator leased from Simlock,
+        # shared with the other repositories' jobs and T3. Canceling this step
+        # stops the job.
+        run: |
+          job="spare-gh-ponzu-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-ios"
+          echo "JOB=$job" >> "$GITHUB_ENV"
+          network job start spare --repo ponzu --agent command --resource ios \
+            --source "$GITHUB_WORKSPACE" --id "$job" -- scripts/ci/mobile-ios.sh
+          network job wait "$job" --artifacts-to "$RUNNER_TEMP/$job"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && env.JOB }}
         with:
           name: maestro
-          path: |
-            ${{ runner.temp }}/maestro.xml
-            ~/.maestro/tests/
+          path: ${{ runner.temp }}/${{ env.JOB }}
           if-no-files-found: ignore
 
   mobile:

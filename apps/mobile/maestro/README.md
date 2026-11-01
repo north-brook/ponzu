@@ -10,7 +10,7 @@ Ponzu serving the three examples. They run in this order (`config.yaml`):
 | `designs.yaml` | Designs lists Kettle, Halon and Weft, under the tab bar (Designs, Search); the header's filter menu picks Archived, then Recent again; holding Weft archives it, and holding it under Archived restores it. |
 | `canvas.yaml` | Kettle opens on its canvas, with no tab bar over it: the bar, its boards drawn in the web view, and the page button's menu turning it to Website. |
 | `open-link.yaml` | An agent's `ponzu://open?file=…` link (and iOS's `ponzu:///open?…`) opens Kettle on its canvas. |
-| `search.yaml` | The search tab's system field: "brand" shows Files and Frames. |
+| `search.yaml` | The search tab's system field: "weft" shows Files and Frames. |
 | `comment.yaml` | A comment on Kettle's Logo (the `?comment=` link), its pin and thread sheet, Resolve, then `?uncomment=` deletes it. |
 | `comment-modes.yaml` | The comment sheet switches typing → voice → typing (the field, then "Listening…", the mute and the keyboard button, then the field again) and sends. |
 | `draft.yaml` | A comment left unsent on Kettle's Logo keeps a pin: held, its sheet moves it (the design pans under it, then Done), it opens again with its words, and Discard draft takes it away. |
