@@ -39,6 +39,7 @@ import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { UpdateButton } from "@/components/update";
 import { watchCatalog } from "@/lib/catalog";
+import { loadPages, savePage } from "@/lib/pages";
 import { loadSeen, look, saveSeen } from "@/lib/seen";
 import { cn } from "@/lib/utils";
 
@@ -114,6 +115,8 @@ export function Studio() {
     const artboard = q.get("artboard") ?? undefined;
     return file && (page || artboard) ? { file, at: { page, artboard } } : null;
   });
+  /** The page each design was last on: a tab, or the design opened again, comes back to it. */
+  const [pages, setPages] = useState(loadPages);
   const sources = useMemo(() => new Map<string, SocketSource>(), []);
   const source = (tab: string) => {
     let s = sources.get(tab);
@@ -342,6 +345,11 @@ export function Studio() {
               theme={theme}
               me={{ kind: "user", name: "You" }}
               link={active === linked?.file ? linked.at : undefined}
+              page={pages[active]}
+              onPageChange={(id) => {
+                savePage(active, id);
+                setPages((p) => (p[active] === id ? p : { ...p, [active]: id }));
+              }}
             />
           </div>
         ) : (
