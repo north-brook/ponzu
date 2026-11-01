@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/north-brook/ponzu/compare/mobile-v0.11.0...mobile-v0.11.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* **mobile:** send comments in one tap after moving the caret, shimmer on glass ([#367](https://github.com/north-brook/ponzu/issues/367)) ([d4e3ea3](https://github.com/north-brook/ponzu/commit/d4e3ea3a672b9b578c03e09ebee517f7feb21a74))
+
 ## [0.11.0](https://github.com/north-brook/ponzu/compare/mobile-v0.10.0...mobile-v0.11.0) (2026-10-30)
 
 
