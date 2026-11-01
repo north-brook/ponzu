@@ -1,0 +1,107 @@
+<section data-artboard data-id="ab_invite" data-name="1 Invite: a cursor story" data-x="0" data-y="0" style="width:1040px;height:600px;background:var(--color-page);font-family:var(--font-ui);color:var(--text-strong)">
+<style>
+.invite{transition:background-color .15s ease, scale .15s ease;cursor:pointer}
+.invite:hover{background-color:var(--color-accent-press) !important}
+.invite:active{scale:.97}
+.field{transition:box-shadow .2s ease;cursor:text}
+.field:focus-within{box-shadow:0 0 0 1px var(--color-accent), 0 0 0 4px rgba(59,91,253,.16) !important}
+</style>
+<div data-name="Stage" style="position:absolute;inset:0;overflow:hidden">
+<div data-name="Window" style="position:absolute;left:96px;top:96px;width:1080px;height:640px;display:flex;flex-direction:row;overflow:hidden;background:var(--color-surface);border-radius:var(--radius-window);box-shadow:var(--shadow-hero)">
+  <div data-name="Sidebar" style="width:212px;flex:none;display:flex;flex-direction:column;background:var(--color-canvas);border-right:1px solid var(--color-line)">
+    <div data-name="Lights" style="display:flex;align-items:center;gap:6px;height:38px;flex:none;padding:0 14.5px">
+      <span style="width:9px;height:9px;border-radius:50%;background:#ff5f57;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.12)"></span>
+      <span style="width:9px;height:9px;border-radius:50%;background:#febc2e;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.12)"></span>
+      <span style="width:9px;height:9px;border-radius:50%;background:#28c840;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.12)"></span>
+    </div>
+    <div data-name="Workspace" style="display:flex;align-items:center;gap:8px;padding:10px 16px 14px">
+      <span style="width:20px;height:20px;border-radius:6px;background:var(--text-strong)"></span>
+      <span style="font-size:13px;font-weight:600">Northwind</span>
+    </div>
+    <div data-name="Nav" style="display:flex;flex-direction:column;gap:2px;padding:0 8px">
+      <div style="display:flex;align-items:center;gap:10px;height:30px;padding:0 8px"><span style="width:14px;height:14px;border-radius:4px;background:var(--ink-4)"></span><span style="width:64px;height:6px;border-radius:3px;background:var(--ink-3)"></span></div>
+      <div style="display:flex;align-items:center;gap:10px;height:30px;padding:0 8px"><span style="width:14px;height:14px;border-radius:4px;background:var(--ink-4)"></span><span style="width:48px;height:6px;border-radius:3px;background:var(--ink-3)"></span></div>
+      <div style="display:flex;align-items:center;gap:10px;height:30px;padding:0 8px"><span style="width:14px;height:14px;border-radius:4px;background:var(--ink-4)"></span><span style="width:72px;height:6px;border-radius:3px;background:var(--ink-3)"></span></div>
+      <div data-name="Members tab" style="display:flex;align-items:center;gap:10px;height:30px;padding:0 8px;border-radius:var(--radius-sm);background:var(--ink-2)">
+        <svg width="14" height="14" viewBox="0 0 256 256" fill="var(--text-strong)"><path d="M117.25 157.92a60 60 0 1 0-66.5 0 95.83 95.83 0 0 0-47.22 37.71 8 8 0 1 0 13.4 8.74 80 80 0 0 1 134.14 0 8 8 0 0 0 13.4-8.74 95.83 95.83 0 0 0-47.22-37.71ZM40 108a44 44 0 1 1 44 44 44.05 44.05 0 0 1-44-44Zm210.14 98.7a8 8 0 0 1-11.07-2.33A79.83 79.83 0 0 0 172 168a8 8 0 0 1 0-16 44 44 0 1 0-16.34-84.87 8 8 0 1 1-5.94-14.85 60 60 0 0 1 55.53 105.64 95.83 95.83 0 0 1 47.22 37.71 8 8 0 0 1-2.33 11.07Z"/></svg>
+        <span style="font-size:13px;font-weight:500">Members</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;height:30px;padding:0 8px"><span style="width:14px;height:14px;border-radius:4px;background:var(--ink-4)"></span><span style="width:56px;height:6px;border-radius:3px;background:var(--ink-3)"></span></div>
+    </div>
+  </div>
+  <div data-name="Content" style="position:relative;flex:1;min-width:0;display:flex;flex-direction:column;padding:28px 32px">
+    <div data-name="Header" style="display:flex;align-items:baseline;justify-content:space-between;width:648px">
+      <div style="font-size:20px;font-weight:600;letter-spacing:-0.01em">Members</div>
+      <div data-name="Seat count" style="font-size:13px;color:var(--text-faint)"><span data-name="Seats" style="display:inline-block;font-variant-numeric:tabular-nums;font-weight:600;color:var(--text-strong)">5</span> of 10 seats</div>
+    </div>
+    <div data-name="Invite row" style="display:flex;gap:8px;width:648px;margin-top:20px">
+      <div class="field" data-name="Field" style="position:relative;flex:1;display:flex;align-items:center;height:40px;padding:0 12px;border-radius:var(--radius-md);background:var(--color-surface);box-shadow:0 0 0 1px var(--ink-4)">
+        <span data-name="Placeholder" style="position:absolute;left:12px;font-size:14px;color:var(--text-faint)">name@company.com</span>
+        <span data-name="Email" style="font-size:14px">maya@northwind.co</span>
+      </div>
+      <div class="invite" data-name="Invite" style="display:flex;align-items:center;height:40px;padding:0 18px;border-radius:var(--radius-md);background:var(--color-accent);color:#fff;font-size:14px;font-weight:600">Send invite</div>
+    </div>
+    <div data-name="List" style="display:flex;flex-direction:column;width:648px;margin-top:20px;border-top:1px solid var(--color-line)">
+      <div data-name="New member" style="display:flex;align-items:center;gap:12px;height:56px;border-bottom:1px solid var(--color-line)">
+        <span style="display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:#e9d8c4;color:#7a5530;font-size:12px;font-weight:600">MC</span>
+        <div style="display:flex;flex-direction:column;gap:3px;flex:1;min-width:0">
+          <span style="font-size:14px;font-weight:500;line-height:1.3">Maya Chen</span>
+          <span style="font-size:12px;line-height:1.3;color:var(--text-faint)">maya@northwind.co</span>
+        </div>
+        <span data-name="Invited" style="padding:3px 8px;border-radius:var(--radius-pill);background:var(--color-accent-soft);color:var(--color-accent);font-size:12px;font-weight:500">Invited</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;height:56px;border-bottom:1px solid var(--color-line)">
+        <span style="width:32px;height:32px;border-radius:50%;background:var(--ink-3)"></span>
+        <div style="display:flex;flex-direction:column;gap:7px;flex:1"><span style="width:120px;height:7px;border-radius:4px;background:var(--ink-4)"></span><span style="width:164px;height:6px;border-radius:3px;background:var(--ink-2)"></span></div>
+        <span style="width:44px;height:6px;border-radius:3px;background:var(--ink-2)"></span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;height:56px;border-bottom:1px solid var(--color-line)">
+        <span style="width:32px;height:32px;border-radius:50%;background:var(--ink-3)"></span>
+        <div style="display:flex;flex-direction:column;gap:7px;flex:1"><span style="width:96px;height:7px;border-radius:4px;background:var(--ink-4)"></span><span style="width:138px;height:6px;border-radius:3px;background:var(--ink-2)"></span></div>
+        <span style="width:52px;height:6px;border-radius:3px;background:var(--ink-2)"></span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;height:56px;border-bottom:1px solid var(--color-line)">
+        <span style="width:32px;height:32px;border-radius:50%;background:var(--ink-3)"></span>
+        <div style="display:flex;flex-direction:column;gap:7px;flex:1"><span style="width:132px;height:7px;border-radius:4px;background:var(--ink-4)"></span><span style="width:150px;height:6px;border-radius:3px;background:var(--ink-2)"></span></div>
+        <span style="width:40px;height:6px;border-radius:3px;background:var(--ink-2)"></span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;height:56px;border-bottom:1px solid var(--color-line)">
+        <span style="width:32px;height:32px;border-radius:50%;background:var(--ink-3)"></span>
+        <div style="display:flex;flex-direction:column;gap:7px;flex:1"><span style="width:104px;height:7px;border-radius:4px;background:var(--ink-4)"></span><span style="width:170px;height:6px;border-radius:3px;background:var(--ink-2)"></span></div>
+        <span style="width:48px;height:6px;border-radius:3px;background:var(--ink-2)"></span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;height:56px;border-bottom:1px solid var(--color-line)">
+        <span style="width:32px;height:32px;border-radius:50%;background:var(--ink-3)"></span>
+        <div style="display:flex;flex-direction:column;gap:7px;flex:1"><span style="width:116px;height:7px;border-radius:4px;background:var(--ink-4)"></span><span style="width:146px;height:6px;border-radius:3px;background:var(--ink-2)"></span></div>
+        <span style="width:44px;height:6px;border-radius:3px;background:var(--ink-2)"></span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;height:56px;border-bottom:1px solid var(--color-line)">
+        <span style="width:32px;height:32px;border-radius:50%;background:var(--ink-3)"></span>
+        <div style="display:flex;flex-direction:column;gap:7px;flex:1"><span style="width:90px;height:7px;border-radius:4px;background:var(--ink-4)"></span><span style="width:160px;height:6px;border-radius:3px;background:var(--ink-2)"></span></div>
+        <span style="width:52px;height:6px;border-radius:3px;background:var(--ink-2)"></span>
+      </div>
+    </div>
+    <div data-name="Toast" style="position:absolute;left:32px;top:404px;display:flex;align-items:center;gap:8px;padding:10px 14px 10px 12px;border-radius:var(--radius-lg);background:var(--text-strong);color:#fff;font-size:13px;font-weight:500;box-shadow:var(--shadow-satellite)">
+      <svg width="16" height="16" viewBox="0 0 256 256" fill="#5ee38f"><path d="M128 24a104 104 0 1 0 104 104A104.11 104.11 0 0 0 128 24Zm45.66 85.66-56 56a8 8 0 0 1-11.32 0l-24-24a8 8 0 0 1 11.32-11.32L112 148.69l50.34-50.35a8 8 0 0 1 11.32 11.32Z"/></svg>
+      Invite sent to Maya
+    </div>
+  </div>
+</div>
+</div>
+<script data-name="Scene" type="ponzu/act">
+wait 700
+click @Field
+type @Email placeholder=@Placeholder
+wait 250
+click @Invite
+show @"New member" grow
+& show @Toast rise delay=120
+count @Seats from 4
+poster
+wait 2000
+hide @Toast
+& hide @Email dur=160
+& show @Placeholder
+reset 600
+</script>
+</section>

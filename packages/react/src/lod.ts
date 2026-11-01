@@ -25,6 +25,7 @@
  */
 
 import { isCSSAnimation, type Motion, nameOf, outermostSvg, STILL_PX } from "./motion.ts";
+import { sceneAnimations } from "./scene.ts";
 
 /** A held element goes again from this size: a zoom hovering at the line doesn't flip it. */
 const RELEASE = STILL_PX / 0.8;
@@ -198,7 +199,8 @@ export class BoardDetail {
     // Skipped content has no layers or ticks to save, and measuring it would lay it out.
     if (d.hidden) return;
     // Every update while held: animations that started since (motion's onStart) hold too.
-    if (d.hold || this.held) holdLoops(this.root, !!d.hold, this.motion.running);
+    if (d.hold || this.held)
+      holdLoops(this.root, !!d.hold, [...this.motion.running, ...sceneAnimations(this.root)]);
     // Fields' loops run in their images, which holdLoops can't reach.
     this.motion.hold(!!d.hold);
     this.held = !!d.hold;

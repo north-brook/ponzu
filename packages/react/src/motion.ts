@@ -27,6 +27,8 @@
  * root's animation events, asking again only for animations it hasn't seen.
  */
 
+import { sceneAnimations } from "./scene.ts";
+
 /** An animated element drawn smaller than this, in device pixels, isn't worth animating live. */
 export const STILL_PX = 8;
 
@@ -334,7 +336,7 @@ const motions = new WeakMap<ShadowRoot, Motion>();
  */
 export function animationsOf(root: ShadowRoot, ask = true): Animation[] {
   const m = motions.get(root);
-  return m ? [...m.running] : ask ? root.getAnimations() : [];
+  return m ? [...m.running, ...sceneAnimations(root)] : ask ? root.getAnimations() : [];
 }
 
 /** The fields in a board that hold any of these elements (Motion.fieldsOf). */

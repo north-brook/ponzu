@@ -1,0 +1,8 @@
+{
+  "ponzu": 1,
+  "name": "Product shots",
+  "example": true,
+  "pages": [
+    { "id": "pg_scenes", "name": "Scenes", "icon": "play" }
+  ]
+}

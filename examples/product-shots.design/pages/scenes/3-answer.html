@@ -1,0 +1,65 @@
+<section data-artboard data-id="ab_answer" data-name="3 Answer: a reply that streams" data-x="0" data-y="680" style="width:720px;height:460px;background:var(--color-page);font-family:var(--font-ui);color:var(--text-strong)">
+<style>
+.send{transition:background-color .15s ease, scale .15s ease;cursor:pointer}
+.send:hover{background-color:var(--color-accent-press) !important}
+.send:active{scale:.94}
+.composer{transition:box-shadow .2s ease;cursor:text}
+.composer:focus-within{box-shadow:0 0 0 1px var(--color-accent), 0 0 0 4px rgba(59,91,253,.14), var(--shadow-ground) !important}
+</style>
+<div data-name="Stage" style="position:absolute;inset:0;overflow:hidden">
+<div data-name="Window" style="position:absolute;left:64px;top:56px;width:760px;height:460px;display:flex;flex-direction:column;overflow:hidden;background:var(--color-surface);border-radius:var(--radius-window);box-shadow:var(--shadow-hero)">
+  <div data-name="Title bar" style="display:flex;align-items:center;gap:6px;height:38px;flex:none;padding:0 14.5px;background:var(--color-chrome);border-bottom:1px solid var(--color-line)">
+    <span style="width:9px;height:9px;border-radius:50%;background:#ff5f57;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.12)"></span>
+    <span style="width:9px;height:9px;border-radius:50%;background:#febc2e;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.12)"></span>
+    <span style="width:9px;height:9px;border-radius:50%;background:#28c840;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.12)"></span>
+    <div style="flex:1;margin-right:36px;text-align:center;font-size:13px;font-weight:600">Help</div>
+  </div>
+  <div data-name="Thread" style="position:relative;flex:1;display:flex;flex-direction:column;gap:18px;padding:24px 32px;width:592px">
+    <div data-name="Greeting" style="display:flex;gap:12px;align-items:center">
+      <span style="display:grid;place-items:center;flex:none;width:28px;height:28px;border-radius:8px;background:var(--text-strong);color:#fff;font-size:12px;font-weight:700">N</span>
+      <span style="font-size:14px;line-height:1.55;color:var(--text)">Hi Maya. Ask me about your workspace or billing.</span>
+    </div>
+    <div data-name="Question" style="align-self:flex-end;max-width:360px;padding:10px 14px;border-radius:16px 16px 4px 16px;background:var(--color-well);font-size:14px;line-height:1.45">Which plan includes SSO?</div>
+    <div data-name="Reply" style="display:flex;gap:12px;align-items:flex-start">
+      <span data-name="Avatar" style="display:grid;place-items:center;flex:none;width:28px;height:28px;border-radius:8px;background:var(--text-strong);color:#fff;font-size:12px;font-weight:700">N</span>
+      <div style="position:relative;display:flex;flex-direction:column;gap:12px;flex:1;padding-top:4px">
+        <span data-name="Thinking" style="position:absolute;top:4px;left:0;font-size:14px;color:var(--text-faint)">Thinking…</span>
+        <p data-name="Answer" style="margin:0;font-size:14px;line-height:1.55;color:var(--text)">SSO comes with the <b style="font-weight:600;color:var(--text-strong)">Business</b> plan, along with SCIM provisioning and audit logs. You're on Team, so upgrading turns it on for all 12 seats at once.</p>
+        <div data-name="Sources" style="display:flex;gap:8px">
+          <span class="source" style="display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:var(--radius-pill);background:var(--color-canvas);box-shadow:inset 0 0 0 1px var(--color-line);font-size:12px;color:var(--text)"><svg width="12" height="12" viewBox="0 0 256 256" fill="var(--text-faint)"><path d="M213.66 82.34l-56-56A8 8 0 0 0 152 24H56a16 16 0 0 0-16 16v176a16 16 0 0 0 16 16h144a16 16 0 0 0 16-16V88a8 8 0 0 0-2.34-5.66ZM160 51.31 188.69 80H160ZM200 216H56V40h88v48a8 8 0 0 0 8 8h48v120Z"/></svg>Pricing</span>
+          <span class="source" style="display:flex;align-items:center;gap:6px;padding:5px 10px;border-radius:var(--radius-pill);background:var(--color-canvas);box-shadow:inset 0 0 0 1px var(--color-line);font-size:12px;color:var(--text)"><svg width="12" height="12" viewBox="0 0 256 256" fill="var(--text-faint)"><path d="M213.66 82.34l-56-56A8 8 0 0 0 152 24H56a16 16 0 0 0-16 16v176a16 16 0 0 0 16 16h144a16 16 0 0 0 16-16V88a8 8 0 0 0-2.34-5.66ZM160 51.31 188.69 80H160ZM200 216H56V40h88v48a8 8 0 0 0 8 8h48v120Z"/></svg>Single sign-on</span>
+        </div>
+      </div>
+    </div>
+    <div class="composer" data-name="Composer" style="position:absolute;left:32px;right:0;top:278px;display:flex;align-items:center;gap:8px;height:48px;padding:0 6px 0 16px;border-radius:14px;background:var(--color-surface);box-shadow:0 0 0 1px var(--ink-4), var(--shadow-ground)">
+      <span data-name="Hint" style="position:absolute;left:16px;font-size:14px;color:var(--text-faint)">Ask anything</span>
+      <span data-name="Draft" style="flex:1;font-size:14px">Which plan includes SSO?</span>
+      <span class="send" data-name="Send" style="display:grid;place-items:center;width:36px;height:36px;border-radius:10px;background:var(--color-accent)"><svg width="16" height="16" viewBox="0 0 256 256" fill="#fff"><path d="M205.66 117.66a8 8 0 0 1-11.32 0L136 59.31V216a8 8 0 0 1-16 0V59.31l-58.34 58.35a8 8 0 0 1-11.32-11.32l72-72a8 8 0 0 1 11.32 0l72 72a8 8 0 0 1 0 11.32Z"/></svg></span>
+    </div>
+  </div>
+</div>
+</div>
+<script data-name="Scene" type="ponzu/act">
+wait 600
+click @Composer
+type @Draft placeholder=@Hint
+wait 200
+click @Send
+& hide @Draft dur=1 delay=80
+& show @Hint delay=80
+& show @Question rise delay=80
+show @Thinking
+& show @Avatar
+wait 900
+hide @Thinking dur=120
+stream @Answer
+show .source rise
+poster
+wait 2400
+hide @Question
+& hide @Avatar
+& hide @Answer
+& hide .source
+reset 500
+</script>
+</section>

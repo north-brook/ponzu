@@ -12,6 +12,7 @@ The `.design` folder is the spec. Read it from disk:
 - `comments.json`: open threads may hold requirements ("collapse on mobile").
 - `notes/`: the brief and the decisions made along the way.
 - `Note: …` artboards: annotations that explain the screens beside them.
+- A `<script type="ponzu/act">` in an artboard is a scene: a scripted demo of the screen for the canvas, not the product's behavior. Read it for intent (what's hovered, what appears), and build real interactions instead.
 
 Build with the codebase's own components and conventions. Translate the structure; don't paste the HTML.
 Keep the flex and grid decisions, the spacing scale and the type scale.
