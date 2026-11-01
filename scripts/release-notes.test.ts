@@ -56,6 +56,34 @@ test("the Mac's notes leave out the iPhone's and drop their own label", () => {
   expect(extractNotes("## Release note\n\niPhone: scan the code on your Mac.")).toEqual([]);
 });
 
+test("a labelled line starts its own note without a bullet", () => {
+  expect(
+    extractNotes(
+      [
+        "## Release note",
+        "",
+        "Mac: designs that changed show a dot.",
+        "iPhone: the Activity tab is gone.",
+      ].join("\n"),
+    ),
+  ).toEqual(["Designs that changed show a dot."]);
+  expect(
+    extractNotes(
+      [
+        "## Release note",
+        "",
+        "- Comments pinned on the",
+        "  iPhone: show on the Mac too.",
+        "- Export keeps the",
+        "  Mac: fonts it found.",
+      ].join("\n"),
+    ),
+  ).toEqual([
+    "Comments pinned on the iPhone: show on the Mac too.",
+    "Export keeps the Mac: fonts it found.",
+  ]);
+});
+
 test("no section, an empty one, or none says nothing", () => {
   expect(extractNotes("fix: a thing\n\nNo notes here.")).toEqual([]);
   expect(extractNotes("## Release note\n\n<!-- one line per change -->\n")).toEqual([]);
