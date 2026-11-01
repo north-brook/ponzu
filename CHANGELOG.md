@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.78.1](https://github.com/north-brook/ponzu/compare/v1.78.0...v1.78.1) (2026-11-01)
+
+
+### Bug Fixes
+
+* keep a labelled release note apart without a bullet ([#358](https://github.com/north-brook/ponzu/issues/358)) ([5dba89b](https://github.com/north-brook/ponzu/commit/5dba89bdd4bb98989eb4f81dcb814cb67816f4d1))
+* **studio:** open a design on the page it was last on ([#368](https://github.com/north-brook/ponzu/issues/368)) ([7042cda](https://github.com/north-brook/ponzu/commit/7042cda1ac70b2dd509839efc083cf5d05980abb))
+
 ## [1.78.0](https://github.com/north-brook/ponzu/compare/v1.77.0...v1.78.0) (2026-11-01)
 
 
