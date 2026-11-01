@@ -115,8 +115,16 @@ export function Studio() {
     const artboard = q.get("artboard") ?? undefined;
     return file && (page || artboard) ? { file, at: { page, artboard } } : null;
   });
-  /** The page each design was last on: a tab, or the design opened again, comes back to it. */
-  const [pages, setPages] = useState(loadPages);
+  /**
+   * The page the tab in front shows: the one its design was last on, read as the tab comes to the
+   * front so another window's moves count, and kept as the person moves.
+   */
+  const [shown, setShown] = useState(() => ({
+    tab: active,
+    page: active ? loadPages()[active] : undefined,
+  }));
+  if (shown.tab !== active)
+    setShown({ tab: active, page: active ? loadPages()[active] : undefined });
   const sources = useMemo(() => new Map<string, SocketSource>(), []);
   const source = (tab: string) => {
     let s = sources.get(tab);
@@ -345,10 +353,10 @@ export function Studio() {
               theme={theme}
               me={{ kind: "user", name: "You" }}
               link={active === linked?.file ? linked.at : undefined}
-              page={pages[active]}
+              page={shown.tab === active ? shown.page : undefined}
               onPageChange={(id) => {
                 savePage(active, id);
-                setPages((p) => (p[active] === id ? p : { ...p, [active]: id }));
+                setShown({ tab: active, page: id });
               }}
             />
           </div>

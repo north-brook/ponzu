@@ -7,12 +7,18 @@ export type Pages = Record<string, string>;
 
 const KEY = "ponzu.pages";
 
+/** What's saved, keeping only page ids: anything else in storage counts as nothing saved. */
 export function loadPages(): Pages {
+  let saved: unknown;
   try {
-    return JSON.parse(localStorage.getItem(KEY) ?? "{}") as Pages;
+    saved = JSON.parse(localStorage.getItem(KEY) ?? "{}");
   } catch {
     return {};
   }
+  if (!saved || typeof saved !== "object" || Array.isArray(saved)) return {};
+  return Object.fromEntries(
+    Object.entries(saved).filter((e): e is [string, string] => typeof e[1] === "string"),
+  );
 }
 
 /**
