@@ -129,7 +129,6 @@ export function FileCard({
                 lineHeight: 19.5,
               }}
               color={color.ink}
-              surface={color.bg}
             />
           ) : (
             <Text

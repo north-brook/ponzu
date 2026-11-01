@@ -327,6 +327,9 @@ export function Composer({
                 scrollEnabled
                 editable={!voice}
                 testID={voice ? undefined : "comment-input"}
+                // iOS's default (true) has the field keep a touch it holds when another view
+                // asks for it, so the first tap on Send after placing the caret went nowhere.
+                rejectResponderTermination={false}
                 style={[
                   styles.field,
                   { color: color.ink },
