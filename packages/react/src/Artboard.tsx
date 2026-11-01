@@ -17,6 +17,7 @@ import { BoardImages, firstStep, markupUrl } from "./images.ts";
 import { BoardDetail, type Detail, holdLoops, STILL_CSS } from "./lod.ts";
 import { animationsOf, MOTION_CSS, Motion } from "./motion.ts";
 import { watchVideos } from "./pacer.tsx";
+import { playScene, stopScene } from "./scene.ts";
 import { useWindowStill } from "./still.ts";
 
 interface Props {
@@ -165,6 +166,8 @@ export const ArtboardView = memo(function ArtboardView({
     // Before the first paint: decoding an image never holds up a frame.
     for (const img of root.querySelectorAll("img"))
       if (!img.hasAttribute("decoding")) img.decoding = "async";
+    // A scene script plays its beats as animations, with the board's own.
+    playScene(root);
     lod.current?.reset();
     if (tracked) {
       motion.current ??= new Motion(root);
@@ -216,6 +219,8 @@ export const ArtboardView = memo(function ArtboardView({
 
   useLayoutEffect(
     () => () => {
+      const root = host.current?.shadowRoot;
+      if (root) stopScene(root);
       lod.current?.reset();
       motion.current?.dispose();
       images.current?.dispose();

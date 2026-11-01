@@ -1,4 +1,5 @@
 import { PAGE_ICON_GROUPS } from "@ponzu/core";
+import { ACT_GUIDE, KIT_GUIDE, PRODUCT_GUIDE } from "./product.ts";
 
 /** The icons a file or page can carry, a line per group. */
 const ICON_LIST = Object.entries(PAGE_ICON_GROUPS)
@@ -74,7 +75,7 @@ HTML and CSS
 - Images: https URLs, data URLs, or files in assets/ referenced as assets/name.png.
 - SVG for icons and logos. Transforms work.
 - Animation is real: @keyframes, transitions, animation-timeline. Screenshots show the settled page; record shows the motion. get_guide('motion') has the details.
-- No scripts and no on* handlers; they're stripped. The result tells you what was removed.
+- No scripts and no on* handlers; they're stripped. The result tells you what was removed. The one exception is a scene, a <script type="ponzu/act"> that plays the artboard as a product demo and never runs as code (get_guide('act')).
 - Name meaningful layers with data-name="Hero". Names make get_tree readable and survive into implementation.
 
 Light and dark
@@ -167,6 +168,7 @@ The .design folder is the spec. Read it directly from disk; don't screenshot and
 - Open comment threads may hold requirements ("this should collapse on mobile"). Read comments.json.
 - notes/ has the brief and decisions. Read them before you start.
 - "Note: …" artboards explain the screens beside them. Read them alongside the screens they sit next to.
+- A <script type="ponzu/act"> is a scene: a scripted demo of the screen, not the product's behavior. Read it for intent and build real interactions.
 - When something can't be built as drawn, leave a comment on the node explaining what you did instead.`,
 
   format: `# The .design format
@@ -198,7 +200,7 @@ ${FORMAT_EXAMPLE["pages/flow/cart.html"]}
 - Size goes in style, as width and height in px. data-x and data-y only place the artboard on its page. Without a width or height it's 1440×900; height: fit-content grows with the content.
 - Give the section a data-id (ab_…) so comments and tools can point at it. Elements inside don't need one: they get stable ids from their position.
 - data-name is the name people see, for the artboard and for layers.
-- Same HTML and CSS rules as write_html (get_guide('basics')): inline styles, var(--token), no scripts.
+- Same HTML and CSS rules as write_html (get_guide('basics')): inline styles, var(--token), no scripts but a scene (get_guide('act')).
 
 comments.json
 \`\`\`json
@@ -212,7 +214,7 @@ ${FORMAT_EXAMPLE["comments.json"]}
 
   motion: `# Motion and states
 
-Designs have no scripts, so motion is CSS (@keyframes, transitions, animation-timeline) and SVG <animate>. Ponzu pauses it and seeks to exact times, so frames are the same every time and cost no real waiting.
+Designs run no scripts, so motion is CSS (@keyframes, transitions, animation-timeline), SVG <animate>, and scenes: a product demo written as beats (click, type, show, count) that Ponzu turns into animations (get_guide('act')). Ponzu pauses all of it and seeks to exact times, so frames are the same every time and cost no real waiting.
 
 See it
 - screenshot shows the settled page: every finite animation has finished. at: 0 shows the first frame; any other at shows that moment.
@@ -244,6 +246,12 @@ Check
 4. Read the motion list: delays and durations should add up to the rhythm you meant.
 5. A finite load the person should judge needs a looping copy beside it; they can't replay the original.`,
 
+  product: PRODUCT_GUIDE,
+
+  act: ACT_GUIDE,
+
+  kit: KIT_GUIDE,
+
   mobile: `# Mobile
 
 - 390×844 artboards. Include a status bar (time, signal, battery) as a 54px row at the top; make it a duplicated component across screens.
@@ -266,6 +274,8 @@ export const SERVER_INSTRUCTIONS = `Ponzu is a design canvas you drive with HTML
 Once you've put work on the canvas for the person to react to, or you're designing together, watch the canvas instead of ending your turn: wait_for_activity → triage → set_status → edit + screenshot → set_comment_status resolved for what you did (reply only to answer a question, flag an ambiguity or explain what you couldn't do) → wait again. Never end a turn asking the person to comment on the canvas or to tell you when they have; watch for their comments instead. Watching doesn't cut you off from chat: their messages reach you between waits, within a minute, and you can write to them in chat and keep watching. Handle chat first. A wait that hears nothing is cheap. If you started watching yourself, stop after 30 quiet minutes and say so. Read get_guide('watch') before your first wait.
 
 Start every session with get_basic_info, then read_notes, then get_guide('basics') if you haven't read it. When the person says "this", look for the comment they pinned to it.
+
+For a product shot (faux product UI for a launch page: a hero, a feature card, a bento grid, a cursor walking through a flow), read get_guide('product') first.
 
 Build in small pieces, screenshot often, and fix what lint reports. Screenshots show the theme the person's canvas is in; a design with both themes uses light-dark() tokens for every color. record shows animation and hover states frame by frame. Put design decisions in tokens and notes. Variations go next to the original, never over it. The canvas shows which artboards you're changing; set_status tells the person what you're doing, and its intent, set once per request, says what they asked for.
 

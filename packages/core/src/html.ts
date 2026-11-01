@@ -48,6 +48,21 @@ const URL_ATTRS = new Set(["href", "src", "xlink:href", "action", "formaction", 
 /** Raw-text elements whose content is serialized without escaping. */
 const RAW_TEXT = new Set(["style"]);
 
+/**
+ * The one script a design keeps: a scene (`<script type="ponzu/act">`), which
+ * Ponzu reads as data and plays as animations (render/src/act.ts). A browser
+ * never runs a script of a type it doesn't know, and this one is written out
+ * with that type and nothing else whatever its node says, so no edit can make
+ * it code. Every other script is dropped.
+ */
+export const ACT_SCRIPT_TYPE = "ponzu/act";
+
+function isActScript(el: P5.Element): boolean {
+  if (el.tagName.toLowerCase() !== "script") return false;
+  const type = el.attrs.find((a) => !a.prefix && a.name.toLowerCase() === "type")?.value;
+  return type?.trim().toLowerCase() === ACT_SCRIPT_TYPE;
+}
+
 export interface ParseOptions {
   /**
    * Assign ids to elements that have none. `random` for new content,
@@ -143,7 +158,7 @@ function convertChildren(
     if (child.nodeName === "#comment" || child.nodeName === "#documentType") continue;
     const el = child as P5.Element;
     const tag = el.tagName;
-    if (BLOCKED_TAGS.has(tag.toLowerCase())) {
+    if (BLOCKED_TAGS.has(tag.toLowerCase()) && !isActScript(el)) {
       dropped.push({ what: `<${tag}>` });
       continue;
     }
@@ -182,6 +197,22 @@ function convertElement(
   }
   if (!id || ids.seen.has(id)) id = makeUpId(ids, path);
   ids.seen.add(id);
+  if (el.tagName === "script") {
+    // A scene: its text, and the type that keeps it data. src and the rest go.
+    for (const k of Object.keys(attrs)) {
+      if (k.toLowerCase() === "type") continue;
+      dropped.push({ what: `${k} on <script>` });
+      delete attrs[k];
+    }
+    attrs.type = ACT_SCRIPT_TYPE;
+    const text = el.childNodes
+      .map((c) => (c.nodeName === "#text" ? (c as P5.TextNode).value : ""))
+      .join("");
+    const node: PElement = { kind: "el", id, tag: "script", attrs, style: {}, children: [] };
+    if (name !== undefined) node.name = name;
+    if (text) node.children.push({ kind: "text", value: text });
+    return node;
+  }
   const ns = el.namespaceURI === NS_SVG ? "svg" : el.namespaceURI === NS_MATH ? "math" : undefined;
   const node: PElement = { kind: "el", id, tag: el.tagName, attrs, style, children: [] };
   if (ns) node.ns = ns;
@@ -245,6 +276,7 @@ export function serializeNode(
   inForeign?: boolean,
 ): string {
   if (node.kind === "text") return rawText ? node.value : escapeText(node.value);
+  if (node.tag === "script" && !node.ns) return serializeActScript(node, opts);
   let out = `<${node.tag}`;
   if (!opts.omitIds) out += ` data-id="${node.id}"`;
   if (node.name !== undefined) out += ` data-name="${escapeAttr(node.name)}"`;
@@ -279,6 +311,20 @@ export function serializeNode(
     else out += serializeNode(c, opts, raw, foreign);
   }
   return `${out}</${node.tag}>`;
+}
+
+/**
+ * A scene script, always as data: type ponzu/act whatever its attributes say,
+ * and text that can't end the element early.
+ */
+function serializeActScript(node: PElement, opts: SerializeOptions): string {
+  let out = "<script";
+  if (!opts.omitIds) out += ` data-id="${node.id}"`;
+  if (node.name !== undefined) out += ` data-name="${escapeAttr(node.name)}"`;
+  out += ` type="${ACT_SCRIPT_TYPE}">`;
+  for (const c of node.children)
+    if (c.kind === "text") out += c.value.replace(/<(\/script|!--)/gi, "<\\$1");
+  return `${out}</script>`;
 }
 
 /** SVG elements whose children parse as HTML. */

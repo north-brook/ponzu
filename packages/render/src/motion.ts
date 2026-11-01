@@ -1,3 +1,4 @@
+import { ACT_SCRIPT, type ActSummary } from "./act.ts";
 import { FONT_LINT_SCRIPT } from "./fonts.ts";
 import { LINT_SCRIPT, type LintIssue } from "./renderer.ts";
 import { THEME_LINT_SCRIPT } from "./theme.ts";
@@ -54,6 +55,11 @@ export interface MotionInfo {
   end: number;
   /** The time currently shown, in ms. */
   at: number;
+  /**
+   * The artboard's scene script, compiled (act.ts). Its animations count toward
+   * settled, loops and cycle like any others but aren't listed in `animations`.
+   */
+  act?: ActSummary;
 }
 
 /** One frame of a recording: a time on the timeline, or a scroll offset. */
@@ -76,9 +82,10 @@ export interface Box {
 }
 
 /**
- * Runs in the page and installs `window.__ponzuMotion`. Designs have no
- * scripts, so every animation is CSS, SVG or video and can be paused and
- * seeked exactly: frames are repeatable and take no real time to reach.
+ * Runs in the page and installs `window.__ponzuMotion`. Designs run no
+ * scripts, so every animation is CSS, SVG, video or a scene script's Web
+ * Animations (act.ts), and can be paused and seeked exactly: frames are
+ * repeatable and take no real time to reach.
  *
  * Serialized with toString, so it can't reference anything outside itself.
  */
@@ -98,6 +105,9 @@ function motionRuntime() {
   let scroller: { el: Element; axis: "x" | "y" } | null = null;
   let rewritten: CSSStyleRule[] | null = null;
   const issues: LintIssue[] = [];
+  /** The artboard's scene, once hold() has compiled it. */
+  let act: { animations: Animation[]; summary: ActSummary; issues: LintIssue[] } | null = null;
+  const isAct = (a: Animation) => a.id === "ponzu-act";
 
   const frame = () =>
     new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
@@ -216,10 +226,10 @@ function motionRuntime() {
     };
   }
 
-  function list(): MotionAnimation[] {
+  function list(scene = true): MotionAnimation[] {
     const out: MotionAnimation[] = [];
     for (const e of entries) {
-      if (e.trigger !== trigger) continue;
+      if (e.trigger !== trigger || (!scene && isAct(e.anim))) continue;
       const d = describe(e);
       if (d) out.push(d);
     }
@@ -287,9 +297,9 @@ function motionRuntime() {
         loopEnd = Math.max(loopEnd, a.delay + one);
       }
     }
-    return {
+    const out: MotionInfo = {
       trigger,
-      animations: animations.slice(0, 60),
+      animations: (act ? list(false) : animations).slice(0, 60),
       settled: round(settled),
       loops,
       cycle: round(cycle),
@@ -297,6 +307,8 @@ function motionRuntime() {
       end: round(Math.max(settled, loopEnd)),
       at: round(now),
     };
+    if (act && trigger === "load") out.act = act.summary;
+    return out;
   }
 
   /** Puts everything at t without waiting for a frame. Videos seek separately. */
@@ -341,6 +353,8 @@ function motionRuntime() {
     parent.removeChild(root);
     void document.body.offsetHeight;
     parent.insertBefore(root, next);
+    // The scene compiles against the board as it lays out now, fonts and images in.
+    act = w.__ponzuAct?.mount(root) ?? null;
     entries = [];
     adopt(document.getAnimations(), "load");
     for (const s of svgs()) {
@@ -554,8 +568,13 @@ function motionRuntime() {
       const r = interact(opts.interact);
       if ("error" in r) return r;
     }
-    await seek(opts.at ?? info().settled);
+    await seek(opts.at ?? rest());
     return info();
+  }
+
+  /** What a still shows by default: a scene's poster, else the settled page. */
+  function rest(): number {
+    return act && trigger === "load" ? act.summary.poster : info().settled;
   }
 
   function plan(spec: { frames?: number; from?: number; to?: number; scroll?: string }): {
@@ -586,8 +605,29 @@ function motionRuntime() {
       };
     }
     const i = info();
+    // A scene, by default, is filmed as a storyboard: where each beat lands.
+    const story =
+      act && trigger === "load" && !spec.frames && spec.from === undefined && spec.to === undefined;
+    if (story) {
+      const s = act!.summary;
+      const last = s.loop ? s.duration - 1 : s.duration;
+      const beats = s.beats.filter((b) => b.end > b.start || /^(poster|reset)/.test(b.text));
+      const picks =
+        beats.length > 23
+          ? Array.from({ length: 23 }, (_, k) => beats[Math.round((k * (beats.length - 1)) / 22)]!)
+          : beats;
+      const steps: FrameStep[] = [{ t: 0, label: "0ms start" }];
+      for (const b of picks) {
+        const t = round(Math.min(last, /^reset/.test(b.text) ? b.start : b.end));
+        if (steps.some((x) => x.t === t)) continue;
+        const text = b.text.length > 34 ? `${b.text.slice(0, 33)}…` : b.text;
+        steps.push({ t, label: `${Math.round(t)}ms ${text}` });
+      }
+      steps.sort((a, b) => a.t! - b.t!);
+      return { steps };
+    }
     const from = spec.from ?? 0;
-    const to = spec.to ?? Math.min(i.end, 10000);
+    const to = spec.to ?? Math.min(i.end, act ? Math.max(10000, act.summary.duration) : 10000);
     return {
       steps: spread(from, Math.max(from, to)).map((t) => ({
         t,
@@ -635,15 +675,15 @@ function motionRuntime() {
     };
   }
 
-  /** Back to rest for lint: everything finished, scrolled to the top. */
+  /** Back to rest for lint: everything finished (a scene at its poster), scrolled to the top. */
   async function settle() {
     scrollTo(0);
-    await seek(info().settled);
+    await seek(rest());
   }
 
   /** Motion problems an agent can't see in HTML. */
   function lint(): LintIssue[] {
-    const out = [...issues];
+    const out = [...issues, ...(act?.issues ?? [])];
     if (!root) return out;
     const defined = new Set<string>();
     const walk = (rules: CSSRuleList) => {
@@ -826,9 +866,9 @@ img{display:block;background:repeating-conic-gradient(#fff 0 25%,#f4f4f4 0 50%) 
 /** Font, layout, motion and theme lint, as one expression. Needs MOTION_SCRIPT installed for the motion part. */
 export const FULL_LINT_SCRIPT = `[...${FONT_LINT_SCRIPT}, ...${LINT_SCRIPT}, ...(window.__ponzuMotion ? ${motionCall("lint")} : []), ...${THEME_LINT_SCRIPT}].slice(0, 30)`;
 
-/** Installs the runtime, holds the timeline and shows `at`. Evaluates to MotionInfo or { error }. */
+/** Installs the runtimes, holds the timeline and shows `at`. Evaluates to MotionInfo or { error }. */
 export function prepareScript(opts: { interact?: Interaction; at?: number }): string {
-  return `(${MOTION_SCRIPT}, ${motionCall("prepare", opts)})`;
+  return `(${ACT_SCRIPT}, ${MOTION_SCRIPT}, ${motionCall("prepare", opts)})`;
 }
 
 /** What a renderer has to offer for recording: one live page. */

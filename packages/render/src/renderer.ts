@@ -20,7 +20,9 @@ export interface LintIssue {
     | "wrapped-text"
     | "flex-direction"
     | "artboard-overlap"
-    | "theme";
+    | "theme"
+    /** A scene script's beat that can't play as written (act.ts). */
+    | "act";
   message: string;
 }
 

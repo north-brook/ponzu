@@ -165,6 +165,27 @@ export function createMcpServer(ws: Workspace, opts: McpOptions = {}): McpServer
     }),
   );
 
+  server.registerPrompt(
+    "product-shot",
+    {
+      title: "Make a product shot",
+      description:
+        "Faux product UI for a launch page, as a still or a demo that plays: a hero, a feature card, a bento grid, a cursor walking through a flow.",
+      argsSchema: { brief: z.string() },
+    },
+    ({ brief }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: `Make a product shot in Ponzu: ${brief}\n\nRead get_guide('product'), get_guide('kit') and get_guide('act'). Plan it in a note first: where it sits, the focal object, the action, the payoff. Build the screen at the size it's shown, frame it, then tell the story with a scene. Screenshot the poster, record the storyboard, review it as a stranger would and fix the largest fault, then watch the canvas for my comments (get_guide('watch')).`,
+          },
+        },
+      ],
+    }),
+  );
+
   return server;
 }
 

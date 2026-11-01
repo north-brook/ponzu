@@ -1,0 +1,77 @@
+<section data-artboard data-id="ab_settle" data-name="2 Settle up: a tap on a phone" data-x="1120" data-y="0" style="width:420px;height:560px;background:#efe9df;font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;color:#000">
+<style>
+.pay{transition:background-color .25s ease, scale .15s ease}
+.pay:active{scale:.97}
+.pay[data-paid]{background-color:#1f9d55 !important}
+.pay .label{transition:opacity .2s ease, translate .25s cubic-bezier(.22,1,.36,1)}
+.pay .paid{opacity:0;translate:0 8px}
+.pay[data-paid] .due{opacity:0;translate:0 -8px}
+.pay[data-paid] .paid{opacity:1;translate:0 0}
+</style>
+<div data-name="Stage" style="position:absolute;inset:0;overflow:hidden">
+<div data-name="Phone" style="position:absolute;left:30px;top:40px;width:422px;height:894px;padding:10px;border-radius:74px;background:#1c1c1e;box-shadow:inset 0 0 0 1.5px #48484a, 0 30px 60px -12px rgba(60,40,20,.35);transform:scale(.85);transform-origin:top left">
+  <div data-name="Screen" style="position:relative;width:402px;height:874px;border-radius:64px;overflow:hidden;background:#fff">
+    <div data-name="Status bar" style="position:absolute;left:0;right:0;top:0;height:54px;display:flex;align-items:center;justify-content:space-between;padding:0 34px 0 52px;font-size:17px;font-weight:600;color:#000">
+      <span>9:41</span>
+      <span style="display:flex;align-items:center;gap:7px">
+        <svg width="18" height="12" viewBox="0 0 18 12" fill="#000"><rect x="0" y="7.5" width="3" height="4.5" rx="1"/><rect x="5" y="5" width="3" height="7" rx="1"/><rect x="10" y="2.5" width="3" height="9.5" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>
+        <svg width="16" height="12" viewBox="0 0 16 12" fill="#000"><path d="M8 2.6c2.2 0 4.2.8 5.7 2.2l1.1-1.1A9.7 9.7 0 0 0 8 1 9.7 9.7 0 0 0 1.2 3.7l1.1 1.1A8.1 8.1 0 0 1 8 2.6Zm0 3.2c1.3 0 2.5.5 3.4 1.3l1.1-1.1A6.4 6.4 0 0 0 8 4.2 6.4 6.4 0 0 0 3.5 6l1.1 1.1A4.8 4.8 0 0 1 8 5.8Zm0 3.2c.5 0 .9.2 1.2.5L8 10.7 6.8 9.5c.3-.3.7-.5 1.2-.5Z"/></svg>
+        <svg width="27" height="13" viewBox="0 0 27 13" fill="none"><rect x=".5" y=".5" width="23" height="12" rx="3.5" stroke="#000" opacity=".35"/><rect x="2" y="2" width="20" height="9" rx="2" fill="#000"/><path d="M25 4.5v4c.8-.3 1.3-1.1 1.3-2s-.5-1.7-1.3-2Z" fill="#000" opacity=".4"/></svg>
+      </span>
+    </div>
+    <div data-name="Island" style="position:absolute;top:14px;left:153.5px;width:95px;height:37px;border-radius:18.5px;background:#000"></div>
+    <div data-name="App" style="position:absolute;left:0;right:0;top:54px;bottom:0;display:flex;flex-direction:column;padding:0 20px">
+      <div data-name="Nav" style="display:flex;align-items:center;height:44px">
+        <svg width="12" height="20" viewBox="0 0 12 20" fill="none"><path d="M10 2 2 10l8 8" stroke="#1d1d1f" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div data-name="Person" style="display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:8px">
+        <span style="display:grid;place-items:center;width:72px;height:72px;border-radius:50%;background:#d9e7d3;color:#3f6b35;font-size:26px;font-weight:600">SR</span>
+        <span style="font-size:20px;font-weight:600">Sam Rivera</span>
+      </div>
+      <div data-name="Balance" style="display:flex;flex-direction:column;align-items:center;gap:4px;margin-top:28px">
+        <span style="font-size:15px;color:#8a8a8e">You owe Sam</span>
+        <span style="position:relative;font-size:48px;font-weight:700;letter-spacing:-0.02em;line-height:1.1;font-variant-numeric:tabular-nums"><span style="position:absolute;right:100%">$</span><span data-name="Owed" style="display:inline-block">0.00</span></span>
+      </div>
+      <div class="pay" data-name="Pay" style="position:relative;display:grid;place-items:center;height:54px;margin-top:28px;border-radius:16px;background:#1d1d1f;color:#fff;font-size:17px;font-weight:600">
+        <span class="label due" style="grid-area:1/1">Pay $42.10</span>
+        <span class="label paid" style="grid-area:1/1;display:flex;align-items:center;gap:6px"><svg width="18" height="18" viewBox="0 0 256 256" fill="#fff"><path d="m229.66 77.66-128 128a8 8 0 0 1-11.32 0l-56-56a8 8 0 0 1 11.32-11.32L96 188.69 218.34 66.34a8 8 0 0 1 11.32 11.32Z"/></svg>Paid</span>
+      </div>
+      <div data-name="Activity" style="display:flex;flex-direction:column;margin-top:32px">
+        <span style="font-size:13px;font-weight:600;color:#8a8a8e;padding-bottom:6px">Activity</span>
+        <div data-name="Payment" style="display:flex;align-items:center;gap:12px;height:60px;border-bottom:.5px solid rgba(0,0,0,.12)">
+          <span style="display:grid;place-items:center;width:36px;height:36px;border-radius:50%;background:#e8f6ee"><svg width="16" height="16" viewBox="0 0 256 256" fill="#1f9d55"><path d="m229.66 77.66-128 128a8 8 0 0 1-11.32 0l-56-56a8 8 0 0 1 11.32-11.32L96 188.69 218.34 66.34a8 8 0 0 1 11.32 11.32Z"/></svg></span>
+          <div style="display:flex;flex-direction:column;gap:2px;flex:1">
+            <span style="font-size:15px;font-weight:600">You paid Sam</span>
+            <span style="font-size:13px;color:#8a8a8e">Just now</span>
+          </div>
+          <span style="font-size:15px;font-weight:600;font-variant-numeric:tabular-nums">$42.10</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;height:60px;border-bottom:.5px solid rgba(0,0,0,.12)">
+          <span style="width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.06)"></span>
+          <div style="display:flex;flex-direction:column;gap:8px;flex:1"><span style="width:118px;height:8px;border-radius:4px;background:rgba(0,0,0,.1)"></span><span style="width:64px;height:7px;border-radius:4px;background:rgba(0,0,0,.06)"></span></div>
+          <span style="width:46px;height:8px;border-radius:4px;background:rgba(0,0,0,.08)"></span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;height:60px;border-bottom:.5px solid rgba(0,0,0,.12)">
+          <span style="width:36px;height:36px;border-radius:50%;background:rgba(0,0,0,.06)"></span>
+          <div style="display:flex;flex-direction:column;gap:8px;flex:1"><span style="width:96px;height:8px;border-radius:4px;background:rgba(0,0,0,.1)"></span><span style="width:78px;height:7px;border-radius:4px;background:rgba(0,0,0,.06)"></span></div>
+          <span style="width:40px;height:8px;border-radius:4px;background:rgba(0,0,0,.08)"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+<script data-name="Scene" type="ponzu/act">
+cursor touch
+wait 900
+tap @Pay
+set @Pay data-paid
+& count @Owed from 42.10 delay=150
+show @Payment grow
+poster
+wait 2200
+unset @Pay data-paid
+& hide @Payment grow delay=200
+reset 500
+</script>
+</section>

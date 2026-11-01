@@ -1,0 +1,45 @@
+:root {
+  /* Grounds and surfaces: one warm neutral family */
+  --color-page: #ffffff;
+  --color-canvas: #f6f5f4;
+  --color-chrome: #fbfbfa;
+  --color-surface: #ffffff;
+  --color-well: #efeeec;
+  --color-line: rgba(0, 0, 0, 0.07);
+
+  /* Placeholder inks, faintest first: filler bars and discs */
+  --ink-1: rgba(0, 0, 0, 0.04);
+  --ink-2: rgba(0, 0, 0, 0.06);
+  --ink-3: rgba(0, 0, 0, 0.08);
+  --ink-4: rgba(0, 0, 0, 0.1);
+  --ink-5: rgba(0, 0, 0, 0.15);
+
+  /* Text */
+  --text-strong: #1d1d1f;
+  --text: #3c3c43;
+  --text-faint: #8a8a8e;
+
+  /* One accent; status colors mean status */
+  --color-accent: #3b5bfd;
+  --color-accent-press: #2f4ae6;
+  --color-accent-soft: #eef1ff;
+  --color-success: #1f9d55;
+  --color-success-soft: #e8f6ee;
+
+  /* Depth: a different shadow says something */
+  --shadow-window: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 4px 16px rgba(0, 0, 0, 0.08);
+  --shadow-hero: 0 0 0 1px rgba(0, 0, 0, 0.06), 0 30px 60px -12px rgba(50, 50, 93, 0.25), 0 18px 36px -18px rgba(0, 0, 0, 0.3);
+  --shadow-satellite: 0 0 0 1px rgba(0, 0, 0, 0.04), 0 14px 32px -8px rgba(50, 50, 93, 0.24), 0 4px 10px -4px rgba(0, 0, 0, 0.1);
+  --shadow-ground: 0 0 0 1px rgba(50, 50, 93, 0.06), 0 24px 48px -24px rgba(50, 50, 93, 0.18);
+
+  /* Shape */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-window: 12px;
+  --radius-pill: 999px;
+
+  /* Type */
+  --font-ui: "Inter", system-ui, sans-serif;
+  --font-page: "Inter Tight", "Inter", system-ui, sans-serif;
+}

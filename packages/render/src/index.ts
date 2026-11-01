@@ -1,3 +1,4 @@
+export * from "./act.ts";
 export * from "./capture.ts";
 export * from "./document.ts";
 export * from "./fonts.ts";

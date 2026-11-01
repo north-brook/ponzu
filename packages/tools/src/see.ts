@@ -65,7 +65,7 @@ export const seeTools = [
     group: "see",
     readOnly: true,
     description:
-      "Render an artboard or node and look at it. Shows the settled state: every finite animation has finished, the way a person sees the page after it loads. Pass `at` for a moment mid-animation, and hover, focus or press to see a state. Comes with a lint pass that reports clipped text, overflow (with the height the artboard needs), charts and images spilling over their neighbors, short labels wrapping in a row, zero-size and off-artboard elements, artboards overlapping each other on the canvas, broken images, tiny text, missing @keyframes, elements left invisible after an animation, more animating at once than the canvas can keep smooth, and states with no styles. Lists what animates. Use scale 1 for layout checks and 2 only to read small text. Check your work after every few edits; use record to watch motion. A render that stalls stops within a minute and says which step it stalled on; if only the image fails, lint still comes back.",
+      "Render an artboard or node and look at it. Shows the settled state: every finite animation has finished, the way a person sees the page after it loads. Pass `at` for a moment mid-animation, and hover, focus or press to see a state. Comes with a lint pass that reports clipped text, overflow (with the height the artboard needs), charts and images spilling over their neighbors, short labels wrapping in a row, zero-size and off-artboard elements, artboards overlapping each other on the canvas, broken images, tiny text, missing @keyframes, elements left invisible after an animation, more animating at once than the canvas can keep smooth, and states with no styles. Lists what animates. An artboard with a scene script (get_guide('act')) shows its poster frame, and lint lists beats that can't play. Use scale 1 for layout checks and 2 only to read small text. Check your work after every few edits; use record to watch motion. A render that stalls stops within a minute and says which step it stalled on; if only the image fails, lint still comes back.",
     input: {
       file: fileArg,
       id: z.string().describe("Artboard or node id."),
@@ -76,7 +76,7 @@ export const seeTools = [
         .min(0)
         .optional()
         .describe(
-          "Milliseconds into the animation timeline. Default: settled. 0 is the first frame. With hover, focus or press, counts from that moment.",
+          "Milliseconds into the animation timeline. Default: settled, or a scene's poster. 0 is the first frame. With hover, focus or press, counts from that moment.",
         ),
       ...interactionArgs,
     },
@@ -146,7 +146,7 @@ export const seeTools = [
       if (!nodeId && ab.root.style.height === "fit-content")
         lines.push(`Content height: ${out.contentHeight}px.`);
       lines.push(lint);
-      if (out.motion?.animations.length) lines.push(motionText(out.motion));
+      if (out.motion?.animations.length || out.motion?.act) lines.push(motionText(out.motion));
       if (remindToWatch(ctx)) lines.push(WATCH_REMINDER);
       return {
         text: lines.join("\n"),
@@ -162,7 +162,7 @@ export const seeTools = [
     group: "see",
     readOnly: true,
     description:
-      "Watch an animation. Steps through the timeline frame by frame (paused and seeked, so frames are exact and repeatable) and returns one contact sheet with every frame labeled by its time, plus what animates: node, keyframes, duration, delay, easing, iterations. By default it covers the whole page load once, or one cycle of anything that loops. Use hover, focus or press to watch a transition into that state, and scroll to step through a scroll container for scroll-driven animation. Lint runs on the last frame. Use it after writing @keyframes, transitions or hover styles, and check easing, overlap and the end state. The person's canvas plays the load once when the artboard appears and then holds the end; hovering doesn't replay it.",
+      "Watch an animation. Steps through the timeline frame by frame (paused and seeked, so frames are exact and repeatable) and returns one contact sheet with every frame labeled by its time, plus what animates: node, keyframes, duration, delay, easing, iterations. By default it covers the whole page load once, or one cycle of anything that loops; an artboard with a scene script (get_guide('act')) is filmed as a storyboard, one frame where each beat lands, labeled with the beat. Use hover, focus or press to watch a transition into that state, and scroll to step through a scroll container for scroll-driven animation. Lint runs on the last frame. Use it after writing @keyframes, transitions or hover styles, and check easing, overlap and the end state. The person's canvas plays the load once when the artboard appears and then holds the end; hovering doesn't replay it.",
     input: {
       file: fileArg,
       id: z.string().describe("Artboard or node id. Frames show this area."),
@@ -172,7 +172,9 @@ export const seeTools = [
         .min(2)
         .max(24)
         .optional()
-        .describe("How many frames, evenly spaced. Default 9; 12–16 for fast or detailed motion."),
+        .describe(
+          "How many frames, evenly spaced. Default 9 (a scene: one per beat); 12–16 for fast or detailed motion.",
+        ),
       from: z.number().min(0).optional().describe("Start, in ms. Default 0."),
       to: z
         .number()
@@ -180,7 +182,7 @@ export const seeTools = [
         .max(60000)
         .optional()
         .describe(
-          "End, in ms. Default: when everything has settled, plus one cycle of any loop (capped at 10s).",
+          "End, in ms. Default: when everything has settled, plus one cycle of any loop (capped at 10s, or a scene's length).",
         ),
       scroll: z
         .string()
@@ -242,7 +244,7 @@ export const seeTools = [
       ];
       if (theme.line) lines.push(theme.line);
       if (out.assetsTimedOut) lines.push(ASSETS_LATE);
-      if (!args.scroll && !m.animations.some((a) => a.timeline === "time" && !a.paused))
+      if (!args.scroll && !m.act && !m.animations.some((a) => a.timeline === "time" && !a.paused))
         lines.push(
           m.trigger === "load"
             ? "Nothing animates over time on load, so every frame is the same."
@@ -252,7 +254,7 @@ export const seeTools = [
         lines.push(
           "No scroll-driven animations: frames only show the content scrolling. Use animation-timeline: scroll() or view() to tie motion to it.",
         );
-      if (m.animations.length) lines.push(motionText(m));
+      if (m.animations.length || m.act) lines.push(motionText(m));
       const at = `Lint at the end${m.trigger === "load" ? "" : ` (${m.trigger})`}`;
       if (out.issues.length)
         lines.push(`${at}:\n${out.issues.map((i) => `  ${i.id}: ${i.message}`).join("\n")}`);
@@ -348,6 +350,7 @@ function interaction(args: Interaction): Interaction | undefined {
 function moment(m: MotionInfo, at: number | undefined): string {
   const after = m.trigger === "load" ? "" : ` after ${m.trigger}`;
   if (at === undefined) {
+    if (m.act) return `at the scene's poster, ${ms(m.act.poster)} into ${ms(m.act.duration)}`;
     if (!m.animations.length) return m.trigger === "load" ? "static" : `${m.trigger}, no motion`;
     return `settled at ${ms(m.settled)}${after}`;
   }
@@ -360,7 +363,13 @@ function motionText(m: MotionInfo): string {
   const head = `Motion (${m.trigger}): settles at ${ms(m.settled)}${loops}.`;
   const rows = m.animations.slice(0, 20).map((a) => `  ${animationLine(a)}`);
   if (m.animations.length > 20) rows.push(`  …and ${m.animations.length - 20} more`);
+  if (m.act) rows.unshift(`  ${sceneLine(m.act)}`);
   return [head, ...rows].join("\n");
+}
+
+function sceneLine(a: NonNullable<MotionInfo["act"]>): string {
+  const how = a.loop ? "loops" : "plays once";
+  return `scene: ${ms(a.duration)}, ${how}; poster at ${ms(a.poster)}; ${a.beats.length} beats as ${a.animations} animations`;
 }
 
 function animationLine(a: MotionAnimation): string {
