@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.78.0](https://github.com/north-brook/ponzu/compare/v1.77.0...v1.78.0) (2026-11-01)
+
+
+### Features
+
+* scene scripts and product shot guides ([#369](https://github.com/north-brook/ponzu/issues/369)) ([b1a4a72](https://github.com/north-brook/ponzu/commit/b1a4a72ee480a2a16daa9745c9ac44f9e11ae585))
+
 ## [1.77.0](https://github.com/north-brook/ponzu/compare/v1.76.0...v1.77.0) (2026-10-30)
 
 
