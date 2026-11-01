@@ -9,61 +9,88 @@ import Animated, {
   withRepeat,
   withTiming,
 } from "react-native-reanimated";
-import Svg, { Defs, LinearGradient, Rect, Stop } from "react-native-svg";
 import { useSeen } from "../lib/use-seen";
+
+/** Strips across the band, each a step of its fade. */
+const SLICES = 12;
 
 /**
  * A name an agent is working in, with desktop's shimmer: a soft band where
  * the text fades to 30%, sweeping across it every 1.8s. React Native has no
- * background-clip: text, so the band is the surface's own color at 70% over
- * the text, which reads the same on a plain background.
+ * background-clip: text, and a band painted over the text shows on glass, so
+ * the text itself fades: copies of it, each clipped to a strip of the band at
+ * that strip's opacity, with whole-ink copies either side.
  */
-export function Shimmer({
-  text,
-  style,
-  color,
-  surface,
-}: {
-  text: string;
-  style: TextStyle;
-  color: string;
-  /** The color behind the text. */
-  surface: string;
-}) {
+export function Shimmer({ text, style, color }: { text: string; style: TextStyle; color: string }) {
   const x = useSharedValue(0);
   const still = useReducedMotion();
   const [w, setW] = useState(0);
   // Holds while nobody can see it: the app away, or its screen under another.
   const awake = useSeen();
+  const moving = w > 0 && !still && awake;
   useEffect(() => {
-    if (still || !w || !awake) return;
+    if (!moving) return;
     x.value = 0;
     x.value = withRepeat(withTiming(1, { duration: 1800, easing: Easing.linear }), -1);
     return () => cancelAnimation(x);
-  }, [still, w, awake]);
+  }, [moving]);
   // desktop: a 200%-wide gradient, 40% ink, 50% faded, 60% ink, moved from 100% to -100%.
-  const band = useAnimatedStyle(() => ({ transform: [{ translateX: (x.value * 2 - 1) * w }] }));
+  // The band is 40% of the text wide; its left edge runs from -70% to 130%.
+  const band = 0.4 * w;
+  const at = useAnimatedStyle(() => ({ transform: [{ translateX: (x.value * 2 - 0.7) * w }] }));
+  // Holds each copy still on the text while the band moves.
+  const back = useAnimatedStyle(() => ({ transform: [{ translateX: -(x.value * 2 - 0.7) * w }] }));
   const onLayout = (e: LayoutChangeEvent) => setW(e.nativeEvent.layout.width);
+  const strips = [
+    { left: -2 * w, width: 2 * w, opacity: 1 },
+    ...Array.from({ length: SLICES }, (_, i) => {
+      const t = (i + 0.5) / SLICES;
+      return {
+        left: (i * band) / SLICES,
+        width: band / SLICES,
+        opacity: 1 - 0.7 * (1 - Math.abs(2 * t - 1)),
+      };
+    }),
+    { left: band, width: 2 * w, opacity: 1 },
+  ];
   return (
     <View style={{ flex: style.flex, minWidth: 0, overflow: "hidden" }} onLayout={onLayout}>
-      <Text numberOfLines={1} style={[style, { flex: undefined, color }]}>
+      {/* Sizes the name and reads it to VoiceOver; the copies draw it while it shimmers. */}
+      <Text
+        numberOfLines={1}
+        style={[style, { flex: undefined, color: moving ? "transparent" : color }]}
+      >
         {text}
       </Text>
-      {w > 0 && !still && (
+      {moving && (
         <Animated.View
           pointerEvents="none"
-          style={[{ position: "absolute", top: 0, bottom: 0, left: 0, width: w }, band]}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          style={[{ position: "absolute", top: 0, bottom: 0, left: 0, width: band }, at]}
         >
-          <Svg width={w} height="100%">
-            <Defs>
-              <LinearGradient id="band" x1="0" y1="0" x2="1" y2="0">
-                <Stop offset="0.3" stopColor={surface} stopOpacity={0} />
-                <Stop offset="0.5" stopColor={surface} stopOpacity={0.7} />
-                <Stop offset="0.7" stopColor={surface} stopOpacity={0} />
-              </LinearGradient>
-            </Defs>
-            <Rect x="0" y="0" width={w} height="100%" fill="url(#band)" />
-          </Svg>
+          {strips.map((s) => (
+            <View
+              key={s.left}
+              style={{
+                position: "absolute",
+                top: 0,
+                bottom: 0,
+                left: s.left,
+                width: s.width,
+                overflow: "hidden",
+                opacity: s.opacity,
+              }}
+            >
+              <Animated.View
+                style={[{ position: "absolute", top: 0, left: -s.left, width: w }, back]}
+              >
+                <Text numberOfLines={1} style={[style, { flex: undefined, color }]}>
+                  {text}
+                </Text>
+              </Animated.View>
+            </View>
+          ))}
         </Animated.View>
       )}
     </View>

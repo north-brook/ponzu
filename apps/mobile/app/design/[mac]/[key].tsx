@@ -792,7 +792,6 @@ export default function Canvas() {
                         text={doc?.name ?? file?.name ?? ""}
                         style={titleText}
                         color={color.ink}
-                        surface={color.bar}
                       />
                     ) : (
                       <Text numberOfLines={1} style={[titleText, { color: color.ink }]}>
@@ -1390,7 +1389,7 @@ function FilePill({
         >
           {icon}
           {working ? (
-            <Shimmer text={file} style={titleText} color={color.ink} surface={color.bar} />
+            <Shimmer text={file} style={titleText} color={color.ink} />
           ) : (
             <Text numberOfLines={1} style={[titleText, { maxWidth: 240, color: color.ink }]}>
               {file}
