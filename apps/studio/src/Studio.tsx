@@ -39,6 +39,7 @@ import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { UpdateButton } from "@/components/update";
 import { watchCatalog } from "@/lib/catalog";
+import { loadPages, savePage } from "@/lib/pages";
 import { loadSeen, look, saveSeen } from "@/lib/seen";
 import { cn } from "@/lib/utils";
 
@@ -114,6 +115,16 @@ export function Studio() {
     const artboard = q.get("artboard") ?? undefined;
     return file && (page || artboard) ? { file, at: { page, artboard } } : null;
   });
+  /**
+   * The page the tab in front shows: the one its design was last on, read as the tab comes to the
+   * front so another window's moves count, and kept as the person moves.
+   */
+  const [shown, setShown] = useState(() => ({
+    tab: active,
+    page: active ? loadPages()[active] : undefined,
+  }));
+  if (shown.tab !== active)
+    setShown({ tab: active, page: active ? loadPages()[active] : undefined });
   const sources = useMemo(() => new Map<string, SocketSource>(), []);
   const source = (tab: string) => {
     let s = sources.get(tab);
@@ -342,6 +353,11 @@ export function Studio() {
               theme={theme}
               me={{ kind: "user", name: "You" }}
               link={active === linked?.file ? linked.at : undefined}
+              page={shown.tab === active ? shown.page : undefined}
+              onPageChange={(id) => {
+                savePage(active, id);
+                setShown({ tab: active, page: id });
+              }}
             />
           </div>
         ) : (
