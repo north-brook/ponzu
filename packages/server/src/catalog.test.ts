@@ -662,7 +662,7 @@ describe("example designs", () => {
     const other = new LocalCatalog({ roots: [], spotlight: "roots", dbFile });
     other.db.grant("/Users/x/Downloads");
     catalog.add(join(homedir(), "Documents/new.design"));
-    await new Promise((r) => setTimeout(r, 20));
+    await catalog.saved();
     expect(JSON.parse(await readFile(stateFile, "utf8")).granted.sort()).toEqual(
       [join(homedir(), "Documents"), "/Users/x/Desktop", "/Users/x/Downloads"].sort(),
     );
