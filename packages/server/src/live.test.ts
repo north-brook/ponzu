@@ -280,9 +280,10 @@ test("a canvas on another Mac that falls behind a burst of changes catches up on
     for (const r of resyncs)
       expect(r).toEqual({ reason: "backpressure", watch: false, relayed: false });
 
-    // Caught up, it hears the next change as a change. The doc is far bigger than the buffer,
-    // so what's sent with it mustn't be dropped and send the doc round again: once the link is
-    // let go, the doc goes once at most.
+    // Caught up, it hears the next change as a change, not the whole doc again. The doc is far
+    // bigger than the buffer, so what's sent with it mustn't be dropped and send the doc round
+    // again: once the link is let go, the doc goes once at most.
+    const caughtUp = resyncs.length;
     await m.tool("rename", { updates: [{ id: files[0]!.id, name: "Totals" }] });
     await until(
       () =>
@@ -293,6 +294,7 @@ test("a canvas on another Mac that falls behind a burst of changes catches up on
       5000,
       () => "remote canvas shows the rename",
     );
+    expect(resyncs.length).toBe(caughtUp);
     expect(resyncs.length - stalled).toBeLessThanOrEqual(1);
   } finally {
     m.spareWs.telemetry = undefined;

@@ -331,8 +331,9 @@ function motionRuntime() {
 
   /**
    * Seeks a video and resolves once its frame at that time is on screen:
-   * `seeked` says the decoder has it, and requestVideoFrameCallback that the
-   * compositor drew it, which comes a little later. Both are waited for
+   * `seeked` says the decoder has it, and requestVideoFrameCallback, for a
+   * frame at that time, that the compositor drew it, which comes a little
+   * later. Both are waited for
    * however long a busy machine takes, so a capture never shows the frame
    * from before. Only a video that can't get there gives up, after
    * VIDEO_STALL_MS, and isn't waited for again.
@@ -345,6 +346,7 @@ function motionRuntime() {
       const target = v.loop ? s % dur : Math.min(s, dur);
       // Already there, with its frame decoded: Chrome draws nothing new for a seek to the same time.
       if (Math.abs(v.currentTime - target) < 0.001 && v.readyState >= 2) return resolve();
+      const from = v.currentTime;
       let seeked = false;
       let shown = typeof v.requestVideoFrameCallback !== "function";
       const done = () => {
@@ -356,10 +358,19 @@ function motionRuntime() {
         stalledVideos.add(v);
         resolve();
       }, VIDEO_STALL_MS);
-      v.requestVideoFrameCallback?.(() => {
+      // A drawn frame is the seek's when it starts at or before the target and isn't the one
+      // from before, which a frame already on its way to the screen can still be. Going back,
+      // that one starts after the target; going forward, the seek's starts after `from`. Once
+      // `seeked` has fired, a frame at or before the target is the one it landed on: a seek
+      // within one frame draws that same frame again.
+      const ours = (media: number) =>
+        media <= target + 0.001 && (seeked || target < from || media > from + 0.001);
+      const drawn: VideoFrameRequestCallback = (_now, frame) => {
+        if (!ours(frame.mediaTime)) return void v.requestVideoFrameCallback(drawn);
         shown = true;
         done();
-      });
+      };
+      v.requestVideoFrameCallback?.(drawn);
       v.addEventListener(
         "seeked",
         () => {
