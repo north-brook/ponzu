@@ -97,6 +97,14 @@ function motionRuntime() {
   const STATES = ["hover", "active", "focus-visible", "focus-within", "focus"];
   /** How many elements can keep animating before the canvas drops frames. */
   const ANIMATION_BUDGET = 100;
+  /**
+   * How long a video seek may go without landing before it's given up on:
+   * well past what decoding takes on a busy machine, and inside the 15s the
+   * prepare stage has (stages.ts), so a video whose file stopped loading
+   * leaves a still frame rather than a failed render.
+   */
+  const VIDEO_STALL_MS = 10_000;
+  const stalledVideos = new WeakSet<HTMLVideoElement>();
   let entries: Entry[] = [];
   let trigger = "load";
   let loadSettled = 0;
@@ -321,24 +329,52 @@ function motionRuntime() {
     for (const s of svgs()) s.setCurrentTime((base + t) / 1000);
   }
 
+  /**
+   * Seeks a video and resolves once its frame at that time is on screen:
+   * `seeked` says the decoder has it, and requestVideoFrameCallback that the
+   * compositor drew it, which comes a little later. Both are waited for
+   * however long a busy machine takes, so a capture never shows the frame
+   * from before. Only a video that can't get there gives up, after
+   * VIDEO_STALL_MS, and isn't waited for again.
+   */
+  function seekVideo(v: HTMLVideoElement, t: number) {
+    return new Promise<void>((resolve) => {
+      const dur = v.duration;
+      if (!Number.isFinite(dur) || dur <= 0 || stalledVideos.has(v)) return resolve();
+      const s = (base + t) / 1000;
+      const target = v.loop ? s % dur : Math.min(s, dur);
+      // Already there, with its frame decoded: Chrome draws nothing new for a seek to the same time.
+      if (Math.abs(v.currentTime - target) < 0.001 && v.readyState >= 2) return resolve();
+      let seeked = false;
+      let shown = typeof v.requestVideoFrameCallback !== "function";
+      const done = () => {
+        if (!seeked || !shown) return;
+        clearTimeout(timer);
+        resolve();
+      };
+      const timer = setTimeout(() => {
+        stalledVideos.add(v);
+        resolve();
+      }, VIDEO_STALL_MS);
+      v.requestVideoFrameCallback?.(() => {
+        shown = true;
+        done();
+      });
+      v.addEventListener(
+        "seeked",
+        () => {
+          seeked = true;
+          done();
+        },
+        { once: true },
+      );
+      v.currentTime = target;
+    });
+  }
+
   async function seek(t: number) {
     setTime(t);
-    await Promise.all(
-      videos().map(
-        (v) =>
-          new Promise<void>((resolve) => {
-            const dur = v.duration;
-            if (!Number.isFinite(dur) || dur <= 0) return resolve();
-            const s = (base + t) / 1000;
-            const target = v.loop ? s % dur : Math.min(s, dur);
-            if (Math.abs(v.currentTime - target) < 0.001) return resolve();
-            const done = () => resolve();
-            v.addEventListener("seeked", done, { once: true });
-            setTimeout(done, 1500);
-            v.currentTime = target;
-          }),
-      ),
-    );
+    await Promise.all(videos().map((v) => seekVideo(v, t)));
     await frame();
     return round(now);
   }
