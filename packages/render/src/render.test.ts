@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { parseArtboardFile } from "@ponzu/core";
 import {
+  ARTBOARD_BASE_CSS,
   artboardPage,
   cssPx,
   fontFaceRules,
@@ -144,4 +145,12 @@ test("image copies follow a board's px width, and a board in other units draws 1
   expect(page("80rem")).toContain(`${base}/assets/a.png?w=2048`);
   expect(cssPx(" 12.5px ")).toBe(12.5);
   expect(cssPx("12em")).toBeNull();
+});
+
+test("an artboard's text keeps its size on a phone", () => {
+  // iOS autosizes small text in a block wider than the screen; desktop and screenshots never do.
+  // The rule is on the board's root, where it inherits to every element in it, whatever the host.
+  const root = ARTBOARD_BASE_CSS.match(/\[data-artboard\]\s*\{([^}]*)\}/)?.[1] ?? "";
+  expect(root).toContain("-webkit-text-size-adjust: 100%");
+  expect(root).toContain("text-size-adjust: 100%");
 });
