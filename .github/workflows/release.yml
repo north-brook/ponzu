@@ -283,7 +283,7 @@ jobs:
     if: >-
       ${{ !cancelled() && (needs.release-please.outputs.released == 'true'
       || (github.event_name == 'workflow_dispatch' && (startsWith(inputs.tag, 'v') || !inputs.publish))) }}
-    runs-on: windows-2025
+    runs-on: blacksmith-4vcpu-windows-2025
     timeout-minutes: 60
     permissions:
       contents: write
