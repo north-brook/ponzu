@@ -295,13 +295,16 @@ describe.skipIf(!chromium)("motion in Chromium", () => {
     await board(
       `<style>@keyframes spin{to{transform:rotate(1turn)}}.s{width:4px;height:4px;animation:spin 1s linear infinite}</style><div class=s></div>`,
     );
-    // Started: its start time is set on its first frame.
-    await frames(2);
     const r = await page.evaluate(async () => {
       const w = window as any;
       const root = document.getElementById("host")!.shadowRoot!;
       const lod = new w.pz.BoardDetail(root, w.motion);
-      const start = root.getAnimations()[0]!.startTime;
+      // Started: it has a start time once it's ready. That's when the compositor says the spin
+      // began, which on a busy machine can be several frames in; until then it's null, and a
+      // hold takes now as its start instead.
+      const spin = root.getAnimations()[0]!;
+      await spin.ready;
+      const start = spin.startTime;
       // Drawn at 1 device px per CSS px, the 4 px spinner is under STILL_PX.
       lod.update({ hidden: false, scale: 1, moving: false });
       const held = !!root.querySelector("[data-pz-still]");

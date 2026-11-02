@@ -148,6 +148,8 @@ export class LocalCatalog {
   private foundAt = new Map<string, string>();
   /** The temporary folders, by real path. */
   private temp: string[];
+  /** catalog.json's writes, one after another, so an older one can't land over a newer one. */
+  private saving: Promise<void> = Promise.resolve();
 
   constructor(private opts: CatalogOptions = {}) {
     this.db = new CatalogDb(opts.dbFile);
@@ -314,6 +316,11 @@ export class LocalCatalog {
     await this.discovering;
   }
 
+  /** Wait until catalog.json has every folder let in so far. */
+  async saved(): Promise<void> {
+    await this.saving;
+  }
+
   /** Stop looking for designs, and let go of the database. */
   close(): void {
     this.db.close();
@@ -426,7 +433,7 @@ export class LocalCatalog {
     if (!guard || this.granted.has(guard)) return;
     this.granted.add(guard);
     this.db.grant(guard);
-    void this.saveState();
+    this.saving = this.saving.then(() => this.saveState());
   }
 
   /** What versions before the database kept in catalog.json, read in once. */
@@ -449,6 +456,7 @@ export class LocalCatalog {
    * ask again. Every grant the database has, and every one the file already
    * lists, so a server saving its view can't drop another's. Written to a
    * temporary file and renamed, so an older version never reads half of it.
+   * Never rejects: `saving` chains on it.
    */
   private async saveState(): Promise<void> {
     const file = this.opts.stateFile;

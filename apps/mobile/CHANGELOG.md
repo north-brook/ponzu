@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.2](https://github.com/north-brook/ponzu/compare/mobile-v0.11.1...mobile-v0.11.2) (2026-11-02)
+
+
+### Bug Fixes
+
+* **mobile:** draw small text at its own size on the iPhone canvas ([#374](https://github.com/north-brook/ponzu/issues/374)) ([15aec2a](https://github.com/north-brook/ponzu/commit/15aec2ab8dd08b4491a7e00645eb1a4b1d9306fe))
+
 ## [0.11.1](https://github.com/north-brook/ponzu/compare/mobile-v0.11.0...mobile-v0.11.1) (2026-11-01)
 
 

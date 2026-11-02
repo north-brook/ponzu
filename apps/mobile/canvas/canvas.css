@@ -27,6 +27,16 @@
   color-scheme: dark;
 }
 
+/*
+ * No text autosizing: iOS enlarges small text in blocks wider than the screen, and every board
+ * is. The boards pin it themselves (ARTBOARD_BASE_CSS); this keeps the page's own labels and pins
+ * at their size too.
+ */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 html,
 body,
 #root {

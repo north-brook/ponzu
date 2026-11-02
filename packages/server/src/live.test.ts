@@ -3,7 +3,7 @@ import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, connect as netConnect, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { Doc } from "@ponzu/core";
+import type { Doc, PNode } from "@ponzu/core";
 import { getTool, runTool, type ToolCaller } from "@ponzu/tools";
 // The canvas's own client, as the studio runs it: what it shows is what the person sees.
 import { SocketSource } from "../../react/src/connection.ts";
@@ -128,6 +128,20 @@ function shown(doc: Doc | null, pageId: string) {
     ?.artboards.map((a) => ({ id: a.id, children: a.root.children }));
 }
 
+/** The last words in a board, past the whitespace between tags: a table's last cell. */
+function lastText(doc: Doc | null, artboardId: string) {
+  const last = (nodes: PNode[]): string | undefined => {
+    for (let i = nodes.length - 1; i >= 0; i--) {
+      const n = nodes[i]!;
+      const text = n.kind === "text" ? n.value.trim() : last(n.children);
+      if (text) return text;
+    }
+    return undefined;
+  };
+  const board = doc?.pages.flatMap((p) => p.artboards).find((a) => a.id === artboardId);
+  return board && last(board.root.children);
+}
+
 async function until(pred: () => boolean, ms: number, what: () => string) {
   const end = Date.now() + ms;
   while (!pred()) {
@@ -210,8 +224,11 @@ test("a canvas on another Mac that falls behind a burst of changes catches up on
     const remote = m.remote();
     await ready(remote);
     const pg = /page (pg_\w+)/.exec(await m.tool("create_page", { name: "Tables" }))![1]!;
+    // Two boards, each rewritten six times: every rewrite is over a megabyte of ops, far more
+    // than the link holds. The server reads the whole design on each one, so more boards would
+    // only make a busy machine slower without making the burst any bigger.
     const files: { id: string; path: string }[] = [];
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 2; i++) {
       const text = await m.tool("create_artboard", { page: pg, name: `Table ${i + 1}` });
       files.push({
         id: /artboard (ab_\w+)/.exec(text)![1]!,
@@ -219,47 +236,71 @@ test("a canvas on another Mac that falls behind a burst of changes catches up on
       });
     }
     await until(
-      () => shown(remote.getState().doc, pg)?.length === 4,
+      () => shown(remote.getState().doc, pg)?.length === files.length,
       5000,
       () => "remote canvas has the empty boards",
     );
 
     // The link stalls while the agent rewrites the files, a few times over: more than the
-    // network holds while it waits, so some of it is dropped.
+    // network holds while it waits, so some of it is dropped. Each rewrite waits for the server
+    // to read it, however long that takes on a busy machine, so each is a change of its own.
+    const rounds = 6;
+    const label = (round: number) => `Round ${round} row 3999`;
     m.net.hold();
-    for (let round = 0; round < 3; round++) {
+    for (let round = 0; round < rounds; round++) {
       for (const [i, f] of files.entries()) {
         const rows = Array.from(
           { length: 4000 },
-          (_, r) => `<tr><td>Round ${round} row ${r}</td><td>${r * (i + 2)}</td></tr>`,
+          (_, r) => `<tr><td>${r * (i + 2)}</td><td>Round ${round} row ${r}</td></tr>`,
         ).join("\n");
         await writeFile(
           f.path,
           `<section data-artboard data-id="${f.id}" data-name="Table ${i + 1}" style="width: 800px; height: fit-content">\n<table>${rows}</table>\n</section>\n`,
         );
-        await new Promise((r) => setTimeout(r, 120));
+        await until(
+          () => lastText(m.design.doc, f.id) === label(round),
+          5000,
+          () => `server read round ${round} of Table ${i + 1}`,
+        );
       }
     }
-    await until(
-      () =>
-        (shown(m.design.doc, pg) ?? []).every((a) =>
-          JSON.stringify(a.children).includes("Round 2 row 3999"),
-        ),
-      5000,
-      () => "server read every file",
-    );
+    // Held, the link still takes a little now and then: whenever all that waited has gone, the
+    // server sends the whole doc, and may again if more is dropped before the link is let go.
+    const stalled = resyncs.length;
     m.net.release();
 
-    const want = JSON.stringify(shown(m.design.doc, pg));
     await until(
-      () => JSON.stringify(shown(remote.getState().doc, pg)) === want,
+      () => files.every((f) => lastText(remote.getState().doc, f.id) === label(rounds - 1)),
       10_000,
       () => `remote canvas caught up (resyncs: ${JSON.stringify(resyncs)})`,
     );
-    // Some of it was dropped on the way and the canvas got the whole doc, not every op: once.
-    // The doc is far bigger than the buffer, so what's sent with it mustn't be dropped and
-    // send the doc round again.
-    expect(resyncs).toEqual([{ reason: "backpressure", watch: false, relayed: false }]);
+    expect(shown(remote.getState().doc, pg)).toEqual(shown(m.design.doc, pg));
+    // Some of it was dropped on the way, and the canvas got the whole doc, not every op.
+    expect(resyncs.length).toBeGreaterThan(0);
+    for (const r of resyncs)
+      expect(r).toEqual({ reason: "backpressure", watch: false, relayed: false });
+
+    // Caught up, it hears the next change as a change, not the whole doc again. The doc is far
+    // bigger than the buffer, so what's sent with it mustn't be dropped and send the doc round
+    // again: once the link is let go, the doc goes once at most.
+    const caughtUp = resyncs.length;
+    // As an op: a socket that reconnected would bring the name in the whole doc it starts with.
+    const ops: string[] = [];
+    const stopListening = remote.onOp((op) => ops.push(JSON.stringify(op)));
+    await m.tool("rename", { updates: [{ id: files[0]!.id, name: "Totals" }] });
+    await until(
+      () =>
+        remote
+          .getState()
+          .doc?.pages.flatMap((p) => p.artboards)
+          .find((a) => a.id === files[0]!.id)?.name === "Totals",
+      5000,
+      () => "remote canvas shows the rename",
+    );
+    stopListening();
+    expect(ops.some((op) => op.includes('"Totals"'))).toBe(true);
+    expect(resyncs.length).toBe(caughtUp);
+    expect(resyncs.length - stalled).toBeLessThanOrEqual(1);
   } finally {
     m.spareWs.telemetry = undefined;
     await m.close();

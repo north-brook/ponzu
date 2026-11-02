@@ -7,9 +7,13 @@ import { googleFontLinks, googleFonts } from "./fonts.ts";
  * makes display: flex a row, so lint flags a root that sets it with no direction.
  * Black on white unless the design says otherwise, in either theme: text left
  * to the page's default would turn white in dark mode, on the white artboard.
+ * Text at the size the design gives it: iOS WebKit's text autosizing enlarges
+ * small text in a block wider than the screen (an 11px code block on a 1320px
+ * board drew at 19px on the phone), which desktop never does. The property
+ * inherits, so the root pins it for the whole board.
  */
 export const ARTBOARD_BASE_CSS = `
-[data-artboard] { display: flex; flex-direction: column; position: relative; overflow: hidden; box-sizing: border-box; background: #fff; color: #000; }
+[data-artboard] { display: flex; flex-direction: column; position: relative; overflow: hidden; box-sizing: border-box; background: #fff; color: #000; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 [data-artboard] *, [data-artboard] *::before, [data-artboard] *::after { box-sizing: border-box; }
 [data-artboard] img, [data-artboard] video, [data-artboard] svg { max-width: none; }
 `;

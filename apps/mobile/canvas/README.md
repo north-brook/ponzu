@@ -34,6 +34,11 @@ about 400 KB). Metro should run the build before it bundles, as augmenter does f
 require("node:child_process").execFileSync("bun", [require("node:path").join(__dirname, "canvas/build.ts")], { stdio: "inherit" });
 ```
 
+Text draws at the size the design gives it, as on desktop: iOS would otherwise autosize small
+text in any block wider than the screen (every board is), so `canvas.css` and the boards' own
+base styles (`ARTBOARD_BASE_CSS`) pin `-webkit-text-size-adjust: 100%`. Playwright's WebKit
+doesn't autosize; check it in the simulator.
+
 `fonts/` holds Inter 500 and 600 cut to Latin from `@expo-google-fonts/inter`:
 `pyftsubset Inter_500Medium.ttf --unicodes="U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2190-2193,U+2212,U+2215" --layout-features="kern,liga,calt,tnum" --flavor=woff`.
 
