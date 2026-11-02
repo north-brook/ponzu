@@ -9,11 +9,23 @@ appId: design.ponzu.app
     permissions:
       microphone: deny
       speech: deny
-- openLink: ${DEV_CLIENT}
-- extendedWaitUntil:
-    visible:
-      id: "(launch|designs|xmark)"
-    timeout: 90000
+# A fresh simulator confirms the first link into an app ("Open in “Ponzu”?",
+# curly quotes, so `.` matches them); the alert outlives the app and blocks
+# every later flow. The launcher can miss a link that lands while it starts,
+# so a link that loads nothing is sent again.
+- retry:
+    maxRetries: 2
+    commands:
+      - openLink: ${DEV_CLIENT}
+      - runFlow:
+          when:
+            visible: "Open in .Ponzu.\\?"
+          commands:
+            - tapOn: Open
+      - extendedWaitUntil:
+          visible:
+            id: "(launch|designs|xmark)"
+          timeout: 60000
 - runFlow:
     when:
       visible:
@@ -22,6 +34,12 @@ appId: design.ponzu.app
       - tapOn:
           id: xmark
 - openLink: ponzu://designs
+# iOS asks again for each scheme: this one is ponzu://.
+- runFlow:
+    when:
+      visible: "Open in .Ponzu.\\?"
+    commands:
+      - tapOn: Open
 - extendedWaitUntil:
     visible:
       id: designs

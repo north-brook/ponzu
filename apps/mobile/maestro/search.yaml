@@ -3,7 +3,8 @@ name: search
 tags: [dev-host]
 ---
 # The search tab opens on the system's search field, over the designs changed
-# lately; "brand" finds designs by name and frames by page: both sections show.
+# lately; "weft" finds the design by name and its frames by design: both
+# sections show.
 - runFlow: shared/start.yaml
 - tapOn:
     id: tab-search
@@ -16,11 +17,14 @@ tags: [dev-host]
       id: search-before
     timeout: 10000
 # The field focuses itself just after the tab opens: typing waits for it.
+# Some simulators never report the field's focus to Maestro, so this wait
+# is optional; the results below fail if the typing went nowhere.
 - extendedWaitUntil:
     visible:
       focused: true
     timeout: 10000
-- inputText: "brand"
+    optional: true
+- inputText: "weft"
 - extendedWaitUntil:
     visible:
       id: search-files
