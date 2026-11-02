@@ -304,6 +304,10 @@ test("a wait that ran in the bridge while the host was down doesn't skip the hos
     await agent.callTool({ name: "wait_for_activity", arguments: { file, timeout: 0 } }),
   );
   await stopHost();
+  // A call that meets the host's dead connection can't tell whether the host took it first, and a
+  // wait sent that way rides out a restart instead of running here. Under load the bridge can
+  // still hold that connection, so a quick call first finds Ponzu gone and lets go of it.
+  await agent.callTool({ name: "list_files", arguments: {} });
   // The bridge's own Ponzu can't tell what the host had: it says so at once.
   const there = await agent.callTool({
     name: "wait_for_activity",

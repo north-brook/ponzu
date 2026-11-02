@@ -114,7 +114,13 @@ describe("design", () => {
   test("an outside edit to another file keeps an edit not yet saved, or being saved", async () => {
     // Writes take a while, as on a busy disk: the outside edit lands mid-save.
     class SlowDisk extends MemoryAdapter {
+      private started: () => void = () => {};
+      /** Settles once a save has begun its first write. */
+      readonly writing = new Promise<void>((r) => {
+        this.started = r;
+      });
       override async write(path: string, content: string) {
+        this.started();
         await new Promise((r) => setTimeout(r, 15));
         await super.write(path, content);
       }
@@ -123,16 +129,48 @@ describe("design", () => {
     for (const saveDelay of [0, 120]) {
       const mem = new SlowDisk(seed);
       const d = await Design.open(mem, { saveDelay });
+      // How long the watcher takes to bring the outside edit in depends on the
+      // save it waits behind, so wait for the edit itself rather than a while.
+      const fromDisk = new Promise<void>((r) => d.onOp((e) => e.origin.kind === "disk" && r()));
       d.apply({ op: "file.rename", name: "Fern 2" }, who);
       d.apply({ op: "style", id: "n_h", style: { color: "red" } }, who);
-      if (!saveDelay) await new Promise((r) => setTimeout(r, 5));
+      // With no delay the save starts at once: the outside edit lands once it's writing.
+      if (!saveDelay) await mem.writing;
       await mem.externalWrite("tokens.css", ":root {\n  --ink: #111;\n}\n");
-      await new Promise((r) => setTimeout(r, 60));
+      await fromDisk;
       await d.flush();
       expect(d.doc.tokens).toContain("#111");
       expect(d.doc.name).toBe("Fern 2");
       expect(mem.files["pages/home/hero.html"]).toContain("color:red");
     }
+  });
+
+  test("an edit made while a design closes is written before it's closed", async () => {
+    // Writes take a while, so the close is still waiting on a save when the edit comes.
+    class SlowDisk extends MemoryAdapter {
+      private started: () => void = () => {};
+      /** Settles once a save has begun its first write. */
+      readonly writing = new Promise<void>((r) => {
+        this.started = r;
+      });
+      override async write(path: string, content: string) {
+        this.started();
+        await new Promise((r) => setTimeout(r, 15));
+        await super.write(path, content);
+      }
+    }
+    const who = { kind: "agent", name: "t" } as const;
+    const mem = new SlowDisk(seed);
+    const d = await Design.open(mem, { saveDelay: 1000 });
+    d.apply({ op: "file.rename", name: "Fern 2" }, who);
+    void d.flush();
+    // The rename's save is writing, so the next edit is one it doesn't have.
+    await mem.writing;
+    const closing = d.close();
+    d.apply({ op: "style", id: "n_h", style: { color: "red" } }, who);
+    await closing;
+    expect(JSON.parse(mem.files["design.json"]!).name).toBe("Fern 2");
+    expect(mem.files["pages/home/hero.html"]).toContain("color:red");
   });
 
   test("only `true` makes a design an example", async () => {

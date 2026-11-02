@@ -1,11 +1,18 @@
-import { expect, test } from "bun:test";
+import { expect, jest, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Capture, locate, parseHtml, threadPage } from "@ponzu/core";
 import { actCore, type Renderer, type RenderResult } from "@ponzu/render";
 import { Design, MemoryAdapter } from "@ponzu/store";
-import { EventHub, PresenceHub, type ToolContext, type Workspace, within } from "./context.ts";
+import {
+  EventHub,
+  PresenceHub,
+  type ToolContext,
+  WORKING_IDLE,
+  type Workspace,
+  within,
+} from "./context.ts";
 import { FORMAT_EXAMPLE, GUIDES } from "./guides.ts";
 import { getTool, runTool } from "./index.ts";
 import { WATCH_REMINDER } from "./see.ts";
@@ -854,37 +861,42 @@ test("an artboard given display: flex with no direction says it stays a column",
 
 test("an agent shows as working on what it changes until it goes quiet", async () => {
   const { call, ws } = await setup();
-  ws.presence = new PresenceHub(100);
   const me = () => ws.presence.list().find((p) => p.id === "t")!;
+  // The clock only moves when the test moves it, so a slow machine can't run
+  // out the quiet period between two calls the test makes back to back.
+  jest.useFakeTimers();
+  try {
+    await call("get_tree", {});
+    expect(me().working).toEqual([]);
 
-  await call("get_tree", {});
-  expect(me().working).toEqual([]);
+    await call("set_text", { updates: [{ id: "n_h", text: "Hello" }] });
+    expect(me()).toMatchObject({ working: ["ab_hero"], file: "fern" });
+    const created = await call("create_artboard", { name: "Card" });
+    const card = /ab_\w+/.exec(created.text)![0];
+    expect(me().working).toEqual(["ab_hero", card]);
 
-  await call("set_text", { updates: [{ id: "n_h", text: "Hello" }] });
-  expect(me()).toMatchObject({ working: ["ab_hero"], file: "fern" });
-  const created = await call("create_artboard", { name: "Card" });
-  const card = /ab_\w+/.exec(created.text)![0];
-  expect(me().working).toEqual(["ab_hero", card]);
+    await call("set_status", { status: "tightening the hero" });
+    expect(me()).toMatchObject({ working: ["ab_hero", card], status: "tightening the hero" });
+    await call("set_status", { status: "just the card", artboards: [card] });
+    expect(me().working).toEqual([card]);
 
-  await call("set_status", { status: "tightening the hero" });
-  expect(me()).toMatchObject({ working: ["ab_hero", card], status: "tightening the hero" });
-  await call("set_status", { status: "just the card", artboards: [card] });
-  expect(me().working).toEqual([card]);
+    // Deleting the artboard drops it rather than claiming it.
+    await call("delete", { ids: [card] });
+    expect(me().working).toEqual([]);
+    expect(me().status).toBe("just the card");
 
-  // Deleting the artboard drops it rather than claiming it.
-  await call("delete", { ids: [card] });
-  expect(me().working).toEqual([]);
-  expect(me().status).toBe("just the card");
-
-  // A read keeps it going; a minute of nothing (100ms here) clears it.
-  await call("set_text", { updates: [{ id: "n_h", text: "Hi" }] });
-  await Bun.sleep(60);
-  await call("get_tree", {});
-  await Bun.sleep(60);
-  expect(me().working).toEqual(["ab_hero"]);
-  await Bun.sleep(80);
-  expect(me()).toMatchObject({ working: [] });
-  expect(me().status).toBeUndefined();
+    // A read keeps it going; a full quiet period with no call clears it.
+    await call("set_text", { updates: [{ id: "n_h", text: "Hi" }] });
+    jest.advanceTimersByTime(WORKING_IDLE / 2);
+    await call("get_tree", {});
+    jest.advanceTimersByTime(WORKING_IDLE - 1);
+    expect(me().working).toEqual(["ab_hero"]);
+    jest.advanceTimersByTime(1);
+    expect(me()).toMatchObject({ working: [] });
+    expect(me().status).toBeUndefined();
+  } finally {
+    jest.useRealTimers();
+  }
 });
 
 test("waiting for activity ends a pass", async () => {

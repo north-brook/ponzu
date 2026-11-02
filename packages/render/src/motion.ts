@@ -97,6 +97,14 @@ function motionRuntime() {
   const STATES = ["hover", "active", "focus-visible", "focus-within", "focus"];
   /** How many elements can keep animating before the canvas drops frames. */
   const ANIMATION_BUDGET = 100;
+  /**
+   * How long a video seek may go without landing before it's given up on:
+   * well past what decoding takes on a busy machine, and inside the 15s the
+   * prepare stage has (stages.ts), so a video whose file stopped loading
+   * leaves a still frame rather than a failed render.
+   */
+  const VIDEO_STALL_MS = 10_000;
+  const stalledVideos = new WeakSet<HTMLVideoElement>();
   let entries: Entry[] = [];
   let trigger = "load";
   let loadSettled = 0;
@@ -321,24 +329,69 @@ function motionRuntime() {
     for (const s of svgs()) s.setCurrentTime((base + t) / 1000);
   }
 
+  /**
+   * Seeks a video and resolves once its frame at that time is on screen:
+   * `seeked` says the decoder has it, and requestVideoFrameCallback, for a
+   * frame at that time, that the compositor drew it, which comes a little
+   * later. Both are waited for
+   * however long a busy machine takes, so a capture never shows the frame
+   * from before. Only a video that can't get there gives up, after
+   * VIDEO_STALL_MS, and isn't waited for again.
+   */
+  function seekVideo(v: HTMLVideoElement, t: number) {
+    return new Promise<void>((resolve) => {
+      const dur = v.duration;
+      if (!Number.isFinite(dur) || dur <= 0) return resolve();
+      const s = (base + t) / 1000;
+      // Inside the video, as the browser would clamp it, so its frame can match below.
+      const target = v.loop ? ((s % dur) + dur) % dur : Math.min(Math.max(s, 0), dur);
+      // Already there, with its frame decoded: Chrome draws nothing new for a seek to the same time.
+      if (Math.abs(v.currentTime - target) < 0.001 && v.readyState >= 2) return resolve();
+      // A video that stalled still moves to each time asked for, without waiting on it again.
+      if (stalledVideos.has(v)) {
+        v.currentTime = target;
+        return resolve();
+      }
+      const from = v.currentTime;
+      let seeked = false;
+      let shown = typeof v.requestVideoFrameCallback !== "function";
+      const done = () => {
+        if (!seeked || !shown) return;
+        clearTimeout(timer);
+        resolve();
+      };
+      const timer = setTimeout(() => {
+        stalledVideos.add(v);
+        resolve();
+      }, VIDEO_STALL_MS);
+      // A drawn frame is the seek's when it starts at or before the target and isn't the one
+      // from before, which a frame already on its way to the screen can still be. Going back,
+      // that one starts after the target; going forward, the seek's starts after `from`. Once
+      // `seeked` has fired, a frame at or before the target is the one it landed on: a seek
+      // within one frame draws that same frame again.
+      const ours = (media: number) =>
+        media <= target + 0.001 && (seeked || target < from || media > from + 0.001);
+      const drawn: VideoFrameRequestCallback = (_now, frame) => {
+        if (!ours(frame.mediaTime)) return void v.requestVideoFrameCallback(drawn);
+        shown = true;
+        done();
+      };
+      v.requestVideoFrameCallback?.(drawn);
+      v.addEventListener(
+        "seeked",
+        () => {
+          seeked = true;
+          done();
+        },
+        { once: true },
+      );
+      v.currentTime = target;
+    });
+  }
+
   async function seek(t: number) {
     setTime(t);
-    await Promise.all(
-      videos().map(
-        (v) =>
-          new Promise<void>((resolve) => {
-            const dur = v.duration;
-            if (!Number.isFinite(dur) || dur <= 0) return resolve();
-            const s = (base + t) / 1000;
-            const target = v.loop ? s % dur : Math.min(s, dur);
-            if (Math.abs(v.currentTime - target) < 0.001) return resolve();
-            const done = () => resolve();
-            v.addEventListener("seeked", done, { once: true });
-            setTimeout(done, 1500);
-            v.currentTime = target;
-          }),
-      ),
-    );
+    await Promise.all(videos().map((v) => seekVideo(v, t)));
     await frame();
     return round(now);
   }

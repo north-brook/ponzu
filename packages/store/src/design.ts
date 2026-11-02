@@ -399,7 +399,13 @@ export class Design {
 
   async close(): Promise<void> {
     this.stopWatching?.();
-    await this.flush();
+    // A read of an outside change the watcher already heard can join the queue while this
+    // waits, and an edit made meanwhile can set a save going: wait for those too, so every edit
+    // is written and nothing reads the folder once it's closed and maybe gone.
+    for (let saving: Promise<void> | undefined; saving !== this.saving || this.saveTimer; ) {
+      saving = this.saving;
+      await this.flush();
+    }
     this.closed = true;
   }
 }
