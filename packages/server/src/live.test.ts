@@ -284,6 +284,9 @@ test("a canvas on another Mac that falls behind a burst of changes catches up on
     // bigger than the buffer, so what's sent with it mustn't be dropped and send the doc round
     // again: once the link is let go, the doc goes once at most.
     const caughtUp = resyncs.length;
+    // As an op: a socket that reconnected would bring the name in the whole doc it starts with.
+    const ops: string[] = [];
+    const stopListening = remote.onOp((op) => ops.push(JSON.stringify(op)));
     await m.tool("rename", { updates: [{ id: files[0]!.id, name: "Totals" }] });
     await until(
       () =>
@@ -294,6 +297,8 @@ test("a canvas on another Mac that falls behind a burst of changes catches up on
       5000,
       () => "remote canvas shows the rename",
     );
+    stopListening();
+    expect(ops.some((op) => op.includes('"Totals"'))).toBe(true);
     expect(resyncs.length).toBe(caughtUp);
     expect(resyncs.length - stalled).toBeLessThanOrEqual(1);
   } finally {

@@ -341,11 +341,17 @@ function motionRuntime() {
   function seekVideo(v: HTMLVideoElement, t: number) {
     return new Promise<void>((resolve) => {
       const dur = v.duration;
-      if (!Number.isFinite(dur) || dur <= 0 || stalledVideos.has(v)) return resolve();
+      if (!Number.isFinite(dur) || dur <= 0) return resolve();
       const s = (base + t) / 1000;
-      const target = v.loop ? s % dur : Math.min(s, dur);
+      // Inside the video, as the browser would clamp it, so its frame can match below.
+      const target = v.loop ? ((s % dur) + dur) % dur : Math.min(Math.max(s, 0), dur);
       // Already there, with its frame decoded: Chrome draws nothing new for a seek to the same time.
       if (Math.abs(v.currentTime - target) < 0.001 && v.readyState >= 2) return resolve();
+      // A video that stalled still moves to each time asked for, without waiting on it again.
+      if (stalledVideos.has(v)) {
+        v.currentTime = target;
+        return resolve();
+      }
       const from = v.currentTime;
       let seeked = false;
       let shown = typeof v.requestVideoFrameCallback !== "function";
