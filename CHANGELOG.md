@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.78.3](https://github.com/north-brook/ponzu/compare/v1.78.2...v1.78.3) (2026-11-02)
+
+
+### Bug Fixes
+
+* keep screenshots of videos on the right frame, and steady ci's flaky tests ([#378](https://github.com/north-brook/ponzu/issues/378)) ([2d3149f](https://github.com/north-brook/ponzu/commit/2d3149fb5f8fa7e808eeefba27c49c2b8096acbb))
+
 ## [1.78.2](https://github.com/north-brook/ponzu/compare/v1.78.1...v1.78.2) (2026-11-02)
 
 
