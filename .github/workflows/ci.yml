@@ -199,7 +199,7 @@ jobs:
     name: Desktop package (Windows)
     needs: scope
     if: ${{ !cancelled() }}
-    runs-on: windows-2025
+    runs-on: blacksmith-4vcpu-windows-2025
     timeout-minutes: 25
     env:
       RUN: ${{ needs.scope.outputs.desktop != 'false' }}
