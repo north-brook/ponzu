@@ -739,6 +739,9 @@ export function Canvas({
     pointer?: { x: number; y: number };
     /** Shift locks a move to one axis; ⌘ or Ctrl lets it go without snapping. */
     keys?: MoveKeys;
+    /** Where a move would drop its boards now. Kept here, not read back from state: a release
+     * can come before the last pointer move has rendered. */
+    drop?: Map<string, { x: number; y: number }>;
     moved: boolean;
   } | null>(null);
 
@@ -861,11 +864,8 @@ export function Canvas({
       d.keys?.free || !moving.length
         ? { dx, dy, guides: [], gaps: [] }
         : snapMove(union(moving), others, dx, dy, SNAP_PX / cam.zoom, lock);
-    setGhost({
-      at: new Map(d.origin.map((o) => [o.id, { x: o.x + snapped.dx, y: o.y + snapped.dy }])),
-      guides: snapped.guides,
-      gaps: snapped.gaps,
-    });
+    d.drop = new Map(d.origin.map((o) => [o.id, { x: o.x + snapped.dx, y: o.y + snapped.dy }]));
+    setGhost({ at: d.drop, guides: snapped.guides, gaps: snapped.gaps });
   };
   const moveToRef = useRef(moveTo);
   moveToRef.current = moveTo;
@@ -892,20 +892,22 @@ export function Canvas({
   const boardsNow = page?.artboards;
   useEffect(() => {
     if (!landing.size) return;
-    const settle = () =>
+    // Lets go of what's landed, and of what has waited until `due`.
+    const settle = (due: number) =>
       setLanding((l) => {
-        const now = performance.now();
         const next = new Map(
           [...l].filter(([id, t]) => {
             const ab = boardsNow?.find((b) => b.id === id);
-            return ab && (ab.x !== t.x || ab.y !== t.y) && t.until > now;
+            return ab && (ab.x !== t.x || ab.y !== t.y) && t.until > due;
           }),
         );
         return next.size === l.size ? l : next;
       });
-    settle();
+    settle(performance.now());
+    // The timer passes its own deadline: a timeout can fire a fraction of a millisecond early,
+    // and would otherwise find nothing due and never come again.
     const soonest = Math.min(...[...landing.values()].map((t) => t.until));
-    const timer = setTimeout(settle, Math.max(0, soonest - performance.now()));
+    const timer = setTimeout(() => settle(soonest), Math.max(0, soonest - performance.now()));
     return () => clearTimeout(timer);
   }, [landing, boardsNow]);
   /** The selection box's corners in page coordinates, so it holds its place if the camera moves. */
@@ -975,7 +977,7 @@ export function Canvas({
   const onPointerUp = () => {
     const d = drag.current;
     drag.current = null;
-    const at = d?.kind === "move" && d.moved && !readOnly ? ghost?.at : null;
+    const at = d?.kind === "move" && d.moved && !readOnly ? d.drop : null;
     const ops = at
       ? d!.origin.flatMap((o) => {
           const t = at.get(o.id);

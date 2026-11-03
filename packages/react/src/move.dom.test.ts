@@ -32,6 +32,8 @@ import { MemorySource } from "./connection.ts";
 
 class Echoing extends MemorySource {
   apply(op) {
+    // A lost connection: the edit never comes back.
+    if (window.pzLost) return;
     setTimeout(() => super.apply(op), ${ECHO});
   }
 }
@@ -213,6 +215,45 @@ describe.skipIf(!chromium)("moving artboards in Chromium", () => {
     expect(Math.min(...(await watch))).toBe(second);
     await docReaches("ab_a", second);
     expect(await drawnAt("ab_a")).toEqual({ x: second, y: 0 });
+    await page.close();
+  });
+
+  test("a drop whose move never comes back goes back to where the document has it", async () => {
+    await mount([["ab_a", 0, 0]]);
+    await page.evaluate(() => {
+      (window as any).pzLost = true;
+    });
+    await dragBy("ab_a", 300);
+    const dropped = (await drawnAt("ab_a")).x;
+    await page.mouse.up();
+    expect((await drawnAt("ab_a")).x).toBe(dropped);
+    // Held for two seconds, then the document's position shows.
+    await page.waitForFunction(
+      () => {
+        const el = document.querySelector('[data-board-name][title="ab_a"]')!.parentElement!
+          .parentElement as HTMLElement;
+        return /\*\s*0px/.test(el.style.left);
+      },
+      undefined,
+      { timeout: 4000 },
+    );
+    await page.close();
+  });
+
+  test("a release right after the last move drops where that move put the board", async () => {
+    await mount([["ab_a", 0, 0]]);
+    await dragBy("ab_a", 100);
+    const z = await zoom();
+    // The last move and the release in one task: nothing renders between them.
+    await page.evaluate((z) => {
+      const title = document.querySelector('[data-board-name][title="ab_a"]')!;
+      const r = title.getBoundingClientRect();
+      const at = { clientX: r.left + 8 + 200 * z, clientY: r.top + r.height / 2 };
+      const opts = { bubbles: true, pointerId: 1, pointerType: "mouse", isPrimary: true, ...at };
+      title.dispatchEvent(new PointerEvent("pointermove", { ...opts, buttons: 1 }));
+      title.dispatchEvent(new PointerEvent("pointerup", { ...opts, button: 0 }));
+    }, z);
+    await docReaches("ab_a", 300);
     await page.close();
   });
 
