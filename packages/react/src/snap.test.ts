@@ -72,9 +72,11 @@ test("between two boards, the box centres itself in the room", () => {
 });
 
 test("boards out of the row don't set its spacing", () => {
-  // B is far below: no row with the box, so nothing to space against.
-  const s = snapMove(box(0, 0), [box(-200, 0), box(-60, 900)], 43, 0, 2);
-  expect(s.dx).toBe(43);
+  // A and B sit 40 apart in a row far below the box. Were they in its row, the box would catch
+  // that spacing 40 right of B, at x 80, from 83.
+  const s = snapMove(box(0, 0), [box(-200, 900), box(-60, 900)], 83, 0, 6);
+  expect(s.dx).toBe(83);
+  expect(s.gaps).toEqual([]);
 });
 
 test("union spans every box", () => {
