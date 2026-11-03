@@ -814,7 +814,8 @@ export function Canvas({
       // A board grabbed again before its last drop lands starts from where it was dropped.
       origin: ids.map((id) => {
         const a = findArtboard(doc!, id)!.artboard;
-        return { id, ...(ghost?.at.get(id) ?? { x: a.x, y: a.y }) };
+        const at = landing.get(id) ?? a;
+        return { id, x: at.x, y: at.y };
       }),
       anchor: toWorld(e.clientX, e.clientY),
       moved: false,
@@ -822,18 +823,19 @@ export function Canvas({
     (e.target as Element).setPointerCapture?.(e.pointerId);
   };
 
-  /**
-   * Where dragged boards are drawn, and the guides they caught. A dropped board stays at its
-   * drop (`landing`) until the document has it there: the server echoes a move a moment later,
-   * and drawing the old position meanwhile flashes it back.
-   */
+  /** Where the boards being dragged are drawn, and the guides they caught. */
   const [ghost, setGhost] = useState<{
     at: Map<string, { x: number; y: number }>;
     guides: Guide[];
     gaps: Gap[];
-    /** After a drop: where the document had each board then. Any change there means it landed. */
-    landing?: Map<string, { x: number; y: number }>;
   } | null>(null);
+  /**
+   * Boards dropped whose move the document doesn't have yet, by id: where each was dropped, and
+   * until when to wait for it. The server echoes a move a moment later; drawing the old position
+   * meanwhile flashes the board back. Each drop waits for its own position, so an earlier drop's
+   * echo, or a drag of another board, never lets it go early.
+   */
+  const [landing, setLanding] = useState<ReadonlyMap<string, Landing>>(() => new Map());
 
   /** Moves the dragged boards to follow the pointer, locked and snapped as the keys say. */
   const moveTo = (d: NonNullable<typeof drag.current>) => {
@@ -885,22 +887,27 @@ export function Canvas({
     };
   }, []);
 
-  // A drop holds its place until the document catches up, or for a moment if the move never
-  // comes back (the connection dropped, say).
+  // A drop holds its place until the document has the board there, or for a moment if the move
+  // never comes back (the connection dropped, say). A board that's gone needs no holding.
   const boardsNow = page?.artboards;
   useEffect(() => {
-    if (!ghost?.landing) return;
-    const landed = [...ghost.landing].every(([id, was]) => {
-      const ab = boardsNow?.find((b) => b.id === id);
-      return !ab || ab.x !== was.x || ab.y !== was.y;
-    });
-    if (landed) setGhost(null);
-  }, [ghost, boardsNow]);
-  useEffect(() => {
-    if (!ghost?.landing) return;
-    const timer = setTimeout(() => setGhost((g) => (g?.landing ? null : g)), LANDING_MS);
+    if (!landing.size) return;
+    const settle = () =>
+      setLanding((l) => {
+        const now = performance.now();
+        const next = new Map(
+          [...l].filter(([id, t]) => {
+            const ab = boardsNow?.find((b) => b.id === id);
+            return ab && (ab.x !== t.x || ab.y !== t.y) && t.until > now;
+          }),
+        );
+        return next.size === l.size ? l : next;
+      });
+    settle();
+    const soonest = Math.min(...[...landing.values()].map((t) => t.until));
+    const timer = setTimeout(settle, Math.max(0, soonest - performance.now()));
     return () => clearTimeout(timer);
-  }, [ghost?.landing]);
+  }, [landing, boardsNow]);
   /** The selection box's corners in page coordinates, so it holds its place if the camera moves. */
   const [marquee, setMarquee] = useState<{
     a: { x: number; y: number };
@@ -968,7 +975,7 @@ export function Canvas({
   const onPointerUp = () => {
     const d = drag.current;
     drag.current = null;
-    const at = d?.kind === "move" && d.moved && !readOnly && !ghost?.landing ? ghost?.at : null;
+    const at = d?.kind === "move" && d.moved && !readOnly ? ghost?.at : null;
     const ops = at
       ? d!.origin.flatMap((o) => {
           const t = at.get(o.id);
@@ -978,19 +985,15 @@ export function Canvas({
         })
       : [];
     if (ops.length) {
-      const was = new Map<string, { x: number; y: number }>();
-      for (const o of ops) {
-        const ab = boards.find((b) => b.id === o.id);
-        if (ab) was.set(o.id, { x: ab.x, y: ab.y });
-      }
-      setGhost({
-        at: new Map(ops.map((o) => [o.id, { x: o.x, y: o.y }])),
-        guides: [],
-        gaps: [],
-        landing: was,
+      const until = performance.now() + LANDING_MS;
+      setLanding((l) => {
+        const next = new Map(l);
+        for (const o of ops) next.set(o.id, { x: o.x, y: o.y, until });
+        return next;
       });
       source.apply(ops.length === 1 ? ops[0]! : { op: "batch", ops });
-    } else if (d?.kind === "move" && !ghost?.landing) setGhost(null);
+    }
+    if (d?.kind === "move") setGhost(null);
     setMarquee(null);
   };
 
@@ -1213,7 +1216,7 @@ export function Canvas({
   }
 
   const ghostFor = (id: string) => {
-    const t = ghost?.at.get(id);
+    const t = ghost?.at.get(id) ?? landing.get(id);
     const ab = t && boards.find((b) => b.id === id);
     return ab ? { dx: t.x - ab.x, dy: t.y - ab.y } : null;
   };
@@ -2181,6 +2184,13 @@ function SnapGap({ gap: g }: { gap: Gap }) {
 const SNAP_PX = 6;
 /** How long a dropped board holds its place if the document never says it moved. */
 const LANDING_MS = 2000;
+
+/** A dropped board's position, held until the document has it or `until` passes. */
+interface Landing {
+  x: number;
+  y: number;
+  until: number;
+}
 
 interface MoveKeys {
   /** Locks the move to the axis it has gone furthest along. */

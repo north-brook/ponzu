@@ -21,7 +21,7 @@ const chromium = findChromium();
 setDefaultTimeout(30_000);
 
 /** Milliseconds the source takes to echo an edit. */
-const ECHO = 150;
+const ECHO = 400;
 
 const ENTRY = `
 import { createElement } from "react";
@@ -131,23 +131,15 @@ describe.skipIf(!chromium)("moving artboards in Chromium", () => {
       return Number.parseFloat(getComputedStyle(el).getPropertyValue("--z")) || 1;
     });
 
-  test("a dropped board stays where it was dropped while the move is on its way", async () => {
-    await mount([["ab_a", 0, 0]]);
-    const z = await zoom();
-    const p = await titlePoint("ab_a");
-    await page.mouse.move(p.x, p.y);
-    await page.mouse.down();
-    for (let i = 1; i <= 10; i++) await page.mouse.move(p.x + (i * 300 * z) / 10, p.y);
-    const dropped = await drawnAt("ab_a");
-    expect(dropped.x).toBeGreaterThan(250);
-    // Watch every frame from the drop until well after the echo.
-    const watch = page.evaluate(
-      (ms) =>
+  /** Every x a board's title is drawn at, frame by frame, for `ms` from now. */
+  const watchX = (id: string, ms: number) =>
+    page.evaluate(
+      ([id, ms]) =>
         new Promise<number[]>((resolve) => {
-          const el = document.querySelector('[data-board-name][title="ab_a"]')!.parentElement!
+          const el = document.querySelector(`[data-board-name][title="${id}"]`)!.parentElement!
             .parentElement as HTMLElement;
           const xs: number[] = [];
-          const end = performance.now() + ms;
+          const end = performance.now() + (ms as number);
           const tick = () => {
             xs.push(Number(/\*\s*(-?[\d.]+)px/.exec(el.style.left)?.[1]));
             if (performance.now() < end) requestAnimationFrame(tick);
@@ -155,13 +147,72 @@ describe.skipIf(!chromium)("moving artboards in Chromium", () => {
           };
           tick();
         }),
-      ECHO * 3,
+      [id, ms] as const,
     );
+
+  /** Grabs a board by its title and drags it by (dx, dy) page px, leaving the button down. */
+  const dragBy = async (id: string, dx: number, dy = 0, steps = 5) => {
+    const z = await zoom();
+    const p = await titlePoint(id);
+    await page.mouse.move(p.x, p.y);
+    await page.mouse.down();
+    for (let i = 1; i <= steps; i++)
+      await page.mouse.move(p.x + (i * dx * z) / steps, p.y + (i * dy * z) / steps);
+  };
+
+  /** Waits until the document has a board at x. */
+  const docReaches = (id: string, x: number) =>
+    page.waitForFunction(
+      ([id, x]) =>
+        (window as any).pzSource.getState().doc.pages[0].artboards.find((a: any) => a.id === id)
+          .x === x,
+      [id, x] as const,
+    );
+
+  test("a dropped board stays where it was dropped while the move is on its way", async () => {
+    await mount([["ab_a", 0, 0]]);
+    await dragBy("ab_a", 300, 0, 10);
+    const dropped = await drawnAt("ab_a");
+    expect(dropped.x).toBeGreaterThan(250);
+    // Watch every frame from the drop until well after the echo.
+    const watch = watchX("ab_a", ECHO * 2);
     await page.mouse.up();
     const xs = await watch;
     expect(Math.min(...xs)).toBe(dropped.x);
     expect(await docAt("ab_a")).toEqual({ x: dropped.x, y: 0 });
     expect(await drawnAt("ab_a")).toEqual({ x: dropped.x, y: 0 });
+    await page.close();
+  });
+
+  test("dragging another board doesn't let a drop on its way go", async () => {
+    await mount([
+      ["ab_a", 0, 0],
+      ["ab_b", 0, 600],
+    ]);
+    await dragBy("ab_a", 300);
+    const dropped = (await drawnAt("ab_a")).x;
+    await page.mouse.up();
+    const watch = watchX("ab_a", ECHO * 2);
+    await dragBy("ab_b", 500);
+    await page.mouse.up();
+    expect(Math.min(...(await watch))).toBe(dropped);
+    await docReaches("ab_a", dropped);
+    await page.close();
+  });
+
+  test("a board dropped twice holds its second drop through the first one's echo", async () => {
+    await mount([["ab_a", 0, 0]]);
+    await dragBy("ab_a", 300);
+    await page.mouse.up();
+    // Grabbed again before the first move comes back, and dropped further on.
+    await dragBy("ab_a", 300);
+    const second = (await drawnAt("ab_a")).x;
+    expect(second).toBeGreaterThan(550);
+    const watch = watchX("ab_a", ECHO * 2);
+    await page.mouse.up();
+    expect(Math.min(...(await watch))).toBe(second);
+    await docReaches("ab_a", second);
+    expect(await drawnAt("ab_a")).toEqual({ x: second, y: 0 });
     await page.close();
   });
 

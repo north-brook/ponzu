@@ -152,9 +152,9 @@ function guidesFor(box: Box, others: Box[], axis: Axis): Guide[] {
         lines.set(at, g);
       }
   // A centre line between two edge lines says nothing they don't: boards that share both edges
-  // share their centre too.
+  // share their centre too. With one edge line, the centre may line up with something else.
   const [start, mid, end] = anchors(box, axis);
-  if (lines.has(mid!) && (lines.has(start!) || lines.has(end!))) lines.delete(mid!);
+  if (lines.has(mid!) && lines.has(start!) && lines.has(end!)) lines.delete(mid!);
   return [...lines.values()];
 }
 

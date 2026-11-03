@@ -32,6 +32,10 @@ test("boards sharing both edges get edge lines, not a centre line between them",
   const c = snapMove(box(0, 0, 50, 50), [box(300, 400)], 323, 0, 6);
   expect(c.dx).toBe(325);
   expect(c.guides.map((g) => g.at)).toEqual([350]);
+  // Sharing one edge, its centre on the other's far edge: both lines show.
+  const h = snapMove(box(0, 0), [box(300, 400, 50, 100)], 302, 0, 6);
+  expect(h.dx).toBe(300);
+  expect(h.guides.map((g) => g.at).sort((a, b) => a - b)).toEqual([300, 350]);
 });
 
 test("beyond the threshold it doesn't snap", () => {
