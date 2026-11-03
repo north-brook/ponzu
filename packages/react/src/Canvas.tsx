@@ -33,6 +33,7 @@ import { Icon, Icons, Pencil } from "./icons.tsx";
 import { centreDistance, detailScale, onScreen, visibleBand } from "./lod.ts";
 import { playing } from "./loops.tsx";
 import { Pacer } from "./pacer.tsx";
+import { type Gap, type Guide, snapMove, union } from "./snap.ts";
 import { TieredBoard, thawed, versionOf } from "./snapshot.tsx";
 import { useWindowStill } from "./still.ts";
 import { Button, ContextMenu, cn, ShortcutHint, Tip, TipProvider, ToggleGroup } from "./ui.tsx";
@@ -736,6 +737,8 @@ export function Canvas({
     anchor?: { x: number; y: number };
     /** The pointer's last position on screen, for the box to follow when the page scrolls. */
     pointer?: { x: number; y: number };
+    /** Shift locks a move to one axis; ⌘ or Ctrl lets it go without snapping. */
+    keys?: MoveKeys;
     moved: boolean;
   } | null>(null);
 
@@ -808,16 +811,96 @@ export function Canvas({
       startX: e.clientX,
       startY: e.clientY,
       ids,
+      // A board grabbed again before its last drop lands starts from where it was dropped.
       origin: ids.map((id) => {
         const a = findArtboard(doc!, id)!.artboard;
-        return { id, x: a.x, y: a.y };
+        return { id, ...(ghost?.at.get(id) ?? { x: a.x, y: a.y }) };
       }),
+      anchor: toWorld(e.clientX, e.clientY),
       moved: false,
     };
     (e.target as Element).setPointerCapture?.(e.pointerId);
   };
 
-  const [ghost, setGhost] = useState<{ dx: number; dy: number } | null>(null);
+  /**
+   * Where dragged boards are drawn, and the guides they caught. A dropped board stays at its
+   * drop (`landing`) until the document has it there: the server echoes a move a moment later,
+   * and drawing the old position meanwhile flashes it back.
+   */
+  const [ghost, setGhost] = useState<{
+    at: Map<string, { x: number; y: number }>;
+    guides: Guide[];
+    gaps: Gap[];
+    /** After a drop: where the document had each board then. Any change there means it landed. */
+    landing?: Map<string, { x: number; y: number }>;
+  } | null>(null);
+
+  /** Moves the dragged boards to follow the pointer, locked and snapped as the keys say. */
+  const moveTo = (d: NonNullable<typeof drag.current>) => {
+    if (!d.anchor || !d.pointer) return;
+    const p = toWorld(d.pointer.x, d.pointer.y);
+    let dx = Math.round(p.x - d.anchor.x);
+    let dy = Math.round(p.y - d.anchor.y);
+    let lock: "x" | "y" | undefined;
+    if (d.keys?.shift) {
+      if (Math.abs(dx) >= Math.abs(dy)) [dy, lock] = [0, "y"];
+      else [dx, lock] = [0, "x"];
+    }
+    const sizes = new Map(boardBoxes.map((b) => [b.id, b]));
+    const moving = d.origin.flatMap((o) => {
+      const b = sizes.get(o.id);
+      return b ? [{ x: o.x, y: o.y, w: b.w, h: b.h }] : [];
+    });
+    const cam = camera.get();
+    const vp = viewportSize();
+    // Only boards in or near view catch: a guide to something off screen explains nothing.
+    const others = boardBoxes.filter((b) => !d.ids.includes(b.id) && onScreen(b, cam, vp));
+    const snapped =
+      d.keys?.free || !moving.length
+        ? { dx, dy, guides: [], gaps: [] }
+        : snapMove(union(moving), others, dx, dy, SNAP_PX / cam.zoom, lock);
+    setGhost({
+      at: new Map(d.origin.map((o) => [o.id, { x: o.x + snapped.dx, y: o.y + snapped.dy }])),
+      guides: snapped.guides,
+      gaps: snapped.gaps,
+    });
+  };
+  const moveToRef = useRef(moveTo);
+  moveToRef.current = moveTo;
+
+  // Pressing or letting go of Shift, ⌘ or Ctrl mid-drag relocks the move without waiting for the
+  // pointer to move.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const d = drag.current;
+      if (d?.kind !== "move" || !d.moved) return;
+      d.keys = moveKeys(e);
+      moveToRef.current(d);
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKey);
+    };
+  }, []);
+
+  // A drop holds its place until the document catches up, or for a moment if the move never
+  // comes back (the connection dropped, say).
+  const boardsNow = page?.artboards;
+  useEffect(() => {
+    if (!ghost?.landing) return;
+    const landed = [...ghost.landing].every(([id, was]) => {
+      const ab = boardsNow?.find((b) => b.id === id);
+      return !ab || ab.x !== was.x || ab.y !== was.y;
+    });
+    if (landed) setGhost(null);
+  }, [ghost, boardsNow]);
+  useEffect(() => {
+    if (!ghost?.landing) return;
+    const timer = setTimeout(() => setGhost((g) => (g?.landing ? null : g)), LANDING_MS);
+    return () => clearTimeout(timer);
+  }, [ghost?.landing]);
   /** The selection box's corners in page coordinates, so it holds its place if the camera moves. */
   const [marquee, setMarquee] = useState<{
     a: { x: number; y: number };
@@ -842,6 +925,8 @@ export function Canvas({
       camera.subscribe(() => {
         const d = drag.current;
         if (d?.kind === "marquee" && d.moved) boxToRef.current(d);
+        // Scrolling mid-drag carries the boards with the pointer.
+        if (d?.kind === "move" && d.moved) moveToRef.current(d);
       }),
     [camera],
   );
@@ -874,24 +959,38 @@ export function Canvas({
       d.pointer = { x: e.clientX, y: e.clientY };
       boxTo(d);
     } else if (d.moved) {
-      const { zoom } = camera.get();
-      setGhost({ dx: dx / zoom, dy: dy / zoom });
+      d.pointer = { x: e.clientX, y: e.clientY };
+      d.keys = moveKeys(e);
+      moveTo(d);
     }
   };
 
   const onPointerUp = () => {
     const d = drag.current;
     drag.current = null;
-    if (d?.kind === "move" && d.moved && ghost && !readOnly) {
-      const ops = d.origin.map((o) => ({
-        op: "artboard.update" as const,
-        id: o.id,
-        x: Math.round(o.x + ghost.dx),
-        y: Math.round(o.y + ghost.dy),
-      }));
+    const at = d?.kind === "move" && d.moved && !readOnly && !ghost?.landing ? ghost?.at : null;
+    const ops = at
+      ? d!.origin.flatMap((o) => {
+          const t = at.get(o.id);
+          return t && (t.x !== o.x || t.y !== o.y)
+            ? [{ op: "artboard.update" as const, id: o.id, x: Math.round(t.x), y: Math.round(t.y) }]
+            : [];
+        })
+      : [];
+    if (ops.length) {
+      const was = new Map<string, { x: number; y: number }>();
+      for (const o of ops) {
+        const ab = boards.find((b) => b.id === o.id);
+        if (ab) was.set(o.id, { x: ab.x, y: ab.y });
+      }
+      setGhost({
+        at: new Map(ops.map((o) => [o.id, { x: o.x, y: o.y }])),
+        guides: [],
+        gaps: [],
+        landing: was,
+      });
       source.apply(ops.length === 1 ? ops[0]! : { op: "batch", ops });
-    }
-    setGhost(null);
+    } else if (d?.kind === "move" && !ghost?.landing) setGhost(null);
     setMarquee(null);
   };
 
@@ -1113,7 +1212,11 @@ export function Canvas({
     );
   }
 
-  const ghostFor = (id: string) => (ghost && drag.current?.ids.includes(id) ? ghost : null);
+  const ghostFor = (id: string) => {
+    const t = ghost?.at.get(id);
+    const ab = t && boards.find((b) => b.id === id);
+    return ab ? { dx: t.x - ab.x, dy: t.y - ab.y } : null;
+  };
   const rectsFor = (ids: string[]) => selectionRects(ids, boards, boardHeight, ghostFor, boxes);
   const selectedRects = rectsFor(selection);
   const vpSize = viewportSize();
@@ -1303,6 +1406,12 @@ export function Canvas({
                 })}
               />
             )}
+            {ghost?.guides.map((g) => (
+              <SnapGuide key={`${g.axis}${g.at}`} guide={g} />
+            ))}
+            {ghost?.gaps.map((g) => (
+              <SnapGap key={`${g.axis}${g.a}:${g.b}@${g.at}`} gap={g} />
+            ))}
             {pageThreads.map((t) => {
               const ab = boards.find((b) => b.id === t.artboardId);
               const dragging = pinDrag?.id === t.id && pinDrag.moved ? pinDrag : null;
@@ -2015,6 +2124,73 @@ function canScroll(el: HTMLElement, e: WheelEvent) {
     ((e.deltaX > 0 && el.scrollLeft + el.clientWidth < el.scrollWidth) ||
       (e.deltaX < 0 && el.scrollLeft > 0));
   return y || x;
+}
+
+/** A line a dragged board shares with others, a hairline at any zoom. */
+function SnapGuide({ guide: g }: { guide: Guide }) {
+  return (
+    <div
+      className="pz:pointer-events-none pz:absolute pz:bg-select"
+      style={
+        g.axis === "x"
+          ? {
+              left: wpx(g.at),
+              top: wpx(g.from),
+              width: 1,
+              height: wpx(g.to - g.from),
+            }
+          : {
+              top: wpx(g.at),
+              left: wpx(g.from),
+              height: 1,
+              width: wpx(g.to - g.from),
+            }
+      }
+    />
+  );
+}
+
+/** A space a dragged board matches: a measured line with end ticks and its width in page px. */
+function SnapGap({ gap: g }: { gap: Gap }) {
+  const across = g.axis === "x";
+  return (
+    <div
+      className="pz:pointer-events-none pz:absolute pz:flex pz:items-center pz:justify-center"
+      style={
+        across
+          ? { left: wpx(g.a), top: wpx(g.at), width: wpx(g.b - g.a), height: 0 }
+          : { top: wpx(g.a), left: wpx(g.at), height: wpx(g.b - g.a), width: 0 }
+      }
+    >
+      <div
+        className={cn(
+          "pz:absolute pz:border-select",
+          across
+            ? "pz:inset-x-0 pz:h-2 pz:-translate-y-1/2 pz:border-x pz:bg-[linear-gradient(var(--color-select),var(--color-select))] pz:bg-[length:100%_1px] pz:bg-center pz:bg-no-repeat"
+            : "pz:inset-y-0 pz:w-2 pz:-translate-x-1/2 pz:border-y pz:bg-[linear-gradient(var(--color-select),var(--color-select))] pz:bg-[length:1px_100%] pz:bg-center pz:bg-no-repeat",
+        )}
+      />
+      <span className="pz:relative pz:rounded-sm pz:bg-select pz:px-1 pz:text-[10px] pz:leading-4 pz:font-medium pz:text-background pz:tabular-nums">
+        {Math.round(g.b - g.a)}
+      </span>
+    </div>
+  );
+}
+
+/** How near, in screen px, a dragged board's edge has to come to another's to catch it. */
+const SNAP_PX = 6;
+/** How long a dropped board holds its place if the document never says it moved. */
+const LANDING_MS = 2000;
+
+interface MoveKeys {
+  /** Locks the move to the axis it has gone furthest along. */
+  shift: boolean;
+  /** Moves without snapping. */
+  free: boolean;
+}
+
+function moveKeys(e: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }): MoveKeys {
+  return { shift: e.shiftKey, free: e.metaKey || e.ctrlKey };
 }
 
 /**
