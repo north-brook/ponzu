@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.78.4](https://github.com/north-brook/ponzu/compare/v1.78.3...v1.78.4) (2026-11-03)
+
+
+### Bug Fixes
+
+* hold dropped artboards in place, lock drags with shift, and snap to edges and gaps ([#380](https://github.com/north-brook/ponzu/issues/380)) ([a446dc8](https://github.com/north-brook/ponzu/commit/a446dc8cc5cd186c970143a4a5c3fdf3b7611064))
+
 ## [1.78.3](https://github.com/north-brook/ponzu/compare/v1.78.2...v1.78.3) (2026-11-02)
 
 
