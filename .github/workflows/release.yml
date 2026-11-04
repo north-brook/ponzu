@@ -244,11 +244,16 @@ jobs:
       - name: Signed, notarized and stapled
         # The app inside the DMG carries the notarization ticket; the DMG
         # itself is only a container and is not notarized.
+        # The ticket is checked offline: `stapler validate` looks it up again on
+        # Apple's ticket service, which drops runners' connections (exit 68,
+        # NSURLErrorDomain -1005) often enough to fail releases whose app was
+        # notarized and stapled. spctl already shows Gatekeeper accepts it as
+        # notarized; codesign shows the ticket is in the bundle.
         run: |
           codesign --verify --deep --strict --verbose=2 out/mac-arm64/Ponzu.app
           codesign --verify --strict --verbose=2 out/mac-arm64/Ponzu.app/Contents/Resources/server/ponzu
           spctl --assess --type execute --verbose=2 out/mac-arm64/Ponzu.app
-          xcrun stapler validate out/mac-arm64/Ponzu.app
+          codesign --display --verbose=4 out/mac-arm64/Ponzu.app 2>&1 | grep -x 'Notarization Ticket=stapled'
         working-directory: apps/desktop
       - name: The signed app starts its server and paints the studio
         # The exact bundle in the draft, before the draft goes public. A broken
