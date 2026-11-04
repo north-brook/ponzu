@@ -253,6 +253,7 @@ jobs:
           codesign --verify --deep --strict --verbose=2 out/mac-arm64/Ponzu.app
           codesign --verify --strict --verbose=2 out/mac-arm64/Ponzu.app/Contents/Resources/server/ponzu
           spctl --assess --type execute --verbose=2 out/mac-arm64/Ponzu.app
+          set -o pipefail
           codesign --display --verbose=4 out/mac-arm64/Ponzu.app 2>&1 | grep -x 'Notarization Ticket=stapled'
         working-directory: apps/desktop
       - name: The signed app starts its server and paints the studio
