@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.4](https://github.com/north-brook/ponzu/compare/mobile-v0.11.3...mobile-v0.11.4) (2026-11-06)
+
+
+### Bug Fixes
+
+* **mobile:** smooth comment field growth, one-tap send, and a working page menu upright ([#383](https://github.com/north-brook/ponzu/issues/383)) ([cb0354f](https://github.com/north-brook/ponzu/commit/cb0354f68204a2ed77268d3e14b3eb371939567d))
+
 ## [0.11.3](https://github.com/north-brook/ponzu/compare/mobile-v0.11.2...mobile-v0.11.3) (2026-11-06)
 
 
