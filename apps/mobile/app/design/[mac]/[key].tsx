@@ -693,11 +693,6 @@ export default function Canvas() {
             page={page}
             pages={pageActions}
             onPage={(id) => pickPage({ nativeEvent: { event: id } } as NativeActionEvent)}
-            pagePill={
-              <BarPill bare={bare} testID="page-pill">
-                <PagePill page={page} menu={pageMenu} shown={!bare} fade={chromeStyle} />
-              </BarPill>
-            }
             count={open.length}
             onComments={() => {
               setThreadId(null);

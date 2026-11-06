@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   type LayoutChangeEvent,
   Pressable,
@@ -9,6 +9,7 @@ import {
   type TextInputInstance,
   View,
 } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { KeyboardController } from "react-native-keyboard-controller";
 import Animated, {
   cancelAnimation,
@@ -26,6 +27,7 @@ import Animated, {
 import { useAppActive } from "../lib/app-active";
 import { useDictation } from "../lib/dictation";
 import { type Draft, getDraft, setDraft } from "../lib/drafts";
+import { FIELD_LINE, FIELD_MAX, FIELD_PAD, fieldScrolls } from "../lib/field";
 import { fail, select, success } from "../lib/haptics";
 import { PARTS, phase, SWITCH_MS } from "../lib/morph";
 import { useTheme } from "../lib/theme";
@@ -54,14 +56,6 @@ function rememberMode(m: Mode) {
 }
 
 const ease = Easing.bezier(...EASE_OUT);
-/**
- * The comment field: lines of Inter 17 on a 22pt line, the padding that
- * centres one in the buttons' 44, and the tallest it grows (five lines)
- * before it scrolls.
- */
-const FIELD_LINE = 22;
-const FIELD_PAD = (44 - FIELD_LINE) / 2;
-const FIELD_MAX = FIELD_PAD * 2 + FIELD_LINE * 5;
 
 const styles = StyleSheet.create({
   field: {
@@ -143,6 +137,8 @@ export function Composer({
   }, [voice, dictation.text]);
   const [sending, setSending] = useState(false);
   const input = useRef<TextInputInstance>(null);
+  /** The field has grown as tall as it gets, and scrolls in itself from here (lib/field.ts). */
+  const [scrolls, setScrolls] = useState(false);
   const text = voice ? dictation.text : typed;
   const has = text.trim().length > 0;
 
@@ -305,9 +301,12 @@ export function Composer({
           >
             {/*
               The field sizes itself, as iOS sizes a multiline text view: one line at 44, a
-              line taller for each line of text up to FIELD_MAX, then it scrolls in itself
-              and iOS keeps the line being typed in view. In voice it steps out of view (moved,
-              never faded: glass breaks under opacity) and the waveform takes the row.
+              line taller for each line of text up to FIELD_MAX, and only then scrolls in
+              itself, iOS keeping the line being typed in view. Until then it never scrolls:
+              able to, it scrolled the text up to the caret on each new line before the field
+              had caught up, then back down as the field grew, a jolt on every line. In voice
+              it steps out of view (moved, never faded: glass breaks under opacity) and the
+              waveform takes the row.
             */}
             <View
               style={voice ? styles.hidden : null}
@@ -324,7 +323,10 @@ export function Composer({
                 selectionColor={brand.yuzu}
                 cursorColor={brand.yuzu}
                 multiline
-                scrollEnabled
+                scrollEnabled={scrolls}
+                onContentSizeChange={(e) =>
+                  setScrolls(fieldScrolls(e.nativeEvent.contentSize.height))
+                }
                 editable={!voice}
                 testID={voice ? undefined : "comment-input"}
                 // iOS's default (true) has the field keep a touch it holds when another view
@@ -446,7 +448,7 @@ export function RoundButton({
   onPress,
   label,
   tone = "glass",
-  disabled,
+  disabled = false,
   shown = true,
   testID,
 }: {
@@ -459,7 +461,12 @@ export function RoundButton({
   shown?: boolean;
   testID?: string;
 }) {
-  const { color } = useTheme();
+  if (tone === "ink")
+    return (
+      <InkButton onPress={onPress} label={label} disabled={disabled} testID={testID}>
+        {children}
+      </InkButton>
+    );
   return (
     <Pressable
       onPress={onPress}
@@ -467,13 +474,78 @@ export function RoundButton({
       accessibilityRole="button"
       accessibilityLabel={label}
       testID={testID}
-      style={({ pressed }) => ({
-        transform: [{ scale: pressed && tone === "ink" ? 0.9 : 1 }],
-        // Only the ink button dims: glass under a dimmed view isn't drawn.
-        opacity: disabled && tone === "ink" ? 0.6 : 1,
-      })}
     >
-      {tone === "ink" ? (
+      <Glass interactive shown={shown} style={round}>
+        <Animated.View key={label} entering={FadeIn.duration(180)} exiting={FadeOut.duration(120)}>
+          {children}
+        </Animated.View>
+      </Glass>
+    </Pressable>
+  );
+}
+
+/**
+ * The ink button (Send), pressed through a native tap recognizer of its own
+ * rather than React Native's responder system, which runs a press in
+ * JavaScript from the touches the root view sees. There a tap on Send could
+ * reach the button and never start its press, so that the next tap sent: a
+ * responder the field still held after a tap in it refused to let go (#367
+ * saw to that one), and the press judges where a touch is by the first of
+ * every finger on the display, so a thumb resting on the canvas puts it
+ * outside the button. UIKit hands the recognizer only the touches on the
+ * button, and nothing in JavaScript gets to refuse or misplace them. It
+ * scales down while held, as before, on the UI thread.
+ */
+function InkButton({
+  children,
+  onPress,
+  label,
+  disabled,
+  testID,
+}: {
+  children: React.ReactNode;
+  onPress: () => void;
+  label: string;
+  disabled: boolean;
+  testID?: string;
+}) {
+  const { color } = useTheme();
+  const held = useSharedValue(0);
+  // The latest press, so the recognizer isn't rebuilt on every render.
+  const press = useRef(onPress);
+  press.current = onPress;
+  const tap = useMemo(
+    () =>
+      Gesture.Tap()
+        .runOnJS(true)
+        .enabled(!disabled)
+        // Held as long as it likes and let go within reach, as the system's buttons take a press.
+        .maxDuration(10_000)
+        .maxDistance(24)
+        .onBegin(() => {
+          held.value = withTiming(1, { duration: 80, easing: ease });
+        })
+        .onEnd(() => press.current())
+        .onFinalize(() => {
+          held.value = withTiming(0, { duration: 120, easing: ease });
+        }),
+    [disabled],
+  );
+  const style = useAnimatedStyle(() => ({ transform: [{ scale: 1 - 0.1 * held.value }] }));
+  return (
+    <GestureDetector gesture={tap}>
+      <Animated.View
+        accessible
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityState={{ disabled }}
+        onAccessibilityTap={disabled ? undefined : onPress}
+        // A little past its edge, as the bar's buttons give; less to the left, where the field is.
+        hitSlop={{ top: 8, bottom: 8, left: 4, right: 10 }}
+        testID={testID}
+        // Dimmed while sending: it's ink, never glass (glass under a dimmed view isn't drawn).
+        style={[style, { opacity: disabled ? 0.6 : 1 }]}
+      >
         <Animated.View
           entering={FadeIn.duration(180)}
           exiting={FadeOut.duration(120)}
@@ -481,18 +553,8 @@ export function RoundButton({
         >
           {children}
         </Animated.View>
-      ) : (
-        <Glass interactive shown={shown} style={round}>
-          <Animated.View
-            key={label}
-            entering={FadeIn.duration(180)}
-            exiting={FadeOut.duration(120)}
-          >
-            {children}
-          </Animated.View>
-        </Glass>
-      )}
-    </Pressable>
+      </Animated.View>
+    </GestureDetector>
   );
 }
 
