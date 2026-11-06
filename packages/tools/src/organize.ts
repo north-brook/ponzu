@@ -212,11 +212,7 @@ export const organizeTools = [
       const ops: Op[] = [];
       if (args.name !== undefined || args.icon !== undefined)
         ops.push({ op: "page.update", id: page.id, name: args.name, icon: args.icon });
-      if (args.index !== undefined) {
-        const ids = doc.pages.map((p) => p.id).filter((id) => id !== page.id);
-        ids.splice(Math.min(args.index, ids.length), 0, page.id);
-        ops.push({ op: "page.order", ids });
-      }
+      if (args.index !== undefined) ops.push({ op: "page.move", id: page.id, index: args.index });
       if (!ops.length) return { text: "Nothing to change." };
       apply(design, { op: "batch", ops }, ctx);
       return { text: `Updated page ${page.id}.` };

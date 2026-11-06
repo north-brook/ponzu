@@ -38,6 +38,8 @@ export type Op =
   | { op: "page.delete"; id: string }
   | { op: "page.update"; id: string; name?: string; icon?: string | null }
   | { op: "page.order"; ids: string[] }
+  /** Move one page to `index` in the list, read against the list as it is when it lands. */
+  | { op: "page.move"; id: string; index: number }
   | { op: "file.rename"; name: string }
   | { op: "file.icon"; icon: string | null }
   | { op: "file.scratch"; scratch: boolean }
@@ -167,6 +169,46 @@ export function findPage(doc: Doc, idOrName: string): PageState | null {
     doc.pages.find((p) => p.name.toLowerCase() === idOrName.toLowerCase()) ??
     null
   );
+}
+
+/**
+ * The op as every client can replay it: a `page.move` becomes the
+ * `page.order` it amounts to against `doc` now. Phones run their own release
+ * of `applyOp`, and one from before `page.move` would skip it.
+ */
+export function resolveOp(doc: Doc, op: Op): Op {
+  return resolveIn(
+    doc.pages.map((p) => p.id),
+    op,
+  );
+}
+
+/** `resolveOp` against the page list `ids`, which it keeps up with the op. */
+function resolveIn(ids: string[], op: Op): Op {
+  switch (op.op) {
+    case "batch":
+      return { op: "batch", ops: op.ops.map((o) => resolveIn(ids, o)) };
+    case "page.move": {
+      const from = ids.indexOf(op.id);
+      if (from < 0) throw new OpError(`No page ${op.id}.`);
+      ids.splice(from, 1);
+      ids.splice(clamp(op.index, 0, ids.length), 0, op.id);
+      return { op: "page.order", ids: ids.slice() };
+    }
+    case "page.create":
+      ids.splice(clamp(op.index, 0, ids.length), 0, op.page.id);
+      return op;
+    case "page.delete": {
+      const at = ids.indexOf(op.id);
+      if (at >= 0) ids.splice(at, 1);
+      return op;
+    }
+    case "page.order":
+      ids.splice(0, ids.length, ...op.ids);
+      return op;
+    default:
+      return op;
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -319,6 +361,13 @@ export function applyOp(doc: Doc, op: Op): Op {
       }
       doc.pages = op.ids.map((id) => byId.get(id)!);
       return { op: "page.order", ids: prev };
+    }
+    case "page.move": {
+      const from = doc.pages.findIndex((p) => p.id === op.id);
+      if (from < 0) throw new OpError(`No page ${op.id}.`);
+      const [page] = doc.pages.splice(from, 1);
+      doc.pages.splice(clamp(op.index, 0, doc.pages.length), 0, page!);
+      return { op: "page.move", id: op.id, index: from };
     }
     case "file.rename": {
       const prev = doc.name;

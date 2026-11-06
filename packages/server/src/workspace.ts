@@ -445,6 +445,8 @@ export function summarize(doc: Doc, op: Op): string {
       return "updated a page";
     case "page.order":
       return "reordered pages";
+    case "page.move":
+      return "moved a page";
     case "tokens":
       return "changed tokens";
     case "file.rename":
