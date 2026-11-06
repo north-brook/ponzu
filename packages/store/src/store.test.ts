@@ -510,6 +510,36 @@ describe("design", () => {
       expect(d.problems).toEqual([]);
     });
 
+    test("a pin's place in its node is read back, and one that isn't two numbers is dropped", async () => {
+      const at = 1767225600000;
+      const thread = (id: string, offset: unknown) => ({
+        id,
+        artboardId: "ab_hero",
+        nodeId: "n_title",
+        offset,
+        x: 10,
+        y: 10,
+        status: "open",
+        createdAt: at,
+        updatedAt: at,
+        messages: [{ id: "m_1", author: { kind: "user", name: "Sam" }, text: "Hi", createdAt: at }],
+      });
+      const d = await Design.open(
+        new MemoryAdapter({
+          ...seed,
+          "comments.json": JSON.stringify({
+            threads: [thread("th_ok", { x: 4, y: 2 }), thread("th_bad", { x: "4" })],
+          }),
+        }),
+        { watch: false, saveDelay: 0 },
+      );
+      expect(d.doc.threads.map((t) => [t.id, t.offset])).toEqual([
+        ["th_ok", { x: 4, y: 2 }],
+        ["th_bad", undefined],
+      ]);
+      expect(d.problems).toEqual([]);
+    });
+
     test("a page without an id, and files that aren't JSON, are reported", async () => {
       const d = await Design.open(
         new MemoryAdapter({

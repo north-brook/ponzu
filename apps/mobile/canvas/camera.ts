@@ -2,6 +2,7 @@
  * The phone canvas's camera, as plain math: where the page sits on screen and how big. A screen
  * point is world * zoom + (x, y), as on desktop. Kept free of the DOM so it can be tested.
  */
+import { pinOnNode } from "@ponzu/core";
 import type { Insets } from "./protocol.ts";
 
 export interface Camera {
@@ -284,19 +285,15 @@ export function clampToBox(c: Camera, box: Box, screen: Screen): Camera {
 
 /**
  * Where a comment's pin goes on screen. A Thread's x and y are artboard px on a board and page
- * px on the open canvas; one on a node stays within the node's box (artboard px) as it moves.
+ * px on the open canvas; one on a node goes with the node's box (artboard px) as it moves.
  */
 export function pinPoint(
-  t: { x: number; y: number },
+  t: { x: number; y: number; offset?: { x: number; y: number } },
   board: { x: number; y: number } | undefined,
   node: Box | null,
   c: Camera,
 ) {
-  let { x, y } = t;
-  if (node) {
-    x = Math.min(Math.max(x, node.x), node.x + node.w);
-    y = Math.min(Math.max(y, node.y), node.y + node.h);
-  }
+  const { x, y } = node ? pinOnNode(t, node) : t;
   return toScreen(c, (board?.x ?? 0) + x, (board?.y ?? 0) + y);
 }
 

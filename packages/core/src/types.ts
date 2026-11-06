@@ -78,6 +78,12 @@ export interface Thread {
   /** The node the pin is attached to, if any. Falls back to the artboard. */
   nodeId?: string;
   /**
+   * With `nodeId`: the pin's place in the node, from its top-left corner in artboard pixels, so
+   * the pin moves with the node when it moves or resizes. Pins without one stay at x, y, kept
+   * within the node's box.
+   */
+  offset?: { x: number; y: number };
+  /**
    * Pin offset from the artboard's top-left corner, in artboard pixels. On the
    * open canvas, the pin's position on the page.
    */
