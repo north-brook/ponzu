@@ -115,7 +115,16 @@ export type FromCanvas =
    * A finger held still on the canvas for half a second: start a comment there. Coordinates are a
    * Thread's: artboard px with `artboardId`, page px without.
    */
-  | { t: "longpress"; pageId: string; artboardId?: string; nodeId?: string; x: number; y: number }
+  | {
+      t: "longpress";
+      pageId: string;
+      artboardId?: string;
+      nodeId?: string;
+      /** Where in the node, so the pin moves with it (see Thread). */
+      offset?: { x: number; y: number };
+      x: number;
+      y: number;
+    }
   /** A pin was tapped. */
   | { t: "openThread"; id: string }
   /** An unsent comment's pin was tapped: its sheet comes back, with its words. */
@@ -129,6 +138,7 @@ export type FromCanvas =
       pageId: string;
       artboardId?: string;
       nodeId?: string;
+      offset?: { x: number; y: number };
       x: number;
       y: number;
     }

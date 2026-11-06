@@ -6,6 +6,8 @@ export interface DraftPin {
   artboardId?: string;
   pageId: string;
   nodeId?: string;
+  /** Its place in the node, so it moves with it (see Thread). */
+  offset?: { x: number; y: number };
   x: number;
   y: number;
 }

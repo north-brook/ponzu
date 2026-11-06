@@ -20,7 +20,7 @@ import {
  *   name.design/
  *     design.json        { ponzu: 1, name, icon?, example?, scratch?, pages: [{ id, name, icon? }] }
  *     tokens.css         :root { --token: value }
- *     comments.json      { threads: [{ id, artboardId (+ nodeId?) | pageId, x, y, status,
+ *     comments.json      { threads: [{ id, artboardId (+ nodeId?, offset?) | pageId, x, y, status,
  *                          createdAt, updatedAt, messages: [{ id, author, text, createdAt }] }] }
  *     notes/*.md         agent field notes
  *     assets/            images, fonts
@@ -209,7 +209,7 @@ function parseThreads(
   }
   raw.threads.forEach((t, i) => {
     const missing = threadFaults(t);
-    if (!missing.length) return threads.push(t as Thread);
+    if (!missing.length) return threads.push(withOffset(t as Thread));
     unreadable.push(t);
     const id = (t as { id?: unknown })?.id;
     const which = typeof id === "string" && id ? id : `#${i + 1}`;
@@ -219,6 +219,16 @@ function parseThreads(
     });
   });
   return { threads, unreadable };
+}
+
+/** A pin's place in its node, kept only when it's two numbers: without it, the pin still shows. */
+function withOffset(t: Thread): Thread {
+  const o = t.offset as unknown as Record<string, unknown> | undefined;
+  if (o === undefined) return t;
+  const num = (v: unknown) => typeof v === "number" && Number.isFinite(v);
+  if (o && typeof o === "object" && num(o.x) && num(o.y)) return t;
+  const { offset: _, ...rest } = t;
+  return rest;
 }
 
 /** What a thread from disk lacks to be shown, in words. Empty when it's whole. */

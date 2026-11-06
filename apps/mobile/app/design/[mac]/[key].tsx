@@ -120,7 +120,9 @@ export default function Canvas() {
   const canvas = useRef<CanvasHandle>(null);
 
   const [pageId, setPageId] = useState<string | null>(null);
-  const [pending, setPending] = useState<(PendingPin & { nodeId?: string }) | null>(null);
+  const [pending, setPending] = useState<
+    (PendingPin & { nodeId?: string; offset?: { x: number; y: number } }) | null
+  >(null);
   /** An unsent comment's pin, held: its sheet of Open, Move and Discard draft, by its draft's key. */
   const [holding, setHolding] = useState<string | null>(null);
   /** An unsent comment's pin being moved, by its draft's key: it holds still, the design moves. */
@@ -296,6 +298,7 @@ export default function Canvas() {
           pageId: msg.pageId,
           artboardId: msg.artboardId,
           nodeId: msg.nodeId,
+          offset: msg.offset,
           x: msg.x,
           y: msg.y,
         });
@@ -326,6 +329,7 @@ export default function Canvas() {
           pageId: msg.pageId,
           ...(msg.artboardId ? { artboardId: msg.artboardId } : {}),
           ...(msg.nodeId ? { nodeId: msg.nodeId } : {}),
+          ...(msg.nodeId && msg.offset ? { offset: msg.offset } : {}),
           x: msg.x,
           y: msg.y,
         };
@@ -365,6 +369,7 @@ export default function Canvas() {
       id: newId("th"),
       ...(pending.artboardId ? { artboardId: pending.artboardId } : { pageId: pending.pageId }),
       ...(pending.nodeId ? { nodeId: pending.nodeId } : {}),
+      ...(pending.nodeId && pending.offset ? { offset: pending.offset } : {}),
       x: pending.x,
       y: pending.y,
       status: "open",

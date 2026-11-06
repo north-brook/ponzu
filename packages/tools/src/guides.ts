@@ -22,6 +22,7 @@ export const FORMAT_EXAMPLE = {
       "id": "th_title",
       "artboardId": "ab_cart",
       "nodeId": "n_title",
+      "offset": { "x": 0, "y": 0 },
       "x": 24,
       "y": 24,
       "status": "open",
@@ -208,6 +209,7 @@ ${FORMAT_EXAMPLE["comments.json"]}
 \`\`\`
 - Every thread needs id, x, y, status ("open" or "resolved"), createdAt, updatedAt and at least one message. Times are milliseconds since 1970.
 - On an artboard: artboardId, and nodeId to pin it to a node inside. x and y are measured from the artboard's top-left corner.
+- On a node, offset ({ "x", "y" }, optional) is the pin's place in the node, from its top-left corner, so the pin moves with the node. Without it the pin stays at x, y, kept within the node.
 - On a page's open canvas: pageId instead. x and y are its place on the page, the same space as data-x and data-y.
 - Each message needs id, author ({ "kind": "user" or "agent", "name" }), text and createdAt. Bringing comments over from another tool, keep who wrote them.
 - A thread missing any of this isn't shown. get_basic_info says which thread and what it needs; the file keeps it until you fix it.`,

@@ -8,12 +8,14 @@ import {
   emptyDoc,
   foldCopies,
   mergeStyle,
+  nodeOffset,
   outline,
   type PElement,
   parseArtboardFile,
   parseHtml,
   parseStyle,
   parseTokens,
+  pinOnNode,
   rewriteCssUrls,
   rootDirectionUnset,
   serializeArtboardFile,
@@ -478,13 +480,36 @@ describe("ops", () => {
       },
       { op: "thread.edit", id: "th_1", messageId: "m_1", text: "b", editedAt: 5 },
       { op: "thread.edit", id: "th_1", messageId: "m_1", text: "c", editedAt: 6 },
-      { op: "thread.update", id: "th_1", x: 9, y: 9, nodeId: "n_2" },
-      { op: "thread.update", id: "th_1", artboardId: null, nodeId: null, pageId: "pg_1" },
+      { op: "thread.update", id: "th_1", x: 9, y: 9, nodeId: "n_2", offset: { x: 4, y: 3 } },
+      { op: "thread.update", id: "th_1", offset: { x: 1, y: 1 } },
+      {
+        op: "thread.update",
+        id: "th_1",
+        artboardId: null,
+        nodeId: null,
+        offset: null,
+        pageId: "pg_1",
+      },
       { op: "thread.delete", id: "th_1" },
     ] as const;
     const inverses = ops.map((op) => applyOp(d, structuredClone(op) as any));
     for (const inv of inverses.reverse()) applyOp(d, inv);
     expect(JSON.stringify(d)).toBe(before);
+  });
+
+  test("a pin on a node goes with the node when it moves, and stays on it when it shrinks", () => {
+    // Dropped 10, 5 into a node at 100, 200 on its artboard.
+    const box = { x: 100, y: 200, w: 80, h: 40 };
+    const offset = nodeOffset(110, 205, box);
+    expect(offset).toEqual({ x: 10, y: 5 });
+    const pin = { x: 110, y: 205, offset };
+    expect(pinOnNode(pin, box)).toEqual({ x: 110, y: 205 });
+    // The agent moves the node: the pin keeps its place in it.
+    expect(pinOnNode(pin, { ...box, x: 300, y: 20 })).toEqual({ x: 310, y: 25 });
+    // Shrunk smaller than the offset, the pin stays on its edge.
+    expect(pinOnNode(pin, { x: 300, y: 20, w: 4, h: 2 })).toEqual({ x: 304, y: 22 });
+    // A pin from before offsets stays at its x, y, kept within the node.
+    expect(pinOnNode({ x: 110, y: 205 }, { ...box, x: 300, y: 20 })).toEqual({ x: 300, y: 60 });
   });
 
   test("an edit marks the message and undoing it clears the mark", () => {

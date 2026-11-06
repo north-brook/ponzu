@@ -97,7 +97,8 @@ export const converseTools = [
       const thread: Thread = {
         id: newId("th"),
         artboardId: hit.artboard.id,
-        ...(hit.parent ? { nodeId: hit.node.id } : {}),
+        // On a node, its top-left corner, wherever the node goes.
+        ...(hit.parent ? { nodeId: hit.node.id, offset: { x: 0, y: 0 } } : {}),
         x: 24,
         y: 24,
         status: "open",

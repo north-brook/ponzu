@@ -6,6 +6,8 @@ import {
   linkTarget,
   locate,
   newId,
+  nodeOffset,
+  pinOnNode,
   serializeArtboardElement,
   type Thread,
   threadPage,
@@ -715,15 +717,24 @@ export function Canvas({
   const spotAt = (e: { clientX: number; clientY: number }, hit = hitTest(e)): Pending | null => {
     if (!page) return null;
     const w = toWorld(e.clientX, e.clientY);
-    return hit
-      ? {
-          artboardId: hit.artboard.id,
-          pageId: page.id,
-          nodeId: hit.nodeId,
-          x: w.x - hit.artboard.x,
-          y: w.y - hit.artboard.y,
-        }
-      : { pageId: page.id, x: w.x, y: w.y };
+    if (!hit) return { pageId: page.id, x: w.x, y: w.y };
+    const x = w.x - hit.artboard.x;
+    const y = w.y - hit.artboard.y;
+    const offset = hit.nodeId ? offsetIn(hit.artboard, hit.nodeId, x, y) : undefined;
+    return {
+      artboardId: hit.artboard.id,
+      pageId: page.id,
+      ...(hit.nodeId ? { nodeId: hit.nodeId } : {}),
+      ...(offset ? { offset } : {}),
+      x,
+      y,
+    };
+  };
+
+  /** Where a spot on an artboard is in a node's box as it's drawn now, to keep a pin there. */
+  const offsetIn = (ab: Artboard, nodeId: string, x: number, y: number) => {
+    const box = viewport.current && nodeBox(viewport.current, ab, nodeId);
+    return box ? nodeOffset(x, y, box) : undefined;
   };
 
   // Pointer: pan, select, drag artboards by their title, place comments.
@@ -1006,6 +1017,7 @@ export function Canvas({
       id: newId("th"),
       ...(pending.artboardId ? { artboardId: pending.artboardId } : { pageId: pending.pageId }),
       ...(pending.nodeId ? { nodeId: pending.nodeId } : {}),
+      ...(pending.nodeId && pending.offset ? { offset: pending.offset } : {}),
       x: Math.round(pending.x),
       y: Math.round(pending.y),
       status: "open",
@@ -1071,29 +1083,18 @@ export function Canvas({
       setOpenThread(openThread === t.id ? null : t.id);
       return;
     }
-    const w = toWorld(e.clientX, e.clientY);
-    const hit = hitTest(e);
-    source.apply(
-      hit
-        ? {
-            op: "thread.update",
-            id: t.id,
-            artboardId: hit.artboard.id,
-            pageId: null,
-            nodeId: hit.nodeId ?? null,
-            x: Math.round(w.x - hit.artboard.x),
-            y: Math.round(w.y - hit.artboard.y),
-          }
-        : {
-            op: "thread.update",
-            id: t.id,
-            artboardId: null,
-            pageId: page.id,
-            nodeId: null,
-            x: Math.round(w.x),
-            y: Math.round(w.y),
-          },
-    );
+    const to = spotAt(e);
+    if (!to) return;
+    source.apply({
+      op: "thread.update",
+      id: t.id,
+      artboardId: to.artboardId ?? null,
+      pageId: to.artboardId ? null : to.pageId,
+      nodeId: to.nodeId ?? null,
+      offset: to.offset ?? null,
+      x: Math.round(to.x),
+      y: Math.round(to.y),
+    });
   };
 
   /**
@@ -1145,7 +1146,8 @@ export function Canvas({
     };
     for (const id of selection) want(id);
     if (pinDrag?.moved && pinDrag.target) want(pinDrag.target);
-    for (const t of pageThreads) {
+    // Pins on a node, sent or not, go where the node is now.
+    for (const t of [...pageThreads, ...unsentPins, ...(pending ? [pending] : [])]) {
       const ab = boards.find((b) => b.id === t.artboardId);
       if (ab && t.nodeId) want(t.nodeId, ab);
     }
@@ -1153,7 +1155,10 @@ export function Canvas({
   };
   const pinTarget = pinDrag?.moved ? pinDrag.target : undefined;
   // eslint-disable-next-line react-hooks/exhaustive-deps -- what the boxes depend on
-  useLayoutEffect(() => measureBoxes.current(), [doc, page, selection, measured, pinTarget]);
+  useLayoutEffect(
+    () => measureBoxes.current(),
+    [doc, page, selection, measured, pinTarget, unsentPins, pending],
+  );
 
   // The camera moves the layers directly, once a frame, without rendering.
   useCameraLayers(camera, scroller, layer, overlay, mounted, () => measureBoxes.current());
@@ -1473,7 +1478,7 @@ export function Canvas({
               if (pending && key === draftKey.comment(draftsFile, pending)) return null;
               const ab = boards.find((b) => b.id === p.artboardId);
               const dragging = pinDrag?.id === key && pinDrag.moved ? pinDrag : null;
-              const at = dragging ?? { x: (ab?.x ?? 0) + p.x, y: (ab?.y ?? 0) + p.y };
+              const at = dragging ?? pinPoint(p, ab, boxes);
               return (
                 <div
                   key={key}
@@ -1529,10 +1534,7 @@ export function Canvas({
                 const key = draftKey.comment(draftsFile, pending);
                 const ab = boards.find((b) => b.id === pending.artboardId);
                 const dragging = pinDrag?.id === key && pinDrag.moved ? pinDrag : null;
-                const at = dragging ?? {
-                  x: (ab?.x ?? 0) + pending.x,
-                  y: (ab?.y ?? 0) + pending.y,
-                };
+                const at = dragging ?? pinPoint(pending, ab, boxes);
                 return (
                   <div
                     className={cn(pinWrap, "pz:z-[3]")}
@@ -2258,15 +2260,15 @@ function sameBoxes(a: Record<string, NodeBox>, b: Record<string, NodeBox>) {
   });
 }
 
-/** Where a pin sits, in page px. */
-function pinPoint(t: Thread, ab: Artboard | undefined, boxes: Record<string, NodeBox>) {
-  let { x, y } = t;
-  // Pins were placed in artboard coordinates; keep them on their node as it moves or resizes.
+/** Where a pin sits, a thread's or an unsent comment's, in page px. */
+function pinPoint(
+  t: Pick<Thread, "nodeId" | "offset" | "x" | "y">,
+  ab: Artboard | undefined,
+  boxes: Record<string, NodeBox>,
+) {
+  // On a node, the pin goes with it as it moves or resizes.
   const box = ab && t.nodeId ? boxes[t.nodeId] : undefined;
-  if (box && box.artboardId === ab?.id) {
-    x = Math.min(Math.max(x, box.x), box.x + box.w);
-    y = Math.min(Math.max(y, box.y), box.y + box.h);
-  }
+  const { x, y } = box && box.artboardId === ab?.id ? pinOnNode(t, box) : t;
   // On the open canvas, x and y are already page coordinates.
   return { x: (ab?.x ?? 0) + x, y: (ab?.y ?? 0) + y };
 }

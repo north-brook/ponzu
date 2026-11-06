@@ -129,6 +129,9 @@ test("pins sit at their thread's spot, in artboard or page px", () => {
   // A pin on a node that moved stays within the node's box.
   const node = { x: 200, y: 300, w: 50, h: 20 };
   expect(pinPoint({ x: 100, y: 40 }, board, node, c)).toEqual({ x: 16 + 335, y: 350 });
+  // One with its place in the node goes with it.
+  const placed = { x: 100, y: 40, offset: { x: 10, y: 4 } };
+  expect(pinPoint(placed, board, node, c)).toEqual({ x: 16 + 340, y: 352 });
 });
 
 test("a long-press becomes a thread's coordinates, as a pin would show it", () => {

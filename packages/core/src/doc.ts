@@ -49,6 +49,8 @@ export type Op =
       id: string;
       status?: Thread["status"];
       nodeId?: string | null;
+      /** The pin's place in its node; null for a pin that isn't on one. */
+      offset?: { x: number; y: number } | null;
       x?: number;
       y?: number;
       /** null moves the pin off its artboard, onto the open canvas of `pageId`. */
@@ -128,6 +130,35 @@ export function findArtboard(
 export function threadPage(doc: Doc, thread: Thread): PageState | null {
   if (thread.artboardId) return findArtboard(doc, thread.artboardId)?.page ?? null;
   return doc.pages.find((p) => p.id === thread.pageId) ?? null;
+}
+
+/** A node's box in its artboard's pixels. */
+export interface NodeRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * Where a pin on a node sits in its artboard's pixels, with the node's box as it is now. One with
+ * an `offset` keeps its place in the node, so it follows the node wherever it goes; an older one
+ * stays at its x, y, kept within the box. Either way it stays on the node.
+ */
+export function pinOnNode(
+  pin: { x: number; y: number; offset?: { x: number; y: number } },
+  box: NodeRect,
+): { x: number; y: number } {
+  const within = (v: number, from: number, length: number) =>
+    Math.min(Math.max(v, from), from + length);
+  const x = pin.offset ? box.x + pin.offset.x : pin.x;
+  const y = pin.offset ? box.y + pin.offset.y : pin.y;
+  return { x: within(x, box.x, box.w), y: within(y, box.y, box.h) };
+}
+
+/** A pin's place in a node's box, for a pin at x, y on the node's artboard. */
+export function nodeOffset(x: number, y: number, box: NodeRect): { x: number; y: number } {
+  return { x: Math.round(x - box.x), y: Math.round(y - box.y) };
 }
 
 export function findPage(doc: Doc, idOrName: string): PageState | null {
@@ -334,6 +365,11 @@ export function applyOp(doc: Doc, op: Op): Op {
         inverse.nodeId = thread.nodeId ?? null;
         if (op.nodeId === null) delete thread.nodeId;
         else thread.nodeId = op.nodeId;
+      }
+      if (op.offset !== undefined) {
+        inverse.offset = thread.offset ?? null;
+        if (op.offset === null) delete thread.offset;
+        else thread.offset = { ...op.offset };
       }
       if (op.x !== undefined) {
         inverse.x = thread.x;

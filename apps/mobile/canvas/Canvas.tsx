@@ -7,7 +7,7 @@
  * chrome: the app draws that around the web view.
  */
 import { Edit03Icon } from "@hugeicons/core-free-icons";
-import { type Artboard, isThemed, threadPage } from "@ponzu/core";
+import { type Artboard, isThemed, nodeOffset, threadPage } from "@ponzu/core";
 import {
   type CSSProperties,
   memo,
@@ -487,6 +487,17 @@ export function PhoneCanvas() {
     return { box, nodeId: el?.getAttribute("data-id") ?? undefined };
   };
 
+  /** The node a pin dropped on, and where in it, so the pin goes with it. */
+  const onNode = (
+    hit: ReturnType<typeof hitTest>,
+    at: { x: number; y: number },
+  ): { nodeId?: string; offset?: { x: number; y: number } } => {
+    if (!hit?.nodeId) return {};
+    const ab = boards.find((b) => b.id === hit.box.id);
+    const node = ab && viewport.current ? nodeBox(viewport.current, ab, hit.nodeId) : null;
+    return { nodeId: hit.nodeId, ...(node ? { offset: nodeOffset(at.x, at.y, node) } : {}) };
+  };
+
   useEffect(() => {
     const key = s.moving;
     const at = key ? unsentAt(camRef.current).find((p) => p.id === key) : undefined;
@@ -530,7 +541,7 @@ export function PhoneCanvas() {
       key: held.key,
       pageId: page.id,
       ...pin,
-      ...(hit?.nodeId ? { nodeId: hit.nodeId } : {}),
+      ...onNode(hit, pin),
     });
     placeUnsent(held.key, pin);
     setHeld(null);
@@ -546,6 +557,7 @@ export function PhoneCanvas() {
     screen,
     page,
     hitTest,
+    onNode,
     focus,
     unfocus,
     animateTo,
@@ -561,6 +573,7 @@ export function PhoneCanvas() {
     screen,
     page,
     hitTest,
+    onNode,
     focus,
     unfocus,
     animateTo,
@@ -715,7 +728,7 @@ export function PhoneCanvas() {
         if (id) focus(id);
       },
       longPress(p) {
-        const { held, hitTest, page, unsentAt } = latest.current;
+        const { held, hitTest, onNode, page, unsentAt } = latest.current;
         if (!page || held) return;
         // An unsent comment's pin: the app offers to open, move or discard it.
         const unsent = nearestPin(unsentAt(camRef.current), p);
@@ -724,13 +737,13 @@ export function PhoneCanvas() {
           return;
         }
         const hit = hitTest(p);
-        const c = camRef.current;
+        const at = threadPoint(camRef.current, p.x, p.y, hit?.box);
         send({
           t: "longpress",
           pageId: page.id,
           ...(hit ? { artboardId: hit.box.id } : {}),
-          ...(hit?.nodeId ? { nodeId: hit.nodeId } : {}),
-          ...threadPoint(c, p.x, p.y, hit?.box),
+          ...onNode(hit, at),
+          ...at,
         });
       },
     });
