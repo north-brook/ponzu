@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.3](https://github.com/north-brook/ponzu/compare/mobile-v0.11.2...mobile-v0.11.3) (2026-11-06)
+
+
+### Bug Fixes
+
+* keep comment pins on their node when it moves ([#384](https://github.com/north-brook/ponzu/issues/384)) ([0a49f1c](https://github.com/north-brook/ponzu/commit/0a49f1c002bd4e26dc0ff745bd720074543ffb64))
+
 ## [0.11.2](https://github.com/north-brook/ponzu/compare/mobile-v0.11.1...mobile-v0.11.2) (2026-11-02)
 
 
