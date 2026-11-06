@@ -16,6 +16,7 @@ import {
   parseStyle,
   parseTokens,
   pinOnNode,
+  resolveOp,
   rewriteCssUrls,
   rootDirectionUnset,
   serializeArtboardFile,
@@ -548,6 +549,57 @@ describe("ops", () => {
   test("can't move into itself", () => {
     const d = doc();
     expect(() => applyOp(d, { op: "move", id: "n_1", parent: "n_2", index: 0 })).toThrow();
+  });
+});
+
+describe("moving a page", () => {
+  const doc = (...ids: string[]): Doc => {
+    const d = emptyDoc("t");
+    for (const id of ids) d.pages.push({ id, name: id, artboards: [] });
+    return d;
+  };
+  const order = (d: Doc) => d.pages.map((p) => p.id);
+
+  test("lands at its index in the list it leaves, and undoes", () => {
+    const d = doc("a", "b", "c", "d");
+    const inverse = applyOp(d, { op: "page.move", id: "a", index: 2 });
+    expect(order(d)).toEqual(["b", "c", "a", "d"]);
+    applyOp(d, inverse);
+    expect(order(d)).toEqual(["a", "b", "c", "d"]);
+    applyOp(d, { op: "page.move", id: "d", index: 0 });
+    expect(order(d)).toEqual(["d", "a", "b", "c"]);
+    applyOp(d, { op: "page.move", id: "d", index: 99 });
+    expect(order(d)).toEqual(["a", "b", "c", "d"]);
+    expect(() => applyOp(d, { op: "page.move", id: "x", index: 0 })).toThrow("No page x.");
+  });
+
+  test("resolves to the page order every client can replay, against the pages as they are", () => {
+    // A page made while the tab was dragged is in the order too.
+    const d = doc("a", "b", "new");
+    expect(resolveOp(d, { op: "page.move", id: "a", index: 1 })).toEqual({
+      op: "page.order",
+      ids: ["b", "a", "new"],
+    });
+    // In a batch, each move reads the pages as the ops before it leave them.
+    expect(
+      resolveOp(d, {
+        op: "batch",
+        ops: [
+          { op: "page.create", index: 0, page: { id: "z", name: "z" } },
+          { op: "page.update", id: "a", name: "A" },
+          { op: "page.move", id: "a", index: 0 },
+        ],
+      }),
+    ).toEqual({
+      op: "batch",
+      ops: [
+        { op: "page.create", index: 0, page: { id: "z", name: "z" } },
+        { op: "page.update", id: "a", name: "A" },
+        { op: "page.order", ids: ["a", "z", "b", "new"] },
+      ],
+    });
+    const other = { op: "page.update", id: "a", name: "A" } as const;
+    expect(resolveOp(d, other)).toBe(other);
   });
 });
 

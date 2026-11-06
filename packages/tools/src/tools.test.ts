@@ -819,6 +819,29 @@ test("update_page renames a page's folder, and get_basic_info shows where it wen
   ]);
 });
 
+test("update_page moves a page to an index, renaming it in the same step", async () => {
+  const { design, call } = await withFiles({
+    "design.json": JSON.stringify({
+      ponzu: 1,
+      name: "Fern",
+      pages: [
+        { id: "pg_a", name: "One" },
+        { id: "pg_b", name: "Two" },
+        { id: "pg_c", name: "Three" },
+      ],
+    }),
+    "tokens.css": ":root {\n}\n",
+  });
+  await call("update_page", { page: "Three", index: 0, name: "First" });
+  expect(design.doc.pages.map((p) => [p.id, p.name])).toEqual([
+    ["pg_c", "First"],
+    ["pg_a", "One"],
+    ["pg_b", "Two"],
+  ]);
+  await call("update_page", { page: "pg_c", index: 99 });
+  expect(design.doc.pages.map((p) => p.id)).toEqual(["pg_a", "pg_b", "pg_c"]);
+});
+
 test("get_basic_info lists what in the files Ponzu couldn't use", async () => {
   const { call } = await withFiles({
     ...FORMAT_EXAMPLE,

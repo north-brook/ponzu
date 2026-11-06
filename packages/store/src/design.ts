@@ -8,6 +8,7 @@ import {
   OpError,
   type Origin,
   opScopes,
+  resolveOp,
   touchedArtboards,
 } from "@ponzu/core";
 import type { StorageAdapter } from "./adapter.ts";
@@ -132,6 +133,7 @@ export class Design {
 
   /** Apply an op. Throws OpError and changes nothing if it doesn't fit. */
   apply(op: Op, origin: Origin, opts: { history?: boolean } = {}): OpEvent {
+    op = resolveOp(this.doc, op);
     const before = touchedArtboards(this.doc, op);
     const inverse = applyOp(this.doc, op);
     if (opts.history !== false) {

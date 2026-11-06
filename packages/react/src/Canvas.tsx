@@ -13,6 +13,7 @@ import {
   threadPage,
 } from "@ponzu/core";
 import {
+  type ButtonHTMLAttributes,
   type CSSProperties,
   Fragment,
   memo,
@@ -35,6 +36,7 @@ import { Icon, Icons, Pencil } from "./icons.tsx";
 import { centreDistance, detailScale, onScreen, visibleBand } from "./lod.ts";
 import { playing } from "./loops.tsx";
 import { Pacer } from "./pacer.tsx";
+import { clampShift, dropIndex, makeRoom, restAt, type Span } from "./reorder.ts";
 import { type Gap, type Guide, snapMove, union } from "./snap.ts";
 import { TieredBoard, thawed, versionOf } from "./snapshot.tsx";
 import { useWindowStill } from "./still.ts";
@@ -241,6 +243,12 @@ export function Canvas({
     onPageChange?.(id);
   };
   const page = doc?.pages.find((p) => p.id === pageId) ?? doc?.pages[0];
+  // The first page, shown for want of a choice, stays shown: a page moved in front of it,
+  // by a drag or an agent, doesn't take its place.
+  const shownId = page?.id;
+  useEffect(() => {
+    if (shownId && shownId !== pageId) setOwnPageId(shownId);
+  }, [shownId, pageId]);
   const [mode, setMode] = useState<Mode>("select");
   const space = useKeyHeld("Space");
   const panning = mode === "hand" || space;
@@ -1595,25 +1603,19 @@ export function Canvas({
            */}
           <div className="pz:pointer-events-none pz:absolute pz:inset-x-2.5 pz:bottom-2.5 pz:z-[3] pz:flex pz:items-end pz:justify-between pz:gap-2.5">
             <Bar name="Pages" className="pz:min-w-0 pz:shrink">
-              <div className="pz:flex pz:min-w-0 pz:items-center pz:gap-0.5 pz:overflow-x-auto pz:[scrollbar-width:none]">
-                {doc.pages.map((p, i) => (
-                  <PageTab
-                    key={p.id}
-                    name={p.name}
-                    shortcut={i < 8 ? i + 1 : i === doc.pages.length - 1 ? 9 : undefined}
-                    showShortcut={pageHint}
-                    icon={p.icon}
-                    active={p.id === page.id}
-                    working={busyPages.has(p.id)}
-                    onClick={() => goToPage(p.id)}
-                    onRename={
-                      readOnly
-                        ? undefined
-                        : (name) => source.apply({ op: "page.update", id: p.id, name })
-                    }
-                  />
-                ))}
-              </div>
+              <PageTabs
+                pages={doc.pages}
+                active={page.id}
+                showShortcut={pageHint}
+                busy={busyPages}
+                onOpen={goToPage}
+                onRename={
+                  readOnly ? undefined : (id, name) => source.apply({ op: "page.update", id, name })
+                }
+                onMove={
+                  readOnly ? undefined : (id, index) => source.apply({ op: "page.move", id, index })
+                }
+              />
               {!readOnly && (
                 <Tip label="New page">
                   <Button
@@ -1845,7 +1847,169 @@ const pinLifted =
 const unsentPin =
   "pz:bg-comment-soft pz:text-foreground pz:shadow-[0_0_0_1.5px_var(--pz-comment),0_1px_3px_rgba(0,0,0,0.2)]";
 
+/** A page tab picked up and dragged along the bar. */
+interface TabDrag {
+  id: string;
+  from: number;
+  /** The page list as the drag found it: once it changes, the drag is over. */
+  order: string;
+  spans: Span[];
+  /** Its shift from its own place, in screen px. */
+  dx: number;
+  to: number;
+  /** Let go: it rests in its new place until the document has the move. */
+  dropped: boolean;
+}
+
+/** Screen px a press travels before it drags a tab rather than clicks it. */
+const TAB_DRAG_SLOP = 4;
+
+/**
+ * The page tabs. With `onMove`, a mouse drags a tab along the bar to reorder
+ * the pages; Escape puts it back.
+ */
+function PageTabs({
+  pages,
+  active,
+  showShortcut,
+  busy,
+  onOpen,
+  onRename,
+  onMove,
+}: {
+  pages: readonly { id: string; name: string; icon?: string }[];
+  active: string;
+  showShortcut: boolean;
+  busy: ReadonlySet<string>;
+  onOpen: (id: string) => void;
+  onRename?: (id: string, name: string) => void;
+  onMove?: (id: string, index: number) => void;
+}) {
+  const [drag, setDrag] = useState<TabDrag | null>(null);
+  const press = useRef<{ id: string; x: number; pointer: number } | null>(null);
+  /** A drag just ended: the click its release makes doesn't open the page. */
+  const dragged = useRef(false);
+  const tabs = useRef(new Map<string, HTMLElement>());
+  const order = pages.map((p) => p.id).join();
+  // A drop that landed, or someone else's change to the pages, leaves the drag's slots stale.
+  // It's ignored from this render on, so the tabs never draw in their new order with old shifts.
+  const live = drag?.order === order ? drag : null;
+  useEffect(() => {
+    if (drag && drag.order !== order) setDrag(null);
+  }, [drag, order]);
+
+  // A drop that never comes back (a lost connection) lets go after a while; one that didn't
+  // move, once it has slid home.
+  const landing = live?.dropped ? (live.to === live.from ? 150 : 2000) : 0;
+  useEffect(() => {
+    if (!landing) return;
+    const t = setTimeout(() => setDrag(null), landing);
+    return () => clearTimeout(t);
+  }, [landing]);
+
+  const grabbing = Boolean(live && !live.dropped);
+  useEffect(() => {
+    if (!grabbing) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      e.stopPropagation();
+      press.current = null;
+      setDrag(null);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [grabbing]);
+
+  const grip = (id: string, from: number): TabGrip | undefined =>
+    onMove && {
+      onPointerDown: (e) => {
+        // A mouse only: a finger on the bar scrolls it.
+        if (e.pointerType !== "mouse" || e.button !== 0 || live) return;
+        if (e.target instanceof HTMLInputElement) return;
+        dragged.current = false;
+        press.current = { id, x: e.clientX, pointer: e.pointerId };
+      },
+      onPointerMove: (e) => {
+        const p = press.current;
+        if (!p || p.id !== id || p.pointer !== e.pointerId) return;
+        const raw = e.clientX - p.x;
+        if (live) {
+          const dx = clampShift(live.spans, from, raw);
+          setDrag({ ...live, dx, to: dropIndex(live.spans, from, dx) });
+          return;
+        }
+        if (Math.abs(raw) < TAB_DRAG_SLOP) return;
+        const spans = pages.map((pg) => {
+          const r = tabs.current.get(pg.id)?.getBoundingClientRect();
+          return { left: r?.left ?? 0, width: r?.width ?? 0 };
+        });
+        e.currentTarget.setPointerCapture(e.pointerId);
+        dragged.current = true;
+        const dx = clampShift(spans, from, raw);
+        setDrag({ id, from, order, spans, dx, to: dropIndex(spans, from, dx), dropped: false });
+      },
+      onPointerUp: (e) => {
+        const p = press.current;
+        press.current = null;
+        if (!live || live.dropped || p?.pointer !== e.pointerId) return;
+        if (live.to !== live.from) onMove(live.id, live.to);
+        setDrag({ ...live, dx: restAt(live.spans, live.from, live.to), dropped: true });
+      },
+      onPointerCancel: () => {
+        press.current = null;
+        if (live && !live.dropped) setDrag(null);
+      },
+    };
+
+  return (
+    <div
+      className="pz:flex pz:min-w-0 pz:items-center pz:gap-0.5 pz:overflow-x-auto pz:[scrollbar-width:none]"
+      onClickCapture={(e) => {
+        if (!dragged.current) return;
+        dragged.current = false;
+        e.stopPropagation();
+      }}
+    >
+      {pages.map((p, i) => {
+        const held = live?.id === p.id;
+        const shift = !live ? 0 : held ? live.dx : makeRoom(live.spans, live.from, live.to, i);
+        return (
+          <PageTab
+            key={p.id}
+            tabRef={(el) => {
+              if (el) tabs.current.set(p.id, el);
+              else tabs.current.delete(p.id);
+            }}
+            name={p.name}
+            shortcut={i < 8 ? i + 1 : i === pages.length - 1 ? 9 : undefined}
+            showShortcut={showShortcut}
+            icon={p.icon}
+            active={p.id === active}
+            working={busy.has(p.id)}
+            onClick={() => onOpen(p.id)}
+            onRename={onRename && ((name) => onRename(p.id, name))}
+            grip={grip(p.id, i)}
+            shift={shift}
+            // The held tab follows the mouse; the others slide aside, and it slides home once let go.
+            slide={Boolean(live) && (!held || Boolean(live?.dropped))}
+            lifted={held}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+type TabGrip = Required<
+  Pick<
+    ButtonHTMLAttributes<HTMLButtonElement>,
+    "onPointerDown" | "onPointerMove" | "onPointerUp" | "onPointerCancel"
+  >
+>;
+
 function PageTab({
+  tabRef,
   name,
   shortcut,
   showShortcut,
@@ -1854,7 +2018,12 @@ function PageTab({
   working,
   onClick,
   onRename,
+  grip,
+  shift = 0,
+  slide = false,
+  lifted = false,
 }: {
+  tabRef?: (el: HTMLButtonElement | null) => void;
   name: string;
   shortcut?: number;
   /** ⌥ is held: the shortcut eases in over the icon. */
@@ -1866,19 +2035,34 @@ function PageTab({
   onClick: () => void;
   /** Absent on a read-only canvas, where a double click doesn't rename. */
   onRename?: (n: string) => void;
+  /** What drags it to reorder the pages; absent on a read-only canvas. */
+  grip?: TabGrip;
+  /** Screen px it's drawn aside from its place while a tab is dragged. */
+  shift?: number;
+  /** It eases to `shift` rather than jumping there. */
+  slide?: boolean;
+  /** It's the tab being dragged. */
+  lifted?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   return (
     <button
+      ref={tabRef}
       type="button"
+      data-page-tab={name}
+      aria-current={active ? "page" : undefined}
       className={cn(
         "pz:inline-flex pz:h-7 pz:shrink-0 pz:items-center pz:gap-1.5 pz:whitespace-nowrap pz:rounded-lg pz:px-2.5",
         active
           ? "pz:bg-raised pz:text-foreground pz:shadow-raised"
           : "pz:text-muted-foreground pz:hover:bg-accent pz:hover:text-foreground",
+        slide && "pz:transition-transform pz:duration-150 pz:ease-out",
+        lifted && "pz:relative pz:z-[1] pz:bg-raised pz:text-foreground pz:shadow-raised",
       )}
+      style={shift ? { transform: `translateX(${shift}px)` } : undefined}
       onClick={onClick}
       onDoubleClick={() => onRename && setEditing(true)}
+      {...grip}
     >
       <ShortcutHint modifier="⌥" n={shortcut} shown={showShortcut} index={shortcut}>
         <Icon name={icon && icon in Icons ? icon : "board"} size={14} />

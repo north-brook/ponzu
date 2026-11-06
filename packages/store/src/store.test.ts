@@ -274,6 +274,34 @@ describe("design", () => {
       expect(await reopened(gone)).toEqual([["Home", ["ab_b"]]]);
     });
 
+    test("a page moved from the canvas goes out as the order it makes, and undoes", async () => {
+      const mem = new MemoryAdapter(
+        files(
+          [
+            { id: "pg_a", name: "One" },
+            { id: "pg_b", name: "Two" },
+            { id: "pg_c", name: "Three" },
+          ],
+          { "pages/one/board.html": board("ab_a"), "pages/two/board.html": board("ab_b") },
+        ),
+      );
+      const d = await Design.open(mem, { saveDelay: 0 });
+      const sent: unknown[] = [];
+      d.onOp((e) => sent.push(e.op));
+      d.apply({ op: "page.move", id: "pg_a", index: 2 }, who);
+      expect(sent).toEqual([{ op: "page.order", ids: ["pg_b", "pg_c", "pg_a"] }]);
+      await d.flush();
+      expect(await reopened(mem)).toEqual([
+        ["Two", ["ab_b"]],
+        ["Three", []],
+        ["One", ["ab_a"]],
+      ]);
+      d.undo(who);
+      expect(sent[1]).toEqual({ op: "page.order", ids: ["pg_a", "pg_b", "pg_c"] });
+      await d.flush();
+      expect((await reopened(mem)).map(([name]) => name)).toEqual(["One", "Two", "Three"]);
+    });
+
     test("swapping two pages' names keeps each page's artboards", async () => {
       const mem = new MemoryAdapter(
         files(
