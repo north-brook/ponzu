@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.79.0](https://github.com/north-brook/ponzu/compare/v1.78.5...v1.79.0) (2026-11-06)
+
+
+### Features
+
+* drag page tabs to reorder pages ([#387](https://github.com/north-brook/ponzu/issues/387)) ([b7ffb9d](https://github.com/north-brook/ponzu/commit/b7ffb9d792c1946a7cbf733fdb2a21b621bf806d))
+
 ## [1.78.5](https://github.com/north-brook/ponzu/compare/v1.78.4...v1.78.5) (2026-11-06)
 
 
