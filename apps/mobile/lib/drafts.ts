@@ -21,7 +21,8 @@ const drafts = new Map<string, Draft>();
 const listeners = new Set<() => void>();
 let all: [string, Draft][] = [];
 
-function subscribe(listener: () => void) {
+/** Hear of a draft arriving, going or moving (`setDraft` says what counts). */
+export function subscribeDrafts(listener: () => void) {
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
@@ -41,12 +42,26 @@ export function getDraft(key: string): Draft | undefined {
   return drafts.get(key);
 }
 
-/** Keep what a field holds; emptied, its draft goes. */
+/**
+ * Keep what a field holds; emptied, its draft goes. Listeners hear of a draft arriving, going
+ * or moving (its pin or thread), and of its words coming to or going from something worth a
+ * pin, never of the words themselves changing: what listens (the pins left unsent, the threads
+ * being written) can't tell one word from the next, and every keystroke would otherwise render
+ * the whole canvas screen. `getDraft` always has the latest words.
+ */
 export function setDraft(key: string, draft: Draft) {
+  const was = drafts.get(key);
   if (draft.text) drafts.set(key, draft);
   else if (!drafts.delete(key)) return;
+  if (was && draft.text && unsent(was) === unsent(draft) && samePlace(was, draft)) return;
   all = [...drafts];
   for (const l of listeners) l();
+}
+
+function samePlace(a: Draft, b: Draft): boolean {
+  return (
+    a.file === b.file && a.thread === b.thread && JSON.stringify(a.pin) === JSON.stringify(b.pin)
+  );
 }
 
 /**
@@ -70,7 +85,7 @@ export function unsent(d: Draft): boolean {
 /** Every draft, with its key. */
 export function useDrafts(): [string, Draft][] {
   return useSyncExternalStore(
-    subscribe,
+    subscribeDrafts,
     () => all,
     () => all,
   );

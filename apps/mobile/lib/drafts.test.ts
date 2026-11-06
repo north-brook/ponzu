@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { draftFile, draftKey, getDraft, moveDraft, setDraft } from "./drafts";
+import { draftFile, draftKey, getDraft, moveDraft, setDraft, subscribeDrafts } from "./drafts";
 
 test("copies of a design, which share thread ids, keep their own drafts", () => {
   const original = draftFile("studio", "/work/kettle.design");
@@ -34,4 +34,33 @@ test("an unsent comment moved to another spot takes its words with it", () => {
   moveDraft(fromKey, draftKey.comment(file, from), from);
   expect(getDraft(fromKey)).toBeUndefined();
   setDraft(toKey, { file, pin: to, text: "" });
+});
+
+test("listeners hear a draft arrive, go or move, never its words change", () => {
+  const file = draftFile("studio", "/work/kettle.design");
+  const pin = { pageId: "pg_1", artboardId: "ab_1", x: 4, y: 8 };
+  const key = draftKey.comment(file, pin);
+  let heard = 0;
+  const stop = subscribeDrafts(() => heard++);
+  setDraft(key, { file, pin, text: "t" });
+  expect(heard).toBe(1);
+  // Typing on: the words are there to read, and nobody is told.
+  setDraft(key, { file, pin, text: "ti" });
+  setDraft(key, { file, pin, text: "tighter" });
+  expect(heard).toBe(1);
+  expect(getDraft(key)?.text).toBe("tighter");
+  // Nothing worth a pin any more, then something again.
+  setDraft(key, { file, pin, text: " " });
+  expect(heard).toBe(2);
+  setDraft(key, { file, pin, text: " a" });
+  expect(heard).toBe(3);
+  // Moved.
+  setDraft(key, { file, pin: { ...pin, x: 5 }, text: " a" });
+  expect(heard).toBe(4);
+  // Gone, and nothing more to forget.
+  setDraft(key, { file, pin, text: "" });
+  expect(heard).toBe(5);
+  setDraft(key, { file, pin, text: "" });
+  expect(heard).toBe(5);
+  stop();
 });

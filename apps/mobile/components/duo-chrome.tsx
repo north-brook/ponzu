@@ -28,14 +28,19 @@ const ease = Easing.bezier(...EASE_OUT);
  * The canvas's bar items as the system's own (iPhone Duo's rail, and its
  * horizontal bars upright). On the rail each has an icon and a title, which
  * Apple needs for an item to go vertical; a custom view never does. Upright
- * the bar stays horizontal, so the file and the page are our pills in it,
- * laid out by the system beside Back and clear of the status bar.
+ * the bar stays horizontal, so the file is our pill in it, laid out by the
+ * system beside Back and clear of the status bar. The page is the system's
+ * own menu item wherever it's on the bar, never our pill: when the bar runs
+ * short of room (a Live Activity in the status bar takes some, upright),
+ * UIKit folds its trailing items into an overflow "…" menu, where a menu
+ * item opens as a submenu and a custom view has nothing to show, so our
+ * pill there was an ellipsis that did nothing when tapped.
  *
  * - `rail` closed (the outer display): Back and comments at the top, with
  *   the open threads' count, and the page under them.
  * - `rail` open sideways: Back and comments; the page is a pill on the canvas.
- * - `upright`: Back and the file top left, the page top right (its icon,
- *   name and chevron, as sideways), comments bottom right.
+ * - `upright`: Back and the file top left, the page top right (its icon and
+ *   name), comments bottom right.
  */
 export function NativeBarItems({
   bars,
@@ -43,7 +48,6 @@ export function NativeBarItems({
   page,
   pages,
   onPage,
-  pagePill,
   count,
   onComments,
   onBack,
@@ -56,8 +60,6 @@ export function NativeBarItems({
   page: { id: string; name: string; icon?: string } | undefined;
   pages: MenuAction[];
   onPage: (id: string) => void;
-  /** The page pill with its menu: the page's bar item upright. */
-  pagePill: ReactElement;
   count: number;
   onComments: () => void;
   onBack: () => void;
@@ -107,21 +109,17 @@ export function NativeBarItems({
       </Stack.Toolbar>
       {pageOnBar && pages.length > 1 && (
         <Stack.Toolbar placement="right">
-          {upright ? (
-            <Stack.Toolbar.View hidesSharedBackground>{pagePill}</Stack.Toolbar.View>
-          ) : (
-            <Stack.Toolbar.Menu accessibilityLabel={`Page: ${page?.name ?? ""}`} title="Pages">
-              <Stack.Toolbar.Icon
-                renderingMode="template"
-                xcasset={pages.find((p) => p.id === page?.id)?.image ?? "hi-board"}
-              />
-              <Stack.Toolbar.Label>{page?.name ?? "Page"}</Stack.Toolbar.Label>
-              {barMenuItems(pages, (id) => {
-                select();
-                onPage(id);
-              })}
-            </Stack.Toolbar.Menu>
-          )}
+          <Stack.Toolbar.Menu accessibilityLabel={`Page: ${page?.name ?? ""}`} title="Pages">
+            <Stack.Toolbar.Icon
+              renderingMode="template"
+              xcasset={pages.find((p) => p.id === page?.id)?.image ?? "hi-board"}
+            />
+            <Stack.Toolbar.Label>{page?.name ?? "Page"}</Stack.Toolbar.Label>
+            {barMenuItems(pages, (id) => {
+              select();
+              onPage(id);
+            })}
+          </Stack.Toolbar.Menu>
         </Stack.Toolbar>
       )}
       {comments === "toolbar" && (
