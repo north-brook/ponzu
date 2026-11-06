@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.78.5](https://github.com/north-brook/ponzu/compare/v1.78.4...v1.78.5) (2026-11-06)
+
+
+### Bug Fixes
+
+* keep comment pins on their node when it moves ([#384](https://github.com/north-brook/ponzu/issues/384)) ([0a49f1c](https://github.com/north-brook/ponzu/commit/0a49f1c002bd4e26dc0ff745bd720074543ffb64))
+
 ## [1.78.4](https://github.com/north-brook/ponzu/compare/v1.78.3...v1.78.4) (2026-11-03)
 
 
