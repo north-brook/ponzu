@@ -854,6 +854,27 @@ test("get_basic_info lists what in the files Ponzu couldn't use", async () => {
   expect((await clean.call("get_basic_info", {})).text).not.toContain("Not used as written");
 });
 
+test("get_basic_info shows an artboard file caught half-written as last read whole, and says so", async () => {
+  const { call, design, captured } = await onHub(new EventHub());
+  const path = "pages/home/hero.html";
+  const whole = (design.storage as MemoryAdapter).files[path]!;
+  // A script empties the file before writing it, and get_basic_info runs in between.
+  await (design.storage as MemoryAdapter).externalWrite(path, "");
+  await new Promise((r) => setTimeout(r, 20));
+  const text = (await call("get_basic_info", {})).text;
+  expect(text).toContain("ab_hero");
+  expect(text).toContain("800px×600px at (0, 0)");
+  expect(text).not.toContain("1440");
+  expect(text).not.toContain("Overlapping");
+  expect(text).toContain(`Still being written, shown as last read whole`);
+  expect(text).toContain(`\n  ${path}`);
+  expect(captured.at(-1)).toMatchObject({ tool: "get_basic_info", held_files: 1 });
+  await (design.storage as MemoryAdapter).externalWrite(path, whole);
+  await new Promise((r) => setTimeout(r, 20));
+  expect((await call("get_basic_info", {})).text).not.toContain("Still being written");
+  expect(captured.at(-1)).toMatchObject({ held_files: 0 });
+});
+
 test("an artboard given display: flex with no direction says it stays a column", async () => {
   const { call } = await setup();
   const flexed = await call("update_styles", {
