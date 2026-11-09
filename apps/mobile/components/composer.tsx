@@ -1,14 +1,22 @@
+import {
+  Host,
+  Text as SwiftText,
+  TextField,
+  type TextFieldRef,
+  useNativeState,
+} from "@expo/ui/swift-ui";
+import {
+  font,
+  foregroundStyle,
+  lineLimit,
+  lineSpacing,
+  padding,
+  disabled as swiftDisabled,
+  tint,
+} from "@expo/ui/swift-ui/modifiers";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  type LayoutChangeEvent,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  type TextInputInstance,
-  View,
-} from "react-native";
+import { type LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { KeyboardController } from "react-native-keyboard-controller";
 import Animated, {
@@ -27,7 +35,7 @@ import Animated, {
 import { useAppActive } from "../lib/app-active";
 import { useDictation } from "../lib/dictation";
 import { type Draft, getDraft, setDraft } from "../lib/drafts";
-import { FIELD_LINE, FIELD_MAX, FIELD_PAD } from "../lib/field";
+import { FIELD_LINES, FIELD_PAD, FIELD_SIZE, FIELD_SPACING } from "../lib/field";
 import { fail, select, success } from "../lib/haptics";
 import { PARTS, phase, SWITCH_MS } from "../lib/morph";
 import { useTheme } from "../lib/theme";
@@ -58,17 +66,6 @@ function rememberMode(m: Mode) {
 const ease = Easing.bezier(...EASE_OUT);
 
 const styles = StyleSheet.create({
-  field: {
-    minHeight: 44,
-    maxHeight: FIELD_MAX,
-    paddingTop: FIELD_PAD,
-    paddingBottom: FIELD_PAD,
-    paddingHorizontal: 14,
-    fontFamily: "Inter",
-    fontSize: 17,
-    lineHeight: FIELD_LINE,
-  },
-  fieldEmpty: { height: 44 },
   // Out of view, never faded: Liquid Glass draws as a plain view under a parent with opacity.
   hidden: { position: "absolute", left: -10_000, width: 300 },
 });
@@ -126,17 +123,25 @@ export function Composer({
   };
   // Opened in voice, it goes on from what was said or typed before.
   const dictation = useDictation(voice && !gone, voice ? kept : "");
+  // The field's words live in SwiftUI (field); typed follows them for Send and the draft.
+  const field = useNativeState(voice ? "" : kept);
   const [typed, setTypedState] = useState(voice ? "" : kept);
-  const setTyped = (t: string) => {
+  /** The person typed: SwiftUI has the words already. */
+  const onType = (t: string) => {
     keep(t);
     setTypedState(t);
+  };
+  /** The app puts words in the field (what was said, a send, a send that failed). */
+  const setTyped = (t: string) => {
+    field.value = t;
+    onType(t);
   };
   // What's heard is kept as it comes, as typing is.
   useEffect(() => {
     if (voice) keep(dictation.text);
   }, [voice, dictation.text]);
   const [sending, setSending] = useState(false);
-  const input = useRef<TextInputInstance>(null);
+  const input = useRef<TextFieldRef>(null);
   const text = voice ? dictation.text : typed;
   const has = text.trim().length > 0;
 
@@ -165,7 +170,8 @@ export function Composer({
     toVoice.value = voice;
     clock.value = still ? to : withTiming(to, { duration: SWITCH_MS, easing: Easing.linear });
     // The keyboard comes up as the field comes back, and the sheet rides it.
-    if (!voice && (autoFocus || !was)) setTimeout(() => input.current?.focus(), was ? 60 : 0);
+    if (!voice && (autoFocus || !was))
+      setTimeout(() => input.current?.focus().catch(() => {}), was ? 60 : 0);
   }, [mode]);
 
   // The mode and the words now, for a send that fails: its words go back into whichever
@@ -298,12 +304,12 @@ export function Composer({
             style={{ minHeight: 44, borderRadius: 22, justifyContent: "flex-end" }}
           >
             {/*
-              The field sizes itself, as iOS sizes a multiline text view: one line at 44, a
-              line taller for each line of text up to FIELD_MAX, then it scrolls in itself
-              and iOS keeps the line being typed in view. It must stay able to scroll: with
-              scrolling off until the cap (#383), it stopped growing past one line. In voice
-              it steps out of view (moved, never faded: glass breaks under opacity) and the
-              waveform takes the row.
+              SwiftUI's own text field, as Messages' is: one line at 44, a line taller for
+              each line of text up to five, then it scrolls in itself, keeping the line being
+              typed in view. SwiftUI sizes it and the host takes its height
+              (matchContents), so nothing here measures it. It isn't React Native's, so it
+              holds no touch Send needs. In voice it steps out of view (moved, never faded:
+              glass breaks under opacity) and the waveform takes the row.
             */}
             <View
               style={voice ? styles.hidden : null}
@@ -311,28 +317,29 @@ export function Composer({
               accessibilityElementsHidden={voice}
               importantForAccessibility={voice ? "no-hide-descendants" : "auto"}
             >
-              <TextInput
-                ref={input}
-                value={typed}
-                onChangeText={setTyped}
-                placeholder={placeholder}
-                placeholderTextColor={color.faint}
-                selectionColor={brand.yuzu}
-                cursorColor={brand.yuzu}
-                multiline
-                editable={!voice}
-                testID={voice ? undefined : "comment-input"}
-                // iOS's default (true) has the field keep a touch it holds when another view
-                // asks for it, so the first tap on Send after placing the caret went nowhere.
-                rejectResponderTermination={false}
-                style={[
-                  styles.field,
-                  { color: color.ink },
-                  // iOS keeps a multiline field's last height after it's emptied by a send:
-                  // empty, it's one line (as augmenter's composer does).
-                  (voice || typed === "") && styles.fieldEmpty,
-                ]}
-              />
+              <Host matchContents={{ vertical: true }} alignment="bottomLeading">
+                <TextField
+                  ref={input}
+                  text={field}
+                  onTextChange={onType}
+                  axis="vertical"
+                  testID={voice ? undefined : "comment-input"}
+                  modifiers={[
+                    // Relative to body, so it follows Dynamic Type as the rest of the app does.
+                    font({ family: "Inter", size: FIELD_SIZE, textStyle: "body" }),
+                    foregroundStyle(color.ink),
+                    tint(brand.yuzu),
+                    lineLimit({ min: 1, max: FIELD_LINES }),
+                    lineSpacing(FIELD_SPACING),
+                    padding({ horizontal: 14, vertical: FIELD_PAD }),
+                    swiftDisabled(voice),
+                  ]}
+                >
+                  <TextField.Placeholder>
+                    <SwiftText modifiers={[foregroundStyle(color.faint)]}>{placeholder}</SwiftText>
+                  </TextField.Placeholder>
+                </TextField>
+              </Host>
             </View>
             <Animated.View
               pointerEvents="none"

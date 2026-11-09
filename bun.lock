@@ -14,7 +14,7 @@
     },
     "apps/cli": {
       "name": "ponzu",
-      "version": "1.51.0",
+      "version": "1.79.1",
       "bin": {
         "ponzu": "./src/index.ts",
       },
@@ -30,7 +30,7 @@
     },
     "apps/desktop": {
       "name": "@ponzu/desktop",
-      "version": "1.51.0",
+      "version": "1.79.1",
       "dependencies": {
         "electron-updater": "6.8.9",
       },
@@ -44,11 +44,12 @@
     },
     "apps/mobile": {
       "name": "@ponzu/mobile",
-      "version": "0.1.0",
+      "version": "0.11.4",
       "dependencies": {
         "@expo-google-fonts/funnel-display": "^0.4.1",
         "@expo-google-fonts/ibm-plex-mono": "^0.4.1",
         "@expo-google-fonts/inter": "^0.4.2",
+        "@expo/ui": "~58.0.27",
         "@hugeicons/core-free-icons": "^4.3.5",
         "@hugeicons/react-native": "^1.0.16",
         "@ponzu/core": "workspace:*",
@@ -555,6 +556,8 @@
     "@expo/spawn-async": ["@expo/spawn-async@1.8.0", "", { "dependencies": { "cross-spawn": "^7.0.6" } }, "sha512-eb9xxd/LbuEGSdua4NumCu/McVB9EM+F/JxB9pWgnERw4HQ9XyTNH1KapG6oqLWR8TuRK2LQfzJlmNi94CVobw=="],
 
     "@expo/sudo-prompt": ["@expo/sudo-prompt@9.3.2", "", {}, "sha512-HHQigo3rQWKMDzYDLkubN5WQOYXJJE2eNqIQC2axC2iO3mHdwnIR7FgZVvHWtBwAdzBgAP0ECp8KqS8TiMKvgw=="],
+
+    "@expo/ui": ["@expo/ui@58.0.27", "", { "dependencies": { "sf-symbols-typescript": "^2.1.0" }, "peerDependencies": { "@babel/core": "*", "expo": "*", "react": "*", "react-dom": "*", "react-native": "*", "react-native-worklets": "*" }, "optionalPeers": ["@babel/core", "react-dom", "react-native-worklets"] }, "sha512-g2BDAofZBgmDVxQ9PtbrWk6z9aPf5OUH+06Jdw7XPPTIFCNZ7qZQ94umEisAm8Vt4xViiECyWNTkHMKo7Pi2+w=="],
 
     "@expo/ws-tunnel": ["@expo/ws-tunnel@2.0.1", "", { "peerDependencies": { "ws": "^8.0.0" } }, "sha512-mljsRffbOHzmSimYQbQu9h9NR3alwCCwEEouRGFL4QRTt8dNvsNtKEPa/5jHmtDLDtsh4xXsWKwzjN9BTpeXHQ=="],
 

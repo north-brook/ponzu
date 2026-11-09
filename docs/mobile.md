@@ -81,7 +81,10 @@ across it, the sheet floats centred over the design at most 560pt wide
 rather than docking on it. Sent, a new comment's sheet leaves at once with the keyboard
 rather than when the Mac answers (a reply's field empties at once); a send
 the Mac refuses brings the words back. The field and, in voice, the waveform share one glass capsule the
-buttons' height; the glyphs are Hugeicons, as everywhere in the app.
+buttons' height; the glyphs are Hugeicons, as everywhere in the app. The
+field is SwiftUI's own `TextField` (`@expo/ui`, vertical, five lines at most):
+SwiftUI grows it a line at a time and scrolls it past five, and its host takes
+its height, so nothing in JavaScript measures it.
 
 ### iPhone Duo and iPad
 
