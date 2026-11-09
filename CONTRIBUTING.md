@@ -33,7 +33,8 @@ Scopes are optional: `fix(desktop): …`, `feat(react): …`.
 A change users would notice ends its PR description with a `## Release note`
 section: one plain sentence per change, written for someone who uses Ponzu.
 The squash merge carries it into the commit, and the next release shows it in
-the app's update popover. No section means no note. In a PR that
+the desktop app's update popover, or the iPhone's TestFlight notes. No section
+means no note. In a PR that
 changes both the Mac and the iPhone app, start each note with `Mac:` or
 `iPhone:`. See [docs/release-notes.md](docs/release-notes.md).
 

@@ -3,7 +3,14 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { $ } from "bun";
-import { compareVersions, extractNotes, phoneOnly, releases } from "./release-notes";
+import {
+  compareVersions,
+  extractNotes,
+  phoneOnly,
+  releases,
+  WHAT_TO_TEST_LIMIT,
+  whatToTest,
+} from "./release-notes";
 
 test("a description's release note section becomes one note per bullet", () => {
   expect(
@@ -54,6 +61,33 @@ test("the Mac's notes leave out the iPhone's and drop their own label", () => {
     ),
   ).toEqual(["Pair an iPhone from the Ponzu menu.", "Comments show who replied."]);
   expect(extractNotes("## Release note\n\niPhone: scan the code on your Mac.")).toEqual([]);
+});
+
+test("the iPhone's notes keep its own and drop the Mac's", () => {
+  const message = [
+    "## Release note",
+    "",
+    "- Mac: pair an iPhone from the Ponzu menu.",
+    "- iPhone: find the Macs on your Wi-Fi.",
+    "- Comments show who replied.",
+  ].join("\n");
+  expect(extractNotes(message, "iphone")).toEqual([
+    "Find the Macs on your Wi-Fi.",
+    "Comments show who replied.",
+  ]);
+  // A note without a label is the desktop's when its commit changed more than the phone.
+  expect(extractNotes(message, "iphone", false)).toEqual(["Find the Macs on your Wi-Fi."]);
+});
+
+test("What to Test is one line per note, within Apple's limit", () => {
+  expect(whatToTest(["Send takes one tap.", "Pins stay put."])).toBe(
+    "- Send takes one tap.\n- Pins stay put.",
+  );
+  expect(whatToTest([])).toBe("");
+  const long = "x".repeat(1500);
+  const text = whatToTest([long, long, long]);
+  expect(text.length).toBeLessThanOrEqual(WHAT_TO_TEST_LIMIT);
+  expect(text.split("\n")).toHaveLength(2);
 });
 
 test("a labelled line starts its own note without a bullet", () => {
@@ -140,6 +174,48 @@ test("each release carries the Mac's notes merged since the tag before it", asyn
       },
       { version: "0.1.0", notes: ["Open a design."] },
     ]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("each phone release carries its notes merged since the phone's tag before it", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "release-notes-"));
+  try {
+    const git = (...args: string[]) =>
+      $`git -c user.name=t -c user.email=t@example.com -c tag.gpgsign=false -c commit.gpgsign=false ${args}`
+        .cwd(dir)
+        .quiet();
+    const commit = async (subject: string, note: string | undefined, ...files: string[]) => {
+      for (const file of files) {
+        await mkdir(dirname(join(dir, file)), { recursive: true });
+        await writeFile(join(dir, file), subject);
+        await git("add", file);
+      }
+      const message = note ? `${subject}\n\n## Release note\n\n${note}` : subject;
+      await git("commit", "-q", "--allow-empty", "-m", message);
+    };
+    await git("init", "-q", "-b", "main");
+    await commit("feat(mobile): a canvas", "- Open a design.", "apps/mobile/app/index.tsx");
+    await git("tag", "mobile-v0.1.0");
+    await commit("fix(mobile): one-tap send", "- Send takes one tap.", "apps/mobile/app/send.tsx");
+    await commit("feat: page icons", "- Pages show their icons.", "apps/studio/icons.ts");
+    await git("tag", "v1.0.0");
+    await commit(
+      "fix: pins stay on their node",
+      "- Mac: Pins stay put on the Mac.\n- iPhone: Pins stay put.",
+      "packages/core/doc.ts",
+      "apps/mobile/app/pins.tsx",
+    );
+    await commit("chore(main): release mobile 0.2.0", "- Not a note.", "apps/mobile/app.json");
+    await git("tag", "mobile-v0.2.0");
+    await commit("fix(mobile): not shipped yet", "- Unreleased.", "apps/mobile/app/later.tsx");
+    expect(await releases(dir, "iphone")).toEqual([
+      { version: "0.2.0", notes: ["Send takes one tap.", "Pins stay put."] },
+      { version: "0.1.0", notes: ["Open a design."] },
+    ]);
+    // The phone's tags never become the desktop's releases.
+    expect(await releases(dir)).toEqual([{ version: "1.0.0", notes: ["Pages show their icons."] }]);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

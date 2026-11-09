@@ -3,18 +3,25 @@
  * Release notes are written by the pull request's author under a
  * `## Release note` heading in its description. The squash merge copies the
  * description into the commit message, so the notes travel with the commit.
- * The desktop build reads them back out of main's history, grouped by the
- * release tag that shipped them; the release publishes the result beside its
- * build for the title bar's update popover (docs/release-notes.md). A note that starts `iPhone:` is about the phone
- * app and left out; one that starts `Mac:` keeps its words without the label.
+ * This reads them back out of main's history, grouped by the release tag that
+ * shipped them (docs/release-notes.md), for either app:
  *
  *   bun scripts/release-notes.ts <out.json>
- *       write `{ "releases": [{ version, notes }] }`, newest first
+ *       the desktop app's (`vX.Y.Z`): write `{ "releases": [{ version, notes }] }`,
+ *       newest first, which the release publishes beside its build for the
+ *       title bar's update popover. `iPhone:` notes are left out, and `Mac:`
+ *       ones keep their words without the label.
+ *   bun scripts/release-notes.ts --phone <mobile-vX.Y.Z>
+ *       the iPhone app's: print that release's notes, one `- ` line each, for
+ *       TestFlight's What to Test (apps/mobile/.eas/workflows/production.yml).
+ *       Its notes are the `iPhone:` ones and those without a label from
+ *       commits that changed only `apps/mobile`; nothing if it has none.
  *
- * A checkout without history or tags (CI's shallow clone) writes no releases
- * and warns instead of failing: the build still works, it just has nothing
- * to show. It marks the file `"incomplete": true`, so an app about to update
- * doesn't take the empty list for every release's notes.
+ * A checkout without history or tags (CI's shallow clone) finds no releases
+ * and warns instead of failing, so whatever reads the notes still works with
+ * nothing to show. The desktop's file is marked `"incomplete": true`, so an
+ * app about to update doesn't take the empty list for every release's notes;
+ * the phone's prints nothing, and its workflow falls back to its own line.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
@@ -25,6 +32,9 @@ export interface Release {
   notes: string[];
 }
 
+/** The desktop app (Mac, Windows, Linux) or the iPhone app, which release apart. */
+export type App = "mac" | "iphone";
+
 const HEADING = /^#{2,3}\s+release notes?\s*$/i;
 const ANY_HEADING = /^#{1,6}\s/;
 const BULLET = /^[-*]\s+/;
@@ -34,17 +44,29 @@ const NOTHING = /^(none|n\/a|-|no)\.?$/i;
 const TRAILER = /^(?:[a-z][\w-]*-by|cc):\s/i;
 /** A tool's sign-off line at the foot of a description, such as "🤖 Generated with …". */
 const SIGN_OFF = /^\W*generated (with|by)\b/i;
-/** A note about the phone only: not for the Mac's release notes. */
+/** A note about the phone only, in a pull request that also changed the Mac. */
 const IPHONE = /^iphone:\s*/i;
 /** A note about the Mac only, in a pull request that also changed the phone. */
 const MAC = /^mac:\s*/i;
 /** A first word in lowercase only, so `macOS` or `iPhone` keeps its case. */
 const LOWERCASE_WORD = /^[a-z]+\b/;
 const RELEASE_COMMIT = /^chore\(main\): release /;
-const TAG = /^v(\d+)\.(\d+)\.(\d+)$/;
+/** Each app's release tags: the version is the numbers after the prefix. */
+const TAGS: Record<App, { glob: string; pattern: RegExp }> = {
+  mac: { glob: "v*", pattern: /^v(\d+\.\d+\.\d+)$/ },
+  iphone: { glob: "mobile-v*", pattern: /^mobile-v(\d+\.\d+\.\d+)$/ },
+};
+/** The most TestFlight's What to Test takes; Apple refuses a longer one. */
+export const WHAT_TO_TEST_LIMIT = 4000;
 
-/** The Mac app's user-facing lines a commit message or pull request description carries. */
-export function extractNotes(message: string): string[] {
+/**
+ * One app's user-facing lines a commit message or pull request description
+ * carries: those labelled for it, without the label, and, if `unlabelled`,
+ * those with no label. A note with no label is the desktop's unless its
+ * commit changed only the phone, so the phone's are asked for by commit.
+ */
+export function extractNotes(message: string, app: App = "mac", unlabelled = true): string[] {
+  const [own, other] = app === "mac" ? [MAC, IPHONE] : [IPHONE, MAC];
   const lines = message.replace(COMMENT, "").split("\n");
   const start = lines.findIndex((line) => HEADING.test(line.trim()));
   if (start === -1) return [];
@@ -53,8 +75,8 @@ export function extractNotes(message: string): string[] {
   const flush = () => {
     const joined = paragraph.join(" ").trim();
     paragraph = [];
-    if (IPHONE.test(joined)) return;
-    const text = joined.replace(MAC, "");
+    if (other.test(joined) || (!unlabelled && !own.test(joined))) return;
+    const text = joined.replace(own, "");
     if (text && !NOTHING.test(text)) {
       notes.push(LOWERCASE_WORD.test(text) ? text[0]!.toUpperCase() + text.slice(1) : text);
     }
@@ -105,19 +127,23 @@ export function compareVersions(a: string, b: string): number {
 }
 
 /**
- * Every `vX.Y.Z` tag with the notes of the commits main gained up to it since
- * the tag before, newest first. Commits after the newest tag haven't shipped
- * and are left out; a release with nothing to say is omitted.
+ * Every release tag of `app` with its notes from the commits main gained up to
+ * it since the tag before, newest first. Commits after the newest tag haven't
+ * shipped and are left out; a release with nothing to say is omitted.
  */
-export async function releases(cwd = process.cwd()): Promise<Release[]> {
-  const tags = (await $`git tag --list ${"v*"}`.cwd(cwd).quiet().text())
+export async function releases(cwd = process.cwd(), app: App = "mac"): Promise<Release[]> {
+  const { glob, pattern } = TAGS[app];
+  const tags = (await $`git tag --list ${glob}`.cwd(cwd).quiet().text())
     .split("\n")
     .map((tag) => tag.trim())
-    .filter((tag) => TAG.test(tag))
-    .sort(compareVersions);
+    .flatMap((tag) => {
+      const version = pattern.exec(tag)?.[1];
+      return version ? [{ tag, version }] : [];
+    })
+    .sort((a, b) => compareVersions(a.version, b.version));
   const out: Release[] = [];
   let previous: string | null = null;
-  for (const tag of tags) {
+  for (const { tag, version } of tags) {
     const range = previous ? `${previous}..${tag}` : tag;
     previous = tag;
     // A record separator before each commit, a unit separator between its
@@ -134,34 +160,73 @@ export async function releases(cwd = process.cwd()): Promise<Release[]> {
         const [head = "", list = ""] = entry.split("\x1d");
         const [subject = "", message = ""] = head.split("\x1f");
         const files = list.split("\n").filter(Boolean);
-        return RELEASE_COMMIT.test(subject) || phoneOnly(files) ? [] : extractNotes(message);
+        if (RELEASE_COMMIT.test(subject)) return [];
+        if (app === "iphone") return extractNotes(message, app, phoneOnly(files));
+        return phoneOnly(files) ? [] : extractNotes(message);
       });
-    if (notes.length) out.push({ version: tag.slice(1), notes });
+    if (notes.length) out.push({ version, notes });
   }
   return out.reverse();
 }
 
+/** A release's notes as TestFlight's What to Test, leaving out whole notes past Apple's limit. */
+export function whatToTest(notes: string[]): string {
+  let text = "";
+  for (const note of notes) {
+    const next = text ? `${text}\n- ${note}` : `- ${note}`;
+    if (next.length > WHAT_TO_TEST_LIMIT) break;
+    text = next;
+  }
+  return text;
+}
+
+/** Throws in a checkout without history, whose releases would be wrong rather than empty. */
+async function assertHistory() {
+  const shallow = (await $`git rev-parse --is-shallow-repository`.quiet().text()).trim();
+  if (shallow === "true") throw new Error("shallow checkout");
+}
+
+const describe = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
 if (import.meta.main) {
-  const [path] = process.argv.slice(2);
-  if (!path) {
-    console.error("usage: bun scripts/release-notes.ts <out.json>");
-    process.exit(1);
+  const args = process.argv.slice(2);
+  if (args[0] === "--phone") {
+    const tag = args[1] ?? "";
+    const version = TAGS.iphone.pattern.exec(tag)?.[1];
+    if (!version) {
+      console.error("usage: bun scripts/release-notes.ts --phone <mobile-vX.Y.Z>");
+      process.exit(1);
+    }
+    // Only the notes go to stdout, which the workflow reads.
+    try {
+      await assertHistory();
+      const release = (await releases(process.cwd(), "iphone")).find((r) => r.version === version);
+      if (release) console.log(whatToTest(release.notes));
+      else console.warn(`release-notes: ${tag} has no notes`);
+    } catch (err) {
+      console.warn(`release-notes: none for ${tag} (${describe(err)})`);
+    }
+  } else {
+    const [path] = args;
+    if (!path) {
+      console.error("usage: bun scripts/release-notes.ts <out.json>");
+      process.exit(1);
+    }
+    let found: Release[] = [];
+    let incomplete = false;
+    try {
+      await assertHistory();
+      found = await releases();
+      if (!found.length) console.warn("release-notes: no tagged release has notes");
+    } catch (err) {
+      incomplete = true;
+      console.warn(`release-notes: bundling none (${describe(err)})`);
+    }
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(
+      path,
+      `${JSON.stringify({ releases: found, ...(incomplete ? { incomplete } : {}) }, null, 2)}\n`,
+    );
+    console.log(`release-notes: ${found.length} releases → ${path}`);
   }
-  let found: Release[] = [];
-  let incomplete = false;
-  try {
-    const shallow = (await $`git rev-parse --is-shallow-repository`.quiet().text()).trim();
-    if (shallow === "true") throw new Error("shallow checkout");
-    found = await releases();
-    if (!found.length) console.warn("release-notes: no tagged release has notes");
-  } catch (err) {
-    incomplete = true;
-    console.warn(`release-notes: bundling none (${err instanceof Error ? err.message : err})`);
-  }
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(
-    path,
-    `${JSON.stringify({ releases: found, ...(incomplete ? { incomplete } : {}) }, null, 2)}\n`,
-  );
-  console.log(`release-notes: ${found.length} releases → ${path}`);
 }
