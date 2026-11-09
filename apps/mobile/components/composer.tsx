@@ -27,7 +27,7 @@ import Animated, {
 import { useAppActive } from "../lib/app-active";
 import { useDictation } from "../lib/dictation";
 import { type Draft, getDraft, setDraft } from "../lib/drafts";
-import { FIELD_LINE, FIELD_MAX, FIELD_PAD, fieldScrolls } from "../lib/field";
+import { FIELD_LINE, FIELD_MAX, FIELD_PAD } from "../lib/field";
 import { fail, select, success } from "../lib/haptics";
 import { PARTS, phase, SWITCH_MS } from "../lib/morph";
 import { useTheme } from "../lib/theme";
@@ -137,8 +137,6 @@ export function Composer({
   }, [voice, dictation.text]);
   const [sending, setSending] = useState(false);
   const input = useRef<TextInputInstance>(null);
-  /** The field has grown as tall as it gets, and scrolls in itself from here (lib/field.ts). */
-  const [scrolls, setScrolls] = useState(false);
   const text = voice ? dictation.text : typed;
   const has = text.trim().length > 0;
 
@@ -301,10 +299,9 @@ export function Composer({
           >
             {/*
               The field sizes itself, as iOS sizes a multiline text view: one line at 44, a
-              line taller for each line of text up to FIELD_MAX, and only then scrolls in
-              itself, iOS keeping the line being typed in view. Until then it never scrolls:
-              able to, it scrolled the text up to the caret on each new line before the field
-              had caught up, then back down as the field grew, a jolt on every line. In voice
+              line taller for each line of text up to FIELD_MAX, then it scrolls in itself
+              and iOS keeps the line being typed in view. It must stay able to scroll: with
+              scrolling off until the cap (#383), it stopped growing past one line. In voice
               it steps out of view (moved, never faded: glass breaks under opacity) and the
               waveform takes the row.
             */}
@@ -323,10 +320,6 @@ export function Composer({
                 selectionColor={brand.yuzu}
                 cursorColor={brand.yuzu}
                 multiline
-                scrollEnabled={scrolls}
-                onContentSizeChange={(e) =>
-                  setScrolls(fieldScrolls(e.nativeEvent.contentSize.height))
-                }
                 editable={!voice}
                 testID={voice ? undefined : "comment-input"}
                 // iOS's default (true) has the field keep a touch it holds when another view
