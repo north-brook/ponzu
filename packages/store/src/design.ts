@@ -364,7 +364,12 @@ export class Design {
         if (prev && carryIds(prev.root, ab.root, derived)) pin.push(ab.id);
       }
     }
-    const ops = diffDocs(this.doc, incoming);
+    // A held file is read as it last was, so its artboard stays as it is here, with
+    // any edit made since that's waiting to be saved.
+    const keep = new Set<string>();
+    for (const map of [layout.artboards, this.layout.artboards])
+      for (const [id, path] of map) if (this.held.has(path)) keep.add(id);
+    const ops = diffDocs(this.doc, incoming, keep);
     this.layout = layout;
     // Set by hand in design.json, never by an op: carry it over so the next write keeps it.
     if (incoming.example) this.doc.example = true;
@@ -526,8 +531,8 @@ function sameMap(a: Map<string, string>, b: Map<string, string>): boolean {
   return true;
 }
 
-/** Ops that turn `cur` into `next`, at artboard granularity. */
-export function diffDocs(cur: Doc, next: Doc): Op[] {
+/** Ops that turn `cur` into `next`, at artboard granularity, leaving the artboards in `keep` as they are. */
+export function diffDocs(cur: Doc, next: Doc, keep: ReadonlySet<string> = new Set()): Op[] {
   const ops: Op[] = [];
   if (cur.name !== next.name) ops.push({ op: "file.rename", name: next.name });
   if ((cur.icon ?? null) !== (next.icon ?? null))
@@ -566,9 +571,11 @@ export function diffDocs(cur: Doc, next: Doc): Op[] {
     p.artboards.forEach((a, index) => nextArtboards.set(a.id, { page: p.id, artboard: a, index }));
   for (const p of cur.pages) {
     for (const a of p.artboards)
-      if (!nextArtboards.has(a.id)) ops.push({ op: "artboard.delete", id: a.id });
+      if (!nextArtboards.has(a.id) && !keep.has(a.id))
+        ops.push({ op: "artboard.delete", id: a.id });
   }
   for (const [id, n] of nextArtboards) {
+    if (keep.has(id)) continue;
     const hit = findArtboard(cur, id);
     if (!hit) {
       ops.push({ op: "artboard.create", page: n.page, index: n.index, artboard: n.artboard });

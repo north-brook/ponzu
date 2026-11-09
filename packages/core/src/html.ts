@@ -531,7 +531,8 @@ export function parseArtboardFile(
  * it (emptied, or cut off partway) doesn't, so it isn't the artboard yet.
  */
 export function artboardFileComplete(html: string): boolean {
-  const text = html.replace(/<!--[\s\S]*?-->/g, "");
+  // A comment still being written runs to the end: nothing in it counts yet.
+  const text = html.replace(/<!--[\s\S]*?(?:-->|$)/g, "");
   const open = /<section\b[^>]*\bdata-artboard\b[^>]*>/i.exec(text);
   if (!open) return false;
   let depth = 0;

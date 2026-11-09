@@ -359,6 +359,9 @@ describe("telling a finished artboard file from one still being written", () => 
       expect(artboardFileComplete(whole.slice(0, cut))).toBe(false);
     // A close only inside a comment doesn't count.
     expect(artboardFileComplete(`${whole.slice(0, end)}<!-- </section> -->`)).toBe(false);
+    // Nor one inside a comment that isn't finished yet.
+    expect(artboardFileComplete(`<section data-artboard><!-- </section>`)).toBe(false);
+    expect(artboardFileComplete(`<section data-artboard><!-- note --></section>`)).toBe(true);
   });
 
   test("a file with no artboard section isn't one, finished or not", () => {

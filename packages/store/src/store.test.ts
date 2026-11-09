@@ -668,6 +668,26 @@ describe("an artboard file caught while something is still writing it", () => {
     expect(mem.files[path]).toContain('style="color:red"');
   });
 
+  test("an edit waiting on a held file survives more reads before it's finished", async () => {
+    const { mem, d } = await open();
+    await mem.externalWrite(path, "");
+    await settle();
+    d.apply({ op: "style", id: "n_h", style: { color: "red" } }, { kind: "agent", name: "t" });
+    await d.flush();
+    // More of the file, and an edit to another file, both read while it's still held.
+    await mem.externalWrite(path, seed[path].slice(0, 30));
+    await settle();
+    await mem.externalWrite("tokens.css", ":root {\n  --ink: #111;\n}\n");
+    await settle();
+    expect(d.doc.tokens).toContain("#111");
+    const h1 = hero(d).root.children.find((n): n is PElement => n.kind === "el")!;
+    expect(h1.style).toMatchObject({ color: "red" });
+    await mem.externalWrite(path, seed[path]);
+    await settle();
+    await d.flush();
+    expect(mem.files[path]).toContain('style="color:red"');
+  });
+
   test("closing with a file still held finishes, and leaves the file to its writer", async () => {
     const { mem, d } = await open();
     await mem.externalWrite(path, "");
