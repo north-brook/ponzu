@@ -21,6 +21,10 @@ const ease = Easing.bezier(...EASE_OUT);
  * 402 and 390pt): its curve meets the side about 34pt below its top edge.
  */
 const KEYBOARD_CORNER = 34;
+/** Bare, with the keyboard down: clear of the home indicator. */
+const BARE_FOOT = 40;
+/** Bare, how far it floats above the keyboard. */
+const BARE_LIFT = 8;
 
 /**
  * A sheet over the canvas (comment, thread). Floating, 8pt in from the
@@ -40,6 +44,11 @@ const KEYBOARD_CORNER = 34;
  * so it can't dock on it. The keyboard still carries it, frame by frame.
  * It stays above `bottomBar`, the system's bottom bar, until the keyboard
  * rises past it.
+ *
+ * `bare` (a new comment) draws no sheet at all: what it holds floats on its
+ * own over the canvas, 8pt above the keyboard, or `BARE_FOOT` above the
+ * bottom with the keyboard down, 12pt in from the sides. It still rides the
+ * keyboard, leaves with it, and is swiped down to cancel.
  */
 export function Sheet({
   children,
@@ -53,8 +62,11 @@ export function Sheet({
   bottomBar = 0,
   away = false,
   onAway,
+  bare = false,
 }: {
   children: ReactNode;
+  /** No surface, no grabber: only what it holds, floating over the canvas. */
+  bare?: boolean;
   onDismiss: () => void;
   /**
    * Leaving (a comment sent): the keyboard goes down and the sheet rides it off the bottom
@@ -149,7 +161,25 @@ export function Sheet({
    * dismissal).
    */
   const docked = useDerivedValue(() => (full.value > 0 ? Math.min(1, lift.value / full.value) : 0));
+  /** Bare: its bottom edge from the bottom of the screen. */
+  const bareBottom = useDerivedValue(() =>
+    Math.max(BARE_FOOT, bottomBar + BARE_LIFT, lift.value + BARE_LIFT),
+  );
   const style = useAnimatedStyle(() => {
+    if (bare) {
+      const side = floats ? inset : 12;
+      return {
+        left: side,
+        right: right + side,
+        bottom: bareBottom.value,
+        gap: 8,
+        transform: [
+          {
+            translateY: Math.max(0, drag.value) + enter.value * (h.value + bareBottom.value + 20),
+          },
+        ],
+      };
+    }
     const d = docked.value;
     const side = floats ? 8 : 8 * (1 - d);
     // Docked, the sheet runs on behind the keyboard by the keyboard's own top corner
@@ -184,6 +214,10 @@ export function Sheet({
   const report = (px: number) => onHeight?.(px);
   useDerivedValue(() => {
     // The top of the sheet from the bottom of the screen: its bottom edge plus its height.
+    if (bare) {
+      runOnJS(report)(Math.round(bareBottom.value + h.value));
+      return;
+    }
     const under = floats ? 0 : KEYBOARD_CORNER * docked.value;
     const rise =
       (floats ? 8 : 8 * (1 - docked.value)) + Math.max(bottomBar, lift.value) - under + h.value;
@@ -224,23 +258,29 @@ export function Sheet({
         style={[
           {
             position: "absolute",
-            backgroundColor: color.card,
-            boxShadow: `0 -1px 0 ${color.hairline}, 0 -12px 40px rgba(0,0,0,0.12)`,
             zIndex: 9,
+            ...(bare
+              ? {}
+              : {
+                  backgroundColor: color.card,
+                  boxShadow: `0 -1px 0 ${color.hairline}, 0 -12px 40px rgba(0,0,0,0.12)`,
+                }),
             ...(height ? { height } : {}),
           },
           style,
         ]}
       >
-        <View
-          style={{
-            alignSelf: "center",
-            width: 36,
-            height: 5,
-            borderRadius: 3,
-            backgroundColor: color.chip,
-          }}
-        />
+        {!bare && (
+          <View
+            style={{
+              alignSelf: "center",
+              width: 36,
+              height: 5,
+              borderRadius: 3,
+              backgroundColor: color.chip,
+            }}
+          />
+        )}
         {children}
       </Animated.View>
     </GestureDetector>

@@ -12,7 +12,7 @@ Ponzu serving the three examples. They run in this order (`config.yaml`):
 | `open-link.yaml` | An agent's `ponzu://open?file=…` link (and iOS's `ponzu:///open?…`) opens Kettle on its canvas. |
 | `search.yaml` | The search tab's system field: "weft" shows Files and Frames. |
 | `comment.yaml` | A comment on Kettle's Logo (the `?comment=` link), its pin and thread sheet, Resolve, then `?uncomment=` deletes it. |
-| `comment-modes.yaml` | The comment sheet switches typing → voice → typing (the field, then "Listening…", the mute and the keyboard button, then the field again) and sends. |
+| `comment-modes.yaml` | The comment field switches typing → voice → typing (the field, then what's heard with the listening disc and the keyboard glyph, then the field again) and sends. |
 | `draft.yaml` | A comment left unsent on Kettle's Logo keeps a pin: held, its sheet moves it (the design pans under it, then Done), it opens again with its words, and Discard draft takes it away. |
 
 `shared/start.yaml` opens the client onto Metro, closes the development

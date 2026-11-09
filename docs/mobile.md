@@ -59,32 +59,37 @@ cache.
 ### Floating controls
 
 What floats over the canvas (back, the file's title, the page button, the
-agent's session card, the hint, the comment sheet's field and round buttons,
+agent's session card, the hint, the comment field,
 Resolve) is Liquid Glass (`expo-glass-effect`) on iOS 26, in the app's light
 or dark; a control held open (the title while the session card shows) is
 the glass a step darker, never a ring. Before iOS 26 it falls back to the design's bar:
 `--c-bar`, a hairline and the pop shadow. `components/glass.tsx` has the
 rules: the glass itself is never clipped, its content is.
 
-### The comment sheet
+### The comment field
 
-A comment or reply is written by voice or typing in one sheet that changes
-shape between them (the design's Flow › 8 ⇄ 7), never two screens. Every part
-stays mounted and moves on one Reanimated clock on the UI thread; the timing
-of each part, both ways, is in `lib/morph.ts`. The sheet's own shape (its
-corners, side insets and bottom edge) follows the keyboard's frame, read
-every frame from `react-native-keyboard-controller`, so it rides the
-keyboard down and up with the system's animation, interactive dismissal
-included. On iPhone Duo's inner display held sideways, too wide for a sheet
-across it, the sheet floats centred over the design at most 560pt wide
-(`SHEET_MAX` in `lib/duo-layout.ts`) and rides 8pt above the keyboard
-rather than docking on it. Sent, a new comment's sheet leaves at once with the keyboard
-rather than when the Mac answers (a reply's field empties at once); a send
-the Mac refuses brings the words back. The field and, in voice, the waveform share one glass capsule the
-buttons' height; the glyphs are Hugeicons, as everywhere in the app. The
-field is SwiftUI's own `TextField` (`@expo/ui`, vertical, five lines at most):
-SwiftUI grows it a line at a time and scrolls it past five, and its host takes
-its height, so nothing in JavaScript measures it.
+A comment is written in one glass field and nothing else: no sheet around it.
+It floats over the design, 8pt above the keyboard or clear of the home
+indicator with the keyboard down, and rides the keyboard frame by frame
+(`react-native-keyboard-controller`, `Sheet` with `bare` in
+`components/sheet.tsx`); swiped down, it's cancelled. A thread's reply field
+is the same field, in the thread's sheet.
+
+Typed and said words go in the same field, five lines at most. Typing, it's
+SwiftUI's own `TextField` (`@expo/ui`, vertical): SwiftUI grows it a line at
+a time and scrolls it past five, and its host takes its height, so nothing in
+JavaScript measures it. The mic inside its trailing edge switches to voice
+until there are words, then Send takes its place. In voice, what's heard is
+written into the field as it's said and the field's edge glows yuzu; the
+listening disc at its leading edge mutes, the keyboard glyph goes back to
+typing, and a tap on what's been said goes back to typing with the words.
+The glyphs are Hugeicons, as everywhere in the app.
+
+On iPhone Duo's inner display held sideways, and on an iPad, the field floats
+centred over the design at most 560pt wide (`SHEET_MAX` in
+`lib/duo-layout.ts`). Sent, a new comment's field leaves at once with the
+keyboard rather than when the Mac answers (a reply's field empties at once);
+a send the Mac refuses brings the words back.
 
 ### iPhone Duo and iPad
 
@@ -95,7 +100,7 @@ an iPad turns freely (`UISupportedInterfaceOrientations~ipad` in
 `app.json`).
 
 - **The canvas.** A window whose shorter side is under 600pt is a phone's:
-  the canvas's own bar and the comment sheet, and on iPhone Duo's outer
+  the canvas's own bar and the comment field, and on iPhone Duo's outer
   display the system's rail. Otherwise the system's bars hold Back, the
   page and Comments: on a rail at the side where iPhone Duo puts one, and
   otherwise across the top and the foot (iPhone Duo open upright, an iPad
