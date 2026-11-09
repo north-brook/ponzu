@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.5](https://github.com/north-brook/ponzu/compare/mobile-v0.11.4...mobile-v0.11.5) (2026-11-09)
+
+
+### Bug Fixes
+
+* **mobile:** let the comment field grow past one line again ([#392](https://github.com/north-brook/ponzu/issues/392)) ([4b68474](https://github.com/north-brook/ponzu/commit/4b68474f2a84632447011d2813f88498c05b53d0))
+
 ## [0.11.4](https://github.com/north-brook/ponzu/compare/mobile-v0.11.3...mobile-v0.11.4) (2026-11-06)
 
 
