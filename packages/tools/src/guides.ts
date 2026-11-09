@@ -64,7 +64,7 @@ Workflow
 4. screenshot after every few writes. Read the lint lines. Fix clipped text and overflow before moving on. When you add motion or states, record them (get_guide('motion')). If a screenshot fails, its error says why: a renderer that didn't answer means the Ponzu app is busy or showing a dialog, so ask the person; one that isn't running is restarting, so try again shortly. Keep working in Ponzu rather than rendering the page some other way.
 5. The canvas shows which artboards you're changing on its own. To tell the person what you're doing, set_status with a few words. When you take on a new request, pass intent too: what they asked for, in one plain line.
 6. When you point the person at your work in chat, give them the Link from get_basic_info, not the folder path: a path opens their editor, the link opens Ponzu. Point at the exact work: add &artboard=<id> to open on one artboard, or &page=<id> to open on a whole page (a flow, a set of options). With both, it opens on the artboard if it's on that page, otherwise on the page.
-7. Explain your work on the canvas itself. A small artboard beside the work, named "Note: …" with height fit-content, holds rationale, labels, a flow's arrows or what to compare. The canvas is infinite, so annotate generously. Comments are for what needs the person: a question, a decision, something you couldn't do.
+7. Explain your work on the canvas itself. A small artboard beside the work, named "Note: …" with height fit-content, holds rationale, labels, a flow's arrows or what to compare. Color it with light-dark() tokens so it suits the person's canvas in either theme (Light and dark, below). The canvas is infinite, so annotate generously. Comments are for what needs the person: a question, a decision, something you couldn't do.
 
 Several files open: a call without file goes to the file that holds the ids it passes, else the one you last created, named or edited. Pass file once to switch; list_files marks the current one.
 
@@ -81,7 +81,8 @@ HTML and CSS
 
 Light and dark
 The person may have their canvas in dark mode; get_basic_info says which. Artboards show in that theme, and screenshots default to it.
-- A design with one look doesn't need to change: plain colors stay as they are in both themes.
+- Boards you make to talk to the person follow their canvas. Notes, explainers, diagrams, comparisons, decision docs, plans and cost tables are read, not shipped: give them light-dark() colors so a dark canvas shows them dark and a light one light. A few tokens cover them: paper, raised surface, ink, muted ink, line and an accent, e.g. --note-paper: light-dark(#f6f5f2, #1b1b1a). Do this even in a design whose product screens have one look.
+- A product's own screens follow the product. One that has a single look keeps it: plain colors stay as they are in both themes.
 - A design with both themes puts every color in a light-dark() token: --color-paper: light-dark(#fafaf9, #121212). Use the tokens for text, surfaces, borders, shadows and dot grids alike. A raw #fff or rgba(0,0,0,.06) beside them stays light when the rest turns dark.
 - Content that should look one way in either theme (a mock of a light app, a photo's caption, a code block) sets color-scheme: light or dark on its wrapper. light-dark() inside it then picks that side.
 - Lint checks a themed design's colors in both themes, and says which text or surface stops reading in the other one. Screenshot the other theme with colorScheme before you call it done.
@@ -279,7 +280,7 @@ Start every session with get_basic_info, then read_notes, then get_guide('basics
 
 For a product shot (faux product UI for a launch page: a hero, a feature card, a bento grid, a cursor walking through a flow), read get_guide('product') first.
 
-Build in small pieces, screenshot often, and fix what lint reports. Screenshots show the theme the person's canvas is in; a design with both themes uses light-dark() tokens for every color. record shows animation and hover states frame by frame. Put design decisions in tokens and notes. Variations go next to the original, never over it. The canvas shows which artboards you're changing; set_status tells the person what you're doing, and its intent, set once per request, says what they asked for.
+Build in small pieces, screenshot often, and fix what lint reports. Screenshots show the theme the person's canvas is in; a design with both themes uses light-dark() tokens for every color, and so do the notes, diagrams and docs you make to explain something to the person, so they read on a dark canvas too. record shows animation and hover states frame by frame. Put design decisions in tokens and notes. Variations go next to the original, never over it. The canvas shows which artboards you're changing; set_status tells the person what you're doing, and its intent, set once per request, says what they asked for.
 
 The canvas is yours to annotate: a "Note: …" artboard beside the work carries rationale, labels and what to compare. Comments carry what needs the person: a question, a choice, something you couldn't do.
 
