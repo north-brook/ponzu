@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.79.1](https://github.com/north-brook/ponzu/compare/v1.79.0...v1.79.1) (2026-11-09)
+
+
+### Bug Fixes
+
+* wait out artboard files caught half-written instead of reading them as new boards ([#390](https://github.com/north-brook/ponzu/issues/390)) ([d8187d3](https://github.com/north-brook/ponzu/commit/d8187d34ee64f6ee21b141404ca397bba70721e8))
+
 ## [1.79.0](https://github.com/north-brook/ponzu/compare/v1.78.5...v1.79.0) (2026-11-06)
 
 
