@@ -525,6 +525,24 @@ export function parseArtboardFile(
   return { artboard: { id: root.id, name, x, y, root }, dropped, assigned };
 }
 
+/**
+ * Whether an artboard file reads as written to the end: its `<section data-artboard>`
+ * opens and every section in it closes. A file read while something is still writing
+ * it (emptied, or cut off partway) doesn't, so it isn't the artboard yet.
+ */
+export function artboardFileComplete(html: string): boolean {
+  // A comment still being written runs to the end: nothing in it counts yet.
+  const text = html.replace(/<!--[\s\S]*?(?:-->|$)/g, "");
+  const open = /<section\b[^>]*\bdata-artboard\b[^>]*>/i.exec(text);
+  if (!open) return false;
+  let depth = 0;
+  for (const m of text.slice(open.index).matchAll(/<(\/?)section\b[^>]*>/gi)) {
+    depth += m[1] ? -1 : 1;
+    if (depth === 0) return true;
+  }
+  return false;
+}
+
 export function serializeArtboardFile(ab: Artboard): string {
   const root = ab.root;
   let open = `<section data-artboard data-id="${ab.id}" data-name="${escapeAttr(ab.name)}" data-x="${fmt(ab.x)}" data-y="${fmt(ab.y)}"`;

@@ -59,6 +59,11 @@ export const orientTools = [
           `Not used as written (fix the files; get_guide('format') has the format):\n  ${shown.join("\n  ")}${more ? `\n  … ${more} more` : ""}`,
         );
       }
+      const held = design.heldFiles;
+      if (held.length)
+        lines.push(
+          `Still being written, shown as last read whole (write files whole: a temp file, then rename it into place):\n  ${held.join("\n  ")}`,
+        );
       const overlaps = [];
       for (const page of doc.pages)
         overlaps.push(...(await pageOverlapList(ws, key, doc, page.artboards)));
@@ -91,7 +96,7 @@ export const orientTools = [
             : `Other open files: ${rest.map((f) => f.design.doc.name).join(", ")}.${sticks}`,
         );
       }
-      return { text: lines.join("\n") };
+      return { text: lines.join("\n"), metrics: { held_files: held.length } };
     },
   }),
 

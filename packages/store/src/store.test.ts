@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, open as openFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type PElement, parseArtboardFile, parseHtml } from "@ponzu/core";
@@ -602,6 +602,167 @@ describe("design", () => {
       const missing = await Design.open(new MemoryAdapter(seed), { watch: false });
       expect(missing.problems).toEqual([]);
     });
+  });
+});
+
+describe("an artboard file caught while something is still writing it", () => {
+  const path = "pages/home/hero.html";
+  const edited = seed[path].replace(">Hi<", ">Hello<").replace('data-x="0"', 'data-x="900"');
+  const settle = (ms = 20) => new Promise((r) => setTimeout(r, ms));
+  const open = async (files: Record<string, string> = seed, holdDelay = 2000) => {
+    const mem = new MemoryAdapter(files);
+    const d = await Design.open(mem, { saveDelay: 0, holdDelay });
+    const ops: string[] = [];
+    d.onOp((e) => ops.push(e.op.op === "batch" ? e.op.ops.map((o) => o.op).join() : e.op.op));
+    return { mem, d, ops };
+  };
+  const hero = (d: Design) => d.doc.pages[0]!.artboards[0]!;
+
+  test("keeps its artboard as last read whole until it's finished", async () => {
+    const { mem, d, ops } = await open();
+    // A script empties the file, then writes it in pieces.
+    for (const partial of ["", seed[path].slice(0, 30), edited.slice(0, edited.indexOf("</h1>"))]) {
+      await mem.externalWrite(path, partial);
+      await settle();
+      expect(hero(d)).toMatchObject({ id: "ab_hero", name: "Hero", x: 0 });
+      expect(hero(d).root.style).toMatchObject({ width: "800px", height: "600px" });
+      expect(d.heldFiles).toEqual([path]);
+    }
+    expect(ops).toEqual([]);
+    await mem.externalWrite(path, edited);
+    await settle();
+    expect(hero(d)).toMatchObject({ id: "ab_hero", x: 900 });
+    expect(d.heldFiles).toEqual([]);
+    // Changed in place: never deleted and made again under another id.
+    expect(ops.join()).not.toMatch(/artboard\.(delete|create)/);
+    expect(ops.join()).toContain("children");
+  });
+
+  test("an edit made meanwhile doesn't write over the file, and the finished file wins", async () => {
+    const { mem, d } = await open();
+    await mem.externalWrite(path, "");
+    await settle();
+    d.apply({ op: "artboard.update", id: "ab_hero", x: 50, y: 50 }, { kind: "user", name: "p" });
+    await d.flush();
+    await settle();
+    expect(mem.files[path]).toBe("");
+    await mem.externalWrite(path, edited);
+    await settle();
+    await d.flush();
+    expect(hero(d)).toMatchObject({ id: "ab_hero", x: 900, y: 0 });
+    expect(mem.files[path]).toContain(">Hello</h1>");
+    expect(mem.files[path]).toContain('data-x="900"');
+  });
+
+  test("a file that ends up as it was lets go, and saves what was edited meanwhile", async () => {
+    const { mem, d } = await open();
+    await mem.externalWrite(path, "");
+    await settle();
+    d.apply({ op: "style", id: "n_h", style: { color: "red" } }, { kind: "agent", name: "t" });
+    await d.flush();
+    expect(mem.files[path]).toBe("");
+    await mem.externalWrite(path, seed[path]);
+    await settle();
+    await d.flush();
+    expect(d.heldFiles).toEqual([]);
+    expect(mem.files[path]).toContain('style="color:red"');
+  });
+
+  test("an edit waiting on a held file survives more reads before it's finished", async () => {
+    const { mem, d } = await open();
+    await mem.externalWrite(path, "");
+    await settle();
+    d.apply({ op: "style", id: "n_h", style: { color: "red" } }, { kind: "agent", name: "t" });
+    await d.flush();
+    // More of the file, and an edit to another file, both read while it's still held.
+    await mem.externalWrite(path, seed[path].slice(0, 30));
+    await settle();
+    await mem.externalWrite("tokens.css", ":root {\n  --ink: #111;\n}\n");
+    await settle();
+    expect(d.doc.tokens).toContain("#111");
+    const h1 = hero(d).root.children.find((n): n is PElement => n.kind === "el")!;
+    expect(h1.style).toMatchObject({ color: "red" });
+    await mem.externalWrite(path, seed[path]);
+    await settle();
+    await d.flush();
+    expect(mem.files[path]).toContain('style="color:red"');
+  });
+
+  test("closing with a file still held finishes, and leaves the file to its writer", async () => {
+    const { mem, d } = await open();
+    await mem.externalWrite(path, "");
+    await settle();
+    d.apply({ op: "style", id: "n_h", style: { color: "red" } }, { kind: "agent", name: "t" });
+    await d.close();
+    expect(mem.files[path]).toBe("");
+  });
+
+  test("a file left without its section is taken as written once it stops changing", async () => {
+    const { mem, d } = await open(seed, 60);
+    await mem.externalWrite(path, "");
+    await settle();
+    expect(hero(d).id).toBe("ab_hero");
+    // Nothing more comes from the watcher: the wait running out is enough.
+    await settle(150);
+    expect(d.heldFiles).toEqual([]);
+    expect(hero(d).id).not.toBe("ab_hero");
+  });
+
+  test("a new file isn't an artboard until it's finished", async () => {
+    const { mem, d } = await open();
+    const more = `<section data-artboard data-id="ab_more" data-name="More" data-x="900" data-y="0" style="width:400px;height:300px">\n<p>More</p>\n</section>\n`;
+    await mem.externalWrite("pages/home/more.html", more.slice(0, 20));
+    await settle();
+    expect(d.doc.pages[0]!.artboards.map((a) => a.id)).toEqual(["ab_hero"]);
+    await mem.externalWrite("pages/home/more.html", more);
+    await settle();
+    expect(d.doc.pages[0]!.artboards.map((a) => a.id)).toEqual(["ab_hero", "ab_more"]);
+  });
+
+  test("ids handed out keep pointing at their elements through a rewrite that empties the file first", async () => {
+    const bare = `<section data-artboard data-id="ab_hero" data-name="Hero" data-x="0" data-y="0" style="width:800px;height:600px"><h1>Title</h1><p>Body</p></section>\n`;
+    const { mem, d } = await open({ ...seed, [path]: bare });
+    const p = hero(d).root.children.find(
+      (n): n is PElement => n.kind === "el" && n.tag === "p",
+    )!.id;
+    await mem.externalWrite(path, "");
+    await settle();
+    await mem.externalWrite(path, bare.replace("<h1>", "<div>Banner</div><h1>"));
+    await settle();
+    const now = hero(d).root.children.find((n): n is PElement => n.kind === "el" && n.tag === "p")!;
+    expect(now.id).toBe(p);
+  });
+
+  test("on disk, an emptied file being written slowly keeps its artboard", async () => {
+    const root = await mkdtemp(join(tmpdir(), "ponzu-midwrite-"));
+    const until = async (ok: () => boolean) => {
+      for (const end = Date.now() + 3000; !ok() && Date.now() < end; ) await settle(10);
+      return ok();
+    };
+    try {
+      const fs = new FsAdapter(root);
+      for (const [p, text] of Object.entries(seed)) await fs.write(p, text);
+      const d = await Design.open(fs, { holdDelay: 3000 });
+      // The watcher hears the writes above late; let that pass.
+      await settle(300);
+      const pieces = edited.match(/[\s\S]{1,40}/g)!;
+      const fh = await openFile(join(root, path), "w");
+      await fh.write(pieces.shift()!);
+      expect(await until(() => d.heldFiles.includes(path))).toBe(true);
+      expect(hero(d)).toMatchObject({ id: "ab_hero", name: "Hero" });
+      for (const piece of pieces) {
+        await fh.write(piece);
+        await settle(5);
+        expect(hero(d).id).toBe("ab_hero");
+      }
+      await fh.close();
+      expect(await until(() => hero(d).x === 900)).toBe(true);
+      expect(hero(d).id).toBe("ab_hero");
+      expect(d.heldFiles).toEqual([]);
+      await d.close();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
 

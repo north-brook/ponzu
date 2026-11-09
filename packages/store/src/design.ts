@@ -1,6 +1,7 @@
 import {
   type Artboard,
   applyOp,
+  artboardFileComplete,
   carryIds,
   type Doc,
   findArtboard,
@@ -42,6 +43,11 @@ export interface DesignOptions {
   saveDelay?: number;
   /** Follow outside edits. Defaults to true when the adapter can watch. */
   watch?: boolean;
+  /**
+   * Milliseconds an artboard file read as half-written must stay unchanged before
+   * it's taken as written. Until then the artboard stays as last read whole.
+   */
+  holdDelay?: number;
 }
 
 interface HistoryEntry {
@@ -50,6 +56,8 @@ interface HistoryEntry {
 }
 
 const HISTORY_LIMIT = 200;
+const HOLD_DELAY = 1500;
+const ARTBOARD_FILE = /^pages\/[^/]+\/[^/]+\.html$/;
 
 /**
  * An open .design: the in-memory doc, its undo history, and the bridge to
@@ -73,12 +81,17 @@ export class Design {
   private closed = false;
   /** What the last read of the files couldn't use: see `problems`. */
   private read: { problems: Problem[]; unreadable: unknown[] } = { problems: [], unreadable: [] };
+  /** Artboard files caught half-written, by path: what was read, and since when it's read so. */
+  private held = new Map<string, { content: string; since: number }>();
+  private holdTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Artboards edited here while their file was held: saved once it's whole. */
+  private deferred = new Set<string>();
 
   private constructor(
     readonly storage: StorageAdapter,
     doc: Doc,
     layout: Layout,
-    private opts: Required<Pick<DesignOptions, "saveDelay">>,
+    private opts: Required<Pick<DesignOptions, "saveDelay" | "holdDelay">>,
   ) {
     this.doc = doc;
     this.layout = layout;
@@ -88,7 +101,10 @@ export class Design {
     const name = opts.name ?? nameFromRoot(storage.root) ?? "Untitled";
     const bag = await storage.readAll();
     const { doc, layout, problems, unreadable } = readBag(bag, name);
-    const design = new Design(storage, doc, layout, { saveDelay: opts.saveDelay ?? 120 });
+    const design = new Design(storage, doc, layout, {
+      saveDelay: opts.saveDelay ?? 120,
+      holdDelay: opts.holdDelay ?? HOLD_DELAY,
+    });
     design.read = { problems, unreadable };
     for (const [path, content] of Object.entries(bag)) design.written.set(path, content);
     if (!bag["design.json"]) {
@@ -238,14 +254,18 @@ export class Design {
     for (const page of this.doc.pages) {
       for (const ab of page.artboards) {
         const path = next.artboards.get(ab.id)!;
-        if (dirty.has(ab.id) || this.layout.artboards.get(ab.id) !== path)
-          writes.set(path, serializeArtboard(ab));
+        const was = this.layout.artboards.get(ab.id);
+        if (!dirty.has(ab.id) && was === path) continue;
+        // Something is still writing this file: writing it now would lose what it writes.
+        if (this.held.has(path) || (was && this.held.has(was))) this.deferred.add(ab.id);
+        else writes.set(path, serializeArtboard(ab));
       }
     }
 
     const keep = new Set(next.artboards.values());
     const removals: string[] = [];
-    for (const path of this.layout.artboards.values()) if (!keep.has(path)) removals.push(path);
+    for (const path of this.layout.artboards.values())
+      if (!keep.has(path) && !this.held.has(path)) removals.push(path);
     if (scopes.has("threads") && noThreads && this.written.has("comments.json"))
       removals.push("comments.json");
     if (scopes.has("notes")) {
@@ -281,6 +301,14 @@ export class Design {
    */
   get problems(): readonly Problem[] {
     return this.read.problems;
+  }
+
+  /**
+   * Artboard files read as half-written (emptied, or cut off partway) and not yet
+   * finished: their artboards show as last read whole. See `holdDelay`.
+   */
+  get heldFiles(): readonly string[] {
+    return [...this.held.keys()];
   }
 
   /** Where an artboard is stored, relative to the design root. */
@@ -320,7 +348,9 @@ export class Design {
         break;
       }
     }
-    if (!changed) return;
+    // A held file can end up as it was before: let it go, with nothing else to do.
+    this.holdUnfinished(bag);
+    if (!changed) return this.saveDeferred();
     const { doc: incoming, layout, lazy, problems, unreadable } = readBag(bag, this.doc.name);
     this.written = new Map(Object.entries(bag));
     this.read = { problems, unreadable };
@@ -334,7 +364,12 @@ export class Design {
         if (prev && carryIds(prev.root, ab.root, derived)) pin.push(ab.id);
       }
     }
-    const ops = diffDocs(this.doc, incoming);
+    // A held file is read as it last was, so its artboard stays as it is here, with
+    // any edit made since that's waiting to be saved.
+    const keep = new Set<string>();
+    for (const map of [layout.artboards, this.layout.artboards])
+      for (const [id, path] of map) if (this.held.has(path)) keep.add(id);
+    const ops = diffDocs(this.doc, incoming, keep);
     this.layout = layout;
     // Set by hand in design.json, never by an op: carry it over so the next write keeps it.
     if (incoming.example) this.doc.example = true;
@@ -351,6 +386,64 @@ export class Design {
       }
     }
     if (pin.length) await this.pinIds(pin, bag);
+    this.saveDeferred();
+  }
+
+  /**
+   * Put back the last whole version of each artboard file caught half-written, as a
+   * script that empties a file and then writes it leaves it for a moment: read as it
+   * is, the artboard would turn into a new, empty one and back. A file that stays
+   * that way for `holdDelay` is taken as written. A new file is left out until then.
+   */
+  private holdUnfinished(bag: FileBag): void {
+    const now = Date.now();
+    let wait = Number.POSITIVE_INFINITY;
+    for (const path of new Set([...Object.keys(bag), ...this.held.keys()])) {
+      if (!ARTBOARD_FILE.test(path)) continue;
+      const text = bag[path];
+      const before = this.written.get(path);
+      const unfinished =
+        text !== undefined &&
+        text !== before &&
+        !artboardFileComplete(text) &&
+        (before === undefined || artboardFileComplete(before));
+      let hold = this.held.get(path);
+      if (unfinished && (!hold || hold.content !== text)) {
+        hold = { content: text, since: now };
+        this.held.set(path, hold);
+      }
+      const left = unfinished && hold ? hold.since + this.opts.holdDelay - now : 0;
+      if (left <= 0) {
+        this.held.delete(path);
+        continue;
+      }
+      wait = Math.min(wait, left);
+      if (before === undefined) delete bag[path];
+      else bag[path] = before;
+    }
+    if (this.holdTimer) clearTimeout(this.holdTimer);
+    this.holdTimer = null;
+    // Nothing more may come from the watcher: look again once the wait is up.
+    if (this.held.size)
+      this.holdTimer = setTimeout(() => {
+        this.holdTimer = null;
+        void this.onOutsideChange([...this.held.keys()]);
+      }, wait + 1);
+  }
+
+  /** Edits made to an artboard while its file was held, saved now the file is whole. */
+  private saveDeferred(): void {
+    let any = false;
+    for (const id of this.deferred) {
+      const path = this.layout.artboards.get(id);
+      if (path && this.held.has(path)) continue;
+      this.deferred.delete(id);
+      if (findArtboard(this.doc, id)) {
+        this.dirtyArtboards.add(id);
+        any = true;
+      }
+    }
+    if (any) this.scheduleSave();
   }
 
   /**
@@ -401,6 +494,9 @@ export class Design {
 
   async close(): Promise<void> {
     this.stopWatching?.();
+    // A file still held is someone else's to finish: what it ends up as wins.
+    if (this.holdTimer) clearTimeout(this.holdTimer);
+    this.holdTimer = null;
     // A read of an outside change the watcher already heard can join the queue while this
     // waits, and an edit made meanwhile can set a save going: wait for those too, so every edit
     // is written and nothing reads the folder once it's closed and maybe gone.
@@ -435,8 +531,8 @@ function sameMap(a: Map<string, string>, b: Map<string, string>): boolean {
   return true;
 }
 
-/** Ops that turn `cur` into `next`, at artboard granularity. */
-export function diffDocs(cur: Doc, next: Doc): Op[] {
+/** Ops that turn `cur` into `next`, at artboard granularity, leaving the artboards in `keep` as they are. */
+export function diffDocs(cur: Doc, next: Doc, keep: ReadonlySet<string> = new Set()): Op[] {
   const ops: Op[] = [];
   if (cur.name !== next.name) ops.push({ op: "file.rename", name: next.name });
   if ((cur.icon ?? null) !== (next.icon ?? null))
@@ -475,9 +571,11 @@ export function diffDocs(cur: Doc, next: Doc): Op[] {
     p.artboards.forEach((a, index) => nextArtboards.set(a.id, { page: p.id, artboard: a, index }));
   for (const p of cur.pages) {
     for (const a of p.artboards)
-      if (!nextArtboards.has(a.id)) ops.push({ op: "artboard.delete", id: a.id });
+      if (!nextArtboards.has(a.id) && !keep.has(a.id))
+        ops.push({ op: "artboard.delete", id: a.id });
   }
   for (const [id, n] of nextArtboards) {
+    if (keep.has(id)) continue;
     const hit = findArtboard(cur, id);
     if (!hit) {
       ops.push({ op: "artboard.create", page: n.page, index: n.index, artboard: n.artboard });

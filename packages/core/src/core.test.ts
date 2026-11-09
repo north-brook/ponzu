@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   applyOp,
+  artboardFileComplete,
   type CatalogFile,
   type CatalogGit,
   carryIds,
@@ -327,6 +328,44 @@ describe("html", () => {
     const b = parseArtboardFile(src, { id: "ab_1", name: "A" }).artboard;
     expect(serializeArtboardFile(a)).toBe(serializeArtboardFile(b));
     expect(a.id).toBe("ab_1");
+  });
+});
+
+describe("telling a finished artboard file from one still being written", () => {
+  const whole = `<section data-artboard data-id="ab_1" data-name="A" data-x="0" data-y="0" style="width:400px;height:300px">\n<section data-id="n_s"><p data-id="n_p">Hi</p></section>\n<p>After</p>\n</section>\n`;
+
+  test("a file written to the end is finished, however it's wrapped", () => {
+    expect(artboardFileComplete(whole)).toBe(true);
+    expect(artboardFileComplete(`<!doctype html><html><body>${whole}</body></html>`)).toBe(true);
+    expect(artboardFileComplete(`<section data-artboard data-name="A"><p>one</p></section>`)).toBe(
+      true,
+    );
+    const { artboard } = parseArtboardFile(whole, { id: "ab_x", name: "x" });
+    expect(artboardFileComplete(serializeArtboardFile(artboard))).toBe(true);
+  });
+
+  test("an emptied file, or one cut off anywhere before its last close, isn't", () => {
+    expect(artboardFileComplete("")).toBe(false);
+    expect(artboardFileComplete("\n  \n")).toBe(false);
+    const end = whole.lastIndexOf("</section>");
+    for (const cut of [
+      10,
+      40,
+      whole.indexOf(">") + 1,
+      whole.indexOf("</p>"),
+      whole.indexOf("<p>After"),
+      end,
+    ])
+      expect(artboardFileComplete(whole.slice(0, cut))).toBe(false);
+    // A close only inside a comment doesn't count.
+    expect(artboardFileComplete(`${whole.slice(0, end)}<!-- </section> -->`)).toBe(false);
+    // Nor one inside a comment that isn't finished yet.
+    expect(artboardFileComplete(`<section data-artboard><!-- </section>`)).toBe(false);
+    expect(artboardFileComplete(`<section data-artboard><!-- note --></section>`)).toBe(true);
+  });
+
+  test("a file with no artboard section isn't one, finished or not", () => {
+    expect(artboardFileComplete("<div><p>Bare content</p></div>")).toBe(false);
   });
 });
 
