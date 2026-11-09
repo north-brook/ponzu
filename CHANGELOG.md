@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.79.2](https://github.com/north-brook/ponzu/compare/v1.79.1...v1.79.2) (2026-11-09)
+
+
+### Bug Fixes
+
+* have agents theme their explainer boards to match the canvas ([#395](https://github.com/north-brook/ponzu/issues/395)) ([0b159e7](https://github.com/north-brook/ponzu/commit/0b159e77d648caccb747619edb1bfb3a1ea82cf5))
+
 ## [1.79.1](https://github.com/north-brook/ponzu/compare/v1.79.0...v1.79.1) (2026-11-09)
 
 
