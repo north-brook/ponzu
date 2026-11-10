@@ -135,7 +135,7 @@ test("self-closing svg children written with write_html stay siblings", async ()
     await client.callTool({ name: "get_html", arguments: { id: abId, ids: false } }),
   );
   expect(html).toContain(
-    `<svg viewBox="0 0 24 24"><g data-name="Glyph"><path d="M1 1"/><path d="M2 2"/><circle r="2"/><path d="M3 3"/><path d="M4 4"/></g><path d="M3 3"/><path d="M4 4"/></svg>`,
+    `<svg viewBox="0 0 24 24"><g data-name="Glyph"><path d="M1 1"></path><path d="M2 2"></path><circle r="2"></circle><path d="M3 3"></path><path d="M4 4"></path></g><path d="M3 3"></path><path d="M4 4"></path></svg>`,
   );
 });
 

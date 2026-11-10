@@ -1,13 +1,75 @@
 import { describe, expect, test } from "bun:test";
-import { type DefaultTreeAdapterTypes as P5, parseFragment } from "parse5";
+import {
+  defaultTreeAdapter,
+  html as html5,
+  type DefaultTreeAdapterTypes as P5,
+  parseFragment,
+} from "parse5";
 import { parseStyle } from "./css.ts";
-import type { Op } from "./doc.ts";
-import { el, SAMPLE_OPS, text, VARIANTS } from "./fixtures/ops.ts";
+import { applyOp, type Op, OpError } from "./doc.ts";
+import { el, SAMPLE_OPS, sampleDoc, text, VARIANTS } from "./fixtures/ops.ts";
 import { type Random, random } from "./fixtures/random.ts";
-import { parseHtml, serializeNode, serializeNodes } from "./html.ts";
+import { Sequencer } from "./fixtures/sequencer.ts";
+import { parseHtml, serializeArtboardElement, serializeNode, serializeNodes } from "./html.ts";
 import { sanitizeNode, sanitizeNodes, sanitizeOp } from "./sanitize.ts";
 import { walk } from "./tree.ts";
-import type { Dropped, PElement, PNode } from "./types.ts";
+import type { Actor, Dropped, PElement, PNode } from "./types.ts";
+
+/**
+ * The elements a browser makes of HTML set as an element's `innerHTML`, which is how the
+ * canvas draws an artboard: parsed inside a `<div>`, with none of Ponzu's rules applied.
+ * (`parseHtml` is no judge of what the serializer wrote: it parses with no element around
+ * the HTML, and takes out what the rules forbid before anyone can see it was there.)
+ */
+function browserElements(html: string): P5.Element[] {
+  const div = defaultTreeAdapter.createElement("div", html5.NS.HTML, []);
+  const out: P5.Element[] = [];
+  const visit = (list: P5.ChildNode[]) => {
+    for (const child of list) {
+      if (!("tagName" in child)) continue;
+      out.push(child);
+      visit(child.childNodes);
+    }
+  };
+  visit(parseFragment(div, html, {}).childNodes);
+  return out;
+}
+
+const BLOCKED = /^(noscript|iframe|frame|frameset|object|embed|applet|base|meta|template|portal)$/;
+const URL_ATTRIBUTE = /^(href|src|xlink:href|action|formaction|poster|data)$/;
+
+/** What a browser would run, load or frame in `html`. Sanitized HTML has none. */
+function runs(html: string): string[] {
+  const found: string[] = [];
+  for (const node of browserElements(html)) {
+    const attr = (name: string) => node.attrs.find((a) => a.name === name)?.value;
+    const tag = node.tagName.toLowerCase();
+    if (BLOCKED.test(tag)) found.push(`<${tag}>`);
+    if (tag === "script" && (attr("type") !== "ponzu/act" || node.attrs.some(isUrl)))
+      found.push("<script> that isn't a scene");
+    for (const a of node.attrs) {
+      const name = a.prefix ? `${a.prefix}:${a.name}` : a.name;
+      if (/^on|^srcdoc$/i.test(name)) found.push(`${name} on <${tag}>`);
+      if (isUrl(a) && /^(java|vb)script:/i.test(a.value.replace(/[\u0000- ]/g, "")))
+        found.push(`script URL in ${name} on <${tag}>`);
+    }
+  }
+  return found;
+}
+
+function isUrl(a: { name: string; prefix?: string }): boolean {
+  return URL_ATTRIBUTE.test(a.prefix ? `${a.prefix}:${a.name}` : a.name);
+}
+
+/**
+ * Whether a payload written as text or as an attribute's value was read as an element. For
+ * trees that aren't sanitized, where a handler a node carries says nothing.
+ */
+function payloadCameAlive(html: string): boolean {
+  return browserElements(html).some((node) =>
+    node.attrs.some((a) => a.name === "src" && a.value === "x"),
+  );
+}
 
 /**
  * HTML as nodes with no rule applied: what a client that skipped the parser could put in an
@@ -148,6 +210,7 @@ describe("the parser and the node sanitizer apply one set of rules", () => {
     const back = parseHtml(serializeNodes(sanitized));
     expect(back.dropped).toEqual([]);
     expect(back.assigned.size).toBe(0);
+    expect(runs(serializeNodes(sanitized))).toEqual([]);
   });
 
   test("nothing in the corpus survives as something a browser would run", () => {
@@ -179,7 +242,7 @@ describe("what the rules remove", () => {
       dropped,
     );
     expect(serializeNodes(nodes, { omitIds: true })).toBe(
-      '<div style="color:red"><a>hi</a><style>a{b:x(1)}</style><svg><animate/></svg></div>',
+      '<div style="color:red"><a>hi</a><style>a{b:x(1)}</style><svg><animate></animate></svg></div>',
     );
     expect(what(dropped)).toEqual([
       "onclick on <div>",
@@ -316,6 +379,44 @@ function hostileTrees(): Record<string, PNode[]> {
     "a style sheet inside a select": [
       el("n_1", "select", [el("n_2", "style", [text(`</select>${PAYLOAD}`)])]),
     ],
+    // Each of the next three was live markup when empty SVG elements were written `<x/>`.
+    "a paragraph and a textarea that say they are SVG, before a style sheet": [
+      ns(el("n_1", "svg", [ns(el("n_2", "p"), "svg"), ns(el("n_3", "textarea"), "svg")]), "svg"),
+      el("n_4", "style", [text(`</textarea>${PAYLOAD}`)]),
+    ],
+    "a foreignObject in lower case, under a table cell that says it is SVG": [
+      ns(
+        el("n_1", "svg", [
+          ns(
+            el("n_2", "td", [ns(el("n_3", "foreignobject", [ns(el("n_4", "p"), "svg")]), "svg")]),
+            "svg",
+          ),
+        ]),
+        "svg",
+      ),
+      el("n_5", "div"),
+      el("n_6", "td"),
+      el("n_7", "style", [text(PAYLOAD)]),
+    ],
+    "an empty SVG element before an attribute that closes a textarea": [
+      ns(el("n_1", "svg", [ns(el("n_2", "p"), "svg"), ns(el("n_3", "textarea"), "svg")]), "svg"),
+      attr("div", { title: `</textarea>${PAYLOAD}` }),
+    ],
+    "integration points in the wrong case": [
+      ns(el("n_1", "math", [ns(el("n_2", "MI", [ns(el("n_3", "p"), "math")]), "math")]), "math"),
+      ns(el("n_4", "svg", [ns(el("n_5", "DESC", [ns(el("n_6", "p"), "svg")]), "svg")]), "svg"),
+      ns(
+        el("n_7", "math", [
+          ns(
+            attr("annotation-xml", { ENCODING: "text/html" }, [ns(el("n_8", "p"), "math")]),
+            "math",
+          ),
+        ]),
+        "math",
+      ),
+      el("n_9", "td"),
+      el("n_10", "style", [text(PAYLOAD)]),
+    ],
   };
 }
 
@@ -333,12 +434,15 @@ describe("trees that never were HTML", () => {
       const back = parseHtml(serializeNodes(sanitized));
       expect(back.dropped).toEqual([]);
       expect(elements(back.nodes).filter((n) => !known.has(n.id))).toEqual([]);
+      expect(runs(serializeNodes(sanitized))).toEqual([]);
+      expect(payloadCameAlive(serializeNodes(sanitized))).toBe(false);
 
       // Written out as it is, the way a `move` can leave a design without any op carrying
       // the nodes: text and attribute values still come out as text and attribute values.
       const unsanitized = parseHtml(serializeNodes(nodes));
       expect(elements(unsanitized.nodes).filter((n) => !known.has(n.id))).toEqual([]);
       expect(unsanitized.assigned.size).toBe(0);
+      expect(payloadCameAlive(serializeNodes(nodes))).toBe(false);
     });
   }
 
@@ -377,7 +481,52 @@ describe("trees that never were HTML", () => {
         '<svg><script type="ponzu/act">&lt;img src=x onerror=alert(1)&gt;</script></svg><math><mi><style>\\3c img src=x onerror=alert(1)></style></mi></math>',
       "a style sheet inside a select":
         "<select><style>\\3c /select>\\3c img src=x onerror=alert(1)></style></select>",
+      // The elements that claimed a namespace they can't have lost it, and `<p></p>` reads
+      // the same wherever a parser is, so the style sheet is one to it as well.
+      "a paragraph and a textarea that say they are SVG, before a style sheet": `<svg><p></p><textarea></textarea></svg><style></textarea>${PAYLOAD}</style>`,
+      "a foreignObject in lower case, under a table cell that says it is SVG": `<svg><td><foreignObject><p></p></foreignObject></td></svg><div></div><td></td><style>${PAYLOAD}</style>`,
+      "an empty SVG element before an attribute that closes a textarea":
+        '<svg><p></p><textarea></textarea></svg><div title="&lt;/textarea&gt;&lt;img src=x onerror=alert(1)&gt;"></div>',
+      "integration points in the wrong case": `<math><mi><p></p></mi></math><svg><desc><p></p></desc></svg><math><annotation-xml ENCODING="text/html"><p></p></annotation-xml></math><td></td><style>${PAYLOAD}</style>`,
     });
+  });
+
+  test("a tag and its namespace come out as a parser would have given them", () => {
+    const shape = (node: PElement) => {
+      const out = sanitizeNode(node) as PElement;
+      return out.ns ? `${out.ns}:${out.tag}` : out.tag;
+    };
+    const svg = (tag: string): PElement => ({ ...el("n_1", tag), ns: "svg" });
+    const math = (tag: string): PElement => ({ ...el("n_1", tag), ns: "math" });
+    expect(shape(el("n_1", "DIV"))).toBe("div");
+    expect(shape(el("n_1", "foreignObject"))).toBe("foreignobject");
+    expect(shape(svg("FOREIGNOBJECT"))).toBe("svg:foreignObject");
+    expect(shape(svg("lineargradient"))).toBe("svg:linearGradient");
+    expect(shape(math("MI"))).toBe("math:mi");
+    expect(shape(el("n_1", "SVG"))).toBe("svg:svg");
+    expect(shape(el("n_1", "math"))).toBe("math:math");
+    // In SVG a <math> is one more SVG element, and the other way round.
+    expect(shape(svg("math"))).toBe("svg:math");
+    expect(shape(svg("P"))).toBe("p");
+    expect(shape(math("img"))).toBe("img");
+    expect(shape(svg("font"))).toBe("svg:font");
+    expect(shape({ ...svg("font"), attrs: { COLOR: "red" } })).toBe("font");
+    // Only A to Z change case, as in a parser.
+    expect(shape(el("n_1", "X-ÉCLAIR"))).toBe("x-Éclair");
+  });
+
+  test("an element keeps a claim to SVG exactly when a parser reading it inside <svg> agrees", () => {
+    const tags =
+      "a abbr address animate article aside b bdi bdo big blockquote br button canvas caption center circle cite clippath code col colgroup dd defs del desc details dfn dialog div dl dt em fieldset figure font footer foreignobject form g h1 h2 h3 h4 h5 h6 header hr i img input ins kbd label li line lineargradient listing main mark mask menu nav nobr ol option p path pre q rect ruby s samp section select small span strike strong style sub summary sup table tbody td text textarea tfoot th thead title tr tspan tt u ul use var video wbr";
+    const attrs = ["", ' class="c"', ' color="red"', ' FACE="x"', ' size="1"'];
+    for (const tag of tags.split(" "))
+      for (const attr of attrs) {
+        const html = `<svg><${tag}${attr}></${tag}></svg>`;
+        const parsed = elements(rawNodes(html)).find((n) => n.tag.toLowerCase() === tag)!;
+        const claimed: PElement = { ...parsed, tag, ns: "svg", children: [] };
+        const kept = sanitizeNode(claimed) as PElement;
+        expect([html, kept.ns, kept.tag]).toEqual([html, parsed.ns, parsed.tag]);
+      }
   });
 
   test("names that would write more than one name are dropped", () => {
@@ -410,6 +559,7 @@ describe("trees that never were HTML", () => {
 });
 
 describe("random trees", () => {
+  // Tags a parser treats specially, in the case it gives them and in cases it never would.
   const TAGS = [
     "div",
     "p",
@@ -417,9 +567,11 @@ describe("random trees", () => {
     "a",
     "b",
     "img",
+    "br",
     "ul",
     "li",
     "table",
+    "caption",
     "tr",
     "td",
     "form",
@@ -427,31 +579,41 @@ describe("random trees", () => {
     "select",
     "option",
     "textarea",
+    "TEXTAREA",
     "title",
+    "Title",
     "style",
+    "STYLE",
     "script",
     "SCRIPT",
     "xmp",
     "plaintext",
     "noembed",
     "noframes",
+    "noscript",
     "iframe",
     "object",
     "template",
     "svg",
+    "SVG",
     "g",
     "path",
     "foreignObject",
+    "foreignobject",
     "desc",
+    "DESC",
     "animate",
     "math",
     "mi",
+    "MI",
     "mtext",
     "mglyph",
     "annotation-xml",
+    "ANNOTATION-XML",
     "h1",
     "pre",
     "font",
+    "FONT",
   ];
   const ATTRS: [string, string][] = [
     ["class", "a b"],
@@ -466,10 +628,13 @@ describe("random trees", () => {
     ["type", "ponzu/act"],
     ["type", "text/javascript"],
     ["encoding", "text/html"],
+    ["ENCODING", "application/xhtml+xml"],
     ["values", "0; javascript:alert(1)"],
     ["style", "color:red"],
     ["data-id", "n_forged"],
     ["color", "red"],
+    ["FACE", "serif"],
+    ["size", "1"],
   ];
   const STYLES: [string, string][] = [
     ["color", "red"],
@@ -510,28 +675,152 @@ describe("random trees", () => {
     return node;
   }
 
-  test("sanitized, each is settled; written out, no payload comes alive", () => {
-    const r = random(20261110);
-    for (let i = 0; i < 2000; i++) {
-      const counter = { n: 0 };
-      const nodes = [tree(r, counter, 0), tree(r, counter, 0)];
-      const sanitized = sanitizeNodes(nodes);
-      const twice: Dropped[] = [];
-      expect(sanitizeNodes(sanitized, twice)).toEqual(sanitized);
-      expect(twice).toEqual([]);
-
-      // A payload read as markup is an <img src=x> with a handler for the rules to remove.
-      // (A parser adds elements of its own to trees like these, so counting them says nothing.)
-      const alive = (list: PNode[]) => elements(list).some((n) => n.attrs.src === "x");
-      const html = serializeNodes(sanitized);
-      const back = parseHtml(html);
-      if (back.dropped.length || alive(back.nodes))
-        throw new Error(`Tree ${i} came alive:\n${html}\n${what(back.dropped)}`);
-
-      // Nor when the tree is written out as it is: the serializer alone keeps text as text.
-      const raw = serializeNodes(nodes);
-      if (alive(parseHtml(raw).nodes)) throw new Error(`Tree ${i} came alive unsanitized:\n${raw}`);
+  /**
+   * The trees as an artboard, after a few ops that carry no nodes: a `move` puts an element
+   * where no sanitizer saw it, and `attrs` can change how a parser reads one (a color on a
+   * `<font>`, an encoding on an `<annotation-xml>`). `clean` is what the API does to an op
+   * before it applies it.
+   */
+  function artboardAfterOps(r: Random, nodes: PNode[], clean: (op: Op) => Op): string {
+    const doc = sampleDoc();
+    const board = doc.pages[0]!.artboards[0]!;
+    board.root.children = structuredClone(nodes);
+    const ids = elements(nodes).map((n) => n.id);
+    for (let i = ids.length ? r.int(6) : 0; i > 0; i--) {
+      const op: Op = r.chance(0.5)
+        ? { op: "move", id: r.pick(ids), parent: r.pick([...ids, board.id]), index: r.int(4) }
+        : {
+            op: "attrs",
+            id: r.pick(ids),
+            attrs: Object.fromEntries([r.pick(ATTRS), r.pick(ATTRS)]),
+          };
+      try {
+        applyOp(doc, clean(op));
+      } catch (err) {
+        // A node can't move into itself.
+        if (!(err instanceof OpError)) throw err;
+      }
     }
+    return serializeArtboardElement(board);
+  }
+
+  // The hole these tests were written for showed in about one tree in a thousand, so one
+  // seed proves little: many seeds, and a failure names the one to run again.
+  const SEEDS = 150;
+  const TREES_PER_SEED = 60;
+
+  test("sanitized, each is settled; written out, whatever ops follow, nothing in it runs", () => {
+    for (let seed = 1; seed <= SEEDS; seed++) {
+      const r = random(seed);
+      for (let i = 0; i < TREES_PER_SEED; i++) {
+        const fail = (what: string, html: string) => {
+          throw new Error(`Seed ${seed}, tree ${i} ${what}:\n${html}`);
+        };
+        const counter = { n: 0 };
+        const nodes = [tree(r, counter, 0), tree(r, counter, 0)];
+        const sanitized = sanitizeNodes(nodes);
+        const twice: Dropped[] = [];
+        expect(sanitizeNodes(sanitized, twice)).toEqual(sanitized);
+        expect(twice).toEqual([]);
+
+        // Every payload is an <img src=x> with a handler, and every tree has only been
+        // given text and attribute values with one in.
+        const html = serializeNodes(sanitized);
+        if (runs(html).length || payloadCameAlive(html)) fail(`runs ${runs(html)}`, html);
+        const later = artboardAfterOps(r, sanitized, sanitizeOp);
+        if (runs(later).length || payloadCameAlive(later))
+          fail(`runs ${runs(later)} after ops`, later);
+
+        // Nor does a payload come alive when nothing was sanitized: the serializer alone
+        // keeps text as text and a value as a value.
+        const raw = serializeNodes(nodes);
+        if (payloadCameAlive(raw)) fail("came alive unsanitized", raw);
+        const rawLater = artboardAfterOps(r, nodes, (op) => op);
+        if (payloadCameAlive(rawLater)) fail("came alive unsanitized, after ops", rawLater);
+      }
+    }
+  });
+});
+
+describe("ops committed as the API commits them, then drawn", () => {
+  const agent: Actor = { kind: "agent", id: "agent_1", name: "Claude" };
+  const svg = (node: PElement): PElement => ({ ...node, ns: "svg" });
+
+  /** The first artboard after these ops, as the canvas sets it into a shadow root. */
+  function drawn(ops: Op[]): string {
+    const api = new Sequencer(sampleDoc());
+    const posted = ops.map((op, i) => ({ id: `op_${i}`, op }));
+    expect(api.commit(posted, agent).rejected).toEqual([]);
+    return serializeArtboardElement(api.doc.pages[0]!.artboards[0]!);
+  }
+
+  test("an element that says it is SVG can't leave a textarea open for a style sheet to close", () => {
+    const html = drawn([
+      {
+        op: "insert",
+        parent: "n_1",
+        index: 0,
+        nodes: [
+          svg(el("n_s", "svg", [svg(el("n_p", "p")), svg(el("n_t", "textarea"))])),
+          el("n_c", "style", [text(`</textarea>${PAYLOAD}`)]),
+        ],
+      },
+    ]);
+    expect(html).toContain(
+      `<svg data-id="n_s"><p data-id="n_p"></p><textarea data-id="n_t"></textarea></svg><style data-id="n_c"></textarea>${PAYLOAD}</style>`,
+    );
+    expect(runs(html)).toEqual([]);
+  });
+
+  test("nor can a lower-case foreignObject keep the parser in SVG past its end", () => {
+    const cell = svg(el("n_d", "td", [svg(el("n_f", "foreignobject", [svg(el("n_p", "p"))]))]));
+    const html = drawn([
+      {
+        op: "insert",
+        parent: "n_1",
+        index: 0,
+        nodes: [
+          svg(el("n_s", "svg", [cell])),
+          el("n_v", "div"),
+          el("n_e", "td"),
+          el("n_c", "style", [text(PAYLOAD)]),
+        ],
+      },
+    ]);
+    expect(runs(html)).toEqual([]);
+  });
+
+  test("an attribute set afterwards can't turn parsed HTML into markup of its own", () => {
+    // Nothing forged: HTML through the parser, then a color on the <font>, which makes a
+    // parser leave the SVG there.
+    const { nodes } = parseHtml(
+      `<svg><font></font><title></title></svg><style>a::after{content:"</title>${PAYLOAD}"}</style>`,
+    );
+    const font = elements(nodes).find((n) => n.tag === "font")!;
+    const html = drawn([
+      { op: "children", id: "n_1", children: nodes },
+      { op: "attrs", id: font.id, attrs: { color: "red" } },
+    ]);
+    expect(html).toContain('<font data-id="');
+    expect(html).toContain('color="red"></font><title data-id="');
+    expect(runs(html)).toEqual([]);
+  });
+
+  test("an attribute's value stays a value after an element a parser reads differently", () => {
+    const html = drawn([
+      {
+        op: "insert",
+        parent: "n_1",
+        index: 0,
+        nodes: [
+          svg(el("n_s", "svg", [svg(el("n_p", "p")), svg(el("n_t", "textarea"))])),
+          { ...el("n_v", "div"), attrs: { title: `</textarea>${PAYLOAD}` } },
+        ],
+      },
+    ]);
+    expect(html).toContain('title="&lt;/textarea&gt;&lt;img src=x onerror=alert(1)&gt;"');
+    expect(runs(html)).toEqual([]);
+    expect(payloadCameAlive(html)).toBe(false);
   });
 });
 

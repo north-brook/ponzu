@@ -1,3 +1,4 @@
+import { foreignContent } from "parse5";
 import { MAX_ID_LENGTH } from "./limits.ts";
 import type { Dropped } from "./types.ts";
 
@@ -113,6 +114,9 @@ export interface Shell {
  * One element under the rules, its children aside: what stays of it, or null when the whole
  * element goes. A scene script comes back as exactly that, whatever else it carried.
  * What was removed is added to `dropped`.
+ *
+ * Its tag and namespace come back as a parser would have given them, which changes nothing
+ * for an element a parser did give and is not counted as dropping anything.
  */
 export function cleanShell(el: Shell, dropped: Dropped[]): Shell | null {
   const lower = el.tag.toLowerCase();
@@ -128,9 +132,90 @@ export function cleanShell(el: Shell, dropped: Dropped[]): Shell | null {
       if (name.toLowerCase() !== "type") dropped.push({ what: `${name} on <script>` });
     return { tag: "script", attrs: { type: ACT_SCRIPT_TYPE }, style: {} };
   }
-  const shell: Shell = { tag: el.tag, attrs, style: cleanStyle(el.style, dropped, el.tag) };
-  if (el.ns) shell.ns = el.ns;
+  const ns = parsedNamespace(lower, el.ns, attrs);
+  const shell: Shell = {
+    tag: parsedTag(el.tag, ns),
+    attrs,
+    style: cleanStyle(el.style, dropped, el.tag),
+  };
+  if (ns) shell.ns = ns;
   return shell;
+}
+
+/**
+ * Start tags that end SVG or MathML content (the HTML standard's list, "in foreign
+ * content"). `<font>` is one too when it has a color, a face or a size.
+ */
+const LEAVES_FOREIGN = new Set([
+  "b",
+  "big",
+  "blockquote",
+  "body",
+  "br",
+  "center",
+  "code",
+  "dd",
+  "div",
+  "dl",
+  "dt",
+  "em",
+  "embed",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "head",
+  "hr",
+  "i",
+  "img",
+  "li",
+  "listing",
+  "menu",
+  "meta",
+  "nobr",
+  "ol",
+  "p",
+  "pre",
+  "ruby",
+  "s",
+  "small",
+  "span",
+  "strong",
+  "strike",
+  "sub",
+  "sup",
+  "table",
+  "tt",
+  "u",
+  "ul",
+  "var",
+]);
+
+/**
+ * The namespace a parser could have given an element with this tag. What a node claims is
+ * kept unless no HTML text reads that way: `<svg>` and `<math>` always have a namespace, and
+ * a tag that ends SVG or MathML content never does. Where the element sits also decides,
+ * and that isn't known here, so this narrows a claim without making it true.
+ */
+function parsedNamespace(
+  lower: string,
+  claimed: Shell["ns"],
+  attrs: Record<string, string>,
+): Shell["ns"] {
+  if (!claimed) return lower === "svg" ? "svg" : lower === "math" ? "math" : undefined;
+  if (LEAVES_FOREIGN.has(lower)) return undefined;
+  const leaves =
+    lower === "font" && Object.keys(attrs).some((name) => /^(color|face|size)$/i.test(name));
+  return leaves ? undefined : claimed;
+}
+
+/** The tag in the case a parser gives it: lowercase, but for SVG's camel-cased names. */
+function parsedTag(tag: string, ns: Shell["ns"]): string {
+  // A parser lowercases A to Z and nothing else.
+  const lower = tag.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
+  return ns === "svg" ? (foreignContent.SVG_TAG_NAMES_ADJUSTMENT_MAP.get(lower) ?? lower) : lower;
 }
 
 /** The attributes that may stay, in their order. `tag` is only for saying where one was. */

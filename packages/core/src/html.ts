@@ -207,38 +207,41 @@ export interface SerializeOptions {
   omitIds?: boolean;
 }
 
-/** Where a node is written, as the parser that reads it back will see it. */
-interface Context {
-  /**
-   * Whether the parser will be in SVG/MathML content, where `<x/>` closes itself. Undefined
-   * (a node serialized on its own) assumes a foreign node sits inside its own namespace.
-   */
-  foreign: boolean | undefined;
-  /**
-   * Whether the parser is certainly reading ordinary HTML here, so a `<style>` or a scene is
-   * raw text to it. Where that isn't certain, their text is written so it's inert as markup.
-   */
-  plain: boolean;
-}
-
 /**
  * Nodes as HTML that reads back as the same nodes, and as nothing more: whatever a tree
  * holds, no text or attribute in it comes out as markup of its own.
+ *
+ * That has to hold for trees no parser would produce (an element that claims a namespace it
+ * can't have, an attribute changed after the fact), because an op can make any of them and a
+ * browser reads the result. So the output doesn't lean on knowing where the parser will be.
+ * Every element but an HTML void is closed with an end tag, which reads the same in HTML,
+ * SVG and MathML. Text and attribute values are escaped, so they stay inert even inside an
+ * element the parser reads as raw text. A style sheet and a scene are the two things that
+ * must be written raw, and `writeNode` only does so where it is safe.
+ *
+ * The random trees in sanitize.test.ts check this against a parser with none of Ponzu's
+ * rules, as a browser reads the HTML. Change how anything here is written and run them over
+ * many more seeds than the suite does.
  */
 export function serializeNodes(nodes: PNode[], opts: SerializeOptions = {}): string {
   let out = "";
-  for (const n of nodes) out += writeNode(n, opts, { foreign: false, plain: true });
+  for (const n of nodes) out += writeNode(n, opts, true);
   return out;
 }
 
 export function serializeNode(node: PNode, opts: SerializeOptions = {}): string {
-  return writeNode(node, opts, { foreign: undefined, plain: true });
+  return writeNode(node, opts, true);
 }
 
-function writeNode(node: PNode, opts: SerializeOptions, ctx: Context): string {
+/**
+ * `plain` is whether the parser is certainly reading ordinary HTML here, so a `<style>` or a
+ * scene is raw text to it: nothing above it is, or claims to be, SVG, MathML or a `<select>`.
+ * Where that isn't certain, their text is written so it's inert as markup.
+ */
+function writeNode(node: PNode, opts: SerializeOptions, plain: boolean): string {
   if (node.kind === "text") return escapeText(node.value);
   const lower = node.tag.toLowerCase();
-  if (lower === "script") return serializeActScript(node, opts, ctx.plain);
+  if (lower === "script") return serializeActScript(node, opts, plain);
   let out = `<${node.tag}`;
   if (!opts.omitIds) out += ` data-id="${escapeAttr(node.id)}"`;
   if (node.name !== undefined) out += ` data-name="${escapeAttr(node.name)}"`;
@@ -256,33 +259,27 @@ function writeNode(node: PNode, opts: SerializeOptions, ctx: Context): string {
     out += ` style="${escapeAttr(
       rewrite ? rewriteCssUrls(style, (u) => rewrite(u, { tag: node.tag, attr: "style" })) : style,
     )}"`;
-  if (!node.ns && VOID.has(node.tag)) return `${out}>`;
-  // HTML parsers honor `/>` on <svg> and <math> anywhere, and on any element
-  // inside foreign content. Elsewhere it would be ignored and the element
-  // would swallow its next siblings, so close it explicitly.
-  const parsedForeign =
-    !!node.ns && (node.tag === "svg" || node.tag === "math" || (ctx.foreign ?? true));
-  if (node.ns && node.children.length === 0)
-    return parsedForeign ? `${out}/>` : `${out}></${node.tag}>`;
+  if (!node.ns && VOID.has(lower)) return `${out}>`;
+  // Never `<x/>`. A parser honors that only in SVG and MathML, and whether it is there
+  // depends on more than a tree shows: `<p>` and `<font color>` leave SVG, an attribute makes
+  // `<annotation-xml>` hold HTML. Where `/>` is ignored the element stays open and swallows
+  // what follows, and a `<textarea/>` turns the rest of the artboard into its text.
   out += ">";
   if (isTextOnly(lower)) {
     // Read back as text, so written as text: an element here could close its parent early.
     for (const c of node.children) {
       if (c.kind !== "text") continue;
-      if (node.tag !== "style") out += escapeText(c.value);
+      if (lower !== "style") out += escapeText(c.value);
       else {
         const css = rewrite
           ? rewriteCssUrls(c.value, (u) => rewrite(u, { tag: node.tag, attr: "style" }))
           : c.value;
-        out += rawCss(css, ctx.plain);
+        out += rawCss(css, plain);
       }
     }
     return `${out}</${node.tag}>`;
   }
-  const inside: Context = {
-    foreign: parsedForeign && childrenAreForeign(node),
-    plain: ctx.plain && !node.ns && !NOT_PLAIN.has(lower),
-  };
+  const inside = plain && !node.ns && !NOT_PLAIN.has(lower);
   for (const c of node.children) out += writeNode(c, opts, inside);
   return `${out}</${node.tag}>`;
 }
@@ -312,25 +309,6 @@ function serializeActScript(node: PElement, opts: SerializeOptions, plain: boole
     out += plain ? c.value.replace(/<(\/script|!--)/gi, "<\\$1") : escapeText(c.value);
   }
   return `${out}</script>`;
-}
-
-/** SVG elements whose children parse as HTML. */
-const SVG_HTML_INTEGRATION = new Set(["foreignObject", "desc", "title"]);
-/** MathML elements whose children (mostly) parse as HTML. */
-const MATHML_TEXT_INTEGRATION = new Set(["mi", "mo", "mn", "ms", "mtext"]);
-
-/** Whether a parser reads this element's children as foreign (SVG/MathML) content. */
-function childrenAreForeign(node: PElement): boolean {
-  if (node.ns === "svg") return !SVG_HTML_INTEGRATION.has(node.tag);
-  if (node.ns === "math") {
-    if (MATHML_TEXT_INTEGRATION.has(node.tag)) return false;
-    if (node.tag === "annotation-xml") {
-      const encoding = (node.attrs.encoding ?? "").toLowerCase();
-      return encoding !== "text/html" && encoding !== "application/xhtml+xml";
-    }
-    return true;
-  }
-  return false;
 }
 
 function isBooleanish(attr: string): boolean {
@@ -447,8 +425,18 @@ function escapeText(s: string): string {
     .replace(/ /g, "&nbsp;");
 }
 
+/**
+ * `<` and `>` mean nothing inside a quoted value and are escaped all the same, as browsers
+ * do when they serialize: a value that ends up read as the text of an element left open then
+ * holds nothing that could close it and start a tag.
+ */
 function escapeAttr(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/ /g, "&nbsp;");
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/ /g, "&nbsp;");
 }
 
 /** Deterministic id from a seed and position, so unchanged files keep the same ids across reloads. */
