@@ -226,9 +226,23 @@ it. Each op is stored with its inverse.
 ## The sandbox
 
 One design owns one sandbox, one Claude session, one branch and at most one pull
-request. The provider sits behind `packages/sandbox`:
-`create`, `resume`, `stop`, `destroy`, `exec`, `readFile`, `writeFile`, `url`,
-`snapshot`, `usage`.
+request. The provider sits behind `SandboxProvider` in `packages/sandbox`:
+`create`, `get`, `list`, `ensureAwake`, `resume`, `stop`, `extend`, `destroy`,
+`exec`, `execStream`, `spawn`, `process`, `kill`, `readFile`, `writeFile`,
+`address`, `saveSnapshot`, `getSnapshot`, `listSnapshots`, `deleteSnapshot`,
+`usage`. A sandbox is `awake`, `asleep` or `gone`, or `starting` or `stopping` on
+the way. `BoatProvider` is the real one; `FakeProvider` runs in memory with a clock
+the test controls.
+
+Three rules of that interface shape the API's jobs:
+
+- `ensureAwake` has a deadline (90 seconds unless told otherwise) and ends with a
+  typed error when it passes, so a wake never outlives its function unannounced.
+- A wake that is given a new environment either starts the sandbox on it or fails
+  with `conflict`. It never returns a sandbox that is running on the old one.
+- The idempotency key on `create` guards one job's retries, not a design. The
+  provider forgets it after a day and when the sandbox is destroyed. The design's
+  row holds the sandbox id; a label finds a sandbox the row lost.
 
 boat.dev gives each sandbox a full VM (Ubuntu 24.04 with Node, Bun, git, Docker,
 Chrome and Claude Code) and a token-gated public address per port. It has no idle
@@ -392,6 +406,8 @@ from `cloud` into `main`, released as the next major version.
   which is why tools work on a local replica and post ops in the background.
 - After a long sleep the first reply takes 20 to 50 seconds. The thread shows a
   waking state.
+- A stop usually finishes in a few seconds but has taken 50, and boat.dev refuses a
+  resume until it has. A message that arrives in that window waits for the stop.
 - Neon Realtime is a public beta.
 - A commit can be authored by the person or verified, not both. Repos that require
   signed commits on the pushed branch need the API commit path.

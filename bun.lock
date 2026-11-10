@@ -14,7 +14,7 @@
     },
     "apps/cli": {
       "name": "ponzu",
-      "version": "1.79.1",
+      "version": "1.80.1",
       "bin": {
         "ponzu": "./src/index.ts",
       },
@@ -30,7 +30,7 @@
     },
     "apps/desktop": {
       "name": "@ponzu/desktop",
-      "version": "1.79.1",
+      "version": "1.80.1",
       "dependencies": {
         "electron-updater": "6.8.9",
       },
@@ -44,7 +44,7 @@
     },
     "apps/mobile": {
       "name": "@ponzu/mobile",
-      "version": "0.11.4",
+      "version": "0.12.1",
       "dependencies": {
         "@expo-google-fonts/funnel-display": "^0.4.1",
         "@expo-google-fonts/ibm-plex-mono": "^0.4.1",
@@ -216,6 +216,10 @@
         "@ponzu/core": "workspace:*",
         "playwright-core": "^1.64.1",
       },
+    },
+    "packages/sandbox": {
+      "name": "@ponzu/sandbox",
+      "version": "0.1.0",
     },
     "packages/server": {
       "name": "@ponzu/server",
@@ -744,6 +748,8 @@
     "@ponzu/react": ["@ponzu/react@workspace:packages/react"],
 
     "@ponzu/render": ["@ponzu/render@workspace:packages/render"],
+
+    "@ponzu/sandbox": ["@ponzu/sandbox@workspace:packages/sandbox"],
 
     "@ponzu/server": ["@ponzu/server@workspace:packages/server"],
 
