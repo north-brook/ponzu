@@ -305,4 +305,5 @@ test("a canvas on another Mac that falls behind a burst of changes catches up on
     m.spareWs.telemetry = undefined;
     await m.close();
   }
-}, 30_000);
+  // Twelve megabyte rewrites, each parsed whole: 12 s on a CI runner with room, 30 on a loaded one.
+}, 60_000);
