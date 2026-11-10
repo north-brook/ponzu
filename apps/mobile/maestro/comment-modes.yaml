@@ -2,7 +2,7 @@ appId: design.ponzu.app
 name: comment-modes
 tags: [dev-host]
 ---
-# The comment sheet changes shape between typing and voice, both ways, and
+# The comment field switches between typing and voice, both ways, and
 # sends what was typed. The microphone is refused (shared/start.yaml), so
 # voice says it can't hear you. The comment is deleted after.
 - runFlow: shared/start.yaml

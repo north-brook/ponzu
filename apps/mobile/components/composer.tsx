@@ -1,14 +1,22 @@
+import {
+  Host,
+  Text as SwiftText,
+  TextField,
+  type TextFieldRef,
+  useNativeState,
+} from "@expo/ui/swift-ui";
+import {
+  font,
+  foregroundStyle,
+  lineLimit,
+  lineSpacing,
+  padding,
+  disabled as swiftDisabled,
+  tint,
+} from "@expo/ui/swift-ui/modifiers";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  type LayoutChangeEvent,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  type TextInputInstance,
-  View,
-} from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { KeyboardController } from "react-native-keyboard-controller";
 import Animated, {
@@ -27,9 +35,8 @@ import Animated, {
 import { useAppActive } from "../lib/app-active";
 import { useDictation } from "../lib/dictation";
 import { type Draft, getDraft, setDraft } from "../lib/drafts";
-import { FIELD_LINE, FIELD_MAX, FIELD_PAD } from "../lib/field";
+import { FIELD_LINE, FIELD_LINES, FIELD_PAD, FIELD_SIZE, FIELD_SPACING } from "../lib/field";
 import { fail, select, success } from "../lib/haptics";
-import { PARTS, phase, SWITCH_MS } from "../lib/morph";
 import { useTheme } from "../lib/theme";
 import { brand, EASE_OUT } from "../lib/tokens";
 import { Glass } from "./glass";
@@ -58,38 +65,31 @@ function rememberMode(m: Mode) {
 const ease = Easing.bezier(...EASE_OUT);
 
 const styles = StyleSheet.create({
-  field: {
-    minHeight: 44,
-    maxHeight: FIELD_MAX,
-    paddingTop: FIELD_PAD,
-    paddingBottom: FIELD_PAD,
-    paddingHorizontal: 14,
-    fontFamily: "Inter",
-    fontSize: 17,
-    lineHeight: FIELD_LINE,
-  },
-  fieldEmpty: { height: 44 },
   // Out of view, never faded: Liquid Glass draws as a plain view under a parent with opacity.
   hidden: { position: "absolute", left: -10_000, width: 300 },
 });
-/** Between "Listening…" (or what's said) and the row under it. */
-const GAP = 14;
+/** A control inside the field: its size, and how far it sits in from the field's edge. */
+const SLOT = 32;
+const INSET = (44 - SLOT) / 2;
+/** Text beside a control clears it by this much more. */
+const BESIDE = INSET + SLOT + 8;
+/** The text's own inset, with nothing beside it. */
+const EDGE = 16;
 
 /**
- * Writing a comment or reply, by voice or typing (Flow › 6–9). One action
- * button: in voice, the keyboard (switch to typing) until something is said,
- * then send; in typing, the mic (switch to voice) until something is typed,
- * then send. Voice shows what's heard, a live waveform and a neutral mute.
- * The field and the waveform share one glass capsule, the buttons' height;
- * the field sizes itself, as iOS does a multiline text view, up to five lines.
+ * Writing a comment or reply, by voice or typing: one glass field and
+ * nothing else (Directions › A+ in .context/composer.design). What's typed
+ * and what's said are written in the same field, five lines at most.
  *
- * Switching is one sheet changing shape (Flow › 8 ⇄ 7), never two screens:
- * every part stays mounted and moves on one clock on the UI thread
- * (lib/morph.ts has the timing). The field steps out of view and the
- * waveform grows in its place, "Listening…" opens above, the mute slides in from the
- * left and the button's mic turns into the keyboard. The keyboard itself
- * drops or rises with the system's animation, and the sheet (sheet.tsx)
- * rides it.
+ * Typing, it's SwiftUI's own text field, with the mic inside its trailing
+ * edge (switch to voice) until there are words, then Send. In voice, what's
+ * heard is written into the field as it's said, its edge glows yuzu, the
+ * listening disc at its leading edge mutes (tap again to listen), and the
+ * keyboard glyph goes back to typing until there are words, then Send. A tap
+ * on what's been said goes back to typing too, the words with it, to fix one.
+ *
+ * A new comment's field floats on its own over the canvas (sheet.tsx, bare);
+ * a thread's reply field sits in the thread's sheet.
  */
 export function Composer({
   mode,
@@ -112,12 +112,12 @@ export function Composer({
    * they come back wherever the composer opens next.
    */
   draft?: { key: string } & Omit<Draft, "text">;
-  /** Sending takes the sheet away (a new comment): the words go with it, never emptied first. */
+  /** Sending takes the field away (a new comment): the words go with it, never emptied first. */
   leaves?: boolean;
 }) {
   const { color } = useTheme();
   const voice = mode === "voice";
-  /** Sent from a sheet that leaves: the microphone stops with the tap, not when the Mac answers. */
+  /** Sent from a field that leaves: the microphone stops with the tap, not when the Mac answers. */
   const [gone, setGone] = useState(false);
   const [kept] = useState(() => (draft ? (getDraft(draft.key)?.text ?? "") : ""));
   const keep = (t: string) => {
@@ -126,24 +126,27 @@ export function Composer({
   };
   // Opened in voice, it goes on from what was said or typed before.
   const dictation = useDictation(voice && !gone, voice ? kept : "");
+  // The field's words live in SwiftUI (field); typed follows them for Send and the draft.
+  const field = useNativeState(voice ? "" : kept);
   const [typed, setTypedState] = useState(voice ? "" : kept);
-  const setTyped = (t: string) => {
+  /** The person typed: SwiftUI has the words already. */
+  const onType = (t: string) => {
     keep(t);
     setTypedState(t);
+  };
+  /** The app puts words in the field (what was said, a send, a send that failed). */
+  const setTyped = (t: string) => {
+    field.value = t;
+    onType(t);
   };
   // What's heard is kept as it comes, as typing is.
   useEffect(() => {
     if (voice) keep(dictation.text);
   }, [voice, dictation.text]);
   const [sending, setSending] = useState(false);
-  const input = useRef<TextInputInstance>(null);
+  const input = useRef<TextFieldRef>(null);
   const text = voice ? dictation.text : typed;
   const has = text.trim().length > 0;
-
-  /** 0 typing, 1 voice, and which way it's going. */
-  const clock = useSharedValue(voice ? 1 : 0);
-  const toVoice = useSharedValue(voice);
-  const still = useReducedMotion();
 
   const switchTo = (m: Mode) => {
     select();
@@ -151,7 +154,7 @@ export function Composer({
     if (m === "type") setTyped(dictation.text);
     else {
       dictation.setText(typed);
-      // The keyboard goes down with the system's own animation; the sheet follows it.
+      // The keyboard goes down with the system's own animation; the field rides it.
       KeyboardController.dismiss().catch(() => {});
     }
     rememberMode(m);
@@ -161,11 +164,9 @@ export function Composer({
   useEffect(() => {
     const was = first.current;
     first.current = false;
-    const to = voice ? 1 : 0;
-    toVoice.value = voice;
-    clock.value = still ? to : withTiming(to, { duration: SWITCH_MS, easing: Easing.linear });
-    // The keyboard comes up as the field comes back, and the sheet rides it.
-    if (!voice && (autoFocus || !was)) setTimeout(() => input.current?.focus(), was ? 60 : 0);
+    // The keyboard comes up as typing starts, and the field rides it.
+    if (!voice && (autoFocus || !was))
+      setTimeout(() => input.current?.focus().catch(() => {}), was ? 60 : 0);
   }, [mode]);
 
   // The mode and the words now, for a send that fails: its words go back into whichever
@@ -177,7 +178,7 @@ export function Composer({
     const words = text.trim();
     setSending(true);
     // Something answers the tap at once, not when the Mac does: over the tailnet that's long
-    // enough to read as a tap that didn't take. A sheet that leaves takes the words with it; a
+    // enough to read as a tap that didn't take. A field that leaves takes the words with it; a
     // reply's leave the field. A send that fails puts them back.
     if (leaves) setGone(true);
     else {
@@ -192,7 +193,7 @@ export function Composer({
         dictation.setText("");
       }
     } catch {
-      // A sheet that leaves comes back with its words, listening again as it did when it opened.
+      // A field that leaves comes back with its words, listening again as it did when it opened.
       if (leaves) setGone(false);
       else {
         const n = now.current;
@@ -208,38 +209,19 @@ export function Composer({
     }
   };
 
-  // What's heard, or "Listening…", above the row: opens to its own height.
-  const tall = useSharedValue(0);
-  const onTranscript = (e: LayoutChangeEvent) => {
-    const h = e.nativeEvent.layout.height;
-    tall.value = tall.value ? withTiming(h, { duration: 160, easing: ease }) : h;
-  };
-  const listenStyle = useAnimatedStyle(() => {
-    const p = phase(clock.value, toVoice.value, PARTS.listen);
-    return { height: tall.value * p, opacity: p, marginBottom: -GAP * (1 - p) };
-  });
-  const waveStyle = useAnimatedStyle(() => {
-    const p = phase(clock.value, toVoice.value, PARTS.wave);
-    return { opacity: p, transform: [{ scaleY: 0.2 + 0.8 * p }] };
-  });
-  const muteSlot = useAnimatedStyle(() => {
-    const p = phase(clock.value, toVoice.value, PARTS.mute);
-    return { width: 56 * p };
-  });
-  // The mute slides and grows in; its glass appears natively (never faded,
-  // components/glass.tsx) and only its glyph fades.
-  const muteStyle = useAnimatedStyle(() => {
-    const p = phase(clock.value, toVoice.value, PARTS.mute);
-    return { transform: [{ translateX: -16 * (1 - p) }, { scale: 0.6 + 0.4 * p }] };
-  });
-  const muteGlyph = useAnimatedStyle(() => ({
-    opacity: phase(clock.value, toVoice.value, PARTS.mute),
-  }));
-  const middleStyle = useAnimatedStyle(() => ({
-    marginRight: 8 + 4 * phase(clock.value, toVoice.value, PARTS.sheet),
-  }));
+  // Listening, the field's edge glows yuzu; it fades, as the glass itself never may.
+  const still = useReducedMotion();
+  const glow = useSharedValue(voice ? 1 : 0);
+  useEffect(() => {
+    glow.value = still
+      ? voice
+        ? 1
+        : 0
+      : withTiming(voice ? 1 : 0, { duration: 220, easing: ease });
+  }, [voice]);
+  const glowStyle = useAnimatedStyle(() => ({ opacity: glow.value }));
 
-  const quiet = dictation.state !== "listening" && !dictation.muted;
+  const blocked = dictation.state === "denied" || dictation.state === "unavailable";
   const note =
     dictation.state === "denied"
       ? "Ponzu can't hear you. Turn on the microphone and speech recognition in Settings, or type."
@@ -251,167 +233,119 @@ export function Composer({
   return (
     <View>
       <Animated.View
-        style={[{ overflow: "hidden" }, listenStyle]}
-        accessibilityElementsHidden={!voice}
-        importantForAccessibility={voice ? "auto" : "no-hide-descendants"}
+        pointerEvents="none"
+        style={[
+          StyleSheet.absoluteFill,
+          {
+            borderRadius: 22,
+            boxShadow: `0 0 0 2px ${brand.yuzu}, 0 0 18px rgba(255,200,30,0.35)`,
+          },
+          glowStyle,
+        ]}
+      />
+      <Glass
+        testID="comment-field"
+        style={{ minHeight: 44, borderRadius: 22, justifyContent: "flex-end" }}
       >
-        <View onLayout={onTranscript} style={{ position: "absolute", top: 0, left: 0, right: 0 }}>
-          <Text
-            testID={voice ? "transcript" : undefined}
-            style={{
-              paddingHorizontal: 4,
-              fontFamily: "Inter",
-              fontSize: 19,
-              lineHeight: 27.55,
-              color: spoken ? color.ink : color.faint,
-            }}
-          >
-            {spoken ? dictation.text : <Caret />}
-            {spoken ? <Caret /> : (note ?? (dictation.muted ? "Muted" : "Listening…"))}
-          </Text>
-        </View>
-      </Animated.View>
-      <View style={{ marginTop: GAP, flexDirection: "row", alignItems: "flex-end" }}>
-        <Animated.View
-          style={[{ height: 44 }, muteSlot]}
-          pointerEvents={voice ? "auto" : "none"}
-          accessibilityElementsHidden={!voice}
-          importantForAccessibility={voice ? "auto" : "no-hide-descendants"}
+        {/*
+          SwiftUI's own text field, as Messages' is: one line at 44, a line taller for
+          each line of text up to five, then it scrolls in itself, keeping the line being
+          typed in view. SwiftUI sizes it and the host takes its height
+          (matchContents), so nothing here measures it. It isn't React Native's, so it
+          holds no touch Send needs. In voice it steps out of view (moved, never faded:
+          glass breaks under opacity) and what's heard takes its place.
+        */}
+        <View
+          style={voice ? styles.hidden : { paddingRight: BESIDE - EDGE }}
+          pointerEvents={voice ? "none" : "auto"}
+          accessibilityElementsHidden={voice}
+          importantForAccessibility={voice ? "no-hide-descendants" : "auto"}
         >
-          <Animated.View style={[{ position: "absolute", left: 0, top: 0 }, muteStyle]}>
-            <RoundButton
-              label={dictation.muted ? "Unmute" : "Mute"}
-              onPress={() => dictation.setMuted(!dictation.muted)}
-              shown={voice}
-              testID="mute"
-            >
-              <Animated.View style={muteGlyph}>
-                {dictation.muted ? <MicOff color={color.ink} /> : <Mic color={color.ink} />}
-              </Animated.View>
-            </RoundButton>
-          </Animated.View>
-        </Animated.View>
-        <Animated.View style={[{ flex: 1, minWidth: 0, justifyContent: "center" }, middleStyle]}>
-          {/* One glass capsule, the buttons' height and glass: the field in typing, the waveform in voice. */}
-          <Glass
-            testID="comment-field"
-            style={{ minHeight: 44, borderRadius: 22, justifyContent: "flex-end" }}
-          >
-            {/*
-              The field sizes itself, as iOS sizes a multiline text view: one line at 44, a
-              line taller for each line of text up to FIELD_MAX, then it scrolls in itself
-              and iOS keeps the line being typed in view. It must stay able to scroll: with
-              scrolling off until the cap (#383), it stopped growing past one line. In voice
-              it steps out of view (moved, never faded: glass breaks under opacity) and the
-              waveform takes the row.
-            */}
-            <View
-              style={voice ? styles.hidden : null}
-              pointerEvents={voice ? "none" : "auto"}
-              accessibilityElementsHidden={voice}
-              importantForAccessibility={voice ? "no-hide-descendants" : "auto"}
-            >
-              <TextInput
-                ref={input}
-                value={typed}
-                onChangeText={setTyped}
-                placeholder={placeholder}
-                placeholderTextColor={color.faint}
-                selectionColor={brand.yuzu}
-                cursorColor={brand.yuzu}
-                multiline
-                editable={!voice}
-                testID={voice ? undefined : "comment-input"}
-                // iOS's default (true) has the field keep a touch it holds when another view
-                // asks for it, so the first tap on Send after placing the caret went nowhere.
-                rejectResponderTermination={false}
-                style={[
-                  styles.field,
-                  { color: color.ink },
-                  // iOS keeps a multiline field's last height after it's emptied by a send:
-                  // empty, it's one line (as augmenter's composer does).
-                  (voice || typed === "") && styles.fieldEmpty,
-                ]}
-              />
-            </View>
-            <Animated.View
-              pointerEvents="none"
-              accessibilityElementsHidden={!voice}
-              importantForAccessibility={voice ? "auto" : "no-hide-descendants"}
-              style={[
-                { position: "absolute", left: 4, right: 4, bottom: 4, height: 36 },
-                waveStyle,
+          <Host matchContents={{ vertical: true }} alignment="bottomLeading">
+            <TextField
+              ref={input}
+              text={field}
+              onTextChange={onType}
+              axis="vertical"
+              testID={voice ? undefined : "comment-input"}
+              modifiers={[
+                // Relative to body, so it follows Dynamic Type as the rest of the app does.
+                font({ family: "Inter", size: FIELD_SIZE, textStyle: "body" }),
+                foregroundStyle(color.ink),
+                tint(brand.yuzu),
+                lineLimit({ min: 1, max: FIELD_LINES }),
+                lineSpacing(FIELD_SPACING),
+                padding({ horizontal: EDGE, vertical: FIELD_PAD }),
+                swiftDisabled(voice),
               ]}
             >
-              <Waveform
-                level={dictation.level}
-                active={voice && spoken}
-                quiet={!voice || quiet || dictation.muted}
-                shown={voice && dictation.state !== "denied" && dictation.state !== "unavailable"}
-              />
-            </Animated.View>
-          </Glass>
-        </Animated.View>
-        {has ? (
-          <RoundButton tone="ink" label="Send" onPress={send} disabled={sending} testID="send">
-            <Send color={color.bg} />
-          </RoundButton>
-        ) : (
-          <SwitchButton
-            voice={voice}
-            clock={clock}
-            toVoice={toVoice}
-            onPress={() => switchTo(voice ? "type" : "voice")}
-          />
+              <TextField.Placeholder>
+                <SwiftText modifiers={[foregroundStyle(color.faint)]}>{placeholder}</SwiftText>
+              </TextField.Placeholder>
+            </TextField>
+          </Host>
+        </View>
+        {voice && (
+          // What's heard, written into the field as it's said. A tap goes back to typing with it.
+          <Pressable
+            onPress={() => switchTo("type")}
+            accessibilityRole="button"
+            accessibilityHint="Type to change it"
+            style={{
+              minHeight: 44,
+              justifyContent: "center",
+              paddingVertical: (44 - FIELD_LINE) / 2,
+              paddingLeft: BESIDE,
+              paddingRight: BESIDE,
+            }}
+          >
+            <Text
+              testID="transcript"
+              numberOfLines={FIELD_LINES}
+              ellipsizeMode="head"
+              style={{
+                fontFamily: "Inter",
+                fontSize: FIELD_SIZE,
+                lineHeight: FIELD_LINE,
+                color: spoken ? color.ink : color.faint,
+              }}
+            >
+              {spoken ? dictation.text : <Caret />}
+              {spoken ? <Caret /> : (note ?? (dictation.muted ? "Muted" : "Listening…"))}
+            </Text>
+          </Pressable>
         )}
-      </View>
-    </View>
-  );
-}
-
-/**
- * The button that switches: the mic in typing, the keyboard in voice. Its
- * glyph turns over as the sheet changes, the mic rotating away as the
- * keyboard rotates in (Flow › 8 ⇄ 7).
- */
-function SwitchButton({
-  voice,
-  clock,
-  toVoice,
-  onPress,
-}: {
-  voice: boolean;
-  clock: SharedValue<number>;
-  toVoice: SharedValue<boolean>;
-  onPress: () => void;
-}) {
-  const { color } = useTheme();
-  const mic = useAnimatedStyle(() => {
-    const p = phase(clock.value, toVoice.value, PARTS.mic);
-    return { opacity: 1 - p, transform: [{ rotate: `${-90 * p}deg` }, { scale: 1 - 0.4 * p }] };
-  });
-  const keys = useAnimatedStyle(() => {
-    const p = phase(clock.value, toVoice.value, PARTS.keys);
-    return { opacity: p, transform: [{ rotate: `${90 * (1 - p)}deg` }, { scale: 0.6 + 0.4 * p }] };
-  });
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={voice ? "Type instead" : "Speak instead"}
-      testID={voice ? "to-type" : "to-voice"}
-    >
-      <Glass interactive style={round}>
-        <View style={{ width: 24, height: 24 }}>
-          <Animated.View style={[centered, mic]}>
-            <Mic color={color.ink} />
-          </Animated.View>
-          <Animated.View style={[centered, keys]}>
-            <Keyboard color={color.ink} />
-          </Animated.View>
+        {voice && (
+          <View style={{ position: "absolute", left: INSET, bottom: INSET }}>
+            <ListenDisc
+              level={dictation.level}
+              muted={dictation.muted}
+              blocked={blocked}
+              listening={dictation.state === "listening"}
+              onPress={() => {
+                select();
+                dictation.setMuted(!dictation.muted);
+              }}
+            />
+          </View>
+        )}
+        <View style={{ position: "absolute", right: INSET, bottom: INSET }}>
+          {has ? (
+            <InkButton label="Send" onPress={send} disabled={sending} testID="send">
+              <Send size={16} color={color.bg} />
+            </InkButton>
+          ) : voice ? (
+            <GlyphButton label="Type instead" testID="to-type" onPress={() => switchTo("type")}>
+              <Keyboard color={color.muted} />
+            </GlyphButton>
+          ) : (
+            <GlyphButton label="Speak instead" testID="to-voice" onPress={() => switchTo("voice")}>
+              <Mic color={color.muted} />
+            </GlyphButton>
+          )}
         </View>
       </Glass>
-    </Pressable>
+    </View>
   );
 }
 
@@ -432,47 +366,30 @@ function Caret() {
   );
 }
 
-/**
- * A 44pt round button: glass (switch to typing or voice, mute) or ink (send).
- * The glass ones float on the sheet as the canvas bar's controls do.
- */
-export function RoundButton({
+/** A glyph inside the field (switch to typing or voice): no glass of its own, the field's is. */
+function GlyphButton({
   children,
   onPress,
   label,
-  tone = "glass",
-  disabled = false,
-  shown = true,
   testID,
 }: {
   children: React.ReactNode;
   onPress: () => void;
   label: string;
-  tone?: "glass" | "ink";
-  disabled?: boolean;
-  /** Glass: there, or dissolved (components/glass.tsx). */
-  shown?: boolean;
-  testID?: string;
+  testID: string;
 }) {
-  if (tone === "ink")
-    return (
-      <InkButton onPress={onPress} label={label} disabled={disabled} testID={testID}>
-        {children}
-      </InkButton>
-    );
   return (
     <Pressable
       onPress={onPress}
-      disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}
       testID={testID}
+      hitSlop={8}
+      style={slot}
     >
-      <Glass interactive shown={shown} style={round}>
-        <Animated.View key={label} entering={FadeIn.duration(180)} exiting={FadeOut.duration(120)}>
-          {children}
-        </Animated.View>
-      </Glass>
+      <Animated.View key={label} entering={FadeIn.duration(180)} exiting={FadeOut.duration(120)}>
+        {children}
+      </Animated.View>
     </Pressable>
   );
 }
@@ -533,8 +450,8 @@ function InkButton({
         accessibilityLabel={label}
         accessibilityState={{ disabled }}
         onAccessibilityTap={disabled ? undefined : onPress}
-        // A little past its edge, as the bar's buttons give; less to the left, where the field is.
-        hitSlop={{ top: 8, bottom: 8, left: 4, right: 10 }}
+        // A little past its edge; less to the left, where the words are.
+        hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
         testID={testID}
         // Dimmed while sending: it's ink, never glass (glass under a dimmed view isn't drawn).
         style={[style, { opacity: disabled ? 0.6 : 1 }]}
@@ -542,7 +459,7 @@ function InkButton({
         <Animated.View
           entering={FadeIn.duration(180)}
           exiting={FadeOut.duration(120)}
-          style={[round, { backgroundColor: color.ink }]}
+          style={[slot, { backgroundColor: color.ink }]}
         >
           {children}
         </Animated.View>
@@ -551,98 +468,81 @@ function InkButton({
   );
 }
 
-const round = {
-  width: 44,
-  height: 44,
+/** A control inside the field. */
+const slot = {
+  width: SLOT,
+  height: SLOT,
   borderRadius: 999,
   alignItems: "center",
   justifyContent: "center",
 } as const;
 
-const centered = {
-  position: "absolute",
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
-  alignItems: "center",
-  justifyContent: "center",
-} as const;
-
-/** The design's 34 bars: their resting heights, which the voice level scales. */
-const BARS = [
-  10, 18, 26, 14, 30, 22, 12, 24, 32, 16, 20, 28, 12, 18, 24, 10, 16, 22, 14, 8, 12, 20, 28, 16, 24,
-  30, 18, 10, 22, 14, 26, 12, 18, 8,
-];
-/** While nothing's said, the quieter line the empty sheet shows. */
-const IDLE = [
-  4, 6, 8, 5, 10, 6, 4, 7, 9, 5, 6, 8, 4, 5, 7, 4, 5, 6, 5, 3, 4, 6, 8, 5, 7, 9, 5, 4, 6, 5, 7, 4,
-  5, 3,
-];
+/** The disc's five bars: their resting heights, which the voice level scales. */
+const BARS = [8, 14, 20, 12, 7];
 
 /**
- * The live waveform: bars that follow the microphone's level, each with its
- * own phase so the line ripples. Faint until there's text, then ink, as the
- * design's empty and speaking sheets show.
+ * At the field's leading edge in voice: listening, a yuzu disc whose bars
+ * follow the microphone's level, each a beat behind the one before so they
+ * ripple; tapped, it mutes, the disc goes quiet and shows the mic struck
+ * through, and tapped again it listens. Refused the microphone, it's quiet
+ * and does nothing.
  */
-function Waveform({
+function ListenDisc({
   level,
-  active,
-  quiet,
-  shown,
+  muted,
+  blocked,
+  listening,
+  onPress,
 }: {
   level: SharedValue<number>;
-  active: boolean;
-  quiet: boolean;
-  /**
-   * In voice, and able to hear. Typing, the waveform is out of sight; refused the microphone, it
-   * has nothing to follow. Either way its clock stops and the line rests: left running, it
-   * restyled all 34 bars on the UI thread every frame for as long as the sheet was open.
-   */
-  shown: boolean;
+  muted: boolean;
+  blocked: boolean;
+  listening: boolean;
+  onPress: () => void;
 }) {
   const { color } = useTheme();
+  const live = !muted && !blocked;
   const smooth = useDerivedValue(() =>
-    withTiming(quiet ? 0 : level.value, { duration: 120, easing: ease }),
+    withTiming(live && listening ? level.value : 0, { duration: 120, easing: ease }),
   );
-  // The design's wave: 0.9s, each bar 0.13s behind the one before.
+  // 0.9s a lap, each bar 0.13s behind the one before. Stopped while it can't hear, and
+  // while the app is away: left running, it restyled the bars every frame for nothing.
   const clock = useSharedValue(0);
   const still = useReducedMotion();
   const awake = useAppActive();
   useEffect(() => {
-    if (still || !shown || !awake) return;
+    if (still || !live || !awake) return;
     // From 0: the repeat runs from the value it finds, and stopped near 1 every lap would be
     // a sliver of one.
     clock.value = 0;
     clock.value = withRepeat(withTiming(1, { duration: 900, easing: Easing.linear }), -1);
     return () => cancelAnimation(clock);
-  }, [still, shown, awake]);
+  }, [still, live, awake]);
   return (
-    <View
-      testID="waveform"
-      style={{
-        flex: 1,
-        minWidth: 0,
-        height: 36,
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 2,
-      }}
+    <Pressable
+      onPress={onPress}
+      disabled={blocked}
+      accessibilityRole="button"
+      accessibilityLabel={muted ? "Unmute" : "Mute"}
+      accessibilityState={{ disabled: blocked }}
+      testID="mute"
+      hitSlop={8}
+      style={[slot, { backgroundColor: live ? brand.yuzu : color.chip }]}
     >
-      {BARS.map((h, i) => (
-        <Bar
-          // biome-ignore lint/suspicious/noArrayIndexKey: the bars are a fixed list; place is identity
-          key={i}
-          i={i}
-          rest={active ? h : IDLE[i]!}
-          level={smooth}
-          clock={clock}
-          idle={!active}
-          color={active ? color.ink : color.faint}
-        />
-      ))}
-    </View>
+      {live ? (
+        <View
+          testID="waveform"
+          style={{ flexDirection: "row", alignItems: "center", gap: 2, height: 22 }}
+        >
+          {BARS.map((h, i) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: the bars are a fixed list; place is identity
+            <Bar key={i} i={i} rest={h} level={smooth} clock={clock} />
+          ))}
+        </View>
+      ) : (
+        <MicOff size={17} color={blocked ? color.faint : color.ink} />
+      )}
+    </Pressable>
   );
 }
 
@@ -651,37 +551,22 @@ function Bar({
   rest,
   level,
   clock,
-  idle,
-  color,
 }: {
   i: number;
   rest: number;
   level: SharedValue<number>;
   clock: SharedValue<number>;
-  /** Nothing said yet: the faint line ripples on its own. */
-  idle: boolean;
-  color: string;
 }) {
   const style = useAnimatedStyle(() => {
     const phase = (clock.value + (i * 0.13) / 0.9) % 1;
     const wave = 0.5 - 0.5 * Math.cos(2 * Math.PI * phase);
-    // Between 30% and 100% of its height; how far it moves follows the voice.
-    const reach = idle ? 1 : 0.2 + 0.8 * level.value;
-    return { transform: [{ scaleY: 0.3 + 0.7 * wave * reach }] };
+    // Between 35% and 100% of its height; how far it moves follows the voice.
+    const reach = 0.25 + 0.75 * level.value;
+    return { transform: [{ scaleY: 0.35 + 0.65 * wave * reach }] };
   });
   return (
     <Animated.View
-      style={[
-        {
-          flex: 1,
-          minWidth: 2,
-          maxWidth: 3,
-          height: rest,
-          borderRadius: 2,
-          backgroundColor: color,
-        },
-        style,
-      ]}
+      style={[{ width: 3, height: rest, borderRadius: 2, backgroundColor: brand.ink }, style]}
     />
   );
 }

@@ -857,6 +857,8 @@ export default function Canvas() {
       {pending && (
         <Sheet
           testID="comment-sheet"
+          // No sheet: the field alone floats over the design, above the keyboard.
+          bare
           // Like a book it stays on the design's half, clear of the crease and comments.
           right={split === "beside" ? W - area.width : insets.right}
           maxWidth={sheetMax(duo, W)}
@@ -885,7 +887,17 @@ export default function Canvas() {
             draft={{ key: pinDraft!, file: draftsFile, pin: pending }}
           />
           {error && (
-            <Text style={{ fontFamily: "Inter", fontSize: 13, color: color.muted }}>{error}</Text>
+            // On glass, as it floats over the design with the field.
+            <Glass
+              style={{
+                alignSelf: "flex-start",
+                borderRadius: 14,
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+              }}
+            >
+              <Text style={{ fontFamily: "Inter", fontSize: 13, color: color.muted }}>{error}</Text>
+            </Glass>
           )}
         </Sheet>
       )}
