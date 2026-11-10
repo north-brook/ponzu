@@ -80,10 +80,10 @@ SwiftUI's own `TextField` (`@expo/ui`, vertical): SwiftUI grows it a line at
 a time and scrolls it past five, and its host takes its height, so nothing in
 JavaScript measures it. The mic inside its trailing edge switches to voice
 until there are words, then Send takes its place. In voice, what's heard is
-written into the field as it's said and the field's edge glows yuzu; the
-listening disc at its leading edge mutes, the keyboard glyph goes back to
-typing, and a tap on what's been said goes back to typing with the words.
-The glyphs are Hugeicons, as everywhere in the app.
+written into the field as it's said; the listening disc at its leading edge
+mutes, the keyboard glyph goes back to typing, and a tap on what's been said
+goes back to typing with the words. The glyphs are Hugeicons, as everywhere
+in the app.
 
 On iPhone Duo's inner display held sideways, and on an iPad, the field floats
 centred over the design at most 560pt wide (`SHEET_MAX` in

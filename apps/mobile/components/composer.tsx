@@ -83,10 +83,10 @@ const EDGE = 16;
  *
  * Typing, it's SwiftUI's own text field, with the mic inside its trailing
  * edge (switch to voice) until there are words, then Send. In voice, what's
- * heard is written into the field as it's said, its edge glows yuzu, the
- * listening disc at its leading edge mutes (tap again to listen), and the
- * keyboard glyph goes back to typing until there are words, then Send. A tap
- * on what's been said goes back to typing too, the words with it, to fix one.
+ * heard is written into the field as it's said, the listening disc at its
+ * leading edge mutes (tap again to listen), and the keyboard glyph goes back
+ * to typing until there are words, then Send. A tap on what's been said goes
+ * back to typing too, the words with it, to fix one.
  *
  * A new comment's field floats on its own over the canvas (sheet.tsx, bare);
  * a thread's reply field sits in the thread's sheet.
@@ -209,18 +209,6 @@ export function Composer({
     }
   };
 
-  // Listening, the field's edge glows yuzu; it fades, as the glass itself never may.
-  const still = useReducedMotion();
-  const glow = useSharedValue(voice ? 1 : 0);
-  useEffect(() => {
-    glow.value = still
-      ? voice
-        ? 1
-        : 0
-      : withTiming(voice ? 1 : 0, { duration: 220, easing: ease });
-  }, [voice]);
-  const glowStyle = useAnimatedStyle(() => ({ opacity: glow.value }));
-
   const blocked = dictation.state === "denied" || dictation.state === "unavailable";
   const note =
     dictation.state === "denied"
@@ -231,135 +219,131 @@ export function Composer({
   const spoken = dictation.text.trim().length > 0;
 
   return (
-    <View>
-      <Animated.View
-        pointerEvents="none"
-        style={[
-          StyleSheet.absoluteFill,
-          {
-            borderRadius: 22,
-            boxShadow: `0 0 0 2px ${brand.yuzu}, 0 0 18px rgba(255,200,30,0.35)`,
-          },
-          glowStyle,
-        ]}
-      />
-      <Glass
-        testID="comment-field"
-        style={{ minHeight: 44, borderRadius: 22, justifyContent: "flex-end" }}
+    <Glass
+      testID="comment-field"
+      style={{ minHeight: 44, borderRadius: 22, justifyContent: "flex-end" }}
+    >
+      {/*
+        SwiftUI's own text field, as Messages' is: one line at 44, a line taller for
+        each line of text up to five, then it scrolls in itself, keeping the line being
+        typed in view. SwiftUI sizes it and the host takes its height
+        (matchContents), so nothing here measures it. It isn't React Native's, so it
+        holds no touch Send needs. In voice it steps out of view (moved, never faded:
+        glass breaks under opacity) and what's heard takes its place.
+      */}
+      <View
+        style={voice ? styles.hidden : { paddingRight: BESIDE - EDGE }}
+        pointerEvents={voice ? "none" : "auto"}
+        accessibilityElementsHidden={voice}
+        importantForAccessibility={voice ? "no-hide-descendants" : "auto"}
       >
-        {/*
-          SwiftUI's own text field, as Messages' is: one line at 44, a line taller for
-          each line of text up to five, then it scrolls in itself, keeping the line being
-          typed in view. SwiftUI sizes it and the host takes its height
-          (matchContents), so nothing here measures it. It isn't React Native's, so it
-          holds no touch Send needs. In voice it steps out of view (moved, never faded:
-          glass breaks under opacity) and what's heard takes its place.
-        */}
-        <View
-          style={voice ? styles.hidden : { paddingRight: BESIDE - EDGE }}
-          pointerEvents={voice ? "none" : "auto"}
-          accessibilityElementsHidden={voice}
-          importantForAccessibility={voice ? "no-hide-descendants" : "auto"}
+        <Host matchContents={{ vertical: true }} alignment="bottomLeading">
+          <TextField
+            ref={input}
+            text={field}
+            onTextChange={onType}
+            axis="vertical"
+            testID={voice ? undefined : "comment-input"}
+            modifiers={[
+              // Relative to body, so it follows Dynamic Type as the rest of the app does.
+              font({ family: "Inter", size: FIELD_SIZE, textStyle: "body" }),
+              foregroundStyle(color.ink),
+              tint(brand.yuzu),
+              lineLimit({ min: 1, max: FIELD_LINES }),
+              lineSpacing(FIELD_SPACING),
+              padding({ horizontal: EDGE, vertical: FIELD_PAD }),
+              swiftDisabled(voice),
+            ]}
+          >
+            <TextField.Placeholder>
+              <SwiftText modifiers={[foregroundStyle(color.faint)]}>{placeholder}</SwiftText>
+            </TextField.Placeholder>
+          </TextField>
+        </Host>
+      </View>
+      {voice && (
+        // What's heard, written into the field as it's said. A tap goes back to typing with it.
+        <Pressable
+          onPress={() => switchTo("type")}
+          accessibilityRole="button"
+          accessibilityHint="Type to change it"
+          style={{
+            minHeight: 44,
+            justifyContent: "center",
+            paddingVertical: (44 - FIELD_LINE) / 2,
+            paddingLeft: BESIDE,
+            paddingRight: BESIDE,
+          }}
         >
-          <Host matchContents={{ vertical: true }} alignment="bottomLeading">
-            <TextField
-              ref={input}
-              text={field}
-              onTextChange={onType}
-              axis="vertical"
-              testID={voice ? undefined : "comment-input"}
-              modifiers={[
-                // Relative to body, so it follows Dynamic Type as the rest of the app does.
-                font({ family: "Inter", size: FIELD_SIZE, textStyle: "body" }),
-                foregroundStyle(color.ink),
-                tint(brand.yuzu),
-                lineLimit({ min: 1, max: FIELD_LINES }),
-                lineSpacing(FIELD_SPACING),
-                padding({ horizontal: EDGE, vertical: FIELD_PAD }),
-                swiftDisabled(voice),
-              ]}
-            >
-              <TextField.Placeholder>
-                <SwiftText modifiers={[foregroundStyle(color.faint)]}>{placeholder}</SwiftText>
-              </TextField.Placeholder>
-            </TextField>
-          </Host>
-        </View>
-        {voice && (
-          // What's heard, written into the field as it's said. A tap goes back to typing with it.
-          <Pressable
-            onPress={() => switchTo("type")}
-            accessibilityRole="button"
-            accessibilityHint="Type to change it"
+          <Text
+            testID="transcript"
+            numberOfLines={FIELD_LINES}
+            ellipsizeMode="head"
             style={{
-              minHeight: 44,
-              justifyContent: "center",
-              paddingVertical: (44 - FIELD_LINE) / 2,
-              paddingLeft: BESIDE,
-              paddingRight: BESIDE,
+              fontFamily: "Inter",
+              fontSize: FIELD_SIZE,
+              lineHeight: FIELD_LINE,
+              color: spoken ? color.ink : color.faint,
             }}
           >
-            <Text
-              testID="transcript"
-              numberOfLines={FIELD_LINES}
-              ellipsizeMode="head"
-              style={{
-                fontFamily: "Inter",
-                fontSize: FIELD_SIZE,
-                lineHeight: FIELD_LINE,
-                color: spoken ? color.ink : color.faint,
-              }}
-            >
-              {spoken ? dictation.text : <Caret />}
-              {spoken ? <Caret /> : (note ?? (dictation.muted ? "Muted" : "Listening…"))}
-            </Text>
-          </Pressable>
-        )}
-        {voice && (
-          <View style={{ position: "absolute", left: INSET, bottom: INSET }}>
-            <ListenDisc
-              level={dictation.level}
-              muted={dictation.muted}
-              blocked={blocked}
-              listening={dictation.state === "listening"}
-              onPress={() => {
-                select();
-                dictation.setMuted(!dictation.muted);
-              }}
-            />
-          </View>
-        )}
-        <View style={{ position: "absolute", right: INSET, bottom: INSET }}>
-          {has ? (
-            <InkButton label="Send" onPress={send} disabled={sending} testID="send">
-              <Send size={16} color={color.bg} />
-            </InkButton>
-          ) : voice ? (
-            <GlyphButton label="Type instead" testID="to-type" onPress={() => switchTo("type")}>
-              <Keyboard color={color.muted} />
-            </GlyphButton>
-          ) : (
-            <GlyphButton label="Speak instead" testID="to-voice" onPress={() => switchTo("voice")}>
-              <Mic color={color.muted} />
-            </GlyphButton>
-          )}
+            {spoken ? dictation.text : <Caret />}
+            {spoken ? <Caret /> : (note ?? (dictation.muted ? "Muted" : "Listening…"))}
+          </Text>
+        </Pressable>
+      )}
+      {voice && (
+        <View style={{ position: "absolute", left: INSET, bottom: INSET }}>
+          <ListenDisc
+            level={dictation.level}
+            muted={dictation.muted}
+            blocked={blocked}
+            listening={dictation.state === "listening"}
+            onPress={() => {
+              select();
+              dictation.setMuted(!dictation.muted);
+            }}
+          />
         </View>
-      </Glass>
-    </View>
+      )}
+      <View style={{ position: "absolute", right: INSET, bottom: INSET }}>
+        {has ? (
+          <InkButton label="Send" onPress={send} disabled={sending} testID="send">
+            <Send size={16} color={color.bg} />
+          </InkButton>
+        ) : voice ? (
+          <GlyphButton label="Type instead" testID="to-type" onPress={() => switchTo("type")}>
+            <Keyboard color={color.muted} />
+          </GlyphButton>
+        ) : (
+          <GlyphButton label="Speak instead" testID="to-voice" onPress={() => switchTo("voice")}>
+            <Mic color={color.muted} />
+          </GlyphButton>
+        )}
+      </View>
+    </Glass>
   );
 }
 
-/** The yuzu caret, 2×22. */
+/** The caret's height in the line, under Inter's ascender so it never makes the line taller. */
+const CARET = 14;
+
+/**
+ * The yuzu caret, drawn 2×22 from a descender's depth up. In the line it's
+ * CARET tall, sitting on the baseline: an inline view taller than the font's
+ * ascender stretches its line, which pushed the field past 44 and set the
+ * words and its controls low. It's scaled to 22 about its middle, which a
+ * 14pt view on the baseline shares with 22pt reaching 4pt below it.
+ */
 function Caret() {
   return (
     <Text>
       <View
         style={{
           width: 2,
-          height: 22,
+          height: CARET,
           marginHorizontal: 2,
           backgroundColor: brand.yuzu,
-          transform: [{ translateY: 4 }],
+          transform: [{ scaleY: FIELD_LINE / CARET }],
         }}
       />
     </Text>
