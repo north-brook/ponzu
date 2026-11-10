@@ -1,5 +1,5 @@
 import type { Clock } from "@ponzu/sandbox";
-import { createRemoteJWKSet, customFetch, type JWTVerifyGetKey } from "jose";
+import { createRemoteJWKSet, customFetch, decodeJwt, type JWTVerifyGetKey } from "jose";
 import { UpstreamError } from "../http/errors.ts";
 import type { Fetch } from "./fetch.ts";
 
@@ -23,6 +23,8 @@ export interface WorkosOauthTokens {
 }
 
 export interface WorkosSession {
+  /** WorkOS's id for the session: the `sid` of this access token and of every one after it. */
+  id: string;
   user: WorkosUser;
   /** A five-minute JWT the client sends on every request. */
   accessToken: string;
@@ -209,15 +211,26 @@ function toSession(body: Record<string, unknown>): WorkosSession {
   const email = text(user.email);
   const accessToken = text(body.access_token);
   const refreshToken = text(body.refresh_token);
-  if (!id || !email || !accessToken || !refreshToken) {
+  const sessionId = accessToken && sessionIdOf(accessToken);
+  if (!id || !email || !accessToken || !refreshToken || !sessionId) {
     throw new UpstreamError("workos", "authenticate answered 200 without a user or its tokens");
   }
   return {
+    id: sessionId,
     user: { id, email, emailVerified: user.email_verified === true },
     accessToken,
     refreshToken,
     githubTokens: toGithubTokens(body.oauth_tokens),
   };
+}
+
+/** The `sid` claim of an access token WorkOS has just handed over, unverified: it came from WorkOS. */
+function sessionIdOf(accessToken: string): string | undefined {
+  try {
+    return text(decodeJwt(accessToken).sid);
+  } catch {
+    return undefined;
+  }
 }
 
 function toGithubTokens(value: unknown): WorkosOauthTokens | null {

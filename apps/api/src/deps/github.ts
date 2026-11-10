@@ -117,8 +117,14 @@ export function createGithub({
   // Parsed on first use, so a test that never acts as the App needs no real key.
   let signingKey: ReturnType<typeof createPrivateKey> | undefined;
 
-  async function call(method: string, path: string, bearer: string, body?: unknown) {
-    const asUser = !path.startsWith("/app/");
+  /** One call to api.github.com. `as` says whose credential `bearer` is. */
+  async function call(
+    as: "user" | "app",
+    method: string,
+    path: string,
+    bearer: string,
+    body?: unknown,
+  ) {
     let response: Response;
     try {
       response = await fetch(`${API_URL}${path}`, {
@@ -136,7 +142,7 @@ export function createGithub({
     } catch (cause) {
       throw new UpstreamError("github", `${method} ${path} did not answer`, { cause });
     }
-    if (response.status === 401 && asUser) {
+    if (response.status === 401 && as === "user") {
       // The token ran out early or the person revoked the App: only signing in again mends it.
       throw new ApiError(401, "github_reauth_required", "Sign in again to reconnect GitHub.");
     }
@@ -150,7 +156,12 @@ export function createGithub({
   async function listAll(path: string, userToken: string, key: string): Promise<any[]> {
     const items: any[] = [];
     for (let page = 1; page <= MAX_PAGES; page++) {
-      const body = await call("GET", `${path}?per_page=${PAGE_SIZE}&page=${page}`, userToken);
+      const body = await call(
+        "user",
+        "GET",
+        `${path}?per_page=${PAGE_SIZE}&page=${page}`,
+        userToken,
+      );
       const batch: any[] = body[key] ?? [];
       items.push(...batch);
       if (batch.length < PAGE_SIZE) break;
@@ -172,7 +183,7 @@ export function createGithub({
 
   return {
     async getUser(userToken) {
-      const user = await call("GET", "/user", userToken);
+      const user = await call("user", "GET", "/user", userToken);
       return {
         id: user.id,
         login: user.login,
@@ -182,7 +193,12 @@ export function createGithub({
     },
 
     async listEmails(userToken) {
-      const emails: any[] = await call("GET", `/user/emails?per_page=${PAGE_SIZE}`, userToken);
+      const emails: any[] = await call(
+        "user",
+        "GET",
+        `/user/emails?per_page=${PAGE_SIZE}`,
+        userToken,
+      );
       return emails.map((entry) => ({
         email: entry.email,
         primary: entry.primary === true,
@@ -259,7 +275,7 @@ export function createGithub({
 
     async createInstallationToken({ installationId, repositoryIds, permissions }) {
       const path = `/app/installations/${installationId}/access_tokens`;
-      const body = await call("POST", path, await appJwt(), {
+      const body = await call("app", "POST", path, await appJwt(), {
         ...(repositoryIds ? { repository_ids: repositoryIds } : {}),
         ...(permissions ? { permissions } : {}),
       });

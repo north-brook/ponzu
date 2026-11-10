@@ -60,6 +60,10 @@ Hono preset treats both as entry points.
    touch: check that against the database in the handler. A runner may act only on
    `c.var.actor.designId`.
 
+   `access.user` takes a WorkOS access token, verified locally, and honors it only for a
+   session that `/v1/auth/exchange` admitted (the `sessions` table). WorkOS will hand a token
+   to anyone who signs in with it directly; the exchange is where GitHub is asked who they are.
+
 3. **Validation.** Requests: `validate("json" | "query" | "param", schema)` after the access
    declaration, then `c.req.valid(…)`. Responses: define the body as a zod schema and send
    `c.json(Schema.parse(value))`. The schema is the allowlist, so a row passed whole cannot
@@ -102,7 +106,7 @@ Hono preset treats both as entry points.
 
 | Header | |
 |---|---|
-| `Authorization: Bearer <WorkOS access token>` | Every route but health and the exchange. `token_expired` means refresh with WorkOS and retry; `token_invalid`, `user_not_found` and `github_reauth_required` mean sign in again. |
+| `Authorization: Bearer <WorkOS access token>` | Every route but health and the exchange. `token_expired` means refresh with WorkOS and retry; `token_invalid`, `session_unknown` and `github_reauth_required` mean sign in again. |
 | `X-Ponzu-Client: <platform>/<version>` | `macos/2.0.0`, `ios/1.4.2`. When the API answers 426 `client_too_old`, offer the update; `details.minimumVersion` says what is enough. Off unless `PONZU_MIN_CLIENT_VERSIONS` is set. |
 | `X-Request-Id` | Optional, 8 to 64 of `A-Za-z0-9_-`. Every answer carries one; quote it when something fails. |
 
@@ -149,10 +153,17 @@ the repository root, with a current CLI (`VERCEL_ORG_ID` is the team id, `VERCEL
 the `ponzu-api` project's):
 
 ```sh
-bunx vercel@latest deploy --prod --yes
+bunx vercel@latest deploy --prod --yes --env VERCEL_GIT_COMMIT_SHA="$(git rev-parse HEAD)"
 ```
 
-The project's Root Directory is `apps/api`; [vercel.json](vercel.json) does the rest.
+The project's Root Directory is `apps/api`; [vercel.json](vercel.json) does the rest. The
+`--env` is how `/v1/health` knows its commit: Vercel sets that variable itself for a deployment
+made from a connected repository, and leaves it empty for one made by the CLI from a git
+worktree. Apply any pending migration first (above), and check afterwards:
+
+```sh
+curl https://api.ponzu.design/v1/health
+```
 
 **Why the build is ours.** Vercel's default Hono builder transpiles file by file and leaves
 import specifiers alone, which cannot run this repo's style (workspace packages that export

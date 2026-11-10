@@ -13,8 +13,11 @@ export type ErrorCode =
   | "token_expired"
   /** The token is not one WorkOS issued for Ponzu, or not one a runner holds. Sign in again. */
   | "token_invalid"
-  /** The token is good but nobody has signed in with it through `/v1/auth/exchange`. Sign in again. */
-  | "user_not_found"
+  /**
+   * The token is good but its session did not begin at `/v1/auth/exchange`, or was signed out.
+   * Sign in again.
+   */
+  | "session_unknown"
   /** Signed in, but not allowed to do this. */
   | "forbidden"
   /** A route that does not say who may call it. A bug in the API, never the caller's. */

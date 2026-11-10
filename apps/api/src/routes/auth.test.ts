@@ -287,6 +287,79 @@ describe("email verification, finished by the API", () => {
   });
 });
 
+describe("someone signing in under an address that is not theirs", () => {
+  // Mallory's GitHub account lists maya's address, unverified. WorkOS keys its users by email,
+  // so both of them arrive as the same WorkOS user; the API has finished WorkOS's email
+  // verification for whoever asked, so WorkOS now takes that user's address as proven.
+  async function mallory(workosUserId: string) {
+    const account = await t.startSignIn({
+      login: "mallory",
+      email: "victim@example.com",
+      emailVerifiedAtGithub: false,
+    });
+    const code = await t.workos.authorize(workosUserId, {
+      codeVerifier: account.codeVerifier,
+      oauthTokens: t.github.issueTokens(account.github.id),
+    });
+    return exchange({ code, code_verifier: account.codeVerifier });
+  }
+
+  test("is refused before the real owner arrives, and after, and holds no usable token", async () => {
+    const shared = t.workos.addUser({ email: "victim@example.com", emailVerified: false });
+
+    // First: the API completes the verification, then GitHub says the address is not hers.
+    const first = await mallory(shared.id);
+    expect([first.status, await errorCode(first)]).toEqual([403, "email_not_verified"]);
+    expect(t.workos.user(shared.id).emailVerified).toBe(true);
+    // Again, now that WorkOS no longer asks for verification.
+    const second = await mallory(shared.id);
+    expect([second.status, await errorCode(second)]).toEqual([403, "email_not_verified"]);
+
+    // The owner signs in with her own GitHub account, where the address is verified.
+    const victim = await t.startSignIn({ login: "victim", email: "victim@example.com" });
+    const code = await t.workos.authorize(shared.id, {
+      codeVerifier: victim.codeVerifier,
+      oauthTokens: t.github.issueTokens(victim.github.id),
+    });
+    const admitted = await exchange({ code, code_verifier: victim.codeVerifier });
+    expect(admitted.status).toBe(200);
+    const owner = ((await admitted.json()) as any).user;
+    expect(owner.githubLogin).toBe("victim");
+
+    // Mallory through the exchange: the WorkOS user is taken, by another GitHub account.
+    const third = await mallory(shared.id);
+    expect([third.status, await errorCode(third)]).toEqual([409, "identity_conflict"]);
+    // Mallory straight to WorkOS, which hands her a token for the shared user.
+    const direct = await t.workos.signAccessToken({
+      userId: shared.id,
+      sessionId: "session_mallory",
+    });
+    const me = await t.app.request("/v1/me", { headers: { authorization: `Bearer ${direct}` } });
+    expect([me.status, await errorCode(me)]).toEqual([401, "session_unknown"]);
+
+    // And the owner's account is still hers alone.
+    const row = await getUserByWorkosId(t.db, shared.id);
+    expect(row).toMatchObject({ id: owner.id, githubUserId: victim.github.id });
+  });
+
+  test("a person whose WorkOS address changes is checked against GitHub again", async () => {
+    const person = await t.signInAs({ login: "mover" });
+    t.workos.user(person.workos.id).email = "new-address@example.com";
+
+    const unverified = await t.startSignIn({ login: "mover" });
+    const refused = await exchange({
+      code: unverified.code,
+      code_verifier: unverified.codeVerifier,
+    });
+    expect([refused.status, await errorCode(refused)]).toEqual([403, "email_not_verified"]);
+
+    person.github.emails.push({ email: "new-address@example.com", primary: false, verified: true });
+    const verified = await t.startSignIn({ login: "mover" });
+    const admitted = await exchange({ code: verified.code, code_verifier: verified.codeVerifier });
+    expect(((await admitted.json()) as any).user.email).toBe("new-address@example.com");
+  });
+});
+
 describe("POST /v1/auth/sign-out", () => {
   test("revokes the session the token belongs to, and only that one", async () => {
     const phone = await t.signInAs({ login: "twodevices" });
@@ -302,6 +375,30 @@ describe("POST /v1/auth/sign-out", () => {
     expect(await response.text()).toBe("");
     expect(t.workos.sessions.get(sid(mac.accessToken))!.revoked).toBe(true);
     expect(t.workos.sessions.get(sid(phone.accessToken))!.revoked).toBe(false);
+    // The Mac's token has minutes left and is refused all the same; the phone carries on.
+    const after = async (headers: { authorization: string }) => {
+      const me = await t.app.request("/v1/me", { headers });
+      return me.status === 200 ? 200 : [me.status, await errorCode(me)];
+    };
+    expect(await after(mac.headers)).toEqual([401, "session_unknown"]);
+    expect(await after(phone.headers)).toBe(200);
+  });
+
+  test("if WorkOS cannot be reached the session is left whole, to be signed out again", async () => {
+    const person = await t.signInAs({ login: "retry" });
+    t.workos.failNext("/user_management/sessions/revoke", 503);
+
+    const failed = await t.app.request("/v1/auth/sign-out", {
+      method: "POST",
+      headers: person.headers,
+    });
+    expect(failed.status).toBe(502);
+
+    const again = await t.app.request("/v1/auth/sign-out", {
+      method: "POST",
+      headers: person.headers,
+    });
+    expect(again.status).toBe(204);
   });
 
   test("needs a signed-in person", async () => {

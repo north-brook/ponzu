@@ -28,6 +28,7 @@ import { listPresence, touchPresence } from "./presence.ts";
 import { answerSecretQuestion, cancelQuestions, createQuestion } from "./questions.ts";
 import { QueryError } from "./run.ts";
 import { createRunnerToken, verifyRunnerToken } from "./runner-tokens.ts";
+import { admitSession, endSession, getSessionUser } from "./sessions.ts";
 import { appendThreadItem, listThreadItems, updateThreadItem } from "./thread.ts";
 import { commitReversal, nextRedo, nextUndo } from "./undo.ts";
 import { addLedgerEntry, ledgerBalance, recordUsage } from "./usage.ts";
@@ -271,6 +272,12 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
     await releaseGithubTokenRefresh(db, { userId: user.id, until });
     expect((await getGithubUserToken(db, user.id))!.refreshClaimedUntil).toBeNull();
     expect((await getUserByWorkosId(db, user.workosUserId))!.id).toBe(user.id);
+    const sessionId = `session_live_${user.id}`;
+    await admitSession(db, { id: sessionId, userId: user.id });
+    await admitSession(db, { id: sessionId, userId: user.id });
+    expect(await getSessionUser(db, sessionId)).toEqual(user);
+    await endSession(db, sessionId);
+    expect(await getSessionUser(db, sessionId)).toBeNull();
     await pingDb(db);
   }, 60_000);
 

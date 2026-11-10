@@ -77,14 +77,23 @@ GitHub token never reaches a device.
 - Access tokens are five-minute JWTs. The API verifies them locally against
   WorkOS's JWKS. Clients refresh directly with WorkOS, one refresh in flight at a
   time, and always store the rotated refresh token.
+- A verified token is not enough by itself. WorkOS is a public client: anyone can
+  finish a sign-in with it directly and hold a well-signed token, without the
+  exchange (and its check against GitHub) ever running. So the exchange records
+  each session it lets in, and the API honors a token only for a recorded
+  session. Signing out removes the record, which ends the session at the API at
+  once and not five minutes later.
 - WorkOS will not finish a sign-in until the email is verified, and it does not
   take GitHub's word for it. The API completes that step itself during the
   exchange and then checks with GitHub that the address is verified there, so
   nobody is sent a code by email. The check is made whenever the API completed
-  the step, and the first time a WorkOS user is let in at all: a sign-in that
-  fails it leaves WorkOS counting the address as verified, so WorkOS's own flag
-  is never what lets someone in. A sign-in that fails after WorkOS has made a
-  session revokes that session.
+  the step, the first time a WorkOS user is let in at all, and when their
+  address has changed: a sign-in that fails it leaves WorkOS counting the
+  address as verified, so WorkOS's own flag is never what lets someone in. For
+  the same reason one WorkOS user is one GitHub account, held by the database:
+  WorkOS joins accounts by email, and an address it believes only because the
+  API vouched for it must not join a stranger to someone's user. A sign-in that
+  fails after WorkOS has made a session revokes that session.
 - The GitHub user token lasts eight hours and its refresh token works once.
   The API refreshes it when it is about to run out, one refresh at a time per
   person: the claim is a column on the token's row, since function instances
@@ -392,7 +401,7 @@ rendered-picture tier for heavy pages; it is not in the first cloud release.
 
 | Boundary | Rule |
 |---|---|
-| Client and API | A WorkOS access token on every request. Clients never hold a GitHub, Claude or provider credential. |
+| Client and API | A WorkOS access token on every request, for a session the sign-in exchange let in. Clients never hold a GitHub, Claude or provider credential. |
 | Person and design | GitHub decides, checked by the API on every request. |
 | Sandbox and API | A token bound to one design. The API validates and sanitizes everything it sends. |
 | Design HTML and the app | Sanitized on the way in, written out so that no text or attribute can be read as markup whatever the tree holds, drawn in a shadow root, under a strict content security policy. The preload bridge exposes the minimum. |

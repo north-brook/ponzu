@@ -98,10 +98,27 @@ describe("a route for a signed-in person", () => {
     expect(await me(`Bearer ${forged}`)).toEqual([401, "token_invalid"]);
   });
 
-  test("a good token for someone who never finished signing in: user_not_found", async () => {
+  test("a good token for someone Ponzu has no user for: session_unknown", async () => {
     const stranger = t.workos.addUser({ email: "stranger@example.com" });
     const token = await t.workos.signAccessToken({ userId: stranger.id, sessionId: "session_x" });
-    expect(await me(`Bearer ${token}`)).toEqual([401, "user_not_found"]);
+    expect(await me(`Bearer ${token}`)).toEqual([401, "session_unknown"]);
+  });
+
+  test("a good token for a real person, from a session that did not come through the exchange: session_unknown", async () => {
+    // WorkOS is a public client: anyone can finish a sign-in with it directly and hold a
+    // perfectly signed token for their WorkOS user. Only the exchange checks GitHub.
+    const direct = await t.workos.signAccessToken({
+      userId: person.workos.id,
+      sessionId: "session_started_at_workos",
+    });
+    expect(await me(`Bearer ${direct}`)).toEqual([401, "session_unknown"]);
+  });
+
+  test("an admitted session presented for a different WorkOS user: session_unknown", async () => {
+    const other = await t.signInAs({ login: "ines" });
+    const sid = JSON.parse(atob(other.accessToken.split(".")[1]!)).sid;
+    const crossed = await t.workos.signAccessToken({ userId: person.workos.id, sessionId: sid });
+    expect(await me(`Bearer ${crossed}`)).toEqual([401, "session_unknown"]);
   });
 
   test("a runner token is not a person", async () => {

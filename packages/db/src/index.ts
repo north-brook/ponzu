@@ -100,6 +100,7 @@ export {
   revokeRunnerTokens,
   verifyRunnerToken,
 } from "./queries/runner-tokens.ts";
+export { admitSession, endSession, getSessionUser } from "./queries/sessions.ts";
 export { isStorable } from "./queries/text.ts";
 export {
   appendThreadItem,

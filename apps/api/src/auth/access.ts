@@ -1,4 +1,4 @@
-import { getUserByWorkosId, verifyRunnerToken } from "@ponzu/db";
+import { getSessionUser, verifyRunnerToken } from "@ponzu/db";
 import type { Context, MiddlewareHandler } from "hono";
 import { matchedRoutes } from "hono/route";
 import type { AppEnv } from "../http/context.ts";
@@ -41,15 +41,16 @@ export const access = {
   public: declare<MiddlewareHandler<AppEnv>>((_c, next) => next()),
 
   /**
-   * A signed-in person: a WorkOS access token as the bearer, verified here, whose user has a
-   * row. The handler reads them from `c.var.actor`.
+   * A signed-in person: a WorkOS access token as the bearer, verified here, for a session the
+   * sign-in exchange admitted. A token WorkOS issued for a session started any other way is
+   * refused, however good its signature. The handler reads the person from `c.var.actor`.
    */
   user: declare<Declaration<UserActor>>(async (c, next) => {
     const { db, workos, clock } = c.var.deps;
     const claims = await verifyAccessToken(bearer(c), { workos, clock });
-    const user = await getUserByWorkosId(db, claims.workosUserId);
-    if (!user) {
-      throw new ApiError(401, "user_not_found", "Sign in again to finish setting up your account.");
+    const user = await getSessionUser(db, claims.sessionId);
+    if (!user || user.workosUserId !== claims.workosUserId) {
+      throw new ApiError(401, "session_unknown", "Sign in again.");
     }
     c.set("actor", { kind: "user", user, sessionId: claims.sessionId });
     return next();

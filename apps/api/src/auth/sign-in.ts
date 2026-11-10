@@ -1,5 +1,4 @@
-import { getUserByWorkosId, QueryError, type User, upsertUser } from "@ponzu/db";
-import { decodeJwt } from "jose";
+import { admitSession, getUserByWorkosId, QueryError, type User, upsertUser } from "@ponzu/db";
 import type { Deps } from "../deps/index.ts";
 import type { AuthenticateResult, CallerInfo, WorkosSession } from "../deps/workos.ts";
 import { storeGithubUserToken } from "../github/user-token.ts";
@@ -8,8 +7,15 @@ import type { Logger } from "../http/log.ts";
 
 /*
  * The server half of sign-in. The app ran the authorization-code flow with PKCE in the system
- * browser and posts what came back; this trades it with WorkOS, makes or updates the person's
- * row, and stores their GitHub token. See "Identity and access" in docs/cloud.md.
+ * browser and posts what came back; this trades it with WorkOS, decides whether the session
+ * WorkOS made becomes a Ponzu one, and if so records the person, their GitHub token and the
+ * session. See "Identity and access" in docs/cloud.md.
+ *
+ * Why the session is recorded: WorkOS will issue an access token to anyone who signs in with
+ * it directly, without this code running, and the API finishes WorkOS's email verification on
+ * the person's behalf, so WorkOS's own idea of who owns an address is weaker than it looks.
+ * What Ponzu trusts is the check made here against GitHub. `access.user` honors a token only
+ * for a session this function admitted.
  */
 
 type SignInDeps = Pick<Deps, "db" | "clock" | "vault" | "workos" | "github">;
@@ -49,7 +55,12 @@ export async function signIn(
     return { user, accessToken: session.accessToken, refreshToken: session.refreshToken };
   } catch (error) {
     // WorkOS has made a session that nobody will be handed. End it rather than leave it open.
-    await revokeQuietly(deps, log, session);
+    try {
+      await workos.revokeSession(session.id);
+    } catch (revokeError) {
+      // The sign-in has already failed for its own reason; that is the one to report.
+      log.warn("session_revoke_failed", { error: revokeError });
+    }
     throw error;
   }
 }
@@ -91,12 +102,15 @@ async function admit(
       "Ponzu did not receive your GitHub sign-in. Try again.",
     );
   }
+  // Who this is comes from GitHub, asked with the token this sign-in produced.
   const profile = await github.getUser(tokens.accessToken);
 
-  // The first time a WorkOS user is let in, and whenever the API verified the email itself,
-  // GitHub has to say the address is verified. A person already let in under this WorkOS user
-  // passed that check then, and is not locked out for tidying their GitHub emails since.
-  if (verifiedHere || !(await getUserByWorkosId(db, session.user.id))) {
+  // GitHub has to say the address is verified whenever the API verified it for WorkOS itself,
+  // the first time a WorkOS user is let in, and when their address has changed. Someone let in
+  // before under the same address passed this then, and is not locked out for tidying their
+  // GitHub emails since.
+  const known = await getUserByWorkosId(db, session.user.id);
+  if (verifiedHere || known?.email !== session.user.email) {
     const emails = await github.listEmails(tokens.accessToken);
     const address = session.user.email.toLowerCase();
     if (!emails.some((entry) => entry.verified && entry.email.toLowerCase() === address)) {
@@ -119,6 +133,8 @@ async function admit(
       avatarUrl: profile.avatarUrl,
     });
   } catch (cause) {
+    // One WorkOS user is one GitHub account, and the database holds it to that. This is what
+    // refuses a second GitHub account that WorkOS has attached to someone else's user.
     if (cause instanceof QueryError && cause.message.includes("users_workos_user_id_unique")) {
       throw new ApiError(
         409,
@@ -135,15 +151,6 @@ async function admit(
     refreshToken: tokens.refreshToken,
     refreshTokenExpiresAt: null,
   });
+  await admitSession(db, { id: session.id, userId: user.id });
   return user;
-}
-
-async function revokeQuietly({ workos }: SignInDeps, log: Logger, session: WorkosSession) {
-  try {
-    const { sid } = decodeJwt(session.accessToken);
-    if (typeof sid === "string") await workos.revokeSession(sid);
-  } catch (error) {
-    // The sign-in has already failed for its own reason; that is the one to report.
-    log.warn("session_revoke_failed", { error });
-  }
 }

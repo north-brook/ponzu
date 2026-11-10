@@ -1,3 +1,4 @@
+import { endSession } from "@ponzu/db";
 import { Hono } from "hono";
 import { z } from "zod";
 import { access } from "../auth/access.ts";
@@ -46,10 +47,13 @@ export const auth = new Hono<AppEnv>()
   })
 
   /**
-   * Ends the session the bearer token belongs to: its refresh token stops working at WorkOS.
-   * The access token itself keeps verifying until it runs out, so the app forgets both.
+   * Ends the session the bearer token belongs to. Its refresh token stops working at WorkOS,
+   * and the API stops honoring its access tokens at once, not when they run out. WorkOS goes
+   * first, so a failure there leaves the session whole and the request can be sent again.
    */
   .post("/sign-out", access.user, async (c) => {
-    await c.var.deps.workos.revokeSession(c.var.actor.sessionId);
+    const { db, workos } = c.var.deps;
+    await workos.revokeSession(c.var.actor.sessionId);
+    await endSession(db, c.var.actor.sessionId);
     return c.body(null, 204);
   });
