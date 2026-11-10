@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.80.1](https://github.com/north-brook/ponzu/compare/v1.80.0...v1.80.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* keep board pictures steady while you zoom ([#401](https://github.com/north-brook/ponzu/issues/401)) ([12add57](https://github.com/north-brook/ponzu/commit/12add57e772dafe54c211ebf1c3ab61567ae6cc9))
+* **mobile:** keep the listening field 44pt with no yuzu ring ([#400](https://github.com/north-brook/ponzu/issues/400)) ([b46a3f9](https://github.com/north-brook/ponzu/commit/b46a3f979630b974ba84765f64e12a92a91d39d5))
+
 ## [1.80.0](https://github.com/north-brook/ponzu/compare/v1.79.2...v1.80.0) (2026-11-10)
 
 
