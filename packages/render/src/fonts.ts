@@ -1,4 +1,5 @@
 import { GOOGLE_FONTS_DATA } from "./google-fonts-data.ts";
+import { CJK_NAMES, STAND_INS, UNNAMED_CJK } from "./stand-ins.ts";
 
 /**
  * Google Fonts, loaded so text renders the same on the canvas, in screenshots
@@ -240,19 +241,49 @@ export function googleFontElement(doc: Document, f: GoogleFontRequest): HTMLLink
  * that shows it. Whether a family renders is measured, not inferred from the
  * request: a font installed locally still counts, and an @font-face whose
  * files failed doesn't.
+ *
+ * A system font this machine lacks falls through quietly, as it does for
+ * anyone without it. On Linux most of them draw in a stand-in of the same
+ * widths and line height instead (stand-ins.ts), which needs no comment. The
+ * few whose stand-in sets text differently get one "stand-in-font" issue
+ * each, saying how, so a line break in the screenshot isn't taken for what
+ * people see. That too is found out, not assumed: the renderer's own face
+ * for the name loaded, or the name and its stand-in draw the sample alike.
+ * Emoji count wherever they appear, since fallback draws them whatever the
+ * stack names. Chinese, Japanese and Korean text that fallback draws gets a
+ * note of its own, once, where its line height is left to the font.
  */
 export const FONT_LINT_SCRIPT = `(() => {
   const issues = [];
   const root = document.querySelector('[data-artboard]');
   if (!root || !document.fonts) return issues;
+  const standIns = ${JSON.stringify(
+    Object.fromEntries(
+      STAND_INS.flatMap((s) =>
+        s.caveat ? s.names.map((n) => [n.toLowerCase(), { font: s.font, caveat: s.caveat }]) : [],
+      ),
+    ),
+  )};
+  const system = ${JSON.stringify(STAND_INS.flatMap((s) => s.names.map((n) => n.toLowerCase())))};
+  const cjk = ${JSON.stringify(CJK_NAMES.map((n) => n.toLowerCase()))};
   const unquote = (s) => s.trim().replace(/^['"]|['"]$/g, '').trim();
   const links = new Map([...document.querySelectorAll('link[data-font]')].map((l) => [l.dataset.font.toLowerCase(), l]));
-  const faces = new Map();
-  for (const f of document.fonts) {
-    const k = unquote(f.family).toLowerCase();
-    faces.set(k, faces.get(k) === true || f.status === 'loaded');
-  }
+  // The faces the renderer declares for stand-ins are first in the page, so first here. The rest are the design's.
+  const all = [...document.fonts];
+  const ours = all.splice(0, document.querySelector('style[data-stand-ins]')?.sheet?.cssRules.length ?? 0);
+  const loaded = (list) => {
+    const by = new Map();
+    for (const f of list) {
+      const k = unquote(f.family).toLowerCase();
+      by.set(k, by.get(k) === true || f.status === 'loaded');
+    }
+    return by;
+  };
+  const faces = loaded(all);
+  const carried = loaded(ours);
   const generic = /^(serif|sans-serif|monospace|cursive|fantasy|system-ui|ui-sans-serif|ui-serif|ui-monospace|ui-rounded|math|emoji|fangsong|inherit|initial|unset|revert)$/i;
+  // A keyword is written bare: quoted, it would name a family instead.
+  const written = (family) => generic.test(family) ? family : JSON.stringify(family);
   const ctx = document.createElement('canvas').getContext('2d');
   const sample = 'mmmmmmmmmmlli WWQ@0123456789 abcdefghijklmnopqrstuvwxyz';
   const seen = new Map();
@@ -265,29 +296,59 @@ export const FONT_LINT_SCRIPT = `(() => {
     for (const base of ctx ? ['monospace', 'serif'] : []) {
       ctx.font = style + ' 40px ' + base;
       const plain = ctx.measureText(sample).width;
-      ctx.font = style + ' 40px ' + JSON.stringify(family) + ', ' + base;
+      ctx.font = style + ' 40px ' + written(family) + ', ' + base;
       if (ctx.measureText(sample).width !== plain) ok = true;
     }
     seen.set(k, ok);
     return ok;
   };
+  // A keyword always draws something, except the ui- ones: Chrome reads them and has no
+  // font for them, so like a missing family they count only if they measure as one.
+  const draws = (family, style) => (generic.test(family) && !/^ui-/i.test(family)) || renders(family, style);
+  // Whether a stand-in is what draws a family: the renderer's face for it loaded, or the stand-in is installed and the two set the sample alike over either fallback, as the real font wouldn't.
+  const stoodIn = (family, font, style) => carried.has(family.toLowerCase()) ? carried.get(family.toLowerCase()) : !!ctx && renders(font, style) && ['monospace', 'serif'].every((base) => {
+    ctx.font = style + ' 40px ' + written(family) + ', ' + base;
+    const named = ctx.measureText(sample).width;
+    ctx.font = style + ' 40px ' + JSON.stringify(font) + ', ' + base;
+    return ctx.measureText(sample).width === named;
+  });
   const reported = new Set();
+  const standsIn = (el, family, style) => {
+    const k = family.toLowerCase();
+    const standIn = standIns[k];
+    if (!standIn || reported.has(k) || !stoodIn(family, standIn.font, style)) return;
+    reported.add(k);
+    issues.push({ id: el.getAttribute('data-id'), kind: 'stand-in-font', message: 'font "' + family + '" draws in ' + standIn.font + ' in screenshots: ' + standIn.caveat + '.' });
+  };
   for (const el of root.querySelectorAll('[data-id]')) {
-    if (![...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())) continue;
+    const text = [...el.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join('');
+    if (!text.trim()) continue;
     const cs = getComputedStyle(el);
     // Text that isn't rendered (here or under a hidden ancestor) never loads its font.
     if (cs.visibility === 'hidden' || !el.getClientRects().length) continue;
     const style = (/^(italic|oblique)/.test(cs.fontStyle) ? 'italic ' : '') + cs.fontWeight;
+    // No stack on a Mac draws an emoji but Apple's font, named or not.
+    if (/\\p{Emoji_Presentation}|\\uFE0F/u.test(text)) standsIn(el, 'Apple Color Emoji', style);
     const stack = cs.fontFamily.split(',').map(unquote).filter(Boolean);
     for (let i = 0; i < stack.length; i++) {
       const family = stack[i];
       const k = family.toLowerCase();
-      if (generic.test(family) || renders(family, style)) break;
+      if (draws(family, style)) {
+        standsIn(el, family, style);
+        // Chinese, Japanese or Korean in a stack of system fonts that names none for it: fallback
+        // draws it, here in a font with another line height, which shows where the font sets it.
+        if (ours.length && !reported.has('cjk') && cs.lineHeight === 'normal' && (generic.test(family) || system.includes(k)) &&
+            /[\\p{sc=Han}\\p{sc=Hiragana}\\p{sc=Katakana}\\p{sc=Hangul}]/u.test(text) && !stack.some((f) => cjk.includes(f.toLowerCase()))) {
+          reported.add('cjk');
+          issues.push({ id: el.getAttribute('data-id'), kind: 'stand-in-font', message: ${JSON.stringify(UNNAMED_CJK)} });
+        }
+        break;
+      }
       // Never requested: a system font this machine lacks, which falls through quietly.
       if (!links.has(k) && !faces.has(k)) continue;
       if (reported.has(k)) break;
       reported.add(k);
-      const next = stack.slice(i + 1).find((f) => generic.test(f) || renders(f, style));
+      const next = stack.slice(i + 1).find((f) => draws(f, style));
       const shows = 'its text shows in ' + (next ? next : 'the default font') + ' instead';
       const link = links.get(k);
       let message;
@@ -337,7 +398,9 @@ const SYSTEM = new Set([
   "sf pro",
   "sf pro text",
   "sf pro display",
+  "sf pro rounded",
   "sf mono",
+  "sfmono-regular",
   "menlo",
   "monaco",
   "consolas",

@@ -1084,6 +1084,31 @@ test("a fit-content artboard is checked at its rendered height", async () => {
   expect(measured).toEqual(["ab_b"]);
 });
 
+test("a measured artboard isn't measured again when its asset key is rotated", async () => {
+  const s = await twoBoards(0, -1400, "width:800px;height:fit-content");
+  // As the cloud serves a design's files: under a key in the path.
+  let assets = "https://assets.ponzu.test/k3y-one";
+  s.ws.assetBase = () => assets;
+  const bases: (string | undefined)[] = [];
+  s.ws.renderer = {
+    render: async () => {
+      throw new Error("unused");
+    },
+    measure: async (req) => {
+      bases.push(req.assetBase);
+      return {
+        boxes: { [req.artboard.id]: { x: 0, y: 0, width: 800, height: 1500 } },
+        contentHeight: 1500,
+      };
+    },
+    close: async () => {},
+  };
+  await s.call("get_basic_info", {});
+  assets = "https://assets.ponzu.test/k3y-two";
+  await s.call("get_basic_info", {});
+  expect(bases).toEqual(["https://assets.ponzu.test/k3y-one"]);
+});
+
 test("two unmeasured artboards that only meet at their rendered sizes are both measured", async () => {
   // A wide fit-content-width board and a tall fit-content-height board: at the
   // 1440×900 fallback they miss each other; rendered, they cross.

@@ -17,6 +17,8 @@ export interface LintIssue {
     | "animation-budget"
     | "no-state-style"
     | "missing-font"
+    /** A system font drawn by a stand-in that sets text differently (stand-ins.ts). */
+    | "stand-in-font"
     | "wrapped-text"
     | "flex-direction"
     | "artboard-overlap"

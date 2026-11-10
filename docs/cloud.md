@@ -355,6 +355,55 @@ publishing an export, the design's link and the theme to render in.
 - **Without a renderer** `screenshot`, `record` and `export` say so and the rest
   work from declared sizes.
 
+### Rendering
+
+`ChromiumRenderer` in `packages/render` draws every screenshot, recording, export,
+measurement and lint, inside the runner's process.
+
+- **The browser is ours, not the image's.** The runner launches the Chrome Headless
+  Shell that `playwright-core` is pinned to (`channel: "chromium-headless-shell"`),
+  which the sandbox image installs with `playwright-core install --only-shell
+  chromium`. Its version moves with our lockfile instead of with boat.dev's image,
+  and on a small sandbox it idles at 140 MB and draws a landing page in 0.4 s, where
+  the image's Google Chrome takes 290 MB and 0.9 s.
+- **Chromium's sandbox stays on.** The runner is not root, and the VM allows user
+  namespaces. A design can load remote images in the same machine that holds the
+  owner's Claude credential. Where the kernel refuses (a container without user
+  namespaces), the render fails saying so, and `PONZU_CHROMIUM_SANDBOX=0` turns the
+  sandbox off without a change to code.
+- **Work is bounded.** Two jobs at a time, the rest in a queue; 24 million device
+  pixels in one image, past which the image comes back at a smaller scale; 60
+  seconds a job, after which its page is closed; and an idle browser closes after
+  two minutes. A browser that dies is replaced on the next job. A page is loaded
+  once, at a scale its whole viewport fits the pixel budget at, and what is
+  captured is drawn at a scale of its own: a node comes back at the scale asked
+  for however long the board around it.
+- **Fonts.** Designs name fonts a Mac has and Ubuntu cannot ship: Helvetica, Menlo,
+  Georgia, `system-ui`. `packages/render/sandbox-fonts.json` lists what the image
+  installs, and `stand-ins.ts` maps each name to a font of the same widths, so text
+  wraps in a screenshot where it does on the canvas. A fontconfig file the renderer
+  writes resolves the names. Where the Mac's font makes a taller or shorter line
+  than its stand-in (Georgia, Monaco, Helvetica Neue, the Chinese, Japanese and
+  Korean fonts), the page also declares the name as an `@font-face` over the
+  stand-in with the Mac font's ascent and descent, so a line is as tall as on the
+  canvas, to the pixel. The reference is Chrome on a Mac. Three things can't be
+  made to match, and lint says so on a screenshot that has them: `system-ui`, where
+  Inter stands in for San Francisco, close at text sizes and up to 12% wide in
+  headings; emoji, which on a Mac are narrower from 24px up and make their line a
+  few pixels taller; and Chinese, Japanese or Korean text in a stack that names no
+  font for it, which fallback draws at Noto's line height where the design sets
+  none. Fallback goes by what is installed, so the image holds the fonts in that
+  list and no others for those scripts.
+- **The dev server.** With `loopback: true` a design can load images, video, fonts
+  and stylesheets from `http://localhost:<port>`. Chrome refuses those to a page at
+  a public origin, so the renderer grants its pages Chrome's permission for this
+  machine, and only this machine: the rest of the local network stays refused.
+  Chrome then loads them itself. A request that needs a CORS header a dev server
+  doesn't send (every font, a mask image) is fetched by the renderer instead, which
+  holds the file whole on its way to Chrome and so refuses one over 25 MB.
+- **Bun.** The runner runs on the Bun this repo pins. Under the Bun in boat.dev's
+  image (1.3.14) the renderer's own tests hung.
+
 ### Events
 
 A design has one ordered feed of things that happened: a message, an answer, a
