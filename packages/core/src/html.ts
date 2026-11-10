@@ -6,7 +6,10 @@ import {
 } from "parse5";
 import { parseStyle, serializeStyle } from "./css.ts";
 import { newId } from "./ids.ts";
+import { ACT_SCRIPT_TYPE, cleanSheet, cleanShell, isId, isTextOnly, URL_ATTRS } from "./rules.ts";
 import type { Artboard, Dropped, PElement, PNode } from "./types.ts";
+
+export { ACT_SCRIPT_TYPE };
 
 const NS_SVG = "http://www.w3.org/2000/svg";
 const NS_MATH = "http://www.w3.org/1998/Math/MathML";
@@ -27,41 +30,11 @@ const VOID = new Set([
   "wbr",
 ]);
 
-/** Elements that never make it into a design. */
-const BLOCKED_TAGS = new Set([
-  "script",
-  "noscript",
-  "iframe",
-  "frame",
-  "frameset",
-  "object",
-  "embed",
-  "applet",
-  "base",
-  "meta",
-  "template",
-  "portal",
-]);
-
-const URL_ATTRS = new Set(["href", "src", "xlink:href", "action", "formaction", "poster", "data"]);
-
-/** Raw-text elements whose content is serialized without escaping. */
-const RAW_TEXT = new Set(["style"]);
-
 /**
- * The one script a design keeps: a scene (`<script type="ponzu/act">`), which
- * Ponzu reads as data and plays as animations (render/src/act.ts). A browser
- * never runs a script of a type it doesn't know, and this one is written out
- * with that type and nothing else whatever its node says, so no edit can make
- * it code. Every other script is dropped.
+ * Elements a parser doesn't read as ordinary HTML inside: foreign content, and the modes
+ * where it skips tags. A `<style>` or a scene below one may not be read as raw text.
  */
-export const ACT_SCRIPT_TYPE = "ponzu/act";
-
-function isActScript(el: P5.Element): boolean {
-  if (el.tagName.toLowerCase() !== "script") return false;
-  const type = el.attrs.find((a) => !a.prefix && a.name.toLowerCase() === "type")?.value;
-  return type?.trim().toLowerCase() === ACT_SCRIPT_TYPE;
-}
+const NOT_PLAIN = new Set(["svg", "math", "select", "frameset"]);
 
 export interface ParseOptions {
   /**
@@ -85,7 +58,7 @@ export interface ParseResult {
   assigned: Set<string>;
 }
 
-/** Parse an HTML fragment into Ponzu nodes, removing anything executable. */
+/** Parse an HTML fragment into Ponzu nodes, removing what the rules forbid (rules.ts). */
 export function parseHtml(html: string, opts: ParseOptions = {}): ParseResult {
   const dropped: Dropped[] = [];
   const context = opts.parent ? foreignContext(opts.parent) : null;
@@ -116,7 +89,7 @@ function collectIds(list: P5.ChildNode[], out: Set<string>): void {
     const el = child as P5.Element;
     if (!el.attrs) continue;
     const id = el.attrs.find((a) => !a.prefix && a.name.toLowerCase() === "data-id")?.value.trim();
-    if (id) out.add(id);
+    if (id && isId(id)) out.add(id);
     collectIds(el.childNodes ?? [], out);
   }
 }
@@ -156,24 +129,22 @@ function convertChildren(
       continue;
     }
     if (child.nodeName === "#comment" || child.nodeName === "#documentType") continue;
-    const el = child as P5.Element;
-    const tag = el.tagName;
-    if (BLOCKED_TAGS.has(tag.toLowerCase()) && !isActScript(el)) {
-      dropped.push({ what: `<${tag}>` });
-      continue;
-    }
-    const childPath = [...path, elIndex++];
-    out.push(convertElement(el, childPath, ids, dropped));
+    // A dropped element takes no place among its siblings, so the ids after it stay the same.
+    const node = convertElement(child as P5.Element, [...path, elIndex], ids, dropped);
+    if (!node) continue;
+    elIndex++;
+    out.push(node);
   }
   return out;
 }
 
+/** The element as a node, or null when the rules drop it. */
 function convertElement(
   el: P5.Element,
   path: number[],
   ids: IdState,
   dropped: Dropped[],
-): PElement {
+): PElement | null {
   const attrs: Record<string, string> = {};
   let style: Record<string, string> = {};
   let id = "";
@@ -181,62 +152,40 @@ function convertElement(
   for (const a of el.attrs) {
     const key = a.prefix ? `${a.prefix}:${a.name}` : a.name;
     const lower = key.toLowerCase();
-    if (lower.startsWith("on")) {
-      dropped.push({ what: `${key} on <${el.tagName}>` });
-      continue;
-    }
-    if (URL_ATTRS.has(lower) && isScriptUrl(a.value)) {
-      dropped.push({ what: `javascript: URL in ${key} on <${el.tagName}>` });
-      continue;
-    }
     if (lower === "style") style = parseStyle(a.value);
     else if (lower === "data-id") id = a.value.trim();
     else if (lower === "data-name" || lower === "layer-name") name = a.value;
-    else if (lower === "srcdoc") dropped.push({ what: `srcdoc on <${el.tagName}>` });
     else attrs[key] = a.value;
   }
-  if (!id || ids.seen.has(id)) id = makeUpId(ids, path);
+  const ns = el.namespaceURI === NS_SVG ? "svg" : el.namespaceURI === NS_MATH ? "math" : undefined;
+  const shell = cleanShell({ tag: el.tagName, ns, attrs, style }, dropped);
+  if (!shell) return null;
+  // An id that couldn't be written back into an attribute as it is counts as none.
+  if (!isId(id) || ids.seen.has(id)) id = makeUpId(ids, path);
   ids.seen.add(id);
-  if (el.tagName === "script") {
-    // A scene: its text, and the type that keeps it data. src and the rest go.
-    for (const k of Object.keys(attrs)) {
-      if (k.toLowerCase() === "type") continue;
-      dropped.push({ what: `${k} on <script>` });
-      delete attrs[k];
-    }
-    attrs.type = ACT_SCRIPT_TYPE;
-    const text = el.childNodes
-      .map((c) => (c.nodeName === "#text" ? (c as P5.TextNode).value : ""))
-      .join("");
-    const node: PElement = { kind: "el", id, tag: "script", attrs, style: {}, children: [] };
-    if (name !== undefined) node.name = name;
-    if (text) node.children.push({ kind: "text", value: text });
+  const { tag } = shell;
+  const node: PElement = {
+    kind: "el",
+    id,
+    tag,
+    attrs: shell.attrs,
+    style: shell.style,
+    children: [],
+  };
+  if (shell.ns) node.ns = shell.ns;
+  if (name !== undefined) node.name = name;
+  if (!isTextOnly(tag)) {
+    node.children = convertChildren(el.childNodes, path, ids, dropped);
     return node;
   }
-  const ns = el.namespaceURI === NS_SVG ? "svg" : el.namespaceURI === NS_MATH ? "math" : undefined;
-  const node: PElement = { kind: "el", id, tag: el.tagName, attrs, style, children: [] };
-  if (ns) node.ns = ns;
-  if (name !== undefined) node.name = name;
-  node.children = convertChildren(el.childNodes, path, ids, dropped);
-  if (RAW_TEXT.has(el.tagName)) {
-    for (const c of node.children)
-      if (c.kind === "text") c.value = sanitizeCssText(c.value, dropped);
+  let text = "";
+  for (const c of el.childNodes) {
+    if (c.nodeName === "#text") text += (c as P5.TextNode).value;
+    else if ("tagName" in c) dropped.push({ what: `<${c.tagName}> inside <${tag}>` });
   }
+  if (tag === "style") text = cleanSheet(text, dropped);
+  if (text) node.children.push({ kind: "text", value: text });
   return node;
-}
-
-function isScriptUrl(value: string): boolean {
-  // Browsers ignore control characters and whitespace in the scheme.
-  const compact = value.replace(/[\u0000- ]/g, "").toLowerCase();
-  return compact.startsWith("javascript:") || compact.startsWith("vbscript:");
-}
-
-function sanitizeCssText(css: string, dropped: Dropped[]): string {
-  if (/expression\s*\(|javascript:/i.test(css)) {
-    dropped.push({ what: "script inside <style>" });
-    return css.replace(/expression\s*\(/gi, "x(").replace(/javascript:/gi, "");
-  }
-  return css;
 }
 
 /** Where a URL being rewritten sits: an element's attribute, or CSS (`attr` "style"). */
@@ -258,27 +207,40 @@ export interface SerializeOptions {
   omitIds?: boolean;
 }
 
-export function serializeNodes(nodes: PNode[], opts: SerializeOptions = {}): string {
-  let out = "";
-  for (const n of nodes) out += serializeNode(n, opts, false, false);
-  return out;
+/** Where a node is written, as the parser that reads it back will see it. */
+interface Context {
+  /**
+   * Whether the parser will be in SVG/MathML content, where `<x/>` closes itself. Undefined
+   * (a node serialized on its own) assumes a foreign node sits inside its own namespace.
+   */
+  foreign: boolean | undefined;
+  /**
+   * Whether the parser is certainly reading ordinary HTML here, so a `<style>` or a scene is
+   * raw text to it. Where that isn't certain, their text is written so it's inert as markup.
+   */
+  plain: boolean;
 }
 
 /**
- * `inForeign` says whether a parser reading this node will be in SVG/MathML
- * content, where `<x/>` closes itself. Undefined (a node serialized on its
- * own) assumes a foreign node sits inside its own namespace.
+ * Nodes as HTML that reads back as the same nodes, and as nothing more: whatever a tree
+ * holds, no text or attribute in it comes out as markup of its own.
  */
-export function serializeNode(
-  node: PNode,
-  opts: SerializeOptions = {},
-  rawText = false,
-  inForeign?: boolean,
-): string {
-  if (node.kind === "text") return rawText ? node.value : escapeText(node.value);
-  if (node.tag === "script" && !node.ns) return serializeActScript(node, opts);
+export function serializeNodes(nodes: PNode[], opts: SerializeOptions = {}): string {
+  let out = "";
+  for (const n of nodes) out += writeNode(n, opts, { foreign: false, plain: true });
+  return out;
+}
+
+export function serializeNode(node: PNode, opts: SerializeOptions = {}): string {
+  return writeNode(node, opts, { foreign: undefined, plain: true });
+}
+
+function writeNode(node: PNode, opts: SerializeOptions, ctx: Context): string {
+  if (node.kind === "text") return escapeText(node.value);
+  const lower = node.tag.toLowerCase();
+  if (lower === "script") return serializeActScript(node, opts, ctx.plain);
   let out = `<${node.tag}`;
-  if (!opts.omitIds) out += ` data-id="${node.id}"`;
+  if (!opts.omitIds) out += ` data-id="${escapeAttr(node.id)}"`;
   if (node.name !== undefined) out += ` data-name="${escapeAttr(node.name)}"`;
   const rewrite = opts.rewriteUrl;
   for (const [k, v] of Object.entries(node.attrs)) {
@@ -299,31 +261,56 @@ export function serializeNode(
   // inside foreign content. Elsewhere it would be ignored and the element
   // would swallow its next siblings, so close it explicitly.
   const parsedForeign =
-    !!node.ns && (node.tag === "svg" || node.tag === "math" || (inForeign ?? true));
+    !!node.ns && (node.tag === "svg" || node.tag === "math" || (ctx.foreign ?? true));
   if (node.ns && node.children.length === 0)
     return parsedForeign ? `${out}/>` : `${out}></${node.tag}>`;
   out += ">";
-  const raw = RAW_TEXT.has(node.tag);
-  const foreign = parsedForeign && childrenAreForeign(node);
-  for (const c of node.children) {
-    if (raw && c.kind === "text" && rewrite)
-      out += rewriteCssUrls(c.value, (u) => rewrite(u, { tag: node.tag, attr: "style" }));
-    else out += serializeNode(c, opts, raw, foreign);
+  if (isTextOnly(lower)) {
+    // Read back as text, so written as text: an element here could close its parent early.
+    for (const c of node.children) {
+      if (c.kind !== "text") continue;
+      if (node.tag !== "style") out += escapeText(c.value);
+      else {
+        const css = rewrite
+          ? rewriteCssUrls(c.value, (u) => rewrite(u, { tag: node.tag, attr: "style" }))
+          : c.value;
+        out += rawCss(css, ctx.plain);
+      }
+    }
+    return `${out}</${node.tag}>`;
   }
+  const inside: Context = {
+    foreign: parsedForeign && childrenAreForeign(node),
+    plain: ctx.plain && !node.ns && !NOT_PLAIN.has(lower),
+  };
+  for (const c of node.children) out += writeNode(c, opts, inside);
   return `${out}</${node.tag}>`;
 }
 
 /**
- * A scene script, always as data: type ponzu/act whatever its attributes say,
- * and text that can't end the element early.
+ * A style sheet's text, unescaped as a parser expects it in `<style>`. A CSS escape stands in
+ * for a `<` that could be read as markup: in ordinary HTML only `</style` can be, and
+ * anywhere else (inside `<svg>`, say, where a style sheet is parsed as markup) any tag can.
+ * The escape means the same in a CSS string, which is where CSS has such a `<`.
  */
-function serializeActScript(node: PElement, opts: SerializeOptions): string {
+function rawCss(css: string, plain: boolean): string {
+  return css.replace(plain ? /<(?=\/style)/gi : /<(?=[a-z/!?])/gi, "\\3c ");
+}
+
+/**
+ * A scene script, always as data: type ponzu/act whatever its node says, and text that can't
+ * end the element early. Where a parser may not read a script as raw text, the text is
+ * escaped as any other text is.
+ */
+function serializeActScript(node: PElement, opts: SerializeOptions, plain: boolean): string {
   let out = "<script";
-  if (!opts.omitIds) out += ` data-id="${node.id}"`;
+  if (!opts.omitIds) out += ` data-id="${escapeAttr(node.id)}"`;
   if (node.name !== undefined) out += ` data-name="${escapeAttr(node.name)}"`;
   out += ` type="${ACT_SCRIPT_TYPE}">`;
-  for (const c of node.children)
-    if (c.kind === "text") out += c.value.replace(/<(\/script|!--)/gi, "<\\$1");
+  for (const c of node.children) {
+    if (c.kind !== "text") continue;
+    out += plain ? c.value.replace(/<(\/script|!--)/gi, "<\\$1") : escapeText(c.value);
+  }
   return `${out}</script>`;
 }
 
@@ -545,7 +532,7 @@ export function artboardFileComplete(html: string): boolean {
 
 export function serializeArtboardFile(ab: Artboard): string {
   const root = ab.root;
-  let open = `<section data-artboard data-id="${ab.id}" data-name="${escapeAttr(ab.name)}" data-x="${fmt(ab.x)}" data-y="${fmt(ab.y)}"`;
+  let open = `<section data-artboard data-id="${escapeAttr(ab.id)}" data-name="${escapeAttr(ab.name)}" data-x="${fmt(ab.x)}" data-y="${fmt(ab.y)}"`;
   for (const [k, v] of Object.entries(root.attrs)) open += ` ${k}="${escapeAttr(v)}"`;
   const style = serializeStyle(root.style);
   if (style) open += ` style="${escapeAttr(style)}"`;
