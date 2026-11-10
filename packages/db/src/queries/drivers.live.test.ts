@@ -38,7 +38,6 @@ import {
   ensureWorkspaceAdmin,
   listWorkspaceMembers,
   removeMembership,
-  setMemberRepos,
   setMemberRole,
 } from "./members.ts";
 import { commitOps, findOps, readOps } from "./ops.ts";
@@ -46,7 +45,12 @@ import { pingDb } from "./ping.ts";
 import { listPresence, touchPresence } from "./presence.ts";
 import { findDesignByBranch, recordPullRequest } from "./pull-requests.ts";
 import { answerSecretQuestion, cancelQuestions, createQuestion } from "./questions.ts";
-import { listDesignRepoAccess, recordRepoAccess } from "./repo-access.ts";
+import {
+  listDesignRepoAccess,
+  markRepoAccessStale,
+  recordReachableRepos,
+  recordRepoAccess,
+} from "./repo-access.ts";
 import { QueryError } from "./run.ts";
 import { createRunnerToken, verifyRunnerToken } from "./runner-tokens.ts";
 import { admitSession, endSession, getSessionUser } from "./sessions.ts";
@@ -342,15 +346,17 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
     ]);
     const repo = await seedRepo(db, workspace.id, "live/app");
     expect(
-      await setMemberRepos(db, {
+      await recordReachableRepos(db, {
         ...key,
         repos: [
-          { githubRepoId: repo.githubRepoId, canPush: true },
-          { githubRepoId: 1, canPush: false },
+          { githubRepoId: repo.githubRepoId, permission: "write" },
+          { githubRepoId: 1, permission: "read" },
         ],
         complete: true,
+        checkedAt: new Date(),
       }),
     ).toEqual({ missing: [1] });
+    expect(await markRepoAccessStale(db, { workspaceId: workspace.id })).toBe(1);
     expect(await listWorkspaceRepos(db, key)).toMatchObject([{ id: repo.id, canPush: true }]);
     expect(await deleteMembershipsExcept(db, { userId: user.id, workspaceIds: [] })).toEqual([
       workspace.id,
@@ -383,7 +389,7 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
       state: "merged",
       updatedAt,
     });
-    expect(await findDesignByBranch(db, branch)).toEqual({ id: settled!, status: "settled" });
+    expect(await findDesignByBranch(db, branch)).toMatchObject({ id: settled!, status: "settled" });
     expect(await markReposRemovedExcept(db, { workspaceId: workspace.id, githubRepoIds: [] })).toBe(
       1,
     );

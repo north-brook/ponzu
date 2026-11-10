@@ -211,10 +211,19 @@ export const repos = pgTable(
 );
 
 /**
- * What GitHub last said a person may do in a repo, and when. Every function instance reads it,
- * so one answer serves them all, and live queries join it: Realtime has no row-level security,
- * so this is how a list shows a repo's designs only to people who can read the repo. A row is
- * only ever replaced by a newer answer.
+ * What GitHub last said a person may do in a repo, and when: the one answer to "may this person
+ * see or steer this repo", for every route and live query that asks (`auth/repo-access.ts` in
+ * the API). Two kinds of answer land here, both GitHub's: a sync of the person, which lists
+ * every repo of an installation their own token reaches (`write` or `read`, and `none` for the
+ * workspace's others), and a question asked as the App about one repo when no answer is fresh.
+ * Every function instance reads it, so one answer serves them all, and live queries join it:
+ * Realtime has no row-level security, so this is how a list shows a repo's designs only to
+ * people who can read the repo. A row is only ever replaced by a newer answer, and a webhook
+ * that says access may have changed makes the answers it concerns stale (`checked_at` at the
+ * epoch), so they are asked again before they are trusted.
+ *
+ * It answers only for a member of the repo's workspace: whoever reads it also requires the
+ * membership, so a person who leaves a workspace loses its repos at once, whatever is here.
  */
 export const repoAccess = pgTable(
   "repo_access",
@@ -226,7 +235,7 @@ export const repoAccess = pgTable(
       .notNull()
       .references(() => repos.id, { onDelete: "cascade" }),
     permission: text("permission", { enum: REPO_PERMISSIONS }).notNull(),
-    /** When GitHub gave this answer, by the API's clock. */
+    /** When GitHub was asked for this answer, by the API's clock. */
     checkedAt: instant("checked_at").notNull(),
   },
   (t) => [
@@ -237,9 +246,11 @@ export const repoAccess = pgTable(
 );
 
 /**
- * The repos of a workspace one member can reach, as GitHub last told them
- * (`GET /user/installations/{id}/repositories`). The workspace's installation may hold repos
- * GitHub hides from them, and they are shown only these. Goes when the membership goes.
+ * Retired: what `repo_access` holds now. It stays only so the build before this one, which
+ * reads and writes it, keeps working while this one deploys; nothing here reads or writes it,
+ * and the next migration drops it.
+ *
+ * @deprecated Use `repoAccess`.
  */
 export const memberRepos = pgTable(
   "member_repos",

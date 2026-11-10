@@ -9,7 +9,7 @@ import {
 import type { Deps } from "../deps/index.ts";
 import { ApiError } from "../http/errors.ts";
 import type { Actor, UserActor } from "./actor.ts";
-import { repoPermission } from "./repo-access.ts";
+import { canWrite, repoPermission } from "./repo-access.ts";
 
 /*
  * What a caller may touch. An access declaration says who is asking; the functions here say
@@ -53,8 +53,9 @@ type DesignContext = { var: { deps: Pick<Deps, "db" | "github" | "clock">; actor
 /**
  * The design `designId` names, if the caller may `need` it. Opening a design takes read access
  * to its repository and steering it takes write access, both GitHub's to say (docs/cloud.md,
- * "Identity and access"); a Scratch design has no repository and is its owner's alone. A
- * runner may look at and steer its own design and no other.
+ * "Identity and access"), and either takes membership of its workspace; a Scratch design has
+ * no repository and is its owner's alone. A runner may look at and steer its own design and
+ * no other.
  */
 export async function requireDesign(
   c: DesignContext,
@@ -77,16 +78,22 @@ export async function requireDesign(
   return { ...found, access };
 }
 
-/** What GitHub lets a person do in the design's repository, or null for nothing. */
+/**
+ * What a person may do with the design: nothing outside its workspace, and inside it what
+ * GitHub lets them do in its repository. Null for nothing.
+ */
 async function personAccess(
   deps: Pick<Deps, "db" | "github" | "clock">,
   user: User,
-  { design, repo, installationId, known }: DesignAccess,
+  { design, repo, installationId, known, member }: DesignAccess,
 ): Promise<DesignGrant["access"] | null> {
+  // Membership is GitHub's too, and a person who loses it loses the workspace's designs at
+  // once, whatever answer about the repo is still kept.
+  if (!member) return null;
   if (!repo) return design.ownerId === user.id ? "write" : null;
   // Without the App there is nobody to ask, and nothing the design could do anyway.
   if (installationId === null) return null;
   const permission = await repoPermission(deps, { user, repo, installationId, known });
-  if (permission === "admin" || permission === "write") return "write";
+  if (canWrite(permission)) return "write";
   return permission === "read" ? "read" : null;
 }

@@ -17,12 +17,29 @@ export interface NewEvent {
   userId?: string | null;
 }
 
-/** Add something that happened to a design's feed, for its agent to take up. */
+/**
+ * An event as a row of `events` stores it: a new id, its payload with what Postgres cannot hold
+ * replaced, and the person behind it (null when GitHub was). Every way into a design's feed
+ * makes its rows here: `appendEvent`, and the commit statement for the events of a person's ops.
+ */
+export function eventRow({
+  kind,
+  priority,
+  payload,
+  userId = null,
+}: Omit<NewEvent, "designId">): Omit<NewEvent, "designId"> & { id: string; userId: string | null } {
+  return { id: newId("evt"), kind, priority, payload: scrubbed(payload), userId };
+}
+
+/**
+ * Add something that happened to a design's feed, for its agent to take up: what a webhook or
+ * a route appends on its own. The events of a person's ops go in with the ops (`commitOps`).
+ */
 export async function appendEvent(db: Db, event: NewEvent): Promise<DesignEvent> {
   const [row] = await run(
     db
       .insert(events)
-      .values({ ...event, payload: scrubbed(event.payload), id: newId("evt") })
+      .values({ designId: event.designId, ...eventRow(event) })
       .returning(),
   );
   return row!;

@@ -31,7 +31,11 @@ const at = (minute: number) => new Date(Date.UTC(2026, 10, 10, 12, minute));
 test("findDesignByBranch finds the design that owns a branch, and only that", async () => {
   const { design, key } = await designOnBranch();
 
-  expect(await findDesignByBranch(db, key)).toEqual({ id: design.id, status: "active" });
+  expect(await findDesignByBranch(db, key)).toMatchObject({
+    id: design.id,
+    status: "active",
+    repo: { githubRepoId: key.githubRepoId },
+  });
   expect(await findDesignByBranch(db, { ...key, branch: "main" })).toBeNull();
   expect(await findDesignByBranch(db, { ...key, githubRepoId: 404_404 })).toBeNull();
 });

@@ -1,5 +1,10 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { getRepoInstallationId, getUserByGithubId, getWorkspaceByInstallation } from "@ponzu/db";
+import {
+  getRepoInstallationId,
+  getUserByGithubId,
+  getWorkspaceByInstallation,
+  markRepoAccessStale,
+} from "@ponzu/db";
 import { z } from "zod";
 import type { Deps } from "../deps/index.ts";
 import { reconcileInstallation } from "./installations.ts";
@@ -109,7 +114,7 @@ const ReviewEvent = z.object({
     state: z.string(),
     body: z.string().nullable(),
     html_url: z.string(),
-    user: z.object({ login: z.string() }).nullable(),
+    user: z.object({ id: z.number().int(), login: z.string() }).nullable(),
     author_association: z.string(),
   }),
   pull_request: PullRequest,
@@ -123,6 +128,8 @@ const INSTALLATION_ACTIONS = [
   "new_permissions_accepted",
 ];
 const REPOSITORY_ACTIONS = ["renamed", "transferred", "deleted", "privatized", "publicized"];
+/** The repository actions after which who may read or push to it is asked again. */
+const ACCESS_CHANGING_REPOSITORY_ACTIONS = ["transferred", "deleted", "privatized", "publicized"];
 const TEAM_ACTIONS = ["added_to_repository", "removed_from_repository", "deleted"];
 const PULL_REQUEST_ACTIONS = [
   "opened",
@@ -137,9 +144,10 @@ const FAILED = ["failure", "timed_out", "action_required", "startup_failure"];
 /** The most of a review's text a design's feed keeps. */
 const REVIEW_BODY_CHARS = 4_000;
 /**
- * Whose reviews reach the agent: the repo's owner, its organization's members and its
+ * Whose reviews are worth asking about: the repo's owner, its organization's members and its
  * collaborators. On a public repo anyone can review a pull request, and a review is text the
- * agent reads, so a stranger's never reaches it.
+ * agent reads, so a stranger's is dropped at once; of these, only one GitHub says can push to
+ * the repo reaches the agent (`tellDesigns`).
  */
 const REVIEWERS = ["OWNER", "MEMBER", "COLLABORATOR"];
 
@@ -165,17 +173,23 @@ export function planDelivery(event: string, payload: unknown): Plan {
 
     case "installation_repositories":
     case "installation_target":
+      // Repos joined or left the installation: what anyone may do in its repos is asked again.
       return plan(
         InstallationScoped,
         payload,
-        (e) => (deps) => reconcileInstallation(deps, e.installation.id).then(() => {}),
+        (e) => (deps) => reconcileAndRecheck(deps, e.installation.id),
       );
 
     case "repository":
       return plan(RepositoryEvent, payload, (e) => {
         const defaultBranchChanged = e.action === "edited" && e.changes?.default_branch;
         if (!REPOSITORY_ACTIONS.includes(e.action) && !defaultBranchChanged) return null;
-        return (deps) => reconcileRepository(deps, e.repository.id, e.installation?.id);
+        const accessChanged = ACCESS_CHANGING_REPOSITORY_ACTIONS.includes(e.action);
+        return async (deps) => {
+          if (accessChanged)
+            await markRepoAccessStale(deps.db, { githubRepoIds: [e.repository.id] });
+          await reconcileRepository(deps, e.repository.id, e.installation?.id);
+        };
       });
 
     case "member":
@@ -269,7 +283,8 @@ export function planDelivery(event: string, payload: unknown): Plan {
     case "pull_request_review":
       return plan(ReviewEvent, payload, (e) => {
         const { review } = e;
-        if (e.action !== "submitted" || !REVIEWERS.includes(review.author_association)) {
+        const { user } = review;
+        if (e.action !== "submitted" || !user || !REVIEWERS.includes(review.author_association)) {
           return null;
         }
         return (deps) =>
@@ -277,9 +292,10 @@ export function planDelivery(event: string, payload: unknown): Plan {
             githubRepoId: e.repository.id,
             pullRequests: [e.pull_request],
             kind: "review",
+            author: { githubUserId: user.id, login: user.login },
             payload: (pr: PullRequestRef) => ({
               state: review.state.toLowerCase(),
-              reviewer: review.user?.login ?? null,
+              reviewer: user.login,
               reviewerAssociation: review.author_association,
               body: (review.body ?? "").slice(0, REVIEW_BODY_CHARS),
               url: review.html_url,
@@ -324,6 +340,16 @@ function plan<Schema extends z.ZodType>(
   if (!parsed.success) return { kind: "malformed" };
   const work = decide(parsed.data);
   return work ? { kind: "work", payload: parsed.data, work } : { kind: "ignored" };
+}
+
+/**
+ * Read an installation again, and make what is kept about its repos stale first: GitHub says
+ * its repos changed, but not for whom.
+ */
+async function reconcileAndRecheck(deps: WebhookDeps, installationId: number) {
+  const workspace = await getWorkspaceByInstallation(deps.db, installationId);
+  if (workspace) await markRepoAccessStale(deps.db, { workspaceId: workspace.id });
+  await reconcileInstallation(deps, installationId);
 }
 
 /** Reconcile an installation only if Ponzu has a workspace for it: an event about it says no more. */

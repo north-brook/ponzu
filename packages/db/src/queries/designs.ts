@@ -8,6 +8,7 @@ import {
   designCheckpoints,
   designReads,
   designs,
+  memberships,
   type RepoPermission,
   repoAccess,
   repos,
@@ -109,6 +110,11 @@ export interface DesignAccess {
   installationId: number | null;
   /** What GitHub last said the person asking may do in the repo, if it was ever asked. */
   known: { permission: RepoPermission; checkedAt: Date } | null;
+  /**
+   * Whether the person asking is a member of the design's workspace. Nobody else may open it,
+   * whatever `known` says: an answer is only ever about a member (see `repo_access`).
+   */
+  member: boolean;
 }
 
 /**
@@ -128,9 +134,17 @@ export async function getDesignAccess(
         installationId: workspaces.installationId,
         permission: repoAccess.permission,
         checkedAt: repoAccess.checkedAt,
+        member: sql<boolean>`${memberships.userId} is not null`.mapWith(Boolean),
       })
       .from(designs)
       .innerJoin(workspaces, eq(workspaces.id, designs.workspaceId))
+      .leftJoin(
+        memberships,
+        and(
+          eq(memberships.workspaceId, designs.workspaceId),
+          userId === null ? sql`false` : eq(memberships.userId, userId),
+        ),
+      )
       .leftJoin(repos, eq(repos.id, designs.repoId))
       .leftJoin(
         repoAccess,
@@ -142,7 +156,7 @@ export async function getDesignAccess(
       .where(eq(designs.id, designId)),
   );
   if (!row) return null;
-  const { design, githubRepoId, fullName, installationId, permission, checkedAt } = row;
+  const { design, githubRepoId, fullName, installationId, permission, checkedAt, member } = row;
   return {
     design,
     repo:
@@ -151,6 +165,7 @@ export async function getDesignAccess(
         : { id: design.repoId, githubRepoId, fullName },
     installationId,
     known: permission === null || checkedAt === null ? null : { permission, checkedAt },
+    member,
   };
 }
 
@@ -233,8 +248,8 @@ export interface DesignListItem extends DesignHead {
 
 /**
  * A workspace's designs, most recently active first, with how far `userId` has looked at each:
- * those in a repo `repo_access` says they can read, and their own Scratch designs. Whether
- * those answers are recent is the caller's to make sure of.
+ * those in a repo `repo_access` says they can read, and their own Scratch designs. That they are
+ * a member, and that those answers are recent, is the caller's to make sure of.
  */
 export function listWorkspaceDesigns(
   db: Db,

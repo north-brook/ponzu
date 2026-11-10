@@ -43,6 +43,13 @@
       "when": 1794351512179,
       "tag": "0005_github_access",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794354494647,
+      "tag": "0006_repo_access",
+      "breakpoints": true
     }
   ]
 }

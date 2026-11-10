@@ -1,11 +1,10 @@
 import type { Op } from "@ponzu/core";
 import { type SQL, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
-import { newId } from "../ids.ts";
 import type { ActorKind, OpKind } from "../schema/index.ts";
-import type { NewEvent } from "./events.ts";
+import { eventRow, type NewEvent } from "./events.ts";
 import { queryJson } from "./json.ts";
-import { isStorable, scrubbed, toStorableJson } from "./text.ts";
+import { isStorable, toStorableJson } from "./text.ts";
 
 /** Who made a change. It comes from the caller's token, never from what they sent. */
 export interface Actor {
@@ -125,16 +124,7 @@ export async function commit(
   // One parameter however long the batch is. `json` keeps each op's text as sent, so `->` hands
   // back the op with its keys in the order the caller wrote them.
   const batch = `[${texts.join(",")}]`;
-  const feed = JSON.stringify(
-    events.map(({ opId, kind, priority, payload, userId = null }) => ({
-      id: newId("evt"),
-      opId,
-      kind,
-      priority,
-      payload: scrubbed(payload),
-      userId,
-    })),
-  );
+  const feed = JSON.stringify(events.map(({ opId, ...event }) => ({ opId, ...eventRow(event) })));
   const result = await queryJson<{
     seq: number;
     conflict: boolean;

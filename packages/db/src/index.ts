@@ -91,7 +91,6 @@ export {
   listWorkspaceMembers,
   removeMembership,
   type SetRoleResult,
-  setMemberRepos,
   setMemberRole,
   type WorkspaceMember,
   workspaceHasAdmin,
@@ -117,7 +116,11 @@ export {
   removePresence,
   touchPresence,
 } from "./queries/presence.ts";
-export { findDesignByBranch, recordPullRequest } from "./queries/pull-requests.ts";
+export {
+  type BranchDesign,
+  findDesignByBranch,
+  recordPullRequest,
+} from "./queries/pull-requests.ts";
 export {
   answerQuestion,
   answerSecretQuestion,
@@ -129,10 +132,14 @@ export {
 } from "./queries/questions.ts";
 export {
   type DesignRepoAccess,
+  getRepoAccess,
   listDesignRepoAccess,
+  markRepoAccessStale,
   READABLE_PERMISSIONS,
   type RepoAccessAnswer,
+  recordReachableRepos,
   recordRepoAccess,
+  WRITABLE_PERMISSIONS,
 } from "./queries/repo-access.ts";
 export { QueryError } from "./queries/run.ts";
 export {

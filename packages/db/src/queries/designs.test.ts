@@ -5,7 +5,7 @@ import { actorFor, rename, seedDesign, seedRepo, seedUser, seedWorkspace } from 
 import { DESIGN_HEAD_COLUMNS, type LiveDesignHead, toDesignHead } from "../head.ts";
 import { designReads, designs } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
-import { markReposRemoved } from "./accounts.ts";
+import { markReposRemoved, upsertMembership } from "./accounts.ts";
 import { readDocSource } from "./checkpoints.ts";
 import {
   createDesign,
@@ -365,6 +365,7 @@ describe("getDesignAccess", () => {
       repo: { id: repo.id, githubRepoId: repo.githubRepoId, fullName: "north-brook/harbor" },
       installationId: workspace.installationId,
       known: null,
+      member: false,
     });
     expect(access!.design).not.toHaveProperty("assetKey");
   });
@@ -395,6 +396,23 @@ describe("getDesignAccess", () => {
     expect(await known(user.id)).toEqual({ permission: "write", checkedAt });
     expect(await known(teammate.id)).toBeNull();
     expect(await known(null)).toBeNull();
+  });
+
+  test("says whether the person asking is a member of the design's workspace", async () => {
+    const { design, user } = await seedDesign(db);
+    const outsider = await seedUser(db, "outsider");
+    const member = async (userId: string | null) =>
+      (await getDesignAccess(db, { designId: design.id, userId }))!.member;
+
+    expect(await member(outsider.id)).toBe(false);
+    expect(await member(null)).toBe(false);
+    await upsertMembership(db, {
+      workspaceId: design.workspaceId,
+      userId: user.id,
+      role: "member",
+    });
+    expect(await member(user.id)).toBe(true);
+    expect(await member(outsider.id)).toBe(false);
   });
 
   test("Scratch has no repo, and a design that does not exist is null", async () => {

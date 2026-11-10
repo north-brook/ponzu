@@ -35,7 +35,7 @@ import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { access } from "../auth/access.ts";
 import { type DesignGrant, requireDesign, requireWorkspace } from "../auth/authorize.ts";
-import { repoPermission } from "../auth/repo-access.ts";
+import { canWrite, repoPermission } from "../auth/repo-access.ts";
 import type { Deps } from "../deps/index.ts";
 import { toCommittedOp } from "../designs/actor.ts";
 import { commitPost } from "../designs/commit.ts";
@@ -204,11 +204,10 @@ export const designs = new Hono<AppEnv>()
               user: actor.user,
               repo,
               installationId: workspace.installationId,
-              known: null,
             })
           : "none";
       if (permission === "none") throw new ApiError(404, "not_found", "There is no such repo.");
-      if (permission === "read") {
+      if (!canWrite(permission)) {
         throw new ApiError(403, "forbidden", "Designs need a repo you can push to.");
       }
     }

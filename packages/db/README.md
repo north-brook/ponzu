@@ -123,9 +123,9 @@ People and access
 | `workspaces` | A GitHub account with the App installed, and its billing: Stripe customer, cap, period anchor. Keyed by the account; the installation id changes on a reinstall. `reconciled_at` is when the installation was last read as the App. | live |
 | `uninstalled_installations` | Installation ids GitHub said are gone. GitHub never reuses one, so a read that began before the uninstall cannot bring it back. | |
 | `memberships` | Who can reach a workspace, as GitHub last said, how (`github_access`: owner, member of its organization, or collaborator on some repos), and their role (admin or member). An owner is always an admin. | live |
-| `member_repos` | The repos of a workspace each member reaches, as GitHub last told them, and whether they can push. A member is shown only these. Goes with the membership. | |
+| `member_repos` | Retired: what `repo_access` holds now. Kept only while the build before reads it; the next migration drops it. Nothing reads or writes it. | |
 | `repos` | A repo the App can see: default branch, the base snapshot new designs start from, its stack, ideas. | live |
-| `repo_access` | What GitHub last said each person may do in each repo, and when. Every function instance shares the answers, and live queries join them so a repo's designs show only to people who can read it. A row is replaced only by a newer answer. | live |
+| `repo_access` | What GitHub last said each person may do in each repo (`admin`, `write`, `read`, `none`), and when: the one answer to who may see or steer a repo. A person's sync writes a whole workspace of them (`recordReachableRepos`), a question asked as the App writes one (`recordRepoAccess`), and a webhook that cannot say whose access changed makes them stale (`markRepoAccessStale`). The repo list, the designs list and the live queries join it, so a repo and its designs show only to people who can read it. A row is replaced only by a newer answer, and is read only alongside the person's membership. | live |
 | `repo_secrets` | A repo's environment variables, encrypted. | |
 | `claude_accounts` | A person's own Claude: subscription or API key (encrypted), status, expiry, last known limits. | live |
 | `devices` | A phone or Mac to push to. | |

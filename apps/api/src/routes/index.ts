@@ -7,7 +7,6 @@ import { github } from "./github.ts";
 import { health } from "./health.ts";
 import { live } from "./live.ts";
 import { me } from "./me.ts";
-import { workspaceDesigns } from "./workspace-designs.ts";
 import { workspaces } from "./workspaces.ts";
 
 /**
@@ -19,7 +18,6 @@ export const v1 = new Hono<AppEnv>()
   .route("/auth", auth)
   .route("/me", me)
   .route("/github", github)
-  .route("/workspaces/:workspaceId/designs", workspaceDesigns)
   .route("/workspaces", workspaces)
   .route("/designs", designs)
   .route("/live", live)
