@@ -5,7 +5,8 @@
   "license": "MIT",
   "exports": {
     ".": "./src/index.ts",
-    "./github": "./src/github.ts"
+    "./github": "./src/github.ts",
+    "./testing": "./src/fixtures/sequencer.ts"
   },
   "dependencies": {
     "parse5": "^8"

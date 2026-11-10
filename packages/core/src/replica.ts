@@ -95,9 +95,11 @@ export class Replica {
   private head: number;
   private queue: Pending[] = [];
 
+  /** Who edits here. */
+  readonly actor: Actor;
+
   private readonly transport: SyncTransport;
   private readonly schedule: Scheduler;
-  private readonly actor: Actor;
   private readonly newId: () => string;
 
   /** A request is in flight. There is never more than one. */

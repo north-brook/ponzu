@@ -76,7 +76,7 @@ export function docSummary(
   doc: Doc,
   opts: { folderOf?: (pageId: string) => string | undefined } = {},
 ): string {
-  const lines = [`File: ${doc.name}`];
+  const lines = [`Design: ${doc.name}`];
   for (const page of doc.pages) {
     const folder = opts.folderOf?.(page.id);
     lines.push(
