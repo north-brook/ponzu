@@ -1,0 +1,74 @@
+name: Deploy API
+
+# The cloud API at api.ponzu.design is the head of `cloud`, and this is the only thing that
+# puts it there: every push to `cloud` applies the migrations that are pending to the Neon
+# `dev` branch and then deploys apps/api to production on Vercel. Nobody deploys a branch
+# with `--prod`, so the API the desktop and phone work is built against never becomes
+# whichever branch deployed last, and a migration reaches the shared database only once it
+# has merged. See apps/api/README.md, "Deploying".
+#
+# The repository is deliberately not connected to the Vercel project; this deploys with the
+# CLI and a token. Until cutover api.ponzu.design is the development API. After it, this
+# moves to `main` and the Neon default branch.
+on:
+  push:
+    branches: [cloud]
+
+permissions:
+  contents: read
+
+concurrency:
+  # One at a time and in order: a deploy is never cancelled halfway through its migration.
+  group: deploy-api
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Migrate and deploy
+    # Off until the repository variable API_DEPLOY is "true", set once the variables and
+    # secrets this reads exist (apps/api/README.md lists them).
+    if: vars.API_DEPLOY == 'true'
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 15
+    env:
+      VERCEL_ORG_ID: ${{ vars.VERCEL_TEAM_ID }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_API_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - name: Apply pending migrations to the Neon `dev` branch
+        # Before the code that needs them. `db:migrate` applies everything pending in one
+        # transaction and fails if a migration in the journal was passed over.
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+        run: |
+          url="$(bun apps/api/scripts/neon.ts dev --direct)"
+          echo "::add-mask::$url"
+          cd packages/db && DATABASE_URL="$url" bun run db:migrate
+      - name: Deploy to production
+        # The project's Root Directory is apps/api, so this runs at the repository root. The
+        # CLI is pinned: it runs with a token that can deploy.
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: bunx vercel@65.14.0 deploy --prod --yes --env VERCEL_GIT_COMMIT_SHA="$GITHUB_SHA"
+      - name: api.ponzu.design answers with this commit
+        run: |
+          for _ in 1 2 3 4 5 6; do
+            body="$(curl --silent --show-error --max-time 20 https://api.ponzu.design/v1/health || true)"
+            if grep -q "\"commit\":\"$GITHUB_SHA\"" <<<"$body" && grep -q '"database":true' <<<"$body"; then
+              echo "$body"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::api.ponzu.design did not answer healthy with commit $GITHUB_SHA: $body"
+          exit 1

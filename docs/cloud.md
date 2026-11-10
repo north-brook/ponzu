@@ -82,18 +82,24 @@ GitHub token never reaches a device.
   exchange (and its check against GitHub) ever running. So the exchange records
   each session it lets in, and the API honors a token only for a recorded
   session. Signing out removes the record, which ends the session at the API at
-  once and not five minutes later.
+  once and not five minutes later, whether or not WorkOS can be reached to
+  revoke it there too.
 - WorkOS will not finish a sign-in until the email is verified, and it does not
   take GitHub's word for it. The API completes that step itself during the
   exchange and then checks with GitHub that the address is verified there, so
-  nobody is sent a code by email. The check is made whenever the API completed
-  the step, the first time a WorkOS user is let in at all, and when their
-  address has changed: a sign-in that fails it leaves WorkOS counting the
-  address as verified, so WorkOS's own flag is never what lets someone in. For
-  the same reason one WorkOS user is one GitHub account, held by the database:
-  WorkOS joins accounts by email, and an address it believes only because the
-  API vouched for it must not join a stranger to someone's user. A sign-in that
-  fails after WorkOS has made a session revokes that session.
+  nobody is sent a code by email. Completing it vouches for the address to
+  WorkOS, which joins accounts by email, so the API holds to three rules. It
+  never completes the step for a WorkOS user who is already a Ponzu person:
+  that is WorkOS about to attach a new identity to their user. When it has
+  completed the step and then does not let the person in, it deletes the
+  WorkOS user, so nothing stays verified or attached on its word alone. And
+  WorkOS's own flag is never what lets someone in: GitHub is asked whenever the
+  API completed the step, the first time a WorkOS user is let in, when their
+  address has changed, and when the GitHub account is not the one that WorkOS
+  user belongs to. One WorkOS user is one GitHub account, held by the database.
+  A sign-in that fails after WorkOS has made a session revokes that session.
+- Only a GitHub sign-in is taken. WorkOS can offer other methods; a session
+  that came from one is refused and revoked.
 - The GitHub user token lasts eight hours and its refresh token works once.
   The API refreshes it when it is about to run out, one refresh at a time per
   person: the claim is a column on the token's row, since function instances
@@ -412,8 +418,10 @@ with a key that exists only in the API's environment. Each is bound to the row a
 column it is stored in, so a value copied anywhere else does not decrypt, and each
 names the key that encrypted it, so the key can be rotated.
 
-Every route says who may call it (anyone, a signed-in person, or a design's
-runner), and a route that does not is refused. Errors leave the API as
+Every route says who may call it (anyone, a signed-in person, a design's
+runner, or either of those two), and a route that does not is refused. A whole
+area can be declared for people or for runners; opening a route to anyone is
+said on that route and nowhere else. Errors leave the API as
 `{ error: { code, message, details? } }` with a stable code and nothing of the
 failure itself; logs carry ids and outcomes, never tokens, bodies or headers.
 
@@ -423,6 +431,12 @@ failure itself; logs carry ids and outcomes, never tokens, bodies or headers.
 |---|---|---|---|---|
 | Development and the `cloud` branch | `api.ponzu.design` until cutover | Neon branch `dev` | WorkOS staging | `ponzu-dev` |
 | Production, from cutover | `api.ponzu.design` | Neon default branch | WorkOS production | `ponzu` |
+
+The API is deployed from the head of `cloud` by a workflow, which applies the
+pending migrations to the database first; nobody deploys a branch to
+production or migrates the shared database by hand. Every deployment holds the
+environment's secrets, so only production's own domains are public: previews
+and the unique URL of each deployment open only for the team.
 
 Tests run against an in-process Postgres (PGlite), so they need no network. PGlite
 is a single connection, so CI also runs the database's races, and each kind of
