@@ -1,9 +1,11 @@
 import { existsSync } from "node:fs";
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
-import type { Browser, BrowserContext, Page } from "playwright-core";
-import { captureScale, clampScale, IMAGES_READY_SCRIPT } from "./capture.ts";
+import type { Browser, Page, Route } from "playwright-core";
+import { BrowserProcess } from "./browser.ts";
+import { captureScale, IMAGES_READY_SCRIPT, MAX_CAPTURE_PX } from "./capture.ts";
 import { artboardPage, cssPx } from "./document.ts";
+import { linuxFonts } from "./linux-fonts.ts";
 import { filmLoops, type LoopRequest, type LoopResult } from "./loop.ts";
 import {
   type FrameDriver,
@@ -12,6 +14,7 @@ import {
   prepareScript,
   recordFrames,
 } from "./motion.ts";
+import { JobQueue } from "./queue.ts";
 import {
   type LintIssue,
   type MeasureRequest,
@@ -25,54 +28,176 @@ import {
 } from "./renderer.ts";
 import { RenderError, STAGE_BUDGET_MS, stalled, withBudget, within } from "./stages.ts";
 
+/** What one renderer may use of the machine it runs on. */
+export interface RenderLimits {
+  /** Jobs drawing at once. Each is a page in Chrome; the rest wait in line. */
+  concurrency: number;
+  /** How long a job waits in line before it fails as busy, in ms. */
+  queueMs: number;
+  /** How long a job may run before it is stopped and its page closed, in ms. */
+  jobMs: number;
+  /**
+   * Device pixels in one image, and in the page's viewport at the scale it is
+   * drawn at. An ask for more comes back at the largest scale that fits, with
+   * that scale in the result.
+   */
+  maxPixels: number;
+  /** How long a browser stays open with nothing to draw, in ms. */
+  idleMs: number;
+}
+
+/**
+ * Sized for a 4 GB sandbox that also runs a dev server and an agent. Chrome
+ * holds about 20 bytes for each device pixel of an image while it captures
+ * it, so a job at the pixel limit takes close to 500 MB over an idle
+ * browser's 150 MB, and two of them at once stay near 1.1 GB. 24 million
+ * pixels is a 1440×900 board at 4x, or a 1440×4000 page at 2x.
+ */
+export const DEFAULT_LIMITS: RenderLimits = {
+  concurrency: 2,
+  queueMs: STAGE_BUDGET_MS.queue,
+  jobMs: 60_000,
+  maxPixels: 24_000_000,
+  idleMs: 120_000,
+};
+
 export interface ChromiumOptions {
   /** Path to a Chrome or Chromium binary. Found automatically when omitted. */
   executablePath?: string;
+  /**
+   * A browser Playwright finds itself, used when there's no `executablePath`.
+   * "chromium-headless-shell" and "chromium" are the builds this version of
+   * playwright-core is pinned to (`playwright-core install` downloads them);
+   * "chrome" is the machine's own Google Chrome.
+   */
+  channel?: string;
+  /**
+   * Chromium's own sandbox around the pages it draws. On unless this runs as
+   * root, which Chrome refuses to sandbox. Turn it off only where the kernel
+   * won't allow it (a container without user namespaces).
+   */
+  sandbox?: boolean;
+  /** More command-line switches for Chrome, after the renderer's own. */
+  args?: string[];
   /** Base URL for relative asset paths, usually the server's /assets route. */
   assetBase?: string;
+  /**
+   * Lets a design load from servers on this machine (http://localhost:3000,
+   * 127.0.0.1, [::1]): the repo's dev server, in a sandbox. Off by default,
+   * because on a person's own computer a design could then reach whatever
+   * they have listening locally.
+   */
+  loopback?: boolean;
   /** Runs on each new page before the artboard loads, e.g. to route its requests in tests. */
   preparePage?: (page: Page) => Promise<void>;
   /** How long fonts and images may take, so tests of one that never arrives needn't wait the full budget. */
   assetsMs?: number;
+  limits?: Partial<RenderLimits>;
 }
 
 /**
- * Renders with a headless Chromium the user already has: Chrome, Edge,
- * Brave, Chromium, or a Playwright download. Nothing is downloaded.
+ * Renders with a headless Chromium: the one at `executablePath` or `channel`,
+ * or else a Chrome, Edge, Brave or Chromium already on the machine. It keeps
+ * one browser open while there is work, in a queue that bounds how much runs
+ * at once.
  */
 export class ChromiumRenderer implements Renderer {
-  private browser: Promise<Browser> | null = null;
-  private context: Promise<BrowserContext> | null = null;
-  private film: Promise<BrowserContext> | null = null;
+  private limits: RenderLimits;
+  private queue: JobQueue;
+  private main: BrowserProcess;
+  /**
+   * Filming gets a browser of its own, launched when first needed: without a
+   * frame rate limit a capture takes 13-25 ms instead of waiting for the next
+   * frame at 30 fps, which halves filming time. Screenshots keep paced frames.
+   */
+  private film: BrowserProcess;
 
-  constructor(private opts: ChromiumOptions = {}) {}
+  constructor(private opts: ChromiumOptions = {}) {
+    this.limits = { ...DEFAULT_LIMITS, ...opts.limits };
+    this.queue = new JobQueue(this.limits.concurrency, this.limits.queueMs);
+    this.main = new BrowserProcess(() => this.launch([]), this.limits.idleMs);
+    this.film = new BrowserProcess(
+      () =>
+        this.launch([
+          // Render pages are served at this origin; secure, they get WebCodecs to encode.
+          `--unsafely-treat-insecure-origin-as-secure=${RENDER_ORIGIN}`,
+          "--disable-frame-rate-limit",
+          "--disable-gpu-vsync",
+        ]),
+      this.limits.idleMs,
+    );
+  }
 
-  private async ctx(): Promise<BrowserContext> {
-    if (!this.browser) {
-      const executablePath = this.opts.executablePath ?? findChromium();
-      if (!executablePath) {
-        throw new Error(
-          "No Chrome or Chromium found for screenshots. Install Google Chrome, or set PONZU_CHROMIUM to a Chromium binary.",
+  private async launch(extra: string[]): Promise<Browser> {
+    const { channel } = this.opts;
+    const executablePath = this.opts.executablePath ?? (channel ? undefined : findChromium());
+    if (!executablePath && !channel) {
+      throw new Error(
+        "No Chrome or Chromium found for screenshots. Install Google Chrome, or set PONZU_CHROMIUM to a Chromium binary.",
+      );
+    }
+    const { chromium } = await import("playwright-core");
+    const fonts = platform() === "linux" ? linuxFonts() : null;
+    return chromium.launch({
+      ...(executablePath ? { executablePath } : { channel }),
+      headless: true,
+      // Playwright turns the sandbox off unless told to keep it.
+      chromiumSandbox: this.opts.sandbox ?? process.getuid?.() !== 0,
+      args: [
+        "--hide-scrollbars",
+        "--font-render-hinting=none",
+        ...(fonts?.args ?? []),
+        ...extra,
+        ...(this.opts.args ?? []),
+      ],
+      ...(fonts && { env: { ...definedEnv(), ...fonts.env } }),
+    });
+  }
+
+  /**
+   * One job: its turn in the queue, a page of its own, and no longer than
+   * `ms`. The page is closed however the job ends, one that finished opening
+   * after the job gave up on it included.
+   */
+  private job<T>(
+    browser: BrowserProcess,
+    scale: number,
+    work: (page: Page) => Promise<T>,
+    ms = this.limits.jobMs,
+  ): Promise<T> {
+    return this.queue.run(async () => {
+      const opening = browser.open(scale);
+      try {
+        return await deadline(
+          opening.then((lease) =>
+            work(lease.page).catch((err) => {
+              throw lease.explain(err);
+            }),
+          ),
+          ms,
+        );
+      } finally {
+        await opening.then(
+          (lease) => lease.close(),
+          () => {},
         );
       }
-      const { chromium } = await import("playwright-core");
-      this.browser = chromium.launch({
-        executablePath,
-        headless: true,
-        args: ["--hide-scrollbars", "--font-render-hinting=none"],
-      });
-      this.browser.catch(() => {
-        this.browser = null;
-      });
-    }
-    if (!this.context)
-      this.context = this.browser.then((b) => b.newContext({ deviceScaleFactor: 1 }));
-    return this.context;
+    });
   }
 
   async render(req: RenderRequest): Promise<RenderResult> {
-    const out = await this.renderAt(req, clampScale(req.scale));
-    // Too big for the GPU to draw at that scale: again, at the largest it can.
+    const view = viewportOf(req.artboard);
+    // Chrome draws the whole viewport at the device scale, so a big board is
+    // held to the pixel budget before it loads, not only once it's measured.
+    const scale = captureScale(
+      view.width,
+      view.height,
+      req.scale,
+      Number.POSITIVE_INFINITY,
+      this.limits.maxPixels,
+    );
+    const out = await this.renderAt(req, scale);
+    // Too big to draw at that scale: again, at the largest that fits.
     return "retry" in out ? ((await this.renderAt(req, out.retry)) as RenderResult) : out;
   }
 
@@ -80,17 +205,8 @@ export class ChromiumRenderer implements Renderer {
    * Renders at `scale` device pixels per CSS pixel, or says which smaller
    * scale to try when an image that big can't be drawn.
    */
-  private async renderAt(
-    req: RenderRequest,
-    scale: number,
-  ): Promise<RenderResult | { retry: number }> {
-    const context = await this.ctx();
-    const browser = await this.browser!;
-    // deviceScaleFactor is per-context, so non-default scales get their own.
-    // devicePixelRatio reports it, so srcset and image-set() pick to suit.
-    const own = scale !== 1 ? await browser.newContext({ deviceScaleFactor: scale }) : null;
-    const page = await (own ?? context).newPage();
-    try {
+  private renderAt(req: RenderRequest, scale: number): Promise<RenderResult | { retry: number }> {
+    return this.job(this.main, scale, async (page) => {
       const loaded = await this.load(page, req, req.thumbnail ? scale : undefined);
       const assetsTimedOut = loaded ? undefined : true;
       const motion = await withBudget(
@@ -115,7 +231,7 @@ export class ChromiumRenderer implements Renderer {
       if (!measured) throw new Error(`Node ${req.nodeId} is not in this artboard.`);
       const { box, contentHeight } = measured;
       if (req.format !== "pdf") {
-        const fits = captureScale(box.width, box.height, scale);
+        const fits = this.fit(box, scale);
         if (fits < scale) return { retry: fits };
       }
 
@@ -185,15 +301,16 @@ export class ChromiumRenderer implements Renderer {
           captureError: message,
         };
       }
-    } finally {
-      await page.close().catch(() => {});
-      if (own) await own.close().catch(() => {});
-    }
+    });
   }
 
-  async record(req: RecordRequest): Promise<RecordResult> {
-    const page = await (await this.ctx()).newPage();
-    try {
+  /** The scale an image of `box` can be captured at: `scale`, or less when that is past a limit. */
+  private fit(box: { width: number; height: number }, scale: number): number {
+    return captureScale(box.width, box.height, scale, MAX_CAPTURE_PX, this.limits.maxPixels);
+  }
+
+  record(req: RecordRequest): Promise<RecordResult> {
+    return this.job(this.main, 1, async (page) => {
       const loaded = await this.load(page, req);
       const cdp = await page.context().newCDPSession(page);
       // Transparent where the design is, like screenshots.
@@ -215,10 +332,10 @@ export class ChromiumRenderer implements Renderer {
       await pin();
       const driver: FrameDriver = {
         evaluate: (expression) => page.evaluate(expression),
-        async capture(box, scale) {
+        capture: async (box, scale) => {
           const shot = await cdp.send("Page.captureScreenshot", {
             format: "png",
-            clip: { ...box, scale: captureScale(box.width, box.height, scale) },
+            clip: { ...box, scale: this.fit(box, scale) },
             // Renders the clip even below the viewport, which stays the artboard's own size.
             captureBeyondViewport: true,
           });
@@ -242,84 +359,54 @@ export class ChromiumRenderer implements Renderer {
       });
       await cdp.detach().catch(() => {});
       return { ...out, mime: "image/png", ...(loaded ? {} : { assetsTimedOut: true }) };
-    } finally {
-      await page.close().catch(() => {});
-    }
+    });
   }
 
-  /**
-   * Filming gets a browser of its own, launched when first needed: without a
-   * frame rate limit a capture takes 13-25 ms instead of waiting for the next
-   * frame at 30 fps, which halves filming time. Screenshots keep paced frames.
-   */
-  private filmContext(): Promise<BrowserContext> {
-    if (!this.film) {
-      const executablePath = this.opts.executablePath ?? findChromium();
-      if (!executablePath)
-        return Promise.reject(new Error("No Chrome or Chromium found to film loops."));
-      this.film = import("playwright-core")
-        .then(({ chromium }) =>
-          chromium.launch({
-            executablePath,
-            headless: true,
-            args: [
-              "--hide-scrollbars",
-              "--font-render-hinting=none",
-              // Render pages are served at this origin; secure, they get WebCodecs to encode.
-              `--unsafely-treat-insecure-origin-as-secure=${RENDER_ORIGIN}`,
-              "--disable-frame-rate-limit",
-              "--disable-gpu-vsync",
-            ],
-          }),
-        )
-        .then((b) => b.newContext({ deviceScaleFactor: 1 }));
-      this.film.catch(() => {
-        this.film = null;
-      });
-    }
-    return this.film;
+  loop(req: LoopRequest): Promise<LoopResult> {
+    // A film runs for as long as its caller lets it: `signal` is its time limit.
+    return this.job(
+      this.film,
+      1,
+      async (page) => {
+        // Given up on: closing the page fails whatever it's waiting on, and frees it.
+        const abort = () => void page.close().catch(() => {});
+        req.signal?.addEventListener("abort", abort, { once: true });
+        if (req.signal?.aborted) abort();
+        try {
+          const loaded = await this.load(page, req, req.thumbnail ? req.scale : undefined);
+          const cdp = await page.context().newCDPSession(page);
+          const v = page.viewportSize();
+          if (v)
+            await cdp.send("Emulation.setDeviceMetricsOverride", {
+              ...v,
+              deviceScaleFactor: 0,
+              mobile: false,
+            });
+          const driver: FrameDriver = {
+            evaluate: (expression) => page.evaluate(expression),
+            async capture(box, scale) {
+              const shot = await cdp.send("Page.captureScreenshot", {
+                format: "png",
+                clip: { ...box, scale: captureScale(box.width, box.height, scale) },
+                captureBeyondViewport: true,
+              });
+              return new Uint8Array(Buffer.from(shot.data, "base64"));
+            },
+            async show() {},
+          };
+          const out = await filmLoops(driver, req);
+          await cdp.detach().catch(() => {});
+          return loaded ? out : { ...out, assetsTimedOut: true };
+        } finally {
+          req.signal?.removeEventListener("abort", abort);
+        }
+      },
+      Number.POSITIVE_INFINITY,
+    );
   }
 
-  async loop(req: LoopRequest): Promise<LoopResult> {
-    const page = await (await this.filmContext()).newPage();
-    // Given up on: closing the page fails whatever it's waiting on, and frees it.
-    const abort = () => void page.close().catch(() => {});
-    req.signal?.addEventListener("abort", abort, { once: true });
-    if (req.signal?.aborted) abort();
-    try {
-      const loaded = await this.load(page, req, req.thumbnail ? req.scale : undefined);
-      const cdp = await page.context().newCDPSession(page);
-      const v = page.viewportSize();
-      if (v)
-        await cdp.send("Emulation.setDeviceMetricsOverride", {
-          ...v,
-          deviceScaleFactor: 0,
-          mobile: false,
-        });
-      const driver: FrameDriver = {
-        evaluate: (expression) => page.evaluate(expression),
-        async capture(box, scale) {
-          const shot = await cdp.send("Page.captureScreenshot", {
-            format: "png",
-            clip: { ...box, scale: captureScale(box.width, box.height, scale) },
-            captureBeyondViewport: true,
-          });
-          return new Uint8Array(Buffer.from(shot.data, "base64"));
-        },
-        async show() {},
-      };
-      const out = await filmLoops(driver, req);
-      await cdp.detach().catch(() => {});
-      return loaded ? out : { ...out, assetsTimedOut: true };
-    } finally {
-      req.signal?.removeEventListener("abort", abort);
-      await page.close().catch(() => {});
-    }
-  }
-
-  async measure(req: MeasureRequest): Promise<MeasureResult> {
-    const page = await (await this.ctx()).newPage();
-    try {
+  measure(req: MeasureRequest): Promise<MeasureResult> {
+    return this.job(this.main, 1, async (page) => {
       await this.load(page, req);
       // At rest, like a screenshot: every finite animation finished.
       const motion = await page.evaluate<MotionInfo | { error: string }>(prepareScript({}));
@@ -327,9 +414,7 @@ export class ChromiumRenderer implements Renderer {
       const out = await page.evaluate<MeasureResult | null>(measureScript(req.ids));
       if (!out) throw new Error("The artboard didn't render.");
       return out;
-    } finally {
-      await page.close().catch(() => {});
-    }
+    });
   }
 
   /**
@@ -348,30 +433,22 @@ export class ChromiumRenderer implements Renderer {
     },
     imageScale?: number,
   ): Promise<boolean> {
-    const width = cssPx(req.artboard.root.style.width) ?? 1440;
-    const height = cssPx(req.artboard.root.style.height) ?? 900;
-    await page.setViewportSize({
-      width: Math.max(1, Math.ceil(width)),
-      height: Math.max(1, Math.ceil(height)),
-    });
+    await page.setViewportSize(viewportOf(req.artboard));
     if (req.colorScheme) await page.emulateMedia({ colorScheme: req.colorScheme });
     await this.opts.preparePage?.(page);
     const assetBase = req.assetBase ?? this.opts.assetBase;
-    // Chrome won't let the page reach a server on 127.0.0.1 (local network
-    // access), so its asset requests are fetched from here instead.
-    if (assetBase && /^https?:/.test(assetBase)) {
-      const prefix = `${assetBase.replace(/\/$/, "")}/`;
+    // Chrome won't let a page at a public origin reach a server on this
+    // machine or its network (local network access), so those requests are
+    // fetched from here instead: the asset base when it is such a server, and
+    // with `loopback` anything a design loads from this machine. A public
+    // https asset base is left to Chrome, which caches and streams.
+    const local = assetBase && !isPublic(assetBase) ? `${assetBase.replace(/\/$/, "")}/` : null;
+    const { loopback } = this.opts;
+    if (local || loopback)
       await page.route(
-        (url) => url.href.startsWith(prefix),
-        async (route) => {
-          try {
-            await route.fulfill({ response: await route.fetch() });
-          } catch {
-            await route.abort().catch(() => {});
-          }
-        },
+        (url) => (local !== null && url.href.startsWith(local)) || (!!loopback && isLoopback(url)),
+        fetchHere,
       );
-    }
     const html = artboardPage(req.artboard, {
       tokens: req.tokens,
       assetBase,
@@ -392,18 +469,84 @@ export class ChromiumRenderer implements Renderer {
   }
 
   async close(): Promise<void> {
-    const b = this.browser;
-    const film = this.film;
-    this.browser = null;
-    this.context = null;
-    this.film = null;
-    if (b) await (await b).close().catch(() => {});
-    if (film) await film.then((c) => c.browser()?.close()).catch(() => {});
+    await Promise.all([this.main.close(), this.film.close()]);
   }
 }
 
 /** Where render pages are served from (routed, never fetched). */
 const RENDER_ORIGIN = "http://ponzu.render";
+
+/** The page size an artboard is drawn in: its own, or 1440×900 where it has no size in px. */
+function viewportOf(artboard: RenderRequest["artboard"]): { width: number; height: number } {
+  return {
+    width: Math.max(1, Math.ceil(cssPx(artboard.root.style.width) ?? 1440)),
+    height: Math.max(1, Math.ceil(cssPx(artboard.root.style.height) ?? 900)),
+  };
+}
+
+/** `work`, or a RenderError once it has run for `ms`. */
+function deadline<T>(work: Promise<T>, ms: number): Promise<T> {
+  if (!Number.isFinite(ms)) return work;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(
+          new RenderError(
+            `The render took too long (stopped after ${Math.round(ms / 1000)}s).`,
+            "timeout",
+          ),
+        ),
+      ms,
+    );
+  });
+  return Promise.race([work, late]).finally(() => clearTimeout(timer));
+}
+
+/** This process's environment, for a browser launched with one of its own. */
+function definedEnv(): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) if (value !== undefined) env[key] = value;
+  return env;
+}
+
+/** Whether a URL is on this machine: localhost, a name under .localhost, 127.0.0.0/8 or [::1]. */
+function isLoopback(url: URL): boolean {
+  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+  const host = url.hostname;
+  return (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host === "[::1]" ||
+    /^127(\.\d{1,3}){3}$/.test(host)
+  );
+}
+
+/** Whether Chrome can load an asset base itself: an https origin that isn't this machine. */
+function isPublic(base: string): boolean {
+  try {
+    const url = new URL(base);
+    return url.protocol === "https:" && !isLoopback(url);
+  } catch {
+    return false;
+  }
+}
+
+/** Answers a page's request with a fetch made from this process. */
+async function fetchHere(route: Route): Promise<void> {
+  try {
+    const response = await route.fetch();
+    await route.fulfill({
+      response,
+      // A font from another origin needs CORS, which a dev server rarely
+      // sends with its static files. Designs run no scripts, so nothing on
+      // the page can read what this lets through.
+      headers: { ...response.headers(), "access-control-allow-origin": "*" },
+    });
+  } catch {
+    await route.abort().catch(() => {});
+  }
+}
 
 /** A capture straight through the DevTools protocol, which doesn't wait for fonts the way page.screenshot does. */
 async function captureNow(
