@@ -4,6 +4,10 @@ out
 .DS_Store
 *.log
 .vercel
+# Local environments hold credentials (and `vercel link` writes one). Only the examples are kept.
+.env
+.env.*
+!.env.example
 .ponzu-cache
 apps/desktop/dist
 apps/desktop/out
