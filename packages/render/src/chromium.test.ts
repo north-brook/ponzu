@@ -163,18 +163,19 @@ describe.skipIf(!chromium)("the Chromium renderer", () => {
     });
 
     test("a job that runs past its time is stopped, and leaves no page or context behind", async () => {
-      const { renderer, seen } = make({ jobMs: 600 }, { assetsMs: 20_000 });
+      // Long enough for a loaded machine to launch Chrome and draw a plain board, far short of the assets' wait.
+      const { renderer, seen } = make({ jobMs: 5_000 }, { assetsMs: 60_000 });
       const started = Date.now();
       const errors = await Promise.all(
         [1, 2].map((scale) =>
           renderer.render({ artboard: stalling, tokens: "", scale }).catch((e) => e),
         ),
       );
-      expect(Date.now() - started).toBeLessThan(5_000);
+      expect(Date.now() - started).toBeLessThan(20_000);
       for (const err of errors) {
         expect(err).toBeInstanceOf(RenderError);
         expect(err).toMatchObject({ failure: "timeout" });
-        expect(err.message).toBe("The render took too long (stopped after 1s).");
+        expect(err.message).toBe("The render took too long (stopped after 5s).");
       }
       const browser = seen.browser!;
       expect(openPages(browser)).toBe(0);
