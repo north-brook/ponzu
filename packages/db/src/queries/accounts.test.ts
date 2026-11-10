@@ -2,12 +2,16 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { emptyDoc } from "@ponzu/core";
 import { eq } from "drizzle-orm";
 import { seedUser, seedWorkspace } from "../fixtures.ts";
-import { memberships, repos, users, workspaces } from "../schema/index.ts";
+import { claudeAccounts, memberships, repos, users, workspaces } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
 import {
   deleteMembershipsExcept,
   type GithubInstallation,
   type GithubProfile,
+  getClaudeAccount,
+  getMemberWorkspace,
+  getUserByWorkosId,
+  listUserWorkspaces,
   markReposRemoved,
   upsertMembership,
   upsertRepos,
@@ -167,6 +171,67 @@ describe("memberships", () => {
     // Reaching nothing at all drops the rest.
     expect(await deleteMembershipsExcept(db, { userId: user.id, workspaceIds: [] })).toBe(1);
     expect(await of(user.id)).toEqual([]);
+  });
+
+  test("listUserWorkspaces gives a person their workspaces and roles, and nobody else's", async () => {
+    const [user, other] = await Promise.all([seedUser(db), seedUser(db, "maya")]);
+    const [mine, theirs] = await Promise.all([seedWorkspace(db, "acme"), seedWorkspace(db)]);
+    await upsertMembership(db, { workspaceId: mine.id, userId: user.id, role: "admin" });
+    await upsertMembership(db, { workspaceId: theirs.id, userId: other.id, role: "member" });
+
+    expect(await listUserWorkspaces(db, user.id)).toEqual([
+      {
+        id: mine.id,
+        githubLogin: "acme",
+        kind: "org",
+        name: "acme",
+        avatarUrl: null,
+        installationId: mine.installationId,
+        suspendedAt: null,
+        role: "admin",
+      },
+    ]);
+    expect(await listUserWorkspaces(db, "usr_nobody")).toEqual([]);
+  });
+
+  test("getMemberWorkspace gives a member their workspace and role, and anyone else nothing", async () => {
+    const [user, other] = await Promise.all([seedUser(db), seedUser(db, "ines")]);
+    const [mine, theirs] = await Promise.all([seedWorkspace(db, "globex"), seedWorkspace(db)]);
+    await upsertMembership(db, { workspaceId: mine.id, userId: user.id, role: "member" });
+    await upsertMembership(db, { workspaceId: theirs.id, userId: other.id, role: "admin" });
+
+    expect(await getMemberWorkspace(db, { userId: user.id, workspaceId: mine.id })).toMatchObject({
+      id: mine.id,
+      githubLogin: "globex",
+      role: "member",
+    });
+    expect(await getMemberWorkspace(db, { userId: user.id, workspaceId: theirs.id })).toBeNull();
+    expect(await getMemberWorkspace(db, { userId: user.id, workspaceId: "ws_nowhere" })).toBeNull();
+  });
+});
+
+describe("what a signed-in request reads", () => {
+  test("getUserByWorkosId finds the person whose sign-in came through a WorkOS user", async () => {
+    const user = await seedUser(db);
+    expect(await getUserByWorkosId(db, user.workosUserId)).toEqual(user);
+    expect(await getUserByWorkosId(db, "user_nobody")).toBeNull();
+  });
+
+  test("getClaudeAccount never hands back the credential", async () => {
+    const user = await seedUser(db);
+    expect(await getClaudeAccount(db, user.id)).toBeNull();
+    await db.insert(claudeAccounts).values({
+      id: "cla_test",
+      userId: user.id,
+      kind: "subscription",
+      encryptedCredential: "ciphertext",
+      planLabel: "Claude Max",
+    });
+
+    const account = await getClaudeAccount(db, user.id);
+
+    expect(account).toMatchObject({ kind: "subscription", status: "connected" });
+    expect(JSON.stringify(account)).not.toContain("ciphertext");
   });
 });
 

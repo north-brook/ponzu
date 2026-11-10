@@ -4,6 +4,8 @@
   "compilerOptions": { "paths": { "@/*": ["./apps/studio/src/*"] } },
   "include": [
     "packages/*/src",
+    "apps/api/src",
+    "apps/api/scripts",
     "apps/cli/src",
     "apps/studio/src",
     "apps/desktop/src/**/*.test.ts",

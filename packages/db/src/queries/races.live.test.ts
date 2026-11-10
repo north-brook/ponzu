@@ -3,11 +3,12 @@
 // PONZU_TEST_DATABASE_URL names a migrated database (see ../live.ts); CI gives it a Postgres 18.
 import { afterAll, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
-import { actorFor, rename, seedDesign } from "../fixtures.ts";
+import { actorFor, rename, seedDesign, seedUser } from "../fixtures.ts";
 import { describeLive } from "../live.ts";
 import { designOps, events, jobs } from "../schema/index.ts";
 import { getDesign, getDesignHead } from "./designs.ts";
 import { appendEvent, claimEvents } from "./events.ts";
+import { claimGithubTokenRefresh, saveGithubUserToken } from "./github-tokens.ts";
 import { claimJobs, enqueueJob } from "./jobs.ts";
 import { commitOps, readOps } from "./ops.ts";
 import { answerQuestion, countOpenQuestions, createQuestion } from "./questions.ts";
@@ -97,6 +98,31 @@ describeLive("races on a real Postgres", ({ db, close }) => {
       [1, "do", 2],
       [2, "undo", null],
     ]);
+  }, 60_000);
+
+  test("callers claiming one token's refresh at once: exactly one holds it", async () => {
+    const user = await seedUser(db);
+    const now = new Date();
+    await saveGithubUserToken(db, {
+      userId: user.id,
+      encryptedAccessToken: "access",
+      accessTokenExpiresAt: now,
+      encryptedRefreshToken: "refresh",
+      refreshTokenExpiresAt: null,
+    });
+
+    const claims = await Promise.all(
+      times(8, () =>
+        claimGithubTokenRefresh(db, {
+          userId: user.id,
+          now,
+          staleAt: new Date(now.getTime() + 300_000),
+          until: new Date(now.getTime() + 30_000),
+        }),
+      ),
+    );
+
+    expect(claims.filter((claimed) => claimed !== null)).toHaveLength(1);
   }, 60_000);
 
   test("a claim of jobs keeps to its limit when the table was empty a moment ago", async () => {

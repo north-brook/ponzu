@@ -1,0 +1,1 @@
+ALTER TABLE "github_user_tokens" ADD COLUMN "refresh_claimed_until" timestamp with time zone;

@@ -63,6 +63,24 @@ export const users = pgTable("users", {
   updatedAt: updatedAt(),
 });
 
+/**
+ * A WorkOS session the API let in through its sign-in exchange, which is where the person's
+ * GitHub identity is checked. An access token is honored only if its session is here: WorkOS
+ * will issue a token to anyone who signs in with it directly, and that proves less.
+ */
+export const sessions = pgTable(
+  "sessions",
+  {
+    /** WorkOS's id for the session: the `sid` of every access token it issues for it. */
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("sessions_user_id_idx").on(t.userId)],
+);
+
 export const githubUserTokens = pgTable("github_user_tokens", {
   userId: text("user_id")
     .primaryKey()
@@ -71,6 +89,11 @@ export const githubUserTokens = pgTable("github_user_tokens", {
   accessTokenExpiresAt: instant("access_token_expires_at"),
   encryptedRefreshToken: text("encrypted_refresh_token"),
   refreshTokenExpiresAt: instant("refresh_token_expires_at"),
+  /**
+   * Set while one function instance is refreshing the token with GitHub. A refresh token works
+   * once, so two instances must never send the same one; the others wait for this to clear.
+   */
+  refreshClaimedUntil: instant("refresh_claimed_until"),
   updatedAt: updatedAt(),
 });
 

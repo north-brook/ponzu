@@ -1,0 +1,31 @@
+{
+  "name": "@ponzu/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": "26.x"
+  },
+  "exports": {
+    "./types": "./src/types.ts"
+  },
+  "scripts": {
+    "dev": "bun --watch scripts/dev.ts",
+    "dev:signin": "bun scripts/dev-signin.ts",
+    "build": "bun build src/index.ts --target=node --format=esm --outdir=dist --external hono --external 'hono/*' --sourcemap=linked",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@hono/zod-validator": "^0.9.1",
+    "@ponzu/db": "workspace:*",
+    "@ponzu/sandbox": "workspace:*",
+    "hono": "^4.13.17",
+    "jose": "^6.2.17",
+    "zod": "^4"
+  },
+  "devDependencies": {
+    "@ponzu/core": "workspace:*",
+    "@types/node": "^26.6.5"
+  }
+}

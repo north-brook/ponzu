@@ -15,6 +15,20 @@
       "when": 1794332273660,
       "tag": "0001_rate_card_v1",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794337899279,
+      "tag": "0002_github_token_refresh_claim",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794339837309,
+      "tag": "0003_sessions",
+      "breakpoints": true
     }
   ]
 }
