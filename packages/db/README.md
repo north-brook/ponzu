@@ -57,8 +57,8 @@ const result = await commitOps(db, { designId, expectedSeq, actor, ops });
   which is how the API gives the database ten seconds. Without one a statement can wait as
   long as the runtime's `fetch` does.
 - **A query that depends on the time takes `now` from its caller**, as the GitHub token claim
-  does, so a test can move the clock. The older ones still read Postgres's `now()` (runner
-  token expiry, job leases and retries, presence, event claims); convert one when a module
+  and presence do, so a test can move the clock. The older ones still read Postgres's `now()`
+  (runner token expiry, job leases and retries, event claims); convert one when a module
   comes to depend on its timing, and do not add to them.
 - `@ponzu/db/testing` exports `createTestDb()`: a migrated PGlite database, about 60 ms each.
 - `@ponzu/db/types` is for clients: the fixed lists (`AGENT_STATES`, `EVENT_PRIORITIES`, …),

@@ -33,16 +33,22 @@ export {
 export {
   createDesign,
   type Design,
+  type DesignAccess,
   type DesignListItem,
+  deleteDesign,
   getDesign,
+  getDesignAccess,
   getDesignAssetKey,
   getDesignHead,
+  getWorkspaceRepo,
   listWorkspaceDesigns,
   markDesignSeen,
   type NewDesign,
+  updateDesign,
 } from "./queries/designs.ts";
 export {
   appendEvent,
+  appendEvents,
   claimEvents,
   type DesignEvent,
   markEventsDelivered,

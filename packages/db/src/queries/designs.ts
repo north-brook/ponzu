@@ -1,5 +1,5 @@
 import type { Doc } from "@ponzu/core";
-import { and, desc, eq, getTableColumns, sql } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, isNotNull, isNull, or, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import type { DesignHead } from "../head.ts";
 import { newId, randomString } from "../ids.ts";
@@ -9,7 +9,10 @@ import {
   designReads,
   designs,
   repos,
+  workspaces,
 } from "../schema/index.ts";
+import type { Repo } from "./accounts.ts";
+import { timeParam } from "./json.ts";
 import { run } from "./run.ts";
 import { isStorable, unstorableDocument } from "./text.ts";
 
@@ -93,6 +96,99 @@ export async function getDesign(db: Db, designId: string): Promise<Design | null
   return row ?? null;
 }
 
+/** What deciding who may open a design takes: the design, its repo, and where to ask GitHub. */
+export interface DesignAccess {
+  design: Design;
+  /** The repo whose access decides who may open it. Null for Scratch. */
+  repo: { githubRepoId: number; fullName: string } | null;
+  /** The App's installation on the design's workspace. Null while the App is not installed. */
+  installationId: number | null;
+}
+
+/** A design with what deciding access to it takes, or null when there is no such design. */
+export async function getDesignAccess(db: Db, designId: string): Promise<DesignAccess | null> {
+  const [row] = await run(
+    db
+      .select({
+        design: columns,
+        githubRepoId: repos.githubRepoId,
+        fullName: repos.fullName,
+        installationId: workspaces.installationId,
+      })
+      .from(designs)
+      .innerJoin(workspaces, eq(workspaces.id, designs.workspaceId))
+      .leftJoin(repos, eq(repos.id, designs.repoId))
+      .where(eq(designs.id, designId)),
+  );
+  if (!row) return null;
+  const { design, githubRepoId, fullName, installationId } = row;
+  return {
+    design,
+    repo: githubRepoId === null || fullName === null ? null : { githubRepoId, fullName },
+    installationId,
+  };
+}
+
+/** A repo of this workspace that the App can still see, or null. */
+export async function getWorkspaceRepo(
+  db: Db,
+  { workspaceId, repoId }: { workspaceId: string; repoId: string },
+): Promise<Repo | null> {
+  const [repo] = await run(
+    db
+      .select()
+      .from(repos)
+      .where(and(eq(repos.id, repoId), eq(repos.workspaceId, workspaceId), isNull(repos.removedAt))),
+  );
+  return repo ?? null;
+}
+
+/**
+ * Change what people may change about a design themselves: its name and icon, and whether it
+ * is settled (as of `now`). Null when there is no such design.
+ */
+export async function updateDesign(
+  db: Db,
+  designId: string,
+  {
+    name,
+    icon,
+    settled,
+    now,
+  }: { name?: string; icon?: string | null; settled?: boolean; now: Date },
+): Promise<Design | null> {
+  const settling =
+    settled === undefined
+      ? {}
+      : settled
+        ? {
+            status: "settled" as const,
+            // Settling a settled design keeps the time it first settled.
+            settledAt: sql`coalesce(${designs.settledAt}, ${timeParam(now)}::timestamptz)`,
+          }
+        : { status: "active" as const, settledAt: null };
+  const [design] = await run(
+    db
+      .update(designs)
+      .set({
+        ...(name === undefined ? {} : { name }),
+        ...(icon === undefined ? {} : { icon }),
+        ...settling,
+      })
+      .where(eq(designs.id, designId))
+      .returning(columns),
+  );
+  return design ?? null;
+}
+
+/** Delete a design and everything that is only its own (see the README). False if there was none. */
+export async function deleteDesign(db: Db, designId: string): Promise<boolean> {
+  const deleted = await run(
+    db.delete(designs).where(eq(designs.id, designId)).returning({ id: designs.id }),
+  );
+  return deleted.length > 0;
+}
+
 /**
  * The path segment a design's files are served under. Knowing it is the permission to read
  * them, so give it only to someone who may open the design.
@@ -121,7 +217,8 @@ export interface DesignListItem extends DesignHead {
 
 /**
  * A workspace's designs, most recently active first, with how far `userId` has looked at each.
- * It does not check which repos that person can read; the caller does.
+ * A Scratch design is listed only to its owner. It does not check which repos that person can
+ * read; the caller does.
  */
 export function listWorkspaceDesigns(
   db: Db,
@@ -147,7 +244,11 @@ export function listWorkspaceDesigns(
         and(eq(designReads.designId, designs.id), eq(designReads.userId, userId)),
       )
       .where(
-        and(eq(designs.workspaceId, workspaceId), status ? eq(designs.status, status) : undefined),
+        and(
+          eq(designs.workspaceId, workspaceId),
+          or(isNotNull(designs.repoId), eq(designs.ownerId, userId)),
+          status ? eq(designs.status, status) : undefined,
+        ),
       )
       .orderBy(desc(designs.lastActivityAt), designs.id),
   );

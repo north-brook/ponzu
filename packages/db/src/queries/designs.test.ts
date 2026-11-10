@@ -5,15 +5,20 @@ import { actorFor, rename, seedDesign, seedRepo, seedUser, seedWorkspace } from 
 import { DESIGN_HEAD_COLUMNS, type LiveDesignHead, toDesignHead } from "../head.ts";
 import { designReads, designs } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
+import { markReposRemoved } from "./accounts.ts";
 import { readDocSource } from "./checkpoints.ts";
 import {
   createDesign,
+  deleteDesign,
   getDesign,
+  getDesignAccess,
   getDesignAssetKey,
   getDesignHead,
+  getWorkspaceRepo,
   head as headColumns,
   listWorkspaceDesigns,
   markDesignSeen,
+  updateDesign,
 } from "./designs.ts";
 import { commitOps } from "./ops.ts";
 
@@ -297,6 +302,112 @@ describe("listWorkspaceDesigns", () => {
       ["Settled", null, null],
       ["Oldest", null, null],
     ]);
+  });
+
+  test("lists Scratch designs to their owner only", async () => {
+    const { workspace } = await workspaceWithDesigns();
+    const teammate = await seedUser(db, "maya");
+
+    const theirs = await listWorkspaceDesigns(db, {
+      workspaceId: workspace.id,
+      userId: teammate.id,
+    });
+
+    expect(theirs.map((design) => design.name)).toEqual(["Oldest"]);
+  });
+});
+
+describe("getDesignAccess", () => {
+  test("a design in a repo comes with the repo's GitHub id and name, and the installation", async () => {
+    const [user, workspace] = await Promise.all([seedUser(db), seedWorkspace(db)]);
+    const repo = await seedRepo(db, workspace.id, "north-brook/harbor");
+    const design = await createDesign(db, {
+      workspaceId: workspace.id,
+      repoId: repo.id,
+      ownerId: user.id,
+      claudeAccountId: null,
+      name: "Harbor",
+      branch: "pz/harbor",
+      doc: emptyDoc("Harbor"),
+    });
+
+    const access = await getDesignAccess(db, design.id);
+
+    expect(access).toEqual({
+      design: (await getDesign(db, design.id))!,
+      repo: { githubRepoId: repo.githubRepoId, fullName: "north-brook/harbor" },
+      installationId: workspace.installationId,
+    });
+    expect(access!.design).not.toHaveProperty("assetKey");
+  });
+
+  test("Scratch has no repo, and a design that does not exist is null", async () => {
+    const { design } = await seedDesign(db);
+
+    expect((await getDesignAccess(db, design.id))!.repo).toBeNull();
+    expect(await getDesignAccess(db, "des_missing")).toBeNull();
+  });
+});
+
+describe("getWorkspaceRepo", () => {
+  test("finds a repo of the workspace the App can still see, and nothing else", async () => {
+    const [workspace, elsewhere] = await Promise.all([seedWorkspace(db), seedWorkspace(db)]);
+    const repo = await seedRepo(db, workspace.id, "north-brook/kept");
+    const lost = await seedRepo(db, workspace.id, "north-brook/lost");
+    await markReposRemoved(db, [lost.githubRepoId]);
+
+    expect(await getWorkspaceRepo(db, { workspaceId: workspace.id, repoId: repo.id })).toEqual(
+      repo,
+    );
+    expect(await getWorkspaceRepo(db, { workspaceId: elsewhere.id, repoId: repo.id })).toBeNull();
+    expect(await getWorkspaceRepo(db, { workspaceId: workspace.id, repoId: lost.id })).toBeNull();
+  });
+});
+
+describe("updateDesign", () => {
+  const now = new Date("2026-11-10T12:00:00Z");
+
+  test("renames, sets an icon, settles and reopens", async () => {
+    const { design } = await seedDesign(db);
+
+    expect(await updateDesign(db, design.id, { name: "Porto", icon: "star", now })).toMatchObject(
+      { name: "Porto", icon: "star", status: "active", settledAt: null },
+    );
+    expect(await updateDesign(db, design.id, { settled: true, now })).toMatchObject({
+      name: "Porto",
+      status: "settled",
+      settledAt: now,
+    });
+    // Settling again keeps when it first settled.
+    const later = new Date("2026-11-11T12:00:00Z");
+    expect(await updateDesign(db, design.id, { settled: true, now: later })).toMatchObject({
+      settledAt: now,
+    });
+    expect(await updateDesign(db, design.id, { settled: false, icon: null, now })).toMatchObject({
+      status: "active",
+      settledAt: null,
+      icon: null,
+    });
+  });
+
+  test("a design that does not exist is null", async () => {
+    expect(await updateDesign(db, "des_missing", { name: "Nowhere", now })).toBeNull();
+  });
+});
+
+describe("deleteDesign", () => {
+  test("deletes the design with its log and checkpoints, once", async () => {
+    const { design, user } = await seedDesign(db);
+    await commitOps(db, {
+      designId: design.id,
+      expectedSeq: 0,
+      actor: actorFor(user),
+      ops: [rename("op_1", "Gone")],
+    });
+
+    expect(await deleteDesign(db, design.id)).toBe(true);
+    expect(await deleteDesign(db, design.id)).toBe(false);
+    expect(await readDocSource(db, design.id)).toBeNull();
   });
 });
 

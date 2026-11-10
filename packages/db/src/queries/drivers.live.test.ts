@@ -201,9 +201,10 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
     expect(await cancelQuestions(db, { designId: inRepo.id })).toBe(1);
     expect((await getDesignHead(db, inRepo.id))!.needsYouCount).toBe(0);
 
-    await touchPresence(db, { designId: design.id, userId: user.id, pageId: "pg_1" });
-    await touchPresence(db, { designId: design.id, userId: user.id });
-    const [here] = await listPresence(db, { designId: design.id });
+    const now = new Date();
+    await touchPresence(db, { designId: design.id, userId: user.id, pageId: "pg_1", now });
+    await touchPresence(db, { designId: design.id, userId: user.id, now });
+    const [here] = await listPresence(db, { designId: design.id, now });
     expect(here).toMatchObject({ userId: user.id, pageId: "pg_1" });
     expect(here!.joinedAt).toBeInstanceOf(Date);
   }, 60_000);

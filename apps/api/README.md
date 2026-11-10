@@ -135,8 +135,8 @@ has: no `Bun.…`, no DOM. `bun run typecheck` (and CI) checks exactly that.
    to `deps.background`. Nothing in it can reach the network.
 
    `t.clock` moves only when told, and it is the API's clock: token expiry, the GitHub token
-   refresh, timeouts and waits follow it. What `@ponzu/db` times with Postgres's own `now()`
-   does not: runner token expiry, job leases and retries, presence and event claims. A query
+   refresh, presence, timeouts and waits follow it. What `@ponzu/db` times with Postgres's own
+   `now()` does not: runner token expiry, job leases and retries, and event claims. A query
    function that needs the time takes `now` from its caller (as the GitHub token claim does);
    convert one of the others when your module comes to depend on its timing.
 
