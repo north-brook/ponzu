@@ -232,6 +232,10 @@
         "playwright-core": "^1.64.1",
       },
     },
+    "packages/sandbox": {
+      "name": "@ponzu/sandbox",
+      "version": "0.1.0",
+    },
     "packages/server": {
       "name": "@ponzu/server",
       "version": "0.1.0",
@@ -823,6 +827,8 @@
     "@ponzu/react": ["@ponzu/react@workspace:packages/react"],
 
     "@ponzu/render": ["@ponzu/render@workspace:packages/render"],
+
+    "@ponzu/sandbox": ["@ponzu/sandbox@workspace:packages/sandbox"],
 
     "@ponzu/server": ["@ponzu/server@workspace:packages/server"],
 

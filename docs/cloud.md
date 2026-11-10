@@ -121,21 +121,27 @@ CommittedOp = { seq, id, op, actor, at }
 actor       = { kind: "user" | "agent", id, name, avatarUrl? }
 ```
 
-For each op, in order, the API:
+The body is checked as a whole first (`validateCommit`): at most 64 ops, each
+under a well-formed id that no other op in the post has. A body that fails is
+refused whole with a 400, and nothing in it is committed.
 
-1. **Validates** it structurally (`validateOp`): a known variant, bounded sizes,
-   and no text Postgres cannot store (a NUL, or half of a surrogate pair;
-   `isStorable` in `packages/db`). Such an op is rejected like any other invalid
-   one. In a thread, event or question payload the same characters are replaced
-   with U+FFFD instead, so tool output never fails a write.
+Then for each op, in order, the API:
+
+1. **Validates** it structurally (`validateOp`): a known variant, well-formed ids
+   and names, sizes within `packages/core/src/limits.ts`, and no text Postgres
+   can't hold (U+0000, half a surrogate pair). In a thread, event or question
+   payload the same characters are replaced with U+FFFD instead, so tool output
+   never fails a write.
 2. **Sanitizes** node trees (`sanitizeOp`): blocked tags, `on*` attributes and
    `javascript:` URLs are removed. This used to happen only when HTML was parsed in
    the tool process, which is not enough once any client can post an op.
-3. **Stamps** it. The actor comes from the caller's token, never from the payload.
+3. **Stamps** it (`stampOp`). The actor comes from the caller's token, never from
+   the payload: a comment's author and every time in a thread op are the API's.
    Timestamps are carried in the op, so `applyOp` is deterministic and never reads
    the clock.
 4. **Applies** it to the current document. An op that does not apply is rejected
-   and the rest of the batch continues.
+   and the rest of the batch continues. A rejected op leaves the document exactly
+   as it was, a `batch` op that failed partway included.
 5. **Appends** it to `design_ops` with the next `seq` and bumps `designs.seq`, in
    one statement that only succeeds if `designs.seq` is still what the API read.
    On a miss it catches up and tries again.
@@ -144,7 +150,8 @@ For each op, in order, the API:
 again returns the original result, so a retry is safe, for seven days. An op is
 kept in the log, and its id with it, for at least that long whatever has been
 checkpointed since; after that it may be pruned, and the same id would be appended
-as a new op. A sender must not retry an op older than that.
+as a new op. A sender must not retry an op older than that. `seq` counts a
+design's ops from 1 with no gaps; a design nobody has changed is at 0.
 
 ### Reading
 
@@ -164,15 +171,31 @@ app, the phone and the sandbox all use it.
 
 - It holds the document as of the last confirmed `seq`, plus a queue of pending ops.
 - `apply(op)` applies locally at once and queues the op. Writes are optimistic:
-  there is no waiting for an echo.
-- Pending ops are posted in order, one batch in flight.
+  there is no waiting for an echo. It runs `validateOp` first, so an op the API
+  would refuse on sight is never shown or queued, and returns the op's id.
+- Pending ops are posted in order, one batch in flight. A post that fails is sent
+  again with the same ids. The replica makes one request at a time, and takes turns
+  between posting and catching up when both are due.
+- A post carries at most 64 ops and 3 MB, which keeps the request and its answer
+  inside the 4.5 MB a Vercel function takes. If the API refuses a post outright
+  (too large, malformed), sending it again can't help: the replica sends its ops
+  one to a post, and drops and reports the op that is refused alone.
 - When committed ops arrive, the replica rolls back its pending ops, applies the
   committed ones in `seq` order, drops any pending op whose id was confirmed, and
-  reapplies the rest. A pending op that no longer applies is dropped and reported.
+  reapplies the rest. A pending op that no longer applies is dropped and reported,
+  unless it was already posted: then the API's answer decides.
 - A pending op that has waited seven days is dropped and reported the same way,
   not posted: the log may no longer remember its id (see Committing), so the
   replica cannot tell whether an earlier attempt landed.
-- It emits each op with its actor so the canvas can animate what changed.
+- When it cannot continue from its own `seq` (a 410, a hole in what it fetched, a
+  committed op that does not apply), it fetches the whole document and puts its
+  pending ops back on top.
+- The API says where the head is. Word of a `seq` the API turns out not to have
+  is asked about once and then forgotten, and a whole document older than the
+  replica's own is not taken.
+- It emits each op with its actor so the canvas can animate what changed: once per
+  op, and an op made here again only if the API committed it changed. That second
+  time is marked as an echo, so nothing counts a person's own comment twice.
 
 People only move and rename artboards, manage pages and write comments; agents edit
 nodes. Conflicts are rare and the rule is simple: the committed order wins.
@@ -215,9 +238,23 @@ it. Each op is stored with its inverse.
 ## The sandbox
 
 One design owns one sandbox, one Claude session, one branch and at most one pull
-request. The provider sits behind `packages/sandbox`:
-`create`, `resume`, `stop`, `destroy`, `exec`, `readFile`, `writeFile`, `url`,
-`snapshot`, `usage`.
+request. The provider sits behind `SandboxProvider` in `packages/sandbox`:
+`create`, `get`, `list`, `ensureAwake`, `resume`, `stop`, `extend`, `destroy`,
+`exec`, `execStream`, `spawn`, `process`, `kill`, `readFile`, `writeFile`,
+`address`, `saveSnapshot`, `getSnapshot`, `listSnapshots`, `deleteSnapshot`,
+`usage`. A sandbox is `awake`, `asleep` or `gone`, or `starting` or `stopping` on
+the way. `BoatProvider` is the real one; `FakeProvider` runs in memory with a clock
+the test controls.
+
+Three rules of that interface shape the API's jobs:
+
+- `ensureAwake` has a deadline (90 seconds unless told otherwise) and ends with a
+  typed error when it passes, so a wake never outlives its function unannounced.
+- A wake that is given a new environment either starts the sandbox on it or fails
+  with `conflict`. It never returns a sandbox that is running on the old one.
+- The idempotency key on `create` guards one job's retries, not a design. The
+  provider forgets it after a day and when the sandbox is destroyed. The design's
+  row holds the sandbox id; a label finds a sandbox the row lost.
 
 boat.dev gives each sandbox a full VM (Ubuntu 24.04 with Node, Bun, git, Docker,
 Chrome and Claude Code) and a token-gated public address per port. It has no idle
@@ -347,7 +384,7 @@ rendered-picture tier for heavy pages; it is not in the first cloud release.
 | Client and API | A WorkOS access token on every request. Clients never hold a GitHub, Claude or provider credential. |
 | Person and design | GitHub decides, checked by the API on every request. |
 | Sandbox and API | A token bound to one design. The API validates and sanitizes everything it sends. |
-| Design HTML and the app | Sanitized on the way in, drawn in a shadow root, under a strict content security policy. The preload bridge exposes the minimum. |
+| Design HTML and the app | Sanitized on the way in, written out so that no text or attribute can be read as markup whatever the tree holds, drawn in a shadow root, under a strict content security policy. The preload bridge exposes the minimum. |
 | Workspace and workspace | Every row belongs to one workspace. A design carries its workspace, and must agree with its repo's; the rows under a design (ops, thread, questions, presence and the rest) carry the design and reach the workspace through it, so there is no second copy to disagree. Live queries are written by the API, and one scoped to a workspace joins through `designs`. |
 
 Stored secrets (Claude credentials, GitHub user tokens, repo secrets) are encrypted
@@ -388,6 +425,8 @@ from `cloud` into `main`, released as the next major version.
   which is why tools work on a local replica and post ops in the background.
 - After a long sleep the first reply takes 20 to 50 seconds. The thread shows a
   waking state.
+- A stop usually finishes in a few seconds but has taken 50, and boat.dev refuses a
+  resume until it has. A message that arrives in that window waits for the stop.
 - Neon Realtime is a public beta.
 - A commit can be authored by the person or verified, not both. Repos that require
   signed commits on the pushed branch need the API commit path.
