@@ -536,7 +536,8 @@ function apply(doc: Doc, op: Op, undo: Undo | null): Op {
         for (const restore of steps.reverse()) restore();
         throw err;
       }
-      undo?.push(...steps);
+      // One at a time: a long batch has more steps than a call takes arguments.
+      if (undo) for (const step of steps) undo.push(step);
       return { op: "batch", ops: inverses.reverse() };
     }
   }
