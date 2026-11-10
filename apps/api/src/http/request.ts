@@ -11,9 +11,9 @@ const CLIENT_NAME = /^[a-z]+\/[\w.+-]{1,40}$/;
 
 /**
  * The first middleware of every request. It puts the dependencies, a request id and a logger
- * on the context, answers with the id in `x-request-id`, and writes the one line that says
- * what the request was and how it ended. The line has the path but never the query string,
- * a header or a body.
+ * on the context, answers with the id in `x-request-id` and `cache-control: no-store`, and
+ * writes the one line that says what the request was and how it ended. The line has the path
+ * but never the query string, a header or a body.
  */
 export function requestContext(deps: Deps): MiddlewareHandler<AppEnv> {
   return async (c, next) => {
@@ -27,6 +27,9 @@ export function requestContext(deps: Deps): MiddlewareHandler<AppEnv> {
     await next();
 
     c.res.headers.set(REQUEST_ID_HEADER, requestId);
+    // Answers are one person's and some carry tokens: nothing between here and them keeps a
+    // copy. A route that really is cacheable says so itself.
+    if (!c.res.headers.has("cache-control")) c.res.headers.set("cache-control", "no-store");
     const actor = c.get("actor");
     const client = c.req.header(CLIENT_HEADER);
     c.var.log.info("request", {

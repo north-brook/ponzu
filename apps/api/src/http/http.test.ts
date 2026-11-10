@@ -172,6 +172,24 @@ describe("addresses and methods", () => {
   });
 });
 
+test("no answer may be kept by a cache, the one that carries tokens least of all", async () => {
+  const started = await t.startSignIn({ login: "cached" });
+  const exchange = await t.app.request("/v1/auth/exchange", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code: started.code, code_verifier: started.codeVerifier }),
+  });
+  expect(exchange.status).toBe(200);
+  const answers = [
+    exchange,
+    await t.app.request("/v1/me", { headers: person.headers }),
+    await t.app.request("/v1/me"),
+    await t.app.request("/v1/health"),
+    await t.app.request("/v1/nope"),
+  ];
+  for (const response of answers) expect(response.headers.get("cache-control")).toBe("no-store");
+});
+
 describe("request ids", () => {
   test("every answer has one, errors and 404s included, and no two are the same", async () => {
     const ids = await Promise.all(
