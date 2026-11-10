@@ -36,6 +36,7 @@ export class ReplicaDesign implements ToolDesign {
     this.stop = [
       replica.onOp((op, actor, doc, info) => this.heard(op, actor, doc, info)),
       replica.onDrop((dropped) => this.undone.push(dropped)),
+      replica.subscribe(() => this.release()),
     ];
   }
 
@@ -108,9 +109,19 @@ export class ReplicaDesign implements ToolDesign {
     // The agent's own op was told as it was applied, with everything it touched. The API's
     // version of it, heard again as an echo, is no news.
     if (info.seq === undefined || info.echo) return;
-    const { key, events, presence } = this.hubs;
+    const { key, events } = this.hubs;
     // Read after the op: a node it removed no longer says which artboard it was in.
     events.emitOp(key, doc, { op, origin: authorOf(actor), artboards: touchedArtboards(doc, op) });
+  }
+
+  /**
+   * Nobody is working on an artboard that is gone. Checked whenever the replica changes and
+   * not per op: a whole fetched document brings deletions no op told of, and an artboard the
+   * agent made goes with the edit when that is undone.
+   */
+  private release(): void {
+    const { key, presence } = this.hubs;
+    const doc = this.replica.doc;
     const gone = presence
       .list()
       .flatMap((p) => p.working)

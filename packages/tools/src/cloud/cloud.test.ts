@@ -407,6 +407,27 @@ test("the host hears what the agent is working on, and only when it changes", as
   expect(host.statuses.at(-1)).toEqual({ artboards: ["ab_hero"], status: "tightening the hero" });
 });
 
+test("a board that went while the agent was away stops showing as worked on, however the news came", async () => {
+  // In a whole fetched document, where no op says so.
+  const away = setup();
+  await away.call("set_status", { status: "pricing tiers", artboards: ["ab_hero", "ab_pricing"] });
+  away.commitAs(ada, { op: "artboard.delete", id: "ab_pricing" });
+  away.api.forget();
+  await away.synced();
+  expect(away.host.statuses.at(-1)).toEqual({ artboards: ["ab_hero"], status: "pricing tiers" });
+
+  // With the agent's own edit, when the API takes it back.
+  const api = gated();
+  const undone = setup({ transport: api.transport });
+  undone.commitAs(ada, { op: "page.delete", id: "pg_home" });
+  const made = await undone.call("create_artboard", { name: "Sign in", page: "pg_home" });
+  const { id } = made.data as { id: string };
+  expect(undone.host.statuses.at(-1)).toEqual({ artboards: [id] });
+  api.release();
+  await undone.synced();
+  expect(undone.host.statuses.at(-1)).toEqual({ artboards: [] });
+});
+
 /* ------------------------------------------------------------------ */
 /* Files in the sandbox                                                */
 /* ------------------------------------------------------------------ */
