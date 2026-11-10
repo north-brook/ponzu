@@ -71,11 +71,17 @@ export class FakeGithub {
   duringRefresh: (() => Promise<void>) | null = null;
   /** Every installation token the App asked for. */
   readonly installationTokenRequests: { installationId: number; body: unknown }[] = [];
+  /** Every question about a person's access to a repository, as `owner/name login`. */
+  readonly permissionRequests: string[] = [];
 
   readonly #clock: Clock;
   readonly #users = new Map<number, FakeGithubUser>();
   readonly #accessTokens = new Map<string, { userId: number; expiresAt: number }>();
   readonly #refreshTokens = new Map<string, number>();
+  readonly #installationTokens = new Map<
+    string,
+    { installationId: number; repositoryIds: number[] | null; expiresAt: number }
+  >();
   readonly #failures: { path: string; status: number }[] = [];
   #next = 1;
 
@@ -139,6 +145,13 @@ export class FakeGithub {
     const appToken = /^\/app\/installations\/(\d+)\/access_tokens$/.exec(pathname);
     if (method === "POST" && appToken) {
       return this.#installationToken(bearer, Number(appToken[1]), JSON.parse(String(init.body)));
+    }
+
+    const permission = /^\/repos\/([^/]+\/[^/]+)\/collaborators\/([^/]+)\/permission$/.exec(
+      pathname,
+    );
+    if (method === "GET" && permission) {
+      return this.#permission(bearer, permission[1]!, decodeURIComponent(permission[2]!));
     }
 
     const held = this.#accessTokens.get(bearer);
@@ -240,17 +253,51 @@ export class FakeGithub {
     } catch {
       return Response.json({ message: "A JSON web token could not be decoded" }, { status: 401 });
     }
-    if (!this.installations.some(({ id }) => id === installationId)) {
-      return Response.json({ message: "Not Found" }, { status: 404 });
+    const installation = this.installations.find(({ id }) => id === installationId);
+    if (!installation) return Response.json({ message: "Not Found" }, { status: 404 });
+    const { repository_ids: repositoryIds } = body as { repository_ids?: number[] };
+    const outside = repositoryIds?.some(
+      (repositoryId) => !installation.repositories.some(({ id }) => id === repositoryId),
+    );
+    if (outside) {
+      return Response.json(
+        { message: "There is at least one repository that does not exist or is not accessible" },
+        { status: 422 },
+      );
     }
     this.installationTokenRequests.push({ installationId, body });
-    return Response.json(
-      {
-        token: `ghs_${this.#secret(36)}`,
-        expires_at: new Date(this.#clock.now() + 3600_000).toISOString(),
-      },
-      { status: 201 },
+    const token = `ghs_${this.#secret(36)}`;
+    const expiresAt = this.#clock.now() + 3600_000;
+    this.#installationTokens.set(token, {
+      installationId,
+      repositoryIds: repositoryIds ?? null,
+      expiresAt,
+    });
+    return Response.json({ token, expires_at: new Date(expiresAt).toISOString() }, { status: 201 });
+  }
+
+  /**
+   * `GET /repos/{owner}/{repo}/collaborators/{login}/permission`, asked with an installation
+   * token that reaches the repository. A login GitHub does not know is a 404; someone it knows
+   * without access is `none`.
+   */
+  #permission(bearer: string, fullName: string, login: string): Response {
+    const token = this.#installationTokens.get(bearer);
+    if (!token || token.expiresAt <= this.#clock.now()) {
+      return Response.json({ message: "Bad credentials" }, { status: 401 });
+    }
+    const installation = this.installations.find(({ id }) => id === token.installationId);
+    const repository = installation?.repositories.find(
+      (candidate) =>
+        candidate.fullName === fullName &&
+        (token.repositoryIds === null || token.repositoryIds.includes(candidate.id)),
     );
+    if (!repository) return Response.json({ message: "Not Found" }, { status: 404 });
+    const user = [...this.#users.values()].find((candidate) => candidate.login === login);
+    if (!user) return Response.json({ message: "Not Found" }, { status: 404 });
+    this.permissionRequests.push(`${fullName} ${login}`);
+    const permission = repository.access[user.id] ?? "none";
+    return Response.json({ permission, role_name: permission });
   }
 
   #secret(length: number): string {

@@ -96,7 +96,31 @@ export interface Github {
     repositoryIds?: number[];
     permissions?: Record<string, "read" | "write">;
   }): Promise<GithubInstallationToken>;
+
+  /**
+   * As the App: what a person may do in one repository, which is what decides who may open and
+   * steer a design. The answer is kept for a minute per person and repository, in this
+   * function instance only, so someone whose access is taken away loses it within a minute.
+   */
+  getRepoPermission(input: RepoPermissionQuery): Promise<RepoPermission>;
 }
+
+/** GitHub's four answers: admin, write and read, or none for no access at all. */
+export type RepoPermission = "admin" | "write" | "read" | "none";
+
+export interface RepoPermissionQuery {
+  installationId: number;
+  /** The repository and the person by GitHub's numeric ids, which are what the answer is kept under. */
+  repository: { id: number; fullName: string };
+  user: { id: number; login: string };
+}
+
+/** How long an answer about a person's access to a repository is kept. */
+export const REPO_PERMISSION_TTL_MS = 60_000;
+/** How many answers one instance keeps; past this the oldest go first. */
+const REPO_PERMISSION_CACHE_SIZE = 10_000;
+/** An installation token is reused until this long before it runs out. */
+const TOKEN_REUSE_MARGIN_MS = 5 * 60_000;
 
 const API_URL = "https://api.github.com";
 const TOKEN_URL = "https://github.com/login/oauth/access_token";
@@ -121,6 +145,10 @@ export function createGithub({
 }): Github {
   // Parsed on first use, so a test that never acts as the App needs no real key.
   let signingKey: ReturnType<typeof createPrivateKey> | undefined;
+  /** `getRepoPermission`'s answers, by repository and person, oldest first. */
+  const permissions = new Map<string, { permission: RepoPermission; until: number }>();
+  /** The tokens it asks with, by installation and repository. */
+  const tokens = new Map<string, GithubInstallationToken>();
 
   /** One call to api.github.com. `as` says whose credential `bearer` is. */
   async function call(
@@ -282,13 +310,82 @@ export function createGithub({
       });
     },
 
-    async createInstallationToken({ installationId, repositoryIds, permissions }) {
-      const path = `/app/installations/${installationId}/access_tokens`;
-      const body = await call("app", "POST", path, await appJwt(), {
-        ...(repositoryIds ? { repository_ids: repositoryIds } : {}),
-        ...(permissions ? { permissions } : {}),
-      });
-      return { token: body.token, expiresAt: new Date(body.expires_at) };
+    createInstallationToken,
+
+    async getRepoPermission({ installationId, repository, user }) {
+      const key = `${repository.id}:${user.id}`;
+      const known = permissions.get(key);
+      if (known && known.until > clock.now()) return known.permission;
+
+      const permission = await askRepoPermission(installationId, repository, user.login);
+      permissions.delete(key);
+      if (permissions.size >= REPO_PERMISSION_CACHE_SIZE) {
+        permissions.delete(permissions.keys().next().value!);
+      }
+      permissions.set(key, { permission, until: clock.now() + REPO_PERMISSION_TTL_MS });
+      return permission;
     },
   };
+
+  async function createInstallationToken({
+    installationId,
+    repositoryIds,
+    permissions,
+  }: Parameters<Github["createInstallationToken"]>[0]): Promise<GithubInstallationToken> {
+    const path = `/app/installations/${installationId}/access_tokens`;
+    const body = await call("app", "POST", path, await appJwt(), {
+      ...(repositoryIds ? { repository_ids: repositoryIds } : {}),
+      ...(permissions ? { permissions } : {}),
+    });
+    return { token: body.token, expiresAt: new Date(body.expires_at) };
+  }
+
+  /**
+   * Asks with an installation token for this one repository and `metadata: read`, the least
+   * the question takes. (The github-app spike measured this endpoint right for organization
+   * owners with that token, where the collaborator list and `collaborators/{login}` were wrong
+   * without `members: read`.) It takes a login, so a person who renamed themselves since they
+   * last signed in is not found, and has no access until they sign in again.
+   */
+  async function askRepoPermission(
+    installationId: number,
+    repository: RepoPermissionQuery["repository"],
+    login: string,
+  ): Promise<RepoPermission> {
+    let token: string;
+    try {
+      token = await metadataToken(installationId, repository.id);
+    } catch (error) {
+      // 404: the installation is gone. 422: the repository is not in it any more.
+      if (error instanceof UpstreamError && (error.status === 404 || error.status === 422)) {
+        return "none";
+      }
+      throw error;
+    }
+    const path = `/repos/${repository.fullName}/collaborators/${encodeURIComponent(login)}/permission`;
+    try {
+      const body = await call("app", "GET", path, token);
+      return PERMISSIONS.includes(body.permission) ? body.permission : "none";
+    } catch (error) {
+      // No such login, or a repository renamed since it was last synced.
+      if (error instanceof UpstreamError && error.status === 404) return "none";
+      throw error;
+    }
+  }
+
+  /** A `metadata: read` token for one repository, reused while it has a while to run. */
+  async function metadataToken(installationId: number, repositoryId: number): Promise<string> {
+    const key = `${installationId}:${repositoryId}`;
+    const held = tokens.get(key);
+    if (held && held.expiresAt.getTime() - TOKEN_REUSE_MARGIN_MS > clock.now()) return held.token;
+    const minted = await createInstallationToken({
+      installationId,
+      repositoryIds: [repositoryId],
+      permissions: { metadata: "read" },
+    });
+    tokens.set(key, minted);
+    return minted.token;
+  }
 }
+
+const PERMISSIONS: readonly RepoPermission[] = ["admin", "write", "read", "none"];
