@@ -2,8 +2,9 @@ import type { Actor, Doc, Op } from "@ponzu/core";
 
 /*
  * Who may commit which op. `applyOp` takes anything that fits the document; this decides who
- * may send it. People move, rename and delete artboards, manage pages and write comments; the
- * design's runner edits everything else (docs/cloud.md, "The replica"). Every variant is in
+ * may send it. People move, rename and delete artboards, manage pages, name the design and
+ * write comments; the design's runner edits everything else (docs/cloud.md, "The replica").
+ * Every variant is in
  * `OP_RULES`, so a new one does not compile until someone has decided who may send it.
  */
 
@@ -37,9 +38,10 @@ export const OP_RULES: Record<Op["op"], OpRule> = {
   "page.update": "anyone",
   "page.order": "anyone",
   "page.move": "anyone",
-  // The design's name and icon are the design row's, changed with PATCH /v1/designs/:id.
-  "file.rename": "runner",
-  "file.icon": "runner",
+  // The design's name and icon: PATCH /v1/designs/:id sends these for a person, and the
+  // agent's `update_design` for the agent. The row follows the document.
+  "file.rename": "anyone",
+  "file.icon": "anyone",
   // Hides a design from the local app's home screen. The cloud has no such list.
   "file.scratch": "nobody",
   tokens: "runner",

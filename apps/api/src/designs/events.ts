@@ -1,5 +1,6 @@
+import type { Op } from "@ponzu/core";
 import { type Doc, summarize, threadEvents, touchedArtboards } from "@ponzu/core";
-import type { Design, EventPriority, NewEvent, StoredOp } from "@ponzu/db";
+import type { Design, EventPriority, OpEvent } from "@ponzu/db";
 
 /*
  * What the agent hears about a person's ops (docs/cloud.md, "Events"). A comment is `now`
@@ -16,18 +17,21 @@ export function agentBoards(design: Pick<Design, "agentState" | "agentArtboards"
   return design.agentState === "working" ? design.agentArtboards : [];
 }
 
-/** One event per op a person committed, read against the document after them. */
+/**
+ * One event per op a person is committing, read against the document after them. They are
+ * committed with the ops, which give each its `payload.seq`.
+ */
 export function eventsForPersonOps(
-  design: Pick<Design, "id" | "agentState" | "agentArtboards">,
+  design: Pick<Design, "agentState" | "agentArtboards">,
   userId: string,
-  ops: StoredOp[],
+  ops: { id: string; op: Op }[],
   doc: Doc,
-): NewEvent[] {
+): OpEvent[] {
   const working = new Set(agentBoards(design));
-  return ops.map((stored) => {
-    const base = { designId: design.id, userId };
-    const summary = summarize(doc, stored.op);
-    const comments = threadEvents(stored.op).map((event) => {
+  return ops.map(({ id, op }) => {
+    const base = { opId: id, userId };
+    const summary = summarize(doc, op);
+    const comments = threadEvents(op).map((event) => {
       const threadId = event.kind === "created" ? event.thread.id : event.id;
       const thread =
         event.kind === "created" ? event.thread : doc.threads.find(({ id }) => id === threadId);
@@ -45,7 +49,7 @@ export function eventsForPersonOps(
         ...base,
         kind: "edit",
         priority: "later",
-        payload: { seq: stored.seq, summary, artboards: touchedArtboards(doc, stored.op) },
+        payload: { summary, artboards: touchedArtboards(doc, op) },
       };
     }
     const priority: EventPriority = comments.some(
@@ -53,6 +57,6 @@ export function eventsForPersonOps(
     )
       ? "now"
       : "next";
-    return { ...base, kind: "comment", priority, payload: { seq: stored.seq, summary, comments } };
+    return { ...base, kind: "comment", priority, payload: { summary, comments } };
   });
 }

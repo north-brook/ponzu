@@ -152,33 +152,59 @@ describe("a person's permission in a repository", () => {
     ]);
   });
 
-  test("is kept for a minute per person and repository, and the token for most of its hour", async () => {
-    const someone = t.github.addUser({
+  test("asks every time, but questions about one person and repository at once share an answer", async () => {
+    const asked = () => t.github.permissionRequests.filter((line) => line.endsWith(" maya")).length;
+    const before = asked();
+
+    const answers = await Promise.all([ask(fernwood), ask(fernwood), ask(fernwood)]);
+    expect(answers).toEqual(["write", "write", "write"]);
+    expect(asked()).toBe(before + 1);
+
+    expect(await ask(fernwood)).toBe("write");
+    expect(asked()).toBe(before + 2);
+  });
+
+  test("reuses its token for most of the hour, and mints again when GitHub stops taking it early", async () => {
+    await ask(fernwood);
+    const minted = t.github.installationTokenRequests.length;
+    expect(await ask(fernwood)).toBe("write");
+    expect(t.github.installationTokenRequests.length).toBe(minted);
+
+    // Suspended and back, or its permissions changed: the token says 401 before it runs out.
+    t.github.revokeInstallationTokens();
+    expect(await ask(fernwood)).toBe("write");
+    expect(t.github.installationTokenRequests.length).toBe(minted + 1);
+  });
+
+  test("takes an answer only about the person's own account, whatever login now belongs to whom", async () => {
+    const repository = t.github.installations[1]!.repositories[0]!;
+    const renamed = t.github.addUser({
       id: 5150,
-      login: "someone",
+      login: "kit-new",
       name: null,
       avatarUrl: null,
       emails: [],
     });
-    const user = { id: someone.id, login: "someone" };
-    const repository = t.github.installations[1]!.repositories[0]!;
-    const asked = () =>
-      t.github.permissionRequests.filter((line) => line.endsWith(" someone")).length;
-    const minted = t.github.installationTokenRequests.length;
+    repository.access[renamed.id] = "read";
+    // Kit last signed in as `kit` and has renamed since; nobody has taken `kit` yet.
+    const kit = { id: renamed.id, login: "kit" };
+    expect(await ask(fernwood, kit)).toBe("read");
 
-    expect(await ask(fernwood, user)).toBe("none");
-    repository.access[someone.id] = "read";
-    t.clock.advance(59_000);
-    expect(await ask(fernwood, user)).toBe("none");
-    expect(asked()).toBe(1);
+    // Now someone else has the old login, and write access.
+    const squatter = t.github.addUser({
+      id: 5151,
+      login: "kit",
+      name: null,
+      avatarUrl: null,
+      emails: [],
+    });
+    repository.access[squatter.id] = "write";
+    expect(await ask(fernwood, kit)).toBe("read");
 
-    t.clock.advance(1_000);
-    expect(await ask(fernwood, user)).toBe("read");
-    expect(asked()).toBe(2);
-    // Another person in the same repository is asked about on their own.
-    expect(await ask(fernwood)).toBe("write");
-    expect(t.github.installationTokenRequests.length).toBe(minted);
-    delete repository.access[someone.id];
+    // An account that is gone has no access, whoever holds its old login.
+    expect(await ask(fernwood, { id: 5152, login: "kit" })).toBe("none");
+    delete repository.access[renamed.id];
+    delete repository.access[squatter.id];
   });
 
   test("is none for a login GitHub does not know, a repository or installation the App has lost", async () => {

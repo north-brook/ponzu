@@ -420,6 +420,53 @@ describe("the event feed", () => {
     expect((await feed(design.id)).map((event) => event.priority)).toEqual(["next"]);
   });
 
+  test("an op and its event land together or not at all, so a retry is never an op the agent missed", async () => {
+    const design = await sample();
+    // The next insert into the feed fails, once: a database that hiccups between two writes.
+    for (const statement of [
+      "create sequence events_fail_once",
+      `create function events_fail_once() returns trigger language plpgsql as $$
+       begin
+         if nextval('events_fail_once') = 1 then raise exception 'the feed is down'; end if;
+         return new;
+       end $$`,
+      `create trigger events_fail_once before insert on events
+         for each row execute function events_fail_once()`,
+    ]) {
+      await t.db.execute(statement);
+    }
+    const reply = {
+      id: "op_reply",
+      op: {
+        op: "thread.message",
+        id: "th_1",
+        message: {
+          id: "m_reply",
+          author: { kind: "user", name: "Maya" },
+          text: "Yes",
+          createdAt: 0,
+        },
+      },
+    };
+
+    try {
+      const failed = await post(as("maya"), design.id, [reply]);
+      expect(failed.status).toBe(500);
+      expect((await getDesign(t.db, design.id))!.seq).toBe(0);
+
+      const retried = await post(as("maya"), design.id, [reply]);
+      expect(retried.body).toMatchObject({ committed: [{ id: "op_reply", seq: 1 }], seq: 1 });
+    } finally {
+      await t.db.execute("drop trigger events_fail_once on events");
+      await t.db.execute("drop function events_fail_once()");
+      await t.db.execute("drop sequence events_fail_once");
+    }
+    const events = await feed(design.id);
+    expect(events.map(({ kind, payload }) => [kind, (payload as { seq: number }).seq])).toEqual([
+      ["comment", 1],
+    ]);
+  });
+
   test("the runner's own ops make no events", async () => {
     const design = await sample();
 

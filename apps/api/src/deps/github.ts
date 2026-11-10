@@ -99,8 +99,8 @@ export interface Github {
 
   /**
    * As the App: what a person may do in one repository, which is what decides who may open and
-   * steer a design. The answer is kept for a minute per person and repository, in this
-   * function instance only, so someone whose access is taken away loses it within a minute.
+   * steer a design. Every call asks GitHub, except that calls about the same person and
+   * repository at the same time share one question; keeping answers is `auth/repo-access.ts`'s.
    */
   getRepoPermission(input: RepoPermissionQuery): Promise<RepoPermission>;
 }
@@ -110,17 +110,16 @@ export type RepoPermission = "admin" | "write" | "read" | "none";
 
 export interface RepoPermissionQuery {
   installationId: number;
-  /** The repository and the person by GitHub's numeric ids, which are what the answer is kept under. */
+  /** By GitHub's numeric id, which never changes, and the name it was last seen under. */
   repository: { id: number; fullName: string };
+  /** By GitHub's numeric id, and the login it last signed in with, which can change hands. */
   user: { id: number; login: string };
 }
 
-/** How long an answer about a person's access to a repository is kept. */
-export const REPO_PERMISSION_TTL_MS = 60_000;
-/** How many answers one instance keeps; past this the oldest go first. */
-const REPO_PERMISSION_CACHE_SIZE = 10_000;
 /** An installation token is reused until this long before it runs out. */
 const TOKEN_REUSE_MARGIN_MS = 5 * 60_000;
+/** How many installation tokens one instance keeps; past this the oldest go first. */
+const TOKENS_KEPT = 1_000;
 
 const API_URL = "https://api.github.com";
 const TOKEN_URL = "https://github.com/login/oauth/access_token";
@@ -145,9 +144,9 @@ export function createGithub({
 }): Github {
   // Parsed on first use, so a test that never acts as the App needs no real key.
   let signingKey: ReturnType<typeof createPrivateKey> | undefined;
-  /** `getRepoPermission`'s answers, by repository and person, oldest first. */
-  const permissions = new Map<string, { permission: RepoPermission; until: number }>();
-  /** The tokens it asks with, by installation and repository. */
+  /** `getRepoPermission`'s questions in flight, by installation, repository and person. */
+  const asking = new Map<string, Promise<RepoPermission>>();
+  /** The tokens it asks with, by installation and repository, oldest first. */
   const tokens = new Map<string, GithubInstallationToken>();
 
   /** One call to api.github.com. `as` says whose credential `bearer` is. */
@@ -312,18 +311,15 @@ export function createGithub({
 
     createInstallationToken,
 
-    async getRepoPermission({ installationId, repository, user }) {
-      const key = `${repository.id}:${user.id}`;
-      const known = permissions.get(key);
-      if (known && known.until > clock.now()) return known.permission;
-
-      const permission = await askRepoPermission(installationId, repository, user.login);
-      permissions.delete(key);
-      if (permissions.size >= REPO_PERMISSION_CACHE_SIZE) {
-        permissions.delete(permissions.keys().next().value!);
-      }
-      permissions.set(key, { permission, until: clock.now() + REPO_PERMISSION_TTL_MS });
-      return permission;
+    getRepoPermission({ installationId, repository, user }) {
+      const key = `${installationId}:${repository.id}:${user.id}`;
+      const pending = asking.get(key);
+      if (pending) return pending;
+      const asked = askRepoPermission(installationId, repository, user).finally(() =>
+        asking.delete(key),
+      );
+      asking.set(key, asked);
+      return asked;
     },
   };
 
@@ -344,48 +340,111 @@ export function createGithub({
    * Asks with an installation token for this one repository and `metadata: read`, the least
    * the question takes. (The github-app spike measured this endpoint right for organization
    * owners with that token, where the collaborator list and `collaborators/{login}` were wrong
-   * without `members: read`.) It takes a login, so a person who renamed themselves since they
-   * last signed in is not found, and has no access until they sign in again.
+   * without `members: read`.) It takes a login, and a login can change hands, so the answer is
+   * taken only when the account it names is this person's: otherwise it is asked again under
+   * the login their id has now.
    */
   async function askRepoPermission(
     installationId: number,
     repository: RepoPermissionQuery["repository"],
-    login: string,
+    user: RepoPermissionQuery["user"],
   ): Promise<RepoPermission> {
-    let token: string;
+    const ask = (path: string) => getAsApp(installationId, repository.id, path);
     try {
-      token = await metadataToken(installationId, repository.id);
+      const asked = await permissionOf(ask, repository.fullName, user.login);
+      if (asked?.userId === user.id) return asked.permission;
+      const login = await loginOf(ask, user.id);
+      if (login === null || login === user.login) return "none";
+      const again = await permissionOf(ask, repository.fullName, login);
+      return again?.userId === user.id ? again.permission : "none";
     } catch (error) {
-      // 404: the installation is gone. 422: the repository is not in it any more.
-      if (error instanceof UpstreamError && (error.status === 404 || error.status === 422)) {
-        return "none";
-      }
-      throw error;
-    }
-    const path = `/repos/${repository.fullName}/collaborators/${encodeURIComponent(login)}/permission`;
-    try {
-      const body = await call("app", "GET", path, token);
-      return PERMISSIONS.includes(body.permission) ? body.permission : "none";
-    } catch (error) {
-      // No such login, or a repository renamed since it was last synced.
-      if (error instanceof UpstreamError && error.status === 404) return "none";
+      if (error instanceof NoInstallationToken) return "none";
       throw error;
     }
   }
 
-  /** A `metadata: read` token for one repository, reused while it has a while to run. */
-  async function metadataToken(installationId: number, repositoryId: number): Promise<string> {
+  /**
+   * A GET as the App, with a `metadata: read` token for one repository. A token GitHub stops
+   * taking before it runs out (the installation was suspended, or its permissions changed) is
+   * dropped, and one more is minted.
+   */
+  async function getAsApp(installationId: number, repositoryId: number, path: string) {
     const key = `${installationId}:${repositoryId}`;
+    for (let attempt = 1; ; attempt++) {
+      const token = await metadataToken(key, installationId, repositoryId);
+      try {
+        return await call("app", "GET", path, token);
+      } catch (error) {
+        if (attempt === 2 || !(error instanceof UpstreamError) || error.status !== 401) throw error;
+        tokens.delete(key);
+      }
+    }
+  }
+
+  /** A `metadata: read` token for one repository, reused while it has a while to run. */
+  async function metadataToken(
+    key: string,
+    installationId: number,
+    repositoryId: number,
+  ): Promise<string> {
     const held = tokens.get(key);
     if (held && held.expiresAt.getTime() - TOKEN_REUSE_MARGIN_MS > clock.now()) return held.token;
-    const minted = await createInstallationToken({
-      installationId,
-      repositoryIds: [repositoryId],
-      permissions: { metadata: "read" },
-    });
+    let minted: GithubInstallationToken;
+    try {
+      minted = await createInstallationToken({
+        installationId,
+        repositoryIds: [repositoryId],
+        permissions: { metadata: "read" },
+      });
+    } catch (error) {
+      // 404: the installation is gone. 422: the repository is not in it any more.
+      if (error instanceof UpstreamError && (error.status === 404 || error.status === 422)) {
+        throw new NoInstallationToken();
+      }
+      throw error;
+    }
+    tokens.delete(key);
+    if (tokens.size >= TOKENS_KEPT) tokens.delete(tokens.keys().next().value!);
     tokens.set(key, minted);
     return minted.token;
   }
 }
 
 const PERMISSIONS: readonly RepoPermission[] = ["admin", "write", "read", "none"];
+
+/** The App has no way into the repository any more, so nobody has access through it. */
+class NoInstallationToken extends Error {}
+
+type AskAsApp = (path: string) => Promise<any>;
+
+/**
+ * What GitHub says one login may do in a repository, and the id of the account it means. Null
+ * when GitHub knows no such login, or the repository was renamed since it was last synced.
+ */
+async function permissionOf(
+  ask: AskAsApp,
+  fullName: string,
+  login: string,
+): Promise<{ userId: number | undefined; permission: RepoPermission } | null> {
+  try {
+    const body = await ask(
+      `/repos/${fullName}/collaborators/${encodeURIComponent(login)}/permission`,
+    );
+    const permission = PERMISSIONS.includes(body.permission) ? body.permission : "none";
+    return { userId: body.user?.id, permission };
+  } catch (error) {
+    if (error instanceof UpstreamError && error.status === 404) return null;
+    throw error;
+  }
+}
+
+/** The login a GitHub account has now (`GET /user/{id}` needs no permission), or null when it is gone. */
+async function loginOf(ask: AskAsApp, userId: number): Promise<string | null> {
+  try {
+    const body = await ask(`/user/${userId}`);
+    return typeof body.login === "string" ? body.login : null;
+  } catch (error) {
+    if (error instanceof UpstreamError && error.status === 404) return null;
+    throw error;
+  }
+}

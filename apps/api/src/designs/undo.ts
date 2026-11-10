@@ -1,10 +1,10 @@
 import { applyOp, type CommittedOp, newOpId, OpError } from "@ponzu/core";
-import { appendEvents, commitReversal, type Design, nextRedo, nextUndo } from "@ponzu/db";
+import { commitReversal, type Design, nextRedo, nextUndo } from "@ponzu/db";
 import type { Actor as Caller } from "../auth/actor.ts";
 import type { Deps } from "../deps/index.ts";
 import { ApiError } from "../http/errors.ts";
 import { actorOf, toCommittedOp } from "./actor.ts";
-import { COMMIT_ATTEMPTS, designBusy } from "./commit.ts";
+import { COMMIT_ATTEMPTS, designBusy, headChange } from "./commit.ts";
 import { keep, readCurrentDoc } from "./document.ts";
 import { eventsForPersonOps } from "./events.ts";
 
@@ -63,22 +63,22 @@ export async function reverse(
         : new ApiError(409, "nothing_to_redo", "There is nothing to redo.");
     }
 
+    const op = { id: newOpId(), op: target.inverse, inverse };
     const result = await commitReversal(deps.db, {
       designId: design.id,
       expectedSeq: current.seq,
       actor,
       kind,
       reverses: target.seq,
-      op: { id: newOpId(), op: target.inverse, inverse },
+      op,
+      events: caller.kind === "user" ? eventsForPersonOps(design, caller.user.id, [op], doc) : [],
+      head: headChange(current.doc, doc),
     });
     if (result.kind === "conflict") continue;
     if (result.kind === "unstorable") {
       throw new Error("An inverse from the log could not be stored again.");
     }
     keep(deps, design.id, current, { seq: result.seq, doc, ops: result.ops });
-    if (caller.kind === "user") {
-      await appendEvents(deps.db, eventsForPersonOps(design, caller.user.id, result.ops, doc));
-    }
     return { committed: toCommittedOp(result.ops[0]!), seq: result.seq };
   }
   throw designBusy();

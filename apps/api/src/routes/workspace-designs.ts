@@ -9,6 +9,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { access } from "../auth/access.ts";
 import { requireWorkspace } from "../auth/authorize.ts";
+import { refreshWorkspaceRepoAccess } from "../auth/repo-access.ts";
 import type { AppEnv } from "../http/context.ts";
 import { validate } from "../http/validate.ts";
 
@@ -42,9 +43,8 @@ const DesignList = z.object({ designs: z.array(DesignRow) });
 
 /**
  * A workspace's designs, for a first paint; the `workspace.designs` live query keeps them
- * fresh. Mounted under `/workspaces/:workspaceId/designs`. Like the live query, it lists every
- * design in a repo of the workspace to its members, and Scratch designs to their owners:
- * opening one is what asks GitHub.
+ * fresh. Mounted under `/workspaces/:workspaceId/designs`. Like the live query, it lists the
+ * designs in repos GitHub lets the person read, and their own Scratch designs.
  */
 export const workspaceDesigns = new Hono<AppEnv>().get(
   "/",
@@ -52,6 +52,7 @@ export const workspaceDesigns = new Hono<AppEnv>().get(
   validate("param", z.object({ workspaceId: z.string().min(1).max(64) })),
   async (c) => {
     const workspace = await requireWorkspace(c, c.req.valid("param").workspaceId);
+    await refreshWorkspaceRepoAccess(c.var.deps, { user: c.var.actor.user, workspace });
     const designs = await listWorkspaceDesigns(c.var.deps.db, {
       workspaceId: workspace.id,
       userId: c.var.actor.user.id,

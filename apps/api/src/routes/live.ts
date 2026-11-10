@@ -4,7 +4,8 @@ import { access } from "../auth/access.ts";
 import type { Actor } from "../auth/actor.ts";
 import type { Deps } from "../deps/index.ts";
 import type { AppEnv } from "../http/context.ts";
-import { ApiError, type ErrorCode } from "../http/errors.ts";
+import { ApiError, type ErrorCode, toApiError, UpstreamError } from "../http/errors.ts";
+import type { Logger } from "../http/log.ts";
 import { validate } from "../http/validate.ts";
 import { LIVE_QUERIES, type LiveQueryDefinition } from "../live/queries.ts";
 
@@ -42,7 +43,7 @@ const LiveView = z.object({
   ),
 });
 
-type LiveContext = { var: { deps: Deps; actor: Actor } };
+type LiveContext = { var: { deps: Deps; actor: Actor; log: Logger } };
 
 /** One query sealed, or the refusal a route would have answered with. */
 async function seal(c: LiveContext, { name, args }: { name: string; args?: unknown }) {
@@ -60,6 +61,12 @@ async function seal(c: LiveContext, { name, args }: { name: string; args?: unkno
     return { name, sealed: await c.var.deps.realtime.seal({ sql: query.sql, params }) };
   } catch (error) {
     if (error instanceof ApiError && error.status < 500) return refused(error.code, error.message);
+    // GitHub failing for one repo must not stop every other subscription from renewing.
+    if (error instanceof UpstreamError) {
+      c.var.log.warn("live_query_upstream_failed", { query: name, service: error.service });
+      const { code, message } = toApiError(error);
+      return refused(code, message);
+    }
     throw error;
   }
 }

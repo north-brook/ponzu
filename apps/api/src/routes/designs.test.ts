@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { emptyDoc } from "@ponzu/core";
-import { getDesignAssetKey, readDocSource } from "@ponzu/db";
+import { appendThreadItem, claimEvents, getDesignAssetKey, readDocSource } from "@ponzu/db";
 import {
   call,
   designIn,
@@ -173,6 +173,40 @@ describe("PATCH /v1/designs/:id", () => {
     });
   });
 
+  test("names the document, which is what every replica and the agent read, by an op in the log", async () => {
+    const design = await designIn(t, ws, "maya", emptyDoc("Draft"));
+
+    await call(t, as("maya"), "PATCH", `/v1/designs/${design.id}`, { name: "Final", icon: "star" });
+
+    const { body } = await call(t, as("ines"), "GET", `/v1/designs/${design.id}/doc`);
+    expect(body).toMatchObject({ doc: { name: "Final", icon: "star" }, seq: 1 });
+    const ops = await call(t, as("ines"), "GET", `/v1/designs/${design.id}/ops?after=0`);
+    expect(ops.body.ops).toMatchObject([
+      { seq: 1, actor: { kind: "user", id: ws.people.maya!.userId } },
+    ]);
+    // The agent hears of it like any other edit.
+    expect((await claimEvents(t.db, { designId: design.id })).map((e) => e.kind)).toEqual(["edit"]);
+    // Settling alone touches no document.
+    await call(t, as("maya"), "PATCH", `/v1/designs/${design.id}`, { settled: true });
+    expect((await call(t, as("ines"), "GET", `/v1/designs/${design.id}/doc`)).body.seq).toBe(1);
+  });
+
+  test("the row follows whoever names the document, the agent included", async () => {
+    const design = await designIn(t, ws, "maya", emptyDoc("Untitled"));
+
+    await call(t, await runnerHeaders(t, design.id), "POST", `/v1/designs/${design.id}/ops`, {
+      ops: [{ id: "op_name", op: { op: "file.rename", name: "Checkout flow" } }],
+    });
+
+    expect((await call(t, as("maya"), "GET", `/v1/designs/${design.id}`)).body.name).toBe(
+      "Checkout flow",
+    );
+    await call(t, as("maya"), "POST", `/v1/designs/${design.id}/undo`);
+    expect((await call(t, as("maya"), "GET", `/v1/designs/${design.id}`)).body.name).toBe(
+      "Untitled",
+    );
+  });
+
   test("refuses a reader, an empty change and an icon Ponzu does not draw", async () => {
     const design = await designIn(t, ws, "maya", emptyDoc("Kept"));
     const patch = (login: string, body: unknown) =>
@@ -224,6 +258,39 @@ describe("GET /v1/designs/:id/doc", () => {
     expect(reader.body).toEqual({ doc: emptyDoc("Read me"), seq: 0 });
     expect(own.body).toEqual(reader.body);
     expect([elsewhere.status, elsewhere.body.error.code]).toEqual([404, "not_found"]);
+  });
+});
+
+describe("GET /v1/designs/:id/ops", () => {
+  test("pages by size as well as count, so catching up after big edits fits in an answer", async () => {
+    const design = await designIn(t, ws, "maya", emptyDoc("Heavy"));
+    const runner = await runnerHeaders(t, design.id);
+    // Two posts as large as the replica sends: 12 notes of 250 KB each.
+    for (const post of [1, 2]) {
+      const ops = Array.from({ length: 12 }, (_, i) => ({
+        id: `op_${post}_${i}`,
+        op: { op: "note", name: `n${i}`, content: "x".repeat(250_000) },
+      }));
+      expect((await call(t, runner, "POST", `/v1/designs/${design.id}/ops`, { ops })).status).toBe(
+        200,
+      );
+    }
+
+    const pages: number[][] = [];
+    for (let after = 0; after < 24; ) {
+      const response = await t.app.request(`/v1/designs/${design.id}/ops?after=${after}`, {
+        headers: as("ines"),
+      });
+      const text = await response.text();
+      // What a Vercel function may send.
+      expect(text.length).toBeLessThan(4_500_000);
+      const { ops, seq } = JSON.parse(text);
+      expect(seq).toBe(24);
+      pages.push(ops.map((op: { seq: number }) => op.seq));
+      after = ops.at(-1).seq;
+    }
+    expect(pages.length).toBeGreaterThan(1);
+    expect(pages.flat()).toEqual(Array.from({ length: 24 }, (_, i) => i + 1));
   });
 });
 
@@ -279,10 +346,26 @@ describe("seen", () => {
         (d: any) => d.id === design.id,
       );
 
-    expect((await seen({ seq: 40, threadSeq: 7 })).status).toBe(204);
-    expect(await row()).toMatchObject({ seenSeq: 1, seenThreadSeq: 7 });
+    const item = await appendThreadItem(t.db, {
+      designId: design.id,
+      kind: "assistant",
+      payload: { text: "Done." },
+    });
+
+    expect((await seen({ seq: 40, threadSeq: 9e15 })).status).toBe(204);
+    expect(await row()).toMatchObject({ seenSeq: 1, seenThreadSeq: item!.seq });
     await seen({ seq: 0 });
     expect(await row()).toMatchObject({ seenSeq: 1 });
+
+    // A number from a buggy client cannot hide the dot for what comes next.
+    const next = await appendThreadItem(t.db, {
+      designId: design.id,
+      kind: "assistant",
+      payload: { text: "Again." },
+    });
+    expect(await row()).toMatchObject({ seenThreadSeq: item!.seq });
+    await seen({ threadSeq: next!.seq });
+    expect(await row()).toMatchObject({ seenThreadSeq: next!.seq });
   });
 });
 

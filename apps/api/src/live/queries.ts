@@ -2,6 +2,7 @@ import { DESIGN_HEAD_COLUMNS } from "@ponzu/db";
 import { z } from "zod";
 import type { Actor, UserActor } from "../auth/actor.ts";
 import { requireDesign, requireWorkspace } from "../auth/authorize.ts";
+import { refreshWorkspaceRepoAccess } from "../auth/repo-access.ts";
 import type { Deps } from "../deps/index.ts";
 import { ApiError } from "../http/errors.ts";
 
@@ -22,7 +23,9 @@ import { ApiError } from "../http/errors.ts";
  * - A `bigint` arrives as a string (`seq` and the rest): decode before comparing.
  */
 
-type LiveContext = { var: { deps: Pick<Deps, "db" | "github">; actor: Actor } };
+type LiveContext = {
+  var: { deps: Pick<Deps, "db" | "github" | "clock" | "vault" | "log">; actor: Actor };
+};
 
 export interface LiveQueryDefinition<Args extends z.ZodType = z.ZodType> {
   args: Args;
@@ -73,14 +76,17 @@ export const LIVE_QUERIES = {
 
   /**
    * The sidebar: a workspace's designs and how far the person has looked at each. Joined
-   * through membership, so a member who is dropped sees the rows go at once. A Scratch design
-   * is its owner's alone.
+   * through membership, so a member who is dropped sees the rows go at once, and through
+   * `repo_access`, so a design shows only to people GitHub lets read its repo, and goes as soon
+   * as an answer says they no longer can. Each renewal brings those answers up to the minute.
+   * A Scratch design is its owner's alone.
    */
   "workspace.designs": define({
     args: z.object({ workspaceId: Id }),
     authorize: async (c, { workspaceId }) => {
       const actor = person(c);
-      await requireWorkspace({ var: { deps: c.var.deps, actor } }, workspaceId);
+      const workspace = await requireWorkspace({ var: { deps: c.var.deps, actor } }, workspaceId);
+      await refreshWorkspaceRepoAccess(c.var.deps, { user: actor.user, workspace });
       return [actor.user.id, workspaceId];
     },
     sql: `select d.id, d.workspace_id, d.repo_id, r.full_name as repo_full_name, d.owner_id,
@@ -91,9 +97,11 @@ export const LIVE_QUERIES = {
             from designs d
             join memberships m on m.workspace_id = d.workspace_id and m.user_id = $1
             left join repos r on r.id = d.repo_id
+            left join repo_access ra on ra.repo_id = d.repo_id and ra.user_id = $1
             left join design_reads dr on dr.design_id = d.id and dr.user_id = $1
            where d.workspace_id = $2
-             and (d.repo_id is not null or d.owner_id = $1)`,
+             and (ra.permission in ('admin', 'write', 'read')
+                  or (d.repo_id is null and d.owner_id = $1))`,
   }),
 
   /** A design's head: when `seq` moves, fetch the ops after your own from the API. */

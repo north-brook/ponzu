@@ -7,8 +7,8 @@ import { createTestApp, type TestApp } from "../testing/index.ts";
 
 /*
  * The real thing, opt in: the API on the Neon `dev` branch and its Realtime, with GitHub and
- * WorkOS still in memory. It seals a query, subscribes to it as a client would, commits an op
- * through the API and waits for the change to arrive. Skipped unless all three are set:
+ * WorkOS still in memory. It seals queries, subscribes to them as a client would, changes the
+ * design through the API and waits for the change to arrive. Skipped unless all three are set:
  *
  *   DATABASE_URL=<dev's pooled URL> NEON_REALTIME_URL=… NEON_REALTIME_SECRET=… \
  *     bun test apps/api/src/live/realtime.live.test.ts
@@ -27,7 +27,7 @@ describe.skipIf(!ready)("Realtime on the dev branch", () => {
   let t: TestApp | undefined;
   afterAll(() => t?.close());
 
-  test("a design's head moves on a subscriber's screen when an op is committed", async () => {
+  test("a design's head and its sidebar row move on a subscriber's screen as it changes", async () => {
     const db = createDb(url!);
     const realtime = createRealtimeSealer({
       url: realtimeUrl!,
@@ -57,25 +57,34 @@ describe.skipIf(!ready)("Realtime on the dev branch", () => {
     const client = createRealtimeClient({ url: realtimeUrl! });
     try {
       const live = await call(t, person.headers, "POST", "/v1/live", {
-        queries: [{ name: "design.head", args: { designId } }],
+        queries: [
+          { name: "design.head", args: { designId } },
+          { name: "workspace.designs", args: { workspaceId: workspace.id } },
+        ],
       });
       expect(live.body.url).toBe(realtimeUrl);
-      const sealed = live.body.results[0].sealed as SealedLiveQuery<{ seq: string }>;
-      const subscription = client.subscribe(sealed);
+      const [head, list] = live.body.results.map((result: any) => result.sealed);
+      const subscription = client.subscribe(head as SealedLiveQuery<{ seq: string }>);
+      const sidebar = client.subscribe(list as SealedLiveQuery<{ id: string; name: string }>);
       const seq = () => Number(subscription.getSnapshot().data?.[0]?.seq ?? -1);
+      const name = () => sidebar.getSnapshot().data?.find((row) => row.id === designId)?.name;
       const until = (done: () => boolean, ms: number) =>
         new Promise<void>((resolve, reject) => {
           const timer = setTimeout(() => reject(new Error(`no change within ${ms} ms`)), ms);
           const check = () => {
-            if (subscription.getState().status === "error") {
+            const failed = [subscription, sidebar].find(
+              (watched) => watched.getState().status === "error",
+            );
+            if (failed) {
               clearTimeout(timer);
-              reject(new Error(String(subscription.getState().error?.message)));
+              reject(new Error(String(failed.getState().error?.message)));
             } else if (done()) {
               clearTimeout(timer);
               resolve();
             }
           };
           subscription.onChange(check);
+          sidebar.onChange(check);
           check();
         });
       const subscribing = performance.now();
@@ -98,7 +107,13 @@ describe.skipIf(!ready)("Realtime on the dev branch", () => {
           `${(answered - sent).toFixed(0)} ms; the new seq arrived ${(arrived - answered).toFixed(0)} ms ` +
           `after that, ${(arrived - sent).toFixed(0)} ms after sending.`,
       );
+
+      // The sidebar's query joins memberships and repo_access: still a delta, as Realtime needs.
+      await until(() => name() === "Realtime check", 15_000);
+      await call(t, person.headers, "PATCH", `/v1/designs/${designId}`, { name: "Renamed live" });
+      await until(() => name() === "Renamed live", 15_000);
       subscription.unsubscribe();
+      sidebar.unsubscribe();
     } finally {
       client.close();
       await call(t, person.headers, "DELETE", `/v1/designs/${designId}`);

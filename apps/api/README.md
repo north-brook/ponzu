@@ -74,9 +74,11 @@ has: no `Bun.…`, no DOM. `bun run typecheck` (and CI) checks exactly that.
    throws 404 `not_found` when they are not a member (the same as when it does not exist), and
    `requireWorkspace(c, id, "admin")` throws 403 `forbidden` for a member who is not an admin.
    `await requireDesign(c, designId, "read" | "write")` does the same for a design, with the
-   access GitHub gives the person in its repo (kept a minute per instance), and lets a runner
-   at its own design only. Get a row another person could not see only through a function
-   there, and add the next one beside them with the same two answers.
+   access GitHub gives the person in its repo, and lets a runner at its own design only.
+   GitHub's answers are kept in `repo_access` for every instance to share, by
+   `auth/repo-access.ts`; a list of designs (or a live query over one) joins that table and
+   calls `refreshWorkspaceRepoAccess` first. Get a row another person could not see only
+   through a function there, and add the next one beside them with the same two answers.
 
    To turn a token into a person anywhere else (a socket, a sealed query), call
    `authenticateUser(deps, token)` from `auth/authenticate.ts`. It verifies the WorkOS token

@@ -11,7 +11,7 @@ import {
   stampOp,
   validateOp,
 } from "@ponzu/core";
-import { appendEvents, commitOps, type Design, findOps, type NewOp } from "@ponzu/db";
+import { type CommitInput, commitOps, type Design, findOps, type NewOp } from "@ponzu/db";
 import type { Actor as Caller } from "../auth/actor.ts";
 import type { Deps } from "../deps/index.ts";
 import { ApiError } from "../http/errors.ts";
@@ -76,6 +76,8 @@ export async function commitPost(
       expectedSeq: current.seq,
       actor,
       ops: fresh,
+      events: caller.kind === "user" ? eventsForPersonOps(design, caller.user.id, fresh, doc) : [],
+      head: headChange(current.doc, doc),
     });
     if (result.kind === "conflict") continue;
     if (result.kind === "unstorable") {
@@ -88,13 +90,20 @@ export async function commitPost(
     if (result.replayed.length === 0) {
       keep(deps, design.id, current, { seq: result.seq, doc, ops: appended });
     }
-    if (caller.kind === "user") {
-      await appendEvents(deps.db, eventsForPersonOps(design, caller.user.id, appended, doc));
-    }
     const committed = [...replayed, ...result.ops].sort((a, b) => a.seq - b.seq);
     return { committed: committed.map(toCommittedOp), rejected, seq: result.seq };
   }
   throw designBusy();
+}
+
+/**
+ * The design's name and icon after ops took `before` to `after`, when they changed either. The
+ * document is where the name lives (the agent's tools read and set it there), and the row
+ * follows it in the same statement, for lists and live queries to show.
+ */
+export function headChange(before: Doc, after: Doc): CommitInput["head"] {
+  if (before.name === after.name && before.icon === after.icon) return undefined;
+  return { name: after.name, icon: after.icon ?? null };
 }
 
 /**

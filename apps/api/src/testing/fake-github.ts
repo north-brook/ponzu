@@ -118,6 +118,11 @@ export class FakeGithub {
       if (owner === userId) this.#refreshTokens.delete(token);
   }
 
+  /** Every installation token stops working before it runs out, as when one is suspended. */
+  revokeInstallationTokens() {
+    this.#installationTokens.clear();
+  }
+
   /** Makes the next request to `path` fail as if GitHub itself were broken. */
   failNext(path: string, status = 500) {
     this.#failures.push({ path, status });
@@ -152,6 +157,12 @@ export class FakeGithub {
     );
     if (method === "GET" && permission) {
       return this.#permission(bearer, permission[1]!, decodeURIComponent(permission[2]!));
+    }
+    const account = /^\/user\/(\d+)$/.exec(pathname);
+    if (method === "GET" && account && this.#installationTokens.has(bearer)) {
+      const user = this.#users.get(Number(account[1]));
+      if (!user) return Response.json({ message: "Not Found" }, { status: 404 });
+      return Response.json({ id: user.id, login: user.login, type: "User" });
     }
 
     const held = this.#accessTokens.get(bearer);
@@ -297,7 +308,11 @@ export class FakeGithub {
     if (!user) return Response.json({ message: "Not Found" }, { status: 404 });
     this.permissionRequests.push(`${fullName} ${login}`);
     const permission = repository.access[user.id] ?? "none";
-    return Response.json({ permission, role_name: permission });
+    return Response.json({
+      permission,
+      role_name: permission,
+      user: { id: user.id, login: user.login },
+    });
   }
 
   #secret(length: number): string {

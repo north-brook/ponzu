@@ -6,6 +6,8 @@ import {
   MAX_COMMIT_BYTES,
   MAX_NAME_LENGTH,
   newId,
+  newOpId,
+  type Op,
   PAGE_ICONS,
   validateCommit,
 } from "@ponzu/core";
@@ -15,6 +17,7 @@ import {
   DESIGN_STATUSES,
   type Design,
   deleteDesign,
+  getDesign,
   getDesignAssetKey,
   getMemberWorkspace,
   getWorkspaceRepo,
@@ -24,14 +27,15 @@ import {
   PR_STATES,
   readOps,
   removePresence,
+  settleDesign,
   touchPresence,
-  updateDesign,
 } from "@ponzu/db";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { access } from "../auth/access.ts";
 import { type DesignGrant, requireDesign, requireWorkspace } from "../auth/authorize.ts";
+import { repoPermission } from "../auth/repo-access.ts";
 import type { Deps } from "../deps/index.ts";
 import { toCommittedOp } from "../designs/actor.ts";
 import { commitPost } from "../designs/commit.ts";
@@ -98,7 +102,10 @@ function toView(
   };
 }
 
-async function viewOf(deps: Pick<Deps, "db" | "config">, grant: DesignGrant) {
+async function viewOf(
+  deps: Pick<Deps, "db" | "config">,
+  grant: Pick<DesignGrant, "design" | "repo" | "access">,
+) {
   const assetKey = await getDesignAssetKey(deps.db, grant.design.id);
   if (!assetKey) throw new ApiError(404, "not_found", "There is no such design.");
   return DesignView.parse(toView(deps, grant.design, grant.repo, grant.access, assetKey));
@@ -140,6 +147,12 @@ const CommitBody = z.unknown().transform((body, ctx) => {
  * around them. A body larger than this is refused before it is read.
  */
 const MAX_COMMIT_BODY_BYTES = MAX_COMMIT_BYTES + 4096;
+
+/**
+ * The most op text one page of `GET /ops` carries, the same as a post, so an answer stays
+ * inside the 4.5 MB a Vercel function may send. A page always has at least one op.
+ */
+const OPS_PAGE_BYTES = MAX_COMMIT_BYTES;
 
 const DocView = z.object({ doc: z.custom<Doc>(), seq: z.number() });
 const OpsView = z.object({ ops: z.array(z.custom<CommittedOp>()), seq: z.number() });
@@ -187,10 +200,11 @@ export const designs = new Hono<AppEnv>()
     if (repoId) {
       const permission =
         repo && workspace.installationId !== null
-          ? await deps.github.getRepoPermission({
+          ? await repoPermission(deps, {
+              user: actor.user,
+              repo,
               installationId: workspace.installationId,
-              repository: { id: repo.githubRepoId, fullName: repo.fullName },
-              user: { id: actor.user.githubUserId, login: actor.user.githubLogin },
+              known: null,
             })
           : "none";
       if (permission === "none") throw new ApiError(404, "not_found", "There is no such repo.");
@@ -211,13 +225,7 @@ export const designs = new Hono<AppEnv>()
       branch: null,
       doc,
     });
-    const view = await viewOf(deps, {
-      design,
-      repo,
-      installationId: workspace.installationId,
-      access: "write",
-    });
-    return c.json(view, 201);
+    return c.json(await viewOf(deps, { design, repo, access: "write" }), 201);
   })
 
   /** What the app's chrome shows about a design, and where its files are. */
@@ -226,14 +234,33 @@ export const designs = new Hono<AppEnv>()
     return c.json(await viewOf(c.var.deps, grant));
   })
 
-  /** Renames it, changes its icon, or settles or reopens it. */
+  /**
+   * Renames it, changes its icon, or settles or reopens it. The name and icon are the
+   * document's, so they change by an op like any other, which every replica and the agent see.
+   */
   .patch("/:id", access.user, validate("param", Params), validate("json", PatchBody), async (c) => {
-    const { deps } = c.var;
+    const { deps, actor } = c.var;
     const grant = await requireDesign(c, c.req.valid("param").id, "write");
-    const design = await updateDesign(deps.db, grant.design.id, {
-      ...c.req.valid("json"),
-      now: new Date(deps.clock.now()),
-    });
+    const { name, icon, settled } = c.req.valid("json");
+    const ops: Op[] = [];
+    if (name !== undefined) ops.push({ op: "file.rename", name });
+    if (icon !== undefined) ops.push({ op: "file.icon", icon });
+    if (ops.length > 0) {
+      const { rejected } = await commitPost(deps, {
+        design: grant.design,
+        caller: actor,
+        posted: [{ id: newOpId(), op: ops.length === 1 ? ops[0] : { op: "batch", ops } }],
+      });
+      // Both apply to any document, so this is a bug, not a bad request.
+      if (rejected.length > 0) throw new Error(`A rename was rejected: ${rejected[0]!.reason}`);
+    }
+    const design =
+      settled === undefined
+        ? await getDesign(deps.db, grant.design.id)
+        : await settleDesign(deps.db, grant.design.id, {
+            settled,
+            now: new Date(deps.clock.now()),
+          });
     if (!design) throw new ApiError(404, "not_found", "There is no such design.");
     return c.json(await viewOf(deps, { ...grant, design }));
   })
@@ -277,6 +304,7 @@ export const designs = new Hono<AppEnv>()
       const read = await readOps(c.var.deps.db, {
         designId: design.id,
         after: c.req.valid("query").after,
+        maxBytes: OPS_PAGE_BYTES,
       });
       if (!read) throw new ApiError(404, "not_found", "There is no such design.");
       if (read.kind === "too_old") {
@@ -351,7 +379,7 @@ export const designs = new Hono<AppEnv>()
 
   /**
    * Records how far the person has looked: the design's seq and the thread's, as they saw
-   * them. Left out, the design's seq is now's. It never moves back.
+   * them. Left out, the design's seq is now's. It never moves back, nor past what there is.
    */
   .post(
     "/:id/seen",
@@ -362,13 +390,7 @@ export const designs = new Hono<AppEnv>()
       const { deps, actor } = c.var;
       const { design } = await requireDesign(c, c.req.valid("param").id, "read");
       const { seq = design.seq, threadSeq } = c.req.valid("json");
-      await markDesignSeen(deps.db, {
-        userId: actor.user.id,
-        designId: design.id,
-        // Nobody has seen what is not there yet.
-        seq: Math.min(seq, design.seq),
-        threadSeq,
-      });
+      await markDesignSeen(deps.db, { userId: actor.user.id, designId: design.id, seq, threadSeq });
       return c.body(null, 204);
     },
   );

@@ -147,6 +147,85 @@ describe("refusals", () => {
   });
 });
 
+/** What a subscriber to a sealed query would hold now: its SQL, run with its values. */
+async function rows(result: { sealed: { capability: string } }): Promise<any[]> {
+  const { sql, params } = unsealed(result);
+  const client = (t.db as unknown as { $client: { query(sql: string, params: string[]): any } })
+    .$client;
+  return (await client.query(sql, params)).rows;
+}
+
+describe("workspace.designs", () => {
+  let team: Workspace;
+  beforeAll(async () => {
+    team = await workspaceWithRepo(t, { maya: "write", ines: "read", omar: "none" });
+    await designIn(t, team, "maya", emptyDoc("Secret launch"));
+  });
+  const watch = async (login: string) => {
+    const { body } = await live(team.people[login]!.headers, [
+      { name: "workspace.designs", args: { workspaceId: team.id } },
+    ]);
+    return body.results[0];
+  };
+  const listed = async (login: string) =>
+    (await call(t, team.people[login]!.headers, "GET", `/v1/workspaces/${team.id}/designs`)).body
+      .designs;
+
+  test("shows a repo's designs only to members GitHub lets read the repo, live and listed", async () => {
+    for (const login of ["maya", "ines"]) {
+      expect((await rows(await watch(login))).map((row) => row.name)).toEqual(["Secret launch"]);
+      expect((await listed(login)).map((row: any) => row.name)).toEqual(["Secret launch"]);
+    }
+    // A member who cannot see the repo on GitHub learns nothing of it here: not its name, not
+    // its designs.
+    const omar = await watch("omar");
+    expect(omar.sealed).toBeDefined();
+    expect(await rows(omar)).toEqual([]);
+    expect(await listed("omar")).toEqual([]);
+  });
+
+  test("access GitHub takes away goes from the same subscription at a renewal within the minute", async () => {
+    const subscribed = await watch("ines");
+    team.grant("ines", "none");
+
+    t.clock.advance(30_000);
+    expect((await watch("ines")).sealed.queryFingerprint).toBe(subscribed.sealed.queryFingerprint);
+    expect(await rows(subscribed)).toHaveLength(1);
+
+    t.clock.advance(30_000);
+    await watch("ines");
+    expect(await rows(subscribed)).toEqual([]);
+    team.grant("ines", "read");
+  });
+});
+
+describe("GitHub failing", () => {
+  test("refuses only the queries that needed it; the rest of the renewal goes through", async () => {
+    const [one, two] = [
+      await workspaceWithRepo(t, { maya: "write" }),
+      await workspaceWithRepo(t, { maya: "write" }),
+    ];
+    const [first, second] = [
+      await designIn(t, one, "maya", emptyDoc("One")),
+      await designIn(t, two, "maya", emptyDoc("Two")),
+    ];
+    t.github.failNext(`/repos/${two.repo.fullName}/collaborators/maya/permission`, 403);
+
+    const { status, body } = await live(one.people.maya!.headers, [
+      { name: "me" },
+      { name: "design.head", args: { designId: first.id } },
+      { name: "design.head", args: { designId: second.id } },
+    ]);
+
+    expect(status).toBe(200);
+    expect(body.results.map((result: any) => result.error?.code ?? "sealed")).toEqual([
+      "sealed",
+      "sealed",
+      "upstream_unavailable",
+    ]);
+  });
+});
+
 describe("the SQL that is sealed", () => {
   test("never carries an argument in its text: the same text for anyone, the values bound", async () => {
     const other = await workspaceWithRepo(t, { maya: "write" });

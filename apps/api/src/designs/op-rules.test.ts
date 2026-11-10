@@ -38,8 +38,8 @@ const PERSON: Record<Op["op"], "committed" | "rejected"> = {
   "page.update": "committed",
   "page.order": "committed",
   "page.move": "committed",
-  "file.rename": "rejected",
-  "file.icon": "rejected",
+  "file.rename": "committed",
+  "file.icon": "committed",
   "file.scratch": "rejected",
   tokens: "rejected",
   note: "rejected",
@@ -90,4 +90,43 @@ describe.each([
       expect(doc.body).toEqual({ doc: sampleDoc(), seq: 0 });
     }
   });
+});
+
+describe("a person's batch is judged op by op, however deep", () => {
+  const post = async (op: Op) => {
+    const design = await designIn(t, ws, "maya", sampleDoc());
+    const headers = ws.people.maya!.headers;
+    const { body } = await call(t, headers, "POST", `/v1/designs/${design.id}/ops`, {
+      ops: [{ id: "op_batch", op }],
+    });
+    const doc = await call(t, headers, "GET", `/v1/designs/${design.id}/doc`);
+    return { body, doc: doc.body };
+  };
+  const move = SAMPLE_OPS["artboard.update"];
+  const rename = SAMPLE_OPS["page.update"];
+  const restyle = SAMPLE_OPS.style;
+
+  test("one made only of what a person may send commits whole", async () => {
+    const { body, doc } = await post({ op: "batch", ops: [move, { op: "batch", ops: [rename] }] });
+
+    expect(body).toMatchObject({ rejected: [], seq: 1 });
+    expect(doc.doc.pages[0].artboards[0]).toMatchObject({ name: "Landing", x: 40 });
+    expect(doc.doc.pages[1]).toMatchObject({ name: "Later" });
+  });
+
+  test.each([
+    ["last", { op: "batch", ops: [move, rename, restyle] }],
+    [
+      "nested",
+      { op: "batch", ops: [move, { op: "batch", ops: [rename, { op: "batch", ops: [restyle] }] }] },
+    ],
+  ] as [string, Op][])(
+    "one with the agent's op %s is refused, and changes nothing",
+    async (_, op) => {
+      const { body, doc } = await post(op);
+
+      expect(body).toMatchObject({ committed: [], rejected: [{ id: "op_batch" }], seq: 0 });
+      expect(doc).toEqual({ doc: sampleDoc(), seq: 0 });
+    },
+  );
 });

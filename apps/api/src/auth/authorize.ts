@@ -9,6 +9,7 @@ import {
 import type { Deps } from "../deps/index.ts";
 import { ApiError } from "../http/errors.ts";
 import type { Actor, UserActor } from "./actor.ts";
+import { repoPermission } from "./repo-access.ts";
 
 /*
  * What a caller may touch. An access declaration says who is asking; the functions here say
@@ -47,7 +48,7 @@ export interface DesignGrant extends DesignAccess {
   access: "read" | "write";
 }
 
-type DesignContext = { var: { deps: Pick<Deps, "db" | "github">; actor: Actor } };
+type DesignContext = { var: { deps: Pick<Deps, "db" | "github" | "clock">; actor: Actor } };
 
 /**
  * The design `designId` names, if the caller may `need` it. Opening a design takes read access
@@ -63,7 +64,10 @@ export async function requireDesign(
   const { deps, actor } = c.var;
   const notFound = new ApiError(404, "not_found", "There is no such design.");
   if (actor.kind === "runner" && actor.designId !== designId) throw notFound;
-  const found = await getDesignAccess(deps.db, designId);
+  const found = await getDesignAccess(deps.db, {
+    designId,
+    userId: actor.kind === "user" ? actor.user.id : null,
+  });
   if (!found) throw notFound;
   const access = actor.kind === "runner" ? "write" : await personAccess(deps, actor.user, found);
   if (!access) throw notFound;
@@ -75,18 +79,14 @@ export async function requireDesign(
 
 /** What GitHub lets a person do in the design's repository, or null for nothing. */
 async function personAccess(
-  { github }: Pick<Deps, "github">,
+  deps: Pick<Deps, "db" | "github" | "clock">,
   user: User,
-  { design, repo, installationId }: DesignAccess,
+  { design, repo, installationId, known }: DesignAccess,
 ): Promise<DesignGrant["access"] | null> {
   if (!repo) return design.ownerId === user.id ? "write" : null;
   // Without the App there is nobody to ask, and nothing the design could do anyway.
   if (installationId === null) return null;
-  const permission = await github.getRepoPermission({
-    installationId,
-    repository: { id: repo.githubRepoId, fullName: repo.fullName },
-    user: { id: user.githubUserId, login: user.githubLogin },
-  });
+  const permission = await repoPermission(deps, { user, repo, installationId, known });
   if (permission === "admin" || permission === "write") return "write";
   return permission === "read" ? "read" : null;
 }
