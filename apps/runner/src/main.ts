@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ChromiumRenderer } from "@ponzu/render/chromium";
 import { ClaudeAgent } from "./agent/sdk.ts";
+import { ApiError } from "./api/api.ts";
 import { HttpRunnerApi } from "./api/http.ts";
 import { EnvError, readEnv } from "./env.ts";
 import { checkout } from "./repo.ts";
@@ -74,5 +75,6 @@ try {
   log("started");
 } catch (err) {
   log(`could not start: ${err instanceof Error ? err.message : err}`);
-  process.exit(1);
+  // A token the API refuses stays refused: only a new start of the sandbox brings a new one.
+  process.exit(err instanceof ApiError && err.status === 401 ? EXIT_CONFIG : 1);
 }

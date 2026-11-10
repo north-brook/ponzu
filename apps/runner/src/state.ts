@@ -1,4 +1,4 @@
-import type { RunnerApi } from "./api/api.ts";
+import { type RunnerApi, retryable } from "./api/api.ts";
 import type { StateRequest } from "./api/protocol.ts";
 import { Pacer } from "./pacer.ts";
 
@@ -58,8 +58,14 @@ export class StateReporter {
 
   private async send(): Promise<void> {
     const body = this.state;
-    const { seq } = await this.api.putState(body);
+    try {
+      const { seq } = await this.api.putState(body);
+      this.opts.onSeq(seq);
+    } catch (err) {
+      if (retryable(err)) throw err;
+      // Refused outright: the next change or heartbeat says it again.
+      this.opts.onError?.(err);
+    }
     this.sent = JSON.stringify(body);
-    this.opts.onSeq(seq);
   }
 }

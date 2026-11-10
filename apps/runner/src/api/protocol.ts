@@ -294,7 +294,7 @@ export type AgentState = "working" | "needs_you" | "idle";
  */
 export interface StateRequest {
   state: AgentState;
-  /** A few words on what it is doing. Null when it has not said, and when idle. */
+  /** While working, the working line. Otherwise what is wrong, if anything (a clone that failed). */
   status: string | null;
   /** The artboards it is on. */
   artboards: string[];

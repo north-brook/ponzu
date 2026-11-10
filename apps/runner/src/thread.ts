@@ -1,4 +1,4 @@
-import type { RunnerApi } from "./api/api.ts";
+import { type RunnerApi, retryable } from "./api/api.ts";
 import { MAX_TEXT, MAX_THREAD_WRITE, type ThreadWrite } from "./api/protocol.ts";
 import { Pacer } from "./pacer.ts";
 
@@ -16,7 +16,7 @@ export class ThreadWriter {
 
   constructor(
     private readonly api: RunnerApi,
-    opts: { gapMs: number; onError?: (err: unknown) => void },
+    private readonly opts: { gapMs: number; onError?: (err: unknown) => void },
   ) {
     this.pacer = new Pacer(() => this.send(), opts.gapMs, opts.onError);
   }
@@ -44,6 +44,11 @@ export class ThreadWriter {
       const { items } = await this.api.writeThread(batch);
       for (const item of items) if (!item.streaming) this.finished.add(item.id);
     } catch (err) {
+      // Refused outright: sending the same again cannot help, so it is dropped.
+      if (!retryable(err)) {
+        this.opts.onError?.(err);
+        return;
+      }
       // Back in front, unless a newer payload for the same item came in meanwhile.
       const newer = this.pending;
       this.pending = new Map(batch.filter((i) => !newer.has(i.id)).map((i) => [i.id, i]));

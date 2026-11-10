@@ -1,7 +1,26 @@
 import { expect, test } from "bun:test";
+import { ApiError, type RunnerApi } from "./api/api.ts";
 import { FakeRunnerApi } from "./api/fake.ts";
 import { MAX_TEXT } from "./api/protocol.ts";
 import { ThreadWriter } from "./thread.ts";
+
+test("a write the API refuses outright is dropped, not sent again and again", async () => {
+  let writes = 0;
+  const errors: unknown[] = [];
+  const api = {
+    async writeThread() {
+      writes++;
+      throw new ApiError(400, "invalid_request", "No.");
+    },
+  } as unknown as RunnerApi;
+  const thread = new ThreadWriter(api, { gapMs: 1, onError: (e) => errors.push(e) });
+  thread.write({ id: "ti_a", kind: "notice", payload: { type: "started" }, streaming: false });
+  await thread.flush();
+  await Bun.sleep(50);
+  expect(writes).toBe(1);
+  expect(errors).toHaveLength(1);
+  thread.close();
+});
 
 test("only the latest payload of each item is sent, items that changed together in one write", async () => {
   const api = new FakeRunnerApi();
