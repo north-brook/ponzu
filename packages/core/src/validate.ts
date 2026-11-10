@@ -358,9 +358,10 @@ function name(value: unknown, path: string): string {
 const UNSTORABLE = /[\u0000\ud800-\udfff]/u;
 
 /**
- * Text the database can hold. Postgres has no U+0000 in `text`, and reads no JSON with half
- * a surrogate pair in it, so either would be an error where the op is stored or read back
- * rather than a rejection here.
+ * Text that can be stored. Postgres `text` can't hold U+0000. Half of a surrogate pair is no
+ * character at all: it has no UTF-8, and Postgres raises an error when it turns a JSON
+ * string holding one into text. Either would surface as a database error where the op is
+ * stored or read back, not as a rejection here.
  */
 function storable(value: string, path: string): void {
   if (UNSTORABLE.test(value)) fail(path, "must not hold U+0000 or half of a surrogate pair");
