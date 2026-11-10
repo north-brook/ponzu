@@ -7,8 +7,6 @@ import {
   type Doc,
   designLink,
   findArtboard,
-  summarize,
-  threadEvents,
   touchesStructure,
 } from "@ponzu/core";
 import type { Renderer } from "@ponzu/render";
@@ -338,47 +336,12 @@ export class LocalWorkspace implements Workspace {
   }
 
   private emitFor(key: string, doc: Doc, e: OpEvent): void {
-    const author = e.origin.name;
-    if (e.origin.kind === "disk") {
-      this.events.emit(key, { type: "file.changed", path: e.origin.name, artboards: e.artboards });
+    const { origin } = e;
+    if (origin.kind === "disk") {
+      this.events.emit(key, { type: "file.changed", path: origin.name, artboards: e.artboards });
       return;
     }
-    for (const t of threadEvents(e.op)) {
-      if (t.kind === "created") {
-        this.events.emit(key, {
-          type: "comment.created",
-          thread: t.thread.id,
-          artboard: t.thread.artboardId,
-          text: t.thread.messages[0]?.text ?? "",
-          author,
-        });
-      } else if (t.kind === "message" || t.kind === "edited") {
-        const th = doc.threads.find((x) => x.id === t.id);
-        this.events.emit(key, {
-          type: t.kind === "message" ? "comment.replied" : "comment.edited",
-          thread: t.id,
-          artboard: th?.artboardId,
-          text: t.text,
-          author,
-        });
-      } else {
-        const th = doc.threads.find((x) => x.id === t.id);
-        this.events.emit(key, {
-          type: t.status === "resolved" ? "comment.resolved" : "comment.reopened",
-          thread: t.id,
-          artboard: th?.artboardId,
-          author,
-        });
-      }
-    }
-    if (e.artboards.length || touchesStructure(e.op)) {
-      this.events.emit(key, {
-        type: "change",
-        origin: e.origin,
-        artboards: e.artboards,
-        summary: summarize(doc, e.op),
-      });
-    }
+    this.events.emitOp(key, doc, { op: e.op, origin, artboards: e.artboards });
   }
 }
 

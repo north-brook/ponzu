@@ -1,0 +1,31 @@
+import type { Doc, Op, Origin } from "@ponzu/core";
+
+/** What applying an op tells the tools. */
+export interface Applied {
+  /** The artboards the op touched, deleted ones included. */
+  artboards: string[];
+}
+
+/**
+ * One design as the tools reach it: the document, and a way to change it. Where the design is
+ * kept is the host's business. In the cloud it is a `ReplicaDesign`, on a replica that syncs
+ * with the API; the local server hands over store's `Design`, which is a folder of files.
+ */
+export interface ToolDesign {
+  /**
+   * The design as it is now. Read it again after every `await`: a design that syncs swaps the
+   * whole object when other people's changes land, so one held across an await can be stale.
+   */
+  readonly doc: Doc;
+  /**
+   * Apply an op at once, in `origin`'s name, and say what it touched. It never waits on
+   * storage or the network. Throws, and changes nothing, when the op doesn't fit the document.
+   */
+  apply(op: Op, origin: Origin): Applied;
+}
+
+/** A design a host has open, under the key the host knows it by. */
+export interface OpenDesign {
+  key: string;
+  design: ToolDesign;
+}

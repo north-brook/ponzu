@@ -6,22 +6,23 @@ import {
   findArtboard,
   findPage,
   locate,
+  MAX_OP_BYTES,
   mergeStyle,
   newId,
   type Op,
   type PElement,
   parseHtml,
-  parseStyle,
   ROOT_DIRECTION_NOTE,
   rawIndex,
   rootDirectionUnset,
   toKebab,
   walk,
 } from "@ponzu/core";
-import type { Design } from "@ponzu/store";
 import { z } from "zod";
 import type { ToolContext } from "./context.ts";
-import { fileArg, styleArg, ToolError, tool } from "./define.ts";
+import { styleArg, ToolError, type ToolResult, tool } from "./define.ts";
+import type { ToolDesign } from "./design.ts";
+import { readGiven } from "./disk.ts";
 import {
   type Footprint,
   footprints,
@@ -32,15 +33,120 @@ import {
 } from "./overlap.ts";
 import {
   ARTBOARD_GAP,
+  type ArtboardNote,
   apply,
+  artboardSize,
   autoPlace,
+  designOf,
   droppedNote,
   elementsIn,
   plural,
   reportIds,
-  resolveFile,
   target,
 } from "./util.ts";
+
+/** How a call carries markup: in the call, or in a file the agent wrote. */
+const markupArgs = {
+  html: z.string().optional().describe("The HTML."),
+  path: z
+    .string()
+    .optional()
+    .describe(
+      "Instead of html: the absolute path of a file that holds it, which you wrote with your own file tools. For HTML too long to pass in a call: a long table, a diagram a script generated.",
+    ),
+};
+
+/** The markup a call carries, read from the file it names if it names one. */
+async function markupOf(args: { html?: string; path?: string }): Promise<string | undefined> {
+  if (args.path === undefined) return args.html;
+  if (args.html !== undefined) throw new ToolError("Pass html or path, not both.");
+  const bytes = await readGiven(
+    args.path,
+    MAX_OP_BYTES,
+    "Split the HTML into parts and write each with its own write_html call; append is the default mode.",
+  );
+  return new TextDecoder().decode(bytes);
+}
+
+const createArtboardInput = {
+  name: z.string().describe("Shown above the artboard."),
+  page: z.string().optional().describe("Page id or name. Defaults to the first page."),
+  width: z.union([z.number(), z.string()]).optional().describe("Default 1440."),
+  height: z
+    .union([z.number(), z.string()])
+    .optional()
+    .describe("Default 900. 'fit-content' grows with content."),
+  style: styleArg.optional(),
+  ...markupArgs,
+  x: z.number().optional(),
+  y: z.number().optional(),
+};
+
+/** create_artboard. `kept` adds where the host keeps the new artboard. */
+export async function createArtboard(
+  args: z.infer<z.ZodObject<typeof createArtboardInput>>,
+  ctx: ToolContext,
+  kept?: ArtboardNote,
+): Promise<ToolResult> {
+  const open = await designOf(ctx, [args.page]);
+  const { key, design } = open;
+  const html = await markupOf(args);
+  const pageNow = () => {
+    const doc = design.doc;
+    const page = args.page ? findPage(doc, args.page) : doc.pages[0];
+    if (!page)
+      throw new ToolError(
+        `No page ${args.page}. Pages: ${doc.pages.map((p) => `${p.id} "${p.name}"`).join(", ")}`,
+      );
+    return page;
+  };
+  const style = mergeStyle(
+    {},
+    { width: args.width ?? 1440, height: args.height ?? 900, ...args.style },
+  );
+  const width = style.width ?? "auto";
+  const height = style.height ?? "auto";
+  const { nodes, dropped } = html ? parseHtml(html) : { nodes: [], dropped: [] };
+  const around = pageNow().artboards;
+  const pos =
+    args.x !== undefined && args.y !== undefined
+      ? { x: args.x, y: args.y }
+      : autoPlace(
+          await footprints(ctx.ws, key, design.doc, around, { need: rowNeed(around, args.y) }),
+          args.y,
+        );
+  // Read after the measure, which waits on the renderer: the page may have changed meanwhile.
+  const page = pageNow();
+  const id = newId("ab");
+  const artboard: Artboard = {
+    id,
+    name: args.name,
+    x: args.x ?? pos.x,
+    y: args.y ?? pos.y,
+    root: {
+      kind: "el",
+      id,
+      tag: "section",
+      name: args.name,
+      attrs: {},
+      style,
+      children: nodes,
+    },
+  };
+  apply(
+    design,
+    { op: "artboard.create", page: page.id, index: page.artboards.length, artboard },
+    ctx,
+  );
+  ctx.ws.focus?.(key, id);
+  const where = (await kept?.(open, id)) ?? "";
+  const kids = elementsIn(nodes);
+  const overlap = await pageOverlaps(ctx, key, design, [id]);
+  return {
+    text: `Created artboard ${id} "${args.name}" ${width}×${height} at (${artboard.x}, ${artboard.y}) on "${page.name}"${where}.${kids.length ? `\n${reportIds(nodes)}` : ""}${droppedNote(dropped)}${directionNote([id], () => style)}${overlap}`,
+    data: { id },
+  };
+}
 
 export const writeTools = [
   tool({
@@ -48,78 +154,9 @@ export const writeTools = [
     title: "Create artboard",
     group: "write",
     description:
-      "Add an artboard (a top-level frame, stored as its own HTML file). It's placed in a free spot unless you give x/y. Defaults to a flex column, even when its style sets display: flex; give flex-direction: row for side-by-side panes. Typical sizes: desktop 1440×900, tablet 768×1024, phone 390×844. Use height 'fit-content' for long pages. Optionally pass `html` to fill it in the same call.",
-    input: {
-      file: fileArg,
-      name: z.string().describe("Shown above the artboard and used as its file name."),
-      page: z.string().optional().describe("Page id or name. Defaults to the first page."),
-      width: z.union([z.number(), z.string()]).optional().describe("Default 1440."),
-      height: z
-        .union([z.number(), z.string()])
-        .optional()
-        .describe("Default 900. 'fit-content' grows with content."),
-      style: styleArg.optional(),
-      html: z.string().optional().describe("Initial content."),
-      x: z.number().optional(),
-      y: z.number().optional(),
-    },
-    async handler(args, ctx) {
-      const { key, design } = await resolveFile(ctx, args.file, [args.page]);
-      const doc = design.doc;
-      const page = args.page ? findPage(doc, args.page) : doc.pages[0];
-      if (!page)
-        throw new ToolError(
-          `No page ${args.page}. Pages: ${doc.pages.map((p) => `${p.id} "${p.name}"`).join(", ")}`,
-        );
-      const style = mergeStyle(
-        {},
-        { width: args.width ?? 1440, height: args.height ?? 900, ...args.style },
-      );
-      const width = style.width ?? "auto";
-      const height = style.height ?? "auto";
-      const { nodes, dropped } = args.html ? parseHtml(args.html) : { nodes: [], dropped: [] };
-      const pos =
-        args.x !== undefined && args.y !== undefined
-          ? { x: args.x, y: args.y }
-          : autoPlace(
-              await footprints(ctx.ws, key, doc, page.artboards, {
-                need: rowNeed(page.artboards, args.y),
-              }),
-              args.y,
-            );
-      const id = newId("ab");
-      const artboard: Artboard = {
-        id,
-        name: args.name,
-        x: args.x ?? pos.x,
-        y: args.y ?? pos.y,
-        root: {
-          kind: "el",
-          id,
-          tag: "section",
-          name: args.name,
-          attrs: {},
-          style,
-          children: nodes,
-        },
-      };
-      apply(
-        design,
-        { op: "artboard.create", page: page.id, index: page.artboards.length, artboard },
-        ctx,
-      );
-      ctx.ws.focus?.(key, id);
-      // On disk before this returns: an agent may write the file next, and a save still
-      // waiting would put the empty artboard back over it.
-      await design.flush();
-      const file = design.pathOf(id);
-      const kids = elementsIn(nodes);
-      const overlap = await pageOverlaps(ctx, key, design, [id]);
-      return {
-        text: `Created artboard ${id} "${args.name}" ${width}×${height} at (${artboard.x}, ${artboard.y}) on "${page.name}"${file ? ` · file ${file}` : ""}.${kids.length ? `\n${reportIds(nodes)}` : ""}${droppedNote(dropped)}${directionNote([id], () => style)}${overlap}`,
-        data: { id },
-      };
-    },
+      "Add an artboard (a top-level frame). It's placed in a free spot unless you give x/y. Defaults to a flex column, even when its style sets display: flex; give flex-direction: row for side-by-side panes. Typical sizes: desktop 1440×900, tablet 768×1024, phone 390×844. Use height 'fit-content' for long pages. Optionally pass `html`, or the `path` of a file that holds it, to fill it in the same call.",
+    input: createArtboardInput,
+    handler: (args, ctx) => createArtboard(args, ctx),
   }),
 
   tool({
@@ -127,11 +164,10 @@ export const writeTools = [
     title: "Write HTML",
     group: "write",
     description:
-      "Insert HTML into a node, or replace a node with HTML. Use inline styles, flexbox/grid, and var(--token) values. Write in small visual pieces (a header, then a row, then a card) and screenshot as you go. Name important layers with data-name. Returns the new ids. To set a whole artboard's content in one call, target the artboard with mode replace-children. For content too big for a call (a long table, a diagram from a script), write the artboard's HTML file directly instead, at the path create_artboard or get_node gives; Ponzu picks the change up live.",
+      "Insert HTML into a node, or replace a node with HTML. Use inline styles, flexbox/grid, and var(--token) values. Write in small visual pieces (a header, then a row, then a card) and screenshot as you go. Name important layers with data-name. Returns the new ids. To set a whole artboard's content in one call, target the artboard with mode replace-children. For HTML too long to pass in a call (a long table, a diagram from a script), write it to a file with your own file tools and pass its `path` instead of `html`: it is read, cleaned and written the same way.",
     input: {
-      file: fileArg,
       target: z.string().describe("Artboard or node id."),
-      html: z.string(),
+      ...markupArgs,
       mode: z
         .enum(["append", "prepend", "before", "after", "replace", "replace-children"])
         .optional()
@@ -140,7 +176,10 @@ export const writeTools = [
         ),
     },
     async handler(args, ctx) {
-      const { design } = await resolveFile(ctx, args.file, [args.target]);
+      const { design } = await designOf(ctx, [args.target]);
+      const html = await markupOf(args);
+      if (html === undefined)
+        throw new ToolError("Pass html, or the path of a file that holds it.");
       const doc = design.doc;
       const t = target(doc, args.target);
       const mode = args.mode ?? "append";
@@ -148,7 +187,7 @@ export const writeTools = [
       // written into an <svg> or <g> close themselves like they do in a browser.
       const sibling = mode === "before" || mode === "after" || mode === "replace";
       const parent = sibling ? t.parent : t.node;
-      const { nodes, dropped } = parseHtml(args.html, parent ? { parent } : {});
+      const { nodes, dropped } = parseHtml(html, parent ? { parent } : {});
       if (!nodes.some((n) => n.kind === "el" || n.value.trim()))
         throw new ToolError("The HTML is empty after cleanup." + droppedNote(dropped));
       let op: Op;
@@ -199,13 +238,11 @@ export const writeTools = [
     description:
       'Change CSS on one or more nodes or artboards. Merges into existing inline styles; null removes a property. Batch many edits: [{"ids": ["n_a","n_b"], "style": {"color": "var(--color-ink)"}}]. Setting width/height on an artboard resizes it.',
     input: {
-      file: fileArg,
       updates: z.array(z.object({ ids: z.array(z.string()).min(1), style: styleArg })).min(1),
     },
     async handler(args, ctx) {
-      const { design } = await resolveFile(
+      const { design } = await designOf(
         ctx,
-        args.file,
         args.updates.flatMap((u) => u.ids),
       );
       const doc = design.doc;
@@ -234,13 +271,11 @@ export const writeTools = [
     description:
       "Replace the text inside nodes, keeping their styles. Removes any child elements of those nodes.",
     input: {
-      file: fileArg,
       updates: z.array(z.object({ id: z.string(), text: z.string() })).min(1),
     },
     async handler(args, ctx) {
-      const { design } = await resolveFile(
+      const { design } = await designOf(
         ctx,
-        args.file,
         args.updates.map((u) => u.id),
       );
       const ops: Op[] = args.updates.map((u) => {
@@ -261,12 +296,11 @@ export const writeTools = [
     description:
       "Set or remove HTML attributes (src, href, alt, viewBox, fill…). null removes. Event handlers are not allowed.",
     input: {
-      file: fileArg,
       id: z.string(),
       attrs: z.record(z.string(), z.union([z.string(), z.null()])),
     },
     async handler(args, ctx) {
-      const { design } = await resolveFile(ctx, args.file, [args.id]);
+      const { design } = await designOf(ctx, [args.id]);
       const t = target(design.doc, args.id);
       const next = { ...t.node.attrs };
       for (const [k, v] of Object.entries(args.attrs)) {
@@ -292,7 +326,6 @@ export const writeTools = [
     description:
       "Deep-copy nodes or artboards. Copies of nodes go right after the original (or into `parent`); artboard copies are placed in a free spot to the right of the original, which makes variations easy, unless you give x/y. Returns each copy's new id; get_tree on a copy lists its descendants.",
     input: {
-      file: fileArg,
       ids: z.array(z.string()).min(1),
       parent: z.string().optional().describe("Put node copies inside this node instead."),
       names: z.array(z.string()).optional().describe("New names for the copies, in order."),
@@ -305,30 +338,29 @@ export const writeTools = [
       y: z.number().optional().describe("Row for artboard copies. Default: the original's row."),
     },
     async handler(args, ctx) {
-      const { key, design } = await resolveFile(ctx, args.file, [...args.ids, args.parent]);
+      const { key, design } = await designOf(ctx, [...args.ids, args.parent]);
+      // Each page that holds an original, measured: the originals for their copies' size, and
+      // when x is left to autoPlace, what's in the rows the copies join. Measuring waits on
+      // the renderer, so it comes before the document is read for the ops.
+      const pageBoxes = new Map<string, Footprint[]>();
+      for (const page of design.doc.pages) {
+        const originals = page.artboards.filter((ab) => args.ids.includes(ab.id));
+        if (!originals.length) continue;
+        const inRow =
+          args.x === undefined
+            ? rowNeed(
+                page.artboards,
+                ...(args.y !== undefined ? [args.y] : originals.map((ab) => ab.y)),
+              )
+            : () => false;
+        const need = (ab: Artboard) => args.ids.includes(ab.id) || inRow(ab);
+        pageBoxes.set(page.id, await footprints(ctx.ws, key, design.doc, page.artboards, { need }));
+      }
       const doc = design.doc;
       const ops: Op[] = [];
       const map: Record<string, string> = {};
       // Artboard copies so far, at their originals' size on the canvas.
       const placed: Footprint[] = [];
-      const measuredPages = new Map<string, Promise<Footprint[]>>();
-      // Measures the originals, for their copies' size, and when x is left
-      // to autoPlace, what's in the rows the copies join.
-      const pageBoxes = (page: { id: string; artboards: Artboard[] }) => {
-        if (!measuredPages.has(page.id)) {
-          const originals = page.artboards.filter((ab) => args.ids.includes(ab.id));
-          const inRow =
-            args.x === undefined
-              ? rowNeed(
-                  page.artboards,
-                  ...(args.y !== undefined ? [args.y] : originals.map((ab) => ab.y)),
-                )
-              : () => false;
-          const need = (ab: Artboard) => args.ids.includes(ab.id) || inRow(ab);
-          measuredPages.set(page.id, footprints(ctx.ws, key, doc, page.artboards, { need }));
-        }
-        return measuredPages.get(page.id)!;
-      };
       // Reported in the order asked for; names[i] goes with ids[i].
       const lines: string[] = new Array(args.ids.length);
       const ids: string[] = new Array(args.ids.length);
@@ -351,7 +383,7 @@ export const writeTools = [
           const copyRoot = cloneWithNewIds(ab.artboard.root, map, "ab");
           const name = args.names?.[i] ?? `${ab.artboard.name} copy`;
           copyRoot.name = name;
-          const boxes = await pageBoxes(ab.page);
+          const boxes = pageBoxes.get(ab.page.id) ?? [];
           const pos = placeCopy(boxes, placed, ab.artboard.y, args.x, args.y);
           const artboard: Artboard = {
             id: copyRoot.id,
@@ -360,7 +392,8 @@ export const writeTools = [
             y: pos.y,
             root: copyRoot,
           };
-          const { w, h } = boxes.find((b) => b.id === id)!;
+          // An original that reached this page while it was measured goes by its declared size.
+          const { w, h } = boxes.find((b) => b.id === id) ?? artboardSize(ab.artboard);
           placed.push({ id: artboard.id, name, x: pos.x, y: pos.y, w, h });
           const onPage = (copiesOnPage.get(ab.page.id) ?? 0) + 1;
           copiesOnPage.set(ab.page.id, onPage);
@@ -426,7 +459,6 @@ export const writeTools = [
     description:
       "Reparent or reorder nodes without changing their ids. Give `before` or `after` a sibling id, or `parent` (plus optional `index`). To move artboards on the canvas, use update_artboard.",
     input: {
-      file: fileArg,
       moves: z
         .array(
           z.object({
@@ -445,9 +477,8 @@ export const writeTools = [
         .min(1),
     },
     async handler(args, ctx) {
-      const { design } = await resolveFile(
+      const { design } = await designOf(
         ctx,
-        args.file,
         args.moves.flatMap((m) => [m.id, m.before, m.after, m.parent]),
       );
       const doc = design.doc;
@@ -509,10 +540,10 @@ export const writeTools = [
     title: "Delete",
     group: "write",
     destructive: true,
-    description: "Delete nodes or whole artboards (and their files). Undoable from the app.",
-    input: { file: fileArg, ids: z.array(z.string()).min(1) },
+    description: "Delete nodes or whole artboards. Undoable from the app.",
+    input: { ids: z.array(z.string()).min(1) },
     async handler(args, ctx) {
-      const { design } = await resolveFile(ctx, args.file, args.ids);
+      const { design } = await designOf(ctx, args.ids);
       const doc = design.doc;
       const ops: Op[] = [];
       for (const id of args.ids) {
@@ -529,16 +560,13 @@ export const writeTools = [
     name: "rename",
     title: "Rename",
     group: "write",
-    description:
-      "Set layer names (data-name) on nodes or artboards. Artboard renames also rename the file.",
+    description: "Set layer names (data-name) on nodes or artboards.",
     input: {
-      file: fileArg,
       updates: z.array(z.object({ id: z.string(), name: z.string() })).min(1),
     },
     async handler(args, ctx) {
-      const { design } = await resolveFile(
+      const { design } = await designOf(
         ctx,
-        args.file,
         args.updates.map((u) => u.id),
       );
       const ops: Op[] = args.updates.map((u) =>
@@ -558,7 +586,6 @@ export const writeTools = [
     description:
       "Move an artboard on the canvas, resize it, rename it, or move it to another page.",
     input: {
-      file: fileArg,
       id: z.string(),
       x: z.number().optional(),
       y: z.number().optional(),
@@ -568,7 +595,13 @@ export const writeTools = [
       page: z.string().optional().describe("Move to this page (id or name)."),
     },
     async handler(args, ctx) {
-      const { key, design } = await resolveFile(ctx, args.file, [args.id, args.page]);
+      const { key, design } = await designOf(ctx, [args.id, args.page]);
+      // Where it lands on another page takes a measure, which waits on the renderer, so it
+      // comes before the document is read for the ops.
+      const free =
+        args.page && args.x === undefined
+          ? await freeSpot(ctx, key, design, args.id, args.page)
+          : undefined;
       const doc = design.doc;
       const hit = findArtboard(doc, args.id);
       if (!hit) throw new ToolError(`No artboard ${args.id}.`);
@@ -583,14 +616,7 @@ export const writeTools = [
             page: page.id,
             index: page.artboards.length,
           });
-          if (args.x === undefined) {
-            const pos = autoPlace(
-              await footprints(ctx.ws, key, doc, page.artboards, {
-                need: rowNeed(page.artboards),
-              }),
-            );
-            ops.push({ op: "artboard.update", id: args.id, x: pos.x, y: pos.y });
-          }
+          if (free) ops.push({ op: "artboard.update", id: args.id, x: free.x, y: free.y });
         }
       }
       if (args.x !== undefined || args.y !== undefined || args.name !== undefined) {
@@ -639,8 +665,6 @@ function directionNote(
   });
   return roots.length ? `\nNote: ${roots.join(", ")} ${ROOT_DIRECTION_NOTE}.` : "";
 }
-
-export { type PElement, parseStyle };
 
 /** Nodes a move_nodes batch sent to one spot, and the step its first move was. */
 interface Run {
@@ -713,6 +737,22 @@ function placeCopy(
   return { x: x ?? autoPlace(boxes, row).x, y: row };
 }
 
+/** A free spot on `page` for an artboard that is on another page now, or nothing if it isn't. */
+async function freeSpot(
+  ctx: ToolContext,
+  key: string,
+  design: ToolDesign,
+  id: string,
+  page: string,
+): Promise<{ x: number; y: number } | undefined> {
+  const doc = design.doc;
+  const to = findPage(doc, page);
+  if (!to || findArtboard(doc, id)?.page.id === to.id) return undefined;
+  return autoPlace(
+    await footprints(ctx.ws, key, doc, to.artboards, { need: rowNeed(to.artboards) }),
+  );
+}
+
 /**
  * A note naming the artboards that now overlap any of `ids` on its page, as
  * the canvas draws them. Measures fit-content artboards when it can.
@@ -720,7 +760,7 @@ function placeCopy(
 async function pageOverlaps(
   ctx: ToolContext,
   key: string,
-  design: Design,
+  design: ToolDesign,
   ids: string[],
   known: Record<string, { w: number; h: number }> = {},
 ): Promise<string> {
