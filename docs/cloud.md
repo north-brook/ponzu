@@ -77,10 +77,17 @@ GitHub token never reaches a device.
 - Access tokens are five-minute JWTs. The API verifies them locally against
   WorkOS's JWKS. Clients refresh directly with WorkOS, one refresh in flight at a
   time, and always store the rotated refresh token.
+- WorkOS will not finish a sign-in until the email is verified, and it does not
+  take GitHub's word for it. The API completes that step itself during the
+  exchange and then checks with GitHub that the address is verified there, so
+  nobody is sent a code by email.
 
 **Workspaces.** A workspace is a GitHub account (a person or an organization) with
 the Ponzu GitHub App installed. One row per installation. A person's workspaces are
 the installations their GitHub user token can reach (`GET /user/installations`).
+The token does not reveal organizations the App is not installed on. Setup lists the
+person's own account and the accounts where Ponzu is installed; any other
+organization is added through GitHub's install page, which has its own picker.
 
 **Membership** is GitHub's. Anyone who can reach an installation's repos is a
 member; Ponzu stores only the role (Admin or Member). There are no invitations.
