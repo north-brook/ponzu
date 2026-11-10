@@ -54,7 +54,12 @@ export async function upsertUser(db: Db, profile: GithubProfile): Promise<User> 
   return user!;
 }
 
-/** The person a WorkOS access token names (its `sub`), or null if they never finished a sign-in. */
+/**
+ * The person whose last sign-in came through this WorkOS user, or null. For the sign-in
+ * exchange, which decides who a WorkOS user is. It does not authenticate anyone: a token's
+ * `sub` says which WorkOS user it is for, not that Ponzu let its session in. Requests are
+ * authenticated by session (`getSessionUser`).
+ */
 export async function getUserByWorkosId(db: Db, workosUserId: string): Promise<User | null> {
   const [user] = await run(db.select().from(users).where(eq(users.workosUserId, workosUserId)));
   return user ?? null;
@@ -146,24 +151,41 @@ export type MemberWorkspace = Pick<
   "id" | "githubLogin" | "kind" | "name" | "avatarUrl" | "installationId" | "suspendedAt"
 > & { role: MemberRole };
 
+const memberWorkspaceColumns = {
+  id: workspaces.id,
+  githubLogin: workspaces.githubLogin,
+  kind: workspaces.kind,
+  name: workspaces.name,
+  avatarUrl: workspaces.avatarUrl,
+  installationId: workspaces.installationId,
+  suspendedAt: workspaces.suspendedAt,
+  role: memberships.role,
+};
+
 /** The workspaces a person belongs to, as GitHub last said, with their role in each. */
 export function listUserWorkspaces(db: Db, userId: string): Promise<MemberWorkspace[]> {
   return run(
     db
-      .select({
-        id: workspaces.id,
-        githubLogin: workspaces.githubLogin,
-        kind: workspaces.kind,
-        name: workspaces.name,
-        avatarUrl: workspaces.avatarUrl,
-        installationId: workspaces.installationId,
-        suspendedAt: workspaces.suspendedAt,
-        role: memberships.role,
-      })
+      .select(memberWorkspaceColumns)
       .from(memberships)
       .innerJoin(workspaces, eq(workspaces.id, memberships.workspaceId))
       .where(eq(memberships.userId, userId)),
   );
+}
+
+/** One workspace as a member sees it, or null if the person is not a member (or it does not exist). */
+export async function getMemberWorkspace(
+  db: Db,
+  { userId, workspaceId }: { userId: string; workspaceId: string },
+): Promise<MemberWorkspace | null> {
+  const [workspace] = await run(
+    db
+      .select(memberWorkspaceColumns)
+      .from(memberships)
+      .innerJoin(workspaces, eq(workspaces.id, memberships.workspaceId))
+      .where(and(eq(memberships.userId, userId), eq(memberships.workspaceId, workspaceId))),
+  );
+  return workspace ?? null;
 }
 
 /**

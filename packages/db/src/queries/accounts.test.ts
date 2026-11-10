@@ -9,6 +9,7 @@ import {
   type GithubInstallation,
   type GithubProfile,
   getClaudeAccount,
+  getMemberWorkspace,
   getUserByWorkosId,
   listUserWorkspaces,
   markReposRemoved,
@@ -192,10 +193,25 @@ describe("memberships", () => {
     ]);
     expect(await listUserWorkspaces(db, "usr_nobody")).toEqual([]);
   });
+
+  test("getMemberWorkspace gives a member their workspace and role, and anyone else nothing", async () => {
+    const [user, other] = await Promise.all([seedUser(db), seedUser(db, "ines")]);
+    const [mine, theirs] = await Promise.all([seedWorkspace(db, "globex"), seedWorkspace(db)]);
+    await upsertMembership(db, { workspaceId: mine.id, userId: user.id, role: "member" });
+    await upsertMembership(db, { workspaceId: theirs.id, userId: other.id, role: "admin" });
+
+    expect(await getMemberWorkspace(db, { userId: user.id, workspaceId: mine.id })).toMatchObject({
+      id: mine.id,
+      githubLogin: "globex",
+      role: "member",
+    });
+    expect(await getMemberWorkspace(db, { userId: user.id, workspaceId: theirs.id })).toBeNull();
+    expect(await getMemberWorkspace(db, { userId: user.id, workspaceId: "ws_nowhere" })).toBeNull();
+  });
 });
 
 describe("what a signed-in request reads", () => {
-  test("getUserByWorkosId finds the person a token names", async () => {
+  test("getUserByWorkosId finds the person whose sign-in came through a WorkOS user", async () => {
     const user = await seedUser(db);
     expect(await getUserByWorkosId(db, user.workosUserId)).toEqual(user);
     expect(await getUserByWorkosId(db, "user_nobody")).toBeNull();

@@ -8,6 +8,7 @@ export {
   type GithubProfile,
   type GithubRepo,
   getClaudeAccount,
+  getMemberWorkspace,
   getUserByWorkosId,
   listUserWorkspaces,
   type Membership,

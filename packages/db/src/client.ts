@@ -17,9 +17,21 @@ export type Db = PgDatabase<PgQueryResultHKT>;
 /**
  * Neon over HTTP: no connection to open or keep, which is what a function instance wants.
  * It has no interactive transactions, so every query function in this package is one statement.
+ *
+ * `deadline` is asked for a fresh signal before each statement; when the signal aborts, the
+ * statement fails with a `QueryError` whose `unavailable` is true. Without one a statement
+ * waits as long as the runtime's `fetch` does, which under Node is five minutes for a
+ * database that takes the request and never answers.
  */
-export function createDb(url: string) {
-  return drizzleHttp({ client: neon(url) });
+export function createDb(url: string, { deadline }: { deadline?: () => AbortSignal } = {}) {
+  // The driver spreads `fetchOptions` into every request it makes, so a getter is read anew
+  // each time. It has no `fetch` of its own to wrap: that setting is one for the whole process.
+  const fetchOptions = deadline && {
+    get signal() {
+      return deadline();
+    },
+  };
+  return drizzleHttp({ client: neon(url, { fetchOptions }) });
 }
 
 /**

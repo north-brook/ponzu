@@ -49,9 +49,17 @@ const result = await commitOps(db, { designId, expectedSeq, actor, ops });
 - **Every query is one statement.** Neon's HTTP driver has no interactive transactions, so
   a function that must do two things atomically does them in one statement with `WITH`.
   The functions also run inside a transaction on `createPooledDb`, for a handler that needs one.
-- A statement Postgres refuses throws a `QueryError`. Its message is what Postgres said
+- A statement that fails throws a `QueryError`. Its message is what Postgres said
   (it names the constraint). Drizzle's own error lists every parameter of the statement,
-  which would put op batches and payloads into the logs; this one does not.
+  which would put op batches and payloads into the logs; this one does not. Its `unavailable`
+  is true when Postgres never answered (Neon unreachable, or out of time) rather than refused.
+- `createDb(url, { deadline })` asks `deadline` for an `AbortSignal` before each statement,
+  which is how the API gives the database ten seconds. Without one a statement can wait as
+  long as the runtime's `fetch` does.
+- **A query that depends on the time takes `now` from its caller**, as the GitHub token claim
+  does, so a test can move the clock. The older ones still read Postgres's `now()` (runner
+  token expiry, job leases and retries, presence, event claims); convert one when a module
+  comes to depend on its timing, and do not add to them.
 - `@ponzu/db/testing` exports `createTestDb()`: a migrated PGlite database, about 60 ms each.
 - `@ponzu/db/types` is for clients: the fixed lists (`AGENT_STATES`, `EVENT_PRIORITIES`, …),
   their types and the design head. It imports no driver and no Drizzle. The package root

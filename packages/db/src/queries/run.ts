@@ -1,18 +1,28 @@
+import { NeonDbError } from "@neondatabase/serverless";
 import { DrizzleQueryError } from "drizzle-orm/errors";
 
 /**
- * A statement the database refused. The message is what Postgres said, which names the
- * constraint that was broken; `cause` is the driver's own error, with its code. Unlike
- * Drizzle's error it does not list the statement's parameters.
+ * A statement that failed. The message is what Postgres said, which names the constraint that
+ * was broken; `cause` is the driver's own error, with its code. Unlike Drizzle's error it
+ * does not list the statement's parameters.
  */
 export class QueryError extends Error {
   /** The statement's text, with placeholders where its parameters were. */
   readonly statement: string;
+  /**
+   * True when Postgres never answered: Neon could not be reached, ran out of the time
+   * `createDb` gave it, or failed in front of the database. Whether the statement took effect
+   * is then unknown. False when Postgres refused the statement, which sending it again will
+   * not mend. Only Neon's HTTP driver is told apart this way.
+   */
+  readonly unavailable: boolean;
 
   constructor(statement: string, cause: unknown) {
     super(cause instanceof Error ? cause.message : "The query failed.", { cause });
     this.name = "QueryError";
     this.statement = statement;
+    // A refusal from Postgres carries a SQLSTATE. A request that never reached it has none.
+    this.unavailable = cause instanceof NeonDbError && cause.code === undefined;
   }
 }
 
