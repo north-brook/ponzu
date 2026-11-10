@@ -121,8 +121,10 @@ member; Ponzu stores only the role (Admin or Member). There are no invitations.
 
 **Opening a design** needs read access to its repo. Steering it (messages, answers,
 merging) needs write access. The API checks with
-`GET /repos/{owner}/{repo}/collaborators/{login}/permission`, cached for a minute
-and invalidated by membership webhooks.
+`GET /repos/{owner}/{repo}/collaborators/{login}/permission`, asked as the App, and
+each function instance keeps the answer for a minute. Nothing invalidates it across
+instances, so someone whose access is taken away loses it within a minute. A Scratch
+design has no repo and is its owner's alone.
 
 **The GitHub App** is the only way Ponzu touches GitHub. The API mints one-hour
 installation tokens scoped to one repository and the least permission a job needs.
@@ -250,7 +252,8 @@ it. Each op is stored with its inverse.
 `packages/client` wraps Neon Realtime behind one module so it can be replaced.
 
 - Clients never send SQL. They ask `POST /v1/live` for named queries with arguments
-  (`workspace.designs`, `design.head`, `design.thread`, `design.presence`, `me`).
+  (`workspace.designs`, `design.head`, `design.thread`, `design.questions`,
+  `design.presence`, `me`).
   The API authorizes each one and returns it sealed, with a 60-second lifetime.
 - The endpoint takes a list, and clients renew all their subscriptions in one call.
 - Live queries are plain filters and joins over small rows. Sorting happens on the
