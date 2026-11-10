@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/north-brook/ponzu/compare/mobile-v0.11.5...mobile-v0.12.0) (2026-11-10)
+
+
+### Features
+
+* **mobile:** write comments in one floating field ([#393](https://github.com/north-brook/ponzu/issues/393)) ([741d2c5](https://github.com/north-brook/ponzu/commit/741d2c54a2fa084fec6d570eb57e785c0d546c98))
+
 ## [0.11.5](https://github.com/north-brook/ponzu/compare/mobile-v0.11.4...mobile-v0.11.5) (2026-11-09)
 
 
