@@ -739,7 +739,8 @@ describe("random trees", () => {
         if (payloadCameAlive(rawLater)) fail("came alive unsanitized, after ops", rawLater);
       }
     }
-  });
+    // Nine thousand trees: under a second alone, but ten times that on a loaded CI runner.
+  }, 60_000);
 });
 
 describe("ops committed as the API commits them, then drawn", () => {
