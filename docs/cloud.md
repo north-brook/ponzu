@@ -386,11 +386,14 @@ measurement and lint, inside the runner's process.
   than its stand-in (Georgia, Monaco, Helvetica Neue, the Chinese, Japanese and
   Korean fonts), the page also declares the name as an `@font-face` over the
   stand-in with the Mac font's ascent and descent, so a line is as tall as on the
-  canvas, to the pixel. The reference is Chrome on a Mac. Two things can't be made
-  to match, and lint says so on every screenshot that has them: `system-ui`, where
+  canvas, to the pixel. The reference is Chrome on a Mac. Three things can't be
+  made to match, and lint says so on a screenshot that has them: `system-ui`, where
   Inter stands in for San Francisco, close at text sizes and up to 12% wide in
-  headings; and emoji, which on a Mac are narrower from 24px up and make their
-  line a few pixels taller.
+  headings; emoji, which on a Mac are narrower from 24px up and make their line a
+  few pixels taller; and Chinese, Japanese or Korean text in a stack that names no
+  font for it, which fallback draws at Noto's line height where the design sets
+  none. Fallback goes by what is installed, so the image holds the fonts in that
+  list and no others for those scripts.
 - **The dev server.** With `loopback: true` a design can load images, video, fonts
   and stylesheets from `http://localhost:<port>`. Chrome refuses those to a page at
   a public origin, so the renderer grants its pages Chrome's permission for this
