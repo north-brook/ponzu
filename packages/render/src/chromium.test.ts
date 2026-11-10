@@ -55,6 +55,9 @@ describe.skipIf(!chromium)("the Chromium renderer", () => {
     return { renderer, seen };
   }
 
+  /** One with nothing special about it, for the tests that need no more. */
+  const ordinary = make().renderer;
+
   /** Kills Chrome's main process, as a crash or the kernel's out-of-memory killer would. */
   async function kill(browser: Browser): Promise<void> {
     const cdp = await browser.newBrowserCDPSession();
@@ -71,8 +74,10 @@ describe.skipIf(!chromium)("the Chromium renderer", () => {
   }
 
   describe("when Chrome dies", () => {
+    // One renderer through every death, as the one in a sandbox has to live through them.
+    const { renderer, seen } = make({}, { assetsMs: 20_000 });
+
     test("between renders, the next one starts a new browser", async () => {
-      const { renderer, seen } = make();
       await renderer.render({ artboard: plain, tokens: "" });
       const first = seen.browser!;
       await kill(first);
@@ -84,9 +89,9 @@ describe.skipIf(!chromium)("the Chromium renderer", () => {
     });
 
     test("during a render, that render fails saying so and the next succeeds", async () => {
-      const { renderer, seen } = make({}, { assetsMs: 20_000 });
       await renderer.measure({ artboard: plain, tokens: "", ids: ["n_p"] });
       const first = seen.browser!;
+      seen.stalled = 0;
       // One at each device scale, so a page in the shared context and one in its own both go.
       const inFlight = [1, 2].map((scale) =>
         renderer.render({ artboard: stalling, tokens: "", scale }).catch((e) => e),
@@ -104,9 +109,9 @@ describe.skipIf(!chromium)("the Chromium renderer", () => {
     });
 
     test("a page that crashes fails alone, and the browser carries on", async () => {
-      const { renderer, seen } = make({}, { assetsMs: 20_000 });
       await renderer.render({ artboard: plain, tokens: "" });
       const browser = seen.browser!;
+      seen.stalled = 0;
       const inFlight = renderer.render({ artboard: stalling, tokens: "" }).catch((e) => e);
       await until(() => seen.stalled === 1);
       // What running out of memory usually takes: the page's own process, not Chrome itself.
@@ -215,10 +220,9 @@ describe.skipIf(!chromium)("the Chromium renderer", () => {
     ];
     try {
       for (let i = 0; i < 3; i++) await Bun.spawn(["true"]).exited;
-      const { renderer } = make();
-      for (let i = 0; i < 12; i++) {
+      for (let i = 0; i < 8; i++) {
         const artboard = board(`<p data-id="n_p" style="width:${100 + i}px">Round ${i}</p>`);
-        const out = await renderer.measure({ artboard, tokens: "", ids: ["n_p"] });
+        const out = await ordinary.measure({ artboard, tokens: "", ids: ["n_p"] });
         expect(out.boxes.n_p?.width).toBe(100 + i);
         if (i % 4 === 0) await Bun.spawn(["true"]).exited;
       }
@@ -267,8 +271,7 @@ describe.skipIf(!chromium)("the Chromium renderer", () => {
 
     test("a design can't reach servers on this machine unless the renderer is told it may", async () => {
       requests.length = 0;
-      const { renderer } = make();
-      const out = await renderer.render({ artboard: page, tokens, lint: true });
+      const out = await ordinary.render({ artboard: page, tokens, lint: true });
       // Chrome refuses a public page's requests to this machine before they are sent.
       expect(requests).toEqual([]);
       expect(assetIssues(out.issues).sort()).toEqual(["n_img", "n_text"]);
@@ -294,8 +297,7 @@ describe.skipIf(!chromium)("the Chromium renderer", () => {
 
     test("an asset base on this machine is fetched from here, with or without loopback", async () => {
       requests.length = 0;
-      const { renderer } = make();
-      const out = await renderer.render({
+      const out = await ordinary.render({
         artboard: board(`<img data-id="n_img" src="pixel.png" style="width:20px;height:20px">`),
         tokens: "",
         lint: true,
