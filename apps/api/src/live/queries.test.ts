@@ -44,9 +44,11 @@ test("the registry is the six queries the clients watch", () => {
   expect(Object.keys(LIVE_QUERIES).sort()).toEqual([...NAMES].sort());
 });
 
-test("seals every query for someone who may watch it, in one call, with where to subscribe", async () => {
-  const sealedBefore = t.realtime.sealed.length;
+/** What the fake sealer sealed for one result: it writes the query into the capability. */
+const unsealed = (result: { sealed: { capability: string } }): { sql: string; params: string[] } =>
+  JSON.parse(result.sealed.capability.slice("sealed:".length));
 
+test("seals every query for someone who may watch it, in one call, with where to subscribe", async () => {
   const { status, body } = await live(as("ines"), every());
 
   expect(status).toBe(200);
@@ -59,9 +61,8 @@ test("seals every query for someone who may watch it, in one call, with where to
       expiresAt: t.clock.now() + 60_000,
     });
   }
-  const sealed = t.realtime.sealed.slice(sealedBefore);
   const ines = ws.people.ines!.userId;
-  expect(sealed.map((query) => query.params)).toEqual([
+  expect(body.results.map((result: any) => unsealed(result).params)).toEqual([
     [ines],
     [ines, ws.id],
     [designId],
@@ -150,19 +151,17 @@ describe("the SQL that is sealed", () => {
   test("never carries an argument in its text: the same text for anyone, the values bound", async () => {
     const other = await workspaceWithRepo(t, { maya: "write" });
     const otherDesign = await designIn(t, other, "maya", emptyDoc("Elsewhere"));
-    const before = t.realtime.sealed.length;
+    const here = await live(as("maya"), every());
+    const there = await live(
+      as("maya"),
+      every({ workspaceId: other.id, designId: otherDesign.id }),
+    );
 
-    await live(as("maya"), every());
-    await live(as("maya"), every({ workspaceId: other.id, designId: otherDesign.id }));
-
-    const sealed = t.realtime.sealed.slice(before);
-    const [first, second] = [sealed.slice(0, NAMES.length), sealed.slice(NAMES.length)];
-    for (const [i, query] of first.entries()) {
-      expect(query.sql).toBe(LIVE_QUERIES[NAMES[i]!].sql);
-      expect(second[i]!.sql).toBe(query.sql);
-      for (const value of [...query.params, ...second[i]!.params]) {
-        expect(query.sql).not.toContain(value);
-      }
+    for (const [i, name] of NAMES.entries()) {
+      const [one, two] = [unsealed(here.body.results[i]), unsealed(there.body.results[i])];
+      expect(one.sql).toBe(LIVE_QUERIES[name].sql);
+      expect(two.sql).toBe(one.sql);
+      for (const value of [...one.params, ...two.params]) expect(one.sql).not.toContain(value);
     }
   });
 
