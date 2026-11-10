@@ -20,10 +20,11 @@ export class MemoryStorage implements ObjectStorage {
 }
 
 /**
- * A sealer that seals nothing: the token is the query, readable, so a test can assert exactly
- * what SQL and which values a route authorized. `sealed` keeps every one, oldest first.
+ * A sealer that seals nothing: the capability is the query, readable, so a test can assert
+ * exactly what SQL and which values a route authorized. `sealed` keeps every one, oldest first.
  */
 export class FakeSealer implements RealtimeSealer {
+  readonly url = "https://realtime.test/";
   readonly sealed: LiveQuery[] = [];
   readonly #clock: Clock;
 
@@ -33,6 +34,11 @@ export class FakeSealer implements RealtimeSealer {
 
   async seal(query: LiveQuery): Promise<SealedQuery> {
     this.sealed.push(query);
-    return { token: `sealed:${JSON.stringify(query)}`, expiresAt: this.#clock.now() + 60_000 };
+    const text = JSON.stringify(query);
+    return {
+      capability: `sealed:${text}`,
+      queryFingerprint: `fingerprint:${text}`,
+      expiresAt: this.#clock.now() + 60_000,
+    };
   }
 }

@@ -17,6 +17,11 @@ const schema = z.object({
   BOAT_API_KEY: z.string(),
   /** The key stored secrets are sealed with: 32 random bytes in base64url. */
   PONZU_VAULT_KEY: z.string(),
+  /** Neon Realtime for the database's branch: where clients subscribe, and what seals queries. */
+  NEON_REALTIME_URL: z.url(),
+  NEON_REALTIME_SECRET: z.string(),
+  /** Where design files are served from, without a trailing slash: `https://assets.ponzu.cloud`. */
+  PONZU_ASSETS_URL: z.url(),
   /** Keys that were PONZU_VAULT_KEY before, comma-separated, so what they sealed still opens. */
   PONZU_VAULT_OLD_KEYS: z.string().optional(),
   /** The oldest client each platform may run, like `macos=2.1.0,ios=1.3.0`. Unset: no gate. */
@@ -39,6 +44,8 @@ export interface Env {
   githubApp: { clientId: string; clientSecret: string; privateKey: string };
   boatApiKey: string;
   vault: { key: string; oldKeys: string[] };
+  realtime: { url: string; secret: string };
+  assetsUrl: string;
   minimumClientVersions: MinimumVersions;
   commit: string | null;
 }
@@ -79,6 +86,8 @@ export function readEnv(source: Record<string, string | undefined>): Env {
       key: env.PONZU_VAULT_KEY,
       oldKeys: env.PONZU_VAULT_OLD_KEYS?.split(",").filter(Boolean) ?? [],
     },
+    realtime: { url: env.NEON_REALTIME_URL, secret: env.NEON_REALTIME_SECRET },
+    assetsUrl: env.PONZU_ASSETS_URL.replace(/\/+$/, ""),
     minimumClientVersions,
     commit: env.VERCEL_GIT_COMMIT_SHA ?? null,
   };

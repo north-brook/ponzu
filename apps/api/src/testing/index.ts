@@ -1,10 +1,13 @@
+import type { Db } from "@ponzu/db";
 import { createTestDb } from "@ponzu/db/testing";
 import { FakeClock, FakeProvider } from "@ponzu/sandbox";
 import { createApp } from "../create-app.ts";
 import { createBackground } from "../deps/background.ts";
 import { createGithub } from "../deps/github.ts";
 import type { Deps } from "../deps/index.ts";
+import type { RealtimeSealer } from "../deps/realtime.ts";
 import { createWorkos } from "../deps/workos.ts";
+import { DocCache } from "../designs/doc-cache.ts";
 import type { MinimumVersions } from "../http/client-version.ts";
 import { createLogger, type LogLine } from "../http/log.ts";
 import { createVault } from "../vault/vault.ts";
@@ -64,9 +67,18 @@ export type TestApp = Awaited<ReturnType<typeof createTestApp>>;
  * all run. Close it with `close()` when the file is done.
  */
 export async function createTestApp(
-  options: { minimumClientVersions?: MinimumVersions; commit?: string | null } = {},
+  options: {
+    minimumClientVersions?: MinimumVersions;
+    commit?: string | null;
+    /**
+     * A real database and Realtime, for an opt-in test against the Neon `dev` branch. Without
+     * them everything stays in this process.
+     */
+    live?: { db: Db; realtime: RealtimeSealer };
+  } = {},
 ) {
-  const db = await createTestDb();
+  const local = options.live ? null : await createTestDb();
+  const db: Db = options.live?.db ?? local!;
   // The deployed API reaches Postgres over Neon's HTTP driver, which has no transactions.
   // PGlite has them, so a route that used one would pass here and fail in production; this
   // makes it fail here, the way that driver does.
@@ -78,7 +90,7 @@ export async function createTestApp(
   const github = new FakeGithub(clock);
   const sandbox = new FakeProvider(clock);
   const storage = new MemoryStorage();
-  const realtime = new FakeSealer(clock);
+  const sealer = new FakeSealer(clock);
   /** Every line the app logged, oldest first. */
   const logs: LogLine[] = [];
   let requests = 0;
@@ -101,10 +113,12 @@ export async function createTestApp(
     github: createGithub({ ...github.credentials, fetch: github.fetch, clock }),
     sandbox,
     storage,
-    realtime,
+    realtime: options.live?.realtime ?? sealer,
+    docs: new DocCache(),
     config: {
       build: { version: "0.0.0-test", commit: options.commit ?? "testcommit" },
       minimumClientVersions: options.minimumClientVersions ?? {},
+      assetsUrl: "https://assets.test",
     },
   };
   const app = createApp(deps);
@@ -212,11 +226,13 @@ export async function createTestApp(
     github,
     sandbox,
     storage,
-    realtime,
+    realtime: sealer,
     logs,
     startSignIn,
     signInAs,
     backgroundDone,
-    close: () => db.$client.close(),
+    close: async () => {
+      await local?.$client.close();
+    },
   };
 }

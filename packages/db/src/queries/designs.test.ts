@@ -370,9 +370,12 @@ describe("updateDesign", () => {
   test("renames, sets an icon, settles and reopens", async () => {
     const { design } = await seedDesign(db);
 
-    expect(await updateDesign(db, design.id, { name: "Porto", icon: "star", now })).toMatchObject(
-      { name: "Porto", icon: "star", status: "active", settledAt: null },
-    );
+    expect(await updateDesign(db, design.id, { name: "Porto", icon: "star", now })).toMatchObject({
+      name: "Porto",
+      icon: "star",
+      status: "active",
+      settledAt: null,
+    });
     expect(await updateDesign(db, design.id, { settled: true, now })).toMatchObject({
       name: "Porto",
       status: "settled",

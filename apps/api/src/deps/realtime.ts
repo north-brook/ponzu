@@ -1,32 +1,56 @@
-import { ApiError } from "../http/errors.ts";
+import { createRealtime, rawSql } from "@neon/realtime/server";
 
 /** A query a client may subscribe to: SQL the API wrote, with the values it bound. */
 export interface LiveQuery {
   sql: string;
-  params: readonly unknown[];
+  params: readonly string[];
 }
 
-/** What a client hands to Neon Realtime in place of SQL. It cannot be read or changed. */
+/**
+ * What a client hands to Neon Realtime in place of SQL (`client.subscribe(sealed)`), as Neon's
+ * SDK makes it. It cannot be read or changed, and it is a bearer credential for its lifetime:
+ * never log it.
+ */
 export interface SealedQuery {
-  token: string;
-  /** Epoch milliseconds. A client renews before this. */
+  capability: string;
+  /** The same for every seal of the same SQL and values, which is what lets a client renew. */
+  queryFingerprint: string;
+  /** Epoch milliseconds, 60 seconds after sealing. A client renews before this. */
   expiresAt: number;
 }
 
 /**
  * Seals live queries for Neon Realtime, so a client subscribes to exactly what the API
- * authorized and nothing else.
- *
- * INTERFACE ONLY. The live-query module (`POST /v1/live`) owns the real implementation and may
- * reshape this to fit it; until then the deployed API has `realtimeNotBuilt`, and tests have
- * `FakeSealer` (src/testing).
+ * authorized and nothing else. Realtime has no row-level security: the SQL sealed is the
+ * access control, so only the live-query registry (`live/queries.ts`) writes it.
  */
 export interface RealtimeSealer {
+  /** Where clients subscribe: the Realtime endpoint of the database's branch. */
+  url: string;
   seal(query: LiveQuery): Promise<SealedQuery>;
 }
 
-export const realtimeNotBuilt: RealtimeSealer = {
-  async seal() {
-    throw new ApiError(501, "not_implemented", "Ponzu cannot send live updates yet.");
-  },
-};
+/**
+ * The real sealer. Sealing is local encryption with the branch's Realtime secret and makes no
+ * request. `database` is the Postgres database the queries run in.
+ */
+export function createRealtimeSealer({
+  url,
+  secret,
+  database,
+}: {
+  url: string;
+  secret: string;
+  database: string;
+}): RealtimeSealer {
+  const realtime = createRealtime({ secret, db: database });
+  return {
+    url,
+    async seal({ sql, params }) {
+      const { capability, queryFingerprint, expiresAt } = await realtime.seal({
+        query: rawSql(sql, params),
+      });
+      return { capability, queryFingerprint, expiresAt };
+    },
+  };
+}

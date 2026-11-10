@@ -1,6 +1,7 @@
 import { createDb, type Db } from "@ponzu/db";
 import { BoatProvider, type Clock, type SandboxProvider, systemClock } from "@ponzu/sandbox";
 import manifest from "../../package.json" with { type: "json" };
+import { DocCache } from "../designs/doc-cache.ts";
 import type { Env } from "../env.ts";
 import type { MinimumVersions } from "../http/client-version.ts";
 import { consoleSink, createLogger, type Logger } from "../http/log.ts";
@@ -8,7 +9,7 @@ import { createVault, type Vault } from "../vault/vault.ts";
 import { type Background, createBackground, waitUntil } from "./background.ts";
 import type { Fetch } from "./fetch.ts";
 import { createGithub, type Github } from "./github.ts";
-import { type RealtimeSealer, realtimeNotBuilt } from "./realtime.ts";
+import { createRealtimeSealer, type RealtimeSealer } from "./realtime.ts";
 import { type ObjectStorage, storageNotBuilt } from "./storage.ts";
 import { createWorkos, type Workos } from "./workos.ts";
 
@@ -34,8 +35,9 @@ export interface Deps {
   sandbox: SandboxProvider;
   /** Interface only until the assets module. */
   storage: ObjectStorage;
-  /** Interface only until the live-query module. */
   realtime: RealtimeSealer;
+  /** The design documents this instance has built lately. */
+  docs: DocCache;
   config: Config;
 }
 
@@ -44,6 +46,8 @@ export interface Config {
   /** What `/v1/health` reports about this build. */
   build: { version: string; commit: string | null };
   minimumClientVersions: MinimumVersions;
+  /** Where design files are served from; a design's are under `<assetsUrl>/<asset key>/`. */
+  assetsUrl: string;
 }
 
 /** Ids the API makes itself. Rows get theirs from `@ponzu/db`. */
@@ -81,10 +85,15 @@ export function createDeps(env: Env): Deps {
     github: createGithub({ ...env.githubApp, fetch: outbound, clock }),
     sandbox: new BoatProvider({ apiKey: env.boatApiKey, clock }),
     storage: storageNotBuilt,
-    realtime: realtimeNotBuilt,
+    realtime: createRealtimeSealer({
+      ...env.realtime,
+      database: new URL(env.databaseUrl).pathname.slice(1),
+    }),
+    docs: new DocCache(),
     config: {
       build: { version: VERSION, commit: env.commit },
       minimumClientVersions: env.minimumClientVersions,
+      assetsUrl: env.assetsUrl,
     },
   };
 }

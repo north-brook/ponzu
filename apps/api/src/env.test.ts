@@ -11,6 +11,9 @@ const complete = {
   GITHUB_APP_PRIVATE_KEY: "-----BEGIN RSA PRIVATE KEY-----\nMIIE\n-----END RSA PRIVATE KEY-----\n",
   BOAT_API_KEY: "boat-key",
   PONZU_VAULT_KEY: "vault-key",
+  NEON_REALTIME_URL: "https://ep-example.rt.c-1.us-east-1.aws.neon.tech/",
+  NEON_REALTIME_SECRET: "nrt_live_1example",
+  PONZU_ASSETS_URL: "https://assets.example/",
 };
 
 test("a complete environment is read into one typed value", () => {
@@ -24,6 +27,9 @@ test("a complete environment is read into one typed value", () => {
     },
     boatApiKey: "boat-key",
     vault: { key: "vault-key", oldKeys: [] },
+    realtime: { url: complete.NEON_REALTIME_URL, secret: "nrt_live_1example" },
+    // Without its trailing slash, so a path can follow it.
+    assetsUrl: "https://assets.example",
     minimumClientVersions: {},
     commit: null,
   });

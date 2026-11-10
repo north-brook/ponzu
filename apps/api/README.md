@@ -22,20 +22,23 @@ src/
   deps/           everything outside our code, behind interfaces, made in createDeps
     workos.ts       real: code exchange, email verification, session revoke, user delete, JWKS
     github.ts       real: as a person (user, emails, installations, repositories, token refresh)
-                    and as the App (installation tokens)
+                    and as the App (installation tokens, a person's permission in a repo)
     background.ts   work that outlives its request
     storage.ts      interface only, until the assets module
-    realtime.ts     interface only, until the live-query module
+    realtime.ts     real: seals live queries with the branch's Realtime secret
   http/           errors, validation, request ids and logs, CORS, the client-version gate
   auth/           access declarations, authentication, authorization, sign-in
   vault/          sealing stored secrets
   github/         githubUserToken: a person's GitHub token, kept fresh
+  designs/        committing ops, undo, the current document and its cache, who may send
+                  which op (op-rules.ts), and the events a person's ops make
+  live/           queries.ts: every live query, its arguments, who may watch it and its SQL
   routes/         one file per area, mounted under /v1 in routes/index.ts
-  testing/        createTestApp and the fakes behind it
+  testing/        createTestApp and the fakes behind it; designs.ts for workspaces to test in
 scripts/
   dev.ts          bun run dev
   dev-signin.ts   a real sign-in from a terminal, saved for end-to-end tests
-  neon.ts         a Neon branch's connection string, by branch name
+  neon.ts         a Neon branch's connection string and Realtime, by branch name
 ```
 
 No file is named `app.ts` or `server.ts`, and nothing lives under `apps/api/api/`: Vercel's
@@ -70,9 +73,10 @@ has: no `Bun.…`, no DOM. `bun run typecheck` (and CI) checks exactly that.
    `await requireWorkspace(c, workspaceId)` returns the workspace as the person sees it, or
    throws 404 `not_found` when they are not a member (the same as when it does not exist), and
    `requireWorkspace(c, id, "admin")` throws 403 `forbidden` for a member who is not an admin.
-   Get a row another person could not see only through a function there, and add the next one
-   (`requireDesign` is the designs module's) beside it with the same two answers. A runner may
-   act only on `c.var.actor.designId`.
+   `await requireDesign(c, designId, "read" | "write")` does the same for a design, with the
+   access GitHub gives the person in its repo (kept a minute per instance), and lets a runner
+   at its own design only. Get a row another person could not see only through a function
+   there, and add the next one beside them with the same two answers.
 
    To turn a token into a person anywhere else (a socket, a sealed query), call
    `authenticateUser(deps, token)` from `auth/authenticate.ts`. It verifies the WorkOS token
@@ -86,7 +90,7 @@ has: no `Bun.…`, no DOM. `bun run typecheck` (and CI) checks exactly that.
    leak a column. JSON is camelCase; `/v1/auth/exchange` keeps OAuth's three snake_case names.
 
 4. **Dependencies.** Read them from `c.var.deps` (`db`, `clock`, `vault`, `workos`, `github`,
-   `sandbox`, `storage`, `realtime`, `background`, `log`, `config`). Never import a client,
+   `sandbox`, `storage`, `realtime`, `docs`, `background`, `log`, `config`). Never import a client,
    the database or the clock as a module-level value, never call `fetch` or `Date.now()`
    directly, and never read `process.env` outside `env.ts`. Something new to talk to is an
    interface in `deps/`, a real implementation that takes `fetch` and `clock`, a line in
@@ -139,6 +143,24 @@ has: no `Bun.…`, no DOM. `bun run typecheck` (and CI) checks exactly that.
    `now()` does not: runner token expiry, job leases and retries, and event claims. A query
    function that needs the time takes `now` from its caller (as the GitHub token claim does);
    convert one of the others when your module comes to depend on its timing.
+
+   For designs, `testing/designs.ts` makes a workspace whose repository each named person can
+   reach as given (`workspaceWithRepo(t, { maya: "write", ines: "read" })`), designs in it,
+   and a runner's headers.
+
+## Live queries
+
+`POST /v1/live` seals the queries in `live/queries.ts` and no others. Neon Realtime has no
+row-level security, so a query's SQL is its access control: its `authorize` throws the same
+404 or 403 the matching route would, and answers the values the SQL binds, which is constant
+text. Realtime delivers a change as a small delta only for plain filters and joins, so no
+`ORDER BY`, `LIMIT`, aggregate, subquery or `now()`; it sends a row whole on every change,
+so never a design's content, an `encrypted_…` column or an asset key. A test holds every query
+to that.
+
+`live/realtime.live.test.ts` runs the real thing against the `dev` branch: it seals a query,
+subscribes, commits an op through the API and waits for the change. It is skipped unless
+`DATABASE_URL`, `NEON_REALTIME_URL` and `NEON_REALTIME_SECRET` are set.
 
 ## What clients send
 

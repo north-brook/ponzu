@@ -388,15 +388,17 @@ describe("a route that does not say who may call it", () => {
   });
 
   test("is not opened by an area that says it is public", async () => {
-    // Two files under one prefix: share links, which anyone may open, and designs, where one
+    // Two files under one prefix: share links, which anyone may open, and boards, where one
     // route forgot its declaration.
     const shareLinks = new Hono<AppEnv>().use(access.public).get("/shared/:token", handler("link"));
-    const designs = new Hono<AppEnv>().delete("/:id", handler("delete"));
-    const app = createApp(t.deps).route("/v1/designs", shareLinks).route("/v1/designs", designs);
+    const boards = new Hono<AppEnv>().delete("/:id", handler("delete"));
+    const app = createApp(t.deps)
+      .route("/v1/test/boards", shareLinks)
+      .route("/v1/test/boards", boards);
 
-    expect(await answer(app, "/v1/designs/dsn_1", { method: "DELETE" })).toEqual(REFUSED);
+    expect(await answer(app, "/v1/test/boards/ab_1", { method: "DELETE" })).toEqual(REFUSED);
     // Public is said on the route, so the area's own route is refused too until it says so.
-    expect(await answer(app, "/v1/designs/shared/abc")).toEqual(REFUSED);
+    expect(await answer(app, "/v1/test/boards/shared/abc")).toEqual(REFUSED);
     expect(ran).not.toContain("delete");
     expect(ran).not.toContain("link");
   });

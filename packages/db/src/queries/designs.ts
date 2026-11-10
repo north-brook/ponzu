@@ -138,7 +138,9 @@ export async function getWorkspaceRepo(
     db
       .select()
       .from(repos)
-      .where(and(eq(repos.id, repoId), eq(repos.workspaceId, workspaceId), isNull(repos.removedAt))),
+      .where(
+        and(eq(repos.id, repoId), eq(repos.workspaceId, workspaceId), isNull(repos.removedAt)),
+      ),
   );
   return repo ?? null;
 }

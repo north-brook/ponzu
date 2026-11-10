@@ -34,7 +34,9 @@ export async function appendEvents(db: Db, list: NewEvent[]): Promise<DesignEven
   const rows = await run(
     db
       .insert(events)
-      .values(list.map((event) => ({ ...event, payload: scrubbed(event.payload), id: newId("evt") })))
+      .values(
+        list.map((event) => ({ ...event, payload: scrubbed(event.payload), id: newId("evt") })),
+      )
       .returning(),
   );
   return rows.sort((a, b) => a.seq - b.seq);
