@@ -278,9 +278,12 @@ count, and the phone gets a push. An answer is an event with priority `now`.
 ## Assets and previews
 
 Bytes live in R2. Each design has a random asset key; its files are served from
-`https://assets.ponzu.design/<asset key>/…`. Images, CSS and video cannot send an
+`https://assets.ponzu.cloud/<asset key>/…`. Images, CSS and video cannot send an
 `Authorization` header, so the key in the path is the capability. The API returns
 it only to people who can open the design, and it can be rotated.
+
+User content is served from its own domain, `ponzu.cloud`, so nothing a design
+contains ever shares an origin or a cookie with `ponzu.design`.
 
 The runner uploads a light and a dark preview of the first page after each batch of
 edits. The sidebar and the phone show those.
