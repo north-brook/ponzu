@@ -47,6 +47,11 @@ const check = `
   };
   await expectJson("/v1/me", 401, "unauthenticated");
   await expectJson("/nowhere", 404, "not_found");
-  console.log("The API bundle loads in Node " + process.versions.node + " and answers.");
+  // A promise nobody awaited, rejecting: Node ends the process for that unless the entry has
+  // said otherwise, and an instance is serving other requests when it happens.
+  Promise.reject(new Error("a stray rejection, made by scripts/ci/api-bundle.ts"));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  await expectJson("/nowhere", 404, "not_found");
+  console.log("The API bundle loads in Node " + process.versions.node + ", answers, and outlives a stray rejection.");
 `;
 run("node", ["--input-type=module", "--eval", check], environment);

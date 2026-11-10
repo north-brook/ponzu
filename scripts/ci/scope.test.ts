@@ -41,7 +41,8 @@ test("the studio's components the phone reads by path run the phone too", () => 
 
 test("the cloud API and the packages only it uses run neither", () => {
   // "Check, typecheck, test" covers them on every pull request: the root typecheck includes
-  // apps/api, `bun test` runs its tests, and scripts/ci/api-bundle.ts builds and loads it.
+  // apps/api and its own tsconfig checks it against Node, `bun test` runs its tests, and
+  // scripts/ci/api-bundle.ts builds and loads it.
   for (const file of [
     "apps/api/src/routes/me.ts",
     "apps/api/vercel.json",
@@ -50,6 +51,29 @@ test("the cloud API and the packages only it uses run neither", () => {
   ]) {
     expect(suites(file)).toEqual({ desktop: false, mobile: false });
   }
+});
+
+test("it still runs neither once the apps take its route types through the client", () => {
+  // The typed client imports `AppType` from the API, and both apps will depend on the client.
+  // A route change can break their typecheck, which every pull request runs, but cannot
+  // change the desktop package or the phone's bundle.
+  const withClient = [
+    ...packages.map((workspace) =>
+      ["desktop", "mobile"].includes(workspace.name)
+        ? { ...workspace, dependencies: [...workspace.dependencies, "client"] }
+        : workspace,
+    ),
+    { name: "client", dir: "packages/client", dependencies: ["api", "core"] },
+  ];
+
+  for (const file of ["apps/api/src/routes/me.ts", "packages/db/src/queries/accounts.ts"]) {
+    expect(scope([file], withClient)).toEqual({ desktop: false, mobile: false });
+  }
+  // What the client runs still reaches them.
+  expect(scope(["packages/client/src/index.ts"], withClient)).toEqual({
+    desktop: true,
+    mobile: true,
+  });
 });
 
 test("the site runs neither", () => {
