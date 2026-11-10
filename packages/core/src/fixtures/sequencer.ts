@@ -3,7 +3,7 @@ import { sanitizeOp } from "../sanitize.ts";
 import { stampOp } from "../stamp.ts";
 import type { ClientOp, CommitResult, CommittedOp } from "../sync.ts";
 import type { Actor } from "../types.ts";
-import { validateOp } from "../validate.ts";
+import { validateCommit, validateOp } from "../validate.ts";
 
 /** What crosses the wire is JSON: nothing a replica holds is the sequencer's own object. */
 export function wire<T>(value: T): T {
@@ -12,9 +12,9 @@ export function wire<T>(value: T): T {
 
 /**
  * The API's side of the sync protocol, in memory, for testing a replica against: the commit
- * rules of docs/cloud.md ("Committing"). Each op is validated, sanitized, stamped and applied,
- * in that order; one that fails any step is rejected and the rest carry on; an id seen before
- * gets the answer it got the first time.
+ * rules of docs/cloud.md ("Committing"). The post is checked as a whole, then each op is
+ * validated, sanitized, stamped and applied, in that order; one that fails any step is
+ * rejected and the rest carry on; an id seen before gets the answer it got the first time.
  */
 export class Sequencer {
   readonly doc: Doc;
@@ -33,9 +33,10 @@ export class Sequencer {
     this.history = [JSON.stringify(this.doc)];
   }
 
+  /** Throws `InvalidOpError` for a post that isn't one, which the API answers by refusing it whole. */
   commit(ops: ClientOp[], actor: Actor): CommitResult {
     const result: CommitResult = { committed: [], rejected: [], seq: 0 };
-    for (const { id, op } of wire(ops)) {
+    for (const { id, op } of validateCommit(wire({ ops }))) {
       const answer = this.answers.get(id) ?? this.decide(id, op, actor);
       this.answers.set(id, answer);
       if ("seq" in answer) result.committed.push(answer);

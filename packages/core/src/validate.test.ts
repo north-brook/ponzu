@@ -12,8 +12,9 @@ import {
   MAX_OP_BYTES,
   MAX_STRING_LENGTH,
 } from "./limits.ts";
+import { MAX_COMMIT_OPS, newOpId } from "./sync.ts";
 import type { PElement, PNode } from "./types.ts";
-import { InvalidOpError, validateOp } from "./validate.ts";
+import { InvalidOpError, validateCommit, validateOp } from "./validate.ts";
 
 /** The op as it arrives: parsed from JSON, sharing nothing with the fixture. */
 function wire(op: unknown): any {
@@ -445,5 +446,99 @@ describe("hostile input", () => {
       expect(fault({ op: "move", id: "n_2", parent: "n_1", index: bad })).toBe("op.index");
     }
     expect(fault({ op: "move", id: "n_2", parent: "n_1", index: 2 ** 53 })).toBe("op.index");
+  });
+
+  test("text the database can't hold is refused: U+0000, and half of a surrogate pair", () => {
+    // As they arrive in JSON: an escape, which a parser turns into the character itself.
+    for (const bad of ['"a\\u0000b"', '"\\ud83d"', '"x\\udc00y"', '"\\ude00\\ud83d"']) {
+      const s: string = JSON.parse(bad);
+      const node = (change: Partial<PElement>) => ({
+        op: "insert",
+        parent: "n_1",
+        index: 0,
+        nodes: [{ ...el("n_9", "p"), ...change }],
+      });
+      expect(fault({ op: "file.rename", name: s })).toBe("op.name");
+      expect(fault({ op: "tokens", css: s })).toBe("op.css");
+      expect(fault({ op: "note", name: "brief", content: s })).toBe("op.content");
+      expect(fault({ op: "page.update", id: "pg_1", icon: s })).toBe("op.icon");
+      expect(fault({ op: "thread.edit", id: "th_1", messageId: "m_1", text: s, editedAt: 1 })).toBe(
+        "op.text",
+      );
+      expect(fault(node({ children: [text(s)] }))).toBe("op.nodes[0].children[0].value");
+      expect(fault(node({ name: s }))).toBe("op.nodes[0].name");
+      expect(fault(node({ tag: `x-${s}` }))).toBe("op.nodes[0].tag");
+      expect(fault(node({ attrs: { title: s } }))).toBe("op.nodes[0].attrs.title");
+      expect(fault(node({ style: { content: s } }))).toBe("op.nodes[0].style.content");
+      // As a key as well. (U+0000 is no attribute name or property to begin with.)
+      expect(fault(node({ attrs: { [`data-${s}`]: "x" } }))).toStartWith("op.nodes[0].attrs.");
+      expect(fault(node({ style: { [`--${s}`]: "x" } }))).toStartWith("op.nodes[0].style.");
+    }
+    // A whole pair is a character like any other.
+    expect(fault({ op: "file.rename", name: "Launch 🚀" })).toBeNull();
+    expect(fault({ op: "attrs", id: "n_1", attrs: { "data-🚀": "🚀" } })).toBeNull();
+  });
+});
+
+describe("validateCommit", () => {
+  const post = (ops: unknown) => ({ ops });
+  const one = (id: unknown = "op_1") => ({ id, op: SAMPLE_OPS["file.rename"] });
+  const commitFault = (input: unknown): string | null => {
+    try {
+      validateCommit(input);
+      return null;
+    } catch (err) {
+      if (!(err instanceof InvalidOpError)) throw err;
+      return err.path;
+    }
+  };
+
+  test("a post comes back as its ops, each still to be validated on its own", () => {
+    const body = wire(post([one("op_1"), { id: "op_2", op: { op: "no such op" } }]));
+    const ops = validateCommit(body);
+    expect(ops).toBe(body.ops);
+    expect(ops.map((o) => o.id)).toEqual(["op_1", "op_2"]);
+    expect(validateOp(ops[0]!.op)).toEqual(SAMPLE_OPS["file.rename"]);
+    // One bad op is the API's to reject under its id; it doesn't cost the post.
+    expect(fault(ops[1]!.op)).toBe("op.op");
+    expect(validateCommit(post([]))).toEqual([]);
+    expect(validateCommit(post([one(newOpId())]))).toHaveLength(1);
+  });
+
+  test("what isn't a post is refused, and the path says where", () => {
+    for (const bad of [null, undefined, "ops", 7, [], [one()]])
+      expect(commitFault(bad)).toBe("body");
+    expect(commitFault({})).toBe("body.ops");
+    expect(commitFault({ ops: [], also: 1 })).toBe("body.also");
+    for (const bad of [null, {}, "x", 3]) expect(commitFault(post(bad))).toBe("ops");
+    for (const bad of [null, "x", 3, [], [one()]])
+      expect(commitFault(post([one(), bad]))).toBe("ops[1]");
+    expect(commitFault(post([{ id: "op_1" }]))).toBe("ops[0].op");
+    expect(commitFault(post([{ op: SAMPLE_OPS.remove }]))).toBe("ops[0].id");
+    expect(commitFault(post([{ ...one(), seq: 4 }]))).toBe("ops[0].seq");
+  });
+
+  test("an id has to be one, and no other op's", () => {
+    const bad = [3, null, "", "has space", "a/b", "é", "x".repeat(MAX_ID_LENGTH + 1), ["op_1"]];
+    for (const id of bad) expect(commitFault(post([one("op_0"), one(id)]))).toBe("ops[1].id");
+    expect(commitFault(post([one("x".repeat(MAX_ID_LENGTH))]))).toBeNull();
+    expect(commitFault(post([one("a"), one("b"), one("a")]))).toBe("ops[2].id");
+    // A megabyte of id is turned away without being copied anywhere.
+    expect(commitFault(post([one("x".repeat(1024 * 1024))]))).toBe("ops[0].id");
+  });
+
+  test("a post carries no more ops than a replica sends, and the count is checked first", () => {
+    const many = (count: number) => post(Array.from({ length: count }, (_, i) => one(`op_${i}`)));
+    expect(commitFault(many(MAX_COMMIT_OPS))).toBeNull();
+    expect(commitFault(many(MAX_COMMIT_OPS + 1))).toBe("ops");
+    expect(commitFault(post(new Array(5_000_000).fill(7)))).toBe("ops");
+  });
+
+  test("keys that would pollute are just fields that don't belong", () => {
+    expect(commitFault(JSON.parse('{"ops":[],"__proto__":{"x":1}}'))).toBe("body.__proto__");
+    expect(commitFault(JSON.parse('{"ops":[{"id":"a","op":{},"constructor":1}]}'))).toBe(
+      "ops[0].constructor",
+    );
+    expect(({} as { x?: number }).x).toBeUndefined();
   });
 });

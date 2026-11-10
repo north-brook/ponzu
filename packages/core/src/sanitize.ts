@@ -77,8 +77,34 @@ export function sanitizeOp(op: Op, dropped: Dropped[] = []): Op {
     }
     case "batch":
       return { ...op, ops: op.ops.map((child) => sanitizeOp(child, dropped)) };
-    default:
+    case "remove":
+    case "move":
+    case "name":
+    case "artboard.delete":
+    case "artboard.update":
+    case "artboard.move":
+    case "page.create":
+    case "page.delete":
+    case "page.update":
+    case "page.order":
+    case "page.move":
+    case "file.rename":
+    case "file.icon":
+    case "file.scratch":
+    case "thread.create":
+    case "thread.delete":
+    case "thread.update":
+    case "thread.message":
+    case "thread.unmessage":
+    case "thread.edit":
+    case "note":
       return op;
+    default: {
+      // Every variant is named above, so a new one doesn't compile until someone has decided
+      // whether it carries anything to sanitize.
+      const undecided: never = op;
+      return undecided;
+    }
   }
 }
 

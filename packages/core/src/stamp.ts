@@ -51,8 +51,36 @@ export function stampOp(op: Op, actor: Actor, at: number): Op {
       return { ...op, updatedAt: at };
     case "batch":
       return { ...op, ops: op.ops.map((child) => stampOp(child, actor, at)) };
-    default:
+    case "insert":
+    case "remove":
+    case "move":
+    case "style":
+    case "attrs":
+    case "name":
+    case "children":
+    case "artboard.create":
+    case "artboard.delete":
+    case "artboard.update":
+    case "artboard.move":
+    case "page.create":
+    case "page.delete":
+    case "page.update":
+    case "page.order":
+    case "page.move":
+    case "file.rename":
+    case "file.icon":
+    case "file.scratch":
+    case "tokens":
+    case "thread.delete":
+    case "thread.unmessage":
+    case "note":
       return op;
+    default: {
+      // Every variant is named above, so a new one doesn't compile until someone has decided
+      // whether it says who or when.
+      const undecided: never = op;
+      return undecided;
+    }
   }
 }
 

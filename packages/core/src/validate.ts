@@ -10,6 +10,8 @@ import {
   MAX_STRING_LENGTH,
 } from "./limits.ts";
 import { isAttributeName, isId, isStyleProperty, isTagName } from "./rules.ts";
+import { MAX_COMMIT_OPS } from "./sync.ts";
+import { utf8Length } from "./utf8.ts";
 
 /** An op that isn't one. `path` names the field at fault, like `op.nodes[0].attrs.href`. */
 export class InvalidOpError extends Error {
@@ -24,8 +26,8 @@ export class InvalidOpError extends Error {
 
 /**
  * Check that untrusted JSON is an op: a known variant with every field it needs, nothing it
- * doesn't, the right types, well-formed ids and names, and sizes within limits.ts. Returns
- * the input itself, typed, or throws `InvalidOpError`.
+ * doesn't, the right types, well-formed ids and names, text the database can hold, and sizes
+ * within limits.ts. Returns the input itself, typed, or throws `InvalidOpError`.
  *
  * This is the shape only. Whether the op fits a design is `applyOp`'s to say, and what its
  * nodes may hold is `sanitizeOp`'s.
@@ -37,6 +39,25 @@ export function validateOp(input: unknown): Op {
   const bytes = utf8Length(JSON.stringify(input));
   if (bytes > MAX_OP_BYTES) fail("op", `is ${bytes} bytes; the most is ${MAX_OP_BYTES}`);
   return input as Op;
+}
+
+/**
+ * Check the body of a commit, `{ ops: [{ id, op }] }`: at most `MAX_COMMIT_OPS` ops, each
+ * under a well-formed id that no other op in the post has. Returns the ops, or throws
+ * `InvalidOpError` with a path like `ops[3].id`.
+ *
+ * Each `op` comes back unchecked. `validateOp` is run on them one at a time, so that one bad
+ * op is rejected under its id and the rest of the post still commits.
+ */
+export function validateCommit(input: unknown): { id: string; op: unknown }[] {
+  const ops = array(fields(input, "body", { ops: any }).ops, "ops", MAX_COMMIT_OPS);
+  const seen = new Set<unknown>();
+  ops.forEach((item, i) => {
+    const posted = fields(item, `ops[${i}]`, { id, op: any });
+    if (seen.has(posted.id)) fail(`ops[${i}].id`, "is the id of another op in this post");
+    seen.add(posted.id);
+  });
+  return ops as { id: string; op: unknown }[];
 }
 
 type Fields = Record<string, unknown>;
@@ -187,6 +208,7 @@ function entries(
   for (const key of keys) {
     const at = `${path}.${show(key)}`;
     if (key.length > MAX_NAME_LENGTH || !named(key)) fail(at, problem);
+    storable(key, at);
     string(map[key], at);
   }
 }
@@ -321,13 +343,27 @@ function string(value: unknown, path: string): string {
   if (typeof value !== "string") fail(path, "must be a string");
   if (value.length > MAX_STRING_LENGTH)
     fail(path, `is longer than ${MAX_STRING_LENGTH} characters`);
+  storable(value, path);
   return value;
 }
 
 function name(value: unknown, path: string): string {
   if (typeof value !== "string") fail(path, "must be a string");
   if (value.length > MAX_NAME_LENGTH) fail(path, `is longer than ${MAX_NAME_LENGTH} characters`);
+  storable(value, path);
   return value;
+}
+
+/** U+0000, or half of a surrogate pair: with `u`, a whole pair is one character and no match. */
+const UNSTORABLE = /[\u0000\ud800-\udfff]/u;
+
+/**
+ * Text the database can hold. Postgres has no U+0000 in `text`, and reads no JSON with half
+ * a surrogate pair in it, so either would be an error where the op is stored or read back
+ * rather than a rejection here.
+ */
+function storable(value: string, path: string): void {
+  if (UNSTORABLE.test(value)) fail(path, "must not hold U+0000 or half of a surrogate pair");
 }
 
 function id(value: unknown, path: string): void {
@@ -358,18 +394,4 @@ function boolean(value: unknown, path: string): void {
 /** A key as part of a path, short enough to read and safe to print. */
 function show(key: string): string {
   return /^[\w-]{1,40}$/.test(key) ? key : JSON.stringify(key.slice(0, 40));
-}
-
-/** The length of a string in UTF-8, without building the bytes. */
-function utf8Length(text: string): number {
-  let bytes = 0;
-  for (let i = 0; i < text.length; i++) {
-    const c = text.charCodeAt(i);
-    if (c < 0x80) bytes += 1;
-    else if (c < 0x800) bytes += 2;
-    // A surrogate pair is four bytes, counted as two for each half.
-    else if (c >= 0xd800 && c <= 0xdfff) bytes += 2;
-    else bytes += 3;
-  }
-  return bytes;
 }
