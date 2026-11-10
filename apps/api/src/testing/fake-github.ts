@@ -142,7 +142,10 @@ export class FakeGithub {
   delivery(
     event: string,
     payload: unknown,
-    { id = crypto.randomUUID(), secret = this.credentials.webhookSecret } = {},
+    {
+      id = crypto.randomUUID() as string,
+      secret = this.credentials.webhookSecret,
+    }: { id?: string; secret?: string } = {},
   ): { method: "POST"; headers: Record<string, string>; body: string } {
     const body = JSON.stringify(payload);
     const signature = createHmac("sha256", secret).update(body).digest("hex");

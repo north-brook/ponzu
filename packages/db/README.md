@@ -170,6 +170,10 @@ the foreign key is the repo and its workspace together. When GitHub transfers a 
 another account, `upsertRepos` moves the repo and its designs follow in the same statement.
 Usage already recorded stays with the workspace that was billed for it.
 
+A design's pull request is recorded from GitHub's webhooks by `recordPullRequest`, which keeps
+the newest word (`designs.pr_updated_at`, GitHub's `updated_at`) since deliveries arrive out
+of order, and settles the design on a merge.
+
 ## Deleting
 
 Deleting a design deletes everything that is only its own (ops, checkpoints, thread, events,
