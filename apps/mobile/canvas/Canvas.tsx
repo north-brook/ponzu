@@ -18,9 +18,9 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-// Desktop's own pieces, from source: the app doesn't depend on @ponzu/react, whose index pulls
+// Desktop's own pieces, from source: the app doesn't depend on @ponzu/canvas, whose index pulls
 // in the whole studio canvas.
-import { ArtboardView } from "../../../packages/react/src/Artboard.tsx";
+import { ArtboardView } from "../../../packages/canvas/src/Artboard.tsx";
 import {
   type Arrivals,
   arriveBoard,
@@ -28,9 +28,9 @@ import {
   drawFrame,
   RING_OUT_MS,
   ringDelay,
-} from "../../../packages/react/src/arrive.ts";
-import { useWindowStill } from "../../../packages/react/src/still.ts";
-import { Rain, useLingering } from "../../../packages/react/src/working.tsx";
+} from "../../../packages/canvas/src/arrive.ts";
+import { useWindowStill } from "../../../packages/canvas/src/still.ts";
+import { Rain, useLingering } from "../../../packages/canvas/src/working.tsx";
 import {
   BOARD_RADIUS,
   type Box,
@@ -1211,7 +1211,7 @@ function offscreen(
 
 /**
  * The pencil on a comment being written: an unsent comment's pin, and a thread's while a reply to
- * it is unsent. Hugeicons' Edit03, as desktop's (packages/react/src/icons.tsx, Pencil).
+ * it is unsent. Hugeicons' Edit03, as desktop's (packages/canvas/src/icons.tsx, Pencil).
  */
 function Pencil() {
   return (

@@ -1,8 +1,8 @@
 "use client";
 
+import { Canvas, MemorySource } from "@ponzu/canvas";
 import type { Doc } from "@ponzu/core";
-import { Canvas, MemorySource } from "@ponzu/react";
-import "@ponzu/react/styles.css";
+import "@ponzu/canvas/styles.css";
 import { useState, useSyncExternalStore } from "react";
 import { usePages } from "./pages";
 

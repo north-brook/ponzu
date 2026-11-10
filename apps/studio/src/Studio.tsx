@@ -1,13 +1,4 @@
 import {
-  type Catalog,
-  type CatalogFile,
-  type CatalogMachine,
-  type Doc,
-  findArtboard,
-  type Presence,
-  shelfRequest,
-} from "@ponzu/core";
-import {
   type AgentActivity,
   AgentMark,
   agentActivity,
@@ -20,7 +11,16 @@ import {
   useDelayed,
   useModifierHint,
   useSource,
-} from "@ponzu/react";
+} from "@ponzu/canvas";
+import {
+  type Catalog,
+  type CatalogFile,
+  type CatalogMachine,
+  type Doc,
+  findArtboard,
+  type Presence,
+  shelfRequest,
+} from "@ponzu/core";
 import {
   Fragment,
   type ReactNode,

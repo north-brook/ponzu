@@ -1,6 +1,5 @@
 "use client";
 
-import type { Artboard } from "@ponzu/core";
 import {
   AgentMark,
   ARRIVE_LAG_MS,
@@ -17,7 +16,8 @@ import {
   Rain,
   RING_OUT_MS,
   SHEET_KEYFRAMES,
-} from "@ponzu/react";
+} from "@ponzu/canvas";
+import type { Artboard } from "@ponzu/core";
 import "./ponzu.css";
 import "./demo.css";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -742,7 +742,7 @@ type Ring = "on" | "leaving" | null;
 
 /**
  * One artboard, as the canvas draws it: the design's own HTML in Ponzu's artboard view. A board
- * written while you watch develops as it does in the app (packages/react/src/arrive.ts): its frame
+ * written while you watch develops as it does in the app (packages/canvas/src/arrive.ts): its frame
  * draws round it and its sheet develops inside, then each of its pieces, in the order the agent
  * writes them, shows its plan in yuzu outlines and develops top first, playing its own entrance as
  * it does. While the agent works on it, a yuzu ring breathes round it and rain falls in its

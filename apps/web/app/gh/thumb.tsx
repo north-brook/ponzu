@@ -1,7 +1,7 @@
 "use client";
 
+import { ArtboardView } from "@ponzu/canvas";
 import { type Artboard, parseArtboardFile } from "@ponzu/core";
-import { ArtboardView } from "@ponzu/react";
 import { useEffect, useRef, useState } from "react";
 import { useSystemTheme } from "./design-canvas";
 import type { ListedDesign } from "./github";

@@ -15,7 +15,7 @@ export interface Draft {
  * Unsent words, by what they're for (a new comment's pin, or a thread): kept as the composer
  * moves (iPhone Duo folds and opens it from the sheet to the panel or the half beside the
  * design), when its sheet is swiped away, and when an agent changes the thread under it. Gone
- * once they're sent, or the field is emptied. As desktop's (packages/react/src/drafts.ts).
+ * once they're sent, or the field is emptied. As desktop's (packages/canvas/src/drafts.ts).
  */
 const drafts = new Map<string, Draft>();
 const listeners = new Set<() => void>();

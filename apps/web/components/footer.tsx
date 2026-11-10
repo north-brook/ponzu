@@ -1,4 +1,4 @@
-import { SLICE, SLICE_STROKE } from "@ponzu/react/slice";
+import { SLICE, SLICE_STROKE } from "@ponzu/canvas/slice";
 import { Heart, Lockup } from "./icons";
 import { CONTRIBUTING, DOWNLOAD, IPHONE, LICENSE, PRIVACY, RELEASES, REPO, SDK } from "./links";
 

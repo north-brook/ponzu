@@ -1,4 +1,4 @@
-import { Icon } from "@ponzu/react";
+import { Icon } from "@ponzu/canvas";
 import { type KeyboardEvent, useEffect, useRef } from "react";
 import type { Script } from "./script";
 
