@@ -8,6 +8,7 @@ import {
   PICTURE_AGAIN,
   PICTURE_SCALE,
   pictureAnswer,
+  pictureBuckets,
   THAW_BUDGET,
   takeThaws,
   tierFor,
@@ -68,6 +69,20 @@ test("pictures are never upscaled", () => {
   expect(bucketFor(0.5)).toBe(0.5);
   expect(bucketFor(0.8)).toBe(1);
   expect(hash("a")).not.toBe(hash("b"));
+});
+
+test("a picture keeps its resolution mid-gesture, loading the next one ahead", () => {
+  // At rest: the bucket the scale wants, and the next one up past 70% of it.
+  expect(pictureBuckets(0.2, 0.25, false)).toEqual({ bucket: 0.25, ahead: 0.5 });
+  expect(pictureBuckets(0.1, 0.25, false)).toEqual({ bucket: 0.25, ahead: null });
+  expect(pictureBuckets(0.4, 0.25, false)).toEqual({ bucket: 0.5, ahead: 1 });
+  // Zooming in past its bucket: the one it had stays, the one reached loads ahead.
+  expect(pictureBuckets(0.4, 0.25, true)).toEqual({ bucket: 0.25, ahead: 0.5 });
+  expect(pictureBuckets(0.9, 0.25, true)).toEqual({ bucket: 0.25, ahead: 1 });
+  // Zooming out: still the one it had, nothing smaller to load.
+  expect(pictureBuckets(0.1, 1, true)).toEqual({ bucket: 1, ahead: 0.25 });
+  // Mid-gesture within its bucket, as at rest.
+  expect(pictureBuckets(0.2, 0.25, true)).toEqual({ bucket: 0.25, ahead: 0.5 });
 });
 
 const thaw = (name: string, rank: number, cost: number) => ({ name, rank, cost });
