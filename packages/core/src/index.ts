@@ -17,6 +17,7 @@ export * from "./replica.ts";
 export * from "./sanitize.ts";
 export * from "./stamp.ts";
 export * from "./suggestions.ts";
+export * from "./summary.ts";
 export * from "./sync.ts";
 export * from "./tree.ts";
 export * from "./types.ts";

@@ -1,7 +1,13 @@
-import { type AgentChange, type Doc, findArtboard, type Op, type Presence } from "@ponzu/core";
+import {
+  type AgentChange,
+  type Doc,
+  findArtboard,
+  type Op,
+  type Presence,
+  summarize,
+} from "@ponzu/core";
 import type { OpEvent } from "@ponzu/store";
 import type { CatalogDb } from "./catalog-db.ts";
-import { summarize } from "./workspace.ts";
 
 /** Edits by one agent in one design this close together are one change. */
 export const CHANGE_GAP = 2 * 60_000;
