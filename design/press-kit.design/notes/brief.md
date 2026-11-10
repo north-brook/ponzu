@@ -8,7 +8,7 @@ What a journalist, partner or anyone writing about Ponzu needs: a description an
 
 ## Source of truth
 - Facts and copy: `README.md` and `apps/web` (the home page, `components/share.ts`, `app/layout.tsx`, the download page, the privacy page). The iPhone app: `docs/mobile.md` and `apps/mobile`. Nothing here is invented: no stats, funding, founders or quotes.
-- Logo geometry: `packages/react/src/slice.ts`. The lockup: `apps/web/components/icons.tsx`. Colors and type: `design/brand.design`.
+- Logo geometry: `packages/canvas/src/slice.ts`. The lockup: `apps/web/components/icons.tsx`. Colors and type: `design/brand.design`.
 - Product shots: the current Mac app itself. The canvas shots must be captured from it; the old `apps/web/public/app-light.png` and `app-dark.png` were stale and unused by the site, so don't take shots from them. The example-design shots come from `apps/web/public/home/*`.
 
 ## Open

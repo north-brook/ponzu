@@ -1,5 +1,5 @@
+import { Icon } from "@ponzu/canvas";
 import { type CatalogMachine, type UpdatePlan, updatePlan } from "@ponzu/core";
-import { Icon } from "@ponzu/react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";

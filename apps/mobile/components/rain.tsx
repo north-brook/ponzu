@@ -17,7 +17,7 @@ import { brand } from "../lib/tokens";
 import { useSeen } from "../lib/use-seen";
 
 /**
- * Yuzu rain, as desktop's `Rain` (packages/react's working.tsx): columns of
+ * Yuzu rain, as desktop's `Rain` (packages/canvas's working.tsx): columns of
  * dots falling at their own pace, saying "an agent is at work here". Sized
  * like desktop's em: `size` is the font size it would sit at, so a column is
  * 0.25 wide and 0.67 tall with 0.17 between columns. The columns come in left

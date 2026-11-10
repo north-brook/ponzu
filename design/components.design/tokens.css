@@ -42,7 +42,7 @@
 }
 
 /*
- * The studio's own colors, light and dark, from packages/react/src/styles.css
+ * The studio's own colors, light and dark, from packages/canvas/src/styles.css
  * (--pz-*) and apps/studio/src/studio.css. Wrap a component in .ui-light or
  * .ui-dark and it reads them. Each --c-* is the --pz-* of the same name unless
  * noted. Pins are yuzu with ink numbers.

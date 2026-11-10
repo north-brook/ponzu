@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { SLICE as WEB_SLICE, SLICE_STROKE as WEB_STROKE } from "../../../packages/react/src/slice";
+import { SLICE as WEB_SLICE, SLICE_STROKE as WEB_STROKE } from "../../../packages/canvas/src/slice";
 import { LAUNCH, LAUNCH_LIFT, SLICE, SLICE_STROKE } from "./mark";
 
 test("the phone draws the same slice as the web", () => {

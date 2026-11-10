@@ -42,8 +42,8 @@ apps/
   web/       marketing, download, privacy
 packages/
   core/      Doc, Op, applyOp, validation, sanitizing, the sync replica
-  canvas/    the canvas React components (today's packages/react), shared by
-             studio, the phone's canvas page and the marketing site
+  canvas/    the canvas React components, shared by studio, the phone's canvas
+             page and the marketing site
   tools/     the agent's canvas tools
   render/    headless Chromium: screenshots, layout, lint, recordings
   db/        Drizzle schema, migrations, queries

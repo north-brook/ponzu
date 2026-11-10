@@ -1,7 +1,7 @@
 # The canvas web view
 
 The phone's canvas is a web page inside a `react-native-webview`. It draws a design exactly as
-desktop does: each artboard in its own shadow root through `@ponzu/react`'s `ArtboardView`, with
+desktop does: each artboard in its own shadow root through `@ponzu/canvas`'s `ArtboardView`, with
 the design's tokens and Google fonts, an agent's work developing in the same way, and the same
 yuzu ring and rain round a board an agent is working on.
 React Native owns everything else: the design's socket, the doc, and all the chrome. The page is a

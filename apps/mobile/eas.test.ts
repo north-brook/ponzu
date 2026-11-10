@@ -167,10 +167,10 @@ test("shared code the phone bundles goes out over the air on production", () => 
   const { on, jobs } = workflow("shared.yml");
   expect(on.push.branches).toEqual(["main"]);
   expect(on.push.tags).toBeUndefined();
-  // The canvas and icons import packages/react's and packages/render's source by path.
+  // The canvas and icons import packages/canvas's and packages/render's source by path.
   expect(on.push.paths).toEqual([
     "packages/core/**",
-    "packages/react/**",
+    "packages/canvas/**",
     "packages/render/**",
     "patches/**",
     "bun.lock",

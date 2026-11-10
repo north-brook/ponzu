@@ -5,10 +5,10 @@ The studio's own UI vocabulary, documented: the title bar with its tabs, shortcu
 This is documentation of what ships, not a redesign. When the code changes, update these artboards to match; when they disagree, the code is right.
 
 ## Source of truth
-- Canvas colors and motion: `packages/react/src/styles.css` (`--pz-*`, `.pz-ring`, `.pz-rain`, `.pz-shimmer`, `.pz-juice` / `.pz-juice-slow`, `.pz-hint*`).
-- Components: `packages/react/src/ui.tsx` (Button, ToggleGroup, Tip, Menu, ShortcutHint), `Canvas.tsx` (bars, page tabs, artboard labels, `WorkingStatus`, `Ring`, `Frame`, the selection box, the opening state, pins), `arrive.ts` (a new board's frame, sheet and name), `Comments.tsx` (thread card, composer), `working.tsx` (`Juice`, `Rain`).
+- Canvas colors and motion: `packages/canvas/src/styles.css` (`--pz-*`, `.pz-ring`, `.pz-rain`, `.pz-shimmer`, `.pz-juice` / `.pz-juice-slow`, `.pz-hint*`).
+- Components: `packages/canvas/src/ui.tsx` (Button, ToggleGroup, Tip, Menu, ShortcutHint), `Canvas.tsx` (bars, page tabs, artboard labels, `WorkingStatus`, `Ring`, `Frame`, the selection box, the opening state, pins), `arrive.ts` (a new board's frame, sheet and name), `Comments.tsx` (thread card, composer), `working.tsx` (`Juice`, `Rain`).
 - Studio chrome: `apps/studio/src/Studio.tsx` (title bar, tabs, agents), `apps/studio/src/components/update.tsx` (update button and popover), `apps/studio/src/components/dashboard.tsx` (home screen), `apps/studio/src/components/file-info.tsx` (a card's where-line), `apps/studio/src/studio.css`.
-- Icons: `packages/react/src/icons.tsx` and `icon-names.ts`, drawn from `@hugeicons/core-free-icons`. The SVG paths here are copied from that package.
+- Icons: `packages/canvas/src/icons.tsx` and `icon-names.ts`, drawn from `@hugeicons/core-free-icons`. The SVG paths here are copied from that package.
 
 ## Notes
 - `tokens.css` holds the brand tokens plus `.ui-light` and `.ui-dark`, the studio's two palettes as `--c-*` variables. Components here are written once and read whichever scope wraps them.

@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 /**
  * Marks for the agents Ponzu works with, at tile size. Vector marks follow the color scheme;
  * T3 Code, Conductor and Grok Bot are their app icons. Cursor and Grok are the marks T3 Code ships;
- * Gemini is from LobeHub's icon set; Claude and OpenAI match @ponzu/react's `AgentMark`.
+ * Gemini is from LobeHub's icon set; Claude and OpenAI match @ponzu/canvas's `AgentMark`.
  */
 export type Agent =
   | "claude"

@@ -4,7 +4,7 @@
  * fresh copy of the doc, as the desktop's SocketSource does.
  */
 import { applyOp, type Doc, type Presence } from "@ponzu/core";
-import { Arrivals } from "../../../packages/react/src/arrive.ts";
+import { Arrivals } from "../../../packages/canvas/src/arrive.ts";
 import {
   CANVAS_BRIDGE,
   type FromCanvas,

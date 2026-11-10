@@ -12,8 +12,8 @@ const here = import.meta.dir;
 const repo = resolve(here, "../../..");
 const dist = join(here, "dist");
 // The app's own React is React Native's, a different version: the web view and the desktop
-// pieces it reuses share @ponzu/react's.
-const reactHome = join(repo, "packages/react/node_modules");
+// pieces it reuses share @ponzu/canvas's.
+const reactHome = join(repo, "packages/canvas/node_modules");
 const oneReact: BunPlugin = {
   name: "one-react",
   setup(build) {
