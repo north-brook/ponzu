@@ -290,6 +290,37 @@ one-minute cron finishes anything a function did not.
 The runner dials the API with a token that is valid for one design. The API reaches
 the runner through the sandbox's token-gated address to deliver events.
 
+### Rendering
+
+`ChromiumRenderer` in `packages/render` draws every screenshot, recording, export,
+measurement and lint, inside the runner's process.
+
+- **The browser is ours, not the image's.** The runner launches the Chrome Headless
+  Shell that `playwright-core` is pinned to (`channel: "chromium-headless-shell"`),
+  which the sandbox image installs with `playwright-core install --only-shell
+  chromium`. Its version moves with our lockfile instead of with boat.dev's image,
+  and on a small sandbox it idles at 140 MB and draws a landing page in 0.4 s, where
+  the image's Google Chrome takes 290 MB and 0.9 s.
+- **Chromium's sandbox stays on.** The runner is not root, and the VM allows user
+  namespaces. A design can load remote images in the same machine that holds the
+  owner's Claude credential.
+- **Work is bounded.** Two jobs at a time, the rest in a queue; 24 million device
+  pixels in one image, past which the image comes back at a smaller scale; 60
+  seconds a job, after which its page is closed; and an idle browser closes after
+  two minutes. A browser that dies is replaced on the next job.
+- **Fonts.** Designs name fonts a Mac has and Ubuntu cannot ship: Helvetica, Menlo,
+  Georgia, `system-ui`. `packages/render/sandbox-fonts.json` lists what the image
+  installs, and `stand-ins.ts` maps each name to a font of the same widths, so text
+  wraps in a screenshot where it does on the canvas. The reference is Chrome on a
+  Mac. `system-ui` is the exception: Inter stands in for San Francisco, close at
+  text sizes and up to 12% wide in headings, and lint says so on every screenshot
+  that uses it.
+- **The dev server.** With `loopback: true` a design can load images, fonts and
+  stylesheets from `http://localhost:<port>`. Chrome refuses those to a page at a
+  public origin, so the renderer fetches them itself.
+- **Bun.** The runner runs on the Bun this repo pins. Under the Bun in boat.dev's
+  image (1.3.14) the renderer's own tests hung.
+
 ### Events
 
 A design has one ordered feed of things that happened: a message, an answer, a
