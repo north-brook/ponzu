@@ -22,6 +22,8 @@ const TOKEN_FAULTS = [
  * good for longer than this.
  */
 const MAX_TOKEN_AGE = "15m";
+/** How far WorkOS's clock and this instance's may disagree. */
+const CLOCK_TOLERANCE = "30s";
 
 /**
  * The person a WorkOS access token is for, or a 401 that says why not. This is the one way a
@@ -83,6 +85,9 @@ async function verifyAccessToken(
       // jose checks `exp` only when it is there, so a token without one would never run out.
       requiredClaims: ["exp", "iat", "sub", "sid"],
       maxTokenAge: MAX_TOKEN_AGE,
+      // Checking the age means reading `iat`, and a token minted a second ago by a clock a
+      // second ahead of this one would be "from the future". Allow for that.
+      clockTolerance: CLOCK_TOLERANCE,
     }));
   } catch (cause) {
     // Too old by `iat` is reported the same way as past `exp`.

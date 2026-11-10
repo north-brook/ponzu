@@ -60,6 +60,8 @@ export interface AccessTokenOverrides {
   clientId?: string;
   /** Seconds from now. Negative for a token that has already run out. Null for no `exp` at all. */
   expiresIn?: number | null;
+  /** Seconds from now that it says it was issued: positive for a clock ahead of the API's. */
+  issuedIn?: number;
   /** `other-key`: a key WorkOS does not publish, under the published key's id. */
   signedWith?: "workos-key" | "other-key" | "shared-secret";
 }
@@ -156,9 +158,11 @@ export class FakeWorkos {
       .setIssuer(overrides.issuer ?? this.issuer)
       .setSubject(userId)
       .setJti(this.#id())
-      .setIssuedAt(now);
+      .setIssuedAt(now + (overrides.issuedIn ?? 0));
     if (overrides.expiresIn !== null) {
-      jwt.setExpirationTime(now + (overrides.expiresIn ?? ACCESS_TOKEN_SECONDS));
+      jwt.setExpirationTime(
+        now + (overrides.issuedIn ?? 0) + (overrides.expiresIn ?? ACCESS_TOKEN_SECONDS),
+      );
     }
     if (overrides.signedWith === "shared-secret") {
       // The classic confusion attack: HS256, keyed with something the attacker knows.

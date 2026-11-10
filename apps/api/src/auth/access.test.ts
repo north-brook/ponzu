@@ -60,8 +60,17 @@ describe("a route for a signed-in person", () => {
   });
 
   test("an expired token: token_expired", async () => {
-    const expired = await t.workos.signAccessToken(session(), { expiresIn: -1 });
+    const expired = await t.workos.signAccessToken(session(), { expiresIn: -60 });
     expect(await me(`Bearer ${expired}`)).toEqual([401, "token_expired"]);
+  });
+
+  test("a token from a clock a little ahead of ours is taken; one from the future is not", async () => {
+    const sid = JSON.parse(atob(person.accessToken.split(".")[1]!)).sid;
+    const issued = (seconds: number) =>
+      t.workos.signAccessToken({ userId: person.workos.id, sessionId: sid }, { issuedIn: seconds });
+
+    expect((await me(`Bearer ${await issued(5)}`))[0]).toBe(200);
+    expect(await me(`Bearer ${await issued(300)}`)).toEqual([401, "token_invalid"]);
   });
 
   test("a token that never says when it runs out: token_invalid", async () => {
@@ -95,14 +104,15 @@ describe("a route for a signed-in person", () => {
     await other.close();
   });
 
-  test("a token expires five minutes after it was issued, by the API's own clock", async () => {
+  test("a token runs out five minutes after it was issued, by the API's own clock", async () => {
     const other = await createTestApp();
     const fresh = await other.signInAs();
     const ask = async () => (await other.app.request("/v1/me", { headers: fresh.headers })).status;
 
     other.clock.advance(299_000);
     expect(await ask()).toBe(200);
-    other.clock.advance(2_000);
+    // Half a minute is allowed for the two clocks disagreeing, and no more.
+    other.clock.advance(32_000);
     expect(await ask()).toBe(401);
     await other.close();
   });
