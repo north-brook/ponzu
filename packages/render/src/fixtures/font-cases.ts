@@ -32,10 +32,12 @@ const SAMPLES: Record<string, string> = {
 };
 
 /**
- * Lines a stand-in draws without being named. The generic sans-serif and
- * serif are Helvetica and Times on a Mac, and reach their stand-ins on Linux
- * by another road (see stand-ins.ts). An emoji is drawn by fallback in a
- * line of any font.
+ * Lines a stand-in draws without being the first name in the stack, each
+ * held to the stand-in for `as`. The generic sans-serif and serif are
+ * Helvetica and Times on a Mac, and reach their stand-ins on Linux by another
+ * road (see stand-ins.ts). An emoji is drawn by fallback in a line of any
+ * font. Chinese, Japanese and Korean after a Latin font is how a stack names
+ * a font for them.
  */
 const UNNAMED: { name: string; family: string; as: string; text: string }[] = [
   { name: "sans-serif", family: "sans-serif", as: "Helvetica", text: LATIN },
@@ -46,6 +48,12 @@ const UNNAMED: { name: string; family: string; as: string; text: string }[] = [
     as: "Apple Color Emoji",
     text: "Shipped 🚀 and checked ✅ by the whole team 🎉",
   },
+  ...["PingFang SC", "Hiragino Sans", "Apple SD Gothic Neo"].map((as) => ({
+    name: `${as} after Helvetica`,
+    family: `"Helvetica", "${as}"`,
+    as,
+    text: `Settings ${SAMPLES[standInFor(as)!.font]}`,
+  })),
 ];
 
 const SIZES = [12, 16, 24, 40];

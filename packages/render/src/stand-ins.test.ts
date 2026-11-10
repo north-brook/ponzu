@@ -11,6 +11,7 @@ import {
   type Metrics,
   STAND_INS,
   standInFor,
+  UNNAMED_CJK,
 } from "./stand-ins.ts";
 
 test("every stand-in is a font the sandbox image is told to install", () => {
@@ -202,6 +203,27 @@ describe.skipIf(!chromium || process.platform !== "linux")("stand-ins on Linux",
       (await lint(tailwind)).map((i) => `${i.kind} ${i.id} ${/"([^"]+)"/.exec(i.message)![1]}`),
     ).toEqual(["stand-in-font n_sans system-ui", "stand-in-font n_rounded Helvetica Neue"]);
   });
+
+  test.skipIf(!have.has("Liberation Sans") || !have.has("Noto Sans CJK JP"))(
+    "lint says when fallback draws Chinese, Japanese or Korean at a line height of its own",
+    async () => {
+      const { artboard } = parseArtboardFile(
+        `<section data-artboard data-id="ab_k" style="width:600px;height:400px">
+<p data-id="n_named" style="font-family:Helvetica, 'PingFang SC', sans-serif">设置与账户</p>
+<p data-id="n_set" style="font:16px/1.5 Helvetica, sans-serif">設定とアカウント</p>
+<p data-id="n_latin" style="font-family:Helvetica, sans-serif">Settings</p>
+<p data-id="n_left" style="font-family:Helvetica, sans-serif">设置与账户</p>
+<p data-id="n_again" style="font-family:sans-serif">설정 및 계정</p>
+</section>`,
+        { id: "ab_k", name: "Fallback" },
+      );
+      const { issues } = await renderer.render({ artboard, tokens: "", lint: true });
+      // Once, on the first line that names no font for it and leaves its height to the font.
+      expect(issues.filter((i) => i.kind === "stand-in-font")).toEqual([
+        { id: "n_left", kind: "stand-in-font", message: UNNAMED_CJK },
+      ]);
+    },
+  );
 
   const byName = new Map<string, FontCase[]>();
   for (const c of cases) byName.set(c.name, [...(byName.get(c.name) ?? []), c]);

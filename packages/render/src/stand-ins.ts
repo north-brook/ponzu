@@ -24,14 +24,14 @@
  * keyword or the font a missing glyph falls back to; where that leaves a
  * line's height off, the stand-in has a `caveat`.
  *
- * Not covered, and lint doesn't see it: Chinese, Japanese or Korean text in
- * a stack that names no font for it. Fallback draws it in whichever font
- * fontconfig's own order puts first for the character (Noto Sans CJK JP when
- * the machine holds only the fonts in sandbox-fonts.json), under that font's
- * metrics, and a line with no line-height set can be a fifth taller or
- * shorter than on a Mac. A stack that names PingFang, Hiragino or Apple SD
- * Gothic Neo after its own font draws that text in the stand-in, at the
- * Mac's line height.
+ * Not matched: Chinese, Japanese or Korean text in a stack that names no
+ * font for it. Fallback draws it in whichever font fontconfig's own order
+ * puts first for the character (Noto Sans CJK JP when the machine holds only
+ * the fonts in sandbox-fonts.json), under that font's metrics. There its
+ * widths are the named stand-ins', but a line with no line-height set is 24px tall
+ * at 16px where a Mac's is 18 to 24. With a line-height set the two agree,
+ * and so they do when the stack names PingFang, Hiragino or Apple SD Gothic
+ * Neo after its own font. Lint says so (`UNNAMED_CJK`).
  *
  * stand-ins.test.ts holds each stand-in to widths and line heights recorded
  * on a Mac (scripts/font-reference.ts). The fonts themselves are listed for
@@ -182,6 +182,19 @@ export function standInFor(name: string): StandIn | undefined {
   const key = name.toLowerCase();
   return STAND_INS.find((s) => s.names.some((n) => n.toLowerCase() === key));
 }
+
+/** The names that draw Chinese, Japanese or Korean text in a stand-in held to the Mac's font. */
+export const CJK_NAMES: readonly string[] = STAND_INS.filter((s) =>
+  s.font.startsWith("Noto Sans CJK"),
+).flatMap((s) => s.names);
+
+/**
+ * What lint says of such text in a stack of system fonts that names none of
+ * them, where the line height is left to the font: fallback draws it, and no
+ * face reaches a fallback.
+ */
+export const UNNAMED_CJK =
+  'Chinese, Japanese or Korean text with no font named for it is drawn by a fallback font in screenshots, where a line with no line-height set can be a third taller than people see. Set a line-height, or name "PingFang SC", "Hiragino Sans" or "Apple SD Gothic Neo" in the stack.';
 
 const xml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 

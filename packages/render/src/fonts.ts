@@ -1,5 +1,5 @@
 import { GOOGLE_FONTS_DATA } from "./google-fonts-data.ts";
-import { STAND_INS } from "./stand-ins.ts";
+import { CJK_NAMES, STAND_INS, UNNAMED_CJK } from "./stand-ins.ts";
 
 /**
  * Google Fonts, loaded so text renders the same on the canvas, in screenshots
@@ -250,7 +250,8 @@ export function googleFontElement(doc: Document, f: GoogleFontRequest): HTMLLink
  * people see. That too is found out, not assumed: the renderer's own face
  * for the name loaded, or the name and its stand-in draw the sample alike.
  * Emoji count wherever they appear, since fallback draws them whatever the
- * stack names.
+ * stack names. Chinese, Japanese and Korean text that fallback draws gets a
+ * note of its own, once, where its line height is left to the font.
  */
 export const FONT_LINT_SCRIPT = `(() => {
   const issues = [];
@@ -263,6 +264,8 @@ export const FONT_LINT_SCRIPT = `(() => {
       ),
     ),
   )};
+  const system = ${JSON.stringify(STAND_INS.flatMap((s) => s.names.map((n) => n.toLowerCase())))};
+  const cjk = ${JSON.stringify(CJK_NAMES.map((n) => n.toLowerCase()))};
   const unquote = (s) => s.trim().replace(/^['"]|['"]$/g, '').trim();
   const links = new Map([...document.querySelectorAll('link[data-font]')].map((l) => [l.dataset.font.toLowerCase(), l]));
   // The faces the renderer declares for stand-ins are first in the page, so first here. The rest are the design's.
@@ -332,6 +335,13 @@ export const FONT_LINT_SCRIPT = `(() => {
       const k = family.toLowerCase();
       if (draws(family, style)) {
         standsIn(el, family, style);
+        // Chinese, Japanese or Korean in a stack of system fonts that names none for it: fallback
+        // draws it, here in a font with another line height, which shows where the font sets it.
+        if (ours.length && !reported.has('cjk') && cs.lineHeight === 'normal' && (generic.test(family) || system.includes(k)) &&
+            /[\\p{sc=Han}\\p{sc=Hiragana}\\p{sc=Katakana}\\p{sc=Hangul}]/u.test(text) && !stack.some((f) => cjk.includes(f.toLowerCase()))) {
+          reported.add('cjk');
+          issues.push({ id: el.getAttribute('data-id'), kind: 'stand-in-font', message: ${JSON.stringify(UNNAMED_CJK)} });
+        }
         break;
       }
       // Never requested: a system font this machine lacks, which falls through quietly.
