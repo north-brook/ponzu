@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { access } from "../auth/access.ts";
 import { signIn } from "../auth/sign-in.ts";
+import { syncGithub } from "../github/sync.ts";
 import type { AppEnv } from "../http/context.ts";
 import { clientIp } from "../http/request.ts";
 import { validate } from "../http/validate.ts";
@@ -37,6 +38,11 @@ export const auth = new Hono<AppEnv>()
       ipAddress: clientIp(c.req.raw.headers),
       userAgent: c.req.header("user-agent"),
     });
+    // What the person can reach on GitHub, brought up to date without making sign-in wait.
+    c.var.deps.background(
+      "github_sync",
+      syncGithub({ ...c.var.deps, log: c.var.log }, signedIn.user.id),
+    );
     return c.json(
       Session.parse({
         user: toProfile(signedIn.user),

@@ -248,11 +248,19 @@ export async function upsertMembership(
 /** A workspace as one of its members sees it in a list. */
 export type MemberWorkspace = Pick<
   Workspace,
-  "id" | "githubLogin" | "kind" | "name" | "avatarUrl" | "installationId" | "suspendedAt"
+  | "id"
+  | "githubAccountId"
+  | "githubLogin"
+  | "kind"
+  | "name"
+  | "avatarUrl"
+  | "installationId"
+  | "suspendedAt"
 > & { role: MemberRole };
 
 const memberWorkspaceColumns = {
   id: workspaces.id,
+  githubAccountId: workspaces.githubAccountId,
   githubLogin: workspaces.githubLogin,
   kind: workspaces.kind,
   name: workspaces.name,

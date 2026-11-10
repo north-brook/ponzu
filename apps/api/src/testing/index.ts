@@ -105,6 +105,7 @@ export async function createTestApp(
     config: {
       build: { version: "0.0.0-test", commit: options.commit ?? "testcommit" },
       minimumClientVersions: options.minimumClientVersions ?? {},
+      githubApp: { slug: "ponzu-test", webhookSecret: github.credentials.webhookSecret },
     },
   };
   const app = createApp(deps);
@@ -164,8 +165,9 @@ export async function createTestApp(
 
   /**
    * Signs a person in through the real `POST /v1/auth/exchange`, so their row and their
-   * stored GitHub token exist exactly as a real sign-in leaves them. Signing the same login in
-   * again is the same person with a new session.
+   * stored GitHub token exist exactly as a real sign-in leaves them, and waits for the sync
+   * with GitHub the sign-in starts. Signing the same login in again is the same person with a
+   * new session.
    */
   async function signInAs(who: Partial<Person> = {}): Promise<SignedInPerson> {
     const started = await startSignIn(who);
@@ -184,6 +186,7 @@ export async function createTestApp(
       access_token: string;
       refresh_token: string;
     };
+    await backgroundDone();
     return {
       headers: { authorization: `Bearer ${session.access_token}` },
       userId: session.user.id,

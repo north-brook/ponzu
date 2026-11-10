@@ -318,6 +318,7 @@ describe("memberships", () => {
     expect(await listUserWorkspaces(db, user.id)).toEqual([
       {
         id: mine.id,
+        githubAccountId: mine.githubAccountId,
         githubLogin: "acme",
         kind: "org",
         name: "acme",

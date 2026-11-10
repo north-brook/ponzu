@@ -1,4 +1,4 @@
-import { createPrivateKey } from "node:crypto";
+import { createPrivateKey, type KeyObject } from "node:crypto";
 import type { Clock } from "@ponzu/sandbox";
 import { SignJWT } from "jose";
 import { ApiError, UpstreamError } from "../http/errors.ts";
@@ -30,7 +30,7 @@ export interface GithubAccount {
   avatarUrl: string | null;
 }
 
-/** An installation of the App that a person can reach. */
+/** An installation of the App: one a person can reach, or one the App looked up itself. */
 export interface GithubUserInstallation {
   id: number;
   account: GithubAccount;
@@ -47,6 +47,12 @@ export interface GithubRepository {
   /** Whether the person can push to it. */
   canPush: boolean;
 }
+
+/** A repository as the App sees it in an installation: nobody's permission in particular. */
+export type GithubInstalledRepository = Omit<GithubRepository, "canPush">;
+
+/** A person's standing in an organization: `admin` is an owner. */
+export type GithubOrgRole = "admin" | "member";
 
 /** A fresh user token pair, from a refresh. */
 export interface GithubTokenPair {
@@ -84,6 +90,8 @@ export interface Github {
     userToken: string,
     installationId: number,
   ): Promise<GithubRepository[]>;
+  /** Their role in an organization, or null if they are not an active member it shows them. */
+  getOrgRole(userToken: string, org: string): Promise<GithubOrgRole | null>;
   /** Trades a refresh token for a new pair. The old refresh token stops working at once. */
   refreshUserToken(refreshToken: string): Promise<GithubRefreshResult>;
 
@@ -96,6 +104,15 @@ export interface Github {
     repositoryIds?: number[];
     permissions?: Record<string, "read" | "write">;
   }): Promise<GithubInstallationToken>;
+  /**
+   * As the App: one installation as GitHub has it now, or null once it is gone. This is the
+   * word to trust over a webhook's payload, which may be older than what happened since.
+   */
+  getInstallation(installationId: number): Promise<GithubUserInstallation | null>;
+  /** With an installation token: every repository the installation can see. */
+  listRepositoriesAsInstallation(installationToken: string): Promise<GithubInstalledRepository[]>;
+  /** With an installation token: an account's display name, or null when it has none. */
+  getAccountName(installationToken: string, login: string): Promise<string | null>;
 }
 
 const API_URL = "https://api.github.com";
@@ -160,15 +177,15 @@ export function createGithub({
   }
 
   /** Every page of a list GitHub wraps as `{ total_count, [key]: [...] }`. */
-  async function listAll(path: string, userToken: string, key: string): Promise<any[]> {
+  async function listAll(
+    as: "user" | "app",
+    path: string,
+    token: string,
+    key: string,
+  ): Promise<any[]> {
     const items: any[] = [];
     for (let page = 1; page <= MAX_PAGES; page++) {
-      const body = await call(
-        "user",
-        "GET",
-        `${path}?per_page=${PAGE_SIZE}&page=${page}`,
-        userToken,
-      );
+      const body = await call(as, "GET", `${path}?per_page=${PAGE_SIZE}&page=${page}`, token);
       const batch: any[] = body[key] ?? [];
       items.push(...batch);
       if (batch.length < PAGE_SIZE) break;
@@ -176,16 +193,9 @@ export function createGithub({
     return items;
   }
 
-  /** The App's own credential: a JWT good for a few minutes, backdated for clock drift. */
   function appJwt(): Promise<string> {
     signingKey ??= createPrivateKey(privateKey);
-    const now = Math.floor(clock.now() / 1000);
-    return new SignJWT({})
-      .setProtectedHeader({ alg: "RS256" })
-      .setIssuer(clientId)
-      .setIssuedAt(now - 60)
-      .setExpirationTime(now + 540)
-      .sign(signingKey);
+    return signAppJwt({ clientId, privateKey: signingKey, now: clock.now() });
   }
 
   return {
@@ -214,31 +224,33 @@ export function createGithub({
     },
 
     async listInstallations(userToken) {
-      const installations = await listAll("/user/installations", userToken, "installations");
-      return installations.map((installation) => ({
-        id: installation.id,
-        account: {
-          id: installation.account.id,
-          login: installation.account.login,
-          type: installation.account.type === "Organization" ? "Organization" : "User",
-          avatarUrl: installation.account.avatar_url ?? null,
-        },
-        repositorySelection: installation.repository_selection === "all" ? "all" : "selected",
-        suspendedAt: installation.suspended_at ? new Date(installation.suspended_at) : null,
-      }));
+      const path = "/user/installations";
+      return (await listAll("user", path, userToken, "installations")).map(toInstallation);
     },
 
     async listInstallationRepositories(userToken, installationId) {
       const path = `/user/installations/${installationId}/repositories`;
-      const repositories = await listAll(path, userToken, "repositories");
+      const repositories = await listAll("user", path, userToken, "repositories");
       return repositories.map((repository) => ({
-        id: repository.id,
-        fullName: repository.full_name,
-        defaultBranch: repository.default_branch,
-        private: repository.private === true,
-        pushedAt: repository.pushed_at ? new Date(repository.pushed_at) : null,
+        ...toRepository(repository),
         canPush: repository.permissions?.push === true,
       }));
+    },
+
+    async getOrgRole(userToken, org) {
+      const path = `/user/memberships/orgs/${encodeURIComponent(org)}`;
+      let membership: any;
+      try {
+        membership = await call("user", "GET", path, userToken);
+      } catch (error) {
+        // 404: not a member. 403: the organization does not let the App see its members.
+        if (error instanceof UpstreamError && (error.status === 404 || error.status === 403)) {
+          return null;
+        }
+        throw error;
+      }
+      if (membership.state !== "active") return null;
+      return membership.role === "admin" ? "admin" : "member";
     },
 
     async refreshUserToken(refreshToken) {
@@ -290,5 +302,73 @@ export function createGithub({
       });
       return { token: body.token, expiresAt: new Date(body.expires_at) };
     },
+
+    async getInstallation(installationId) {
+      try {
+        const path = `/app/installations/${installationId}`;
+        return toInstallation(await call("app", "GET", path, await appJwt()));
+      } catch (error) {
+        if (error instanceof UpstreamError && error.status === 404) return null;
+        throw error;
+      }
+    },
+
+    async listRepositoriesAsInstallation(installationToken) {
+      const path = "/installation/repositories";
+      return (await listAll("app", path, installationToken, "repositories")).map(toRepository);
+    },
+
+    async getAccountName(installationToken, login) {
+      const path = `/users/${encodeURIComponent(login)}`;
+      const account = await call("app", "GET", path, installationToken);
+      return typeof account.name === "string" && account.name.trim() !== "" ? account.name : null;
+    },
+  };
+}
+
+/**
+ * The App's own credential: a JWT good for a few minutes, signed with its private key and
+ * backdated for clock drift. GitHub takes it only on `/app/…`.
+ */
+export function signAppJwt({
+  clientId,
+  privateKey,
+  now,
+}: {
+  clientId: string;
+  privateKey: KeyObject;
+  /** Epoch milliseconds. */
+  now: number;
+}): Promise<string> {
+  const seconds = Math.floor(now / 1000);
+  return new SignJWT({})
+    .setProtectedHeader({ alg: "RS256" })
+    .setIssuer(clientId)
+    .setIssuedAt(seconds - 60)
+    .setExpirationTime(seconds + 540)
+    .sign(privateKey);
+}
+
+function toInstallation(installation: any): GithubUserInstallation {
+  return {
+    id: installation.id,
+    account: {
+      id: installation.account.id,
+      login: installation.account.login,
+      type: installation.account.type === "Organization" ? "Organization" : "User",
+      avatarUrl: installation.account.avatar_url ?? null,
+    },
+    repositorySelection: installation.repository_selection === "all" ? "all" : "selected",
+    suspendedAt: installation.suspended_at ? new Date(installation.suspended_at) : null,
+  };
+}
+
+function toRepository(repository: any): GithubInstalledRepository {
+  return {
+    id: repository.id,
+    fullName: repository.full_name,
+    defaultBranch: repository.default_branch,
+    private: repository.private === true,
+    pushedAt: repository.pushed_at ? new Date(repository.pushed_at) : null,
   };
 }
