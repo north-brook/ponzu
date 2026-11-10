@@ -80,7 +80,15 @@ GitHub token never reaches a device.
 - WorkOS will not finish a sign-in until the email is verified, and it does not
   take GitHub's word for it. The API completes that step itself during the
   exchange and then checks with GitHub that the address is verified there, so
-  nobody is sent a code by email.
+  nobody is sent a code by email. The check is made whenever the API completed
+  the step, and the first time a WorkOS user is let in at all: a sign-in that
+  fails it leaves WorkOS counting the address as verified, so WorkOS's own flag
+  is never what lets someone in. A sign-in that fails after WorkOS has made a
+  session revokes that session.
+- The GitHub user token lasts eight hours and its refresh token works once.
+  The API refreshes it when it is about to run out, one refresh at a time per
+  person: the claim is a column on the token's row, since function instances
+  share nothing else.
 
 **Workspaces.** A workspace is a GitHub account (a person or an organization) with
 the Ponzu GitHub App installed. There is one row per account, not per installation:
@@ -358,10 +366,13 @@ free credits are used up. A workspace has a monthly cap.
 
 ## Clients
 
-**Desktop.** The shell bundles the studio and serves it from a custom scheme, so
-the app and its UI always match. The main process owns sign-in, token storage
+**Desktop.** The shell bundles the studio and serves it from a custom scheme
+(`ponzu-studio://app`, the one origin outside the web that the API's CORS allows),
+so the app and its UI always match. The main process owns sign-in, token storage
 (`safeStorage`), refresh and the updater; the renderer asks it for an access token.
-The API can refuse a client that is too old, and the shell then offers the update.
+Every client names itself on each request (`X-Ponzu-Client: macos/2.0.0`). The API
+can refuse one that is too old (426, `client_too_old`), and the shell then offers
+the update.
 On first launch the cloud app removes what 1.x left behind (the wake helper, the
 `ponzu` shim, agent registrations).
 
@@ -388,7 +399,14 @@ rendered-picture tier for heavy pages; it is not in the first cloud release.
 | Workspace and workspace | Every row belongs to one workspace. A design carries its workspace, and must agree with its repo's; the rows under a design (ops, thread, questions, presence and the rest) carry the design and reach the workspace through it, so there is no second copy to disagree. Live queries are written by the API, and one scoped to a workspace joins through `designs`. |
 
 Stored secrets (Claude credentials, GitHub user tokens, repo secrets) are encrypted
-with a key that exists only in the API's environment.
+with a key that exists only in the API's environment. Each is bound to the row and
+column it is stored in, so a value copied anywhere else does not decrypt, and each
+names the key that encrypted it, so the key can be rotated.
+
+Every route says who may call it (anyone, a signed-in person, or a design's
+runner), and a route that does not is refused. Errors leave the API as
+`{ error: { code, message, details? } }` with a stable code and nothing of the
+failure itself; logs carry ids and outcomes, never tokens, bodies or headers.
 
 ## Environments
 

@@ -39,6 +39,19 @@ test("the studio's components the phone reads by path run the phone too", () => 
   }
 });
 
+test("the cloud API and the packages only it uses run neither", () => {
+  // "Check, typecheck, test" covers them on every pull request: the root typecheck includes
+  // apps/api, `bun test` runs its tests, and scripts/ci/api-bundle.ts builds and loads it.
+  for (const file of [
+    "apps/api/src/routes/me.ts",
+    "apps/api/vercel.json",
+    "packages/db/src/queries/accounts.ts",
+    "packages/sandbox/src/boat.ts",
+  ]) {
+    expect(suites(file)).toEqual({ desktop: false, mobile: false });
+  }
+});
+
 test("the site runs neither", () => {
   expect(suites("apps/web/app/page.tsx")).toEqual({ desktop: false, mobile: false });
 });

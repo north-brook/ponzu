@@ -119,10 +119,11 @@ jobs:
           check typecheck-desktop bunx tsc -p apps/desktop/tsconfig.json --noEmit
           check studio bun run --filter @ponzu/studio build
           check web bun run --filter @ponzu/web build
+          check api bun scripts/ci/api-bundle.ts
           failed=0
           bun test --parallel || failed=1
           wait
-          for name in lint typecheck typecheck-mobile typecheck-desktop studio web; do
+          for name in lint typecheck typecheck-mobile typecheck-desktop studio web api; do
             echo "::group::$name"
             cat "$RUNNER_TEMP/$name.log"
             echo "::endgroup::"
