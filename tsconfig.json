@@ -7,6 +7,8 @@
     "apps/api/src",
     "apps/api/scripts",
     "apps/cli/src",
+    "apps/runner/src",
+    "apps/runner/scripts",
     "apps/studio/src",
     "apps/desktop/src/**/*.test.ts",
     "scripts"
