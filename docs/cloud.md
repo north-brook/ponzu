@@ -326,21 +326,36 @@ measurement and lint, inside the runner's process.
   the image's Google Chrome takes 290 MB and 0.9 s.
 - **Chromium's sandbox stays on.** The runner is not root, and the VM allows user
   namespaces. A design can load remote images in the same machine that holds the
-  owner's Claude credential.
+  owner's Claude credential. Where the kernel refuses (a container without user
+  namespaces), the render fails saying so, and `PONZU_CHROMIUM_SANDBOX=0` turns the
+  sandbox off without a change to code.
 - **Work is bounded.** Two jobs at a time, the rest in a queue; 24 million device
   pixels in one image, past which the image comes back at a smaller scale; 60
   seconds a job, after which its page is closed; and an idle browser closes after
-  two minutes. A browser that dies is replaced on the next job.
+  two minutes. A browser that dies is replaced on the next job. A page is loaded
+  once, at a scale its whole viewport fits the pixel budget at, and what is
+  captured is drawn at a scale of its own: a node comes back at the scale asked
+  for however long the board around it.
 - **Fonts.** Designs name fonts a Mac has and Ubuntu cannot ship: Helvetica, Menlo,
   Georgia, `system-ui`. `packages/render/sandbox-fonts.json` lists what the image
   installs, and `stand-ins.ts` maps each name to a font of the same widths, so text
-  wraps in a screenshot where it does on the canvas. The reference is Chrome on a
-  Mac. `system-ui` is the exception: Inter stands in for San Francisco, close at
-  text sizes and up to 12% wide in headings, and lint says so on every screenshot
-  that uses it.
-- **The dev server.** With `loopback: true` a design can load images, fonts and
-  stylesheets from `http://localhost:<port>`. Chrome refuses those to a page at a
-  public origin, so the renderer fetches them itself.
+  wraps in a screenshot where it does on the canvas. A fontconfig file the renderer
+  writes resolves the names. Where the Mac's font makes a taller or shorter line
+  than its stand-in (Georgia, Monaco, Helvetica Neue, the Chinese, Japanese and
+  Korean fonts), the page also declares the name as an `@font-face` over the
+  stand-in with the Mac font's ascent and descent, so a line is as tall as on the
+  canvas, to the pixel. The reference is Chrome on a Mac. Two things can't be made
+  to match, and lint says so on every screenshot that has them: `system-ui`, where
+  Inter stands in for San Francisco, close at text sizes and up to 12% wide in
+  headings; and emoji, which on a Mac are narrower from 24px up and make their
+  line a few pixels taller.
+- **The dev server.** With `loopback: true` a design can load images, video, fonts
+  and stylesheets from `http://localhost:<port>`. Chrome refuses those to a page at
+  a public origin, so the renderer grants its pages Chrome's permission for this
+  machine, and only this machine: the rest of the local network stays refused.
+  Chrome then loads them itself. A request that needs a CORS header a dev server
+  doesn't send (every font, a mask image) is fetched by the renderer instead, which
+  holds the file whole on its way to Chrome and so refuses one over 25 MB.
 - **Bun.** The runner runs on the Bun this repo pins. Under the Bun in boat.dev's
   image (1.3.14) the renderer's own tests hung.
 
