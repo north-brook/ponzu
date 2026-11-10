@@ -1,19 +1,19 @@
 import { type Artboard, parseArtboardFile } from "@ponzu/core";
-import { STAND_INS, type StandIn } from "../stand-ins.ts";
+import { STAND_INS, type StandIn, standInFor } from "../stand-ins.ts";
 
 /**
  * Lines of text set in each system font that has a Linux stand-in, as one
- * artboard to measure. scripts/font-widths.ts measures it on a Mac and
+ * artboard to measure. scripts/font-reference.ts measures it on a Mac and
  * stand-ins.test.ts measures it again where the stand-ins draw, so both see
  * exactly the same page.
  */
 export interface FontCase {
-  /** The node to measure, and the key its width is recorded under. */
+  /** The node to measure, and the key its size is recorded under. */
   id: string;
-  /** The family as a design names it. */
+  /** The family as a design names it, or a few words for a line that names none. */
   name: string;
   standIn: StandIn;
-  /** The CSS `font` value, with no family after `name` to fall back to. */
+  /** The CSS `font` value, with no family after it to fall back to. */
   font: string;
   text: string;
 }
@@ -31,6 +31,23 @@ const SAMPLES: Record<string, string> = {
   "Noto Sans CJK KR": "다람쥐 헌 쳇바퀴에 타고파 설정 및 계정",
 };
 
+/**
+ * Lines a stand-in draws without being named. The generic sans-serif and
+ * serif are Helvetica and Times on a Mac, and reach their stand-ins on Linux
+ * by another road (see stand-ins.ts). An emoji is drawn by fallback in a
+ * line of any font.
+ */
+const UNNAMED: { name: string; family: string; as: string; text: string }[] = [
+  { name: "sans-serif", family: "sans-serif", as: "Helvetica", text: LATIN },
+  { name: "serif", family: "serif", as: "Times", text: LATIN },
+  {
+    name: "emoji in Helvetica",
+    family: '"Helvetica"',
+    as: "Apple Color Emoji",
+    text: "Shipped 🚀 and checked ✅ by the whole team 🎉",
+  },
+];
+
 const SIZES = [12, 16, 24, 40];
 const STYLES = ["400", "700", "italic 400"];
 
@@ -39,21 +56,23 @@ const family = (name: string) => (/^(system-ui|monospace)$/.test(name) ? name : 
 
 export function fontCases(): FontCase[] {
   const cases: FontCase[] = [];
-  for (const standIn of STAND_INS) {
-    const text = SAMPLES[standIn.font] ?? LATIN;
+  const add = (name: string, standIn: StandIn, families: string, text: string) => {
     // Emoji have one weight and no italic.
     const styles = standIn.font === "Noto Color Emoji" ? ["400"] : STYLES;
+    for (const style of styles)
+      for (const size of SIZES)
+        cases.push({
+          id: `${name} ${style} ${size}px`.replace(/[^a-zA-Z0-9]+/g, "-"),
+          name,
+          standIn,
+          font: `${style} ${size}px ${families}`,
+          text,
+        });
+  };
+  for (const standIn of STAND_INS)
     for (const name of standIn.names)
-      for (const style of styles)
-        for (const size of SIZES)
-          cases.push({
-            id: `${name} ${style} ${size}px`.replace(/[^a-zA-Z0-9]+/g, "-"),
-            name,
-            standIn,
-            font: `${style} ${size}px ${family(name)}`,
-            text,
-          });
-  }
+      add(name, standIn, family(name), SAMPLES[standIn.font] ?? LATIN);
+  for (const line of UNNAMED) add(line.name, standInFor(line.as)!, line.family, line.text);
   return cases;
 }
 
