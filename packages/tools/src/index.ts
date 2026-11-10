@@ -1,3 +1,15 @@
+// The tools on a replica, in a design's sandbox.
+export { CLOUD_INSTRUCTIONS, type CloudGuideTopic, cloudGuides } from "./cloud/guides.ts";
+export { ReplicaDesign } from "./cloud/replica-design.ts";
+export { cloudTools, getCloudTool, MAX_ASSET_BYTES } from "./cloud/tools.ts";
+export {
+  type AgentStatus,
+  type CloudHost,
+  type CloudWorkspace,
+  type CloudWorkspaceOptions,
+  createCloudWorkspace,
+} from "./cloud/workspace.ts";
+
 // What every host of the tools builds on.
 export * from "./context.ts";
 export { threadLine } from "./converse.ts";
