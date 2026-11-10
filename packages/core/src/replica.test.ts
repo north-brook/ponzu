@@ -2,9 +2,17 @@ import { describe, expect, test } from "bun:test";
 import { type Doc, locate, type Op, OpError } from "./doc.ts";
 import { el, sampleDoc, text } from "./fixtures/ops.ts";
 import { Sequencer, wire } from "./fixtures/sequencer.ts";
-import { type DroppedOp, Replica, type Scheduler } from "./replica.ts";
-import { type ClientOp, MAX_COMMIT_OPS, type SyncTransport } from "./sync.ts";
+import { MAX_NODES } from "./limits.ts";
+import { type DroppedOp, type OpInfo, Replica, type Scheduler } from "./replica.ts";
+import {
+  type ClientOp,
+  CommitRefusedError,
+  MAX_COMMIT_BYTES,
+  MAX_COMMIT_OPS,
+  type SyncTransport,
+} from "./sync.ts";
 import type { Actor } from "./types.ts";
+import { InvalidOpError } from "./validate.ts";
 
 const ada: Actor = { kind: "user", id: "user_ada", name: "Ada" };
 const bo: Actor = { kind: "user", id: "user_bo", name: "Bo" };
@@ -26,6 +34,8 @@ class Line implements SyncTransport {
   waiting: Request[] = [];
   /** Every request made, by kind, in order. */
   asked: Request["kind"][] = [];
+  /** The largest body the API takes, in bytes, as a host in front of it would enforce. */
+  maxBody = Number.POSITIVE_INFINITY;
 
   constructor(
     private api: Sequencer,
@@ -33,9 +43,17 @@ class Line implements SyncTransport {
   ) {}
 
   commit(ops: ClientOp[]) {
-    return this.ask<ReturnType<Sequencer["commit"]>>("commit", ops, () =>
-      this.api.commit(ops, this.actor),
-    );
+    return this.ask<ReturnType<Sequencer["commit"]>>("commit", ops, () => {
+      if (JSON.stringify({ ops }).length > this.maxBody)
+        throw new CommitRefusedError("The post is too large.");
+      try {
+        return this.api.commit(ops, this.actor);
+      } catch (err) {
+        // A post that isn't one: the API answers 400, and that never changes.
+        if (err instanceof InvalidOpError) throw new CommitRefusedError(err.message);
+        throw err;
+      }
+    });
   }
 
   fetchOps(after: number) {
@@ -57,9 +75,13 @@ class Line implements SyncTransport {
     if (!request) throw new Error("No request is waiting.");
     if (lost === "request") request.reject(new Error("The request was lost."));
     else {
-      const value = request.serve();
-      if (lost) request.reject(new Error("The response was lost."));
-      else request.resolve(value);
+      try {
+        const value = request.serve();
+        if (lost) request.reject(new Error("The response was lost."));
+        else request.resolve(value);
+      } catch (err) {
+        request.reject(err as Error);
+      }
     }
     await tick();
   }
@@ -110,9 +132,12 @@ function setup(doc: Doc = sampleDoc()) {
       newId: () => `${actor.name.toLowerCase()}-${++made}`,
     });
     const heard: { op: Op; by: string }[] = [];
-    replica.onOp((op, by, doc) => {
+    /** Which op each of `heard` was, in the same order. */
+    const infos: OpInfo[] = [];
+    replica.onOp((op, by, doc, info) => {
       expect(doc).toBe(replica.doc);
       heard.push({ op, by: by.name });
+      infos.push(info);
     });
     const dropped: DroppedOp[] = [];
     replica.onDrop((d) => dropped.push(d));
@@ -121,7 +146,7 @@ function setup(doc: Doc = sampleDoc()) {
       replica.apply(op);
       await line.drain();
     };
-    return { replica, line, heard, dropped, commit };
+    return { replica, line, heard, infos, dropped, commit };
   };
   return { api, timers, open };
 }
@@ -147,12 +172,13 @@ describe("editing", () => {
     let changes = 0;
     a.replica.subscribe(() => changes++);
 
-    const inverse = a.replica.apply(red);
-    expect(inverse).toEqual({ op: "style", id: "n_1", style: {} });
+    const applied = a.replica.apply(red);
+    expect(applied).toEqual({ id: "ada-1", inverse: { op: "style", id: "n_1", style: {} } });
     expect(locate(a.replica.doc, "n_1")!.node.style).toEqual({ color: "red" });
-    expect(a.replica.pending).toEqual([expect.objectContaining({ id: "ada-1", op: red })]);
+    expect(a.replica.pending).toEqual([{ id: "ada-1", op: red }]);
     expect(a.replica.seq).toBe(0);
     expect(a.heard).toEqual([{ op: red, by: "Ada" }]);
+    expect(a.infos).toEqual([{ id: "ada-1", echo: false }]);
     expect(changes).toBe(1);
     expect(a.line.waiting.map((r) => [r.kind, r.sent])).toEqual([
       ["commit", [{ id: "ada-1", op: red }]],
@@ -178,6 +204,38 @@ describe("editing", () => {
     expect(a.replica.pending).toEqual([]);
     expect(a.heard).toEqual([]);
     expect(a.line.asked).toEqual([]);
+  });
+
+  test("an op the API would refuse on sight throws as validateOp does, and leaves nothing behind", () => {
+    const { open } = setup();
+    const a = open(ada);
+    const before = JSON.stringify(a.replica.doc);
+    // Each fits the document, so applyOp alone would have shown it and queued it.
+    const refused: Op[] = [
+      { op: "page.create", index: 0, page: { id: "not an id", name: "Bad" } },
+      { op: "note", name: "design.system", content: "x" },
+      { op: "file.rename", name: "a\u0000b" },
+      {
+        op: "children",
+        id: "n_1",
+        children: Array.from({ length: MAX_NODES + 1 }, () => text("x")),
+      },
+    ];
+    for (const op of refused) expect(() => a.replica.apply(op)).toThrow(InvalidOpError);
+    expect(JSON.stringify(a.replica.doc)).toBe(before);
+    expect(a.replica.pending).toEqual([]);
+    expect(a.heard).toEqual([]);
+    expect(a.line.asked).toEqual([]);
+  });
+
+  test("pending is a copy: changing it changes nothing here", () => {
+    const { open } = setup();
+    const a = open(ada);
+    a.replica.apply(red);
+    const pending = a.replica.pending;
+    expect(pending).toEqual([{ id: "ada-1", op: red }]);
+    pending.length = 0;
+    expect(a.replica.pending).toEqual([{ id: "ada-1", op: red }]);
   });
 
   test("pending ops go out in order, one batch in flight", async () => {
@@ -211,6 +269,120 @@ describe("editing", () => {
     expectInSync(a.replica, api);
     expect(api.seq).toBe(count);
   });
+
+  test("a queue of large ops goes out in posts the API's host will take", async () => {
+    const { api, open } = setup();
+    const a = open(ada);
+    // What a Vercel function accepts. Forty ops of 150 KB in one post would be 6 MB.
+    a.line.maxBody = 4.5 * 1024 * 1024;
+    const filler = "x".repeat(150 * 1024);
+    for (let n = 1; n <= 40; n++)
+      a.replica.apply({ op: "children", id: "n_3", children: [text(`${n} ${filler}`)] });
+    const posts: { ops: number; bytes: number }[] = [];
+    while (a.line.waiting.length) {
+      const sent = a.line.waiting[0]!.sent as ClientOp[];
+      posts.push({ ops: sent.length, bytes: JSON.stringify(sent).length });
+      await a.line.answer();
+    }
+    expect(posts.map((p) => p.ops)).toEqual([1, 20, 19]);
+    for (const post of posts) expect(post.bytes).toBeLessThanOrEqual(MAX_COMMIT_BYTES);
+    expectInSync(a.replica, api);
+    expect(api.seq).toBe(40);
+    expect(a.replica.offline).toBe(false);
+    expect(a.dropped).toEqual([]);
+  });
+
+  test("a post is measured in bytes, not characters", async () => {
+    const { api, open } = setup();
+    const a = open(ada);
+    // Three bytes a character: 600 KB an op, so five to a post where characters would say fifteen.
+    const filler = "漢".repeat(200 * 1024);
+    for (let n = 1; n <= 11; n++)
+      a.replica.apply({ op: "children", id: "n_3", children: [text(`${n} ${filler}`)] });
+    const sizes: number[] = [];
+    while (a.line.waiting.length) {
+      sizes.push((a.line.waiting[0]!.sent as ClientOp[]).length);
+      await a.line.answer();
+    }
+    expect(sizes).toEqual([1, 5, 5]);
+    expectInSync(a.replica, api);
+  });
+});
+
+describe("a post the API refuses whole", () => {
+  test("is sent again one op at a time, and the op refused alone is dropped and reported", async () => {
+    const { api, timers, open } = setup();
+    const a = open(ada);
+    a.line.maxBody = 1000;
+    const small = (n: number): Op => ({ op: "file.rename", name: `Name ${n}` });
+    const large: Op = { op: "children", id: "n_3", children: [text("x".repeat(2000))] };
+    a.replica.apply(small(1));
+    a.replica.apply(large);
+    a.replica.apply(small(2));
+    a.replica.apply(small(3));
+    expect(locate(a.replica.doc, "n_3")!.node.children).toEqual(large.children);
+
+    const posts: string[][] = [];
+    while (a.line.waiting.length) {
+      posts.push((a.line.waiting[0]!.sent as ClientOp[]).map((c) => c.id));
+      await a.line.answer();
+    }
+    // The three together are refused, then the large one alone; after that, posts fill up again.
+    expect(posts).toEqual([
+      ["ada-1"],
+      ["ada-2", "ada-3", "ada-4"],
+      ["ada-2"],
+      ["ada-3"],
+      ["ada-4"],
+    ]);
+    expect(a.dropped).toEqual([
+      { id: "ada-2", op: large, cause: "rejected", reason: "The post is too large." },
+    ]);
+    expectInSync(a.replica, api);
+    expect(api.log.map((c) => c.id)).toEqual(["ada-1", "ada-3", "ada-4"]);
+    expect(locate(a.replica.doc, "n_3")!.node.children).toEqual([text("World")]);
+    // The API answered every time, so there was nothing to wait out.
+    expect(a.replica.offline).toBe(false);
+    expect(timers.waits).toEqual([]);
+  });
+
+  test("two ops under one id, which no post may carry, don't wedge the queue", async () => {
+    const { api, timers } = setup();
+    const line = new Line(api, ada);
+    // A fault in whatever makes the ids. The API takes the first op under an id as that op.
+    const ids = ["first", "same", "same", "last"];
+    const replica = new Replica({
+      transport: line,
+      schedule: timers.schedule,
+      actor: ada,
+      ...api.snapshot(),
+      newId: () => ids.shift()!,
+    });
+    replica.apply({ op: "file.rename", name: "Name 1" });
+    replica.apply({ op: "file.rename", name: "Name 2" });
+    replica.apply({ op: "file.icon", icon: "star" });
+    replica.apply(red);
+    await line.drain();
+    expectInSync(replica, api);
+    expect(api.log.map((c) => c.id)).toEqual(["first", "same", "last"]);
+    expect(line.asked).toEqual(["commit", "commit", "commit", "commit"]);
+    expect(timers.waits).toEqual([]);
+  });
+
+  test("an op confirmed while its post was being refused is not dropped", async () => {
+    const { api, open } = setup();
+    const a = open(ada);
+    a.replica.apply(red);
+    // The API commits it and the answer is lost; the retry is refused; the op arrives as committed.
+    await a.line.answer("response");
+    a.replica.notify(0);
+    a.line.maxBody = 0;
+    a.replica.ingest(api.log);
+    await a.line.drain();
+    expectInSync(a.replica, api);
+    expect(a.dropped).toEqual([]);
+    expect(a.heard).toEqual([{ op: red, by: "Ada" }]);
+  });
 });
 
 describe("other people's ops", () => {
@@ -235,6 +407,10 @@ describe("other people's ops", () => {
     expect(a.heard).toEqual([
       { op: red, by: "Ada" },
       { op: { op: "name", id: "n_1", name: "Card" }, by: "Bo" },
+    ]);
+    expect(a.infos).toEqual([
+      { id: "ada-1", echo: false },
+      { id: "bo-1", seq: 1, echo: false },
     ]);
   });
 
@@ -261,6 +437,58 @@ describe("other people's ops", () => {
     await tick();
     expect(a.line.asked).toEqual(["fetchOps"]);
     expect(a.heard).toHaveLength(3);
+  });
+
+  test("word of a head the API doesn't have is asked about once, then forgotten", async () => {
+    const { api, timers, open } = setup();
+    const a = open(ada);
+    const b = open(bo);
+    // Word of another design's head, or of this one before it was reset: nothing is at 5.
+    a.replica.notify(5);
+    await a.line.drain();
+    for (let turn = 0; turn < 20; turn++) await tick();
+    expect(a.line.asked).toEqual(["fetchOps"]);
+    expect(timers.waits).toEqual([]);
+    expect(a.replica.offline).toBe(false);
+    expectInSync(a.replica, api);
+
+    // Hearing it again asks again, once. And true word still gets through.
+    a.replica.notify(5);
+    await a.line.drain();
+    expect(a.line.asked).toEqual(["fetchOps", "fetchOps"]);
+    await b.commit(red);
+    a.replica.notify(1);
+    await a.line.drain();
+    expectInSync(a.replica, api);
+    expect(a.line.asked).toEqual(["fetchOps", "fetchOps", "fetchOps"]);
+  });
+
+  test("with ops to post as well, a head the API doesn't have still isn't asked about twice", async () => {
+    const { api, open } = setup();
+    const a = open(ada);
+    a.replica.notify(5);
+    a.replica.apply(red);
+    a.replica.apply({ op: "file.rename", name: "Renamed" });
+    await a.line.drain();
+    expectInSync(a.replica, api);
+    expect(a.line.asked).toEqual(["fetchOps", "commit"]);
+  });
+
+  test("an answer from before the head moved doesn't unsay word that came while asking", async () => {
+    const { api, open } = setup();
+    const a = open(ada);
+    const b = open(bo);
+    await b.commit({ op: "file.rename", name: "Name 1" });
+    a.replica.notify(1);
+    // The API reads the design a moment before Bo's first op lands in it...
+    a.line.waiting[0]!.serve = () => ({ ops: [], seq: 0 });
+    // ...and while its answer is on the way, Bo commits again and Ada hears of it.
+    await b.commit({ op: "file.rename", name: "Name 2" });
+    a.replica.notify(2);
+    await a.line.answer();
+    expect(a.line.waiting.map((r) => [r.kind, r.sent])).toEqual([["fetchOps", 0]]);
+    await a.line.drain();
+    expectInSync(a.replica, api);
   });
 
   test("ops past a hole wait for the fetch that fills it", async () => {
@@ -330,25 +558,36 @@ describe("what the API changes or refuses", () => {
       api.log[1]!.op,
     ]);
     expect(api.log[0]!.op).not.toEqual(insert);
+    // The second hearing says which op it is, and that it has been heard before: a listener
+    // that counts comments counts this one once.
+    expect(a.infos).toEqual([
+      { id: "ada-1", echo: false },
+      { id: "ada-2", echo: false },
+      { id: "ada-3", echo: false },
+      { id: "ada-1", seq: 1, echo: true },
+      { id: "ada-2", seq: 2, echo: true },
+    ]);
   });
 
   test("a rejected op is taken back out and reported", async () => {
     const { api, open } = setup();
     const a = open(ada);
-    // Fine by applyOp, which checks no ids; refused by the API, which does.
-    const bad: Op = { op: "page.create", index: 0, page: { id: "not an id", name: "Bad" } };
-    a.replica.apply(bad);
+    const b = open(bo);
+    // Bo removes the paragraph, and nobody has told Ada: her op fits here and not at the API.
+    await b.commit({ op: "remove", id: "n_2" });
+    const rename: Op = { op: "name", id: "n_2", name: "Greeting" };
+    const { id } = a.replica.apply(rename);
     a.replica.apply(red);
-    expect(a.replica.doc.pages.map((p) => p.name)).toEqual(["Bad", "First", "Second"]);
+    expect(locate(a.replica.doc, "n_2")!.node.name).toBe("Greeting");
 
     await a.line.drain();
     expectInSync(a.replica, api);
-    expect(a.replica.doc.pages.map((p) => p.name)).toEqual(["First", "Second"]);
+    expect(locate(a.replica.doc, "n_2")).toBeNull();
     expect(locate(a.replica.doc, "n_1")!.node.style).toEqual({ color: "red" });
     expect(a.dropped).toEqual([
-      { id: "ada-1", op: bad, cause: "rejected", reason: expect.stringContaining("op.page.id") },
+      { id, op: rename, cause: "rejected", reason: expect.stringContaining("n_2") },
     ]);
-    expect(api.log.map((c) => c.id)).toEqual(["ada-2"]);
+    expect(api.log.map((c) => c.id)).toEqual(["bo-1", "ada-2"]);
   });
 
   test("an op undone by a committed one is dropped and reported; one in flight waits for the API", async () => {
@@ -471,17 +710,21 @@ describe("a failing connection", () => {
     expectInSync(a.replica, api);
   });
 
-  test("an answer that leaves an op out is no answer", async () => {
+  test("an answer that leaves an op out is no answer, and the waits grow as for any failure", async () => {
     const { api, timers, open } = setup();
     const a = open(ada);
     a.replica.apply(red);
-    a.line.waiting[0]!.serve = () => ({ committed: [], rejected: [], seq: 0 });
-    await a.line.answer();
-    expect(a.replica.pending.map((p) => p.id)).toEqual(["ada-1"]);
-    expect(timers.waits).toHaveLength(1);
-    await timers.fire();
+    for (const wait of [500, 1000, 2000]) {
+      a.line.waiting[0]!.serve = () => ({ committed: [], rejected: [], seq: 0 });
+      await a.line.answer();
+      expect(a.replica.pending.map((p) => p.id)).toEqual(["ada-1"]);
+      expect(a.replica.offline).toBe(true);
+      expect(timers.waits.map((w) => w.ms)).toEqual([wait]);
+      await timers.fire();
+    }
     await a.line.answer();
     expectInSync(a.replica, api);
+    expect(a.replica.offline).toBe(false);
   });
 
   test("a closed replica asks nothing more and takes no more answers", async () => {
@@ -608,9 +851,46 @@ describe("fetching the whole design", () => {
     await a.line.answer();
     expect(a.line.asked).toEqual(["fetchOps", "fetchDoc", "fetchOps"]);
     expect(a.line.waiting).toEqual([]);
-    expect(timers.waits).toHaveLength(1);
+    expect(timers.waits.map((w) => w.ms)).toEqual([500]);
     await timers.fire();
     expect(a.line.waiting.map((r) => r.kind)).toEqual(["fetchDoc"]);
+    // Round after round gets it nowhere, so each wait is longer than the last.
+    for (const wait of [1000, 2000, 4000]) {
+      await a.line.answer();
+      await a.line.answer();
+      expect(a.line.waiting).toEqual([]);
+      expect(timers.waits.map((w) => w.ms)).toEqual([wait]);
+      await timers.fire();
+    }
+  });
+
+  test("a whole document older than the one here is not taken", async () => {
+    const { api, timers, open } = setup();
+    const a = open(ada);
+    const b = open(bo);
+    await b.commit({ op: "file.rename", name: "Name 1" });
+    const stale = api.snapshot();
+    for (const n of [2, 3]) await b.commit({ op: "file.rename", name: `Name ${n}` });
+    a.replica.notify(3);
+    await a.line.drain();
+    expectInSync(a.replica, api);
+
+    // Something sends Ada for the whole document, and a cache answers with an old one.
+    a.replica.ingest([{ ...api.log[0]!, seq: 4, op: { op: "remove", id: "n_nowhere" } }]);
+    expect(a.line.waiting.map((r) => r.kind)).toEqual(["fetchDoc"]);
+    a.line.waiting[0]!.serve = () => stale;
+    await a.line.answer();
+    expect(a.replica.seq).toBe(3);
+    expect(a.replica.doc.name).toBe("Name 3");
+    expect(a.replica.offline).toBe(true);
+    expect(a.line.waiting).toEqual([]);
+    expect(timers.waits.map((w) => w.ms)).toEqual([500]);
+
+    await timers.fire();
+    await a.line.drain();
+    expectInSync(a.replica, api);
+    expect(a.replica.offline).toBe(false);
+    expect(timers.waits).toEqual([]);
   });
 
   test("Replica.open starts from the design as the API has it", async () => {

@@ -110,10 +110,15 @@ CommittedOp = { seq, id, op, actor, at }
 actor       = { kind: "user" | "agent", id, name, avatarUrl? }
 ```
 
-For each op, in order, the API:
+The body is checked as a whole first (`validateCommit`): at most 64 ops, each
+under a well-formed id that no other op in the post has. A body that fails is
+refused whole with a 400, and nothing in it is committed.
+
+Then for each op, in order, the API:
 
 1. **Validates** it structurally (`validateOp`): a known variant, well-formed ids
-   and names, sizes within `packages/core/src/limits.ts`.
+   and names, no text Postgres can't hold (U+0000, half a surrogate pair), sizes
+   within `packages/core/src/limits.ts`.
 2. **Sanitizes** node trees (`sanitizeOp`): blocked tags, `on*` attributes and
    `javascript:` URLs are removed. This used to happen only when HTML was parsed in
    the tool process, which is not enough once any client can post an op.
@@ -150,10 +155,15 @@ app, the phone and the sandbox all use it.
 
 - It holds the document as of the last confirmed `seq`, plus a queue of pending ops.
 - `apply(op)` applies locally at once and queues the op. Writes are optimistic:
-  there is no waiting for an echo.
+  there is no waiting for an echo. It runs `validateOp` first, so an op the API
+  would refuse on sight is never shown or queued, and returns the op's id.
 - Pending ops are posted in order, one batch in flight. A post that fails is sent
   again with the same ids. The replica makes one request at a time, and takes turns
   between posting and catching up when both are due.
+- A post carries at most 64 ops and 3 MB, which keeps the request and its answer
+  inside the 4.5 MB a Vercel function takes. If the API refuses a post outright
+  (too large, malformed), sending it again can't help: the replica sends its ops
+  one to a post, and drops and reports the op that is refused alone.
 - When committed ops arrive, the replica rolls back its pending ops, applies the
   committed ones in `seq` order, drops any pending op whose id was confirmed, and
   reapplies the rest. A pending op that no longer applies is dropped and reported,
@@ -161,8 +171,12 @@ app, the phone and the sandbox all use it.
 - When it cannot continue from its own `seq` (a 410, a hole in what it fetched, a
   committed op that does not apply), it fetches the whole document and puts its
   pending ops back on top.
+- The API says where the head is. Word of a `seq` the API turns out not to have
+  is asked about once and then forgotten, and a whole document older than the
+  replica's own is not taken.
 - It emits each op with its actor so the canvas can animate what changed: once per
-  op, and an op made here again only if the API committed it changed.
+  op, and an op made here again only if the API committed it changed. That second
+  time is marked as an echo, so nothing counts a person's own comment twice.
 
 People only move and rename artboards, manage pages and write comments; agents edit
 nodes. Conflicts are rare and the rule is simple: the committed order wins.
@@ -329,7 +343,7 @@ rendered-picture tier for heavy pages; it is not in the first cloud release.
 | Client and API | A WorkOS access token on every request. Clients never hold a GitHub, Claude or provider credential. |
 | Person and design | GitHub decides, checked by the API on every request. |
 | Sandbox and API | A token bound to one design. The API validates and sanitizes everything it sends. |
-| Design HTML and the app | Sanitized on the way in, drawn in a shadow root, under a strict content security policy. The preload bridge exposes the minimum. |
+| Design HTML and the app | Sanitized on the way in, written out so that no text or attribute can be read as markup whatever the tree holds, drawn in a shadow root, under a strict content security policy. The preload bridge exposes the minimum. |
 | Workspace and workspace | Every row carries its workspace. Live queries are written by the API. |
 
 Stored secrets (Claude credentials, GitHub user tokens, repo secrets) are encrypted

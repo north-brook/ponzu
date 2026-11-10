@@ -39,8 +39,28 @@ export interface CommitResult {
 /** The most ops one post carries. A replica with more pending sends them in turns. */
 export const MAX_COMMIT_OPS = 64;
 
+/**
+ * The most one post's ops weigh, as JSON in UTF-8 bytes. A Vercel function takes a body of
+ * 4.5 MB and answers with no more, and the answer carries every committed op back, so this
+ * leaves room for the rest of both. One op alone always fits: `MAX_OP_BYTES` is smaller.
+ */
+export const MAX_COMMIT_BYTES = 3 * 1024 * 1024;
+
+/**
+ * What `commit` throws when the API will never take the post as it was sent (too large,
+ * malformed, not allowed), so that sending it again can't help. Any other failure is taken
+ * to be passing, and the post is sent again.
+ */
+export class CommitRefusedError extends Error {
+  constructor(reason: string) {
+    super(reason);
+    this.name = "CommitRefusedError";
+  }
+}
+
 /** What a replica needs from the API, for one design. */
 export interface SyncTransport {
+  /** Rejects with `CommitRefusedError` for a post that will never be taken, and with anything else for a failure worth another try. */
   commit(ops: ClientOp[]): Promise<CommitResult>;
   /** Every op after `after`, in order, or "gone" when the API no longer keeps ops that old. */
   fetchOps(after: number): Promise<{ ops: CommittedOp[]; seq: number } | "gone">;

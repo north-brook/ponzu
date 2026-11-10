@@ -6,6 +6,7 @@ import { randomOp } from "./fixtures/random-ops.ts";
 import { Sequencer } from "./fixtures/sequencer.ts";
 import { Replica } from "./replica.ts";
 import type { Actor } from "./types.ts";
+import { InvalidOpError } from "./validate.ts";
 
 /**
  * Several replicas of one design, each making random ops, over a network that delays, loses
@@ -21,6 +22,8 @@ interface Network {
   loss: number;
   /** The chance a replica never hears that the head moved. */
   deaf: number;
+  /** The chance that what a replica hears names a seq the API hasn't reached. */
+  rumor: number;
   /** Whether the API lets go of old ops now and then, so a replica behind them gets "gone". */
   forgets: boolean;
 }
@@ -64,6 +67,8 @@ const seen = {
   lost: 0,
   wholeFetches: 0,
   unfit: 0,
+  invalid: 0,
+  rumors: 0,
 };
 
 async function simulate(seed: number, network: Network): Promise<void> {
@@ -112,8 +117,18 @@ async function simulate(seed: number, network: Network): Promise<void> {
       ...api.snapshot(),
       newId: () => `r${i}-${++ids}`,
     });
-    replica.onOp((op, by) => {
-      if (!applying) heard.push(JSON.stringify([by.id, op]));
+    const heardSeqs = new Set<number>();
+    replica.onOp((op, by, _doc, info) => {
+      if (applying) {
+        expect(info.seq).toBeUndefined();
+        expect(info.echo).toBe(false);
+        return;
+      }
+      // A committed op is heard once, and is an echo exactly when it was made here.
+      expect(heardSeqs.has(info.seq!)).toBe(false);
+      heardSeqs.add(info.seq!);
+      expect(info.echo).toBe(made.has(info.id));
+      heard.push(JSON.stringify([by.id, op]));
     });
     replica.onDrop((dropped) => {
       if (dropped.cause === "conflict") seen.conflicts++;
@@ -127,13 +142,14 @@ async function simulate(seed: number, network: Network): Promise<void> {
       const before = JSON.stringify(replica.doc);
       applying = true;
       try {
-        replica.apply(op);
-        made.set(replica.pending.at(-1)!.id, JSON.stringify(op));
+        const { id } = replica.apply(op);
+        made.set(id, JSON.stringify(op));
       } catch (err) {
-        if (!(err instanceof OpError)) throw err;
-        // An op that doesn't fit leaves no trace.
+        if (!(err instanceof OpError) && !(err instanceof InvalidOpError)) throw err;
+        // An op that doesn't fit, or isn't one, leaves no trace.
         expect(JSON.stringify(replica.doc)).toBe(before);
-        seen.unfit++;
+        if (err instanceof OpError) seen.unfit++;
+        else seen.invalid++;
       } finally {
         applying = false;
       }
@@ -143,11 +159,13 @@ async function simulate(seed: number, network: Network): Promise<void> {
     return { actor, replica, made, heard };
   });
 
-  /** The head row moved. Each replica hears of it late, twice, or not at all. */
+  /** The head row moved. Each replica hears of it late, twice, wrongly, or not at all. */
   function announce(): void {
-    const seq = api.seq;
     for (const peer of peers) {
       if (r.chance(network.deaf)) continue;
+      const rumor = r.chance(network.rumor);
+      if (rumor) seen.rumors++;
+      const seq = api.seq + (rumor ? 1 + r.int(3) : 0);
       for (let times = r.chance(0.2) ? 2 : 1; times > 0; times--)
         sim.after(() => peer.replica.notify(seq), r.int(600));
     }
@@ -227,18 +245,32 @@ const SEEDS = Array.from({ length: 40 }, (_, i) => i + 1);
 
 describe("replicas converge on the API's document", () => {
   test.each(SEEDS)("on a network that only delays: seed %i", async (seed) => {
-    await simulate(seed, { replicas: 3, ops: 50, loss: 0, deaf: 0, forgets: false });
+    await simulate(seed, { replicas: 3, ops: 50, loss: 0, deaf: 0, rumor: 0, forgets: false });
   });
 
   test.each(SEEDS)(
-    "when requests and notifications are lost and repeated: seed %i",
+    "when requests and notifications are lost, repeated and wrong: seed %i",
     async (seed) => {
-      await simulate(1000 + seed, { replicas: 4, ops: 50, loss: 0.2, deaf: 0.4, forgets: false });
+      await simulate(1000 + seed, {
+        replicas: 4,
+        ops: 50,
+        loss: 0.2,
+        deaf: 0.4,
+        rumor: 0.1,
+        forgets: false,
+      });
     },
   );
 
   test.each(SEEDS)("when the API lets go of old ops as well: seed %i", async (seed) => {
-    await simulate(2000 + seed, { replicas: 4, ops: 50, loss: 0.2, deaf: 0.6, forgets: true });
+    await simulate(2000 + seed, {
+      replicas: 4,
+      ops: 50,
+      loss: 0.2,
+      deaf: 0.6,
+      rumor: 0.1,
+      forgets: true,
+    });
   });
 
   test("and the runs above went through everything a replica has to handle", () => {
@@ -249,5 +281,7 @@ describe("replicas converge on the API's document", () => {
     expect(seen.lost).toBeGreaterThan(500);
     expect(seen.wholeFetches).toBeGreaterThan(10);
     expect(seen.unfit).toBeGreaterThan(20);
+    expect(seen.invalid).toBeGreaterThan(20);
+    expect(seen.rumors).toBeGreaterThan(100);
   });
 });
