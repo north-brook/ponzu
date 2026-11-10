@@ -50,7 +50,7 @@ export interface RenderLimits {
  * Sized for a 4 GB sandbox that also runs a dev server and an agent. Chrome
  * holds about 20 bytes for each device pixel of an image while it captures
  * it, so a job at the pixel limit takes close to 500 MB over an idle
- * browser's 150 MB, and two of them at once stay near 1.1 GB. 24 million
+ * browser's 140 MB, and two of them at once stay near 1.1 GB. 24 million
  * pixels is a 1440×900 board at 4x, or a 1440×4000 page at 2x.
  */
 export const DEFAULT_LIMITS: RenderLimits = {
@@ -116,10 +116,10 @@ export class ChromiumRenderer implements Renderer {
     this.limits = { ...DEFAULT_LIMITS, ...opts.limits };
     this.queue = new JobQueue(this.limits.concurrency, this.limits.queueMs);
     this.main = new BrowserProcess(
-      // Headless Chrome on Linux has no GPU to draw with, on a desktop or in
-      // a VM, and stands one in with GL emulated on the CPU. Compositing in
-      // plain software instead halves the time a full Chrome takes to draw a
-      // page there. (The headless shell does that anyway.)
+      // A sandbox VM has no GPU, and Chrome stands one in with GL emulated on
+      // the CPU. Compositing in plain software instead halves the time a full
+      // Chrome takes to draw a page there (the headless shell does that
+      // anyway), and a screenshot has no use for a GPU on a desktop either.
       () => this.launch(platform() === "linux" ? ["--disable-gpu"] : []),
       this.limits.idleMs,
     );
