@@ -290,6 +290,34 @@ one-minute cron finishes anything a function did not.
 The runner dials the API with a token that is valid for one design. The API reaches
 the runner through the sandbox's token-gated address to deliver events.
 
+### The canvas tools
+
+`packages/tools` has the tool set (`cloudTools`), its guides (`cloudGuides`,
+`CLOUD_INSTRUCTIONS`) and what the runner hosts them on: `createCloudWorkspace`
+builds the workspace for the sandbox's one design from the `Replica`, the renderer
+and a handful of callbacks (`CloudHost`) for what leaves the process: the agent's
+status and the artboards it is on, the intent of a request, storing an asset,
+publishing an export, the design's link and the theme to render in.
+
+- **One design.** No tool takes a file and none manages files. `update_design`
+  sets the design's name and icon.
+- **No tool waits on the network.** A tool reads the replica's view and applies
+  its op to it; the replica posts behind it.
+- **Edits can be undone later.** When the replica drops an op the agent made (the
+  API rejected it, or someone's change left it nothing to apply to), the next tool
+  result says what was undone and why, whatever that call was. At the end of a
+  turn and before the sandbox sleeps the runner waits on `design.settled(timeout)`,
+  and gives the agent any notice no tool result carried.
+- **Other people's ops** reach the same in-process event and presence hubs the
+  agent's own do, so a board a person deletes stops showing as worked on.
+- **Files go by sandbox path.** There are no design files. HTML too long for one
+  call is written to a file by the agent, and `write_html` or `create_artboard`
+  takes its path. `add_asset` takes a file's path, hands the bytes to the host and
+  returns the `assets/<name>` reference. `export` writes where the agent says, so
+  the file can be committed, and adds a link when the host can publish one.
+- **Without a renderer** `screenshot`, `record` and `export` say so and the rest
+  work from declared sizes.
+
 ### Events
 
 A design has one ordered feed of things that happened: a message, an answer, a
