@@ -28,3 +28,11 @@ export async function getSessionUser(db: Db, sessionId: string): Promise<User | 
 export async function endSession(db: Db, sessionId: string): Promise<void> {
   await run(db.delete(sessions).where(eq(sessions.id, sessionId)));
 }
+
+/** Forget every session a person has, on every device. Answers how many there were. */
+export async function endUserSessions(db: Db, userId: string): Promise<number> {
+  const ended = await run(
+    db.delete(sessions).where(eq(sessions.userId, userId)).returning({ id: sessions.id }),
+  );
+  return ended.length;
+}

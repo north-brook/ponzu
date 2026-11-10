@@ -33,6 +33,11 @@ export async function saveGithubUserToken(
   );
 }
 
+/** Forget a person's GitHub token, once GitHub has stopped honoring it. */
+export async function deleteGithubUserToken(db: Db, userId: string): Promise<void> {
+  await run(db.delete(githubUserTokens).where(eq(githubUserTokens.userId, userId)));
+}
+
 export async function getGithubUserToken(db: Db, userId: string): Promise<GithubUserToken | null> {
   const [row] = await run(
     db.select().from(githubUserTokens).where(eq(githubUserTokens.userId, userId)),

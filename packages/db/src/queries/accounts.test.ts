@@ -10,9 +10,18 @@ import {
   type GithubProfile,
   getClaudeAccount,
   getMemberWorkspace,
+  getRepoInstallationId,
+  getUser,
+  getUserByGithubId,
   getUserByWorkosId,
+  getWorkspace,
+  getWorkspaceByInstallation,
   listUserWorkspaces,
+  listWorkspaceRepos,
   markReposRemoved,
+  markReposRemovedExcept,
+  markWorkspaceUninstalled,
+  suspendWorkspace,
   upsertMembership,
   upsertRepos,
   upsertUser,
@@ -132,6 +141,100 @@ describe("upsertWorkspace", () => {
     });
     expect(second.installedAt!.getTime()).toBeGreaterThan(0);
   });
+
+  test("an installer learned after the fact fills in, and never replaces, a known one", async () => {
+    const [first, second] = await Promise.all([seedUser(db, "first"), seedUser(db, "second")]);
+    const account = { ...installation, githubAccountId: 7003, installationId: 503 };
+    await upsertWorkspace(db, account);
+
+    const filled = await upsertWorkspace(db, { ...account, installedByUserId: first.id });
+    const kept = await upsertWorkspace(db, { ...account, installedByUserId: second.id });
+
+    expect(filled.installedByUserId).toBe(first.id);
+    expect(kept.installedByUserId).toBe(first.id);
+  });
+
+  test("suspension is GitHub's to say when it is given, and left alone when it is not", async () => {
+    const account = { ...installation, githubAccountId: 7004, installationId: 504 };
+    const when = new Date("2026-11-09T10:00:00Z");
+
+    const suspended = await upsertWorkspace(db, { ...account, suspendedAt: when });
+    expect(suspended.suspendedAt).toEqual(when);
+    expect((await upsertWorkspace(db, account)).suspendedAt).toEqual(when);
+    expect((await upsertWorkspace(db, { ...account, suspendedAt: null })).suspendedAt).toBeNull();
+  });
+
+  test("suspendWorkspace touches only a workspace that holds the installation", async () => {
+    const workspace = await seedWorkspace(db);
+    const when = new Date("2026-11-09T11:00:00Z");
+
+    const suspended = await suspendWorkspace(db, {
+      installationId: workspace.installationId!,
+      suspendedAt: when,
+    });
+
+    expect(suspended).toMatchObject({ id: workspace.id, suspendedAt: when });
+    expect(await suspendWorkspace(db, { installationId: 404_404, suspendedAt: when })).toBeNull();
+  });
+
+  test("markWorkspaceUninstalled keeps the workspace and marks its repos removed", async () => {
+    const workspace = await seedWorkspace(db);
+    const [repo] = await upsertRepos(db, {
+      workspaceId: workspace.id,
+      repos: [
+        {
+          githubRepoId: 8801,
+          fullName: "a/b",
+          defaultBranch: "main",
+          private: true,
+          pushedAt: null,
+        },
+      ],
+    });
+
+    expect(await markWorkspaceUninstalled(db, workspace.installationId!)).toBe(workspace.id);
+
+    expect(await getWorkspace(db, workspace.id)).toMatchObject({
+      installationId: null,
+      repositorySelection: null,
+    });
+    const [after] = await db.select().from(repos).where(eq(repos.id, repo!.id));
+    expect(after!.removedAt).toBeInstanceOf(Date);
+    // Again, or for an installation nobody holds: nothing to do.
+    expect(await markWorkspaceUninstalled(db, workspace.installationId!)).toBeNull();
+    expect(await getWorkspaceByInstallation(db, workspace.installationId!)).toBeNull();
+  });
+});
+
+describe("people and workspaces by id", () => {
+  test("getUser and getUserByGithubId find a person, and nobody else", async () => {
+    const user = await seedUser(db, "lookup");
+    expect(await getUser(db, user.id)).toEqual(user);
+    expect(await getUserByGithubId(db, user.githubUserId)).toEqual(user);
+    expect(await getUser(db, "usr_nobody")).toBeNull();
+    expect(await getUserByGithubId(db, 404_404_404)).toBeNull();
+  });
+
+  test("getWorkspace names who installed the App; getWorkspaceByInstallation finds it", async () => {
+    const installer = await seedUser(db, "installs");
+    const workspace = await upsertWorkspace(db, {
+      githubAccountId: 7101,
+      githubLogin: "fablefuel",
+      kind: "org",
+      name: "Fablefuel",
+      avatarUrl: null,
+      installationId: 7102,
+      repositorySelection: "all",
+      installedByUserId: installer.id,
+    });
+
+    expect(await getWorkspace(db, workspace.id)).toMatchObject({
+      id: workspace.id,
+      installedByLogin: "installs",
+    });
+    expect((await getWorkspaceByInstallation(db, 7102))!.id).toBe(workspace.id);
+    expect(await getWorkspace(db, "ws_nowhere")).toBeNull();
+  });
 });
 
 describe("memberships", () => {
@@ -171,6 +274,39 @@ describe("memberships", () => {
     // Reaching nothing at all drops the rest.
     expect(await deleteMembershipsExcept(db, { userId: user.id, workspaceIds: [] })).toBe(1);
     expect(await of(user.id)).toEqual([]);
+  });
+
+  test("dropping a workspace's last admin makes its longest-standing member admin", async () => {
+    const [admin, early, late, elsewhere] = await Promise.all([
+      seedUser(db, "admin"),
+      seedUser(db, "early"),
+      seedUser(db, "late"),
+      seedUser(db, "elsewhere"),
+    ]);
+    const [led, shared] = await Promise.all([seedWorkspace(db), seedWorkspace(db)]);
+    await upsertMembership(db, { workspaceId: led.id, userId: admin.id, role: "admin" });
+    await upsertMembership(db, { workspaceId: led.id, userId: early.id, role: "member" });
+    await upsertMembership(db, { workspaceId: led.id, userId: late.id, role: "member" });
+    // A workspace with another admin left keeps its roles as they are.
+    await upsertMembership(db, { workspaceId: shared.id, userId: admin.id, role: "admin" });
+    await upsertMembership(db, { workspaceId: shared.id, userId: elsewhere.id, role: "admin" });
+    await upsertMembership(db, { workspaceId: shared.id, userId: early.id, role: "member" });
+    // Two statements a moment apart can share a timestamp; say who came first.
+    await db
+      .update(memberships)
+      .set({ createdAt: new Date("2026-01-01T00:00:00Z") })
+      .where(eq(memberships.userId, early.id));
+    const roles = async (workspaceId: string) =>
+      Object.fromEntries(
+        (await db.select().from(memberships).where(eq(memberships.workspaceId, workspaceId))).map(
+          (row) => [row.userId, row.role],
+        ),
+      );
+
+    expect(await deleteMembershipsExcept(db, { userId: admin.id, workspaceIds: [] })).toBe(2);
+
+    expect(await roles(led.id)).toEqual({ [early.id]: "admin", [late.id]: "member" });
+    expect(await roles(shared.id)).toEqual({ [elsewhere.id]: "admin", [early.id]: "member" });
   });
 
   test("listUserWorkspaces gives a person their workspaces and roles, and nobody else's", async () => {
@@ -311,6 +447,55 @@ describe("repos", () => {
       (await listWorkspaceDesigns(db, { workspaceId, userId: user.id })).map((d) => d.name);
     expect(await names(from.id)).toEqual(["Lisbon"]);
     expect(await names(to.id)).toEqual(["checkout"]);
+  });
+
+  test("markReposRemovedExcept marks what an installation's list left out, there only", async () => {
+    const [workspace, other] = await Promise.all([seedWorkspace(db), seedWorkspace(db)]);
+    await upsertRepos(db, {
+      workspaceId: workspace.id,
+      repos: [seen(401, "a/kept"), seen(402, "a/gone")],
+    });
+    await upsertRepos(db, { workspaceId: other.id, repos: [seen(403, "b/untouched")] });
+    const names = async (workspaceId: string) =>
+      (await listWorkspaceRepos(db, workspaceId)).map((repo) => repo.fullName);
+
+    expect(
+      await markReposRemovedExcept(db, { workspaceId: workspace.id, githubRepoIds: [401] }),
+    ).toBe(1);
+    expect(await names(workspace.id)).toEqual(["a/kept"]);
+    expect(await names(other.id)).toEqual(["b/untouched"]);
+
+    // An installation with no repos left.
+    expect(await markReposRemovedExcept(db, { workspaceId: workspace.id, githubRepoIds: [] })).toBe(
+      1,
+    );
+    expect(await names(workspace.id)).toEqual([]);
+  });
+
+  test("listWorkspaceRepos puts the most recently pushed first, and never-pushed last", async () => {
+    const workspace = await seedWorkspace(db);
+    await upsertRepos(db, {
+      workspaceId: workspace.id,
+      repos: [
+        { ...seen(501, "a/old"), pushedAt: new Date("2026-01-01T00:00:00Z") },
+        { ...seen(502, "a/never"), pushedAt: null },
+        { ...seen(503, "a/new"), pushedAt: new Date("2026-11-01T00:00:00Z") },
+      ],
+    });
+
+    expect((await listWorkspaceRepos(db, workspace.id)).map((repo) => repo.fullName)).toEqual([
+      "a/new",
+      "a/old",
+      "a/never",
+    ]);
+  });
+
+  test("getRepoInstallationId names the installation that holds a repo", async () => {
+    const workspace = await seedWorkspace(db);
+    await upsertRepos(db, { workspaceId: workspace.id, repos: [seen(601, "a/held")] });
+
+    expect(await getRepoInstallationId(db, 601)).toBe(workspace.installationId);
+    expect(await getRepoInstallationId(db, 602)).toBeNull();
   });
 
   test("markReposRemoved marks, and seeing the repo again clears it", async () => {

@@ -3,13 +3,15 @@
 // PONZU_TEST_DATABASE_URL names a migrated database (see ../live.ts); CI gives it a Postgres 18.
 import { afterAll, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
-import { actorFor, rename, seedDesign, seedUser } from "../fixtures.ts";
+import { actorFor, rename, seedDesign, seedUser, seedWorkspace } from "../fixtures.ts";
 import { describeLive } from "../live.ts";
 import { designOps, events, jobs } from "../schema/index.ts";
+import { upsertMembership } from "./accounts.ts";
 import { getDesign, getDesignHead } from "./designs.ts";
 import { appendEvent, claimEvents } from "./events.ts";
 import { claimGithubTokenRefresh, saveGithubUserToken } from "./github-tokens.ts";
 import { claimJobs, enqueueJob } from "./jobs.ts";
+import { setMemberRole, workspaceHasAdmin } from "./members.ts";
 import { commitOps, readOps } from "./ops.ts";
 import { answerQuestion, countOpenQuestions, createQuestion } from "./questions.ts";
 import { commitReversal } from "./undo.ts";
@@ -179,6 +181,30 @@ describeLive("races on a real Postgres", ({ db, close }) => {
     const rest = await claimEvents(db, { designId: design.id });
     expect(first.length + taken.length + rest.length).toBe(13);
     await db.delete(events).where(eq(events.designId, design.id));
+  }, 60_000);
+
+  test("admins demoting one another at once never leave a workspace without one", async () => {
+    for (let round = 0; round < 5; round++) {
+      const [workspace, ...admins] = await Promise.all([
+        seedWorkspace(db),
+        seedUser(db, "a"),
+        seedUser(db, "b"),
+        seedUser(db, "c"),
+      ]);
+      for (const admin of admins) {
+        await upsertMembership(db, { workspaceId: workspace.id, userId: admin.id, role: "admin" });
+      }
+
+      const results = await Promise.all(
+        admins.map((admin) =>
+          setMemberRole(db, { workspaceId: workspace.id, userId: admin.id, role: "member" }),
+        ),
+      );
+
+      expect(results.filter((result) => result === "updated")).toHaveLength(2);
+      expect(results.filter((result) => result === "last_admin")).toHaveLength(1);
+      expect(await workspaceHasAdmin(db, workspace.id)).toBe(true);
+    }
   }, 60_000);
 
   test("many answers to one question at once: the first wins and the count drops once", async () => {

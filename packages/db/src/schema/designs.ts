@@ -76,6 +76,11 @@ export const designs = pgTable(
     /** False when the branch conflicts with its base. Null until GitHub has worked it out. */
     prMergeable: boolean("pr_mergeable"),
     prAutoMerge: boolean("pr_auto_merge").notNull().default(false),
+    /**
+     * GitHub's `updated_at` for the pull request as last recorded. Webhooks arrive out of
+     * order, so one older than this is not applied.
+     */
+    prUpdatedAt: instant("pr_updated_at"),
     agentState: text("agent_state", { enum: AGENT_STATES }).notNull().default("idle"),
     /** One line: what the agent is doing. */
     agentStatus: text("agent_status"),
