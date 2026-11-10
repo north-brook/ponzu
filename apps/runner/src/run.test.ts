@@ -115,25 +115,37 @@ async function temp(): Promise<string> {
 /* Starting                                                            */
 /* ------------------------------------------------------------------ */
 
-test("a fresh design starts a new session and says so once Claude is up", async () => {
-  const { api, run } = await setup();
-  expect(run.opts.resume).toBeNull();
-  expect(run.opts.instructions).toContain("Ponzu's canvas tools");
-  expect(run.opts.instructions).toContain("no repository");
-  expect(run.opts.tools.map((t) => t.name)).toContain("create_artboard");
-
-  await until(() => api.items()[0]?.payload);
+test("the thread shows the runner waking while the checkout is made, then a new session", async () => {
+  let cloned: (() => void) | undefined;
+  const work = await temp();
+  const api = new FakeRunnerApi();
+  const starting = setup({
+    api,
+    prepare: () =>
+      new Promise((resolve) => {
+        cloned = () => resolve(work);
+      }),
+  });
+  await until(() => cloned && api.items()[0]);
   expect(api.items()[0]).toMatchObject({
     kind: "notice",
     payload: { type: "waking" },
     streaming: true,
   });
+  expect(api.lastState).toMatchObject({ state: "working", status: "Waking up" });
+
+  cloned!();
+  const { run } = await starting;
+  expect(run.opts.resume).toBeNull();
+  expect(run.opts.instructions).toContain("Ponzu's canvas tools");
+  expect(run.opts.instructions).toContain("no repository");
+  expect(run.opts.tools.map((t) => t.name)).toContain("create_artboard");
+  await until(() => !api.items()[0]!.streaming);
+  expect(api.items()[0]!.payload).toEqual({ type: "started" });
+  await until(() => api.lastState?.state === "idle");
 
   run.ready("sess_new");
   await until(() => api.lastState?.claudeSessionId === "sess_new");
-  await until(() => !api.items()[0]!.streaming);
-  expect(api.items()[0]!.payload).toEqual({ type: "started" });
-  expect(api.lastState).toMatchObject({ state: "idle", claudeSessionId: "sess_new" });
 });
 
 test("a design with a session resumes it, and withdraws what an earlier run left open", async () => {
@@ -150,7 +162,6 @@ test("a design with a session resumes it, and withdraws what an earlier run left
     status: "open",
   });
   expect(run.opts.resume).toBe("sess_old");
-  run.ready("sess_old");
   await until(() => api.items()[0] && !api.items()[0]!.streaming);
   expect(api.items()[0]!.payload).toEqual({ type: "resumed" });
   expect(api.calls).toContain("withdraw");
@@ -619,6 +630,31 @@ test("Claude Code that stops by itself is started again on the same session", as
   // What the first had not taken goes into the second.
   const again = await second.input();
   expect(again.uuid).toBe(eventUuid(event.id));
+});
+
+test("Claude Code that keeps stopping is left down until the next event starts it", async () => {
+  const agent = new ScriptedAgent();
+  const { api, runner } = await setup({ agent });
+  for (let n = 1; n <= 4; n++) (await agent.run(n)).crash();
+  await until(() =>
+    api.items().some((i) => i.kind === "notice" && JSON.stringify(i.payload).includes("keeps")),
+  );
+  await Bun.sleep(30);
+  expect(agent.runs.length).toBe(4);
+
+  const event = api.push({ kind: "message", payload: { text: "Try again" } });
+  runner.poke();
+  const fifth = await agent.run(5);
+  expect((await fifth.input()).uuid).toBe(eventUuid(event.id));
+});
+
+test("an event of a kind this runner does not know is acknowledged, not held forever", async () => {
+  const { api, runner, run, logs } = await setup();
+  const event = api.push({ kind: "deploy", payload: {} } as never);
+  runner.poke();
+  await until(() => api.delivered.includes(event.id));
+  expect(run.inputs).toEqual([]);
+  expect(logs.join("\n")).toContain("deploy");
 });
 
 test("a message a repo's hook refused leaves the design idle, and is not acknowledged", async () => {

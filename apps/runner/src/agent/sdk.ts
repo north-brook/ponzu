@@ -62,11 +62,11 @@ export class ClaudeAgent implements Agent {
     return new ClaudeRun(this.opts, options);
   }
 
-  async history(sessionId: string, cwd: string): Promise<SessionHistory | null> {
-    if (!(await getSessionInfo(sessionId, { dir: cwd }))) return null;
+  async history(sessionId: string): Promise<SessionHistory | null> {
+    if (!(await getSessionInfo(sessionId))) return null;
     const messages = new Set<string>();
     const toolResults = new Set<string>();
-    for (const m of await getSessionMessages(sessionId, { dir: cwd })) {
+    for (const m of await getSessionMessages(sessionId)) {
       if (m.type !== "user") continue;
       messages.add(m.uuid);
       const content = (m.message as { content?: unknown })?.content;

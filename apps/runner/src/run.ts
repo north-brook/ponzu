@@ -76,6 +76,16 @@ export const TIMING: Timing = {
 /** How many times in a row Claude Code may stop by itself before the runner stops starting it. */
 const MAX_RESTARTS = 3;
 
+const EVENT_KINDS = new Set<string>([
+  "message",
+  "answer",
+  "comment",
+  "edit",
+  "check",
+  "review",
+  "stop",
+] satisfies RunnerEvent["kind"][]);
+
 export interface RunnerOptions {
   api: RunnerApi;
   agent: Agent;
@@ -130,6 +140,7 @@ export class Runner {
   private historyQuestions = new Set<string>();
   private wakeItem = randomId("ti");
   private restarts = 0;
+  private restarting: Promise<void> | null = null;
 
   /** Claimed and not yet acknowledged, by id. */
   private held = new Map<string, RunnerEvent>();
@@ -137,7 +148,7 @@ export class Runner {
   /** Messages put into the run that Claude Code has not taken yet: uuid to the event, if any. */
   private sent = new Map<string, string | null>();
   /** Canvas edits waiting for the agent to next touch the canvas. */
-  private later: RunnerEvent[] = [];
+  private later: Exclude<RunnerEvent, { kind: "stop" }>[] = [];
   /** Open questions: question id to the agent's ask id. */
   private asks = new Map<string, string>();
   /** Answers handed to the agent: ask id to the answer's event, until the tool result is in. */
@@ -194,6 +205,8 @@ export class Runner {
     this.replica = await this.retry(() =>
       Replica.open({ transport: this.api.sync, schedule: timer, actor: ACTOR }),
     );
+    // Stopped while the checkout or the design was on its way: there is nothing to start.
+    if (this.stopping) return;
     this.replica.notify(this.session.seq);
     this.ws = createCloudWorkspace({
       id: this.session.design.id,
@@ -289,10 +302,12 @@ export class Runner {
   }
 
   private async startAgent(resume: string | null): Promise<void> {
-    this.history = resume ? await this.opts.agent.history(resume, this.cwd) : null;
+    this.history = resume ? await this.opts.agent.history(resume) : null;
     this.historyQuestions = new Set(
       [...(this.history?.toolResults ?? [])].map((id) => derivedId("q", id)),
     );
+    // Said once, when the runner starts: Claude Code itself says nothing until its first turn.
+    this.notice(this.wakeItem, { type: this.history ? "resumed" : "started" });
     const run = this.opts.agent.start({
       cwd: this.cwd,
       // A session whose transcript is gone (the sandbox was rebuilt) cannot be resumed.
@@ -400,6 +415,12 @@ export class Runner {
 
   /** Put an event where it belongs: into the run, to a waiting question, or aside for later. */
   private route(event: RunnerEvent): void {
+    if (!EVENT_KINDS.has(event.kind)) {
+      // From an API newer than this runner. Held, it would come back on every start.
+      this.log(`an event of a kind this runner does not know: ${event.kind}`);
+      this.ack(event.id);
+      return;
+    }
     if (this.inSession(event)) {
       this.ack(event.id);
       return;
@@ -441,15 +462,7 @@ export class Runner {
   /** Canvas edits go in once the agent is at the canvas, or before whatever starts its next turn. */
   private deliverLater(): void {
     for (const event of this.later.splice(0)) {
-      this.send(
-        eventUuid(event.id),
-        eventText(event as Exclude<RunnerEvent, { kind: "stop" }>),
-        "next",
-        {
-          human: false,
-          event: event.id,
-        },
-      );
+      this.send(eventUuid(event.id), eventText(event), "next", { human: false, event: event.id });
     }
   }
 
@@ -459,7 +472,11 @@ export class Runner {
     priority: "now" | "next",
     opts: { human: boolean; event: string | null },
   ): void {
-    if (!this.run) return;
+    if (!this.run) {
+      // Claude Code gave up starting: try again, which puts back every event held.
+      void this.restartAgent();
+      return;
+    }
     this.sent.set(uuid, opts.event);
     this.run.send({ uuid, text, priority, human: opts.human });
     this.refreshState();
@@ -565,8 +582,6 @@ export class Runner {
   private ready(sessionId: string, problems: string[]): void {
     this.sessionId = sessionId;
     for (const problem of problems) this.log(problem);
-    // Said once: a Claude Code that starts again after stopping is the same session.
-    this.notice(this.wakeItem, { type: this.history ? "resumed" : "started" });
     this.state.set({ claudeSessionId: sessionId });
   }
 
@@ -694,6 +709,8 @@ export class Runner {
     this.inTurn = false;
     this.run = null;
     if (++this.restarts > MAX_RESTARTS) {
+      // Until the next event, which starts it again (`send`) with a fresh count.
+      this.restarts = 0;
       this.notice(randomId("ti"), {
         type: "error",
         code: "agent_exited",
@@ -712,11 +729,16 @@ export class Runner {
   }
 
   /** Start Claude Code again on the same session, and put back what it had not taken. */
-  private async restartAgent(): Promise<void> {
-    if (this.stopping) return;
-    await this.startAgent(this.sessionId ?? this.session.claudeSessionId);
-    for (const event of this.held.values()) if (!this.toAck.has(event.id)) this.route(event);
-    this.refreshState();
+  private restartAgent(): Promise<void> {
+    if (this.stopping) return Promise.resolve();
+    this.restarting ??= (async () => {
+      await this.startAgent(this.sessionId ?? this.session.claudeSessionId);
+      for (const event of this.held.values()) if (!this.toAck.has(event.id)) this.route(event);
+      this.refreshState();
+    })().finally(() => {
+      this.restarting = null;
+    });
+    return this.restarting;
   }
 
   /* ---------------------------------------------------------------- */

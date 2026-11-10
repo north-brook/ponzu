@@ -109,7 +109,7 @@ test.skipIf(!live)(
     expect(items[0]).toMatchObject({ kind: "notice", payload: { type: "started" } });
     expect(api.lastState).toMatchObject({ state: "idle" });
     // What a runner that starts again reads to know the event is in the session already.
-    const history = await agent.history(api.lastState!.claudeSessionId!, work);
+    const history = await agent.history(api.lastState!.claudeSessionId!);
     expect(history?.messages.has(eventUuid(message.id))).toBe(true);
   },
   200_000,

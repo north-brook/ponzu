@@ -107,6 +107,9 @@ export interface SessionHistory {
 
 export interface Agent {
   start(opts: AgentOptions): AgentRun;
-  /** What the session holds, or null when there is no such session to resume. */
-  history(sessionId: string, cwd: string): Promise<SessionHistory | null>;
+  /**
+   * What the session holds, or null when there is no such session to resume. Found by id
+   * alone: a session can be resumed from any working directory.
+   */
+  history(sessionId: string): Promise<SessionHistory | null>;
 }
