@@ -74,6 +74,26 @@ export function bucketFor(scale: number): number {
 }
 
 /**
+ * Which picture a board shows, and which it loads ahead without showing. Mid-gesture it keeps
+ * `held`, the one it had when the camera started: a new picture swapped in mid-zoom can draw as
+ * nothing for a frame while it decodes, and the boards' layer is a bitmap at the gesture's
+ * first zoom anyway (useCameraLayers), so a sharper one would show no better until it stops.
+ * Meanwhile the one the zoom has reached loads ahead, ready to swap in once the camera rests.
+ * At rest, past 70% of its bucket the next one up loads ahead.
+ */
+export function pictureBuckets(
+  scale: number,
+  held: number,
+  moving: boolean,
+): { bucket: number; ahead: number | null } {
+  const wanted = bucketFor(scale);
+  const bucket = moving ? held : wanted;
+  if (wanted !== bucket) return { bucket, ahead: wanted };
+  const up = bucketFor(bucket * 1.01);
+  return { bucket, ahead: up > bucket && scale > bucket * 0.7 ? up : null };
+}
+
+/**
  * Which representation a board wants. `scale` is device px per CSS px;
  * `current` is what it shows now (for hysteresis); `motion` is the device px
  * of its biggest looping animation, and `looped` whether loops can play it
@@ -418,15 +438,15 @@ function useTier(opts: {
   const failures = useRef(0);
   const pictureRef = useRef<Picture | null>(null);
   pictureRef.current = picture;
-  const bucket = bucketFor(scale);
-  const up = bucketFor(bucket * 1.01);
+  // The picture's resolution changes only while the camera rests (pictureBuckets).
+  const shownBucket = useRef(bucketFor(scale));
+  const { bucket, ahead } = pictureBuckets(scale, shownBucket.current, moving);
+  shownBucket.current = bucket;
   // Only boards near or below the line need a picture; big live ones don't.
   // One that loops may stay a picture up to the scale its loops were filmed at.
   const near = scale <= (picture?.loops ? LOOPS_FILMED_AT : PICTURE_SCALE * 1.5);
   const src = snapshotUrl && near ? snapshotUrl(id, bucket) : "";
-  // Promote early: past 70% of this bucket, fetch the next one up too.
-  const upSrc =
-    snapshotUrl && near && up > bucket && scale > bucket * 0.7 ? snapshotUrl(id, up) : "";
+  const upSrc = snapshotUrl && near && ahead ? snapshotUrl(id, ahead) : "";
   // Loops: asked for once the board is known to loop and is drawn small.
   const loopState = useLoops(
     loopsUrl && picture?.loops && scale < LOOPS_FILMED_AT ? loopsUrl(id) : null,
@@ -490,7 +510,7 @@ function useTier(opts: {
       live = false;
       clearTimeout(timer);
     };
-  }, [src, upSrc, bucket, up, onScreen, retry]);
+  }, [src, upSrc, onScreen, retry]);
   useEffect(() => {
     if (want === tier) return;
     if (want === "picture" && !picture) return;
