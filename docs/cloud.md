@@ -77,10 +77,17 @@ GitHub token never reaches a device.
 - Access tokens are five-minute JWTs. The API verifies them locally against
   WorkOS's JWKS. Clients refresh directly with WorkOS, one refresh in flight at a
   time, and always store the rotated refresh token.
+- WorkOS will not finish a sign-in until the email is verified, and it does not
+  take GitHub's word for it. The API completes that step itself during the
+  exchange and then checks with GitHub that the address is verified there, so
+  nobody is sent a code by email.
 
 **Workspaces.** A workspace is a GitHub account (a person or an organization) with
 the Ponzu GitHub App installed. One row per installation. A person's workspaces are
 the installations their GitHub user token can reach (`GET /user/installations`).
+The token does not reveal organizations the App is not installed on. Setup lists the
+person's own account and the accounts where Ponzu is installed; any other
+organization is added through GitHub's install page, which has its own picker.
 
 **Membership** is GitHub's. Anyone who can reach an installation's repos is a
 member; Ponzu stores only the role (Admin or Member). There are no invitations.
@@ -271,9 +278,12 @@ count, and the phone gets a push. An answer is an event with priority `now`.
 ## Assets and previews
 
 Bytes live in R2. Each design has a random asset key; its files are served from
-`https://assets.ponzu.design/<asset key>/…`. Images, CSS and video cannot send an
+`https://assets.ponzu.cloud/<asset key>/…`. Images, CSS and video cannot send an
 `Authorization` header, so the key in the path is the capability. The API returns
 it only to people who can open the design, and it can be rotated.
+
+User content is served from its own domain, `ponzu.cloud`, so nothing a design
+contains ever shares an origin or a cookie with `ponzu.design`.
 
 The runner uploads a light and a dark preview of the first page after each batch of
 edits. The sidebar and the phone show those.
