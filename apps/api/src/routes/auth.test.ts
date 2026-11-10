@@ -182,20 +182,48 @@ describe("POST /v1/auth/exchange", () => {
     expect(await getUserByWorkosId(t.db, started.workos.id)).toBeNull();
   });
 
-  test("a WorkOS user that already belongs to another GitHub account is identity_conflict", async () => {
+  test("a second GitHub account that has verified the same address is identity_conflict", async () => {
     const owner = await t.signInAs({ login: "owner" });
-    const intruder = await t.startSignIn({ login: "intruder" });
-    // Act out WorkOS handing the intruder's GitHub identity the owner's WorkOS user.
+    // The owner's other GitHub account, where the address has since been verified, arriving
+    // as the same WorkOS user: WorkOS keys its users by email.
+    const second = await t.startSignIn({ login: "owner-two", email: "owner@example.com" });
     const code = await t.workos.authorize(owner.workos.id, {
-      codeVerifier: intruder.codeVerifier,
-      oauthTokens: t.github.issueTokens(intruder.github.id),
+      codeVerifier: second.codeVerifier,
+      oauthTokens: t.github.issueTokens(second.github.id),
     });
 
-    const response = await exchange({ code, code_verifier: intruder.codeVerifier });
+    const response = await exchange({ code, code_verifier: second.codeVerifier });
 
     expect(response.status).toBe(409);
     expect(await errorCode(response)).toBe("identity_conflict");
     expect((await getUserByWorkosId(t.db, owner.workos.id))!.githubUserId).toBe(owner.github.id);
+  });
+
+  test("a sign-in that was not through GitHub is sign_in_not_supported, and no outage of ours", async () => {
+    // WorkOS's hosted page offers a password too, and anyone can post the code it gives.
+    const started = await t.startSignIn({ login: "password" });
+    const live = liveSessions().length;
+    const code = await t.workos.authorize(started.workos.id, {
+      codeVerifier: started.codeVerifier,
+      oauthTokens: null,
+      authenticationMethod: "Password",
+    });
+
+    const response = await exchange({ code, code_verifier: started.codeVerifier });
+
+    expect(response.status).toBe(403);
+    expect(await errorCode(response)).toBe("sign_in_not_supported");
+    expect(liveSessions()).toHaveLength(live);
+    expect(await getUserByWorkosId(t.db, started.workos.id)).toBeNull();
+    expect(t.logs.findLast((line) => line.event === "sign_in_not_supported")).toMatchObject({
+      level: "warn",
+      reason: "authentication_method_password",
+    });
+    // Logged as a refusal, not at error level as a failure of the API's.
+    const requestId = response.headers.get("x-request-id");
+    expect(
+      t.logs.filter((line) => line.requestId === requestId).map((line) => line.level),
+    ).not.toContain("error");
   });
 });
 
@@ -213,7 +241,7 @@ describe("email verification, finished by the API", () => {
     expect(await getGithubUserToken(t.db, session.user.id)).not.toBeNull();
   });
 
-  test("an address GitHub has not verified is email_not_verified: no person, no live session", async () => {
+  test("an address GitHub has not verified is email_not_verified, and WorkOS is left believing nothing", async () => {
     const started = await t.startSignIn({
       login: "unverified",
       emailVerifiedAtWorkos: false,
@@ -227,19 +255,59 @@ describe("email verification, finished by the API", () => {
     expect(await errorCode(response)).toBe("email_not_verified");
     expect(await getUserByWorkosId(t.db, started.workos.id)).toBeNull();
     expect(liveSessions()).toHaveLength(live);
+    // The API verified the address for WorkOS to get this far. It takes that back: the WorkOS
+    // user, with its verified flag and the GitHub identity attached to it, is gone.
+    expect(t.workos.hasUser(started.workos.id)).toBe(false);
   });
 
-  test("trying again does not get past it, though WorkOS now counts the email as verified", async () => {
+  test("trying again does not get past it", async () => {
     const who = { login: "persistent", emailVerifiedAtWorkos: false, emailVerifiedAtGithub: false };
     const first = await t.startSignIn(who);
     await exchange({ code: first.code, code_verifier: first.codeVerifier });
-    expect(t.workos.user(first.workos.id).emailVerified).toBe(true);
 
     const second = await t.startSignIn(who);
     const response = await exchange({ code: second.code, code_verifier: second.codeVerifier });
 
     expect(response.status).toBe(403);
     expect(await errorCode(response)).toBe("email_not_verified");
+    expect(t.workos.hasUser(second.workos.id)).toBe(false);
+  });
+
+  test("if WorkOS cannot be told to forget, the sign-in still fails, and stays refused after", async () => {
+    const who = { login: "sticky", emailVerifiedAtWorkos: false, emailVerifiedAtGithub: false };
+    const first = await t.startSignIn(who);
+    t.workos.failNext(`/user_management/users/${first.workos.id}`, 503);
+
+    const refused = await exchange({ code: first.code, code_verifier: first.codeVerifier });
+
+    expect([refused.status, await errorCode(refused)]).toEqual([403, "email_not_verified"]);
+    expect(
+      t.logs.findLast((line) => line.event === "email_verification_not_withdrawn"),
+    ).toMatchObject({
+      level: "error",
+      workosUserId: first.workos.id,
+    });
+    // WorkOS now counts the address as verified and no longer stops the sign-in. GitHub is
+    // still asked, because nobody has been let in as this WorkOS user.
+    expect(t.workos.user(first.workos.id).emailVerified).toBe(true);
+    const second = await t.startSignIn(who);
+    const again = await exchange({ code: second.code, code_verifier: second.codeVerifier });
+    expect([again.status, await errorCode(again)]).toEqual([403, "email_not_verified"]);
+  });
+
+  test("a sign-in that fails for another reason after the API vouched takes the vouching back too", async () => {
+    const started = await t.startSignIn({ login: "ghdown-new", emailVerifiedAtWorkos: false });
+    t.github.failNext("/user");
+
+    const response = await exchange({ code: started.code, code_verifier: started.codeVerifier });
+
+    expect([response.status, await errorCode(response)]).toEqual([502, "upstream_unavailable"]);
+    expect(t.workos.hasUser(started.workos.id)).toBe(false);
+    // Nothing is lost by it: the next attempt is a first sign-in again, and goes through.
+    const again = await t.startSignIn({ login: "ghdown-new", emailVerifiedAtWorkos: false });
+    expect((await exchange({ code: again.code, code_verifier: again.codeVerifier })).status).toBe(
+      200,
+    );
   });
 
   test("once they verify the address on GitHub, the next sign-in works", async () => {
@@ -288,10 +356,10 @@ describe("email verification, finished by the API", () => {
 });
 
 describe("someone signing in under an address that is not theirs", () => {
-  // Mallory's GitHub account lists maya's address, unverified. WorkOS keys its users by email,
-  // so both of them arrive as the same WorkOS user; the API has finished WorkOS's email
-  // verification for whoever asked, so WorkOS now takes that user's address as proven.
-  async function mallory(workosUserId: string) {
+  // Mallory's GitHub account lists the victim's address, unverified. WorkOS keys its users by
+  // email, so she arrives as whichever WorkOS user holds that address. `attachesIdentity` is
+  // WorkOS stopping to verify the address before it joins her GitHub identity to that user.
+  async function mallory(workosUserId: string, { attachesIdentity = false } = {}) {
     const account = await t.startSignIn({
       login: "mallory",
       email: "victim@example.com",
@@ -300,46 +368,78 @@ describe("someone signing in under an address that is not theirs", () => {
     const code = await t.workos.authorize(workosUserId, {
       codeVerifier: account.codeVerifier,
       oauthTokens: t.github.issueTokens(account.github.id),
+      attachesIdentity,
     });
     return exchange({ code, code_verifier: account.codeVerifier });
   }
+  const answer = async (response: Response) => [response.status, await response.json()];
 
-  test("is refused before the real owner arrives, and after, and holds no usable token", async () => {
-    const shared = t.workos.addUser({ email: "victim@example.com", emailVerified: false });
+  test("before the owner has an account, she is refused and WorkOS is left with nothing of hers", async () => {
+    const early = t.workos.addUser({ email: "victim@example.com", emailVerified: false });
 
-    // First: the API completes the verification, then GitHub says the address is not hers.
-    const first = await mallory(shared.id);
-    expect([first.status, await errorCode(first)]).toEqual([403, "email_not_verified"]);
-    expect(t.workos.user(shared.id).emailVerified).toBe(true);
-    // Again, now that WorkOS no longer asks for verification.
-    const second = await mallory(shared.id);
-    expect([second.status, await errorCode(second)]).toEqual([403, "email_not_verified"]);
+    // The API completes the verification, then GitHub says the address is not hers.
+    const refused = await mallory(early.id);
 
-    // The owner signs in with her own GitHub account, where the address is verified.
-    const victim = await t.startSignIn({ login: "victim", email: "victim@example.com" });
-    const code = await t.workos.authorize(shared.id, {
-      codeVerifier: victim.codeVerifier,
-      oauthTokens: t.github.issueTokens(victim.github.id),
+    expect([refused.status, await errorCode(refused)]).toEqual([403, "email_not_verified"]);
+    // No verified address, and no identity of hers, waits at WorkOS for the owner to walk into.
+    expect(t.workos.hasUser(early.id)).toBe(false);
+  });
+
+  test("once the owner has an account, nobody can tell, and the API vouches for no one", async () => {
+    const victim = await t.signInAs({ login: "victim", emailVerifiedAtWorkos: false });
+    const nobody = t.workos.addUser({ email: "nobody@example.com", emailVerified: false });
+    const made = t.workos.sessions.size;
+
+    // WorkOS wants the address verified before it attaches her identity to the owner's user.
+    const taken = await answer(await mallory(victim.workos.id, { attachesIdentity: true }));
+    // The same attempt on an address nobody at Ponzu has.
+    const free = await answer(await mallory(nobody.id));
+
+    expect(taken).toEqual(free);
+    expect(taken[0]).toBe(403);
+    expect((taken[1] as any).error.code).toBe("email_not_verified");
+    // For the owner's user the verification was never finished: only the other attempt got as
+    // far as a session, so WorkOS attached nothing to her.
+    expect(t.workos.sessions.size).toBe(made + 1);
+    expect(t.workos.hasUser(victim.workos.id)).toBe(true);
+    expect(t.logs.findLast((line) => line.event === "email_verification_refused")).toMatchObject({
+      level: "warn",
+      workosUserId: victim.workos.id,
     });
-    const admitted = await exchange({ code, code_verifier: victim.codeVerifier });
-    expect(admitted.status).toBe(200);
-    const owner = ((await admitted.json()) as any).user;
-    expect(owner.githubLogin).toBe("victim");
+  });
 
-    // Mallory through the exchange: the WorkOS user is taken, by another GitHub account.
-    const third = await mallory(shared.id);
-    expect([third.status, await errorCode(third)]).toEqual([409, "identity_conflict"]);
-    // Mallory straight to WorkOS, which hands her a token for the shared user.
+  test("if WorkOS has joined her to the owner's user anyway, she is still refused, the same way", async () => {
+    const victim = await t.signInAs({ login: "joined", email: "joined@example.com" });
+    const account = await t.startSignIn({
+      login: "mallory-joined",
+      email: "joined@example.com",
+      emailVerifiedAtGithub: false,
+    });
+    const viaExchange = async () => {
+      const code = await t.workos.authorize(victim.workos.id, {
+        codeVerifier: account.codeVerifier,
+        oauthTokens: t.github.issueTokens(account.github.id),
+      });
+      return exchange({ code, code_verifier: account.codeVerifier });
+    };
+
+    // Through the exchange: GitHub is asked, because this is not the GitHub account the WorkOS
+    // user belongs to. The answer is the one a stranger to Ponzu would get.
+    const refused = await viaExchange();
+    expect([refused.status, await errorCode(refused)]).toEqual([403, "email_not_verified"]);
+
+    // Straight to WorkOS, which hands her a well-signed token for the owner's user.
     const direct = await t.workos.signAccessToken({
-      userId: shared.id,
+      userId: victim.workos.id,
       sessionId: "session_mallory",
     });
     const me = await t.app.request("/v1/me", { headers: { authorization: `Bearer ${direct}` } });
     expect([me.status, await errorCode(me)]).toEqual([401, "session_unknown"]);
 
-    // And the owner's account is still hers alone.
-    const row = await getUserByWorkosId(t.db, shared.id);
-    expect(row).toMatchObject({ id: owner.id, githubUserId: victim.github.id });
+    // And the owner's account is still hers alone, and still works.
+    const row = await getUserByWorkosId(t.db, victim.workos.id);
+    expect(row).toMatchObject({ id: victim.userId, githubUserId: victim.github.id });
+    expect((await t.app.request("/v1/me", { headers: victim.headers })).status).toBe(200);
   });
 
   test("a person whose WorkOS address changes is checked against GitHub again", async () => {
@@ -384,21 +484,23 @@ describe("POST /v1/auth/sign-out", () => {
     expect(await after(phone.headers)).toBe(200);
   });
 
-  test("if WorkOS cannot be reached the session is left whole, to be signed out again", async () => {
+  test("if WorkOS cannot be reached the person is signed out all the same", async () => {
     const person = await t.signInAs({ login: "retry" });
     t.workos.failNext("/user_management/sessions/revoke", 503);
 
-    const failed = await t.app.request("/v1/auth/sign-out", {
+    const response = await t.app.request("/v1/auth/sign-out", {
       method: "POST",
       headers: person.headers,
     });
-    expect(failed.status).toBe(502);
 
-    const again = await t.app.request("/v1/auth/sign-out", {
-      method: "POST",
-      headers: person.headers,
+    expect(response.status).toBe(204);
+    // The session WorkOS still holds buys nothing here: the API has forgotten it.
+    expect(t.workos.sessions.get(decodeJwt(person.accessToken).sid as string)!.revoked).toBe(false);
+    const me = await t.app.request("/v1/me", { headers: person.headers });
+    expect([me.status, await errorCode(me)]).toEqual([401, "session_unknown"]);
+    expect(t.logs.findLast((line) => line.event === "session_revoke_failed")).toMatchObject({
+      level: "warn",
     });
-    expect(again.status).toBe(204);
   });
 
   test("needs a signed-in person", async () => {

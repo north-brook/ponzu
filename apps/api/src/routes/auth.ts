@@ -47,13 +47,20 @@ export const auth = new Hono<AppEnv>()
   })
 
   /**
-   * Ends the session the bearer token belongs to. Its refresh token stops working at WorkOS,
-   * and the API stops honoring its access tokens at once, not when they run out. WorkOS goes
-   * first, so a failure there leaves the session whole and the request can be sent again.
+   * Ends the session the bearer token belongs to. Forgetting it here is what signs the person
+   * out: the API stops honoring the session's tokens at once, these and any refreshed later.
+   * So that goes first and is all the answer depends on. Revoking at WorkOS only tidies up (it
+   * stops the refresh token, which would now buy tokens the API refuses), and a failure there
+   * must not leave someone who pressed "sign out" signed in.
    */
   .post("/sign-out", access.user, async (c) => {
     const { db, workos } = c.var.deps;
-    await workos.revokeSession(c.var.actor.sessionId);
-    await endSession(db, c.var.actor.sessionId);
+    const { sessionId } = c.var.actor;
+    await endSession(db, sessionId);
+    try {
+      await workos.revokeSession(sessionId);
+    } catch (error) {
+      c.var.log.warn("session_revoke_failed", { error });
+    }
     return c.body(null, 204);
   });

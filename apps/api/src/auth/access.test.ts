@@ -1,11 +1,18 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { emptyDoc } from "@ponzu/core";
-import { createDesign, createRunnerToken, revokeRunnerTokens, upsertWorkspace } from "@ponzu/db";
-import { Hono } from "hono";
+import {
+  createDesign,
+  createRunnerToken,
+  revokeRunnerTokens,
+  upsertMembership,
+  upsertWorkspace,
+} from "@ponzu/db";
+import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { createApp } from "../create-app.ts";
 import type { AppEnv } from "../http/context.ts";
 import { createTestApp, type SignedInPerson, type TestApp } from "../testing/index.ts";
-import { access } from "./access.ts";
+import { access, firstUndeclared } from "./access.ts";
+import { requireWorkspace } from "./authorize.ts";
 
 let t: TestApp;
 let person: SignedInPerson;
@@ -55,6 +62,37 @@ describe("a route for a signed-in person", () => {
   test("an expired token: token_expired", async () => {
     const expired = await t.workos.signAccessToken(session(), { expiresIn: -1 });
     expect(await me(`Bearer ${expired}`)).toEqual([401, "token_expired"]);
+  });
+
+  test("a token that never says when it runs out: token_invalid", async () => {
+    const sid = JSON.parse(atob(person.accessToken.split(".")[1]!)).sid;
+    const endless = await t.workos.signAccessToken(
+      { userId: person.workos.id, sessionId: sid },
+      { expiresIn: null },
+    );
+    expect(await me(`Bearer ${endless}`)).toEqual([401, "token_invalid"]);
+  });
+
+  test("a token is good for fifteen minutes at most, whatever expiry it carries", async () => {
+    const other = await createTestApp();
+    const fresh = await other.signInAs();
+    const sid = JSON.parse(atob(fresh.accessToken.split(".")[1]!)).sid;
+    const tenYears = await other.workos.signAccessToken(
+      { userId: fresh.workos.id, sessionId: sid },
+      { expiresIn: 10 * 365 * 86_400 },
+    );
+    const ask = async () => {
+      const response = await other.app.request("/v1/me", {
+        headers: { authorization: `Bearer ${tenYears}` },
+      });
+      return response.status === 200 ? 200 : ((await response.json()) as any).error.code;
+    };
+
+    other.clock.advance(14 * 60_000);
+    expect(await ask()).toBe(200);
+    other.clock.advance(2 * 60_000);
+    expect(await ask()).toBe("token_expired");
+    await other.close();
   });
 
   test("a token expires five minutes after it was issued, by the API's own clock", async () => {
@@ -144,6 +182,34 @@ const brokenJwks = (() => {
   throw new TypeError("fetch failed");
 }) as unknown as TestApp["deps"]["workos"]["jwks"];
 
+let accounts = 0;
+/** A workspace nobody belongs to yet. */
+function workspace() {
+  const githubAccountId = 500_000 + accounts++;
+  return upsertWorkspace(t.db, {
+    githubAccountId,
+    githubLogin: `north-brook-${githubAccountId}`,
+    kind: "org",
+    name: "North Brook",
+    avatarUrl: null,
+    installationId: githubAccountId,
+    repositorySelection: "all",
+    installedByUserId: null,
+  });
+}
+
+async function design() {
+  return createDesign(t.db, {
+    workspaceId: (await workspace()).id,
+    repoId: null,
+    ownerId: person.userId,
+    claudeAccountId: null,
+    name: "Lisbon",
+    branch: null,
+    doc: emptyDoc("Lisbon"),
+  });
+}
+
 describe("a route for a runner", () => {
   // No runner route exists yet, so this mounts one the way a later module will.
   const withRunnerRoute = () => {
@@ -152,28 +218,6 @@ describe("a route for a runner", () => {
     );
     return createApp(t.deps).route("/", routes);
   };
-
-  async function design() {
-    const workspace = await upsertWorkspace(t.db, {
-      githubAccountId: Math.floor(Math.random() * 1e9),
-      githubLogin: "north-brook",
-      kind: "org",
-      name: "North Brook",
-      avatarUrl: null,
-      installationId: Math.floor(Math.random() * 1e9),
-      repositorySelection: "all",
-      installedByUserId: null,
-    });
-    return createDesign(t.db, {
-      workspaceId: workspace.id,
-      repoId: null,
-      ownerId: person.userId,
-      claudeAccountId: null,
-      name: "Lisbon",
-      branch: null,
-      doc: emptyDoc("Lisbon"),
-    });
-  }
 
   test("takes a runner token and is told the one design it is for", async () => {
     const app = withRunnerRoute();
@@ -207,60 +251,207 @@ describe("a route for a runner", () => {
   });
 });
 
+describe("a route for a person or a runner", () => {
+  const withSharedRoute = () => {
+    const routes = new Hono<AppEnv>().get("/v1/test/either", access.userOrRunner, (c) => {
+      const { actor } = c.var;
+      return c.json(actor.kind === "user" ? { user: actor.user.id } : { design: actor.designId });
+    });
+    return createApp(t.deps).route("/", routes);
+  };
+  const ask = async (authorization?: string) => {
+    const response = await withSharedRoute().request("/v1/test/either", {
+      headers: authorization ? { authorization } : {},
+    });
+    const body = (await response.json()) as any;
+    return response.status === 200 ? body : [response.status, body.error.code];
+  };
+
+  test("knows which of the two is asking", async () => {
+    const { id: designId } = await design();
+    const { token } = await createRunnerToken(t.db, { designId, ttlSeconds: 600 });
+
+    expect(await ask(person.headers.authorization)).toEqual({ user: person.userId });
+    expect(await ask(`Bearer ${token}`)).toEqual({ design: designId });
+  });
+
+  test("refuses anyone who is neither, each as its own kind of token would be", async () => {
+    const direct = await t.workos.signAccessToken({
+      userId: person.workos.id,
+      sessionId: "session_started_at_workos",
+    });
+
+    expect(await ask()).toEqual([401, "unauthenticated"]);
+    expect(await ask("Bearer not-a-jwt")).toEqual([401, "token_invalid"]);
+    expect(await ask(`Bearer pzr_${"0".repeat(52)}`)).toEqual([401, "token_invalid"]);
+    expect(await ask(`Bearer ${direct}`)).toEqual([401, "session_unknown"]);
+  });
+});
+
+describe("what a signed-in person may touch", () => {
+  const withWorkspaceRoutes = () => {
+    const routes = new Hono<AppEnv>()
+      .use(access.user)
+      .get("/:id", async (c) => c.json(await requireWorkspace(c, c.req.param("id"))))
+      .delete("/:id", async (c) => c.json(await requireWorkspace(c, c.req.param("id"), "admin")));
+    return createApp(t.deps).route("/v1/test/workspaces", routes);
+  };
+  const ask = async (id: string, method = "GET") => {
+    const response = await withWorkspaceRoutes().request(`/v1/test/workspaces/${id}`, {
+      method,
+      headers: person.headers,
+    });
+    const body = (await response.json()) as any;
+    return response.status === 200 ? body : [response.status, body.error.code];
+  };
+
+  test("a member gets their workspace, with their role in it", async () => {
+    const { id } = await workspace();
+    await upsertMembership(t.db, { workspaceId: id, userId: person.userId, role: "member" });
+
+    expect(await ask(id)).toMatchObject({ id, role: "member" });
+  });
+
+  test("a workspace they do not belong to and one that does not exist look the same", async () => {
+    const { id } = await workspace();
+
+    expect(await ask(id)).toEqual([404, "not_found"]);
+    expect(await ask("ws_nowhere")).toEqual([404, "not_found"]);
+    // Asking as an admin tells them no more.
+    expect(await ask(id, "DELETE")).toEqual([404, "not_found"]);
+  });
+
+  test("what only an admin may do is forbidden to a member and open to an admin", async () => {
+    const [mine, theirs] = [await workspace(), await workspace()];
+    await upsertMembership(t.db, { workspaceId: mine.id, userId: person.userId, role: "admin" });
+    await upsertMembership(t.db, { workspaceId: theirs.id, userId: person.userId, role: "member" });
+
+    expect(await ask(mine.id, "DELETE")).toMatchObject({ id: mine.id, role: "admin" });
+    expect(await ask(theirs.id, "DELETE")).toEqual([403, "forbidden"]);
+  });
+});
+
 describe("a route that does not say who may call it", () => {
-  let ran = false;
-  const undeclared = new Hono<AppEnv>()
-    .get("/v1/test/open", (c) => {
-      ran = true;
-      return c.json({ leaked: true });
-    })
-    // Declared, but only after something of the route's own has run.
-    .post(
-      "/v1/test/late",
-      (_c, next) => next(),
-      access.user,
-      (c) => c.json({}),
-    )
-    .use("/v1/test/area/*", access.public)
-    .get("/v1/test/area/inside", (c) => c.json({ ok: true }));
-  const app = () => createApp(t.deps).route("/", undeclared);
+  const ran: string[] = [];
+  /** A handler that records that it ran, which an undeclared one never should. */
+  const handler = (name: string) => (c: Context<AppEnv>) => {
+    ran.push(name);
+    return c.json({ name });
+  };
+  const passThrough: MiddlewareHandler<AppEnv> = (_c, next) => next();
+  /** The answer's status, and the error code when it is not a success. */
+  const answer = async (app: { request: Hono["request"] }, path: string, init?: RequestInit) => {
+    const response = await app.request(path, init);
+    return response.status === 200
+      ? 200
+      : [response.status, ((await response.json()) as any).error.code];
+  };
+  const REFUSED = [403, "access_undeclared"];
 
   test("is refused before its handler runs, signed in or not", async () => {
+    const app = createApp(t.deps).route(
+      "/",
+      new Hono<AppEnv>().get("/v1/test/open", handler("open")),
+    );
     for (const headers of [{}, person.headers]) {
-      const response = await app().request("/v1/test/open", { headers });
-      expect(response.status).toBe(403);
-      expect(((await response.json()) as any).error.code).toBe("access_undeclared");
+      expect(await answer(app, "/v1/test/open", { headers })).toEqual(REFUSED);
     }
-    expect(ran).toBe(false);
+    expect(ran).not.toContain("open");
   });
 
   test("is refused when the declaration is not the first thing it runs", async () => {
-    const response = await app().request("/v1/test/late", {
-      method: "POST",
-      headers: person.headers,
-    });
-    expect(response.status).toBe(403);
-    expect(((await response.json()) as any).error.code).toBe("access_undeclared");
-  });
-
-  test("is covered by a declaration on its whole area", async () => {
-    const response = await app().request("/v1/test/area/inside");
-    expect(response.status).toBe(200);
-  });
-
-  test("every route the app ships declares one", async () => {
-    const shipped = createApp(t.deps);
-    const paths = new Set(
-      shipped.routes
-        .filter((route) => route.method !== "ALL")
-        .map((route) => `${route.method} ${route.path}`),
+    const app = createApp(t.deps).route(
+      "/",
+      new Hono<AppEnv>().post("/v1/test/late", passThrough, access.user, handler("late")),
     );
-    expect(paths.size).toBeGreaterThan(0);
-    for (const entry of paths) {
-      const [method, path] = entry.split(" ") as [string, string];
-      const response = await shipped.request(path, { method });
+    expect(await answer(app, "/v1/test/late", { method: "POST", headers: person.headers })).toEqual(
+      REFUSED,
+    );
+  });
+
+  test("is covered by its area saying it is for signed-in people, who must then sign in", async () => {
+    const area = new Hono<AppEnv>().use(access.user).get("/inside", handler("inside"));
+    const app = createApp(t.deps).route("/v1/test/area", area);
+
+    expect(await answer(app, "/v1/test/area/inside")).toEqual([401, "unauthenticated"]);
+    expect(await answer(app, "/v1/test/area/inside", { headers: person.headers })).toBe(200);
+  });
+
+  test("is not opened by an area that says it is public", async () => {
+    // Two files under one prefix: share links, which anyone may open, and designs, where one
+    // route forgot its declaration.
+    const shareLinks = new Hono<AppEnv>().use(access.public).get("/shared/:token", handler("link"));
+    const designs = new Hono<AppEnv>().delete("/:id", handler("delete"));
+    const app = createApp(t.deps).route("/v1/designs", shareLinks).route("/v1/designs", designs);
+
+    expect(await answer(app, "/v1/designs/dsn_1", { method: "DELETE" })).toEqual(REFUSED);
+    // Public is said on the route, so the area's own route is refused too until it says so.
+    expect(await answer(app, "/v1/designs/shared/abc")).toEqual(REFUSED);
+    expect(ran).not.toContain("delete");
+    expect(ran).not.toContain("link");
+  });
+
+  test("is not opened by a public area mounted beside or above it", async () => {
+    const things = new Hono<AppEnv>().use(access.public).get("/", access.public, handler("things"));
+    const admin = new Hono<AppEnv>().get("/secret", handler("secret"));
+    const nested = createApp(t.deps).route("/v1/things", things).route("/v1/things/admin", admin);
+    expect(await answer(nested, "/v1/things")).toBe(200);
+    expect(await answer(nested, "/v1/things/admin/secret")).toEqual(REFUSED);
+
+    // An area at the root with a wildcard, registered before every other area.
+    const root = new Hono<AppEnv>().use("*", access.public);
+    const later = new Hono<AppEnv>().get("/later", handler("later"));
+    const app = createApp(t.deps).route("/", root).route("/v1/test", later);
+    expect(await answer(app, "/v1/test/later")).toEqual(REFUSED);
+
+    expect(ran).not.toContain("secret");
+    expect(ran).not.toContain("later");
+  });
+
+  test("is not opened by a public route that merely matches it", async () => {
+    const routes = new Hono<AppEnv>()
+      .get("/v1/test/files/*", access.public, passThrough)
+      .get("/v1/test/files/private", handler("private"))
+      .post("/v1/test/files/*", handler("upload"));
+    const app = createApp(t.deps).route("/", routes);
+
+    expect(await answer(app, "/v1/test/files/private")).toEqual(REFUSED);
+    expect(await answer(app, "/v1/test/files/x", { method: "POST" })).toEqual(REFUSED);
+    expect(ran).not.toContain("private");
+    expect(ran).not.toContain("upload");
+  });
+
+  test("public said on the route opens that route, with whatever it runs after", async () => {
+    const routes = new Hono<AppEnv>().get(
+      "/v1/test/welcome",
+      access.public,
+      passThrough,
+      handler("welcome"),
+    );
+    expect(await answer(createApp(t.deps).route("/", routes), "/v1/test/welcome")).toBe(200);
+  });
+
+  test("every route the app ships is declared, and none is made public by its area", () => {
+    const shipped = createApp(t.deps);
+    expect(
+      shipped.routes.filter((route) => route.method === "ALL" && route.handler === access.public),
+    ).toEqual([]);
+
+    const routes = shipped.routes.filter(
+      (route) => route.method !== "ALL" && route.path.startsWith("/v1/"),
+    );
+    expect(routes.length).toBeGreaterThan(3);
+    for (const { method, path } of routes) {
+      // Everything a request to this route would run, in order, without the app's own
+      // middleware (which is registered for every path).
+      const sample = path.replace(/:[^/]+/g, "x").replace(/\*/g, "x");
+      const chain = shipped.router
+        .match(method, sample)[0]
+        .map(([[, route]]) => route)
+        .filter((route) => route.path !== "/*");
+      const undeclared = firstUndeclared(chain);
       // Named in the failure, so the route that forgot is the one reported.
-      expect(`${entry}: ${response.status}`).not.toBe(`${entry}: 403`);
+      expect(undeclared && `${undeclared.method} ${undeclared.path}`).toBeUndefined();
     }
   });
 });

@@ -32,6 +32,15 @@ export interface WorkosSession {
   refreshToken: string;
   /** Null when WorkOS did not return GitHub's tokens, or the sign-in was not through GitHub. */
   githubTokens: WorkosOauthTokens | null;
+  /** How WorkOS says the person signed in (`GitHubOAuth`, `Password`, …), when it says. */
+  authenticationMethod: string | null;
+}
+
+/** A verification WorkOS is waiting on: the code it would have emailed, and whose it is. */
+export interface WorkosEmailVerification {
+  code: string;
+  /** The WorkOS user the address would be verified for. */
+  userId: string;
 }
 
 export type AuthenticateResult =
@@ -63,13 +72,19 @@ export interface Workos {
   authenticateWithCode(
     input: { code: string; codeVerifier: string } & CallerInfo,
   ): Promise<AuthenticateResult>;
-  /** The code WorkOS would have emailed for a pending verification. */
-  getEmailVerificationCode(emailVerificationId: string): Promise<string>;
+  /** A pending email verification, read in place of the email WorkOS would have sent. */
+  getEmailVerification(emailVerificationId: string): Promise<WorkosEmailVerification>;
+  /** Finishes a sign-in that stopped for verification. WorkOS then counts the address as verified. */
   authenticateWithEmailVerification(
     input: { code: string; pendingAuthenticationToken: string } & CallerInfo,
   ): Promise<AuthenticateResult>;
   /** Ends a session: its refresh token stops working. Revoking one already ended is not an error. */
   revokeSession(sessionId: string): Promise<void>;
+  /**
+   * Removes a WorkOS user with its sessions and linked identities. Their next sign-in makes a
+   * new one. Deleting one already gone is not an error.
+   */
+  deleteUser(userId: string): Promise<void>;
 }
 
 const BASE_URL = "https://api.workos.com";
@@ -138,7 +153,11 @@ export function createWorkos({
     if (response.status >= 400 && response.status < 500 && PENDING_STEPS.has(code)) {
       return { kind: "not_supported", reason: code };
     }
-    throw new UpstreamError("workos", `POST ${path} answered ${response.status} ${safeCode(code)}`);
+    throw new UpstreamError(
+      "workos",
+      `POST ${path} answered ${response.status} ${safeCode(code)}`,
+      { status: response.status },
+    );
   }
 
   return {
@@ -158,14 +177,18 @@ export function createWorkos({
         user_agent: userAgent,
       }),
 
-    async getEmailVerificationCode(emailVerificationId) {
+    async getEmailVerification(emailVerificationId) {
       const path = `/user_management/email_verification/${encodeURIComponent(emailVerificationId)}`;
       const response = await call("GET", path);
-      const code = response.ok ? text((await readJson(response)).code) : undefined;
-      if (!code) {
-        throw new UpstreamError("workos", `GET email_verification answered ${response.status}`);
+      const body = response.ok ? await readJson(response) : {};
+      const code = text(body.code);
+      const userId = text(body.user_id);
+      if (!code || !userId) {
+        throw new UpstreamError("workos", `GET email_verification answered ${response.status}`, {
+          status: response.status,
+        });
       }
-      return code;
+      return { code, userId };
     },
 
     authenticateWithEmailVerification: ({
@@ -187,7 +210,18 @@ export function createWorkos({
       const response = await call("POST", path, { session_id: sessionId });
       // Gone already is what was wanted.
       if (!response.ok && response.status !== 404) {
-        throw new UpstreamError("workos", `POST ${path} answered ${response.status}`);
+        throw new UpstreamError("workos", `POST ${path} answered ${response.status}`, {
+          status: response.status,
+        });
+      }
+    },
+
+    async deleteUser(userId) {
+      const response = await call("DELETE", `/user_management/users/${encodeURIComponent(userId)}`);
+      if (!response.ok && response.status !== 404) {
+        throw new UpstreamError("workos", `DELETE users answered ${response.status}`, {
+          status: response.status,
+        });
       }
     },
   };
@@ -221,6 +255,7 @@ function toSession(body: Record<string, unknown>): WorkosSession {
     accessToken,
     refreshToken,
     githubTokens: toGithubTokens(body.oauth_tokens),
+    authenticationMethod: text(body.authentication_method) ?? null,
   };
 }
 
