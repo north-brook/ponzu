@@ -120,6 +120,11 @@ test("a resume after the warm window is cold: processes and /tmp are lost, the d
 
 test("an auto-stop is never warm, however soon the resume", async () => {
   const { fake, id } = await awake({ autoStopSeconds: 300 });
+  // An explicit stop a minute ago, whose warm window is still open.
+  await fake.stop(id);
+  fake.clock.advance(MINUTE);
+  expect((await fake.ensureAwake(id)).start).toBe("warm");
+
   fake.clock.advance(5 * MINUTE);
   expect(await fake.get(id)).toMatchObject({ state: "asleep", autoStopAt: null });
   expect((await fake.ensureAwake(id)).start).toBe("cold");
