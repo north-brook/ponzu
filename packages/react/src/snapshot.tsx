@@ -438,10 +438,15 @@ function useTier(opts: {
   const failures = useRef(0);
   const pictureRef = useRef<Picture | null>(null);
   pictureRef.current = picture;
-  // The picture's resolution changes only while the camera rests (pictureBuckets).
+  // The picture's resolution changes only while the camera rests (pictureBuckets): the bucket
+  // asked for holds mid-gesture, and a picture that arrives mid-gesture over one already shown
+  // (asked for at rest, say, just before the camera moved again) waits for it to rest.
   const shownBucket = useRef(bucketFor(scale));
   const { bucket, ahead } = pictureBuckets(scale, shownBucket.current, moving);
   shownBucket.current = bucket;
+  const movingRef = useRef(moving);
+  movingRef.current = moving;
+  const [waiting, setWaiting] = useState<{ src: string; picture: Picture } | null>(null);
   // Only boards near or below the line need a picture; big live ones don't.
   // One that loops may stay a picture up to the scale its loops were filmed at.
   const near = scale <= (picture?.loops ? LOOPS_FILMED_AT : PICTURE_SCALE * 1.5);
@@ -502,7 +507,9 @@ function useTier(opts: {
       failures.current = 0;
       if (!p) return setFailed(true);
       setMissing(false);
-      setPicture((cur) => (cur?.url === p.url ? cur : p));
+      const shown = pictureRef.current;
+      if (movingRef.current && shown && shown.url !== p.url) setWaiting({ src, picture: p });
+      else setPicture((cur) => (cur?.url === p.url ? cur : p));
       // Drawn too early: kept on screen, and asked for again once it's let go (just after).
       if (p.partial) timer = setTimeout(() => setRetry((n) => n + 1), PARTIAL_RETRY_MS + 50);
     });
@@ -511,6 +518,18 @@ function useTier(opts: {
       clearTimeout(timer);
     };
   }, [src, upSrc, onScreen, retry]);
+  // Once the camera rests, the picture that waited goes in, if it's still the one asked for.
+  useEffect(() => {
+    if (moving || !waiting) return;
+    if (waiting.src === src) {
+      const p = waiting.picture;
+      setPicture((cur) => (cur?.url === p.url ? cur : p));
+    }
+    setWaiting(null);
+  }, [moving, waiting, src]);
+  // Kept decoded while it waits, as a shown one is.
+  const waitingUrl = waiting?.picture.url;
+  useEffect(() => (waitingUrl ? holdPicture(waitingUrl) : undefined), [waitingUrl]);
   useEffect(() => {
     if (want === tier) return;
     if (want === "picture" && !picture) return;
