@@ -1,6 +1,6 @@
 "use client";
 
-import { AgentMark, Icon } from "@ponzu/react";
+import { AgentMark, Icon } from "@ponzu/canvas";
 import "./ponzu.css";
 import "./demo.css";
 

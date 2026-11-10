@@ -1,6 +1,6 @@
 /**
  * The icons a file or page can carry, grouped by what they're for. Agents choose from these
- * (the tools' enum and the format guide both come from here), and @ponzu/react draws each one.
+ * (the tools' enum and the format guide both come from here), and @ponzu/canvas draws each one.
  */
 export const PAGE_ICON_GROUPS = {
   general: ["page", "file", "home", "folder", "archive", "note", "book", "star", "settings"],

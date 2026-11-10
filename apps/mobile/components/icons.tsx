@@ -35,7 +35,7 @@ import { pageIcon } from "../lib/page-icons";
 
 /**
  * The app's icons: Hugeicons, the set the brand and desktop draw with
- * (packages/react/src/icons.tsx), by desktop's names where the concept is
+ * (packages/canvas/src/icons.tsx), by desktop's names where the concept is
  * the same. `color` is the stroke; sizes and stroke widths come from each
  * use. The Ponzu slice, Tailscale's dots and the agents' marks are brand
  * marks, drawn as their owners draw them, at the end of this file.

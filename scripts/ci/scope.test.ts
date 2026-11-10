@@ -29,11 +29,11 @@ test("what both apps bundle runs both", () => {
 });
 
 test("the studio's components the phone reads by path run the phone too", () => {
-  // The phone can't depend on @ponzu/react, but its canvas and icons import its source.
+  // The phone can't depend on @ponzu/canvas, but its canvas and icons import its source.
   for (const file of [
-    "packages/react/src/icon-names.ts",
-    "packages/react/src/Artboard.tsx",
-    "packages/react/src/arrive.ts",
+    "packages/canvas/src/icon-names.ts",
+    "packages/canvas/src/Artboard.tsx",
+    "packages/canvas/src/arrive.ts",
   ]) {
     expect(suites(file).mobile).toBe(true);
   }

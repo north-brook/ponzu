@@ -21,7 +21,7 @@ type OpListener = (op: Op, origin: Origin, doc: Doc) => void;
 
 /**
  * One open design: its socket (`/ws?file=`), and the doc as the Mac has it.
- * Mirrors the studio's SocketSource (packages/react/src/connection.ts): ops
+ * Mirrors the studio's SocketSource (packages/canvas/src/connection.ts): ops
  * apply on the server's echo, never optimistically, so the phone never shows
  * what isn't in the file. A dropped socket comes back with backoff, and the
  * new hello replaces the doc.

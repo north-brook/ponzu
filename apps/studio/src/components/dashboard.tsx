@@ -1,4 +1,14 @@
 import {
+  ArtboardView,
+  Icon,
+  Rain,
+  SocketSource,
+  Tip,
+  TipProvider,
+  useDelayed,
+  useSource,
+} from "@ponzu/canvas";
+import {
   type Catalog,
   type CatalogArtboard,
   type CatalogCard,
@@ -13,16 +23,6 @@ import {
   viewOf,
   withoutUntouched,
 } from "@ponzu/core";
-import {
-  ArtboardView,
-  Icon,
-  Rain,
-  SocketSource,
-  Tip,
-  TipProvider,
-  useDelayed,
-  useSource,
-} from "@ponzu/react";
 import Fuse, { type FuseResultMatch } from "fuse.js";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { agoShort, branchOf, folderOf, projectOf, tilde, WhereLine } from "@/components/file-info";

@@ -6,7 +6,7 @@
  *   the back and `tab-<name>-fill.png`, the same outline heavier, for the one
  *   in front (the free set has outline icons only).
  * - `hi-<name>.png`, 22pt: a page's icon in the canvas's page menu, by the
- *   names design.json uses, desktop's `Icons` (packages/react/src/icons.tsx).
+ *   names design.json uses, desktop's `Icons` (packages/canvas/src/icons.tsx).
  *   app.json puts these in the asset catalog (expo-native-asset), where the
  *   native menu finds them by name (lib/page-icons.ts reads the same map).
  * - `bar-<name>.png`, 22pt: a header bar button's glyph (Designs' filter,
@@ -31,7 +31,7 @@ import {
   Search01Icon,
 } from "@hugeicons/core-free-icons";
 import { Resvg } from "@resvg/resvg-js";
-import { Icons } from "../../../packages/react/src/icons.tsx";
+import { Icons } from "../../../packages/canvas/src/icons.tsx";
 
 type IconSvg = readonly (readonly [string, Record<string, string | number>])[];
 

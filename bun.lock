@@ -116,8 +116,8 @@
       "name": "@ponzu/studio",
       "version": "0.1.0",
       "dependencies": {
+        "@ponzu/canvas": "workspace:*",
         "@ponzu/core": "workspace:*",
-        "@ponzu/react": "workspace:*",
         "@tailwindcss/vite": "^4.3.3",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
@@ -141,8 +141,8 @@
       "name": "@ponzu/web",
       "version": "0.1.0",
       "dependencies": {
+        "@ponzu/canvas": "workspace:*",
         "@ponzu/core": "workspace:*",
-        "@ponzu/react": "workspace:*",
         "@ponzu/store": "workspace:*",
         "next": "^16.4.2",
         "posthog-js": "^1.438.13",
@@ -161,6 +161,36 @@
         "tailwindcss": "^4.3.3",
         "typescript": "^5.9.3",
       },
+    },
+    "packages/canvas": {
+      "name": "@ponzu/canvas",
+      "version": "0.1.0",
+      "dependencies": {
+        "@hugeicons/core-free-icons": "^4.3.5",
+        "@hugeicons/react": "^1.1.10",
+        "@ponzu/core": "workspace:*",
+        "@ponzu/render": "workspace:*",
+        "class-variance-authority": "^0.7.1",
+        "clsx": "^2.1.1",
+        "radix-ui": "^1.8.1",
+        "tailwind-merge": "^3.7.0",
+      },
+      "devDependencies": {
+        "@tailwindcss/cli": "^4.3.3",
+        "@types/react": "^19.3.0",
+        "@types/react-dom": "^19.3.0",
+        "react": "^19.3.1",
+        "react-dom": "^19.3.1",
+        "tailwindcss": "^4.3.3",
+      },
+      "peerDependencies": {
+        "react": ">=19",
+        "react-dom": ">=19",
+        "tailwindcss": "^4.3.3",
+      },
+      "optionalPeers": [
+        "tailwindcss",
+      ],
     },
     "packages/core": {
       "name": "@ponzu/core",
@@ -193,36 +223,6 @@
         "@ponzu/tools": "workspace:*",
         "zod": "^4",
       },
-    },
-    "packages/react": {
-      "name": "@ponzu/react",
-      "version": "0.1.0",
-      "dependencies": {
-        "@hugeicons/core-free-icons": "^4.3.5",
-        "@hugeicons/react": "^1.1.10",
-        "@ponzu/core": "workspace:*",
-        "@ponzu/render": "workspace:*",
-        "class-variance-authority": "^0.7.1",
-        "clsx": "^2.1.1",
-        "radix-ui": "^1.8.1",
-        "tailwind-merge": "^3.7.0",
-      },
-      "devDependencies": {
-        "@tailwindcss/cli": "^4.3.3",
-        "@types/react": "^19.3.0",
-        "@types/react-dom": "^19.3.0",
-        "react": "^19.3.1",
-        "react-dom": "^19.3.1",
-        "tailwindcss": "^4.3.3",
-      },
-      "peerDependencies": {
-        "react": ">=19",
-        "react-dom": ">=19",
-        "tailwindcss": "^4.3.3",
-      },
-      "optionalPeers": [
-        "tailwindcss",
-      ],
     },
     "packages/render": {
       "name": "@ponzu/render",
@@ -814,6 +814,8 @@
 
     "@peculiar/webcrypto": ["@peculiar/webcrypto@1.7.1", "", { "dependencies": { "@peculiar/asn1-schema": "^2.7.0", "@peculiar/json-schema": "^1.1.12", "@peculiar/utils": "^2.0.2", "tslib": "^2.8.1", "webcrypto-core": "^1.9.2" } }, "sha512-ODOov0sGMJMf3jPonOkgGqPknTsu+DdQ7kD++gz8aI+aFMOMHFbWAA2taqXXVTdP+OTOQR/znGvSpmkeI0WTYQ=="],
 
+    "@ponzu/canvas": ["@ponzu/canvas@workspace:packages/canvas"],
+
     "@ponzu/core": ["@ponzu/core@workspace:packages/core"],
 
     "@ponzu/db": ["@ponzu/db@workspace:packages/db"],
@@ -823,8 +825,6 @@
     "@ponzu/mcp": ["@ponzu/mcp@workspace:packages/mcp"],
 
     "@ponzu/mobile": ["@ponzu/mobile@workspace:apps/mobile"],
-
-    "@ponzu/react": ["@ponzu/react@workspace:packages/react"],
 
     "@ponzu/render": ["@ponzu/render@workspace:packages/render"],
 
@@ -2148,7 +2148,7 @@
 
     "raw-body": ["raw-body@3.0.2", "", { "dependencies": { "bytes": "~3.1.2", "http-errors": "~2.0.1", "iconv-lite": "~0.7.0", "unpipe": "~1.0.0" } }, "sha512-K5zQjDllxWkf7Z5xJdV0/B0WTNqx6vxG70zJE4N0kBs4LovmEYWJzQGxC9bS9RAKu3bgM40lrd5zoLJ12MQ5BA=="],
 
-    "react": ["react@19.3.0", "", {}, "sha512-E8LUcbtBWt20bbl2YoHfx4ZDBdxVTfOKtCZn9cDSJ4l6/nuoApcpIBcj47t2wZoVX8g2ZHuMHbiShgCR1T5Sog=="],
+    "react": ["react@19.3.1", "", {}, "sha512-QNhWdt7nrgVWWQG58QuGsAR3jv3Hbe4mb4vz7w2csnHavciZJgda1CPNaldF6eVxv90ud3jUXpKlHL69gO38yw=="],
 
     "react-devtools-core": ["react-devtools-core@6.1.5", "", { "dependencies": { "shell-quote": "^1.6.1", "ws": "^7" } }, "sha512-ePrwPfxAnB+7hgnEr8vpKxL9cmnp7F322t8oqcPshbIQQhDKgFDW4tjhF2wjVbdXF9O/nyuy3sQWd9JGpiLPvA=="],
 
@@ -2598,13 +2598,9 @@
 
     "@ponzu/mobile/@types/bun": ["@types/bun@1.4.4", "", { "dependencies": { "bun-types": "1.4.4" } }, "sha512-9wkRDXUXK124pEnAutE6n/l18j+i9GC5IAHK8TmX/2nlySETmky0OU6yL5U8pW1AoKh++AN9auDCr647BfurjQ=="],
 
-    "@ponzu/react/react": ["react@19.3.1", "", {}, "sha512-QNhWdt7nrgVWWQG58QuGsAR3jv3Hbe4mb4vz7w2csnHavciZJgda1CPNaldF6eVxv90ud3jUXpKlHL69gO38yw=="],
-
-    "@ponzu/studio/react": ["react@19.3.1", "", {}, "sha512-QNhWdt7nrgVWWQG58QuGsAR3jv3Hbe4mb4vz7w2csnHavciZJgda1CPNaldF6eVxv90ud3jUXpKlHL69gO38yw=="],
+    "@ponzu/mobile/react": ["react@19.3.0", "", {}, "sha512-E8LUcbtBWt20bbl2YoHfx4ZDBdxVTfOKtCZn9cDSJ4l6/nuoApcpIBcj47t2wZoVX8g2ZHuMHbiShgCR1T5Sog=="],
 
     "@ponzu/web/@types/node": ["@types/node@24.19.2", "", { "dependencies": { "undici-types": ">=7.24.0 <7.24.7" } }, "sha512-93d49wCWJkCyN87MxLpNN6KXPCwFw7bVUg79mGUV1OS40JGWwVCr8n61DXCSqz7CV6/VfPkb7xec7uP2M+QHWQ=="],
-
-    "@ponzu/web/react": ["react@19.3.1", "", {}, "sha512-QNhWdt7nrgVWWQG58QuGsAR3jv3Hbe4mb4vz7w2csnHavciZJgda1CPNaldF6eVxv90ud3jUXpKlHL69gO38yw=="],
 
     "@posthog/browser-common/@posthog/core": ["@posthog/core@1.59.1", "", { "dependencies": { "@posthog/types": "^1.416.0" } }, "sha512-P39YgzQVDh6oz6wAzQXEnoHgTYpM7gifonmVKq1scAJco79h31XmmNVurRq9tTmmyIrr1uX8FHT0riCsyfV9AQ=="],
 
@@ -2749,8 +2745,6 @@
     "promise-retry/retry": ["retry@0.12.0", "", {}, "sha512-9LkiTwjUh6rT555DtE9rTX+BKByPfrMzEAtnlEtdEwr3Nkffwiihqe2bWADg+OQRjt9gl6ICdmB/ZFDCGAtSow=="],
 
     "proper-lockfile/retry": ["retry@0.12.0", "", {}, "sha512-9LkiTwjUh6rT555DtE9rTX+BKByPfrMzEAtnlEtdEwr3Nkffwiihqe2bWADg+OQRjt9gl6ICdmB/ZFDCGAtSow=="],
-
-    "react-dom/react": ["react@19.3.1", "", {}, "sha512-QNhWdt7nrgVWWQG58QuGsAR3jv3Hbe4mb4vz7w2csnHavciZJgda1CPNaldF6eVxv90ud3jUXpKlHL69gO38yw=="],
 
     "react-native/semver": ["semver@7.8.5", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA=="],
 

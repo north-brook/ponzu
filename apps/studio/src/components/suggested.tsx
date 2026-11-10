@@ -1,5 +1,5 @@
+import { ARRIVE_LAG_MS, ARRIVE_LINE, drawFrame, Icon, Rain, reducedMotion } from "@ponzu/canvas";
 import type { CatalogMachine, Idea, IdeaStep, LookingAt, SuggestionAgent } from "@ponzu/core";
-import { ARRIVE_LAG_MS, ARRIVE_LINE, drawFrame, Icon, Rain, reducedMotion } from "@ponzu/react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
  * The Suggested tab's cards: designs the person's agent suggests for their recent projects, each
  * a dashed card holding the prompt that asks for it, with its name and project where a design's are.
  * While a run looks around a project, the project has a card of its own, rain where a name goes.
- * Its ideas arrive the way an artboard arrives on the canvas (packages/react/src/arrive.ts): a
+ * Its ideas arrive the way an artboard arrives on the canvas (packages/canvas/src/arrive.ts): a
  * yuzu line draws round the card while the name and project fade in. Until its prompt is written,
  * the card shows what the agent reads; then the prompt fades in.
  */

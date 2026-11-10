@@ -1,5 +1,5 @@
+import { Icon, timeAgo } from "@ponzu/canvas";
 import type { Catalog, CatalogFile, CatalogMachine } from "@ponzu/core";
-import { Icon, timeAgo } from "@ponzu/react";
 import { cn } from "@/lib/utils";
 
 /** The catalog's entry for a design, by its key and the server in front of it. */
