@@ -15,11 +15,13 @@ interface Profile {
 }
 
 interface Job {
-  type: string;
+  type?: string;
   if?: string;
   needs?: string[];
   environment?: string;
   params: Record<string, unknown>;
+  outputs?: Record<string, string>;
+  steps?: { id?: string; run?: string }[];
 }
 
 interface Workflow {
@@ -96,7 +98,7 @@ test("production is the only store build, and only production.yml builds", () =>
     "shared.yml",
   ]);
   const builds = Object.values(workflow("shared.yml").jobs).filter((job) =>
-    ["build", "submit", "testflight"].includes(job.type),
+    ["build", "submit", "testflight"].includes(job.type ?? ""),
   );
   expect(builds).toEqual([]);
 });
@@ -134,14 +136,29 @@ test("production runs on a mobile tag and sends a new binary to the Alpha group"
   expect(on.push.tags).toEqual(["mobile-v*"]);
   const submission = jobs.submit_ios;
   expect(submission?.type).toBe("testflight");
-  expect(submission?.needs).toEqual(["build_ios"]);
+  expect(submission?.needs).toEqual(["build_ios", "notes"]);
   expect(submission?.params).toMatchObject({
     // biome-ignore lint/suspicious/noTemplateCurlyInString: EAS resolves this workflow expression.
     build_id: "${{ needs.build_ios.outputs.build_id }}",
     external_groups: ["Alpha"],
     submit_beta_review: true,
   });
-  expect(String(submission?.params.changelog ?? "").trim()).not.toBe("");
+});
+
+test("a new binary's What to Test is its release's notes, or a generic line", () => {
+  const { jobs } = workflow("production.yml");
+  const notes = jobs.notes;
+  // Only a release that builds reaches TestFlight, so only it reads notes.
+  expect(notes?.if).toBe(jobs.build_ios?.if);
+  const run = notes?.steps?.map((step) => step.run ?? "").join("\n") ?? "";
+  expect(run).toContain("--unshallow");
+  expect(run).toContain('bun scripts/release-notes.ts --phone "$TAG"');
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: EAS resolves this workflow expression.
+  expect(notes?.outputs?.changelog).toBe("${{ steps.notes.outputs.changelog }}");
+  expect(jobs.submit_ios?.params.changelog).toBe(
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: EAS resolves this workflow expression.
+    "${{ needs.notes.outputs.changelog || 'Bug fixes and improvements.' }}",
+  );
 });
 
 // The phone bundles code from outside apps/mobile, which Release Please doesn't see: a change

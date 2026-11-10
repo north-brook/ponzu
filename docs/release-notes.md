@@ -47,7 +47,9 @@ request that changes both says which app each note is about:
 
 The desktop app's release notes drop `iPhone:` notes and show `Mac:` notes
 without the label, on Windows and Linux too. A note with neither label shows
-on the desktop.
+on the desktop, and on the iPhone only when its pull request changed nothing
+but `apps/mobile`. The iPhone's notes are its `iPhone:` notes, without the
+label, and those unlabelled ones.
 
 ## How it travels
 
@@ -68,6 +70,15 @@ on the desktop.
 
 A checkout without tags or history (a shallow clone) writes no notes and
 warns, marking the file incomplete.
+
+The iPhone's notes travel the same way to TestFlight. When a `mobile-vX.Y.Z`
+release builds a new binary, `apps/mobile/.eas/workflows/production.yml`
+runs `bun scripts/release-notes.ts --phone mobile-vX.Y.Z`, which prints the
+notes of the phone's commits since its tag before, and sends them as the
+build's What to Test (up to Apple's 4,000 characters, dropping whole notes
+past it). A release with no notes, or a run that can't read the history,
+sends "Bug fixes and improvements." instead. A release that ships over the
+air has no TestFlight build, so its notes go nowhere.
 
 ## Fixing a note
 

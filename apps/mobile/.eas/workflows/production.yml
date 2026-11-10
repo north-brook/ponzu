@@ -49,14 +49,34 @@ jobs:
     params:
       platform: ios
       profile: production
+  # TestFlight's What to Test is this release's notes, read from main's
+  # history (scripts/release-notes.ts --phone, docs/release-notes.md).
+  # eas/checkout fetches only the tagged commit, so the history is fetched
+  # first; without it, or without notes, testers get the generic line below.
+  # The script needs no packages, so nothing is installed.
+  notes:
+    needs: [ios_build_exists]
+    if: ${{ !needs.ios_build_exists.outputs.build_id }}
+    env:
+      TAG: ${{ github.ref_name }}
+    outputs:
+      changelog: ${{ steps.notes.outputs.changelog }}
+    steps:
+      - uses: eas/checkout
+      - name: This release's notes
+        id: notes
+        working_directory: ../..
+        run: |
+          git fetch --quiet --unshallow --tags origin || true
+          set-output changelog "$(bun scripts/release-notes.ts --phone "$TAG" || true)"
   submit_ios:
-    needs: [build_ios]
+    needs: [build_ios, notes]
     type: testflight
     params:
       build_id: ${{ needs.build_ios.outputs.build_id }}
       external_groups: ["Alpha"]
       submit_beta_review: true
-      changelog: "Bug fixes and improvements."
+      changelog: ${{ needs.notes.outputs.changelog || 'Bug fixes and improvements.' }}
   update_ios:
     needs: [ios_build_exists]
     if: ${{ needs.ios_build_exists.outputs.build_id }}

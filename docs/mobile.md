@@ -301,7 +301,10 @@ Notes come from the PR's `## Release note` section, as for the Mac
 ([release-notes.md](release-notes.md)). In a PR that changes both apps, start
 a note with `Mac:` or `iPhone:` to say which app it's about. The Mac's What's
 new leaves out `iPhone:` notes and every commit that changed only
-`apps/mobile`.
+`apps/mobile`. A release that builds a new binary sends its notes to
+TestFlight as What to Test (`scripts/release-notes.ts --phone`, run by
+`production.yml`): its `iPhone:` notes and the unlabelled notes of commits
+that changed only `apps/mobile`.
 
 ### Accounts and secrets
 
