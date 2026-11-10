@@ -410,14 +410,25 @@ export default function Canvas() {
     // Resolved while it was open, a reply is something more to do: it opens again.
     await session.send(
       thread.status === "resolved"
-        ? { op: "batch", ops: [message, { op: "thread.update", id: thread.id, status: "open" }] }
+        ? {
+            op: "batch",
+            ops: [
+              message,
+              {
+                op: "thread.update",
+                id: thread.id,
+                status: "open",
+                updatedAt: message.message.createdAt,
+              },
+            ],
+          }
         : message,
     );
     track("comment left", { reply: true, mode: m });
   };
   const setStatus = async (status: Thread["status"]) => {
     if (!session || !thread) return;
-    await session.send({ op: "thread.update", id: thread.id, status });
+    await session.send({ op: "thread.update", id: thread.id, status, updatedAt: Date.now() });
     if (status === "resolved") {
       success();
       setThreadId(null);

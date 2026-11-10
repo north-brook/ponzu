@@ -1102,6 +1102,7 @@ export function Canvas({
       offset: to.offset ?? null,
       x: Math.round(to.x),
       y: Math.round(to.y),
+      updatedAt: Date.now(),
     });
   };
 

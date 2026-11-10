@@ -142,7 +142,7 @@ export const converseTools = [
               op: "batch",
               ops: [
                 { op: "thread.message", id: t.id, message },
-                { op: "thread.update", id: t.id, status: "resolved" },
+                { op: "thread.update", id: t.id, status: "resolved", updatedAt: message.createdAt },
               ],
             }
           : { op: "thread.message", id: t.id, message },
@@ -172,7 +172,11 @@ export const converseTools = [
           `The person is writing a reply in thread ${args.thread}, so it stays open. Their reply comes through wait_for_activity; resolve it once you've done what it asks.`,
           "person_writing",
         );
-      apply(design, { op: "thread.update", id: args.thread, status: args.status }, ctx);
+      apply(
+        design,
+        { op: "thread.update", id: args.thread, status: args.status, updatedAt: Date.now() },
+        ctx,
+      );
       return { text: `Thread ${args.thread} is ${args.status}.` };
     },
   }),

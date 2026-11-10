@@ -21,6 +21,7 @@ import {
   rewriteCssUrls,
   rootDirectionUnset,
   serializeArtboardFile,
+  serializeNode,
   serializeNodes,
   setTokens,
   shelfRequest,
@@ -180,10 +181,12 @@ describe("html", () => {
     );
   });
 
-  test("keeps svg casing and self-closes empty svg children", () => {
-    const { nodes } = parseHtml(`<svg viewBox="0 0 10 10"><path d="M0 0"/></svg>`);
+  test("keeps svg casing, and closes empty svg children with an end tag", () => {
+    const { nodes } = parseHtml(
+      `<svg viewBox="0 0 10 10"><clipPath id="c"/><path d="M0 0"/></svg>`,
+    );
     expect(serializeNodes(nodes, { omitIds: true })).toBe(
-      `<svg viewBox="0 0 10 10"><path d="M0 0"/></svg>`,
+      `<svg viewBox="0 0 10 10"><clipPath id="c"></clipPath><path d="M0 0"></path></svg>`,
     );
   });
 
@@ -193,7 +196,13 @@ describe("html", () => {
     const g = (nodes[0] as PElement).children[0] as PElement;
     expect(g.children.map((c) => (c as PElement).tag)).toEqual(["path", "path", "circle"]);
     expect(g.children.every((c) => (c as PElement).ns === "svg")).toBe(true);
-    expect(serializeNodes(nodes, { omitIds: true })).toBe(src);
+    const out = serializeNodes(nodes, { omitIds: true });
+    expect(out).toBe(
+      `<svg viewBox="0 0 24 24"><g><path d="M1 1"></path><path d="M2 2"></path><circle r="2"></circle></g></svg>`,
+    );
+    expect(JSON.stringify(parseHtml(out, { assignId: (p) => p.join(".") }).nodes)).toBe(
+      JSON.stringify(parseHtml(src, { assignId: (p) => p.join(".") }).nodes),
+    );
   });
 
   test("fragments written into svg parse as svg", () => {
@@ -224,7 +233,9 @@ describe("html", () => {
       children: [g],
     };
     const out = serializeNodes([svg], { omitIds: true });
-    expect(out).toBe(`<svg><g><path d="M1 1"/><path d="M2 2"/><linearGradient id="a"/></g></svg>`);
+    expect(out).toBe(
+      `<svg><g><path d="M1 1"></path><path d="M2 2"></path><linearGradient id="a"></linearGradient></g></svg>`,
+    );
     expect(serializeNodes(parseHtml(out).nodes, { omitIds: true })).toBe(out);
 
     const math: PElement = {
@@ -245,7 +256,7 @@ describe("html", () => {
     expect(serializeNodes(html, { omitIds: true })).toBe(`<span>x<img src="a.png"><br></span>`);
   });
 
-  test("foreign elements only self-close where a parser honors it", () => {
+  test("no element is written self-closing, wherever it sits", () => {
     const path = (id: string): PElement => ({
       kind: "el",
       id,
@@ -287,16 +298,24 @@ describe("html", () => {
     };
     const html = serializeNodes([div, svg], { omitIds: true });
     expect(html).toBe(
-      `<div><path></path><path></path></div><svg><foreignObject><path></path><svg/></foreignObject></svg>`,
+      `<div><path></path><path></path></div><svg><foreignObject><path></path><svg></svg></foreignObject></svg>`,
     );
     expect(serializeNodes(parseHtml(html).nodes, { omitIds: true })).toBe(html);
   });
 
-  test("void html elements and explicitly closed svg still round trip", () => {
+  test("void html elements have no end tag, in any case, and svg round trips", () => {
     const src = `<div><img src="a.png"><br><input value="x"><svg><path d="M0 0"></path><path d="M1 1"></path></svg><hr></div>`;
-    expect(serializeNodes(parseHtml(src).nodes, { omitIds: true })).toBe(
-      `<div><img src="a.png"><br><input value="x"><svg><path d="M0 0"/><path d="M1 1"/></svg><hr></div>`,
-    );
+    expect(serializeNodes(parseHtml(src).nodes, { omitIds: true })).toBe(src);
+    // `</BR>` would be read as a second line break.
+    const br: PElement = { kind: "el", id: "b", tag: "BR", attrs: {}, style: {}, children: [] };
+    expect(serializeNode(br, { omitIds: true })).toBe("<BR>");
+  });
+
+  test("an attribute value is written so that none of it can be read as a tag", () => {
+    const { nodes } = parseHtml(`<p class="[&>a]:x" title='a "<b>" &amp; c'>x</p>`);
+    const html = serializeNodes(nodes, { omitIds: true });
+    expect(html).toBe(`<p class="[&amp;&gt;a]:x" title="a &quot;&lt;b&gt;&quot; &amp; c">x</p>`);
+    expect((parseHtml(html).nodes[0] as PElement).attrs).toEqual((nodes[0] as PElement).attrs);
   });
 
   test("files with nested svg paths keep their structure", () => {
@@ -306,7 +325,7 @@ describe("html", () => {
     const a = svg.children[0] as PElement;
     expect(a.id).toBe("n_a");
     expect((a.children[0] as PElement).id).toBe("n_b");
-    expect(serializeArtboardFile(artboard)).toBe(src);
+    expect(serializeArtboardFile(artboard)).toBe(src.replace("/></path>", "></path></path>"));
   });
 
   test("names come from data-name or layer-name", () => {

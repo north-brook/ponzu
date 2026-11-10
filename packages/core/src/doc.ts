@@ -58,6 +58,11 @@ export type Op =
       /** null moves the pin off its artboard, onto the open canvas of `pageId`. */
       artboardId?: string | null;
       pageId?: string | null;
+      /**
+       * When the change was made, which becomes the thread's `updatedAt`. Whoever builds the op
+       * sets it, since `applyOp` never reads the clock; without one the thread's time stays.
+       */
+      updatedAt?: number;
     }
   | { op: "thread.message"; id: string; message: Message }
   | { op: "thread.unmessage"; id: string; messageId: string }
@@ -218,8 +223,23 @@ function resolveIn(ids: string[], op: Op): Op {
 /**
  * Apply an op to the doc in place and return the op that undoes it.
  * Throws OpError (leaving the doc unchanged) when the op doesn't fit.
+ *
+ * The result depends on the doc and the op alone: no clock, no randomness. Every replica
+ * applies the same ops in the same order, so anything else would make them disagree.
  */
 export function applyOp(doc: Doc, op: Op): Op {
+  return apply(doc, op, null);
+}
+
+/**
+ * What puts back, exactly, everything a batch has changed so far. A batch that fails partway
+ * must leave the doc as it found it, and the inverse ops can't promise that: they find nodes
+ * by id, which a design may hold twice, and a deleted thread comes back at the end of the list.
+ */
+type Undo = (() => void)[];
+
+/** `applyOp`. Inside a batch, each op first adds to `undo` what restores what it will change. */
+function apply(doc: Doc, op: Op, undo: Undo | null): Op {
   switch (op.op) {
     case "insert": {
       const { node: parent } = mustLocate(doc, op.parent);
@@ -227,6 +247,7 @@ export function applyOp(doc: Doc, op: Op): Op {
         if (n.kind === "el" && locate(doc, n.id))
           throw new OpError(`Id ${n.id} is already in use.`);
       const index = clamp(op.index, 0, parent.children.length);
+      undo?.push(keep(parent.children));
       parent.children.splice(index, 0, ...structuredClone(op.nodes));
       if (op.nodes.length === 1 && op.nodes[0]!.kind === "el")
         return { op: "remove", id: op.nodes[0]!.id };
@@ -239,6 +260,7 @@ export function applyOp(doc: Doc, op: Op): Op {
     case "remove": {
       const hit = mustLocate(doc, op.id);
       if (!hit.parent) throw new OpError("Use delete_artboard to remove an artboard.");
+      undo?.push(keep(hit.parent.children));
       hit.parent.children.splice(hit.index, 1);
       return { op: "insert", parent: hit.parent.id, index: hit.index, nodes: [hit.node] };
     }
@@ -250,6 +272,7 @@ export function applyOp(doc: Doc, op: Op): Op {
       }
       const target = mustLocate(doc, op.parent).node;
       const before = { parent: hit.parent.id, index: hit.index };
+      undo?.push(keep(hit.parent.children), keep(target.children));
       hit.parent.children.splice(hit.index, 1);
       target.children.splice(clamp(op.index, 0, target.children.length), 0, hit.node);
       return { op: "move", id: op.id, ...before };
@@ -257,18 +280,21 @@ export function applyOp(doc: Doc, op: Op): Op {
     case "style": {
       const { node } = mustLocate(doc, op.id);
       const prev = node.style;
+      undo?.push(keep(node));
       node.style = { ...op.style };
       return { op: "style", id: op.id, style: prev };
     }
     case "attrs": {
       const { node } = mustLocate(doc, op.id);
       const prev = node.attrs;
+      undo?.push(keep(node));
       node.attrs = { ...op.attrs };
       return { op: "attrs", id: op.id, attrs: prev };
     }
     case "name": {
       const hit = mustLocate(doc, op.id);
       const prev = hit.node.name ?? null;
+      undo?.push(keep(hit.node), keep(hit.artboard));
       if (op.name === null) delete hit.node.name;
       else hit.node.name = op.name;
       if (!hit.parent && op.name !== null) hit.artboard.name = op.name;
@@ -277,6 +303,7 @@ export function applyOp(doc: Doc, op: Op): Op {
     case "children": {
       const { node } = mustLocate(doc, op.id);
       const prev = node.children;
+      undo?.push(keep(node));
       node.children = structuredClone(op.children);
       return { op: "children", id: op.id, children: prev };
     }
@@ -284,6 +311,7 @@ export function applyOp(doc: Doc, op: Op): Op {
       const page = mustPage(doc, op.page);
       if (findArtboard(doc, op.artboard.id))
         throw new OpError(`Artboard ${op.artboard.id} already exists.`);
+      undo?.push(keep(page.artboards));
       page.artboards.splice(
         clamp(op.index, 0, page.artboards.length),
         0,
@@ -293,12 +321,14 @@ export function applyOp(doc: Doc, op: Op): Op {
     }
     case "artboard.delete": {
       const hit = mustArtboard(doc, op.id);
+      undo?.push(keep(hit.page.artboards));
       hit.page.artboards.splice(hit.index, 1);
       return { op: "artboard.create", page: hit.page.id, index: hit.index, artboard: hit.artboard };
     }
     case "artboard.update": {
       const { artboard } = mustArtboard(doc, op.id);
       const inverse: Op = { op: "artboard.update", id: op.id };
+      undo?.push(keep(artboard), keep(artboard.root));
       if (op.x !== undefined) {
         inverse.x = artboard.x;
         artboard.x = op.x;
@@ -317,6 +347,7 @@ export function applyOp(doc: Doc, op: Op): Op {
     case "artboard.move": {
       const hit = mustArtboard(doc, op.id);
       const target = mustPage(doc, op.page);
+      undo?.push(keep(hit.page.artboards), keep(target.artboards));
       hit.page.artboards.splice(hit.index, 1);
       target.artboards.splice(clamp(op.index, 0, target.artboards.length), 0, hit.artboard);
       return { op: "artboard.move", id: op.id, page: hit.page.id, index: hit.index };
@@ -324,6 +355,7 @@ export function applyOp(doc: Doc, op: Op): Op {
     case "page.create": {
       if (doc.pages.some((p) => p.id === op.page.id))
         throw new OpError(`Page ${op.page.id} already exists.`);
+      undo?.push(keep(doc.pages));
       doc.pages.splice(clamp(op.index, 0, doc.pages.length), 0, { ...op.page, artboards: [] });
       return { op: "page.delete", id: op.page.id };
     }
@@ -331,6 +363,7 @@ export function applyOp(doc: Doc, op: Op): Op {
       const index = doc.pages.findIndex((p) => p.id === op.id);
       if (index < 0) throw new OpError(`No page ${op.id}.`);
       const page = doc.pages[index]!;
+      undo?.push(keep(doc.pages));
       doc.pages.splice(index, 1);
       const { artboards, ...meta } = page;
       const restore: Op[] = [{ op: "page.create", index, page: meta }];
@@ -342,6 +375,7 @@ export function applyOp(doc: Doc, op: Op): Op {
     case "page.update": {
       const page = mustPage(doc, op.id);
       const inverse: Op = { op: "page.update", id: op.id };
+      undo?.push(keep(page));
       if (op.name !== undefined) {
         inverse.name = page.name;
         page.name = op.name;
@@ -359,53 +393,62 @@ export function applyOp(doc: Doc, op: Op): Op {
       if (op.ids.length !== prev.length || op.ids.some((id) => !byId.has(id))) {
         throw new OpError("page order must list every page exactly once.");
       }
+      undo?.push(keep(doc));
       doc.pages = op.ids.map((id) => byId.get(id)!);
       return { op: "page.order", ids: prev };
     }
     case "page.move": {
       const from = doc.pages.findIndex((p) => p.id === op.id);
       if (from < 0) throw new OpError(`No page ${op.id}.`);
+      undo?.push(keep(doc.pages));
       const [page] = doc.pages.splice(from, 1);
       doc.pages.splice(clamp(op.index, 0, doc.pages.length), 0, page!);
       return { op: "page.move", id: op.id, index: from };
     }
     case "file.rename": {
       const prev = doc.name;
+      undo?.push(keep(doc));
       doc.name = op.name;
       return { op: "file.rename", name: prev };
     }
     case "file.icon": {
       const prev = doc.icon ?? null;
+      undo?.push(keep(doc));
       if (op.icon === null) delete doc.icon;
       else doc.icon = op.icon;
       return { op: "file.icon", icon: prev };
     }
     case "file.scratch": {
       const prev = Boolean(doc.scratch);
+      undo?.push(keep(doc));
       if (op.scratch) doc.scratch = true;
       else delete doc.scratch;
       return { op: "file.scratch", scratch: prev };
     }
     case "tokens": {
       const prev = doc.tokens;
+      undo?.push(keep(doc));
       doc.tokens = op.css;
       return { op: "tokens", css: prev };
     }
     case "thread.create": {
       if (doc.threads.some((t) => t.id === op.thread.id))
         throw new OpError(`Thread ${op.thread.id} exists.`);
+      undo?.push(keep(doc.threads));
       doc.threads.push(structuredClone(op.thread));
       return { op: "thread.delete", id: op.thread.id };
     }
     case "thread.delete": {
       const index = doc.threads.findIndex((t) => t.id === op.id);
       if (index < 0) throw new OpError(`No thread ${op.id}.`);
+      undo?.push(keep(doc.threads));
       const [thread] = doc.threads.splice(index, 1);
       return { op: "thread.create", thread: thread! };
     }
     case "thread.update": {
       const thread = mustThread(doc, op.id);
       const inverse: Extract<Op, { op: "thread.update" }> = { op: "thread.update", id: op.id };
+      undo?.push(keep(thread));
       if (op.status !== undefined) {
         inverse.status = thread.status;
         thread.status = op.status;
@@ -438,11 +481,15 @@ export function applyOp(doc: Doc, op: Op): Op {
         if (op.pageId === null) delete thread.pageId;
         else thread.pageId = op.pageId;
       }
-      thread.updatedAt = Date.now();
+      if (op.updatedAt !== undefined) {
+        inverse.updatedAt = thread.updatedAt;
+        thread.updatedAt = op.updatedAt;
+      }
       return inverse;
     }
     case "thread.message": {
       const thread = mustThread(doc, op.id);
+      undo?.push(keep(thread), keep(thread.messages));
       thread.messages.push(structuredClone(op.message));
       thread.updatedAt = op.message.createdAt;
       return { op: "thread.unmessage", id: op.id, messageId: op.message.id };
@@ -451,6 +498,7 @@ export function applyOp(doc: Doc, op: Op): Op {
       const thread = mustThread(doc, op.id);
       const index = thread.messages.findIndex((m) => m.id === op.messageId);
       if (index < 0) throw new OpError(`No message ${op.messageId}.`);
+      undo?.push(keep(thread.messages));
       const [message] = thread.messages.splice(index, 1);
       return { op: "thread.message", id: op.id, message: message! };
     }
@@ -465,28 +513,53 @@ export function applyOp(doc: Doc, op: Op): Op {
         text: message.text,
         editedAt: message.editedAt ?? null,
       };
+      undo?.push(keep(message));
       message.text = op.text;
       if (op.editedAt === null) delete message.editedAt;
       else message.editedAt = op.editedAt;
       return inverse;
     }
     case "note": {
-      const prev = doc.notes[op.name] ?? null;
+      // Read as an own key: a note may be named after something every object has.
+      const prev = Object.hasOwn(doc.notes, op.name) ? doc.notes[op.name]! : null;
+      undo?.push(keep(doc.notes));
       if (op.content === null) delete doc.notes[op.name];
       else doc.notes[op.name] = op.content;
       return { op: "note", name: op.name, content: prev };
     }
     case "batch": {
+      const steps: Undo = [];
       const inverses: Op[] = [];
       try {
-        for (const child of op.ops) inverses.push(applyOp(doc, child));
+        for (const child of op.ops) inverses.push(apply(doc, child, steps));
       } catch (err) {
-        for (const inv of inverses.reverse()) applyOp(doc, inv);
+        for (const restore of steps.reverse()) restore();
         throw err;
       }
+      // One at a time: a long batch has more steps than a call takes arguments.
+      if (undo) for (const step of steps) undo.push(step);
       return { op: "batch", ops: inverses.reverse() };
     }
   }
+}
+
+/**
+ * A way to put an object's own fields, or a list's items, back exactly as they are now,
+ * order included. It copies one level, which is all an op changes of anything it touches.
+ */
+function keep(target: object): () => void {
+  if (Array.isArray(target)) {
+    const items = target.slice();
+    return () => {
+      target.length = 0;
+      for (const item of items) target.push(item);
+    };
+  }
+  const fields = { ...target };
+  return () => {
+    for (const key of Object.keys(target)) delete (target as Record<string, unknown>)[key];
+    Object.assign(target, fields);
+  };
 }
 
 function removedSnapshot(parent: PElement, index: number, count: number): PNode[] {

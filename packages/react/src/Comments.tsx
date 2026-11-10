@@ -267,15 +267,32 @@ export function ThreadCard({
     // Resolved while it was open, a reply is something more to do: it opens again.
     source.apply(
       resolved
-        ? { op: "batch", ops: [message, { op: "thread.update", id: thread.id, status: "open" }] }
+        ? {
+            op: "batch",
+            ops: [
+              message,
+              {
+                op: "thread.update",
+                id: thread.id,
+                status: "open",
+                updatedAt: message.message.createdAt,
+              },
+            ],
+          }
         : message,
     );
   };
   const resolve = () => {
-    source.apply({ op: "thread.update", id: thread.id, status: "resolved" });
+    source.apply({
+      op: "thread.update",
+      id: thread.id,
+      status: "resolved",
+      updatedAt: Date.now(),
+    });
     onClose();
   };
-  const reopen = () => source.apply({ op: "thread.update", id: thread.id, status: "open" });
+  const reopen = () =>
+    source.apply({ op: "thread.update", id: thread.id, status: "open", updatedAt: Date.now() });
   const remove = () => {
     for (const k of [
       draftKey.reply(file, thread.id),
