@@ -13,9 +13,107 @@ import {
 } from "@ponzu/core";
 import type { MeasureRequest, MeasureResult, Renderer } from "@ponzu/render";
 import { z } from "zod";
-import { fileArg, ToolError, tool } from "./define.ts";
+import type { ToolContext } from "./context.ts";
+import { ToolError, type ToolResult, tool } from "./define.ts";
+import type { OpenDesign } from "./design.ts";
 import { overlapLine, pageOverlapList } from "./overlap.ts";
-import { plural, resolveFile } from "./util.ts";
+import { type ArtboardNote, designOf, plural } from "./util.ts";
+
+/**
+ * What get_basic_info says about a design wherever it is kept, a line or a block each.
+ * `summary` is the design in outline; `linkNote` says what its link is for.
+ */
+export async function overview(
+  ctx: ToolContext,
+  { key, design }: OpenDesign,
+  summary: string,
+  linkNote: string,
+): Promise<string[]> {
+  const { ws } = ctx;
+  const doc = design.doc;
+  const lines = [summary];
+  const link = ws.link?.(key, { origin: ctx.caller.reachedAt });
+  if (link) lines.push(`Link: ${link} (${linkNote})`);
+  const tokens = parseTokens(doc.tokens);
+  if (tokens.length) {
+    const limit = 40;
+    const shown = tokens.slice(0, limit).map((t) => `${t.name}: ${t.value}`);
+    const more = tokens.length - shown.length;
+    lines.push(
+      `Tokens (${tokens.length}, use as var(--name)):\n  ${shown.join("\n  ")}${more ? `\n  … ${more} more (get_tokens lists them all)` : ""}`,
+    );
+  } else {
+    lines.push(
+      "Tokens: none yet. Define colors, type and spacing with set_tokens before building.",
+    );
+  }
+  const overlaps = [];
+  for (const page of doc.pages)
+    overlaps.push(...(await pageOverlapList(ws, key, doc, page.artboards)));
+  if (overlaps.length) {
+    const limit = 10;
+    const shown = overlaps.slice(0, limit).map(overlapLine);
+    const more = overlaps.length - shown.length;
+    lines.push(
+      `Overlapping artboards (the canvas draws one over the other):\n  ${shown.join("\n  ")}${more ? `\n  … ${more} more; move these and call get_basic_info again for the rest` : ""}`,
+    );
+  }
+  if (ws.theme)
+    lines.push(
+      isThemed(doc.tokens) || doc.pages.some((p) => p.artboards.some((ab) => isThemed("", ab.root)))
+        ? `The person's canvas is in ${ws.theme} mode, so they see this design's light-dark() colors in ${ws.theme}. Screenshots default to it.`
+        : `The person's canvas is in ${ws.theme} mode. These tokens don't change with the theme, so artboards show as they are in both. Notes, diagrams and docs you make for the person should still follow it: give them light-dark() colors.`,
+    );
+  const working = ws.presence.list().filter((p) => p.working.length);
+  if (working.length)
+    lines.push(
+      `Working now: ${working.map((p) => `${p.name} on ${p.working.join(", ")}`).join("; ")}`,
+    );
+  return lines;
+}
+
+/** get_node. `kept` adds where the host keeps the node's artboard. */
+export async function getNode(
+  { id }: { id: string },
+  ctx: ToolContext,
+  kept?: ArtboardNote,
+): Promise<ToolResult> {
+  const { ws } = ctx;
+  const open = await designOf(ctx, [id]);
+  const doc = open.design.doc;
+  const hit = locate(doc, id);
+  if (!hit) throw new ToolError(`No node with id ${id}.`);
+  const n = hit.node;
+  const lines = [
+    `${n.id} <${n.tag}>${n.name ? ` "${n.name}"` : ""}`,
+    `Artboard: ${hit.artboard.id} "${hit.artboard.name}"${(await kept?.(open, hit.artboard.id)) ?? ""}`,
+    hit.parent
+      ? `Parent: ${hit.parent.id} ${describeNode(hit.parent)} (child ${hit.index})`
+      : `Artboard at (${hit.artboard.x}, ${hit.artboard.y})`,
+  ];
+  const layout = await measured(
+    ws.renderer,
+    { artboard: hit.artboard, tokens: doc.tokens, assetBase: ws.assetBase?.(open.key) },
+    n.id,
+    !hit.parent,
+  );
+  if (layout) lines.push(layout);
+  const style = Object.entries(n.style);
+  if (style.length) lines.push(`Style:\n  ${style.map(([k, v]) => `${k}: ${v}`).join("\n  ")}`);
+  const attrs = Object.entries(n.attrs);
+  if (attrs.length)
+    lines.push(
+      `Attributes: ${attrs.map(([k, v]) => `${k}="${v.length > 80 ? `${v.slice(0, 80)}…` : v}"`).join(" ")}`,
+    );
+  const kids = n.children.filter((c) => c.kind === "el");
+  if (kids.length)
+    lines.push(
+      `Children: ${kids.map((c) => (c.kind === "el" ? `${c.id} ${describeNode(c)}` : "")).join(", ")}`,
+    );
+  const text = visibleText(n);
+  if (text) lines.push(`Text: ${text.length > 400 ? `${text.slice(0, 400)}…` : text}`);
+  return { text: lines.join("\n") };
+}
 
 export const orientTools = [
   tool({
@@ -24,79 +122,17 @@ export const orientTools = [
     group: "orient",
     readOnly: true,
     description:
-      "Start here. Summarizes the open .design: pages with their folders, artboards with sizes and positions, token names, open comments, artboards that overlap each other, who else is working, and anything in the files Ponzu couldn't use. Call get_guide('basics') once per session for the house rules.",
-    input: { file: fileArg },
-    async handler({ file }, ctx) {
-      const { ws } = ctx;
-      const { key, design } = await resolveFile(ctx, file);
-      const doc = design.doc;
-      const folders = design.pageFolders();
-      const lines = [docSummary(doc, { folderOf: (id) => folders.get(id) }), `Path: ${key}`];
-      const link = ws.link?.(key, { origin: ctx.caller.reachedAt });
-      if (link)
-        lines.push(
-          `Link: ${link} (give the person this, not the path, to open it in Ponzu; add &page=<id> to open on a page, &artboard=<id> on one artboard)`,
-        );
-      const tokens = parseTokens(doc.tokens);
-      if (tokens.length) {
-        const limit = 40;
-        const shown = tokens.slice(0, limit).map((t) => `${t.name}: ${t.value}`);
-        const more = tokens.length - shown.length;
-        lines.push(
-          `Tokens (${tokens.length}, use as var(--name)):\n  ${shown.join("\n  ")}${more ? `\n  … ${more} more (get_tokens lists them all)` : ""}`,
-        );
-      } else {
-        lines.push(
-          "Tokens: none yet. Define colors, type and spacing with set_tokens before building.",
-        );
-      }
-      const problems = design.problems;
-      if (problems.length) {
-        const limit = 10;
-        const shown = problems.slice(0, limit).map((p) => `${p.path}: ${p.what}`);
-        const more = problems.length - shown.length;
-        lines.push(
-          `Not used as written (fix the files; get_guide('format') has the format):\n  ${shown.join("\n  ")}${more ? `\n  … ${more} more` : ""}`,
-        );
-      }
-      const held = design.heldFiles;
-      if (held.length)
-        lines.push(
-          `Still being written, shown as last read whole (write files whole: a temp file, then rename it into place):\n  ${held.join("\n  ")}`,
-        );
-      const overlaps = [];
-      for (const page of doc.pages)
-        overlaps.push(...(await pageOverlapList(ws, key, doc, page.artboards)));
-      if (overlaps.length) {
-        const limit = 10;
-        const shown = overlaps.slice(0, limit).map(overlapLine);
-        const more = overlaps.length - shown.length;
-        lines.push(
-          `Overlapping artboards (the canvas draws one over the other):\n  ${shown.join("\n  ")}${more ? `\n  … ${more} more; move these and call get_basic_info again for the rest` : ""}`,
-        );
-      }
-      if (ws.theme)
-        lines.push(
-          isThemed(doc.tokens) ||
-            doc.pages.some((p) => p.artboards.some((ab) => isThemed("", ab.root)))
-            ? `The person's canvas is in ${ws.theme} mode, so they see this design's light-dark() colors in ${ws.theme}. Screenshots default to it.`
-            : `The person's canvas is in ${ws.theme} mode. These tokens don't change with the theme, so artboards show as they are in both. Notes, diagrams and docs you make for the person should still follow it: give them light-dark() colors.`,
-        );
-      const others = ws.presence.list().filter((p) => p.working.length);
-      if (others.length)
-        lines.push(
-          `Working now: ${others.map((p) => `${p.name} on ${p.working.join(", ")}`).join("; ")}`,
-        );
-      const rest = ws.designs().filter((f) => f.key !== key);
-      if (rest.length) {
-        const sticks = ctx.session ? " Calls without file use this one." : "";
-        lines.push(
-          rest.length > 5
-            ? `Other open files: ${rest.length} (list_files).${sticks}`
-            : `Other open files: ${rest.map((f) => f.design.doc.name).join(", ")}.${sticks}`,
-        );
-      }
-      return { text: lines.join("\n"), metrics: { held_files: held.length } };
+      "Start here. Summarizes the design: pages, artboards with sizes and positions, token names, open comments, artboards that overlap each other, and what is being worked on. Call get_guide('basics') once per session for the house rules.",
+    input: {},
+    async handler(_args, ctx) {
+      const open = await designOf(ctx);
+      const lines = await overview(
+        ctx,
+        open,
+        docSummary(open.design.doc),
+        "opens this design in Ponzu",
+      );
+      return { text: lines.join("\n") };
     },
   }),
 
@@ -106,14 +142,13 @@ export const orientTools = [
     group: "orient",
     readOnly: true,
     description:
-      "Indented outline of an artboard, node or page: tag, id, layer name, short text and layout hints. Cheap; use it to find ids before editing. Omit id for the whole file.",
+      "Indented outline of an artboard, node or page: tag, id, layer name, short text and layout hints. Cheap; use it to find ids before editing. Omit id for the whole design.",
     input: {
-      file: fileArg,
-      id: z.string().optional().describe("Artboard, node or page id. Omit for the whole file."),
+      id: z.string().optional().describe("Artboard, node or page id. Omit for the whole design."),
       depth: z.number().int().min(1).max(12).optional().describe("Levels to show. Default 4."),
     },
-    async handler({ file, id, depth }, ctx) {
-      const { design } = await resolveFile(ctx, file, [id]);
+    async handler({ id, depth }, ctx) {
+      const { design } = await designOf(ctx, [id]);
       const doc = design.doc;
       if (!id) return { text: docSummary(doc) };
       const page = findPage(doc, id);
@@ -142,44 +177,8 @@ export const orientTools = [
     readOnly: true,
     description:
       "Full detail for one node: its rendered box (x, y, width, height in px from the artboard's top left), styles, attributes, parent, children and text. For an artboard, also the height its content needs, so you can set its height in one step.",
-    input: { file: fileArg, id: z.string() },
-    async handler({ file, id }, ctx) {
-      const { ws } = ctx;
-      const { key, design } = await resolveFile(ctx, file, [id]);
-      const doc = design.doc;
-      const hit = locate(doc, id);
-      if (!hit) throw new ToolError(`No node with id ${id}.`);
-      const n = hit.node;
-      const lines = [
-        `${n.id} <${n.tag}>${n.name ? ` "${n.name}"` : ""}`,
-        `Artboard: ${hit.artboard.id} "${hit.artboard.name}" · file ${design.pathOf(hit.artboard.id) ?? "?"}`,
-        hit.parent
-          ? `Parent: ${hit.parent.id} ${describeNode(hit.parent)} (child ${hit.index})`
-          : `Artboard at (${hit.artboard.x}, ${hit.artboard.y})`,
-      ];
-      const layout = await measured(
-        ws.renderer,
-        { artboard: hit.artboard, tokens: doc.tokens, assetBase: ws.assetBase?.(key) },
-        n.id,
-        !hit.parent,
-      );
-      if (layout) lines.push(layout);
-      const style = Object.entries(n.style);
-      if (style.length) lines.push(`Style:\n  ${style.map(([k, v]) => `${k}: ${v}`).join("\n  ")}`);
-      const attrs = Object.entries(n.attrs);
-      if (attrs.length)
-        lines.push(
-          `Attributes: ${attrs.map(([k, v]) => `${k}="${v.length > 80 ? `${v.slice(0, 80)}…` : v}"`).join(" ")}`,
-        );
-      const kids = n.children.filter((c) => c.kind === "el");
-      if (kids.length)
-        lines.push(
-          `Children: ${kids.map((c) => (c.kind === "el" ? `${c.id} ${describeNode(c)}` : "")).join(", ")}`,
-        );
-      const text = visibleText(n);
-      if (text) lines.push(`Text: ${text.length > 400 ? `${text.slice(0, 400)}…` : text}`);
-      return { text: lines.join("\n") };
-    },
+    input: { id: z.string() },
+    handler: (args, ctx) => getNode(args, ctx),
   }),
 
   tool({
@@ -188,14 +187,13 @@ export const orientTools = [
     group: "orient",
     readOnly: true,
     description:
-      "The HTML of an artboard or node, exactly as stored. Use it to study or reuse existing work. For implementing a design in code, read the .design files directly instead.",
+      "The HTML of an artboard or node, exactly as stored: every size, color and font setting. Use it to study or reuse existing work, and as the spec when you build a design in code.",
     input: {
-      file: fileArg,
       id: z.string(),
       ids: z.boolean().optional().describe("Include data-id attributes. Default true."),
     },
-    async handler({ file, id, ids }, ctx) {
-      const { design } = await resolveFile(ctx, file, [id]);
+    async handler({ id, ids }, ctx) {
+      const { design } = await designOf(ctx, [id]);
       const hit = locate(design.doc, id);
       if (!hit) throw new ToolError(`No artboard or node with id ${id}.`);
       const html = serializeNode(hit.node, { omitIds: ids === false });
@@ -215,9 +213,8 @@ export const orientTools = [
     group: "orient",
     readOnly: true,
     description:
-      "Search nodes by text, layer name, tag, or declared style (property and/or value, including var(--token) references). Filters combine with AND. Searches the whole file unless `within` is given.",
+      "Search nodes by text, layer name, tag, or declared style (property and/or value, including var(--token) references). Filters combine with AND. Searches the whole design unless `within` is given.",
     input: {
-      file: fileArg,
       text: z.string().optional().describe("Case-insensitive substring of the node's own text."),
       name: z.string().optional().describe("Case-insensitive substring of the layer name."),
       tag: z.string().optional().describe("Tag name, e.g. h1, img, svg, button."),
@@ -232,7 +229,7 @@ export const orientTools = [
       limit: z.number().int().min(1).max(200).optional(),
     },
     async handler(args, ctx) {
-      const { design } = await resolveFile(ctx, args.file, [args.within]);
+      const { design } = await designOf(ctx, [args.within]);
       const doc = design.doc;
       const roots = scopeRoots(doc, args.within);
       const results: string[] = [];

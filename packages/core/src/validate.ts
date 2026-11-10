@@ -18,6 +18,12 @@ export class InvalidOpError extends Error {
   constructor(
     readonly path: string,
     readonly problem: string,
+    /**
+     * The op carries more than one op may, in nodes or in bytes: the same change made as
+     * several smaller ops would pass. False for every other fault, one value that is too long
+     * included, since splitting the op doesn't help those.
+     */
+    readonly tooMuch = false,
   ) {
     super(`${path} ${problem}`);
     this.name = "InvalidOpError";
@@ -37,7 +43,7 @@ export function validateOp(input: unknown): Op {
   checkOp(input, "op", 0, budget);
   // Measured last: by now the op is known to be shallow enough to serialize.
   const bytes = utf8Length(JSON.stringify(input));
-  if (bytes > MAX_OP_BYTES) fail("op", `is ${bytes} bytes; the most is ${MAX_OP_BYTES}`);
+  if (bytes > MAX_OP_BYTES) fail("op", `is ${bytes} bytes; the most is ${MAX_OP_BYTES}`, true);
   return input as Op;
 }
 
@@ -156,8 +162,10 @@ const VARIANTS: Record<
 /* ------------------------------------------------------------------ */
 
 function nodes(value: unknown, path: string, depth: number, budget: Budget): void {
+  const list: unknown[] = Array.isArray(value) ? value : fail(path, "must be a list");
   // Checked before the walk, so a list of a million nodes costs nothing to turn away.
-  const list = array(value, path, budget.nodes, `holds more nodes than an op may (${MAX_NODES})`);
+  if (list.length > budget.nodes)
+    fail(path, `holds more nodes than an op may (${MAX_NODES})`, true);
   budget.nodes -= list.length;
   if (list.length && depth > MAX_NODE_DEPTH)
     fail(path, `nests nodes more than ${MAX_NODE_DEPTH} deep`);
@@ -282,8 +290,8 @@ function noteName(value: unknown, path: string): void {
 /* Values                                                              */
 /* ------------------------------------------------------------------ */
 
-function fail(path: string, problem: string): never {
-  throw new InvalidOpError(path, problem);
+function fail(path: string, problem: string, tooMuch = false): never {
+  throw new InvalidOpError(path, problem, tooMuch);
 }
 
 /** A field checked elsewhere: the discriminant that chose this check. */
@@ -321,9 +329,9 @@ function fields(
   return object;
 }
 
-function array(value: unknown, path: string, max: number, problem?: string): unknown[] {
+function array(value: unknown, path: string, max: number): unknown[] {
   if (!Array.isArray(value)) fail(path, "must be a list");
-  if (value.length > max) fail(path, problem ?? `has more than ${max} items`);
+  if (value.length > max) fail(path, `has more than ${max} items`);
   return value;
 }
 

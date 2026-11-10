@@ -197,8 +197,10 @@ app, the phone and the sandbox all use it.
   there is no waiting for an echo. It runs `validateOp` first, so an op the API
   would refuse on sight is never shown or queued, and returns the op's id.
 - Pending ops are posted in order, one batch in flight. A post that fails is sent
-  again with the same ids. The replica makes one request at a time, and takes turns
-  between posting and catching up when both are due.
+  again with the same ids, after a wait that doubles from half a second to half a
+  minute. Word from the API cuts the wait short, and so can the host (`retryNow`).
+  The replica makes one request at a time, and takes turns between posting and
+  catching up when both are due.
 - A post carries at most 64 ops and 3 MB, which keeps the request and its answer
   inside the 4.5 MB a Vercel function takes. If the API refuses a post outright
   (too large, malformed), sending it again can't help: the replica sends its ops
@@ -312,6 +314,46 @@ one-minute cron finishes anything a function did not.
 
 The runner dials the API with a token that is valid for one design. The API reaches
 the runner through the sandbox's token-gated address to deliver events.
+
+### The canvas tools
+
+`packages/tools` has the tool set (`cloudTools`), its guides (`cloudGuides`,
+`CLOUD_INSTRUCTIONS`) and what the runner hosts them on: `createCloudWorkspace`
+builds the workspace for the sandbox's one design from the `Replica`, the renderer
+and a handful of callbacks (`CloudHost`) for what leaves the process: the agent's
+status and the artboards it is on, the intent of a request, storing an asset,
+publishing an export, the design's link and the theme to render in.
+
+- **One design.** No tool takes a file and none manages files. `update_design`
+  sets the design's name and icon. A design may have no pages (a new one has
+  none); `create_artboard` then makes the first page with the artboard, in one op.
+- **No tool waits on the network.** A tool reads the replica's view and applies
+  its op to it; the replica posts behind it.
+- **The view is what will be committed.** An op is sanitized (`sanitizeOp`, the
+  API's own step) before it is applied to the replica, and the tool's result says
+  what that removed. Nothing the agent reads or screenshots is taken away by the
+  commit.
+- **Edits can be undone later.** When the replica drops an op the agent made (the
+  API rejected it, or someone's change left it nothing to apply to), the next tool
+  result says what was undone and why, whatever that call was. At the end of a
+  turn and before the sandbox sleeps the runner waits on `design.settled(timeout)`,
+  which keeps the replica retrying for as long as it waits, and gives the agent
+  any notice no tool result carried.
+- **Other people's ops** reach the same in-process event and presence hubs the
+  agent's own do, so a board a person deletes stops showing as worked on.
+- **Files go by sandbox path.** There are no design files. HTML too long for one
+  call is written to a file by the agent, and `write_html` or `create_artboard`
+  takes its path; the limits of an op (10,000 nodes, 1 MB) hold either way.
+  `add_asset` takes a file's path, checks that the file is the kind its name
+  says, hands the bytes to the host and returns the `assets/<name>` reference.
+  `export` writes where the agent says, under `.png`, `.jpg` or `.pdf`, so the
+  file can be committed, and adds a link when the host can publish one. Only the
+  cloud's tools read a path: the local server's take none but to write.
+- **The host's failures stay the host's.** A status or intent callback that throws
+  or rejects is counted in telemetry and dropped: it is called after an edit has
+  landed, and from the replica's listeners.
+- **Without a renderer** `screenshot`, `record` and `export` say so and the rest
+  work from declared sizes.
 
 ### Rendering
 
