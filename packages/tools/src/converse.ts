@@ -8,8 +8,8 @@ import {
   threadPage,
 } from "@ponzu/core";
 import { z } from "zod";
-import { fileArg, ToolError, tool } from "./define.ts";
-import { apply, resolveFile } from "./util.ts";
+import { ToolError, tool } from "./define.ts";
+import { apply, designOf } from "./util.ts";
 
 export function threadLine(doc: Doc, t: Thread): string {
   const node = t.nodeId ? locate(doc, t.nodeId)?.node : undefined;
@@ -34,14 +34,13 @@ export const converseTools = [
     group: "converse",
     readOnly: true,
     description:
-      "Comment threads in the file. Open ones by default. Most are pinned to an artboard and usually a node inside it; some sit on the open canvas of a page, beside the artboards.",
+      "Comment threads in the design. Open ones by default. Most are pinned to an artboard and usually a node inside it; some sit on the open canvas of a page, beside the artboards.",
     input: {
-      file: fileArg,
       status: z.enum(["open", "resolved", "all"]).optional(),
       artboard: z.string().optional(),
     },
     async handler(args, ctx) {
-      const { design } = await resolveFile(ctx, args.file, [args.artboard]);
+      const { design } = await designOf(ctx, [args.artboard]);
       const doc = design.doc;
       const status = args.status ?? "open";
       const threads = doc.threads.filter(
@@ -61,9 +60,9 @@ export const converseTools = [
     group: "converse",
     readOnly: true,
     description: "A thread with every message, and what its pin points at.",
-    input: { file: fileArg, id: z.string() },
+    input: { id: z.string() },
     async handler(args, ctx) {
-      const { design } = await resolveFile(ctx, args.file, [args.id]);
+      const { design } = await designOf(ctx, [args.id]);
       const t = design.doc.threads.find((x) => x.id === args.id);
       if (!t) throw new ToolError(`No thread ${args.id}.`);
       const lines = [
@@ -84,12 +83,11 @@ export const converseTools = [
     description:
       'Start a thread pinned to a node or artboard when you need the person: a question only they can answer, a choice for them to make, or something you couldn\'t build as asked. Each open thread is something for them to act on. Explanations and rationale go on the canvas, in a "Note: …" artboard beside the work.',
     input: {
-      file: fileArg,
       on: z.string().describe("Node or artboard id."),
       text: z.string().min(1),
     },
     async handler(args, ctx) {
-      const { design } = await resolveFile(ctx, args.file, [args.on]);
+      const { design } = await designOf(ctx, [args.on]);
       const doc = design.doc;
       const hit = locate(doc, args.on);
       if (!hit) throw new ToolError(`No node or artboard ${args.on}.`);
@@ -118,13 +116,12 @@ export const converseTools = [
     description:
       "Reply in a comment thread, in one or two sentences. Only when the person needs to read it: to answer a question, give a recommendation, say how you read an ambiguous comment, or explain what you couldn't do. For a change you simply made, don't reply; resolve it with set_comment_status. Leave a thread you replied to open: resolved threads leave the canvas, so resolve: true hides your reply from the person.",
     input: {
-      file: fileArg,
       thread: z.string(),
       text: z.string().min(1),
       resolve: z.boolean().optional(),
     },
     async handler(args, ctx) {
-      const { key, design } = await resolveFile(ctx, args.file, [args.thread]);
+      const { key, design } = await designOf(ctx, [args.thread]);
       const t = design.doc.threads.find((x) => x.id === args.thread);
       if (!t) throw new ToolError(`No thread ${args.thread}.`);
       // Their reply would land in a thread gone from the canvas: it stays open for it.
@@ -150,7 +147,7 @@ export const converseTools = [
       );
       if (args.resolve && !resolve)
         return {
-          text: "Replied, and left it open: the person is writing a reply in this thread. Their reply comes through wait_for_activity.",
+          text: "Replied, and left it open: the person is writing a reply in this thread. You'll hear it once they send it.",
         };
       return { text: `Replied${resolve ? " and resolved" : ""}.` };
     },
@@ -162,14 +159,14 @@ export const converseTools = [
     group: "converse",
     description:
       "Resolve or reopen a thread without replying. Resolve a comment once you've done what it asked; that hides its pin from the canvas, and the change speaks for itself.",
-    input: { file: fileArg, thread: z.string(), status: z.enum(["open", "resolved"]) },
+    input: { thread: z.string(), status: z.enum(["open", "resolved"]) },
     async handler(args, ctx) {
-      const { key, design } = await resolveFile(ctx, args.file, [args.thread]);
+      const { key, design } = await designOf(ctx, [args.thread]);
       if (!design.doc.threads.some((t) => t.id === args.thread))
         throw new ToolError(`No thread ${args.thread}.`);
       if (args.status === "resolved" && ctx.ws.writing?.(key, args.thread))
         throw new ToolError(
-          `The person is writing a reply in thread ${args.thread}, so it stays open. Their reply comes through wait_for_activity; resolve it once you've done what it asks.`,
+          `The person is writing a reply in thread ${args.thread}, so it stays open. You'll hear it once they send it; resolve the thread when you've done what it asks.`,
           "person_writing",
         );
       apply(
@@ -186,7 +183,7 @@ export const converseTools = [
     title: "Send feedback to the Ponzu team",
     group: "converse",
     description:
-      "Tell the people who build Ponzu how it's working for you. Send it when a tool confused you, failed or got in your way, when you had to work around something Ponzu can't do, when something worked notably well, or when the person asks you to pass something on. Keep it about Ponzu: no design content, file names, paths or personal details. It goes to the Ponzu team, not to the person; carry on with their task afterwards.",
+      "Tell the people who build Ponzu how it's working for you. Send it when a tool confused you, failed or got in your way, when you had to work around something Ponzu can't do, when something worked notably well, or when the person asks you to pass something on. Keep it about Ponzu: no design content, names, paths or personal details. It goes to the Ponzu team, not to the person; carry on with their task afterwards.",
     input: {
       sentiment: z.enum(["positive", "neutral", "negative", "mixed"]),
       category: z.enum(["bug", "missing_capability", "confusing_tool", "praise", "other"]),
@@ -196,7 +193,7 @@ export const converseTools = [
         .max(4000)
         .optional()
         .describe(
-          "What happened, which tool, and what would have helped. Leave design content, file names, paths and personal details out of any argument or error you quote.",
+          "What happened, which tool, and what would have helped. Leave design content, names, paths and personal details out of any argument or error you quote.",
         ),
       tool: z.string().optional().describe("The Ponzu tool it's about, if any."),
     },
@@ -210,5 +207,3 @@ export const converseTools = [
     },
   }),
 ];
-
-export { findArtboard };

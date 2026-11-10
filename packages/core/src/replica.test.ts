@@ -696,6 +696,33 @@ describe("a failing connection", () => {
     expectInSync(a.replica, api);
   });
 
+  test("a host that can't wait cuts it short too, and a retry that fails waits as long as it would have", async () => {
+    const { api, timers, open } = setup();
+    const a = open(ada);
+    a.replica.apply(red);
+    await a.line.answer("request");
+    await timers.fire();
+    await a.line.answer("request");
+    expect(timers.waits.map((w) => w.ms)).toEqual([1000]);
+
+    a.replica.retryNow();
+    expect(timers.waits).toEqual([]);
+    expect(a.line.waiting.map((r) => r.kind)).toEqual(["commit"]);
+    // While that request is out there is nothing to hurry.
+    a.replica.retryNow();
+    expect(a.line.waiting).toHaveLength(1);
+    await a.line.answer("request");
+    expect(timers.waits.map((w) => w.ms)).toEqual([2000]);
+
+    a.replica.retryNow();
+    await a.line.answer();
+    expectInSync(a.replica, api);
+    expect(a.replica.offline).toBe(false);
+    // With nothing due, it asks nothing.
+    a.replica.retryNow();
+    expect(a.line.waiting).toEqual([]);
+  });
+
   test("a failed fetch is tried again", async () => {
     const { api, timers, open } = setup();
     const a = open(ada);

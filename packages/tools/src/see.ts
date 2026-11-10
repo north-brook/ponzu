@@ -1,13 +1,27 @@
 import { type Artboard, findArtboard, findNode, isThemed, locate } from "@ponzu/core";
-import type { Interaction, MotionAnimation, MotionInfo } from "@ponzu/render";
+import type { Interaction, MotionAnimation, MotionInfo, Renderer } from "@ponzu/render";
 import { z } from "zod";
-import type { ToolContext } from "./context.ts";
-import { fileArg, ToolError, type ToolImage, tool } from "./define.ts";
+import type { ToolContext, Workspace } from "./context.ts";
+import { ToolError, type ToolImage, tool } from "./define.ts";
+import type { OpenDesign } from "./design.ts";
+import { fileSize, writeGiven } from "./disk.ts";
 import { footprintsAround, overlapIssues, overlaps } from "./overlap.ts";
-import { resolveFile } from "./util.ts";
+import { designOf } from "./util.ts";
+
+// The local tool list adds this to a look at the work, and its tests import it from here.
+export { WATCH_REMINDER } from "./local/watch.ts";
 
 function toBase64(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64");
+}
+
+/** The renderer, or a plain no for a tool that can't work without one. */
+function rendererFor(ws: Workspace, what: string): Renderer {
+  if (!ws.renderer)
+    throw new ToolError(
+      `No renderer is available here, so ${what} can't run. Carry on without it, and tell the person the work hasn't been checked on screen.`,
+    );
+  return ws.renderer;
 }
 
 const colorSchemeArg = z
@@ -47,17 +61,6 @@ const interactionArgs = {
     .describe("Node id to press (pointer down) first. :active and :hover apply."),
 };
 
-/**
- * Checking work is the moment before an agent hands it back, and so the moment
- * it decides whether to end its turn or watch for the person's comments.
- */
-export const WATCH_REMINDER =
-  "Once this pass is done, watch the canvas (wait_for_activity) instead of ending your turn: the person can steer with comments, and chat still reaches you between waits.";
-
-function remindToWatch({ ws, caller }: ToolContext): boolean {
-  return caller.author.kind === "agent" && ws.presence.shouldRemindToWatch(caller.id);
-}
-
 export const seeTools = [
   tool({
     name: "screenshot",
@@ -67,7 +70,6 @@ export const seeTools = [
     description:
       "Render an artboard or node and look at it. Shows the settled state: every finite animation has finished, the way a person sees the page after it loads. Pass `at` for a moment mid-animation, and hover, focus or press to see a state. Comes with a lint pass that reports clipped text, overflow (with the height the artboard needs), charts and images spilling over their neighbors, short labels wrapping in a row, zero-size and off-artboard elements, artboards overlapping each other on the canvas, broken images, tiny text, missing @keyframes, elements left invisible after an animation, more animating at once than the canvas can keep smooth, and states with no styles. Lists what animates. An artboard with a scene script (get_guide('act')) shows its poster frame, and lint lists beats that can't play. Use scale 1 for layout checks and 2 only to read small text. Check your work after every few edits; use record to watch motion. A render that stalls stops within a minute and says which step it stalled on; if only the image fails, lint still comes back.",
     input: {
-      file: fileArg,
       id: z.string().describe("Artboard or node id."),
       scale: z.number().min(0.25).max(3).optional(),
       colorScheme: colorSchemeArg,
@@ -82,11 +84,8 @@ export const seeTools = [
     },
     async handler(args, ctx) {
       const { ws } = ctx;
-      if (!ws.renderer)
-        throw new ToolError(
-          "No renderer is available here, so screenshots are off. Ask the user to install Chrome.",
-        );
-      const { key, design } = await resolveFile(ctx, args.file, [args.id]);
+      const renderer = rendererFor(ws, "screenshot");
+      const { key, design } = await designOf(ctx, [args.id]);
       const doc = design.doc;
       const ab = findArtboard(doc, args.id)?.artboard ?? locate(doc, args.id)?.artboard;
       if (!ab) throw new ToolError(`No artboard or node ${args.id}.`);
@@ -100,7 +99,7 @@ export const seeTools = [
       const fit = Math.min(1, 1600 / Math.max(w, h));
       const scale = args.scale ?? (nodeId ? 1 : Math.max(0.5, Number(fit.toFixed(2))));
       const theme = scheme(ws, doc.tokens, ab, args.colorScheme);
-      const out = await ws.renderer.render({
+      const out = await renderer.render({
         artboard: ab,
         tokens: doc.tokens,
         nodeId,
@@ -147,7 +146,6 @@ export const seeTools = [
         lines.push(`Content height: ${out.contentHeight}px.`);
       lines.push(lint);
       if (out.motion?.animations.length || out.motion?.act) lines.push(motionText(out.motion));
-      if (remindToWatch(ctx)) lines.push(WATCH_REMINDER);
       return {
         text: lines.join("\n"),
         images: [image],
@@ -164,7 +162,6 @@ export const seeTools = [
     description:
       "Watch an animation. Steps through the timeline frame by frame (paused and seeked, so frames are exact and repeatable) and returns one contact sheet with every frame labeled by its time, plus what animates: node, keyframes, duration, delay, easing, iterations. By default it covers the whole page load once, or one cycle of anything that loops; an artboard with a scene script (get_guide('act')) is filmed as a storyboard, one frame where each beat lands, labeled with the beat. Use hover, focus or press to watch a transition into that state, and scroll to step through a scroll container for scroll-driven animation. Lint runs on the last frame. Use it after writing @keyframes, transitions or hover styles, and check easing, overlap and the end state. The person's canvas plays the load once when the artboard appears and then holds the end; hovering doesn't replay it.",
     input: {
-      file: fileArg,
       id: z.string().describe("Artboard or node id. Frames show this area."),
       frames: z
         .number()
@@ -195,17 +192,14 @@ export const seeTools = [
     },
     async handler(args, ctx) {
       const { ws } = ctx;
-      if (!ws.renderer)
-        throw new ToolError(
-          "No renderer is available here, so recording is off. Ask the user to install Chrome.",
-        );
-      if (!ws.renderer.record)
+      const renderer = rendererFor(ws, "record");
+      if (!renderer.record)
         throw new ToolError("This renderer can't record. Use screenshot with `at` instead.");
       if (args.scroll && (args.from !== undefined || args.to !== undefined))
         throw new ToolError("scroll steps through a scroll range, so from and to don't apply.");
       if (args.from !== undefined && args.to !== undefined && args.to <= args.from)
         throw new ToolError("to has to be after from.");
-      const { key, design } = await resolveFile(ctx, args.file, [args.id]);
+      const { key, design } = await designOf(ctx, [args.id]);
       const doc = design.doc;
       const ab = findArtboard(doc, args.id)?.artboard ?? locate(doc, args.id)?.artboard;
       if (!ab) throw new ToolError(`No artboard or node ${args.id}.`);
@@ -213,7 +207,7 @@ export const seeTools = [
       if (args.scroll && !findNode(ab.root, args.scroll))
         throw new ToolError(`No node ${args.scroll} to scroll in this artboard.`);
       const theme = scheme(ws, doc.tokens, ab, args.colorScheme);
-      const out = await ws.renderer.record({
+      const out = await renderer.record({
         artboard: ab,
         tokens: doc.tokens,
         nodeId: ab.id === args.id ? undefined : args.id,
@@ -259,7 +253,6 @@ export const seeTools = [
       if (out.issues.length)
         lines.push(`${at}:\n${out.issues.map((i) => `  ${i.id}: ${i.message}`).join("\n")}`);
       else lines.push(`${at}: clean.`);
-      if (remindToWatch(ctx)) lines.push(WATCH_REMINDER);
       return {
         text: lines.join("\n"),
         images: [{ data: toBase64(out.bytes), mime: out.mime }],
@@ -267,58 +260,66 @@ export const seeTools = [
       };
     },
   }),
-
-  tool({
-    name: "export",
-    title: "Export",
-    group: "see",
-    readOnly: true,
-    description:
-      "Export an artboard or node as PNG, JPEG or PDF to a file path on disk (default: the design's exports/ folder). A design with light-dark() colors exports in the theme the person's canvas is in unless you pass colorScheme; the file name says which.",
-    input: {
-      file: fileArg,
-      id: z.string(),
-      format: z.enum(["png", "jpeg", "pdf"]).optional(),
-      scale: z.number().min(0.25).max(4).optional().describe("Default 2."),
-      path: z.string().optional().describe("Absolute output path."),
-      colorScheme: colorSchemeArg,
-    },
-    async handler(args, ctx) {
-      const { ws } = ctx;
-      if (!ws.renderer) throw new ToolError("No renderer available.");
-      const { key, design } = await resolveFile(ctx, args.file, [args.id]);
-      const doc = design.doc;
-      const ab = findArtboard(doc, args.id)?.artboard ?? locate(doc, args.id)?.artboard;
-      if (!ab) throw new ToolError(`No artboard or node ${args.id}.`);
-      const format = args.format ?? "png";
-      const theme = scheme(ws, doc.tokens, ab, args.colorScheme);
-      const out = await ws.renderer.render({
-        artboard: ab,
-        tokens: doc.tokens,
-        nodeId: ab.id === args.id ? undefined : args.id,
-        scale: args.scale ?? 2,
-        format,
-        colorScheme: theme.colorScheme,
-        assetBase: ws.assetBase?.(key),
-      });
-      const root = design.storage.root;
-      const ext = format === "jpeg" ? "jpg" : format;
-      const path =
-        args.path ??
-        (root
-          ? `${root}/exports/${slug(ab.name)}${ab.id === args.id ? "" : `-${args.id}`}${theme.line ? `-${theme.colorScheme}` : ""}.${ext}`
-          : null);
-      if (!path) throw new ToolError("This design isn't on disk; pass an absolute path.");
-      const { mkdir, writeFile } = await import("node:fs/promises");
-      const { dirname } = await import("node:path");
-      await mkdir(dirname(path), { recursive: true });
-      await writeFile(path, out.bytes);
-      return {
-        text: `Wrote ${path} (${Math.round(out.width)}×${Math.round(out.height)} at ${shownScale(args.scale ?? 2, out.scale)}${theme.line ? `, ${theme.colorScheme}` : ""}, ${Math.round(out.bytes.length / 1024)} KB).`,
-      };
-    },
-  }),
 ];
+
+/** What every `export` takes, wherever its file goes. */
+export const exportInput = {
+  id: z.string().describe("Artboard or node id."),
+  format: z.enum(["png", "jpeg", "pdf"]).optional(),
+  scale: z.number().min(0.25).max(4).optional().describe("Default 2."),
+  colorScheme: colorSchemeArg,
+};
+
+/** A file an export wrote. */
+export interface Exported {
+  path: string;
+  bytes: Uint8Array;
+  mime: string;
+  /** "Wrote /repo/docs/hero.png (1440×900 at 2x, 212 KB)." */
+  text: string;
+}
+
+/**
+ * Render what `export` was asked for and write it where `pathFor` says. `pathFor` is given a
+ * file name made from the artboard's name, the node, the theme and the format, and the design
+ * the call is on. It runs before the render, so a path that won't do costs nothing.
+ */
+export async function exportTo(
+  ctx: ToolContext,
+  args: z.infer<z.ZodObject<typeof exportInput>>,
+  pathFor: (name: string, open: OpenDesign) => string,
+): Promise<Exported> {
+  const { ws } = ctx;
+  const renderer = rendererFor(ws, "export");
+  const open = await designOf(ctx, [args.id]);
+  const doc = open.design.doc;
+  const ab = findArtboard(doc, args.id)?.artboard ?? locate(doc, args.id)?.artboard;
+  if (!ab) throw new ToolError(`No artboard or node ${args.id}.`);
+  const format = args.format ?? "png";
+  const theme = scheme(ws, doc.tokens, ab, args.colorScheme);
+  const node = ab.id === args.id ? "" : `-${args.id}`;
+  const themed = theme.line ? `-${theme.colorScheme}` : "";
+  const path = pathFor(
+    `${slug(ab.name)}${node}${themed}.${format === "jpeg" ? "jpg" : format}`,
+    open,
+  );
+  const out = await renderer.render({
+    artboard: ab,
+    tokens: doc.tokens,
+    nodeId: ab.id === args.id ? undefined : args.id,
+    scale: args.scale ?? 2,
+    format,
+    colorScheme: theme.colorScheme,
+    assetBase: ws.assetBase?.(open.key),
+  });
+  await writeGiven(path, out.bytes);
+  return {
+    path,
+    bytes: out.bytes,
+    mime: out.mime,
+    text: `Wrote ${path} (${Math.round(out.width)}×${Math.round(out.height)} at ${shownScale(args.scale ?? 2, out.scale)}${theme.line ? `, ${theme.colorScheme}` : ""}, ${fileSize(out.bytes.length)}).`,
+  };
+}
 
 const ASSETS_LATE =
   "Fonts or images were still loading when time ran out, so the image may show fallbacks. Lint says which.";
