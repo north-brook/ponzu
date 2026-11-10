@@ -202,6 +202,93 @@ test("a refresh token GitHub has already spent, with a newer pair stored meanwhi
   expect(token).toBe(theirs.tokens.accessToken);
 });
 
+test("a refusal heard while the first holder is still storing its pair waits for that pair", async () => {
+  const person = await someone();
+  t.clock.advance(8 * HOURS);
+  // A holder whose claim ran out has traded the refresh token and not yet stored what it got.
+  const theirs = await t.deps.github.refreshUserToken(await openRefreshToken(person));
+  if (theirs.kind !== "refreshed") throw new Error("expected a refresh");
+  // It lands while this caller, refused by GitHub, is giving it a moment.
+  const deps: TestApp["deps"] = {
+    ...t.deps,
+    clock: {
+      now: () => t.clock.now(),
+      timeout: (ms) => t.clock.timeout(ms),
+      sleep: () => storeGithubUserToken(t.deps, person.userId, theirs.tokens),
+    },
+  };
+
+  const token = await githubUserToken(deps, person.userId);
+
+  expect(token).toBe(theirs.tokens.accessToken);
+  expect((await stored(person)).refreshClaimedUntil).toBeNull();
+});
+
+/** The database, except that the statements `fails` picks (counting updates from 1) never arrive. */
+function withFailingUpdates(fails: (update: number) => boolean): TestApp["db"] {
+  let updates = 0;
+  return new Proxy(t.db, {
+    get(db, property) {
+      if (property === "update" && fails(++updates)) {
+        return () => {
+          throw new Error("fetch failed");
+        };
+      }
+      const value = Reflect.get(db, property, db);
+      return typeof value === "function" ? value.bind(db) : value;
+    },
+  });
+}
+
+test("a rotated pair whose store fails once is stored on the next try", async () => {
+  const person = await someone();
+  t.clock.advance(8 * HOURS);
+  const attempts = t.github.refreshAttempts;
+  // The first update is the claim. The second is the store, after GitHub has already ended
+  // the old pair: the new one exists nowhere but in this call.
+  const db = withFailingUpdates((update) => update === 2);
+
+  const token = await githubUserToken({ ...t.deps, db }, person.userId);
+
+  expect(t.github.accepts(token)).toBe(true);
+  expect(t.github.refreshAttempts).toBe(attempts + 1);
+  const row = await stored(person);
+  expect(row.refreshClaimedUntil).toBeNull();
+  expect(
+    await t.deps.vault.open(row.encryptedAccessToken, {
+      column: "github_user_tokens.access_token",
+      row: person.userId,
+    }),
+  ).toBe(token);
+  // The person is not stranded: the stored refresh token is the live one.
+  t.clock.advance(8 * HOURS);
+  expect(t.github.accepts(await githubUserToken(t.deps, person.userId))).toBe(true);
+  expect(t.logs.findLast((line) => line.event === "github_token_store_retry")).toMatchObject({
+    level: "warn",
+    userId: person.userId,
+    attempt: 1,
+  });
+});
+
+test("a rotated pair that cannot be stored at all is reported, with whose it was", async () => {
+  const person = await someone();
+  t.clock.advance(8 * HOURS);
+  // The claim, then five tries at the store. The release that follows gets through.
+  const db = withFailingUpdates((update) => update >= 2 && update <= 6);
+
+  await expect(githubUserToken({ ...t.deps, db }, person.userId)).rejects.toThrow("fetch failed");
+
+  expect(t.logs.findLast((line) => line.event === "github_token_rotation_lost")).toMatchObject({
+    level: "error",
+    userId: person.userId,
+  });
+  // The claim is given up, so the next caller learns at once that only signing in again helps.
+  expect((await stored(person)).refreshClaimedUntil).toBeNull();
+  await expect(githubUserToken(t.deps, person.userId)).rejects.toMatchObject({
+    code: "github_reauth_required",
+  });
+});
+
 test("a refresh token GitHub refuses, with nothing newer stored: github_reauth_required", async () => {
   const person = await someone();
   t.clock.advance(8 * HOURS);

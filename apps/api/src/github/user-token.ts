@@ -29,16 +29,20 @@ const CLAIM_MS = 30_000;
 /** How long to wait for someone else's refresh before giving up. */
 const WAIT_MS = 15_000;
 const WAIT_STEP_MS = 250;
+/** The waits between tries at storing a rotated pair: five tries over about eight seconds. */
+const STORE_RETRY_MS = [500, 1_000, 2_000, 4_000];
+/** When to look for a newer pair after GitHub refuses a refresh token: now, and twice more. */
+const NEWER_PAIR_WAITS_MS = [0, 400, 800];
 
-type UserTokenDeps = Pick<Deps, "db" | "clock" | "vault" | "github">;
+type UserTokenDeps = Pick<Deps, "db" | "clock" | "vault" | "github" | "log">;
 
 const binding = (column: "access_token" | "refresh_token", userId: string): Binding => ({
   column: `github_user_tokens.${column}`,
   row: userId,
 });
 
-/** Store the pair a sign-in or a refresh produced, encrypted and bound to the person. */
-async function seal({ vault }: UserTokenDeps, userId: string, tokens: GithubTokenPair) {
+/** The pair a sign-in or a refresh produced, encrypted and bound to the person. */
+async function seal({ vault }: Pick<Deps, "vault">, userId: string, tokens: GithubTokenPair) {
   return {
     userId,
     encryptedAccessToken: await vault.seal(tokens.accessToken, binding("access_token", userId)),
@@ -53,7 +57,7 @@ async function seal({ vault }: UserTokenDeps, userId: string, tokens: GithubToke
 
 /** Keep the GitHub tokens a sign-in came back with, in place of any the person had. */
 export async function storeGithubUserToken(
-  deps: UserTokenDeps,
+  deps: Pick<Deps, "db" | "vault">,
   userId: string,
   tokens: GithubTokenPair,
 ): Promise<void> {
@@ -108,16 +112,17 @@ function isFresh(token: GithubUserToken, now: number): boolean {
 async function refresh(deps: UserTokenDeps, held: GithubUserToken, until: Date): Promise<string> {
   const { db, vault, github } = deps;
   const { userId } = held;
+  const replaces = held.encryptedRefreshToken;
   const release = () => releaseGithubTokenRefresh(db, { userId, until });
 
-  if (held.encryptedRefreshToken === null) {
+  if (replaces === null) {
     await release();
     throw reauthRequired();
   }
   let result: Awaited<ReturnType<typeof github.refreshUserToken>>;
   try {
     result = await github.refreshUserToken(
-      await vault.open(held.encryptedRefreshToken, binding("refresh_token", userId)),
+      await vault.open(replaces, binding("refresh_token", userId)),
     );
   } catch (error) {
     // GitHub did not answer, so the refresh token may still be good: let the next caller try.
@@ -126,22 +131,75 @@ async function refresh(deps: UserTokenDeps, held: GithubUserToken, until: Date):
   }
 
   if (result.kind === "refreshed") {
-    const rotated = await rotateGithubUserToken(db, {
-      ...(await seal(deps, userId, result.tokens)),
-      replaces: held.encryptedRefreshToken,
-    });
-    if (rotated) return result.tokens.accessToken;
-  } else {
-    await release();
+    if (await storeRotated(deps, userId, result.tokens, replaces, release)) {
+      return result.tokens.accessToken;
+    }
+    // The row no longer held the token that was traded: a sign-in stored a newer pair while
+    // this ran (or an earlier attempt to store this one landed after all). What is stored now
+    // is the pair to use.
+    const stored = await getGithubUserToken(db, userId);
+    if (!stored) throw reauthRequired();
+    return vault.open(stored.encryptedAccessToken, binding("access_token", userId));
   }
 
-  // Either GitHub refused the refresh token or the row no longer held it. Both happen when a
-  // newer pair was stored while this ran (the person signed in again, or a claim that outlived
-  // its time was taken over); that pair is the one to use. Only if the row still holds the
-  // token GitHub refused is the person really cut off.
-  const stored = await getGithubUserToken(db, userId);
-  if (!stored || stored.encryptedRefreshToken === held.encryptedRefreshToken) {
-    throw reauthRequired();
+  // GitHub refused the refresh token. That is how it answers a token it has already traded,
+  // which happens when this caller took over a claim whose first holder was slow, not dead:
+  // GitHub has given that holder the new pair and it is about to store it. So wait a moment
+  // for a newer pair before deciding. Only if the row still holds the token GitHub refused is
+  // the person really cut off.
+  const newer = await newerPair(deps, held);
+  await release();
+  if (!newer) throw reauthRequired();
+  return vault.open(newer.encryptedAccessToken, binding("access_token", userId));
+}
+
+/**
+ * Store the pair GitHub just gave in exchange for `replaces`. GitHub ended the old pair as it
+ * answered, so until this lands the pair exists nowhere else, and one failed statement would
+ * cost the person their GitHub connection. It is tried again for as long as a claim lasts.
+ * Answers false if the row no longer holds `replaces` (see `rotateGithubUserToken`).
+ */
+async function storeRotated(
+  deps: UserTokenDeps,
+  userId: string,
+  tokens: GithubTokenPair,
+  replaces: string,
+  release: () => Promise<void>,
+): Promise<boolean> {
+  const { db, clock, log } = deps;
+  try {
+    // Sealed once: every attempt writes the same ciphertext, so one that landed without its
+    // answer arriving is recognized by the next.
+    const sealed = await seal(deps, userId, tokens);
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await rotateGithubUserToken(db, { ...sealed, replaces });
+      } catch (error) {
+        const wait = STORE_RETRY_MS[attempt];
+        if (wait === undefined) throw error;
+        log.warn("github_token_store_retry", { userId, attempt: attempt + 1, error });
+        await clock.sleep(wait);
+      }
+    }
+  } catch (error) {
+    // The pair is gone and the stored refresh token is dead: the person has to sign in again.
+    log.error("github_token_rotation_lost", { userId, error });
+    // So the next caller finds that out from GitHub now, not after waiting out this claim.
+    await release().catch(() => {});
+    throw error;
   }
-  return vault.open(stored.encryptedAccessToken, binding("access_token", userId));
+}
+
+/** The pair stored for a person since `held` was read, giving one on its way a moment to land. */
+async function newerPair(
+  { db, clock }: UserTokenDeps,
+  held: GithubUserToken,
+): Promise<GithubUserToken | null> {
+  for (const wait of NEWER_PAIR_WAITS_MS) {
+    if (wait > 0) await clock.sleep(wait);
+    const stored = await getGithubUserToken(db, held.userId);
+    if (!stored) return null;
+    if (stored.encryptedRefreshToken !== held.encryptedRefreshToken) return stored;
+  }
+  return null;
 }
