@@ -421,7 +421,7 @@
 
 /*
  * The GitHub viewer's loading state (app/gh/[...slug]/loading.tsx), in the canvas's own colors
- * (packages/react/src/styles.css), so the skeleton reads as the canvas about to appear.
+ * (packages/canvas/src/styles.css), so the skeleton reads as the canvas about to appear.
  */
 .gv-loading {
   --gv-canvas: #f4f3ef;

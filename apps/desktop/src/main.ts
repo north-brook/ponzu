@@ -250,7 +250,7 @@ function watchIdle() {
  * What the window shows while the server starts: the slice, its segments
  * fading in turn, faded in only if the start takes long enough to notice.
  * Self-contained, so it paints before anything else is up. The segments are
- * `SLICE` from @ponzu/react.
+ * `SLICE` from @ponzu/canvas.
  */
 function splashUrl() {
   const segments = [

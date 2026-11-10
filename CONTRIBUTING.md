@@ -26,7 +26,7 @@ lowercase description. CI checks it.
 | `feat!: …` or a `BREAKING CHANGE:` footer | major (minor while `0.x`) |
 | `chore:`, `docs:`, `refactor:`, `test:`, `ci:`, `build:` | none on their own |
 
-Scopes are optional: `fix(desktop): …`, `feat(react): …`.
+Scopes are optional: `fix(desktop): …`, `feat(canvas): …`.
 
 ### Release notes
 

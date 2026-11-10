@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { Icons } from "@ponzu/react/icons";
-import { SLICE, SLICE_STROKE } from "@ponzu/react/slice";
+import { Icons } from "@ponzu/canvas/icons";
+import { SLICE, SLICE_STROKE } from "@ponzu/canvas/slice";
 import { createElement, type ReactElement } from "react";
 import type { DesignView } from "./github";
 
@@ -220,7 +220,7 @@ export function OgCard({ design }: { design: DesignView }): ReactElement {
   );
 }
 
-/** A page's icon as the canvas draws it (packages/react/src/icons.tsx), in hugeicons' strokes. */
+/** A page's icon as the canvas draws it (packages/canvas/src/icons.tsx), in hugeicons' strokes. */
 function PageIcon({ name }: { name?: string }) {
   const icon = Icons[(name && name in Icons ? name : "board") as keyof typeof Icons];
   return (

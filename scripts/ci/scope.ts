@@ -26,9 +26,9 @@ export type Suite = "desktop" | "mobile";
 const SUITES: Record<Suite, string[]> = {
   // The packaged Electron app, which bundles the CLI's server and the studio.
   desktop: ["desktop", "cli", "studio"],
-  // The iPhone app: its checks, export and simulator flows. It can't depend on @ponzu/react,
+  // The iPhone app: its checks, export and simulator flows. It can't depend on @ponzu/canvas,
   // but its canvas and icons import that package's source by path (apps/mobile/canvas).
-  mobile: ["mobile", "react"],
+  mobile: ["mobile", "canvas"],
 };
 
 /** Changes that run every suite: what decides how they all run. */

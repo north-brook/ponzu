@@ -1,4 +1,4 @@
-import { SLICE, SLICE_STROKE } from "@ponzu/react/slice";
+import { SLICE, SLICE_STROKE } from "@ponzu/canvas/slice";
 import type { CSSProperties } from "react";
 
 /**

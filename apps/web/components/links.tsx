@@ -6,7 +6,7 @@ export const REPO = "https://github.com/north-brook/ponzu";
 export const RELEASES = `${REPO}/releases/latest`;
 /** Every download: the Mac, Windows and Linux, the iPhone beta and the CLI. */
 export const DOWNLOAD = "/download";
-export const SDK = `${REPO}/tree/main/packages/react`;
+export const SDK = `${REPO}/tree/main/packages/canvas`;
 export const CONTRIBUTING = `${REPO}/blob/main/CONTRIBUTING.md`;
 export const LICENSE = `${REPO}/blob/main/LICENSE`;
 export const PRIVACY = "/privacy";

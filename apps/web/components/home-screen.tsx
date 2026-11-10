@@ -1,6 +1,6 @@
 "use client";
 
-import { Icon, Rain } from "@ponzu/react";
+import { Icon, Rain } from "@ponzu/canvas";
 import "./demo/ponzu.css";
 
 /**

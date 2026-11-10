@@ -1,4 +1,4 @@
-import { SLICE, SLICE_STROKE } from "@ponzu/react/slice";
+import { SLICE, SLICE_STROKE } from "@ponzu/canvas/slice";
 
 /*
  * The README badge, drawn the way shields.io draws its own so it sits in a row of them: 20px

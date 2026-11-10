@@ -1,6 +1,6 @@
 "use client";
 
-import { Icon, Icons } from "@ponzu/react/icons";
+import { Icon, Icons } from "@ponzu/canvas/icons";
 import { createContext, type ReactNode, useContext, useState } from "react";
 
 /*

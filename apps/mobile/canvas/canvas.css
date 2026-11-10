@@ -1,6 +1,6 @@
 /*
  * The phone canvas. No chrome: the app draws it. Colors are the studio's and the iPhone design's
- * (`--c-*`), light and dark; the ring, the rain and the frame are desktop's (packages/react's
+ * (`--c-*`), light and dark; the ring, the rain and the frame are desktop's (packages/canvas's
  * styles.css), copied here: the page doesn't load desktop's stylesheet.
  */
 :root {

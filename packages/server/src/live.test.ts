@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import type { Doc, PNode } from "@ponzu/core";
 import { getTool, runTool, type ToolCaller } from "@ponzu/tools";
 // The canvas's own client, as the studio runs it: what it shows is what the person sees.
-import { SocketSource } from "../../react/src/connection.ts";
+import { SocketSource } from "../../canvas/src/connection.ts";
 import { LocalWorkspace, serve } from "./index.ts";
 
 /*

@@ -1,5 +1,5 @@
+import { Icon as PageIcon } from "@ponzu/canvas/icons";
 import { targetPath } from "@ponzu/core/github";
-import { Icon as PageIcon } from "@ponzu/react/icons";
 import type { ReactNode, SVGProps } from "react";
 import { GitHub, Slice } from "@/components/icons";
 import { CopyButton, CopyCommand } from "./copy";
