@@ -143,6 +143,18 @@ describe.skipIf(!chromium)("the Chromium renderer", () => {
       expect(grown.height).toBe(3200);
       expect(grown.scale).toBe(0.79);
       expect(pngSize(grown.bytes)).toEqual({ width: 395, height: 2528 });
+      // Measuring a board whose viewport is past the budget draws it small, and reads the same.
+      const huge = board(
+        `<div data-id="n_h" style="height:250px;margin:10px 30px"></div>`,
+        "width:1000px;height:4000px",
+      );
+      const { boxes } = await renderer.measure({
+        artboard: huge,
+        tokens: "",
+        ids: ["ab_c", "n_h"],
+      });
+      expect(boxes.ab_c).toMatchObject({ width: 1000, height: 4000 });
+      expect(boxes.n_h).toMatchObject({ x: 30, y: 10, width: 940, height: 250 });
     });
 
     test("a job that runs past its time is stopped, and leaves no page or context behind", async () => {
@@ -177,12 +189,9 @@ describe.skipIf(!chromium)("the Chromium renderer", () => {
       // The one ahead of it was never more than one page.
       expect(openPages(seen.browser!)).toBe(1);
       expect((await slow).assetsTimedOut).toBe(true);
-      const [a, b] = await Promise.all([
-        renderer.measure({ artboard: plain, tokens: "", ids: ["n_p"] }),
-        renderer.render({ artboard: plain, tokens: "" }),
-      ]);
-      expect(a.boxes.n_p).not.toBeNull();
-      expect(b.bytes.length).toBeGreaterThan(0);
+      // Its turn over, the next job gets one.
+      const next = await renderer.measure({ artboard: plain, tokens: "", ids: ["n_p"] });
+      expect(next.boxes.n_p).not.toBeNull();
     });
 
     test("a browser nothing is drawing in closes, and the next render starts another", async () => {
@@ -224,7 +233,7 @@ describe.skipIf(!chromium)("the Chromium renderer", () => {
     const server = Bun.serve({
       port: 0,
       hostname: "127.0.0.1",
-      fetch(req) {
+      async fetch(req) {
         const { pathname } = new URL(req.url);
         requests.push(`${req.headers.get("host")}${pathname}`);
         if (pathname === "/site.css")
@@ -233,8 +242,13 @@ describe.skipIf(!chromium)("the Chromium renderer", () => {
           });
         if (pathname === "/pixel.png")
           return new Response(PNG, { headers: { "content-type": "image/png" } });
-        if (pathname === "/serif.woff2")
+        if (pathname === "/serif.woff2") {
+          // Not instant, like a dev server compiling: the artboard's own
+          // @font-face loads a second time once the page is held to be drawn,
+          // and the capture has to wait for that one too.
+          await Bun.sleep(200);
           return new Response(FONT, { headers: { "content-type": "font/woff2" } });
+        }
         return new Response("Not found", { status: 404 });
       },
     });

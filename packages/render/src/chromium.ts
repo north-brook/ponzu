@@ -115,7 +115,14 @@ export class ChromiumRenderer implements Renderer {
   constructor(private opts: ChromiumOptions = {}) {
     this.limits = { ...DEFAULT_LIMITS, ...opts.limits };
     this.queue = new JobQueue(this.limits.concurrency, this.limits.queueMs);
-    this.main = new BrowserProcess(() => this.launch([]), this.limits.idleMs);
+    this.main = new BrowserProcess(
+      // Headless Chrome on Linux has no GPU to draw with, on a desktop or in
+      // a VM, and stands one in with GL emulated on the CPU. Compositing in
+      // plain software instead halves the time a full Chrome takes to draw a
+      // page there. (The headless shell does that anyway.)
+      () => this.launch(platform() === "linux" ? ["--disable-gpu"] : []),
+      this.limits.idleMs,
+    );
     this.film = new BrowserProcess(
       () =>
         this.launch([
@@ -186,19 +193,26 @@ export class ChromiumRenderer implements Renderer {
   }
 
   async render(req: RenderRequest): Promise<RenderResult> {
-    const view = viewportOf(req.artboard);
-    // Chrome draws the whole viewport at the device scale, so a big board is
-    // held to the pixel budget before it loads, not only once it's measured.
-    const scale = captureScale(
+    const out = await this.renderAt(req, this.pageScale(req.artboard, req.scale));
+    // Too big to draw at that scale: again, at the largest that fits.
+    return "retry" in out ? ((await this.renderAt(req, out.retry)) as RenderResult) : out;
+  }
+
+  /**
+   * The device scale to load an artboard's page at: the one asked for, or
+   * less when its viewport would be past the pixel budget. Chrome holds the
+   * whole viewport at the device scale whether or not it is captured, so a
+   * big board is held to the budget before it loads, not only once measured.
+   */
+  private pageScale(artboard: RenderRequest["artboard"], scale: number | undefined): number {
+    const view = viewportOf(artboard);
+    return captureScale(
       view.width,
       view.height,
-      req.scale,
+      scale,
       Number.POSITIVE_INFINITY,
       this.limits.maxPixels,
     );
-    const out = await this.renderAt(req, scale);
-    // Too big to draw at that scale: again, at the largest that fits.
-    return "retry" in out ? ((await this.renderAt(req, out.retry)) as RenderResult) : out;
   }
 
   /**
@@ -406,7 +420,8 @@ export class ChromiumRenderer implements Renderer {
   }
 
   measure(req: MeasureRequest): Promise<MeasureResult> {
-    return this.job(this.main, 1, async (page) => {
+    // Layout is in CSS px whatever the device scale, so a huge board measures the same drawn small.
+    return this.job(this.main, this.pageScale(req.artboard, 1), async (page) => {
       await this.load(page, req);
       // At rest, like a screenshot: every finite animation finished.
       const motion = await page.evaluate<MotionInfo | { error: string }>(prepareScript({}));
