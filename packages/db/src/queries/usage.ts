@@ -3,6 +3,7 @@ import type { Db } from "../client.ts";
 import { newId } from "../ids.ts";
 import { creditLedger, usageEvents } from "../schema/index.ts";
 import { queryJson, timeParam } from "./json.ts";
+import { run } from "./run.ts";
 
 export type NewUsageEvent = {
   /** Chosen by whoever reports it, so reporting it again changes nothing. */
@@ -80,11 +81,13 @@ export interface NewLedgerEntry {
  * grant that member already has for that period: the allowance is given once.
  */
 export async function addLedgerEntry(db: Db, entry: NewLedgerEntry): Promise<boolean> {
-  const added = await db
-    .insert(creditLedger)
-    .values({ ...entry, id: newId("led") })
-    .onConflictDoNothing()
-    .returning({ id: creditLedger.id });
+  const added = await run(
+    db
+      .insert(creditLedger)
+      .values({ ...entry, id: newId("led") })
+      .onConflictDoNothing()
+      .returning({ id: creditLedger.id }),
+  );
   return added.length > 0;
 }
 
@@ -103,15 +106,17 @@ export async function ledgerBalance(
   { workspaceId, periodStart }: { workspaceId: string; periodStart: Date },
 ): Promise<LedgerBalance> {
   const { delta, reason } = creditLedger;
-  const [row] = await db
-    .select({
-      granted: sql`coalesce(sum(${delta}) filter (where ${reason} = 'grant'), 0)`.mapWith(Number),
-      used: sql`coalesce(-sum(${delta}) filter (where ${reason} = 'use'), 0)`.mapWith(Number),
-      balance: sql`coalesce(sum(${delta}), 0)`.mapWith(Number),
-    })
-    .from(creditLedger)
-    .where(
-      and(eq(creditLedger.workspaceId, workspaceId), eq(creditLedger.periodStart, periodStart)),
-    );
+  const [row] = await run(
+    db
+      .select({
+        granted: sql`coalesce(sum(${delta}) filter (where ${reason} = 'grant'), 0)`.mapWith(Number),
+        used: sql`coalesce(-sum(${delta}) filter (where ${reason} = 'use'), 0)`.mapWith(Number),
+        balance: sql`coalesce(sum(${delta}), 0)`.mapWith(Number),
+      })
+      .from(creditLedger)
+      .where(
+        and(eq(creditLedger.workspaceId, workspaceId), eq(creditLedger.periodStart, periodStart)),
+      ),
+  );
   return row!;
 }

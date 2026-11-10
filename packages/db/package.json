@@ -5,7 +5,8 @@
   "license": "MIT",
   "exports": {
     ".": "./src/index.ts",
-    "./testing": "./src/testing.ts"
+    "./testing": "./src/testing.ts",
+    "./types": "./src/types.ts"
   },
   "scripts": {
     "db:generate": "drizzle-kit generate",

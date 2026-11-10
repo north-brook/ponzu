@@ -5,6 +5,7 @@ import { designOps } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
 import { getDesign } from "./designs.ts";
 import { commit, commitOps, findOps, readOps } from "./ops.ts";
+import { QueryError } from "./run.ts";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 beforeAll(async () => {
@@ -177,11 +178,17 @@ describe("commitOps", () => {
         ops: [rename("a", "One")],
       });
 
-    const results = await Promise.all([post(), post()]);
+    const results = await Promise.all([post(), post(), post()]);
 
-    for (const result of results) expect(result).toMatchObject({ kind: "committed", seq: 1 });
-    expect(results.map((r) => r.kind === "committed" && r.replayed).sort()).toEqual([[], ["a"]]);
+    // One of them appends it. Each of the others either started after and was handed the stored
+    // op, or was waiting on the design's row and got a conflict; here they take turns, on a
+    // real Postgres they wait (see ops.live.test.ts). Neither appends, and a retry replays.
+    const committed = results.filter((result) => result.kind === "committed");
+    expect(committed.filter((result) => result.replayed.length === 0)).toHaveLength(1);
+    for (const result of committed) expect(result).toMatchObject({ seq: 1, ops: [{ seq: 1 }] });
+    for (const result of results) expect(["committed", "conflict"]).toContain(result.kind);
     expect(await logOf(design.id)).toHaveLength(1);
+    expect(await post()).toMatchObject({ kind: "committed", seq: 1, replayed: ["a"] });
   });
 
   test("a batch of replayed and new ops appends only the new ones", async () => {
@@ -242,9 +249,55 @@ describe("commitOps", () => {
     ]);
 
     const error = await broken.catch((thrown: Error) => thrown);
-    expect(String((error as Error).cause)).toContain("design_ops_reverses_seq_check");
+    expect((error as Error).message).toContain("design_ops_reverses_seq_check");
     expect((await getDesign(db, design.id))!.seq).toBe(0);
     expect(await logOf(design.id)).toEqual([]);
+  });
+
+  test("an op with text Postgres cannot store is named, and nothing is written", async () => {
+    const { design, user } = await seedDesign(db);
+    const target = { designId: design.id, expectedSeq: 0, actor: actorFor(user) };
+
+    const result = await commitOps(db, {
+      ...target,
+      ops: [
+        rename("fine", "Fine \ud83d\ude00"),
+        rename("nul", "a\u0000b"),
+        // What `text.slice(0, n)` leaves when it cuts an emoji in half.
+        rename("half", "Launch \ud83d"),
+        { id: "inverse", op: { op: "file.rename", name: "ok" }, inverse: rename("x", "\udc00").op },
+        {
+          id: "key",
+          op: { op: "attrs", id: "n_1", attrs: { "data-\u0000": "x" } },
+          inverse: rename("x", "y").op,
+        },
+      ],
+    });
+
+    expect(result).toEqual({ kind: "unstorable", ids: ["nul", "half", "inverse", "key"] });
+    expect((await getDesign(db, design.id))!.seq).toBe(0);
+    expect(await logOf(design.id)).toEqual([]);
+    // With those rejected by the caller, the rest goes in, emoji and all.
+    const retried = await commitOps(db, { ...target, ops: [rename("fine", "Fine \ud83d\ude00")] });
+    expect(retried).toMatchObject({
+      kind: "committed",
+      ops: [{ op: { name: "Fine \ud83d\ude00" } }],
+    });
+  });
+
+  test("a refused batch says what Postgres said and none of what was sent", async () => {
+    const { design, user } = await seedDesign(db);
+    const target = { designId: design.id, expectedSeq: 0, actor: actorFor(user) };
+
+    const error = await commit(db, target, [
+      { ...rename("a", "the-content-of-the-design"), kind: "undo", reverses: null },
+    ]).catch((thrown: unknown) => thrown);
+
+    expect(error).toBeInstanceOf(QueryError);
+    expect((error as QueryError).message).toContain("design_ops_reverses_seq_check");
+    expect(`${(error as QueryError).message}\n${(error as QueryError).stack}`).not.toContain(
+      "the-content-of-the-design",
+    );
   });
 
   test("refuses an empty batch and a batch that repeats an id", async () => {
@@ -352,5 +405,9 @@ describe("findOps", () => {
       ["c", 3],
     ]);
     expect(await findOps(db, { designId: one.design.id, ids: [] })).toEqual([]);
+    // An id Postgres could not have stored is simply not there.
+    expect(await findOps(db, { designId: one.design.id, ids: ["a\u0000", "b"] })).toMatchObject([
+      { id: "b" },
+    ]);
   });
 });

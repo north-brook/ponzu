@@ -1,14 +1,17 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { emptyDoc } from "@ponzu/core";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { actorFor, rename, seedDesign, seedRepo, seedUser, seedWorkspace } from "../fixtures.ts";
+import { DESIGN_HEAD_COLUMNS, type LiveDesignHead, toDesignHead } from "../head.ts";
 import { designReads, designs } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
 import { readDocSource } from "./checkpoints.ts";
 import {
   createDesign,
   getDesign,
+  getDesignAssetKey,
   getDesignHead,
+  head as headColumns,
   listWorkspaceDesigns,
   markDesignSeen,
 } from "./designs.ts";
@@ -59,8 +62,13 @@ describe("createDesign", () => {
 
   test("gives every design its own unguessable asset key", async () => {
     const [one, two] = await Promise.all([seedDesign(db), seedDesign(db)]);
-    expect(one.design.assetKey).toMatch(/^[0-9a-z]{32}$/);
-    expect(one.design.assetKey).not.toBe(two.design.assetKey);
+    const [oneKey, twoKey] = await Promise.all([
+      getDesignAssetKey(db, one.design.id),
+      getDesignAssetKey(db, two.design.id),
+    ]);
+    expect(oneKey).toMatch(/^[0-9a-z]{32}$/);
+    expect(oneKey).not.toBe(twoKey);
+    expect(await getDesignAssetKey(db, "des_missing")).toBeNull();
   });
 
   test("leaves nothing behind when the design cannot be made", async () => {
@@ -79,6 +87,55 @@ describe("createDesign", () => {
 
     await expect(refused).rejects.toThrow();
     expect(await db.$count(designs)).toBe(before);
+  });
+
+  test("refuses a repo that is not the workspace's", async () => {
+    const [user, workspace, elsewhere] = await Promise.all([
+      seedUser(db),
+      seedWorkspace(db),
+      seedWorkspace(db),
+    ]);
+    const repo = await seedRepo(db, elsewhere.id);
+
+    const refused = createDesign(db, {
+      workspaceId: workspace.id,
+      repoId: repo.id,
+      ownerId: user.id,
+      claudeAccountId: null,
+      name: "Misfiled",
+      branch: "pz/misfiled",
+      doc: emptyDoc("Misfiled"),
+    });
+
+    await expect(refused).rejects.toThrow("designs_repo_id_workspace_id_fk");
+  });
+
+  test("refuses a document Postgres cannot store, before it sends anything", async () => {
+    const { user, workspace } = await seedDesign(db);
+
+    const refused = createDesign(db, {
+      workspaceId: workspace.id,
+      repoId: null,
+      ownerId: user.id,
+      claudeAccountId: null,
+      name: "Broken",
+      branch: null,
+      doc: emptyDoc("half a pair \ud83d"),
+    });
+
+    await expect(refused).rejects.toThrow("cannot store");
+  });
+});
+
+describe("getDesign", () => {
+  test("is the row without its asset key, which has to be asked for by name", async () => {
+    const { design } = await seedDesign(db);
+
+    const row = await getDesign(db, design.id);
+
+    expect(row).toMatchObject({ id: design.id, name: "Lisbon", sandboxId: null });
+    expect(row).not.toHaveProperty("assetKey");
+    expect(design).not.toHaveProperty("assetKey");
   });
 });
 
@@ -120,6 +177,35 @@ describe("getDesignHead", () => {
   test("is null for a design that does not exist", async () => {
     expect(await getDesignHead(db, "des_missing")).toBeNull();
     expect(await getDesign(db, "des_missing")).toBeNull();
+  });
+
+  test("a live query's columns are the head's, by their own names", () => {
+    expect<string[]>([...DESIGN_HEAD_COLUMNS]).toEqual(
+      Object.values(headColumns).map((column) => column.name),
+    );
+  });
+
+  test("a row as Realtime delivers it decodes to the same head", async () => {
+    const { design, user } = await seedDesign(db);
+    await commitOps(db, {
+      designId: design.id,
+      expectedSeq: 0,
+      actor: actorFor(user),
+      ops: Array.from({ length: 10 }, (_, i) => rename(`op-${i}`, `v${i}`)),
+    });
+    await db.update(designs).set({ previewSeq: 9 }).where(eq(designs.id, design.id));
+    // What the Realtime SDK hands over: keys are column names, a bigint is a string.
+    const { rows } = await db.execute<LiveDesignHead>(sql`
+      select ${sql.raw(DESIGN_HEAD_COLUMNS.join(", "))} from designs where id = ${design.id}
+    `);
+    const live = { ...rows[0]!, seq: "10", preview_seq: "9" };
+
+    const decoded = toDesignHead(live);
+
+    expect(decoded).toEqual((await getDesignHead(db, design.id))!);
+    expect(decoded.seq).toBe(10);
+    expect(decoded.previewSeq).toBe(9);
+    expect(toDesignHead({ ...live, preview_seq: null }).previewSeq).toBeNull();
   });
 });
 
@@ -167,6 +253,26 @@ describe("listWorkspaceDesigns", () => {
 
     expect(all.map((design) => design.name)).toEqual(["Newest", "Settled", "Oldest"]);
     expect(all.map((design) => design.repoFullName)).toEqual([null, null, "north-brook/fernwood"]);
+  });
+
+  test("lists what a sidebar row shows, and no asset key or sandbox", async () => {
+    const { user, workspace, oldest } = await workspaceWithDesigns();
+
+    const all = await listWorkspaceDesigns(db, { workspaceId: workspace.id, userId: user.id });
+
+    const row = all.find((design) => design.id === oldest.id)!;
+    expect(row).toMatchObject({
+      ...(await getDesignHead(db, oldest.id))!,
+      repoId: oldest.repoId,
+      ownerId: user.id,
+      branch: "pz/oldest",
+      settledAt: null,
+    });
+    // One `c.json(designs)` must not hand every design's files to everyone in the workspace.
+    for (const design of all) {
+      expect(design).not.toHaveProperty("assetKey");
+      expect(design).not.toHaveProperty("sandboxId");
+    }
   });
 
   test("filters by status", async () => {

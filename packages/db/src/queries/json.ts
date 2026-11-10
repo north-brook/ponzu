@@ -1,5 +1,6 @@
 import type { SQL } from "drizzle-orm";
 import type { Db } from "../client.ts";
+import { run } from "./run.ts";
 
 /**
  * Run a statement that answers with one json document in a column named `result`.
@@ -9,7 +10,9 @@ import type { Db } from "../client.ts";
  * the same way. So a statement the query builder cannot express builds its answer in Postgres.
  */
 export async function queryJson<T extends object>(db: Db, statement: SQL): Promise<T | null> {
-  const { rows } = (await db.execute(statement)) as unknown as { rows: { result: unknown }[] };
+  const { rows } = (await run(db.execute(statement))) as unknown as {
+    rows: { result: unknown }[];
+  };
   const result = rows[0]?.result ?? null;
   return (typeof result === "string" ? JSON.parse(result) : result) as T | null;
 }

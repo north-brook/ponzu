@@ -1,5 +1,5 @@
 {
-  "id": "ef55c221-193b-4b8c-8f0c-3c638c74b981",
+  "id": "b646365e-d53c-4ca1-9d8f-af4a6d3a7dad",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -766,6 +766,14 @@
           "columns": [
             "github_repo_id"
           ]
+        },
+        "repos_id_workspace_id_key": {
+          "name": "repos_id_workspace_id_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "workspace_id"
+          ]
         }
       },
       "policies": {},
@@ -1490,6 +1498,21 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "usage_events_design_id_idx": {
+          "name": "usage_events_design_id_idx",
+          "columns": [
+            {
+              "expression": "design_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -2205,6 +2228,21 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "designs_sandbox_id_idx": {
+          "name": "designs_sandbox_id_idx",
+          "columns": [
+            {
+              "expression": "sandbox_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -2214,19 +2252,6 @@
           "tableTo": "workspaces",
           "columnsFrom": [
             "workspace_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "designs_repo_id_repos_id_fk": {
-          "name": "designs_repo_id_repos_id_fk",
-          "tableFrom": "designs",
-          "tableTo": "repos",
-          "columnsFrom": [
-            "repo_id"
           ],
           "columnsTo": [
             "id"
@@ -2272,6 +2297,21 @@
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
+        },
+        "designs_repo_id_workspace_id_fk": {
+          "name": "designs_repo_id_workspace_id_fk",
+          "tableFrom": "designs",
+          "tableTo": "repos",
+          "columnsFrom": [
+            "repo_id",
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "id",
+            "workspace_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -2417,6 +2457,21 @@
           ],
           "isUnique": false,
           "where": "\"events\".\"delivered_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "events_design_id_idx": {
+          "name": "events_design_id_idx",
+          "columns": [
+            {
+              "expression": "design_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -2690,6 +2745,10 @@
           "name": "questions_answer_check",
           "value": "(\"questions\".\"status\" = 'answered') = (\"questions\".\"answer\" is not null)"
         },
+        "questions_secret_answer_check": {
+          "name": "questions_secret_answer_check",
+          "value": "\"questions\".\"kind\" <> 'secret' or \"questions\".\"answer\" is null or (jsonb_typeof(\"questions\".\"answer\" -> 'name') = 'string' and \"questions\".\"answer\" - 'name' = '{}'::jsonb)"
+        },
         "questions_payload_check": {
           "name": "questions_payload_check",
           "value": "octet_length(\"questions\".\"payload\"::text) <= 262144"
@@ -2900,6 +2959,21 @@
           ],
           "isUnique": true,
           "where": "\"sandboxes\".\"state\" <> 'gone'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "sandboxes_design_id_idx": {
+          "name": "sandboxes_design_id_idx",
+          "columns": [
+            {
+              "expression": "design_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -3168,6 +3242,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "failed_at": {
+          "name": "failed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -3188,7 +3268,7 @@
             }
           ],
           "isUnique": false,
-          "where": "\"jobs\".\"completed_at\" is null",
+          "where": "\"jobs\".\"completed_at\" is null and \"jobs\".\"failed_at\" is null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -3210,7 +3290,7 @@
             }
           ],
           "isUnique": true,
-          "where": "\"jobs\".\"completed_at\" is null",
+          "where": "\"jobs\".\"completed_at\" is null and \"jobs\".\"failed_at\" is null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -3224,6 +3304,10 @@
         "jobs_locked_by_check": {
           "name": "jobs_locked_by_check",
           "value": "(\"jobs\".\"locked_at\" is null) = (\"jobs\".\"locked_by\" is null)"
+        },
+        "jobs_ended_check": {
+          "name": "jobs_ended_check",
+          "value": "\"jobs\".\"completed_at\" is null or \"jobs\".\"failed_at\" is null"
         }
       },
       "isRLSEnabled": false

@@ -95,6 +95,7 @@ CREATE TABLE "repos" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "repos_github_repo_id_unique" UNIQUE("github_repo_id"),
+	CONSTRAINT "repos_id_workspace_id_key" UNIQUE("id","workspace_id"),
 	CONSTRAINT "repos_base_status_check" CHECK ("repos"."base_status" in ('none', 'building', 'ready', 'failed'))
 );
 --> statement-breakpoint
@@ -332,6 +333,7 @@ CREATE TABLE "questions" (
 	CONSTRAINT "questions_kind_check" CHECK ("questions"."kind" in ('question', 'permission', 'plan', 'elicitation', 'handoff', 'secret')),
 	CONSTRAINT "questions_status_check" CHECK ("questions"."status" in ('open', 'answered', 'cancelled')),
 	CONSTRAINT "questions_answer_check" CHECK (("questions"."status" = 'answered') = ("questions"."answer" is not null)),
+	CONSTRAINT "questions_secret_answer_check" CHECK ("questions"."kind" <> 'secret' or "questions"."answer" is null or (jsonb_typeof("questions"."answer" -> 'name') = 'string' and "questions"."answer" - 'name' = '{}'::jsonb)),
 	CONSTRAINT "questions_payload_check" CHECK (octet_length("questions"."payload"::text) <= 262144)
 );
 --> statement-breakpoint
@@ -389,8 +391,10 @@ CREATE TABLE "jobs" (
 	"locked_by" text,
 	"last_error" text,
 	"completed_at" timestamp with time zone,
+	"failed_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "jobs_locked_by_check" CHECK (("jobs"."locked_at" is null) = ("jobs"."locked_by" is null))
+	CONSTRAINT "jobs_locked_by_check" CHECK (("jobs"."locked_at" is null) = ("jobs"."locked_by" is null)),
+	CONSTRAINT "jobs_ended_check" CHECK ("jobs"."completed_at" is null or "jobs"."failed_at" is null)
 );
 --> statement-breakpoint
 CREATE TABLE "webhook_deliveries" (
@@ -426,10 +430,10 @@ ALTER TABLE "design_ops" ADD CONSTRAINT "design_ops_design_id_designs_id_fk" FOR
 ALTER TABLE "design_reads" ADD CONSTRAINT "design_reads_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "design_reads" ADD CONSTRAINT "design_reads_design_id_designs_id_fk" FOREIGN KEY ("design_id") REFERENCES "public"."designs"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "designs" ADD CONSTRAINT "designs_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "designs" ADD CONSTRAINT "designs_repo_id_repos_id_fk" FOREIGN KEY ("repo_id") REFERENCES "public"."repos"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "designs" ADD CONSTRAINT "designs_owner_id_users_id_fk" FOREIGN KEY ("owner_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "designs" ADD CONSTRAINT "designs_claude_account_id_claude_accounts_id_fk" FOREIGN KEY ("claude_account_id") REFERENCES "public"."claude_accounts"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "designs" ADD CONSTRAINT "designs_sandbox_id_sandboxes_id_fk" FOREIGN KEY ("sandbox_id") REFERENCES "public"."sandboxes"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "designs" ADD CONSTRAINT "designs_repo_id_workspace_id_fk" FOREIGN KEY ("repo_id","workspace_id") REFERENCES "public"."repos"("id","workspace_id") ON DELETE restrict ON UPDATE cascade;--> statement-breakpoint
 ALTER TABLE "events" ADD CONSTRAINT "events_design_id_designs_id_fk" FOREIGN KEY ("design_id") REFERENCES "public"."designs"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "events" ADD CONSTRAINT "events_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "presence" ADD CONSTRAINT "presence_design_id_designs_id_fk" FOREIGN KEY ("design_id") REFERENCES "public"."designs"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
@@ -447,16 +451,20 @@ CREATE INDEX "repos_workspace_id_idx" ON "repos" USING btree ("workspace_id");--
 CREATE INDEX "credit_ledger_workspace_id_period_start_idx" ON "credit_ledger" USING btree ("workspace_id","period_start");--> statement-breakpoint
 CREATE UNIQUE INDEX "credit_ledger_grant_key" ON "credit_ledger" USING btree ("workspace_id","period_start","user_id") WHERE "credit_ledger"."reason" = 'grant';--> statement-breakpoint
 CREATE INDEX "usage_events_workspace_id_occurred_at_idx" ON "usage_events" USING btree ("workspace_id","occurred_at");--> statement-breakpoint
+CREATE INDEX "usage_events_design_id_idx" ON "usage_events" USING btree ("design_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "design_ops_design_id_client_op_id_key" ON "design_ops" USING btree ("design_id","client_op_id");--> statement-breakpoint
 CREATE INDEX "design_reads_design_id_idx" ON "design_reads" USING btree ("design_id");--> statement-breakpoint
 CREATE INDEX "designs_workspace_id_status_idx" ON "designs" USING btree ("workspace_id","status");--> statement-breakpoint
 CREATE UNIQUE INDEX "designs_repo_id_branch_key" ON "designs" USING btree ("repo_id","branch");--> statement-breakpoint
+CREATE INDEX "designs_sandbox_id_idx" ON "designs" USING btree ("sandbox_id");--> statement-breakpoint
 CREATE INDEX "events_design_id_seq_pending_idx" ON "events" USING btree ("design_id","seq") WHERE "events"."delivered_at" is null;--> statement-breakpoint
+CREATE INDEX "events_design_id_idx" ON "events" USING btree ("design_id");--> statement-breakpoint
 CREATE INDEX "questions_design_id_status_idx" ON "questions" USING btree ("design_id","status");--> statement-breakpoint
 CREATE INDEX "runner_tokens_design_id_idx" ON "runner_tokens" USING btree ("design_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "sandboxes_provider_provider_id_key" ON "sandboxes" USING btree ("provider","provider_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "sandboxes_design_id_live_key" ON "sandboxes" USING btree ("design_id") WHERE "sandboxes"."state" <> 'gone';--> statement-breakpoint
+CREATE INDEX "sandboxes_design_id_idx" ON "sandboxes" USING btree ("design_id");--> statement-breakpoint
 CREATE INDEX "sandboxes_awake_last_activity_at_idx" ON "sandboxes" USING btree ("last_activity_at") WHERE "sandboxes"."state" = 'awake';--> statement-breakpoint
 CREATE INDEX "thread_items_design_id_seq_idx" ON "thread_items" USING btree ("design_id","seq");--> statement-breakpoint
-CREATE INDEX "jobs_run_at_pending_idx" ON "jobs" USING btree ("run_at") WHERE "jobs"."completed_at" is null;--> statement-breakpoint
-CREATE UNIQUE INDEX "jobs_kind_key_pending_key" ON "jobs" USING btree ("kind","key") WHERE "jobs"."completed_at" is null;
+CREATE INDEX "jobs_run_at_pending_idx" ON "jobs" USING btree ("run_at") WHERE "jobs"."completed_at" is null and "jobs"."failed_at" is null;--> statement-breakpoint
+CREATE UNIQUE INDEX "jobs_kind_key_pending_key" ON "jobs" USING btree ("kind","key") WHERE "jobs"."completed_at" is null and "jobs"."failed_at" is null;

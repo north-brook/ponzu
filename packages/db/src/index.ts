@@ -1,4 +1,5 @@
 export { createDb, createPooledDb, type Db } from "./client.ts";
+export { DESIGN_HEAD_COLUMNS, type DesignHead, type LiveDesignHead, toDesignHead } from "./head.ts";
 export { type IdPrefix, newId } from "./ids.ts";
 export {
   deleteMembershipsExcept,
@@ -17,6 +18,8 @@ export {
 } from "./queries/accounts.ts";
 export {
   type DocSource,
+  OP_RETENTION_DAYS,
+  pruneOps,
   readDocSource,
   UNDO_DEPTH,
   writeCheckpoint,
@@ -24,9 +27,9 @@ export {
 export {
   createDesign,
   type Design,
-  type DesignHead,
   type DesignListItem,
   getDesign,
+  getDesignAssetKey,
   getDesignHead,
   listWorkspaceDesigns,
   markDesignSeen,
@@ -43,6 +46,7 @@ export {
   claimJobs,
   completeJob,
   enqueueJob,
+  failAbandonedJobs,
   failJob,
   JOB_LOCK_SECONDS,
   type Job,
@@ -68,16 +72,20 @@ export {
 } from "./queries/presence.ts";
 export {
   answerQuestion,
+  answerSecretQuestion,
+  cancelQuestions,
   countOpenQuestions,
   createQuestion,
   listOpenQuestions,
   type Question,
 } from "./queries/questions.ts";
+export { QueryError } from "./queries/run.ts";
 export {
   createRunnerToken,
   revokeRunnerTokens,
   verifyRunnerToken,
 } from "./queries/runner-tokens.ts";
+export { isStorable } from "./queries/text.ts";
 export {
   appendThreadItem,
   listThreadItems,

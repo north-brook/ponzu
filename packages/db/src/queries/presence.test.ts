@@ -50,6 +50,41 @@ test("touching again refreshes the one row and follows the person to another pag
   expect(here[0]!.seenAt.getTime()).toBeGreaterThan(before!.seenAt.getTime());
 });
 
+test("a refresh that names no page leaves the person on the page they were on", async () => {
+  const { design, user } = await seedDesign(db);
+  await touchPresence(db, { designId: design.id, userId: user.id, pageId: "pg_home" });
+
+  await touchPresence(db, { designId: design.id, userId: user.id });
+
+  expect(await listPresence(db, { designId: design.id })).toMatchObject([{ pageId: "pg_home" }]);
+  // Null is a page too: it says they are on none.
+  await touchPresence(db, { designId: design.id, userId: user.id, pageId: null });
+  expect(await listPresence(db, { designId: design.id })).toMatchObject([{ pageId: null }]);
+});
+
+test("someone who comes back after going stale joins afresh", async () => {
+  const { design, user } = await seedDesign(db);
+  const teammate = await seedUser(db, "maya");
+  await touchPresence(db, { designId: design.id, userId: user.id });
+  await db
+    .update(presence)
+    .set({ joinedAt: sql`now() - interval '2 hours'`, seenAt: sql`now() - interval '1 hour'` })
+    .where(eq(presence.userId, user.id));
+  await touchPresence(db, { designId: design.id, userId: teammate.id });
+  await db
+    .update(presence)
+    .set({ joinedAt: sql`now() - interval '10 minutes'` })
+    .where(eq(presence.userId, teammate.id));
+
+  // The sweep has not removed the stale row yet when they open the design again.
+  await touchPresence(db, { designId: design.id, userId: user.id });
+
+  const here = await listPresence(db, { designId: design.id });
+  // Longest here first: the teammate who stayed, then the person who just came back.
+  expect(here.map((p) => p.userId)).toEqual([teammate.id, user.id]);
+  expect(Date.now() - here[1]!.joinedAt.getTime()).toBeLessThan(60_000);
+});
+
 test("someone who stopped refreshing is gone after the TTL", async () => {
   const { design, user } = await seedDesign(db);
   const teammate = await seedUser(db, "maya");

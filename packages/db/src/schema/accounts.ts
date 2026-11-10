@@ -9,20 +9,20 @@ import {
   pgTable,
   primaryKey,
   text,
+  unique,
 } from "drizzle-orm/pg-core";
+import {
+  AUTH_STATE_KINDS,
+  BASE_STATUSES,
+  CLAUDE_ACCOUNT_KINDS,
+  CLAUDE_ACCOUNT_STATUSES,
+  DEVICE_PLATFORMS,
+  MEMBER_ROLES,
+  PUSH_ENVIRONMENTS,
+  REPOSITORY_SELECTIONS,
+  WORKSPACE_KINDS,
+} from "../enums.ts";
 import { createdAt, instant, type Json, oneOf, updatedAt } from "./columns.ts";
-
-export const WORKSPACE_KINDS = ["personal", "org"] as const;
-export const REPOSITORY_SELECTIONS = ["all", "selected"] as const;
-export const MEMBER_ROLES = ["admin", "member"] as const;
-export const BASE_STATUSES = ["none", "building", "ready", "failed"] as const;
-export const CLAUDE_ACCOUNT_KINDS = ["subscription", "api_key"] as const;
-export const CLAUDE_ACCOUNT_STATUSES = ["connected", "expired", "revoked"] as const;
-export const DEVICE_PLATFORMS = ["ios", "macos"] as const;
-export const PUSH_ENVIRONMENTS = ["development", "production"] as const;
-export const AUTH_STATE_KINDS = ["github_install", "claude_sign_in"] as const;
-
-export type MemberRole = (typeof MEMBER_ROLES)[number];
 
 /** One runtime, package manager or service in a repo's base, as Settings shows it. */
 export interface StackItem {
@@ -164,6 +164,8 @@ export const repos = pgTable(
   },
   (t) => [
     index("repos_workspace_id_idx").on(t.workspaceId),
+    // What a design's foreign key points at, so a design is always in its repo's workspace.
+    unique("repos_id_workspace_id_key").on(t.id, t.workspaceId),
     check("repos_base_status_check", oneOf(t.baseStatus, BASE_STATUSES)),
   ],
 );

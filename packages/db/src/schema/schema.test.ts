@@ -53,6 +53,26 @@ describe("migrations", () => {
     expect(rows).toEqual([]);
   });
 
+  test("index every foreign key that deleting a design follows", async () => {
+    // Postgres finds the rows that point at a deleted row by scanning for them. Without an
+    // index whose first columns are the key's (a partial index does not count), every design
+    // deleted reads the whole table, and usage and events only ever grow.
+    const { rows } = await db.execute<{ key: string }>(sql`
+      select c.conrelid::regclass::text || '.' || c.conname as key
+        from pg_constraint c
+       where c.contype = 'f'
+         and c.confrelid in ('designs'::regclass, 'sandboxes'::regclass)
+         and not exists (
+           select 1
+             from pg_index i
+            where i.indrelid = c.conrelid
+              and i.indpred is null
+              and (i.indkey::int2[])[0:cardinality(c.conkey) - 1] @> c.conkey
+         )
+    `);
+    expect(rows).toEqual([]);
+  });
+
   test("store ops and documents as json and never jsonb", async () => {
     const { rows } = await db.execute<{ column: string; data_type: string }>(sql`
       select table_name || '.' || column_name as column, data_type

@@ -3,6 +3,7 @@ import { type SQL, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import type { ActorKind, OpKind } from "../schema/index.ts";
 import { queryJson } from "./json.ts";
+import { isStorable, toStorableJson } from "./text.ts";
 
 /** Who made a change. It comes from the caller's token, never from what they sent. */
 export interface Actor {
@@ -50,7 +51,13 @@ export type CommitResult =
    * Nothing was written: the design is not at `expectedSeq` (or is gone). Read the ops after
    * the seq you have, apply them, and commit again.
    */
-  | { kind: "conflict" };
+  | { kind: "conflict" }
+  /**
+   * Nothing was written: these ops hold text Postgres cannot store (see `isStorable`). The
+   * later ops in the batch were applied on top of them, so the batch cannot go in without
+   * them; reject these while validating, before applying anything.
+   */
+  | { kind: "unstorable"; ids: string[] };
 
 /**
  * Append ops to a design's log and move `designs.seq` past them, or do neither.
@@ -63,7 +70,7 @@ export type CommitResult =
  *
  * An op whose id is already in the log is not appended again; the stored op comes back in its
  * place. A batch made only of such ops succeeds whatever `expectedSeq` says, so a retry is
- * always safe.
+ * safe for as long as the log keeps the op: `OP_RETENTION_DAYS` at least (see `writeCheckpoint`).
  */
 export function commitOps(
   db: Db,
@@ -91,9 +98,12 @@ export async function commit(
   if (new Set(entries.map((entry) => entry.id)).size !== entries.length) {
     throw new Error("The ops in one commit must have distinct ids.");
   }
+  const texts = entries.map(toStorableJson);
+  const unstorable = entries.filter((_, index) => texts[index] === null).map((entry) => entry.id);
+  if (unstorable.length > 0) return { kind: "unstorable", ids: unstorable };
   // One parameter however long the batch is. `json` keeps each op's text as sent, so `->` hands
   // back the op with its keys in the order the caller wrote them.
-  const batch = JSON.stringify(entries);
+  const batch = `[${texts.join(",")}]`;
   const result = await queryJson<{
     seq: number;
     conflict: boolean;
@@ -236,7 +246,9 @@ export async function findOps(
   db: Db,
   { designId, ids }: { designId: string; ids: string[] },
 ): Promise<StoredOp[]> {
-  if (ids.length === 0) return [];
+  // An id Postgres cannot store is not in the log, and asking for it would fail the query.
+  const known = ids.filter(isStorable);
+  if (known.length === 0) return [];
   const result = await queryJson<{ ops: OpJson[] }>(
     db,
     sql`
@@ -244,7 +256,7 @@ export async function findOps(
         'ops', coalesce(json_agg(${opJson("o")} order by o.seq), '[]'::json)
       ) as result
         from design_ops o
-       where o.design_id = ${designId} and o.client_op_id in ${ids}
+       where o.design_id = ${designId} and o.client_op_id in ${known}
     `,
   );
   return (result?.ops ?? []).map(toStoredOp);

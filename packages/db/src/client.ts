@@ -4,8 +4,13 @@ import { drizzle as drizzlePool } from "drizzle-orm/neon-serverless";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 /**
- * What every query function takes. Any Drizzle Postgres database fits: Neon over HTTP, a pool,
- * a transaction on a pool, or PGlite in tests.
+ * What every query function takes: Neon over HTTP, Neon's pool, or a transaction on that pool.
+ *
+ * The type admits any Drizzle Postgres database, but drivers differ in how they send json and
+ * in what a raw statement hands back, and the queries are only known to work on the ones the
+ * tests run them on: those two, PGlite, and node-postgres, which is how CI and `db:migrate`
+ * reach a plain Postgres. Bun's own client and postgres-js are known not to: both encode a
+ * json parameter a second time, so the commit fails and a jsonb column is stored as a string.
  */
 export type Db = PgDatabase<PgQueryResultHKT>;
 

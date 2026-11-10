@@ -1,10 +1,16 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { emptyDoc } from "@ponzu/core";
-import { eq } from "drizzle-orm";
-import { actorFor, rename, seedDesign } from "../fixtures.ts";
+import { and, eq, lte, sql } from "drizzle-orm";
+import { actorFor, agent, rename, seedDesign } from "../fixtures.ts";
 import { designCheckpoints, designOps } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
-import { readDocSource, UNDO_DEPTH, writeCheckpoint } from "./checkpoints.ts";
+import {
+  OP_RETENTION_DAYS,
+  pruneOps,
+  readDocSource,
+  UNDO_DEPTH,
+  writeCheckpoint,
+} from "./checkpoints.ts";
 import { commitOps, readOps } from "./ops.ts";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -23,6 +29,20 @@ async function designWithOps(count: number) {
     ops: Array.from({ length: count }, (_, i) => rename(`op-${i + 1}`, `v${i + 1}`)),
   });
   return seeded.design.id;
+}
+
+/** Pretend the ops up to `throughSeq` were committed `days` ago. */
+const committedDaysAgo = (designId: string, throughSeq: number, days: number) =>
+  db
+    .update(designOps)
+    .set({ createdAt: sql`now() - make_interval(days => ${days})` })
+    .where(and(eq(designOps.designId, designId), lte(designOps.seq, throughSeq)));
+
+/** A design with `count` ops, all of them older than the retention. */
+async function designWithOldOps(count: number) {
+  const designId = await designWithOps(count);
+  await committedDaysAgo(designId, count, OP_RETENTION_DAYS + 1);
+  return designId;
 }
 
 const opSeqs = async (designId: string) =>
@@ -83,7 +103,7 @@ describe("writeCheckpoint", () => {
   });
 
   test("prunes ops the checkpoint covers, but never the newest UNDO_DEPTH", async () => {
-    const designId = await designWithOps(UNDO_DEPTH + 60);
+    const designId = await designWithOldOps(UNDO_DEPTH + 60);
     const head = UNDO_DEPTH + 60;
 
     const result = await writeCheckpoint(db, { designId, seq: head, doc: emptyDoc("head") });
@@ -95,7 +115,7 @@ describe("writeCheckpoint", () => {
   });
 
   test("never prunes an op after the checkpoint, however old", async () => {
-    const designId = await designWithOps(UNDO_DEPTH + 60);
+    const designId = await designWithOldOps(UNDO_DEPTH + 60);
 
     // The checkpoint is at 20, so ops 21 to 60 are still needed to rebuild the document.
     const result = await writeCheckpoint(db, { designId, seq: 20, doc: emptyDoc("v20") });
@@ -108,8 +128,69 @@ describe("writeCheckpoint", () => {
     );
   });
 
-  test("reading from before the pruned ops says too old; from the edge it works", async () => {
+  test("never prunes an op younger than the retention, so its id still replays", async () => {
+    const { design, user } = await seedDesign(db);
+    const actor = actorFor(user);
+    // A phone posts a rename and loses the response in a tunnel.
+    const first = await commitOps(db, {
+      designId: design.id,
+      expectedSeq: 0,
+      actor,
+      ops: [rename("from-the-phone", "Mine")],
+    });
+    // Minutes later the agent has made 300 ops and a checkpoint covers them all.
+    await commitOps(db, {
+      designId: design.id,
+      expectedSeq: 1,
+      actor: agent,
+      ops: Array.from({ length: 300 }, (_, i) => rename(`agent-${i}`, `v${i}`)),
+    });
+    const written = await writeCheckpoint(db, {
+      designId: design.id,
+      seq: 301,
+      doc: emptyDoc("head"),
+    });
+    expect(written).toEqual({ written: true, prunedOps: 0 });
+
+    const retry = await commitOps(db, {
+      designId: design.id,
+      expectedSeq: 0,
+      actor,
+      ops: [rename("from-the-phone", "Mine")],
+    });
+
+    if (first.kind !== "committed") throw new Error("expected a commit");
+    expect(retry).toEqual({
+      kind: "committed",
+      seq: 301,
+      ops: first.ops,
+      replayed: ["from-the-phone"],
+    });
+    expect(await opSeqs(design.id)).toHaveLength(301);
+  });
+
+  test("prunes up to the first op still inside the retention, and no further", async () => {
     const designId = await designWithOps(UNDO_DEPTH + 60);
+    // Ops 1 to 40 are from last week; 41 onwards are from the last few days.
+    await committedDaysAgo(designId, 40, OP_RETENTION_DAYS + 1);
+    await committedDaysAgo(designId, 20, OP_RETENTION_DAYS + 3);
+    await db
+      .update(designOps)
+      .set({ createdAt: sql`now() - make_interval(days => ${OP_RETENTION_DAYS - 1})` })
+      .where(and(eq(designOps.designId, designId), eq(designOps.seq, 41)));
+
+    const result = await writeCheckpoint(db, {
+      designId,
+      seq: UNDO_DEPTH + 60,
+      doc: emptyDoc("head"),
+    });
+
+    expect(result).toEqual({ written: true, prunedOps: 40 });
+    expect((await opSeqs(designId))[0]).toBe(41);
+  });
+
+  test("reading from before the pruned ops says too old; from the edge it works", async () => {
+    const designId = await designWithOldOps(UNDO_DEPTH + 60);
     await writeCheckpoint(db, { designId, seq: UNDO_DEPTH + 60, doc: emptyDoc("head") });
 
     expect(await readOps(db, { designId, after: 10 })).toEqual({
@@ -152,6 +233,15 @@ describe("writeCheckpoint", () => {
     expect(result).toEqual({ written: false, prunedOps: 0 });
   });
 
+  test("refuses a document Postgres cannot store, before it sends anything", async () => {
+    const designId = await designWithOps(1);
+    const doc = emptyDoc("x");
+    doc.notes = { broken: "half a pair \ud83d" };
+
+    await expect(writeCheckpoint(db, { designId, seq: 1, doc })).rejects.toThrow("cannot store");
+    expect(await checkpointSeqs(designId)).toEqual([0]);
+  });
+
   test("keeps the document's key order", async () => {
     const designId = await designWithOps(1);
     const doc = emptyDoc("ordered");
@@ -161,5 +251,47 @@ describe("writeCheckpoint", () => {
 
     const stored = (await readDocSource(db, designId))!.checkpoint.doc;
     expect(Object.keys(stored.notes)).toEqual(["zebra", "apple", "mango"]);
+  });
+});
+
+describe("pruneOps", () => {
+  test("drops what a design that stopped changing no longer needs, once it is old enough", async () => {
+    const designId = await designWithOps(UNDO_DEPTH + 60);
+    // The last checkpoint was written while every op was still inside the retention.
+    const written = await writeCheckpoint(db, {
+      designId,
+      seq: UNDO_DEPTH + 50,
+      doc: emptyDoc("v"),
+    });
+    expect(written).toEqual({ written: true, prunedOps: 0 });
+    expect(await pruneOps(db, designId)).toBe(0);
+
+    // Eight days later nobody has touched the design.
+    await committedDaysAgo(designId, UNDO_DEPTH + 60, OP_RETENTION_DAYS + 1);
+
+    expect(await pruneOps(db, designId)).toBe(60);
+    expect(await opSeqs(designId)).toHaveLength(UNDO_DEPTH);
+    expect(await pruneOps(db, designId)).toBe(0);
+    // The document can still be rebuilt: everything after the checkpoint is there.
+    expect((await readDocSource(db, designId))!.ops.map((op) => op.seq)).toEqual(
+      Array.from({ length: 10 }, (_, i) => UNDO_DEPTH + 51 + i),
+    );
+  });
+
+  test("never drops an op after the latest checkpoint, and is one design's", async () => {
+    const designId = await designWithOldOps(UNDO_DEPTH + 60);
+    const other = await designWithOldOps(UNDO_DEPTH + 60);
+    // Put straight into the table, so that nothing has been pruned yet.
+    await db
+      .insert(designCheckpoints)
+      .values({ designId: other, seq: UNDO_DEPTH + 60, doc: emptyDoc("head") });
+
+    // This design's only checkpoint is the one it was created with, at seq 0.
+    expect(await pruneOps(db, designId)).toBe(0);
+    expect(await pruneOps(db, "des_missing")).toBe(0);
+    expect(await pruneOps(db, other)).toBe(60);
+
+    expect(await opSeqs(designId)).toHaveLength(UNDO_DEPTH + 60);
+    expect(await opSeqs(other)).toHaveLength(UNDO_DEPTH);
   });
 });

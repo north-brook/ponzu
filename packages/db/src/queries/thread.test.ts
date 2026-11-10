@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { seedDesign } from "../fixtures.ts";
 import { createTestDb } from "../testing.ts";
+import { QueryError } from "./run.ts";
 import { appendThreadItem, listThreadItems, updateThreadItem } from "./thread.ts";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -144,6 +145,51 @@ test("pages backwards from the newest", async () => {
   expect(texts(older)).toEqual(["2", "3"]);
   const oldest = await listThreadItems(db, { designId: design.id, before: older[0]!.seq });
   expect(texts(oldest)).toEqual(["1"]);
+});
+
+test("tool output Postgres cannot store is kept, with the stray characters replaced", async () => {
+  const { design } = await seedDesign(db);
+  // A NUL from `cat` on a binary, and an emoji cut in half by truncation, in a key as well.
+  const payload = {
+    output: "PNG\u0000\u0001 done \ud83d",
+    "bad\u0000key": ["ok \ud83d\ude00", "\ude00"],
+  };
+
+  const item = await appendThreadItem(db, {
+    designId: design.id,
+    kind: "assistant",
+    payload,
+    streaming: true,
+  });
+  const updated = await updateThreadItem(db, {
+    designId: design.id,
+    id: item!.id,
+    payload: { text: "more\u0000" },
+    streaming: false,
+  });
+
+  expect(item!.payload).toEqual({
+    output: "PNG\ufffd\u0001 done \ufffd",
+    "bad\ufffdkey": ["ok \ud83d\ude00", "\ufffd"],
+  });
+  expect(updated!.payload).toEqual({ text: "more\ufffd" });
+});
+
+test("a refused write says what Postgres said and none of what was sent", async () => {
+  const { design } = await seedDesign(db);
+
+  const error = await appendThreadItem(db, {
+    designId: design.id,
+    kind: "tool",
+    payload: { output: `sk-live-secret ${"x".repeat(300_000)}` },
+  }).catch((thrown: unknown) => thrown);
+
+  expect(error).toBeInstanceOf(QueryError);
+  const refused = error as QueryError;
+  expect(refused.message).toContain("thread_items_payload_check");
+  expect(refused.statement).toContain('insert into "thread_items"');
+  // Drizzle's own error lists every parameter after the statement.
+  expect(`${refused.message}\n${refused.stack}\n${refused.statement}`).not.toContain("sk-live");
 });
 
 test("refuses a payload too large for a row that clients watch", async () => {

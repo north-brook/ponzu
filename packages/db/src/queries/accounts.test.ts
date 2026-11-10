@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { emptyDoc } from "@ponzu/core";
 import { eq } from "drizzle-orm";
 import { seedUser, seedWorkspace } from "../fixtures.ts";
-import { memberships, repos, workspaces } from "../schema/index.ts";
+import { memberships, repos, users, workspaces } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
 import {
   deleteMembershipsExcept,
@@ -13,6 +14,7 @@ import {
   upsertUser,
   upsertWorkspace,
 } from "./accounts.ts";
+import { createDesign, getDesign, listWorkspaceDesigns } from "./designs.ts";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 beforeAll(async () => {
@@ -41,6 +43,23 @@ describe("upsertUser", () => {
     expect(second.id).toBe(first.id);
     expect(second).toMatchObject({ githubLogin: "bryce", name: null, email: "bryce@example.com" });
     expect(second.createdAt).toEqual(first.createdAt);
+  });
+
+  test("a GitHub account that arrives under a new WorkOS id is the same person", async () => {
+    const known = { ...profile, githubUserId: 9002, workosUserId: "user_01OLD" };
+    const first = await upsertUser(db, known);
+    await db.update(users).set({ defaultModel: "claude-opus" }).where(eq(users.id, first.id));
+
+    // WorkOS deleted its user and made a new one for the same GitHub account.
+    const second = await upsertUser(db, { ...known, workosUserId: "user_01NEW" });
+
+    expect(second).toMatchObject({
+      id: first.id,
+      workosUserId: "user_01NEW",
+      githubUserId: 9002,
+      defaultModel: "claude-opus",
+    });
+    expect(await db.$count(users, eq(users.githubUserId, 9002))).toBe(1);
   });
 
   test("leaves what Ponzu keeps about the person alone", async () => {
@@ -197,6 +216,36 @@ describe("repos", () => {
     const [after] = await upsertRepos(db, { workspaceId: to.id, repos: [seen(201, "b/site")] });
 
     expect(after).toMatchObject({ id: before!.id, workspaceId: to.id, fullName: "b/site" });
+  });
+
+  test("a transferred repo takes its designs to the new workspace, and leaves Scratch behind", async () => {
+    const [from, to, user] = await Promise.all([
+      seedWorkspace(db),
+      seedWorkspace(db),
+      seedUser(db),
+    ]);
+    const [repo] = await upsertRepos(db, { workspaceId: from.id, repos: [seen(211, "a/app")] });
+    const make = (name: string, repoId: string | null) =>
+      createDesign(db, {
+        workspaceId: from.id,
+        repoId,
+        ownerId: user.id,
+        claudeAccountId: null,
+        name,
+        branch: repoId && `pz/${name}`,
+        doc: emptyDoc(name),
+      });
+    const inRepo = await make("checkout", repo!.id);
+    const scratch = await make("Lisbon", null);
+
+    await upsertRepos(db, { workspaceId: to.id, repos: [seen(211, "b/app")] });
+
+    expect((await getDesign(db, inRepo.id))!.workspaceId).toBe(to.id);
+    expect((await getDesign(db, scratch.id))!.workspaceId).toBe(from.id);
+    const names = async (workspaceId: string) =>
+      (await listWorkspaceDesigns(db, { workspaceId, userId: user.id })).map((d) => d.name);
+    expect(await names(from.id)).toEqual(["Lisbon"]);
+    expect(await names(to.id)).toEqual(["checkout"]);
   });
 
   test("markReposRemoved marks, and seeing the repo again clears it", async () => {

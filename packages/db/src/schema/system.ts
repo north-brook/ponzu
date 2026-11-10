@@ -9,9 +9,8 @@ import {
   text,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { WEBHOOK_SOURCES } from "../enums.ts";
 import { createdAt, instant, type Json, oneOf } from "./columns.ts";
-
-export const WEBHOOK_SOURCES = ["github", "stripe", "boat", "workos"] as const;
 
 /**
  * Work that must finish even if the function that started it does not: a request records the
@@ -23,7 +22,7 @@ export const jobs = pgTable(
     id: text("id").primaryKey(),
     // Free text: the kinds belong to the code that runs them.
     kind: text("kind").notNull(),
-    /** What the job is about, like a design id. One unfinished job per kind and key. */
+    /** What the job is about, like a design id. One waiting job per kind and key. */
     key: text("key"),
     payload: jsonb("payload").$type<Json>().notNull().default({}),
     runAt: instant("run_at").notNull().defaultNow(),
@@ -33,12 +32,19 @@ export const jobs = pgTable(
     lockedBy: text("locked_by"),
     lastError: text("last_error"),
     completedAt: instant("completed_at"),
+    /** Set when it ran out of attempts. Like a completed job it is over, and its key is free. */
+    failedAt: instant("failed_at"),
     createdAt: createdAt(),
   },
   (t) => [
-    index("jobs_run_at_pending_idx").on(t.runAt).where(sql`${t.completedAt} is null`),
-    uniqueIndex("jobs_kind_key_pending_key").on(t.kind, t.key).where(sql`${t.completedAt} is null`),
+    index("jobs_run_at_pending_idx")
+      .on(t.runAt)
+      .where(sql`${t.completedAt} is null and ${t.failedAt} is null`),
+    uniqueIndex("jobs_kind_key_pending_key")
+      .on(t.kind, t.key)
+      .where(sql`${t.completedAt} is null and ${t.failedAt} is null`),
     check("jobs_locked_by_check", sql`(${t.lockedAt} is null) = (${t.lockedBy} is null)`),
+    check("jobs_ended_check", sql`${t.completedAt} is null or ${t.failedAt} is null`),
   ],
 );
 

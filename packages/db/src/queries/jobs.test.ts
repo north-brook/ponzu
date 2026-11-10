@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import { jobs } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
-import { claimJobs, completeJob, enqueueJob, failJob } from "./jobs.ts";
+import { claimJobs, completeJob, enqueueJob, failAbandonedJobs, failJob } from "./jobs.ts";
 
 // Claiming takes whatever is due, so each test gets a queue of its own.
 let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -130,10 +130,47 @@ test("a failed job goes back with its error, to be tried again when asked", asyn
   expect(await claimJobs(db, { worker: "w3" })).toMatchObject([{ id: job!.id, attempts: 3 }]);
 });
 
-test("a job out of attempts is left alone", async () => {
-  const job = await enqueueJob(db, { kind: "wake" });
-  await db.update(jobs).set({ attempts: 5 });
+test("a job that fails its last attempt has failed for good, and frees its key", async () => {
+  const job = await enqueueJob(db, { kind: "wake", key: "des_1" });
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    expect(await stored(job!.id)).toMatchObject({ failedAt: null });
+    expect(await enqueueJob(db, { kind: "wake", key: "des_1" })).toBeNull();
+    const [claimed] = await claimJobs(db, { worker: "w1" });
+    expect(claimed).toMatchObject({ id: job!.id, attempts: attempt });
+    await failJob(db, { id: job!.id, worker: "w1", error: "boat 503" });
+  }
 
-  expect(await claimJobs(db, { worker: "w1" })).toEqual([]);
-  expect(await stored(job!.id)).toMatchObject({ attempts: 5, completedAt: null });
+  const dead = await stored(job!.id);
+  expect(dead).toMatchObject({ attempts: 5, lastError: "boat 503", lockedBy: null });
+  expect(dead.failedAt).toBeInstanceOf(Date);
+  expect(dead.completedAt).toBeNull();
+  expect(await claimJobs(db, { worker: "w2" })).toEqual([]);
+  // boat.dev was down for a few minutes. The design can be woken again.
+  const next = await enqueueJob(db, { kind: "wake", key: "des_1" });
+  expect(next).toMatchObject({ kind: "wake", key: "des_1", attempts: 0 });
+});
+
+test("a job whose worker died on its last attempt is closed by the sweep", async () => {
+  const job = await enqueueJob(db, { kind: "wake", key: "des_1" });
+  await db.update(jobs).set({ attempts: 4 });
+  await claimJobs(db, { worker: "w1" });
+  const held = await enqueueJob(db, { kind: "sleep", key: "des_1" });
+  await claimJobs(db, { worker: "w2" });
+
+  // While w1 may still be working, the job is neither taken over nor written off.
+  expect(await failAbandonedJobs(db)).toEqual([]);
+  expect(await claimJobs(db, { worker: "cron" })).toEqual([]);
+  expect(await enqueueJob(db, { kind: "wake", key: "des_1" })).toBeNull();
+
+  await lockedFor(job!.id, 301);
+  await lockedFor(held!.id, 301);
+  const abandoned = await failAbandonedJobs(db);
+
+  // Only the one out of attempts; the other has attempts left and goes round again.
+  expect(abandoned).toMatchObject([{ id: job!.id, attempts: 5, lockedBy: null }]);
+  expect(abandoned[0]!.failedAt).toBeInstanceOf(Date);
+  expect(await failAbandonedJobs(db)).toEqual([]);
+  expect(await enqueueJob(db, { kind: "wake", key: "des_1" })).not.toBeNull();
+  // The worker that died comes back and cannot finish what was closed without it.
+  expect(await completeJob(db, { id: job!.id, worker: "w1" })).toBe(false);
 });

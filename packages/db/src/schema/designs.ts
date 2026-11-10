@@ -5,6 +5,7 @@ import {
   bigint,
   boolean,
   check,
+  foreignKey,
   index,
   integer,
   json,
@@ -14,33 +15,23 @@ import {
   text,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import {
+  ACTOR_KINDS,
+  AGENT_STATES,
+  DESIGN_STATUSES,
+  EVENT_KINDS,
+  EVENT_PRIORITIES,
+  OP_KINDS,
+  PR_CHECKS,
+  PR_STATES,
+  QUESTION_KINDS,
+  QUESTION_STATUSES,
+  SANDBOX_PROVIDERS,
+  SANDBOX_STATES,
+  THREAD_ITEM_KINDS,
+} from "../enums.ts";
 import { claudeAccounts, repos, users, workspaces } from "./accounts.ts";
 import { atMostBytes, createdAt, instant, type Json, oneOf, updatedAt } from "./columns.ts";
-
-export const DESIGN_STATUSES = ["active", "settled"] as const;
-export const AGENT_STATES = ["idle", "waking", "working", "needs_you", "limited"] as const;
-export const PR_STATES = ["draft", "open", "merged", "closed"] as const;
-export const PR_CHECKS = ["none", "running", "failing", "passing"] as const;
-export const OP_KINDS = ["do", "undo", "redo"] as const;
-export const ACTOR_KINDS = ["user", "agent"] as const;
-export const THREAD_ITEM_KINDS = ["message", "comment", "assistant", "tool", "notice"] as const;
-export const EVENT_KINDS = ["message", "answer", "comment", "edit", "check", "review"] as const;
-export const EVENT_PRIORITIES = ["now", "next", "later"] as const;
-export const QUESTION_KINDS = [
-  "question",
-  "permission",
-  "plan",
-  "elicitation",
-  "handoff",
-  "secret",
-] as const;
-export const QUESTION_STATUSES = ["open", "answered", "cancelled"] as const;
-export const SANDBOX_PROVIDERS = ["boat"] as const;
-export const SANDBOX_STATES = ["starting", "awake", "asleep", "gone"] as const;
-
-export type DesignStatus = (typeof DESIGN_STATUSES)[number];
-export type OpKind = (typeof OP_KINDS)[number];
-export type ActorKind = (typeof ACTOR_KINDS)[number];
 
 /** The most a row the sandbox writes and clients watch may carry in one json value. */
 const WATCHED_PAYLOAD_BYTES = 256 * 1024;
@@ -58,7 +49,7 @@ export const designs = pgTable(
       .notNull()
       .references(() => workspaces.id, { onDelete: "restrict" }),
     /** Null for Scratch. A repo the App lost is marked removed, never deleted, so this holds. */
-    repoId: text("repo_id").references(() => repos.id, { onDelete: "restrict" }),
+    repoId: text("repo_id"),
     // A design belongs to its workspace and outlives the person who started it.
     ownerId: text("owner_id").references(() => users.id, { onDelete: "set null" }),
     /** Whose Claude runs it, from start to finish. */
@@ -101,9 +92,21 @@ export const designs = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
+    // A design is in its repo's workspace: the pair is the key, so the two cannot disagree, and
+    // a repo that moves to another workspace takes its designs with it. Scratch has no repo and
+    // is not checked.
+    foreignKey({
+      name: "designs_repo_id_workspace_id_fk",
+      columns: [t.repoId, t.workspaceId],
+      foreignColumns: [repos.id, repos.workspaceId],
+    })
+      .onUpdate("cascade")
+      .onDelete("restrict"),
     index("designs_workspace_id_status_idx").on(t.workspaceId, t.status),
     // One design, one branch. Also how a GitHub webhook finds the design for a pull request.
     uniqueIndex("designs_repo_id_branch_key").on(t.repoId, t.branch),
+    // Deleting a sandbox clears the designs that point at it.
+    index("designs_sandbox_id_idx").on(t.sandboxId),
     check("designs_status_check", oneOf(t.status, DESIGN_STATUSES)),
     check(
       "designs_settled_at_check",
@@ -282,9 +285,12 @@ export const events = pgTable(
     deliveredAt: instant("delivered_at"),
   },
   (t) => [
+    // What a claim reads.
     index("events_design_id_seq_pending_idx")
       .on(t.designId, t.seq)
       .where(sql`${t.deliveredAt} is null`),
+    // Deleting a design deletes its events, delivered ones included.
+    index("events_design_id_idx").on(t.designId),
     check("events_kind_check", oneOf(t.kind, EVENT_KINDS)),
     check("events_priority_check", oneOf(t.priority, EVENT_PRIORITIES)),
   ],
@@ -314,6 +320,12 @@ export const questions = pgTable(
     check("questions_kind_check", oneOf(t.kind, QUESTION_KINDS)),
     check("questions_status_check", oneOf(t.status, QUESTION_STATUSES)),
     check("questions_answer_check", sql`(${t.status} = 'answered') = (${t.answer} is not null)`),
+    // This row is plaintext and clients watch it. A secret's answer says which secret was
+    // given and nothing else; the value goes to `repo_secrets`, encrypted.
+    check(
+      "questions_secret_answer_check",
+      sql`${t.kind} <> 'secret' or ${t.answer} is null or (jsonb_typeof(${t.answer} -> 'name') = 'string' and ${t.answer} - 'name' = '{}'::jsonb)`,
+    ),
     check("questions_payload_check", atMostBytes(t.payload, WATCHED_PAYLOAD_BYTES)),
   ],
 );
@@ -344,6 +356,8 @@ export const sandboxes = pgTable(
     uniqueIndex("sandboxes_provider_provider_id_key").on(t.provider, t.providerId),
     // One design owns one sandbox.
     uniqueIndex("sandboxes_design_id_live_key").on(t.designId).where(sql`${t.state} <> 'gone'`),
+    // Deleting a design deletes its sandboxes, gone ones included.
+    index("sandboxes_design_id_idx").on(t.designId),
     // What the idle sweep reads.
     index("sandboxes_awake_last_activity_at_idx")
       .on(t.lastActivityAt)

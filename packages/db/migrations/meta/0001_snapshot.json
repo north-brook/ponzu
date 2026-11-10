@@ -1,6 +1,6 @@
 {
-  "id": "360e9bcb-0844-4be5-a966-c34e2695751e",
-  "prevId": "ef55c221-193b-4b8c-8f0c-3c638c74b981",
+  "id": "e5de5e3e-03eb-4be9-ac07-daf964f22233",
+  "prevId": "b646365e-d53c-4ca1-9d8f-af4a6d3a7dad",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -766,6 +766,14 @@
             "github_repo_id"
           ],
           "nullsNotDistinct": false
+        },
+        "repos_id_workspace_id_key": {
+          "name": "repos_id_workspace_id_key",
+          "columns": [
+            "id",
+            "workspace_id"
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -1490,6 +1498,21 @@
           "with": {},
           "method": "btree",
           "concurrently": false
+        },
+        "usage_events_design_id_idx": {
+          "name": "usage_events_design_id_idx",
+          "columns": [
+            {
+              "expression": "design_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
         }
       },
       "foreignKeys": {
@@ -2205,6 +2228,21 @@
           "with": {},
           "method": "btree",
           "concurrently": false
+        },
+        "designs_sandbox_id_idx": {
+          "name": "designs_sandbox_id_idx",
+          "columns": [
+            {
+              "expression": "sandbox_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
         }
       },
       "foreignKeys": {
@@ -2215,19 +2253,6 @@
             "workspace_id"
           ],
           "tableTo": "workspaces",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
-        },
-        "designs_repo_id_repos_id_fk": {
-          "name": "designs_repo_id_repos_id_fk",
-          "tableFrom": "designs",
-          "columnsFrom": [
-            "repo_id"
-          ],
-          "tableTo": "repos",
           "columnsTo": [
             "id"
           ],
@@ -2272,6 +2297,21 @@
           ],
           "onUpdate": "no action",
           "onDelete": "set null"
+        },
+        "designs_repo_id_workspace_id_fk": {
+          "name": "designs_repo_id_workspace_id_fk",
+          "tableFrom": "designs",
+          "columnsFrom": [
+            "repo_id",
+            "workspace_id"
+          ],
+          "tableTo": "repos",
+          "columnsTo": [
+            "id",
+            "workspace_id"
+          ],
+          "onUpdate": "cascade",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
@@ -2419,6 +2459,21 @@
           "with": {},
           "method": "btree",
           "where": "\"events\".\"delivered_at\" is null",
+          "concurrently": false
+        },
+        "events_design_id_idx": {
+          "name": "events_design_id_idx",
+          "columns": [
+            {
+              "expression": "design_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
           "concurrently": false
         }
       },
@@ -2690,6 +2745,10 @@
           "name": "questions_answer_check",
           "value": "(\"questions\".\"status\" = 'answered') = (\"questions\".\"answer\" is not null)"
         },
+        "questions_secret_answer_check": {
+          "name": "questions_secret_answer_check",
+          "value": "\"questions\".\"kind\" <> 'secret' or \"questions\".\"answer\" is null or (jsonb_typeof(\"questions\".\"answer\" -> 'name') = 'string' and \"questions\".\"answer\" - 'name' = '{}'::jsonb)"
+        },
         "questions_payload_check": {
           "name": "questions_payload_check",
           "value": "octet_length(\"questions\".\"payload\"::text) <= 262144"
@@ -2902,6 +2961,21 @@
           "with": {},
           "method": "btree",
           "where": "\"sandboxes\".\"state\" <> 'gone'",
+          "concurrently": false
+        },
+        "sandboxes_design_id_idx": {
+          "name": "sandboxes_design_id_idx",
+          "columns": [
+            {
+              "expression": "design_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
           "concurrently": false
         },
         "sandboxes_awake_last_activity_at_idx": {
@@ -3168,6 +3242,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "failed_at": {
+          "name": "failed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -3190,7 +3270,7 @@
           "isUnique": false,
           "with": {},
           "method": "btree",
-          "where": "\"jobs\".\"completed_at\" is null",
+          "where": "\"jobs\".\"completed_at\" is null and \"jobs\".\"failed_at\" is null",
           "concurrently": false
         },
         "jobs_kind_key_pending_key": {
@@ -3212,7 +3292,7 @@
           "isUnique": true,
           "with": {},
           "method": "btree",
-          "where": "\"jobs\".\"completed_at\" is null",
+          "where": "\"jobs\".\"completed_at\" is null and \"jobs\".\"failed_at\" is null",
           "concurrently": false
         }
       },
@@ -3224,6 +3304,10 @@
         "jobs_locked_by_check": {
           "name": "jobs_locked_by_check",
           "value": "(\"jobs\".\"locked_at\" is null) = (\"jobs\".\"locked_by\" is null)"
+        },
+        "jobs_ended_check": {
+          "name": "jobs_ended_check",
+          "value": "\"jobs\".\"completed_at\" is null or \"jobs\".\"failed_at\" is null"
         }
       },
       "isRLSEnabled": false
