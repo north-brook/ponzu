@@ -76,7 +76,7 @@ export function docSummary(
   doc: Doc,
   opts: { folderOf?: (pageId: string) => string | undefined } = {},
 ): string {
-  const lines = [`File: ${doc.name}`];
+  const lines = [`Design: ${doc.name}`];
   for (const page of doc.pages) {
     const folder = opts.folderOf?.(page.id);
     lines.push(
@@ -84,6 +84,8 @@ export function docSummary(
     );
     for (const ab of page.artboards) lines.push(`  ${artboardSummary(ab)}`);
   }
+  if (!doc.pages.length)
+    lines.push("No pages yet. create_artboard makes the first one, or add one with create_page.");
   const open = doc.threads.filter((t) => t.status === "open");
   if (open.length) lines.push(`Open comment threads: ${open.length} (list_comments)`);
   const notes = Object.keys(doc.notes);

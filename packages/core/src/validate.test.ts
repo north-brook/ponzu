@@ -440,6 +440,26 @@ describe("hostile input", () => {
     expect(fault(wide)).toBe("op");
   });
 
+  test("an op refused for carrying too much says so, and no other fault does", () => {
+    const tooMuch = (input: unknown) => {
+      try {
+        validateOp(input);
+      } catch (err) {
+        return (err as InvalidOpError).tooMuch;
+      }
+      throw new Error("The op was accepted.");
+    };
+    const children = (nodes: PNode[]) => ({ op: "children", id: "n_1", children: nodes });
+    const many = Array.from({ length: MAX_NODES + 1 }, () => text("x"));
+    expect(tooMuch(children(many))).toBe(true);
+    const heavy = Array.from({ length: 9 }, () => text("x".repeat(MAX_STRING_LENGTH / 2)));
+    expect(tooMuch(children(heavy))).toBe(true);
+    // One value past its limit stays too long however the op is split.
+    const long = "x".repeat(MAX_STRING_LENGTH + 1);
+    expect(tooMuch({ op: "attrs", id: "n_1", attrs: { src: long } })).toBe(false);
+    expect(tooMuch({ op: "remove", id: "not an id" })).toBe(false);
+  });
+
   test("numbers JSON can't carry are refused too", () => {
     for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, "1", null]) {
       expect(fault({ op: "artboard.update", id: "ab_1", x: bad })).toBe("op.x");
