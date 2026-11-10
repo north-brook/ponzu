@@ -254,13 +254,12 @@ export class Runner {
     this.inTurn = false;
     this.sent.clear();
     this.refreshState();
-    this.previews?.close();
     await within(
       Promise.all([
         this.thread.flush(),
         this.acks.flush(),
         this.state.stop(),
-        this.previews?.idle(),
+        this.previews?.flush(),
         ...this.calls,
       ]),
     );

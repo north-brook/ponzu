@@ -39,14 +39,14 @@ export class Previews {
     this.timer.unref?.();
   }
 
-  /** Wait for a drawing under way. */
-  async idle(): Promise<void> {
+  /** Draw now what is waiting to be drawn, and resolve once nothing is being drawn. */
+  async flush(): Promise<void> {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+      this.draw();
+    }
     while (this.running) await this.running;
-  }
-
-  close(): void {
-    if (this.timer) clearTimeout(this.timer);
-    this.timer = null;
   }
 
   private draw(): void {

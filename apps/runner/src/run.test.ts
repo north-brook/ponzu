@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Actor, type Doc, emptyDoc, findArtboard, parseHtml } from "@ponzu/core";
+import type { Renderer, RenderRequest } from "@ponzu/render";
 import { ScriptedAgent, type ScriptedRun } from "./agent/scripted.ts";
 import { ADA, FakeRunnerApi } from "./api/fake.ts";
 import type { RunnerSession } from "./api/protocol.ts";
@@ -82,6 +83,7 @@ async function setup(
     prepare?: (session: RunnerSession) => Promise<string>;
     stateDir?: string;
     timing?: Partial<Timing>;
+    renderer?: Renderer;
   } = {},
 ): Promise<Setup> {
   const api = opts.api ?? new FakeRunnerApi({ session: opts.session, doc: opts.doc });
@@ -93,6 +95,7 @@ async function setup(
     api,
     agent,
     prepare: opts.prepare ?? (async () => work),
+    renderer: opts.renderer,
     stateDir,
     log: (m) => logs.push(m),
     timing: { ...FAST, ...opts.timing },
@@ -616,6 +619,51 @@ test("Claude Code that stops by itself is started again on the same session", as
   // What the first had not taken goes into the second.
   const again = await second.input();
   expect(again.uuid).toBe(eventUuid(event.id));
+});
+
+test("a message a repo's hook refused leaves the design idle, and is not acknowledged", async () => {
+  const { api, runner, run } = await setup();
+  const event = api.push({ kind: "message", payload: { text: "Go" } });
+  runner.poke();
+  const input = await run.input();
+  await until(() => api.lastState?.state === "working");
+  run.emit({ type: "dropped", uuids: [input.uuid] });
+  await until(() => api.lastState?.state === "idle");
+  await Bun.sleep(20);
+  expect(api.delivered).not.toContain(event.id);
+});
+
+test("once the canvas is still, light and dark previews of the first page are uploaded with their seq", async () => {
+  const renders: RenderRequest[] = [];
+  const renderer: Renderer = {
+    async render(req) {
+      renders.push(req);
+      return {
+        bytes: new Uint8Array([1]),
+        mime: "image/png",
+        width: 1,
+        height: 1,
+        contentHeight: 1,
+        issues: [],
+      };
+    },
+    close: async () => {},
+  };
+  const { api, runner, run } = await setup({ doc: emptyDoc("Fern"), renderer });
+  api.push({ kind: "message", payload: { text: "Draw" } });
+  runner.poke();
+  run.take(await run.input());
+  await run.call("create_artboard", { name: "Card", html: "<p>Hi</p>" });
+  await run.call("write_html", { target: "n_missing", html: "<p>x</p>" });
+  await until(() => api.uploads.length === 2);
+  expect(api.uploads.map((u) => [u.purpose, u.name, u.seq])).toEqual([
+    ["preview", "light.png", 1],
+    ["preview", "dark.png", 1],
+  ]);
+  expect(renders.map((r) => [r.colorScheme, r.thumbnail])).toEqual([
+    ["light", true],
+    ["dark", true],
+  ]);
 });
 
 /* ------------------------------------------------------------------ */
