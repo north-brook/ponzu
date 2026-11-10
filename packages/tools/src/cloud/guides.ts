@@ -46,7 +46,7 @@ Assets
 Big HTML
 - A whole artboard's content can go in one write_html call: target the artboard with mode replace-children.
 - HTML too long to pass in a call (a long table, a diagram a script generated): write it to a file in the sandbox with your own file tools, then pass that file's absolute path as path instead of html. create_artboard takes path the same way. The file is read once, cleaned like any HTML and written to the canvas; changing the file afterwards changes nothing until you pass it again.
-- One call takes a file of up to 1 MB. If an edit is refused as too large, split it: an artboard first, then its sections, each appended with its own call.
+- A file doesn't raise what one call takes: about 10,000 elements and pieces of text (a table row of four cells is nine), and 1 MB as stored, which for a table of short cells is several times the size of its HTML. Past either, the call is refused and nothing of it is written. So a long table goes in by sections: the artboard and the table's head first, then its rows a few hundred at a time, each batch appended with its own call.
 
 Light and dark
 The person may have their canvas in dark mode; get_basic_info says which, once Ponzu knows. Artboards show in that theme, and screenshots default to it.

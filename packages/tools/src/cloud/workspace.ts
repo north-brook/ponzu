@@ -20,12 +20,18 @@ export interface AgentStatus {
 /**
  * What leaves the runner's process on the tools' behalf. The runner implements each against
  * the API; none is called while a tool reads or edits the canvas.
+ *
+ * `status` and `intent` are told, not asked: they may be async, and one that throws or rejects
+ * is counted (a "host call failed" telemetry event) and otherwise dropped. By then the edit
+ * that led to it is in the design, so the failure is no part of that tool's result.
+ * `assetBase`, `link` and `theme` are read in the middle of a tool call, from what the runner
+ * already holds: they reach for nothing and don't throw.
  */
 export interface CloudHost {
   /** The agent's status changed. Called only when it differs from the last one told. */
-  status(status: AgentStatus): void;
+  status(status: AgentStatus): void | Promise<void>;
   /** What the person asked for, as the agent distilled it (set_status's intent). */
-  intent(text: string): void;
+  intent(text: string): void | Promise<void>;
   /**
    * Keep a file as one of the design's assets and resolve to the reference markup uses for
    * it, `assets/<name>`, once the bytes can be loaded from `assetBase`.
@@ -80,6 +86,27 @@ export function createCloudWorkspace(opts: CloudWorkspaceOptions): CloudWorkspac
   const design = new ReplicaDesign(opts.replica, { key, events, presence });
   const open = { key, design };
 
+  /**
+   * Tell the host something, and keep its failure here. These calls are made from inside a
+   * tool whose edit has landed, and from the replica's listeners when someone else's op
+   * arrives: a throw would turn a done edit into a failed call, or leave through the replica
+   * as an unhandled rejection.
+   */
+  const tell = (call: "status" | "intent", send: () => void | Promise<void>): void => {
+    const failed = () => {
+      try {
+        opts.telemetry?.capture("host call failed", { call });
+      } catch {
+        // Counting a failure never causes one.
+      }
+    };
+    try {
+      Promise.resolve(send()).catch(failed);
+    } catch {
+      failed();
+    }
+  };
+
   // Every tool call touches presence, and most change nothing the host shows.
   let told = JSON.stringify({ artboards: [] } satisfies AgentStatus);
   const offPresence = presence.on((list) => {
@@ -90,7 +117,7 @@ export function createCloudWorkspace(opts: CloudWorkspaceOptions): CloudWorkspac
     const next = JSON.stringify(status);
     if (next === told) return;
     told = next;
-    host.status(status);
+    tell("status", () => host.status(status));
   });
 
   return {
@@ -106,7 +133,7 @@ export function createCloudWorkspace(opts: CloudWorkspaceOptions): CloudWorkspac
     },
     assetBase: () => host.assetBase(),
     link: () => host.link(),
-    intent: (_key, text) => host.intent(text),
+    intent: (_key, text) => tell("intent", () => host.intent(text)),
     storeAsset: (_key, asset) => host.storeAsset(asset),
     publish: host.publish && ((_key, file) => host.publish!(file)),
     notices: () => design.notices(),

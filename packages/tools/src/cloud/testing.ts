@@ -6,11 +6,12 @@ import {
   InvalidOpError,
   type Op,
   Replica,
+  type Scheduler,
   type SyncTransport,
 } from "@ponzu/core";
 import { Sequencer } from "@ponzu/core/testing";
 import type { Renderer } from "@ponzu/render";
-import type { NamedBytes, ToolContext } from "../context.ts";
+import type { NamedBytes, Telemetry, ToolContext } from "../context.ts";
 import {
   type AgentStatus,
   type CloudHost,
@@ -104,20 +105,31 @@ export function memoryCloud(
     host?: MemoryHost;
     /** In place of `memoryTransport`, to hold requests back or fail them. */
     transport?: (api: Sequencer) => SyncTransport;
+    /** In place of real timers for the replica's retries, to hold one back. */
+    schedule?: Scheduler;
+    telemetry?: Telemetry;
   } = {},
 ): MemoryCloud {
   const api = new Sequencer(doc);
   const replica = new Replica({
     transport: opts.transport?.(api) ?? memoryTransport(api, AGENT),
-    schedule: (run, ms) => {
-      const timer = setTimeout(run, ms);
-      return () => clearTimeout(timer);
-    },
+    schedule:
+      opts.schedule ??
+      ((run, ms) => {
+        const timer = setTimeout(run, ms);
+        return () => clearTimeout(timer);
+      }),
     actor: AGENT,
     ...api.snapshot(),
   });
   const host = opts.host ?? memoryHost();
-  const ws = createCloudWorkspace({ id: "dsn_test", replica, renderer: opts.renderer, host });
+  const ws = createCloudWorkspace({
+    id: "dsn_test",
+    replica,
+    renderer: opts.renderer,
+    host,
+    telemetry: opts.telemetry,
+  });
   let posted = 0;
   return {
     api,

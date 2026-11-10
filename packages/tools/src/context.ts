@@ -64,9 +64,9 @@ export interface Workspace {
   /** Put an export where a link reaches it. Resolves to the link. */
   publish?(key: string, file: NamedBytes): Promise<string>;
   /**
-   * What the host has to tell the agent since it last asked, each a few plain lines: an edit
-   * that was undone, say. `runTool` adds them to the next result, whatever the call was.
-   * Asking takes them.
+   * What the host has to tell the agent since it last asked, each a few plain lines: what it
+   * left out of an edit, or an edit that was undone. `runTool` adds them to the next result,
+   * whatever the call was. Asking takes them.
    */
   notices?(): string[];
 }

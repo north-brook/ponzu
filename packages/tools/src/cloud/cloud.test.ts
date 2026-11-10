@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,18 +10,23 @@ import {
   emptyDoc,
   findArtboard,
   locate,
+  MAX_NODES,
   MAX_OP_BYTES,
   parseHtml,
+  type Scheduler,
   type SyncTransport,
   type Thread,
 } from "@ponzu/core";
 import type { Sequencer } from "@ponzu/core/testing";
 import type { Renderer, RenderRequest } from "@ponzu/render";
+import type { Telemetry } from "../context.ts";
 import { jsonSchema, runTool } from "../define.ts";
+import { readGiven } from "../disk.ts";
 import { tools as localTools } from "../local/tools.ts";
+import { MAX_ASSET_BYTES } from "./asset.ts";
 import { CLOUD_INSTRUCTIONS, cloudGuides } from "./guides.ts";
 import { AGENT, type MemoryCloud, memoryCloud, memoryHost, memoryTransport } from "./testing.ts";
-import { cloudTools, getCloudTool, MAX_ASSET_BYTES } from "./tools.ts";
+import { cloudTools, getCloudTool } from "./tools.ts";
 
 const ada: Actor = { kind: "user", id: "user_ada", name: "Ada" };
 
@@ -78,8 +84,8 @@ afterEach(async () => {
   for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
 });
 
-function setup(opts: Parameters<typeof memoryCloud>[1] = {}) {
-  const cloud = memoryCloud(fern(), opts);
+function setup(opts: Parameters<typeof memoryCloud>[1] = {}, doc = fern()) {
+  const cloud = memoryCloud(doc, opts);
   open.push(cloud);
   const call = (name: string, args: unknown = {}) => runTool(getCloudTool(name)!, args, cloud.ctx);
   return { ...cloud, call };
@@ -202,6 +208,47 @@ test("what a person does mid-session is in the agent's next read", async () => {
       author: "Ada",
     },
     { type: "change", origin: { kind: "user", name: "Ada" }, artboards: ["ab_pricing"] },
+  ]);
+});
+
+test("the first artboard of a design with no pages brings its page with it", async () => {
+  // How a new design starts in the cloud: a name and nothing else.
+  const { call, replica, api, synced } = setup({}, emptyDoc("Untitled"));
+  expect((await call("get_basic_info")).text).toStartWith(
+    "Design: Untitled\nNo pages yet. create_artboard makes the first one, or add one with create_page.",
+  );
+  const lost = await call("create_artboard", { name: "Sign in", page: "Flows" });
+  expect(lost.text).toBe(
+    "No page Flows: this design has no pages yet. Leave page out and the first one is made, or add it with create_page.",
+  );
+
+  const made = await call("create_artboard", { name: "Sign in", html: "<h1>Welcome back</h1>" });
+  expect(made.isError).toBeFalsy();
+  const { id } = made.data as { id: string };
+  const page = replica.doc.pages[0]!;
+  expect(made.text).toStartWith(
+    `Created artboard ${id} "Sign in" 1440px×900px at (0, 0) on "Home" (${page.id}, made now: the design had no page).`,
+  );
+  expect(page).toMatchObject({ name: "Home", artboards: [{ id }] });
+  // One edit, so the page never arrives without its artboard, or the other way round.
+  await synced();
+  expect(api.seq).toBe(1);
+  expect(api.doc).toEqual(replica.doc);
+
+  const next = await call("create_artboard", { name: "Sign up" });
+  expect(next.text).toContain(`at (1520, 0) on "Home".`);
+  expect(replica.doc.pages).toHaveLength(1);
+});
+
+test("a design whose last page a person deleted takes an artboard all the same", async () => {
+  const { call, commitAs, synced, replica } = setup();
+  commitAs(ada, { op: "page.delete", id: "pg_home" });
+  await synced();
+  expect(replica.doc.pages).toEqual([]);
+  const made = await call("create_artboard", { name: "Start over" });
+  expect(made.isError).toBeFalsy();
+  expect(replica.doc.pages.map((p) => [p.name, p.artboards.map((a) => a.name)])).toEqual([
+    ["Home", ["Start over"]],
   ]);
 });
 
@@ -345,6 +392,110 @@ test("an edit the API would never take is refused before it shows", async () => 
   expect(replica.pending).toEqual([]);
 });
 
+test("what the API would strip from an edit never shows, and the result says what went", async () => {
+  const api = gated();
+  const { call, replica, synced, ws, ...cloud } = setup({ transport: api.transport });
+  const removed = (what: string) => `\n\nRemoved (designs can't run code): ${what}.`;
+
+  const styled = await call("update_styles", {
+    updates: [{ ids: ["n_h"], style: { background: "url(javascript:alert(1))", color: "red" } }],
+  });
+  expect(styled.text).toBe(`Updated 1 node.${removed("script in background")}`);
+  expect(locate(replica.doc, "n_h")?.node.style).toEqual({ color: "red" });
+
+  const linked = await call("set_attributes", {
+    id: "n_p",
+    attrs: { href: " vbscript:x", title: "ok" },
+  });
+  expect(linked.text).toBe(`Updated attributes on n_p.${removed("javascript: URL in href")}`);
+  expect(locate(replica.doc, "n_p")?.node.attrs).toEqual({ title: "ok" });
+
+  const tokens = await call("set_tokens", { tokens: { "--x": "expression(alert(1))" } });
+  expect(tokens.text).toBe(`Tokens: 1 defined.${removed("script in the tokens")}`);
+  expect(replica.doc.tokens).not.toContain("expression");
+
+  const made = await call("create_artboard", {
+    name: "Sign in",
+    style: { backgroundImage: "url( 'javascript:alert(1)' )" },
+  });
+  expect(made.text).toEndWith(removed("script in background-image on <section>"));
+  // Clean edits say nothing of it.
+  expect((await call("set_text", { updates: [{ id: "n_h", text: "Hello" }] })).text).toBe(
+    "Set text on 1 node.",
+  );
+
+  // What the agent read and screenshot before the commit is what everyone gets after it.
+  const before = structuredClone(replica.doc);
+  expect(JSON.stringify(before)).not.toMatch(/script:|expression/);
+  api.release();
+  await synced();
+  expect(replica.doc).toEqual(before);
+  expect(cloud.api.doc).toEqual(before);
+  expect(ws.notices()).toEqual([]);
+});
+
+test("an edit that didn't apply reports nothing as removed from it", () => {
+  const { ws } = setup();
+  expect(() =>
+    ws.design.apply({ op: "style", id: "n_gone", style: { width: "expression(1)" } }),
+  ).toThrow();
+  expect(ws.notices()).toEqual([]);
+});
+
+test("set_attributes refuses what an attribute can't be, before anything shows", async () => {
+  const { call, replica } = setup();
+  for (const [name, why] of [
+    ["data-name", "A layer's name isn't an attribute. Set it with rename."],
+    ["layer-name", "A layer's name isn't an attribute. Set it with rename."],
+    ["srcdoc", "Designs can't hold a document inside an attribute; srcdoc is not allowed."],
+    ["data-id", "Ids are managed by Ponzu."],
+    ["onclick", "Designs can't run code; event handlers are not allowed."],
+  ] as const) {
+    const r = await call("set_attributes", { id: "n_h", attrs: { [name]: "x", title: "ok" } });
+    expect(r.isError, name).toBe(true);
+    expect(r.text).toBe(why);
+  }
+  expect(locate(replica.doc, "n_h")?.node.attrs).toEqual({});
+  expect(replica.pending).toEqual([]);
+});
+
+test("waiting for edits doesn't sit out the replica's retry wait once the API is back", async () => {
+  let down = true;
+  // The replica's own retry never comes here, as when it is seconds or half a minute away.
+  const never: Scheduler = () => () => {};
+  const { call, ws, ...cloud } = setup({
+    schedule: never,
+    transport: (api) => {
+      const direct = memoryTransport(api, AGENT);
+      return {
+        ...direct,
+        commit: async (ops) => {
+          if (down) throw new Error("ECONNRESET");
+          return direct.commit(ops);
+        },
+      };
+    },
+  });
+  await call("write_note", { name: "brief", content: "A fitness app." });
+  expect(await ws.design.settled(30)).toBe(false);
+  expect(cloud.replica.offline).toBe(true);
+
+  // Back before the host asks: the wait starts with a try.
+  down = false;
+  expect(await ws.design.settled(2000)).toBe(true);
+  expect(cloud.api.doc.notes.brief).toBe("A fitness app.");
+
+  // Back while the host waits: it keeps trying.
+  down = true;
+  await call("write_note", { name: "brief", content: "A running app." });
+  const waiting = ws.design.settled(2000);
+  setTimeout(() => {
+    down = false;
+  }, 50);
+  expect(await waiting).toBe(true);
+  expect(cloud.api.doc.notes.brief).toBe("A running app.");
+});
+
 test("the host can wait for edits to be committed, and gives up when the API can't be reached", async () => {
   let down = true;
   const { call, ws, ...cloud } = setup({
@@ -407,6 +558,38 @@ test("the host hears what the agent is working on, and only when it changes", as
   expect(host.statuses.at(-1)).toEqual({ artboards: ["ab_hero"], status: "tightening the hero" });
 });
 
+test("a host that fails to take a status or an intent fails no tool, and nothing in the replica", async () => {
+  const host = memoryHost();
+  host.status = () => {
+    throw new Error("status endpoint 500");
+  };
+  host.intent = async () => {
+    throw new Error("intent endpoint 500");
+  };
+  const failed: unknown[] = [];
+  const telemetry: Telemetry = {
+    capture: (event, properties) => {
+      if (event === "host call failed") failed.push(properties?.call);
+    },
+    feedback: async () => false,
+  };
+  const { call, commitAs, synced, replica } = setup({ host, telemetry });
+
+  // The edit lands, so the call says it did: an agent told it failed would make it twice.
+  const edit = await call("set_text", { updates: [{ id: "n_plan", text: "Pro" }] });
+  expect(edit).toEqual({ text: "Set text on 1 node." });
+  expect(locate(replica.doc, "n_plan")?.node.children).toEqual([{ kind: "text", value: "Pro" }]);
+  const status = await call("set_status", { status: "pricing tiers", intent: "Add a Pro plan." });
+  expect(status).toEqual({ text: "Status: pricing tiers." });
+
+  // A person deletes the board the agent was on. The host is told from inside the replica's
+  // own listeners, where a throw would leave as an unhandled rejection.
+  await synced();
+  commitAs(ada, { op: "artboard.delete", id: "ab_pricing" });
+  await synced();
+  expect(failed).toEqual(["status", "status", "intent", "status"]);
+});
+
 test("a board that went while the agent was away stops showing as worked on, however the news came", async () => {
   // In a whole fetched document, where no op says so.
   const away = setup();
@@ -432,10 +615,29 @@ test("a board that went while the agent was away stops showing as worked on, how
 /* Files in the sandbox                                                */
 /* ------------------------------------------------------------------ */
 
+/** A file of each kind add_asset takes, as far in as says what it is. */
+const ASSET_HEADS: Record<string, string> = {
+  png: "\x89PNG\r\n\x1a\n",
+  jpg: "\xff\xd8\xff\xe0",
+  jpeg: "\xff\xd8\xff\xe1",
+  gif: "GIF89a",
+  webp: "RIFF\x24\0\0\0WEBPVP8 ",
+  avif: "\0\0\0\x1cftypmif1\0\0\0\0mif1avifmiaf",
+  svg: '<?xml version="1.0"?>\n<!-- The logo. -->\n<svg xmlns="http://www.w3.org/2000/svg"></svg>',
+  woff2: "wOF2\0\x01\0\0",
+  woff: "wOFF\0\x01\0\0",
+  ttf: "\0\x01\0\0\0\x0c",
+  otf: "OTTO\0\x0c",
+  mp4: "\0\0\0\x18ftypisom\0\0\x02\0isommp42",
+  webm: "\x1a\x45\xdf\xa3",
+};
+
+const bytesOf = (head: string) => new Uint8Array(Buffer.from(head, "latin1"));
+
 test("add_asset hands a sandbox file to the host and returns the reference markup uses", async () => {
   const { call, host, replica } = setup();
   const dir = await tempDir();
-  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+  const png = bytesOf(`${ASSET_HEADS.png}pixels`);
   await writeFile(join(dir, "Team photo (1).PNG"), png);
 
   const added = await call("add_asset", { path: join(dir, "Team photo (1).PNG") });
@@ -466,7 +668,7 @@ test("add_asset says plainly what it won't take", async () => {
   await writeFile(join(dir, "empty.png"), "");
   await writeFile(join(dir, "huge.mp4"), "");
   await truncate(join(dir, "huge.mp4"), MAX_ASSET_BYTES + 1);
-  await writeFile(join(dir, "ok.png"), "png");
+  await writeFile(join(dir, "ok.png"), bytesOf(ASSET_HEADS.png!));
 
   const fails = async (args: unknown) => {
     const r = await call("add_asset", args);
@@ -493,6 +695,63 @@ test("add_asset says plainly what it won't take", async () => {
   );
   expect(host.assets.size).toBe(0);
 });
+
+test("add_asset takes each kind of file it names, and only a file that is what its name says", async () => {
+  const { call, host } = setup();
+  const dir = await tempDir();
+  for (const [ext, head] of Object.entries(ASSET_HEADS)) {
+    await writeFile(join(dir, `real.${ext}`), bytesOf(head));
+    const added = await call("add_asset", { path: join(dir, `real.${ext}`) });
+    expect(added.isError, `${ext}: ${added.text}`).toBeFalsy();
+    // The same bytes under another kind's name are not that kind.
+    const other = ext === "png" ? "gif" : "png";
+    const renamed = await call("add_asset", {
+      path: join(dir, `real.${ext}`),
+      name: `fake.${other}`,
+    });
+    expect(renamed.isError, `${ext} as ${other}`).toBe(true);
+  }
+  expect([...host.assets.keys()]).toEqual(Object.keys(ASSET_HEADS).map((e) => `assets/real.${e}`));
+  expect(getCloudTool("add_asset")!.description).toContain(Object.keys(ASSET_HEADS).join(", "));
+
+  // Any file in the sandbox, asked for under an image's name.
+  await writeFile(join(dir, ".env"), "API_KEY=sk-live-1234");
+  const secret = await call("add_asset", { path: join(dir, ".env"), name: "pixel.png" });
+  expect(secret.isError).toBe(true);
+  expect(secret.text).toBe(
+    `${join(dir, ".env")} isn't a PNG image, whatever its name: it doesn't start the way one does. If you downloaded it, look at what came back. If it is another kind of image, font or video, name it with that kind's extension.`,
+  );
+  // The page a failed download left behind.
+  await writeFile(join(dir, "hero.jpg"), "<!doctype html><title>404 Not Found</title>");
+  const page = await call("add_asset", { path: join(dir, "hero.jpg") });
+  expect(page.text).toStartWith(`${join(dir, "hero.jpg")} isn't a JPEG image`);
+  expect(host.assets.size).toBe(Object.keys(ASSET_HEADS).length);
+});
+
+test("add_asset takes a file of exactly the size it says is the most", async () => {
+  const { call, host } = setup();
+  const dir = await tempDir();
+  const film = join(dir, "film.mp4");
+  await writeFile(film, bytesOf(ASSET_HEADS.mp4!));
+  await truncate(film, MAX_ASSET_BYTES);
+  const added = await call("add_asset", { path: film });
+  expect(added.text).toStartWith("Added assets/film.mp4 (20 MB).");
+  expect(host.assets.get("assets/film.mp4")?.bytes.length).toBe(MAX_ASSET_BYTES);
+  expect(getCloudTool("add_asset")!.description).toContain("Up to 20 MB.");
+});
+
+// A file under /proc says it is empty and isn't, so only the read itself can keep to a limit.
+test.skipIf(process.platform !== "linux")(
+  "a file is read no further than the limit, whatever size it reports",
+  async () => {
+    const environ = "/proc/self/environ";
+    expect((await readFile(environ)).length).toBeGreaterThan(64);
+    await expect(readGiven(environ, 64, "Use less.")).rejects.toThrow(
+      `${environ} is more than 1 KB; the most is 1 KB. Use less.`,
+    );
+    expect((await readGiven(environ, MAX_ASSET_BYTES, "")).length).toBeGreaterThan(64);
+  },
+);
 
 test("write_html and create_artboard take a file of HTML by path, cleaned like any other", async () => {
   const { call, replica, synced, api } = setup();
@@ -531,6 +790,62 @@ test("write_html and create_artboard take a file of HTML by path, cleaned like a
   const tooBig = await call("write_html", { target: "ab_hero", path: big });
   expect(tooBig.isError).toBe(true);
   expect(tooBig.text).toContain("big.html is 1 MB; the most is 1 MB. Split the HTML into parts");
+  // A path that isn't HTML at all: a picture, say.
+  const picture = join(dir, "logo.png");
+  await writeFile(picture, bytesOf(ASSET_HEADS.png!));
+  const notText = await call("write_html", { target: "ab_hero", path: picture });
+  expect(notText.text).toBe(`${picture} isn't text. HTML is read as UTF-8.`);
+});
+
+test("one call takes what the guide and the tools say it does, by path as in the call", async () => {
+  const limits = "about 10,000 elements and pieces of text";
+  expect(cloudGuides.basics).toContain(
+    `A file doesn't raise what one call takes: ${limits} (a table row of four cells is nine), and 1 MB as stored`,
+  );
+  for (const name of ["write_html", "create_artboard"]) {
+    const schema = jsonSchema(getCloudTool(name)!) as {
+      properties: { path: { description: string } };
+    };
+    expect(schema.properties.path.description).toContain(`${limits}, and 1 MB as stored.`);
+  }
+  expect(getCloudTool("write_html")!.description).toContain(`${limits}, and 1 MB as stored.`);
+  expect([MAX_NODES, MAX_OP_BYTES]).toEqual([10_000, 1024 * 1024]);
+
+  const { call, api, synced } = setup();
+  const dir = await tempDir();
+  const write = async (name: string, html: string) => {
+    await writeFile(join(dir, name), html);
+    return call("write_html", { target: "ab_hero", path: join(dir, name) });
+  };
+  const split =
+    " It is too much for one edit, and nothing of it was written: make it as several smaller edits.";
+
+  // Nine to a row, as the guide counts, and the table and its body: 1,110 rows are 9,992.
+  const row = "<tr><td>a</td><td>b</td><td>c</td><td>d</td></tr>";
+  const table = (rows: number) => `<table><tbody>${row.repeat(rows)}</tbody></table>`;
+  expect((await write("fits.html", table(1110))).isError).toBeFalsy();
+  const rows = await write("rows.html", table(1111));
+  expect(rows.isError).toBe(true);
+  expect(rows.text).toEndWith(`holds more nodes than an op may (10000).${split}`);
+
+  // A megabyte as stored, of little but text: about as much again as HTML.
+  const text = (paragraphs: number) => `<p>${"x".repeat(10_000)}</p>`.repeat(paragraphs);
+  expect((await write("long.html", text(100))).isError).toBeFalsy();
+  await synced();
+  const stored = JSON.stringify(api.log.at(-1)!.op).length;
+  expect(stored).toBeGreaterThan(1_000_000);
+  expect(stored).toBeLessThan(MAX_OP_BYTES);
+  const longer = await write("longer.html", text(104));
+  expect(longer.isError).toBe(true);
+  expect(longer.text).toEndWith(`bytes; the most is 1048576.${split}`);
+
+  // One value that is too long is as long in a smaller edit: no advice to split it.
+  const url = `data:image/png;base64,${"A".repeat(300_000)}`;
+  const inlined = await call("set_attributes", { id: "n_h", attrs: { src: url } });
+  expect(inlined.text).toBe(
+    "That edit can't be saved: op.attrs.src is longer than 262144 characters.",
+  );
+  expect(cloudGuides.basics).toContain("a long data URL is refused");
 });
 
 test("export writes where the agent says, and links to the copy the host published", async () => {
@@ -557,10 +872,42 @@ test("export writes where the agent says, and links to the copy the host publish
   );
   expect(calls).toHaveLength(1);
 
-  // The extension says the format, unless the call does.
+  // The path's ending says the format.
   await call("export", { id: "ab_hero", path: join(dir, "hero.JPG") });
-  await call("export", { id: "ab_hero", path: join(dir, "hero.pdf"), format: "png" });
-  expect(calls.slice(1).map((c) => c.format)).toEqual(["jpeg", "png"]);
+  await call("export", { id: "ab_hero", path: join(dir, "hero.pdf") });
+  await call("export", { id: "ab_hero", path: join(dir, "hero.jpeg"), format: "jpeg" });
+  expect(calls.slice(1).map((c) => c.format)).toEqual(["jpeg", "pdf", "jpeg"]);
+});
+
+test("export writes a file only under a name that says what it is", async () => {
+  const { renderer, calls } = fakeRenderer();
+  const { call, host } = setup({ renderer });
+  const dir = await tempDir();
+  // An existing source file, which a PNG must not replace.
+  await writeFile(join(dir, "index.ts"), "export {};\n");
+  for (const [name, ending] of [
+    ["hero.webp", "ends in .webp"],
+    ["hero.svg", "ends in .svg"],
+    ["index.ts", "ends in .ts"],
+    ["hero", "has no extension"],
+  ] as const) {
+    const r = await call("export", { id: "ab_hero", path: join(dir, name) });
+    expect(r.isError, name).toBe(true);
+    expect(r.text).toBe(
+      `${join(dir, name)} ${ending}. An export is a PNG, a JPEG or a PDF: end the path in .png, .jpg or .pdf.`,
+    );
+  }
+  const clash = await call("export", { id: "ab_hero", path: join(dir, "hero.pdf"), format: "png" });
+  expect(clash.isError).toBe(true);
+  expect(clash.text).toBe(
+    `format is png, but ${join(dir, "hero.pdf")} ends in .pdf. An export is a PNG, a JPEG or a PDF, and the path's ending says which (.png, .jpg or .pdf): change the path, or leave format out.`,
+  );
+  // Refused before anything is rendered, written or published.
+  expect(calls).toEqual([]);
+  expect(host.published).toEqual([]);
+  expect(await readFile(join(dir, "index.ts"), "utf8")).toBe("export {};\n");
+  for (const name of ["hero.webp", "hero.svg", "hero", "hero.pdf"])
+    expect(existsSync(join(dir, name)), name).toBe(false);
 });
 
 test("export still writes the file when the host can't publish, or fails to", async () => {
@@ -740,9 +1087,6 @@ test("the guides written for the cloud leave the local world out", () => {
 });
 
 test("the basics guide describes add_asset, big HTML and undone edits as the tools behave", async () => {
-  // The limit the guide quotes is the one write_html enforces.
-  expect(cloudGuides.basics).toContain("One call takes a file of up to 1 MB.");
-  expect(MAX_OP_BYTES).toBe(1024 * 1024);
   expect(cloudGuides.basics).toContain("pass that file's absolute path as path instead of html");
   expect(cloudGuides.basics).toContain(
     "add_asset takes the absolute path of a file in the sandbox",

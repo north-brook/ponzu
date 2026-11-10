@@ -6,7 +6,6 @@ import {
   findArtboard,
   findPage,
   locate,
-  MAX_OP_BYTES,
   mergeStyle,
   newId,
   type Op,
@@ -22,7 +21,6 @@ import { z } from "zod";
 import type { ToolContext } from "./context.ts";
 import { styleArg, ToolError, type ToolResult, tool } from "./define.ts";
 import type { ToolDesign } from "./design.ts";
-import { readGiven } from "./disk.ts";
 import {
   type Footprint,
   footprints,
@@ -45,29 +43,6 @@ import {
   target,
 } from "./util.ts";
 
-/** How a call carries markup: in the call, or in a file the agent wrote. */
-const markupArgs = {
-  html: z.string().optional().describe("The HTML."),
-  path: z
-    .string()
-    .optional()
-    .describe(
-      "Instead of html: the absolute path of a file that holds it, which you wrote with your own file tools. For HTML too long to pass in a call: a long table, a diagram a script generated.",
-    ),
-};
-
-/** The markup a call carries, read from the file it names if it names one. */
-async function markupOf(args: { html?: string; path?: string }): Promise<string | undefined> {
-  if (args.path === undefined) return args.html;
-  if (args.html !== undefined) throw new ToolError("Pass html or path, not both.");
-  const bytes = await readGiven(
-    args.path,
-    MAX_OP_BYTES,
-    "Split the HTML into parts and write each with its own write_html call; append is the default mode.",
-  );
-  return new TextDecoder().decode(bytes);
-}
-
 const createArtboardInput = {
   name: z.string().describe("Shown above the artboard."),
   page: z.string().optional().describe("Page id or name. Defaults to the first page."),
@@ -77,7 +52,7 @@ const createArtboardInput = {
     .optional()
     .describe("Default 900. 'fit-content' grows with content."),
   style: styleArg.optional(),
-  ...markupArgs,
+  html: z.string().optional().describe("Initial content."),
   x: z.number().optional(),
   y: z.number().optional(),
 };
@@ -90,13 +65,16 @@ export async function createArtboard(
 ): Promise<ToolResult> {
   const open = await designOf(ctx, [args.page]);
   const { key, design } = open;
-  const html = await markupOf(args);
+  /** The page it goes on. Nothing when none is named and the design has none: one is made. */
   const pageNow = () => {
     const doc = design.doc;
-    const page = args.page ? findPage(doc, args.page) : doc.pages[0];
+    if (!args.page) return doc.pages[0];
+    const page = findPage(doc, args.page);
     if (!page)
       throw new ToolError(
-        `No page ${args.page}. Pages: ${doc.pages.map((p) => `${p.id} "${p.name}"`).join(", ")}`,
+        doc.pages.length
+          ? `No page ${args.page}. Pages: ${doc.pages.map((p) => `${p.id} "${p.name}"`).join(", ")}`
+          : `No page ${args.page}: this design has no pages yet. Leave page out and the first one is made, or add it with create_page.`,
       );
     return page;
   };
@@ -106,8 +84,8 @@ export async function createArtboard(
   );
   const width = style.width ?? "auto";
   const height = style.height ?? "auto";
-  const { nodes, dropped } = html ? parseHtml(html) : { nodes: [], dropped: [] };
-  const around = pageNow().artboards;
+  const { nodes, dropped } = args.html ? parseHtml(args.html) : { nodes: [], dropped: [] };
+  const around = pageNow()?.artboards ?? [];
   const pos =
     args.x !== undefined && args.y !== undefined
       ? { x: args.x, y: args.y }
@@ -116,7 +94,10 @@ export async function createArtboard(
           args.y,
         );
   // Read after the measure, which waits on the renderer: the page may have changed meanwhile.
-  const page = pageNow();
+  const existing = pageNow();
+  // A design can be without a page: a new one in the cloud, or one whose last page a person
+  // deleted. Its first artboard brings the page with it.
+  const page = existing ?? { id: newId("pg"), name: "Home", artboards: [] };
   const id = newId("ab");
   const artboard: Artboard = {
     id,
@@ -133,17 +114,22 @@ export async function createArtboard(
       children: nodes,
     },
   };
-  apply(
-    design,
-    { op: "artboard.create", page: page.id, index: page.artboards.length, artboard },
-    ctx,
-  );
+  const create: Op = {
+    op: "artboard.create",
+    page: page.id,
+    index: page.artboards.length,
+    artboard,
+  };
+  // One op, so nobody is ever shown the page without its artboard, or refused one of the two.
+  const newPage: Op = { op: "page.create", index: 0, page: { id: page.id, name: page.name } };
+  apply(design, existing ? create : { op: "batch", ops: [newPage, create] }, ctx);
+  const made = existing ? "" : ` (${page.id}, made now: the design had no page)`;
   ctx.ws.focus?.(key, id);
   const where = (await kept?.(open, id)) ?? "";
   const kids = elementsIn(nodes);
   const overlap = await pageOverlaps(ctx, key, design, [id]);
   return {
-    text: `Created artboard ${id} "${args.name}" ${width}×${height} at (${artboard.x}, ${artboard.y}) on "${page.name}"${where}.${kids.length ? `\n${reportIds(nodes)}` : ""}${droppedNote(dropped)}${directionNote([id], () => style)}${overlap}`,
+    text: `Created artboard ${id} "${args.name}" ${width}×${height} at (${artboard.x}, ${artboard.y}) on "${page.name}"${made}${where}.${kids.length ? `\n${reportIds(nodes)}` : ""}${droppedNote(dropped)}${directionNote([id], () => style)}${overlap}`,
     data: { id },
   };
 }
@@ -154,7 +140,7 @@ export const writeTools = [
     title: "Create artboard",
     group: "write",
     description:
-      "Add an artboard (a top-level frame). It's placed in a free spot unless you give x/y. Defaults to a flex column, even when its style sets display: flex; give flex-direction: row for side-by-side panes. Typical sizes: desktop 1440×900, tablet 768×1024, phone 390×844. Use height 'fit-content' for long pages. Optionally pass `html`, or the `path` of a file that holds it, to fill it in the same call.",
+      "Add an artboard (a top-level frame). It's placed in a free spot unless you give x/y. Defaults to a flex column, even when its style sets display: flex; give flex-direction: row for side-by-side panes. Typical sizes: desktop 1440×900, tablet 768×1024, phone 390×844. Use height 'fit-content' for long pages. Optionally pass `html` to fill it in the same call.",
     input: createArtboardInput,
     handler: (args, ctx) => createArtboard(args, ctx),
   }),
@@ -164,10 +150,10 @@ export const writeTools = [
     title: "Write HTML",
     group: "write",
     description:
-      "Insert HTML into a node, or replace a node with HTML. Use inline styles, flexbox/grid, and var(--token) values. Write in small visual pieces (a header, then a row, then a card) and screenshot as you go. Name important layers with data-name. Returns the new ids. To set a whole artboard's content in one call, target the artboard with mode replace-children. For HTML too long to pass in a call (a long table, a diagram from a script), write it to a file with your own file tools and pass its `path` instead of `html`: it is read, cleaned and written the same way.",
+      "Insert HTML into a node, or replace a node with HTML. Use inline styles, flexbox/grid, and var(--token) values. Write in small visual pieces (a header, then a row, then a card) and screenshot as you go. Name important layers with data-name. Returns the new ids. To set a whole artboard's content in one call, target the artboard with mode replace-children.",
     input: {
       target: z.string().describe("Artboard or node id."),
-      ...markupArgs,
+      html: z.string(),
       mode: z
         .enum(["append", "prepend", "before", "after", "replace", "replace-children"])
         .optional()
@@ -177,9 +163,6 @@ export const writeTools = [
     },
     async handler(args, ctx) {
       const { design } = await designOf(ctx, [args.target]);
-      const html = await markupOf(args);
-      if (html === undefined)
-        throw new ToolError("Pass html, or the path of a file that holds it.");
       const doc = design.doc;
       const t = target(doc, args.target);
       const mode = args.mode ?? "append";
@@ -187,7 +170,7 @@ export const writeTools = [
       // written into an <svg> or <g> close themselves like they do in a browser.
       const sibling = mode === "before" || mode === "after" || mode === "replace";
       const parent = sibling ? t.parent : t.node;
-      const { nodes, dropped } = parseHtml(html, parent ? { parent } : {});
+      const { nodes, dropped } = parseHtml(args.html, parent ? { parent } : {});
       if (!nodes.some((n) => n.kind === "el" || n.value.trim()))
         throw new ToolError("The HTML is empty after cleanup." + droppedNote(dropped));
       let op: Op;
@@ -309,6 +292,12 @@ export const writeTools = [
           throw new ToolError("Designs can't run code; event handlers are not allowed.");
         if (lower === "style") throw new ToolError("Use update_styles for CSS.");
         if (lower === "data-id") throw new ToolError("Ids are managed by Ponzu.");
+        if (lower === "data-name" || lower === "layer-name")
+          throw new ToolError("A layer's name isn't an attribute. Set it with rename.");
+        if (lower === "srcdoc")
+          throw new ToolError(
+            "Designs can't hold a document inside an attribute; srcdoc is not allowed.",
+          );
         if (v !== null && /^\s*javascript:/i.test(v))
           throw new ToolError("javascript: URLs are not allowed.");
         if (v === null) delete next[k];

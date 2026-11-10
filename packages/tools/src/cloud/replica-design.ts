@@ -2,30 +2,42 @@ import {
   type Actor,
   authorOf,
   type Doc,
+  type Dropped,
   type DroppedOp,
   findArtboard,
   type Op,
   type OpInfo,
   type Replica,
+  sanitizeOp,
   summarize,
   threadEvents,
   touchedArtboards,
 } from "@ponzu/core";
 import type { EventHub, PresenceHub } from "../context.ts";
 import type { Applied, ToolDesign } from "../design.ts";
+import { droppedNote } from "../util.ts";
+
+/**
+ * How often `settled` has the replica try again while the API isn't answering: as often as
+ * the replica's own first retry.
+ */
+const SETTLE_RETRY_MS = 500;
 
 /**
  * A design in the cloud, as the tools reach it: a `Replica` of it in this process. Reads are
  * the replica's own view. An edit applies to that view at once and goes to the API behind the
  * tool's back, so no tool waits on the network.
  *
- * Two things follow from editing ahead of the API, and both are handled here. Other people's
- * ops arrive while the agent works, and are told to the same event and presence hubs the
- * agent's own are. And an edit the agent already saw succeed can still be undone, when the API
- * refuses it or someone else's change leaves it nothing to apply to: `notices` says so, for
- * the agent's next tool result.
+ * Three things follow from editing ahead of the API, and all are handled here. The view has to
+ * be what the API will commit, so an edit is sanitized as the API would before it is applied,
+ * and `notices` says what that took out. Other people's ops arrive while the agent works, and
+ * are told to the same event and presence hubs the agent's own are. And an edit the agent
+ * already saw succeed can still be undone, when the API refuses it or someone else's change
+ * leaves it nothing to apply to: `notices` says that too, for the agent's next tool result.
  */
 export class ReplicaDesign implements ToolDesign {
+  /** What sanitizing took out of the agent's edits, not yet told. */
+  private removed: Dropped[] = [];
   private undone: DroppedOp[] = [];
   private readonly stop: (() => void)[];
 
@@ -44,10 +56,18 @@ export class ReplicaDesign implements ToolDesign {
     return this.replica.doc;
   }
 
-  /** The origin is the replica's actor whatever is passed: the API takes it from the runner's token. */
-  apply(op: Op): Applied {
+  /**
+   * The op goes in as the API will commit it: sanitized first (`sanitizeOp`, the API's own
+   * step), so nothing shows here, in a read or a screenshot, that the commit would take away.
+   * The origin is the replica's actor whatever is passed: the API takes it from the runner's
+   * token.
+   */
+  apply(given: Op): Applied {
+    const removed: Dropped[] = [];
+    const op = sanitizeOp(given, removed);
     const before = touchedArtboards(this.replica.doc, op);
     const { inverse } = this.replica.apply(op);
+    this.removed.push(...removed);
     const doc = this.replica.doc;
     const artboards = [
       ...new Set([...before, ...touchedArtboards(doc, op), ...touchedArtboards(doc, inverse)]),
@@ -61,12 +81,17 @@ export class ReplicaDesign implements ToolDesign {
    * said it won't, and false if `timeoutMs` passes first: the API can't be reached, or is
    * slow. For the end of a turn and before the sandbox sleeps; an edit still pending when the
    * process stops is lost. Ask `notices` afterwards for what was undone.
+   *
+   * While it waits the replica is kept trying. Left alone, a replica that has failed a few
+   * requests waits up to half a minute before the next, which would report an API that came
+   * back seconds ago as out of reach.
    */
   settled(timeoutMs: number): Promise<boolean> {
     if (!this.replica.pending.length) return Promise.resolve(true);
     return new Promise((resolve) => {
       const done = (ok: boolean) => {
         clearTimeout(timer);
+        clearInterval(retry);
         off();
         resolve(ok);
       };
@@ -74,25 +99,33 @@ export class ReplicaDesign implements ToolDesign {
         if (!this.replica.pending.length) done(true);
       });
       const timer = setTimeout(() => done(false), timeoutMs);
+      const retry = setInterval(() => this.replica.retryNow(), SETTLE_RETRY_MS);
+      this.replica.retryNow();
     });
   }
 
   /**
-   * The agent's edits that were undone since this was last asked, in words for the agent.
-   * Asking takes them, so each is told once.
+   * What the agent has to hear about its edits since this was last asked, in words for it:
+   * what was left out of one as it was made, and which were undone afterwards. Asking takes
+   * them, so each is told once.
    */
   notices(): string[] {
+    const said: string[] = [];
+    const removed = this.removed.splice(0);
+    if (removed.length) said.push(droppedNote(removed).trimStart());
     const dropped = this.undone.splice(0);
-    if (!dropped.length) return [];
-    const doc = this.replica.doc;
-    const one = dropped.length === 1;
-    return [
-      [
-        `Undone: ${one ? "an edit" : `${dropped.length} edits`} you made earlier ${one ? "is" : "are"} not in the design, though the tool said ${one ? "it was" : "they were"}.`,
-        ...dropped.map((d) => `- ${describe(doc, d.op)}: ${why(d)}`),
-        `Look at what is there now (get_tree, get_html) before you make ${one ? "it" : "them"} again.`,
-      ].join("\n"),
-    ];
+    if (dropped.length) {
+      const doc = this.replica.doc;
+      const one = dropped.length === 1;
+      said.push(
+        [
+          `Undone: ${one ? "an edit" : `${dropped.length} edits`} you made earlier ${one ? "is" : "are"} not in the design, though the tool said ${one ? "it was" : "they were"}.`,
+          ...dropped.map((d) => `- ${describe(doc, d.op)}: ${why(d)}`),
+          `Look at what is there now (get_tree, get_html) before you make ${one ? "it" : "them"} again.`,
+        ].join("\n"),
+      );
+    }
+    return said;
   }
 
   /** Stop listening to the replica. */

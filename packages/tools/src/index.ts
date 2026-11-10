@@ -1,7 +1,8 @@
 // The tools on a replica, in a design's sandbox.
+export { MAX_ASSET_BYTES } from "./cloud/asset.ts";
 export { CLOUD_INSTRUCTIONS, type CloudGuideTopic, cloudGuides } from "./cloud/guides.ts";
 export { ReplicaDesign } from "./cloud/replica-design.ts";
-export { cloudTools, getCloudTool, MAX_ASSET_BYTES } from "./cloud/tools.ts";
+export { cloudTools, getCloudTool } from "./cloud/tools.ts";
 export {
   type AgentStatus,
   type CloudHost,

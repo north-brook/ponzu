@@ -1,11 +1,15 @@
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { mkdir, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute } from "node:path";
 import { ToolError } from "./define.ts";
 
 /*
- * Files an agent names by path. The tools run on the machine the agent works on (its sandbox,
- * in the cloud), so a path is how something too big for an argument gets in, and how an export
- * gets out to where the agent can use it.
+ * Files an agent names by path. In a sandbox the tools run on the machine the agent works on,
+ * so a path is how something too big for an argument gets in, and how an export gets out to
+ * where the agent can use it.
+ *
+ * Only the cloud's tools read one. The local server answers callers on other machines, and
+ * there a path names a file of the server's, which the caller could not otherwise read.
  */
 
 /** "340 KB", "1.2 MB". */
@@ -28,11 +32,25 @@ export async function readGiven(path: string, limit: number, instead: string): P
   const info = await stat(absolute(path)).catch(() => null);
   if (!info) throw new ToolError(`There is no file at ${path}.`);
   if (!info.isFile()) throw new ToolError(`${path} is not a file.`);
-  if (info.size > limit)
-    throw new ToolError(
-      `${path} is ${fileSize(info.size)}; the most is ${fileSize(limit)}. ${instead}`,
-    );
-  return readFile(path);
+  // Read to one byte past the limit and no further, whatever size the file reports: one can
+  // grow after it is asked, and some (under /proc) say they are empty.
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for await (const chunk of createReadStream(path, { end: limit })) {
+    chunks.push(chunk);
+    size += chunk.length;
+  }
+  if (size > limit) {
+    const actual = info.size > limit ? fileSize(info.size) : `more than ${fileSize(limit)}`;
+    throw new ToolError(`${path} is ${actual}; the most is ${fileSize(limit)}. ${instead}`);
+  }
+  const bytes = new Uint8Array(size);
+  let at = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, at);
+    at += chunk.length;
+  }
+  return bytes;
 }
 
 /** Write a file where the agent asked for it, making the folders on the way. */

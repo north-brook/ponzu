@@ -110,6 +110,10 @@ const LOCAL: Record<string, { description?: string; handler?: ToolDef<any>["hand
       "Add an artboard (a top-level frame, stored as its own HTML file). It's placed in a free spot unless you give x/y. Defaults to a flex column, even when its style sets display: flex; give flex-direction: row for side-by-side panes. Typical sizes: desktop 1440×900, tablet 768×1024, phone 390×844. Use height 'fit-content' for long pages. Optionally pass `html` to fill it in the same call.",
     handler: (args: any, ctx) => createArtboard(args, ctx, written),
   },
+  write_html: {
+    description:
+      "Insert HTML into a node, or replace a node with HTML. Use inline styles, flexbox/grid, and var(--token) values. Write in small visual pieces (a header, then a row, then a card) and screenshot as you go. Name important layers with data-name. Returns the new ids. To set a whole artboard's content in one call, target the artboard with mode replace-children. For content too big for a call (a long table, a diagram from a script), write the artboard's HTML file directly instead, at the path create_artboard or get_node gives; Ponzu picks the change up live.",
+  },
   set_status: {
     description:
       "Optional. Say in a few words what you're doing, e.g. 'tightening the hero'; the person reads it on hover over the yuzu rain in the header of each artboard you're working on. Artboards you change already show as worked on (a yuzu ring breathes round them, their page and file tabs shimmer) until you go two minutes without a tool call or call wait_for_activity. Pass artboards to claim them before your first edit.",

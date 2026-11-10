@@ -162,10 +162,12 @@ async function invoke(def: ToolDef<any>, rawArgs: unknown, ctx: ToolContext): Pr
     // An edit the API would refuse on sight (`validateOp`): too large, or a name it can't keep.
     if ((err as Error)?.name === "InvalidOpError") {
       track("mistake", { error_class: "invalid_target" });
-      return {
-        text: `That edit can't be saved: ${message}. If it is too large, make it as several smaller edits.`,
-        isError: true,
-      };
+      // Only an edit that carries too much is helped by splitting it. One value that is too
+      // long (a data: URL, say) is as long in a smaller edit.
+      const split = (err as { tooMuch?: boolean }).tooMuch
+        ? " It is too much for one edit, and nothing of it was written: make it as several smaller edits."
+        : "";
+      return { text: `That edit can't be saved: ${message}.${split}`, isError: true };
     }
     const render = renderFailure(err);
     const aborted = (err as Error)?.name === "AbortError";

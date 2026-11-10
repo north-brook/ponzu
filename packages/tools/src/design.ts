@@ -20,6 +20,10 @@ export interface ToolDesign {
   /**
    * Apply an op at once, in `origin`'s name, and say what it touched. It never waits on
    * storage or the network. Throws, and changes nothing, when the op doesn't fit the document.
+   *
+   * A host may apply less than it was given: the cloud leaves out what a design can't hold
+   * (script, mostly), and says what through the workspace's `notices`. So read `doc` for what
+   * an edit left; don't assume it is the op.
    */
   apply(op: Op, origin: Origin): Applied;
 }
