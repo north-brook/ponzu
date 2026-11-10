@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArtboardFile } from "@ponzu/core";
 import type { Browser, Page } from "playwright-core";
@@ -36,7 +37,9 @@ describe.skipIf(!chromium)("the Chromium renderer", () => {
 
   /** A renderer, and the latest page it opened with the browser that page is in. */
   function make(limits: Partial<RenderLimits> = {}, opts: { assetsMs?: number } = {}) {
-    const seen: { browser?: Browser; page?: Page; stalled: number } = { stalled: 0 };
+    const seen: { browser?: Browser; page?: Page; density?: number; stalled: number } = {
+      stalled: 0,
+    };
     const renderer = new ChromiumRenderer({
       executablePath: chromium ?? undefined,
       assetsMs: opts.assetsMs,
@@ -44,6 +47,8 @@ describe.skipIf(!chromium)("the Chromium renderer", () => {
       preparePage: async (page: Page) => {
         seen.page = page;
         seen.browser = page.context().browser()!;
+        // Device pixels per CSS pixel the page is held at.
+        seen.density = await page.evaluate("devicePixelRatio");
         // Never answered: a render that asks for one sits waiting on its assets.
         await page.route("https://stall.test/**", () => {
           seen.stalled++;
@@ -162,6 +167,75 @@ describe.skipIf(!chromium)("the Chromium renderer", () => {
       expect(boxes.n_h).toMatchObject({ x: 30, y: 10, width: 940, height: 250 });
     });
 
+    test("a node comes back at the scale asked, however big the board around it", async () => {
+      // Hairlines a CSS pixel wide: each is four device pixels at 4x, and a
+      // smear in an image stretched up from a lower scale.
+      const hairlines = Array.from(
+        { length: 64 },
+        (_, i) => `<i style="width:1px;background:${i % 2 ? "#fff" : "#000"}"></i>`,
+      ).join("");
+      const page = (height: number) =>
+        board(
+          `<div data-id="n_logo" style="display:flex;width:64px;height:64px;margin:20px;flex-shrink:0">${hairlines}</div>
+<div data-id="n_big" style="width:600px;height:600px;flex-shrink:0"></div>`,
+          `width:1440px;height:${height}px`,
+        );
+      // A landing page: 1440×5200 is past the budget at 2x, let alone 4x.
+      const ask = { tokens: "", nodeId: "n_logo", scale: 4 };
+      const tall = await ordinary.render({ artboard: page(5200), ...ask });
+      expect(tall.scale).toBe(4);
+      expect(pngSize(tall.bytes)).toEqual({ width: 256, height: 256 });
+      // Drawn at that scale, not stretched to it: the image a board that fits at 4x gives.
+      const short = await ordinary.render({ artboard: page(900), ...ask });
+      expect(Buffer.from(tall.bytes).equals(Buffer.from(short.bytes))).toBe(true);
+      const jpeg = await ordinary.render({ artboard: page(5200), ...ask, format: "jpeg" });
+      expect(jpeg).toMatchObject({ scale: 4, mime: "image/jpeg" });
+      // A node too big for one image is held to the budget like a board is.
+      const { renderer } = make({ maxPixels: 1_000_000 });
+      const big = await renderer.render({
+        artboard: page(5200),
+        tokens: "",
+        nodeId: "n_big",
+        scale: 4,
+      });
+      expect(big.scale).toBe(1.666);
+      expect(pngSize(big.bytes)).toEqual({ width: 1000, height: 1000 });
+    });
+
+    test("a board that grows when it is drawn at a lower density still comes back as an image", async () => {
+      // 9000px tall on a dense screen, 30000px on any other. Held to the
+      // budget by loading the page again at the scale that fit, it grew past
+      // that scale too, and the render answered with no image at all.
+      const dense = board(
+        `<style>.hero { height: 9000px } @media (max-resolution: 1.5dppx) { .hero { height: 30000px } }</style>
+<div data-id="n_hero" class="hero" style="flex-shrink:0"></div>`,
+        "width:1440px;height:fit-content",
+      );
+      const out = await ordinary.render({ artboard: dense, tokens: "", scale: 2 });
+      // Laid out once, at the density asked for; only the picture of it is smaller.
+      expect(out.height).toBe(9000);
+      expect(out.scale).toBe(1.36);
+      expect(pngSize(out.bytes)).toEqual({ width: 1958, height: 12240 });
+    });
+
+    test("a recording's page is held to the budget too, and its frames come out the same", async () => {
+      // 3000×2000 is over twice the budget at 1x; the frames and the sheet are inside it.
+      const { renderer, seen } = make({ maxPixels: 2_400_000 });
+      const moving = board(
+        `<style>@keyframes go { to { transform: translateX(200px) } } .dot { animation: go 1s linear both }</style>
+<div data-id="n_dot" class="dot" style="width:40px;height:40px;background:#f60"></div>`,
+        "width:3000px;height:2000px",
+      );
+      const held = await renderer.record({ artboard: moving, tokens: "", nodeId: "n_dot" });
+      expect(seen.density).toBeCloseTo(0.632, 5);
+      const whole = await ordinary.record({ artboard: moving, tokens: "", nodeId: "n_dot" });
+      // The same moments of the same area, at the same size, whatever the page was held at.
+      expect(held.steps).toEqual(whole.steps);
+      expect(held.box).toEqual(whole.box);
+      expect(held.frames.map(pngSize)).toEqual(whole.frames.map(pngSize));
+      expect(pngSize(held.bytes)).toEqual(pngSize(whole.bytes));
+    });
+
     test("a job that runs past its time is stopped, and leaves no page or context behind", async () => {
       // Long enough for a loaded machine to launch Chrome and draw a plain board, far short of the assets' wait.
       const { renderer, seen } = make({ jobMs: 5_000 }, { assetsMs: 60_000 });
@@ -211,6 +285,54 @@ describe.skipIf(!chromium)("the Chromium renderer", () => {
     });
   });
 
+  test.skipIf(process.platform === "win32")(
+    "a Chrome the kernel won't let sandbox its pages says so, and how to go without",
+    async () => {
+      // Stands in for Chrome where user namespaces are off: it gives up at
+      // launch unless told not to sandbox.
+      const dir = mkdtempSync(join(tmpdir(), "ponzu-chrome-"));
+      const chrome = join(dir, "chrome");
+      writeFileSync(
+        chrome,
+        `#!/bin/sh
+case "$*" in
+  *--no-sandbox*) echo "Started without a sandbox, and has nothing to draw with." >&2; exit 0 ;;
+  *) echo "FATAL:zygote_host_impl_linux.cc(128)] No usable sandbox!" >&2; exit 1 ;;
+esac
+`,
+      );
+      chmodSync(chrome, 0o755);
+      const draw = (sandbox?: boolean) => {
+        const renderer = new ChromiumRenderer({ executablePath: chrome, sandbox });
+        renderers.push(renderer);
+        return renderer.render({ artboard: plain, tokens: "" }).catch((e) => e);
+      };
+      const before = process.env.PONZU_CHROMIUM_SANDBOX;
+      try {
+        delete process.env.PONZU_CHROMIUM_SANDBOX;
+        const refused = await draw(true);
+        expect(refused).toBeInstanceOf(RenderError);
+        expect(refused.message).toStartWith("Chrome can't sandbox its pages on this machine");
+        expect(refused.message).toContain("PONZU_CHROMIUM_SANDBOX=0");
+        expect(refused.message).toContain("`sandbox: false`");
+        // Not the launch log it came from.
+        expect(refused.message).not.toContain("zygote");
+        // The variable is the way out for a caller that can't pass an option. It
+        // gets Chrome started; this one just can't draw.
+        process.env.PONZU_CHROMIUM_SANDBOX = "0";
+        const started = await draw();
+        expect(started).toBeInstanceOf(Error);
+        expect(started.message).not.toContain("sandbox its pages");
+        // An option given in code still decides.
+        expect((await draw(true)).message).toContain("sandbox its pages");
+      } finally {
+        if (before === undefined) delete process.env.PONZU_CHROMIUM_SANDBOX;
+        else process.env.PONZU_CHROMIUM_SANDBOX = before;
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+
   test("renders after this process has spawned children", async () => {
     // Under Bun, a page filled with setContent could leave evaluate waiting
     // for ever once the process had children; pages are navigated to instead.
@@ -234,13 +356,41 @@ describe.skipIf(!chromium)("the Chromium renderer", () => {
 
   describe("where assets load from", () => {
     const requests: string[] = [];
+    const MB = 1024 * 1024;
+    /** How much of its big files the server has been asked to send. */
+    let streamed = 0;
+    const chunk = new Uint8Array(MB);
+    /** `bytes` of nothing in particular, sent as fast as they are taken. */
+    const stream = (bytes: number) => {
+      let left = bytes;
+      return new ReadableStream({
+        pull(controller) {
+          if (left <= 0) return controller.close();
+          const size = Math.min(left, chunk.length);
+          controller.enqueue(chunk.subarray(0, size));
+          left -= size;
+          streamed += size;
+        },
+      });
+    };
     // A dev server as they come: no CORS headers on its static files.
     const server = Bun.serve({
       port: 0,
       hostname: "127.0.0.1",
+      idleTimeout: 0,
       async fetch(req) {
         const { pathname } = new URL(req.url);
         requests.push(`${req.headers.get("host")}${pathname}`);
+        // A product video, where a dev server keeps them.
+        if (pathname === "/demo.mp4")
+          return new Response(stream(300 * MB), {
+            headers: { "content-type": "video/mp4", "content-length": String(300 * MB) },
+          });
+        // A response that says no length and never ends.
+        if (pathname === "/endless.png")
+          return new Response(stream(Number.POSITIVE_INFINITY), {
+            headers: { "content-type": "image/png" },
+          });
         if (pathname === "/site.css")
           return new Response(".wide { width: 321px; }", {
             headers: { "content-type": "text/css" },
@@ -294,6 +444,115 @@ describe.skipIf(!chromium)("the Chromium renderer", () => {
       ]);
       const { boxes } = await renderer.measure({ artboard: page, tokens, ids: ["n_wide"] });
       expect(boxes.n_wide?.width).toBe(321);
+      // An image that asks for CORS, as every font does, gets the header the dev server didn't send.
+      const cors = await renderer.render({
+        artboard: board(
+          `<img data-id="n_cors" crossorigin="anonymous" src="http://${local}/pixel.png" style="width:20px;height:20px">`,
+        ),
+        tokens: "",
+        lint: true,
+      });
+      expect(assetIssues(cors.issues)).toEqual([]);
+    });
+
+    /**
+     * Draws `heavy` with a plain board beside it. Resolves with both results,
+     * how much this process grew while they drew, and how much of its big
+     * files the server went on sending once they were done.
+     */
+    async function beside(
+      renderer: ChromiumRenderer,
+      heavy: Parameters<typeof renderer.render>[0],
+    ) {
+      await renderer.render({ artboard: plain, tokens: "" });
+      streamed = 0;
+      const before = process.memoryUsage().rss;
+      let peak = before;
+      const watch = setInterval(() => {
+        peak = Math.max(peak, process.memoryUsage().rss);
+      }, 20);
+      try {
+        const [out, other] = await Promise.all([
+          renderer.render(heavy),
+          renderer.render({ artboard: plain, tokens: "" }),
+        ]);
+        // A moment for the server to hear that its connections have closed.
+        await Bun.sleep(300);
+        const sent = streamed;
+        await Bun.sleep(500);
+        return { out, other, grewMB: (peak - before) / MB, sentAfterMB: (streamed - sent) / MB };
+      } finally {
+        clearInterval(watch);
+      }
+    }
+    const heavyBody = (base: string) =>
+      `<video data-id="n_video" src="${base}demo.mp4" style="width:100px;height:100px"></video>
+<img data-id="n_endless" src="${base}endless.png" style="width:20px;height:20px">
+<p data-id="n_p">Beside a video</p>`;
+
+    test("with loopback on, a video and a response that never ends cost this process nothing", async () => {
+      const renderer = new ChromiumRenderer({
+        executablePath: chromium ?? undefined,
+        loopback: true,
+        assetsMs: 3_000,
+      });
+      renderers.push(renderer);
+      const { out, other, grewMB, sentAfterMB } = await beside(renderer, {
+        artboard: board(heavyBody(`http://${local}/`)),
+        tokens: "",
+        lint: true,
+      });
+      expect(pngSize(out.bytes)).toEqual({ width: 400, height: 300 });
+      expect(pngSize(other.bytes)).toEqual({ width: 400, height: 300 });
+      // Chrome loads them itself, in pieces. Held here on their way to it,
+      // 300 MB of video took this process past a gigabyte.
+      expect(grewMB).toBeLessThan(150);
+      // And the page gone, nothing is still being read.
+      expect(sentAfterMB).toBe(0);
+    });
+
+    test("what is fetched from here for a page is refused past a size, and stops with the page", async () => {
+      // No loopback: the asset base is a server on this machine, so every file comes through this process.
+      const renderer = new ChromiumRenderer({
+        executablePath: chromium ?? undefined,
+        assetBase: `http://${local}`,
+        assetsMs: 3_000,
+      });
+      renderers.push(renderer);
+      const { out, other, grewMB, sentAfterMB } = await beside(renderer, {
+        artboard: board(
+          `<img data-id="n_video" src="demo.mp4" style="width:20px;height:20px">
+<img data-id="n_endless" src="endless.png" style="width:20px;height:20px">
+<img data-id="n_img" src="pixel.png" style="width:20px;height:20px">`,
+        ),
+        tokens: "",
+        lint: true,
+      });
+      // Both are refused, one by the length it states and one once it passes the limit, and lint says so.
+      expect(assetIssues(out.issues).sort()).toEqual(["n_endless", "n_video"]);
+      expect(out.assetsTimedOut).toBeUndefined();
+      expect(pngSize(other.bytes)).toEqual({ width: 400, height: 300 });
+      // 25 MB of the endless one was read before it was dropped, the server
+      // having queued some more behind it, and nothing after.
+      expect(streamed / MB).toBeLessThan(200);
+      expect(grewMB).toBeLessThan(250);
+      expect(sentAfterMB).toBe(0);
+    });
+
+    test("a smaller limit on fetched assets is honoured", async () => {
+      const renderer = new ChromiumRenderer({
+        executablePath: chromium ?? undefined,
+        assetBase: `http://${local}`,
+        limits: { maxAssetBytes: 10 },
+      });
+      renderers.push(renderer);
+      // The 68-byte pixel that loaded under the default limit.
+      const out = await renderer.render({
+        artboard: board(`<img data-id="n_img" src="pixel.png" style="width:20px;height:20px">`),
+        tokens: "",
+        lint: true,
+      });
+      expect(assetIssues(out.issues)).toEqual(["n_img"]);
     });
 
     test("an asset base on this machine is fetched from here, with or without loopback", async () => {
