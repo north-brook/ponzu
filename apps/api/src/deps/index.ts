@@ -46,6 +46,8 @@ export interface Config {
   minimumClientVersions: MinimumVersions;
   /** The GitHub App's slug, where installs begin, and the secret its webhooks are signed with. */
   githubApp: { slug: string; webhookSecret: string };
+  /** What the scheduler's requests carry (`routes/cron.ts`). */
+  cronSecret: string;
 }
 
 /** Ids the API makes itself. Rows get theirs from `@ponzu/db`. */
@@ -94,6 +96,7 @@ export function createDeps(env: Env): Deps {
       build: { version: VERSION, commit: env.commit },
       minimumClientVersions: env.minimumClientVersions,
       githubApp: { slug: env.githubApp.slug, webhookSecret: env.githubApp.webhookSecret },
+      cronSecret: env.cronSecret,
     },
   };
 }

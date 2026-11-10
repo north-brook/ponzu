@@ -16,10 +16,17 @@ afterAll(() => t.close());
 let nextId = 70_000;
 const id = () => nextId++;
 
+/** An installation on an organization whose members, the people given, can push to its repo. */
 function installOnOrg(login: string, people: SignedInPerson[], name: string | null = null) {
   const installation: FakeInstallation = {
     id: id(),
-    account: { id: id(), login, type: "Organization", name },
+    account: {
+      id: id(),
+      login,
+      type: "Organization",
+      name,
+      members: people.map((person) => person.github.id),
+    },
     repositorySelection: "selected",
     repositories: [
       {

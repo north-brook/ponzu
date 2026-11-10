@@ -32,6 +32,7 @@ src/
   github/         githubUserToken: a person's GitHub token, kept fresh; syncGithub and
                   reconcileInstallation: workspaces, members and repos in line with GitHub;
                   the install round trip and its setup page; what each webhook does
+  jobs/           runJob and runDueJobs: work recorded in `jobs`, run now and retried by the cron
   routes/         one file per area, mounted under /v1 in routes/index.ts
   testing/        createTestApp and the fakes behind it
 scripts/
@@ -108,7 +109,11 @@ has: no `Bun.…`, no DOM. `bun run typecheck` (and CI) checks exactly that.
    leave a promise running past a response: it keeps the instance alive for it and logs a
    failure. Await everything else: on a rejection nobody handles, Vercel ends the instance,
    with the other requests it is serving, and the app cannot stop it. The linter flags a
-   floating promise where it can tell there is one.
+   floating promise where it can tell there is one. Work that must happen even if the
+   instance dies or the work fails is a job: record it in `jobs` held by the request, run it
+   with `runJob` in the background, and add its kind to `HANDLERS` in `jobs/run.ts`; the
+   cron (`GET /v1/cron/minute`, every minute on production) runs it again after a failure,
+   or once the request's lock runs out. The GitHub webhook is the model.
 
 5. **Errors.** Throw `new ApiError(status, code, message, { details?, cause? })`. Every error
    leaves as `{ "error": { "code", "message", "details"? } }`. `code` is from the `ErrorCode`
@@ -142,7 +147,8 @@ has: no `Bun.…`, no DOM. `bun run typecheck` (and CI) checks exactly that.
 
    `t.clock` moves only when told, and it is the API's clock: token expiry, the GitHub token
    refresh, timeouts and waits follow it. What `@ponzu/db` times with Postgres's own `now()`
-   does not: runner token expiry, job leases and retries, presence and event claims. A query
+   does not: runner token expiry, job leases, presence and event claims. (When a job is due
+   is the API's clock: `runJob` and the cron set and compare it by `deps.clock`.) A query
    function that needs the time takes `now` from its caller (as the GitHub token claim does);
    convert one of the others when your module comes to depend on its timing.
 
@@ -245,4 +251,9 @@ seconds.
 places at once: set the new value on the project, then point the App at it with
 `bun scripts/github-webhook.ts configure` (which also sets the URL). Deliveries in between fail
 their signature check; once the deploy is live, `bun scripts/github-webhook.ts redeliver` sends
-them again. GitHub never retries a failed delivery by itself.
+them again. GitHub never retries a failed delivery by itself. One the API answered 202 is a job
+by then, and the cron retries its work.
+
+`CRON_SECRET` is what Vercel sends as the bearer of each cron request (`crons` in
+[vercel.json](vercel.json)); Vercel reads that exact name from the project. Crons run on
+production only, so a preview never runs its jobs again by itself.

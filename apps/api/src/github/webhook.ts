@@ -5,15 +5,15 @@ import type { Deps } from "../deps/index.ts";
 import { reconcileInstallation } from "./installations.ts";
 import { type PullRequestRef, recordPullRequestEvent, tellDesigns } from "./pull-requests.ts";
 import { forgetRevokedAuthorization } from "./revoked.ts";
-import { resyncGithubUser } from "./sync.ts";
+import { resyncGithubUser, resyncWorkspaceMembers } from "./sync.ts";
 
 /*
  * GitHub's webhooks: which deliveries mean something to Ponzu, and the work each one starts.
  *
  * A delivery is a signal, not a record. GitHub sends one late, twice, or after a later one, so
  * nothing here writes what a payload says about an installation or its repos: it asks GitHub
- * for the installation as it is now (`reconcileInstallation`) or syncs the person it names. A
- * pull request is the exception, recorded from its payload, and that keeps only the newest
+ * for the installation as it is now (`reconcileInstallation`) or syncs the people it concerns.
+ * A pull request is the exception, recorded from its payload, and that keeps only the newest
  * word. Every handler can run again with the same delivery and change nothing more.
  *
  * Only the fields used are read; the schemas below are that list.
@@ -31,7 +31,11 @@ export type WebhookDeps = Pick<Deps, "db" | "clock" | "vault" | "github" | "log"
 type Work = (deps: WebhookDeps) => Promise<void>;
 
 export type Plan =
-  | { kind: "work"; work: Work }
+  /**
+   * `payload` is the delivery's payload with only the fields used: what is kept while the work
+   * waits to run. Planned again, it plans the same work.
+   */
+  | { kind: "work"; payload: unknown; work: Work }
   /** An event or action Ponzu does not act on. */
   | { kind: "ignored" }
   /** An event Ponzu acts on, in a shape it does not recognise. */
@@ -54,11 +58,16 @@ const RepositoryEvent = z.object({
   installation: Id.optional(),
   changes: z.object({ default_branch: z.unknown().optional() }).optional(),
 });
-const MemberEvent = z.object({ action: z.string(), member: Id });
+const MemberEvent = z.object({ action: z.string(), member: Id, installation: Id.optional() });
 const OrganizationEvent = z.object({
   action: z.string(),
   membership: z.object({ user: Id.nullable() }).optional(),
   installation: Id.optional(),
+});
+const TeamEvent = z.object({
+  action: z.string(),
+  installation: Id,
+  changes: z.object({ repository: z.unknown().optional() }).optional(),
 });
 const AuthorizationEvent = z.object({ action: z.string(), sender: Id });
 const PullRequestEvent = z.object({
@@ -101,6 +110,7 @@ const ReviewEvent = z.object({
     body: z.string().nullable(),
     html_url: z.string(),
     user: z.object({ login: z.string() }).nullable(),
+    author_association: z.string(),
   }),
   pull_request: PullRequest,
 });
@@ -113,6 +123,7 @@ const INSTALLATION_ACTIONS = [
   "new_permissions_accepted",
 ];
 const REPOSITORY_ACTIONS = ["renamed", "transferred", "deleted", "privatized", "publicized"];
+const TEAM_ACTIONS = ["added_to_repository", "removed_from_repository", "deleted"];
 const PULL_REQUEST_ACTIONS = [
   "opened",
   "closed",
@@ -125,6 +136,12 @@ const PULL_REQUEST_ACTIONS = [
 const FAILED = ["failure", "timed_out", "action_required", "startup_failure"];
 /** The most of a review's text a design's feed keeps. */
 const REVIEW_BODY_CHARS = 4_000;
+/**
+ * Whose reviews reach the agent: the repo's owner, its organization's members and its
+ * collaborators. On a public repo anyone can review a pull request, and a review is text the
+ * agent reads, so a stranger's never reaches it.
+ */
+const REVIEWERS = ["OWNER", "MEMBER", "COLLABORATOR"];
 
 /** What to do with one delivery of `event`, decided from its payload alone. */
 export function planDelivery(event: string, payload: unknown): Plan {
@@ -164,19 +181,33 @@ export function planDelivery(event: string, payload: unknown): Plan {
     case "member":
     case "membership":
       // A collaborator added to or removed from a repo; someone added to or removed from a team.
-      return plan(MemberEvent, payload, (e) => (deps) => resyncGithubUser(deps, e.member.id));
+      return plan(MemberEvent, payload, (e) => {
+        const lostAccessTo = e.action === "removed" ? e.installation?.id : undefined;
+        return (deps) => resyncGithubUser(deps, e.member.id, { lostAccessTo });
+      });
 
     case "organization":
       return plan(OrganizationEvent, payload, (e) => {
         const person = e.membership?.user?.id;
         if ((e.action === "member_added" || e.action === "member_removed") && person) {
-          return (deps) => resyncGithubUser(deps, person);
+          const lostAccessTo = e.action === "member_removed" ? e.installation?.id : undefined;
+          return (deps) => resyncGithubUser(deps, person, { lostAccessTo });
         }
         const installationId = e.installation?.id;
         if (e.action === "renamed" && installationId) {
           return (deps) => reconcileKnownInstallation(deps, installationId);
         }
         return null;
+      });
+
+    case "team":
+      // A team gained or lost a repo, or its access to one changed. The payload does not say
+      // who is on the team, so everyone in the workspace is synced.
+      return plan(TeamEvent, payload, (e) => {
+        const accessChanged =
+          TEAM_ACTIONS.includes(e.action) || (e.action === "edited" && e.changes?.repository);
+        if (!accessChanged) return null;
+        return (deps) => resyncWorkspaceMembers(deps, e.installation.id);
       });
 
     case "github_app_authorization":
@@ -237,8 +268,10 @@ export function planDelivery(event: string, payload: unknown): Plan {
 
     case "pull_request_review":
       return plan(ReviewEvent, payload, (e) => {
-        if (e.action !== "submitted") return null;
         const { review } = e;
+        if (e.action !== "submitted" || !REVIEWERS.includes(review.author_association)) {
+          return null;
+        }
         return (deps) =>
           tellDesigns(deps, {
             githubRepoId: e.repository.id,
@@ -247,6 +280,7 @@ export function planDelivery(event: string, payload: unknown): Plan {
             payload: (pr: PullRequestRef) => ({
               state: review.state.toLowerCase(),
               reviewer: review.user?.login ?? null,
+              reviewerAssociation: review.author_association,
               body: (review.body ?? "").slice(0, REVIEW_BODY_CHARS),
               url: review.html_url,
               pullRequest: pr.number,
@@ -259,6 +293,28 @@ export function planDelivery(event: string, payload: unknown): Plan {
   }
 }
 
+/** The job a delivery's work is recorded as, keyed by its delivery id (`jobs/run.ts`). */
+export const WEBHOOK_JOB = "github_webhook";
+/** Attempts a delivery's work gets: with the retry waits, a little over two hours of them. */
+export const WEBHOOK_JOB_ATTEMPTS = 8;
+
+const WebhookJob = z.object({ event: z.string(), payload: z.unknown() });
+
+/** What a delivery's job holds: its event and the payload `planDelivery` kept. */
+export type WebhookJobPayload = z.infer<typeof WebhookJob>;
+
+/** Run a delivery's work from its job. */
+export async function runWebhookJob(deps: WebhookDeps, stored: unknown): Promise<void> {
+  const { event, payload } = WebhookJob.parse(stored);
+  const planned = planDelivery(event, payload);
+  if (planned.kind !== "work") {
+    // A payload kept by an older build that this one reads differently.
+    deps.log.warn("github_webhook_job_skipped", { event, reason: planned.kind });
+    return;
+  }
+  await planned.work(deps);
+}
+
 function plan<Schema extends z.ZodType>(
   schema: Schema,
   payload: unknown,
@@ -267,7 +323,7 @@ function plan<Schema extends z.ZodType>(
   const parsed = schema.safeParse(payload);
   if (!parsed.success) return { kind: "malformed" };
   const work = decide(parsed.data);
-  return work ? { kind: "work", work } : { kind: "ignored" };
+  return work ? { kind: "work", payload: parsed.data, work } : { kind: "ignored" };
 }
 
 /** Reconcile an installation only if Ponzu has a workspace for it: an event about it says no more. */

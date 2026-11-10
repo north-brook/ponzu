@@ -59,6 +59,8 @@ export type ErrorCode =
   | "signature_invalid"
   /** A workspace always has an admin: this would leave it with none. Make someone else one first. */
   | "last_admin"
+  /** GitHub says this person owns the workspace's account, so they are always an admin. */
+  | "owner_is_admin"
   | "internal";
 
 /**

@@ -11,6 +11,7 @@ const complete = {
   GITHUB_APP_PRIVATE_KEY: "-----BEGIN RSA PRIVATE KEY-----\nMIIE\n-----END RSA PRIVATE KEY-----\n",
   GITHUB_APP_SLUG: "ponzu-dev",
   GITHUB_WEBHOOK_SECRET: "a-webhook-secret-of-at-least-32-characters",
+  CRON_SECRET: "a-cron-secret-of-at-least-32-characters",
   BOAT_API_KEY: "boat-key",
   PONZU_VAULT_KEY: "vault-key",
 };
@@ -26,6 +27,7 @@ test("a complete environment is read into one typed value", () => {
       slug: "ponzu-dev",
       webhookSecret: complete.GITHUB_WEBHOOK_SECRET,
     },
+    cronSecret: complete.CRON_SECRET,
     boatApiKey: "boat-key",
     vault: { key: "vault-key", oldKeys: [] },
     minimumClientVersions: {},

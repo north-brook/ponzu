@@ -4,5 +4,6 @@
   "installCommand": "bun install --frozen-lockfile --ignore-scripts --filter @ponzu/api",
   "buildCommand": "bun run build",
   "outputDirectory": "dist",
-  "regions": ["iad1"]
+  "regions": ["iad1"],
+  "crons": [{ "path": "/v1/cron/minute", "schedule": "* * * * *" }]
 }

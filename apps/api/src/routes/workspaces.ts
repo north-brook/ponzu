@@ -1,4 +1,5 @@
 import {
+  GITHUB_ACCESS,
   getWorkspace,
   listUserWorkspaces,
   listWorkspaceMembers,
@@ -44,6 +45,8 @@ const Member = z.object({
   name: z.string().nullable(),
   avatarUrl: z.string().nullable(),
   role: z.enum(MEMBER_ROLES),
+  /** How GitHub says they reach it. An `owner` is always an admin and cannot be demoted. */
+  githubAccess: z.enum(GITHUB_ACCESS),
 });
 
 const WorkspaceProfile = z.object({
@@ -60,7 +63,7 @@ const WorkspaceProfile = z.object({
       })
       .nullable(),
   }),
-  /** The repos Ponzu can open, most recently pushed first. */
+  /** The repos of it the caller can open, as GitHub last said, most recently pushed first. */
   repos: z.array(
     z.object({
       id: z.string(),
@@ -69,9 +72,13 @@ const WorkspaceProfile = z.object({
       defaultBranch: z.string(),
       private: z.boolean(),
       pushedAt: z.date().nullable(),
+      canPush: z.boolean(),
     }),
   ),
-  /** Admins first, then by name. */
+  /**
+   * Admins first, then by name. Someone who reaches the workspace only through repos shared
+   * with them sees only themselves: GitHub does not show them who else is in it.
+   */
   members: z.array(Member),
 });
 
@@ -100,12 +107,17 @@ export const workspaces = new Hono<AppEnv>()
   /** One workspace: its profile, its installation, its repos and its members with their roles. */
   .get("/:id", validate("param", WorkspaceParam), async (c) => {
     const { db } = c.var.deps;
+    const { user } = c.var.actor;
     const member = await requireWorkspace(c, c.req.valid("param").id);
-    const [workspace, repos, members] = await Promise.all([
+    const [workspace, repos, everyone] = await Promise.all([
       getWorkspace(db, member.id),
-      listWorkspaceRepos(db, member.id),
+      listWorkspaceRepos(db, { workspaceId: member.id, userId: user.id }),
       listWorkspaceMembers(db, member.id),
     ]);
+    const members =
+      member.githubAccess === "collaborator"
+        ? everyone.filter(({ userId }) => userId === user.id)
+        : everyone;
     if (!workspace) throw new ApiError(404, "not_found", "There is no such workspace.");
     return c.json(
       WorkspaceProfile.parse({
@@ -133,7 +145,8 @@ export const workspaces = new Hono<AppEnv>()
 
   /**
    * Set a member's role. Admins only. Membership itself is GitHub's; the role is the one thing
-   * Ponzu adds, and a sync never changes it afterwards. The last admin cannot be demoted.
+   * Ponzu adds, and a sync never changes it afterwards. Neither an owner of the account nor the
+   * last admin can be demoted.
    */
   .patch(
     "/:id/members/:userId",
@@ -147,6 +160,13 @@ export const workspaces = new Hono<AppEnv>()
       const result = await setMemberRole(db, { workspaceId: workspace.id, userId, role });
       if (result === "not_member") {
         throw new ApiError(404, "not_found", "There is no such member in this workspace.");
+      }
+      if (result === "owner") {
+        throw new ApiError(
+          409,
+          "owner_is_admin",
+          "GitHub says this person owns the account, so they are always an admin.",
+        );
       }
       if (result === "last_admin") {
         throw new ApiError(

@@ -10,8 +10,9 @@ import type { Fetch } from "../deps/fetch.ts";
  * hours, a refresh token works once and is replaced, and a spent one is `bad_refresh_token`.
  *
  * And what the spike recorded of the real one: a person's token lists only installations of
- * the App, and organizations only where the App is installed; a suspended installation is
- * listed but mints no token and lists no repositories (403); an installation token is long,
+ * the App, and shows a membership only of an organization the App is installed on (an outside
+ * collaborator reaches the installation and has none); a suspended installation is listed
+ * but mints no token and lists no repositories (403); an installation token is long,
  * acts only as its installation and is refused on `/user`; lists come a page at a time.
  */
 
@@ -42,6 +43,11 @@ export interface FakeInstallation {
     name?: string | null;
     /** An organization's owners, by GitHub user id. */
     owners?: number[];
+    /**
+     * Its other members, by GitHub user id. Anyone else who reaches one of its repos is an
+     * outside collaborator, and GitHub shows them no membership of the organization.
+     */
+    members?: number[];
   };
   repositorySelection: "all" | "selected";
   repositories: FakeRepository[];
@@ -95,6 +101,7 @@ export class FakeGithub {
   /** Each installation token the App was given, and the installation it acts in. */
   readonly #installationTokens = new Map<string, number>();
   readonly #failures: { path: string; status: number }[] = [];
+  readonly #holds: { path: string; arrived: () => void; released: Promise<void> }[] = [];
   #next = 1;
 
   constructor(clock: Clock) {
@@ -136,6 +143,24 @@ export class FakeGithub {
   }
 
   /**
+   * Holds the answer to the next request to `path` on its way back: GitHub answers it as
+   * things are when it arrives, `reached` settles, and the caller has the answer only after
+   * `release()`. Where a test makes something happen while a caller is acting on old news.
+   */
+  holdNext(path: string): { reached: Promise<void>; release: () => void } {
+    let arrived!: () => void;
+    let release!: () => void;
+    const reached = new Promise<void>((resolve) => {
+      arrived = resolve;
+    });
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.#holds.push({ path, arrived, released });
+    return { reached, release };
+  }
+
+  /**
    * A webhook delivery as GitHub sends one: the body, and headers that name the event and the
    * delivery and sign the body with the App's webhook secret. Post it to the webhook route.
    */
@@ -164,6 +189,17 @@ export class FakeGithub {
 
   /** Serves api.github.com and github.com. Pass it to `createGithub` as its `fetch`. */
   readonly fetch: Fetch = async (url, init = {}) => {
+    const answer = await this.#serve(url, init);
+    const hold = this.#holds.findIndex((queued) => queued.path === new URL(url).pathname);
+    if (hold >= 0) {
+      const { arrived, released } = this.#holds.splice(hold, 1)[0]!;
+      arrived();
+      await released;
+    }
+    return answer;
+  };
+
+  async #serve(url: string, init: RequestInit): Promise<Response> {
     const { hostname, pathname, searchParams } = new URL(url);
     const method = init.method ?? "GET";
     const failure = this.#failures.findIndex((queued) => queued.path === pathname);
@@ -249,11 +285,16 @@ export class FakeGithub {
         ({ account }) => account.type === "Organization" && account.login === orgMembership[1],
       );
       if (!org || !this.#reaches(user, org)) return notFound(method, url);
-      const role = org.account.owners?.includes(user.id) ? "admin" : "member";
+      const role = org.account.owners?.includes(user.id)
+        ? "admin"
+        : org.account.members?.includes(user.id)
+          ? "member"
+          : null;
+      if (!role) return notFound(method, url);
       return Response.json({ state: "active", role, organization: { login: org.account.login } });
     }
     return this.#serveAnyone(method, url) ?? notFound(method, url);
-  };
+  }
 
   /** What an installation token can ask for, as the installation it was minted in. */
   #serveInstallation(installationId: number, method: string, url: string): Response {

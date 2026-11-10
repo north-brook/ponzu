@@ -1,4 +1,4 @@
-import { forgetWebhookDelivery, recordWebhookDelivery, WORKSPACE_KINDS } from "@ponzu/db";
+import { takeWebhookDelivery, WORKSPACE_KINDS } from "@ponzu/db";
 import { Hono } from "hono";
 import { z } from "zod";
 import { access } from "../auth/access.ts";
@@ -6,10 +6,17 @@ import { listGithubAccounts } from "../github/accounts.ts";
 import { createInstallLink, finishSetup } from "../github/install.ts";
 import { renderSetupPage, SETUP_PAGE_HEADERS, type SetupPage } from "../github/setup-page.ts";
 import { syncGithub } from "../github/sync.ts";
-import { planDelivery, verifySignature } from "../github/webhook.ts";
+import {
+  planDelivery,
+  verifySignature,
+  WEBHOOK_JOB,
+  WEBHOOK_JOB_ATTEMPTS,
+  type WebhookJobPayload,
+} from "../github/webhook.ts";
 import type { AppEnv } from "../http/context.ts";
 import { ApiError } from "../http/errors.ts";
 import { validate } from "../http/validate.ts";
+import { runJob } from "../jobs/run.ts";
 
 const Accounts = z.object({
   /** The person's own account first, then every account with the App that they reach. */
@@ -104,8 +111,7 @@ export const github = new Hono<AppEnv>()
   /**
    * GitHub's webhook deliveries. Open to anyone, so nothing is read until the signature over
    * the raw bytes checks out. A delivery seen before is acknowledged and dropped; a new one is
-   * answered at once and its work done after (`planDelivery`). If that work fails the delivery
-   * is given back, so redelivering it from the App's settings runs it again.
+   * recorded as a job, answered, and its work done after (`planDelivery`).
    */
   .post("/webhook", access.public, async (c) => {
     const { deps } = c.var;
@@ -138,17 +144,27 @@ export const github = new Hono<AppEnv>()
       });
       return c.body(null, 204);
     }
-    const delivery = { source: "github" as const, deliveryId, event };
-    if (!(await recordWebhookDelivery(deps.db, delivery))) {
+    // GitHub never sends a delivery again by itself, so its work is a job before it is told
+    // the delivery arrived: the cron retries what fails here or dies with this instance.
+    const worker = `request:${c.var.requestId}`;
+    const job = {
+      kind: WEBHOOK_JOB,
+      payload: { event, payload: plan.payload } satisfies WebhookJobPayload,
+      runAt: new Date(deps.clock.now()),
+      lockedBy: worker,
+      maxAttempts: WEBHOOK_JOB_ATTEMPTS,
+    };
+    const jobId = await takeWebhookDelivery(deps.db, {
+      delivery: { source: "github", deliveryId, event },
+      job,
+    });
+    if (!jobId) {
       c.var.log.info("github_webhook_skipped", { event, deliveryId, reason: "duplicate" });
       return c.body(null, 204);
     }
-    const work = plan.work({ ...deps, log: c.var.log }).catch(async (error) => {
-      await forgetWebhookDelivery(deps.db, delivery).catch((forgetting) => {
-        c.var.log.error("github_webhook_not_given_back", { deliveryId, error: forgetting });
-      });
-      throw error;
-    });
-    deps.background(`github_${event}`, work);
+    deps.background(
+      `github_${event}`,
+      runJob({ ...deps, log: c.var.log }, { id: jobId, attempts: 1, ...job }, worker),
+    );
     return c.body(null, 202);
   });

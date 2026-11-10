@@ -54,6 +54,15 @@ export type GithubInstalledRepository = Omit<GithubRepository, "canPush">;
 /** A person's standing in an organization: `admin` is an owner. */
 export type GithubOrgRole = "admin" | "member";
 
+/**
+ * A list GitHub serves a page at a time. `complete` is false when it was longer than the API
+ * reads (`MAX_PAGES`): what is missing from it is not known to be gone.
+ */
+export interface Listed<T> {
+  items: T[];
+  complete: boolean;
+}
+
 /** A fresh user token pair, from a refresh. */
 export interface GithubTokenPair {
   accessToken: string;
@@ -84,12 +93,12 @@ export interface Github {
   /** Needs the App's "Email addresses" permission. */
   listEmails(userToken: string): Promise<GithubEmail[]>;
   /** The installations of the App this person can reach: their workspaces. */
-  listInstallations(userToken: string): Promise<GithubUserInstallation[]>;
+  listInstallations(userToken: string): Promise<Listed<GithubUserInstallation>>;
   /** The repositories this person can reach inside one installation. */
   listInstallationRepositories(
     userToken: string,
     installationId: number,
-  ): Promise<GithubRepository[]>;
+  ): Promise<Listed<GithubRepository>>;
   /** Their role in an organization, or null if they are not an active member it shows them. */
   getOrgRole(userToken: string, org: string): Promise<GithubOrgRole | null>;
   /** Trades a refresh token for a new pair. The old refresh token stops working at once. */
@@ -110,7 +119,9 @@ export interface Github {
    */
   getInstallation(installationId: number): Promise<GithubUserInstallation | null>;
   /** With an installation token: every repository the installation can see. */
-  listRepositoriesAsInstallation(installationToken: string): Promise<GithubInstalledRepository[]>;
+  listRepositoriesAsInstallation(
+    installationToken: string,
+  ): Promise<Listed<GithubInstalledRepository>>;
   /** With an installation token: an account's display name, or null when it has none. */
   getAccountName(installationToken: string, login: string): Promise<string | null>;
 }
@@ -176,21 +187,24 @@ export function createGithub({
     return (await response.json()) as any;
   }
 
-  /** Every page of a list GitHub wraps as `{ total_count, [key]: [...] }`. */
+  /** Every page of a list GitHub wraps as `{ total_count, [key]: [...] }`, up to `MAX_PAGES`. */
   async function listAll(
     as: "user" | "app",
     path: string,
     token: string,
     key: string,
-  ): Promise<any[]> {
+  ): Promise<Listed<any>> {
     const items: any[] = [];
     for (let page = 1; page <= MAX_PAGES; page++) {
       const body = await call(as, "GET", `${path}?per_page=${PAGE_SIZE}&page=${page}`, token);
       const batch: any[] = body[key] ?? [];
       items.push(...batch);
-      if (batch.length < PAGE_SIZE) break;
+      const total = typeof body.total_count === "number" ? body.total_count : null;
+      if (batch.length < PAGE_SIZE || (total !== null && items.length >= total)) {
+        return { items, complete: true };
+      }
     }
-    return items;
+    return { items, complete: false };
   }
 
   function appJwt(): Promise<string> {
@@ -224,17 +238,20 @@ export function createGithub({
     },
 
     async listInstallations(userToken) {
-      const path = "/user/installations";
-      return (await listAll("user", path, userToken, "installations")).map(toInstallation);
+      const listed = await listAll("user", "/user/installations", userToken, "installations");
+      return { ...listed, items: listed.items.map(toInstallation) };
     },
 
     async listInstallationRepositories(userToken, installationId) {
       const path = `/user/installations/${installationId}/repositories`;
-      const repositories = await listAll("user", path, userToken, "repositories");
-      return repositories.map((repository) => ({
-        ...toRepository(repository),
-        canPush: repository.permissions?.push === true,
-      }));
+      const listed = await listAll("user", path, userToken, "repositories");
+      return {
+        ...listed,
+        items: listed.items.map((repository) => ({
+          ...toRepository(repository),
+          canPush: repository.permissions?.push === true,
+        })),
+      };
     },
 
     async getOrgRole(userToken, org) {
@@ -315,7 +332,8 @@ export function createGithub({
 
     async listRepositoriesAsInstallation(installationToken) {
       const path = "/installation/repositories";
-      return (await listAll("app", path, installationToken, "repositories")).map(toRepository);
+      const listed = await listAll("app", path, installationToken, "repositories");
+      return { ...listed, items: listed.items.map(toRepository) };
     },
 
     async getAccountName(installationToken, login) {
