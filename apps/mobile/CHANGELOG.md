@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1](https://github.com/north-brook/ponzu/compare/mobile-v0.12.0...mobile-v0.12.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* **mobile:** keep the listening field 44pt with no yuzu ring ([#400](https://github.com/north-brook/ponzu/issues/400)) ([b46a3f9](https://github.com/north-brook/ponzu/commit/b46a3f979630b974ba84765f64e12a92a91d39d5))
+
 ## [0.12.0](https://github.com/north-brook/ponzu/compare/mobile-v0.11.5...mobile-v0.12.0) (2026-11-10)
 
 
