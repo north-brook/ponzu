@@ -11,7 +11,14 @@ import type { Fetch } from "../deps/fetch.ts";
  * without spending the code, a code it never issued is refused as a wrong verifier, an
  * unverified email stops the exchange with 403 and the two ids that finish it, and GitHub's
  * tokens come back as `oauth_tokens` with `expires_at` in milliseconds and the provider
- * spelled "GitHubOauth".
+ * spelled "GitHubOauth". The verification leg was run against WorkOS staging with a password
+ * user: the pending verification names its `user_id` and `code`, the email-verification grant
+ * answers with a session that keeps the first leg's `authentication_method`, and deleting a
+ * user answers 200, then 404.
+ *
+ * Two things it does have not been seen live, because they take a GitHub account whose address
+ * WorkOS has not verified: that the second leg carries `oauth_tokens`, and that WorkOS stops
+ * for verification before attaching a new identity to a user it has (`attachesIdentity`).
  */
 
 export interface FakeWorkosUser {
@@ -31,13 +38,28 @@ interface PendingSignIn {
   userId: string;
   /** Null to act out WorkOS not returning GitHub's tokens. */
   oauthTokens: FakeOauthTokens | null;
+  authenticationMethod: string;
+}
+
+/** What the browser half of a sign-in ended with. */
+export interface Authorization {
+  codeVerifier: string;
+  oauthTokens: FakeOauthTokens | null;
+  /** How the person signed in at WorkOS. GitHub unless told otherwise. */
+  authenticationMethod?: string;
+  /**
+   * The sign-in arrived with an identity the user does not have yet, under the user's
+   * address: WorkOS stops for email verification before attaching it, though the user's own
+   * address is already verified. (From WorkOS's documentation; not seen on the live service.)
+   */
+  attachesIdentity?: boolean;
 }
 
 export interface AccessTokenOverrides {
   issuer?: string;
   clientId?: string;
-  /** Seconds from now. Negative for a token that has already run out. */
-  expiresIn?: number;
+  /** Seconds from now. Negative for a token that has already run out. Null for no `exp` at all. */
+  expiresIn?: number | null;
   /** `other-key`: a key WorkOS does not publish, under the published key's id. */
   signedWith?: "workos-key" | "other-key" | "shared-secret";
 }
@@ -63,7 +85,10 @@ export class FakeWorkos {
 
   readonly #clock: Clock;
   readonly #users = new Map<string, FakeWorkosUser>();
-  readonly #codes = new Map<string, PendingSignIn & { challenge: string }>();
+  readonly #codes = new Map<
+    string,
+    PendingSignIn & { challenge: string; attachesIdentity: boolean }
+  >();
   readonly #spent = new Set<string>();
   readonly #pending = new Map<string, PendingSignIn & { emailVerificationId: string }>();
   readonly #verifications = new Map<string, { userId: string; code: string }>();
@@ -86,16 +111,32 @@ export class FakeWorkos {
     return user;
   }
 
+  /** Whether the user still exists: the API deletes one it vouched for and then turned away. */
+  hasUser(id: string): boolean {
+    return this.#users.has(id);
+  }
+
   /**
    * What the browser half of a sign-in ends with: an authorization code for `userId`, tied to
    * the PKCE verifier the app began with.
    */
   async authorize(
     userId: string,
-    { codeVerifier, oauthTokens }: { codeVerifier: string; oauthTokens: FakeOauthTokens | null },
+    {
+      codeVerifier,
+      oauthTokens,
+      authenticationMethod = "GitHubOAuth",
+      attachesIdentity = false,
+    }: Authorization,
   ): Promise<string> {
     const code = `code_${this.#id()}`;
-    this.#codes.set(code, { userId, oauthTokens, challenge: await sha256(codeVerifier) });
+    this.#codes.set(code, {
+      userId,
+      oauthTokens,
+      authenticationMethod,
+      attachesIdentity,
+      challenge: await sha256(codeVerifier),
+    });
     return code;
   }
 
@@ -115,8 +156,10 @@ export class FakeWorkos {
       .setIssuer(overrides.issuer ?? this.issuer)
       .setSubject(userId)
       .setJti(this.#id())
-      .setIssuedAt(now)
-      .setExpirationTime(now + (overrides.expiresIn ?? ACCESS_TOKEN_SECONDS));
+      .setIssuedAt(now);
+    if (overrides.expiresIn !== null) {
+      jwt.setExpirationTime(now + (overrides.expiresIn ?? ACCESS_TOKEN_SECONDS));
+    }
     if (overrides.signedWith === "shared-secret") {
       // The classic confusion attack: HS256, keyed with something the attacker knows.
       const secret = new TextEncoder().encode(JSON.stringify(await exportJWK(published.publicKey)));
@@ -168,6 +211,16 @@ export class FakeWorkos {
       session.revoked = true;
       return Response.json({});
     }
+    const user = /^\/user_management\/users\/([^/]+)$/.exec(pathname);
+    if (method === "DELETE" && user) {
+      const id = decodeURIComponent(user[1]!);
+      if (!this.#users.delete(id)) return Response.json({ message: "Not Found" }, { status: 404 });
+      // Its sessions go with it.
+      for (const session of this.sessions.values()) {
+        if (session.userId === id) session.revoked = true;
+      }
+      return Response.json({});
+    }
     return Response.json(
       { message: `The fake WorkOS has no ${method} ${pathname}.` },
       { status: 404 },
@@ -198,7 +251,7 @@ export class FakeWorkos {
       this.#codes.delete(code);
       this.#spent.add(code);
       const user = this.user(signIn.userId);
-      if (!user.emailVerified) {
+      if (!user.emailVerified || signIn.attachesIdentity) {
         const pendingAuthenticationToken = `pending_${this.#id()}`;
         const emailVerificationId = `email_verification_${this.#id()}`;
         this.#pending.set(pendingAuthenticationToken, { ...signIn, emailVerificationId });
@@ -231,7 +284,7 @@ export class FakeWorkos {
     return oauthError(400, "unsupported_grant_type", "Unsupported grant type.");
   }
 
-  async #session({ userId, oauthTokens }: PendingSignIn): Promise<Response> {
+  async #session({ userId, oauthTokens, authenticationMethod }: PendingSignIn): Promise<Response> {
     const user = this.user(userId);
     const sessionId = `session_${this.#id()}`;
     this.sessions.set(sessionId, { userId, revoked: false });
@@ -247,7 +300,7 @@ export class FakeWorkos {
       },
       access_token: await this.signAccessToken({ userId, sessionId }),
       refresh_token: `refresh${this.#id()}`,
-      authentication_method: "GitHubOAuth",
+      authentication_method: authenticationMethod,
       ...(oauthTokens
         ? {
             oauth_tokens: {

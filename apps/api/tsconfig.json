@@ -1,0 +1,13 @@
+{
+  // The code Vercel serves, checked against the runtime it is served on: Node's globals and
+  // types, no Bun and no DOM. The root tsconfig also checks this directory, with Bun's types,
+  // because the tests and scripts run under Bun; without this one, a `Bun.` or browser-only
+  // global in a route passes every check and every test and first fails in production.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": ["node"]
+  },
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts", "src/testing"]
+}

@@ -1,5 +1,4 @@
 import { type Context, Hono } from "hono";
-import { HTTPException } from "hono/http-exception";
 import { denyUndeclared } from "./auth/access.ts";
 import type { Deps } from "./deps/index.ts";
 import { clientVersionGate } from "./http/client-version.ts";
@@ -48,13 +47,7 @@ export function createApp(deps: Deps) {
   });
 
   app.onError((thrown, c) => {
-    const error =
-      thrown instanceof HTTPException && thrown.status === 400
-        ? // Hono's own refusal of a body it could not read.
-          new ApiError(400, "invalid_request", "The request body could not be read.", {
-            cause: thrown,
-          })
-        : toApiError(thrown);
+    const error = toApiError(thrown);
     const fields = { status: error.status, errorCode: error.code, error: error.cause };
     if (error.status >= 500) c.var.log.error("request_failed", fields);
     else c.var.log.warn("request_refused", fields);

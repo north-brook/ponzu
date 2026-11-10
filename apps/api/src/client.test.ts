@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { hc } from "hono/client";
-import type { AppType } from "./index.ts";
 import { createTestApp } from "./testing/index.ts";
+import type { AppType } from "./types.ts";
 
 // The typed client is the next step's to build. This holds the door open for it: if the
 // routes stop reaching `AppType` (a sub-app mounted without chaining, a handler that returns

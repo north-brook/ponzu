@@ -67,6 +67,11 @@ export interface GithubInstallationToken {
   expiresAt: Date;
 }
 
+/**
+ * An answer from GitHub that is not a success leaves each of these as an `UpstreamError` that
+ * carries GitHub's `status`, so a caller can tell "no such repository, or not for you" (404)
+ * and "not allowed" (403) from GitHub being down.
+ */
 export interface Github {
   /** Calls made as a person. Each fails as `github_reauth_required` when GitHub refuses the token. */
   getUser(userToken: string): Promise<GithubUser>;
@@ -147,7 +152,9 @@ export function createGithub({
       throw new ApiError(401, "github_reauth_required", "Sign in again to reconnect GitHub.");
     }
     if (!response.ok) {
-      throw new UpstreamError("github", `${method} ${path} answered ${response.status}`);
+      throw new UpstreamError("github", `${method} ${path} answered ${response.status}`, {
+        status: response.status,
+      });
     }
     return (await response.json()) as any;
   }
@@ -270,7 +277,9 @@ export function createGithub({
       if (body.error === "bad_refresh_token") return { kind: "rejected" };
       const code =
         typeof body.error === "string" && /^[a-z_]{1,64}$/.test(body.error) ? body.error : "";
-      throw new UpstreamError("github", `the token refresh answered ${response.status} ${code}`);
+      throw new UpstreamError("github", `the token refresh answered ${response.status} ${code}`, {
+        status: response.status,
+      });
     },
 
     async createInstallationToken({ installationId, repositoryIds, permissions }) {

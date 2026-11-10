@@ -1,6 +1,7 @@
 import { createTestDb } from "@ponzu/db/testing";
 import { FakeClock, FakeProvider } from "@ponzu/sandbox";
 import { createApp } from "../create-app.ts";
+import { createBackground } from "../deps/background.ts";
 import { createGithub } from "../deps/github.ts";
 import type { Deps } from "../deps/index.ts";
 import { createWorkos } from "../deps/workos.ts";
@@ -66,6 +67,12 @@ export async function createTestApp(
   options: { minimumClientVersions?: MinimumVersions; commit?: string | null } = {},
 ) {
   const db = await createTestDb();
+  // The deployed API reaches Postgres over Neon's HTTP driver, which has no transactions.
+  // PGlite has them, so a route that used one would pass here and fail in production; this
+  // makes it fail here, the way that driver does.
+  db.transaction = () => {
+    throw new Error("No transactions support in neon-http driver");
+  };
   const clock = new FakeClock();
   const workos = new FakeWorkos(clock);
   const github = new FakeGithub(clock);
@@ -75,12 +82,15 @@ export async function createTestApp(
   /** Every line the app logged, oldest first. */
   const logs: LogLine[] = [];
   let requests = 0;
+  const log = createLogger((line) => logs.push(line));
+  const background: Promise<void>[] = [];
 
   const deps: Deps = {
     db,
     clock,
     ids: { requestId: () => `req_test_${++requests}` },
-    log: createLogger((line) => logs.push(line)),
+    log,
+    background: createBackground(log, (work) => background.push(work)),
     vault: createVault({ key: TEST_VAULT_KEY }),
     workos: createWorkos({
       apiKey: workos.apiKey,
@@ -105,7 +115,14 @@ export async function createTestApp(
   /** The person behind `login` at both services, made on first mention. */
   function person(who: Person) {
     const known = people.get(who.login);
-    if (known) return known;
+    if (known) {
+      // The API deleted their WorkOS user (it vouched for the address and then turned them
+      // away). WorkOS makes a new one when they come back, unverified like any new user.
+      if (!workos.hasUser(known.workos.id)) {
+        known.workos = workos.addUser({ email: known.workos.email, emailVerified: false });
+      }
+      return known;
+    }
     const made = {
       github: github.addUser({
         id: nextGithubId++,
@@ -177,6 +194,15 @@ export async function createTestApp(
     };
   }
 
+  /**
+   * Waits for everything handed to `deps.background` so far, and for whatever that work
+   * starts in turn. A failure in it does not throw here: it is a `background_failed` line in
+   * `logs`, as in a deployment.
+   */
+  async function backgroundDone(): Promise<void> {
+    while (background.length > 0) await background.shift();
+  }
+
   return {
     app,
     deps,
@@ -190,6 +216,7 @@ export async function createTestApp(
     logs,
     startSignIn,
     signInAs,
+    backgroundDone,
     close: () => db.$client.close(),
   };
 }

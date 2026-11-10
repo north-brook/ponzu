@@ -5,6 +5,7 @@ import type { Env } from "../env.ts";
 import type { MinimumVersions } from "../http/client-version.ts";
 import { consoleSink, createLogger, type Logger } from "../http/log.ts";
 import { createVault, type Vault } from "../vault/vault.ts";
+import { type Background, createBackground, waitUntil } from "./background.ts";
 import type { Fetch } from "./fetch.ts";
 import { createGithub, type Github } from "./github.ts";
 import { type RealtimeSealer, realtimeNotBuilt } from "./realtime.ts";
@@ -18,10 +19,15 @@ import { createWorkos, type Workos } from "./workos.ts";
  * is what lets `createTestApp` run the whole app on fakes.
  */
 export interface Deps {
+  /**
+   * Neon over HTTP: one statement per call and no transactions (`db.transaction` throws, in
+   * tests too). Every statement has `DATABASE_TIMEOUT_MS` to answer.
+   */
   db: Db;
   clock: Clock;
   ids: Ids;
   log: Logger;
+  background: Background;
   vault: Vault;
   workos: Workos;
   github: Github;
@@ -52,15 +58,24 @@ export const randomIds: Ids = {
 /** The API's own version: what Release Please last wrote to its manifest. */
 export const VERSION = manifest.version;
 
+/**
+ * How long the database has to answer one statement, the same as WorkOS and GitHub get. A
+ * statement that runs out fails as 503 `database_unavailable`. Without this the wait is
+ * Node's own, five minutes, which is also as long as the function may run.
+ */
+export const DATABASE_TIMEOUT_MS = 10_000;
+
 /** The real thing, for a deployment or `bun run dev`. */
 export function createDeps(env: Env): Deps {
   const clock = systemClock;
   const outbound: Fetch = (url, init) => fetch(url, init);
+  const log = createLogger(consoleSink);
   return {
-    db: createDb(env.databaseUrl),
+    db: createDb(env.databaseUrl, { deadline: () => clock.timeout(DATABASE_TIMEOUT_MS) }),
     clock,
     ids: randomIds,
-    log: createLogger(consoleSink),
+    log,
+    background: createBackground(log, waitUntil),
     vault: createVault(env.vault),
     workos: createWorkos({ ...env.workos, fetch: outbound, clock }),
     github: createGithub({ ...env.githubApp, fetch: outbound, clock }),

@@ -25,6 +25,7 @@
       },
       "devDependencies": {
         "@ponzu/core": "workspace:*",
+        "@types/node": "^26.6.5",
       },
     },
     "apps/cli": {

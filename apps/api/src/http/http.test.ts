@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { admitSession, createDb } from "@ponzu/db";
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
+import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { access } from "../auth/access.ts";
 import { createApp } from "../create-app.ts";
@@ -21,27 +24,43 @@ afterAll(() => t.close());
 /** The app with routes that fail in each way a route can. */
 function failing() {
   const boom = new Hono<AppEnv>()
-    .use(access.public)
-    .get("/crash", () => {
+    .get("/crash", access.public, () => {
       throw new Error("connect ECONNREFUSED 10.1.2.3:5432 password=hunter2");
     })
-    .get("/upstream", () => {
+    .get("/upstream", access.public, () => {
       throw new UpstreamError("github", "GET /user answered 500", {
+        status: 500,
         cause: new Error('{"message":"internal github detail"}'),
       });
     })
-    .get("/refused", () => {
+    .get("/refused", access.public, () => {
       throw new ApiError(403, "forbidden", "You cannot open this design.", {
         details: { designId: "des_1" },
         cause: new Error("membership row missing for usr_secretinternal"),
       });
     })
-    .get("/shape", (c) => c.json(z.object({ id: z.string() }).parse({ id: 5 })))
+    .get("/shape", access.public, (c) => c.json(z.object({ id: z.string() }).parse({ id: 5 })))
     .post(
       "/echo",
+      access.public,
       validate("json", z.object({ name: z.string().min(1), size: z.number().int() })),
       (c) => c.json(c.req.valid("json")),
-    );
+    )
+    // What Hono's own middleware throws: a body limit, and what a rate limiter would.
+    .post("/small", access.public, bodyLimit({ maxSize: 16 }), (c) => c.json({ ok: true }))
+    .get("/busy", access.public, () => {
+      throw new HTTPException(429, { message: "limiter internals: bucket usr_9 empty" });
+    })
+    .get("/teapot", access.public, () => {
+      throw new HTTPException(418);
+    })
+    .get("/broken", access.public, () => {
+      throw new HTTPException(502, { message: "proxy internals" });
+    })
+    .get("/logs-bigint", access.public, (c) => {
+      c.var.log.info("committed", { seq: 12n });
+      return c.json({ ok: true });
+    });
   return createApp(t.deps).route("/v1/test", boom);
 }
 
@@ -103,6 +122,127 @@ describe("the error body", () => {
     const line = t.logs.findLast((entry) => entry.event === "request_failed")!;
     expect(line).toMatchObject({ level: "error", requestId, status: 500, errorCode: "internal" });
     expect((line.error as { message: string }).message).toContain("ECONNREFUSED");
+  });
+
+  test("a refusal by Hono's own middleware keeps its status and gets a code of ours", async () => {
+    const tooLarge = await failing().request("/v1/test/small", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ padding: "x".repeat(64) }),
+    });
+    expect(tooLarge.status).toBe(413);
+    expect(await tooLarge.json()).toEqual({
+      error: { code: "payload_too_large", message: "The request is too large." },
+    });
+
+    const limited = await failing().request("/v1/test/busy");
+    expect(limited.status).toBe(429);
+    const text = await limited.text();
+    expect(JSON.parse(text).error.code).toBe("rate_limited");
+    expect(text).not.toContain("bucket");
+
+    // A status with no code of its own is still the caller's fault, in the one error body.
+    const other = await failing().request("/v1/test/teapot");
+    expect([other.status, ((await other.json()) as any).error.code]).toEqual([
+      418,
+      "invalid_request",
+    ]);
+  });
+
+  test("anything else Hono throws is internal", async () => {
+    const response = await failing().request("/v1/test/broken");
+    expect(response.status).toBe(500);
+    const text = await response.text();
+    expect(JSON.parse(text).error.code).toBe("internal");
+    expect(text).not.toContain("proxy");
+  });
+
+  test("a database that does not answer in time is database_unavailable, not internal", async () => {
+    // The driver the deployment uses, with a deadline that has already passed: the request
+    // fails before anything is sent.
+    const db = createDb("postgres://user:password@database.invalid/ponzu", {
+      deadline: () => AbortSignal.abort(new DOMException("timed out", "TimeoutError")),
+    });
+    const app = createApp({ ...t.deps, db });
+
+    const response = await app.request("/v1/me", { headers: person.headers });
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: {
+        code: "database_unavailable",
+        message: "Ponzu could not reach its database. Try again in a moment.",
+      },
+    });
+    // Health reports the same thing in its own words.
+    const health = await app.request("/v1/health");
+    expect([health.status, ((await health.json()) as any).database]).toEqual([503, false]);
+  });
+
+  test("a statement Postgres refuses is still internal", async () => {
+    const refusing = new Hono<AppEnv>().get(
+      "/v1/test/refused-statement",
+      access.public,
+      async (c) =>
+        c.json(await admitSession(c.var.deps.db, { id: "session_x", userId: "usr_nobody" })),
+    );
+    const response = await createApp(t.deps)
+      .route("/", refusing)
+      .request("/v1/test/refused-statement");
+    expect([response.status, ((await response.json()) as any).error.code]).toEqual([
+      500,
+      "internal",
+    ]);
+  });
+});
+
+describe("the dependencies a route is given", () => {
+  test("the database has no transactions, as in a deployment", async () => {
+    const transacting = new Hono<AppEnv>().post("/v1/test/transaction", access.public, async (c) =>
+      c.json(await c.var.deps.db.transaction(async () => "committed")),
+    );
+
+    const response = await createApp(t.deps)
+      .route("/", transacting)
+      .request("/v1/test/transaction", { method: "POST" });
+
+    expect(response.status).toBe(500);
+    const line = t.logs.findLast((entry) => entry.event === "request_failed")!;
+    expect((line.error as { message: string }).message).toContain("No transactions support");
+  });
+
+  test("work left running after the answer is waited for, and its failure is logged", async () => {
+    const done: string[] = [];
+    const working = new Hono<AppEnv>().post("/v1/test/background", access.public, (c) => {
+      c.var.deps.background(
+        "wake",
+        Bun.sleep(5).then(() => done.push("woke")),
+      );
+      c.var.deps.background(
+        "sync",
+        Promise.reject(new Error("GitHub said ghu_0123456789abcdef0123")),
+      );
+      return c.body(null, 202);
+    });
+
+    const response = await createApp(t.deps)
+      .route("/", working)
+      .request("/v1/test/background", { method: "POST" });
+    expect(response.status).toBe(202);
+    expect(done).toEqual([]);
+
+    await t.backgroundDone();
+
+    expect(done).toEqual(["woke"]);
+    const line = t.logs.findLast((entry) => entry.event === "background_failed")!;
+    expect(line).toMatchObject({ level: "error", name: "sync" });
+    expect(JSON.stringify(line)).not.toContain("ghu_");
+  });
+
+  test("a log field JSON cannot write does not fail the request", async () => {
+    const response = await failing().request("/v1/test/logs-bigint");
+    expect(response.status).toBe(200);
+    expect(t.logs.findLast((entry) => entry.event === "committed")).toMatchObject({ seq: "12" });
   });
 });
 
@@ -360,6 +500,12 @@ describe("the minimum client version", () => {
   test("a platform with no minimum, and a caller that does not say, pass", async () => {
     expect((await ask(gated, "windows/0.1.0"))[0]).toBe(200);
     expect((await ask(gated))[0]).toBe(200);
+  });
+
+  test("a platform named after something every object has is one with no minimum", async () => {
+    for (const app of [gated, t]) {
+      expect((await ask(app, "constructor/1.0.0"))[0]).toBe(200);
+    }
   });
 
   test("a header that is not <platform>/<version> is invalid_request", async () => {

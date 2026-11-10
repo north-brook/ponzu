@@ -59,7 +59,8 @@ export function clientVersionGate(minimums: MinimumVersions): MiddlewareHandler<
         details: { issues: [{ path: `header.${CLIENT_HEADER}`, message: "<platform>/<version>" }] },
       });
     }
-    const minimum = minimums[platform];
+    // The platform is the caller's word, and `constructor` is a property of every object.
+    const minimum = Object.hasOwn(minimums, platform) ? minimums[platform] : undefined;
     if (minimum !== undefined && isOlder(version, parseVersion(minimum)!)) {
       throw new ApiError(426, "client_too_old", "This version of Ponzu is too old. Update it.", {
         details: { platform, minimumVersion: minimum },

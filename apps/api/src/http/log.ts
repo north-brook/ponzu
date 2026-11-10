@@ -27,7 +27,14 @@ export interface Logger {
 export type LogSink = (line: LogLine) => void;
 
 export const consoleSink: LogSink = (line) => {
-  const text = JSON.stringify(line);
+  let text: string;
+  try {
+    text = JSON.stringify(line);
+  } catch {
+    // A field JSON cannot write (a cycle, a value with a throwing `toJSON`). The line is lost;
+    // that it was lost is not, and the request that logged it carries on.
+    text = JSON.stringify({ level: line.level, event: line.event, unloggable: true });
+  }
   if (line.level === "error") console.error(text);
   else if (line.level === "warn") console.warn(text);
   else console.log(text);
@@ -73,6 +80,8 @@ const MAX_DEPTH = 6;
 /** A copy of `value` that is safe to log. */
 export function redact(value: unknown, depth = 0): unknown {
   if (typeof value === "string") return redactText(value);
+  // JSON has no bigint, and `JSON.stringify` throws on one.
+  if (typeof value === "bigint") return value.toString();
   if (value === null || typeof value !== "object") return value;
   if (depth >= MAX_DEPTH) return "[too deep]";
   if (value instanceof Error) {

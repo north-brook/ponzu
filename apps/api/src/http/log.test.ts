@@ -1,8 +1,8 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { getGithubUserToken } from "@ponzu/db";
 import { githubUserToken } from "../github/user-token.ts";
 import { createTestApp, TEST_VAULT_KEY } from "../testing/index.ts";
-import { createLogger, type LogLine, redact } from "./log.ts";
+import { consoleSink, createLogger, type LogLine, redact } from "./log.ts";
 
 describe("redact", () => {
   test("a field whose name says it is a secret loses its value, at any depth", () => {
@@ -90,6 +90,28 @@ describe("redact", () => {
     const loop: Record<string, unknown> = { name: "loop" };
     loop.self = loop;
     expect(JSON.stringify(redact(loop))).toContain("[too deep]");
+  });
+
+  test("a bigint is written as its digits, since JSON has none", () => {
+    expect(JSON.stringify(redact({ seq: 12n, nested: [9007199254740993n] }))).toBe(
+      '{"seq":"12","nested":["9007199254740993"]}',
+    );
+  });
+
+  test("a line JSON cannot write is replaced by one that says so, and nothing is thrown", () => {
+    const written = spyOn(console, "warn").mockImplementation(() => {});
+    const unwritable = {
+      toJSON() {
+        throw new Error("no");
+      },
+    };
+
+    consoleSink({ level: "warn", event: "odd_field", field: unwritable });
+
+    expect(written.mock.calls).toEqual([
+      ['{"level":"warn","event":"odd_field","unloggable":true}'],
+    ]);
+    written.mockRestore();
   });
 
   test("the logger redacts every line it writes, bound fields included", () => {
