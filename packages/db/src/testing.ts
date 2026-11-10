@@ -4,23 +4,19 @@ import { migrate } from "drizzle-orm/pglite/migrator";
 import { migrationsFolder } from "./migrations.ts";
 
 // Starting an empty Postgres and migrating it takes about half a second; loading a copy of one
-// that is already migrated takes a tenth of that. So the first call builds a template and every
-// call, the first included, starts from a copy of it.
-let template: Promise<Blob | File> | undefined;
+// that is already migrated takes a tenth of that. So the first database made in a process is
+// copied before anything is written to it, and every later one starts from that copy.
+let migrated: Promise<Blob | File> | undefined;
 
 /**
  * A fresh Postgres in this process with every migration applied, for tests. It needs no network
  * and shares nothing with any other database this returns. Close it with `db.$client.close()`.
  */
 export async function createTestDb() {
-  template ??= migratedDataDir();
-  return drizzle({ client: new PGlite({ loadDataDir: await template }) });
-}
-
-async function migratedDataDir() {
+  if (migrated) return drizzle({ client: new PGlite({ loadDataDir: await migrated }) });
   const client = new PGlite();
-  await migrate(drizzle({ client }), { migrationsFolder });
-  const dataDir = await client.dumpDataDir("none");
-  await client.close();
-  return dataDir;
+  const db = drizzle({ client });
+  migrated = migrate(db, { migrationsFolder }).then(() => client.dumpDataDir("none"));
+  await migrated;
+  return db;
 }

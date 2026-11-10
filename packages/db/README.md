@@ -13,6 +13,10 @@ bun test packages/db
 A test fails if the schema and the migrations disagree. Never edit a migration that has
 been applied; change the schema and generate the next one.
 
+PGlite is a single connection, so its races take turns. To race real transactions against
+each other, point `PONZU_TEST_DATABASE_URL` at a migrated database (the Neon `dev` branch)
+and run `bun test packages/db/src/queries/ops.live.test.ts`. It cleans up after itself.
+
 ## Using it
 
 ```ts
