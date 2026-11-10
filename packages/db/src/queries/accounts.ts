@@ -1,7 +1,14 @@
-import { and, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
+import { and, eq, getTableColumns, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { newId } from "../ids.ts";
-import { type MemberRole, memberships, repos, users, workspaces } from "../schema/index.ts";
+import {
+  claudeAccounts,
+  type MemberRole,
+  memberships,
+  repos,
+  users,
+  workspaces,
+} from "../schema/index.ts";
 import { run } from "./run.ts";
 
 export type User = typeof users.$inferSelect;
@@ -45,6 +52,26 @@ export async function upsertUser(db: Db, profile: GithubProfile): Promise<User> 
       .returning(),
   );
   return user!;
+}
+
+/** The person a WorkOS access token names (its `sub`), or null if they never finished a sign-in. */
+export async function getUserByWorkosId(db: Db, workosUserId: string): Promise<User | null> {
+  const [user] = await run(db.select().from(users).where(eq(users.workosUserId, workosUserId)));
+  return user ?? null;
+}
+
+// A credential is read only by the code that hands it to a sandbox, which asks for it by name.
+const { encryptedCredential: _encryptedCredential, ...claudeAccountColumns } =
+  getTableColumns(claudeAccounts);
+
+export type ClaudeAccount = Omit<typeof claudeAccounts.$inferSelect, "encryptedCredential">;
+
+/** A person's Claude account without its credential, or null if they have not connected one. */
+export async function getClaudeAccount(db: Db, userId: string): Promise<ClaudeAccount | null> {
+  const [account] = await run(
+    db.select(claudeAccountColumns).from(claudeAccounts).where(eq(claudeAccounts.userId, userId)),
+  );
+  return account ?? null;
 }
 
 export interface GithubInstallation {
@@ -111,6 +138,32 @@ export async function upsertMembership(
       .returning(),
   );
   return row!;
+}
+
+/** A workspace as one of its members sees it in a list. */
+export type MemberWorkspace = Pick<
+  Workspace,
+  "id" | "githubLogin" | "kind" | "name" | "avatarUrl" | "installationId" | "suspendedAt"
+> & { role: MemberRole };
+
+/** The workspaces a person belongs to, as GitHub last said, with their role in each. */
+export function listUserWorkspaces(db: Db, userId: string): Promise<MemberWorkspace[]> {
+  return run(
+    db
+      .select({
+        id: workspaces.id,
+        githubLogin: workspaces.githubLogin,
+        kind: workspaces.kind,
+        name: workspaces.name,
+        avatarUrl: workspaces.avatarUrl,
+        installationId: workspaces.installationId,
+        suspendedAt: workspaces.suspendedAt,
+        role: memberships.role,
+      })
+      .from(memberships)
+      .innerJoin(workspaces, eq(workspaces.id, memberships.workspaceId))
+      .where(eq(memberships.userId, userId)),
+  );
 }
 
 /**

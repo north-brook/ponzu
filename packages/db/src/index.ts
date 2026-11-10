@@ -2,11 +2,16 @@ export { createDb, createPooledDb, type Db } from "./client.ts";
 export { DESIGN_HEAD_COLUMNS, type DesignHead, type LiveDesignHead, toDesignHead } from "./head.ts";
 export { type IdPrefix, newId } from "./ids.ts";
 export {
+  type ClaudeAccount,
   deleteMembershipsExcept,
   type GithubInstallation,
   type GithubProfile,
   type GithubRepo,
+  getClaudeAccount,
+  getUserByWorkosId,
+  listUserWorkspaces,
   type Membership,
+  type MemberWorkspace,
   markReposRemoved,
   type Repo,
   type User,
@@ -43,6 +48,15 @@ export {
   type NewEvent,
 } from "./queries/events.ts";
 export {
+  claimGithubTokenRefresh,
+  type GithubUserToken,
+  getGithubUserToken,
+  releaseGithubTokenRefresh,
+  rotateGithubUserToken,
+  type StoredGithubUserToken,
+  saveGithubUserToken,
+} from "./queries/github-tokens.ts";
+export {
   claimJobs,
   completeJob,
   enqueueJob,
@@ -62,6 +76,7 @@ export {
   readOps,
   type StoredOp,
 } from "./queries/ops.ts";
+export { pingDb } from "./queries/ping.ts";
 export {
   deleteStalePresence,
   listPresence,

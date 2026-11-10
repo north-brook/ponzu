@@ -109,7 +109,7 @@ People and access
 | Table | What it is for | |
 |---|---|---|
 | `users` | A person: their WorkOS and GitHub identity, agent defaults, ping settings, onboarding steps. The GitHub account is who they are. | live |
-| `github_user_tokens` | A person's GitHub token, encrypted. Used to ask GitHub what they can reach. | |
+| `github_user_tokens` | A person's GitHub token, encrypted. Used to ask GitHub what they can reach. `refresh_claimed_until` is the lock that lets one function instance at a time refresh it. | |
 | `workspaces` | A GitHub account with the App installed, and its billing: Stripe customer, cap, period anchor. Keyed by the account; the installation id changes on a reinstall. | live |
 | `memberships` | Who can reach a workspace, as GitHub last said, and their role (admin or member). | live |
 | `repos` | A repo the App can see: default branch, the base snapshot new designs start from, its stack, ideas. | live |

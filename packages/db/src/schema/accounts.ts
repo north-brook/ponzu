@@ -71,6 +71,11 @@ export const githubUserTokens = pgTable("github_user_tokens", {
   accessTokenExpiresAt: instant("access_token_expires_at"),
   encryptedRefreshToken: text("encrypted_refresh_token"),
   refreshTokenExpiresAt: instant("refresh_token_expires_at"),
+  /**
+   * Set while one function instance is refreshing the token with GitHub. A refresh token works
+   * once, so two instances must never send the same one; the others wait for this to clear.
+   */
+  refreshClaimedUntil: instant("refresh_claimed_until"),
   updatedAt: updatedAt(),
 });
 
