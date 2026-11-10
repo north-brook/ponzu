@@ -77,10 +77,33 @@ GitHub token never reaches a device.
 - Access tokens are five-minute JWTs. The API verifies them locally against
   WorkOS's JWKS. Clients refresh directly with WorkOS, one refresh in flight at a
   time, and always store the rotated refresh token.
+- A verified token is not enough by itself. WorkOS is a public client: anyone can
+  finish a sign-in with it directly and hold a well-signed token, without the
+  exchange (and its check against GitHub) ever running. So the exchange records
+  each session it lets in, and the API honors a token only for a recorded
+  session. Signing out removes the record, which ends the session at the API at
+  once and not five minutes later, whether or not WorkOS can be reached to
+  revoke it there too.
 - WorkOS will not finish a sign-in until the email is verified, and it does not
   take GitHub's word for it. The API completes that step itself during the
   exchange and then checks with GitHub that the address is verified there, so
-  nobody is sent a code by email.
+  nobody is sent a code by email. Completing it vouches for the address to
+  WorkOS, which joins accounts by email, so the API holds to three rules. It
+  never completes the step for a WorkOS user who is already a Ponzu person:
+  that is WorkOS about to attach a new identity to their user. When it has
+  completed the step and then does not let the person in, it deletes the
+  WorkOS user, so nothing stays verified or attached on its word alone. And
+  WorkOS's own flag is never what lets someone in: GitHub is asked whenever the
+  API completed the step, the first time a WorkOS user is let in, when their
+  address has changed, and when the GitHub account is not the one that WorkOS
+  user belongs to. One WorkOS user is one GitHub account, held by the database.
+  A sign-in that fails after WorkOS has made a session revokes that session.
+- Only a GitHub sign-in is taken. WorkOS can offer other methods; a session
+  that came from one is refused and revoked.
+- The GitHub user token lasts eight hours and its refresh token works once.
+  The API refreshes it when it is about to run out, one refresh at a time per
+  person: the claim is a column on the token's row, since function instances
+  share nothing else.
 
 **Workspaces.** A workspace is a GitHub account (a person or an organization) with
 the Ponzu GitHub App installed. There is one row per account, not per installation:
@@ -389,10 +412,13 @@ free credits are used up. A workspace has a monthly cap.
 
 ## Clients
 
-**Desktop.** The shell bundles the studio and serves it from a custom scheme, so
-the app and its UI always match. The main process owns sign-in, token storage
+**Desktop.** The shell bundles the studio and serves it from a custom scheme
+(`ponzu-studio://app`, the one origin outside the web that the API's CORS allows),
+so the app and its UI always match. The main process owns sign-in, token storage
 (`safeStorage`), refresh and the updater; the renderer asks it for an access token.
-The API can refuse a client that is too old, and the shell then offers the update.
+Every client names itself on each request (`X-Ponzu-Client: macos/2.0.0`). The API
+can refuse one that is too old (426, `client_too_old`), and the shell then offers
+the update.
 On first launch the cloud app removes what 1.x left behind (the wake helper, the
 `ponzu` shim, agent registrations).
 
@@ -412,14 +438,23 @@ rendered-picture tier for heavy pages; it is not in the first cloud release.
 
 | Boundary | Rule |
 |---|---|
-| Client and API | A WorkOS access token on every request. Clients never hold a GitHub, Claude or provider credential. |
+| Client and API | A WorkOS access token on every request, for a session the sign-in exchange let in. Clients never hold a GitHub, Claude or provider credential. |
 | Person and design | GitHub decides, checked by the API on every request. |
 | Sandbox and API | A token bound to one design. The API validates and sanitizes everything it sends. |
 | Design HTML and the app | Sanitized on the way in, written out so that no text or attribute can be read as markup whatever the tree holds, drawn in a shadow root, under a strict content security policy. The preload bridge exposes the minimum. |
 | Workspace and workspace | Every row belongs to one workspace. A design carries its workspace, and must agree with its repo's; the rows under a design (ops, thread, questions, presence and the rest) carry the design and reach the workspace through it, so there is no second copy to disagree. Live queries are written by the API, and one scoped to a workspace joins through `designs`. |
 
 Stored secrets (Claude credentials, GitHub user tokens, repo secrets) are encrypted
-with a key that exists only in the API's environment.
+with a key that exists only in the API's environment. Each is bound to the row and
+column it is stored in, so a value copied anywhere else does not decrypt, and each
+names the key that encrypted it, so the key can be rotated.
+
+Every route says who may call it (anyone, a signed-in person, a design's
+runner, or either of those two), and a route that does not is refused. A whole
+area can be declared for people or for runners; opening a route to anyone is
+said on that route and nowhere else. Errors leave the API as
+`{ error: { code, message, details? } }` with a stable code and nothing of the
+failure itself; logs carry ids and outcomes, never tokens, bodies or headers.
 
 ## Environments
 
@@ -427,6 +462,12 @@ with a key that exists only in the API's environment.
 |---|---|---|---|---|
 | Development and the `cloud` branch | `api.ponzu.design` until cutover | Neon branch `dev` | WorkOS staging | `ponzu-dev` |
 | Production, from cutover | `api.ponzu.design` | Neon default branch | WorkOS production | `ponzu` |
+
+The API is deployed from the head of `cloud` by a workflow, which applies the
+pending migrations to the database first; nobody deploys a branch to
+production or migrates the shared database by hand. Every deployment holds the
+environment's secrets, so only production's own domains are public: previews
+and the unique URL of each deployment open only for the team.
 
 Tests run against an in-process Postgres (PGlite), so they need no network. PGlite
 is a single connection, so CI also runs the database's races, and each kind of

@@ -6,6 +6,7 @@ import { afterAll, expect, test } from "bun:test";
 import { emptyDoc } from "@ponzu/core";
 import { actorFor, rename, seedDesign, seedRepo } from "../fixtures.ts";
 import { describeLive } from "../live.ts";
+import { getUserByWorkosId } from "./accounts.ts";
 import { readDocSource, writeCheckpoint } from "./checkpoints.ts";
 import {
   createDesign,
@@ -15,11 +16,19 @@ import {
   markDesignSeen,
 } from "./designs.ts";
 import { appendEvent, claimEvents, markEventsDelivered } from "./events.ts";
+import {
+  claimGithubTokenRefresh,
+  getGithubUserToken,
+  releaseGithubTokenRefresh,
+  saveGithubUserToken,
+} from "./github-tokens.ts";
 import { commitOps, findOps, readOps } from "./ops.ts";
+import { pingDb } from "./ping.ts";
 import { listPresence, touchPresence } from "./presence.ts";
 import { answerSecretQuestion, cancelQuestions, createQuestion } from "./questions.ts";
 import { QueryError } from "./run.ts";
 import { createRunnerToken, verifyRunnerToken } from "./runner-tokens.ts";
+import { admitSession, endSession, getSessionUser } from "./sessions.ts";
 import { appendThreadItem, listThreadItems, updateThreadItem } from "./thread.ts";
 import { commitReversal, nextRedo, nextUndo } from "./undo.ts";
 import { addLedgerEntry, ledgerBalance, recordUsage } from "./usage.ts";
@@ -238,6 +247,38 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
       used: 2.5,
       balance: 97.5,
     });
+  }, 60_000);
+
+  test("a GitHub token's times come back as the dates that went in, and the database answers", async () => {
+    const { user } = await seedDesign(db);
+    const expiresAt = new Date(Date.UTC(2031, 4, 6, 7, 8, 9, 123));
+    await saveGithubUserToken(db, {
+      userId: user.id,
+      encryptedAccessToken: "access",
+      accessTokenExpiresAt: expiresAt,
+      encryptedRefreshToken: "refresh",
+      refreshTokenExpiresAt: null,
+    });
+    const until = new Date(expiresAt.getTime() + 30_000);
+
+    const claimed = await claimGithubTokenRefresh(db, {
+      userId: user.id,
+      now: expiresAt,
+      staleAt: expiresAt,
+      until,
+    });
+
+    expect(claimed).toMatchObject({ accessTokenExpiresAt: expiresAt, refreshClaimedUntil: until });
+    await releaseGithubTokenRefresh(db, { userId: user.id, until });
+    expect((await getGithubUserToken(db, user.id))!.refreshClaimedUntil).toBeNull();
+    expect((await getUserByWorkosId(db, user.workosUserId))!.id).toBe(user.id);
+    const sessionId = `session_live_${user.id}`;
+    await admitSession(db, { id: sessionId, userId: user.id });
+    await admitSession(db, { id: sessionId, userId: user.id });
+    expect(await getSessionUser(db, sessionId)).toEqual(user);
+    await endSession(db, sessionId);
+    expect(await getSessionUser(db, sessionId)).toBeNull();
+    await pingDb(db);
   }, 60_000);
 
   test("a refused statement is a QueryError that names the constraint", async () => {

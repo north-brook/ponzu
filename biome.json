@@ -54,6 +54,9 @@
       "a11y": {
         "noStaticElementInteractions": "off",
         "noAutofocus": "off"
+      },
+      "nursery": {
+        "noFloatingPromises": "error"
       }
     }
   },
@@ -63,6 +66,16 @@
     }
   },
   "overrides": [
+    {
+      "includes": ["**", "!apps/api/**"],
+      "linter": {
+        "rules": {
+          "nursery": {
+            "noFloatingPromises": "off"
+          }
+        }
+      }
+    },
     {
       "includes": [
         "apps/mobile/app.json",
