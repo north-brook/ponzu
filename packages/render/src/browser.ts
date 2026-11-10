@@ -13,6 +13,12 @@ export interface Lease {
   close(): Promise<void>;
 }
 
+/** A launched browser, and a promise that settles when it is gone, however it goes. */
+interface Running {
+  browser: Browser;
+  gone: Promise<void>;
+}
+
 /**
  * One Chrome process and the pages jobs open in it. It starts when a page is
  * first asked for, is replaced once it dies (a crash, the kernel's
@@ -20,11 +26,16 @@ export interface Lease {
  * nothing to draw isn't holding a browser's memory.
  */
 export class BrowserProcess {
-  private running: Promise<Browser> | null = null;
+  private running: Promise<Running> | null = null;
   private shared: { browser: Browser; context: Promise<BrowserContext> } | null = null;
   private leases = 0;
   private idle: ReturnType<typeof setTimeout> | undefined;
 
+  /**
+   * `launch` starts a browser. One that fails to start is tried once more,
+   * unless it fails with a RenderError: that is `launch` saying why it never
+   * will.
+   */
   constructor(
     private launch: () => Promise<Browser>,
     private idleMs: number,
@@ -48,22 +59,31 @@ export class BrowserProcess {
 
   private async lease(scale: number, again: boolean): Promise<Lease> {
     const starting = this.start();
-    const browser = await starting;
+    const running = await starting.catch((err) => {
+      if (err instanceof RenderError || !again) throw err;
+      return null;
+    });
+    // It died as it started, or between jobs with nothing to notice: once more, in a new one.
+    const retry = () => {
+      this.forget(starting);
+      if (!again) throw died();
+      return this.lease(scale, false);
+    };
+    if (!running) return retry();
+    const { browser, gone } = running;
     const opened = this.page(browser, scale);
-    if (!(await within(opened, STAGE_BUDGET_MS.load))) {
+    // Playwright never settles a page that was opening when Chrome died, so
+    // the browser going is watched for beside it.
+    if (!(await within(Promise.race([opened, gone]), STAGE_BUDGET_MS.load))) {
       // A browser that can't open a page is no use to the next job either.
       await this.stop(starting);
       throw new RenderError(stalled("load"), "timeout", "load");
     }
-    const got = await opened.catch((err) => {
-      if (browser.isConnected()) throw err;
-      // It died between jobs and nothing had noticed yet: once more, in a new one.
-      this.forget(starting);
-      if (!again) throw died();
-      return null;
-    });
-    if (!got) return this.lease(scale, false);
-    const { page, own } = got;
+    if (!browser.isConnected()) {
+      opened.catch(() => {});
+      return retry();
+    }
+    const { page, own } = await opened;
     let crashed = false;
     page.on("crash", () => {
       crashed = true;
@@ -86,20 +106,23 @@ export class BrowserProcess {
     if (this.running) await this.stop(this.running);
   }
 
-  private start(): Promise<Browser> {
+  private start(): Promise<Running> {
     if (this.running) return this.running;
-    const starting = this.launch();
+    const starting = this.launch().then((browser) => ({
+      browser,
+      gone: new Promise<void>((resolve) => {
+        browser.on("disconnected", () => resolve());
+        if (!browser.isConnected()) resolve();
+      }),
+    }));
     this.running = starting;
     // It failed to launch, or died later: the next job starts another.
     const forget = () => this.forget(starting);
-    starting.then((browser) => {
-      browser.on("disconnected", forget);
-      if (!browser.isConnected()) forget();
-    }, forget);
+    starting.then(({ gone }) => gone.then(forget), forget);
     return starting;
   }
 
-  private forget(starting: Promise<Browser>): void {
+  private forget(starting: Promise<Running>): void {
     if (this.running !== starting) return;
     this.running = null;
     this.shared = null;
@@ -130,11 +153,11 @@ export class BrowserProcess {
     return this.shared.context;
   }
 
-  private async stop(starting: Promise<Browser>): Promise<void> {
+  private async stop(starting: Promise<Running>): Promise<void> {
     this.forget(starting);
-    const browser = await starting.catch(() => null);
+    const running = await starting.catch(() => null);
     // Playwright kills the process tree itself when Chrome doesn't answer.
-    if (browser) await within(browser.close(), 2 * CLOSE_MS);
+    if (running) await within(running.browser.close(), 2 * CLOSE_MS);
   }
 
   /** One job fewer. With none left, the browser closes after `idleMs` unless another comes. */
