@@ -1,0 +1,47 @@
+{
+  "apt": [
+    "fontconfig",
+    "fonts-liberation",
+    "fonts-dejavu-mono",
+    "fonts-inter-variable",
+    "fonts-noto-color-emoji",
+    "fonts-noto-cjk"
+  ],
+  "download": [
+    {
+      "file": "Gelasio-Regular.ttf",
+      "url": "https://raw.githubusercontent.com/SorkinType/Gelasio/7ab20e7e5c42791e603b9ee3201a0b49849cfdb2/fonts/ttf/Gelasio-Regular.ttf",
+      "sha256": "48c797fbe0e07c48a18cb962e7bdfa23f19618327dddf54093265328dc9eb39d"
+    },
+    {
+      "file": "Gelasio-Bold.ttf",
+      "url": "https://raw.githubusercontent.com/SorkinType/Gelasio/7ab20e7e5c42791e603b9ee3201a0b49849cfdb2/fonts/ttf/Gelasio-Bold.ttf",
+      "sha256": "e0ef3addf1acf35f5c6aef2be00d0a2c01363bf70a5950e16650976051a0c462"
+    },
+    {
+      "file": "Gelasio-Italic.ttf",
+      "url": "https://raw.githubusercontent.com/SorkinType/Gelasio/7ab20e7e5c42791e603b9ee3201a0b49849cfdb2/fonts/ttf/Gelasio-Italic.ttf",
+      "sha256": "1d8bda4ff258bb8251eae4f7d7500c8d97d084136192bb264bc2305168765d1b"
+    },
+    {
+      "file": "Gelasio-BoldItalic.ttf",
+      "url": "https://raw.githubusercontent.com/SorkinType/Gelasio/7ab20e7e5c42791e603b9ee3201a0b49849cfdb2/fonts/ttf/Gelasio-BoldItalic.ttf",
+      "sha256": "aa87e21b46aef3dcb50a68dc6e1946f0c0a9819d067e4be6a98a6daa8f5b3c16"
+    }
+  ],
+  "downloadDir": "/usr/local/share/fonts/ponzu",
+  "families": [
+    "Liberation Sans",
+    "Liberation Serif",
+    "Liberation Mono",
+    "DejaVu Sans Mono",
+    "Inter Variable",
+    "Gelasio",
+    "Noto Color Emoji",
+    "Noto Sans CJK SC",
+    "Noto Sans CJK TC",
+    "Noto Sans CJK HK",
+    "Noto Sans CJK JP",
+    "Noto Sans CJK KR"
+  ]
+}

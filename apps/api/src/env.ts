@@ -14,6 +14,12 @@ const schema = z.object({
   GITHUB_APP_CLIENT_SECRET: z.string(),
   /** The App's private key, as the PEM GitHub gave: many lines, stored as they are. */
   GITHUB_APP_PRIVATE_KEY: z.string().includes("PRIVATE KEY-----"),
+  /** The App's slug, from its public page `github.com/apps/<slug>`: where installs begin. */
+  GITHUB_APP_SLUG: z.string().regex(/^[a-z0-9-]+$/),
+  /** What GitHub signs each webhook delivery with (the App's webhook secret). */
+  GITHUB_WEBHOOK_SECRET: z.string().min(32),
+  /** What Vercel's cron sends as its bearer token: the only way into `/v1/cron`. */
+  CRON_SECRET: z.string().min(32),
   BOAT_API_KEY: z.string(),
   /** The key stored secrets are sealed with: 32 random bytes in base64url. */
   PONZU_VAULT_KEY: z.string(),
@@ -41,7 +47,14 @@ export class EnvError extends Error {
 export interface Env {
   databaseUrl: string;
   workos: { apiKey: string; clientId: string };
-  githubApp: { clientId: string; clientSecret: string; privateKey: string };
+  githubApp: {
+    clientId: string;
+    clientSecret: string;
+    privateKey: string;
+    slug: string;
+    webhookSecret: string;
+  };
+  cronSecret: string;
   boatApiKey: string;
   vault: { key: string; oldKeys: string[] };
   realtime: { url: string; secret: string };
@@ -80,7 +93,10 @@ export function readEnv(source: Record<string, string | undefined>): Env {
       clientId: env.GITHUB_APP_CLIENT_ID,
       clientSecret: env.GITHUB_APP_CLIENT_SECRET,
       privateKey: env.GITHUB_APP_PRIVATE_KEY,
+      slug: env.GITHUB_APP_SLUG,
+      webhookSecret: env.GITHUB_WEBHOOK_SECRET,
     },
+    cronSecret: env.CRON_SECRET,
     boatApiKey: env.BOAT_API_KEY,
     vault: {
       key: env.PONZU_VAULT_KEY,

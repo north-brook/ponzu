@@ -1,0 +1,77 @@
+import {
+  countWorkspaceMembers,
+  listUserWorkspaces,
+  type User,
+  type WorkspaceKind,
+} from "@ponzu/db";
+import type { Deps } from "../deps/index.ts";
+
+/** One row of the "Where do you design?" step: a GitHub account the person could design in. */
+export interface GithubAccountRow {
+  githubAccountId: number;
+  login: string;
+  /** Who the account is to people: the person's name, an organization's display name. */
+  name: string;
+  avatarUrl: string | null;
+  kind: WorkspaceKind;
+  /**
+   * `ready`: the App is installed and the person reaches it. `not_installed` is only ever the
+   * person's own account: their GitHub token does not show organizations without the App.
+   */
+  status: "ready" | "not_installed";
+  /** The workspace it is, once ready. */
+  workspaceId: string | null;
+  suspended: boolean;
+  /** How many people are in a ready organization's workspace: those who have signed in. */
+  memberCount: number | null;
+}
+
+/**
+ * The person's own account first, then every account where the App is installed and they are
+ * a member, by name. As of the last sync: call `syncGithub` first for a fresh answer.
+ */
+export async function listGithubAccounts(
+  { db }: Pick<Deps, "db">,
+  user: User,
+): Promise<GithubAccountRow[]> {
+  const installed = (await listUserWorkspaces(db, user.id)).filter(
+    (workspace) => workspace.installationId !== null,
+  );
+  const own = installed.find((workspace) => workspace.githubAccountId === user.githubUserId);
+  const others = installed
+    .filter((workspace) => workspace !== own)
+    .sort((a, b) => a.name.localeCompare(b.name) || a.githubLogin.localeCompare(b.githubLogin));
+  const counts = new Map(
+    (
+      await countWorkspaceMembers(
+        db,
+        others.filter((workspace) => workspace.kind === "org").map((workspace) => workspace.id),
+      )
+    ).map(({ workspaceId, members }) => [workspaceId, members]),
+  );
+
+  return [
+    {
+      githubAccountId: user.githubUserId,
+      login: user.githubLogin,
+      name: user.name ?? user.githubLogin,
+      avatarUrl: user.avatarUrl,
+      kind: "personal",
+      status: own ? "ready" : "not_installed",
+      workspaceId: own?.id ?? null,
+      suspended: own?.suspendedAt != null,
+      memberCount: null,
+    },
+    ...others.map((workspace) => ({
+      githubAccountId: workspace.githubAccountId,
+      login: workspace.githubLogin,
+      name: workspace.name,
+      avatarUrl: workspace.avatarUrl,
+      kind: workspace.kind,
+      status: "ready" as const,
+      workspaceId: workspace.id,
+      suspended: workspace.suspendedAt !== null,
+      memberCount: counts.get(workspace.id) ?? null,
+    })),
+  ];
+}

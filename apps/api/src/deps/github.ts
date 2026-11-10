@@ -1,4 +1,4 @@
-import { createPrivateKey } from "node:crypto";
+import { createPrivateKey, type KeyObject } from "node:crypto";
 import type { Clock } from "@ponzu/sandbox";
 import { SignJWT } from "jose";
 import { ApiError, UpstreamError } from "../http/errors.ts";
@@ -30,7 +30,7 @@ export interface GithubAccount {
   avatarUrl: string | null;
 }
 
-/** An installation of the App that a person can reach. */
+/** An installation of the App: one a person can reach, or one the App looked up itself. */
 export interface GithubUserInstallation {
   id: number;
   account: GithubAccount;
@@ -46,6 +46,21 @@ export interface GithubRepository {
   pushedAt: Date | null;
   /** Whether the person can push to it. */
   canPush: boolean;
+}
+
+/** A repository as the App sees it in an installation: nobody's permission in particular. */
+export type GithubInstalledRepository = Omit<GithubRepository, "canPush">;
+
+/** A person's standing in an organization: `admin` is an owner. */
+export type GithubOrgRole = "admin" | "member";
+
+/**
+ * A list GitHub serves a page at a time. `complete` is false when it was longer than the API
+ * reads (`MAX_PAGES`): what is missing from it is not known to be gone.
+ */
+export interface Listed<T> {
+  items: T[];
+  complete: boolean;
 }
 
 /** A fresh user token pair, from a refresh. */
@@ -78,12 +93,14 @@ export interface Github {
   /** Needs the App's "Email addresses" permission. */
   listEmails(userToken: string): Promise<GithubEmail[]>;
   /** The installations of the App this person can reach: their workspaces. */
-  listInstallations(userToken: string): Promise<GithubUserInstallation[]>;
+  listInstallations(userToken: string): Promise<Listed<GithubUserInstallation>>;
   /** The repositories this person can reach inside one installation. */
   listInstallationRepositories(
     userToken: string,
     installationId: number,
-  ): Promise<GithubRepository[]>;
+  ): Promise<Listed<GithubRepository>>;
+  /** Their role in an organization, or null if they are not an active member it shows them. */
+  getOrgRole(userToken: string, org: string): Promise<GithubOrgRole | null>;
   /** Trades a refresh token for a new pair. The old refresh token stops working at once. */
   refreshUserToken(refreshToken: string): Promise<GithubRefreshResult>;
 
@@ -96,13 +113,23 @@ export interface Github {
     repositoryIds?: number[];
     permissions?: Record<string, "read" | "write">;
   }): Promise<GithubInstallationToken>;
-
   /**
    * As the App: what a person may do in one repository, which is what decides who may open and
    * steer a design. Every call asks GitHub, except that calls about the same person and
    * repository at the same time share one question; keeping answers is `auth/repo-access.ts`'s.
    */
   getRepoPermission(input: RepoPermissionQuery): Promise<RepoPermission>;
+  /**
+   * As the App: one installation as GitHub has it now, or null once it is gone. This is the
+   * word to trust over a webhook's payload, which may be older than what happened since.
+   */
+  getInstallation(installationId: number): Promise<GithubUserInstallation | null>;
+  /** With an installation token: every repository the installation can see. */
+  listRepositoriesAsInstallation(
+    installationToken: string,
+  ): Promise<Listed<GithubInstalledRepository>>;
+  /** With an installation token: an account's display name, or null when it has none. */
+  getAccountName(installationToken: string, login: string): Promise<string | null>;
 }
 
 /** GitHub's four answers: admin, write and read, or none for no access at all. */
@@ -186,142 +213,30 @@ export function createGithub({
     return (await response.json()) as any;
   }
 
-  /** Every page of a list GitHub wraps as `{ total_count, [key]: [...] }`. */
-  async function listAll(path: string, userToken: string, key: string): Promise<any[]> {
+  /** Every page of a list GitHub wraps as `{ total_count, [key]: [...] }`, up to `MAX_PAGES`. */
+  async function listAll(
+    as: "user" | "app",
+    path: string,
+    token: string,
+    key: string,
+  ): Promise<Listed<any>> {
     const items: any[] = [];
     for (let page = 1; page <= MAX_PAGES; page++) {
-      const body = await call(
-        "user",
-        "GET",
-        `${path}?per_page=${PAGE_SIZE}&page=${page}`,
-        userToken,
-      );
+      const body = await call(as, "GET", `${path}?per_page=${PAGE_SIZE}&page=${page}`, token);
       const batch: any[] = body[key] ?? [];
       items.push(...batch);
-      if (batch.length < PAGE_SIZE) break;
+      const total = typeof body.total_count === "number" ? body.total_count : null;
+      if (batch.length < PAGE_SIZE || (total !== null && items.length >= total)) {
+        return { items, complete: true };
+      }
     }
-    return items;
+    return { items, complete: false };
   }
 
-  /** The App's own credential: a JWT good for a few minutes, backdated for clock drift. */
   function appJwt(): Promise<string> {
     signingKey ??= createPrivateKey(privateKey);
-    const now = Math.floor(clock.now() / 1000);
-    return new SignJWT({})
-      .setProtectedHeader({ alg: "RS256" })
-      .setIssuer(clientId)
-      .setIssuedAt(now - 60)
-      .setExpirationTime(now + 540)
-      .sign(signingKey);
+    return signAppJwt({ clientId, privateKey: signingKey, now: clock.now() });
   }
-
-  return {
-    async getUser(userToken) {
-      const user = await call("user", "GET", "/user", userToken);
-      return {
-        id: user.id,
-        login: user.login,
-        name: user.name ?? null,
-        avatarUrl: user.avatar_url ?? null,
-      };
-    },
-
-    async listEmails(userToken) {
-      const emails: any[] = await call(
-        "user",
-        "GET",
-        `/user/emails?per_page=${PAGE_SIZE}`,
-        userToken,
-      );
-      return emails.map((entry) => ({
-        email: entry.email,
-        primary: entry.primary === true,
-        verified: entry.verified === true,
-      }));
-    },
-
-    async listInstallations(userToken) {
-      const installations = await listAll("/user/installations", userToken, "installations");
-      return installations.map((installation) => ({
-        id: installation.id,
-        account: {
-          id: installation.account.id,
-          login: installation.account.login,
-          type: installation.account.type === "Organization" ? "Organization" : "User",
-          avatarUrl: installation.account.avatar_url ?? null,
-        },
-        repositorySelection: installation.repository_selection === "all" ? "all" : "selected",
-        suspendedAt: installation.suspended_at ? new Date(installation.suspended_at) : null,
-      }));
-    },
-
-    async listInstallationRepositories(userToken, installationId) {
-      const path = `/user/installations/${installationId}/repositories`;
-      const repositories = await listAll(path, userToken, "repositories");
-      return repositories.map((repository) => ({
-        id: repository.id,
-        fullName: repository.full_name,
-        defaultBranch: repository.default_branch,
-        private: repository.private === true,
-        pushedAt: repository.pushed_at ? new Date(repository.pushed_at) : null,
-        canPush: repository.permissions?.push === true,
-      }));
-    },
-
-    async refreshUserToken(refreshToken) {
-      let response: Response;
-      try {
-        response = await fetch(TOKEN_URL, {
-          method: "POST",
-          headers: { accept: "application/json", "content-type": "application/json" },
-          body: JSON.stringify({
-            client_id: clientId,
-            client_secret: clientSecret,
-            grant_type: "refresh_token",
-            refresh_token: refreshToken,
-          }),
-          signal: clock.timeout(TIMEOUT_MS),
-        });
-      } catch (cause) {
-        throw new UpstreamError("github", "the token refresh did not answer", { cause });
-      }
-      // GitHub answers 200 either way and says which in the body.
-      const body = response.ok ? ((await response.json()) as any) : {};
-      if (typeof body.access_token === "string") {
-        const now = clock.now();
-        const after = (seconds: unknown) =>
-          typeof seconds === "number" ? new Date(now + seconds * 1000) : null;
-        return {
-          kind: "refreshed",
-          tokens: {
-            accessToken: body.access_token,
-            accessTokenExpiresAt: after(body.expires_in),
-            refreshToken: typeof body.refresh_token === "string" ? body.refresh_token : null,
-            refreshTokenExpiresAt: after(body.refresh_token_expires_in),
-          },
-        };
-      }
-      if (body.error === "bad_refresh_token") return { kind: "rejected" };
-      const code =
-        typeof body.error === "string" && /^[a-z_]{1,64}$/.test(body.error) ? body.error : "";
-      throw new UpstreamError("github", `the token refresh answered ${response.status} ${code}`, {
-        status: response.status,
-      });
-    },
-
-    createInstallationToken,
-
-    getRepoPermission({ installationId, repository, user }) {
-      const key = `${installationId}:${repository.id}:${user.id}`;
-      const pending = asking.get(key);
-      if (pending) return pending;
-      const asked = askRepoPermission(installationId, repository, user).finally(() =>
-        asking.delete(key),
-      );
-      asking.set(key, asked);
-      return asked;
-    },
-  };
 
   async function createInstallationToken({
     installationId,
@@ -408,6 +323,188 @@ export function createGithub({
     tokens.set(key, minted);
     return minted.token;
   }
+
+  return {
+    async getUser(userToken) {
+      const user = await call("user", "GET", "/user", userToken);
+      return {
+        id: user.id,
+        login: user.login,
+        name: user.name ?? null,
+        avatarUrl: user.avatar_url ?? null,
+      };
+    },
+
+    async listEmails(userToken) {
+      const emails: any[] = await call(
+        "user",
+        "GET",
+        `/user/emails?per_page=${PAGE_SIZE}`,
+        userToken,
+      );
+      return emails.map((entry) => ({
+        email: entry.email,
+        primary: entry.primary === true,
+        verified: entry.verified === true,
+      }));
+    },
+
+    async listInstallations(userToken) {
+      const listed = await listAll("user", "/user/installations", userToken, "installations");
+      return { ...listed, items: listed.items.map(toInstallation) };
+    },
+
+    async listInstallationRepositories(userToken, installationId) {
+      const path = `/user/installations/${installationId}/repositories`;
+      const listed = await listAll("user", path, userToken, "repositories");
+      return {
+        ...listed,
+        items: listed.items.map((repository) => ({
+          ...toRepository(repository),
+          canPush: repository.permissions?.push === true,
+        })),
+      };
+    },
+
+    async getOrgRole(userToken, org) {
+      const path = `/user/memberships/orgs/${encodeURIComponent(org)}`;
+      let membership: any;
+      try {
+        membership = await call("user", "GET", path, userToken);
+      } catch (error) {
+        // 404: not a member. 403: the organization does not let the App see its members.
+        if (error instanceof UpstreamError && (error.status === 404 || error.status === 403)) {
+          return null;
+        }
+        throw error;
+      }
+      if (membership.state !== "active") return null;
+      return membership.role === "admin" ? "admin" : "member";
+    },
+
+    async refreshUserToken(refreshToken) {
+      let response: Response;
+      try {
+        response = await fetch(TOKEN_URL, {
+          method: "POST",
+          headers: { accept: "application/json", "content-type": "application/json" },
+          body: JSON.stringify({
+            client_id: clientId,
+            client_secret: clientSecret,
+            grant_type: "refresh_token",
+            refresh_token: refreshToken,
+          }),
+          signal: clock.timeout(TIMEOUT_MS),
+        });
+      } catch (cause) {
+        throw new UpstreamError("github", "the token refresh did not answer", { cause });
+      }
+      // GitHub answers 200 either way and says which in the body.
+      const body = response.ok ? ((await response.json()) as any) : {};
+      if (typeof body.access_token === "string") {
+        const now = clock.now();
+        const after = (seconds: unknown) =>
+          typeof seconds === "number" ? new Date(now + seconds * 1000) : null;
+        return {
+          kind: "refreshed",
+          tokens: {
+            accessToken: body.access_token,
+            accessTokenExpiresAt: after(body.expires_in),
+            refreshToken: typeof body.refresh_token === "string" ? body.refresh_token : null,
+            refreshTokenExpiresAt: after(body.refresh_token_expires_in),
+          },
+        };
+      }
+      if (body.error === "bad_refresh_token") return { kind: "rejected" };
+      const code =
+        typeof body.error === "string" && /^[a-z_]{1,64}$/.test(body.error) ? body.error : "";
+      throw new UpstreamError("github", `the token refresh answered ${response.status} ${code}`, {
+        status: response.status,
+      });
+    },
+
+    createInstallationToken,
+
+    getRepoPermission({ installationId, repository, user }) {
+      const key = `${installationId}:${repository.id}:${user.id}`;
+      const pending = asking.get(key);
+      if (pending) return pending;
+      const asked = askRepoPermission(installationId, repository, user).finally(() =>
+        asking.delete(key),
+      );
+      asking.set(key, asked);
+      return asked;
+    },
+
+    async getInstallation(installationId) {
+      try {
+        const path = `/app/installations/${installationId}`;
+        return toInstallation(await call("app", "GET", path, await appJwt()));
+      } catch (error) {
+        if (error instanceof UpstreamError && error.status === 404) return null;
+        throw error;
+      }
+    },
+
+    async listRepositoriesAsInstallation(installationToken) {
+      const path = "/installation/repositories";
+      const listed = await listAll("app", path, installationToken, "repositories");
+      return { ...listed, items: listed.items.map(toRepository) };
+    },
+
+    async getAccountName(installationToken, login) {
+      const path = `/users/${encodeURIComponent(login)}`;
+      const account = await call("app", "GET", path, installationToken);
+      return typeof account.name === "string" && account.name.trim() !== "" ? account.name : null;
+    },
+  };
+}
+
+/**
+ * The App's own credential: a JWT good for a few minutes, signed with its private key and
+ * backdated for clock drift. GitHub takes it only on `/app/…`.
+ */
+export function signAppJwt({
+  clientId,
+  privateKey,
+  now,
+}: {
+  clientId: string;
+  privateKey: KeyObject;
+  /** Epoch milliseconds. */
+  now: number;
+}): Promise<string> {
+  const seconds = Math.floor(now / 1000);
+  return new SignJWT({})
+    .setProtectedHeader({ alg: "RS256" })
+    .setIssuer(clientId)
+    .setIssuedAt(seconds - 60)
+    .setExpirationTime(seconds + 540)
+    .sign(privateKey);
+}
+
+function toInstallation(installation: any): GithubUserInstallation {
+  return {
+    id: installation.id,
+    account: {
+      id: installation.account.id,
+      login: installation.account.login,
+      type: installation.account.type === "Organization" ? "Organization" : "User",
+      avatarUrl: installation.account.avatar_url ?? null,
+    },
+    repositorySelection: installation.repository_selection === "all" ? "all" : "selected",
+    suspendedAt: installation.suspended_at ? new Date(installation.suspended_at) : null,
+  };
+}
+
+function toRepository(repository: any): GithubInstalledRepository {
+  return {
+    id: repository.id,
+    fullName: repository.full_name,
+    defaultBranch: repository.default_branch,
+    private: repository.private === true,
+    pushedAt: repository.pushed_at ? new Date(repository.pushed_at) : null,
+  };
 }
 
 const PERMISSIONS: readonly RepoPermission[] = ["admin", "write", "read", "none"];

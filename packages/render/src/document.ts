@@ -31,6 +31,12 @@ export interface PageOptions {
    * they need the originals.
    */
   imageScale?: number;
+  /**
+   * @font-face rules for the system fonts this machine draws in stand-ins
+   * (stand-ins.ts). They go first in the page, so a face the design declares
+   * under the same name wins, and lint can tell them from the design's own.
+   */
+  standInFaces?: string;
 }
 
 /**
@@ -67,7 +73,10 @@ export function artboardPage(ab: Artboard, opts: PageOptions): string {
   });
   const fonts = googleFontLinks(googleFonts(body, opts.tokens));
   const scheme = opts.colorScheme ? `:root{color-scheme:${opts.colorScheme}}` : "";
-  return `<!doctype html><html><head><meta charset="utf-8">
+  const standIns = opts.standInFaces
+    ? `<style data-stand-ins>${styleText(opts.standInFaces)}</style>`
+    : "";
+  return `<!doctype html><html><head><meta charset="utf-8">${standIns}
 ${fonts}
 <style>${styleText(resolveTokenAssets(opts.tokens, opts.assetBase))}</style>
 <style>html,body{margin:0;padding:0;background:transparent}${scheme}${ARTBOARD_BASE_CSS}</style>

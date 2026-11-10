@@ -1,5 +1,5 @@
 {
-  "id": "db1445fe-a152-4a01-8459-209cd334ec41",
+  "id": "eff2b34b-aa69-49e7-88ed-a75897267a14",
   "prevId": "59faa8e8-4dac-4ffb-a054-44ca9d961867",
   "version": "7",
   "dialect": "postgresql",
@@ -524,99 +524,6 @@
         "memberships_role_check": {
           "name": "memberships_role_check",
           "value": "\"memberships\".\"role\" in ('admin', 'member')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.repo_access": {
-      "name": "repo_access",
-      "schema": "",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "repo_id": {
-          "name": "repo_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "permission": {
-          "name": "permission",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "checked_at": {
-          "name": "checked_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "repo_access_repo_id_idx": {
-          "name": "repo_access_repo_id_idx",
-          "columns": [
-            {
-              "expression": "repo_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "repo_access_user_id_users_id_fk": {
-          "name": "repo_access_user_id_users_id_fk",
-          "tableFrom": "repo_access",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "repo_access_repo_id_repos_id_fk": {
-          "name": "repo_access_repo_id_repos_id_fk",
-          "tableFrom": "repo_access",
-          "tableTo": "repos",
-          "columnsFrom": [
-            "repo_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "repo_access_user_id_repo_id_pk": {
-          "name": "repo_access_user_id_repo_id_pk",
-          "columns": [
-            "user_id",
-            "repo_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "repo_access_permission_check": {
-          "name": "repo_access_permission_check",
-          "value": "\"repo_access\".\"permission\" in ('admin', 'write', 'read', 'none')"
         }
       },
       "isRLSEnabled": false
@@ -2291,6 +2198,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
+        },
+        "pr_updated_at": {
+          "name": "pr_updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         },
         "agent_state": {
           "name": "agent_state",

@@ -617,6 +617,11 @@ function motionRuntime() {
       ),
     );
     hold();
+    // A font the artboard declares in its own <style> left the page with it
+    // and loads again now. Unless it is in the browser's cache that takes a
+    // moment, and a capture in that moment has the text in a fallback or
+    // missing. Not for long: a font that never arrived the first time won't now.
+    await Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 2000))]);
     if (opts.interact && Object.values(opts.interact).some(Boolean)) {
       const r = interact(opts.interact);
       if ("error" in r) return r;

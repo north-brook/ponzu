@@ -6,6 +6,12 @@ export const REPOSITORY_SELECTIONS = ["all", "selected"] as const;
 export const MEMBER_ROLES = ["admin", "member"] as const;
 /** What GitHub says a person may do in a repo: its four legacy answers. */
 export const REPO_PERMISSIONS = ["admin", "write", "read", "none"] as const;
+/**
+ * How a member reaches a workspace on GitHub: they own its account (a personal account's
+ * person, an organization's owners), they are in its organization, or only some of its repos
+ * are shared with them.
+ */
+export const GITHUB_ACCESS = ["owner", "member", "collaborator"] as const;
 export const BASE_STATUSES = ["none", "building", "ready", "failed"] as const;
 export const CLAUDE_ACCOUNT_KINDS = ["subscription", "api_key"] as const;
 export const CLAUDE_ACCOUNT_STATUSES = ["connected", "expired", "revoked"] as const;
@@ -43,6 +49,7 @@ export const WEBHOOK_SOURCES = ["github", "stripe", "boat", "workos"] as const;
 export type WorkspaceKind = (typeof WORKSPACE_KINDS)[number];
 export type MemberRole = (typeof MEMBER_ROLES)[number];
 export type RepoPermission = (typeof REPO_PERMISSIONS)[number];
+export type GithubAccess = (typeof GITHUB_ACCESS)[number];
 export type DesignStatus = (typeof DESIGN_STATUSES)[number];
 export type AgentState = (typeof AGENT_STATES)[number];
 export type PrState = (typeof PR_STATES)[number];

@@ -58,7 +58,8 @@ const result = await commitOps(db, { designId, expectedSeq, actor, ops });
   long as the runtime's `fetch` does.
 - **A query that depends on the time takes `now` from its caller**, as the GitHub token claim
   and presence do, so a test can move the clock. The older ones still read Postgres's `now()`
-  (runner token expiry, job leases and retries, event claims); convert one when a module
+  (runner token expiry, job leases, event claims; `claimJobs` takes a `now` for when a job is
+  due, which its caller then sets `runAt` by); convert one when a module
   comes to depend on its timing, and do not add to them.
 - `@ponzu/db/testing` exports `createTestDb()`: a migrated PGlite database, about 60 ms each.
 - `@ponzu/db/types` is for clients: the fixed lists (`AGENT_STATES`, `EVENT_PRIORITIES`, …),
@@ -119,8 +120,10 @@ People and access
 | `users` | A person: their WorkOS and GitHub identity, agent defaults, ping settings, onboarding steps. The GitHub account is who they are. | live |
 | `sessions` | The WorkOS sessions the sign-in exchange let in. A token is honored only for one of these; signing out deletes the row. | |
 | `github_user_tokens` | A person's GitHub token, encrypted. Used to ask GitHub what they can reach. `refresh_claimed_until` is the lock that lets one function instance at a time refresh it. | |
-| `workspaces` | A GitHub account with the App installed, and its billing: Stripe customer, cap, period anchor. Keyed by the account; the installation id changes on a reinstall. | live |
-| `memberships` | Who can reach a workspace, as GitHub last said, and their role (admin or member). | live |
+| `workspaces` | A GitHub account with the App installed, and its billing: Stripe customer, cap, period anchor. Keyed by the account; the installation id changes on a reinstall. `reconciled_at` is when the installation was last read as the App. | live |
+| `uninstalled_installations` | Installation ids GitHub said are gone. GitHub never reuses one, so a read that began before the uninstall cannot bring it back. | |
+| `memberships` | Who can reach a workspace, as GitHub last said, how (`github_access`: owner, member of its organization, or collaborator on some repos), and their role (admin or member). An owner is always an admin. | live |
+| `member_repos` | The repos of a workspace each member reaches, as GitHub last told them, and whether they can push. A member is shown only these. Goes with the membership. | |
 | `repos` | A repo the App can see: default branch, the base snapshot new designs start from, its stack, ideas. | live |
 | `repo_access` | What GitHub last said each person may do in each repo, and when. Every function instance shares the answers, and live queries join them so a repo's designs show only to people who can read it. A row is replaced only by a newer answer. | live |
 | `repo_secrets` | A repo's environment variables, encrypted. | |
@@ -170,6 +173,10 @@ A design names its workspace and, unless it is Scratch, its repo. The two cannot
 the foreign key is the repo and its workspace together. When GitHub transfers a repo to
 another account, `upsertRepos` moves the repo and its designs follow in the same statement.
 Usage already recorded stays with the workspace that was billed for it.
+
+A design's pull request is recorded from GitHub's webhooks by `recordPullRequest`, which keeps
+the newest word (`designs.pr_updated_at`, GitHub's `updated_at`) since deliveries arrive out
+of order, and settles the design on a merge.
 
 ## Deleting
 

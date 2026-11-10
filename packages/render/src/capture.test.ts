@@ -21,13 +21,30 @@ test("capture scale keeps the image within a GPU texture", () => {
   expect(captureScale(0, 0, 2)).toBe(2);
 });
 
+test("capture scale keeps the image within a pixel budget", () => {
+  const budget = (w: number, h: number, scale: number, maxPixels: number) =>
+    captureScale(w, h, scale, MAX_CAPTURE_PX, maxPixels);
+  // 1440×900 at 4x is 20.7 million pixels.
+  expect(budget(1440, 900, 4, 24_000_000)).toBe(4);
+  const s = budget(1440, 900, 4, 8_000_000);
+  expect(s).toBe(2.484);
+  expect(1440 * 900 * s * s).toBeLessThanOrEqual(8_000_000);
+  // Whichever limit is tighter decides: a long thin strip is short on pixels and still too long.
+  expect(budget(100, 40_000, 1, 24_000_000)).toBe(captureScale(100, 40_000, 1));
+  expect(budget(4000, 8000, 2, 24_000_000)).toBe(0.866);
+});
+
 const chromium = findChromium();
 
 // Real Chrome, and big images.
 setDefaultTimeout(60_000);
 
 describe.skipIf(!chromium)("tall artboards in Chromium", () => {
-  const renderer = new ChromiumRenderer({ executablePath: chromium ?? undefined });
+  // These are about how long an image can be, so the pixel budget is out of their way.
+  const renderer = new ChromiumRenderer({
+    executablePath: chromium ?? undefined,
+    limits: { maxPixels: Number.POSITIVE_INFINITY },
+  });
   // One whose fonts never arrive, and a shorter wait for them than the real one.
   const stalling = new ChromiumRenderer({
     executablePath: chromium ?? undefined,

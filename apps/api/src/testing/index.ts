@@ -21,6 +21,8 @@ export { FakeSealer, MemoryStorage } from "./fakes.ts";
 
 /** 32 bytes of nothing secret, in base64url: the vault key every test app seals with. */
 export const TEST_VAULT_KEY = Buffer.alloc(32, 7).toString("base64url");
+/** What the test app's cron route takes as its bearer token. */
+export const TEST_CRON_SECRET = "test_cron_secret_".padEnd(40, "x");
 
 /** Someone to sign in as. Everything has a default; `login` is what tells two people apart. */
 export interface Person {
@@ -119,6 +121,8 @@ export async function createTestApp(
       build: { version: "0.0.0-test", commit: options.commit ?? "testcommit" },
       minimumClientVersions: options.minimumClientVersions ?? {},
       assetsUrl: "https://assets.test",
+      githubApp: { slug: "ponzu-test", webhookSecret: github.credentials.webhookSecret },
+      cronSecret: TEST_CRON_SECRET,
     },
   };
   const app = createApp(deps);
@@ -178,8 +182,9 @@ export async function createTestApp(
 
   /**
    * Signs a person in through the real `POST /v1/auth/exchange`, so their row and their
-   * stored GitHub token exist exactly as a real sign-in leaves them. Signing the same login in
-   * again is the same person with a new session.
+   * stored GitHub token exist exactly as a real sign-in leaves them, and waits for the sync
+   * with GitHub the sign-in starts. Signing the same login in again is the same person with a
+   * new session.
    */
   async function signInAs(who: Partial<Person> = {}): Promise<SignedInPerson> {
     const started = await startSignIn(who);
@@ -198,6 +203,7 @@ export async function createTestApp(
       access_token: string;
       refresh_token: string;
     };
+    await backgroundDone();
     return {
       headers: { authorization: `Bearer ${session.access_token}` },
       userId: session.user.id,

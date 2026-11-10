@@ -130,6 +130,8 @@ jobs:
           check web bun run --filter @ponzu/web build
           check api bun scripts/ci/api-bundle.ts
           failed=0
+          # Beside the builds above, a test file's first in-process Postgres can take longer to
+          # boot than bun's five seconds; it takes well under one alone.
           bun test --parallel --timeout 20000 || failed=1
           wait
           for name in lint typecheck typecheck-mobile typecheck-desktop typecheck-api studio web api; do

@@ -45,41 +45,47 @@ beforeAll(async () => {
 afterAll(() => t.close());
 
 test("a person's installations are the ones they can reach, and no others", async () => {
-  expect(await t.deps.github.listInstallations(token)).toEqual([
-    {
-      id: 9001,
-      account: { id: maya.github.id, login: "maya", type: "User", avatarUrl: null },
-      repositorySelection: "all",
-      suspendedAt: null,
-    },
-    {
-      id: 9002,
-      account: { id: 77, login: "north-brook", type: "Organization", avatarUrl: null },
-      repositorySelection: "selected",
-      suspendedAt: null,
-    },
-  ]);
+  expect(await t.deps.github.listInstallations(token)).toEqual({
+    items: [
+      {
+        id: 9001,
+        account: { id: maya.github.id, login: "maya", type: "User", avatarUrl: null },
+        repositorySelection: "all",
+        suspendedAt: null,
+      },
+      {
+        id: 9002,
+        account: { id: 77, login: "north-brook", type: "Organization", avatarUrl: null },
+        repositorySelection: "selected",
+        suspendedAt: null,
+      },
+    ],
+    complete: true,
+  });
 });
 
 test("the repositories inside one are theirs to see, with whether they can push", async () => {
-  expect(await t.deps.github.listInstallationRepositories(token, 9002)).toEqual([
-    {
-      id: 1,
-      fullName: "north-brook/fernwood",
-      defaultBranch: "main",
-      private: true,
-      pushedAt: null,
-      canPush: true,
-    },
-    {
-      id: 2,
-      fullName: "north-brook/site",
-      defaultBranch: "trunk",
-      private: false,
-      pushedAt: null,
-      canPush: false,
-    },
-  ]);
+  expect(await t.deps.github.listInstallationRepositories(token, 9002)).toEqual({
+    items: [
+      {
+        id: 1,
+        fullName: "north-brook/fernwood",
+        defaultBranch: "main",
+        private: true,
+        pushedAt: null,
+        canPush: true,
+      },
+      {
+        id: 2,
+        fullName: "north-brook/site",
+        defaultBranch: "trunk",
+        private: false,
+        pushedAt: null,
+        canPush: false,
+      },
+    ],
+    complete: true,
+  });
 });
 
 test("a long list is read to its end, a page at a time", async () => {
@@ -97,8 +103,34 @@ test("a long list is read to its end, a page at a time", async () => {
 
   const repositories = await t.deps.github.listInstallationRepositories(token, 9100);
 
-  expect(repositories).toHaveLength(230);
-  expect(new Set(repositories.map((repository) => repository.id)).size).toBe(230);
+  expect(repositories.complete).toBe(true);
+  expect(repositories.items).toHaveLength(230);
+  expect(new Set(repositories.items.map((repository) => repository.id)).size).toBe(230);
+});
+
+test("a list longer than twenty pages says it was cut short", async () => {
+  const sizes = [2_000, 2_001];
+  for (const size of sizes) {
+    t.github.installations.push({
+      id: 9200 + size,
+      account: { id: 80 + size, login: `huge${size}`, type: "Organization" },
+      repositorySelection: "all",
+      repositories: Array.from({ length: size }, (_, index) => ({
+        id: 100_000 * size + index,
+        fullName: `huge${size}/r${index}`,
+        access: { [maya.github.id]: "read" as const },
+      })),
+    });
+  }
+
+  const exact = await t.deps.github.listInstallationRepositories(token, 11_200);
+  const over = await t.deps.github.listInstallationRepositories(token, 11_201);
+
+  // Exactly as many as are read is all of them: GitHub's total says so.
+  expect(exact).toMatchObject({ complete: true });
+  expect(exact.items).toHaveLength(2_000);
+  expect(over).toMatchObject({ complete: false });
+  expect(over.items).toHaveLength(2_000);
 });
 
 test("a user token GitHub refuses is github_reauth_required", async () => {

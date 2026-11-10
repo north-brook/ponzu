@@ -21,24 +21,29 @@ src/
   env.ts          every environment variable, read and checked once (.env.example lists them)
   deps/           everything outside our code, behind interfaces, made in createDeps
     workos.ts       real: code exchange, email verification, session revoke, user delete, JWKS
-    github.ts       real: as a person (user, emails, installations, repositories, token refresh)
-                    and as the App (installation tokens, a person's permission in a repo)
+    github.ts       real: as a person (user, emails, installations, repositories, org role, token
+                    refresh) and as the App (installation lookups and tokens, repo lists, a
+                    person's permission in a repo)
     background.ts   work that outlives its request
     storage.ts      interface only, until the assets module
     realtime.ts     real: seals live queries with the branch's Realtime secret
   http/           errors, validation, request ids and logs, CORS, the client-version gate
   auth/           access declarations, authentication, authorization, sign-in
   vault/          sealing stored secrets
-  github/         githubUserToken: a person's GitHub token, kept fresh
+  github/         githubUserToken: a person's GitHub token, kept fresh; syncGithub and
+                  reconcileInstallation: workspaces, members and repos in line with GitHub;
+                  the install round trip and its setup page; what each webhook does
   designs/        committing ops, undo, the current document and its cache, who may send
-                  which op (op-rules.ts), and the events a person's ops make
+                  which op (op-rules.ts), and the events a design's feed gets
   live/           queries.ts: every live query, its arguments, who may watch it and its SQL
+  jobs/           runJob and runDueJobs: work recorded in `jobs`, run now and retried by the cron
   routes/         one file per area, mounted under /v1 in routes/index.ts
   testing/        createTestApp and the fakes behind it; designs.ts for workspaces to test in
 scripts/
   dev.ts          bun run dev
   dev-signin.ts   a real sign-in from a terminal, saved for end-to-end tests
   neon.ts         a Neon branch's connection string and Realtime, by branch name
+  github-webhook.ts  the App's webhook: where it points, its secret, redelivering failures
 ```
 
 No file is named `app.ts` or `server.ts`, and nothing lives under `apps/api/api/`: Vercel's
@@ -90,6 +95,9 @@ has: no `Bun.…`, no DOM. `bun run typecheck` (and CI) checks exactly that.
    declaration, then `c.req.valid(…)`. Responses: define the body as a zod schema and send
    `c.json(Schema.parse(value))`. The schema is the allowlist, so a row passed whole cannot
    leak a column. JSON is camelCase; `/v1/auth/exchange` keeps OAuth's three snake_case names.
+   Two routes are not JSON, both GitHub's to call: `GET /v1/github/setup` is a page a browser
+   lands on (`github/setup-page.ts`: no script, everything escaped, its own strict headers), and
+   `POST /v1/github/webhook` reads its raw body to check the signature before parsing it.
 
 4. **Dependencies.** Read them from `c.var.deps` (`db`, `clock`, `vault`, `workos`, `github`,
    `sandbox`, `storage`, `realtime`, `docs`, `background`, `log`, `config`). Never import a client,
@@ -108,7 +116,11 @@ has: no `Bun.…`, no DOM. `bun run typecheck` (and CI) checks exactly that.
    leave a promise running past a response: it keeps the instance alive for it and logs a
    failure. Await everything else: on a rejection nobody handles, Vercel ends the instance,
    with the other requests it is serving, and the app cannot stop it. The linter flags a
-   floating promise where it can tell there is one.
+   floating promise where it can tell there is one. Work that must happen even if the
+   instance dies or the work fails is a job: record it in `jobs` held by the request, run it
+   with `runJob` in the background, and add its kind to `HANDLERS` in `jobs/run.ts`; the
+   cron (`GET /v1/cron/minute`, every minute on production) runs it again after a failure,
+   or once the request's lock runs out. The GitHub webhook is the model.
 
 5. **Errors.** Throw `new ApiError(status, code, message, { details?, cause? })`. Every error
    leaves as `{ "error": { "code", "message", "details"? } }`. `code` is from the `ErrorCode`
@@ -141,8 +153,10 @@ has: no `Bun.…`, no DOM. `bun run typecheck` (and CI) checks exactly that.
    to `deps.background`. Nothing in it can reach the network.
 
    `t.clock` moves only when told, and it is the API's clock: token expiry, the GitHub token
-   refresh, presence, timeouts and waits follow it. What `@ponzu/db` times with Postgres's own
-   `now()` does not: runner token expiry, job leases and retries, and event claims. A query
+   refresh, presence, repo access answers, timeouts and waits follow it. What `@ponzu/db` times
+   with Postgres's own `now()` does not: runner token expiry, job leases and event claims.
+   (When a job is due is the API's clock: `runJob` and the cron set and compare it by
+   `deps.clock`.) A query
    function that needs the time takes `now` from its caller (as the GitHub token claim does);
    convert one of the others when your module comes to depend on its timing.
 
@@ -258,3 +272,14 @@ sensitive values. `GITHUB_APP_PRIVATE_KEY` is the PEM as it is, many lines. Unti
 `DATABASE_URL` is the pooled URL of the Neon `dev` branch in both. At cutover, turn off
 scale-to-zero on the production database's endpoint: a waking database eats into those ten
 seconds.
+
+`GITHUB_WEBHOOK_SECRET` is the secret the App's webhook is signed with, so it changes in two
+places at once: set the new value on the project, then point the App at it with
+`bun scripts/github-webhook.ts configure` (which also sets the URL). Deliveries in between fail
+their signature check; once the deploy is live, `bun scripts/github-webhook.ts redeliver` sends
+them again. GitHub never retries a failed delivery by itself. One the API answered 202 is a job
+by then, and the cron retries its work.
+
+`CRON_SECRET` is what Vercel sends as the bearer of each cron request (`crons` in
+[vercel.json](vercel.json)); Vercel reads that exact name from the project. Crons run on
+production only, so a preview never runs its jobs again by itself.

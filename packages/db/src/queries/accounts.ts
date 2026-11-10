@@ -1,11 +1,26 @@
-import { and, eq, getTableColumns, inArray, isNull, notInArray, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  getTableColumns,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  notInArray,
+  or,
+  sql,
+} from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { newId } from "../ids.ts";
 import {
   claudeAccounts,
+  type GithubAccess,
   type MemberRole,
+  memberRepos,
   memberships,
   repos,
+  uninstalledInstallations,
   users,
   workspaces,
 } from "../schema/index.ts";
@@ -89,18 +104,27 @@ export interface GithubInstallation {
   repositorySelection: NonNullable<Workspace["repositorySelection"]>;
   /** Who installed the App, when we know. */
   installedByUserId: string | null;
+  /** Whether GitHub says it is suspended. Left out, a reinstall clears it and nothing else does. */
+  suspendedAt?: Date | null;
+  /** When this was read from GitHub as the App. Left out, the last time is kept. */
+  reconciledAt?: Date;
 }
 
 /**
  * The workspace for a GitHub account the App is installed on. The account is the key, so a
  * reinstall comes back to the same workspace. Who installed it and when are kept until the
- * installation itself changes.
+ * installation itself changes; an installer learned later (the person who came back from the
+ * install page, after a webhook that could not name them) fills in an unknown one.
  */
 export async function upsertWorkspace(
   db: Db,
   installation: GithubInstallation,
 ): Promise<Workspace> {
   const reinstalled = sql`${workspaces.installationId} is distinct from excluded.installation_id`;
+  const suspendedAt =
+    installation.suspendedAt === undefined
+      ? sql`case when ${reinstalled} then null else ${workspaces.suspendedAt} end`
+      : installation.suspendedAt;
   const [workspace] = await run(
     db
       .insert(workspaces)
@@ -114,9 +138,10 @@ export async function upsertWorkspace(
           avatarUrl: installation.avatarUrl,
           installationId: installation.installationId,
           repositorySelection: installation.repositorySelection,
-          installedByUserId: sql`case when ${reinstalled} then excluded.installed_by_user_id else ${workspaces.installedByUserId} end`,
+          installedByUserId: sql`case when ${reinstalled} then excluded.installed_by_user_id else coalesce(${workspaces.installedByUserId}, excluded.installed_by_user_id) end`,
           installedAt: sql`case when ${reinstalled} then now() else ${workspaces.installedAt} end`,
-          suspendedAt: sql`case when ${reinstalled} then null else ${workspaces.suspendedAt} end`,
+          suspendedAt,
+          ...(installation.reconciledAt ? { reconciledAt: installation.reconciledAt } : {}),
         },
       })
       .returning(),
@@ -124,13 +149,161 @@ export async function upsertWorkspace(
   return workspace!;
 }
 
+/** The person with this id, or null. */
+export async function getUser(db: Db, userId: string): Promise<User | null> {
+  const [user] = await run(db.select().from(users).where(eq(users.id, userId)));
+  return user ?? null;
+}
+
+/** The person signed in as this GitHub account, or null if they never signed in to Ponzu. */
+export async function getUserByGithubId(db: Db, githubUserId: number): Promise<User | null> {
+  const [user] = await run(db.select().from(users).where(eq(users.githubUserId, githubUserId)));
+  return user ?? null;
+}
+
+/** A workspace, with the GitHub login of whoever installed the App on it when that is known. */
+export async function getWorkspace(
+  db: Db,
+  workspaceId: string,
+): Promise<(Workspace & { installedByLogin: string | null }) | null> {
+  const [row] = await run(
+    db
+      .select({ ...getTableColumns(workspaces), installedByLogin: users.githubLogin })
+      .from(workspaces)
+      .leftJoin(users, eq(users.id, workspaces.installedByUserId))
+      .where(eq(workspaces.id, workspaceId)),
+  );
+  return row ?? null;
+}
+
+/** The workspace an installation of the App belongs to now, or null. */
+export async function getWorkspaceByInstallation(
+  db: Db,
+  installationId: number,
+): Promise<Workspace | null> {
+  const [row] = await run(
+    db.select().from(workspaces).where(eq(workspaces.installationId, installationId)),
+  );
+  return row ?? null;
+}
+
 /**
- * Record that GitHub says a person can reach a workspace. `role` is used only for a new
- * member: the role is Ponzu's own and a sync must never undo a change an admin made.
+ * Record GitHub's word, read at `reconciledAt`, that an installation is suspended. Only a
+ * workspace Ponzu already has is touched: null when no workspace holds the installation.
+ */
+export async function suspendWorkspace(
+  db: Db,
+  {
+    installationId,
+    suspendedAt,
+    reconciledAt,
+  }: { installationId: number; suspendedAt: Date; reconciledAt: Date },
+): Promise<Workspace | null> {
+  const [row] = await run(
+    db
+      .update(workspaces)
+      .set({ suspendedAt, reconciledAt })
+      .where(eq(workspaces.installationId, installationId))
+      .returning(),
+  );
+  return row ?? null;
+}
+
+/**
+ * The App was removed from an account: its workspace keeps its row, designs and members but
+ * loses the installation, and its repos are marked removed, in one statement. The installation
+ * is remembered as gone (`wasUninstalled`) even when no workspace holds it (never seen, or
+ * already replaced by a reinstall). Answers the workspace's id, or null.
+ */
+export async function markWorkspaceUninstalled(
+  db: Db,
+  installationId: number,
+): Promise<string | null> {
+  const remembered = db
+    .$with("remembered")
+    .as(
+      db
+        .insert(uninstalledInstallations)
+        .values({ installationId })
+        .onConflictDoNothing()
+        .returning({ installationId: uninstalledInstallations.installationId }),
+    );
+  const uninstalled = db
+    .$with("uninstalled")
+    .as(
+      db
+        .update(workspaces)
+        .set({ installationId: null, repositorySelection: null, suspendedAt: null })
+        .where(eq(workspaces.installationId, installationId))
+        .returning({ id: workspaces.id }),
+    );
+  const removed = db.$with("removed").as(
+    db
+      .update(repos)
+      .set({ removedAt: sql`now()` })
+      .where(
+        and(
+          inArray(repos.workspaceId, db.select({ id: uninstalled.id }).from(uninstalled)),
+          isNull(repos.removedAt),
+        ),
+      )
+      .returning({ id: repos.id }),
+  );
+  const [row] = await run(
+    db.with(remembered, uninstalled, removed).select({ id: uninstalled.id }).from(uninstalled),
+  );
+  return row?.id ?? null;
+}
+
+/** Whether GitHub has said this installation is gone (`markWorkspaceUninstalled`). */
+export async function wasUninstalled(db: Db, installationId: number): Promise<boolean> {
+  const rows = await run(
+    db
+      .select({ installationId: uninstalledInstallations.installationId })
+      .from(uninstalledInstallations)
+      .where(eq(uninstalledInstallations.installationId, installationId)),
+  );
+  return rows.length > 0;
+}
+
+/**
+ * Installations Ponzu holds that were last read from GitHub before `before` (or never),
+ * longest ago first: what the scheduled reconcile catches up, a few at a time.
+ */
+export async function listStaleInstallations(
+  db: Db,
+  { before, limit }: { before: Date; limit: number },
+): Promise<number[]> {
+  const rows = await run(
+    db
+      .select({ installationId: workspaces.installationId })
+      .from(workspaces)
+      .where(
+        and(
+          isNotNull(workspaces.installationId),
+          or(isNull(workspaces.reconciledAt), lt(workspaces.reconciledAt, before)),
+        ),
+      )
+      .orderBy(sql`${workspaces.reconciledAt} asc nulls first`, asc(workspaces.installationId))
+      .limit(limit),
+  );
+  return rows.map((row) => row.installationId!);
+}
+
+/**
+ * Record that GitHub says a person can reach a workspace, and how (`githubAccess`, kept as it
+ * was when left out). `role` is used only for a new member: the role is Ponzu's own and a sync
+ * must never undo a change an admin made. The one exception is an owner of the account, who
+ * is always an admin, so nobody can take a workspace from the people GitHub says own it.
  */
 export async function upsertMembership(
   db: Db,
-  membership: { workspaceId: string; userId: string; role: MemberRole },
+  membership: {
+    workspaceId: string;
+    userId: string;
+    role: MemberRole;
+    githubAccess?: GithubAccess;
+  },
 ): Promise<Membership> {
   const [row] = await run(
     db
@@ -138,7 +311,15 @@ export async function upsertMembership(
       .values(membership)
       .onConflictDoUpdate({
         target: [memberships.workspaceId, memberships.userId],
-        set: { syncedAt: sql`now()` },
+        set: {
+          syncedAt: sql`now()`,
+          ...(membership.githubAccess
+            ? {
+                githubAccess: membership.githubAccess,
+                role: sql`case when excluded.github_access = 'owner' then 'admin' else ${memberships.role} end`,
+              }
+            : {}),
+        },
       })
       .returning(),
   );
@@ -148,11 +329,19 @@ export async function upsertMembership(
 /** A workspace as one of its members sees it in a list. */
 export type MemberWorkspace = Pick<
   Workspace,
-  "id" | "githubLogin" | "kind" | "name" | "avatarUrl" | "installationId" | "suspendedAt"
-> & { role: MemberRole };
+  | "id"
+  | "githubAccountId"
+  | "githubLogin"
+  | "kind"
+  | "name"
+  | "avatarUrl"
+  | "installationId"
+  | "suspendedAt"
+> & { role: MemberRole; githubAccess: GithubAccess };
 
 const memberWorkspaceColumns = {
   id: workspaces.id,
+  githubAccountId: workspaces.githubAccountId,
   githubLogin: workspaces.githubLogin,
   kind: workspaces.kind,
   name: workspaces.name,
@@ -160,6 +349,7 @@ const memberWorkspaceColumns = {
   installationId: workspaces.installationId,
   suspendedAt: workspaces.suspendedAt,
   role: memberships.role,
+  githubAccess: memberships.githubAccess,
 };
 
 /** The workspaces a person belongs to, as GitHub last said, with their role in each. */
@@ -190,12 +380,21 @@ export async function getMemberWorkspace(
 
 /**
  * Drop a person's memberships of every workspace not listed: the other half of syncing with
- * GitHub, for the installations they can no longer reach. Answers how many were dropped.
+ * GitHub, for the installations they can no longer reach. Answers the workspaces they left,
+ * each of which may now need an admin (`ensureWorkspaceAdmin`).
+ *
+ * Their own account's workspace is never one of them: it stays theirs with the App removed
+ * from it, as their designs in it do.
  */
 export async function deleteMembershipsExcept(
   db: Db,
   { userId, workspaceIds }: { userId: string; workspaceIds: string[] },
-): Promise<number> {
+): Promise<string[]> {
+  const ownAccount = db
+    .select({ id: workspaces.id })
+    .from(workspaces)
+    .innerJoin(users, eq(users.githubUserId, workspaces.githubAccountId))
+    .where(eq(users.id, userId));
   const dropped = await run(
     db
       .delete(memberships)
@@ -203,11 +402,12 @@ export async function deleteMembershipsExcept(
         and(
           eq(memberships.userId, userId),
           workspaceIds.length > 0 ? notInArray(memberships.workspaceId, workspaceIds) : undefined,
+          notInArray(memberships.workspaceId, ownAccount),
         ),
       )
       .returning({ workspaceId: memberships.workspaceId }),
   );
-  return dropped.length;
+  return dropped.map((row) => row.workspaceId);
 }
 
 export interface GithubRepo {
@@ -246,6 +446,67 @@ export async function upsertRepos(
       })
       .returning(),
   );
+}
+
+/**
+ * Mark every repo of a workspace that is not in `githubRepoIds` removed: the other half of
+ * reading an installation's whole repo list from GitHub. Answers how many were marked.
+ */
+export async function markReposRemovedExcept(
+  db: Db,
+  { workspaceId, githubRepoIds }: { workspaceId: string; githubRepoIds: number[] },
+): Promise<number> {
+  const removed = await run(
+    db
+      .update(repos)
+      .set({ removedAt: sql`now()` })
+      .where(
+        and(
+          eq(repos.workspaceId, workspaceId),
+          isNull(repos.removedAt),
+          githubRepoIds.length > 0 ? notInArray(repos.githubRepoId, githubRepoIds) : undefined,
+        ),
+      )
+      .returning({ id: repos.id }),
+  );
+  return removed.length;
+}
+
+/**
+ * The repos of a workspace one member can open now (`member_repos`), most recently pushed
+ * first, with whether they can push to each.
+ */
+export function listWorkspaceRepos(
+  db: Db,
+  { workspaceId, userId }: { workspaceId: string; userId: string },
+): Promise<(Repo & { canPush: boolean })[]> {
+  return run(
+    db
+      .select({ ...getTableColumns(repos), canPush: memberRepos.canPush })
+      .from(repos)
+      .innerJoin(
+        memberRepos,
+        and(
+          eq(memberRepos.repoId, repos.id),
+          eq(memberRepos.workspaceId, repos.workspaceId),
+          eq(memberRepos.userId, userId),
+        ),
+      )
+      .where(and(eq(repos.workspaceId, workspaceId), isNull(repos.removedAt)))
+      .orderBy(sql`${repos.pushedAt} desc nulls last`, repos.fullName),
+  );
+}
+
+/** The installation that holds a repo Ponzu knows, or null (unknown, or its App is gone). */
+export async function getRepoInstallationId(db: Db, githubRepoId: number): Promise<number | null> {
+  const [row] = await run(
+    db
+      .select({ installationId: workspaces.installationId })
+      .from(repos)
+      .innerJoin(workspaces, eq(workspaces.id, repos.workspaceId))
+      .where(eq(repos.githubRepoId, githubRepoId)),
+  );
+  return row?.installationId ?? null;
 }
 
 /** Mark repos the App can no longer see. Their rows stay, because designs point at them. */

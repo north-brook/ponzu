@@ -32,6 +32,9 @@ const environment = {
   GITHUB_APP_CLIENT_SECRET: "placeholder",
   GITHUB_APP_PRIVATE_KEY:
     "-----BEGIN RSA PRIVATE KEY-----\nplaceholder\n-----END RSA PRIVATE KEY-----",
+  GITHUB_APP_SLUG: "placeholder",
+  GITHUB_WEBHOOK_SECRET: "placeholder".repeat(4),
+  CRON_SECRET: "placeholder".repeat(4),
   BOAT_API_KEY: "placeholder",
   PONZU_VAULT_KEY: Buffer.alloc(32, 1).toString("base64url"),
   NEON_REALTIME_URL: "https://realtime.invalid/",
