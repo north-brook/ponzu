@@ -431,6 +431,18 @@ describe("a route that does not say who may call it", () => {
     expect(await answer(createApp(t.deps).route("/", routes), "/v1/test/welcome")).toBe(200);
   });
 
+  test("an area with an error handler of its own is refused whole", async () => {
+    // Hono wraps every handler of such an area, the declaration with them, so nothing in it
+    // can be told to be one. The app's error handler is the only one (README).
+    const area = new Hono<AppEnv>()
+      .get("/", access.public, handler("own-errors"))
+      .onError((_error, c) => c.text("handled here", 500));
+    const app = createApp(t.deps).route("/v1/test/own-errors", area);
+
+    expect(await answer(app, "/v1/test/own-errors")).toEqual(REFUSED);
+    expect(ran).not.toContain("own-errors");
+  });
+
   test("every route the app ships is declared, and none is made public by its area", () => {
     const shipped = createApp(t.deps);
     expect(

@@ -100,8 +100,9 @@ has: no `Bun.…`, no DOM. `bun run typecheck` (and CI) checks exactly that.
 
    **Work after the answer.** `c.var.deps.background("wake", promise)` is the only way to
    leave a promise running past a response: it keeps the instance alive for it and logs a
-   failure. Await everything else: a rejection nobody handles ends a Node process that is
-   serving other requests. The linter flags a floating promise where it can tell there is one.
+   failure. Await everything else: on a rejection nobody handles, Vercel ends the instance,
+   with the other requests it is serving, and the app cannot stop it. The linter flags a
+   floating promise where it can tell there is one.
 
 5. **Errors.** Throw `new ApiError(status, code, message, { details?, cause? })`. Every error
    leaves as `{ "error": { "code", "message", "details"? } }`. `code` is from the `ErrorCode`

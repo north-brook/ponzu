@@ -5,9 +5,10 @@ import type { Logger } from "../http/log.ts";
  * `name` says what it was in the log if it fails.
  *
  * This is the only way to leave a promise running past a response. A promise nobody holds is
- * frozen with the instance once the response is sent, and if it rejects, Node ends the
- * process and every other request it was serving. Work that must finish whatever happens to
- * the instance is also a row in `jobs`; this only starts it sooner.
+ * frozen with the instance once the response is sent. And if it rejects, the instance dies
+ * with every other request it was serving: Vercel's runtime exits on an unhandled rejection
+ * (seen on a deployment; a listener of the app's own does not stop it). Work that must finish
+ * whatever happens to the instance is also a row in `jobs`; this only starts it sooner.
  */
 export type Background = (name: string, work: Promise<unknown>) => void;
 
@@ -32,7 +33,8 @@ export function createBackground(log: Logger, keep: (work: Promise<void>) => voi
  * Vercel's `waitUntil`: keeps the function instance alive until `work` settles. This is the
  * whole of what `@vercel/functions` does for it, and that package brings half a megabyte of
  * other things into the bundle with it. Vercel puts the current request's context behind
- * this symbol; anywhere else (`bun run dev`) there is none, and the work simply runs.
+ * this symbol (checked on a deployment: work finished four seconds after its response);
+ * anywhere else (`bun run dev`) there is none, and the work simply runs.
  */
 export function waitUntil(work: Promise<void>): void {
   const store = (globalThis as Record<symbol, unknown>)[Symbol.for("@vercel/request-context")] as

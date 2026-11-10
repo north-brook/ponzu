@@ -8,12 +8,4 @@ import { createApp } from "./create-app.ts";
 import { createDeps } from "./deps/index.ts";
 import { readEnv } from "./env.ts";
 
-const deps = createDeps(readEnv(process.env));
-
-// Node ends the process on a rejection nobody handled, and an instance serves many requests
-// at once. Work a request leaves running goes through `deps.background`, which never rejects;
-// this is for the promise that slipped past it, so one request's bug is a log line and not
-// everyone's failed request.
-process.on("unhandledRejection", (error) => deps.log.error("unhandled_rejection", { error }));
-
-export default createApp(deps);
+export default createApp(createDeps(readEnv(process.env)));
