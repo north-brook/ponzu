@@ -188,6 +188,8 @@ test("a refused write says what Postgres said and none of what was sent", async 
   const refused = error as QueryError;
   expect(refused.message).toContain("thread_items_payload_check");
   expect(refused.statement).toContain('insert into "thread_items"');
+  // The driver's own error is still there for a caller that wants the code: a check violation.
+  expect((refused.cause as { code?: string }).code).toBe("23514");
   // Drizzle's own error lists every parameter after the statement.
   expect(`${refused.message}\n${refused.stack}\n${refused.statement}`).not.toContain("sk-live");
 });

@@ -1,27 +1,9 @@
+// What `run` does with a statement Postgres refuses is tested where one is refused: in
+// thread.test.ts for the query builder and ops.test.ts for a raw statement.
 import { expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { sql } from "drizzle-orm";
-import { createTestDb } from "../testing.ts";
-import { QueryError, run } from "./run.ts";
-
-test("a refused statement becomes a QueryError without its parameters", async () => {
-  const db = await createTestDb();
-  const secret = "sk-live-do-not-log";
-
-  const error = await run(db.execute(sql`select ${secret}::text, 1 / ${0}::int`)).catch(
-    (thrown: unknown) => thrown,
-  );
-
-  expect(error).toBeInstanceOf(QueryError);
-  const refused = error as QueryError;
-  expect(refused.message).toBe("division by zero");
-  expect(refused.statement).toBe("select $1::text, 1 / $2::int");
-  expect((refused.cause as { code?: string }).code).toBe("22012");
-  // Drizzle's own error ends with every parameter.
-  expect(`${refused.message}\n${refused.stack}`).not.toContain(secret);
-  await db.$client.close();
-});
+import { run } from "./run.ts";
 
 test("anything that is not the database refusing a statement passes through as it is", async () => {
   const failure = new Error("the network went away");
