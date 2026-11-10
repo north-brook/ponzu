@@ -60,6 +60,47 @@ test("a retried create returns the first sandbox, and changed options are a conf
   expect(await code(fake.create({ ...options, env: { TOKEN: "t2" } }))).toBe("conflict");
 });
 
+test("a retried create matches on what the options say, not the order they were built in", async () => {
+  const fake = new FakeProvider();
+  const first = await fake.create({
+    idempotencyKey: "design-d1",
+    labels: { design: "d1", env: "dev" },
+    env: { A: "1", B: "2" },
+    autoStopSeconds: 600,
+  });
+  const again = await fake.create({
+    autoStopSeconds: 600,
+    env: { B: "2", A: "1" },
+    labels: { env: "dev", design: "d1" },
+    idempotencyKey: "design-d1",
+  });
+  expect(again.sandbox.id).toBe(first.sandbox.id);
+});
+
+test("an idempotency key guards a retry, not a design: it is forgotten after a day", async () => {
+  const fake = new FakeProvider();
+  const options = { idempotencyKey: "design-d1", labels: { design: "d1" }, autoStopSeconds: 600 };
+  const first = await fake.create(options);
+  fake.clock.advance(24 * 60 * MINUTE - 1);
+  expect((await fake.create(options)).sandbox.id).toBe(first.sandbox.id);
+
+  fake.clock.advance(1);
+  const second = await fake.create(options);
+  expect(second.sandbox.id).not.toBe(first.sandbox.id);
+  // The first is still there: a caller that leans on the key for longer ends up with two.
+  expect(await fake.list({ labels: { design: "d1" } })).toHaveLength(2);
+});
+
+test("destroying a sandbox frees its idempotency key", async () => {
+  const fake = new FakeProvider();
+  const options = { idempotencyKey: "design-d1", autoStopSeconds: 600 };
+  const first = await fake.create(options);
+  await fake.destroy(first.sandbox.id);
+  const second = await fake.create(options);
+  expect(second.sandbox.id).not.toBe(first.sandbox.id);
+  expect(await fake.list()).toHaveLength(1);
+});
+
 test("list filters on every label given", async () => {
   const fake = new FakeProvider();
   await fake.create({
@@ -81,8 +122,18 @@ test("ensureAwake waits out a first start and reports it cold", async () => {
   const fake = new FakeProvider();
   const { sandbox } = await fake.create({ idempotencyKey: "k", autoStopSeconds: 600 });
   const wake = await fake.ensureAwake(sandbox.id);
-  expect(wake).toMatchObject({ start: "cold", ms: 3_000, sandbox: { state: "awake" } });
-  expect(await fake.ensureAwake(sandbox.id)).toMatchObject({ start: "none", ms: 0 });
+  // The create started it, not this call.
+  expect(wake).toMatchObject({
+    start: "cold",
+    resumed: false,
+    ms: 3_000,
+    sandbox: { state: "awake" },
+  });
+  expect(await fake.ensureAwake(sandbox.id)).toMatchObject({
+    start: "none",
+    resumed: false,
+    ms: 0,
+  });
 });
 
 test("a resume soon after an explicit stop is warm: processes and /tmp survive", async () => {
@@ -154,12 +205,84 @@ test("a new environment forces a cold start and replaces the old one whole", asy
   expect(wake.sandbox.autoStopAt).toBe(fake.clock.now() - 3_000 + 120_000);
 });
 
-test("resuming a sandbox that is still stopping is a conflict, and ensureAwake waits it out", async () => {
+test("resuming a sandbox that is still stopping is busy, and ensureAwake waits it out", async () => {
   const { fake, id } = await awake();
   await fake.stop(id);
-  await expect(fake.resume(id)).rejects.toMatchObject({ code: "conflict", retryAfterSeconds: 2 });
+  await expect(fake.resume(id)).rejects.toMatchObject({ code: "busy", retryAfterSeconds: 2 });
   const wake = await fake.ensureAwake(id);
-  expect(wake).toMatchObject({ start: "warm", ms: 2_000 + 1_000 });
+  expect(wake).toMatchObject({ start: "warm", resumed: true, ms: 2_000 + 1_000 });
+});
+
+test("a stop can hold the machine past the point the sandbox reads asleep", async () => {
+  const { fake, id } = await awake();
+  fake.stopLingerMs = 1_500;
+  await fake.stop(id);
+  fake.clock.advance(2_000);
+  expect((await fake.get(id)).state).toBe("asleep");
+  await expect(fake.resume(id)).rejects.toMatchObject({ code: "busy", retryAfterSeconds: 2 });
+  // ensureAwake asks again when the provider said to, two seconds on, and the thaw takes one.
+  expect(await fake.ensureAwake(id)).toMatchObject({ start: "warm", resumed: true, ms: 3_000 });
+});
+
+test("two wakes at once with different environments: only one of them gets its own", async () => {
+  const { fake, id } = await awake({ env: { TOKEN: "t0" } });
+  await fake.stop(id);
+  fake.clock.advance(20 * MINUTE);
+  const [first, second] = await Promise.allSettled([
+    fake.ensureAwake(id, { env: { TOKEN: "t1" } }),
+    fake.ensureAwake(id, { env: { TOKEN: "t2" } }),
+  ]);
+  expect(first).toMatchObject({ status: "fulfilled", value: { start: "cold", resumed: true } });
+  // The loser must not go on to run anything believing its token is in place.
+  expect(second).toMatchObject({ status: "rejected", reason: { code: "conflict" } });
+  expect(fake.env(id)).toEqual({ TOKEN: "t1" });
+});
+
+test("a wake that finds the sandbox awake does not claim its options took effect", async () => {
+  const { fake, id } = await awake({ env: { TOKEN: "t1" }, autoStopSeconds: 600 });
+  const before = (await fake.get(id)).autoStopAt;
+  const wake = await fake.ensureAwake(id, { autoStopSeconds: 3600 });
+  expect(wake).toMatchObject({ start: "none", resumed: false });
+  expect(wake.sandbox.autoStopAt).toBe(before);
+  expect(await code(fake.ensureAwake(id, { env: { TOKEN: "t2" } }))).toBe("conflict");
+  expect(fake.env(id)).toEqual({ TOKEN: "t1" });
+});
+
+test("a resume the provider keeps refusing ends the wake at once", async () => {
+  const { fake, id } = await awake();
+  await fake.stop(id);
+  fake.clock.advance(MINUTE);
+  const refused = new SandboxError("conflict", "the restore failed");
+  fake.failNext("resume", refused, 3);
+  const before = fake.clock.now();
+  await expect(fake.ensureAwake(id)).rejects.toBe(refused);
+  expect(fake.clock.now()).toBe(before);
+  // One of the three was spent: the wake did not go back for more.
+  await expect(fake.resume(id)).rejects.toBe(refused);
+  await expect(fake.resume(id)).rejects.toBe(refused);
+  expect((await fake.resume(id)).coldStart).toBe(false);
+});
+
+test("a start that fails leaves the sandbox asleep with the reason, and the wake says so", async () => {
+  const { fake, id } = await awake();
+  await fake.stop(id);
+  fake.clock.advance(20 * MINUTE);
+  fake.failNextStart(id, "machine lost");
+  const before = fake.clock.now();
+  await expect(fake.ensureAwake(id)).rejects.toMatchObject({
+    code: "unavailable",
+    message: expect.stringContaining("machine lost"),
+  });
+  // Known as soon as the start ended, not after the 90 s a wake may take.
+  expect(fake.clock.now() - before).toBe(3_000);
+  expect(await fake.get(id)).toMatchObject({ state: "asleep", reason: "machine lost" });
+  expect((await fake.usage(id)).awake).toBe(false);
+
+  expect(await fake.ensureAwake(id)).toMatchObject({
+    start: "cold",
+    resumed: true,
+    sandbox: { state: "awake", reason: null },
+  });
 });
 
 test("usage meters awake time only, at the size's price", async () => {
@@ -188,6 +311,35 @@ test("an auto-stop ends the meter at the deadline, not when someone next looks",
   fake.clock.advance(60 * MINUTE);
   // Awake from the end of the 3 s start until the deadline, 600 s after the create.
   expect((await fake.usage(id)).awakeSeconds).toBe(597);
+});
+
+test("a command sent during a start is held until the start lands, then runs", async () => {
+  const fake = new FakeProvider();
+  const { sandbox } = await fake.create({ idempotencyKey: "k", autoStopSeconds: 600 });
+  const before = fake.clock.now();
+  expect((await fake.exec(sandbox.id, "true")).exitCode).toBe(0);
+  expect(fake.clock.now() - before).toBe(3_000);
+  expect((await fake.get(sandbox.id)).state).toBe("awake");
+});
+
+test("a start slower than a minute refuses the held call, which did not run", async () => {
+  const fake = new FakeProvider();
+  fake.startMs.cold = 5 * MINUTE;
+  const { sandbox } = await fake.create({ idempotencyKey: "k", autoStopSeconds: 3600 });
+  const before = fake.clock.now();
+  expect(await code(fake.writeFile(sandbox.id, "a", "b"))).toBe("not_running");
+  expect(fake.clock.now() - before).toBe(MINUTE);
+  expect(await code(fake.exec(sandbox.id, "true"))).toBe("not_running");
+  expect(fake.commands).toHaveLength(0);
+});
+
+test("a command's time limit must be a whole number from 1 to 600", async () => {
+  const { fake, id } = await awake();
+  for (const timeoutSeconds of [0, 601, 9999, 1.5]) {
+    expect(await code(fake.exec(id, "true", { timeoutSeconds }))).toBe("rejected");
+  }
+  expect(fake.commands).toHaveLength(0);
+  expect((await fake.exec(id, "true", { timeoutSeconds: 600 })).exitCode).toBe(0);
 });
 
 test("an injected failure hits the next call once", async () => {
@@ -339,6 +491,29 @@ test("a snapshot takes time to save, then new sandboxes start from its files", a
   expect(
     await code(fake.create({ idempotencyKey: "d3", from: "repo-42", autoStopSeconds: 60 })),
   ).toBe("not_found");
+});
+
+test("saving over a snapshot keeps the old one serving until the new one is ready", async () => {
+  const { fake, id } = await awake();
+  await fake.writeFile(id, "repo/v.txt", "one");
+  await fake.saveSnapshot(id, "repo-42");
+  fake.clock.advance(4_000);
+
+  await fake.writeFile(id, "repo/v.txt", "three");
+  expect(await fake.saveSnapshot(id, "repo-42")).toMatchObject({ state: "saving", sizeBytes: 3 });
+  const read = async (key: string) => {
+    const { sandbox } = await fake.create({
+      idempotencyKey: key,
+      from: "repo-42",
+      autoStopSeconds: 60,
+    });
+    return new TextDecoder().decode(await fake.readFile(sandbox.id, "repo/v.txt"));
+  };
+  expect(await read("during")).toBe("one");
+
+  fake.clock.advance(4_000);
+  expect(await fake.getSnapshot("repo-42")).toMatchObject({ state: "ready", sizeBytes: 5 });
+  expect(await read("after")).toBe("three");
 });
 
 test("a destroyed sandbox is gone", async () => {

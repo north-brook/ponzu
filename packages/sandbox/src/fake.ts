@@ -2,7 +2,8 @@
  * A SandboxProvider that lives in memory, for testing the API and the runner lifecycle without
  * a network. It keeps the rules that shape that code: starts and stops take time, an explicit
  * stop stays warm for ten minutes and an auto-stop does not, a cold start loses processes and
- * /tmp, a new environment forces one, and awake time is metered.
+ * /tmp, a new environment forces one, a call sent during a start is held until it lands, an
+ * idempotency key is forgotten after a day, and awake time is metered.
  *
  * Time is a FakeClock. Sleeping moves it forward at once, so code that polls finishes
  * immediately and the test decides how long things took.
@@ -32,6 +33,7 @@ import { ensureAwake } from "./wake.ts";
 
 export class FakeClock implements Clock {
   #ms: number;
+  #timeouts: Array<{ at: number; controller: AbortController }> = [];
 
   constructor(startAt = Date.UTC(2026, 0, 1)) {
     this.#ms = startAt;
@@ -41,12 +43,24 @@ export class FakeClock implements Clock {
     return this.#ms;
   }
 
+  /** Moves time forward, aborting every `timeout` signal that comes due. */
   advance(ms: number): void {
     this.#ms += ms;
+    const due = this.#timeouts.filter((timeout) => timeout.at <= this.#ms);
+    this.#timeouts = this.#timeouts.filter((timeout) => timeout.at > this.#ms);
+    for (const { controller } of due) {
+      controller.abort(new DOMException("The operation timed out.", "TimeoutError"));
+    }
   }
 
   async sleep(ms: number): Promise<void> {
     this.advance(ms);
+  }
+
+  timeout(ms: number): AbortSignal {
+    const controller = new AbortController();
+    this.#timeouts.push({ at: this.#ms + ms, controller });
+    return controller.signal;
   }
 }
 
@@ -67,7 +81,13 @@ interface Machine {
   env: Record<string, string>;
   state: "awake" | "asleep";
   /** A start or stop under way, and when it lands. */
-  moving: { to: "awake" | "asleep"; at: number } | null;
+  moving: { to: "awake"; at: number; cold: boolean } | { to: "asleep"; at: number } | null;
+  /** A stop holds the machine until then: a resume before it is `busy`. */
+  busyUntil: number;
+  /** Why the last start failed, until the next one is accepted. */
+  reason: string | null;
+  /** Set by `failNextStart`: what the start under way, or the next one, fails with. */
+  startFails: string | null;
   autoStopSeconds: number;
   autoStopAt: number | null;
   /** An explicit stop keeps memory until then; a resume before it is warm. */
@@ -85,6 +105,8 @@ interface SavedSnapshot {
   files: Map<string, Uint8Array>;
   createdAt: number;
   readyAt: number;
+  /** The save this one replaces, which goes on serving `create` until this one is ready. */
+  before: Map<string, Uint8Array> | null;
 }
 
 const USD_PER_AWAKE_HOUR: Record<SandboxSize, number> = {
@@ -94,11 +116,23 @@ const USD_PER_AWAKE_HOUR: Record<SandboxSize, number> = {
   xlarge: 0.2,
 };
 
+/** How long a provider remembers an idempotency key. */
+const KEY_MEMORY_MS = 24 * 60 * 60_000;
+/** How long a provider holds a call sent during a start before refusing it. */
+const HELD_WHILE_STARTING_MS = 60_000;
+const DEFAULT_COMMAND_SECONDS = 30;
+const MAX_COMMAND_SECONDS = 600;
+
 export class FakeProvider implements SandboxProvider {
   readonly clock: FakeClock;
   /** How long a start takes. Raise `cold` past a wake's timeout to act out a start that hangs. */
   startMs = { cold: 3_000, warm: 1_000 };
   stopMs = 2_000;
+  /**
+   * How long past the end of a stop a resume is still refused as `busy`. A real provider has
+   * held a machine for a moment after the sandbox read asleep; raise this to act that out.
+   */
+  stopLingerMs = 0;
   snapshotMs = 4_000;
   warmWindowMs = 10 * 60_000;
   /** Every command run or spawned, oldest first. */
@@ -108,7 +142,7 @@ export class FakeProvider implements SandboxProvider {
 
   readonly #machines = new Map<string, Machine>();
   readonly #snapshots = new Map<string, SavedSnapshot>();
-  readonly #created = new Map<string, { id: string; options: string }>();
+  readonly #created = new Map<string, { id: string; options: string; at: number }>();
   readonly #failures = new Map<keyof SandboxProvider, Error[]>();
   #nextId = 1;
   #nextPid = 1000;
@@ -117,9 +151,18 @@ export class FakeProvider implements SandboxProvider {
     this.clock = clock;
   }
 
-  /** Makes the next call to `method` fail with `error`, once. Calls queue up. */
-  failNext(method: keyof SandboxProvider, error: Error): void {
-    this.#failures.set(method, [...(this.#failures.get(method) ?? []), error]);
+  /** Makes the next call to `method` fail with `error`, or the next `times` of them. Calls queue up. */
+  failNext(method: keyof SandboxProvider, error: Error, times = 1): void {
+    const queued = this.#failures.get(method) ?? [];
+    this.#failures.set(method, [...queued, ...Array<Error>(times).fill(error)]);
+  }
+
+  /**
+   * Makes the start under way, or else the next one, fail: the sandbox ends up asleep with
+   * `reason`, as when a provider loses the machine it was starting.
+   */
+  failNextStart(id: string, reason: string): void {
+    this.#machine(id).startFails = reason;
   }
 
   /** Deletes a sleeping sandbox's disk, as a provider does after long enough: resume then fails. */
@@ -134,9 +177,11 @@ export class FakeProvider implements SandboxProvider {
 
   async create(options: CreateOptions): Promise<Created> {
     this.#fail("create");
-    const sent = JSON.stringify(options);
+    const now = this.clock.now();
+    const sent = canonical(options);
     const before = this.#created.get(options.idempotencyKey);
-    if (before && this.#machines.has(before.id)) {
+    // A key is forgotten after a day, and with its sandbox: then it makes a new one.
+    if (before && this.#machines.has(before.id) && now - before.at < KEY_MEMORY_MS) {
       if (before.options !== sent) {
         throw new SandboxError(
           "conflict",
@@ -149,19 +194,20 @@ export class FakeProvider implements SandboxProvider {
     let files = new Map<string, Uint8Array>();
     if (options.from) {
       const base = this.#snapshots.get(options.from);
-      if (!base || base.readyAt > this.clock.now()) {
-        throw new SandboxError("not_found", `no snapshot ${options.from}`);
-      }
-      files = new Map(base.files);
+      const served = base && (base.readyAt <= now ? base.files : base.before);
+      if (!served) throw new SandboxError("not_found", `no snapshot ${options.from}`);
+      files = new Map(served);
     }
-    const now = this.clock.now();
     const machine: Machine = {
       id: `sb_${this.#nextId++}`,
       size: options.size ?? "small",
       labels: { ...options.labels },
       env: { ...options.env },
       state: "asleep",
-      moving: { to: "awake", at: now + this.startMs.cold },
+      moving: { to: "awake", at: now + this.startMs.cold, cold: true },
+      busyUntil: 0,
+      reason: null,
+      startFails: null,
       autoStopSeconds: options.autoStopSeconds,
       autoStopAt: now + options.autoStopSeconds * 1000,
       warmUntil: 0,
@@ -172,7 +218,7 @@ export class FakeProvider implements SandboxProvider {
       processes: new Map(),
     };
     this.#machines.set(machine.id, machine);
-    this.#created.set(options.idempotencyKey, { id: machine.id, options: sent });
+    this.#created.set(options.idempotencyKey, { id: machine.id, options: sent, at: now });
     return this.#createdAs(machine, options.ports);
   }
 
@@ -201,12 +247,21 @@ export class FakeProvider implements SandboxProvider {
     this.#fail("resume");
     const machine = this.#machine(id);
     const now = this.clock.now();
-    if (machine.moving?.to === "asleep") {
-      throw new SandboxError("conflict", `sandbox ${id} is still stopping`, {
-        retryAfterSeconds: Math.ceil((machine.moving.at - now) / 1000),
+    if (now < machine.busyUntil) {
+      throw new SandboxError("busy", `a stop still holds sandbox ${id}`, {
+        retryAfterSeconds: Math.ceil((machine.busyUntil - now) / 1000),
       });
     }
-    if (machine.state === "awake" || machine.moving) {
+    if (machine.moving?.to === "awake") {
+      // A start someone else began. It can be joined, but not given another environment.
+      if (options.env) {
+        throw new SandboxError("busy", `a start of sandbox ${id} is already under way`, {
+          retryAfterSeconds: Math.ceil((machine.moving.at - now) / 1000),
+        });
+      }
+      return { sandbox: toSandbox(machine), coldStart: machine.moving.cold };
+    }
+    if (machine.state === "awake") {
       if (options.env) {
         throw new SandboxError(
           "conflict",
@@ -228,7 +283,12 @@ export class FakeProvider implements SandboxProvider {
     }
     if (options.autoStopSeconds !== undefined) machine.autoStopSeconds = options.autoStopSeconds;
     machine.autoStopAt = now + machine.autoStopSeconds * 1000;
-    machine.moving = { to: "awake", at: now + (coldStart ? this.startMs.cold : this.startMs.warm) };
+    machine.reason = null;
+    machine.moving = {
+      to: "awake",
+      at: now + (coldStart ? this.startMs.cold : this.startMs.warm),
+      cold: coldStart,
+    };
     return { sandbox: toSandbox(machine), coldStart };
   }
 
@@ -240,6 +300,7 @@ export class FakeProvider implements SandboxProvider {
       this.#meterOff(machine, now);
       machine.state = "asleep";
       machine.moving = { to: "asleep", at: now + this.stopMs };
+      machine.busyUntil = now + this.stopMs + this.stopLingerMs;
       machine.autoStopAt = null;
       machine.warmUntil = now + this.warmWindowMs;
     }
@@ -282,7 +343,7 @@ export class FakeProvider implements SandboxProvider {
     options: { cwd?: string } = {},
   ): Promise<{ pid: number }> {
     this.#fail("spawn");
-    const machine = this.#awake(id);
+    const machine = this.#reach(id);
     this.commands.push({ id, command, cwd: options.cwd, env: { ...machine.env }, detached: true });
     const pid = this.#nextPid++;
     machine.processes.set(pid, true);
@@ -291,7 +352,7 @@ export class FakeProvider implements SandboxProvider {
 
   async process(id: string, pid: number): Promise<ProcessStatus> {
     this.#fail("process");
-    const running = this.#awake(id).processes.get(pid);
+    const running = this.#reach(id).processes.get(pid);
     if (running === undefined) return { state: "lost", exitCode: null, stdout: "", stderr: "" };
     return running
       ? { state: "running", exitCode: null, stdout: "", stderr: "" }
@@ -300,13 +361,13 @@ export class FakeProvider implements SandboxProvider {
 
   async kill(id: string, pid: number): Promise<void> {
     this.#fail("kill");
-    const { processes } = this.#awake(id);
+    const { processes } = this.#reach(id);
     if (processes.has(pid)) processes.set(pid, false);
   }
 
   async readFile(id: string, path: string): Promise<Uint8Array> {
     this.#fail("readFile");
-    const bytes = this.#awake(id).files.get(absolute(path));
+    const bytes = this.#reach(id).files.get(absolute(path));
     if (!bytes) throw new SandboxError("not_found", `no file ${path} in sandbox ${id}`);
     return bytes.slice();
   }
@@ -314,7 +375,7 @@ export class FakeProvider implements SandboxProvider {
   async writeFile(id: string, path: string, content: Uint8Array | string): Promise<void> {
     this.#fail("writeFile");
     const bytes = typeof content === "string" ? new TextEncoder().encode(content) : content.slice();
-    this.#awake(id).files.set(absolute(path), bytes);
+    this.#reach(id).files.set(absolute(path), bytes);
   }
 
   async address(id: string, port: number): Promise<SandboxAddress> {
@@ -326,8 +387,8 @@ export class FakeProvider implements SandboxProvider {
     this.#fail("saveSnapshot");
     const machine = this.#machine(id);
     const now = this.clock.now();
-    const saving = this.#snapshots.get(name);
-    if (saving && saving.readyAt > now) {
+    const last = this.#snapshots.get(name);
+    if (last && last.readyAt > now) {
       throw new SandboxError("conflict", `snapshot ${name} is already being saved`);
     }
     this.#snapshots.set(name, {
@@ -335,6 +396,7 @@ export class FakeProvider implements SandboxProvider {
       files: new Map(machine.files),
       createdAt: now,
       readyAt: now + this.snapshotMs,
+      before: last?.files ?? null,
     });
     return this.#snapshot(name)!;
   }
@@ -377,8 +439,15 @@ export class FakeProvider implements SandboxProvider {
     if (!machine) return undefined;
     const now = this.clock.now();
     if (machine.moving && now >= machine.moving.at) {
-      machine.state = machine.moving.to;
-      if (machine.state === "awake") machine.awakeSince = machine.moving.at;
+      if (machine.moving.to === "awake" && machine.startFails !== null) {
+        machine.reason = machine.startFails;
+        machine.startFails = null;
+        machine.autoStopAt = null;
+        machine.warmUntil = 0;
+      } else {
+        machine.state = machine.moving.to;
+        if (machine.state === "awake") machine.awakeSince = machine.moving.at;
+      }
       machine.moving = null;
     }
     if (machine.state === "awake" && machine.autoStopAt !== null && now >= machine.autoStopAt) {
@@ -410,8 +479,27 @@ export class FakeProvider implements SandboxProvider {
     return machine;
   }
 
+  /**
+   * The machine, for a call that goes to it: a command, a file, a process. Sent during a start,
+   * such a call is held until the start lands, for a minute at most, and so takes that long.
+   */
+  #reach(id: string): Machine {
+    const { moving } = this.#machine(id);
+    if (moving?.to === "awake") {
+      this.clock.advance(Math.min(moving.at - this.clock.now(), HELD_WHILE_STARTING_MS));
+    }
+    return this.#awake(id);
+  }
+
   #run(id: string, command: string, options: ExecOptions): ExecResult {
-    const machine = this.#awake(id);
+    const seconds = options.timeoutSeconds ?? DEFAULT_COMMAND_SECONDS;
+    if (!Number.isInteger(seconds) || seconds < 1 || seconds > MAX_COMMAND_SECONDS) {
+      throw new SandboxError(
+        "rejected",
+        `timeoutSeconds must be a whole number from 1 to ${MAX_COMMAND_SECONDS}`,
+      );
+    }
+    const machine = this.#reach(id);
     const ran = { id, command, cwd: options.cwd, env: { ...machine.env }, detached: false };
     this.commands.push(ran);
     return {
@@ -435,13 +523,15 @@ export class FakeProvider implements SandboxProvider {
     const saved = this.#snapshots.get(name);
     if (!saved) return null;
     const ready = saved.readyAt <= this.clock.now();
+    // While a name is saved over, its size is still that of the save being replaced.
+    const served = ready ? saved.files : saved.before;
     let sizeBytes = 0;
-    for (const bytes of saved.files.values()) sizeBytes += bytes.byteLength;
+    for (const bytes of served?.values() ?? []) sizeBytes += bytes.byteLength;
     return {
       name,
       state: ready ? "ready" : "saving",
       sandboxId: saved.sandboxId,
-      sizeBytes: ready ? sizeBytes : null,
+      sizeBytes: served ? sizeBytes : null,
       createdAt: saved.createdAt,
       error: null,
     };
@@ -458,8 +548,17 @@ function toSandbox(machine: Machine): Sandbox {
       : machine.state,
     labels: { ...machine.labels },
     autoStopAt: machine.autoStopAt,
-    reason: null,
+    reason: machine.reason,
   };
+}
+
+/** JSON with every object's keys in order, so the same options compare equal however they were built. */
+function canonical(value: unknown): string {
+  return JSON.stringify(value, (_key, inner: unknown) =>
+    typeof inner === "object" && inner !== null && !Array.isArray(inner)
+      ? Object.fromEntries(Object.entries(inner).sort(([a], [b]) => (a < b ? -1 : 1)))
+      : inner,
+  );
 }
 
 function toAddress(id: string, port: number): SandboxAddress {

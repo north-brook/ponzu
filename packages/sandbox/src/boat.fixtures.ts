@@ -1,6 +1,6 @@
 /*
  * boat.dev's answers, for tests. The shapes were recorded from the live API on 2026-11-10 with
- * every field boat sent; ids, addresses and tokens are made up. The two marked "documented"
+ * every field boat sent; ids, addresses and tokens are made up. Those marked "documented"
  * could not be provoked cheaply and follow boat's documentation instead.
  */
 
@@ -208,6 +208,48 @@ export const sandboxStopping = () =>
       headers: { "retry-after": "5" },
     },
   );
+
+/** A resume, here one with a new environment, sent while another resume was booting the sandbox. */
+export const sandboxResuming = () =>
+  refusal(
+    409,
+    "sandbox_resuming",
+    "A resume for this sandbox is already in progress. Wait for it to finish.",
+    { details: { id: ID, status: "resuming" } },
+  );
+
+/** Documented, not recorded: the restore behind a resume failed. */
+export const resumeFailed = () => refusal(409, "resume_failed");
+
+/** The same key as an earlier create, with a different body. */
+export const idempotencyKeyReused = () =>
+  refusal(
+    409,
+    "idempotency_key_reused",
+    "This Idempotency-Key was already used with a different request body.",
+  );
+
+/**
+ * Documented, not recorded: a create re-sent while the first send is still being made. A
+ * second send 150 ms after the first got the first's sandbox instead, so the window is short.
+ */
+export const idempotencyInProgress = () => refusal(409, "idempotency_in_progress");
+
+/** A command sent with a timeout outside 1 to 600 seconds. */
+export const invalidTimeout = () =>
+  refusal(400, "invalid_timeout", "timeoutSeconds must be an integer between 1 and 600.");
+
+/** Documented, not recorded: boat held a command for its 60 s and the sandbox was still starting. */
+export const sandboxStarting = () =>
+  refusal(409, "sandbox_starting", "Sandbox is starting.", { details: { retryable: true } });
+
+/** Documented, not recorded: a call in the first seconds of a start, before the disk is mounted. */
+export const sandboxRestoring = () =>
+  refusal(502, "sandbox_direct_failed", "sandbox_restoring", { details: { retryable: true } });
+
+/** Documented, not recorded: the same refusal when the command was sent with `stream`. */
+export const RESTORING_FRAME =
+  '{"type":"error","error":"sandbox_direct_failed","message":"sandbox_restoring","retryable":true}';
 
 /** Documented, not recorded: a start limit is full. */
 export const rateLimited = () =>

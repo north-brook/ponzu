@@ -32,6 +32,10 @@ export interface CreateOptions {
   /**
    * Makes a retried create return the first sandbox instead of a second one. A retry must send
    * the same options, `env` included: the same key with different options is a `conflict`.
+   *
+   * It guards a retry, not a design. The provider forgets a key after a day, and when its
+   * sandbox is destroyed; from then on the same key makes a new sandbox. To find a sandbox
+   * later, `list` by label.
    */
   idempotencyKey: string;
   /** The base snapshot to start from. Absent means the provider's stock image. */
@@ -76,22 +80,40 @@ export interface Resumed {
 }
 
 export interface WakeOptions extends ResumeOptions {
-  /** How long to wait before giving up with `unavailable`. Defaults to 90 seconds. */
+  /**
+   * The deadline for the whole call, requests in flight included: when it passes, the call ends
+   * with `unavailable`. Defaults to 90 seconds.
+   */
   timeoutMs?: number;
 }
 
 export interface Wake {
   sandbox: Sandbox;
-  /** `none`: it was already awake. `warm`: it was frozen and thawed. `cold`: it booted. */
+  /**
+   * What the sandbox went through while this call waited. `none`: it was already awake.
+   * `warm`: it was frozen and thawed. `cold`: it booted.
+   */
   start: "none" | "warm" | "cold";
+  /**
+   * Whether a resume sent by this call was accepted. False when the sandbox was already awake
+   * or someone else's start was under way, and then `autoStopSeconds` was not applied: use
+   * `extend`.
+   */
+  resumed: boolean;
   /** How long the call took: until the sandbox was awake and, after a start, had taken a command. */
   ms: number;
 }
 
 export interface ExecOptions {
-  /** Absolute, or relative to the sandbox user's home. It must exist. */
+  /**
+   * Absolute, or relative to the sandbox user's home. It must exist, under the home folder or
+   * `/tmp`.
+   */
   cwd?: string;
-  /** The command is killed after this long. Defaults to 30. Providers cap it; `spawn` has no limit. */
+  /**
+   * The command is killed after this long. Defaults to 30. A whole number from 1 to 600:
+   * anything else is `rejected`. A longer run needs `spawn`, which has no limit.
+   */
   timeoutSeconds?: number;
 }
 
@@ -137,11 +159,14 @@ export interface SandboxAddress {
 
 export interface Snapshot {
   name: string;
-  /** Only a `ready` snapshot can be created from. */
+  /**
+   * How the newest save under this name stands. A first save can be created from once it is
+   * `ready`; while a name is saved over, the save before it keeps serving `create`.
+   */
   state: "saving" | "ready" | "failed";
   /** The sandbox it was saved from. */
   sandboxId: string;
-  /** Null until it is ready. */
+  /** Null until a save under this name has finished. */
   sizeBytes: number | null;
   /** Epoch milliseconds. */
   createdAt: number;
@@ -159,7 +184,11 @@ export interface Usage {
 }
 
 export interface SandboxProvider {
-  /** Returns as soon as the provider has accepted it, usually still `starting`. */
+  /**
+   * Returns as soon as the provider has accepted it, usually still `starting`. A retry that
+   * overtakes the first attempt waits for it, and is `busy` if that takes too long: send it
+   * again.
+   */
   create(options: CreateOptions): Promise<Created>;
 
   /** Never fails for a missing sandbox: that is `state: "gone"`. */
@@ -170,15 +199,24 @@ export interface SandboxProvider {
 
   /**
    * Makes sure the sandbox takes commands: resumes it if it is asleep, waits out a stop or a
-   * start already under way, and after a start returns only once a command has run. `env` and
-   * `autoStopSeconds` apply only if this call resumes it. `not_found` when it is gone.
+   * start already under way, and after a start returns only once a command has run.
+   *
+   * `env` and `autoStopSeconds` take effect only through this call's own resume. When `env` was
+   * given and the call returns, the sandbox runs on it: if it could not be applied, because the
+   * sandbox was already awake or someone else was starting it, the call fails with `conflict`
+   * instead. `Wake.resumed` says whether `autoStopSeconds` was.
+   *
+   * `not_found` when it is gone. A resume the provider refuses, other than as `busy`, ends the
+   * call at once with that error, and so does a start that fails. `unavailable` when
+   * `timeoutMs` passes.
    */
   ensureAwake(id: string, options?: WakeOptions): Promise<Wake>;
 
   /**
    * Starts waking a sleeping sandbox and returns without waiting for it. A sandbox that is
    * already awake is left alone, unless `env` was given: its environment cannot change while it
-   * runs, so that is a `conflict`. `snapshot_expired` when its disk is gone.
+   * runs, so that is a `conflict`. `busy` while a stop still holds the machine or another
+   * resume is under way. `snapshot_expired` when its disk is gone.
    */
   resume(id: string, options?: ResumeOptions): Promise<Resumed>;
 
@@ -198,6 +236,7 @@ export interface SandboxProvider {
   /**
    * Runs a shell command and waits for it. The provider may keep the command text, so a secret
    * never goes in it: use `env` or `writeFile`. A non-zero exit is a result, not an error.
+   * After `not_running` the command did not run; after `unavailable` it may have.
    */
   exec(id: string, command: string, options?: ExecOptions): Promise<ExecResult>;
 

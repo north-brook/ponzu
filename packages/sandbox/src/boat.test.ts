@@ -8,16 +8,24 @@ import {
   created,
   deleting,
   ID,
+  idempotencyInProgress,
+  idempotencyKeyReused,
   info,
+  invalidTimeout,
   json,
   machineNotRunning,
   notFound,
   ORIGIN,
   processStatus,
+  RESTORING_FRAME,
   rateLimited,
   refusal,
+  resumeFailed,
   STREAM_LINES,
   sandboxNotReady,
+  sandboxRestoring,
+  sandboxResuming,
+  sandboxStarting,
   sandboxStopping,
   savedSnapshot,
   snapshotDataExpired,
@@ -38,7 +46,11 @@ interface Sent {
   path: string;
   headers: Record<string, string>;
   body: any;
+  /** Milliseconds on the fake clock since the harness was made. */
+  at: number;
 }
+
+type Answer = (signal: AbortSignal) => Response;
 
 /**
  * boat, scripted. `on("GET /sandboxes/bx_1", a, b)` answers the first such call with `a` and
@@ -46,8 +58,9 @@ interface Sent {
  */
 function boat() {
   const sent: Sent[] = [];
-  const script = new Map<string, Array<() => Response>>();
+  const script = new Map<string, Answer[]>();
   const clock = new FakeClock();
+  const started = clock.now();
   const provider = new BoatProvider({
     apiKey: KEY,
     clock,
@@ -59,21 +72,39 @@ function boat() {
         path,
         headers: init.headers as Record<string, string>,
         body: typeof init.body === "string" ? JSON.parse(init.body) : undefined,
+        at: clock.now() - started,
       };
       sent.push(call);
       const answers = script.get(`${call.method} ${path}`);
       if (!answers) throw new Error(`boat was not expecting ${call.method} ${path}`);
-      return (answers.length > 1 ? answers.shift()! : answers[0]!)();
+      return (answers.length > 1 ? answers.shift()! : answers[0]!)(init.signal!);
     },
   });
+  /**
+   * An answer that takes `ms` to come, as boat's do when it holds a call. Time passes on the
+   * fake clock, and the request fails the way fetch does if its signal aborts first.
+   */
+  const after =
+    (ms: number, answer: () => Response): Answer =>
+    (signal) => {
+      for (let waited = 0; waited < ms; waited += 250) {
+        clock.advance(250);
+        if (signal.aborted) throw signal.reason;
+      }
+      return answer();
+    };
   return {
     provider,
     clock,
     sent,
-    on(call: string, ...answers: Array<() => Response>) {
+    on(call: string, ...answers: Answer[]) {
       script.set(call, answers);
     },
+    after,
+    /** boat never answering. An hour stands in for never: every budget is shorter. */
+    never: after(3_600_000, () => new Response("too late", { status: 504 })),
     count: (call: string) => sent.filter((s) => `${s.method} ${s.path}` === call).length,
+    elapsed: () => clock.now() - started,
   };
 }
 
@@ -174,12 +205,7 @@ describe("create", () => {
       "not_found",
       undefined,
     ],
-    [
-      "an idempotency key reused with other options",
-      () => refusal(409, "idempotency_key_reused", "This Idempotency-Key was already used."),
-      "conflict",
-      undefined,
-    ],
+    ["an idempotency key reused with other options", idempotencyKeyReused, "conflict", undefined],
     ["a full start limit", rateLimited, "rate_limited", 37],
     [
       "too many sandboxes awake at once",
@@ -212,6 +238,80 @@ describe("create", () => {
     b.on("POST /sandboxes", () => refusal(429, "rate_limited"));
     const error = await failure(b.provider.create({ idempotencyKey: "k", autoStopSeconds: 600 }));
     expect(error.retryAfterSeconds).toBe(60);
+  });
+
+  test("reads Retry-After as seconds or as a date, and keeps 0 apart from absent", async () => {
+    const b = boat();
+    const waits: Array<[string, number]> = [
+      ["0", 0],
+      ["12", 12],
+      [new Date(b.clock.now() + 20_000).toUTCString(), 20],
+      // A date already past means now, and nonsense means boat did not say.
+      [new Date(b.clock.now() - 5_000).toUTCString(), 0],
+      ["soon", 60],
+    ];
+    for (const [header, seconds] of waits) {
+      b.on("POST /sandboxes", () =>
+        refusal(429, "rate_limited", "Start limit reached.", {
+          headers: { "retry-after": header },
+        }),
+      );
+      const error = await failure(b.provider.create({ idempotencyKey: "k", autoStopSeconds: 600 }));
+      expect(error.retryAfterSeconds).toBe(seconds);
+    }
+  });
+
+  test("a retry that overtakes the first attempt waits for it and gets its sandbox", async () => {
+    const b = boat();
+    b.on("POST /sandboxes", idempotencyInProgress, idempotencyInProgress, created);
+    const result = await b.provider.create({
+      idempotencyKey: "design-d1",
+      env: { TOKEN: "t1" },
+      autoStopSeconds: 600,
+    });
+    expect(result.sandbox.id).toBe(ID);
+    // Every send is the same request under the same key, two seconds apart.
+    expect(b.sent.map((s) => s.at)).toEqual([0, 2_000, 4_000]);
+    expect(new Set(b.sent.map((s) => s.headers["Idempotency-Key"]))).toEqual(
+      new Set(["design-d1"]),
+    );
+    expect(b.sent[2]!.body).toEqual(b.sent[0]!.body);
+  });
+
+  test("a first attempt that outlasts the whole create is busy, with when to ask again", async () => {
+    const b = boat();
+    b.on("POST /sandboxes", idempotencyInProgress);
+    const error = await failure(b.provider.create({ idempotencyKey: "k", autoStopSeconds: 600 }));
+    expect(error).toMatchObject({ code: "busy", retryAfterSeconds: 2 });
+    // Every two seconds until one more wait would pass the 90.
+    expect(b.sent).toHaveLength(45);
+    expect(b.elapsed()).toBe(88_000);
+  });
+
+  test("the same options make the same body, whatever order they were built in", async () => {
+    const b = boat();
+    b.on("POST /sandboxes", created);
+    await b.provider.create({
+      idempotencyKey: "k",
+      labels: { design: "d1", env: "dev" },
+      env: { B: "2", A: "1" },
+      autoStopSeconds: 600,
+    });
+    await b.provider.create({
+      autoStopSeconds: 600,
+      env: { A: "1", B: "2" },
+      labels: { env: "dev", design: "d1" },
+      idempotencyKey: "k",
+    });
+    expect(JSON.stringify(b.sent[1]!.body)).toBe(JSON.stringify(b.sent[0]!.body));
+  });
+
+  test("gives boat 90 seconds, however many sends that takes", async () => {
+    const b = boat();
+    b.on("POST /sandboxes", b.after(50_000, idempotencyInProgress), b.never);
+    const error = await failure(b.provider.create({ idempotencyKey: "k", autoStopSeconds: 600 }));
+    expect(error.code).toBe("unavailable");
+    expect(b.elapsed()).toBe(90_000);
   });
 });
 
@@ -247,6 +347,27 @@ describe("get and list", () => {
       autoStopAt: null,
       reason: null,
     });
+  });
+
+  test("a 404 that is not boat saying so leaves the sandbox's fate unknown", async () => {
+    const strays: Array<() => Response> = [
+      () => new Response("<html>Not Found</html>", { status: 404 }),
+      () => refusal(404, "route_not_found", "No such route."),
+      () => new Response("null", { status: 404, headers: { "content-type": "application/json" } }),
+    ];
+    for (const stray of strays) {
+      const b = boat();
+      b.on(`GET /sandboxes/${ID}`, stray);
+      b.on(`DELETE /sandboxes/${ID}`, stray);
+      b.on("GET /saved-snapshots/ponzu-base-v1", stray);
+      b.on("DELETE /saved-snapshots/ponzu-base-v1", stray);
+      // Not `gone`, which would have the API make a second sandbox beside a living one.
+      expect((await failure(b.provider.get(ID))).code).toBe("unavailable");
+      expect((await failure(b.provider.ensureAwake(ID))).code).toBe("unavailable");
+      expect((await failure(b.provider.destroy(ID))).code).toBe("unavailable");
+      expect((await failure(b.provider.getSnapshot("ponzu-base-v1"))).code).toBe("unavailable");
+      expect((await failure(b.provider.deleteSnapshot("ponzu-base-v1"))).code).toBe("unavailable");
+    }
   });
 
   test("a create boat cancelled is gone, with the reason", async () => {
@@ -323,11 +444,27 @@ describe("resume, stop, extend", () => {
     expect((await failure(b.provider.resume(ID))).code).toBe("snapshot_expired");
   });
 
-  test("a resume while the stop still holds the machine is a conflict to retry", async () => {
+  test("a resume while the stop still holds the machine is busy, with boat's wait", async () => {
     const b = boat();
     b.on(`POST /sandboxes/${ID}/resume`, sandboxStopping);
     const error = await failure(b.provider.resume(ID));
-    expect(error).toMatchObject({ code: "conflict", retryAfterSeconds: 5 });
+    expect(error).toMatchObject({ code: "busy", retryAfterSeconds: 5 });
+  });
+
+  test("a resume while someone else's is under way is busy", async () => {
+    const b = boat();
+    b.on(`POST /sandboxes/${ID}/resume`, sandboxResuming);
+    const error = await failure(b.provider.resume(ID, { env: { TOKEN: "t2" } }));
+    // boat sends no Retry-After with this one.
+    expect(error).toMatchObject({ code: "busy", retryAfterSeconds: 2 });
+  });
+
+  test("a resume boat cannot carry out is a conflict, not something to wait out", async () => {
+    const b = boat();
+    b.on(`POST /sandboxes/${ID}/resume`, resumeFailed);
+    const error = await failure(b.provider.resume(ID));
+    expect(error.code).toBe("conflict");
+    expect(error.retryAfterSeconds).toBeUndefined();
   });
 
   test("a resume past the start limit is rate_limited with the wait", async () => {
@@ -375,7 +512,16 @@ describe("destroy", () => {
     expect(b.count(`GET /sandboxes/${ID}`)).toBe(2);
   });
 
-  test("a sandbox that is already gone needs no deleting", async () => {
+  test("is fine to repeat: boat accepts the delete again and the sandbox is still gone", async () => {
+    const b = boat();
+    b.on(`DELETE /sandboxes/${ID}`, deleting);
+    b.on(`GET /sandboxes/${ID}`, notFound);
+    await b.provider.destroy(ID);
+    await b.provider.destroy(ID);
+    expect(b.count(`DELETE /sandboxes/${ID}`)).toBe(2);
+  });
+
+  test("a delete boat answers with its own 404 needs no waiting", async () => {
     const b = boat();
     b.on(`DELETE /sandboxes/${ID}`, notFound);
     await b.provider.destroy(ID);
@@ -386,10 +532,22 @@ describe("destroy", () => {
     const b = boat();
     b.on(`DELETE /sandboxes/${ID}`, deleting);
     b.on(`GET /sandboxes/${ID}`, () => info(asleepSandbox()));
-    const before = b.clock.now();
     const error = await failure(b.provider.destroy(ID));
     expect(error.code).toBe("unavailable");
-    expect(b.clock.now() - before).toBe(60_000);
+    expect(b.elapsed()).toBe(60_000);
+  });
+
+  test("the wait for the delete ends on time, cutting off a look that is still in flight", async () => {
+    const b = boat();
+    b.on(`DELETE /sandboxes/${ID}`, deleting);
+    b.on(
+      `GET /sandboxes/${ID}`,
+      b.after(20_000, () => info(asleepSandbox())),
+    );
+    const error = await failure(b.provider.destroy(ID));
+    expect(error.code).toBe("unavailable");
+    expect(error.message).toContain("gave up waiting");
+    expect(b.elapsed()).toBe(60_000);
   });
 });
 
@@ -428,7 +586,7 @@ describe("exec", () => {
   });
 
   test("a sandbox that sleeps or is going to sleep is not_running", async () => {
-    for (const answer of [machineNotRunning, sandboxNotReady]) {
+    for (const answer of [() => machineNotRunning(), sandboxNotReady]) {
       const b = boat();
       b.on(`POST /sandboxes/${ID}/commands`, answer);
       expect((await failure(b.provider.exec(ID, "true"))).code).toBe("not_running");
@@ -436,22 +594,38 @@ describe("exec", () => {
     }
   });
 
-  test("waits out a start boat was still finishing, then runs the command once", async () => {
+  test("waits out a disk boat was still mounting, then runs the command once", async () => {
     const b = boat();
-    b.on(
-      `POST /sandboxes/${ID}/commands`,
-      () =>
-        refusal(409, "sandbox_starting", "Sandbox is starting.", { details: { retryable: true } }),
-      () =>
-        refusal(502, "sandbox_direct_failed", "sandbox_restoring", {
-          details: { retryable: true },
-        }),
-      () => commandFinished({ stdout: "ok\n" }),
+    b.on(`POST /sandboxes/${ID}/commands`, sandboxRestoring, sandboxRestoring, () =>
+      commandFinished({ stdout: "ok\n" }),
     );
-    const before = b.clock.now();
     expect((await b.provider.exec(ID, "echo ok")).stdout).toBe("ok\n");
-    expect(b.sent).toHaveLength(3);
-    expect(b.clock.now() - before).toBe(2_000);
+    expect(b.sent.map((s) => s.at)).toEqual([0, 1_000, 2_000]);
+  });
+
+  test("still waits it out when boat held the call for most of a minute first", async () => {
+    const b = boat();
+    // The patience is counted from the refusal: counted from the send, it would already be spent.
+    b.on(`POST /sandboxes/${ID}/commands`, b.after(45_000, sandboxRestoring), () =>
+      commandFinished({ stdout: "ok\n" }),
+    );
+    expect((await b.provider.exec(ID, "echo ok")).stdout).toBe("ok\n");
+    expect(b.sent.map((s) => s.at)).toEqual([0, 46_000]);
+  });
+
+  test("stops waiting for the disk after 30 seconds: the command did not run", async () => {
+    const b = boat();
+    b.on(`POST /sandboxes/${ID}/commands`, sandboxRestoring);
+    expect((await failure(b.provider.exec(ID, "true"))).code).toBe("not_running");
+    expect(b.elapsed()).toBe(30_000);
+  });
+
+  test("a start boat gave up holding the call for is not_running, and not sent again", async () => {
+    const b = boat();
+    b.on(`POST /sandboxes/${ID}/commands`, b.after(60_000, sandboxStarting));
+    expect((await failure(b.provider.exec(ID, "true"))).code).toBe("not_running");
+    expect(b.sent).toHaveLength(1);
+    expect(b.elapsed()).toBe(60_000);
   });
 
   test("never re-sends a command that may have run", async () => {
@@ -463,12 +637,11 @@ describe("exec", () => {
     expect(b.sent).toHaveLength(1);
   });
 
-  test("stops waiting for a start after 30 seconds", async () => {
+  test("a timeout boat does not allow is rejected", async () => {
     const b = boat();
-    b.on(`POST /sandboxes/${ID}/commands`, () => refusal(409, "sandbox_starting"));
-    const before = b.clock.now();
-    expect((await failure(b.provider.exec(ID, "true"))).code).toBe("not_running");
-    expect(b.clock.now() - before).toBe(30_000);
+    b.on(`POST /sandboxes/${ID}/commands`, invalidTimeout);
+    const error = await failure(b.provider.exec(ID, "bun test", { timeoutSeconds: 601 }));
+    expect(error.code).toBe("rejected");
   });
 });
 
@@ -545,8 +718,38 @@ describe("execStream", () => {
 
   test("a sandbox that sleeps fails before any output", async () => {
     const b = boat();
-    b.on(`POST /sandboxes/${ID}/commands`, machineNotRunning);
+    b.on(`POST /sandboxes/${ID}/commands`, () => machineNotRunning());
     expect((await failure(collect(b.provider.execStream(ID, "true")))).code).toBe("not_running");
+  });
+
+  const restoring = () => stream([bytes(`${RESTORING_FRAME}\n`)]);
+
+  test("sends the command again when boat's frame says the disk was still mounting", async () => {
+    const b = boat();
+    // The refusal comes both ways: as a 502 before the stream opens, and as a frame inside it.
+    b.on(`POST /sandboxes/${ID}/commands`, restoring, sandboxRestoring, restoring, () =>
+      stream([whole]),
+    );
+    expect(await collect(b.provider.execStream(ID, "run-it"))).toEqual(recorded);
+    expect(b.sent.map((s) => s.at)).toEqual([0, 1_000, 2_000, 3_000]);
+  });
+
+  test("stops after 30 seconds of that with not_running: the command did not run", async () => {
+    const b = boat();
+    b.on(`POST /sandboxes/${ID}/commands`, restoring, sandboxRestoring, restoring);
+    const error = await failure(collect(b.provider.execStream(ID, "run-it")));
+    expect(error.code).toBe("not_running");
+    expect(b.elapsed()).toBe(30_000);
+  });
+
+  test("never sends a command again once it has produced output", async () => {
+    const b = boat();
+    b.on(`POST /sandboxes/${ID}/commands`, () =>
+      stream([bytes(`${STREAM_LINES.slice(0, 2).join("\n")}\n${RESTORING_FRAME}\n`)]),
+    );
+    const error = await failure(collect(b.provider.execStream(ID, "run-it")));
+    expect(error.code).toBe("unavailable");
+    expect(b.sent).toHaveLength(1);
   });
 });
 
@@ -620,6 +823,12 @@ describe("processes", () => {
       }),
     );
     await b.provider.kill(ID, 6169);
+    await b.provider.kill(ID, 6169);
+    expect(b.sent.map((s) => `${s.method} ${s.path}`)).toEqual([
+      `DELETE /sandboxes/${ID}/commands/6169`,
+      `DELETE /sandboxes/${ID}/commands/6169`,
+    ]);
+    expect(b.sent[0]!.body).toBeUndefined();
   });
 });
 
@@ -682,7 +891,7 @@ describe("files", () => {
 
   test("a sandbox that sleeps is not_running", async () => {
     const b = boat();
-    b.on(`GET /sandboxes/${ID}/files?path=a&encoding=base64`, machineNotRunning);
+    b.on(`GET /sandboxes/${ID}/files?path=a&encoding=base64`, () => machineNotRunning());
     expect((await failure(b.provider.readFile(ID, "a"))).code).toBe("not_running");
   });
 });
@@ -850,8 +1059,13 @@ describe("ensureAwake", () => {
   test("leaves an awake sandbox alone", async () => {
     const b = boat();
     b.on(get, () => info(boatSandbox({ state: "idle" })));
-    const wake = await b.provider.ensureAwake(ID);
-    expect(wake).toMatchObject({ start: "none", ms: 0, sandbox: { state: "awake" } });
+    const wake = await b.provider.ensureAwake(ID, { autoStopSeconds: 900 });
+    expect(wake).toMatchObject({
+      start: "none",
+      resumed: false,
+      ms: 0,
+      sandbox: { state: "awake" },
+    });
     expect(b.sent).toHaveLength(1);
   });
 
@@ -861,7 +1075,7 @@ describe("ensureAwake", () => {
     b.on(resume, warmResume);
     b.on(commands, () => commandFinished());
     const wake = await b.provider.ensureAwake(ID, { autoStopSeconds: 900 });
-    expect(wake.start).toBe("warm");
+    expect(wake).toMatchObject({ start: "warm", resumed: true });
     expect(b.sent.map((s) => `${s.method} ${s.path}`)).toEqual([get, resume, commands]);
     expect(b.sent[1]!.body).toEqual({ ttlSeconds: 900 });
     expect(b.sent[2]!.body.command).toBe("true");
@@ -879,12 +1093,17 @@ describe("ensureAwake", () => {
     b.on(resume, coldResume);
     b.on(commands, () => commandFinished());
     const wake = await b.provider.ensureAwake(ID, { env: { TOKEN: "t2" } });
-    expect(wake).toMatchObject({ start: "cold", ms: 750, sandbox: { state: "awake" } });
+    expect(wake).toMatchObject({
+      start: "cold",
+      resumed: true,
+      ms: 750,
+      sandbox: { state: "awake" },
+    });
     expect(b.count(resume)).toBe(1);
     expect(b.sent[1]!.body).toEqual({ env: { TOKEN: "t2" } });
   });
 
-  test("waits for a stop to finish before resuming", async () => {
+  test("waits for a stop to finish, and as long as boat says when it still holds the machine", async () => {
     const b = boat();
     b.on(
       get,
@@ -892,16 +1111,18 @@ describe("ensureAwake", () => {
       () => info(boatSandbox({ state: "archiving" })),
       () => info(asleepSandbox()),
     );
-    // The sandbox reads as asleep a moment before boat lets it be resumed.
+    // The sandbox reads as asleep a moment before boat lets it be resumed, and boat says to
+    // ask again in five seconds.
     b.on(resume, sandboxStopping, warmResume);
     b.on(commands, () => commandFinished());
     const wake = await b.provider.ensureAwake(ID);
-    expect(wake).toMatchObject({ start: "warm", ms: 750 });
-    expect(b.count(get)).toBe(4);
-    expect(b.count(resume)).toBe(2);
+    expect(wake).toMatchObject({ start: "warm", resumed: true });
+    const resumes = b.sent.filter((s) => s.path.endsWith("/resume")).map((s) => s.at);
+    // Asked again at the first look after boat's five seconds, not every 250 ms meanwhile.
+    expect(resumes).toEqual([500, 6_000]);
   });
 
-  test("a start someone else began counts as cold", async () => {
+  test("a start someone else began counts as cold, and not as this call's", async () => {
     const b = boat();
     b.on(
       get,
@@ -909,9 +1130,94 @@ describe("ensureAwake", () => {
       () => info(boatSandbox()),
     );
     b.on(commands, () => commandFinished());
-    const wake = await b.provider.ensureAwake(ID);
-    expect(wake.start).toBe("cold");
+    const wake = await b.provider.ensureAwake(ID, { autoStopSeconds: 900 });
+    expect(wake).toMatchObject({ start: "cold", resumed: false });
     expect(b.count(resume)).toBe(0);
+  });
+
+  test("joins a resume someone else got in first, without claiming it", async () => {
+    const b = boat();
+    b.on(
+      get,
+      () => info(asleepSandbox()),
+      () => info(boatSandbox({ state: "provisioned" })),
+      () => info(boatSandbox()),
+    );
+    b.on(resume, sandboxResuming);
+    b.on(commands, () => commandFinished());
+    const wake = await b.provider.ensureAwake(ID);
+    expect(wake).toMatchObject({ start: "cold", resumed: false });
+    expect(b.count(resume)).toBe(1);
+  });
+
+  describe("with a new environment it could not apply", () => {
+    const env = { CLAUDE_CODE_OAUTH_TOKEN: "new" };
+
+    test("is a conflict when the sandbox is already awake", async () => {
+      const b = boat();
+      b.on(get, () => info());
+      const error = await failure(b.provider.ensureAwake(ID, { env }));
+      expect(error.code).toBe("conflict");
+      expect(b.sent).toHaveLength(1);
+    });
+
+    test("is a conflict when someone else is starting it", async () => {
+      const b = boat();
+      b.on(get, () => info(boatSandbox({ state: "provisioned" })));
+      const error = await failure(b.provider.ensureAwake(ID, { env }));
+      expect(error.code).toBe("conflict");
+      expect(b.sent).toHaveLength(1);
+    });
+
+    test("is a conflict when someone else's resume got in first", async () => {
+      const b = boat();
+      b.on(
+        get,
+        () => info(asleepSandbox()),
+        () => info(boatSandbox({ state: "provisioned" })),
+      );
+      b.on(resume, sandboxResuming);
+      const error = await failure(b.provider.ensureAwake(ID, { env }));
+      expect(error.code).toBe("conflict");
+      expect(b.count(resume)).toBe(1);
+      expect(b.count(commands)).toBe(0);
+    });
+
+    test("is a conflict when boat answers the resume as already running", async () => {
+      const b = boat();
+      b.on(get, () => info(asleepSandbox()));
+      b.on(resume, warmResume);
+      const error = await failure(b.provider.ensureAwake(ID, { env }));
+      expect(error.code).toBe("conflict");
+      expect(b.count(resume)).toBe(1);
+    });
+  });
+
+  test("a resume boat refuses for good ends the wake at once, with boat's reason", async () => {
+    const b = boat();
+    b.on(get, () => info(asleepSandbox({ state: "error", error: "restore failed" })));
+    b.on(resume, resumeFailed);
+    const error = await failure(b.provider.ensureAwake(ID));
+    expect(error.code).toBe("conflict");
+    expect(error.message).toContain("resume_failed");
+    expect(b.count(resume)).toBe(1);
+    expect(b.elapsed()).toBe(0);
+  });
+
+  test("a start that fails ends the wake at once, with boat's reason", async () => {
+    const b = boat();
+    b.on(
+      get,
+      () => info(asleepSandbox()),
+      () => info(boatSandbox({ state: "provisioned" })),
+      () => info(asleepSandbox({ state: "error", error: "machine lost during restore" })),
+    );
+    b.on(resume, coldResume);
+    const error = await failure(b.provider.ensureAwake(ID));
+    expect(error.code).toBe("unavailable");
+    expect(error.message).toContain("machine lost during restore");
+    expect(b.count(resume)).toBe(1);
+    expect(b.elapsed()).toBe(500);
   });
 
   test("a sandbox that is gone is not_found", async () => {
@@ -941,8 +1247,83 @@ describe("ensureAwake", () => {
     const error = await failure(b.provider.ensureAwake(ID, { timeoutMs: 20_000 }));
     expect(error.code).toBe("unavailable");
     expect(b.count(resume)).toBe(1);
-    // Every 250 ms for the 5 s a start should take, then once a second.
-    expect(b.count(get)).toBe(1 + 20 + 15);
+    // Every 250 ms for the 5 s a start should take, then once a second, and none at the deadline.
+    expect(b.count(get)).toBe(1 + 20 + 14);
+    expect(b.elapsed()).toBe(20_000);
+  });
+
+  test("asks again when boat gave up holding the first command for a slow start", async () => {
+    const b = boat();
+    b.on(
+      get,
+      () => info(asleepSandbox()),
+      () => info(),
+    );
+    b.on(resume, coldResume);
+    b.on(commands, b.after(60_000, sandboxStarting), () => commandFinished());
+    const wake = await b.provider.ensureAwake(ID);
+    expect(wake.start).toBe("cold");
+    expect(b.count(commands)).toBe(2);
+    expect(b.elapsed()).toBeLessThan(90_000);
+  });
+
+  describe("timeoutMs is a deadline", () => {
+    test("cuts off the command that proves the sandbox awake", async () => {
+      const b = boat();
+      b.on(
+        get,
+        b.after(250, () => info(asleepSandbox())),
+      );
+      b.on(resume, b.after(250, warmResume));
+      // boat holds a command sent during a start for up to a minute.
+      b.on(commands, b.after(60_000, sandboxStarting));
+      const error = await failure(b.provider.ensureAwake(ID, { timeoutMs: 5_000 }));
+      expect(error.code).toBe("unavailable");
+      expect(error.message).toContain("gave up waiting");
+      expect(b.elapsed()).toBe(5_000);
+    });
+
+    test("cuts off a look boat never answers", async () => {
+      const b = boat();
+      b.on(get, b.never);
+      const error = await failure(b.provider.ensureAwake(ID, { timeoutMs: 5_000 }));
+      expect(error.code).toBe("unavailable");
+      expect(b.elapsed()).toBe(5_000);
+    });
+
+    test("cuts off a resume boat never answers", async () => {
+      const b = boat();
+      b.on(get, () => info(asleepSandbox()));
+      b.on(resume, b.never);
+      const error = await failure(b.provider.ensureAwake(ID, { timeoutMs: 5_000 }));
+      expect(error.code).toBe("unavailable");
+      expect(b.elapsed()).toBe(5_000);
+      expect(b.count(resume)).toBe(1);
+    });
+
+    test("does not wait out a stop that boat says will outlast it", async () => {
+      const b = boat();
+      b.on(get, () => info(asleepSandbox()));
+      b.on(resume, sandboxStopping);
+      const error = await failure(b.provider.ensureAwake(ID, { timeoutMs: 4_000 }));
+      expect(error.code).toBe("unavailable");
+      expect((error.cause as SandboxError).code).toBe("busy");
+      expect(b.elapsed()).toBe(0);
+    });
+
+    test("stops re-sending a command for a disk still being mounted", async () => {
+      const b = boat();
+      b.on(
+        get,
+        () => info(asleepSandbox()),
+        () => info(),
+      );
+      b.on(resume, coldResume);
+      b.on(commands, sandboxRestoring);
+      const error = await failure(b.provider.ensureAwake(ID, { timeoutMs: 10_000 }));
+      expect(error.code).toBe("unavailable");
+      expect(b.elapsed()).toBe(10_000);
+    });
   });
 });
 
@@ -960,12 +1341,62 @@ describe("when boat misbehaves", () => {
     expect(error.message).not.toContain(KEY);
   });
 
+  describe("gives a call boat never answers only so long", () => {
+    const budgets: Array<[string, number, (b: ReturnType<typeof boat>) => Promise<unknown>]> = [
+      ["get", 30_000, (b) => b.provider.get(ID)],
+      ["resume", 30_000, (b) => b.provider.resume(ID)],
+      ["stop", 30_000, (b) => b.provider.stop(ID)],
+      ["usage", 30_000, (b) => b.provider.usage(ID)],
+      // A create is held until the machine exists.
+      ["create", 90_000, (b) => b.provider.create({ idempotencyKey: "k", autoStopSeconds: 60 })],
+      // A command gets its own time limit, plus the minute boat may hold it during a start.
+      ["exec", 105_000, (b) => b.provider.exec(ID, "true")],
+      ["exec", 195_000, (b) => b.provider.exec(ID, "bun test", { timeoutSeconds: 120 })],
+      ["execStream", 105_000, (b) => collect(b.provider.execStream(ID, "true"))],
+      ["spawn", 75_000, (b) => b.provider.spawn(ID, "bun run dev")],
+      ["process", 75_000, (b) => b.provider.process(ID, 6169)],
+      ["kill", 75_000, (b) => b.provider.kill(ID, 6169)],
+      ["readFile", 75_000, (b) => b.provider.readFile(ID, "a")],
+      ["writeFile", 75_000, (b) => b.provider.writeFile(ID, "a", "b")],
+    ];
+    for (const [what, ms, call] of budgets) {
+      test(`${what}: ${ms / 1000} s`, async () => {
+        const b = boat();
+        for (const answered of [
+          `GET /sandboxes/${ID}`,
+          `POST /sandboxes/${ID}/resume`,
+          `POST /sandboxes/${ID}/stop`,
+          `GET /sandboxes/${ID}/usage`,
+          "POST /sandboxes",
+          `POST /sandboxes/${ID}/commands`,
+          `GET /sandboxes/${ID}/commands/6169?tailBytes=65536`,
+          `DELETE /sandboxes/${ID}/commands/6169`,
+          `GET /sandboxes/${ID}/files?path=a&encoding=base64`,
+          `PUT /sandboxes/${ID}/files`,
+        ]) {
+          b.on(answered, b.never);
+        }
+        const error = await failure(call(b));
+        expect(error.code).toBe("unavailable");
+        expect((error.cause as Error).name).toBe("TimeoutError");
+        expect(b.elapsed()).toBe(ms);
+        expect(b.sent).toHaveLength(1);
+      });
+    }
+  });
+
   test("an error page instead of JSON is unavailable", async () => {
     const b = boat();
     b.on(`GET /sandboxes/${ID}`, () => new Response("<html>Bad gateway</html>", { status: 502 }));
     const error = await failure(b.provider.get(ID));
     expect(error.code).toBe("unavailable");
     expect(error.message).toContain("502");
+  });
+
+  test("an error whose JSON is not boat's envelope is still a SandboxError", async () => {
+    const b = boat();
+    b.on(`GET /sandboxes/${ID}`, () => new Response("null", { status: 500 }));
+    expect((await failure(b.provider.get(ID))).code).toBe("unavailable");
   });
 
   test("a 200 that is not JSON is unavailable", async () => {
