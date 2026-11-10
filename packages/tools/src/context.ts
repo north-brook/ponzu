@@ -9,21 +9,33 @@ import {
   type PonzuEvent,
   type Presence,
   type PresenceOrigin,
+  summarize,
+  threadEvents,
+  touchesStructure,
 } from "@ponzu/core";
 import type { Renderer } from "@ponzu/render";
-import type { Design } from "@ponzu/store";
+import type { OpenDesign } from "./design.ts";
+
+/** Bytes on their way out of the tools, under the name to keep them by. */
+export interface NamedBytes {
+  /** A file name with its extension, like `logo.png`. */
+  name: string;
+  bytes: Uint8Array;
+  mime: string;
+}
 
 /**
- * Everything a tool handler can reach. A host (the CLI server, the desktop
- * app, or your own backend) builds one per open design.
+ * Everything a tool handler can reach. A host builds one: the runner in a design's sandbox
+ * with `createCloudWorkspace`, for that one design, and the local server for the folders it
+ * has open.
  */
 export interface Workspace {
-  /** The open designs, by key (usually the absolute path). */
-  designs(): { key: string; design: Design }[];
-  /** Resolve a file argument (path, name or key) to an open design. Opens it if allowed. */
-  resolve(file?: string): Promise<{ key: string; design: Design }>;
+  /** The open designs, by key: one in the cloud, any number of folders locally. */
+  designs(): OpenDesign[];
+  /** The design a call works on. The local server takes a file argument (a path, name or key). */
+  resolve(file?: string): Promise<OpenDesign>;
   /** Create a new .design and open it. */
-  create?(path: string, doc: Doc): Promise<{ key: string; design: Design }>;
+  create?(path: string, doc: Doc): Promise<OpenDesign>;
   renderer?: Renderer;
   /** Where a renderer loads this design's assets/ from, when the host serves them. */
   assetBase?(key: string): string | undefined;
@@ -47,6 +59,16 @@ export interface Workspace {
   telemetry?: Telemetry;
   /** Keep what the person asked for, as an agent distilled it, in the design's history. */
   intent?(key: string, text: string, origin: Author): void;
+  /** Keep a file as one of this design's assets. Resolves to the reference markup uses: `assets/<name>`. */
+  storeAsset?(key: string, asset: NamedBytes): Promise<string>;
+  /** Put an export where a link reaches it. Resolves to the link. */
+  publish?(key: string, file: NamedBytes): Promise<string>;
+  /**
+   * What the host has to tell the agent since it last asked, each a few plain lines: what it
+   * left out of an edit, or an edit that was undone. `runTool` adds them to the next result,
+   * whatever the call was. Asking takes them.
+   */
+  notices?(): string[];
 }
 
 /**
@@ -103,6 +125,12 @@ export interface ToolContext {
   session?: ToolSession;
   /** Set while the call runs, by resolveFile. */
   resolved?: { from: FileSource; note?: string };
+  /**
+   * Set by the local tool list, whose host has several designs open: finds the one a call
+   * means from its `file` argument and the ids it passes. Without it a call works on the
+   * workspace's one design.
+   */
+  pick?(ids: (string | undefined)[]): Promise<OpenDesign>;
 }
 
 /* ------------------------------------------------------------------ */
@@ -170,6 +198,49 @@ export class EventHub {
     for (const w of this.waiters) w();
     for (const l of this.listeners) l(item);
     return event;
+  }
+
+  /**
+   * Tell what an op did to a design, read against the doc after it: each comment in it, then
+   * the change to the canvas if there was one.
+   */
+  emitOp(key: string, doc: Doc, e: { op: Op; origin: Author; artboards: string[] }): void {
+    const author = e.origin.name;
+    for (const t of threadEvents(e.op)) {
+      if (t.kind === "created") {
+        this.emit(key, {
+          type: "comment.created",
+          thread: t.thread.id,
+          artboard: t.thread.artboardId,
+          text: t.thread.messages[0]?.text ?? "",
+          author,
+        });
+        continue;
+      }
+      const artboard = doc.threads.find((x) => x.id === t.id)?.artboardId;
+      if (t.kind === "status")
+        this.emit(key, {
+          type: t.status === "resolved" ? "comment.resolved" : "comment.reopened",
+          thread: t.id,
+          artboard,
+          author,
+        });
+      else
+        this.emit(key, {
+          type: t.kind === "message" ? "comment.replied" : "comment.edited",
+          thread: t.id,
+          artboard,
+          text: t.text,
+          author,
+        });
+    }
+    if (e.artboards.length || touchesStructure(e.op))
+      this.emit(key, {
+        type: "change",
+        origin: e.origin,
+        artboards: e.artboards,
+        summary: summarize(doc, e.op),
+      });
   }
 
   on(fn: (e: KeyedEvent) => void): () => void {
@@ -350,7 +421,7 @@ export class PresenceHub {
       )
       .sort((a, b) => b.lastSeen - a.lastSeen)[0];
     if (!writer) {
-      if (change.gone.length) this.drop("", file, change.gone);
+      if (change.gone.length) this.removed(file, change.gone);
       return;
     }
     const caller: ToolCaller = {
@@ -362,6 +433,11 @@ export class PresenceHub {
     // Counts as a tool call: each write keeps it working for another idle window.
     this.touch(caller);
     this.worked(caller, file, change);
+  }
+
+  /** Someone who isn't an agent here deleted these artboards in `file`: nobody is working on them. */
+  removed(file: string, gone: string[]): void {
+    this.drop("", file, gone);
   }
 
   /** Deleted artboards are no longer anyone's: take them from the other agents in `file`. */

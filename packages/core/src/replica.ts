@@ -95,9 +95,11 @@ export class Replica {
   private head: number;
   private queue: Pending[] = [];
 
+  /** Who edits here. */
+  readonly actor: Actor;
+
   private readonly transport: SyncTransport;
   private readonly schedule: Scheduler;
-  private readonly actor: Actor;
   private readonly newId: () => string;
 
   /** A request is in flight. There is never more than one. */
@@ -218,6 +220,16 @@ export class Replica {
   notify(seq: number): void {
     if (seq > this.head) this.head = seq;
     // Word from the API means it can be reached: don't sit out the rest of a wait.
+    this.retryNow();
+  }
+
+  /**
+   * Make whatever request is due now, without sitting out the rest of the wait after a failed
+   * one. For a host that has reason to think the API can be reached again, or that can't wait
+   * as long as the replica would: the waits grow to half a minute. Does nothing while a
+   * request is out. If this one fails too, the next wait is as long as it would have been.
+   */
+  retryNow(): void {
     this.cancelRetry?.();
     this.cancelRetry = null;
     this.pump();
