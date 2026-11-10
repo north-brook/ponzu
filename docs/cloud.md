@@ -117,7 +117,75 @@ person's own account and the accounts where Ponzu is installed; any other
 organization is added through GitHub's install page, which has its own picker.
 
 **Membership** is GitHub's. Anyone who can reach an installation's repos is a
-member; Ponzu stores only the role (Admin or Member). There are no invitations.
+member, and sees only the repos GitHub shows them
+(`GET /user/installations/{id}/repositories`, kept per member); the workspace's
+other repos stay hidden from them, and someone who reaches it only through repos
+shared with them (an outside collaborator) sees no other member. Ponzu stores only
+the role (Admin or Member). There are no invitations.
+
+GitHub's owners are a floor: whoever owns the account (the person, for a personal
+account; an owner, for an organization, per `GET /user/memberships/orgs/{org}`) is an
+Admin at every sync and cannot be demoted (409 `owner_is_admin`). Whoever installed
+the App (as its `installation.created` webhook names them) starts as Admin; everyone
+else starts as Member. A workspace with no Admin gets one from among the members of
+its organization, longest-standing first, at the next sync of anyone in it; an outside
+collaborator never becomes one that way, so a personal workspace waits for its owner.
+Demoting the last Admin is refused (409 `last_admin`). Otherwise a role is changed
+only by an Admin in Ponzu, never by a sync.
+
+**Keeping it true.** `syncGithub` brings one person's workspaces in line with GitHub,
+as that person, against their own rate limit: the installations their token lists,
+their membership of each with the repos they reach in it, and none of any other but
+their own account's. An installation is read as the App (its workspace and every repo
+it can see) only when Ponzu's copy is ten minutes old, disagrees with the person's
+view, or lacks a repo they reach: those reads come out of the installation's hourly
+budget, which its git tokens and permission checks share. The sync runs in the
+background after each sign-in, on `POST /v1/github/sync` (the apps call it when they
+come back to focus), and when a webhook says someone's access changed. Every step is
+an upsert or a reconciliation, so it is safe twice at once and again after a failure;
+memberships are dropped only once every installation is accounted for, and nothing is
+dropped or marked removed from a list GitHub served only in part (more than 2,000
+items). A repo the App loses is marked removed, never deleted. A suspended
+installation keeps its workspace, marked. An uninstall is remembered by installation
+id, which GitHub never reuses, so a read of GitHub that began before it cannot bring
+the installation back. A one-minute cron reads again any installation nobody has read
+for six hours, which is how an uninstall whose webhook was lost is found.
+
+**Installing.** `POST /v1/github/install-link` returns GitHub's install page with a
+`state` sealed by the API and recorded as a fifteen-minute, single-use auth state.
+GitHub sends the browser to the App's Setup URL, `GET /v1/github/setup`, which has no
+bearer token: the state says who started, the person's own token must reach the
+installation (its id in the query is never trusted), and the answer is a small HTML
+page with a way back to the app:
+
+```
+ponzu://github/setup?result=installed&workspace=<workspace id>
+ponzu://github/setup?result=requested | pending | sign_in | failed
+```
+
+The app answers any of them by syncing. `pending` covers no state, a used or expired
+one, and an installation the person cannot reach: whoever really installed the App is
+caught up by its webhook and their next sync.
+
+**Webhooks** arrive at `POST /v1/github/webhook`, verified against the raw body
+before anything is read, deduplicated on `X-GitHub-Delivery`, and recorded with the
+fields Ponzu uses as a job in the same statement before GitHub is answered: GitHub
+never sends a delivery again by itself, so the job, not the delivery, carries the
+retries (the cron runs a failed one again after a minute, doubling, for about two
+hours). A delivery is a signal, not a record: an installation or repo event makes the
+API read the installation from GitHub as it is now, and an access event (`member`,
+`membership`, `organization`) syncs the person it names; when their GitHub token is
+dead, one that says they lost access removes them from that workspace at once. A
+`team` event, which names nobody, syncs everyone in the workspace. A pull request
+event updates the design that owns its branch, newest `updated_at` wins, and a merge
+settles the design. A failed check run or suite is an event with priority `next` on
+that design's feed, and so is a submitted review by the repo's owner, a member of its
+organization or a collaborator (`author_association`); anyone else's review is
+dropped, since on a public repo anyone can write one and the agent reads it. A review
+event says who wrote it and how they relate to the repo, and the runner gives its text
+to the agent as quoted input, never as an instruction. A revoked authorization
+forgets the person's GitHub token and ends their sessions, once GitHub confirms the
+token is dead.
 
 **Opening a design** needs read access to its repo. Steering it (messages, answers,
 merging) needs write access. The API checks with
@@ -380,6 +448,55 @@ publishing an export, the design's link and the theme to render in.
   landed, and from the replica's listeners.
 - **Without a renderer** `screenshot`, `record` and `export` say so and the rest
   work from declared sizes.
+
+### Rendering
+
+`ChromiumRenderer` in `packages/render` draws every screenshot, recording, export,
+measurement and lint, inside the runner's process.
+
+- **The browser is ours, not the image's.** The runner launches the Chrome Headless
+  Shell that `playwright-core` is pinned to (`channel: "chromium-headless-shell"`),
+  which the sandbox image installs with `playwright-core install --only-shell
+  chromium`. Its version moves with our lockfile instead of with boat.dev's image,
+  and on a small sandbox it idles at 140 MB and draws a landing page in 0.4 s, where
+  the image's Google Chrome takes 290 MB and 0.9 s.
+- **Chromium's sandbox stays on.** The runner is not root, and the VM allows user
+  namespaces. A design can load remote images in the same machine that holds the
+  owner's Claude credential. Where the kernel refuses (a container without user
+  namespaces), the render fails saying so, and `PONZU_CHROMIUM_SANDBOX=0` turns the
+  sandbox off without a change to code.
+- **Work is bounded.** Two jobs at a time, the rest in a queue; 24 million device
+  pixels in one image, past which the image comes back at a smaller scale; 60
+  seconds a job, after which its page is closed; and an idle browser closes after
+  two minutes. A browser that dies is replaced on the next job. A page is loaded
+  once, at a scale its whole viewport fits the pixel budget at, and what is
+  captured is drawn at a scale of its own: a node comes back at the scale asked
+  for however long the board around it.
+- **Fonts.** Designs name fonts a Mac has and Ubuntu cannot ship: Helvetica, Menlo,
+  Georgia, `system-ui`. `packages/render/sandbox-fonts.json` lists what the image
+  installs, and `stand-ins.ts` maps each name to a font of the same widths, so text
+  wraps in a screenshot where it does on the canvas. A fontconfig file the renderer
+  writes resolves the names. Where the Mac's font makes a taller or shorter line
+  than its stand-in (Georgia, Monaco, Helvetica Neue, the Chinese, Japanese and
+  Korean fonts), the page also declares the name as an `@font-face` over the
+  stand-in with the Mac font's ascent and descent, so a line is as tall as on the
+  canvas, to the pixel. The reference is Chrome on a Mac. Three things can't be
+  made to match, and lint says so on a screenshot that has them: `system-ui`, where
+  Inter stands in for San Francisco, close at text sizes and up to 12% wide in
+  headings; emoji, which on a Mac are narrower from 24px up and make their line a
+  few pixels taller; and Chinese, Japanese or Korean text in a stack that names no
+  font for it, which fallback draws at Noto's line height where the design sets
+  none. Fallback goes by what is installed, so the image holds the fonts in that
+  list and no others for those scripts.
+- **The dev server.** With `loopback: true` a design can load images, video, fonts
+  and stylesheets from `http://localhost:<port>`. Chrome refuses those to a page at
+  a public origin, so the renderer grants its pages Chrome's permission for this
+  machine, and only this machine: the rest of the local network stays refused.
+  Chrome then loads them itself. A request that needs a CORS header a dev server
+  doesn't send (every font, a mask image) is fetched by the renderer instead, which
+  holds the file whole on its way to Chrome and so refuses one over 25 MB.
+- **Bun.** The runner runs on the Bun this repo pins. Under the Bun in boat.dev's
+  image (1.3.14) the renderer's own tests hung.
 
 ### Events
 

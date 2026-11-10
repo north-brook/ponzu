@@ -151,6 +151,26 @@ describe.skipIf(!chromium)("fonts in Chromium", () => {
     ]);
   });
 
+  test("a ui- keyword Chrome has no font for doesn't hide the family after it", async () => {
+    requested.length = 0;
+    const out = await renderer.render({
+      artboard: board(
+        `<style>@font-face { font-family: "Brand Sans"; src: url(data:font/woff2;base64,AAAA) format("woff2"); }</style>
+<p data-id="n_brand" style="margin:0;font-family:ui-sans-serif, 'Brand Sans', sans-serif">Ferns</p>
+<code data-id="n_code" style="font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace">ferns()</code>
+<h2 data-id="n_round" style="margin:0;font-family:ui-rounded, 'SF Pro Rounded', system-ui">Ferns</h2>`,
+      ),
+      tokens: "",
+      lint: true,
+    });
+    // Tailwind's stacks name Apple's fonts after the keyword; none is asked of Google.
+    expect(requested).toEqual([]);
+    // Lint used to stop at the keyword, as if it drew the text.
+    expect(missing(out.issues).map((i) => i.message)).toEqual([
+      `font "Brand Sans" didn't load; check its @font-face src. Its text shows in sans-serif instead`,
+    ]);
+  });
+
   test("a font that never arrives doesn't hold the screenshot, and lint names it", async () => {
     stalled = true;
     try {

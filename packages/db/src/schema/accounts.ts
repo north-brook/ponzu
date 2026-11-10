@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -17,6 +18,7 @@ import {
   CLAUDE_ACCOUNT_KINDS,
   CLAUDE_ACCOUNT_STATUSES,
   DEVICE_PLATFORMS,
+  GITHUB_ACCESS,
   MEMBER_ROLES,
   PUSH_ENVIRONMENTS,
   REPOSITORY_SELECTIONS,
@@ -116,6 +118,8 @@ export const workspaces = pgTable(
     }),
     installedAt: instant("installed_at"),
     suspendedAt: instant("suspended_at"),
+    /** When the installation was last read from GitHub as the App. Null: never. */
+    reconciledAt: instant("reconciled_at"),
     stripeCustomerId: text("stripe_customer_id").unique(),
     /** Null until someone sets one; the rate card's default applies until then. */
     monthlyCapCents: integer("monthly_cap_cents"),
@@ -148,6 +152,8 @@ export const memberships = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     role: text("role", { enum: MEMBER_ROLES }).notNull(),
+    /** How GitHub last said they reach it. An owner is always an admin. */
+    githubAccess: text("github_access", { enum: GITHUB_ACCESS }).notNull().default("collaborator"),
     /** When GitHub last confirmed the person can reach the installation. */
     syncedAt: instant("synced_at").notNull().defaultNow(),
     createdAt: createdAt(),
@@ -156,8 +162,18 @@ export const memberships = pgTable(
     primaryKey({ columns: [t.workspaceId, t.userId] }),
     index("memberships_user_id_idx").on(t.userId),
     check("memberships_role_check", oneOf(t.role, MEMBER_ROLES)),
+    check("memberships_github_access_check", oneOf(t.githubAccess, GITHUB_ACCESS)),
   ],
 );
+
+/**
+ * Installations GitHub has said are gone. GitHub never reuses an installation id (a reinstall
+ * gets a new one), so a read of GitHub that began before the uninstall cannot bring it back.
+ */
+export const uninstalledInstallations = pgTable("uninstalled_installations", {
+  installationId: bigint("installation_id", { mode: "number" }).primaryKey(),
+  uninstalledAt: instant("uninstalled_at").notNull().defaultNow(),
+});
 
 export const repos = pgTable(
   "repos",
@@ -190,6 +206,32 @@ export const repos = pgTable(
     // What a design's foreign key points at, so a design is always in its repo's workspace.
     unique("repos_id_workspace_id_key").on(t.id, t.workspaceId),
     check("repos_base_status_check", oneOf(t.baseStatus, BASE_STATUSES)),
+  ],
+);
+
+/**
+ * The repos of a workspace one member can reach, as GitHub last told them
+ * (`GET /user/installations/{id}/repositories`). The workspace's installation may hold repos
+ * GitHub hides from them, and they are shown only these. Goes when the membership goes.
+ */
+export const memberRepos = pgTable(
+  "member_repos",
+  {
+    workspaceId: text("workspace_id").notNull(),
+    userId: text("user_id").notNull(),
+    repoId: text("repo_id")
+      .notNull()
+      .references(() => repos.id, { onDelete: "cascade" }),
+    canPush: boolean("can_push").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.userId, t.repoId] }),
+    foreignKey({
+      name: "member_repos_membership_fk",
+      columns: [t.workspaceId, t.userId],
+      foreignColumns: [memberships.workspaceId, memberships.userId],
+    }).onDelete("cascade"),
+    index("member_repos_repo_id_idx").on(t.repoId),
   ],
 );
 

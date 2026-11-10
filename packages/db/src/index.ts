@@ -9,19 +9,31 @@ export {
   type GithubRepo,
   getClaudeAccount,
   getMemberWorkspace,
+  getRepoInstallationId,
+  getUser,
+  getUserByGithubId,
   getUserByWorkosId,
+  getWorkspace,
+  getWorkspaceByInstallation,
+  listStaleInstallations,
   listUserWorkspaces,
+  listWorkspaceRepos,
   type Membership,
   type MemberWorkspace,
   markReposRemoved,
+  markReposRemovedExcept,
+  markWorkspaceUninstalled,
   type Repo,
+  suspendWorkspace,
   type User,
   upsertMembership,
   upsertRepos,
   upsertUser,
   upsertWorkspace,
   type Workspace,
+  wasUninstalled,
 } from "./queries/accounts.ts";
+export { type AuthState, consumeAuthState, createAuthState } from "./queries/auth-states.ts";
 export {
   type DocSource,
   OP_RETENTION_DAYS,
@@ -50,6 +62,7 @@ export {
 } from "./queries/events.ts";
 export {
   claimGithubTokenRefresh,
+  deleteGithubUserToken,
   type GithubUserToken,
   getGithubUserToken,
   releaseGithubTokenRefresh,
@@ -67,6 +80,17 @@ export {
   type Job,
   type NewJob,
 } from "./queries/jobs.ts";
+export {
+  countWorkspaceMembers,
+  ensureWorkspaceAdmin,
+  listWorkspaceMembers,
+  removeMembership,
+  type SetRoleResult,
+  setMemberRepos,
+  setMemberRole,
+  type WorkspaceMember,
+  workspaceHasAdmin,
+} from "./queries/members.ts";
 export {
   type Actor,
   type CommitResult,
@@ -86,6 +110,7 @@ export {
   removePresence,
   touchPresence,
 } from "./queries/presence.ts";
+export { findDesignByBranch, recordPullRequest } from "./queries/pull-requests.ts";
 export {
   answerQuestion,
   answerSecretQuestion,
@@ -101,7 +126,12 @@ export {
   revokeRunnerTokens,
   verifyRunnerToken,
 } from "./queries/runner-tokens.ts";
-export { admitSession, endSession, getSessionUser } from "./queries/sessions.ts";
+export {
+  admitSession,
+  endSession,
+  endUserSessions,
+  getSessionUser,
+} from "./queries/sessions.ts";
 export { isStorable } from "./queries/text.ts";
 export {
   appendThreadItem,
@@ -119,4 +149,5 @@ export {
   type NewUsageEvent,
   recordUsage,
 } from "./queries/usage.ts";
+export { takeWebhookDelivery } from "./queries/webhooks.ts";
 export * from "./schema/index.ts";

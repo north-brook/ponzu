@@ -2,14 +2,16 @@
 // working from the statistics of a table that was empty a moment ago. Runs only when
 // PONZU_TEST_DATABASE_URL names a migrated database (see ../live.ts); CI gives it a Postgres 18.
 import { afterAll, expect, test } from "bun:test";
-import { eq, sql } from "drizzle-orm";
-import { actorFor, rename, seedDesign, seedUser } from "../fixtures.ts";
+import { and, eq, sql } from "drizzle-orm";
+import { actorFor, rename, seedDesign, seedUser, seedWorkspace } from "../fixtures.ts";
 import { describeLive } from "../live.ts";
-import { designOps, events, jobs } from "../schema/index.ts";
+import { designOps, events, jobs, memberships } from "../schema/index.ts";
+import { upsertMembership } from "./accounts.ts";
 import { getDesign, getDesignHead } from "./designs.ts";
 import { appendEvent, claimEvents } from "./events.ts";
 import { claimGithubTokenRefresh, saveGithubUserToken } from "./github-tokens.ts";
 import { claimJobs, enqueueJob } from "./jobs.ts";
+import { ensureWorkspaceAdmin, setMemberRole, workspaceHasAdmin } from "./members.ts";
 import { commitOps, readOps } from "./ops.ts";
 import { answerQuestion, countOpenQuestions, createQuestion } from "./questions.ts";
 import { commitReversal } from "./undo.ts";
@@ -179,6 +181,62 @@ describeLive("races on a real Postgres", ({ db, close }) => {
     const rest = await claimEvents(db, { designId: design.id });
     expect(first.length + taken.length + rest.length).toBe(13);
     await db.delete(events).where(eq(events.designId, design.id));
+  }, 60_000);
+
+  test("admins demoting one another at once never leave a workspace without one", async () => {
+    for (let round = 0; round < 5; round++) {
+      const [workspace, ...admins] = await Promise.all([
+        seedWorkspace(db),
+        seedUser(db, "a"),
+        seedUser(db, "b"),
+        seedUser(db, "c"),
+      ]);
+      for (const admin of admins) {
+        await upsertMembership(db, { workspaceId: workspace.id, userId: admin.id, role: "admin" });
+      }
+
+      const results = await Promise.all(
+        admins.map((admin) =>
+          setMemberRole(db, { workspaceId: workspace.id, userId: admin.id, role: "member" }),
+        ),
+      );
+
+      expect(results.filter((result) => result === "updated")).toHaveLength(2);
+      expect(results.filter((result) => result === "last_admin")).toHaveLength(1);
+      expect(await workspaceHasAdmin(db, workspace.id)).toBe(true);
+    }
+  }, 60_000);
+
+  test("people joining a workspace with no admin at once leave it with one", async () => {
+    for (let round = 0; round < 5; round++) {
+      const [workspace, ...people] = await Promise.all([
+        seedWorkspace(db),
+        seedUser(db, "a"),
+        seedUser(db, "b"),
+        seedUser(db, "c"),
+      ]);
+
+      // What each one's sync does: join, then see that the workspace has an admin.
+      await Promise.all(
+        people.map(async (person) => {
+          await upsertMembership(db, {
+            workspaceId: workspace.id,
+            userId: person.id,
+            role: "member",
+            githubAccess: "member",
+          });
+          await ensureWorkspaceAdmin(db, workspace.id);
+        }),
+      );
+      // Whoever was too early to see the others is put right by the next sync.
+      await ensureWorkspaceAdmin(db, workspace.id);
+
+      const admins = await db
+        .select()
+        .from(memberships)
+        .where(and(eq(memberships.workspaceId, workspace.id), eq(memberships.role, "admin")));
+      expect(admins.length).toBeGreaterThanOrEqual(1);
+    }
   }, 60_000);
 
   test("many answers to one question at once: the first wins and the count drops once", async () => {

@@ -44,6 +44,10 @@ export interface Config {
   /** What `/v1/health` reports about this build. */
   build: { version: string; commit: string | null };
   minimumClientVersions: MinimumVersions;
+  /** The GitHub App's slug, where installs begin, and the secret its webhooks are signed with. */
+  githubApp: { slug: string; webhookSecret: string };
+  /** What the scheduler's requests carry (`routes/cron.ts`). */
+  cronSecret: string;
 }
 
 /** Ids the API makes itself. Rows get theirs from `@ponzu/db`. */
@@ -78,13 +82,21 @@ export function createDeps(env: Env): Deps {
     background: createBackground(log, waitUntil),
     vault: createVault(env.vault),
     workos: createWorkos({ ...env.workos, fetch: outbound, clock }),
-    github: createGithub({ ...env.githubApp, fetch: outbound, clock }),
+    github: createGithub({
+      clientId: env.githubApp.clientId,
+      clientSecret: env.githubApp.clientSecret,
+      privateKey: env.githubApp.privateKey,
+      fetch: outbound,
+      clock,
+    }),
     sandbox: new BoatProvider({ apiKey: env.boatApiKey, clock }),
     storage: storageNotBuilt,
     realtime: realtimeNotBuilt,
     config: {
       build: { version: VERSION, commit: env.commit },
       minimumClientVersions: env.minimumClientVersions,
+      githubApp: { slug: env.githubApp.slug, webhookSecret: env.githubApp.webhookSecret },
+      cronSecret: env.cronSecret,
     },
   };
 }
