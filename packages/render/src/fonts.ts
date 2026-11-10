@@ -1,4 +1,5 @@
 import { GOOGLE_FONTS_DATA } from "./google-fonts-data.ts";
+import { STAND_INS } from "./stand-ins.ts";
 
 /**
  * Google Fonts, loaded so text renders the same on the canvas, in screenshots
@@ -240,11 +241,25 @@ export function googleFontElement(doc: Document, f: GoogleFontRequest): HTMLLink
  * that shows it. Whether a family renders is measured, not inferred from the
  * request: a font installed locally still counts, and an @font-face whose
  * files failed doesn't.
+ *
+ * A system font this machine lacks falls through quietly, as it does for
+ * anyone without it. On Linux most of them draw in a stand-in of the same
+ * widths instead (stand-ins.ts), which needs no comment. The few whose
+ * stand-in sets text differently get one "stand-in-font" issue each, saying
+ * how, so a line break in the screenshot isn't taken for what people see.
+ * That too is measured: the name and its stand-in drawing the sample alike.
  */
 export const FONT_LINT_SCRIPT = `(() => {
   const issues = [];
   const root = document.querySelector('[data-artboard]');
   if (!root || !document.fonts) return issues;
+  const standIns = ${JSON.stringify(
+    Object.fromEntries(
+      STAND_INS.flatMap((s) =>
+        s.caveat ? s.names.map((n) => [n.toLowerCase(), { font: s.font, caveat: s.caveat }]) : [],
+      ),
+    ),
+  )};
   const unquote = (s) => s.trim().replace(/^['"]|['"]$/g, '').trim();
   const links = new Map([...document.querySelectorAll('link[data-font]')].map((l) => [l.dataset.font.toLowerCase(), l]));
   const faces = new Map();
@@ -271,6 +286,13 @@ export const FONT_LINT_SCRIPT = `(() => {
     seen.set(k, ok);
     return ok;
   };
+  // Whether a stand-in is what draws a family: it's installed, and the two set the sample alike over either fallback, as the real font wouldn't.
+  const stoodIn = (family, font, style) => !!ctx && renders(font, style) && ['monospace', 'serif'].every((base) => {
+    ctx.font = style + ' 40px ' + (generic.test(family) ? family : JSON.stringify(family)) + ', ' + base;
+    const named = ctx.measureText(sample).width;
+    ctx.font = style + ' 40px ' + JSON.stringify(font) + ', ' + base;
+    return ctx.measureText(sample).width === named;
+  });
   const reported = new Set();
   for (const el of root.querySelectorAll('[data-id]')) {
     if (![...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())) continue;
@@ -282,7 +304,14 @@ export const FONT_LINT_SCRIPT = `(() => {
     for (let i = 0; i < stack.length; i++) {
       const family = stack[i];
       const k = family.toLowerCase();
-      if (generic.test(family) || renders(family, style)) break;
+      if (generic.test(family) || renders(family, style)) {
+        const standIn = standIns[k];
+        if (standIn && !reported.has(k) && stoodIn(family, standIn.font, style)) {
+          reported.add(k);
+          issues.push({ id: el.getAttribute('data-id'), kind: 'stand-in-font', message: 'font "' + family + '" draws in ' + standIn.font + ' in screenshots: ' + standIn.caveat + '.' });
+        }
+        break;
+      }
       // Never requested: a system font this machine lacks, which falls through quietly.
       if (!links.has(k) && !faces.has(k)) continue;
       if (reported.has(k)) break;
