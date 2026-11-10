@@ -10,15 +10,27 @@ import {
   type GithubProfile,
   getClaudeAccount,
   getMemberWorkspace,
+  getRepoInstallationId,
+  getUser,
+  getUserByGithubId,
   getUserByWorkosId,
+  getWorkspace,
+  getWorkspaceByInstallation,
+  listStaleInstallations,
   listUserWorkspaces,
+  listWorkspaceRepos,
   markReposRemoved,
+  markReposRemovedExcept,
+  markWorkspaceUninstalled,
+  suspendWorkspace,
   upsertMembership,
   upsertRepos,
   upsertUser,
   upsertWorkspace,
+  wasUninstalled,
 } from "./accounts.ts";
 import { createDesign, getDesign, listWorkspaceDesigns } from "./designs.ts";
+import { setMemberRepos } from "./members.ts";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 beforeAll(async () => {
@@ -132,6 +144,151 @@ describe("upsertWorkspace", () => {
     });
     expect(second.installedAt!.getTime()).toBeGreaterThan(0);
   });
+
+  test("an installer learned after the fact fills in, and never replaces, a known one", async () => {
+    const [first, second] = await Promise.all([seedUser(db, "first"), seedUser(db, "second")]);
+    const account = { ...installation, githubAccountId: 7003, installationId: 503 };
+    await upsertWorkspace(db, account);
+
+    const filled = await upsertWorkspace(db, { ...account, installedByUserId: first.id });
+    const kept = await upsertWorkspace(db, { ...account, installedByUserId: second.id });
+
+    expect(filled.installedByUserId).toBe(first.id);
+    expect(kept.installedByUserId).toBe(first.id);
+  });
+
+  test("suspension is GitHub's to say when it is given, and left alone when it is not", async () => {
+    const account = { ...installation, githubAccountId: 7004, installationId: 504 };
+    const when = new Date("2026-11-09T10:00:00Z");
+
+    const suspended = await upsertWorkspace(db, { ...account, suspendedAt: when });
+    expect(suspended.suspendedAt).toEqual(when);
+    expect((await upsertWorkspace(db, account)).suspendedAt).toEqual(when);
+    expect((await upsertWorkspace(db, { ...account, suspendedAt: null })).suspendedAt).toBeNull();
+  });
+
+  test("suspendWorkspace touches only a workspace that holds the installation", async () => {
+    const workspace = await seedWorkspace(db);
+    const when = new Date("2026-11-09T11:00:00Z");
+
+    const suspended = await suspendWorkspace(db, {
+      installationId: workspace.installationId!,
+      suspendedAt: when,
+      reconciledAt: when,
+    });
+
+    expect(suspended).toMatchObject({ id: workspace.id, suspendedAt: when, reconciledAt: when });
+    expect(
+      await suspendWorkspace(db, {
+        installationId: 404_404,
+        suspendedAt: when,
+        reconciledAt: when,
+      }),
+    ).toBeNull();
+  });
+
+  test("reconciledAt is kept until a read of GitHub says when it happened again", async () => {
+    const account = { ...installation, githubAccountId: 7005, installationId: 505 };
+    const first = new Date("2026-11-09T12:00:00Z");
+
+    expect((await upsertWorkspace(db, account)).reconciledAt).toBeNull();
+    expect((await upsertWorkspace(db, { ...account, reconciledAt: first })).reconciledAt).toEqual(
+      first,
+    );
+    expect((await upsertWorkspace(db, account)).reconciledAt).toEqual(first);
+  });
+
+  test("listStaleInstallations finds the installations read longest ago, never-read first", async () => {
+    const at = (iso: string) => new Date(iso);
+    const make = (githubAccountId: number, reconciledAt?: Date) =>
+      upsertWorkspace(db, {
+        ...installation,
+        githubAccountId,
+        installationId: githubAccountId,
+        reconciledAt,
+      });
+    await make(7301, at("2026-11-09T09:00:00Z"));
+    await make(7302);
+    await make(7303, at("2026-11-09T13:00:00Z"));
+    await make(7304, at("2026-11-09T08:00:00Z"));
+    const uninstalled = await make(7305, at("2026-11-01T00:00:00Z"));
+    await markWorkspaceUninstalled(db, uninstalled.installationId!);
+
+    const stale = await listStaleInstallations(db, {
+      before: at("2026-11-09T12:00:00Z"),
+      limit: 100,
+    });
+
+    const ours = stale.filter((id) => id >= 7301 && id <= 7305);
+    expect(ours).toEqual([7302, 7304, 7301]);
+    expect(
+      await listStaleInstallations(db, { before: at("2026-11-09T12:00:00Z"), limit: 1 }),
+    ).toHaveLength(1);
+  });
+
+  test("markWorkspaceUninstalled keeps the workspace and marks its repos removed", async () => {
+    const workspace = await seedWorkspace(db);
+    const [repo] = await upsertRepos(db, {
+      workspaceId: workspace.id,
+      repos: [
+        {
+          githubRepoId: 8801,
+          fullName: "a/b",
+          defaultBranch: "main",
+          private: true,
+          pushedAt: null,
+        },
+      ],
+    });
+
+    expect(await wasUninstalled(db, workspace.installationId!)).toBe(false);
+    expect(await markWorkspaceUninstalled(db, workspace.installationId!)).toBe(workspace.id);
+
+    expect(await wasUninstalled(db, workspace.installationId!)).toBe(true);
+    expect(await getWorkspace(db, workspace.id)).toMatchObject({
+      installationId: null,
+      repositorySelection: null,
+    });
+    const [after] = await db.select().from(repos).where(eq(repos.id, repo!.id));
+    expect(after!.removedAt).toBeInstanceOf(Date);
+    // Again, or for an installation nobody holds: nothing to do.
+    expect(await markWorkspaceUninstalled(db, workspace.installationId!)).toBeNull();
+    expect(await getWorkspaceByInstallation(db, workspace.installationId!)).toBeNull();
+    // One Ponzu never saw is remembered as gone all the same.
+    expect(await markWorkspaceUninstalled(db, 404_405)).toBeNull();
+    expect(await wasUninstalled(db, 404_405)).toBe(true);
+  });
+});
+
+describe("people and workspaces by id", () => {
+  test("getUser and getUserByGithubId find a person, and nobody else", async () => {
+    const user = await seedUser(db, "lookup");
+    expect(await getUser(db, user.id)).toEqual(user);
+    expect(await getUserByGithubId(db, user.githubUserId)).toEqual(user);
+    expect(await getUser(db, "usr_nobody")).toBeNull();
+    expect(await getUserByGithubId(db, 404_404_404)).toBeNull();
+  });
+
+  test("getWorkspace names who installed the App; getWorkspaceByInstallation finds it", async () => {
+    const installer = await seedUser(db, "installs");
+    const workspace = await upsertWorkspace(db, {
+      githubAccountId: 7101,
+      githubLogin: "fablefuel",
+      kind: "org",
+      name: "Fablefuel",
+      avatarUrl: null,
+      installationId: 7102,
+      repositorySelection: "all",
+      installedByUserId: installer.id,
+    });
+
+    expect(await getWorkspace(db, workspace.id)).toMatchObject({
+      id: workspace.id,
+      installedByLogin: "installs",
+    });
+    expect((await getWorkspaceByInstallation(db, 7102))!.id).toBe(workspace.id);
+    expect(await getWorkspace(db, "ws_nowhere")).toBeNull();
+  });
 });
 
 describe("memberships", () => {
@@ -152,6 +309,24 @@ describe("memberships", () => {
     expect(synced.syncedAt.getTime()).toBeGreaterThan(0);
   });
 
+  test("an owner of the account is made an admin whatever their role was", async () => {
+    const [user, workspace] = await Promise.all([seedUser(db), seedWorkspace(db)]);
+    const key = { workspaceId: workspace.id, userId: user.id };
+    const joined = await upsertMembership(db, { ...key, role: "member", githubAccess: "member" });
+    expect(joined).toMatchObject({ role: "member", githubAccess: "member" });
+
+    // GitHub now says they own the organization.
+    const owner = await upsertMembership(db, { ...key, role: "member", githubAccess: "owner" });
+    expect(owner).toMatchObject({ role: "admin", githubAccess: "owner" });
+
+    // No longer an owner: what they reach changes, and the role stays as it is.
+    const after = await upsertMembership(db, { ...key, role: "member", githubAccess: "member" });
+    expect(after).toMatchObject({ role: "admin", githubAccess: "member" });
+    // Without word of how they reach it, that is left as it was.
+    const touched = await upsertMembership(db, { ...key, role: "member" });
+    expect(touched).toMatchObject({ role: "admin", githubAccess: "member" });
+  });
+
   test("deleteMembershipsExcept drops the workspaces a person can no longer reach", async () => {
     const [user, other] = await Promise.all([seedUser(db), seedUser(db, "maya")]);
     const [a, b, c] = await Promise.all([seedWorkspace(db), seedWorkspace(db), seedWorkspace(db)]);
@@ -164,13 +339,42 @@ describe("memberships", () => {
         .map((row) => row.workspaceId)
         .sort();
 
-    expect(await deleteMembershipsExcept(db, { userId: user.id, workspaceIds: [b.id] })).toBe(2);
+    const dropped = await deleteMembershipsExcept(db, { userId: user.id, workspaceIds: [b.id] });
+    expect(dropped.sort()).toEqual([a.id, c.id].sort());
     expect(await of(user.id)).toEqual([b.id]);
     expect(await of(other.id)).toEqual([a.id, b.id, c.id].sort());
 
     // Reaching nothing at all drops the rest.
-    expect(await deleteMembershipsExcept(db, { userId: user.id, workspaceIds: [] })).toBe(1);
+    expect(await deleteMembershipsExcept(db, { userId: user.id, workspaceIds: [] })).toEqual([
+      b.id,
+    ]);
     expect(await of(user.id)).toEqual([]);
+  });
+
+  test("deleteMembershipsExcept never drops someone from their own account's workspace", async () => {
+    const user = await seedUser(db, "solo");
+    const own = await upsertWorkspace(db, {
+      githubAccountId: user.githubUserId,
+      githubLogin: "solo",
+      kind: "personal",
+      name: "solo",
+      avatarUrl: null,
+      installationId: 7401,
+      repositorySelection: "all",
+      installedByUserId: user.id,
+    });
+    const org = await seedWorkspace(db);
+    await upsertMembership(db, { workspaceId: own.id, userId: user.id, role: "admin" });
+    await upsertMembership(db, { workspaceId: org.id, userId: user.id, role: "member" });
+    // The App was taken off their account.
+    await markWorkspaceUninstalled(db, 7401);
+
+    expect(await deleteMembershipsExcept(db, { userId: user.id, workspaceIds: [] })).toEqual([
+      org.id,
+    ]);
+    expect((await listUserWorkspaces(db, user.id)).map((workspace) => workspace.id)).toEqual([
+      own.id,
+    ]);
   });
 
   test("listUserWorkspaces gives a person their workspaces and roles, and nobody else's", async () => {
@@ -182,6 +386,7 @@ describe("memberships", () => {
     expect(await listUserWorkspaces(db, user.id)).toEqual([
       {
         id: mine.id,
+        githubAccountId: mine.githubAccountId,
         githubLogin: "acme",
         kind: "org",
         name: "acme",
@@ -189,6 +394,7 @@ describe("memberships", () => {
         installationId: mine.installationId,
         suspendedAt: null,
         role: "admin",
+        githubAccess: "collaborator",
       },
     ]);
     expect(await listUserWorkspaces(db, "usr_nobody")).toEqual([]);
@@ -311,6 +517,79 @@ describe("repos", () => {
       (await listWorkspaceDesigns(db, { workspaceId, userId: user.id })).map((d) => d.name);
     expect(await names(from.id)).toEqual(["Lisbon"]);
     expect(await names(to.id)).toEqual(["checkout"]);
+  });
+
+  test("markReposRemovedExcept marks what an installation's list left out, there only", async () => {
+    const [workspace, other] = await Promise.all([seedWorkspace(db), seedWorkspace(db)]);
+    await upsertRepos(db, {
+      workspaceId: workspace.id,
+      repos: [seen(401, "a/kept"), seen(402, "a/gone")],
+    });
+    await upsertRepos(db, { workspaceId: other.id, repos: [seen(403, "b/untouched")] });
+    const names = async (workspaceId: string) =>
+      (await db.select().from(repos).where(eq(repos.workspaceId, workspaceId)))
+        .filter((repo) => repo.removedAt === null)
+        .map((repo) => repo.fullName);
+
+    expect(
+      await markReposRemovedExcept(db, { workspaceId: workspace.id, githubRepoIds: [401] }),
+    ).toBe(1);
+    expect(await names(workspace.id)).toEqual(["a/kept"]);
+    expect(await names(other.id)).toEqual(["b/untouched"]);
+
+    // An installation with no repos left.
+    expect(await markReposRemovedExcept(db, { workspaceId: workspace.id, githubRepoIds: [] })).toBe(
+      1,
+    );
+    expect(await names(workspace.id)).toEqual([]);
+  });
+
+  test("listWorkspaceRepos gives a member the repos they reach, most recently pushed first", async () => {
+    const [workspace, user, other] = await Promise.all([
+      seedWorkspace(db),
+      seedUser(db, "reader"),
+      seedUser(db, "outsider"),
+    ]);
+    await upsertRepos(db, {
+      workspaceId: workspace.id,
+      repos: [
+        { ...seen(501, "a/old"), pushedAt: new Date("2026-01-01T00:00:00Z") },
+        { ...seen(502, "a/never"), pushedAt: null },
+        { ...seen(503, "a/new"), pushedAt: new Date("2026-11-01T00:00:00Z") },
+        seen(504, "a/hidden"),
+        seen(505, "a/removed"),
+      ],
+    });
+    await markReposRemoved(db, [505]);
+    for (const person of [user, other]) {
+      await upsertMembership(db, { workspaceId: workspace.id, userId: person.id, role: "member" });
+    }
+    await setMemberRepos(db, {
+      workspaceId: workspace.id,
+      userId: user.id,
+      repos: [501, 502, 503, 505].map((githubRepoId) => ({
+        githubRepoId,
+        canPush: githubRepoId === 503,
+      })),
+      complete: true,
+    });
+    const list = (userId: string) => listWorkspaceRepos(db, { workspaceId: workspace.id, userId });
+
+    expect((await list(user.id)).map(({ fullName, canPush }) => [fullName, canPush])).toEqual([
+      ["a/new", true],
+      ["a/old", false],
+      ["a/never", false],
+    ]);
+    // In the workspace, and shown none of it.
+    expect(await list(other.id)).toEqual([]);
+  });
+
+  test("getRepoInstallationId names the installation that holds a repo", async () => {
+    const workspace = await seedWorkspace(db);
+    await upsertRepos(db, { workspaceId: workspace.id, repos: [seen(601, "a/held")] });
+
+    expect(await getRepoInstallationId(db, 601)).toBe(workspace.installationId);
+    expect(await getRepoInstallationId(db, 602)).toBeNull();
   });
 
   test("markReposRemoved marks, and seeing the repo again clears it", async () => {

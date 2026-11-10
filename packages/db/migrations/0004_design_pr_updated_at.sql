@@ -1,0 +1,1 @@
+ALTER TABLE "designs" ADD COLUMN "pr_updated_at" timestamp with time zone;

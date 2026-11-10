@@ -55,6 +55,12 @@ export type ErrorCode =
   | "database_unavailable"
   /** A part of the API that is not built yet. */
   | "not_implemented"
+  /** A webhook delivery that is not signed with the secret its sender shares with Ponzu. */
+  | "signature_invalid"
+  /** A workspace always has an admin: this would leave it with none. Make someone else one first. */
+  | "last_admin"
+  /** GitHub says this person owns the workspace's account, so they are always an admin. */
+  | "owner_is_admin"
   | "internal";
 
 /**

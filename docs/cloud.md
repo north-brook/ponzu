@@ -117,7 +117,75 @@ person's own account and the accounts where Ponzu is installed; any other
 organization is added through GitHub's install page, which has its own picker.
 
 **Membership** is GitHub's. Anyone who can reach an installation's repos is a
-member; Ponzu stores only the role (Admin or Member). There are no invitations.
+member, and sees only the repos GitHub shows them
+(`GET /user/installations/{id}/repositories`, kept per member); the workspace's
+other repos stay hidden from them, and someone who reaches it only through repos
+shared with them (an outside collaborator) sees no other member. Ponzu stores only
+the role (Admin or Member). There are no invitations.
+
+GitHub's owners are a floor: whoever owns the account (the person, for a personal
+account; an owner, for an organization, per `GET /user/memberships/orgs/{org}`) is an
+Admin at every sync and cannot be demoted (409 `owner_is_admin`). Whoever installed
+the App (as its `installation.created` webhook names them) starts as Admin; everyone
+else starts as Member. A workspace with no Admin gets one from among the members of
+its organization, longest-standing first, at the next sync of anyone in it; an outside
+collaborator never becomes one that way, so a personal workspace waits for its owner.
+Demoting the last Admin is refused (409 `last_admin`). Otherwise a role is changed
+only by an Admin in Ponzu, never by a sync.
+
+**Keeping it true.** `syncGithub` brings one person's workspaces in line with GitHub,
+as that person, against their own rate limit: the installations their token lists,
+their membership of each with the repos they reach in it, and none of any other but
+their own account's. An installation is read as the App (its workspace and every repo
+it can see) only when Ponzu's copy is ten minutes old, disagrees with the person's
+view, or lacks a repo they reach: those reads come out of the installation's hourly
+budget, which its git tokens and permission checks share. The sync runs in the
+background after each sign-in, on `POST /v1/github/sync` (the apps call it when they
+come back to focus), and when a webhook says someone's access changed. Every step is
+an upsert or a reconciliation, so it is safe twice at once and again after a failure;
+memberships are dropped only once every installation is accounted for, and nothing is
+dropped or marked removed from a list GitHub served only in part (more than 2,000
+items). A repo the App loses is marked removed, never deleted. A suspended
+installation keeps its workspace, marked. An uninstall is remembered by installation
+id, which GitHub never reuses, so a read of GitHub that began before it cannot bring
+the installation back. A one-minute cron reads again any installation nobody has read
+for six hours, which is how an uninstall whose webhook was lost is found.
+
+**Installing.** `POST /v1/github/install-link` returns GitHub's install page with a
+`state` sealed by the API and recorded as a fifteen-minute, single-use auth state.
+GitHub sends the browser to the App's Setup URL, `GET /v1/github/setup`, which has no
+bearer token: the state says who started, the person's own token must reach the
+installation (its id in the query is never trusted), and the answer is a small HTML
+page with a way back to the app:
+
+```
+ponzu://github/setup?result=installed&workspace=<workspace id>
+ponzu://github/setup?result=requested | pending | sign_in | failed
+```
+
+The app answers any of them by syncing. `pending` covers no state, a used or expired
+one, and an installation the person cannot reach: whoever really installed the App is
+caught up by its webhook and their next sync.
+
+**Webhooks** arrive at `POST /v1/github/webhook`, verified against the raw body
+before anything is read, deduplicated on `X-GitHub-Delivery`, and recorded with the
+fields Ponzu uses as a job in the same statement before GitHub is answered: GitHub
+never sends a delivery again by itself, so the job, not the delivery, carries the
+retries (the cron runs a failed one again after a minute, doubling, for about two
+hours). A delivery is a signal, not a record: an installation or repo event makes the
+API read the installation from GitHub as it is now, and an access event (`member`,
+`membership`, `organization`) syncs the person it names; when their GitHub token is
+dead, one that says they lost access removes them from that workspace at once. A
+`team` event, which names nobody, syncs everyone in the workspace. A pull request
+event updates the design that owns its branch, newest `updated_at` wins, and a merge
+settles the design. A failed check run or suite is an event with priority `next` on
+that design's feed, and so is a submitted review by the repo's owner, a member of its
+organization or a collaborator (`author_association`); anyone else's review is
+dropped, since on a public repo anyone can write one and the agent reads it. A review
+event says who wrote it and how they relate to the repo, and the runner gives its text
+to the agent as quoted input, never as an instruction. A revoked authorization
+forgets the person's GitHub token and ends their sessions, once GitHub confirms the
+token is dead.
 
 **Opening a design** needs read access to its repo. Steering it (messages, answers,
 merging) needs write access. The API checks with
