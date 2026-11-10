@@ -3,7 +3,7 @@ import type { Db } from "../client.ts";
 import { UNDO_DEPTH } from "./checkpoints.ts";
 import { queryJson } from "./json.ts";
 import {
-  type Actor,
+  type CommitInput,
   type CommitResult,
   commit,
   type NewOp,
@@ -82,10 +82,7 @@ export async function nextRedo(
  */
 export function commitReversal(
   db: Db,
-  input: {
-    designId: string;
-    expectedSeq: number;
-    actor: Actor;
+  input: CommitInput & {
     kind: "undo" | "redo";
     /** The seq of the op being taken back. */
     reverses: number;

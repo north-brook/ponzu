@@ -18,9 +18,11 @@ import {
   head as headColumns,
   listWorkspaceDesigns,
   markDesignSeen,
-  updateDesign,
+  settleDesign,
 } from "./designs.ts";
 import { commitOps } from "./ops.ts";
+import { recordRepoAccess } from "./repo-access.ts";
+import { appendThreadItem } from "./thread.ts";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 beforeAll(async () => {
@@ -248,7 +250,10 @@ describe("listWorkspaceDesigns", () => {
       .update(designs)
       .set({ status: "settled", settledAt: new Date() })
       .where(eq(designs.id, settled.id));
-    return { user, workspace, oldest, settled, newest };
+    await recordRepoAccess(db, [
+      { userId: user.id, repoId: repo.id, permission: "read", checkedAt: new Date() },
+    ]);
+    return { user, workspace, repo, oldest, settled, newest };
   }
 
   test("lists one workspace's designs, most recently active first", async () => {
@@ -292,28 +297,50 @@ describe("listWorkspaceDesigns", () => {
   test("says how far the viewer has looked, and only the viewer", async () => {
     const { user, workspace, newest, oldest } = await workspaceWithDesigns();
     const teammate = await seedUser(db, "maya");
-    await markDesignSeen(db, { userId: user.id, designId: newest.id, seq: 4, threadSeq: 9 });
+    await db.update(designs).set({ seq: 4 }).where(eq(designs.id, newest.id));
+    const item = await appendThreadItem(db, {
+      designId: newest.id,
+      kind: "message",
+      payload: { text: "Hi" },
+    });
+    await markDesignSeen(db, {
+      userId: user.id,
+      designId: newest.id,
+      seq: 4,
+      threadSeq: item!.seq,
+    });
     await markDesignSeen(db, { userId: teammate.id, designId: oldest.id, seq: 2 });
 
     const mine = await listWorkspaceDesigns(db, { workspaceId: workspace.id, userId: user.id });
 
     expect(mine.map((d) => [d.name, d.seenSeq, d.seenThreadSeq])).toEqual([
-      ["Newest", 4, 9],
+      ["Newest", 4, item!.seq],
       ["Settled", null, null],
       ["Oldest", null, null],
     ]);
   });
 
-  test("lists Scratch designs to their owner only", async () => {
-    const { workspace } = await workspaceWithDesigns();
-    const teammate = await seedUser(db, "maya");
+  test("lists a repo's designs to whoever repo_access says can read it, and Scratch to its owner only", async () => {
+    const { workspace, repo } = await workspaceWithDesigns();
+    const [reader, writer, revoked, unasked] = await Promise.all([
+      seedUser(db, "ines"),
+      seedUser(db, "ada"),
+      seedUser(db, "omar"),
+      seedUser(db, "lee"),
+    ]);
+    const checkedAt = new Date();
+    await recordRepoAccess(db, [
+      { userId: reader.id, repoId: repo.id, permission: "read", checkedAt },
+      { userId: writer.id, repoId: repo.id, permission: "admin", checkedAt },
+      { userId: revoked.id, repoId: repo.id, permission: "none", checkedAt },
+    ]);
+    const names = async (userId: string) =>
+      (await listWorkspaceDesigns(db, { workspaceId: workspace.id, userId })).map((d) => d.name);
 
-    const theirs = await listWorkspaceDesigns(db, {
-      workspaceId: workspace.id,
-      userId: teammate.id,
-    });
-
-    expect(theirs.map((design) => design.name)).toEqual(["Oldest"]);
+    expect(await names(reader.id)).toEqual(["Oldest"]);
+    expect(await names(writer.id)).toEqual(["Oldest"]);
+    expect(await names(revoked.id)).toEqual([]);
+    expect(await names(unasked.id)).toEqual([]);
   });
 });
 
@@ -331,21 +358,50 @@ describe("getDesignAccess", () => {
       doc: emptyDoc("Harbor"),
     });
 
-    const access = await getDesignAccess(db, design.id);
+    const access = await getDesignAccess(db, { designId: design.id, userId: user.id });
 
     expect(access).toEqual({
       design: (await getDesign(db, design.id))!,
-      repo: { githubRepoId: repo.githubRepoId, fullName: "north-brook/harbor" },
+      repo: { id: repo.id, githubRepoId: repo.githubRepoId, fullName: "north-brook/harbor" },
       installationId: workspace.installationId,
+      known: null,
     });
     expect(access!.design).not.toHaveProperty("assetKey");
   });
 
-  test("Scratch has no repo, and a design that does not exist is null", async () => {
-    const { design } = await seedDesign(db);
+  test("comes with what GitHub last said the person asking may do there, and only them", async () => {
+    const [user, teammate, workspace] = await Promise.all([
+      seedUser(db),
+      seedUser(db, "maya"),
+      seedWorkspace(db),
+    ]);
+    const repo = await seedRepo(db, workspace.id, "north-brook/pier");
+    const design = await createDesign(db, {
+      workspaceId: workspace.id,
+      repoId: repo.id,
+      ownerId: user.id,
+      claudeAccountId: null,
+      name: "Pier",
+      branch: null,
+      doc: emptyDoc("Pier"),
+    });
+    const checkedAt = new Date("2026-11-10T12:00:00Z");
+    await recordRepoAccess(db, [
+      { userId: user.id, repoId: repo.id, permission: "write", checkedAt },
+    ]);
+    const known = async (userId: string | null) =>
+      (await getDesignAccess(db, { designId: design.id, userId }))!.known;
 
-    expect((await getDesignAccess(db, design.id))!.repo).toBeNull();
-    expect(await getDesignAccess(db, "des_missing")).toBeNull();
+    expect(await known(user.id)).toEqual({ permission: "write", checkedAt });
+    expect(await known(teammate.id)).toBeNull();
+    expect(await known(null)).toBeNull();
+  });
+
+  test("Scratch has no repo, and a design that does not exist is null", async () => {
+    const { design, user } = await seedDesign(db);
+
+    expect((await getDesignAccess(db, { designId: design.id, userId: user.id }))!.repo).toBeNull();
+    expect(await getDesignAccess(db, { designId: "des_missing", userId: user.id })).toBeNull();
   });
 });
 
@@ -364,37 +420,29 @@ describe("getWorkspaceRepo", () => {
   });
 });
 
-describe("updateDesign", () => {
+describe("settleDesign", () => {
   const now = new Date("2026-11-10T12:00:00Z");
 
-  test("renames, sets an icon, settles and reopens", async () => {
+  test("settles and reopens", async () => {
     const { design } = await seedDesign(db);
 
-    expect(await updateDesign(db, design.id, { name: "Porto", icon: "star", now })).toMatchObject({
-      name: "Porto",
-      icon: "star",
-      status: "active",
-      settledAt: null,
-    });
-    expect(await updateDesign(db, design.id, { settled: true, now })).toMatchObject({
-      name: "Porto",
+    expect(await settleDesign(db, design.id, { settled: true, now })).toMatchObject({
       status: "settled",
       settledAt: now,
     });
     // Settling again keeps when it first settled.
     const later = new Date("2026-11-11T12:00:00Z");
-    expect(await updateDesign(db, design.id, { settled: true, now: later })).toMatchObject({
+    expect(await settleDesign(db, design.id, { settled: true, now: later })).toMatchObject({
       settledAt: now,
     });
-    expect(await updateDesign(db, design.id, { settled: false, icon: null, now })).toMatchObject({
+    expect(await settleDesign(db, design.id, { settled: false, now })).toMatchObject({
       status: "active",
       settledAt: null,
-      icon: null,
     });
   });
 
   test("a design that does not exist is null", async () => {
-    expect(await updateDesign(db, "des_missing", { name: "Nowhere", now })).toBeNull();
+    expect(await settleDesign(db, "des_missing", { settled: true, now })).toBeNull();
   });
 });
 
@@ -423,13 +471,39 @@ describe("markDesignSeen", () => {
     };
     const key = { userId: user.id, designId: design.id };
 
-    await markDesignSeen(db, { ...key, seq: 5, threadSeq: 3 });
-    expect(await read()).toEqual([5, 3]);
+    await db.update(designs).set({ seq: 9 }).where(eq(designs.id, design.id));
+    const items = [];
+    for (const text of ["one", "two", "three"]) {
+      items.push(
+        (await appendThreadItem(db, { designId: design.id, kind: "message", payload: { text } }))!
+          .seq,
+      );
+    }
+    const [first, second, third] = items as [number, number, number];
+
+    await markDesignSeen(db, { ...key, seq: 5, threadSeq: second });
+    expect(await read()).toEqual([5, second]);
 
     // A slow request from another device, and one that only saw the thread.
-    await markDesignSeen(db, { ...key, seq: 2, threadSeq: 1 });
-    expect(await read()).toEqual([5, 3]);
-    await markDesignSeen(db, { ...key, threadSeq: 8 });
-    expect(await read()).toEqual([5, 8]);
+    await markDesignSeen(db, { ...key, seq: 2, threadSeq: first });
+    expect(await read()).toEqual([5, second]);
+    await markDesignSeen(db, { ...key, threadSeq: third });
+    expect(await read()).toEqual([5, third]);
+  });
+
+  test("never past the design's seq or its newest thread item, which would hide what comes next", async () => {
+    const { design, user } = await seedDesign(db);
+    const read = async () => {
+      const [row] = await db.select().from(designReads).where(eq(designReads.userId, user.id));
+      return [row!.seenSeq, row!.seenThreadSeq];
+    };
+    await db.update(designs).set({ seq: 3 }).where(eq(designs.id, design.id));
+
+    await markDesignSeen(db, { userId: user.id, designId: design.id, seq: 9e15, threadSeq: 9e15 });
+    expect(await read()).toEqual([3, 0]);
+
+    const item = await appendThreadItem(db, { designId: design.id, kind: "message", payload: {} });
+    await markDesignSeen(db, { userId: user.id, designId: design.id, threadSeq: 9e15 });
+    expect(await read()).toEqual([3, item!.seq]);
   });
 });

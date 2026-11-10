@@ -122,6 +122,7 @@ People and access
 | `workspaces` | A GitHub account with the App installed, and its billing: Stripe customer, cap, period anchor. Keyed by the account; the installation id changes on a reinstall. | live |
 | `memberships` | Who can reach a workspace, as GitHub last said, and their role (admin or member). | live |
 | `repos` | A repo the App can see: default branch, the base snapshot new designs start from, its stack, ideas. | live |
+| `repo_access` | What GitHub last said each person may do in each repo, and when. Every function instance shares the answers, and live queries join them so a repo's designs show only to people who can read it. A row is replaced only by a newer answer. | live |
 | `repo_secrets` | A repo's environment variables, encrypted. | |
 | `claude_accounts` | A person's own Claude: subscription or API key (encrypted), status, expiry, last known limits. | live |
 | `devices` | A phone or Mac to push to. | |
@@ -143,7 +144,7 @@ The agent
 | Table | What it is for | |
 |---|---|---|
 | `thread_items` | The agent thread: messages, comments, the agent's text (updated in place while it streams), tool steps. | live |
-| `events` | Things that happened to a design, with a priority, waiting for its runner to take them. | |
+| `events` | Things that happened to a design, with a priority, waiting for its runner to take them. A person's ops append theirs in the statement that commits them (`commitOps`'s `events`). | |
 | `questions` | Needs-you: a question, permission, plan or secret the agent is waiting on, and its answer. | live |
 | `sandboxes` | A design's sandbox at the provider: state, address, awake-since, the Claude session to resume. | |
 | `runner_tokens` | What a runner signs in with, hashed. Good for one design until it expires. | |

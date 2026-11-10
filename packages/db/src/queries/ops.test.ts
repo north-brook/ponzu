@@ -4,7 +4,8 @@ import { actorFor, agent, rename, seedDesign } from "../fixtures.ts";
 import { designOps } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
 import { getDesign } from "./designs.ts";
-import { commit, commitOps, findOps, readOps } from "./ops.ts";
+import { claimEvents } from "./events.ts";
+import { commit, commitOps, findOps, type OpEvent, readOps } from "./ops.ts";
 import { QueryError } from "./run.ts";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -339,6 +340,97 @@ describe("commitOps", () => {
   });
 });
 
+describe("commitOps with events and the design's head", () => {
+  const edit = (opId: string, userId: string, summary: string): OpEvent => ({
+    opId,
+    kind: "edit",
+    priority: "later",
+    payload: { summary },
+    userId,
+  });
+
+  test("appends each op's events with the op, with the seq the op was given", async () => {
+    const { design, user } = await seedDesign(db);
+
+    await commitOps(db, {
+      designId: design.id,
+      expectedSeq: 0,
+      actor: actorFor(user),
+      ops: [rename("a", "One"), rename("b", "Two", "One")],
+      events: [edit("b", user.id, "second\u0000"), edit("a", user.id, "first")],
+    });
+
+    const claimed = await claimEvents(db, { designId: design.id });
+    expect(claimed.map((event) => [event.payload, event.userId])).toEqual([
+      [{ summary: "second\ufffd", seq: 2 }, user.id],
+      [{ summary: "first", seq: 1 }, user.id],
+    ]);
+  });
+
+  test("appends no event when the commit misses, or for an op the log already has", async () => {
+    const { design, user } = await seedDesign(db);
+    const actor = actorFor(user);
+    await commitOps(db, { designId: design.id, expectedSeq: 0, actor, ops: [rename("a", "One")] });
+
+    const missed = await commitOps(db, {
+      designId: design.id,
+      expectedSeq: 0,
+      actor,
+      ops: [rename("b", "Two")],
+      events: [edit("b", user.id, "missed")],
+    });
+    const replayed = await commitOps(db, {
+      designId: design.id,
+      expectedSeq: 1,
+      actor,
+      ops: [rename("a", "One"), rename("c", "Three", "One")],
+      events: [edit("a", user.id, "again"), edit("c", user.id, "new")],
+    });
+
+    expect(missed.kind).toBe("conflict");
+    expect(replayed).toMatchObject({ kind: "committed", seq: 2, replayed: ["a"] });
+    const claimed = await claimEvents(db, { designId: design.id });
+    expect(claimed.map((event) => event.payload)).toEqual([{ summary: "new", seq: 2 }]);
+  });
+
+  test("an event that cannot be stored fails the whole commit, so the op is not in the log without it", async () => {
+    const { design, user } = await seedDesign(db);
+
+    const failed = commitOps(db, {
+      designId: design.id,
+      expectedSeq: 0,
+      actor: actorFor(user),
+      ops: [rename("a", "One")],
+      events: [{ ...edit("a", user.id, "x"), userId: "usr_nobody" }],
+    });
+
+    await expect(failed).rejects.toThrow();
+    expect(await logOf(design.id)).toEqual([]);
+    expect((await getDesign(db, design.id))!.seq).toBe(0);
+  });
+
+  test("moves the design's name and icon with the ops that changed them", async () => {
+    const { design, user } = await seedDesign(db);
+
+    await commitOps(db, {
+      designId: design.id,
+      expectedSeq: 0,
+      actor: actorFor(user),
+      ops: [rename("a", "Porto")],
+      head: { name: "Porto", icon: "star" },
+    });
+    expect(await getDesign(db, design.id)).toMatchObject({ name: "Porto", icon: "star" });
+
+    await commitOps(db, {
+      designId: design.id,
+      expectedSeq: 1,
+      actor: actorFor(user),
+      ops: [rename("b", "Faro", "Porto")],
+    });
+    expect(await getDesign(db, design.id)).toMatchObject({ name: "Porto", icon: "star" });
+  });
+});
+
 describe("readOps", () => {
   test("pages through the log from a seq", async () => {
     const { design, user } = await seedDesign(db);
@@ -353,6 +445,24 @@ describe("readOps", () => {
     expect(first).toMatchObject({ kind: "ok", seq: 5, ops: [{ seq: 2 }, { seq: 3 }] });
     const rest = await readOps(db, { designId: design.id, after: 3 });
     expect(rest).toMatchObject({ kind: "ok", seq: 5, ops: [{ seq: 4 }, { seq: 5 }] });
+  });
+
+  test("stops before the op that would take a page past maxBytes, but always reads one", async () => {
+    const { design, user } = await seedDesign(db);
+    // Each op's text is a little over 1,000 bytes.
+    await commitOps(db, {
+      designId: design.id,
+      expectedSeq: 0,
+      actor: actorFor(user),
+      ops: ["a", "b", "c", "d"].map((id) => rename(id, id.repeat(1000))),
+    });
+
+    const page = await readOps(db, { designId: design.id, after: 0, maxBytes: 2_500 });
+    expect(page).toMatchObject({ kind: "ok", seq: 4, ops: [{ seq: 1 }, { seq: 2 }] });
+    const tiny = await readOps(db, { designId: design.id, after: 2, maxBytes: 10 });
+    expect(tiny).toMatchObject({ kind: "ok", seq: 4, ops: [{ seq: 3 }] });
+    const all = await readOps(db, { designId: design.id, after: 0 });
+    expect(all).toMatchObject({ kind: "ok", ops: [{}, {}, {}, {}] });
   });
 
   test("is empty at the head, and past it", async () => {

@@ -19,6 +19,7 @@ import {
   DEVICE_PLATFORMS,
   MEMBER_ROLES,
   PUSH_ENVIRONMENTS,
+  REPO_PERMISSIONS,
   REPOSITORY_SELECTIONS,
   WORKSPACE_KINDS,
 } from "../enums.ts";
@@ -190,6 +191,32 @@ export const repos = pgTable(
     // What a design's foreign key points at, so a design is always in its repo's workspace.
     unique("repos_id_workspace_id_key").on(t.id, t.workspaceId),
     check("repos_base_status_check", oneOf(t.baseStatus, BASE_STATUSES)),
+  ],
+);
+
+/**
+ * What GitHub last said a person may do in a repo, and when. Every function instance reads it,
+ * so one answer serves them all, and live queries join it: Realtime has no row-level security,
+ * so this is how a list shows a repo's designs only to people who can read the repo. A row is
+ * only ever replaced by a newer answer.
+ */
+export const repoAccess = pgTable(
+  "repo_access",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    repoId: text("repo_id")
+      .notNull()
+      .references(() => repos.id, { onDelete: "cascade" }),
+    permission: text("permission", { enum: REPO_PERMISSIONS }).notNull(),
+    /** When GitHub gave this answer, by the API's clock. */
+    checkedAt: instant("checked_at").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.repoId] }),
+    index("repo_access_repo_id_idx").on(t.repoId),
+    check("repo_access_permission_check", oneOf(t.permission, REPO_PERMISSIONS)),
   ],
 );
 

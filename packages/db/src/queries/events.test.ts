@@ -4,7 +4,7 @@ import type { Db } from "../client.ts";
 import { seedDesign } from "../fixtures.ts";
 import { events } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
-import { appendEvent, appendEvents, claimEvents, markEventsDelivered } from "./events.ts";
+import { appendEvent, claimEvents, markEventsDelivered } from "./events.ts";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 beforeAll(async () => {
@@ -17,23 +17,6 @@ const say = (db: Db, designId: string, text: string, priority: "now" | "next" | 
 
 const texts = (claimed: { payload: unknown }[]) =>
   claimed.map((event) => (event.payload as { text: string }).text);
-
-test("several events append in one go, in order, and are claimed in that order", async () => {
-  const { design, user } = await seedDesign(db);
-  const event = (text: string) => ({
-    designId: design.id,
-    kind: "edit" as const,
-    priority: "later" as const,
-    payload: { text: `${text}\u0000` },
-    userId: user.id,
-  });
-
-  const appended = await appendEvents(db, [event("one"), event("two"), event("three")]);
-
-  expect(texts(appended)).toEqual(["one�", "two�", "three�"]);
-  expect(texts(await claimEvents(db, { designId: design.id }))).toEqual(texts(appended));
-  expect(await appendEvents(db, [])).toEqual([]);
-});
 
 test("an appended event waits, undelivered", async () => {
   const { design, user } = await seedDesign(db);

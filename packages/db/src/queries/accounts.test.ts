@@ -19,6 +19,7 @@ import {
   upsertWorkspace,
 } from "./accounts.ts";
 import { createDesign, getDesign, listWorkspaceDesigns } from "./designs.ts";
+import { recordRepoAccess } from "./repo-access.ts";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 beforeAll(async () => {
@@ -302,6 +303,9 @@ describe("repos", () => {
       });
     const inRepo = await make("checkout", repo!.id);
     const scratch = await make("Lisbon", null);
+    await recordRepoAccess(db, [
+      { userId: user.id, repoId: repo!.id, permission: "write", checkedAt: new Date() },
+    ]);
 
     await upsertRepos(db, { workspaceId: to.id, repos: [seen(211, "b/app")] });
 

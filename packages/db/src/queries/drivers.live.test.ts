@@ -26,6 +26,7 @@ import { commitOps, findOps, readOps } from "./ops.ts";
 import { pingDb } from "./ping.ts";
 import { listPresence, touchPresence } from "./presence.ts";
 import { answerSecretQuestion, cancelQuestions, createQuestion } from "./questions.ts";
+import { listDesignRepoAccess, recordRepoAccess } from "./repo-access.ts";
 import { QueryError } from "./run.ts";
 import { createRunnerToken, verifyRunnerToken } from "./runner-tokens.ts";
 import { admitSession, endSession, getSessionUser } from "./sessions.ts";
@@ -53,9 +54,16 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
           inverse: { op: "style", id: "n_1", style: {} },
         },
       ],
+      events: [
+        { opId: "a", kind: "edit", priority: "later", payload: { summary: "x" }, userId: user.id },
+      ],
+      head: { name: "One 😀", icon: null },
     });
 
     if (committed.kind !== "committed") throw new Error("expected a commit");
+    const [event] = await claimEvents(db, { designId: design.id });
+    expect(event).toMatchObject({ kind: "edit", payload: { summary: "x", seq: 1 } });
+    expect((await getDesignHead(db, design.id))!.name).toBe("One 😀");
     expect(committed).toMatchObject({ seq: 2, replayed: [] });
     expect(committed.ops[0]).toMatchObject({ seq: 1, id: "a", op: { name: "One 😀" }, actor });
     expect(committed.ops[0]!.at).toBeInstanceOf(Date);
@@ -133,6 +141,18 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
       doc: emptyDoc("checkout"),
     });
     await markDesignSeen(db, { userId: user.id, designId: inRepo.id, seq: 4, threadSeq: 9 });
+    const checkedAt = new Date("2026-11-10T12:00:00.123Z");
+    await recordRepoAccess(db, [
+      { userId: user.id, repoId: repo.id, permission: "read", checkedAt },
+    ]);
+    expect(
+      await listDesignRepoAccess(db, { workspaceId: workspace.id, userId: user.id }),
+    ).toContainEqual({
+      repoId: repo.id,
+      githubRepoId: repo.githubRepoId,
+      permission: "read",
+      checkedAt,
+    });
 
     const head = await getDesignHead(db, inRepo.id);
     expect(head).toMatchObject({
@@ -147,8 +167,9 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
     expect(list.find((row) => row.id === inRepo.id)).toMatchObject({
       ...head!,
       repoFullName: repo.fullName,
-      seenSeq: 4,
-      seenThreadSeq: 9,
+      // Nothing past what there is: the design is at 0 and has no thread.
+      seenSeq: 0,
+      seenThreadSeq: 0,
     });
   }, 60_000);
 

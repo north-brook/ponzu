@@ -44,11 +44,10 @@ export {
   listWorkspaceDesigns,
   markDesignSeen,
   type NewDesign,
-  updateDesign,
+  settleDesign,
 } from "./queries/designs.ts";
 export {
   appendEvent,
-  appendEvents,
   claimEvents,
   type DesignEvent,
   markEventsDelivered,
@@ -75,10 +74,12 @@ export {
 } from "./queries/jobs.ts";
 export {
   type Actor,
+  type CommitInput,
   type CommitResult,
   commitOps,
   findOps,
   type NewOp,
+  type OpEvent,
   type ReadOpsResult,
   readOps,
   type StoredOp,
@@ -101,6 +102,13 @@ export {
   listOpenQuestions,
   type Question,
 } from "./queries/questions.ts";
+export {
+  type DesignRepoAccess,
+  listDesignRepoAccess,
+  READABLE_PERMISSIONS,
+  type RepoAccessAnswer,
+  recordRepoAccess,
+} from "./queries/repo-access.ts";
 export { QueryError } from "./queries/run.ts";
 export {
   createRunnerToken,

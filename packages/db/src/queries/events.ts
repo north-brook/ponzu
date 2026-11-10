@@ -28,20 +28,6 @@ export async function appendEvent(db: Db, event: NewEvent): Promise<DesignEvent>
   return row!;
 }
 
-/** Add several things that happened, in the order given, in one statement. */
-export async function appendEvents(db: Db, list: NewEvent[]): Promise<DesignEvent[]> {
-  if (list.length === 0) return [];
-  const rows = await run(
-    db
-      .insert(events)
-      .values(
-        list.map((event) => ({ ...event, payload: scrubbed(event.payload), id: newId("evt") })),
-      )
-      .returning(),
-  );
-  return rows.sort((a, b) => a.seq - b.seq);
-}
-
 /**
  * Take a design's waiting events for its runner, oldest first. An event is waiting until it is
  * marked delivered; one that was taken more than `retakeAfterSeconds` ago and never marked
