@@ -94,10 +94,10 @@ describe("POST /v1/auth/exchange", () => {
     expect(await errorCode(again)).toBe("invalid_code");
   });
 
-  test("a code nobody issued is invalid_code", async () => {
+  test("a code nobody issued is invalid_code_verifier, which is all WorkOS says about one", async () => {
     const response = await exchange({ code: "code_made_up", code_verifier: "v".repeat(43) });
     expect(response.status).toBe(400);
-    expect(await errorCode(response)).toBe("invalid_code");
+    expect(await errorCode(response)).toBe("invalid_code_verifier");
   });
 
   test("the wrong verifier is invalid_code_verifier, and the right one still works after", async () => {

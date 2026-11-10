@@ -59,12 +59,12 @@ function sessionFrom(result: AuthenticateResult, log: Logger): WorkosSession {
     case "session":
       return result.session;
     case "invalid_code":
-      throw new ApiError(400, "invalid_code", "That sign-in has expired. Start again.");
+      throw new ApiError(400, "invalid_code", "That sign-in was already used. Start again.");
     case "invalid_code_verifier":
       throw new ApiError(
         400,
         "invalid_code_verifier",
-        "That sign-in did not start here. Start again.",
+        "That sign-in has expired or did not start here. Start again.",
       );
     case "email_verification_required":
     case "not_supported": {

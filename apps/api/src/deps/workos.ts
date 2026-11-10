@@ -127,7 +127,8 @@ export function createWorkos({
       }
     }
     if (code === "invalid_grant") {
-      // The one thing that tells a wrong verifier from a wrong code is WorkOS's sentence.
+      // Only WorkOS's sentence tells the two apart, and it says "Invalid code verifier." of a
+      // code it does not know as well as of a wrong verifier. A used code it names as used.
       return /code verifier/i.test(text(body.error_description) ?? "")
         ? { kind: "invalid_code_verifier" }
         : { kind: "invalid_code" };

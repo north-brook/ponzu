@@ -7,11 +7,11 @@ import type { Fetch } from "../deps/fetch.ts";
  * and cannot tell. It issues real RS256 access tokens from a key made for the test run and
  * serves the matching JWKS, so token verification is the code that runs in production.
  *
- * It behaves as the live service was seen to (the spike findings behind docs/cloud.md):
- * a code works once, a wrong verifier is refused without spending the code, an unverified
- * email stops the exchange with 403 and the two ids that finish it, and GitHub's tokens come
- * back as `oauth_tokens` with `expires_at` in milliseconds and the provider spelled
- * "GitHubOauth".
+ * It behaves as the live service was seen to: a code works once, a wrong verifier is refused
+ * without spending the code, a code it never issued is refused as a wrong verifier, an
+ * unverified email stops the exchange with 403 and the two ids that finish it, and GitHub's
+ * tokens come back as `oauth_tokens` with `expires_at` in milliseconds and the provider
+ * spelled "GitHubOauth".
  */
 
 export interface FakeWorkosUser {
@@ -64,6 +64,7 @@ export class FakeWorkos {
   readonly #clock: Clock;
   readonly #users = new Map<string, FakeWorkosUser>();
   readonly #codes = new Map<string, PendingSignIn & { challenge: string }>();
+  readonly #spent = new Set<string>();
   readonly #pending = new Map<string, PendingSignIn & { emailVerificationId: string }>();
   readonly #verifications = new Map<string, { userId: string; code: string }>();
   readonly #failures: { path: string; status: number; body: unknown }[] = [];
@@ -180,19 +181,22 @@ export class FakeWorkos {
     this.lastCaller = { ipAddress: body.ip_address, userAgent: body.user_agent };
 
     if (body.grant_type === "authorization_code") {
-      const signIn = this.#codes.get(String(body.code));
-      if (!signIn) {
-        return oauthError(
-          400,
-          "invalid_grant",
-          `The code '${body.code}' has expired or has already been exchanged.`,
-        );
+      const code = String(body.code);
+      if (this.#spent.has(code)) {
+        return oauthError(400, "invalid_grant", `The code '${code}' has already been exchanged.`);
       }
-      if ((await sha256(String(body.code_verifier ?? ""))) !== signIn.challenge) {
+      const signIn = this.#codes.get(code);
+      // A code WorkOS never issued gets the verifier's error too, as long as one was sent:
+      // there is no challenge for it to match. Seen on the live service.
+      if (!signIn && body.code_verifier === undefined) {
+        return oauthError(400, "invalid_grant", `The code '${code}' has expired or is invalid.`);
+      }
+      if (!signIn || (await sha256(String(body.code_verifier ?? ""))) !== signIn.challenge) {
         // The code is not spent: the right verifier still works afterwards.
         return oauthError(400, "invalid_grant", "Invalid code verifier.");
       }
-      this.#codes.delete(String(body.code));
+      this.#codes.delete(code);
+      this.#spent.add(code);
       const user = this.user(signIn.userId);
       if (!user.emailVerified) {
         const pendingAuthenticationToken = `pending_${this.#id()}`;

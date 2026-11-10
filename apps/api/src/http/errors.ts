@@ -23,9 +23,12 @@ export type ErrorCode =
   | "method_not_allowed"
   /** This build of the app is older than the API accepts. `details.minimumVersion` says what is. */
   | "client_too_old"
-  /** Sign-in: the authorization code is wrong, used or expired. Start the sign-in again. */
+  /** Sign-in: the authorization code was already used. Start the sign-in again. */
   | "invalid_code"
-  /** Sign-in: the PKCE verifier is not the one the sign-in began with. */
+  /**
+   * Sign-in: the PKCE verifier is not the one the sign-in began with, or WorkOS does not know
+   * the code at all, which it reports the same way. Start the sign-in again.
+   */
   | "invalid_code_verifier"
   /** Sign-in: GitHub does not say the person's email address is verified. */
   | "email_not_verified"
