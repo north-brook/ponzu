@@ -1,0 +1,53 @@
+// The fixed lists behind the schema's check constraints, and their types. Nothing here imports
+// Drizzle or a driver, so a client can import a list as a value (see `@ponzu/db/types`).
+
+export const WORKSPACE_KINDS = ["personal", "org"] as const;
+export const REPOSITORY_SELECTIONS = ["all", "selected"] as const;
+export const MEMBER_ROLES = ["admin", "member"] as const;
+export const BASE_STATUSES = ["none", "building", "ready", "failed"] as const;
+export const CLAUDE_ACCOUNT_KINDS = ["subscription", "api_key"] as const;
+export const CLAUDE_ACCOUNT_STATUSES = ["connected", "expired", "revoked"] as const;
+export const DEVICE_PLATFORMS = ["ios", "macos"] as const;
+export const PUSH_ENVIRONMENTS = ["development", "production"] as const;
+export const AUTH_STATE_KINDS = ["github_install", "claude_sign_in"] as const;
+
+export const DESIGN_STATUSES = ["active", "settled"] as const;
+export const AGENT_STATES = ["idle", "waking", "working", "needs_you", "limited"] as const;
+export const PR_STATES = ["draft", "open", "merged", "closed"] as const;
+export const PR_CHECKS = ["none", "running", "failing", "passing"] as const;
+export const OP_KINDS = ["do", "undo", "redo"] as const;
+export const ACTOR_KINDS = ["user", "agent"] as const;
+export const THREAD_ITEM_KINDS = ["message", "comment", "assistant", "tool", "notice"] as const;
+export const EVENT_KINDS = ["message", "answer", "comment", "edit", "check", "review"] as const;
+export const EVENT_PRIORITIES = ["now", "next", "later"] as const;
+export const QUESTION_KINDS = [
+  "question",
+  "permission",
+  "plan",
+  "elicitation",
+  "handoff",
+  "secret",
+] as const;
+export const QUESTION_STATUSES = ["open", "answered", "cancelled"] as const;
+export const SANDBOX_PROVIDERS = ["boat"] as const;
+export const SANDBOX_STATES = ["starting", "awake", "asleep", "gone"] as const;
+
+export const USAGE_KINDS = ["sandbox", "model"] as const;
+export const USAGE_PAYERS = ["ponzu", "own_plan"] as const;
+export const LEDGER_REASONS = ["grant", "use", "topup", "refund", "adjustment"] as const;
+
+export const WEBHOOK_SOURCES = ["github", "stripe", "boat", "workos"] as const;
+
+export type WorkspaceKind = (typeof WORKSPACE_KINDS)[number];
+export type MemberRole = (typeof MEMBER_ROLES)[number];
+export type DesignStatus = (typeof DESIGN_STATUSES)[number];
+export type AgentState = (typeof AGENT_STATES)[number];
+export type PrState = (typeof PR_STATES)[number];
+export type PrChecks = (typeof PR_CHECKS)[number];
+export type OpKind = (typeof OP_KINDS)[number];
+export type ActorKind = (typeof ACTOR_KINDS)[number];
+export type ThreadItemKind = (typeof THREAD_ITEM_KINDS)[number];
+export type EventKind = (typeof EVENT_KINDS)[number];
+export type EventPriority = (typeof EVENT_PRIORITIES)[number];
+export type QuestionKind = (typeof QUESTION_KINDS)[number];
+export type QuestionStatus = (typeof QUESTION_STATUSES)[number];

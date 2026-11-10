@@ -133,6 +133,50 @@ jobs:
           done
           exit $failed
 
+  database:
+    # The cloud database's migrations and queries on a real Postgres. Every
+    # other test runs them on PGlite, which is one connection inside the test
+    # process: there two statements never run at once and the planner never
+    # sees a table fill up, so a lost race or a claim that ignores its limit
+    # passes. packages/db/src/live.ts says what these tests need.
+    name: Database on Postgres
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ponzu_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/ponzu_test
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - name: The migrations apply, and applying them again changes nothing
+        run: bun run db:migrate && bun run db:migrate
+        working-directory: packages/db
+      - name: Races, claims and every kind of statement over real connections
+        # These files skip without the variable, which would pass with them unrun.
+        run: bun test packages/db/src/queries/*.live.test.ts
+        env:
+          PONZU_TEST_DATABASE_URL: ${{ env.DATABASE_URL }}
+
   desktop:
     name: Desktop package
     needs: scope

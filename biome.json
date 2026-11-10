@@ -11,6 +11,7 @@
       "!apps/web/public/demo/seekle.design",
       "!apps/web/components/demo/before",
       "!.context",
+      "!packages/db/migrations",
       "!**/.next",
       "!**/next-env.d.ts",
       "!.release-please-manifest.json",
