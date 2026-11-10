@@ -10,9 +10,12 @@ import {
   deleteMembershipsExcept,
   getRepoInstallationId,
   getUserByWorkosId,
+  listStaleInstallations,
+  listWorkspaceRepos,
   markReposRemovedExcept,
   markWorkspaceUninstalled,
   upsertMembership,
+  wasUninstalled,
 } from "./accounts.ts";
 import { consumeAuthState, createAuthState } from "./auth-states.ts";
 import { readDocSource, writeCheckpoint } from "./checkpoints.ts";
@@ -30,7 +33,14 @@ import {
   releaseGithubTokenRefresh,
   saveGithubUserToken,
 } from "./github-tokens.ts";
-import { countWorkspaceMembers, listWorkspaceMembers, setMemberRole } from "./members.ts";
+import {
+  countWorkspaceMembers,
+  ensureWorkspaceAdmin,
+  listWorkspaceMembers,
+  removeMembership,
+  setMemberRepos,
+  setMemberRole,
+} from "./members.ts";
 import { commitOps, findOps, readOps } from "./ops.ts";
 import { pingDb } from "./ping.ts";
 import { listPresence, touchPresence } from "./presence.ts";
@@ -42,7 +52,7 @@ import { admitSession, endSession, getSessionUser } from "./sessions.ts";
 import { appendThreadItem, listThreadItems, updateThreadItem } from "./thread.ts";
 import { commitReversal, nextRedo, nextUndo } from "./undo.ts";
 import { addLedgerEntry, ledgerBalance, recordUsage } from "./usage.ts";
-import { forgetWebhookDelivery, recordWebhookDelivery } from "./webhooks.ts";
+import { takeWebhookDelivery } from "./webhooks.ts";
 
 describeLive("queries on a real Postgres", ({ db, close }) => {
   afterAll(close);
@@ -295,21 +305,45 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
   test("workspaces, members, install states, deliveries and pull requests", async () => {
     const { workspace, user } = await seedDesign(db);
     const heir = await seedUser(db, "heir");
-    await upsertMembership(db, { workspaceId: workspace.id, userId: user.id, role: "admin" });
-    await upsertMembership(db, { workspaceId: workspace.id, userId: heir.id, role: "member" });
+    const key = { workspaceId: workspace.id, userId: user.id };
+    await upsertMembership(db, { ...key, role: "admin", githubAccess: "member" });
+    await upsertMembership(db, {
+      workspaceId: workspace.id,
+      userId: heir.id,
+      role: "member",
+      githubAccess: "member",
+    });
 
-    expect(
-      await setMemberRole(db, { workspaceId: workspace.id, userId: user.id, role: "member" }),
-    ).toBe("last_admin");
+    expect(await setMemberRole(db, { ...key, role: "member" })).toBe("last_admin");
     expect(await countWorkspaceMembers(db, [workspace.id])).toEqual([
       { workspaceId: workspace.id, members: 2 },
     ]);
-    expect(await deleteMembershipsExcept(db, { userId: user.id, workspaceIds: [] })).toBe(1);
-    expect(await listWorkspaceMembers(db, workspace.id)).toMatchObject([
-      { userId: heir.id, role: "admin" },
-    ]);
-
     const repo = await seedRepo(db, workspace.id, "live/app");
+    expect(
+      await setMemberRepos(db, {
+        ...key,
+        repos: [
+          { githubRepoId: repo.githubRepoId, canPush: true },
+          { githubRepoId: 1, canPush: false },
+        ],
+        complete: true,
+      }),
+    ).toEqual({ missing: [1] });
+    expect(await listWorkspaceRepos(db, key)).toMatchObject([{ id: repo.id, canPush: true }]);
+    expect(await deleteMembershipsExcept(db, { userId: user.id, workspaceIds: [] })).toEqual([
+      workspace.id,
+    ]);
+    expect(await ensureWorkspaceAdmin(db, workspace.id)).toBe(heir.id);
+    expect(await listWorkspaceMembers(db, workspace.id)).toMatchObject([
+      { userId: heir.id, role: "admin", githubAccess: "member" },
+    ]);
+    expect(
+      await removeMembership(db, { installationId: workspace.installationId!, userId: heir.id }),
+    ).toBe(workspace.id);
+    expect(
+      await listStaleInstallations(db, { before: new Date("2999-01-01T00:00:00Z"), limit: 1 }),
+    ).toHaveLength(1);
+
     const branch = { githubRepoId: repo.githubRepoId, branch: "pz/live" };
     await createDesign(db, {
       workspaceId: workspace.id,
@@ -333,6 +367,7 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
     );
     expect(await getRepoInstallationId(db, repo.githubRepoId)).toBe(workspace.installationId);
     expect(await markWorkspaceUninstalled(db, workspace.installationId!)).toBe(workspace.id);
+    expect(await wasUninstalled(db, workspace.installationId!)).toBe(true);
 
     const now = new Date("2026-11-10T12:00:00.456Z");
     const state = await createAuthState(db, {
@@ -345,9 +380,15 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
       { payload: { client: "ios" }, consumedAt: now },
     );
     const delivery = { source: "github" as const, deliveryId: `live-${state.id}`, event: "ping" };
-    expect(await recordWebhookDelivery(db, delivery)).toBe(true);
-    expect(await recordWebhookDelivery(db, delivery)).toBe(false);
-    await forgetWebhookDelivery(db, delivery);
+    const job = {
+      kind: "live_webhook",
+      payload: { event: "ping" },
+      runAt: now,
+      lockedBy: "live",
+      maxAttempts: 1,
+    };
+    expect(await takeWebhookDelivery(db, { delivery, job })).toMatch(/^job_/);
+    expect(await takeWebhookDelivery(db, { delivery, job })).toBeNull();
   }, 60_000);
 
   test("a refused statement is a QueryError that names the constraint", async () => {

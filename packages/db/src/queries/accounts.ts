@@ -1,11 +1,26 @@
-import { and, count, eq, getTableColumns, inArray, isNull, ne, notInArray, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  getTableColumns,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  notInArray,
+  or,
+  sql,
+} from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { newId } from "../ids.ts";
 import {
   claudeAccounts,
+  type GithubAccess,
   type MemberRole,
+  memberRepos,
   memberships,
   repos,
+  uninstalledInstallations,
   users,
   workspaces,
 } from "../schema/index.ts";
@@ -91,6 +106,8 @@ export interface GithubInstallation {
   installedByUserId: string | null;
   /** Whether GitHub says it is suspended. Left out, a reinstall clears it and nothing else does. */
   suspendedAt?: Date | null;
+  /** When this was read from GitHub as the App. Left out, the last time is kept. */
+  reconciledAt?: Date;
 }
 
 /**
@@ -124,6 +141,7 @@ export async function upsertWorkspace(
           installedByUserId: sql`case when ${reinstalled} then excluded.installed_by_user_id else coalesce(${workspaces.installedByUserId}, excluded.installed_by_user_id) end`,
           installedAt: sql`case when ${reinstalled} then now() else ${workspaces.installedAt} end`,
           suspendedAt,
+          ...(installation.reconciledAt ? { reconciledAt: installation.reconciledAt } : {}),
         },
       })
       .returning(),
@@ -170,17 +188,21 @@ export async function getWorkspaceByInstallation(
 }
 
 /**
- * Record GitHub's word that an installation is suspended. Only a workspace Ponzu already has
- * is touched: null when no workspace holds the installation.
+ * Record GitHub's word, read at `reconciledAt`, that an installation is suspended. Only a
+ * workspace Ponzu already has is touched: null when no workspace holds the installation.
  */
 export async function suspendWorkspace(
   db: Db,
-  { installationId, suspendedAt }: { installationId: number; suspendedAt: Date },
+  {
+    installationId,
+    suspendedAt,
+    reconciledAt,
+  }: { installationId: number; suspendedAt: Date; reconciledAt: Date },
 ): Promise<Workspace | null> {
   const [row] = await run(
     db
       .update(workspaces)
-      .set({ suspendedAt })
+      .set({ suspendedAt, reconciledAt })
       .where(eq(workspaces.installationId, installationId))
       .returning(),
   );
@@ -189,14 +211,23 @@ export async function suspendWorkspace(
 
 /**
  * The App was removed from an account: its workspace keeps its row, designs and members but
- * loses the installation, and its repos are marked removed, in one statement. An installation
- * no workspace holds (never seen, or already replaced by a reinstall) changes nothing. Answers
- * the workspace's id, or null.
+ * loses the installation, and its repos are marked removed, in one statement. The installation
+ * is remembered as gone (`wasUninstalled`) even when no workspace holds it (never seen, or
+ * already replaced by a reinstall). Answers the workspace's id, or null.
  */
 export async function markWorkspaceUninstalled(
   db: Db,
   installationId: number,
 ): Promise<string | null> {
+  const remembered = db
+    .$with("remembered")
+    .as(
+      db
+        .insert(uninstalledInstallations)
+        .values({ installationId })
+        .onConflictDoNothing()
+        .returning({ installationId: uninstalledInstallations.installationId }),
+    );
   const uninstalled = db
     .$with("uninstalled")
     .as(
@@ -219,18 +250,60 @@ export async function markWorkspaceUninstalled(
       .returning({ id: repos.id }),
   );
   const [row] = await run(
-    db.with(uninstalled, removed).select({ id: uninstalled.id }).from(uninstalled),
+    db.with(remembered, uninstalled, removed).select({ id: uninstalled.id }).from(uninstalled),
   );
   return row?.id ?? null;
 }
 
+/** Whether GitHub has said this installation is gone (`markWorkspaceUninstalled`). */
+export async function wasUninstalled(db: Db, installationId: number): Promise<boolean> {
+  const rows = await run(
+    db
+      .select({ installationId: uninstalledInstallations.installationId })
+      .from(uninstalledInstallations)
+      .where(eq(uninstalledInstallations.installationId, installationId)),
+  );
+  return rows.length > 0;
+}
+
 /**
- * Record that GitHub says a person can reach a workspace. `role` is used only for a new
- * member: the role is Ponzu's own and a sync must never undo a change an admin made.
+ * Installations Ponzu holds that were last read from GitHub before `before` (or never),
+ * longest ago first: what the scheduled reconcile catches up, a few at a time.
+ */
+export async function listStaleInstallations(
+  db: Db,
+  { before, limit }: { before: Date; limit: number },
+): Promise<number[]> {
+  const rows = await run(
+    db
+      .select({ installationId: workspaces.installationId })
+      .from(workspaces)
+      .where(
+        and(
+          isNotNull(workspaces.installationId),
+          or(isNull(workspaces.reconciledAt), lt(workspaces.reconciledAt, before)),
+        ),
+      )
+      .orderBy(sql`${workspaces.reconciledAt} asc nulls first`, asc(workspaces.installationId))
+      .limit(limit),
+  );
+  return rows.map((row) => row.installationId!);
+}
+
+/**
+ * Record that GitHub says a person can reach a workspace, and how (`githubAccess`, kept as it
+ * was when left out). `role` is used only for a new member: the role is Ponzu's own and a sync
+ * must never undo a change an admin made. The one exception is an owner of the account, who
+ * is always an admin, so nobody can take a workspace from the people GitHub says own it.
  */
 export async function upsertMembership(
   db: Db,
-  membership: { workspaceId: string; userId: string; role: MemberRole },
+  membership: {
+    workspaceId: string;
+    userId: string;
+    role: MemberRole;
+    githubAccess?: GithubAccess;
+  },
 ): Promise<Membership> {
   const [row] = await run(
     db
@@ -238,7 +311,15 @@ export async function upsertMembership(
       .values(membership)
       .onConflictDoUpdate({
         target: [memberships.workspaceId, memberships.userId],
-        set: { syncedAt: sql`now()` },
+        set: {
+          syncedAt: sql`now()`,
+          ...(membership.githubAccess
+            ? {
+                githubAccess: membership.githubAccess,
+                role: sql`case when excluded.github_access = 'owner' then 'admin' else ${memberships.role} end`,
+              }
+            : {}),
+        },
       })
       .returning(),
   );
@@ -256,7 +337,7 @@ export type MemberWorkspace = Pick<
   | "avatarUrl"
   | "installationId"
   | "suspendedAt"
-> & { role: MemberRole };
+> & { role: MemberRole; githubAccess: GithubAccess };
 
 const memberWorkspaceColumns = {
   id: workspaces.id,
@@ -268,6 +349,7 @@ const memberWorkspaceColumns = {
   installationId: workspaces.installationId,
   suspendedAt: workspaces.suspendedAt,
   role: memberships.role,
+  githubAccess: memberships.githubAccess,
 };
 
 /** The workspaces a person belongs to, as GitHub last said, with their role in each. */
@@ -298,62 +380,34 @@ export async function getMemberWorkspace(
 
 /**
  * Drop a person's memberships of every workspace not listed: the other half of syncing with
- * GitHub, for the installations they can no longer reach. Answers how many were dropped.
+ * GitHub, for the installations they can no longer reach. Answers the workspaces they left,
+ * each of which may now need an admin (`ensureWorkspaceAdmin`).
  *
- * A workspace always has an admin. Where the person dropped was its last one, the member who
- * has been there longest becomes admin in the same statement, so no moment and no failure in
- * between leaves the workspace without one.
+ * Their own account's workspace is never one of them: it stays theirs with the App removed
+ * from it, as their designs in it do.
  */
 export async function deleteMembershipsExcept(
   db: Db,
   { userId, workspaceIds }: { userId: string; workspaceIds: string[] },
-): Promise<number> {
-  const dropped = db.$with("dropped").as(
+): Promise<string[]> {
+  const ownAccount = db
+    .select({ id: workspaces.id })
+    .from(workspaces)
+    .innerJoin(users, eq(users.githubUserId, workspaces.githubAccountId))
+    .where(eq(users.id, userId));
+  const dropped = await run(
     db
       .delete(memberships)
       .where(
         and(
           eq(memberships.userId, userId),
           workspaceIds.length > 0 ? notInArray(memberships.workspaceId, workspaceIds) : undefined,
+          notInArray(memberships.workspaceId, ownAccount),
         ),
       )
-      .returning({ workspaceId: memberships.workspaceId, role: memberships.role }),
+      .returning({ workspaceId: memberships.workspaceId }),
   );
-  // Every part of a statement sees the table as it was before the delete, so the person being
-  // dropped is excluded by name rather than by being gone.
-  const heirs = db.$with("heirs").as(
-    db
-      .selectDistinctOn([memberships.workspaceId], {
-        workspaceId: memberships.workspaceId,
-        userId: memberships.userId,
-      })
-      .from(memberships)
-      .innerJoin(
-        dropped,
-        and(eq(dropped.workspaceId, memberships.workspaceId), eq(dropped.role, "admin")),
-      )
-      .where(
-        and(
-          ne(memberships.userId, userId),
-          sql`not exists (select 1 from ${memberships} as other where other.workspace_id = ${memberships.workspaceId} and other.role = 'admin' and other.user_id <> ${userId})`,
-        ),
-      )
-      .orderBy(memberships.workspaceId, memberships.createdAt, memberships.userId),
-  );
-  const promoted = db.$with("promoted").as(
-    db
-      .update(memberships)
-      .set({ role: "admin" })
-      .from(heirs)
-      .where(
-        and(eq(memberships.workspaceId, heirs.workspaceId), eq(memberships.userId, heirs.userId)),
-      )
-      .returning({ userId: memberships.userId }),
-  );
-  const [row] = await run(
-    db.with(dropped, heirs, promoted).select({ count: count() }).from(dropped),
-  );
-  return row?.count ?? 0;
+  return dropped.map((row) => row.workspaceId);
 }
 
 export interface GithubRepo {
@@ -418,12 +472,26 @@ export async function markReposRemovedExcept(
   return removed.length;
 }
 
-/** The repos a workspace can open now, most recently pushed first. */
-export function listWorkspaceRepos(db: Db, workspaceId: string): Promise<Repo[]> {
+/**
+ * The repos of a workspace one member can open now (`member_repos`), most recently pushed
+ * first, with whether they can push to each.
+ */
+export function listWorkspaceRepos(
+  db: Db,
+  { workspaceId, userId }: { workspaceId: string; userId: string },
+): Promise<(Repo & { canPush: boolean })[]> {
   return run(
     db
-      .select()
+      .select({ ...getTableColumns(repos), canPush: memberRepos.canPush })
       .from(repos)
+      .innerJoin(
+        memberRepos,
+        and(
+          eq(memberRepos.repoId, repos.id),
+          eq(memberRepos.workspaceId, repos.workspaceId),
+          eq(memberRepos.userId, userId),
+        ),
+      )
       .where(and(eq(repos.workspaceId, workspaceId), isNull(repos.removedAt)))
       .orderBy(sql`${repos.pushedAt} desc nulls last`, repos.fullName),
   );

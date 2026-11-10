@@ -67,6 +67,15 @@ test("a claim takes due jobs, oldest first, and counts the attempt", async () =>
   expect(await claimJobs(db, { worker: "w3" })).toEqual([]);
 });
 
+test("a claim can say what time it is, for jobs timed by the caller's clock", async () => {
+  const at = new Date("2030-01-01T00:00:00Z");
+  const job = await enqueueJob(db, { kind: "later", runAt: at });
+
+  expect(await claimJobs(db, { worker: "w1" })).toEqual([]);
+  expect(await claimJobs(db, { worker: "w1", now: new Date(at.getTime() - 1) })).toEqual([]);
+  expect(await claimJobs(db, { worker: "w1", now: at })).toMatchObject([{ id: job!.id }]);
+});
+
 test("workers claiming at once take different jobs", async () => {
   for (let i = 0; i < 6; i++) await enqueueJob(db, { kind: "work" });
 

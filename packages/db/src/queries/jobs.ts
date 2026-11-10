@@ -57,6 +57,9 @@ export async function enqueueJob(db: Db, job: NewJob): Promise<Job | null> {
  *
  * `for update skip locked` lets several workers claim at once: each takes different jobs and
  * none waits for another.
+ *
+ * `now` is what "due" is measured against, for a caller that sets `runAt` by its own clock;
+ * Postgres's `now()` when left out. Locks always run on Postgres's.
  */
 export async function claimJobs(
   db: Db,
@@ -64,7 +67,8 @@ export async function claimJobs(
     worker,
     limit = 10,
     lockSeconds = JOB_LOCK_SECONDS,
-  }: { worker: string; limit?: number; lockSeconds?: number },
+    now,
+  }: { worker: string; limit?: number; lockSeconds?: number; now?: Date },
 ): Promise<Job[]> {
   // In `with`, so that it runs once. As a subquery of the update it is run again for each
   // row whenever the planner joins by nested loop, and each run locks the next `limit` rows.
@@ -75,7 +79,7 @@ export async function claimJobs(
       .where(
         and(
           waiting,
-          lte(jobs.runAt, sql`now()`),
+          lte(jobs.runAt, now ?? sql`now()`),
           lt(jobs.attempts, jobs.maxAttempts),
           free(lockSeconds),
         ),

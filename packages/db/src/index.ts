@@ -15,6 +15,7 @@ export {
   getUserByWorkosId,
   getWorkspace,
   getWorkspaceByInstallation,
+  listStaleInstallations,
   listUserWorkspaces,
   listWorkspaceRepos,
   type Membership,
@@ -30,6 +31,7 @@ export {
   upsertUser,
   upsertWorkspace,
   type Workspace,
+  wasUninstalled,
 } from "./queries/accounts.ts";
 export { type AuthState, consumeAuthState, createAuthState } from "./queries/auth-states.ts";
 export {
@@ -80,8 +82,11 @@ export {
 } from "./queries/jobs.ts";
 export {
   countWorkspaceMembers,
+  ensureWorkspaceAdmin,
   listWorkspaceMembers,
+  removeMembership,
   type SetRoleResult,
+  setMemberRepos,
   setMemberRole,
   type WorkspaceMember,
   workspaceHasAdmin,
@@ -144,5 +149,5 @@ export {
   type NewUsageEvent,
   recordUsage,
 } from "./queries/usage.ts";
-export { forgetWebhookDelivery, recordWebhookDelivery } from "./queries/webhooks.ts";
+export { takeWebhookDelivery } from "./queries/webhooks.ts";
 export * from "./schema/index.ts";
