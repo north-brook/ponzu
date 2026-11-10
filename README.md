@@ -154,14 +154,14 @@ Ponzu is a set of packages you can build into your own product:
 | `@ponzu/tools` | The agent tools as transport-agnostic `{ name, schema, handler }` |
 | `@ponzu/mcp` | Those tools over MCP (stdio and streamable HTTP) |
 | `@ponzu/render` | Screenshots, frame-by-frame animation recordings, motion loops and a lint pass. Uses Chromium, an Electron window, or your own renderer |
-| `@ponzu/react` | `<Canvas>`. Renders artboards with the host page's own engine, in shadow roots |
+| `@ponzu/canvas` | `<Canvas>`. Renders artboards with the host page's own engine, in shadow roots |
 | `@ponzu/server` | The local host behind `ponzu serve` |
 
 On a big page the canvas draws each board as cheaply as it can be seen: boards drawn small show as pictures (their looping motion as short videos over them), images load as copies sized to how they're drawn, and boards off screen skip rendering. A source that serves pictures provides `snapshotUrl` (and `loopsUrl`); without it every board is live DOM. `ponzu serve` makes pictures, loops and image copies in the background and keeps them in `~/.ponzu/cache` (`PONZU_HOME` moves it), trimmed to a few GB, least recently used first.
 
 ```tsx
-import { Canvas, MemorySource } from "@ponzu/react";
-import "@ponzu/react/styles.css";
+import { Canvas, MemorySource } from "@ponzu/canvas";
+import "@ponzu/canvas/styles.css";
 
 <Canvas source={new MemorySource(doc, (next) => save(next))} theme="light" />
 ```
@@ -198,7 +198,7 @@ The Mac app and the `ponzu` package send pseudonymous usage to the Ponzu team: w
 
 Agents can also tell us how Ponzu is working for them with `send_feedback`. That's the one event with words in it, and it's about Ponzu, not your work.
 
-Turn all of it off with `ponzu telemetry off`, or set `PONZU_TELEMETRY=0` or `DO_NOT_TRACK=1`. Nothing is sent in CI. Only release builds report: Ponzu built from source, or a fork, has no key and sends nothing. The packages you embed (`@ponzu/tools`, `@ponzu/react` and the rest) send nothing on their own; a host opts in by passing a `telemetry` to its workspace.
+Turn all of it off with `ponzu telemetry off`, or set `PONZU_TELEMETRY=0` or `DO_NOT_TRACK=1`. Nothing is sent in CI. Only release builds report: Ponzu built from source, or a fork, has no key and sends nothing. The packages you embed (`@ponzu/tools`, `@ponzu/canvas` and the rest) send nothing on their own; a host opts in by passing a `telemetry` to its workspace.
 
 ## Develop
 

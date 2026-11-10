@@ -23,7 +23,7 @@ design's `notes/brief.md`.
 
 `ios/` is generated (`expo prebuild`) and never committed.
 
-Code here may import `@ponzu/core`, never `@ponzu/react`, `@ponzu/render` or
+Code here may import `@ponzu/core`, never `@ponzu/canvas`, `@ponzu/render` or
 `@ponzu/server`, which need a browser or Node. `lib/polyfills.ts`, imported
 first, gives core what Hermes lacks.
 
@@ -276,7 +276,7 @@ that changes native code waits for its build to reach TestFlight.
 
 Release Please releases the phone only for changes under `apps/mobile`, but
 the phone also bundles `packages/core`, and the canvas and icons import
-`packages/react`'s and `packages/render`'s source. `shared.yml` covers those:
+`packages/canvas`'s and `packages/render`'s source. `shared.yml` covers those:
 a push to `main` touching them (or `patches/**` or `bun.lock`) publishes
 `main` as an update on the same `production` channel, and never builds. A
 native change there reaches no phone until the next phone release builds
