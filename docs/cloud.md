@@ -436,12 +436,23 @@ one-minute cron finishes anything a function did not (`apps/api/src/sandboxes`).
 - **The database decides.** A design has at most one `sandboxes` row that is not `gone`
   (`waking`, `awake`, `stopping`, `asleep` or `failed`, with when it got there and why it
   failed), and each move holds to the states it moves from, so of two function instances
-  racing only one makes it. A row of the next generation replaces a lost one; the design and
-  the generation are the provider's idempotency key, so a create sent again after a crash
-  finds the sandbox the first made. The design's head shows `waking` at once, and
-  `agent_blocker` says why a design waits: `claude_not_connected`, `claude_expired`,
-  `sandbox_busy` (out of starts: the job waits as long as the provider says) or
+  racing only one makes it. A wake claims the row before it creates or starts anything: `waking`
+  records the wake job that holds it (`waking_by`), only that job moves it on, and another may
+  take it over only once it has sat unmoved for six minutes. A wake that loses the claim does
+  nothing, and when the sandbox is awake every runner token of the design but the one its
+  environment carries is revoked. A row of the next generation replaces a lost one; the design
+  and the generation are the provider's idempotency key, so a create sent again after a crash
+  finds the sandbox the first made. A wake that finds the sandbox `stopping` waits for the stop
+  to land before it resumes it (Known constraints). The design's head shows `waking` at once,
+  and `agent_blocker` says why a design waits: `claude_not_connected`, `claude_expired`,
+  `claude_owner_left` (whose Claude it runs on is no longer in the workspace), `sandbox_busy`
+  (out of starts: the job waits as long as the provider says, or past the limits below) or
   `sandbox_failed`.
+- **Limits.** Until billing exists, the claim also counts the sandboxes waking or awake in the
+  design's workspace (`PONZU_SANDBOX_MAX_PER_WORKSPACE`, 5) and for its owner
+  (`PONZU_SANDBOX_MAX_PER_OWNER`, 3), in the same statement; a wake past either waits as
+  `sandbox_busy` and is tried again. The count is the statement's view, so claims for different
+  designs landing in the same instant can pass it by a few; it bounds the bill, it is not a quota.
 - **The environment** is `PONZU_API_URL`, `PONZU_DESIGN_ID`, a runner token issued for it
   (hashed; good for 30 days and renewed with a day left) and exactly one Claude credential,
   the one the design runs on, opened from the vault. It goes only into the provider's `env`.
@@ -456,9 +467,16 @@ one-minute cron finishes anything a function did not (`apps/api/src/sandboxes`).
   safety net. A runner unheard from for 90 seconds is dead: the sandbox is stopped and woken on
   a new environment, and after three restarts in a row with nothing heard it is `failed`.
 - **The rest of the sweep.** A settled design's sandbox is destroyed and its runner tokens
-  revoked; a design sandbox at the provider that no row knows (labels `ponzu=design`,
-  `design=<id>`) is destroyed; a row left in `waking` or `stopping` for six minutes is set to
-  what the provider says, and woken if its feed still has work.
+  revoked, and so is any sandbox, asleep or awake, whose environment holds a Claude credential
+  that was disconnected or whose owner has left the workspace. A design sandbox at the provider
+  that no row knows is destroyed; a row left in `waking` or `stopping` for six minutes is set to
+  what the provider says, and woken if its feed still has work. One left `waking` before the
+  provider answered its create is failed, and whatever the provider made for it, found by its
+  labels, destroyed.
+- **Whose sandboxes.** Every deployment shares the boat.dev account, so every sandbox carries
+  `scope=<a hash of the database it belongs to>` beside `ponzu=design` (with `design=<id>` and
+  `generation=<n>`) or `ponzu=claude-sign-in`, and a sweep lists and destroys only its own
+  scope's. A sandbox with another scope, or none, is never touched.
 
 ### The runner
 
@@ -648,8 +666,14 @@ secret's name. A Scratch design has no repo, so it has nowhere to keep one.
   /v1/claude/sign-ins` answers the claude.ai address, and `POST /v1/claude/sign-ins/:id/code`
   writes the pasted code into the sandbox as a file, reads the token back as one, seals it and
   destroys the sandbox. A sign-in is good for ten minutes and one code (`claude_code_invalid`,
-  `claude_sign_in_expired`, `claude_sign_in_used`). Disconnecting destroys the credential, keeps
-  the row (`revoked`), and stops the sandboxes awake on it.
+  `claude_sign_in_expired`, `claude_sign_in_used`). Each sign-in is a machine Ponzu pays for, so a
+  person has one open at a time (a new one replaces the last, and its sandbox is destroyed) and
+  starts at most five an hour (429 `rate_limited`). Disconnecting destroys the credential, keeps
+  the row (`revoked`), and destroys every sandbox whose environment may hold it, asleep or awake:
+  a stopped sandbox keeps its environment at the provider until its disk goes. The next wake
+  starts the design over from its branch. A design whose owner leaves the workspace stops
+  running on their Claude the same way: it does not wake (`claude_owner_left`), and the sweep
+  destroys its sandbox.
 - **Repo secrets** are stored encrypted per repo and injected as environment
   variables at start.
 

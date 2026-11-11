@@ -177,9 +177,13 @@ export async function sweepSignIns(
   deps: Pick<ClaudeDeps, "sandbox" | "clock" | "config">,
 ): Promise<number> {
   const now = deps.clock.now();
-  const listed = await deps.sandbox.list({ labels: signInSandboxes(deps) });
+  const labels = signInSandboxes(deps);
+  const listed = await deps.sandbox.list({ labels });
   const over = listed.filter(
-    (sandbox) => sandbox.state !== "gone" && Number(sandbox.labels.expires) < now,
+    (sandbox) =>
+      sandbox.state !== "gone" &&
+      sandbox.labels.scope === labels.scope &&
+      Number(sandbox.labels.expires) < now,
   );
   await Promise.all(over.map((sandbox) => deps.sandbox.destroy(sandbox.id)));
   return over.length;

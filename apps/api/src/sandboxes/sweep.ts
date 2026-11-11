@@ -236,13 +236,15 @@ async function putToSleep(
  * while its destroy failed, or a sandbox a lost create made. Answers how many.
  */
 async function destroyOrphans(deps: JobDeps): Promise<number> {
-  const listed = await deps.sandbox.list({ labels: designSandboxes(deps.config.sandbox.scope) });
+  const { scope } = deps.config.sandbox;
+  const listed = await deps.sandbox.list({ labels: designSandboxes(scope) });
   const now = new Date(deps.clock.now());
   const orphans: string[] = [];
   await Promise.all(
     listed.map(async (sandbox) => {
       const designId = sandbox.labels.design;
-      if (!designId || sandbox.state === "gone") return;
+      // Checked again here: another deployment's sandbox is never this sweep's to destroy.
+      if (!designId || sandbox.state === "gone" || sandbox.labels.scope !== scope) return;
       if (await isSandboxKnown(deps.db, { designId, providerId: sandbox.id, now })) return;
       orphans.push(sandbox.id);
     }),

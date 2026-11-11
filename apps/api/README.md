@@ -69,6 +69,14 @@ Hono preset treats both as entry points.
 The code runs on Node and is tested on Bun. `src/` outside the tests may use only what Node
 has: no `Bun.…`, no DOM. `bun run typecheck` (and CI) checks exactly that.
 
+**The sandbox image.** Designs' sandboxes are created from `PONZU_SANDBOX_SNAPSHOT`, and a
+deployment that wakes them must set it; unset, every wake shows `sandbox_failed`. The image's
+runner must speak this API's runner protocol, so bake it (`bun apps/runner/image/bake.ts`) from
+a commit at least as new as the API's protocol: an image from before `claimId` (migration
+0008) cannot claim its events. The one the sandbox lifecycle was proven with end to end is
+`ponzu-runner-6041787d9d11`. Every deployment shares the boat.dev account; the sweeps keep to
+the sandboxes labelled with their own database (`SandboxConfig.scope`).
+
 ## Adding a route
 
 1. **Where.** A new area is `src/routes/<area>.ts` exporting a `new Hono<AppEnv>()` sub-app,
