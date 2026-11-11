@@ -207,6 +207,8 @@
   --dur-hover: 120ms;
   --dur-pop: 140ms;
   --dur-pane: 220ms;
+  /* How long the pointer rests on a pane's edge before its line shows: sweeping past shows nothing. */
+  --dur-linger: 300ms;
   --beat: 1.2s;
 }
 

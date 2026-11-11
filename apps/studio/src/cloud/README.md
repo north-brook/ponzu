@@ -57,6 +57,20 @@ page, position, zoom and selection. The tab fits whatever width the middle has: 
 files in one column at a reading measure below 1080, the board's two columns from there
 (`Columns` in `pr-tab/pull-request-view.tsx`).
 
+The sidebar and the rail resize by dragging their edge with the canvas. The panes are shadcn's
+Resizable (`ui/resizable.tsx`, react-resizable-panels) in pixels, with their limits in
+`window/panes.ts`; `AppWindow` takes the widths to open them at and hands back a new one (the
+window keeps it in `app/ui-state.ts`). The edge is the gutter between pane and canvas, so it never
+covers either. The toggles collapse and expand the same panels, easing while `data-pane-motion` is
+on the window; a drag never eases. Anything that lines up with a pane's edge (the chrome's blocks)
+reads its width from `--pane-sidebar` or `--pane-rail`, which a drag writes in the frame the panes
+move in, and eases with the `pane-motion` utility beside a `transition-[…]` naming what moves:
+`pane-motion` eases only while `data-pane-motion` is on, so nothing tagged with it trails a drag.
+Dragging one edge holds the other pane still (its panel disabled) and stops where the canvas
+reaches 400. Whenever the window lays the panes out itself (opening, a toggle, a window resize),
+each open pane takes its remembered width, or in a window too small for both a share of the
+shortfall (`fitPanes`); what's remembered changes only when the person moves an edge.
+
 ### The window chrome
 
 The chrome departs from the boards on purpose, at the founder's request: it draws no Ponzu

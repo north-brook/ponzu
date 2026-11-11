@@ -35,7 +35,9 @@ function drift(frames: Frame[], clock: number[], key: keyof Frame): number {
 function duration(frames: Frame[], key: keyof Frame): number {
   const end = frames.at(-1)![key];
   const start = frames.findIndex((f) => f[key] !== frames[0]![key]);
-  const rest = frames.findIndex((f, i) => i >= start && Math.abs(f[key] - end) < 0.01);
+  // Within a layout unit (1/64px) of where it ends: the panes are laid out as shares of the
+  // window, and the last unit can land with the easing's end rather than its last frame.
+  const rest = frames.findIndex((f, i) => i >= start && Math.abs(f[key] - end) <= 1 / 64 + 0.001);
   return frames[rest]!.t - frames[start - 1]!.t;
 }
 
@@ -97,8 +99,8 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
       const widths = sidebar.map((f) => f.titleText);
       expect(Math.max(...widths) - Math.min(...widths)).toBeLessThanOrEqual(0.5);
       // The right side holds still.
-      expect(drift(sidebar, clock, "thread")).toBe(0);
-      expect(drift(sidebar, clock, "right")).toBe(0);
+      expect(drift(sidebar, clock, "thread")).toBeLessThanOrEqual(1 / 64);
+      expect(drift(sidebar, clock, "right")).toBeLessThanOrEqual(1 / 64);
       times.push(duration(sidebar, "left"));
 
       const rail = await sampleToggle(page, THREAD);
@@ -108,10 +110,11 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
       ).toBeGreaterThanOrEqual(5);
       gaps.push(gap(rail));
       // The cluster's divider keeps to the cluster, which holds still at the window's edge.
-      expect(drift(rail, railClock, "railDivider")).toBe(0);
-      expect(drift(rail, railClock, "left")).toBe(0);
-      expect(drift(rail, railClock, "tab")).toBe(0);
-      expect(drift(rail, railClock, "thread")).toBe(0);
+      expect(drift(rail, railClock, "railDivider")).toBeLessThanOrEqual(1 / 64);
+      // (Within a layout unit, 1/64px: the panes are laid out as shares of the window.)
+      expect(drift(rail, railClock, "left")).toBeLessThanOrEqual(1 / 64);
+      expect(drift(rail, railClock, "tab")).toBeLessThanOrEqual(1 / 64);
+      expect(drift(rail, railClock, "thread")).toBeLessThanOrEqual(1 / 64);
       times.push(duration(rail, "right"));
       if (state === "opening") {
         // Open, the tabs' divider is on the sidebar's edge.
@@ -120,15 +123,24 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
       }
     }
     // Left and right run on one clock: everything that moves with a pane has the same duration
-    // and easing.
-    const clocks = await page.evaluate(() =>
-      ["#sidebar", "#thread", "main", "header > div:first-child", "[data-chrome-title]"].map(
-        (s) => {
-          const cs = getComputedStyle(document.querySelector(s)!);
-          return `${cs.transitionDuration.split(",")[0]} ${cs.transitionTimingFunction.split(",")[0]}`;
-        },
-      ),
-    );
+    // and easing while a toggle eases (`data-pane-motion`; at any other time, a drag included,
+    // nothing eases). The panes themselves are the resizable panels.
+    const clocks = await page.evaluate(() => {
+      const frame = document.querySelector("header")!.parentElement!;
+      frame.setAttribute("data-pane-motion", "");
+      const read = [
+        "#sidebar-pane",
+        "#thread-pane",
+        "main",
+        "header > div:first-child",
+        "[data-chrome-title]",
+      ].map((s) => {
+        const cs = getComputedStyle(document.querySelector(s)!);
+        return `${cs.transitionDuration.split(",")[0]} ${cs.transitionTimingFunction.split(",")[0]}`;
+      });
+      frame.removeAttribute("data-pane-motion");
+      return read;
+    });
     expect(new Set(clocks).size).toBe(1);
     // And measured, they take the same time: within a frame at either end. Only where the machine
     // drew frames steadily; a busy one (CI) can stall long enough to say nothing.
@@ -171,7 +183,7 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
     await page.click(SIDEBAR);
     const opened = await at();
     expect(opened.title.width).toBe(0);
-    expect(opened.divider).toBe(opened.main);
+    expect(Math.abs(opened.divider - opened.main)).toBeLessThanOrEqual(1 / 64);
     // The create page: nothing past the toggle, and no divider.
     await open("create");
     expect(await page.$$eval("header [data-chrome-divider]", (els) => els.length)).toBe(0);
