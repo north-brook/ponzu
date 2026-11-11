@@ -63,6 +63,21 @@ test("a turn's events reach PostHog as one batch on flush, under the project's t
   await telemetry.shutdown();
 });
 
+test("every event says which runner, and so which image, its turn ran on", async () => {
+  const ph = sink();
+  const telemetry = posthogTelemetry(
+    { key: "phc_test", host: "https://ph.test", content: false },
+    { fetch: ph.fetch, client: "runner/0.1.0+ponzu-runner-2de5aff8d903" },
+  );
+  telemetry.capture(trace("usr_ada"));
+  await telemetry.flush();
+  expect(ph.batches[0]!.body.batch.map((e) => e.properties.ponzu_runner)).toEqual([
+    "runner/0.1.0+ponzu-runner-2de5aff8d903",
+    "runner/0.1.0+ponzu-runner-2de5aff8d903",
+  ]);
+  await telemetry.shutdown();
+});
+
 test("a trace about no one is keyed by its own id", async () => {
   const ph = sink();
   const telemetry = posthogTelemetry(

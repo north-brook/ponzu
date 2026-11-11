@@ -2,6 +2,7 @@ import { getDesign, getEventOrigins } from "@ponzu/db";
 import type { TurnUsage } from "@ponzu/runner/protocol";
 import { stableUuid } from "../analytics/analytics.ts";
 import type { Deps } from "../deps/index.ts";
+import { runnerImage } from "./client.ts";
 
 /*
  * A design's turns in product analytics: "turn started" and "turn finished", from what the
@@ -16,6 +17,8 @@ export async function reportTurns(
   deps: Pick<Deps, "db" | "analytics">,
   designId: string,
   turns: TurnUsage[],
+  /** What the runner that reported them said it is (`X-Ponzu-Client`). */
+  client: string | null = null,
 ): Promise<void> {
   const reported = turns.filter((turn) => turn.turn);
   if (reported.length === 0) return;
@@ -57,6 +60,8 @@ export async function reportTurns(
         cache_read_tokens: sum((model) => model.cacheReadTokens),
         cache_write_tokens: sum((model) => model.cacheWriteTokens),
         cost_usd: sum((model) => model.costUsd),
+        runner: client,
+        image: runnerImage(client),
       },
       { ...options, timestamp: new Date(at), uuid: stableUuid(`${id}/finished`) },
     );
