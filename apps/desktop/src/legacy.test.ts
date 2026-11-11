@@ -391,7 +391,7 @@ function snapshot(root: string): Record<string, string> {
   return seen;
 }
 
-test("Ponzu Preview and a development build never clean up after 1.x; only a release does", async () => {
+test("Ponzu Dev and Ponzu Local never clean up after 1.x; only a release does", async () => {
   // A home 1.x left with its server gone, which a release would clean up.
   const m = machine();
   m.agents();
@@ -417,7 +417,7 @@ test("Ponzu Preview and a development build never clean up after 1.x; only a rel
   put(join(support, "Ponzu/Local State"), "1.x's own");
   const before = snapshot(m.home);
 
-  for (const build of [configFor(true, {}, false, "preview"), configFor(false, {})]) {
+  for (const build of [configFor(true, {}, false, "dev"), configFor(false, {})]) {
     const record = join(support, build.appName, "legacy-cleanup.json");
     expect(await removeLegacyFor(build, m.host, record, "2.0.0")).toBeNull();
     expect(m.calls).toEqual([]);

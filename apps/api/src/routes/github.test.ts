@@ -327,11 +327,11 @@ describe("GET /v1/github/setup", () => {
     expect(await response.text()).toContain("result=failed");
   });
 
-  test("the way back is to the app that asked: Ponzu Preview's links for Ponzu Preview", async () => {
+  test("the way back is to the app that asked: Ponzu Dev's links for Ponzu Dev", async () => {
     const dee = await t.signInAs({ login: "dee" });
     const asked = await post("/v1/github/install-link", dee, {
       client: "mac",
-      scheme: "ponzu-preview",
+      scheme: "ponzu-dev",
     });
     const state = new URL((await asked.json()).url).searchParams.get("state")!;
     const installation = installOnOrg("previewco", [dee]);
@@ -342,9 +342,30 @@ describe("GET /v1/github/setup", () => {
 
     const [workspace] = await listUserWorkspaces(t.db, dee.userId);
     expect(page).toContain(
+      `href="ponzu-dev://github/setup?result=installed&amp;workspace=${workspace!.id}"`,
+    );
+    expect(page).not.toContain("ponzu://");
+  });
+
+  test("a Ponzu Preview built before the rename still asks with its own scheme, and gets it", async () => {
+    const gus = await t.signInAs({ login: "gus" });
+    const asked = await post("/v1/github/install-link", gus, {
+      client: "mac",
+      scheme: "ponzu-preview",
+    });
+    const state = new URL((await asked.json()).url).searchParams.get("state")!;
+    const installation = installOnOrg("oldpreviewco", [gus]);
+
+    const page = await (
+      await land({ installation_id: String(installation.id), setup_action: "install", state })
+    ).text();
+
+    const [workspace] = await listUserWorkspaces(t.db, gus.userId);
+    expect(page).toContain(
       `href="ponzu-preview://github/setup?result=installed&amp;workspace=${workspace!.id}"`,
     );
     expect(page).not.toContain("ponzu://");
+    expect(page).not.toContain("ponzu-dev://");
   });
 
   test("an app's scheme survives GitHub failing, and the query can't choose one", async () => {
@@ -373,7 +394,7 @@ describe("GET /v1/github/setup", () => {
 });
 
 describe("the schemes an install link may name", () => {
-  test("Ponzu's three, recorded in the state; anything else is refused", async () => {
+  test("Ponzu's, Ponzu Dev's and Ponzu Preview's (Ponzu Dev's earlier name), recorded in the state; anything else is refused", async () => {
     const fay = await t.signInAs({ login: "fay" });
     for (const scheme of ["ponzu", "ponzu-preview", "ponzu-dev"]) {
       const response = await post("/v1/github/install-link", fay, { client: "mac", scheme });
@@ -410,6 +431,10 @@ describe("the schemes an install link may name", () => {
     const page = renderSetupPage({ kind: "pending" }, "javascript" as never);
     expect(page).toContain('href="ponzu://github/setup?result=pending"');
     expect(page).not.toContain("javascript");
+    // Each scheme on the list is its own way back.
+    expect(renderSetupPage({ kind: "requested" }, "ponzu-dev")).toContain(
+      'href="ponzu-dev://github/setup?result=requested"',
+    );
     expect(renderSetupPage({ kind: "requested" }, "ponzu-preview")).toContain(
       'href="ponzu-preview://github/setup?result=requested"',
     );

@@ -58,6 +58,15 @@ export function usableWorkspaces(workspaces: MeWorkspace[]): MeWorkspace[] {
   return workspaces.filter((workspace) => workspace.installed && !workspace.suspended);
 }
 
+/** The workspace the window shows: the one last chosen while it is usable, else the first. */
+export function shownWorkspace(
+  workspaces: MeWorkspace[],
+  chosenId: string | null,
+): MeWorkspace | null {
+  const usable = usableWorkspaces(workspaces);
+  return usable.find((w) => w.id === chosenId) ?? usable[0] ?? null;
+}
+
 /** `north-brook/ponzu` as the UI's repo. */
 export function toRepo(id: string, fullName: string): Repo {
   const slash = fullName.indexOf("/");

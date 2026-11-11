@@ -1,8 +1,9 @@
-import { ArrowDown01Icon, ArrowUpRight01Icon } from "@hugeicons/core-free-icons";
+import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
 import type { Workspace } from "../model.ts";
 import { Avatar } from "../ui/avatar.tsx";
 import { Button } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
+import { ExternalLink } from "../ui/external-link.tsx";
 import { Icon } from "../ui/icon.tsx";
 import { GithubMark } from "../ui/marks.tsx";
 import { Menu, MenuContent, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "../ui/menu.tsx";
@@ -57,14 +58,9 @@ export function MembersSection({
         <Row
           leading={<GithubMark size={18} className="text-ink" />}
           trailing={
-            <button
-              type="button"
-              onClick={onManage}
-              className="flex cursor-default items-center gap-1 rounded-4 text-12 text-muted outline-none transition-colors duration-(--dur-hover) focus-ring hover:text-ink"
-            >
+            <ExternalLink onClick={onManage} className="gap-1 text-12">
               Manage
-              <Icon icon={ArrowUpRight01Icon} size={11} stroke={2} className="text-icon-soft" />
-            </button>
+            </ExternalLink>
           }
         >
           <TwoLine

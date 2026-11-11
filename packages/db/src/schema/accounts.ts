@@ -262,6 +262,12 @@ export const repos = pgTable(
     /** When `ideas` were last written, an empty list included. Null: never. */
     ideasGeneratedAt: instant("ideas_generated_at"),
     /**
+     * Which way of making ideas wrote `ideas` (the API's `IDEAS_VERSION`; 0, before there was
+     * one). An empty list an earlier way wrote is made again at the next ask, push or not: a
+     * later way may find ideas where it found none.
+     */
+    ideasVersion: integer("ideas_version").notNull().default(0),
+    /**
      * When an instance last took on generating them. It holds the work for one instance at a
      * time, and is not taken again for a while after, whether that generation ended or not.
      */

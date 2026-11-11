@@ -1,9 +1,8 @@
-import { ArrowUpRight01Icon } from "@hugeicons/core-free-icons";
 import type { DesignAccess, DesignMember, Repo } from "../model.ts";
 import { Avatar } from "../ui/avatar.tsx";
 import { cn } from "../ui/cn.ts";
+import { ExternalLink } from "../ui/external-link.tsx";
 import { FadeScroll } from "../ui/fade-scroll.tsx";
-import { Icon } from "../ui/icon.tsx";
 import { GithubMark } from "../ui/marks.tsx";
 import { PopoverContent } from "../ui/popover.tsx";
 
@@ -47,17 +46,12 @@ export function SharePopover({
     >
       <div className="flex flex-col gap-[7px] px-4 pt-4 pb-2">
         <h2 className="m-0 font-semibold text-14">Share {designName}</h2>
-        <button
-          type="button"
-          onClick={onOpenRepo}
-          className="-mx-1 flex cursor-default items-center gap-1.5 self-start rounded-6 px-1 text-12 text-muted outline-none transition-colors duration-(--dur-hover) focus-ring hover:bg-hover"
-        >
+        <ExternalLink onClick={onOpenRepo} stroke={1.5} className="self-start text-12">
           <GithubMark size={12} />
           <span className="font-mono text-11">
             {repo.owner}/{repo.name}
           </span>
-          <Icon icon={ArrowUpRight01Icon} size={11} stroke={1.5} className="text-icon-soft" />
-        </button>
+        </ExternalLink>
       </div>
       <FadeScroll>
         <ul

@@ -3,12 +3,10 @@ import type { z } from "zod";
 import type { Deps } from "../deps/index.ts";
 import type { Model, StructuredAnswer } from "../deps/model.ts";
 import type { Logger } from "../http/log.ts";
-import { checkIdeas, IDEAS_SYSTEM_PROMPT, IdeasOutput, ideasPrompt } from "./prompt.ts";
+import { checkIdeas, IdeasOutput, type IdeasRequest, ideasRequest } from "./prompt.ts";
+import { readRepository } from "./read-repo.ts";
 
 type IdeasAnswer = z.infer<typeof IdeasOutput>;
-
-import { readRepository } from "./read-repo.ts";
-import { isEmpty } from "./snapshot.ts";
 
 /*
  * A repo's ideas (docs/cloud.md, "Ideas"): four prompts to start a design from, made for the
@@ -17,8 +15,19 @@ import { isEmpty } from "./snapshot.ts";
  * `generating` at once and asks again. One instance at a time makes them (the claim in the
  * row), within a workspace's allowance, and every failure is quiet: nothing new is kept and
  * the screen shows no ideas. A failure to get an answer (GitHub or the model down, the
- * deadline) is tried again an hour later; answers turned away twice wait for a push.
+ * deadline) is tried again an hour later; answers turned away twice wait for a push, or a
+ * week when they leave the repo with none.
+ *
+ * Every repo the App can read gets four, however little is in it: a product not built yet gets
+ * where to begin designing it (`FRESH_SYSTEM_PROMPT`).
  */
+
+/**
+ * The way ideas are made, kept with them (`repos.ideas_version`). An empty list an earlier way
+ * wrote is made again at the next ask, push or not. 1: a repo with nothing built yet gets
+ * ideas, where before it got none, so those it was skipped for get theirs.
+ */
+export const IDEAS_VERSION = 1;
 
 const HOUR = 3600_000;
 const DAY = 24 * HOUR;
@@ -36,6 +45,12 @@ export const IDEAS_POLICY = {
    * has passed. A repo nobody pushes to keeps its ideas; nobody's visit alone remakes them.
    */
   staleMs: 30 * DAY,
+  /**
+   * An empty list (both answers turned away, with none from before) is made again this long
+   * after, pushed or not: a repo with little in it is the kind nobody pushes to, and one
+   * unlucky pair of answers must not leave it with no ideas for good.
+   */
+  emptyRetryMs: 7 * DAY,
   /** Each workspace may start this many generations an hour, whatever it has in repos. */
   windowMs: HOUR,
   windowLimit: 20,
@@ -68,8 +83,10 @@ export async function repoIdeas(
       now: new Date(now),
       retryBefore: new Date(now - IDEAS_POLICY.retryMs),
       staleBefore: new Date(now - IDEAS_POLICY.staleMs),
+      emptyBefore: new Date(now - IDEAS_POLICY.emptyRetryMs),
       windowStartedBefore: new Date(now - IDEAS_POLICY.windowMs),
       windowLimit: IDEAS_POLICY.windowLimit,
+      version: IDEAS_VERSION,
     });
     if (claim === "claimed") {
       const claimedAt = new Date(now);
@@ -96,6 +113,10 @@ function isDue(repo: RepoIdeasRow, now: number): boolean {
   }
   const generated = repo.ideasGeneratedAt;
   if (!generated) return true;
+  if (repo.ideas.length === 0) {
+    if (repo.ideasVersion < IDEAS_VERSION) return true;
+    if (generated.getTime() <= now - IDEAS_POLICY.emptyRetryMs) return true;
+  }
   if (!repo.pushedAt || repo.pushedAt <= generated) return false;
   return repo.ideas.length === 0 || generated.getTime() <= now - IDEAS_POLICY.staleMs;
 }
@@ -135,42 +156,38 @@ export async function generateRepoIdeas(
       readRepository(deps.github, token, repo.fullName),
       deadline,
     );
-    let ideas: string[] = [];
-    let rejected = false;
-    if (isEmpty(snapshot)) {
-      log.info("ideas_skipped", { ...ids, reason: "empty_repo", files: snapshot.files });
-    } else {
-      const asked = await askForIdeas(deps.model, ideasPrompt(snapshot), {
-        signal: deadline,
-        tally,
+    const request = ideasRequest(snapshot);
+    const asked = await askForIdeas(deps.model, request, { signal: deadline, tally });
+    let ideas: string[];
+    const rejected = "rejected" in asked;
+    if ("rejected" in asked) {
+      log.warn("ideas_rejected", {
+        ...ids,
+        model: deps.model.id,
+        ...tally,
+        fresh: request.fresh,
+        reason: asked.rejected,
       });
-      if ("rejected" in asked) {
-        log.warn("ideas_rejected", {
-          ...ids,
-          model: deps.model.id,
-          ...tally,
-          reason: asked.rejected,
-        });
-        // Asking about the same material again would most likely be turned away again, so
-        // this counts as a generation: the ideas it had stay (none, the first time), and the
-        // next try waits for a push, as for a repo with nothing in it.
-        ideas = repo.ideas;
-        rejected = true;
-      } else {
-        ideas = asked.ideas;
-      }
+      // Asking about the same material again would most likely be turned away again, so
+      // this counts as a generation: the ideas it had stay (none, the first time), and the
+      // next try waits for a push, or `emptyRetryMs` when it has none.
+      ideas = repo.ideas;
+    } else {
+      ideas = asked.ideas;
     }
     const saved = await saveRepoIdeas(deps.db, {
       repoId: repo.id,
       ideas,
       generatedAt: new Date(deps.clock.now()),
       claimedAt,
+      version: IDEAS_VERSION,
     });
     if (!rejected) {
       log.info("ideas_generated", {
         ...ids,
         model: deps.model.id,
         ...tally,
+        fresh: request.fresh,
         ideas: ideas.length,
         saved,
         ms: deps.clock.now() - started,
@@ -197,13 +214,13 @@ export interface Tally {
 }
 
 /**
- * Four ideas for the product `prompt` describes (`ideasPrompt`), or why there are none: one
+ * Four ideas for the product `request` describes (`ideasRequest`), or why there are none: one
  * answer that breaks a rule is asked for again, once, with the rule it broke, and the second
  * is the last. What each ask cost is added to `tally`, so it is known even when one throws.
  */
 export async function askForIdeas(
   model: Model,
-  prompt: string,
+  { instructions, prompt, fresh }: IdeasRequest,
   { signal, tally }: { signal?: AbortSignal; tally: Tally },
 ): Promise<{ ideas: string[] } | { rejected: string }> {
   let rejected = "";
@@ -211,8 +228,8 @@ export async function askForIdeas(
     tally.attempts++;
     const answer: StructuredAnswer<IdeasAnswer> = await model.structured({
       instructions: rejected
-        ? `${IDEAS_SYSTEM_PROMPT}\n\nAn earlier answer was turned away because ${rejected}. Keep to every rule.`
-        : IDEAS_SYSTEM_PROMPT,
+        ? `${instructions}\n\nAn earlier answer was turned away because ${rejected}. Keep to every rule.`
+        : instructions,
       prompt,
       schema: IdeasOutput,
       maxTokens: MAX_TOKENS,
@@ -224,7 +241,7 @@ export async function askForIdeas(
     tally.usage.input += answer.usage.input;
     tally.usage.output += answer.usage.output;
     const checked: ReturnType<typeof checkIdeas> = answer.output
-      ? checkIdeas(answer.output)
+      ? checkIdeas(answer.output, { fresh, instructions })
       : { ok: false, reason: `it was not in the shape asked for (${answer.finishReason})` };
     if (checked.ok) return { ideas: checked.ideas };
     rejected = checked.reason;

@@ -128,11 +128,18 @@ export function createModel(
           timeout: timeoutMs,
           ...(signal ? { abortSignal: signal } : {}),
         });
-        return {
-          output: result.output,
-          finishReason: result.finishReason,
-          usage: tokens(result.usage),
-        };
+        // What the whole call cost: `totalUsage`, every step's, where `usage` is the last
+        // step's alone (the same here, with one step, but the right one to bill by).
+        const usage = tokens(result.totalUsage);
+        try {
+          // `output` is a getter that throws `NoOutputGeneratedError` when the call ended
+          // without one (it stopped for another reason than `stop`): read on its own, so
+          // what the call cost is still known.
+          return { output: result.output, finishReason: result.finishReason, usage };
+        } catch (error) {
+          if (!NoOutputGeneratedError.isInstance(error)) throw error;
+          return { output: null, finishReason: result.finishReason, usage };
+        }
       } catch (error) {
         if (NoObjectGeneratedError.isInstance(error)) {
           return {
@@ -140,9 +147,6 @@ export function createModel(
             finishReason: error.finishReason ?? null,
             usage: tokens(error.usage),
           };
-        }
-        if (NoOutputGeneratedError.isInstance(error)) {
-          return { output: null, finishReason: null, usage: { input: 0, output: 0 } };
         }
         const upstream = noAnswer(error);
         if (upstream) throw upstream;
