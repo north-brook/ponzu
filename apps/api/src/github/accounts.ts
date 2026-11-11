@@ -42,15 +42,16 @@ export async function listGithubAccounts(
     .filter((workspace) => workspace !== own)
     .sort((a, b) => a.name.localeCompare(b.name) || a.githubLogin.localeCompare(b.githubLogin));
   const counts = new Map(
-    // Someone who reaches a workspace only through repos shared with them is not shown who
-    // else is in it, nor how many (docs/cloud.md, "Identity and access").
+    // Each counts only the people this person is shown (docs/cloud.md, "Identity and access"):
+    // someone who reaches a workspace only through repos shared with them is not shown who
+    // else is in it, nor how many.
     (
-      await countWorkspacePeople(
-        db,
-        others
+      await countWorkspacePeople(db, {
+        viewerUserId: user.id,
+        workspaceIds: others
           .filter((workspace) => workspace.githubAccess !== "collaborator")
           .map((workspace) => workspace.id),
-      )
+      })
     ).map(({ workspaceId, people }) => [workspaceId, people]),
   );
 

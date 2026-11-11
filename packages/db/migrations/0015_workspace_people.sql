@@ -14,6 +14,7 @@ CREATE TABLE "workspace_people" (
 	CONSTRAINT "workspace_people_permission_not_none_check" CHECK ("workspace_people"."permission" <> 'none')
 );
 --> statement-breakpoint
+ALTER TABLE "repos" ADD COLUMN "people_read_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "workspaces" ADD COLUMN "people_synced_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "workspaces" ADD COLUMN "people_complete" boolean DEFAULT false NOT NULL;--> statement-breakpoint
 ALTER TABLE "workspace_people" ADD CONSTRAINT "workspace_people_workspace_id_workspaces_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

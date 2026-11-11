@@ -8,6 +8,7 @@ import {
 import { z } from "zod";
 import type { Deps } from "../deps/index.ts";
 import { reconcileInstallation } from "./installations.ts";
+import { readPeopleSoon } from "./people.ts";
 import {
   type PullRequestRef,
   refreshAfterPush,
@@ -189,8 +190,8 @@ export function planDelivery(event: string, payload: unknown): Plan {
             e.action === "created" ? await getUserByGithubId(deps.db, e.sender.id) : null;
           const workspace = await reconcileInstallation(deps, e.installation.id, {
             installedByUserId: installer?.id ?? null,
-            people: "refresh",
           });
+          if (workspace) await readPeopleSoon(deps, e.installation.id);
           if (!workspace || e.action !== "created") return;
           // Whoever installed it, and whoever asked an owner to, can reach it now.
           for (const person of new Set([e.sender.id, e.requester?.id])) {
@@ -226,10 +227,10 @@ export function planDelivery(event: string, payload: unknown): Plan {
       // A collaborator added to or removed from a repo; someone added to or removed from a team.
       return plan(MemberEvent, payload, (e) => {
         const lostAccessTo = e.action === "removed" ? e.installation?.id : undefined;
-        return async (deps) => {
-          await refreshPeopleOf(deps, e.installation?.id);
-          await resyncGithubUser(deps, e.member.id, { lostAccessTo });
-        };
+        return (deps) =>
+          andThenPeople(deps, e.installation?.id, () =>
+            resyncGithubUser(deps, e.member.id, { lostAccessTo }),
+          );
       });
 
     case "organization":
@@ -237,10 +238,10 @@ export function planDelivery(event: string, payload: unknown): Plan {
         const person = e.membership?.user?.id;
         if ((e.action === "member_added" || e.action === "member_removed") && person) {
           const lostAccessTo = e.action === "member_removed" ? e.installation?.id : undefined;
-          return async (deps) => {
-            await refreshPeopleOf(deps, e.installation?.id);
-            await resyncGithubUser(deps, person, { lostAccessTo });
-          };
+          return (deps) =>
+            andThenPeople(deps, e.installation?.id, () =>
+              resyncGithubUser(deps, person, { lostAccessTo }),
+            );
         }
         const installationId = e.installation?.id;
         if (e.action === "renamed" && installationId) {
@@ -256,10 +257,10 @@ export function planDelivery(event: string, payload: unknown): Plan {
         const accessChanged =
           TEAM_ACTIONS.includes(e.action) || (e.action === "edited" && e.changes?.repository);
         if (!accessChanged) return null;
-        return async (deps) => {
-          await refreshPeopleOf(deps, e.installation.id);
-          await resyncWorkspaceMembers(deps, e.installation.id);
-        };
+        return (deps) =>
+          andThenPeople(deps, e.installation.id, () =>
+            resyncWorkspaceMembers(deps, e.installation.id),
+          );
       });
 
     case "github_app_authorization":
@@ -415,18 +416,32 @@ function plan<Schema extends z.ZodType>(
 async function reconcileAndRecheck(deps: WebhookDeps, installationId: number) {
   const workspace = await getWorkspaceByInstallation(deps.db, installationId);
   if (workspace) await markRepoAccessStale(deps.db, { workspaceId: workspace.id });
-  await reconcileInstallation(deps, installationId, { people: "refresh" });
+  if (await reconcileInstallation(deps, installationId)) {
+    await readPeopleSoon(deps, installationId);
+  }
 }
 
 /**
- * Who can reach an installation's repos changed, by GitHub's word: read them again, with the
- * installation, if Ponzu has a workspace for it. An event about one Ponzu does not hold says
- * no more.
+ * Who can reach an installation's repos changed, by GitHub's word: first `access`, the work
+ * that grants or takes away what a person may do, then a read of the installation's people
+ * recorded for the cron (`readPeopleSoon`), if Ponzu has a workspace for it. That read is
+ * recorded even when `access` fails, and it never holds up or fails `access`: a burst of
+ * deliveries is one read, and one that fails is tried again on its own.
  */
-async function refreshPeopleOf(deps: WebhookDeps, installationId: number | undefined) {
-  if (installationId === undefined) return;
-  if (await getWorkspaceByInstallation(deps.db, installationId)) {
-    await reconcileInstallation(deps, installationId, { people: "refresh" });
+async function andThenPeople(
+  deps: WebhookDeps,
+  installationId: number | undefined,
+  access: () => Promise<unknown>,
+) {
+  try {
+    await access();
+  } finally {
+    if (
+      installationId !== undefined &&
+      (await getWorkspaceByInstallation(deps.db, installationId).catch(() => null))
+    ) {
+      await readPeopleSoon(deps, installationId);
+    }
   }
 }
 

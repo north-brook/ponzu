@@ -187,7 +187,9 @@ export const memberships = pgTable(
  * opened Ponzu. No `users` row is made for them; someone who signs in is matched by their
  * GitHub id. It says who is in the team (the count, Settings › Members, Share) and nothing
  * more: what a person may do in Ponzu is still `memberships` and `repo_access`, from their own
- * sync. Someone a complete read no longer finds is deleted.
+ * sync, and for anyone with a `repo_access` answer that answer wins over `repo_permissions`
+ * here, which is never consulted to grant anything. A repo whose list of people was read whole
+ * replaces its entry in everyone's `repo_permissions`; someone left reaching no repo is deleted.
  */
 export const workspacePeople = pgTable(
   "workspace_people",
@@ -203,7 +205,10 @@ export const workspacePeople = pgTable(
     githubAccess: text("github_access", { enum: GITHUB_ACCESS }).notNull(),
     /** The most GitHub lets them do in any of its repos: never `none`. */
     permission: text("permission", { enum: REPO_PERMISSIONS }).notNull(),
-    /** What they may do in each repo they reach, by GitHub repo id. */
+    /**
+     * What they may do in each repo they reach, by GitHub repo id, as the App last read each
+     * repo: a display-only snapshot, chiefly of people who have not opened Ponzu.
+     */
     repoPermissions: jsonb("repo_permissions")
       .$type<Record<string, RepoPermission>>()
       .notNull()
@@ -263,6 +268,12 @@ export const repos = pgTable(
     ideasClaimedAt: instant("ideas_claimed_at"),
     /** Set when the App loses the repo. The row stays because designs point at it. */
     removedAt: instant("removed_at"),
+    /**
+     * When the API last read who can reach this repo as the App (`workspace_people`), by its
+     * clock. Null: never. A read takes the repos read longest ago first, so an installation with
+     * more repos than one read takes is read whole over a few.
+     */
+    peopleReadAt: instant("people_read_at"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

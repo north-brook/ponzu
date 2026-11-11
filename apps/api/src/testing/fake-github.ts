@@ -202,6 +202,11 @@ export class FakeGithub {
     this.#failures.push({ path, status });
   }
 
+  /** Forgets the failures `failNext` queued that no request has met yet. */
+  clearFailures() {
+    this.#failures.length = 0;
+  }
+
   /**
    * Holds the answer to the next request to `path` on its way back: GitHub answers it as
    * things are when it arrives, `reached` settles, and the caller has the answer only after

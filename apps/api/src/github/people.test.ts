@@ -16,8 +16,9 @@ import {
   type SignedInPerson,
   type TestApp,
 } from "../testing/index.ts";
+import { runDueJobs } from "../jobs/run.ts";
 import { reconcileInstallation } from "./installations.ts";
-import { MAX_PEOPLE_REPOS, PEOPLE_AFTER_MS } from "./people.ts";
+import { MAX_PEOPLE_REPOS, PEOPLE_AFTER_MS, PEOPLE_WINDOW_MS } from "./people.ts";
 import { syncGithub } from "./sync.ts";
 
 /*
@@ -92,7 +93,17 @@ function installOnOrg(
   return installation;
 }
 
-const sync = (person: SignedInPerson) => syncGithub(t.deps, person.userId);
+/** A person's sync, and the read of people it starts beside it. */
+async function sync(person: SignedInPerson) {
+  await syncGithub(t.deps, person.userId);
+  await t.backgroundDone();
+}
+
+/** The cron at the end of the minute: the reads webhooks recorded are made. */
+async function cron() {
+  t.clock.advance(PEOPLE_WINDOW_MS);
+  await runDueJobs(t.deps, "people-test");
+}
 
 async function workspaceOf(installation: FakeInstallation) {
   const workspace = await getWorkspaceByInstallation(t.db, installation.id);
@@ -100,9 +111,25 @@ async function workspaceOf(installation: FakeInstallation) {
   return workspace;
 }
 
+/** Everyone kept for an installation's workspace, as an owner of it would see them. */
 async function peopleOf(installation: FakeInstallation) {
   const workspace = await workspaceOf(installation);
-  return (await listWorkspacePeople(t.db, workspace.id)).map((person) => person.githubLogin);
+  const rows = (await t.db.select().from(workspacePeople)).filter(
+    (row) => row.workspaceId === workspace.id,
+  );
+  const joined = new Set(
+    (await t.db.select().from(users))
+      .filter((user) => rows.some((row) => row.githubUserId === user.githubUserId))
+      .map((user) => user.githubUserId),
+  );
+  // Who has opened Ponzu first, then by login.
+  return rows
+    .toSorted(
+      (a, b) =>
+        Number(joined.has(b.githubUserId)) - Number(joined.has(a.githubUserId)) ||
+        a.githubLogin.localeCompare(b.githubLogin),
+    )
+    .map((row) => row.githubLogin);
 }
 
 async function accountsFor(person: SignedInPerson) {
@@ -114,10 +141,11 @@ async function accountsFor(person: SignedInPerson) {
   return Object.fromEntries(accounts.map((account) => [account.login, account.memberCount]));
 }
 
+const profileRequest = (person: SignedInPerson, workspaceId: string) =>
+  t.app.request(`/v1/workspaces/${workspaceId}`, { headers: person.headers });
+
 async function profileFor(person: SignedInPerson, workspaceId: string) {
-  const response = await t.app.request(`/v1/workspaces/${workspaceId}`, {
-    headers: person.headers,
-  });
+  const response = await profileRequest(person, workspaceId);
   expect(response.status).toBe(200);
   return (await response.json()) as {
     members: { userId: string; githubLogin: string }[];
@@ -201,8 +229,9 @@ describe("who can reach an organization's workspace", () => {
     await sync(ines);
     expect(await peopleOf(org)).toEqual(["ines-p", "sam-p"]);
     const workspace = await workspaceOf(org);
+    const asInes = { workspaceId: workspace.id, viewerUserId: ines.userId };
     expect(
-      (await listWorkspacePeople(t.db, workspace.id)).map((person) => person.userId !== null),
+      (await listWorkspacePeople(t.db, asInes)).map((person) => person.userId !== null),
     ).toEqual([true, false]);
 
     // Sam opens Ponzu.
@@ -215,7 +244,7 @@ describe("who can reach an organization's workspace", () => {
     await t.backgroundDone();
 
     const samUser = (await t.db.select().from(users)).find((row) => row.githubUserId === sam.id);
-    const people = await listWorkspacePeople(t.db, workspace.id);
+    const people = await listWorkspacePeople(t.db, asInes);
     expect(people.map((person) => [person.githubLogin, person.userId])).toEqual([
       ["ines-p", ines.userId],
       ["sam-p", samUser!.id],
@@ -269,9 +298,67 @@ describe("who can reach an organization's workspace", () => {
       installation: { id: org.id },
     });
     expect(response.status).toBe(202);
+    // The read is the cron's, at the end of the minute: the webhook's work does not wait on it.
+    expect(await peopleOf(org)).toEqual(["ana-p", "leaving-p"]);
 
+    await cron();
     expect(await peopleOf(org)).toEqual(["ana-p"]);
     expect(await accountsFor(ana)).toMatchObject({ leaveco: 1 });
+  });
+
+  test("taking access away never waits on, nor fails with, the read of people", async () => {
+    const own = await t.signInAs({ login: "own-o" });
+    const leaving = await t.signInAs({ login: "b-q" });
+    const org = installOnOrg("orderco", { owners: [own], members: [leaving] });
+    await sync(own);
+    await sync(leaving);
+    const workspace = await workspaceOf(org);
+    expect((await profileRequest(leaving, workspace.id)).status).toBe(200);
+
+    delete org.repositories[0]!.access[leaving.github.id];
+    org.account.members = [];
+    for (let attempt = 0; attempt < 20; attempt++) t.github.failNext("/graphql", 502);
+    try {
+      const response = await deliver("member", {
+        action: "removed",
+        member: { id: leaving.github.id },
+        installation: { id: org.id },
+      });
+      expect(response.status).toBe(202);
+      // Their access is gone at once, though GitHub would not list anyone's people.
+      expect((await profileRequest(leaving, workspace.id)).status).toBe(404);
+
+      await cron();
+      // The read failed, and is left to be tried again on its own.
+      expect(await peopleOf(org)).toEqual(["b-q", "own-o"]);
+    } finally {
+      t.github.clearFailures();
+    }
+  });
+
+  test("a burst of membership webhooks is one read of the installation's people", async () => {
+    const lead = await t.signInAs({ login: "lead-p" });
+    const team = Array.from({ length: 30 }, (_, index) => onGithubOnly(`team-${index}`));
+    const org = installOnOrg("burstco", { owners: [lead], members: team });
+    org.repositories[0]!.access = { [lead.github.id]: "write" };
+    await sync(lead);
+    const before = t.github.peopleRequests.length;
+
+    // A team of thirty added to the repo: thirty deliveries within the minute.
+    for (const who of team) {
+      org.repositories[0]!.access[who.id] = "write";
+      await deliver("membership", {
+        action: "added",
+        member: { id: who.id },
+        installation: { id: org.id },
+      });
+    }
+    await cron();
+
+    expect(
+      t.github.peopleRequests.slice(before).filter((request) => request.includes("burstco")),
+    ).toEqual(["org burstco", "repo burstco/app"]);
+    expect(await peopleOf(org)).toHaveLength(31);
   });
 
   test("a collaborator added on GitHub is in at once, by the member webhook", async () => {
@@ -287,6 +374,7 @@ describe("who can reach an organization's workspace", () => {
       member: { id: guest.id },
       installation: { id: org.id },
     });
+    await cron();
 
     // Who has opened Ponzu first.
     expect(await peopleOf(org)).toEqual(["kim-p", "guest-p"]);
@@ -303,7 +391,7 @@ describe("who can reach an organization's workspace", () => {
     t.github.peoplePageSize = 1;
     try {
       delete org.repositories[0]!.access[many[11]!.id];
-      await reconcileInstallation(t.deps, org.id, { people: "refresh" });
+      await reconcileInstallation(t.deps, org.id, { people: "read" });
     } finally {
       t.github.peoplePageSize = 100;
     }
@@ -313,35 +401,54 @@ describe("who can reach an organization's workspace", () => {
     expect(t.logs.some((line) => line.event === "github_people_cut_short")).toBe(true);
 
     // Read whole again, the one who left is gone.
-    await reconcileInstallation(t.deps, org.id, { people: "refresh" });
+    await reconcileInstallation(t.deps, org.id, { people: "read" });
     expect(await peopleOf(org)).toHaveLength(12);
   });
 
-  test(`reads at most ${MAX_PEOPLE_REPOS} repos, the most recently pushed, and says it stopped`, async () => {
+  test(`reads at most ${MAX_PEOPLE_REPOS} repos at a time, and the rest on the next read`, async () => {
     const zoe = await t.signInAs({ login: "zoe-p" });
     const old = onGithubOnly("old-p");
     const layout: Record<string, [Someone, "read" | "write"][]> = {};
     for (let index = 0; index < MAX_PEOPLE_REPOS; index++) layout[`r${index}`] = [[zoe, "read"]];
-    // Pushed longest ago, so past the ones read.
+    // Pushed longest ago, so past the ones read first.
     layout.oldest = [[old, "read"]];
     const org = installOnOrg("wideco", { members: [zoe, old], repos: layout });
 
     await sync(zoe);
-
     expect(await peopleOf(org)).toEqual(["zoe-p"]);
     expect((await workspaceOf(org)).peopleComplete).toBe(false);
+
+    // The next read asks about the repo never asked about first.
+    const read = async () => {
+      t.clock.advance(60_000);
+      const before = t.github.peopleRequests.length;
+      await reconcileInstallation(t.deps, org.id, { people: "read" });
+      return t.github.peopleRequests.slice(before);
+    };
+    expect(await read()).toContain("repo wideco/oldest");
+    expect(await peopleOf(org)).toEqual(["zoe-p", "old-p"]);
+
+    // Old-p loses the one repo they reach: once it comes round to be read again, they are
+    // gone, though no read is ever of every repo.
+    delete org.repositories.find((repo) => repo.fullName === "wideco/oldest")!.access[old.id];
+    expect(await read()).not.toContain("repo wideco/oldest");
+    expect(await peopleOf(org)).toEqual(["zoe-p", "old-p"]);
+    expect(await read()).toContain("repo wideco/oldest");
+    expect(await peopleOf(org)).toEqual(["zoe-p"]);
   });
 
-  test("without members: read granted, it lists the repos' people and is marked cut short", async () => {
+  test("without members: read granted, it lists the repos' people and drops who leaves", async () => {
     const una = await t.signInAs({ login: "una-p" });
     const pat = onGithubOnly("pat-p");
-    const org = installOnOrg("grantco", { members: [una, pat] });
+    const org = installOnOrg("staleco", { members: [una, pat] });
     org.grantsMembers = false;
 
     await sync(una);
-
     expect(await peopleOf(org)).toEqual(["una-p", "pat-p"]);
-    expect((await workspaceOf(org)).peopleComplete).toBe(false);
+
+    delete org.repositories[0]!.access[pat.id];
+    await reconcileInstallation(t.deps, org.id, { people: "read" });
+    expect(await peopleOf(org)).toEqual(["una-p"]);
   });
 
   test("a suspended installation keeps its people as last seen, and nobody reads them", async () => {
@@ -405,19 +512,23 @@ describe("who can reach a personal account's workspace", () => {
     await sync(owner);
 
     const workspace = await workspaceOf(installation);
-    const people = await listWorkspacePeople(t.db, workspace.id);
+    const people = await listWorkspacePeople(t.db, {
+      workspaceId: workspace.id,
+      viewerUserId: owner.userId,
+    });
     expect(
       people.map((person) => [person.githubLogin, person.githubAccess, person.userId !== null]),
     ).toEqual([
       ["solo-p", "owner", true],
       ["friend-p", "collaborator", false],
     ]);
+    expect(await accountsFor(owner)).toEqual({ "solo-p": null });
     // No members: read asked of a personal account.
-    expect(
-      t.github.installationTokenRequests
-        .filter((request) => request.installationId === installation.id)
-        .map((request) => request.body),
-    ).toEqual([{ permissions: { metadata: "read" } }, { permissions: { metadata: "read" } }]);
+    const asked = t.github.installationTokenRequests
+      .filter((request) => request.installationId === installation.id)
+      .map((request) => request.body);
+    expect(asked.length).toBeGreaterThan(0);
+    for (const body of asked) expect(body).toEqual({ permissions: { metadata: "read" } });
   });
 });
 
@@ -444,6 +555,84 @@ describe("what each person is shown", () => {
     expect(await accountsFor(host)).toMatchObject({ visitco: 2 });
     const profile = await profileFor(visitor, workspace.id);
     expect(profile.people.map((person) => person.githubLogin)).toEqual(["visitor-p"]);
+  });
+
+  test("a member is not shown an outside collaborator on a repo they cannot read", async () => {
+    const owner = await t.signInAs({ login: "own-q" });
+    const member = await t.signInAs({ login: "mem-q" });
+    const contractor = onGithubOnly("contractor-q", "Secret Contractor");
+    const org = installOnOrg("leakco", {
+      owners: [owner],
+      members: [member],
+      collaborators: [contractor],
+      repos: {
+        app: [
+          [owner, "write"],
+          [member, "write"],
+        ],
+        secret: [
+          [owner, "write"],
+          [contractor, "write"],
+        ],
+      },
+    });
+    await sync(owner);
+    await sync(member);
+    const workspace = await workspaceOf(org);
+
+    // GitHub shows a member the organization's people, and a repo's outside collaborators
+    // only to someone who can push to it.
+    const asMember = await profileFor(member, workspace.id);
+    expect(asMember.people.map((person) => person.githubLogin)).toEqual(["own-q", "mem-q"]);
+    expect(await accountsFor(member)).toMatchObject({ leakco: 2 });
+    // An owner sees everyone.
+    const asOwner = await profileFor(owner, workspace.id);
+    expect(asOwner.people.map((person) => person.githubLogin)).toEqual([
+      "own-q",
+      "mem-q",
+      "contractor-q",
+    ]);
+    expect(await accountsFor(owner)).toMatchObject({ leakco: 3 });
+  });
+
+  test("Share does not show someone who can only read the repo its outside collaborators", async () => {
+    const writer = await t.signInAs({ login: "writer-s" });
+    const reader = await t.signInAs({ login: "reader-s" });
+    const guest = onGithubOnly("guest-s", "A Guest");
+    const org = installOnOrg("readco", {
+      members: [writer, reader],
+      collaborators: [guest],
+      repos: {
+        site: [
+          [writer, "write"],
+          [reader, "read"],
+          [guest, "write"],
+        ],
+      },
+    });
+    await sync(writer);
+    await sync(reader);
+    const workspace = await workspaceOf(org);
+    const design = await createDesign(t.db, {
+      workspaceId: workspace.id,
+      repoId: await repoIdOf(workspace.id, "readco/site"),
+      ownerId: writer.userId,
+      claudeAccountId: null,
+      name: "Calmer pricing",
+      branch: "pz/calmer-pricing",
+      doc: emptyDoc("Calmer pricing"),
+    });
+    const shareFor = async (person: SignedInPerson) => {
+      const response = await t.app.request(`/v1/designs/${design.id}/people`, {
+        headers: person.headers,
+      });
+      expect(response.status).toBe(200);
+      const { people } = (await response.json()) as { people: { githubLogin: string }[] };
+      return people.map((p) => p.githubLogin);
+    };
+
+    expect(await shareFor(reader)).toEqual(["writer-s", "reader-s"]);
+    expect(await shareFor(writer)).toEqual(["writer-s", "reader-s", "guest-s"]);
   });
 
   test("Share lists everyone with access to the design's repo, and nobody else", async () => {

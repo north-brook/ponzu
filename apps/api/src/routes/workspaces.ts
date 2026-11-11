@@ -117,9 +117,10 @@ const WorkspaceProfile = z.object({
   members: z.array(Member),
   /**
    * Everyone GitHub says can reach the workspace, whether or not they have opened Ponzu: those
-   * who have (`joined`, as in `members`) first, admins first, then the rest, each by name. The
-   * same rule as `members`: someone who reaches it only through repos shared with them sees
-   * only themselves.
+   * who have (`joined`, as in `members`) first, admins first, then the rest, each by name. Only
+   * whom GitHub would show this person: an owner of the account sees everyone; a member sees
+   * its owners and members, and an outside collaborator only if they share a repo the member can
+   * push to; someone who reaches it only through repos shared with them sees only themselves.
    */
   people: z.array(WorkspacePersonView),
 });
@@ -185,15 +186,15 @@ export const workspaces = new Hono<AppEnv>()
       { ...c.var.deps, log: c.var.log },
       { user, workspace: member },
     );
-    const [workspace, repos, everyone, reachers] = await Promise.all([
+    const [workspace, repos, everyone, people] = await Promise.all([
       getWorkspace(db, member.id),
       listWorkspaceRepos(db, { workspaceId: member.id, userId: user.id }),
       listWorkspaceMembers(db, member.id),
-      listWorkspacePeople(db, member.id),
+      // Only those GitHub would show them: chosen in the query.
+      listWorkspacePeople(db, { workspaceId: member.id, viewerUserId: user.id }),
     ]);
     const onlySelf = member.githubAccess === "collaborator";
     const members = onlySelf ? everyone.filter(({ userId }) => userId === user.id) : everyone;
-    const people = onlySelf ? reachers.filter(({ userId }) => userId === user.id) : reachers;
     if (!workspace) throw new ApiError(404, "not_found", "There is no such workspace.");
     return c.json(
       WorkspaceProfile.parse({

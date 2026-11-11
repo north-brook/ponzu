@@ -12,7 +12,7 @@ import {
   wasUninstalled,
 } from "@ponzu/db";
 import type { Deps } from "../deps/index.ts";
-import { peopleDue, refreshWorkspacePeople } from "./people.ts";
+import { peopleDue, readPeopleNow, refreshWorkspacePeople } from "./people.ts";
 
 /*
  * One installation of the App, brought in line with GitHub. Whatever asked (a webhook, a sync
@@ -25,7 +25,9 @@ import { peopleDue, refreshWorkspacePeople } from "./people.ts";
  * see `syncGithub`.
  */
 
-type ReconcileDeps = Pick<Deps, "db" | "clock" | "github" | "log">;
+/** `background`, where there is a request to run work beside: a due read of people runs there. */
+type ReconcileDeps = Pick<Deps, "db" | "clock" | "github" | "log"> &
+  Partial<Pick<Deps, "background">>;
 
 /** All it takes to read an installation's account and repo list. */
 const READ_REPOSITORIES = { metadata: "read" } as const;
@@ -45,10 +47,11 @@ const SWEEP_AFTER_MS = 6 * 3600_000;
  *   recorded, and any it no longer sees is marked removed (never deleted: designs point at
  *   it). A repo list GitHub served only in part marks nothing removed.
  *
- * Who can reach its repos (`github/people.ts`) is read with it when `people` is `refresh` (a
- * webhook said membership changed), or when the last read is old: then a failure to read them
- * is logged and left for next time, so it never fails a person's sync. An uninstalled
- * installation's people are forgotten; a suspended one's stay as last seen.
+ * Who can reach its repos (`github/people.ts`) is read with it when `people` is `read`: the
+ * people job, which throws when GitHub fails, to be tried again. Otherwise, when the last read
+ * is old, a read is recorded as that job and run beside, never here: a person's sync and a
+ * webhook's work never wait on it nor fail with it. An uninstalled installation's people are
+ * forgotten; a suspended one's stay as last seen.
  *
  * `installedByUserId` is who installed it, for a webhook that says so; it fills in an unknown
  * installer and never replaces a known one. Safe to run any number of times, at once.
@@ -59,7 +62,7 @@ export async function reconcileInstallation(
   {
     installedByUserId = null,
     people = "when_due",
-  }: { installedByUserId?: string | null; people?: "refresh" | "when_due" } = {},
+  }: { installedByUserId?: string | null; people?: "read" | "when_due" } = {},
 ): Promise<Workspace | null> {
   const { db, clock, github, log } = deps;
   const readAt = new Date(clock.now());
@@ -133,14 +136,10 @@ export async function reconcileInstallation(
     });
   }
 
-  if (people === "refresh") {
+  if (people === "read") {
     await refreshWorkspacePeople(deps, { workspace, installation, repositories });
   } else if (peopleDue(workspace, readAt.getTime())) {
-    try {
-      await refreshWorkspacePeople(deps, { workspace, installation, repositories });
-    } catch (error) {
-      log.warn("github_people_read_failed", { installationId, error });
-    }
+    await readPeopleNow(deps, installationId);
   }
 
   // GitHub may have reported the installation gone while this was reading it, and that

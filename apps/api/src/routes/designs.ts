@@ -270,23 +270,23 @@ export const designs = new Hono<AppEnv>()
   /**
    * Who can open it, for Share: everyone GitHub gives access to its repo, whether or not they
    * have opened Ponzu, its owner first. Access is GitHub's, so nothing here grants any. A
-   * Scratch design is its owner's alone. Someone who reaches the workspace only through repos
-   * shared with them sees only themselves, as in the workspace's member list.
+   * Scratch design is its owner's alone. Only whom GitHub would show this person: someone who
+   * can only read the repo is not shown its outside collaborators, and someone who reaches the
+   * workspace only through repos shared with them sees only themselves.
    */
   .get("/:id/people", access.user, validate("param", Params), async (c) => {
     const { db } = c.var.deps;
     const { user } = c.var.actor;
     const { design, repo } = await requireDesign(c, c.req.valid("param").id, "read");
-    const member = await requireWorkspace(c, design.workspaceId);
-    const everyone = repo
-      ? await listRepoPeople(db, { workspaceId: design.workspaceId, repoId: repo.id })
-      : (await listWorkspacePeople(db, design.workspaceId))
+    await requireWorkspace(c, design.workspaceId);
+    // Who this person is shown is chosen in the query, as GitHub would show them a repo's
+    // people: its outside collaborators only to an owner or someone who can push to it.
+    const viewer = { workspaceId: design.workspaceId, viewerUserId: user.id };
+    const shown = repo
+      ? await listRepoPeople(db, { ...viewer, repoId: repo.id })
+      : (await listWorkspacePeople(db, viewer))
           .filter((person) => person.userId !== null && person.userId === design.ownerId)
           .map((person) => ({ ...person, permission: "admin" as const }));
-    const shown =
-      member.githubAccess === "collaborator"
-        ? everyone.filter((person) => person.userId === user.id)
-        : everyone;
     const people = shown
       .map((person) => ({
         ...toPersonView(person),

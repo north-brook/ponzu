@@ -131,7 +131,7 @@ export {
   type NewJob,
 } from "./queries/jobs.ts";
 export {
-  countWorkspaceMembers,
+  countJoinedMembers,
   ensureWorkspaceAdmin,
   listWorkspaceMembers,
   removeMembership,
@@ -171,8 +171,10 @@ export {
   countWorkspacePeople,
   forgetWorkspacePeople,
   type GithubPerson,
+  listPeopleRepoReads,
   listRepoPeople,
   listWorkspacePeople,
+  type PeopleRepoRead,
   type RepoPerson,
   recordWorkspacePeople,
   type WorkspacePerson,

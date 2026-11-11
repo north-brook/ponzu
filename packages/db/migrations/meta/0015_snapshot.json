@@ -1,5 +1,5 @@
 {
-  "id": "9617f693-2ad6-4afa-a959-ab86e85990c2",
+  "id": "f8fd55fe-5623-4982-840b-0c89b8c0666e",
   "prevId": "b28a58d0-ad1d-40a2-87b2-edbecd76b533",
   "version": "7",
   "dialect": "postgresql",
@@ -873,6 +873,12 @@
         },
         "removed_at": {
           "name": "removed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "people_read_at": {
+          "name": "people_read_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
