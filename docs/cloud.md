@@ -909,6 +909,7 @@ behind these routes, and is the reference for what each answers.
 | POST | `/v1/runner/uploads/complete` | `{ ids: string[], seq?: number }` | `{ files: [{ id, ref, url }] }` |
 | POST | `/v1/runner/git-credential` | `{ protocol, host, path }` | `{ username, password, expiresAt }` |
 | POST | `/v1/runner/git-credential/erase` | `{ protocol, host, path, reason? }` | 204 |
+| POST | `/v1/runner/git-report` | `{ name, fields }` | 204 |
 | POST | `/v1/runner/usage` | `{ turns: TurnUsage[] }` | `{ recorded: number }` |
 | POST | `/v1/runner/pull-request-summary` | `{ summary }` | `{ pullRequest: number \| null, open, kept }` |
 | POST | `/v1/runner/checkpoint` | `{ turn, claudeSessionId, wipCommit, session, workspace }` | `{ saved: SavedPoint }` |
@@ -1075,9 +1076,10 @@ so a payload stays far under the table's 256 KB. Safe to repeat.
              error: string | null } | null }  // why the last push of them failed, for a person
 ```
 
-`branch` is sent once the runner has pushed or tried to (at its start, at the end of each turn,
-before a sleep, and on a `push` event), and with every report after; absent, the API keeps what
-it had. The API keeps it on `design_runners` (`unpushed`, `push_error`), where the pull request
+`branch` is sent once for each push the runner made or tried (at its start, at the end of each
+turn, before a sleep, and on a `push` event), with the report that follows it, and not with the
+heartbeats after; absent, the API keeps what it had. Said again with every heartbeat, an old
+failure would undo Create PR's clearing of it before the push Create PR asked for had run. The API keeps it on `design_runners` (`unpushed`, `push_error`), where the pull request
 tab reads it ("Pull requests").
 
 `needs_you` while the agent waits on a person, and while a question it asked stays open
@@ -1192,16 +1194,24 @@ nothing heard of it, and the agent's commit stayed in the sandbox. So:
   back (`erase`, with why) and checks the next. One that passed is not checked again. When GitHub
   cannot be asked, or keeps refusing past the budget, git gets the token anyway and fails as it
   would have. The runner logs each check (`git_credential_ready`, `_refused`, `_unchecked`,
-  `_unready`) by fingerprint (`apps/runner/src/git-token.ts`).
+  `_unready`) by fingerprint (`apps/runner/src/git-token.ts`), and sends the same lines, and
+  each try of its own pushes (`git_push`: attempt, ok, kind, git's last words, ms), to the
+  API's log (`POST /v1/runner/git-report`, best-effort), so whether GitHub ever made a new token
+  wait can be read from the API's logs after the sandbox is gone.
 - **The runner pushes what the agent did not** (`apps/runner/src/push.ts`). At the end of every
-  turn, before the sandbox sleeps (after the checkpoint, within what the stop's wait leaves),
-  when it starts (a restore may have brought commits back) and on a `push` event, it pushes the
-  design's branch (`git push --porcelain -u origin refs/heads/<branch>`, as the agent, through
-  the same helper) when it has commits the default branch lacks. git itself finds out whether
-  GitHub already has them, so a branch deleted on GitHub is pushed again. It never forces: a
-  branch that moved on GitHub, a protected branch or a rule that refuses it is reported, not
-  retried. Anything else is tried again after 2, 5, 10 and 15 seconds, giving the token back
-  before each try. While it pushes commits GitHub lacks, the design's state says "Pushing to
+  turn (after the turn's checkpoint, which already holds the commits), before the sandbox sleeps
+  (after the checkpoint, within what the stop's wait leaves), when it starts (a restore may have
+  brought commits back) and on a `push` event, it pushes the design's branch (`git push
+  --porcelain -u origin refs/heads/<branch>`, as the agent, through the same helper) when it has
+  commits GitHub lacks: commits the default branch lacks, and a head other than the one
+  `origin/<branch>` last showed. A branch that was on GitHub and is gone (it has an upstream but
+  no `origin/<branch>`, or the design's pull request was merged) is left gone: Ponzu's Merge and
+  GitHub's setting delete a merged branch, and the runner does not put it back; new commits on
+  it are pushed, as the agent's own push would. A `push` event during a turn waits for the
+  turn's end, so the runner never pushes under the agent's own rebase or push. It never forces:
+  a branch that moved on GitHub, a protected branch or a rule that refuses it is reported, not
+  retried. Anything else (a ref GitHub had locked for another push too) is tried again after 2,
+  5, 10 and 15 seconds, giving the token back before each try. While it pushes commits GitHub lacks, the design's state says "Pushing to
   GitHub". It reports the outcome with its state (`branch`), and when it gives up it says so in
   the thread (`push_failed`), once for a commit and a reason. The commits are safe either way:
   the checkpoint's bundle carries every commit GitHub lacks.
@@ -1318,7 +1328,11 @@ updated a pull request unless the tool's answer named one, and to end a turn by 
 work stands: committed and on GitHub or not, the description ready, and Create PR when they're
 ready. Each turn starts with a line after the person's words, from the claim's `pullRequest` and
 the last push: `(From Ponzu: no pull request is open for <branch>. …)`, or `pull request #N is
-open …`, and how many commits GitHub still lacks, with why the last push failed.
+open …`, and how many commits GitHub still lacks, with why the last push failed. Against an API
+whose claim does not say `pullRequest` (older than this), the line claims nothing about whether
+one is open, and the tool's answer says only that no open pull request took the words. So the
+API, with migration 0016, ships before the image with this runner is baked: the other order
+works, but tells the agent less.
 
 ## Pull requests
 

@@ -95,6 +95,9 @@ export function fakeApiHandler(
         case "POST /v1/runner/git-credential/erase":
           await fake.eraseGitCredential(runner, body);
           return new Response(null, { status: 204 });
+        case "POST /v1/runner/git-report":
+          await fake.reportGit(runner, body);
+          return new Response(null, { status: 204 });
         case "POST /v1/runner/usage":
           await fake.recordUsage(runner, body.turns);
           return Response.json({ recorded: body.turns.length });

@@ -44,6 +44,7 @@ import {
   Claim,
   Complete,
   GitCredential,
+  GitReport,
   PullRequestSummary,
   Question,
   Restored,
@@ -332,6 +333,19 @@ export const runner = new Hono<AppEnv>()
       fingerprint: forgotten,
       reason: ask.reason ?? null,
     });
+    return c.body(null, 204);
+  })
+
+  /**
+   * What the runner saw of git and GitHub in the sandbox (its checks of a token, its pushes),
+   * logged beside `git_credential` so a refused push can be traced from here. Safe to repeat.
+   */
+  .post("/git-report", access.runner, validate("json", GitReport), async (c) => {
+    const { deps, actor } = c.var;
+    const { name, fields } = c.req.valid("json");
+    const line = { ...fields, designId: actor.designId, from: "runner" };
+    if (name === "git_push" && fields.ok === false) deps.log.warn(name, line);
+    else deps.log.info(name, line);
     return c.body(null, 204);
   })
 

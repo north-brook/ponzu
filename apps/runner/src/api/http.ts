@@ -11,6 +11,7 @@ import {
   type CompleteResponse,
   type GitCredentialRequest,
   type GitCredentialResponse,
+  type GitReport,
   type PullRequestSummaryRequest,
   type PullRequestSummaryResponse,
   type QuestionRequest,
@@ -114,6 +115,10 @@ export class HttpRunnerApi implements RunnerApi {
 
   async eraseGitCredential(ask: GitCredentialRequest): Promise<void> {
     await this.call("POST", "/v1/runner/git-credential/erase", ask);
+  }
+
+  async reportGit(report: GitReport): Promise<void> {
+    await this.call("POST", "/v1/runner/git-report", report);
   }
 
   async recordUsage(turns: TurnUsage[]): Promise<void> {

@@ -632,6 +632,26 @@ export interface GitCredentialRequest {
   reason?: string;
 }
 
+/**
+ * `POST /v1/runner/git-report`: what the runner saw of git and GitHub in the sandbox, for the
+ * API's log, so a push GitHub refuses can be understood from the API's logs alone: its checks of
+ * a token before git gets it (git-token.ts) and each push it makes (push.ts). Only logged; never
+ * a token (`fingerprint` names one) and never anything a person typed.
+ */
+export interface GitReport {
+  name: GitReportName;
+  fields: Record<string, string | number | boolean | null>;
+}
+
+export const GIT_REPORTS = [
+  "git_credential_ready",
+  "git_credential_refused",
+  "git_credential_unchecked",
+  "git_credential_unready",
+  "git_push",
+] as const;
+export type GitReportName = (typeof GIT_REPORTS)[number];
+
 export interface GitCredentialResponse {
   username: string;
   password: string;

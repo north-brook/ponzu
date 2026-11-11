@@ -17,6 +17,7 @@ import {
   type EventBody,
   type GitCredentialRequest,
   type GitCredentialResponse,
+  type GitReport,
   type Notice,
   type Person,
   type Priority,
@@ -192,6 +193,7 @@ export class FakeRunnerApi {
       upload: as((r, files: UploadFile[], opts?: { seq?: number }) => this.upload(r, files, opts)),
       gitCredential: as((r, ask: GitCredentialRequest) => this.gitCredential(r, ask)),
       eraseGitCredential: as((r, ask: GitCredentialRequest) => this.eraseGitCredential(r, ask)),
+      reportGit: as((r, report: GitReport) => this.reportGit(r, report)),
       recordUsage: as((r, turns: TurnUsage[]) => this.recordUsage(r, turns)),
       saveCheckpoint: as((r, point: Checkpoint) => this.saveCheckpoint(r, point)),
       restore: as((r) => this.restore(r)),
@@ -242,6 +244,19 @@ export class FakeRunnerApi {
 
   get lastState(): StateRequest | undefined {
     return this.states.at(-1);
+  }
+
+  /**
+   * The design's branch as the API's row holds it (`design_runners.unpushed`, `push_error`):
+   * what the runner last reported, until it reports again. Create PR clears its error
+   * (`askRunnerToPush`), as `askToPush` does here.
+   */
+  branch: StateRequest["branch"] = undefined;
+
+  /** Create PR with commits only the sandbox holds: the `push` event, and the old error forgotten. */
+  askToPush() {
+    if (this.branch) this.branch = { ...this.branch, error: null };
+    return this.push({ kind: "push", payload: {} });
   }
 
   /* The routes, as the API answers them. `runner` is the caller's `X-Ponzu-Runner`. */
@@ -312,7 +327,7 @@ export class FakeRunnerApi {
     return {
       events: waiting.map((e) => structuredClone(e.event)),
       seq: this.doc.seq,
-      pullRequest: this.pullRequest,
+      ...(this.older ? {} : { pullRequest: this.pullRequest }),
     };
   }
 
@@ -356,6 +371,8 @@ export class FakeRunnerApi {
   async putState(runner: string, state: StateRequest): Promise<StateResponse> {
     await this.enter("putState", runner);
     this.states.push(structuredClone(state));
+    // As the API's row: kept until the next report of it.
+    if (state.branch !== undefined) this.branch = structuredClone(state.branch);
     if (state.claudeSessionId) this.sessionInfo.claudeSessionId = state.claudeSessionId;
     if (state.quiesced && state.quiesced !== this.quiesced.at(-1))
       this.quiesced.push(state.quiesced);
@@ -413,6 +430,14 @@ export class FakeRunnerApi {
     this.erased.push(ask);
   }
 
+  /** What the runner told the API's log of git and GitHub, in order. */
+  readonly gitReports: GitReport[] = [];
+
+  async reportGit(runner: string, report: GitReport): Promise<void> {
+    await this.enter("reportGit", runner);
+    this.gitReports.push(structuredClone(report));
+  }
+
   async recordUsage(runner: string, turns: TurnUsage[]): Promise<void> {
     await this.enter("recordUsage", runner);
     for (const turn of turns) this.usage.set(turn.id, structuredClone(turn));
@@ -422,6 +447,8 @@ export class FakeRunnerApi {
   readonly summaries: string[] = [];
   /** The design's pull request as the app shows it: what claims and summaries answer. None here. */
   pullRequest: PullRequestState | null = null;
+  /** Answer as an API older than the pull request's state did: claims without `pullRequest`. */
+  older = false;
 
   async pullRequestSummary(runner: string, summary: string): Promise<PullRequestSummaryResponse> {
     await this.enter("pullRequestSummary", runner);

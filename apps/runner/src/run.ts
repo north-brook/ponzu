@@ -32,8 +32,11 @@ import { type ApiError, fatal, type RunnerApi, retryable, watchFatal } from "./a
 import {
   type AgentState,
   CLAIM_LIMIT,
+  GIT_REPORTS,
   type GitCredentialRequest,
   type GitCredentialResponse,
+  type GitReport,
+  type GitReportName,
   HEARTBEAT_MS,
   MAX_PULL_REQUEST_SUMMARY,
   type ModelUsage,
@@ -288,14 +291,19 @@ export class Runner {
   private pusher: BranchPush | null = null;
   /** The pushes asked for, one after another. */
   private pushes: Promise<void> = Promise.resolve();
+  /** Create PR asked for a push during a turn: made when the turn ends. */
+  private pushAsked = false;
   /** A push the person may want to know is happening: the state says so while it lasts. */
   private pushingNow = false;
   /** The design's branch against GitHub, as the last push found it. */
   private branch: PushOutcome | null = null;
   /** The last push failure the thread was told of (head and kind), so it is said once. */
   private toldPushFailure: string | null = null;
-  /** The design's pull request as the app shows it, from the last claim or tool answer. */
-  private pullRequest: PullRequestState | null = null;
+  /**
+   * The design's pull request as the app shows it, from the last claim or tool answer: null for
+   * none, undefined until an API says (one older than this never does).
+   */
+  private pullRequest: PullRequestState | null | undefined = undefined;
 
   private claiming: Promise<void> | null = null;
   private claimAgain = false;
@@ -359,7 +367,7 @@ export class Runner {
       api: this.api,
       // Without a probe every token counts as honoured: handed to git as the API gave it.
       probe: probe ?? (async () => 200),
-      event: (name, fields) => (probe ? this.event(name, fields) : undefined),
+      event: (name, fields) => (probe ? this.gitEvent(name, fields) : undefined),
       waitsMs: this.timing.gitReadyWaitsMs,
     });
   }
@@ -557,6 +565,23 @@ export class Runner {
   private event(name: string, fields: Record<string, unknown>): void {
     if (this.opts.event) this.opts.event(name, fields);
     else this.log(JSON.stringify({ event: name, designId: this.session?.design.id, ...fields }));
+  }
+
+  /**
+   * A line about git and GitHub (a token's check, a push): journalled here, and sent to the API's
+   * log too, since the sandbox's journal is out of reach once it is gone. Sending is best-effort:
+   * an API that does not take it (older than this) or a failed call loses only the copy.
+   */
+  private gitEvent(name: string, fields: Record<string, unknown>): void {
+    this.event(name, fields);
+    if (!(GIT_REPORTS as readonly string[]).includes(name)) return;
+    const scalars: GitReport["fields"] = {};
+    for (const [key, value] of Object.entries(fields)) {
+      if (value === null || ["string", "number", "boolean"].includes(typeof value)) {
+        scalars[key] = value as string | number | boolean | null;
+      }
+    }
+    this.api.reportGit({ name: name as GitReportName, fields: scalars }).catch(() => {});
   }
 
   /* ---------------------------------------------------------------- */
@@ -851,9 +876,11 @@ export class Runner {
       return;
     }
     if (event.kind === "push") {
-      // Create PR, with commits only this sandbox holds: pushed now, without the agent.
+      // Create PR, with commits only this sandbox holds: pushed without the agent. During a turn
+      // the agent's git may be mid-rebase or pushing itself, so the push waits for the turn's end.
       this.ack(event.id, false);
-      void this.push("asked");
+      if (this.working) this.pushAsked = true;
+      else void this.push("asked");
       return;
     }
     if (this.inSession(event)) {
@@ -1300,10 +1327,13 @@ export class Runner {
         return;
       }
       this.ws.presence.leave(CALLER.id);
-      // The turn's commits go to GitHub whether or not the agent pushed them.
-      await this.push("turn");
       // The sandbox may be stopped at any time now: nothing of the turn may live only here.
       await this.checkpoint();
+      // Then the turn's commits go to GitHub whether or not the agent pushed them (the
+      // checkpoint holds them already), and a Create PR asked for during the turn is answered.
+      const asked = this.pushAsked;
+      this.pushAsked = false;
+      await this.push(asked ? "asked" : "turn");
     };
     end().catch((err) => this.log(`ending the turn failed: ${said(err)}`));
   }
@@ -1377,7 +1407,9 @@ export class Runner {
       branch,
       defaultBranch: repo.defaultBranch,
       erase: (reason) => this.credentials.erase({ ...ask, reason }),
-      event: (name, fields) => this.event(name, fields),
+      event: (name, fields) => this.gitEvent(name, fields),
+      // Ponzu's Merge and GitHub's setting delete a merged branch: not one to put back.
+      merged: () => this.pullRequest?.state === "merged",
       waitsMs: this.timing.pushWaitsMs,
     });
   }
@@ -1512,6 +1544,10 @@ export function summaryAnswer(saved: PullRequestSummaryResponse, unpushed: numbe
     unpushed > 0
       ? ` The branch has ${unpushed === 1 ? "a commit" : `${unpushed} commits`} GitHub doesn't have yet; Ponzu pushes ${unpushed === 1 ? "it" : "them"} when your turn ends.`
       : "";
+  if (saved.open === undefined) {
+    // An API older than this says only that no open pull request took the words.
+    return `Saved in Ponzu, but not written into an open pull request on GitHub. If none is open, it becomes the description of the one the person opens with Create PR in Ponzu.${pending}`;
+  }
   return `Saved as the description the pull request will open with. No pull request is open yet: the person opens it with Create PR in Ponzu.${pending}`;
 }
 

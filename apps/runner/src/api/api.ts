@@ -4,6 +4,7 @@ import type {
   ClaimResponse,
   GitCredentialRequest,
   GitCredentialResponse,
+  GitReport,
   PullRequestSummaryResponse,
   QuestionRequest,
   RestoredReport,
@@ -70,6 +71,8 @@ export interface RunnerApi {
   gitCredential(ask: GitCredentialRequest): Promise<GitCredentialResponse>;
   /** GitHub refused the token git was given: mint a new one next time. */
   eraseGitCredential(ask: GitCredentialRequest): Promise<void>;
+  /** What the runner saw of git and GitHub, for the API's log. Only logged. */
+  reportGit(report: GitReport): Promise<void>;
   /** Safe to repeat: turns are recorded by their ids. */
   recordUsage(turns: TurnUsage[]): Promise<void>;
   /**
@@ -155,6 +158,7 @@ export function watchFatal(api: RunnerApi, onFatal: (err: ApiError) => void): Ru
     upload: watch(api.upload.bind(api)),
     gitCredential: watch(api.gitCredential.bind(api)),
     eraseGitCredential: watch(api.eraseGitCredential.bind(api)),
+    reportGit: watch(api.reportGit.bind(api)),
     recordUsage: watch(api.recordUsage.bind(api)),
     saveCheckpoint: watch(api.saveCheckpoint.bind(api)),
     restore: watch(api.restore.bind(api)),

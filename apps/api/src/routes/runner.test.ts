@@ -759,6 +759,34 @@ describe("git credentials", () => {
     expect(JSON.stringify(t.logs)).not.toContain(first.body.password);
   });
 
+  test("what the runner saw of git and GitHub is logged here, under the design: its checks and pushes", async () => {
+    const { design, runner } = await sample();
+    const refused = await send(runner, "POST", "/git-report", {
+      name: "git_credential_refused",
+      fields: { fingerprint: "0123456789ab", status: 404, check: 2 },
+    });
+    expect(refused.status).toBe(204);
+    await send(runner, "POST", "/git-report", {
+      name: "git_push",
+      fields: { branch: "pz/hero", attempt: 0, ok: false, kind: "transient", said: "x".repeat(900) },
+    });
+    expect(t.logs.findLast((line) => line.event === "git_credential_refused")).toMatchObject({
+      designId: design.id,
+      from: "runner",
+      fingerprint: "0123456789ab",
+      status: 404,
+      check: 2,
+    });
+    const pushed = t.logs.findLast((line) => line.event === "git_push");
+    expect(pushed).toMatchObject({ designId: design.id, ok: false, kind: "transient" });
+    expect(String(pushed?.said).length).toBe(500);
+
+    // Only names it knows, and only short scalar fields.
+    const bad = async (body: unknown) => (await send(runner, "POST", "/git-report", body)).status;
+    expect(await bad({ name: "anything", fields: {} })).toBe(400);
+    expect(await bad({ name: "git_push", fields: { nested: { a: 1 } } })).toBe(400);
+  });
+
   test("a token GitHub grants less than contents: write is minted again, and never handed to git", async () => {
     const { runner } = await sample();
     const ask = github(`${ws.repo.fullName}.git`);

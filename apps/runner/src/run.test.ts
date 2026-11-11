@@ -390,6 +390,25 @@ test("the description tool never speaks of a pull request that isn't there, or o
   expect(summaryAnswer({ pullRequest: 3, open: { number: 3, state: "open" }, kept: null }, 0)).toBe(
     "Updated the description of pull request #3 on GitHub.",
   );
+  // An API older than this says only the number, or null: nothing is claimed of a pull request.
+  expect(summaryAnswer({ pullRequest: null }, 0)).toBe(
+    "Saved in Ponzu, but not written into an open pull request on GitHub. If none is open, it becomes the description of the one the person opens with Create PR in Ponzu.",
+  );
+});
+
+test("against an API that doesn't say where the pull request stands, a turn claims nothing of it", async () => {
+  const api = new FakeRunnerApi({
+    session: { repo: { owner: "north", name: "fern", defaultBranch: "main" }, branch: "pz/hero" },
+  });
+  // An older API's claim answer has no `pullRequest`.
+  api.older = true;
+  const s = await onRepo({}, { api });
+  s.run.ready();
+  s.api.push({ kind: "message", payload: { text: "Ship it" } });
+  s.runner.poke();
+  const first = await s.run.input();
+  expect(first.text).not.toContain("no pull request is open");
+  expect(first.text).toContain("the person opens a pull request from pz/hero with Create PR");
 });
 
 /* ------------------------------------------------------------------ */
@@ -409,7 +428,10 @@ const git = (cwd: string, ...args: string[]) =>
   execFileSync("git", args, { cwd, env: GIT_ENV, encoding: "utf8" }).trim();
 
 /** "GitHub" (a bare repository) and the design's checkout of it on pz/hero, with a runner on it. */
-async function onRepo(timing: Partial<Timing> = {}) {
+async function onRepo(
+  timing: Partial<Timing> = {},
+  more: { flush?: () => void; api?: FakeRunnerApi } = {},
+) {
   const root = await temp();
   const origin = join(root, "origin.git");
   const seed = join(root, "seed");
@@ -434,6 +456,7 @@ async function onRepo(timing: Partial<Timing> = {}) {
     prepare: async () => work,
     checkoutGit: (cwd) => gitIn(agentShell(undefined, GIT_ENV), "git", cwd),
     timing: { pushWaitsMs: [5, 5], ...timing },
+    ...more,
   });
   const onGithub = () => {
     try {
@@ -455,7 +478,7 @@ test("a turn that ends with commits GitHub lacks gets them pushed, whatever the 
   s.run.end();
 
   await until(() => s.onGithub() === head, 5_000);
-  await until(() => s.api.lastState?.branch?.unpushed === 0 && s.api.lastState.state === "idle");
+  await until(() => s.api.branch?.unpushed === 0 && s.api.lastState?.state === "idle");
   // While it pushed, the design said so.
   expect(s.api.states.some((st) => st.status === "Pushing to GitHub")).toBe(true);
   expect(notices(s.api, "error")).toEqual([]);
@@ -476,8 +499,15 @@ test("a push that keeps failing is said once in the thread, in Ponzu's words, an
     code: "push_failed",
     message: expect.stringContaining("Ponzu couldn't push pz/hero to north/fern"),
   });
-  await until(() => s.api.lastState?.branch?.unpushed === 1);
-  expect(s.api.lastState?.branch?.error).toContain("1 commit on pz/hero is safe");
+  await until(() => s.api.branch?.unpushed === 1);
+  expect(s.api.branch?.error).toContain("1 commit on pz/hero is safe");
+  // The API's log heard each try, in the runner's words.
+  expect(s.api.gitReports.filter((r) => r.name === "git_push").length).toBeGreaterThan(0);
+  expect(s.api.gitReports.find((r) => r.name === "git_push")?.fields).toMatchObject({
+    branch: "pz/hero",
+    ok: false,
+    kind: "transient",
+  });
   // Each failed try gave the token back for a new one.
   expect(s.api.erased.length).toBeGreaterThan(0);
 
@@ -498,7 +528,94 @@ test("a push that keeps failing is said once in the thread, in Ponzu's words, an
   await turn(s);
   s.run.end();
   await until(() => s.onGithub() !== null, 5_000);
-  await until(() => s.api.lastState?.branch?.error === null);
+  await until(() => s.api.branch?.error === null);
+});
+
+test("Create PR after a failed push: the old error is not said again while the new push runs", async () => {
+  const s = await onRepo({ heartbeatMs: 10 });
+  git(s.work, "remote", "set-url", "origin", join(s.work, "..", "gone.git"));
+  s.run.ready();
+  await turn(s);
+  s.commit();
+  s.run.end();
+  await until(() => s.api.branch?.error != null, 5_000);
+  await until(() => s.api.lastState?.state === "idle");
+
+  // Heartbeats go on, but say nothing of the branch: what was said stands.
+  const quiet = s.api.states.length;
+  await until(() => s.api.states.length >= quiet + 3);
+  expect(s.api.states.slice(quiet).every((st) => st.branch === undefined)).toBe(true);
+
+  // Fixed, and the person presses Create PR: the API forgets the old error. Every report from
+  // then on says only how the new push went, never the old failure.
+  git(s.work, "remote", "set-url", "origin", s.origin);
+  const asked = s.api.states.length;
+  s.api.askToPush();
+  s.runner.poke();
+  await until(() => s.onGithub() !== null, 5_000);
+  await until(() => s.api.branch?.unpushed === 0);
+  const after = s.api.states.slice(asked).filter((st) => st.branch !== undefined);
+  expect(after.every((st) => st.branch?.error === null)).toBe(true);
+  expect(s.api.branch?.error).toBeNull();
+});
+
+test("Create PR during a turn waits for the turn to end, so the agent's git is left alone", async () => {
+  const s = await onRepo();
+  s.run.ready();
+  await turn(s);
+  const head = s.commit();
+  s.api.askToPush();
+  s.runner.poke();
+  await Bun.sleep(100);
+  // Mid-turn: nothing pushed for the agent to race.
+  expect(s.onGithub()).toBeNull();
+  s.run.end();
+  await until(() => s.onGithub() === head, 5_000);
+});
+
+test("the turn's checkpoint is saved before its push, which may take a while", async () => {
+  let ended = false;
+  let pushTries = () => 0;
+  let triesAtSave: number | null = null;
+  const s = await onRepo(
+    { pushWaitsMs: [200] },
+    {
+      // The checkpoint ends by flushing the disk.
+      flush: () => {
+        if (ended) triesAtSave ??= pushTries();
+      },
+    },
+  );
+  pushTries = () => s.api.gitReports.filter((r) => r.name === "git_push").length;
+  git(s.work, "remote", "set-url", "origin", join(s.work, "..", "gone.git"));
+  s.run.ready();
+  await turn(s);
+  s.commit();
+  ended = true;
+  s.run.end();
+  await until(() => notices(s.api, "error").length === 1, 5_000);
+  // Saved before the push's first try, not after its last.
+  expect(triesAtSave).toBe(0);
+  expect(pushTries()).toBe(2);
+});
+
+test("a branch merged and deleted on GitHub isn't put back by the runner", async () => {
+  const s = await onRepo();
+  s.run.ready();
+  await turn(s);
+  s.commit();
+  s.run.end();
+  await until(() => s.onGithub() !== null, 5_000);
+  await until(() => s.api.lastState?.state === "idle");
+  // Merged, and deleted by Ponzu's Merge; the checkout fetches with --prune.
+  git(s.origin, "update-ref", "-d", "refs/heads/pz/hero");
+  git(s.work, "fetch", "-q", "--prune", "origin");
+  s.api.pullRequest = { number: 4, state: "merged" };
+  await turn(s);
+  s.run.end();
+  await until(() => s.api.states.filter((st) => st.state === "idle").length >= 2, 5_000);
+  await Bun.sleep(50);
+  expect(s.onGithub()).toBeNull();
 });
 
 test("Create PR with commits only the sandbox holds: the runner pushes them, without the agent", async () => {

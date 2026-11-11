@@ -145,7 +145,7 @@ test("a push that keeps failing gives up after the waits, or by the deadline, an
   expect(bounded.erased).toHaveLength(1);
 });
 
-test("a branch that moved on GitHub is never pushed over, and a deleted one is pushed again", async () => {
+test("a branch that moved on GitHub is never pushed over, and a deleted one is pushed again only with new commits", async () => {
   const r = repo();
   r.commit();
   const { push } = pusher(r.git);
@@ -166,11 +166,40 @@ test("a branch that moved on GitHub is never pushed over, and a deleted one is p
   expect(diverged.erased).toEqual([]);
   expect(sh(r.origin, "rev-parse", "refs/heads/pz/hero")).toBe(theirs);
 
-  // The branch deleted on GitHub: git sees it is gone and pushes it whole.
+  // The branch deleted on GitHub (merged, say) at the commit the checkout has: left deleted.
   sh(r.origin, "update-ref", "-d", "refs/heads/pz/hero");
   sh(r.work, "reset", "-q", "--hard", "HEAD~1");
+  const gone = pusher(r.git);
+  expect(await gone.push.unpushed()).toBe(0);
+  expect(await gone.push.push()).toEqual({ unpushed: 0, pushed: 0, failure: null });
+  expect(gone.events).toEqual([]);
+  expect(() => sh(r.origin, "rev-parse", "--verify", "refs/heads/pz/hero")).toThrow();
+
+  // New commits on it: GitHub lacks them, so it goes back with them, as the agent's push would.
+  r.commit();
   expect((await pusher(r.git).push.push()).failure).toBeNull();
   expect(sh(r.origin, "rev-parse", "refs/heads/pz/hero")).toBe(sh(r.work, "rev-parse", "HEAD"));
+});
+
+test("a branch pruned after its merge is not put back on GitHub", async () => {
+  const r = repo();
+  r.commit();
+  await pusher(r.git).push.push();
+  // Merged and deleted on GitHub, and a fetch pruned it here: the upstream stays configured.
+  sh(r.origin, "update-ref", "-d", "refs/heads/pz/hero");
+  sh(r.work, "fetch", "-q", "--prune", "origin");
+  const pruned = pusher(r.git);
+  expect(await pruned.push.unpushed()).toBe(0);
+  expect((await pruned.push.push()).pushed).toBe(0);
+  expect(() => sh(r.origin, "rev-parse", "--verify", "refs/heads/pz/hero")).toThrow();
+
+  // A checkout restored without its upstream: the merged pull request says the same.
+  sh(r.work, "branch", "-q", "--unset-upstream");
+  expect(await pusher(r.git).push.unpushed()).toBe(1);
+  const merged = pusher(r.git, { merged: () => true });
+  expect(await merged.push.unpushed()).toBe(0);
+  expect((await merged.push.push()).pushed).toBe(0);
+  expect(() => sh(r.origin, "rev-parse", "--verify", "refs/heads/pz/hero")).toThrow();
 });
 
 test("what git says decides whether to try again", () => {
@@ -196,6 +225,13 @@ test("what git says decides whether to try again", () => {
   expect(
     fail("", "fatal: could not read Username for 'https://github.com': terminal prompts disabled")
       .kind,
+  ).toBe("transient");
+  // The agent's push landed at the same moment: GitHub's ref was locked, not a rule.
+  expect(
+    fail(
+      "!\trefs/heads/pz/hero:refs/heads/pz/hero\t[remote rejected] (failed to update ref)\nDone",
+      "error: failed to push some refs",
+    ).kind,
   ).toBe("transient");
 });
 

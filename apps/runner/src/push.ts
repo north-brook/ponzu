@@ -50,6 +50,11 @@ export interface BranchPushOptions {
   erase(reason: string): Promise<void>;
   /** A structured line for the journal. */
   event(name: string, fields: Record<string, unknown>): void;
+  /**
+   * Whether the design's pull request was merged: a branch GitHub no longer has is then one that
+   * was deleted after its merge, not one to push again.
+   */
+  merged?(): boolean;
   /** Waits between tries of a failure that may pass. */
   waitsMs?: number[];
   sleep?(ms: number): Promise<void>;
@@ -76,15 +81,19 @@ export class BranchPush {
 
   /**
    * Commits on the design's branch that GitHub does not have, as the checkout last knew GitHub:
-   * beyond `origin/<branch>` when that is in its history, else beyond the default branch. No
-   * network: a branch deleted on GitHub since the last fetch counts as there until a push says.
+   * beyond `origin/<branch>` when that is in its history, else beyond the default branch, and
+   * none for a branch deleted on GitHub after it was pushed. No network.
    */
   async unpushed(): Promise<number> {
     const local = `refs/heads/${this.opts.branch}`;
     if (!(await this.has(local))) return 0;
     const remote = `refs/remotes/origin/${this.opts.branch}`;
+    const tracked = await this.has(remote);
+    // Pushed once and gone from GitHub since (merged and deleted, by Ponzu's Merge or the repo's
+    // setting, or by a person): not the runner's to bring back.
+    if (!tracked && (await this.deletedOnGithub())) return 0;
     const base =
-      (await this.has(remote)) && (await this.isAncestor(remote, local))
+      tracked && (await this.isAncestor(remote, local))
         ? remote
         : `refs/remotes/origin/${this.opts.defaultBranch}`;
     if (!(await this.has(base))) return 0;
@@ -103,19 +112,26 @@ export class BranchPush {
   }
 
   /**
-   * Push the design's branch when it has commits beyond the default branch, trying a failure
-   * that may pass again (`waitsMs`) until `deadline`. Never forces: a branch GitHub moved on
-   * past is reported, not overwritten. git itself says "Everything up-to-date" when GitHub
-   * already has it, so a branch deleted on GitHub is pushed again.
+   * Push the design's branch when it has commits GitHub lacks, trying a failure that may pass
+   * again (`waitsMs`) until `deadline`. Never forces: a branch GitHub moved on past is reported,
+   * not overwritten. A branch GitHub already has at this commit is left alone, so one deleted on
+   * GitHub after it was merged is not put back; new commits on it are pushed, as the agent's own
+   * push would.
    */
   async push(opts: { deadline?: number } = {}): Promise<PushOutcome> {
     const { branch, defaultBranch } = this.opts;
     const local = `refs/heads/${branch}`;
-    if (!(await this.has(local))) return { unpushed: 0, pushed: 0, failure: null };
+    const nothing: PushOutcome = { unpushed: 0, pushed: 0, failure: null };
+    if (!(await this.has(local))) return nothing;
     const base = `refs/remotes/origin/${defaultBranch}`;
     // Nothing of the design's own yet: nothing to push, and nothing for a pull request.
-    if ((await this.has(base)) && (await this.count(`${base}..${local}`)) === 0) {
-      return { unpushed: 0, pushed: 0, failure: null };
+    if ((await this.has(base)) && (await this.count(`${base}..${local}`)) === 0) return nothing;
+    const remote = `refs/remotes/origin/${branch}`;
+    if (await this.has(remote)) {
+      // GitHub had this very commit when the checkout last heard: nothing it lacks.
+      if ((await this.sha(remote)) === (await this.sha(local))) return nothing;
+    } else if (await this.deletedOnGithub()) {
+      return nothing;
     }
     const before = await this.unpushed();
     let failure: PushFailure | null = null;
@@ -148,6 +164,23 @@ export class BranchPush {
     return { unpushed: await this.unpushed(), pushed: 0, failure };
   }
 
+  /**
+   * The branch was on GitHub once and is not now, as far as the checkout knows: it has an
+   * upstream but no remote-tracking ref (a fetch pruned it), or the design's pull request was
+   * merged (`merged`), after which GitHub or Ponzu deletes the branch.
+   */
+  private async deletedOnGithub(): Promise<boolean> {
+    if (this.opts.merged?.()) return true;
+    return this.opts.git(["config", "--get", `branch.${this.opts.branch}.merge`]).then(
+      (out) => text(out).trim() !== "",
+      () => false,
+    );
+  }
+
+  private async sha(ref: string): Promise<string> {
+    return text(await this.opts.git(["rev-parse", "--verify", ref])).trim();
+  }
+
   private has(ref: string): Promise<boolean> {
     return this.opts.git(["rev-parse", "--verify", "--quiet", ref]).then(
       () => true,
@@ -177,6 +210,10 @@ export function classify(err: unknown): PushFailure {
   const said = lines.slice(-3).join("\n") || (err instanceof Error ? err.message : String(err));
   if (/\[rejected\]|non-fast-forward|fetch first|stale info/i.test(out)) {
     return { kind: "diverged", said };
+  }
+  // Another push to the branch landed at the same moment (the agent's): GitHub's ref was locked.
+  if (/failed to update ref|cannot lock ref|incorrect old value/i.test(out)) {
+    return { kind: "transient", said };
   }
   if (
     /protected branch|GH0\d\d|rule violations|refusing to allow|remote rejected|pre-receive hook declined/i.test(

@@ -29,14 +29,17 @@ export function turnContext({
   pushFailed,
 }: {
   branch: string;
-  pullRequest: PullRequestState | null;
+  /** Undefined when the API has not said (one older than this): then nothing is claimed of it. */
+  pullRequest: PullRequestState | null | undefined;
   unpushed: number;
   /** git's last words on the push that failed, if the last one did. */
   pushFailed: string | null;
 }): string {
   const pr = pullRequest;
   const where =
-    pr && (pr.state === "open" || pr.state === "draft")
+    pr === undefined
+      ? `the person opens a pull request from ${branch} with Create PR once it has commits; Ponzu doesn't open one by itself. Check describe_pull_request's answer before saying whether one is open.`
+      : pr && (pr.state === "open" || pr.state === "draft")
       ? `pull request #${pr.number} is open${pr.state === "draft" ? " as a draft" : ""} from ${branch}: pushing to the branch updates it, and describe_pull_request rewrites its description.`
       : pr?.state === "merged"
         ? `pull request #${pr.number} from ${branch} was merged. Nothing is open now: for new commits the person opens another with Create PR.`
