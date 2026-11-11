@@ -82,7 +82,16 @@ export function Tip({
 }) {
   return (
     <Tooltip>
-      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipTrigger
+        asChild
+        // Keyboard focus only, as the ring: none for focus a click or our code gave
+        // (ui/quiet-focus.ts), which is marked before this runs.
+        onFocus={(e) => {
+          if (e.currentTarget.hasAttribute("data-quiet-focus")) e.preventDefault();
+        }}
+      >
+        {children}
+      </TooltipTrigger>
       {/*
        * Even on both sides: 9 round the words alone. A shortcut's caps end it 5 from the edge,
        * as above and below them (16 in 26), so they sit in the tip as a pill in a pill.

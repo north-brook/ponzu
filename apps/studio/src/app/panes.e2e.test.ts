@@ -82,10 +82,10 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     // The canvas starts where the sidebar's gutter ends, and stops where the rail's begins.
     expect(g.canvasLeft).toBeCloseTo(300, 0);
     expect(g.canvasRight).toBeCloseTo(WIDTH - 360, 0);
-    // The chrome's left block ends a header gap before x 300; the right block (the rail's
-    // toggle and the cluster before it) reaches back to x 1080, the rail's edge.
+    // The chrome's left block ends a header gap before x 300; the rail's divider is on x 1080,
+    // the rail's edge, its pixel the canvas's last column.
     expect(g.chromeLeftEnd + 4).toBeCloseTo(300, 0);
-    expect(g.chromeRightStart).toBeCloseTo(WIDTH - 360, 0);
+    expect(g.railDividerRight).toBeCloseTo(WIDTH - 360, 1);
     // Each edge is a separator in tab order, named for its pane.
     for (const [id, name] of [
       ["#sidebar-pane-edge", "Resize sidebar"],
@@ -168,7 +168,7 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     expect(await page.evaluate(() => String(window.getSelection()))).toBe("");
   });
 
-  test("the rail's edge drags the same way, and the chrome's right block follows it", async () => {
+  test("the rail's edge drags the same way, and the chrome's divider follows it", async () => {
     const before = await geometry(page);
     const x = await railEdgeX();
     await page.mouse.move(x, GRIP_Y);
@@ -177,11 +177,13 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
       await page.mouse.move(x + dx, GRIP_Y);
       const g = await sameFrame(page);
       expect(g.rail).toBeCloseTo(360 - dx, 0);
-      expect(g.chromeRightStart - g.railLeft).toBeCloseTo(
-        before.chromeRightStart - before.railLeft,
+      expect(g.railDividerRight - g.railLeft).toBeCloseTo(
+        before.railDividerRight - before.railLeft,
         1,
       );
       expect(g.canvasRight).toBeCloseTo(WIDTH - g.rail, 1);
+      // On the canvas's edge, in the same frame as the pane.
+      expect(g.railDividerRight).toBeCloseTo(g.canvasRight, 1);
     }
     await shootBoth("4-dragging-rail", x - 100);
     await page.mouse.up();
@@ -487,7 +489,10 @@ function measure() {
     canvasRight: canvas.right,
     canvasWidth: canvas.width,
     chromeLeftEnd: header.firstElementChild!.getBoundingClientRect().right,
-    chromeRightStart: header.lastElementChild!.getBoundingClientRect().left,
+    // The rail's divider, the chrome's last (the right side's `| … [toggle]`).
+    railDividerRight: [...header.querySelectorAll("[data-chrome-divider]")]
+      .at(-1)!
+      .getBoundingClientRect().right,
   };
 }
 
