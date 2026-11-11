@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Renderer } from "@ponzu/render";
+import type { ChromiumOptions } from "@ponzu/render/chromium";
 import { LocalWorkspace, readJournal, serve } from "./index.ts";
 
 let dir: string;
@@ -21,8 +22,37 @@ async function chromium(): Promise<Renderer | undefined> {
   if (browser) return browser;
   const { ChromiumRenderer, findChromium } = await import("@ponzu/render/chromium");
   const executablePath = findChromium();
-  if (executablePath) browser = new ChromiumRenderer({ executablePath });
+  if (executablePath) browser = new ChromiumRenderer({ executablePath, preparePage: watchVideos });
   return browser;
+}
+
+/** What the videos on render pages did, as each page tells it: their seeks and the frames drawn. */
+const videoLog: string[] = [];
+type Page = Parameters<NonNullable<ChromiumOptions["preparePage"]>>[0];
+async function watchVideos(page: Page) {
+  page.on("console", (m) => {
+    if (m.text().startsWith("video ")) videoLog.push(m.text());
+  });
+  await page.addInitScript(() => {
+    const state = (v: HTMLVideoElement) =>
+      `currentTime ${v.currentTime}, readyState ${v.readyState}, paused ${v.paused}`;
+    for (const type of ["loadedmetadata", "seeking", "seeked", "error"])
+      document.addEventListener(
+        type,
+        (e) => {
+          if (e.target instanceof HTMLVideoElement)
+            console.log(`video ${type}: ${state(e.target)}`);
+        },
+        true,
+      );
+    const ask = HTMLVideoElement.prototype.requestVideoFrameCallback;
+    HTMLVideoElement.prototype.requestVideoFrameCallback = function (cb) {
+      return ask.call(this, (now, frame) => {
+        console.log(`video frame drawn: mediaTime ${frame.mediaTime}, ${state(this)}`);
+        cb(now, frame);
+      });
+    };
+  });
 }
 
 const text = (r: any) =>
@@ -367,11 +397,20 @@ test("screenshots seek a video from the design's assets/", async () => {
     });
     const abId = /artboard (ab_\w+)/.exec(text(ab))![1]!;
     const image = async (at: number) => {
+      videoLog.length = 0;
       const shot = await client.callTool({ name: "screenshot", arguments: { id: abId, at } });
-      return (shot.content as { type: string; data?: string }[]).find((c) => c.type === "image")!
-        .data;
+      const data = (shot.content as { type: string; data?: string }[]).find(
+        (c) => c.type === "image",
+      )?.data;
+      // What the screenshot said and what its page's video did, for a failure to explain itself.
+      return { data, said: `at ${at}ms: ${text(shot)}\n  ${videoLog.join("\n  ")}` };
     };
-    expect(await image(300)).not.toBe(await image(1500));
+    const red = await image(300);
+    const blue = await image(1500);
+    expect(red.data).toBeDefined();
+    expect(blue.data, `Both frames are the same picture.\n${red.said}\n${blue.said}`).not.toBe(
+      red.data,
+    );
   } finally {
     ws.renderer = undefined;
   }
