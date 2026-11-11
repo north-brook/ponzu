@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { SLICE, SLICE_STROKE } from "@ponzu/canvas/slice";
 import { SignInError } from "@ponzu/client";
 import { type Finished, type SignInAttempt, signInWithBrowser } from "./sign-in.ts";
 
@@ -56,11 +57,26 @@ test("the redirect with this attempt's state is finished, then the page says sig
   const { attempt, redirect, state, finished } = await start();
   const page = await fetch(`${redirect.href}?code=code_1&state=${state}`);
   expect(page.status).toBe(200);
-  expect(page.headers.get("content-security-policy")).toContain("default-src 'none'");
+  const csp = page.headers.get("content-security-policy")!;
   const html = await page.text();
   expect(html).toContain("You're signed in");
-  expect(html).toContain("You can close this tab");
-  expect(html).not.toContain("<script");
+  expect(html).toContain("Ponzu has it. You can close this tab.");
+  // A handoff with nothing to open: Ponzu comes forward by itself, and the page closes as it does.
+  const main = html.match(/<main [^>]*>/)![0];
+  expect(main).toContain('data-closes="true"');
+  expect(main).not.toContain("data-link");
+  expect(html).not.toMatch(/ponzu(-dev|-preview)?:\/\//);
+  // Still nothing but its own: one script and one style sheet, each by its hash.
+  expect(csp).toStartWith("default-src 'none'; script-src 'sha256-");
+  expect(csp).not.toContain("unsafe-inline");
+  const script = html.match(/<script>([\s\S]*?)<\/script>/)![1]!;
+  const style = html.match(/<style>([\s\S]*?)<\/style>/)![1]!;
+  expect(csp).toContain(`script-src ${await sha256(script)};`);
+  expect(csp).toContain(`style-src ${await sha256(style)};`);
+  expect(html.match(/<script/g)).toHaveLength(1);
+  // The mark is the brand's slice, the same six segments the app draws.
+  for (const d of SLICE) expect(html).toContain(`<path d="${d}"/>`);
+  expect(html).toContain(`stroke-width="${SLICE_STROKE}"`);
   expect(await attempt.ended).toEqual({ kind: "signed_in" });
   expect(finished).toHaveLength(1);
   expect(finished[0]!.code).toBe("code_1");
@@ -83,8 +99,14 @@ test("the page waits for the exchange, and says it didn't finish when the exchan
   answer({ ok: false, error: new Error("down"), why: "Ponzu couldn't be reached." });
   const html = await page;
   expect(html).toContain("Sign-in didn't finish");
-  expect(html).toContain("Ponzu couldn't be reached.");
+  expect(html).toContain(
+    "Ponzu couldn't be reached. You can close this tab and try again in Ponzu.",
+  );
   expect(html).not.toContain("You're signed in");
+  // It stays open, saying why: there is something left to do in Ponzu.
+  const main = html.match(/<main [^>]*>/)![0];
+  expect(main).not.toContain("data-closes");
+  expect(main).toContain('data-problem="true"');
   expect((await attempt.ended).kind).toBe("failed");
 });
 
@@ -137,3 +159,23 @@ test("closing it, or its window running out, ends it and closes the listener at 
   expect(await late.attempt.ended).toEqual({ kind: "expired" });
   expect(await listening(late.redirect)).toBe(false);
 });
+
+test("whatever the exchange says can only be words on the page", async () => {
+  const { attempt, redirect, state } = await start({
+    finish: async () => ({
+      ok: false,
+      error: new Error("refused"),
+      why: `<script>alert(1)</script><a href="https://evil.example">here</a>`,
+    }),
+  });
+  const html = await (await fetch(`${redirect.href}?code=code_1&state=${state}`)).text();
+  expect(html.match(/<script/g)).toHaveLength(1);
+  expect(html).not.toContain("<a ");
+  expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+  await attempt.ended;
+});
+
+async function sha256(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return `'sha256-${Buffer.from(digest).toString("base64")}'`;
+}

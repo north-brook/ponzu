@@ -37,7 +37,7 @@ src/
                     sandbox's address, and whether its `/health` answers (`runnerPort`)
     anthropic.ts    real: whether Anthropic takes an API key (the free list of models)
     realtime.ts     real: seals live queries with the branch's Realtime secret
-    model.ts        real: Claude Haiku via the AI SDK on Ponzu's own key, structured answers
+    model.ts        real: Claude Haiku (ideas) and Sonnet (their gate) via the AI SDK on Ponzu's own key, structured answers
   http/           errors, validation, request ids and logs, CORS, the client-version gate
   auth/           access declarations, authentication, authorization, sign-in
   vault/          sealing stored secrets
@@ -162,7 +162,9 @@ the sandboxes labelled with their own database (`SandboxConfig.scope`).
    `c.json(Schema.parse(value))`. The schema is the allowlist, so a row passed whole cannot
    leak a column. JSON is camelCase; `/v1/auth/exchange` keeps OAuth's three snake_case names.
    Two routes are not JSON, both GitHub's to call: `GET /v1/github/setup` is a page a browser
-   lands on (`github/setup-page.ts`: no script, everything escaped, its own strict headers), and
+   lands on (`github/setup-page.ts`, a handoff from `@ponzu/core/handoff`: one fixed script and
+   one fixed style sheet allowed by their hashes, everything else escaped, its own strict
+   headers), and
    `POST /v1/github/webhook` reads its raw body to check the signature before parsing it.
 
 4. **Dependencies.** Read them from `c.var.deps` (`db`, `clock`, `vault`, `workos`, `github`,

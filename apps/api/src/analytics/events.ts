@@ -140,10 +140,14 @@ export interface ServerEvents {
     output_tokens: number;
   };
   /**
-   * No ideas were made this time: the workspace asked for too many this hour, the model's
-   * answers broke the rules twice, or GitHub or the model failed.
+   * No ideas were made this time: the workspace asked for too many this hour, nothing in the
+   * model's answers passed the checks and the gate (`rejected`), the gate found an idea asking
+   * the reader for something other than a design (`unsafe`), or GitHub or a model failed.
    */
-  "ideas skipped": { repo_id: string; reason: "rejected" | "rate_limited" | "failed" };
+  "ideas skipped": {
+    repo_id: string;
+    reason: "rejected" | "unsafe" | "rate_limited" | "failed";
+  };
 
   // Files and money
   /** A person's file reached a design (an image they pasted or dropped into the thread). */

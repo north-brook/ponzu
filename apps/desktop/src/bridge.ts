@@ -141,6 +141,11 @@ export interface PonzuDesktop {
   };
   /** Open an https link in the system browser. Anything else is ignored. */
   openExternal(url: string): void;
+  /**
+   * Bring Ponzu in front of the browser: what the studio does once an install it started on
+   * GitHub has come back, as the session does once a sign-in's tab has.
+   */
+  comeForward(): void;
 }
 
 /** The IPC channels, by what they carry. `invoke` ones answer; `send` ones don't. */
@@ -161,4 +166,5 @@ export const CHANNELS = {
   updateCheck: "ponzu:update:check",
   updateInstall: "ponzu:update:install",
   openExternal: "ponzu:open-external",
+  comeForward: "ponzu:come-forward",
 } as const;

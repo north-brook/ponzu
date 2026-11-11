@@ -83,6 +83,7 @@ const desktop: PonzuDesktop = {
     install: () => ipcRenderer.send(CHANNELS.updateInstall),
   },
   openExternal: (url) => ipcRenderer.send(CHANNELS.openExternal, url),
+  comeForward: () => ipcRenderer.send(CHANNELS.comeForward),
 };
 
 contextBridge.exposeInMainWorld("ponzuDesktop", desktop);

@@ -10,7 +10,7 @@ import { trafficLights } from "./traffic-lights.ts";
  */
 
 /**
- * The frame. The Mac's traffic lights sit in the studio's 44px chrome, which leaves them room
+ * The frame. The Mac's traffic lights sit in the studio's 38px chrome, which leaves them room
  * (apps/studio/src/cloud/window/chrome.tsx); Windows and Linux keep their own title bar, since
  * the chrome's right end is the thread's.
  */

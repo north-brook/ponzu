@@ -72,19 +72,27 @@ export interface Model {
 
 /** Claude Haiku 5.5, by Anthropic's id. On the AI Gateway it is `anthropic/claude-haiku-5.5`. */
 export const CLAUDE_HAIKU = "claude-haiku-5-5";
+/**
+ * Claude Sonnet 5.5: the stronger model that reviews what Haiku wrote before a person sees it
+ * (the ideas gate, `ideas/gate.ts`).
+ */
+export const CLAUDE_SONNET = "claude-sonnet-5-5";
 
 /** How long one request may take, retry included, when the caller's signal has not ended it. */
 const TIMEOUT_MS = 30_000;
 
-/** The real thing: Claude Haiku on Ponzu's Anthropic key, over the API's `fetch`. */
+/** The real thing: Claude (Haiku unless told) on Ponzu's Anthropic key, over the API's `fetch`. */
 export function createClaude({
   apiKey,
   fetch,
+  model = CLAUDE_HAIKU,
   timeoutMs = TIMEOUT_MS,
   tracing = null,
 }: {
   apiKey: string;
   fetch: Fetch;
+  /** Which Claude: `CLAUDE_HAIKU` or `CLAUDE_SONNET`. */
+  model?: typeof CLAUDE_HAIKU | typeof CLAUDE_SONNET;
   /** One request's own limit, retry included: shorter only in tests. */
   timeoutMs?: number;
   /** Where each call is traced, or null when analytics is off. */
@@ -97,7 +105,7 @@ export function createClaude({
     baseURL: "https://api.anthropic.com/v1",
     fetch: fetch as typeof globalThis.fetch,
   });
-  return createModel(anthropic(CLAUDE_HAIKU), { timeoutMs, tracing });
+  return createModel(anthropic(model), { timeoutMs, tracing });
   // Through the Vercel AI Gateway instead, the model is this one line (with `createGateway`
   // from "ai"), its key read in env.ts like every other (AI_GATEWAY_API_KEY, made in the team's
   // AI Gateway settings), and PONZU_ANTHROPIC_API_KEY no longer needed:

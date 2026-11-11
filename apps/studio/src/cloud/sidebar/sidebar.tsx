@@ -64,7 +64,6 @@ export interface SidebarProps extends RowHandlers {
  */
 export function Sidebar(props: SidebarProps) {
   const { me, workspace, designs, filter, query, results } = props;
-  const searchButton = useRef<HTMLButtonElement>(null);
   const searchField = useRef<HTMLInputElement>(null);
   const [selected, setSelected] = useResultSelection(results);
 
@@ -78,11 +77,9 @@ export function Sidebar(props: SidebarProps) {
   useShortcut("n", props.onNewDesign);
   useShortcut(",", props.onSettings);
 
-  const closeSearch = () => {
-    props.onQueryChange(null);
-    // Back to where search was opened from.
-    requestAnimationFrame(() => searchButton.current?.focus());
-  };
+  // Closing search leaves focus nowhere in particular: putting it back on the search button
+  // would show that button's tip, as if the person had gone to it.
+  const closeSearch = () => props.onQueryChange(null);
 
   const searching = query !== null && query.trim() !== "";
   const team = workspace.kind === "org";
@@ -137,7 +134,6 @@ export function Sidebar(props: SidebarProps) {
           />
           <span className="flex-1" />
           <IconButton
-            ref={searchButton}
             label="Search"
             keys={["⌘", "K"]}
             onClick={() => props.onQueryChange("")}

@@ -6,8 +6,8 @@
 import type { Composition, Rect } from "./compositions.ts";
 
 const WINDOW = { width: 1440, height: 900 };
-const CANVAS: Rect = { x: 300, y: 44, width: 780, height: 850 };
-const RAIL: Rect = { x: 1080, y: 44, width: 360, height: 856 };
+const CANVAS: Rect = { x: 300, y: 38, width: 780, height: 856 };
+const RAIL: Rect = { x: 1080, y: 38, width: 360, height: 862 };
 /** Settings, 760 by 600, centred in the window. */
 const MODAL: Rect = { x: 340, y: 150, width: 760, height: 600 };
 
