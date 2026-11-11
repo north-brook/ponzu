@@ -20,11 +20,12 @@ export interface ApiOptions {
   /** For the upload's PUT to storage, which carries no bearer. */
   fetch?: Fetch;
   /**
-   * The scheme of the links this app takes, when it isn't `ponzu`: Ponzu Dev's `ponzu-dev`.
-   * Pages the API sends a person to (GitHub's
-   * setup) link back to it, so they return to the app they came from.
+   * The scheme of the links this app takes (`ponzu`, Ponzu Dev's `ponzu-dev`), or `none` for a
+   * build that takes none. Pages the API sends a person to (GitHub's setup) link back to it, so
+   * they return to the app they came from; for `none` they link nowhere and say the app has it.
+   * Left out, the API doesn't know, and its pages link nowhere.
    */
-  linkScheme?: LinkScheme;
+  linkScheme?: LinkScheme | "none";
 }
 
 /** The schemes the API will link back to (apps/api/src/github/link-scheme.ts). */
@@ -107,6 +108,13 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
             json: opts.linkScheme ? { ...body, scheme: opts.linkScheme } : body,
           })
         ).json(),
+      /**
+       * How an install begun with `installLink` stands: waiting for GitHub, settled (what the
+       * setup page said), or expired. Asked while the install page is open, so the app hears
+       * the outcome without the page's link.
+       */
+      install: async (id: string) =>
+        (await v1.github.installs[":id"].$get({ param: { id } })).json(),
     },
 
     workspaces: {

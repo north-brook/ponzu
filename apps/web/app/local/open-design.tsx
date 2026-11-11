@@ -1,9 +1,11 @@
 "use client";
 
 import { appLink, parseDesignLink } from "@ponzu/core";
+import { HANDOFF_WAIT_MS } from "@ponzu/core/handoff";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DownloadArrow, Slice } from "@/components/icons";
 import { DOWNLOAD, TESTFLIGHT } from "@/components/links";
+import { appOf } from "../designs/[id]/app-link";
 
 /*
  * Hands the design in the page's #fragment to Ponzu as a ponzu://open link, which the Mac app and
@@ -12,10 +14,14 @@ import { DOWNLOAD, TESTFLIGHT } from "@/components/links";
  * isn't installed and the page offers it: the Mac download, or on an iPhone, word of the TestFlight
  * beta. Focus that leaves later, once the person answers the browser's prompt, still counts. Once
  * Ponzu has it the page closes itself; a browser that won't let it says the tab can go.
+ *
+ * The API's GitHub setup page and the Mac app's sign-in page are this same handoff, as one
+ * document that a host can serve as a string (@ponzu/core/handoff); this page shares its wait and
+ * the apps' names, and draws the rest with the site's own components.
  */
 
 /** How long the app has to take focus before the page offers the download. */
-const WAIT = 2000;
+const WAIT = HANDOFF_WAIT_MS;
 
 type State = "opening" | "opened" | "missing" | "invalid";
 
@@ -98,6 +104,27 @@ export function OpenDesign({ to }: { to?: string | null } = {}) {
     );
   }
 
+  // `to` is known on the server too, so the first render already names the right app.
+  const app = appOf(link ?? to ?? null);
+
+  // A link for Ponzu Dev that nothing took: no download of an app it isn't, only the way again.
+  if (state === "missing" && !app.release) {
+    return (
+      <div className="flex flex-col items-center gap-8 text-center animate-swap">
+        <div className="flex flex-col items-center gap-3.5">
+          <h1 className={missingTitle}>Open this design in {app.name}.</h1>
+          <p className={missingBody}>
+            {app.name} didn't open. On a Mac with it installed, open it and try again.
+          </p>
+        </div>
+        <button type="button" className={cta} onClick={retry}>
+          <Slice size={18} className="[--slice:currentColor]" />
+          Open in {app.name}
+        </button>
+      </div>
+    );
+  }
+
   if (state === "missing" && onIPhone()) {
     return (
       <div className="flex flex-col items-center gap-8 text-center animate-swap">
@@ -151,11 +178,15 @@ export function OpenDesign({ to }: { to?: string | null } = {}) {
   }
 
   if (state === "opened") {
-    return <Message slice title="Opened in Ponzu." body="You can close this tab." />;
+    return <Message slice title={`Opened in ${app.name}.`} body="You can close this tab." />;
   }
 
   return (
-    <Message slice title="Opening in Ponzu…" body="If your browser asks, choose Open Ponzu." />
+    <Message
+      slice
+      title={`Opening in ${app.name}…`}
+      body={`If your browser asks, choose Open ${app.name}.`}
+    />
   );
 }
 

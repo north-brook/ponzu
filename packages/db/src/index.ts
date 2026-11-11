@@ -48,6 +48,7 @@ export {
   consumeAuthState,
   createAuthState,
   getAuthState,
+  recordAuthStateOutcome,
 } from "./queries/auth-states.ts";
 export {
   type DocSource,

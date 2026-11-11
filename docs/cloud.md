@@ -76,7 +76,10 @@ GitHub token never reaches a device.
   Each press of Continue with GitHub is its own attempt (port, state, verifier) that can
   finish for ten minutes whatever the window does; the first back signs in and the rest
   close, as do the oldest past three and every one when Ponzu quits. The page the browser
-  lands on is written after the exchange has answered, so it says how it went.
+  lands on is written after the exchange has answered, so it says how it went. It is a
+  handoff (below) with nothing to open: Ponzu comes forward by itself once it has signed the
+  person in, and the page says "Ponzu has it" and closes as Ponzu takes the focus. One that
+  didn't finish stays, saying why.
 - The iPhone app redirects to `ponzu://auth/callback` inside an auth session.
 - Access tokens are five-minute JWTs. The API verifies them locally against
   WorkOS's JWKS. Clients refresh directly with WorkOS, one refresh in flight at a
@@ -196,20 +199,66 @@ the installation back. A one-minute cron reads again any installation nobody has
 for six hours, which is how an uninstall whose webhook was lost is found.
 
 **Installing.** `POST /v1/github/install-link` returns GitHub's install page with a
-`state` sealed by the API and recorded as a fifteen-minute, single-use auth state.
-GitHub sends the browser to the App's Setup URL, `GET /v1/github/setup`, which has no
-bearer token: the state says who started, the person's own token must reach the
-installation (its id in the query is never trusted), and the answer is a small HTML
-page with a way back to the app:
+`state` sealed by the API and recorded as a fifteen-minute, single-use auth state, and
+the app's own handle on it (`id`). GitHub sends the browser to the App's Setup URL,
+`GET /v1/github/setup`, which has no bearer token: the state says who started, the
+person's own token must reach the installation (its id in the query is never trusted),
+and the answer is a handoff page (below). Its link back to the app is
 
 ```
-ponzu://github/setup?result=installed&workspace=<workspace id>
-ponzu://github/setup?result=requested | pending | sign_in | failed
+<scheme>://github/setup?result=installed&workspace=<workspace id>
+<scheme>://github/setup?result=requested | pending | sign_in | failed
 ```
 
-The app answers any of them by syncing. `pending` covers no state, a used or expired
-one, and an installation the person cannot reach: whoever really installed the App is
-caught up by its webhook and their next sync.
+The app answers any of them by syncing and moving on (an installed workspace opens).
+`pending` covers no state, a used or expired one, and an installation the person cannot
+reach: whoever really installed the App is caught up by its webhook and their next sync.
+
+Which app the page hands back to is what the app said when it asked for the link
+(`scheme`), kept in the state's row, never in anything the browser brings:
+
+- `ponzu` (Ponzu), `ponzu-dev` (Ponzu Dev), or `ponzu-preview` (Ponzu Dev's earlier
+  name): the page opens that link by itself.
+- `none`: a build that takes no links, which is Ponzu Local (run from a checkout; on a
+  Mac it lives inside the generic Electron.app and can declare no scheme). The page opens
+  nothing and says "Ponzu has it. You can close this tab."
+- Nothing said, or no state at all (installed from github.com, or saved from the
+  installation's settings on GitHub, which sends no state): not known. The page opens
+  nothing and says to go back to Ponzu, which catches up as it comes to the front. A guess
+  could open an app the person doesn't have, or the release from an environment that
+  serves the development builds, so the API never guesses.
+
+The app never needs the link. While GitHub's page is open it asks
+`GET /v1/github/installs/:id` every two seconds (`waiting`, `settled` with the result and
+workspace, or `expired`); the setup page writes its outcome on the state's row as it is
+made. Once settled, Ponzu comes forward by itself and takes the outcome exactly as it
+would the link (`apps/studio/src/app/installs.ts`). A build that takes links usually
+hears both; whichever comes first is acted on and the other is dropped.
+
+This is why the founder's development build was offered `ponzu://` on 11 November 2026:
+Ponzu Local sent no scheme, and the API, taking silence for Ponzu, recorded `ponzu`.
+Ponzu Local now says `none`, and silence now means not known.
+
+**Handing back to the app.** Every page a browser is left on is a handoff, the pattern of
+the old product's `/local` page: the site's lockup in the corner (outlined, since the page
+loads no font), the Ponzu mark and one plain line, the app's link opened
+by the page itself, and a watch for the app taking over (launching an app takes the
+page's focus or hides it). When it does, the page says Ponzu has it and closes itself (or
+says the tab can be closed, where the browser won't let a tab it didn't open close).
+When nothing has taken the link after two seconds, the page offers it again as a button,
+in words that say what still happens without it; focus that leaves later, after the
+browser's prompt, still counts. Where there is no link (a build that takes none, or the
+shell's own sign-in page), the page says Ponzu has it and closes once Ponzu comes forward.
+
+The API's setup page and the shell's sign-in page are one document
+(`@ponzu/core/handoff`), self-contained: no request of its own, one fixed script and one
+fixed style sheet, allowed by their SHA-256 hashes under `default-src 'none'` (no
+`unsafe-inline`, no nonce). Everything that varies (words, the link) sits in the markup,
+escaped, and the link must be one of the apps' schemes. The site's design link page
+(`/designs/<id>`) is the same pattern drawn in React with the site's components; it shares
+the wait and the apps' names, and offers the Ponzu download only for a Ponzu link. The
+Claude sign-in ends on claude.ai's own page (its code is pasted into Ponzu), so it leaves
+no page of ours.
 
 **Webhooks** arrive at `POST /v1/github/webhook`, verified against the raw body
 before anything is read, deduplicated on `X-GitHub-Delivery`, and recorded with the
@@ -1109,21 +1158,30 @@ rather than listed. At most 120 groups carry text (120 characters each); later s
 in a group with `text: null` after their message, and once the log holds 240 groups, in its last
 `text: null` group, so a turn of hundreds of tool calls, or one that talks for hours, is a few
 kilobytes. The API refuses a record past those bounds; a runner whose write is refused sends the
-write's other items again on their own, so one item never takes the agent's text down with it. Clients show a running turn's messages
-and nothing of its work but the working line; once it has ended they keep `final` in full and
-fold everything between the person's message and it into one line ("Worked for 4 min · 7 boards
-· 1 file") that opens on the turn's messages, each followed by its steps. A turn with nothing
-before its answer has no fold.
+write's other items again on their own, so one item never takes the agent's text down with it.
+
+The thread shows people's messages, the agent's messages and, while a turn runs, one working
+line; nothing of a turn's work, ever. While it runs, each message the agent has gone on working
+after (a later message, or a `log` group `after` it) is an aside, set quieter and in italics;
+its newest words read plain until it carries on. Once it has ended only its answer stays:
+`final`; with no `final`, its last message if it ended `done` (or its record isn't closed yet),
+and none if it was stopped or failed, when how it ended (the stop, the error) is its last line.
+A question answered on the way, a pull request and a person's message mid-turn stay where they
+are. The asides and the working line leave together, closing their room and fading at the pane's
+pace (at once with reduced motion), so the answer settles into place; a thread opened later is
+drawn already settled.
+
+So clients read `final`, `ended`, and `log[].after`, and nothing else of the record: `ms`,
+`boards`, `files`, `log[].text` and `log[].count`, and the item's `label`, `steps` and
+`artboards`, were the fold's ("Worked for 4 min · 7 boards · 1 file", opening on each message's
+steps), which is gone. The runner still writes them; the protocol is unchanged.
 
 A runner from before the record (whose items are in designs already) wrote one `tool` item per
-stretch of tool calls between two things the agent said, with no `turn`: while it streamed, the
-working line; once finished, named by its weightiest step or by what the agent last said with
-set_status. Clients fold those turns the same way, by position: a turn starts at the agent's
-first item after a person's, its answer is its last message unless a stretch came after it, and
-each stretch is listed as a count of its steps (with its label, unless every stretch of the turn
-says the same thing). A runner that writes the record therefore needs no change to clients that
-read only `label`: they show its streaming item as the working line and its finished one as one
-quiet line per turn.
+stretch of tool calls between two things the agent said, with no `turn`. Clients read those
+turns by position: a turn starts at the agent's first item after a person's, runs while the
+agent works, and a message with a stretch after it is an aside; once it has ended, its answer is
+its last message, unless the turn was stopped or failed after it. The stretches themselves
+never show, nor their labels (often whatever the agent last set with set_status).
 
 An `assistant` item cut off by an interrupt is finished with the text it had. `error` codes:
 `clone_failed`, `claude_auth`, `claude_limit`, `model_unavailable`, `max_turns`, `turn_failed`,
@@ -1181,7 +1239,7 @@ by shape (git, package managers, tests, dev servers, builds, linters) and are ot
 contents, or text that looks like a secret, and never one of the sandbox's own secret values
 (the repo's secrets, the Claude credential, the runner token). Clients show it at the thread's
 foot with the turning slice from the moment a person sends until the turn's item finishes, and
-take it away in the frame the turn folds, whichever of the item and the idle report comes
+take it away in the frame the turn's asides go, whichever of the item and the idle report comes
 first.
 
 `branch` is sent once for each push the runner made or tried (at its start, at the end of each

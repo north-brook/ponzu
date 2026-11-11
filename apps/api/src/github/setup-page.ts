@@ -1,26 +1,31 @@
+import { APP_NAMES, type Handoff, type HandoffView, renderHandoff } from "@ponzu/core/handoff";
 import type { SetupPage } from "./install.ts";
-import { DEFAULT_LINK_SCHEME, type LinkScheme, linkSchemeOf } from "./link-scheme.ts";
+import type { LinkTarget } from "./link-scheme.ts";
 
 /*
- * The page a browser lands on after GitHub's install page. It is the API's one HTML answer: no
- * script, no request of its own, nothing from the query string, and it can be framed by
- * nobody. It says what happened and offers the way back to the app.
+ * The page a browser lands on after GitHub's install page: a handoff (@ponzu/core/handoff), the
+ * same page the Mac app's sign-in ends on. It is the API's one HTML answer: one fixed script and
+ * one fixed style sheet, allowed by their hashes; no request of its own, nothing from the query
+ * string, and it can be framed by nobody.
  *
- * The way back is a deep link (docs/cloud.md, "Identity and access"):
+ * Where it hands the person back depends on what the install's state recorded of the app that
+ * started it (link-scheme.ts):
  *
- *   ponzu://github/setup?result=installed&workspace=<workspace id>
- *   ponzu://github/setup?result=requested | pending | sign_in | failed
- *
- * The app answers any of them by fetching its accounts again (`POST /v1/github/sync`); on the
- * iPhone, opening it also closes the sheet the install page was shown in. Ponzu Dev gets the
- * same links in its own scheme (`ponzu-dev://`), and a Ponzu Preview still installed in its
- * (`ponzu-preview://`), as the install's state recorded them (link-scheme.ts).
+ *   a scheme   it opens the app's link by itself, closes once the app has taken it, and offers
+ *              the link again if nothing took it:
+ *                <scheme>://github/setup?result=installed&workspace=<workspace id>
+ *                <scheme>://github/setup?result=requested | pending | sign_in | failed
+ *              The app answers any of them by syncing (`POST /v1/github/sync`).
+ *   `none`     a build that takes no links: it has asked the API for the outcome
+ *              (`GET /v1/github/installs/:id`) and comes forward by itself, so the page says
+ *              Ponzu has it and closes as the app takes the focus.
+ *   not known  no state (installed from github.com, or from the installation's settings), or an
+ *              app that didn't say: the page links nowhere, since a guess could open an app the
+ *              person doesn't have. Ponzu catches up when it comes back to the front.
  */
 
-/** Everything the page may load or do: its own inline style, and nothing else. */
+/** The headers besides the content security policy, which comes with the page. */
 export const SETUP_PAGE_HEADERS = {
-  "content-security-policy":
-    "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
   // The address it was opened at carries the install's state.
   "referrer-policy": "no-referrer",
   "cache-control": "no-store",
@@ -29,79 +34,83 @@ export const SETUP_PAGE_HEADERS = {
 
 export type { SetupPage };
 
-/** The page, linking back to the app with `scheme`; one not on the list is Ponzu's. */
-export function renderSetupPage(page: SetupPage, scheme: LinkScheme = DEFAULT_LINK_SCHEME): string {
-  const { title, body } = copy(page);
-  const link = new URL(`${linkSchemeOf(scheme)}://github/setup`);
-  link.searchParams.set("result", page.kind);
-  if (page.kind === "installed") link.searchParams.set("workspace", page.workspace.id);
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex">
-<title>${escapeHtml(title)} · Ponzu</title>
-<style>
-:root { color-scheme: light dark; --bg: #faf9f6; --ink: #1d1c1a; --muted: #6b6860; --button: #1d1c1a; --on-button: #fff; }
-@media (prefers-color-scheme: dark) { :root { --bg: #161513; --ink: #f2f0ea; --muted: #a29e94; --button: #f2f0ea; --on-button: #161513; } }
-body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--ink); font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-main { max-width: 360px; padding: 32px 24px; text-align: center; }
-h1 { font-size: 20px; font-weight: 600; margin: 0 0 8px; }
-p { margin: 0 0 24px; color: var(--muted); }
-a { display: inline-block; padding: 10px 18px; border-radius: 10px; background: var(--button); color: var(--on-button); font-weight: 600; text-decoration: none; }
-</style>
-</head>
-<body>
-<main>
-<h1>${escapeHtml(title)}</h1>
-<p>${escapeHtml(body)}</p>
-<a href="${escapeHtml(link.toString())}">Open Ponzu</a>
-</main>
-</body>
-</html>
-`;
+const CLOSE = "You can close this tab.";
+
+interface Words {
+  title: string;
+  /** What comes next, said when the app has it or the page can't reach it. */
+  line: string;
+  /** What comes next when the app's link went unanswered, if not `line`. */
+  missed?: string;
+  /** What comes next when no app can be named, if not `line`. */
+  unknown?: string;
+  problem?: boolean;
 }
 
-function copy(page: SetupPage): { title: string; body: string } {
+function words(page: SetupPage): Words {
   switch (page.kind) {
     case "installed":
       return {
         title: `Ponzu is set up on ${page.workspace.name}`,
-        body: "Go back to Ponzu to carry on.",
+        line: "Ponzu has it.",
+        missed: "If Ponzu didn't open, it picks this up when you go back to it.",
+        unknown: "Go back to Ponzu to carry on.",
       };
     case "requested":
       return {
         title: "Request sent",
-        body: "An owner of the organization has to approve Ponzu. It shows up in Ponzu once they do.",
+        line: "Ponzu shows the organization once one of its owners approves.",
       };
     case "pending":
       return {
         title: "Almost there",
-        body: "Go back to Ponzu. It picks up what you set up on GitHub by itself.",
+        line: "Ponzu picks up what you set up on GitHub by itself.",
       };
     case "sign_in":
       return {
         title: "Sign in to Ponzu again",
-        body: "Your GitHub connection has expired. What you set up on GitHub is kept.",
+        line: "Your GitHub connection ran out. What you set up on GitHub is kept.",
       };
     case "failed":
       return {
         title: "Ponzu couldn't reach GitHub",
-        body: "What you set up on GitHub is kept. Go back to Ponzu; it catches up in a moment.",
+        line: "What you set up on GitHub is kept, and Ponzu catches up in a moment.",
+        problem: true,
       };
   }
 }
 
-const ENTITIES: Record<string, string> = {
-  "&": "&amp;",
-  "<": "&lt;",
-  ">": "&gt;",
-  '"': "&quot;",
-  "'": "&#39;",
-};
+/** The handoff for an outcome, linking back by what the state recorded. */
+export function setupHandoff(page: SetupPage, target: LinkTarget | null): Handoff {
+  const said = words(page);
+  const ending = (line: string): HandoffView => ({ title: said.title, body: `${line} ${CLOSE}` });
+  const base = { documentTitle: said.title, problem: said.problem ?? false };
+  if (target === null) {
+    return { ...base, view: ending(said.unknown ?? said.line), link: null };
+  }
+  if (target === "none") {
+    return { ...base, view: ending(said.line), link: null, closes: true };
+  }
+  const link = new URL(`${target}://github/setup`);
+  link.searchParams.set("result", page.kind);
+  if (page.kind === "installed") link.searchParams.set("workspace", page.workspace.id);
+  const app = APP_NAMES[target];
+  return {
+    ...base,
+    view: { title: said.title, body: `Opening ${app}…` },
+    link: {
+      href: link.toString(),
+      app,
+      opened: ending(said.line),
+      missed: { title: said.title, body: said.missed ?? said.line },
+    },
+  };
+}
 
-/** Text that can only ever be text, in an element or a quoted attribute. */
-function escapeHtml(text: string): string {
-  return text.replace(/[&<>"']/g, (character) => ENTITIES[character]!);
+/** The page and its content security policy. */
+export function renderSetupPage(
+  page: SetupPage,
+  target: LinkTarget | null,
+): Promise<{ html: string; csp: string }> {
+  return renderHandoff(setupHandoff(page, target));
 }
