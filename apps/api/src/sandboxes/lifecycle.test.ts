@@ -117,6 +117,7 @@ async function runnerIn(sandbox: Sandbox) {
     });
   return {
     status: started.status,
+    headers,
     beat,
     claim: (claimId = newId("clm")) =>
       call(t, headers, "POST", "/v1/runner/events/claim", { claimId }),
@@ -1360,6 +1361,58 @@ describe("a turn that never came", () => {
     await runner.ack([message!.id]);
     t.clock.advance(20_000);
     await runner.answer();
+    await idleToSleep(runner);
+    expect((await live(design.id)).state).toBe("asleep");
+    expect(logged("turn_lapsed", design.id)).toBeUndefined();
+  });
+
+  test("a turn reported finished answered its message, though it wrote nothing to the thread", async () => {
+    // An older runner leaves no item for a turn that showed nothing; its usage report is the
+    // word that the turn came, and a copy would be a second answer.
+    const { design, runner } = await awakeDesign();
+    const [message] = (await runner.claim()).body.events as { id: string }[];
+    await runner.ack([message!.id]);
+    t.clock.advance(20_000);
+    const at = new Date(t.clock.now());
+    const reported = await call(t, runner.headers, "POST", "/v1/runner/usage", {
+      turns: [
+        {
+          id: "3f1c2a9e-0000-4000-8000-0000000000aa",
+          claudeSessionId: "session-1",
+          at: at.toISOString(),
+          models: [],
+          turn: {
+            startedAt: new Date(at.getTime() - 15_000).toISOString(),
+            outcome: "completed",
+            errorCode: null,
+            durationMs: 15_000,
+            toolCalls: 0,
+            eventId: message!.id,
+          },
+        },
+      ],
+    });
+    expect(reported.status).toBe(200);
+    await t.backgroundDone();
+    await idleToSleep(runner);
+    expect((await live(design.id)).state).toBe("asleep");
+    expect(logged("turn_lapsed", design.id)).toBeUndefined();
+  });
+
+  test("a message the person stopped before anything was written is not sent again", async () => {
+    // Stopped while it was starting: the runner ends it before the turn has said anything, and
+    // writes no `stopped` notice for a turn that had not begun. The stop is the answer.
+    const { design, runner } = await awakeDesign();
+    const [message] = (await runner.claim()).body.events as { id: string }[];
+    await runner.ack([message!.id]);
+    t.clock.advance(5_000);
+    expect((await call(t, await as("maya"), "POST", `/v1/designs/${design.id}/stop`)).status).toBe(
+      204,
+    );
+    await t.backgroundDone();
+    const stops = (await runner.claim()).body.events as { id: string; kind: string }[];
+    expect(stops.map((e) => e.kind)).toEqual(["stop"]);
+    await runner.ack(stops.map((e) => e.id));
     await idleToSleep(runner);
     expect((await live(design.id)).state).toBe("asleep");
     expect(logged("turn_lapsed", design.id)).toBeUndefined();

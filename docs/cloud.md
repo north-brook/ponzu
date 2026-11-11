@@ -869,9 +869,12 @@ minutes while Claude Code is busy, so the API sees it go on.
 **The API notices it, whatever the runner** (`apps/api/src/sandboxes/sweep.ts`). A runner thread
 write that says anything of a turn (the agent's text, a turn's work, a question, a stop, an error
 of a turn; not `waking`, `resumed` or `started`, nor `clone_failed` or `push_failed`) moves
-`design_runners.said_at` on. An event that begins a turn (`message`, `answer`, `comment`, `check`,
-`review`, priority `now` or `next`) delivered after it is owed one, by the API's clock, which
-`delivered_at` and `claimed_at` are now kept by too. While a design owes a turn its sandbox is not
+`design_runners.said_at` on, and so does a usage report of a finished turn (`POST
+/v1/runner/usage` with a `turn`), which every runner sends, so a turn that answered without
+writing anything is not taken for one that never came. An event that begins a turn (`message`,
+`answer`, `comment`, `check`, `review`, priority `now` or `next`) delivered after it is owed one,
+by the API's clock, which `delivered_at` and `claimed_at` are now kept by too, unless a person's
+stop came after it: a turn stopped while it was starting writes nothing, and is not sent again. While a design owes a turn its sandbox is not
 put to sleep. The owed events lapse when the runner says it is not working for two minutes, or
 says it is but has written nothing for fifteen, both counted from the newest delivery or from when
 the runner that holds the lease started, whichever is later, so a cold start or a long session's

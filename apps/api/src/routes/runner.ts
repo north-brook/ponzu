@@ -4,6 +4,7 @@ import {
   createQuestion,
   getRunnerContext,
   markEventsDelivered,
+  noteRunnerSaid,
   type RunnerContext,
   recordTurnUsage,
   reportRunnerState,
@@ -408,6 +409,14 @@ export const runner = new Hono<AppEnv>()
         })),
       })),
     });
+    // A turn that finished answered what it took in, even one that wrote nothing to the thread
+    // (docs/cloud.md, "A turn that never came"): nothing delivered before it is owed a turn.
+    if (turns.some((turn) => turn.turn)) {
+      await noteRunnerSaid(c.var.deps.db, {
+        designId: c.var.actor.designId,
+        now: new Date(c.var.deps.clock.now()),
+      });
+    }
     // Off the runner's path: the row is what matters to it, and analytics never fails a call.
     c.var.deps.background("turns_reported", reportTurns(c.var.deps, c.var.actor.designId, turns));
     return c.json({ recorded } satisfies UsageResponse);

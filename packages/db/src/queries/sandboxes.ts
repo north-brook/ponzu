@@ -612,6 +612,11 @@ export async function listSandboxesToSweep(
                TURN_KINDS.map((kind) => sql`${kind}`),
                sql`, `,
              )})
+             -- A person's stop after it says not to answer it: never sent again.
+             and not exists (
+               select 1 from events s
+                where s.design_id = e.design_id and s.kind = 'stop' and s.seq > e.seq
+             )
         ) end,
         'claude_usable', exists (
           select 1 from claude_accounts a

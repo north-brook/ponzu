@@ -1562,9 +1562,6 @@ export class Runner {
     usage: ModelUsage[],
     turn: TurnSummary | null,
   ): void {
-    // A turn that showed nothing still leaves its item: what tells the API the turn it was owed
-    // came (docs/cloud.md, "A turn that never came"), rather than being sent again.
-    if (!this.turn && !error) this.openTurn();
     this.closeStreams(error?.code === "interrupted" ? "stopped" : error ? "failed" : "done");
     this.restarts = 0;
     this.quietStopped = false;
