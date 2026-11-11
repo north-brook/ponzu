@@ -35,7 +35,17 @@ export interface Host {
    */
   signIn(): Promise<SignInResult>;
   persistence(): Promise<SessionPersistence>;
+  /**
+   * The app's links, and the outcome of each GitHub install it started (`installGithub`) as a
+   * `github_setup` link, once each, whether the setup page's link brought it or the API did.
+   */
   onLink(listener: (link: DeepLink) => void): () => void;
+  /**
+   * Open GitHub's install page, suggesting `githubAccountId`. When it comes back, the app comes
+   * forward and its outcome reaches `onLink`, link or no link (installs.ts). Rejects when the
+   * page couldn't be had.
+   */
+  installGithub(body: { githubAccountId?: number }): Promise<void>;
   onCommand(listener: (command: MenuCommand) => void): () => void;
   /** The shell's updater; null where there is none to restart into. */
   update: PonzuDesktop["update"] | null;

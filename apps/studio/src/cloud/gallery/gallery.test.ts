@@ -1,8 +1,8 @@
 /*
  * The cloud gallery's components in a real Chromium: the sidebar's keyboard and focus
- * behaviour, its menus, search and presence. Creating a design, the repo picker and the page tabs
- * are in gallery.create.test.ts; the compositions against their references in
- * gallery.references.*.test.ts. Skips where there is no Chrome or Chromium.
+ * behaviour, its menus, search and presence. Creating a design, the repo picker, the page tabs
+ * and the pull request tab are in gallery.create.test.ts; the compositions against their
+ * references in gallery.references.*.test.ts. Skips where there is no Chrome or Chromium.
  */
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import {
@@ -113,7 +113,11 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     expect(await active()).toBe("search-design-dsn_settled_1");
     await page.keyboard.press("Escape");
     await page.waitForSelector(field, { state: "detached" });
-    await focusOn("Search");
+    // Closing leaves the Search button alone: focus there would raise its tooltip, unasked.
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).not.toBe(
+      "Search",
+    );
+    expect(await page.$('[role="tooltip"]')).toBeNull();
   });
   test("⌘K with the sidebar collapsed opens it, then searches", async () => {
     await open("sidebar-collapsed");

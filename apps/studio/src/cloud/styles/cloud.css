@@ -342,6 +342,27 @@
   }
 }
 
+/*
+ * The sidebar's search field opening: it grows out of the search button's place at the right of
+ * the header row (the button is the third icon from the right edge) to the row's whole width.
+ */
+@keyframes search-open {
+  from {
+    clip-path: inset(4px 48px 4px calc(100% - 72px) round 7px);
+    opacity: 0.4;
+  }
+  to {
+    clip-path: inset(0 round 9px);
+    opacity: 1;
+  }
+}
+@utility search-open {
+  animation: search-open var(--dur-pane) var(--ease-out) both;
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+
 /* Something small arriving from below: the thread's "new" pill. */
 @keyframes rise {
   from {

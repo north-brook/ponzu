@@ -14,12 +14,14 @@
     "test:timings": "bun test --parallel --timings test-timings.json --update-timings",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p apps/mobile/tsconfig.json --noEmit && tsc -p apps/api/tsconfig.json --noEmit",
     "lint": "biome check .",
-    "format": "biome format --write ."
+    "format": "biome format --write .",
+    "evals": "bun scripts/evals.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
     "@commitlint/cli": "^21.2.4",
     "@commitlint/config-conventional": "^21.2.4",
+    "@ponzu/evals": "workspace:*",
     "@types/bun": "latest",
     "typescript": "^5.9.3"
   },

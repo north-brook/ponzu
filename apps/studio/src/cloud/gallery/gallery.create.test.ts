@@ -1,7 +1,7 @@
 /*
  * The cloud gallery's components in a real Chromium, beside gallery.test.ts: creating a
- * design, the repo picker and the page tabs, their keyboard and focus behaviour. Skips where
- * there is no Chrome or Chromium.
+ * design, the repo picker, the page tabs and the pull request tab, their keyboard and focus
+ * behaviour. Skips where there is no Chrome or Chromium.
  */
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import {
@@ -87,32 +87,82 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
   /** Where the create page's question sits, in px from the window's top. */
   const questionTop = () =>
     page.$eval("h1", (h) => Math.round(h.getBoundingClientRect().top) as number);
-  test("the repo picker lifts the column only when its list would not fit below it", async () => {
-    // Scratch alone: a short list, with room under the chip at 1440×900. Nothing moves.
-    await open("fresh-start-no-repos");
+  test("the repo picker opens under its chip and the page stays where it is", async () => {
+    const picker = '[data-slot="popover-content"]';
+    const box = (selector: string) =>
+      page.$eval(selector, (el) => {
+        const r = el.getBoundingClientRect();
+        return { top: Math.round(r.top), bottom: Math.round(r.bottom) };
+      });
+    for (const board of ["fresh-start-no-repos", "pick-a-project-many-repos"]) {
+      await open(board);
+      const resting = await questionTop();
+      await page.click('button[aria-label^="Project"]');
+      await page.waitForSelector('[role="listbox"][aria-label="Repositories"]');
+      // Past the popover's opening and anything the page might have done about it.
+      await page.waitForFunction(
+        (sel) =>
+          document
+            .querySelector(sel)
+            ?.getAnimations()
+            .every((a) => a.playState === "finished"),
+        picker,
+      );
+      expect(await questionTop()).toBe(resting);
+      // Under the chip, and whole inside the window.
+      const chip = await box('button[aria-label^="Project"]');
+      const open_ = await box(picker);
+      expect(open_.top).toBeGreaterThanOrEqual(chip.bottom);
+      expect(open_.bottom).toBeLessThanOrEqual(await page.evaluate(() => window.innerHeight));
+    }
+    // Fifteen repos and Scratch: the list shows five rows and half of the sixth, and has its search.
+    expect(await page.$('input[aria-label="Search repositories"]')).not.toBeNull();
+    const list = await box('[role="listbox"][aria-label="Repositories"]');
+    const shown = await page.$eval('[role="listbox"][aria-label="Repositories"]', (el) =>
+      Math.round(el.parentElement!.getBoundingClientRect().height),
+    );
+    expect(shown).toBe(176);
+    expect(list.bottom - list.top).toBeGreaterThan(shown);
+    // Typing shortens the list; the page still doesn't move.
     const resting = await questionTop();
-    await page.click('button[aria-label^="Project"]');
-    await page.waitForSelector('[role="listbox"][aria-label="Repositories"]');
-    await new Promise((r) => setTimeout(r, 100));
-    expect(await questionTop()).toBe(resting);
-    // Fifteen repos, a search and Scratch: more than the room under the chip, so it rises.
-    await open("pick-a-project-many-repos");
-    const centred = await questionTop();
-    await page.click('button[aria-label^="Project"]');
-    await page.waitForSelector('input[aria-label="Search repositories"]');
-    await new Promise((r) => setTimeout(r, 100));
-    expect(await questionTop()).toBeLessThan(centred);
-    const raised = await questionTop();
-    // Typing shortens the list; the column stays where it went.
     await page.keyboard.type("len");
-    await new Promise((r) => setTimeout(r, 100));
-    expect(await questionTop()).toBe(raised);
+    await page.waitForFunction(() => document.querySelectorAll('[role="option"]').length === 1);
+    expect(await questionTop()).toBe(resting);
   });
-  test("a first visit sits where its ideas go, and shows nothing while they're made", async () => {
+  test("in a window too short for it, the picker's list gives up height and stays under the chip", async () => {
+    await open("pick-a-project-many-repos");
+    await page.setViewportSize({ width: 1440, height: 560 });
+    try {
+      const resting = await questionTop();
+      await page.click('button[aria-label^="Project"]');
+      await page.waitForSelector('input[aria-label="Search repositories"]');
+      const [chipBottom, top, bottom, listHeight] = await page.evaluate(() => {
+        const chip = document.querySelector('button[aria-label^="Project"]')!;
+        const open = document.querySelector('[data-slot="popover-content"]')!;
+        const list = document.querySelector('[role="listbox"][aria-label="Repositories"]')!;
+        const r = open.getBoundingClientRect();
+        return [
+          chip.getBoundingClientRect().bottom,
+          r.top,
+          r.bottom,
+          list.parentElement!.getBoundingClientRect().height,
+        ];
+      });
+      expect(top).toBeGreaterThanOrEqual(chipBottom!);
+      expect(bottom).toBeLessThanOrEqual(560);
+      expect(listHeight).toBeLessThan(176);
+      expect(listHeight).toBeGreaterThan(0);
+      expect(await questionTop()).toBe(resting);
+    } finally {
+      await page.setViewportSize({ width: 1440, height: 900 });
+    }
+  });
+  test("a first visit keeps its ideas' room: a skeleton while they're made, and nothing moves", async () => {
     await open("fresh-start");
     const withIdeas = await questionTop();
+    expect(await page.$('[aria-label="Ideas"]')).not.toBeNull();
     await open("fresh-start-loading");
-    expect(await page.$('[aria-label="Finding ideas"]')).toBeNull();
+    expect(await page.$('[aria-label="Finding ideas"]')).not.toBeNull();
     expect(await page.$('[aria-label="Ideas"]')).toBeNull();
     expect(await questionTop()).toBe(withIdeas);
   });
@@ -365,6 +415,68 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await page.waitForSelector('[role="menu"]');
     expect(await focused()).toBeNull();
     await page.keyboard.press("Escape");
+  });
+  test("the pull request tab swaps the middle only: the thread stays, and ⌘J and the page numbers work there", async () => {
+    await open("pull-request-tab");
+    const heading = 'h1:text-is("Quieter hero, editorial take")';
+    const thread = () =>
+      page.$eval("#thread", (el) => Math.round(el.getBoundingClientRect().width));
+    const expanded = () =>
+      page.$eval('button[aria-controls="thread"]', (b) => b.getAttribute("aria-expanded"));
+    expect(await page.$(heading)).not.toBeNull();
+    expect(await expanded()).toBe("true");
+    expect(await thread()).toBe(360);
+    // ⌘J closes and opens the thread on this tab as anywhere, and the tab stays.
+    await page.click(heading);
+    await page.keyboard.press("Meta+j");
+    expect(await expanded()).toBe("false");
+    expect(await page.$(heading)).not.toBeNull();
+    await page.keyboard.press("Meta+j");
+    expect(await expanded()).toBe("true");
+    // What is typed in the thread outlives leaving the tab (board 3 asks a question: its note
+    // field is in the composer's place). ⌃1 (Alt off the Mac) opens the first page; the thread
+    // doesn't move.
+    const field = "#thread textarea";
+    await page.fill(field, "Half typed");
+    await page.click(heading);
+    const mac = await page.evaluate(() => navigator.userAgent.includes("Mac"));
+    await page.keyboard.press(`${mac ? "Control" : "Alt"}+Digit1`);
+    await page.waitForSelector(heading, { state: "detached" });
+    const chosen = await page.$$eval(
+      '[role="tablist"][aria-label="Pages"] [role="tab"][aria-selected="true"]',
+      (els) => els.length,
+    );
+    expect(chosen).toBe(1);
+    expect(await thread()).toBe(360);
+    expect(await page.inputValue(field)).toBe("Half typed");
+  });
+  test("the pull request fits the canvas's column: stacked when narrow, two columns when wide", async () => {
+    const layout = () =>
+      page.$eval("[data-pr-columns]", (el) => {
+        const pane = el.closest("main")!;
+        const box = el.getBoundingClientRect();
+        const kids = [...el.children].map((c) => c.getBoundingClientRect());
+        return {
+          side: kids.length === 2 && Math.abs(kids[0]!.top - kids[1]!.top) < 1,
+          width: Math.round(box.width),
+          // Nothing reaches past the pane's edges.
+          fits: [...el.querySelectorAll("*")].every(
+            (c) => c.getBoundingClientRect().right <= pane.getBoundingClientRect().right + 0.5,
+          ),
+        };
+      });
+    // The smallest window with both panes open: one column, nothing cut, a long title wrapped.
+    await open("pull-request-min-window", { width: 1100, height: 640 });
+    expect(await layout()).toMatchObject({ side: false, fits: true });
+    // The usual window with both open: one column at the reading measure, centred.
+    await open("pull-request-tab");
+    expect(await layout()).toMatchObject({ side: false, fits: true, width: 760 });
+    // The thread closed: the board's two columns.
+    await open("pull-request-rail-closed");
+    expect(await layout()).toMatchObject({ side: true, fits: true });
+    // A wide screen: two columns, no wider than 1480.
+    await open("pull-request-wide", { width: 2240, height: 1100 });
+    expect(await layout()).toMatchObject({ side: true, fits: true, width: 1480 });
   });
   test("page tabs with the pull request tab open: none is chosen, and Tab reaches the first", async () => {
     await open("pull-request-tab");

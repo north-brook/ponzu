@@ -1,7 +1,7 @@
 import { createServer, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { SLICE, SLICE_STROKE } from "@ponzu/canvas/slice";
 import { readRedirect, SignInError, startSignIn } from "@ponzu/client";
+import { type Handoff, renderHandoff } from "@ponzu/core/handoff";
 
 /*
  * Signing in with GitHub, the Mac's half (docs/cloud.md, "Identity and access"): PKCE through
@@ -110,7 +110,7 @@ export async function signInWithBrowser(opts: {
         return notFound(response);
       }
       used = true;
-      page(response, didntFinish(turnedDown(error)));
+      await page(response, didntFinish(turnedDown(error)));
       answered({ kind: "failed", error });
       return;
     }
@@ -121,7 +121,7 @@ export async function signInWithBrowser(opts: {
     } catch (error) {
       finished = { ok: false, error, why: "Ponzu couldn't finish signing you in." };
     }
-    page(response, finished.ok ? SIGNED_IN : didntFinish(finished.why));
+    await page(response, finished.ok ? SIGNED_IN : didntFinish(finished.why));
     answered(finished.ok ? { kind: "signed_in" } : { kind: "failed", error: finished.error });
   });
 
@@ -148,48 +148,38 @@ function notFound(response: ServerResponse) {
   response.end("Not found");
 }
 
-const SIGNED_IN = {
-  title: "You're signed in",
-  body: "You can close this tab and go back to Ponzu.",
+/*
+ * The page the browser lands on: a handoff (@ponzu/core/handoff), the same page the API's
+ * GitHub setup ends on. There is no link to open: the session brings Ponzu forward itself once
+ * the exchange has signed the person in, so the page says Ponzu has it and closes as the app
+ * takes the focus. One that didn't finish stays, saying why.
+ */
+const SIGNED_IN: Handoff = {
+  documentTitle: "You're signed in",
+  view: { title: "You're signed in", body: "Ponzu has it. You can close this tab." },
+  link: null,
+  closes: true,
 };
-const didntFinish = (why: string) => ({
-  title: "Sign-in didn't finish",
-  body: `${why} You can close this tab and try again in Ponzu.`,
+const didntFinish = (why: string): Handoff => ({
+  documentTitle: "Sign-in didn't finish",
+  view: {
+    title: "Sign-in didn't finish",
+    body: `${why} You can close this tab and try again in Ponzu.`,
+  },
+  link: null,
+  problem: true,
 });
 
-/** For text between tags (the API's message can say anything): never inside an attribute. */
-const escapeHtml = (text: string) =>
-  text.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]!);
-
-/** The page the browser lands on: no script, nothing loaded, the slice and two lines. */
-function page(response: ServerResponse, { title, body }: { title: string; body: string }) {
+/** Answer the browser with `handoff`, under its own content security policy and nothing more. */
+async function page(response: ServerResponse, handoff: Handoff) {
+  const { html, csp } = await renderHandoff(handoff);
   response.writeHead(200, {
     "content-type": "text/html; charset=utf-8",
     "cache-control": "no-store",
-    "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'",
+    "content-security-policy": csp,
     "referrer-policy": "no-referrer",
+    "x-content-type-options": "nosniff",
     connection: "close",
   });
-  response.end(`<!doctype html>
-<html lang="en">
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtml(title)} · Ponzu</title>
-<style>
-  :root { color-scheme: light dark; --ink: #111110; --muted: #5e5b54; --ground: #f4f3ef; }
-  @media (prefers-color-scheme: dark) { :root { --ink: #f4f3ef; --muted: #a9a59b; --ground: #121211; } }
-  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--ground);
-    color: var(--ink); font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif; }
-  main { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 24px; }
-  svg { color: var(--ink); }
-  h1 { margin: 36px 0 0; font-size: 28px; font-weight: 600; letter-spacing: -0.02em; }
-  p { margin: 12px 0 0; max-width: 420px; color: var(--muted); }
-</style>
-<main>
-  <svg width="56" height="56" viewBox="0 0 64 64" aria-hidden="true"><g fill="currentColor" stroke="currentColor" stroke-width="${SLICE_STROKE}" stroke-linejoin="round">${SLICE.map((d) => `<path d="${d}"/>`).join("")}</g></svg>
-  <h1>${escapeHtml(title)}</h1>
-  <p>${escapeHtml(body)}</p>
-</main>
-</html>
-`);
+  response.end(html);
 }

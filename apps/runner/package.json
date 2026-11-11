@@ -21,6 +21,8 @@
     "zod": "^4"
   },
   "devDependencies": {
-    "@ponzu/sandbox": "workspace:*"
+    "@ponzu/evals": "workspace:*",
+    "@ponzu/sandbox": "workspace:*",
+    "mdast-util-from-markdown": "2.1.0"
   }
 }

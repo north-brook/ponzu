@@ -1,5 +1,12 @@
 import { expect, test } from "bun:test";
-import { designAppLink } from "./app-link";
+import { appOf, designAppLink } from "./app-link";
+
+test("the page names the app the link opens, and offers a download only of Ponzu", () => {
+  expect(appOf("ponzu://design/dsn_1")).toEqual({ name: "Ponzu", release: true });
+  expect(appOf("ponzu-dev://design/dsn_1")).toEqual({ name: "Ponzu Dev", release: false });
+  expect(appOf("ponzu-preview://design/dsn_1")).toEqual({ name: "Ponzu Preview", release: false });
+  expect(appOf(null)).toEqual({ name: "Ponzu", release: true });
+});
 
 test("a design opens in Ponzu, or in the app the link names", () => {
   expect(designAppLink("dsn_1")).toBe("ponzu://design/dsn_1");

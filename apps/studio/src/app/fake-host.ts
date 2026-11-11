@@ -3,6 +3,7 @@ import { createFakeBackend, type FakeBackend, type FakePerson } from "@ponzu/cli
 import { type Artboard, newId, newOpId, type Op } from "@ponzu/core";
 import type { DeepLink, MenuCommand } from "@ponzu/desktop/bridge";
 import type { Host } from "./host.ts";
+import { linksWithInstalls } from "./installs.ts";
 
 /*
  * The studio in a plain browser, for development and the headless test: Ponzu Cloud in memory
@@ -118,6 +119,20 @@ export function fakeHost(): Host {
   const session = signedOutUntilAsked(client.session, me, as ? backend.latencyMs : null);
   const links = new Set<(link: DeepLink) => void>();
   const commands = new Set<(command: MenuCommand) => void>();
+  // Nothing it opens is a real page: GitHub's and claude.ai's are played by the backend.
+  const openExternal = (url: string) => {
+    opened.push(url);
+  };
+  // The fake's GitHub never comes back by itself: a test says how an install went with a link.
+  const shellLinks = linksWithInstalls({
+    api: client.api,
+    shellLinks: (listener) => {
+      links.add(listener);
+      return () => links.delete(listener);
+    },
+    openExternal,
+    comeForward: () => {},
+  });
 
   const drawBoard = (designId: string, name: string, color = "#ffc81e") => {
     const doc = backend.design(designId).sequencer.doc;
@@ -220,19 +235,14 @@ export function fakeHost(): Host {
       }
     },
     persistence: async () => "keychain",
-    onLink(listener) {
-      links.add(listener);
-      return () => links.delete(listener);
-    },
+    onLink: shellLinks.onLink,
+    installGithub: shellLinks.installGithub,
     onCommand(listener) {
       commands.add(listener);
       return () => commands.delete(listener);
     },
     update: null,
-    // Nothing it opens is a real page: GitHub's and claude.ai's are played by the backend.
-    openExternal: (url) => {
-      opened.push(url);
-    },
+    openExternal,
     docStorage: null,
   };
 }
