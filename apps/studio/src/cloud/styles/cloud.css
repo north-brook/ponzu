@@ -1,0 +1,240 @@
+/*
+ * The cloud app's one stylesheet: Tailwind over the tokens in tokens.css, scanning only
+ * src/cloud. Tailwind's own palette, radii and shadows are cleared, so a utility can only name a
+ * token (`bg-surface`, `text-muted`, `rounded-8`, `shadow-pop`). The canvas keeps its own
+ * pz-prefixed build (pz.css); the local app's studio.css is not loaded here.
+ */
+@import "tailwindcss" source(none);
+@import "./tokens.css";
+@source "../";
+
+@theme {
+  --color-*: initial;
+  --radius-*: initial;
+  --shadow-*: initial;
+  --font-*: initial;
+  --text-*: initial;
+  --ease-*: initial;
+  --animate-*: initial;
+
+  --text-9: 9px;
+  --text-11: 11px;
+  --text-12: 12px;
+  --text-13: 13px;
+  --text-14: 14px;
+  --text-16: 16px;
+  --text-34: 34px;
+
+  --radius-2: 2px;
+  --radius-3: 3px;
+  --radius-4: 4px;
+  --radius-5: 5px;
+  --radius-6: 6px;
+  --radius-7: 7px;
+  --radius-8: 8px;
+  --radius-9: 9px;
+  --radius-10: 10px;
+  --radius-12: 12px;
+  --radius-14: 14px;
+  --radius-20: 20px;
+  --radius-pill: 99px;
+}
+
+@theme inline {
+  --color-chrome: var(--c-chrome);
+  --color-canvas: var(--c-canvas);
+  --color-surface: var(--c-surface);
+  --color-raised: var(--c-raised);
+  --color-chip: var(--c-chip);
+  --color-ink: var(--c-ink);
+  --color-icon-strong: var(--c-icon-strong);
+  --color-muted: var(--c-muted);
+  --color-icon-soft: var(--c-icon-soft);
+  --color-faint: var(--c-faint);
+  --color-dry: var(--c-dry);
+  --color-rule: var(--c-rule);
+  --color-sep: var(--c-sep);
+  --color-hover: var(--c-hover);
+  --color-press: var(--c-press);
+  --color-selected: var(--c-selected);
+  --color-outline: var(--c-outline);
+  --color-yuzu: var(--c-yuzu);
+  --color-yuzu-ink: var(--c-yuzu-ink);
+  --color-pith: var(--c-pith);
+  --color-danger: var(--c-danger);
+  --color-action: var(--c-action);
+  --color-action-ink: var(--c-action-ink);
+  --color-action-hover: var(--c-action-hover);
+  --color-action-press: var(--c-action-press);
+  --color-pr-open: var(--c-pr-open);
+  --color-pr-failing: var(--c-pr-failing);
+  --color-pr-running: var(--c-pr-running);
+  --color-pr-conflict: var(--c-pr-conflict);
+  --color-pr-merged: var(--c-pr-merged);
+  --color-tip: var(--c-tip);
+  --color-tip-ink: var(--c-tip-ink);
+  --color-tip-key: var(--c-tip-key);
+  --color-tip-key-ink: var(--c-tip-key-ink);
+
+  --shadow-pop: var(--c-pop);
+  --shadow-bar: var(--c-bar-shadow);
+  --shadow-raised: var(--c-raised-shadow);
+  --shadow-preview: var(--c-preview-ring);
+  --shadow-dot: var(--c-dot-ring);
+  --shadow-tip: var(--c-tip-shadow);
+  --shadow-focus: var(--c-focus);
+
+  --font-sans: var(--font-sans);
+  --font-display: var(--font-display);
+  --font-mono: var(--font-mono);
+
+  --ease-out: var(--ease-out);
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  /* Lets a pane's width ease to and from `auto`. */
+  :root {
+    interpolate-size: allow-keywords;
+  }
+
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: var(--c-chrome);
+    color: var(--c-ink);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    /* The design sets text at the font's own line height unless it says otherwise. */
+    line-height: normal;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Focus shows for the keyboard only, and the same way everywhere (focus-ring in ui/). */
+  :focus {
+    outline: none;
+  }
+}
+
+/* Electron: the chrome drags the window; what's clickable in it doesn't. */
+@utility app-drag {
+  -webkit-app-region: drag;
+}
+
+@utility app-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Keyboard focus, the same on every control. */
+@utility focus-ring {
+  &:focus-visible {
+    box-shadow: var(--c-focus);
+  }
+}
+
+/* The slice turning a sixth per beat: the agent is working. */
+@keyframes juiceturn {
+  from {
+    transform: rotate(0);
+  }
+  50%,
+  to {
+    transform: rotate(60deg);
+  }
+}
+
+@utility juiceturn {
+  animation: juiceturn var(--beat) var(--ease-turn) infinite;
+  transform-origin: 50% 50%;
+}
+
+/* A band of light across a label: only the page tab the agent is working on. */
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@utility shimmer {
+  background:
+    linear-gradient(
+      90deg,
+      currentColor 40%,
+      color-mix(in srgb, currentColor 30%, transparent) 50%,
+      currentColor 60%
+    )
+    0 0 / 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 1.8s linear infinite;
+}
+
+/* Loading placeholders breathe instead of sweeping, so a list of them stays calm. */
+@keyframes breathe {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@utility breathe {
+  animation: breathe 1.6s ease-in-out infinite;
+}
+
+/* Menus and popovers open from their trigger and leave faster than they came. */
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px) scale(0.98);
+  }
+}
+
+@keyframes pop-out {
+  to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+
+@utility pop {
+  transform-origin: var(--radix-popper-transform-origin);
+  &[data-state="open"] {
+    animation: pop-in var(--dur-pop) var(--ease-out);
+  }
+  &[data-state="closed"] {
+    animation: pop-out 90ms ease-in forwards;
+  }
+}
+
+@keyframes tip-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@utility tip {
+  &[data-state="delayed-open"],
+  &[data-state="instant-open"] {
+    animation: tip-in 100ms ease-out;
+  }
+}
+
+/* With reduced motion nothing turns, sweeps or travels; state still changes at once. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0s !important;
+  }
+}

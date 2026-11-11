@@ -1,0 +1,124 @@
+/*
+ * The cloud app's design tokens: every color, shadow, radius and duration a cloud component may
+ * use. Each color names its light and its dark value side by side with light-dark(), so the app
+ * follows the system appearance; `data-theme="light"` or `"dark"` on <html> pins one.
+ *
+ * Light values are the design's `.ui-light` (tokens.css of the "Ship with Ponzu" design). Dark
+ * values are its `.ui-dark` where it gives one; the ones marked "derived" it does not, and keep
+ * the light value's relationship to its neighbours (a step between the same two inks, the same
+ * alpha on the dark ground).
+ */
+:root {
+  color-scheme: light dark;
+
+  /* Grounds, back to front. */
+  --c-chrome: light-dark(#e8e6e0, #0e0e0d);
+  --c-canvas: light-dark(#f4f3ef, #121211);
+  --c-surface: light-dark(#ffffff, #1b1b1a);
+  --c-raised: light-dark(#ffffff, #3a3a3a);
+  --c-chip: light-dark(#e8e6e0, #1f1f1e);
+
+  /* Ink, strongest to quietest. */
+  --c-ink: light-dark(#111110, #f4f3ef);
+  /* The design's #3f3d39 (--n-700) icons: New design, the active page tab. Dark: derived. */
+  --c-icon-strong: light-dark(#3f3d39, #d3d0c8);
+  --c-muted: light-dark(#5e5b54, #a9a59b);
+  /* The design's #807c73 (--n-500) icons: chevrons, the search field. Dark: derived. */
+  --c-icon-soft: light-dark(#807c73, #8e8a82);
+  --c-faint: light-dark(#a9a59b, #6b6862);
+  --c-dry: light-dark(#c9c5bc, #5e5b54);
+
+  /* Lines and washes. */
+  --c-rule: light-dark(#e8e6e0, #262523);
+  --c-sep: light-dark(rgba(17, 17, 16, 0.1), rgba(244, 243, 239, 0.1));
+  --c-hover: light-dark(rgba(17, 17, 16, 0.05), rgba(255, 255, 255, 0.06));
+  /* A control held down, and the repo chip while its picker is open. Dark: derived. */
+  --c-press: light-dark(rgba(17, 17, 16, 0.08), rgba(255, 255, 255, 0.1));
+  /*
+   * What is open or chosen: the open design's row, the selected search result, the "+" while
+   * Share is open. Light is the canvas, so the open row reads as part of the pane beside it.
+   * Dark: derived, a step above hover; the dark canvas sits too close to the chrome to show.
+   */
+  --c-selected: light-dark(#f4f3ef, #252523);
+  /* The ring of the presence "+" (--n-300). Dark: derived. */
+  --c-outline: light-dark(#d3d0c8, #3f3d39);
+
+  /* Yuzu: the agent and the brand. Text on it is always ink. */
+  --c-yuzu: #ffc81e;
+  --c-yuzu-ink: #111110;
+  /* Pith: a search match (the design's --c-pin-soft). */
+  --c-pith: light-dark(#fff4d1, #2e2a1c);
+  --c-danger: light-dark(#d93a2b, #ff6b5e);
+
+  /* The dark action button, and a checked box. Dark: derived, inverted to stay the strongest thing. */
+  --c-action: light-dark(#111110, #f4f3ef);
+  --c-action-ink: light-dark(#ffffff, #111110);
+  --c-action-hover: light-dark(#262523, #ffffff);
+  /* Held down: a step past the resting button, the other way from hover. Derived. */
+  --c-action-press: light-dark(#000000, #e8e6e0);
+
+  /* Pull request states, when the mark is active. Dark: derived, lifted to read on the dark ground. */
+  --c-pr-open: light-dark(#3f8a4a, #5fb36b);
+  --c-pr-failing: light-dark(#b4453a, #e0675b);
+  --c-pr-running: light-dark(#d4a017, #e3b341);
+  --c-pr-conflict: light-dark(#b7791f, #d99a3c);
+  --c-pr-merged: light-dark(#8250df, #a37ff0);
+
+  /* Tooltips are dark in either theme, as the canvas's are. */
+  --c-tip: #1c1c1b;
+  --c-tip-ink: #ffffff;
+  --c-tip-key: rgba(255, 255, 255, 0.15);
+  --c-tip-key-ink: rgba(255, 255, 255, 0.85);
+
+  /* Shadows. Menus and popovers cast further in dark, so --c-pop is set again below. */
+  --c-pop: 0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 28px rgba(0, 0, 0, 0.1);
+  --c-bar-shadow:
+    0 0 0 0.5px light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.1)),
+    0 6px 20px light-dark(rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.4)),
+    0 1px 3px light-dark(rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.3));
+  --c-raised-shadow:
+    0 0 0 0.5px light-dark(transparent, rgba(255, 255, 255, 0.06)),
+    0 1px 2px light-dark(rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.4));
+  /* The hairline round a row's unseen dot. Dark: derived. */
+  --c-dot-ring: 0 0 0 1px light-dark(rgba(17, 17, 16, 0.08), rgba(0, 0, 0, 0.4));
+  /* A design's preview in a row. Dark: derived. */
+  --c-preview-ring: 0 0 0 0.5px light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.08));
+  --c-tip-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 4px 14px rgba(0, 0, 0, 0.18);
+  /*
+   * Keyboard focus: the onboarding's focused field (a 1px ring and a soft 4px halo), with the
+   * ring one step darker (--n-500) so it holds 3:1 against the chrome.
+   */
+  --c-focus:
+    0 0 0 1px light-dark(#807c73, #8e8a82),
+    0 0 0 4px light-dark(rgba(17, 17, 16, 0.08), rgba(255, 255, 255, 0.1));
+
+  /* Type. The families the app ships (vite.config.ts links them into every page). */
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-display: "Funnel Display", "Inter", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  /* Motion. */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* A turn of the slice: turns in the first half, rests in the second. */
+  --ease-turn: cubic-bezier(0.65, 0, 0.2, 1);
+  --dur-hover: 120ms;
+  --dur-pop: 140ms;
+  --dur-pane: 220ms;
+  --beat: 1.2s;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+/* What light-dark() can't hold: a shadow's geometry differs between the themes. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --c-pop: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --c-pop: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.5);
+  }
+}
