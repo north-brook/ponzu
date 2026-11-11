@@ -144,6 +144,8 @@
       "name": "@ponzu/studio",
       "version": "0.1.0",
       "dependencies": {
+        "@hugeicons/core-free-icons": "^4.3.5",
+        "@hugeicons/react": "^1.1.10",
         "@ponzu/canvas": "workspace:*",
         "@ponzu/core": "workspace:*",
         "@tailwindcss/vite": "^4.3.3",
@@ -159,6 +161,7 @@
         "uqr": "^0.1.3",
       },
       "devDependencies": {
+        "@ponzu/render": "workspace:*",
         "@types/react": "^19.3.0",
         "@types/react-dom": "^19.3.0",
         "@vitejs/plugin-react": "^6.1.2",

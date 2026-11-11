@@ -1,5 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+/* The cloud app has its own build (cloud/styles/cloud.css). */
+@source not "./cloud";
 
 /* The studio sets data-theme on <html>, so dialogs portaled to <body> follow it too. */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
