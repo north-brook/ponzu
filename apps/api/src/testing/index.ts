@@ -9,17 +9,23 @@ import type { RealtimeSealer } from "../deps/realtime.ts";
 import type { ObjectStorage } from "../deps/storage.ts";
 import { createWorkos } from "../deps/workos.ts";
 import { DocCache } from "../designs/doc-cache.ts";
+import type { SandboxConfig } from "../env.ts";
 import type { MinimumVersions } from "../http/client-version.ts";
 import { createLogger, type LogLine } from "../http/log.ts";
 import { GitTokens } from "../runner/git-credential.ts";
 import { createVault } from "../vault/vault.ts";
 import { FakeGithub, type FakeGithubUser } from "./fake-github.ts";
 import { FakeWorkos, type FakeWorkosUser } from "./fake-workos.ts";
-import { FakePoke, FakeSealer, MemoryStorage } from "./fakes.ts";
+import { FakeAnthropic, FakePoke, FakeSealer, MemoryStorage } from "./fakes.ts";
 
 export { FakeGithub, type FakeInstallation, type FakeRepository } from "./fake-github.ts";
 export { FakeWorkos } from "./fake-workos.ts";
-export { FakePoke, FakeSealer, MemoryStorage } from "./fakes.ts";
+export { FakeAnthropic, FakePoke, FakeSealer, MemoryStorage } from "./fakes.ts";
+
+/** The sandbox image the test app creates sandboxes from; its provider has it baked. */
+export const TEST_SNAPSHOT = "ponzu-runner-test";
+/** Where the test app tells a sandbox's runner the API is. */
+export const TEST_API_URL = "https://api.test";
 
 /** 32 bytes of nothing secret, in base64url: the vault key every test app seals with. */
 export const TEST_VAULT_KEY = Buffer.alloc(32, 7).toString("base64url");
@@ -86,6 +92,8 @@ export async function createTestApp(
     /** Real storage and where it serves from, for an opt-in test against the R2 bucket. */
     storage?: ObjectStorage;
     assetsUrl?: string;
+    /** How sandboxes are made, over the test's own: a snapshot of null acts out it being unset. */
+    sandbox?: Partial<SandboxConfig>;
   } = {},
 ) {
   const local = options.live ? null : await createTestDb();
@@ -100,6 +108,8 @@ export async function createTestApp(
   const workos = new FakeWorkos(clock);
   const github = new FakeGithub(clock);
   const sandbox = new FakeProvider(clock);
+  sandbox.seedSnapshot(TEST_SNAPSHOT);
+  const anthropic = new FakeAnthropic();
   const storage = new MemoryStorage(clock);
   const poke = new FakePoke();
   const sealer = new FakeSealer(clock);
@@ -124,6 +134,7 @@ export async function createTestApp(
     }),
     github: createGithub({ ...github.credentials, fetch: github.fetch, clock }),
     sandbox,
+    anthropic,
     storage: options.storage ?? storage,
     poke: poke.poke,
     realtime: options.live?.realtime ?? sealer,
@@ -139,6 +150,12 @@ export async function createTestApp(
         botUserId: TEST_BOT_USER_ID,
       },
       cronSecret: TEST_CRON_SECRET,
+      sandbox: {
+        snapshot: TEST_SNAPSHOT,
+        apiUrl: TEST_API_URL,
+        idleSeconds: 300,
+        ...options.sandbox,
+      },
     },
   };
   const app = createApp(deps);
@@ -247,6 +264,7 @@ export async function createTestApp(
     workos,
     github,
     sandbox,
+    anthropic,
     storage,
     poke,
     realtime: sealer,

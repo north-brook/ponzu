@@ -68,7 +68,8 @@ export const LIVE_QUERIES = {
                  u.email_digest, u.onboarding_where_at, u.onboarding_iphone_at,
                  a.id as claude_account_id, a.kind as claude_account_kind,
                  a.status as claude_account_status, a.plan_label as claude_plan_label,
-                 a.limited_until as claude_limited_until
+                 a.key_hint as claude_key_hint, a.connected_at as claude_connected_at,
+                 a.expires_at as claude_expires_at, a.limited_until as claude_limited_until
             from users u
             left join claude_accounts a on a.user_id = u.id
            where u.id = $1`,
@@ -91,7 +92,7 @@ export const LIVE_QUERIES = {
     },
     sql: `select d.id, d.workspace_id, d.repo_id, r.full_name as repo_full_name, d.owner_id,
                  d.name, d.icon, d.branch, d.status, d.settled_at, d.seq, d.preview_seq,
-                 d.agent_state, d.agent_status, d.needs_you_count,
+                 d.agent_state, d.agent_status, d.agent_blocker, d.needs_you_count,
                  d.pr_number, d.pr_state, d.pr_checks, d.last_activity_at, d.created_at,
                  dr.seen_seq, dr.seen_thread_seq
             from designs d
@@ -109,7 +110,7 @@ export const LIVE_QUERIES = {
     args: ForDesign,
     authorize: designReader,
     sql: `select ${DESIGN_HEAD_COLUMNS.map((column) => `d.${column}`).join(", ")},
-                 s.state as sandbox_state
+                 d.agent_blocker, s.state as sandbox_state
             from designs d
             left join sandboxes s on s.id = d.sandbox_id
            where d.id = $1`,

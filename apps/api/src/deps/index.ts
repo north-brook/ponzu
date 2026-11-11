@@ -2,11 +2,12 @@ import { createDb, type Db } from "@ponzu/db";
 import { BoatProvider, type Clock, type SandboxProvider, systemClock } from "@ponzu/sandbox";
 import manifest from "../../package.json" with { type: "json" };
 import { DocCache } from "../designs/doc-cache.ts";
-import type { Env } from "../env.ts";
+import type { Env, SandboxConfig } from "../env.ts";
 import type { MinimumVersions } from "../http/client-version.ts";
 import { consoleSink, createLogger, type Logger } from "../http/log.ts";
 import { GitTokens } from "../runner/git-credential.ts";
 import { createVault, type Vault } from "../vault/vault.ts";
+import { type Anthropic, createAnthropic } from "./anthropic.ts";
 import { type Background, createBackground, waitUntil } from "./background.ts";
 import type { Fetch } from "./fetch.ts";
 import { createGithub, type Github } from "./github.ts";
@@ -35,6 +36,8 @@ export interface Deps {
   workos: Workos;
   github: Github;
   sandbox: SandboxProvider;
+  /** Checks a person's Anthropic API key. */
+  anthropic: Anthropic;
   /** Cloudflare R2: the bytes of designs' files, previews and exports. */
   storage: ObjectStorage;
   /** Tells an awake runner there may be events to claim. */
@@ -61,6 +64,8 @@ export interface Config {
   githubApp: { slug: string; webhookSecret: string; botUserId: number };
   /** What the scheduler's requests carry (`routes/cron.ts`). */
   cronSecret: string;
+  /** How designs' sandboxes are made and kept. */
+  sandbox: SandboxConfig;
 }
 
 /** Ids the API makes itself. Rows get theirs from `@ponzu/db`. */
@@ -103,6 +108,7 @@ export function createDeps(env: Env): Deps {
       clock,
     }),
     sandbox: new BoatProvider({ apiKey: env.boatApiKey, clock }),
+    anthropic: createAnthropic({ fetch: outbound, clock }),
     storage: createR2Storage({ ...env.r2, fetch: outbound, clock }),
     poke: createPoke({ fetch: outbound, clock }),
     realtime: createRealtimeSealer({
@@ -121,6 +127,7 @@ export function createDeps(env: Env): Deps {
         botUserId: env.githubApp.botUserId,
       },
       cronSecret: env.cronSecret,
+      sandbox: env.sandbox,
     },
   };
 }

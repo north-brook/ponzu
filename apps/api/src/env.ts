@@ -24,6 +24,18 @@ const schema = z.object({
   /** What Vercel's cron sends as its bearer token: the only way into `/v1/cron`. */
   CRON_SECRET: z.string().min(32),
   BOAT_API_KEY: z.string(),
+  /**
+   * The sandbox image every design's sandbox is created from: the name a bake of
+   * apps/runner/image prints. Unset, a wake fails saying so and nothing else is affected.
+   */
+  PONZU_SANDBOX_SNAPSHOT: z
+    .string()
+    .regex(/^[a-z0-9-]+$/)
+    .optional(),
+  /** Where a sandbox's runner reaches this API. */
+  PONZU_API_URL: z.url().default("https://api.ponzu.design"),
+  /** How long a sandbox stays awake after the last activity, in seconds. */
+  PONZU_SANDBOX_IDLE_SECONDS: z.coerce.number().int().min(30).max(3600).default(300),
   /** The key stored secrets are sealed with: 32 random bytes in base64url. */
   PONZU_VAULT_KEY: z.string(),
   /** Neon Realtime for the database's branch: where clients subscribe, and what seals queries. */
@@ -43,6 +55,16 @@ const schema = z.object({
   /** Set by Vercel when a deployment is made from a git checkout. */
   VERCEL_GIT_COMMIT_SHA: z.string().optional(),
 });
+
+/** How designs' sandboxes are made and kept. */
+export interface SandboxConfig {
+  /** The snapshot a sandbox is created from; null when PONZU_SANDBOX_SNAPSHOT is unset. */
+  snapshot: string | null;
+  /** The API's own address as a sandbox reaches it, with no trailing slash. */
+  apiUrl: string;
+  /** How long a sandbox stays awake after the last activity. */
+  idleSeconds: number;
+}
 
 /** The environment was read and something the API needs is missing or malformed. */
 export class EnvError extends Error {
@@ -65,6 +87,7 @@ export interface Env {
   };
   cronSecret: string;
   boatApiKey: string;
+  sandbox: SandboxConfig;
   vault: { key: string; oldKeys: string[] };
   realtime: { url: string; secret: string };
   assetsUrl: string;
@@ -109,6 +132,11 @@ export function readEnv(source: Record<string, string | undefined>): Env {
     },
     cronSecret: env.CRON_SECRET,
     boatApiKey: env.BOAT_API_KEY,
+    sandbox: {
+      snapshot: env.PONZU_SANDBOX_SNAPSHOT ?? null,
+      apiUrl: env.PONZU_API_URL.replace(/\/+$/, ""),
+      idleSeconds: env.PONZU_SANDBOX_IDLE_SECONDS,
+    },
     vault: {
       key: env.PONZU_VAULT_KEY,
       oldKeys: env.PONZU_VAULT_OLD_KEYS?.split(",").filter(Boolean) ?? [],

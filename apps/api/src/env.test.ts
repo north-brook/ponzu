@@ -38,6 +38,8 @@ test("a complete environment is read into one typed value", () => {
     },
     cronSecret: complete.CRON_SECRET,
     boatApiKey: "boat-key",
+    // Unset, a wake says the snapshot is missing; the API itself starts.
+    sandbox: { snapshot: null, apiUrl: "https://api.ponzu.design", idleSeconds: 300 },
     vault: { key: "vault-key", oldKeys: [] },
     realtime: { url: complete.NEON_REALTIME_URL, secret: "nrt_live_1example" },
     // Without its trailing slash, so a path can follow it.
@@ -59,6 +61,14 @@ test("the optional ones are read when set", () => {
     PONZU_VAULT_OLD_KEYS: "older,oldest",
     PONZU_MIN_CLIENT_VERSIONS: "macos=2.1.0",
     VERCEL_GIT_COMMIT_SHA: "abc1234",
+    PONZU_SANDBOX_SNAPSHOT: "ponzu-runner-0123456789ab",
+    PONZU_API_URL: "https://ponzu-dev.example/",
+    PONZU_SANDBOX_IDLE_SECONDS: "60",
+  });
+  expect(env.sandbox).toEqual({
+    snapshot: "ponzu-runner-0123456789ab",
+    apiUrl: "https://ponzu-dev.example",
+    idleSeconds: 60,
   });
   expect(env.vault.oldKeys).toEqual(["older", "oldest"]);
   expect(env.minimumClientVersions).toEqual({ macos: "2.1.0" });
@@ -109,7 +119,10 @@ test(".env.example lists exactly the variables the API reads, with no values", (
   const required = names.filter((name) => name in complete);
   expect(required.sort()).toEqual(Object.keys(complete).sort());
   expect(names.filter((name) => !(name in complete)).sort()).toEqual([
+    "PONZU_API_URL",
     "PONZU_MIN_CLIENT_VERSIONS",
+    "PONZU_SANDBOX_IDLE_SECONDS",
+    "PONZU_SANDBOX_SNAPSHOT",
     "PONZU_VAULT_OLD_KEYS",
   ]);
 });

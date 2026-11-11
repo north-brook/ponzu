@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Clock } from "@ponzu/sandbox";
+import type { Anthropic } from "../deps/anthropic.ts";
 import type { Poke } from "../deps/poke.ts";
 import type { LiveQuery, RealtimeSealer, SealedQuery } from "../deps/realtime.ts";
 import {
@@ -9,6 +10,7 @@ import {
   type StoredObject,
   uploadHeaders,
 } from "../deps/storage.ts";
+import { UpstreamError } from "../http/errors.ts";
 
 /** An object as `MemoryStorage` holds it. */
 export interface MemoryObject {
@@ -87,6 +89,23 @@ export class MemoryStorage implements ObjectStorage {
 
 function refuse(status: number, code: string): Response {
   return new Response(`<Error><Code>${code}</Code></Error>`, { status });
+}
+
+/**
+ * Anthropic, as far as the API asks it: it takes the keys in `keys` and no others. Set
+ * `failing` to act out Anthropic not answering.
+ */
+export class FakeAnthropic implements Anthropic {
+  readonly keys = new Set<string>();
+  /** Every key asked about, oldest first. */
+  readonly asked: string[] = [];
+  failing = false;
+
+  async acceptsApiKey(key: string): Promise<boolean> {
+    this.asked.push(key);
+    if (this.failing) throw new UpstreamError("anthropic", "Anthropic did not answer.");
+    return this.keys.has(key);
+  }
 }
 
 /** Pokes, recorded instead of sent. Set `failing` to act out a runner that cannot be reached. */
