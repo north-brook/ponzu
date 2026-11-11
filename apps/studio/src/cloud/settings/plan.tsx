@@ -26,6 +26,13 @@ export interface TeamUsage {
   mine: PersonUsage;
 }
 
+/** What one design used this period; `name` null for those the viewer can't see by name. */
+export interface DesignUsage {
+  id: string | null;
+  name: string | null;
+  usedCredits: number;
+}
+
 export interface PlanSectionProps {
   usage: Usage;
   /** A team's workspace; null for a personal one. */
@@ -33,9 +40,12 @@ export interface PlanSectionProps {
   /** May change the cap and the card: a team's admin, or anyone in their own workspace. */
   canManage: boolean;
   onCapChange: (usd: number) => void;
-  /** Stripe's portal, where the card is replaced and invoices are. */
-  onManageCard: () => void;
-  onAddCard: () => void;
+  /** Stripe's portal, where the card is replaced and invoices are; only with a card. */
+  onManageCard?: () => void;
+  /** Left out while cards can't be added yet: the row says there is none, and offers nothing. */
+  onAddCard?: () => void;
+  /** Use by design, most first, for whoever may see it (an admin); left out, not shown. */
+  byDesign?: DesignUsage[] | null;
 }
 
 const BRAND_NAMES: Record<Brand, string> = {
@@ -57,6 +67,7 @@ export function PlanSection({
   onCapChange,
   onManageCard,
   onAddCard,
+  byDesign,
 }: PlanSectionProps) {
   const billed = billedUsd(usage);
   return (
@@ -84,7 +95,7 @@ export function PlanSection({
           <PlanRow
             label="Card"
             action={
-              usage.card ? (
+              usage.card && onManageCard ? (
                 <RowIcon
                   icon={ArrowUpRight01Icon}
                   label="Manage in Stripe"
@@ -105,7 +116,7 @@ export function PlanSection({
             ) : (
               <>
                 <span className="flex-1 font-normal text-muted">No card yet</span>
-                <QuietButton onClick={onAddCard}>Add a card</QuietButton>
+                {onAddCard ? <QuietButton onClick={onAddCard}>Add a card</QuietButton> : null}
               </>
             )}
           </PlanRow>
@@ -118,7 +129,35 @@ export function PlanSection({
           <People label="Your usage" people={[team.mine]} usage={usage} />
         )
       ) : null}
+      {byDesign?.length ? <Designs designs={byDesign} usage={usage} /> : null}
     </>
+  );
+}
+
+/** Use by design, in gross dollars, as the API orders it: most first, the unnamed last. */
+function Designs({ designs, usage }: { designs: DesignUsage[]; usage: Usage }) {
+  return (
+    <section aria-label="By design" className="flex flex-col">
+      <SectionLabel className="pb-1">By design</SectionLabel>
+      {designs.map(({ id, name, usedCredits }) => (
+        <div
+          key={id ?? "others"}
+          className="flex h-[38px] items-center gap-2.5 border-rule border-t"
+        >
+          <span
+            className={cn(
+              "min-w-0 flex-1 truncate text-13",
+              name ? "font-medium text-ink" : "text-muted",
+            )}
+          >
+            {name ?? "Designs you can't open"}
+          </span>
+          <span className="w-20 text-right font-medium font-mono text-12 text-muted leading-none">
+            {money(usedCredits * usage.creditUsd)}
+          </span>
+        </div>
+      ))}
+    </section>
   );
 }
 

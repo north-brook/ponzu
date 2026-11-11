@@ -242,7 +242,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     ]);
   });
 
-  test("Settings opens with ⌘, on each section that has something behind it", async () => {
+  test("Settings opens with ⌘, on every section", async () => {
     await page.keyboard.press("Meta+,");
     const nav = page.getByRole("navigation", { name: "Settings" });
     await nav.waitFor();
@@ -251,7 +251,14 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
         t.trim(),
       );
     // A personal workspace has nobody else in it, so no Members.
-    expect(await sections()).toEqual(["Account", "Agents", "GitHub"]);
+    expect(await sections()).toEqual([
+      "Account",
+      "Agents",
+      "Notifications",
+      "Plan and usage",
+      "GitHub",
+      "Environments",
+    ]);
     await page.getByText("Signed in with").waitFor();
     await shoot("settings-account");
     await nav.getByRole("button", { name: "Agents" }).click();
@@ -281,7 +288,15 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     // The rest of the window is hidden from the accessibility tree while the menu is open.
     await page.getByRole("menu").waitFor({ state: "detached" });
     await nav.getByRole("button", { name: "Members" }).waitFor();
-    expect(await sections()).toEqual(["Account", "Agents", "Members", "GitHub"]);
+    expect(await sections()).toEqual([
+      "Account",
+      "Agents",
+      "Notifications",
+      "Members",
+      "Plan and usage",
+      "GitHub",
+      "Environments",
+    ]);
     for (const [section, shows, name] of [
       ["Members", "Everyone with access to its repos is in Northbrook", "settings-members"],
       ["GitHub", "Repositories Ponzu can open", "settings-github"],

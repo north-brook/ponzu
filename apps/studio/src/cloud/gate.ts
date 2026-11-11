@@ -13,7 +13,7 @@ export function gateMessage(gate: SteerGate, meId: string): string {
       : "You can view this design.";
   }
   if (gate.kind === "claude_owner_left") {
-    return "Its owner left the workspace, so this design can't run on their Claude.";
+    return "Its owner left the workspace. A design runs on its owner's Claude alone, so this one can't run again. You can still look through it.";
   }
   const you = gate.owner.id === meId;
   const whose = you ? "Your" : `${firstName(gate.owner)}'s`;

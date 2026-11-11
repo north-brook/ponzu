@@ -48,8 +48,7 @@ export interface SidebarProps extends RowHandlers {
   onSwitchWorkspace: (workspace: Workspace) => void;
   onAddWorkspace: () => void;
   onSettings: () => void;
-  /** Left out while there is no plan to show. */
-  onPlan?: () => void;
+  onPlan: () => void;
   onSignOut: () => void;
 }
 

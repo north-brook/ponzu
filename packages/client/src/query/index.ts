@@ -4,5 +4,5 @@
 export { createQueryClient } from "./client.ts";
 export { queryKeys } from "./keys.ts";
 export { invalidateFromLive } from "./live.ts";
-export { type PonzuMutations, ponzuMutations } from "./mutations.ts";
+export { type PonzuMutations, type PullRequestAction, ponzuMutations } from "./mutations.ts";
 export { type PonzuQueries, ponzuQueries } from "./queries.ts";

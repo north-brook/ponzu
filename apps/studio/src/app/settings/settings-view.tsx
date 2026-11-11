@@ -1,7 +1,6 @@
 import type { Api, Profile } from "@ponzu/client";
 import { useMemo, useState } from "react";
 import type { Person } from "../../cloud/model.ts";
-import { AccountSection } from "../../cloud/settings/account.tsx";
 import {
   SettingsModal,
   type SettingsSection,
@@ -9,23 +8,20 @@ import {
 } from "../../cloud/settings/settings-modal.tsx";
 import type { Host } from "../host.ts";
 import { toWorkspace } from "../map.ts";
+import { AccountView } from "./account-view.tsx";
 import { AgentsView } from "./agents-view.tsx";
+import { EnvironmentsView } from "./environments-view.tsx";
 import { GithubView } from "./github-view.tsx";
 import { MembersView } from "./members-view.tsx";
+import { NotificationsView } from "./notifications-view.tsx";
+import { PlanView } from "./plan-view.tsx";
 
 /*
- * Settings (⌘, and the team menu), on live data: each section the API has something behind.
- *
- * SEAM(settings api): Notifications, Plan and usage and Environments wait on routes another
- * track is adding under /v1 (ping preferences and devices, credits and usage, repo
- * environments). Until they land, those sections are left out of the nav entirely, rather than
- * shown empty or made up; wiring one is taking it out of this list.
+ * Settings (⌘, and the team menu), on live data: every section, each on its own routes. Its
+ * workspace sections start on the window's workspace and have their own switcher, which changes
+ * only them. The iPhone row of Notifications, with no phone yet, leads to the guided setup's
+ * step for it (`onGetIphone`).
  */
-export const SECTIONS_WITHOUT_AN_API: readonly SettingsSection[] = [
-  "notifications",
-  "plan",
-  "environments",
-];
 
 type MeWorkspace = Awaited<ReturnType<Api["me"]>>["workspaces"][number];
 
@@ -40,6 +36,7 @@ export function SettingsView({
   section,
   onSectionChange,
   onAddWorkspace,
+  onGetIphone,
 }: {
   host: Host;
   me: Person;
@@ -54,6 +51,8 @@ export function SettingsView({
   onSectionChange: (section: SettingsSection) => void;
   /** Set Ponzu up on another GitHub account. */
   onAddWorkspace: () => void;
+  /** Show how to get Ponzu on an iPhone. */
+  onGetIphone: () => void;
 }) {
   const shown = useMemo(() => workspaces.map(toWorkspace), [workspaces]);
   // Settings has its own switcher: choosing a workspace here changes only its sections.
@@ -62,6 +61,9 @@ export function SettingsView({
   if (!chosen) return null;
   const workspace = toWorkspace(chosen);
   const current = sectionFor(section, workspace);
+  const teams = workspaces
+    .filter((w) => w.kind === "org")
+    .map((w) => ({ workspace: toWorkspace(w), role: w.role }));
 
   return (
     <SettingsModal
@@ -76,26 +78,28 @@ export function SettingsView({
         onSectionChange(sectionFor(current, next));
       }}
       onCreateTeam={onAddWorkspace}
-      hidden={SECTIONS_WITHOUT_AN_API}
     >
       {current === "account" ? (
-        <AccountSection
+        <AccountView
+          host={host}
           me={me}
           email={user.email}
-          teams={workspaces
-            .filter((w) => w.kind === "org")
-            .map((w) => ({ workspace: toWorkspace(w), role: w.role }))}
-          onSignOut={() => void host.session.signOut()}
+          teams={teams}
           onCreateTeam={onAddWorkspace}
-          // There is no way to delete an account in the API yet, so there is no Danger zone.
         />
       ) : current === "agents" ? (
         <AgentsView host={host} />
+      ) : current === "notifications" ? (
+        <NotificationsView email={user.email} team={teams.length > 0} onGetIphone={onGetIphone} />
       ) : current === "members" ? (
         <MembersView host={host} workspace={workspace} meId={me.id} />
+      ) : current === "plan" ? (
+        <PlanView key={workspace.id} workspace={workspace} />
       ) : current === "github" ? (
         <GithubView host={host} workspaceId={workspace.id} />
-      ) : null}
+      ) : (
+        <EnvironmentsView key={workspace.id} workspaceId={workspace.id} />
+      )}
     </SettingsModal>
   );
 }

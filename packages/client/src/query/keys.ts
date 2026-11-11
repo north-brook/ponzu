@@ -12,4 +12,21 @@ export const queryKeys = {
   workspace: (workspaceId: string) => ["ponzu", "workspace", workspaceId] as const,
   claudeAccount: () => ["ponzu", "claude", "account"] as const,
   claudeDefaults: () => ["ponzu", "claude", "defaults"] as const,
+
+  /** The person's ping toggles and their devices. */
+  notifications: () => ["ponzu", "notifications"] as const,
+  /** A workspace's repos that have an environment. */
+  environments: (workspaceId: string) => ["ponzu", "environments", workspaceId] as const,
+  /** A workspace's usage this billing period, as the person may see it. */
+  usage: (workspaceId: string) => ["ponzu", "usage", workspaceId] as const,
+
+  /** Everything cached about one design: its thread's pages, its pull request and diffs. */
+  design: (designId: string) => ["ponzu", "design", designId] as const,
+  /** A page of a design's thread, before a seq (or the newest). */
+  threadPage: (designId: string, before: number | null, limit: number) =>
+    ["ponzu", "design", designId, "thread", before, limit] as const,
+  pullRequest: (designId: string) => ["ponzu", "design", designId, "pull-request"] as const,
+  /** One changed file's diff at a commit: a push makes another, so the commit is the key. */
+  pullRequestFile: (designId: string, path: string, headSha: string | null) =>
+    ["ponzu", "design", designId, "pull-request", "file", path, headSha] as const,
 };

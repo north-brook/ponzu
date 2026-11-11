@@ -1,7 +1,11 @@
 import type { Api } from "@ponzu/client";
 import type { ClaudeConnection } from "../../cloud/claude.ts";
+import type { PersonUsage, Usage } from "../../cloud/settings/billing.ts";
+import type { RepoEnvironment } from "../../cloud/settings/environments.ts";
 import type { Installation } from "../../cloud/settings/github.tsx";
 import type { Member } from "../../cloud/settings/members.ts";
+import type { PingDevice } from "../../cloud/settings/notifications.tsx";
+import type { DesignUsage, TeamUsage } from "../../cloud/settings/plan.tsx";
 import { toPerson } from "../map.ts";
 
 /*
@@ -60,4 +64,93 @@ export function installationUrl(view: WorkspaceView): string | null {
 /** The organization's people on GitHub: who is in a workspace is decided there. */
 export function peopleUrl(githubLogin: string): string {
   return `https://github.com/orgs/${githubLogin}/people`;
+}
+
+type Notifications = Awaited<ReturnType<Api["notifications"]["get"]>>;
+type ApiEnvironment = Awaited<ReturnType<Api["environments"]["get"]>>["environment"];
+type ApiUsage = Awaited<ReturnType<Api["usage"]["get"]>>;
+
+/**
+ * The iPhones pings can go to. A device names itself ("Maya's iPhone"); one that hasn't yet is
+ * called what it is. The Mac doesn't take pings, so only phones are listed.
+ */
+export function toPingDevices(answer: Notifications): PingDevice[] {
+  return answer.devices
+    .filter((device) => device.platform === "ios")
+    .map((device) => ({
+      id: device.id,
+      name: device.name?.trim() || "iPhone",
+      pings: device.pings,
+      blocked: device.blocked,
+    }));
+}
+
+/** Whether an iPhone is signed in as the person: the guided setup's last step is then done. */
+export function hasIphone(answer: Notifications): boolean {
+  return answer.devices.some((device) => device.platform === "ios");
+}
+
+/**
+ * A repo's environment as Settings shows it. A rebuild asked for happens at the repo's next
+ * start (the API keeps it asked for until then), so it says that rather than that one is under
+ * way; a base being built says so.
+ */
+export function toEnvironment(env: ApiEnvironment): RepoEnvironment {
+  const { status, builtAt, stack, rebuild } = env.base;
+  return {
+    repo: { id: env.repo.id, owner: env.repo.owner, name: env.repo.name },
+    base: {
+      status: status !== "building" && rebuild.requestedAt !== null ? "requested" : status,
+      builtAt: builtAt === null ? null : String(builtAt),
+      stack,
+    },
+    secrets: env.secrets.map((secret) => ({ ...secret, updatedAt: String(secret.updatedAt) })),
+  };
+}
+
+/**
+ * The period's usage as Plan and usage draws it. There is no billing yet (no card, no invoices),
+ * so the card is none; the cap is always there (the rate card's default until an admin sets
+ * one), and the bar and the period's last day follow it.
+ */
+export function toUsage(usage: ApiUsage): Usage {
+  return {
+    usedCredits: usage.usedCredits,
+    freeCredits: usage.freeCredits,
+    creditUsd: usage.creditCents / 100,
+    capUsd: usage.cap.usd,
+    periodEnd: String(usage.period.end),
+    card: null,
+  };
+}
+
+/** A team's share of the period: everyone's, for an admin; only their own for anyone else. */
+export function toTeamUsage(usage: ApiUsage, name: string): TeamUsage {
+  const row = (p: ApiUsage["mine"]): PersonUsage => ({
+    person: {
+      id: p.person.id,
+      name: p.person.name,
+      login: p.person.login,
+      avatarUrl: p.person.avatarUrl,
+    },
+    admin: p.admin,
+    usedCredits: p.usedCredits,
+  });
+  return {
+    name,
+    people: usage.people,
+    byPerson: usage.byPerson?.map(row) ?? null,
+    mine: row(usage.mine),
+  };
+}
+
+/** Use by design, for an admin; the last row, unnamed, is what they can't open. */
+export function toDesignUsage(usage: ApiUsage): DesignUsage[] | null {
+  return (
+    usage.byDesign?.map(({ design, usedCredits }) => ({
+      id: design?.id ?? null,
+      name: design?.name ?? null,
+      usedCredits,
+    })) ?? null
+  );
 }

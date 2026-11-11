@@ -3,6 +3,7 @@ import { useLiveQuery } from "@ponzu/client/react";
 import type { DeepLink } from "@ponzu/desktop/bridge";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { GetIphoneDialog } from "../cloud/dialogs/account-dialogs.tsx";
 import type { DesignSummary, Person } from "../cloud/model.ts";
 import type { ResultKey } from "../cloud/search.ts";
 import type { SettingsSection } from "../cloud/settings/settings-modal.tsx";
@@ -29,6 +30,7 @@ import {
 import { Banner, PaneMessage } from "./notices.tsx";
 import { usePonzu } from "./ponzu-query.tsx";
 import { SettingsView } from "./settings/settings-view.tsx";
+import { ConnectClaudeDialog } from "./setup/connect-claude-dialog.tsx";
 import { useAssetsUrls, useRowPresence } from "./sidebar-data.ts";
 import { filterFor, loadUi, saveUi, type UiState } from "./ui-state.ts";
 import { useOnReturn } from "./use-answer.ts";
@@ -232,11 +234,25 @@ function WorkspaceWindow({
   const [page, setPage] = useState<string | null>(null);
   const [query, setQuery] = useState<string | null>(null);
   const [settledOpen, setSettledOpen] = useState(false);
-  const [settings, setSettings] = useState<{ open: boolean; section: SettingsSection }>({
-    open: false,
-    section: "account",
-  });
-  const openSettings = useCallback(() => setSettings({ open: true, section: "account" }), []);
+  // Each opening starts Settings on the window's workspace: `opened` keys it.
+  const [settings, setSettings] = useState<{
+    open: boolean;
+    section: SettingsSection;
+    opened: number;
+  }>({ open: false, section: "account", opened: 0 });
+  const showSettings = useCallback(
+    (open: boolean, section?: SettingsSection) =>
+      setSettings((now) => ({
+        open,
+        section: section ?? now.section,
+        opened: open && !now.open ? now.opened + 1 : now.opened,
+      })),
+    [],
+  );
+  const openSettings = useCallback(() => showSettings(true, "account"), [showSettings]);
+  const openPlan = useCallback(() => showSettings(true, "plan"), [showSettings]);
+  const [gettingIphone, setGettingIphone] = useState(false);
+  const [connectingClaude, setConnectingClaude] = useState(false);
   const [deleting, setDeleting] = useState<{ design: DesignSummary; busy: boolean } | null>(null);
   const assetsUrls = useAssetsUrls(host.api, live.rows ?? null);
   const activeIds = useMemo(
@@ -372,9 +388,8 @@ function WorkspaceWindow({
     seenThreadSeq: live.rows?.find((row) => row.id === openId)?.seenThreadSeq ?? null,
     say,
     onClose: () => openDesign(null),
-    // SEAM(connect Claude): the setup track's Connect Claude flow (its card, in a dialog, or
-    // Settings › Agents) opens from here once it is wired. Until then the composer's strip says
-    // the design waits, and offers no button that would do nothing.
+    // The design waits on the viewer's own Claude: the guided setup's card, in a dialog.
+    onConnectClaude: () => setConnectingClaude(true),
   });
 
   return (
@@ -421,7 +436,7 @@ function WorkspaceWindow({
                   onSwitchWorkspace={(next) => update((now) => ({ ...now, workspaceId: next.id }))}
                   onAddWorkspace={addWorkspace}
                   onSettings={openSettings}
-                  // SEAM(settings api): Plan and usage is offered once billing has routes.
+                  onPlan={openPlan}
                   onSignOut={() => void host.session.signOut()}
                 />
               ),
@@ -457,16 +472,24 @@ function WorkspaceWindow({
         />
       )}
       <SettingsView
+        key={settings.opened}
         host={host}
         me={me}
         user={user}
         workspaces={everyWorkspace}
         workspaceId={id}
         open={settings.open}
-        onOpenChange={(open) => setSettings((now) => ({ ...now, open }))}
+        onOpenChange={(open) => showSettings(open)}
         section={settings.section}
         onSectionChange={(section) => setSettings((now) => ({ ...now, section }))}
         onAddWorkspace={addWorkspace}
+        onGetIphone={() => setGettingIphone(true)}
+      />
+      <GetIphoneDialog open={gettingIphone} onDismiss={() => setGettingIphone(false)} />
+      <ConnectClaudeDialog
+        host={host}
+        open={connectingClaude}
+        onClose={() => setConnectingClaude(false)}
       />
       {notice ? <Banner>{notice}</Banner> : null}
       <DeleteDesignDialog

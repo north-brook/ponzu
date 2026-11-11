@@ -8,6 +8,7 @@ import { AppWindow } from "../../cloud/window/app-window.tsx";
 import type { Host } from "../host.ts";
 import { PaneMessage } from "../notices.tsx";
 import { usePonzu } from "../ponzu-query.tsx";
+import { hasIphone } from "../settings/map.ts";
 import { loadUi, saveUi } from "../ui-state.ts";
 import { useClaudeConnect } from "./claude-connect.ts";
 import { setupFacts } from "./facts.ts";
@@ -36,7 +37,12 @@ export function FirstRun({
 }) {
   const { queries } = usePonzu();
   const me = useQuery(queries.me());
-  const step = me.data ? setupStep(setupFacts(me.data)) : null;
+  // The iPhone step is for someone without Ponzu on their phone: their devices say. Asked only
+  // once the gates before it are clear; if they can't be had, the step shows.
+  const before = me.data ? setupStep(setupFacts(me.data, true)) : null;
+  const devices = useQuery({ ...queries.notifications(), enabled: before === "done" });
+  const phone = devices.data ? hasIphone(devices.data) : false;
+  const step = me.data ? setupStep(setupFacts(me.data, phone)) : null;
   // "Where do you design?" waits for its list: until then the sign-in screen keeps waiting.
   const arrival = useArrivalSync(step === "where");
   // Fresh start's model picker shows the person's defaults: asked for alongside `me`, so the
@@ -45,7 +51,12 @@ export function FirstRun({
 
   if (step === "done" && !defaults.isPending) return children;
 
-  const waiting = !me.data || step === "done" || (step === "where" && arrival.loading);
+  const waiting =
+    !me.data ||
+    step === "done" ||
+    (step === "where" && arrival.loading) ||
+    // The iPhone step waits for the devices, so it never shows to someone who has one.
+    (step === "iphone" && devices.isPending);
   let content: ReactNode = null;
   if (!me.data && me.isError) {
     content = (

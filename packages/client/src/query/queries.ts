@@ -41,6 +41,54 @@ export function ponzuQueries(api: Api) {
     /** The model and effort new designs start on, and what there is to choose from. */
     claudeDefaults: () =>
       queryOptions({ queryKey: queryKeys.claudeDefaults(), queryFn: () => api.claude.defaults() }),
+
+    /** Which events ping the person, and the devices pings go to (an iPhone, once signed in). */
+    notifications: () =>
+      queryOptions({
+        queryKey: queryKeys.notifications(),
+        queryFn: () => api.notifications.get(),
+      }),
+    /** The workspace's repos with an environment: each base, and its secrets by name. */
+    environments: (workspaceId: string) =>
+      queryOptions({
+        queryKey: queryKeys.environments(workspaceId),
+        queryFn: () => api.environments.list(workspaceId),
+      }),
+    /** This billing period so far: credits used, the pooled free ones, the cap, who used what. */
+    usage: (workspaceId: string) =>
+      queryOptions({
+        queryKey: queryKeys.usage(workspaceId),
+        queryFn: () => api.usage.get(workspaceId),
+      }),
+
+    /**
+     * A page of a design's thread, oldest first: the newest `limit` items before `before`. Older
+     * pages never change; the newest is the live query's from then on, so none is asked again.
+     */
+    threadPage: (designId: string, page: { before?: number; limit: number }) =>
+      queryOptions({
+        queryKey: queryKeys.threadPage(designId, page.before ?? null, page.limit),
+        queryFn: () => api.designs.thread(designId, page),
+        staleTime: Number.POSITIVE_INFINITY,
+      }),
+    /**
+     * The design's pull request as GitHub has it, `nextAction` included. Read again whenever
+     * the design's head says something about it moved: what reads it says when.
+     */
+    pullRequest: (designId: string) =>
+      queryOptions({
+        queryKey: queryKeys.pullRequest(designId),
+        queryFn: () => api.designs.pullRequest.get(designId),
+        staleTime: 0,
+        refetchOnWindowFocus: false,
+      }),
+    /** One changed file and its diff, at the commit the tab shows: the same commit, the same diff. */
+    pullRequestFile: (designId: string, path: string, headSha: string | null) =>
+      queryOptions({
+        queryKey: queryKeys.pullRequestFile(designId, path, headSha),
+        queryFn: () => api.designs.pullRequest.file(designId, path),
+        staleTime: headSha ? Number.POSITIVE_INFINITY : 0,
+      }),
   };
 }
 

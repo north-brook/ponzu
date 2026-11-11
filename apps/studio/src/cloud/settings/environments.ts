@@ -20,7 +20,11 @@ export interface Secret {
 export interface RepoEnvironment {
   repo: Repo;
   base: {
-    status: "ready" | "building" | "failed";
+    /**
+     * `none`: Claude sets the repo up on its first design there. `requested`: a rebuild was
+     * asked for and happens at the repo's next start.
+     */
+    status: "none" | "requested" | "ready" | "building" | "failed";
     /** When the base in use was built: kept through a rebuild, and through one that failed. */
     builtAt: string | null;
     stack: StackItem[];

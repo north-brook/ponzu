@@ -17,7 +17,8 @@ const images = (files: FileList | null | undefined) =>
  * works with nothing typed, and Send otherwise (composerButton). Return sends and Shift-Return
  * breaks the line; the field grows to six lines, then scrolls. Images come in by the "+", a
  * paste or a drop. While the run waits on its owner's Claude a strip above the field says so
- * and nothing sends; typing still keeps a draft.
+ * and nothing sends; typing still keeps a draft. Once its owner has left the workspace nothing
+ * will run it again, so the strip is all there is: no field to write in for nobody.
  */
 export function RailComposer({
   text,
@@ -49,6 +50,7 @@ export function RailComposer({
   onConnectClaude?: () => void;
 }) {
   const button = composerButton({ working, text, attachments, gate });
+  const ended = gate?.kind === "claude_owner_left";
   const picker = useRef<HTMLInputElement>(null);
   const [dropping, setDropping] = useState(false);
 
@@ -87,7 +89,12 @@ export function RailComposer({
       )}
     >
       {gate ? (
-        <div className="flex items-center gap-2.5 border-rule border-b bg-strip py-[11px] pr-3 pl-[18px] text-13 leading-[1.4]">
+        <div
+          className={cn(
+            "flex items-center gap-2.5 bg-strip py-[11px] pr-3 pl-[18px] text-13 leading-[1.4]",
+            !ended && "border-rule border-b",
+          )}
+        >
           <span className="flex shrink-0" aria-hidden>
             <AgentMark client="claude" size={13} />
           </span>
@@ -103,7 +110,7 @@ export function RailComposer({
           ) : null}
         </div>
       ) : null}
-      {attachments.length ? (
+      {ended ? null : attachments.length ? (
         <ul aria-label="Attached images" className="m-0 flex list-none flex-wrap gap-1.5 px-3 pt-3">
           {attachments.map((a) => (
             <AttachmentChip
@@ -115,7 +122,7 @@ export function RailComposer({
           ))}
         </ul>
       ) : null}
-      <div className="flex items-end gap-[2px] py-2 pr-2 pl-1.5">
+      <div className={cn("flex items-end gap-[2px] py-2 pr-2 pl-1.5", ended && "hidden")}>
         <IconButton
           label="Attach an image"
           tipSide="top"
