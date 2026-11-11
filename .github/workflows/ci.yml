@@ -210,6 +210,12 @@ jobs:
           timings=${TIMINGS/#\~/$HOME}
           results="$RUNNER_TEMP/test-results"
           mkdir -p "$(dirname "$timings")" "$results"
+          # bun refuses a timings file it can't parse, and every push would then save the same
+          # one again, so one bad cache would fail every run after it.
+          if [ -f "$timings" ] && ! jq -e '.files | type == "object"' "$timings" > /dev/null 2>&1; then
+            echo "::warning title=Timings dropped::The cached test timings aren't valid; this run starts files in bun's usual order."
+            rm "$timings"
+          fi
           update=()
           if [ "$GITHUB_EVENT_NAME" = push ]; then update=(--update-timings); fi
           status=0
