@@ -11,9 +11,9 @@ import {
 import { moveSelection, type ResultKey, resultKeys, segments } from "../search.ts";
 import { ago, useNow } from "../time.ts";
 import { Avatar } from "../ui/avatar.tsx";
+import { FadeScroll } from "../ui/fade-scroll.tsx";
 import { Icon } from "../ui/icon.tsx";
 import { Kbd } from "../ui/kbd.tsx";
-import { ScrollArea } from "../ui/scroll-area.tsx";
 import { DesignPreviewImage } from "./design-preview.tsx";
 
 const LIST_ID = "search-results";
@@ -163,7 +163,7 @@ export function SearchResultsView({
   );
 
   return (
-    <ScrollArea className="flex-1">
+    <FadeScroll className="flex-1">
       <div id={LIST_ID} role="listbox" aria-label="Search results" className="flex flex-col">
         <Group label="Designs" hits={results.designs}>
           {(hit: DesignHit) =>
@@ -200,7 +200,7 @@ export function SearchResultsView({
           }
         </Group>
       </div>
-    </ScrollArea>
+    </FadeScroll>
   );
 }
 

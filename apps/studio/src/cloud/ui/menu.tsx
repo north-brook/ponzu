@@ -1,55 +1,59 @@
 /*
- * Menus: a trigger's dropdown and a row's context menu share one look. Radix gives them their
- * keyboard (arrows, Home and End, typeahead, Escape, focus back to the trigger) and roles.
+ * The product's menus: a trigger's dropdown and a row's context menu share one look. They are
+ * shadcn/ui's dropdown-menu and context-menu (dropdown-menu.tsx, context-menu.tsx), with a row's
+ * leading mark, its truncating label and its trailing text laid out the same everywhere, and a
+ * content width the design gives. Radix gives them their keyboard (arrows, Home and End,
+ * typeahead, Escape, focus back to the trigger) and roles.
  */
 import { Tick02Icon } from "@hugeicons/core-free-icons";
-import { ContextMenu, DropdownMenu } from "radix-ui";
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "./cn.ts";
+import {
+  ContextMenu,
+  ContextMenuItem as ContextMenuRow,
+  ContextMenuSeparator as ContextMenuRule,
+  ContextMenuContent as ContextMenuSurface,
+  ContextMenuTrigger as ContextMenuTriggerPart,
+} from "./context-menu.tsx";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "./dropdown-menu.tsx";
 import { Icon } from "./icon.tsx";
 
-const contentClass =
-  "pop z-50 flex max-h-(--radix-popper-available-height) flex-col overflow-y-auto rounded-12 bg-surface p-1.5 text-ink shadow-pop outline-none";
-
-/** A row: 32 tall, its leading mark 9px before the label, the hover wash when highlighted. */
-const itemClass =
-  "flex h-8 shrink-0 cursor-default select-none items-center gap-[9px] rounded-7 px-2 text-13 outline-none data-[disabled]:opacity-35 data-[highlighted]:bg-hover";
-
-export const Menu = DropdownMenu.Root;
-export const MenuTrigger = DropdownMenu.Trigger;
-export const MenuGroup = DropdownMenu.Group;
-export const MenuRadioGroup = DropdownMenu.RadioGroup;
+export const Menu = DropdownMenu;
+export const MenuTrigger = DropdownMenuTrigger;
+export const MenuGroup = DropdownMenuGroup;
+export const MenuRadioGroup = DropdownMenuRadioGroup;
 
 export function MenuContent({
   width,
-  className,
+  style,
   ...props
-}: ComponentProps<typeof DropdownMenu.Content> & { width: number }) {
-  return (
-    <DropdownMenu.Portal>
-      <DropdownMenu.Content
-        collisionPadding={8}
-        className={cn(contentClass, className)}
-        style={{ width }}
-        {...props}
-      />
-    </DropdownMenu.Portal>
-  );
+}: ComponentProps<typeof DropdownMenuContent> & { width: number }) {
+  return <DropdownMenuContent style={{ width, ...style }} {...props} />;
 }
 
 export function MenuItem({
   leading,
   trailing,
-  className,
   children,
   ...props
-}: ComponentProps<typeof DropdownMenu.Item> & { leading?: ReactNode; trailing?: ReactNode }) {
+}: ComponentProps<typeof DropdownMenuItem> & { leading?: ReactNode; trailing?: ReactNode }) {
   return (
-    <DropdownMenu.Item className={cn(itemClass, className)} {...props}>
+    <DropdownMenuItem {...props}>
       {leading}
       <span className="min-w-0 flex-1 truncate">{children}</span>
       {trailing}
-    </DropdownMenu.Item>
+    </DropdownMenuItem>
   );
 }
 
@@ -59,52 +63,33 @@ export function MenuItem({
  */
 export function MenuRadioItem({
   leading,
-  className,
   children,
   ...props
-}: ComponentProps<typeof DropdownMenu.RadioItem> & { leading?: ReactNode }) {
+}: ComponentProps<typeof DropdownMenuRadioItem> & { leading?: ReactNode }) {
   return (
-    <DropdownMenu.RadioItem
-      className={cn(
-        itemClass,
-        "data-[state=checked]:bg-hover data-[state=checked]:data-[highlighted]:bg-press",
-        className,
-      )}
-      {...props}
-    >
+    <DropdownMenuRadioItem {...props}>
       {leading}
       <span className="min-w-0 flex-1 truncate">{children}</span>
-      <DropdownMenu.ItemIndicator>
-        <Icon icon={Tick02Icon} size={14} stroke={2.2} />
-      </DropdownMenu.ItemIndicator>
-    </DropdownMenu.RadioItem>
+    </DropdownMenuRadioItem>
   );
 }
 
 /** A checkbox row: a box at its start, and the menu stays open as it is toggled. */
 export function MenuCheckboxItem({
   trailing,
-  className,
   children,
   checked,
-  onCheckedChange,
   ...props
-}: Omit<ComponentProps<typeof DropdownMenu.CheckboxItem>, "checked"> & {
+}: Omit<ComponentProps<typeof DropdownMenuCheckboxItem>, "checked"> & {
   checked: boolean;
   trailing?: ReactNode;
 }) {
   return (
-    <DropdownMenu.CheckboxItem
-      checked={checked}
-      onCheckedChange={onCheckedChange}
-      onSelect={(e) => e.preventDefault()}
-      className={cn(itemClass, className)}
-      {...props}
-    >
+    <DropdownMenuCheckboxItem checked={checked} onSelect={(e) => e.preventDefault()} {...props}>
       <Checkbox checked={checked} />
       <span className="min-w-0 flex-1 truncate">{children}</span>
       {trailing}
-    </DropdownMenu.CheckboxItem>
+    </DropdownMenuCheckboxItem>
   );
 }
 
@@ -123,53 +108,36 @@ export function Checkbox({ checked }: { checked: boolean }) {
   );
 }
 
-export function MenuLabel({ className, ...props }: ComponentProps<typeof DropdownMenu.Label>) {
-  return (
-    <DropdownMenu.Label
-      className={cn("px-2 pt-1.5 pb-1 font-medium text-11 text-faint", className)}
-      {...props}
-    />
-  );
-}
+export const MenuLabel = DropdownMenuLabel;
 
 export function MenuSeparator() {
-  return <DropdownMenu.Separator className="mx-1 my-[5px] h-px shrink-0 bg-rule" />;
+  return <DropdownMenuSeparator />;
 }
 
-export const ContextMenuRoot = ContextMenu.Root;
-export const ContextMenuTrigger = ContextMenu.Trigger;
+export const ContextMenuRoot = ContextMenu;
+export const ContextMenuTrigger = ContextMenuTriggerPart;
 
 export function ContextMenuContent({
   width,
-  className,
+  style,
   ...props
-}: ComponentProps<typeof ContextMenu.Content> & { width: number }) {
-  return (
-    <ContextMenu.Portal>
-      <ContextMenu.Content
-        collisionPadding={8}
-        className={cn(contentClass, className)}
-        style={{ width }}
-        {...props}
-      />
-    </ContextMenu.Portal>
-  );
+}: ComponentProps<typeof ContextMenuSurface> & { width: number }) {
+  return <ContextMenuSurface style={{ width, ...style }} {...props} />;
 }
 
 export function ContextMenuItem({
   leading,
-  className,
   children,
   ...props
-}: ComponentProps<typeof ContextMenu.Item> & { leading?: ReactNode }) {
+}: ComponentProps<typeof ContextMenuRow> & { leading?: ReactNode }) {
   return (
-    <ContextMenu.Item className={cn(itemClass, className)} {...props}>
+    <ContextMenuRow {...props}>
       {leading}
       <span className="min-w-0 flex-1 truncate">{children}</span>
-    </ContextMenu.Item>
+    </ContextMenuRow>
   );
 }
 
 export function ContextMenuSeparator() {
-  return <ContextMenu.Separator className="mx-1 my-[5px] h-px shrink-0 bg-rule" />;
+  return <ContextMenuRule />;
 }

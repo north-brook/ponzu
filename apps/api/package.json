@@ -20,7 +20,12 @@
     "@ai-sdk/anthropic": "^4.0.102",
     "@hono/zod-validator": "^0.9.1",
     "@neon/realtime": "0.2.1",
-    "@octokit/rest": "22.0.1",
+    "@octokit/auth-app": "8.3.1",
+    "@octokit/core": "7.0.8",
+    "@octokit/graphql": "9.0.5",
+    "@octokit/plugin-paginate-rest": "16.0.0",
+    "@octokit/request-error": "7.1.2",
+    "@octokit/types": "18.0.0",
     "@ponzu/core": "workspace:*",
     "@ponzu/db": "workspace:*",
     "@ponzu/runner": "workspace:*",
@@ -28,6 +33,7 @@
     "ai": "^7.0.169",
     "hono": "^4.13.17",
     "jose": "^6.2.17",
+    "universal-github-app-jwt": "2.2.2",
     "zod": "^4"
   },
   "devDependencies": {

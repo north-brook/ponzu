@@ -14,8 +14,11 @@ time.ts           ages ("2 h", "3 weeks ago"), durations, a time of day, and the
 gate.ts           what keeps someone from steering a design (read access, the owner's Claude), in words
 claude.ts         the person's Claude: how it is connected, its plan's limits, a pasted code
 styles/           tokens.css (every token) and cloud.css (the Tailwind build)
-ui/               primitives: buttons, icon, marks, menu, popover, tooltip, avatar, kbd, scroll area,
-                  and Prose, which draws untrusted Markdown (markdown.ts) as text
+ui/               primitives: shadcn/ui's components themed with our tokens (button, menus,
+                  popover, tooltip, dialogs, field, command, tabs, avatar, kbd, skeleton…), the
+                  product's names on them (menu.tsx, modal.tsx, TextField), our own few (icon,
+                  marks, fade-scroll, qr), and Prose, which draws untrusted Markdown
+                  (markdown.ts has its rules)
 window/           the window frame, chrome, page tabs, presence, Share, PR mark, next action, thread toggle
 sidebar/          the sidebar: workspace menu, filter, rows, settled tray, search
 create/           the create page: composer, model picker, repo picker, ideas
@@ -38,8 +41,13 @@ request tab is open (the rail folds away, and comes back as it was on leaving). 
 the same way.
 
 Text from the model or GitHub (replies, plans, a pull request's body and comments) goes through
-`Prose`, never `dangerouslySetInnerHTML`: raw HTML stays text, images become links, and a link
-survives only to http, https or mailto.
+`Prose`, never `dangerouslySetInnerHTML`. It is react-markdown with GitHub's flavour (tables, task
+lists, strikethrough, bare addresses; not footnotes, whose parser is slow on stray `]`s and whose
+in-page links we drop, so `[^1]` reads as written) and GitHub's line breaks, drawn into our
+elements: raw HTML stays text (no rehype-raw), images become links so nothing loads by itself, a
+link survives only to http, https or mailto and opens outside the app. Text shaped to make the
+parser slow (see `parseable` and `parts` in markdown.ts), or longer than 32 KB, is plain text.
+Blocks are memoised in runs of 16, so a reply streaming in parses only its last run.
 
 ## Tokens
 
@@ -64,14 +72,81 @@ survives only to http, https or mailto.
 
 ## Adding a component
 
-Name it for what it is in the product and give it the product's types (a row takes a
-`DesignSummary`, not strings per pixel). Keep fixtures out of it. Give every control hover,
-pressed, keyboard focus (`focus-ring`) and disabled states, a role and a name; build menus and
-popovers on `ui/menu.tsx` and `ui/popover.tsx` so they keep their keyboard. Add it to
-`gallery/states.tsx`, and if it is on a board, to that board's composition in
-`gallery/boards.tsx` and `gallery/compositions.ts`. Pure rules get a `bun:test` beside them;
-behaviour in a browser goes in `gallery/gallery.test.ts`. Guided setup, Settings and the dialogs
-keep theirs in the `setup-*` files of `gallery/`, which those registries spread in.
+Start with shadcn/ui. If it has the element, add it from apps/studio:
+
+```sh
+bun run shadcn add <component>          # e.g. sonner, or several at once; --overwrite to update one
+```
+
+That runs `shadcn add` (components.json: new-york, Tailwind v4, Hugeicons, files in `ui/`) and
+then makes its files ours: their `cn` comes from `ui/cn.ts` (which teaches tailwind-merge our
+token scales) rather than the `cn` package, siblings are imported by relative path, and the
+dependencies we replace (`cn`, `lucide-react`, `tw-animate-css`) are taken back out. It ends by
+listing every class in the new files that still names shadcn's theme, a bare `border` with no
+color beside it (Tailwind v4's is currentColor, an ink hairline here), a `dark:` variant (it
+follows only the system, not a pinned `data-theme`, and our tokens already hold both themes) and
+shadcn's `disabled:opacity-50` (ours is 35). Map each one onto our tokens, swap any lucide icon
+for `ui/icon.tsx` at the design's size, and drop shadcn's `[&_svg]:size-4` rules (they override a
+Hugeicon's own size). The new-york v4 registry ignores `iconLibrary` for some items (checkbox
+still imports `CheckIcon` from lucide-react), so the script's lucide warning is expected: the
+file won't typecheck until the icon is swapped. `styles/shadcn-names.test.ts` fails on any left
+behind.
+
+Then build the product's piece on it. Name that for what it is in the product and give it the
+product's types (a row takes a `DesignSummary`, not strings per pixel); where shadcn's API
+differs from what callers use, keep the product's names in a wrapper (`menu.tsx` over
+`dropdown-menu.tsx`, `modal.tsx` over `dialog.tsx`, `TextField` over `input-group.tsx`). Keep
+fixtures out of it. Give every control hover, pressed, keyboard focus (`focus-ring`) and disabled
+states, a role and a name. Add it to `gallery/states.tsx`, and if it is on a board, to that
+board's composition in `gallery/boards.tsx` and `gallery/compositions.ts`. Pure rules get a
+`bun:test` beside them; behaviour in a browser goes in `gallery/gallery.test.ts`. Guided setup,
+Settings and the dialogs keep theirs in the `setup-*` files of `gallery/`, which those registries
+spread in.
+
+### shadcn's names, our tokens
+
+The added files are edited to name our tokens; shadcn's semantic variables are not defined. Two
+of its names are already ours with another meaning (`muted` is a text color here, a ground
+there), and the design gives each surface its own radius and shadow (a menu 12, a popover 14, a
+tip 7, a dialog 16), which shadcn's one `--radius` can't say, so aliasing them would either
+repaint something or say what isn't so. The usual swaps:
+
+| shadcn                                            | ours                                           |
+| ------------------------------------------------- | ---------------------------------------------- |
+| `bg-popover`, `bg-background`, `bg-card`          | `bg-surface` (`bg-raised` for a raised chip)   |
+| `text-popover-foreground`, `text-foreground`      | `text-ink`                                     |
+| `text-muted-foreground`                           | `text-muted`, or `text-faint` for labels       |
+| `bg-muted`                                        | `bg-chip`                                      |
+| `focus:bg-accent`, `data-[selected=true]:bg-accent` | `data-[highlighted]:bg-hover`, `…:bg-hover`  |
+| `bg-primary`, `text-primary-foreground`           | `bg-action`, `text-action-ink`                 |
+| `bg-destructive`, `text-destructive`              | `bg-danger` / `text-danger-ink`, `text-danger` |
+| `bg-border`, `border-input`                       | `bg-rule`, `shadow-field`                      |
+| `focus-visible:ring-[3px] ring-ring/50`           | `focus-ring` (a field: `focus-within:shadow-field-focus`) |
+| `bg-black/50` (a dialog's overlay)                | `bg-dim`, `bg-dim-dialog`                      |
+| `rounded-sm`…`rounded-xl`                         | the design's: `rounded-7`, `-8`, `-12`, `-14`, `-16` |
+| `shadow-md`, `shadow-lg`                          | `shadow-pop`; a tip `shadow-tip`               |
+| `text-xs`, `text-sm`                              | `text-11`, `text-12`, `text-13`                |
+| `animate-in fade-in-0 zoom-in-95 …`               | `pop` (menus, popovers, dialogs), `tip`        |
+| `animate-pulse`                                   | `breathe`                                      |
+
+### What is ours, and why
+
+- `fade-scroll.tsx`: the Mac keeps the system's thin native scrollbar and fades a cut edge;
+  shadcn's scroll-area draws its own bars over Radix's.
+- The window chrome, the sidebar's rows, the composer, presence, the pull request's diff view:
+  the product's own layouts, not UI elements a library has.
+- The needs-you options list and the thread's follow-the-foot logic: shadcn's newer
+  questionnaire and message-scroller parts are the path once they settle; they are too young to
+  build on now.
+- `qr.tsx` on uqr, and Hugeicons through `icon.tsx`: what the design specifies.
+- The idea tiles' loading state breathes as whole cards, ring included, so it isn't `Skeleton`.
+
+### When you need
+
+- a toast: the first one is `bun run shadcn add sonner`;
+- a form of several validated fields: shadcn's field (`FieldSet`, `FieldGroup` and the rest of
+  `bun run shadcn add field --diff`), not a forms library;
+- a long list: `@tanstack/react-virtual`.
 
 A surface over the whole window (Settings, a dialog) is built on `ui/modal.tsx`: it traps focus,
 closes on Escape and on the dim, and starts focus on itself so nothing shows a ring until the

@@ -17,7 +17,10 @@ const REUSE_MARGIN_MS = 10 * 60_000;
 const KEPT = 1_000;
 const PERMISSIONS = { contents: "write", metadata: "read" } as const;
 
-/** The tokens this instance has minted for git, by installation and repository. */
+/**
+ * The tokens this instance has minted for git, by installation and repository. Not auth-app's
+ * cache: git is handed a token only with ten minutes left, and `erase` drops one at once.
+ */
 export class GitTokens {
   readonly #held = new Map<string, GithubInstallationToken>();
 

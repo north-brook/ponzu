@@ -11,8 +11,8 @@ import type { DesignSummary, Person, SearchResults, Workspace } from "../model.t
 import type { ResultKey } from "../search.ts";
 import { orderDesigns } from "../status.ts";
 import { Button, IconButton } from "../ui/button.tsx";
+import { FadeScroll } from "../ui/fade-scroll.tsx";
 import { Icon } from "../ui/icon.tsx";
-import { ScrollArea } from "../ui/scroll-area.tsx";
 import { useShortcut } from "../ui/shortcut.ts";
 import { DesignList, DesignListSkeleton } from "./design-list.tsx";
 import type { RowHandlers } from "./design-row.tsx";
@@ -154,7 +154,7 @@ export function Sidebar(props: SidebarProps) {
         />
       ) : (
         <>
-          <ScrollArea className="flex-1">
+          <FadeScroll className="flex-1">
             {shown === null ? (
               <DesignListSkeleton />
             ) : shown.length ? (
@@ -182,7 +182,7 @@ export function Sidebar(props: SidebarProps) {
                   : "No designs yet."}
               </EmptyNote>
             )}
-          </ScrollArea>
+          </FadeScroll>
           {props.settled.count ? (
             <SettledTray
               count={props.settled.count}
