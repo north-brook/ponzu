@@ -512,6 +512,9 @@ async function awake(
   }
   // The runner says what it is doing as soon as it is up; until then the head says waking.
   await showAgentWaiting(db, { designId: moved.designId, waking: true, blocker: null });
+  // A sandbox made just now has a runner still booting, which claims the feed by itself once it
+  // is up: a poke would only find nobody listening yet.
+  if (start === "created") return { sandbox: moved, start };
   try {
     await deps.poke({ url: moved.address!, token });
   } catch (error) {

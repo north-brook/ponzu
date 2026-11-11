@@ -11,6 +11,7 @@ import type {
 } from "../model.ts";
 import { NeedsYou } from "../needs-you/needs-you.tsx";
 import { safeHref } from "../ui/markdown.ts";
+import { quietFocus } from "../ui/quiet-focus.ts";
 import { RailComposer, ReadOnlyLine } from "./composer.tsx";
 import { readDraft, restoreDraft, useDraft, writeDraft } from "./composer-rules.ts";
 import type { LineHandlers } from "./lines.tsx";
@@ -58,7 +59,7 @@ export function ThreadRail(props: ThreadRailProps) {
   latest.current = props;
   const handlers = useMemo<LineHandlers>(
     () => ({
-      renderBoard: (id) => latest.current.renderBoard(id),
+      renderBoard: (id, comment) => latest.current.renderBoard(id, comment),
       onOpenComment: (id) => latest.current.onOpenComment(id),
       onOpenArtboards: (ids) => latest.current.onOpenArtboards(ids),
       onOpenPullRequest: () => latest.current.onOpenPullRequest(),
@@ -166,7 +167,7 @@ function Slot({ carry, children }: { carry: RefObject<boolean>; children: ReactN
       for (const selector of LANDING) {
         const target = el.querySelector<HTMLElement>(selector);
         if (target) {
-          target.focus();
+          quietFocus(target);
           break;
         }
       }

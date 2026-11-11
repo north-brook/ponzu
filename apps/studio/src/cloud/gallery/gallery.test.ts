@@ -281,6 +281,61 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     expect(await disabled()).toBe(false);
   });
 
+  /** Where the create page's question sits, in px from the window's top. */
+  const questionTop = () =>
+    page.$eval("h1", (h) => Math.round(h.getBoundingClientRect().top) as number);
+
+  test("the repo picker lifts the column only when its list would not fit below it", async () => {
+    // Scratch alone: a short list, with room under the chip at 1440×900. Nothing moves.
+    await open("fresh-start-no-repos");
+    const resting = await questionTop();
+    await page.click('button[aria-label^="Project"]');
+    await page.waitForSelector('input[aria-label="Search repositories"]');
+    await new Promise((r) => setTimeout(r, 100));
+    expect(await questionTop()).toBe(resting);
+    // Four repos and Scratch: the list needs more than the room under the chip, so it rises.
+    await open("create");
+    const centred = await questionTop();
+    await page.click('button[aria-label^="Project"]');
+    await page.waitForSelector('input[aria-label="Search repositories"]');
+    await new Promise((r) => setTimeout(r, 100));
+    expect(await questionTop()).toBeLessThan(centred);
+    const raised = await questionTop();
+    // Typing shortens the list; the column stays where it went.
+    await page.keyboard.type("len");
+    await new Promise((r) => setTimeout(r, 100));
+    expect(await questionTop()).toBe(raised);
+  });
+
+  test("a first visit sits where its ideas go, and shows nothing while they're made", async () => {
+    await open("fresh-start");
+    const withIdeas = await questionTop();
+    await open("fresh-start-loading");
+    expect(await page.$('[aria-label="Finding ideas"]')).toBeNull();
+    expect(await page.$('[aria-label="Ideas"]')).toBeNull();
+    expect(await questionTop()).toBe(withIdeas);
+  });
+
+  test("a menu closed by a click gives focus back without a ring; by the keyboard, with one", async () => {
+    await open("create");
+    const chip = 'button[aria-label^="Model"]';
+    const ring = () => page.$eval(chip, (el) => getComputedStyle(el).boxShadow);
+    // Typing first, as someone does: the keyboard was the last thing used.
+    await page.click("textarea");
+    await page.keyboard.type("A card");
+    await page.click(chip);
+    await page.click('[role="menuitemradio"]:has-text("Low")');
+    await page.waitForSelector('[role="menu"]', { state: "detached" });
+    await focusOn(await page.$eval(chip, (el) => el.getAttribute("aria-label")!));
+    expect(await ring()).toBe("none");
+    // From the keyboard it is the keyboard's, ring and all.
+    await page.keyboard.press("Enter");
+    await page.waitForSelector('[role="menu"]');
+    await page.keyboard.press("Escape");
+    await page.waitForSelector('[role="menu"]', { state: "detached" });
+    expect(await ring()).not.toBe("none");
+  });
+
   test("the repo picker filters as you type and chooses with Return", async () => {
     await open("create");
     await page.click('button[aria-label^="Project"]');
@@ -354,6 +409,20 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await focusOn(names.at(-1)!);
     await page.keyboard.press("Home");
     await focusOn(names[0]!);
+  });
+
+  test("a one-file pull request opens its diff, says its checks, and reads its base whole", async () => {
+    await open("pull-request-one-file");
+    const card = '[aria-label="Files changed"] button[aria-expanded]';
+    expect(await page.getAttribute(card, "aria-expanded")).toBe("true");
+    expect(await page.textContent('section[aria-label="Checks"]')).toContain("No checks ran");
+    // The base reads whole beside a long head branch; "Merged …" goes under rather than squeezing.
+    const base = await page.$eval(
+      'span:text-is("→ main")',
+      (el) => el.scrollWidth <= el.clientWidth,
+    );
+    expect(base).toBe(true);
+    expect(await page.$('span:text-matches("^Merged")')).not.toBeNull();
   });
 
   test("page tabs with the pull request tab open: none is chosen, and Tab reaches the first", async () => {

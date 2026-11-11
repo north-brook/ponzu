@@ -14,6 +14,7 @@ import {
   agentActivity,
   answerLine,
   closedQuestions,
+  frozenBoards,
   shownItems,
   steerGate,
   type ThreadContext,
@@ -119,6 +120,8 @@ export function DesignRail({
       ...thread.pending.map((message, i) => pendingItem(message, me, i)),
     ];
   }, [thread, shown, answers, people, assetBase, doc, me]);
+  // Each comment's board as it was when the comment was made, where the API kept a copy.
+  const frozen = useMemo(() => frozenBoards(shown), [shown]);
 
   // With the rail open, the viewer has read the thread as far as it goes.
   const newest = thread.items?.at(-1)?.seq;
@@ -175,8 +178,14 @@ export function DesignRail({
       {...(onConnectClaude
         ? { onConnectClaude: () => onConnectClaude(gate?.kind === "claude_expired") }
         : {})}
-      renderBoard={(artboardId) => (
-        <BoardMiniature doc={doc} artboardId={artboardId} assetBase={assetBase} theme={theme} />
+      renderBoard={(artboardId, commentId) => (
+        <BoardMiniature
+          doc={doc}
+          artboardId={artboardId}
+          frozen={frozen.get(commentId) ?? null}
+          assetBase={assetBase}
+          theme={theme}
+        />
       )}
       onOpenComment={onOpenComment}
       onOpenArtboards={onOpenArtboards}

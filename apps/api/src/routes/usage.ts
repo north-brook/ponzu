@@ -65,10 +65,15 @@ const Usage = z.object({
   byPerson: z.array(PersonUsage).nullable(),
   /** Use put down to nobody (a deleted account). Admins only. */
   unattributedCredits: z.number().int().nullable(),
-  /** Use by design, highest first, ending with what the admin may not see by name. */
+  /**
+   * Use by design, highest first, then designs since deleted (`deleted`) and designs the admin
+   * may not see by name (`hidden`), each as one line with no design. Shared out of the rounded
+   * total, so it adds up to `usedCredits` exactly, as `byPerson` with `unattributedCredits` does.
+   */
   byDesign: z
     .array(
       z.object({
+        kind: z.enum(["design", "deleted", "hidden"]),
         design: z.object({ id: z.string(), name: z.string() }).nullable(),
         usedCredits: z.number().int(),
       }),

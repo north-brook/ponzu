@@ -80,6 +80,11 @@ export const SETUP_COMPOSITIONS: Composition[] = [
   settings("settings-plan", "Settings · Plan and usage", "plan-and-usage.html"),
   settings("settings-plan-solo", "Settings · Plan and usage, solo", "plan-and-usage-solo.html"),
   {
+    id: "settings-plan-breakdown",
+    title: "Settings · Plan and usage, by design, with deleted designs and a deleted account",
+    ...WINDOW,
+  },
+  {
     id: "free-credits",
     title: "Free credits used up",
     board: "pricing/free-hours-used-up.html",

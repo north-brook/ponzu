@@ -141,14 +141,16 @@ export function toTeamUsage(usage: ApiUsage, name: string): TeamUsage {
     name,
     people: usage.people,
     byPerson: usage.byPerson?.map(row) ?? null,
+    unattributedCredits: usage.unattributedCredits ?? 0,
     mine: row(usage.mine),
   };
 }
 
-/** Use by design, for an admin; the last row, unnamed, is what they can't open. */
+/** Use by design, for an admin; the unnamed rows last: deleted designs, then those they can't open. */
 export function toDesignUsage(usage: ApiUsage): DesignUsage[] | null {
   return (
-    usage.byDesign?.map(({ design, usedCredits }) => ({
+    usage.byDesign?.map(({ kind, design, usedCredits }) => ({
+      kind,
       id: design?.id ?? null,
       name: design?.name ?? null,
       usedCredits,

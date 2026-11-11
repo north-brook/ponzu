@@ -1023,6 +1023,11 @@ notice      { type: "waking" | "resumed" | "started" }                    the ru
             { type: "pull_request", number, url, title, state }           the API
 ```
 
+A `comment` item also carries `board`, a copy of the artboard as it was when the comment was
+made (up to 64 KB of JSON, `FROZEN_BOARD_BYTES`), which its thumbnail in the thread draws, with
+the pin placed on it: it shows what was commented on, not the board as it later became. A
+larger board, or a comment from before copies were kept, has none, and its thumbnail is live.
+
 A client renders the thread from these alone. A `tool` item is a stretch of tool calls
 between two things the agent says, folded to one line: while it streams it is the working
 line ("Reading the repo", `Drawing "Pricing · B"`, "Running the dev server", or what the agent
@@ -1215,11 +1220,13 @@ token-gated address. `POST /poke` carries nothing, and the runner trusts nothing
 only claims, from the API, with its own token. The API pokes when it adds an event to an awake
 design's feed and when a person's op moves an awake design's head, and does not retry a poke
 that fails: the runner also claims once a minute, and each claim and state answer carries the
-head. `POST /report` carries nothing either: the runner sends its state report now, and only the
-API's answer to that report can say the sandbox is going to sleep. The API asks for one when it
-starts a stop. While the runner holds a sleep, a poke makes it ask for a report too, which is how
-a warm wake (which only pokes) reaches it. `GET /health` answers `{ "ok": true, "state":
-"working" | "needs_you" | "idle" }`, and the API reads it after a warm resume.
+head. A wake that has just made the sandbox does not poke it: its runner is still booting and
+claims by itself once it is up. `POST /report` carries nothing either: the runner sends its state
+report now, and only the API's answer to that report can say the sandbox is going to sleep. The
+API asks for one when it starts a stop. While the runner holds a sleep, a poke makes it ask for a
+report too, which is how a warm wake (which only pokes) reaches it. `GET /health` answers
+`{ "ok": true, "state": "working" | "needs_you" | "idle" }`, and the API reads it after a warm
+resume.
 
 ### Environment
 
@@ -1276,10 +1283,18 @@ has commits and no open pull request, or commits since its pull request merged),
 draft), `resolve` (conflicts), `fix_checks` (a check failed), `auto_merge` (checks are running,
 or the rules want a review, and the repo allows auto-merge), `update_branch` (the rules hold it
 back for being behind), `merge`, `blocked` (the rules want something, a review or a required
-check, and the repo has no auto-merge), or `none`. Create PR, Fix checks and Resolve are the
-agent's to do; the client sends it a message. A file's diff is the unified patch, or `binary`,
+check, and the repo has no auto-merge), or `none` (nothing to press: no changes, merged, checks
+running in a repo without auto-merge, or GitHub still working out whether it can merge, as for
+a few seconds after a push). Create PR is the API's, as the person
+(`POST /v1/designs/:id/pull-request`, above), like Ready, Merge, Auto-merge and Update branch.
+Fix checks and Resolve are the agent's to do: the client sends it a message in the thread as
+the person (which failing checks, or which base to merge in), once for a commit. A file's diff
+is the unified patch, or `binary`,
 or `too_large` past 512 KB or where GitHub gives none; only the hundred files the tab lists
-are served, which is one request to GitHub.
+are served, which is one request to GitHub. Everyone the tab names (an author, a reviewer,
+whoever merged or turned on auto-merge) is `{ login, avatarUrl, bot, ponzu }`: `ponzu` marks
+the Ponzu App's own bot, the design's agent, so a client never guesses it from a login's shape
+(GitHub's GraphQL names a bot by its slug, its REST API as `<slug>[bot]`).
 
 **What a client must not trust.** Every title, description, comment, review, check name and
 notice title is what someone on GitHub wrote: anyone who can comment on the pull request, and
@@ -1563,9 +1578,15 @@ integer:
 - Billed credits: used − free, never below zero. Billed cents: billed credits × what a credit
   sells for, rounded down. The apps work dollars out of these: the headline to the cent, the
   legend in whole dollars rounded down.
-- A person's and a design's credits are their own exact use rounded down the same way: gross,
-  before the pooled free credits, so a breakdown adds up to what was used, not to what is
-  billed. Use put down to nobody (a deleted account) is `unattributedCredits`.
+- A breakdown (by person, by design) is the rounded total shared out, not each part rounded on
+  its own, so its lines always add up to the headline: every line gets its exact use rounded
+  down, and the credits the fractions add up to go one each to the lines with the largest
+  fractions (largest remainder, ties by id; `apportion` in `credits.ts`). It is gross, before
+  the pooled free credits, so it adds up to what was used, not to what is billed. Use put down
+  to nobody (a deleted account) is `unattributedCredits`, one of the by-person lines. The
+  viewer's own line (`mine`) is their share only where it sits beside the by-person list it adds
+  up with; to someone who sees just their own line it is their own use rounded down, so other
+  people's use never moves it.
 - The cap is whole dollars, $1 to $1,000,000, stored in cents (`monthly_cap_cents`; the card's
   default, $100, until one is set). It may not be set below what the period has billed, rounded
   up to the dollar (400 `cap_too_low`, with `details.lowestUsd`).
@@ -1573,8 +1594,8 @@ integer:
 **Who sees what.** Every member sees the totals, the free credits, what would be billed and the
 cap, and their own use (`mine`). An admin also sees `byPerson` (everyone counted, highest
 first), `unattributedCredits` and `byDesign`: designs named only where they may read the repo
-(or their own Scratch), the rest, deleted designs included, summed in a last entry with no
-design. An admin who reaches the workspace only through repos shared with them sees no other
+(or their own Scratch, `kind: "design"`), then designs since deleted in one entry with no design
+(`kind: "deleted"`), then the designs they may not know of in another (`kind: "hidden"`). An admin who reaches the workspace only through repos shared with them sees no other
 member here either. Only an admin sets the cap (403 `forbidden`). `billing` answers
 `{ status: "not_set_up", card: null, invoices: "not_set_up" }`, so the apps show the no-card
 state.

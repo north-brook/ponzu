@@ -81,14 +81,17 @@ const TAKES_IN = new Set([
 ]);
 
 /**
- * How much one step says about a stretch of work, which a finished stretch is named by: what
- * the agent made (2) over what it ran (1) over what it read or looked at (0).
+ * How much one step says about a stretch of work, which a finished stretch is named by (the
+ * last of its weightiest steps): committing the work (3) over what the agent made (2) over what
+ * it ran (1) over what it read or looked at (0). Describing the pull request after a commit is
+ * the commit's paperwork, not the stretch's main action, so it weighs as running something.
  */
-export function stepWeight(name: string): number {
+export function stepWeight(name: string, input: Record<string, unknown> = {}): number {
   if (name.startsWith(CANVAS)) {
     const tool = name.slice(CANVAS.length);
     return CANVAS_MAKES.has(tool) ? 2 : CANVAS_TAKES_IN.has(tool) ? 0 : 1;
   }
+  if (name === "Bash" && /\bgit\s+commit\b/.test(String(input.command ?? ""))) return 3;
   return MAKES.has(name) ? 2 : TAKES_IN.has(name) ? 0 : 1;
 }
 
@@ -133,6 +136,17 @@ function canvasLabel(tool: string, input: Record<string, unknown>, doc: Doc): st
   if (tool === "set_status" && typeof input.status === "string") return sentence(input.status);
   if (tool === "create_artboard")
     return typeof input.name === "string" ? `Drawing "${input.name}"` : "Drawing a new artboard";
+  if (tool === "delete") {
+    // A board deleted whole is said by its name; a piece of one, as taken out of it.
+    const whole = [...ids(input)].map((id) => findArtboard(doc, id)?.artboard.name).find(Boolean);
+    if (whole) return `Deleting "${whole}"`;
+    const board = artboardIn(input, doc);
+    if (board) return `Removing from "${board}"`;
+    // Already gone from the copy the runner holds: an artboard's id still says what it was.
+    return [...ids(input)].some((id) => id.startsWith("ab_"))
+      ? "Deleting an artboard"
+      : "Removing from the canvas";
+  }
   if (CANVAS_DRAWS.has(tool)) {
     const board = artboardIn(input, doc);
     return board ? `Drawing "${board}"` : "Drawing on the canvas";

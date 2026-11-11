@@ -224,6 +224,15 @@ export interface CommentEvent {
   nodeId: string | null;
 }
 
+/** An artboard as the document held it at a moment: `Artboard` from @ponzu/core, by shape. */
+export interface FrozenBoard {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  root: unknown;
+}
+
 /** A person changed the canvas: moved, renamed or deleted artboards, managed pages. */
 export interface EditEvent {
   /** What they did, in a few words: `summarize` from @ponzu/core, as the canvas says it. */
@@ -327,6 +336,12 @@ export type ThreadContent =
         artboardId: string | null;
         artboardName: string | null;
         from: Person;
+        /**
+         * The board as it was when the comment was made (an @ponzu/core `Artboard`), so its
+         * thumbnail shows what was commented on rather than the board now. Left out on the
+         * open canvas, and for a board too large to keep a copy of: the thumbnail is then live.
+         */
+        board?: FrozenBoard;
       };
     }
   /** What the agent says. Streams as it is written. */

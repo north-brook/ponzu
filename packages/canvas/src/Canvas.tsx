@@ -31,6 +31,15 @@ import { Composer, ThreadCard, threadCard } from "./Comments.tsx";
 import { CaptureFlash, useCaptures } from "./capture.tsx";
 import { boardCost, coldLive, coldSkeleton, placeholderFill } from "./coldopen.ts";
 import { type CanvasSource, viewOnly } from "./connection.ts";
+import {
+  circular,
+  cornersCss,
+  designCorners,
+  largest,
+  type Radii,
+  ringCorners,
+  sameRadii,
+} from "./corners.ts";
 import { type DraftPin, draftKey, moveDraft, setDraft, unsent, useDrafts } from "./drafts.ts";
 import { Icon, Icons, Pencil } from "./icons.tsx";
 import { centreDistance, detailScale, onScreen, visibleBand } from "./lod.ts";
@@ -263,12 +272,32 @@ export function Canvas({
   const layer = useRef<HTMLDivElement>(null);
   const overlay = useRef<HTMLDivElement>(null);
   const [measured, setMeasured] = useState<Record<string, number>>({});
+  /**
+   * Each board's corners as its live root resolved them (corners.ts), for its sheet, ring and
+   * frame; until a board has been live, the document's px are the guess.
+   */
+  const [rounding, setRounding] = useState<ReadonlyMap<string, Radii>>(() => new Map());
+  const reportCorners = useCallback(
+    (id: string, r: Radii) =>
+      setRounding((m) => {
+        const was = m.get(id);
+        if (was && sameRadii(was, r)) return m;
+        return new Map(m).set(id, r);
+      }),
+    [],
+  );
+  const cornersOf = (ab: Artboard): Radii | null => {
+    const guess = designCorners(ab);
+    return rounding.get(ab.id) ?? (guess ? circular(guess) : null);
+  };
   const [pending, setPending] = useState<Pending | null>(null);
   const [openThread, setOpenThread] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   /** Artboard and node ids, for this canvas only: agents point with comments instead. */
   const [selection, setSelection] = useState<string[]>([]);
   const fitted = useRef<string | null>(null);
+  /** Pages that have had boards on them since this canvas mounted. */
+  const hadBoards = useRef(new Set<string>());
 
   const working = useMemo(() => {
     const map = new Map<string, Worker[]>();
@@ -433,13 +462,29 @@ export function Canvas({
   // Fit when a page first shows, before it paints: after, its first frame is at the old page's
   // camera. A change of framing (a window crossing a host's breakpoint) frames it again.
   useLayoutEffect(() => {
-    if (!page || !bounds) return;
+    if (!page) return;
+    if (!bounds) {
+      // A page that had boards and has none now (its last one deleted) keeps the person's
+      // camera, and its fit: an undo brings the board back where they were looking.
+      if (hadBoards.current.has(page.id)) return;
+      // An empty page waits at 100%, the page's origin (where a first board lands) in the
+      // middle: the first board's fit, before it paints, then moves nothing anyone can see and
+      // leaves the zoom where it was, so it arrives with its own animation and no jump.
+      const empty = `${page.id}:empty`;
+      if (fitted.current === empty) return;
+      fitted.current = empty;
+      const v = viewportSize();
+      camera.set({ zoom: 1, x: Math.round(v.w / 2), y: Math.round(v.h / 2) }, true);
+      return;
+    }
+    hadBoards.current.add(page.id);
     const key = `${page.id}:${initialFit}`;
     if (fitted.current === key) return;
     fitted.current = key;
     if (initialFit === "first") fitFirst();
     else fitPage();
-  }, [page, bounds, fitPage, fitFirst, initialFit]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, bounds, fitPage, fitFirst, initialFit, camera]);
 
   /** Show a board's page with the board framed, in place of the page's own fit. */
   const showBoard = (pageId: string, ab: Artboard | undefined) => {
@@ -1321,6 +1366,8 @@ export function Canvas({
                   arrivals={arrivals}
                   // Slightly rounded, the same few px on screen at any zoom (to a quarter octave).
                   radius={(BOARD_RADIUS * dpr) / scale}
+                  corners={rounding.get(ab.id)}
+                  onCorners={reportCorners}
                   hold={
                     crowd ||
                     outOfSight({ ...r, x: r.x + (g?.dx ?? 0), y: r.y + (g?.dy ?? 0) }, view, vpSize)
@@ -1380,20 +1427,30 @@ export function Canvas({
                     h: shot.box.height,
                   }
                 : box;
+              // The ring and the frame keep their gap all the way round a board's corners.
+              const own = cornersOf(ab);
+              const ringRadius = ringCorners(own, BOARD_RADIUS, RING_GAP);
+              const frameRadius = Math.max(largest(own) * view.zoom, BOARD_RADIUS) + RING_GAP;
               return (
                 <Fragment key={ab.id}>
                   {ring !== undefined && (
-                    <Ring {...box} leaving={ring} dim={!!shot} delay={ringDelay(drawn)} />
+                    <Ring
+                      {...box}
+                      radius={ringRadius}
+                      leaving={ring}
+                      dim={!!shot}
+                      delay={ringDelay(drawn)}
+                    />
                   )}
-                  {drawn !== undefined && <Frame {...box} at={drawn} />}
+                  {drawn !== undefined && <Frame {...box} radius={frameRadius} at={drawn} />}
                   {shot && (
                     <CaptureFlash
                       key={shot.id}
                       capture={shot}
                       ring={ringBox(box)}
-                      ringRadius={BOARD_RADIUS + RING_GAP}
+                      ringRadius={frameRadius}
                       area={worldRect(area)}
-                      radius={BOARD_RADIUS}
+                      radius={shot.box ? BOARD_RADIUS : frameRadius - RING_GAP}
                     />
                   )}
                 </Fragment>
@@ -1779,6 +1836,7 @@ function Ring({
   y,
   w,
   h,
+  radius,
   leaving = false,
   dim = false,
   delay = 0,
@@ -1787,6 +1845,8 @@ function Ring({
   y: number;
   w: number;
   h: number;
+  /** Its border-radius: the board's corners, a gap out (corners.ts). */
+  radius: string;
   leaving?: boolean;
   /** An agent's capture is playing over it: it steps aside meanwhile. */
   dim?: boolean;
@@ -1802,7 +1862,7 @@ function Ring({
     >
       <div
         className="pz-ring pz:absolute pz:inset-0"
-        style={{ borderRadius: BOARD_RADIUS + RING_GAP, animationDelay: `${wait}ms` }}
+        style={{ borderRadius: radius, animationDelay: `${wait}ms` }}
       />
     </div>
   );
@@ -1812,7 +1872,22 @@ function Ring({
  * A new artboard's frame drawing itself round its final bounds where the ring will be, from when
  * the board landed, then fading as the ring takes over.
  */
-function Frame({ x, y, w, h, at }: { x: number; y: number; w: number; h: number; at: number }) {
+function Frame({
+  x,
+  y,
+  w,
+  h,
+  radius,
+  at,
+}: {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** Its corners in screen px: the board's largest, a gap out. */
+  radius: number;
+  at: number;
+}) {
   const rect = useRef<SVGRectElement>(null);
   useLayoutEffect(() => {
     if (rect.current) drawFrame(rect.current, at);
@@ -1828,7 +1903,7 @@ function Frame({ x, y, w, h, at }: { x: number; y: number; w: number; h: number;
         x={1}
         y={1}
         style={{ width: "calc(100% - 2px)", height: "calc(100% - 2px)" }}
-        rx={BOARD_RADIUS + RING_GAP}
+        rx={radius}
         pathLength={100}
         fill="none"
         stroke="currentColor"
@@ -2126,6 +2201,8 @@ const Board = memo(function Board({
   rankOf,
   arrivals,
   radius,
+  corners: measuredCorners,
+  onCorners,
   hold,
 }: {
   artboard: Artboard;
@@ -2155,6 +2232,9 @@ const Board = memo(function Board({
   arrivals: Arrivals;
   /** Its corners' radius, in its own px. */
   radius: number;
+  /** Its corners as its live root resolved them, once it has been live (corners.ts). */
+  corners?: Radii;
+  onCorners: (id: string, corners: Radii) => void;
   /** Nobody can see it move, or the camera moves over a crowded view: its loops hold. */
   hold: boolean;
 }) {
@@ -2173,6 +2253,15 @@ const Board = memo(function Board({
     [source, version, colorScheme],
   );
   const visible = y0 === undefined || y1 === undefined ? undefined : { y0, y1 };
+  // The design's own corners where it rounds its root, the canvas's few px where it doesn't: the
+  // sheet and its shadow take the radii ArtboardView gives the live root (corners.ts).
+  // Measured where it has been live, so a token's, a calc()'s or a % radius counts; the
+  // document's px before that.
+  const guess = useMemo(() => designCorners(ab), [ab]);
+  const own = measuredCorners ?? (guess ? circular(guess) : null);
+  const corners = own ? cornersCss(own, "var(--pz-board-radius)") : "var(--pz-board-radius)";
+  const id = ab.id;
+  const reported = useCallback((r: Radii) => onCorners(id, r), [onCorners, id]);
   return (
     <div
       ref={(el) => {
@@ -2180,13 +2269,14 @@ const Board = memo(function Board({
         if (el && at !== undefined) arriveBoard(el, at);
       }}
       className="pz:absolute pz:shadow-board"
+      data-pz-board={ab.id}
       style={
         {
           left: ab.x + dx,
           top: ab.y + dy,
           width: w,
           height: fixed ?? undefined,
-          borderRadius: radius,
+          borderRadius: corners,
           "--pz-board-radius": `${radius}px`,
         } as CSSProperties
       }
@@ -2217,6 +2307,7 @@ const Board = memo(function Board({
             detail={{ hidden, scale, moving, visible }}
             arrivals={arrivals}
             rounded
+            onCorners={reported}
             hold={hold}
           />
         )}

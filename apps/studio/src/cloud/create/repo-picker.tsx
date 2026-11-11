@@ -5,7 +5,7 @@ import {
   FolderGitIcon,
   Tick02Icon,
 } from "@hugeicons/core-free-icons";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, type Ref, useState } from "react";
 import type { Repo } from "../model.ts";
 import { Button } from "../ui/button.tsx";
 import {
@@ -41,6 +41,7 @@ export function RepoPicker({
   onAllowMore,
   open,
   onOpenChange,
+  contentRef,
 }: {
   value: ProjectChoice;
   repos: Repo[] | null;
@@ -48,6 +49,8 @@ export function RepoPicker({
   onAllowMore: () => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** The open list, for the page to measure what room it needs. */
+  contentRef?: Ref<HTMLDivElement>;
 }) {
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
@@ -73,6 +76,7 @@ export function RepoPicker({
         sideOffset={8}
         alignOffset={-4}
         aria-label="Choose a repo"
+        ref={contentRef}
         updatePositionStrategy="always"
         className="p-1.5"
       >

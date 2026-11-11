@@ -1,5 +1,6 @@
 import type { MemberWorkspace, RateCardNumbers, UsagePerson, WorkspaceUsageRead } from "@ponzu/db";
 import {
+  apportionMap,
   awakeUnits,
   billedCredits,
   centsFor,
@@ -50,11 +51,17 @@ export interface WorkspaceUsage {
   /** Use put down to nobody: deleted accounts, and designs nobody's action woke. Admins only. */
   unattributedCredits: number | null;
   /**
-   * Use by design, highest first: admins only. A design the viewer may not know of (in a repo
-   * GitHub hides from them), or one since deleted, is counted in a last entry with no design.
+   * Use by design, highest first: admins only. After the named ones, designs since deleted in
+   * one entry (`deleted`), then designs the viewer may not know of (in a repo GitHub hides from
+   * them) in another (`hidden`). It adds up to `usedCredits` exactly, as `byPerson` with
+   * `unattributedCredits` does.
    */
-  byDesign: { design: { id: string; name: string } | null; usedCredits: number }[] | null;
+  byDesign: DesignUsageView[] | null;
 }
+
+export type DesignUsageView =
+  | { kind: "design"; design: { id: string; name: string }; usedCredits: number }
+  | { kind: "deleted" | "hidden"; design: null; usedCredits: number };
 
 export interface UsageViewer {
   user: { id: string; name: string | null; githubLogin: string; avatarUrl: string | null };
@@ -91,6 +98,8 @@ export function workspaceUsage(
   const capCents = read.monthlyCapCents ?? current.defaultCapCents;
   const admin = viewer.member.role === "admin";
 
+  // Shared out of the rounded total, so the people (and nobody) add up to it exactly.
+  const userCredits = apportionMap(byUser);
   const personView = (person: UsagePerson): UsagePersonView => ({
     person: {
       id: person.id,
@@ -99,12 +108,17 @@ export function workspaceUsage(
       avatarUrl: person.avatarUrl,
     },
     admin: person.role === "admin",
-    usedCredits: creditsOf(byUser.get(person.id) ?? 0),
+    usedCredits: userCredits.get(person.id) ?? 0,
   });
-  const mine = personView({ ...viewer.user, role: viewer.member.role });
   // Someone who reaches the workspace only through repos shared with them sees no other member
   // anywhere, so not here either.
   const seesPeople = admin && viewer.member.githubAccess !== "collaborator";
+  // Beside a list it has to add up with, the viewer's line is their share of the total. Alone, it
+  // is their own use rounded down, which other people's use can never move.
+  const own = personView({ ...viewer.user, role: viewer.member.role });
+  const mine = seesPeople
+    ? own
+    : { ...own, usedCredits: creditsOf(byUser.get(viewer.user.id) ?? 0) };
 
   return {
     period,
@@ -122,7 +136,7 @@ export function workspaceUsage(
     canManage: admin,
     mine,
     byPerson: seesPeople ? highestFirst(read.people.map(personView)) : null,
-    unattributedCredits: seesPeople ? creditsOf(byUser.get(null) ?? 0) : null,
+    unattributedCredits: seesPeople ? (userCredits.get(null) ?? 0) : null,
     byDesign: admin ? designBreakdown(read, byDesign) : null,
   };
 }
@@ -145,23 +159,47 @@ export function ungranted(read: Pick<WorkspaceUsageRead, "people" | "granted">):
     .map((person) => person.id);
 }
 
+/** The two unnamed lines' keys, beside designs' own ids (which are `des_…`). */
+const DELETED = "deleted";
+const HIDDEN = "hidden";
+
+/**
+ * Use by design: each design the viewer may read, by name; then what was used in designs since
+ * deleted (their usage keeps no design); then in designs they may not know of. Every line is
+ * shared out of the rounded total, so the lines add up to it.
+ */
 function designBreakdown(
   read: WorkspaceUsageRead,
   units: Map<string | null, Units>,
 ): NonNullable<WorkspaceUsage["byDesign"]> {
   const known = new Map(read.designs.map((design) => [design.id, design]));
-  let hidden: Units = 0;
-  const shown: NonNullable<WorkspaceUsage["byDesign"]> = [];
+  const lines = new Map<string, Units>();
   for (const [id, used] of units) {
     const design = id === null ? undefined : known.get(id);
-    if (!design?.readable) {
-      hidden += used;
-      continue;
-    }
-    shown.push({ design: { id: design.id, name: design.name }, usedCredits: creditsOf(used) });
+    const line = id === null ? DELETED : design?.readable ? design.id : HIDDEN;
+    lines.set(line, (lines.get(line) ?? 0) + used);
   }
-  const sorted = highestFirst(shown);
-  return hidden > 0 ? [...sorted, { design: null, usedCredits: creditsOf(hidden) }] : sorted;
+  const credits = apportionMap(lines);
+  const named: DesignUsageView[] = [];
+  for (const line of lines.keys()) {
+    const design = line === DELETED || line === HIDDEN ? undefined : known.get(line);
+    if (!design) continue;
+    named.push({
+      kind: "design",
+      design: { id: design.id, name: design.name },
+      usedCredits: credits.get(line) ?? 0,
+    });
+  }
+  const unnamed = ([DELETED, HIDDEN] as const)
+    .filter((line) => lines.has(line))
+    .map(
+      (line): DesignUsageView => ({
+        kind: line,
+        design: null,
+        usedCredits: credits.get(line) ?? 0,
+      }),
+    );
+  return [...highestFirst(named), ...unnamed];
 }
 
 function highestFirst<T extends { usedCredits: number }>(rows: T[]): T[] {

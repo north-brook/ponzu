@@ -70,11 +70,34 @@ export function frameFit(board: { width: number; height: number }) {
   };
 }
 
-/** Where a comment's pin lands in its board's miniature; null when it falls outside it. */
-export function pinOf(doc: Doc | null, threadId: string, artboardId: string | null): Pin | null {
+/**
+ * The boards comments were made on, as they were then, by the comment's thread item: what each
+ * comment's miniature shows, so it stays what was commented on as the board changes after.
+ */
+export function frozenBoards(items: readonly RunnerItem[]): Map<string, Artboard> {
+  const boards = new Map<string, Artboard>();
+  for (const item of items) {
+    if (item.kind === "comment" && item.payload.board) {
+      boards.set(item.id, item.payload.board as Artboard);
+    }
+  }
+  return boards;
+}
+
+/**
+ * Where a comment's pin lands in its board's miniature; null when it falls outside it. Measured
+ * on the board as the comment saw it, where that was kept.
+ */
+export function pinOf(
+  doc: Doc | null,
+  threadId: string,
+  artboardId: string | null,
+  frozen: Artboard | null = null,
+): Pin | null {
   if (!doc || !artboardId) return null;
   const thread = doc.threads.find((t) => t.id === threadId);
-  const board = doc.pages.flatMap((page) => page.artboards).find((ab) => ab.id === artboardId);
+  const board =
+    frozen ?? doc.pages.flatMap((page) => page.artboards).find((ab) => ab.id === artboardId);
   if (!thread || !board) return null;
   const fit = frameFit(boardSize(board));
   const x = (fit.left + thread.x * fit.scale) / FRAME.width;
@@ -118,14 +141,16 @@ export function toThreadItem(item: RunnerItem, ctx: ThreadContext): ThreadItem {
         },
       };
     case "comment": {
-      const { threadId, artboardId } = item.payload;
+      const { threadId, artboardId, board: _board, ...rest } = item.payload;
       return {
         ...base,
         kind: "comment",
         payload: {
-          ...item.payload,
+          ...rest,
+          threadId,
+          artboardId,
           from: personOf(item.payload.from, ctx.people),
-          pin: pinOf(ctx.doc, threadId, artboardId),
+          pin: pinOf(ctx.doc, threadId, artboardId, (item.payload.board as Artboard) ?? null),
         },
       };
     }

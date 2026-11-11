@@ -110,6 +110,30 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
       tab="pull-request"
     />
   ),
+  "pull-request-one-file": () => (
+    <DesignHarness
+      designs={f.soloDesigns}
+      design={{ ...quieter(f.soloDesigns), pullRequest: { ...f.pr412, state: "merged" } }}
+      contributors={null}
+      thread={t.heroThread}
+      agent={IDLE}
+      pullRequest={{
+        kind: "ready",
+        pr: {
+          ...t.pullRequest,
+          state: "merged",
+          head: "pz/320x200-card-with-the-word-hello",
+          endedAt: t.pullRequest.reviews[0]!.at,
+          checks: [],
+          files: t.pullRequest.files.slice(0, 1),
+          filesTotal: 1,
+          additions: t.pullRequest.files[0]!.additions,
+          deletions: t.pullRequest.files[0]!.deletions,
+        },
+      }}
+      tab="pull-request"
+    />
+  ),
   "pull-request-loading": () => (
     <DesignHarness
       designs={f.soloDesigns}

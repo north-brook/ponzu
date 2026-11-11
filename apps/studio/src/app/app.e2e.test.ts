@@ -427,7 +427,9 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await page.locator("header").getByRole("button", { name: /#\d+/ }).click();
     await page.getByRole("heading", { name: NAME }).waitFor();
     expect(await page.locator("#thread").count()).toBe(0);
-    await page.getByRole("button", { name: /src\/pricing\.tsx/ }).click();
+    // Its one file starts open.
+    const card = page.getByRole("button", { name: /src\/pricing\.tsx/ });
+    expect(await card.getAttribute("aria-expanded")).toBe("true");
     await page.getByText("src/pricing.tsx", { exact: false }).first().waitFor();
     // The agent pushes again while the file is open: the diff shown is the new head's.
     await page.evaluate((designId) => {

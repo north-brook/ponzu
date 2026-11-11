@@ -139,7 +139,9 @@ repaint something or say what isn't so. The usual swaps:
   questionnaire and message-scroller parts are the path once they settle; they are too young to
   build on now.
 - `qr.tsx` on uqr, and Hugeicons through `icon.tsx`: what the design specifies.
-- The idea tiles' loading state breathes as whole cards, ring included, so it isn't `Skeleton`.
+- The idea tiles have no loading state (onboarding 4.6: nothing while they are made). On a
+  first visit the column sits at the top from its first frame, where the ideas will go, and they
+  rise into that room when they come; if none do, nothing moves.
 
 ### When you need
 

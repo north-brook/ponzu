@@ -182,11 +182,8 @@ describe("the first wake", () => {
     });
     expect((await runnerIn(sandbox)).status).toBe(200);
 
-    // The runner is poked through its token-gated address, which is kept sealed.
-    expect(t.poke.pokes.at(-1)).toEqual({
-      url: sandbox.address!,
-      token: `fake-token-${machine!.id}-4600`,
-    });
+    // A runner just made claims by itself once it is up, so nobody pokes it before it listens.
+    expect(t.poke.pokes.filter((p) => p.url === sandbox.address)).toEqual([]);
     expect(sandbox.encryptedAddressToken).not.toContain("fake-token");
     // The head says it is waking until the runner says what it is doing; the design records
     // whose Claude it runs on.
@@ -203,6 +200,14 @@ describe("the first wake", () => {
     const lines = JSON.stringify(t.logs);
     expect(lines).not.toContain(KEY);
     expect(lines).not.toContain(env.PONZU_RUNNER_TOKEN!);
+    expect(lines).not.toContain("poke_missed");
+
+    // The next message pokes it through its token-gated address, which is kept sealed.
+    await say(design.id);
+    expect(t.poke.pokes.at(-1)).toEqual({
+      url: sandbox.address!,
+      token: `fake-token-${machine!.id}-4600`,
+    });
   });
 
   test("however many ask at once, one wake makes the one sandbox and the rest leave it be", async () => {

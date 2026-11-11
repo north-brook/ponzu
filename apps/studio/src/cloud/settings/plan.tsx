@@ -25,15 +25,29 @@ export interface TeamUsage {
   people: number;
   /** Everyone's use, for an admin; null for anyone else, who sees only their own. */
   byPerson: PersonUsage[] | null;
+  /**
+   * With `byPerson`: use put down to nobody (a deleted account, or a wake nobody's action
+   * started), drawn as its own last line when there is any, so the people add up to the total.
+   */
+  unattributedCredits?: number;
   mine: PersonUsage;
 }
 
-/** What one design used this period; `name` null for those the viewer can't see by name. */
+/**
+ * What one design used this period, or one of the two unnamed lines: designs since deleted, and
+ * designs the viewer can't open (`id` and `name` null on both).
+ */
 export interface DesignUsage {
+  kind: "design" | "deleted" | "hidden";
   id: string | null;
   name: string | null;
   usedCredits: number;
 }
+
+const UNNAMED: Record<Exclude<DesignUsage["kind"], "design">, string> = {
+  deleted: "Deleted designs",
+  hidden: "Designs you can't open",
+};
 
 export interface PlanSectionProps {
   usage: Usage;
@@ -127,7 +141,12 @@ export function PlanSection({
       </div>
       {team ? (
         team.byPerson ? (
-          <People label="By person · only admins see this" people={team.byPerson} usage={usage} />
+          <People
+            label="By person · only admins see this"
+            people={team.byPerson}
+            nobody={team.unattributedCredits}
+            usage={usage}
+          />
         ) : (
           <People label="Your usage" people={[team.mine]} usage={usage} />
         )
@@ -142,18 +161,15 @@ function Designs({ designs, usage }: { designs: DesignUsage[]; usage: Usage }) {
   return (
     <section aria-label="By design" className="flex flex-col">
       <SectionLabel className="pb-1">By design</SectionLabel>
-      {designs.map(({ id, name, usedCredits }) => (
-        <div
-          key={id ?? "others"}
-          className="flex h-[38px] items-center gap-2.5 border-rule border-t"
-        >
+      {designs.map(({ kind, id, name, usedCredits }) => (
+        <div key={id ?? kind} className="flex h-[38px] items-center gap-2.5 border-rule border-t">
           <span
             className={cn(
               "min-w-0 flex-1 truncate text-13",
-              name ? "font-medium text-ink" : "text-muted",
+              kind === "design" ? "font-medium text-ink" : "text-muted",
             )}
           >
-            {name ?? "Designs you can't open"}
+            {kind === "design" ? name : UNNAMED[kind]}
           </span>
           <span className="w-20 text-right font-medium font-mono text-12 text-muted leading-none">
             {money(usedCredits * usage.creditUsd)}
@@ -321,8 +337,21 @@ function CapRow({
   );
 }
 
-/** Use by person, in gross dollars before the pooled free credits, most first. */
-function People({ label, people, usage }: { label: string; people: PersonUsage[]; usage: Usage }) {
+/**
+ * Use by person, in gross dollars before the pooled free credits, most first; then, when there
+ * is any, what is put down to nobody, so the lines add up to the headline.
+ */
+function People({
+  label,
+  people,
+  nobody = 0,
+  usage,
+}: {
+  label: string;
+  people: PersonUsage[];
+  nobody?: number;
+  usage: Usage;
+}) {
   const sorted = [...people].sort((a, b) => b.usedCredits - a.usedCredits);
   return (
     <section aria-label={label} className="flex flex-col">
@@ -339,6 +368,17 @@ function People({ label, people, usage }: { label: string; people: PersonUsage[]
           </span>
         </div>
       ))}
+      {nobody > 0 ? (
+        <div className="flex h-[38px] items-center gap-2.5 border-rule border-t">
+          <span aria-hidden className="size-[22px] shrink-0 rounded-full bg-chip" />
+          <span className="min-w-0 flex-1 truncate text-13 text-muted">
+            Deleted accounts and wakes no one started
+          </span>
+          <span className="w-20 text-right font-medium font-mono text-12 text-muted leading-none">
+            {money(nobody * usage.creditUsd)}
+          </span>
+        </div>
+      ) : null}
     </section>
   );
 }

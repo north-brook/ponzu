@@ -229,7 +229,7 @@ describe.skipIf(!chromiumPath)("a brand-new person, from sign-in to sign-out", (
     await page.locator("header").getByRole("button", { name: /#\d+/ }).click();
     await page.getByRole("heading", { name: /Checkout one page/ }).waitFor();
     await shoot("pull-request", { dark: true });
-    await page.getByRole("button", { name: /src\/checkout\.tsx/ }).click();
+    // Its one file's diff is open from the start.
     await page.getByText("context", { exact: true }).waitFor();
     await shoot("pull-request-diff");
     // At the smallest window the details stack above the files, whose names stay whole.

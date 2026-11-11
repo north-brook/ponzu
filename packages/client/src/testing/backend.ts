@@ -1403,6 +1403,8 @@ function commentsIn(op: Op, doc: Doc): Omit<CommentPayload, "from">[] {
       text: said.message.text,
       artboardId,
       artboardName: board?.name ?? null,
+      // The board as it is now, which the comment's thumbnail keeps showing.
+      ...(board ? { board: structuredClone(board) } : {}),
     },
   ];
 }
