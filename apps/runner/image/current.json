@@ -1,0 +1,14 @@
+{
+  "snapshot": "ponzu-runner-cac2ee15017d",
+  "inputs": "cac2ee15017d68335cd43dbbf4149ae93e6c16058aa1d1b0adf630565c25f599",
+  "sizeBytes": 524349440,
+  "pins": {
+    "bunVersion": "1.4.2",
+    "bunSha256": "36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913",
+    "claudeVersion": "2.1.322",
+    "claudeSha256": "bfb3703ad5380242328459bc62ada4bde8ae7ba57c6e1eeadb9c00e08874c478",
+    "playwrightCoreVersion": "1.64.1",
+    "headlessShellVersion": "156.0.8078.4"
+  },
+  "bakedAt": "2026-11-11T01:42:56.785Z"
+}

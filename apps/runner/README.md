@@ -44,30 +44,28 @@ scripts/
   dev.ts           a local run against the fake API
 deploy/
   ponzu-runner.service   the systemd unit template
+image/             the sandbox image: its recipe, its bake, its checks (image/README.md)
 ```
 
 ## How it runs in a sandbox
 
-The image installs `dist/` (say in `/opt/ponzu-runner`), runs `bun install --production` there
-for playwright-core, and installs `ponzu-runner.service` with `{{BUN}}` and `{{RUNNER_DIR}}`
-filled in. The unit waits for the environment file boat writes at every start
+[image/README.md](image/README.md) is the image: it installs `dist/` in `/opt/ponzu/runner` with
+`bun install --production` there for playwright-core, the Bun this repo pins, the Claude Code
+the Agent SDK pin speaks to (`0.3.322` with `2.1.322`: they are released together and move
+together, and the runner never runs the copy the SDK would download), the Chrome Headless Shell
+playwright-core pins, `packages/render`'s fonts, and `ponzu-runner.service` with `{{BUN}}` and
+`{{RUNNER_DIR}}` filled in. The unit waits for the environment file boat writes at every start
 (`/run/ascii-secrets/env.sh`), exports it and starts `bun runner.js` as `user`. It restarts on
 failure, except on exit 78, which means only a new start of the sandbox can mend it: the
 environment is wrong, the API revoked the runner token (the design was deleted or settled), or
-a newer runner took over the design's lease. On SIGTERM the runner stops the turn, lets the agent's edits reach the
-API, writes the final state and exits, within the unit's 20 seconds.
+a newer runner took over the design's lease. On SIGTERM, which only the runner gets
+(`KillMode=mixed`), it stops the turn, lets the agent's edits reach the API, writes the final
+state and exits, within the unit's 20 seconds; what is left of the agent's side is killed then.
 
-Tested on Bun 1.4.2 (the repo's) on macOS, and the built bundle uses only what Bun 1.3 has
-(`Bun.serve`, `Bun.build`, `node:` modules). The image also needs:
-
-- **Claude Code** at `/usr/local/bin/claude`, which boat's image has. The Agent SDK is pinned to
-  `0.3.322`, which speaks to Claude Code `2.1.322`: they are released together, so the image's
-  Claude Code and this pin move together, and the runner never runs the copy the SDK would
-  download.
-- **Chromium**: Playwright's headless shell (`bunx playwright@<the playwright-core version in
-  dist/package.json> install --only-shell chromium`), named by `PONZU_CHROMIUM` or found by the
-  renderer, and the fonts the boat spike lists.
-- **git** 2.40 or later, for `password_expiry_utc`.
+In the image, Claude Code and the checkout's git run as a second user, `agent`, that cannot
+read the runner's environment (`PONZU_CLAUDE` and `PONZU_GIT` are wrappers that switch to it),
+and git's credential helper asks the runner over a socket instead of holding the runner token.
+git 2.40 or later is needed, for `password_expiry_utc`.
 
 ## Environment
 
@@ -80,14 +78,17 @@ Tested on Bun 1.4.2 (the repo's) on macOS, and the built bundle uses only what B
 | `PONZU_RUNNER_PORT` | The port `/poke` and `/health` listen on, on every interface. 4600 by default. |
 | `PONZU_WORK_ROOT` | Where checkouts live. `~/work` by default: the repo in `~/work/<name>`, Scratch in `~/work/scratch`. |
 | `PONZU_STATE_DIR` | What the runner keeps across restarts (usage totals). `~/.ponzu` by default. |
-| `PONZU_CLAUDE` | The `claude` binary, when it is not `/usr/local/bin/claude`. |
+| `PONZU_CLAUDE` | The `claude` binary, when it is not `/usr/local/bin/claude`. The image's runs it as `agent`. |
+| `PONZU_GIT` | The `git` the checkout runs, when it is not the one on the PATH. The image's runs it as `agent`. |
+| `PONZU_GIT_SOCKET` | Where git's credential helper asks the runner. `$PONZU_STATE_DIR/git.sock` by default; `/run/ponzu/git.sock` in the image. |
 | `PONZU_CHROMIUM` | The Chromium for screenshots and previews. |
 
 Repo secrets arrive as more variables in the same file and pass through to Claude Code and its
-tools. The agent's environment holds the runner token and the Claude credential too: git's
-credential helper needs the one and Claude Code the other, and anything running as `user` could
-read both from `/proc` anyway. What that exposes, and to whom, is under "What a hostile repo
-or a hostile comment can do" below.
+tools. The runner token does not: the runner leaves it out of the environment it gives Claude
+Code and the checkout's git, and git's credential helper (`bun git-credential.js <socket>`)
+asks the runner, which asks the API with its token and lease. The Claude credential is in the
+agent's environment, because Claude Code needs it. What that exposes, and to whom, is under
+"What a hostile repo or a hostile comment can do" below.
 
 ## The port
 
@@ -111,7 +112,7 @@ token it issued for the design.
 
 ## Claude Code's configuration
 
-- `bypassPermissions`: a VM per design, running as the non-root `user`, with nobody to click
+- `bypassPermissions`: a VM per design, running as a non-root user (`agent`), with nobody to click
   "allow". AskUserQuestion, plan approval (ExitPlanMode) and any other prompt still reach
   `canUseTool` and become questions in the design's needs-you; the SDK's warning that
   `canUseTool` "will not be invoked" in this mode is about ordinary tool calls.
@@ -125,14 +126,15 @@ token it issued for the design.
   the in-process MCP server `ponzu`, always loaded rather than behind tool search.
 
 **What a hostile repo or a hostile comment can do.** A repo's hooks, MCP servers, skills and
-code run as `user` in the sandbox. So does whatever the agent is talked into: anyone whose
-words become a prompt (a person commenting on the design, anyone reviewing its pull request,
-which on a public repo is anyone on GitHub, a check's log) can try to make the agent run a
-command. Either way that reaches the Claude credential, a one-hour token for that one
-repository, the runner token and the repo's own secrets, and nothing of any other design.
-The runner keeps the exposure down where it can: other people's words reach the model quoted,
-under instructions that quoted text never directs it; the runner token can only write what an
-agent could anyway (a runner cannot write the API's own notices, such as a pull request's); and
-the lease means a stolen token can stop this design's runner but not act beside it. It cannot
-hide the credentials from what runs as the same user. docs/cloud.md ("Security") has the whole
-threat and the hardening that closes it.
+code run as the agent's user in the sandbox (`agent` in the image). So does whatever the agent
+is talked into: anyone whose words become a prompt (a person commenting on the design, anyone
+reviewing its pull request, which on a public repo is anyone on GitHub, a check's log) can try
+to make the agent run a command. Either way that reaches the Claude credential, a one-hour
+token for that one repository (through the runner's socket) and the repo's own secrets, and
+nothing of any other design. In the image it does not reach the runner token: `agent` cannot
+read the runner's `/proc` or boat's environment file, and has no sudo. The runner keeps the
+exposure down where it can: other people's words reach the model quoted, under instructions
+that quoted text never directs it; the runner token can only write what an agent could anyway
+(a runner cannot write the API's own notices, such as a pull request's); and the lease means a
+stolen token can stop this design's runner but not act beside it. docs/cloud.md ("Security")
+has the whole threat and the hardening that remains.
