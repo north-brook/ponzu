@@ -6,7 +6,8 @@
  *     Draws every composition that names a board, and the design's own board, at the board's
  *     size in light and dark; writes ours, theirs, the difference and the two side by side to
  *     <out> (.context/visual by default), and prints how much differs, overall and outside the
- *     masked regions this code doesn't draw.
+ *     masked regions: what this code doesn't draw, and the chrome, which departs from the boards
+ *     on purpose (no lockup, the toggles at the window's edges).
  *
  *   bun scripts/visual.ts references
  *     Redraws what the gallery test compares against: a picture of each composition with its
@@ -16,7 +17,7 @@
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { COMPOSITIONS } from "../src/cloud/gallery/compositions.ts";
+import { CHROME_HEIGHT, COMPOSITIONS } from "../src/cloud/gallery/compositions.ts";
 import {
   buildGallery,
   compare,
@@ -76,7 +77,9 @@ try {
       for (const theme of THEMES) {
         const ours = await shootComposition(page, server.url, c, theme);
         const theirs = await shootBoard(page, values.design!, c.board!, c, theme, out);
-        const diff = await compare(tool, theirs, ours, c.masks);
+        // The chrome departs from the boards on purpose: masked, so the rest is still checked.
+        const chrome = { x: 0, y: 0, width: c.width, height: CHROME_HEIGHT };
+        const diff = await compare(tool, theirs, ours, [...(c.masks ?? []), chrome]);
         const name = `${c.id}-${theme}`;
         await Bun.write(join(out, `${name}.ours.png`), ours);
         await Bun.write(join(out, `${name}.theirs.png`), theirs);

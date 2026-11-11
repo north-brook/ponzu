@@ -2,8 +2,6 @@ ground div rgb(14, 14, 13)
 ground span rgb(255, 95, 87)
 ground span rgb(254, 188, 46)
 ground span rgb(40, 200, 64)
-icon svg 16×16 rgb(244, 243, 239) stroke 3.4px
-text "ponzu" rgb(244, 243, 239) 700 16px Funnel Display
 icon svg[Toggle sidebar] 16×16 rgb(169, 165, 155) stroke 1.7px
 ground span rgba(244, 243, 239, 0.1)
 ground button[Pages] rgb(58, 58, 58) shadow rgba(255, 255, 255, 0.06) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.4) 0px 1px 2px 0px
@@ -14,6 +12,7 @@ text "Product" rgb(169, 165, 155) 400 13px Inter
 icon svg[Pages] 14×14 rgb(169, 165, 155) stroke 1.7px
 text "Care cards" rgb(169, 165, 155) 400 13px Inter
 icon svg[New page] 14×14 rgb(107, 104, 98) stroke 1.9px
+ground span rgba(244, 243, 239, 0.1)
 ground img[Bryce (you)] shadow rgb(14, 14, 13) 0px 0px 0px 1.5px
 ground img[Sam] shadow rgb(14, 14, 13) 0px 0px 0px 1.5px
 ground img[Maya] shadow rgb(14, 14, 13) 0px 0px 0px 1.5px
@@ -26,7 +25,6 @@ icon svg[Checks passed] 10×10 rgb(142, 138, 130) stroke 2.6px
 text "Merge" rgb(17, 17, 16) 600 12px Inter
 ground button rgb(244, 243, 239)
 icon svg 13×13 rgb(17, 17, 16) stroke 2px
-ground span rgba(244, 243, 239, 0.1)
 icon svg[Thread] 16×16 rgb(169, 165, 155) stroke 1.7px
 ground button[Workspace: Northbrook] rgba(255, 255, 255, 0.06)
 text "Northbrook" rgb(244, 243, 239) 600 13px Inter

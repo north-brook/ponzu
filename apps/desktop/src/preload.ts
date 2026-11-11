@@ -48,7 +48,6 @@ const desktop: PonzuDesktop = {
       ipcRenderer.invoke(CHANNELS.accessToken, rejected) as Promise<BorrowedToken>,
     report: (error: BridgeError) => ipcRenderer.send(CHANNELS.report, error),
     signIn: () => ipcRenderer.invoke(CHANNELS.signIn) as Promise<SignInResult>,
-    cancelSignIn: () => ipcRenderer.send(CHANNELS.cancelSignIn),
     signOut: () => ipcRenderer.invoke(CHANNELS.signOut) as Promise<void>,
   },
   onLink(listener) {
