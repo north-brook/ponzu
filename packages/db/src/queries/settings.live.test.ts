@@ -41,17 +41,33 @@ describeLive("settings on a real Postgres", ({ db, close }) => {
       platform: "ios",
       pushToken: token,
       pushEnvironment: "production",
+      installId: `install-${token}`,
       name: "iPhone",
       appVersion: "1.0.0",
       pingsBlocked: false,
     });
+    if (first.status !== "registered") throw new Error("not registered");
     expect(first.created).toBe(true);
     expect(first.device.lastSeenAt).toBeInstanceOf(Date);
-    const again = await registerDevice(db, { ...first.device, pingsBlocked: true });
+    const again = await registerDevice(db, {
+      ...first.device,
+      installId: `install-${token}`,
+      pingsBlocked: true,
+    });
     expect(again).toMatchObject({
+      status: "registered",
       created: false,
       device: { id: first.device.id, pingsBlocked: true },
     });
+    const other = await seedUser(db, "pinged-elsewhere");
+    expect(
+      await registerDevice(db, {
+        ...first.device,
+        userId: other.id,
+        installId: "another-install",
+        pingsBlocked: false,
+      }),
+    ).toEqual({ status: "taken", holderId: user.id });
     const changed = await updateDevice(db, {
       userId: user.id,
       id: first.device.id,
@@ -169,6 +185,10 @@ describeLive("settings on a real Postgres", ({ db, close }) => {
       kept: [],
     });
     expect(await anonymiseUser(db, user.id)).toBeGreaterThan(0);
-    expect(await deleteUser(db, user.id)).toBe(user.workosUserId);
+    expect(await deleteUser(db, user.id)).toEqual({
+      status: "deleted",
+      workosUserId: user.workosUserId,
+    });
+    expect(await deleteUser(db, user.id)).toEqual({ status: "gone" });
   });
 });

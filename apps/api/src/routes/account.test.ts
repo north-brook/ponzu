@@ -2,10 +2,12 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sampleDoc } from "@ponzu/core/fixtures";
 import {
   createDesign,
+  deleteUser,
   getDesign,
   getLiveSandbox,
   recordUsage,
   upsertMembership,
+  upsertRepos,
   upsertWorkspace,
 } from "@ponzu/db";
 import { call, designIn, type Workspace, workspaceWithRepo } from "../testing/designs.ts";
@@ -54,6 +56,110 @@ describe("refusals", () => {
     // Nothing happened: she is still here.
     expect((await call(t, await as("una"), "GET", "/v1/me")).status).toBe(200);
   });
+
+  test("two admins deleting themselves at once leave the team one of them", async () => {
+    const team = await workspaceWithRepo(t, { wes: "admin", xan: "admin", yul: "write" });
+    const [wes, xan] = await Promise.all([as("wes"), as("xan")]);
+    const answers = await Promise.all([
+      call(t, wes, "DELETE", "/v1/me", { confirm: "wes" }),
+      call(t, xan, "DELETE", "/v1/me", { confirm: "xan" }),
+    ]);
+    expect(answers.map((answer) => answer.status).toSorted()).toEqual([204, 409]);
+    const admins = await rows(
+      `select user_id from memberships where workspace_id = '${team.id}' and role = 'admin'`,
+    );
+    expect(admins).toHaveLength(1);
+  });
+
+  test("the last admin is checked again as the row goes", async () => {
+    const team = await workspaceWithRepo(t, { zia: "admin", abe: "admin", bo: "write" });
+    // As though Abe's deletion went through after Zia's plan was made.
+    await t.db.execute(
+      `delete from memberships where workspace_id = '${team.id}' and user_id = '${team.people.abe!.userId}'`,
+    );
+    expect(await deleteUser(t.db, team.people.zia!.userId)).toEqual({ status: "sole_admin" });
+    expect((await call(t, await as("zia"), "GET", "/v1/me")).status).toBe(200);
+  });
+});
+
+describe("a personal account others are in", () => {
+  let dee: SignedInPerson;
+  let own: { id: string };
+  let deesDesign: string;
+
+  beforeAll(async () => {
+    dee = await t.signInAs({ login: "dee" });
+    const eli = await t.signInAs({ login: "eli" });
+    own = await upsertWorkspace(t.db, {
+      githubAccountId: dee.github.id,
+      githubLogin: "dee",
+      kind: "personal",
+      name: "dee",
+      avatarUrl: null,
+      installationId: 880_101,
+      repositorySelection: "selected",
+      installedByUserId: null,
+    });
+    const [repo] = await upsertRepos(t.db, {
+      workspaceId: own.id,
+      repos: [
+        {
+          githubRepoId: 880_102,
+          fullName: "dee/site",
+          defaultBranch: "main",
+          private: true,
+          pushedAt: null,
+        },
+      ],
+    });
+    await upsertMembership(t.db, {
+      workspaceId: own.id,
+      userId: dee.userId,
+      role: "admin",
+      githubAccess: "owner",
+    });
+    // A collaborator on her repo, whom Ponzu lets into her account's workspace.
+    await upsertMembership(t.db, {
+      workspaceId: own.id,
+      userId: eli.userId,
+      role: "member",
+      githubAccess: "collaborator",
+    });
+    deesDesign = (
+      await createDesign(t.db, {
+        workspaceId: own.id,
+        repoId: repo!.id,
+        ownerId: dee.userId,
+        claudeAccountId: null,
+        name: "Site",
+        branch: null,
+        doc: sampleDoc(),
+      })
+    ).id;
+  });
+
+  test("is not left without an admin", async () => {
+    const refused = await call(t, dee.headers, "DELETE", "/v1/me", { confirm: "dee" });
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toMatchObject({
+      code: "sole_admin",
+      message: "Make someone else an admin first.",
+      details: { workspaces: [{ id: own.id, name: "dee" }] },
+    });
+    expect(await getDesign(t.db, deesDesign)).not.toBeNull();
+  });
+
+  test("keeps the design the collaborator shares once someone else is its admin", async () => {
+    await t.db.execute(
+      `update memberships set role = 'admin' where workspace_id = '${own.id}' and role = 'member'`,
+    );
+    const deleted = await call(t, dee.headers, "DELETE", "/v1/me", { confirm: "dee" });
+    expect(deleted.status).toBe(204);
+    expect((await getDesign(t.db, deesDesign))?.ownerId).toBeNull();
+    expect(await rows(`select role from memberships where workspace_id = '${own.id}'`)).toEqual([
+      { role: "admin" },
+    ]);
+  });
 });
 
 describe("deleting Rae", () => {
@@ -73,6 +179,7 @@ describe("deleting Rae", () => {
       platform: "ios",
       pushToken: "b".repeat(64),
       pushEnvironment: "production",
+      installId: "rae-phone-install-0001",
     });
 
     // A design of the team's that she owns and has talked in, with its sandbox up.
