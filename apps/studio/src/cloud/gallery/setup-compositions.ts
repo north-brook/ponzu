@@ -76,12 +76,13 @@ export const SETUP_COMPOSITIONS: Composition[] = [
   settings("settings-notifications", "Settings · Notifications", "notifications.html"),
   settings("settings-members", "Settings · Members", "members.html"),
   {
-    // Not drawn: two people GitHub gives access to who haven't opened Ponzu yet, quieter.
+    // Not drawn: two people GitHub gives access to who haven't opened Ponzu yet, quieter. The
+    // rows are settings-members'; the styles hold who is listed and how quiet they are.
     id: "settings-members-not-joined",
     title: "Settings · Members, some haven't opened Ponzu",
     ...WINDOW,
     masks: BEHIND_SETTINGS,
-    reference: true,
+    reference: "styles",
   },
   settings("settings-github", "Settings · GitHub", "github.html"),
   settings("settings-environments", "Settings · Environments", "environments.html"),
