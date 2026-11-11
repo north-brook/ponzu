@@ -49,27 +49,20 @@ test("anything else is dropped", () => {
   }
 });
 
-test("a development build answers its own scheme and not an installed app's", () => {
-  expect(parseDeepLink("ponzu-dev://design/dsn_1", "ponzu-dev")).toEqual({
-    kind: "design",
-    designId: "dsn_1",
-  });
-  expect(parseDeepLink("ponzu://design/dsn_1", "ponzu-dev")).toBeNull();
-  expect(parseDeepLink("ponzu-dev://design/dsn_1", "ponzu")).toBeNull();
-});
-
-test("Ponzu Preview answers ponzu-preview:// and leaves Ponzu's (1.x's, on a Mac that has it) alone", () => {
-  expect(parseDeepLink("ponzu-preview://design/dsn_1?page=pg_2", "ponzu-preview")).toEqual({
+test("Ponzu Dev answers ponzu-dev:// and leaves Ponzu's (1.x's, on a Mac that has it) alone", () => {
+  expect(parseDeepLink("ponzu-dev://design/dsn_1?page=pg_2", "ponzu-dev")).toEqual({
     kind: "design",
     designId: "dsn_1",
     pageId: "pg_2",
   });
   expect(
-    parseDeepLink("ponzu-preview://github/setup?result=installed&workspace=ws_1", "ponzu-preview"),
+    parseDeepLink("ponzu-dev://github/setup?result=installed&workspace=ws_1", "ponzu-dev"),
   ).toEqual({ kind: "github_setup", result: "installed", workspaceId: "ws_1" });
-  expect(parseDeepLink("ponzu://design/dsn_1", "ponzu-preview")).toBeNull();
-  expect(parseDeepLink("ponzu-preview://design/dsn_1", "ponzu")).toBeNull();
-  expect(linksIn(["ponzu-preview", "ponzu://design/dsn_1"], "ponzu-preview")).toEqual([]);
+  expect(parseDeepLink("ponzu://design/dsn_1", "ponzu-dev")).toBeNull();
+  expect(parseDeepLink("ponzu-dev://design/dsn_1", "ponzu")).toBeNull();
+  // Nor its earlier name's.
+  expect(parseDeepLink("ponzu-preview://design/dsn_1", "ponzu-dev")).toBeNull();
+  expect(linksIn(["ponzu-dev", "ponzu://design/dsn_1"], "ponzu-dev")).toEqual([]);
 });
 
 test("a launch's links, past the executable and its switches", () => {

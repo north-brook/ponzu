@@ -432,4 +432,94 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     expect(log).not.toContain("Setting direction");
     expect(log).toContain("Worked for");
   });
+
+  /** A field's card: the element whose presses go to it. */
+  const cardOf = (field: string) =>
+    page.$eval(field, (el) => {
+      const card = el.closest<HTMLElement>("[class*='cursor-text']")!;
+      const r = card.getBoundingClientRect();
+      return {
+        x: r.x,
+        y: r.y,
+        width: r.width,
+        height: r.height,
+        cursor: getComputedStyle(card).cursor,
+      };
+    });
+  const caret = () =>
+    page.evaluate(() => {
+      const el = document.activeElement as HTMLTextAreaElement;
+      return el.tagName === "TEXTAREA" ? [el.selectionStart, el.selectionEnd] : null;
+    });
+
+  test("the rail's composer: a press anywhere on its card writes; attach, chips and send keep theirs", async () => {
+    await open("thread-in-the-right-rail");
+    const field = 'textarea[aria-label="Message"]';
+    await page.fill(field, "Calmer");
+    await page.$eval(field, (el) => (el as HTMLElement).blur());
+    const card = await cardOf(field);
+    expect(card.cursor).toBe("text");
+    // Its padding, above the field and below it.
+    await page.mouse.click(card.x + card.width / 2, card.y + 2);
+    expect(await focused()).toBe("Message");
+    expect(await caret()).toEqual([6, 6]);
+    await page.$eval(field, (el) => (el as HTMLElement).blur());
+    await page.mouse.click(card.x + card.width / 2, card.y + card.height - 2);
+    expect(await caret()).toEqual([6, 6]);
+    // Already writing: a press on the card keeps the caret where it was.
+    await page.$eval(field, (el) => (el as HTMLTextAreaElement).setSelectionRange(2, 2));
+    await page.mouse.click(card.x + card.width / 2, card.y + 2);
+    expect(await caret()).toEqual([2, 2]);
+
+    // An image attached: its chip's remove still removes, and send still sends.
+    await page.setInputFiles('input[type="file"]', {
+      name: "hero.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+        "base64",
+      ),
+    });
+    await page.waitForSelector('ul[aria-label="Attached images"] li');
+    await page.hover('ul[aria-label="Attached images"] li');
+    await page.click('button[aria-label="Remove hero.png"]');
+    await page.waitForSelector('ul[aria-label="Attached images"]', { state: "detached" });
+    await page.click('button[aria-label="Send"]');
+    await page.waitForSelector('[role="log"] p:has-text("Calmer")');
+    expect(await page.inputValue(field)).toBe("");
+  });
+
+  test("the rail's composer under a gate: the strip's words keep the arrow and can be selected", async () => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
+    await page.goto(`${server.url}/gallery.html?states&theme=light`);
+    await page.waitForFunction(() => (window as { galleryReady?: boolean }).galleryReady === true);
+    // A gate whose composer still shows its field (not the owner having left).
+    const strip = await page.evaluateHandle(() => {
+      for (const status of document.querySelectorAll<HTMLElement>('[role="status"]')) {
+        const card = status.closest<HTMLElement>("[class*='cursor-text']");
+        const field = card?.querySelector("textarea[data-press-focus]");
+        if (field?.getClientRects().length) return status;
+      }
+      throw new Error("no gated composer with a field");
+    });
+    const el = strip.asElement()!;
+    await el.scrollIntoViewIfNeeded();
+    expect(await el.evaluate((s) => getComputedStyle(s).cursor)).toBe("default");
+    const box = (await el.boundingBox())!;
+    await page.mouse.dblclick(box.x + 4, box.y + box.height / 2);
+    expect(await focused()).not.toBe("Message");
+    expect(
+      await page.evaluate(() => getSelection()?.toString().trim().length ?? 0),
+    ).toBeGreaterThan(0);
+  });
+
+  test("the note under a question: a press anywhere on its card writes there", async () => {
+    await open("needs-you-a-question");
+    const field = 'textarea[aria-label="Note"]';
+    const card = await cardOf(field);
+    expect(card.cursor).toBe("text");
+    await page.mouse.click(card.x + 6, card.y + card.height / 2);
+    expect(await focused()).toBe("Note");
+  });
 });

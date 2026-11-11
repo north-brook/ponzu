@@ -4,6 +4,7 @@ import type { PendingAttachment } from "../model.ts";
 import { AttachmentChip } from "../thread/composer.tsx";
 import { IconButton, SendButton } from "../ui/button.tsx";
 import { Icon } from "../ui/icon.tsx";
+import { FIELD, pressToFocus } from "../ui/press-to-focus.ts";
 import { canSend } from "./create.ts";
 import { type ModelChoice, ModelPicker } from "./model-picker.tsx";
 
@@ -44,7 +45,11 @@ export function NewDesignComposer({
   };
 
   return (
-    <div className="flex min-h-[118px] flex-col gap-[18px] rounded-20 bg-surface pt-4 pr-2.5 pb-2.5 pl-[18px] shadow-bar">
+    // The whole card is the field's: a press on it, past its controls, writes.
+    <div
+      onMouseDown={pressToFocus}
+      className="flex min-h-[118px] cursor-text flex-col gap-[18px] rounded-20 bg-surface pt-4 pr-2.5 pb-2.5 pl-[18px] shadow-bar"
+    >
       {attachments.length ? (
         <ul
           aria-label="Attached images"
@@ -62,6 +67,7 @@ export function NewDesignComposer({
       ) : null}
       <textarea
         ref={fieldRef}
+        {...FIELD}
         aria-label="Describe the design"
         placeholder="Describe a screen, a flow or a brand"
         rows={1}
