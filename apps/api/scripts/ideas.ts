@@ -1,6 +1,7 @@
 // `bun scripts/ideas.ts owner/repo …`: the ideas for real repositories, made the way the API
-// makes them (the same read, prompt, model and checks), printed with what they cost. Nothing
-// is stored. For working on the prompt: read what comes out as a designer would.
+// makes them (the same read, prompt, models, checks and gate), printed with what they cost and
+// what the gate said of any idea it failed. Nothing is stored. For exploring live public repos
+// by eye; what measures a prompt change is the eval suite (`bun run evals ideas`, docs/evals.md).
 //
 // A public repository is read without a token. One named with `--app` is read as the GitHub
 // App, with a token for it alone (GITHUB_APP_CLIENT_ID, GITHUB_APP_PRIVATE_KEY or its _PATH,
@@ -14,14 +15,14 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { systemClock } from "@ponzu/sandbox";
 import { createGithub } from "../src/deps/github.ts";
-import { createClaude } from "../src/deps/model.ts";
-import { askForIdeas, type Tally } from "../src/ideas/ideas.ts";
+import { CLAUDE_SONNET, createClaude } from "../src/deps/model.ts";
+import { askForIdeas, newTally } from "../src/ideas/ideas.ts";
 import { ideasRequest } from "../src/ideas/prompt.ts";
 import { readRepository } from "../src/ideas/read-repo.ts";
 import type { RepoSnapshot } from "../src/ideas/snapshot.ts";
 
-/** Claude Haiku 5.5's price per million tokens, for prompts under 100K tokens. */
-const PRICE = { input: 0.1, output: 0.5 };
+/** Claude Haiku 5.5 (prompts under 100K tokens) and Sonnet 5.5, per million tokens. */
+const PRICE = { haiku: { input: 0.1, output: 0.5 }, sonnet: { input: 2, output: 10 } };
 
 const { env } = process;
 const args = process.argv.slice(2);
@@ -51,6 +52,7 @@ const github = createGithub({
   clock: systemClock,
 });
 const model = createClaude({ apiKey, fetch: (u, i) => fetch(u, i) });
+const reviewer = createClaude({ apiKey, fetch: (u, i) => fetch(u, i), model: CLAUDE_SONNET });
 
 /** A token for this one repository, as the App, to read it with: what the API mints. */
 async function appToken(fullName: string): Promise<string> {
@@ -137,15 +139,27 @@ for (const fullName of names) {
   if (flags.has("--show")) console.log(request.prompt);
   if (spent >= ceiling) throw new Error(`Stopped at $${spent.toFixed(4)}, the ceiling.`);
   const started = Date.now();
-  const tally: Tally = { attempts: 0, usage: { input: 0, output: 0 } };
-  const asked = await askForIdeas(model, request, { tally });
+  const tally = newTally();
+  const asked = await askForIdeas({ writer: model, reviewer }, request, { tally });
   const { input, output } = tally.usage;
-  const cost = (input * PRICE.input + output * PRICE.output) / 1_000_000;
+  const gate = tally.gate.usage;
+  const cost =
+    (input * PRICE.haiku.input +
+      output * PRICE.haiku.output +
+      gate.input * PRICE.sonnet.input +
+      gate.output * PRICE.sonnet.output) /
+    1_000_000;
   spent += cost;
   console.log(
-    `${tally.attempts} ask(s): ${input} in, ${output} out, $${cost.toFixed(5)}, ${Date.now() - started} ms`,
+    `${tally.attempts} ask(s): ${input} in, ${output} out; ${tally.gate.calls} gate check(s): ${gate.input} in, ${gate.output} out; $${cost.toFixed(5)}, ${Date.now() - started} ms`,
   );
-  if ("rejected" in asked) console.log(`None kept: ${asked.rejected}.`);
-  else for (const idea of asked.ideas) console.log(`- ${idea}  (${idea.length})`);
+  if (asked.kind === "kept")
+    for (const idea of asked.ideas) console.log(`- ${idea}  (${idea.length})`);
+  else if (asked.kind === "withheld") console.log("None kept: the gate found an unsafe idea.");
+  else console.log(`None kept: ${asked.codes.join(", ")}.`);
+  // What the gate said of each idea it failed, for reading by eye.
+  for (const { idea, criteria, reason } of asked.failures) {
+    console.log(`  gate: idea ${idea} failed ${criteria.join(" and ")}: ${reason}`);
+  }
 }
 console.log(`\nSpent $${spent.toFixed(5)} in all.`);
