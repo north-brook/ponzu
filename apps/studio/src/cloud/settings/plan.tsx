@@ -8,6 +8,7 @@ import {
   atCap,
   type CardBrand as Brand,
   billedUsd,
+  headlineUsd,
   money,
   type PersonUsage,
   parseCap,
@@ -75,7 +76,7 @@ export function PlanSection({
     <>
       <div className="flex flex-col gap-1.5">
         <span className="font-display font-semibold text-40 text-ink leading-none tracking-[-0.02em]">
-          {money(billed)}
+          {money(headlineUsd(usage))}
         </span>
         <span className="text-13 text-muted">
           {usageLine(usage, team ? { name: team.name, people: team.people } : undefined)}

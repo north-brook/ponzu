@@ -28,7 +28,11 @@ function linkFromHash(hash: string): string | null {
     : null;
 }
 
-export function OpenDesign() {
+/**
+ * `to` is the app's link when the page knows it from its path (a design in Ponzu Cloud, at
+ * /designs/<id>); without it, the link is read from the fragment.
+ */
+export function OpenDesign({ to }: { to?: string | null } = {}) {
   const [link, setLink] = useState<string | null>(null);
   const [state, setState] = useState<State>("opening");
   /** Stops the attempt in flight: its timer and its watch for the app taking focus. */
@@ -60,6 +64,12 @@ export function OpenDesign() {
 
   // The fragment can change without a reload, when another link opens in this tab.
   useEffect(() => {
+    if (to !== undefined) {
+      setLink(to);
+      if (to) open(to);
+      else setState("invalid");
+      return () => stop.current?.();
+    }
     const read = () => {
       const to = linkFromHash(window.location.hash);
       setLink(to);
@@ -75,7 +85,7 @@ export function OpenDesign() {
       window.removeEventListener("hashchange", read);
       stop.current?.();
     };
-  }, [open]);
+  }, [open, to]);
 
   const retry = link ? () => open(link) : undefined;
 

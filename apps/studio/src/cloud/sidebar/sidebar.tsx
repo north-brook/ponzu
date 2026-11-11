@@ -178,7 +178,7 @@ export function Sidebar(props: SidebarProps) {
             ) : (
               <EmptyNote>
                 {props.settled.count
-                  ? "Nothing open. Settled designs are below."
+                  ? "No designs in progress. Settled ones are below."
                   : "No designs yet."}
               </EmptyNote>
             )}

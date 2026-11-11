@@ -227,7 +227,7 @@ describe.skipIf(!chromiumPath)("a brand-new person, from sign-in to sign-out", (
 
     // The pull request tab, and a file's diff.
     await page.locator("header").getByRole("button", { name: /#\d+/ }).click();
-    await page.getByRole("heading", { name: /Make checkout one page/ }).waitFor();
+    await page.getByRole("heading", { name: /Checkout one page/ }).waitFor();
     await shoot("pull-request", { dark: true });
     await page.getByRole("button", { name: /src\/checkout\.tsx/ }).click();
     await page.getByText("context", { exact: true }).waitFor();

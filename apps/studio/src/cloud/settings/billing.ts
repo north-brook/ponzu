@@ -65,26 +65,40 @@ export function longDate(at: string): string {
 }
 
 /**
- * The line under the total: what was used, in credits, and when the period ends. A team names
- * itself and its people; before a card the period "resets" rather than "bills". While Ponzu
- * can't bill, use past the free credits says it isn't billed yet.
+ * The total at the top: what is billed (or, before billing, used past the free credits) once
+ * there is any; until then what was used, all of it free, so the number never reads $0.00 beside
+ * rows that add up to more.
+ */
+export function headlineUsd(usage: Usage): number {
+  return billedCredits(usage) > 0 ? billedUsd(usage) : usage.usedCredits * usage.creditUsd;
+}
+
+/**
+ * The line under the total: first what the total is (used, billed, or past free), then the
+ * credits, and when the period ends. A team names itself and its people; before a card the period
+ * "resets" rather than "bills". While Ponzu can't bill, use past the free credits says it isn't
+ * billed yet.
  */
 export function usageLine(usage: Usage, team?: { name: string; people: number }): string {
   const credits = Math.floor(usage.usedCredits).toLocaleString("en-US");
-  const free =
-    usage.usedCredits <= usage.freeCredits
-      ? "all free"
-      : `${usage.freeCredits.toLocaleString("en-US")} of them free`;
+  const past = billedCredits(usage) > 0;
+  const what = !past ? "used" : usage.notBilled ? "past free" : "billed";
+  const free = !past
+    ? `all free of ${money(usage.freeCredits * usage.creditUsd, true)}`
+    : `${usage.freeCredits.toLocaleString("en-US")} of them free`;
   const end =
-    usage.notBilled && billedCredits(usage) > 0
+    usage.notBilled && past
       ? "not billed yet"
       : `${usage.card ? "bills" : "resets"} ${longDate(usage.periodEnd)}`;
   if (team) {
     const people = `${team.people} ${team.people === 1 ? "person" : "people"}`;
-    return `this month for ${team.name} · ${people} · ${credits} credits · ${end}`;
+    return `${what} this month in ${team.name} · ${people} · ${credits} credits${past ? "" : ", all free"} · ${end}`;
   }
-  return `this month · ${credits} credits, ${free} · ${end}`;
+  return `${what} this month · ${credits} credits, ${free} · ${end}`;
 }
+
+/** The least share of the bar that any use takes, so a few cents of it can be seen. */
+const MIN_SHOWN = 0.015;
 
 /**
  * The usage bar's two segments as shares of its width. The bar spans the free credits plus what
@@ -94,7 +108,9 @@ export function usageBar(usage: Usage): { free: number; billed: number } {
   const capCredits = usage.capUsd === null ? 0 : usage.capUsd / usage.creditUsd;
   const scale = usage.freeCredits + capCredits;
   if (scale <= 0) return { free: 0, billed: 0 };
-  const free = Math.min(usage.usedCredits, usage.freeCredits) / scale;
+  const used = Math.min(usage.usedCredits, usage.freeCredits) / scale;
+  // A little use still shows: a sliver, not an empty bar beside a total that says otherwise.
+  const free = used > 0 ? Math.max(used, MIN_SHOWN) : 0;
   const billed = Math.min(billedCredits(usage) / scale, 1 - free);
   return { free, billed };
 }

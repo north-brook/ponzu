@@ -309,6 +309,25 @@ test("a repo design is told where its checkout is and that Ponzu opens the pull 
   expect(run.opts.instructions).toContain("north/fern is checked out at");
   expect(run.opts.instructions).toContain("pz/hero");
   expect(run.opts.instructions).toContain("Ponzu opens and merges the pull request");
+  expect(run.opts.instructions).toContain("give it one in your first turn with update_design");
+});
+
+test("a repo design's agent describes its pull request, which the API keeps", async () => {
+  const root = await temp();
+  const { run, api } = await setup({
+    session: { repo: { owner: "north", name: "fern", defaultBranch: "main" }, branch: "pz/hero" },
+    prepare: async () => join(root, "fern"),
+  });
+  expect(run.opts.instructions).toContain("describe_pull_request");
+  const describe = run.opts.tools.find((t) => t.name === "describe_pull_request")!;
+  const result = await describe.run({ summary: "Adds the **Pro** pricing card." });
+  expect(result.text).toContain("when Ponzu opens it");
+  expect(api.summaries).toEqual(["Adds the **Pro** pricing card."]);
+});
+
+test("a Scratch design has no pull request to describe", async () => {
+  const { run } = await setup();
+  expect(run.opts.tools.map((t) => t.name)).not.toContain("describe_pull_request");
 });
 
 /* ------------------------------------------------------------------ */
@@ -820,6 +839,22 @@ test("a finished stretch is named by what it made, and a later one keeps the boa
     { label: 'Drawing "Pricing"', steps: 2, artboards: ["ab_pricing"] },
     { label: 'Drawing "Pricing"', steps: 1, artboards: ["ab_pricing"] },
   ]);
+});
+
+test("a question ends the stretch before it, so the thread reads in the order it happened", async () => {
+  const s = await setup({ doc: pricing() });
+  await turn(s);
+  await s.run.call("list_comments");
+  void s.run.ask("toolu_ask", { kind: "question", questions: [HEADLINE] });
+  await until(() => s.api.items().some((i) => i.kind === "notice"));
+  await s.run.call("set_text", { updates: [{ id: "n_plan", text: "Pro" }] });
+  s.run.say("msg_1", "Done.");
+  await until(() => s.api.items().filter((i) => i.kind === "tool" && !i.streaming).length === 2);
+  const kinds = s.api
+    .items()
+    .filter((i) => i.kind === "tool" || (i.kind === "notice" && i.payload.type === "question"))
+    .map((i) => i.kind);
+  expect(kinds).toEqual(["tool", "notice", "tool"]);
 });
 
 /* ------------------------------------------------------------------ */

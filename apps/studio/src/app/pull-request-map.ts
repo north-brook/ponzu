@@ -53,7 +53,7 @@ export function toPullRequestDetail(pr: Pull): PullRequestDetail {
     number: pr.number,
     url: pr.url,
     title: pr.title,
-    body: pr.body,
+    body: bodyForTab(pr.body),
     head: pr.head.ref,
     headSha: pr.head.sha,
     base: pr.base.ref,
@@ -105,6 +105,21 @@ export function toPullRequestDetail(pr: Pull): PullRequestDetail {
     })),
     filesTotal: pr.files.total,
   };
+}
+
+/**
+ * A description as the tab shows it: what Ponzu wrote for GitHub's readers taken out. The
+ * design's picture is HTML for GitHub's page (the tab draws HTML as text, and the design is open
+ * beside it anyway), the way back to Ponzu leads where the tab already is, and the markers around
+ * the agent's summary are for rewriting it. What anyone else wrote stays as written.
+ */
+export function bodyForTab(body: string): string {
+  return body
+    .replace(/<!-- ponzu:picture -->[\s\S]*?<!-- \/ponzu:picture -->/g, "")
+    .replace(/<!-- \/?ponzu:summary -->/g, "")
+    .replace(/^Designed in Ponzu: \[[^\n]*\]\(https:\/\/ponzu\.design\/[^\s)]*\)[ \t]*$/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 type HeadPr = Pick<

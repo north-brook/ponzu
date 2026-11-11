@@ -162,6 +162,7 @@ export class FakeRunnerApi {
       gitCredential: as((r, ask: GitCredentialRequest) => this.gitCredential(r, ask)),
       eraseGitCredential: as((r, ask: GitCredentialRequest) => this.eraseGitCredential(r, ask)),
       recordUsage: as((r, turns: TurnUsage[]) => this.recordUsage(r, turns)),
+      pullRequestSummary: as((r, summary: string) => this.pullRequestSummary(r, summary)),
     };
   }
 
@@ -331,6 +332,15 @@ export class FakeRunnerApi {
   async recordUsage(runner: string, turns: TurnUsage[]): Promise<void> {
     await this.enter("recordUsage", runner);
     for (const turn of turns) this.usage.set(turn.id, structuredClone(turn));
+  }
+
+  /** The agent's pull request summaries, in the order they came; none is open here. */
+  readonly summaries: string[] = [];
+
+  async pullRequestSummary(runner: string, summary: string): Promise<number | null> {
+    await this.enter("pullRequestSummary", runner);
+    this.summaries.push(summary);
+    return null;
   }
 
   async commit(runner: string, ops: Parameters<SyncTransport["commit"]>[0]) {

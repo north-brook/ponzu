@@ -109,7 +109,7 @@ icon svg[Settings] 16×16 rgb(169, 165, 155) stroke 1.5px
 text "Plan and usage" rgb(244, 243, 239) 600 18px Funnel Display
 icon svg[Close] 15×15 rgb(107, 104, 98) stroke 2px
 text "$156.00" rgb(244, 243, 239) 600 40px Funnel Display
-text "this month for Northbrook · 5 people · …" rgb(169, 165, 155) 400 13px Inter
+text "billed this month in Northbrook · 5 peo…" rgb(169, 165, 155) 400 13px Inter
 ground div[Usage this month] rgb(44, 43, 41)
 ground span[Usage this month] rgb(244, 243, 239)
 ground span[Usage this month] rgb(27, 27, 26)

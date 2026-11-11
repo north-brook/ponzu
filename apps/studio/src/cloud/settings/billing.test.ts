@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   atCap,
   billedUsd,
+  headlineUsd,
   money,
   nextCap,
   parseCap,
@@ -34,23 +35,27 @@ describe("plan and usage", () => {
   });
 
   test("speaks in dollars, with credits once in the line under", () => {
-    expect(usageLine(solo)).toBe("this month · 320 credits, 100 of them free · bills December 9");
+    expect(usageLine(solo)).toBe(
+      "billed this month · 320 credits, 100 of them free · bills December 9",
+    );
     expect(usageLine(team, { name: "Northbrook", people: 5 })).toBe(
-      "this month for Northbrook · 5 people · 2,060 credits · bills December 9",
+      "billed this month in Northbrook · 5 people · 2,060 credits · bills December 9",
     );
     expect(usageLine({ ...solo, usedCredits: 60, card: null, capUsd: null })).toBe(
-      "this month · 60 credits, all free · resets December 9",
+      "used this month · 60 credits, all free of $10 · resets December 9",
     );
   });
 
   test("before Ponzu can bill, use past the free credits is past free, and not billed yet", () => {
     const unbilled: Usage = { ...solo, card: null, notBilled: true };
-    expect(usageLine(unbilled)).toBe("this month · 320 credits, 100 of them free · not billed yet");
+    expect(usageLine(unbilled)).toBe(
+      "past free this month · 320 credits, 100 of them free · not billed yet",
+    );
     expect(pastFreeWord(unbilled)).toBe("past free");
     expect(pastFreeWord(solo)).toBe("billed");
     // All free: the period simply resets.
     expect(usageLine({ ...unbilled, usedCredits: 60 })).toBe(
-      "this month · 60 credits, all free · resets December 9",
+      "used this month · 60 credits, all free of $10 · resets December 9",
     );
     expect(parseCap("10", 22, "used past free")).toEqual({
       ok: false,
@@ -81,6 +86,17 @@ describe("plan and usage", () => {
     expect(atCap(over)).toBe(true);
     expect(atCap(solo)).toBe(false);
     expect(atCap({ ...solo, capUsd: null })).toBe(false);
+  });
+
+  test("with nothing past the free credits, the total is what was used, and the bar shows it", () => {
+    const little: Usage = { ...solo, usedCredits: 2, card: null, notBilled: true };
+    expect(headlineUsd(little)).toBeCloseTo(0.2);
+    expect(headlineUsd(solo)).toBeCloseTo(22);
+    expect(usageLine(little, { name: "Northbrook", people: 1 })).toBe(
+      "used this month in Northbrook · 1 person · 2 credits, all free · resets December 9",
+    );
+    expect(usageBar(little).free).toBeGreaterThanOrEqual(0.015);
+    expect(usageBar({ ...little, usedCredits: 0 }).free).toBe(0);
   });
 
   test("legend figures round down to whole dollars", () => {

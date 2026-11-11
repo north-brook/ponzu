@@ -682,7 +682,10 @@ secret's name. A Scratch design has no repo, so it has nowhere to keep one.
   committed by the app.
 - **Pull requests** are opened, read and merged by the API: read as the App, opened, merged
   and acted on as the person ("Pull requests" says why). The agent has no GitHub
-  API token; it hands the API its summary of the change.
+  API token; it hands the API its summary of the change with the runner's own tool,
+  `describe_pull_request` (beside the canvas tools, for a design with a repo), which posts
+  `/v1/runner/pull-request-summary`. Once a merge has gone through, the API deletes the
+  branch as the person, while it is still at the commit that merged.
 - **Claude.** The owner's credential (an OAuth token from `claude setup-token`, or
   an API key) is passed as an environment variable when the sandbox starts or
   resumes. It is never written to disk or baked into a snapshot. Moving it behind
@@ -1146,6 +1149,9 @@ GitHub user token (`githubUserToken`).
   token. Not measured: a base protected by rules, which takes the repo's administration
   permission to set up, and neither the App nor a token through it has that.
 - A person whose GitHub token is dead is asked to sign in again (401 `github_reauth_required`).
+- A design's link, `https://ponzu.design/designs/<id>` (a pull request's description, the
+  agent's messages), is a page of apps/web that hands the design to the Mac app as
+  `ponzu://design/<id>`, or offers the app.
 
 **Opening** is a draft from the branch into the default branch, titled with the design's name,
 whose description is the agent's summary, the design's first page as its preview showed it

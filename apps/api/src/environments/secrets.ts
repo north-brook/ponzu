@@ -89,6 +89,17 @@ export function secretNameProblem(name: string): "invalid" | "reserved" | null {
   return null;
 }
 
+/**
+ * Why a reserved name is, in words for the person who typed it: the prefix it starts with, or
+ * that the sandbox itself depends on the name.
+ */
+export function reservedReason(name: string): string {
+  const prefix = RESERVED_PREFIXES.find((p) => name.startsWith(p));
+  return prefix
+    ? `Names starting with ${prefix} are kept for Ponzu, Claude and the sandbox's own tools. Use another name.`
+    : `${name} is a name the sandbox itself depends on. Use another name.`;
+}
+
 /** Where a secret's sealed value lives: its repo and name are its row. */
 export function secretBinding(repoId: string, name: string): Binding {
   return { column: "repo_secrets.encrypted_value", row: `${repoId}/${name}` };

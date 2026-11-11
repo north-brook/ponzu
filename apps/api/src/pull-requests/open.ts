@@ -55,7 +55,9 @@ export async function openPullRequest(
   if (target instanceof ApiError) throw target;
   const found = await readPullRequest(deps, target);
   const { pullRequest: existing, branch } = found.read;
-  const mergedAndDone = existing?.state === "merged" && branch?.sha === existing.head.sha;
+  // Its branch deleted once merged is done with too, until something is pushed to it again.
+  const mergedAndDone =
+    existing?.state === "merged" && (!branch || branch.sha === existing.head.sha);
   if (isOpen(existing) || mergedAndDone) {
     await recordCurrent(deps, target.designId, found);
     return { tab: toTab(target, found.read, deps.config.githubApp.slug), opened: false };

@@ -69,6 +69,12 @@ export interface RunnerApi {
   eraseGitCredential(ask: GitCredentialRequest): Promise<void>;
   /** Safe to repeat: turns are recorded by their ids. */
   recordUsage(turns: TurnUsage[]): Promise<void>;
+  /**
+   * The agent's words on what its branch changes, for the pull request's description. Answers
+   * the number of the open pull request they were written into, or null while none is open (the
+   * API keeps them for the one that opens). Safe to repeat: the last one sent wins.
+   */
+  pullRequestSummary(summary: string): Promise<number | null>;
 }
 
 /** Whether a failed call is worth making again: the API was out of reach, or said to wait. */
@@ -118,5 +124,6 @@ export function watchFatal(api: RunnerApi, onFatal: (err: ApiError) => void): Ru
     gitCredential: watch(api.gitCredential.bind(api)),
     eraseGitCredential: watch(api.eraseGitCredential.bind(api)),
     recordUsage: watch(api.recordUsage.bind(api)),
+    pullRequestSummary: watch(api.pullRequestSummary.bind(api)),
   };
 }

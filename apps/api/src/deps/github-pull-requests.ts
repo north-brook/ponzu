@@ -236,6 +236,11 @@ export interface GithubPullRequests {
     userToken: string,
     input: { fullName: string; number: number },
   ): Promise<PersonResult>;
+  /** As the person: deletes a branch. One already gone is done. */
+  deleteBranch(
+    userToken: string,
+    input: { fullName: string; branch: string },
+  ): Promise<PersonResult>;
 }
 
 /** Reading takes these; statuses are what CI that reports the old way shows up as. */
@@ -435,6 +440,18 @@ export function createPullRequestCalls({ octokit, asApp }: GithubTransport): Git
         }),
       );
       return personResult(closed, {});
+    },
+
+    async deleteBranch(userToken, { fullName, branch }) {
+      const deleted = await answer("user", () =>
+        octokit.request("DELETE /repos/{owner}/{repo}/git/refs/{ref}", {
+          ...repoParams(fullName),
+          ref: `heads/${branch}`,
+          headers: bearer(userToken),
+        }),
+      );
+      // 422 "Reference does not exist": someone, or the repo's own setting, deleted it first.
+      return personResult(deleted, { 422: "done" });
     },
   };
 }
