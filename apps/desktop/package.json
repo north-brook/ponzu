@@ -7,8 +7,11 @@
   "homepage": "https://ponzu.design",
   "type": "module",
   "main": "dist/main.cjs",
+  "exports": {
+    "./bridge": "./src/bridge.ts"
+  },
   "scripts": {
-    "build": "bun ../../scripts/release-notes.ts dist/release-notes.json && bun build src/main.ts --target node --format cjs --outfile dist/main.cjs --external electron && bun build src/preload.ts --target node --format cjs --outfile dist/preload.cjs --external electron && bun build ../cli/src/index.ts --compile --external playwright-core --external @ponzu/render/chromium --external @opentelemetry/api --external rxjs --env='PONZU_POSTHOG_*' --outfile dist/server/ponzu",
+    "build": "rm -rf dist && bun build src/main.ts --target node --format cjs --outfile dist/main.cjs --external electron && bun build src/preload.ts --target node --format cjs --outfile dist/preload.cjs --external electron",
     "start": "bun run build && ./run-dev.sh",
     "dist": "bun run build && bun run --filter @ponzu/studio build && electron-builder --mac --arm64 --publish never",
     "package:dir": "bun run build && bun run --filter @ponzu/studio build && electron-builder --dir --publish never",
@@ -16,8 +19,9 @@
     "icons:platforms": "swift scripts/make-platform-icons.swift build/icon-1024.png build"
   },
   "devDependencies": {
+    "@ponzu/canvas": "workspace:*",
+    "@ponzu/client": "workspace:*",
     "@ponzu/core": "workspace:*",
-    "@ponzu/server": "workspace:*",
     "@types/node": "^26.6.5",
     "electron": "^44.9.3",
     "electron-builder": "^26.15.3"
@@ -39,13 +43,8 @@
       {
         "from": "../studio/dist",
         "to": "studio"
-      },
-      {
-        "from": "dist/server",
-        "to": "server"
       }
     ],
-    "afterPack": "./scripts/quicklook.cjs",
     "afterSign": "./scripts/notarize.cjs",
     "protocols": [
       {
@@ -72,37 +71,10 @@
         }
       ],
       "icon": "build/icon.icns",
-      "fileAssociations": [
-        {
-          "ext": "design",
-          "name": "Ponzu Design",
-          "role": "Editor",
-          "isPackage": true,
-          "icon": "build/icon.icns"
-        }
-      ],
-      "extendInfo": {
-        "UTExportedTypeDeclarations": [
-          {
-            "UTTypeIdentifier": "design.ponzu.design",
-            "UTTypeDescription": "Ponzu Design",
-            "UTTypeConformsTo": [
-              "com.apple.package",
-              "public.composite-content"
-            ],
-            "UTTypeTagSpecification": {
-              "public.filename-extension": [
-                "design"
-              ]
-            }
-          }
-        ]
-      },
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
-      "sign": "./scripts/quicklook.cjs",
       "notarize": false,
       "artifactName": "${productName}-${version}-${arch}-mac.${ext}"
     },
@@ -142,14 +114,6 @@
       "icon": "build/icon.ico",
       "extraResources": [
         {
-          "from": "build",
-          "to": "tray",
-          "filter": [
-            "tray.png",
-            "tray@2x.png"
-          ]
-        },
-        {
           "from": "build/uninstall.ps1",
           "to": "uninstall.ps1"
         }
@@ -159,21 +123,8 @@
       "executableName": "ponzu",
       "icon": "build/icons",
       "category": "Graphics",
-      "synopsis": "A design canvas you drive with HTML and CSS",
+      "synopsis": "Design with Claude on a canvas, and ship pull requests",
       "maintainer": "Northbrook <https://ponzu.design>",
-      "mimeTypes": [
-        "application/x-ponzu-design"
-      ],
-      "extraResources": [
-        {
-          "from": "build",
-          "to": "tray",
-          "filter": [
-            "tray.png",
-            "tray@2x.png"
-          ]
-        }
-      ],
       "target": [
         {
           "target": "AppImage",
@@ -199,8 +150,7 @@
       "artifactName": "${productName}-x64.${ext}"
     },
     "deb": {
-      "artifactName": "${productName}-x64.${ext}",
-      "afterRemove": "build/deb-after-remove.sh"
+      "artifactName": "${productName}-x64.${ext}"
     }
   },
   "dependencies": {

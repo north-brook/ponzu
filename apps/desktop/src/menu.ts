@@ -1,0 +1,94 @@
+import { app, Menu, shell } from "electron";
+import type { MenuCommand } from "./bridge.ts";
+
+/*
+ * The app's menus. What the studio carries out (a new design, Settings) goes to it as a
+ * command, so a shortcut does the same thing from anywhere in the window; signing out and
+ * updating are the main process's own.
+ */
+
+export interface MenuActions {
+  command(command: MenuCommand): void;
+  checkForUpdates(): void;
+  signOut(): void;
+}
+
+const SIGN_OUT = "sign-out";
+
+export function buildMenu(actions: MenuActions): void {
+  const mac = process.platform === "darwin";
+  const account: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: "Settings…",
+      accelerator: "CmdOrCtrl+,",
+      click: () => actions.command("settings"),
+    },
+    { type: "separator" },
+    { id: SIGN_OUT, label: "Sign Out", enabled: false, click: () => actions.signOut() },
+  ];
+  const update: Electron.MenuItemConstructorOptions = {
+    label: "Check for Updates…",
+    click: () => actions.checkForUpdates(),
+  };
+  const template: Electron.MenuItemConstructorOptions[] = [
+    ...(mac
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              { role: "about" as const },
+              update,
+              { type: "separator" as const },
+              ...account,
+              { type: "separator" as const },
+              { role: "services" as const },
+              { type: "separator" as const },
+              { role: "hide" as const },
+              { role: "hideOthers" as const },
+              { role: "unhide" as const },
+              { type: "separator" as const },
+              { role: "quit" as const },
+            ],
+          },
+        ]
+      : []),
+    {
+      label: "File",
+      submenu: [
+        {
+          label: "New Design",
+          accelerator: "CmdOrCtrl+N",
+          click: () => actions.command("new-design"),
+        },
+        { type: "separator" },
+        mac ? { role: "close" } : { role: "quit" },
+      ],
+    },
+    { role: "editMenu" },
+    {
+      label: "View",
+      submenu: [
+        { role: "reload" },
+        { role: "toggleDevTools" },
+        { type: "separator" },
+        { role: "togglefullscreen" },
+      ],
+    },
+    { role: "windowMenu" },
+    {
+      role: "help",
+      submenu: [
+        { label: "ponzu.design", click: () => void shell.openExternal("https://ponzu.design") },
+        // Off the Mac there's no app menu to hold these.
+        ...(mac ? [] : [{ type: "separator" as const }, update, ...account]),
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+/** Sign Out only means something while someone is signed in. */
+export function setSignedIn(signedIn: boolean): void {
+  const item = Menu.getApplicationMenu()?.getMenuItemById(SIGN_OUT);
+  if (item) item.enabled = signedIn;
+}

@@ -46,6 +46,7 @@ export type { Fetch, Profile } from "./rpc.ts";
 export {
   createSession,
   type KeyValueStorage,
+  SESSION_KEY,
   type Session,
   type SessionHost,
   type SessionOptions,
