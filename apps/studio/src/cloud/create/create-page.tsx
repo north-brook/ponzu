@@ -1,13 +1,13 @@
-import { type RefObject, useLayoutEffect, useRef, useState } from "react";
+import { type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Idea, PendingAttachment, Repo } from "../model.ts";
 import { cn } from "../ui/cn.ts";
 import { NewDesignComposer } from "./composer.tsx";
 import type { ProjectChoice } from "./create.ts";
-import { Ideas } from "./ideas.tsx";
+import { IDEAS_ROOM, Ideas, IdeasSkeleton } from "./ideas.tsx";
 import type { ModelChoice } from "./model-picker.tsx";
 import { RepoPicker } from "./repo-picker.tsx";
 
-/** Where the column's top sits when it needs room below: for ideas, or the open repo picker. */
+/** Where the column's top sits when it needs room below, for the open repo picker. */
 const TOP = 130;
 /** The open repo picker hangs this far under the chip (its `sideOffset`). */
 const PICKER_GAP = 8;
@@ -29,7 +29,7 @@ export interface CreatePageProps {
   onAllowMore: () => void;
   /**
    * Prompts for the chosen repo; null shows none (the workspace has designs, or Scratch), and
-   * "loading" none yet, with their room kept.
+   * "loading" their skeleton, in the room kept for them.
    */
   ideas: Idea[] | "loading" | null;
   /** An idea was picked into the composer: its place in the list, from 0. */
@@ -40,11 +40,12 @@ export interface CreatePageProps {
 }
 
 /**
- * Starting a design, in the canvas pane: the question, the composer and the repo chip. On a
- * workspace's first visit ideas follow below. The column sits a little above centre, and rises
- * to a fixed top when it needs the room below: on a first visit, where ideas will be (from the
- * first frame, so it never moves when they come or don't), or when the repo picker opens and
- * its list would not fit below the chip where the column is.
+ * Starting a design, in the canvas pane: the question, the composer and the repo chip, and on a
+ * workspace's first visit the ideas below them. The column is centred in the pane as one piece,
+ * a little above true centre. Ideas have their room in it from the first frame (two rows of
+ * tiles: a skeleton while they are made, then the ideas, or nothing if none come), so the
+ * composer never moves when they arrive or don't. The column rises to a fixed top only when the
+ * repo picker opens and its list would not fit below the chip where the column is.
  */
 export function CreatePage({
   prompt,
@@ -72,7 +73,7 @@ export function CreatePage({
   // come, or a switch to Scratch, don't move the composer down under the person.
   const [expectsIdeas, setExpectsIdeas] = useState(ideas !== null);
   if (ideas !== null && !expectsIdeas) setExpectsIdeas(true);
-  const lift = useCentreLift(pane, column, picker, expectsIdeas, pickerOpen);
+  const lift = useCentreLift(pane, column, picker, pickerOpen);
 
   const pick = (idea: Idea) => {
     onPromptChange(idea.prompt);
@@ -86,7 +87,7 @@ export function CreatePage({
   };
 
   return (
-    <div ref={pane} className="absolute inset-0 overflow-y-auto">
+    <div ref={pane} data-create-composer className="absolute inset-0 overflow-y-auto">
       <div
         ref={column}
         className={cn(
@@ -120,12 +121,18 @@ export function CreatePage({
             contentRef={setPicker}
           />
         </div>
-        {/* 8 after the chip, as the column spaces its rows, and 22 more. Nothing while they're
-            made (onboarding 4.6): they rise into the room the column already left them. */}
-        {Array.isArray(ideas) && ideas.length > 0 ? (
+        {/* 8 after the chip, as the column spaces its rows, and 22 more: the ideas' room, kept
+            whether they are here yet or not. */}
+        {expectsIdeas ? (
           // Prompts made from the repo: masked in a private recording (app/analytics/privacy.ts).
-          <div data-replay="mask" className="mt-[30px]">
-            <Ideas ideas={ideas} onPick={pick} />
+          // Its height is fixed, not a minimum: ideas that run to a third line hang below it
+          // rather than growing the column, which would shift everything above them.
+          <div data-replay="mask" className="mt-[30px]" style={{ height: IDEAS_ROOM }}>
+            {ideas === "loading" ? (
+              <IdeasSkeleton />
+            ) : Array.isArray(ideas) && ideas.length > 0 ? (
+              <Ideas ideas={ideas} onPick={pick} />
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -135,17 +142,16 @@ export function CreatePage({
 
 /**
  * How far below TOP the column sits to be centred in the pane, 40px high of true centre; zero
- * when it should sit at TOP (ideas follow) or doesn't fit. The open repo picker lifts it only
- * when its list, as tall as it really is, wouldn't fit below the chip where the column is, so the
- * page doesn't jump for nothing; once lifted it stays up while the picker is open (typing a
- * search shortens the list, and the column shouldn't chase it). `measured` is false until the
- * first measure, so the column doesn't glide into place on arrival.
+ * when it doesn't fit. The open repo picker lifts it to TOP only when its list, as tall as it
+ * really is, wouldn't fit below the chip where the column is, so the page doesn't jump for
+ * nothing; once lifted it stays up while the picker is open (typing a search shortens the list,
+ * and the column shouldn't chase it). `measured` is false until the column has been
+ * drawn in its place once, so it doesn't glide into place on arrival.
  */
 function useCentreLift(
   pane: RefObject<HTMLDivElement | null>,
   column: RefObject<HTMLDivElement | null>,
   picker: HTMLDivElement | null,
-  top: boolean,
   pickerOpen: boolean,
 ) {
   const [state, setState] = useState({ centre: 0, roomBelow: 0, measured: false });
@@ -191,6 +197,15 @@ function useCentreLift(
   const short = pickerOpen && needs !== null && state.roomBelow < needs;
   if (short && !raised) setRaised(true);
 
-  const lifted = top || (pickerOpen && (raised || short));
-  return { offset: lifted ? 0 : state.centre, measured: state.measured };
+  // The column may glide only once it has been drawn where it belongs: turning the transition
+  // on in the same pass that first places it would slide it down from the top on arrival.
+  const [placed, setPlaced] = useState(false);
+  useEffect(() => {
+    if (!state.measured) return;
+    const frame = requestAnimationFrame(() => setPlaced(true));
+    return () => cancelAnimationFrame(frame);
+  }, [state.measured]);
+
+  const lifted = pickerOpen && (raised || short);
+  return { offset: lifted ? 0 : state.centre, measured: placed };
 }
