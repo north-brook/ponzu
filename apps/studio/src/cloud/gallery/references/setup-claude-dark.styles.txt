@@ -15,9 +15,9 @@ text "Claude Subscription" rgb(244, 243, 239) 500 14px Inter
 text "Pro or Max. Designs run on your plan." rgb(107, 104, 98) 400 12px Inter
 text "Sign in" rgb(17, 17, 16) 500 12px Inter
 ground button rgb(244, 243, 239)
-icon svg 12×12 rgb(17, 17, 16) stroke 2px
+icon svg 12×12 rgb(17, 17, 16) stroke 2.4px
 ground span rgb(22, 22, 21)
-icon svg 16×16 rgb(169, 165, 155) stroke 1.8px
+icon svg 16×16 rgb(169, 165, 155) stroke 1.7px
 text "Anthropic API key" rgb(244, 243, 239) 500 14px Inter
 text "Pay per token through the Console." rgb(107, 104, 98) 400 12px Inter
 text "Add key" rgb(244, 243, 239) 500 12px Inter

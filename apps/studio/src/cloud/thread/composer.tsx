@@ -135,9 +135,9 @@ export function RailComposer({
           tipSide="top"
           disabled={gate !== null}
           onClick={() => picker.current?.click()}
-          className="size-7 rounded-pill text-icon-soft"
+          className="size-7 rounded-pill"
         >
-          <Icon icon={Add01Icon} size={16} stroke={1.8} />
+          <Icon icon={Add01Icon} step="control" />
         </IconButton>
         <input
           ref={picker}
@@ -166,7 +166,7 @@ export function RailComposer({
         {button === "stop" ? (
           <StopButton onStop={onStop} />
         ) : (
-          <SendButton size={28} iconSize={13} disabled={button === "waiting"} onClick={onSend} />
+          <SendButton size={28} disabled={button === "waiting"} onClick={onSend} />
         )}
       </div>
     </div>
@@ -219,7 +219,7 @@ export function AttachmentChip({
           onClick={onRetry}
           className="absolute inset-0 grid cursor-default place-items-center rounded-8 text-danger outline-none focus-ring"
         >
-          <Icon icon={RefreshIcon} size={16} stroke={2} />
+          <Icon icon={RefreshIcon} step="control" />
         </button>
       ) : null}
       <button
@@ -228,7 +228,7 @@ export function AttachmentChip({
         onClick={onRemove}
         className="absolute -top-1.5 -right-1.5 grid size-[18px] cursor-default place-items-center rounded-pill bg-action text-action-ink opacity-0 shadow-[0_0_0_2px_var(--c-surface)] outline-none transition-opacity duration-(--dur-hover) focus-ring focus-visible:opacity-100 group-hover:opacity-100"
       >
-        <Icon icon={Cancel01Icon} size={10} stroke={2.6} />
+        <Icon icon={Cancel01Icon} step="tick" onFill />
       </button>
     </li>
   );

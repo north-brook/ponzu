@@ -60,14 +60,9 @@ export function ChecksMark({ glyph, tone }: { glyph: ChecksGlyph; tone: Tone }) 
       ) : glyph === "running" ? (
         <span className={cn("size-1.5 rounded-pill bg-current", colored && "text-pr-running")} />
       ) : glyph === "failing" ? (
-        <Icon
-          icon={Cancel01Icon}
-          size={10}
-          stroke={2.6}
-          className={cn(colored && "text-pr-failing")}
-        />
+        <Icon icon={Cancel01Icon} step="tick" className={cn(colored && "text-pr-failing")} />
       ) : (
-        <Icon icon={Tick02Icon} size={10} stroke={2.6} className={cn(colored && "text-pr-open")} />
+        <Icon icon={Tick02Icon} step="tick" className={cn(colored && "text-pr-open")} />
       )}
     </span>
   );
@@ -89,8 +84,7 @@ export function PullRequestMark({
     <span className="flex shrink-0 items-center gap-1 font-mono text-11">
       <Icon
         icon={PULL_REQUEST_ICONS[state]}
-        size={11}
-        stroke={2}
+        step="meta"
         className={tone === "colored" ? ICON_COLORS[state] : undefined}
       />
       #{pr.number}
@@ -120,9 +114,7 @@ export function PullRequestTab({
       onClick={onToggle}
       className={cn(
         "h-7 px-2.5",
-        active
-          ? "bg-raised text-ink shadow-raised hover:bg-raised"
-          : "text-muted [&_svg]:text-icon-soft",
+        active ? "bg-raised text-ink shadow-raised hover:bg-raised" : "text-muted",
       )}
     >
       <PullRequestMark pr={pr} tone={active ? "colored" : "neutral"} checks />

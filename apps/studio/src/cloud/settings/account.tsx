@@ -67,7 +67,7 @@ export function AccountSection({
             onClick={onCreateTeam}
             className="-mx-1 flex cursor-default items-center gap-2.5 rounded-6 px-1 py-1 text-13 text-muted outline-none transition-colors duration-(--dur-hover) focus-ring hover:text-ink"
           >
-            <Icon icon={Add01Icon} size={16} stroke={1.8} className="text-faint" />
+            <Icon icon={Add01Icon} step="control" />
             Create a team
           </button>
         </Row>

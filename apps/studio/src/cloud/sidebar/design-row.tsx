@@ -13,6 +13,7 @@ import { type RowIndicator, rowIndicator } from "../status.ts";
 import { AvatarStack } from "../ui/avatar.tsx";
 import { cn } from "../ui/cn.ts";
 import { Icon } from "../ui/icon.tsx";
+import { TEXT } from "../ui/ladder.ts";
 import { Slice } from "../ui/marks.tsx";
 import {
   ContextMenuContent,
@@ -127,8 +128,7 @@ export const DesignRow = memo(function DesignRow({
           )}
           {pr ? (
             <span className="ml-auto flex shrink-0 items-center gap-1 pl-1.5">
-              <Icon icon={PULL_REQUEST_ICONS[pullRequestIcon(pr)]} size={11} stroke={1.9} />#
-              {pr.number}
+              <Icon icon={PULL_REQUEST_ICONS[pullRequestIcon(pr)]} step="meta" />#{pr.number}
             </span>
           ) : null}
         </span>
@@ -194,7 +194,7 @@ export const DesignRow = memo(function DesignRow({
         )}
         <ContextMenuSeparator />
         <ContextMenuItem
-          leading={<Icon icon={Delete02Icon} size={16} stroke={1.8} />}
+          leading={<Icon icon={Delete02Icon} step="control" />}
           onSelect={() => onAction(design, "delete")}
           className="text-danger"
         >
@@ -207,17 +207,17 @@ export const DesignRow = memo(function DesignRow({
 
 /** An action's icon in the row's menu, as the workspace menu sets its own. */
 function MenuIcon({ icon }: { icon: Parameters<typeof Icon>[0]["icon"] }) {
-  return <Icon icon={icon} size={16} stroke={1.8} className="text-muted" />;
+  return <Icon icon={icon} step="control" className="text-muted" />;
 }
 
 /** A line of a row's quiet facts: the repo, the branch, the pull request. */
-const META = "flex h-[14px] items-center gap-1.5 font-mono text-11 text-faint";
+const META = `flex h-[14px] items-center gap-1.5 ${TEXT.meta}`;
 
 /** One of them: a small icon and its word, cut short when the row is narrow. */
 function Meta({ icon, text }: { icon: Parameters<typeof Icon>[0]["icon"]; text: string }) {
   return (
     <span className="flex min-w-0 items-center gap-1 whitespace-nowrap">
-      <Icon icon={icon} size={11} stroke={1.9} />
+      <Icon icon={icon} step="meta" />
       <span className="truncate">{text}</span>
     </span>
   );

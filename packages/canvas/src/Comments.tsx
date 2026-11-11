@@ -148,7 +148,7 @@ export function Composer({
         onKeyDown={(e) => onFieldKey(e, submit, onCancel)}
       />
       <Button size="icon-lg" disabled={!text.trim()} onClick={submit} aria-label="Send">
-        <Icon name="send" size={14} />
+        <Icon name="send" step="inline" onFill />
       </Button>
     </div>
   );
@@ -331,17 +331,17 @@ export function ThreadCard({
         <div className="pz:absolute pz:top-1.5 pz:right-1.5 pz:z-[1] pz:flex pz:gap-0.5 pz:rounded-lg pz:bg-card">
           {resolved ? (
             <Button variant="ghost" size="icon" onClick={reopen} title="Resolved · Reopen">
-              <Icon name="undo" size={15} />
+              <Icon name="undo" step="control" />
             </Button>
           ) : (
             <Button variant="ghost" size="icon" onClick={resolve} title="Resolve">
-              <Icon name="check" size={15} />
+              <Icon name="check" step="control" />
             </Button>
           )}
           <Menu
             trigger={
               <Button variant="ghost" size="icon" title="More">
-                <Icon name="more" size={15} />
+                <Icon name="more" step="control" />
               </Button>
             }
             items={[
@@ -349,14 +349,14 @@ export function ThreadCard({
                 ? [
                     {
                       label: "Edit",
-                      icon: <Icon name="edit" size={14} />,
+                      icon: <Icon name="edit" step="control" />,
                       onSelect: () => setEditing(first.id),
                     },
                   ]
                 : []),
               {
                 label: "Delete",
-                icon: <Icon name="trash" size={14} />,
+                icon: <Icon name="trash" step="control" />,
                 danger: true,
                 onSelect: remove,
               },
@@ -415,7 +415,7 @@ export function ThreadCard({
                     onClick={() => setEditing(m.id)}
                     title="Edit"
                   >
-                    <Icon name="edit" size={14} />
+                    <Icon name="edit" step="control" />
                   </Button>
                   <Button
                     variant="ghost"
@@ -423,7 +423,7 @@ export function ThreadCard({
                     onClick={() => removeMessage(m.id)}
                     title="Delete"
                   >
-                    <Icon name="trash" size={14} />
+                    <Icon name="trash" step="control" />
                   </Button>
                 </div>
               )}

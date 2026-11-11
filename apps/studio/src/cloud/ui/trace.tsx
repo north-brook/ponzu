@@ -109,7 +109,7 @@ function TraceCollapsibleTrigger({
     >
       {children}
       <TraceIcon className="transition-transform duration-(--dur-pop) ease-(--ease-out) group-aria-expanded/trace-collapsible-trigger:rotate-90">
-        <Icon icon={ArrowRight01Icon} size={11} stroke={2} />
+        <Icon icon={ArrowRight01Icon} step="meta" />
       </TraceIcon>
     </CollapsibleTrigger>
   );

@@ -52,7 +52,7 @@ export function NextActionButton({
       onClick={why ? undefined : () => onRun(action)}
       className="aria-disabled:opacity-35 aria-disabled:hover:bg-action aria-disabled:active:bg-action"
     >
-      <Icon icon={icon} size={13} stroke={2} />
+      <Icon icon={icon} step="small" onFill />
       {label}
     </Button>
   );

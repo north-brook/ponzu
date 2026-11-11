@@ -17,6 +17,7 @@ import { who } from "../thread/thread.ts";
 import { Button, SendButton } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
 import { Icon } from "../ui/icon.tsx";
+import { TEXT } from "../ui/ladder.ts";
 import { safeHref } from "../ui/markdown.ts";
 import { FIELD, pressToFocus } from "../ui/press-to-focus.ts";
 import { Prose } from "../ui/prose.tsx";
@@ -221,13 +222,7 @@ export function NeedsYou({
               className="max-h-[100px] min-w-0 flex-1 resize-none bg-transparent py-1 text-13 text-ink leading-5 outline-none [caret-color:var(--c-ink)] [field-sizing:content] [scrollbar-width:thin] placeholder:text-faint"
             />
           )}
-          <SendButton
-            size={28}
-            iconSize={14}
-            disabled={!ready}
-            aria-busy={busy || undefined}
-            onClick={advance}
-          />
+          <SendButton size={28} disabled={!ready} aria-busy={busy || undefined} onClick={advance} />
         </div>
       )}
       {ask.kind === "secret" && !closed ? (
@@ -260,7 +255,7 @@ function Pager({ at, count, onGo }: { at: number; count: number; onGo: (to: numb
         onClick={() => onGo(at - 1)}
         className={step}
       >
-        <Icon icon={ArrowLeft01Icon} size={12} stroke={2.2} />
+        <Icon icon={ArrowLeft01Icon} step="small" />
       </button>
       <span aria-live="polite">
         {at + 1}/{count}
@@ -272,7 +267,7 @@ function Pager({ at, count, onGo }: { at: number; count: number; onGo: (to: numb
         onClick={() => onGo(at + 1)}
         className={step}
       >
-        <Icon icon={ArrowRight01Icon} size={12} stroke={2.2} />
+        <Icon icon={ArrowRight01Icon} step="small" />
       </button>
     </div>
   );
@@ -331,7 +326,7 @@ function PageBody({
               {ask.description ? (
                 <p className="m-0 text-12 text-muted leading-[1.4]">{ask.description}</p>
               ) : null}
-              <p className="m-0 font-mono text-11 text-faint">{ask.tool}</p>
+              <p className={cn("m-0", TEXT.meta)}>{ask.tool}</p>
             </div>
           )}
           <Options
@@ -393,7 +388,7 @@ function PageBody({
                     {draft.chosen.length ? "Opened. Send when you're done there." : href}
                   </span>
                 </span>
-                <Icon icon={ArrowUpRight01Icon} size={14} stroke={1.9} className="text-icon-soft" />
+                <Icon icon={ArrowUpRight01Icon} step="inline" className="text-icon-soft" />
               </button>
             </div>
           ) : (
@@ -497,7 +492,7 @@ function Options({
                 <span className="text-12 text-muted leading-[1.4]">{o.description}</span>
               ) : null}
             </span>
-            {on ? <Icon icon={Tick02Icon} size={15} stroke={2.4} /> : null}
+            {on ? <Icon icon={Tick02Icon} step="inline" /> : null}
           </button>
         );
       })}

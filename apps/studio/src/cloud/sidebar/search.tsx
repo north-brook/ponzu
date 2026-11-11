@@ -11,9 +11,11 @@ import {
 import { moveSelection, type ResultKey, resultKeys, segments } from "../search.ts";
 import { ago, useNow } from "../time.ts";
 import { Avatar } from "../ui/avatar.tsx";
+import { cn } from "../ui/cn.ts";
 import { FadeScroll } from "../ui/fade-scroll.tsx";
 import { Icon } from "../ui/icon.tsx";
 import { Kbd } from "../ui/kbd.tsx";
+import { TEXT } from "../ui/ladder.ts";
 import { DesignPreviewImage } from "./design-preview.tsx";
 
 const LIST_ID = "search-results";
@@ -69,7 +71,7 @@ export function SearchField({
 
   return (
     <div className="flex h-[34px] shrink-0 items-center gap-2 rounded-9 bg-surface pr-2 pl-2.5 shadow-[0_0_0_1px_var(--c-rule)]">
-      <Icon icon={Search01Icon} size={15} stroke={1.8} className="text-icon-soft" />
+      <Icon icon={Search01Icon} step="inline" className="text-icon-soft" />
       <input
         type="search"
         role="combobox"
@@ -188,7 +190,7 @@ export function SearchResultsView({
             option(
               `board:${hit.id}`,
               <span className="grid h-[26px] w-10 shrink-0 place-items-center rounded-4 bg-hover text-icon-soft">
-                <Icon icon={DashboardSquare01Icon} size={14} stroke={1.8} />
+                <Icon icon={DashboardSquare01Icon} step="inline" />
               </span>,
               <Highlighted text={hit.name} matches={hit.matches} />,
               `in ${hit.design.name}`,
@@ -226,7 +228,7 @@ function Group<T>({
   return (
     // biome-ignore lint/a11y/useSemanticElements: a listbox groups its options with role="group"
     <div role="group" aria-labelledby={id} className="mt-2.5 flex flex-col gap-px">
-      <span id={id} className="px-2 pb-1 font-medium text-11 text-faint">
+      <span id={id} className={cn("px-2 pb-1", TEXT.label)}>
         {label}
       </span>
       {hits.map(children)}

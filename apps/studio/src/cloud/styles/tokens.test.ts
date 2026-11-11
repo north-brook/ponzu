@@ -60,7 +60,6 @@ for (const [theme, i] of [
   });
 
   test(`icons and the focus ring hold 3:1 in ${theme}`, () => {
-    expect(worst("icon-strong", i)).toBeGreaterThanOrEqual(3);
     expect(worst("icon-soft", i)).toBeGreaterThanOrEqual(3);
     const ring = token("focus")[0].match(/#[0-9a-f]{6}/gi)!;
     expect(contrast(i === 0 ? ring[0]! : ring[1]!, token("chrome")[i])).toBeGreaterThanOrEqual(3);

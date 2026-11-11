@@ -126,7 +126,7 @@ function PhoneMock() {
               className="grid size-8 shrink-0 place-items-center rounded-pill"
               style={{ background: PHONE.glass }}
             >
-              <Icon icon={Mic01Icon} size={16} stroke={1.8} />
+              <Icon icon={Mic01Icon} step="control" />
             </span>
             <span
               className="flex h-8 min-w-0 flex-1 items-center justify-center gap-[3px] overflow-hidden rounded-pill px-3"
@@ -145,7 +145,7 @@ function PhoneMock() {
               className="grid size-8 shrink-0 place-items-center rounded-pill"
               style={{ background: PHONE.ink, color: PHONE.sheet }}
             >
-              <Icon icon={ArrowUp02Icon} size={16} stroke={2.4} />
+              <Icon icon={ArrowUp02Icon} step="control" onFill />
             </span>
           </div>
           <span

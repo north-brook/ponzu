@@ -20,14 +20,14 @@ ground span rgb(79, 90, 61)
 text "Fablefuel" rgb(17, 17, 16) 500 14px Inter
 text "fablefuel · 12 people" rgb(169, 165, 155) 400 12px Inter
 text "Ready" rgb(94, 91, 84) 500 12px Inter
-icon svg 14×14 rgb(17, 17, 16) stroke 2.2px
+icon svg 14×14 rgb(17, 17, 16) stroke 1.9px
 ground img shadow rgb(232, 230, 224) 0px 0px 0px 1px
 text "Northbrook" rgb(17, 17, 16) 500 14px Inter
 text "north-brook · 5 people" rgb(169, 165, 155) 400 12px Inter
 text "Ready" rgb(94, 91, 84) 500 12px Inter
-icon svg 14×14 rgb(17, 17, 16) stroke 2.2px
+icon svg 14×14 rgb(17, 17, 16) stroke 1.9px
 text "Don't see an organization? Grant access…" rgb(94, 91, 84) 500 12px Inter
-icon svg 11×11 rgb(128, 124, 115) stroke 2px
+icon svg 11×11 rgb(128, 124, 115) stroke 2.2px
 text "Continue" rgb(255, 255, 255) 500 13px Inter
 ground button rgb(17, 17, 16)
-icon svg 14×14 rgb(255, 255, 255) stroke 2px
+icon svg 14×14 rgb(255, 255, 255) stroke 2.3px

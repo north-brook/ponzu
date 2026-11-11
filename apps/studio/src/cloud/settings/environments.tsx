@@ -10,9 +10,11 @@ import { Fragment, type KeyboardEvent, type ReactNode, useId, useState } from "r
 import type { Repo } from "../model.ts";
 import { Waiting } from "../setup/step.tsx";
 import { ago, useNow } from "../time.ts";
+import { cn } from "../ui/cn.ts";
 import { TextField } from "../ui/field.tsx";
 import { useFocusReturn } from "../ui/focus-return.ts";
 import { Icon } from "../ui/icon.tsx";
+import { TEXT } from "../ui/ladder.ts";
 import { REPO_ICON } from "../ui/project-icons.ts";
 import {
   canSaveSecret,
@@ -110,7 +112,7 @@ function RepoEnvironmentRow({
         onClick={onToggle}
         className="flex min-h-12 cursor-default items-center gap-2.5 rounded-6 py-1.5 text-left outline-none focus-ring"
       >
-        <Icon icon={REPO_ICON} size={16} stroke={1.6} className="text-muted" />
+        <Icon icon={REPO_ICON} step="control" className="text-muted" />
         <span className="flex min-w-0 flex-col gap-0.5">
           <span className="truncate font-medium text-13 text-ink">{repo.name}</span>
           <span className="truncate text-12 text-faint">
@@ -124,14 +126,13 @@ function RepoEnvironmentRow({
               <StackLogo key={item.slug} item={item} size={13} />
             ))}
             <span className="w-1.5" />
-            <Icon icon={Key01Icon} size={13} stroke={1.8} className="text-faint" />
+            <Icon icon={Key01Icon} step="small" className="text-faint" />
             <span className="text-12 text-faint tabular-nums">{secrets.length}</span>
           </span>
         )}
         <Icon
           icon={open ? ArrowDown01Icon : ArrowRight01Icon}
-          size={14}
-          stroke={1.8}
+          step="inline"
           className="text-faint"
         />
       </button>
@@ -191,10 +192,8 @@ function CardHead({
 }) {
   return (
     <div className="flex items-center gap-1.5 px-2.5 pt-2.5 pb-0.5">
-      <Icon icon={icon} size={13} stroke={1.8} className="text-icon-soft" />
-      <span className="flex-1 font-semibold text-11 text-muted uppercase tracking-[0.02em]">
-        {label}
-      </span>
+      <Icon icon={icon} step="meta" className="text-faint" />
+      <span className={cn("flex-1 uppercase tracking-[0.02em]", TEXT.label)}>{label}</span>
       {children}
     </div>
   );
@@ -323,7 +322,7 @@ function Secrets({
             onClick={() => setDraft({ name: "", value: "", replacing: null })}
             className="flex cursor-default items-center gap-[5px] rounded-4 font-medium text-12 text-muted outline-none transition-colors duration-(--dur-hover) focus-ring hover:text-ink"
           >
-            <Icon icon={Add01Icon} size={13} stroke={1.8} />
+            <Icon icon={Add01Icon} step="small" />
             Add
           </button>
         ) : null}

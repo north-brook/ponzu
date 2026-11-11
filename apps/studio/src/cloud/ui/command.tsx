@@ -59,7 +59,7 @@ function CommandInput({
       data-slot="command-input-wrapper"
       className="flex h-8 shrink-0 items-center gap-[9px] px-2 text-13"
     >
-      <Icon icon={Search01Icon} size={16} stroke={1.7} className="text-faint" />
+      <Icon icon={Search01Icon} step="inline" className="text-icon-soft" />
       <CommandPrimitive.Input
         ref={ref}
         data-slot="command-input"

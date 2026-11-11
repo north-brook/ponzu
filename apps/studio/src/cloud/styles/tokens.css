@@ -25,12 +25,15 @@
    */
   --c-secondary: light-dark(#f4f3ef, #161615);
 
-  /* Ink, strongest to quietest. */
+  /*
+   * Ink, strongest to quietest: the colour ladder (README, "The ladder"). Ink is what is read or
+   * chosen; muted a control at rest and a secondary line; faint quiet text (meta, placeholders,
+   * labels), deliberately under AA. icon-soft is the quiet step for an icon standing alone (a
+   * disclosure chevron, a field's glyph), the design's #807c73 (--n-500), one step above faint so
+   * it holds 3:1. Dark: derived. dry is the slice at rest and the dot between meta.
+   */
   --c-ink: light-dark(#111110, #f4f3ef);
-  /* The design's #3f3d39 (--n-700) icons: New design, the active page tab. Dark: derived. */
-  --c-icon-strong: light-dark(#3f3d39, #d3d0c8);
   --c-muted: light-dark(#5e5b54, #a9a59b);
-  /* The design's #807c73 (--n-500) icons: chevrons, the search field. Dark: derived. */
   --c-icon-soft: light-dark(#807c73, #8e8a82);
   --c-faint: light-dark(#a9a59b, #6b6862);
   --c-dry: light-dark(#c9c5bc, #5e5b54);

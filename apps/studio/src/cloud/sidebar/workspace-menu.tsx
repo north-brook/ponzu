@@ -115,7 +115,7 @@ export function WorkspaceMenu({
       >
         <WorkspaceMark workspace={current} />
         <span className="font-semibold text-13">{workspaceName(current)}</span>
-        <Icon icon={ArrowDown01Icon} size={11} stroke={2.2} className="text-icon-soft" />
+        <Icon icon={ArrowDown01Icon} step="meta" className="text-icon-soft" />
       </MenuTrigger>
       <MenuContent width={260} side="bottom" align="start" sideOffset={7} alignOffset={-2}>
         <MenuRadioGroup
@@ -138,8 +138,8 @@ export function WorkspaceMenu({
         </MenuRadioGroup>
         <MenuItem
           onSelect={onAddWorkspace}
-          leading={<Icon icon={Add01Icon} size={16} stroke={1.8} className="text-icon-soft" />}
-          trailing={<Icon icon={ArrowUpRight01Icon} size={12} stroke={2} className="text-faint" />}
+          leading={<Icon icon={Add01Icon} step="control" />}
+          trailing={<Icon icon={ArrowUpRight01Icon} step="small" className="text-icon-soft" />}
           className="text-muted"
         >
           Set up another on GitHub
@@ -147,21 +147,21 @@ export function WorkspaceMenu({
         <MenuSeparator />
         <MenuItem
           onSelect={onSettings}
-          leading={<Icon icon={Settings01Icon} size={16} stroke={1.8} className="text-muted" />}
+          leading={<Icon icon={Settings01Icon} step="control" className="text-muted" />}
           trailing={<Kbd>⌘,</Kbd>}
         >
           Settings
         </MenuItem>
         <MenuItem
           onSelect={onPlan}
-          leading={<Icon icon={CreditCardIcon} size={16} stroke={1.8} className="text-muted" />}
+          leading={<Icon icon={CreditCardIcon} step="control" className="text-muted" />}
         >
           Plan and usage
         </MenuItem>
         <MenuSeparator />
         <MenuItem
           onSelect={onSignOut}
-          leading={<Icon icon={Logout01Icon} size={16} stroke={1.8} className="text-muted" />}
+          leading={<Icon icon={Logout01Icon} step="control" className="text-muted" />}
         >
           Sign out
         </MenuItem>

@@ -1377,7 +1377,7 @@ export function Canvas({
           value: m.value,
           title: m.label,
           keys: [m.key],
-          label: <Icon name={m.value} size={16} />,
+          label: <Icon name={m.value} step="control" />,
         }))}
       />
     </>
@@ -1391,13 +1391,13 @@ export function Canvas({
           aria-label="Zoom out"
           onClick={() => zoomAt(0.8, viewportSize().w / 2, viewportSize().h / 2)}
         >
-          <Icon name="minus" size={14} />
+          <Icon name="minus" step="control" />
         </Button>
       </Tip>
       <Tip label="Zoom to fit" keys={["⇧", "1"]}>
         <Button
           variant="ghost"
-          className="pz:h-7 pz:min-w-9 pz:rounded-lg pz:px-0.5 pz:text-foreground pz:tabular-nums"
+          className="pz:h-7 pz:min-w-9 pz:rounded-lg pz:px-0.5 pz:font-medium pz:text-[12px] pz:tabular-nums"
           aria-label="Zoom to fit"
           onClick={fitPage}
         >
@@ -1411,7 +1411,7 @@ export function Canvas({
           aria-label="Zoom in"
           onClick={() => zoomAt(1.25, viewportSize().w / 2, viewportSize().h / 2)}
         >
-          <Icon name="plus" size={14} />
+          <Icon name="plus" step="control" />
         </Button>
       </Tip>
     </>
@@ -1697,7 +1697,7 @@ export function Canvas({
                     items={[
                       {
                         label: "Open",
-                        icon: <Icon name="comment" size={14} />,
+                        icon: <Icon name="comment" step="control" />,
                         onSelect: () => {
                           setOpenThread(null);
                           setPending(p);
@@ -1705,7 +1705,7 @@ export function Canvas({
                       },
                       {
                         label: "Discard draft",
-                        icon: <Icon name="trash" size={14} />,
+                        icon: <Icon name="trash" step="control" />,
                         danger: true,
                         onSelect: () => discardDraft(p),
                       },
@@ -1754,7 +1754,7 @@ export function Canvas({
                       items={[
                         {
                           label: "Discard draft",
-                          icon: <Icon name="trash" size={14} />,
+                          icon: <Icon name="trash" step="control" />,
                           danger: true,
                           onSelect: () => discardDraft(pending),
                         },
@@ -1837,7 +1837,7 @@ export function Canvas({
                         setPageId(id);
                       }}
                     >
-                      <Icon name="add" size={15} />
+                      <Icon name="add" step="control" />
                     </Button>
                   </Tip>
                 )}
@@ -2291,7 +2291,7 @@ function PageTab({
       {...grip}
     >
       <ShortcutHint modifier="⌥" n={shortcut} shown={showShortcut} index={shortcut}>
-        <Icon name={icon && icon in Icons ? icon : "board"} size={14} />
+        <Icon name={icon && icon in Icons ? icon : "board"} step="inline" />
       </ShortcutHint>
       {editing ? (
         <input

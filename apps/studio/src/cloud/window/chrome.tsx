@@ -54,7 +54,7 @@ export function SidebarToggle({ open, onToggle }: { open: boolean; onToggle: () 
       onClick={onToggle}
       className="size-7"
     >
-      <Icon icon={LayoutLeftIcon} size={16} stroke={1.7} />
+      <Icon icon={LayoutLeftIcon} step="control" />
     </IconButton>
   );
 }

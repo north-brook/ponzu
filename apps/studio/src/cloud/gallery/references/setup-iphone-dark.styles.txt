@@ -14,7 +14,7 @@ ground span rgba(17, 17, 16, 0.08)
 text "Make the balance bigger and lose the ca…" rgb(17, 17, 16) 400 14px Inter
 ground span rgb(255, 200, 30)
 ground span rgba(17, 17, 16, 0.06)
-icon svg 16×16 rgb(17, 17, 16) stroke 1.8px
+icon svg 16×16 rgb(17, 17, 16) stroke 1.7px
 ground span rgba(17, 17, 16, 0.06)
 ground span rgb(17, 17, 16)
 ground span rgb(17, 17, 16)
@@ -45,7 +45,7 @@ ground span rgb(17, 17, 16)
 ground span rgb(17, 17, 16)
 ground span rgb(17, 17, 16)
 ground span rgb(17, 17, 16)
-icon svg 16×16 rgb(255, 255, 255) stroke 2.4px
+icon svg 16×16 rgb(255, 255, 255) stroke 2.1px
 ground span rgb(17, 17, 16)
 ground span[Setup] rgb(244, 243, 239)
 ground span[Setup] rgb(244, 243, 239)
@@ -60,4 +60,4 @@ icon svg 15×15 rgb(244, 243, 239) stroke 1px
 text "Sign in with the same GitHub account. E…" rgb(169, 165, 155) 400 13px Inter
 text "Start designing" rgb(17, 17, 16) 500 13px Inter
 ground button rgb(244, 243, 239)
-icon svg 14×14 rgb(17, 17, 16) stroke 2px
+icon svg 14×14 rgb(17, 17, 16) stroke 2.3px
