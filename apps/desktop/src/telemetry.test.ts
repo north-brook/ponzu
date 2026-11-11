@@ -191,7 +191,10 @@ test("the main process's uncaught errors go to PostHog as the signed-in person, 
   expect(process.listenerCount("uncaughtExceptionMonitor")).toBe(0);
 
   expect(events.map((e) => e.event)).toEqual(["$exception", "$exception"]);
-  const [mine, nobody] = events as { distinct_id: string; properties: Record<string, unknown> }[];
+  // Each exception is built asynchronously, so they may be sent in either order.
+  const sent = events as { distinct_id: string; properties: Record<string, unknown> }[];
+  const mine = sent.find((e) => e.properties.origin === "uncaughtException");
+  const nobody = sent.find((e) => e.properties.origin === "unhandledRejection");
   expect(mine!.distinct_id).toBe("usr_1");
   expect(mine!.properties).toMatchObject({
     app_version: "2.0.0",
