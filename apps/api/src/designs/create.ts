@@ -10,6 +10,7 @@ import {
   QueryError,
   type User,
 } from "@ponzu/db";
+import { appSession } from "../analytics/scope.ts";
 import { effortOrDefault, modelOrDefault } from "../claude/models.ts";
 import { requestWake, type WakeDeps } from "../sandboxes/wake.ts";
 import { personFor } from "./actor.ts";
@@ -51,6 +52,7 @@ export async function startDesign(
   const firstMessage = message && {
     item: { text: message.text, from: personFor(user) },
     event: { text: message.text },
+    posthogSessionId: appSession(),
   };
   for (let attempt = 1; ; attempt++) {
     const taken = repo

@@ -15,6 +15,8 @@ export class StateReporter {
     claudeSessionId: null,
   };
   private sent = "";
+  /** The branch report last sent, by identity: each push's outcome is a new object. */
+  private sentBranch: StateRequest["branch"];
   private readonly pacer: Pacer;
   private heartbeat: ReturnType<typeof setInterval> | null = null;
 
@@ -44,7 +46,8 @@ export class StateReporter {
   set(change: Partial<StateRequest>): void {
     const next = { ...this.state, ...change };
     this.state = next;
-    if (JSON.stringify(next) !== this.sent) this.pacer.kick();
+    const news = change.branch !== undefined && change.branch !== this.sentBranch;
+    if (news || JSON.stringify(next) !== this.sent) this.pacer.kick();
   }
 
   start(): void {
@@ -69,7 +72,12 @@ export class StateReporter {
   }
 
   private async send(): Promise<void> {
-    const body = this.state;
+    const state = this.state;
+    // `branch` is news, said once per push: the API keeps it until the next one (absent leaves
+    // it), and clears its error itself when a person asks for a new push (Create PR). Said again
+    // with every heartbeat, an old failure would undo that clearing before the new push ends.
+    const { branch, ...rest } = state;
+    const body: StateRequest = branch !== undefined && branch !== this.sentBranch ? state : rest;
     try {
       const { seq, sleep } = await this.api.putState(body);
       this.opts.onSeq(seq);
@@ -79,6 +87,7 @@ export class StateReporter {
       // Refused outright: the next change or heartbeat says it again.
       this.opts.onError?.(err);
     }
-    this.sent = JSON.stringify(body);
+    this.sentBranch = branch;
+    this.sent = JSON.stringify(state);
   }
 }

@@ -1,15 +1,26 @@
 import { afterEach, expect, test } from "bun:test";
+import { execFileSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Actor, type Doc, emptyDoc, findArtboard, parseHtml } from "@ponzu/core";
 import type { Renderer, RenderRequest } from "@ponzu/render";
 import { ScriptedAgent, type ScriptedRun } from "./agent/scripted.ts";
+import type { AiEvent } from "./agent/trace.ts";
 import { ApiError } from "./api/api.ts";
 import { ADA, FakeRunnerApi } from "./api/fake.ts";
-import type { AskedQuestion, RunnerSession } from "./api/protocol.ts";
+import {
+  type AskedQuestion,
+  MAX_TURN_GROUPS,
+  type RunnerAnalytics,
+  type RunnerSession,
+  type WorkItem,
+} from "./api/protocol.ts";
 import { derivedId, eventUuid, randomId } from "./ids.ts";
-import { Runner, type Timing } from "./run.ts";
+import { Runner, type RunnerOptions, summaryAnswer, type Timing } from "./run.ts";
+import { agentShell } from "./save/shell.ts";
+import { type Git, gitIn } from "./save/work.ts";
 
 const FAST: Partial<Timing> = {
   threadGapMs: 5,
@@ -98,6 +109,8 @@ async function setup(
     timing?: Partial<Timing>;
     renderer?: Renderer;
     flush?: () => void;
+    checkoutGit?: (cwd: string) => Git;
+    telemetry?: RunnerOptions["telemetry"];
   } = {},
 ): Promise<Setup> {
   const api = opts.api ?? new FakeRunnerApi({ session: opts.session, doc: opts.doc });
@@ -112,6 +125,8 @@ async function setup(
     prepare: opts.prepare ?? (async () => work),
     renderer: opts.renderer,
     flush: opts.flush,
+    ...(opts.checkoutGit ? { checkoutGit: opts.checkoutGit } : {}),
+    ...(opts.telemetry ? { telemetry: opts.telemetry } : {}),
     stateDir,
     log: (m) => logs.push(m),
     onFatal: (reason) => fatal.push(reason),
@@ -323,7 +338,7 @@ test("a clone that fails is said in the thread and the state, and the agent is t
   expect(run.opts.instructions).not.toContain("no repository");
 });
 
-test("a repo design is told where its checkout is and that Ponzu opens the pull request", async () => {
+test("a repo design is told where its checkout is, and that the person opens the pull request", async () => {
   const root = await temp();
   const { run } = await setup({
     session: { repo: { owner: "north", name: "fern", defaultBranch: "main" }, branch: "pz/hero" },
@@ -331,7 +346,13 @@ test("a repo design is told where its checkout is and that Ponzu opens the pull 
   });
   expect(run.opts.instructions).toContain("north/fern is checked out at");
   expect(run.opts.instructions).toContain("pz/hero");
-  expect(run.opts.instructions).toContain("Ponzu opens and merges the pull request");
+  expect(run.opts.instructions).toContain(
+    "Ponzu doesn't open a pull request by itself, and there is no GitHub API token here: the person opens it with Create PR in Ponzu",
+  );
+  expect(run.opts.instructions).toContain("If a push fails, don't work around it");
+  expect(run.opts.instructions).toContain(
+    "Never say you opened or updated a pull request unless that answer named it.",
+  );
   expect(run.opts.instructions).toContain("give it one in your first turn with update_design");
 });
 
@@ -344,8 +365,299 @@ test("a repo design's agent describes its pull request, which the API keeps", as
   expect(run.opts.instructions).toContain("describe_pull_request");
   const describe = run.opts.tools.find((t) => t.name === "describe_pull_request")!;
   const result = await describe.run({ summary: "Adds the **Pro** pricing card." });
-  expect(result.text).toContain("when Ponzu opens it");
+  // No pull request exists: the agent hears so, and who opens one.
+  expect(result.text).toBe(
+    "Saved as the description the pull request will open with. No pull request is open yet: the person opens it with Create PR in Ponzu.",
+  );
   expect(api.summaries).toEqual(["Adds the **Pro** pricing card."]);
+
+  // Once one is open, its description on GitHub is what changed.
+  api.pullRequest = { number: 7, state: "draft" };
+  const updated = await describe.run({ summary: "Adds the **Pro** and **Team** cards." });
+  expect(updated.text).toBe("Updated the description of pull request #7 on GitHub.");
+});
+
+test("the description tool never speaks of a pull request that isn't there, or of one it didn't reach", () => {
+  expect(summaryAnswer({ pullRequest: null, open: null, kept: "none_open" }, 2)).toBe(
+    "Saved as the description the pull request will open with. No pull request is open yet: the person opens it with Create PR in Ponzu. The branch has 2 commits GitHub doesn't have yet; Ponzu pushes them when your turn ends.",
+  );
+  // Merged or closed is as good as none.
+  expect(
+    summaryAnswer(
+      { pullRequest: null, open: { number: 3, state: "merged" }, kept: "none_open" },
+      0,
+    ),
+  ).toStartWith("Saved as the description the pull request will open with.");
+  expect(
+    summaryAnswer({ pullRequest: null, open: { number: 3, state: "open" }, kept: "rewritten" }, 0),
+  ).toBe(
+    "Pull request #3 is open, but its description was rewritten on GitHub, so Ponzu left it as it is. Your words are saved in Ponzu.",
+  );
+  expect(
+    summaryAnswer({ pullRequest: null, open: { number: 3, state: "open" }, kept: "unreadable" }, 0),
+  ).toStartWith("Pull request #3 is open, but Ponzu couldn't reach it on GitHub just now");
+  expect(summaryAnswer({ pullRequest: 3, open: { number: 3, state: "open" }, kept: null }, 0)).toBe(
+    "Updated the description of pull request #3 on GitHub.",
+  );
+  // An API older than this says only the number, or null: nothing is claimed of a pull request.
+  expect(summaryAnswer({ pullRequest: null }, 0)).toBe(
+    "Saved in Ponzu, but not written into an open pull request on GitHub. If none is open, it becomes the description of the one the person opens with Create PR in Ponzu.",
+  );
+});
+
+test("against an API that doesn't say where the pull request stands, a turn claims nothing of it", async () => {
+  const api = new FakeRunnerApi({
+    session: { repo: { owner: "north", name: "fern", defaultBranch: "main" }, branch: "pz/hero" },
+  });
+  // An older API's claim answer has no `pullRequest`.
+  api.older = true;
+  const s = await onRepo({}, { api });
+  s.run.ready();
+  s.api.push({ kind: "message", payload: { text: "Ship it" } });
+  s.runner.poke();
+  const first = await s.run.input();
+  expect(first.text).not.toContain("no pull request is open");
+  expect(first.text).toContain("the person opens a pull request from pz/hero with Create PR");
+});
+
+/* ------------------------------------------------------------------ */
+/* The branch on GitHub                                                */
+/* ------------------------------------------------------------------ */
+
+const GIT_ENV = {
+  ...process.env,
+  GIT_AUTHOR_NAME: "Ada",
+  GIT_AUTHOR_EMAIL: "ada@example.com",
+  GIT_COMMITTER_NAME: "ponzu[bot]",
+  GIT_COMMITTER_EMAIL: "bot@example.com",
+  GIT_CONFIG_GLOBAL: "/dev/null",
+  GIT_CONFIG_NOSYSTEM: "1",
+};
+const git = (cwd: string, ...args: string[]) =>
+  execFileSync("git", args, { cwd, env: GIT_ENV, encoding: "utf8" }).trim();
+
+/** "GitHub" (a bare repository) and the design's checkout of it on pz/hero, with a runner on it. */
+async function onRepo(
+  timing: Partial<Timing> = {},
+  more: { flush?: () => void; api?: FakeRunnerApi } = {},
+) {
+  const root = await temp();
+  const origin = join(root, "origin.git");
+  const seed = join(root, "seed");
+  git(root, "init", "-q", "--bare", "-b", "main", origin);
+  git(root, "init", "-q", "-b", "main", seed);
+  writeFileSync(join(seed, "README.md"), "fern\n");
+  git(seed, "add", ".");
+  git(seed, "commit", "-qm", "First");
+  git(seed, "push", "-q", origin, "main");
+  const work = join(root, "fern");
+  git(root, "clone", "-q", origin, work);
+  git(work, "switch", "-qc", "pz/hero");
+  let n = 0;
+  const commit = () => {
+    writeFileSync(join(work, `screen-${++n}.html`), `<p>${n}</p>\n`);
+    git(work, "add", ".");
+    git(work, "commit", "-qm", `Screen ${n}`);
+    return git(work, "rev-parse", "HEAD");
+  };
+  const s = await setup({
+    session: { repo: { owner: "north", name: "fern", defaultBranch: "main" }, branch: "pz/hero" },
+    prepare: async () => work,
+    checkoutGit: (cwd) => gitIn(agentShell(undefined, GIT_ENV), "git", cwd),
+    timing: { pushWaitsMs: [5, 5], ...timing },
+    ...more,
+  });
+  const onGithub = () => {
+    try {
+      return git(origin, "rev-parse", "refs/heads/pz/hero");
+    } catch {
+      return null;
+    }
+  };
+  return { ...s, work, origin, commit, onGithub };
+}
+
+test("a turn that ends with commits GitHub lacks gets them pushed, whatever the agent did", async () => {
+  const s = await onRepo();
+  s.run.ready();
+  await turn(s);
+  // The agent committed, and its own push failed (or it never pushed).
+  const head = s.commit();
+  s.run.say("m1", "The commit is saved locally but didn't reach GitHub.");
+  s.run.end();
+
+  await until(() => s.onGithub() === head, 5_000);
+  await until(() => s.api.branch?.unpushed === 0 && s.api.lastState?.state === "idle");
+  // While it pushed, the design said so.
+  expect(s.api.states.some((st) => st.status === "Pushing to GitHub")).toBe(true);
+  expect(notices(s.api, "error")).toEqual([]);
+});
+
+test("a push that keeps failing is said once in the thread, in Ponzu's words, and tried again next turn", async () => {
+  const s = await onRepo();
+  git(s.work, "remote", "set-url", "origin", join(s.work, "..", "gone.git"));
+  s.run.ready();
+  await turn(s);
+  s.commit();
+  s.run.end();
+
+  await until(() => notices(s.api, "error").length === 1, 5_000);
+  const [failed] = notices(s.api, "error");
+  expect(failed?.payload).toMatchObject({
+    type: "error",
+    code: "push_failed",
+    message: expect.stringContaining("Ponzu couldn't push pz/hero to north/fern"),
+  });
+  await until(() => s.api.branch?.unpushed === 1);
+  expect(s.api.branch?.error).toContain("1 commit on pz/hero is safe");
+  // The API's log heard each try, in the runner's words.
+  expect(s.api.gitReports.filter((r) => r.name === "git_push").length).toBeGreaterThan(0);
+  expect(s.api.gitReports.find((r) => r.name === "git_push")?.fields).toMatchObject({
+    branch: "pz/hero",
+    ok: false,
+    kind: "transient",
+  });
+  // Each failed try gave the token back for a new one.
+  expect(s.api.erased.length).toBeGreaterThan(0);
+
+  // The next turn starts knowing it, and the same failure isn't said twice.
+  const event = s.api.push({ kind: "message", payload: { text: "Add a screen" } });
+  s.runner.poke();
+  const input = await s.run.input();
+  expect(input.uuid).toBe(eventUuid(event.id));
+  expect(input.text).toContain("1 commit on pz/hero isn't on GitHub yet (the last push failed:");
+  s.run.take(input);
+  s.run.end();
+  await until(() => s.api.states.filter((st) => st.state === "idle").length >= 2, 5_000);
+  await Bun.sleep(50);
+  expect(notices(s.api, "error")).toHaveLength(1);
+
+  // Fixed: the next push lands.
+  git(s.work, "remote", "set-url", "origin", s.origin);
+  await turn(s);
+  s.run.end();
+  await until(() => s.onGithub() !== null, 5_000);
+  await until(() => s.api.branch?.error === null);
+});
+
+test("Create PR after a failed push: the old error is not said again while the new push runs", async () => {
+  const s = await onRepo({ heartbeatMs: 10 });
+  git(s.work, "remote", "set-url", "origin", join(s.work, "..", "gone.git"));
+  s.run.ready();
+  await turn(s);
+  s.commit();
+  s.run.end();
+  await until(() => s.api.branch?.error != null, 5_000);
+  await until(() => s.api.lastState?.state === "idle");
+
+  // Heartbeats go on, but say nothing of the branch: what was said stands.
+  const quiet = s.api.states.length;
+  await until(() => s.api.states.length >= quiet + 3);
+  expect(s.api.states.slice(quiet).every((st) => st.branch === undefined)).toBe(true);
+
+  // Fixed, and the person presses Create PR: the API forgets the old error. Every report from
+  // then on says only how the new push went, never the old failure.
+  git(s.work, "remote", "set-url", "origin", s.origin);
+  const asked = s.api.states.length;
+  s.api.askToPush();
+  s.runner.poke();
+  await until(() => s.onGithub() !== null, 5_000);
+  await until(() => s.api.branch?.unpushed === 0);
+  const after = s.api.states.slice(asked).filter((st) => st.branch !== undefined);
+  expect(after.every((st) => st.branch?.error === null)).toBe(true);
+  expect(s.api.branch?.error).toBeNull();
+});
+
+test("Create PR during a turn waits for the turn to end, so the agent's git is left alone", async () => {
+  const s = await onRepo();
+  s.run.ready();
+  await turn(s);
+  const head = s.commit();
+  s.api.askToPush();
+  s.runner.poke();
+  await Bun.sleep(100);
+  // Mid-turn: nothing pushed for the agent to race.
+  expect(s.onGithub()).toBeNull();
+  s.run.end();
+  await until(() => s.onGithub() === head, 5_000);
+});
+
+test("the turn's checkpoint is saved before its push, which may take a while", async () => {
+  let ended = false;
+  let pushTries = () => 0;
+  let triesAtSave: number | null = null;
+  const s = await onRepo(
+    { pushWaitsMs: [200] },
+    {
+      // The checkpoint ends by flushing the disk.
+      flush: () => {
+        if (ended) triesAtSave ??= pushTries();
+      },
+    },
+  );
+  pushTries = () => s.api.gitReports.filter((r) => r.name === "git_push").length;
+  git(s.work, "remote", "set-url", "origin", join(s.work, "..", "gone.git"));
+  s.run.ready();
+  await turn(s);
+  s.commit();
+  ended = true;
+  s.run.end();
+  await until(() => notices(s.api, "error").length === 1, 5_000);
+  // Saved before the push's first try, not after its last.
+  expect(triesAtSave as number | null).toBe(0);
+  expect(pushTries()).toBe(2);
+});
+
+test("a branch merged and deleted on GitHub isn't put back by the runner", async () => {
+  const s = await onRepo();
+  s.run.ready();
+  await turn(s);
+  s.commit();
+  s.run.end();
+  await until(() => s.onGithub() !== null, 5_000);
+  await until(() => s.api.lastState?.state === "idle");
+  // Merged, and deleted by Ponzu's Merge; the checkout fetches with --prune.
+  git(s.origin, "update-ref", "-d", "refs/heads/pz/hero");
+  git(s.work, "fetch", "-q", "--prune", "origin");
+  s.api.pullRequest = { number: 4, state: "merged" };
+  await turn(s);
+  s.run.end();
+  await until(() => s.api.states.filter((st) => st.state === "idle").length >= 2, 5_000);
+  await Bun.sleep(50);
+  expect(s.onGithub()).toBeNull();
+});
+
+test("Create PR with commits only the sandbox holds: the runner pushes them, without the agent", async () => {
+  const s = await onRepo();
+  s.run.ready();
+  const head = s.commit();
+  const seen = s.run.inputs.length;
+  const asked = s.api.push({ kind: "push", payload: {} });
+  s.runner.poke();
+  await until(() => s.onGithub() === head, 5_000);
+  // Nothing went to the agent, and the event was acknowledged.
+  expect(s.run.inputs.length).toBe(seen);
+  await until(() => s.api.delivered.includes(asked.id));
+});
+
+test("a turn on a repo design starts with where its pull request stands", async () => {
+  const s = await onRepo();
+  s.run.ready();
+  s.api.push({ kind: "message", payload: { text: "Ship it" } });
+  s.runner.poke();
+  const first = await s.run.input();
+  expect(first.text).toBe(
+    "Message from Ada:\nShip it\n\n(From Ponzu: no pull request is open for pz/hero. Ponzu doesn't open one by itself: the person opens it with Create PR once the branch has commits.)",
+  );
+  s.run.take(first);
+  s.run.end();
+  await until(() => s.api.lastState?.state === "idle");
+
+  s.api.pullRequest = { number: 12, state: "draft" };
+  s.api.push({ kind: "message", payload: { text: "Tweak it" } });
+  s.runner.poke();
+  const second = await s.run.input();
+  expect(second.text).toContain("pull request #12 is open as a draft from pz/hero");
 });
 
 test("a Scratch design has no pull request to describe", async () => {
@@ -419,6 +731,8 @@ test("a message goes in at once, and is acknowledged once the session holds it, 
     text: "Message from Ada:\nMake the hero quieter.",
     priority: "now",
     human: true,
+    // Whose turn it begins: the event, its sender, and their app session (none here).
+    origin: { eventId: event.id, userId: ADA.id, sessionId: null },
   });
   await until(() => api.lastState?.state === "working");
   await Bun.sleep(30);
@@ -794,20 +1108,6 @@ test("a reply cut off by an interrupt ends in the thread as it was, not streamin
 /* The canvas                                                          */
 /* ------------------------------------------------------------------ */
 
-test("the canvas tools edit a real replica and the edits reach the API", async () => {
-  const s = await setup({ doc: emptyDoc("Fern") });
-  await turn(s, "Draw a card");
-  const result = await s.run.call("create_artboard", {
-    name: "Card",
-    html: "<div><h1>Hi</h1></div>",
-  });
-  expect(result.isError).toBeFalsy();
-  await until(() => s.api.doc.snapshot().doc.pages[0]?.artboards[0]?.name === "Card");
-  await until(() => s.api.items().some((i) => i.kind === "tool"));
-  const work = s.api.items().find((i) => i.kind === "tool");
-  expect(work?.payload).toMatchObject({ label: 'Drawing "Card"', steps: 1 });
-});
-
 test("an edit the API undid is in the next tool result", async () => {
   const s = await setup({ doc: pricing() });
   const { api, runner, run } = s;
@@ -834,85 +1134,306 @@ test("an edit the API undid is in the next tool result", async () => {
   expect(next.text).toContain("Undone:");
 });
 
-test("the working line follows the agent's steps, and its status when it gives one", async () => {
-  const s = await setup({ doc: pricing() });
-  await turn(s);
-  s.run.emit({ type: "tool", id: "t1", name: "Read", input: { file_path: "/w/src/app.tsx" } });
-  await until(() => s.api.lastState?.status === "Reading the repo");
-  await s.run.call("set_status", { status: "tightening the hero" });
-  await until(() => s.api.lastState?.status === "Tightening the hero");
-  s.run.say("msg_1", "Done.");
-  await until(() => s.api.items().some((i) => i.kind === "assistant"));
-  const work = s.api.items().find((i) => i.kind === "tool")!;
-  expect(work.streaming).toBe(false);
-  expect(work.payload).toMatchObject({ label: "Tightening the hero", steps: 2 });
-});
-
-test("a finished stretch is named by what it made, and a later one keeps the boards it is on", async () => {
-  const s = await setup({ doc: pricing() });
-  await turn(s);
-  await s.run.call("set_text", { updates: [{ id: "n_plan", text: "Paid" }] });
-  await s.run.call("list_comments");
-  s.run.say("msg_1", "Updated the plan.");
-  await s.run.call("set_text", { updates: [{ id: "n_plan", text: "Pro" }] });
-  s.run.say("msg_2", "And again.");
-  await until(() => s.api.items().filter((i) => i.kind === "tool" && !i.streaming).length === 2);
-  const work = s.api.items().filter((i) => i.kind === "tool");
-  expect(work.map((i) => i.payload)).toEqual([
-    { label: 'Drawing "Pricing"', steps: 2, artboards: ["ab_pricing"] },
-    { label: 'Drawing "Pricing"', steps: 1, artboards: ["ab_pricing"] },
-  ]);
-});
-
-test("a stretch is named by its main action: a commit, not the pull request's description after it", async () => {
-  const s = await setup({ doc: pricing() });
-  await turn(s);
-  const step = (id: string, name: string, input: Record<string, unknown>) => {
-    s.run.emit({ type: "tool", id, name, input });
-    s.run.emit({ type: "tool-done", id, error: false });
-  };
-  step("toolu_a", "Bash", { command: "git add -A" });
-  step("toolu_b", "Bash", { command: 'git commit -m "Pricing"' });
-  step("toolu_c", "Bash", { command: "git push" });
-  step("toolu_d", "mcp__ponzu__describe_pull_request", { title: "Pricing", body: "" });
-  s.run.say("msg_1", "Committed.");
-  await until(() => s.api.items().some((i) => i.kind === "tool" && !i.streaming));
-  const work = s.api.items().find((i) => i.kind === "tool");
-  expect(work?.payload).toMatchObject({ label: "Committing", steps: 4 });
-});
-
-test("a stretch that deletes a board says so, by the board's name", async () => {
-  const s = await setup({ doc: pricing() });
-  await turn(s);
-  await s.run.call("list_comments");
-  // Claude Code says what it calls before the call runs, so the board is still there to name.
-  s.run.emit({
-    type: "tool",
-    id: "toolu_del",
-    name: "mcp__ponzu__delete",
-    input: { ids: ["ab_pricing"] },
+test("the canvas tools edit a real replica and the edits reach the API", async () => {
+  const s = await setup({ doc: emptyDoc("Fern") });
+  await turn(s, "Draw a card");
+  const result = await s.run.call("create_artboard", {
+    name: "Card",
+    html: "<div><h1>Hi</h1></div>",
   });
-  s.run.emit({ type: "tool-done", id: "toolu_del", error: false });
-  s.run.say("msg_1", "Removed it.");
-  await until(() => s.api.items().some((i) => i.kind === "tool" && !i.streaming));
+  expect(result.isError).toBeFalsy();
+  await until(() => s.api.doc.snapshot().doc.pages[0]?.artboards[0]?.name === "Card");
+  await until(() => s.api.items().some((i) => i.kind === "tool"));
   const work = s.api.items().find((i) => i.kind === "tool");
-  expect(work?.payload).toMatchObject({ label: 'Deleting "Pricing"', steps: 2 });
+  expect(work?.payload).toMatchObject({ steps: 1, turn: { ended: null, boards: 1 } });
 });
 
-test("a question ends the stretch before it, so the thread reads in the order it happened", async () => {
+/** The turn's one `tool` item: its record. */
+const turnOf = (api: FakeRunnerApi) => {
+  const items = api.items().filter((i) => i.kind === "tool");
+  expect(items.length).toBeLessThanOrEqual(1);
+  const item = items[0];
+  return item ? { item, work: item.payload as WorkItem } : null;
+};
+
+test("the working state across a turn: never blank, specific while a tool runs, thinking between", async () => {
   const s = await setup({ doc: pricing() });
+  const { api, run } = s;
+  const statuses = () => api.states.map((st) => `${st.state}:${st.status}`);
+  const now = (status: string) => until(() => api.lastState?.status === status);
   await turn(s);
-  await s.run.call("list_comments");
-  void s.run.ask("toolu_ask", { kind: "question", questions: [HEADLINE] });
-  await until(() => s.api.items().some((i) => i.kind === "notice"));
-  await s.run.call("set_text", { updates: [{ id: "n_plan", text: "Pro" }] });
-  s.run.say("msg_1", "Done.");
-  await until(() => s.api.items().filter((i) => i.kind === "tool" && !i.streaming).length === 2);
-  const kinds = s.api
+  await now("Thinking");
+  // The model starts writing a call: the kind of thing is known before its input is.
+  run.emit({ type: "tool-start", id: "t1", name: "mcp__ponzu__create_artboard" });
+  await now("Drawing a new board");
+  run.emit({
+    type: "tool",
+    id: "t1",
+    name: "mcp__ponzu__create_artboard",
+    input: { name: "Plan" },
+  });
+  await now('Drawing "Plan"');
+  run.emit({ type: "tool-done", id: "t1", error: false });
+  await now("Thinking");
+  // It speaks, and goes on: thinking while the text streams and after it, before its next call.
+  run.say("msg_1", "Drawing the plan", false);
+  run.say("msg_1", "Drawing the plan now.", true);
+  await until(() => api.items().some((i) => i.kind === "assistant" && !i.streaming));
+  expect(api.lastState).toMatchObject({ state: "working", status: "Thinking" });
+  // A long-running tool keeps its state for its whole run.
+  run.emit({ type: "tool", id: "t2", name: "Bash", input: { command: "bun run dev" } });
+  await now("Running the dev server");
+  await Bun.sleep(30);
+  expect(api.lastState?.status).toBe("Running the dev server");
+  // The agent's own words: between its calls, not over a running one, and only until it speaks.
+  run.emit({
+    type: "tool",
+    id: "t3",
+    name: "mcp__ponzu__set_status",
+    input: { status: "tightening the plan" },
+  });
+  run.emit({ type: "tool-done", id: "t3", error: false });
+  await Bun.sleep(30);
+  expect(api.lastState?.status).toBe("Running the dev server");
+  run.emit({ type: "tool-done", id: "t2", error: false });
+  await now("Tightening the plan");
+  run.emit({ type: "tool", id: "t4", name: "Read", input: { file_path: "src/app.tsx" } });
+  await now("Reading src/app.tsx");
+  run.emit({ type: "tool-done", id: "t4", error: false });
+  // The next call ended the stretch it was said for: it doesn't come back.
+  await now("Thinking");
+  run.say("msg_2", "Done.", true);
+  await now("Thinking");
+  run.end();
+  await until(() => api.lastState?.state === "idle");
+  // From the message to the end: working with a state every time, then idle once.
+  const during = statuses().slice(statuses().indexOf("working:Thinking"));
+  const last = during.pop();
+  expect(last).toBe("idle:null");
+  for (const st of during) expect(st).toMatch(/^working:\S/);
+  expect(during).not.toContain("working:null");
+  expect(statuses().join("|")).not.toContain("Setting");
+});
+
+test("set_status fills the gap after it and no more: specific, then thinking, between calls", async () => {
+  const s = await setup({ doc: pricing() });
+  const { api, run } = s;
+  const seen: string[] = [];
+  const note = () => {
+    const st = api.lastState?.status;
+    if (st && seen.at(-1) !== st) seen.push(st);
+  };
+  const now = async (status: string) => {
+    await until(() => api.lastState?.status === status);
+    note();
+  };
+  await turn(s);
+  await now("Thinking");
+  run.emit({ type: "tool-start", id: "s1", name: "mcp__ponzu__set_status" });
+  run.emit({
+    type: "tool",
+    id: "s1",
+    name: "mcp__ponzu__set_status",
+    input: { status: "setting direction" },
+  });
+  run.emit({ type: "tool-done", id: "s1", error: false });
+  await now("Setting direction");
+  const calls: [string, Record<string, unknown>, string][] = [
+    ["Read", { file_path: "src/a.tsx" }, "Reading src/a.tsx"],
+    ["Grep", { pattern: "Button" }, 'Searching the repo for "Button"'],
+    ["Bash", { command: "bun test" }, "Running tests"],
+  ];
+  for (const [i, [name, input, phrase]] of calls.entries()) {
+    run.emit({ type: "tool-start", id: `c${i}`, name });
+    run.emit({ type: "tool", id: `c${i}`, name, input });
+    await now(phrase);
+    run.emit({ type: "tool-done", id: `c${i}`, error: false });
+    await now("Thinking");
+  }
+  expect(seen).toEqual([
+    "Thinking",
+    "Setting direction",
+    "Reading src/a.tsx",
+    "Thinking",
+    'Searching the repo for "Button"',
+    "Thinking",
+    "Running tests",
+    "Thinking",
+  ]);
+  // Its plan's step in progress lasts while it works through it.
+  run.emit({
+    type: "tool",
+    id: "p1",
+    name: "TodoWrite",
+    input: {
+      todos: [{ content: "Draw the plan", activeForm: "Drawing the plan", status: "in_progress" }],
+    },
+  });
+  run.emit({ type: "tool-done", id: "p1", error: false });
+  await now("Drawing the plan");
+  run.emit({ type: "tool", id: "r1", name: "Read", input: { file_path: "src/b.tsx" } });
+  run.emit({ type: "tool-done", id: "r1", error: false });
+  await now("Drawing the plan");
+  run.say("msg_1", "Done.", true);
+  await now("Thinking");
+  run.end();
+});
+
+test("a call's phrase turns specific while its input is still being written", async () => {
+  const s = await setup({ doc: pricing() });
+  const { api, run } = s;
+  const now = (status: string) => until(() => api.lastState?.status === status);
+  await turn(s);
+  const cases: [string, Record<string, unknown>, string, string][] = [
+    [
+      "Write",
+      { file_path: `${s.run.opts.cwd}/src/app/page.tsx` },
+      "Writing a file",
+      "Writing src/app/page.tsx",
+    ],
+    [
+      "mcp__ponzu__write_html",
+      { target: "ab_pricing" },
+      "Drawing on the canvas",
+      'Drawing "Pricing"',
+    ],
+    ["Bash", { command: "bun run build" }, "Running a command", "Building the app"],
+  ];
+  for (const [i, [name, input, plain, specific]] of cases.entries()) {
+    const id = `w${i}`;
+    run.emit({ type: "tool-start", id, name });
+    await now(plain);
+    // The keys that name it are in; the rest (the HTML, the file's contents) is still coming.
+    run.emit({ type: "tool-input", id, input });
+    await now(specific);
+    run.emit({ type: "tool", id, name, input: { ...input, content: "…", html: "<p/>" } });
+    await Bun.sleep(20);
+    expect(api.lastState?.status).toBe(specific);
+    run.emit({ type: "tool-done", id, error: false });
+    await now("Thinking");
+  }
+  run.end();
+});
+
+test("a turn is one thread item that records its steps between its messages, and names its answer", async () => {
+  const s = await setup({ doc: pricing() });
+  const { api, run } = s;
+  await turn(s);
+  await run.call("get_tree", { id: "ab_pricing" });
+  await run.call("set_text", { updates: [{ id: "n_plan", text: "Paid" }] });
+  await run.call("set_text", { updates: [{ id: "n_plan", text: "Pro" }] });
+  run.say("msg_1", "Updated the plan.");
+  run.emit({ type: "tool", id: "e1", name: "Edit", input: { file_path: "src/a.tsx" } });
+  run.emit({ type: "tool-done", id: "e1", error: false });
+  run.emit({ type: "tool", id: "e2", name: "Bash", input: { command: "git commit -m 'Pricing'" } });
+  run.emit({ type: "tool-done", id: "e2", error: false });
+  run.say("msg_2", "All done.");
+  // While it runs: one streaming item, before the messages in the thread's order.
+  await until(() => api.items().filter((i) => i.kind === "assistant").length === 2);
+  const running = turnOf(api)!;
+  expect(running.item.streaming).toBe(true);
+  expect(running.work.turn?.ended).toBeNull();
+  const kinds = api
     .items()
-    .filter((i) => i.kind === "tool" || (i.kind === "notice" && i.payload.type === "question"))
+    .filter((i) => i.kind !== "notice")
     .map((i) => i.kind);
-  expect(kinds).toEqual(["tool", "notice", "tool"]);
+  expect(kinds).toEqual(["tool", "assistant", "assistant"]);
+  run.end();
+  await until(() => !turnOf(api)?.item.streaming);
+  const [first, second] = api.items().filter((i) => i.kind === "assistant");
+  const { work } = turnOf(api)!;
+  expect(work).toMatchObject({
+    label: "Worked on 1 board and 1 file",
+    steps: 5,
+    artboards: ["ab_pricing"],
+    turn: {
+      ended: "done",
+      final: second!.id,
+      boards: 1,
+      files: 1,
+      log: [
+        { after: null, text: 'Read "Pricing"', count: 1 },
+        { after: null, text: 'Wrote the copy for "Pricing"', count: 2 },
+        { after: first!.id, text: "Edited src/a.tsx", count: 1 },
+        { after: first!.id, text: 'Committed "Pricing"', count: 1 },
+      ],
+    },
+  });
+  expect(work.turn!.ms).toBeGreaterThanOrEqual(0);
+});
+
+test("a turn stopped mid-work has no answer to keep, and says it was stopped", async () => {
+  const s = await setup({ doc: pricing() });
+  const { api, run } = s;
+  await turn(s);
+  run.say("msg_1", "Starting on it.");
+  await run.call("list_comments");
+  api.push({ kind: "stop", payload: {} });
+  s.runner.poke();
+  await until(() => run.interrupts > 0);
+  run.end({ error: { code: "interrupted", message: "The turn was stopped." } });
+  await until(() => turnOf(api)?.item.streaming === false);
+  expect(turnOf(api)!.work.turn).toMatchObject({ ended: "stopped", final: null });
+  expect(notices(api, "stopped")).toHaveLength(1);
+  // The stop is written after the turn's item, so it reads as the turn's ending.
+  const ids = api.items().map((i) => i.kind);
+  expect(ids.indexOf("tool")).toBeLessThan(
+    api.items().findIndex((i) => i.kind === "notice" && i.payload.type === "stopped"),
+  );
+});
+
+test("a failed turn ends failed; a question stays inside its turn", async () => {
+  const s = await setup({ doc: pricing() });
+  const { api, run } = s;
+  await turn(s);
+  await run.call("list_comments");
+  void run.ask("toolu_ask", { kind: "question", questions: [HEADLINE] });
+  await until(() => api.lastState?.state === "needs_you");
+  expect(api.lastState?.status).toBeNull();
+  run.end({ error: { code: "turn_failed", message: "Overloaded." } });
+  await until(() => turnOf(api)?.item.streaming === false);
+  expect(turnOf(api)!.work.turn?.ended).toBe("failed");
+  const order = api
+    .items()
+    .filter((i) => i.kind === "tool" || i.kind === "notice")
+    .map((i) => (i.kind === "tool" ? "turn" : (i.payload as { type: string }).type))
+    .filter((k) => k !== "started" && k !== "waking");
+  expect(order).toEqual(["turn", "question", "error"]);
+});
+
+test("a turn of hundreds of tool calls stays small: repeats are grouped, the rest counted", async () => {
+  const s = await setup({ doc: pricing() });
+  const { api, run } = s;
+  await turn(s);
+  for (let i = 0; i < 300; i++) {
+    const id = `t${i}`;
+    // A third repeat, the rest each a different file.
+    const input = i % 3 ? { file_path: `src/f${i}.ts` } : { file_path: "src/same.ts" };
+    run.emit({ type: "tool", id, name: i % 2 ? "Read" : "Edit", input });
+    run.emit({ type: "tool-done", id, error: false });
+  }
+  run.say("msg_1", "Done.");
+  run.end();
+  await until(() => turnOf(api)?.item.streaming === false);
+  const { work } = turnOf(api)!;
+  const log = work.turn!.log;
+  expect(log.filter((g) => g.text !== null).length).toBeLessThanOrEqual(MAX_TURN_GROUPS);
+  expect(log.reduce((n, g) => n + g.count, 0)).toBe(300);
+  expect(log.at(-1)).toMatchObject({ text: null });
+  expect(JSON.stringify(work).length).toBeLessThan(16_000);
+  expect(work.turn?.final).toBe(api.items().find((i) => i.kind === "assistant")!.id);
+});
+
+test("a turn that only speaks has a record with no steps", async () => {
+  const s = await setup();
+  await turn(s);
+  s.run.say("msg_1", "Hello.");
+  s.run.end();
+  await until(() => s.api.lastState?.state === "idle");
+  await until(() => s.api.items().some((i) => i.kind === "assistant" && !i.streaming));
+  const { work } = turnOf(s.api)!;
+  // The record is there, but it lists nothing: clients show no section.
+  expect(work.turn).toMatchObject({ log: [], ended: "done" });
 });
 
 /* ------------------------------------------------------------------ */
@@ -1102,4 +1623,143 @@ test("stopping waits for the agent's edits to reach the API, then reports idle",
   expect(s.api.lastState?.state).toBe("idle");
   expect(s.run.interrupts).toBe(1);
   expect(s.run.closed).toBe(true);
+});
+
+/* ------------------------------------------------------------------ */
+/* Analytics                                                           */
+/* ------------------------------------------------------------------ */
+
+/** Telemetry that keeps what it is handed, and says when it was flushed and shut down. */
+function recordingTelemetry() {
+  const made: RunnerAnalytics[] = [];
+  const captured: AiEvent[][] = [];
+  const calls: string[] = [];
+  const telemetry: RunnerOptions["telemetry"] = (config) => {
+    made.push(config);
+    return {
+      capture: (events) => void captured.push(events),
+      flush: async () => void calls.push("flush"),
+      shutdown: async () => void calls.push("shutdown"),
+    };
+  };
+  return { telemetry, made, captured, calls };
+}
+
+const ANALYTICS: RunnerAnalytics = { key: "phc_test", host: "https://ph.test", content: false };
+
+test("with analytics on, each turn is traced under its design and workspace, for whoever began it", async () => {
+  const t = recordingTelemetry();
+  const s = await setup({
+    session: { analytics: ANALYTICS, workspaceId: "ws_test" },
+    telemetry: t.telemetry,
+  });
+  expect(t.made).toEqual([ANALYTICS]);
+  const trace = s.run.opts.trace!;
+  expect(trace).toMatchObject({ content: false, designId: "des_test", workspaceId: "ws_test" });
+
+  s.run.ready("sess_1");
+  const sent = s.api.push(
+    { kind: "message", payload: { text: "Go" } },
+    { posthogSessionId: "0192e0a0-0000-7000-8000-000000000001" },
+  );
+  s.runner.poke();
+  const input = await s.run.input();
+  // The message carries who sent it and from which app session.
+  expect(input.origin).toEqual({
+    eventId: sent.id,
+    userId: ADA.id,
+    sessionId: "0192e0a0-0000-7000-8000-000000000001",
+  });
+  s.run.take(input);
+  // What the agent's trace hands over goes to PostHog's client.
+  trace.sink([{ event: "$ai_trace", distinctId: ADA.id, properties: {} }]);
+  expect(t.captured).toHaveLength(1);
+
+  // The turn's report goes with its usage: how it went, and the event that began it.
+  s.run.end({
+    id: "res_1",
+    error: { code: "claude_limit", message: "Limit." },
+    turn: { startedAt: new Date(Date.now() - 5_000).toISOString(), toolCalls: 3, eventId: sent.id },
+  });
+  await until(() => s.api.usage.has("res_1"));
+  const report = s.api.usage.get("res_1")!;
+  expect(report.models).toEqual([]);
+  expect(report.turn).toMatchObject({
+    outcome: "failed",
+    errorCode: "claude_limit",
+    toolCalls: 3,
+    eventId: sent.id,
+  });
+  expect(report.turn!.durationMs).toBeGreaterThanOrEqual(5_000);
+});
+
+test("a turn a person stopped is reported as stopped, with no error code", async () => {
+  const s = await setup({
+    session: { analytics: ANALYTICS },
+    telemetry: recordingTelemetry().telemetry,
+  });
+  s.run.ready("sess_1");
+  await turn(s);
+  s.run.end({
+    id: "res_1",
+    error: { code: "interrupted", message: "Stopped." },
+    turn: { startedAt: new Date().toISOString(), toolCalls: 0, eventId: null },
+  });
+  await until(() => s.api.usage.has("res_1"));
+  expect(s.api.usage.get("res_1")!.turn).toMatchObject({ outcome: "stopped", errorCode: null });
+});
+
+test("with analytics off the agent traces nothing, and the runner never makes a client", async () => {
+  const t = recordingTelemetry();
+  const s = await setup({ session: { analytics: null }, telemetry: t.telemetry });
+  expect(t.made).toEqual([]);
+  expect(s.run.opts.trace).toBeUndefined();
+});
+
+test("the traces are flushed as the sandbox gets ready to sleep, and sent off as the runner stops", async () => {
+  const t = recordingTelemetry();
+  const s = await setup({ session: { analytics: ANALYTICS }, telemetry: t.telemetry });
+  s.run.ready("sess_1");
+  s.api.sleep = "2026-11-11T10:00:00.000Z";
+  s.runner.report();
+  await until(() => s.api.quiesced.length === 1);
+  expect(t.calls).toEqual(["flush"]);
+  await s.runner.stop();
+  expect(t.calls).toEqual(["flush", "shutdown"]);
+});
+
+test("a PostHog that fails to send does not cut short the wait for the thread before sleep", async () => {
+  const s = await setup({
+    session: { analytics: ANALYTICS },
+    telemetry: () => ({
+      capture: () => {},
+      flush: () => Promise.reject(new Error("PostHog is down")),
+      shutdown: async () => {},
+    }),
+  });
+  s.run.ready("sess_1");
+  await turn(s);
+  // The API is slow to take the thread: the reply is still on its way when the sleep comes.
+  s.api.delays.set("writeThread", 150);
+  s.run.say("m1", "Drawn.");
+  s.run.end();
+  s.api.sleep = "2026-11-11T10:00:00.000Z";
+  s.runner.report();
+  await until(() => s.api.quiesced.length === 1);
+  expect(s.api.items().find((i) => i.kind === "assistant")).toMatchObject({
+    streaming: false,
+    payload: { text: "Drawn." },
+  });
+  expect(s.logs).toContain("sending the turns' traces failed: PostHog is down");
+});
+
+test("telemetry that cannot start leaves the runner running, untraced", async () => {
+  const s = await setup({
+    session: { analytics: ANALYTICS },
+    telemetry: () => {
+      throw new Error("no PostHog here");
+    },
+  });
+  expect(s.run.opts.trace).toBeUndefined();
+  expect(s.logs).toContain("analytics could not start: no PostHog here");
 });

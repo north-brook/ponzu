@@ -20,7 +20,7 @@ import { ApiError } from "../http/errors.ts";
  * a merge settles the design there whichever path saw it first.
  */
 
-export type PullRequestDeps = Pick<Deps, "db" | "github" | "clock" | "log">;
+export type PullRequestDeps = Pick<Deps, "db" | "github" | "clock" | "log" | "analytics">;
 
 /** A design whose branch GitHub can be asked about, as the App. */
 export interface PullRequestTarget {
@@ -30,6 +30,11 @@ export interface PullRequestTarget {
   defaultBranch: string;
   /** The pull request the row last recorded. */
   number: number | null;
+  /**
+   * The branch in the design's sandbox as its runner last said: commits GitHub lacks, and why
+   * the last push failed. Absent where it was not read.
+   */
+  sandbox?: { unpushed: number; pushError: string | null };
 }
 
 /** What asking GitHub about a design's pull request takes, or why it cannot be asked. */
@@ -54,6 +59,7 @@ export function targetOf(context: PullRequestContext): PullRequestTarget | ApiEr
     branch: design.branch,
     defaultBranch: repo.defaultBranch,
     number: design.prNumber,
+    sandbox: context.sandbox,
   };
 }
 
@@ -115,7 +121,7 @@ export function lagsBranch({ pullRequest, branch }: GithubPullRequestRead): bool
  * records it all the same, for the last read there will be.
  */
 export async function recordCurrent(
-  deps: Pick<Deps, "db" | "log">,
+  deps: Pick<Deps, "db" | "log" | "analytics">,
   designId: string,
   { read, readAt }: Read,
   { lagging = false } = {},
@@ -130,7 +136,7 @@ export async function recordCurrent(
  * was not applied: a read that began later was recorded first, or the row already says this.
  */
 export async function recordRead(
-  { db, log }: Pick<Deps, "db" | "log">,
+  { db, log, analytics }: Pick<Deps, "db" | "log" | "analytics">,
   designId: string,
   pullRequest: GithubPullRequest,
   readAt: Date,
@@ -147,12 +153,23 @@ export async function recordRead(
     readAt,
   });
   if (!design) return null;
-  await appendThreadItemOnce(db, {
+  const firstSeen = await appendThreadItemOnce(db, {
     id: noticeId(number, state),
     designId,
     kind: "notice",
     payload: { type: "pull_request", number, url, title, state },
   });
+  // The notice is written once for each moment, whichever of a route and a webhook sees it
+  // first, so the moment is captured once with it: by the person who did it, through Ponzu.
+  if (firstSeen) {
+    const event =
+      state === "merged"
+        ? "pull request merged"
+        : state === "closed"
+          ? "pull request closed"
+          : "pull request created";
+    analytics.capture(event, { design_id: designId, number }, { workspaceId: design.workspaceId });
+  }
   log.info("pull_request_recorded", { designId, number, state });
   return design;
 }

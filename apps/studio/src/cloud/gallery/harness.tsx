@@ -8,6 +8,7 @@ import { CreatePage, type CreatePageProps } from "../create/create-page.tsx";
 import { type DesignFilter, NO_FILTER } from "../filter.ts";
 import type {
   Contributor,
+  DesignMember,
   DesignSummary,
   Effort,
   Match,
@@ -151,15 +152,21 @@ export function DesignChromeHarness({
   sidebarOpen,
   contributors,
   railOpen,
+  onToggleRail,
   threadUnseen = false,
   changes = true,
+  members = f.members,
   overrides = {},
 }: {
   design: DesignSummary;
   sidebarOpen: boolean;
   /** Who has worked on it, in a team workspace; null leaves the presence cluster out. */
   contributors: Contributor[] | null;
+  /** Who Share lists. */
+  members?: DesignMember[];
   railOpen: boolean;
+  /** The window's rail follows the toggle: without it, only the toggle does. */
+  onToggleRail?: () => void;
   threadUnseen?: boolean;
   /** The branch has commits, so a design with no pull request offers Create PR. */
   changes?: boolean;
@@ -167,7 +174,8 @@ export function DesignChromeHarness({
 }) {
   const [page, setPage] = useState<string | null>(overrides.activePageId ?? f.homePages[0]!.id);
   const [prTab, setPrTab] = useState(false);
-  const [rail, setRail] = useState(railOpen);
+  const [own, setOwn] = useState(railOpen);
+  const rail = onToggleRail ? railOpen : own;
   const pr = design.pullRequest;
   const action = nextAction(pr, changes);
   return (
@@ -187,7 +195,7 @@ export function DesignChromeHarness({
               meId: f.bryce.id,
               contributors,
               repo: design.project.repo,
-              members: f.members,
+              members,
               onOpenRepo: ignore,
             }
           : null
@@ -197,7 +205,7 @@ export function DesignChromeHarness({
       rail={{
         open: rail,
         signal: railSignal(design, threadUnseen),
-        onToggle: () => setRail((o) => !o),
+        onToggle: onToggleRail ?? (() => setOwn((o) => !o)),
       }}
       {...overrides}
     />

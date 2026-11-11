@@ -21,7 +21,9 @@ src/
   env.ts           the environment, checked once (exactly one Claude credential)
   run.ts           Runner: events in, the thread and state out, the session's lifecycle
   prompt.ts        each event as the text the model receives
-  steps.ts         each tool call as the working line ("Drawing "Pricing · B"")
+  steps.ts         each tool call said: the working state ("Drawing "Pricing · B"", "Running
+                   tests") and, past tense, the turn's record; never a command or a secret
+  turn.ts          a turn's one thread item: its steps grouped after each message, its answer
   thread.ts        thread writes, coalesced
   state.ts         state reports and the heartbeat
   previews.ts      light and dark previews of the first page
@@ -97,6 +99,9 @@ git 2.40 or later is needed, for `password_expiry_utc`.
 | `PONZU_GIT_SOCKET` | Where git's credential helper asks the runner. `$PONZU_STATE_DIR/git.sock` by default; `/run/ponzu/git.sock` in the image. |
 | `PONZU_CHROMIUM` | The Chromium for screenshots and previews. |
 | `PONZU_REPO_SECRETS` | The repo's secrets, `NAME:base64(value)` comma-separated. |
+
+PostHog needs no variable here: the API's session says where each turn's trace goes (`analytics`),
+or that it goes nowhere ([docs/analytics.md](../../docs/analytics.md), "Agent turns").
 
 Repo secrets arrive packed in `PONZU_REPO_SECRETS`, so none is ever a variable of the runner's
 own (a `BUN_OPTIONS` would load code into it before it starts, and a value is only base64 in

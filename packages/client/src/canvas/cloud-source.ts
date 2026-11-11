@@ -166,6 +166,14 @@ export class CloudSource implements CanvasSource {
     return () => this.unsavedListeners.delete(listener);
   }
 
+  /**
+   * Resolves once every edit made here so far has been sent and answered: committed, or turned
+   * away (`onUnsaved` says which). What needs an op in the design first waits on it.
+   */
+  saved(): Promise<void> {
+    return this.replica ? settled(this.replica) : Promise.resolve();
+  }
+
   /** The page the person is on, for the others' presence. */
   setPage(pageId: string | null): void {
     if (pageId === this.pageId) return;

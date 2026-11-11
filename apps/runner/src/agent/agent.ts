@@ -1,6 +1,7 @@
 import type { ToolResult } from "@ponzu/tools";
 import type { z } from "zod";
 import type { AskedQuestion, Effort, ModelUsage, RunErrorCode } from "../api/protocol.ts";
+import type { Origin, TraceOptions, TurnSummary } from "./trace.ts";
 
 /*
  * The agent as the runner drives it: start one long-lived session, feed it messages, answer
@@ -30,6 +31,8 @@ export interface AgentOptions {
   instructions: string;
   /** Served to the agent as the `ponzu` MCP server. */
   tools: AgentTool[];
+  /** Where each turn's trace goes (LLM analytics), or absent when analytics is off. */
+  trace?: TraceOptions;
 }
 
 /** Something to put into the run. */
@@ -45,6 +48,8 @@ export interface AgentInput {
   priority: "now" | "next" | "aside";
   /** A person typed it, rather than the runner writing it for them. */
   human: boolean;
+  /** The event it carries, who sent it and from which app session: whose turn it begins. */
+  origin?: Origin | null;
 }
 
 /** What the agent needs a person for. */
@@ -71,14 +76,28 @@ export type AgentEvent =
   | { type: "dropped"; uuids: string[] }
   /** The agent's text so far in one reply. `done` once the reply is complete. */
   | { type: "text"; id: string; text: string; done: boolean }
+  /** The agent began writing a call to a tool: its input is still to come. */
+  | { type: "tool-start"; id: string; name: string }
+  /** More of a call's input is written: its complete members so far (the rest still to come). */
+  | { type: "tool-input"; id: string; input: Record<string, unknown> }
   /** The agent called a tool. */
   | { type: "tool"; id: string; name: string; input: Record<string, unknown> }
   /** A tool call's result is in the session. */
   | { type: "tool-done"; id: string; error: boolean }
   /** The agent waits on a person; answer with `reply` or take it back with `withdraw`. */
   | { type: "ask"; id: string; ask: Ask }
-  /** The turn ended. `usage` is the session's running total, by model. */
-  | { type: "result"; id: string; ok: boolean; error: TurnError | null; usage: ModelUsage[] }
+  /**
+   * The turn ended. `usage` is the session's running total, by model; `turn` is when it began,
+   * how many tools it called and which event began it, when the agent knows.
+   */
+  | {
+      type: "result";
+      id: string;
+      ok: boolean;
+      error: TurnError | null;
+      usage: ModelUsage[];
+      turn?: TurnSummary | null;
+    }
   /** The session ended, on its own or by `close`. */
   | { type: "exit"; error: string | null };
 

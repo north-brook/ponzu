@@ -106,6 +106,7 @@ export {
   type DesignEvent,
   type EventPerson,
   findStops,
+  getEventOrigins,
   hasHeldEvents,
   markEventsDelivered,
   type NewEvent,
@@ -131,7 +132,7 @@ export {
   type NewJob,
 } from "./queries/jobs.ts";
 export {
-  countWorkspaceMembers,
+  countJoinedMembers,
   ensureWorkspaceAdmin,
   listWorkspaceMembers,
   removeMembership,
@@ -166,6 +167,19 @@ export {
   readOps,
   type StoredOp,
 } from "./queries/ops.ts";
+export {
+  bestPermission,
+  countWorkspacePeople,
+  forgetWorkspacePeople,
+  type GithubPerson,
+  listPeopleRepoReads,
+  listRepoPeople,
+  listWorkspacePeople,
+  type PeopleRepoRead,
+  type RepoPerson,
+  recordWorkspacePeople,
+  type WorkspacePerson,
+} from "./queries/people.ts";
 export { pingDb } from "./queries/ping.ts";
 export {
   deleteStalePresence,
@@ -225,6 +239,7 @@ export {
   verifyRunnerToken,
 } from "./queries/runner-tokens.ts";
 export {
+  askRunnerToPush,
   countSandboxRollback,
   getQuiescedFor,
   getRunnerContext,
@@ -271,6 +286,8 @@ export { isStorable } from "./queries/text.ts";
 export {
   appendThreadItem,
   appendThreadItemOnce,
+  attachCommentPicture,
+  getComment,
   listThreadItems,
   type NewThreadItem,
   postMessage,

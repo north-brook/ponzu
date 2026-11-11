@@ -15,14 +15,16 @@ gate.ts           what keeps someone from steering a design (read access, the ow
 claude.ts         the person's Claude: how it is connected, its plan's limits, a pasted code
 styles/           tokens.css (every token) and cloud.css (the Tailwind build)
 ui/               primitives: shadcn/ui's components themed with our tokens (button, menus,
-                  popover, tooltip, dialogs, field, command, tabs, avatar, kbd, skeleton…), the
+                  popover, tooltip, dialogs, field, command, tabs, avatar, kbd, skeleton, trace
+                  and collapsible, from its AI Elements…), the
                   product's names on them (menu.tsx, modal.tsx, TextField), our own few (icon,
                   marks, fade-scroll, qr), and Prose, which draws untrusted Markdown
                   (markdown.ts has its rules)
 window/           the window frame, chrome, page tabs, presence, Share, PR mark, next action, thread toggle
 sidebar/          the sidebar: workspace menu, filter, rows, settled tray, search
 create/           the create page: composer, model picker, repo picker, ideas
-thread/           the thread rail: its lines, following the foot, the composer, drafts
+thread/           the thread rail: its lines, the working line, finished turns folded (thread.ts
+                  has the rules, fold.tsx the line), following the foot, the composer, drafts
 needs-you/        what the agent waits on, in the composer's place, and the rules for answering it
 pr-tab/           the pull request tab: details, checks, conversation, files and their diffs
 setup/            guided first run: the gates (setup.ts), sign in, where you design, Connect
@@ -55,6 +57,38 @@ it off its partner.
 `visual.ts compare` masks the chrome's 44px for this reason, so the rest is still checked
 against the boards.
 
+The chrome reads, left to right (the founder's order):
+
+- sidebar collapsed, a design open: `[traffic lights] [sidebar toggle] [design name] | [tabs] +`
+  … `| [presence] [PR mark] [action] [thread toggle]`. The name is the row's type (13, medium),
+  cut with an ellipsis at 240, and not a control: a double-click there zooms the window, as on
+  any Mac title bar, so renaming stays on the row.
+- sidebar open: `[traffic lights] [sidebar toggle]` … `| [tabs] +` …, the divider on the
+  sidebar's edge at x 300, where the canvas pane starts. The name's room closes to nothing.
+- the create page, or no design: `[traffic lights] [sidebar toggle]` and nothing else: no
+  name, no divider.
+
+⌘B toggles the sidebar and ⌘J the rail, from anywhere in the window, the canvas and the
+composers included (no field here takes rich text, so ⌘B means nothing else); both are in the
+toggles' tips and in the desktop's View menu (Toggle Sidebar, Toggle Thread), whose clicks
+reach the studio as commands. Neither toggles while a menu or a modal is open over the window,
+or while a design's name is being edited on its row (`paneHeld` in `ui/shortcut.ts`).
+
+Both panes open and close on one clock, `pane-motion` (`--dur-pane`, `--ease-out`), and so does
+everything that moves with them: the pane's width, the canvas pane's margin, the left block's
+width, the name's room, and the right block's reach (the room it keeps over the rail). The rail, like the sidebar, keeps its content still at the
+window's edge while its room opens or closes, and holds it until it has closed. The canvas
+keeps its boards still on screen as its pane's edge moves, anchored to the edge that isn't
+moving, with no refit (useCanvas.ts). `gallery/chrome.test.ts` checks it frame by frame, and
+the app's end-to-end test that the boards don't move.
+
+A click never leaves a ring: whatever takes focus while the pointer was the last thing used is
+marked quiet (`ui/quiet-focus.ts`, the mechanism the menus and the needs-you options use), and
+the ring comes back only from a key that works focus: Tab, an arrow inside a menu, tablist or
+radio group, or Return or Space pressing the focused control. A letter or Escape after a click
+is the canvas's, not the control's. The chrome's buttons and page tabs (`data-toolbar`) take no focus from a click at
+all, as a Mac's toolbar buttons don't, so the next key goes where it went before the click.
+
 Text from the model or GitHub (replies, plans, a pull request's body and comments) goes through
 `Prose`, never `dangerouslySetInnerHTML`. It is react-markdown with GitHub's flavour (tables, task
 lists, strikethrough, bare addresses; not footnotes, whose parser is slow on stray `]`s and whose
@@ -67,6 +101,37 @@ it names is gone). While a reply streams, a link still being written shows as it
 (`settled`). Text shaped to make the
 parser slow (see `parseable` and `parts` in markdown.ts), or longer than 32 KB, is plain text.
 Blocks are memoised in runs of 16, so a reply streaming in parses only its last run.
+
+## Keyboard
+
+| Shortcut | What it does | Where |
+| --- | --- | --- |
+| ⌘N | New design (the create page) | sidebar, File menu |
+| ⌘K | Search (expands a collapsed sidebar first) | sidebar |
+| ⌘J | Show or hide the thread | thread toggle |
+| ⌘, | Settings | sidebar, app menu |
+| ⌘1–⌘8, ⌘9 | Open the sidebar's first eight designs, and ⌘9 its last | sidebar |
+| ⌘0 | The create page | sidebar |
+| ⌥1–⌥8, ⌥9 | Open the design's first eight pages, and ⌥9 its last | page tabs |
+| Esc | Close search, a menu or a popover | |
+
+Ctrl stands for ⌘ off the Mac, and Alt for ⌥. The numbers are the 1.x studio's
+(`ui/shortcut.ts`):
+
+- **Which list.** ⌘ numbers follow the sidebar's active designs as it shows them, filtered and
+  ordered; settled designs aren't counted. While search's results take the list's place, ⌘1–9
+  rest (⌘0 still works). With the sidebar collapsed they open the same designs, unseen. ⌥ numbers
+  follow the page tabs. 9 is always the last, however many there are.
+- **Hints.** Holding the modifier on its own for 250 ms shows each target's number
+  (`ui/shortcut-hint.tsx`): on a row, over its preview's top-left corner; on a page tab, in its
+  icon's place, or on a tab without one in place of its name, which fades beneath it.
+  Nothing moves to make room. They arrive one after another on the pop's timing and leave all at
+  once, quicker, as the key comes up, the window loses focus, or any other key, click or scroll
+  comes; so ⌘B, ⌘J or ⌘K never flash them. A number pressed while they show keeps them up.
+- **When not.** Nothing jumps or shows while a menu, popover or dialog is open. In a text field
+  (the composer, search, a rename) ⌘ numbers still jump, since ⌘ types nothing, but show no
+  hints; ⌥ numbers neither jump nor show, since ⌥ types symbols there.
+- **⌘0.** The desktop's View menu has no zoom roles, so ⌘0 is never Actual Size (`menu.ts`).
 
 ## Tokens
 
@@ -158,6 +223,16 @@ repaint something or say what isn't so. The usual swaps:
   questionnaire and message-scroller parts are the path once they settle; they are too young to
   build on now.
 - `qr.tsx` on uqr, and Hugeicons through `icon.tsx`: what the design specifies.
+- AI Elements (now shadcn/ui's own patterns, built on its Trace): a finished turn's fold is its
+  Chain of Thought pattern, on `ui/trace.tsx` (added from the registry's `radix-nova` style,
+  which is the one that carries it: `bun run shadcn add
+  https://ui.shadcn.com/r/styles/radix-nova/trace.json`). The rest stay ours: Chat and Message
+  Scroller (the follow-the-foot logic above; ours also windows a thousand lines and anchors by
+  hand), Message and its Bubble (the design's bubble, avatars and comment frames), the streaming
+  response (`Prose`, with its rules for untrusted Markdown), Tool and Reasoning (the thread never
+  shows a tool's input or output, and Claude Code's thinking isn't streamed to it), the shimmer
+  utility for the working line (the design draws the turning slice, not a sweep of light), and
+  Prompt Input (the composer, the product's own).
 - The idea tiles have no loading state (onboarding 4.6: nothing while they are made). On a
   first visit the column sits at the top from its first frame, where the ideas will go, and they
   rise into that room when they come; if none do, nothing moves.

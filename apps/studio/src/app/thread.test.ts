@@ -8,7 +8,6 @@ import {
   agentActivity,
   answerLine,
   branchMoment,
-  frozenBoards,
   shownItems,
   steerGate,
   toThreadItem,
@@ -149,30 +148,85 @@ test("a teammate's message and comment carry them, as the members they are", asy
     kind: "message",
     payload: { text: "Keep the green", from: { id: w.sam.id, name: "Sam Lee", login: "sam" } },
   });
+  // No picture yet: it says where it was left.
   expect(comment).toMatchObject({
     kind: "comment",
     payload: {
       text: "Calmer here",
       artboardName: "Hero",
+      pageName: null,
       from: { name: "Sam Lee" },
-      // The middle of the board is the middle of its miniature.
-      pin: { x: 0.5, y: 0.5 },
+      picture: null,
     },
   });
 
-  // The board changes after: the comment keeps the board it was made on, for its miniature.
-  w.agent.commit([
-    { op: "style", id: "ab_hero", style: { width: "800px", height: "300px", background: "red" } },
-  ]);
+  // Sam's app gives it its picture: everyone's thread shows it, from the design's files.
+  const uploads = await sam.api.designs.uploadCommentPicture(w.design.id, "m_1", {
+    light: new Uint8Array([1]),
+    dark: new Uint8Array([2]),
+  });
+  await sam.api.designs.attachCommentPicture(w.design.id, "m_1", uploads);
   await settle();
-  const later = w.backend.design(w.design.id).sequencer.doc;
-  expect(later.pages[0]!.artboards[0]!.root.style.width).toBe("800px");
-  const items = store.getSnapshot().items!;
-  const kept = frozenBoards(items).get(items[1]!.id);
-  expect(kept?.root.style).toEqual({ width: "400px", height: "300px" });
-  // Its pin is still where it was on that board, not on the wider one it became.
-  expect(toThreadItem(items[1]!, { ...ctx(w.people), doc: later }).payload).toMatchObject({
-    pin: { x: 0.5, y: 0.5 },
+  const item = store.getSnapshot().items![1]!;
+  const shown = toThreadItem(item, { ...ctx(w.people), doc });
+  expect(shown.payload).toMatchObject({
+    picture: {
+      kind: "image",
+      light: expect.stringMatching(/^https:\/\/assets\.test\/d\/comments\/m_1-light-\w+\.webp$/),
+      dark: expect.stringMatching(/^https:\/\/assets\.test\/d\/comments\/m_1-dark-\w+\.webp$/),
+      width: 240,
+      height: 160,
+    },
+  });
+  // The viewer's own picture, drawn here, is shown from here: while it is drawn, and after.
+  const local = { state: "drawn" as const, light: "blob:light", dark: "blob:dark" };
+  const drawing = { state: "drawing" as const, doc, threadId: "th_1" };
+  const ownCtx = (picture: typeof local | typeof drawing) => ({
+    ...ctx(w.people),
+    doc,
+    pictures: new Map([["m_1", picture]]),
+  });
+  expect(toThreadItem(item, ownCtx(drawing)).payload).toMatchObject({
+    picture: { kind: "drawing" },
+  });
+  expect(toThreadItem(item, ownCtx(local)).payload).toMatchObject({
+    picture: { kind: "image", light: "blob:light", dark: "blob:dark" },
+  });
+  // Only its author can give it one.
+  await expect(
+    w.client.api.designs.attachCommentPicture(w.design.id, "m_1", uploads),
+  ).rejects.toThrow();
+  store.close();
+});
+
+test("a comment on the open canvas names its page, where the design has more than one", async () => {
+  const w = await world();
+  const store = w.thread();
+  const sam = w.backend.connect(w.sam);
+  const doc = () => w.backend.design(w.design.id).sequencer.doc;
+  const first = doc().pages[0]!;
+  const author = { kind: "user" as const, id: w.sam.id, name: "Sam Lee" };
+  const thread = {
+    id: "th_open",
+    pageId: first.id,
+    x: -60,
+    y: 40,
+    status: "open" as const,
+    createdAt: 0,
+    updatedAt: 0,
+    messages: [{ id: "m_open", author, text: "Between these", createdAt: 0 }],
+  };
+  await sam.api.designs.commit(w.design.id, [{ id: "op_o", op: { op: "thread.create", thread } }]);
+  await settle();
+  const [item] = store.getSnapshot().items!.filter((i) => i.kind === "comment");
+  expect(item!.payload).toMatchObject({ pageId: first.id, at: { x: -60, y: 40 } });
+  expect(toThreadItem(item!, { ...ctx(w.people), doc: doc() }).payload).toMatchObject({
+    artboardName: null,
+    pageName: null,
+  });
+  w.agent.commit([{ op: "page.create", index: 1, page: { id: "pg_more", name: "More" } }]);
+  expect(toThreadItem(item!, { ...ctx(w.people), doc: doc() }).payload).toMatchObject({
+    pageName: first.name,
   });
   store.close();
 });

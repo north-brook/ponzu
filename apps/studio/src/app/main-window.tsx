@@ -10,7 +10,10 @@ import type { SettingsSection } from "../cloud/settings/settings-modal.tsx";
 import type { RowAction } from "../cloud/sidebar/design-row.tsx";
 import { Sidebar } from "../cloud/sidebar/sidebar.tsx";
 import { orderSettled } from "../cloud/status.ts";
+import { paneHeld, ranJustNow } from "../cloud/ui/shortcut.ts";
 import { AppWindow } from "../cloud/window/app-window.tsx";
+import type { NoticeName, OpenedVia } from "./analytics/events.ts";
+import { useAnalytics, useView } from "./analytics/provider.tsx";
 import { DeleteDesignDialog } from "./confirm-dialogs.tsx";
 import { CreateView } from "./create.tsx";
 import { type FreshDesign, useOpenDesign } from "./design.tsx";
@@ -75,17 +78,34 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
   const syncGithub = useMutation(mutations.syncGithub()).mutateAsync;
   const [opening, setOpening] = useState<Opening | null>(null);
   const [notice, say] = useNotice();
+  const analytics = useAnalytics();
+  /** How the next design to open came to be opened: whoever opens one says. */
+  const openedVia = useRef<OpenedVia>("restored");
+  /** A notice, said, and counted by what it is (never its words). */
+  const tell = useCallback(
+    (name: NoticeName, words: string) => {
+      analytics.capture("notice shown", { notice: name });
+      say(words);
+    },
+    [analytics, say],
+  );
 
   // Signed in without a keychain to keep the session in: say so once, now, when it matters.
   useEffect(() => {
     void host.persistence().then((persistence) => {
       if (persistence === "memory") {
-        say("Ponzu can't use this computer's keychain, so you'll sign in again next time.");
+        tell(
+          "keychain_unavailable",
+          "Ponzu can't use this computer's keychain, so you'll sign in again next time.",
+        );
       } else if (persistence === "file") {
-        say("Signed in with a developer's session file, kept unencrypted, not in the keychain.");
+        tell(
+          "session_file",
+          "Signed in with a developer's session file, kept unencrypted, not in the keychain.",
+        );
       }
     });
-  }, [host, say]);
+  }, [host, tell]);
 
   // Back in front: GitHub may have changed who reaches what (docs/cloud.md, "Keeping it true").
   const sync = useCallback(async () => {
@@ -114,16 +134,17 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
             workspaceId: design.workspaceId,
             designs: { ...now.designs, [design.workspaceId]: design.id },
           }));
+          openedVia.current = "link";
           setOpening({
             designId: design.id,
             ...(link.pageId ? { page: link.pageId } : {}),
             ...(link.artboardId ? { artboard: link.artboardId } : {}),
           });
         },
-        () => say("That design isn't there, or you can't open it."),
+        () => tell("design_unavailable", "That design isn't there, or you can't open it."),
       );
     },
-    [host, update, say],
+    [host, update, tell],
   );
 
   useEffect(
@@ -136,15 +157,18 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
             update((now) => ({ ...now, workspaceId }));
           }
           if (link.result === "requested") {
-            say("Ponzu asked the organization's owners to install it. It shows here once they do.");
+            tell(
+              "install_requested",
+              "Ponzu asked the organization's owners to install it. It shows here once they do.",
+            );
           } else if (link.result === "failed") {
-            say("GitHub didn't finish setting Ponzu up. Try again.");
+            tell("install_failed", "GitHub didn't finish setting Ponzu up. Try again.");
           }
           return;
         }
         openDesign(link);
       }),
-    [host, sync, update, say, openDesign],
+    [host, sync, update, tell, openDesign],
   );
 
   const all = meAnswer.data?.workspaces ?? null;
@@ -159,11 +183,12 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
     shownId.current = workspace?.id ?? null;
     const gone = was && was !== workspace?.id ? all?.find((w) => w.id === was) : null;
     if (gone?.suspended) {
-      say(
+      tell(
+        "workspace_suspended",
         `Ponzu is suspended on GitHub for ${toWorkspace(gone).name}. Its designs open again once it's back.`,
       );
     }
-  }, [workspace?.id, all, say]);
+  }, [workspace?.id, all, tell]);
 
   // Guided setup (FirstRun) holds the window until there is a workspace to work in, so there
   // is none only for the moment GitHub takes one away, before the gates see it.
@@ -188,6 +213,7 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
       badge={badge}
       opening={opening}
       onOpenDesign={openDesign}
+      openedVia={openedVia}
       notice={notice}
       say={say}
       onLostAccess={() => {
@@ -211,6 +237,7 @@ function WorkspaceWindow({
   badge,
   opening,
   onOpenDesign,
+  openedVia,
   notice,
   say,
   onLostAccess,
@@ -229,6 +256,7 @@ function WorkspaceWindow({
   opening: Opening | null;
   /** Opens a design a link names, on its page or board. */
   onOpenDesign: (link: { designId: string; pageId?: string; artboardId?: string }) => void;
+  openedVia: { current: OpenedVia };
   notice: string | null;
   say: (notice: string) => void;
   onLostAccess: () => void;
@@ -247,6 +275,11 @@ function WorkspaceWindow({
   // The design the create page just made, as its answer said, for it to open on.
   const [fresh, setFresh] = useState<FreshDesign | null>(null);
   const open = useOpenDesign(host, me, openId, say, fresh);
+  // Share's list: everyone GitHub gives access to the open design's repo.
+  const sharePeople = useQuery({
+    ...queries.designPeople(openId ?? ""),
+    enabled: openId !== null,
+  });
   const [page, setPage] = useState<string | null>(null);
   const [query, setQuery] = useState<string | null>(null);
   const [settledOpen, setSettledOpen] = useState(false);
@@ -281,6 +314,10 @@ function WorkspaceWindow({
     [live.rows, workspace.kind],
   );
   const presence = useRowPresence(host.live, activeIds, me.id);
+  const analytics = useAnalytics();
+  useEffect(() => {
+    analytics.workspace({ id, login: workspace.githubLogin, kind: workspace.kind });
+  }, [analytics, id, workspace.githubLogin, workspace.kind]);
 
   // Rows a live update didn't change, and unchanged previews, stay the same objects.
   const summaries = useUnchanged(
@@ -310,25 +347,49 @@ function WorkspaceWindow({
   const link = opening && opening.designId === openId ? opening : null;
 
   const openDesign = useCallback(
-    (designId: string | null) => {
+    (designId: string | null, via: OpenedVia = "sidebar") => {
+      openedVia.current = via;
       update((now) => {
         const { [id]: _was, ...others } = now.designs;
         return { ...now, designs: designId ? { ...others, [id]: designId } : others };
       });
       setPage(null);
     },
-    [id, update],
+    [id, update, openedVia],
+  );
+  useEffect(() => {
+    if (!openId) return;
+    analytics.capture("design opened", { design_id: openId, via: openedVia.current });
+    openedVia.current = "restored";
+  }, [analytics, openId, openedVia]);
+  const switchPage = useCallback(
+    (pageId: string) => {
+      setPage(pageId);
+      if (openId) analytics.capture("page switched", { design_id: openId });
+    },
+    [analytics, openId],
   );
   // Another design opens on its first page, or the one a link names, never the last one's.
   useEffect(() => {
     setPage(link?.page ?? null);
   }, [openId, link]);
 
+  // The panes' toggles, for the menu's commands: the latest, without listening again each render.
+  const toggles = useRef<{ sidebar: (() => void) | null; rail: (() => void) | null }>({
+    sidebar: null,
+    rail: null,
+  });
   useEffect(
     () =>
       host.onCommand((command) => {
         if (command === "new-design") openDesign(null);
         if (command === "settings") openSettings();
+        // The window's own ⌘B and ⌘J take the keys first; a press they just ran isn't run again,
+        // and neither toggles under a menu or a modal (paneHeld).
+        if (command === "toggle-sidebar" && !ranJustNow("b") && !paneHeld("sidebar"))
+          toggles.current.sidebar?.();
+        if (command === "toggle-thread" && !ranJustNow("j") && !paneHeld("thread"))
+          toggles.current.rail?.();
       }),
     [host, openDesign, openSettings],
   );
@@ -396,15 +457,26 @@ function WorkspaceWindow({
     open: lost ? null : open,
     summary: openSummary,
     people,
-    members: designMembers(detail.data?.members ?? [], openSummary?.owner?.id ?? null),
+    members: designMembers(
+      detail.data?.members ?? [],
+      openSummary?.owner?.id ?? null,
+      sharePeople.data?.people,
+    ),
     workspaceKind: workspace.kind,
     sidebarOpen: !firstDesign && sidebarOpen,
     rail: {
       open: ui.railOpen,
-      onToggle: () => update((now) => ({ ...now, railOpen: !now.railOpen })),
+      onToggle: () => {
+        analytics.capture("pane toggled", {
+          pane: "thread",
+          open: !ui.railOpen,
+          ...(openId ? { design_id: openId } : {}),
+        });
+        update((now) => ({ ...now, railOpen: !now.railOpen }));
+      },
     },
     page,
-    onPage: setPage,
+    onPage: switchPage,
     link,
     onOpenDesign: ({ designId, page, artboard }) =>
       onOpenDesign({
@@ -422,6 +494,32 @@ function WorkspaceWindow({
     },
   });
 
+  const toggleSidebar = () => {
+    analytics.capture("pane toggled", { pane: "sidebar", open: !sidebarOpen });
+    update((now) => ({ ...now, sidebarOpen: !now.sidebarOpen }));
+  };
+  toggles.current = {
+    sidebar: firstDesign ? null : toggleSidebar,
+    rail: panes?.toggleRail ?? null,
+  };
+  useView(
+    settings.open
+      ? { name: "settings", section: settings.section }
+      : lost
+        ? { name: "no-access" }
+        : panes && open
+          ? { name: "design", designId: open.id, tab: panes.tab }
+          : openId
+            ? null
+            : { name: "create" },
+  );
+  useEffect(() => {
+    if (settings.open) analytics.capture("settings section viewed", { section: settings.section });
+  }, [analytics, settings.open, settings.section]);
+  useEffect(() => {
+    if (lost) analytics.capture("notice shown", { notice: "no_longer_in_workspace" });
+  }, [analytics, lost]);
+
   return (
     <AppWindow
       lights={host.lights}
@@ -431,7 +529,7 @@ function WorkspaceWindow({
           ? null
           : {
               open: sidebarOpen,
-              onToggle: () => update((now) => ({ ...now, sidebarOpen: !now.sidebarOpen })),
+              onToggle: toggleSidebar,
               content: (
                 <Sidebar
                   me={me}
@@ -456,7 +554,9 @@ function WorkspaceWindow({
                   onQueryChange={setQuery}
                   results={query?.trim() ? searchByName(query, designs) : null}
                   onOpenResult={(key: ResultKey) => {
-                    if (key.startsWith("design:")) openDesign(key.slice("design:".length));
+                    if (key.startsWith("design:")) {
+                      openDesign(key.slice("design:".length), "search");
+                    }
                     setQuery(null);
                   }}
                   onOpen={onOpen}
@@ -495,8 +595,9 @@ function WorkspaceWindow({
           onAllowMore={addWorkspace}
           onCreated={(design, messageFailed) => {
             setFresh(design);
-            openDesign(design.id);
+            openDesign(design.id, "created");
             if (messageFailed) {
+              analytics.capture("notice shown", { notice: "first_message_not_sent" });
               say("The design is made, but your message didn't reach Claude. Send it again.");
             }
           }}

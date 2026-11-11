@@ -49,6 +49,7 @@ const ask = {
   prompt: "The product.",
   schema: Schema,
   maxTokens: 4_000,
+  feature: { name: "test_feature", workspaceId: null },
 };
 
 test("it asks Claude Haiku on Anthropic's API, with the schema, the effort and the key", async () => {

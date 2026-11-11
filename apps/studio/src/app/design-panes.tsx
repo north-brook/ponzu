@@ -1,10 +1,14 @@
+import type { CanvasProps } from "@ponzu/canvas";
 import { type ReactNode, useCallback, useState } from "react";
 import type { DesignMember, DesignSummary, Person, WorkspaceKind } from "../cloud/model.ts";
 import type { DesignAddress } from "../cloud/ui/design-address.ts";
+import { useAnalytics } from "./analytics/provider.tsx";
 import { DesignCanvas, DesignChromeSlot, type OpenDesign } from "./design.tsx";
 import type { Host } from "./host.ts";
 import { BypassConfirmation, PullRequestPane } from "./pull-request-pane.tsx";
-import { DesignRail } from "./thread-rail.tsx";
+import { type CommentLink, DesignRail } from "./thread-rail.tsx";
+
+type CanvasLink = NonNullable<CanvasProps["link"]>;
 
 /*
  * What the window shows for an open design, in AppWindow's three slots: the chrome, the thread
@@ -17,6 +21,10 @@ export interface DesignPanes {
   chrome: ReactNode;
   rail: ReactNode | null;
   pane: ReactNode;
+  /** What the rail toggle does (⌘J, View › Toggle Thread): from the pull request tab too. */
+  toggleRail: () => void;
+  /** What the canvas's pane shows: the canvas, or the pull request tab over it. */
+  tab: "canvas" | "pull-request";
 }
 
 export function useDesignPanes({
@@ -66,23 +74,24 @@ export function useDesignPanes({
   // the person left it, never on the last one's tab or board.
   const designId = open?.id ?? null;
   const [tabFor, setTabFor] = useState<string | null>(null);
-  const [showing, setShowing] = useState<{
-    designId: string;
-    page?: string;
-    artboard?: string;
-    at: number;
-  }>();
+  const [showing, setShowing] = useState<{ designId: string; link: CanvasLink }>();
   const prTab = designId !== null && tabFor === designId;
-  const shown = showing?.designId === designId ? showing : null;
-  const setPrTab = (open: boolean) => setTabFor(open ? designId : null);
+  const shown = showing?.designId === designId ? showing.link : null;
+  const analytics = useAnalytics();
+  const setPrTab = (open: boolean) => {
+    if (designId && open !== prTab) {
+      analytics.capture("pane toggled", { pane: "pull_request", open, design_id: designId });
+    }
+    setTabFor(open ? designId : null);
+  };
 
-  // Every jump the thread makes (a comment's board, a stretch of work, a link in a reply) is
-  // the canvas following a link, as a ponzu:// one does: the same framing and the same mark.
+  // Every jump the thread makes (a comment, a stretch of work, a link in a reply) is the canvas
+  // following a link, as a ponzu:// one does: the same framing and the same mark.
   const show = useCallback(
-    (at: { page?: string; artboard?: string }) => {
-      if (!designId || (!at.page && !at.artboard)) return;
+    (to: Omit<CanvasLink, "at">) => {
+      if (!designId) return;
       setTabFor(null);
-      setShowing({ designId, ...at, at: Date.now() });
+      setShowing({ designId, link: { ...to, at: Date.now() } });
     },
     [designId],
   );
@@ -93,6 +102,7 @@ export function useDesignPanes({
     },
     [show],
   );
+  const onOpenComment = useCallback((to: CommentLink) => show(to), [show]);
   // A link to a page or board: on this design's canvas, or another design opened there.
   const onOpenPlace = useCallback(
     (at: DesignAddress) => {
@@ -121,6 +131,8 @@ export function useDesignPanes({
   };
 
   return {
+    toggleRail,
+    tab: prTab ? "pull-request" : "canvas",
     chrome: (
       <DesignChromeSlot
         open={open}
@@ -147,6 +159,7 @@ export function useDesignPanes({
         repo={repo}
         owner={owner}
         onOpenArtboards={onOpenArtboards}
+        onOpenComment={onOpenComment}
         onOpenPlace={onOpenPlace}
         onOpenPullRequest={() => setPrTab(true)}
         say={say}
@@ -163,23 +176,14 @@ export function useDesignPanes({
             me={me}
             page={page}
             onPage={onPage}
-            {...(shown
-              ? {
-                  link: {
-                    ...(shown.page ? { page: shown.page } : {}),
-                    ...(shown.artboard ? { artboard: shown.artboard } : {}),
-                    at: shown.at,
-                  },
-                }
-              : link
-                ? { link }
-                : {})}
+            {...(shown ? { link: shown } : link ? { link } : {})}
             onClose={onClose}
           />
         </div>
         {prTab ? (
           // Over the canvas and everything it floats, which stays put underneath for coming back.
-          <div className="absolute inset-0 z-20 bg-canvas">
+          // A repo's code and file names: masked in a private recording (analytics/privacy.ts).
+          <div data-replay="mask" className="absolute inset-0 z-20 bg-canvas">
             <PullRequestPane host={host} open={open} viewerLogin={me.login} />
           </div>
         ) : null}

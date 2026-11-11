@@ -42,6 +42,8 @@ const CANVAS: Rect = { x: 300, y: 44, width: 780, height: 850 };
 const RAIL: Rect = { x: 1080, y: 44, width: 360, height: 856 };
 const DESIGN = [CANVAS, RAIL];
 const WINDOW = { width: 1440, height: 900 };
+/** MIN_WINDOW in app-window.tsx, which this file can't import (it stays free of React). */
+const MIN = { width: 1100, height: 640 };
 
 export const COMPOSITIONS: Composition[] = [
   {
@@ -94,6 +96,15 @@ export const COMPOSITIONS: Composition[] = [
     id: "share",
     title: "Share",
     board: "teams/share.html",
+    ...WINDOW,
+    open: 'button[aria-label="Share"]',
+    masks: DESIGN,
+    reference: true,
+  },
+  {
+    // Not drawn: two people GitHub gives access to who haven't opened Ponzu yet, quieter.
+    id: "share-not-joined",
+    title: "Share · some haven't opened Ponzu",
     ...WINDOW,
     open: 'button[aria-label="Share"]',
     masks: DESIGN,
@@ -157,7 +168,20 @@ export const COMPOSITIONS: Composition[] = [
   { id: "fresh-start-personal", title: "Fresh start · a new personal workspace", ...WINDOW },
   { id: "fresh-start-no-repos", title: "Fresh start · no repos yet", ...WINDOW },
   { id: "fresh-start-loading", title: "Fresh start · loading", ...WINDOW },
-  { id: "sidebar-collapsed", title: "Sidebar collapsed, rail closed", ...WINDOW },
+  { id: "sidebar-collapsed", title: "Sidebar collapsed, rail closed", ...WINDOW, reference: true },
+  {
+    id: "sidebar-collapsed-long-name",
+    title: "Sidebar collapsed · a long design name",
+    ...WINDOW,
+    reference: true,
+  },
+  { id: "min-window", title: "The smallest window", ...MIN, reference: true },
+  {
+    id: "min-window-collapsed",
+    title: "The smallest window · sidebar collapsed",
+    ...MIN,
+    reference: true,
+  },
   { id: "settled-open", title: "Settled tray expanded", ...WINDOW },
   { id: "filtered-empty", title: "A filter nothing matches", ...WINDOW },
   {
@@ -200,6 +224,27 @@ export const COMPOSITIONS: Composition[] = [
   { id: "thread-loading", title: "Thread · loading", ...WINDOW },
   { id: "thread-every-kind", title: "Thread · every kind of line", ...WINDOW },
   { id: "thread-read-only", title: "Thread · read-only access", ...WINDOW },
+  { id: "turn-running", title: "Turn · running, drawing a board", ...WINDOW },
+  { id: "turn-running-thinking", title: "Turn · running, thinking", ...WINDOW },
+  { id: "turn-running-command", title: "Turn · running, a long command", ...WINDOW },
+  { id: "turn-completed", title: "Turn · completed, folded", ...WINDOW },
+  {
+    id: "turn-completed-open",
+    title: "Turn · completed, opened",
+    ...WINDOW,
+    // The thread's last fold: the earlier turns' are above it, out of view.
+    open: '[data-slot="trace-collapsible-trigger"] >> nth=-1',
+  },
+  { id: "turn-stopped", title: "Turn · stopped", ...WINDOW },
+  { id: "turn-failed", title: "Turn · failed", ...WINDOW },
+  { id: "turn-asked", title: "Turn · ended on a question", ...WINDOW },
+  {
+    id: "turn-old-runner",
+    title: "Turn · an older runner's thread, opened",
+    ...WINDOW,
+    // The thread's last fold: the earlier turns' are above it, out of view.
+    open: '[data-slot="trace-collapsible-trigger"] >> nth=-1',
+  },
   { id: "pull-request-busy", title: "Pull request · draft, failing, large files", ...WINDOW },
   { id: "pull-request-merged", title: "Pull request · merged", ...WINDOW },
   {

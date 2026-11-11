@@ -49,8 +49,12 @@ export interface GithubProfile {
  * person a new id (their user there was deleted and made again, or their GitHub email
  * changed), so a known GitHub id arriving under a new WorkOS id is the same person and takes
  * the new id. It throws only if that WorkOS id already belongs to a different GitHub account.
+ * `created` says whether this made the row: the person's sign-up.
  */
-export async function upsertUser(db: Db, profile: GithubProfile): Promise<User> {
+export async function upsertUser(
+  db: Db,
+  profile: GithubProfile,
+): Promise<User & { created: boolean }> {
   const [user] = await run(
     db
       .insert(users)
@@ -65,7 +69,8 @@ export async function upsertUser(db: Db, profile: GithubProfile): Promise<User> 
           avatarUrl: profile.avatarUrl,
         },
       })
-      .returning(),
+      // An inserted row has no deleting transaction; an updated one has this one's.
+      .returning({ ...getTableColumns(users), created: sql<boolean>`(xmax = 0)` }),
   );
   return user!;
 }
@@ -116,36 +121,66 @@ export interface GithubInstallation {
  * reinstall comes back to the same workspace. Who installed it and when are kept until the
  * installation itself changes; an installer learned later (the person who came back from the
  * install page, after a webhook that could not name them) fills in an unknown one.
+ *
+ * `connected` says whether this call is the one that made the account's installation work: it
+ * made the row, put a new installation on it, or lifted a suspension. Of any number of calls at
+ * once for the same installation (its webhook and the setup that follows it), exactly one says
+ * so: the insert has one winner, and the update locks the row as it reads it, so a call that
+ * waited for another reads what that one wrote.
  */
 export async function upsertWorkspace(
   db: Db,
   installation: GithubInstallation,
-): Promise<Workspace> {
-  const reinstalled = sql`${workspaces.installationId} is distinct from excluded.installation_id`;
+): Promise<Workspace & { connected: boolean }> {
+  const [inserted] = await run(
+    db
+      .insert(workspaces)
+      .values({ id: newId("ws"), ...installation, installedAt: sql`now()` })
+      .onConflictDoNothing({ target: workspaces.githubAccountId })
+      .returning(),
+  );
+  if (inserted) return { ...inserted, connected: inserted.suspendedAt === null };
+
+  // `from` the same row under another name reads it as it was before the update.
+  const before = db.$with("before").as(
+    db
+      .select({
+        id: workspaces.id,
+        installationId: workspaces.installationId,
+        suspendedAt: workspaces.suspendedAt,
+      })
+      .from(workspaces)
+      .where(eq(workspaces.githubAccountId, installation.githubAccountId))
+      .for("update"),
+  );
+  const reinstalled = sql`(${before.installationId} is distinct from ${installation.installationId}::bigint)`;
+  const installer = sql`${installation.installedByUserId}::text`;
   const suspendedAt =
     installation.suspendedAt === undefined
       ? sql`case when ${reinstalled} then null else ${workspaces.suspendedAt} end`
       : installation.suspendedAt;
   const [workspace] = await run(
     db
-      .insert(workspaces)
-      .values({ id: newId("ws"), ...installation, installedAt: sql`now()` })
-      .onConflictDoUpdate({
-        target: workspaces.githubAccountId,
-        set: {
-          githubLogin: installation.githubLogin,
-          kind: installation.kind,
-          name: installation.name,
-          avatarUrl: installation.avatarUrl,
-          installationId: installation.installationId,
-          repositorySelection: installation.repositorySelection,
-          installedByUserId: sql`case when ${reinstalled} then excluded.installed_by_user_id else coalesce(${workspaces.installedByUserId}, excluded.installed_by_user_id) end`,
-          installedAt: sql`case when ${reinstalled} then now() else ${workspaces.installedAt} end`,
-          suspendedAt,
-          ...(installation.reconciledAt ? { reconciledAt: installation.reconciledAt } : {}),
-        },
+      .with(before)
+      .update(workspaces)
+      .set({
+        githubLogin: installation.githubLogin,
+        kind: installation.kind,
+        name: installation.name,
+        avatarUrl: installation.avatarUrl,
+        installationId: installation.installationId,
+        repositorySelection: installation.repositorySelection,
+        installedByUserId: sql`case when ${reinstalled} then ${installer} else coalesce(${workspaces.installedByUserId}, ${installer}) end`,
+        installedAt: sql`case when ${reinstalled} then now() else ${workspaces.installedAt} end`,
+        suspendedAt,
+        ...(installation.reconciledAt ? { reconciledAt: installation.reconciledAt } : {}),
       })
-      .returning(),
+      .from(before)
+      .where(eq(workspaces.id, before.id))
+      .returning({
+        ...getTableColumns(workspaces),
+        connected: sql<boolean>`(${workspaces.suspendedAt} is null and (${reinstalled} or ${before.suspendedAt} is not null))`,
+      }),
   );
   return workspace!;
 }

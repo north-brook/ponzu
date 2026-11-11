@@ -15,6 +15,7 @@ import {
 } from "@ponzu/db";
 import { feedOf } from "@ponzu/db/testing";
 import { RUNNER_HEADER } from "@ponzu/runner/protocol";
+import { fingerprint } from "../runner/git-credential.ts";
 import {
   call,
   designIn,
@@ -78,6 +79,9 @@ describe("the session and the lease", () => {
       openQuestions: [],
       seq: 0,
       saved: null,
+      workspaceId: ws.id,
+      // The test app has no PostHog key: the runner traces nothing.
+      analytics: null,
     });
   });
 
@@ -178,12 +182,16 @@ describe("events", () => {
           at: first.createdAt.toISOString(),
           priority: "now",
           from: { id: ws.people.maya!.userId, name: "Maya", login: "maya" },
+          // Sent without the app's PostHog session.
+          posthogSessionId: null,
           kind: "message",
           payload: { text: "Make it blue" },
         },
         expect.objectContaining({ kind: "check", priority: "next", from: null }),
       ],
       seq: 0,
+      // No pull request yet: the agent's next turn says so.
+      pullRequest: null,
     });
   });
 
@@ -356,6 +364,47 @@ describe("the thread", () => {
       expect([answer.status, answer.body.error.code]).toEqual([400, "invalid_request"]);
     }
     expect(await listThreadItems(t.db, { designId: design.id })).toEqual([]);
+  });
+
+  test("a turn's work item keeps its record, bounded; one from an older runner has none", async () => {
+    const { design, runner } = await sample();
+    const said = newId("ti");
+    const turnItem = (id: string, log: unknown[]) => ({
+      id,
+      kind: "tool",
+      streaming: false,
+      payload: {
+        label: "Worked on 2 boards",
+        steps: 3,
+        artboards: ["ab_1"],
+        turn: { ended: "done", ms: 61_000, final: said, boards: 2, files: 0, log },
+      },
+    });
+    const ok = turnItem(newId("ti"), [
+      { after: null, text: 'Drew "Hero"', count: 2 },
+      { after: said, text: null, count: 1 },
+    ]);
+    const old = {
+      id: newId("ti"),
+      kind: "tool",
+      streaming: false,
+      payload: { label: "Drawing", steps: 2, artboards: [] },
+    };
+    expect((await send(runner, "POST", "/thread", { items: [ok, old] })).status).toBe(200);
+    const tooMany = Array.from({ length: 121 }, (_, i) => ({
+      after: null,
+      text: `${i}`,
+      count: 1,
+    }));
+    for (const bad of [
+      turnItem(newId("ti"), tooMany),
+      turnItem(newId("ti"), [{ after: "not_an_item", text: "x", count: 1 }]),
+      turnItem(newId("ti"), [{ after: null, text: "x", count: 0 }]),
+    ]) {
+      expect((await send(runner, "POST", "/thread", { items: [bad] })).status).toBe(400);
+    }
+    const stored = await listThreadItems(t.db, { designId: design.id });
+    expect(stored.map((i) => i.payload)).toEqual([ok.payload, old.payload]);
   });
 
   test("agent text is clipped, and a write holds at most 32 items, each once", async () => {
@@ -710,16 +759,104 @@ describe("git credentials", () => {
   });
 
   test("an erased token is not handed out again", async () => {
-    const { runner } = await sample();
+    const { design, runner } = await sample();
     const ask = github(`${ws.repo.fullName}.git`);
     const first = await send(runner, "POST", "/git-credential", ask);
 
-    const erased = await send(runner, "POST", "/git-credential/erase", ask);
+    const erased = await send(runner, "POST", "/git-credential/erase", {
+      ...ask,
+      reason: "GitHub's git answered 404 to the runner's check, 4 times",
+    });
     await send(runner, "POST", "/git-credential/erase", ask);
     const next = await send(runner, "POST", "/git-credential", ask);
 
     expect(erased.status).toBe(204);
     expect(next.body.password).not.toBe(first.body.password);
+    // Which token was given back, and why, by its fingerprint.
+    expect(t.logs.filter((line) => line.event === "git_credential_erased").slice(-2)).toEqual([
+      expect.objectContaining({
+        designId: design.id,
+        fingerprint: fingerprint(first.body.password),
+        reason: "GitHub's git answered 404 to the runner's check, 4 times",
+      }),
+      expect.objectContaining({ fingerprint: null, reason: null }),
+    ]);
+  });
+
+  test("every token git is handed is logged: minted or reused, its expiry and what GitHub granted, never the token", async () => {
+    const { design, runner } = await sample();
+    const ask = github(`${ws.repo.fullName}.git`);
+    await send(runner, "POST", "/git-credential/erase", ask);
+    const first = await send(runner, "POST", "/git-credential", ask);
+    await send(runner, "POST", "/git-credential", ask);
+
+    const lines = t.logs.filter((line) => line.event === "git_credential").slice(-2);
+    const said = {
+      designId: design.id,
+      fingerprint: fingerprint(first.body.password),
+      expiresAt: first.body.expiresAt,
+      permissions: { contents: "write", metadata: "read" },
+      repositoryIds: [ws.repo.githubRepoId],
+    };
+    expect(lines).toEqual([
+      expect.objectContaining({ ...said, minted: true }),
+      expect.objectContaining({ ...said, minted: false }),
+    ]);
+    expect(JSON.stringify(t.logs)).not.toContain(first.body.password);
+  });
+
+  test("what the runner saw of git and GitHub is logged here, under the design: its checks and pushes", async () => {
+    const { design, runner } = await sample();
+    const refused = await send(runner, "POST", "/git-report", {
+      name: "git_credential_refused",
+      fields: { fingerprint: "0123456789ab", status: 404, check: 2 },
+    });
+    expect(refused.status).toBe(204);
+    await send(runner, "POST", "/git-report", {
+      name: "git_push",
+      fields: {
+        branch: "pz/hero",
+        attempt: 0,
+        ok: false,
+        kind: "transient",
+        said: "x".repeat(900),
+      },
+    });
+    expect(t.logs.findLast((line) => line.event === "git_credential_refused")).toMatchObject({
+      designId: design.id,
+      from: "runner",
+      fingerprint: "0123456789ab",
+      status: 404,
+      check: 2,
+    });
+    const pushed = t.logs.findLast((line) => line.event === "git_push");
+    expect(pushed).toMatchObject({ designId: design.id, ok: false, kind: "transient" });
+    expect(String(pushed?.said).length).toBe(500);
+
+    // Only names it knows, and only short scalar fields.
+    const bad = async (body: unknown) => (await send(runner, "POST", "/git-report", body)).status;
+    expect(await bad({ name: "anything", fields: {} })).toBe(400);
+    expect(await bad({ name: "git_push", fields: { nested: { a: 1 } } })).toBe(400);
+  });
+
+  test("a token GitHub grants less than contents: write is minted again, and never handed to git", async () => {
+    const { runner } = await sample();
+    const ask = github(`${ws.repo.fullName}.git`);
+    await send(runner, "POST", "/git-credential/erase", ask);
+    const asked = t.github.installationTokenRequests.length;
+
+    t.github.grantNext.push({ metadata: "read" });
+    const second = await send(runner, "POST", "/git-credential", ask);
+    expect(second.status).toBe(200);
+    expect(t.github.installationTokenRequests.length - asked).toBe(2);
+    expect(t.logs.findLast((line) => line.event === "git_credential")).toMatchObject({
+      permissions: { contents: "write", metadata: "read" },
+    });
+
+    await send(runner, "POST", "/git-credential/erase", ask);
+    t.github.grantNext.push({ metadata: "read" }, { contents: "read", metadata: "read" });
+    const refused = await send(runner, "POST", "/git-credential", ask);
+    expect([refused.status, refused.body.error.code]).toEqual([502, "upstream_unavailable"]);
   });
 
   test("any other host, path or protocol is forbidden, Scratch has none, and GitHub failing is upstream", async () => {

@@ -286,3 +286,77 @@ export async function compare(
   );
   return { ...result, image: Buffer.from(result.image, "base64") };
 }
+
+/** Where things are in one frame, after layout and the canvas's own resize handling. */
+export interface Frame {
+  t: number;
+  /** The canvas pane's edges. */
+  left: number;
+  right: number;
+  /** The divider before the tabs, and the one at the rail's edge. */
+  divider: number;
+  railDivider: number;
+  /** The first page tab, and the thread toggle. */
+  tab: number;
+  thread: number;
+  /** The design's name in the chrome: its room's width, and how opaque it is. */
+  title: number;
+  titleOpacity: number;
+  /** The name's own width inside its room: set once, not re-cut as the room moves. */
+  titleText: number;
+  /** The first board on the canvas, where there is one: where it is on screen. */
+  boardX: number;
+  boardY: number;
+}
+
+/**
+ * Presses `selector` and records every frame until things have rested. Measured in a
+ * ResizeObserver on the canvas pane made after the page's own: where a frame is painted, after
+ * the canvas has answered its pane's resize.
+ */
+export function sampleToggle(page: Page, selector: string): Promise<Frame[]> {
+  return page.evaluate(
+    (selector) =>
+      new Promise<Frame[]>((resolve) => {
+        const main = document.querySelector("main")!;
+        const x = (el: Element | null | undefined) => el?.getBoundingClientRect().left ?? NaN;
+        const dividers = () => document.querySelectorAll("header [data-chrome-divider]");
+        const frames: Frame[] = [];
+        const measure = () => {
+          const box = main.getBoundingClientRect();
+          const title = document.querySelector("[data-chrome-title]");
+          const all = dividers();
+          const board = document.querySelector("[data-artboard-host]")?.getBoundingClientRect();
+          frames.push({
+            t: performance.now(),
+            left: box.left,
+            right: box.right,
+            divider: x(all[0]),
+            railDivider: x(all[1]),
+            tab: x(document.querySelector('header [role="tab"]')),
+            thread: x(document.querySelector('header [aria-controls="thread"]')),
+            title: title?.getBoundingClientRect().width ?? NaN,
+            titleOpacity: title ? Number(getComputedStyle(title).opacity) : NaN,
+            titleText: title?.firstElementChild?.getBoundingClientRect().width ?? NaN,
+            boardX: board?.left ?? NaN,
+            boardY: board?.top ?? NaN,
+          });
+        };
+        const ro = new ResizeObserver(measure);
+        measure();
+        ro.observe(main);
+        (document.querySelector(selector) as HTMLElement).click();
+        // Rested: the panes' clock and as much again.
+        const pane = getComputedStyle(document.documentElement).getPropertyValue("--dur-pane");
+        setTimeout(
+          () => {
+            ro.disconnect();
+            measure();
+            resolve(frames);
+          },
+          Math.max(700, 2 * (Number.parseFloat(pane) || 0) + 300),
+        );
+      }),
+    selector,
+  );
+}

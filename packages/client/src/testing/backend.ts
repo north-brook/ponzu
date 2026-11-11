@@ -5,13 +5,21 @@ import {
   type CommittedOp,
   type Doc,
   emptyDoc,
+  findArtboard,
   InvalidOpError,
   newId,
   newOpId,
   type Op,
+  threadPage,
 } from "@ponzu/core";
 import { Sequencer } from "@ponzu/core/testing";
-import type { QuestionBody, RunErrorCode, ThreadItem } from "@ponzu/runner/protocol";
+import {
+  COMMENT_PICTURE,
+  type QuestionBody,
+  type RunErrorCode,
+  type ThreadItem,
+  type TurnRecord,
+} from "@ponzu/runner/protocol";
 import type { AnswerBody, Api } from "../api.ts";
 import { type Clock, systemClock } from "../clock.ts";
 import { ApiError, networkError } from "../errors.ts";
@@ -64,6 +72,17 @@ interface FakeWorkspace {
   suspended: boolean;
   /** Someone has GitHub's install page open for it: the next sync finds it installed. */
   installing: boolean;
+  /** People GitHub says can reach it who have not opened Ponzu. */
+  githubOnly: FakeGithubOnly[];
+}
+
+/** Someone with access on GitHub who has never opened Ponzu: no user, no role. */
+interface FakeGithubOnly {
+  githubUserId: number;
+  login: string;
+  name: string | null;
+  /** What they may do in each repo, by repo id; one left out they cannot reach. */
+  access: Map<string, Exclude<Permission, "none">>;
 }
 
 interface FakeThreadItem {
@@ -107,6 +126,8 @@ export interface FakeDesign {
   github: FakePullRequests | null;
   /** The files people uploaded to it: `assets/<name>` to their type. */
   assets: Map<string, string>;
+  /** The pictures of people's comments, `comments/<name>` to their bytes, by upload id. */
+  pictures: Map<string, { ref: string; bytes: Uint8Array; userId: string }>;
   /** Stops people asked for, oldest first. */
   stops: string[];
   /** What it was made to run on, when the create said. */
@@ -131,12 +152,19 @@ export interface FakeAgent {
   /** Say something in the thread; while `streaming`, saying again with the same id replaces it. */
   say(text: string, opts?: { id?: string; streaming?: boolean }): string;
   /**
-   * A stretch of work in the thread: while `streaming`, the working line; saying again with the
-   * same id replaces it, until it is finished.
+   * The agent's work in the thread: with `turn`, a turn's one item and its record, as a runner
+   * that keeps one writes it; without, a stretch of work as an older runner wrote it. Saying
+   * again with the same id replaces it while it streams.
    */
   tool(
     label: string,
-    opts?: { id?: string; streaming?: boolean; steps?: number; artboards?: string[] },
+    opts?: {
+      id?: string;
+      streaming?: boolean;
+      steps?: number;
+      artboards?: string[];
+      turn?: TurnRecord;
+    },
   ): string;
   /** Show it at work on these boards, with a working line. */
   work(artboards: string[], status?: string): void;
@@ -186,6 +214,9 @@ export class FakeBackend {
   latencyMs = 0;
   private ids = 0;
   private refreshing = false;
+  /** Each person's GitHub id, and the next one to hand out. */
+  private readonly githubIds = new Map<string, number>();
+  private nextGithubId = 70_001;
 
   /** Settings: ping toggles and devices, environments, usage and caps (`setBase`, `use`). */
   readonly settings: FakeSettings;
@@ -205,6 +236,7 @@ export class FakeBackend {
       avatarUrl: null,
     };
     this.people.set(person.id, person);
+    this.githubIds.set(person.id, this.nextGithubId++);
     return person;
   }
 
@@ -220,9 +252,24 @@ export class FakeBackend {
     /** False: a GitHub account the App is not on yet, which "Where do you design?" offers. */
     installed?: boolean;
     suspended?: boolean;
+    /**
+     * People with access on GitHub who have not opened Ponzu. Each can push to every repo
+     * unless `repos` (by repo name) says what they may do and where.
+     */
+    githubOnly?: {
+      login: string;
+      name?: string | null;
+      repos?: Record<string, Exclude<Permission, "none">>;
+    }[];
   }): { id: string; githubAccountId: number; repos: { id: string; fullName: string }[] } {
     const installed = input.installed ?? true;
     const kind = input.kind ?? "org";
+    const repos = (input.repos ?? []).map((repo) => ({
+      id: this.id("repo"),
+      fullName: `${input.login}/${repo.name}`,
+      name: repo.name,
+      access: new Map(Object.entries(repo.access ?? {})),
+    }));
     const workspace: FakeWorkspace = {
       id: this.id("ws"),
       githubAccountId: 1000 + this.ids,
@@ -242,10 +289,17 @@ export class FakeBackend {
       everInstalled: installed,
       suspended: input.suspended ?? false,
       installing: false,
-      repos: (input.repos ?? []).map((repo) => ({
-        id: this.id("repo"),
-        fullName: `${input.login}/${repo.name}`,
-        access: new Map(Object.entries(repo.access ?? {})),
+      repos: repos.map(({ id, fullName, access }) => ({ id, fullName, access })),
+      githubOnly: (input.githubOnly ?? []).map((someone) => ({
+        githubUserId: this.nextGithubId++,
+        login: someone.login,
+        name: someone.name === undefined ? someone.login : someone.name,
+        access: new Map(
+          repos.flatMap((repo) => {
+            const can = someone.repos ? someone.repos[repo.name] : "write";
+            return can ? [[repo.id, can] as const] : [];
+          }),
+        ),
       })),
     };
     this.workspaces.set(workspace.id, workspace);
@@ -348,8 +402,11 @@ export class FakeBackend {
         this.touch(design);
         return id;
       },
-      tool: (label, { id = this.id("ti"), streaming = true, steps = 1, artboards = [] } = {}) => {
-        const payload = { label, steps, artboards };
+      tool: (
+        label,
+        { id = this.id("ti"), streaming = true, steps = 1, artboards = [], turn } = {},
+      ) => {
+        const payload = { label, steps, artboards, ...(turn ? { turn } : {}) };
         const existing = design.thread.find((entry) => entry.item.id === id);
         if (existing?.item.streaming) {
           existing.item = { ...existing.item, payload, streaming } as ThreadItem;
@@ -540,8 +597,11 @@ export class FakeBackend {
           status: workspace.installed ? ("ready" as const) : ("not_installed" as const),
           workspaceId: workspace.installed ? workspace.id : null,
           suspended: workspace.suspended,
+          // Everyone GitHub says can reach it, whether or not they have opened Ponzu.
           memberCount:
-            workspace.kind === "org" && workspace.installed ? workspace.members.size : null,
+            workspace.kind === "org" && workspace.installed
+              ? workspace.members.size + workspace.githubOnly.length
+              : null,
         })),
     });
     const onboarding = () => {
@@ -560,6 +620,42 @@ export class FakeBackend {
         githubAccess: workspace.owners.has(userId) ? ("owner" as const) : ("member" as const),
       };
     };
+    /** Someone who has opened Ponzu, as the API's `people` lists them. */
+    const joinedRow = (workspace: FakeWorkspace, userId: string) => {
+      const row = memberRow(workspace, userId);
+      return {
+        githubUserId: this.githubIds.get(userId)!,
+        githubLogin: row.githubLogin,
+        name: row.name,
+        avatarUrl: row.avatarUrl,
+        joined: true,
+        userId,
+        role: row.role,
+        githubAccess: row.githubAccess,
+      };
+    };
+    /** Someone who has not, yet. */
+    const githubOnlyRow = (someone: FakeGithubOnly) => ({
+      githubUserId: someone.githubUserId,
+      githubLogin: someone.login,
+      name: someone.name,
+      avatarUrl: null,
+      joined: false,
+      userId: null,
+      role: null,
+      githubAccess: "member" as const,
+    });
+    const byName = (a: { name: string | null; githubLogin: string }, b: typeof a) =>
+      (a.name ?? a.githubLogin).localeCompare(b.name ?? b.githubLogin);
+    /** Everyone who can reach a workspace: joined admins, joined members, then the rest. */
+    const peopleOf = (workspace: FakeWorkspace) => [
+      ...[...workspace.members.keys()]
+        .map((userId) => joinedRow(workspace, userId))
+        .toSorted(
+          (a, b) => Number(b.role === "admin") - Number(a.role === "admin") || byName(a, b),
+        ),
+      ...workspace.githubOnly.map(githubOnlyRow).toSorted(byName),
+    ];
 
     return {
       me: () =>
@@ -635,6 +731,7 @@ export class FakeBackend {
                   canPush: canWrite(repoPermission(repo, person.id)),
                 })),
               members: [...workspace.members.keys()].map((userId) => memberRow(workspace, userId)),
+              people: peopleOf(workspace),
             };
           }),
         designs: (id) =>
@@ -725,6 +822,7 @@ export class FakeBackend {
               branch,
               github: null,
               assets: new Map(),
+              pictures: new Map(),
               stops: [],
               thread: [],
               questions: [],
@@ -794,6 +892,37 @@ export class FakeBackend {
         commit: (id, ops) => call(() => commit(writable(id), ops)),
         undo: (id) => call(() => reverse(writable(id), "undo")),
         redo: (id) => call(() => reverse(writable(id), "redo")),
+        people: (id) =>
+          call(() => {
+            const design = readable(id);
+            const workspace = this.workspaces.get(design.workspaceId)!;
+            const repo = workspace.repos.find((candidate) => candidate.id === design.repoId);
+            const accessOf = (userId: string | null, permission: Permission) =>
+              userId === design.ownerId
+                ? ("owner" as const)
+                : permission === "read"
+                  ? ("view" as const)
+                  : ("edit" as const);
+            const joined = [...workspace.members.keys()]
+              .filter((userId) =>
+                repo ? repoPermission(repo, userId) !== "none" : userId === design.ownerId,
+              )
+              .map((userId) => ({
+                ...joinedRow(workspace, userId),
+                access: accessOf(userId, repo ? repoPermission(repo, userId) : "admin"),
+              }));
+            const others = repo
+              ? workspace.githubOnly.flatMap((someone) => {
+                  const can = someone.access.get(repo.id);
+                  return can ? [{ ...githubOnlyRow(someone), access: accessOf(null, can) }] : [];
+                })
+              : [];
+            return {
+              people: [...joined.toSorted(byName), ...others.toSorted(byName)].toSorted(
+                (a, b) => Number(b.access === "owner") - Number(a.access === "owner"),
+              ),
+            };
+          }),
         presence: (id, pageId) =>
           call(() => {
             const design = readable(id);
@@ -943,6 +1072,47 @@ export class FakeBackend {
             const ref = `assets/${stem}-${this.id("x").slice(-6)}${ext}`;
             design.assets.set(ref, file.type);
             return { id: this.id("up"), ref, url: `${assetsUrl(design)}${ref}` };
+          }),
+        uploadCommentPicture: (id, messageId, files) =>
+          call(() => {
+            const design = writable(id);
+            return (["light", "dark"] as const).map((theme) => {
+              const upload = this.id("up");
+              const ref = `comments/${messageId}-${theme}-${upload.slice(-6)}.webp`;
+              design.pictures.set(upload, { ref, bytes: files[theme], userId: person.id });
+              return upload;
+            });
+          }),
+        attachCommentPicture: (id, messageId, uploads) =>
+          call(() => {
+            const design = writable(id);
+            const refs = uploads.map((upload) => design.pictures.get(upload));
+            const of = (theme: string) =>
+              refs.find((r) => r?.userId === person.id && r.ref.includes(`${messageId}-${theme}-`));
+            const light = of("light");
+            const dark = of("dark");
+            if (!light || !dark) {
+              throw new ApiError(400, "invalid_request", "A comment's picture is its two files.");
+            }
+            // As the API's statement does: the author's comment keeps the first it is given.
+            const entry = design.thread.find(
+              ({ item, userId }) =>
+                item.kind === "comment" &&
+                item.payload.messageId === messageId &&
+                userId === person.id,
+            );
+            if (!entry || entry.item.kind !== "comment") {
+              throw new ApiError(404, "not_found", "There is no such comment of yours.");
+            }
+            entry.item.payload.picture ??= {
+              light: light.ref,
+              dark: dark.ref,
+              width: COMMENT_PICTURE.width,
+              height: COMMENT_PICTURE.height,
+            };
+            entry.updatedAt = this.now();
+            this.changed();
+            return { picture: entry.item.payload.picture };
           }),
         pullRequest: {
           get: (id) => call(() => github(readable(id)).tab()),
@@ -1394,17 +1564,24 @@ function commentsIn(op: Op, doc: Doc): Omit<CommentPayload, "from">[] {
         ? { thread: doc.threads.find((t) => t.id === op.id), message: op.message }
         : null;
   if (!said?.thread) return [];
-  const artboardId = said.thread.artboardId ?? null;
-  const board = doc.pages.flatMap((page) => page.artboards).find((ab) => ab.id === artboardId);
+  const thread = said.thread;
+  const artboardId = thread.artboardId ?? null;
+  const board = artboardId ? findArtboard(doc, artboardId)?.artboard : undefined;
+  const page = doc.threads.some((t) => t.id === thread.id) ? threadPage(doc, thread) : null;
   return [
     {
-      threadId: said.thread.id,
+      threadId: thread.id,
       messageId: said.message.id,
       text: said.message.text,
       artboardId,
       artboardName: board?.name ?? null,
-      // The board as it is now, which the comment's thumbnail keeps showing.
-      ...(board ? { board: structuredClone(board) } : {}),
+      ...(page
+        ? {
+            pageId: page.id,
+            pageName: page.name,
+            at: { x: (board?.x ?? 0) + thread.x, y: (board?.y ?? 0) + thread.y },
+          }
+        : {}),
     },
   ];
 }

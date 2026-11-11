@@ -1,6 +1,8 @@
 import type { Db } from "@ponzu/db";
 import { createTestDb } from "@ponzu/db/testing";
 import { FakeClock, FakeProvider } from "@ponzu/sandbox";
+import { createAnalytics } from "../analytics/analytics.ts";
+import type { PosthogConfig } from "../analytics/posthog.ts";
 import { createApp } from "../create-app.ts";
 import { createBackground } from "../deps/background.ts";
 import { createGithub } from "../deps/github.ts";
@@ -14,11 +16,13 @@ import type { MinimumVersions } from "../http/client-version.ts";
 import { createLogger, type LogLine } from "../http/log.ts";
 import { GitTokens } from "../runner/git-credential.ts";
 import { createVault } from "../vault/vault.ts";
+import { MemoryAnalytics } from "./fake-analytics.ts";
 import { FakeGithub, type FakeGithubUser } from "./fake-github.ts";
 import { FakeModel } from "./fake-model.ts";
 import { FakeWorkos, type FakeWorkosUser } from "./fake-workos.ts";
 import { FakeAnthropic, FakePoke, FakeSealer, MemoryStorage } from "./fakes.ts";
 
+export { type CapturedEvent, MemoryAnalytics } from "./fake-analytics.ts";
 export { FakeGithub, type FakeInstallation, type FakeRepository } from "./fake-github.ts";
 export { FakeModel, type FakeReply } from "./fake-model.ts";
 export {
@@ -108,6 +112,8 @@ export async function createTestApp(
      * provider account. Give each its own `sandbox.scope`.
      */
     provider?: FakeProvider;
+    /** What the runner is told to report its turns to PostHog with; none by default. */
+    posthog?: PosthogConfig;
   } = {},
 ) {
   const local = options.live ? null : await createTestDb();
@@ -133,13 +139,19 @@ export async function createTestApp(
   let requests = 0;
   const log = createLogger((line) => logs.push(line));
   const background: Promise<void>[] = [];
+  const keep = (work: Promise<void>) => background.push(work);
+  const analytics = new MemoryAnalytics();
+  const tracked = createAnalytics({ sink: analytics, keep, log });
 
   const deps: Deps = {
     db,
     clock,
     ids: { requestId: () => `req_test_${++requests}` },
     log,
-    background: createBackground(log, (work) => background.push(work)),
+    analytics: tracked,
+    background: createBackground(log, keep, (name, error) =>
+      tracked.exception(error, { background: name }),
+    ),
     vault: createVault({ key: TEST_VAULT_KEY }),
     workos: createWorkos({
       apiKey: workos.apiKey,
@@ -162,6 +174,7 @@ export async function createTestApp(
       build: { version: "0.0.0-test", commit: options.commit ?? "testcommit" },
       minimumClientVersions: options.minimumClientVersions ?? {},
       assetsUrl: options.assetsUrl ?? TEST_ASSETS_URL,
+      posthog: options.posthog ?? null,
       githubApp: {
         slug: "ponzu-test",
         webhookSecret: github.credentials.webhookSecret,
@@ -290,6 +303,8 @@ export async function createTestApp(
     poke,
     realtime: sealer,
     model,
+    /** Every event, profile and exception the app captured, as PostHog would be handed them. */
+    analytics,
     logs,
     startSignIn,
     signInAs,

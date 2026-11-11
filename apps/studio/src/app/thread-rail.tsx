@@ -9,7 +9,7 @@ import { useNow } from "../cloud/time.ts";
 import { useColorScheme } from "../cloud/ui/color-scheme.ts";
 import type { DesignAddress } from "../cloud/ui/design-address.ts";
 import { type DesignPlaces, DesignPlacesProvider } from "../cloud/ui/place-link.tsx";
-import { BoardMiniature } from "./board-miniature.tsx";
+import { CommentScene } from "./comment-picture.tsx";
 import { type OpenDesign, useAccess, useSourceState } from "./design.tsx";
 import type { Host } from "./host.ts";
 import { usePonzu } from "./ponzu-query.tsx";
@@ -17,7 +17,6 @@ import {
   agentActivity,
   answerLine,
   closedQuestions,
-  frozenBoards,
   shownItems,
   steerGate,
   type ThreadContext,
@@ -25,6 +24,14 @@ import {
 } from "./thread-map.ts";
 import type { PendingMessage } from "./thread-store.ts";
 import { useSnapshot } from "./use-snapshot.ts";
+
+/** Where the canvas goes for a comment (the canvas's `link`). */
+export interface CommentLink {
+  thread: string;
+  page?: string;
+  artboard?: string;
+  spot?: { x: number; y: number };
+}
 
 /*
  * The thread rail of an open design on live data (AppWindow's `rail`): its thread, what its agent
@@ -40,6 +47,7 @@ export function DesignRail({
   repo,
   owner,
   onOpenArtboards,
+  onOpenComment,
   onOpenPlace,
   onOpenPullRequest,
   onConnectClaude,
@@ -55,6 +63,8 @@ export function DesignRail({
   owner: Person | null;
   /** Shows these boards on the canvas. */
   onOpenArtboards: (artboardIds: string[]) => void;
+  /** Takes the canvas to a comment, or to where it was when its thread is gone. */
+  onOpenComment: (to: CommentLink) => void;
   /** Shows a page or board a link in the agent's words points at, in this design or another. */
   onOpenPlace: (at: DesignAddress) => void;
   onOpenPullRequest: () => void;
@@ -84,6 +94,7 @@ export function DesignRail({
     [asked, people],
   );
   const attachments = useSnapshot(open.uploads);
+  const pictures = useSnapshot(open.pictures);
   const head = useLiveQuery("design.head", { designId }).rows?.[0];
   const meRow = useLiveQuery("me", {}).rows?.[0];
   const theme = useColorScheme();
@@ -120,14 +131,12 @@ export function DesignRail({
   const items = useMemo(() => {
     // A design just made shows its first message while its thread is read.
     if (!thread.items && !thread.pending.length) return null;
-    const ctx: ThreadContext = { people, assetsUrl: assetBase ?? null, doc };
+    const ctx: ThreadContext = { people, assetsUrl: assetBase ?? null, doc, pictures };
     return [
       ...shown.map((item) => withAnswer(toThreadItem(item, ctx), answers)),
       ...thread.pending.map((message, i) => pendingItem(message, me, i)),
     ];
-  }, [thread, shown, answers, people, assetBase, doc, me]);
-  // Each comment's board as it was when the comment was made, where the API kept a copy.
-  const frozen = useMemo(() => frozenBoards(shown), [shown]);
+  }, [thread, shown, answers, people, assetBase, doc, me, pictures]);
 
   // With the rail open, the viewer has read the thread as far as it goes.
   const newest = thread.items?.at(-1)?.seq;
@@ -140,12 +149,23 @@ export function DesignRail({
     return () => clearTimeout(timer);
   }, [host, designId, newest, access]);
 
-  const onOpenComment = useCallback(
-    (threadId: string) => {
-      const artboard = doc?.threads.find((t) => t.id === threadId)?.artboardId;
-      if (artboard) onOpenArtboards([artboard]);
+  // To the comment, resolved or not; to where it was, once its thread has been deleted.
+  const openComment = useCallback(
+    (threadId: string, messageId: string) => {
+      const item = shown.find(
+        (candidate) => candidate.kind === "comment" && candidate.payload.messageId === messageId,
+      );
+      const left = item?.kind === "comment" ? item.payload : null;
+      const there = doc?.threads.some((t) => t.id === threadId) ?? true;
+      if (!there) say("That comment was deleted. This is where it was.");
+      onOpenComment({
+        thread: threadId,
+        ...(left?.pageId ? { page: left.pageId } : {}),
+        ...(left?.artboardId ? { artboard: left.artboardId } : {}),
+        ...(left?.at ? { spot: left.at } : {}),
+      });
     },
-    [doc, onOpenArtboards],
+    [shown, doc, onOpenComment, say],
   );
 
   // What a link in the agent's words can find: the design as it is now, while it streams too.
@@ -195,16 +215,19 @@ export function DesignRail({
         {...(onConnectClaude
           ? { onConnectClaude: () => onConnectClaude(gate?.kind === "claude_expired") }
           : {})}
-        renderBoard={(artboardId, commentId) => (
-          <BoardMiniature
-            doc={doc}
-            artboardId={artboardId}
-            frozen={frozen.get(commentId) ?? null}
-            assetBase={assetBase}
-            theme={theme}
-          />
-        )}
-        onOpenComment={onOpenComment}
+        renderDrawing={(messageId) => {
+          const local = pictures.get(messageId);
+          return local?.state === "drawing" ? (
+            <CommentScene
+              doc={local.doc}
+              threadId={local.threadId}
+              messageId={messageId}
+              theme={theme}
+              assetBase={assetBase}
+            />
+          ) : null;
+        }}
+        onOpenComment={openComment}
         onOpenArtboards={onOpenArtboards}
         onOpenPullRequest={onOpenPullRequest}
         onOpenLink={(url) => host.openExternal(url)}

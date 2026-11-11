@@ -8,6 +8,7 @@ import {
   type RepoIdeasAccess,
   type User,
 } from "@ponzu/db";
+import { noteWorkspace } from "../analytics/scope.ts";
 import type { Deps } from "../deps/index.ts";
 import { ApiError } from "../http/errors.ts";
 import type { Actor, UserActor } from "./actor.ts";
@@ -39,6 +40,7 @@ export async function requireWorkspace(
   const { deps, actor } = c.var;
   const workspace = await getMemberWorkspace(deps.db, { userId: actor.user.id, workspaceId });
   if (!workspace) throw new ApiError(404, "not_found", "There is no such workspace.");
+  noteWorkspace(workspace.id);
   if (role === "admin" && workspace.role !== "admin") {
     throw new ApiError(403, "forbidden", "Only an admin of this workspace can do this.");
   }
@@ -74,6 +76,7 @@ export async function requireDesign(
   if (!found) throw notFound;
   const access = actor.kind === "runner" ? "write" : await personAccess(deps, actor.user, found);
   if (!access) throw notFound;
+  noteWorkspace(found.design.workspaceId);
   if (need === "write" && access !== "write") {
     throw new ApiError(403, "forbidden", "You can open this design but not change it.");
   }
@@ -101,6 +104,7 @@ export async function requireRepo(
     known: found.known,
   });
   if (permission === "none") throw new ApiError(404, "not_found", "There is no such repo.");
+  noteWorkspace(found.repo.workspaceId);
   if (need === "write" && !canWrite(permission)) {
     throw new ApiError(403, "forbidden", "You can read this repo but not push to it.");
   }

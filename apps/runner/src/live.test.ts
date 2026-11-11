@@ -143,3 +143,79 @@ test.skipIf(!live)(
   },
   200_000,
 );
+
+test.skipIf(!live)(
+  "two small boards and a file edit: the working state as it went, and the turn folded",
+  async () => {
+    const work = realpathSync(await mkdtemp(join(tmpdir(), "ponzu-live-work-")));
+    const state = await mkdtemp(join(tmpdir(), "ponzu-live-state-"));
+    const transcripts = join(homedir(), ".claude", "projects", work.replace(/[^a-zA-Z0-9]/g, "-"));
+    dirs.push(work, state, transcripts);
+    await Bun.write(join(work, "tokens.css"), ":root {\n  --accent: #3b82f6;\n}\n");
+    const api = new FakeRunnerApi({ doc: emptyDoc("Untitled"), session: { model: "haiku" } });
+    const agent = new ClaudeAgent({ client: "ponzu-runner/live-test", log: (l) => logs.push(l) });
+    const runner = new Runner({
+      api: api.client(),
+      agent,
+      prepare: async () => work,
+      stateDir: state,
+      log: (m) => logs.push(m),
+      secrets: [process.env.ANTHROPIC_API_KEY!],
+      timing: { stateGapMs: 50 },
+    });
+    await runner.start();
+    api.push({
+      kind: "message",
+      payload: {
+        text: 'Draw two small boards, "Plan" and "Plan ready", each a 320×200 card with one line of text. Then in tokens.css change --accent to #16a34a. Say a word between the steps. No screenshots.',
+      },
+    });
+    runner.poke();
+    const deadline = Date.now() + 180_000;
+    while (
+      !(
+        api.lastState?.state === "idle" &&
+        api.usage.size > 0 &&
+        api.items().every((i) => !i.streaming)
+      )
+    ) {
+      if (Date.now() > deadline) throw new Error(`timed out\n${logs.join("\n")}`);
+      await Bun.sleep(50);
+    }
+    await runner.stop();
+
+    // Every state reported, as the head would hold it in turn, repeats folded.
+    const states = api.states
+      .map((s) => (s.state === "working" ? s.status : s.state))
+      .filter((s, i, all) => s !== all[i - 1]);
+    const items = api.items();
+    const turn = items.find((i) => i.kind === "tool")!.payload as WorkItem;
+    const cost = [...api.usage.values()]
+      .flatMap((t) => t.models)
+      .reduce((sum, m) => sum + m.costUsd, 0);
+    console.log(
+      [
+        "States:",
+        ...states.map((s) => `  ${s}`),
+        "Thread:",
+        ...items.map((i) => `  ${i.kind} ${JSON.stringify(i.payload).slice(0, 160)}`),
+        `Turn label: ${turn.label}`,
+        `Turn record: ${JSON.stringify(turn.turn, null, 2)}`,
+        `Cost: $${cost.toFixed(4)}`,
+      ].join("\n"),
+    );
+
+    const working = api.states.filter((s) => s.state === "working");
+    expect(working.every((s) => typeof s.status === "string" && s.status.length > 0)).toBe(true);
+    expect(states).toContain("Thinking");
+    expect(states.some((s) => s?.startsWith('Drawing "Plan'))).toBe(true);
+    expect(JSON.stringify(api.states)).not.toContain(process.env.ANTHROPIC_API_KEY!);
+    expect(items.filter((i) => i.kind === "tool")).toHaveLength(1);
+    expect(turn.turn).toMatchObject({ ended: "done" });
+    expect(turn.turn!.boards).toBeGreaterThanOrEqual(2);
+    expect(turn.turn!.files).toBeGreaterThanOrEqual(1);
+    expect(items.find((i) => i.id === turn.turn!.final)?.kind).toBe("assistant");
+    expect(await Bun.file(join(work, "tokens.css")).text()).toContain("#16a34a");
+  },
+  200_000,
+);

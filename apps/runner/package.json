@@ -5,7 +5,8 @@
   "type": "module",
   "license": "MIT",
   "exports": {
-    "./protocol": "./src/api/protocol.ts"
+    "./protocol": "./src/api/protocol.ts",
+    "./turn": "./src/turn.ts"
   },
   "scripts": {
     "build": "bun scripts/build.ts",
@@ -16,6 +17,7 @@
     "@ponzu/core": "workspace:*",
     "@ponzu/render": "workspace:*",
     "@ponzu/tools": "workspace:*",
+    "posthog-node": "^5.68.2",
     "zod": "^4"
   },
   "devDependencies": {

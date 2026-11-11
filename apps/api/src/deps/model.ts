@@ -9,6 +9,7 @@ import {
   RetryError,
 } from "ai";
 import type { z } from "zod";
+import type { AiTracing } from "../analytics/ai.ts";
 import { UpstreamError } from "../http/errors.ts";
 import type { Fetch } from "./fetch.ts";
 
@@ -42,6 +43,11 @@ export interface StructuredRequest<T> {
   effort: "low" | "medium" | "high";
   /** Gives up the request when it aborts: the caller's timeout. */
   signal?: AbortSignal;
+  /**
+   * What asked, as LLM analytics names it (`repo_ideas`), and the workspace it was asked for:
+   * every call is traced under its feature (`analytics/ai.ts`).
+   */
+  feature: { name: string; workspaceId: string | null };
 }
 
 export interface StructuredAnswer<T> {
@@ -75,11 +81,14 @@ export function createClaude({
   apiKey,
   fetch,
   timeoutMs = TIMEOUT_MS,
+  tracing = null,
 }: {
   apiKey: string;
   fetch: Fetch;
   /** One request's own limit, retry included: shorter only in tests. */
   timeoutMs?: number;
+  /** Where each call is traced, or null when analytics is off. */
+  tracing?: AiTracing | null;
 }): Model {
   const anthropic = createAnthropic({
     apiKey,
@@ -88,7 +97,7 @@ export function createClaude({
     baseURL: "https://api.anthropic.com/v1",
     fetch: fetch as typeof globalThis.fetch,
   });
-  return createModel(anthropic(CLAUDE_HAIKU), { timeoutMs });
+  return createModel(anthropic(CLAUDE_HAIKU), { timeoutMs, tracing });
   // Through the Vercel AI Gateway instead, the model is this one line (with `createGateway`
   // from "ai"), its key read in env.ts like every other (AI_GATEWAY_API_KEY, made in the team's
   // AI Gateway settings), and PONZU_ANTHROPIC_API_KEY no longer needed:
@@ -100,7 +109,10 @@ export function createClaude({
 /** Any AI SDK language model behind the `Model` interface. */
 export function createModel(
   model: Exclude<LanguageModel, string>,
-  { timeoutMs = TIMEOUT_MS }: { timeoutMs?: number } = {},
+  {
+    timeoutMs = TIMEOUT_MS,
+    tracing = null,
+  }: { timeoutMs?: number; tracing?: AiTracing | null } = {},
 ): Model {
   const id = model.modelId;
   return {
@@ -112,10 +124,13 @@ export function createModel(
       maxTokens,
       effort,
       signal,
+      feature,
     }: StructuredRequest<T>): Promise<StructuredAnswer<T>> {
       try {
         const result = await generateText({
           model,
+          // In LLM analytics as a trace of `feature`, for the person and workspace it is for.
+          ...tracing?.call(feature.name, { workspaceId: feature.workspaceId }),
           instructions,
           prompt,
           // Sent as the answer's JSON schema (Anthropic's structured outputs), and checked on

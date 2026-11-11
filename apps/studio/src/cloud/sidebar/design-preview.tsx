@@ -157,6 +157,8 @@ export function DesignPreviewImage({
   };
   return (
     <span
+      // A design's own pixels: blocked in a private recording (app/analytics/privacy.ts).
+      data-replay="block"
       data-slot="design-preview"
       data-status={loading ? "loading" : undefined}
       className={cn(

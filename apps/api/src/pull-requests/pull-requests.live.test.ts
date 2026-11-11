@@ -31,10 +31,12 @@ import {
   repos,
 } from "@ponzu/db";
 import { systemClock } from "@ponzu/sandbox";
+import { noAnalytics } from "../analytics/analytics.ts";
 import { createGithub, type Github } from "../deps/github.ts";
 import type { Config } from "../deps/index.ts";
 import type { ObjectStorage } from "../deps/storage.ts";
 import { createLogger } from "../http/log.ts";
+import type { JobDeps } from "../jobs/run.ts";
 import { createVault } from "../vault/vault.ts";
 import { actOnPullRequest } from "./actions.ts";
 import { openPullRequest, savePullRequestSummary } from "./open.ts";
@@ -66,6 +68,7 @@ describe.skipIf(!configured)("a design's pull request on GitHub, for real", () =
     clock: systemClock,
     vault: createVault({ key: env.PONZU_VAULT_KEY ?? "" }),
     log: createLogger(() => {}),
+    analytics: noAnalytics,
     background: (_name: string, work: Promise<unknown>) => {
       background.push(work.catch(() => {}));
     },
@@ -75,6 +78,8 @@ describe.skipIf(!configured)("a design's pull request on GitHub, for real", () =
     storage: new Proxy({} as ObjectStorage, {
       get: () => () => Promise.reject(new Error("The live test uses no storage.")),
     }),
+    // No sandbox here holds commits GitHub lacks, so Create PR never asks one to push.
+    ...({} as Pick<JobDeps, "sandbox" | "poke" | "runnerPort">),
   });
   const tag = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   const base = `pz-live-base-${tag}`;
@@ -215,9 +220,10 @@ describe.skipIf(!configured)("a design's pull request on GitHub, for real", () =
     });
     expect(tab.pullRequest!.body).toContain(`https://ponzu.design/designs/${design.id}`);
     expect((await openPullRequest(deps, context, user)).opened).toBe(false);
-    expect(await savePullRequestSummary(deps, design.id, `Adds live-${tag}.md.`)).toBe(
-      tab.pullRequest!.number,
-    );
+    expect(await savePullRequestSummary(deps, design.id, `Adds live-${tag}.md.`)).toMatchObject({
+      pullRequest: tab.pullRequest!.number,
+      kept: null,
+    });
 
     // GitHub works out whether it can merge over a few seconds.
     await Promise.all(background);
