@@ -1,8 +1,9 @@
 /*
  * The runner with the real Agent SDK and Claude Code, on this machine, against the fake API. It
  * runs only when asked for, with RUNNER_LIVE=1 as well as the key: the key alone is not enough,
- * because it also sits in a developer's `.env`, which Bun loads for every `bun test`. One short
- * turn on the cheapest model, under a cent:
+ * because it also sits in a developer's `.env`, which Bun loads for every `bun test`. A request
+ * as a person would make it, with no script for the model, and a comment on the board it draws
+ * while it works, on the cheapest model: about two cents.
  *
  *   RUNNER_LIVE=1 ANTHROPIC_API_KEY=… bun test apps/runner/src/live.test.ts
  *
@@ -18,6 +19,7 @@ import { emptyDoc, type Op } from "@ponzu/core";
 import { ChromiumRenderer, findChromium } from "@ponzu/render/chromium";
 import { ClaudeAgent } from "./agent/sdk.ts";
 import { FakeRunnerApi } from "./api/fake.ts";
+import type { WorkItem } from "./api/protocol.ts";
 import { eventUuid } from "./ids.ts";
 import { Runner } from "./run.ts";
 
@@ -33,7 +35,7 @@ afterAll(async () => {
 });
 
 test.skipIf(!live)(
-  "a message asking for an artboard: Claude draws it, the thread shows it, the run ends idle",
+  "a request and a comment mid-turn: Claude draws, takes the comment up, and the run ends idle",
   async () => {
     const work = realpathSync(await mkdtemp(join(tmpdir(), "ponzu-live-work-")));
     const state = await mkdtemp(join(tmpdir(), "ponzu-live-state-"));
@@ -44,7 +46,7 @@ test.skipIf(!live)(
     const agent = new ClaudeAgent({ client: "ponzu-runner/live-test", log: (l) => logs.push(l) });
     const chromium = findChromium();
     const runner = new Runner({
-      api,
+      api: api.client(),
       agent,
       renderer: chromium ? new ChromiumRenderer({ executablePath: chromium }) : undefined,
       prepare: async () => work,
@@ -60,7 +62,7 @@ test.skipIf(!live)(
     const message = api.push({
       kind: "message",
       payload: {
-        text: 'Use create_artboard to make one artboard named "Hello" whose HTML is <h1>Hello</h1>. Skip the guides and screenshots and call no other tool. Then reply with the single word: done.',
+        text: "A small pricing card with three tiers: Free, Pro and Team. Keep it simple.",
       },
     });
     runner.poke();
@@ -74,12 +76,32 @@ test.skipIf(!live)(
       }
       timings[what] = at();
     };
+    const board = () => api.doc.snapshot().doc.pages[0]?.artboards[0];
     await wait("working", () => api.lastState?.state === "working");
     await wait("acknowledged", () => api.delivered.includes(message.id));
-    await wait("artboard committed", () =>
-      api.doc.snapshot().doc.pages.some((p) => p.artboards.some((a) => a.name === "Hello")),
+    await wait("artboard committed", board);
+    // A person comments on the board while Claude is still on it.
+    const comment = api.push({
+      kind: "comment",
+      payload: {
+        threadId: "th_live",
+        messageId: "m_live",
+        text: "Make the Pro tier stand out.",
+        reply: false,
+        artboardId: board()!.id,
+        artboardName: board()!.name,
+        nodeId: null,
+      },
+    });
+    runner.poke();
+    await wait("comment acknowledged", () => api.delivered.includes(comment.id));
+    await wait(
+      "idle",
+      () =>
+        api.lastState?.state === "idle" &&
+        api.usage.size > 0 &&
+        api.items().every((i) => !i.streaming),
     );
-    await wait("idle", () => api.lastState?.state === "idle" && api.usage.size > 0);
     await runner.stop();
     timings.stopped = at();
 
@@ -87,7 +109,7 @@ test.skipIf(!live)(
     const ops = log === "gone" ? [] : log.ops;
     const kinds = (op: Op): string[] => (op.op === "batch" ? op.ops.flatMap(kinds) : [op.op]);
     const items = api.items();
-    const turn = [...api.usage.values()][0]!;
+    const turns = [...api.usage.values()];
     console.log(
       [
         "Thread:",
@@ -97,20 +119,27 @@ test.skipIf(!live)(
         `Ops: ${ops.map((o) => `${o.seq} ${kinds(o.op).join("+")}`).join(", ")}`,
         `State: ${JSON.stringify(api.lastState)}`,
         `Timings (ms): ${JSON.stringify(timings)}`,
-        `Usage: ${JSON.stringify(turn.models)}`,
+        `Usage: ${JSON.stringify(turns.map((t) => t.models))}`,
+        `Cost: $${turns
+          .flatMap((t) => t.models)
+          .reduce((sum, m) => sum + m.costUsd, 0)
+          .toFixed(4)}`,
         `Thread writes: ${api.threadWrites.length}, state reports: ${api.states.length}`,
         `Uploads: ${api.uploads.map((u) => `${u.purpose} ${u.name} at seq ${u.seq}`).join(", ") || "none"}`,
       ].join("\n"),
     );
 
     expect(ops.some((o) => kinds(o.op).includes("artboard.create"))).toBe(true);
-    expect(items.some((i) => i.kind === "assistant" && !i.streaming)).toBe(true);
-    expect(items.some((i) => i.kind === "tool")).toBe(true);
+    expect(items.some((i) => i.kind === "assistant")).toBe(true);
+    expect(items.every((i) => !i.streaming)).toBe(true);
+    const stretches = items.filter((i) => i.kind === "tool").map((i) => i.payload as WorkItem);
+    expect(stretches.some((w) => w.artboards.includes(board()!.id))).toBe(true);
     expect(items[0]).toMatchObject({ kind: "notice", payload: { type: "started" } });
     expect(api.lastState).toMatchObject({ state: "idle" });
     // What a runner that starts again reads to know the event is in the session already.
     const history = await agent.history(api.lastState!.claudeSessionId!);
     expect(history?.messages.has(eventUuid(message.id))).toBe(true);
+    expect(history?.messages.has(eventUuid(comment.id))).toBe(true);
   },
   200_000,
 );
