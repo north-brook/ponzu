@@ -320,6 +320,20 @@ function authorOf(e: PonzuEvent): string | undefined {
  */
 export const WORKING_IDLE = 2 * 60_000;
 
+/**
+ * How long a board the agent has moved on from still shows as worked on: long enough that a
+ * pass over several boards reads as one sweep, short enough that its mark doesn't stay where
+ * the agent no longer is.
+ */
+export const BOARD_HANDOFF = 6_000;
+
+/**
+ * How long the boards of an agent's latest change show as worked on with nothing more done to
+ * them. A model can take most of a minute to write its next change to the same board, and it is
+ * still at work there; past this it has gone to do something else.
+ */
+export const BOARD_IDLE = 45_000;
+
 /** How recently an agent must have made a call for an edit on disk to count as its own. */
 const DISK_CREDIT = 5 * 60_000;
 
@@ -334,6 +348,9 @@ export class PresenceHub {
   private seenIn = new Map<string, string>();
   /** When each agent was last reminded to watch the canvas. */
   private reminded = new Map<string, number>();
+  /** When each agent last changed each board it shows as working on, and which were its latest. */
+  private touched = new Map<string, { at: Map<string, number>; latest: Set<string> }>();
+  private boards = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(private idleMs = WORKING_IDLE) {}
 
@@ -385,9 +402,10 @@ export class PresenceHub {
   }
 
   /**
-   * The agent changed these artboards in `file`, or deleted the `gone` ones.
-   * It shows as working on them, and on any it touched before, until it
-   * goes quiet. `status` replaces what it said it's doing.
+   * The agent changed these artboards in `file`, or deleted the `gone` ones. It shows as working
+   * on the boards of its latest change until it changes others, goes `BOARD_IDLE` without
+   * changing them again, or goes quiet; a board it has moved on from keeps its mark for
+   * `BOARD_HANDOFF` and then lets go. `status` replaces what it said it's doing.
    */
   worked(
     caller: ToolCaller,
@@ -397,12 +415,80 @@ export class PresenceHub {
     if (change.gone?.length) this.drop(caller.id, file, change.gone);
     const prev = this.map.get(caller.id);
     const same = prev?.file === file;
-    const kept = same ? prev.working.filter((id) => !change.gone?.includes(id)) : [];
-    const working = [...new Set([...kept, ...(change.artboards ?? [])])];
+    const now = Date.now();
+    const known = same ? this.touched.get(caller.id) : undefined;
+    const at = new Map(known?.at);
+    for (const id of change.gone ?? []) at.delete(id);
+    for (const id of change.artboards ?? []) at.set(id, now);
+    // A call that changed no board (a status alone) leaves the latest ones as they were.
+    const latest = change.artboards?.length
+      ? new Set(change.artboards)
+      : new Set([...(known?.latest ?? [])].filter((id) => at.has(id)));
+    this.touched.set(caller.id, { at, latest });
+    const working = this.workingOn(caller.id, now);
     const status = change.status ?? (same ? prev.status : undefined);
+    this.armBoards(caller.id);
     // Another edit to the same artboards changes nothing anyone sees, and the call already touched.
     if (same && sameIds(working, prev.working) && status === prev.status) return;
     this.touch(caller, { file, working, status });
+  }
+
+  /**
+   * The agent said which artboards it is working on (set_status): exactly these, replacing what
+   * it showed, and held as its latest are, until it changes others or `BOARD_IDLE` passes.
+   */
+  claimed(caller: ToolCaller, file: string, artboards: string[], status?: string): void {
+    const now = Date.now();
+    this.touched.set(caller.id, {
+      at: new Map(artboards.map((id) => [id, now] as const)),
+      latest: new Set(artboards),
+    });
+    this.armBoards(caller.id);
+    this.touch(caller, { file, working: artboards, status });
+  }
+
+  /** The boards an agent shows as working on at `now`, in the order it came to them. */
+  private workingOn(id: string, now: number): string[] {
+    const known = this.touched.get(id);
+    if (!known) return [];
+    for (const [board, when] of known.at) {
+      const lasts = known.latest.has(board) ? BOARD_IDLE : BOARD_HANDOFF;
+      if (now - when >= lasts) {
+        known.at.delete(board);
+        known.latest.delete(board);
+      }
+    }
+    return [...known.at.keys()];
+  }
+
+  /** Lets go of each board when its time is up, whatever the agent does meanwhile. */
+  private armBoards(id: string): void {
+    clearTimeout(this.boards.get(id));
+    this.boards.delete(id);
+    const known = this.touched.get(id);
+    if (!known?.at.size) return;
+    const now = Date.now();
+    const next = Math.min(
+      ...[...known.at].map(
+        ([board, when]) => when + (known.latest.has(board) ? BOARD_IDLE : BOARD_HANDOFF),
+      ),
+    );
+    const timer = setTimeout(
+      () => {
+        this.boards.delete(id);
+        const cur = this.map.get(id);
+        if (!cur) return;
+        const working = this.workingOn(id, Date.now());
+        if (!sameIds(working, cur.working)) {
+          this.map.set(id, { ...cur, working });
+          this.notify();
+        }
+        this.armBoards(id);
+      },
+      Math.max(0, next - now) + 1,
+    );
+    timer.unref?.();
+    this.boards.set(id, timer);
   }
 
   /** A call by this agent worked on `file`, even if only to read it. */
@@ -467,6 +553,9 @@ export class PresenceHub {
     this.idle.delete(id);
     this.seenIn.delete(id);
     this.reminded.delete(id);
+    clearTimeout(this.boards.get(id));
+    this.boards.delete(id);
+    this.touched.delete(id);
     if (this.map.delete(id)) this.notify();
   }
 
@@ -479,6 +568,7 @@ export class PresenceHub {
       this.idle.delete(p.id);
       const cur = this.map.get(p.id);
       if (!cur) return;
+      this.touched.delete(p.id);
       this.map.set(p.id, { ...cur, working: [], status: undefined });
       this.notify();
     }, this.idleMs);
