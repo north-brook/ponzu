@@ -24,7 +24,7 @@ import {
 } from "./bridge.ts";
 import { configFor } from "./config.ts";
 import { contentSecurityPolicy } from "./csp.ts";
-import { dataFolder } from "./data-folder.ts";
+import { dataFolder, removeOnceExited } from "./data-folder.ts";
 import { linksIn, parseDeepLink } from "./deep-links.ts";
 import { removeLegacyFor, runProgram } from "./legacy.ts";
 import { registerAppImage } from "./linux.ts";
@@ -148,7 +148,8 @@ function showWindow() {
     win.webContents.on("render-process-gone", (_event, details) => {
       if (!smoke && details.reason !== "clean-exit") win.reload();
     });
-    if (smoke) watchSmoke(win);
+    // The throwaway folder goes once the check has exited (data-folder.ts).
+    if (smoke) watchSmoke(win, () => removeOnceExited(userData));
     return;
   }
   if (mainWindow.isMinimized()) mainWindow.restore();
@@ -164,6 +165,8 @@ function send(channel: string, ...args: unknown[]) {
 function openLink(url: string) {
   const link = parseDeepLink(url, config.linkScheme);
   if (!link) return;
+  // Its kind only: what a link names stays out of the log.
+  console.log(`Link: ${link.kind}, ${linkListeners > 0 ? "to the studio" : "waiting for it"}`);
   showWindow();
   if (linkListeners > 0) send(CHANNELS.link, link);
   else pendingLinks.push(link);

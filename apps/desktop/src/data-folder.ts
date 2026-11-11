@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -22,9 +23,22 @@ export function dataFolder(
   return join(appData, appName);
 }
 
-/** A new, empty folder under the system's temporary folder, removed as the process exits. */
+/** A new, empty folder under the system's temporary folder, for `removeOnceExited`. */
 export function throwawayDataFolder(parent = tmpdir()): string {
-  const folder = mkdtempSync(join(parent, "ponzu-smoke-"));
-  process.once("exit", () => rmSync(folder, { recursive: true, force: true }));
-  return folder;
+  return mkdtempSync(join(parent, "ponzu-smoke-"));
+}
+
+/**
+ * Removes `folder` once this process has gone. Chromium writes its profile (session storage,
+ * Local State) as the app exits, after anything in the process could remove it, so a shell
+ * outside waits for the process to end, then removes it. Windows has no such shell here: the
+ * folder is removed now, and what Chromium writes after stays in the temporary folder.
+ */
+export function removeOnceExited(folder: string, pid = process.pid): void {
+  if (process.platform === "win32") {
+    rmSync(folder, { recursive: true, force: true });
+    return;
+  }
+  const wait = 'while kill -0 "$1" 2>/dev/null; do sleep 0.1; done; rm -rf "$0"';
+  spawn("/bin/sh", ["-c", wait, folder, String(pid)], { detached: true, stdio: "ignore" }).unref();
 }
