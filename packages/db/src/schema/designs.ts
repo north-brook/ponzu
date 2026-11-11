@@ -1,7 +1,6 @@
 import type { Doc, Op } from "@ponzu/core";
 import { sql } from "drizzle-orm";
 import {
-  type AnyPgColumn,
   bigint,
   boolean,
   check,
@@ -27,7 +26,6 @@ import {
   PR_STATES,
   QUESTION_KINDS,
   QUESTION_STATUSES,
-  SANDBOX_PROVIDERS,
   SANDBOX_STATES,
   THREAD_ITEM_KINDS,
   UPLOAD_PURPOSES,
@@ -109,10 +107,6 @@ export const designs = pgTable(
      * tap, a retry after a lost answer) makes one design.
      */
     createKey: text("create_key"),
-    /** The sandbox it has now, if any. */
-    sandboxId: text("sandbox_id").references((): AnyPgColumn => sandboxes.id, {
-      onDelete: "set null",
-    }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -131,8 +125,6 @@ export const designs = pgTable(
     // One design, one branch. Also how a GitHub webhook finds the design for a pull request.
     uniqueIndex("designs_repo_id_branch_key").on(t.repoId, t.branch),
     uniqueIndex("designs_owner_id_create_key_key").on(t.ownerId, t.createKey),
-    // Deleting a sandbox clears the designs that point at it.
-    index("designs_sandbox_id_idx").on(t.sandboxId),
     check("designs_status_check", oneOf(t.status, DESIGN_STATUSES)),
     check(
       "designs_settled_at_check",
@@ -389,100 +381,77 @@ export const questions = pgTable(
 );
 
 /**
- * A sandbox a design has or had, and where it is in its life (docs/cloud.md, "The sandbox").
- * At most one row of a design is not `gone`; a lost one is marked gone and a row of the next
- * generation replaces it. Every move between states is a statement that holds to the state it
- * moves from, so two function instances racing on one sandbox cannot both make the move.
+ * A design's sandbox, and where it is in its life (docs/cloud.md, "The sandbox"). At most one
+ * per design: the sandbox at Vercel is named for the design (`pz-<scope>-<designId>`), so the
+ * row needs no id of its own, and no row means no sandbox. Every call to Vercel after the wake's
+ * `up()` is pinned to `session_id`, so a session that ended is never resumed by accident. Every
+ * move between states is a statement that holds to the state it moves from (and, for a row held
+ * by a job, to `waking_by`), so two function instances racing on one sandbox cannot both make it.
  */
 export const sandboxes = pgTable(
   "sandboxes",
   {
-    id: text("id").primaryKey(),
     designId: text("design_id")
-      .notNull()
+      .primaryKey()
       .references(() => designs.id, { onDelete: "cascade" }),
-    /**
-     * Counts the design's sandboxes from 1. With the design it makes the provider's idempotency
-     * key, so a create sent again after a crash finds the sandbox the first one made.
-     */
-    generation: integer("generation").notNull().default(1),
-    provider: text("provider", { enum: SANDBOX_PROVIDERS }).notNull(),
-    /** Null until the provider has accepted the create. */
-    providerId: text("provider_id"),
-    state: text("state", { enum: SANDBOX_STATES }).notNull().default("waking"),
+    state: text("state", { enum: SANDBOX_STATES }).notNull(),
     /** When it entered its state: how a row a crashed function left mid-move is found. */
     stateAt: instant("state_at").notNull().defaultNow(),
     /**
-     * The wake that holds it while it is `waking` (its job's id). Only that wake moves it on,
-     * until it has sat unmoved for a lease (`WAKING_LEASE_MS`) and another may take it over.
+     * The job holding a `waking` or `stopping` row (its id; `retire:<job>` while a retire holds
+     * it). Only that job moves it on, until it has sat unmoved for a lease (`WAKING_LEASE_MS`).
      */
     wakingBy: text("waking_by"),
-    /** Why it is `failed`, or what the provider said when it was lost. */
+    /** Why the last wake gave up. The row is asleep and the design shows `sandbox_failed`. */
     failure: text("failure"),
-    /** Where the API reaches the runner. */
-    address: text("address"),
-    encryptedAddressToken: text("encrypted_address_token"),
+    /** The Vercel session the row holds. Every call is pinned to it. */
+    sessionId: text("session_id"),
     /**
-     * The runner token its environment carries. A wake that finds it revoked or about to run
-     * out starts the sandbox on a new environment.
+     * That session's start, which a restart in place keeps: what the 23.5-hour cycle and the
+     * clamp on extending it count from.
      */
+    sessionStartedAt: instant("session_started_at"),
+    /** `https://<sub>.vercel.run`: the runner's port. */
+    address: text("address"),
+    /** The bearer of that port, new at every start, sealed (`sandboxes.encrypted_port_token`). */
+    encryptedPortToken: text("encrypted_port_token"),
+    /** The running session's deadline at Vercel, as last set. */
+    expiresAt: instant("expires_at"),
+    /**
+     * The image the sandbox runs (`current.json`'s `image`). A wake on another one recreates it,
+     * unless the design's last checkpoint is behind (docs/cloud.md, "How images roll out").
+     */
+    image: text("image"),
+    /** The runner token the running runner was started with. */
     runnerTokenId: text("runner_token_id").references(() => runnerTokens.id, {
       onDelete: "set null",
     }),
     /**
-     * Which Claude credential its environment carries: the account and when it was connected.
-     * A wake that finds the owner's credential changed starts the sandbox on a new environment.
+     * Which Claude credential the running runner was started with: the account and when it was
+     * connected. A wake that finds the owner's credential changed restarts it in place.
      */
     claudeCredential: text("claude_credential"),
-    /** Set while it is awake. Awake time is metered from here when it next stops. */
+    /** Set while it is awake. Awake time is metered from here when it next leaves `awake`. */
     awakeSince: instant("awake_since"),
     /** Who its awake time is put down to: the person who woke it or last kept it awake. */
     awakeUserId: text("awake_user_id").references(() => users.id, { onDelete: "set null" }),
     /** The last time a person or a working agent kept it awake. Idle is counted from here. */
     lastActivityAt: instant("last_activity_at").notNull().defaultNow(),
-    /** The provider's own auto-stop deadline as the API last set it: the safety net. */
-    autoStopAt: instant("auto_stop_at"),
     /** How often its runner was found dead and restarted since one was last heard from. */
     restarts: integer("restarts").notNull().default(0),
-    /** How often its runner found the disk behind the design's last checkpoint (a rollback). */
-    rollbacks: integer("rollbacks").notNull().default(0),
-    /**
-     * The image it was created from (`PONZU_SANDBOX_SNAPSHOT` then). Null for one made before
-     * this was recorded. A wake that finds it is not the image set now moves the design onto a
-     * new sandbox from that one (docs/cloud.md, "How images roll out").
-     */
-    image: text("image"),
-    /**
-     * Set while a wake is moving it onto the current image, from when it took a slot: the moves
-     * under way at once are counted from these (`PONZU_SANDBOX_MAX_MOVES`).
-     */
-    movingSince: instant("moving_since"),
-    /**
-     * An image a move onto failed to start, so the design stays on this sandbox, and no move is
-     * tried again, until another image is set.
-     */
-    imageFailed: text("image_failed"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
-    uniqueIndex("sandboxes_provider_provider_id_key").on(t.provider, t.providerId),
-    // One design owns one sandbox.
-    uniqueIndex("sandboxes_design_id_live_key").on(t.designId).where(sql`${t.state} <> 'gone'`),
-    uniqueIndex("sandboxes_design_id_generation_key").on(t.designId, t.generation),
-    // Deleting a design deletes its sandboxes, gone ones included.
-    index("sandboxes_design_id_idx").on(t.designId),
     // What the idle sweep reads.
     index("sandboxes_awake_last_activity_at_idx")
       .on(t.lastActivityAt)
       .where(sql`${t.state} = 'awake'`),
-    check("sandboxes_provider_check", oneOf(t.provider, SANDBOX_PROVIDERS)),
     check("sandboxes_state_check", oneOf(t.state, SANDBOX_STATES)),
     check(
       "sandboxes_awake_since_check",
       sql`(${t.state} = 'awake') = (${t.awakeSince} is not null)`,
     ),
-    check("sandboxes_generation_check", sql`${t.generation} > 0`),
   ],
 );
 
@@ -553,11 +522,6 @@ export const designRunners = pgTable("design_runners", {
    * not hold, so the design is not moved onto a new sandbox until a later checkpoint covers it.
    */
   savedThrough: bigint("saved_through", { mode: "number" }),
-  /**
-   * The sleep the runner last said it was ready for: the `state_at` of the stop it was asked to
-   * get ready for. The idle stop waits a little for it to match before it stops the sandbox.
-   */
-  quiescedFor: instant("quiesced_for"),
   /**
    * The design's branch in the sandbox against GitHub, as the runner last said: commits GitHub
    * lacks, and why the last push of them failed. Create PR goes by it while GitHub lacks them.

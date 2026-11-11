@@ -46,13 +46,18 @@ export const QUESTION_KINDS = [
   "secret",
 ] as const;
 export const QUESTION_STATUSES = ["open", "answered", "cancelled"] as const;
-export const SANDBOX_PROVIDERS = ["boat"] as const;
 /**
- * A sandbox's life as the API drives it. `waking` and `stopping` are the moves between `asleep`
- * and `awake`; `failed` is a wake that gave up, with its reason, until the next wake tries again;
- * `gone` is destroyed, or lost and replaced by a new row.
+ * A design's sandbox as the API drives it (docs/cloud.md, "The sandbox"):
+ *
+ *   asleep     no session the row holds is running (a wake that gave up says why in `failure`)
+ *   waking     a wake job holds the row: a create, a resume, or a restart in place
+ *   awake      a session is running, `ponzu-start` was sent, and the row is metered
+ *   stopping   the sweep is shutting the runner down and stopping the session, or a retire holds
+ *              the row until its sandbox is deleted
+ *
+ * No row is no sandbox.
  */
-export const SANDBOX_STATES = ["waking", "awake", "stopping", "asleep", "failed", "gone"] as const;
+export const SANDBOX_STATES = ["asleep", "waking", "awake", "stopping"] as const;
 /**
  * Why a design's agent cannot run, when something outside the design must change first: its
  * owner's Claude is not connected, or has expired; its owner, whose Claude it runs on, is no
@@ -86,7 +91,7 @@ export const USAGE_KINDS = ["sandbox", "model"] as const;
 export const USAGE_PAYERS = ["ponzu", "own_plan"] as const;
 export const LEDGER_REASONS = ["grant", "use", "topup", "refund", "adjustment"] as const;
 
-export const WEBHOOK_SOURCES = ["github", "stripe", "boat", "workos"] as const;
+export const WEBHOOK_SOURCES = ["github", "stripe", "workos"] as const;
 
 export type WorkspaceKind = (typeof WORKSPACE_KINDS)[number];
 export type MemberRole = (typeof MEMBER_ROLES)[number];
@@ -106,6 +111,6 @@ export type EventKind = (typeof EVENT_KINDS)[number];
 export type EventPriority = (typeof EVENT_PRIORITIES)[number];
 export type QuestionKind = (typeof QUESTION_KINDS)[number];
 export type QuestionStatus = (typeof QUESTION_STATUSES)[number];
-export type SandboxStatus = (typeof SANDBOX_STATES)[number];
+export type SandboxState = (typeof SANDBOX_STATES)[number];
 export type AgentBlocker = (typeof AGENT_BLOCKERS)[number];
 export type UploadPurpose = (typeof UPLOAD_PURPOSES)[number];

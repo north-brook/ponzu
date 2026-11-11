@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { seedUser } from "../fixtures.ts";
 import { createTestDb } from "../testing.ts";
 import { getAuthState } from "./auth-states.ts";
-import { openClaudeSignIn, setClaudeSignInSandbox } from "./claude-sign-ins.ts";
+import { openClaudeSignIn, setClaudeSignInSession } from "./claude-sign-ins.ts";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 beforeAll(async () => {
@@ -19,22 +19,25 @@ const open = (userId: string, minutes: number) =>
     perHour: 3,
   });
 
-test("a new sign-in replaces the open one, and hands back its sandbox", async () => {
+test("a new sign-in replaces the open one, and hands back its id", async () => {
   const user = await seedUser(db);
   const first = await open(user.id, 0);
   expect(first).toEqual({ id: expect.stringMatching(/^auth_/), replaced: [] });
-  expect(await setClaudeSignInSandbox(db, { id: first!.id, sandboxId: "bx_1" })).toBe(true);
+  expect(await setClaudeSignInSession(db, { id: first!.id, sessionId: "sbx_1" })).toBe(true);
+  const recorded = await getAuthState(db, { id: first!.id, kind: "claude_sign_in", userId: user.id });
+  expect(recorded!.payload).toEqual({ sessionId: "sbx_1" });
 
   const second = await open(user.id, 1);
-  expect(second!.replaced).toEqual(["bx_1"]);
+  // Its sandbox is named for it, so the id is what the caller removes.
+  expect(second!.replaced).toEqual([first!.id]);
   const replaced = await getAuthState(db, {
     id: first!.id,
     kind: "claude_sign_in",
     userId: user.id,
   });
   expect(replaced!.consumedAt).toEqual(at(1));
-  // The replaced one takes no sandbox now: the caller destroys the one it made.
-  expect(await setClaudeSignInSandbox(db, { id: first!.id, sandboxId: "bx_2" })).toBe(false);
+  // The replaced one takes no session now: the caller removes the sandbox it made.
+  expect(await setClaudeSignInSession(db, { id: first!.id, sessionId: "sbx_2" })).toBe(false);
 });
 
 test("however many are started at once, one stays open", async () => {

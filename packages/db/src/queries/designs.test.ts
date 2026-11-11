@@ -57,7 +57,6 @@ describe("createDesign", () => {
       needsYouCount: 0,
       prNumber: null,
       prChecks: "none",
-      sandboxId: null,
     });
     expect(await getDesign(db, design.id)).toEqual(design);
     expect(await readDocSource(db, design.id)).toEqual({
@@ -140,7 +139,7 @@ describe("getDesign", () => {
 
     const row = await getDesign(db, design.id);
 
-    expect(row).toMatchObject({ id: design.id, name: "Lisbon", sandboxId: null });
+    expect(row).toMatchObject({ id: design.id, name: "Lisbon" });
     expect(row).not.toHaveProperty("assetKey");
     expect(design).not.toHaveProperty("assetKey");
   });

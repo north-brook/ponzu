@@ -324,23 +324,21 @@ export async function findStops(
 }
 
 /**
- * Whether the design's feed has an event that wakes a sandbox (`now` or `next`) that its current
- * runner claimed and has not put into its session: in a sandbox that was idle, what the runner
- * held back because its claim was answered as it got ready to sleep. Asleep, the sandbox must be
- * woken again for it.
+ * Whether the design's feed has an event that wakes a sandbox (`now` or `next`) that no runner
+ * has put into its session: the pending rule after a sleep (docs/cloud.md, "The sandbox"). What
+ * came in while the runner shut down, or what it claimed and never delivered, is the next
+ * runner's, and asleep, nothing would wake the design for it.
  */
-export async function hasHeldEvents(db: Db, designId: string): Promise<boolean> {
+export async function hasPendingEvents(db: Db, designId: string): Promise<boolean> {
   const [row] = await run(
     db
       .select({ id: events.id })
       .from(events)
-      .innerJoin(designRunners, eq(designRunners.designId, events.designId))
       .where(
         and(
           eq(events.designId, designId),
           isNull(events.deliveredAt),
           inArray(events.priority, ["now", "next"]),
-          eq(events.claimedBy, designRunners.runnerId),
         ),
       )
       .limit(1),
