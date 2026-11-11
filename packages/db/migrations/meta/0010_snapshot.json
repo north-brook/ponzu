@@ -1,6 +1,6 @@
 {
-  "id": "53815f82-544d-4312-aae2-3720c8b73854",
-  "prevId": "a602d22e-6f92-44de-8f6b-497cd054d72e",
+  "id": "049906b1-dc30-4f2f-b0d2-46795d309d3f",
+  "prevId": "6befb4ed-6b32-48e1-8b60-cbfb1ab8d0fb",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -65,22 +65,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "auth_states_open_claude_sign_in_key": {
-          "name": "auth_states_open_claude_sign_in_key",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"auth_states\".\"kind\" = 'claude_sign_in' and \"auth_states\".\"consumed_at\" is null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -835,6 +819,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "ideas_claimed_at": {
+          "name": "ideas_claimed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "removed_at": {
           "name": "removed_at",
           "type": "timestamp with time zone",
@@ -1264,6 +1254,19 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "ideas_window_started_at": {
+          "name": "ideas_window_started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ideas_window_count": {
+          "name": "ideas_window_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "created_at": {
           "name": "created_at",
@@ -2676,7 +2679,7 @@
         },
         "designs_agent_blocker_check": {
           "name": "designs_agent_blocker_check",
-          "value": "\"designs\".\"agent_blocker\" in ('claude_not_connected', 'claude_expired', 'claude_owner_left', 'sandbox_busy', 'sandbox_failed')"
+          "value": "\"designs\".\"agent_blocker\" in ('claude_not_connected', 'claude_expired', 'sandbox_busy', 'sandbox_failed')"
         },
         "designs_needs_you_count_check": {
           "name": "designs_needs_you_count_check",
@@ -3236,12 +3239,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "waking_by": {
-          "name": "waking_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "failure": {
           "name": "failure",

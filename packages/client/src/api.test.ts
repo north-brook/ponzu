@@ -58,6 +58,19 @@ describe("against the API's own routes", () => {
     expect(mine?.role).toBe("admin");
   });
 
+  test("a repo's ideas: generating at first, ready once made", async () => {
+    const ines = clientFor("ines");
+    expect(await ines.repos.ideas(ws.repo.id)).toEqual({ status: "generating", ideas: [] });
+    await t.backgroundDone();
+    // The test repo has nothing in it to ground ideas in.
+    const answer = await ines.repos.ideas(ws.repo.id);
+    const status: "ready" | "generating" | "none" = answer.status;
+    expect(status).toBe("none");
+    await expect(ines.repos.ideas("repo_nosuchrepo00000")).rejects.toMatchObject({
+      code: "not_found",
+    });
+  });
+
   test("a member's role, and the API's refusal to leave a workspace without an admin", async () => {
     const maya = clientFor("maya");
     const ines = ws.people.ines!.userId;

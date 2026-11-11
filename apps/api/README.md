@@ -30,6 +30,7 @@ src/
     poke.ts         real: `POST /poke` to an awake runner through its sandbox's address
     anthropic.ts    real: whether Anthropic takes an API key (the free list of models)
     realtime.ts     real: seals live queries with the branch's Realtime secret
+    model.ts        real: Claude Haiku via the AI SDK on Ponzu's own key, structured answers
   http/           errors, validation, request ids and logs, CORS, the client-version gate
   auth/           access declarations, authentication, authorization, sign-in
   vault/          sealing stored secrets
@@ -50,6 +51,8 @@ src/
                   `claude setup-token` in a utility sandbox), disconnecting, and the models
   live/           queries.ts: every live query, its arguments, who may watch it and its SQL
   jobs/           runJob and runDueJobs: work recorded in `jobs`, run now and retried by the cron
+  ideas/          a repo's ideas: the light read (read-repo.ts, snapshot.ts), the prompt and
+                  its checks (prompt.ts), when they are made and kept (ideas.ts)
   routes/         one file per area, mounted under /v1 in routes/index.ts
   testing/        createTestApp and the fakes behind it; designs.ts for workspaces to test in
 scripts/
@@ -57,6 +60,7 @@ scripts/
   dev-signin.ts   a real sign-in from a terminal, saved for end-to-end tests
   neon.ts         a Neon branch's connection string and Realtime, by branch name
   github-webhook.ts  the App's webhook: where it points, its secret, redelivering failures
+  ideas.ts        a real repo's ideas, made as the API makes them, with what they cost
 ```
 
 No file is named `app.ts` or `server.ts`, and nothing lives under `apps/api/api/`: Vercel's
@@ -124,7 +128,7 @@ has: no `Bun.…`, no DOM. `bun run typecheck` (and CI) checks exactly that.
    `POST /v1/github/webhook` reads its raw body to check the signature before parsing it.
 
 4. **Dependencies.** Read them from `c.var.deps` (`db`, `clock`, `vault`, `workos`, `github`,
-   `sandbox`, `storage`, `poke`, `realtime`, `docs`, `gitTokens`, `background`, `log`,
+   `sandbox`, `storage`, `poke`, `realtime`, `model`, `docs`, `gitTokens`, `background`, `log`,
    `config`). Never import a client,
    the database or the clock as a module-level value, never call `fetch` or `Date.now()`
    directly, and never read `process.env` outside `env.ts`. Something new to talk to is an
@@ -175,7 +179,8 @@ has: no `Bun.…`, no DOM. `bun run typecheck` (and CI) checks exactly that.
    `TEST_SNAPSHOT` baked), `t.anthropic` (the API keys Anthropic takes), `t.storage`
    (`MemoryStorage`, which holds a presigned PUT to what R2 does: its `fetch` serves the
    signed addresses and refuses other bytes, headers, sizes or a late PUT), `t.poke` (the
-   pokes, recorded), `t.realtime`, `t.clock`, `t.logs` and `t.db`. `signInAs` goes through the real exchange;
+   pokes, recorded), `t.realtime`, `t.model` (`FakeModel`: every request it was sent, answered
+   from `reply(…)`), `t.clock`, `t.logs` and `t.db`. `signInAs` goes through the real exchange;
    `startSignIn` stops before it. Give GitHub installations and repositories with
    `t.github.installations.push(…)`. `await t.backgroundDone()` waits for what routes handed
    to `deps.background`. Nothing in it can reach the network.

@@ -11,6 +11,7 @@ import { type Anthropic, createAnthropic } from "./anthropic.ts";
 import { type Background, createBackground, waitUntil } from "./background.ts";
 import type { Fetch } from "./fetch.ts";
 import { createGithub, type Github } from "./github.ts";
+import { createClaude, type Model } from "./model.ts";
 import { createPoke, type Poke } from "./poke.ts";
 import { createRealtimeSealer, type RealtimeSealer } from "./realtime.ts";
 import { createR2Storage, type ObjectStorage } from "./storage.ts";
@@ -43,6 +44,8 @@ export interface Deps {
   /** Tells an awake runner there may be events to claim. */
   poke: Poke;
   realtime: RealtimeSealer;
+  /** Claude Haiku, through the AI SDK on Ponzu's own key, for what the API asks itself (repo ideas). */
+  model: Model;
   /** The design documents this instance has built lately. */
   docs: DocCache;
   /** The git tokens this instance hands runners, kept while they may be reused. */
@@ -115,6 +118,7 @@ export function createDeps(env: Env): Deps {
       ...env.realtime,
       database: new URL(env.databaseUrl).pathname.slice(1),
     }),
+    model: createClaude({ apiKey: env.anthropicApiKey, fetch: outbound }),
     docs: new DocCache(),
     gitTokens: new GitTokens(),
     config: {

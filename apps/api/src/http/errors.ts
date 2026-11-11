@@ -132,7 +132,7 @@ export class UpstreamError extends Error {
   readonly status?: number;
 
   constructor(
-    readonly service: "workos" | "github" | "storage" | "anthropic" | "sandbox",
+    readonly service: "workos" | "github" | "storage" | "model" | "anthropic" | "sandbox",
     message: string,
     options: { status?: number; cause?: unknown } = {},
   ) {
@@ -146,6 +146,7 @@ const SERVICE_NAME = {
   workos: "the sign-in service",
   github: "GitHub",
   storage: "its file storage",
+  model: "the model it asks",
   anthropic: "Anthropic",
   // Only a Claude sign-in waits on a sandbox in a person's request.
   sandbox: "Claude",

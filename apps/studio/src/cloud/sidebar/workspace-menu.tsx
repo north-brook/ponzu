@@ -23,32 +23,45 @@ import {
 /** Tiles for an organization with no logo: muted, so no workspace shouts. */
 const MONOGRAM_COLORS = ["#5a4a3d", "#3d4a5a", "#5a3d50", "#3d5a40", "#4f5a3d", "#3d5a57"];
 
+/** The tile color of an account with no logo, the same for it everywhere. */
+export function monogramColor(id: string): string {
+  const hue = [...id].reduce((sum, c) => sum + c.charCodeAt(0), 0);
+  return MONOGRAM_COLORS[hue % MONOGRAM_COLORS.length]!;
+}
+
 /**
  * A workspace's mark: an organization's logo, or a tile with its initial when it has none; a
- * personal workspace is the person's round avatar.
+ * personal workspace is the person's round avatar. 20px in the sidebar; Settings' nav takes 16.
  */
-export function WorkspaceMark({ workspace }: { workspace: Workspace }) {
+export function WorkspaceMark({ workspace, size = 20 }: { workspace: Workspace; size?: 16 | 20 }) {
   const round = workspace.kind === "personal";
+  const shape = round ? "rounded-pill" : size === 16 ? "rounded-4" : "rounded-5";
   if (workspace.avatarUrl) {
     return (
       <img
         src={workspace.avatarUrl}
         alt=""
         draggable={false}
-        className={cn("block size-5 shrink-0 object-cover", round ? "rounded-pill" : "rounded-5")}
+        className={cn("block shrink-0 object-cover", shape)}
+        style={{ width: size, height: size }}
       />
     );
   }
-  const hue = [...workspace.id].reduce((sum, c) => sum + c.charCodeAt(0), 0);
   return (
     <span
       aria-hidden
       className={cn(
-        "grid size-5 shrink-0 place-items-center font-display font-semibold text-11 leading-none",
-        round ? "rounded-pill" : "rounded-5",
+        "grid shrink-0 place-items-center font-display font-semibold leading-none",
+        size === 16 ? "text-9" : "text-11",
+        shape,
       )}
       // White on a dark tile in either theme.
-      style={{ background: MONOGRAM_COLORS[hue % MONOGRAM_COLORS.length], color: "#ffffff" }}
+      style={{
+        width: size,
+        height: size,
+        background: monogramColor(workspace.id),
+        color: "#ffffff",
+      }}
     >
       {workspaceName(workspace).charAt(0).toUpperCase()}
     </span>

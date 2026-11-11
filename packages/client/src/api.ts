@@ -80,6 +80,15 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
         ).json(),
     },
 
+    repos: {
+      /**
+       * The four ideas under the create composer, for a repo the person can read (404
+       * otherwise). Asking starts them the first time; `generating` means ask again shortly.
+       * `watchRepoIdeas` (ideas.ts) does the asking again; `useRepoIdeas` is it for React.
+       */
+      ideas: async (id: string) => (await v1.repos[":id"].ideas.$get(design(id))).json(),
+    },
+
     designs: {
       /** In a repo the person can push to, or Scratch (`repoId` left out). */
       create: async (body: { workspaceId: string; repoId?: string | null; name?: string }) =>
