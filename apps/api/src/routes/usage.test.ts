@@ -171,3 +171,39 @@ describe("the monthly cap", () => {
     });
   });
 });
+
+describe("the free allowance", () => {
+  const usage = async (login: string, workspaceId: string) =>
+    (await call(t, await as(login), "GET", `/v1/workspaces/${workspaceId}/usage`)).body;
+
+  test("stays counted for a member who leaves mid-period without using anything", async () => {
+    const team = await workspaceWithRepo(t, { ann: "admin", bea: "write", cal: "read" });
+    expect(await usage("ann", team.id)).toMatchObject({ freeCredits: 300, people: 3 });
+    // GitHub took Cal out of the organization.
+    await t.db.execute(
+      `delete from memberships where workspace_id = '${team.id}' and user_id = '${team.people.cal!.userId}'`,
+    );
+    expect(await usage("ann", team.id)).toMatchObject({
+      freeCredits: 300,
+      people: 3,
+      billedCents: 0,
+    });
+  });
+
+  test("stays counted for a member who deletes their account before anyone looked", async () => {
+    const team = await workspaceWithRepo(t, { dan: "admin", eve: "write", fay: "read" });
+    const gone = await call(t, await as("fay"), "DELETE", "/v1/me", { confirm: "fay" });
+    expect(gone.status).toBe(204);
+    expect(await usage("dan", team.id)).toMatchObject({ freeCredits: 300, people: 3 });
+  });
+
+  test("is granted once a period, however often the period is read", async () => {
+    const team = await workspaceWithRepo(t, { gus: "admin", hal: "write" });
+    await usage("gus", team.id);
+    await usage("hal", team.id);
+    const grants = (await t.db.execute(
+      `select delta from credit_ledger where workspace_id = '${team.id}' and reason = 'grant'`,
+    )) as unknown as { rows: { delta: number }[] };
+    expect(grants.rows.map((row) => Number(row.delta))).toEqual([100, 100]);
+  });
+});

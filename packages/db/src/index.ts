@@ -5,6 +5,7 @@ export {
   type AccountDeletionPlan,
   anonymiseUser,
   DELETED_PERSON,
+  type DeleteUserResult,
   deleteUser,
   planAccountDeletion,
 } from "./queries/account-deletion.ts";
@@ -139,6 +140,7 @@ export {
 export {
   type Device,
   type DeviceChanges,
+  type DeviceRegistered,
   type DeviceRegistration,
   deleteDevice,
   listDevices,
@@ -292,6 +294,7 @@ export {
 } from "./queries/usage.ts";
 export { takeWebhookDelivery } from "./queries/webhooks.ts";
 export {
+  grantAllowances,
   type RateCardNumbers,
   readWorkspaceUsage,
   setMonthlyCap,

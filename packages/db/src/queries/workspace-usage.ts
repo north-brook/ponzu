@@ -1,5 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
+import { newId } from "../ids.ts";
 import { type MemberRole, workspaces } from "../schema/index.ts";
 import { queryJson, timeParam } from "./json.ts";
 import { run } from "./run.ts";
@@ -59,12 +60,15 @@ export interface WorkspaceUsageRead {
   /** The cap the workspace set, or null for the card's default. */
   monthlyCapCents: number | null;
   rows: UsageRow[];
-  /**
-   * Everyone who is a member now, and everyone else whose use is counted in the period: who
-   * the free credits are counted for.
-   */
+  /** Everyone who is a member now, and everyone else whose use is counted in the period. */
   people: UsagePerson[];
   designs: UsageDesign[];
+  /**
+   * The period's free allowances granted so far (`credit_ledger`, `grant`): to whom, and how
+   * many went to people whose account has since been deleted. A grant is never taken back, so
+   * someone who leaves mid-period is still counted.
+   */
+  granted: { userIds: string[]; departed: number };
 }
 
 /** One rate card row `alias` as `RateCardNumbers`. */
@@ -153,12 +157,61 @@ export async function readWorkspaceUsage(
                                         where a.repo_id = d.repo_id and a.user_id = ${viewerId}
                                           and a.permission in ('admin', 'write', 'read')) end))
                     from designs d
-                   where d.id in (select design_id from grouped)), '[]'::json)
+                   where d.id in (select design_id from grouped)), '[]'::json),
+        'granted', (select json_build_object(
+                      'userIds', coalesce(json_agg(l.user_id order by l.user_id)
+                                            filter (where l.user_id is not null), '[]'::json),
+                      'departed', count(*) filter (where l.user_id is null))
+                      from credit_ledger l
+                     where l.workspace_id = w.id and l.reason = 'grant'
+                       and l.period_start = ${from})
       ) as result
         from workspaces w
        where w.id = ${workspaceId}
     `,
   );
+}
+
+/**
+ * Grant each person their free allowance for the period that starts at `periodStart`, at the
+ * rate card in effect at `now`, once: a grant they already have is left as it is
+ * (`credit_ledger_grant_key`). Answers how many were granted now. A card that gives no free
+ * credits grants nothing.
+ */
+export async function grantAllowances(
+  db: Db,
+  {
+    workspaceId,
+    periodStart,
+    now,
+    userIds,
+  }: { workspaceId: string; periodStart: Date; now: Date; userIds: string[] },
+): Promise<number> {
+  if (userIds.length === 0) return 0;
+  const grants = userIds.map((userId) => ({ id: newId("led"), user_id: userId }));
+  const result = await queryJson<{ granted: number }>(
+    db,
+    sql`
+      with card as (
+        select free_credits_per_member as credits from rate_cards
+         where version = coalesce(
+           (select max(version) from rate_cards where effective_from <= ${timeParam(now)}::timestamptz),
+           (select min(version) from rate_cards))
+      ),
+      granted as (
+        insert into credit_ledger (id, workspace_id, delta, reason, period_start, user_id)
+        select g.id, ${workspaceId}, card.credits, 'grant', ${timeParam(periodStart)}::timestamptz,
+               g.user_id
+          from json_to_recordset(${JSON.stringify(grants)}::json) as g(id text, user_id text)
+               cross join card
+         where card.credits > 0
+        on conflict do nothing
+        returning 1
+      )
+      select json_build_object('granted', (select count(*) from granted)) as result
+    `,
+  );
+  return result?.granted ?? 0;
 }
 
 /** Set a workspace's monthly cap on what is billed, in cents. False when there is no workspace. */

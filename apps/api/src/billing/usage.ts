@@ -84,7 +84,8 @@ export function workspaceUsage(
 
   const { current } = read;
   const usedCredits = creditsOf(total);
-  const free = freeCredits(read.people.length, current.freeCreditsPerMember);
+  const counted = countedPeople(read);
+  const free = freeCredits(counted, current.freeCreditsPerMember);
   const billed = billedCredits(usedCredits, free);
   const billedCents = centsFor(billed, current.creditMicrousd);
   const capCents = read.monthlyCapCents ?? current.defaultCapCents;
@@ -112,7 +113,7 @@ export function workspaceUsage(
     freeCredits: free,
     billedCredits: billed,
     billedCents,
-    people: read.people.length,
+    people: counted,
     cap: {
       usd: Math.floor(capCents / 100),
       isDefault: read.monthlyCapCents === null,
@@ -124,6 +125,24 @@ export function workspaceUsage(
     unattributedCredits: seesPeople ? creditsOf(byUser.get(null) ?? 0) : null,
     byDesign: admin ? designBreakdown(read, byDesign) : null,
   };
+}
+
+/**
+ * Whom the period's free credits are counted for: everyone who has been a member at any point
+ * in it (a member now, or granted an allowance this period and gone since, their account
+ * deleted or not), and anyone else whose use is in it.
+ */
+export function countedPeople(read: Pick<WorkspaceUsageRead, "people" | "granted">): number {
+  const ids = new Set([...read.people.map((person) => person.id), ...read.granted.userIds]);
+  return ids.size + read.granted.departed;
+}
+
+/** The members of a period's read who have no allowance granted for it yet. */
+export function ungranted(read: Pick<WorkspaceUsageRead, "people" | "granted">): string[] {
+  const granted = new Set(read.granted.userIds);
+  return read.people
+    .filter((person) => person.role !== null && !granted.has(person.id))
+    .map((person) => person.id);
 }
 
 function designBreakdown(

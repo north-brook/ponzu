@@ -10,7 +10,7 @@ import {
   lowestCapUsd,
 } from "./credits.ts";
 import { billingPeriod } from "./period.ts";
-import { workspaceUsage } from "./usage.ts";
+import { countedPeople, ungranted, workspaceUsage } from "./usage.ts";
 
 /*
  * The credit model against the spec's own examples (Settings and pricing: "How the drawn numbers
@@ -58,6 +58,7 @@ function read(
     })),
     people: ids.map((id, i) => person(id, i === 0 ? "admin" : "member")),
     designs: ids.map((id) => ({ id: `des_${id}`, name: `${id}'s design`, readable: true })),
+    granted: { userIds: [], departed: 0 },
     ...extra,
   };
 }
@@ -161,6 +162,32 @@ describe("the spec's examples", () => {
       viewer("solo"),
     );
     expect(usage.usedCredits).toBe(100);
+  });
+});
+
+describe("whom the free credits are counted for", () => {
+  test("a member now, someone granted this period and gone, and a deleted account's grant", () => {
+    // Ada and Ben are members; Cy left after his grant; one grant's account was deleted.
+    const got = read(
+      { ada: 30, ben: 34 },
+      { granted: { userIds: ["ada", "ben", "cy"], departed: 1 } },
+    );
+    expect(countedPeople(got)).toBe(4);
+    const usage = workspaceUsage(got, period, viewer("ada"));
+    // 64 hours is 320 credits; 400 are free.
+    expect(usage).toMatchObject({ people: 4, freeCredits: 400, billedCents: 0 });
+  });
+
+  test("grants go to the members who lack one, never to someone only their use names", () => {
+    const got = read(
+      { ada: 1, ben: 1 },
+      {
+        people: [person("ada", "admin"), person("ben"), person("cy", null)],
+        granted: { userIds: ["ada"], departed: 0 },
+      },
+    );
+    expect(ungranted(got)).toEqual(["ben"]);
+    expect(countedPeople(got)).toBe(3);
   });
 });
 

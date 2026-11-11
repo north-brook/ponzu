@@ -1,4 +1,4 @@
-import { getWorkspace, readWorkspaceUsage, setMonthlyCap } from "@ponzu/db";
+import { getWorkspace, grantAllowances, readWorkspaceUsage, setMonthlyCap } from "@ponzu/db";
 import { Hono } from "hono";
 import { z } from "zod";
 import { access } from "../auth/access.ts";
@@ -6,7 +6,7 @@ import type { UserActor } from "../auth/actor.ts";
 import { requireWorkspace } from "../auth/authorize.ts";
 import { refreshWorkspaceRepoAccess } from "../auth/repo-access.ts";
 import { billingPeriod } from "../billing/period.ts";
-import { type WorkspaceUsage, workspaceUsage } from "../billing/usage.ts";
+import { ungranted, type WorkspaceUsage, workspaceUsage } from "../billing/usage.ts";
 import type { Deps } from "../deps/index.ts";
 import type { AppEnv } from "../http/context.ts";
 import { ApiError } from "../http/errors.ts";
@@ -106,6 +106,14 @@ async function usageFor(c: UserContext, workspaceId: string): Promise<WorkspaceU
     now,
   });
   if (!read) throw new ApiError(404, "not_found", "There is no such workspace.");
+  // A member's allowance is granted the first time the period is read with them in it, so a
+  // member who leaves later in the period stays counted (`countedPeople`).
+  await grantAllowances(deps.db, {
+    workspaceId: member.id,
+    periodStart: period.start,
+    now,
+    userIds: ungranted(read),
+  });
   return workspaceUsage(read, period, { user: actor.user, member });
 }
 
