@@ -16,7 +16,8 @@ import { ERROR_COPY, ERROR_DETAIL, type ThreadRow, who } from "./thread.ts";
 /** What a line can lead to: the canvas, the pull request tab, the browser. */
 export interface LineHandlers {
   /** A miniature of a board, for a comment's frame; the canvas draws it. */
-  renderBoard: (artboardId: string) => ReactNode;
+  /** A comment's board, as it was when the comment was made where that is known. */
+  renderBoard: (artboardId: string, commentId: string) => ReactNode;
   onOpenComment: (threadId: string) => void;
   onOpenArtboards: (artboardIds: string[]) => void;
   onOpenPullRequest: () => void;
@@ -95,7 +96,7 @@ function PersonLine({
         pin={item.payload.pin}
         onOpen={() => handlers.onOpenComment(item.payload.threadId)}
       >
-        {handlers.renderBoard(item.payload.artboardId)}
+        {handlers.renderBoard(item.payload.artboardId, item.id)}
       </CommentFrame>
     ) : null;
   return (

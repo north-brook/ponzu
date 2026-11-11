@@ -886,6 +886,11 @@ notice      { type: "waking" | "resumed" | "started" }                    the ru
             { type: "pull_request", number, url, title, state }           the API
 ```
 
+A `comment` item also carries `board`, a copy of the artboard as it was when the comment was
+made (up to 64 KB of JSON, `FROZEN_BOARD_BYTES`), which its thumbnail in the thread draws, with
+the pin placed on it: it shows what was commented on, not the board as it later became. A
+larger board, or a comment from before copies were kept, has none, and its thumbnail is live.
+
 A client renders the thread from these alone. A `tool` item is a stretch of tool calls
 between two things the agent says, folded to one line: while it streams it is the working
 line ("Reading the repo", `Drawing "Pricing · B"`, "Running the dev server", or what the agent

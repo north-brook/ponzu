@@ -453,6 +453,7 @@ describe("the event feed", () => {
           artboardId: "ab_1",
           artboardName: "Home",
           from,
+          board: expect.objectContaining({ id: "ab_1", name: "Home", x: 0 }),
         },
       },
       {
@@ -466,12 +467,22 @@ describe("the event feed", () => {
           artboardId: "ab_1",
           artboardName: "Home",
           from,
+          board: expect.objectContaining({ id: "ab_1", name: "Home", x: 0 }),
         },
       },
     ]);
     expect(
       (await feed(design.id)).map((event) => (event.payload as { reply: boolean }).reply),
     ).toEqual([false, true]);
+
+    // The board each keeps is the board as it was then, not as it later becomes.
+    await post(as("maya"), design.id, [
+      { id: "op_c3", op: { op: "artboard.update", id: "ab_1", x: 50 } },
+    ]);
+    const kept = await listThreadItems(t.db, { designId: design.id });
+    expect(kept.map((item) => (item.payload as { board?: { x: number } }).board?.x)).toEqual([
+      0, 0,
+    ]);
   });
 
   test("a person's ops ask for the design's sandbox, and a comment asks it to wake", async () => {

@@ -8,6 +8,7 @@ import {
   agentActivity,
   answerLine,
   branchMoment,
+  frozenBoards,
   shownItems,
   steerGate,
   toThreadItem,
@@ -157,6 +158,21 @@ test("a teammate's message and comment carry them, as the members they are", asy
       // The middle of the board is the middle of its miniature.
       pin: { x: 0.5, y: 0.5 },
     },
+  });
+
+  // The board changes after: the comment keeps the board it was made on, for its miniature.
+  w.agent.commit([
+    { op: "style", id: "ab_hero", style: { width: "800px", height: "300px", background: "red" } },
+  ]);
+  await settle();
+  const later = w.backend.design(w.design.id).sequencer.doc;
+  expect(later.pages[0]!.artboards[0]!.root.style.width).toBe("800px");
+  const items = store.getSnapshot().items!;
+  const kept = frozenBoards(items).get(items[1]!.id);
+  expect(kept?.root.style).toEqual({ width: "400px", height: "300px" });
+  // Its pin is still where it was on that board, not on the wider one it became.
+  expect(toThreadItem(items[1]!, { ...ctx(w.people), doc: later }).payload).toMatchObject({
+    pin: { x: 0.5, y: 0.5 },
   });
   store.close();
 });
