@@ -393,10 +393,13 @@ function LeavingLine({
     const timer = setTimeout(() => onGone(leaving), seconds * 1000 + 500);
     return () => clearTimeout(timer);
   }, [leaving, onGone]);
+  // The space above it goes inside the box that closes, never on it as padding: padding can't
+  // close, so the box would stop short at its height and the line under it jump when it went.
+  // The same two boxes live or leaving, so the line in them is never drawn again.
   if (!leaving) {
     return (
       <div ref={box} data-working-box className="shrink-0">
-        {children}
+        <div>{children}</div>
       </div>
     );
   }
@@ -408,18 +411,12 @@ function LeavingLine({
       inert
       data-leaving
       className="leave shrink-0"
-      style={
-        {
-          "--room": `${room}px`,
-          paddingTop: above,
-          marginTop: after ? -LINE_GAP : 0,
-        } as CSSProperties
-      }
+      style={{ "--room": `${room}px`, marginTop: after ? -LINE_GAP : 0 } as CSSProperties}
       onAnimationEnd={(e) => {
         if (e.target === e.currentTarget) onGone(leaving);
       }}
     >
-      {children}
+      <div style={{ paddingTop: above }}>{children}</div>
     </div>
   );
 }

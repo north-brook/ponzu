@@ -443,6 +443,11 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     }
     expect(leaving.at(-1)!.t - leaving[0]!.t).toBeLessThan(400);
     expect(frames.at(-1)!.leaving).toEqual([]);
+    // Each closes all the way, the space above it included, before it goes: its going moves
+    // nothing (no last step of the answer by the gap it held).
+    expect(total(leaving.at(-1)!)).toBeLessThan(1);
+    const gone = frames.findIndex((f, i) => i > end && f.leaving.length === 0);
+    expect(Math.abs(frames[gone]!.answerBottom! - frames[gone - 1]!.answerBottom!)).toBeLessThan(1);
     // The answer settles into the working line's room, a little each frame, never jumping, and
     // stays there.
     const settled = frames.at(-1)!.answerBottom!;
