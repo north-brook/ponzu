@@ -62,7 +62,7 @@ import {
   useSource,
   useZoomPercent,
 } from "./useCanvas.ts";
-import { Juice, Rain, useDelayed, useLingering } from "./working.tsx";
+import { Juice, useDelayed, useLingering } from "./working.tsx";
 
 export type Mode = "select" | "hand" | "comment";
 
@@ -1492,6 +1492,9 @@ export function Canvas({
                   arrivals={arrivals}
                   // Slightly rounded, the same few px on screen at any zoom (to a quarter octave).
                   radius={(BOARD_RADIUS * dpr) / scale}
+                  // Its edge, one px on screen at any zoom, the same way: zoomed out, a board the
+                  // canvas's own colour is held by its hairline alone.
+                  edge={dpr / scale}
                   corners={rounding.get(ab.id)}
                   onCorners={reportCorners}
                   hold={
@@ -1915,24 +1918,6 @@ interface Worker {
 }
 
 /**
- * The right side of a working artboard's header: yuzu rain, columns of dots falling at their own
- * pace, Paper's way of saying "at work here" without anyone's face on the board. The columns come
- * in left to right. Sized in em, so it's the label's size at any zoom; it runs as many columns as
- * fit in half the board (see .pz-rain-fit), so zoomed out it never runs past the board's edge or
- * crowds out its name. Who's working and what they say they're doing is in the tooltip; written
- * out, one pass repeated the same status over every board it touched.
- */
-function WorkingStatus({ who }: { who: Worker[] }) {
-  return (
-    <Rain
-      className="pz-rain-fit pz:ml-auto"
-      label="Working"
-      title={who.map((a) => `${a.name}: ${a.status ?? "working"}`).join("\n")}
-    />
-  );
-}
-
-/**
  * A yuzu ring round a working artboard, a few px off its edge so it never touches the design,
  * breathing slowly in width and glow so it reads on a light canvas as well as a dark one. It
  * fades in after `delay` ms (a new board's frame is still drawing) and fades out when `leaving`,
@@ -2341,6 +2326,7 @@ const Board = memo(function Board({
   rankOf,
   arrivals,
   radius,
+  edge,
   corners: measuredCorners,
   onCorners,
   hold,
@@ -2372,6 +2358,8 @@ const Board = memo(function Board({
   arrivals: Arrivals;
   /** Its corners' radius, in its own px. */
   radius: number;
+  /** Its hairline's width, in its own px. */
+  edge: number;
   /** Its corners as its live root resolved them, once it has been live (corners.ts). */
   corners?: Radii;
   onCorners: (id: string, corners: Radii) => void;
@@ -2408,7 +2396,7 @@ const Board = memo(function Board({
         const at = el ? arrivals.takeBoard(ab.id) : undefined;
         if (el && at !== undefined) arriveBoard(el, at);
       }}
-      className="pz:absolute pz:shadow-board"
+      className="pz:absolute pz:shadow-[0_0_0_var(--pz-board-edge-width)_var(--pz-board-edge),var(--pz-board-drop)]"
       data-pz-board={ab.id}
       style={
         {
@@ -2418,6 +2406,7 @@ const Board = memo(function Board({
           height: fixed ?? undefined,
           borderRadius: corners,
           "--pz-board-radius": `${radius}px`,
+          "--pz-board-edge-width": `${edge}px`,
         } as CSSProperties
       }
     >
@@ -2539,7 +2528,6 @@ const BoardTitle = memo(function BoardTitle({
             {ab.name}
           </span>
         )}
-        {who && <WorkingStatus who={who} />}
       </div>
     </div>
   );

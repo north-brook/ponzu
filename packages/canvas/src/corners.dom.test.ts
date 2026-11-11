@@ -177,6 +177,24 @@ describe.skipIf(!chromium)("a board's corners in Chromium", () => {
     expect(near(await shot(d.box.x + rx * d.zoom, d.box.y + ry * d.zoom), YELLOW)).toBe(true);
   };
 
+  test("zoomed out, a board the canvas's colour still shows its edge", async () => {
+    // A white board on a white canvas, as the cloud studio draws them, framed far out.
+    await mount("width:4800px;height:3200px;background:#ffffff");
+    await page.addStyleTag({ content: ".pz-root { --pz-canvas: #ffffff; }" });
+    const d = await drawn();
+    expect(d.zoom).toBeLessThan(0.4);
+    // Its hairline is a screen px wide, not a board px shrunk with the zoom: the darkest pixel
+    // across its left edge is as dark as the hairline's colour drawn whole (0.06 black: 240).
+    const y = d.box.y + d.box.h / 2;
+    let darkest = 255;
+    for (let x = Math.floor(d.box.x) - 2; x <= Math.ceil(d.box.x) + 1; x++) {
+      darkest = Math.min(darkest, (await shot(x, y))[0]!);
+    }
+    expect(darkest).toBeLessThanOrEqual(244);
+    expect(near(await shot(d.box.x - 40, y), [255, 255, 255])).toBe(true);
+    await page.close();
+  });
+
   test("a radius in a calc() rounds the sheet under the card too", async () => {
     await mount("width:320px;height:200px;background:#fff6b3;border-radius:calc(8px * 3)");
     const d = await drawn();

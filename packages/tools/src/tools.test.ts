@@ -6,6 +6,8 @@ import { type Capture, locate, parseHtml, threadPage } from "@ponzu/core";
 import { actCore, type Renderer, type RenderResult } from "@ponzu/render";
 import { Design, MemoryAdapter } from "@ponzu/store";
 import {
+  BOARD_HANDOFF,
+  BOARD_IDLE,
   EventHub,
   PresenceHub,
   type ToolContext,
@@ -903,11 +905,11 @@ test("an artboard given display: flex with no direction says it stays a column",
   expect(plain.text).not.toContain("Note:");
 });
 
-test("an agent shows as working on what it changes until it goes quiet", async () => {
+test("an agent shows as working on the boards it is changing, and lets go of the ones it has left", async () => {
   const { call, ws } = await setup();
   const me = () => ws.presence.list().find((p) => p.id === "t")!;
   // The clock only moves when the test moves it, so a slow machine can't run
-  // out the quiet period between two calls the test makes back to back.
+  // out a board's time between two calls the test makes back to back.
   jest.useFakeTimers();
   try {
     await call("get_tree", {});
@@ -917,10 +919,18 @@ test("an agent shows as working on what it changes until it goes quiet", async (
     expect(me()).toMatchObject({ working: ["ab_hero"], file: "fern" });
     const created = await call("create_artboard", { name: "Card" });
     const card = /ab_\w+/.exec(created.text)![0];
+    // Straight on to another board: the one it left keeps its mark a moment.
     expect(me().working).toEqual(["ab_hero", card]);
 
     await call("set_status", { status: "tightening the hero" });
     expect(me()).toMatchObject({ working: ["ab_hero", card], status: "tightening the hero" });
+    // The hero's moment is up; the card, its latest, stays.
+    jest.advanceTimersByTime(BOARD_HANDOFF + 5);
+    expect(me().working).toEqual([card]);
+
+    // Back on the hero after a while on the card: the card, long untouched, lets go at once.
+    await call("set_text", { updates: [{ id: "n_h", text: "Hey" }] });
+    expect(me().working).toEqual(["ab_hero"]);
     await call("set_status", { status: "just the card", artboards: [card] });
     expect(me().working).toEqual([card]);
 
@@ -929,14 +939,17 @@ test("an agent shows as working on what it changes until it goes quiet", async (
     expect(me().working).toEqual([]);
     expect(me().status).toBe("just the card");
 
-    // A read keeps it going; a full quiet period with no call clears it.
+    // Its latest board stays through the time a model takes to write its next change, a read
+    // or two included, and no longer; what it says it is doing lasts until it goes quiet.
     await call("set_text", { updates: [{ id: "n_h", text: "Hi" }] });
-    jest.advanceTimersByTime(WORKING_IDLE / 2);
+    jest.advanceTimersByTime(BOARD_IDLE / 2);
     await call("get_tree", {});
-    jest.advanceTimersByTime(WORKING_IDLE - 1);
+    jest.advanceTimersByTime(BOARD_IDLE / 2 - 5);
     expect(me().working).toEqual(["ab_hero"]);
-    jest.advanceTimersByTime(1);
-    expect(me()).toMatchObject({ working: [] });
+    jest.advanceTimersByTime(10);
+    expect(me().working).toEqual([]);
+    expect(me().status).toBe("just the card");
+    jest.advanceTimersByTime(WORKING_IDLE);
     expect(me().status).toBeUndefined();
   } finally {
     jest.useRealTimers();
