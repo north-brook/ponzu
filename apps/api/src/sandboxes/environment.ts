@@ -4,14 +4,16 @@ import {
   listDesignSecrets,
   type WakeContext,
 } from "@ponzu/db";
+import { encodeRepoSecrets, REPO_SECRETS_VARIABLE } from "@ponzu/runner/protocol";
 import type { Deps } from "../deps/index.ts";
 import { secretBinding, secretNameProblem } from "../environments/secrets.ts";
 
 /*
  * What a design's sandbox starts with (docs/cloud.md, "Environment" and "Credentials"): where
  * the API is, which design, a runner token good for that design alone, exactly one Claude
- * credential, the design's owner's, and its repo's secrets. The provider's `env` is the only
- * place any of it goes; none of it is logged, written to a file or put in a command.
+ * credential, the design's owner's, and its repo's secrets, packed into one variable that only
+ * the agent's side unpacks (`REPO_SECRETS_VARIABLE`). The provider's `env` is the only place
+ * any of it goes; none of it is logged, written to a file or put in a command.
  */
 
 /** The port the runner listens on, which the API reaches through the sandbox's address. */
@@ -24,8 +26,11 @@ export const RUNNER_PORT = 4600;
  */
 const RUNNER_TOKEN_SECONDS = 30 * 24 * 3600;
 
-/** What boat.dev takes as a sandbox's `env`: 100 variables, 64 KB of names and values. */
-const ENV_LIMITS = { count: 100, bytes: 64 * 1024 };
+/**
+ * What boat.dev takes as a sandbox's `env`: 64 KB of names and values, and 100 variables, which
+ * Ponzu's own and the one the repo's secrets travel in stay well inside.
+ */
+const ENV_LIMITS = { bytes: 64 * 1024 };
 
 type Claude = NonNullable<WakeContext["claude"]>;
 
@@ -87,9 +92,9 @@ export async function newEnvironment(
     // Exactly one: with both, Claude Code would use the key and bill it without a word.
     [claude.kind === "api_key" ? "ANTHROPIC_API_KEY" : "CLAUDE_CODE_OAUTH_TOKEN"]: credential,
   };
+  const packed = packSecrets(deps, designId, own, secrets);
   return {
-    // Ponzu's own last, so nothing of the repo's can stand in for them.
-    env: { ...withinLimits(deps, designId, own, secrets), ...own },
+    env: packed ? { ...own, [REPO_SECRETS_VARIABLE]: packed } : own,
     runnerTokenId: token.id,
     claudeCredential: credentialMark(claude),
   };
@@ -126,28 +131,32 @@ async function repoSecrets(
 }
 
 /**
- * The secrets that fit beside Ponzu's own variables in what the provider takes, in name order;
- * the rest are left out and logged. The API keeps a repo's secrets inside this on the way in,
- * so this only bites when the limits change.
+ * The secrets as `REPO_SECRETS_VARIABLE` carries them, in the order they were read (by name),
+ * as many as fit beside Ponzu's own variables in what the provider takes; the rest are left out
+ * and logged. Null when there are none. The API keeps a repo's secrets inside this on the way
+ * in (`SECRET_LIMITS`), so this only bites when the limits change.
  */
-function withinLimits(
+function packSecrets(
   deps: Pick<Deps, "log">,
   designId: string,
   own: Record<string, string>,
   secrets: [name: string, value: string][],
-): Record<string, string> {
-  const size = ([name, value]: [string, string]) =>
-    new TextEncoder().encode(name).length + new TextEncoder().encode(value).length;
-  let count = Object.keys(own).length;
-  let bytes = Object.entries(own).reduce((sum, entry) => sum + size(entry), 0);
-  const fitting: Record<string, string> = {};
+): string | null {
+  const bytes = (text: string) => new TextEncoder().encode(text).length;
+  const room = Object.entries(own).reduce(
+    (left, [name, value]) => left - bytes(name) - bytes(value),
+    ENV_LIMITS.bytes - bytes(REPO_SECRETS_VARIABLE),
+  );
+  const fitting: [string, string][] = [];
+  let used = 0;
   for (const secret of secrets) {
-    if (count + 1 > ENV_LIMITS.count || bytes + size(secret) > ENV_LIMITS.bytes) continue;
-    fitting[secret[0]] = secret[1];
-    count += 1;
-    bytes += size(secret);
+    // `NAME:base64`, and a comma before every entry but the first.
+    const size = encodeRepoSecrets([secret]).length + (fitting.length > 0 ? 1 : 0);
+    if (used + size > room) continue;
+    fitting.push(secret);
+    used += size;
   }
-  const left = secrets.length - Object.keys(fitting).length;
+  const left = secrets.length - fitting.length;
   if (left > 0) deps.log.warn("repo_secrets_over_limit", { designId, skipped: left });
-  return fitting;
+  return fitting.length > 0 ? encodeRepoSecrets(fitting) : null;
 }

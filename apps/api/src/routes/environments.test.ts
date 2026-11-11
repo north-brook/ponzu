@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sampleDoc } from "@ponzu/core/fixtures";
 import { getLiveSandbox, upsertRepos } from "@ponzu/db";
+import { decodeRepoSecrets, REPO_SECRETS_VARIABLE } from "@ponzu/runner/protocol";
 import { secretBinding } from "../environments/secrets.ts";
 import { call, designIn, type Workspace, workspaceWithRepo } from "../testing/designs.ts";
 import { createTestApp, TEST_VAULT_KEY, type TestApp } from "../testing/index.ts";
@@ -128,10 +129,35 @@ describe("secrets", () => {
       "NODE_OPTIONS",
       "HTTPS_PROXY",
       "GIT_ASKPASS",
+      // What loads code into a program as it starts, or changes how it checks TLS.
+      "BUN_OPTIONS",
+      "BUN_CONFIG_REGISTRY",
+      "NODE_PATH",
+      "NODE_TLS_REJECT_UNAUTHORIZED",
+      "NPM_CONFIG_REGISTRY",
+      "BASH_ENV",
+      "BASH_FUNC_LS",
+      "ENV",
+      "SHELLOPTS",
+      "PS4",
+      "PROMPT_COMMAND",
+      "PYTHONSTARTUP",
+      "XDG_CONFIG_HOME",
+      "DYLD_INSERT_LIBRARIES",
+      "CURL_CA_BUNDLE",
     ]) {
       const refused = await call(t, ada, "POST", `${env()}/secrets`, { name, value: "x" });
       expect(refused.status).toBe(400);
       expect(refused.body.error.code).toBe("secret_name_reserved");
+    }
+  });
+
+  test("allow how a repo's own code runs and installs, under Node's prefix", async () => {
+    const ada = await as("ada");
+    for (const name of ["NODE_ENV", "NODE_AUTH_TOKEN"]) {
+      const added = await call(t, ada, "POST", `${env(hidden.id)}/secrets`, { name, value: "x" });
+      expect(added.status).toBe(201);
+      await call(t, ada, "DELETE", `${env(hidden.id)}/secrets/${name}`);
     }
   });
 
@@ -257,6 +283,7 @@ describe("a sandbox's environment", () => {
     await t.backgroundDone();
   });
 
+  /** What the provider was given, and the secrets the runner unpacks from it for the agent. */
   async function started(scratch = false) {
     const design = await designIn(t, ws, "ada", sampleDoc(), scratch ? "scratch" : "repo");
     const said = await call(t, await as("ada"), "POST", `/v1/designs/${design.id}/messages`, {
@@ -265,17 +292,38 @@ describe("a sandbox's environment", () => {
     expect(said.status).toBe(201);
     await t.backgroundDone();
     const sandbox = await getLiveSandbox(t.db, design.id);
-    return t.sandbox.env(sandbox!.providerId!);
+    const given = t.sandbox.env(sandbox!.providerId!);
+    return { given, secrets: decodeRepoSecrets(given[REPO_SECRETS_VARIABLE]) };
   }
 
   test("carries the repo's secrets beside Ponzu's own and the one Claude credential", async () => {
-    const given = await started();
-    expect(given.DATABASE_URL).toBe(DATABASE_URL);
+    const { given, secrets } = await started();
+    expect(secrets).toEqual({ DATABASE_URL });
     expect(given.ANTHROPIC_API_KEY).toBe(KEY);
     expect(given.PONZU_DESIGN_ID).toBeString();
     expect(given.PONZU_RUNNER_TOKEN).toBeString();
-    // Another repo's are not its.
-    expect(given.OPENAI_KEY).toBeUndefined();
+    // Never as variables of the runner's own, and another repo's are not its.
+    expect(Object.keys(given).toSorted()).toEqual([
+      "ANTHROPIC_API_KEY",
+      "PONZU_API_URL",
+      "PONZU_DESIGN_ID",
+      REPO_SECRETS_VARIABLE,
+      "PONZU_RUNNER_TOKEN",
+    ]);
+  });
+
+  test("carry any bytes, in a variable a shell can source as it is", async () => {
+    const ada = await as("ada");
+    const hostile = 'line one\nit\'s $(touch /tmp/pwned) `id` "q" \\ ünï';
+    const added = await call(t, ada, "POST", `${env()}/secrets`, {
+      name: "HOSTILE",
+      value: hostile,
+    });
+    expect(added.status).toBe(201);
+    const { given, secrets } = await started();
+    expect(secrets.HOSTILE).toBe(hostile);
+    expect(given[REPO_SECRETS_VARIABLE]).toMatch(/^[A-Za-z0-9_:+/=,]+$/);
+    await call(t, ada, "DELETE", `${env()}/secrets/HOSTILE`);
   });
 
   test("leaves out what is not allowed or cannot be opened, and still starts", async () => {
@@ -288,17 +336,16 @@ describe("a sandbox's environment", () => {
        values ('${ws.repo.id}', 'ANTHROPIC_BASE_URL', '${sealed}', 20),
               ('${ws.repo.id}', 'BROKEN', 'pzv1.nokey.AAAA.AAAA', 4)`,
     );
-    const given = await started();
+    const { given, secrets } = await started();
+    expect(secrets).toEqual({ DATABASE_URL });
     expect(given.ANTHROPIC_BASE_URL).toBeUndefined();
-    expect(given.BROKEN).toBeUndefined();
-    expect(given.DATABASE_URL).toBe(DATABASE_URL);
     expect(t.logs.some((line) => line.event === "repo_secrets_skipped")).toBe(true);
     await t.db.execute(`delete from repo_secrets where name in ('ANTHROPIC_BASE_URL', 'BROKEN')`);
   });
 
   test("a Scratch design has no repo, and so no secrets", async () => {
-    const given = await started(true);
-    expect(given.DATABASE_URL).toBeUndefined();
+    const { given } = await started(true);
+    expect(given[REPO_SECRETS_VARIABLE]).toBeUndefined();
     expect(given.ANTHROPIC_API_KEY).toBe(KEY);
   });
 });
