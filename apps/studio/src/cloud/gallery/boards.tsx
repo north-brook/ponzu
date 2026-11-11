@@ -4,6 +4,7 @@ import { repoKey } from "../filter.ts";
 import type { Contributor, DesignSummary } from "../model.ts";
 import * as f from "./fixtures.ts";
 import { CreateHarness, DesignChromeHarness, Harness } from "./harness.tsx";
+import { SETUP_BOARDS } from "./setup-boards.tsx";
 
 const ONBOARDING_PROMPT = "I'd like to iterate on the onboarding flow";
 
@@ -120,4 +121,5 @@ export const BOARDS: Record<string, () => ReactNode> = {
       {null}
     </Harness>
   ),
+  ...SETUP_BOARDS,
 };

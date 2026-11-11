@@ -1,0 +1,65 @@
+ground div rgb(14, 14, 13)
+ground span rgb(255, 95, 87)
+ground span rgb(254, 188, 46)
+ground span rgb(40, 200, 64)
+icon svg 16×16 rgb(244, 243, 239) stroke 3.4px
+text "ponzu" rgb(244, 243, 239) 700 16px Funnel Display
+ground main rgb(18, 18, 17)
+ground div rgb(11, 11, 10) shadow rgba(40, 30, 0, 0.28) 0px 30px 80px -24px
+ground div rgb(244, 243, 239)
+text "6 Money" rgb(128, 124, 115) 400 10px Inter
+ground img shadow rgba(17, 17, 16, 0.08) 0px 0px 0px 1px
+text "+" rgb(17, 17, 16) 600 15px Inter
+ground span rgb(255, 200, 30) shadow rgba(17, 17, 16, 0.12) 0px 0px 0px 1px, rgba(0, 0, 0, 0.18) 0px 2px 6px 0px
+ground div rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.1) 0px -8px 28px 0px
+ground span rgba(17, 17, 16, 0.08)
+text "Make the balance bigger and lose the ca…" rgb(17, 17, 16) 400 14px Inter
+ground span rgb(255, 200, 30)
+ground span rgba(17, 17, 16, 0.06)
+icon svg 16×16 rgb(17, 17, 16) stroke 1.8px
+ground span rgba(17, 17, 16, 0.06)
+ground span rgb(17, 17, 16)
+ground span rgb(17, 17, 16)
+ground span rgb(17, 17, 16)
+ground span rgb(17, 17, 16)
+ground span rgb(17, 17, 16)
+ground span rgb(17, 17, 16)
+ground span rgb(17, 17, 16)
+ground span rgb(17, 17, 16)
+ground span rgb(17, 17, 16)
+ground span rgb(17, 17, 16)
+ground span rgb(17, 17, 16)
+ground span rgb(17, 17, 16)
+ground span rgb(17, 17, 16)
+ground span rgb(17, 17, 16)
+ground span rgb(17, 17, 16)
+ground span rgb(17, 17, 16)
+ground span rgb(17, 17, 16)
+ground span rgb(17, 17, 16)
+ground span rgb(17, 17, 16)
+ground span rgb(17, 17, 16)
+ground span rgb(17, 17, 16)
+ground span rgb(17, 17, 16)
+ground span rgb(17, 17, 16)
+ground span rgb(17, 17, 16)
+ground span rgb(17, 17, 16)
+ground span rgb(17, 17, 16)
+ground span rgb(17, 17, 16)
+ground span rgb(17, 17, 16)
+ground span rgb(17, 17, 16)
+icon svg 16×16 rgb(255, 255, 255) stroke 2.4px
+ground span rgb(17, 17, 16)
+ground span[Setup] rgb(244, 243, 239)
+ground span[Setup] rgb(244, 243, 239)
+ground span[Setup] rgb(244, 243, 239)
+text "Get Ponzu on your iPhone" rgb(244, 243, 239) 600 28px Funnel Display
+text "Comment on designs and answer Ponzu's q…" rgb(169, 165, 155) 400 15px Inter
+ground div rgb(27, 27, 26) shadow rgb(38, 37, 35) 0px 0px 0px 1px, rgba(0, 0, 0, 0.3) 0px 1px 2px 0px
+ground div rgb(255, 255, 255) shadow rgb(38, 37, 35) 0px 0px 0px 1px
+icon svg[QR code for Ponzu on the App Store] 88×88 rgb(17, 17, 16) stroke 1px
+text "Scan with your iPhone" rgb(244, 243, 239) 500 14px Inter
+icon svg 15×15 rgb(244, 243, 239) stroke 1px
+text "Sign in with the same GitHub account. E…" rgb(169, 165, 155) 400 13px Inter
+text "Start designing" rgb(17, 17, 16) 500 13px Inter
+ground button rgb(244, 243, 239)
+icon svg 14×14 rgb(17, 17, 16) stroke 2px
