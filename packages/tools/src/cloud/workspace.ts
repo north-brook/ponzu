@@ -64,6 +64,24 @@ export interface CloudWorkspaceOptions {
   telemetry?: Telemetry;
 }
 
+/**
+ * The design's link (`https://ponzu.design/designs/<id>`) narrowed to one page or board:
+ * `?page=<id>` or `?artboard=<id>`, the query the app's `ponzu://design/<id>` links take, so it
+ * means the same in the thread (which follows it in place), on GitHub and anywhere it is pasted.
+ */
+export function linkTo(
+  link: string | undefined,
+  at: { page: string } | { artboard: string },
+): string | undefined {
+  if (!link || !URL.canParse(link)) return undefined;
+  const url = new URL(link);
+  url.search = "";
+  url.hash = "";
+  if ("page" in at) url.searchParams.set("page", at.page);
+  else url.searchParams.set("artboard", at.artboard);
+  return url.href;
+}
+
 /** The workspace for the one design a sandbox works on. */
 export interface CloudWorkspace extends Workspace {
   readonly design: ReplicaDesign;
@@ -140,6 +158,7 @@ export function createCloudWorkspace(opts: CloudWorkspaceOptions): CloudWorkspac
     },
     assetBase: () => host.assetBase(),
     link: () => host.link(),
+    linkTo: (_key, at) => linkTo(host.link(), at),
     intent: (_key, text) => tell("intent", () => host.intent(text)),
     storeAsset: (_key, asset) => host.storeAsset(asset),
     publish: host.publish && ((_key, file) => host.publish!(file)),

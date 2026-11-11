@@ -60,7 +60,11 @@ Text from the model or GitHub (replies, plans, a pull request's body and comment
 lists, strikethrough, bare addresses; not footnotes, whose parser is slow on stray `]`s and whose
 in-page links we drop, so `[^1]` reads as written) and GitHub's line breaks, drawn into our
 elements: raw HTML stays text (no rehype-raw), images become links so nothing loads by itself, a
-link survives only to http, https or mailto and opens outside the app. Text shaped to make the
+link survives only to http, https or mailto and opens outside the app, except one to a design's
+own address with a page or board on it (`design-address.ts`), which in an open design's thread
+moves the canvas there (`place-link.tsx`: dotted where an outside link is solid, muted once what
+it names is gone). While a reply streams, a link still being written shows as its words alone
+(`settled`). Text shaped to make the
 parser slow (see `parseable` and `parts` in markdown.ts), or longer than 32 KB, is plain text.
 Blocks are memoised in runs of 16, so a reply streaming in parses only its last run.
 

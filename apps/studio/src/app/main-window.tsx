@@ -104,6 +104,28 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
     return () => document.removeEventListener("visibilitychange", change);
   }, [host]);
 
+  // A design a link names, opened on its page or board: from the shell, or the thread.
+  const openDesign = useCallback(
+    (link: { designId: string; pageId?: string; artboardId?: string }) => {
+      host.api.designs.get(link.designId).then(
+        (design) => {
+          update((now) => ({
+            ...now,
+            workspaceId: design.workspaceId,
+            designs: { ...now.designs, [design.workspaceId]: design.id },
+          }));
+          setOpening({
+            designId: design.id,
+            ...(link.pageId ? { page: link.pageId } : {}),
+            ...(link.artboardId ? { artboard: link.artboardId } : {}),
+          });
+        },
+        () => say("That design isn't there, or you can't open it."),
+      );
+    },
+    [host, update, say],
+  );
+
   useEffect(
     () =>
       host.onLink((link: DeepLink) => {
@@ -120,23 +142,9 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
           }
           return;
         }
-        host.api.designs.get(link.designId).then(
-          (design) => {
-            update((now) => ({
-              ...now,
-              workspaceId: design.workspaceId,
-              designs: { ...now.designs, [design.workspaceId]: design.id },
-            }));
-            setOpening({
-              designId: design.id,
-              ...(link.pageId ? { page: link.pageId } : {}),
-              ...(link.artboardId ? { artboard: link.artboardId } : {}),
-            });
-          },
-          () => say("That design isn't there, or you can't open it."),
-        );
+        openDesign(link);
       }),
-    [host, sync, update, say],
+    [host, sync, update, say, openDesign],
   );
 
   const all = meAnswer.data?.workspaces ?? null;
@@ -179,6 +187,7 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
       update={update}
       badge={badge}
       opening={opening}
+      onOpenDesign={openDesign}
       notice={notice}
       say={say}
       onLostAccess={() => {
@@ -201,6 +210,7 @@ function WorkspaceWindow({
   update,
   badge,
   opening,
+  onOpenDesign,
   notice,
   say,
   onLostAccess,
@@ -217,6 +227,8 @@ function WorkspaceWindow({
   update: (change: (ui: UiState) => UiState) => void;
   badge: ReactNode;
   opening: Opening | null;
+  /** Opens a design a link names, on its page or board. */
+  onOpenDesign: (link: { designId: string; pageId?: string; artboardId?: string }) => void;
   notice: string | null;
   say: (notice: string) => void;
   onLostAccess: () => void;
@@ -391,6 +403,12 @@ function WorkspaceWindow({
     page,
     onPage: setPage,
     link,
+    onOpenDesign: ({ designId, page, artboard }) =>
+      onOpenDesign({
+        designId,
+        ...(page ? { pageId: page } : {}),
+        ...(artboard ? { artboardId: artboard } : {}),
+      }),
     seenThreadSeq: live.rows?.find((row) => row.id === openId)?.seenThreadSeq ?? null,
     say,
     onClose: () => openDesign(null),

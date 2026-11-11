@@ -28,6 +28,19 @@ export function designOf(ctx: ToolContext, ids: (string | undefined)[] = []): Pr
  */
 export type ArtboardNote = (open: OpenDesign, artboardId: string) => string | Promise<string>;
 
+/**
+ * ` · link: <address>` for a page or board, where the host has links that the person's thread
+ * follows in place (`Workspace.linkTo`), to go after its id and name in a result; else nothing.
+ */
+export function linkNote(
+  ctx: ToolContext,
+  key: string,
+  at: { page: string } | { artboard: string },
+): string {
+  const link = ctx.ws.linkTo?.(key, at);
+  return link ? ` · link: ${link}` : "";
+}
+
 export function origin(ctx: ToolContext): Origin {
   return ctx.caller.author;
 }

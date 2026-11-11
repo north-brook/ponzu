@@ -11,8 +11,10 @@ import {
 import Markdown, { type Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import { cn } from "./cn.ts";
+import { parseDesignAddress } from "./design-address.ts";
 import { Icon } from "./icon.tsx";
-import { parts, prepare, remarkGfm, remarkUntrusted, safeHref } from "./markdown.ts";
+import { parts, prepare, remarkGfm, remarkUntrusted, safeHref, settled } from "./markdown.ts";
+import { PlaceLink } from "./place-link.tsx";
 
 /**
  * Markdown from the agent or GitHub, drawn with react-markdown into our own elements and tokens.
@@ -21,19 +23,25 @@ import { parts, prepare, remarkGfm, remarkUntrusted, safeHref } from "./markdown
  * browser. Memoized twice: a line of the thread redraws only when its text changes (so
  * `onOpenLink` should keep its identity), and within it each run of blocks (markdown.ts's
  * `blocks` and `runs`) only when its own text does, so a reply streaming in parses and redraws
- * only its last run.
+ * only its last run. While `streaming`, a link still being written at the end reads as its words
+ * alone, never as half of its syntax.
  */
 export const Prose = memo(function Prose({
   text,
+  streaming = false,
   onOpenLink,
   className,
 }: {
   text: string;
+  streaming?: boolean;
   onOpenLink?: (url: string) => void;
   className?: string;
 }) {
   const components = useMemo(() => elements(onOpenLink), [onOpenLink]);
-  const source = useMemo(() => prepare(text), [text]);
+  const source = useMemo(
+    () => (streaming ? settled(prepare(text)) : prepare(text)),
+    [text, streaming],
+  );
   const runs = useMemo(() => parts(source), [source]);
   return (
     <div className={cn("flex min-w-0 flex-col gap-2 [overflow-wrap:anywhere]", className)}>
@@ -159,7 +167,7 @@ function elements(onOpenLink?: (url: string) => void): Components {
             onOpenLink(href);
           }
         : undefined;
-      return (
+      const external = (
         <a
           href={href}
           target="_blank"
@@ -169,6 +177,15 @@ function elements(onOpenLink?: (url: string) => void): Components {
         >
           {children}
         </a>
+      );
+      // A design's own address, a page or board of it: followed in place where a design is open.
+      const address = parseDesignAddress(href);
+      return address ? (
+        <PlaceLink address={address} href={href} external={external}>
+          {children}
+        </PlaceLink>
+      ) : (
+        external
       );
     },
     // A table scrolls sideways inside its own box rather than widening what holds it.

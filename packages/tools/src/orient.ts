@@ -17,23 +17,23 @@ import type { ToolContext } from "./context.ts";
 import { ToolError, type ToolResult, tool } from "./define.ts";
 import type { OpenDesign } from "./design.ts";
 import { overlapLine, pageOverlapList } from "./overlap.ts";
-import { type ArtboardNote, designOf, plural } from "./util.ts";
+import { type ArtboardNote, designOf, linkNote, plural } from "./util.ts";
 
 /**
  * What get_basic_info says about a design wherever it is kept, a line or a block each.
- * `summary` is the design in outline; `linkNote` says what its link is for.
+ * `summary` is the design in outline; `linkAbout` says what its link is for.
  */
 export async function overview(
   ctx: ToolContext,
   { key, design }: OpenDesign,
   summary: string,
-  linkNote: string,
+  linkAbout: string,
 ): Promise<string[]> {
   const { ws } = ctx;
   const doc = design.doc;
   const lines = [summary];
   const link = ws.link?.(key, { origin: ctx.caller.reachedAt });
-  if (link) lines.push(`Link: ${link} (${linkNote})`);
+  if (link) lines.push(`Link: ${link} (${linkAbout})`);
   const tokens = parseTokens(doc.tokens);
   if (tokens.length) {
     const limit = 40;
@@ -129,8 +129,10 @@ export const orientTools = [
       const lines = await overview(
         ctx,
         open,
-        docSummary(open.design.doc),
-        "opens this design in Ponzu",
+        docSummary(open.design.doc, { linkOf: (at) => ctx.ws.linkTo?.(open.key, at) }),
+        ctx.ws.linkTo
+          ? "opens this design in Ponzu, for a pull request description; each page and artboard above has its own, for your messages"
+          : "opens this design in Ponzu",
       );
       return { text: lines.join("\n") };
     },
@@ -148,9 +150,9 @@ export const orientTools = [
       depth: z.number().int().min(1).max(12).optional().describe("Levels to show. Default 4."),
     },
     async handler({ id, depth }, ctx) {
-      const { design } = await designOf(ctx, [id]);
+      const { key, design } = await designOf(ctx, [id]);
       const doc = design.doc;
-      if (!id) return { text: docSummary(doc) };
+      if (!id) return { text: docSummary(doc, { linkOf: (at) => ctx.ws.linkTo?.(key, at) }) };
       const page = findPage(doc, id);
       if (page) {
         if (!page.artboards.length)
@@ -165,7 +167,7 @@ export const orientTools = [
       if (!hit) throw new ToolError(`No artboard, node or page with id ${id}.`);
       const head = hit.parent
         ? `In ${hit.artboard.id} "${hit.artboard.name}"\n`
-        : `${artboardSummary(hit.artboard)} · page "${hit.page.name}"\n`;
+        : `${artboardSummary(hit.artboard)} · page "${hit.page.name}"${linkNote(ctx, key, { artboard: hit.artboard.id })}\n`;
       return { text: head + outline(hit.node, depth ?? 4, { artboard: !hit.parent }) };
     },
   }),

@@ -154,6 +154,28 @@ export function prepare(source: string): string {
 }
 
 const FENCE = /^ {0,3}(`{3,}|~{3,})/;
+
+/**
+ * A link still being written at the end of a reply streaming in: `[Note: Pri`, `[Note: Pricing]`,
+ * `[Note: Pricing](https://ponzu.des`. Its text is the group, and it holds no newline.
+ */
+const OPEN_LINK = /\[([^[\]\n]*)(?:\]\([^()\s]*|\])?$/;
+
+/**
+ * Text streaming in, with a link it is still writing at its end shown as its words alone, so half
+ * a link's syntax never flashes (nor half an address, which GitHub's flavour would draw as a link
+ * of its own). In fenced code or a code span it is left as written.
+ */
+export function settled(source: string): string {
+  const open = OPEN_LINK.exec(source);
+  if (!open) return source;
+  const before = source.slice(0, open.index);
+  const fences = before.split("\n").filter((line) => FENCE.test(line)).length;
+  if (fences % 2 === 1) return source;
+  const line = before.slice(before.lastIndexOf("\n") + 1);
+  if ((line.match(/`/g)?.length ?? 0) % 2 === 1) return source;
+  return before + open[1];
+}
 /** A line after a blank one that may still belong to what came before: indented, or an item. */
 const CONTINUES = /^(?:[ \t]|[*+-](?:[ \t]|$)|\d{1,9}[.)](?:[ \t]|$))/;
 /** What reaches across blocks: a link definition, a footnote, an HTML block that spans blanks. */
