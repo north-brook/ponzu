@@ -631,7 +631,7 @@ export class Runner {
       ? `This design has no repository: ${this.cwd} is an empty folder for your own files.`
       : this.cloneError
         ? `The design's repository, ${repo.owner}/${repo.name}, could not be checked out (${this.cloneError}), so ${this.cwd} is an empty folder. Work on the canvas only, and tell the person the code is out of reach until the sandbox starts again.`
-        : `The repository ${repo.owner}/${repo.name} is checked out at ${this.cwd}, on the design's branch ${branch}. Commit as you go and push the branch (git push sets its upstream itself). Ponzu opens and merges the pull request: there is no GitHub API token here, so don't try to open one yourself. Whenever you push, say what the branch changes with ${SUMMARY_TOOL}: a few lines of Markdown for a reviewer, what changed and why. It becomes the pull request's description, now or when it opens.`;
+        : `The repository ${repo.owner}/${repo.name} is checked out at ${this.cwd}, on the design's branch ${branch}. Commit as you go and push the branch (git push sets its upstream itself). Ponzu opens and merges the pull request: there is no GitHub API token here, so don't try to open one yourself. Whenever you push, say what the branch changes with ${SUMMARY_TOOL}: Markdown for a reviewer, what changed and why. It becomes the pull request's description, now or when it opens, and it is where the full account goes, not the thread.`;
     const naming = `The design's name titles its pull request and the commit that merges it. If it is still the person's first words rather than a name, give it one in your first turn with update_design: two to four words for what is being designed, like "Quieter shop hero".`;
     return `${CLOUD_INSTRUCTIONS}\n\nThis sandbox's design is "${design.name}" (${link}). ${naming} ${where}\n\n${RUNNER_INSTRUCTIONS}`;
   }
@@ -645,7 +645,7 @@ export class Runner {
       title: "Describe pull request",
       group: "converse",
       description:
-        "Say what the design's branch changes, for its pull request's description: a few lines of Markdown for a reviewer, what changed and why. Ponzu writes it into the open pull request, or keeps it for the one it opens. Call it again after a push that changes the story; the last one wins.",
+        "Say what the design's branch changes, for its pull request's description: Markdown for a reviewer on GitHub who hasn't seen the canvas, what changed and why. This, not the thread, is where the full account goes. Ponzu writes it into the open pull request, or keeps it for the one it opens. Call it again after a push that changes the story; the last one wins.",
       input: {
         summary: z.string().min(1).max(MAX_PULL_REQUEST_SUMMARY).describe("Markdown."),
       },
