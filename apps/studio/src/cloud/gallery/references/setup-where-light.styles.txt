@@ -1,0 +1,35 @@
+ground div rgb(232, 230, 224)
+ground span rgb(255, 95, 87)
+ground span rgb(254, 188, 46)
+ground span rgb(40, 200, 64)
+icon svg 16×16 rgb(17, 17, 16) stroke 3.4px
+text "ponzu" rgb(17, 17, 16) 700 16px Funnel Display
+ground main rgb(244, 243, 239)
+ground span[Setup] rgb(17, 17, 16)
+ground span[Setup] rgb(211, 208, 200)
+ground span[Setup] rgb(211, 208, 200)
+text "Where do you design?" rgb(17, 17, 16) 600 28px Funnel Display
+text "Design on your real product, with your …" rgb(94, 91, 84) 400 15px Inter
+ground div rgb(255, 255, 255) shadow rgb(232, 230, 224) 0px 0px 0px 1px, rgba(0, 0, 0, 0.04) 0px 1px 2px 0px
+ground img shadow rgb(232, 230, 224) 0px 0px 0px 1px
+text "Personal" rgb(17, 17, 16) 500 14px Inter
+text "brycedbjork" rgb(169, 165, 155) 400 12px Inter
+text "Set up" rgb(17, 17, 16) 500 12px Inter
+ground button rgb(255, 255, 255) shadow rgba(0, 0, 0, 0) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.08) 0px 1px 2px 0px, rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
+icon svg 12×12 rgb(94, 91, 84) stroke 2px
+text "F" rgb(255, 255, 255) 600 14px Funnel Display
+ground span rgb(61, 90, 64)
+text "Fablefuel" rgb(17, 17, 16) 500 14px Inter
+text "fablefuel · 12 people" rgb(169, 165, 155) 400 12px Inter
+text "Ready" rgb(94, 91, 84) 500 12px Inter
+icon svg 14×14 rgb(17, 17, 16) stroke 2.2px
+ground img shadow rgb(232, 230, 224) 0px 0px 0px 1px
+text "Northbrook" rgb(17, 17, 16) 500 14px Inter
+text "north-brook · 5 people" rgb(169, 165, 155) 400 12px Inter
+text "Ready" rgb(94, 91, 84) 500 12px Inter
+icon svg 14×14 rgb(17, 17, 16) stroke 2.2px
+text "Don't see an organization? Grant access…" rgb(94, 91, 84) 500 12px Inter
+icon svg 11×11 rgb(128, 124, 115) stroke 2px
+text "Continue" rgb(255, 255, 255) 500 13px Inter
+ground button rgb(17, 17, 16)
+icon svg 14×14 rgb(255, 255, 255) stroke 2px

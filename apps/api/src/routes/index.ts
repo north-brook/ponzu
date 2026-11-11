@@ -8,6 +8,7 @@ import { github } from "./github.ts";
 import { health } from "./health.ts";
 import { live } from "./live.ts";
 import { me } from "./me.ts";
+import { repoIdeas } from "./repo-ideas.ts";
 import { runner } from "./runner.ts";
 import { workspaces } from "./workspaces.ts";
 
@@ -23,6 +24,7 @@ export const v1 = new Hono<AppEnv>()
   .route("/workspaces", workspaces)
   .route("/designs", designs)
   .route("/designs", designThread)
+  .route("/repos", repoIdeas)
   .route("/runner", runner)
   .route("/live", live)
   .route("/cron", cron);

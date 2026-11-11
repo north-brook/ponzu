@@ -22,6 +22,7 @@ const complete = {
   R2_ACCESS_KEY_ID: "r2-key-id",
   R2_SECRET_ACCESS_KEY: "r2-secret",
   R2_BUCKET: "ponzu-test",
+  PONZU_ANTHROPIC_API_KEY: "sk-ant-example",
 };
 
 test("a complete environment is read into one typed value", () => {
@@ -48,6 +49,7 @@ test("a complete environment is read into one typed value", () => {
       secretAccessKey: "r2-secret",
       bucket: "ponzu-test",
     },
+    anthropicApiKey: "sk-ant-example",
     minimumClientVersions: {},
     commit: null,
   });
@@ -96,6 +98,13 @@ test("a malformed value is named and never quoted", () => {
   );
   expect(read({ PONZU_MIN_CLIENT_VERSIONS: "macos>=2" })).toContain(
     "PONZU_MIN_CLIENT_VERSIONS is malformed.",
+  );
+  // Anything that is not an Anthropic API key.
+  expect(read({ PONZU_ANTHROPIC_API_KEY: "ghs_not-an-anthropic-key" })).toBe(
+    "The API cannot start. PONZU_ANTHROPIC_API_KEY is malformed.",
+  );
+  expect(read({ PONZU_ANTHROPIC_API_KEY: "" })).toBe(
+    "The API cannot start. PONZU_ANTHROPIC_API_KEY is not set.",
   );
 });
 

@@ -16,7 +16,14 @@
   --c-canvas: light-dark(#f4f3ef, #121211);
   --c-surface: light-dark(#ffffff, #1b1b1a);
   --c-raised: light-dark(#ffffff, #3a3a3a);
+  /* A raised button under the pointer. Derived: a step down from raised toward the chrome. */
+  --c-raised-hover: light-dark(#f7f6f3, #444443);
   --c-chip: light-dark(#e8e6e0, #1f1f1e);
+  /*
+   * The second ground inside a surface: Settings' nav, an open environment, an icon's tile. Dark:
+   * derived; the design's (#1b1b1a) is the surface itself, which leaves the nav no edge.
+   */
+  --c-secondary: light-dark(#f4f3ef, #161615);
 
   /* Ink, strongest to quietest. */
   --c-ink: light-dark(#111110, #f4f3ef);
@@ -42,6 +49,18 @@
   --c-selected: light-dark(#f4f3ef, #252523);
   /* The ring of the presence "+" (--n-300). Dark: derived. */
   --c-outline: light-dark(#d3d0c8, #3f3d39);
+  /* A step of the guided setup not reached yet (--n-300). Dark: derived. */
+  --c-step: light-dark(#d3d0c8, #3a3936);
+  /* What a meter has left: a Claude limit, the month's usage. Dark: derived, so it shows on the surface. */
+  --c-track: light-dark(#e8e6e0, #2c2b29);
+  /* A switch: its track when off, and its knob. Dark: derived; on, the track is the action color. */
+  --c-switch-off: light-dark(#e8e6e0, #3f3d39);
+  --c-knob: light-dark(#ffffff, #1b1b1a);
+  /* An input's edge at rest. Dark: derived, a step above the rule so a field shows its shape. */
+  --c-field-edge: light-dark(#e8e6e0, #3a3936);
+  /* Behind Settings, and behind a dialog that blocks a send: the design keeps the two apart. Dark: derived. */
+  --c-dim: light-dark(rgba(17, 17, 16, 0.18), rgba(0, 0, 0, 0.4));
+  --c-dim-dialog: light-dark(rgba(17, 17, 16, 0.16), rgba(0, 0, 0, 0.36));
 
   /* Yuzu: the agent and the brand. Text on it is always ink. */
   --c-yuzu: #ffc81e;
@@ -49,6 +68,8 @@
   /* Pith: a search match (the design's --c-pin-soft). */
   --c-pith: light-dark(#fff4d1, #2e2a1c);
   --c-danger: light-dark(#d93a2b, #ff6b5e);
+  /* Text on a danger button. Dark: derived; white on the lighter dark red doesn't hold. */
+  --c-danger-ink: light-dark(#ffffff, #111110);
 
   /* The dark action button, and a checked box. Dark: derived, inverted to stay the strongest thing. */
   --c-action: light-dark(#111110, #f4f3ef);
@@ -63,6 +84,11 @@
   --c-pr-running: light-dark(#d4a017, #e3b341);
   --c-pr-conflict: light-dark(#b7791f, #d99a3c);
   --c-pr-merged: light-dark(#8250df, #a37ff0);
+
+  /* Continue with GitHub: GitHub's own near-black in either theme, a step lighter under the pointer. */
+  --c-github: #141414;
+  --c-github-hover: #262523;
+  --c-github-ink: #ffffff;
 
   /* Tooltips are dark in either theme, as the canvas's are. */
   --c-tip: #1c1c1b;
@@ -84,6 +110,24 @@
   /* A design's preview in a row. Dark: derived. */
   --c-preview-ring: 0 0 0 0.5px light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.08));
   --c-tip-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 4px 14px rgba(0, 0, 0, 0.18);
+  /* A card on the canvas: the setup's account and Claude cards. */
+  --c-card-shadow:
+    0 0 0 1px var(--c-rule), 0 1px 2px light-dark(rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.3));
+  /* A raised button: Set up, Sign out, Rebuild. */
+  --c-button-shadow:
+    var(--c-raised-shadow), 0 0 0 0.5px light-dark(rgba(0, 0, 0, 0.08), transparent);
+  /* A text field at rest, focused (the design's: a 1px --n-400 ring and a soft halo), and wrong. */
+  --c-field: inset 0 0 0 1px var(--c-field-edge);
+  --c-field-focus:
+    0 0 0 1px light-dark(#a9a59b, #6b6862),
+    0 0 0 4px light-dark(rgba(17, 17, 16, 0.06), rgba(255, 255, 255, 0.06));
+  --c-field-error: inset 0 0 0 1px var(--c-danger);
+  --c-field-error-focus:
+    0 0 0 1px var(--c-danger),
+    0 0 0 4px light-dark(rgba(17, 17, 16, 0.06), rgba(255, 255, 255, 0.06));
+  --c-knob-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  /* The GitHub button's edge: none on light; on the dark canvas a hairline, so it keeps its shape. */
+  --c-github-ring: 0 0 0 0.5px light-dark(transparent, rgba(255, 255, 255, 0.18));
   /*
    * Keyboard focus: the onboarding's focused field (a 1px ring and a soft 4px halo), with the
    * ring one step darker (--n-500) so it holds 3:1 against the chrome.

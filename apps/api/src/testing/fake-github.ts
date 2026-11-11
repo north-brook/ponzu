@@ -35,6 +35,16 @@ export interface FakeRepository {
    * person's own token lists (GitHub's documented rule). On a public one anyone can read.
    */
   access: Record<number, "read" | "write">;
+  /** When it was last pushed to. Never, unless it says. */
+  pushedAt?: Date | null;
+  /** What it says of itself on its page. */
+  description?: string | null;
+  topics?: string[];
+  /**
+   * Its files on the default branch, by path: what a token with `contents: read` reads. A
+   * README among them at the top is the one its page shows.
+   */
+  files?: Record<string, string>;
 }
 
 export interface FakeInstallation {
@@ -99,6 +109,8 @@ export class FakeGithub {
   readonly installationTokenRequests: { installationId: number; body: unknown }[] = [];
   /** Every question about a person's access to a repository, as `owner/name login`. */
   readonly permissionRequests: string[] = [];
+  /** Every read of a repository's contents, as `owner/name what`: `readme`, `contents/<path>`. */
+  readonly contentRequests: string[] = [];
 
   readonly #clock: Clock;
   readonly #users = new Map<number, FakeGithubUser>();
@@ -287,7 +299,7 @@ export class FakeGithub {
           full_name: repository.fullName,
           default_branch: repository.defaultBranch ?? "main",
           private: repository.private ?? true,
-          pushed_at: null,
+          pushed_at: repository.pushedAt?.toISOString() ?? null,
           permissions: { pull: true, push: repository.access[user.id] === "write" },
         })),
       });
@@ -331,6 +343,8 @@ export class FakeGithub {
     if (method === "GET" && permission) {
       return this.#permission(repositories, permission[1]!, decodeURIComponent(permission[2]!));
     }
+    const contents = this.#serveContents(token, repositories, method, url);
+    if (contents) return contents;
     // An account by id needs no permission at all.
     const account = /^\/user\/(\d+)$/.exec(pathname);
     if (method === "GET" && account) {
@@ -343,6 +357,81 @@ export class FakeGithub {
       return Response.json({ message: "Resource not accessible by integration" }, { status: 403 });
     }
     return this.#serveAnyone(method, url) ?? notFound(method, url);
+  }
+
+  /**
+   * A repository's page, its tree and its files, for a token that reaches it: its metadata
+   * with any permission, its contents only with `contents`. Null for any other path.
+   */
+  #serveContents(
+    token: InstallationToken,
+    reachable: FakeRepository[],
+    method: string,
+    url: string,
+  ): Response | null {
+    const { pathname, searchParams } = new URL(url);
+    const match = /^\/repos\/([^/]+\/[^/]+)(?:\/(git\/trees\/[^/]+|readme|contents\/.+))?$/.exec(
+      pathname,
+    );
+    if (method !== "GET" || !match) return null;
+    const repository = reachable.find((candidate) => candidate.fullName === match[1]);
+    if (!repository) return Response.json({ message: "Not Found" }, { status: 404 });
+    const part = match[2];
+    if (part === undefined) {
+      return Response.json({
+        ...repositoryJson(repository),
+        description: repository.description ?? null,
+        topics: repository.topics ?? [],
+        homepage: null,
+        language: null,
+        archived: false,
+      });
+    }
+    if (!token.permissions?.contents) {
+      return Response.json({ message: "Resource not accessible by integration" }, { status: 403 });
+    }
+    this.contentRequests.push(`${repository.fullName} ${part}`);
+    const files = repository.files ?? {};
+    if (part.startsWith("git/trees/")) {
+      if (searchParams.get("recursive") !== "1") return notFound(method, url);
+      const folders = new Set(
+        Object.keys(files).flatMap((path) =>
+          path
+            .split("/")
+            .slice(0, -1)
+            .map((_, i, parts) => parts.slice(0, i + 1).join("/")),
+        ),
+      );
+      return Response.json({
+        sha: "0".repeat(40),
+        tree: [
+          ...[...folders].map((path) => ({ path, mode: "040000", type: "tree" })),
+          ...Object.entries(files).map(([path, text]) => ({
+            path,
+            mode: "100644",
+            type: "blob",
+            size: new TextEncoder().encode(text).byteLength,
+          })),
+        ],
+        truncated: false,
+      });
+    }
+    const path =
+      part === "readme"
+        ? Object.keys(files).find((candidate) => /^readme(\.[a-z]+)?$/i.test(candidate))
+        : decodeURIComponent(part.slice("contents/".length));
+    const text = path === undefined ? undefined : files[path];
+    if (text === undefined) return Response.json({ message: "Not Found" }, { status: 404 });
+    // GitHub's JSON form: the content in base64 up to 1 MB, left out past that.
+    const bytes = Buffer.from(text);
+    const large = bytes.byteLength > 1024 * 1024;
+    return Response.json({
+      type: "file",
+      path,
+      size: bytes.byteLength,
+      encoding: large ? "none" : "base64",
+      content: large ? "" : bytes.toString("base64"),
+    });
   }
 
   /** What any token may read: an account's public profile. */
@@ -418,7 +507,10 @@ export class FakeGithub {
     const installation = this.#installation(installationId);
     if (!installation) return Response.json({ message: "Not Found" }, { status: 404 });
     if (installation.suspendedAt) return suspended();
-    const { repository_ids: repositoryIds } = body as { repository_ids?: number[] };
+    const { repository_ids: repositoryIds, permissions } = body as {
+      repository_ids?: number[];
+      permissions?: Record<string, string>;
+    };
     const outside = repositoryIds?.some(
       (repositoryId) => !installation.repositories.some(({ id }) => id === repositoryId),
     );
@@ -435,6 +527,7 @@ export class FakeGithub {
     this.#installationTokens.set(token, {
       installationId,
       repositoryIds: repositoryIds ?? null,
+      permissions: permissions ?? null,
       expiresAt,
     });
     return Response.json({ token, expires_at: new Date(expiresAt).toISOString() }, { status: 201 });
@@ -470,6 +563,8 @@ interface InstallationToken {
   installationId: number;
   /** The repositories it was narrowed to; null for every one the installation has. */
   repositoryIds: number[] | null;
+  /** What it was narrowed to; null for everything the installation has. */
+  permissions: Record<string, string> | null;
   /** Epoch milliseconds. */
   expiresAt: number;
 }
@@ -496,7 +591,7 @@ function repositoryJson(repository: FakeRepository) {
     full_name: repository.fullName,
     default_branch: repository.defaultBranch ?? "main",
     private: repository.private ?? true,
-    pushed_at: null,
+    pushed_at: repository.pushedAt?.toISOString() ?? null,
   };
 }
 

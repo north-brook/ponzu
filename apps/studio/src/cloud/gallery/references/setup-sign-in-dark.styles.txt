@@ -1,0 +1,13 @@
+ground div rgb(14, 14, 13)
+ground span rgb(255, 95, 87)
+ground span rgb(254, 188, 46)
+ground span rgb(40, 200, 64)
+icon svg 16×16 rgb(244, 243, 239) stroke 3.4px
+text "ponzu" rgb(244, 243, 239) 700 16px Funnel Display
+ground main rgb(18, 18, 17)
+icon svg 72×72 rgb(244, 243, 239) stroke 3.4px
+text "Sign in to Ponzu" rgb(244, 243, 239) 600 28px Funnel Display
+text "Design on a canvas, steer with comments…" rgb(169, 165, 155) 400 15px Inter
+text "Continue with GitHub" rgb(255, 255, 255) 600 14px Inter
+ground button rgb(20, 20, 20) shadow rgba(255, 255, 255, 0.18) 0px 0px 0px 0.5px
+icon svg 16×16 rgb(255, 255, 255) stroke 1px
