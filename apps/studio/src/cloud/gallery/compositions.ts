@@ -42,6 +42,8 @@ const CANVAS: Rect = { x: 300, y: 44, width: 780, height: 850 };
 const RAIL: Rect = { x: 1080, y: 44, width: 360, height: 856 };
 const DESIGN = [CANVAS, RAIL];
 const WINDOW = { width: 1440, height: 900 };
+/** The window's smallest size (MIN_WINDOW in app-window.tsx). */
+const MIN_WINDOW = { width: 1100, height: 640 };
 
 export const COMPOSITIONS: Composition[] = [
   {
@@ -184,7 +186,10 @@ export const COMPOSITIONS: Composition[] = [
     board: "mac/3-pull-request-tab.html",
     ...WINDOW,
     open: 'button[aria-controls="file-src/components/hero.tsx"]',
+    masks: DESIGN,
     reference: true,
+    differs:
+      "the tab no longer folds the thread away: the rail stays as it was (open here), and the pull request fits the canvas's column, stacked at this width (both masked)",
   },
   {
     id: "together-on-a-design",
@@ -215,6 +220,24 @@ export const COMPOSITIONS: Composition[] = [
     id: "pull-request-one-file",
     title: "Pull request · merged, one file, no checks, a long branch",
     ...WINDOW,
+  },
+  {
+    id: "pull-request-rail-closed",
+    title: "Pull request · the thread closed: two columns",
+    ...WINDOW,
+    reference: true,
+  },
+  {
+    id: "pull-request-min-window",
+    title: "Pull request · the smallest window, both panes open, a long title",
+    ...MIN_WINDOW,
+    reference: true,
+  },
+  {
+    id: "pull-request-wide",
+    title: "Pull request · a wide screen, the sidebar closed",
+    width: 2240,
+    height: 1100,
   },
   { id: "pull-request-loading", title: "Pull request · loading", ...WINDOW },
   { id: "pull-request-error", title: "Pull request · GitHub unreachable", ...WINDOW },

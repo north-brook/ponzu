@@ -270,7 +270,10 @@ export function Canvas({
     if (shownId && shownId !== pageId) setOwnPageId(shownId);
   }, [shownId, pageId]);
   const [mode, setMode] = useState<Mode>("select");
-  const space = useKeyHeld("Space");
+  // A host that covers the canvas with something else (Ponzu's pull request tab) makes it inert:
+  // its keys are then that view's, and the canvas waits as it was left, selection and all.
+  const covered = () => Boolean(viewport.current?.closest("[inert]"));
+  const space = useKeyHeld("Space", covered);
   const panning = mode === "hand" || space;
   const { camera, zoomAt, panBy, fit } = useCameraStore();
   const still = useWindowStill();
@@ -677,7 +680,7 @@ export function Canvas({
         active.blur();
     };
     const onKey = (e: KeyboardEvent) => {
-      if (isTyping(e)) return;
+      if (isTyping(e) || covered()) return;
       const mod = e.metaKey || e.ctrlKey;
       // ⌥1–9: pages, by e.code since ⌥ changes e.key on a Mac. 9 is the last. A host that
       // draws its own page tabs (pageBar off) gives them their shortcuts itself.

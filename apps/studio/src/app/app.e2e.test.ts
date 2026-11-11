@@ -459,10 +459,37 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
       .getByText(/Pull request\s+#\d+\s+opened as a draft/)
       .waitFor();
 
-    // The pull request tab takes the canvas's pane, with the file's diff on demand.
+    // Where the canvas was left: zoomed in, a board chosen; and a draft in the composer.
+    const zoomShown = () => page.getByRole("button", { name: "Zoom to fit" }).textContent();
+    const before = await zoomShown();
+    await page.getByRole("button", { name: "Zoom in" }).click();
+    await waitUntil(async () => (await zoomShown()) !== before);
+    const zoom = await zoomShown();
+    await page.locator('[data-board-name][title="Yearly toggle"]').click();
+    const draft = rail().getByPlaceholder("Steer, or ask more");
+    await draft.fill("Half typed");
+    const railBox = await rail().boundingBox();
+
+    // The pull request tab takes the canvas's pane, with the file's diff on demand, and leaves
+    // the thread as it was beside it.
     await page.locator("header").getByRole("button", { name: /#\d+/ }).click();
     await page.getByRole("heading", { name: NAME }).waitFor();
-    expect(await page.locator("#thread").count()).toBe(0);
+    expect(await rail().boundingBox()).toEqual(railBox);
+    expect(await draft.inputValue()).toBe("Half typed");
+    // Keys go to what shows: Delete doesn't reach the chosen board under the tab.
+    await page.getByRole("heading", { name: NAME }).click();
+    await page.keyboard.press("Backspace");
+    // ⌘J closes and opens the thread on this tab as on any other, and the draft survives.
+    const threadShown = () =>
+      page.locator('button[aria-controls="thread"]').getAttribute("aria-expanded");
+    await page.keyboard.press("Meta+j");
+    await waitUntil(async () => (await threadShown()) === "false");
+    expect(await page.getByRole("heading", { name: NAME }).count()).toBe(1);
+    await page.keyboard.press("Meta+j");
+    await waitUntil(async () => (await threadShown()) === "true");
+    await rail().getByPlaceholder("Steer, or ask more").waitFor();
+    expect(await rail().getByPlaceholder("Steer, or ask more").inputValue()).toBe("Half typed");
+    await rail().getByPlaceholder("Steer, or ask more").fill("");
     // Its one file starts open.
     const card = page.getByRole("button", { name: /src\/pricing\.tsx/ });
     expect(await card.getAttribute("aria-expanded")).toBe("true");
@@ -494,6 +521,9 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await rail()
       .getByText(/Pull request\s+#\d+\s+merged/)
       .waitFor();
+    // The canvas is back as it was left: the same zoom, and the chosen board still there.
+    expect(await zoomShown()).toBe(zoom);
+    expect(await page.locator('[data-board-name][title="Yearly toggle"]').count()).toBe(1);
   });
 
   test("a design deleted while it's open says so calmly, and leads back", async () => {

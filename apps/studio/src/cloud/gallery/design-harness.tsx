@@ -88,6 +88,7 @@ export function DesignHarness({
   pullRequest = null,
   tab = "page",
   rail: initialRail = true,
+  sidebar = "open",
   changes = true,
   action: forcedAction,
 }: {
@@ -107,6 +108,7 @@ export function DesignHarness({
   pullRequest?: PullRequestTabState | null;
   tab?: "page" | "pull-request";
   rail?: boolean;
+  sidebar?: "open" | "closed";
   /** The branch has commits, so a design with no pull request offers Create PR. */
   changes?: boolean;
   /** The next action, when it is one the summary can't give (Update branch). */
@@ -114,9 +116,8 @@ export function DesignHarness({
 }) {
   const [page, setPage] = useState(pages.find((p) => p.working)?.id ?? pages[0]!.id);
   const [prTab, setPrTab] = useState(tab === "pull-request");
-  const [railOpen, setRailOpen] = useState(initialRail && tab === "page");
-  // Opening the pull request tab folds the rail away; leaving it puts the rail back as it was.
-  const railBefore = useRef(initialRail);
+  // The pull request tab leaves the rail as it is: it only swaps what the canvas's pane shows.
+  const [railOpen, setRailOpen] = useState(initialRail);
   const [items, setItems] = useState(initialThread);
   const [older, setOlder] = useState(olderThread);
   const [olderState, setOlderState] = useState<OlderItems>(olderThread.length ? "more" : "none");
@@ -159,15 +160,6 @@ export function DesignHarness({
         } else setAgent({ state: "idle", status: null });
       }),
     );
-  };
-
-  const openTab = (open: boolean) => {
-    if (open === prTab) return;
-    if (open) {
-      railBefore.current = railOpen;
-      setRailOpen(false);
-    } else setRailOpen(railBefore.current);
-    setPrTab(open);
   };
 
   const pr = design.pullRequest;
@@ -251,7 +243,7 @@ export function DesignHarness({
       renderBoard={renderBoard}
       onOpenComment={ignore}
       onOpenArtboards={ignore}
-      onOpenPullRequest={() => openTab(true)}
+      onOpenPullRequest={() => setPrTab(true)}
       onOpenLink={ignore}
     />
   );
@@ -260,6 +252,7 @@ export function DesignHarness({
     <Harness
       designs={designs.map((d) => (d.id === design.id ? shown : d))}
       openId={design.id}
+      sidebar={sidebar}
       rail={railOpen}
       railContent={rail}
       chrome={(sidebarOpen) => (
@@ -269,7 +262,7 @@ export function DesignHarness({
           pages={pages}
           activePageId={prTab ? null : page}
           onSelectPage={(id) => {
-            openTab(false);
+            setPrTab(false);
             setPage(id);
           }}
           onAddPage={ignore}
@@ -284,7 +277,7 @@ export function DesignHarness({
                 }
               : null
           }
-          pullRequest={pr ? { pr, tabOpen: prTab, onToggleTab: () => openTab(!prTab) } : null}
+          pullRequest={pr ? { pr, tabOpen: prTab, onToggleTab: () => setPrTab((o) => !o) } : null}
           action={
             action
               ? { kind: action, blocked: actionBlock(action, gate, f.bryce.id), onRun: ignore }

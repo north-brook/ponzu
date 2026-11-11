@@ -339,12 +339,14 @@ export function useCameraLayers(
   }, [camera, scroller, layer, overlay, mounted, settle]);
 }
 
-/** Track a key held down (for space-to-pan). */
-export function useKeyHeld(code: string): boolean {
+/** Track a key held down (for space-to-pan), unless `ignore` says it isn't ours just now. */
+export function useKeyHeld(code: string, ignore?: () => boolean): boolean {
   const [held, setHeld] = useState(false);
+  const ignored = useRef(ignore);
+  ignored.current = ignore;
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
-      if (e.code === code && !isTyping(e)) {
+      if (e.code === code && !isTyping(e) && !ignored.current?.()) {
         setHeld(true);
         if (code === "Space") e.preventDefault();
       }

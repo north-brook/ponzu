@@ -576,6 +576,68 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await page.keyboard.press("Escape");
   });
 
+  test("the pull request tab swaps the middle only: the thread stays, and ⌘J and ⌥1 work there", async () => {
+    await open("pull-request-tab");
+    const heading = 'h1:text-is("Quieter hero, editorial take")';
+    const thread = () =>
+      page.$eval("#thread", (el) => Math.round(el.getBoundingClientRect().width));
+    const expanded = () =>
+      page.$eval('button[aria-controls="thread"]', (b) => b.getAttribute("aria-expanded"));
+    expect(await page.$(heading)).not.toBeNull();
+    expect(await expanded()).toBe("true");
+    expect(await thread()).toBe(360);
+    // ⌘J closes and opens the thread on this tab as anywhere, and the tab stays.
+    await page.click(heading);
+    await page.keyboard.press("Meta+j");
+    expect(await expanded()).toBe("false");
+    expect(await page.$(heading)).not.toBeNull();
+    await page.keyboard.press("Meta+j");
+    expect(await expanded()).toBe("true");
+    // What is typed in the thread outlives leaving the tab (board 3 asks a question: its note
+    // field is in the composer's place). ⌥1 opens the first page; the thread doesn't move.
+    const field = "#thread textarea";
+    await page.fill(field, "Half typed");
+    await page.click(heading);
+    await page.keyboard.press("Alt+Digit1");
+    await page.waitForSelector(heading, { state: "detached" });
+    const chosen = await page.$$eval(
+      '[role="tablist"][aria-label="Pages"] [role="tab"][aria-selected="true"]',
+      (els) => els.length,
+    );
+    expect(chosen).toBe(1);
+    expect(await thread()).toBe(360);
+    expect(await page.inputValue(field)).toBe("Half typed");
+  });
+
+  test("the pull request fits the canvas's column: stacked when narrow, two columns when wide", async () => {
+    const layout = () =>
+      page.$eval("[data-pr-columns]", (el) => {
+        const pane = el.closest("main")!;
+        const box = el.getBoundingClientRect();
+        const kids = [...el.children].map((c) => c.getBoundingClientRect());
+        return {
+          side: kids.length === 2 && Math.abs(kids[0]!.top - kids[1]!.top) < 1,
+          width: Math.round(box.width),
+          // Nothing reaches past the pane's edges.
+          fits: [...el.querySelectorAll("*")].every(
+            (c) => c.getBoundingClientRect().right <= pane.getBoundingClientRect().right + 0.5,
+          ),
+        };
+      });
+    // The smallest window with both panes open: one column, nothing cut, a long title wrapped.
+    await open("pull-request-min-window", { width: 1100, height: 640 });
+    expect(await layout()).toMatchObject({ side: false, fits: true });
+    // The usual window with both open: one column at the reading measure, centred.
+    await open("pull-request-tab");
+    expect(await layout()).toMatchObject({ side: false, fits: true, width: 760 });
+    // The thread closed: the board's two columns.
+    await open("pull-request-rail-closed");
+    expect(await layout()).toMatchObject({ side: true, fits: true });
+    // A wide screen: two columns, no wider than 1480.
+    await open("pull-request-wide", { width: 2240, height: 1100 });
+    expect(await layout()).toMatchObject({ side: true, fits: true, width: 1480 });
+  });
+
   test("page tabs with the pull request tab open: none is chosen, and Tab reaches the first", async () => {
     await open("pull-request-tab");
     const tabs = '[role="tablist"][aria-label="Pages"] [role="tab"]';
