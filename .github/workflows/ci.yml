@@ -216,8 +216,9 @@ jobs:
           results="$RUNNER_TEMP/test-results"
           mkdir -p "$(dirname "$timings")" "$results"
           # bun refuses a timings file it can't parse, and every push would then save the same
-          # one again, so one bad cache would fail every run after it.
-          if [ -f "$timings" ] && ! jq -e '.files | type == "object"' "$timings" > /dev/null 2>&1; then
+          # one again, so one bad cache would fail every run after it. Exactly one JSON document
+          # of the right shape passes (`-s` reads them all: jq alone would accept two in a row).
+          if [ -f "$timings" ] && ! jq -e -s 'length == 1 and (.[0].files | type == "object")' "$timings" > /dev/null 2>&1; then
             echo "::warning title=Timings dropped::The cached test timings aren't valid; this run starts files in bun's usual order."
             rm "$timings"
           fi
