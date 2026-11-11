@@ -1,13 +1,13 @@
-ground div rgb(238, 237, 233)
+ground div rgb(244, 243, 240)
 ground span rgb(255, 95, 87)
 ground span rgb(254, 188, 46)
 ground span rgb(40, 200, 64)
-icon svg[Toggle sidebar] 16×16 rgb(94, 91, 84) stroke 1.7px
+icon svg[Toggle sidebar] 16×16 rgb(86, 83, 77) stroke 1.7px
 text "Northbrook" rgb(17, 17, 16) 600 13px Inter
 icon svg[Workspace: Northbrook] 11×11 rgb(128, 124, 115) stroke 2.2px
-icon svg[Search] 16×16 rgb(94, 91, 84) stroke 1.7px
-icon svg[Filter] 16×16 rgb(94, 91, 84) stroke 1.7px
-icon svg[New design] 16×16 rgb(94, 91, 84) stroke 1.7px
+icon svg[Search] 16×16 rgb(86, 83, 77) stroke 1.7px
+icon svg[Filter] 16×16 rgb(86, 83, 77) stroke 1.7px
+icon svg[New design] 16×16 rgb(86, 83, 77) stroke 1.7px
 ground span[Quieter shop hero, fernwood, pz/hero-re…] rgba(17, 17, 16, 0.05) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
 icon svg[Quieter shop hero, fernwood, pz/hero-re…] 11×11 rgb(169, 165, 155) stroke 2.2px
 text "fernwood" rgb(169, 165, 155) 400 11px IBM Plex Mono
@@ -55,63 +55,63 @@ text "lenny" rgb(169, 165, 155) 400 11px IBM Plex Mono
 text "Support inbox triage" rgb(17, 17, 16) 500 13px Inter
 icon svg[Support inbox triage, lenny, pz/inbox-t…] 11×11 rgb(169, 165, 155) stroke 2.2px
 text "pz/inbox-triage" rgb(169, 165, 155) 400 11px IBM Plex Mono
-text "Settled" rgb(94, 91, 84) 400 12px Inter
+text "Settled" rgb(86, 83, 77) 400 12px Inter
 text "9" rgb(169, 165, 155) 400 11px IBM Plex Mono
 icon svg[Designs] 11×11 rgb(128, 124, 115) stroke 2.2px
 ground main rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
 text "What do you want to design?" rgb(17, 17, 16) 600 34px Funnel Display
 ground div rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.1) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.08) 0px 6px 20px 0px, rgba(0, 0, 0, 0.06) 0px 1px 3px 0px
 text "I'd like to iterate on the onboarding f…" rgb(17, 17, 16) 400 16px Inter
-icon svg[Attach] 16×16 rgb(94, 91, 84) stroke 1.7px
-text "Opus 5.5" rgb(94, 91, 84) 500 12px Inter
-icon svg[Claude] 13×13 rgb(94, 91, 84) stroke 1px
+icon svg[Attach] 16×16 rgb(86, 83, 77) stroke 1.7px
+text "Opus 5.5" rgb(86, 83, 77) 500 12px Inter
+icon svg[Claude] 13×13 rgb(86, 83, 77) stroke 1px
 text "· High" rgb(169, 165, 155) 400 12px Inter
-icon svg[Model: Opus 5.5, effort High] 11×11 rgb(94, 91, 84) stroke 2.2px
+icon svg[Model: Opus 5.5, effort High] 11×11 rgb(86, 83, 77) stroke 2.2px
 ground button[Send] rgb(255, 200, 30)
 icon svg[Send] 16×16 rgb(17, 17, 16) stroke 2.1px
-text "fernwood" rgb(94, 91, 84) 500 12px Inter
+text "fernwood" rgb(86, 83, 77) 500 12px Inter
 ground button[Project: fernwood] rgba(17, 17, 16, 0.08)
-icon svg[Project: fernwood] 12×12 rgb(94, 91, 84) stroke 2px
-icon svg[Project: fernwood] 11×11 rgb(94, 91, 84) stroke 2.2px
+icon svg[Project: fernwood] 12×12 rgb(86, 83, 77) stroke 2px
+icon svg[Project: fernwood] 11×11 rgb(86, 83, 77) stroke 2.2px
 ground div[Choose a repo] rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.06) 0px 1px 2px 0px, rgba(0, 0, 0, 0.1) 0px 8px 28px 0px
 text "Choose a repo" rgb(17, 17, 16) 400 13px Inter
 icon svg[Choose a repo] 14×14 rgb(128, 124, 115) stroke 1.9px
 ground div[Choose a repo] rgb(232, 230, 224)
-icon svg[Repositories] 16×16 rgb(94, 91, 84) stroke 1.7px
+icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
 text "Scratch" rgb(17, 17, 16) 400 13px Inter
 ground div[Repositories] rgba(17, 17, 16, 0.05)
-icon svg[Repositories] 16×16 rgb(94, 91, 84) stroke 1.7px
+icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
 text "fernwood" rgb(17, 17, 16) 400 13px Inter
 icon svg[Repositories] 14×14 rgb(17, 17, 16) stroke 1.9px
-icon svg[Repositories] 16×16 rgb(94, 91, 84) stroke 1.7px
+icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
 text "lenny" rgb(17, 17, 16) 400 13px Inter
-icon svg[Repositories] 16×16 rgb(94, 91, 84) stroke 1.7px
+icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
 text "ponzu" rgb(17, 17, 16) 400 13px Inter
-icon svg[Repositories] 16×16 rgb(94, 91, 84) stroke 1.7px
+icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
 text "fablefuel" rgb(17, 17, 16) 400 13px Inter
-icon svg[Repositories] 16×16 rgb(94, 91, 84) stroke 1.7px
+icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
 text "customer-onboarding-experiments-and-lan…" rgb(17, 17, 16) 400 13px Inter
-icon svg[Repositories] 16×16 rgb(94, 91, 84) stroke 1.7px
+icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
 text "brand" rgb(17, 17, 16) 400 13px Inter
-icon svg[Repositories] 16×16 rgb(94, 91, 84) stroke 1.7px
+icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
 text "north-brook.com" rgb(17, 17, 16) 400 13px Inter
-icon svg[Repositories] 16×16 rgb(94, 91, 84) stroke 1.7px
+icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
 text "design-system" rgb(17, 17, 16) 400 13px Inter
-icon svg[Repositories] 16×16 rgb(94, 91, 84) stroke 1.7px
+icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
 text "mobile" rgb(17, 17, 16) 400 13px Inter
-icon svg[Repositories] 16×16 rgb(94, 91, 84) stroke 1.7px
+icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
 text "api" rgb(17, 17, 16) 400 13px Inter
-icon svg[Repositories] 16×16 rgb(94, 91, 84) stroke 1.7px
+icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
 text "docs" rgb(17, 17, 16) 400 13px Inter
-icon svg[Repositories] 16×16 rgb(94, 91, 84) stroke 1.7px
+icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
 text "sandbox-images" rgb(17, 17, 16) 400 13px Inter
-icon svg[Repositories] 16×16 rgb(94, 91, 84) stroke 1.7px
+icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
 text "press-kit" rgb(17, 17, 16) 400 13px Inter
-icon svg[Repositories] 16×16 rgb(94, 91, 84) stroke 1.7px
+icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
 text "dotfiles" rgb(17, 17, 16) 400 13px Inter
-icon svg[Repositories] 16×16 rgb(94, 91, 84) stroke 1.7px
+icon svg[Repositories] 16×16 rgb(86, 83, 77) stroke 1.7px
 text "infra" rgb(17, 17, 16) 400 13px Inter
 ground div[Choose a repo] rgb(232, 230, 224)
 icon svg[Choose a repo] 16×16 rgb(169, 165, 155) stroke 1px
-text "Allow more on GitHub" rgb(94, 91, 84) 400 13px Inter
+text "Allow more on GitHub" rgb(86, 83, 77) 400 13px Inter
 icon svg[Choose a repo] 12×12 rgb(169, 165, 155) stroke 2px

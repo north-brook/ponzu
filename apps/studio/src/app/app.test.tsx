@@ -27,6 +27,7 @@ function hostIn(state: SessionState): Host {
     signIn: async () => ({ ok: true }),
     persistence: async () => "keychain",
     onLink: () => () => {},
+    installGithub: async () => {},
     onCommand: () => () => {},
     update: {
       state: async () => ready,

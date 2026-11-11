@@ -1,4 +1,4 @@
-ground div rgb(18, 18, 17)
+ground div rgb(26, 26, 25)
 ground span rgb(255, 95, 87)
 ground span rgb(254, 188, 46)
 ground span rgb(40, 200, 64)
@@ -7,18 +7,18 @@ ground span[Setup] rgb(244, 243, 239)
 ground span[Setup] rgb(244, 243, 239)
 ground span[Setup] rgb(58, 57, 54)
 text "Connect Claude" rgb(244, 243, 239) 600 28px Funnel Display
-text "Claude Code does the designing, in the …" rgb(169, 165, 155) 400 15px Inter
+text "Claude Code does the designing, in the …" rgb(183, 179, 169) 400 15px Inter
 ground div rgb(27, 27, 26) shadow rgb(38, 37, 35) 0px 0px 0px 1px, rgba(0, 0, 0, 0.3) 0px 1px 2px 0px
 ground span rgb(22, 22, 21)
-icon svg[Claude] 17×17 rgb(169, 165, 155) stroke 1px
+icon svg[Claude] 17×17 rgb(183, 179, 169) stroke 1px
 text "Claude Subscription" rgb(244, 243, 239) 500 14px Inter
-text "Pro or Max. Designs run on your plan." rgb(110, 107, 101) 400 12px Inter
+text "Pro or Max. Designs run on your plan." rgb(118, 115, 105) 400 12px Inter
 text "Sign in" rgb(17, 17, 16) 500 12px Inter
 ground button rgb(244, 243, 239)
 icon svg 12×12 rgb(17, 17, 16) stroke 2.4px
 ground span rgb(22, 22, 21)
-icon svg 16×16 rgb(169, 165, 155) stroke 1.7px
+icon svg 16×16 rgb(183, 179, 169) stroke 1.7px
 text "Anthropic API key" rgb(244, 243, 239) 500 14px Inter
-text "Pay per token through the Console." rgb(110, 107, 101) 400 12px Inter
+text "Pay per token through the Console." rgb(118, 115, 105) 400 12px Inter
 text "Add key" rgb(244, 243, 239) 500 12px Inter
 ground button rgb(58, 58, 58) shadow rgba(255, 255, 255, 0.06) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.4) 0px 1px 2px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0.5px

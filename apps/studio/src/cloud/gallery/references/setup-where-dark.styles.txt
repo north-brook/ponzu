@@ -1,4 +1,4 @@
-ground div rgb(18, 18, 17)
+ground div rgb(26, 26, 25)
 ground span rgb(255, 95, 87)
 ground span rgb(254, 188, 46)
 ground span rgb(40, 200, 64)
@@ -7,26 +7,26 @@ ground span[Setup] rgb(244, 243, 239)
 ground span[Setup] rgb(58, 57, 54)
 ground span[Setup] rgb(58, 57, 54)
 text "Where do you design?" rgb(244, 243, 239) 600 28px Funnel Display
-text "Design on your real product, with your …" rgb(169, 165, 155) 400 15px Inter
+text "Design on your real product, with your …" rgb(183, 179, 169) 400 15px Inter
 ground div rgb(27, 27, 26) shadow rgb(38, 37, 35) 0px 0px 0px 1px, rgba(0, 0, 0, 0.3) 0px 1px 2px 0px
 ground img shadow rgb(38, 37, 35) 0px 0px 0px 1px
 text "Personal" rgb(244, 243, 239) 500 14px Inter
-text "brycedbjork" rgb(110, 107, 101) 400 12px Inter
+text "brycedbjork" rgb(118, 115, 105) 400 12px Inter
 text "Set up" rgb(244, 243, 239) 500 12px Inter
 ground button rgb(58, 58, 58) shadow rgba(255, 255, 255, 0.06) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.4) 0px 1px 2px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0.5px
-icon svg 12×12 rgb(169, 165, 155) stroke 2px
+icon svg 12×12 rgb(183, 179, 169) stroke 2px
 text "F" rgb(255, 255, 255) 600 14px Funnel Display
 ground span rgb(79, 90, 61)
 text "Fablefuel" rgb(244, 243, 239) 500 14px Inter
-text "fablefuel · 12 people" rgb(110, 107, 101) 400 12px Inter
-text "Ready" rgb(169, 165, 155) 500 12px Inter
+text "fablefuel · 12 people" rgb(118, 115, 105) 400 12px Inter
+text "Ready" rgb(183, 179, 169) 500 12px Inter
 icon svg 14×14 rgb(244, 243, 239) stroke 1.9px
 ground img shadow rgb(38, 37, 35) 0px 0px 0px 1px
 text "Northbrook" rgb(244, 243, 239) 500 14px Inter
-text "north-brook · 5 people" rgb(110, 107, 101) 400 12px Inter
-text "Ready" rgb(169, 165, 155) 500 12px Inter
+text "north-brook · 5 people" rgb(118, 115, 105) 400 12px Inter
+text "Ready" rgb(183, 179, 169) 500 12px Inter
 icon svg 14×14 rgb(244, 243, 239) stroke 1.9px
-text "Don't see an organization? Grant access…" rgb(169, 165, 155) 500 12px Inter
+text "Don't see an organization? Grant access…" rgb(183, 179, 169) 500 12px Inter
 icon svg 11×11 rgb(142, 138, 130) stroke 2.2px
 text "Continue" rgb(17, 17, 16) 500 13px Inter
 ground button rgb(244, 243, 239)

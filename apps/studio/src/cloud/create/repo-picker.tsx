@@ -1,5 +1,5 @@
 import { ArrowDown01Icon, ArrowUpRight01Icon, Tick02Icon } from "@hugeicons/core-free-icons";
-import { type Ref, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Repo } from "../model.ts";
 import { Button } from "../ui/button.tsx";
 import {
@@ -29,6 +29,10 @@ const keyOf = (choice: ProjectChoice) => (choice.kind === "scratch" ? SCRATCH : 
  * repos the App can see by name, and a way to allow more on GitHub; a search over them once
  * there are enough to need one. Typing filters, the arrows move (Home and End to the ends),
  * Return chooses, Escape closes without changing. `repos` is null while they load.
+ *
+ * It opens under the chip and the page stays where it is: the list shows five and a half rows
+ * and scrolls (a list that long has its search), and in a window too short even for that the
+ * list gives up height rather than the picker turning over onto the composer.
  */
 export function RepoPicker({
   value,
@@ -37,7 +41,6 @@ export function RepoPicker({
   onAllowMore,
   open,
   onOpenChange,
-  contentRef,
 }: {
   value: ProjectChoice;
   repos: Repo[] | null;
@@ -45,8 +48,6 @@ export function RepoPicker({
   onAllowMore: () => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** The open list, for the page to measure what room it needs. */
-  contentRef?: Ref<HTMLDivElement>;
 }) {
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
@@ -68,9 +69,8 @@ export function RepoPicker({
         sideOffset={8}
         alignOffset={-4}
         aria-label="Choose a repo"
-        ref={contentRef}
-        updatePositionStrategy="always"
-        className="rounded-12 p-1.5"
+        avoidCollisions={false}
+        className="max-h-(--radix-popover-content-available-height) rounded-12 p-1.5"
       >
         <PickerBody
           value={value}
@@ -132,7 +132,13 @@ function PickerBody({
   return (
     <>
       {/* Our own filter (pickerRows), so cmdk only drives the keyboard and the highlight. */}
-      <Command shouldFilter={false} value={active} onValueChange={setActive} label="Choose a repo">
+      <Command
+        shouldFilter={false}
+        value={active}
+        onValueChange={setActive}
+        label="Choose a repo"
+        className="min-h-0"
+      >
         {search ? (
           <>
             <CommandInput
@@ -145,7 +151,7 @@ function PickerBody({
             <CommandSeparator alwaysRender />
           </>
         ) : null}
-        <FadeScroll className="max-h-[320px]">
+        <FadeScroll style={{ maxHeight: LIST_ROOM }}>
           <CommandList ref={list} label="Repositories">
             {rows.scratch ? row({ kind: "scratch" }, "Scratch") : null}
             {repos === null ? (
@@ -223,6 +229,13 @@ function PickerRow({
     if (was.current === highlighted) return;
     was.current = highlighted;
     place(highlighted);
+    if (!highlighted) return;
+    // The list scrolls a row the keys reach into view, and a tip closes when what it names
+    // scrolls: once that has happened, the row still highlighted gets its tip back.
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => was.current && place(true));
+    });
+    return () => cancelAnimationFrame(frame);
   }, [highlighted]);
   return (
     <CommandItem value={key} data-choice={key} onSelect={() => onChoose(choice)}>
@@ -242,6 +255,12 @@ function PickerRow({
     </CommandItem>
   );
 }
+
+/**
+ * What the list shows before it scrolls: five 32px rows and half of the next, so a longer list
+ * reads as longer.
+ */
+const LIST_ROOM = 176;
 
 /** A tip's distance from what it names (the tooltip's own `sideOffset`). */
 const TIP_GAP = 6;

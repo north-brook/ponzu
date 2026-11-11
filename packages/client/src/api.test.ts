@@ -55,14 +55,21 @@ describe("against the API's own routes", () => {
     const link = await clientFor("maya", { linkScheme: "ponzu-dev" }).github.installLink({
       client: "mac",
     });
+    const none = await clientFor("maya", { linkScheme: "none" }).github.installLink({
+      client: "mac",
+    });
     const plain = await clientFor("maya").github.installLink({ client: "mac" });
     const rows = await t.db.select().from(authStates);
     const schemes = rows
       .filter((row) => row.userId === ws.people.maya!.userId)
-      .map((row) => (row.payload as { scheme?: string }).scheme);
-    expect(schemes).toEqual(["ponzu-dev", "ponzu"]);
+      .map((row) => (row.payload as { scheme?: string | null }).scheme);
+    // An app that says nothing is not known, so the page won't guess Ponzu for it.
+    expect(schemes).toEqual(["ponzu-dev", "none", null]);
     expect(link.url).not.toContain("ponzu-dev");
     expect(plain.url).toStartWith("https://github.com/");
+
+    // Each comes back with the app's handle on it, to ask how it went.
+    expect(await clientFor("maya").github.install(none.id)).toMatchObject({ status: "waiting" });
   });
 
   test("me, the workspace and its repos", async () => {

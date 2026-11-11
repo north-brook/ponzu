@@ -23,8 +23,8 @@
    * much of the material shows through.
    * --c-canvas is the ground the boards sit on, the canvas package's too (`--pz-canvas`, below).
    */
-  --c-chrome: light-dark(#eeede9, #121211);
-  --c-chrome-glass: light-dark(rgba(238, 237, 233, 0.8), rgba(12, 12, 11, 0.8));
+  --c-chrome: light-dark(#f4f3f0, #1a1a19);
+  --c-chrome-glass: light-dark(rgba(246, 245, 242, 0.62), rgba(30, 30, 28, 0.6));
   --c-canvas: light-dark(#ffffff, #000000);
   /* What the shell paints: the solid shell, or nothing where <html> carries the glass (below). */
   --c-shell: var(--c-chrome);
@@ -47,10 +47,11 @@
    * it holds 3:1. Dark: derived. dry is the slice at rest and the dot between meta.
    */
   --c-ink: light-dark(#111110, #f4f3ef);
-  --c-muted: light-dark(#5e5b54, #a9a59b);
+  /* A step past the design's #5e5b54 (--n-600), and dark's a step up, so text holds AA on the glassy shell. */
+  --c-muted: light-dark(#56534d, #b7b3a9);
   --c-icon-soft: light-dark(#807c73, #8e8a82);
-  /* Dark: a step up from the design's #6b6862, so it holds where it did on the open row now the shell is lifted. */
-  --c-faint: light-dark(#a9a59b, #6e6b65);
+  /* Dark: steps up from the design's #6b6862, so it holds where it did on the open row now the shell is lifted. */
+  --c-faint: light-dark(#a9a59b, #767369);
   --c-dry: light-dark(#c9c5bc, #5e5b54);
 
   /* Lines and washes. */
@@ -64,7 +65,7 @@
    * Share is open. Light is the canvas (white), so the open row reads as part of the pane beside it.
    * Dark: derived, a step above hover; the black canvas would read as a hole in the shell.
    */
-  --c-selected: light-dark(#ffffff, #282826);
+  --c-selected: light-dark(#ffffff, #30302e);
   /* The ring of the presence "+" (--n-300). Dark: derived. */
   --c-outline: light-dark(#d3d0c8, #3f3d39);
   /* A step of the guided setup not reached yet (--n-300). Dark: derived. */
@@ -246,12 +247,16 @@
 }
 
 /*
- * The canvas package's ground and board edge are ours, so the canvas is one token here.
+ * The canvas package's ground, board edge and greys are ours, so the canvas is one token here:
+ * its tools, zoom and comment cards paint the studio's ink, muted and faint (the colour ladder).
  * `:root` puts these past the package's own `.pz-root` and `.pz-root.pz-dark`.
  */
 :root .pz-root,
 :root .pz-root.pz-dark {
   --pz-canvas: var(--c-canvas);
+  --pz-ink: var(--c-ink);
+  --pz-muted: var(--c-muted);
+  --pz-faint: var(--c-faint);
   --pz-board-edge: var(--c-board-edge);
   --pz-board-drop: var(--c-board-drop);
   --pz-board-shadow: var(--c-board);

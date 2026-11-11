@@ -294,6 +294,15 @@ function showWindow() {
   mainWindow.focus();
 }
 
+/**
+ * Ponzu in front of whatever the person was in (the browser, as a sign-in or an install comes
+ * back). A Mac only lets an app take the focus from another when it asks to steal it.
+ */
+function comeForward() {
+  if (process.platform === "darwin") app.focus({ steal: true });
+  showWindow();
+}
+
 function send(channel: string, ...args: unknown[]) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, ...args);
 }
@@ -369,6 +378,7 @@ function registerIpc(session: MainSession, updater: Updates) {
     const link = typeof url === "string" ? externalLink(url) : null;
     if (link) void shell.openExternal(link);
   });
+  listen(CHANNELS.comeForward, () => comeForward());
 }
 
 function isBridgeError(value: unknown): value is BridgeError {
@@ -503,10 +513,7 @@ if (!app.requestSingleInstanceLock()) {
       storage,
       persistence,
       openBrowser: (url) => shell.openExternal(url),
-      focus: () => {
-        if (process.platform === "darwin") app.focus({ steal: true });
-        showWindow();
-      },
+      focus: comeForward,
     });
     const session = account.session;
     signedInUser = () => {

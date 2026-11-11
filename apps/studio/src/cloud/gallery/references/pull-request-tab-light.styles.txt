@@ -1,15 +1,15 @@
-ground div rgb(238, 237, 233)
+ground div rgb(244, 243, 240)
 ground span rgb(255, 95, 87)
 ground span rgb(254, 188, 46)
 ground span rgb(40, 200, 64)
-icon svg[Toggle sidebar] 16×16 rgb(94, 91, 84) stroke 1.7px
+icon svg[Toggle sidebar] 16×16 rgb(86, 83, 77) stroke 1.7px
 ground span rgba(17, 17, 16, 0.1)
-icon svg[Pages] 14×14 rgb(94, 91, 84) stroke 1.9px
-text "Home" rgb(94, 91, 84) 400 13px Inter
-icon svg[Pages] 14×14 rgb(94, 91, 84) stroke 1.9px
-text "Product" rgb(94, 91, 84) 400 13px Inter
-icon svg[Pages] 14×14 rgb(94, 91, 84) stroke 1.9px
-text "Care cards" rgb(94, 91, 84) 400 13px Inter
+icon svg[Pages] 14×14 rgb(86, 83, 77) stroke 1.9px
+text "Home" rgb(86, 83, 77) 400 13px Inter
+icon svg[Pages] 14×14 rgb(86, 83, 77) stroke 1.9px
+text "Product" rgb(86, 83, 77) 400 13px Inter
+icon svg[Pages] 14×14 rgb(86, 83, 77) stroke 1.9px
+text "Care cards" rgb(86, 83, 77) 400 13px Inter
 icon svg[New page] 14×14 rgb(128, 124, 115) stroke 1.9px
 ground span rgba(17, 17, 16, 0.1)
 ground button[Pull request #412] rgb(255, 255, 255) shadow rgba(0, 0, 0, 0) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.08) 0px 1px 2px 0px
@@ -19,12 +19,12 @@ icon svg[Checks passed] 10×10 rgb(63, 138, 74) stroke 2.4px
 text "Merge" rgb(255, 255, 255) 600 12px Inter
 ground button rgb(17, 17, 16)
 icon svg 12×12 rgb(255, 255, 255) stroke 2.4px
-icon svg[Thread] 16×16 rgb(94, 91, 84) stroke 1.7px
+icon svg[Thread] 16×16 rgb(86, 83, 77) stroke 1.7px
 text "Northbrook" rgb(17, 17, 16) 600 13px Inter
 icon svg[Workspace: Northbrook] 11×11 rgb(128, 124, 115) stroke 2.2px
-icon svg[Search] 16×16 rgb(94, 91, 84) stroke 1.7px
-icon svg[Filter] 16×16 rgb(94, 91, 84) stroke 1.7px
-icon svg[New design] 16×16 rgb(94, 91, 84) stroke 1.7px
+icon svg[Search] 16×16 rgb(86, 83, 77) stroke 1.7px
+icon svg[Filter] 16×16 rgb(86, 83, 77) stroke 1.7px
+icon svg[New design] 16×16 rgb(86, 83, 77) stroke 1.7px
 ground button[Quieter shop hero, 2 waiting for you, f…] rgb(255, 255, 255)
 ground span[Quieter shop hero, 2 waiting for you, f…] rgba(17, 17, 16, 0.05) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
 icon svg[Quieter shop hero, 2 waiting for you, f…] 11×11 rgb(169, 165, 155) stroke 2.2px
@@ -75,19 +75,19 @@ text "lenny" rgb(169, 165, 155) 400 11px IBM Plex Mono
 text "Support inbox triage" rgb(17, 17, 16) 500 13px Inter
 icon svg[Support inbox triage, lenny, pz/inbox-t…] 11×11 rgb(169, 165, 155) stroke 2.2px
 text "pz/inbox-triage" rgb(169, 165, 155) 400 11px IBM Plex Mono
-text "Settled" rgb(94, 91, 84) 400 12px Inter
+text "Settled" rgb(86, 83, 77) 400 12px Inter
 text "9" rgb(169, 165, 155) 400 11px IBM Plex Mono
 icon svg[Designs] 11×11 rgb(128, 124, 115) stroke 2.2px
 ground main rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
 text "Quieter hero, editorial take" rgb(17, 17, 16) 600 26px Funnel Display
-text "#412" rgb(94, 91, 84) 400 12px IBM Plex Mono
+text "#412" rgb(86, 83, 77) 400 12px IBM Plex Mono
 icon svg 12×12 rgb(63, 138, 74) stroke 2px
 icon svg[Open on GitHub] 11×11 rgb(128, 124, 115) stroke 2.2px
 text "·" rgb(201, 197, 188) 400 12px IBM Plex Mono
-text "pz/hero-refresh" rgb(94, 91, 84) 400 12px IBM Plex Mono
-text "→ main" rgb(94, 91, 84) 400 12px IBM Plex Mono
-text "Drops the paragraph from the hero and l…" rgb(94, 91, 84) 400 13px Inter
-text "--hero-measure" rgb(94, 91, 84) 400 11.999px IBM Plex Mono
+text "pz/hero-refresh" rgb(86, 83, 77) 400 12px IBM Plex Mono
+text "→ main" rgb(86, 83, 77) 400 12px IBM Plex Mono
+text "Drops the paragraph from the hero and l…" rgb(86, 83, 77) 400 13px Inter
+text "--hero-measure" rgb(86, 83, 77) 400 11.999px IBM Plex Mono
 text "Checks" rgb(169, 165, 155) 600 11px Inter
 text "Passed:" rgb(17, 17, 16) 400 13px Inter
 icon svg[Checks] 12×12 rgb(63, 138, 74) stroke 2px
@@ -122,7 +122,7 @@ icon svg[Checks] 12×12 rgb(63, 138, 74) stroke 2px
 text "commitlint" rgb(17, 17, 16) 400 13px Inter
 text "9s" rgb(169, 165, 155) 400 11px IBM Plex Mono
 text "Comments" rgb(169, 165, 155) 600 11px Inter
-text "T" rgb(94, 91, 84) 600 9px Inter
+text "T" rgb(86, 83, 77) 600 9px Inter
 ground span[Comments] rgb(232, 230, 224)
 text "Theo" rgb(17, 17, 16) 600 12px Inter
 text "· hero.tsx:15 · 14m" rgb(169, 165, 155) 400 12px Inter
@@ -136,7 +136,7 @@ text "You" rgb(17, 17, 16) 600 12px Inter
 text "· 3m" rgb(169, 165, 155) 400 12px Inter
 text "Ship it once e2e is green." rgb(17, 17, 16) 400 13px Inter
 text "Approvals" rgb(169, 165, 155) 600 11px Inter
-text "T" rgb(94, 91, 84) 600 9px Inter
+text "T" rgb(86, 83, 77) 600 9px Inter
 ground span[Approvals] rgb(232, 230, 224)
 text "Theo approved" rgb(17, 17, 16) 400 13px Inter
 text "12m" rgb(169, 165, 155) 400 11px IBM Plex Mono
@@ -215,16 +215,16 @@ ground section[Ponzu needs you: Headline] rgba(250, 250, 249, 0.72) shadow rgba(
 ground span[Ponzu needs you: Headline] rgb(255, 200, 30) shadow rgba(255, 200, 30, 0.25) 0px 0px 0px 3px
 text "Headline" rgb(17, 17, 16) 600 13px Inter
 icon svg[Previous] 12×12 rgb(169, 165, 155) stroke 2px
-text "1/2" rgb(94, 91, 84) 400 11px IBM Plex Mono
-icon svg[Next] 12×12 rgb(94, 91, 84) stroke 2px
+text "1/2" rgb(86, 83, 77) 400 11px IBM Plex Mono
+icon svg[Next] 12×12 rgb(86, 83, 77) stroke 2px
 text "The headline runs to three lines at 390…" rgb(17, 17, 16) 500 13px Inter
 ground div[The headline runs to three lines at 390…] rgba(17, 17, 16, 0.05)
 text "Shorten it" rgb(17, 17, 16) 500 13px Inter
-text "Cut to “Slow plants, fast homes.” Two l…" rgb(94, 91, 84) 400 12px Inter
+text "Cut to “Slow plants, fast homes.” Two l…" rgb(86, 83, 77) 400 12px Inter
 text "Smaller type on phones" rgb(17, 17, 16) 500 13px Inter
-text "Drop to 30px under 420px; keeps the wor…" rgb(94, 91, 84) 400 12px Inter
+text "Drop to 30px under 420px; keeps the wor…" rgb(86, 83, 77) 400 12px Inter
 text "Let it wrap" rgb(17, 17, 16) 500 13px Inter
-text "Three lines, as the site does today." rgb(94, 91, 84) 400 12px Inter
+text "Three lines, as the site does today." rgb(86, 83, 77) 400 12px Inter
 ground div[Ponzu needs you: Headline] rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.05) 0px 1px 2px 0px
 ground button[Send] rgb(232, 230, 224)
 icon svg[Send] 14×14 rgb(169, 165, 155) stroke 2.3px

@@ -1,10 +1,10 @@
 import {
   ArrowTurnBackwardIcon,
-  CheckmarkCircle02Icon,
   Delete02Icon,
   GitBranchIcon,
   Link01Icon,
   PencilEdit01Icon,
+  Tick02Icon,
 } from "@hugeicons/core-free-icons";
 import { type KeyboardEvent, memo, useEffect, useRef, useState } from "react";
 import type { DesignSummary } from "../model.ts";
@@ -186,7 +186,7 @@ export const DesignRow = memo(function DesignRow({
           </ContextMenuItem>
         ) : (
           <ContextMenuItem
-            leading={<MenuIcon icon={CheckmarkCircle02Icon} />}
+            leading={<MenuIcon icon={Tick02Icon} />}
             onSelect={() => onAction(design, "settle")}
           >
             Settle

@@ -76,7 +76,10 @@ GitHub token never reaches a device.
   Each press of Continue with GitHub is its own attempt (port, state, verifier) that can
   finish for ten minutes whatever the window does; the first back signs in and the rest
   close, as do the oldest past three and every one when Ponzu quits. The page the browser
-  lands on is written after the exchange has answered, so it says how it went.
+  lands on is written after the exchange has answered, so it says how it went. It is a
+  handoff (below) with nothing to open: Ponzu comes forward by itself once it has signed the
+  person in, and the page says "Ponzu has it" and closes as Ponzu takes the focus. One that
+  didn't finish stays, saying why.
 - The iPhone app redirects to `ponzu://auth/callback` inside an auth session.
 - Access tokens are five-minute JWTs. The API verifies them locally against
   WorkOS's JWKS. Clients refresh directly with WorkOS, one refresh in flight at a
@@ -196,20 +199,66 @@ the installation back. A one-minute cron reads again any installation nobody has
 for six hours, which is how an uninstall whose webhook was lost is found.
 
 **Installing.** `POST /v1/github/install-link` returns GitHub's install page with a
-`state` sealed by the API and recorded as a fifteen-minute, single-use auth state.
-GitHub sends the browser to the App's Setup URL, `GET /v1/github/setup`, which has no
-bearer token: the state says who started, the person's own token must reach the
-installation (its id in the query is never trusted), and the answer is a small HTML
-page with a way back to the app:
+`state` sealed by the API and recorded as a fifteen-minute, single-use auth state, and
+the app's own handle on it (`id`). GitHub sends the browser to the App's Setup URL,
+`GET /v1/github/setup`, which has no bearer token: the state says who started, the
+person's own token must reach the installation (its id in the query is never trusted),
+and the answer is a handoff page (below). Its link back to the app is
 
 ```
-ponzu://github/setup?result=installed&workspace=<workspace id>
-ponzu://github/setup?result=requested | pending | sign_in | failed
+<scheme>://github/setup?result=installed&workspace=<workspace id>
+<scheme>://github/setup?result=requested | pending | sign_in | failed
 ```
 
-The app answers any of them by syncing. `pending` covers no state, a used or expired
-one, and an installation the person cannot reach: whoever really installed the App is
-caught up by its webhook and their next sync.
+The app answers any of them by syncing and moving on (an installed workspace opens).
+`pending` covers no state, a used or expired one, and an installation the person cannot
+reach: whoever really installed the App is caught up by its webhook and their next sync.
+
+Which app the page hands back to is what the app said when it asked for the link
+(`scheme`), kept in the state's row, never in anything the browser brings:
+
+- `ponzu` (Ponzu), `ponzu-dev` (Ponzu Dev), or `ponzu-preview` (Ponzu Dev's earlier
+  name): the page opens that link by itself.
+- `none`: a build that takes no links, which is Ponzu Local (run from a checkout; on a
+  Mac it lives inside the generic Electron.app and can declare no scheme). The page opens
+  nothing and says "Ponzu has it. You can close this tab."
+- Nothing said, or no state at all (installed from github.com, or saved from the
+  installation's settings on GitHub, which sends no state): not known. The page opens
+  nothing and says to go back to Ponzu, which catches up as it comes to the front. A guess
+  could open an app the person doesn't have, or the release from an environment that
+  serves the development builds, so the API never guesses.
+
+The app never needs the link. While GitHub's page is open it asks
+`GET /v1/github/installs/:id` every two seconds (`waiting`, `settled` with the result and
+workspace, or `expired`); the setup page writes its outcome on the state's row as it is
+made. Once settled, Ponzu comes forward by itself and takes the outcome exactly as it
+would the link (`apps/studio/src/app/installs.ts`). A build that takes links usually
+hears both; whichever comes first is acted on and the other is dropped.
+
+This is why the founder's development build was offered `ponzu://` on 11 November 2026:
+Ponzu Local sent no scheme, and the API, taking silence for Ponzu, recorded `ponzu`.
+Ponzu Local now says `none`, and silence now means not known.
+
+**Handing back to the app.** Every page a browser is left on is a handoff, the pattern of
+the old product's `/local` page: the site's lockup in the corner (outlined, since the page
+loads no font), the Ponzu mark and one plain line, the app's link opened
+by the page itself, and a watch for the app taking over (launching an app takes the
+page's focus or hides it). When it does, the page says Ponzu has it and closes itself (or
+says the tab can be closed, where the browser won't let a tab it didn't open close).
+When nothing has taken the link after two seconds, the page offers it again as a button,
+in words that say what still happens without it; focus that leaves later, after the
+browser's prompt, still counts. Where there is no link (a build that takes none, or the
+shell's own sign-in page), the page says Ponzu has it and closes once Ponzu comes forward.
+
+The API's setup page and the shell's sign-in page are one document
+(`@ponzu/core/handoff`), self-contained: no request of its own, one fixed script and one
+fixed style sheet, allowed by their SHA-256 hashes under `default-src 'none'` (no
+`unsafe-inline`, no nonce). Everything that varies (words, the link) sits in the markup,
+escaped, and the link must be one of the apps' schemes. The site's design link page
+(`/designs/<id>`) is the same pattern drawn in React with the site's components; it shares
+the wait and the apps' names, and offers the Ponzu download only for a Ponzu link. The
+Claude sign-in ends on claude.ai's own page (its code is pasted into Ponzu), so it leaves
+no page of ours.
 
 **Webhooks** arrive at `POST /v1/github/webhook`, verified against the raw body
 before anything is read, deduplicated on `X-GitHub-Delivery`, and recorded with the

@@ -8,8 +8,9 @@ import { usePonzu } from "../ponzu-query.tsx";
 
 /*
  * "Where do you design?", live: the person's GitHub accounts, Set up opening GitHub's install
- * page in the browser, and on coming back (Ponzu's ponzu://github/setup link, or the window
- * coming to the front) a sync with GitHub, which turns the row Ready. Continue records the
+ * page in the browser, and on coming back (the install's outcome, by the setup page's link or by
+ * asking the API, or the window coming to the front) a sync with GitHub, which turns the row
+ * Ready. Continue records the
  * step, and the gates move on.
  *
  * The list comes from the sync guided setup runs as the step opens (`useArrivalSync`), and is
@@ -52,7 +53,6 @@ export function WhereView({
   // What the arrival sync, or the read after it, put in the cache; and each sync after.
   const accounts = useQuery({ ...queries.githubAccounts(), enabled: false });
   const sync = useMutation(mutations.syncGithub());
-  const installLink = useMutation(mutations.installLink());
   const confirm = useMutation(mutations.recordOnboarding());
   const [settingUp, setSettingUp] = useState<number | null>(null);
   const [notice, setNotice] = useState<InstallNotice | null>(null);
@@ -95,18 +95,14 @@ export function WhereView({
     [host, resync, onWorkspaceSetUp],
   );
 
+  // Once GitHub is done, Ponzu comes forward and the link listener above takes it from there,
+  // whether or not this build takes the setup page's link (host.installGithub).
   const open = (githubAccountId?: number) => {
     setNotice(null);
-    installLink.mutate(
-      { client: "mac", ...(githubAccountId ? { githubAccountId } : {}) },
-      {
-        onSuccess: ({ url }) => host.openExternal(url),
-        onError: () => {
-          setSettingUp(null);
-          setNotice("failed");
-        },
-      },
-    );
+    host.installGithub(githubAccountId ? { githubAccountId } : {}).catch(() => {
+      setSettingUp(null);
+      setNotice("failed");
+    });
   };
 
   const list: GithubAccount[] | "loading" | "failed" = accounts.data

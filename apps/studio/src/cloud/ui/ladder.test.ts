@@ -32,6 +32,13 @@ test("cloud icons are set by step, not by size and stroke", async () => {
   expect(offenders).toEqual([]);
 });
 
+test("the canvas paints the studio's greys, so its tools and the composer's + are one muted", async () => {
+  const css = await Bun.file(new URL("../styles/tokens.css", import.meta.url)).text();
+  const block = css.match(/:root \.pz-root,\s*:root \.pz-root\.pz-dark \{([^}]*)\}/)?.[1] ?? "";
+  for (const role of ["ink", "muted", "faint"])
+    expect(block).toContain(`--pz-${role}: var(--c-${role});`);
+});
+
 test("the canvas's controls draw one plus and set text on whole pixels", async () => {
   const root = new URL("../../../../../packages/canvas/src/", import.meta.url).pathname;
   const offenders: string[] = [];
