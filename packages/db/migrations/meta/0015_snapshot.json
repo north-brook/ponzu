@@ -1,5 +1,5 @@
 {
-  "id": "2c24df44-fd19-496d-9a44-e6a4048c9702",
+  "id": "a74907ab-0525-45d8-9603-2af1fe67db93",
   "prevId": "b28a58d0-ad1d-40a2-87b2-edbecd76b533",
   "version": "7",
   "dialect": "postgresql",
@@ -864,6 +864,13 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "ideas_version": {
+          "name": "ideas_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "ideas_claimed_at": {
           "name": "ideas_claimed_at",
@@ -2351,19 +2358,6 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
-        },
-        "unpushed": {
-          "name": "unpushed",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "push_error": {
-          "name": "push_error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {},
@@ -2963,7 +2957,7 @@
       "checkConstraints": {
         "events_kind_check": {
           "name": "events_kind_check",
-          "value": "\"events\".\"kind\" in ('message', 'answer', 'comment', 'edit', 'check', 'review', 'stop', 'push')"
+          "value": "\"events\".\"kind\" in ('message', 'answer', 'comment', 'edit', 'check', 'review', 'stop')"
         },
         "events_priority_check": {
           "name": "events_priority_check",

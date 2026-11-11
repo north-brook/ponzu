@@ -52,7 +52,7 @@ function clientFor(login: string, opts: Parameters<typeof createApi>[1] = {}): A
 
 describe("against the API's own routes", () => {
   test("an install link remembers which app asked, by its links' scheme", async () => {
-    const link = await clientFor("maya", { linkScheme: "ponzu-preview" }).github.installLink({
+    const link = await clientFor("maya", { linkScheme: "ponzu-dev" }).github.installLink({
       client: "mac",
     });
     const plain = await clientFor("maya").github.installLink({ client: "mac" });
@@ -60,8 +60,8 @@ describe("against the API's own routes", () => {
     const schemes = rows
       .filter((row) => row.userId === ws.people.maya!.userId)
       .map((row) => (row.payload as { scheme?: string }).scheme);
-    expect(schemes).toEqual(["ponzu-preview", "ponzu"]);
-    expect(link.url).not.toContain("ponzu-preview");
+    expect(schemes).toEqual(["ponzu-dev", "ponzu"]);
+    expect(link.url).not.toContain("ponzu-dev");
     expect(plain.url).toStartWith("https://github.com/");
   });
 
@@ -83,10 +83,11 @@ describe("against the API's own routes", () => {
     const ines = clientFor("ines");
     expect(await ines.repos.ideas(ws.repo.id)).toEqual({ status: "generating", ideas: [] });
     await t.backgroundDone();
-    // The test repo has nothing in it to ground ideas in.
+    // The test repo has next to nothing in it, and gets four all the same: where to begin.
     const answer = await ines.repos.ideas(ws.repo.id);
     const status: "ready" | "generating" | "none" = answer.status;
-    expect(status).toBe("none");
+    expect(status).toBe("ready");
+    expect(answer.ideas).toHaveLength(4);
     await expect(ines.repos.ideas("repo_nosuchrepo00000")).rejects.toMatchObject({
       code: "not_found",
     });

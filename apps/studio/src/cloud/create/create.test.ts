@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { Repo } from "../model.ts";
-import { canSend, pickerRows } from "./create.ts";
+import { canSend, pickerRows, SEARCH_FROM, showsSearch } from "./create.ts";
 
 test("a prompt sends once it says something, and not while it is sending", () => {
   expect(canSend("", false)).toBe(false);
@@ -9,27 +9,25 @@ test("a prompt sends once it says something, and not while it is sending", () =>
   expect(canSend("Three takes on the hero", true)).toBe(false);
 });
 
-const repo = (owner: string, name: string): Repo => ({ id: `${owner}/${name}`, owner, name });
-const repos = [
-  repo("north-brook", "fernwood"),
-  repo("fablefuel", "site"),
-  repo("north-brook", "lenny"),
-];
+const repo = (name: string): Repo => ({ id: `repo_${name}`, owner: "north-brook", name });
+const repos = [repo("fernwood"), repo("site"), repo("lenny")];
 
-test("the picker groups repos by owner, keeping their order", () => {
-  const rows = pickerRows(repos, "");
-  expect(rows.scratch).toBe(true);
-  expect(rows.groups.map((g) => [g.owner, g.repos.map((r) => r.name)])).toEqual([
-    ["north-brook", ["fernwood", "lenny"]],
-    ["fablefuel", ["site"]],
-  ]);
+test("the picker lists Scratch, then the repos in their order", () => {
+  expect(pickerRows(repos, "")).toEqual({ scratch: true, repos });
 });
 
-test("a query keeps what names it, by repo or owner, and Scratch only when it matches", () => {
-  expect(pickerRows(repos, "LEN").groups.flatMap((g) => g.repos.map((r) => r.name))).toEqual([
-    "lenny",
-  ]);
-  expect(pickerRows(repos, "LEN").scratch).toBe(false);
-  expect(pickerRows(repos, "fable").groups.map((g) => g.owner)).toEqual(["fablefuel"]);
-  expect(pickerRows(repos, "scr")).toEqual({ scratch: true, groups: [] });
+test("a query keeps the repos whose name has it, and Scratch only when it matches", () => {
+  expect(pickerRows(repos, "LEN")).toEqual({ scratch: false, repos: [repo("lenny")] });
+  expect(pickerRows(repos, "  len ").repos.map((r) => r.name)).toEqual(["lenny"]);
+  // The owner is the workspace's, the same on every repo: it isn't searched.
+  expect(pickerRows(repos, "north").repos).toEqual([]);
+  expect(pickerRows(repos, "scr")).toEqual({ scratch: true, repos: [] });
+});
+
+test("the search shows only once there are enough repos to need it", () => {
+  const some = (n: number) => Array.from({ length: n }, (_, i) => repo(`r${i}`));
+  expect(showsSearch(null)).toBe(false);
+  expect(showsSearch([])).toBe(false);
+  expect(showsSearch(some(SEARCH_FROM - 1))).toBe(false);
+  expect(showsSearch(some(SEARCH_FROM))).toBe(true);
 });

@@ -2,7 +2,7 @@
  * Builds the main process and the preload into dist/. `PONZU_TEST_BUILD=1` makes a test build
  * (src/config.ts): the real app, which also honours PONZU_SESSION_FILE and a remote debugging
  * port, for spare and CI to drive it signed in. The release workflow never sets it.
- * `PONZU_VARIANT=preview` builds Ponzu Preview's (scripts/package-preview.ts sets it).
+ * `PONZU_VARIANT=dev` builds Ponzu Dev's (scripts/package-dev.ts sets it).
  */
 import { rmSync } from "node:fs";
 import { join } from "node:path";
@@ -10,8 +10,8 @@ import { join } from "node:path";
 const root = join(import.meta.dir, "..");
 const testBuild = process.env.PONZU_TEST_BUILD === "1";
 const variant = process.env.PONZU_VARIANT || "release";
-if (variant !== "release" && variant !== "preview") {
-  console.error(`PONZU_VARIANT is "release" or "preview", not "${variant}".`);
+if (variant !== "release" && variant !== "dev") {
+  console.error(`PONZU_VARIANT is "release" or "dev", not "${variant}".`);
   process.exit(1);
 }
 rmSync(join(root, "dist"), { recursive: true, force: true });
@@ -35,4 +35,4 @@ for (const entry of ["main", "preload"]) {
   }
 }
 if (testBuild) console.log("A test build: it takes PONZU_SESSION_FILE and remote debugging.");
-if (variant === "preview") console.log("Ponzu Preview: its own name, data, keychain and links.");
+if (variant === "dev") console.log("Ponzu Dev: its own name, data, keychain and links.");

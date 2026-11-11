@@ -1,8 +1,9 @@
-import { ArrowUpRight01Icon, FolderGitIcon } from "@hugeicons/core-free-icons";
 import { shortDate } from "../claude.ts";
 import type { Repo } from "../model.ts";
+import { ExternalLink } from "../ui/external-link.tsx";
 import { Icon } from "../ui/icon.tsx";
 import { GithubMark } from "../ui/marks.tsx";
+import { REPO_ICON } from "../ui/project-icons.ts";
 import { Row, Section, TwoLine } from "./parts.tsx";
 
 /** Ponzu's GitHub App on a workspace's account. */
@@ -49,14 +50,14 @@ export function GithubSection({ installation, repos, onManage, onInstall }: Gith
         <Row
           leading={<GithubMark size={18} className="text-ink" />}
           trailing={
-            <button
-              type="button"
+            <ExternalLink
+              tone="ink"
+              arrow={12}
               onClick={state === "not_installed" ? onInstall : onManage}
-              className="flex cursor-default items-center gap-[5px] rounded-4 font-medium text-13 text-ink outline-none transition-colors duration-(--dur-hover) focus-ring hover:text-muted"
+              className="gap-[5px] font-medium text-13"
             >
               {state === "not_installed" ? "Install on GitHub" : "Manage on GitHub"}
-              <Icon icon={ArrowUpRight01Icon} size={12} stroke={2} className="text-muted" />
-            </button>
+            </ExternalLink>
           }
         >
           <TwoLine title={title} line={line || null} />
@@ -68,9 +69,7 @@ export function GithubSection({ installation, repos, onManage, onInstall }: Gith
             repos.map((repo) => (
               <Row
                 key={repo.id}
-                leading={
-                  <Icon icon={FolderGitIcon} size={16} stroke={1.6} className="text-muted" />
-                }
+                leading={<Icon icon={REPO_ICON} size={16} stroke={1.6} className="text-muted" />}
               >
                 <TwoLine title={repo.name} line={`${repo.owner}/${repo.name}`} />
               </Row>

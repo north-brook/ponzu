@@ -1,0 +1,1 @@
+ALTER TABLE "repos" ADD COLUMN "ideas_version" integer DEFAULT 0 NOT NULL;

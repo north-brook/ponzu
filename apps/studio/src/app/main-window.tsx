@@ -22,6 +22,7 @@ import {
   membersById,
   pushableRepos,
   searchByName,
+  shownWorkspace,
   toPerson,
   toSummary,
   toWorkspace,
@@ -31,7 +32,7 @@ import { Banner, PaneMessage } from "./notices.tsx";
 import { usePonzu } from "./ponzu-query.tsx";
 import { SettingsView } from "./settings/settings-view.tsx";
 import { ConnectClaudeDialog } from "./setup/connect-claude-dialog.tsx";
-import { useAssetsUrls, useRowPresence } from "./sidebar-data.ts";
+import { useAssetsUrls, useRowPresence, useUnchanged } from "./sidebar-data.ts";
 import { filterFor, loadUi, saveUi, type UiState } from "./ui-state.ts";
 import { useOnReturn } from "./use-answer.ts";
 
@@ -140,7 +141,8 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
 
   const all = meAnswer.data?.workspaces ?? null;
   const usable = useMemo(() => (all ? usableWorkspaces(all) : []), [all]);
-  const workspace = usable.find((w) => w.id === ui.workspaceId) ?? usable[0] ?? null;
+  // The same choice guided setup reads ahead before it hands the window over (setup/first-run).
+  const workspace = all ? shownWorkspace(all, ui.workspaceId) : null;
   // The workspace the window showed is suspended on GitHub: it opens another, and says why.
   // What was shown counts, not what was chosen: a window that took the first workspace too.
   const shownId = useRef<string | null>(null);
@@ -268,18 +270,21 @@ function WorkspaceWindow({
   );
   const presence = useRowPresence(host.live, activeIds, me.id);
 
-  const summaries = useMemo(
-    () =>
-      live.rows?.map((row) => {
-        const assetsUrl = assetsUrls.get(row.id);
-        return toSummary(row, {
-          people,
-          open: row.id === openId,
-          hereNow: hereNow(presence.get(row.id) ?? [], me.id),
-          ...(assetsUrl ? { assetsUrl } : {}),
-        });
-      }) ?? null,
-    [live.rows, people, openId, presence, assetsUrls, me.id],
+  // Rows a live update didn't change, and unchanged previews, stay the same objects.
+  const summaries = useUnchanged(
+    useMemo(
+      () =>
+        live.rows?.map((row) => {
+          const assetsUrl = assetsUrls.get(row.id);
+          return toSummary(row, {
+            people,
+            open: row.id === openId,
+            hereNow: hereNow(presence.get(row.id) ?? [], me.id),
+            ...(assetsUrl ? { assetsUrl } : {}),
+          });
+        }) ?? null,
+      [live.rows, people, openId, presence, assetsUrls, me.id],
+    ),
   );
   const active = useMemo(
     () => summaries?.filter((d) => d.status === "active") ?? null,

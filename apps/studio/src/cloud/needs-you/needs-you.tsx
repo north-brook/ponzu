@@ -18,6 +18,7 @@ import { Button, SendButton } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
 import { Icon } from "../ui/icon.tsx";
 import { safeHref } from "../ui/markdown.ts";
+import { FIELD, pressToFocus } from "../ui/press-to-focus.ts";
 import { Prose } from "../ui/prose.tsx";
 import {
   answerable,
@@ -170,10 +171,15 @@ export function NeedsYou({
           </Button>
         </Resolved>
       ) : (
-        <div className="flex items-end gap-2 rounded-14 bg-surface py-2 pr-2 pl-3.5 shadow-note-field">
+        // The whole card is the field's: a press on it, past send, writes.
+        <div
+          onMouseDown={pressToFocus}
+          className="flex cursor-text items-end gap-2 rounded-14 bg-surface py-2 pr-2 pl-3.5 shadow-note-field"
+        >
           {ask.kind === "secret" ? (
             <input
               ref={note}
+              {...FIELD}
               type="password"
               autoComplete="off"
               spellCheck={false}
@@ -193,6 +199,7 @@ export function NeedsYou({
           ) : (
             <textarea
               ref={note}
+              {...FIELD}
               rows={1}
               dir="auto"
               aria-label="Note"

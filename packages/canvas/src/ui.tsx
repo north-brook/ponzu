@@ -118,7 +118,12 @@ export function Tip({
           sideOffset={8}
           collisionPadding={8}
           data-slot="tip"
-          className="pz-tip pz:z-50 pz:flex pz:h-[26px] pz:select-none pz:items-center pz:gap-2 pz:whitespace-nowrap pz:rounded-[7px] pz:bg-[#1c1c1b] pz:pr-1.5 pz:pl-[9px] pz:text-[12px] pz:text-white pz:leading-4 pz:antialiased pz:shadow-[0_0_0_0.5px_rgba(255,255,255,0.1),0_4px_14px_rgba(0,0,0,0.18)]"
+          // Even on both sides: 9 round the words alone; a shortcut's caps end it 5 from the
+          // edge, as above and below them (16 in 26), a pill in a pill.
+          className={cn(
+            "pz-tip pz:z-50 pz:flex pz:h-[26px] pz:select-none pz:items-center pz:gap-2 pz:whitespace-nowrap pz:rounded-[7px] pz:bg-[#1c1c1b] pz:px-[9px] pz:text-[12px] pz:text-white pz:leading-4 pz:antialiased pz:shadow-[0_0_0_0.5px_rgba(255,255,255,0.1),0_4px_14px_rgba(0,0,0,0.18)]",
+            keys?.length && "pz:pr-[5px]",
+          )}
         >
           {label}
           {keys?.length ? (
