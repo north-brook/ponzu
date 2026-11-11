@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { imageName, SNAPSHOT_PREFIX as RUNNER_SNAPSHOT_PREFIX } from "../src/version.ts";
 import {
   claudeBinaryUrl,
   type Input,
@@ -13,6 +14,17 @@ import {
   SNAPSHOT_PREFIX,
   snapshotName,
 } from "./recipe.ts";
+
+test("the runner names its image as the bake named the snapshot, from the hash the image records", () => {
+  const hash = "2de5aff8d90350a37fec16d85a27d92312032cdc06cbfdf39781f187948221b1";
+  expect(RUNNER_SNAPSHOT_PREFIX).toBe(SNAPSHOT_PREFIX);
+  // provision.sh writes the inputs hash it was given (pins.env's INPUTS_HASH) to image.json.
+  expect(pinsEnv(readPins(), hash)).toContain(`INPUTS_HASH=${hash}`);
+  expect(readFileSync(join(import.meta.dir, "provision.sh"), "utf8")).toContain(
+    '--arg inputs "$INPUTS_HASH"',
+  );
+  expect(imageName(() => JSON.stringify({ inputs: hash }))).toBe(snapshotName(hash));
+});
 
 test("every version comes from what pins it, and Bun's from the repo's packageManager", () => {
   const pins = readPins();
