@@ -79,8 +79,9 @@ export function referenceTests(area: Area) {
     for (const c of COMPOSITIONS.filter((c) => c.reference && areaOf(c) === area)) {
       for (const theme of ["light", "dark"] as const) {
         test(`${c.id} in ${theme} matches its reference`, async () => {
-          // Without the app's fonts every line measures differently; that is the network, not us.
-          if (!fonts) return console.warn("The app's fonts didn't load; references not compared.");
+          // The fonts ship with the app (src/cloud/styles/fonts), so they always load; without them
+          // every line measures differently and the comparison would mean nothing.
+          expect(fonts, "the app's fonts didn't load").toBe(true);
           const shot = await shootComposition(page, server.url, c, theme, { hideText: true });
           const reference = Buffer.from(
             await Bun.file(join(REFERENCES, `${c.id}-${theme}.png`)).arrayBuffer(),
