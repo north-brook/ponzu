@@ -1,4 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { getWorkspaceByInstallation, listUserWorkspaces, listWorkspaceRepos } from "@ponzu/db";
+import { reconcileInstallation } from "../github/installations.ts";
+import { syncGithub } from "../github/sync.ts";
 import { githubUserToken } from "../github/user-token.ts";
 import { UpstreamError } from "../http/errors.ts";
 import { createTestApp, type SignedInPerson, type TestApp } from "../testing/index.ts";
@@ -211,6 +214,108 @@ describe("GraphQL", () => {
     expect(await refusing("FORBIDDEN")).toBe("forbidden");
     expect(await refusing("UNPROCESSABLE")).toBe("refused");
   });
+});
+
+describe("an answer that does not arrive whole", () => {
+  // Octokit reads a body it fails to read, or one that is not JSON, as an empty success, and its
+  // paginator then as an empty, complete list: a sync would drop everything it no longer saw.
+
+  type Cut = "dropped" | "timed out" | "html";
+
+  /** A client whose answers to `path` start well and then are cut off as `how` says. */
+  function cuttingOff(path: string, how: Cut) {
+    return freshGithub(async (url, init) => {
+      if (new URL(url).pathname !== path) return t.github.fetch(url, init);
+      if (how === "html") {
+        return new Response("<html>Bad gateway</html>", {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        });
+      }
+      const signal = init?.signal ?? undefined;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"total_count":1,"install'));
+          if (how === "dropped") controller.error(new TypeError("terminated"));
+          else signal?.addEventListener("abort", () => controller.error(signal.reason));
+        },
+      });
+      if (how === "timed out") queueMicrotask(() => t.clock.advance(11_000));
+      return new Response(body, { status: 200, headers: { "content-type": "application/json" } });
+    });
+  }
+
+  const cuts: Cut[] = ["dropped", "timed out", "html"];
+
+  test.each(cuts)("a list %s is GitHub failing, not an empty list", async (how) => {
+    const token = await githubUserToken(t.deps, maya.userId);
+    const installations = await cuttingOff("/user/installations", how)
+      .listInstallations(token)
+      .catch((caught) => caught);
+    expect(installations).toBeInstanceOf(UpstreamError);
+
+    const { token: installationToken } = await t.deps.github.createInstallationToken({
+      installationId: 9002,
+    });
+    const repositories = await cuttingOff("/installation/repositories", how)
+      .listRepositoriesAsInstallation(installationToken)
+      .catch((caught) => caught);
+    expect(repositories).toBeInstanceOf(UpstreamError);
+  });
+
+  test.each(cuts)("one read %s is GitHub failing, not a blank", async (how) => {
+    const token = await githubUserToken(t.deps, maya.userId);
+    const error = await cuttingOff("/user", how)
+      .getUser(token)
+      .catch((caught) => caught);
+    expect(error).toBeInstanceOf(UpstreamError);
+    expect(error.message).toBe(
+      how === "html" ? "GET /user answered 200 with no JSON" : "GET /user did not answer",
+    );
+  });
+
+  test("a sync cut off keeps the person's workspaces and the workspace's repos", async () => {
+    await syncGithub(t.deps, maya.userId);
+    const workspace = (await getWorkspaceByInstallation(t.db, 9002))!;
+    const workspacesBefore = await listUserWorkspaces(t.db, maya.userId);
+    const reposBefore = await listWorkspaceRepos(t.db, {
+      workspaceId: workspace.id,
+      userId: maya.userId,
+    });
+    expect(workspacesBefore.map(({ githubLogin }) => githubLogin)).toContain("north-brook");
+    expect(reposBefore.length).toBeGreaterThan(0);
+
+    await expect(
+      syncGithub({ ...t.deps, github: cuttingOff("/user/installations", "dropped") }, maya.userId),
+    ).rejects.toBeInstanceOf(UpstreamError);
+    await expect(
+      reconcileInstallation(
+        { ...t.deps, github: cuttingOff("/installation/repositories", "dropped") },
+        9002,
+      ),
+    ).rejects.toBeInstanceOf(UpstreamError);
+
+    expect(await listUserWorkspaces(t.db, maya.userId)).toEqual(workspacesBefore);
+    expect(
+      await listWorkspaceRepos(t.db, { workspaceId: workspace.id, userId: maya.userId }),
+    ).toEqual(reposBefore);
+  });
+});
+
+test("the App's JWT is dated a minute back and runs nine minutes on, by the API's clock", async () => {
+  let jwt = "";
+  const github = freshGithub((url, init) => {
+    if (new URL(url).pathname.startsWith("/app/")) {
+      jwt = new Headers(init?.headers).get("authorization")!.replace("Bearer ", "");
+    }
+    return t.github.fetch(url, init);
+  });
+
+  await github.getInstallation(9002);
+
+  const claims = JSON.parse(Buffer.from(jwt.split(".")[1]!, "base64url").toString());
+  const now = Math.floor(t.clock.now() / 1000);
+  expect(claims).toMatchObject({ iat: now - 60, exp: now + 540 });
 });
 
 test("the App's JWT is signed at the API's clock, wherever it is", async () => {

@@ -38,7 +38,10 @@ export function createOctokit({ fetch, clock }: { fetch: Fetch; clock: Clock }):
     userAgent: "ponzu-api",
     request: {
       fetch: ((url: string, init?: RequestInit) =>
-        fetch(url, { ...init, signal: clock.timeout(TIMEOUT_MS) })) as typeof globalThis.fetch,
+        wholeAnswer(fetch, url, {
+          ...init,
+          signal: clock.timeout(TIMEOUT_MS),
+        })) as typeof globalThis.fetch,
     },
     log: SILENT,
   });
@@ -46,6 +49,49 @@ export function createOctokit({ fetch, clock }: { fetch: Fetch; clock: Clock }):
     options.headers["x-github-api-version"] = API_VERSION;
   });
   return octokit;
+}
+
+/** A 2xx from GitHub whose body is not the JSON it promised. */
+class NotJson extends Error {}
+
+/** Statuses that carry no body. */
+const BODILESS = new Set([204, 205, 304]);
+
+/**
+ * GitHub's answer, read in full before Octokit sees it. Octokit takes a body it fails to read,
+ * or one that is not JSON, for an empty success, and its paginator then for an empty, complete
+ * list: a sync would drop every membership and repository it no longer saw. Here a body cut off
+ * by the timeout or a dropped connection throws, as no answer at all, and a 2xx that is not
+ * JSON throws `NotJson`.
+ */
+async function wholeAnswer(fetch: Fetch, url: string, init: RequestInit): Promise<Response> {
+  let response: Response;
+  let bytes: ArrayBuffer;
+  try {
+    response = await fetch(url, init);
+    bytes = await response.arrayBuffer();
+  } catch (cause) {
+    // Plain, so Octokit wraps it as no answer; it rethrows an AbortError as it is.
+    throw new Error("GitHub's answer did not arrive in full", { cause });
+  }
+  if (response.ok && !BODILESS.has(response.status) && !isJson(bytes, response.headers)) {
+    throw new NotJson(`answered ${response.status} with no JSON`);
+  }
+  const whole = new Response(BODILESS.has(response.status) ? null : bytes, response);
+  // The paginator tells a real page from its 409 stand-in by its url.
+  Object.defineProperty(whole, "url", { value: response.url });
+  return whole;
+}
+
+/** JSON, or no body where none was promised (no JSON content type). */
+function isJson(bytes: ArrayBuffer, headers: Headers): boolean {
+  if (bytes.byteLength === 0) return !/json/i.test(headers.get("content-type") ?? "");
+  try {
+    JSON.parse(new TextDecoder().decode(bytes));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** The header that makes one call as whoever holds `token`. */
@@ -82,6 +128,9 @@ export function githubFailure(caller: Caller, error: unknown): unknown {
   if (!(error instanceof RequestError)) return error;
   const { method, url } = error.request;
   const what = `${method} ${new URL(url).pathname}`;
+  if (error.cause instanceof NotJson) {
+    return new UpstreamError("github", `${what} ${error.cause.message}`, { cause: error });
+  }
   if (!error.response) {
     return new UpstreamError("github", `${what} did not answer`, { cause: error });
   }
@@ -219,6 +268,9 @@ class KeptTokens {
   }
 }
 
+/** Seconds the App's JWT is dated back on top of `universal-github-app-jwt`'s own 30. */
+const JWT_DRIFT_S = 30;
+
 /** auth-app with nowhere to keep a token: each one is minted for its caller. */
 const NOT_KEPT = { get: () => "", set() {} };
 
@@ -253,7 +305,10 @@ export function createAppCredentials({
     const { token, expiration } = await githubAppJwt({
       id: appId,
       privateKey,
-      now: Math.floor(clock.now() / 1000),
+      // The library dates the JWT 30 seconds back and lets it run 10 minutes from there; 30 more
+      // make it a minute back and 9 minutes on, so it holds against a clock up to a minute off
+      // GitHub's either way.
+      now: Math.floor(clock.now() / 1000) - JWT_DRIFT_S,
     });
     return { jwt: token, expiresAt: new Date(expiration * 1000).toISOString() };
   };
