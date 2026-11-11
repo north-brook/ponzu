@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./github": "./src/github.ts",
+    "./handoff": "./src/handoff.ts",
     "./redact": "./src/redact.ts",
     "./fixtures": "./src/fixtures/ops.ts",
     "./testing": "./src/fixtures/sequencer.ts"

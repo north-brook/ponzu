@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { GithubSection } from "../../cloud/settings/github.tsx";
 import type { Host } from "../host.ts";
 import { toRepo } from "../map.ts";
@@ -11,9 +11,8 @@ import { installationUrl, toInstallation } from "./map.ts";
  * GitHub goes to the installation's settings, Install on GitHub to its install page.
  */
 export function GithubView({ host, workspaceId }: { host: Host; workspaceId: string }) {
-  const { queries, mutations } = usePonzu();
+  const { queries } = usePonzu();
   const view = useQuery(queries.workspace(workspaceId));
-  const installLink = useMutation(mutations.installLink());
   if (!view.data) return null;
   const data = view.data;
   const manage = installationUrl(data);
@@ -24,12 +23,11 @@ export function GithubView({ host, workspaceId }: { host: Host; workspaceId: str
       onManage={() => {
         if (manage) host.openExternal(manage);
       }}
-      onInstall={() =>
-        installLink.mutate(
-          { client: "mac", githubAccountId: data.workspace.githubAccountId },
-          { onSuccess: ({ url }) => host.openExternal(url) },
-        )
-      }
+      onInstall={() => {
+        void host
+          .installGithub({ githubAccountId: data.workspace.githubAccountId })
+          .catch(() => {});
+      }}
     />
   );
 }
