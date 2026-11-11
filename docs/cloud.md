@@ -1583,7 +1583,10 @@ integer:
   down, and the credits the fractions add up to go one each to the lines with the largest
   fractions (largest remainder, ties by id; `apportion` in `credits.ts`). It is gross, before
   the pooled free credits, so it adds up to what was used, not to what is billed. Use put down
-  to nobody (a deleted account) is `unattributedCredits`, one of the by-person lines.
+  to nobody (a deleted account) is `unattributedCredits`, one of the by-person lines. The
+  viewer's own line (`mine`) is their share only where it sits beside the by-person list it adds
+  up with; to someone who sees just their own line it is their own use rounded down, so other
+  people's use never moves it.
 - The cap is whole dollars, $1 to $1,000,000, stored in cents (`monthly_cap_cents`; the card's
   default, $100, until one is set). It may not be set below what the period has billed, rounded
   up to the dollar (400 `cap_too_low`, with `details.lowestUsd`).

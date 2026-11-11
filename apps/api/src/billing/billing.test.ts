@@ -373,12 +373,35 @@ describe("a breakdown adds up to the headline", () => {
           expect(sum(got.byPerson!.map((p) => p.usedCredits)) + got.unattributedCredits!).toBe(
             got.usedCredits,
           );
-          // The viewer's own line is the number the admin's list shows for them.
+          // An admin's own line is the number their list shows for them.
           expect(got.mine.usedCredits).toBe(
             got.byPerson!.find((p) => p.person.id === "ada")!.usedCredits,
           );
         },
       ),
+    );
+  });
+
+  test("a member who sees only their own line sees their own use, which others' can't move", () => {
+    const row = (userId: string, seconds: number) => ({
+      userId,
+      designId: null,
+      rateCardVersion: 1,
+      seconds,
+      modelCredits: 0,
+    });
+    // 0.6 credits theirs, then someone else's use whose remainder passes theirs.
+    const people = [person("maya"), person("ada", "admin")];
+    const theirs = [row("maya", 432)];
+    const usage = (rows: ReturnType<typeof row>[]) =>
+      workspaceUsage({ ...read({}), rows, people }, period, viewer("maya", "member"));
+    expect(usage(theirs).mine.usedCredits).toBe(0);
+    return fc.assert(
+      fc.property(fc.array(fc.nat({ max: 20 * HOUR }), { maxLength: 10 }), (others) => {
+        const got = usage([...theirs, ...others.map((s) => row("ada", s))]);
+        expect(got.byPerson).toBeNull();
+        expect(got.mine.usedCredits).toBe(creditsOf(awakeUnits(432, 5)));
+      }),
     );
   });
 

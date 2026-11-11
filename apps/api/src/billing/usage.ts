@@ -110,10 +110,15 @@ export function workspaceUsage(
     admin: person.role === "admin",
     usedCredits: userCredits.get(person.id) ?? 0,
   });
-  const mine = personView({ ...viewer.user, role: viewer.member.role });
   // Someone who reaches the workspace only through repos shared with them sees no other member
   // anywhere, so not here either.
   const seesPeople = admin && viewer.member.githubAccess !== "collaborator";
+  // Beside a list it has to add up with, the viewer's line is their share of the total. Alone, it
+  // is their own use rounded down, which other people's use can never move.
+  const own = personView({ ...viewer.user, role: viewer.member.role });
+  const mine = seesPeople
+    ? own
+    : { ...own, usedCredits: creditsOf(byUser.get(viewer.user.id) ?? 0) };
 
   return {
     period,
