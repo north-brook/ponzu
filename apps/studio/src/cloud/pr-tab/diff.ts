@@ -13,8 +13,8 @@ export type DiffRow =
       old: number | null;
       new: number | null;
       text: string;
-      /** The changed part of a changed line, start and end; null when all of it changed. */
-      changed: readonly [number, number] | null;
+      /** The words that changed on a changed line; null when all of it did. */
+      changed: Span[] | null;
     }
   /** Unchanged lines GitHub left out between hunks, folded. */
   | { kind: "fold"; lines: number };
@@ -60,10 +60,8 @@ const row = (
 ): DiffRow => ({ kind: "line", type, old, new: next, text, changed: null });
 
 /**
- * Pairs each run of removed lines with the added lines after it, line for line, and marks what
- * changed between the two: what lies between their shared start and shared end, widened to
- * whole words. Lines with too little in common are left whole: marking nearly all of a line
- * says less than not marking it.
+ * Pairs each run of removed lines with the added lines after it, line for line, and marks the
+ * words that changed between the two (changedSpans).
  */
 function markChanges(rows: DiffRow[]) {
   for (let i = 0; i < rows.length; ) {
@@ -84,35 +82,95 @@ function markChanges(rows: DiffRow[]) {
 const isLine = (r: DiffRow | undefined, type: "add" | "del") =>
   r?.kind === "line" && r.type === type;
 
-/** The changed spans of two versions of a line, or null when they share too little. */
-export function changedSpans(
-  a: string,
-  b: string,
-): [readonly [number, number], readonly [number, number]] | null {
+/** A run of a line's text, start and end. */
+export type Span = readonly [number, number];
+
+/** A word, a run of spaces, or one mark of punctuation. */
+const TOKEN = /\w+|\s+|[^\w\s]/g;
+/** Past this many word pairs to weigh, the middle of the two lines is marked whole. */
+const MAX_PAIRS = 10_000;
+
+/**
+ * The words that changed between two versions of a line, each version's as spans, or null when
+ * the lines share too little: marking nearly all of a line says less than not marking it. The
+ * words both keep, in order, are the longest run they have in common; the rest are marked, and
+ * a space between two marked words is marked with them.
+ */
+export function changedSpans(a: string, b: string): [Span[], Span[]] | null {
+  const ta = a.match(TOKEN) ?? [];
+  const tb = b.match(TOKEN) ?? [];
+  const keptA = new Array<boolean>(ta.length).fill(false);
+  const keptB = new Array<boolean>(tb.length).fill(false);
+  // What the two start and end with is kept; only the middle is weighed word by word.
   let start = 0;
-  while (start < a.length && start < b.length && a[start] === b[start]) start++;
-  let end = 0;
-  while (
-    end < a.length - start &&
-    end < b.length - start &&
-    a[a.length - 1 - end] === b[b.length - 1 - end]
-  ) {
-    end++;
+  while (start < ta.length && start < tb.length && ta[start] === tb[start]) {
+    keptA[start] = keptB[start] = true;
+    start++;
   }
-  const shared = start + end;
+  let endA = ta.length;
+  let endB = tb.length;
+  while (endA > start && endB > start && ta[endA - 1] === tb[endB - 1]) {
+    keptA[--endA] = keptB[--endB] = true;
+  }
+  if ((endA - start) * (endB - start) <= MAX_PAIRS) {
+    keepCommon(ta.slice(start, endA), tb.slice(start, endB), (i, j) => {
+      keptA[start + i] = keptB[start + j] = true;
+    });
+  }
+  const shared = ta.reduce((sum, token, i) => sum + (keptA[i] ? token.length : 0), 0);
   if (shared < Math.min(a.length, b.length) * 0.3 || shared === Math.max(a.length, b.length)) {
     return null;
   }
-  while (start > 0 && isWord(a[start - 1]) && (isWord(a[start]) || isWord(b[start]))) start--;
-  const span = (text: string): readonly [number, number] => {
-    let to = text.length - end;
-    while (to < text.length && isWord(text[to]) && isWord(text[to - 1])) to++;
-    return [start, Math.max(start, to)];
-  };
-  return [span(a), span(b)];
+  return [spansOf(ta, keptA), spansOf(tb, keptB)];
 }
 
-const isWord = (ch: string | undefined) => ch !== undefined && /\w/.test(ch);
+/** The longest common run of two token lists, each pair of kept tokens passed to `keep`. */
+function keepCommon(a: string[], b: string[], keep: (i: number, j: number) => void) {
+  const width = b.length + 1;
+  // lengths[i * width + j]: the longest common run of a[i..] and b[j..].
+  const lengths = new Uint16Array((a.length + 1) * width);
+  for (let i = a.length - 1; i >= 0; i--) {
+    for (let j = b.length - 1; j >= 0; j--) {
+      lengths[i * width + j] =
+        a[i] === b[j]
+          ? lengths[(i + 1) * width + j + 1]! + 1
+          : Math.max(lengths[(i + 1) * width + j]!, lengths[i * width + j + 1]!);
+    }
+  }
+  for (let i = 0, j = 0; i < a.length && j < b.length; ) {
+    if (a[i] === b[j]) {
+      keep(i++, j++);
+    } else if (lengths[(i + 1) * width + j]! >= lengths[i * width + j + 1]!) i++;
+    else j++;
+  }
+}
+
+/**
+ * The marked runs of a line: its changed tokens, joined across the spaces between them, without
+ * the spaces at their edges (unless spacing is all that changed).
+ */
+function spansOf(tokens: string[], kept: boolean[]): Span[] {
+  const marked = kept.map((k) => !k);
+  for (let i = 1; i < tokens.length - 1; i++) {
+    if (kept[i] && /^\s+$/.test(tokens[i]!) && marked[i - 1] && marked[i + 1]) marked[i] = true;
+  }
+  const spans: Span[] = [];
+  let at = 0;
+  tokens.forEach((token, i) => {
+    if (marked[i]) {
+      const last = spans.at(-1);
+      if (last && last[1] === at) spans[spans.length - 1] = [last[0], at + token.length];
+      else spans.push([at, at + token.length]);
+    }
+    at += token.length;
+  });
+  const text = tokens.join("");
+  return spans.map(([from, to]) => {
+    const run = text.slice(from, to);
+    if (!run.trim()) return [from, to];
+    return [from + run.length - run.trimStart().length, to - (run.length - run.trimEnd().length)];
+  });
+}
 
 /** A file with more changed lines than this opens behind "Show diff". */
 export const LARGE_DIFF = 400;

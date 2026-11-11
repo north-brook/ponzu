@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { CheckRun } from "../model.ts";
-import { changedSpans, orderChecks, parsePatch } from "./diff.ts";
+import { changedSpans, orderChecks, parsePatch, type Span } from "./diff.ts";
 
 const PATCH = `@@ -13,6 +13,5 @@ export function Hero() {
  export function Hero() {
@@ -43,20 +43,50 @@ test("a changed line marks what changed, in whole words, beside its pair", () =>
   const del = rows.find((r) => r.kind === "line" && r.old === 15)!;
   const add = rows.find((r) => r.kind === "line" && r.new === 15)!;
   if (del.kind !== "line" || add.kind !== "line") throw new Error("not lines");
-  expect(del.text.slice(...del.changed!)).toBe("Plants that outlive your lease");
-  expect(add.text.slice(...add.changed!)).toBe("Slow plants, fast homes");
+  expect(marked(del.text, del.changed)).toEqual(["Plants that outlive your lease"]);
+  expect(marked(add.text, add.changed)).toEqual(["Slow plants, fast homes"]);
   // The second removed line has no pair: it is removed whole.
   expect(rows.find((r) => r.kind === "line" && r.old === 16)).toMatchObject({ changed: null });
 });
 
-test("changed spans: whole words, and nothing when the lines share too little", () => {
-  const [a, b] = changedSpans("const width = 38;", "const width = 42;")!;
-  expect("const width = 38;".slice(...a)).toBe("38");
-  expect("const width = 42;".slice(...b)).toBe("42");
-  const [c] = changedSpans("color: muted;", "color: mutedest;")!;
-  expect("color: muted;".slice(...c)).toBe("muted");
-  expect(changedSpans("import a from 'a';", "export default function Page() {}")).toBeNull();
-  expect(changedSpans("same", "same")).toBeNull();
+/** The marked words of a line. */
+const marked = (text: string, spans: Span[] | null) =>
+  (spans ?? []).map(([from, to]) => text.slice(from, to));
+const changes = (a: string, b: string) => {
+  const spans = changedSpans(a, b);
+  return spans && [marked(a, spans[0]), marked(b, spans[1])];
+};
+
+test("changed spans: only the words that changed, and nothing when lines share too little", () => {
+  expect(changes("const width = 38;", "const width = 42;")).toEqual([["38"], ["42"]]);
+  expect(changes("color: muted;", "color: mutedest;")).toEqual([["muted"], ["mutedest"]]);
+  // Two changes apart on one line are two marks, not everything between them.
+  expect(
+    changes(
+      'export const label = "Shop" + suffix(a, b);',
+      'export const title = "Shop" + suffix(a, c);',
+    ),
+  ).toEqual([
+    ["label", "b"],
+    ["title", "c"],
+  ]);
+  // Words said again in the new line stay unmarked; a space between changed words joins them.
+  expect(changes("Keep the green and the photo", "Keep the calm green and photo")).toEqual([
+    ["the"],
+    ["calm"],
+  ]);
+  // When spacing is all that changed, the spacing is marked.
+  expect(changes("  return width;", "    return width;")).toEqual([["  "], ["    "]]);
+  expect(changes("import a from 'a';", "export default function Page() {}")).toBeNull();
+  expect(changes("same", "same")).toBeNull();
+});
+
+test("changed spans stay quick on a long, wholly rewritten line", () => {
+  const a = Array.from({ length: 2000 }, (_, i) => `a${i}`).join(" ");
+  const b = Array.from({ length: 2000 }, (_, i) => `b${i}`).join(" ");
+  const started = performance.now();
+  changedSpans(`x ${a} y`, `x ${b} y`);
+  expect(performance.now() - started).toBeLessThan(50);
 });
 
 test("checks: failing first, then running and queued, then passed, each in GitHub's order", () => {

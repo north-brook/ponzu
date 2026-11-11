@@ -22,6 +22,7 @@ import { Avatar } from "../ui/avatar.tsx";
 import { Button, IconButton } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
 import { Icon, type IconSvgElement } from "../ui/icon.tsx";
+import { safeHref } from "../ui/markdown.ts";
 import { AgentMark } from "../ui/marks.tsx";
 import { Prose } from "../ui/prose.tsx";
 import { orderChecks } from "./diff.ts";
@@ -49,7 +50,7 @@ const STATE_ICON: Record<PrState, { icon: IconSvgElement; color: string }> = {
 export function PullRequestView({
   state,
   viewerLogin,
-  onOpenLink,
+  onOpenLink: open,
   onRetry,
 }: {
   state: PullRequestTabState;
@@ -57,6 +58,11 @@ export function PullRequestView({
   onOpenLink: (url: string) => void;
   onRetry: () => void;
 }) {
+  // GitHub's addresses (a check's page, a link in a comment) leave the app only to the web.
+  const onOpenLink = (url: string) => {
+    const href = safeHref(url);
+    if (href) open(href);
+  };
   const column = "flex min-h-0 min-w-0 flex-col overflow-y-auto pt-11 pb-11 [scrollbar-width:thin]";
   if (state.kind !== "ready") {
     return (

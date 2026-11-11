@@ -1,10 +1,10 @@
 import { ArrowDown01Icon, ArrowRight01Icon } from "@hugeicons/core-free-icons";
-import { type ReactNode, useMemo, useState } from "react";
+import { type CSSProperties, type ReactNode, useMemo, useState } from "react";
 import type { PrFile } from "../model.ts";
 import { Button } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
 import { Icon } from "../ui/icon.tsx";
-import { type DiffRow, isLarge, parsePatch } from "./diff.ts";
+import { type DiffRow, isLarge, parsePatch, type Span } from "./diff.ts";
 
 /** "+214 −38", in the pull request's colors. */
 export function Counts({ additions, deletions }: { additions: number; deletions: number }) {
@@ -138,14 +138,22 @@ function Quiet({ children }: { children: ReactNode }) {
   );
 }
 
-const LINE = "grid grid-cols-[40px_40px_1fr] font-mono text-12 leading-[21px]";
+const LINE = "grid grid-cols-[var(--number)_var(--number)_1fr] font-mono text-12 leading-[21px]";
 const NUMBER = "select-none text-right text-faint";
 
 /** A unified diff, syntax-neutral: tints for what was added and removed, stronger on the words. */
 function Diff({ patch }: { patch: string }) {
   const rows = useMemo(() => parsePatch(patch), [patch]);
+  // The line numbers' columns fit the longest of them, and are never narrower than 40.
+  const digits = Math.max(
+    0,
+    ...rows.map((r) => (r.kind === "line" ? String(Math.max(r.old ?? 0, r.new ?? 0)).length : 0)),
+  );
   return (
-    <div className="py-1.5">
+    <div
+      className="py-1.5 [tab-size:4]"
+      style={{ "--number": `max(40px, calc(${digits}ch + 12px))` } as CSSProperties}
+    >
       {rows.map((row, i) =>
         row.kind === "fold" ? (
           <div
@@ -177,18 +185,13 @@ function DiffLine({ row }: { row: Extract<DiffRow, { kind: "line" }> }) {
         ? "shadow-[inset_2px_0_0_var(--c-diff-del-bar)]"
         : undefined;
   const word = row.type === "add" ? "bg-diff-add-word" : "bg-diff-del-word";
-  const [from, to] = row.changed ?? [0, 0];
   return (
     <div className={cn(LINE, tint)}>
       <span className={cn(NUMBER, "pr-2", bar)}>{row.old ?? ""}</span>
       <span className={cn(NUMBER, "pr-3")}>{row.new ?? ""}</span>
       <span className="whitespace-pre-wrap pr-3 text-ink [overflow-wrap:anywhere]">
         {row.changed ? (
-          <>
-            {row.text.slice(0, from)}
-            <span className={cn("rounded-2", word)}>{row.text.slice(from, to)}</span>
-            {row.text.slice(to)}
-          </>
+          <Marked text={row.text} spans={row.changed} className={word} />
         ) : (
           row.text || " "
         )}
@@ -198,4 +201,21 @@ function DiffLine({ row }: { row: Extract<DiffRow, { kind: "line" }> }) {
       </span>
     </div>
   );
+}
+
+/** A line's text with its changed words marked. */
+function Marked({ text, spans, className }: { text: string; spans: Span[]; className: string }) {
+  const parts: ReactNode[] = [];
+  let at = 0;
+  for (const [from, to] of spans) {
+    parts.push(text.slice(at, from));
+    parts.push(
+      <span key={from} className={cn("rounded-2", className)}>
+        {text.slice(from, to)}
+      </span>,
+    );
+    at = to;
+  }
+  parts.push(text.slice(at));
+  return parts;
 }
