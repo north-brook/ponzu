@@ -1,14 +1,19 @@
 {
-  "snapshot": "ponzu-runner-6041787d9d11",
-  "inputs": "6041787d9d11c9c3a7005e66983cec2e2fc9b87368712c4ecaecd83b802cb2e6",
-  "sizeBytes": 524341248,
+  "snapshot": "ponzu-runner-75552d8049e5",
+  "inputs": "75552d8049e5ccf5e5bdb9b293da694d8611071e64c301f8c3d00210da866cf4",
+  "base": "63ef2b523183",
+  "bakedAt": "2026-11-11T06:54:41.609Z",
+  "verifiedAt": "2026-11-11T07:01:29.172Z",
+  "sizeBytes": 510758912,
   "pins": {
     "bunVersion": "1.4.2",
     "bunSha256": "36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913",
     "claudeVersion": "2.1.322",
     "claudeSha256": "bfb3703ad5380242328459bc62ada4bde8ae7ba57c6e1eeadb9c00e08874c478",
     "playwrightCoreVersion": "1.64.1",
-    "headlessShellVersion": "156.0.8078.4"
-  },
-  "bakedAt": "2026-11-11T04:37:09.551Z"
+    "headlessShellVersion": "156.0.8078.4",
+    "headlessShellRevision": "1248",
+    "headlessShellUrl": "https://cdn.playwright.dev/builds/cft/156.0.8078.4/linux64/chrome-headless-shell-linux64.zip",
+    "headlessShellSha256": "c3e50596aef52c58f8fda3c6b3411c33d34c88b177b3ed1c2243359fd3b8ba20"
+  }
 }

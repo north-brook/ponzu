@@ -572,17 +572,22 @@ measurement and lint, inside the runner's process.
 Every sandbox is created from one saved snapshot, baked from `apps/runner/image` (its README
 has what is in it and the measurements): boat's base with the Bun the repo pins, the runner's
 build, the Claude Code the Agent SDK pin speaks to (checked by the binary's hash), the Chrome
-Headless Shell playwright-core pins, exactly `packages/render`'s fonts, a second Linux user,
-`agent`, and the runner's unit, enabled. The snapshot is named for a hash of all of that, so
-the same inputs make the same name, and the API creates sandboxes `from` the name in its
-`PONZU_SANDBOX_SNAPSHOT`; `apps/runner/image/current.json` records the last bake. About
-500 MiB over boat's base.
+Headless Shell playwright-core pins (checked by the zip's hash), exactly `packages/render`'s
+fonts at the versions it pins, a second Linux user, `agent`, and the runner's unit, enabled.
+The snapshot is named for a hash of all of that, of the checks it passed and of boat's base as
+read before the recipe ran, so the same inputs make the same name, and the API creates
+sandboxes `from` the name in its `PONZU_SANDBOX_SNAPSHOT`; `apps/runner/image/current.json`
+records the last bake and when it passed the checks from the snapshot, which is what says it
+may be used. About 490 MiB over boat's base.
 
 **Two users.** The runner runs as `user`; Claude Code, its tools, the repo's hooks and the
 checkout's git run as `agent`, which has no sudo, no docker and no way into `/home/user`, the
 runner's `/proc` or boat's environment file, so nothing the repo or the agent runs can read the
-runner token. git asks the runner for credentials over a socket ("Git"). The runner reads what
-the agent writes through `CAP_DAC_READ_SEARCH` (Claude Code keeps its transcripts 0600). The
+runner token. git asks the runner for credentials over a socket ("Git"). The canvas tools run
+in the runner's process, so a file the agent names to one (an HTML file by path, an asset, an
+export) is read and written as `agent` (`PONZU_AS_AGENT`): a path, or a link a repo committed,
+reaches only what the agent could reach itself, not the runner's environment or home. The
+runner reads Claude Code's transcripts (0600 `agent`) through `CAP_DAC_READ_SEARCH`. The
 Claude credential is still in the agent's environment: Claude Code needs it.
 
 ### Events
@@ -660,8 +665,10 @@ behind these routes, and is the reference for what each answers.
   and act on the same events twice; with the lease the older one is refused at its next call.
 - **Stopping for good.** On 401 `token_invalid` or 409 `superseded`, from any call, the
   runner interrupts the turn, writes nothing more, closes Claude Code and exits 78, which
-  systemd does not restart (`RestartPreventExitStatus`). Only a new start of the sandbox, with
-  a new environment, brings a runner back.
+  systemd does not restart (`RestartPreventExitStatus`). Only a cold start of the sandbox (a
+  resume with a new environment is always one) or an explicit `systemctl start ponzu-runner`
+  through `exec` brings a runner back: a warm resume thaws the same boot, and the runner stays
+  down.
 - **Batch, never chat.** The sandbox is in the EU and the API in US East, about 100 ms each
   way, so each route takes many things at once and the runner sends what piled up: thread
   writes at most about three a second, state when it changes and on a heartbeat, acks,
@@ -1191,10 +1198,17 @@ from `cloud` into `main`, released as the next major version.
 
 - boat.dev hosts in the EU only. The sandbox is far from the API and the database,
   which is why tools work on a local replica and post ops in the background.
-- After a long sleep (a cold resume) the runner answers `/health` in 5 to 8 seconds and the
-  first words of a reply come 8 to 12 seconds after the resume call; after a short one (warm)
-  in under a second and about 2 seconds (`apps/runner/image/README.md` has the runs). The
-  thread shows a waking state.
+- After a long sleep (a cold resume) the runner answers `/health` in 5 to 16 seconds and the
+  first words of a reply come 8 to 25 seconds after the resume call; after a short one (warm)
+  in under a second and about 2 seconds. A create from the image answers `/health` in 4 to 31
+  seconds (`apps/runner/image/README.md` has the runs). The thread shows a waking state.
+- A cold start can bring the disk back older than it was. A file written a moment before a stop
+  and not flushed is lost, so the runner flushes after each turn. Worse, in two of three
+  end-to-end runs of the image the second cold start in a row came back with the disk as it was
+  at the first, losing everything written in between; a test with only files being written did not
+  show it. Unexplained, and worth raising with boat. Until then the sandbox's disk is a cache
+  that can go back to its previous cold stop (principle 2): the session can forget its last
+  exchanges, unpushed commits can be lost, and a turn's usage can be counted twice.
 - A stop usually finishes in a few seconds but has taken 50, and boat.dev refuses a
   resume until it has. A message that arrives in that window waits for the stop.
 - Neon Realtime is a public beta.
