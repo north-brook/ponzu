@@ -11,6 +11,7 @@ text "Product" rgb(169, 165, 155) 400 13px Inter
 icon svg[Pages] 14×14 rgb(169, 165, 155) stroke 1.7px
 text "Care cards" rgb(169, 165, 155) 400 13px Inter
 icon svg[New page] 14×14 rgb(110, 107, 101) stroke 1.9px
+ground span rgba(244, 243, 239, 0.1)
 ground button[Pull request #412] rgb(58, 58, 58) shadow rgba(255, 255, 255, 0.06) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.4) 0px 1px 2px 0px
 text "#412" rgb(244, 243, 239) 400 11px IBM Plex Mono
 icon svg[Pull request #412] 11×11 rgb(95, 179, 107) stroke 2px
@@ -18,9 +19,7 @@ icon svg[Checks passed] 10×10 rgb(95, 179, 107) stroke 2.6px
 text "Merge" rgb(17, 17, 16) 600 12px Inter
 ground button rgb(244, 243, 239)
 icon svg 13×13 rgb(17, 17, 16) stroke 2px
-ground span rgba(244, 243, 239, 0.1)
-text "2" rgb(17, 17, 16) 600 12px Inter
-ground span[2 questions for you] rgb(255, 200, 30)
+icon svg[Thread] 16×16 rgb(169, 165, 155) stroke 1.7px
 text "Northbrook" rgb(244, 243, 239) 600 13px Inter
 icon svg[Workspace: Northbrook] 11×11 rgb(142, 138, 130) stroke 2.2px
 icon svg[Search] 15×15 rgb(169, 165, 155) stroke 1.7px
@@ -203,3 +202,29 @@ text "src/components/" rgb(244, 243, 239) 400 13px IBM Plex Mono
 text "hero-photo.tsx" rgb(244, 243, 239) 400 13px IBM Plex Mono
 text "+26" rgb(95, 179, 107) 400 12px IBM Plex Mono
 text "−2" rgb(224, 103, 91) 400 12px IBM Plex Mono
+text "Give me three takes on the hero. Keep t…" rgb(244, 243, 239) 400 13px Inter
+ground p[Thread] rgb(27, 27, 26)
+text "You said:" rgb(244, 243, 239) 400 13px Inter
+text "I read the shop page and the current he…" rgb(244, 243, 239) 400 13px Inter
+ground button[Open the comment on Hero] rgb(0, 0, 0) shadow rgba(255, 255, 255, 0.1) 0px 0px 0px 1px, rgba(0, 0, 0, 0) 0px 2px 10px 0px
+text "Too many words here. Calmer, and put a …" rgb(244, 243, 239) 400 13px Inter
+ground p[Thread] rgb(27, 27, 26)
+text "You commented:" rgb(244, 243, 239) 400 13px Inter
+text "Folding that into B: no paragraph, and …" rgb(244, 243, 239) 400 13px Inter
+ground section[Ponzu needs you: Headline] rgba(28, 28, 28, 0.72) shadow rgba(255, 255, 255, 0.1) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.4) 0px 6px 20px 0px, rgba(0, 0, 0, 0.3) 0px 1px 3px 0px
+ground span[Ponzu needs you: Headline] rgb(255, 200, 30) shadow rgba(255, 200, 30, 0.25) 0px 0px 0px 3px
+text "Headline" rgb(244, 243, 239) 600 13px Inter
+icon svg[Previous] 12×12 rgb(110, 107, 101) stroke 2.2px
+text "1/2" rgb(169, 165, 155) 400 11px IBM Plex Mono
+icon svg[Next] 12×12 rgb(169, 165, 155) stroke 2.2px
+text "The headline runs to three lines at 390…" rgb(244, 243, 239) 500 13px Inter
+ground div[The headline runs to three lines at 390…] rgba(255, 255, 255, 0.06)
+text "Shorten it" rgb(244, 243, 239) 500 13px Inter
+text "Cut to “Slow plants, fast homes.” Two l…" rgb(169, 165, 155) 400 12px Inter
+text "Smaller type on phones" rgb(244, 243, 239) 500 13px Inter
+text "Drop to 30px under 420px; keeps the wor…" rgb(169, 165, 155) 400 12px Inter
+text "Let it wrap" rgb(244, 243, 239) 500 13px Inter
+text "Three lines, as the site does today." rgb(169, 165, 155) 400 12px Inter
+ground div[Ponzu needs you: Headline] rgb(27, 27, 26) shadow rgba(255, 255, 255, 0.1) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.3) 0px 1px 2px 0px
+ground button[Send] rgb(31, 31, 30)
+icon svg[Send] 14×14 rgb(110, 107, 101) stroke 2.3px
