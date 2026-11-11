@@ -27,6 +27,7 @@ export interface RepoIdeasRow {
   pushedAt: Date | null;
   ideas: string[];
   ideasGeneratedAt: Date | null;
+  ideasVersion: number;
   ideasClaimedAt: Date | null;
 }
 
@@ -63,6 +64,7 @@ export async function getRepoIdeasAccess(
           pushedAt: repos.pushedAt,
           ideas: repos.ideas,
           ideasGeneratedAt: repos.ideasGeneratedAt,
+          ideasVersion: repos.ideasVersion,
           ideasClaimedAt: repos.ideasClaimedAt,
         },
         installationId: workspaces.installationId,
@@ -102,6 +104,8 @@ export interface IdeasPolicy {
   windowStartedBefore: Date;
   /** How many generations one workspace may start in one window. */
   windowLimit: number;
+  /** The way ideas are made now: an empty list an earlier one wrote is due. */
+  version: number;
 }
 
 export type IdeasClaim =
@@ -119,7 +123,8 @@ export type IdeasClaim =
  * take its last generation. Two requests for the same repo at once can both spend one, and
  * only one of them claims it; the allowance errs that way, never the other.
  *
- * Due: never generated; or generated empty, or at or before `staleBefore`, and pushed since.
+ * Due: never generated; generated empty by an earlier `version`; or generated empty, or at or
+ * before `staleBefore`, and pushed since.
  */
 export async function claimRepoIdeas(
   db: Db,
@@ -164,6 +169,7 @@ function due(policy: IdeasPolicy): SQL {
     and (repos.ideas_claimed_at is null
       or repos.ideas_claimed_at <= ${timeParam(policy.retryBefore)}::timestamptz)
     and (repos.ideas_generated_at is null
+      or (jsonb_array_length(repos.ideas) = 0 and repos.ideas_version < ${policy.version})
       or (repos.pushed_at > repos.ideas_generated_at
         and (jsonb_array_length(repos.ideas) = 0
           or repos.ideas_generated_at <= ${timeParam(policy.staleBefore)}::timestamptz)))`;
@@ -171,7 +177,7 @@ function due(policy: IdeasPolicy): SQL {
 
 /**
  * Keep the ideas a generation made (an empty list when there were none to make), as of
- * `generatedAt`. Only the claim that made them writes: false, and nothing written, once
+ * `generatedAt`, by the way of making them that is `version`. Only the claim that made them writes: false, and nothing written, once
  * another has been taken since (this one ran past its time).
  */
 export async function saveRepoIdeas(
@@ -181,12 +187,13 @@ export async function saveRepoIdeas(
     ideas,
     generatedAt,
     claimedAt,
-  }: { repoId: string; ideas: string[]; generatedAt: Date; claimedAt: Date },
+    version,
+  }: { repoId: string; ideas: string[]; generatedAt: Date; claimedAt: Date; version: number },
 ): Promise<boolean> {
   const saved = await run(
     db
       .update(repos)
-      .set({ ideas, ideasGeneratedAt: generatedAt })
+      .set({ ideas, ideasGeneratedAt: generatedAt, ideasVersion: version })
       .where(and(eq(repos.id, repoId), eq(repos.ideasClaimedAt, claimedAt)))
       .returning({ id: repos.id }),
   );

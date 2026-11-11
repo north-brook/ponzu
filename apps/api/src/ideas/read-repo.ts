@@ -3,11 +3,14 @@ import { UpstreamError } from "../http/errors.ts";
 import {
   BUDGET,
   cleanReadme,
+  excerptSample,
   excerptTheme,
   hasDarkTheme,
   interfaceOf,
+  isUnbuilt,
   layoutOf,
   pickManifests,
+  pickSamples,
   pickTheme,
   type RepoSnapshot,
   summarizeManifest,
@@ -50,14 +53,27 @@ export async function readRepository(
           .catch(() => null);
   const themePath = pickTheme(tree);
   const manifestPaths = pickManifests(tree);
-  const [readme, theme, ...manifests] = await Promise.all([
+  const { screens, components } = interfaceOf(tree);
+  const files = tree.entries.filter((entry) => entry.type === "blob").length;
+  // Nothing built yet: the few files there are say what it will be, read with the requests
+  // the manifests it lacks leave over, so the budget stays the same.
+  const samplePaths = isUnbuilt({ screens, components, theme: themePath, files })
+    ? pickSamples(
+        tree,
+        manifestPaths,
+        Math.min(BUDGET.samples, BUDGET.manifests - manifestPaths.length),
+      )
+    : [];
+  const [readme, theme, ...texts] = await Promise.all([
     tree.entries.length === 0
       ? null
       : github.getReadme(token, { fullName, ref, maxBytes: BUDGET.fileBytes }).catch(() => null),
     themePath ? file(themePath) : null,
     ...manifestPaths.map(file),
+    ...samplePaths.map(file),
   ]);
-  const { screens, components } = interfaceOf(tree);
+  const manifests = texts.slice(0, manifestPaths.length);
+  const samples = texts.slice(manifestPaths.length);
   const themeExcerpt = themePath && theme ? excerptTheme(themePath, theme) : null;
   return {
     fullName,
@@ -75,6 +91,11 @@ export async function readRepository(
     components,
     theme: themePath && themeExcerpt ? { path: themePath, excerpt: themeExcerpt } : null,
     darkTheme: hasDarkTheme(tree, theme),
-    files: tree.entries.filter((entry) => entry.type === "blob").length,
+    samples: samplePaths.flatMap((path, i) => {
+      const text = samples[i];
+      const excerpt = text ? excerptSample(text) : null;
+      return excerpt ? [{ path, excerpt }] : [];
+    }),
+    files,
   };
 }

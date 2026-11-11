@@ -67,7 +67,10 @@ export interface ClaudeConnect extends ClaudeCardProps {
 /**
  * The Claude card, live. `onConnected` runs once the API has the person's Claude; the cache's
  * `me` and Claude answers already say so by then, and the card is back on its two ways with
- * nothing entered kept.
+ * nothing entered kept. With `leavesWhenConnected` (guided setup, which moves on to the next
+ * step) it stays on Connecting instead until it goes, rather than showing its two ways again
+ * for the moment before the next step is drawn: what was entered goes with the card, and its
+ * mutation keeps nothing all the same.
  *
  * Each sign-in is a sandbox the API runs until it is used or let go of, and counts toward the
  * person's sign-ins this hour. So one starts only on a press, never two at once, and is let go
@@ -77,9 +80,11 @@ export interface ClaudeConnect extends ClaudeCardProps {
 export function useClaudeConnect({
   openExternal,
   onConnected,
+  leavesWhenConnected = false,
 }: {
   openExternal: (url: string) => void;
   onConnected?: () => void;
+  leavesWhenConnected?: boolean;
 }): ClaudeConnect {
   const { api, mutations } = usePonzu();
   const [state, setState] = useState<ClaudeCardState>(CHOOSING);
@@ -172,12 +177,16 @@ export function useClaudeConnect({
       if (state.mode === "choose") return;
       const entry = state;
       setState({ ...entry, status: "connecting" } as Entry);
+      // A code on its way is the sign-in's to settle: taken, it has nothing left to let go of,
+      // and the card can go (the step moving on as `me` says Claude is connected) before this
+      // hears back. It is held again only if it can still take a code.
+      const sending = held.current;
+      if (entry.mode === "subscription") held.current = null;
       const done = {
         onSuccess: () => {
-          held.current = null;
           setPending(null);
           // Nothing of the key or code stays in the card, or its mutation, once it is sent.
-          setState(CHOOSING);
+          if (!leavesWhenConnected) setState(CHOOSING);
           connectKey.reset();
           sendCode.reset();
           connected.current?.();
@@ -185,7 +194,7 @@ export function useClaudeConnect({
         onError: (error: unknown) => {
           const next = afterRefusal(entry, error);
           // A sign-in that took its one code, or ran out, has nothing left to let go of.
-          if (signInSpent(next)) held.current = null;
+          if (entry.mode === "subscription" && !signInSpent(next)) held.current = sending;
           setState(next);
         },
       };

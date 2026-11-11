@@ -3,12 +3,14 @@ import type { GithubTree } from "../deps/github.ts";
 import {
   BUDGET,
   cleanReadme,
+  excerptSample,
   excerptTheme,
   hasDarkTheme,
   interfaceOf,
-  isEmpty,
+  isUnbuilt,
   layoutOf,
   pickManifests,
+  pickSamples,
   pickTheme,
   summarizeManifest,
 } from "./snapshot.ts";
@@ -185,7 +187,7 @@ describe("what is kept of a file", () => {
   });
 });
 
-describe("layoutOf and isEmpty", () => {
+describe("layoutOf, isUnbuilt and the few files of a new repo", () => {
   test("the top two levels, without dependencies or dot folders", () => {
     expect(
       layoutOf({
@@ -204,23 +206,29 @@ describe("layoutOf and isEmpty", () => {
     ).toEqual(["app/: cart/, page.tsx", "(top-level files): README.md"]);
   });
 
-  test("a repo with only a short README is empty; any interface is not", () => {
-    const base = {
-      fullName: "a/b",
-      description: null,
-      topics: [],
-      language: null,
-      readme: "# b",
-      layout: [],
-      manifests: [],
-      screens: [],
-      components: [],
-      theme: null,
-      darkTheme: false,
-      files: 1,
-    };
-    expect(isEmpty(base)).toBe(true);
-    expect(isEmpty({ ...base, components: ["Button"] })).toBe(false);
-    expect(isEmpty({ ...base, readme: "A product. ".repeat(40) })).toBe(false);
+  test("a repo with a few files and no interface is not built yet, however long its README", () => {
+    const base = { screens: [], components: [], theme: null, files: 3 };
+    expect(isUnbuilt(base)).toBe(true);
+    expect(isUnbuilt({ ...base, components: ["Button"] })).toBe(false);
+    expect(isUnbuilt({ ...base, theme: { path: "app.css", excerpt: "--ink: #111" } })).toBe(false);
+    expect(isUnbuilt({ ...base, files: 30 })).toBe(false);
+  });
+
+  test("of a new repo's files, reads small text ones, pages and prose first, never the README", () => {
+    const entries = [
+      { path: "README.md", type: "blob" as const, size: 40 },
+      { path: "LICENSE", type: "blob" as const, size: 1_000 },
+      { path: "main.py", type: "blob" as const, size: 300 },
+      { path: "index.html", type: "blob" as const, size: 200 },
+      { path: "docs/idea.md", type: "blob" as const, size: 900 },
+      { path: "logo.png", type: "blob" as const, size: 900 },
+      { path: "dump.json", type: "blob" as const, size: BUDGET.sampleBytes + 1 },
+      { path: "package.json", type: "blob" as const, size: 90 },
+    ];
+    const files = { entries, complete: true };
+    expect(pickSamples(files, ["package.json"], 2)).toEqual(["index.html", "docs/idea.md"]);
+    expect(pickSamples(files, ["package.json"], 0)).toEqual([]);
+    expect(excerptSample("Tides\n\n\n\nSee https://evil.example now  ")).toBe("Tides\n\nSee  now");
+    expect(excerptSample("   ")).toBeNull();
   });
 });

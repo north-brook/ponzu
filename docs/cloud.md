@@ -1505,7 +1505,10 @@ order summary on the right"). They are generated, never written by hand
   and four HTTP requests a generation.
 - **Refresh**: ideas a month old are made again once the repo has been pushed to since; an
   empty list after any push. A visit alone never remakes them, and a repo nobody pushes to keeps
-  them.
+  them. The one exception is a change in how ideas are made: each list keeps the version that
+  made it (`repos.ideas_version`, `IDEAS_VERSION`), and an empty list an earlier version wrote is
+  made again at the next ask, push or not (version 1 is the one that stopped skipping a repo with
+  nothing built yet).
 - **A light read, never a clone**, through Octokit as the App with a token for that one repo
   (`contents: read`, `metadata: read`), minted and dropped: the repo's description and topics,
   its tree, README, up to four manifests and one theme file. At most 8 reads; the tree as far as
@@ -1513,9 +1516,18 @@ order summary on the right"). They are generated, never written by hand
   README cut at 64 KiB (GitHub's contents JSON carries at most 1 MB), about 18,000 characters
   into the prompt. Screens and routes come from path conventions (Next, Remix, SvelteKit,
   Nuxt/Vue, Rails, Django and Jinja, Laravel, Phoenix, Expo Router, React Native, SwiftUI,
-  Android, Flutter). A repo with nothing to ground ideas in gets none, without a model call:
-  invented ideas about a product that is not there yet would mislead.
-- **The four kinds**: improve a screen the repo names; variations of its most prominent one;
+  Android, Flutter).
+- **A product not built yet still gets four.** A repo with no screens, no components, no theme
+  and fewer than 8 files (`isUnbuilt`) is read the same way, plus the start of up to 2 of its
+  few files with the reads its missing manifests leave (still at most 8), and asked with its own
+  instructions (`FRESH_SYSTEM_PROMPT`): where a designer would begin this product (its first
+  screen, its landing page, its core flow, its look), as specific as its name, owner,
+  description, topics, README and files allow, building on a first draft when one is there. They
+  never pretend it has screens: an idea that redesigns, improves or fixes anything, or speaks of
+  "the current" or "the existing", is turned away like any other broken rule. When nothing says
+  what the product is, the user turn says so (Ponzu's words, outside the fence) and the four are
+  good first briefs for any new product, claiming nothing about this one.
+- **The four kinds** (a product with an interface): improve a screen the repo names; variations of its most prominent one;
   a screen or state it lacks; something across the interface. Kinds 3 and 4 are menus with no
   default, so repos do not all get the same empty state or type scale, and only screens the
   read found may be redesigned. "No dark theme" is said only when a theme file was read.

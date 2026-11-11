@@ -22,6 +22,7 @@ import {
   membersById,
   pushableRepos,
   searchByName,
+  shownWorkspace,
   toPerson,
   toSummary,
   toWorkspace,
@@ -140,7 +141,8 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
 
   const all = meAnswer.data?.workspaces ?? null;
   const usable = useMemo(() => (all ? usableWorkspaces(all) : []), [all]);
-  const workspace = usable.find((w) => w.id === ui.workspaceId) ?? usable[0] ?? null;
+  // The same choice guided setup reads ahead before it hands the window over (setup/first-run).
+  const workspace = all ? shownWorkspace(all, ui.workspaceId) : null;
   // The workspace the window showed is suspended on GitHub: it opens another, and says why.
   // What was shown counts, not what was chosen: a window that took the first workspace too.
   const shownId = useRef<string | null>(null);

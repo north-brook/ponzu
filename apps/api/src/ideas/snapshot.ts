@@ -9,7 +9,8 @@ import type { GithubTree } from "../deps/github.ts";
  *
  * The budget, at most, for one repository:
  *   reads    8 GitHub requests: the repo, its tree, its README, 4 manifests, 1 theme file
- *            (plus the one that mints the token)
+ *            (plus the one that mints the token); a repo with nothing built yet spends what
+ *            its missing manifests leave on up to 2 of its few files instead
  *   bytes    the tree as far as GitHub lists it (it stops at 100,000 entries or 7 MB);
  *            a manifest or theme file only when the tree says it is under 64 KiB; the README
  *            cut at 64 KiB (GitHub sends at most 1 MB of any file's content)
@@ -25,6 +26,10 @@ export const BUDGET = {
   readme: 5_000,
   manifest: 1_400,
   theme: 2_200,
+  /** A repo with nothing built yet: how many of its own files are read, how large, how much kept. */
+  samples: 2,
+  sampleBytes: 16 * 1024,
+  sample: 1_500,
   layout: 2_200,
   screens: 4_000,
   components: 1_400,
@@ -47,6 +52,8 @@ export interface RepoSnapshot {
   theme: { path: string; excerpt: string } | null;
   /** Whether the interface has a dark theme already, as far as names and the theme show. */
   darkTheme: boolean;
+  /** For a repo with nothing built yet (`isUnbuilt`), the start of each of a few of its files. */
+  samples: { path: string; excerpt: string }[];
   /** How many files the tree has. */
   files: number;
 }
@@ -430,19 +437,75 @@ export function excerptTheme(path: string, text: string): string | null {
 }
 
 /**
- * Whether there is anything to ground ideas in: no interface, no stack, no theme and next to
- * no README means a repo with nothing in it yet. Ideas then would be invented, not read, so it
- * gets none (docs/cloud.md, "Ideas").
+ * The most files a repo with nothing built yet has. Past this, what is there is something,
+ * even with no screens: a library, a tool, a backend, which the usual ideas fit.
  */
-export function isEmpty(snapshot: RepoSnapshot): boolean {
+const UNBUILT_FILES = 8;
+
+/**
+ * Whether the product is not built yet: no screens, no components, no theme and only a few
+ * files (a README, a first file or two). Its ideas are then where to start designing it, not
+ * changes to screens it does not have (`FRESH_SYSTEM_PROMPT` in prompt.ts; docs/cloud.md,
+ * "Ideas"). Known from the tree alone, before any file is read.
+ */
+export function isUnbuilt(snapshot: {
+  screens: unknown[];
+  components: unknown[];
+  /** The theme file, if one was found. */
+  theme: unknown;
+  files: number;
+}): boolean {
   return (
     snapshot.screens.length === 0 &&
     snapshot.components.length === 0 &&
-    snapshot.manifests.length === 0 &&
     snapshot.theme === null &&
-    (snapshot.readme ?? "").length + (snapshot.description ?? "").length < 280 &&
-    snapshot.files < 8
+    snapshot.files < UNBUILT_FILES
   );
+}
+
+/** Text a person wrote, as far as a name says: prose, markup, styles, code, data. */
+const TEXT =
+  /\.(md|mdx|txt|rst|adoc|html?|css|s[ac]ss|tsx?|jsx?|mjs|cjs|vue|svelte|astro|py|rb|go|rs|swift|kt|java|dart|ex|php|json|ya?ml|toml)$/i;
+/** Files that say how a repo is kept, not what the product is. */
+const HOUSEKEEPING =
+  /(^|\/)(readme|licen[cs]e|copying|changelog|contributing|code_of_conduct|security)(\.[a-z]+)?$/i;
+
+/**
+ * Which of a repo's few files to read when nothing is built yet, besides its README and
+ * manifests (`skip`): up to `limit`, small and text, what says most of what people will see
+ * (a first page, then prose, then the rest), each under `BUDGET.sampleBytes` by the tree's count.
+ */
+export function pickSamples(tree: GithubTree, skip: string[], limit: number): string[] {
+  const rank = (path: string) =>
+    /\.(html?|vue|svelte|astro)$/i.test(path) ? 0 : /\.(md|mdx|txt|rst|adoc)$/i.test(path) ? 1 : 2;
+  return tree.entries
+    .filter(
+      ({ path, type, size }) =>
+        type === "blob" &&
+        kept(path) &&
+        TEXT.test(path) &&
+        !HOUSEKEEPING.test(path) &&
+        !skip.includes(path) &&
+        (size ?? 0) > 0 &&
+        (size ?? 0) <= BUDGET.sampleBytes,
+    )
+    .map(({ path }) => path)
+    .sort(
+      (a, b) =>
+        rank(a) - rank(b) || a.split("/").length - b.split("/").length || a.localeCompare(b),
+    )
+    .slice(0, Math.max(0, limit));
+}
+
+/** The start of a file, as data: no addresses or runs of blank lines, cut at a line. */
+export function excerptSample(text: string): string | null {
+  const body = text
+    .replace(/\b(?:https?:\/\/|www\.)\S+/gi, "")
+    .replace(/[ \t]+$/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  const lines = body ? cutLines(body.split("\n"), BUDGET.sample) : [];
+  return lines.length ? lines.join("\n") : null;
 }
 
 /* ------------------------------------------------------------------ */

@@ -16,9 +16,9 @@ import { systemClock } from "@ponzu/sandbox";
 import { createGithub } from "../src/deps/github.ts";
 import { createClaude } from "../src/deps/model.ts";
 import { askForIdeas, type Tally } from "../src/ideas/ideas.ts";
-import { ideasPrompt } from "../src/ideas/prompt.ts";
+import { ideasRequest } from "../src/ideas/prompt.ts";
 import { readRepository } from "../src/ideas/read-repo.ts";
-import { isEmpty, type RepoSnapshot } from "../src/ideas/snapshot.ts";
+import type { RepoSnapshot } from "../src/ideas/snapshot.ts";
 
 /** Claude Haiku 5.5's price per million tokens, for prompts under 100K tokens. */
 const PRICE = { input: 0.1, output: 0.5 };
@@ -110,17 +110,16 @@ for (const fullName of names) {
     console.log(`\n## ${fullName}\nThe read failed: ${(error as Error).message}`);
     continue;
   }
-  const prompt = ideasPrompt(snapshot);
-  console.log(`\n## ${fullName}  (${prompt.length} characters of prompt, ${snapshot.files} files)`);
-  if (flags.has("--show")) console.log(prompt);
-  if (isEmpty(snapshot)) {
-    console.log("Nothing to ground ideas in: none, and no model call.");
-    continue;
-  }
+  const request = ideasRequest(snapshot);
+  const kind = request.fresh ? ", not built yet" : "";
+  console.log(
+    `\n## ${fullName}  (${request.prompt.length} characters of prompt, ${snapshot.files} files${kind})`,
+  );
+  if (flags.has("--show")) console.log(request.prompt);
   if (spent >= ceiling) throw new Error(`Stopped at $${spent.toFixed(4)}, the ceiling.`);
   const started = Date.now();
   const tally: Tally = { attempts: 0, usage: { input: 0, output: 0 } };
-  const asked = await askForIdeas(model, prompt, { tally });
+  const asked = await askForIdeas(model, request, { tally });
   const { input, output } = tally.usage;
   const cost = (input * PRICE.input + output * PRICE.output) / 1_000_000;
   spent += cost;

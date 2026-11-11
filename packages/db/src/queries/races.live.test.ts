@@ -377,5 +377,6 @@ function ideasPolicy(windowLimit: number): IdeasPolicy {
     staleBefore: new Date(now - 30 * 24 * 3600_000),
     windowStartedBefore: new Date(now - 3600_000),
     windowLimit,
+    version: 1,
   };
 }

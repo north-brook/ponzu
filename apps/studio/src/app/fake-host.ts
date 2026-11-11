@@ -11,6 +11,11 @@ import type { Host } from "./host.ts";
  * finishes at the next sync (as coming back from GitHub does). claude.ai takes any code but one
  * starting "wrong". It starts signed out; Continue with GitHub signs in at once.
  * `window.ponzuFake` hands the test the backend, to play GitHub, the agent and teammates with.
+ *
+ * Two query parameters set the world up for the tests of how the window starts: `latency` slows
+ * every answer by that many milliseconds from the first, and `as` relaunches signed in, as
+ * someone part way through setup (`claude`: their account set up, Claude not yet connected) or
+ * past it (`returning`).
  */
 
 /** The ideas Maya's own repo gets, once they have been made. */
@@ -64,9 +69,20 @@ export function fakeHost(): Host {
   });
   backend.setIdeas(personal.repos[0]!.id, "generating", KETTLE_IDEAS);
   backend.claude.acceptsCode = (code) => !code.startsWith("wrong");
+  const params = new URLSearchParams(window.location.search);
+  backend.latencyMs = Number(params.get("latency")) || 0;
+  const as = params.get("as");
+  if (as === "claude" || as === "returning") {
+    backend.install(personal.id);
+    backend.finishStep(me.id, "where");
+  }
+  if (as === "returning") {
+    backend.claude.connect(me.id);
+    backend.finishStep(me.id, "iphone");
+  }
   const opened: string[] = [];
   const client = backend.connect(me);
-  const session = signedOutUntilAsked(client.session, me);
+  const session = signedOutUntilAsked(client.session, me, as ? backend.latencyMs : null);
   const links = new Set<(link: DeepLink) => void>();
   const commands = new Set<(command: MenuCommand) => void>();
 
@@ -178,14 +194,18 @@ async function seed(
   await backend.connect(teammate).api.designs.presence(design.id);
 }
 
-/** The fake session, but signed out until the sign-in screen's button is pressed. */
-function signedOutUntilAsked(session: Session, me: FakePerson): Session {
-  let state: SessionState = { status: "signed_out" };
+/**
+ * The fake session, but signed out until the sign-in screen's button is pressed; or, with
+ * `restoreMs`, a relaunch: loading for that long, as a keychain read is, then signed in.
+ */
+function signedOutUntilAsked(session: Session, me: FakePerson, restoreMs: number | null): Session {
+  let state: SessionState = { status: restoreMs === null ? "signed_out" : "loading" };
   const listeners = new Set<() => void>();
   const set = (next: SessionState) => {
     state = next;
     for (const listener of listeners) listener();
   };
+  if (restoreMs !== null) setTimeout(() => set({ status: "signed_in", user: me }), restoreMs);
   return {
     ...session,
     getState: () => state,

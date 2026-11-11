@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { suspendWorkspace, upsertRepos } from "@ponzu/db";
+import { claimRepoIdeas, saveRepoIdeas, suspendWorkspace, upsertRepos } from "@ponzu/db";
 import { CLAUDE_HAIKU } from "../deps/model.ts";
 import { IDEAS_POLICY } from "../ideas/ideas.ts";
-import { IDEAS_SYSTEM_PROMPT } from "../ideas/prompt.ts";
+import { FRESH_SYSTEM_PROMPT, IDEAS_SYSTEM_PROMPT } from "../ideas/prompt.ts";
 import { call, type Workspace, workspaceWithRepo } from "../testing/designs.ts";
 import type { FakeRepository } from "../testing/fake-github.ts";
 import { createTestApp, type TestApp } from "../testing/index.ts";
@@ -128,24 +128,98 @@ describe("GET /v1/repos/:id/ideas", () => {
     expect(prompt).not.toContain("margin: 0");
   });
 
-  test("a repo with nothing in it yet gets none, without asking the model; a push brings them", async () => {
-    ws.github.repository.description = null;
-    ws.github.repository.files = { "README.md": "# fernwood\n" };
+  test("a repo with next to nothing in it gets four ideas for where to begin, from what there is", async () => {
+    ws.github.repository.description = "Booking for a small climbing gym";
+    ws.github.repository.topics = [];
+    ws.github.repository.files = {
+      "README.md": "# fernwood\n",
+      "index.html": "<title>Fernwood climbing</title>\n<h1>Coming soon</h1>",
+    };
+    const fresh = [
+      "Lay out the home screen around today's open sessions",
+      "Draft a landing page that tells climbers how to book a slot",
+      "Sketch booking a session, from picking a time to paying",
+      "Work up directions for the gym's mark, colors and type",
+    ];
+    t.model.reply({ output: { ideas: fresh } });
     expect((await ideasOf("maya")).body).toEqual({ status: "generating", ideas: [] });
     await t.backgroundDone();
-    expect((await ideasOf("maya")).body).toEqual({ status: "none", ideas: [] });
-    expect(t.model.requests).toHaveLength(0);
-    expect(logged("ideas_skipped")).toHaveLength(1);
+    expect((await ideasOf("maya")).body).toEqual({
+      status: "ready",
+      ideas: fresh.map((prompt) => ({ prompt })),
+    });
 
-    // Asking again changes nothing until someone pushes, and then not within the hour.
-    t.clock.advance(2 * HOUR);
-    expect((await ideasOf("maya")).body.status).toBe("none");
-    Object.assign(ws.github.repository, STOREFRONT);
-    await pushed(new Date(t.clock.now()));
-    t.clock.advance(10 * 60_000);
-    expect((await ideasOf("maya")).body.status).toBe("generating");
+    // The model was asked for where to begin, with all there is: the names, the description,
+    // the README and the one other file, still fenced.
+    const [asked] = t.model.requests;
+    expect(asked!.instructions).toBe(FRESH_SYSTEM_PROMPT);
+    expect(asked!.prompt).toContain("Booking for a small climbing gym");
+    expect(asked!.prompt).toContain(`product: ${ws.repo.fullName.split("/")[1]}`);
+    expect(asked!.prompt).toContain("index.html:\n‹title›Fernwood climbing‹/title›");
+    expect(asked!.prompt).not.toContain("Nothing in it says what the product is");
+    expect(t.github.contentRequests.length).toBeLessThanOrEqual(8);
+    expect(logged("ideas_generated")).toMatchObject([{ fresh: true, ideas: 4 }]);
+  });
+
+  test("a repo with nothing to go on still gets four, told nothing says what it is", async () => {
+    ws.github.repository.description = null;
+    ws.github.repository.topics = [];
+    ws.github.repository.files = { "README.md": "# fernwood\n" };
+    await ideasOf("maya");
     await t.backgroundDone();
     expect((await ideasOf("maya")).body.status).toBe("ready");
+    const [asked] = t.model.requests;
+    expect(asked!.instructions).toBe(FRESH_SYSTEM_PROMPT);
+    expect(asked!.prompt).toContain("Nothing in it says what the product is beyond its name.");
+  });
+
+  test("for a product not built yet, an idea that redesigns what is there is asked for again", async () => {
+    ws.github.repository.files = { "README.md": "# fernwood\n\nA shop for house plants." };
+    const fresh = [
+      "Lay out the shop's home screen with this week's plants first",
+      "Draft a landing page that says who the plants are for",
+      "Sketch buying a plant, from picking a pot to checkout",
+      "Work up directions for the shop's mark, colors and type",
+    ];
+    t.model.reply(
+      {
+        output: { ideas: ["Redesign the checkout so the total stays in view", ...fresh.slice(1)] },
+      },
+      { output: { ideas: fresh } },
+    );
+    await ideasOf("maya");
+    await t.backgroundDone();
+    expect(t.model.requests).toHaveLength(2);
+    expect(t.model.requests[1]!.instructions).toContain(
+      'an idea said "redesign", as if there were screens already',
+    );
+    expect((await ideasOf("maya")).body.ideas[0].prompt).toBe(fresh[0]);
+  });
+
+  test("a repo an earlier version gave no ideas gets them at the next visit, with no push", async () => {
+    ws.github.repository.files = { "README.md": "# fernwood\n" };
+    // As the version before this one left it: an empty list, generated, waiting for a push.
+    const then = new Date(t.clock.now() - 3 * DAY);
+    const policy = {
+      now: then,
+      retryBefore: new Date(then.getTime() - HOUR),
+      staleBefore: new Date(then.getTime() - 30 * DAY),
+      windowStartedBefore: new Date(then.getTime() - HOUR),
+      windowLimit: 20,
+      version: 0,
+    };
+    expect(await claimRepoIdeas(t.db, { repoId: ws.repo.id, ...policy })).toBe("claimed");
+    await saveRepoIdeas(t.db, {
+      repoId: ws.repo.id,
+      ideas: [],
+      generatedAt: then,
+      claimedAt: then,
+      version: 0,
+    });
+    expect((await ideasOf("maya")).body).toEqual({ status: "generating", ideas: [] });
+    await t.backgroundDone();
+    expect((await ideasOf("maya")).body.status).toBe("ready");
+    expect(t.model.requests).toHaveLength(1);
   });
 
   test("ideas are made again only when a month old and pushed to since, never by a visit", async () => {
