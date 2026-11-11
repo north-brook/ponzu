@@ -52,6 +52,13 @@ export interface Workspace {
    * Absent, or undefined, when there's no canvas for one to open.
    */
   link?(key: string, opts?: { artboard?: string; origin?: string }): string | undefined;
+  /**
+   * The link to one page or artboard of this design, for the agent to paste into what it writes
+   * to the person: where they read it, a click takes their canvas there. Tools that tell the
+   * agent of a page or board give it beside the id, so it never builds one from parts. Absent
+   * where nothing follows such a link in place (the local server).
+   */
+  linkTo?(key: string, at: { page: string } | { artboard: string }): string | undefined;
   /** Whether an open canvas has an unsent reply in this thread: agents leave it open. */
   writing?(key: string, thread: string): boolean;
   /** How the person's canvas looks, once one has said. Renders default to it. */

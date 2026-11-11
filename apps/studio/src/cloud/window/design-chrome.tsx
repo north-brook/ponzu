@@ -134,7 +134,9 @@ export function DesignChrome({
               : "w-auto",
           )}
         >
-          <span className="max-w-[240px] shrink-0 truncate pr-3 pl-1 font-medium text-13 text-ink">
+          {/* No padding before it: the header's own gap and the toggle's inset already put the
+              name as far from the toggle's icon as the icon is from the traffic lights (14). */}
+          <span className="max-w-[240px] shrink-0 truncate pr-3 font-medium text-13 text-ink">
             {name}
           </span>
         </span>
