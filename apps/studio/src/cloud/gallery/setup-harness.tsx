@@ -332,15 +332,22 @@ function useSettings(initial: SettingsData, section: SettingsSection) {
           rebuild("building");
           later(2000, () => rebuild("ready"));
         }}
-        onSaveSecret={(repo, name, value) =>
-          set({
+        onSaveSecret={(repo, name, value) => {
+          // As the API refuses it (apps/api/src/environments/secrets.ts).
+          if (name.startsWith("PONZU_"))
+            return Promise.reject(
+              new Error(
+                "Names starting with PONZU_ are kept for Ponzu, Claude and the sandbox's own tools. Use another name.",
+              ),
+            );
+          return set({
             environments: data.environments.map((e) =>
               e.repo.id !== repo.id || !value || e.secrets.some((x) => x.name === name)
                 ? e
                 : { ...e, secrets: [...e.secrets, { name, updatedAt: new Date().toISOString() }] },
             ),
-          })
-        }
+          });
+        }}
         onRemoveSecret={(repo, name) =>
           set({
             environments: data.environments.map((e) =>

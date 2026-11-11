@@ -7,7 +7,7 @@ import {
   Layers01Icon,
   PencilEdit02Icon,
 } from "@hugeicons/core-free-icons";
-import { type KeyboardEvent, type ReactNode, useState } from "react";
+import { Fragment, type KeyboardEvent, type ReactNode, useId, useState } from "react";
 import type { Repo } from "../model.ts";
 import { Waiting } from "../setup/step.tsx";
 import { ago, useNow } from "../time.ts";
@@ -251,8 +251,16 @@ function Secrets({
   onSave: (name: string, value: string) => unknown;
   onRemove: (name: string) => void;
 }) {
-  const [draft, setDraft] = useState<Draft | null>(null);
+  const [draft, setDraftState] = useState<Draft | null>(null);
   const [saving, setSaving] = useState(false);
+  // Why the API refused the last save (a reserved name, say), said under the row it's about
+  // until what was typed changes.
+  const [refusal, setRefusal] = useState<string | null>(null);
+  const setDraft = (next: Draft | null) => {
+    setRefusal(null);
+    setDraftState(next);
+  };
+  const errorId = useId();
   // Remove asks once more, in place, before a secret goes: its value can't be read back.
   const [removing, setRemoving] = useState(false);
   // An edit ends with focus back on what opened it: Add, or the secret's pencil.
@@ -273,8 +281,11 @@ function Secrets({
     try {
       await onSave(draft.name, draft.value);
       close();
-    } catch {
-      // Refused: what was typed stays, beside the reason the section shows.
+    } catch (error) {
+      // Refused: what was typed stays, with the reason right under it.
+      setRefusal(
+        error instanceof Error && error.message ? error.message : "Couldn't save it. Try again.",
+      );
     } finally {
       setSaving(false);
     }
@@ -288,7 +299,12 @@ function Secrets({
     }
   };
   const adding = draft && !draft.replacing ? draft : null;
-  const nameError = adding ? secretNameError(adding.name, env.secrets) : null;
+  const nameError = adding ? (secretNameError(adding.name, env.secrets) ?? refusal) : null;
+  const say = (text: string, id: string) => (
+    <p id={id} role="alert" className="m-0 mx-2.5 pt-1 pb-1.5 text-12 text-danger leading-[1.4]">
+      {text}
+    </p>
+  );
   const saveButton = (
     <QuietButton disabled={!ok || saving} onClick={() => void save()}>
       Save
@@ -312,59 +328,64 @@ function Secrets({
       <span className="h-1.5" />
       {env.secrets.map((secret) =>
         draft?.replacing === secret.name ? (
-          <SecretRow key={secret.name} name={<SecretName>{secret.name}</SecretName>}>
-            {removing ? (
-              <>
-                <span className="truncate text-12 text-muted">Remove it from this repo?</span>
-                <button
-                  type="button"
-                  autoFocus
-                  data-keeps-escape
-                  onClick={() => {
-                    onRemove(secret.name);
-                    focus.returnTo("add");
-                    setDraft(null);
-                    setRemoving(false);
-                  }}
-                  onKeyDown={keys}
-                  className="cursor-default rounded-4 font-medium text-12 text-danger outline-none focus-ring hover:underline"
-                >
-                  Remove
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRemoving(false)}
-                  className="cursor-default rounded-4 font-medium text-12 text-muted outline-none focus-ring hover:text-ink"
-                >
-                  Keep
-                </button>
-              </>
-            ) : (
-              <>
-                <TextField
-                  compact
-                  mono
-                  autoFocus
-                  data-keeps-escape
-                  type="password"
-                  aria-label={`New value for ${secret.name}`}
-                  placeholder="New value"
-                  value={draft.value}
-                  onChange={(e) => setDraft({ ...draft, value: e.target.value })}
-                  onKeyDown={keys}
-                  className="w-[180px]"
-                />
-                {saveButton}
-                <button
-                  type="button"
-                  onClick={() => setRemoving(true)}
-                  className="cursor-default rounded-4 font-medium text-12 text-danger outline-none focus-ring hover:underline"
-                >
-                  Remove
-                </button>
-              </>
-            )}
-          </SecretRow>
+          <Fragment key={secret.name}>
+            <SecretRow name={<SecretName>{secret.name}</SecretName>}>
+              {removing ? (
+                <>
+                  <span className="truncate text-12 text-muted">Remove it from this repo?</span>
+                  <button
+                    type="button"
+                    autoFocus
+                    data-keeps-escape
+                    onClick={() => {
+                      onRemove(secret.name);
+                      focus.returnTo("add");
+                      setDraft(null);
+                      setRemoving(false);
+                    }}
+                    onKeyDown={keys}
+                    className="cursor-default rounded-4 font-medium text-12 text-danger outline-none focus-ring hover:underline"
+                  >
+                    Remove
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRemoving(false)}
+                    className="cursor-default rounded-4 font-medium text-12 text-muted outline-none focus-ring hover:text-ink"
+                  >
+                    Keep
+                  </button>
+                </>
+              ) : (
+                <>
+                  <TextField
+                    compact
+                    mono
+                    autoFocus
+                    data-keeps-escape
+                    type="password"
+                    aria-label={`New value for ${secret.name}`}
+                    invalid={refusal !== null}
+                    aria-describedby={refusal ? `${errorId}-value` : undefined}
+                    placeholder="New value"
+                    value={draft.value}
+                    onChange={(e) => setDraft({ ...draft, value: e.target.value })}
+                    onKeyDown={keys}
+                    className="w-[180px]"
+                  />
+                  {saveButton}
+                  <button
+                    type="button"
+                    onClick={() => setRemoving(true)}
+                    className="cursor-default rounded-4 font-medium text-12 text-danger outline-none focus-ring hover:underline"
+                  >
+                    Remove
+                  </button>
+                </>
+              )}
+            </SecretRow>
+            {refusal && !removing ? say(refusal, `${errorId}-value`) : null}
+          </Fragment>
         ) : (
           <SecretRow key={secret.name} name={<SecretName>{secret.name}</SecretName>}>
             <span className="font-mono text-12 text-muted">{SECRET_MASK}</span>
@@ -390,6 +411,7 @@ function Secrets({
               aria-label="Name"
               placeholder="NAME"
               invalid={nameError !== null}
+              aria-describedby={nameError ? `${errorId}-name` : undefined}
               value={adding.name}
               onChange={(e) => setDraft({ ...adding, name: secretName(e.target.value) })}
               onKeyDown={keys}
@@ -409,11 +431,7 @@ function Secrets({
             />
             {saveButton}
           </div>
-          {nameError ? (
-            <p role="alert" className="m-0 mx-2.5 pb-1 text-12 text-danger">
-              {nameError}
-            </p>
-          ) : null}
+          {nameError ? say(nameError, `${errorId}-name`) : null}
         </>
       ) : null}
     </>

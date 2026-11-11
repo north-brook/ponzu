@@ -29,7 +29,8 @@ export function EnvironmentsView({ workspaceId }: { workspaceId: string }) {
     () => new Set(workspace.data?.repos.filter((r) => r.canPush).map((r) => r.id) ?? []),
     [workspace.data],
   );
-  const refused = rebuild.error ?? save.error ?? remove.error;
+  // A refused save is said under the row it is about (the section's Secrets); these, here.
+  const refused = rebuild.error ?? remove.error;
   useEffect(() => {
     if (!refused) return;
     const timer = setTimeout(() => {
@@ -63,19 +64,28 @@ export function EnvironmentsView({ workspaceId }: { workspaceId: string }) {
         onSaveSecret={(repo, name, value) => {
           const env = answer.data.repos.find((r) => r.repo.id === repo.id);
           const replacing = env?.secrets.some((s) => s.name === name) ?? false;
-          return save.mutateAsync({ workspaceId, repoId: repo.id, name, value, replacing });
+          return save
+            .mutateAsync({ workspaceId, repoId: repo.id, name, value, replacing })
+            .catch((error: unknown) => {
+              throw new Error(refusalText(error));
+            });
         }}
         onRemoveSecret={(repo, name) => remove.mutate({ workspaceId, repoId: repo.id, name })}
       />
       {refused ? (
         <p role="alert" className="m-0 text-12 text-danger">
-          {refused instanceof ApiError && refused.status !== 0
-            ? refused.message
-            : "Couldn't reach Ponzu, so nothing changed. Try again."}
+          {refusalText(refused)}
         </p>
       ) : null}
     </>
   );
+}
+
+/** Why a change was refused, as the person reads it. */
+function refusalText(error: unknown): string {
+  return error instanceof ApiError && error.status !== 0
+    ? error.message
+    : "Couldn't reach Ponzu, so nothing changed. Try again.";
 }
 
 function loadOpen(workspaceId: string): string[] {

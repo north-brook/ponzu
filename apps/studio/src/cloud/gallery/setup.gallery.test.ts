@@ -93,6 +93,30 @@ describe.skipIf(!chromiumPath)("setup and settings", () => {
     expect(await page.$('input[aria-label="Name"]')).not.toBeNull();
   });
 
+  test("a reserved name is refused right under the Name field, which is marked", async () => {
+    await open("settings-environments");
+    await page.click('button:has-text("Add")');
+    await page.keyboard.type("ponzu qa");
+    await page.fill('input[aria-label="Value"]', "secret");
+    await page.press('input[aria-label="Value"]', "Enter");
+    const alert = await page.waitForSelector('[role="alert"]');
+    expect(await alert.textContent()).toStartWith("Names starting with PONZU_ are kept");
+    const name = 'input[aria-label="Name"]';
+    expect(await page.getAttribute(name, "aria-invalid")).toBe("true");
+    // Directly under the Name and Value row, inside the repo's card.
+    const gap = await page.evaluate(() => {
+      const field = document.querySelector('input[aria-label="Name"]')!.getBoundingClientRect();
+      const said = document.querySelector('[role="alert"]')!.getBoundingClientRect();
+      return { below: said.top - field.bottom, left: said.left - field.left };
+    });
+    expect(gap.below).toBeGreaterThanOrEqual(0);
+    expect(gap.below).toBeLessThan(16);
+    expect(Math.abs(gap.left)).toBeLessThan(16);
+    // Typing again clears it.
+    await page.fill(name, "QA_TOKEN");
+    expect(await page.$('[role="alert"]')).toBeNull();
+  });
+
   test("Escape in a secret's field cancels the edit and leaves Settings open", async () => {
     await open("settings-environments");
     await page.click('button[aria-label="Edit DATABASE_URL"]');
