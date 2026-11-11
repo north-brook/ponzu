@@ -1,11 +1,13 @@
 import { encode } from "uqr";
 
 /**
- * A QR code of `text`, `size` px square, in `currentColor`: one path of the dark modules, a run
- * per segment. No quiet zone; the tile around it is one.
+ * A QR code of `text` in `currentColor`, `module` px to a module so every edge lands on a whole
+ * pixel: one path of the dark modules, a run per segment. ECC L keeps a short link to the
+ * smallest grid, the densest a camera then has to read. No quiet zone; the tile around it is
+ * one, and should be four modules wide.
  */
-export function QrCode({ text, size, label }: { text: string; size: number; label: string }) {
-  const { data, size: modules } = encode(text, { ecc: "M", border: 0 });
+export function QrCode({ text, module, label }: { text: string; module: number; label: string }) {
+  const { data, size: modules } = encode(text, { ecc: "L", border: 0 });
   let d = "";
   data.forEach((row, y) => {
     for (let x = 0; x < modules; ) {
@@ -19,6 +21,7 @@ export function QrCode({ text, size, label }: { text: string; size: number; labe
       x += n;
     }
   });
+  const size = modules * module;
   return (
     <svg
       role="img"
