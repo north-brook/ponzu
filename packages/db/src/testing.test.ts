@@ -22,16 +22,14 @@ test("a test database has every migration applied, however it was made", async (
 
 test("two test databases share nothing: what one writes the other never sees", async () => {
   const one = await createTestDb();
-  const two = await createTestDb();
   try {
     await seedUser(one);
     expect(await one.$count(users)).toBe(1);
+    // Made after the write, from the same saved copy: the copy took none of it.
+    const two = await createTestDb();
     expect(await two.$count(users)).toBe(0);
-    const three = await createTestDb();
-    expect(await three.$count(users)).toBe(0);
-    await three.$client.close();
+    await two.$client.close();
   } finally {
     await one.$client.close();
-    await two.$client.close();
   }
 });

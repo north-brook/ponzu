@@ -14,7 +14,8 @@ import { Tabs, TabsList, TabsTrigger } from "../ui/tabs.tsx";
  * The open design's pages, as tabs. The active one is raised; the one the agent is drawing on
  * shimmers. `activeId` null is the pull request tab open, with no page showing. Arrow keys move
  * between tabs and Return or Space opens one. Too many to fit scroll under a fade, keeping the
- * active tab in view and clear of the fade: the strip never gets narrower than it needs for that.
+ * active tab in view and clear of the fade: the strip gets narrower than it needs for that only
+ * when the chrome has no more room, and then it gives way before anything beside it does.
  * ⌃1–9 open the first eight and the last; held a moment, ⌃ shows each tab its number, over its
  * icon, or on a tab without one in place of its name, centred on the tab.
  */
@@ -55,7 +56,19 @@ export function PageTabs({
       panels={false}
       className="flex min-w-0 items-center gap-0.5"
     >
-      <FadeScroll axis="x" className="min-w-0" style={{ minWidth }}>
+      <FadeScroll
+        axis="x"
+        className="min-w-0"
+        // The active tab whole, clear of the fades, while the chrome has the room; past that
+        // (the smallest window with a crowded cluster on the right) the strip gives way, and
+        // the "+" (28 and the 2 before it) keeps its place beside it.
+        style={{
+          minWidth:
+            minWidth === undefined
+              ? undefined
+              : `min(${minWidth}px, 100%${onAdd ? " - 30px" : ""})`,
+        }}
+      >
         <TabsList ref={list} aria-label="Pages" className="py-1">
           {pages.map((page, i) => {
             const active = page.id === activeId;
@@ -66,7 +79,7 @@ export function PageTabs({
                 value={page.id}
                 aria-keyshortcuts={n ? `${JUMP_KEY.page.key}+${n}` : undefined}
                 // A click opens the page without taking focus, as the chrome's buttons don't
-                // (quietPointerFocus): Radix would focus the tab itself, so the press is ours.
+                // (installFocusRule): Radix would focus the tab itself, so the press is ours.
                 onMouseDown={(e) => {
                   if (e.button !== 0 || e.ctrlKey) return;
                   e.preventDefault();

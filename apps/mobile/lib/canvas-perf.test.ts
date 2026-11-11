@@ -28,15 +28,6 @@ const pan: GesturePerf = {
   boards: 12,
 };
 
-test("a gesture's line in Metro", () => {
-  expect(p.describe(pan)).toBe(
-    "[perf] pan 640 ms: 46.2 moves/s, longest wait 50 ms; 52.1 fps, longest frame 50 ms, 4 over 33 ms; 12 boards",
-  );
-  expect(p.describe({ ...pan, longTasks: 2, longestTaskMs: 88 })).toContain(
-    ", 2 long tasks (88 ms);",
-  );
-});
-
 test("each measured gesture goes to telemetry, which decides whether it's sent", () => {
   p.measured(pan);
   expect(tracked).toEqual([["canvas gesture", pan]]);

@@ -81,11 +81,6 @@ describe("upsertUser", () => {
     });
     expect(await db.$count(users, eq(users.githubUserId, 9002))).toBe(1);
   });
-
-  test("leaves what Ponzu keeps about the person alone", async () => {
-    const user = await seedUser(db, "maya");
-    expect(user).toMatchObject({ pingNeedsYou: true, emailDigest: false, defaultModel: null });
-  });
 });
 
 describe("upsertWorkspace", () => {

@@ -520,7 +520,7 @@ export function AppWindow({
         }
       >
         <header
-          // A click on its buttons and tabs leaves focus where it was (quietPointerFocus).
+          // A click on its buttons and tabs leaves focus where it was (installFocusRule).
           data-toolbar
           className={cn(
             // 38 tall: its 28px controls with 5 above and below (CHROME in the shell's traffic-lights.ts).
