@@ -182,84 +182,79 @@ test("strikethrough and bare addresses, as GitHub writes them", () => {
 /*
  * micromark slows with the square of some shapes (a 16 KB address of dots took 1.5 s, 16 KB of
  * `![` 5 s at 64 KB) and runs out of stack on a line of nested lists. `parseable` sends those to
- * plain text; what it lets through, shaped to sit just under each of its limits, measured under
- * 100 ms at the 32 KB limit on an M-series Mac, at most about four times an ordinary reply that
- * long (a thousand one-letter paragraphs and a long fenced block cost by their number of
- * lines). The
- * bound is against that reply on the same machine, since CI runs slower: a shape that grows with
- * the square of its length costs tens to hundreds of times more. The slowest honest shape
- * measures about four times the reply on an M-series Mac and up to eight times on CI's Linux
- * runners, every draw, so the line is drawn at ten. One slow draw proves nothing on a busy
- * machine (a collection or a neighbour's test lands in it), so a text over the bound is drawn
- * again, twice at most, and its fastest draw is what counts: a shape that is slow by its nature
- * is slow every time.
+ * plain text; what it lets through, shaped to sit at each of its limits, must cost in step with
+ * its length. So each shape is drawn once at the most it may be and eight times at an eighth of
+ * that, the same work if its cost grows with its length and an eighth of it if with the square.
+ * The long draw may cost at most four times the eight short ones: the honest shapes measure under
+ * 2.5, the address of dots 8, and nested quotes and lists run out of stack. Cost is the CPU time
+ * this process spent, not the time on the clock, so a busy machine or a slow one moves both sides
+ * alike, and the least of two turns is what counts. A side under a millisecond counts as one.
  */
-test("hostile text the size of a GitHub comment draws about as fast as a reply", () => {
-  const fill = (unit: string, n = 65_536) => unit.repeat(Math.ceil(n / unit.length)).slice(0, n);
-  const under = (unit: string) => fill(unit, PROSE_LIMIT - 1);
-  const time = (text: string) => {
-    const started = performance.now();
-    html(text);
-    return performance.now() - started;
-  };
-  // Warm the parser once, as the app has by the time anything arrives.
-  html("*warm* `up`");
-  const reply = under(
-    "I moved the headline into `--hero-measure` and set **B** a step calmer, as [you asked](https://a.test).\n\n- one change\n- another\n\n",
-  );
-  const ordinary = Math.min(time(reply), time(reply), time(reply));
-  const bound = Math.max(10 * ordinary, 100);
-  const fastest = (text: string) => {
-    let best = time(text);
-    for (let again = 0; again < 2 && best >= bound; again++) best = Math.min(best, time(text));
-    return best;
-  };
-  for (const text of [
-    fill("*a "),
-    fill("_a "),
-    fill("**a "),
-    fill("~~a "),
-    fill("[a "),
-    fill("![a "),
-    fill("*_~~[`a "),
-    fill("| a "),
-    fill("- [ "),
-    `http://a${".".repeat(65_536)}x`,
-    `www.a${".".repeat(16_384)}x`,
-    `- ${fill("*a ")}`,
-    `${">".repeat(16_384)} deep`,
-    `${"- ".repeat(5000)}x`,
-    `${"*_".repeat(4096)}x${"_*".repeat(4096)}`,
-    // Brackets with no partner, which GFM's footnotes scanned back over with the square of their
-    // number; lines underlined as headings, which micromark resolves against the text before
-    // them; and short lines, in one paragraph or each its own.
-    under("a]"),
-    under("x]\n"),
-    under("a ]"),
-    under("b]a"),
-    under("a\n=\n"),
-    under("a\n-\n"),
-    under("a\n"),
-    under("a\n\n"),
-    under("[^a] "),
-    // Just under the limits.
-    under(`${"[".repeat(16)}${"a ".repeat(100)}`),
-    under(`${"*_".repeat(8)}${"a ".repeat(100)}`),
-    under(`${"*_".repeat(4)}a${"_*".repeat(4)} ${"b ".repeat(80)}`),
-    under(`http://a${".".repeat(15)}b `),
-    under("*a* bcde "),
-    under(`${"x]\n".repeat(1000)}\n`),
-    `${"a\n=\n".repeat(200)}${fill("word ", PROSE_LIMIT - 801)}`,
-    `${"a\n\n".repeat(1000)}${fill("word ", PROSE_LIMIT - 3001)}`,
-    `\`\`\`\n${fill("a\n", PROSE_LIMIT - 5)}`,
-    fill("- - - - x\n", 8000),
-    Array.from({ length: 30 }, (_, i) => `${"  ".repeat(i)}- x`)
-      .join("\n")
-      .repeat(20),
-  ]) {
-    expect(fastest(text)).toBeLessThan(bound);
-  }
-});
+const fill = (unit: string, n: number) => unit.repeat(Math.ceil(n / unit.length)).slice(0, n);
+const hostile: [(n: number) => string, number?][] = [
+  [(n) => fill("*a ", n)],
+  [(n) => fill("_a ", n)],
+  [(n) => fill("**a ", n)],
+  [(n) => fill("~~a ", n)],
+  [(n) => fill("[a ", n)],
+  [(n) => fill("![a ", n)],
+  [(n) => fill("![", n)],
+  [(n) => fill("*_~~[`a ", n)],
+  [(n) => fill("| a ", n)],
+  [(n) => fill("- [ ", n)],
+  [(n) => `http://a${".".repeat(n - 9)}x`],
+  [(n) => `www.a${".".repeat(n - 6)}x`],
+  [(n) => `- ${fill("*a ", n - 2)}`],
+  [(n) => `${">".repeat(n - 5)} deep`],
+  [(n) => `${fill("- ", n - 1)}x`],
+  [(n) => `${fill("*_", (n - 1) / 2)}x${fill("_*", (n - 1) / 2)}`],
+  // Brackets with no partner, which GFM's footnotes scanned back over with the square of their
+  // number; lines underlined as headings, which micromark resolves against the text before
+  // them; and short lines, in one paragraph or each its own, as many as `parseable` allows.
+  [(n) => fill("a]", n)],
+  [(n) => fill("x]\n", n), 3000],
+  [(n) => fill("a ]", n)],
+  [(n) => fill("b]a", n)],
+  [(n) => fill("a\n=\n", n), 800],
+  [(n) => fill("a\n-\n", n), 800],
+  [(n) => fill("a\n", n), 2000],
+  [(n) => fill("a\n\n", n), 3000],
+  [(n) => fill("[^a] ", n)],
+  // Just under the limits.
+  [(n) => fill(`${"[".repeat(16)}${"a ".repeat(100)}`, n)],
+  [(n) => fill(`${"*_".repeat(8)}${"a ".repeat(100)}`, n)],
+  [(n) => fill(`${"*_".repeat(4)}a${"_*".repeat(4)} ${"b ".repeat(80)}`, n)],
+  [(n) => fill(`http://a${".".repeat(15)}b `, n)],
+  [(n) => fill("*a* bcde ", n)],
+  [(n) => fill(`${"x]\n".repeat(1000)}\n`, n)],
+  [(n) => `${"a\n=\n".repeat(200)}${fill("word ", n - 800)}`],
+  [(n) => `${"a\n\n".repeat(1000)}${fill("word ", n - 3000)}`],
+  [(n) => `\`\`\`\n${fill("a\n", n - 4)}`],
+  [(n) => fill("- - - - x\n", n), 10_000],
+  [(n) => fill(Array.from({ length: 30 }, (_, i) => `${"  ".repeat(i)}- x`).join("\n"), n)],
+];
+for (const [make, most = PROSE_LIMIT - 1] of hostile) {
+  const long = make(most);
+  test(`hostile text costs in step with its length: ${JSON.stringify(long.slice(0, 20))}… at ${most}`, () => {
+    const short = make(Math.floor(most / 8));
+    const cpu = (text: string, times: number) => {
+      const started = process.cpuUsage();
+      for (let i = 0; i < times; i++) html(text);
+      const spent = process.cpuUsage(started);
+      return Math.max((spent.user + spent.system) / 1000, 1);
+    };
+    // Warm the parser once, as the app has by the time anything arrives.
+    html("*warm* `up`");
+    let once = Infinity;
+    let eight = Infinity;
+    for (let turn = 0; turn < 2; turn++) {
+      eight = Math.min(eight, cpu(short, 8));
+      once = Math.min(once, cpu(long, 1));
+    }
+    expect(long.length).toBeLessThan(PROSE_LIMIT);
+    expect(once / eight).toBeLessThan(4);
+  });
+}
 
 test("what can't be parsed quickly is plain text, as written", () => {
   const long = `**bold** ${"a".repeat(PROSE_LIMIT)}`;
