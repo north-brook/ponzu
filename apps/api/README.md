@@ -28,6 +28,7 @@ src/
     storage.ts      real: Cloudflare R2 over its S3 API (presigned PUTs, head, copy, delete)
     sigv4.ts        AWS Signature Version 4 on Web Crypto, for storage
     poke.ts         real: `POST /poke` to an awake runner through its sandbox's address
+    anthropic.ts    real: whether Anthropic takes an API key (the free list of models)
     realtime.ts     real: seals live queries with the branch's Realtime secret
   http/           errors, validation, request ids and logs, CORS, the client-version gate
   auth/           access declarations, authentication, authorization, sign-in
@@ -41,7 +42,12 @@ src/
                   session, thread writes, git credentials; runner.e2e.test.ts runs the real
                   runner against these routes
   uploads/        what may be uploaded and how it is served (files.ts), presign and complete
-  sandboxes/      wake.ts: requestWake, the one door from what people do to a design's sandbox
+  sandboxes/      wake.ts: requestWake, the one door from what people do to a design's sandbox;
+                  orchestrate.ts: the wake job (create, resume, a new environment, replace);
+                  environment.ts: what a sandbox starts with; sweep.ts: the minute's idle
+                  stop, dead runners, settled designs, orphans and repairs; retire.ts
+  claude/         a person's own Claude: connecting a key or a subscription (sign-in.ts drives
+                  `claude setup-token` in a utility sandbox), disconnecting, and the models
   live/           queries.ts: every live query, its arguments, who may watch it and its SQL
   jobs/           runJob and runDueJobs: work recorded in `jobs`, run now and retried by the cron
   routes/         one file per area, mounted under /v1 in routes/index.ts
@@ -165,7 +171,8 @@ has: no `Bun.…`, no DOM. `bun run typecheck` (and CI) checks exactly that.
    ```
 
    `createTestApp` is the real app on an in-process Postgres with `t.workos` and `t.github`
-   (in-memory services behind the real clients), `t.sandbox` (`FakeProvider`), `t.storage`
+   (in-memory services behind the real clients), `t.sandbox` (`FakeProvider`, with the image
+   `TEST_SNAPSHOT` baked), `t.anthropic` (the API keys Anthropic takes), `t.storage`
    (`MemoryStorage`, which holds a presigned PUT to what R2 does: its `fetch` serves the
    signed addresses and refuses other bytes, headers, sizes or a late PUT), `t.poke` (the
    pokes, recorded), `t.realtime`, `t.clock`, `t.logs` and `t.db`. `signInAs` goes through the real exchange;
