@@ -429,7 +429,7 @@ detection and no wake-on-request, so the API owns the lifecycle.
 |---|---|
 | Create | On the first message, which `POST /v1/designs` takes with the design (and a create key, so a double tap makes one). The API names the branch `pz/<topic>` from the message's first words that say something, numbered when taken, and never renames it; it creates the sandbox from Ponzu's image (a repo's base snapshot later; credits are not checked yet), and the runner checks out the branch from the default branch. |
 | First run in a repo | Claude sets the checkout up itself. The result is saved as the repo's base so later designs start warm. |
-| Run | Ops go to the API as they happen. Commits go to the branch as they happen. After each turn the runner saves a checkpoint: the session's transcript and the checkout's uncommitted work ("Saving the sandbox"). |
+| Run | Ops go to the API as they happen. Commits go to the branch as they happen, and at the end of each turn the runner pushes whatever the agent left unpushed ("Git"). After each turn the runner saves a checkpoint: the session's transcript and the checkout's uncommitted work ("Saving the sandbox"). |
 | Sleep | Five minutes after the last activity the API stops the sandbox: it asks the runner to get ready (finish the turn, settle, checkpoint, `sync`), waits up to 30 seconds for it, runs `sync` itself, then stops. A stop keeps the disk; memory survives for about ten minutes. |
 | Wake | A message, answer or comment resumes it. Cold, the runner restarts as a systemd service; warm, the API checks `/health` and starts the unit again if it is down. A disk behind the last checkpoint is restored from it; then the runner resumes the Claude session and takes its pending events. |
 | Settle | On merge the design settles and its sandbox is destroyed. |
@@ -818,7 +818,8 @@ secret's name. A Scratch design has no repo, so it has nowhere to keep one.
 - **Commits** are authored by the person (their GitHub noreply address) and
   committed by the app.
 - **Pull requests** are opened, read and merged by the API: read as the App, opened, merged
-  and acted on as the person ("Pull requests" says why). The agent has no GitHub
+  and acted on as the person ("Pull requests" says why). Ponzu never opens one by itself: the
+  person does, with Create PR. The agent has no GitHub
   API token; it hands the API its summary of the change with the runner's own tool,
   `describe_pull_request` (beside the canvas tools, for a design with a repo), which posts
   `/v1/runner/pull-request-summary`. Once a merge has gone through, the API deletes the
@@ -897,19 +898,19 @@ behind these routes, and is the reference for what each answers.
 | Method | Path | Request | Response |
 |---|---|---|---|
 | POST | `/v1/runner/session` | `{}` | `RunnerSession`, with the lease `runnerId` |
-| POST | `/v1/runner/events/claim` | `{ claimId, limit?: number }` | `{ events: RunnerEvent[], seq }` |
+| POST | `/v1/runner/events/claim` | `{ claimId, limit?: number }` | `{ events: RunnerEvent[], seq, pullRequest }` |
 | POST | `/v1/runner/events/ack` | `{ ids: string[], claudeSessionId: string \| null }` | `{ acked: number }` |
 | POST | `/v1/runner/thread` | `{ items: ThreadWrite[] }` | `{ items: [{ id, seq, streaming }] }` |
-| PUT | `/v1/runner/state` | `{ state, status, artboards, claudeSessionId, quiesced? }` | `{ seq, sleep }` |
+| PUT | `/v1/runner/state` | `{ state, status, artboards, claudeSessionId, quiesced?, branch? }` | `{ seq, sleep }` |
 | POST | `/v1/runner/questions` | `{ id, kind, payload }` | `{ id, status }` |
 | POST | `/v1/runner/questions/withdraw` | `{ ids: string[] }` | `{ withdrawn: number }` |
 | POST | `/v1/runner/uploads` | `{ files: [{ purpose, name, contentType, size, sha256 }] }` | `{ files: [{ id, put: { url, headers }, expiresAt }] }` |
 | PUT | `put.url` from the above | the bytes, with `put.headers` and no bearer | 200 |
 | POST | `/v1/runner/uploads/complete` | `{ ids: string[], seq?: number }` | `{ files: [{ id, ref, url }] }` |
 | POST | `/v1/runner/git-credential` | `{ protocol, host, path }` | `{ username, password, expiresAt }` |
-| POST | `/v1/runner/git-credential/erase` | `{ protocol, host, path }` | 204 |
+| POST | `/v1/runner/git-credential/erase` | `{ protocol, host, path, reason? }` | 204 |
 | POST | `/v1/runner/usage` | `{ turns: TurnUsage[] }` | `{ recorded: number }` |
-| POST | `/v1/runner/pull-request-summary` | `{ summary }` | `{ pullRequest: number \| null }` |
+| POST | `/v1/runner/pull-request-summary` | `{ summary }` | `{ pullRequest: number \| null, open, kept }` |
 | POST | `/v1/runner/checkpoint` | `{ turn, claudeSessionId, wipCommit, session, workspace }` | `{ saved: SavedPoint }` |
 | POST | `/v1/runner/restore` | `{}` | `{ saved, session, workspace }`, each archive `{ url, size, sha256 }` or null |
 | POST | `/v1/runner/restored` | `RestoredReport` | 204 |
@@ -967,6 +968,7 @@ Person      = { id, name, login }
 | `check` | next | `{ name, conclusion, url, summary }` | a user message, priority `next` |
 | `review` | next | `{ state, reviewer: { login }, body, url, comments: [{ path, line, body }] }` | a user message, priority `next` |
 | `stop` | now | `{}` | interrupts the running turn and what was put in behind it; nothing goes in |
+| `push` | now | `{}` | nothing goes in: the runner pushes the design's branch now, without the agent (Create PR with commits only the sandbox holds, "Pull requests") |
 
 A comment event is one new comment or one reply; an edited, resolved or reopened comment is a
 canvas edit (`edit`), and so is one an undo or a redo puts back, which was heard when it was
@@ -1041,7 +1043,9 @@ the agent made over what it ran over what it read), and may be folded or hidden.
 are the boards the agent is on during the stretch. No tool input or output is written. An
 `assistant` item cut off by an interrupt is finished with the text it had. `error` codes:
 `clone_failed`, `claude_auth`, `claude_limit`, `model_unavailable`, `max_turns`, `turn_failed`,
-`agent_exited`, `message_refused`, `question_failed`. The `waking` notice becomes `resumed` or
+`agent_exited`, `message_refused`, `question_failed`, `push_failed` (the runner gave up pushing
+the branch; its message says why and what to do, in Ponzu's words, once for a commit and a
+reason). The `waking` notice becomes `resumed` or
 `started` once Claude Code is up. A `pull_request` notice is written once for each pull request
 opening, merging and closing, under an id of its own (`ti_pr-<number>-opened`, `-merged`,
 `-closed`) that no runner can write, whichever of a route and a webhook sees it first.
@@ -1066,8 +1070,15 @@ so a payload stays far under the table's 256 KB. Safe to repeat.
 { state: "working" | "needs_you" | "idle",
   status: string | null,       // the working line; while not working, what is wrong, if anything
   artboards: string[],         // what the agent is on, from the canvas tools
-  claudeSessionId: string | null }
+  claudeSessionId: string | null,
+  branch?: { unpushed: number,   // commits on the design's branch that GitHub lacks
+             error: string | null } | null }  // why the last push of them failed, for a person
 ```
+
+`branch` is sent once the runner has pushed or tried to (at its start, at the end of each turn,
+before a sleep, and on a `push` event), and with every report after; absent, the API keeps what
+it had. The API keeps it on `design_runners` (`unpushed`, `push_error`), where the pull request
+tab reads it ("Pull requests").
 
 `needs_you` while the agent waits on a person, and while a question it asked stays open
 after its run (Questions); `status` while not working is a clone that failed or a turn that
@@ -1159,6 +1170,42 @@ the API drops the token it was reusing. Both are safe to repeat. A token is kept
 in the memory of the function instance that minted it, never in a row, so an `erase` that lands
 on another instance leaves the first one's in use until it has ten minutes left.
 
+GitHub can refuse a token it has just minted. On 2026-11-11 a push with a token minted that
+instant, and again three seconds later, got `remote: Repository not found.`: what git prints
+when GitHub knows the token but does not let it see the repository's contents. A token minted
+seven minutes earlier pushed. git calls `erase` only after a 401, never after that 404, so
+nothing heard of it, and the agent's commit stayed in the sandbox. So:
+
+- **The API checks what GitHub granted.** GitHub's answer to the mint lists the token's
+  permissions and repositories; one without `contents: write` on the design's repository is
+  minted again once, and then refused (502). Every token handed to git is logged
+  (`git_credential`: minted or reused, a fingerprint, which is the first 12 hex characters of
+  its SHA-256, its expiry, and the permissions and repository ids GitHub granted), and so is
+  every erase (`git_credential_erased`, with the fingerprint it dropped and the runner's
+  `reason`). Never the token itself.
+- **The runner hands git only a token GitHub honours.** Before it answers the helper it asks
+  GitHub's git endpoint for the repository's refs as a push would (`GET
+  /<owner>/<name>.git/info/refs?service=git-receive-pack`, from the sandbox, with the token):
+  200 means the token may push, 404 means GitHub does not (yet) let it see the contents, 403
+  that it may only read. While GitHub refuses, it waits (half a second, growing, about 15
+  seconds in all, inside the helper's 30); after four refusals of one token it gives that token
+  back (`erase`, with why) and checks the next. One that passed is not checked again. When GitHub
+  cannot be asked, or keeps refusing past the budget, git gets the token anyway and fails as it
+  would have. The runner logs each check (`git_credential_ready`, `_refused`, `_unchecked`,
+  `_unready`) by fingerprint (`apps/runner/src/git-token.ts`).
+- **The runner pushes what the agent did not** (`apps/runner/src/push.ts`). At the end of every
+  turn, before the sandbox sleeps (after the checkpoint, within what the stop's wait leaves),
+  when it starts (a restore may have brought commits back) and on a `push` event, it pushes the
+  design's branch (`git push --porcelain -u origin refs/heads/<branch>`, as the agent, through
+  the same helper) when it has commits the default branch lacks. git itself finds out whether
+  GitHub already has them, so a branch deleted on GitHub is pushed again. It never forces: a
+  branch that moved on GitHub, a protected branch or a rule that refuses it is reported, not
+  retried. Anything else is tried again after 2, 5, 10 and 15 seconds, giving the token back
+  before each try. While it pushes commits GitHub lacks, the design's state says "Pushing to
+  GitHub". It reports the outcome with its state (`branch`), and when it gives up it says so in
+  the thread (`push_failed`), once for a commit and a reason. The commits are safe either way:
+  the checkpoint's bundle carries every commit GitHub lacks.
+
 At start the runner sets `author.*` to the person and `committer.*` to the App's bot in the
 agent's global git config, clones the repository into `~/work/<name>` of the agent's user
 (`/home/agent/work` in the image), as that user (or fetches, when the disk kept
@@ -1249,14 +1296,29 @@ when a question stays open) and exits.
 
 `POST /v1/runner/pull-request-summary` takes the agent's words on what its branch changes
 (markdown, clipped to 8,000 characters). The API keeps them on the design and, when its pull
-request is open, writes them into the description in place of what it said before; the answer
-names that pull request, or is null while they wait for one to open. Safe to repeat: the last
-one wins.
+request is open, writes them into the description on GitHub in place of what it said before.
+The answer says what happened: `pullRequest`, the number it was written into, or null; `open`,
+the design's pull request as the app shows it (`{ number, state }` or null); and `kept`, why the
+words were only kept: `none_open` (they become the description of the pull request the person
+opens), `rewritten` (one is open but someone rewrote its description without Ponzu's part) or
+`unreadable` (GitHub could not be read). Safe to repeat: the last one wins.
 
 The agent says them through a tool the runner hosts beside the canvas tools,
-`describe_pull_request({ summary })`, on a repo design whose repository is checked out. The
-runner's instructions ask it to call the tool whenever it pushes; the tool's answer says whether
-an open pull request now says it or the summary is kept for the one Ponzu opens.
+`describe_pull_request({ summary })`, on a repo design whose repository is checked out; the
+thread calls the step "Writing the pull request description". The tool's answer says what it
+did in words the agent can repeat: "Updated the description of pull request #N on GitHub", or
+"Saved as the description the pull request will open with. No pull request is open yet: the
+person opens it with Create PR in Ponzu" (and that commits are still to be pushed, when they
+are), or that #N is open and why its description was left alone.
+
+**What the agent knows.** Its instructions say Ponzu never opens a pull request by itself (the
+person does, with Create PR), that a failed push is Ponzu's to retry rather than something to
+work around, to write the description once the branch has its change, never to say it opened or
+updated a pull request unless the tool's answer named one, and to end a turn by saying where the
+work stands: committed and on GitHub or not, the description ready, and Create PR when they're
+ready. Each turn starts with a line after the person's words, from the claim's `pullRequest` and
+the last push: `(From Ponzu: no pull request is open for <branch>. …)`, or `pull request #N is
+open …`, and how many commits GitHub still lacks, with why the last push failed.
 
 ## Pull requests
 
@@ -1270,7 +1332,7 @@ pull-requests/` and `deps/github-pull-requests.ts`.
 |---|---|---|---|
 | GET | `/v1/designs/:id/pull-request` | none | `PullRequestTab` |
 | GET | `/v1/designs/:id/pull-request/files?path=` | none | one file and its diff |
-| POST | `/v1/designs/:id/pull-request` | none | 201 `PullRequestTab`; 200 when one was open |
+| POST | `/v1/designs/:id/pull-request` | none | 201 `PullRequestTab`; 200 when one was open; 202 while the sandbox pushes first |
 | POST | `/v1/designs/:id/pull-request/ready` | none | `PullRequestTab` |
 | POST | `/v1/designs/:id/pull-request/merge` | `{ headSha, bypass? }` | `PullRequestTab` |
 | POST, DELETE | `/v1/designs/:id/pull-request/auto-merge` | none | `PullRequestTab` |
@@ -1278,13 +1340,16 @@ pull-requests/` and `deps/github-pull-requests.ts`.
 | POST | `/v1/designs/:id/pull-request/update-branch` | `{ headSha }` | `PullRequestTab` |
 
 Reading takes read access to the design; the rest takes write access. `PullRequestTab` is the
-branch (`exists`, `aheadBy`, `behindBy` against the default branch), the pull request or null
+branch (`exists`, `aheadBy`, `behindBy` against the default branch, and `unpushed` and
+`pushError`, the commits only the sandbox holds and why their last push failed, as its runner
+last said), the pull request or null
 (state, draft, mergeable and GitHub's merge state, review decision and reviews, every check with
 its state, whether the repo's rules require it, and its link, the conversation (the last
 hundred comments and reviews) with line comments, the first hundred changed files with their
 counts, the last hundred commits), the merge method Merge would use, whether the repo allows
-auto-merge, and `nextAction`, the one thing the chrome's button offers: `create_pr` (the branch
-has commits and no open pull request, or commits since its pull request merged), `ready` (a
+auto-merge, and `nextAction`, the one thing the chrome's button offers: `create_pr` (the design
+has commits its base lacks, on GitHub or only in its sandbox, and no open pull request, or
+commits since its pull request merged), `ready` (a
 draft), `resolve` (conflicts), `fix_checks` (a check failed), `auto_merge` (checks are running,
 or the rules want a review, and the repo allows auto-merge), `update_branch` (the rules hold it
 back for being behind), `merge`, `blocked` (the rules want something, a review or a required
@@ -1357,13 +1422,21 @@ copy deleted from storage. What stays exposed: whoever could read the descriptio
 first page as it was, a mail or an integration may keep a copy, and an earlier pull request of
 the same design (one closed, or merged before the design was reopened) keeps its picture.
 
+**Commits only the sandbox holds.** When the runner has said the branch has commits GitHub
+lacks, Create PR asks it to push them: a `push` event (priority `now`, which wakes a sleeping
+sandbox), with the last push's error cleared, since this is a new try. When GitHub has
+something to open the pull request from, it opens at once and the push brings the rest; when it
+has nothing yet, the answer is 202 with the tab, and the person's client reads the tab every few
+seconds and asks again once GitHub has the commits, or says the runner's reason when the push
+fails, or gives up after three minutes. The person never has finished work and no button.
+
 Where the repo's plan has no draft pull requests GitHub refuses one, and a ready one is opened
 instead. Asking again answers the pull request already open from the branch, or the merged one
 until the branch has commits since its merge (the design was reopened and worked on), when a
 new one is opened from the same branch; one someone opened on GitHub from the branch into the
 default branch is the design's too; after one is closed, asking opens a new one. Refused:
-Scratch (409 `no_repository`), a branch not on GitHub (`branch_not_pushed`), a branch with
-nothing the default branch lacks (`no_changes`).
+Scratch (409 `no_repository`), a branch not on GitHub with nothing in the sandbox to push
+(`branch_not_pushed`), a branch with nothing the default branch lacks (`no_changes`).
 
 The agent's summary sits between `<!-- ponzu:summary -->` and `<!-- /ponzu:summary -->`, and
 only that part is written again. A description someone rewrote without those markers is theirs:

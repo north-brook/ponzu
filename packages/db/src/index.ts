@@ -225,6 +225,7 @@ export {
   verifyRunnerToken,
 } from "./queries/runner-tokens.ts";
 export {
+  askRunnerToPush,
   countSandboxRollback,
   getQuiescedFor,
   getRunnerContext,

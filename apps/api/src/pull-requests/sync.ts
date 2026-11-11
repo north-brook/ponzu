@@ -30,6 +30,11 @@ export interface PullRequestTarget {
   defaultBranch: string;
   /** The pull request the row last recorded. */
   number: number | null;
+  /**
+   * The branch in the design's sandbox as its runner last said: commits GitHub lacks, and why
+   * the last push failed. Absent where it was not read.
+   */
+  sandbox?: { unpushed: number; pushError: string | null };
 }
 
 /** What asking GitHub about a design's pull request takes, or why it cannot be asked. */
@@ -54,6 +59,7 @@ export function targetOf(context: PullRequestContext): PullRequestTarget | ApiEr
     branch: design.branch,
     defaultBranch: repo.defaultBranch,
     number: design.prNumber,
+    sandbox: context.sandbox,
   };
 }
 

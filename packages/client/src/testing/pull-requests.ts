@@ -70,6 +70,11 @@ export class FakePullRequests {
   private conflicting = false;
   /** What the repo's rules want before a merge. */
   rules = { review: false, upToDate: false };
+  /** Commits only the design's sandbox holds, as its runner said, and why their push failed. */
+  private unpushed: FakeFileInput[][] = [];
+  private pushError: string | null = null;
+  /** How many times Create PR asked the sandbox to push. */
+  pushesAsked = 0;
   autoMergeAllowed = true;
 
   constructor(
@@ -82,6 +87,29 @@ export class FakePullRequests {
   /* ---------------------------------------------------------------- */
   /* GitHub, played by hand                                            */
   /* ---------------------------------------------------------------- */
+
+  /**
+   * A commit the agent made that only its sandbox holds: GitHub lacks it until `landPush`. With
+   * `error`, the runner's last push of it failed, saying so.
+   */
+  commitUnpushed(files: FakeFileInput[] = [{ path: "src/app.tsx" }], error: string | null = null) {
+    this.unpushed.push(files);
+    this.pushError = error;
+    this.events.changed();
+  }
+
+  /** The runner's push of what only the sandbox held reached GitHub. */
+  landPush(): void {
+    const commits = this.unpushed.splice(0);
+    this.pushError = null;
+    for (const files of commits) this.push(files);
+  }
+
+  /** The runner's push failed, and it said why. */
+  failPush(error: string): void {
+    this.pushError = error;
+    this.events.changed();
+  }
 
   /** Commits to the branch, as the agent's pushes do, changing these files. */
   push(files: FakeFileInput[] = [{ path: "src/app.tsx" }]): string {
@@ -184,6 +212,8 @@ export class FakePullRequests {
         exists,
         aheadBy: this.aheadBy(),
         behindBy: this.baseMoved,
+        unpushed: this.unpushed.length,
+        pushError: this.pushError,
       },
       pullRequest: pull && this.view(pull),
       mergeMethod: "squash",
@@ -207,10 +237,21 @@ export class FakePullRequests {
     };
   }
 
-  /** A draft by `author`, titled with the design's name. */
-  open(author: string, title: string): { tab: Tab; opened: boolean } {
+  /**
+   * A draft by `author`, titled with the design's name. Commits only the sandbox holds are asked
+   * for first; with nothing on GitHub to open it from yet, the answer says the push is under way.
+   */
+  open(author: string, title: string): { tab: Tab; opened: boolean; pushing?: boolean } {
     if (this.pull && this.pull.state !== "closed" && this.nextAction() !== "create_pr") {
       return { tab: this.tab(), opened: false };
+    }
+    if (this.unpushed.length) {
+      // A new try: what the last push said is moot until the runner says how this one went.
+      this.pushesAsked++;
+      this.pushError = null;
+    }
+    if (this.unpushed.length && !this.aheadBy()) {
+      return { tab: this.tab(), opened: false, pushing: true };
     }
     if (!this.commits.length) {
       throw new ApiError(
@@ -332,9 +373,13 @@ export class FakePullRequests {
   /** As `nextAction` in apps/api/src/pull-requests/view.ts. */
   private nextAction(): Tab["nextAction"] {
     const pull = this.pull;
-    if (!pull || pull.state === "closed") return this.aheadBy() > 0 ? "create_pr" : "none";
+    const unpushed = this.unpushed.length > 0;
+    if (!pull || pull.state === "closed") {
+      return this.aheadBy() > 0 || unpushed ? "create_pr" : "none";
+    }
     if (pull.state === "merged") {
-      return this.commits.at(-1) !== pull.headSha && this.aheadBy() > 0 ? "create_pr" : "none";
+      const since = this.commits.at(-1) !== pull.headSha && this.aheadBy() > 0;
+      return since || unpushed ? "create_pr" : "none";
     }
     if (pull.state === "draft") return "ready";
     if (this.conflicting) return "resolve";

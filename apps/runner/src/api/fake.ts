@@ -20,6 +20,8 @@ import {
   type Notice,
   type Person,
   type Priority,
+  type PullRequestState,
+  type PullRequestSummaryResponse,
   type QuestionRequest,
   type QuestionResponse,
   type RestoredReport,
@@ -307,7 +309,11 @@ export class FakeRunnerApi {
     ).slice(0, Math.min(limit, CLAIM_LIMIT));
     for (const e of waiting) Object.assign(e, { claimedBy: runner, claimId });
     if (this.lostAnswers.delete("claim")) throw new TypeError("fetch failed");
-    return { events: waiting.map((e) => structuredClone(e.event)), seq: this.doc.seq };
+    return {
+      events: waiting.map((e) => structuredClone(e.event)),
+      seq: this.doc.seq,
+      pullRequest: this.pullRequest,
+    };
   }
 
   async ack(runner: string, ids: string[], claudeSessionId: string | null): Promise<void> {
@@ -412,13 +418,19 @@ export class FakeRunnerApi {
     for (const turn of turns) this.usage.set(turn.id, structuredClone(turn));
   }
 
-  /** The agent's pull request summaries, in the order they came; none is open here. */
+  /** The agent's pull request summaries, in the order they came. */
   readonly summaries: string[] = [];
+  /** The design's pull request as the app shows it: what claims and summaries answer. None here. */
+  pullRequest: PullRequestState | null = null;
 
-  async pullRequestSummary(runner: string, summary: string): Promise<number | null> {
+  async pullRequestSummary(runner: string, summary: string): Promise<PullRequestSummaryResponse> {
     await this.enter("pullRequestSummary", runner);
     this.summaries.push(summary);
-    return null;
+    const open = this.pullRequest;
+    const written = open && (open.state === "open" || open.state === "draft");
+    return written
+      ? { pullRequest: open.number, open, kept: null }
+      : { pullRequest: null, open, kept: "none_open" };
   }
 
   async commit(runner: string, ops: Parameters<SyncTransport["commit"]>[0]) {

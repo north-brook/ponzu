@@ -62,6 +62,7 @@ const RUN_ERRORS = [
   "agent_exited",
   "message_refused",
   "question_failed",
+  "push_failed",
 ] as const satisfies RunErrorCode[];
 
 const RunnerNotice = z.discriminatedUnion("type", [
@@ -112,6 +113,17 @@ export const State: z.ZodType<StateRequest, unknown> = z.object({
   artboards: Artboards,
   claudeSessionId: SessionId.nullable(),
   quiesced: z.iso.datetime({ offset: true }).nullable().optional(),
+  branch: z
+    .object({
+      unpushed: z
+        .number()
+        .int()
+        .min(0)
+        .max(2 ** 31 - 1),
+      error: text(1_000).nullable(),
+    })
+    .nullable()
+    .optional(),
 });
 
 const Turn = z
@@ -210,6 +222,7 @@ export const GitCredential: z.ZodType<GitCredentialRequest> = z.object({
   protocol: z.string().max(32),
   host: z.string().max(256),
   path: z.string().max(512),
+  reason: text(500).optional(),
 });
 
 export const PullRequestSummary: z.ZodType<PullRequestSummaryRequest> = z.object({

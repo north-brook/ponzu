@@ -1,4 +1,4 @@
-import type { AnswerEvent, Person, RunnerEvent } from "./api/protocol.ts";
+import type { AnswerEvent, Person, PullRequestState, RunnerEvent } from "./api/protocol.ts";
 
 /*
  * What the model reads for each event. Every one starts with a line that says what it is and
@@ -17,8 +17,40 @@ export const RUNNER_INSTRUCTIONS = [
   "Ids such as artboard and thread ids are for the tools. When you write to people, name artboards and pages as they are named on the canvas, never by id.",
 ].join(" ");
 
-/** The text an event goes into the session as. `stop` is not one: it interrupts instead. */
-export function eventText(event: Exclude<RunnerEvent, { kind: "stop" }>): string {
+/**
+ * What a turn on a repo design starts with, after the event: where the design's pull request
+ * and branch stand as the app shows them, so the agent never speaks of a pull request that does
+ * not exist and knows who opens one.
+ */
+export function turnContext({
+  branch,
+  pullRequest,
+  unpushed,
+  pushFailed,
+}: {
+  branch: string;
+  pullRequest: PullRequestState | null;
+  unpushed: number;
+  /** git's last words on the push that failed, if the last one did. */
+  pushFailed: string | null;
+}): string {
+  const pr = pullRequest;
+  const where =
+    pr && (pr.state === "open" || pr.state === "draft")
+      ? `pull request #${pr.number} is open${pr.state === "draft" ? " as a draft" : ""} from ${branch}: pushing to the branch updates it, and describe_pull_request rewrites its description.`
+      : pr?.state === "merged"
+        ? `pull request #${pr.number} from ${branch} was merged. Nothing is open now: for new commits the person opens another with Create PR.`
+        : `no pull request is open for ${branch}. Ponzu doesn't open one by itself: the person opens it with Create PR once the branch has commits.`;
+  const commits = unpushed === 1 ? "1 commit" : `${unpushed} commits`;
+  const pending =
+    unpushed > 0
+      ? ` ${commits} on ${branch} ${unpushed === 1 ? "isn't" : "aren't"} on GitHub yet${pushFailed ? ` (the last push failed: ${pushFailed})` : ""}; Ponzu pushes the branch when your turn ends.`
+      : "";
+  return `(From Ponzu: ${where}${pending})`;
+}
+
+/** The text an event goes into the session as. A stop and a push are not: neither reaches the agent. */
+export function eventText(event: Exclude<RunnerEvent, { kind: "stop" | "push" }>): string {
   const who = name(event.from);
   switch (event.kind) {
     case "message":

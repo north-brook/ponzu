@@ -1,14 +1,17 @@
 import {
+  askRunnerToPush,
   getPullRequestContext,
   type PullRequestContext,
   randomString,
   setPullRequestSummary,
   type User,
 } from "@ponzu/db";
+import type { PullRequestSummaryResponse } from "@ponzu/runner/protocol";
 import type { Deps } from "../deps/index.ts";
 import { githubUserToken } from "../github/user-token.ts";
 import { ApiError } from "../http/errors.ts";
 import { designLink } from "../runner/session.ts";
+import { requestWake, type WakeDeps } from "../sandboxes/wake.ts";
 import {
   isOpen,
   type PullRequestDeps,
@@ -25,7 +28,9 @@ import { type PullRequestTab, toTab } from "./view.ts";
  * rules want a review, GitHub wants it from someone else.
  */
 
-type OpenDeps = PullRequestDeps & Pick<Deps, "background" | "config" | "storage" | "vault">;
+type OpenDeps = PullRequestDeps &
+  WakeDeps &
+  Pick<Deps, "background" | "config" | "storage" | "vault">;
 
 /** Where the agent's words go in a description, so they can be written again in place. */
 const SUMMARY_START = "<!-- ponzu:summary -->";
@@ -43,14 +48,19 @@ const PICTURES = "pull-requests";
  * Open a draft pull request from the design's branch into the repo's default branch, or answer
  * the one already open from it: `opened` says which. A merged one is answered too, until the
  * branch has commits since its merge (the design was reopened and worked on): then a new one is
- * opened. Refused when the design is Scratch, its branch is not on GitHub, or the branch has
- * nothing the default branch lacks.
+ * opened. Refused when the design is Scratch, or the branch has nothing the default branch lacks
+ * on GitHub or in the sandbox.
+ *
+ * Commits only the sandbox holds (its runner said so) are pushed first: the runner is asked with
+ * a `push` event, which wakes a sleeping sandbox. When GitHub has nothing to open a pull request
+ * from yet, the answer is the tab with `pushing` set, and the person's client asks again once the
+ * branch is there.
  */
 export async function openPullRequest(
   deps: OpenDeps,
   context: PullRequestContext,
   user: User,
-): Promise<{ tab: PullRequestTab; opened: boolean }> {
+): Promise<{ tab: PullRequestTab; opened: boolean; pushing?: boolean }> {
   const target = targetOf(context);
   if (target instanceof ApiError) throw target;
   const found = await readPullRequest(deps, target);
@@ -62,8 +72,21 @@ export async function openPullRequest(
     await recordCurrent(deps, target.designId, found);
     return { tab: toTab(target, found.read, deps.config.githubApp.slug), opened: false };
   }
-  if (!branch) throw notPushed(target.branch);
-  if (branch.aheadBy === 0) throw noChanges(target.branch, target.defaultBranch);
+  const { unpushed } = context.sandbox;
+  if (unpushed > 0) {
+    await askRunnerToPush(deps.db, { designId: target.designId, userId: user.id });
+    await requestWake(deps, target.designId, "push");
+  }
+  if (!branch || branch.aheadBy === 0) {
+    if (unpushed > 0) {
+      // A new try: what the last push said is moot until the runner says how this one went.
+      const asked = { ...target, sandbox: { unpushed, pushError: null } };
+      const tab = toTab(asked, found.read, deps.config.githubApp.slug);
+      return { tab, opened: false, pushing: true };
+    }
+    if (!branch) throw notPushed(target.branch);
+    throw noChanges(target.branch, target.defaultBranch);
+  }
 
   const token = await githubUserToken(deps, user.id);
   const input = {
@@ -111,32 +134,44 @@ export async function openPullRequest(
 /**
  * Keep the agent's words on what the branch changes, and write them into the open pull
  * request's description in place of what it said before. Answers the number of the pull request
- * that now carries them, or null when they wait for one to open (or the description no longer
- * has Ponzu's part, because someone rewrote it on GitHub, which is theirs to keep).
+ * that now carries them, or null with why they were only kept: no pull request is open (they
+ * become the description of the one the person opens with Create PR), or the open one's
+ * description no longer has Ponzu's part because someone rewrote it on GitHub (theirs to keep),
+ * or GitHub could not be read. `open` is the design's pull request as the app shows it, either way.
  */
 export async function savePullRequestSummary(
   deps: PullRequestDeps,
   designId: string,
   summary: string,
-): Promise<number | null> {
+): Promise<Required<PullRequestSummaryResponse>> {
   const saved = await setPullRequestSummary(deps.db, { designId, summary });
   if (!saved) throw new ApiError(404, "not_found", "There is no such design.");
-  if (saved.prState !== "open" && saved.prState !== "draft") return null;
+  const open =
+    saved.prNumber !== null && saved.prState !== null
+      ? { number: saved.prNumber, state: saved.prState }
+      : null;
+  const kept = (why: "none_open" | "rewritten" | "unreadable") => ({
+    pullRequest: null,
+    open,
+    kept: why,
+  });
+  if (saved.prState !== "open" && saved.prState !== "draft") return kept("none_open");
   const context = await getPullRequestContext(deps.db, designId);
   const target = context && targetOf(context);
-  if (!target || target instanceof ApiError) return null;
+  if (!target || target instanceof ApiError) return kept("unreadable");
   const { read } = await readPullRequest(deps, target);
   const pullRequest = read.pullRequest;
-  if (!isOpen(pullRequest)) return null;
+  if (!isOpen(pullRequest)) return { ...kept("none_open"), open: null };
+  const current = { number: pullRequest.number, state: pullRequest.state };
   const body = withSummary(pullRequest.body, summary);
   if (body === null) {
     deps.log.info("pull_request_summary_kept", { designId, reason: "description_rewritten" });
-    return null;
+    return { ...kept("rewritten"), open: current };
   }
   if (body !== pullRequest.body) {
     await deps.github.editPullRequestBody(target.repo, pullRequest.number, body);
   }
-  return pullRequest.number;
+  return { pullRequest: pullRequest.number, open: current, kept: null };
 }
 
 /**

@@ -92,6 +92,10 @@ export type GithubRefreshResult =
 export interface GithubInstallationToken {
   token: string;
   expiresAt: Date;
+  /** What GitHub says the token may do, as it answered the mint; absent when it did not say. */
+  permissions?: Record<string, string>;
+  /** The repositories GitHub says it reaches, when it was narrowed to some. */
+  repositoryIds?: number[];
 }
 
 /**

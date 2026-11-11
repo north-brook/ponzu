@@ -45,7 +45,7 @@ const CANVAS_OTHER: Record<string, string> = {
   reply: "Replying to a comment",
   set_comment_status: "Resolving comments",
   send_feedback: "Telling Ponzu",
-  describe_pull_request: "Describing the pull request",
+  describe_pull_request: "Writing the pull request description",
 };
 
 const CANVAS_MAKES = new Set([

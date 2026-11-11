@@ -136,9 +136,7 @@ export function fakeApiHandler(
           await fake.reportRestored(runner, body);
           return new Response(null, { status: 204 });
         case "POST /v1/runner/pull-request-summary":
-          return Response.json({
-            pullRequest: await fake.pullRequestSummary(runner, body.summary),
-          });
+          return Response.json(await fake.pullRequestSummary(runner, body.summary));
         case `POST ${design}/ops`:
           return Response.json(await fake.commit(runner, body.ops as ClientOp[]));
         case `GET ${design}/ops`: {

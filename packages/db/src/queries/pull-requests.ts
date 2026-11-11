@@ -13,6 +13,7 @@ import {
 import type { Db } from "../client.ts";
 import {
   type DesignStatus,
+  designRunners,
   designs,
   type PrChecks,
   type PrState,
@@ -109,6 +110,11 @@ export interface PullRequestContext {
   installationId: number | null;
   /** Set while the App is suspended on the workspace. */
   suspendedAt: Date | null;
+  /**
+   * The design's branch in its sandbox as the runner last said: commits GitHub does not have,
+   * and why the last push of them failed. None before a runner has said.
+   */
+  sandbox: { unpushed: number; pushError: string | null };
 }
 
 /** A design with its repo and installation, or null when there is no such design. */
@@ -127,10 +133,13 @@ export async function getPullRequestContext(
         private: repos.private,
         installationId: workspaces.installationId,
         suspendedAt: workspaces.suspendedAt,
+        unpushed: designRunners.unpushed,
+        pushError: designRunners.pushError,
       })
       .from(designs)
       .innerJoin(workspaces, eq(workspaces.id, designs.workspaceId))
       .leftJoin(repos, eq(repos.id, designs.repoId))
+      .leftJoin(designRunners, eq(designRunners.designId, designs.id))
       .where(eq(designs.id, designId)),
   );
   if (!row) return null;
@@ -144,6 +153,7 @@ export async function getPullRequestContext(
         : { githubRepoId, fullName, defaultBranch, private: row.private ?? true },
     installationId: row.installationId,
     suspendedAt: row.suspendedAt,
+    sandbox: { unpushed: row.unpushed ?? 0, pushError: row.pushError ?? null },
   };
 }
 

@@ -14,6 +14,7 @@ import { HttpRunnerApi } from "./api/http.ts";
 import { decodeRepoSecrets, REPO_SECRETS_VARIABLE } from "./api/protocol.ts";
 import { agentEnv, EnvError, readEnv } from "./env.ts";
 import { agentFiles } from "./files.ts";
+import { receivePackProbe } from "./git-token.ts";
 import { checkout } from "./repo.ts";
 import { Runner } from "./run.ts";
 import { agentShell } from "./save/shell.ts";
@@ -137,6 +138,10 @@ const runner = new Runner({
     return { transcripts, work };
   },
   boot,
+  // The runner pushes the design's branch with the agent's git, so the checkout stays theirs.
+  checkoutGit: (cwd) => gitIn(agentShell(undefined, agentEnv(process.env)), env.git ?? "git", cwd),
+  // A token goes to git once GitHub's git endpoint honours it for a push (git-token.ts).
+  gitProbe: receivePackProbe(),
   log,
   event: (name, fields) => log(JSON.stringify({ event: name, designId: env.designId, ...fields })),
   onFatal: () => {

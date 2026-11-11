@@ -34,6 +34,7 @@ export const EVENT_KINDS = [
   "check",
   "review",
   "stop",
+  "push",
 ] as const;
 export const EVENT_PRIORITIES = ["now", "next", "later"] as const;
 export const QUESTION_KINDS = [

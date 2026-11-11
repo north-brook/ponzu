@@ -510,6 +510,12 @@ export const designRunners = pgTable("design_runners", {
    * get ready for. The idle stop waits a little for it to match before it stops the sandbox.
    */
   quiescedFor: instant("quiesced_for"),
+  /**
+   * The design's branch in the sandbox against GitHub, as the runner last said: commits GitHub
+   * lacks, and why the last push of them failed. Create PR goes by it while GitHub lacks them.
+   */
+  unpushed: integer("unpushed").notNull().default(0),
+  pushError: text("push_error"),
 });
 
 /**

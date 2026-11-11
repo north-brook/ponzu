@@ -15,6 +15,7 @@ import {
 } from "@ponzu/db";
 import { feedOf } from "@ponzu/db/testing";
 import { RUNNER_HEADER } from "@ponzu/runner/protocol";
+import { fingerprint } from "../runner/git-credential.ts";
 import {
   call,
   designIn,
@@ -184,6 +185,8 @@ describe("events", () => {
         expect.objectContaining({ kind: "check", priority: "next", from: null }),
       ],
       seq: 0,
+      // No pull request yet: the agent's next turn says so.
+      pullRequest: null,
     });
   });
 
@@ -710,16 +713,70 @@ describe("git credentials", () => {
   });
 
   test("an erased token is not handed out again", async () => {
-    const { runner } = await sample();
+    const { design, runner } = await sample();
     const ask = github(`${ws.repo.fullName}.git`);
     const first = await send(runner, "POST", "/git-credential", ask);
 
-    const erased = await send(runner, "POST", "/git-credential/erase", ask);
+    const erased = await send(runner, "POST", "/git-credential/erase", {
+      ...ask,
+      reason: "GitHub's git answered 404 to the runner's check, 4 times",
+    });
     await send(runner, "POST", "/git-credential/erase", ask);
     const next = await send(runner, "POST", "/git-credential", ask);
 
     expect(erased.status).toBe(204);
     expect(next.body.password).not.toBe(first.body.password);
+    // Which token was given back, and why, by its fingerprint.
+    expect(t.logs.filter((line) => line.event === "git_credential_erased").slice(-2)).toEqual([
+      expect.objectContaining({
+        designId: design.id,
+        fingerprint: fingerprint(first.body.password),
+        reason: "GitHub's git answered 404 to the runner's check, 4 times",
+      }),
+      expect.objectContaining({ fingerprint: null, reason: null }),
+    ]);
+  });
+
+  test("every token git is handed is logged: minted or reused, its expiry and what GitHub granted, never the token", async () => {
+    const { design, runner } = await sample();
+    const ask = github(`${ws.repo.fullName}.git`);
+    await send(runner, "POST", "/git-credential/erase", ask);
+    const first = await send(runner, "POST", "/git-credential", ask);
+    await send(runner, "POST", "/git-credential", ask);
+
+    const lines = t.logs.filter((line) => line.event === "git_credential").slice(-2);
+    const said = {
+      designId: design.id,
+      fingerprint: fingerprint(first.body.password),
+      expiresAt: first.body.expiresAt,
+      permissions: { contents: "write", metadata: "read" },
+      repositoryIds: [ws.repo.githubRepoId],
+    };
+    expect(lines).toEqual([
+      expect.objectContaining({ ...said, minted: true }),
+      expect.objectContaining({ ...said, minted: false }),
+    ]);
+    expect(JSON.stringify(t.logs)).not.toContain(first.body.password);
+  });
+
+  test("a token GitHub grants less than contents: write is minted again, and never handed to git", async () => {
+    const { runner } = await sample();
+    const ask = github(`${ws.repo.fullName}.git`);
+    await send(runner, "POST", "/git-credential/erase", ask);
+    const asked = t.github.installationTokenRequests.length;
+
+    t.github.grantNext.push({ metadata: "read" });
+    const second = await send(runner, "POST", "/git-credential", ask);
+    expect(second.status).toBe(200);
+    expect(t.github.installationTokenRequests.length - asked).toBe(2);
+    expect(t.logs.findLast((line) => line.event === "git_credential")).toMatchObject({
+      permissions: { contents: "write", metadata: "read" },
+    });
+
+    await send(runner, "POST", "/git-credential/erase", ask);
+    t.github.grantNext.push({ metadata: "read" }, { contents: "read", metadata: "read" });
+    const refused = await send(runner, "POST", "/git-credential", ask);
+    expect([refused.status, refused.body.error.code]).toEqual([502, "upstream_unavailable"]);
   });
 
   test("any other host, path or protocol is forbidden, Scratch has none, and GitHub failing is upstream", async () => {

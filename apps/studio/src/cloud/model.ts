@@ -194,7 +194,8 @@ export type RunErrorCode =
   | "turn_failed"
   | "agent_exited"
   | "message_refused"
-  | "question_failed";
+  | "question_failed"
+  | "push_failed";
 
 export type ThreadNotice =
   | { type: "waking" }
