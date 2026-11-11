@@ -129,7 +129,7 @@ jobs:
           check studio bun run --filter @ponzu/studio build
           check web bun run --filter @ponzu/web build
           check api bun scripts/ci/api-bundle.ts
-          check runner bun apps/runner/scripts/build.ts --smoke
+          check runner bun apps/runner/scripts/build.ts --smoke --outdir "$RUNNER_TEMP/runner"
           failed=0
           # Beside the builds above, a test file's first in-process Postgres can take longer to
           # boot than bun's five seconds; it takes well under one alone.

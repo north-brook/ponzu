@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "hono",
-  "installCommand": "bun install --frozen-lockfile --ignore-scripts --filter @ponzu/api",
+  "installCommand": "bun install --frozen-lockfile --ignore-scripts --filter @ponzu/api --filter @ponzu/runner",
   "buildCommand": "bun run build",
   "outputDirectory": "dist",
   "regions": ["iad1"],
