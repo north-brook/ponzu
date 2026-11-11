@@ -23,6 +23,7 @@ import { PullRequestMark, PullRequestTab } from "../window/pull-request-mark.tsx
 import { ThreadToggle } from "../window/thread-toggle.tsx";
 import * as f from "./fixtures.ts";
 import { CreateHarness } from "./harness.tsx";
+import { ThreadStates } from "./thread-states.tsx";
 
 const ignore = () => {};
 
@@ -359,6 +360,8 @@ export function States() {
             <CreateHarness ideas={f.ideas} />
           </div>
         </Section>
+
+        <ThreadStates Section={Section} />
       </main>
     </TipProvider>
   );

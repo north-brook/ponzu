@@ -2,8 +2,11 @@
 import type { ReactNode } from "react";
 import { repoKey } from "../filter.ts";
 import type { Contributor, DesignSummary } from "../model.ts";
+import { DesignHarness } from "./design-harness.tsx";
 import * as f from "./fixtures.ts";
 import { CreateHarness, DesignChromeHarness, Harness } from "./harness.tsx";
+import { THREAD_BOARDS, WORKING } from "./thread-boards.tsx";
+import * as t from "./thread-fixtures.ts";
 
 const ONBOARDING_PROMPT = "I'd like to iterate on the onboarding flow";
 
@@ -54,26 +57,24 @@ export const BOARDS: Record<string, () => ReactNode> = {
   "sidebar-search-results": () => <DesignWindow query="hero" />,
   share: () => <DesignWindow />,
   "thread-in-the-right-rail": () => (
-    <DesignWindow designs={f.soloWorking} contributors={f.justYou} />
+    <DesignHarness
+      designs={f.soloWorking}
+      design={quieter(f.soloWorking)}
+      contributors={f.justYou}
+      thread={t.heroThread}
+      agent={WORKING}
+    />
   ),
   "claude-sets-it-up": () => (
-    <Harness
+    <DesignHarness
       designs={[f.justCreated, ...f.soloDesigns]}
-      openId={f.justCreated.id}
-      rail
-      chrome={(sidebarOpen) => (
-        <DesignChromeHarness
-          design={f.justCreated}
-          sidebarOpen={sidebarOpen}
-          contributors={f.justYou}
-          railOpen
-          changes={false}
-          overrides={{ pages: f.onboardingPages, activePageId: "pg_welcome" }}
-        />
-      )}
-    >
-      {null}
-    </Harness>
+      design={f.justCreated}
+      contributors={f.justYou}
+      pages={f.onboardingPages}
+      thread={t.setUpThread}
+      agent={WORKING}
+      changes={false}
+    />
   ),
   create: () => (
     <Harness designs={f.soloDesigns} openId={null}>
@@ -120,4 +121,5 @@ export const BOARDS: Record<string, () => ReactNode> = {
       {null}
     </Harness>
   ),
+  ...THREAD_BOARDS,
 };
