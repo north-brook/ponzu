@@ -1,15 +1,15 @@
-ground div rgb(238, 237, 233)
+ground div rgb(244, 243, 240)
 ground span rgb(255, 95, 87)
 ground span rgb(254, 188, 46)
 ground span rgb(40, 200, 64)
-icon svg[Toggle sidebar] 16×16 rgb(94, 91, 84) stroke 1.7px
+icon svg[Toggle sidebar] 16×16 rgb(86, 83, 77) stroke 1.7px
 ground span rgba(17, 17, 16, 0.1)
-icon svg[Pages] 14×14 rgb(94, 91, 84) stroke 1.7px
-text "Home" rgb(94, 91, 84) 400 13px Inter
-icon svg[Pages] 14×14 rgb(94, 91, 84) stroke 1.7px
-text "Product" rgb(94, 91, 84) 400 13px Inter
-icon svg[Pages] 14×14 rgb(94, 91, 84) stroke 1.7px
-text "Care cards" rgb(94, 91, 84) 400 13px Inter
+icon svg[Pages] 14×14 rgb(86, 83, 77) stroke 1.7px
+text "Home" rgb(86, 83, 77) 400 13px Inter
+icon svg[Pages] 14×14 rgb(86, 83, 77) stroke 1.7px
+text "Product" rgb(86, 83, 77) 400 13px Inter
+icon svg[Pages] 14×14 rgb(86, 83, 77) stroke 1.7px
+text "Care cards" rgb(86, 83, 77) 400 13px Inter
 icon svg[New page] 14×14 rgb(169, 165, 155) stroke 1.9px
 ground span rgba(17, 17, 16, 0.1)
 ground button[Pull request #412] rgb(255, 255, 255) shadow rgba(0, 0, 0, 0) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.08) 0px 1px 2px 0px
@@ -23,8 +23,8 @@ text "2" rgb(17, 17, 16) 600 12px Inter
 ground span[2 questions for you] rgb(255, 200, 30)
 text "Northbrook" rgb(17, 17, 16) 600 13px Inter
 icon svg[Workspace: Northbrook] 11×11 rgb(128, 124, 115) stroke 2.2px
-icon svg[Search] 15×15 rgb(94, 91, 84) stroke 1.7px
-icon svg[Filter] 15×15 rgb(94, 91, 84) stroke 1.9px
+icon svg[Search] 15×15 rgb(86, 83, 77) stroke 1.7px
+icon svg[Filter] 15×15 rgb(86, 83, 77) stroke 1.9px
 icon svg[New design] 15×15 rgb(63, 61, 57) stroke 1.7px
 ground button[Quieter shop hero, 2 waiting for you, f…] rgb(255, 255, 255)
 ground span[Quieter shop hero, 2 waiting for you, f…] rgba(17, 17, 16, 0.05) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
@@ -76,19 +76,19 @@ text "lenny" rgb(169, 165, 155) 400 11px IBM Plex Mono
 text "Support inbox triage" rgb(17, 17, 16) 500 13px Inter
 icon svg[Support inbox triage, lenny, pz/inbox-t…] 11×11 rgb(169, 165, 155) stroke 1.9px
 text "pz/inbox-triage" rgb(169, 165, 155) 400 11px IBM Plex Mono
-text "Settled" rgb(94, 91, 84) 400 12px Inter
+text "Settled" rgb(86, 83, 77) 400 12px Inter
 text "9" rgb(169, 165, 155) 400 11px IBM Plex Mono
 icon svg[Designs] 11×11 rgb(128, 124, 115) stroke 2.2px
 ground main rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
 text "Quieter hero, editorial take" rgb(17, 17, 16) 600 26px Funnel Display
-text "#412" rgb(94, 91, 84) 400 12px IBM Plex Mono
+text "#412" rgb(86, 83, 77) 400 12px IBM Plex Mono
 icon svg 12×12 rgb(63, 138, 74) stroke 2px
 icon svg[Open on GitHub] 11×11 rgb(169, 165, 155) stroke 1.9px
 text "·" rgb(201, 197, 188) 400 12px IBM Plex Mono
-text "pz/hero-refresh" rgb(94, 91, 84) 400 12px IBM Plex Mono
-text "→ main" rgb(94, 91, 84) 400 12px IBM Plex Mono
-text "Drops the paragraph from the hero and l…" rgb(94, 91, 84) 400 13px Inter
-text "--hero-measure" rgb(94, 91, 84) 400 11.999px IBM Plex Mono
+text "pz/hero-refresh" rgb(86, 83, 77) 400 12px IBM Plex Mono
+text "→ main" rgb(86, 83, 77) 400 12px IBM Plex Mono
+text "Drops the paragraph from the hero and l…" rgb(86, 83, 77) 400 13px Inter
+text "--hero-measure" rgb(86, 83, 77) 400 11.999px IBM Plex Mono
 text "Checks" rgb(169, 165, 155) 600 11px Inter
 text "Passed:" rgb(17, 17, 16) 400 13px Inter
 icon svg[Checks] 13×13 rgb(63, 138, 74) stroke 2.4px
@@ -123,7 +123,7 @@ icon svg[Checks] 13×13 rgb(63, 138, 74) stroke 2.4px
 text "commitlint" rgb(17, 17, 16) 400 13px Inter
 text "9s" rgb(169, 165, 155) 400 11px IBM Plex Mono
 text "Comments" rgb(169, 165, 155) 600 11px Inter
-text "T" rgb(94, 91, 84) 600 9px Inter
+text "T" rgb(86, 83, 77) 600 9px Inter
 ground span[Comments] rgb(232, 230, 224)
 text "Theo" rgb(17, 17, 16) 600 12px Inter
 text "· hero.tsx:15 · 14m" rgb(169, 165, 155) 400 12px Inter
@@ -137,7 +137,7 @@ text "You" rgb(17, 17, 16) 600 12px Inter
 text "· 3m" rgb(169, 165, 155) 400 12px Inter
 text "Ship it once e2e is green." rgb(17, 17, 16) 400 13px Inter
 text "Approvals" rgb(169, 165, 155) 600 11px Inter
-text "T" rgb(94, 91, 84) 600 9px Inter
+text "T" rgb(86, 83, 77) 600 9px Inter
 ground span[Approvals] rgb(232, 230, 224)
 text "Theo approved" rgb(17, 17, 16) 400 13px Inter
 text "12m" rgb(169, 165, 155) 400 11px IBM Plex Mono

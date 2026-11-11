@@ -10,11 +10,11 @@ export function canSend(prompt: string, sending: boolean): boolean {
 
 /**
  * The picker's search shows from this many repos: fewer read at a glance (with Scratch, at most
- * seven one-line rows), and the arrows reach them as fast as typing would. Seven rows is also as
- * tall as the picker gets while it still fits under a centred composer in a 900pt window, so a
- * picker without search never lifts the composer; one with search (and its longer list) does.
+ * five one-line rows), and the arrows reach them as fast as typing would. Five rows is also all
+ * the picker's list shows before it scrolls (repo-picker.tsx), so a list that scrolls always has
+ * its search, and the picker stays small enough to open under the composer where it is.
  */
-export const SEARCH_FROM = 7;
+export const SEARCH_FROM = 5;
 
 /** Whether the picker offers a search: only once there are enough repos to need one. */
 export function showsSearch(repos: readonly Repo[] | null): boolean {

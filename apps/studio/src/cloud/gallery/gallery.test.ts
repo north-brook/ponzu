@@ -151,7 +151,11 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     expect(await active()).toBe("search-design-dsn_settled_1");
     await page.keyboard.press("Escape");
     await page.waitForSelector(field, { state: "detached" });
-    await focusOn("Search");
+    // Closing leaves the Search button alone: focus there would raise its tooltip, unasked.
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).not.toBe(
+      "Search",
+    );
+    expect(await page.$('[role="tooltip"]')).toBeNull();
   });
 
   test("⌘K with the sidebar collapsed opens it, then searches", async () => {
@@ -285,26 +289,76 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
   const questionTop = () =>
     page.$eval("h1", (h) => Math.round(h.getBoundingClientRect().top) as number);
 
-  test("the repo picker lifts the column only when its list would not fit below it", async () => {
-    // Scratch alone: a short list, with room under the chip at 1440×900. Nothing moves.
-    await open("fresh-start-no-repos");
+  test("the repo picker opens under its chip and the page stays where it is", async () => {
+    const picker = '[data-slot="popover-content"]';
+    const box = (selector: string) =>
+      page.$eval(selector, (el) => {
+        const r = el.getBoundingClientRect();
+        return { top: Math.round(r.top), bottom: Math.round(r.bottom) };
+      });
+    for (const board of ["fresh-start-no-repos", "pick-a-project-many-repos"]) {
+      await open(board);
+      const resting = await questionTop();
+      await page.click('button[aria-label^="Project"]');
+      await page.waitForSelector('[role="listbox"][aria-label="Repositories"]');
+      // Past the popover's opening and anything the page might have done about it.
+      await page.waitForFunction(
+        (sel) =>
+          document
+            .querySelector(sel)
+            ?.getAnimations()
+            .every((a) => a.playState === "finished"),
+        picker,
+      );
+      expect(await questionTop()).toBe(resting);
+      // Under the chip, and whole inside the window.
+      const chip = await box('button[aria-label^="Project"]');
+      const open_ = await box(picker);
+      expect(open_.top).toBeGreaterThanOrEqual(chip.bottom);
+      expect(open_.bottom).toBeLessThanOrEqual(await page.evaluate(() => window.innerHeight));
+    }
+    // Fifteen repos and Scratch: the list shows five rows and half of the sixth, and has its search.
+    expect(await page.$('input[aria-label="Search repositories"]')).not.toBeNull();
+    const list = await box('[role="listbox"][aria-label="Repositories"]');
+    const shown = await page.$eval('[role="listbox"][aria-label="Repositories"]', (el) =>
+      Math.round(el.parentElement!.getBoundingClientRect().height),
+    );
+    expect(shown).toBe(176);
+    expect(list.bottom - list.top).toBeGreaterThan(shown);
+    // Typing shortens the list; the page still doesn't move.
     const resting = await questionTop();
-    await page.click('button[aria-label^="Project"]');
-    await page.waitForSelector('[role="listbox"][aria-label="Repositories"]');
-    await new Promise((r) => setTimeout(r, 100));
-    expect(await questionTop()).toBe(resting);
-    // Fifteen repos, a search and Scratch: more than the room under the chip, so it rises.
-    await open("pick-a-project-many-repos");
-    const centred = await questionTop();
-    await page.click('button[aria-label^="Project"]');
-    await page.waitForSelector('input[aria-label="Search repositories"]');
-    await new Promise((r) => setTimeout(r, 100));
-    expect(await questionTop()).toBeLessThan(centred);
-    const raised = await questionTop();
-    // Typing shortens the list; the column stays where it went.
     await page.keyboard.type("len");
-    await new Promise((r) => setTimeout(r, 100));
-    expect(await questionTop()).toBe(raised);
+    await page.waitForFunction(() => document.querySelectorAll('[role="option"]').length === 1);
+    expect(await questionTop()).toBe(resting);
+  });
+
+  test("in a window too short for it, the picker's list gives up height and stays under the chip", async () => {
+    await open("pick-a-project-many-repos");
+    await page.setViewportSize({ width: 1440, height: 560 });
+    try {
+      const resting = await questionTop();
+      await page.click('button[aria-label^="Project"]');
+      await page.waitForSelector('input[aria-label="Search repositories"]');
+      const [chipBottom, top, bottom, listHeight] = await page.evaluate(() => {
+        const chip = document.querySelector('button[aria-label^="Project"]')!;
+        const open = document.querySelector('[data-slot="popover-content"]')!;
+        const list = document.querySelector('[role="listbox"][aria-label="Repositories"]')!;
+        const r = open.getBoundingClientRect();
+        return [
+          chip.getBoundingClientRect().bottom,
+          r.top,
+          r.bottom,
+          list.parentElement!.getBoundingClientRect().height,
+        ];
+      });
+      expect(top).toBeGreaterThanOrEqual(chipBottom!);
+      expect(bottom).toBeLessThanOrEqual(560);
+      expect(listHeight).toBeLessThan(176);
+      expect(listHeight).toBeGreaterThan(0);
+      expect(await questionTop()).toBe(resting);
+    } finally {
+      await page.setViewportSize({ width: 1440, height: 900 });
+    }
   });
 
   test("a first visit keeps its ideas' room: a skeleton while they're made, and nothing moves", async () => {
