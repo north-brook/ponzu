@@ -137,7 +137,7 @@ export function Checkbox({ checked }: { checked: boolean }) {
         checked ? "bg-action text-action-ink" : "shadow-[inset_0_0_0_1px_var(--c-faint)]",
       )}
     >
-      {checked ? <Icon icon={Tick02Icon} size={10} stroke={2.8} /> : null}
+      {checked ? <Icon icon={Tick02Icon} step="tick" onFill /> : null}
     </span>
   );
 }

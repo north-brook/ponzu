@@ -93,12 +93,11 @@ export function IconButton({
  */
 export function SendButton({
   size,
-  iconSize,
   disabled,
   onClick,
   className,
   ...props
-}: Omit<ButtonProps, "variant" | "size" | "asChild"> & { size: 28 | 32; iconSize: number }) {
+}: Omit<ButtonProps, "variant" | "size" | "asChild"> & { size: 28 | 32 }) {
   return (
     <Tip label="Send" keys={["↩"]} side="top">
       <button
@@ -113,7 +112,7 @@ export function SendButton({
         )}
         {...props}
       >
-        <Icon icon={ArrowUp02Icon} size={iconSize} stroke={2.3} />
+        <Icon icon={ArrowUp02Icon} step={size === 32 ? "control" : "inline"} onFill />
       </button>
     </Tip>
   );

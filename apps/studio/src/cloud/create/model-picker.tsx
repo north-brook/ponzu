@@ -43,7 +43,7 @@ export function ModelPicker({ models, efforts, model, effort, onChange }: ModelC
           <AgentMark client="claude" size={13} />
           {label}
           <span className="font-normal text-faint">· {EFFORT_LABELS[effort]}</span>
-          <Icon icon={ArrowDown01Icon} size={11} stroke={2.2} />
+          <Icon icon={ArrowDown01Icon} step="meta" />
         </Button>
       </MenuTrigger>
       <MenuContent width={220} side="bottom" align="end" sideOffset={6}>

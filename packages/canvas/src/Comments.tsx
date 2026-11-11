@@ -8,9 +8,9 @@ import { Button, cn, Menu, Textarea } from "./ui.tsx";
 /** A card floating over the canvas: a thread, or the composer for a new one. */
 export const threadCard =
   "pz:absolute pz:-top-3 pz:left-5 pz:w-[300px] pz:select-text pz:overflow-hidden pz:rounded-xl pz:bg-card pz:shadow-pop";
-const meta = "pz:text-[11.5px] pz:text-muted-foreground";
+const meta = "pz:text-[12px] pz:text-muted-foreground";
 const messageText =
-  "pz:whitespace-pre-wrap pz:text-[13.5px] pz:leading-[1.55] pz:[overflow-wrap:anywhere]";
+  "pz:whitespace-pre-wrap pz:text-[13px] pz:leading-[1.55] pz:[overflow-wrap:anywhere]";
 
 export function timeAgo(ms: number): string {
   const s = Math.max(1, Math.round((Date.now() - ms) / 1000));
@@ -139,7 +139,7 @@ export function Composer({
       onPointerDown={(e) => e.stopPropagation()}
     >
       <Textarea
-        className="pz:max-h-40 pz:flex-1 pz:text-[13.5px] pz:leading-[1.55]"
+        className="pz:max-h-40 pz:flex-1 pz:text-[13px] pz:leading-[1.55]"
         ref={ref}
         value={text}
         placeholder={placeholder}
@@ -148,7 +148,7 @@ export function Composer({
         onKeyDown={(e) => onFieldKey(e, submit, onCancel)}
       />
       <Button size="icon-lg" disabled={!text.trim()} onClick={submit} aria-label="Send">
-        <Icon name="send" size={14} />
+        <Icon name="send" step="inline" onFill />
       </Button>
     </div>
   );
@@ -190,7 +190,7 @@ function EditField({
   return (
     <div className="pz:flex pz:flex-col pz:gap-1.5">
       <Textarea
-        className="pz:max-h-60 pz:rounded-lg pz:px-2 pz:text-[13.5px] pz:leading-[1.55] pz:ring-[1.5px] pz:ring-select"
+        className="pz:max-h-60 pz:rounded-lg pz:px-2 pz:text-[13px] pz:leading-[1.55] pz:ring-[1.5px] pz:ring-select"
         ref={ref}
         value={text}
         aria-label="Edit message"
@@ -331,17 +331,17 @@ export function ThreadCard({
         <div className="pz:absolute pz:top-1.5 pz:right-1.5 pz:z-[1] pz:flex pz:gap-0.5 pz:rounded-lg pz:bg-card">
           {resolved ? (
             <Button variant="ghost" size="icon" onClick={reopen} title="Resolved · Reopen">
-              <Icon name="undo" size={15} />
+              <Icon name="undo" step="control" />
             </Button>
           ) : (
             <Button variant="ghost" size="icon" onClick={resolve} title="Resolve">
-              <Icon name="check" size={15} />
+              <Icon name="check" step="control" />
             </Button>
           )}
           <Menu
             trigger={
               <Button variant="ghost" size="icon" title="More">
-                <Icon name="more" size={15} />
+                <Icon name="more" step="control" />
               </Button>
             }
             items={[
@@ -349,14 +349,14 @@ export function ThreadCard({
                 ? [
                     {
                       label: "Edit",
-                      icon: <Icon name="edit" size={14} />,
+                      icon: <Icon name="edit" step="control" />,
                       onSelect: () => setEditing(first.id),
                     },
                   ]
                 : []),
               {
                 label: "Delete",
-                icon: <Icon name="trash" size={14} />,
+                icon: <Icon name="trash" step="control" />,
                 danger: true,
                 onSelect: remove,
               },
@@ -415,7 +415,7 @@ export function ThreadCard({
                     onClick={() => setEditing(m.id)}
                     title="Edit"
                   >
-                    <Icon name="edit" size={14} />
+                    <Icon name="edit" step="control" />
                   </Button>
                   <Button
                     variant="ghost"
@@ -423,7 +423,7 @@ export function ThreadCard({
                     onClick={() => removeMessage(m.id)}
                     title="Delete"
                   >
-                    <Icon name="trash" size={14} />
+                    <Icon name="trash" step="control" />
                   </Button>
                 </div>
               )}

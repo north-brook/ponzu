@@ -84,17 +84,11 @@ export function NewDesignComposer({
           onClick={onAttach}
           className="size-[30px] rounded-pill"
         >
-          <Icon icon={PlusSignIcon} size={16} stroke={1.9} />
+          <Icon icon={PlusSignIcon} step="control" />
         </IconButton>
         <span className="flex-1" />
         {model ? <ModelPicker {...model} /> : null}
-        <SendButton
-          size={32}
-          iconSize={15}
-          disabled={!ready}
-          aria-busy={sending || undefined}
-          onClick={onSend}
-        />
+        <SendButton size={32} disabled={!ready} aria-busy={sending || undefined} onClick={onSend} />
       </div>
     </div>
   );

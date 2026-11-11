@@ -4,6 +4,7 @@ import { settledShown } from "../status.ts";
 import { cn } from "../ui/cn.ts";
 import { FadeScroll } from "../ui/fade-scroll.tsx";
 import { Icon } from "../ui/icon.tsx";
+import { TEXT } from "../ui/ladder.ts";
 import { DesignList, DesignListSkeleton } from "./design-list.tsx";
 import type { RowHandlers } from "./design-row.tsx";
 
@@ -40,11 +41,10 @@ export function SettledTray({
         className="mt-1.5 flex h-8 shrink-0 cursor-default select-none items-center gap-2 rounded-8 pr-2 pl-2.5 text-12 text-muted outline-none transition-colors duration-(--dur-hover) focus-ring hover:bg-hover active:bg-press"
       >
         Settled
-        <span className="ml-auto font-mono text-11 text-faint">{count}</span>
+        <span className={cn("ml-auto", TEXT.meta)}>{count}</span>
         <Icon
           icon={ArrowRight01Icon}
-          size={11}
-          stroke={2.2}
+          step="meta"
           className={cn(
             "text-icon-soft transition-transform duration-(--dur-pane) ease-out",
             expanded && "rotate-90",

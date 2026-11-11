@@ -16,7 +16,7 @@ claude.ts         the person's Claude: how it is connected, its plan's limits, a
 styles/           tokens.css (every token) and cloud.css (the Tailwind build)
 ui/               primitives: shadcn/ui's components themed with our tokens (button, menus,
                   popover, tooltip, dialogs, field, command, tabs, avatar, kbd, skeleton…), the
-                  product's names on them (menu.tsx, modal.tsx, TextField), our own few (icon,
+                  product's names on them (menu.tsx, modal.tsx, TextField), our own few (icon, ladder,
                   marks, fade-scroll, qr), and Prose, which draws untrusted Markdown
                   (markdown.ts has its rules)
 window/           the window frame, chrome, page tabs, presence, Share, PR mark, next action, thread toggle
@@ -192,8 +192,9 @@ The thread and the pull request's keys:
   design gives no dark value the file says "derived".
 - A new token goes in tokens.css, in cloud.css's `@theme inline`, and, for a size, radius or
   shadow, in `ui/cn.ts` so tailwind-merge knows it.
-- Icons are Hugeicons (`@hugeicons/core-free-icons`, MIT) through `ui/icon.tsx`, at the design's
-  size and stroke; color them with a text token. Brand marks are in `ui/marks.tsx`.
+- Icons are Hugeicons (`@hugeicons/core-free-icons`, MIT) through `ui/icon.tsx`, at a step of the
+  ladder (below), never a size and stroke by hand; color them with a text token. Brand marks are
+  in `ui/marks.tsx`.
 - Motion: durations and easings are tokens; reduced motion stills every animation.
 - Fonts: `vite.config.ts` links the web fonts into every page (the app and the gallery) from one
   URL; a new family or weight goes there, so the gallery always measures what ships.
@@ -209,6 +210,70 @@ The thread and the pull request's keys:
   scripts/glass-shots.ts <dir> [ids]` draws compositions solid and over a stand-in for the glass.
 - One way to style: the canvas keeps its own `pz:` build, and `studio.css` (the local app's)
   doesn't scan this folder.
+
+## The ladder
+
+Every icon and every piece of interface text is set from a few named steps, so a call site says
+what a thing is rather than how big it is: `<Icon icon={…} step="control" />`, `TEXT.meta`. The
+steps are in `ui/ladder.ts`; the icon steps live with the canvas (`@ponzu/canvas/ladder`), so its
+tools and zoom are drawn from the same table. The gallery's `?ladder` draws them all, and
+`bun scripts/ladder-sheets.ts <dir> --ladder` draws every composition in light and dark at 2x
+beside it.
+
+**Icons.** Size and stroke move together. Hugeicons draw on a 24-unit grid, so a stroke `s` at
+`size` px paints `s × size / 24` px; each step's stroke is chosen so all of them paint the same
+line (1.0–1.1 px), and a small icon reads at the weight of a large one.
+
+| Step | Size / stroke | Where |
+| --- | --- | --- |
+| `control` | 16 / 1.7 | alone in a 24–28px button (the chrome's toggles, the sidebar's Search, Filter and New design, the composer's +, the canvas's tools and zoom), or leading a menu's, a nav's or a list's row |
+| `inline` | 14 / 1.9 | inside a compact control beside 13px words: a page tab, a check in a list, a field's glyph, the 28px send arrow |
+| `small` | 12 / 2 | beside 12px words: a quiet button's project, the action button, a status line, a submenu's chevron |
+| `meta` | 11 / 2.2 | beside 11px words: the meta line's repo, branch and pull request; a header's chevron; a link's arrow |
+| `tick` | 10 / 2.4 | inside a dense mark: a check that passed, a checked box, a remove ✕ |
+
+`onFill` draws a step 0.4 heavier where the icon sits on a solid ground (the send arrow on yuzu,
+the action button's glyph, a checked box): a light line on a fill reads thinner than ink on
+paper. An icon alone that belongs to a row of text controls takes the row's step: the page tabs'
++ is `inline`, like the tabs' icons. The slice, avatars and brand marks are drawn, not stroked,
+and keep their own sizes. There is one plus, Hugeicons' `PlusSignIcon` (the canvas's `plus`):
+`Add01Icon` draws a smaller cross in the same box, so beside the zoom's + it read lighter
+(ladder.test.ts holds this).
+
+**Text.** A size, a weight and a face; colour comes from the role below unless the step is
+defined by being quiet.
+
+| Step | Treatment | Where |
+| --- | --- | --- |
+| `body` | 13 | what a person reads: messages, a dialog's words |
+| `name` | 13 medium | a design's, a page tab's, a setting's name |
+| `title` | 13 semibold | the heading of a small surface: the workspace, a dialog's row |
+| `control` | 12 medium | a button's words (quiet muted, raised ink, action semibold on ink) |
+| `secondary` | 12 | a line under a name (faint) or a value at rest (muted) |
+| `meta` | 11 mono, faint | repo, branch, pull request, counts, ages |
+| `label` | 11 semibold, faint | a section's label in a menu, Settings, search, the pull request tab |
+
+Display (Funnel Display 600) is a heading's alone: 34 the create page, 28 a setup step, 26 the
+pull request, 18 a Settings section, 40 a price.
+
+The full-window pages read one size up, as the boards draw them: setup's lede is 15 muted and its
+cards' names 14 medium, and the Share popover's heading is 14 semibold. The canvas's comment cards
+are on the ladder too: a message is `body` (13), its author and age `secondary` (12).
+
+**Colour, by role.** `ink` is what is read, chosen or open (body text, the chosen tool, the active
+tab and its icon); `muted` a control at rest and a secondary line; `faint` quiet text (meta,
+placeholders, labels, counts), deliberately under AA; `icon-soft` a quiet icon standing alone (a
+disclosure chevron, a field's glyph, a row's trailing action, Settings' close), one step above
+faint so it holds 3:1. An icon beside words takes the words' colour (a tab, a chip, the meta
+line): it is part of that label. The one exception is a row's leading icon in a menu or a nav, which
+is muted beside ink words so the words lead.
+Disabled is not a colour: a disabled control fades to 35%. The accents mean one thing each: yuzu
+the agent at work; `pr-open`, `pr-running`, `pr-conflict`, `pr-failing`, `pr-merged` a pull
+request's state; `danger` what can't be undone or failed.
+
+Kept apart on purpose: the canvas's tools are the pane's instruments, so the chosen one is ink on
+a raised chip while the rest stay muted; the meta line is the faintest text in the app; the
+action button is the one semibold control.
 
 ## Adding a component
 

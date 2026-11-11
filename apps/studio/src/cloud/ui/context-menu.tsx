@@ -59,7 +59,7 @@ function ContextMenuSubTrigger({
       {...props}
     >
       {children}
-      <Icon icon={ArrowRight01Icon} size={12} stroke={2} className="ml-auto text-faint" />
+      <Icon icon={ArrowRight01Icon} step="small" className="ml-auto text-icon-soft" />
     </ContextMenuPrimitive.SubTrigger>
   );
 }
@@ -145,7 +145,7 @@ function ContextMenuRadioItem({
     >
       {children}
       <ContextMenuPrimitive.ItemIndicator>
-        <Icon icon={Tick02Icon} size={14} stroke={2.2} />
+        <Icon icon={Tick02Icon} step="inline" />
       </ContextMenuPrimitive.ItemIndicator>
     </ContextMenuPrimitive.RadioItem>
   );

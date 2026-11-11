@@ -46,7 +46,7 @@ export function SharePopover({
     >
       <div className="flex flex-col gap-[7px] px-4 pt-4 pb-2">
         <h2 className="m-0 font-semibold text-14">Share {designName}</h2>
-        <ExternalLink onClick={onOpenRepo} stroke={1.5} className="self-start text-12">
+        <ExternalLink onClick={onOpenRepo} className="self-start text-12">
           <GithubMark size={12} />
           <span className="font-mono text-11">
             {repo.owner}/{repo.name}

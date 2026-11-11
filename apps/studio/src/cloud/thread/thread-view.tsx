@@ -360,7 +360,7 @@ export function ThreadView({
           aria-label={`Jump to ${state.unseen} new in the thread`}
           className="rise absolute bottom-2.5 left-1/2 flex h-7 -translate-x-1/2 cursor-default items-center gap-1 rounded-pill bg-surface pr-2.5 pl-2 font-medium text-12 text-muted shadow-bar outline-none transition-colors duration-(--dur-hover) focus-ring hover:text-ink active:bg-selected"
         >
-          <Icon icon={ArrowDown01Icon} size={12} stroke={2.2} />
+          <Icon icon={ArrowDown01Icon} step="small" />
           {state.unseen} new
         </button>
       ) : null}

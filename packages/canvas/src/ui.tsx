@@ -70,7 +70,7 @@ export function Textarea({ className, ...props }: ComponentProps<"textarea">) {
     <textarea
       data-slot="textarea"
       className={cn(
-        "pz:field-sizing-content pz:min-h-7 pz:w-full pz:resize-none pz:bg-transparent pz:py-1 pz:outline-0 pz:placeholder:text-muted-foreground pz:disabled:cursor-not-allowed pz:disabled:opacity-50",
+        "pz:field-sizing-content pz:min-h-7 pz:w-full pz:resize-none pz:bg-transparent pz:py-1 pz:outline-0 pz:placeholder:text-faint pz:disabled:cursor-not-allowed pz:disabled:opacity-50",
         className,
       )}
       {...props}

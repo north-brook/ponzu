@@ -57,9 +57,9 @@ export function RepoPicker({
           aria-label={`Project: ${chipLabel(value)}`}
           className="gap-1.5 px-[9px]"
         >
-          <Icon icon={iconOf(value)} size={13} stroke={1.7} />
+          <Icon icon={iconOf(value)} step="small" />
           {chipLabel(value)}
-          <Icon icon={ArrowDown01Icon} size={11} stroke={2.2} />
+          <Icon icon={ArrowDown01Icon} step="meta" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
@@ -187,7 +187,7 @@ function PickerBody({
         <span className="min-w-0 flex-1 truncate">
           {repos?.length === 0 ? "Allow repositories on GitHub" : "Allow more on GitHub"}
         </span>
-        <Icon icon={ArrowUpRight01Icon} size={12} stroke={2} className="text-faint" />
+        <Icon icon={ArrowUpRight01Icon} step="small" className="text-faint" />
       </button>
     </>
   );
@@ -239,7 +239,7 @@ function PickerRow({
   }, [highlighted]);
   return (
     <CommandItem value={key} data-choice={key} onSelect={() => onChoose(choice)}>
-      <Icon icon={iconOf(choice)} size={16} stroke={1.7} className="text-muted" />
+      <Icon icon={iconOf(choice)} step="control" className="text-muted" />
       {/* The name is the tip's trigger: cmdk keeps the row's own pointer handlers. */}
       <Tooltip open={tip !== null} onOpenChange={place}>
         <TooltipTrigger asChild>
@@ -251,7 +251,7 @@ function PickerRow({
           {name}
         </TooltipContent>
       </Tooltip>
-      {checked ? <Icon icon={Tick02Icon} size={14} stroke={2.2} className="text-ink" /> : null}
+      {checked ? <Icon icon={Tick02Icon} step="inline" className="text-ink" /> : null}
     </CommandItem>
   );
 }

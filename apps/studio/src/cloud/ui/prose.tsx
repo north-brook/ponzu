@@ -135,7 +135,7 @@ function elements(onOpenLink?: (url: string) => void): Components {
             checked ? "bg-action text-action-ink" : "shadow-[inset_0_0_0_1px_var(--c-faint)]",
           )}
         >
-          {checked ? <Icon icon={Tick02Icon} size={9} stroke={2.8} /> : null}
+          {checked ? <Icon icon={Tick02Icon} step="tick" onFill /> : null}
         </span>
       ) : null,
     // Fenced code: the text alone in a box that scrolls sideways, so a long line never widens the

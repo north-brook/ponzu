@@ -76,8 +76,8 @@ export function PageTabs({
               >
                 {page.icon ? (
                   <ShortcutHint jump="page" n={n} shown={hint}>
-                    <span className={cn("flex", active && "text-icon-strong")}>
-                      <PageIcon name={page.icon} size={14} strokeWidth={1.7} />
+                    <span className="flex">
+                      <PageIcon name={page.icon} step="inline" />
                     </span>
                   </ShortcutHint>
                 ) : null}
@@ -99,8 +99,8 @@ export function PageTabs({
         </TabsList>
       </FadeScroll>
       {onAdd ? (
-        <IconButton label="New page" onClick={onAdd} className="size-7 text-faint">
-          <Icon icon={PlusSignIcon} size={14} stroke={1.9} />
+        <IconButton label="New page" onClick={onAdd} className="size-7 text-icon-soft">
+          <Icon icon={PlusSignIcon} step="inline" />
         </IconButton>
       ) : null}
     </Tabs>
