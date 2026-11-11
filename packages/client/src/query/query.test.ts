@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { MutationObserver, type MutationOptions } from "@tanstack/react-query";
 import { ApiError } from "../errors.ts";
 import { createFakeBackend } from "../testing/backend.ts";
 import { settle } from "../testing/clock.ts";
@@ -27,8 +28,9 @@ function device() {
     client,
     queryClient,
     queries: ponzuQueries(client.api),
-    mutate: <V, R>(options: { mutationFn?: (vars: V) => Promise<R> }, vars: V) =>
-      queryClient.getMutationCache().build(queryClient, options).execute(vars),
+    /** Runs a mutation as `useMutation` would. */
+    mutate: <R, V>(options: MutationOptions<R, Error, V>, vars: V) =>
+      new MutationObserver(queryClient, options).mutate(vars),
     mutations: ponzuMutations(client.api, queryClient),
   };
 }
@@ -53,7 +55,7 @@ test("a sync after GitHub's install page puts the account's new state in the cac
   await mutate(mutations.installLink(), { client: "mac", githubAccountId: own.githubAccountId });
   await mutate(mutations.syncGithub(), undefined);
 
-  const after = queryClient.getQueryData(queryKeys.githubAccounts());
+  const after = queryClient.getQueryData(queries.githubAccounts().queryKey);
   expect(after?.accounts.map((a) => [a.status, a.workspaceId])).toEqual([["ready", own.id]]);
   expect(queryClient.getQueryState(queryKeys.me())?.isInvalidated).toBe(true);
 });
@@ -63,14 +65,16 @@ test("a recorded step and a connected Claude show in `me` at once", async () => 
   await queryClient.fetchQuery(queries.me());
 
   await mutate(mutations.recordOnboarding(), "where");
-  expect(queryClient.getQueryData(queryKeys.me())?.onboarding.whereConfirmedAt).not.toBeNull();
+  expect(
+    queryClient.getQueryData(queries.me().queryKey)?.onboarding.whereConfirmedAt,
+  ).not.toBeNull();
 
   await mutate(mutations.connectApiKey(), "sk-ant-api03-abcdefghijklmnopqrstuvwxyz");
-  expect(queryClient.getQueryData(queryKeys.me())?.claudeAccount?.kind).toBe("api_key");
-  expect(queryClient.getQueryData(queryKeys.claudeAccount())?.label).toContain("…wxyz");
+  expect(queryClient.getQueryData(queries.me().queryKey)?.claudeAccount?.kind).toBe("api_key");
+  expect(queryClient.getQueryData(queries.claudeAccount().queryKey)?.label).toContain("…wxyz");
 
   await mutate(mutations.disconnectClaude(), undefined);
-  expect(queryClient.getQueryData(queryKeys.me())?.claudeAccount).toBeNull();
+  expect(queryClient.getQueryData(queries.me().queryKey)?.claudeAccount).toBeNull();
 });
 
 test("a change to the person's row on another device asks for what it covers again", async () => {

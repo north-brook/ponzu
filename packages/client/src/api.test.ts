@@ -184,9 +184,10 @@ describe("against the API's own routes", () => {
     const said = await maya.designs.sendMessage(first.id, { text: "And a summary" });
     expect(said.kind).toBe("message");
     const { items } = await maya.designs.thread(first.id);
-    expect(items.map((item) => (item.kind === "message" ? item.payload.text : item.kind))).toEqual(
-      ["Make checkout one page", "And a summary"],
-    );
+    expect(items.map((item) => (item.kind === "message" ? item.payload.text : item.kind))).toEqual([
+      "Make checkout one page",
+      "And a summary",
+    ]);
     await maya.designs.stop(first.id);
   });
 
