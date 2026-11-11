@@ -14,28 +14,49 @@ PONZU_SMOKE=1 out/mac-arm64/Ponzu.app/Contents/MacOS/Ponzu   # must exit 0
 
 A development build may also take `PONZU_API_URL` (https, or http on this computer) and
 `PONZU_WORKOS_CLIENT_ID`. A packaged build ignores all three and talks to `api.ponzu.design`.
-A development build is an app of its own, `Ponzu Dev`: its own data folder, keychain item and
-single-instance lock, so it runs beside an installed Ponzu and never touches its session. On a
-Mac it takes no links (it runs inside node_modules' generic Electron.app, which can't claim a
-scheme); use Ponzu Preview for that. On Windows and Linux it takes `ponzu-dev://`.
+A development build is an app of its own, `Ponzu Local`: its own data folder
+(`~/Library/Application Support/Ponzu Local`), keychain item ("Ponzu Local Safe Storage") and
+single-instance lock, so it runs beside an installed Ponzu or Ponzu Dev and never touches their
+sessions. It takes no links (on a Mac it runs inside node_modules' generic Electron.app, which
+can't claim a scheme): use Ponzu Dev for those. GitHub's setup page then offers Ponzu's link
+back; come back to the window instead.
 
-## Ponzu Preview
+## Ponzu Dev
 
 ```sh
-bun run package:preview      # out/preview/mac-arm64/Ponzu Preview.app, and a zip of it beside
-PONZU_SMOKE=1 "out/preview/mac-arm64/Ponzu Preview.app/Contents/MacOS/Ponzu Preview"
+bun run package:dev      # out/dev/mac-arm64/Ponzu Dev.app, and a zip of it beside
+PONZU_SMOKE=1 "out/dev/mac-arm64/Ponzu Dev.app/Contents/MacOS/Ponzu Dev"
 ```
 
 The cloud app for a Mac that still uses Ponzu 1.x, until the cloud release replaces it: the
 release in everything (fuses, no debugging port, no session file, the CSP, sign-in,
-`api.ponzu.design`) but who it is (`src/packaging.ts`, `src/config.ts`). It is "Ponzu Preview",
-bundle id `design.ponzu.app.preview`, with its own icon (`bun run icons:preview`), data folder
-(`~/Library/Application Support/Ponzu Preview`), keychain item ("Ponzu Preview Safe Storage")
-and single-instance lock, and it takes `ponzu-preview://` links, declared in its Info.plist so
-they reach it whether it is running or not. It never claims `ponzu://`, never runs the 1.x
+`api.ponzu.design`) but who it is (`src/packaging.ts`, `src/config.ts`). It is "Ponzu Dev",
+bundle id `design.ponzu.app.dev`, with its own icon (the release's on a grey tile, `bun run
+icons:dev`), data folder (`~/Library/Application Support/Ponzu Dev`), keychain item ("Ponzu Dev
+Safe Storage") and single-instance lock, and it takes `ponzu-dev://` links, declared in its
+Info.plist so they reach it whether it is running or not. It never claims `ponzu://`, never runs the 1.x
 cleanup and never writes into 1.x's folders. It doesn't update itself (there is no feed for it;
 Check for Updates isn't in its menu): build a new one. It is ad-hoc signed and not notarized
 unless built with the release's credentials. CI builds it and runs its smoke check on Linux.
+
+It was called Ponzu Preview (`design.ponzu.app.preview`, `ponzu-preview://`), and a checkout run
+was called Ponzu Dev. Its first launch (`src/carry-over.ts`) copies Ponzu Preview's window state
+(the studio's localStorage: the workspace and design last open, the sidebar, rail and filters)
+and keeps it through the signed-out launch until the person signs in; the designs Ponzu Preview
+cached come over in the same copy and the studio drops them at once. While Ponzu Preview is
+open, it asks the person to quit it and Try Again, or to Continue Without. The session can't come
+with it: it is sealed by "Ponzu Preview Safe Storage", which only Ponzu Preview opens, so the
+person signs in once. A "Ponzu Dev" folder a checkout run left is moved to "Ponzu Local" (or
+beside it), and Ponzu Dev won't start while such a run is open.
+
+On a Mac where a checkout ran before the rename, that run made a "Ponzu Dev Safe Storage"
+keychain item, owned by node_modules' Electron.app. Delete it in Keychain Access before Ponzu
+Dev's first launch (it only sealed that old checkout session, which Ponzu Local no longer reads),
+and Ponzu Dev makes its own without asking; never answer Always Allow for it. Update every
+checkout to the current `cloud` before its next `bun run start`: an older one still calls itself
+Ponzu Dev and would open Ponzu Dev's folder. Nothing is deleted from code: Ponzu Preview's app
+and folder stay for the person to remove. The API still links back to `ponzu-preview://` for a
+Ponzu Preview that asks.
 
 `PONZU_SESSION_FILE=<path>` runs on a developer session saved by `bun run dev:signin` in
 apps/api instead of the keychain, rotating it in place, unencrypted (the window says so): for
@@ -63,9 +84,10 @@ src/
   sign-in.ts        PKCE through WorkOS in the system browser, back to a loopback listener
   token-store.ts    tokens in a file only safeStorage can read, or in memory without a keychain
   session-file.ts   a developer's saved session, opt in
-  deep-links.ts     ponzu:// links (ponzu-preview://, ponzu-dev://)
+  deep-links.ts     ponzu:// links (ponzu-dev://)
   data-folder.ts    each app's data folder, and the smoke check's throwaway one
-  packaging.ts      Ponzu Preview's electron-builder configuration, from the release's
+  packaging.ts      Ponzu Dev's electron-builder configuration, from the release's
+  carry-over.ts     Ponzu Dev's first launch after it was Ponzu Preview
   updater.ts        electron-updater and the notes the update mark shows
   menu.ts           the menus
   legacy.ts         what Ponzu 1.x left on the computer, removed once
@@ -130,8 +152,8 @@ They arrive on a cold start (`open-url` on the Mac, the command line elsewhere) 
 running (`second-instance`), and wait until the studio listens, which it does while someone
 is signed in. Any web page can open one, so a
 link only ever asks to show something: one that doesn't parse is dropped without a word. Ponzu
-Preview takes `ponzu-preview://` instead, and a development build `ponzu-dev://` (not on a Mac),
-and both leave an installed Ponzu's links alone. The studio tells the API its scheme when it
+Dev takes `ponzu-dev://` instead, and leaves an installed Ponzu's links alone; a development
+build takes none. The studio tells the API its scheme when it
 asks for GitHub's install link, so the setup page links back to the app that asked.
 
 ## Updates
@@ -152,7 +174,7 @@ wrote and what it runs is gone; nothing goes while a 1.x app is still installed.
 the rest of `~/.ponzu` are never touched, and neither is a Cursor `mcp.json` that is a link
 (into someone's dotfiles, say). A step that fails is logged and doesn't stop the others. What
 it did is in `legacy-cleanup.json` in the app's data folder, and it never runs again. Only the
-release does any of this: Ponzu Preview and a development build run beside a 1.x still in use. Windows' PATH entry and design.json association are
+release does any of this: Ponzu Dev and a development build run beside a 1.x still in use. Windows' PATH entry and design.json association are
 removed by the uninstaller (`build/uninstall.ps1`).
 
 ## The smoke check
@@ -169,5 +191,5 @@ scheme either, so the copy in `out/` never becomes the one a person's links open
 no update.
 
 A packaged app whose bundle and main process disagree on which app they are (a bundle named
-"Ponzu Preview" holding a release's `dist/main.cjs`, say) refuses to start, before it reads any
-data folder; `bun run package:preview` also checks its bundle's main process before it zips it.
+"Ponzu Dev" holding a release's `dist/main.cjs`, say) refuses to start, before it reads any
+data folder; `bun run package:dev` also checks its bundle's main process before it zips it.

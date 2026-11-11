@@ -242,6 +242,29 @@ export function States() {
         </Section>
 
         <Section title="Page tabs">
+          <div className="w-[520px]" data-state="one page">
+            <PageTabs
+              pages={[{ id: "pg_1", name: "Page 1", icon: null, working: false }]}
+              activeId="pg_1"
+              onSelect={ignore}
+              onAdd={ignore}
+            />
+          </div>
+          <div className="flex w-[300px]" data-state="too many to fit">
+            <PageTabs
+              pages={[
+                ...f.homePages,
+                { id: "x", name: "Checkout", icon: null, working: false },
+                { id: "y", name: "Empty states", icon: "list", working: false },
+              ]}
+              activeId="pg_product"
+              onSelect={ignore}
+              onAdd={ignore}
+            />
+          </div>
+          <div className="w-[520px]" data-state="three pages">
+            <PageTabs pages={f.homePages} activeId="pg_product" onSelect={ignore} onAdd={ignore} />
+          </div>
           <div className="w-[520px]">
             <PageTabs
               pages={[

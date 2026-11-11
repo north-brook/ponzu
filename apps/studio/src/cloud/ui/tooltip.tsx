@@ -51,7 +51,7 @@ function TooltipContent({
         sideOffset={sideOffset}
         collisionPadding={collisionPadding}
         className={cn(
-          "tip z-50 flex h-[26px] select-none items-center gap-2 whitespace-nowrap rounded-7 bg-tip pr-1.5 pl-[9px] font-sans text-12 text-tip-ink leading-4 shadow-tip",
+          "tip z-50 flex h-[26px] select-none items-center gap-2 whitespace-nowrap rounded-7 bg-tip px-[9px] font-sans text-12 text-tip-ink leading-4 shadow-tip",
           className,
         )}
         {...props}
@@ -83,7 +83,11 @@ export function Tip({
   return (
     <Tooltip>
       <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent side={side}>
+      {/*
+       * Even on both sides: 9 round the words alone. A shortcut's caps end it 5 from the edge,
+       * as above and below them (16 in 26), so they sit in the tip as a pill in a pill.
+       */}
+      <TooltipContent side={side} className={keys?.length ? "pr-[5px]" : undefined}>
         {label}
         {keys?.length ? (
           <KbdGroup>

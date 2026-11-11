@@ -71,14 +71,18 @@ export interface CanvasProps {
   /** Who's using the canvas, for comments. */
   me?: Author;
   theme?: "light" | "dark";
-  /** Float page tabs (bottom left) and tools (bottom right) over the canvas. Default true. */
+  /**
+   * Float page tabs (bottom left) and the tools and zoom (bottom right) over the canvas. Default
+   * true.
+   */
   footer?: boolean;
   /**
-   * The footer's page tabs, for a host whose chrome has its own. Default true. Off, the host
-   * owns ⌥1–9 too: the canvas leaves them to it.
+   * The footer's page tabs, for a host whose chrome has its own. Default true. Without them the
+   * tools move to the bottom left, apart from the zoom (the Mac app's canvas), and the host owns
+   * ⌥1–9 too: the canvas leaves them to it.
    */
   pageBar?: boolean;
-  /** Extra content at the start of the tools bar, before the modes. */
+  /** Extra content at the start of the tools, before the modes. */
   footerExtra?: ReactNode;
   /**
    * Look, don't touch: pan, zoom, switch pages, select and read comment
@@ -1296,6 +1300,60 @@ export function Canvas({
   const scale = detailScale(view.zoom, dpr);
   const arriving = arrivals.boardsArriving(boards);
 
+  // The footer's controls: the tools (and a host's extra) and the zoom. Beside page tabs they
+  // share one bar at the bottom right; without them, as the Mac app's boards draw it, the tools
+  // take the bottom left and the zoom stands alone at the bottom right.
+  const tools = (
+    <>
+      {footerExtra}
+      <ToggleGroup
+        variant="raised"
+        value={panning ? "hand" : mode}
+        onValueChange={setMode}
+        items={MODES.filter((m) => !readOnly || m.value !== "comment").map((m) => ({
+          value: m.value,
+          title: m.label,
+          keys: [m.key],
+          label: <Icon name={m.value} size={16} />,
+        }))}
+      />
+    </>
+  );
+  const zoom = (
+    <>
+      <Tip label="Zoom out" keys={["⌘", "−"]}>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Zoom out"
+          onClick={() => zoomAt(0.8, viewportSize().w / 2, viewportSize().h / 2)}
+        >
+          <Icon name="minus" size={14} />
+        </Button>
+      </Tip>
+      <Tip label="Zoom to fit" keys={["⇧", "1"]}>
+        <Button
+          variant="ghost"
+          className="pz:h-7 pz:min-w-9 pz:rounded-lg pz:px-0.5 pz:text-foreground pz:tabular-nums"
+          aria-label="Zoom to fit"
+          onClick={fitPage}
+        >
+          <ZoomPercent camera={camera} />
+        </Button>
+      </Tip>
+      <Tip label="Zoom in" keys={["⌘", "+"]}>
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label="Zoom in"
+          onClick={() => zoomAt(1.25, viewportSize().w / 2, viewportSize().h / 2)}
+        >
+          <Icon name="plus" size={14} />
+        </Button>
+      </Tip>
+    </>
+  );
+
   return (
     <div
       className={cn("pz-root", `pz-${theme}`, still && "pz-still", className)}
@@ -1710,51 +1768,22 @@ export function Canvas({
                 )}
               </Bar>
             )}
-            <Bar name="Controls" className="pz:ml-auto pz:shrink-0">
-              {footerExtra}
-              <ToggleGroup
-                variant="raised"
-                value={panning ? "hand" : mode}
-                onValueChange={setMode}
-                items={MODES.filter((m) => !readOnly || m.value !== "comment").map((m) => ({
-                  value: m.value,
-                  title: m.label,
-                  keys: [m.key],
-                  label: <Icon name={m.value} size={16} />,
-                }))}
-              />
-              <span aria-hidden className="pz:mx-1.5 pz:h-4 pz:w-px pz:bg-foreground/10" />
-              <Tip label="Zoom out" keys={["⌘", "−"]}>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Zoom out"
-                  onClick={() => zoomAt(0.8, viewportSize().w / 2, viewportSize().h / 2)}
-                >
-                  <Icon name="minus" size={14} />
-                </Button>
-              </Tip>
-              <Tip label="Zoom to fit" keys={["⇧", "1"]}>
-                <Button
-                  variant="ghost"
-                  className="pz:h-7 pz:min-w-9 pz:rounded-lg pz:px-0.5 pz:text-foreground pz:tabular-nums"
-                  aria-label="Zoom to fit"
-                  onClick={fitPage}
-                >
-                  <ZoomPercent camera={camera} />
-                </Button>
-              </Tip>
-              <Tip label="Zoom in" keys={["⌘", "+"]}>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label="Zoom in"
-                  onClick={() => zoomAt(1.25, viewportSize().w / 2, viewportSize().h / 2)}
-                >
-                  <Icon name="plus" size={14} />
-                </Button>
-              </Tip>
-            </Bar>
+            {pageBar ? (
+              <Bar name="Controls" className="pz:ml-auto pz:shrink-0">
+                {tools}
+                <span aria-hidden className="pz:mx-1.5 pz:h-4 pz:w-px pz:bg-foreground/10" />
+                {zoom}
+              </Bar>
+            ) : (
+              <>
+                <Bar name="Tools" className="pz:shrink-0">
+                  {tools}
+                </Bar>
+                <Bar name="Zoom" className="pz:ml-auto pz:shrink-0">
+                  {zoom}
+                </Bar>
+              </>
+            )}
           </div>
         </TipProvider>
       )}

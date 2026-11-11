@@ -6,6 +6,7 @@ import { ArrowRight01Icon, ArrowUpRight01Icon } from "@hugeicons/core-free-icons
 import type { ComponentProps, ReactNode } from "react";
 import { Button } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
+import { ExternalLink } from "../ui/external-link.tsx";
 import { Icon } from "../ui/icon.tsx";
 import { Slice } from "../ui/marks.tsx";
 
@@ -177,24 +178,7 @@ export function Waiting({ size, label }: { size: number; label?: string }) {
   return <Slice size={size} label={label} className="dryturn text-dry" />;
 }
 
-/** A quiet link that leaves the app: muted text, the arrow out after it. */
-export function LeaveLink({
-  className,
-  children,
-  arrow = 11,
-  ...props
-}: ComponentProps<"button"> & { arrow?: number }) {
-  return (
-    <button
-      type="button"
-      className={cn(
-        "inline-flex cursor-default items-center gap-1.5 rounded-4 font-medium text-12 text-muted outline-none transition-colors duration-(--dur-hover) focus-ring hover:text-ink",
-        className,
-      )}
-      {...props}
-    >
-      {children}
-      <Icon icon={ArrowUpRight01Icon} size={arrow} stroke={2} className="text-icon-soft" />
-    </button>
-  );
+/** A quiet link that leaves the app, in a step's words: the app's one external link, medium. */
+export function LeaveLink({ className, ...props }: ComponentProps<typeof ExternalLink>) {
+  return <ExternalLink className={cn("font-medium text-12", className)} {...props} />;
 }

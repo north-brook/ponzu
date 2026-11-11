@@ -40,7 +40,10 @@ export function PageTabs({
 
   useLayoutEffect(() => {
     const tab = list.current?.querySelector<HTMLElement>('[aria-selected="true"]');
-    setMinWidth(tab ? tab.offsetWidth + 2 * SCROLL_FADE : undefined);
+    // Room for the fades only when the tabs need to scroll: tabs that fit end where they end,
+    // and the "+" follows the last at their own 2px rhythm.
+    const all = list.current?.scrollWidth ?? 0;
+    setMinWidth(tab ? Math.min(all, tab.offsetWidth + 2 * SCROLL_FADE) : undefined);
     tab?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [activeId, pages]);
 
