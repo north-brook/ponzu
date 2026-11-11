@@ -208,8 +208,7 @@ describe("ideasRequest, for a product not built yet", () => {
     const copied = withFirst("Build the booking page around one calendar, open slots in bold");
     expect(checkIdeas(copied, options)).toEqual({
       ok: false,
-      reason:
-        "an idea took 5 words in a row from these instructions; write each in your own words",
+      reason: "an idea took 5 words in a row from these instructions; write each in your own words",
     });
     expect(
       checkIdeas(withFirst("Lay out the first screen with one clear thing to do"), options),

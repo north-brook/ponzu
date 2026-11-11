@@ -108,7 +108,9 @@ describe("claimRepoIdeas", () => {
     expect(await claimRepoIdeas(db, { repoId: empty.id, ...policy(twoHours) })).toBe("claimed");
 
     // An empty list nobody pushes to is made again a week on, and not before.
-    const quiet = await seedRepo(db, workspace.id, "north-brook/quiet");
+    // In a workspace of its own, so the claims above leave its allowance whole.
+    const still = await seedWorkspace(db, "still-water");
+    const quiet = await seedRepo(db, still.id, "still-water/quiet");
     await claimRepoIdeas(db, { repoId: quiet.id, ...policy(first) });
     await saveRepoIdeas(db, {
       repoId: quiet.id,
