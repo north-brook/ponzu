@@ -657,6 +657,27 @@ describe("acting", () => {
     expect(asInes).toMatchObject({ status: 403, body: { error: { code: "forbidden" } } });
   });
 
+  test("Merge is offered only once GitHub says it can merge and nothing is still running", async () => {
+    const { ws, repo, design } = await ready();
+    const next = async () =>
+      (await call(t, as(ws, "maya"), "GET", path(design.id))).body.nextAction;
+    expect(await next()).toBe("merge");
+
+    // Just pushed: GitHub is working out whether it can merge. Nothing to press yet.
+    t.github.pulls.push(repo, BRANCH);
+    expect(await next()).toBe("none");
+    t.clock.advance(MERGEABLE_AFTER_MS);
+    expect(await next()).toBe("merge");
+
+    // Checks running in a repo without auto-merge: wait for them, never Merge past them.
+    t.github.pulls.setChecks(head(repo), [{ name: "ci", state: "in_progress" }]);
+    expect(await next()).toBe("none");
+    t.github.pulls.settings(repo, { autoMerge: true });
+    expect(await next()).toBe("auto_merge");
+    t.github.pulls.setChecks(head(repo), [{ name: "ci", state: "success" }]);
+    expect(await next()).toBe("merge");
+  });
+
   test("auto-merge, where the repo allows it and there is something to wait for", async () => {
     const { ws, repo, design } = await ready();
     expect(await codeOf(act(ws, design.id, "auto-merge"))).toBe("auto_merge_not_allowed");

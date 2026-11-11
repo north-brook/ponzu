@@ -62,7 +62,11 @@ export function Files({
   /** Fetches a file's diff the tab wasn't sent. */
   onLoadDiff?: (path: string) => Promise<LoadedDiff>;
 }) {
-  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+  // A pull request of one file starts with its diff open (board 3 draws one card open): there
+  // is nothing else to choose between.
+  const [open, setOpen] = useState<ReadonlySet<string>>(
+    () => new Set(files.length === 1 && total === 1 ? [files[0]!.path] : []),
+  );
   const toggle = (path: string) =>
     setOpen((prev) => {
       const next = new Set(prev);

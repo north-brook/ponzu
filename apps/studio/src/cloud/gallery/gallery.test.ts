@@ -391,6 +391,20 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await focusOn(names[0]!);
   });
 
+  test("a one-file pull request opens its diff, says its checks, and reads its base whole", async () => {
+    await open("pull-request-one-file");
+    const card = '[aria-label="Files changed"] button[aria-expanded]';
+    expect(await page.getAttribute(card, "aria-expanded")).toBe("true");
+    expect(await page.textContent('section[aria-label="Checks"]')).toContain("No checks ran");
+    // The base reads whole beside a long head branch; "Merged …" goes under rather than squeezing.
+    const base = await page.$eval(
+      'span:text-is("→ main")',
+      (el) => el.scrollWidth <= el.clientWidth,
+    );
+    expect(base).toBe(true);
+    expect(await page.$('span:text-matches("^Merged")')).not.toBeNull();
+  });
+
   test("page tabs with the pull request tab open: none is chosen, and Tab reaches the first", async () => {
     await open("pull-request-tab");
     const tabs = '[role="tablist"][aria-label="Pages"] [role="tab"]';

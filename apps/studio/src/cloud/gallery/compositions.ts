@@ -152,6 +152,11 @@ export const COMPOSITIONS: Composition[] = [
   { id: "thread-read-only", title: "Thread · read-only access", ...WINDOW },
   { id: "pull-request-busy", title: "Pull request · draft, failing, large files", ...WINDOW },
   { id: "pull-request-merged", title: "Pull request · merged", ...WINDOW },
+  {
+    id: "pull-request-one-file",
+    title: "Pull request · merged, one file, no checks, a long branch",
+    ...WINDOW,
+  },
   { id: "pull-request-loading", title: "Pull request · loading", ...WINDOW },
   { id: "pull-request-error", title: "Pull request · GitHub unreachable", ...WINDOW },
   ...SETUP_COMPOSITIONS,

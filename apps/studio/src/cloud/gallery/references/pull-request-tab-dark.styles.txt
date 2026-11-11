@@ -93,7 +93,8 @@ text "#412" rgb(169, 165, 155) 400 12px IBM Plex Mono
 icon svg 12×12 rgb(95, 179, 107) stroke 2px
 icon svg[Open on GitHub] 11×11 rgb(107, 104, 98) stroke 1.9px
 text "·" rgb(94, 91, 84) 400 12px IBM Plex Mono
-text "pz/hero-refresh → main" rgb(169, 165, 155) 400 12px IBM Plex Mono
+text "pz/hero-refresh" rgb(169, 165, 155) 400 12px IBM Plex Mono
+text "→ main" rgb(169, 165, 155) 400 12px IBM Plex Mono
 text "Drops the paragraph from the hero and l…" rgb(169, 165, 155) 400 13px Inter
 text "--hero-measure" rgb(169, 165, 155) 400 11.999px IBM Plex Mono
 text "Checks" rgb(107, 104, 98) 600 11px Inter

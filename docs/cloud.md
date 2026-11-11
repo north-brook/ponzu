@@ -1102,7 +1102,9 @@ has commits and no open pull request, or commits since its pull request merged),
 draft), `resolve` (conflicts), `fix_checks` (a check failed), `auto_merge` (checks are running,
 or the rules want a review, and the repo allows auto-merge), `update_branch` (the rules hold it
 back for being behind), `merge`, `blocked` (the rules want something, a review or a required
-check, and the repo has no auto-merge), or `none`. Create PR is the API's, as the person
+check, and the repo has no auto-merge), or `none` (nothing to press: no changes, merged, checks
+running in a repo without auto-merge, or GitHub still working out whether it can merge, as for
+a few seconds after a push). Create PR is the API's, as the person
 (`POST /v1/designs/:id/pull-request`, below), like Ready, Merge, Auto-merge and Update branch.
 Fix checks and Resolve are the agent's to do: the client sends it a message in the thread as
 the person (which failing checks, or which base to merge in), once for a commit. A file's diff is the unified patch, or `binary`,

@@ -210,8 +210,9 @@ export function toTab(
 /**
  * What the action button offers (the spec's PR states): open one when the branch has changes and
  * no open pull request (or commits since its merged one); then ready a draft, resolve conflicts,
- * fix failing checks, wait on running ones with auto-merge where the repo allows it, and update a
- * branch the repo's rules hold back for being behind. What the rules still want (a review, a
+ * fix failing checks, wait on running ones with auto-merge where the repo allows it (and offer
+ * nothing while they run where it doesn't, or while GitHub hasn't worked out whether it can
+ * merge), and update a branch the repo's rules hold back for being behind. What the rules still want (a review, a
  * required check) is waited for with auto-merge where the repo allows it, and is otherwise
  * `blocked`, never `merge`: Merge never asks GitHub to set the rules aside.
  */
@@ -230,7 +231,12 @@ export function nextAction({
   if (pullRequest.state === "draft") return "ready";
   if (pullRequest.mergeable === false) return "resolve";
   if (pullRequest.checks.state === "failing") return "fix_checks";
-  if (pullRequest.checks.state === "running" && autoMergeAllowed) return "auto_merge";
+  // Checks still running: the spec's action is Auto-merge. Where the repo has no auto-merge
+  // there is nothing to press yet, and Merge would land the pull request before its checks say.
+  if (pullRequest.checks.state === "running") return autoMergeAllowed ? "auto_merge" : "none";
+  // GitHub is still working out whether it can merge (just after a push or a ready): wait for it
+  // rather than offer a Merge it may refuse.
+  if (pullRequest.mergeable === null || pullRequest.mergeState === "unknown") return "none";
   if (pullRequest.mergeState === "behind") return "update_branch";
   if (pullRequest.mergeState === "blocked") return autoMergeAllowed ? "auto_merge" : "blocked";
   return "merge";

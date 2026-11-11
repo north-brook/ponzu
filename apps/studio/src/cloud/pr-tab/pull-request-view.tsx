@@ -112,7 +112,7 @@ export function PullRequestView({
           <Subtitle
             state={pr.state}
             number={pr.number}
-            branches={`${pr.head} → ${pr.base}`}
+            branches={{ head: pr.head, base: pr.base }}
             endedAt={pr.endedAt}
             onOpen={() => onOpenLink(pr.url)}
           />
@@ -124,18 +124,27 @@ export function PullRequestView({
             />
           ) : null}
         </div>
-        {pr.checks.length ? (
-          <Section title="Checks">
-            {orderChecks(pr.checks).map((check) => (
+        <Section title="Checks">
+          {pr.checks.length ? (
+            orderChecks(pr.checks).map((check) => (
               <CheckRow key={check.id} check={check} onOpenLink={onOpenLink} />
-            ))}
-            {pr.checksComplete ? null : (
-              <MoreOnGithub onOpen={() => onOpenLink(`${pr.url}/checks`)}>
-                More checks than shown here.
-              </MoreOnGithub>
-            )}
-          </Section>
-        ) : null}
+            ))
+          ) : (
+            // Before a merge, none yet may mean none are set up, or none have started: say only
+            // what is so. GitHub's own are a moment behind a push.
+            <p className="m-0 flex h-7 items-center gap-2 text-13 text-muted">
+              <CheckGlyph state="queued" />
+              {pr.state === "open" || pr.state === "draft"
+                ? "No checks have reported"
+                : "No checks ran"}
+            </p>
+          )}
+          {pr.checksComplete ? null : (
+            <MoreOnGithub onOpen={() => onOpenLink(`${pr.url}/checks`)}>
+              More checks than shown here.
+            </MoreOnGithub>
+          )}
+        </Section>
         {pr.comments.length ? (
           <Section title="Comments" gap>
             {pr.comments.map((comment) => (
@@ -201,7 +210,7 @@ function Subtitle({
 }: {
   state: PrState;
   number: number;
-  branches?: string;
+  branches?: { head: string; base: string };
   endedAt?: string | null;
   onOpen?: () => void;
 }) {
@@ -216,32 +225,44 @@ function Subtitle({
           ? "Closed"
           : null;
   const dot = <span className="text-dry">·</span>;
+  // One line while it fits. A long head branch gives way first (the base always reads whole),
+  // and what became of the pull request goes under rather than squeezing them; its dot, which
+  // hangs in the margin the row is shifted into, is clipped when it starts a line.
   return (
-    <div className="flex min-w-0 items-center gap-2 font-mono text-12 text-muted">
-      <span className="flex shrink-0 items-center gap-1">
-        <Icon icon={icon} size={12} stroke={2} className={color} />#{number}
-        {onOpen ? (
-          <IconButton
-            label="Open on GitHub"
-            onClick={onOpen}
-            className="-m-1 size-[19px] rounded-5 text-faint"
-          >
-            <Icon icon={LinkSquare02Icon} size={11} stroke={1.9} />
-          </IconButton>
+    <div className="-my-1 min-w-0 overflow-hidden py-1">
+      <div className="-ml-[23px] flex flex-wrap items-center gap-y-1 font-mono text-12 text-muted">
+        <span className="flex min-w-0 max-w-full items-center gap-2 pl-[23px]">
+          <span className="flex shrink-0 items-center gap-1">
+            <Icon icon={icon} size={12} stroke={2} className={color} />#{number}
+            {onOpen ? (
+              <IconButton
+                label="Open on GitHub"
+                onClick={onOpen}
+                className="-m-1 size-[19px] rounded-5 text-faint"
+              >
+                <Icon icon={LinkSquare02Icon} size={11} stroke={1.9} />
+              </IconButton>
+            ) : null}
+          </span>
+          {branches ? (
+            <>
+              {dot}
+              <span className="min-w-0 truncate" title={branches.head}>
+                {branches.head}
+              </span>
+              <span className="shrink-0">→ {branches.base}</span>
+            </>
+          ) : null}
+        </span>
+        {ended ? (
+          <span className="flex shrink-0 items-center">
+            <span aria-hidden className="w-[23px] shrink-0 text-center text-dry">
+              ·
+            </span>
+            <span className="font-sans">{ended}</span>
+          </span>
         ) : null}
-      </span>
-      {branches ? (
-        <>
-          {dot}
-          <span className="truncate">{branches}</span>
-        </>
-      ) : null}
-      {ended ? (
-        <>
-          {dot}
-          <span className="shrink-0 font-sans">{ended}</span>
-        </>
-      ) : null}
+      </div>
     </div>
   );
 }
