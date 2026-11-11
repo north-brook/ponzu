@@ -23,8 +23,8 @@
    * much of the material shows through.
    * --c-canvas is the ground the boards sit on, the canvas package's too (`--pz-canvas`, below).
    */
-  --c-chrome: light-dark(#eeede9, #121211);
-  --c-chrome-glass: light-dark(rgba(238, 237, 233, 0.8), rgba(12, 12, 11, 0.8));
+  --c-chrome: light-dark(#f4f3f0, #1a1a19);
+  --c-chrome-glass: light-dark(rgba(246, 245, 242, 0.62), rgba(30, 30, 28, 0.6));
   --c-canvas: light-dark(#ffffff, #000000);
   /* What the shell paints: the solid shell, or nothing where <html> carries the glass (below). */
   --c-shell: var(--c-chrome);
