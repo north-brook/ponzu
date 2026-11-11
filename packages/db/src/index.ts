@@ -285,6 +285,8 @@ export { isStorable } from "./queries/text.ts";
 export {
   appendThreadItem,
   appendThreadItemOnce,
+  attachCommentPicture,
+  getComment,
   listThreadItems,
   type NewThreadItem,
   postMessage,
