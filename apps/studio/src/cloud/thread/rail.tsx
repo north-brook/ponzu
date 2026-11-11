@@ -12,6 +12,7 @@ import type {
 import { NeedsYou } from "../needs-you/needs-you.tsx";
 import { safeHref } from "../ui/markdown.ts";
 import { quietFocus } from "../ui/quiet-focus.ts";
+import { overlayOpen } from "../ui/shortcut.ts";
 import { RailComposer, ReadOnlyLine } from "./composer.tsx";
 import { readDraft, restoreDraft, useDraft, writeDraft } from "./composer-rules.ts";
 import type { LineHandlers } from "./lines.tsx";
@@ -152,6 +153,31 @@ const LANDING = [
   "textarea:enabled",
   'input:enabled:not([type="file"])',
 ];
+
+/** Something a person types into: what has the keyboard there is theirs to keep. */
+const FIELD = 'input, textarea, select, [contenteditable]:not([contenteditable="false"])';
+
+/**
+ * The thread pane has just opened (`pane`, AppWindow's rail): the keyboard goes to what fills
+ * the composer's slot, so opening it is ready to say something. The composer's field; a
+ * question's first option, when one waits in its place; nothing for someone who can only read.
+ * Never under a menu, popover or dialog, and never from a field elsewhere that has the caret
+ * (the sidebar's search, a rename, text on the canvas). Without scrolling, and without a ring.
+ */
+export function enterThread(pane: HTMLElement): void {
+  if (overlayOpen() || pane.inert) return;
+  const active = document.activeElement;
+  if (active && active !== document.body) {
+    if (pane.contains(active) || active.matches(FIELD)) return;
+  }
+  for (const selector of LANDING) {
+    const target = pane.querySelector<HTMLElement>(selector);
+    if (target) {
+      quietFocus(target);
+      return;
+    }
+  }
+}
 
 /**
  * The composer's slot, holding one thing: the composer, what the agent waits on, or the

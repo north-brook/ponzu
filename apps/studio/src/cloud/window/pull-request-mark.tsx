@@ -114,8 +114,9 @@ export function PullRequestTab({
   active: boolean;
   onToggle: () => void;
 }) {
-  // ⌘P shows and hides the pull request, as a click on the mark does.
-  useShortcut("p", () => overlayOpen() || onToggle());
+  // ⌘P shows and hides the pull request, as a click on the mark does: not under a menu, popover
+  // or dialog (the key is left alone there), and once a press.
+  useShortcut("p", onToggle, true, { once: true, when: () => !overlayOpen() });
   return (
     <Tip label={`Pull request #${pr.number}`} keys={["⌘", "P"]}>
       <Button

@@ -5,40 +5,89 @@ import { useAnalytics } from "../../app/analytics/provider.tsx";
 /** Key presses already counted: two shortcuts on one key (⌘, has two) are one use. */
 const counted = new WeakSet<KeyboardEvent>();
 
+/** Presses a `once` shortcut has already run for. */
+const pressed = new WeakSet<object>();
+
 /** When each shortcut last ran, by key: a menu item with the same accelerator checks it. */
 const ran = new Map<string, number>();
+
+/** How a shortcut is pressed, past ⌘ and its key, and when it may run. */
+export interface ShortcutOptions {
+  /** ⇧ as well (⌘⇧↵); without it, a press with ⇧ is another shortcut's. */
+  shift?: boolean;
+  /**
+   * Whether it may run now, asked at each press: when not, the key is left alone (not taken,
+   * not counted), as if the shortcut weren't there.
+   */
+  when?: () => boolean;
+  /**
+   * One press runs it once: not again with each repeat of a key held down, and not a second
+   * time for another of the same shortcut mounted at once. For what can't be undone.
+   */
+  once?: boolean;
+}
+
+type Press = Pick<
+  KeyboardEvent,
+  "key" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey" | "isComposing" | "repeat"
+>;
+
+/**
+ * What a key press is to the shortcut on ⌘ (Ctrl off the Mac) plus `key`: not its own (null:
+ * another key, other modifiers, mid-composition, or `when` says not now); its own but already
+ * run ("taken": a repeat, or another of it ran for this press, when it is `once`); or to run.
+ * `seen` holds the presses a `once` shortcut has run for.
+ */
+export function shortcutPress(
+  e: Press,
+  key: string,
+  { shift = false, when, once = false }: ShortcutOptions = {},
+  seen: WeakSet<object> = pressed,
+): "run" | "taken" | null {
+  if (!(e.metaKey || e.ctrlKey) || e.shiftKey !== shift || e.altKey) return null;
+  if (e.key.toLowerCase() !== key || e.isComposing) return null;
+  if (when && !when()) return null;
+  if (!once) return "run";
+  if (e.repeat || seen.has(e)) return "taken";
+  seen.add(e);
+  return "run";
+}
+
+/** A shortcut as `hotkey used` names it: "mod+p", "mod+shift+enter". */
+export const hotkeyName = (key: string, shift = false) => `mod+${shift ? "shift+" : ""}${key}`;
 
 /**
  * Runs `handler` on ⌘ (Ctrl off the Mac) plus `key`, anywhere in the window, text fields
  * included: none of the app's take rich text, so no shortcut here shadows one of theirs. `key`
- * is the KeyboardEvent key, lowercase: "k", "n", "j", "b", ",", "p", "enter"; `shift` asks for ⇧
- * as well (⌘⇧↵). Each use is counted (`hotkey used`), by key.
+ * is the KeyboardEvent key, lowercase: "k", "n", "j", "b", ",", "p", "enter". Each use is
+ * counted (`hotkey used`, hotkeyName), and a press it takes does nothing else in the page.
  */
 export function useShortcut(
   key: string,
   handler: () => void,
   enabled = true,
-  { shift = false }: { shift?: boolean } = {},
+  { shift = false, when, once = false }: ShortcutOptions = {},
 ): void {
-  const latest = useRef(handler);
-  latest.current = handler;
+  const latest = useRef({ handler, when });
+  latest.current = { handler, when };
   const analytics = useAnalytics();
   useEffect(() => {
     if (!enabled) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.shiftKey !== shift || e.altKey) return;
-      if (e.key.toLowerCase() !== key) return;
+      const press = shortcutPress(e, key, { shift, once, when: latest.current.when });
+      if (!press) return;
       e.preventDefault();
+      if (press === "taken") return;
       ran.set(key, performance.now());
       if (!counted.has(e)) {
         counted.add(e);
-        analytics.capture("hotkey used", { hotkey: `mod+${shift ? "shift+" : ""}${key}` });
+        analytics.capture("hotkey used", { hotkey: hotkeyName(key, shift) });
       }
-      latest.current();
+      latest.current.handler();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [key, enabled, analytics, shift]);
+  }, [key, enabled, analytics, shift, once]);
 }
 
 /**

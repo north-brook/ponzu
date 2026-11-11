@@ -1109,21 +1109,30 @@ rather than listed. At most 120 groups carry text (120 characters each); later s
 in a group with `text: null` after their message, and once the log holds 240 groups, in its last
 `text: null` group, so a turn of hundreds of tool calls, or one that talks for hours, is a few
 kilobytes. The API refuses a record past those bounds; a runner whose write is refused sends the
-write's other items again on their own, so one item never takes the agent's text down with it. Clients show a running turn's messages
-and nothing of its work but the working line; once it has ended they keep `final` in full and
-fold everything between the person's message and it into one line ("Worked for 4 min · 7 boards
-· 1 file") that opens on the turn's messages, each followed by its steps. A turn with nothing
-before its answer has no fold.
+write's other items again on their own, so one item never takes the agent's text down with it.
+
+The thread shows people's messages, the agent's messages and, while a turn runs, one working
+line; nothing of a turn's work, ever. While it runs, each message the agent has gone on working
+after (a later message, or a `log` group `after` it) is an aside, set quieter and in italics;
+its newest words read plain until it carries on. Once it has ended only its answer stays:
+`final`; with no `final`, its last message if it ended `done` (or its record isn't closed yet),
+and none if it was stopped or failed, when how it ended (the stop, the error) is its last line.
+A question answered on the way, a pull request and a person's message mid-turn stay where they
+are. The asides and the working line leave together, closing their room and fading at the pane's
+pace (at once with reduced motion), so the answer settles into place; a thread opened later is
+drawn already settled.
+
+So clients read `final`, `ended`, and `log[].after`, and nothing else of the record: `ms`,
+`boards`, `files`, `log[].text` and `log[].count`, and the item's `label`, `steps` and
+`artboards`, were the fold's ("Worked for 4 min · 7 boards · 1 file", opening on each message's
+steps), which is gone. The runner still writes them; the protocol is unchanged.
 
 A runner from before the record (whose items are in designs already) wrote one `tool` item per
-stretch of tool calls between two things the agent said, with no `turn`: while it streamed, the
-working line; once finished, named by its weightiest step or by what the agent last said with
-set_status. Clients fold those turns the same way, by position: a turn starts at the agent's
-first item after a person's, its answer is its last message unless a stretch came after it, and
-each stretch is listed as a count of its steps (with its label, unless every stretch of the turn
-says the same thing). A runner that writes the record therefore needs no change to clients that
-read only `label`: they show its streaming item as the working line and its finished one as one
-quiet line per turn.
+stretch of tool calls between two things the agent said, with no `turn`. Clients read those
+turns by position: a turn starts at the agent's first item after a person's, runs while the
+agent works, and a message with a stretch after it is an aside; once it has ended, its answer is
+its last message, unless the turn was stopped or failed after it. The stretches themselves
+never show, nor their labels (often whatever the agent last set with set_status).
 
 An `assistant` item cut off by an interrupt is finished with the text it had. `error` codes:
 `clone_failed`, `claude_auth`, `claude_limit`, `model_unavailable`, `max_turns`, `turn_failed`,
@@ -1181,7 +1190,7 @@ by shape (git, package managers, tests, dev servers, builds, linters) and are ot
 contents, or text that looks like a secret, and never one of the sandbox's own secret values
 (the repo's secrets, the Claude credential, the runner token). Clients show it at the thread's
 foot with the turning slice from the moment a person sends until the turn's item finishes, and
-take it away in the frame the turn folds, whichever of the item and the idle report comes
+take it away in the frame the turn's asides go, whichever of the item and the idle report comes
 first.
 
 `branch` is sent once for each push the runner made or tried (at its start, at the end of each

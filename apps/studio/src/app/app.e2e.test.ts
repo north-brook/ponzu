@@ -343,6 +343,9 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     await page.evaluate((id) => window.ponzuFake!.drawBoard(id, "Three plans"), design.id);
     await page.locator('[data-board-name][title="Three plans"]').waitFor();
     expect(await page.locator("[data-artboard-host]").count()).toBe(1);
+    // The thread came with the design rather than being opened: the caret isn't put there.
+    await page.waitForTimeout(400);
+    expect(await page.evaluate(() => !!document.activeElement?.closest("#thread"))).toBe(false);
   });
 
   test("a pane opening or closing slides over still boards, on either side, every frame", async () => {
@@ -377,6 +380,11 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
   });
 
   test("a comment left on the canvas reaches the design, and a teammate's reply comes back", async () => {
+    // The thread opened last, with the caret in its composer: back to the canvas's keys first.
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe(
+      "Message",
+    );
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await page.keyboard.press("c");
     // Into the board, below its title.
     const title = (await page.locator('[data-board-name][title="Three plans"]').boundingBox())!;

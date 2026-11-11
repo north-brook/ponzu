@@ -473,16 +473,6 @@ function WorkspaceWindow({
           ...(openId ? { design_id: openId } : {}),
         });
         update((now) => ({ ...now, railOpen: !now.railOpen }));
-        // Opening it is to say something: the caret goes to the composer once the pane is in.
-        if (!ui.railOpen) {
-          requestAnimationFrame(() =>
-            requestAnimationFrame(() =>
-              document
-                .querySelector<HTMLTextAreaElement>('#thread textarea[aria-label="Message"]')
-                ?.focus({ preventScroll: true }),
-            ),
-          );
-        }
       },
     },
     page,

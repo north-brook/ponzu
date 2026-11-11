@@ -44,9 +44,15 @@ export function NextActionButton({
 }) {
   const { label, icon } = ACTIONS[action];
   const why = blocked ?? (action === "auto_merge_on" ? "Merges once the checks pass" : null);
-  // ⌘⇧↵ presses it: three keys, since it can merge. Not under a menu or a dialog, and never
-  // while it couldn't be pressed.
-  useShortcut("enter", () => why || busy || overlayOpen() || onRun(action), true, { shift: true });
+  // ⌘⇧↵ presses it: three keys, since it can merge. Never while it couldn't be pressed or under
+  // a menu, popover or dialog (then the key isn't taken or counted), and once a press, however
+  // long the keys are held. What a press does is what a click does: the dialog that asks before
+  // merging past the repo's rules still asks.
+  useShortcut("enter", () => onRun(action), true, {
+    shift: true,
+    once: true,
+    when: () => !why && !busy && !overlayOpen(),
+  });
   const button = (
     <Button
       variant="action"

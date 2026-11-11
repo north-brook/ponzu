@@ -37,7 +37,6 @@ export const TURN_BOARDS: Record<string, () => ReactNode> = {
     working("Running the dev server"),
   ),
   "turn-completed": turnBoard([...t.stoppedTurn, ...t.askedTurn, ...t.completedTurn], IDLE),
-  "turn-completed-open": turnBoard([...t.stoppedTurn, ...t.askedTurn, ...t.completedTurn], IDLE),
   "turn-stopped": turnBoard(t.stoppedTurn, IDLE),
   "turn-failed": turnBoard(t.failedTurn, IDLE),
   "turn-asked": turnBoard(t.askedTurn, IDLE),
@@ -48,6 +47,8 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
   ...TURN_BOARDS,
   // Not a composition: a turn the browser tests play through, frame by frame.
   "turn-live": () => <LiveTurnRail />,
+  // The same, under sixty earlier lines: for reading up while it ends.
+  "turn-live-long": () => <LiveTurnRail earlier />,
   "needs-you-a-question": () => (
     <DesignHarness
       designs={asking}
