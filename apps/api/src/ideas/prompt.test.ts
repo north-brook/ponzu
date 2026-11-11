@@ -67,12 +67,37 @@ describe("checkIdeas", () => {
     ["a line break", "Make checkout one page\nand the cart too"],
     ["a tab", "Make checkout\tone page"],
     ["a control character", "Make checkout one page\u0007"],
-    ["a right-to-left override", "Make checkout ‮egap eno"],
-    ["a zero-width space", "Make check​out one page"],
-    ["a private-use character", "Make checkout one page "],
-    ["a line separator", "Make checkout one page and the cart"],
+    ["a right-to-left override", "Make checkout \u202Eegap eno"],
+    ["a right-to-left isolate", "Make checkout \u2067one page\u2069"],
+    ["a left-to-right mark", "Make checkout\u200E one page"],
+    ["hidden tag text", "Make checkout one page\u{E0069}\u{E0067}\u{E006E}"],
+    ["a private-use character", "Make checkout one page \uE000"],
+    ["a line separator", "Make checkout one page\u2028and the cart"],
   ])("refuses an idea with %s: it can make text read other than it is", (_, idea) => {
     expect(checkIdeas(withFirst(idea))).toEqual({ ok: false, code: "characters" });
+  });
+
+  // Format characters a language or an emoji needs are not hidden text.
+  test.each([
+    [
+      "Persian with a zero-width non-joiner",
+      "\u0637\u0631\u0627\u062D\u06CC \u0635\u0641\u062D\u0647\u200C\u06CC \u0627\u0635\u0644\u06CC \u0628\u0631\u0627\u06CC \u0641\u0631\u0648\u0634\u06AF\u0627\u0647",
+    ],
+    [
+      "Hindi with a zero-width joiner",
+      "\u0915\u094D\u200D\u0937 \u092E\u0941\u0916\u092A\u0943\u0937\u094D\u0920 \u0915\u094B \u0928\u092F\u093E \u0930\u0942\u092A \u0926\u0947\u0902",
+    ],
+    [
+      "a family emoji joined with zero-width joiners",
+      "Add a \u{1f469}\u200D\u{1f469}\u200D\u{1f467} family plan card",
+    ],
+    [
+      "a zero-width space, which Thai and Khmer use between words",
+      "\u0E2D\u0E2D\u0E01\u0E41\u0E1A\u0E1A\u0E2B\u0E19\u0E49\u0E32\u0E41\u0E23\u0E01\u200B\u0E02\u0E2D\u0E07\u0E23\u0E49\u0E32\u0E19",
+    ],
+    ["a soft hyphen", "Redesign the onboard\u00ADing flow"],
+  ])("keeps an idea with %s", (_, idea) => {
+    expect(checkIdeas(withFirst(idea))).toMatchObject({ ok: true });
   });
 
   // Each of these was refused by a pattern rule this replaced.

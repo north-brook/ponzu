@@ -8,10 +8,12 @@ import type { Meter } from "./meter.ts";
  * A judge: a model asked to grade something against a written rubric, answering in a
  * structured form with its reason before its verdict. It goes through the AI SDK the way the
  * product's own model calls do (`generateText` with `Output.object`), and every call is metered.
- * The judges are a stronger model than what they judge: Claude Opus 5.5 offline.
+ * A judge is a stronger model than what it judges: Claude Opus 5.5 for the ideas, which Claude
+ * Haiku 5.5 writes, and Claude Fable 5.2 for the design agent, which runs on Claude Opus 5.5
+ * (`THREAD_JUDGE_MODEL` in apps/runner/evals/agent/judge.ts).
  */
 
-/** The offline judges' model. */
+/** The offline judges' model, unless a suite names a stronger one for what it judges. */
 export const JUDGE_MODEL = "claude-opus-5-5";
 
 export type Model = Exclude<LanguageModel, string>;
@@ -56,7 +58,10 @@ export function createJudge(model: Model, meter: Meter): Judge {
       schema,
       maxOutputTokens = MAX_OUTPUT,
     }: JudgeRequest<T>) {
-      meter.reserve(id, { maxOutputTokens, inputChars: instructions.length + prompt.length });
+      const hold = meter.reserve(id, {
+        maxOutputTokens,
+        inputChars: instructions.length + prompt.length,
+      });
       try {
         const result = await generateText({
           model,
@@ -68,22 +73,26 @@ export function createJudge(model: Model, meter: Meter): Judge {
           reasoning: "low",
           maxRetries: 2,
         });
-        meter.record(id, `judge:${label}`, {
+        const usage = {
           input: result.totalUsage.inputTokens ?? 0,
           output: result.totalUsage.outputTokens ?? 0,
-        });
+        };
+        meter.record(id, `judge:${label}`, usage, hold);
         return result.output as T;
       } catch (error) {
         if (NoObjectGeneratedError.isInstance(error)) {
-          meter.record(id, `judge:${label}`, {
+          const usage = {
             input: error.usage?.inputTokens ?? 0,
             output: error.usage?.outputTokens ?? 0,
-          });
+          };
+          meter.record(id, `judge:${label}`, usage, hold);
           throw new JudgeError(
             `the ${label} judge gave no answer in shape (${error.finishReason})`,
           );
         }
         throw error;
+      } finally {
+        meter.release(hold);
       }
     },
   };

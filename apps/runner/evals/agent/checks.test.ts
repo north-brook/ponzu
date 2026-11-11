@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { type FactInputs, factsText, pushAndNotices } from "./agent.eval.ts";
 import { checkMessages, describedAfterLastCommit, idsOf, parseDesignAddress } from "./checks.ts";
 import { pricingDoc } from "./seeds.ts";
 
@@ -76,4 +77,39 @@ test("describe_pull_request after the last commit, by the second", () => {
   expect(describedAfterLastCommit([], [])).toBeNull();
   expect(describedAfterLastCommit([{ at: 100 }, { at: 200 }], [{ at: 150_000 }])).toBe(false);
   expect(describedAfterLastCommit([{ at: 100 }, { at: 200 }], [{ at: 200_400 }])).toBe(true);
+});
+
+const BASE_FACTS: FactInputs = {
+  made: [],
+  changed: [],
+  deleted: [],
+  pagesMade: [],
+  tokensChanged: false,
+  repo: true,
+  commits: [],
+  pushed: 0,
+  refused: null,
+  summaries: 0,
+  ponzuPushFailed: false,
+  notices: [],
+  questions: 0,
+  ended: "end_turn",
+};
+
+test("only the runner's own push failure is told to the judge as one; other notices are their own facts", () => {
+  const other = "export_failed: the screenshot could not be made";
+  expect(pushAndNotices({ branch: { unpushed: 0, error: null }, errors: [other] })).toEqual({
+    ponzuPushFailed: false,
+    notices: [other],
+  });
+  expect(pushAndNotices({ branch: null, errors: ["push_failed: remote rejected", other] })).toEqual(
+    { ponzuPushFailed: true, notices: [other] },
+  );
+  expect(pushAndNotices({ branch: { unpushed: 1, error: "rejected" }, errors: [] })).toEqual({
+    ponzuPushFailed: true,
+    notices: [],
+  });
+  const facts = factsText({ ...BASE_FACTS, notices: [other] });
+  expect(facts).toContain(`Ponzu showed an error notice in the thread: ${other}`);
+  expect(facts).not.toContain("Ponzu's own push");
 });

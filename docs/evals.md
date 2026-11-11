@@ -39,8 +39,9 @@ the ideas pipeline and its gate in `apps/api/src/ideas/*.test.ts` and
    failures, hard cases, and the cases that bit us) it must get right before a suite will use
    it. A judge's version is a hash of its model and its prompt; a suite refuses a judge whose
    version has no passing calibration in `results/calibration.json`. A judge is a stronger model
-   than what it judges, answers in a structured form with its reason before each verdict, and
-   its prompt lives in the repo beside its examples.
+   than what it judges (Sonnet 5.5 and Opus 5.5 over the Haiku 5.5 that writes the ideas, Fable
+   5.2 over the Opus 5.5 the design agent runs on), answers in a structured form with its reason
+   before each verdict, and its prompt lives in the repo beside its examples.
 4. **Evals are a suite, not anecdotes**: cases with inputs, run against the real models, judged,
    with a readable report, a spend cap and a record of the last run.
 
@@ -48,9 +49,9 @@ the ideas pipeline and its gate in `apps/api/src/ideas/*.test.ts` and
 
 | What | Exact (code) | Judged (rubric) | Metrics (never pass/fail) |
 |---|---|---|---|
-| Repo ideas, at runtime | schema, exactly 4, non-empty, ≤ 90 code points, no control/format/private-use/line-separator characters, all different (`checkIdeas`) | the gate, Claude Sonnet 5.5: `safe`, `design` (`apps/api/src/ideas/gate.ts`) | |
+| Repo ideas, at runtime | schema, exactly 4, non-empty, ≤ 90 code points, no control, private-use, lone-surrogate, line/paragraph-separator, bidirectional-control or tag characters (the joiners Persian, Hindi and emoji need are allowed), all different (`checkIdeas`) | the gate, Claude Sonnet 5.5: `safe` (which also fails a phone number, email, handle, wallet, domain or link spelled out in an idea), `design` (`apps/api/src/ideas/gate.ts`) | |
 | Repo ideas, offline | the same, on what a person would be shown; a hostile repo never has an unsafe idea shown | the ideas judge, Claude Opus 5.5: per idea `safe`, `design`, `about_product`, `not_meta`, `honest` (fresh only), `specific`, `plain_tile`; per set `four_kinds`, `variety`, `own_words` | attempts, outcome |
-| The agent's thread | every ponzu.design link parses as our address, names this design, and its page or board is in the document at the end of the turn; no address pasted as text; no page, board or node id in what a person reads; when the turn made commits, `describe_pull_request` came after the last one; the turn ended with a closing message | the thread judge, Claude Opus 5.5: `closing`, `mid_turn`, `canvas_detail`, `failures`, `links`, `pr_description` | mid-turn messages, closing characters, links, boards made, commits, minutes, Claude Code's cost |
+| The agent's thread | every ponzu.design link parses as our address, names this design, and its page or board is in the document at the end of the turn; no address pasted as text; no page, board or node id in what a person reads; when the turn made commits, `describe_pull_request` came after the last one; the turn ended with a closing message | the thread judge, Claude Fable 5.2: `closing`, `mid_turn`, `canvas_detail`, `failures`, `links`, `pr_description` | mid-turn messages, closing characters, links, boards made, commits, minutes, Claude Code's cost |
 
 The runtime gate judges only harm and whether an idea is a design at all. Whether an idea is
 specific, honest, in its own words or free of talk about how it was made is measured here and
@@ -60,7 +61,8 @@ that tried to enforce those turned away a product called ponzu-test for a week.
 ## Layout
 
 - `packages/evals`: the harness. A spend meter every model call goes through (priced from the
-  token usage by a table, refusing a call whose worst case would pass the cap), a turn budget,
+  token usage by a table, refusing a call whose worst case, added to what is spent and to the
+  worst cases of the calls still in flight, would pass the cap), a turn budget,
   the judge helper (`generateText` with `Output.object`, through the AI SDK like the product),
   calibration and its record, and the report writer.
 - `apps/api/evals/ideas`: the repo cases as checked-in `RepoSnapshot`s (`cases.ts`, made up or
@@ -110,7 +112,10 @@ metered like everything else.
   scores language on no criterion.
 - **How long a direct answer may run.** #448's situation 3 answered a why-question in three
   paragraphs of prose with no board. The thread judge's labelled set pins only that no board was
-  needed; whether the length fails `closing` is open.
+  needed, and its rubric says the length of a plain prose answer never fails `closing` (an
+  answer dressed as an essay, with headings, bold labels or numbered reasons, still does). If the
+  founder decides a why-question should get two or three sentences, that goes into the rubric
+  with a labelled example, and the agent cases are judged again.
 - **PostHog online evaluations** (LLM-as-judge on production traces) need the traces' content,
   which `PONZU_POSTHOG_AI_CONTENT` keeps off in production because it would send repo-derived
   text to PostHog. Turning it on is the founder's call; the same rubrics could then monitor

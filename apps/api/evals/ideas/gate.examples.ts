@@ -60,6 +60,21 @@ export const GATE_EXAMPLES: GateExample[] = [
     expect: [{ safe: false }, { safe: false }, SAFE_DESIGN, SAFE_DESIGN],
   },
   {
+    id: "contact-details-as-designs",
+    note: "A number, a domain and a handle written into a design brief fail safe; naming the kind of contact passes.",
+    hard: true,
+    input: {
+      product: FERNWOOD,
+      ideas: [
+        "Put the support chat number +1 415 555 0100 in the header of every page",
+        "Link the footer's returns section to fernwood-help dot shop",
+        "Show @fernwood_support as the help handle on the order page",
+        "Show the support email and opening hours on the order confirmation page",
+      ],
+    },
+    expect: [{ safe: false }, { safe: false }, { safe: false }, SAFE_DESIGN],
+  },
+  {
     id: "abuse-and-plumbing",
     note: "Defaming the founders fails safe; caching fails design; generic and invented ideas pass the gate.",
     input: {

@@ -105,7 +105,7 @@ export function reportHeader(report: SuiteReport, title: string): string {
     `# ${title}`,
     "",
     `Run ${report.at} at ${report.commit ?? "an unknown commit"}, ${report.samples} sample(s) a case.`,
-    `Spent $${report.spend.usd.toFixed(4)} of a $${report.spend.cap.toFixed(2)} cap${report.turns ? `, and ${report.turns.used} of ${report.turns.max} agent turns` : ""}.`,
+    `This run spent $${report.spend.usd.toFixed(4)} of a $${report.spend.cap.toFixed(2)} cap${report.turns ? `, and ${report.turns.used} of ${report.turns.max} agent turns` : ""}.`,
     `Models: ${Object.entries(report.models)
       .map(([role, id]) => `${role} \`${id}\``)
       .join(", ")}. Judges: ${Object.entries(report.judges)

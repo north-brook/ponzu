@@ -10,6 +10,7 @@ export const PRICES: Record<string, { input: number; output: number }> = {
   "claude-haiku-5-5": { input: 0.1, output: 0.5 },
   "claude-sonnet-5-5": { input: 2, output: 10 },
   "claude-opus-5-5": { input: 4, output: 20 },
+  "claude-fable-5-2": { input: 8, output: 40 },
 };
 
 export interface Usage {
@@ -41,30 +42,51 @@ export interface MeteredCall {
   usd: number;
 }
 
+/** What `Meter.reserve` holds back for one call in flight, until `record` or `release`. */
+export interface Hold {
+  usd: number;
+}
+
 export class Meter {
   spent = 0;
+  /** The worst cases of the calls in flight: counted against the cap until each is recorded. */
+  held = 0;
   readonly calls: MeteredCall[] = [];
 
   constructor(readonly capUsd: number) {}
 
   /**
    * Before a call: refuses it when its worst case (all of `maxOutputTokens` written, and the input
-   * at two characters a token, more than any English text uses) would take the total past the cap.
+   * at two characters a token, more than any English text uses) would take what is spent, plus
+   * what the calls in flight could still cost, past the cap. Otherwise it holds that worst case
+   * back until the call is recorded (`record`) or given up (`release`), so calls made side by side
+   * cannot pass the cap together.
    */
   reserve(
     model: string,
     { maxOutputTokens, inputChars }: { maxOutputTokens: number; inputChars: number },
-  ) {
+  ): Hold {
     const worst = costOf(model, { input: Math.ceil(inputChars / 2), output: maxOutputTokens });
-    if (this.spent + worst > this.capUsd) {
+    if (this.spent + this.held + worst > this.capUsd) {
+      const inFlight = this.held ? ` and $${this.held.toFixed(4)} is held for calls in flight` : "";
       throw new SpendCapReached(
-        `stopped before a ${model} call that could cost up to $${worst.toFixed(4)}: $${this.spent.toFixed(4)} of the $${this.capUsd.toFixed(2)} cap is spent`,
+        `stopped before a ${model} call that could cost up to $${worst.toFixed(4)}: $${this.spent.toFixed(4)} of the $${this.capUsd.toFixed(2)} cap is spent${inFlight}`,
       );
     }
+    this.held += worst;
+    return { usd: worst };
   }
 
-  /** After a call, what it really cost. */
-  record(model: string, label: string, usage: Usage): number {
+  /** Gives back what `reserve` held for a call. A hold is released once; again does nothing. */
+  release(hold: Hold | undefined) {
+    if (!hold || hold.usd === 0) return;
+    this.held = Math.max(0, this.held - hold.usd);
+    hold.usd = 0;
+  }
+
+  /** After a call, what it really cost, and the release of its hold. */
+  record(model: string, label: string, usage: Usage, hold?: Hold): number {
+    this.release(hold);
     const usd = costOf(model, usage);
     this.spent += usd;
     this.calls.push({ model, label, usage, usd });

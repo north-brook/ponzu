@@ -14,13 +14,17 @@ export function meteredModel(
   return {
     id: inner.id,
     async structured(request) {
-      meter.reserve(inner.id, {
+      const hold = meter.reserve(inner.id, {
         maxOutputTokens: request.maxTokens,
         inputChars: request.instructions.length + request.prompt.length,
       });
-      const answer = await inner.structured(request);
-      meter.record(inner.id, label, answer.usage);
-      return answer;
+      try {
+        const answer = await inner.structured(request);
+        meter.record(inner.id, label, answer.usage, hold);
+        return answer;
+      } finally {
+        meter.release(hold);
+      }
     },
   };
 }

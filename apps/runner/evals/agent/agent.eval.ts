@@ -29,8 +29,10 @@ import {
   judgeThread,
   THREAD_CRITERIA,
   THREAD_JUDGE,
+  THREAD_JUDGE_MODEL,
   type ThreadTurn,
   type ThreadVerdict,
+  threadJudge,
   threadJudgeVersion,
 } from "./judge.ts";
 import { onboardingDoc, pinnedComment, pricingDoc } from "./seeds.ts";
@@ -161,6 +163,8 @@ export interface FactInputs {
   summaries: number;
   /** Ponzu's own push at the end of the turn failed, and it said so in the thread. */
   ponzuPushFailed: boolean;
+  /** Ponzu's other error notices in the thread during the turn, as `code: message`. */
+  notices?: string[];
   questions: number;
   ended: string | null;
 }
@@ -194,9 +198,23 @@ export function factInputs(setup: TurnSetup, turn: TurnOutcome): FactInputs {
     // could know, so the judge is told what git said, not that it always will.
     refused: setup.refusePush && turn.commits.length > turn.pushed ? REFUSAL : null,
     summaries: turn.summaries.length,
-    ponzuPushFailed: Boolean(turn.branch?.error || turn.errors.length),
+    ...pushAndNotices(turn),
     questions: turn.questions,
     ended: turn.ended,
+  };
+}
+
+/**
+ * Ponzu's own push failed only when the runner said so: the branch it reports carries an error, or
+ * a `push_failed` notice. Every other error notice is a fact of its own, never read as a push.
+ */
+export function pushAndNotices(
+  turn: Pick<TurnOutcome, "branch" | "errors">,
+): Pick<FactInputs, "ponzuPushFailed" | "notices"> {
+  const push = (line: string) => line.startsWith("push_failed:");
+  return {
+    ponzuPushFailed: Boolean(turn.branch?.error) || turn.errors.some(push),
+    notices: turn.errors.filter((line) => !push(line)),
   };
 }
 
@@ -231,6 +249,9 @@ export function factsText(f: FactInputs): string {
       "After the closing message, Ponzu's own push of the branch (which the instructions told the agent it would make, and report if it failed) failed too, and Ponzu said so in the thread itself.",
     );
   }
+  for (const notice of f.notices ?? []) {
+    lines.push(`Ponzu showed an error notice in the thread: ${notice}`);
+  }
   if (f.questions)
     lines.push(`The agent asked ${f.questions} question(s); each was answered "Your call."`);
   lines.push(`The turn ended: ${f.ended ?? "unknown"}.`);
@@ -254,6 +275,9 @@ interface CaseResult {
   prDescription?: string | null;
   steps?: string[];
   verdict?: ThreadVerdict;
+  /** When and at what commit this row's turn ran, and at what commit it was last judged. */
+  ran?: { at: string; commit: string | null };
+  judgedAt?: string | null;
 }
 
 function claudeToken(): string | null {
@@ -286,11 +310,11 @@ export const agentSuite: Suite = {
     ctx.log(`calibrating the thread judge on ${examples.length} labelled turns`);
     const result = await calibrate({
       judge: THREAD_JUDGE,
-      model: ctx.judge.model,
-      version: threadJudgeVersion(ctx.judge.model),
+      model: THREAD_JUDGE_MODEL,
+      version: threadJudgeVersion(THREAD_JUDGE_MODEL),
       commit: ctx.commit,
       examples,
-      run: (turn) => judgeThread(ctx.judge, turn),
+      run: (turn) => judgeThread(threadJudge(ctx), turn),
       compare: (expect, got: ThreadVerdict | null) => {
         let labels = 0;
         const misses: ReturnType<typeof compareLabels>["misses"] = [];
@@ -314,7 +338,11 @@ export const agentSuite: Suite = {
   },
 
   async run(ctx) {
-    const judgeAt = requireCalibrated(RESULTS, THREAD_JUDGE, threadJudgeVersion(ctx.judge.model));
+    const judgeAt = requireCalibrated(
+      RESULTS,
+      THREAD_JUDGE,
+      threadJudgeVersion(THREAD_JUDGE_MODEL),
+    );
     const token = claudeToken();
     const claude = claudeBinary();
     const chromium = process.env.PONZU_CHROMIUM ?? findHeadlessShell();
@@ -354,6 +382,7 @@ export const agentSuite: Suite = {
         ctx.log(`${c.id}: the turn failed: ${row.error}`);
         continue;
       }
+      row.ran = { at: new Date().toISOString(), commit: ctx.commit };
       const messages = [...turn.midTurn, ...(turn.closing ? [turn.closing] : [])];
       const checked = checkMessages(messages, {
         designId: setup.designId,
@@ -395,7 +424,8 @@ export const agentSuite: Suite = {
         prDescription: row.prDescription,
       };
       try {
-        row.verdict = await judgeThread(ctx.judge, judged);
+        row.verdict = await judgeThread(threadJudge(ctx), judged);
+        row.judgedAt = ctx.commit;
       } catch (error) {
         if (error instanceof SpendCapReached) notRun.push(`${c.id}'s judging: ${error.message}`);
         row.error = `judging failed: ${error}`;
@@ -410,7 +440,9 @@ export const agentSuite: Suite = {
         readFileSync(join(RESULTS, "latest.json"), "utf8"),
       ) as SuiteReport;
       for (const row of recorded.cases as CaseResult[]) {
-        if (!ctx.only.includes(row.id)) kept.push(row);
+        if (ctx.only.includes(row.id)) continue;
+        row.ran ??= { at: recorded.at, commit: recorded.commit };
+        kept.push(row);
       }
       if (kept.length) {
         notRun.push(
@@ -439,7 +471,11 @@ export const agentSuite: Suite = {
    * as they were recorded.
    */
   async rejudge(ctx) {
-    const judgeAt = requireCalibrated(RESULTS, THREAD_JUDGE, threadJudgeVersion(ctx.judge.model));
+    const judgeAt = requireCalibrated(
+      RESULTS,
+      THREAD_JUDGE,
+      threadJudgeVersion(THREAD_JUDGE_MODEL),
+    );
     const recorded = JSON.parse(readFileSync(join(RESULTS, "latest.json"), "utf8")) as SuiteReport;
     const startedAt = ctx.meter.spent;
     const notRun: string[] = [];
@@ -449,14 +485,16 @@ export const agentSuite: Suite = {
       if (row.factInputs) row.facts = factsText(row.factInputs);
       if (!row.facts || !request) continue;
       row.request = request;
+      row.ran ??= { at: recorded.at, commit: recorded.commit };
       try {
-        row.verdict = await judgeThread(ctx.judge, {
+        row.verdict = await judgeThread(threadJudge(ctx), {
           request,
           facts: row.facts,
           midTurn: row.midTurn ?? [],
           closing: row.closing ?? null,
           prDescription: row.prDescription ?? null,
         });
+        row.judgedAt = ctx.commit;
         if (row.error?.startsWith("judging failed")) delete row.error;
       } catch (error) {
         if (error instanceof SpendCapReached) notRun.push(`${row.id}'s judging: ${error.message}`);
@@ -526,7 +564,7 @@ function finish(
     turns,
     models: {
       agent: "claude-opus-5-5 (high), Claude Code via the Agent SDK",
-      judge: ctx.judge.model,
+      judge: THREAD_JUDGE_MODEL,
     },
     judges: { [THREAD_JUDGE]: judge },
     rates,
@@ -539,7 +577,26 @@ function finish(
 }
 
 function markdown(report: SuiteReport, results: readonly CaseResult[]): string {
-  const lines = [reportHeader(report, "The design agent's thread"), "## Cases", ""];
+  const lines = [reportHeader(report, "The design agent's thread")];
+  // A row may come from an earlier run (`--only`, `rejudge`): say where each one's turn ran.
+  const ran = results.filter((row) => row.ran);
+  if (ran.length) {
+    const commits = new Set(ran.map((row) => row.ran!.commit ?? "?"));
+    lines.push(
+      "## Where each row comes from",
+      "",
+      `${ran.length} agent turn(s) behind these rows, at ${[...commits].join(", ")}. The header's spend and turns are this run's alone.`,
+      "",
+      "| Case | Turn ran | At commit | Judged at commit |",
+      "|---|---|---|---|",
+      ...ran.map(
+        (row) =>
+          `| ${row.id} | ${row.ran!.at} | ${row.ran!.commit ?? "?"} | ${row.judgedAt ?? row.ran!.commit ?? "?"} |`,
+      ),
+      "",
+    );
+  }
+  lines.push("## Cases", "");
   for (const row of results) {
     lines.push(`### ${row.id}: ${row.title}`, "");
     if (row.error) lines.push(`_${row.error}_`, "");

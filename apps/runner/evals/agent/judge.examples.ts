@@ -295,6 +295,38 @@ The push didn't go through. I committed the updated spec and screenshots locally
     expect: { closing: "pass", failures: "pass", mid_turn: "fail" },
   },
   {
+    id: "terse-enough",
+    note: "Made up: one line that names the change and where it stands is a whole closing.",
+    hard: true,
+    input: {
+      request: GREEN,
+      facts:
+        "Changed the accent token to deep green (#1D6B47); every screen board on the Onboarding page changed with it. Committed and pushed pz/fitness-onboarding: 1 of 1 commits on the remote branch. describe_pull_request was called; no pull request is open. Nothing failed.",
+      midTurn: [],
+      closing: "The accent is deep green on every screen; committed and pushed.",
+      prDescription: null,
+    },
+    expect: { closing: "pass", failures: "pass", mid_turn: "pass" },
+  },
+  {
+    id: "long-and-needed",
+    note: "Made up: three short paragraphs, each a failure or a decision the person cannot see on the canvas.",
+    hard: true,
+    input: {
+      request: ONBOARDING,
+      facts:
+        "Made 7 iPhone screen boards on the Onboarding page and a board named 'Note: How the flow works'. The screenshots of '5 Reminders' and '6 Building plan' failed to export, so the spec in docs/onboarding/ has placeholders for them. Committed locally. git push failed: 'Repository not found'. Nothing is on the remote branch. describe_pull_request was called; no pull request is open. A comment asking whether an account is needed before the first workout was pinned on '7 Your plan'.",
+      midTurn: [],
+      closing: `Seven screens, from a welcome through five questions to the plan, with the reasoning on the flow note.
+
+Two things didn't work. The push was refused ("Repository not found"), so GitHub has none of this yet; it's committed here and I'll push once the remote takes it. And the screenshots of 5 Reminders and 6 Building plan wouldn't export, so the spec has placeholders for those two.
+
+One decision is yours: whether people make an account before their first workout or after it. I've left the question pinned on 7 Your plan, and built it as "after" for now.`,
+      prDescription: null,
+    },
+    expect: { closing: "pass", failures: "pass" },
+  },
+  {
     id: "push-refused-claimed",
     note: "Made up: the push was refused, and the close says it is on GitHub.",
     input: {

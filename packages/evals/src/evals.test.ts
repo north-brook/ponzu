@@ -60,10 +60,42 @@ test("the meter refuses a call whose worst case would pass the cap, before it is
   expect(() =>
     meter.reserve("claude-opus-5-5", { maxOutputTokens: 8_000, inputChars: 100 }),
   ).toThrow(SpendCapReached);
-  meter.reserve("claude-haiku-5-5", { maxOutputTokens: 4_000, inputChars: 1_000 });
-  meter.record("claude-haiku-5-5", "generate", { input: 500, output: 100 });
+  const hold = meter.reserve("claude-haiku-5-5", { maxOutputTokens: 4_000, inputChars: 1_000 });
+  meter.record("claude-haiku-5-5", "generate", { input: 500, output: 100 }, hold);
   expect(meter.spent).toBeCloseTo(0.0001, 10);
+  expect(meter.held).toBe(0);
   expect(meter.byLabel()).toEqual({ generate: { calls: 1, usd: meter.spent } });
+});
+
+test("calls in flight hold their worst case, so side by side they cannot pass the cap", () => {
+  // Each Sonnet call could cost $0.03 (3,000 output tokens): three fit under $0.10, a fourth does not.
+  const meter = new Meter(0.1);
+  const call = { maxOutputTokens: 3_000, inputChars: 0 };
+  const holds = [1, 2, 3].map(() => meter.reserve("claude-sonnet-5-5", call));
+  expect(meter.held).toBeCloseTo(0.09, 10);
+  expect(() => meter.reserve("claude-sonnet-5-5", call)).toThrow("held for calls in flight");
+  // One comes back cheaper than its worst case, one fails: both give back what they held.
+  meter.record("claude-sonnet-5-5", "gate", { input: 0, output: 1_000 }, holds[0]);
+  meter.release(holds[1]);
+  meter.release(holds[1]);
+  expect(meter.held).toBeCloseTo(0.03, 10);
+  expect(meter.spent).toBeCloseTo(0.01, 10);
+  expect(() => meter.reserve("claude-sonnet-5-5", call)).not.toThrow();
+});
+
+test("a judge call that throws gives back what it held", async () => {
+  const meter = new Meter(1);
+  const failing = new MockLanguageModelV4({
+    modelId: "claude-opus-5-5",
+    doGenerate: async () => {
+      throw new Error("network down");
+    },
+  } as ConstructorParameters<typeof MockLanguageModelV4>[0]);
+  const judge = createJudge(failing, meter);
+  await expect(
+    judge.ask({ label: "x", instructions: "Grade.", prompt: "it", schema: Verdict }),
+  ).rejects.toThrow();
+  expect(meter.held).toBe(0);
 });
 
 test("the turn budget stops the turn past its count", () => {
