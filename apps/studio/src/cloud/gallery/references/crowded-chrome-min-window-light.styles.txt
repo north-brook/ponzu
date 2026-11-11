@@ -107,7 +107,7 @@ ground p[Thread] rgb(255, 255, 255)
 text "Maya said:" rgb(17, 17, 16) 400 13px Inter
 ground img[Thread] shadow rgb(232, 230, 224) 0px 0px 0px 2px
 icon svg[Working] 15×15 rgb(255, 200, 30) stroke 3.4px
-text "Cropping Hero · B's photo" rgb(94, 91, 84) 400 13px Inter
+text "Thinking" rgb(94, 91, 84) 400 13px Inter
 ground div[Thread] rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.1) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.08) 0px 6px 20px 0px, rgba(0, 0, 0, 0.06) 0px 1px 3px 0px
 icon svg[Attach an image] 16×16 rgb(128, 124, 115) stroke 1.8px
 ground button[Stop] rgb(17, 17, 16)
