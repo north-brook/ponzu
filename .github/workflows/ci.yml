@@ -244,14 +244,14 @@ jobs:
         # runs the same check on the signed Mac build before publishing it.
         run: PONZU_SMOKE=1 timeout 120 xvfb-run -a out/linux-unpacked/ponzu --no-sandbox
         working-directory: apps/desktop
-      - name: Ponzu Preview packages and draws its sign-in screen
+      - name: Ponzu Dev packages and draws its sign-in screen
         if: env.RUN == 'true'
         # The build that runs beside Ponzu 1.x (src/packaging.ts), so it can't
         # rot between the times someone needs it. Built after the release's
-        # check: it rebuilds dist/ as the preview's.
+        # check: it rebuilds dist/ as Ponzu Dev's.
         run: |
-          bun run package:preview
-          PONZU_SMOKE=1 timeout 120 xvfb-run -a out/preview/linux-unpacked/ponzu-preview --no-sandbox
+          bun run package:dev
+          PONZU_SMOKE=1 timeout 120 xvfb-run -a out/dev/linux-unpacked/ponzu-dev --no-sandbox
         working-directory: apps/desktop
       - name: The npm package installs, creates a design and serves the studio
         if: env.RUN == 'true'

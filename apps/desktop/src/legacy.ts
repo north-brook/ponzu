@@ -125,7 +125,7 @@ export async function removeLegacyOnce(
 
 /**
  * `removeLegacyOnce` for this build, which only a release does (config.ts's `cleansUpLegacy`).
- * Ponzu Preview and a development build run beside a 1.x that is still in use: they read nothing
+ * Ponzu Dev and Ponzu Local run beside a 1.x that is still in use: they read nothing
  * of it, remove nothing, and record nothing, so a release installed later still cleans up.
  */
 export async function removeLegacyFor(

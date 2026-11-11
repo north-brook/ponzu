@@ -9,7 +9,8 @@ import type { GithubTree } from "../deps/github.ts";
  *
  * The budget, at most, for one repository:
  *   reads    8 GitHub requests: the repo, its tree, its README, 4 manifests, 1 theme file
- *            (plus the one that mints the token)
+ *            (plus the one that mints the token); a small repo spends what its missing
+ *            manifests leave on the start of up to 2 of its few files instead
  *   bytes    the tree as far as GitHub lists it (it stops at 100,000 entries or 7 MB);
  *            a manifest or theme file only when the tree says it is under 64 KiB; the README
  *            cut at 64 KiB (GitHub sends at most 1 MB of any file's content)
@@ -25,6 +26,10 @@ export const BUDGET = {
   readme: 5_000,
   manifest: 1_400,
   theme: 2_200,
+  /** A small repo: how many of its own files are read, how much of each, how much kept. */
+  samples: 2,
+  sampleBytes: 16 * 1024,
+  sample: 1_500,
   layout: 2_200,
   screens: 4_000,
   components: 1_400,
@@ -47,6 +52,8 @@ export interface RepoSnapshot {
   theme: { path: string; excerpt: string } | null;
   /** Whether the interface has a dark theme already, as far as names and the theme show. */
   darkTheme: boolean;
+  /** For a small repo (`isSmall`), the start of each of a few of its files. */
+  samples: { path: string; excerpt: string }[];
   /** How many files the tree has. */
   files: number;
 }
@@ -95,7 +102,7 @@ const THEME: RegExp[] = [
   /(^|\/)(design-)?tokens?(\.[a-z]+)?\.(json|css|scss|ts|js|ya?ml)$|(^|\/)tokens\/[^/]+\.(json|css|ts|js)$|(^|\/)[\w-]*design[-_]?system[\w-]*\.(s?css|json|ts)$/i,
   /(^|\/)tailwind\.config\.(js|ts|cjs|mjs)$/,
   /(^|\/)theme\.(ts|js|json)$|(^|\/)theme\/(index|colors|tokens)\.(ts|js)$|(^|\/)(Colors|Theme)\.swift$|(^|\/)values\/colors\.xml$/,
-  /(^|\/)(globals?|app|application|main|index|variables|_variables|theme|styles)\.(s?css)$|(^|\/)tailwind\/[^/]+\.css$/,
+  /(^|\/)(globals?|app|application|main|index|variables|_variables|theme|styles?)\.(s?css)$|(^|\/)tailwind\/[^/]+\.css$/,
 ];
 
 /** A dark theme shows in a file's name (`dark.css`, `DarkTheme.ts`) or in the theme's text. */
@@ -235,6 +242,13 @@ const COMPONENT =
   /(^|\/)(components|ui|widgets)\/(?:.*\/)?([^/]+)\.(tsx|jsx|vue|svelte|astro|swift|kt|dart)$|(^|\/)([^/]+)\.(component\.ts|stories\.(tsx|jsx|ts|mdx))$/;
 /** Icons are components by the hundred, and say nothing of the product. */
 const ICONS = /(^|\/)(icons?|glyphs|svgs?|illustrations)\//i;
+/**
+ * A page written by hand, outside any stack's conventions: a site's `index.html`, an
+ * `about.vue`. Only one with something in it (`PAGE_BYTES` of markup) counts as a screen: a
+ * framework's empty `index.html` shell is not one.
+ */
+const PAGE_FILE = /^(.*?)([^/]+)\.(html?|vue|svelte|astro)$/i;
+const PAGE_BYTES = 4 * 1024;
 /** `Button.web.tsx` is `Button`. */
 const PLATFORM = /\.(web|ios|android|native|server|client|shared)$/;
 
@@ -243,6 +257,7 @@ export function interfaceOf(tree: GithubTree): {
   screens: RepoSnapshot["screens"];
   components: string[];
 } {
+  const sizes = new Map(tree.entries.map((entry) => [entry.path, entry.size ?? 0]));
   const files = tree.entries
     .filter((entry) => entry.type === "blob" && kept(entry.path))
     .map((entry) => entry.path)
@@ -289,6 +304,11 @@ export function interfaceOf(tree: GithubTree): {
       const name = (component[3] ?? component[6]!).replace(PLATFORM, "");
       const named = name === "index" ? path.split("/").slice(-2, -1)[0]! : name;
       if (/^[A-Za-z][A-Za-z0-9_-]*$/.test(named)) components.add(named);
+      continue;
+    }
+    const page = PAGE_FILE.exec(path);
+    if (page && (sizes.get(path) ?? 0) > PAGE_BYTES) {
+      add(page[1]!, "pages", stripIndex(page[2]!));
     }
   }
 
@@ -410,14 +430,17 @@ export function summarizeManifest(path: string, text: string): string | null {
 export function excerptTheme(path: string, text: string): string | null {
   let body = text;
   if (/\.s?css$/.test(path)) {
-    const lines = text
-      .split("\n")
-      .filter((line) =>
-        /--[\w-]+\s*:|@theme|:root|\.dark|\[data-theme|\$[\w-]+\s*:|@font-face|font-family/.test(
-          line,
-        ),
-      );
-    if (lines.length === 0) return null;
+    const all = text.split("\n");
+    let lines = all.filter((line) =>
+      /--[\w-]+\s*:|@theme|:root|\.dark|\[data-theme|\$[\w-]+\s*:|@font-face|font-family/.test(
+        line,
+      ),
+    );
+    // A hand-written stylesheet with no variables still says its colors and type, rule by rule.
+    if (lines.length === 0) {
+      lines = all.filter((line) => /^\s*[^{]*\{|\b(color|background|font)[\w-]*\s*:/.test(line));
+      if (!lines.some((line) => /\b(color|background|font)[\w-]*\s*:/.test(line))) return null;
+    }
     body = lines.map((line) => line.trim()).join("\n");
   } else {
     body = text
@@ -430,19 +453,85 @@ export function excerptTheme(path: string, text: string): string | null {
 }
 
 /**
- * Whether there is anything to ground ideas in: no interface, no stack, no theme and next to
- * no README means a repo with nothing in it yet. Ideas then would be invented, not read, so it
- * gets none (docs/cloud.md, "Ideas").
+ * The most files a small repo has: one with nothing built yet, or a page or two. Past this,
+ * what is there is something, even with no screens: a library, a tool, a backend, which the
+ * usual ideas fit.
  */
-export function isEmpty(snapshot: RepoSnapshot): boolean {
+const FEW_FILES = 8;
+
+/** A repo of a few files, whose own files the read can afford to look into (`pickSamples`). */
+export const isSmall = (files: number) => files < FEW_FILES;
+
+/**
+ * Whether the product is not built yet: no screens (a page of its own counts, `interfaceOf`),
+ * no components, no theme and only a few files (a README, a first file or two). Its ideas are
+ * then where to start designing it, not changes to screens it does not have
+ * (`FRESH_SYSTEM_PROMPT` in prompt.ts; docs/cloud.md, "Ideas"). Known from the tree alone,
+ * before any file is read.
+ */
+export function isUnbuilt(snapshot: {
+  screens: unknown[];
+  components: unknown[];
+  /** The theme file, if one was found. */
+  theme: unknown;
+  files: number;
+}): boolean {
   return (
     snapshot.screens.length === 0 &&
     snapshot.components.length === 0 &&
-    snapshot.manifests.length === 0 &&
     snapshot.theme === null &&
-    (snapshot.readme ?? "").length + (snapshot.description ?? "").length < 280 &&
-    snapshot.files < 8
+    isSmall(snapshot.files)
   );
+}
+
+/** Text a person wrote, as far as a name says: prose, markup, styles, code, data. */
+const TEXT =
+  /\.(md|mdx|txt|rst|adoc|html?|css|s[ac]ss|tsx?|jsx?|mjs|cjs|vue|svelte|astro|py|rb|go|rs|swift|kt|java|dart|ex|php|json|ya?ml|toml)$/i;
+/** Files that say how a repo is kept, not what the product is. */
+const HOUSEKEEPING =
+  /(^|\/)(readme|licen[cs]e|copying|changelog|contributing|code_of_conduct|security)(\.[a-z]+)?$/i;
+
+/**
+ * Which of a small repo's files to read (`isSmall`), besides its README, manifests and theme
+ * (`skip`): up to `limit` text files, what says most of what people will see first (a page,
+ * then prose, then the rest), the largest of a kind first, as the most worked-on draft. Only
+ * the start of each is read (`BUDGET.sampleBytes`), and none the tree says is over
+ * `BUDGET.fileBytes`, which is generated more often than written.
+ */
+export function pickSamples(tree: GithubTree, skip: string[], limit: number): string[] {
+  const rank = (path: string) =>
+    /\.(html?|vue|svelte|astro)$/i.test(path) ? 0 : /\.(md|mdx|txt|rst|adoc)$/i.test(path) ? 1 : 2;
+  return tree.entries
+    .filter(
+      ({ path, type, size }) =>
+        type === "blob" &&
+        kept(path) &&
+        TEXT.test(path) &&
+        !HOUSEKEEPING.test(path) &&
+        !skip.includes(path) &&
+        (size ?? 0) > 0 &&
+        (size ?? 0) <= BUDGET.fileBytes,
+    )
+    .sort(
+      (a, b) =>
+        rank(a.path) - rank(b.path) ||
+        (b.size ?? 0) - (a.size ?? 0) ||
+        a.path.split("/").length - b.path.split("/").length ||
+        a.path.localeCompare(b.path),
+    )
+    .map(({ path }) => path)
+    .slice(0, Math.max(0, limit));
+}
+
+/** The start of a file, as data: no addresses or runs of blank lines, cut at a line. */
+export function excerptSample(text: string): string | null {
+  const body = text
+    .replace(/\b(?:https?:\/\/|www\.)\S+/gi, "")
+    .replace(/[ \t]+$/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  const lines = body ? cutLines(body.split("\n"), BUDGET.sample) : [];
+  return lines.length ? lines.join("\n") : null;
 }
 
 /* ------------------------------------------------------------------ */
