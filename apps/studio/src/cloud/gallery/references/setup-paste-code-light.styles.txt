@@ -18,7 +18,7 @@ text "Paste the code from claude.ai" rgb(17, 17, 16) 500 13px Inter
 ground span rgb(255, 255, 255) shadow rgb(169, 165, 155) 0px 0px 0px 1px, rgba(17, 17, 16, 0.06) 0px 0px 0px 4px
 text "claude.ai shows it after you approve." rgb(169, 165, 155) 400 12px Inter
 text "Open sign-in again" rgb(94, 91, 84) 500 12px Inter
-icon svg 10×10 rgb(94, 91, 84) stroke 2px
+icon svg 10×10 rgb(128, 124, 115) stroke 2px
 text "Connect" rgb(255, 255, 255) 500 13px Inter
 ground button rgb(17, 17, 16)
 icon svg 14×14 rgb(255, 255, 255) stroke 2px
