@@ -120,7 +120,8 @@ export async function completeUploads(
     rows.map(async (row) => {
       if (row.completedAt) return true;
       const head = await deps.storage.head(row.objectKey);
-      return head !== null && head.size === row.size && (head.sha256 ?? row.sha256) === row.sha256;
+      // An object storage holds without the declared checksum is not the upload.
+      return head !== null && head.size === row.size && head.sha256 === row.sha256;
     }),
   );
   if (arrived.includes(false)) throw notArrived;

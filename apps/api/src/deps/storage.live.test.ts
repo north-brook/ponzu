@@ -102,6 +102,10 @@ describe.skipIf(!configured)("R2, for real", () => {
     expect(new Uint8Array(await copied.arrayBuffer())).toEqual(preview);
     expect(await storage.head(`staging/${picture.id}-light.png`)).toBeNull();
 
+    // Completion checked this: R2 answers a HEAD with the checksum it checked the bytes against.
+    expect((await storage.head(`${assetKey}/assets/icon.svg`))?.sha256).toBe(
+      createHash("sha256").update(svg).digest("hex"),
+    );
     await storage.delete(`${assetKey}/assets/icon.svg`);
     expect(await storage.head(`${assetKey}/assets/icon.svg`)).toBeNull();
   }, 60_000);

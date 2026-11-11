@@ -558,6 +558,22 @@ describe("uploads", () => {
     expect([elsewhere.status, elsewhere.body.error.code]).toEqual([404, "not_found"]);
   });
 
+  test("an object of the right size that storage holds without the declared checksum is not the upload", async () => {
+    const { design, runner } = await sample();
+    const logo = bytes("x");
+    const signed = await send(runner, "POST", "/uploads", {
+      files: [declared("asset", "x.png", "image/png", logo)],
+    });
+    const [file] = signed.body.files;
+    const key = `${await getDesignAssetKey(t.db, design.id)}/assets/x.png`;
+    // As something other than the signed PUT would leave it.
+    t.storage.objects.set(key, { body: logo, headers: {}, sha256: null });
+
+    const completed = await send(runner, "POST", "/uploads/complete", { ids: [file.id] });
+
+    expect([completed.status, completed.body.error.code]).toEqual([404, "not_found"]);
+  });
+
   test("what may be uploaded is limited by kind and size, with errors that say so", async () => {
     const { runner } = await sample();
     const ask = async (file: unknown) => {

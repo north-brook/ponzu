@@ -106,8 +106,12 @@ export function createR2Storage({
     },
 
     async head(key) {
-      // Without this a text type (an SVG) comes back as if compressed, with no length.
-      const response = await call("HEAD", key, { "accept-encoding": "identity" });
+      const response = await call("HEAD", key, {
+        // Without this a text type (an SVG) comes back as if compressed, with no length.
+        "accept-encoding": "identity",
+        // S3 sends the checksum only when asked. (R2 sends it either way, as of November 2026.)
+        "x-amz-checksum-mode": "ENABLED",
+      });
       if (response.status === 404) return null;
       if (!response.ok) throw refused("HEAD", response);
       const checksum = response.headers.get("x-amz-checksum-sha256");
