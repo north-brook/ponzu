@@ -377,10 +377,15 @@ export const ERROR_COPY: Record<RunErrorCode, string> = {
   agent_exited: "Claude stopped unexpectedly and started again.",
   message_refused: "The repo's Claude Code settings turned that message away.",
   question_failed: "Claude couldn't ask its question, so it went on without an answer.",
+  push_failed: "Ponzu couldn't push the branch to GitHub. The commits are safe in the design.",
 };
 
 /** Errors whose own message says more than the sentence does. */
-export const ERROR_DETAIL: ReadonlySet<RunErrorCode> = new Set(["turn_failed", "message_refused"]);
+export const ERROR_DETAIL: ReadonlySet<RunErrorCode> = new Set([
+  "turn_failed",
+  "message_refused",
+  "push_failed",
+]);
 
 /** "You", or the person's first name. */
 export function who(person: Person, meId: string): string {

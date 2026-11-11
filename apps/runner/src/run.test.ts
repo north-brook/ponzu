@@ -1,4 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
+import { execFileSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,7 +18,9 @@ import {
   type WorkItem,
 } from "./api/protocol.ts";
 import { derivedId, eventUuid, randomId } from "./ids.ts";
-import { Runner, type RunnerOptions, type Timing } from "./run.ts";
+import { Runner, type RunnerOptions, summaryAnswer, type Timing } from "./run.ts";
+import { agentShell } from "./save/shell.ts";
+import { type Git, gitIn } from "./save/work.ts";
 
 const FAST: Partial<Timing> = {
   threadGapMs: 5,
@@ -105,6 +109,7 @@ async function setup(
     timing?: Partial<Timing>;
     renderer?: Renderer;
     flush?: () => void;
+    checkoutGit?: (cwd: string) => Git;
     telemetry?: RunnerOptions["telemetry"];
   } = {},
 ): Promise<Setup> {
@@ -120,6 +125,7 @@ async function setup(
     prepare: opts.prepare ?? (async () => work),
     renderer: opts.renderer,
     flush: opts.flush,
+    ...(opts.checkoutGit ? { checkoutGit: opts.checkoutGit } : {}),
     ...(opts.telemetry ? { telemetry: opts.telemetry } : {}),
     stateDir,
     log: (m) => logs.push(m),
@@ -332,7 +338,7 @@ test("a clone that fails is said in the thread and the state, and the agent is t
   expect(run.opts.instructions).not.toContain("no repository");
 });
 
-test("a repo design is told where its checkout is and that Ponzu opens the pull request", async () => {
+test("a repo design is told where its checkout is, and that the person opens the pull request", async () => {
   const root = await temp();
   const { run } = await setup({
     session: { repo: { owner: "north", name: "fern", defaultBranch: "main" }, branch: "pz/hero" },
@@ -340,7 +346,13 @@ test("a repo design is told where its checkout is and that Ponzu opens the pull 
   });
   expect(run.opts.instructions).toContain("north/fern is checked out at");
   expect(run.opts.instructions).toContain("pz/hero");
-  expect(run.opts.instructions).toContain("Ponzu opens and merges the pull request");
+  expect(run.opts.instructions).toContain(
+    "Ponzu doesn't open a pull request by itself, and there is no GitHub API token here: the person opens it with Create PR in Ponzu",
+  );
+  expect(run.opts.instructions).toContain("If a push fails, don't work around it");
+  expect(run.opts.instructions).toContain(
+    "Never say you opened or updated a pull request unless that answer named it.",
+  );
   expect(run.opts.instructions).toContain("give it one in your first turn with update_design");
 });
 
@@ -353,8 +365,299 @@ test("a repo design's agent describes its pull request, which the API keeps", as
   expect(run.opts.instructions).toContain("describe_pull_request");
   const describe = run.opts.tools.find((t) => t.name === "describe_pull_request")!;
   const result = await describe.run({ summary: "Adds the **Pro** pricing card." });
-  expect(result.text).toContain("when Ponzu opens it");
+  // No pull request exists: the agent hears so, and who opens one.
+  expect(result.text).toBe(
+    "Saved as the description the pull request will open with. No pull request is open yet: the person opens it with Create PR in Ponzu.",
+  );
   expect(api.summaries).toEqual(["Adds the **Pro** pricing card."]);
+
+  // Once one is open, its description on GitHub is what changed.
+  api.pullRequest = { number: 7, state: "draft" };
+  const updated = await describe.run({ summary: "Adds the **Pro** and **Team** cards." });
+  expect(updated.text).toBe("Updated the description of pull request #7 on GitHub.");
+});
+
+test("the description tool never speaks of a pull request that isn't there, or of one it didn't reach", () => {
+  expect(summaryAnswer({ pullRequest: null, open: null, kept: "none_open" }, 2)).toBe(
+    "Saved as the description the pull request will open with. No pull request is open yet: the person opens it with Create PR in Ponzu. The branch has 2 commits GitHub doesn't have yet; Ponzu pushes them when your turn ends.",
+  );
+  // Merged or closed is as good as none.
+  expect(
+    summaryAnswer(
+      { pullRequest: null, open: { number: 3, state: "merged" }, kept: "none_open" },
+      0,
+    ),
+  ).toStartWith("Saved as the description the pull request will open with.");
+  expect(
+    summaryAnswer({ pullRequest: null, open: { number: 3, state: "open" }, kept: "rewritten" }, 0),
+  ).toBe(
+    "Pull request #3 is open, but its description was rewritten on GitHub, so Ponzu left it as it is. Your words are saved in Ponzu.",
+  );
+  expect(
+    summaryAnswer({ pullRequest: null, open: { number: 3, state: "open" }, kept: "unreadable" }, 0),
+  ).toStartWith("Pull request #3 is open, but Ponzu couldn't reach it on GitHub just now");
+  expect(summaryAnswer({ pullRequest: 3, open: { number: 3, state: "open" }, kept: null }, 0)).toBe(
+    "Updated the description of pull request #3 on GitHub.",
+  );
+  // An API older than this says only the number, or null: nothing is claimed of a pull request.
+  expect(summaryAnswer({ pullRequest: null }, 0)).toBe(
+    "Saved in Ponzu, but not written into an open pull request on GitHub. If none is open, it becomes the description of the one the person opens with Create PR in Ponzu.",
+  );
+});
+
+test("against an API that doesn't say where the pull request stands, a turn claims nothing of it", async () => {
+  const api = new FakeRunnerApi({
+    session: { repo: { owner: "north", name: "fern", defaultBranch: "main" }, branch: "pz/hero" },
+  });
+  // An older API's claim answer has no `pullRequest`.
+  api.older = true;
+  const s = await onRepo({}, { api });
+  s.run.ready();
+  s.api.push({ kind: "message", payload: { text: "Ship it" } });
+  s.runner.poke();
+  const first = await s.run.input();
+  expect(first.text).not.toContain("no pull request is open");
+  expect(first.text).toContain("the person opens a pull request from pz/hero with Create PR");
+});
+
+/* ------------------------------------------------------------------ */
+/* The branch on GitHub                                                */
+/* ------------------------------------------------------------------ */
+
+const GIT_ENV = {
+  ...process.env,
+  GIT_AUTHOR_NAME: "Ada",
+  GIT_AUTHOR_EMAIL: "ada@example.com",
+  GIT_COMMITTER_NAME: "ponzu[bot]",
+  GIT_COMMITTER_EMAIL: "bot@example.com",
+  GIT_CONFIG_GLOBAL: "/dev/null",
+  GIT_CONFIG_NOSYSTEM: "1",
+};
+const git = (cwd: string, ...args: string[]) =>
+  execFileSync("git", args, { cwd, env: GIT_ENV, encoding: "utf8" }).trim();
+
+/** "GitHub" (a bare repository) and the design's checkout of it on pz/hero, with a runner on it. */
+async function onRepo(
+  timing: Partial<Timing> = {},
+  more: { flush?: () => void; api?: FakeRunnerApi } = {},
+) {
+  const root = await temp();
+  const origin = join(root, "origin.git");
+  const seed = join(root, "seed");
+  git(root, "init", "-q", "--bare", "-b", "main", origin);
+  git(root, "init", "-q", "-b", "main", seed);
+  writeFileSync(join(seed, "README.md"), "fern\n");
+  git(seed, "add", ".");
+  git(seed, "commit", "-qm", "First");
+  git(seed, "push", "-q", origin, "main");
+  const work = join(root, "fern");
+  git(root, "clone", "-q", origin, work);
+  git(work, "switch", "-qc", "pz/hero");
+  let n = 0;
+  const commit = () => {
+    writeFileSync(join(work, `screen-${++n}.html`), `<p>${n}</p>\n`);
+    git(work, "add", ".");
+    git(work, "commit", "-qm", `Screen ${n}`);
+    return git(work, "rev-parse", "HEAD");
+  };
+  const s = await setup({
+    session: { repo: { owner: "north", name: "fern", defaultBranch: "main" }, branch: "pz/hero" },
+    prepare: async () => work,
+    checkoutGit: (cwd) => gitIn(agentShell(undefined, GIT_ENV), "git", cwd),
+    timing: { pushWaitsMs: [5, 5], ...timing },
+    ...more,
+  });
+  const onGithub = () => {
+    try {
+      return git(origin, "rev-parse", "refs/heads/pz/hero");
+    } catch {
+      return null;
+    }
+  };
+  return { ...s, work, origin, commit, onGithub };
+}
+
+test("a turn that ends with commits GitHub lacks gets them pushed, whatever the agent did", async () => {
+  const s = await onRepo();
+  s.run.ready();
+  await turn(s);
+  // The agent committed, and its own push failed (or it never pushed).
+  const head = s.commit();
+  s.run.say("m1", "The commit is saved locally but didn't reach GitHub.");
+  s.run.end();
+
+  await until(() => s.onGithub() === head, 5_000);
+  await until(() => s.api.branch?.unpushed === 0 && s.api.lastState?.state === "idle");
+  // While it pushed, the design said so.
+  expect(s.api.states.some((st) => st.status === "Pushing to GitHub")).toBe(true);
+  expect(notices(s.api, "error")).toEqual([]);
+});
+
+test("a push that keeps failing is said once in the thread, in Ponzu's words, and tried again next turn", async () => {
+  const s = await onRepo();
+  git(s.work, "remote", "set-url", "origin", join(s.work, "..", "gone.git"));
+  s.run.ready();
+  await turn(s);
+  s.commit();
+  s.run.end();
+
+  await until(() => notices(s.api, "error").length === 1, 5_000);
+  const [failed] = notices(s.api, "error");
+  expect(failed?.payload).toMatchObject({
+    type: "error",
+    code: "push_failed",
+    message: expect.stringContaining("Ponzu couldn't push pz/hero to north/fern"),
+  });
+  await until(() => s.api.branch?.unpushed === 1);
+  expect(s.api.branch?.error).toContain("1 commit on pz/hero is safe");
+  // The API's log heard each try, in the runner's words.
+  expect(s.api.gitReports.filter((r) => r.name === "git_push").length).toBeGreaterThan(0);
+  expect(s.api.gitReports.find((r) => r.name === "git_push")?.fields).toMatchObject({
+    branch: "pz/hero",
+    ok: false,
+    kind: "transient",
+  });
+  // Each failed try gave the token back for a new one.
+  expect(s.api.erased.length).toBeGreaterThan(0);
+
+  // The next turn starts knowing it, and the same failure isn't said twice.
+  const event = s.api.push({ kind: "message", payload: { text: "Add a screen" } });
+  s.runner.poke();
+  const input = await s.run.input();
+  expect(input.uuid).toBe(eventUuid(event.id));
+  expect(input.text).toContain("1 commit on pz/hero isn't on GitHub yet (the last push failed:");
+  s.run.take(input);
+  s.run.end();
+  await until(() => s.api.states.filter((st) => st.state === "idle").length >= 2, 5_000);
+  await Bun.sleep(50);
+  expect(notices(s.api, "error")).toHaveLength(1);
+
+  // Fixed: the next push lands.
+  git(s.work, "remote", "set-url", "origin", s.origin);
+  await turn(s);
+  s.run.end();
+  await until(() => s.onGithub() !== null, 5_000);
+  await until(() => s.api.branch?.error === null);
+});
+
+test("Create PR after a failed push: the old error is not said again while the new push runs", async () => {
+  const s = await onRepo({ heartbeatMs: 10 });
+  git(s.work, "remote", "set-url", "origin", join(s.work, "..", "gone.git"));
+  s.run.ready();
+  await turn(s);
+  s.commit();
+  s.run.end();
+  await until(() => s.api.branch?.error != null, 5_000);
+  await until(() => s.api.lastState?.state === "idle");
+
+  // Heartbeats go on, but say nothing of the branch: what was said stands.
+  const quiet = s.api.states.length;
+  await until(() => s.api.states.length >= quiet + 3);
+  expect(s.api.states.slice(quiet).every((st) => st.branch === undefined)).toBe(true);
+
+  // Fixed, and the person presses Create PR: the API forgets the old error. Every report from
+  // then on says only how the new push went, never the old failure.
+  git(s.work, "remote", "set-url", "origin", s.origin);
+  const asked = s.api.states.length;
+  s.api.askToPush();
+  s.runner.poke();
+  await until(() => s.onGithub() !== null, 5_000);
+  await until(() => s.api.branch?.unpushed === 0);
+  const after = s.api.states.slice(asked).filter((st) => st.branch !== undefined);
+  expect(after.every((st) => st.branch?.error === null)).toBe(true);
+  expect(s.api.branch?.error).toBeNull();
+});
+
+test("Create PR during a turn waits for the turn to end, so the agent's git is left alone", async () => {
+  const s = await onRepo();
+  s.run.ready();
+  await turn(s);
+  const head = s.commit();
+  s.api.askToPush();
+  s.runner.poke();
+  await Bun.sleep(100);
+  // Mid-turn: nothing pushed for the agent to race.
+  expect(s.onGithub()).toBeNull();
+  s.run.end();
+  await until(() => s.onGithub() === head, 5_000);
+});
+
+test("the turn's checkpoint is saved before its push, which may take a while", async () => {
+  let ended = false;
+  let pushTries = () => 0;
+  let triesAtSave: number | null = null;
+  const s = await onRepo(
+    { pushWaitsMs: [200] },
+    {
+      // The checkpoint ends by flushing the disk.
+      flush: () => {
+        if (ended) triesAtSave ??= pushTries();
+      },
+    },
+  );
+  pushTries = () => s.api.gitReports.filter((r) => r.name === "git_push").length;
+  git(s.work, "remote", "set-url", "origin", join(s.work, "..", "gone.git"));
+  s.run.ready();
+  await turn(s);
+  s.commit();
+  ended = true;
+  s.run.end();
+  await until(() => notices(s.api, "error").length === 1, 5_000);
+  // Saved before the push's first try, not after its last.
+  expect(triesAtSave as number | null).toBe(0);
+  expect(pushTries()).toBe(2);
+});
+
+test("a branch merged and deleted on GitHub isn't put back by the runner", async () => {
+  const s = await onRepo();
+  s.run.ready();
+  await turn(s);
+  s.commit();
+  s.run.end();
+  await until(() => s.onGithub() !== null, 5_000);
+  await until(() => s.api.lastState?.state === "idle");
+  // Merged, and deleted by Ponzu's Merge; the checkout fetches with --prune.
+  git(s.origin, "update-ref", "-d", "refs/heads/pz/hero");
+  git(s.work, "fetch", "-q", "--prune", "origin");
+  s.api.pullRequest = { number: 4, state: "merged" };
+  await turn(s);
+  s.run.end();
+  await until(() => s.api.states.filter((st) => st.state === "idle").length >= 2, 5_000);
+  await Bun.sleep(50);
+  expect(s.onGithub()).toBeNull();
+});
+
+test("Create PR with commits only the sandbox holds: the runner pushes them, without the agent", async () => {
+  const s = await onRepo();
+  s.run.ready();
+  const head = s.commit();
+  const seen = s.run.inputs.length;
+  const asked = s.api.push({ kind: "push", payload: {} });
+  s.runner.poke();
+  await until(() => s.onGithub() === head, 5_000);
+  // Nothing went to the agent, and the event was acknowledged.
+  expect(s.run.inputs.length).toBe(seen);
+  await until(() => s.api.delivered.includes(asked.id));
+});
+
+test("a turn on a repo design starts with where its pull request stands", async () => {
+  const s = await onRepo();
+  s.run.ready();
+  s.api.push({ kind: "message", payload: { text: "Ship it" } });
+  s.runner.poke();
+  const first = await s.run.input();
+  expect(first.text).toBe(
+    "Message from Ada:\nShip it\n\n(From Ponzu: no pull request is open for pz/hero. Ponzu doesn't open one by itself: the person opens it with Create PR once the branch has commits.)",
+  );
+  s.run.take(first);
+  s.run.end();
+  await until(() => s.api.lastState?.state === "idle");
+
+  s.api.pullRequest = { number: 12, state: "draft" };
+  s.api.push({ kind: "message", payload: { text: "Tweak it" } });
+  s.runner.poke();
+  const second = await s.run.input();
+  expect(second.text).toContain("pull request #12 is open as a draft from pz/hero");
 });
 
 test("a Scratch design has no pull request to describe", async () => {

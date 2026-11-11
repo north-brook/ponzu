@@ -196,7 +196,8 @@ export type RunErrorCode =
   | "turn_failed"
   | "agent_exited"
   | "message_refused"
-  | "question_failed";
+  | "question_failed"
+  | "push_failed";
 
 /**
  * What a turn did, as the runner records it (`TurnRecord` in @ponzu/runner/protocol): how it

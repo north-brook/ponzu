@@ -277,7 +277,11 @@ describe("opening", () => {
     const summary = await call(t, runner.headers, "POST", "/v1/runner/pull-request-summary", {
       summary: "Drops the paragraph from the hero.",
     });
-    expect(summary).toEqual({ status: 200, body: { pullRequest: null } });
+    // No pull request yet: kept for the one the person opens, and the agent is told so.
+    expect(summary).toEqual({
+      status: 200,
+      body: { pullRequest: null, open: null, kept: "none_open" },
+    });
     const assetKey = await withPreviews(design.id, 4);
 
     const body = await opened(ws, design.id);
@@ -368,6 +372,52 @@ describe("opening", () => {
     );
   });
 
+  test("commits only the sandbox holds: Create PR is offered, pushes first, and opens once GitHub has them", async () => {
+    const { ws, repo, design } = await setup({ pushed: false });
+    const runner = await startRunner(t, design.id);
+    const report = (branch: { unpushed: number; error: string | null }) =>
+      call(t, runner.headers, "PUT", "/v1/runner/state", {
+        state: "idle",
+        status: null,
+        artboards: [],
+        claudeSessionId: null,
+        branch,
+      });
+    // The agent's push failed: the runner says so with its state.
+    const failed = "Ponzu couldn't push pz/checkout to the repo (fatal: repository not found).";
+    expect((await report({ unpushed: 1, error: failed })).status).toBe(200);
+
+    const read = await call(t, as(ws, "ines"), "GET", path(design.id));
+    expect(read.body).toMatchObject({
+      branch: { exists: false, aheadBy: 0, unpushed: 1, pushError: failed },
+      pullRequest: null,
+      nextAction: "create_pr",
+    });
+
+    // Create PR: nothing to open from on GitHub yet, so the sandbox is asked to push first.
+    const actions = t.github.pulls.actions.length;
+    const asked = await call(t, as(ws, "maya"), "POST", path(design.id));
+    expect(asked.status).toBe(202);
+    expect(asked.body).toMatchObject({
+      branch: { exists: false, unpushed: 1, pushError: null },
+      pullRequest: null,
+    });
+    const claimed = await call(t, runner.headers, "POST", "/v1/runner/events/claim", {
+      claimId: "clm_aaaaaaaaaaaaaaaa",
+    });
+    expect(claimed.body.events).toMatchObject([
+      { kind: "push", priority: "now", from: { login: "maya" }, payload: {} },
+    ]);
+    expect(t.github.pulls.actions.length).toBe(actions);
+
+    // The runner pushed: GitHub has the branch, and Create PR opens from it.
+    t.github.pulls.push(repo, BRANCH);
+    await report({ unpushed: 0, error: null });
+    const body = await opened(ws, design.id);
+    expect(body.pullRequest).toMatchObject({ state: "draft" });
+    expect(body.branch).toMatchObject({ unpushed: 0, pushError: null });
+  });
+
   test("a private repo on a plan with no drafts gets a ready one", async () => {
     const { ws, repo, design } = await setup();
     t.github.pulls.settings(repo, { draftsUnsupported: true });
@@ -426,15 +476,23 @@ describe("the agent's summary", () => {
     const pull = t.github.pulls.latest(repo)!;
     pull.body = `Context from Theo.\n\n${pull.body}`;
 
-    expect(await say("First take.")).toEqual({ status: 200, body: { pullRequest: pull.number } });
-    expect(await say("Second take.")).toEqual({ status: 200, body: { pullRequest: pull.number } });
+    const written = {
+      status: 200,
+      body: { pullRequest: pull.number, open: { number: pull.number, state: "draft" }, kept: null },
+    };
+    expect(await say("First take.")).toEqual(written);
+    expect(await say("Second take.")).toEqual(written);
     expect(pull.body).toStartWith("Context from Theo.");
     expect(pull.body).toContain("Second take.");
     expect(pull.body).not.toContain("First take.");
 
     // Someone rewrote the description on GitHub: it is theirs now.
     pull.body = "Rewritten by hand.";
-    expect(await say("Third take.")).toEqual({ status: 200, body: { pullRequest: null } });
+    // The agent hears that one is open, and why its words did not go in.
+    expect(await say("Third take.")).toEqual({
+      status: 200,
+      body: { pullRequest: null, open: { number: pull.number, state: "draft" }, kept: "rewritten" },
+    });
     expect(pull.body).toBe("Rewritten by hand.");
   });
 });

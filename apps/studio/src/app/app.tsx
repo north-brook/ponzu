@@ -1,6 +1,7 @@
 import { LiveProvider, useSessionState } from "@ponzu/client/react";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { AppWindow } from "../cloud/window/app-window.tsx";
+import { useAnalytics, useView } from "./analytics/provider.tsx";
 import type { Host } from "./host.ts";
 import { MainWindow } from "./main-window.tsx";
 import { PonzuQueryProvider } from "./ponzu-query.tsx";
@@ -20,6 +21,15 @@ export function App({ host }: { host: Host }) {
   // Whether this window has shown the sign-in screen: then signing in waits on it, rather
   // than flashing to an empty window, until the first step can show.
   const askedToSignIn = useRef(false);
+  // Who is using the window, for PostHog: the Ponzu user id, and nobody once they sign out.
+  const analytics = useAnalytics();
+  const userId = state.status === "signed_in" ? state.user.id : null;
+  const signedOut = state.status === "signed_out" || state.status === "github_reauth";
+  useEffect(() => {
+    if (userId) analytics.identify(userId);
+    else if (signedOut) analytics.signedOut();
+  }, [analytics, userId, signedOut]);
+  useView(state.status === "too_old" ? { name: "update" } : signedOut ? { name: "sign-in" } : null);
 
   if (state.status === "signed_in") {
     return (

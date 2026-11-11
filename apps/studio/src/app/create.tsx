@@ -6,6 +6,7 @@ import type { ProjectChoice } from "../cloud/create/create.ts";
 import { CreatePage } from "../cloud/create/create-page.tsx";
 import { ClaudeSignedOutDialog } from "../cloud/dialogs/account-dialogs.tsx";
 import type { Effort, PendingAttachment, Repo } from "../cloud/model.ts";
+import { useAnalytics } from "./analytics/provider.tsx";
 import type { FreshDesign } from "./design.tsx";
 import type { Host } from "./host.ts";
 import { Banner } from "./notices.tsx";
@@ -102,6 +103,9 @@ export function CreateView({
   const createKey = useRef(newCreateKey());
   const going = useRef(false);
   const picker = useRef<HTMLInputElement>(null);
+  const analytics = useAnalytics();
+  /** The idea last picked into the composer, to tell an idea sent from words of their own. */
+  const pickedIdea = useRef<string | null>(null);
   // Until the person picks, the repo pushed to last, or Scratch when there is none.
   const project: ProjectChoice =
     chosen ?? (repos?.[0] ? { kind: "repo", repo: repos[0] } : { kind: "scratch" });
@@ -156,6 +160,13 @@ export function CreateView({
         // With images, the message waits until they are files of the design.
         ...(images.length ? {} : { message: { text } }),
       });
+      const idea = pickedIdea.current;
+      analytics.capture("create prompt sent", {
+        source: idea === null ? "typed" : idea.trim() === text ? "idea" : "idea_edited",
+        project: project.kind,
+        images: images.length,
+      });
+      pickedIdea.current = null;
       const said = images.length ? await sayWithImages(host.api, design.id, text, images) : true;
       createKey.current = newCreateKey();
       setPrompt("");
@@ -176,6 +187,7 @@ export function CreateView({
         !said,
       );
     } catch (failure) {
+      analytics.capture("notice shown", { notice: "design_not_made" });
       setError(
         failure instanceof ApiError && failure.code === "network"
           ? "Ponzu can't be reached. Check your connection and send it again."
@@ -223,6 +235,10 @@ export function CreateView({
         onProjectChange={setChosen}
         onAllowMore={onAllowMore}
         ideas={ideas}
+        onIdeaPicked={(idea, position) => {
+          pickedIdea.current = idea.prompt;
+          analytics.capture("idea chosen", { position });
+        }}
         attachments={picked}
         onRemoveAttachment={(id) => {
           release(picked.filter((p) => p.id === id));

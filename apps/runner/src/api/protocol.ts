@@ -207,7 +207,12 @@ export type EventBody =
   | { kind: "edit"; payload: EditEvent }
   | { kind: "check"; payload: CheckEvent }
   | { kind: "review"; payload: ReviewEvent }
-  | { kind: "stop"; payload: Record<string, never> };
+  | { kind: "stop"; payload: Record<string, never> }
+  /**
+   * A person pressed Create PR while the branch had commits only this sandbox holds: the runner
+   * pushes them now, without the agent. Nothing goes into the session.
+   */
+  | { kind: "push"; payload: Record<string, never> };
 
 export type EventKind = EventBody["kind"];
 
@@ -300,6 +305,17 @@ export interface ClaimResponse {
   events: RunnerEvent[];
   /** The design's head, so the runner's replica can catch up. */
   seq: number;
+  /**
+   * The design's pull request as the app shows it (the design's row): what the agent is told
+   * when a turn starts. Null when it has none; absent from an API that does not say.
+   */
+  pullRequest?: PullRequestState | null;
+}
+
+/** A design's pull request, as the app shows it. */
+export interface PullRequestState {
+  number: number;
+  state: "draft" | "open" | "merged" | "closed";
 }
 
 /** `POST /v1/runner/events/ack`: these are in the Claude session and never to be handed out again. */
@@ -512,7 +528,9 @@ export type RunErrorCode =
   /** The repository's Claude Code settings (a `UserPromptSubmit` hook) turned a message away. */
   | "message_refused"
   /** The API would not take a question, so nobody could answer it and the agent went on. */
-  | "question_failed";
+  | "question_failed"
+  /** Commits on the design's branch could not be pushed to GitHub; the message says why. */
+  | "push_failed";
 
 /** The longest text one thread item carries. Longer agent text is clipped, with an ellipsis. */
 export const MAX_TEXT = 32_000;
@@ -570,6 +588,20 @@ export interface StateRequest {
    * turn, let its edits reach the API, saved a checkpoint and flushed the disk.
    */
   quiesced?: string | null;
+  /**
+   * The design's branch in this sandbox against GitHub, once the runner has looked: what Create
+   * PR goes by while GitHub lacks commits. Absent: unchanged. Null for Scratch, or a checkout
+   * that failed.
+   */
+  branch?: BranchReport | null;
+}
+
+/** The design's branch in the sandbox against GitHub. */
+export interface BranchReport {
+  /** Commits on the branch that GitHub does not have. */
+  unpushed: number;
+  /** Why the last push of them failed, in words for a person; null when it did not. */
+  error: string | null;
 }
 
 export interface StateResponse {
@@ -689,7 +721,32 @@ export interface GitCredentialRequest {
   host: string;
   /** `owner/name.git`: git sends it with `credential.useHttpPath`. */
   path: string;
+  /**
+   * On `erase` only: why the token is given back, as the runner saw GitHub refuse it (its HTTP
+   * status, or git's last words), for the API's log. Never a secret.
+   */
+  reason?: string;
 }
+
+/**
+ * `POST /v1/runner/git-report`: what the runner saw of git and GitHub in the sandbox, for the
+ * API's log, so a push GitHub refuses can be understood from the API's logs alone: its checks of
+ * a token before git gets it (git-token.ts) and each push it makes (push.ts). Only logged; never
+ * a token (`fingerprint` names one) and never anything a person typed.
+ */
+export interface GitReport {
+  name: GitReportName;
+  fields: Record<string, string | number | boolean | null>;
+}
+
+export const GIT_REPORTS = [
+  "git_credential_ready",
+  "git_credential_refused",
+  "git_credential_unchecked",
+  "git_credential_unready",
+  "git_push",
+] as const;
+export type GitReportName = (typeof GIT_REPORTS)[number];
 
 export interface GitCredentialResponse {
   username: string;
@@ -716,6 +773,17 @@ export const MAX_PULL_REQUEST_SUMMARY = 8_000;
 export interface PullRequestSummaryResponse {
   /** The open pull request whose description now says it; null while it waits for one. */
   pullRequest: number | null;
+  /**
+   * The design's pull request as the app shows it, whether or not the summary reached it: so the
+   * agent can say truly whether one exists. Absent from an API that does not say.
+   */
+  open?: PullRequestState | null;
+  /**
+   * Why the summary was only kept: no pull request is open (`none_open`), or one is open and its
+   * description was rewritten on GitHub without Ponzu's part (`rewritten`), or GitHub could not
+   * be read (`unreadable`). Null when it was written in.
+   */
+  kept?: "none_open" | "rewritten" | "unreadable" | null;
 }
 
 /* ------------------------------------------------------------------ */

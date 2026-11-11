@@ -237,7 +237,7 @@ function canvasStep(tool: string, input: Record<string, unknown>, ctx: StepConte
     case "send_feedback":
       return step("Sending Ponzu feedback", "Sent Ponzu feedback", 1);
     case "describe_pull_request":
-      return step("Describing the pull request", "Described the pull request", 1);
+      return step("Writing the pull request description", "Wrote the pull request description", 1);
     case "wait_for_activity":
       return step("Waiting for comments", "Waited for comments");
     // The local server's tools for a folder of designs: the cloud has one design a sandbox,

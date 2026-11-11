@@ -33,11 +33,16 @@ import { type ApiError, fatal, type RunnerApi, retryable, watchFatal } from "./a
 import {
   type AgentState,
   CLAIM_LIMIT,
+  GIT_REPORTS,
   type GitCredentialRequest,
   type GitCredentialResponse,
+  type GitReport,
+  type GitReportName,
   HEARTBEAT_MS,
   MAX_PULL_REQUEST_SUMMARY,
   type ModelUsage,
+  type PullRequestState,
+  type PullRequestSummaryResponse,
   type QuestionBody,
   type QuestionRequest,
   type RunnerAnalytics,
@@ -49,13 +54,15 @@ import {
   type TurnReport,
   type TurnUsage,
 } from "./api/protocol.ts";
+import { GitCredentials, type Probe } from "./git-token.ts";
 import { derivedId, eventUuid, randomId } from "./ids.ts";
 import { backoff as BACKOFF, Outbox } from "./pacer.ts";
 import { Previews } from "./previews.ts";
-import { eventText, noticeText, RUNNER_INSTRUCTIONS } from "./prompt.ts";
+import { eventText, noticeText, RUNNER_INSTRUCTIONS, turnContext } from "./prompt.ts";
+import { BranchPush, type PushOutcome, pushFailureText } from "./push.ts";
 import { type Boot, Checkpoints, type Recovery } from "./save/checkpoints.ts";
 import type { Transcripts } from "./save/transcripts.ts";
-import type { WorkSaver } from "./save/work.ts";
+import type { Git, WorkSaver } from "./save/work.ts";
 import { StateReporter } from "./state.ts";
 import { describeStep } from "./steps.ts";
 import type { Telemetry } from "./telemetry.ts";
@@ -86,6 +93,12 @@ export interface Timing {
    */
   quiesceTurnMs: number;
   checkpointMs: number;
+  /** The waits between tries of a push that may pass again (push.ts). */
+  pushWaitsMs: number[];
+  /** How long getting ready to sleep may spend pushing. */
+  quiescePushMs: number;
+  /** The waits between checks that GitHub honours a token for git (git-token.ts). */
+  gitReadyWaitsMs: number[];
   /** The wait before a failed call is made again, after `failures` in a row. */
   backoff(failures: number): number;
 }
@@ -102,6 +115,9 @@ export const TIMING: Timing = {
   restartMs: 2_000,
   quiesceTurnMs: 15_000,
   checkpointMs: 10_000,
+  pushWaitsMs: [2_000, 5_000, 10_000, 15_000],
+  quiescePushMs: 8_000,
+  gitReadyWaitsMs: [500, 1_000, 1_500, 2_000, 2_500, 3_000, 4_000],
   backoff: BACKOFF,
 };
 
@@ -119,6 +135,7 @@ const EVENT_KINDS = new Set<string>([
   "check",
   "review",
   "stop",
+  "push",
 ] satisfies RunnerEvent["kind"][]);
 
 export interface RunnerOptions {
@@ -154,6 +171,16 @@ export interface RunnerOptions {
    * credential): a step whose phrase would hold one is said in plain words instead.
    */
   secrets?: readonly string[];
+  /**
+   * The checkout's git, as the agent, for a repo design checked out at `cwd`: what the runner
+   * pushes the design's branch with (push.ts). Without it the runner never pushes.
+   */
+  checkoutGit?(cwd: string): Git;
+  /**
+   * Asks GitHub whether it honours a token for a push before git gets it (git-token.ts). Without
+   * one, tokens go to git as the API hands them out.
+   */
+  gitProbe?: Probe;
   log(message: string): void;
   /** A structured line for the journal. `log` with its JSON when absent. */
   event?(name: string, fields: Record<string, unknown>): void;
@@ -186,8 +213,8 @@ interface Ack {
 
 type QuestionCall = { ask: QuestionRequest } | { withdraw: string };
 
-/** An event that goes into the session as text: every kind but a stop. */
-type Talk = Exclude<RunnerEvent, { kind: "stop" }>;
+/** An event that goes into the session as text: every kind but a stop and a push. */
+type Talk = Exclude<RunnerEvent, { kind: "stop" | "push" }>;
 
 /** Something put into the run that Claude Code has not taken yet. */
 interface Sent {
@@ -280,6 +307,25 @@ export class Runner {
   private cloneError: string | null = null;
   /** What the last turn's failure says about Claude (its credential, its limit), until one works. */
   private claudeProblem: string | null = null;
+  /** Hands git tokens GitHub honours for a push. */
+  private readonly credentials: GitCredentials;
+  /** Pushes the design's branch; null for Scratch and a checkout that failed. */
+  private pusher: BranchPush | null = null;
+  /** The pushes asked for, one after another. */
+  private pushes: Promise<void> = Promise.resolve();
+  /** Create PR asked for a push during a turn: made when the turn ends. */
+  private pushAsked = false;
+  /** A push the person may want to know is happening: the state says so while it lasts. */
+  private pushingNow = false;
+  /** The design's branch against GitHub, as the last push found it. */
+  private branch: PushOutcome | null = null;
+  /** The last push failure the thread was told of (head and kind), so it is said once. */
+  private toldPushFailure: string | null = null;
+  /**
+   * The design's pull request as the app shows it, from the last claim or tool answer: null for
+   * none, undefined until an API says (one older than this never does).
+   */
+  private pullRequest: PullRequestState | null | undefined = undefined;
 
   private claiming: Promise<void> | null = null;
   private claimAgain = false;
@@ -338,6 +384,14 @@ export class Runner {
       backoff,
     });
     this.usage = new UsageMeter(join(opts.stateDir, "usage.json"));
+    const probe = opts.gitProbe;
+    this.credentials = new GitCredentials({
+      api: this.api,
+      // Without a probe every token counts as honoured: handed to git as the API gave it.
+      probe: probe ?? (async () => 200),
+      event: (name, fields) => (probe ? this.gitEvent(name, fields) : undefined),
+      waitsMs: this.timing.gitReadyWaitsMs,
+    });
   }
 
   /** Start: read the session, ready the checkout, open the design, start Claude, claim. */
@@ -354,6 +408,7 @@ export class Runner {
     // Before Claude Code reads its transcript: a disk behind the last checkpoint gets it back.
     await this.recover();
     if (this.stopping) return;
+    this.pusher = this.branchPush();
     this.replica = await this.retry(() =>
       Replica.open({ transport: this.api.sync, schedule: timer, actor: ACTOR }),
     );
@@ -413,14 +468,17 @@ export class Runner {
     return { ok: true, state: this.state.current.state };
   }
 
-  /** A token for git, asked through this runner's lease: the agent's git holds no runner token. */
+  /**
+   * A token for git, asked through this runner's lease (the agent's git holds no runner token),
+   * once GitHub honours it for a push (git-token.ts).
+   */
   gitCredential(ask: GitCredentialRequest): Promise<GitCredentialResponse> {
-    return this.api.gitCredential(ask);
+    return this.credentials.get(ask);
   }
 
   /** GitHub refused the token git was given. */
   eraseGitCredential(ask: GitCredentialRequest): Promise<void> {
-    return this.api.eraseGitCredential(ask);
+    return this.credentials.erase(ask);
   }
 
   /**
@@ -560,6 +618,23 @@ export class Runner {
     else this.log(JSON.stringify({ event: name, designId: this.session?.design.id, ...fields }));
   }
 
+  /**
+   * A line about git and GitHub (a token's check, a push): journalled here, and sent to the API's
+   * log too, since the sandbox's journal is out of reach once it is gone. Sending is best-effort:
+   * an API that does not take it (older than this) or a failed call loses only the copy.
+   */
+  private gitEvent(name: string, fields: Record<string, unknown>): void {
+    this.event(name, fields);
+    if (!(GIT_REPORTS as readonly string[]).includes(name)) return;
+    const scalars: GitReport["fields"] = {};
+    for (const [key, value] of Object.entries(fields)) {
+      if (value === null || ["string", "number", "boolean"].includes(typeof value)) {
+        scalars[key] = value as string | number | boolean | null;
+      }
+    }
+    this.api.reportGit({ name: name as GitReportName, fields: scalars }).catch(() => {});
+  }
+
   /* ---------------------------------------------------------------- */
   /* Sleep                                                             */
   /* ---------------------------------------------------------------- */
@@ -624,6 +699,11 @@ export class Runner {
       this.flushTelemetry(),
     ]);
     await bounded(this.checkpoint(), this.timing.checkpointMs);
+    // The checkpoint holds the commits whatever happens; GitHub gets them too if it can in time.
+    if (current()) {
+      const deadline = Date.now() + this.timing.quiescePushMs;
+      await bounded(this.push("sleep", { deadline }), this.timing.quiescePushMs);
+    }
     if (!current()) return;
     this.sleep!.ready = true;
     this.state.set({ quiesced: id });
@@ -705,7 +785,13 @@ export class Runner {
       ? `This design has no repository: ${this.cwd} is an empty folder for your own files.`
       : this.cloneError
         ? `The design's repository, ${repo.owner}/${repo.name}, could not be checked out (${this.cloneError}), so ${this.cwd} is an empty folder. Work on the canvas only, and tell the person the code is out of reach until the sandbox starts again.`
-        : `The repository ${repo.owner}/${repo.name} is checked out at ${this.cwd}, on the design's branch ${branch}. Commit as you go and push the branch (git push sets its upstream itself). Ponzu opens and merges the pull request: there is no GitHub API token here, so don't try to open one yourself. Whenever you push, say what the branch changes with ${SUMMARY_TOOL}: a few lines of Markdown for a reviewer, what changed and why. It becomes the pull request's description, now or when it opens.`;
+        : [
+            `The repository ${repo.owner}/${repo.name} is checked out at ${this.cwd}, on the design's branch ${branch}. Commit as you go and push the branch (git push sets its upstream itself).`,
+            "If a push fails, don't work around it or guess why: Ponzu pushes the branch itself when your turn ends, trying again, and tells the person if it still can't.",
+            "Ponzu doesn't open a pull request by itself, and there is no GitHub API token here: the person opens it with Create PR in Ponzu once the branch has commits. Each turn starts by saying whether a pull request is open.",
+            `Once the branch has your change, write what it changes with ${SUMMARY_TOOL}: a few lines of Markdown for a reviewer, what changed and why. Its answer says what it did: updated the open pull request's description, or saved it for the one the person will open. Never say you opened or updated a pull request unless that answer named it.`,
+            "End a turn by saying in plain words where the work stands: what is committed and whether it is on GitHub, that the description is ready, and, when no pull request is open, that they can press Create PR when they're ready.",
+          ].join(" ");
     const naming = `The design's name titles its pull request and the commit that merges it. If it is still the person's first words rather than a name, give it one in your first turn with update_design: two to four words for what is being designed, like "Quieter shop hero".`;
     return `${CLOUD_INSTRUCTIONS}\n\nThis sandbox's design is "${design.name}" (${link}). ${naming} ${where}\n\n${RUNNER_INSTRUCTIONS}`;
   }
@@ -716,25 +802,23 @@ export class Runner {
     const api = this.api;
     const describe = tool({
       name: SUMMARY_TOOL,
-      title: "Describe pull request",
+      title: "Write pull request description",
       group: "converse",
       description:
-        "Say what the design's branch changes, for its pull request's description: a few lines of Markdown for a reviewer, what changed and why. Ponzu writes it into the open pull request, or keeps it for the one it opens. Call it again after a push that changes the story; the last one wins.",
+        "Write what the design's branch changes, as its pull request's description: a few lines of Markdown for a reviewer, what changed and why. When a pull request is open, Ponzu updates its description on GitHub; when none is, Ponzu saves it as the description of the one the person opens with Create PR. The answer says which. Call it again when the story changes; the last one wins.",
       input: {
         summary: z.string().min(1).max(MAX_PULL_REQUEST_SUMMARY).describe("Markdown."),
       },
-      async handler({ summary }) {
+      handler: async ({ summary }) => {
+        let saved: PullRequestSummaryResponse;
         try {
-          const number = await api.pullRequestSummary(summary);
-          return {
-            text:
-              number === null
-                ? "Kept: it becomes the pull request's description when Ponzu opens it."
-                : `Written into pull request #${number}'s description.`,
-          };
+          saved = await api.pullRequestSummary(summary);
         } catch (err) {
           throw new ToolError(`Ponzu could not take it: ${said(err)}`);
         }
+        if (saved.open !== undefined) this.pullRequest = saved.open;
+        const unpushed = await this.pusher?.unpushed().catch(() => 0);
+        return { text: summaryAnswer(saved, unpushed ?? 0) };
       },
     });
     return [...cloudTools, describe];
@@ -813,11 +897,12 @@ export class Runner {
           // Kept until a claim is answered: one that is sent again after no answer hands out
           // again what it handed out, rather than leaving that with nobody.
           this.claimId ??= randomId("clm");
-          const { events, seq } = await this.api.claim({
+          const { events, seq, pullRequest } = await this.api.claim({
             claimId: this.claimId,
             limit: CLAIM_LIMIT,
           });
           this.claimFailures = 0;
+          if (pullRequest !== undefined) this.pullRequest = pullRequest;
           this.replica.notify(seq);
           if (this.sleep) {
             // The sleep came while this claim was out: nothing it brought starts a turn the stop
@@ -831,6 +916,8 @@ export class Runner {
           if (!this.claimedOnce) {
             this.claimedOnce = true;
             this.refreshState();
+            // What a turn left unpushed before this start, or a restore brought back.
+            void this.push("start");
           }
           // A full page: there may be more behind it.
           if (events.length >= CLAIM_LIMIT) this.claimAgain = true;
@@ -862,6 +949,14 @@ export class Runner {
       this.ack(event.id, false);
       return;
     }
+    if (event.kind === "push") {
+      // Create PR, with commits only this sandbox holds: pushed without the agent. During a turn
+      // the agent's git may be mid-rebase or pushing itself, so the push waits for the turn's end.
+      this.ack(event.id, false);
+      if (this.working) this.pushAsked = true;
+      else void this.push("asked");
+      return;
+    }
     if (this.inSession(event)) {
       this.ack(event.id, true);
       return;
@@ -889,7 +984,10 @@ export class Runner {
       return;
     }
     this.deliverLater("next");
-    this.send(eventUuid(event.id), eventText(event), event.priority === "now" ? "now" : "next", {
+    // A turn starts with where the branch and its pull request stand, as the app shows them.
+    const context = this.working ? null : this.context();
+    const text = context ? `${eventText(event)}\n\n${context}` : eventText(event);
+    this.send(eventUuid(event.id), text, event.priority === "now" ? "now" : "next", {
       human: event.kind !== "check" && event.kind !== "edit",
       event: event.id,
     });
@@ -1385,6 +1483,11 @@ export class Runner {
       this.ws.presence.leave(CALLER.id);
       // The sandbox may be stopped at any time now: nothing of the turn may live only here.
       await this.checkpoint();
+      // Then the turn's commits go to GitHub whether or not the agent pushed them (the
+      // checkpoint holds them already), and a Create PR asked for during the turn is answered.
+      const asked = this.pushAsked;
+      this.pushAsked = false;
+      await this.push(asked ? "asked" : "turn");
     };
     end().catch((err) => this.log(`ending the turn failed: ${said(err)}`));
   }
@@ -1445,6 +1548,89 @@ export class Runner {
   }
 
   /* ---------------------------------------------------------------- */
+  /* The branch on GitHub                                              */
+  /* ---------------------------------------------------------------- */
+
+  /** What pushes the design's branch, for a repo design that is checked out. */
+  private branchPush(): BranchPush | null {
+    const { repo, branch } = this.session;
+    if (!repo || !branch || this.cloneError || !this.opts.checkoutGit) return null;
+    const ask = { protocol: "https", host: "github.com", path: `${repo.owner}/${repo.name}.git` };
+    return new BranchPush({
+      git: this.opts.checkoutGit(this.cwd),
+      branch,
+      defaultBranch: repo.defaultBranch,
+      erase: (reason) => this.credentials.erase({ ...ask, reason }),
+      event: (name, fields) => this.gitEvent(name, fields),
+      // Ponzu's Merge and GitHub's setting delete a merged branch: not one to put back.
+      merged: () => this.pullRequest?.state === "merged",
+      waitsMs: this.timing.pushWaitsMs,
+    });
+  }
+
+  /**
+   * Push the design's branch if GitHub lacks commits of it (push.ts), one push at a time, and say
+   * how it stands: to the API with the state (what Create PR goes by), and in the thread when a
+   * push failed for good. The end of a turn, a sleep, a start and a person's Create PR ask for it.
+   */
+  private push(why: "turn" | "sleep" | "start" | "asked", opts: { deadline?: number } = {}) {
+    const pusher = this.pusher;
+    if (!pusher || this.fatalReason) return Promise.resolve();
+    const run = async () => {
+      try {
+        const ahead = await pusher.unpushed();
+        // Said while it lasts, but not on the way to sleep: that would read as work to keep awake for.
+        if ((ahead > 0 || why === "asked") && why !== "sleep") {
+          this.pushingNow = true;
+          this.refreshState();
+        }
+        const outcome = await pusher.push(opts);
+        this.branch = outcome;
+        const error = outcome.failure
+          ? pushFailureText(outcome.failure, {
+              branch: pusher.branchName,
+              repo: `${this.session.repo!.owner}/${this.session.repo!.name}`,
+              unpushed: Math.max(outcome.unpushed, 1),
+            })
+          : null;
+        this.state.set({ branch: { unpushed: outcome.unpushed, error } });
+        if (!outcome.failure || !error) {
+          this.toldPushFailure = null;
+          return;
+        }
+        // Said once for a commit and a reason, and again whenever a person asked.
+        const told = `${await pusher.head()}:${outcome.failure.kind}`;
+        if (why === "asked" || told !== this.toldPushFailure) {
+          this.toldPushFailure = told;
+          this.notice(randomId("ti"), { type: "error", code: "push_failed", message: error });
+        }
+      } catch (err) {
+        if (fatal(err)) return;
+        this.log(`pushing the branch failed: ${said(err)}`);
+      } finally {
+        if (this.pushingNow) {
+          this.pushingNow = false;
+          this.refreshState();
+        }
+      }
+    };
+    this.pushes = this.pushes.then(run, run);
+    return this.pushes;
+  }
+
+  /** Where the branch and its pull request stand, for the start of a turn. */
+  private context(): string | null {
+    const { repo, branch } = this.session;
+    if (!repo || !branch || this.cloneError) return null;
+    return turnContext({
+      branch,
+      pullRequest: this.pullRequest,
+      unpushed: this.branch?.unpushed ?? 0,
+      pushFailed: this.branch?.failure?.said.split("\n").at(-1) ?? null,
+    });
+  }
+
+  /* ---------------------------------------------------------------- */
   /* Out                                                               */
   /* ---------------------------------------------------------------- */
 
@@ -1452,14 +1638,19 @@ export class Runner {
     const waiting = [...this.asks.values()];
     const state: AgentState = waiting.some((a) => a)
       ? "needs_you"
-      : this.working
+      : this.working || this.pushingNow
         ? "working"
         : waiting.length
           ? "needs_you"
           : "idle";
     this.state.set({
       state,
-      status: state === "working" ? this.label() : (this.claudeProblem ?? this.cloneProblem),
+      status:
+        state !== "working"
+          ? (this.claudeProblem ?? this.cloneProblem)
+          : this.working
+            ? this.label()
+            : "Pushing to GitHub",
       artboards: this.status.artboards,
     });
   }
@@ -1487,6 +1678,31 @@ export class Runner {
   private log(message: string): void {
     this.opts.log(message);
   }
+}
+
+/**
+ * What `describe_pull_request` tells the agent it did, in words it can repeat to the person: the
+ * open pull request's description updated on GitHub, or saved for the one the person opens.
+ */
+export function summaryAnswer(saved: PullRequestSummaryResponse, unpushed: number): string {
+  if (saved.pullRequest !== null) {
+    return `Updated the description of pull request #${saved.pullRequest} on GitHub.`;
+  }
+  const open = saved.open;
+  if (open && (open.state === "open" || open.state === "draft")) {
+    return saved.kept === "rewritten"
+      ? `Pull request #${open.number} is open, but its description was rewritten on GitHub, so Ponzu left it as it is. Your words are saved in Ponzu.`
+      : `Pull request #${open.number} is open, but Ponzu couldn't reach it on GitHub just now, so its description is unchanged. Your words are saved, and go in when you call this again.`;
+  }
+  const pending =
+    unpushed > 0
+      ? ` The branch has ${unpushed === 1 ? "a commit" : `${unpushed} commits`} GitHub doesn't have yet; Ponzu pushes ${unpushed === 1 ? "it" : "them"} when your turn ends.`
+      : "";
+  if (saved.open === undefined) {
+    // An API older than this says only that no open pull request took the words.
+    return `Saved in Ponzu, but not written into an open pull request on GitHub. If none is open, it becomes the description of the one the person opens with Create PR in Ponzu.${pending}`;
+  }
+  return `Saved as the description the pull request will open with. No pull request is open yet: the person opens it with Create PR in Ponzu.${pending}`;
 }
 
 /** How a turn went, for the API's "turn started" and "turn finished". */
