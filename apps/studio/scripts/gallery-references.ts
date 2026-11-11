@@ -1,6 +1,6 @@
 /*
  * The cloud gallery's compositions against their references, in a real Chromium: the picture
- * for layout, the painted styles for color and type. They run in five files, one for each part
+ * for layout, the painted styles for color and type. They run in seven files, one for each part
  * of the app (src/cloud/gallery/gallery.references.*.test.ts), so bun's workers draw them at
  * once; each composition is in exactly one. Skips where there is no Chrome or Chromium.
  */
@@ -31,20 +31,24 @@ import {
 const TOLERANCE = 0.002;
 
 /**
- * The part of the app a composition shows: first run's steps, creating a design, settings and
- * the dialogs beside them (the rest of setup-compositions.ts), the sidebar, or the design's
- * window around the canvas (sharing, the thread rail, the chrome, the smallest window).
+ * The part of the app a composition shows: first run's steps; creating a design; a workspace's
+ * GitHub, environments and plan in settings; the rest of settings and the dialogs beside them
+ * (setup-compositions.ts); the sidebar; the people in a design (sharing, the thread rail, working
+ * together); or the window around the canvas (its chrome, a question, the pull request tab, the
+ * smallest window).
  */
-export type Area = "setup" | "create" | "settings" | "sidebar" | "design";
+export type Area = "setup" | "create" | "workspace" | "settings" | "sidebar" | "people" | "window";
 
 const SETUP = new Set(SETUP_COMPOSITIONS.map((c) => c.id));
 
 export function areaOf(c: Composition): Area {
   if (c.id.startsWith("setup-")) return "setup";
   if (/^create$|^pick-a-project|^fresh-start|^claude-sets-it-up$/.test(c.id)) return "create";
+  if (/^settings-(github|environments|plan)|^free-credits/.test(c.id)) return "workspace";
   if (SETUP.has(c.id)) return "settings";
   if (c.id.includes("sidebar")) return "sidebar";
-  return "design";
+  if (/^share|^thread-in-the-right-rail$|^together-on-a-design$/.test(c.id)) return "people";
+  return "window";
 }
 
 /** Registers, under "the cloud gallery", both comparisons for every composition in `area`. */
