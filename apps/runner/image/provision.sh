@@ -9,6 +9,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 
 PONZU=/opt/ponzu
 BUN="$PONZU/bun/$BUN_VERSION/bun"
+CLAUDE="$PONZU/claude/$CLAUDE_VERSION/claude"
 AGENT_PATH="$PONZU/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 FONTS="$here/sandbox-fonts.json"
 work=$(mktemp -d)
@@ -23,6 +24,18 @@ usermod --append --groups agent user
 chmod 0750 /home/agent
 install -d -o agent -g agent -m 2775 /home/agent/work
 
+apt_install() { DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends "$@" >/dev/null; }
+
+step "the tools the recipe uses"
+# Whether boat's base has them or not.
+missing=()
+for tool in curl:curl jq:jq unzip:unzip fc-cache:fontconfig; do
+  command -v "${tool%%:*}" >/dev/null || missing+=("${tool#*:}")
+done
+if [ ${#missing[@]} -gt 0 ]; then
+  apt_install "${missing[@]}" || { apt-get update -qq && apt_install "${missing[@]}"; }
+fi
+
 step "Bun $BUN_VERSION"
 curl -fsSL --retry 3 -o "$work/bun.zip" \
   "https://github.com/oven-sh/bun/releases/download/bun-v$BUN_VERSION/bun-linux-x64.zip"
@@ -35,11 +48,17 @@ ln -sfn "$BUN" "$PONZU/bin/bunx"
 
 step "Claude Code $CLAUDE_VERSION"
 # The runner's Agent SDK speaks to exactly this version, and its manifest says the binary's hash.
-claude_hash() { sha256sum "$(readlink -f /usr/local/bin/claude)" | cut -d' ' -f1; }
-if [ "$(claude_hash)" != "$CLAUDE_SHA256" ]; then
-  npm install --global --no-fund --no-audit --cache "$work/npm" "@anthropic-ai/claude-code@$CLAUDE_VERSION"
-  [ "$(claude_hash)" = "$CLAUDE_SHA256" ] || { echo "claude is not $CLAUDE_VERSION's binary" >&2; exit 1; }
-fi
+# Whatever boat's base ships is replaced, never kept: the native binary is fetched as it is (no
+# package manager, no install script) and checked against that hash before it is installed.
+echo "boat's base ships Claude Code $(/usr/local/bin/claude --version 2>/dev/null || echo "(none)")"
+curl -fsSL --retry 3 -o "$work/claude" "$CLAUDE_URL"
+echo "$CLAUDE_SHA256  $work/claude" | sha256sum --check --quiet
+install -D -m 0755 "$work/claude" "$CLAUDE"
+ln -sfn "$CLAUDE" "$PONZU/bin/claude"
+# So a `claude` on any PATH is this one, as is the runner's default when PONZU_CLAUDE is unset.
+ln -sfn "$CLAUDE" /usr/local/bin/claude
+[ "$(sha256sum "$(readlink -f /usr/local/bin/claude)" | cut -d' ' -f1)" = "$CLAUDE_SHA256" ] ||
+  { echo "claude is not $CLAUDE_VERSION's binary" >&2; exit 1; }
 
 step "the runner"
 rm -rf "$PONZU/runner"
@@ -62,11 +81,14 @@ shell="$browsers/chrome-headless-shell-linux64/chrome-headless-shell"
 step "fonts"
 # Exactly packages/render/sandbox-fonts.json, and no recommended extras: fontconfig would
 # prefer some of them over Noto. Droid Sans Fallback, in boat's base, is the one other CJK font.
+# At exactly the pinned versions, whichever boat's base has: a newer one there is taken back.
 mapfile -t packages < <(jq -r '.apt[]' "$FONTS")
-apt_install() { DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends "$@" >/dev/null; }
 # The base image's package lists are 200 MB: fetched again, they would all be in the snapshot.
-apt_install "${packages[@]}" || { apt-get update -qq && apt_install "${packages[@]}"; }
-DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq fonts-droid-fallback >/dev/null
+apt_install --allow-downgrades "${packages[@]}" ||
+  { apt-get update -qq && apt_install --allow-downgrades "${packages[@]}"; }
+if dpkg-query -W -f '${Status}' fonts-droid-fallback 2>/dev/null | grep -q 'ok installed'; then
+  DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq fonts-droid-fallback >/dev/null
+fi
 fonts=$(jq -r .downloadDir "$FONTS")
 install -d -m 0755 "$fonts"
 jq -r '.download[] | [.file, .url, .sha256] | @tsv' "$FONTS" | while IFS=$'\t' read -r file url sha; do
@@ -86,7 +108,7 @@ cat > "$PONZU/libexec/as-agent" <<EOF
 exec sudo -n -E -u agent -- /usr/bin/env -u PONZU_RUNNER_TOKEN HOME=/home/agent USER=agent \\
   LOGNAME=agent PATH=$AGENT_PATH /bin/sh -c 'umask 002; exec "\$@"' sh "\$@"
 EOF
-printf '#!/bin/sh\nexec %s/libexec/as-agent /usr/local/bin/claude "$@"\n' "$PONZU" > "$PONZU/libexec/agent-claude"
+printf '#!/bin/sh\nexec %s/libexec/as-agent %s "$@"\n' "$PONZU" "$CLAUDE" >"$PONZU/libexec/agent-claude"
 printf '#!/bin/sh\nexec %s/libexec/as-agent /usr/bin/git "$@"\n' "$PONZU" > "$PONZU/libexec/agent-git"
 chmod 0755 "$PONZU"/libexec/*
 
@@ -120,9 +142,9 @@ systemctl daemon-reload
 systemctl enable ponzu-runner.service
 
 step "what was baked"
-jq -n --arg inputs "$INPUTS_HASH" --arg bun "$BUN" --arg chromium "$shell" \
+jq -n --arg inputs "$INPUTS_HASH" --arg bun "$BUN" --arg chromium "$shell" --arg claudePath "$CLAUDE" \
   --arg bunVersion "$BUN_VERSION" --arg claude "$CLAUDE_VERSION" --arg playwright "$PLAYWRIGHT_CORE_VERSION" \
-  '{inputs: $inputs, bun: {path: $bun, version: $bunVersion}, claude: {path: "/usr/local/bin/claude", version: $claude},
+  '{inputs: $inputs, bun: {path: $bun, version: $bunVersion}, claude: {path: $claudePath, version: $claude},
     playwrightCore: $playwright, chromium: $chromium}' > "$PONZU/image.json"
 
 step "leaving nothing behind"

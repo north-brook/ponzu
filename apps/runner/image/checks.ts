@@ -205,10 +205,16 @@ image=/opt/ponzu/image.json
 bun=$(jq -r .bun.path $image)
 # The Bun the runner's unit starts, which must be the same one.
 unit_bun=$(systemctl cat ponzu-runner | grep -o '/opt/ponzu/bun/[^/]*/bun' | head -1)
+# The Claude Code the image installed, and that the agent's wrapper and /usr/local/bin/claude
+# are that one and no other.
+claude=$(jq -r .claude.path $image)
+agent_claude=$(grep -o '/opt/ponzu/claude/[^ ]*/claude' /opt/ponzu/libexec/agent-claude)
+[ "$agent_claude" = "$claude" ] || { echo "agent-claude runs $agent_claude, not $claude" >&2; exit 1; }
+[ "$(readlink -f /usr/local/bin/claude)" = "$claude" ] || { echo "/usr/local/bin/claude is not $claude" >&2; exit 1; }
 jq -n --arg bun "$($bun --version)" \\
   --arg unitBun "$($unit_bun --version)" \\
-  --arg claude "$(/usr/local/bin/claude --version)" \\
-  --arg claudeSha256 "$(sha256sum "$(readlink -f /usr/local/bin/claude)" | cut -d' ' -f1)" \\
+  --arg claude "$($claude --version)" \\
+  --arg claudeSha256 "$(sha256sum "$claude" | cut -d' ' -f1)" \\
   --arg headlessShell "$($(jq -r .chromium $image) --version | sed 's/ *$//')" \\
   --arg playwrightCore "$(jq -r .version /opt/ponzu/runner/node_modules/playwright-core/package.json)" \\
   '{bun: $bun, unitBun: $unitBun, claude: $claude, claudeSha256: $claudeSha256, headlessShell: $headlessShell, playwrightCore: $playwrightCore}'`;

@@ -29,12 +29,18 @@ current.json     the last snapshot baked and checked: name, inputs, base, dates,
 |---|---|---|
 | Bun 1.4.2 | `/opt/ponzu/bun/<version>/bun`, `/opt/ponzu/bin/bun` | The runner's. boat's own Bun 1.3.14 (`/usr/local/bin/bun`) hangs renders in a long-lived process, so it stays where it is and the unit names ours. The zip's SHA-256 is checked. |
 | The runner | `/opt/ponzu/runner` | `apps/runner/dist` with `bun install --production` (playwright-core only). Owned by root. |
-| Claude Code 2.1.322 | `/usr/local/bin/claude` | The version the Agent SDK pin (0.3.322) speaks to. Its manifest gives the linux-x64 binary's hash; boat's base ships exactly that binary today, so it is kept, and installed from npm when the hash differs. |
+| Claude Code 2.1.322 | `/opt/ponzu/claude/<version>/claude`, linked from `/opt/ponzu/bin/claude` and `/usr/local/bin/claude` | The version the Agent SDK pin (0.3.322) speaks to. Its manifest gives the linux-x64 binary's hash. The native binary for that version is fetched as a file from where Claude Code's own installer gets it (`claudeBinaryUrl` in `recipe.ts`) and installed only if its SHA-256 is that hash. Whatever boat's base ships is replaced, never kept: boat moved its Claude Code once, and the npm fallback the recipe had then failed, as npm 11 no longer runs the install script that puts the package's binary in place. |
 | Chrome Headless Shell 156.0.8078.4 | `/opt/ponzu/browsers` | What playwright-core 1.64.1 pins: the zip its installer would fetch, from the same address, checked against the hash in `chromium.json` (`recipe.ts` refuses to bake when playwright-core moves on and the file has not). The runner's `PONZU_CHROMIUM` names it. Not boat's Google Chrome. |
-| Fonts | `/usr/share/fonts`, `/usr/local/share/fonts/ponzu` | Exactly `packages/render/sandbox-fonts.json`: its apt packages at the versions it pins, with no recommended extras, and its downloads with their hashes checked. boat's Droid Sans Fallback is removed: it was the one other CJK font, and fallback goes by what is installed. Not `playwright install --with-deps`, whose fonts fontconfig would prefer over Noto. |
+| Fonts | `/usr/share/fonts`, `/usr/local/share/fonts/ponzu` | Exactly `packages/render/sandbox-fonts.json`: its apt packages at the versions it pins (a newer one in boat's base is taken back), with no recommended extras, and its downloads with their hashes checked. boat's Droid Sans Fallback is removed: it was the one other CJK font, and fallback goes by what is installed. Not `playwright install --with-deps`, whose fonts fontconfig would prefer over Noto. |
 | The `agent` user | `/home/agent`, checkouts in `/home/agent/work` | Claude Code, its tools and the checkout's git run as `agent`: no sudo, no docker, no way into `/home/user`. See "Two users". |
 | The runner's unit | `/etc/systemd/system/ponzu-runner.service` and `.d/image.conf` | The template from `apps/runner/deploy` with its placeholders filled, enabled; the drop-in adds where things are and the agent's user apart. |
 | A record | `/opt/ponzu/image.json` | The inputs hash and the versions, for people and the checks. |
+
+None of it depends on what boat's base happens to ship: Bun, Claude Code, the headless shell and
+the downloaded fonts are fetched by pinned address and hash whatever is there, the font packages
+are installed at their pinned versions (downgrading if the base is ahead), and the few tools the
+recipe itself uses (`curl`, `jq`, `unzip`, `fontconfig`) are installed if the base lacks them.
+The base still names the image (`BASE_FINGERPRINT`), since what is beside ours differs.
 
 Removed or kept out: nothing of boat's account reaches a sandbox (it is created `noEnv`, so
 boat's GitHub login, AI logins and account token are absent; the checks confirm `gh` is logged
