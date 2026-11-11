@@ -20,6 +20,7 @@ import {
   toThreadItem,
 } from "./thread-map.ts";
 import type { PendingMessage } from "./thread-store.ts";
+import { useSnapshot } from "./use-snapshot.ts";
 
 /** Where the canvas goes for a comment (the canvas's `link`). */
 export interface CommentLink {
@@ -28,8 +29,6 @@ export interface CommentLink {
   artboard?: string;
   spot?: { x: number; y: number };
 }
-
-import { useSnapshot } from "./use-snapshot.ts";
 
 /*
  * The thread rail of an open design on live data (AppWindow's `rail`): its thread, what its agent

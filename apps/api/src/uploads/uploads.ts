@@ -151,7 +151,9 @@ export async function completeUploads(
       const key =
         row.purpose === "preview"
           ? `${target.assetKey}/${previewPath(previewSeq!, row.name)}`
-          : row.objectKey;
+          : row.purpose === "comment"
+            ? `${target.assetKey}/${commentRef(row.name)}`
+            : row.objectKey;
       if (key !== row.objectKey) await deps.storage.copy(row.objectKey, key);
       const asset = row.purpose === "asset" ? { path: assetRef(row.name) } : undefined;
       await completeUpload(deps.db, {
@@ -164,6 +166,14 @@ export async function completeUploads(
     }),
   );
   if (previews.length > 0) await showPreviews(deps, target, previews, previewSeq!);
+  const comments = rows.filter((row) => row.purpose === "comment" && !row.servedKey);
+  if (comments.length > 0) {
+    // Copied to where they are served from; the staged copies are no longer anyone's.
+    deps.background(
+      "comment_pictures_staged_cleared",
+      Promise.all(comments.map((row) => deps.storage.delete(row.objectKey))),
+    );
+  }
 
   const byId = new Map(rows.map((row, index) => [row.id, { row, key: served[index]! }]));
   return ids.map((id) => {
@@ -207,14 +217,14 @@ export const assetRef = (name: string) => `assets/${name}`;
 export const commentRef = (name: string) => `comments/${name}`;
 
 /**
- * Where an upload's bytes go. An asset, a comment's picture and an export go where they are
- * served from. A preview's place depends on the seq it is completed with, so it waits under
- * `staging/`, apart from every design's files (where a bucket lifecycle rule can clear what is
- * never completed), and is copied into place then.
+ * Where an upload's bytes go. An asset and an export go where they are served from. A preview's
+ * place depends on the seq it is completed with, and a comment's picture is asked for before its
+ * comment is saved (which may never happen: refused, undone, the app closed), so both wait under
+ * `staging/`, apart from every design's files (where a bucket lifecycle rule clears what is
+ * never completed), and are copied into place when completed.
  */
 function uploadKey(assetKey: string, purpose: Upload["purpose"], id: string, name: string): string {
   if (purpose === "asset") return `${assetKey}/${assetRef(name)}`;
-  if (purpose === "comment") return `${assetKey}/${commentRef(name)}`;
   if (purpose === "export") return `${assetKey}/exports/${id}-${name}`;
   if (purpose === "session" || purpose === "workspace")
     return `${PRIVATE}/${randomString(32)}/${id}-${name}`;

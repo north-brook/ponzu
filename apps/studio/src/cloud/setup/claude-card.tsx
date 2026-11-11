@@ -3,10 +3,11 @@
  * one turns the card into that way's entry: the code claude.ai shows after a sign-in, or an
  * Anthropic API key. Guided setup, Settings › Agents and the reconnect dialog all use it.
  */
-import { ArrowUpRight01Icon, Key01Icon } from "@hugeicons/core-free-icons";
+import { Key01Icon } from "@hugeicons/core-free-icons";
 import { useId } from "react";
 import { enteredKey, pastedCode } from "../claude.ts";
 import { cn } from "../ui/cn.ts";
+import { ExternalLink } from "../ui/external-link.tsx";
 import { TextField } from "../ui/field.tsx";
 import { Icon } from "../ui/icon.tsx";
 import { AgentMark } from "../ui/marks.tsx";
@@ -213,24 +214,20 @@ function MethodEntry({
           {subscription ? (
             <>
               {" "}
-              <button
-                type="button"
+              <ExternalLink
                 onClick={onReopen}
                 disabled={connecting || reopening}
                 aria-busy={reopening || undefined}
+                arrow={10}
+                trailing={reopening ? <Waiting size={10} label="Starting a sign-in" /> : undefined}
                 className={cn(
-                  "inline-flex cursor-default items-center gap-0.5 rounded-4 font-medium text-muted outline-none transition-colors duration-(--dur-hover) focus-ring hover:text-ink",
+                  "gap-0.5 font-medium",
                   // Waiting on Claude is the turning slice, not a faded link.
                   reopening ? "disabled:opacity-100" : "disabled:opacity-35",
                 )}
               >
                 Open sign-in again
-                {reopening ? (
-                  <Waiting size={10} label="Starting a sign-in" />
-                ) : (
-                  <Icon icon={ArrowUpRight01Icon} size={10} stroke={2} />
-                )}
-              </button>
+              </ExternalLink>
             </>
           ) : null}
         </p>

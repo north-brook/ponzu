@@ -484,9 +484,18 @@ describe("a comment's picture", () => {
     const { design } = await sample();
     const ids = await upload(design.id, "m_pic1");
 
+    const assetKey = await getDesignAssetKey(t.db, design.id);
+    const keys = () => [...t.storage.objects.keys()];
+    const served = () => keys().filter((key) => key.startsWith(`${assetKey}/comments/`));
+    const staged = () => keys().filter((key) => /^staging\/.*m_pic1-/.test(key));
+    // The bytes wait under staging/, served from nowhere, until a comment has them.
+    expect(staged()).toHaveLength(2);
+    expect(served()).toEqual([]);
+
     // Before the comment is committed, there is nothing to give it to; asking again is fine.
     const early = await complete(design.id, "m_pic1", ids);
     expect([early.status, early.body.error.code]).toEqual([404, "not_found"]);
+    expect(served()).toEqual([]);
 
     await call(t, as("maya"), "POST", `/v1/designs/${design.id}/ops`, {
       ops: [{ id: "op_pic1", op: comment("m_pic1") }],
@@ -500,15 +509,20 @@ describe("a comment's picture", () => {
       width: 240,
       height: 160,
     });
-    const assetKey = await getDesignAssetKey(t.db, design.id);
-    const served = await t.storage.head(`${assetKey}/${picture.light}`);
-    expect(served?.size).toBe(webp("light").byteLength);
+    const light = await t.storage.head(`${assetKey}/${picture.light}`);
+    expect(light?.size).toBe(webp("light").byteLength);
     const [item] = await listThreadItems(t.db, { designId: design.id });
     expect(item!.payload).toMatchObject({ messageId: "m_pic1", picture });
+    await t.backgroundDone();
+    expect(staged()).toEqual([]);
 
-    // A second picture for it changes nothing: the first is the one it keeps.
+    // A second picture for it (another window of theirs) changes nothing: the first is the one
+    // it keeps, and the second is never served.
     const again = await complete(design.id, "m_pic1", await upload(design.id, "m_pic1"));
     expect(again.body.picture).toEqual(picture);
+    expect(served().sort()).toEqual(
+      [`${assetKey}/${picture.light}`, `${assetKey}/${picture.dark}`].sort(),
+    );
   });
 
   test("only its author gives a comment a picture, of its own files, both themes", async () => {
@@ -540,5 +554,8 @@ describe("a comment's picture", () => {
     expect([elsewhere.status, elsewhere.body.error.code]).toEqual([400, "invalid_request"]);
     const [item] = await listThreadItems(t.db, { designId: design.id });
     expect(item!.payload).not.toHaveProperty("picture");
+    const assetKey = await getDesignAssetKey(t.db, design.id);
+    const served = [...t.storage.objects.keys()].filter((key) => key.startsWith(`${assetKey}/`));
+    expect(served).toEqual([]);
   });
 });

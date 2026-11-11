@@ -2,8 +2,10 @@ import {
   answerQuestion,
   appendEvent,
   attachCommentPicture,
+  getComment,
   getDesignAssetKey,
   getQuestion,
+  getUploads,
   getUser,
   listAssets,
   listThreadItems,
@@ -28,7 +30,7 @@ import { ApiError } from "../http/errors.ts";
 import { validate } from "../http/validate.ts";
 import { Complete, MAX_UPLOAD_FILES, UploadFile } from "../runner/protocol.ts";
 import { requestWake } from "../sandboxes/wake.ts";
-import { completeUploads, presignUploads } from "../uploads/uploads.ts";
+import { commentRef, completeUploads, presignUploads } from "../uploads/uploads.ts";
 
 /*
  * People's side of a design's thread (docs/cloud.md, "The runner protocol", "Events", "Needs
@@ -372,7 +374,9 @@ export const designThread = new Hono<AppEnv>()
    * Gives the person's comment the picture whose bytes arrived, both themes at once, and
    * answers the picture it has: the first it was given, as a photo sent stays sent. 404
    * `not_found` while the comment itself is not in the thread (its op not committed yet): ask
-   * again once it is.
+   * again once it is. The files wait under `staging/` until then and are copied to where they
+   * are served from only for a comment that exists and has no picture yet, so a picture that
+   * is never attached is never served.
    */
   .post(
     "/:id/comments/:messageId/picture/complete",
@@ -382,22 +386,40 @@ export const designThread = new Hono<AppEnv>()
     async (c) => {
       const { deps, actor } = c.var;
       const { id, messageId } = c.req.valid("param");
+      const { ids } = c.req.valid("json");
       const { design } = await requireDesign(c, id, "write");
       const assetKey = await getDesignAssetKey(deps.db, design.id);
       if (!assetKey) throw new ApiError(404, "not_found", "There is no such design.");
-      const target = { designId: design.id, assetKey, seq: design.seq };
-      const files = await completeUploads(deps, target, c.req.valid("json").ids, {
-        userId: actor.user.id,
-      });
-      const picture = pictureOf(messageId, files);
-      const item = await attachCommentPicture(deps.db, {
-        designId: design.id,
+      const who = { designId: design.id, messageId, userId: actor.user.id };
+      const comment = await getComment(deps.db, who);
+      if (!comment) throw new ApiError(404, "not_found", "There is no such comment of yours.");
+      const had = (comment.payload as { picture?: CommentPicture }).picture;
+      if (had) return c.json(PictureView.parse({ picture: had }));
+
+      // Both files are this comment's, one of each theme, before either is copied anywhere.
+      const uploads = await getUploads(deps.db, { designId: design.id, ids });
+      pictureOf(
         messageId,
-        userId: actor.user.id,
-        picture: { ...picture },
-      });
+        uploads
+          .filter((row) => row.userId === actor.user.id && row.purpose === "comment")
+          .map((row) => ({ ref: commentRef(row.name) })),
+        ids,
+      );
+      const target = { designId: design.id, assetKey, seq: design.seq };
+      const files = await completeUploads(deps, target, ids, { userId: actor.user.id });
+      const picture = pictureOf(messageId, files, ids);
+      const item = await attachCommentPicture(deps.db, { ...who, picture: { ...picture } });
       if (!item) throw new ApiError(404, "not_found", "There is no such comment of yours.");
       const kept = (item.payload as { picture?: CommentPicture }).picture ?? picture;
+      if (kept.light !== picture.light) {
+        // Another of the person's windows attached its picture first: this one is no one's.
+        deps.background(
+          "comment_picture_unkept",
+          Promise.all(
+            [picture.light, picture.dark].map((ref) => deps.storage.delete(`${assetKey}/${ref}`)),
+          ),
+        );
+      }
       return c.json(PictureView.parse({ picture: kept }));
     },
   );
@@ -406,14 +428,18 @@ export const designThread = new Hono<AppEnv>()
  * A comment's picture from its two files, the light and the dark, each a picture of this
  * comment's; refused when they are anything else.
  */
-function pictureOf(messageId: string, files: { ref: string | null }[]): CommentPicture {
+function pictureOf(
+  messageId: string,
+  files: { ref: string | null }[],
+  ids: string[],
+): CommentPicture {
   const of = (theme: "light" | "dark") => {
     const found = files.filter(({ ref }) => ref?.startsWith(`comments/${messageId}-${theme}-`));
     return found.length === 1 ? found[0]!.ref! : null;
   };
   const light = of("light");
   const dark = of("dark");
-  if (!light || !dark || files.length !== 2) {
+  if (!light || !dark || files.length !== 2 || new Set(ids).size !== 2) {
     throw new ApiError(
       400,
       "invalid_request",

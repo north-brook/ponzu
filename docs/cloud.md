@@ -73,6 +73,10 @@ GitHub user token encrypted, and returns WorkOS access and refresh tokens. The
 GitHub token never reaches a device.
 
 - The Mac app redirects to a loopback address (`http://127.0.0.1:<port>/auth/callback`).
+  Each press of Continue with GitHub is its own attempt (port, state, verifier) that can
+  finish for ten minutes whatever the window does; the first back signs in and the rest
+  close, as do the oldest past three and every one when Ponzu quits. The page the browser
+  lands on is written after the exchange has answered, so it says how it went.
 - The iPhone app redirects to `ponzu://auth/callback` inside an auth session.
 - Access tokens are five-minute JWTs. The API verifies them locally against
   WorkOS's JWKS. Clients refresh directly with WorkOS, one refresh in flight at a
@@ -1030,8 +1034,8 @@ the page in page px) and, once its author's app has attached one, `picture`: the
 pin as it was when the comment was made, the pin drawn in with its number, as `{ light, dark,
 width, height }` (`COMMENT_PICTURE`, 240 × 160 shown, WebP at twice that). The app that sent
 the comment draws it from the document as it stood then, uploads it with `POST
-/v1/designs/:id/comments/:messageId/picture` (two files, `light.webp` and `dark.webp`, stored
-under `comments/`) and attaches it with `…/picture/complete` once the comment's op is committed
+/v1/designs/:id/comments/:messageId/picture` (two files, `light.webp` and `dark.webp`, staged
+and copied under `comments/` when attached) and attaches it with `…/picture/complete` once the comment's op is committed
 (404 before that); the first picture attached is the one it keeps. Sending a comment never waits
 on it. A comment with no picture (from before pictures, or one that couldn't be drawn or kept)
 says where it was left instead. Older comment items may carry `board`, a copy of the board an
@@ -1467,7 +1471,9 @@ picture, copied from the previews when it opens, under a random key that opens n
 A client builds a preview's address from the design's head: `<assets url>/<asset key>/previews/
 <preview seq>-<theme>.png`. A preview waits under `staging/` at the bucket's root until it is
 completed with its seq, and is copied into place then; a bucket lifecycle rule can clear what is
-never completed. Previews replaced by later ones are deleted.
+never completed. Previews replaced by later ones are deleted. A comment's picture waits there too,
+since it is uploaded before its comment is saved (and may never be): it is copied under
+`comments/` only when it is attached to a comment that exists and has no picture yet.
 
 Uploads are signed (SigV4, `apps/api/src/deps/sigv4.ts`) for their type, exact size, SHA-256
 (`x-amz-checksum-sha256`, which R2 checks against the bytes), cache rule and disposition, for
@@ -1514,7 +1520,11 @@ order summary on the right"). They are generated, never written by hand
   and four HTTP requests a generation.
 - **Refresh**: ideas a month old are made again once the repo has been pushed to since; an
   empty list after any push. A visit alone never remakes them, and a repo nobody pushes to keeps
-  them.
+  them. The one exception is a change in how ideas are made: each list keeps the version that
+  made it (`repos.ideas_version`, `IDEAS_VERSION`), and an empty list an earlier version wrote is
+  made again at the next ask, push or not (version 1 is the one that stopped skipping a repo with
+  nothing built yet). And an empty list (both answers turned away, with none from before) is
+  made again a week on, push or not: a repo with little in it is the kind nobody pushes to.
 - **A light read, never a clone**, through Octokit as the App with a token for that one repo
   (`contents: read`, `metadata: read`), minted and dropped: the repo's description and topics,
   its tree, README, up to four manifests and one theme file. At most 8 reads; the tree as far as
@@ -1522,9 +1532,27 @@ order summary on the right"). They are generated, never written by hand
   README cut at 64 KiB (GitHub's contents JSON carries at most 1 MB), about 18,000 characters
   into the prompt. Screens and routes come from path conventions (Next, Remix, SvelteKit,
   Nuxt/Vue, Rails, Django and Jinja, Laravel, Phoenix, Expo Router, React Native, SwiftUI,
-  Android, Flutter). A repo with nothing to ground ideas in gets none, without a model call:
-  invented ideas about a product that is not there yet would mislead.
-- **The four kinds**: improve a screen the repo names; variations of its most prominent one;
+  Android, Flutter), and a hand-written page with something in it (an `.html`, `.vue`,
+  `.svelte` or `.astro` file over 4 KB) counts as one, so a finished one-page site is a product
+  with a screen. A repo of fewer than 8 files also has the start (16 KiB) of up to 2 of its
+  files read, its largest page first, with the reads its missing manifests leave (still at
+  most 8).
+- **A product not built yet still gets four.** A repo with no screens, no components, no theme
+  and fewer than 8 files (`isUnbuilt`) is asked with its own instructions
+  (`FRESH_SYSTEM_PROMPT`): where a designer would begin this product, one of each of four kinds,
+  each a short menu (where people start: a first screen, a welcome, an empty state; how it
+  introduces itself: a landing page, a pitch, a sign-up page; what people come to do: the
+  screen at its heart or its core flow; its look), as specific as its name, owner, description,
+  topics, README and files allow, building on a first draft when one is there. They never
+  pretend it has screens: an idea that redesigns, improves or fixes anything, or speaks of "the
+  current" or "the existing", is turned away like any other broken rule. When nothing says what
+  the product is, the user turn says so (Ponzu's words, outside the fence): keep to what the
+  name alone implies, naming no feature it does not, or, when the name says nothing either,
+  write good first briefs for any new product, claiming nothing about this one.
+- **Never the prompt's own words.** An idea that shares a run of 5 words with the instructions
+  it was asked with (an example, a stock opener) is turned away: it would be the same for every
+  repo.
+- **The four kinds** (a product with an interface): improve a screen the repo names; variations of its most prominent one;
   a screen or state it lacks; something across the interface. Kinds 3 and 4 are menus with no
   default, so repos do not all get the same empty state or type scale, and only screens the
   read found may be redesigned. "No dark theme" is said only when a theme file was read.

@@ -2,8 +2,6 @@ ground div rgb(232, 230, 224)
 ground span rgb(255, 95, 87)
 ground span rgb(254, 188, 46)
 ground span rgb(40, 200, 64)
-icon svg 16×16 rgb(17, 17, 16) stroke 3.4px
-text "ponzu" rgb(17, 17, 16) 700 16px Funnel Display
 ground main rgb(244, 243, 239)
 ground span[Setup] rgb(17, 17, 16)
 ground span[Setup] rgb(17, 17, 16)
@@ -20,7 +18,7 @@ text "Paste the code from claude.ai" rgb(17, 17, 16) 500 13px Inter
 ground span rgb(255, 255, 255) shadow rgb(169, 165, 155) 0px 0px 0px 1px, rgba(17, 17, 16, 0.06) 0px 0px 0px 4px
 text "claude.ai shows it after you approve." rgb(169, 165, 155) 400 12px Inter
 text "Open sign-in again" rgb(94, 91, 84) 500 12px Inter
-icon svg 10×10 rgb(94, 91, 84) stroke 2px
+icon svg 10×10 rgb(128, 124, 115) stroke 2px
 text "Connect" rgb(255, 255, 255) 500 13px Inter
 ground button rgb(17, 17, 16)
 icon svg 14×14 rgb(255, 255, 255) stroke 2px

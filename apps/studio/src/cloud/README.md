@@ -40,6 +40,21 @@ is the rail's content, needs you included; `PullRequestView` fills the canvas pa
 request tab is open (the rail folds away, and comes back as it was on leaving). Settings plugs in
 the same way.
 
+### The window chrome
+
+The chrome departs from the boards on purpose, at the founder's request: it draws no Ponzu
+lockup in any state, the sidebar toggle is the first thing at the left (on a Mac 8px past the
+traffic lights, which the shell puts at x 16, y 16, so the toggle's box spans 76 to 104 and is
+centred on the lights' line; on Windows and Linux 10px from the edge), and the thread toggle is
+the last thing at the right, 10px from the window's edge, whether the rail is open or closed and
+on every tab. The rest of the right cluster (presence, Share, the pull request mark, the next
+action) sits just before the thread toggle, so it holds one place too, and the divider sits 18px
+before the cluster in every state: it separates the page tabs from the cluster rather than marking
+the rail's edge, so a wider cluster (five people, Update branch) or the rail toggling never moves
+it off its partner.
+`visual.ts compare` masks the chrome's 44px for this reason, so the rest is still checked
+against the boards.
+
 Text from the model or GitHub (replies, plans, a pull request's body and comments) goes through
 `Prose`, never `dangerouslySetInnerHTML`. It is react-markdown with GitHub's flavour (tables, task
 lists, strikethrough, bare addresses; not footnotes, whose parser is slow on stray `]`s and whose
@@ -142,6 +157,14 @@ repaint something or say what isn't so. The usual swaps:
 - The idea tiles have no loading state (onboarding 4.6: nothing while they are made). On a
   first visit the column sits at the top from its first frame, where the ideas will go, and they
   rise into that room when they come; if none do, nothing moves.
+- The repo picker departs from board 5 (pick a project) on purpose: one-line rows at the menus'
+  metrics (a repo by its name alone, since a workspace is one GitHub account; no owner heading,
+  no line under Scratch), a search only from seven repos (`SEARCH_FROM`), and Scratch's
+  temporary-folder icon from `ui/project-icons.ts`, the one place both projects' icons are set.
+  Its composition masks the picker and says so in `compare`. In a 900pt window a picker without
+  search (Scratch and up to six repos) fits under the centred composer and never moves it; one
+  with search lifts the composer to the top while it is open, by design: its ten-row list needs
+  the room, and a shorter list would scroll sooner for everyone with many repos.
 
 ### When you need
 

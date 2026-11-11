@@ -11,7 +11,7 @@ import { useNow } from "../cloud/time.ts";
 import { useColorScheme } from "../cloud/ui/color-scheme.ts";
 import { DesignChrome } from "../cloud/window/design-chrome.tsx";
 import { AskStore } from "./ask-store.ts";
-import { drawCommentPicture } from "./comment-picture.tsx";
+import { drawCommentPicture, hasPictureArea } from "./comment-picture.tsx";
 import { CommentPictures } from "./comment-pictures.ts";
 import type { Host } from "./host.ts";
 import { contributors, pageTabs } from "./map.ts";
@@ -118,6 +118,7 @@ export function useOpenDesign(
       source,
       api: api.designs,
       draw: drawCommentPicture,
+      drawable: hasPictureArea,
     }).start();
     const pullRequest = new PullRequestStore({
       ponzu,

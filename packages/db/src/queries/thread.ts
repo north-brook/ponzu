@@ -156,6 +156,28 @@ export async function postMessage(
   return row!;
 }
 
+/** The `comment` item of `messageId` that `userId` wrote, or null while there is none. */
+export async function getComment(
+  db: Db,
+  { designId, messageId, userId }: { designId: string; messageId: string; userId: string },
+): Promise<ThreadItem | null> {
+  const [row] = await run(
+    db
+      .select()
+      .from(threadItems)
+      .where(
+        and(
+          eq(threadItems.designId, designId),
+          eq(threadItems.kind, "comment"),
+          eq(threadItems.userId, userId),
+          sql`${threadItems.payload}->>'messageId' = ${messageId}`,
+        ),
+      )
+      .limit(1),
+  );
+  return row ?? null;
+}
+
 /**
  * Give a person's comment its picture (`payload.picture`): the `comment` item of `messageId`
  * that `userId` wrote. The first picture is the one it keeps, as a photo sent is: attaching

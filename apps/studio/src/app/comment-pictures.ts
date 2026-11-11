@@ -45,6 +45,11 @@ export interface CommentPicturesOptions {
     messageId: string;
     assetBase?: string | undefined;
   }) => Promise<Record<Theme, Blob>>;
+  /**
+   * Whether a comment can have a picture at all (`hasPictureArea`), asked before it is drawn so
+   * one that can't shows as a comment without one from the start. Every comment can, unless said.
+   */
+  drawable?: (comment: { doc: Doc; threadId: string; messageId: string }) => boolean;
   now?: () => number;
   wait?: (ms: number) => Promise<void>;
   /** A local address for a picture: an object URL in the browser. */
@@ -69,6 +74,8 @@ export class CommentPictures {
       const now = (this.opts.now ?? Date.now)();
       for (const said of commentsIn(op)) {
         if (now - said.createdAt > FRESH_MS || this.pictures.has(said.messageId)) continue;
+        const comment = { doc, threadId: said.threadId, messageId: said.messageId };
+        if (this.opts.drawable && !this.opts.drawable(comment)) continue;
         this.take(doc, said.threadId, said.messageId);
       }
     });
@@ -103,7 +110,9 @@ export class CommentPictures {
     try {
       files = await this.opts.draw({ doc, threadId, messageId, assetBase: source.assetBase });
     } catch (error) {
-      console.warn("[ponzu] a comment's picture couldn't be drawn:", error);
+      if (!(error instanceof Error && error.name === "NoPicture")) {
+        console.warn("[ponzu] a comment's picture couldn't be drawn:", error);
+      }
       return this.drop(messageId);
     }
     if (this.closed) return;

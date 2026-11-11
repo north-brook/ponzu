@@ -16,7 +16,18 @@ function accessToken(n: number): string {
  * The main process's session with a browser that goes straight back to the loopback listener,
  * as WorkOS would after GitHub, and an API that answers the exchange.
  */
-function harness(browser: (authorize: URL) => Promise<void>) {
+function harness(
+  browser: (authorize: URL) => Promise<void>,
+  opts: {
+    attemptMs?: number;
+    exchangeMs?: number;
+    exchange?: "down";
+    /** Codes whose exchange the API never answers. */
+    hang?: string[];
+    /** How long the API takes to answer an exchange. */
+    delayMs?: number;
+  } = {},
+) {
   const exchanges: unknown[] = [];
   const storage = memoryStorage();
   let focused = 0;
@@ -29,13 +40,25 @@ function harness(browser: (authorize: URL) => Promise<void>) {
     focus: () => {
       focused++;
     },
+    ...(opts.attemptMs ? { attemptMs: opts.attemptMs } : {}),
+    ...(opts.exchangeMs ? { exchangeMs: opts.exchangeMs } : {}),
     fetch: async (input, init) => {
       const request = new Request(input, init);
       if (request.url === "https://api.test/v1/auth/exchange") {
-        exchanges.push({
-          body: await request.json(),
-          client: request.headers.get("x-ponzu-client"),
-        });
+        const body = (await request.json()) as { code: string };
+        exchanges.push({ body, client: request.headers.get("x-ponzu-client") });
+        if (opts.hang?.includes(body.code)) {
+          await new Promise((_, reject) => {
+            init?.signal?.addEventListener("abort", () => reject(init.signal!.reason));
+          });
+        }
+        if (opts.delayMs) await new Promise((resolve) => setTimeout(resolve, opts.delayMs));
+        if (opts.exchange === "down") {
+          return Response.json(
+            { error: { code: "unavailable", message: "Ponzu is down for a moment." } },
+            { status: 503 },
+          );
+        }
         return Response.json({ user, access_token: accessToken(1), refresh_token: "rt_1" });
       }
       return Response.json({ error: { code: "not_found", message: "No." } }, { status: 404 });
@@ -88,12 +111,155 @@ test("a sign-in GitHub turned down says so, and leaves the person signed out", a
   expect(main.session.getState().status).toBe("signed_out");
 });
 
-test("starting again, or cancelling, ends the sign-in that was waiting without a word", async () => {
-  const { main } = harness(async () => {});
+/** A browser that keeps every tab it was sent to, for the test to bring back when it likes. */
+function tabs() {
+  const opened: URL[] = [];
+  return {
+    open: async (authorize: URL) => {
+      opened.push(authorize);
+    },
+    opened,
+    /** The tab coming back from GitHub with `code`: the page it lands on, or null if refused. */
+    async back(i: number, code: string): Promise<string | null> {
+      const authorize = opened[i]!;
+      const redirect = authorize.searchParams.get("redirect_uri")!;
+      const state = authorize.searchParams.get("state")!;
+      const page = await fetch(`${redirect}?code=${code}&state=${state}`).catch(() => null);
+      return page ? page.text() : null;
+    },
+    async listening(i: number): Promise<boolean> {
+      const redirect = new URL(opened[i]!.searchParams.get("redirect_uri")!);
+      return (await fetch(`${redirect.origin}/`).catch(() => null)) !== null;
+    },
+  };
+}
+
+const until = async (done: () => boolean) => {
+  while (!done()) await new Promise((resolve) => setTimeout(resolve, 5));
+};
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+test("a sign-in outlives the window coming forward: its tab finishes it minutes later", async () => {
+  const browser = tabs();
+  const { main, focused, exchanges } = harness(browser.open);
+  const signingIn = main.signIn();
+  await until(() => browser.opened.length === 1);
+  // The person is back in Ponzu, and away again, while GitHub asks for a two-factor code: the
+  // studio once cancelled the sign-in 1.5 s after the window took focus. Nothing does now.
+  await wait(1_700);
+  expect(await browser.listening(0)).toBe(true);
+  expect(await browser.back(0, "code_1")).toContain("You're signed in");
+  expect(await signingIn).toEqual({ ok: true });
+  expect(exchanges).toHaveLength(1);
+  expect(focused()).toBe(1);
+});
+
+test("a second press starts another attempt beside the first; the first tab back wins", async () => {
+  const browser = tabs();
+  const { main, exchanges } = harness(browser.open);
   const first = main.signIn();
-  await new Promise((resolve) => setTimeout(resolve, 20));
-  main.cancelSignIn();
-  expect(await first).toEqual({ ok: false, reason: "cancelled" });
+  await until(() => browser.opened.length === 1);
+  const second = main.signIn();
+  await until(() => browser.opened.length === 2);
+  // Each its own listener, state and verifier.
+  const at = (i: number) => new URL(browser.opened[i]!.searchParams.get("redirect_uri")!).port;
+  expect(at(0)).not.toBe(at(1));
+  expect(browser.opened[0]!.searchParams.get("state")).not.toBe(
+    browser.opened[1]!.searchParams.get("state"),
+  );
+
+  // The older tab, where the person finished signing in to GitHub, comes back first.
+  expect(await browser.back(0, "code_old")).toContain("You're signed in");
+  expect(await first).toEqual({ ok: true });
+  expect(main.session.getState()).toEqual({ status: "signed_in", user });
+  // The other attempt ends quietly, its listener closed: a late tab finds nothing.
+  expect(await second).toEqual({ ok: false, reason: "closed" });
+  expect(await browser.listening(1)).toBe(false);
+  expect(await browser.back(1, "code_new")).toBeNull();
+  expect((exchanges as { body: { code: string } }[]).map((e) => e.body.code)).toEqual(["code_old"]);
+});
+
+test("at most three attempts listen: a fourth press closes the oldest", async () => {
+  const browser = tabs();
+  const { main } = harness(browser.open);
+  const results = [main.signIn()];
+  for (let n = 2; n <= 4; n++) {
+    await until(() => browser.opened.length === n - 1);
+    results.push(main.signIn());
+  }
+  await until(() => browser.opened.length === 4);
+  expect(await results[0]).toEqual({ ok: false, reason: "closed" });
+  expect(await browser.listening(0)).toBe(false);
+  for (const i of [1, 2, 3]) expect(await browser.listening(i)).toBe(true);
+  // Quitting closes the rest.
+  main.closeSignIns();
+  for (const i of [1, 2, 3]) expect(await results[i]).toEqual({ ok: false, reason: "closed" });
+  for (const i of [1, 2, 3]) expect(await browser.listening(i)).toBe(false);
+});
+
+test("an attempt nobody comes back to ends with its window, quietly", async () => {
+  const browser = tabs();
+  const { main } = harness(browser.open, { attemptMs: 30 });
+  expect(await main.signIn()).toEqual({ ok: false, reason: "closed" });
+  expect(await browser.listening(0)).toBe(false);
+});
+
+test("an exchange the API turns down says so on the page and in the app", async () => {
+  const browser = tabs();
+  const { main, focused } = harness(browser.open, { exchange: "down" });
+  const signingIn = main.signIn();
+  await until(() => browser.opened.length === 1);
+  const page = await browser.back(0, "code_1");
+  expect(page).toContain("Sign-in didn't finish");
+  expect(page).not.toContain("You're signed in");
+  const result = await signingIn;
+  expect(result.ok).toBe(false);
+  expect(result.ok === false && result.reason).toBe("failed");
+  expect(main.session.getState().status).toBe("signed_out");
+  expect(focused()).toBe(1);
+});
+
+test("an exchange that stalls is given up: its page says so, and the next tab still signs in", async () => {
+  const browser = tabs();
+  const { main, exchanges, focused } = harness(browser.open, {
+    hang: ["code_stuck"],
+    exchangeMs: 150,
+  });
+  const first = main.signIn();
+  await until(() => browser.opened.length === 1);
+  const second = main.signIn();
+  await until(() => browser.opened.length === 2);
+  const stuckPage = browser.back(0, "code_stuck");
+  await until(() => exchanges.length === 1);
+  // The second tab comes back while the first exchange hangs: it waits, but not for minutes.
+  const page = await browser.back(1, "code_2");
+  expect(page).toContain("You're signed in");
+  expect(await stuckPage).toContain("Ponzu couldn't be reached.");
+  expect(await stuckPage).not.toContain("You're signed in");
+  expect(await second).toEqual({ ok: true });
+  const firstResult = await first;
+  expect(firstResult.ok === false && firstResult.reason).toBe("failed");
+  expect(main.session.getState()).toEqual({ status: "signed_in", user });
+  expect((exchanges as { body: { code: string } }[]).map((e) => e.body.code)).toEqual([
+    "code_stuck",
+    "code_2",
+  ]);
+  expect(focused()).toBe(2);
+});
+
+test("two tabs back at once: one exchange, and Ponzu comes forward once", async () => {
+  const browser = tabs();
+  const { main, exchanges, focused } = harness(browser.open, { delayMs: 100 });
+  const first = main.signIn();
+  await until(() => browser.opened.length === 1);
+  const second = main.signIn();
+  await until(() => browser.opened.length === 2);
+  const pages = await Promise.all([browser.back(0, "code_1"), browser.back(1, "code_2")]);
+  for (const page of pages) expect(page).toContain("You're signed in");
+  expect(await first).toEqual({ ok: true });
+  expect(await second).toEqual({ ok: true });
+  expect(exchanges).toHaveLength(1);
+  expect(focused()).toBe(1);
 });
 
 test("without a session there is no token to lend, and the studio is told why", async () => {

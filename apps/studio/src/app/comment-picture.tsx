@@ -11,7 +11,7 @@ import { COMMENT_PICTURE } from "@ponzu/runner/protocol";
 import { domToBlob } from "modern-screenshot";
 import { type CSSProperties, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { pictureArea, type Rect } from "./comment-area.ts";
+import { distanceTo, OPEN_LIMIT, pictureArea, type Rect } from "./comment-area.ts";
 
 /*
  * A comment's picture: the area of the page round its pin, as the canvas draws it (the boards
@@ -39,10 +39,8 @@ function declared(ab: Artboard): { w: number; h: number | null } {
   return { w, h };
 }
 
-interface Framed {
-  area: Rect;
-  pin: { x: number; y: number };
-}
+/** The area framed round the pin, or null when there is nothing round it to show. */
+type Framed = { area: Rect; pin: { x: number; y: number } } | null;
 
 /** What a comment points at in a document: its thread, page and board, and the pin's number. */
 export function commentIn(doc: Doc, threadId: string, messageId: string) {
@@ -57,9 +55,35 @@ export function commentIn(doc: Doc, threadId: string, messageId: string) {
 }
 
 /**
+ * Whether a comment can have a picture, before anything is drawn: one on a board always can; one
+ * on the open canvas only with a board in reach (`OPEN_LIMIT`), taking a board that doesn't say
+ * its height as reaching down without end, so this never says no where `pictureArea` would
+ * find a board.
+ */
+export function hasPictureArea({
+  doc,
+  threadId,
+  messageId,
+}: {
+  doc: Doc;
+  threadId: string;
+  messageId: string;
+}): boolean {
+  const comment = commentIn(doc, threadId, messageId);
+  if (!comment) return false;
+  if (comment.board) return true;
+  const pin = { x: comment.thread.x, y: comment.thread.y };
+  return comment.page.artboards.some((ab) => {
+    const { w, h } = declared(ab);
+    return distanceTo(pin, { x: ab.x, y: ab.y, w, h: h ?? Number.MAX_SAFE_INTEGER }) <= OPEN_LIMIT;
+  });
+}
+
+/**
  * The area round a comment's pin, drawn at the picture's size. It lays the nearby boards out
  * unseen first, to know their heights and the node the pin is on, then frames the area
- * (`pictureArea`) and shows it; `onFramed` hears when it has.
+ * (`pictureArea`) and shows it; `onFramed` hears when it has, or `onEmpty` that there is nothing
+ * round the pin to show (a pin on the open canvas far from every board), and it draws nothing.
  */
 export function CommentScene({
   doc,
@@ -68,6 +92,7 @@ export function CommentScene({
   theme,
   assetBase,
   onFramed,
+  onEmpty,
 }: {
   doc: Doc;
   threadId: string;
@@ -75,10 +100,12 @@ export function CommentScene({
   theme: Theme;
   assetBase?: string | undefined;
   onFramed?: (scene: HTMLElement) => void;
+  onEmpty?: () => void;
 }) {
   const scene = useRef<HTMLDivElement>(null);
   const layer = useRef<HTMLDivElement>(null);
-  const [framed, setFramed] = useState<Framed | null>(null);
+  // Undefined until framed.
+  const [framed, setFramed] = useState<Framed | undefined>(undefined);
   const comment = useMemo(() => commentIn(doc, threadId, messageId), [doc, threadId, messageId]);
   // Measured from the pin's spot as it was saved, so the layer's px are page px less this.
   const origin = useMemo(
@@ -105,7 +132,7 @@ export function CommentScene({
   // Before the first paint: lay out, measure, frame.
   useLayoutEffect(() => {
     const el = layer.current;
-    if (!el || !comment || framed) return;
+    if (!el || !comment || framed !== undefined) return;
     const rects = new Map<string, Rect>();
     for (const ab of near) {
       const sheet = el.querySelector<HTMLElement>(`[data-scene-board="${CSS.escape(ab.id)}"]`);
@@ -135,12 +162,15 @@ export function CommentScene({
       node,
       aspect: WIDTH / HEIGHT,
     });
-    setFramed({ area, pin });
+    setFramed(area ? { area, pin } : null);
   }, [comment, near, framed, origin]);
 
   useLayoutEffect(() => {
-    if (framed && scene.current) onFramed?.(scene.current);
-  }, [framed, onFramed]);
+    if (framed === null) onEmpty?.();
+    else if (framed && scene.current) onFramed?.(scene.current);
+  }, [framed, onFramed, onEmpty]);
+
+  if (framed === null) return null;
 
   const k = framed ? WIDTH / framed.area.w : 1;
   const shown = framed
@@ -239,6 +269,14 @@ export function CommentScene({
   );
 }
 
+/** There is nothing round the comment's pin to show: it goes without a picture, by design. */
+export class NoPicture extends Error {
+  override name = "NoPicture";
+  constructor() {
+    super("There is nothing round the comment's pin to show.");
+  }
+}
+
 /** How long a picture may take before the comment goes without one. */
 const DRAW_MS = 15_000;
 
@@ -284,6 +322,10 @@ export async function drawCommentPicture(given: {
             onFramed={(el) => {
               clearTimeout(timer);
               resolve(el);
+            }}
+            onEmpty={() => {
+              clearTimeout(timer);
+              reject(new NoPicture());
             }}
           />,
         );

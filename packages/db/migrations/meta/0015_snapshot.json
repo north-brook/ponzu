@@ -1,5 +1,5 @@
 {
-  "id": "034f30f0-8321-4085-820a-c8455a70eec1",
+  "id": "a74907ab-0525-45d8-9603-2af1fe67db93",
   "prevId": "b28a58d0-ad1d-40a2-87b2-edbecd76b533",
   "version": "7",
   "dialect": "postgresql",
@@ -864,6 +864,13 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "ideas_version": {
+          "name": "ideas_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "ideas_claimed_at": {
           "name": "ideas_claimed_at",
@@ -3859,7 +3866,7 @@
       "checkConstraints": {
         "uploads_purpose_check": {
           "name": "uploads_purpose_check",
-          "value": "\"uploads\".\"purpose\" in ('asset', 'export', 'preview', 'session', 'workspace', 'comment')"
+          "value": "\"uploads\".\"purpose\" in ('asset', 'export', 'preview', 'session', 'workspace')"
         },
         "uploads_size_check": {
           "name": "uploads_size_check",

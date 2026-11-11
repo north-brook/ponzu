@@ -9,7 +9,13 @@ import { CommentPictures } from "./comment-pictures.ts";
  * when they can't be drawn or kept, so the comment reads as everyone else's does.
  */
 
-async function world({ draw }: { draw?: () => Promise<{ light: Blob; dark: Blob }> } = {}) {
+async function world({
+  draw,
+  drawable,
+}: {
+  draw?: () => Promise<{ light: Blob; dark: Blob }>;
+  drawable?: () => boolean;
+} = {}) {
   const backend = createFakeBackend();
   const maya = backend.addPerson({ login: "maya", name: "Maya Ortiz" });
   const sam = backend.addPerson({ login: "sam", name: "Sam Lee" });
@@ -46,6 +52,7 @@ async function world({ draw }: { draw?: () => Promise<{ light: Blob; dark: Blob 
         drawn.push(messageId);
         return { light: new Blob(["l"]), dark: new Blob(["d"]) };
       }),
+    ...(drawable ? { drawable } : {}),
     wait: async () => {},
     preview: () => `blob:${++urls}`,
     release: (url) => released.push(url),
@@ -164,4 +171,15 @@ test("a picture waits for its comment's op, and one that can't be drawn or kept 
   expect(broken.pictures.getSnapshot().has("m_2")).toBe(false);
   const item2 = broken.kept("m_2");
   expect(item2?.kind === "comment" && item2.payload.picture).toBeUndefined();
+});
+
+test("a comment with nothing round its pin to show is never drawn: it reads without a picture", async () => {
+  const w = await world({ drawable: () => false });
+  await w.leave("m_far");
+  // Not even for a moment.
+  expect(w.pictures.getSnapshot().has("m_far")).toBe(false);
+  await settle();
+  expect(w.drawn).toEqual([]);
+  const item = w.kept("m_far");
+  expect(item?.kind === "comment" && item.payload.picture).toBeUndefined();
 });

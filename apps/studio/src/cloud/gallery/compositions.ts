@@ -7,6 +7,8 @@
  * - `masks` cover what the gallery doesn't draw: the canvas's boards, and on the sidebar's
  *   boards the thread rail, which their compositions leave empty.
  * - `reference` draws it for the visual regression test, from references/.
+ * - `differs` says where the app departs from the board on purpose; `compare` prints it, and a
+ *   mask over that part keeps the share outside the masks about the rest.
  */
 import { SETUP_COMPOSITIONS } from "./setup-compositions.ts";
 
@@ -26,7 +28,15 @@ export interface Composition {
   open?: string;
   masks?: Rect[];
   reference?: boolean;
+  differs?: string;
 }
+
+/**
+ * The window's 44px chrome, across its width. Masked in every comparison with the design's
+ * boards (visual.ts adds it): it departs from them on purpose, with no lockup and the toggles
+ * at the window's edges (README, "The window chrome").
+ */
+export const CHROME_HEIGHT = 44;
 
 const CANVAS: Rect = { x: 300, y: 44, width: 780, height: 850 };
 const RAIL: Rect = { x: 1080, y: 44, width: 360, height: 856 };
@@ -76,6 +86,11 @@ export const COMPOSITIONS: Composition[] = [
     reference: true,
   },
   {
+    id: "sidebar-previews-updating",
+    title: "Sidebar · Previews updating while the agent works",
+    ...WINDOW,
+  },
+  {
     id: "share",
     title: "Share",
     board: "teams/share.html",
@@ -104,6 +119,30 @@ export const COMPOSITIONS: Composition[] = [
     id: "pick-a-project",
     title: "5 · Pick a project",
     board: "mac/5-pick-a-project.html",
+    ...WINDOW,
+    open: 'button[aria-label^="Project"]',
+    // The board's picker and ours, wherever either lands.
+    masks: [{ x: 530, y: 416, width: 424, height: 380 }],
+    differs:
+      "the picker's rows are one line (no owner/name or note under them, no owner heading), the search shows only from seven repos, and Scratch has the temporary-folder icon",
+    reference: true,
+  },
+  {
+    id: "pick-a-project-scratch",
+    title: "Pick a project · Scratch chosen",
+    ...WINDOW,
+    open: 'button[aria-label^="Project"]',
+  },
+  {
+    id: "pick-a-project-one-repo",
+    title: "Pick a project · one repo",
+    ...WINDOW,
+    open: 'button[aria-label^="Project"]',
+    reference: true,
+  },
+  {
+    id: "pick-a-project-many-repos",
+    title: "Pick a project · fifteen repos",
     ...WINDOW,
     open: 'button[aria-label^="Project"]',
     reference: true,
@@ -145,6 +184,17 @@ export const COMPOSITIONS: Composition[] = [
     ...WINDOW,
     masks: [CANVAS],
     reference: true,
+  },
+  {
+    id: "crowded-chrome",
+    title: "Chrome · five people and Update branch, rail open",
+    ...WINDOW,
+    reference: true,
+  },
+  {
+    id: "crowded-chrome-closed",
+    title: "Chrome · five people and Update branch, rail closed",
+    ...WINDOW,
   },
   { id: "long-thread", title: "Thread · a thousand lines, older ones loading", ...WINDOW },
   { id: "thread-loading", title: "Thread · loading", ...WINDOW },

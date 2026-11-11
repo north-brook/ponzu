@@ -272,6 +272,7 @@ export {
   appendThreadItem,
   appendThreadItemOnce,
   attachCommentPicture,
+  getComment,
   listThreadItems,
   type NewThreadItem,
   postMessage,
