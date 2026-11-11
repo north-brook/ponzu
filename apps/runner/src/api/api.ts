@@ -4,6 +4,8 @@ import type {
   ClaimResponse,
   GitCredentialRequest,
   GitCredentialResponse,
+  GitReport,
+  PullRequestSummaryResponse,
   QuestionRequest,
   RestoredReport,
   RunnerSession,
@@ -69,6 +71,8 @@ export interface RunnerApi {
   gitCredential(ask: GitCredentialRequest): Promise<GitCredentialResponse>;
   /** GitHub refused the token git was given: mint a new one next time. */
   eraseGitCredential(ask: GitCredentialRequest): Promise<void>;
+  /** What the runner saw of git and GitHub, for the API's log. Only logged. */
+  reportGit(report: GitReport): Promise<void>;
   /** Safe to repeat: turns are recorded by their ids. */
   recordUsage(turns: TurnUsage[]): Promise<void>;
   /**
@@ -82,10 +86,11 @@ export interface RunnerApi {
   reportRestored(report: RestoredReport): Promise<void>;
   /**
    * The agent's words on what its branch changes, for the pull request's description. Answers
-   * the number of the open pull request they were written into, or null while none is open (the
-   * API keeps them for the one that opens). Safe to repeat: the last one sent wins.
+   * the number of the open pull request they were written into, or null with why they were only
+   * kept (none is open: the API keeps them for the one the person opens), and the design's pull
+   * request as the app shows it. Safe to repeat: the last one sent wins.
    */
-  pullRequestSummary(summary: string): Promise<number | null>;
+  pullRequestSummary(summary: string): Promise<PullRequestSummaryResponse>;
 }
 
 /** A checkpoint to save: its turn marker and what is kept with it. */
@@ -153,6 +158,7 @@ export function watchFatal(api: RunnerApi, onFatal: (err: ApiError) => void): Ru
     upload: watch(api.upload.bind(api)),
     gitCredential: watch(api.gitCredential.bind(api)),
     eraseGitCredential: watch(api.eraseGitCredential.bind(api)),
+    reportGit: watch(api.reportGit.bind(api)),
     recordUsage: watch(api.recordUsage.bind(api)),
     saveCheckpoint: watch(api.saveCheckpoint.bind(api)),
     restore: watch(api.restore.bind(api)),

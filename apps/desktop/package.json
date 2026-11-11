@@ -24,9 +24,11 @@
     "@ponzu/canvas": "workspace:*",
     "@ponzu/client": "workspace:*",
     "@ponzu/core": "workspace:*",
+    "@posthog/cli": "^0.19.3",
     "@types/node": "^26.6.5",
     "electron": "^44.9.3",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "^26.15.3",
+    "posthog-node": "^5.68.2"
   },
   "build": {
     "appId": "design.ponzu.app",
@@ -56,6 +58,7 @@
       "grantFileProtocolExtraPrivileges": false,
       "resetAdHocDarwinSignature": true
     },
+    "beforePack": "./scripts/before-pack.cjs",
     "afterSign": "./scripts/notarize.cjs",
     "protocols": [
       {

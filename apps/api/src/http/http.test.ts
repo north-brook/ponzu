@@ -424,6 +424,23 @@ describe("CORS", () => {
     expect(response.headers.get("access-control-allow-credentials")).toBeNull();
   });
 
+  test("the app's requests may carry PostHog's session headers, or every one would be refused", async () => {
+    const response = await t.app.request("/v1/me", {
+      method: "OPTIONS",
+      headers: {
+        origin: "ponzu-studio://app",
+        "access-control-request-method": "GET",
+        "access-control-request-headers":
+          "authorization,x-posthog-session-id,x-posthog-window-id,x-posthog-distinct-id",
+      },
+    });
+    expect(response.status).toBe(204);
+    const allowed = response.headers.get("access-control-allow-headers") ?? "";
+    for (const header of ["x-posthog-session-id", "x-posthog-window-id", "x-posthog-distinct-id"]) {
+      expect(allowed).toContain(header);
+    }
+  });
+
   test("an allowed origin can read an error as well as an answer", async () => {
     const refused = await t.app.request("/v1/me", {
       headers: { origin: "https://app.ponzu.design" },

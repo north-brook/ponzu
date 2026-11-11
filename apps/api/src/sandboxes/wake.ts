@@ -14,6 +14,8 @@ import { WAKE_ATTEMPTS, WAKE_JOB } from "./orchestrate.ts";
  *   POST /v1/designs/:id/stop                        "stop"
  *   a person's ops (commitPost), undo and redo       "comment" when the ops left a comment for
  *                                                    the agent, else "edit"
+ *   POST /v1/designs/:id/pull-request (Create PR,    "push": the runner pushes commits only
+ *   with commits only the sandbox holds)              the sandbox holds
  *
  * Every reason keeps an awake sandbox awake for longer and pokes its runner. A message, an
  * answer or a comment also records a wake (`orchestrate.ts`), which this request starts at
@@ -21,13 +23,14 @@ import { WAKE_ATTEMPTS, WAKE_JOB } from "./orchestrate.ts";
  * review) comes in a webhook's job instead, which only records one (`queueWake`).
  */
 
-export type WakeReason = "message" | "answer" | "comment" | "stop" | "edit";
+export type WakeReason = "message" | "answer" | "comment" | "stop" | "edit" | "push";
 
 /** What waking takes. A caller of `requestWake` takes these with its own (`CommitDeps`). */
 export type WakeDeps = JobDeps & Pick<Deps, "background">;
 
 /**
- * What wakes a sleeping sandbox: a message, an answer or a comment (priority `now` or `next`).
+ * What wakes a sleeping sandbox: a message, an answer or a comment (priority `now` or `next`), and
+ * Create PR asking for commits only the sandbox holds (`push`).
  * A person's edit (`later`) does not, and neither does a stop: a sleeping sandbox is running
  * nothing to stop, and the stop is in the feed for when it next wakes.
  */
@@ -37,6 +40,7 @@ const WAKES: Record<WakeReason, boolean> = {
   comment: true,
   stop: false,
   edit: false,
+  push: true,
 };
 
 /**

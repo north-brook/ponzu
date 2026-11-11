@@ -258,7 +258,15 @@ test("the chrome's mark comes from the design's head, and its button from the AP
   expect(prSummary({ ...head, prNumber: null, prState: null })).toBeNull();
 
   const tab = (nextAction: PullRequestTab["nextAction"], pull: Pull | null = API_PULL) => ({
-    branch: { name: "pz/hero", base: "main", exists: true, aheadBy: 1, behindBy: 0 },
+    branch: {
+      name: "pz/hero",
+      base: "main",
+      exists: true,
+      aheadBy: 1,
+      behindBy: 0,
+      unpushed: 0,
+      pushError: null,
+    },
     pullRequest: pull,
     mergeMethod: "squash" as const,
     autoMergeAllowed: true,
@@ -361,6 +369,47 @@ test("from changes on the branch to a merge: create, ready, merge, and the desig
     notices.map((n) => n.kind === "notice" && n.payload.type === "pull_request" && n.payload.state),
   ).toEqual(["draft", "merged"]);
   expect(w.said).toEqual([]);
+});
+
+test("commits only the sandbox holds: Create PR is offered, waits for the push, then opens", async () => {
+  const w = await world();
+  // The agent's push failed: its commit is only in the sandbox.
+  w.github.commitUnpushed([{ path: "src/onboarding.tsx" }], "Ponzu couldn't push pz/pricing.");
+  const before = await w.read();
+  expect(before.tab?.branch).toMatchObject({ exists: false, unpushed: 1 });
+  expect(chromeAction(before.tab!)).toBe("create_pr");
+
+  w.store.run("create_pr");
+  await settle();
+  expect(w.github.pushesAsked).toBe(1);
+  // Still busy: the pull request opens once GitHub has the commit. What the last push said is moot.
+  expect(w.store.getSnapshot().busy).toBe("create_pr");
+  expect((await w.read()).busy).toBe("create_pr");
+
+  w.github.landPush();
+  await w.read();
+  await settle();
+  const opened = w.store.getSnapshot();
+  expect(opened.busy).toBeNull();
+  expect(opened.tab?.pullRequest).toMatchObject({ state: "draft" });
+  expect(w.said).toEqual([]);
+  w.store.close();
+});
+
+test("a push Create PR waits on that fails says why, and the button comes back", async () => {
+  const w = await world();
+  w.github.commitUnpushed();
+  await w.read();
+  w.store.run("create_pr");
+  await settle();
+  expect(w.store.getSnapshot().busy).toBe("create_pr");
+
+  w.github.failPush("pz/pricing on GitHub has commits this design doesn't.");
+  await w.read();
+  expect(w.store.getSnapshot().busy).toBeNull();
+  expect(w.said).toEqual(["pz/pricing on GitHub has commits this design doesn't."]);
+  expect(chromeAction(w.store.getSnapshot().tab!)).toBe("create_pr");
+  w.store.close();
 });
 
 test("checks running offer auto-merge; failing ones and conflicts are asked of the agent", async () => {

@@ -5,7 +5,9 @@ import {
   CLAIM_LIMIT,
   type ClaimRequest,
   type CompleteRequest,
+  GIT_REPORTS,
   type GitCredentialRequest,
+  type GitReport as GitReportRequest,
   MAX_PULL_REQUEST_SUMMARY,
   MAX_TEXT,
   MAX_THREAD_WRITE,
@@ -62,6 +64,7 @@ const RUN_ERRORS = [
   "agent_exited",
   "message_refused",
   "question_failed",
+  "push_failed",
 ] as const satisfies RunErrorCode[];
 
 const RunnerNotice = z.discriminatedUnion("type", [
@@ -112,6 +115,17 @@ export const State: z.ZodType<StateRequest, unknown> = z.object({
   artboards: Artboards,
   claudeSessionId: SessionId.nullable(),
   quiesced: z.iso.datetime({ offset: true }).nullable().optional(),
+  branch: z
+    .object({
+      unpushed: z
+        .number()
+        .int()
+        .min(0)
+        .max(2 ** 31 - 1),
+      error: text(1_000).nullable(),
+    })
+    .nullable()
+    .optional(),
 });
 
 const Turn = z
@@ -210,6 +224,24 @@ export const GitCredential: z.ZodType<GitCredentialRequest> = z.object({
   protocol: z.string().max(32),
   host: z.string().max(256),
   path: z.string().max(512),
+  reason: text(500).optional(),
+});
+
+/**
+ * What the runner saw of git and GitHub, for the log: a known name and a few short scalar
+ * fields (`said` is git's own last words, which never carry the token).
+ */
+export const GitReport: z.ZodType<GitReportRequest, unknown> = z.object({
+  name: z.enum(GIT_REPORTS),
+  fields: z
+    .record(
+      z.string().max(64),
+      z.union([text(500), z.number(), z.boolean(), z.null()]) as z.ZodType<
+        string | number | boolean | null,
+        unknown
+      >,
+    )
+    .refine((fields) => Object.keys(fields).length <= 20, "At most 20 fields."),
 });
 
 export const PullRequestSummary: z.ZodType<PullRequestSummaryRequest> = z.object({
