@@ -138,6 +138,9 @@
         "@ponzu/tools": "workspace:*",
         "zod": "^4",
       },
+      "devDependencies": {
+        "@ponzu/sandbox": "workspace:*",
+      },
     },
     "apps/studio": {
       "name": "@ponzu/studio",

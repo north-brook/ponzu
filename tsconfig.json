@@ -9,6 +9,7 @@
     "apps/cli/src",
     "apps/runner/src",
     "apps/runner/scripts",
+    "apps/runner/image",
     "apps/studio/src",
     "apps/desktop/src/**/*.test.ts",
     "scripts"

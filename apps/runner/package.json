@@ -17,5 +17,8 @@
     "@ponzu/render": "workspace:*",
     "@ponzu/tools": "workspace:*",
     "zod": "^4"
+  },
+  "devDependencies": {
+    "@ponzu/sandbox": "workspace:*"
   }
 }
