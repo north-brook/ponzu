@@ -20,18 +20,21 @@ export interface SidebarSlot {
  * - `chrome` is everything past the left block (DesignChrome); nothing on the create page.
  * - `rail` is the thread rail's content, or null while it is closed.
  * - `children` fill the canvas pane.
+ * - `badge` sits just past the lockup: the shell's update mark, when there is one.
  */
 export function AppWindow({
   lights,
   sidebar,
   chrome,
   rail,
+  badge,
   children,
 }: {
   lights: "native" | "drawn";
   sidebar: SidebarSlot | null;
   chrome?: ReactNode;
   rail: ReactNode | null;
+  badge?: ReactNode;
   children: ReactNode;
 }) {
   const sidebarOpen = sidebar?.open ?? false;
@@ -50,6 +53,7 @@ export function AppWindow({
           >
             <TrafficLights drawn={lights === "drawn"} />
             <Lockup />
+            {badge}
             <span className="flex-1" />
             {sidebar ? <SidebarToggle open={sidebar.open} onToggle={sidebar.onToggle} /> : null}
           </div>

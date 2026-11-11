@@ -2,16 +2,13 @@
 
 ```sh
 bun install
-bun run dev          # the studio with hot reload, on the three examples/
+bun run dev          # the studio with hot reload, on Ponzu Cloud in memory
 bun run lint && bun run typecheck && bun test
 ```
 
-The desktop app: `cd apps/desktop && bun run start`. The iPhone app:
+The desktop app: `cd apps/desktop && bun run start`, against the real API
+([apps/desktop/README.md](apps/desktop/README.md)). The iPhone app:
 `cd apps/mobile && bunx expo run:ios`, see [docs/mobile.md](docs/mobile.md).
-
-`serve` from a checkout listens on that checkout's own port in 7800–7999 (it
-prints it) and stays off the tailnet, so it never takes 7777 or the iPhone's
-Bonjour advert from the installed app. `--tailnet` opts back in.
 
 ## Pull requests
 
@@ -66,15 +63,14 @@ pass it merges, and for the desktop app
    - **Windows** (x64, beta): a one-click NSIS installer that installs for the
      person only, under `%LOCALAPPDATA%\Programs\ponzu`, and `latest.yml`.
      It isn't signed yet, so SmartScreen asks before its first launch.
-     Uninstalling removes what the app registered for the person
+     Uninstalling removes what Ponzu 1.x registered for the person
      (`apps/desktop/build/uninstall.ps1`).
    - **Linux** (x64, beta): an AppImage, a `.deb` (which installs to
      `/opt/Ponzu` and links `/usr/bin/ponzu`), and `latest-linux.yml`.
-     Removing the `.deb` removes the wake helper's units that ran it, from each
-     person's `~/.config/systemd/user` (`apps/desktop/build/deb-after-remove.sh`).
 
-   Each launches what it built and waits for it to start its server and paint
-   the studio (`PONZU_SMOKE=1`, see `apps/desktop/src/smoke.ts`): the signed
+   Each launches what it built and waits for the studio to draw its sign-in
+   screen, with no keychain and no network (`PONZU_SMOKE=1`, see
+   `apps/desktop/src/smoke.ts`): the signed
    Mac app, the Windows app as its installer installed it (then uninstalls
    it), the AppImage, and the installed `.deb` (then removes it).
 3. Once all three have succeeded, adds `release-notes.json`, downloads the
@@ -104,14 +100,11 @@ touching no release. With no tag it builds the branch it runs from:
 sign the Mac, so from any other branch it builds Windows and Linux.
 
 Installed apps check for a newer release at launch and every four hours,
-download it in the background, and show Update in the title bar once it's
-ready. One click installs it on every one of the person's computers on their
-tailnet, the clicked one last; one that was off catches up once it's back and
-nobody is using it. It also installs on quit (`apps/desktop/src/updater.ts`,
-`packages/core/src/update.ts`). The `.deb` is the exception: dpkg asks for an
-admin's password, so it installs only when the person clicks Update on that
-computer. A build run from an unpacked folder doesn't update itself and offers
-no Update. Each download keeps one name across versions, so these always fetch
+download it in the background, and show a yellow mark beside Ponzu's name once
+it's ready, with what's new and Restart. It also installs on quit
+(`apps/desktop/src/updater.ts`). The `.deb` is the exception: dpkg asks for an
+admin's password, so it installs only when the person clicks Restart. A build
+run from an unpacked folder doesn't update itself and offers no update. Each download keeps one name across versions, so these always fetch
 the newest build:
 
 | Platform | Download |
@@ -122,7 +115,7 @@ the newest build:
 | Linux x64, Debian and Ubuntu | <https://github.com/north-brook/ponzu/releases/latest/download/Ponzu-x64.deb> |
 
 The AppImage's name has no version, so an update replaces it at the same path,
-where agents and the desktop entry the app writes find it.
+where the desktop entry the app writes finds it.
 
 Signing secrets (the Mac's; Windows and Linux builds aren't signed) live in
 the `release-signing` environment, which only `main` can use: `APPLE_CERTIFICATE` (the Developer ID `.p12`, base64),

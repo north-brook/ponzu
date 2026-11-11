@@ -1,53 +1,70 @@
-import { contextBridge, ipcRenderer, webUtils } from "electron";
+import type { SessionState } from "@ponzu/client";
+import { contextBridge, type IpcRendererEvent, ipcRenderer } from "electron";
+import {
+  type BorrowedToken,
+  type BridgeError,
+  CHANNELS,
+  type DeepLink,
+  type MenuCommand,
+  type PonzuDesktop,
+  type SessionPersistence,
+  type SignInResult,
+  type UpdateState,
+} from "./bridge.ts";
 
-/** The small surface the studio uses when it runs inside the desktop app. */
-contextBridge.exposeInMainWorld("ponzuDesktop", {
-  platform: process.platform,
-  openFolder: (): Promise<string | null> => ipcRenderer.invoke("ponzu:open-folder"),
-  newFile: (): Promise<string | null> => ipcRenderer.invoke("ponzu:new-file"),
-  reveal: (path: string) => ipcRenderer.send("ponzu:reveal", path),
-  /** File > Close Tab (⌘W). The studio closes its open tab, or the window from home. */
-  onCloseTab: (handler: () => void) => {
-    const listener = () => handler();
-    ipcRenderer.on("ponzu:close-tab", listener);
-    return () => ipcRenderer.removeListener("ponzu:close-tab", listener);
-  },
-  closeWindow: () => ipcRenderer.send("ponzu:close-window"),
-  /** Ponzu › Pair iPhone…, including a click from before the studio was listening. */
-  onPairIphone: (handler: () => void) => {
-    const listener = () => handler();
-    ipcRenderer.on("ponzu:pair-iphone", listener);
-    void ipcRenderer.invoke("ponzu:pair-iphone-pending").then((pending) => pending && handler());
-    return () => ipcRenderer.removeListener("ponzu:pair-iphone", listener);
-  },
-});
-
-/**
- * Windows and Linux: a .design folder, its design.json, or a folder holding one, dropped
- * anywhere on the window opens it, as the Mac's dock icon does. Anything else goes on to the
- * studio, which takes images. Which is which, the main process says while the drop waits.
+/*
+ * `window.ponzuDesktop`: the studio's whole view of the shell (bridge.ts). Each call is one
+ * named channel with plain data; nothing of Electron or Node reaches the page.
  */
-if (process.platform !== "darwin") {
-  window.addEventListener(
-    "dragover",
-    (e) => {
-      if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
-    },
-    true,
-  );
-  window.addEventListener(
-    "drop",
-    (e) => {
-      const paths = [...(e.dataTransfer?.files ?? [])]
-        .map((f) => webUtils.getPathForFile(f))
-        .filter(Boolean);
-      if (!paths.length) return;
-      const designs = ipcRenderer.sendSync("ponzu:designs", paths) as string[];
-      if (!designs.length) return;
-      e.preventDefault();
-      e.stopPropagation();
-      ipcRenderer.send("ponzu:open-designs", designs);
-    },
-    true,
-  );
+
+/** Hear `channel` until the returned function is called. */
+function on<T>(channel: string, listener: (value: T) => void): () => void {
+  const heard = (_event: IpcRendererEvent, value: T) => listener(value);
+  ipcRenderer.on(channel, heard);
+  return () => ipcRenderer.removeListener(channel, heard);
 }
+
+/** What the main process put on the renderer's command line (window.ts's `args`). */
+function argument(name: string): string {
+  const prefix = `--ponzu-${name}=`;
+  return process.argv.find((arg) => arg.startsWith(prefix))?.slice(prefix.length) ?? "";
+}
+
+const desktop: PonzuDesktop = {
+  platform: process.platform,
+  version: argument("version"),
+  config: { apiUrl: argument("api"), client: argument("client"), dev: argument("dev") === "1" },
+  session: {
+    state: () => ipcRenderer.invoke(CHANNELS.sessionState) as Promise<SessionState>,
+    onState: (listener) => on<SessionState>(CHANNELS.sessionChanged, listener),
+    persistence: () =>
+      ipcRenderer.invoke(CHANNELS.sessionPersistence) as Promise<SessionPersistence>,
+    accessToken: (rejected) =>
+      ipcRenderer.invoke(CHANNELS.accessToken, rejected) as Promise<BorrowedToken>,
+    report: (error: BridgeError) => ipcRenderer.send(CHANNELS.report, error),
+    signIn: () => ipcRenderer.invoke(CHANNELS.signIn) as Promise<SignInResult>,
+    cancelSignIn: () => ipcRenderer.send(CHANNELS.cancelSignIn),
+    signOut: () => ipcRenderer.invoke(CHANNELS.signOut) as Promise<void>,
+  },
+  onLink(listener) {
+    const off = on<DeepLink>(CHANNELS.link, listener);
+    void (ipcRenderer.invoke(CHANNELS.links) as Promise<DeepLink[]>).then((links) => {
+      for (const link of links) listener(link);
+    });
+    // With no listener left (signed out), the main process keeps links for the next one.
+    return () => {
+      off();
+      ipcRenderer.send(CHANNELS.linksStop);
+    };
+  },
+  onCommand: (listener) => on<MenuCommand>(CHANNELS.command, listener),
+  update: {
+    state: () => ipcRenderer.invoke(CHANNELS.updateState) as Promise<UpdateState>,
+    onState: (listener) => on<UpdateState>(CHANNELS.updateChanged, listener),
+    check: () => ipcRenderer.send(CHANNELS.updateCheck),
+    install: () => ipcRenderer.send(CHANNELS.updateInstall),
+  },
+  openExternal: (url) => ipcRenderer.send(CHANNELS.openExternal, url),
+};
+
+contextBridge.exposeInMainWorld("ponzuDesktop", desktop);

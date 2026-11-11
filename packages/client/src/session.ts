@@ -59,6 +59,21 @@ export interface Session {
   signOut(): Promise<void>;
 }
 
+/**
+ * The session as the process that holds it sees it: on the Mac, the main process, which is the
+ * only one that refreshes and the only one that keeps the refresh token. It lends access tokens
+ * to the renderer (`borrowSession`) and hears from it what an API error meant.
+ */
+export interface SessionHost extends Session {
+  /**
+   * An access token good for at least another minute. `rejected` is one the API just called
+   * expired: unless someone has refreshed since, it is refreshed now whatever its claims say.
+   */
+  accessToken(rejected?: string): Promise<string>;
+  /** Take in what an error the API answered someone else with means for the session. */
+  take(error: ApiError): void;
+}
+
 export interface SessionOptions {
   /** `https://api.ponzu.design`. */
   apiUrl: string;
@@ -91,11 +106,11 @@ interface Tokens {
   refreshAt: number;
 }
 
-export function createSession(opts: SessionOptions): Session {
+export function createSession(opts: SessionOptions): SessionHost {
   return new TokenSession(opts);
 }
 
-class TokenSession implements Session {
+class TokenSession implements SessionHost {
   readonly apiUrl: string;
   private readonly opts: SessionOptions;
   private readonly send: Fetch;
@@ -130,17 +145,12 @@ class TokenSession implements Session {
     return () => this.listeners.delete(listener);
   }
 
-  async fetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
-    let token = await this.accessToken();
-    let response = await this.sendToApi(input, init, token);
-    if (response.status === 401) {
-      const error = await errorOf(response);
-      if (error.code !== "token_expired") throw this.taken(error);
-      token = await this.accessToken(token);
-      response = await this.sendToApi(input, init, token);
-    }
-    if (!response.ok) throw this.taken(await errorOf(response));
-    return response;
+  fetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+    return authorizedFetch({
+      send: (token) => this.sendToApi(input, init, token),
+      token: (rejected) => this.accessToken(rejected),
+      taken: (error) => this.taken(error),
+    });
   }
 
   async completeSignIn({ code, codeVerifier }: { code: string; codeVerifier: string }) {
@@ -176,11 +186,7 @@ class TokenSession implements Session {
     await this.forget({ status: "signed_out" });
   }
 
-  /**
-   * A token good for at least another minute. `rejected` is one the API just called expired:
-   * unless someone has refreshed since, refresh now whatever its claims say.
-   */
-  private async accessToken(rejected?: string): Promise<string> {
+  async accessToken(rejected?: string): Promise<string> {
     await this.loaded;
     const tokens = this.tokens;
     if (!tokens) throw new ApiError(401, "unauthenticated", "Sign in to do this.");
@@ -278,6 +284,10 @@ class TokenSession implements Session {
     }
   }
 
+  take(error: ApiError): void {
+    this.taken(error);
+  }
+
   /** What an error from the API means for the session, then the error, to throw. */
   private taken(error: ApiError): ApiError {
     switch (error.code) {
@@ -300,15 +310,8 @@ class TokenSession implements Session {
     return error;
   }
 
-  private async sendToApi(input: RequestInfo | URL, init: RequestInit, token?: string) {
-    const headers = new Headers(init.headers);
-    headers.set("x-ponzu-client", this.clientHeader);
-    if (token) headers.set("authorization", `Bearer ${token}`);
-    try {
-      return await this.send(input, { ...init, headers });
-    } catch (error) {
-      throw networkError(error);
-    }
+  private sendToApi(input: RequestInfo | URL, init: RequestInit, token?: string) {
+    return sendToApi(this.send, this.clientHeader, input, init, token);
   }
 
   /** A pair just handed out by the API or WorkOS. */
@@ -379,6 +382,45 @@ class TokenSession implements Session {
 }
 
 const signedOut = () => new ApiError(401, "unauthenticated", "Sign in again.");
+
+/** One request to the API, with the client header and, when there is one, the bearer. */
+export async function sendToApi(
+  send: Fetch,
+  clientHeader: string,
+  input: RequestInfo | URL,
+  init: RequestInit,
+  token?: string,
+): Promise<Response> {
+  const headers = new Headers(init.headers);
+  headers.set("x-ponzu-client", clientHeader);
+  if (token) headers.set("authorization", `Bearer ${token}`);
+  try {
+    return await send(input, { ...init, headers });
+  } catch (error) {
+    throw networkError(error);
+  }
+}
+
+/**
+ * A request with a valid bearer: sent again once with a fresh token when the API calls the
+ * first expired, and every other error handed to `taken` before it is thrown.
+ */
+export async function authorizedFetch(how: {
+  send: (token: string) => Promise<Response>;
+  token: (rejected?: string) => Promise<string>;
+  taken: (error: ApiError) => ApiError;
+}): Promise<Response> {
+  let token = await how.token();
+  let response = await how.send(token);
+  if (response.status === 401) {
+    const error = await errorOf(response);
+    if (error.code !== "token_expired") throw how.taken(error);
+    token = await how.token(token);
+    response = await how.send(token);
+  }
+  if (!response.ok) throw how.taken(await errorOf(response));
+  return response;
+}
 
 /** Network trouble, a timeout, a rate limit or WorkOS failing: the same token may work next time. */
 function retryable(status: number): boolean {

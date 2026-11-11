@@ -211,7 +211,7 @@ bun apps/cli/src/index.ts serve examples/halon.design examples/kettle.design exa
 
 [`examples/`](examples) holds three made-up companies to try Ponzu on: Halon (incident response for engineering teams), Kettle (an iPhone app for people who live together) and Weft (a sync platform for developers). Each has a brand, architecture diagrams, a website and an app, with its brief in `notes/brief.md`.
 
-For studio work, run `bun run dev`: the studio with hot reload on all three examples.
+For studio work, run `bun run dev`: the cloud studio with hot reload, on Ponzu Cloud in memory.
 
 Run from a checkout, `serve` stays out of the installed app's way: it listens on a port in 7800–7999 derived from the checkout's path (the same every run, different per worktree, the next free one if it's taken), and not on the tailnet, so your iPhone and other Macs keep finding the app, not a dev server. `--port` picks a port; `--tailnet` answers the phone and other Macs too, for testing against them (the app's tailnet port must be free). The studio's dev server proxies to the checkout's port; `PONZU_SERVER=<url>` points it elsewhere.
 

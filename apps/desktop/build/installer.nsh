@@ -1,6 +1,6 @@
 ; electron-builder includes this in the Windows installer (package.json's nsis.include).
 ;
-; Uninstalling removes what Ponzu wrote for the person at launch, which the installer never
+; Uninstalling removes what Ponzu 1.x wrote for the person at launch, which the installer never
 ; knew about: see uninstall.ps1. Not on an update, which runs the old version's uninstaller
 ; too, before the new one installs.
 !macro customUnInstall
