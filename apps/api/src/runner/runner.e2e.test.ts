@@ -199,8 +199,8 @@ test("a message, a reply, a question and its answer, state and usage, between a 
     return (result as unknown as { rows: unknown[] }).rows.length === 1;
   });
 
-  // What a client reads from the thread: Maya's message, the agent's words, the stretch of
-  // work the question was, and the question.
+  // What a client reads from the thread: Maya's message, the turn's work item opening it, the
+  // agent's words, the question it asked on the way, and its answer, which the record names.
   const thread = await call(t, as("maya"), "GET", `/v1/designs/${design.id}/thread`);
   const shown = thread.body.items.map(
     ({ kind, payload }: { kind: string; payload: Record<string, unknown> }) =>
@@ -209,11 +209,17 @@ test("a message, a reply, a question and its answer, state and usage, between a 
   expect(shown).toEqual([
     "notice:started",
     "message:Pick a headline",
-    "assistant:Two ways to go.",
     expect.stringMatching(/^tool:/),
+    "assistant:Two ways to go.",
     "notice:question",
     "assistant:Shortened it.",
   ]);
+  const work = thread.body.items.find((item: { kind: string }) => item.kind === "tool");
+  expect(work.payload.turn).toMatchObject({
+    ended: "done",
+    final: thread.body.items.at(-1).id,
+    log: [],
+  });
   expect(thread.body.items.every((item: { streaming: boolean }) => !item.streaming)).toBe(true);
   expect((await getQuestion(t.db, { designId: design.id, id: questionId }))!.status).toBe(
     "answered",

@@ -1015,7 +1015,7 @@ kind        payload                                                       writte
 message     { text, from: Person }                                        the API, with the event
 comment     { threadId, messageId, text, artboardId, artboardName, from } the API, with the event
 assistant   { text }                    markdown, streams                 the runner
-tool        { label, steps, artboards } one stretch of work               the runner
+tool        { label, steps, artboards, turn? }  one turn's work (below)   the runner
 notice      { type: "waking" | "resumed" | "started" }                    the runner
             { type: "question", questionId, header, text }                the runner
             { type: "error", code, message }                              the runner
@@ -1029,13 +1029,44 @@ made (up to 64 KB of JSON, `FROZEN_BOARD_BYTES`), which its thumbnail in the thr
 the pin placed on it: it shows what was commented on, not the board as it later became. A
 larger board, or a comment from before copies were kept, has none, and its thumbnail is live.
 
-A client renders the thread from these alone. A `tool` item is a stretch of tool calls
-between two things the agent says, folded to one line: while it streams it is the working
-line ("Reading the repo", `Drawing "Pricing · B"`, "Running the dev server", or what the agent
-said with set_status); once finished it is named by the step that says most about it (what
-the agent made over what it ran over what it read), and may be folded or hidden. `artboards`
-are the boards the agent is on during the stretch. No tool input or output is written. An
-`assistant` item cut off by an interrupt is finished with the text it had. `error` codes:
+A client renders the thread from these alone, and never shows a tool's input or output.
+
+**A turn's work** is one `tool` item, which the runner opens the first time the turn shows
+anything (before its first message, so everything the runner writes until the next such item
+belongs to that turn) and finishes when the turn ends. While it streams, `label` is the working
+state; once finished, a few words for what the turn did ("Worked on 3 boards and 1 file").
+`artboards` are the boards it was on. `turn` is the turn's record:
+
+```
+turn = { ended: "done" | "stopped" | "failed" | null,   // null while it runs; a question ends "done"
+         ms,                                             // how long it ran, so far
+         final: ti_… | null,     // its answer: the last assistant item, unless it worked on after it
+         boards, files,          // boards it made or changed, files it changed, each counted once
+         log: [{ after: ti_… | null, text: string | null, count }] }
+```
+
+`log` is the turn's steps in order, each said in the past tense from the same phrases as the
+working state (`Drew "Hero"`, "Edited src/app/page.tsx", "Ran tests"), grouped after the
+assistant item they followed (null before the first), a repeat after the same message counted
+rather than listed. At most 120 groups carry text (120 characters each); later steps are counted
+in a group with `text: null` after their message, so a turn of hundreds of tool calls is a few
+kilobytes. The API refuses a record past those bounds. Clients show a running turn's messages
+and nothing of its work but the working line; once it has ended they keep `final` in full and
+fold everything between the person's message and it into one line ("Worked for 4 min · 7 boards
+· 1 file") that opens on the turn's messages, each followed by its steps. A turn with nothing
+before its answer has no fold.
+
+A runner from before the record (whose items are in designs already) wrote one `tool` item per
+stretch of tool calls between two things the agent said, with no `turn`: while it streamed, the
+working line; once finished, named by its weightiest step or by what the agent last said with
+set_status. Clients fold those turns the same way, by position: a turn starts at the agent's
+first item after a person's, its answer is its last message unless a stretch came after it, and
+each stretch is listed as a count of its steps (with its label, unless every stretch of the turn
+says the same thing). A runner that writes the record therefore needs no change to clients that
+read only `label`: they show its streaming item as the working line and its finished one as one
+quiet line per turn.
+
+An `assistant` item cut off by an interrupt is finished with the text it had. `error` codes:
 `clone_failed`, `claude_auth`, `claude_limit`, `model_unavailable`, `max_turns`, `turn_failed`,
 `agent_exited`, `message_refused`, `question_failed`. The `waking` notice becomes `resumed` or
 `started` once Claude Code is up. A `pull_request` notice is written once for each pull request
@@ -1060,10 +1091,32 @@ so a payload stays far under the table's 256 KB. Safe to repeat.
 
 ```
 { state: "working" | "needs_you" | "idle",
-  status: string | null,       // the working line; while not working, what is wrong, if anything
+  status: string | null,       // the working state; while not working, what is wrong, if anything
   artboards: string[],         // what the agent is on, from the canvas tools
   claudeSessionId: string | null }
 ```
+
+**The working state** (`status` while `working`) is said from the tool call running now, never
+from a status the agent set long before: most specific first,
+
+1. a tool call running: its phrase, for as long as it runs (`Drawing "4 · About you"`, "Reading
+   src/app/page.tsx", "Running the dev server", "Searching the repo for "Button"",
+   "Committing "Add pricing card"", "Looking up the Tailwind docs"); the newest when several
+   run at once; the plain one ("Drawing a new board") from the moment the model starts writing
+   the call, the specific one once its input is complete;
+2. else what the agent said it is about since it last spoke (set_status, or its todo list's step
+   in progress), which ends the moment it next says something;
+3. else "Thinking": between calls, while text streams and right after it.
+
+Before Claude Code is up it is "Waking up". Boards are named by their names, files by a short
+path (cut from the left at whole folders, never the file's name); shell commands are recognised
+by shape (git, package managers, tests, dev servers, builds, linters) and are otherwise
+"Running a command": never a command line, an argument, an address's path or query, a file's
+contents, or text that looks like a secret, and never one of the sandbox's own secret values
+(the repo's secrets, the Claude credential, the runner token). Clients show it at the thread's
+foot with the turning slice from the moment a person sends until the turn's item finishes, and
+take it away in the frame the turn folds, whichever of the item and the idle report comes
+first.
 
 `needs_you` while the agent waits on a person, and while a question it asked stays open
 after its run (Questions); `status` while not working is a clone that failed or a turn that

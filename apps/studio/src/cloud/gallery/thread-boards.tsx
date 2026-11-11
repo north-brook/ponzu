@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { AgentActivity, DesignSummary } from "../model.ts";
 import { DesignHarness } from "./design-harness.tsx";
 import * as f from "./fixtures.ts";
+import { LiveTurnRail } from "./live-turn.tsx";
 import * as t from "./thread-fixtures.ts";
 
 export const WORKING: AgentActivity = { state: "working", status: null };
@@ -15,7 +16,38 @@ const quieter = (designs: DesignSummary[]) => designs.find((d) => d.id === QUIET
 const asking = f.soloDesigns.map((d) => (d.id === QUIETER ? { ...d, needsYou: 2 } : d));
 const long = t.longThread();
 
+/** An open design whose rail shows one of the turn fixtures. */
+const turnBoard = (thread: ReturnType<typeof t.said>[], agent: AgentActivity) => () => (
+  <DesignHarness
+    designs={f.soloDesigns}
+    design={quieter(f.soloDesigns)}
+    contributors={f.justYou}
+    thread={thread}
+    agent={agent}
+  />
+);
+const working = (status: string): AgentActivity => ({ state: "working", status });
+
+/** A turn running, finished, stopped, failed, asking; and a thread an older runner wrote. */
+export const TURN_BOARDS: Record<string, () => ReactNode> = {
+  "turn-running": turnBoard([...t.askedTurn, ...t.runningTurn], working('Drawing "5 · Schedule"')),
+  "turn-running-thinking": turnBoard([...t.askedTurn, ...t.runningTurn], working("Thinking")),
+  "turn-running-command": turnBoard(
+    [...t.askedTurn, ...t.runningTurn],
+    working("Running the dev server"),
+  ),
+  "turn-completed": turnBoard([...t.stoppedTurn, ...t.askedTurn, ...t.completedTurn], IDLE),
+  "turn-completed-open": turnBoard([...t.stoppedTurn, ...t.askedTurn, ...t.completedTurn], IDLE),
+  "turn-stopped": turnBoard(t.stoppedTurn, IDLE),
+  "turn-failed": turnBoard(t.failedTurn, IDLE),
+  "turn-asked": turnBoard(t.askedTurn, IDLE),
+  "turn-old-runner": turnBoard(t.oldFormatThread, IDLE),
+};
+
 export const THREAD_BOARDS: Record<string, () => ReactNode> = {
+  ...TURN_BOARDS,
+  // Not a composition: a turn the browser tests play through, frame by frame.
+  "turn-live": () => <LiveTurnRail />,
   "needs-you-a-question": () => (
     <DesignHarness
       designs={asking}
@@ -44,7 +76,7 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
       design={quieter(f.teamDesigns)}
       contributors={f.contributors}
       thread={t.teamThread}
-      agent={WORKING}
+      agent={t.teamAgent}
     />
   ),
   "long-thread": () => (
@@ -81,7 +113,7 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
       design={quieter(f.teamDesigns)}
       contributors={f.contributors}
       thread={t.teamThread}
-      agent={WORKING}
+      agent={t.teamAgent}
       gate={{ kind: "read_only", repo: f.fernwood }}
     />
   ),
@@ -91,7 +123,7 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
       design={{ ...quieter(f.soloDesigns), pullRequest: { ...f.pr412, state: "draft" } }}
       contributors={null}
       thread={t.heroThread}
-      agent={WORKING}
+      agent={t.heroAgent}
       pullRequest={{ kind: "ready", pr: t.busyPullRequest }}
       tab="pull-request"
     />
@@ -140,7 +172,7 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
       design={quieter(f.soloDesigns)}
       contributors={null}
       thread={t.heroThread}
-      agent={WORKING}
+      agent={t.heroAgent}
       pullRequest={{ kind: "loading", summary: f.pr412 }}
       tab="pull-request"
     />
@@ -151,7 +183,7 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
       design={quieter(f.soloDesigns)}
       contributors={null}
       thread={t.heroThread}
-      agent={WORKING}
+      agent={t.heroAgent}
       pullRequest={{ kind: "error", summary: f.pr412 }}
       tab="pull-request"
     />

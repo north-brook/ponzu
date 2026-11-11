@@ -207,7 +207,8 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
       });
       await page.waitForTimeout(80);
     }
-    await page.waitForFunction((sel) => document.querySelectorAll(`${sel} > *`).length > 200, log);
+    // The 200 items loaded at first are 150 lines, each turn's work folded with its first reply.
+    await page.waitForFunction((sel) => document.querySelectorAll(`${sel} > *`).length > 160, log);
   });
 
   test("Stop while working with nothing typed; Send once there are words", async () => {
@@ -297,5 +298,138 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     expect(await ring()).toBe("none");
     await page.keyboard.press("ArrowDown");
     expect(await ring()).not.toBe("none");
+  });
+
+  /*
+   * A turn played through as the API delivers it, watched every frame: from the send until the
+   * turn folds there is always exactly one working line, the agent's work never has lines of its
+   * own, and the fold appears in the frame the working line goes, with the answer where it was.
+   */
+  test("a streaming turn always has its working line, no work lines, and folds in one frame", async () => {
+    await page.setViewportSize({ width: 600, height: 700 });
+    await page.emulateMedia({ colorScheme: "light", reducedMotion: "no-preference" });
+    await page.goto(`${server.url}/gallery.html?board=turn-live&theme=light`);
+    await page.waitForFunction(
+      () => typeof (window as { playTurn?: unknown }).playTurn === "function",
+    );
+    const frames = await page.evaluate(async () => {
+      type Frame = {
+        lines: number;
+        working: string | null;
+        folds: number;
+        messages: number;
+        work: boolean;
+        answerBottom: number | null;
+        /** The working line's height with the gap above it: what the answer settles by. */
+        lineRoom: number;
+      };
+      const out: Frame[] = [];
+      let on = true;
+      const sample = () => {
+        const log = document.querySelector('[role="log"]');
+        const lines = document.querySelectorAll("[data-working-line]");
+        const answer = [...(log?.querySelectorAll(".text-13") ?? [])].find((el) =>
+          el.textContent?.startsWith("Done: Plan"),
+        );
+        out.push({
+          lines: lines.length,
+          working: lines[0]?.textContent ?? null,
+          folds: log?.querySelectorAll("[data-fold]").length ?? 0,
+          messages: log?.querySelectorAll("p[dir=auto]").length ?? 0,
+          // What the rail's old stretches said: "· N steps" lines.
+          work: /\d+ steps?/.test(log?.textContent ?? ""),
+          answerBottom: answer ? answer.getBoundingClientRect().bottom : null,
+          lineRoom: lines[0] ? lines[0].getBoundingClientRect().height + 14 : 0,
+        });
+        if (on) requestAnimationFrame(sample);
+      };
+      requestAnimationFrame(sample);
+      await (window as unknown as { playTurn: () => Promise<void> }).playTurn();
+      await new Promise((r) => setTimeout(r, 300));
+      on = false;
+      return out;
+    });
+    const sent = frames.findIndex((f) => f.messages > 0);
+    const folded = frames.findIndex((f) => f.folds > 0);
+    expect(sent).toBeGreaterThanOrEqual(0);
+    expect(folded).toBeGreaterThan(sent);
+    // Every frame from the send to the fold: one working line, never blank, no work lines.
+    const during = frames.slice(sent, folded);
+    expect(during.length).toBeGreaterThan(30);
+    for (const frame of during) {
+      expect(frame.lines).toBe(1);
+      expect(frame.working?.trim()).toBeTruthy();
+      expect(frame.work).toBe(false);
+      expect(frame.folds).toBe(0);
+    }
+    // The states it went through, each specific; thinking right after it spoke.
+    const states = during.map((f) => f.working!).filter((state, i, all) => state !== all[i - 1]);
+    expect(states).toEqual([
+      "Thinking",
+      "Reading the canvas",
+      'Drawing "Plan"',
+      "Thinking",
+      'Drawing "Plan ready"',
+      "Editing styles/tokens.css",
+      "Thinking",
+    ]);
+    // The fold's frame: the working line is gone in it, and stays gone.
+    for (const frame of frames.slice(folded)) {
+      expect(frame.lines).toBe(0);
+      expect(frame.folds).toBe(1);
+    }
+    // The answer stays where it was as the turn folds above it: it settles only by the working
+    // line that left from under it, in that frame, and doesn't move after.
+    const before = frames[folded - 1]!;
+    const after = frames[folded]!.answerBottom!;
+    expect(Math.abs(after - before.answerBottom! - before.lineRoom)).toBeLessThan(2);
+    for (const frame of frames.slice(folded))
+      expect(Math.abs(frame.answerBottom! - after)).toBeLessThan(1);
+  });
+
+  test("a folded turn opens and closes from the keyboard, says so, and stays where it is", async () => {
+    await open("turn-completed");
+    // A thread shorter than the rail, sitting at its foot: the hard case, with room above to
+    // be lifted into.
+    const trigger = '[data-slot="trace-collapsible-trigger"] >> nth=-1';
+    const expanded = () => page.$eval(trigger, (b) => b.getAttribute("aria-expanded"));
+    const top = () => page.$eval(trigger, (b) => b.getBoundingClientRect().top);
+    expect(await page.$eval(trigger, (b) => b.textContent)).toContain("Worked for 4 min");
+    expect(await expanded()).toBe("false");
+    // The steps aren't there to read until it opens.
+    expect(await page.$('[aria-label="Steps"]')).toBeNull();
+    await page.focus(trigger);
+    const at = await top();
+    await page.keyboard.press("Enter");
+    await page.waitForSelector('[aria-label="Steps"]');
+    expect(await expanded()).toBe("true");
+    const controls = await page.$eval(trigger, (b) => b.getAttribute("aria-controls"));
+    expect(await page.$eval(`[id="${controls}"]`, (el) => el.textContent)).toContain(
+      'Drew "4 · About you"',
+    );
+    // Its intermediate messages, in order, and no tool's input or output.
+    const text = await page.$eval(`[id="${controls}"]`, (el) => el.textContent ?? "");
+    expect(text.indexOf("Copied the screen layout")).toBeLessThan(
+      text.indexOf('Now "4 · About you"'),
+    );
+    expect(Math.abs((await top()) - at)).toBeLessThan(2);
+    await page.keyboard.press("Space");
+    await page.waitForFunction(
+      (sel) =>
+        [...document.querySelectorAll(sel)].at(-1)?.getAttribute("aria-expanded") === "false",
+      '[data-slot="trace-collapsible-trigger"]',
+    );
+    await page.waitForSelector('[aria-label="Steps"]', { state: "detached" });
+    expect(Math.abs((await top()) - at)).toBeLessThan(2);
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("data-slot"))).toBe(
+      "trace-collapsible-trigger",
+    );
+  });
+
+  test("an older runner's thread folds its stretches and never shows their stale labels", async () => {
+    await open("turn-old-runner");
+    const log = await page.$eval('[role="log"]', (el) => el.textContent ?? "");
+    expect(log).not.toContain("Setting direction");
+    expect(log).toContain("Worked for");
   });
 });

@@ -346,7 +346,10 @@ export type ThreadContent =
     }
   /** What the agent says. Streams as it is written. */
   | { kind: "assistant"; payload: AssistantItem }
-  /** One stretch of work between two things the agent says. While it streams it is the working line. */
+  /**
+   * The agent's work. A runner that writes `turn` writes one per turn, streaming while the turn
+   * runs; an older one wrote one per stretch of work between two things the agent said.
+   */
   | { kind: "tool"; payload: WorkItem }
   | { kind: "notice"; payload: Notice };
 
@@ -358,17 +361,63 @@ export interface AssistantItem {
 }
 
 /**
- * A stretch of tool calls, folded to one line. Clients show the newest one that is streaming
- * as the working line ("Drawing Pricing · B"), and may fold or hide finished ones.
+ * The agent's work, folded. With `turn`, one item per turn: it opens when the turn first shows
+ * something (before the turn's first message, so everything the runner writes until the next
+ * such item belongs to the turn), streams while the turn runs and finishes when it ends. Without
+ * `turn` (an older runner), one stretch of tool calls between two things the agent said.
+ * Clients that don't know `turn` show a streaming item's label as the working line and a
+ * finished one as a quiet line, which reads well either way.
  */
 export interface WorkItem {
-  /** What the agent is doing, or last did, in a few words. */
+  /**
+   * While streaming, what the agent is doing ("Drawing "Pricing · B""); once finished, what it
+   * did in a few words ("Worked on 3 boards and 2 files").
+   */
   label: string;
-  /** How many steps the stretch took so far. */
+  /** How many steps it took so far. */
   steps: number;
-  /** The artboards it changed, by id. */
+  /** The artboards it was on, by id. */
   artboards: string[];
+  /** The turn's record: absent from what an older runner wrote. */
+  turn?: TurnRecord;
 }
+
+export type TurnEnding = "done" | "stopped" | "failed";
+
+/**
+ * What a turn did, for the thread to fold away once it ends: how long it took, what it made,
+ * which of its messages is its answer, and its steps between its messages. Never a tool's input
+ * or output; each step is a phrase ("Drew "Hero"", "Edited src/app/page.tsx").
+ */
+export interface TurnRecord {
+  /** How it ended; null while it runs. A turn that ends on a question is `done`. */
+  ended: TurnEnding | null;
+  /** How long it ran, so far, in milliseconds. */
+  ms: number;
+  /**
+   * Its answer: the id of its last `assistant` item, which stays in full when the turn folds.
+   * Null when there is none, or it went on working after it (stopped or failed mid-step).
+   */
+  final: string | null;
+  /** How many boards it made or changed, and files it changed, each counted once. */
+  boards: number;
+  files: number;
+  /** Its steps in order, grouped after each message. At most `MAX_TURN_GROUPS` with text. */
+  log: StepGroup[];
+}
+
+export interface StepGroup {
+  /** The `assistant` item these came after; null before the turn's first message. */
+  after: string | null;
+  /** The step, said in the past tense; null for steps past the limit, only counted. */
+  text: string | null;
+  /** How many times, after that message. */
+  count: number;
+}
+
+/** The most step groups a turn lists, and the longest one's text. */
+export const MAX_TURN_GROUPS = 120;
+export const MAX_STEP_TEXT = 120;
 
 /** A notice as clients read it. */
 export type Notice =
@@ -463,7 +512,11 @@ export type AgentState = "working" | "needs_you" | "idle";
  */
 export interface StateRequest {
   state: AgentState;
-  /** While working, the working line. Otherwise what is wrong, if anything (a clone that failed). */
+  /**
+   * While working, the working state: what the tool running now is doing ("Reading
+   * src/app/page.tsx"), else what the agent said it is about since it last spoke, else
+   * "Thinking". Otherwise what is wrong, if anything (a clone that failed).
+   */
   status: string | null;
   /** The artboards it is on. */
   artboards: string[];

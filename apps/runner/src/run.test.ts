@@ -7,7 +7,12 @@ import type { Renderer, RenderRequest } from "@ponzu/render";
 import { ScriptedAgent, type ScriptedRun } from "./agent/scripted.ts";
 import { ApiError } from "./api/api.ts";
 import { ADA, FakeRunnerApi } from "./api/fake.ts";
-import type { AskedQuestion, RunnerSession } from "./api/protocol.ts";
+import {
+  type AskedQuestion,
+  MAX_TURN_GROUPS,
+  type RunnerSession,
+  type WorkItem,
+} from "./api/protocol.ts";
 import { derivedId, eventUuid, randomId } from "./ids.ts";
 import { Runner, type Timing } from "./run.ts";
 
@@ -794,20 +799,6 @@ test("a reply cut off by an interrupt ends in the thread as it was, not streamin
 /* The canvas                                                          */
 /* ------------------------------------------------------------------ */
 
-test("the canvas tools edit a real replica and the edits reach the API", async () => {
-  const s = await setup({ doc: emptyDoc("Fern") });
-  await turn(s, "Draw a card");
-  const result = await s.run.call("create_artboard", {
-    name: "Card",
-    html: "<div><h1>Hi</h1></div>",
-  });
-  expect(result.isError).toBeFalsy();
-  await until(() => s.api.doc.snapshot().doc.pages[0]?.artboards[0]?.name === "Card");
-  await until(() => s.api.items().some((i) => i.kind === "tool"));
-  const work = s.api.items().find((i) => i.kind === "tool");
-  expect(work?.payload).toMatchObject({ label: 'Drawing "Card"', steps: 1 });
-});
-
 test("an edit the API undid is in the next tool result", async () => {
   const s = await setup({ doc: pricing() });
   const { api, runner, run } = s;
@@ -834,85 +825,205 @@ test("an edit the API undid is in the next tool result", async () => {
   expect(next.text).toContain("Undone:");
 });
 
-test("the working line follows the agent's steps, and its status when it gives one", async () => {
-  const s = await setup({ doc: pricing() });
-  await turn(s);
-  s.run.emit({ type: "tool", id: "t1", name: "Read", input: { file_path: "/w/src/app.tsx" } });
-  await until(() => s.api.lastState?.status === "Reading the repo");
-  await s.run.call("set_status", { status: "tightening the hero" });
-  await until(() => s.api.lastState?.status === "Tightening the hero");
-  s.run.say("msg_1", "Done.");
-  await until(() => s.api.items().some((i) => i.kind === "assistant"));
-  const work = s.api.items().find((i) => i.kind === "tool")!;
-  expect(work.streaming).toBe(false);
-  expect(work.payload).toMatchObject({ label: "Tightening the hero", steps: 2 });
-});
-
-test("a finished stretch is named by what it made, and a later one keeps the boards it is on", async () => {
-  const s = await setup({ doc: pricing() });
-  await turn(s);
-  await s.run.call("set_text", { updates: [{ id: "n_plan", text: "Paid" }] });
-  await s.run.call("list_comments");
-  s.run.say("msg_1", "Updated the plan.");
-  await s.run.call("set_text", { updates: [{ id: "n_plan", text: "Pro" }] });
-  s.run.say("msg_2", "And again.");
-  await until(() => s.api.items().filter((i) => i.kind === "tool" && !i.streaming).length === 2);
-  const work = s.api.items().filter((i) => i.kind === "tool");
-  expect(work.map((i) => i.payload)).toEqual([
-    { label: 'Drawing "Pricing"', steps: 2, artboards: ["ab_pricing"] },
-    { label: 'Drawing "Pricing"', steps: 1, artboards: ["ab_pricing"] },
-  ]);
-});
-
-test("a stretch is named by its main action: a commit, not the pull request's description after it", async () => {
-  const s = await setup({ doc: pricing() });
-  await turn(s);
-  const step = (id: string, name: string, input: Record<string, unknown>) => {
-    s.run.emit({ type: "tool", id, name, input });
-    s.run.emit({ type: "tool-done", id, error: false });
-  };
-  step("toolu_a", "Bash", { command: "git add -A" });
-  step("toolu_b", "Bash", { command: 'git commit -m "Pricing"' });
-  step("toolu_c", "Bash", { command: "git push" });
-  step("toolu_d", "mcp__ponzu__describe_pull_request", { title: "Pricing", body: "" });
-  s.run.say("msg_1", "Committed.");
-  await until(() => s.api.items().some((i) => i.kind === "tool" && !i.streaming));
-  const work = s.api.items().find((i) => i.kind === "tool");
-  expect(work?.payload).toMatchObject({ label: "Committing", steps: 4 });
-});
-
-test("a stretch that deletes a board says so, by the board's name", async () => {
-  const s = await setup({ doc: pricing() });
-  await turn(s);
-  await s.run.call("list_comments");
-  // Claude Code says what it calls before the call runs, so the board is still there to name.
-  s.run.emit({
-    type: "tool",
-    id: "toolu_del",
-    name: "mcp__ponzu__delete",
-    input: { ids: ["ab_pricing"] },
+test("the canvas tools edit a real replica and the edits reach the API", async () => {
+  const s = await setup({ doc: emptyDoc("Fern") });
+  await turn(s, "Draw a card");
+  const result = await s.run.call("create_artboard", {
+    name: "Card",
+    html: "<div><h1>Hi</h1></div>",
   });
-  s.run.emit({ type: "tool-done", id: "toolu_del", error: false });
-  s.run.say("msg_1", "Removed it.");
-  await until(() => s.api.items().some((i) => i.kind === "tool" && !i.streaming));
+  expect(result.isError).toBeFalsy();
+  await until(() => s.api.doc.snapshot().doc.pages[0]?.artboards[0]?.name === "Card");
+  await until(() => s.api.items().some((i) => i.kind === "tool"));
   const work = s.api.items().find((i) => i.kind === "tool");
-  expect(work?.payload).toMatchObject({ label: 'Deleting "Pricing"', steps: 2 });
+  expect(work?.payload).toMatchObject({ steps: 1, turn: { ended: null, boards: 1 } });
 });
 
-test("a question ends the stretch before it, so the thread reads in the order it happened", async () => {
+/** The turn's one `tool` item: its record. */
+const turnOf = (api: FakeRunnerApi) => {
+  const items = api.items().filter((i) => i.kind === "tool");
+  expect(items.length).toBeLessThanOrEqual(1);
+  const item = items[0];
+  return item ? { item, work: item.payload as WorkItem } : null;
+};
+
+test("the working state across a turn: never blank, specific while a tool runs, thinking between", async () => {
   const s = await setup({ doc: pricing() });
+  const { api, run } = s;
+  const statuses = () => api.states.map((st) => `${st.state}:${st.status}`);
+  const now = (status: string) => until(() => api.lastState?.status === status);
   await turn(s);
-  await s.run.call("list_comments");
-  void s.run.ask("toolu_ask", { kind: "question", questions: [HEADLINE] });
-  await until(() => s.api.items().some((i) => i.kind === "notice"));
-  await s.run.call("set_text", { updates: [{ id: "n_plan", text: "Pro" }] });
-  s.run.say("msg_1", "Done.");
-  await until(() => s.api.items().filter((i) => i.kind === "tool" && !i.streaming).length === 2);
-  const kinds = s.api
+  await now("Thinking");
+  // The model starts writing a call: the kind of thing is known before its input is.
+  run.emit({ type: "tool-start", id: "t1", name: "mcp__ponzu__create_artboard" });
+  await now("Drawing a new board");
+  run.emit({
+    type: "tool",
+    id: "t1",
+    name: "mcp__ponzu__create_artboard",
+    input: { name: "Plan" },
+  });
+  await now('Drawing "Plan"');
+  run.emit({ type: "tool-done", id: "t1", error: false });
+  await now("Thinking");
+  // It speaks, and goes on: thinking while the text streams and after it, before its next call.
+  run.say("msg_1", "Drawing the plan", false);
+  run.say("msg_1", "Drawing the plan now.", true);
+  await until(() => api.items().some((i) => i.kind === "assistant" && !i.streaming));
+  expect(api.lastState).toMatchObject({ state: "working", status: "Thinking" });
+  // A long-running tool keeps its state for its whole run.
+  run.emit({ type: "tool", id: "t2", name: "Bash", input: { command: "bun run dev" } });
+  await now("Running the dev server");
+  await Bun.sleep(30);
+  expect(api.lastState?.status).toBe("Running the dev server");
+  // The agent's own words: between its calls, not over a running one, and only until it speaks.
+  run.emit({
+    type: "tool",
+    id: "t3",
+    name: "mcp__ponzu__set_status",
+    input: { status: "tightening the plan" },
+  });
+  run.emit({ type: "tool-done", id: "t3", error: false });
+  await Bun.sleep(30);
+  expect(api.lastState?.status).toBe("Running the dev server");
+  run.emit({ type: "tool-done", id: "t2", error: false });
+  await now("Tightening the plan");
+  run.emit({ type: "tool", id: "t4", name: "Read", input: { file_path: "src/app.tsx" } });
+  await now("Reading src/app.tsx");
+  run.emit({ type: "tool-done", id: "t4", error: false });
+  await now("Tightening the plan");
+  run.say("msg_2", "Done.", true);
+  await now("Thinking");
+  run.end();
+  await until(() => api.lastState?.state === "idle");
+  // From the message to the end: working with a state every time, then idle once.
+  const during = statuses().slice(statuses().indexOf("working:Thinking"));
+  const last = during.pop();
+  expect(last).toBe("idle:null");
+  for (const st of during) expect(st).toMatch(/^working:\S/);
+  expect(during).not.toContain("working:null");
+  expect(statuses().join("|")).not.toContain("Setting");
+});
+
+test("a turn is one thread item that records its steps between its messages, and names its answer", async () => {
+  const s = await setup({ doc: pricing() });
+  const { api, run } = s;
+  await turn(s);
+  await run.call("get_tree", { id: "ab_pricing" });
+  await run.call("set_text", { updates: [{ id: "n_plan", text: "Paid" }] });
+  await run.call("set_text", { updates: [{ id: "n_plan", text: "Pro" }] });
+  run.say("msg_1", "Updated the plan.");
+  run.emit({ type: "tool", id: "e1", name: "Edit", input: { file_path: "src/a.tsx" } });
+  run.emit({ type: "tool-done", id: "e1", error: false });
+  run.emit({ type: "tool", id: "e2", name: "Bash", input: { command: "git commit -m 'Pricing'" } });
+  run.emit({ type: "tool-done", id: "e2", error: false });
+  run.say("msg_2", "All done.");
+  // While it runs: one streaming item, before the messages in the thread's order.
+  await until(() => api.items().filter((i) => i.kind === "assistant").length === 2);
+  const running = turnOf(api)!;
+  expect(running.item.streaming).toBe(true);
+  expect(running.work.turn?.ended).toBeNull();
+  const kinds = api
     .items()
-    .filter((i) => i.kind === "tool" || (i.kind === "notice" && i.payload.type === "question"))
+    .filter((i) => i.kind !== "notice")
     .map((i) => i.kind);
-  expect(kinds).toEqual(["tool", "notice", "tool"]);
+  expect(kinds).toEqual(["tool", "assistant", "assistant"]);
+  run.end();
+  await until(() => !turnOf(api)?.item.streaming);
+  const [first, second] = api.items().filter((i) => i.kind === "assistant");
+  const { work } = turnOf(api)!;
+  expect(work).toMatchObject({
+    label: "Worked on 1 board and 1 file",
+    steps: 5,
+    artboards: ["ab_pricing"],
+    turn: {
+      ended: "done",
+      final: second!.id,
+      boards: 1,
+      files: 1,
+      log: [
+        { after: null, text: 'Read "Pricing"', count: 1 },
+        { after: null, text: 'Wrote the copy for "Pricing"', count: 2 },
+        { after: first!.id, text: "Edited src/a.tsx", count: 1 },
+        { after: first!.id, text: 'Committed "Pricing"', count: 1 },
+      ],
+    },
+  });
+  expect(work.turn!.ms).toBeGreaterThanOrEqual(0);
+});
+
+test("a turn stopped mid-work has no answer to keep, and says it was stopped", async () => {
+  const s = await setup({ doc: pricing() });
+  const { api, run } = s;
+  await turn(s);
+  run.say("msg_1", "Starting on it.");
+  await run.call("list_comments");
+  api.push({ kind: "stop", payload: {} });
+  s.runner.poke();
+  await until(() => run.interrupts > 0);
+  run.end({ error: { code: "interrupted", message: "The turn was stopped." } });
+  await until(() => turnOf(api)?.item.streaming === false);
+  expect(turnOf(api)!.work.turn).toMatchObject({ ended: "stopped", final: null });
+  expect(notices(api, "stopped")).toHaveLength(1);
+  // The stop is written after the turn's item, so it reads as the turn's ending.
+  const ids = api.items().map((i) => i.kind);
+  expect(ids.indexOf("tool")).toBeLessThan(
+    api.items().findIndex((i) => i.kind === "notice" && i.payload.type === "stopped"),
+  );
+});
+
+test("a failed turn ends failed; a question stays inside its turn", async () => {
+  const s = await setup({ doc: pricing() });
+  const { api, run } = s;
+  await turn(s);
+  await run.call("list_comments");
+  void run.ask("toolu_ask", { kind: "question", questions: [HEADLINE] });
+  await until(() => api.lastState?.state === "needs_you");
+  expect(api.lastState?.status).toBeNull();
+  run.end({ error: { code: "turn_failed", message: "Overloaded." } });
+  await until(() => turnOf(api)?.item.streaming === false);
+  expect(turnOf(api)!.work.turn?.ended).toBe("failed");
+  const order = api
+    .items()
+    .filter((i) => i.kind === "tool" || i.kind === "notice")
+    .map((i) => (i.kind === "tool" ? "turn" : (i.payload as { type: string }).type))
+    .filter((k) => k !== "started" && k !== "waking");
+  expect(order).toEqual(["turn", "question", "error"]);
+});
+
+test("a turn of hundreds of tool calls stays small: repeats are grouped, the rest counted", async () => {
+  const s = await setup({ doc: pricing() });
+  const { api, run } = s;
+  await turn(s);
+  for (let i = 0; i < 300; i++) {
+    const id = `t${i}`;
+    // A third repeat, the rest each a different file.
+    const input = i % 3 ? { file_path: `src/f${i}.ts` } : { file_path: "src/same.ts" };
+    run.emit({ type: "tool", id, name: i % 2 ? "Read" : "Edit", input });
+    run.emit({ type: "tool-done", id, error: false });
+  }
+  run.say("msg_1", "Done.");
+  run.end();
+  await until(() => turnOf(api)?.item.streaming === false);
+  const { work } = turnOf(api)!;
+  const log = work.turn!.log;
+  expect(log.filter((g) => g.text !== null).length).toBeLessThanOrEqual(MAX_TURN_GROUPS);
+  expect(log.reduce((n, g) => n + g.count, 0)).toBe(300);
+  expect(log.at(-1)).toMatchObject({ text: null });
+  expect(JSON.stringify(work).length).toBeLessThan(16_000);
+  expect(work.turn?.final).toBe(api.items().find((i) => i.kind === "assistant")!.id);
+});
+
+test("a turn that only speaks has a record with no steps", async () => {
+  const s = await setup();
+  await turn(s);
+  s.run.say("msg_1", "Hello.");
+  s.run.end();
+  await until(() => s.api.lastState?.state === "idle");
+  await until(() => s.api.items().some((i) => i.kind === "assistant" && !i.streaming));
+  const { work } = turnOf(s.api)!;
+  // The record is there, but it lists nothing: clients show no section.
+  expect(work.turn).toMatchObject({ log: [], ended: "done" });
 });
 
 /* ------------------------------------------------------------------ */

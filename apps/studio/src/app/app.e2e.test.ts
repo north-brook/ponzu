@@ -365,7 +365,9 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
         });
     }, id);
     await rail().getByText("Yearly saves 20%").waitFor();
-    await rail().getByText("Drew Yearly toggle").waitFor();
+    // While the turn runs its work has no line of its own; the working line goes on.
+    await rail().getByRole("status").getByText("Drawing Yearly toggle").waitFor();
+    expect(await rail().getByText("Drew Yearly toggle").count()).toBe(0);
 
     // It asks; the question takes the composer's place, and the answer goes to the API.
     const question = await page.evaluate(

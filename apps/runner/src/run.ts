@@ -42,6 +42,7 @@ import {
   type RunnerEvent,
   type RunnerNotice,
   type RunnerSession,
+  type TurnEnding,
   type TurnUsage,
 } from "./api/protocol.ts";
 import { derivedId, eventUuid, randomId } from "./ids.ts";
@@ -52,8 +53,9 @@ import { type Boot, Checkpoints, type Recovery } from "./save/checkpoints.ts";
 import type { Transcripts } from "./save/transcripts.ts";
 import type { WorkSaver } from "./save/work.ts";
 import { StateReporter } from "./state.ts";
-import { stepLabel, stepWeight } from "./steps.ts";
+import { describeStep } from "./steps.ts";
 import { ThreadWriter } from "./thread.ts";
+import { TurnLog } from "./turn.ts";
 import { UsageMeter } from "./usage.ts";
 
 export interface Timing {
@@ -142,6 +144,11 @@ export interface RunnerOptions {
   ): { transcripts: Transcripts | null; work: WorkSaver | null };
   /** This boot of the machine, for what is logged about a rollback. */
   boot?(): Boot;
+  /**
+   * Values the thread and the working state must never say (the repo's secrets, the Claude
+   * credential): a step whose phrase would hold one is said in plain words instead.
+   */
+  secrets?: readonly string[];
   log(message: string): void;
   /** A structured line for the journal. `log` with its JSON when absent. */
   event?(name: string, fields: Record<string, unknown>): void;
@@ -177,17 +184,6 @@ interface Sent {
   /** The event it carries, if any. */
   event: string | null;
   human: boolean;
-}
-
-interface Work {
-  id: string;
-  steps: number;
-  /** The step running now. */
-  label: string;
-  /** The step that says most about the stretch, which names it once it is over. */
-  best: string;
-  weight: number;
-  artboards: Set<string>;
 }
 
 /**
@@ -252,7 +248,14 @@ export class Runner {
   private ending: { event: string; cancelled: Set<string> } | null = null;
   /** The agent's replies being written: API message id to the thread item and its text so far. */
   private texts = new Map<string, { item: string; text: string }>();
-  private work: Work | null = null;
+  /** The turn running, once it has shown something: its thread item and its record. */
+  private turn: TurnLog | null = null;
+  /** The boards the turn has been on, from the canvas. */
+  private turnBoards = new Set<string>();
+  /** The tool calls running now, oldest first: their ids, to what each is doing. */
+  private running = new Map<string, string>();
+  /** What the agent said it is about since it last spoke (set_status, its plan). */
+  private intent: string | null = null;
   private status: AgentStatus = { artboards: [] };
   /** Why the repository could not be checked out, if it could not. */
   private cloneError: string | null = null;
@@ -417,7 +420,7 @@ export class Runner {
     // A runner the API has let go of can deliver nothing more: the next one has the design.
     if (this.ws && !this.fatalReason) await this.ws.design.settled(this.timing.stopStepMs);
     this.dropAsks("The sandbox is going to sleep.");
-    this.closeStreams();
+    this.closeStreams("stopped");
     this.inTurn = false;
     this.sent.clear();
     this.asides.clear();
@@ -687,9 +690,9 @@ export class Runner {
     return {
       status: (status) => {
         this.status = status;
-        if (this.work) {
-          for (const id of status.artboards) this.work.artboards.add(id);
-          this.writeWork(true);
+        if (this.turn) {
+          for (const id of status.artboards) this.turnBoards.add(id);
+          this.writeTurn(null);
         }
         this.refreshState();
       },
@@ -943,18 +946,25 @@ export class Runner {
         break;
       case "text":
         this.inTurn = true;
-        this.finishWork();
         this.writeText(event.id, event.text, event.done);
+        break;
+      case "tool-start":
+        this.inTurn = true;
+        this.toolStart(event.id, event.name);
         break;
       case "tool":
         this.inTurn = true;
-        this.step(event.name, event.input);
+        this.step(event.id, event.name, event.input);
         break;
       case "tool-done": {
         const answered = this.answering.get(event.id);
         if (answered) {
           this.answering.delete(event.id);
           this.ack(answered, true);
+        }
+        if (this.running.delete(event.id)) {
+          this.writeTurn(null);
+          this.refreshState();
         }
         break;
       }
@@ -1028,77 +1038,96 @@ export class Runner {
   }
 
   private writeText(id: string, text: string, done: boolean): void {
-    const entry = this.texts.get(id) ?? { item: randomId("ti"), text };
+    const turn = this.openTurn();
+    let entry = this.texts.get(id);
+    if (!entry) {
+      // The agent speaks: the stretch it said it was about is over, and what it does next is
+      // listed after this message.
+      entry = { item: randomId("ti"), text };
+      this.texts.set(id, entry);
+      this.intent = null;
+      turn.said(entry.item);
+      this.writeTurn(null);
+      this.refreshState();
+    }
     entry.text = text;
-    this.texts.set(id, entry);
     this.thread.write({ id: entry.item, kind: "assistant", payload: { text }, streaming: !done });
     if (done) this.texts.delete(id);
   }
 
-  private step(name: string, input: Record<string, unknown>): void {
-    const label = stepLabel(name, input, this.replica.doc);
-    const weight = stepWeight(name, input);
-    // The boards the agent is on carry over from the stretch before: the canvas says them only
-    // when they change.
-    this.work ??= {
-      id: randomId("ti"),
-      steps: 0,
-      label,
-      best: label,
-      weight,
-      artboards: new Set(this.status.artboards),
-    };
-    const work = this.work;
-    work.steps++;
-    work.label = label;
-    if (weight >= work.weight) {
-      work.best = label;
-      work.weight = weight;
+  /** The turn's thread item, opened the first time the turn shows something. */
+  private openTurn(): TurnLog {
+    if (!this.turn) {
+      this.turn = new TurnLog(randomId("ti"));
+      // The boards the agent is on carry over: the canvas says them only when they change.
+      this.turnBoards = new Set(this.status.artboards);
+      // Written before anything else of the turn, so it opens the turn in the thread's order.
+      this.writeTurn(null);
     }
-    this.writeWork(true);
+    return this.turn;
+  }
+
+  private stepContext() {
+    return { doc: this.replica.doc, cwd: this.cwd, secrets: this.opts.secrets };
+  }
+
+  /** The agent began writing a tool call: say what kind of thing is coming. */
+  private toolStart(id: string, name: string): void {
+    this.openTurn();
+    const { doing } = describeStep(name, {}, this.stepContext());
+    if (!doing) return;
+    this.running.set(id, doing);
+    this.writeTurn(null);
     this.refreshState();
   }
 
-  private writeWork(streaming: boolean): void {
-    const work = this.work;
-    if (!work) return;
+  private step(id: string, name: string, input: Record<string, unknown>): void {
+    const turn = this.openTurn();
+    const step = describeStep(name, input, this.stepContext());
+    if (step.intent) this.intent = step.intent;
+    if (step.doing) this.running.set(id, step.doing);
+    else this.running.delete(id);
+    turn.add(step);
+    this.writeTurn(null);
+    this.refreshState();
+  }
+
+  private writeTurn(ended: TurnEnding | null): void {
+    const turn = this.turn;
+    if (!turn) return;
     this.thread.write({
-      id: work.id,
+      id: turn.id,
       kind: "tool",
-      payload: { label: this.label(streaming), steps: work.steps, artboards: [...work.artboards] },
-      streaming,
+      payload: turn.payload({ label: this.label(), artboards: [...this.turnBoards], ended }),
+      streaming: ended === null,
     });
   }
 
   /**
-   * The working line: what the agent said it is doing, or else its step running now. Once the
-   * stretch is over, the step that says most about it.
+   * The working state, most specific first: the tool call running now (the newest, when the
+   * agent runs several at once, for as long as it runs); else what the agent said it is about
+   * since it last spoke; else thinking. The agent's own words never outlive the stretch they
+   * were said in, nor stand in for a tool that is running.
    */
-  private label(streaming = true): string {
-    const said = this.status.status?.trim();
-    if (said) return said.charAt(0).toUpperCase() + said.slice(1);
-    if (!this.work) return "Working";
-    return streaming ? this.work.label : this.work.best;
-  }
-
-  private finishWork(): void {
-    this.writeWork(false);
-    this.work = null;
+  private label(): string {
+    return [...this.running.values()].at(-1) ?? this.intent ?? "Thinking";
   }
 
   /** End whatever is streaming: the turn is over, or the runner is. A reply cut off ends as it was. */
-  private closeStreams(): void {
-    this.finishWork();
+  private closeStreams(ended: TurnEnding): void {
     for (const { item, text } of this.texts.values())
       this.thread.write({ id: item, kind: "assistant", payload: { text }, streaming: false });
     this.texts.clear();
+    this.running.clear();
+    this.intent = null;
+    this.writeTurn(ended);
+    this.turn = null;
   }
 
   private raise(askId: string, ask: Ask): void {
     const id = derivedId("q", askId);
-    // The work so far ends where the question is asked, so the thread reads in order: what it
-    // did, what it asked, then what it did with the answer.
-    this.finishWork();
+    // Opened first, so the question is in the turn it was asked in.
+    this.openTurn();
     this.asks.set(id, askId);
     this.questions.put(`ask:${id}`, { ask: { id, ...questionBody(ask) } });
     const [header, text] =
@@ -1180,7 +1209,7 @@ export class Runner {
   }
 
   private result(id: string, error: TurnError | null, usage: ModelUsage[]): void {
-    this.closeStreams();
+    this.closeStreams(error?.code === "interrupted" ? "stopped" : error ? "failed" : "done");
     this.restarts = 0;
     if (this.sessionId) {
       const used = this.usage.turn(this.sessionId, usage);
@@ -1238,7 +1267,7 @@ export class Runner {
   private exited(error: string | null): void {
     if (this.stopping) return;
     this.log(`Claude Code stopped${error ? `: ${error}` : ""}`);
-    this.closeStreams();
+    this.closeStreams("failed");
     // The process that asked is gone; the questions stay for people to answer as messages.
     for (const id of this.asks.keys()) this.asks.set(id, null);
     this.answering.clear();

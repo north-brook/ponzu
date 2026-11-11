@@ -196,6 +196,19 @@ export type RunErrorCode =
   | "message_refused"
   | "question_failed";
 
+/**
+ * What a turn did, as the runner records it (`TurnRecord` in @ponzu/runner/protocol): how it
+ * ended, how long it took, its answer's item, what it made, and its steps after each message.
+ */
+export interface TurnRecord {
+  ended: "done" | "stopped" | "failed" | null;
+  ms: number;
+  final: string | null;
+  boards: number;
+  files: number;
+  log: { after: string | null; text: string | null; count: number }[];
+}
+
 export type ThreadNotice =
   | { type: "waking" }
   | { type: "resumed" }
@@ -244,8 +257,14 @@ export type ThreadItem = {
     }
   /** Markdown, from the model: untrusted text. */
   | { kind: "assistant"; payload: { text: string } }
-  /** A stretch of work between two things the agent says, folded to one line. */
-  | { kind: "tool"; payload: { label: string; steps: number; artboards: string[] } }
+  /**
+   * The agent's work: with `turn`, one item per turn that opens it (thread.ts folds the turn by
+   * it); without, a stretch of work an older runner wrote between two things the agent said.
+   */
+  | {
+      kind: "tool";
+      payload: { label: string; steps: number; artboards: string[]; turn?: TurnRecord };
+    }
   | { kind: "notice"; payload: ThreadNotice }
 );
 

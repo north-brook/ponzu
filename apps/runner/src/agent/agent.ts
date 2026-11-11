@@ -71,6 +71,8 @@ export type AgentEvent =
   | { type: "dropped"; uuids: string[] }
   /** The agent's text so far in one reply. `done` once the reply is complete. */
   | { type: "text"; id: string; text: string; done: boolean }
+  /** The agent began writing a call to a tool: its input is still to come. */
+  | { type: "tool-start"; id: string; name: string }
   /** The agent called a tool. */
   | { type: "tool"; id: string; name: string; input: Record<string, unknown> }
   /** A tool call's result is in the session. */

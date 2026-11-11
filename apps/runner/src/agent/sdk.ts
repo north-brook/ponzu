@@ -331,6 +331,9 @@ export class Translator {
       const e = m.event;
       if (e.type === "message_start") {
         this.current = e.message.id;
+      } else if (e.type === "content_block_start" && e.content_block.type === "tool_use") {
+        // A long input (a board's HTML) takes a while to write: say what is coming meanwhile.
+        out.push({ type: "tool-start", id: e.content_block.id, name: e.content_block.name });
       } else if (
         e.type === "content_block_delta" &&
         e.delta.type === "text_delta" &&

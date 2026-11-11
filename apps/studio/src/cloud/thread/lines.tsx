@@ -60,7 +60,9 @@ export const ThreadLine = memo(function ThreadLine({
         </div>
       );
     case "tool":
-      return <FoldedWork {...item.payload} onOpen={handlers.onOpenArtboards} />;
+      // The agent's work is never a line of its own: a running turn's is the working line, and
+      // a finished one's is in its fold.
+      return null;
     case "notice":
       return <NoticeLine notice={item.payload} meId={meId} handlers={handlers} />;
   }
@@ -237,47 +239,6 @@ function CommentFrame({
   );
 }
 
-/**
- * A stretch of work, done: one quiet line named by what it did. When it touched boards, it
- * takes you to them.
- */
-function FoldedWork({
-  label,
-  steps,
-  artboards,
-  onOpen,
-}: {
-  label: string;
-  steps: number;
-  artboards: string[];
-  onOpen: (artboardIds: string[]) => void;
-}) {
-  const content = (
-    <>
-      <Slice size={11} className="text-dry" />
-      <span className="truncate">{label}</span>
-      <span className="shrink-0 text-dry">·</span>
-      <span className="shrink-0">
-        {steps} {steps === 1 ? "step" : "steps"}
-      </span>
-    </>
-  );
-  const line = "flex min-w-0 items-center gap-1.5 px-[2px] text-12 text-faint leading-[1.4]";
-  if (!artboards.length) return <div className={line}>{content}</div>;
-  return (
-    <button
-      type="button"
-      onClick={() => onOpen(artboards)}
-      className={cn(
-        line,
-        "-mx-1 -my-0.5 cursor-default self-start rounded-6 px-1.5 py-0.5 text-left outline-none transition-colors duration-(--dur-hover) focus-ring hover:bg-hover hover:text-muted",
-      )}
-    >
-      {content}
-    </button>
-  );
-}
-
 const PR_ICON: Record<PrState, { icon: typeof GitPullRequestIcon; color: string; verb: string }> = {
   draft: { icon: GitPullRequestIcon, color: "text-icon-soft", verb: "opened as a draft" },
   open: { icon: GitPullRequestIcon, color: "text-pr-open", verb: "opened" },
@@ -380,15 +341,21 @@ export function SandboxLine({ text, failed }: { text: string; failed: boolean })
   );
 }
 
-/** The thread's newest line while the agent works: the turning slice and what it's doing. */
+/**
+ * The thread's newest line while the agent works: the turning slice and what it's doing. Each
+ * new state settles in where the last one was; the slice keeps turning through them.
+ */
 export function WorkingLine({ label }: { label: string }) {
   return (
     <div
       role="status"
+      data-working-line
       className="flex min-w-0 items-center gap-2 px-[2px] text-13 text-muted leading-[1.4]"
     >
       <Slice size={15} turning className="text-yuzu" label="Working" />
-      <span className="truncate">{label}</span>
+      <span key={label} className="settle truncate">
+        {label}
+      </span>
     </div>
   );
 }

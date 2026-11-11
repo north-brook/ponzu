@@ -11,7 +11,7 @@ import {
   type Op,
 } from "@ponzu/core";
 import { Sequencer } from "@ponzu/core/testing";
-import type { QuestionBody, RunErrorCode, ThreadItem } from "@ponzu/runner/protocol";
+import type { QuestionBody, RunErrorCode, ThreadItem, TurnRecord } from "@ponzu/runner/protocol";
 import type { AnswerBody, Api } from "../api.ts";
 import { type Clock, systemClock } from "../clock.ts";
 import { ApiError, networkError } from "../errors.ts";
@@ -131,12 +131,19 @@ export interface FakeAgent {
   /** Say something in the thread; while `streaming`, saying again with the same id replaces it. */
   say(text: string, opts?: { id?: string; streaming?: boolean }): string;
   /**
-   * A stretch of work in the thread: while `streaming`, the working line; saying again with the
-   * same id replaces it, until it is finished.
+   * The agent's work in the thread: with `turn`, a turn's one item and its record, as a runner
+   * that keeps one writes it; without, a stretch of work as an older runner wrote it. Saying
+   * again with the same id replaces it while it streams.
    */
   tool(
     label: string,
-    opts?: { id?: string; streaming?: boolean; steps?: number; artboards?: string[] },
+    opts?: {
+      id?: string;
+      streaming?: boolean;
+      steps?: number;
+      artboards?: string[];
+      turn?: TurnRecord;
+    },
   ): string;
   /** Show it at work on these boards, with a working line. */
   work(artboards: string[], status?: string): void;
@@ -348,8 +355,11 @@ export class FakeBackend {
         this.touch(design);
         return id;
       },
-      tool: (label, { id = this.id("ti"), streaming = true, steps = 1, artboards = [] } = {}) => {
-        const payload = { label, steps, artboards };
+      tool: (
+        label,
+        { id = this.id("ti"), streaming = true, steps = 1, artboards = [], turn } = {},
+      ) => {
+        const payload = { label, steps, artboards, ...(turn ? { turn } : {}) };
         const existing = design.thread.find((entry) => entry.item.id === id);
         if (existing?.item.streaming) {
           existing.item = { ...existing.item, payload, streaming } as ThreadItem;

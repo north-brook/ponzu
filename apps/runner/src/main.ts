@@ -96,6 +96,12 @@ const runner = new Runner({
       ...(env.git ? { git: env.git } : {}),
     }),
   stateDir: env.stateDir,
+  // What the working state and the thread's steps never say, whatever the agent typed.
+  secrets: [
+    env.token,
+    ...Object.values(decodeRepoSecrets(process.env[REPO_SECRETS_VARIABLE])),
+    ...CLAUDE_CREDENTIALS.flatMap((name) => process.env[name] ?? []),
+  ],
   // Every filesystem, so the agent's files are flushed with the runner's own.
   flush: () =>
     new Promise<void>((resolve) => {

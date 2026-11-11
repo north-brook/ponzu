@@ -21,7 +21,9 @@ src/
   env.ts           the environment, checked once (exactly one Claude credential)
   run.ts           Runner: events in, the thread and state out, the session's lifecycle
   prompt.ts        each event as the text the model receives
-  steps.ts         each tool call as the working line ("Drawing "Pricing · B"")
+  steps.ts         each tool call said: the working state ("Drawing "Pricing · B"", "Running
+                   tests") and, past tense, the turn's record; never a command or a secret
+  turn.ts          a turn's one thread item: its steps grouped after each message, its answer
   thread.ts        thread writes, coalesced
   state.ts         state reports and the heartbeat
   previews.ts      light and dark previews of the first page

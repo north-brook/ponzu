@@ -358,6 +358,47 @@ describe("the thread", () => {
     expect(await listThreadItems(t.db, { designId: design.id })).toEqual([]);
   });
 
+  test("a turn's work item keeps its record, bounded; one from an older runner has none", async () => {
+    const { design, runner } = await sample();
+    const said = newId("ti");
+    const turnItem = (id: string, log: unknown[]) => ({
+      id,
+      kind: "tool",
+      streaming: false,
+      payload: {
+        label: "Worked on 2 boards",
+        steps: 3,
+        artboards: ["ab_1"],
+        turn: { ended: "done", ms: 61_000, final: said, boards: 2, files: 0, log },
+      },
+    });
+    const ok = turnItem(newId("ti"), [
+      { after: null, text: 'Drew "Hero"', count: 2 },
+      { after: said, text: null, count: 1 },
+    ]);
+    const old = {
+      id: newId("ti"),
+      kind: "tool",
+      streaming: false,
+      payload: { label: "Drawing", steps: 2, artboards: [] },
+    };
+    expect((await send(runner, "POST", "/thread", { items: [ok, old] })).status).toBe(200);
+    const tooMany = Array.from({ length: 121 }, (_, i) => ({
+      after: null,
+      text: `${i}`,
+      count: 1,
+    }));
+    for (const bad of [
+      turnItem(newId("ti"), tooMany),
+      turnItem(newId("ti"), [{ after: "not_an_item", text: "x", count: 1 }]),
+      turnItem(newId("ti"), [{ after: null, text: "x", count: 0 }]),
+    ]) {
+      expect((await send(runner, "POST", "/thread", { items: [bad] })).status).toBe(400);
+    }
+    const stored = await listThreadItems(t.db, { designId: design.id });
+    expect(stored.map((i) => i.payload)).toEqual([ok.payload, old.payload]);
+  });
+
   test("agent text is clipped, and a write holds at most 32 items, each once", async () => {
     const { design, runner } = await sample();
     const id = newId("ti");

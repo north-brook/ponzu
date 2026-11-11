@@ -10,18 +10,23 @@ import {
   useState,
 } from "react";
 import type { AgentActivity, OlderItems, ThreadItem } from "../model.ts";
+import { useNow } from "../time.ts";
 import { SCROLL_FADE } from "../ui/fade-scroll.tsx";
 import { Icon } from "../ui/icon.tsx";
 import { Skeleton } from "../ui/skeleton.tsx";
+import { TurnFoldLine } from "./fold.tsx";
 import { atFoot, FOLLOWING, follow, type ScrollMetrics } from "./follow.ts";
 import { type LineHandlers, SandboxLine, ThreadLine, WorkingLine } from "./lines.tsx";
-import { sandboxLine, threadRows, workingLine } from "./thread.ts";
+import { isFold, type Row, SENT_GRACE_MS, sandboxLine, threadRows, workingLine } from "./thread.ts";
 
 /** Rows drawn at first, and how many more each time the person reads up past them. */
 const WINDOW = 80;
 const PAGE = 40;
 /** How near the top reading up reveals more, or asks for older items. */
 const NEAR_TOP = 320;
+
+/** A row's key: its item's id, or its fold's. */
+const rowKey = (row: Row) => (isFold(row) ? `fold:${row.fold.id}` : row.item.id);
 
 const metricsOf = (el: HTMLElement): ScrollMetrics => ({
   scrollTop: el.scrollTop,
@@ -56,13 +61,26 @@ export function ThreadView({
   const following = useRef(state.following);
   following.current = state.following;
 
-  const rows = useMemo(() => threadRows(items), [items]);
+  // Only the agent's state decides whether its last turn folds: not each change of its status.
+  const agentState = agent.state;
+  const rows = useMemo(
+    () => threadRows(items, { state: agentState, status: null }),
+    [items, agentState],
+  );
   const waiting = sandboxLine(agent);
-  const working = waiting ? null : workingLine(items, agent);
+  const now = useNow();
+  const working = waiting ? null : workingLine(items, agent, now);
+  // A send's "Thinking" before the agent has said anything lasts only so long: look again then.
+  const [, recheck] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    if (!working || agentState !== "idle") return;
+    const timer = setTimeout(recheck, SENT_GRACE_MS);
+    return () => clearTimeout(timer);
+  }, [working, agentState]);
 
   // The window: from `firstId` to the end. Null, while following, is the newest WINDOW rows.
   const [firstId, setFirstId] = useState<string | null>(null);
-  const found = firstId ? rows.findIndex((r) => r.item.id === firstId) : -1;
+  const found = firstId ? rows.findIndex((r) => rowKey(r) === firstId) : -1;
   const start = found >= 0 ? found : Math.max(0, rows.length - WINDOW);
   const shown = rows.slice(start);
 
@@ -112,7 +130,53 @@ export function ThreadView({
     ours.current = el.scrollTop;
   }, []);
 
+  /*
+   * A fold opening or closing holds its own line where it is, whether the person was at the
+   * foot or reading: what it opens on grows below it, never pushing it out from under the
+   * pointer. Once it has settled, the rail follows again if it ends at the foot.
+   */
+  const pinned = useRef<{ el: Element; top: number } | null>(null);
+  const pinTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holdPinned = useCallback(() => {
+    const el = scroller.current;
+    const held = pinned.current;
+    if (!el || !held?.el.isConnected) return false;
+    const moved = held.el.getBoundingClientRect().top - held.top;
+    if (Math.abs(moved) >= 0.5) el.scrollTop += moved;
+    ours.current = el.scrollTop;
+    return true;
+  }, []);
+  const onToggleFold = useCallback((trigger: HTMLElement) => {
+    pinned.current = { el: trigger, top: trigger.getBoundingClientRect().top };
+    // A thread shorter than the rail sits at its foot, with room above: kept as room at the
+    // top, what opens grows down from the line rather than lifting everything into that room.
+    const box = content.current;
+    const first = box?.firstElementChild;
+    if (box && first && !box.style.paddingTop) {
+      const room = first.getBoundingClientRect().top - box.getBoundingClientRect().top;
+      if (room > 1) box.style.paddingTop = `${room}px`;
+    }
+    if (pinTimer.current) clearTimeout(pinTimer.current);
+    pinTimer.current = setTimeout(() => {
+      pinned.current = null;
+      const el = scroller.current;
+      if (el) dispatch({ type: "scrolled", metrics: metricsOf(el) });
+    }, 400);
+  }, []);
+  useEffect(
+    () => () => {
+      if (pinTimer.current) clearTimeout(pinTimer.current);
+    },
+    [],
+  );
+
+  // The room kept for an opened fold goes once the thread itself changes.
   useLayoutEffect(() => {
+    if (items && content.current) content.current.style.paddingTop = "";
+  }, [items]);
+
+  useLayoutEffect(() => {
+    if (holdPinned()) return;
     if (following.current) toFoot();
     else holdAnchor();
     noteAnchor();
@@ -122,7 +186,7 @@ export function ThreadView({
   // still on the same line if reading.
   useLayoutEffect(() => {
     const observer = new ResizeObserver(() => {
-      if (jumping.current) return;
+      if (jumping.current || holdPinned()) return;
       if (following.current) toFoot();
       else holdAnchor();
       noteAnchor();
@@ -130,7 +194,7 @@ export function ThreadView({
     if (content.current) observer.observe(content.current);
     if (scroller.current) observer.observe(scroller.current);
     return () => observer.disconnect();
-  }, [toFoot, holdAnchor, noteAnchor]);
+  }, [toFoot, holdAnchor, noteAnchor, holdPinned]);
 
   // Back at the foot with a long window drawn: let the oldest go again.
   useEffect(() => {
@@ -147,7 +211,7 @@ export function ThreadView({
   const readUp = useCallback(() => {
     const el = scroller.current;
     if (!el || el.scrollTop > NEAR_TOP) return;
-    if (start > 0) setFirstId(rows[Math.max(0, start - PAGE)]!.item.id);
+    if (start > 0) setFirstId(rowKey(rows[Math.max(0, start - PAGE)]!));
     else if (older === "more" && !asked.current) {
       asked.current = true;
       onLoadOlder();
@@ -172,7 +236,7 @@ export function ThreadView({
     dispatch({ type: "scrolled", metrics: m });
     // Reading, the window holds its first row: what arrives at the foot no longer pushes the
     // oldest out from above what the person is reading.
-    if (!atFoot(m) && firstId === null && rows[start]) setFirstId(rows[start].item.id);
+    if (!atFoot(m) && firstId === null && rows[start]) setFirstId(rowKey(rows[start]));
     readUp();
   };
 
@@ -217,9 +281,18 @@ export function ThreadView({
           {older === "loading" && start === 0 ? (
             <div className="breathe self-center py-1 text-12 text-faint">Loading earlier…</div>
           ) : null}
-          {shown.map((row) => (
-            <ThreadLine key={row.item.id} {...row} meId={meId} handlers={handlers} />
-          ))}
+          {shown.map((row) =>
+            isFold(row) ? (
+              <TurnFoldLine
+                key={rowKey(row)}
+                fold={row.fold}
+                handlers={handlers}
+                onToggle={onToggleFold}
+              />
+            ) : (
+              <ThreadLine key={row.item.id} {...row} meId={meId} handlers={handlers} />
+            ),
+          )}
           {working ? <WorkingLine label={working} /> : null}
           {waiting ? <SandboxLine {...waiting} /> : null}
         </div>
