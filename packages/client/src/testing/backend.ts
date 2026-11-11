@@ -393,6 +393,14 @@ export class FakeBackend {
       for (const op of result.committed) if (!done.includes(op.seq)) done.push(op.seq);
       design.done.set(person.id, done);
       if (result.committed.length) design.undone.set(person.id, []);
+      // A new comment or reply reaches the thread with its commit, as the API's statement does.
+      const doc = design.sequencer.doc;
+      for (const { op } of result.committed) {
+        for (const comment of commentsIn(op, doc)) {
+          const payload = { ...comment, from: personOf(person) };
+          this.append(design, { kind: "comment", payload }, person.id);
+        }
+      }
       this.touch(design);
       return result;
     };
@@ -1125,6 +1133,31 @@ function listRow(head: ReturnType<FakeBackend["headOf"]>, design: FakeDesign, us
     seenThreadSeq: read?.threadSeq ?? null,
   };
 }
+
+/** The new comments and replies an op makes, as apps/api/src/designs/events.ts finds them. */
+function commentsIn(op: Op, doc: Doc): Omit<CommentPayload, "from">[] {
+  if (op.op === "batch") return op.ops.flatMap((inner) => commentsIn(inner, doc));
+  const said =
+    op.op === "thread.create"
+      ? op.thread.messages[0] && { thread: op.thread, message: op.thread.messages[0] }
+      : op.op === "thread.message"
+        ? { thread: doc.threads.find((t) => t.id === op.id), message: op.message }
+        : null;
+  if (!said?.thread) return [];
+  const artboardId = said.thread.artboardId ?? null;
+  const board = doc.pages.flatMap((page) => page.artboards).find((ab) => ab.id === artboardId);
+  return [
+    {
+      threadId: said.thread.id,
+      messageId: said.message.id,
+      text: said.message.text,
+      artboardId,
+      artboardName: board?.name ?? null,
+    },
+  ];
+}
+
+type CommentPayload = Extract<ThreadItem, { kind: "comment" }>["payload"];
 
 /** Where the design's files are served, as `GET /v1/designs/:id` answers it. */
 function assetsUrl(design: FakeDesign): string {

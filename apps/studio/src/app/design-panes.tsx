@@ -80,6 +80,14 @@ export function useDesignPanes({
   const repo = project?.kind === "repo" ? project.repo : null;
   const owner = summary?.owner ?? null;
   const togglePrTab = () => setPrTab((was) => !was);
+  // The tab folds the rail away; the toggle then says what the rail would, and brings it back.
+  const railShown = rail.open && !prTab;
+  const toggleRail = () => {
+    if (prTab) {
+      setPrTab(false);
+      if (!rail.open) rail.onToggle();
+    } else rail.onToggle();
+  };
 
   return {
     chrome: (
@@ -93,27 +101,26 @@ export function useDesignPanes({
         sidebarOpen={sidebarOpen}
         page={page}
         onPage={onPage}
-        rail={rail}
+        rail={{ open: railShown, onToggle: toggleRail }}
         prTab={{ open: prTab, onToggle: togglePrTab }}
         seenThreadSeq={seenThreadSeq}
         onOpenRepo={(fullName) => host.openExternal(`https://github.com/${fullName}`)}
       />
     ),
-    rail:
-      rail.open && !prTab ? (
-        <DesignRail
-          host={host}
-          open={open}
-          me={me}
-          people={people}
-          repo={repo}
-          owner={owner}
-          onOpenArtboards={onOpenArtboards}
-          onOpenPullRequest={() => setPrTab(true)}
-          say={say}
-          {...(onConnectClaude ? { onConnectClaude } : {})}
-        />
-      ) : null,
+    rail: railShown ? (
+      <DesignRail
+        host={host}
+        open={open}
+        me={me}
+        people={people}
+        repo={repo}
+        owner={owner}
+        onOpenArtboards={onOpenArtboards}
+        onOpenPullRequest={() => setPrTab(true)}
+        say={say}
+        {...(onConnectClaude ? { onConnectClaude } : {})}
+      />
+    ) : null,
     pane: (
       <>
         <div inert={prTab} className="contents">
@@ -129,7 +136,8 @@ export function useDesignPanes({
           />
         </div>
         {prTab ? (
-          <div className="absolute inset-0 bg-canvas">
+          // Over the canvas and everything it floats, which stays put underneath for coming back.
+          <div className="absolute inset-0 z-20 bg-canvas">
             <PullRequestPane host={host} open={open} viewerLogin={me.login} />
           </div>
         ) : null}

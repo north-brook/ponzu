@@ -22,7 +22,8 @@ export function PageTabs({
   pages: PageTab[];
   activeId: string | null;
   onSelect: (id: string) => void;
-  onAdd: () => void;
+  /** Null for someone who can't change the design: no "+". */
+  onAdd: (() => void) | null;
 }) {
   const list = useRef<HTMLDivElement>(null);
   const [minWidth, setMinWidth] = useState<number>();
@@ -84,9 +85,11 @@ export function PageTabs({
           })}
         </div>
       </ScrollArea>
-      <IconButton label="New page" onClick={onAdd} className="size-7 text-faint">
-        <Icon icon={PlusSignIcon} size={14} stroke={1.9} />
-      </IconButton>
+      {onAdd ? (
+        <IconButton label="New page" onClick={onAdd} className="size-7 text-faint">
+          <Icon icon={PlusSignIcon} size={14} stroke={1.9} />
+        </IconButton>
+      ) : null}
     </div>
   );
 }

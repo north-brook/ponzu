@@ -257,9 +257,10 @@ function WorkspaceWindow({
     },
     [id, update],
   );
+  // Another design opens on its first page, or the one a link names, never the last one's.
   useEffect(() => {
-    if (link?.page) setPage(link.page);
-  }, [link]);
+    setPage(link?.page ?? null);
+  }, [openId, link]);
 
   useEffect(
     () =>

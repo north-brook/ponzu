@@ -95,10 +95,55 @@ test("a teammate's message and comment carry them, as the members they are", asy
   const sam = w.backend.connect(w.sam);
   await sam.api.designs.sendMessage(w.design.id, { text: "Keep the green" });
   await settle();
-  const [message] = store.getSnapshot().items!.map((i) => toThreadItem(i, ctx(w.people)));
+  // A comment on a 400 × 300 board, pinned at its middle.
+  const page = w.backend.design(w.design.id).sequencer.doc.pages[0]!;
+  const root = {
+    kind: "el" as const,
+    id: "ab_hero",
+    tag: "section",
+    attrs: {},
+    style: { width: "400px", height: "300px" },
+    children: [],
+  };
+  w.agent.commit([
+    {
+      op: "artboard.create",
+      page: page.id,
+      index: 0,
+      artboard: { id: "ab_hero", name: "Hero", x: 0, y: 0, root },
+    },
+  ]);
+  const author = { kind: "user" as const, id: w.sam.id, name: "Sam Lee" };
+  const said = { id: "m_1", author, text: "Calmer here", createdAt: 0 };
+  const thread = {
+    id: "th_1",
+    artboardId: "ab_hero",
+    x: 200,
+    y: 150,
+    status: "open" as const,
+    createdAt: 0,
+    updatedAt: 0,
+    messages: [said],
+  };
+  await sam.api.designs.commit(w.design.id, [{ id: "op_1", op: { op: "thread.create", thread } }]);
+  await settle();
+  const doc = w.backend.design(w.design.id).sequencer.doc;
+  const [message, comment] = store
+    .getSnapshot()
+    .items!.map((i) => toThreadItem(i, { ...ctx(w.people), doc }));
   expect(message).toMatchObject({
     kind: "message",
     payload: { text: "Keep the green", from: { id: w.sam.id, name: "Sam Lee", login: "sam" } },
+  });
+  expect(comment).toMatchObject({
+    kind: "comment",
+    payload: {
+      text: "Calmer here",
+      artboardName: "Hero",
+      from: { name: "Sam Lee" },
+      // The middle of the board is the middle of its miniature.
+      pin: { x: 0.5, y: 0.5 },
+    },
   });
   store.close();
 });

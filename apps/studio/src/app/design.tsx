@@ -197,16 +197,19 @@ export function DesignChromeSlot({
         if (prTab.open) prTab.onToggle();
         onPage(id);
       }}
-      onAddPage={() => {
-        if (!doc || !open.source.writable) return;
-        const id = newId("pg");
-        open.source.apply({
-          op: "page.create",
-          index: doc.pages.length,
-          page: { id, name: `Page ${doc.pages.length + 1}` },
-        });
-        onPage(id);
-      }}
+      onAddPage={
+        doc && access === "write"
+          ? () => {
+              const id = newId("pg");
+              open.source.apply({
+                op: "page.create",
+                index: doc.pages.length,
+                page: { id, name: `Page ${doc.pages.length + 1}` },
+              });
+              onPage(id);
+            }
+          : null
+      }
       team={
         workspaceKind === "org" && project?.kind === "repo"
           ? {

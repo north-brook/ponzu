@@ -131,6 +131,128 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
       [id, thread!.id],
     );
     await page.locator('button[title="Drag to move"]', { hasText: "2" }).waitFor();
+    // The comment and the reply reached the thread too, each with its board above it.
+    const frames = rail().getByRole("button", { name: "Open the comment on Three plans" });
+    await waitUntil(async () => (await frames.count()) === 2);
+  });
+
+  /** The thread rail. */
+  const rail = () => page.locator("#thread");
+
+  test("a message, a reply that streams while the agent draws, a question, and a merge", async () => {
+    const { id } = await made();
+    await page.keyboard.press("Escape");
+    const field = rail().getByPlaceholder("Steer, or ask more");
+    await field.fill("Add a yearly toggle");
+    await field.press("Enter");
+    // The bubble is there at once, and the message reached the design's feed.
+    await rail().getByText("Add a yearly toggle").waitFor();
+    await waitUntil(async () => (await made()).said.includes("Add a yearly toggle"));
+
+    // The agent works: the working line, then its reply streaming in, and a board drawn.
+    await page.evaluate((designId) => {
+      const agent = window.ponzuFake!.backend.agent(designId);
+      agent.work([], "Drawing Yearly toggle");
+      agent.tool("Drawing Yearly toggle", { id: "ti_work0000000001" });
+    }, id);
+    await rail().getByRole("status").getByText("Drawing Yearly toggle").waitFor();
+    await rail().getByRole("button", { name: "Stop" }).waitFor();
+    await page.evaluate((designId) => {
+      const world = window.ponzuFake!;
+      const agent = world.backend.agent(designId);
+      agent.tool("Drew Yearly toggle", { id: "ti_work0000000001", streaming: false, steps: 3 });
+      agent.say("Adding a toggle", { id: "ti_reply000000001", streaming: true });
+      world.drawBoard(designId, "Yearly toggle", "#e8efe4");
+    }, id);
+    await rail().getByText("Adding a toggle").waitFor();
+    await page.locator('[data-board-name][title="Yearly toggle"]').waitFor();
+    await page.evaluate((designId) => {
+      window
+        .ponzuFake!.backend.agent(designId)
+        .say("Adding a toggle above the plans. Yearly saves 20%.", {
+          id: "ti_reply000000001",
+          streaming: false,
+        });
+    }, id);
+    await rail().getByText("Yearly saves 20%").waitFor();
+    await rail().getByText("Drew Yearly toggle").waitFor();
+
+    // It asks; the question takes the composer's place, and the answer goes to the API.
+    const question = await page.evaluate(
+      (designId) =>
+        window.ponzuFake!.backend.agent(designId).ask(
+          {
+            kind: "question",
+            payload: {
+              questions: [
+                {
+                  header: "Default",
+                  question: "Which should the toggle show first?",
+                  options: [
+                    { label: "Monthly", description: "As the page does today." },
+                    { label: "Yearly", description: "Leads with the saving." },
+                  ],
+                  multiSelect: false,
+                },
+              ],
+            },
+          },
+          "Default",
+        ),
+      id,
+    );
+    const asked = page.getByRole("region", { name: "Ponzu needs you: Default" });
+    await asked.getByText("Which should the toggle show first?").waitFor();
+    expect(await rail().getByPlaceholder("Steer, or ask more").count()).toBe(0);
+    await asked.getByRole("radio", { name: /Yearly/ }).click();
+    await asked.getByRole("button", { name: "Send" }).click();
+    await waitUntil(() =>
+      page.evaluate(
+        ([designId, q]) =>
+          window.ponzuFake!.backend.design(designId!).questions.find((x) => x.id === q)?.status ===
+          "answered",
+        [id, question],
+      ),
+    );
+    await rail().getByPlaceholder("Steer, or ask more").waitFor();
+
+    // It pushes and its turn ends: Create PR, then Ready, then Merge.
+    await page.evaluate((designId) => {
+      const agent = window.ponzuFake!.backend.agent(designId);
+      agent.push([{ path: "src/pricing.tsx", additions: 42, deletions: 3 }]);
+      agent.idle();
+    }, id);
+    const action = (name: string) => page.locator("header").getByRole("button", { name });
+    await action("Create PR").click();
+    await action("Ready").click();
+    await rail()
+      .getByText(/Pull request\s+#\d+\s+opened as a draft/)
+      .waitFor();
+
+    // The pull request tab takes the canvas's pane, with the file's diff on demand.
+    await page.locator("header").getByRole("button", { name: /#\d+/ }).click();
+    await page.getByRole("heading", { name: PROMPT }).waitFor();
+    expect(await page.locator("#thread").count()).toBe(0);
+    await page.getByRole("button", { name: /src\/pricing\.tsx/ }).click();
+    await page.getByText("src/pricing.tsx", { exact: false }).first().waitFor();
+
+    await action("Merge").click();
+    await page
+      .getByText(/Merged/)
+      .first()
+      .waitFor();
+    await waitUntil(() =>
+      page.evaluate(
+        (designId) => window.ponzuFake!.backend.design(designId).settledAt !== null,
+        id,
+      ),
+    );
+    // Merged: no button, and the design settled on its own.
+    expect(await action("Merge").count()).toBe(0);
+    await page.getByRole("tab", { name: "Page 1" }).click();
+    await rail()
+      .getByText(/Pull request\s+#\d+\s+merged/)
+      .waitFor();
   });
 
   test("a design deleted while it's open says so calmly, and leads back", async () => {
