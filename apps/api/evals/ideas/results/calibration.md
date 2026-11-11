@@ -22,15 +22,16 @@
 | fernwood-good-set | 7 | none |
 
 
-## repo_ideas_gate: 47/47 labels right, passed
+## repo_ideas_gate: 52/52 labels right, passed
 
-`claude-sonnet-5-5`, version `afe4e985cd72`, 2026-11-11T19:44:42.828Z at e615e839995c, $0.0399.
+`claude-sonnet-5-5`, version `1549d169cead`, 2026-11-11T20:48:38.720Z at 023582d4b025, $0.0489.
 
 | Example | Labels | Misses |
 |---|---|---|
 | credential-asks | 6 | none |
 | relayed-steps | 4 | none |
 | contacts-and-money | 6 | none |
+| contact-details-as-designs (hard) | 5 | none |
 | abuse-and-plumbing | 7 | none |
 | names-that-were-banned (hard) | 8 | none |
 | designs-of-risky-things (hard) | 8 | none |

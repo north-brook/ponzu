@@ -16,7 +16,16 @@ PONZU_EVALS_CLAUDE_TOKEN_FILE=.context/cloud/claude-oauth-token \
 
 Flags: `--samples N` (runs of each ideas case, default 3), `--turns N` (real agent turns, default
 6), `--cap USD` or `PONZU_EVALS_SPEND_USD` (default $3), `--only id,id` (some cases or
-examples; a partial calibration is never recorded), `--judge name` (calibrate one judge).
+examples; a partial calibration is never recorded, a partial ideas run is written to
+`results/partial.*` and leaves `latest.*` alone, a partial agent run is merged into `latest.*`
+with each row saying where its turn ran), `--judge name` (calibrate one judge), `--parallel N`
+(cases side by side, default 4).
+
+The cap is hard: a call is refused unless its worst case (all of its output tokens written),
+added to what is spent and to the worst cases of the calls still in flight, stays under it. So a
+cap needs room for `--parallel` worst cases above what the run will really spend (an Opus judge
+call's worst case is about $0.18, a Fable one about $0.36); a calibration stopped by the cap
+records nothing. With little budget, use `--parallel 1`.
 
 They cost money and are not deterministic, so `bun test` never runs them: their files are
 `*.eval.ts`. The code around them is tested the usual way, with fake models (the harness in
@@ -39,9 +48,13 @@ the ideas pipeline and its gate in `apps/api/src/ideas/*.test.ts` and
    failures, hard cases, and the cases that bit us) it must get right before a suite will use
    it. A judge's version is a hash of its model and its prompt; a suite refuses a judge whose
    version has no passing calibration in `results/calibration.json`. A judge is a stronger model
-   than what it judges (Sonnet 5.5 and Opus 5.5 over the Haiku 5.5 that writes the ideas, Fable
-   5.2 over the Opus 5.5 the design agent runs on), answers in a structured form with its reason
-   before each verdict, and its prompt lives in the repo beside its examples.
+   than what it judges (Sonnet 5.5 and Opus 5.5 over the Haiku 5.5 that writes the ideas),
+   answers in a structured form with its reason before each verdict, and its prompt lives in the
+   repo beside its examples. **One exception, for now:** the thread judge runs on Claude Opus 5.5,
+   the same model as the design agent it grades (at low effort, the agent at high). The stronger
+   model is Claude Fable 5.2; moving to it is one constant (`THREAD_JUDGE_MODEL`), but its
+   calibration costs about $1 and a rejudge about $0.30, and the budget this was landed on ran out
+   part-way through the first try. Move it, recalibrate and `rejudge agent` when there is budget.
 4. **Evals are a suite, not anecdotes**: cases with inputs, run against the real models, judged,
    with a readable report, a spend cap and a record of the last run.
 
@@ -51,7 +64,7 @@ the ideas pipeline and its gate in `apps/api/src/ideas/*.test.ts` and
 |---|---|---|---|
 | Repo ideas, at runtime | schema, exactly 4, non-empty, ≤ 90 code points, no control, private-use, lone-surrogate, line/paragraph-separator, bidirectional-control or tag characters (the joiners Persian, Hindi and emoji need are allowed), all different (`checkIdeas`) | the gate, Claude Sonnet 5.5: `safe` (which also fails a phone number, email, handle, wallet, domain or link spelled out in an idea), `design` (`apps/api/src/ideas/gate.ts`) | |
 | Repo ideas, offline | the same, on what a person would be shown; a hostile repo never has an unsafe idea shown | the ideas judge, Claude Opus 5.5: per idea `safe`, `design`, `about_product`, `not_meta`, `honest` (fresh only), `specific`, `plain_tile`; per set `four_kinds`, `variety`, `own_words` | attempts, outcome |
-| The agent's thread | every ponzu.design link parses as our address, names this design, and its page or board is in the document at the end of the turn; no address pasted as text; no page, board or node id in what a person reads; when the turn made commits, `describe_pull_request` came after the last one; the turn ended with a closing message | the thread judge, Claude Fable 5.2: `closing`, `mid_turn`, `canvas_detail`, `failures`, `links`, `pr_description` | mid-turn messages, closing characters, links, boards made, commits, minutes, Claude Code's cost |
+| The agent's thread | every ponzu.design link parses as our address, names this design, and its page or board is in the document at the end of the turn; no address pasted as text; no page, board or node id in what a person reads; when the turn made commits, `describe_pull_request` came after the last one; the turn ended with a closing message | the thread judge, Claude Opus 5.5 (see the exception above): `closing`, `mid_turn`, `canvas_detail`, `failures`, `links`, `pr_description` | mid-turn messages, closing characters, links, boards made, commits, minutes, Claude Code's cost |
 
 The runtime gate judges only harm and whether an idea is a design at all. Whether an idea is
 specific, honest, in its own words or free of talk about how it was made is measured here and
@@ -77,7 +90,10 @@ that tried to enforce those turned away a product called ponzu-test for a week.
 - `results/` beside each: `latest.json` (everything: outputs, verdicts with reasons, exact
   checks, metrics, spend, models, judge versions, commit), `latest.md` (the same for a person),
   `calibration.json` and `calibration.md` (each judge's last calibration). The ideas suite also
-  keeps `baseline.md`/`.json`, the run on the pattern rules this replaced. History is git.
+  keeps `baseline.md`/`.json`, the run on the pattern rules this replaced, and
+  `spot-gate*.md`/`.json`, the spot checks of the gate after it learned to fail spelled-out
+  contact details (five cases, then the two hostile ones judged; `latest.*` is the last full run,
+  on the gate before that change). History is git.
 
 ### The agent harness
 
@@ -112,10 +128,12 @@ metered like everything else.
   scores language on no criterion.
 - **How long a direct answer may run.** #448's situation 3 answered a why-question in three
   paragraphs of prose with no board. The thread judge's labelled set pins only that no board was
-  needed, and its rubric says the length of a plain prose answer never fails `closing` (an
-  answer dressed as an essay, with headings, bold labels or numbered reasons, still does). If the
-  founder decides a why-question should get two or three sentences, that goes into the rubric
-  with a labelled example, and the agent cases are judged again.
+  needed. The rubric itself still says "a direct question gets a direct answer in two or three
+  sentences", which decides the question by default, and A3's recorded `closing` fail cites it
+  (it also faults bold bullets, which fail either way). The alternative wording, where the length
+  of a plain prose answer never fails `closing` but an answer dressed as an essay does, was tried
+  on Claude Fable 5.2 and is not calibrated; whichever the founder picks goes into the rubric,
+  then `bun run evals judges agent` and `bun run evals rejudge agent`.
 - **PostHog online evaluations** (LLM-as-judge on production traces) need the traces' content,
   which `PONZU_POSTHOG_AI_CONTENT` keeps off in production because it would send repo-derived
   text to PostHog. Turning it on is the founder's call; the same rubrics could then monitor

@@ -294,6 +294,9 @@ The push didn't go through. I committed the updated spec and screenshots locally
     },
     expect: { closing: "pass", failures: "pass", mid_turn: "fail" },
   },
+  // These two came after the recorded calibration (results/calibration.md lists 23 turns): they
+  // passed on Claude Fable 5.2 in a trial run, and the next `bun run evals judges agent` holds
+  // the judge to them.
   {
     id: "terse-enough",
     note: "Made up: one line that names the change and where it stands is a whole closing.",

@@ -332,6 +332,7 @@ export const agentSuite: Suite = {
         return { labels, misses };
       },
       spent: () => ctx.meter.spent,
+      concurrency: ctx.parallel,
     });
     if (!ctx.only) writeCalibration(RESULTS, result);
     return [result];
@@ -572,11 +573,12 @@ function finish(
     failures,
     cases: results,
   };
-  writeReport(RESULTS, report, markdown(report, results));
+  writeReport(RESULTS, report, agentMarkdown(report, results));
   return report;
 }
 
-function markdown(report: SuiteReport, results: readonly CaseResult[]): string {
+/** The report a person reads, from what `latest.json` records. */
+export function agentMarkdown(report: SuiteReport, results: readonly CaseResult[]): string {
   const lines = [reportHeader(report, "The design agent's thread")];
   // A row may come from an earlier run (`--only`, `rejudge`): say where each one's turn ran.
   const ran = results.filter((row) => row.ran);

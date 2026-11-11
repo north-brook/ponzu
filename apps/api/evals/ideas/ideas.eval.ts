@@ -112,6 +112,7 @@ export const ideasSuite: Suite = {
           return { labels, misses };
         },
         spent: () => ctx.meter.spent,
+        concurrency: ctx.parallel,
       });
       if (!ctx.only) writeCalibration(RESULTS, ideas);
       out.push(ideas);
@@ -140,6 +141,7 @@ export const ideasSuite: Suite = {
           return { labels, misses };
         },
         spent: () => ctx.meter.spent,
+        concurrency: ctx.parallel,
       });
       if (!ctx.only) writeCalibration(RESULTS, gated);
       out.push(gated);
@@ -162,7 +164,7 @@ export const ideasSuite: Suite = {
     );
     const notRun: string[] = [];
     ctx.log(`running ${jobs.length} generations (${cases.length} cases × ${ctx.samples})`);
-    const samples = await pool(jobs, 4, async ({ c, sample }): Promise<Sample> => {
+    const samples = await pool(jobs, ctx.parallel ?? 4, async ({ c, sample }): Promise<Sample> => {
       const row: Sample = { case: c.id, sample };
       try {
         try {
@@ -216,7 +218,8 @@ export const ideasSuite: Suite = {
       failures,
       cases: [{ pipeline: PIPELINE }, ...samples],
     };
-    writeReport(RESULTS, report, markdown(report, cases, samples));
+    // Some cases: kept apart from `latest`, which stays the record of the last full run.
+    writeReport(RESULTS, report, markdown(report, cases, samples), ctx.only ? "partial" : "latest");
     return report;
   },
 };

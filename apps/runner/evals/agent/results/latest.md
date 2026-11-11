@@ -1,7 +1,7 @@
 # The design agent's thread
 
 Run 2026-11-11T19:51:51.496Z at e615e839995c, 1 sample(s) a case.
-Spent $0.0225 of a $0.20 cap, and 1 of 1 agent turns.
+This run spent $0.0225 of a $0.20 cap, and 1 of 1 agent turns.
 Models: agent `claude-opus-5-5 (high), Claude Code via the Agent SDK`, judge `claude-opus-5-5`. Judges: thread `cfec7d6e92ed`.
 
 ## Pass rates
@@ -44,6 +44,21 @@ Models: agent `claude-opus-5-5 (high), Claude Code via the Agent SDK`, judge `cl
 ## Not run
 
 - A1, A2, A3, A4, A6 kept from the run of 2026-11-11T19:49:56.670Z; A5 ran again
+- A3's closing fail cites the rubric's "two or three sentences" for a direct question, the founder's open call; it also faults bold bullets, which fail either way (docs/evals.md, Calls left to the founder)
+- every row's turn ran at e615e839, before #448 and #451 merged into cloud: these numbers describe the agent's instructions before them
+
+## Where each row comes from
+
+6 agent turn(s) behind these rows, at e615e839995c. The header's spend and turns are this run's alone.
+
+| Case | Turn ran | At commit | Judged at commit |
+|---|---|---|---|
+| A1 | 2026-11-11T19:49:56.670Z | e615e839995c | e615e839995c |
+| A2 | 2026-11-11T19:49:56.670Z | e615e839995c | e615e839995c |
+| A3 | 2026-11-11T19:49:56.670Z | e615e839995c | e615e839995c |
+| A4 | 2026-11-11T19:49:56.670Z | e615e839995c | e615e839995c |
+| A5 | 2026-11-11T19:51:51.496Z | e615e839995c | e615e839995c |
+| A6 | 2026-11-11T19:49:56.670Z | e615e839995c | e615e839995c |
 
 ## Cases
 

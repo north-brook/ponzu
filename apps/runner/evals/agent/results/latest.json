@@ -71,7 +71,9 @@
     }
   },
   "notRun": [
-    "A1, A2, A3, A4, A6 kept from the run of 2026-11-11T19:49:56.670Z; A5 ran again"
+    "A1, A2, A3, A4, A6 kept from the run of 2026-11-11T19:49:56.670Z; A5 ran again",
+    "A3's closing fail cites the rubric's \"two or three sentences\" for a direct question, the founder's open call; it also faults bold bullets, which fail either way (docs/evals.md, Calls left to the founder)",
+    "every row's turn ran at e615e839, before #448 and #451 merged into cloud: these numbers describe the agent's instructions before them"
   ],
   "failures": [
     "A1 closing: The closing walks through every screen one by one, saying what each holds (1 Welcome, 2 Goal and 3 Experience, 4 Schedule, and so on). It also uses bolded heading-like labels. That is a recap, not a phrase giving the shape of the work.",

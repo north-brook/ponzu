@@ -25,6 +25,11 @@ export interface EvalContext {
   samples: number;
   /** Only these case ids, when given. */
   only: readonly string[] | null;
+  /**
+   * How many cases run side by side (`--parallel`, default 4). The meter holds each call's worst
+   * case while it is in flight, so a cap close to what a run will spend needs fewer at once.
+   */
+  parallel?: number;
   /** Calibrate only this judge, when given. */
   onlyJudge: string | null;
   /** The checkout's commit, for the record. */
@@ -77,10 +82,16 @@ export function gitCommit(): string | null {
   }
 }
 
-export function writeReport(dir: string, report: SuiteReport, markdown: string): void {
+/** Writes `<name>.json` and `<name>.md` (by default `latest`, the record of the last full run). */
+export function writeReport(
+  dir: string,
+  report: SuiteReport,
+  markdown: string,
+  name = "latest",
+): void {
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "latest.json"), `${JSON.stringify(report, null, 2)}\n`);
-  writeFileSync(join(dir, "latest.md"), markdown.endsWith("\n") ? markdown : `${markdown}\n`);
+  writeFileSync(join(dir, `${name}.json`), `${JSON.stringify(report, null, 2)}\n`);
+  writeFileSync(join(dir, `${name}.md`), markdown.endsWith("\n") ? markdown : `${markdown}\n`);
 }
 
 /** Adds one result of `criterion` to `rates`. A verdict of n/a adds nothing. */

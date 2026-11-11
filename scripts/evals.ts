@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /*
- * `bun run evals [judges|rejudge|ideas|agent|all] [suite…] [--samples N] [--turns N] [--cap USD] [--only id,id] [--judge name]`
+ * `bun run evals [judges|rejudge|ideas|agent|all] [suite…] [--samples N] [--turns N] [--cap USD] [--only id,id] [--judge name] [--parallel N]`
  *
  * Runs the AI evals against the real models (docs/evals.md). They cost money and are not
  * deterministic, so `bun test` never runs them.
@@ -63,6 +63,7 @@ const ctx: EvalContext = {
   judge: createJudge(models(JUDGE_MODEL), meter),
   samples: Number(flag("samples") ?? 3),
   only,
+  parallel: Math.max(1, Number(flag("parallel") ?? 4)),
   onlyJudge: flag("judge") ?? null,
   commit: gitCommit(),
   log: (line) => console.log(`  ${line}`),
@@ -109,7 +110,8 @@ async function runAll(suites: Suite[]) {
     for (const [criterion, rate] of Object.entries(report.rates))
       console.log(`${criterion}: ${percent(rate)}`);
     for (const line of report.notRun) console.log(`not run: ${line}`);
-    console.log(`→ ${join(suite.resultsDir, "latest.md")}`);
+    const written = only && suite.name === "ideas" ? "partial.md" : "latest.md";
+    console.log(`→ ${join(suite.resultsDir, written)}`);
   }
 }
 
