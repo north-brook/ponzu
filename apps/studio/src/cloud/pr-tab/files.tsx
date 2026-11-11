@@ -1,6 +1,14 @@
 import { ArrowDown01Icon, ArrowRight01Icon } from "@hugeicons/core-free-icons";
-import { type CSSProperties, type ReactNode, useMemo, useState } from "react";
-import type { PrFile } from "../model.ts";
+import {
+  type CSSProperties,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { PrDiff, PrFile } from "../model.ts";
 import { Button } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
 import { Icon } from "../ui/icon.tsx";
@@ -23,12 +31,15 @@ export function Files({
   deletions,
   url,
   onOpenLink,
+  onLoadDiff,
 }: {
   files: PrFile[];
   additions: number;
   deletions: number;
   url: string;
   onOpenLink: (url: string) => void;
+  /** Fetches a file's diff the tab wasn't sent. */
+  onLoadDiff?: (path: string) => Promise<PrDiff>;
 }) {
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   const toggle = (path: string) =>
@@ -49,6 +60,7 @@ export function Files({
           file={file}
           open={open.has(file.path)}
           onToggle={() => toggle(file.path)}
+          onLoadDiff={onLoadDiff}
           onOpenOnGithub={() => onOpenLink(`${url}/files`)}
         />
       ))}
@@ -60,11 +72,13 @@ function FileCard({
   file,
   open,
   onToggle,
+  onLoadDiff,
   onOpenOnGithub,
 }: {
   file: PrFile;
   open: boolean;
   onToggle: () => void;
+  onLoadDiff: ((path: string) => Promise<PrDiff>) | undefined;
   onOpenOnGithub: () => void;
 }) {
   const id = `file-${file.path}`;
@@ -96,28 +110,30 @@ function FileCard({
       </button>
       {open ? (
         <div id={id} className="border-rule border-t">
-          <FileBody file={file} onOpenOnGithub={onOpenOnGithub} />
+          <FileBody file={file} onLoadDiff={onLoadDiff} onOpenOnGithub={onOpenOnGithub} />
         </div>
       ) : null}
     </div>
   );
 }
 
-/** A file's diff, or why it isn't shown: binary, too large for GitHub, or large enough to ask. */
-function FileBody({ file, onOpenOnGithub }: { file: PrFile; onOpenOnGithub: () => void }) {
+/**
+ * A file's diff, or why it isn't shown: large enough to ask first, binary, or too large for
+ * GitHub. A diff the tab wasn't sent is asked for here, the first time the card opens.
+ */
+function FileBody({
+  file,
+  onLoadDiff,
+  onOpenOnGithub,
+}: {
+  file: PrFile;
+  onLoadDiff?: (path: string) => Promise<PrDiff>;
+  onOpenOnGithub: () => void;
+}) {
   const [forced, setForced] = useState(false);
-  if (file.binary) return <Quiet>Binary file, not shown.</Quiet>;
-  if (file.patch === null) {
-    return (
-      <Quiet>
-        GitHub doesn't show a diff this large.
-        <Button variant="quiet" onClick={onOpenOnGithub} className="-my-1 px-2 text-ink">
-          Open on GitHub
-        </Button>
-      </Quiet>
-    );
-  }
-  if (isLarge(file) && !forced) {
+  const large = isLarge(file) && !forced;
+  const diff = useDiff(file, large ? undefined : onLoadDiff);
+  if (large) {
     return (
       <Quiet>
         {(file.additions + file.deletions).toLocaleString("en-US")} changed lines.
@@ -127,7 +143,75 @@ function FileBody({ file, onOpenOnGithub }: { file: PrFile; onOpenOnGithub: () =
       </Quiet>
     );
   }
-  return <Diff patch={file.patch} />;
+  if (diff.status === "loading") return <DiffSkeleton />;
+  if (diff.status === "failed") {
+    return (
+      <Quiet>
+        <span role="alert">Couldn't load this diff.</span>
+        <Button variant="quiet" onClick={diff.retry} className="-my-1 px-2 text-ink">
+          Try again
+        </Button>
+      </Quiet>
+    );
+  }
+  switch (diff.diff.kind) {
+    case "binary":
+      return <Quiet>Binary file, not shown.</Quiet>;
+    case "too_large":
+      return (
+        <Quiet>
+          GitHub doesn't show a diff this large.
+          <Button variant="quiet" onClick={onOpenOnGithub} className="-my-1 px-2 text-ink">
+            Open on GitHub
+          </Button>
+        </Quiet>
+      );
+    case "text":
+      return <Diff patch={diff.diff.patch} />;
+  }
+}
+
+type DiffState =
+  | { status: "loading" }
+  | { status: "failed"; retry: () => void }
+  | { status: "ready"; diff: PrDiff };
+
+/** The file's diff as it came, or as `load` brings it; asked for once each time it is retried. */
+function useDiff(file: PrFile, load: ((path: string) => Promise<PrDiff>) | undefined): DiffState {
+  const [fetched, setFetched] = useState<PrDiff | "failed" | null>(null);
+  const { path, diff } = file;
+  /** Only the latest ask's answer is taken. */
+  const latest = useRef(0);
+  const ask = useCallback(() => {
+    if (!load) return;
+    const mine = ++latest.current;
+    setFetched(null);
+    load(path).then(
+      (answer) => latest.current === mine && setFetched(answer),
+      () => latest.current === mine && setFetched("failed"),
+    );
+  }, [load, path]);
+  useEffect(() => {
+    if (!diff) ask();
+  }, [diff, ask]);
+  if (diff) return { status: "ready", diff };
+  if (fetched === "failed") return { status: "failed", retry: ask };
+  return fetched ? { status: "ready", diff: fetched } : { status: "loading" };
+}
+
+/** A diff on its way: a few lines breathing. */
+function DiffSkeleton() {
+  return (
+    <div role="status" aria-label="Loading the diff" className="flex flex-col gap-1.5 px-3 py-2.5">
+      {[72, 56, 64].map((width, i) => (
+        <span
+          key={width}
+          className="breathe h-3 rounded-3 bg-hover"
+          style={{ width: `${width}%`, animationDelay: `${i * 120}ms` }}
+        />
+      ))}
+    </div>
+  );
 }
 
 function Quiet({ children }: { children: ReactNode }) {

@@ -13,8 +13,8 @@ import type { AgentActivity, OlderItems, ThreadItem } from "../model.ts";
 import { Icon } from "../ui/icon.tsx";
 import { SCROLL_FADE } from "../ui/scroll-area.tsx";
 import { atFoot, FOLLOWING, follow, type ScrollMetrics } from "./follow.ts";
-import { type LineHandlers, ThreadLine, WorkingLine } from "./lines.tsx";
-import { threadRows, workingLine } from "./thread.ts";
+import { type LineHandlers, SandboxLine, ThreadLine, WorkingLine } from "./lines.tsx";
+import { sandboxLine, threadRows, workingLine } from "./thread.ts";
 
 /** Rows drawn at first, and how many more each time the person reads up past them. */
 const WINDOW = 80;
@@ -56,7 +56,8 @@ export function ThreadView({
   following.current = state.following;
 
   const rows = useMemo(() => threadRows(items), [items]);
-  const working = workingLine(items, agent);
+  const waiting = sandboxLine(agent);
+  const working = waiting ? null : workingLine(items, agent);
 
   // The window: from `firstId` to the end. Null, while following, is the newest WINDOW rows.
   const [firstId, setFirstId] = useState<string | null>(null);
@@ -219,6 +220,7 @@ export function ThreadView({
             <ThreadLine key={row.item.id} {...row} meId={meId} handlers={handlers} />
           ))}
           {working ? <WorkingLine label={working} /> : null}
+          {waiting ? <SandboxLine {...waiting} /> : null}
         </div>
       </div>
       {!state.following && state.unseen > 0 ? (

@@ -21,6 +21,10 @@ export interface LineHandlers {
   onOpenArtboards: (artboardIds: string[]) => void;
   onOpenPullRequest: () => void;
   onOpenLink: (url: string) => void;
+  /** Sends a message that didn't arrive again. */
+  onRetryMessage?: (id: string) => void;
+  /** Takes a message that didn't arrive back into the composer. */
+  onEditMessage?: (id: string) => void;
 }
 
 /**
@@ -79,6 +83,7 @@ function PersonLine({
   handlers: LineHandlers;
 }) {
   const { from, text } = item.payload;
+  const delivery = item.kind === "message" ? item.payload.delivery : undefined;
   const above =
     item.kind === "message" ? (
       item.payload.attachments.length ? (
@@ -109,7 +114,11 @@ function PersonLine({
       <div className={cn("relative", team ? "max-w-[260px]" : "max-w-[280px]")}>
         <p
           dir="auto"
-          className="m-0 whitespace-pre-wrap rounded-14 bg-surface px-[13px] py-[9px] text-13 leading-[1.5] [overflow-wrap:anywhere]"
+          aria-busy={delivery === "sending" || undefined}
+          className={cn(
+            "m-0 whitespace-pre-wrap rounded-14 bg-surface px-[13px] py-[9px] text-13 leading-[1.5] transition-opacity duration-(--dur-hover) [overflow-wrap:anywhere]",
+            delivery && "opacity-60",
+          )}
         >
           <span className="sr-only">
             {who(from, meId)}
@@ -119,6 +128,29 @@ function PersonLine({
         </p>
         {avatar ? <Stamp person={from} /> : null}
       </div>
+      {delivery === "failed" ? <Undelivered id={item.id} handlers={handlers} /> : null}
+    </div>
+  );
+}
+
+/** Under a message that didn't arrive: say so, and send it again or take it back to edit. */
+function Undelivered({ id, handlers }: { id: string; handlers: LineHandlers }) {
+  const action =
+    "cursor-default rounded-4 px-1 font-medium text-ink outline-none focus-ring hover:underline";
+  return (
+    <div role="alert" className="flex items-center gap-1.5 text-12 text-faint leading-[1.4]">
+      <Icon icon={Alert02Icon} size={12} stroke={2} className="text-danger" />
+      <span>Didn't send.</span>
+      {handlers.onRetryMessage ? (
+        <button type="button" onClick={() => handlers.onRetryMessage?.(id)} className={action}>
+          Try again
+        </button>
+      ) : null}
+      {handlers.onEditMessage ? (
+        <button type="button" onClick={() => handlers.onEditMessage?.(id)} className={action}>
+          Edit
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -315,6 +347,26 @@ function NoticeLine({
     default:
       return null;
   }
+}
+
+/**
+ * The thread's newest line while the design's sandbox can't run: a quiet still slice while it
+ * waits its turn for a machine, or the error mark when starting one failed.
+ */
+export function SandboxLine({ text, failed }: { text: string; failed: boolean }) {
+  return (
+    <div
+      role="status"
+      className="flex min-w-0 items-start gap-2 px-[2px] text-12 text-faint leading-[1.4]"
+    >
+      {failed ? (
+        <Icon icon={Alert02Icon} size={13} stroke={1.9} className="mt-[1px] text-danger" />
+      ) : (
+        <Slice size={13} className="mt-[1px] text-dry" />
+      )}
+      <span>{text}</span>
+    </div>
+  );
 }
 
 /** The thread's newest line while the agent works: the turning slice and what it's doing. */

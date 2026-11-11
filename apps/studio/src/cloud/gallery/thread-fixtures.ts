@@ -320,8 +320,7 @@ export const pullRequest: PullRequestDetail = {
       status: "modified",
       additions: 96,
       deletions: 21,
-      patch: HERO_PATCH,
-      binary: false,
+      diff: { kind: "text", patch: HERO_PATCH },
     },
     {
       path: "src/components/hero.tsx",
@@ -329,8 +328,7 @@ export const pullRequest: PullRequestDetail = {
       status: "modified",
       additions: 74,
       deletions: 12,
-      patch: HERO_PATCH,
-      binary: false,
+      diff: { kind: "text", patch: HERO_PATCH },
     },
     {
       path: "src/styles/tokens.css",
@@ -338,8 +336,10 @@ export const pullRequest: PullRequestDetail = {
       status: "modified",
       additions: 18,
       deletions: 3,
-      patch: "@@ -1,3 +1,4 @@\n :root {\n+  --hero-measure: 38ch;\n   --ink: #111110;\n }",
-      binary: false,
+      diff: {
+        kind: "text",
+        patch: "@@ -1,3 +1,4 @@\n :root {\n+  --hero-measure: 38ch;\n   --ink: #111110;\n }",
+      },
     },
     {
       path: "src/components/hero-photo.tsx",
@@ -347,8 +347,7 @@ export const pullRequest: PullRequestDetail = {
       status: "modified",
       additions: 26,
       deletions: 2,
-      patch: HERO_PATCH,
-      binary: false,
+      diff: { kind: "text", patch: HERO_PATCH },
     },
   ],
 };
@@ -381,8 +380,7 @@ export const busyPullRequest: PullRequestDetail = {
       status: "added",
       additions: 0,
       deletions: 0,
-      patch: null,
-      binary: true,
+      diff: { kind: "binary" },
     },
     {
       path: "src/generated/schema.ts",
@@ -390,8 +388,7 @@ export const busyPullRequest: PullRequestDetail = {
       status: "modified",
       additions: 1840,
       deletions: 922,
-      patch: null,
-      binary: false,
+      diff: { kind: "too_large" },
     },
     {
       path: "src/components/hero-copy.tsx",
@@ -399,8 +396,7 @@ export const busyPullRequest: PullRequestDetail = {
       status: "renamed",
       additions: 512,
       deletions: 3,
-      patch: HERO_PATCH,
-      binary: false,
+      diff: { kind: "text", patch: HERO_PATCH },
     },
   ],
 };

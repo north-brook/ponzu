@@ -12,6 +12,7 @@ import type {
   CheckRun,
   GithubAuthor,
   PrComment,
+  PrDiff,
   PrReview,
   PrState,
   PullRequestDetail,
@@ -52,11 +53,14 @@ export function PullRequestView({
   viewerLogin,
   onOpenLink: open,
   onRetry,
+  onLoadDiff,
 }: {
   state: PullRequestTabState;
   viewerLogin: string;
   onOpenLink: (url: string) => void;
   onRetry: () => void;
+  /** Fetches a file's diff when its card first opens. */
+  onLoadDiff?: (path: string) => Promise<PrDiff>;
 }) {
   // GitHub's addresses (a check's page, a link in a comment) leave the app only to the web.
   const onOpenLink = (url: string) => {
@@ -154,6 +158,7 @@ export function PullRequestView({
           deletions={pr.deletions}
           url={pr.url}
           onOpenLink={onOpenLink}
+          onLoadDiff={onLoadDiff}
         />
       </div>
     </div>

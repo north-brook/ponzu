@@ -88,9 +88,10 @@ export interface CanvasProps {
   initialFit?: "page" | "first";
   /**
    * Where a link opens: an artboard, its page showing with the board framed, or a page. With
-   * both, the page wins when the board isn't on it (@ponzu/core's linkTarget).
+   * both, the page wins when the board isn't on it (@ponzu/core's linkTarget). A link is
+   * followed once; a new `at` follows the same one again (a comment's board, clicked twice).
    */
-  link?: { page?: string; artboard?: string };
+  link?: { page?: string; artboard?: string; at?: number };
   className?: string;
 }
 
@@ -459,14 +460,14 @@ export function Canvas({
     const to = linkTarget(doc, link);
     const ab = to?.artboardId ? findArtboard(doc, to.artboardId)?.artboard : undefined;
     const sized = !!ab && (size(ab).h !== null || measured[ab.id] !== undefined);
-    const key = `${link.page}:${link.artboard}`;
+    const key = `${link.page}:${link.artboard}:${link.at ?? ""}`;
     const shown = shownLink.current;
     if (shown?.key === key && (shown.sized || !sized)) return;
     shownLink.current = { key, sized };
     if (to && ab) showBoard(to.pageId, ab);
     else if (to && to.pageId !== page?.id) setPageId(to.pageId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [link?.page, link?.artboard, doc, measured]);
+  }, [link?.page, link?.artboard, link?.at, doc, measured]);
 
   // Follow an agent to the boards it makes, until the person moves the camera themselves: then
   // it's theirs, and an agent's new board doesn't pull them off the one they're on. Each file

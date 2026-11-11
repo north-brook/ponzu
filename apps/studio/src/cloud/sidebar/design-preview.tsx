@@ -22,9 +22,15 @@ export function DesignPreviewImage({
     >
       {preview ? (
         <img
+          // A new picture gets a fresh element: one that failed to load doesn't hide the next.
+          key={preview[scheme]}
           src={preview[scheme]}
           alt=""
           draggable={false}
+          // Not drawn yet, or gone: the empty tile, never a broken picture.
+          onError={(e) => {
+            e.currentTarget.hidden = true;
+          }}
           className="block size-full object-cover object-top"
         />
       ) : null}

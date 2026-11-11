@@ -67,6 +67,26 @@ export function workingLine(items: ThreadItem[], agent: AgentActivity): string |
   return agent.status ?? "Working…";
 }
 
+/**
+ * What the thread's foot says while the design's sandbox can't run, in place of the working
+ * line: a quiet wait for a machine, or a start that failed. Messages are kept either way.
+ */
+export function sandboxLine(agent: AgentActivity): { text: string; failed: boolean } | null {
+  if (agent.sandbox === "busy") {
+    return {
+      text: "Waiting for a free machine. Your messages go in as soon as one starts.",
+      failed: false,
+    };
+  }
+  if (agent.sandbox === "failed") {
+    return {
+      text: "Ponzu couldn't start a machine for this design. Send a message to try again.",
+      failed: true,
+    };
+  }
+  return null;
+}
+
 /** What each way a turn can fail means to a person, in a sentence. */
 export const ERROR_COPY: Record<RunErrorCode, string> = {
   clone_failed:

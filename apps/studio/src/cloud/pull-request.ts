@@ -1,7 +1,12 @@
 import { gateMessage } from "./gate.ts";
 import type { PullRequestSummary, SteerGate } from "./model.ts";
 
-/** The one thing the chrome's dark button offers, from the pull request's state. */
+/**
+ * The one thing the chrome's dark button offers, from the pull request's state. The API names
+ * two the pull request's summary can't: `update_branch`, when the repo's rules hold it back for
+ * being behind, and `blocked`, when they want something (a review, a required check) and the
+ * repo has no auto-merge, so a merge goes past them only if the person says so.
+ */
 export type NextAction =
   | "create_pr"
   | "ready"
@@ -9,7 +14,9 @@ export type NextAction =
   | "fix_checks"
   | "auto_merge"
   | "auto_merge_on"
-  | "merge";
+  | "update_branch"
+  | "merge"
+  | "blocked";
 
 /**
  * The next best action. A draft is made ready before anything else; conflicts are resolved
