@@ -146,6 +146,16 @@ export {
   type WorkspaceRepoAccess,
   WRITABLE_PERMISSIONS,
 } from "./queries/repo-access.ts";
+export {
+  claimRepoIdeas,
+  getRepoIdeasAccess,
+  type IdeasClaim,
+  type IdeasPolicy,
+  type RepoIdeasAccess,
+  type RepoIdeasRow,
+  releaseRepoIdeas,
+  saveRepoIdeas,
+} from "./queries/repo-ideas.ts";
 export { QueryError } from "./queries/run.ts";
 export {
   createRunnerToken,
