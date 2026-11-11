@@ -49,8 +49,11 @@ export function DesignRail({
   /** Shows these boards on the canvas. */
   onOpenArtboards: (artboardIds: string[]) => void;
   onOpenPullRequest: () => void;
-  /** Connects the viewer's own Claude, when the design waits on it; absent until it can. */
-  onConnectClaude?: () => void;
+  /**
+   * Connects the viewer's own Claude, when the design waits on it; absent until it can. Says
+   * whether its sign-in ran out, so the dialog puts it as the strip did.
+   */
+  onConnectClaude?: (expired: boolean) => void;
   /** Says over the window what didn't happen. */
   say: (notice: string) => void;
 }) {
@@ -60,7 +63,17 @@ export function DesignRail({
   const state = useSourceState(open.source);
   const access = useAccess(open);
   const thread = useSnapshot(open.thread);
-  const asks = useSnapshot(open.asks);
+  const asked = useSnapshot(open.asks);
+  // Who answered, as the member they are: with their picture, when the workspace has them.
+  const asks = useMemo(
+    () =>
+      asked.map((ask) =>
+        ask.answeredBy
+          ? { ...ask, answeredBy: people.get(ask.answeredBy.id) ?? ask.answeredBy }
+          : ask,
+      ),
+    [asked, people],
+  );
   const attachments = useSnapshot(open.uploads);
   const head = useLiveQuery("design.head", { designId }).rows?.[0];
   const meRow = useLiveQuery("me", {}).rows?.[0];
@@ -139,7 +152,9 @@ export function DesignRail({
       onTouchAsk={(id) => open.asks.touch(id)}
       onRetryMessage={(id) => open.thread.retry(id)}
       onEditMessage={(id) => open.thread.discard(id)}
-      {...(onConnectClaude ? { onConnectClaude } : {})}
+      {...(onConnectClaude
+        ? { onConnectClaude: () => onConnectClaude(gate?.kind === "claude_expired") }
+        : {})}
       renderBoard={(artboardId) => (
         <BoardMiniature doc={doc} artboardId={artboardId} assetBase={assetBase} theme={theme} />
       )}

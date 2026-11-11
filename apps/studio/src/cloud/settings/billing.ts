@@ -26,6 +26,16 @@ export interface Usage {
   /** When the period ends: the bill, or before a card, the free credits renewing. */
   periodEnd: string;
   card: Card | null;
+  /**
+   * Ponzu can't bill yet (the API's billing is `not_set_up`): what passes the free credits is
+   * counted, and the cap stored, but nothing is charged, so nothing reads as billed.
+   */
+  notBilled?: boolean;
+}
+
+/** What the use past the free credits is called: billed, or before billing exists, past free. */
+export function pastFreeWord(usage: Usage): string {
+  return usage.notBilled ? "past free" : "billed";
 }
 
 /** One person's share of a team's use this period: gross, before the pooled free credits. */
@@ -56,7 +66,8 @@ export function longDate(at: string): string {
 
 /**
  * The line under the total: what was used, in credits, and when the period ends. A team names
- * itself and its people; before a card the period "resets" rather than "bills".
+ * itself and its people; before a card the period "resets" rather than "bills". While Ponzu
+ * can't bill, use past the free credits says it isn't billed yet.
  */
 export function usageLine(usage: Usage, team?: { name: string; people: number }): string {
   const credits = Math.floor(usage.usedCredits).toLocaleString("en-US");
@@ -64,7 +75,10 @@ export function usageLine(usage: Usage, team?: { name: string; people: number })
     usage.usedCredits <= usage.freeCredits
       ? "all free"
       : `${usage.freeCredits.toLocaleString("en-US")} of them free`;
-  const end = `${usage.card ? "bills" : "resets"} ${longDate(usage.periodEnd)}`;
+  const end =
+    usage.notBilled && billedCredits(usage) > 0
+      ? "not billed yet"
+      : `${usage.card ? "bills" : "resets"} ${longDate(usage.periodEnd)}`;
   if (team) {
     const people = `${team.people} ${team.people === 1 ? "person" : "people"}`;
     return `this month for ${team.name} · ${people} · ${credits} credits · ${end}`;
@@ -97,6 +111,8 @@ export function atCap(usage: Usage): boolean {
 export function parseCap(
   typed: string,
   billed: number,
+  /** What the use past the free credits is called: "billed", or "used past free" before billing. */
+  word = "billed",
 ): { ok: true; usd: number } | { ok: false; error: string } {
   const text = typed.trim().replace(/^\$/, "").replaceAll(",", "");
   if (!text) return { ok: false, error: "Enter an amount" };
@@ -106,7 +122,7 @@ export function parseCap(
   if (usd < least) {
     return {
       ok: false,
-      error: billed > 0 ? `At least ${money(least, true)}, billed so far` : "At least $1",
+      error: billed > 0 ? `At least ${money(least, true)}, ${word} so far` : "At least $1",
     };
   }
   return { ok: true, usd };

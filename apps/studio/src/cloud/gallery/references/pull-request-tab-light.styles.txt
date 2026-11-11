@@ -154,11 +154,15 @@ text "−38" rgb(180, 69, 58) 400 12px IBM Plex Mono
 ground div[Files changed] rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.06) 0px 0px 0px 0.5px
 icon svg[Files changed] 12×12 rgb(128, 124, 115) stroke 2.2px
 text "src/app/(shop)/page.tsx" rgb(17, 17, 16) 400 13px IBM Plex Mono
+text "src/app/(shop)/" rgb(17, 17, 16) 400 13px IBM Plex Mono
+text "page.tsx" rgb(17, 17, 16) 400 13px IBM Plex Mono
 text "+96" rgb(63, 138, 74) 400 12px IBM Plex Mono
 text "−21" rgb(180, 69, 58) 400 12px IBM Plex Mono
 ground div[Files changed] rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.06) 0px 0px 0px 0.5px
 icon svg[Files changed] 12×12 rgb(128, 124, 115) stroke 2.2px
 text "src/components/hero.tsx" rgb(17, 17, 16) 400 13px IBM Plex Mono
+text "src/components/" rgb(17, 17, 16) 400 13px IBM Plex Mono
+text "hero.tsx" rgb(17, 17, 16) 400 13px IBM Plex Mono
 text "+74" rgb(63, 138, 74) 400 12px IBM Plex Mono
 text "−12" rgb(180, 69, 58) 400 12px IBM Plex Mono
 text "13" rgb(169, 165, 155) 400 12px IBM Plex Mono
@@ -195,10 +199,14 @@ text ");" rgb(17, 17, 16) 400 12px IBM Plex Mono
 ground div[Files changed] rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.06) 0px 0px 0px 0.5px
 icon svg[Files changed] 12×12 rgb(128, 124, 115) stroke 2.2px
 text "src/styles/tokens.css" rgb(17, 17, 16) 400 13px IBM Plex Mono
+text "src/styles/" rgb(17, 17, 16) 400 13px IBM Plex Mono
+text "tokens.css" rgb(17, 17, 16) 400 13px IBM Plex Mono
 text "+18" rgb(63, 138, 74) 400 12px IBM Plex Mono
 text "−3" rgb(180, 69, 58) 400 12px IBM Plex Mono
 ground div[Files changed] rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.06) 0px 0px 0px 0.5px
 icon svg[Files changed] 12×12 rgb(128, 124, 115) stroke 2.2px
 text "src/components/hero-photo.tsx" rgb(17, 17, 16) 400 13px IBM Plex Mono
+text "src/components/" rgb(17, 17, 16) 400 13px IBM Plex Mono
+text "hero-photo.tsx" rgb(17, 17, 16) 400 13px IBM Plex Mono
 text "+26" rgb(63, 138, 74) 400 12px IBM Plex Mono
 text "−2" rgb(180, 69, 58) 400 12px IBM Plex Mono

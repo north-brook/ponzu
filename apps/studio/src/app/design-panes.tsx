@@ -55,7 +55,8 @@ export function useDesignPanes({
   say: (notice: string) => void;
   /** Leave it: back to the create page. */
   onClose: () => void;
-  onConnectClaude?: () => void;
+  /** Its sign-in ran out (`expired`), or it isn't connected. */
+  onConnectClaude?: (expired: boolean) => void;
 }): DesignPanes | null {
   // Each is the open design's own: another design opens on its canvas, where its own link or
   // the person left it, never on the last one's tab or board.

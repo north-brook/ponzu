@@ -254,7 +254,9 @@ function WorkspaceWindow({
   const openSettings = useCallback(() => showSettings(true, "account"), [showSettings]);
   const openPlan = useCallback(() => showSettings(true, "plan"), [showSettings]);
   const [gettingIphone, setGettingIphone] = useState(false);
+  // Kept apart from whether it is open, so the dialog's words hold as it closes.
   const [connectingClaude, setConnectingClaude] = useState(false);
+  const [claudeExpired, setClaudeExpired] = useState(false);
   const [deleting, setDeleting] = useState<{ design: DesignSummary; busy: boolean } | null>(null);
   const assetsUrls = useAssetsUrls(host.api, live.rows ?? null);
   const activeIds = useMemo(
@@ -391,7 +393,10 @@ function WorkspaceWindow({
     say,
     onClose: () => openDesign(null),
     // The design waits on the viewer's own Claude: the guided setup's card, in a dialog.
-    onConnectClaude: () => setConnectingClaude(true),
+    onConnectClaude: (expired) => {
+      setClaudeExpired(expired);
+      setConnectingClaude(true);
+    },
   });
 
   return (
@@ -492,6 +497,7 @@ function WorkspaceWindow({
       <ConnectClaudeDialog
         host={host}
         open={connectingClaude}
+        expired={claudeExpired}
         onClose={() => setConnectingClaude(false)}
       />
       {notice ? <Banner>{notice}</Banner> : null}

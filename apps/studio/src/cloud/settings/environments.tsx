@@ -148,9 +148,7 @@ function RepoEnvironmentRow({
               </span>
             ))}
             {base.status === "none" ? (
-              <span className="text-12 text-faint">
-                Claude sets it up the first time you design here.
-              </span>
+              <span className="text-12 text-faint">Ponzu sets it up as a design here starts.</span>
             ) : null}
             <span className="flex-1" />
             {base.status !== "none" && canRebuild(repo) ? (

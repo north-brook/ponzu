@@ -121,6 +121,7 @@ export function toUsage(usage: ApiUsage): Usage {
     capUsd: usage.cap.usd,
     periodEnd: String(usage.period.end),
     card: null,
+    notBilled: usage.billing.status === "not_set_up",
   };
 }
 

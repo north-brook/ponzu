@@ -25,6 +25,7 @@ import {
   CHOICES,
   choose,
   type Draft,
+  draftOf,
   EMPTY_DRAFT,
   type Page,
   pagesOf,
@@ -80,7 +81,9 @@ export function NeedsYou({
   }, [current]);
 
   if (!page) return null;
-  const draft = drafts[keyOf(page)] ?? EMPTY_DRAFT;
+  // Once someone else's answer has won, theirs is what shows as chosen, not the viewer's.
+  const given = page.ask.status === "answered" && page.ask.given ? page.ask.given : null;
+  const draft = given ? draftOf(page, given) : (drafts[keyOf(page)] ?? EMPTY_DRAFT);
   const setDraft = (next: Draft) => {
     setDrafts((d) => ({ ...d, [keyOf(page)]: next }));
     onTouch?.(page.ask.id);
@@ -151,7 +154,13 @@ export function NeedsYou({
         />
       </div>
       {closed ? (
-        <Resolved status={ask.status} by={ask.answeredBy} meId={meId}>
+        <Resolved
+          status={ask.status}
+          by={ask.answeredBy}
+          meId={meId}
+          // What they said in their own words, beside what they chose.
+          words={given ? draft.note.trim() || null : null}
+        >
           <Button
             variant="quiet"
             onClick={() => onDismiss(ask.id)}
@@ -490,11 +499,14 @@ function Resolved({
   status,
   by,
   meId,
+  words,
   children,
 }: {
   status: Ask["status"];
   by: Person | null;
   meId: string;
+  /** The winning answer's note, in the answerer's words. */
+  words: string | null;
   children: ReactNode;
 }) {
   const said =
@@ -507,8 +519,9 @@ function Resolved({
           : "Answered.";
   return (
     <div className="flex items-center gap-2 rounded-14 bg-surface py-2 pr-2 pl-3.5 shadow-note-field">
-      <span role="status" className="min-w-0 flex-1 py-1 text-13 text-muted leading-5">
+      <span role="status" className="min-w-0 flex-1 truncate py-1 text-13 text-muted leading-5">
         {said}
+        {words ? <span className="text-ink"> “{words}”</span> : null}
       </span>
       {children}
     </div>

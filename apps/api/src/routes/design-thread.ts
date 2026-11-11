@@ -74,6 +74,17 @@ const QuestionView = z.object({
   id: z.string(),
   status: z.enum(["open", "answered", "cancelled"]),
 });
+/** A question as it stands: once answered, the answer that won and who gave it. */
+const StandingQuestionView = QuestionView.extend({
+  answer: z
+    .object({
+      answers: z.record(z.string(), z.string()).optional(),
+      approved: z.boolean().optional(),
+      note: z.string().optional(),
+    })
+    .nullable(),
+  answeredBy: z.object({ id: z.string(), name: z.string(), login: z.string() }).nullable(),
+});
 const UploadView = z.object({
   files: z.array(
     z.object({
@@ -204,6 +215,31 @@ export const designThread = new Hono<AppEnv>()
       return c.json(QuestionView.parse(answered));
     },
   )
+
+  /**
+   * One of the agent's questions as it stands. Once answered, the answer that won and who gave
+   * it, so someone who was answering it too sees what was chosen and by whom. A secret's value is
+   * never kept with its question, so a secret has no answer here.
+   */
+  .get("/:id/questions/:questionId", access.user, validate("param", QuestionParams), async (c) => {
+    const { deps } = c.var;
+    const { id, questionId } = c.req.valid("param");
+    const { design } = await requireDesign(c, id, "read");
+    const question = await getQuestion(deps.db, { designId: design.id, id: questionId });
+    if (!question) throw new ApiError(404, "not_found", "There is no such question.");
+    const answered = question.status === "answered";
+    const userId = answered ? question.answeredByUserId : null;
+    const user = userId ? await getUser(deps.db, userId) : null;
+    const given = answered && question.kind !== "secret" ? question.answer : null;
+    return c.json(
+      StandingQuestionView.parse({
+        id: question.id,
+        status: question.status,
+        answer: given && typeof given === "object" && !Array.isArray(given) ? given : null,
+        answeredBy: user ? personFor(user) : null,
+      }),
+    );
+  })
 
   /** Stops the agent's turn, and whatever was put in behind it. */
   .post("/:id/stop", access.user, validate("param", Params), async (c) => {

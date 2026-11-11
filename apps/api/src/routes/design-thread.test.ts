@@ -218,6 +218,32 @@ describe("answers", () => {
     expect(await feedOf(t.db, design.id)).toEqual([]);
   });
 
+  test("a question as it stands: open, then the answer that won and who gave it, to anyone who may read", async () => {
+    const { design, runner } = await sample();
+    const id = await raise(runner, { kind: "question", payload: { questions: [HEADLINE] } });
+    const read = (login: string) =>
+      call(t, as(login), "GET", `/v1/designs/${design.id}/questions/${id}`);
+
+    const open = await read("ines");
+    await answer("maya", design.id, id, { answers: { "Which way?": "Let it wrap" } });
+    const answered = await read("ines");
+    const stranger = await read("omar");
+    const none = await call(t, as("maya"), "GET", `/v1/designs/${design.id}/questions/q_none`);
+
+    expect([open.status, open.body]).toEqual([
+      200,
+      { id, status: "open", answer: null, answeredBy: null },
+    ]);
+    expect(answered.body).toEqual({
+      id,
+      status: "answered",
+      answer: { answers: { "Which way?": "Let it wrap" } },
+      answeredBy: { id: ws.people.maya!.userId, name: expect.any(String), login: "maya" },
+    });
+    expect(stranger.status).toBe(404);
+    expect(none.status).toBe(404);
+  });
+
   test("an answer to several questions answers every one of them, and no others", async () => {
     const { design, runner } = await sample();
     const size = { ...HEADLINE, header: "Size", question: "How big?" };

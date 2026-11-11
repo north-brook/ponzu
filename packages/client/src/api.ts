@@ -178,6 +178,14 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
             json: body,
           })
         ).json(),
+      /**
+       * One of the agent's questions as it stands: once answered, the answer that won and who
+       * gave it. `design.questions` holds the open ones alone; this says how one closed.
+       */
+      question: async (id: string, questionId: string) =>
+        (
+          await v1.designs[":id"].questions[":questionId"].$get({ param: { id, questionId } })
+        ).json(),
       /** Stops the agent's turn. The runner's `stopped` notice arrives through `design.thread`. */
       stop: async (id: string): Promise<void> => {
         await v1.designs[":id"].stop.$post(design(id));

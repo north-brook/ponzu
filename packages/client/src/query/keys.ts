@@ -25,6 +25,9 @@ export const queryKeys = {
   /** A page of a design's thread, before a seq (or the newest). */
   threadPage: (designId: string, before: number | null, limit: number) =>
     ["ponzu", "design", designId, "thread", before, limit] as const,
+  /** One of the agent's questions as it stands. */
+  question: (designId: string, questionId: string) =>
+    ["ponzu", "design", designId, "question", questionId] as const,
   pullRequest: (designId: string) => ["ponzu", "design", designId, "pull-request"] as const,
   /** One changed file's diff at a commit: a push makes another, so the commit is the key. */
   pullRequestFile: (designId: string, path: string, headSha: string | null) =>

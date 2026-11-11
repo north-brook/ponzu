@@ -1,6 +1,14 @@
 import { expect, test } from "bun:test";
 import type { Ask } from "../model.ts";
-import { answerable, answerOf, choose, type Draft, EMPTY_DRAFT, pagesOf } from "./answer.ts";
+import {
+  answerable,
+  answerOf,
+  choose,
+  type Draft,
+  draftOf,
+  EMPTY_DRAFT,
+  pagesOf,
+} from "./answer.ts";
 
 const headline: Ask = {
   id: "q_headline",
@@ -110,4 +118,22 @@ test("an ask's answer needs every page, keyed by question text in the options' o
     note: "not on prod",
   });
   expect(answerOf(secret, [draft({ note: "sk_test_123" })])).toEqual({ secret: "sk_test_123" });
+});
+
+test("the answer that won reads back as the page's choices, the inverse of sending it", () => {
+  const [first, second] = pagesOf([headline]);
+  const given = answerOf(headline, [
+    draft({ chosen: ["Shorten it"] }),
+    draft({ chosen: ["Care cards", "Home"], note: "And the blog" }),
+  ]) as { answers: Record<string, string> };
+  expect(draftOf(first!, given)).toEqual({ chosen: ["Shorten it"], note: "" });
+  expect(draftOf(second!, given)).toEqual({ chosen: ["Home", "Care cards"], note: "And the blog" });
+  // In words alone, nothing is chosen.
+  const words = { answers: { [headline.questions[0]!.question]: "Neither, cut it" } };
+  expect(draftOf(first!, words)).toEqual({ chosen: [], note: "Neither, cut it" });
+  const [p] = pagesOf([plan]);
+  expect(draftOf(p!, { approved: false, note: "Do C first" })).toEqual({
+    chosen: ["no"],
+    note: "Do C first",
+  });
 });

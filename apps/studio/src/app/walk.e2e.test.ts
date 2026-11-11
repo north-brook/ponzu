@@ -232,6 +232,10 @@ describe.skipIf(!chromiumPath)("a brand-new person, from sign-in to sign-out", (
     await page.getByRole("button", { name: /src\/checkout\.tsx/ }).click();
     await page.getByText("context", { exact: true }).waitFor();
     await shoot("pull-request-diff");
+    // At the smallest window the details stack above the files, whose names stay whole.
+    await page.setViewportSize({ width: 1100, height: 640 });
+    await shoot("pull-request-min-window");
+    await page.setViewportSize({ width: 1440, height: 900 });
 
     // Merge: the design settles on its own.
     await action("Merge").click();
@@ -269,10 +273,11 @@ describe.skipIf(!chromiumPath)("a brand-new person, from sign-in to sign-out", (
     await page.getByText("Signed in with").waitFor();
     await shoot("settings-account");
     await page.getByRole("button", { name: "Delete" }).click();
-    await page.getByLabel("Type maya to confirm").fill("maya");
-    await page.getByRole("button", { name: "Delete account" }).click();
-    // The only admin of a team others are in can't leave it without one.
+    // The only admin of a team others are in can't leave it without one: said at once, with
+    // nothing to type.
     await page.getByText("You're the only admin of Northbrook").waitFor();
+    expect(await page.getByLabel("Type maya to confirm").isDisabled()).toBe(true);
+    expect(await page.getByRole("button", { name: "Delete account" }).isDisabled()).toBe(true);
     await shoot("settings-account-delete-blocked");
     await page.getByRole("button", { name: "Cancel" }).click();
     await page.getByRole("alertdialog").waitFor({ state: "detached" });
@@ -345,6 +350,11 @@ describe.skipIf(!chromiumPath)("a brand-new person, from sign-in to sign-out", (
     await shoot("settings-plan-team");
     await page.keyboard.press("Escape");
     await nav().waitFor({ state: "detached" });
+    // The keyboard is back where ⌘, found it: the page's tab.
+    await waitUntil(
+      async () => (await page.evaluate(() => document.activeElement?.textContent)) === "Page 1",
+      2000,
+    );
 
     // Switch workspace: the team's designs.
     await page.getByRole("button", { name: "Workspace: Personal" }).click();
@@ -366,6 +376,9 @@ describe.skipIf(!chromiumPath)("a brand-new person, from sign-in to sign-out", (
     await shoot("design-waits-on-claude");
     await rail().getByRole("button", { name: "Connect" }).click();
     const dialog = page.getByRole("dialog");
+    // Put as the strip put it, and it can be put away.
+    await dialog.getByRole("heading", { name: "Your Claude sign-in ran out" }).last().waitFor();
+    await dialog.getByRole("button", { name: "Cancel" }).waitFor();
     await dialog.getByRole("button", { name: "Add key" }).click();
     await dialog.getByLabel("Paste your Anthropic API key").fill("sk-ant-api03-walk-4f2a");
     await shoot("design-connect-claude");
@@ -375,6 +388,58 @@ describe.skipIf(!chromiumPath)("a brand-new person, from sign-in to sign-out", (
     expect(
       await rail().getByText("Your Claude sign-in has run out. This design waits.").count(),
     ).toBe(0);
+
+    // It asks; Maya chooses, but Sam answers first: his name and his choice, not hers.
+    const onboardingId = await fake(
+      () =>
+        [...window.ponzuFake!.backend.designs.values()].find(
+          (d) => d.sequencer.doc.name === "Onboarding flow",
+        )!.id,
+    );
+    const tone = await fake(
+      (designId) =>
+        window.ponzuFake!.backend.agent(designId).ask(
+          {
+            kind: "question",
+            payload: {
+              questions: [
+                {
+                  header: "Tone",
+                  question: "Warm or plain?",
+                  options: [
+                    { label: "Warm", description: "A friendly hello." },
+                    { label: "Plain", description: "Just the steps." },
+                  ],
+                  multiSelect: false,
+                },
+              ],
+            },
+          },
+          "Tone",
+        ),
+      onboardingId,
+    );
+    const toneAsk = page.getByRole("region", { name: "Ponzu needs you: Tone" });
+    await toneAsk.getByRole("radio", { name: /Warm/ }).click();
+    await fake(
+      ([designId, q]) => {
+        const { backend, teammate } = window.ponzuFake!;
+        return backend
+          .connect(teammate)
+          .api.designs.answer(designId!, q!, { answers: { "Warm or plain?": "Plain" } });
+      },
+      [onboardingId, tone] as const,
+    );
+    await toneAsk.getByText("Sam answered.").waitFor();
+    expect(await toneAsk.getByRole("radio", { name: /Plain/ }).getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    expect(await toneAsk.getByRole("radio", { name: /Warm/ }).getAttribute("aria-checked")).toBe(
+      "false",
+    );
+    await shoot("design-teammate-answered", { dark: true });
+    await toneAsk.getByRole("button", { name: "OK" }).click();
+    await rail().getByPlaceholder("Steer, or ask more").waitFor();
 
     // The team menu: Plan and usage, then sign out.
     await page.getByRole("button", { name: "Workspace: Northbrook" }).click();

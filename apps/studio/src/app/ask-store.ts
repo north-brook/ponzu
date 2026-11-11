@@ -5,11 +5,14 @@ import { toAsk } from "./thread-map.ts";
 
 /*
  * What the agent waits on in one open design: the `design.questions` live query, which holds
- * the open questions alone, and the viewer's answers on their way. The first answer wins: when
- * someone else's got there first, the API says so (409 `question_closed`, naming who) and the ask
- * stays, put calmly with their name, until the viewer puts it away. A question the run withdrew, or a teammate answered,
- * leaves with its row; when the viewer had started answering it, it stays, closed, saying so,
- * until they put it away, so their choices don't vanish without a word.
+ * the open questions alone, and the viewer's answers on their way. The first answer wins.
+ *
+ * A question that leaves while the viewer is on it (chose something, typed a note, or sent an
+ * answer the API turned away with 409 `question_closed`) stays, so their choices don't vanish
+ * without a word: Ponzu reads how it closed and the card says so until they put it away. When a
+ * teammate answered, it names them and shows the answer that won in place of the viewer's own
+ * choice; when the run withdrew it, it says Claude moved on. Only when that can't be read does it
+ * say, neutrally, that it no longer waits.
  */
 
 export class AskStore {
@@ -18,11 +21,14 @@ export class AskStore {
   private sending = new Set<string>();
   /** Asks the viewer has started answering: chosen something in, or typed a note. */
   private touched = new Set<string>();
-  /** Asks someone else answered first, kept until put away. */
+  /** Asks that left while the viewer was on them, as they were asked, while Ponzu reads how. */
+  private settling = new Map<string, Ask>();
+  /** Asks that closed while the viewer was on them, kept until put away. */
   private closed: Ask[] = [];
   private snapshot: Ask[] = [];
   private readonly listeners = new Set<() => void>();
   private stopLive: (() => void) | null = null;
+  private stopped = false;
 
   constructor(
     private readonly opts: {
@@ -47,7 +53,7 @@ export class AskStore {
           // An answer the run has taken is no longer on its way.
           const mine = this.sending.delete(row.id);
           const started = this.touched.delete(row.id);
-          if (!mine && started) this.keepClosed({ ...toAsk(row), status: "closed" });
+          if (!mine && started) this.settle(toAsk(row), null);
         }
         this.emit();
       },
@@ -56,6 +62,7 @@ export class AskStore {
   }
 
   close(): void {
+    this.stopped = true;
     this.stopLive?.();
     this.listeners.clear();
   }
@@ -81,7 +88,7 @@ export class AskStore {
       (error: unknown) => {
         this.sending.delete(id);
         if (error instanceof ApiError && error.code === "question_closed") {
-          this.keepClosed({ ...asked, status: "answered", answeredBy: answeredBy(error) });
+          this.settle(asked, answeredBy(error));
         } else {
           this.opts.onError(
             error instanceof ApiError && error.code === "network"
@@ -101,17 +108,45 @@ export class AskStore {
 
   /** Puts away an ask that closed while the viewer was on it. */
   dismiss(id: string): void {
+    this.settling.delete(id);
     this.closed = this.closed.filter((ask) => ask.id !== id);
     this.emit();
   }
 
-  private keepClosed(ask: Ask): void {
-    this.touched.delete(ask.id);
+  /**
+   * An ask that left while the viewer was on it: held, read-only, while Ponzu reads how it
+   * closed, then kept as that. `by` is who the API's refusal named, if it did.
+   */
+  private settle(asked: Ask, by: Person | null): void {
+    const { ponzu, designId } = this.opts;
+    this.touched.delete(asked.id);
+    this.settling.set(asked.id, asked);
+    ponzu.queryClient.fetchQuery(ponzu.queries.question(designId, asked.id)).then(
+      (question) => {
+        // The rail resolves them to the member they are, picture and all.
+        const who = question.answeredBy ? { ...question.answeredBy, avatarUrl: null } : by;
+        if (question.status === "answered") {
+          this.keep({ ...asked, status: "answered", answeredBy: who, given: question.answer });
+        } else if (question.status === "cancelled") {
+          this.keep({ ...asked, status: "cancelled" });
+        } else {
+          this.keep({ ...asked, status: by ? "answered" : "closed", answeredBy: by });
+        }
+      },
+      () => this.keep({ ...asked, status: by ? "answered" : "closed", answeredBy: by }),
+    );
+  }
+
+  private keep(ask: Ask): void {
+    // Put away while Ponzu was still reading it: it stays away.
+    if (this.stopped || !this.settling.delete(ask.id)) return;
     this.closed = [...this.closed.filter((kept) => kept.id !== ask.id), ask];
+    this.emit();
   }
 
   private emit(): void {
-    const closedIds = new Set(this.closed.map((ask) => ask.id));
+    const kept = [...this.settling.values()].map((ask): Ask => ({ ...ask, status: "sending" }));
+    const closedIds = new Set([...this.closed, ...kept].map((ask) => ask.id));
     const open = this.rows
       .filter((row) => !closedIds.has(row.id))
       .toSorted((a, b) => a.seq - b.seq)
@@ -119,7 +154,7 @@ export class AskStore {
         const ask = toAsk(row);
         return this.sending.has(row.id) ? { ...ask, status: "sending" } : ask;
       });
-    this.snapshot = [...open, ...this.closed];
+    this.snapshot = [...open, ...kept, ...this.closed];
     for (const listener of this.listeners) listener();
   }
 }
@@ -128,7 +163,12 @@ export class AskStore {
 function answeredBy(error: ApiError): Person | null {
   const by = error.details?.answeredBy as Partial<Person> | undefined;
   if (typeof by?.id !== "string" || typeof by.login !== "string") return null;
-  return { id: by.id, login: by.login, name: by.name ?? by.login, avatarUrl: null };
+  return {
+    id: by.id,
+    login: by.login,
+    name: by.name ?? by.login,
+    avatarUrl: typeof by.avatarUrl === "string" ? by.avatarUrl : null,
+  };
 }
 
 /** The answer as the API takes it. A secret's value is never sent this way. */

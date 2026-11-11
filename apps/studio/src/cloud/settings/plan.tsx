@@ -11,6 +11,7 @@ import {
   money,
   type PersonUsage,
   parseCap,
+  pastFreeWord,
   type Usage,
   usageBar,
   usageLine,
@@ -86,6 +87,7 @@ export function PlanSection({
           <CapRow
             capUsd={usage.capUsd}
             billed={billed}
+            billedWord={usage.notBilled ? "used past free" : "billed"}
             team={team !== null}
             canManage={canManage}
             onChange={onCapChange}
@@ -200,7 +202,7 @@ function UsageBar({ usage }: { usage: Usage }) {
           <>
             <span className="flex items-center gap-1.5">
               <span className="size-2 rounded-pill bg-ink" />
-              {money(billedUsd(usage), true)} billed
+              {money(billedUsd(usage), true)} {pastFreeWord(usage)}
             </span>
             <span className="flex-1" />
             <span className={cn(capped && "font-medium text-ink")}>
@@ -242,19 +244,22 @@ function PlanRow({
 function CapRow({
   capUsd,
   billed,
+  billedWord,
   team,
   canManage,
   onChange,
 }: {
   capUsd: number;
   billed: number;
+  /** What the use past the free credits is called, for the reason a cap is too low. */
+  billedWord: string;
   team: boolean;
   canManage: boolean;
   onChange: (usd: number) => void;
 }) {
   const [typed, setTyped] = useState<string | null>(null);
   const focus = useFocusReturn();
-  const parsed = typed === null ? null : parseCap(typed, billed);
+  const parsed = typed === null ? null : parseCap(typed, billed, billedWord);
   const commit = () => {
     if (parsed?.ok && parsed.usd !== capUsd) onChange(parsed.usd);
     setTyped(null);

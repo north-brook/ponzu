@@ -2,7 +2,7 @@
  * Dialogs about the person's own account: their Claude signed out (on send, or from a design
  * waiting on it), getting the iPhone app, disconnecting Claude, and deleting the account.
  */
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { ClaudeCard, type ClaudeCardProps, canConnect } from "../setup/claude-card.tsx";
 import { IphoneCard } from "../setup/iphone-step.tsx";
 import { TextField } from "../ui/field.tsx";
@@ -24,6 +24,7 @@ export function ClaudeSignedOutDialog({
   onDismiss,
   card,
   connected = true,
+  expired = false,
   resume = false,
 }: {
   open: boolean;
@@ -31,6 +32,8 @@ export function ClaudeSignedOutDialog({
   card: ClaudeCardProps;
   /** False for someone with no Claude at all: it asks to connect, not to reconnect. */
   connected?: boolean;
+  /** Its sign-in ran out, rather than being revoked: said as the design's strip says it. */
+  expired?: boolean;
   /** Opened from a design waiting on the person's Claude, not from a send. */
   resume?: boolean;
 }) {
@@ -38,14 +41,19 @@ export function ClaudeSignedOutDialog({
   const then = resume
     ? "and this design picks up where it waited."
     : "and Ponzu sends this. Your prompt is saved.";
+  const title = !connected
+    ? "Connect Claude"
+    : expired
+      ? "Your Claude sign-in ran out"
+      : "Claude was signed out";
   return (
     <BlockingDialog
       open={open}
       onDismiss={onDismiss}
-      title={connected ? "Claude was signed out" : "Connect Claude"}
+      title={title}
       body={
         connected
-          ? `Connect Claude again ${then}`
+          ? `${expired ? "Sign in to Claude again" : "Connect Claude again"} ${then}`
           : `Claude Code does the designing, on your own plan. Connect it ${then}`
       }
       wide
@@ -53,8 +61,11 @@ export function ClaudeSignedOutDialog({
       <div className="mt-0.5 flex flex-col">
         <ClaudeCard {...card} />
       </div>
-      {state.mode === "choose" ? null : (
-        <DialogActions>
+      <DialogActions>
+        <DialogButton tone="raised" onClick={onDismiss}>
+          Cancel
+        </DialogButton>
+        {state.mode === "choose" ? null : (
           <DialogButton
             tone="primary"
             onClick={card.onSubmit}
@@ -63,8 +74,8 @@ export function ClaudeSignedOutDialog({
           >
             {resume ? "Connect" : "Connect and send"}
           </DialogButton>
-        </DialogActions>
-      )}
+        )}
+      </DialogActions>
     </BlockingDialog>
   );
 }
@@ -150,6 +161,10 @@ export function DeleteAccountDialog({
   error?: string | null;
 }) {
   const [typed, setTyped] = useState("");
+  // Each opening starts with the field empty.
+  useEffect(() => {
+    if (open) setTyped("");
+  }, [open]);
   const id = useId();
   // GitHub's logins are the same whatever their case.
   const matches = typed.trim().toLowerCase() === login.toLowerCase();

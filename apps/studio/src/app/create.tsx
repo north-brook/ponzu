@@ -222,6 +222,7 @@ export function CreateView({
         }}
         card={connect}
         connected={me.data?.claudeAccount != null}
+        expired={me.data?.claudeAccount?.status === "expired"}
       />
       {error ? <Banner>{error}</Banner> : null}
     </>

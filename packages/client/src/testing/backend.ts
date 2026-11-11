@@ -886,6 +886,27 @@ export class FakeBackend {
             this.touch(design);
             return { id: question.id, status: question.status };
           }),
+        question: (id, questionId) =>
+          call(() => {
+            const question = readable(id).questions.find((q) => q.id === questionId);
+            if (!question) throw new ApiError(404, "not_found", "There is no such question.");
+            const answered = question.status === "answered" ? question.answer : null;
+            const by = answered ? this.people.get(answered.userId) : undefined;
+            return {
+              id: question.id,
+              status: question.status,
+              answer: answered
+                ? {
+                    ...(answered.body.answers ? { answers: answered.body.answers } : {}),
+                    ...(answered.body.approved === undefined
+                      ? {}
+                      : { approved: answered.body.approved }),
+                    ...(answered.body.note ? { note: answered.body.note } : {}),
+                  }
+                : null,
+              answeredBy: by ? personOf(by) : null,
+            };
+          }),
         stop: (id) =>
           call(() => {
             const design = writable(id);
@@ -993,6 +1014,7 @@ export class FakeBackend {
         throw new ApiError(404, "not_found", "There is no such repo.");
       },
       repos: (workspaceId) => readable(member(workspaceId).workspace),
+      designedIn: (repoId) => [...this.designs.values()].some((d) => d.repoId === repoId),
       person: (userId) => this.people.get(userId)!,
       soleAdminOf: (userId) =>
         [...this.workspaces.values()]

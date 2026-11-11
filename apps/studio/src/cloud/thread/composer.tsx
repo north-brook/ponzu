@@ -226,11 +226,23 @@ export function AttachmentChip({
   );
 }
 
-/** Someone who can read the design but not steer it: one line where the composer would be. */
-export function ReadOnlyLine({ message }: { message: string }) {
+/**
+ * Someone who can read the design but not steer it: one line where the composer would be. The
+ * repo's name, when the line has one, wraps whole rather than at its hyphen or slash.
+ */
+export function ReadOnlyLine({ message, whole }: { message: string; whole?: string | null }) {
+  const at = whole ? message.indexOf(whole) : -1;
   return (
     <p className="m-0 shrink-0 px-3 py-2.5 text-center text-12 text-faint leading-[1.5]">
-      {message}
+      {whole && at >= 0 ? (
+        <>
+          {message.slice(0, at)}
+          <span className="whitespace-nowrap">{whole}</span>
+          {message.slice(at + whole.length)}
+        </>
+      ) : (
+        message
+      )}
     </p>
   );
 }

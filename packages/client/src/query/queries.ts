@@ -73,6 +73,16 @@ export function ponzuQueries(api: Api) {
         staleTime: page.before === undefined ? 0 : Number.POSITIVE_INFINITY,
       }),
     /**
+     * One of the agent's questions as it stands: once answered, the answer that won and who
+     * gave it. Read when a question leaves `design.questions`, to say how it closed.
+     */
+    question: (designId: string, questionId: string) =>
+      queryOptions({
+        queryKey: queryKeys.question(designId, questionId),
+        queryFn: () => api.designs.question(designId, questionId),
+        staleTime: 0,
+      }),
+    /**
      * The design's pull request as GitHub has it, `nextAction` included. Read again whenever
      * the design's head says something about it moved: what reads it says when.
      */

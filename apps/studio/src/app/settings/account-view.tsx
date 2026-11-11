@@ -1,5 +1,5 @@
 import { ApiError } from "@ponzu/client";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueries } from "@tanstack/react-query";
 import { useState } from "react";
 import { DeleteAccountDialog } from "../../cloud/dialogs/account-dialogs.tsx";
 import type { Person, Workspace } from "../../cloud/model.ts";
@@ -27,14 +27,35 @@ export function AccountView({
   teams: { workspace: Workspace; role: Role }[];
   onCreateTeam: () => void;
 }) {
-  const { mutations } = usePonzu();
+  const { queries, mutations } = usePonzu();
   const remove = useMutation(mutations.deleteAccount());
   const [asking, setAsking] = useState(false);
+  // The teams the person alone administers while others are in them, worked out before the
+  // dialog opens from each team they administer, so it says so at once; the API's 409 stays
+  // the word when this is out of date.
+  const administered = useQueries({
+    queries: teams
+      .filter((team) => team.role === "admin")
+      .map((team) => queries.workspace(team.workspace.id)),
+  });
+  const heldAlone = administered.flatMap(({ data }) => {
+    const members = data?.members ?? [];
+    const others = members.filter((m) => m.userId !== me.id);
+    const alone = others.length > 0 && !others.some((m) => m.role === "admin");
+    return data && alone ? [data.workspace.name] : [];
+  });
   const refusal = remove.error instanceof ApiError ? remove.error : null;
   const teamsHeld = (
     (refusal?.details?.workspaces as { name?: unknown }[] | undefined) ?? []
   ).flatMap((w) => (typeof w.name === "string" ? [w.name] : []));
-  const soleAdmin = refusal?.code === "sole_admin" ? (teamsHeld.length ? teamsHeld : true) : false;
+  const soleAdmin =
+    refusal?.code === "sole_admin"
+      ? teamsHeld.length
+        ? teamsHeld
+        : true
+      : heldAlone.length
+        ? heldAlone
+        : false;
   const error =
     remove.error && !soleAdmin
       ? refusal && refusal.status !== 0

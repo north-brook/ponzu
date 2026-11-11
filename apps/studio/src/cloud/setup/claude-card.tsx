@@ -199,9 +199,10 @@ function MethodEntry({
           id={`${id}-help`}
           role={error ? "alert" : undefined}
           className={cn(
-            "m-0 text-pretty text-12",
-            // The key's helper runs to two lines; its one-line error keeps them, so Connect holds.
-            !subscription && "min-h-[2lh]",
+            "m-0 text-12",
+            // The code's line wraps evenly. The key's helper fills the card's width and may run
+            // to two lines; its one-line error keeps them, so Connect holds.
+            subscription ? "text-pretty" : "min-h-[2lh]",
             error ? "text-danger" : "text-faint",
           )}
         >

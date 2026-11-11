@@ -13,15 +13,19 @@ import { useClaudeConnect } from "./claude-connect.ts";
 export function ConnectClaudeDialog({
   host,
   open,
+  expired,
   onClose,
 }: {
   host: Host;
   open: boolean;
+  /** The design's strip said its sign-in ran out: the dialog says the same. */
+  expired: boolean;
   onClose: () => void;
 }) {
   const { queries } = usePonzu();
   const me = useQuery(queries.me());
   const card = useClaudeConnect({ openExternal: host.openExternal, onConnected: onClose });
+  const account = me.data?.claudeAccount;
   return (
     <ClaudeSignedOutDialog
       open={open}
@@ -31,7 +35,8 @@ export function ConnectClaudeDialog({
         onClose();
       }}
       card={card}
-      connected={me.data?.claudeAccount != null}
+      connected={expired || account != null}
+      expired={expired || account?.status === "expired"}
       resume
     />
   );

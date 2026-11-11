@@ -145,7 +145,11 @@ describe("Plan and usage", () => {
     // Three people, 100 free each: 400 used, 300 free, 100 billed at $0.10.
     expect([usage.freeCredits, usage.usedCredits, billedUsd(usage)]).toEqual([300, 400, 10]);
     expect(usage.card).toBeNull();
-    expect(usageLine(usage, { name: "Northbrook", people: 3 })).toContain("400 credits");
+    // Nothing is billed while billing isn't set up: the line says so, not a billing date.
+    expect(usage.notBilled).toBe(true);
+    expect(usageLine(usage, { name: "Northbrook", people: 3 })).toBe(
+      "this month for Northbrook · 3 people · 400 credits · not billed yet",
+    );
     expect(toTeamUsage(answer, "Northbrook").byPerson?.map((p) => p.usedCredits)).toEqual([
       250, 150, 0,
     ]);
