@@ -196,6 +196,7 @@ export async function createTestApp(
         idleSeconds: 300,
         // Higher than a deployment's, since a test file keeps many designs awake at once.
         limits: { perWorkspace: 100, perOwner: 100 },
+        maxMoves: 3,
         scope: TEST_SCOPE,
         ...options.sandbox,
       },

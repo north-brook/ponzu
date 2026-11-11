@@ -45,6 +45,7 @@ test("a complete environment is read into one typed value", () => {
       apiUrl: "https://api.ponzu.design",
       idleSeconds: 300,
       limits: { perWorkspace: 5, perOwner: 3 },
+      maxMoves: 3,
       scope: sandboxScope(complete.DATABASE_URL),
     },
     vault: { key: "vault-key", oldKeys: [] },
@@ -98,12 +99,14 @@ test("the optional ones are read when set", () => {
     PONZU_SANDBOX_IDLE_SECONDS: "60",
     PONZU_SANDBOX_MAX_PER_WORKSPACE: "20",
     PONZU_SANDBOX_MAX_PER_OWNER: "4",
+    PONZU_SANDBOX_MAX_MOVES: "1",
   });
   expect(env.sandbox).toEqual({
     snapshot: "ponzu-runner-0123456789ab",
     apiUrl: "https://ponzu-dev.example",
     idleSeconds: 60,
     limits: { perWorkspace: 20, perOwner: 4 },
+    maxMoves: 1,
     scope: sandboxScope(complete.DATABASE_URL),
   });
   expect(env.vault.oldKeys).toEqual(["older", "oldest"]);
@@ -179,6 +182,7 @@ test(".env.example lists exactly the variables the API reads, with no values", (
     "PONZU_POSTHOG_HOST",
     "PONZU_POSTHOG_KEY",
     "PONZU_SANDBOX_IDLE_SECONDS",
+    "PONZU_SANDBOX_MAX_MOVES",
     "PONZU_SANDBOX_MAX_PER_OWNER",
     "PONZU_SANDBOX_MAX_PER_WORKSPACE",
     "PONZU_SANDBOX_SNAPSHOT",
