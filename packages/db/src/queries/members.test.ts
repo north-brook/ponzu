@@ -5,7 +5,7 @@ import { type GithubAccess, memberships, users } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
 import { upsertMembership } from "./accounts.ts";
 import {
-  countWorkspaceMembers,
+  countJoinedMembers,
   ensureWorkspaceAdmin,
   listWorkspaceMembers,
   removeMembership,
@@ -64,18 +64,18 @@ test("listWorkspaceMembers puts admins first, then everyone by name", async () =
   });
 });
 
-test("countWorkspaceMembers counts each workspace asked about", async () => {
+test("countJoinedMembers counts each workspace asked about", async () => {
   const one = await team(["a", "admin"], ["b", "member"]);
   const two = await team(["c", "admin"]);
   const empty = await seedWorkspace(db);
 
-  const counts = await countWorkspaceMembers(db, [one.workspace.id, two.workspace.id, empty.id]);
+  const counts = await countJoinedMembers(db, [one.workspace.id, two.workspace.id, empty.id]);
 
   expect(counts.sort((x, y) => y.members - x.members)).toEqual([
     { workspaceId: one.workspace.id, members: 2 },
     { workspaceId: two.workspace.id, members: 1 },
   ]);
-  expect(await countWorkspaceMembers(db, [])).toEqual([]);
+  expect(await countJoinedMembers(db, [])).toEqual([]);
 });
 
 test("workspaceHasAdmin", async () => {

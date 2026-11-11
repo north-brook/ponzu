@@ -8,6 +8,7 @@ import { CreatePage, type CreatePageProps } from "../create/create-page.tsx";
 import { type DesignFilter, NO_FILTER } from "../filter.ts";
 import type {
   Contributor,
+  DesignMember,
   DesignSummary,
   Effort,
   Match,
@@ -153,12 +154,15 @@ export function DesignChromeHarness({
   railOpen,
   threadUnseen = false,
   changes = true,
+  members = f.members,
   overrides = {},
 }: {
   design: DesignSummary;
   sidebarOpen: boolean;
   /** Who has worked on it, in a team workspace; null leaves the presence cluster out. */
   contributors: Contributor[] | null;
+  /** Who Share lists. */
+  members?: DesignMember[];
   railOpen: boolean;
   threadUnseen?: boolean;
   /** The branch has commits, so a design with no pull request offers Create PR. */
@@ -187,7 +191,7 @@ export function DesignChromeHarness({
               meId: f.bryce.id,
               contributors,
               repo: design.project.repo,
-              members: f.members,
+              members,
               onOpenRepo: ignore,
             }
           : null

@@ -1,4 +1,5 @@
 import {
+  forgetWorkspacePeople,
   getWorkspaceByInstallation,
   listStaleInstallations,
   markRepoAccessStale,
@@ -10,7 +11,9 @@ import {
   type Workspace,
   wasUninstalled,
 } from "@ponzu/db";
+import { type CaptureOptions, stableUuid } from "../analytics/analytics.ts";
 import type { Deps } from "../deps/index.ts";
+import { peopleDue, readPeopleNow, refreshWorkspacePeople } from "./people.ts";
 
 /*
  * One installation of the App, brought in line with GitHub. Whatever asked (a webhook, a sync
@@ -23,7 +26,9 @@ import type { Deps } from "../deps/index.ts";
  * see `syncGithub`.
  */
 
-type ReconcileDeps = Pick<Deps, "db" | "clock" | "github" | "log">;
+/** `background`, where there is a request to run work beside: a due read of people runs there. */
+type ReconcileDeps = Pick<Deps, "db" | "clock" | "github" | "log" | "analytics"> &
+  Partial<Pick<Deps, "background">>;
 
 /** All it takes to read an installation's account and repo list. */
 const READ_REPOSITORIES = { metadata: "read" } as const;
@@ -43,14 +48,31 @@ const SWEEP_AFTER_MS = 6 * 3600_000;
  *   recorded, and any it no longer sees is marked removed (never deleted: designs point at
  *   it). A repo list GitHub served only in part marks nothing removed.
  *
+ * Who can reach its repos (`github/people.ts`) is read with it when `people` is `read`: the
+ * people job, which throws when GitHub fails, to be tried again. Otherwise, when the last read
+ * is old, a read is recorded as that job and run beside, never here: a person's sync and a
+ * webhook's work never wait on it nor fail with it. An uninstalled installation's people are
+ * forgotten; a suspended one's stay as last seen.
+ *
  * `installedByUserId` is who installed it, for a webhook that says so; it fills in an unknown
  * installer and never replaces a known one. Safe to run any number of times, at once.
  */
 export async function reconcileInstallation(
-  { db, clock, github, log }: ReconcileDeps,
+  deps: ReconcileDeps,
   installationId: number,
-  { installedByUserId = null }: { installedByUserId?: string | null } = {},
+  {
+    installedByUserId = null,
+    reposChanged = false,
+    people = "when_due",
+  }: {
+    installedByUserId?: string | null;
+    /** GitHub said the repos the installation reaches changed: said in analytics once read. */
+    reposChanged?: boolean;
+    /** `read`: read who can reach its repos here (the people job). */
+    people?: "read" | "when_due";
+  } = {},
 ): Promise<Workspace | null> {
+  const { db, clock, github, log, analytics } = deps;
   const readAt = new Date(clock.now());
   const installation = await github.getInstallation(installationId);
   const before = await getWorkspaceByInstallation(db, installationId);
@@ -60,9 +82,24 @@ export async function reconcileInstallation(
   const reachChanged = async () => {
     if (before) await markRepoAccessStale(db, { workspaceId: before.id });
   };
+  // This runs at once from a webhook and from the setup or the sweep, and each read `before`
+  // for itself: what two of them could both see is said once, on the database's word or under
+  // one id that both give it (PostHog keeps one event per id).
+  const disconnected = (reason: "uninstalled" | "suspended", options: CaptureOptions = {}) => {
+    if (before?.suspendedAt === null) {
+      analytics.capture(
+        "workspace disconnected",
+        { workspace_id: before.id, reason },
+        { distinctId: null, workspaceId: before.id, ...options },
+      );
+    }
+  };
   if (!installation) {
-    await markWorkspaceUninstalled(db, installationId);
+    // Only the call that took the installation off the workspace says it went.
+    const uninstalled = await markWorkspaceUninstalled(db, installationId);
     await reachChanged();
+    if (before) await forgetWorkspacePeople(db, before.id);
+    if (uninstalled) disconnected("uninstalled");
     return null;
   }
   if (installation.suspendedAt) {
@@ -72,6 +109,11 @@ export async function reconcileInstallation(
       reconciledAt: readAt,
     });
     if (before?.suspendedAt === null) await reachChanged();
+    // GitHub's own time for the suspension, which every reader of it agrees on.
+    disconnected("suspended", {
+      timestamp: installation.suspendedAt,
+      uuid: stableUuid(`${installationId}/suspended/${installation.suspendedAt.toISOString()}`),
+    });
     return suspended;
   }
 
@@ -86,7 +128,7 @@ export async function reconcileInstallation(
     github.listRepositoriesAsInstallation(token),
   ]);
 
-  const workspace = await upsertWorkspace(db, {
+  const { connected, ...workspace } = await upsertWorkspace(db, {
     githubAccountId: account.id,
     githubLogin: account.login,
     kind: account.type === "Organization" ? "org" : "personal",
@@ -121,12 +163,46 @@ export async function reconcileInstallation(
     });
   }
 
+  if (people === "read") {
+    await refreshWorkspacePeople(deps, { workspace, installation, repositories });
+  } else if (peopleDue(workspace, readAt.getTime())) {
+    await readPeopleNow(deps, { workspace, installation, repositories });
+  }
+
   // GitHub may have reported the installation gone while this was reading it, and that
   // uninstall would then be underneath what this just wrote. An installation id is never used
   // again, so it is applied again on top.
   if (await wasUninstalled(db, installationId)) {
     await markWorkspaceUninstalled(db, installationId);
+    await forgetWorkspacePeople(db, workspace.id);
     return null;
+  }
+  const kind = workspace.kind === "org" ? "organization" : "user";
+  analytics.group({
+    workspaceId: workspace.id,
+    name: account.login,
+    kind,
+    repos: repositories.items.length,
+    repositorySelection: installation.repositorySelection,
+  });
+  // Connected: an account new to Ponzu, back after an uninstall, or out of a suspension, which
+  // the database says to exactly one caller. It is about whoever installed it when Ponzu knows
+  // them, and otherwise the person whose sign-in or setup found it (the request's scope).
+  if (connected) {
+    analytics.capture(
+      "workspace connected",
+      { workspace_id: workspace.id, kind, repos: repositories.items.length },
+      {
+        ...(workspace.installedByUserId ? { distinctId: workspace.installedByUserId } : {}),
+        workspaceId: workspace.id,
+      },
+    );
+  } else if (reposChanged) {
+    analytics.capture(
+      "repo access changed",
+      { workspace_id: workspace.id, repos: repositories.items.length },
+      { distinctId: null, workspaceId: workspace.id },
+    );
   }
   return workspace;
 }

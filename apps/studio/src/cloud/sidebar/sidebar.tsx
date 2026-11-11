@@ -13,7 +13,7 @@ import { orderDesigns } from "../status.ts";
 import { Button, IconButton } from "../ui/button.tsx";
 import { FadeScroll } from "../ui/fade-scroll.tsx";
 import { Icon } from "../ui/icon.tsx";
-import { useShortcut } from "../ui/shortcut.ts";
+import { jumpTarget, useJumpShortcuts, useShortcut } from "../ui/shortcut.ts";
 import { DesignList, DesignListSkeleton } from "./design-list.tsx";
 import type { RowHandlers } from "./design-row.tsx";
 import { FilterMenu } from "./filter-menu.tsx";
@@ -55,7 +55,11 @@ export interface SidebarProps extends RowHandlers {
 /**
  * The sidebar: the workspace switcher and Search, Filter and New design over the workspace's
  * designs by recency, the settled tray at the foot. Search takes the header row's place; with a
- * query its results take the list's. It holds the shortcuts for what it offers: ⌘K, ⌘N and ⌘,.
+ * query its results take the list's. It holds the shortcuts for what it offers: ⌘K, ⌘N, ⌘, and
+ * the numbers: ⌘1–9 open the designs in the order the list shows them (filtered; 9 the last;
+ * settled ones aren't counted) and ⌘0 the create page. They work with the sidebar collapsed,
+ * with no numbers to show; while search's results take the list's place ⌘1–9 rest, so a number
+ * never opens a design you can't see.
  */
 export function Sidebar(props: SidebarProps) {
   const { me, workspace, designs, filter, query, results } = props;
@@ -86,6 +90,16 @@ export function Sidebar(props: SidebarProps) {
     [designs, filter, workspace.kind],
   );
   const projects = useMemo(() => projectCounts(designs ?? []), [designs]);
+  const hint = useJumpShortcuts("design", (n) => {
+    if (n === 0) {
+      props.onNewDesign();
+      return true;
+    }
+    if (searching) return false;
+    const design = jumpTarget(shown ?? [], n);
+    if (design && design.id !== props.openDesignId) props.onOpen(design);
+    return design !== undefined;
+  });
   const handlers: RowHandlers = {
     onOpen: props.onOpen,
     onAction: props.onAction,
@@ -162,6 +176,8 @@ export function Sidebar(props: SidebarProps) {
                 designs={shown}
                 openId={props.openDesignId}
                 label="Designs"
+                shortcuts
+                hint={hint && !props.collapsed}
                 {...handlers}
               />
             ) : isFiltering(filter) ? (

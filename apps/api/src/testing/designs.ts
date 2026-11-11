@@ -46,7 +46,7 @@ export async function workspaceWithRepo(
   const githubRepoId = nextGithubId++;
   const login = `org-${accountId}`;
   const fullName = `${login}/fernwood`;
-  const workspace = await upsertWorkspace(t.db, {
+  const { connected: _connected, ...workspace } = await upsertWorkspace(t.db, {
     githubAccountId: accountId,
     githubLogin: login,
     kind: "org",

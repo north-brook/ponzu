@@ -13,6 +13,7 @@ import {
   threadItems,
   workspaces,
 } from "@ponzu/db";
+import { PEOPLE_WINDOW_MS } from "../github/people.ts";
 import { syncGithub } from "../github/sync.ts";
 import { REFRESH_JOB, refreshSoon } from "../pull-requests/refresh.ts";
 import { refreshPullRequest } from "../pull-requests/sync.ts";
@@ -94,6 +95,15 @@ async function cronRun() {
   expect(response.status).toBe(200);
   await t.backgroundDone();
   return response.json();
+}
+
+/**
+ * Run everything earlier tests left to run, the reads of people their webhooks recorded for
+ * the end of their minute among it, so a test counts only the jobs of its own.
+ */
+async function drainJobs() {
+  t.clock.advance(PEOPLE_WINDOW_MS);
+  while ((await cronRun()).ran > 0);
 }
 
 const installationPayload = (action: string, installation: FakeInstallation, sender: number) => ({
@@ -222,8 +232,8 @@ describe("what is let in", () => {
   });
 
   test("work that fails after the answer is kept, and the cron runs it again after a wait", async () => {
-    // Run what earlier tests left due first: the wakes their news queued.
-    await cronRun();
+    // Run what earlier tests left first: the wakes their news queued, the reads of people.
+    await drainJobs();
     const installation = installOnOrg("flakyco", []);
     const payload = installationPayload("created", installation, 1);
     t.github.failNext(`/app/installations/${installation.id}`);
@@ -798,6 +808,7 @@ describe("pull requests, checks and reviews", () => {
   });
 
   test("a push to the default branch reads each open pull request, and one that fails is tried again", async () => {
+    await drainJobs();
     const person = await t.signInAs({ login: "manyprsco-person" });
     const installation = installOnOrg("manyprsco", [person]);
     const [workspace] = await syncGithub(t.deps, person.userId);

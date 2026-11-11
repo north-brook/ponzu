@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Person } from "../model.ts";
-import { type Member, roleEdit, sortMembers } from "./members.ts";
+import { type Member, type Role, roleEdit, sortMembers } from "./members.ts";
 
 const person = (name: string): Person => ({
   id: name,
@@ -8,9 +8,17 @@ const person = (name: string): Person => ({
   login: name.toLowerCase(),
   avatarUrl: null,
 });
-const member = (name: string, role: Member["role"], owner = false): Member => ({
+const member = (name: string, role: Role, owner = false): Member => ({
   person: person(name),
+  joined: true,
   role,
+  owner,
+});
+/** Someone GitHub gives access who hasn't opened Ponzu yet. */
+const notJoined = (name: string, owner = false): Member => ({
+  person: person(name),
+  joined: false,
+  role: null,
   owner,
 });
 
@@ -48,5 +56,32 @@ describe("the role picker", () => {
       (m) => m.person.name,
     );
     expect(order).toEqual(["Bryce", "Sam", "Alex", "Maya"]);
+  });
+
+  test("has nothing to change for someone who hasn't opened Ponzu, even for an admin", () => {
+    const ting = notJoined("Ting", true);
+    expect(roleEdit(ting, [bryce, sam, maya, ting], true)).toEqual({
+      editable: false,
+      reason: "not_joined",
+    });
+    expect(roleEdit(ting, [bryce, sam, maya, ting], false)).toEqual({
+      editable: false,
+      reason: "not_joined",
+    });
+  });
+
+  test("doesn't count someone who hasn't opened Ponzu toward the admins", () => {
+    // An owner on GitHub who hasn't opened Ponzu is no admin yet: Sam is still the last one.
+    expect(roleEdit(sam, [sam, maya, notJoined("Ting", true)], true)).toEqual({
+      editable: false,
+      reason: "last_admin",
+    });
+  });
+
+  test("lists those who have opened Ponzu first, then the rest by name", () => {
+    const order = sortMembers([notJoined("Leo"), maya, notJoined("Ada"), sam]).map(
+      (m) => m.person.name,
+    );
+    expect(order).toEqual(["Sam", "Maya", "Ada", "Leo"]);
   });
 });

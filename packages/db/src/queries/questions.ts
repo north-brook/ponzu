@@ -74,7 +74,20 @@ export async function getQuestion(
  */
 export async function answerQuestion(
   db: Db,
-  { designId, id, answer, userId }: { designId: string; id: string; answer: Json; userId: string },
+  {
+    designId,
+    id,
+    answer,
+    userId,
+    posthogSessionId = null,
+  }: {
+    designId: string;
+    id: string;
+    answer: Json;
+    userId: string;
+    /** The PostHog session of the app that answered, if it said. */
+    posthogSessionId?: string | null;
+  },
 ): Promise<Question | null> {
   const answered = answering(db, {
     designId,
@@ -84,13 +97,13 @@ export async function answerQuestion(
     only: ne(questions.kind, "secret"),
   });
   const told = db.$with("told", { id: events.id }).as(sql`
-    insert into ${events} (id, design_id, kind, priority, payload, user_id)
+    insert into ${events} (id, design_id, kind, priority, payload, user_id, posthog_session_id)
     select ${newId("evt")}, ${answered.designId}, 'answer', 'now',
            jsonb_build_object(
              'questionId', ${answered.id},
              'question', jsonb_build_object('kind', ${answered.kind}, 'payload', ${answered.payload})
            ) || ${answered.answer},
-           ${userId}
+           ${userId}, ${posthogSessionId}
       from ${answered}
     returning id
   `);

@@ -29,6 +29,8 @@ export const queryKeys = {
   question: (designId: string, questionId: string) =>
     ["ponzu", "design", designId, "question", questionId] as const,
   pullRequest: (designId: string) => ["ponzu", "design", designId, "pull-request"] as const,
+  /** Who can open a design, for Share. */
+  designPeople: (designId: string) => ["ponzu", "design", designId, "people"] as const,
   /** One changed file's diff at a commit: a push makes another, so the commit is the key. */
   pullRequestFile: (designId: string, path: string, headSha: string | null) =>
     ["ponzu", "design", designId, "pull-request", "file", path, headSha] as const,

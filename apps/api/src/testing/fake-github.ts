@@ -68,6 +68,11 @@ export interface FakeInstallation {
   repositories: FakeRepository[];
   /** Set while the installation is suspended: GitHub then mints it no tokens. */
   suspendedAt?: Date | null;
+  /**
+   * False when the account's owner has not granted the App `members: read`: GitHub then
+   * refuses (422) a token that asks for it. Granted unless it says.
+   */
+  grantsMembers?: boolean;
 }
 
 export interface FakeTokenPair {
@@ -112,6 +117,16 @@ export class FakeGithub {
   readonly permissionRequests: string[] = [];
   /** Every read of a repository's contents, as `owner/name what`: `readme`, `contents/<path>`. */
   readonly contentRequests: string[] = [];
+  /**
+   * Every page of people the App asked for, as `org <login>` or `repo <owner/name>`: an
+   * organization's members, or everyone with access to a repository.
+   */
+  readonly peopleRequests: string[] = [];
+  /**
+   * How many people GitHub puts on a page of them, whatever was asked for: a test makes it
+   * small to have a list run past the pages the API reads.
+   */
+  peoplePageSize = 100;
 
   readonly #clock: Clock;
   readonly #users = new Map<number, FakeGithubUser>();
@@ -185,6 +200,11 @@ export class FakeGithub {
   /** Makes the next request to `path` fail as if GitHub itself were broken. */
   failNext(path: string, status = 500) {
     this.#failures.push({ path, status });
+  }
+
+  /** Forgets the failures `failNext` queued that no request has met yet. */
+  clearFailures() {
+    this.#failures.length = 0;
   }
 
   /**
@@ -283,6 +303,10 @@ export class FakeGithub {
     if (asInstallation !== undefined) {
       if (asInstallation.expiresAt <= this.#clock.now()) {
         return Response.json({ message: "Bad credentials" }, { status: 401 });
+      }
+      if (method === "POST" && pathname === "/graphql") {
+        const people = this.#people(asInstallation, body);
+        if (people) return people;
       }
       const caller = { kind: "app" as const, ...asInstallation };
       const pulled = this.pulls.serve(caller, method, new URL(url), body, find);
@@ -545,6 +569,12 @@ export class FakeGithub {
       repository_ids?: number[];
       permissions?: Record<string, string>;
     };
+    if (permissions.members && installation.grantsMembers === false) {
+      return Response.json(
+        { message: "The permissions requested are not granted to this installation." },
+        { status: 422 },
+      );
+    }
     const outside = repositoryIds?.some(
       (repositoryId) => !installation.repositories.some(({ id }) => id === repositoryId),
     );
@@ -586,6 +616,83 @@ export class FakeGithub {
       role_name: permission,
       user: { id: user.id, login: user.login },
     });
+  }
+
+  /**
+   * The two GraphQL lists of people the App reads with an installation token, a page at a
+   * time: an organization's members with their roles (it takes `members: read`), and everyone
+   * with access to a repository with what they may do there: its explicit collaborators, and,
+   * as GitHub counts them, the organization's owners or the personal account's person as
+   * admins. Null for any other operation.
+   */
+  #people(token: InstallationToken, body: unknown): Response | null {
+    const { query, variables } = body as { query: string; variables: Record<string, any> };
+    const operation = /^\s*query\s+(\w+)/.exec(query)?.[1];
+    if (
+      operation !== "InstallationOrganizationPeople" &&
+      operation !== "InstallationRepositoryPeople"
+    ) {
+      return null;
+    }
+    const installation = this.#installation(token.installationId)!;
+    const error = (type: string, message: string) =>
+      Response.json({ data: null, errors: [{ type, message }] });
+    const node = (id: number) => {
+      const user = this.#users.get(id);
+      return user
+        ? { databaseId: user.id, login: user.login, name: user.name, avatarUrl: user.avatarUrl }
+        : null;
+    };
+    const pageOf = <T>(edges: T[]) => {
+      const start = Number(variables.after ?? 0);
+      const end = start + this.peoplePageSize;
+      return {
+        pageInfo: { hasNextPage: end < edges.length, endCursor: String(end) },
+        edges: edges.slice(start, end),
+      };
+    };
+    const { account } = installation;
+
+    if (operation === "InstallationOrganizationPeople") {
+      if (account.type !== "Organization" || account.login !== variables.login) {
+        return error("NOT_FOUND", "Could not resolve to an Organization.");
+      }
+      if (!token.permissions.members) {
+        return error("FORBIDDEN", "Resource not accessible by integration");
+      }
+      this.peopleRequests.push(`org ${account.login}`);
+      const roles = [
+        ...(account.owners ?? []).map((id) => ({ id, role: "ADMIN" })),
+        ...(account.members ?? []).map((id) => ({ id, role: "MEMBER" })),
+      ];
+      const edges = roles.flatMap(({ id, role }) => {
+        const person = node(id);
+        return person ? [{ role, node: person }] : [];
+      });
+      return Response.json({ data: { organization: { membersWithRole: pageOf(edges) } } });
+    }
+
+    const fullName = `${variables.owner}/${variables.name}`;
+    const repository = installation.repositories.find(
+      (repo) =>
+        repo.fullName === fullName &&
+        (token.repositoryIds === null || token.repositoryIds.includes(repo.id)),
+    );
+    if (!repository) return error("NOT_FOUND", "Could not resolve to a Repository.");
+    this.peopleRequests.push(`repo ${fullName}`);
+    const admins = account.type === "Organization" ? (account.owners ?? []) : [account.id];
+    const permissions = new Map<number, string>(
+      Object.entries(repository.access).map(([id, access]) => [
+        Number(id),
+        access === "write" ? "WRITE" : "READ",
+      ]),
+    );
+    for (const id of admins) permissions.set(id, "ADMIN");
+    const edges = [...permissions].flatMap(([id, permission]) => {
+      const person = node(id);
+      return person ? [{ permission, node: person }] : [];
+    });
+    return Response.json({ data: { repository: { collaborators: pageOf(edges) } } });
   }
 
   #secret(length: number): string {

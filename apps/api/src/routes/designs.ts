@@ -21,6 +21,8 @@ import {
   getMemberWorkspace,
   getWorkspaceRepo,
   listPresence,
+  listRepoPeople,
+  listWorkspacePeople,
   markDesignSeen,
   PR_CHECKS,
   PR_STATES,
@@ -48,6 +50,7 @@ import { ApiError } from "../http/errors.ts";
 import { validate } from "../http/validate.ts";
 import { forgetCheckpoints } from "../runner/checkpoint.ts";
 import { destroySandboxes, retireSandboxes } from "../sandboxes/retire.ts";
+import { toPersonView, WorkspacePersonView } from "./workspaces.ts";
 
 /*
  * A design: its row, its document and how it changes (docs/cloud.md, "The document and how it
@@ -135,6 +138,11 @@ const CreateBody = z.object({
     .string()
     .regex(/^[A-Za-z0-9_-]{8,64}$/)
     .optional(),
+  /**
+   * Where the first message came from, for analytics only: one of the composer's ideas, or
+   * the person's own words (the default).
+   */
+  source: z.enum(["idea", "prompt"]).optional(),
 });
 
 const PatchBody = z
@@ -201,6 +209,19 @@ const PresenceView = z.object({
   ),
 });
 
+/** Who can open a design, as Share lists them: everyone GitHub gives access to its repo. */
+const DesignPeopleView = z.object({
+  people: z.array(
+    WorkspacePersonView.extend({
+      /**
+       * `owner`: the design is theirs. Otherwise what GitHub lets them do in its repo: `edit`
+       * (push) or `view` (read).
+       */
+      access: z.enum(["owner", "edit", "view"]),
+    }),
+  ),
+});
+
 const SeenBody = z.object({
   seq: z.number().int().min(0).optional(),
   threadSeq: z.number().int().min(0).optional(),
@@ -242,6 +263,23 @@ export const designs = new Hono<AppEnv>()
       ...(body.effort ? { effort: body.effort } : {}),
       ...(createKey ? { createKey } : {}),
     });
+    if (created) {
+      deps.analytics.capture("design created", {
+        design_id: design.id,
+        source: repo ? (body.source ?? "prompt") : "scratch",
+        with_message: message !== undefined,
+        model: design.model,
+        effort: design.effort,
+      });
+      if (message) {
+        deps.analytics.capture("message sent", {
+          design_id: design.id,
+          first: true,
+          characters: message.text.length,
+          attachments: 0,
+        });
+      }
+    }
     return c.json(await viewOf(deps, { design, repo, access: "write" }), created ? 201 : 200);
   })
 
@@ -249,6 +287,40 @@ export const designs = new Hono<AppEnv>()
   .get("/:id", access.user, validate("param", Params), async (c) => {
     const grant = await requireDesign(c, c.req.valid("param").id, "read");
     return c.json(await viewOf(c.var.deps, grant));
+  })
+
+  /**
+   * Who can open it, for Share: everyone GitHub gives access to its repo, whether or not they
+   * have opened Ponzu, its owner first. Access is GitHub's, so nothing here grants any. A
+   * Scratch design is its owner's alone. Only whom GitHub would show this person: someone who
+   * can only read the repo is not shown its outside collaborators, and someone who reaches the
+   * workspace only through repos shared with them sees only themselves.
+   */
+  .get("/:id/people", access.user, validate("param", Params), async (c) => {
+    const { db } = c.var.deps;
+    const { user } = c.var.actor;
+    const { design, repo } = await requireDesign(c, c.req.valid("param").id, "read");
+    await requireWorkspace(c, design.workspaceId);
+    // Who this person is shown is chosen in the query, as GitHub would show them a repo's
+    // people: its outside collaborators only to an owner or someone who can push to it.
+    const viewer = { workspaceId: design.workspaceId, viewerUserId: user.id };
+    const shown = repo
+      ? await listRepoPeople(db, { ...viewer, repoId: repo.id })
+      : (await listWorkspacePeople(db, viewer))
+          .filter((person) => person.userId !== null && person.userId === design.ownerId)
+          .map((person) => ({ ...person, permission: "admin" as const }));
+    const people = shown
+      .map((person) => ({
+        ...toPersonView(person),
+        access:
+          person.userId !== null && person.userId === design.ownerId
+            ? ("owner" as const)
+            : person.permission === "read"
+              ? ("view" as const)
+              : ("edit" as const),
+      }))
+      .toSorted((a, b) => Number(b.access === "owner") - Number(a.access === "owner"));
+    return c.json(DesignPeopleView.parse({ people }));
   })
 
   /**
@@ -279,6 +351,11 @@ export const designs = new Hono<AppEnv>()
             now: new Date(deps.clock.now()),
           });
     if (!design) throw new ApiError(404, "not_found", "There is no such design.");
+    if (settled !== undefined && settled !== (grant.design.settledAt !== null)) {
+      deps.analytics.capture(settled ? "design settled" : "design reopened", {
+        design_id: design.id,
+      });
+    }
     if (settled) {
       // A settled design needs no sandbox; the minute's sweep does this too, for a merge.
       deps.background(
@@ -306,6 +383,10 @@ export const designs = new Hono<AppEnv>()
     const sandboxes = await retireSandboxes(deps, design.id);
     const forget = await forgetCheckpoints(deps, design.id);
     await deleteDesign(deps.db, design.id);
+    deps.analytics.capture("design deleted", {
+      design_id: design.id,
+      by_owner: design.ownerId === actor.user.id,
+    });
     deps.background("retire", destroySandboxes(deps, sandboxes));
     // Its transcripts and work in progress, which no row knows of any more.
     deps.background("checkpoints_deleted", forget());

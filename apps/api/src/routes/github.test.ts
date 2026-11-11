@@ -101,13 +101,23 @@ describe("GET /v1/github/accounts and POST /v1/github/sync", () => {
     const workspaces = await listUserWorkspaces(t.db, quin.userId);
     const workspaceOf = (login: string) => workspaces.find((w) => w.githubLogin === login)!.id;
     // Their own first, then by name; a member count only for a ready organization.
+    // Who GitHub says can reach zebra-co is read beside the sync, which does not wait for it:
+    // until then its count is not known.
     expect(accounts.map((a: any) => [a.login, a.name, a.kind, a.status, a.memberCount])).toEqual([
       ["quin", "Quin", "personal", "ready", null],
       ["acme", "Acme Inc", "org", "ready", 2],
-      ["zebra-co", "zebra-co", "org", "ready", 1],
+      ["zebra-co", "zebra-co", "org", "ready", null],
     ]);
     expect(accounts[0].workspaceId).toBe(workspaceOf("quin"));
     expect(accounts[1].workspaceId).toBe(workspaceOf("acme"));
+
+    await t.backgroundDone();
+    const later = await t.app.request("/v1/github/accounts", { headers: quin.headers });
+    expect((await later.json()).accounts.map((a: any) => [a.login, a.memberCount])).toEqual([
+      ["quin", null],
+      ["acme", 2],
+      ["zebra-co", 1],
+    ]);
   });
 
   test("a sync with a token GitHub refuses asks the person to sign in again", async () => {
