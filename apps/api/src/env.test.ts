@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { EnvError, readEnv } from "./env.ts";
+import { EnvError, readEnv, sandboxScope } from "./env.ts";
 
 const complete = {
   DATABASE_URL: "postgres://user:hunter2@ep-example-pooler.us-east-1.aws.neon.tech/neondb",
@@ -39,7 +39,13 @@ test("a complete environment is read into one typed value", () => {
     cronSecret: complete.CRON_SECRET,
     boatApiKey: "boat-key",
     // Unset, a wake says the snapshot is missing; the API itself starts.
-    sandbox: { snapshot: null, apiUrl: "https://api.ponzu.design", idleSeconds: 300 },
+    sandbox: {
+      snapshot: null,
+      apiUrl: "https://api.ponzu.design",
+      idleSeconds: 300,
+      limits: { perWorkspace: 5, perOwner: 3 },
+      scope: sandboxScope(complete.DATABASE_URL),
+    },
     vault: { key: "vault-key", oldKeys: [] },
     realtime: { url: complete.NEON_REALTIME_URL, secret: "nrt_live_1example" },
     // Without its trailing slash, so a path can follow it.
@@ -64,15 +70,30 @@ test("the optional ones are read when set", () => {
     PONZU_SANDBOX_SNAPSHOT: "ponzu-runner-0123456789ab",
     PONZU_API_URL: "https://ponzu-dev.example/",
     PONZU_SANDBOX_IDLE_SECONDS: "60",
+    PONZU_SANDBOX_MAX_PER_WORKSPACE: "20",
+    PONZU_SANDBOX_MAX_PER_OWNER: "4",
   });
   expect(env.sandbox).toEqual({
     snapshot: "ponzu-runner-0123456789ab",
     apiUrl: "https://ponzu-dev.example",
     idleSeconds: 60,
+    limits: { perWorkspace: 20, perOwner: 4 },
+    scope: sandboxScope(complete.DATABASE_URL),
   });
   expect(env.vault.oldKeys).toEqual(["older", "oldest"]);
   expect(env.minimumClientVersions).toEqual({ macos: "2.1.0" });
   expect(env.commit).toBe("abc1234");
+});
+
+test("a sandbox's scope is the database's, through whichever of its hosts", () => {
+  const pooled = "postgres://user:hunter2@ep-example-pooler.us-east-1.aws.neon.tech/neondb";
+  const direct = "postgres://other:secret@ep-example.us-east-1.aws.neon.tech/neondb";
+  expect(sandboxScope(pooled)).toMatch(/^[0-9a-f]{12}$/);
+  expect(sandboxScope(direct)).toBe(sandboxScope(pooled));
+  expect(sandboxScope("postgres://user:pw@ep-other.us-east-1.aws.neon.tech/neondb")).not.toBe(
+    sandboxScope(pooled),
+  );
+  expect(sandboxScope(pooled.replace("/neondb", "/otherdb"))).not.toBe(sandboxScope(pooled));
 });
 
 test("everything missing is named at once, and an empty value counts as missing", () => {
@@ -122,6 +143,8 @@ test(".env.example lists exactly the variables the API reads, with no values", (
     "PONZU_API_URL",
     "PONZU_MIN_CLIENT_VERSIONS",
     "PONZU_SANDBOX_IDLE_SECONDS",
+    "PONZU_SANDBOX_MAX_PER_OWNER",
+    "PONZU_SANDBOX_MAX_PER_WORKSPACE",
     "PONZU_SANDBOX_SNAPSHOT",
     "PONZU_VAULT_OLD_KEYS",
   ]);

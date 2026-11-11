@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import type { SandboxLimits } from "@ponzu/db";
 import { z } from "zod";
 import type { R2Config } from "./deps/storage.ts";
 import { type MinimumVersions, parseMinimumVersions } from "./http/client-version.ts";
@@ -36,6 +38,9 @@ const schema = z.object({
   PONZU_API_URL: z.url().default("https://api.ponzu.design"),
   /** How long a sandbox stays awake after the last activity, in seconds. */
   PONZU_SANDBOX_IDLE_SECONDS: z.coerce.number().int().min(30).max(3600).default(300),
+  /** How many sandboxes may be waking or awake at once in one workspace, and for one owner. */
+  PONZU_SANDBOX_MAX_PER_WORKSPACE: z.coerce.number().int().min(1).default(5),
+  PONZU_SANDBOX_MAX_PER_OWNER: z.coerce.number().int().min(1).default(3),
   /** The key stored secrets are sealed with: 32 random bytes in base64url. */
   PONZU_VAULT_KEY: z.string(),
   /** Neon Realtime for the database's branch: where clients subscribe, and what seals queries. */
@@ -64,6 +69,24 @@ export interface SandboxConfig {
   apiUrl: string;
   /** How long a sandbox stays awake after the last activity. */
   idleSeconds: number;
+  /** How many may be up at once. Until billing exists, this is what bounds the provider's bill. */
+  limits: SandboxLimits;
+  /**
+   * The label value that marks this database's sandboxes at the provider (`scope`). Every
+   * deployment shares the provider account, and a sweep destroys only what its own database
+   * should know of, so it must never take another database's sandboxes for orphans.
+   */
+  scope: string;
+}
+
+/**
+ * The database a connection string reaches, as a short hash: the same for every deployment on
+ * one database, whichever of Neon's hosts for it they connect through.
+ */
+export function sandboxScope(databaseUrl: string): string {
+  const url = new URL(databaseUrl);
+  const host = url.hostname.replace("-pooler.", ".");
+  return createHash("sha256").update(`${host}${url.pathname}`).digest("hex").slice(0, 12);
 }
 
 /** The environment was read and something the API needs is missing or malformed. */
@@ -136,6 +159,11 @@ export function readEnv(source: Record<string, string | undefined>): Env {
       snapshot: env.PONZU_SANDBOX_SNAPSHOT ?? null,
       apiUrl: env.PONZU_API_URL.replace(/\/+$/, ""),
       idleSeconds: env.PONZU_SANDBOX_IDLE_SECONDS,
+      limits: {
+        perWorkspace: env.PONZU_SANDBOX_MAX_PER_WORKSPACE,
+        perOwner: env.PONZU_SANDBOX_MAX_PER_OWNER,
+      },
+      scope: sandboxScope(env.DATABASE_URL),
     },
     vault: {
       key: env.PONZU_VAULT_KEY,

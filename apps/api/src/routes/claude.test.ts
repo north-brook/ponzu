@@ -212,6 +212,37 @@ describe("a subscription sign-in", () => {
     expect(used.body.error.code).toBe("claude_sign_in_used");
   });
 
+  test("a person has one open at a time: a new one replaces the last, and its sandbox goes", async () => {
+    const headers = await as("ivy");
+    const first = await start(headers);
+    const firstSandbox = await machine();
+    await start(headers);
+    await t.backgroundDone();
+    expect((await t.sandbox.get(firstSandbox.id)).state).toBe("gone");
+    const replaced = await call(t, headers, "POST", `/v1/claude/sign-ins/${first.id}/code`, {
+      code: CODE,
+    });
+    expect(replaced.body.error.code).toBe("claude_sign_in_used");
+  });
+
+  test("five an hour: the next is refused before any sandbox is made", async () => {
+    const headers = await as("jo");
+    for (let i = 0; i < 5; i++) await start(headers);
+    await t.backgroundDone();
+    const live = async () =>
+      (await t.sandbox.list({ labels: { ponzu: "claude-sign-in" } })).filter(
+        (sandbox) => sandbox.state !== "gone",
+      ).length;
+    const before = await live();
+    const sixth = await call(t, headers, "POST", "/v1/claude/sign-ins");
+    expect(sixth.status).toBe(429);
+    expect(sixth.body.error.code).toBe("rate_limited");
+    expect(await live()).toBe(before);
+
+    t.clock.advance(61 * 60_000);
+    await start(await as("jo"));
+  });
+
   test("a provider that cannot start the sandbox is Claude being out of reach", async () => {
     t.sandbox.failNext("create", new SandboxError("rate_limited", "429", { retryAfterSeconds: 9 }));
     const failed = await call(t, await as("hal"), "POST", "/v1/claude/sign-ins");

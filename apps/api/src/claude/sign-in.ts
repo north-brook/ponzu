@@ -1,4 +1,10 @@
-import { type ClaudeAccount, consumeAuthState, createAuthState, getAuthState } from "@ponzu/db";
+import {
+  type ClaudeAccount,
+  consumeAuthState,
+  getAuthState,
+  openClaudeSignIn,
+  setClaudeSignInSandbox,
+} from "@ponzu/db";
 import { SandboxError } from "@ponzu/sandbox";
 import { ApiError, UpstreamError } from "../http/errors.ts";
 import { type ClaudeDeps, connectClaude } from "./accounts.ts";
@@ -29,6 +35,8 @@ const WAKE_TIMEOUT_MS = 60_000;
 const DRIVER = ".st/driver.sh";
 /** The label every sign-in's sandbox carries, with `expires`: when it may be destroyed. */
 const SIGN_IN_SANDBOX = { ponzu: "claude-sign-in" } as const;
+/** How many sign-ins a person may start in an hour. */
+const SIGN_INS_PER_HOUR = 5;
 /** A subscription token, as claude.ai issues them. */
 const TOKEN = /^sk-ant-oat\d+-[A-Za-z0-9_-]{20,}$/;
 /** What `claude setup-token` says when it turns a code away. */
@@ -40,39 +48,64 @@ export interface StartedSignIn {
   expiresAt: Date;
 }
 
-/** Start a sign-in and answer where the person approves it. */
+/** The labels of this database's sign-in sandboxes (`SandboxConfig.scope`). */
+function signInSandboxes(deps: Pick<ClaudeDeps, "config">): Record<string, string> {
+  return { ...SIGN_IN_SANDBOX, scope: deps.config.sandbox.scope };
+}
+
+/**
+ * Start a sign-in and answer where the person approves it. It replaces any they had open, and
+ * its sandbox with it; a person starts at most `SIGN_INS_PER_HOUR` an hour, since each is a
+ * machine Ponzu pays for.
+ */
 export async function startSignIn(deps: ClaudeDeps, userId: string): Promise<StartedSignIn> {
-  const { sandbox, clock } = deps;
+  const { sandbox, clock, db } = deps;
   const expiresAt = new Date(clock.now() + SIGN_IN_MS);
-  const created = await provider(() =>
-    sandbox.create({
-      idempotencyKey: `claude-sign-in-${crypto.randomUUID()}`,
-      name: "claude-sign-in",
-      labels: { ...SIGN_IN_SANDBOX, expires: String(expiresAt.getTime()) },
-      // No environment at all: an API key or an older token would change who signs in.
-      commandHistory: false,
-      autoStopSeconds: SANDBOX_SECONDS,
-    }),
-  );
-  const id = created.sandbox.id;
+  const opened = await openClaudeSignIn(db, {
+    userId,
+    now: new Date(clock.now()),
+    expiresAt,
+    perHour: SIGN_INS_PER_HOUR,
+  });
+  if (!opened) {
+    throw new ApiError(
+      429,
+      "rate_limited",
+      "You've started signing in to Claude several times this hour. Try again later.",
+    );
+  }
+  const { id, replaced } = opened;
+  for (const old of replaced) deps.background("claude_sign_in", sandbox.destroy(old));
+
+  let sandboxId: string | null = null;
   try {
+    const created = await provider(() =>
+      sandbox.create({
+        idempotencyKey: `claude-sign-in-${id}`,
+        name: "claude-sign-in",
+        labels: { ...signInSandboxes(deps), expires: String(expiresAt.getTime()) },
+        // No environment at all: an API key or an older token would change who signs in.
+        commandHistory: false,
+        autoStopSeconds: SANDBOX_SECONDS,
+      }),
+    );
+    const made = created.sandbox.id;
+    sandboxId = made;
+    if (!(await setClaudeSignInSandbox(db, { id, sandboxId: made }))) {
+      throw new ApiError(409, "claude_sign_in_used", "A newer sign-in replaced this one.");
+    }
     const url = await provider(async () => {
-      await sandbox.ensureAwake(id, { timeoutMs: WAKE_TIMEOUT_MS });
-      await sandbox.writeFile(id, DRIVER, SIGN_IN_DRIVER);
-      const started = await sandbox.exec(id, `bash ~/${DRIVER} start`, { timeoutSeconds: 45 });
+      await sandbox.ensureAwake(made, { timeoutMs: WAKE_TIMEOUT_MS });
+      await sandbox.writeFile(made, DRIVER, SIGN_IN_DRIVER);
+      const started = await sandbox.exec(made, `bash ~/${DRIVER} start`, { timeoutSeconds: 45 });
       return /^URL=(https:\/\/\S+)$/m.exec(started.stdout)?.[1] ?? null;
     });
     if (!url) throw new UpstreamError("sandbox", "claude setup-token printed no address.");
-    const state = await createAuthState(deps.db, {
-      kind: "claude_sign_in",
-      userId,
-      payload: { sandboxId: id },
-      expiresAt,
-    });
-    deps.log.info("claude_sign_in_started", { userId, signInId: state.id });
-    return { id: state.id, authorizeUrl: url, expiresAt };
+    deps.log.info("claude_sign_in_started", { userId, signInId: id });
+    return { id, authorizeUrl: url, expiresAt };
   } catch (error) {
-    deps.background("claude_sign_in", sandbox.destroy(id));
+    await consumeAuthState(db, { id, kind: "claude_sign_in", now: new Date(clock.now()) });
+    if (sandboxId) deps.background("claude_sign_in", sandbox.destroy(sandboxId));
     throw error;
   }
 }
@@ -129,16 +162,22 @@ export async function abandonSignIn(deps: ClaudeDeps, userId: string, id: string
   const state = await getAuthState(deps.db, { id, kind: "claude_sign_in", userId });
   if (!state) throw new ApiError(404, "not_found", "There is no such sign-in.");
   await consumeAuthState(deps.db, { id, kind: "claude_sign_in", now: new Date(deps.clock.now()) });
-  deps.background("claude_sign_in", deps.sandbox.destroy(String(state.payload.sandboxId)));
+  const sandboxId = state.payload.sandboxId;
+  // Without one, its start failed and destroyed what it made.
+  if (typeof sandboxId === "string") {
+    deps.background("claude_sign_in", deps.sandbox.destroy(sandboxId));
+  }
 }
 
 /**
  * Destroy the sandboxes of sign-ins past their time: abandoned, or whose destroy failed.
  * Answers how many.
  */
-export async function sweepSignIns(deps: Pick<ClaudeDeps, "sandbox" | "clock">): Promise<number> {
+export async function sweepSignIns(
+  deps: Pick<ClaudeDeps, "sandbox" | "clock" | "config">,
+): Promise<number> {
   const now = deps.clock.now();
-  const listed = await deps.sandbox.list({ labels: SIGN_IN_SANDBOX });
+  const listed = await deps.sandbox.list({ labels: signInSandboxes(deps) });
   const over = listed.filter(
     (sandbox) => sandbox.state !== "gone" && Number(sandbox.labels.expires) < now,
   );

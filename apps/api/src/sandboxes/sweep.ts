@@ -3,12 +3,14 @@ import {
   isSandboxKnown,
   listSandboxesToSweep,
   moveSandbox,
+  revokeRunnerTokens,
   type SweptSandbox,
   setSandboxAutoStop,
   showAgentWaiting,
+  WAKING_LEASE_MS,
 } from "@ponzu/db";
 import type { JobDeps } from "../jobs/run.ts";
-import { AUTO_STOP_SECONDS, DESIGN_SANDBOX } from "./orchestrate.ts";
+import { AUTO_STOP_SECONDS, designSandboxes, sandboxLabels } from "./orchestrate.ts";
 import { destroySandboxes, retireSandboxes } from "./retire.ts";
 import { startWake } from "./wake.ts";
 
@@ -17,20 +19,17 @@ import { startWake } from "./wake.ts";
  * sandbox"). boat has no idle detection, so this is what puts sandboxes to sleep: with an
  * explicit stop, which keeps the machine warm for about ten minutes, where the provider's own
  * auto-stop (kept well ahead while awake) would not. It also brings back runners that went
- * quiet, destroys the sandboxes of settled designs and the ones nothing knows, and repairs rows
- * a crashed function left halfway through a move.
+ * quiet; destroys the sandboxes of settled designs, the ones whose environment carries a Claude
+ * credential that was disconnected or whose owner left, and the ones nothing knows; and repairs
+ * rows a crashed function left halfway through a move.
  *
  * Each sandbox's step is a move that holds to the state it moves from, so two sweeps at once,
- * or a sweep and a wake, cannot both act on it.
+ * or a sweep and a wake, cannot both act on it. Only this database's sandboxes are looked at
+ * (the `scope` label): every deployment shares the provider account.
  */
 
 /** A runner unheard from for this long (the heartbeat is every 30 s) is taken as dead. */
 export const DEAD_AFTER_MS = 90_000;
-/**
- * A move left in `waking` or `stopping` this long was abandoned by its function. Longer than a
- * job's lock, so a wake still being tried is never taken for one.
- */
-const STUCK_AFTER_MS = 6 * 60_000;
 /** The provider's auto-stop is moved out once it is closer than this. */
 const EXTEND_WITHIN_MS = 10 * 60_000;
 /** Restarts in a row of a runner that never answers before the sandbox is failed. */
@@ -41,7 +40,7 @@ export type SweepStep = "retire" | "sleep" | "stop" | "restart" | "repair" | "ex
 /** What the sweep does with one sandbox now, or null for nothing. */
 export function stepFor(row: SweptSandbox, now: number, idleMs: number): SweepStep | null {
   const { sandbox } = row;
-  if (row.designStatus === "settled") return "retire";
+  if (row.designStatus === "settled" || !row.claudeHeld) return "retire";
   if (sandbox.state === "awake") {
     // Its owner disconnected Claude: nothing more may run on the credential it holds.
     if (!row.claudeUsable) return "stop";
@@ -54,7 +53,7 @@ export function stepFor(row: SweptSandbox, now: number, idleMs: number): SweepSt
     return null;
   }
   if (sandbox.state === "waking" || sandbox.state === "stopping") {
-    if (sandbox.stateAt.getTime() < now - STUCK_AFTER_MS) return "repair";
+    if (sandbox.stateAt.getTime() < now - WAKING_LEASE_MS) return "repair";
   }
   return null;
 }
@@ -96,8 +95,12 @@ export async function sweepSandboxes(deps: JobDeps): Promise<SweepCounts> {
 type Step = (deps: JobDeps, row: SweptSandbox, idleBefore: number) => Promise<boolean>;
 
 const STEPS: Record<SweepStep, Step> = {
-  retire: async (deps, { sandbox }) => {
-    await destroySandboxes(deps, await retireSandboxes(deps, sandbox.designId));
+  retire: async (deps, row) => {
+    const { designId } = row.sandbox;
+    await destroySandboxes(deps, await retireSandboxes(deps, designId));
+    if (row.designStatus !== "settled" && !row.ownerMember) {
+      await showAgentWaiting(deps.db, { designId, waking: false, blocker: "claude_owner_left" });
+    }
     return true;
   },
 
@@ -136,27 +139,43 @@ const STEPS: Record<SweepStep, Step> = {
   },
 
   repair: async (deps, row) => {
-    const { db, clock } = deps;
+    const { db, clock, config } = deps;
     const { sandbox } = row;
     const now = new Date(clock.now());
     const moving = ["waking", "stopping"] as const;
+    // Only a move nobody has made progress on since the sweep looked.
+    const stateBefore = new Date(sandbox.stateAt.getTime() + 1);
     if (!sandbox.providerId) {
-      // A create that never got as far as the provider, or never heard back.
-      await moveSandbox(db, {
+      // A create that never got as far as the provider, or whose answer never came back. What
+      // it may have made carries the row's labels and an environment nothing recorded, the
+      // owner's Claude credential in it: destroy that, and the runner tokens issued for it.
+      const failed = await moveSandbox(db, {
         id: sandbox.id,
         from: moving,
         to: "failed",
         now,
+        stateBefore,
         changes: { failure: "Its wake was cut off." },
       });
+      if (!failed) return false;
+      const made = await deps.sandbox.list({
+        labels: sandboxLabels(config.sandbox.scope, sandbox.designId, sandbox.generation),
+      });
+      await revokeRunnerTokens(db, sandbox.designId);
+      // One whose destroy fails is no row's now: the orphan sweep finds it next.
+      await destroySandboxes(
+        deps,
+        made.filter((found) => found.state !== "gone").map((found) => found.id),
+      );
     } else {
       const seen = await deps.sandbox.get(sandbox.providerId);
       if (seen.state === "starting" || seen.state === "stopping") return false;
-      await moveSandbox(db, {
+      const moved = await moveSandbox(db, {
         id: sandbox.id,
         from: moving,
         to: seen.state,
         now,
+        stateBefore,
         changes:
           seen.state === "gone"
             ? { failure: seen.reason ?? "The provider lost it." }
@@ -164,6 +183,7 @@ const STEPS: Record<SweepStep, Step> = {
               ? { autoStopAt: seen.autoStopAt ? new Date(seen.autoStopAt) : null }
               : {},
       });
+      if (!moved) return false;
       if (seen.state === "awake") return true;
     }
     if (row.pending) await startWake(deps, sandbox.designId, "repair");
@@ -184,7 +204,7 @@ const STEPS: Record<SweepStep, Step> = {
  * Put an awake sandbox to sleep with an explicit stop. With `idleBefore`, only if nobody has
  * kept it awake since. False when it was not this call that stopped it.
  */
-export async function putToSleep(
+async function putToSleep(
   deps: JobDeps,
   sandbox: SweptSandbox["sandbox"],
   idleBefore?: Date,
@@ -216,13 +236,14 @@ export async function putToSleep(
  * while its destroy failed, or a sandbox a lost create made. Answers how many.
  */
 async function destroyOrphans(deps: JobDeps): Promise<number> {
-  const listed = await deps.sandbox.list({ labels: DESIGN_SANDBOX });
+  const listed = await deps.sandbox.list({ labels: designSandboxes(deps.config.sandbox.scope) });
+  const now = new Date(deps.clock.now());
   const orphans: string[] = [];
   await Promise.all(
     listed.map(async (sandbox) => {
       const designId = sandbox.labels.design;
       if (!designId || sandbox.state === "gone") return;
-      if (await isSandboxKnown(deps.db, { designId, providerId: sandbox.id })) return;
+      if (await isSandboxKnown(deps.db, { designId, providerId: sandbox.id, now })) return;
       orphans.push(sandbox.id);
     }),
   );

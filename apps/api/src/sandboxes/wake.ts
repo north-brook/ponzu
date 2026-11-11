@@ -85,11 +85,12 @@ async function recordWake(deps: Pick<JobDeps, "db" | "clock">, designId: string,
 }
 
 async function wake(deps: WakeDeps, designId: string, reason: WakeReason): Promise<void> {
-  const now = new Date(deps.clock.now());
+  // First, so that an idle stop the wake might find the sandbox awake for cannot begin after
+  // it looked: that stop holds to nobody having kept the sandbox awake since it went idle.
+  await touchSandbox(deps.db, { designId, now: new Date(deps.clock.now()) });
   const [recorded, sandbox] = await Promise.all([
     WAKES[reason] ? recordWake(deps, designId, reason) : null,
     getAwakeSandboxAddress(deps.db, designId),
-    touchSandbox(deps.db, { designId, now }),
   ]);
   if (recorded) deps.background("wake", runJob(deps, recorded.job, recorded.worker));
   if (!sandbox) return;

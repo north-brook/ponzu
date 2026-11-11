@@ -3,17 +3,18 @@ import {
   claudeAccountIdFor,
   connectClaudeAccount,
   disconnectClaudeAccount,
-  getLiveSandbox,
+  listDesignsWithSandboxOn,
   setClaudeBlocker,
 } from "@ponzu/db";
 import type { Deps } from "../deps/index.ts";
-import { putToSleep } from "../sandboxes/sweep.ts";
+import { destroySandboxes, retireSandboxes } from "../sandboxes/retire.ts";
 import { startWake } from "../sandboxes/wake.ts";
 
 /*
  * A person's own Claude (docs/cloud.md, "Credentials"): sealed in the vault, bound to its row,
  * and opened only to go into a sandbox's environment. Connecting lets the person's designs that
- * were waiting for Claude run; disconnecting destroys the credential and stops what runs on it.
+ * were waiting for Claude run; disconnecting destroys the credential and every sandbox that
+ * holds it.
  */
 
 export type ClaudeDeps = Pick<
@@ -67,8 +68,10 @@ export async function connectClaude(
 }
 
 /**
- * Destroy the person's credential. Their designs say they wait for Claude, and the sandboxes
- * awake on it are stopped. Safe to repeat.
+ * Destroy the person's credential, wherever it is. Their designs say they wait for Claude, and
+ * every sandbox whose environment may carry it is destroyed, asleep or awake: a stopped
+ * sandbox keeps its environment at the provider until its disk goes. Their next wake makes a
+ * new one from the branch. Safe to repeat; the minute's sweep finishes what this did not.
  */
 export async function disconnectClaude(deps: ClaudeDeps, userId: string): Promise<void> {
   const { db } = deps;
@@ -79,14 +82,12 @@ export async function disconnectClaude(deps: ClaudeDeps, userId: string): Promis
     userId,
     blocker: "claude_not_connected",
   });
-  deps.log.info("claude_disconnected", { userId, designs: blocked.length });
-  deps.background(
-    "claude_disconnected",
-    Promise.all(
-      blocked.map(async ({ id }) => {
-        const sandbox = await getLiveSandbox(db, id);
-        if (sandbox?.state === "awake") await putToSleep(deps, sandbox);
-      }),
-    ),
-  );
+  const holding = await listDesignsWithSandboxOn(db, { claudeAccountId: accountId, userId });
+  const machines = await Promise.all(holding.map((id) => retireSandboxes(deps, id)));
+  deps.log.info("claude_disconnected", {
+    userId,
+    designs: blocked.length,
+    sandboxes: holding.length,
+  });
+  deps.background("claude_disconnected", destroySandboxes(deps, machines.flat()));
 }

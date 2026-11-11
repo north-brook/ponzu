@@ -26,6 +26,8 @@ export { FakeAnthropic, FakePoke, FakeSealer, MemoryStorage } from "./fakes.ts";
 export const TEST_SNAPSHOT = "ponzu-runner-test";
 /** Where the test app tells a sandbox's runner the API is. */
 export const TEST_API_URL = "https://api.test";
+/** The label value the test app's sandboxes carry: its database's, as a deployment's would. */
+export const TEST_SCOPE = "testscope";
 
 /** 32 bytes of nothing secret, in base64url: the vault key every test app seals with. */
 export const TEST_VAULT_KEY = Buffer.alloc(32, 7).toString("base64url");
@@ -94,6 +96,11 @@ export async function createTestApp(
     assetsUrl?: string;
     /** How sandboxes are made, over the test's own: a snapshot of null acts out it being unset. */
     sandbox?: Partial<SandboxConfig>;
+    /**
+     * Another test app's provider (and its clock), to act out two deployments sharing one
+     * provider account. Give each its own `sandbox.scope`.
+     */
+    provider?: FakeProvider;
   } = {},
 ) {
   const local = options.live ? null : await createTestDb();
@@ -104,10 +111,10 @@ export async function createTestApp(
   db.transaction = () => {
     throw new Error("No transactions support in neon-http driver");
   };
-  const clock = new FakeClock();
+  const clock = options.provider?.clock ?? new FakeClock();
   const workos = new FakeWorkos(clock);
   const github = new FakeGithub(clock);
-  const sandbox = new FakeProvider(clock);
+  const sandbox = options.provider ?? new FakeProvider(clock);
   sandbox.seedSnapshot(TEST_SNAPSHOT);
   const anthropic = new FakeAnthropic();
   const storage = new MemoryStorage(clock);
@@ -154,6 +161,9 @@ export async function createTestApp(
         snapshot: TEST_SNAPSHOT,
         apiUrl: TEST_API_URL,
         idleSeconds: 300,
+        // Higher than a deployment's, since a test file keeps many designs awake at once.
+        limits: { perWorkspace: 100, perOwner: 100 },
+        scope: TEST_SCOPE,
         ...options.sandbox,
       },
     },

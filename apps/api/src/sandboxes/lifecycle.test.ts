@@ -4,8 +4,15 @@ import { getDesign, getLiveSandbox, moveSandbox, type Sandbox } from "@ponzu/db"
 import { RUNNER_HEADER } from "@ponzu/runner/protocol";
 import { SandboxError } from "@ponzu/sandbox";
 import { call, designIn, type Workspace, workspaceWithRepo } from "../testing/designs.ts";
-import { createTestApp, TEST_API_URL, TEST_CRON_SECRET, type TestApp } from "../testing/index.ts";
-import { wakeDesign } from "./orchestrate.ts";
+import {
+  createTestApp,
+  TEST_API_URL,
+  TEST_CRON_SECRET,
+  TEST_SCOPE,
+  TEST_SNAPSHOT,
+  type TestApp,
+} from "../testing/index.ts";
+import { sandboxLabels, wakeDesign } from "./orchestrate.ts";
 
 /*
  * A design's sandbox from its first message to its deletion, through the routes and the
@@ -23,6 +30,24 @@ beforeAll(async () => {
   await connectKey("maya", KEY);
 });
 afterAll(() => t.close());
+
+/**
+ * Runs the tests of the `describe` this is called in on an app of their own, made with
+ * `options`, with Maya's key connected in a workspace of Maya, Ines and Omar.
+ */
+function onAppOfTheirOwn(options: Parameters<typeof createTestApp>[0] = {}) {
+  let saved: { t: TestApp; ws: Workspace };
+  beforeAll(async () => {
+    saved = { t, ws };
+    t = await createTestApp(options);
+    ws = await workspaceWithRepo(t, { maya: "write", ines: "write", omar: "write" });
+    await connectKey("maya", KEY);
+  });
+  afterAll(async () => {
+    await t.close();
+    ({ t, ws } = saved);
+  });
+}
 
 /** A fresh sign-in: the test clock runs past an access token's five minutes. */
 const as = async (login: string) => (await t.signInAs({ login })).headers;
@@ -61,7 +86,11 @@ async function cron() {
   });
   expect(ran.status).toBe(200);
   await t.backgroundDone();
-  return (await ran.json()) as { ran: number; sandboxes: Record<string, number> };
+  return (await ran.json()) as {
+    ran: number;
+    sandboxes: Record<string, number>;
+    signIns: number;
+  };
 }
 
 /**
@@ -116,7 +145,12 @@ describe("the first wake", () => {
     const sandbox = await live(design.id);
     expect(sandbox).toMatchObject({ state: "awake", generation: 1, provider: "boat" });
     const [machine] = await machines(design.id);
-    expect(machine!.labels).toEqual({ ponzu: "design", design: design.id, generation: "1" });
+    expect(machine!.labels).toEqual({
+      ponzu: "design",
+      scope: TEST_SCOPE,
+      design: design.id,
+      generation: "1",
+    });
     expect(machine!.id).toBe(sandbox.providerId!);
     const env = t.sandbox.env(machine!.id);
     // Exactly one Claude credential, and nothing else but what the runner needs.
@@ -156,22 +190,45 @@ describe("the first wake", () => {
     expect(lines).not.toContain(env.PONZU_RUNNER_TOKEN!);
   });
 
-  test("however many ask at once, a design gets one sandbox", async () => {
+  test("however many ask at once, one wake makes the one sandbox and the rest leave it be", async () => {
     const design = await fresh();
-    const job = { attempts: 1, maxAttempts: 5 };
-    await Promise.all([
-      say(design.id, "one"),
-      say(design.id, "two"),
-      wakeDesign(t.deps, design.id, job),
-      wakeDesign(t.deps, design.id, job),
-      wakeDesign(t.deps, design.id, job),
-    ]);
-    await t.backgroundDone();
+    const calls = { create: 0, stop: 0, ensureAwake: 0 };
+    const counted = (Object.keys(calls) as (keyof typeof calls)[]).map((method) => {
+      const real = t.sandbox[method].bind(t.sandbox) as (...args: unknown[]) => Promise<unknown>;
+      (t.sandbox as unknown as Record<string, unknown>)[method] = (...args: unknown[]) => {
+        calls[method]++;
+        return real(...args);
+      };
+      return () => {
+        (t.sandbox as unknown as Record<string, unknown>)[method] = real;
+      };
+    });
+    try {
+      const wake = (id: string) =>
+        wakeDesign(t.deps, design.id, { id, attempts: 1, maxAttempts: 5 });
+      await Promise.all([
+        say(design.id, "one"),
+        say(design.id, "two"),
+        wake("job_x"),
+        wake("job_y"),
+        wake("job_z"),
+      ]);
+      await t.backgroundDone();
+    } finally {
+      for (const restore of counted) restore();
+    }
 
+    expect(calls).toEqual({ create: 1, stop: 0, ensureAwake: 1 });
     expect(await machines(design.id)).toHaveLength(1);
     expect(await rows(`select state from sandboxes where design_id = '${design.id}'`)).toEqual([
       { state: "awake" },
     ]);
+    expect(
+      await rows(
+        `select count(*)::int as live from runner_tokens
+          where design_id = '${design.id}' and revoked_at is null`,
+      ),
+    ).toEqual([{ live: 1 }]);
   });
 
   test("a design whose owner has no Claude does not wake, says why, and wakes once they connect", async () => {
@@ -551,6 +608,34 @@ describe("repairs", () => {
     expect((await live(lost.id)).state).toBe("failed");
   });
 
+  test("a create that reached the provider before its function died leaves nothing behind", async () => {
+    const design = await fresh();
+    await rows(`
+      insert into sandboxes (id, design_id, generation, provider, state, state_at, waking_by)
+      values ('sbx_crashedcreate01', '${design.id}', 1, 'boat', 'waking',
+              '${new Date(t.clock.now()).toISOString()}', 'job_dead')`);
+    // What the provider made before the function died: the row's labels, and the key.
+    const made = await t.sandbox.create({
+      idempotencyKey: `${design.id}-1`,
+      from: TEST_SNAPSHOT,
+      labels: sandboxLabels(TEST_SCOPE, design.id, 1),
+      env: { ANTHROPIC_API_KEY: KEY },
+      autoStopSeconds: 1200,
+    });
+
+    t.clock.advance(7 * MINUTE);
+    expect((await cron()).sandboxes.repair).toBe(1);
+    expect((await live(design.id)).state).toBe("failed");
+    expect((await t.sandbox.get(made.sandbox.id)).state).toBe("gone");
+
+    // The next message makes the generation's sandbox anew.
+    await say(design.id);
+    const next = await live(design.id);
+    expect(next).toMatchObject({ state: "awake", generation: 1 });
+    expect(next.providerId).not.toBe(made.sandbox.id);
+    expect(await machines(design.id)).toHaveLength(1);
+  });
+
   test("a stop left halfway on a design whose message still waits wakes it again", async () => {
     const { design, sandbox } = await awakeDesign();
     await moveSandbox(t.db, {
@@ -566,9 +651,150 @@ describe("repairs", () => {
   });
 });
 
+describe("a stop under way", () => {
+  onAppOfTheirOwn();
+
+  test("a message that lands while an idle stop is in flight waits for it, then wakes the sandbox", async () => {
+    const { design, sandbox, runner } = await awakeDesign();
+    for (let i = 0; i < 11; i++) {
+      t.clock.advance(30_000);
+      await runner.beat();
+    }
+    // The cron's stop is at the provider when the message comes; the wake looks, finds the
+    // sandbox stopping and waits; only then does the stop land.
+    const { stop, sleep } = {
+      stop: t.sandbox.stop.bind(t.sandbox),
+      sleep: t.clock.sleep.bind(t.clock),
+    };
+    let message: Promise<void> | undefined;
+    let looked!: () => void;
+    const wakeLooked = new Promise<void>((resolve) => {
+      looked = resolve;
+    });
+    let landed!: () => void;
+    const stopLanded = new Promise<void>((resolve) => {
+      landed = resolve;
+    });
+    let stops = 0;
+    t.sandbox.stop = async (id) => {
+      stops++;
+      message = say(design.id, "Wait for me");
+      await wakeLooked;
+      const stopped = await stop(id);
+      landed();
+      return stopped;
+    };
+    t.clock.sleep = async (ms) => {
+      looked();
+      await stopLanded;
+      return sleep(ms);
+    };
+    try {
+      await cron();
+      await message;
+    } finally {
+      t.sandbox.stop = stop;
+      t.clock.sleep = sleep;
+    }
+
+    expect(stops).toBe(1);
+    expect((await live(design.id)).state).toBe("awake");
+    expect((await t.sandbox.get(sandbox.providerId!)).state).toBe("awake");
+    expect(logged("sandbox_awake", design.id)).toMatchObject({ start: "warm" });
+  });
+});
+
+describe("limits, until billing exists", () => {
+  onAppOfTheirOwn({ sandbox: { limits: { perWorkspace: 2, perOwner: 1 } } });
+
+  test("a wake past the owner's or the workspace's limit waits, says so, and starts once there is room", async () => {
+    await connectKey("ines", "sk-ant-api03-ines-key-000000000000000");
+    const mine = await awakeDesign();
+    const second = await fresh();
+    await say(second.id);
+    expect(await head(second.id)).toMatchObject({
+      agentState: "waking",
+      agentBlocker: "sandbox_busy",
+    });
+    expect(await machines(second.id)).toEqual([]);
+
+    const theirs = await designIn(t, ws, "ines", sampleDoc());
+    await say(theirs.id, "Make it blue", "ines");
+    expect((await live(theirs.id)).state).toBe("awake");
+    const theirRunner = await runnerIn(await live(theirs.id));
+    const another = await designIn(t, ws, "ines", sampleDoc());
+    await say(another.id, "And green", "ines");
+    expect((await head(another.id)).agentBlocker).toBe("sandbox_busy");
+
+    // Maya's first goes to sleep; her second starts in its place, and the workspace is full
+    // again for Ines's other.
+    for (let i = 0; i < 11; i++) {
+      t.clock.advance(30_000);
+      await mine.runner.beat();
+      await theirRunner.beat("working");
+    }
+    await cron();
+    expect((await live(mine.design.id)).state).toBe("asleep");
+    t.clock.advance(MINUTE);
+    await theirRunner.beat("working");
+    await cron();
+    expect((await live(second.id)).state).toBe("awake");
+    expect((await head(second.id)).agentBlocker).toBeNull();
+    expect(await machines(another.id)).toEqual([]);
+    expect((await head(another.id)).agentBlocker).toBe("sandbox_busy");
+  });
+});
+
+describe("two deployments on one provider account", () => {
+  test("a sweep destroys only its own database's sandboxes", async () => {
+    const other = await createTestApp({ provider: t.sandbox, sandbox: { scope: "otherscope" } });
+    try {
+      const { sandbox } = await awakeDesign();
+      // Made before sandboxes carried a scope: nobody's to destroy.
+      const unscoped = await t.sandbox.create({
+        idempotencyKey: "unscoped",
+        labels: { ponzu: "design", design: "des_elsewhere00001" },
+        autoStopSeconds: 60,
+      });
+      const signIn = await t.sandbox.create({
+        idempotencyKey: "sign-in-here",
+        labels: { ponzu: "claude-sign-in", scope: TEST_SCOPE, expires: "0" },
+        autoStopSeconds: 60,
+      });
+      // The other deployment's own orphan, which it does destroy.
+      const theirs = await t.sandbox.create({
+        idempotencyKey: "their-orphan",
+        labels: sandboxLabels("otherscope", "des_theirsgone00001", 1),
+        autoStopSeconds: 60,
+      });
+
+      const ran = await other.app.request("/v1/cron/minute", {
+        headers: { authorization: `Bearer ${TEST_CRON_SECRET}` },
+      });
+      await other.backgroundDone();
+      expect(await ran.json()).toMatchObject({ sandboxes: { orphaned: 1 }, signIns: 0 });
+
+      expect((await t.sandbox.get(theirs.sandbox.id)).state).toBe("gone");
+      for (const kept of [sandbox.providerId!, unscoped.sandbox.id, signIn.sandbox.id]) {
+        expect((await t.sandbox.get(kept)).state).not.toBe("gone");
+      }
+      // This deployment's own sweep takes its expired sign-in, and leaves the unscoped one.
+      expect((await cron()).signIns).toBe(1);
+      expect((await t.sandbox.get(unscoped.sandbox.id)).state).not.toBe("gone");
+      await t.sandbox.destroy(unscoped.sandbox.id);
+    } finally {
+      await other.close();
+    }
+  });
+});
+
 describe("disconnecting Claude", () => {
-  test("destroys the credential, stops what runs on it, and says why its designs wait", async () => {
+  test("destroys the credential and every sandbox holding it, asleep or awake", async () => {
     const { design, sandbox } = await awakeDesign();
+    const sleeping = await awakeDesign();
+    await idleToSleep(sleeping.runner);
+    expect(t.sandbox.env(sleeping.sandbox.providerId!).ANTHROPIC_API_KEY).toBe(KEY);
+
     const gone = await call(t, await as("maya"), "DELETE", "/v1/claude");
     await t.backgroundDone();
     expect(gone.status).toBe(204);
@@ -578,11 +804,64 @@ describe("disconnecting Claude", () => {
         `select status, encrypted_credential from claude_accounts where user_id = '${ws.people.maya!.userId}'`,
       ),
     ).toEqual([{ status: "revoked", encrypted_credential: null }]);
-    expect((await live(design.id)).state).toBe("asleep");
-    expect((await t.sandbox.get(sandbox.providerId!)).state).not.toBe("awake");
-    expect((await head(design.id)).agentBlocker).toBe("claude_not_connected");
+    // Not stopped: gone, and the environment with the key in it with them.
+    for (const { design: each, sandbox: machine } of [{ design, sandbox }, sleeping]) {
+      expect(await getLiveSandbox(t.db, each.id)).toBeNull();
+      expect((await t.sandbox.get(machine.providerId!)).state).toBe("gone");
+      expect(() => t.sandbox.env(machine.providerId!)).toThrow();
+      expect((await head(each.id)).agentBlocker).toBe("claude_not_connected");
+    }
 
-    await connectKey("maya", KEY);
+    // Connecting again starts the design over from its branch, on the new key.
+    await connectKey("maya", OTHER_KEY);
     expect((await head(design.id)).agentBlocker).toBeNull();
+    await say(design.id);
+    const next = await live(design.id);
+    expect(next).toMatchObject({ state: "awake", generation: 2 });
+    expect(t.sandbox.env(next.providerId!).ANTHROPIC_API_KEY).toBe(OTHER_KEY);
+    await connectKey("maya", KEY);
+  });
+
+  test("a sandbox the disconnect could not destroy is destroyed by the sweep", async () => {
+    const { design, sandbox } = await awakeDesign();
+    await idleToSleep(await runnerIn(sandbox));
+    // As if the disconnect's function died after revoking the account and before the rest.
+    await rows(`
+      update claude_accounts set status = 'revoked', encrypted_credential = null
+       where user_id = '${ws.people.maya!.userId}'`);
+    await cron();
+    expect(await getLiveSandbox(t.db, design.id)).toBeNull();
+    expect((await t.sandbox.get(sandbox.providerId!)).state).toBe("gone");
+    await connectKey("maya", KEY);
+  });
+});
+
+describe("an owner who left the workspace", () => {
+  test("lends their Claude to nothing: a teammate's message does not wake it, and the sweep destroys it", async () => {
+    const { design, sandbox, runner } = await awakeDesign();
+    await idleToSleep(runner);
+    const [membership] = await rows(`
+      delete from memberships
+       where workspace_id = '${ws.id}' and user_id = '${ws.people.maya!.userId}'
+      returning role, github_access`);
+    try {
+      await say(design.id, "Carry on without Maya", "ines");
+      expect((await live(design.id)).state).toBe("asleep");
+      expect((await t.sandbox.get(sandbox.providerId!)).state).not.toBe("awake");
+      expect(await head(design.id)).toMatchObject({
+        agentState: "idle",
+        agentBlocker: "claude_owner_left",
+      });
+
+      await cron();
+      expect(await getLiveSandbox(t.db, design.id)).toBeNull();
+      expect((await t.sandbox.get(sandbox.providerId!)).state).toBe("gone");
+      expect((await head(design.id)).agentBlocker).toBe("claude_owner_left");
+    } finally {
+      await rows(`
+        insert into memberships (workspace_id, user_id, role, github_access)
+        values ('${ws.id}', '${ws.people.maya!.userId}', '${membership!.role}',
+                '${membership!.github_access}')`);
+    }
   });
 });
