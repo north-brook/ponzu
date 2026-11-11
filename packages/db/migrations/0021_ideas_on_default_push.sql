@@ -1,0 +1,1 @@
+ALTER TABLE "repos" ADD COLUMN "default_pushed_at" timestamp with time zone;

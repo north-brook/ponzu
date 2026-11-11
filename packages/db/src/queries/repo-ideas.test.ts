@@ -9,6 +9,7 @@ import {
   claimRepoIdeas,
   getRepoIdeasAccess,
   type IdeasPolicy,
+  markDefaultBranchPushed,
   saveRepoIdeas,
 } from "./repo-ideas.ts";
 
@@ -59,6 +60,49 @@ describe("claimRepoIdeas", () => {
       Array.from({ length: 8 }, () => claimRepoIdeas(db, { repoId: repo.id, ...policy(now, 50) })),
     );
     expect(claims.filter((claim) => claim === "claimed")).toHaveLength(1);
+  });
+
+  test("ideas are made again once the default branch has moved since, however young they are", async () => {
+    const workspace = await seedWorkspace(db, "moving-co");
+    const repo = await seedRepo(db, workspace.id, "moving-co/app");
+    const made = at("01T12:00:00");
+    const claim = (now: Date) => claimRepoIdeas(db, { repoId: repo.id, ...policy(now) });
+    const pushed = (at: Date) =>
+      markDefaultBranchPushed(db, { githubRepoId: repo.githubRepoId, at });
+    expect(await claim(made)).toBe("claimed");
+    await saveRepoIdeas(db, {
+      repoId: repo.id,
+      ideas: ["One"],
+      generatedAt: made,
+      claimedAt: made,
+      version: 1,
+    });
+    const twoHours = new Date(made.getTime() + 2 * HOUR);
+    expect(await claim(twoHours)).toBe("not_due");
+    // A push from before they were made says nothing they don't already know.
+    await pushed(new Date(made.getTime() - HOUR));
+    expect(await claim(twoHours)).toBe("not_due");
+
+    // The default branch moves half an hour after they were made.
+    const moved = new Date(made.getTime() + HOUR / 2);
+    await pushed(moved);
+    // Within the hour of the last try, not yet; after it, they are made again.
+    expect(await claim(new Date(made.getTime() + (3 * HOUR) / 4))).toBe("not_due");
+    expect(await claim(twoHours)).toBe("claimed");
+    await saveRepoIdeas(db, {
+      repoId: repo.id,
+      ideas: ["Two"],
+      generatedAt: twoHours,
+      claimedAt: twoHours,
+      version: 1,
+    });
+    // Made from the branch as it moved: nothing is due until it moves again.
+    expect(await claim(new Date(twoHours.getTime() + 2 * HOUR))).toBe("not_due");
+
+    // A delivery that comes late never moves the time back.
+    await pushed(new Date(made.getTime() - DAY));
+    const [row] = await db.select().from(repos).where(eq(repos.id, repo.id));
+    expect(row!.defaultPushedAt).toEqual(moved);
   });
 
   test("generated ideas are made again only when old and pushed since, or empty and pushed since", async () => {

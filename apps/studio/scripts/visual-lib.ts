@@ -190,10 +190,15 @@ export async function paintedStyles(page: Page): Promise<string> {
   });
 }
 
-/** Whether the app's three families loaded: without them, text measures differently. */
+/** Whether the app's faces loaded: without them, text measures differently. */
 export async function fontsLoaded(page: Page): Promise<boolean> {
   return page.evaluate(async () => {
-    const faces = ['500 13px "Inter"', '600 34px "Funnel Display"', '11px "IBM Plex Mono"'];
+    const faces = [
+      '500 13px "Inter"',
+      'italic 400 13px "Inter"',
+      '600 34px "Funnel Display"',
+      '11px "IBM Plex Mono"',
+    ];
     const loaded = await Promise.all(faces.map((f) => document.fonts.load(f).catch(() => [])));
     return loaded.every((list) => list.length > 0);
   });

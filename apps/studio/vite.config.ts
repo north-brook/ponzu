@@ -1,24 +1,7 @@
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig, type Plugin } from "vite";
-
-/*
- * The web fonts the app ships, every family and weight its screens use (the cloud screens' are in
- * src/cloud/styles/tokens.css). One link for every page, so the gallery measures what ships.
- */
-const FONTS =
-  "https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..600&family=Funnel+Display:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap";
-
-function webFonts(): Plugin {
-  return {
-    name: "ponzu-web-fonts",
-    transformIndexHtml: () => [
-      { tag: "link", attrs: { rel: "preconnect", href: "https://fonts.googleapis.com" } },
-      { tag: "link", attrs: { rel: "stylesheet", href: FONTS } },
-    ],
-  };
-}
+import { defineConfig } from "vite";
 
 /*
  * `bun run dev` serves the studio on Ponzu Cloud in memory (src/app/fake-host.ts); inside the
@@ -26,7 +9,7 @@ function webFonts(): Plugin {
  * real API.
  */
 export default defineConfig(({ mode }) => ({
-  plugins: [react(), tailwindcss(), webFonts()],
+  plugins: [react(), tailwindcss()],
   server: { port: 5173 },
   build: {
     outDir: "dist",

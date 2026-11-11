@@ -63,6 +63,23 @@ const view = board ? (
   <Index />
 );
 
+// The app's faces load before anything draws, so the first layout is the one that ships. Laid out
+// in a fallback first, a component that measures itself once (page-tabs.tsx) keeps the fallback's
+// size after the swap. Nothing caches the fonts between the gallery's pages.
+await Promise.all(
+  [
+    '400 13px "Inter"',
+    '600 13px "Inter"',
+    'italic 400 13px "Inter"',
+    '600 34px "Funnel Display"',
+    '400 11px "IBM Plex Mono"',
+    '500 11px "IBM Plex Mono"',
+  ].map(
+    // A face that won't load draws in its fallback; the gallery tests' fontsLoaded says so.
+    (face) => document.fonts.load(face).catch(() => []),
+  ),
+);
+
 createRoot(document.getElementById("root")!).render(
   <NowContext.Provider value={() => NOW}>{view}</NowContext.Provider>,
 );

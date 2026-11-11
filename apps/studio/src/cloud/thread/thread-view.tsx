@@ -1,6 +1,7 @@
 import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
 import {
   type CSSProperties,
+  type ReactNode,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -14,10 +15,9 @@ import { useNow } from "../time.ts";
 import { SCROLL_FADE } from "../ui/fade-scroll.tsx";
 import { Icon } from "../ui/icon.tsx";
 import { Skeleton } from "../ui/skeleton.tsx";
-import { TurnFoldLine } from "./fold.tsx";
 import { atFoot, FOLLOWING, follow, type ScrollMetrics } from "./follow.ts";
 import { type LineHandlers, SandboxLine, ThreadLine, WorkingLine } from "./lines.tsx";
-import { isFold, type Row, SENT_GRACE_MS, sandboxLine, threadRows, workingLine } from "./thread.ts";
+import { SENT_GRACE_MS, sandboxLine, type ThreadRow, threadRows, workingLine } from "./thread.ts";
 
 /** Rows drawn at first, and how many more each time the person reads up past them. */
 const WINDOW = 80;
@@ -27,8 +27,34 @@ const NEAR_TOP = 320;
 /** The gap between the thread's lines (`gap-[14px]`). */
 const LINE_GAP = 14;
 
-/** A row's key: its item's id, or its fold's. */
-const rowKey = (row: Row) => (isFold(row) ? `fold:${row.fold.id}` : row.item.id);
+const rowKey = (row: ThreadRow) => row.item.id;
+
+/**
+ * Where a line that can leave sits, from its last frame: the room it takes in the thread (from
+ * the bottom of the line above to its own bottom) and how much of that is the space above it.
+ */
+interface Place {
+  room: number;
+  above: number;
+  /** It has a line above it, so the thread's gap comes before it. */
+  after: boolean;
+}
+
+/** A line on its way out: drawn as it was, in the room it held, while that room closes. */
+interface Leaving {
+  /** An aside of a turn that has ended; or null, the working line (with its `label`). */
+  row: ThreadRow | null;
+  label: string;
+  /** The row an aside follows, so it leaves from where it was; null, the thread's first. */
+  follows: string | null;
+  place: Place;
+}
+
+/** The working line's key among the places of what can leave. */
+const WORKING = "working-line";
+
+const stillMotion = () =>
+  typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const metricsOf = (el: HTMLElement): ScrollMetrics => ({
   scrollTop: el.scrollTop,
@@ -63,7 +89,7 @@ export function ThreadView({
   const following = useRef(state.following);
   following.current = state.following;
 
-  // Only the agent's state decides whether its last turn folds: not each change of its status.
+  // Only the agent's state decides whether its last turn has ended: not each change of status.
   const agentState = agent.state;
   const rows = useMemo(
     () => threadRows(items, { state: agentState, status: null }),
@@ -74,24 +100,59 @@ export function ThreadView({
   const working = waiting ? null : workingLine(items, agent, now);
 
   /*
-   * The working line leaving (the turn folded, a question came) would drop everything above it
-   * by its height in that frame, the answer the person is reading with it. Its room is kept for
-   * that frame and then let go at the pane's pace, so the answer settles rather than jumps.
+   * A turn ending takes its asides and the working line away in one frame, which would drop
+   * the answer between them by their height, and everything above it with it. They stay for
+   * that frame as they were, then close at the pane's pace, fading as they go, so the answer
+   * settles into place. The working line leaving on its own (a question came) does the same.
+   * Each line that can leave notes where it sits after every frame (`places`); with reduced
+   * motion they simply go. A thread drawn already settled (opened later, reloaded) has nothing
+   * leaving: only a change seen here starts one.
    */
-  const lineRoom = useRef(0);
-  const [leaving, setLeaving] = useState<{ key: number; room: number } | null>(null);
-  const [hadLine, setHadLine] = useState(!!working);
-  if (hadLine !== !!working) {
-    setHadLine(!!working);
-    if (!working && lineRoom.current > 0) setLeaving({ key: Date.now(), room: lineRoom.current });
-    else if (working) setLeaving(null);
+  const places = useRef(new Map<string, Place>());
+  const [leaving, setLeaving] = useState<Leaving[]>([]);
+  const [last, setLast] = useState({ rows, working });
+  if (last.rows !== rows || last.working !== working) {
+    setLast({ rows, working });
+    const kept = new Set(rows.map(rowKey));
+    const going: Leaving[] = [];
+    if (!stillMotion()) {
+      let follows: string | null = null;
+      for (const row of last.rows) {
+        const key = rowKey(row);
+        const place = places.current.get(key);
+        if (kept.has(key)) follows = key;
+        else if (row.aside && place) going.push({ row, label: "", follows, place });
+      }
+      const line = places.current.get(WORKING);
+      if (last.working && !working && line) {
+        going.push({ row: null, label: last.working, follows: null, place: line });
+      }
+    }
+    // What came back (the working line again, a turn going on) is no longer leaving.
+    const staying = leaving.filter((l) => (l.row ? !kept.has(rowKey(l.row)) : !working));
+    if (going.length || staying.length !== leaving.length) setLeaving([...staying, ...going]);
   }
   useLayoutEffect(() => {
-    const line = content.current?.querySelector<HTMLElement>("[data-working-line]");
-    if (!line) return;
-    // The line and the gap above it.
-    lineRoom.current = line.getBoundingClientRect().height + LINE_GAP;
+    const box = content.current;
+    if (!box) return;
+    places.current.clear();
+    for (const el of box.querySelectorAll<HTMLElement>(
+      ":scope > [data-aside], :scope > [data-working-box]:not([data-leaving])",
+    )) {
+      const key = el.dataset.aside ?? WORKING;
+      const own = el.getBoundingClientRect();
+      const prev = el.previousElementSibling?.getBoundingClientRect();
+      places.current.set(key, {
+        room: own.bottom - (prev?.bottom ?? own.top),
+        above: prev ? own.top - prev.bottom : 0,
+        after: !!prev,
+      });
+    }
   });
+  const gone = useCallback(
+    (l: Leaving) => setLeaving((now) => now.filter((other) => other !== l)),
+    [],
+  );
   // A send's "Thinking" before the agent has said anything lasts only so long: look again then.
   const [, recheck] = useReducer((n: number) => n + 1, 0);
   useEffect(() => {
@@ -137,8 +198,9 @@ export function ThreadView({
   const noteAnchor = useCallback(() => {
     const el = scroller.current;
     const top = el?.getBoundingClientRect().top ?? 0;
+    // Never a line on its way out: what stays is what the person goes on reading.
     const line = [...(content.current?.children ?? [])].find(
-      (child) => child.getBoundingClientRect().bottom > top,
+      (child) => !child.hasAttribute("data-leaving") && child.getBoundingClientRect().bottom > top,
     );
     anchor.current = line ? { el: line, top: line.getBoundingClientRect().top } : null;
   }, []);
@@ -152,63 +214,17 @@ export function ThreadView({
     ours.current = el.scrollTop;
   }, []);
 
-  /*
-   * A fold opening or closing holds its own line where it is, whether the person was at the
-   * foot or reading: what it opens on grows below it, never pushing it out from under the
-   * pointer. Once it has settled, the rail follows again if it ends at the foot.
-   */
-  const pinned = useRef<{ el: Element; top: number } | null>(null);
-  const pinTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const holdPinned = useCallback(() => {
-    const el = scroller.current;
-    const held = pinned.current;
-    if (!el || !held?.el.isConnected) return false;
-    const moved = held.el.getBoundingClientRect().top - held.top;
-    if (Math.abs(moved) >= 0.5) el.scrollTop += moved;
-    ours.current = el.scrollTop;
-    return true;
-  }, []);
-  const onToggleFold = useCallback((trigger: HTMLElement) => {
-    pinned.current = { el: trigger, top: trigger.getBoundingClientRect().top };
-    // A thread shorter than the rail sits at its foot, with room above: kept as room at the
-    // top, what opens grows down from the line rather than lifting everything into that room.
-    const box = content.current;
-    const first = box?.firstElementChild;
-    if (box && first && !box.style.paddingTop) {
-      const room = first.getBoundingClientRect().top - box.getBoundingClientRect().top;
-      if (room > 1) box.style.paddingTop = `${room}px`;
-    }
-    if (pinTimer.current) clearTimeout(pinTimer.current);
-    pinTimer.current = setTimeout(() => {
-      pinned.current = null;
-      const el = scroller.current;
-      if (el) dispatch({ type: "scrolled", metrics: metricsOf(el) });
-    }, 400);
-  }, []);
-  useEffect(
-    () => () => {
-      if (pinTimer.current) clearTimeout(pinTimer.current);
-    },
-    [],
-  );
-
-  // The room kept for an opened fold goes once the thread itself changes.
   useLayoutEffect(() => {
-    if (items && content.current) content.current.style.paddingTop = "";
-  }, [items]);
-
-  useLayoutEffect(() => {
-    if (holdPinned()) return;
     if (following.current) toFoot();
     else holdAnchor();
     noteAnchor();
   });
 
-  // Text streaming in, a picture loading, the rail resizing: still at the foot if following,
-  // still on the same line if reading.
+  // Text streaming in, a picture loading, lines leaving, the rail resizing: still at the foot
+  // if following, still on the same line if reading.
   useLayoutEffect(() => {
     const observer = new ResizeObserver(() => {
-      if (jumping.current || holdPinned()) return;
+      if (jumping.current) return;
       if (following.current) toFoot();
       else holdAnchor();
       noteAnchor();
@@ -216,7 +232,7 @@ export function ThreadView({
     if (content.current) observer.observe(content.current);
     if (scroller.current) observer.observe(scroller.current);
     return () => observer.disconnect();
-  }, [toFoot, holdAnchor, noteAnchor, holdPinned]);
+  }, [toFoot, holdAnchor, noteAnchor]);
 
   // Back at the foot with a long window drawn: let the oldest go again.
   useEffect(() => {
@@ -278,6 +294,26 @@ export function ThreadView({
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   };
 
+  // Where each line on its way out is drawn: after the row it followed, if that is drawn.
+  const asides = useMemo(() => {
+    const first: Leaving[] = [];
+    const after = new Map<string, Leaving[]>();
+    for (const l of leaving) {
+      if (!l.row) continue;
+      if (l.follows === null) {
+        if (start === 0) first.push(l);
+      } else after.set(l.follows, [...(after.get(l.follows) ?? []), l]);
+    }
+    return { first, after };
+  }, [leaving, start]);
+  const line = leaving.find((l) => !l.row);
+  // An aside on its way out, as it was, without the pull toward the one above (its room has it).
+  const ghost = (l: Leaving) => (
+    <LeavingLine key={`leaving:${rowKey(l.row!)}`} leaving={l} onGone={gone}>
+      <ThreadLine {...l.row!} asideContinues={false} meId={meId} handlers={handlers} />
+    </LeavingLine>
+  );
+
   const fade = edges.top || edges.bottom;
   const mask = fade
     ? `linear-gradient(to bottom, ${edges.top ? "transparent" : "black"}, black ${SCROLL_FADE}px, black calc(100% - ${SCROLL_FADE}px), ${edges.bottom ? "transparent" : "black"})`
@@ -303,29 +339,16 @@ export function ThreadView({
           {older === "loading" && start === 0 ? (
             <div className="breathe self-center py-1 text-12 text-faint">Loading earlier…</div>
           ) : null}
-          {shown.map((row) =>
-            isFold(row) ? (
-              <TurnFoldLine
-                key={rowKey(row)}
-                fold={row.fold}
-                handlers={handlers}
-                onToggle={onToggleFold}
-              />
-            ) : (
-              <ThreadLine key={row.item.id} {...row} meId={meId} handlers={handlers} />
-            ),
-          )}
-          {working ? <WorkingLine label={working} /> : null}
-          {leaving ? (
-            <div
-              key={leaving.key}
-              aria-hidden
-              data-line-room
-              className="leave shrink-0"
-              // Its own gap is taken back, so it holds exactly what the line did.
-              style={{ "--room": `${leaving.room}px`, marginTop: -LINE_GAP } as CSSProperties}
-              onAnimationEnd={() => setLeaving(null)}
-            />
+          {asides.first.map(ghost)}
+          {shown.flatMap((row) => [
+            <ThreadLine key={row.item.id} {...row} meId={meId} handlers={handlers} />,
+            ...(asides.after.get(row.item.id)?.map(ghost) ?? []),
+          ])}
+          {/* One box for the working line, live or leaving, so the slice turns on through. */}
+          {working || line ? (
+            <LeavingLine key="working" leaving={working ? null : line!} onGone={gone}>
+              <WorkingLine label={working ?? line!.label} leaving={!working} />
+            </LeavingLine>
           ) : null}
           {waiting ? <SandboxLine {...waiting} /> : null}
         </div>
@@ -341,6 +364,59 @@ export function ThreadView({
           {state.unseen} new
         </button>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * A line leaving the thread: drawn where it was, in exactly the room it held (the space above
+ * it included, the thread's own gap taken back), and that room closing at the pane's pace while
+ * the line fades (`leave`). Gone once it has closed, or a moment after it should have, if its
+ * animation never ran (a hidden window). With `leaving` null it is the working line's box while
+ * the line is live: a plain box, which the line leaves in without being drawn again.
+ */
+function LeavingLine({
+  leaving,
+  onGone,
+  children,
+}: {
+  leaving: Leaving | null;
+  onGone: (l: Leaving) => void;
+  children: ReactNode;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!leaving) return;
+    const seconds = box.current
+      ? Number.parseFloat(getComputedStyle(box.current).animationDuration) || 0
+      : 0;
+    const timer = setTimeout(() => onGone(leaving), seconds * 1000 + 500);
+    return () => clearTimeout(timer);
+  }, [leaving, onGone]);
+  // The space above it goes inside the box that closes, never on it as padding: padding can't
+  // close, so the box would stop short at its height and the line under it jump when it went.
+  // The same two boxes live or leaving, so the line in them is never drawn again.
+  if (!leaving) {
+    return (
+      <div ref={box} data-working-box className="shrink-0">
+        <div>{children}</div>
+      </div>
+    );
+  }
+  const { room, above, after } = leaving.place;
+  return (
+    <div
+      ref={box}
+      aria-hidden
+      inert
+      data-leaving
+      className="leave shrink-0"
+      style={{ "--room": `${room}px`, marginTop: after ? -LINE_GAP : 0 } as CSSProperties}
+      onAnimationEnd={(e) => {
+        if (e.target === e.currentTarget) onGone(leaving);
+      }}
+    >
+      <div style={{ paddingTop: above }}>{children}</div>
     </div>
   );
 }

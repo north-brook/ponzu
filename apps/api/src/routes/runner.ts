@@ -34,6 +34,7 @@ import { captureForDesign } from "../analytics/design.ts";
 import { access } from "../auth/access.ts";
 import type { LeasedRunner } from "../auth/actor.ts";
 import type { Deps } from "../deps/index.ts";
+import { CLIENT_HEADER } from "../http/client-version.ts";
 import type { AppEnv } from "../http/context.ts";
 import { ApiError } from "../http/errors.ts";
 import { validate } from "../http/validate.ts";
@@ -161,7 +162,11 @@ export const runner = new Hono<AppEnv>()
    * held it before is refused from now on. Safe to repeat: the last one wins.
    */
   .post("/session", access.runnerStarting, async (c) => {
-    const session = await startRunnerSession(c.var.deps, c.var.actor.designId);
+    const session = await startRunnerSession(
+      c.var.deps,
+      c.var.actor.designId,
+      c.req.header(CLIENT_HEADER) ?? null,
+    );
     return c.json(SessionView.parse(session));
   })
 
@@ -407,6 +412,9 @@ export const runner = new Hono<AppEnv>()
       })),
     });
     // Off the runner's path: the row is what matters to it, and analytics never fails a call.
-    c.var.deps.background("turns_reported", reportTurns(c.var.deps, c.var.actor.designId, turns));
+    c.var.deps.background(
+      "turns_reported",
+      reportTurns(c.var.deps, c.var.actor.designId, turns, c.req.header(CLIENT_HEADER) ?? null),
+    );
     return c.json({ recorded } satisfies UsageResponse);
   });

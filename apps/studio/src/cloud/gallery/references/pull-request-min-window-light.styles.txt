@@ -198,10 +198,7 @@ ground button[Open the comment on Hero] rgb(255, 255, 255) shadow rgba(0, 0, 0, 
 text "Too many words here. Calmer, and put a …" rgb(17, 17, 16) 400 13px Inter
 ground p[Thread] rgb(255, 255, 255)
 text "You commented:" rgb(17, 17, 16) 400 13px Inter
-icon svg[Thread] 11×11 rgb(201, 197, 188) stroke 3.4px
-text "Worked for a moment" rgb(169, 165, 155) 400 12px Inter
-text ", what Claude did before it was stopped" rgb(169, 165, 155) 400 12px Inter
-icon svg[Thread] 11×11 rgb(169, 165, 155) stroke 2.2px
+text "Folding that into B: no paragraph, and …" rgb(17, 17, 16) 400 13px Inter
 ground div[Thread] rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.1) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.08) 0px 6px 20px 0px, rgba(0, 0, 0, 0.06) 0px 1px 3px 0px
 icon svg[Attach an image] 16×16 rgb(86, 83, 77) stroke 1.7px
 ground button[Send] rgb(232, 230, 224)
