@@ -349,11 +349,15 @@ jobs:
     # pull requests from this repository: a fork's code never runs there. A
     # job no runner can take waits a day in the queue, so this one runs only
     # once the repository variable MOBILE_IOS is "true", set when the
-    # spare-ios runners serve this repository.
+    # spare-ios runners serve this repository. Not for pull requests into
+    # `cloud`: these flows drive the local app's pairing, which the cloud
+    # rewrite replaces, and one runner takes eleven minutes a run, in turn.
+    # The phone's own flows come back with its cloud client.
     name: Mobile iOS
     needs: scope
     if: >-
       ${{ !cancelled() && github.event_name == 'pull_request'
+      && github.base_ref != 'cloud'
       && vars.MOBILE_IOS == 'true'
       && needs.scope.outputs.mobile != 'false'
       && github.event.pull_request.head.repo.full_name == github.repository }}
