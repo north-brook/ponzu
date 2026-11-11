@@ -1,5 +1,3 @@
-import { SandboxError } from "./errors.ts";
-
 /** Time, passed in so that waiting can be tested without waiting. */
 export interface Clock {
   /** Epoch milliseconds. */
@@ -15,46 +13,39 @@ export const systemClock: Clock = {
   timeout: (ms) => AbortSignal.timeout(ms),
 };
 
-/** A warm start takes about 2 s and a cold one about 5 s, so look often for that long, then ease off. */
-const EAGER_FOR_MS = 5_000;
-const EAGER_EVERY_MS = 250;
-const PATIENT_EVERY_MS = 1_000;
-
 /**
- * Calls `check` until it returns something, sleeping between calls, and gives up with
- * `unavailable` when `timeoutMs` has passed. `waitingFor` finishes the sentence "gave up
- * waiting for …".
- *
- * The time is a deadline, not a number of tries: `check` is told how long is left and must not
- * take longer, and a `check` that fails as `unavailable` once the time is up counts as giving up.
+ * A clock for tests. Sleeping moves it forward at once, so code that waits finishes immediately
+ * and the test decides how long things took.
  */
-export async function poll<T>(
-  clock: Clock,
-  timeoutMs: number,
-  waitingFor: string,
-  check: (leftMs: () => number) => Promise<T | undefined>,
-): Promise<T> {
-  const started = clock.now();
-  const left = () => started + timeoutMs - clock.now();
-  const gaveUp = (cause?: unknown) =>
-    new SandboxError(
-      "unavailable",
-      `gave up waiting for ${waitingFor} after ${Math.round((clock.now() - started) / 1000)} s`,
-      { cause },
-    );
-  while (left() > 0) {
-    let found: T | undefined;
-    try {
-      found = await check(left);
-    } catch (error) {
-      if (left() <= 0 && error instanceof SandboxError && error.code === "unavailable") {
-        throw gaveUp(error);
-      }
-      throw error;
-    }
-    if (found !== undefined) return found;
-    const every = clock.now() - started < EAGER_FOR_MS ? EAGER_EVERY_MS : PATIENT_EVERY_MS;
-    await clock.sleep(Math.max(0, Math.min(every, left())));
+export class FakeClock implements Clock {
+  #ms: number;
+  #timeouts: Array<{ at: number; controller: AbortController }> = [];
+
+  constructor(startAt = Date.UTC(2026, 0, 1)) {
+    this.#ms = startAt;
   }
-  throw gaveUp();
+
+  now(): number {
+    return this.#ms;
+  }
+
+  /** Moves time forward, aborting every `timeout` signal that comes due. */
+  advance(ms: number): void {
+    this.#ms += ms;
+    const due = this.#timeouts.filter((timeout) => timeout.at <= this.#ms);
+    this.#timeouts = this.#timeouts.filter((timeout) => timeout.at > this.#ms);
+    for (const { controller } of due) {
+      controller.abort(new DOMException("The operation timed out.", "TimeoutError"));
+    }
+  }
+
+  async sleep(ms: number): Promise<void> {
+    this.advance(ms);
+  }
+
+  timeout(ms: number): AbortSignal {
+    const controller = new AbortController();
+    this.#timeouts.push({ at: this.#ms + ms, controller });
+    return controller.signal;
+  }
 }
