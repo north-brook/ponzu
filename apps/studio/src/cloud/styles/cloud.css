@@ -23,6 +23,7 @@
   --text-13: 13px;
   --text-14: 14px;
   --text-16: 16px;
+  --text-26: 26px;
   --text-34: 34px;
   --text-10: 10px;
   --text-15: 15px;
@@ -39,9 +40,11 @@
   --radius-8: 8px;
   --radius-9: 9px;
   --radius-10: 10px;
+  --radius-11: 11px;
   --radius-12: 12px;
   --radius-14: 14px;
   --radius-16: 16px;
+  --radius-18: 18px;
   --radius-20: 20px;
   --radius-pill: 99px;
 }
@@ -81,6 +84,14 @@
   --color-tip-ink: var(--c-tip-ink);
   --color-tip-key: var(--c-tip-key);
   --color-tip-key-ink: var(--c-tip-key-ink);
+  --color-bar: var(--c-bar);
+  --color-strip: var(--c-strip);
+  --color-diff-add: var(--c-diff-add);
+  --color-diff-add-bar: var(--c-diff-add-bar);
+  --color-diff-add-word: var(--c-diff-add-word);
+  --color-diff-del: var(--c-diff-del);
+  --color-diff-del-bar: var(--c-diff-del-bar);
+  --color-diff-del-word: var(--c-diff-del-word);
   --color-raised-hover: var(--c-raised-hover);
   --color-secondary: var(--c-secondary);
   --color-step: var(--c-step);
@@ -110,6 +121,12 @@
   --shadow-dot: var(--c-dot-ring);
   --shadow-tip: var(--c-tip-shadow);
   --shadow-focus: var(--c-focus);
+  --shadow-board: var(--c-board);
+  --shadow-chosen: var(--c-chosen-shadow);
+  --shadow-note-field: var(--c-field-shadow);
+  --shadow-file-card: var(--c-card-ring);
+  --shadow-halo: 0 0 0 3px var(--c-yuzu-halo);
+  --shadow-pin: var(--c-pin-shadow);
 
   --font-sans: var(--font-sans);
   --font-display: var(--font-display);
@@ -309,6 +326,18 @@
   &[data-state="closed"] {
     animation: pop-out 90ms ease-in forwards;
   }
+}
+
+/* Something small arriving from below: the thread's "new" pill. */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@utility rise {
+  animation: rise var(--dur-pop) var(--ease-out);
 }
 
 @keyframes tip-in {

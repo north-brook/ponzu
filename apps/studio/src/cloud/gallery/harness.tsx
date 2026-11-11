@@ -64,6 +64,8 @@ export interface HarnessProps {
   /** Past the left block: a design's chrome, or nothing on the create page. */
   chrome?: (sidebarOpen: boolean) => ReactNode;
   rail?: boolean;
+  /** What the open rail holds; an empty rail without it. */
+  railContent?: ReactNode;
   children: ReactNode;
 }
 
@@ -79,6 +81,7 @@ export function Harness({
   sidebar = "open",
   chrome,
   rail = false,
+  railContent,
   children,
 }: HarnessProps) {
   const [open, setOpen] = useState(sidebar === "open");
@@ -133,7 +136,7 @@ export function Harness({
             }
       }
       chrome={chrome?.(open)}
-      rail={rail ? <div /> : null}
+      rail={rail ? (railContent ?? <div />) : null}
     >
       {children}
     </AppWindow>

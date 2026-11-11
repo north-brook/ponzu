@@ -159,3 +159,219 @@ export interface CommentHit {
   design: { id: string; name: string };
   at: string;
 }
+
+/*
+ * The thread: what the rail draws. The kinds and payloads are the runner protocol's
+ * (`ThreadItem` in @ponzu/runner/protocol), with people resolved to their avatars, a message's
+ * attachments to their addresses, and a comment's pin to where it sits on its board (from the
+ * document's comment thread).
+ */
+
+/** An image a person sent with a message: one of the design's files. */
+export interface Attachment {
+  /** `assets/<name>`, as the message names it. */
+  ref: string;
+  url: string;
+  contentType: string;
+}
+
+/** Where a comment's pin sits on its board, as fractions of the board's width and height. */
+export interface Pin {
+  x: number;
+  y: number;
+}
+
+/** Why a turn ended badly, as the runner names it. Each has its own plain sentence in the rail. */
+export type RunErrorCode =
+  | "clone_failed"
+  | "claude_auth"
+  | "claude_limit"
+  | "model_unavailable"
+  | "max_turns"
+  | "turn_failed"
+  | "agent_exited"
+  | "message_refused"
+  | "question_failed";
+
+export type ThreadNotice =
+  | { type: "waking" }
+  | { type: "resumed" }
+  | { type: "started" }
+  | { type: "question"; questionId: string; header: string; text: string }
+  | { type: "error"; code: RunErrorCode; message: string }
+  | { type: "stopped"; by: Person | null }
+  | { type: "pull_request"; number: number; url: string; title: string; state: PrState };
+
+export type ThreadItem = {
+  id: string;
+  /** Orders the thread. Increasing, with gaps. */
+  seq: number;
+  at: string;
+  /** Still being written: its payload will change. */
+  streaming: boolean;
+} & (
+  | { kind: "message"; payload: { text: string; from: Person; attachments: Attachment[] } }
+  | {
+      kind: "comment";
+      payload: {
+        threadId: string;
+        messageId: string;
+        text: string;
+        artboardId: string | null;
+        artboardName: string | null;
+        from: Person;
+        pin: Pin | null;
+      };
+    }
+  /** Markdown, from the model: untrusted text. */
+  | { kind: "assistant"; payload: { text: string } }
+  /** A stretch of work between two things the agent says, folded to one line. */
+  | { kind: "tool"; payload: { label: string; steps: number; artboards: string[] } }
+  | { kind: "notice"; payload: ThreadNotice }
+);
+
+/** What the agent is doing, from the design's head: its state and its working line. */
+export interface AgentActivity {
+  state: AgentState;
+  status: string | null;
+}
+
+/** Older items of the thread: more to fetch, fetching, or none. */
+export type OlderItems = "more" | "loading" | "none";
+
+/** An image on its way into the next message. */
+export interface PendingAttachment {
+  id: string;
+  name: string;
+  /** A local picture of it (an object URL), shown while it uploads. */
+  previewUrl: string;
+  status: "uploading" | "ready" | "failed";
+}
+
+/**
+ * Why nobody can steer the design right now. The run waits on its owner's Claude, for everyone;
+ * someone with read access can watch it but not steer it.
+ */
+export type SteerGate =
+  | { kind: "read_only"; repo: Repo | null }
+  | { kind: "claude_limit"; owner: Person; until: string }
+  | { kind: "claude_disconnected"; owner: Person };
+
+/*
+ * Needs you: what the agent waits on a person for, in the composer's slot. `question`, `plan`
+ * and `permission` are the runner's question rows; `secret` and `link` are the spec's default
+ * shapes for a secret the agent needs and a hand-off it can't do itself, which the runner does
+ * not raise yet.
+ */
+
+export interface AskedQuestion {
+  /** A word or two: the strip's title. */
+  header: string;
+  question: string;
+  options: { label: string; description: string }[];
+  multiSelect: boolean;
+}
+
+/** `sending` is the viewer's own answer on its way; `answered` and `cancelled` are closed. */
+export type AskStatus = "open" | "sending" | "answered" | "cancelled";
+
+export type Ask = {
+  id: string;
+  status: AskStatus;
+  /** Who answered it, once someone has. */
+  answeredBy: Person | null;
+} & (
+  | { kind: "question"; questions: AskedQuestion[] }
+  /** Markdown, from the model. */
+  | { kind: "plan"; plan: string }
+  | { kind: "permission"; tool: string; title: string; description: string | null }
+  | { kind: "secret"; name: string; description: string | null }
+  | { kind: "link"; title: string; url: string; description: string | null }
+);
+
+/**
+ * An answer, as `POST /v1/designs/:id/questions/:questionId/answer` takes it: a question's
+ * answers by question text; yes or no to a plan, a permission or a hand-off; a secret's value,
+ * which the API keeps in the repo's secrets and never in a row.
+ */
+export type AskAnswer =
+  | { answers: Record<string, string> }
+  | { approved: boolean; note?: string }
+  | { secret: string };
+
+/*
+ * The pull request tab: the design's pull request as GitHub has it, read through the App. These
+ * are the fields the tab draws; the API's answer is mapped onto them.
+ */
+
+/** Someone on GitHub, who need not be a Ponzu user. The agent's own words come as `agent`. */
+export interface GithubAuthor {
+  login: string;
+  name: string | null;
+  avatarUrl: string | null;
+  agent: boolean;
+}
+
+/** A check run or a commit status, as its row shows it. */
+export interface CheckRun {
+  id: string;
+  name: string;
+  state: "queued" | "running" | "passing" | "failing" | "skipped";
+  startedAt: string | null;
+  completedAt: string | null;
+  /** A status's own words ("Ready"), shown when there is no duration. */
+  description: string | null;
+  url: string | null;
+}
+
+/** A comment on the pull request: on the whole of it, or on a line of a file. */
+export interface PrComment {
+  id: string;
+  author: GithubAuthor;
+  /** Markdown, from GitHub: untrusted text. */
+  body: string;
+  at: string;
+  path: string | null;
+  line: number | null;
+  url: string;
+}
+
+/** Each reviewer's latest approval or request for changes. */
+export interface PrReview {
+  id: string;
+  author: GithubAuthor;
+  state: "approved" | "changes_requested";
+  at: string;
+}
+
+export interface PrFile {
+  path: string;
+  /** Where a renamed file was. */
+  previousPath: string | null;
+  status: "added" | "removed" | "modified" | "renamed";
+  additions: number;
+  deletions: number;
+  /** The unified diff GitHub gives; null for a binary file or one too large for GitHub to show. */
+  patch: string | null;
+  binary: boolean;
+}
+
+export interface PullRequestDetail {
+  number: number;
+  url: string;
+  title: string;
+  /** Markdown, from GitHub: untrusted text. */
+  body: string;
+  head: string;
+  base: string;
+  state: PrState;
+  /** When it merged or closed, for a pull request that has. */
+  endedAt: string | null;
+  additions: number;
+  deletions: number;
+  checks: CheckRun[];
+  /** Oldest first. */
+  comments: PrComment[];
+  reviews: PrReview[];
+  files: PrFile[];
+}

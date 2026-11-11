@@ -4,7 +4,8 @@
  *
  * - `board` names the design's artboard file (under its pages/ folder) it is compared with.
  * - `open` is a control pressed before the picture: a menu or a popover's trigger.
- * - `masks` cover what this pull request doesn't draw (the canvas's boards, the thread rail).
+ * - `masks` cover what the gallery doesn't draw: the canvas's boards, and on the sidebar's
+ *   boards the thread rail, which their compositions leave empty.
  * - `reference` draws it for the visual regression test, from references/.
  */
 import { SETUP_COMPOSITIONS } from "./setup-compositions.ts";
@@ -88,14 +89,15 @@ export const COMPOSITIONS: Composition[] = [
     title: "1 · Thread in the right rail",
     board: "mac/1-thread-in-the-right-rail.html",
     ...WINDOW,
-    masks: DESIGN,
+    masks: [CANVAS],
+    reference: true,
   },
   {
     id: "claude-sets-it-up",
     title: "6 · Claude sets it up",
     board: "mac/6-claude-sets-it-up.html",
     ...WINDOW,
-    masks: DESIGN,
+    masks: [CANVAS],
   },
   { id: "create", title: "4 · Create", board: "mac/4-create.html", ...WINDOW, reference: true },
   {
@@ -119,5 +121,38 @@ export const COMPOSITIONS: Composition[] = [
   { id: "sidebar-collapsed", title: "Sidebar collapsed, rail closed", ...WINDOW },
   { id: "settled-open", title: "Settled tray expanded", ...WINDOW },
   { id: "filtered-empty", title: "A filter nothing matches", ...WINDOW },
+  {
+    id: "needs-you-a-question",
+    title: "2 · Needs you: a question",
+    board: "mac/2-needs-you-a-question.html",
+    ...WINDOW,
+    open: '[role="radio"]:has-text("Shorten it")',
+    masks: [CANVAS],
+    reference: true,
+  },
+  {
+    id: "pull-request-tab",
+    title: "3 · Pull request tab",
+    board: "mac/3-pull-request-tab.html",
+    ...WINDOW,
+    open: 'button[aria-controls="file-src/components/hero.tsx"]',
+    reference: true,
+  },
+  {
+    id: "together-on-a-design",
+    title: "Together on a design",
+    board: "teams/together-on-a-design.html",
+    ...WINDOW,
+    masks: [CANVAS],
+    reference: true,
+  },
+  { id: "long-thread", title: "Thread · a thousand lines, older ones loading", ...WINDOW },
+  { id: "thread-loading", title: "Thread · loading", ...WINDOW },
+  { id: "thread-every-kind", title: "Thread · every kind of line", ...WINDOW },
+  { id: "thread-read-only", title: "Thread · read-only access", ...WINDOW },
+  { id: "pull-request-busy", title: "Pull request · draft, failing, large files", ...WINDOW },
+  { id: "pull-request-merged", title: "Pull request · merged", ...WINDOW },
+  { id: "pull-request-loading", title: "Pull request · loading", ...WINDOW },
+  { id: "pull-request-error", title: "Pull request · GitHub unreachable", ...WINDOW },
   ...SETUP_COMPOSITIONS,
 ];

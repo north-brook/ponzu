@@ -10,13 +10,18 @@ status.ts         a row's indicator and its precedence, the rail toggle's signal
 filter.ts         the sidebar filter
 search.ts         match highlighting, keyboard selection over results
 pull-request.ts   the next action and the pull request mark's state
-time.ts           ages ("2 h", "3 weeks ago") and the clock they read
+time.ts           ages ("2 h", "3 weeks ago"), durations, a time of day, and the clock they read
+gate.ts           what keeps someone from steering a design (read access, the owner's Claude), in words
 claude.ts         the person's Claude: how it is connected, its plan's limits, a pasted code
 styles/           tokens.css (every token) and cloud.css (the Tailwind build)
-ui/               primitives: buttons, icon, marks, menu, popover, tooltip, avatar, kbd, scroll area
+ui/               primitives: buttons, icon, marks, menu, popover, tooltip, avatar, kbd, scroll area,
+                  and Prose, which draws untrusted Markdown (markdown.ts) as text
 window/           the window frame, chrome, page tabs, presence, Share, PR mark, next action, thread toggle
 sidebar/          the sidebar: workspace menu, filter, rows, settled tray, search
 create/           the create page: composer, model picker, repo picker, ideas
+thread/           the thread rail: its lines, following the foot, the composer, drafts
+needs-you/        what the agent waits on, in the composer's place, and the rules for answering it
+pr-tab/           the pull request tab: details, checks, conversation, files and their diffs
 setup/            guided first run: the gates (setup.ts), sign in, where you design, Connect
                   Claude and its card, the iPhone step
 settings/         the Settings modal and its sections, with their rules (billing, members,
@@ -27,8 +32,14 @@ gallery/          dev-only: every board composed from fixtures, every component'
 ```
 
 `AppWindow` takes the sidebar, the chrome past its left block (`DesignChrome`, or nothing on the
-create page), the rail's content (null while closed) and the canvas pane's content. The thread
-rail, needs you, the pull request tab and settings plug into those slots.
+create page), the rail's content (null while closed) and the canvas pane's content. `ThreadRail`
+is the rail's content, needs you included; `PullRequestView` fills the canvas pane while the pull
+request tab is open (the rail folds away, and comes back as it was on leaving). Settings plugs in
+the same way.
+
+Text from the model or GitHub (replies, plans, a pull request's body and comments) goes through
+`Prose`, never `dangerouslySetInnerHTML`: raw HTML stays text, images become links, and a link
+survives only to http, https or mailto.
 
 ## Tokens
 
