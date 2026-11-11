@@ -342,6 +342,17 @@
   animation: rise var(--dur-pop) var(--ease-out);
 }
 
+/* A design's new preview over the one it replaces: a short, quiet cross-fade. */
+@keyframes preview-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@utility preview-in {
+  animation: preview-in var(--dur-pop) var(--ease-out);
+}
+
 @keyframes tip-in {
   from {
     opacity: 0;

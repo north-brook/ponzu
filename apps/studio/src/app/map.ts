@@ -102,6 +102,42 @@ export function previewOf(assetsUrl: string, previewSeq: number | null): DesignP
   return { light: `${base}-light.png`, dark: `${base}-dark.png` };
 }
 
+/**
+ * `next`, with every part equal to `previous`'s taken from `previous`: a live update that changed
+ * one row's status hands back the other rows, and that row's preview, project and people, as the
+ * same objects. The sidebar draws a row, and a row its picture, again only when its own parts
+ * change. For plain data: objects, arrays and primitives.
+ */
+export function keepUnchanged<T>(previous: T, next: T): T {
+  if (Object.is(previous, next)) return previous;
+  if (typeof previous !== "object" || typeof next !== "object" || !previous || !next) return next;
+  if (Array.isArray(previous) !== Array.isArray(next)) return next;
+  if (Object.getPrototypeOf(next) !== Object.prototype && !Array.isArray(next)) return next;
+  const was = previous as Record<string, unknown>;
+  const now = next as Record<string, unknown>;
+  // A list of rows is matched by id, so a row moving up the list is still the same row.
+  const byId =
+    Array.isArray(previous) &&
+    new Map<unknown, unknown>(
+      (previous as unknown[]).flatMap((item): [unknown, unknown][] =>
+        item && typeof item === "object" && "id" in item ? [[item.id, item]] : [],
+      ),
+    );
+  const out = (Array.isArray(next) ? [] : {}) as Record<string, unknown>;
+  let same = Object.keys(was).length === Object.keys(now).length;
+  for (const key of Object.keys(now)) {
+    const item = now[key];
+    const match =
+      byId && item && typeof item === "object" && "id" in item
+        ? byId.get((item as { id: unknown }).id)
+        : was[key];
+    const kept = keepUnchanged(match, item);
+    out[key] = kept;
+    if (!Object.is(kept, was[key])) same = false;
+  }
+  return same ? previous : (out as T);
+}
+
 export function toSummary(
   row: DesignListRow,
   context: {

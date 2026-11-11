@@ -1,6 +1,7 @@
 import { type Api, type Live, type PresenceRow, presentNow } from "@ponzu/client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNow } from "../cloud/time.ts";
+import { keepUnchanged } from "./map.ts";
 
 /*
  * What the sidebar's rows show beyond their own live row: where each design's files are, which
@@ -34,6 +35,21 @@ export function useAssetsUrls(
     }
   }, [api, wanted, asked]);
   return known;
+}
+
+/**
+ * The value, sharing every part that hasn't changed since the last render (`keepUnchanged`): the
+ * rows a live update didn't touch, and an unchanged preview, stay the same objects, so their rows
+ * aren't drawn again and their pictures aren't asked for again.
+ */
+export function useUnchanged<T>(value: T): T {
+  const last = useRef(value);
+  // Compared once per new value, not on every render of the window.
+  const kept = useMemo(() => keepUnchanged(last.current, value), [value]);
+  useEffect(() => {
+    last.current = kept;
+  }, [kept]);
+  return kept;
 }
 
 /** At most this many designs are watched for who is in them: the top of the list. */

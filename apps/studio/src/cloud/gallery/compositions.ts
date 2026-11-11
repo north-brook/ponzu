@@ -76,6 +76,11 @@ export const COMPOSITIONS: Composition[] = [
     reference: true,
   },
   {
+    id: "sidebar-previews-updating",
+    title: "Sidebar · Previews updating while the agent works",
+    ...WINDOW,
+  },
+  {
     id: "share",
     title: "Share",
     board: "teams/share.html",
