@@ -5,6 +5,7 @@ import {
   IDEAS_SYSTEM_PROMPT,
   ideasPrompt,
   ideasRequest,
+  ownWords,
   saysWhatItIs,
 } from "./prompt.ts";
 import type { RepoSnapshot } from "./snapshot.ts";
@@ -225,5 +226,48 @@ describe("ideasRequest, for a product not built yet", () => {
     for (const example of examples) {
       expect(checkIdeas(withFirst(example), options)).toMatchObject({ ok: false });
     }
+  });
+});
+
+describe("a product named with a word ideas may not otherwise say", () => {
+  const named = ["Give Ponzu a welcome screen that shows one clear next step", ...GOOD.slice(1)];
+
+  test("its own name is let through, for it alone", () => {
+    const own = ownWords({ fullName: "north-brook/ponzu-test", description: null });
+    expect(own).toEqual(["ponzu"]);
+    expect(checkIdeas({ ideas: named }, { own })).toMatchObject({ ok: true });
+    expect(checkIdeas({ ideas: named })).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining('"ponzu"'),
+    });
+  });
+
+  test("the other words stay refused for it", () => {
+    const own = ownWords({ fullName: "north-brook/ponzu-test", description: null });
+    const ideas = ["Ask Claude to lay out the welcome screen for Ponzu", ...GOOD.slice(1)];
+    expect(checkIdeas({ ideas }, { own })).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining('"claude"'),
+    });
+  });
+
+  test("a description counts, and an ordinary product has no such words", () => {
+    expect(
+      ownWords({ fullName: "acme/assistant", description: "A GPT wrapper for teams" }),
+    ).toEqual(["gpt"]);
+    expect(ownWords({ fullName: "acme/checkout", description: "Payments" })).toEqual([]);
+  });
+
+  test("a product called AI something may be called that, and no other may", () => {
+    const ideas = ["Give AI Notes a first screen with one note already written", ...GOOD.slice(1)];
+    const own = ownWords({ fullName: "acme/ai-notes", description: null });
+    expect(own).toEqual(["ai"]);
+    expect(checkIdeas({ ideas }, { own })).toMatchObject({ ok: true });
+    expect(
+      checkIdeas({ ideas }, { own: ownWords({ fullName: "acme/maintain", description: null }) }),
+    ).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining('"AI"'),
+    });
   });
 });
