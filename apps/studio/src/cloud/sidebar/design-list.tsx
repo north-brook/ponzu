@@ -1,5 +1,6 @@
 import type { KeyboardEvent } from "react";
 import type { DesignSummary } from "../model.ts";
+import { Skeleton } from "../ui/skeleton.tsx";
 import { DesignRow, type RowHandlers } from "./design-row.tsx";
 
 /**
@@ -64,20 +65,23 @@ export function DesignList({
 export function DesignListSkeleton({ rows = 5 }: { rows?: number }) {
   return (
     <div role="status" aria-label="Loading designs" className="flex flex-col gap-px">
-      {Array.from({ length: rows }, (_, i) => (
-        <div
+      {Array.from({ length: rows }, (_, i) => {
+        // Each row breathes a beat after the one above it.
+        const delay = `${i * 120}ms`;
+        return (
           // biome-ignore lint/suspicious/noArrayIndexKey: placeholders have nothing else to tell them apart
-          key={i}
-          className="breathe flex items-center gap-2.5 px-2 py-1.5"
-          style={{ animationDelay: `${i * 120}ms` }}
-        >
-          <span className="h-9 w-14 shrink-0 rounded-4 bg-hover" />
-          <span className="flex flex-1 flex-col gap-2">
-            <span className="h-2.5 rounded-3 bg-hover" style={{ width: `${72 - (i % 3) * 14}%` }} />
-            <span className="h-2 w-2/5 rounded-3 bg-hover" />
-          </span>
-        </div>
-      ))}
+          <div key={i} className="flex items-center gap-2.5 px-2 py-1.5">
+            <Skeleton className="h-9 w-14 shrink-0 rounded-4" style={{ animationDelay: delay }} />
+            <span className="flex flex-1 flex-col gap-2">
+              <Skeleton
+                className="h-2.5 rounded-3"
+                style={{ width: `${72 - (i % 3) * 14}%`, animationDelay: delay }}
+              />
+              <Skeleton className="h-2 w-2/5 rounded-3" style={{ animationDelay: delay }} />
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }

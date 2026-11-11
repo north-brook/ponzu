@@ -2,8 +2,8 @@ import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
 import type { DesignSummary } from "../model.ts";
 import { orderSettled } from "../status.ts";
 import { cn } from "../ui/cn.ts";
+import { FadeScroll } from "../ui/fade-scroll.tsx";
 import { Icon } from "../ui/icon.tsx";
-import { ScrollArea } from "../ui/scroll-area.tsx";
 import { DesignList, DesignListSkeleton } from "./design-list.tsx";
 import type { RowHandlers } from "./design-row.tsx";
 
@@ -29,7 +29,7 @@ export function SettledTray({
   return (
     <div className="flex min-h-0 shrink-0 flex-col">
       {expanded ? (
-        <ScrollArea id="settled" className="max-h-[45vh] border-sep border-t pt-1.5">
+        <FadeScroll id="settled" className="max-h-[45vh] border-sep border-t pt-1.5">
           {designs ? (
             <DesignList
               designs={orderSettled(designs)}
@@ -41,7 +41,7 @@ export function SettledTray({
           ) : (
             <DesignListSkeleton rows={Math.min(count, 3)} />
           )}
-        </ScrollArea>
+        </FadeScroll>
       ) : null}
       <button
         type="button"
