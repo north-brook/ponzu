@@ -120,6 +120,11 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     expect(await line()).toBe(NOTHING);
     await page.waitForTimeout(600);
     expect(await line()).toBe("rgb(201, 197, 188)");
+    // On the canvas's side of the gutter, under the chrome's divider: never in the gutter's
+    // middle, a few pixels off it.
+    const drawn = await box(page, "#sidebar-pane-edge > span");
+    const canvas = await box(page, "#canvas-pane main");
+    expect(drawn.x + drawn.width).toBeCloseTo(canvas.x, 0);
     await shootBoth("2-hover", x);
     await page.mouse.move(x + 200, GRIP_Y);
   });
@@ -234,10 +239,55 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     expect(await edge.evaluate((el) => el.matches(":focus-visible"))).toBe(true);
     await shootBoth("5-focus", await sidebarEdgeX());
     // The rail's edge moves the way the arrow points too: left widens it.
-    await page.locator("#thread-pane-edge").focus();
+    const rail = page.locator("#thread-pane-edge");
+    await rail.focus();
     await page.keyboard.press("ArrowLeft");
     expect((await geometry(page)).rail).toBeCloseTo(470, 0);
     await waitUntil(async () => (await saved(page))?.railWidth === 470);
+    // Read out as the pane's width, whichever side it's on (the library's own value is the
+    // panel before the edge: the canvas, for the rail).
+    await waitUntil(
+      async () => (await rail.getAttribute("aria-valuetext")) === "Thread, 470 pixels",
+    );
+    // Home: the pane at its narrowest; End: at its widest. The same on both sides.
+    await page.keyboard.press("Home");
+    expect((await geometry(page)).rail).toBeCloseTo(PANES.rail.min, 0);
+    await page.keyboard.press("End");
+    expect((await geometry(page)).rail).toBeCloseTo(PANES.rail.max, 0);
+    await waitUntil(async () => (await saved(page))?.railWidth === PANES.rail.max);
+    await edge.focus();
+    await page.keyboard.press("End");
+    expect((await geometry(page)).sidebar).toBeCloseTo(PANES.sidebar.max, 0);
+    await page.keyboard.press("Home");
+    expect((await geometry(page)).sidebar).toBeCloseTo(PANES.sidebar.min, 0);
+    await waitUntil(
+      async () =>
+        (await edge.getAttribute("aria-valuetext")) === `Sidebar, ${PANES.sidebar.min} pixels`,
+    );
+  });
+
+  test("dragging an edge leaves focus where it was", async () => {
+    const message = page.getByRole("textbox", { name: "Message" });
+    await message.click();
+    await page.keyboard.type("hello");
+    const x = await railEdgeX();
+    await page.mouse.move(x, GRIP_Y);
+    await page.mouse.down();
+    await page.mouse.move(x - 20, GRIP_Y, { steps: 2 });
+    await page.mouse.up();
+    expect(await message.evaluate((el) => el === document.activeElement)).toBe(true);
+    await page.keyboard.type("X");
+    expect(await message.inputValue()).toBe("helloX");
+    await message.fill("");
+    // From nowhere in particular, focus doesn't stay on the edge either.
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.mouse.move(x - 20, GRIP_Y);
+    await page.mouse.down();
+    await page.mouse.move(x, GRIP_Y, { steps: 2 });
+    await page.mouse.up();
+    expect(await page.evaluate(() => document.activeElement?.id ?? "")).not.toBe(
+      "thread-pane-edge",
+    );
   });
 
   test("double-clicking an edge returns its pane to the design's width", async () => {
@@ -280,6 +330,66 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
       sidebarWidth: PANES.sidebar.max,
       railWidth: PANES.rail.max,
     });
+  });
+
+  test("in a small window, dragging one edge stops at the canvas and leaves the other pane be", async () => {
+    await page.mouse.dblclick(await sidebarEdgeX(), GRIP_Y);
+    await page.mouse.dblclick(await railEdgeX(), GRIP_Y);
+    await page.setViewportSize({ width: 1100, height: HEIGHT });
+    await waitUntil(
+      async () => Math.abs((await geometry(page)).canvasWidth - (1100 - 300 - 360)) < 1,
+    );
+    const before = await geometry(page);
+    const x = await sidebarEdgeX();
+    await page.mouse.move(x, GRIP_Y);
+    await page.mouse.down();
+    await page.mouse.move(x + 200, GRIP_Y, { steps: 6 });
+    const held = await geometry(page);
+    // Stopped where the canvas reached its 400; the rail where it was, while held too.
+    expect(held.canvasWidth).toBeCloseTo(400, 0);
+    expect(held.rail).toBeCloseTo(before.rail, 0);
+    await page.mouse.up();
+    const after = await geometry(page);
+    expect(after.rail).toBeCloseTo(before.rail, 0);
+    expect(after.sidebar).toBeCloseTo(1100 - 400 - before.rail, 0);
+    await waitUntil(async () => (await saved(page))?.sidebarWidth === Math.round(after.sidebar));
+    expect((await saved(page))?.railWidth).toBe(360);
+    // The keys the same way: the rail's edge pushed left goes no further than the canvas lets it.
+    await page.locator("#thread-pane-edge").focus();
+    await page.keyboard.press("Shift+ArrowLeft");
+    const keyed = await geometry(page);
+    expect(keyed.sidebar).toBeCloseTo(after.sidebar, 0);
+    expect(keyed.rail).toBeCloseTo(before.rail, 0);
+    // Back to the design's widths for what follows.
+    await page.setViewportSize({ width: WIDTH, height: HEIGHT });
+    await waitUntil(async () => (await geometry(page)).canvasWidth > 600);
+    await page.mouse.dblclick(await sidebarEdgeX(), GRIP_Y);
+    await waitUntil(async () => (await saved(page))?.sidebarWidth === 300);
+  });
+
+  test("opened in a small window, wide panes share the shortfall, and widen again with it", async () => {
+    await page.evaluate(() => {
+      const key = Object.keys(localStorage).find((k) => k.startsWith("ponzu.ui."))!;
+      const ui = JSON.parse(localStorage.getItem(key)!);
+      localStorage.setItem(key, JSON.stringify({ ...ui, sidebarWidth: 420, railWidth: 520 }));
+    });
+    await page.setViewportSize({ width: 1100, height: HEIGHT });
+    await page.reload();
+    await openTheDesign(page);
+    const small = await geometry(page);
+    expect(small.canvasWidth).toBeCloseTo(400, 0);
+    // Each gave up some of its width, in proportion to its room above its minimum: neither
+    // squeezed to it while the other kept all of its own.
+    expect(small.sidebar).toBeGreaterThan(PANES.sidebar.min + 40);
+    expect(small.rail).toBeGreaterThan(PANES.rail.min + 40);
+    expect(small.sidebar + small.rail).toBeCloseTo(1100 - 400, 0);
+    expect(small.chromeLeftEnd + 4).toBeCloseTo(small.sidebar, 0);
+    await page.setViewportSize({ width: WIDTH, height: HEIGHT });
+    await waitUntil(async () => {
+      const g = await geometry(page);
+      return Math.abs(g.sidebar - 420) < 1 && Math.abs(g.rail - 520) < 1;
+    });
+    expect(await saved(page)).toMatchObject({ sidebarWidth: 420, railWidth: 520 });
   });
 
   test("the widths come back after a reload", async () => {

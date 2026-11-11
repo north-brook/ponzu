@@ -127,7 +127,7 @@ export function DesignChrome({
         className={cn(
           // Open, at least to the rail's edge (`--pane-rail`, which follows its drag), less the
           // header's 10 of right padding.
-          "pane-motion flex shrink-0 items-center",
+          "pane-motion flex shrink-0 items-center transition-[min-width]",
           rail.open ? "min-w-[calc(var(--pane-rail,360px)-10px)]" : "min-w-0",
         )}
       >

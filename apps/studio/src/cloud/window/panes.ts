@@ -38,3 +38,33 @@ export function paneWidth(pane: Pane, width: unknown): number {
   if (typeof width !== "number" || !Number.isFinite(width)) return fallback;
   return Math.min(max, Math.max(min, Math.round(width)));
 }
+
+/**
+ * The widths the open panes take in `room` (the window's width less the canvas's 400 and the
+ * gutters of any closed pane): each the width it was left at when they fit. When they don't,
+ * each gives up a share of the shortfall in proportion to how far it is above its minimum, so
+ * neither is squeezed to its minimum while the other keeps its width, and neither goes below
+ * its minimum. The widths the person left them at stay as they are, kept, for when the window
+ * has room again.
+ */
+export function fitPanes(
+  room: number,
+  wanted: Partial<Record<Pane, number>>,
+): Partial<Record<Pane, number>> {
+  const open = Object.keys(wanted) as Pane[];
+  const total = open.reduce((sum, pane) => sum + (wanted[pane] ?? 0), 0);
+  const short = total - room;
+  if (short <= 0) return { ...wanted };
+  const slack = open.reduce(
+    (sum, pane) => sum + Math.max(0, (wanted[pane] ?? 0) - PANES[pane].min),
+    0,
+  );
+  const fitted: Partial<Record<Pane, number>> = {};
+  for (const pane of open) {
+    const width = wanted[pane] ?? 0;
+    const above = Math.max(0, width - PANES[pane].min);
+    fitted[pane] =
+      slack > 0 ? Math.max(PANES[pane].min, width - (short * above) / slack) : PANES[pane].min;
+  }
+  return fitted;
+}

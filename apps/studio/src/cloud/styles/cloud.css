@@ -177,11 +177,11 @@
 
 /*
  * The window's panes (window/app-window.tsx). While a pane opens or closes, the window carries
- * `data-pane-motion`: the panes, the chrome over them and the canvas between them ease together.
- * At any other time, a drag included, they follow at once.
+ * `data-pane-motion`: the panes' panels ease (here) and so does everything tagged `pane-motion`
+ * (below). At any other time, a drag included, they follow at once.
  */
-[data-pane-motion] :is([data-panel], .pane-motion) {
-  transition-property: flex-grow, width, min-width, margin;
+[data-pane-motion] [data-panel] {
+  transition-property: flex-grow;
   transition-duration: var(--dur-pane);
   transition-timing-function: var(--ease-out);
 }
@@ -208,6 +208,22 @@
 @utility focus-ring {
   &:focus-visible:not([data-quiet-focus]) {
     box-shadow: var(--c-focus);
+  }
+}
+
+/* The panes' one clock: what moves with the sidebar and the rail as a toggle opens or closes
+   them (the canvas pane's edges, the chrome's blocks over the panes). Name what moves with a
+   `transition-*` utility beside it. It eases only while the window carries `data-pane-motion`
+   (a toggle's easing): at any other time, a drag of an edge included, it follows at once, so
+   the chrome never trails the pane under the pointer. Reduced motion stills it like any other. */
+@utility pane-motion {
+  --tw-duration: 0s;
+  transition-duration: 0s;
+  [data-pane-motion] & {
+    --tw-duration: var(--dur-pane);
+    --tw-ease: var(--ease-out);
+    transition-duration: var(--dur-pane);
+    transition-timing-function: var(--ease-out);
   }
 }
 
