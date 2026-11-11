@@ -96,7 +96,7 @@ runner must speak this API's runner protocol, so bake it (`bun apps/runner/image
 a commit at least as new as the API's protocol: an image from before `claimId` (migration
 0008) cannot claim its events. The one the sandbox lifecycle was proven with end to end is
 `ponzu-runner-6041787d9d11`. Checkpoints, getting ready to sleep and `POST /report` need an image
-from this API's checkpoint routes on (migration 0014): `ponzu-runner-0b599d9a201c`. An older
+from this API's checkpoint routes on (migration 0014): `ponzu-runner-b06c59b6e389`. An older
 image still works against this API: its runner has no `/report` (a stop then does not wait for
 it, and still runs `sync`), and it saves no checkpoint, so its disk stays the only copy. Every deployment shares the boat.dev account; the sweeps keep to
 the sandboxes labelled with their own database (`SandboxConfig.scope`).

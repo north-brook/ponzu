@@ -1847,9 +1847,9 @@ from `cloud` into `main`, released as the next major version.
   in under a second and about 2 seconds. A create from the image answers `/health` in 4 to 31
   seconds (`apps/runner/image/README.md` has the runs). The thread shows a waking state.
 - A cold start can bring the disk back older than it was. A file written a moment before a stop
-  and not flushed is lost (every run here lost the unflushed probe and kept the flushed one), so
-  the runner flushes after each turn and before a sleep, and the API runs `sync` before every
-  stop. Worse, in two of three end-to-end runs of the earlier image the second cold start in a
+  and not flushed was lost in the image's earlier runs, so the runner flushes after each turn and
+  before a sleep, and the API runs `sync` before every stop (with that, a file written just
+  before the stop and never flushed by its writer came back in every cold wake recorded here). Worse, in two of three end-to-end runs of the earlier image the second cold start in a
   row came back with the disk as it was at the first. Unexplained, and worth raising with boat;
   the runner now logs `sandbox_rollback` with the boot ids and markers when it happens, and the
   API logs it with the sandbox and counts it (`sandboxes.rollbacks`). Since the stop began
