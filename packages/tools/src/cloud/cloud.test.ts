@@ -1118,6 +1118,11 @@ test("the guides written for the cloud leave the local world out", () => {
   }
   expect(cloudGuides.comments).toContain("reaches you as a new turn");
   expect(CLOUD_INSTRUCTIONS).toContain("reach you as new turns");
+  // What the agent writes is a chat message beside the canvas, not a terminal recap.
+  expect(CLOUD_INSTRUCTIONS).toContain("Where your words go: not to a terminal.");
+  expect(cloudGuides.basics).toContain("goes to a chat thread beside the canvas");
+  // Claude Code's preset asks for progress updates; here set_status is that update.
+  expect(CLOUD_INSTRUCTIONS).toContain("is for a terminal, where people can't see your tools");
   expect(cloudGuides.code).toContain("rebuild it on the canvas faithfully before you change");
   expect(CLOUD_INSTRUCTIONS).toContain(
     "rebuild it on the canvas faithfully from the running dev server",
