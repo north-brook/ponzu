@@ -25,7 +25,8 @@ export function imageChecks(boat: SandboxProvider, id: string, pins: Pins): Chec
     {
       name: "versions are the pinned ones",
       run: async () => {
-        const got = JSON.parse(await run(VERSIONS));
+        // boat's own Claude Code, which nothing of ours runs, is only reported.
+        const { boatClaude, ...got } = JSON.parse(await run(VERSIONS));
         const want = {
           bun: pins.bunVersion,
           unitBun: pins.bunVersion,
@@ -36,7 +37,7 @@ export function imageChecks(boat: SandboxProvider, id: string, pins: Pins): Chec
         };
         if (JSON.stringify(got) !== JSON.stringify(want))
           throw new Error(`want ${JSON.stringify(want)}\n got ${JSON.stringify(got)}`);
-        return `Bun ${got.bun}, Claude Code ${pins.claudeVersion}, ${got.headlessShell}, playwright-core ${got.playwrightCore}`;
+        return `Bun ${got.bun}, Claude Code ${pins.claudeVersion}, ${got.headlessShell}, playwright-core ${got.playwrightCore} (boat's /usr/local/bin/claude: ${boatClaude})`;
       },
     },
     {
@@ -205,13 +206,22 @@ image=/opt/ponzu/image.json
 bun=$(jq -r .bun.path $image)
 # The Bun the runner's unit starts, which must be the same one.
 unit_bun=$(systemctl cat ponzu-runner | grep -o '/opt/ponzu/bun/[^/]*/bun' | head -1)
+# The Claude Code the image installed, and that the runner's unit and the agent's PATH reach that
+# one, never boat's /usr/local/bin/claude (which boat puts back at every create).
+claude=$(jq -r .claude.path $image)
+agent_claude=$(grep -o '/opt/ponzu/claude/[^ ]*/claude' /opt/ponzu/libexec/agent-claude)
+[ "$agent_claude" = "$claude" ] || { echo "agent-claude runs $agent_claude, not $claude" >&2; exit 1; }
+systemctl show -p Environment --value ponzu-runner | tr ' ' '\\n' | grep -qx 'PONZU_CLAUDE=/opt/ponzu/libexec/agent-claude' \\
+  || { echo "the runner's unit does not name agent-claude" >&2; exit 1; }
+[ "$(readlink -f /opt/ponzu/bin/claude)" = "$claude" ] || { echo "/opt/ponzu/bin/claude is not $claude" >&2; exit 1; }
 jq -n --arg bun "$($bun --version)" \\
   --arg unitBun "$($unit_bun --version)" \\
-  --arg claude "$(/usr/local/bin/claude --version)" \\
-  --arg claudeSha256 "$(sha256sum "$(readlink -f /usr/local/bin/claude)" | cut -d' ' -f1)" \\
+  --arg claude "$($claude --version)" \\
+  --arg claudeSha256 "$(sha256sum "$claude" | cut -d' ' -f1)" \\
   --arg headlessShell "$($(jq -r .chromium $image) --version | sed 's/ *$//')" \\
   --arg playwrightCore "$(jq -r .version /opt/ponzu/runner/node_modules/playwright-core/package.json)" \\
-  '{bun: $bun, unitBun: $unitBun, claude: $claude, claudeSha256: $claudeSha256, headlessShell: $headlessShell, playwrightCore: $playwrightCore}'`;
+  --arg boatClaude "$(/usr/local/bin/claude --version 2>/dev/null || echo none)" \\
+  '{bun: $bun, unitBun: $unitBun, claude: $claude, claudeSha256: $claudeSha256, headlessShell: $headlessShell, playwrightCore: $playwrightCore, boatClaude: $boatClaude}'`;
 
 /**
  * Files holding the shape of one of Ponzu's secrets, by path and shape, never the match.

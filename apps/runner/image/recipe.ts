@@ -25,6 +25,8 @@ export interface Pins {
   claudeVersion: string;
   /** The linux-x64 binary's, from the Agent SDK's own manifest. */
   claudeSha256: string;
+  /** Where that binary is fetched from (`claudeBinaryUrl`). */
+  claudeUrl: string;
   playwrightCoreVersion: string;
   /** The Chrome Headless Shell that playwright-core version downloads. */
   headlessShellVersion: string;
@@ -71,12 +73,24 @@ export function readPins(): Pins {
     bunSha256: bunPin.linuxX64Sha256,
     claudeVersion: claude.version,
     claudeSha256: claude.platforms["linux-x64"].checksum,
+    claudeUrl: claudeBinaryUrl(claude.version),
     playwrightCoreVersion: playwright,
     headlessShellVersion: shell.browserVersion,
     headlessShellRevision: chromiumPin.revision,
     headlessShellUrl: chromiumPin.url,
     headlessShellSha256: chromiumPin.sha256,
   };
+}
+
+/**
+ * Claude Code's native binary for linux-x64 at exactly `version`: the file its own native
+ * installer fetches for a pinned version, the binary alone, so nothing runs to install it (npm
+ * 11 no longer runs a package's install scripts, which is how its npm package puts the binary
+ * in place). provision.sh checks it against the hash in the Agent SDK's manifest.
+ */
+export function claudeBinaryUrl(version: string): string {
+  if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error(`not a Claude Code version: ${version}`);
+  return `https://downloads.claude.ai/claude-code-releases/${version}/linux-x64/claude`;
 }
 
 /** The file provision.sh sources. */
@@ -86,6 +100,7 @@ export function pinsEnv(pins: Pins, inputs: string): string {
     `BUN_SHA256=${pins.bunSha256}`,
     `CLAUDE_VERSION=${pins.claudeVersion}`,
     `CLAUDE_SHA256=${pins.claudeSha256}`,
+    `CLAUDE_URL=${pins.claudeUrl}`,
     `PLAYWRIGHT_CORE_VERSION=${pins.playwrightCoreVersion}`,
     `CHROMIUM_REVISION=${pins.headlessShellRevision}`,
     `CHROMIUM_URL=${pins.headlessShellUrl}`,
@@ -138,15 +153,16 @@ export function recipeInputs(pins: Pins, base: string, dist = DIST): Input[] {
 
 /**
  * What boat's base image is, read in a fresh sandbox before the recipe runs: the system, every
- * package and its version, the fonts fallback can find, and the tools the recipe keeps or
- * replaces. boat names no version of its base, so this is how a change to it is seen.
+ * package and its version, the fonts fallback can find, and the Claude Code and Bun it ships,
+ * which the recipe replaces with its own whatever they are. boat names no version of its base,
+ * so this is how a change to it is seen.
  */
 export const BASE_FINGERPRINT = `set -e
 cat /etc/os-release
 uname -r
 dpkg-query -W -f '\${Package}=\${Version}\\n' | sort
 find /usr/share/fonts /usr/local/share/fonts -type f 2>/dev/null | sort
-sha256sum "$(readlink -f /usr/local/bin/claude)" | cut -d' ' -f1
+sha256sum "$(readlink -f /usr/local/bin/claude)" 2>/dev/null | cut -d' ' -f1 || true
 /usr/local/bin/bun --version 2>/dev/null || true`;
 
 /** The same inputs always hash the same, whatever order they were read in. */

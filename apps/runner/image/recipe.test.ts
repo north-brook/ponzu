@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  claudeBinaryUrl,
   type Input,
   inputsHash,
   pinsEnv,
@@ -33,6 +34,29 @@ test("provision.sh gets the pins and the inputs' hash as shell variables", () =>
   expect(env).toEndWith("INPUTS_HASH=abc\n");
   // Nothing in it needs quoting.
   for (const line of env.trim().split("\n")) expect(line).toMatch(/^[A-Z_0-9]+=[A-Za-z0-9.:/_-]+$/);
+});
+
+test("Claude Code is the pinned version's native binary, fetched as a file and checked by hash", () => {
+  const pins = readPins();
+  expect(pins.claudeUrl).toBe(claudeBinaryUrl(pins.claudeVersion));
+  expect(claudeBinaryUrl("2.1.322")).toBe(
+    "https://downloads.claude.ai/claude-code-releases/2.1.322/linux-x64/claude",
+  );
+  // A version is all that goes into the address: no tag, range or path.
+  for (const bad of ["latest", "stable", "^2.1.322", "2.1", "2.1.322/../x", ""])
+    expect(() => claudeBinaryUrl(bad)).toThrow();
+  expect(pinsEnv(pins, "abc")).toContain(`CLAUDE_URL=${pins.claudeUrl}\n`);
+  // The recipe installs what it fetched only once the SDK's hash matches, and never through a
+  // package manager, whose install scripts may or may not run.
+  const recipe = readFileSync(join(import.meta.dir, "provision.sh"), "utf8");
+  expect(recipe).toContain('curl -fsSL --retry 3 -o "$work/claude" "$CLAUDE_URL"');
+  expect(recipe.indexOf('echo "$CLAUDE_SHA256  $work/claude" | sha256sum --check')).toBeLessThan(
+    recipe.indexOf('install -D -m 0755 "$work/claude"'),
+  );
+  expect(recipe).not.toMatch(/\bnpm (install|i)\b/);
+  // boat puts its own /usr/local/bin/claude back at every create: the agent runs ours by path.
+  expect(recipe).not.toMatch(/ln [^\n]*\/usr\/local\/bin\/claude/);
+  expect(recipe).toContain('as-agent %s "$@"\\n\' "$PONZU" "$CLAUDE"');
 });
 
 test("the headless shell is the build playwright-core pins, fetched from where its installer would", () => {
