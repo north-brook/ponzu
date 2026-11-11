@@ -97,6 +97,7 @@ async function setup(
     stateDir?: string;
     timing?: Partial<Timing>;
     renderer?: Renderer;
+    flush?: () => void;
   } = {},
 ): Promise<Setup> {
   const api = opts.api ?? new FakeRunnerApi({ session: opts.session, doc: opts.doc });
@@ -110,6 +111,7 @@ async function setup(
     agent,
     prepare: opts.prepare ?? (async () => work),
     renderer: opts.renderer,
+    flush: opts.flush,
     stateDir,
     log: (m) => logs.push(m),
     onFatal: (reason) => fatal.push(reason),
@@ -172,6 +174,17 @@ test("the thread shows the runner waking while the checkout is made, then a new 
 
   run.ready("sess_new");
   await until(() => api.lastState?.claudeSessionId === "sess_new");
+});
+
+test("what a turn wrote is flushed to the disk once it has ended and settled, not before", async () => {
+  let flushes = 0;
+  const s = await setup({ flush: () => flushes++ });
+  s.run.ready();
+  await turn(s);
+  s.run.say("m1", "Drawn.");
+  expect(flushes).toBe(0);
+  s.run.end();
+  await until(() => flushes === 1);
 });
 
 test("a poke while the runner is starting waits for the claim that ends the start", async () => {

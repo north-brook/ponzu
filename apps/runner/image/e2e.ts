@@ -275,9 +275,17 @@ async function repo(): Promise<void> {
       await gh(github.token, `/repos/${owner}/${name}/git/refs/heads/${branch}`, "DELETE").catch(
         (err) => console.log(`could not delete ${branch}: ${err}`),
       );
-      report.branchDeleted = await gh(github.token, `/repos/${owner}/${name}/branches/${branch}`)
-        .then(() => false)
-        .catch(() => true);
+      // GitHub can still answer for a branch for a few seconds after it is deleted.
+      report.branchDeleted = await until(
+        "the branch to be gone",
+        () =>
+          gh(github.token, `/repos/${owner}/${name}/branches/${branch}`).then(
+            () => false,
+            () => true,
+          ),
+        30_000,
+        2_000,
+      ).catch(() => false);
     }
   } finally {
     await gh(github.token, "/installation/token", "DELETE").catch(() => {});

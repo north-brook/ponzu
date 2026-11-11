@@ -2,6 +2,7 @@
  * The runner's entry: `bun runner.js` in a design's sandbox, as the ponzu-runner systemd
  * service. README.md has its environment and how to run it elsewhere.
  */
+import { spawn } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -72,6 +73,8 @@ const runner = new Runner({
       ...(env.git ? { git: env.git } : {}),
     }),
   stateDir: env.stateDir,
+  // Every filesystem, so the agent's files are flushed with the runner's own.
+  flush: () => void spawn("sync", { stdio: "ignore" }).on("error", (err) => log(`sync: ${err}`)),
   log,
   onFatal: () => {
     server.stop();

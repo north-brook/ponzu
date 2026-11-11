@@ -107,6 +107,12 @@ export interface RunnerOptions {
   prepare(session: RunnerSession): Promise<string>;
   /** Where the runner keeps what it needs across restarts. */
   stateDir: string;
+  /**
+   * Called once a turn has ended and its edits have settled: put what the turn wrote (the
+   * session's transcript, the checkout) on the disk. A stop that turns cold loses what was
+   * still in memory, and the sandbox may be stopped at any time after a turn.
+   */
+  flush?(): void;
   log(message: string): void;
   /**
    * The API said this process must stop for good (its token is revoked, or a newer runner
@@ -995,6 +1001,7 @@ export class Runner {
         return;
       }
       this.ws.presence.leave(CALLER.id);
+      this.opts.flush?.();
     };
     end().catch((err) => this.log(`ending the turn failed: ${said(err)}`));
   }
