@@ -32,8 +32,9 @@ export function TrafficLights({ drawn }: { drawn: boolean }) {
 }
 
 /**
- * The chrome's hairline: one before the page tabs (at the sidebar's edge while it is open, just
- * past the design's name while it is closed), one at the rail's edge.
+ * The chrome's hairline: one before the page tabs (on the sidebar's edge while it is open, just
+ * past the design's name while it is closed), one before the thread toggle (on the rail's edge
+ * while it is open, just past the people and the next action while it is closed).
  */
 export function ChromeDivider() {
   return <span aria-hidden data-chrome-divider className="h-4 w-px shrink-0 bg-sep" />;
@@ -54,7 +55,7 @@ export function SidebarToggle({ open, onToggle }: { open: boolean; onToggle: () 
       onClick={onToggle}
       className="size-7"
     >
-      <Icon icon={LayoutLeftIcon} size={16} stroke={1.7} />
+      <Icon icon={LayoutLeftIcon} step="control" />
     </IconButton>
   );
 }

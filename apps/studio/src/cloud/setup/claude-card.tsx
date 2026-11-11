@@ -219,7 +219,6 @@ function MethodEntry({
                 onClick={onReopen}
                 disabled={connecting || reopening}
                 aria-busy={reopening || undefined}
-                arrow={10}
                 trailing={reopening ? <Waiting size={10} label="Starting a sign-in" /> : undefined}
                 className={cn(
                   "gap-0.5 font-medium",
@@ -248,7 +247,7 @@ function ClaudeTile() {
 function KeyTile() {
   return (
     <MarkTile>
-      <Icon icon={Key01Icon} size={16} stroke={1.8} />
+      <Icon icon={Key01Icon} step="control" />
     </MarkTile>
   );
 }

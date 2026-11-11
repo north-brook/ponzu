@@ -52,7 +52,7 @@ export function NotificationsSection({
   onGetIphone,
 }: NotificationsSectionProps) {
   const events = team ? EVENTS : EVENTS.filter((e) => e.key !== "teammateComments");
-  const phone = <Icon icon={SmartPhone01Icon} size={16} stroke={1.8} className="text-muted" />;
+  const phone = <Icon icon={SmartPhone01Icon} step="control" className="text-muted" />;
   return (
     <>
       <Section label="Ping me when">
@@ -107,7 +107,7 @@ export function NotificationsSection({
           </Row>
         )}
         <Row
-          leading={<Icon icon={Mail01Icon} size={16} stroke={1.8} className="text-muted" />}
+          leading={<Icon icon={Mail01Icon} step="control" className="text-muted" />}
           trailing={
             <Switch
               label="Email"

@@ -3,29 +3,47 @@ export { type IconName, Icons } from "./icon-names.ts";
 import { Edit03Icon, File01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { type IconName, Icons } from "./icon-names.ts";
+import { ICON, type IconStep, ON_FILL } from "./ladder.ts";
 import { SLICE, SLICE_STROKE } from "./slice.ts";
 
+/**
+ * A page's, a board's or a control's icon at a step of the ladder (ladder.ts): `control` unless
+ * told otherwise. `onFill` draws it heavier on a solid ground. `size` and `strokeWidth` override
+ * the step, for a host drawing outside the app's ladder (the web's design pages).
+ */
 export function Icon({
   name,
-  size = 16,
-  strokeWidth = 1.6,
+  step = "control",
+  onFill = false,
+  size,
+  strokeWidth,
   className,
 }: {
   name: IconName | string;
+  step?: IconStep;
+  onFill?: boolean;
   size?: number;
   strokeWidth?: number;
   className?: string;
 }) {
   const icon = Icons[name as IconName] ?? File01Icon;
-  return <HugeiconsIcon icon={icon} size={size} strokeWidth={strokeWidth} className={className} />;
+  const at = ICON[step];
+  return (
+    <HugeiconsIcon
+      icon={icon}
+      size={size ?? at.size}
+      strokeWidth={strokeWidth ?? (onFill ? at.stroke + ON_FILL : at.stroke)}
+      className={className}
+    />
+  );
 }
 
 /**
  * The pencil on a comment being written: an unsent comment's pin, and a thread's while a reply to
  * it is unsent. Not one of Icons, which a page can take: the iPhone would need its image too.
  */
-export function Pencil({ size = 12 }: { size?: number }) {
-  return <HugeiconsIcon icon={Edit03Icon} size={size} strokeWidth={2} />;
+export function Pencil() {
+  return <HugeiconsIcon icon={Edit03Icon} size={ICON.small.size} strokeWidth={ICON.small.stroke} />;
 }
 
 /** The Ponzu slice, in one color: ink, or paper on dark. `color` overrides both. */

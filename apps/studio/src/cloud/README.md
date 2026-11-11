@@ -16,7 +16,7 @@ claude.ts         the person's Claude: how it is connected, its plan's limits, a
 styles/           tokens.css (every token) and cloud.css (the Tailwind build)
 ui/               primitives: shadcn/ui's components themed with our tokens (button, menus,
                   popover, tooltip, dialogs, field, command, tabs, avatar, kbd, skeleton…), the
-                  product's names on them (menu.tsx, modal.tsx, TextField), our own few (icon,
+                  product's names on them (menu.tsx, modal.tsx, TextField), our own few (icon, ladder,
                   marks, fade-scroll, qr), and Prose, which draws untrusted Markdown
                   (markdown.ts has its rules)
 window/           the window frame, chrome, page tabs, presence, Share, PR mark, next action, thread toggle
@@ -78,25 +78,34 @@ lockup in any state, the sidebar toggle is the first thing at the left (on a Mac
 traffic lights, which the shell puts at x 16, y 16, so the toggle's box spans 76 to 104 and is
 centred on the lights' line; on Windows and Linux 10px from the edge), and the thread toggle is
 the last thing at the right, 10px from the window's edge, whether the rail is open or closed and
-on every tab. The rest of the right cluster (presence, Share, the pull request mark, the next
-action) sits just before the thread toggle, so it holds one place too, and the divider sits 18px
-before the cluster in every state: it separates the page tabs from the cluster rather than marking
-the rail's edge, so a wider cluster (five people, Update branch) or the rail toggling never moves
-it off its partner.
-The chrome is 38px tall where the boards draw 44 (the founder's direction: more compact, its
-28px controls and the traffic lights centred on it), so everything under it sits 6px higher than
-on a board. `visual.ts compare` masks the boards' 44px of chrome for these reasons.
+on every tab. The chrome is 38px tall where the boards draw 44 (the founder's direction: more
+compact, its 28px controls and the traffic lights centred on it), so everything under it sits 6px
+higher than on a board. `visual.ts compare` masks the boards' 44px of chrome for these reasons,
+so the rest is still checked against the boards.
 
-The chrome reads, left to right (the founder's order):
+The chrome reads, left to right (the founder's order), the right side the left's mirror:
 
-- sidebar collapsed, a design open: `[traffic lights] [sidebar toggle] [design name] | [tabs] +`
-  … `| [presence] [PR mark] [action] [thread toggle]`. The name is the row's type (13, medium),
-  cut with an ellipsis at 240, and not a control: a double-click there zooms the window, as on
-  any Mac title bar, so renaming stays on the row.
-- sidebar open: `[traffic lights] [sidebar toggle]` … `| [tabs] +` …, the divider on the
-  sidebar's edge at x 300, where the canvas pane starts. The name's room closes to nothing.
+- sidebar collapsed, a design open: `[traffic lights] [sidebar toggle] [design name] | [tabs] +`.
+  The name is the row's type (13, medium), cut with an ellipsis at 240, and not a control: a
+  double-click there zooms the window, as on any Mac title bar, so renaming stays on the row.
+- sidebar open: `[traffic lights] [sidebar toggle]` … `| [tabs] +`, the divider on the
+  sidebar's edge, where the canvas pane starts (its pixel the canvas's first column). The name's
+  room closes to nothing.
+- rail open: `[people] [PR mark] [action] | …  [thread toggle]`. The cluster (presence and
+  Share's +, the pull request mark, the next action) sits over the canvas and ends 12 before the
+  divider; the divider is on the rail's edge, its pixel the canvas's last column; the chrome over
+  the rail is empty to the toggle.
+- rail closed: `[people] [PR mark] [action] | [thread toggle]`, together at the window's edge,
+  12 either side of the divider. The pull request tab leaves the rail as it was, so it reads as
+  on any page: open or closed by the rail.
 - the create page, or no design: `[traffic lights] [sidebar toggle]` and nothing else: no
   name, no divider.
+
+Each divider's place comes from its pane's width, which the panels write to `--pane-sidebar` and
+`--pane-rail` as they lay out (app-window.tsx, a drag included): the left block and the rail's
+block in the chrome (`[data-chrome-rail]`) read them, so one number moves pane and divider. Where the
+window is too narrow for all of it (the smallest window, five people and Update branch) the page
+tabs give way, scrolling under their fade; the cluster never wraps or clips.
 
 ⌘B toggles the sidebar and ⌘J the rail, from anywhere in the window, the canvas and the
 composers included (no field here takes rich text, so ⌘B means nothing else); both are in the
@@ -106,18 +115,32 @@ or while a design's name is being edited on its row (`paneHeld` in `ui/shortcut.
 
 Both panes open and close on one clock, `pane-motion` (`--dur-pane`, `--ease-out`), and so does
 everything that moves with them: the pane's width, the canvas pane's margin, the left block's
-width, the name's room, and the right block's reach (the room it keeps over the rail). The rail, like the sidebar, keeps its content still at the
-window's edge while its room opens or closes, and holds it until it has closed. The canvas
+width, the name's room, and the rail's block in the chrome, so each divider stays on its pane's
+edge in every frame (the rail's until the edge passes where it rests with the rail closed). The
+rail, like the sidebar, keeps its content still at the window's edge while its room opens or
+closes, and holds it until it has closed. The canvas
 keeps its boards still on screen as its pane's edge moves, anchored to the edge that isn't
 moving, with no refit (useCanvas.ts). `gallery/chrome.test.ts` checks it frame by frame, and
 the app's end-to-end test that the boards don't move.
 
-A click never leaves a ring: whatever takes focus while the pointer was the last thing used is
-marked quiet (`ui/quiet-focus.ts`, the mechanism the menus and the needs-you options use), and
-the ring comes back only from a key that works focus: Tab, an arrow inside a menu, tablist or
-radio group, or Return or Space pressing the focused control. A letter or Escape after a click
-is the canvas's, not the control's. The chrome's buttons and page tabs (`data-toolbar`) take no focus from a click at
-all, as a Mac's toolbar buttons don't, so the next key goes where it went before the click.
+The focus ring is keyboard navigation's and nothing else's (`ui/quiet-focus.ts`, installed once
+by the app and the gallery). It shows where Tab or Shift-Tab, or an arrow, Home or End inside a
+menu, a list, the page tabs or the people in the chrome, moved focus, and again where focus comes
+back to something navigation had reached (a menu or dialog closing onto its trigger) with no
+click since. Focus a click gave, a shortcut acted through, or our own code handed on (a question
+taking the composer's place, a row back from renaming) is marked quiet for as long as it stays,
+whatever keys follow: ⌘, ⌥ held for a shortcut, Return, Space, a letter. It turns into the
+keyboard's only when a navigating key is pressed on it. `focus-ring` and the canvas package's
+controls skip quiet focus, and so do tips (`Tip`). Return or Space on a control that has the
+keyboard's focus hands it on: the popover or dialog it opens rings its first control (`presses`);
+on a control a click focused, the same press stays quiet. Text fields keep their own focus treatment;
+menus show their current item by its highlight, whichever way they were opened.
+
+Controls that act on the window, not on themselves, take no focus from a click at all, as a
+Mac's toolbar buttons don't (`data-toolbar`: the chrome's toggles and page tabs, and the
+sidebar's Search and New design), so the next key goes where it went before the click. Search
+gives focus back where it found it when it closes (the composer after ⌘K, nowhere if it was
+nowhere), as the keyboard's if it was.
 
 Text from the model or GitHub (replies, plans, a pull request's body and comments) goes through
 `Prose`, never `dangerouslySetInnerHTML`. It is react-markdown with GitHub's flavour (tables, task
@@ -192,8 +215,9 @@ The thread and the pull request's keys:
   design gives no dark value the file says "derived".
 - A new token goes in tokens.css, in cloud.css's `@theme inline`, and, for a size, radius or
   shadow, in `ui/cn.ts` so tailwind-merge knows it.
-- Icons are Hugeicons (`@hugeicons/core-free-icons`, MIT) through `ui/icon.tsx`, at the design's
-  size and stroke; color them with a text token. Brand marks are in `ui/marks.tsx`.
+- Icons are Hugeicons (`@hugeicons/core-free-icons`, MIT) through `ui/icon.tsx`, at a step of the
+  ladder (below), never a size and stroke by hand; color them with a text token. Brand marks are
+  in `ui/marks.tsx`.
 - Motion: durations and easings are tokens; reduced motion stills every animation.
 - Fonts: `vite.config.ts` links the web fonts into every page (the app and the gallery) from one
   URL; a new family or weight goes there, so the gallery always measures what ships.
@@ -209,6 +233,70 @@ The thread and the pull request's keys:
   scripts/glass-shots.ts <dir> [ids]` draws compositions solid and over a stand-in for the glass.
 - One way to style: the canvas keeps its own `pz:` build, and `studio.css` (the local app's)
   doesn't scan this folder.
+
+## The ladder
+
+Every icon and every piece of interface text is set from a few named steps, so a call site says
+what a thing is rather than how big it is: `<Icon icon={…} step="control" />`, `TEXT.meta`. The
+steps are in `ui/ladder.ts`; the icon steps live with the canvas (`@ponzu/canvas/ladder`), so its
+tools and zoom are drawn from the same table. The gallery's `?ladder` draws them all, and
+`bun scripts/ladder-sheets.ts <dir> --ladder` draws every composition in light and dark at 2x
+beside it.
+
+**Icons.** Size and stroke move together. Hugeicons draw on a 24-unit grid, so a stroke `s` at
+`size` px paints `s × size / 24` px; each step's stroke is chosen so all of them paint the same
+line (1.0–1.1 px), and a small icon reads at the weight of a large one.
+
+| Step | Size / stroke | Where |
+| --- | --- | --- |
+| `control` | 16 / 1.7 | alone in a 24–28px button (the chrome's toggles, the sidebar's Search, Filter and New design, the composer's +, the canvas's tools and zoom), or leading a menu's, a nav's or a list's row |
+| `inline` | 14 / 1.9 | inside a compact control beside 13px words: a page tab, a check in a list, a field's glyph, the 28px send arrow |
+| `small` | 12 / 2 | beside 12px words: a quiet button's project, the action button, a status line, a submenu's chevron |
+| `meta` | 11 / 2.2 | beside 11px words: the meta line's repo, branch and pull request; a header's chevron; a link's arrow |
+| `tick` | 10 / 2.4 | inside a dense mark: a check that passed, a checked box, a remove ✕ |
+
+`onFill` draws a step 0.4 heavier where the icon sits on a solid ground (the send arrow on yuzu,
+the action button's glyph, a checked box): a light line on a fill reads thinner than ink on
+paper. An icon alone that belongs to a row of text controls takes the row's step: the page tabs'
++ is `inline`, like the tabs' icons. The slice, avatars and brand marks are drawn, not stroked,
+and keep their own sizes. There is one plus, Hugeicons' `PlusSignIcon` (the canvas's `plus`):
+`Add01Icon` draws a smaller cross in the same box, so beside the zoom's + it read lighter
+(ladder.test.ts holds this).
+
+**Text.** A size, a weight and a face; colour comes from the role below unless the step is
+defined by being quiet.
+
+| Step | Treatment | Where |
+| --- | --- | --- |
+| `body` | 13 | what a person reads: messages, a dialog's words |
+| `name` | 13 medium | a design's, a page tab's, a setting's name |
+| `title` | 13 semibold | the heading of a small surface: the workspace, a dialog's row |
+| `control` | 12 medium | a button's words (quiet muted, raised ink, action semibold on ink) |
+| `secondary` | 12 | a line under a name (faint) or a value at rest (muted) |
+| `meta` | 11 mono, faint | repo, branch, pull request, counts, ages |
+| `label` | 11 semibold, faint | a section's label in a menu, Settings, search, the pull request tab |
+
+Display (Funnel Display 600) is a heading's alone: 34 the create page, 28 a setup step, 26 the
+pull request, 18 a Settings section, 40 a price.
+
+The full-window pages read one size up, as the boards draw them: setup's lede is 15 muted and its
+cards' names 14 medium, and the Share popover's heading is 14 semibold. The canvas's comment cards
+are on the ladder too: a message is `body` (13), its author and age `secondary` (12).
+
+**Colour, by role.** `ink` is what is read, chosen or open (body text, the chosen tool, the active
+tab and its icon); `muted` a control at rest and a secondary line; `faint` quiet text (meta,
+placeholders, labels, counts), deliberately under AA; `icon-soft` a quiet icon standing alone (a
+disclosure chevron, a field's glyph, a row's trailing action, Settings' close), one step above
+faint so it holds 3:1. An icon beside words takes the words' colour (a tab, a chip, the meta
+line): it is part of that label. The one exception is a row's leading icon in a menu or a nav, which
+is muted beside ink words so the words lead.
+Disabled is not a colour: a disabled control fades to 35%. The accents mean one thing each: yuzu
+the agent at work; `pr-open`, `pr-running`, `pr-conflict`, `pr-failing`, `pr-merged` a pull
+request's state; `danger` what can't be undone or failed.
+
+Kept apart on purpose: the canvas's tools are the pane's instruments, so the chosen one is ink on
+a raised chip while the rest stay muted; the meta line is the faintest text in the app; the
+action button is the one semibold control.
 
 ## Adding a component
 

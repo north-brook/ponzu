@@ -12,6 +12,7 @@ import type { LoadedDiff, PrDiff, PrFile } from "../model.ts";
 import { Button } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
 import { Icon } from "../ui/icon.tsx";
+import { TEXT } from "../ui/ladder.ts";
 import { type DiffRow, isLarge, parsePatch, type Span } from "./diff.ts";
 
 /** "+214 −38", in the pull request's colors. */
@@ -75,7 +76,7 @@ export function Files({
     });
   return (
     <section aria-label="Files changed" className="flex min-w-0 flex-col gap-2.5">
-      <div className="flex items-center font-semibold text-11 text-faint">
+      <div className={cn("flex items-center", TEXT.label)}>
         {total > files.length ? `${files.length} of ${total.toLocaleString("en-US")}` : total}{" "}
         {total === 1 ? "file" : "files"}
         <Counts additions={additions} deletions={deletions} />
@@ -138,8 +139,7 @@ function FileCard({
       >
         <Icon
           icon={open ? ArrowDown01Icon : ArrowRight01Icon}
-          size={12}
-          stroke={2.2}
+          step="small"
           className="text-icon-soft"
         />
         {previousPath ? (

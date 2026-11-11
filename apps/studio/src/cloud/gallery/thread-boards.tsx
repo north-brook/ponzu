@@ -101,6 +101,17 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
       rail={false}
     />
   ),
+  // The same at the smallest window: the page tabs give way to the cluster.
+  "crowded-chrome-min-window": () => (
+    <DesignHarness
+      designs={f.teamDesigns}
+      design={quieter(f.teamDesigns)}
+      contributors={[...f.contributors, { person: f.alex, here: true, lastHereAt: null }]}
+      thread={t.teamThread}
+      agent={WORKING}
+      action="update_branch"
+    />
+  ),
   "long-thread": () => (
     <DesignHarness
       designs={f.soloDesigns}

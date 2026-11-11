@@ -106,7 +106,7 @@ export function AgentsSection({
             </Row>
           ) : null}
           <ActionRow
-            leading={<Icon icon={Key01Icon} size={16} stroke={1.8} className="text-faint" />}
+            leading={<Icon icon={Key01Icon} step="control" className="text-muted" />}
             icon={ArrowRight01Icon}
             onClick={onSwitch}
           >

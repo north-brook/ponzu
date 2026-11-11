@@ -187,22 +187,22 @@ export function States() {
           </Labelled>
           <Labelled label="icon">
             <IconButton label="Merge" className="size-7">
-              <Icon icon={GitMergeIcon} size={16} stroke={1.7} />
+              <Icon icon={GitMergeIcon} step="control" />
             </IconButton>
           </Labelled>
           <Labelled label="icon, disabled">
             <IconButton label="Merge" disabled className="size-7">
-              <Icon icon={GitMergeIcon} size={16} stroke={1.7} />
+              <Icon icon={GitMergeIcon} step="control" />
             </IconButton>
           </Labelled>
           <Labelled label="send">
-            <SendButton size={32} iconSize={15} />
+            <SendButton size={32} />
           </Labelled>
           <Labelled label="send, disabled">
-            <SendButton size={32} iconSize={15} disabled />
+            <SendButton size={32} disabled />
           </Labelled>
           <Labelled label="send, rail">
-            <SendButton size={28} iconSize={13} />
+            <SendButton size={28} />
           </Labelled>
         </Section>
 

@@ -134,7 +134,7 @@ function AccountRow({
         <span className="font-medium text-12 text-muted">Suspended on GitHub</span>
       ) : (
         <span className="flex items-center gap-1.5 font-medium text-12 text-muted">
-          <Icon icon={Tick02Icon} size={14} stroke={2.2} className="text-ink" />
+          <Icon icon={Tick02Icon} step="inline" className="text-ink" />
           Ready
         </span>
       )}

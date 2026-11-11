@@ -1,21 +1,22 @@
 /*
  * The cloud gallery: every board as a full window from fixtures, and every component's states.
  * Dev only: gallery.html is not part of the app's build. `?board=<id>` draws one composition,
- * `?states` the component states, nothing the index; `&theme=light|dark` pins the scheme.
+ * `?states` the component states, `?ladder` the icon and text ladder, nothing the index; `&theme=light|dark` pins the scheme.
  */
 import "../styles/cloud.css";
 import { createRoot } from "react-dom/client";
 import { NowContext } from "../time.ts";
-import { quietPointerFocus } from "../ui/quiet-focus.ts";
+import { installFocusRule } from "../ui/quiet-focus.ts";
 import { BOARDS } from "./boards.tsx";
 import { COMPOSITIONS } from "./compositions.ts";
 import { NOW } from "./fixtures.ts";
+import { Ladder } from "./ladder.tsx";
 import { States } from "./states.tsx";
 
 const params = new URLSearchParams(location.search);
 const theme = params.get("theme");
 if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
-quietPointerFocus();
+installFocusRule();
 
 function Index() {
   const link = (query: string) => `?${query}${theme ? `&theme=${theme}` : ""}`;
@@ -28,6 +29,11 @@ function Index() {
         <li>
           <a href={link("states")} className="text-ink">
             Component states
+          </a>
+        </li>
+        <li>
+          <a href={link("ladder")} className="text-ink">
+            The ladder
           </a>
         </li>
         {COMPOSITIONS.map((c) => (
@@ -51,6 +57,8 @@ const view = board ? (
   (BOARDS[board]?.() ?? <p>No board “{board}”.</p>)
 ) : params.has("states") ? (
   <States />
+) : params.has("ladder") ? (
+  <Ladder />
 ) : (
   <Index />
 );

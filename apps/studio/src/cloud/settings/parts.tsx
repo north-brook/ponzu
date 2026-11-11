@@ -8,6 +8,7 @@ import { Button, IconButton } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
 import type { IconSvgElement } from "../ui/icon.tsx";
 import { Icon } from "../ui/icon.tsx";
+import { TEXT } from "../ui/ladder.ts";
 import { Menu, MenuContent, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "../ui/menu.tsx";
 
 /** A section: its label in small capitals, its rows under a hairline, and a note under them. */
@@ -37,12 +38,7 @@ export function Section({
 
 export function SectionLabel({ className, children }: { className?: string; children: string }) {
   return (
-    <span
-      className={cn(
-        "flex-1 font-semibold text-11 text-faint uppercase tracking-[0.02em]",
-        className,
-      )}
-    >
+    <span className={cn("flex-1 uppercase tracking-[0.02em]", TEXT.label, className)}>
       {children}
     </span>
   );
@@ -101,8 +97,8 @@ export function ActionRow({
         {leading}
         {children}
       </span>
-      <span className="grid size-7 place-items-center text-faint transition-colors duration-(--dur-hover) group-hover:text-muted">
-        <Icon icon={icon} size={16} stroke={1.5} />
+      <span className="grid size-7 place-items-center text-icon-soft transition-colors duration-(--dur-hover) group-hover:text-ink">
+        <Icon icon={icon} step="control" />
       </span>
     </button>
   );
@@ -130,16 +126,14 @@ export function QuietButton({
 export function RowIcon({
   icon,
   label,
-  stroke = 1.5,
   ...props
 }: Omit<ComponentProps<"button">, "children"> & {
   icon: IconSvgElement;
   label: string;
-  stroke?: number;
 }) {
   return (
-    <IconButton label={label} className="size-7 text-faint hover:text-muted" {...props}>
-      <Icon icon={icon} size={16} stroke={stroke} />
+    <IconButton label={label} className="size-7 text-icon-soft hover:text-ink" {...props}>
+      <Icon icon={icon} step="control" />
     </IconButton>
   );
 }
@@ -170,7 +164,7 @@ export function ValuePicker<T extends string>({
         >
           {leading}
           {current}
-          <Icon icon={ArrowDown01Icon} size={11} stroke={2.2} className="text-muted" />
+          <Icon icon={ArrowDown01Icon} step="meta" className="text-muted" />
         </Button>
       </MenuTrigger>
       <MenuContent width={200} side="bottom" align="end" sideOffset={4}>

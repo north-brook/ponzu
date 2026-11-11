@@ -165,7 +165,7 @@ function RolePicker({
           className="h-6 gap-1 rounded-6 pr-1 pl-2 font-normal text-12 text-muted"
         >
           {label}
-          <Icon icon={ArrowDown01Icon} size={10} stroke={2.2} className="text-faint" />
+          <Icon icon={ArrowDown01Icon} step="meta" />
         </Button>
       </MenuTrigger>
       <MenuContent width={160} side="bottom" align="end" sideOffset={4}>

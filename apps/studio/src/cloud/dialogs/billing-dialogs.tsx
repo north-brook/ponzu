@@ -142,7 +142,7 @@ export function CardFields({
   return (
     <>
       <div className={frame}>
-        <Icon icon={CreditCardIcon} size={16} stroke={1.5} className="shrink-0 text-faint" />
+        <Icon icon={CreditCardIcon} step="inline" className="shrink-0 text-icon-soft" />
         <div className="min-w-0 flex-1">{number}</div>
       </div>
       <div className="flex gap-2">

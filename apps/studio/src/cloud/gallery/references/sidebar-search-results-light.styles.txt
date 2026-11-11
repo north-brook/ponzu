@@ -5,31 +5,31 @@ ground span rgb(40, 200, 64)
 icon svg[Toggle sidebar] 16×16 rgb(86, 83, 77) stroke 1.7px
 ground span rgba(17, 17, 16, 0.1)
 ground button[Pages] rgb(255, 255, 255) shadow rgba(0, 0, 0, 0) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.08) 0px 1px 2px 0px
-icon svg[Pages] 14×14 rgb(63, 61, 57) stroke 1.7px
+icon svg[Pages] 14×14 rgb(17, 17, 16) stroke 1.9px
 text "Home" rgb(17, 17, 16) 500 13px Inter
-icon svg[Pages] 14×14 rgb(86, 83, 77) stroke 1.7px
+icon svg[Pages] 14×14 rgb(86, 83, 77) stroke 1.9px
 text "Product" rgb(86, 83, 77) 400 13px Inter
-icon svg[Pages] 14×14 rgb(86, 83, 77) stroke 1.7px
+icon svg[Pages] 14×14 rgb(86, 83, 77) stroke 1.9px
 text "Care cards" rgb(86, 83, 77) 400 13px Inter
-icon svg[New page] 14×14 rgb(169, 165, 155) stroke 1.9px
-ground span rgba(17, 17, 16, 0.1)
+icon svg[New page] 14×14 rgb(128, 124, 115) stroke 1.9px
 ground img[Bryce (you)] shadow rgb(244, 243, 240) 0px 0px 0px 1.5px
 ground img[Sam] shadow rgb(244, 243, 240) 0px 0px 0px 1.5px
 ground img[Maya] shadow rgb(244, 243, 240) 0px 0px 0px 1.5px
 ground img[Jordan · last here 2 days ago] shadow rgb(244, 243, 240) 0px 0px 0px 1.5px
 ground button[Share] shadow rgb(211, 208, 200) 0px 0px 0px 1px inset
-icon svg[Share] 11×11 rgb(86, 83, 77) stroke 2.4px
+icon svg[Share] 11×11 rgb(86, 83, 77) stroke 2.2px
 text "#412" rgb(86, 83, 77) 400 11px IBM Plex Mono
-icon svg[Pull request #412] 11×11 rgb(128, 124, 115) stroke 2px
-icon svg[Checks passed] 10×10 rgb(128, 124, 115) stroke 2.6px
+icon svg[Pull request #412] 11×11 rgb(86, 83, 77) stroke 2.2px
+icon svg[Checks passed] 10×10 rgb(86, 83, 77) stroke 2.4px
 text "Merge" rgb(255, 255, 255) 600 12px Inter
 ground button rgb(17, 17, 16)
-icon svg 13×13 rgb(255, 255, 255) stroke 2px
+icon svg 12×12 rgb(255, 255, 255) stroke 2.4px
+ground span rgba(17, 17, 16, 0.1)
 icon svg[Thread] 16×16 rgb(86, 83, 77) stroke 1.7px
 ground div[Designs] rgb(255, 255, 255) shadow rgb(232, 230, 224) 0px 0px 0px 1px
-icon svg[Designs] 15×15 rgb(128, 124, 115) stroke 1.8px
-icon svg[Close search] 13×13 rgb(128, 124, 115) stroke 2px
-text "Designs" rgb(169, 165, 155) 500 11px Inter
+icon svg[Designs] 16×16 rgb(128, 124, 115) stroke 1.7px
+icon svg[Close search] 14×14 rgb(128, 124, 115) stroke 1.9px
+text "Designs" rgb(169, 165, 155) 600 11px Inter
 ground div[Search results] rgb(255, 255, 255)
 ground span[Search results] rgba(17, 17, 16, 0.05) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
 text "Quieter shop" rgb(17, 17, 16) 500 13px Inter
@@ -41,20 +41,20 @@ text "Three takes on the" rgb(17, 17, 16) 500 13px Inter
 text "hero" rgb(17, 17, 16) 500 13px Inter
 ground mark[Search results] rgb(255, 244, 209)
 text "fernwood · Bryce · 3 weeks ago" rgb(169, 165, 155) 400 11px Inter
-text "Boards" rgb(169, 165, 155) 500 11px Inter
+text "Boards" rgb(169, 165, 155) 600 11px Inter
 ground span[Search results] rgba(17, 17, 16, 0.05)
-icon svg[Search results] 14×14 rgb(128, 124, 115) stroke 1.8px
+icon svg[Search results] 14×14 rgb(128, 124, 115) stroke 1.9px
 text "· B" rgb(17, 17, 16) 500 13px Inter
 text "Hero" rgb(17, 17, 16) 500 13px Inter
 ground mark[Search results] rgb(255, 244, 209)
 text "in Quieter shop hero" rgb(169, 165, 155) 400 11px Inter
 ground span[Search results] rgba(17, 17, 16, 0.05)
-icon svg[Search results] 14×14 rgb(128, 124, 115) stroke 1.8px
+icon svg[Search results] 14×14 rgb(128, 124, 115) stroke 1.9px
 text ", dark" rgb(17, 17, 16) 500 13px Inter
 text "Hero" rgb(17, 17, 16) 500 13px Inter
 ground mark[Search results] rgb(255, 244, 209)
 text "in Brand kit for the relaunch" rgb(169, 165, 155) 400 11px Inter
-text "Comments" rgb(169, 165, 155) 500 11px Inter
+text "Comments" rgb(169, 165, 155) 600 11px Inter
 text "“Can C try the serif at a smaller size …" rgb(17, 17, 16) 500 13px Inter
 text "hero" rgb(17, 17, 16) 500 13px Inter
 ground mark[Search results] rgb(255, 244, 209)
