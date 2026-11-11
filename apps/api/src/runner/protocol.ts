@@ -1,6 +1,7 @@
 import { isId } from "@ponzu/db";
 import {
   type AckRequest,
+  type CheckpointRequest,
   CLAIM_LIMIT,
   type ClaimRequest,
   type CompleteRequest,
@@ -10,6 +11,7 @@ import {
   MAX_THREAD_WRITE,
   type PullRequestSummaryRequest,
   type QuestionRequest,
+  type RestoredReport,
   type RunErrorCode,
   type StateRequest,
   type ThreadRequest,
@@ -102,11 +104,44 @@ export const Thread: z.ZodType<ThreadRequest, unknown> = z.object({
     }),
 });
 
+const SessionId = z.string().min(1).max(128);
+
 export const State: z.ZodType<StateRequest, unknown> = z.object({
   state: z.enum(["working", "needs_you", "idle"]),
   status: text(500).nullable(),
   artboards: Artboards,
-  claudeSessionId: z.string().min(1).max(128).nullable(),
+  claudeSessionId: SessionId.nullable(),
+  quiesced: z.iso.datetime({ offset: true }).nullable().optional(),
+});
+
+const Turn = z
+  .number()
+  .int()
+  .min(1)
+  .max(2 ** 31 - 1);
+const UploadId = z.string().min(1).max(64);
+
+export const Checkpoint: z.ZodType<CheckpointRequest> = z.object({
+  turn: Turn,
+  claudeSessionId: SessionId.nullable(),
+  wipCommit: z
+    .string()
+    .regex(/^[0-9a-f]{40}([0-9a-f]{24})?$/, "Expected a commit's full hash.")
+    .nullable(),
+  session: UploadId.nullable(),
+  workspace: UploadId.nullable(),
+});
+
+const When = z.iso.datetime({ offset: true });
+const BootId = z.string().max(64).nullable();
+
+export const Restored: z.ZodType<RestoredReport> = z.object({
+  kind: z.enum(["rollback", "rebuilt"]),
+  disk: z.object({ turn: Turn, at: When, bootId: BootId }).nullable(),
+  saved: z.object({ turn: Turn, at: When }),
+  bootId: BootId,
+  bootAt: When.nullable(),
+  restored: z.object({ session: z.boolean(), workspace: z.boolean() }),
 });
 
 const Option = z.object({ label: text(200), description: text(2_000) });
@@ -156,7 +191,11 @@ export const UploadFile = z.object({
 
 export const Upload: z.ZodType<UploadRequest> = z.object({
   files: z
-    .array(UploadFile.extend({ purpose: z.enum(["asset", "export", "preview"]) }))
+    .array(
+      UploadFile.extend({
+        purpose: z.enum(["asset", "export", "preview", "session", "workspace"]),
+      }),
+    )
     .min(1)
     .max(MAX_UPLOAD_FILES),
 });

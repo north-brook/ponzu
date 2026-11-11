@@ -152,6 +152,7 @@ export async function createTestApp(
     anthropic,
     storage: options.storage ?? storage,
     poke: poke.poke,
+    runnerPort: poke.port,
     realtime: options.live?.realtime ?? sealer,
     model,
     docs: new DocCache(),

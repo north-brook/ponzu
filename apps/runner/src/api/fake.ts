@@ -1,7 +1,14 @@
 import { type Doc, emptyDoc, type SyncTransport } from "@ponzu/core";
 import { Sequencer } from "@ponzu/core/testing";
 import { AGENT, memoryTransport } from "@ponzu/tools/testing";
-import { ApiError, type RunnerApi, type Uploaded, type UploadFile } from "./api.ts";
+import {
+  ApiError,
+  type Checkpoint,
+  type Restored,
+  type RunnerApi,
+  type Uploaded,
+  type UploadFile,
+} from "./api.ts";
 import {
   type AnswerEvent,
   CLAIM_LIMIT,
@@ -13,11 +20,14 @@ import {
   type Notice,
   type Person,
   type Priority,
+  type PullRequestSummaryResponse,
   type QuestionRequest,
   type QuestionResponse,
+  type RestoredReport,
   type RunnerEvent,
   type RunnerNotice,
   type RunnerSession,
+  type SavedPoint,
   type StateRequest,
   type StateResponse,
   type ThreadItem,
@@ -53,6 +63,7 @@ export function testSession(over: Partial<RunnerSession> = {}): RunnerSession {
     theme: null,
     openQuestions: [],
     seq: 0,
+    saved: null,
     ...over,
   };
 }
@@ -108,6 +119,25 @@ export class FakeRunnerApi {
   readonly calls: Call[] = [];
   /** The runner process that holds the lease. */
   runner: string | null = null;
+  /** The design's last checkpoint, and its archives as they were uploaded. */
+  saved: SavedPoint | null = null;
+  archives: { session: Uint8Array | null; workspace: Uint8Array | null } = {
+    session: null,
+    workspace: null,
+  };
+  /** Every checkpoint sent, recorded or not. */
+  readonly checkpoints: Omit<Checkpoint, "session" | "workspace">[] = [];
+  /** What runners reported restoring. */
+  readonly restored: RestoredReport[] = [];
+  /** The agent's pull request summaries, in order. */
+  readonly summaries: string[] = [];
+  /**
+   * The stop the API is putting the sandbox through, which every state answer names; null while
+   * it is awake. Set it to ask the runner to get ready to sleep.
+   */
+  sleep: string | null = null;
+  /** The sleeps the runner said it was ready for, in order. */
+  readonly quiesced: string[] = [];
 
   private readonly transport: SyncTransport;
   private seq: number;
@@ -162,6 +192,10 @@ export class FakeRunnerApi {
       gitCredential: as((r, ask: GitCredentialRequest) => this.gitCredential(r, ask)),
       eraseGitCredential: as((r, ask: GitCredentialRequest) => this.eraseGitCredential(r, ask)),
       recordUsage: as((r, turns: TurnUsage[]) => this.recordUsage(r, turns)),
+      saveCheckpoint: as((r, point: Checkpoint) => this.saveCheckpoint(r, point)),
+      restore: as((r) => this.restore(r)),
+      reportRestored: as((r, report: RestoredReport) => this.reportRestored(r, report)),
+      pullRequestSummary: as((r, summary: string) => this.pullRequestSummary(r, summary)),
     };
   }
 
@@ -214,7 +248,54 @@ export class FakeRunnerApi {
   async session(): Promise<RunnerSession> {
     await this.enter("session");
     this.runner = `rnr_${String(++this.runners).padStart(16, "0")}`;
-    return structuredClone({ ...this.sessionInfo, runnerId: this.runner, seq: this.doc.seq });
+    return structuredClone({
+      ...this.sessionInfo,
+      runnerId: this.runner,
+      seq: this.doc.seq,
+      saved: this.saved,
+    });
+  }
+
+  async saveCheckpoint(runner: string, point: Checkpoint): Promise<SavedPoint> {
+    await this.enter("saveCheckpoint", runner);
+    const { session, workspace, ...marker } = point;
+    this.checkpoints.push(structuredClone(marker));
+    if (!this.saved || this.saved.turn < point.turn) {
+      this.saved = {
+        turn: point.turn,
+        at: new Date().toISOString(),
+        claudeSessionId: point.claudeSessionId,
+        wipCommit: point.wipCommit,
+        session: session !== null,
+        workspace: workspace !== null,
+      };
+      this.archives = {
+        session: session && new Uint8Array(session),
+        workspace: workspace && new Uint8Array(workspace),
+      };
+    }
+    return structuredClone(this.saved);
+  }
+
+  async restore(runner: string): Promise<Restored> {
+    await this.enter("restore", runner);
+    const copy = (bytes: Uint8Array | null) => bytes && new Uint8Array(bytes);
+    return {
+      saved: structuredClone(this.saved),
+      session: copy(this.archives.session),
+      workspace: copy(this.archives.workspace),
+    };
+  }
+
+  async reportRestored(runner: string, report: RestoredReport): Promise<void> {
+    await this.enter("reportRestored", runner);
+    this.restored.push(structuredClone(report));
+  }
+
+  async pullRequestSummary(runner: string, summary: string): Promise<PullRequestSummaryResponse> {
+    await this.enter("pullRequestSummary", runner);
+    this.summaries.push(summary);
+    return { pullRequest: null };
   }
 
   async claim(
@@ -274,7 +355,9 @@ export class FakeRunnerApi {
     await this.enter("putState", runner);
     this.states.push(structuredClone(state));
     if (state.claudeSessionId) this.sessionInfo.claudeSessionId = state.claudeSessionId;
-    return { seq: this.doc.seq };
+    if (state.quiesced && state.quiesced !== this.quiesced.at(-1))
+      this.quiesced.push(state.quiesced);
+    return { seq: this.doc.seq, sleep: this.sleep };
   }
 
   async ask(runner: string, question: QuestionRequest): Promise<void> {

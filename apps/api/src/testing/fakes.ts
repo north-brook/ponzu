@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Clock } from "@ponzu/sandbox";
 import type { Anthropic } from "../deps/anthropic.ts";
-import type { Poke } from "../deps/poke.ts";
+import type { Poke, RunnerPort } from "../deps/poke.ts";
 import type { LiveQuery, RealtimeSealer, SealedQuery } from "../deps/realtime.ts";
 import {
   type ObjectStorage,
@@ -31,6 +31,7 @@ export class MemoryStorage implements ObjectStorage {
   static readonly ORIGIN = "https://storage.test";
   readonly objects = new Map<string, MemoryObject>();
   readonly #signed = new Map<string, { key: string; object: StoredObject; expiresAt: number }>();
+  readonly #reads = new Map<string, { key: string; expiresAt: number }>();
   readonly #clock: Clock;
   #next = 0;
 
@@ -46,9 +47,25 @@ export class MemoryStorage implements ObjectStorage {
     return { url: url.toString(), headers: uploadHeaders(object) };
   }
 
-  /** Serves the addresses `presignPut` made, answering as R2 does. */
+  async presignGet(key: string, expiresIn: number): Promise<string> {
+    const signature = `get${++this.#next}`;
+    this.#reads.set(signature, { key, expiresAt: this.#clock.now() + expiresIn * 1000 });
+    const url = new URL(`/${key}`, MemoryStorage.ORIGIN);
+    url.searchParams.set("signature", signature);
+    return url.toString();
+  }
+
+  /** Serves the addresses `presignPut` and `presignGet` made, answering as R2 does. */
   readonly fetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const request = new Request(input, init);
+    const read = this.#reads.get(new URL(request.url).searchParams.get("signature") ?? "");
+    if (read) {
+      if (request.method !== "GET") return refuse(403, "SignatureDoesNotMatch");
+      if (this.#clock.now() > read.expiresAt) return refuse(403, "AccessDenied");
+      const found = this.objects.get(read.key);
+      if (!found) return refuse(404, "NoSuchKey");
+      return new Response(Buffer.from(found.body), { status: 200, headers: found.headers });
+    }
     const signed = this.#signed.get(new URL(request.url).searchParams.get("signature") ?? "");
     if (request.method !== "PUT" || !signed) return refuse(403, "SignatureDoesNotMatch");
     if (this.#clock.now() > signed.expiresAt) return refuse(403, "AccessDenied");
@@ -108,14 +125,37 @@ export class FakeAnthropic implements Anthropic {
   }
 }
 
-/** Pokes, recorded instead of sent. Set `failing` to act out a runner that cannot be reached. */
+/**
+ * Pokes, report requests and health checks, recorded instead of sent. Set `failing` to act out a
+ * runner that cannot be reached at all, and `healthy` to false for one whose `/health` does not
+ * answer (it exited, or is still booting). `onReport` acts out a runner that answers a request for
+ * a report, as it would by calling the state route; without one the request fails as against an
+ * old runner that has no such door, so a stop does not wait for a runner no test plays.
+ */
 export class FakePoke {
   readonly pokes: { url: string; token: string | null }[] = [];
+  readonly reports: { url: string; token: string | null }[] = [];
+  readonly checks: { url: string; token: string | null }[] = [];
   failing = false;
+  healthy = true;
+  onReport: (() => Promise<void>) | null = null;
 
   readonly poke: Poke = async (address) => {
     this.pokes.push(address);
     if (this.failing) throw new Error("The runner could not be reached.");
+  };
+
+  readonly port: RunnerPort = {
+    report: async (address) => {
+      this.reports.push(address);
+      if (this.failing) throw new Error("The runner could not be reached.");
+      if (!this.onReport) throw new Error("The runner answered a report with 404.");
+      await this.onReport();
+    },
+    healthy: async (address) => {
+      this.checks.push(address);
+      return !this.failing && this.healthy;
+    },
   };
 }
 

@@ -23,6 +23,7 @@ import {
   newEnvironment,
   RUNNER_PORT,
 } from "./environment.ts";
+import { addressBinding, reviveRunner, stopSandbox } from "./quiesce.ts";
 
 /*
  * Waking a design's sandbox (docs/cloud.md, "The sandbox"): the job `requestWake` records, run
@@ -217,7 +218,8 @@ async function bringUp(deps: JobDeps, context: WakeContext, by: string): Promise
       now,
     });
     if (!stopping) return null;
-    await deps.sandbox.stop(sandbox.providerId!);
+    // Its runner saves what it has before the machine goes (quiesce.ts).
+    await stopSandbox(deps, stopping, { quiesce: true });
     from = ["stopping"];
   }
   const waking = claimed(
@@ -344,7 +346,7 @@ async function resume(
   const providerId = waking.providerId!;
   await showAgentWaiting(db, { designId: waking.designId, waking: true, blocker: null });
 
-  const environment = current ? null : await newEnvironment(deps, waking.designId, claude);
+  let environment = current ? null : await newEnvironment(deps, waking.designId, claude);
   const options = {
     ...(environment ? { env: environment.env } : {}),
     autoStopSeconds: AUTO_STOP_SECONDS,
@@ -359,6 +361,25 @@ async function resume(
       if (!(environment && error instanceof SandboxError && error.code === "conflict")) throw error;
       await deps.sandbox.stop(providerId);
       wake = await deps.sandbox.ensureAwake(providerId, options);
+    }
+    if (wake.start === "warm") {
+      // A thaw brings back the boot as it was, a runner that had exited included (quiesce.ts).
+      const runner = await reviveRunner(deps, waking);
+      if (runner === "stay_down") return null;
+      if (runner === "down") {
+        deps.log.warn("runner_down_after_warm_resume", {
+          designId: waking.designId,
+          sandboxId: waking.id,
+        });
+        if (environment) await revokeRunnerToken(db, environment.runnerTokenId);
+        // A new environment is always a cold start, and a boot starts the unit.
+        environment = await newEnvironment(deps, waking.designId, claude);
+        await deps.sandbox.stop(providerId);
+        wake = await deps.sandbox.ensureAwake(providerId, {
+          ...options,
+          env: environment.env,
+        });
+      }
     }
     return await awake(deps, waking, wake.start, by, environment);
   } catch (error) {
@@ -468,10 +489,6 @@ async function awake(
     deps.log.info("poke_missed", { designId: moved.designId, error });
   }
   return { sandbox: moved, start };
-}
-
-function addressBinding(sandboxId: string) {
-  return { column: "sandboxes.encrypted_address_token", row: sandboxId };
 }
 
 async function sealedAddress(

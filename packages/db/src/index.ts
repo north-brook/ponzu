@@ -222,10 +222,16 @@ export {
   verifyRunnerToken,
 } from "./queries/runner-tokens.ts";
 export {
+  countSandboxRollback,
+  getQuiescedFor,
   getRunnerContext,
+  getSavedPoint,
   type RunnerContext,
   type RunnerState,
+  recordCheckpoint,
   reportRunnerState,
+  type SavedPoint,
+  type StateAnswer,
   takeRunnerLease,
 } from "./queries/runners.ts";
 export {

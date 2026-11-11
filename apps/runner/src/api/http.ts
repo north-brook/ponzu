@@ -1,21 +1,33 @@
 import { createHash } from "node:crypto";
 import { CommitRefusedError, type SyncTransport } from "@ponzu/core";
-import type { RunnerApi, Uploaded, UploadFile } from "./api.ts";
-import type {
-  AckRequest,
-  ClaimRequest,
-  ClaimResponse,
-  CompleteResponse,
-  GitCredentialRequest,
-  GitCredentialResponse,
-  QuestionRequest,
-  RunnerSession,
-  StateRequest,
-  StateResponse,
-  ThreadResponse,
-  ThreadWrite,
-  TurnUsage,
-  UploadResponse,
+import type { Checkpoint, Restored, RunnerApi, Uploaded, UploadFile } from "./api.ts";
+import {
+  type AckRequest,
+  ARCHIVE_TYPE,
+  type CheckpointRequest,
+  type CheckpointResponse,
+  type ClaimRequest,
+  type ClaimResponse,
+  type CompleteResponse,
+  type GitCredentialRequest,
+  type GitCredentialResponse,
+  type PullRequestSummaryRequest,
+  type PullRequestSummaryResponse,
+  type QuestionRequest,
+  type RestoredReport,
+  type RestoreResponse,
+  type RunnerSession,
+  type SavedArchive,
+  type SavedPoint,
+  SESSION_ARCHIVE,
+  type StateRequest,
+  type StateResponse,
+  type ThreadResponse,
+  type ThreadWrite,
+  type TurnUsage,
+  type UploadPurpose,
+  type UploadResponse,
+  WORKSPACE_ARCHIVE,
 } from "./protocol.ts";
 import { ApiError, type Endpoint, request, TIMEOUT_MS } from "./request.ts";
 
@@ -63,6 +75,16 @@ export class HttpRunnerApi implements RunnerApi {
   }
 
   async upload(files: UploadFile[], opts: { seq?: number } = {}): Promise<Uploaded[]> {
+    const ids = await this.place(files);
+    const done = await this.call<CompleteResponse>("POST", "/v1/runner/uploads/complete", {
+      ids,
+      ...(opts.seq === undefined ? {} : { seq: opts.seq }),
+    });
+    return done.files.map((f, i) => ({ name: files[i]!.name, ref: f.ref, url: f.url }));
+  }
+
+  /** Asks for addresses and puts the bytes there. Answers the upload ids. */
+  private async place(files: UploadFile[]): Promise<string[]> {
     const placed = await this.call<UploadResponse>("POST", "/v1/runner/uploads", {
       files: files.map((f) => ({
         purpose: f.purpose,
@@ -83,11 +105,7 @@ export class HttpRunnerApi implements RunnerApi {
         if (!response.ok) throw new Error(`The upload was refused (${response.status}).`);
       }),
     );
-    const done = await this.call<CompleteResponse>("POST", "/v1/runner/uploads/complete", {
-      ids: placed.files.map((f) => f.id),
-      ...(opts.seq === undefined ? {} : { seq: opts.seq }),
-    });
-    return done.files.map((f, i) => ({ name: files[i]!.name, ref: f.ref, url: f.url }));
+    return placed.files.map((f) => f.id);
   }
 
   gitCredential(ask: GitCredentialRequest): Promise<GitCredentialResponse> {
@@ -100,6 +118,63 @@ export class HttpRunnerApi implements RunnerApi {
 
   async recordUsage(turns: TurnUsage[]): Promise<void> {
     await this.call("POST", "/v1/runner/usage", { turns });
+  }
+
+  async saveCheckpoint(point: Checkpoint): Promise<SavedPoint> {
+    const archives: [UploadPurpose, string, Uint8Array][] = [];
+    if (point.session) archives.push(["session", SESSION_ARCHIVE, point.session]);
+    if (point.workspace) archives.push(["workspace", WORKSPACE_ARCHIVE, point.workspace]);
+    const ids: Record<string, string> = {};
+    if (archives.length > 0) {
+      const placed = await this.place(
+        archives.map(([purpose, name, bytes]) => ({
+          purpose,
+          name,
+          contentType: ARCHIVE_TYPE,
+          bytes,
+        })),
+      );
+      archives.forEach(([purpose], i) => {
+        ids[purpose] = placed[i]!;
+      });
+    }
+    const { saved } = await this.call<CheckpointResponse>("POST", "/v1/runner/checkpoint", {
+      turn: point.turn,
+      claudeSessionId: point.claudeSessionId,
+      wipCommit: point.wipCommit,
+      session: ids.session ?? null,
+      workspace: ids.workspace ?? null,
+    } satisfies CheckpointRequest);
+    return saved;
+  }
+
+  async restore(): Promise<Restored> {
+    const answer = await this.call<RestoreResponse>("POST", "/v1/runner/restore", {});
+    const read = async (archive: SavedArchive | null) => {
+      if (!archive) return null;
+      const response = await (this.endpoint.fetch ?? fetch)(archive.url, {
+        signal: AbortSignal.timeout(TIMEOUT_MS * 4),
+      });
+      if (!response.ok)
+        throw new Error(`The saved archive could not be read (${response.status}).`);
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      const sha256 = createHash("sha256").update(bytes).digest("hex");
+      if (bytes.byteLength !== archive.size || sha256 !== archive.sha256)
+        throw new Error("The saved archive came back different from what was stored.");
+      return bytes;
+    };
+    const [session, workspace] = await Promise.all([read(answer.session), read(answer.workspace)]);
+    return { saved: answer.saved, session, workspace };
+  }
+
+  async reportRestored(report: RestoredReport): Promise<void> {
+    await this.call("POST", "/v1/runner/restored", report);
+  }
+
+  pullRequestSummary(summary: string): Promise<PullRequestSummaryResponse> {
+    return this.call("POST", "/v1/runner/pull-request-summary", {
+      summary,
+    } satisfies PullRequestSummaryRequest);
   }
 
   /** The existing document routes, as core's `Replica` asks for them. */

@@ -9,7 +9,7 @@ import {
 } from "@ponzu/db";
 import type { Deps } from "../deps/index.ts";
 import { ApiError } from "../http/errors.ts";
-import { checkUpload, type Declared, type UploadKind } from "./files.ts";
+import { checkUpload, type Declared, PRIVATE_PURPOSES, type UploadKind } from "./files.ts";
 
 /*
  * Uploads (docs/cloud.md, "The runner protocol", "Uploads"): bytes go straight to storage at an
@@ -107,6 +107,14 @@ export async function completeUploads(
   const rows = found.filter((row) => row.userId === userId);
   const notArrived = new ApiError(404, "not_found", "Those bytes never arrived.");
   if (rows.length !== wanted.length) throw notArrived;
+  if (rows.some((row) => PRIVATE_PURPOSES.includes(row.purpose))) {
+    // Completing one would answer an address on the public assets domain.
+    throw new ApiError(
+      400,
+      "invalid_request",
+      "A checkpoint's archives are recorded by the checkpoint.",
+    );
+  }
   const previews = rows.filter((row) => row.purpose === "preview");
   if (previews.length > 0 && (previewSeq === undefined || previewSeq > target.seq)) {
     throw new ApiError(
@@ -190,8 +198,20 @@ export const assetRef = (name: string) => `assets/${name}`;
 function uploadKey(assetKey: string, purpose: Upload["purpose"], id: string, name: string): string {
   if (purpose === "asset") return `${assetKey}/${assetRef(name)}`;
   if (purpose === "export") return `${assetKey}/exports/${id}-${name}`;
+  if (purpose === "session" || purpose === "workspace")
+    return `${PRIVATE}/${randomString(32)}/${id}-${name}`;
   return `${STAGING}/${id}-${name}`;
 }
+
+/**
+ * Where a checkpoint's archives go (a session's transcript holds the whole conversation and every
+ * tool's output): at the bucket's root, never under a design's asset key, which people hold, and
+ * each under 32 random characters of its own that no answer to any client carries. The assets
+ * domain serves any key it is asked for, so the key is the only thing between it and the world;
+ * a bucket with no public domain at all is the better home (docs/cloud.md, "Saving the
+ * sandbox").
+ */
+export const PRIVATE = "private";
 
 /** Where uploads wait that are not yet where they are served from. */
 export const STAGING = "staging";

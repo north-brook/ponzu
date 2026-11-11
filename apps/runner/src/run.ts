@@ -14,6 +14,7 @@ import {
   type ToolCaller,
   type ToolDef,
 } from "@ponzu/tools";
+import { z } from "zod";
 import type {
   Agent,
   AgentEvent,
@@ -32,6 +33,7 @@ import {
   type GitCredentialRequest,
   type GitCredentialResponse,
   HEARTBEAT_MS,
+  MAX_PULL_REQUEST_SUMMARY,
   type ModelUsage,
   type QuestionBody,
   type QuestionRequest,
@@ -44,6 +46,9 @@ import { derivedId, eventUuid, randomId } from "./ids.ts";
 import { backoff as BACKOFF, Outbox } from "./pacer.ts";
 import { Previews } from "./previews.ts";
 import { eventText, noticeText, RUNNER_INSTRUCTIONS } from "./prompt.ts";
+import { type Boot, Checkpoints, type Recovery } from "./save/checkpoints.ts";
+import type { Transcripts } from "./save/transcripts.ts";
+import type { WorkSaver } from "./save/work.ts";
 import { StateReporter } from "./state.ts";
 import { stepLabel, stepWeight } from "./steps.ts";
 import { ThreadWriter } from "./thread.ts";
@@ -66,6 +71,12 @@ export interface Timing {
   previewDelayMs: number;
   /** The wait before Claude Code is started again after it stopped by itself. */
   restartMs: number;
+  /**
+   * Getting ready to sleep: how long a running turn may go on finishing, and how long the
+   * checkpoint may take. The API stops the sandbox after its own wait whatever happens.
+   */
+  quiesceTurnMs: number;
+  checkpointMs: number;
   /** The wait before a failed call is made again, after `failures` in a row. */
   backoff(failures: number): number;
 }
@@ -80,8 +91,13 @@ export const TIMING: Timing = {
   stopStepMs: 2_500,
   previewDelayMs: 3_000,
   restartMs: 2_000,
+  quiesceTurnMs: 15_000,
+  checkpointMs: 10_000,
   backoff: BACKOFF,
 };
+
+/** The runner's own tool: the agent's summary of its branch, for the pull request. */
+export const SUMMARY_TOOL = "set_pull_request_summary";
 
 /** How many times in a row Claude Code may stop by itself before the runner stops starting it. */
 const MAX_RESTARTS = 3;
@@ -108,12 +124,25 @@ export interface RunnerOptions {
   /** Where the runner keeps what it needs across restarts. */
   stateDir: string;
   /**
-   * Called once a turn has ended and its edits have settled: put what the turn wrote (the
-   * session's transcript, the checkout) on the disk. A stop that turns cold loses what was
-   * still in memory, and the sandbox may be stopped at any time after a turn.
+   * Called once a turn has ended, its edits have settled and its checkpoint is saved, and before
+   * the sandbox sleeps: put what was written (the session's transcript, the checkout, the
+   * runner's own files) on the disk. A stop that turns cold loses what was still in memory.
    */
-  flush?(): void;
+  flush?(): void | Promise<void>;
+  /**
+   * What a checkpoint saves in this sandbox, once the working folder is ready: the session's
+   * transcripts and the work in progress (save/). Without it nothing is saved or restored.
+   */
+  saving?(
+    session: RunnerSession,
+    cwd: string,
+    checkedOut: boolean,
+  ): { transcripts: Transcripts | null; work: WorkSaver | null };
+  /** This boot of the machine, for what is logged about a rollback. */
+  boot?(): Boot;
   log(message: string): void;
+  /** A structured line for the journal. `log` with its JSON when absent. */
+  event?(name: string, fields: Record<string, unknown>): void;
   /**
    * The API said this process must stop for good (its token is revoked, or a newer runner
    * took the lease). Called once the runner has stopped.
@@ -236,6 +265,15 @@ export class Runner {
   private claimTimer: ReturnType<typeof setInterval> | null = null;
   private stopping: Promise<void> | null = null;
   private fatalReason: string | null = null;
+  /** Saves and restores what lives only on this disk; null until the folder is ready. */
+  private checkpoints: Checkpoints | null = null;
+  /** What starting found of the disk against the API's last checkpoint. */
+  recovery: Recovery = { kind: "none", restored: { session: false, workspace: false } };
+  /**
+   * The sleep the API is putting the sandbox through, as its state answers name it: no new work
+   * is claimed until it says the sandbox is awake again. `ready` once the runner said so.
+   */
+  private sleep: { id: string; ready: boolean } | null = null;
 
   constructor(private readonly opts: RunnerOptions) {
     this.api = watchFatal(opts.api, (err) => this.fatal(err));
@@ -251,6 +289,7 @@ export class Runner {
       gapMs: this.timing.stateGapMs,
       heartbeatMs: this.timing.heartbeatMs,
       onSeq: (seq) => this.replica?.notify(seq),
+      onSleep: (sleep) => this.onSleep(sleep),
       onError: onError("state report"),
       backoff,
     });
@@ -285,6 +324,9 @@ export class Runner {
     for (const id of this.session.openQuestions) this.asks.set(id, null);
 
     this.cwd = await this.prepare();
+    // Before Claude Code reads its transcript: a disk behind the last checkpoint gets it back.
+    await this.recover();
+    if (this.stopping) return;
     this.replica = await this.retry(() =>
       Replica.open({ transport: this.api.sync, schedule: timer, actor: ACTOR }),
     );
@@ -325,6 +367,14 @@ export class Runner {
   /** Something may be waiting to be claimed. What arrives is never trusted: it only starts a claim. */
   poke(): void {
     this.claim();
+  }
+
+  /**
+   * Report the state now. What arrives is never trusted: only the API's answer to the report can
+   * say the sandbox is going to sleep.
+   */
+  report(): void {
+    this.state.now();
   }
 
   /** What `/health` says. */
@@ -375,6 +425,12 @@ export class Runner {
       ]),
     );
     if (this.run) await within(this.run.close());
+    // Claude Code has written the transcript's last line: keep it, with the work, and flush.
+    if (!this.fatalReason)
+      await bounded(
+        this.checkpoint(),
+        Math.min(this.timing.checkpointMs, this.timing.stopStepMs * 2),
+      );
     for (const outbox of [this.thread, this.acks, this.questions, this.turns]) outbox.close();
     this.ws?.close();
     this.replica?.close();
@@ -396,6 +452,101 @@ export class Runner {
   /* ---------------------------------------------------------------- */
   /* Starting                                                          */
   /* ---------------------------------------------------------------- */
+
+  /**
+   * The disk against the API's last checkpoint (save/checkpoints.ts): behind it, or holding none
+   * of it, the transcript and the work in progress come back from it. A rollback is said in the
+   * log, to the API, and in the thread when the session resumes.
+   */
+  private async recover(): Promise<void> {
+    const parts = this.opts.saving?.(this.session, this.cwd, !this.cloneError);
+    if (!parts) return;
+    this.checkpoints = new Checkpoints({
+      api: this.api,
+      stateDir: this.opts.stateDir,
+      transcripts: parts.transcripts,
+      work: parts.work,
+      log: (m) => this.log(m),
+      event: (name, fields) => this.event(name, fields),
+      boot: () => this.opts.boot?.() ?? { id: null, at: null },
+      flush: () => this.flushDisk(),
+    });
+    try {
+      this.recovery = await this.checkpoints.recover(this.session.saved ?? null);
+    } catch (err) {
+      if (fatal(err)) throw err;
+      this.log(`restoring from the last checkpoint failed: ${said(err)}`);
+    }
+  }
+
+  /** Save a checkpoint of the session and the work in progress, then flush the disk. */
+  private async checkpoint(): Promise<void> {
+    await this.checkpoints?.save(this.sessionId);
+    await this.flushDisk();
+  }
+
+  private async flushDisk(): Promise<void> {
+    try {
+      await this.opts.flush?.();
+    } catch (err) {
+      this.log(`flushing the disk failed: ${said(err)}`);
+    }
+  }
+
+  private event(name: string, fields: Record<string, unknown>): void {
+    if (this.opts.event) this.opts.event(name, fields);
+    else this.log(JSON.stringify({ event: name, designId: this.session?.design.id, ...fields }));
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Sleep                                                             */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * What the API's state answer says of sleep. A stop under way makes the runner take no new
+   * work, finish the turn (for a while), let its edits reach the API, save a checkpoint, flush
+   * the disk and say it is ready; the API stops the sandbox after its own wait either way. The
+   * sandbox awake again (a warm resume thaws this same process) makes it take work again.
+   */
+  private onSleep(sleep: string | null): void {
+    if (sleep === null) {
+      if (!this.sleep) return;
+      this.sleep = null;
+      this.log("awake again");
+      this.state.set({ quiesced: null });
+      this.claim();
+      return;
+    }
+    if (this.sleep?.id === sleep || this.stopping) return;
+    this.sleep = { id: sleep, ready: false };
+    void this.quiesce(sleep).catch((err) =>
+      this.log(`getting ready to sleep failed: ${said(err)}`),
+    );
+  }
+
+  private async quiesce(id: string): Promise<void> {
+    const current = () => this.sleep?.id === id && !this.stopping;
+    this.log(`getting ready to sleep (${id})`);
+    const until = Date.now() + this.timing.quiesceTurnMs;
+    while (this.working && Date.now() < until && current()) await sleep(50);
+    if (!current()) return;
+    if (this.ws) await this.ws.design.settled(this.timing.settleMs);
+    await bounded(
+      Promise.all([
+        this.thread.flush(),
+        this.acks.flush(),
+        this.questions.flush(),
+        this.turns.flush(),
+        this.previews?.flush(),
+      ]),
+      this.timing.stopStepMs,
+    );
+    await bounded(this.checkpoint(), this.timing.checkpointMs);
+    if (!current()) return;
+    this.sleep!.ready = true;
+    this.state.set({ quiesced: id });
+    this.log("ready to sleep");
+  }
 
   private async prepare(): Promise<string> {
     try {
@@ -438,7 +589,10 @@ export class Runner {
       model: this.session.model,
       effort: this.session.effort,
       instructions: this.instructions(),
-      tools: cloudTools.map((def) => this.tool(def)),
+      tools: [
+        ...cloudTools.map((def) => this.tool(def)),
+        ...(this.checkedOut ? [this.summaryTool()] : []),
+      ],
     });
     this.run = run;
     this.consume(run).catch((err) => this.log(`reading Claude Code failed: ${said(err)}`));
@@ -455,7 +609,7 @@ export class Runner {
       ? `This design has no repository: ${this.cwd} is an empty folder for your own files.`
       : this.cloneError
         ? `The design's repository, ${repo.owner}/${repo.name}, could not be checked out (${this.cloneError}), so ${this.cwd} is an empty folder. Work on the canvas only, and tell the person the code is out of reach until the sandbox starts again.`
-        : `The repository ${repo.owner}/${repo.name} is checked out at ${this.cwd}, on the design's branch ${branch}. Commit as you go and push the branch (git push sets its upstream itself). Ponzu opens and merges the pull request: there is no GitHub API token here, so don't try to open one yourself.`;
+        : `The repository ${repo.owner}/${repo.name} is checked out at ${this.cwd}, on the design's branch ${branch}. Commit as you go and push the branch (git push sets its upstream itself). Ponzu opens and merges the pull request: there is no GitHub API token here, so don't try to open one yourself. Once the branch holds a change worth reviewing, and again whenever what it does changes, call ${SUMMARY_TOOL} with a few lines of markdown on what the branch changes and why, for the people reviewing it: Ponzu puts your words in the pull request's description.`;
     return `${CLOUD_INSTRUCTIONS}\n\nThis sandbox's design is "${design.name}" (${link}). ${where}\n\n${RUNNER_INSTRUCTIONS}`;
   }
 
@@ -472,6 +626,45 @@ export class Runner {
         // The agent is at the canvas: what people did to it is next for it to read.
         this.deliverLater("next");
         return result;
+      },
+    };
+  }
+
+  /** A repo design whose repository is checked out. */
+  private get checkedOut(): boolean {
+    return !!this.session.repo && !this.cloneError;
+  }
+
+  /**
+   * The agent's own words on what its branch changes, for the pull request's description
+   * (docs/cloud.md, "Pull request summary"). The agent has no GitHub API token: the API keeps the
+   * summary and writes it into the description of the pull request, once one is open.
+   */
+  private summaryTool(): AgentTool {
+    return {
+      name: SUMMARY_TOOL,
+      description:
+        "Say what this design's branch changes, for its pull request's description: a few lines of markdown for the people reviewing it (what changed, why, anything to check). Ponzu writes it into the description of the open pull request, or keeps it for when one opens; calling it again replaces what you said before.",
+      input: {
+        summary: z
+          .string()
+          .min(1)
+          .max(MAX_PULL_REQUEST_SUMMARY)
+          .describe("Markdown: what the branch changes and why."),
+      },
+      destructive: false,
+      run: async (args) => {
+        const { summary } = args as { summary: string };
+        try {
+          const { pullRequest } = await this.api.pullRequestSummary(summary);
+          return {
+            text: pullRequest
+              ? `Pull request #${pullRequest}'s description now says this.`
+              : "Kept: it goes into the pull request's description when one is opened.",
+          };
+        } catch (err) {
+          return { text: `Ponzu could not keep the summary: ${said(err)}`, isError: true };
+        }
       },
     };
   }
@@ -514,6 +707,8 @@ export class Runner {
     // Not started: a poke that comes first is answered by the claim that ends `start`, which
     // the design and Claude Code are ready for.
     if (this.stopping || !this.claimTimer) return;
+    // Going to sleep: what arrives now waits in the feed for the sandbox to wake.
+    if (this.sleep) return;
     if (this.claiming) {
       this.claimAgain = true;
       return;
@@ -1001,7 +1196,8 @@ export class Runner {
         return;
       }
       this.ws.presence.leave(CALLER.id);
-      this.opts.flush?.();
+      // The sandbox may be stopped at any time now: nothing of the turn may live only here.
+      await this.checkpoint();
     };
     end().catch((err) => this.log(`ending the turn failed: ${said(err)}`));
   }

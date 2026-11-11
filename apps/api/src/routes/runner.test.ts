@@ -77,6 +77,7 @@ describe("the session and the lease", () => {
       theme: null,
       openQuestions: [],
       seq: 0,
+      saved: null,
     });
   });
 
@@ -405,7 +406,10 @@ describe("state", () => {
     const first = await send(runner, "PUT", "/state", state);
     const again = await send(runner, "PUT", "/state", state);
 
-    expect([first.body, again.body]).toEqual([{ seq: 0 }, { seq: 0 }]);
+    expect([first.body, again.body]).toEqual([
+      { seq: 0, sleep: null },
+      { seq: 0, sleep: null },
+    ]);
     expect(await getDesignHead(t.db, design.id)).toMatchObject({
       agentState: "working",
       agentStatus: 'Drawing "Home"',

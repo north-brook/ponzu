@@ -181,3 +181,52 @@ test("a notice only the API writes is refused from a runner", async () => {
     by: fake.events[0]!.event.from,
   });
 });
+
+test("a checkpoint over HTTP: archives up, recorded only forward, and read back as they were", async () => {
+  const { fake, connected } = served();
+  const http = await connected();
+  const session = new TextEncoder().encode("a gzipped transcript");
+  const workspace = new TextEncoder().encode("a gzipped folder");
+  const none = { claudeSessionId: null, wipCommit: null, session: null, workspace: null };
+  const saved = await http.saveCheckpoint({
+    ...none,
+    turn: 2,
+    claudeSessionId: "s1",
+    session,
+    workspace,
+  });
+  expect(saved).toMatchObject({ turn: 2, claudeSessionId: "s1", session: true, workspace: true });
+  // Late, or sent again: the API keeps the newer one.
+  expect((await http.saveCheckpoint({ ...none, turn: 1 })).turn).toBe(2);
+  // The archives never go where the design's files are.
+  expect(fake.uploads).toEqual([]);
+
+  const back = await http.restore();
+  expect(back.saved?.turn).toBe(2);
+  expect(new TextDecoder().decode(back.session!)).toBe("a gzipped transcript");
+  expect(new TextDecoder().decode(back.workspace!)).toBe("a gzipped folder");
+
+  await http.reportRestored({
+    kind: "rollback",
+    disk: { turn: 1, at: saved.at, bootId: "b1" },
+    saved: { turn: 2, at: saved.at },
+    bootId: "b2",
+    bootAt: null,
+    restored: { session: true, workspace: false },
+  });
+  expect(fake.restored).toMatchObject([{ kind: "rollback", bootId: "b2" }]);
+  // The next runner starts with it.
+  expect((await connected().then((c) => c.session())).saved?.turn).toBe(2);
+});
+
+test("the state answer says when the sandbox is going to sleep, and the pull request summary goes through", async () => {
+  const { fake, connected } = served();
+  const http = await connected();
+  const state = { state: "idle" as const, status: null, artboards: [], claudeSessionId: null };
+  expect(await http.putState(state)).toEqual({ seq: 0, sleep: null });
+  fake.sleep = "2026-11-11T10:00:00.000Z";
+  expect((await http.putState({ ...state, quiesced: fake.sleep })).sleep).toBe(fake.sleep);
+  expect(fake.quiesced).toEqual([fake.sleep]);
+  expect(await http.pullRequestSummary("What the branch does.")).toEqual({ pullRequest: null });
+  expect(fake.summaries).toEqual(["What the branch does."]);
+});

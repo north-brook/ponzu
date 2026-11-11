@@ -12,7 +12,7 @@ import { type Background, createBackground, waitUntil } from "./background.ts";
 import type { Fetch } from "./fetch.ts";
 import { createGithub, type Github } from "./github.ts";
 import { createClaude, type Model } from "./model.ts";
-import { createPoke, type Poke } from "./poke.ts";
+import { createPoke, createRunnerPort, type Poke, type RunnerPort } from "./poke.ts";
 import { createRealtimeSealer, type RealtimeSealer } from "./realtime.ts";
 import { createR2Storage, type ObjectStorage } from "./storage.ts";
 import { createWorkos, type Workos } from "./workos.ts";
@@ -43,6 +43,8 @@ export interface Deps {
   storage: ObjectStorage;
   /** Tells an awake runner there may be events to claim. */
   poke: Poke;
+  /** Asks an awake runner for a state report now, and whether it answers at all. */
+  runnerPort: RunnerPort;
   realtime: RealtimeSealer;
   /** Claude Haiku, through the AI SDK on Ponzu's own key, for what the API asks itself (repo ideas). */
   model: Model;
@@ -114,6 +116,7 @@ export function createDeps(env: Env): Deps {
     anthropic: createAnthropic({ fetch: outbound, clock }),
     storage: createR2Storage({ ...env.r2, fetch: outbound, clock }),
     poke: createPoke({ fetch: outbound, clock }),
+    runnerPort: createRunnerPort({ fetch: outbound, clock }),
     realtime: createRealtimeSealer({
       ...env.realtime,
       database: new URL(env.databaseUrl).pathname.slice(1),

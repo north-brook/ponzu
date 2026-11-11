@@ -430,6 +430,8 @@ export const sandboxes = pgTable(
     autoStopAt: instant("auto_stop_at"),
     /** How often its runner was found dead and restarted since one was last heard from. */
     restarts: integer("restarts").notNull().default(0),
+    /** How often its runner found the disk behind the design's last checkpoint (a rollback). */
+    rollbacks: integer("rollbacks").notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -490,6 +492,24 @@ export const designRunners = pgTable("design_runners", {
   heardAt: instant("heard_at").notNull(),
   /** The Claude session the next runner resumes, as an ack or a state report last named it. */
   claudeSessionId: text("claude_session_id"),
+  /**
+   * The runner's last checkpoint (docs/cloud.md, "Saving the sandbox"): its turn marker, which
+   * only goes up, when it was recorded, the Claude session its transcript is of, the commit of
+   * work in progress it pushed to `refs/ponzu/wip/<design>` (a repo design), and the uploads
+   * holding the transcript and a Scratch design's files. A runner whose disk is behind this
+   * restores from it.
+   */
+  savedTurn: integer("saved_turn"),
+  savedAt: instant("saved_at"),
+  savedClaudeSessionId: text("saved_claude_session_id"),
+  savedWipCommit: text("saved_wip_commit"),
+  sessionUploadId: text("session_upload_id"),
+  workspaceUploadId: text("workspace_upload_id"),
+  /**
+   * The sleep the runner last said it was ready for: the `state_at` of the stop it was asked to
+   * get ready for. The idle stop waits a little for it to match before it stops the sandbox.
+   */
+  quiescedFor: instant("quiesced_for"),
 });
 
 /**

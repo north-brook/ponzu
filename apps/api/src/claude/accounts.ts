@@ -26,6 +26,7 @@ export type ClaudeDeps = Pick<
   | "log"
   | "sandbox"
   | "poke"
+  | "runnerPort"
   | "storage"
   | "config"
   | "background"
