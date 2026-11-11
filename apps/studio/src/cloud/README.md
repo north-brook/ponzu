@@ -78,25 +78,34 @@ lockup in any state, the sidebar toggle is the first thing at the left (on a Mac
 traffic lights, which the shell puts at x 16, y 16, so the toggle's box spans 76 to 104 and is
 centred on the lights' line; on Windows and Linux 10px from the edge), and the thread toggle is
 the last thing at the right, 10px from the window's edge, whether the rail is open or closed and
-on every tab. The rest of the right cluster (presence, Share, the pull request mark, the next
-action) sits just before the thread toggle, so it holds one place too, and the divider sits 18px
-before the cluster in every state: it separates the page tabs from the cluster rather than marking
-the rail's edge, so a wider cluster (five people, Update branch) or the rail toggling never moves
-it off its partner.
-The chrome is 38px tall where the boards draw 44 (the founder's direction: more compact, its
-28px controls and the traffic lights centred on it), so everything under it sits 6px higher than
-on a board. `visual.ts compare` masks the boards' 44px of chrome for these reasons.
+on every tab. The chrome is 38px tall where the boards draw 44 (the founder's direction: more
+compact, its 28px controls and the traffic lights centred on it), so everything under it sits 6px
+higher than on a board. `visual.ts compare` masks the boards' 44px of chrome for these reasons,
+so the rest is still checked against the boards.
 
-The chrome reads, left to right (the founder's order):
+The chrome reads, left to right (the founder's order), the right side the left's mirror:
 
-- sidebar collapsed, a design open: `[traffic lights] [sidebar toggle] [design name] | [tabs] +`
-  … `| [presence] [PR mark] [action] [thread toggle]`. The name is the row's type (13, medium),
-  cut with an ellipsis at 240, and not a control: a double-click there zooms the window, as on
-  any Mac title bar, so renaming stays on the row.
-- sidebar open: `[traffic lights] [sidebar toggle]` … `| [tabs] +` …, the divider on the
-  sidebar's edge at x 300, where the canvas pane starts. The name's room closes to nothing.
+- sidebar collapsed, a design open: `[traffic lights] [sidebar toggle] [design name] | [tabs] +`.
+  The name is the row's type (13, medium), cut with an ellipsis at 240, and not a control: a
+  double-click there zooms the window, as on any Mac title bar, so renaming stays on the row.
+- sidebar open: `[traffic lights] [sidebar toggle]` … `| [tabs] +`, the divider on the
+  sidebar's edge, where the canvas pane starts (its pixel the canvas's first column). The name's
+  room closes to nothing.
+- rail open: `[people] [PR mark] [action] | …  [thread toggle]`. The cluster (presence and
+  Share's +, the pull request mark, the next action) sits over the canvas and ends 12 before the
+  divider; the divider is on the rail's edge, its pixel the canvas's last column; the chrome over
+  the rail is empty to the toggle.
+- rail closed: `[people] [PR mark] [action] | [thread toggle]`, together at the window's edge,
+  12 either side of the divider. The pull request tab leaves the rail as it was, so it reads as
+  on any page: open or closed by the rail.
 - the create page, or no design: `[traffic lights] [sidebar toggle]` and nothing else: no
   name, no divider.
+
+Each divider's place comes from its pane's width, which the panels write to `--pane-sidebar` and
+`--pane-rail` as they lay out (app-window.tsx, a drag included): the left block and the rail's
+block in the chrome (`[data-chrome-rail]`) read them, so one number moves pane and divider. Where the
+window is too narrow for all of it (the smallest window, five people and Update branch) the page
+tabs give way, scrolling under their fade; the cluster never wraps or clips.
 
 ⌘B toggles the sidebar and ⌘J the rail, from anywhere in the window, the canvas and the
 composers included (no field here takes rich text, so ⌘B means nothing else); both are in the
@@ -106,18 +115,32 @@ or while a design's name is being edited on its row (`paneHeld` in `ui/shortcut.
 
 Both panes open and close on one clock, `pane-motion` (`--dur-pane`, `--ease-out`), and so does
 everything that moves with them: the pane's width, the canvas pane's margin, the left block's
-width, the name's room, and the right block's reach (the room it keeps over the rail). The rail, like the sidebar, keeps its content still at the
-window's edge while its room opens or closes, and holds it until it has closed. The canvas
+width, the name's room, and the rail's block in the chrome, so each divider stays on its pane's
+edge in every frame (the rail's until the edge passes where it rests with the rail closed). The
+rail, like the sidebar, keeps its content still at the window's edge while its room opens or
+closes, and holds it until it has closed. The canvas
 keeps its boards still on screen as its pane's edge moves, anchored to the edge that isn't
 moving, with no refit (useCanvas.ts). `gallery/chrome.test.ts` checks it frame by frame, and
 the app's end-to-end test that the boards don't move.
 
-A click never leaves a ring: whatever takes focus while the pointer was the last thing used is
-marked quiet (`ui/quiet-focus.ts`, the mechanism the menus and the needs-you options use), and
-the ring comes back only from a key that works focus: Tab, an arrow inside a menu, tablist or
-radio group, or Return or Space pressing the focused control. A letter or Escape after a click
-is the canvas's, not the control's. The chrome's buttons and page tabs (`data-toolbar`) take no focus from a click at
-all, as a Mac's toolbar buttons don't, so the next key goes where it went before the click.
+The focus ring is keyboard navigation's and nothing else's (`ui/quiet-focus.ts`, installed once
+by the app and the gallery). It shows where Tab or Shift-Tab, or an arrow, Home or End inside a
+menu, a list, the page tabs or the people in the chrome, moved focus, and again where focus comes
+back to something navigation had reached (a menu or dialog closing onto its trigger) with no
+click since. Focus a click gave, a shortcut acted through, or our own code handed on (a question
+taking the composer's place, a row back from renaming) is marked quiet for as long as it stays,
+whatever keys follow: ⌘, ⌥ held for a shortcut, Return, Space, a letter. It turns into the
+keyboard's only when a navigating key is pressed on it. `focus-ring` and the canvas package's
+controls skip quiet focus, and so do tips (`Tip`). Return or Space on a control that has the
+keyboard's focus hands it on: the popover or dialog it opens rings its first control (`presses`);
+on a control a click focused, the same press stays quiet. Text fields keep their own focus treatment;
+menus show their current item by its highlight, whichever way they were opened.
+
+Controls that act on the window, not on themselves, take no focus from a click at all, as a
+Mac's toolbar buttons don't (`data-toolbar`: the chrome's toggles and page tabs, and the
+sidebar's Search and New design), so the next key goes where it went before the click. Search
+gives focus back where it found it when it closes (the composer after ⌘K, nowhere if it was
+nowhere), as the keyboard's if it was.
 
 Text from the model or GitHub (replies, plans, a pull request's body and comments) goes through
 `Prose`, never `dangerouslySetInnerHTML`. It is react-markdown with GitHub's flavour (tables, task
