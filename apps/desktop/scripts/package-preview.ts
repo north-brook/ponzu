@@ -60,6 +60,7 @@ for (const asar of asars) {
     process.exit(1);
   }
 }
+console.log(`Checked: ${asars.length} app.asar holds Ponzu Preview's main process.`);
 
 if (process.platform === "darwin") {
   const arch = process.arch === "arm64" ? "arm64" : "x64";
