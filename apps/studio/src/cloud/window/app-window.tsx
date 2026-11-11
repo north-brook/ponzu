@@ -21,7 +21,7 @@ export interface SidebarSlot {
 }
 
 /**
- * The main window: a 44px chrome over three panes. The sidebar (300) and the thread rail (360)
+ * The main window: a 38px chrome over three panes. The sidebar (300) and the thread rail (360)
  * keep their widths; the pane between them, the canvas's, takes the rest.
  *
  * - `sidebar` null is a brand-new personal workspace: no sidebar and no toggle.
@@ -145,7 +145,8 @@ export function AppWindow({
           // A click on its buttons and tabs leaves focus where it was (quietPointerFocus).
           data-toolbar
           className={cn(
-            "app-drag flex h-11 shrink-0 items-center gap-1",
+            // 38 tall: its 28px controls with 5 above and below (CHROME in the shell's traffic-lights.ts).
+            "app-drag flex h-[38px] shrink-0 items-center gap-1",
             // 10 at either edge; on a Mac the traffic lights' own 16 on the left.
             lights === "none" ? "px-2.5" : "pr-2.5 pl-4",
           )}
