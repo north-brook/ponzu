@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, isNotNull, isNull } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { newId } from "../ids.ts";
 import { authStates, type Json } from "../schema/index.ts";
@@ -32,6 +32,24 @@ export async function getAuthState(
       .where(and(eq(authStates.id, id), eq(authStates.kind, kind), eq(authStates.userId, userId))),
   );
   return row ?? null;
+}
+
+/**
+ * Write down what became of a round trip that came back, for the app that began it to read:
+ * its payload, replaced. Only a state already taken, so nothing is said of one still out.
+ */
+export async function recordAuthStateOutcome(
+  db: Db,
+  { id, kind, payload }: { id: string; kind: AuthState["kind"]; payload: Json },
+): Promise<void> {
+  await run(
+    db
+      .update(authStates)
+      .set({ payload })
+      .where(
+        and(eq(authStates.id, id), eq(authStates.kind, kind), isNotNull(authStates.consumedAt)),
+      ),
+  );
 }
 
 /**

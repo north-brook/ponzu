@@ -264,8 +264,10 @@ export type ThreadItem = {
   /** Markdown, from the model: untrusted text. */
   | { kind: "assistant"; payload: { text: string } }
   /**
-   * The agent's work: with `turn`, one item per turn that opens it (thread.ts folds the turn by
-   * it); without, a stretch of work an older runner wrote between two things the agent said.
+   * The agent's work, never a line of its own: with `turn`, one item per turn that opens it
+   * (thread.ts reads its asides and answer by it; of the record only `final`, `ended` and
+   * `log[].after`); without, a stretch of work an older runner wrote between two things the
+   * agent said.
    */
   | {
       kind: "tool";

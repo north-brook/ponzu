@@ -6,9 +6,10 @@ import { defineConfig, type Plugin } from "vite";
 /*
  * The web fonts the app ships, every family and weight its screens use (the cloud screens' are in
  * src/cloud/styles/tokens.css). One link for every page, so the gallery measures what ships.
+ * Inter's own italic too: the thread's asides are set in it, and a slanted upright reads worse.
  */
 const FONTS =
-  "https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..600&family=Funnel+Display:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap";
+  "https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,400..600;1,14..32,400..600&family=Funnel+Display:wght@600;700&family=IBM+Plex+Mono:wght@400;500&display=swap";
 
 function webFonts(): Plugin {
   return {

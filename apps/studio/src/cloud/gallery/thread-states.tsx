@@ -205,7 +205,7 @@ export function ThreadStates({
           agent={{ state: "working", status: "Reading src/app/page.tsx" }}
           label="running: reading a file"
         />
-        <Rail designId="turn-done" thread={t.completedTurn} label="completed: folded" />
+        <Rail designId="turn-done" thread={t.completedTurn} label="completed: only its answer" />
         <Rail designId="turn-stopped" thread={t.stoppedTurn} label="stopped mid-work" />
         <Rail designId="turn-failed" thread={t.failedTurn} label="failed" />
         <Rail designId="turn-asked" thread={t.askedTurn} label="ended on a question" />

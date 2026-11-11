@@ -17,6 +17,7 @@ import {
   useGroupRef,
   usePanelRef,
 } from "react-resizable-panels";
+import { enterThread } from "../thread/rail.tsx";
 import { cn } from "../ui/cn.ts";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "../ui/resizable.tsx";
 import { TipProvider } from "../ui/tooltip.tsx";
@@ -111,6 +112,55 @@ function panelLimits(pane: Pane, collapsible: boolean) {
  * fitPanes). The chrome's blocks over the panes read the widths from `--pane-sidebar` and
  * `--pane-rail` on the window, which a drag writes in the same frame as the panels move.
  */
+/**
+ * The keyboard and the thread pane. Once the pane has opened (its toggle's easing has ended, or
+ * at once with reduced motion: it is `inert` until it is open), the keyboard goes into it
+ * (`enterThread`), when it opened on a design that was already showing: the toggle, ⌘J, the
+ * View menu, or anything else that opens it while the design shows. Not when it came with a
+ * design being opened, which leaves the keyboard where the person was (a row of the sidebar).
+ * Closing it with the keyboard inside gives the keyboard back to where it was before, or to the
+ * window, so it never sits in a pane that has gone inert.
+ */
+function useThreadFocus(
+  open: boolean,
+  onDesign: boolean,
+  box: RefObject<HTMLElement | null>,
+  motion: PaneMotion,
+) {
+  const was = useRef({ open, onDesign });
+  const before = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    const prev = was.current;
+    was.current = { open, onDesign };
+    const pane = box.current;
+    if (!pane || prev.open === open) return;
+    if (!open) {
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && pane.contains(active)) {
+        const back = before.current;
+        if (back?.isConnected && !pane.contains(back)) back.focus({ preventScroll: true });
+        else active.blur();
+      }
+      before.current = null;
+      return;
+    }
+    if (!prev.onDesign || !onDesign) return;
+    let live = true;
+    // After the toggle's own layout effect has started the easing (a microtask on).
+    queueMicrotask(() =>
+      motion.after(() => {
+        if (!live || !was.current.open) return;
+        const active = document.activeElement;
+        before.current = active instanceof HTMLElement && active !== document.body ? active : null;
+        enterThread(pane);
+      }),
+    );
+    return () => {
+      live = false;
+    };
+  }, [open, onDesign, box, motion]);
+}
+
 export function AppWindow({
   lights,
   sidebar,
@@ -148,6 +198,8 @@ export function AppWindow({
   // Each pane's width as it stands while open: the remembered one, or less in a small window.
   const [shown, setShown] = useState(remembered);
   const motion = usePaneMotion(frame);
+  const railBox = useRef<HTMLElement>(null);
+  useThreadFocus(railOpen, chrome != null, railBox, motion);
   // The edge the person last took hold of (pointer or keys): only its pane's width is kept.
   const held = useRef<Pane | null>(null);
   // While one edge is dragged, the other pane, held where it is (its panel disabled): the drag
@@ -562,6 +614,7 @@ export function AppWindow({
             style={{ overflow: "hidden" }}
           >
             <aside
+              ref={railBox}
               id="thread"
               aria-label="Thread"
               inert={!railOpen}

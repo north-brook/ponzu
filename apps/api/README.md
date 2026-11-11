@@ -162,7 +162,9 @@ the sandboxes labelled with their own database (`SandboxConfig.scope`).
    `c.json(Schema.parse(value))`. The schema is the allowlist, so a row passed whole cannot
    leak a column. JSON is camelCase; `/v1/auth/exchange` keeps OAuth's three snake_case names.
    Two routes are not JSON, both GitHub's to call: `GET /v1/github/setup` is a page a browser
-   lands on (`github/setup-page.ts`: no script, everything escaped, its own strict headers), and
+   lands on (`github/setup-page.ts`, a handoff from `@ponzu/core/handoff`: one fixed script and
+   one fixed style sheet allowed by their hashes, everything else escaped, its own strict
+   headers), and
    `POST /v1/github/webhook` reads its raw body to check the signature before parsing it.
 
 4. **Dependencies.** Read them from `c.var.deps` (`db`, `clock`, `vault`, `workos`, `github`,
