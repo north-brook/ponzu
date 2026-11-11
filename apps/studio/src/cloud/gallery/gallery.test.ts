@@ -286,11 +286,84 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await page.click('button[aria-label^="Project"]');
     await page.waitForSelector('input[aria-label="Search repositories"]');
     await page.keyboard.type("len");
-    const options = await page.$$eval('[role="option"]', (els) => els.map((e) => e.id));
-    expect(options).toEqual(["project-repo_lenny"]);
+    const options = await page.$$eval('[role="option"]', (els) =>
+      els.map((e) => e.getAttribute("data-choice")),
+    );
+    expect(options).toEqual(["repo_lenny"]);
     await page.keyboard.press("Enter");
     await page.waitForSelector('input[aria-label="Search repositories"]', { state: "detached" });
     expect(await page.textContent('button[aria-label^="Project"]')).toBe("lenny");
     await focusOn("Project: lenny");
+  });
+
+  test("the repo picker: the arrows, Home and End move the highlight; Escape changes nothing", async () => {
+    await open("create");
+    await page.click('button[aria-label^="Project"]');
+    const field = 'input[aria-label="Search repositories"]';
+    await page.waitForSelector(field);
+    const highlighted = () =>
+      page.$eval(field, (input) => {
+        const id = input.getAttribute("aria-activedescendant");
+        return id ? document.getElementById(id)?.getAttribute("data-choice") : null;
+      });
+    const choices = await page.$$eval('[role="option"]', (els) =>
+      els.map((e) => e.getAttribute("data-choice")),
+    );
+    // It opens on the chosen one, named for assistive tech.
+    expect(await highlighted()).toBe("repo_fernwood");
+    await page.keyboard.press("End");
+    expect(await highlighted()).toBe(choices.at(-1)!);
+    await page.keyboard.press("Home");
+    expect(await highlighted()).toBe(choices[0]!);
+    await page.keyboard.press("ArrowDown");
+    expect(await highlighted()).toBe(choices[1]!);
+    // The field keeps focus throughout.
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe(
+      "Search repositories",
+    );
+    await page.keyboard.press("Escape");
+    await page.waitForSelector(field, { state: "detached" });
+    await focusOn("Project: fernwood");
+  });
+
+  test("page tabs: the arrows move between them without opening one; Return opens it", async () => {
+    await open("thread-in-the-right-rail");
+    const tabs = '[role="tablist"][aria-label="Pages"] [role="tab"]';
+    const names = await page.$$eval(tabs, (els) => els.map((e) => e.textContent ?? ""));
+    const selected = () =>
+      page.$$eval(tabs, (els) =>
+        els
+          .filter((e) => e.getAttribute("aria-selected") === "true")
+          .map((e) => e.textContent ?? ""),
+      );
+    expect(await selected()).toEqual([names[0]!]);
+    // They open pages, not panels of their own: no tab points at a panel that isn't there.
+    expect(
+      await page.$$eval(tabs, (els) => els.filter((e) => e.hasAttribute("aria-controls")).length),
+    ).toBe(0);
+    await page.focus(`${tabs}[aria-selected="true"]`);
+    await page.keyboard.press("ArrowRight");
+    await focusOn(names[1]!);
+    expect(await selected()).toEqual([names[0]!]);
+    await page.keyboard.press("Enter");
+    expect(await selected()).toEqual([names[1]!]);
+    await page.keyboard.press("End");
+    await focusOn(names.at(-1)!);
+    // The ends don't wrap around.
+    await page.keyboard.press("ArrowRight");
+    await focusOn(names.at(-1)!);
+    await page.keyboard.press("Home");
+    await focusOn(names[0]!);
+  });
+
+  test("page tabs with the pull request tab open: none is chosen, and Tab reaches the first", async () => {
+    await open("pull-request-tab");
+    const tabs = '[role="tablist"][aria-label="Pages"] [role="tab"]';
+    expect(await page.$$eval(`${tabs}[aria-selected="true"]`, (els) => els.length)).toBe(0);
+    const first = await page.$eval(tabs, (el) => el.textContent);
+    // Tab from the control before the strip.
+    await page.focus('button[aria-label="Toggle sidebar"]');
+    await page.keyboard.press("Tab");
+    await focusOn(first!);
   });
 });

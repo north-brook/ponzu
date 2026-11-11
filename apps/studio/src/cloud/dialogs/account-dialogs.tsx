@@ -71,6 +71,7 @@ export function DisconnectClaudeDialog({
       open={open}
       onDismiss={onCancel}
       title="Disconnect Claude?"
+      confirm
       body="Your designs will wait until you connect again. Running turns stop."
     >
       <DialogActions>
@@ -113,6 +114,7 @@ export function DeleteAccountDialog({
       open={open}
       onDismiss={onCancel}
       title="Delete your Ponzu account?"
+      confirm
       body="Your designs, threads and settings are deleted. Your repos and pull requests on GitHub are not touched."
     >
       <form
