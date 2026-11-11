@@ -98,6 +98,29 @@ const actions = (page: Page) =>
     return by;
   });
 
+/**
+ * Waits, frame by frame, until the app has had no answer outstanding and asked nothing new for
+ * LATENCY: every answer of the moment in, and drawn (fake-host.ts counts them).
+ */
+const quiet = (page: Page) =>
+  page.evaluate(async (latency) => {
+    const answers = window.ponzuFake!.answers;
+    const started = performance.now();
+    let asked = answers.asked;
+    let since = performance.now();
+    for (;;) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const now = performance.now();
+      if (answers.waiting > 0 || answers.asked !== asked) {
+        asked = answers.asked;
+        since = now;
+      } else if (now - since >= latency) {
+        return;
+      }
+      if (now - started > 30_000) throw new Error("The window never stopped asking.");
+    }
+  }, LATENCY);
+
 /** Each step's action stayed in one place across the transition just recorded. */
 async function actionsHeld(page: Page) {
   for (const [screen, seen] of Object.entries(await actions(page))) {
@@ -135,8 +158,9 @@ describe.skipIf(!chromiumPath)("between the guided steps, with slow answers", ()
   /** Sign in and go through every step to Fresh start, checking each transition. */
   const walk = async (query: string) => {
     const { page, errors } = await open(query);
-    // Long enough for the slowest answer of any run to have come in.
-    const settle = () => page.waitForTimeout(LATENCY * 5);
+    // Until the slowest answer asked for has come in, and what it set off has asked and been
+    // answered too: nothing outstanding, and nothing new asked, for an answer's time.
+    const settle = () => quiet(page);
     await page.waitForSelector('[data-screen="sign-in"]');
     await page.getByRole("button", { name: "Continue with GitHub" }).click();
     // Signing in: the sign-in screen waits on until the first step can show.
