@@ -1,6 +1,14 @@
-import { GitBranchIcon } from "@hugeicons/core-free-icons";
+import {
+  ArrowTurnBackwardIcon,
+  CheckmarkCircle02Icon,
+  Delete02Icon,
+  GitBranchIcon,
+  Link01Icon,
+  PencilEdit01Icon,
+} from "@hugeicons/core-free-icons";
 import { type KeyboardEvent, memo, useEffect, useRef, useState } from "react";
 import type { DesignSummary } from "../model.ts";
+import { pullRequestIcon } from "../pull-request.ts";
 import { type RowIndicator, rowIndicator } from "../status.ts";
 import { AvatarStack } from "../ui/avatar.tsx";
 import { cn } from "../ui/cn.ts";
@@ -16,7 +24,7 @@ import {
 import { REPO_ICON, SCRATCH_ICON } from "../ui/project-icons.ts";
 import { JUMP_KEY } from "../ui/shortcut.ts";
 import { HintKeys } from "../ui/shortcut-hint.tsx";
-import { PullRequestMark } from "../window/pull-request-mark.tsx";
+import { PULL_REQUEST_ICONS } from "../window/pull-request-mark.tsx";
 import { DesignPreviewImage } from "./design-preview.tsx";
 
 export type RowAction = "copy_link" | "rename" | "settle" | "reopen" | "delete";
@@ -29,12 +37,13 @@ export interface RowHandlers {
 }
 
 /**
- * A design in the sidebar: its preview, its name with one status at the end, and where it
- * lives (repo and branch, or a Scratch city) with its pull request. The open design's row takes
- * the selected ground (the canvas's, in light), and its pull request mark darkens and shows its checks. Teammates in it
- * now sit on the preview's corner. Right-click for its actions; Rename edits the name in place.
- * It draws again only when its own props change, so a long list stays quick. One of the first
- * nine shows its ⌘ number on the preview's corner while ⌘ is held.
+ * A design in the sidebar: its preview beside three lines. The first says where it lives (the
+ * repo, or Scratch) with one status at its end; the second is its name; the third is its branch
+ * (or Scratch's city) with its pull request at the end, set the same quiet way as the repo and
+ * the branch. The open design's row takes the selected ground (the canvas's, in light).
+ * Teammates in it now sit on the preview's corner. Right-click for its actions; Rename edits
+ * the name in place. It draws again only when its own props change, so a long list stays quick.
+ * One of the first nine shows its ⌘ number on the preview's corner while ⌘ is held.
  */
 export const DesignRow = memo(function DesignRow({
   design,
@@ -68,12 +77,13 @@ export const DesignRow = memo(function DesignRow({
   }, [renaming]);
   const indicator = indicators ? rowIndicator(design) : null;
   const pr = design.pullRequest;
+  const { project } = design;
   const settled = design.status === "settled";
 
   const body = (
     <>
       <span className="relative shrink-0">
-        <DesignPreviewImage preview={design.preview} width={56} height={36} />
+        <DesignPreviewImage preview={design.preview} width={64} height={48} />
         {design.hereNow.length ? (
           <span className="absolute -right-[5px] -bottom-[5px] flex">
             <AvatarStack people={design.hereNow} size={15} overlap={5} ring="chrome" />
@@ -89,27 +99,36 @@ export const DesignRow = memo(function DesignRow({
           />
         ) : null}
       </span>
-      <span className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="flex items-center gap-[5px]">
-          {renaming ? (
-            <RenameField
-              name={design.name}
-              onDone={(name) => {
-                renamed.current = true;
-                setRenaming(false);
-                if (name && name !== design.name) onRename(design, name);
-              }}
-            />
-          ) : (
-            <span className="truncate font-medium text-13">{design.name}</span>
-          )}
+      <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
+        <span className={META}>
+          <Meta
+            icon={project.kind === "repo" ? REPO_ICON : SCRATCH_ICON}
+            text={project.kind === "repo" ? project.repo.name : "Scratch"}
+          />
           {indicator ? <IndicatorMark indicator={indicator} /> : null}
         </span>
-        <span className="flex items-center gap-1.5 font-mono text-11 text-faint">
-          <ProjectLine design={design} />
+        {renaming ? (
+          <RenameField
+            name={design.name}
+            onDone={(name) => {
+              renamed.current = true;
+              setRenaming(false);
+              if (name && name !== design.name) onRename(design, name);
+            }}
+          />
+        ) : (
+          <span className="truncate font-medium text-13">{design.name}</span>
+        )}
+        <span className={META}>
+          {project.kind === "repo" ? (
+            <Meta icon={GitBranchIcon} text={project.branch} />
+          ) : (
+            <span className="truncate">{project.city}</span>
+          )}
           {pr ? (
-            <span className={cn("ml-auto flex", open && "text-muted")}>
-              <PullRequestMark pr={pr} tone="neutral" checks={open} />
+            <span className="ml-auto flex shrink-0 items-center gap-1 pl-1.5">
+              <Icon icon={PULL_REQUEST_ICONS[pullRequestIcon(pr)]} size={11} stroke={1.9} />#
+              {pr.number}
             </span>
           ) : null}
         </span>
@@ -146,15 +165,39 @@ export const DesignRow = memo(function DesignRow({
         </button>
       </ContextMenuTrigger>
       <ContextMenuContent width={200}>
-        <ContextMenuItem onSelect={() => onAction(design, "copy_link")}>Copy link</ContextMenuItem>
-        <ContextMenuItem onSelect={() => setRenaming(true)}>Rename</ContextMenuItem>
+        <ContextMenuItem
+          leading={<MenuIcon icon={Link01Icon} />}
+          onSelect={() => onAction(design, "copy_link")}
+        >
+          Copy link
+        </ContextMenuItem>
+        <ContextMenuItem
+          leading={<MenuIcon icon={PencilEdit01Icon} />}
+          onSelect={() => setRenaming(true)}
+        >
+          Rename
+        </ContextMenuItem>
         {settled ? (
-          <ContextMenuItem onSelect={() => onAction(design, "reopen")}>Reopen</ContextMenuItem>
+          <ContextMenuItem
+            leading={<MenuIcon icon={ArrowTurnBackwardIcon} />}
+            onSelect={() => onAction(design, "reopen")}
+          >
+            Reopen
+          </ContextMenuItem>
         ) : (
-          <ContextMenuItem onSelect={() => onAction(design, "settle")}>Settle</ContextMenuItem>
+          <ContextMenuItem
+            leading={<MenuIcon icon={CheckmarkCircle02Icon} />}
+            onSelect={() => onAction(design, "settle")}
+          >
+            Settle
+          </ContextMenuItem>
         )}
         <ContextMenuSeparator />
-        <ContextMenuItem onSelect={() => onAction(design, "delete")} className="text-danger">
+        <ContextMenuItem
+          leading={<Icon icon={Delete02Icon} size={16} stroke={1.8} />}
+          onSelect={() => onAction(design, "delete")}
+          className="text-danger"
+        >
           Delete
         </ContextMenuItem>
       </ContextMenuContent>
@@ -162,29 +205,25 @@ export const DesignRow = memo(function DesignRow({
   );
 });
 
-/** Where a design lives: the repo and its branch, or Scratch's city. */
-function ProjectLine({ design }: { design: DesignSummary }) {
-  const { project } = design;
-  if (project.kind === "scratch") {
-    return (
-      <span className="flex min-w-0 items-center gap-1 whitespace-nowrap">
-        <Icon icon={SCRATCH_ICON} size={11} stroke={1.9} />
-        <span className="truncate">{project.city}</span>
-      </span>
-    );
-  }
+/** An action's icon in the row's menu, as the workspace menu sets its own. */
+function MenuIcon({ icon }: { icon: Parameters<typeof Icon>[0]["icon"] }) {
+  return <Icon icon={icon} size={16} stroke={1.8} className="text-muted" />;
+}
+
+/** A line of a row's quiet facts: the repo, the branch, the pull request. */
+const META = "flex h-[14px] items-center gap-1.5 font-mono text-11 text-faint";
+
+/** One of them: a small icon and its word, cut short when the row is narrow. */
+function Meta({ icon, text }: { icon: Parameters<typeof Icon>[0]["icon"]; text: string }) {
   return (
-    <span className="flex min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap">
-      <Icon icon={REPO_ICON} size={11} stroke={1.9} />
-      {project.repo.name}
-      <span className="text-dry">·</span>
-      <Icon icon={GitBranchIcon} size={10} stroke={2} />
-      <span className="truncate">{project.branch}</span>
+    <span className="flex min-w-0 items-center gap-1 whitespace-nowrap">
+      <Icon icon={icon} size={11} stroke={1.9} />
+      <span className="truncate">{text}</span>
     </span>
   );
 }
 
-/** The one status mark, centred on the New design icon's line above it. */
+/** The one status mark, at the end of the row's first line. */
 function IndicatorMark({ indicator }: { indicator: RowIndicator }) {
   if (indicator.kind === "needs_you") {
     const label = `${indicator.count} ${indicator.count === 1 ? "question" : "questions"} for you`;

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { DesignSummary } from "./model.ts";
-import { orderDesigns, railSignal, rowIndicator } from "./status.ts";
+import { orderDesigns, railSignal, rowIndicator, settledShown } from "./status.ts";
 
 const design = (over: Partial<DesignSummary> = {}): DesignSummary => ({
   id: "dsn",
@@ -50,4 +50,14 @@ test("designs go by recency, and on a team what waits on you comes first", () =>
   const ids = (list: DesignSummary[]) => list.map((d) => d.id);
   expect(ids(orderDesigns([old, middle, recent], "personal"))).toEqual(["recent", "middle", "old"]);
   expect(ids(orderDesigns([middle, recent, old], "org"))).toEqual(["old", "recent", "middle"]);
+});
+
+test("the settled section shows every row open, and closed only the design you are in", () => {
+  const older = design({ id: "a", status: "settled", settledAt: "2026-11-09T12:00:00.000Z" });
+  const newer = design({ id: "b", status: "settled", settledAt: "2026-11-10T12:00:00.000Z" });
+  expect(settledShown([older, newer], true, null).map((d) => d.id)).toEqual(["b", "a"]);
+  expect(settledShown([older, newer], false, null)).toEqual([]);
+  expect(settledShown([older, newer], false, "a").map((d) => d.id)).toEqual(["a"]);
+  // A design that is open but not settled changes nothing here.
+  expect(settledShown([older, newer], false, "elsewhere")).toEqual([]);
 });

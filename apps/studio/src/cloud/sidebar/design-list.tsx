@@ -78,7 +78,7 @@ export function DesignList({
   );
 }
 
-/** Rows still on their way: a preview's tile and two lines, breathing. */
+/** Rows still on their way: a preview's tile and three lines, breathing. */
 export function DesignListSkeleton({ rows = 5 }: { rows?: number }) {
   return (
     <div role="status" aria-label="Loading designs" className="flex flex-col gap-px">
@@ -88,8 +88,9 @@ export function DesignListSkeleton({ rows = 5 }: { rows?: number }) {
         return (
           // biome-ignore lint/suspicious/noArrayIndexKey: placeholders have nothing else to tell them apart
           <div key={i} className="flex items-center gap-2.5 px-2 py-1.5">
-            <Skeleton className="h-9 w-14 shrink-0 rounded-4" style={{ animationDelay: delay }} />
-            <span className="flex flex-1 flex-col gap-2">
+            <Skeleton className="h-12 w-16 shrink-0 rounded-4" style={{ animationDelay: delay }} />
+            <span className="flex flex-1 flex-col gap-[9px]">
+              <Skeleton className="h-2 w-1/4 rounded-3" style={{ animationDelay: delay }} />
               <Skeleton
                 className="h-2.5 rounded-3"
                 style={{ width: `${72 - (i % 3) * 14}%`, animationDelay: delay }}
