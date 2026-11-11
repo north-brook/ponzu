@@ -60,6 +60,8 @@ export class Checkpoints {
   private again: string | null | undefined = undefined;
   /** What the last checkpoint saved, so an unchanged sandbox saves nothing. */
   private last: string | null = null;
+  /** The API's last checkpoint, as this process last heard of it. */
+  private known: SavedPoint | null = null;
 
   constructor(private readonly opts: CheckpointOptions) {}
 
@@ -85,6 +87,7 @@ export class Checkpoints {
    */
   async recover(saved: SavedPoint | null): Promise<Recovery> {
     const disk = this.marker();
+    this.known = saved;
     this.turn = Math.max(disk?.turn ?? 0, saved?.turn ?? 0);
     const restored = { session: false, workspace: false };
     if (!saved || (disk && disk.turn >= saved.turn)) return { kind: "none", restored };
@@ -104,6 +107,7 @@ export class Checkpoints {
     // Not marked restored: the next start tries again.
     if (!point?.saved) return { kind, restored };
     const latest = point.saved;
+    this.known = latest;
     if (point.session && this.opts.transcripts) {
       try {
         await this.opts.transcripts.unpack(point.session);
@@ -181,16 +185,25 @@ export class Checkpoints {
     if (stamp === this.last) return;
     const turn = this.turn + 1;
     const session = sessionId && transcripts ? await transcripts.pack(sessionId) : null;
+    const known = this.known;
+    // A checkpoint never carries less than the last one: without a transcript on this disk it
+    // would drop the one stored, so there is nothing to save yet.
+    if (!session && known?.session) {
+      this.opts.log("no transcript on this disk to save over the stored one: no checkpoint");
+      return;
+    }
     const saved = work ? await work.save(turn) : null;
     if (saved?.skipped.length)
       this.opts.log(`left out of the checkpoint for their size: ${saved.skipped.join(", ")}`);
     const point = await this.opts.api.saveCheckpoint({
       turn,
       claudeSessionId: session ? sessionId : null,
-      wipCommit: saved?.wipCommit ?? null,
+      // No checkout here (it could not be had): the work saved before is still the work.
+      wipCommit: work ? (saved?.wipCommit ?? null) : (known?.wipCommit ?? null),
       session,
       workspace: saved?.workspace ?? null,
     });
+    this.known = point;
     this.turn = Math.max(turn, point.turn);
     // Another process saved a later one: this one was not recorded, so the disk is not at it.
     if (point.turn !== turn) return;

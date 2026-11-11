@@ -25,6 +25,7 @@ import { join } from "node:path";
 import type { RunnerSession, ThreadItem } from "../src/api/protocol.ts";
 import { destroyOnSignal, provider, sh, until } from "./harness.ts";
 import {
+  control,
   endTrial,
   health,
   message,
@@ -64,6 +65,7 @@ async function proof(): Promise<void> {
   const [owner, repoName] = need("GITHUB_TEST_REPO").split("/") as [string, string];
   const github = await installationToken(repoName);
   const branch = `pz/durability-${Date.now().toString(36)}`;
+  const gitToken = { password: github.token, expiresAt: github.expiresAt };
   let designId: string | null = null;
   try {
     const person = await gh<{ login: string; id: number }>("", `/users/${need("E2E_PERSON")}`);
@@ -88,7 +90,7 @@ async function proof(): Promise<void> {
       label: "image-e2e",
       credential: { ANTHROPIC_API_KEY: need("ANTHROPIC_API_KEY") },
       session,
-      gitToken: { password: github.token, expiresAt: github.expiresAt },
+      gitToken,
       hold: true,
     });
     designId = trial.designId;
@@ -147,7 +149,7 @@ async function proof(): Promise<void> {
       // A warm sleep and wake, as the API does them.
       const warmSleep = await sleepLikeTheApi(trial);
       await Bun.sleep(WARM_AFTER_MS);
-      const warmWake = await wake(trial, warmSleep.memory);
+      const warmWake = await wakeWithToken(trial, warmSleep.memory, gitToken);
       report.warm = { sleep: without(warmSleep, "memory"), wake: warmWake };
       await idle(trial, "the runner after the warm wake");
 
@@ -155,7 +157,7 @@ async function proof(): Promise<void> {
       const coldSleep = await sleepLikeTheApi(trial);
       console.log(`cold: asleep; resuming in ${COLD_AFTER_MS / 1000} s`);
       await Bun.sleep(COLD_AFTER_MS);
-      const coldWake = await wake(trial, coldSleep.memory);
+      const coldWake = await wakeWithToken(trial, coldSleep.memory, gitToken);
       await idle(trial, "the runner after the cold wake");
       const afterCold = await record(trial);
       const boatRolledBack = afterCold.restored.some((r) => r.kind === "rollback");
@@ -423,6 +425,40 @@ async function journal(trial: Trial, pattern: string): Promise<string[]> {
     { quiet: true },
   ).catch(() => "");
   return out.trim().split("\n").filter(Boolean);
+}
+
+/**
+ * A wake of a repo design: as `wakeLikeTheApi`, but the fake is handed the git token first. It
+ * never writes the token down, so a cold boot forgets it, where the real API always has one to
+ * mint; the runner is held until the memory comes back, so it fetches with the token.
+ */
+async function wakeWithToken(
+  trial: Trial,
+  memory: Parameters<typeof wakeLikeTheApi>[1],
+  gitToken: { password: string; expiresAt: string },
+) {
+  const began = performance.now();
+  const resumed = await until(
+    "boat to take the resume",
+    () =>
+      boat.resume(trial.id).catch((err) => {
+        if (err?.code === "busy") return null;
+        throw err;
+      }),
+    120_000,
+    500,
+  );
+  await until("the fake API", () => record(trial), 180_000, 200);
+  const before = await record(trial);
+  await control(trial, "PUT", "git-token", gitToken);
+  await control(trial, "PUT", "memory", memory);
+  await control(trial, "PUT", "sleep", { sleep: null });
+  await until("the runner's /health", () => health(trial.runner), 180_000, 200);
+  return {
+    coldStart: resumed.coldStart,
+    healthSeconds: Math.round((performance.now() - began) / 10) / 100,
+    fakeFileSavedTurn: before.kept.restored.savedTurn,
+  };
 }
 
 /**

@@ -354,3 +354,43 @@ test("a disk at or past the last checkpoint is left as it is", async () => {
   expect(readFileSync(join(cwd, "a.html"), "utf8")).toBe("newer, never saved\n");
   expect(api.calls).not.toContain("restore");
 });
+
+test("a checkpoint never carries less than the last: no checkout keeps the saved work, no transcript saves nothing", async () => {
+  const api = new FakeRunnerApi();
+  api.saved = {
+    turn: 4,
+    at: new Date().toISOString(),
+    claudeSessionId: "11111111-2222-3333-4444-555555555555",
+    wipCommit: "a".repeat(40),
+    session: true,
+    workspace: false,
+  };
+  api.archives = { session: new Uint8Array([1]), workspace: null };
+  const [stateDir, configDir] = [await temp(), await temp()];
+  await writeFile(
+    join(stateDir, "checkpoint.json"),
+    JSON.stringify({ ...api.saved, bootId: null }),
+  );
+  const id = "11111111-2222-3333-4444-555555555555";
+  const shell = agentShell(undefined, process.env);
+  // The repository could not be checked out this time: there is no work saver.
+  const made = new Checkpoints({
+    api: await api.connect(),
+    stateDir,
+    transcripts: new Transcripts({ configDir, shell }),
+    work: null,
+    log: () => {},
+    event: () => {},
+    boot: () => ({ id: null, at: null }),
+    flush: async () => {},
+  });
+  await made.recover(api.saved);
+
+  // No transcript on this disk yet: saving would drop the stored one.
+  await made.save(id);
+  expect(api.checkpoints).toHaveLength(0);
+
+  await transcript(configDir, id, ['{"n":5}']);
+  await made.save(id);
+  expect(api.saved).toMatchObject({ turn: 5, wipCommit: "a".repeat(40), session: true });
+});
