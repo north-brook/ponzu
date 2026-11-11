@@ -11,7 +11,7 @@ import type { PersonUsage, Usage } from "../settings/billing.ts";
 import type { RepoEnvironment } from "../settings/environments.ts";
 import { EnvironmentsSection } from "../settings/environments.tsx";
 import { GithubSection, type Installation } from "../settings/github.tsx";
-import type { Member } from "../settings/members.ts";
+import type { Member, Role } from "../settings/members.ts";
 import { MembersSection } from "../settings/members.tsx";
 import { NotificationsSection, type PingDevice } from "../settings/notifications.tsx";
 import { type DesignUsage, PlanSection } from "../settings/plan.tsx";
@@ -165,7 +165,7 @@ function ClaudeHarness({
 export interface SettingsData {
   workspace: Workspace;
   workspaces: Workspace[];
-  teams: { workspace: Workspace; role: Member["role"] }[];
+  teams: { workspace: Workspace; role: Role }[];
   connection: ClaudeConnection | null;
   entry: ClaudeCardState | null;
   limits: ClaudeLimit[] | null;
@@ -278,7 +278,7 @@ function useSettings(initial: SettingsData, section: SettingsSection) {
         onRoleChange={(member, role) =>
           set({
             members: data.members.map((m) =>
-              m.person.id === member.person.id ? { ...m, role } : m,
+              m.person.id === member.person.id && m.joined ? { ...m, role } : m,
             ),
           })
         }

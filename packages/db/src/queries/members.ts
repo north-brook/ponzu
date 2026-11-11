@@ -37,8 +37,12 @@ export function listWorkspaceMembers(db: Db, workspaceId: string): Promise<Works
   );
 }
 
-/** How many people are in each of these workspaces. A workspace with nobody in it is left out. */
-export function countWorkspaceMembers(
+/**
+ * How many people have opened Ponzu and joined each of these workspaces (`memberships`): not
+ * how many can reach it, which is `countWorkspacePeople`. A workspace nobody has joined is left
+ * out.
+ */
+export function countJoinedMembers(
   db: Db,
   workspaceIds: string[],
 ): Promise<{ workspaceId: string; members: number }[]> {

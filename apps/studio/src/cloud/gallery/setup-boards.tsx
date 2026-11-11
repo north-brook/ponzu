@@ -129,6 +129,9 @@ export const SETUP_BOARDS: Record<string, () => ReactNode> = {
   "settings-agents": () => <SettingsWindow section="agents" />,
   "settings-notifications": () => <SettingsWindow section="notifications" />,
   "settings-members": () => <SettingsWindow section="members" />,
+  "settings-members-not-joined": () => (
+    <SettingsWindow section="members" data={{ ...TEAM_SETTINGS, members: s.membersMixed }} />
+  ),
   "settings-github": () => <SettingsWindow section="github" />,
   "settings-environments": () => <SettingsWindow section="environments" />,
   "settings-plan": () => <SettingsWindow section="plan" />,

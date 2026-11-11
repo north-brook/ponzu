@@ -1,4 +1,5 @@
 import {
+  forgetWorkspacePeople,
   getWorkspaceByInstallation,
   listStaleInstallations,
   markRepoAccessStale,
@@ -12,6 +13,7 @@ import {
 } from "@ponzu/db";
 import { type CaptureOptions, stableUuid } from "../analytics/analytics.ts";
 import type { Deps } from "../deps/index.ts";
+import { peopleDue, readPeopleNow, refreshWorkspacePeople } from "./people.ts";
 
 /*
  * One installation of the App, brought in line with GitHub. Whatever asked (a webhook, a sync
@@ -24,7 +26,9 @@ import type { Deps } from "../deps/index.ts";
  * see `syncGithub`.
  */
 
-type ReconcileDeps = Pick<Deps, "db" | "clock" | "github" | "log" | "analytics">;
+/** `background`, where there is a request to run work beside: a due read of people runs there. */
+type ReconcileDeps = Pick<Deps, "db" | "clock" | "github" | "log" | "analytics"> &
+  Partial<Pick<Deps, "background">>;
 
 /** All it takes to read an installation's account and repo list. */
 const READ_REPOSITORIES = { metadata: "read" } as const;
@@ -44,21 +48,31 @@ const SWEEP_AFTER_MS = 6 * 3600_000;
  *   recorded, and any it no longer sees is marked removed (never deleted: designs point at
  *   it). A repo list GitHub served only in part marks nothing removed.
  *
+ * Who can reach its repos (`github/people.ts`) is read with it when `people` is `read`: the
+ * people job, which throws when GitHub fails, to be tried again. Otherwise, when the last read
+ * is old, a read is recorded as that job and run beside, never here: a person's sync and a
+ * webhook's work never wait on it nor fail with it. An uninstalled installation's people are
+ * forgotten; a suspended one's stay as last seen.
+ *
  * `installedByUserId` is who installed it, for a webhook that says so; it fills in an unknown
  * installer and never replaces a known one. Safe to run any number of times, at once.
  */
 export async function reconcileInstallation(
-  { db, clock, github, log, analytics }: ReconcileDeps,
+  deps: ReconcileDeps,
   installationId: number,
   {
     installedByUserId = null,
     reposChanged = false,
+    people = "when_due",
   }: {
     installedByUserId?: string | null;
     /** GitHub said the repos the installation reaches changed: said in analytics once read. */
     reposChanged?: boolean;
+    /** `read`: read who can reach its repos here (the people job). */
+    people?: "read" | "when_due";
   } = {},
 ): Promise<Workspace | null> {
+  const { db, clock, github, log, analytics } = deps;
   const readAt = new Date(clock.now());
   const installation = await github.getInstallation(installationId);
   const before = await getWorkspaceByInstallation(db, installationId);
@@ -84,6 +98,7 @@ export async function reconcileInstallation(
     // Only the call that took the installation off the workspace says it went.
     const uninstalled = await markWorkspaceUninstalled(db, installationId);
     await reachChanged();
+    if (before) await forgetWorkspacePeople(db, before.id);
     if (uninstalled) disconnected("uninstalled");
     return null;
   }
@@ -148,11 +163,18 @@ export async function reconcileInstallation(
     });
   }
 
+  if (people === "read") {
+    await refreshWorkspacePeople(deps, { workspace, installation, repositories });
+  } else if (peopleDue(workspace, readAt.getTime())) {
+    await readPeopleNow(deps, { workspace, installation, repositories });
+  }
+
   // GitHub may have reported the installation gone while this was reading it, and that
   // uninstall would then be underneath what this just wrote. An installation id is never used
   // again, so it is applied again on top.
   if (await wasUninstalled(db, installationId)) {
     await markWorkspaceUninstalled(db, installationId);
+    await forgetWorkspacePeople(db, workspace.id);
     return null;
   }
   const kind = workspace.kind === "org" ? "organization" : "user";
