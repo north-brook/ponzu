@@ -2,9 +2,9 @@ import { FilterHorizontalIcon, UserGroupIcon } from "@hugeicons/core-free-icons"
 import {
   type DesignFilter,
   isFiltering,
-  isRepoChecked,
-  type RepoCount,
-  toggleRepo,
+  isProjectChecked,
+  type ProjectCount,
+  toggleProject,
 } from "../filter.ts";
 import type { Person } from "../model.ts";
 import { Avatar } from "../ui/avatar.tsx";
@@ -24,26 +24,28 @@ import {
 const EVERYONE = "everyone";
 
 /**
- * Narrows the design list by who started a design (one person, or everyone) and by repo
- * (checkboxes, with how many designs each has). It changes the list as you choose and stays
- * open until you click away. A small yuzu dot on the icon says a filter is on. A personal
- * workspace has nobody else to filter by, so no Person section.
+ * Narrows the design list by who started a design (one person, or everyone) and by project
+ * (checkboxes for each repo and Scratch, with how many designs each has). It changes the list as
+ * you choose and stays open until you click away. A small yuzu dot on the icon says a filter is
+ * on. A personal workspace has nobody else to filter by, so no Person section; with nothing to
+ * choose either, there is no Filter at all.
  */
 export function FilterMenu({
   filter,
   onChange,
   me,
   teammates,
-  repos,
+  projects,
 }: {
   filter: DesignFilter;
   onChange: (filter: DesignFilter) => void;
   me: Person;
   /** Null in a personal workspace. */
   teammates: Person[] | null;
-  repos: RepoCount[];
+  projects: ProjectCount[];
 }) {
-  const allRepos = repos.map((r) => r.repo.id);
+  if (!teammates && !projects.length) return null;
+  const all = projects.map((p) => p.key);
   return (
     <Menu>
       <MenuTrigger asChild>
@@ -87,22 +89,22 @@ export function FilterMenu({
                 </MenuRadioItem>
               ))}
             </MenuRadioGroup>
-            {repos.length ? <MenuSeparator /> : null}
+            {projects.length ? <MenuSeparator /> : null}
           </>
         ) : null}
-        {repos.length ? (
+        {projects.length ? (
           <>
             <MenuLabel>Repo</MenuLabel>
-            {repos.map(({ repo, count }) => (
+            {projects.map(({ key, repo, count }) => (
               <MenuCheckboxItem
-                key={repo.id}
-                checked={isRepoChecked(filter, repo.id)}
-                onCheckedChange={() => onChange(toggleRepo(filter, repo.id, allRepos))}
+                key={key}
+                checked={isProjectChecked(filter, key)}
+                onCheckedChange={() => onChange(toggleProject(filter, key, all))}
                 trailing={
                   <span className="font-mono text-11 text-faint leading-none">{count}</span>
                 }
               >
-                {repo.name}
+                {repo ? repo.name : "Scratch"}
               </MenuCheckboxItem>
             ))}
           </>
