@@ -10,6 +10,7 @@ import {
   primaryKey,
   text,
   unique,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import {
   AUTH_STATE_KINDS,
@@ -347,6 +348,10 @@ export const authStates = pgTable(
   },
   (t) => [
     index("auth_states_expires_at_idx").on(t.expiresAt),
+    // A person has one Claude sign-in open at a time, each with a sandbox of its own.
+    uniqueIndex("auth_states_open_claude_sign_in_key")
+      .on(t.userId)
+      .where(sql`${t.kind} = 'claude_sign_in' and ${t.consumedAt} is null`),
     check("auth_states_kind_check", oneOf(t.kind, AUTH_STATE_KINDS)),
   ],
 );

@@ -113,7 +113,9 @@ export async function setClaudeBlocker(
       .update(designs)
       .set({
         agentBlocker: blocker,
-        agentState: sql`case when ${designs.agentState} = 'waking' then 'idle' else ${designs.agentState} end`,
+        // With a blocker nothing runs, whatever its runner last said.
+        agentState: sql`case when ${designs.agentState} in ${blocker ? sql`('waking', 'working')` : sql`('waking')`}
+                             then 'idle' else ${designs.agentState} end`,
       })
       .where(
         and(

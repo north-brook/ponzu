@@ -71,6 +71,13 @@
       "when": 1794371093690,
       "tag": "0009_sandbox_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794374817722,
+      "tag": "0010_sandbox_claims",
+      "breakpoints": true
     }
   ]
 }

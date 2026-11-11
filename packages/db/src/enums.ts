@@ -54,12 +54,14 @@ export const SANDBOX_PROVIDERS = ["boat"] as const;
 export const SANDBOX_STATES = ["waking", "awake", "stopping", "asleep", "failed", "gone"] as const;
 /**
  * Why a design's agent cannot run, when something outside the design must change first: its
- * owner's Claude is not connected, or has expired; no machine can be started for now, so the
- * wake is waiting (and retrying by itself); or the sandbox failed to start for good.
+ * owner's Claude is not connected, or has expired; its owner, whose Claude it runs on, is no
+ * longer in its workspace; no machine can be started for now, so the wake is waiting (and
+ * retrying by itself); or the sandbox failed to start for good.
  */
 export const AGENT_BLOCKERS = [
   "claude_not_connected",
   "claude_expired",
+  "claude_owner_left",
   "sandbox_busy",
   "sandbox_failed",
 ] as const;

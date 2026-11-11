@@ -387,6 +387,11 @@ export const sandboxes = pgTable(
     state: text("state", { enum: SANDBOX_STATES }).notNull().default("waking"),
     /** When it entered its state: how a row a crashed function left mid-move is found. */
     stateAt: instant("state_at").notNull().defaultNow(),
+    /**
+     * The wake that holds it while it is `waking` (its job's id). Only that wake moves it on,
+     * until it has sat unmoved for a lease (`WAKING_LEASE_MS`) and another may take it over.
+     */
+    wakingBy: text("waking_by"),
     /** Why it is `failed`, or what the provider said when it was lost. */
     failure: text("failure"),
     /** Where the API reaches the runner. */

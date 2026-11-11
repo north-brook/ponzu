@@ -55,6 +55,7 @@ export {
   setAgentDefaults,
   setClaudeBlocker,
 } from "./queries/claude.ts";
+export { openClaudeSignIn, setClaudeSignInSandbox } from "./queries/claude-sign-ins.ts";
 export {
   BRANCH_TAKEN,
   CREATE_KEY_TAKEN,
@@ -179,21 +180,26 @@ export {
 } from "./queries/runners.ts";
 export {
   beginSandbox,
+  claimSandbox,
   countSandboxRestart,
   getAwakeSandboxAddress,
   getLiveSandbox,
   getWakeContext,
   isSandboxKnown,
+  listDesignsWithSandboxOn,
   listLiveSandboxes,
   listSandboxesToSweep,
   moveSandbox,
   recordDesignClaudeAccount,
   type Sandbox,
   type SandboxChanges,
+  type SandboxClaim,
+  type SandboxLimits,
   type SweptSandbox,
   setSandboxAutoStop,
   showAgentWaiting,
   touchSandbox,
+  WAKING_LEASE_MS,
   type WakeContext,
 } from "./queries/sandboxes.ts";
 export {
