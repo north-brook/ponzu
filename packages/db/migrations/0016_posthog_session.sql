@@ -1,0 +1,1 @@
+ALTER TABLE "events" ADD COLUMN "posthog_session_id" text;

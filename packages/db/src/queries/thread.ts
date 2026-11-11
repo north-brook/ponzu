@@ -134,7 +134,20 @@ export async function writeThreadItems(
  */
 export async function postMessage(
   db: Db,
-  { designId, userId, item, event }: { designId: string; userId: string; item: Json; event: Json },
+  {
+    designId,
+    userId,
+    item,
+    event,
+    posthogSessionId = null,
+  }: {
+    designId: string;
+    userId: string;
+    item: Json;
+    event: Json;
+    /** The PostHog session of the app that sent it, if it said. */
+    posthogSessionId?: string | null;
+  },
 ): Promise<ThreadItem> {
   // Postgres runs a data-modifying `with` whether or not the statement reads it.
   const queued = db.$with("queued").as(
@@ -142,7 +155,7 @@ export async function postMessage(
       .insert(events)
       .values({
         designId,
-        ...eventRow({ kind: "message", priority: "now", payload: event, userId }),
+        ...eventRow({ kind: "message", priority: "now", payload: event, userId, posthogSessionId }),
       })
       .returning({ id: events.id }),
   );

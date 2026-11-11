@@ -1,5 +1,5 @@
 {
-  "id": "0317758c-821f-4dc9-91b7-2e83e72a4909",
+  "id": "3d9c9452-486b-482e-ba55-7cc66278212c",
   "prevId": "a74907ab-0525-45d8-9603-2af1fe67db93",
   "version": "7",
   "dialect": "postgresql",
@@ -2852,6 +2852,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "posthog_session_id": {
+          "name": "posthog_session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -3866,7 +3872,7 @@
       "checkConstraints": {
         "uploads_purpose_check": {
           "name": "uploads_purpose_check",
-          "value": "\"uploads\".\"purpose\" in ('asset', 'export', 'preview', 'session', 'workspace', 'comment')"
+          "value": "\"uploads\".\"purpose\" in ('asset', 'export', 'preview', 'session', 'workspace')"
         },
         "uploads_size_check": {
           "name": "uploads_size_check",

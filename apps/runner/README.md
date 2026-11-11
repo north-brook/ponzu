@@ -98,6 +98,9 @@ git 2.40 or later is needed, for `password_expiry_utc`.
 | `PONZU_CHROMIUM` | The Chromium for screenshots and previews. |
 | `PONZU_REPO_SECRETS` | The repo's secrets, `NAME:base64(value)` comma-separated. |
 
+PostHog needs no variable here: the API's session says where each turn's trace goes (`analytics`),
+or that it goes nowhere ([docs/analytics.md](../../docs/analytics.md), "Agent turns").
+
 Repo secrets arrive packed in `PONZU_REPO_SECRETS`, so none is ever a variable of the runner's
 own (a `BUN_OPTIONS` would load code into it before it starts, and a value is only base64 in
 the file the unit sources). `agentEnv` unpacks them under the runner's own variables for Claude

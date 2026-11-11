@@ -12,6 +12,7 @@ import {
   validateOp,
 } from "@ponzu/core";
 import { type CommitInput, commitOps, type Design, findOps, type NewOp } from "@ponzu/db";
+import { appSession } from "../analytics/scope.ts";
 import type { Actor as Caller } from "../auth/actor.ts";
 import type { Deps } from "../deps/index.ts";
 import { ApiError } from "../http/errors.ts";
@@ -29,7 +30,7 @@ import { refusal } from "./op-rules.ts";
  * whole post is worked out again on the newer document.
  */
 
-type CommitDeps = Pick<Deps, "db" | "docs" | "background" | "clock"> & WakeDeps;
+type CommitDeps = Pick<Deps, "db" | "docs" | "background" | "clock" | "analytics"> & WakeDeps;
 
 /** How many times a post is worked out again on a newer document before the caller is told to retry. */
 export const COMMIT_ATTEMPTS = 5;
@@ -72,12 +73,14 @@ export async function commitPost(
       return { committed: replayed.map(toCommittedOp), rejected, seq: current.seq };
     }
 
+    // A person's ops tell the agent, from the app session they came from.
+    const posthogSessionId = appSession();
     const events =
       caller.kind === "user"
         ? eventsForPersonOps(design, personFor(caller.user), fresh, {
             before: current.doc,
             after: doc,
-          })
+          }).map((event) => ({ ...event, posthogSessionId }))
         : [];
     const result = await commitOps(deps.db, {
       designId: design.id,
@@ -100,6 +103,14 @@ export async function commitPost(
     }
     if (caller.kind === "user" && appended.length > 0) {
       const commented = events.some((event) => event.kind === "comment");
+      const added = new Set(appended.map((stored) => stored.id));
+      for (const event of events) {
+        if (event.kind !== "comment" || !added.has(event.opId)) continue;
+        deps.analytics.capture("comment posted", {
+          design_id: design.id,
+          reply: (event.payload as { reply?: unknown }).reply === true,
+        });
+      }
       await requestWake(deps, design.id, commented ? "comment" : "edit");
     }
     const committed = [...replayed, ...result.ops].sort((a, b) => a.seq - b.seq);

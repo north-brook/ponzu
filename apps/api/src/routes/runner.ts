@@ -29,6 +29,8 @@ import type {
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
+import { stableUuid } from "../analytics/analytics.ts";
+import { captureForDesign } from "../analytics/design.ts";
 import { access } from "../auth/access.ts";
 import type { LeasedRunner } from "../auth/actor.ts";
 import type { Deps } from "../deps/index.ts";
@@ -55,6 +57,7 @@ import {
 } from "../runner/protocol.ts";
 import { startRunnerSession } from "../runner/session.ts";
 import { writeRunnerThread } from "../runner/thread.ts";
+import { reportTurns } from "../runner/turns.ts";
 import { completeUploads, presignUploads } from "../uploads/uploads.ts";
 
 /*
@@ -90,6 +93,8 @@ const SessionView: z.ZodType<RunnerSession> = z.object({
   openQuestions: z.array(z.string()),
   seq: z.number(),
   saved: SavedView.nullable(),
+  workspaceId: z.string(),
+  analytics: z.object({ key: z.string(), host: z.string(), content: z.boolean() }).nullable(),
 });
 const Archive = z.object({ url: z.string(), size: z.number(), sha256: z.string() });
 const RestoreView: z.ZodType<RestoreResponse> = z.object({
@@ -105,6 +110,7 @@ const ClaimView = z.object({
       at: z.string(),
       priority: z.enum(["now", "next", "later"]),
       from: Person.nullable(),
+      posthogSessionId: z.string().nullable(),
       kind: z.string(),
       payload: z.record(z.string(), z.unknown()),
     }),
@@ -174,6 +180,7 @@ export const runner = new Hono<AppEnv>()
             at: event.createdAt.toISOString(),
             priority: event.priority,
             from: event.from,
+            posthogSessionId: event.posthogSessionId,
             kind: event.kind,
             payload: event.payload,
           }) as RunnerEvent,
@@ -253,7 +260,19 @@ export const runner = new Hono<AppEnv>()
 
   /** The runner found its disk behind the last checkpoint and restored from it. Logged. */
   .post("/restored", access.runner, validate("json", Restored), async (c) => {
-    await recordRestored(c.var.deps, c.var.actor.designId, c.req.valid("json"));
+    const { deps, actor } = c.var;
+    const report = c.req.valid("json");
+    await recordRestored(deps, actor.designId, report);
+    captureForDesign(deps, actor.designId, (workspaceId) =>
+      deps.analytics.capture(
+        "sandbox restored",
+        { design_id: actor.designId, kind: report.kind },
+        {
+          workspaceId,
+          uuid: stableUuid(`${actor.designId}/${report.bootId}/${report.saved.turn}/restored`),
+        },
+      ),
+    );
     return c.body(null, 204);
   })
 
@@ -266,6 +285,17 @@ export const runner = new Hono<AppEnv>()
       kind,
       payload: { ...payload },
     });
+    // Only when this raised it: one raised again after a lost answer was asked once.
+    const { deps, actor } = c.var;
+    if (question.raised) {
+      captureForDesign(deps, actor.designId, (workspaceId) =>
+        deps.analytics.capture(
+          "question asked",
+          { design_id: actor.designId, question_id: question.id, kind },
+          { workspaceId },
+        ),
+      );
+    }
     return c.json({ id: question.id, status: question.status } satisfies QuestionResponse);
   })
 
@@ -333,11 +363,15 @@ export const runner = new Hono<AppEnv>()
     return c.json({ pullRequest } satisfies PullRequestSummaryResponse);
   })
 
-  /** What each turn used, by model, under the turn's id. Safe to repeat. */
+  /**
+   * What each turn used, by model, under the turn's id, and how it went (analytics). Safe to
+   * repeat: a turn's events are captured under ids made from its own, which PostHog keeps once.
+   */
   .post("/usage", access.runner, validate("json", Usage), async (c) => {
+    const { turns } = c.req.valid("json");
     const recorded = await recordTurnUsage(c.var.deps.db, {
       designId: c.var.actor.designId,
-      turns: c.req.valid("json").turns.map((turn) => ({
+      turns: turns.map((turn) => ({
         id: turn.id,
         at: new Date(turn.at),
         models: turn.models.map(({ costUsd, ...usage }) => ({
@@ -346,5 +380,7 @@ export const runner = new Hono<AppEnv>()
         })),
       })),
     });
+    // Off the runner's path: the row is what matters to it, and analytics never fails a call.
+    c.var.deps.background("turns_reported", reportTurns(c.var.deps, c.var.actor.designId, turns));
     return c.json({ recorded } satisfies UsageResponse);
   });

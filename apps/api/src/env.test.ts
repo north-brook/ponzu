@@ -62,7 +62,29 @@ test("a complete environment is read into one typed value", () => {
     anthropicApiKey: "sk-ant-example",
     minimumClientVersions: {},
     commit: null,
+    // Without a PostHog key, analytics is off.
+    posthog: null,
   });
+});
+
+test("a PostHog key switches analytics on, with prompts and answers off unless asked for", () => {
+  expect(readEnv({ ...complete, PONZU_POSTHOG_KEY: "phc_dev123" }).posthog).toEqual({
+    key: "phc_dev123",
+    host: "https://us.i.posthog.com",
+    aiContent: false,
+  });
+  expect(
+    readEnv({
+      ...complete,
+      PONZU_POSTHOG_KEY: "phc_dev123",
+      PONZU_POSTHOG_HOST: "https://eu.i.posthog.com/",
+      PONZU_POSTHOG_AI_CONTENT: "1",
+    }).posthog,
+  ).toEqual({ key: "phc_dev123", host: "https://eu.i.posthog.com", aiContent: true });
+  // A personal API key (`phx_…`) is a secret and is not what goes here.
+  expect(() => readEnv({ ...complete, PONZU_POSTHOG_KEY: "phx_secret" })).toThrow(
+    "PONZU_POSTHOG_KEY is malformed.",
+  );
 });
 
 test("the optional ones are read when set", () => {
@@ -153,6 +175,9 @@ test(".env.example lists exactly the variables the API reads, with no values", (
   expect(names.filter((name) => !(name in complete)).sort()).toEqual([
     "PONZU_API_URL",
     "PONZU_MIN_CLIENT_VERSIONS",
+    "PONZU_POSTHOG_AI_CONTENT",
+    "PONZU_POSTHOG_HOST",
+    "PONZU_POSTHOG_KEY",
     "PONZU_SANDBOX_IDLE_SECONDS",
     "PONZU_SANDBOX_MAX_PER_OWNER",
     "PONZU_SANDBOX_MAX_PER_WORKSPACE",

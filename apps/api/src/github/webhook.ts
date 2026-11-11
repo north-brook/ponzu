@@ -51,6 +51,7 @@ export type WebhookDeps = Pick<
   | "runnerPort"
   | "storage"
   | "config"
+  | "analytics"
 >;
 type Work = (deps: WebhookDeps) => Promise<void>;
 
@@ -405,7 +406,7 @@ function plan<Schema extends z.ZodType>(
 async function reconcileAndRecheck(deps: WebhookDeps, installationId: number) {
   const workspace = await getWorkspaceByInstallation(deps.db, installationId);
   if (workspace) await markRepoAccessStale(deps.db, { workspaceId: workspace.id });
-  await reconcileInstallation(deps, installationId);
+  await reconcileInstallation(deps, installationId, { reposChanged: true });
 }
 
 /** Reconcile an installation only if Ponzu has a workspace for it: an event about it says no more. */
