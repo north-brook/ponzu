@@ -2,8 +2,6 @@ ground div rgb(14, 14, 13)
 ground span rgb(255, 95, 87)
 ground span rgb(254, 188, 46)
 ground span rgb(40, 200, 64)
-icon svg 16×16 rgb(244, 243, 239) stroke 3.4px
-text "ponzu" rgb(244, 243, 239) 700 16px Funnel Display
 icon svg[Toggle sidebar] 16×16 rgb(169, 165, 155) stroke 1.7px
 text "Northbrook" rgb(244, 243, 239) 600 13px Inter
 icon svg[Workspace: Northbrook] 11×11 rgb(142, 138, 130) stroke 2.2px

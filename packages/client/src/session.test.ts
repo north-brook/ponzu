@@ -145,6 +145,25 @@ describe("signing in and out", () => {
     expect(session.getState().status).toBe("signed_out");
   });
 
+  test("an exchange given up on keeps nothing, even if the API answers after", async () => {
+    let answer: (response: Response) => void = () => {};
+    const { session, storage } = await harness({
+      api: () => new Promise<Response>((resolve) => (answer = resolve)),
+    });
+    const giveUp = new AbortController();
+    const exchange = session
+      .completeSignIn({ code: "c0de", codeVerifier: "v".repeat(43), signal: giveUp.signal })
+      .catch((e) => e);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    giveUp.abort(new Error("too long"));
+    answer(json(200, { user, access_token: jwt(9e9, 1), refresh_token: "rt_late" }));
+    const error = await exchange;
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error.code).toBe("network");
+    expect(storage.saved()).toBeNull();
+    expect(session.getState().status).toBe("signed_out");
+  });
+
   test("signing out ends the session at the API with its token, then forgets it", async () => {
     const { session, storage, requests, bearer } = await harness({ left: 200 });
     const token = storage.saved()!.accessToken;

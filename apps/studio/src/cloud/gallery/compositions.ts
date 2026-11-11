@@ -28,6 +28,13 @@ export interface Composition {
   reference?: boolean;
 }
 
+/**
+ * The window's 44px chrome, across its width. Masked in every comparison with the design's
+ * boards (visual.ts adds it): it departs from them on purpose, with no lockup and the toggles
+ * at the window's edges (README, "The window chrome").
+ */
+export const CHROME_HEIGHT = 44;
+
 const CANVAS: Rect = { x: 300, y: 44, width: 780, height: 850 };
 const RAIL: Rect = { x: 1080, y: 44, width: 360, height: 856 };
 const DESIGN = [CANVAS, RAIL];
@@ -150,6 +157,17 @@ export const COMPOSITIONS: Composition[] = [
     ...WINDOW,
     masks: [CANVAS],
     reference: true,
+  },
+  {
+    id: "crowded-chrome",
+    title: "Chrome · five people and Update branch, rail open",
+    ...WINDOW,
+    reference: true,
+  },
+  {
+    id: "crowded-chrome-closed",
+    title: "Chrome · five people and Update branch, rail closed",
+    ...WINDOW,
   },
   { id: "long-thread", title: "Thread · a thousand lines, older ones loading", ...WINDOW },
   { id: "thread-loading", title: "Thread · loading", ...WINDOW },
