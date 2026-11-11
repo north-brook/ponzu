@@ -1,5 +1,5 @@
 import { ArrowDown01Icon, ArrowUpRight01Icon, Tick02Icon } from "@hugeicons/core-free-icons";
-import { type Ref, useLayoutEffect, useRef, useState } from "react";
+import { type Ref, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Repo } from "../model.ts";
 import { Button } from "../ui/button.tsx";
 import {
@@ -124,6 +124,7 @@ function PickerBody({
       choice={choice}
       name={name}
       checked={keyOf(choice) === chosen}
+      highlighted={keyOf(choice) === active}
       onChoose={onChoose}
     />
   );
@@ -160,7 +161,8 @@ function PickerBody({
               rows.repos.map((repo) => row({ kind: "repo", repo }, repo.name))
             )}
             {repos !== null && !rows.scratch && !rows.repos.length ? (
-              <p className="m-0 flex h-8 items-center px-2 text-13 text-muted">
+              // In the names' column (past a 16px icon and its 9px gap), under the field's text.
+              <p className="m-0 flex h-8 items-center pr-2 pl-[33px] text-13 text-muted">
                 <span className="truncate">No repositories match “{query.trim()}”</span>
               </p>
             ) : null}
@@ -174,7 +176,8 @@ function PickerBody({
         onClick={onAllowMore}
         className="flex h-8 shrink-0 cursor-default items-center gap-[9px] rounded-7 px-2 text-left text-13 text-muted outline-none transition-colors duration-(--dur-hover) focus-ring hover:bg-hover"
       >
-        <GithubMark size={16} />
+        {/* Faint, like the arrow: the solid mark would outweigh the stroked icons it serves. */}
+        <GithubMark size={16} className="text-faint" />
         <span className="min-w-0 flex-1 truncate">
           {repos?.length === 0 ? "Allow repositories on GitHub" : "Allow more on GitHub"}
         </span>
@@ -186,18 +189,21 @@ function PickerBody({
 
 /**
  * One line: the project's icon, its name, and the check on the chosen one. A name cut short shows
- * whole in a tip just past the picker's edge while the pointer rests on it; the row's accessible
- * name is always the whole of it.
+ * whole in a tip just past the picker's edge while the pointer rests on it, or while the arrows
+ * have it highlighted (not as the picker opens on it: only once the highlight moves there); the
+ * row's accessible name is always the whole of it.
  */
 function PickerRow({
   choice,
   name,
   checked,
+  highlighted,
   onChoose,
 }: {
   choice: ProjectChoice;
   name: string;
   checked: boolean;
+  highlighted: boolean;
   onChoose: (choice: ProjectChoice) => void;
 }) {
   const key = keyOf(choice);
@@ -211,6 +217,13 @@ function PickerRow({
     const gap = picker.getBoundingClientRect().right - el.getBoundingClientRect().right;
     setTip(Math.round(gap) + TIP_GAP);
   };
+  // The highlight, wherever the keys or the pointer move it, opens and closes the tip too.
+  const was = useRef(highlighted);
+  useEffect(() => {
+    if (was.current === highlighted) return;
+    was.current = highlighted;
+    place(highlighted);
+  }, [highlighted]);
   return (
     <CommandItem value={key} data-choice={key} onSelect={() => onChoose(choice)}>
       <Icon icon={iconOf(choice)} size={16} stroke={1.7} className="text-muted" />

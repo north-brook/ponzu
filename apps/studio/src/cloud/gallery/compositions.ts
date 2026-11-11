@@ -119,7 +119,7 @@ export const COMPOSITIONS: Composition[] = [
     // The board's picker and ours, wherever either lands.
     masks: [{ x: 530, y: 416, width: 424, height: 380 }],
     differs:
-      "the picker's rows are one line (no owner/name or note under them, no owner heading), the search shows only from eight repos, and Scratch has the temporary-folder icon",
+      "the picker's rows are one line (no owner/name or note under them, no owner heading), the search shows only from seven repos, and Scratch has the temporary-folder icon",
     reference: true,
   },
   {

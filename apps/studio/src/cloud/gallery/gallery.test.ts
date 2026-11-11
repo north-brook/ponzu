@@ -434,6 +434,28 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     expect(tipLeft).toBeGreaterThanOrEqual(pickerRight);
   });
 
+  test("the repo picker: the arrows show a cut-short name's tip too, and take it away", async () => {
+    await open("pick-a-project-many-repos");
+    await page.mouse.move(1, 1);
+    await page.click('button[aria-label^="Project"]');
+    await page.waitForSelector('input[aria-label="Search repositories"]');
+    await page.mouse.move(1, 1);
+    const name = "customer-onboarding-experiments-and-landing-page-variants";
+    const tip = '[data-slot="tooltip-content"]';
+    // Opening on the chosen row shows no tip; arrowing onto the long name does.
+    expect(await page.$(tip)).toBeNull();
+    await page.keyboard.press("Home");
+    for (let i = 0; i < 8; i++) {
+      const on = await page.getAttribute(`[data-choice="repo_${name}"]`, "data-selected");
+      if (on === "true") break;
+      await page.keyboard.press("ArrowDown");
+    }
+    await page.waitForSelector(tip);
+    expect(await page.textContent(tip)).toContain(name);
+    await page.keyboard.press("ArrowDown");
+    await page.waitForSelector(tip, { state: "detached" });
+  });
+
   test("page tabs: the arrows move between them without opening one; Return opens it", async () => {
     await open("thread-in-the-right-rail");
     const tabs = '[role="tablist"][aria-label="Pages"] [role="tab"]';

@@ -117,6 +117,6 @@ text "dotfiles" rgb(244, 243, 239) 400 13px Inter
 icon svg[Repositories] 16×16 rgb(169, 165, 155) stroke 1.7px
 text "infra" rgb(244, 243, 239) 400 13px Inter
 ground div[Choose a repo] rgb(38, 37, 35)
-icon svg[Choose a repo] 16×16 rgb(169, 165, 155) stroke 1px
+icon svg[Choose a repo] 16×16 rgb(107, 104, 98) stroke 1px
 text "Allow more on GitHub" rgb(169, 165, 155) 400 13px Inter
 icon svg[Choose a repo] 12×12 rgb(107, 104, 98) stroke 2px
