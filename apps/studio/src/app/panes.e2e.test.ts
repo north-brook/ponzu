@@ -82,10 +82,10 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     // The canvas starts where the sidebar's gutter ends, and stops where the rail's begins.
     expect(g.canvasLeft).toBeCloseTo(300, 0);
     expect(g.canvasRight).toBeCloseTo(WIDTH - 360, 0);
-    // The chrome's left block ends a header gap before x 300; the right block (the rail's
-    // toggle and the cluster before it) reaches back to x 1080, the rail's edge.
+    // The chrome's left block ends a header gap before x 300; the rail's divider is on x 1080,
+    // the rail's edge, its pixel the canvas's last column.
     expect(g.chromeLeftEnd + 4).toBeCloseTo(300, 0);
-    expect(g.chromeRightStart).toBeCloseTo(WIDTH - 360, 0);
+    expect(g.railDividerRight).toBeCloseTo(WIDTH - 360, 1);
     // Each edge is a separator in tab order, named for its pane.
     for (const [id, name] of [
       ["#sidebar-pane-edge", "Resize sidebar"],
@@ -168,7 +168,7 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     expect(await page.evaluate(() => String(window.getSelection()))).toBe("");
   });
 
-  test("the rail's edge drags the same way, and the chrome's right block follows it", async () => {
+  test("the rail's edge drags the same way, and the chrome's divider follows it", async () => {
     const before = await geometry(page);
     const x = await railEdgeX();
     await page.mouse.move(x, GRIP_Y);
@@ -177,11 +177,13 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
       await page.mouse.move(x + dx, GRIP_Y);
       const g = await sameFrame(page);
       expect(g.rail).toBeCloseTo(360 - dx, 0);
-      expect(g.chromeRightStart - g.railLeft).toBeCloseTo(
-        before.chromeRightStart - before.railLeft,
+      expect(g.railDividerRight - g.railLeft).toBeCloseTo(
+        before.railDividerRight - before.railLeft,
         1,
       );
       expect(g.canvasRight).toBeCloseTo(WIDTH - g.rail, 1);
+      // On the canvas's edge, in the same frame as the pane.
+      expect(g.railDividerRight).toBeCloseTo(g.canvasRight, 1);
     }
     await shootBoth("4-dragging-rail", x - 100);
     await page.mouse.up();
@@ -311,6 +313,79 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
       const ui = await saved(page);
       return ui?.sidebarWidth === 300 && ui.railWidth === 360;
     });
+  });
+
+  test("the chrome's dividers are handles for their panes too: a drag sizes one, a double click resets it", async () => {
+    const grip = async (pane: "sidebar" | "rail") => {
+      const b = await box(page, `[data-chrome-grip="${pane}"]`);
+      return { x: b.x + b.width / 2, y: b.y + b.height / 2, width: b.width, height: b.height };
+    };
+    // The sidebar's divider stands on its edge, at the canvas's first column, and takes the
+    // pointer the chrome's full height, 4 either side of the hairline.
+    const left = await grip("sidebar");
+    expect(left.x).toBeCloseTo(300.5, 0);
+    expect(left.width).toBe(9);
+    expect(left.height).toBe(38);
+    expect(
+      await page
+        .locator('[data-chrome-grip="sidebar"]')
+        .evaluate((el) => getComputedStyle(el).cursor),
+    ).toBe("col-resize");
+    await page.mouse.move(left.x, left.y);
+    await page.mouse.down();
+    for (const dx of [16, 40]) {
+      await page.mouse.move(left.x + dx, left.y);
+      const g = await sameFrame(page);
+      expect(g.sidebar).toBeCloseTo(300 + dx, 0);
+      expect(g.chromeLeftEnd + 4).toBeCloseTo(g.sidebar, 1);
+      expect(g.canvasLeft).toBeCloseTo(g.sidebar, 1);
+    }
+    // Held like an edge: the cursor everywhere, nothing easing, and the pane's own limits.
+    expect(await page.locator("[data-pane-drag]").count()).toBe(1);
+    expect(await page.locator("[data-pane-motion]").count()).toBe(0);
+    await page.mouse.move(left.x + 600, 300, { steps: 4 });
+    expect((await geometry(page)).sidebar).toBeCloseTo(PANES.sidebar.max, 0);
+    await page.mouse.move(left.x + 24, left.y, { steps: 4 });
+    await page.mouse.up();
+    expect((await geometry(page)).sidebar).toBeCloseTo(324, 0);
+    expect(await page.locator("[data-pane-drag]").count()).toBe(0);
+    await waitUntil(async () => (await saved(page))?.sidebarWidth === 324);
+    expect(await page.evaluate(() => String(window.getSelection()))).toBe("");
+
+    // The rail's divider, on the canvas's last column: the pointer going left widens the rail.
+    const right = await grip("rail");
+    expect(right.x).toBeCloseTo(WIDTH - 360 - 0.5, 0);
+    await page.mouse.move(right.x, right.y);
+    await page.mouse.down();
+    await page.mouse.move(right.x - 50, right.y);
+    const g = await sameFrame(page);
+    expect(g.rail).toBeCloseTo(410, 0);
+    expect(g.canvasRight).toBeCloseTo(WIDTH - g.rail, 1);
+    expect(g.railDividerRight).toBeCloseTo(g.canvasRight, 1);
+    await page.mouse.up();
+    await waitUntil(async () => (await saved(page))?.railWidth === 410);
+
+    // A double click on either puts its pane back at the design's width.
+    const leftNow = await grip("sidebar");
+    await page.mouse.dblclick(leftNow.x, leftNow.y);
+    expect((await geometry(page)).sidebar).toBeCloseTo(PANES.sidebar.default, 0);
+    const rightNow = await grip("rail");
+    await page.mouse.dblclick(rightNow.x, rightNow.y);
+    expect((await geometry(page)).rail).toBeCloseTo(PANES.rail.default, 0);
+    await waitUntil(async () => {
+      const ui = await saved(page);
+      return ui?.sidebarWidth === 300 && ui.railWidth === 360;
+    });
+
+    // Closed, a pane's divider is only a divider.
+    const toggle = page.getByRole("button", { name: "Toggle sidebar" });
+    await toggle.click();
+    await waitUntil(async () => (await geometry(page)).sidebar === 0);
+    expect(await page.locator('[data-chrome-grip="sidebar"]').count()).toBe(0);
+    expect(await page.locator('[data-chrome-grip="rail"]').count()).toBe(1);
+    await toggle.click();
+    await waitUntil(async () => Math.round((await geometry(page)).sidebar) === 300);
+    await waitUntil(async () => (await page.locator("[data-pane-motion]").count()) === 0);
   });
 
   test("a small window keeps the canvas its room, and gives the panes theirs back", async () => {
@@ -487,7 +562,10 @@ function measure() {
     canvasRight: canvas.right,
     canvasWidth: canvas.width,
     chromeLeftEnd: header.firstElementChild!.getBoundingClientRect().right,
-    chromeRightStart: header.lastElementChild!.getBoundingClientRect().left,
+    // The rail's divider, the chrome's last (the right side's `| … [toggle]`).
+    railDividerRight: [...header.querySelectorAll("[data-chrome-divider]")]
+      .at(-1)!
+      .getBoundingClientRect().right,
   };
 }
 

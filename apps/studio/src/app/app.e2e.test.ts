@@ -250,7 +250,7 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
       {
         workspaceId: personalId,
         model: "claude-opus-5-5",
-        effort: "high",
+        effort: "medium",
         said: ["A quieter checkout"],
       },
     ]);

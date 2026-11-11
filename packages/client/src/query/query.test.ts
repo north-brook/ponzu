@@ -143,20 +143,21 @@ test("a ping toggle shows at once, and is put back when the API turns it down", 
   const { backend, queryClient, queries, mutations, mutate } = device();
   const needsYou = () => queryClient.getQueryData(queries.notifications().queryKey)?.prefs.needsYou;
   await queryClient.fetchQuery(queries.notifications());
-  // Answers take a moment: what shows before one is the toggle as flipped.
-  backend.latencyMs = 300;
-  const flipped = mutate(mutations.setPings(), { needsYou: false });
-  await settle();
-  expect(needsYou()).toBe(false);
-  await flipped;
+  // Every value the toggle shows, in turn, with no clock to wait on.
+  const shown: (boolean | undefined)[] = [needsYou()];
+  queryClient.getQueryCache().subscribe(() => {
+    if (shown.at(-1) !== needsYou()) shown.push(needsYou());
+  });
+
+  await mutate(mutations.setPings(), { needsYou: false });
   expect(needsYou()).toBe(false);
 
   backend.online = false;
-  const refused = mutate(mutations.setPings(), { needsYou: true });
-  await settle();
-  expect(needsYou()).toBe(true);
-  await expect(refused).rejects.toMatchObject({ code: "network" });
-  expect(needsYou()).toBe(false);
+  await expect(mutate(mutations.setPings(), { needsYou: true })).rejects.toMatchObject({
+    code: "network",
+  });
+  // On as soon as it was flipped, before any answer, and off again when none came.
+  expect(shown).toEqual([true, false, true, false]);
 });
 
 test("a secret saved or a rebuild asked for shows in the workspace's environments at once", async () => {

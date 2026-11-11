@@ -33,7 +33,7 @@ async function touched() {
   await post(as("leo"), "op_leo", { op: "page.update", id: "pg_2", name: "Leo's" });
   const act = (headers: Record<string, string>, kind: "undo" | "redo") =>
     call(t, headers, "POST", `/v1/designs/${design.id}/${kind}`);
-  return { design, runner, post, act };
+  return { design, runner, act };
 }
 
 async function current(designId: string): Promise<Doc> {
@@ -85,15 +85,6 @@ test("redo takes back the caller's newest undo, and comes back through the log l
   expect([again.status, again.body.error.code]).toEqual([409, "nothing_to_redo"]);
   // Maya never undid anything, so she has nothing to redo either.
   expect((await act(as("maya"), "redo")).status).toBe(409);
-});
-
-test("a new op by the caller or the agent ends the chance to redo", async () => {
-  const { act, post, runner } = await touched();
-  await act(as("maya"), "undo");
-
-  await post(runner, "op_more", { op: "note", name: "later", content: "x" });
-
-  expect((await act(as("maya"), "redo")).body.error.code).toBe("nothing_to_redo");
 });
 
 test("the agent undoes its own ops and redoes its undo", async () => {

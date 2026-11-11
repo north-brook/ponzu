@@ -15,8 +15,10 @@ export const PRESENCE_LIMIT = 5;
  * Everyone who has worked on the design, you first: full strength while they're here, faded to
  * 40% once they've gone. Hovering one, or reaching it with the keyboard (one Tab stop, then the
  * arrows), says who, and for someone away, when they were last here. The "+" after them opens
- * Share (it must sit in the Share popover's root); open, it takes the selected ground instead of
- * its ring.
+ * Share (it must sit in the Share popover's root). It is one of the stack: it overlaps the last
+ * avatar as each avatar does the one before it, on the shell's own ground with the same hairline
+ * of it cut around, so the face under it doesn't show through. Open, it takes the selected
+ * ground instead of its ring.
  */
 export function Presence({ contributors, meId }: { contributors: Contributor[]; meId: string }) {
   const now = useNow();
@@ -67,7 +69,7 @@ export function Presence({ contributors, meId }: { contributors: Contributor[]; 
       <Tip label="Share">
         <PopoverTrigger
           aria-label="Share"
-          className="app-no-drag ml-[3px] grid size-[22px] shrink-0 cursor-default place-items-center rounded-pill text-muted shadow-[inset_0_0_0_1px_var(--c-outline)] outline-none transition-colors duration-(--dur-hover) focus-ring hover:bg-hover aria-expanded:bg-selected aria-expanded:shadow-none"
+          className="app-no-drag -ml-1.5 relative grid size-[22px] shrink-0 cursor-default place-items-center rounded-pill bg-chrome text-muted shadow-[inset_0_0_0_1px_var(--c-outline),0_0_0_1.5px_var(--c-chrome)] outline-none transition-colors duration-(--dur-hover) focus-ring hover:bg-[image:linear-gradient(var(--c-hover),var(--c-hover))] aria-expanded:bg-selected aria-expanded:bg-none aria-expanded:shadow-[0_0_0_1.5px_var(--c-chrome)]"
         >
           <Icon icon={PlusSignIcon} step="meta" />
         </PopoverTrigger>

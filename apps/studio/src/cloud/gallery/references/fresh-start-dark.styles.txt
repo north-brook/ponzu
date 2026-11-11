@@ -65,7 +65,7 @@ ground div rgb(27, 27, 26) shadow rgba(255, 255, 255, 0.1) 0px 0px 0px 0.5px, rg
 icon svg[Attach] 16×16 rgb(183, 179, 169) stroke 1.7px
 text "Opus 5.5" rgb(183, 179, 169) 500 12px Inter
 icon svg[Claude] 13×13 rgb(183, 179, 169) stroke 1px
-text "· High" rgb(118, 115, 105) 400 12px Inter
+text "High" rgb(118, 115, 105) 400 12px Inter
 icon svg[Model: Opus 5.5, effort High] 11×11 rgb(183, 179, 169) stroke 2.2px
 ground button[Send] rgb(31, 31, 30)
 icon svg[Send] 16×16 rgb(118, 115, 105) stroke 2.1px

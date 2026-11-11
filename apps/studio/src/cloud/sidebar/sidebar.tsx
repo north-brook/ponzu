@@ -13,6 +13,7 @@ import { orderDesigns, settledShown } from "../status.ts";
 import { Button, IconButton } from "../ui/button.tsx";
 import { FadeScroll } from "../ui/fade-scroll.tsx";
 import { Icon } from "../ui/icon.tsx";
+import { focusNow, giveFocusBack } from "../ui/quiet-focus.ts";
 import { jumpTarget, useJumpShortcuts, useShortcut } from "../ui/shortcut.ts";
 import { DesignList, DesignListSkeleton } from "./design-list.tsx";
 import type { RowHandlers } from "./design-row.tsx";
@@ -65,11 +66,19 @@ export interface SidebarProps extends RowHandlers {
 export function Sidebar(props: SidebarProps) {
   const { me, workspace, designs, filter, query, results } = props;
   const searchField = useRef<HTMLInputElement>(null);
+  const searchButton = useRef<HTMLButtonElement>(null);
   const [selected, setSelected] = useResultSelection(results);
 
+  // Where focus was when search opened (⌘K from the composer, a click on Search that took no
+  // focus, Return on the Search button), to give it back to when search closes.
+  const openedFrom = useRef<ReturnType<typeof focusNow>>(null);
+  const openSearch = () => {
+    openedFrom.current = focusNow();
+    props.onQueryChange("");
+  };
   useShortcut("k", () => {
     if (props.collapsed) props.onExpand();
-    if (query === null) props.onQueryChange("");
+    if (query === null) openSearch();
     // Already open: back into the field, once the pane is no longer inert. A field just opened
     // takes focus as it mounts.
     else requestAnimationFrame(() => searchField.current?.focus({ preventScroll: true }));
@@ -77,9 +86,16 @@ export function Sidebar(props: SidebarProps) {
   useShortcut("n", props.onNewDesign);
   useShortcut(",", props.onSettings);
 
-  // Closing search leaves focus nowhere in particular: putting it back on the search button
-  // would show that button's tip, as if the person had gone to it.
-  const closeSearch = () => props.onQueryChange(null);
+  // Closing search gives focus back where search found it: the composer after ⌘K there, nowhere
+  // after a click on Search (which takes no focus), so no tip shows as if the person had gone to
+  // the button; and the button, drawn again with its ring and tip, only when the keyboard had
+  // reached it (Tab, then Return).
+  const closeSearch = () => {
+    props.onQueryChange(null);
+    const was = openedFrom.current;
+    openedFrom.current = null;
+    requestAnimationFrame(() => giveFocusBack(was, searchButton.current));
+  };
 
   const searching = query !== null && query.trim() !== "";
   const team = workspace.kind === "org";
@@ -122,7 +138,12 @@ export function Sidebar(props: SidebarProps) {
   return (
     <div ref={lists} className="flex min-h-0 flex-1 flex-col">
       {query === null ? (
-        <div className="flex h-[34px] shrink-0 items-center rounded-9 pl-2.5">
+        <div
+          // Search and New design take no focus from a click, as the window's chrome doesn't
+          // (installFocusRule): focus stays where it was, and search gives it back there.
+          data-toolbar
+          className="flex h-[34px] shrink-0 items-center rounded-9 pl-2.5"
+        >
           <WorkspaceMenu
             current={workspace}
             workspaces={props.workspaces}
@@ -134,9 +155,10 @@ export function Sidebar(props: SidebarProps) {
           />
           <span className="flex-1" />
           <IconButton
+            ref={searchButton}
             label="Search"
             keys={["⌘", "K"]}
-            onClick={() => props.onQueryChange("")}
+            onClick={openSearch}
             className="h-[26px] w-6"
           >
             <Icon icon={Search01Icon} step="control" />

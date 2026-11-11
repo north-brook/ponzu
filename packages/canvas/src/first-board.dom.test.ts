@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { type ChromiumOptions, findChromium } from "@ponzu/render/chromium";
+import { ARRIVE_LAG_MS } from "./arrive.ts";
 
 /*
  * An empty design's first board, in a real browser: the canvas waits at 100% where the board will
@@ -51,10 +52,28 @@ window.pzCreate = (x, y) => {
     '<section data-artboard data-id="ab_card" data-name="Hello card" style="width:320px;height:200px;background:#fff6b3"><h1>Hello</h1></section>',
     { id: "ab_card", name: "Hello card" },
   );
+  window.pzLanded = performance.now();
   window.pzSource.agent({ op: "artboard.create", page: "pg_a", index: 0, artboard: { ...artboard, x, y } });
 };
 
-/** Every frame from now: the zoom, the plane's transform, and where the board and its frame are. */
+/**
+ * Where the frame's draw starts on performance.now()'s clock, however late it mounts: when the
+ * draw was set going, less how far into it that was. Read as it's set, so it's never later than
+ * the start the canvas asked for.
+ */
+const time = Object.getOwnPropertyDescriptor(Animation.prototype, "currentTime");
+Object.defineProperty(Animation.prototype, "currentTime", {
+  ...time,
+  set(t) {
+    if (this.effect?.target?.matches("svg rect[pathLength]")) window.pzDrawFrom ??= performance.now() - t;
+    time.set.call(this, t);
+  },
+});
+
+/**
+ * Every frame from now until the board's frame has drawn and faded: the zoom, where the board and
+ * its frame are, and how far into its draw the frame is, on its animation's own time.
+ */
 window.pzWatch = () => {
   const frames = [];
   window.pzFrames = frames;
@@ -62,15 +81,26 @@ window.pzWatch = () => {
     const zoom = [...document.querySelectorAll("button, span")].map((e) => e.textContent).find((t) => /^\\d+%$/.test(t ?? ""));
     const sheet = document.querySelector("[data-pz-board]");
     const frame = document.querySelector("svg rect[pathLength]");
+    const draw = frame?.getAnimations()[0];
     const box = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }; };
     frames.push({
       zoom,
       sheet: box(sheet),
-      frame: frame ? { ...box(frame.ownerSVGElement), dash: getComputedStyle(frame).strokeDashoffset, opacity: getComputedStyle(frame).opacity } : null,
+      frame: frame ? { ...box(frame.ownerSVGElement), dash: getComputedStyle(frame).strokeDashoffset, opacity: getComputedStyle(frame).opacity, t: draw?.currentTime ?? null, done: draw?.playState === "finished" } : null,
     });
-    if (frames.length < 120) requestAnimationFrame(step);
+    window.pzDone = !!frames.at(-1).frame?.done || frames.length >= 240;
+    if (!window.pzDone) requestAnimationFrame(step);
   };
   requestAnimationFrame(step);
+};
+
+/** The frame's draw, held at \`t\` ms in: how much of the line is still undrawn there. */
+window.pzDashAt = (t) => {
+  const frame = document.querySelector("svg rect[pathLength]");
+  const draw = frame.getAnimations()[0];
+  draw.pause();
+  draw.currentTime = t;
+  return getComputedStyle(frame).strokeDashoffset;
 };
 `;
 
@@ -119,24 +149,40 @@ describe.skipIf(!chromium)("an empty design's first board in Chromium", () => {
     await page.evaluate(() => (window as any).pzWatch());
     await new Promise((r) => setTimeout(r, 100));
     await page.evaluate(() => (window as any).pzCreate(0, 0));
-    await page.waitForFunction(() => (window as any).pzFrames.length >= 120);
+    await page.waitForFunction(() => (window as any).pzDone);
     const frames = (await page.evaluate(() => (window as any).pzFrames)) as {
       zoom?: string;
       sheet: { x: number; y: number; w: number; h: number } | null;
-      frame: { x: number; y: number; dash: string; opacity: string } | null;
+      frame: {
+        x: number;
+        y: number;
+        dash: string;
+        opacity: string;
+        t: number | null;
+        done: boolean;
+      } | null;
     }[];
     // Before and after, at 100%: the empty page waited where the board fits.
     expect(frames.map((f) => f.zoom)).toEqual(frames.map(() => "100%"));
-    // From its first frame on screen the board stays put: no camera move after it lands.
+    // From its first frame on screen until its frame has drawn and faded, the board stays put: no
+    // camera move after it lands.
     const placed = frames.filter((f) => f.sheet);
-    expect(placed.length).toBeGreaterThan(60);
+    expect(placed.at(-1)!.frame?.done).toBe(true);
     expect(new Set(placed.map((f) => `${f.sheet!.x},${f.sheet!.y}`)).size).toBe(1);
-    // The frame that draws it in is round the board's own place, from its first frame, and it
-    // starts drawing only after the board landed, then draws on.
+    // The frame that draws it in is round the board's own place, from its first frame, and draws
+    // on to the end.
     const sheet = placed[0]!.sheet!;
     for (const f of placed) expect(f.frame).toMatchObject({ x: sheet.x - 4, y: sheet.y - 4 });
-    expect(placed[0]!.frame!.dash).toBe("100px");
     expect(Number.parseFloat(placed.at(-1)!.frame!.dash)).toBeLessThan(5);
+    // It starts drawing only a beat after the board landed (less a hair for floating point),
+    // however late it mounts, and nothing of it is drawn until then.
+    const { landed, from } = await page.evaluate(() => ({
+      landed: (window as any).pzLanded as number,
+      from: (window as any).pzDrawFrom as number,
+    }));
+    expect(from - landed).toBeGreaterThanOrEqual(ARRIVE_LAG_MS - 0.001);
+    for (const f of placed) if (f.frame!.t! <= 0) expect(f.frame!.dash).toBe("100px");
+    expect(await page.evaluate(() => (window as any).pzDashAt(0))).toBe("100px");
     // Nothing of it is drawn before the board is there.
     expect(frames.filter((f) => !f.sheet).every((f) => f.frame === null)).toBe(true);
     await page.close();
