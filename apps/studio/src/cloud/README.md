@@ -48,8 +48,10 @@ traffic lights, which the shell puts at x 16, y 16, so the toggle's box spans 76
 centred on the lights' line; on Windows and Linux 10px from the edge), and the thread toggle is
 the last thing at the right, 10px from the window's edge, whether the rail is open or closed and
 on every tab. The rest of the right cluster (presence, Share, the pull request mark, the next
-action) sits just before the thread toggle, so it holds one place too; the divider at the rail's
-edge stays there while the rail is open and comes in to just before the cluster when it closes.
+action) sits just before the thread toggle, so it holds one place too, and the divider sits 18px
+before the cluster in every state: it separates the page tabs from the cluster rather than marking
+the rail's edge, so a wider cluster (five people, Update branch) or the rail toggling never moves
+it off its partner.
 `visual.ts compare` masks the chrome's 44px for this reason, so the rest is still checked
 against the boards.
 
@@ -71,8 +73,7 @@ reach the studio as commands.
 
 Both panes open and close on one clock, `pane-motion` (`--dur-pane`, `--ease-out`), and so does
 everything that moves with them: the pane's width, the canvas pane's margin, the left block's
-width, the name's room, the right block's width (eased with `calc-size`, so the rail's divider
-tracks the rail's edge all the way). The rail, like the sidebar, keeps its content still at the
+width, the name's room, and the right block's reach (the room it keeps over the rail). The rail, like the sidebar, keeps its content still at the
 window's edge while its room opens or closes, and holds it until it has closed. The canvas
 keeps its boards still on screen as its pane's edge moves, anchored to the edge that isn't
 moving, with no refit (useCanvas.ts). `gallery/chrome.test.ts` checks it frame by frame, and

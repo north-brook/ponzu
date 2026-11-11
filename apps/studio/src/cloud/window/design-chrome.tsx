@@ -137,25 +137,22 @@ export function DesignChrome({
       <PageTabs pages={pages} activeId={activePageId} onSelect={onSelectPage} onAdd={onAddPage} />
       <span className="min-w-2 flex-1" />
       {/*
-       * The right block, flush with the window's right edge in every state: the divider, then
-       * the cluster just before the thread toggle, so neither moves between the canvas and the
-       * pull request tab or as the rail opens and closes. Open, the block is at least 350 wide,
-       * which with the header's 10 of right padding puts the divider on the rail's edge; closed,
-       * it is its content's width, the divider just before the cluster. Its width eases between
-       * the two on the panes' clock (calc-size, so even from a content width the divider tracks
-       * the rail's edge frame by frame instead of stopping where a min-width would let go).
+       * The right block, flush with the window's right edge in every state: the divider 18px
+       * before the cluster, and the cluster just before the thread toggle, so none of them moves
+       * between the canvas and the pull request tab, as the rail opens and closes, or with the
+       * width of the next action. Open, the block reaches at least to the rail's edge (the
+       * header's 10 of right padding and this 350 make the rail's 360), which keeps the page
+       * tabs over the canvas; the space it adds is empty header, before the divider.
        */}
       <div
-        data-chrome-right
-        className="pane-motion flex shrink-0 items-center transition-[width]"
-        style={{
-          width: rail.open
-            ? "calc-size(max-content, max(350px, size))"
-            : "calc-size(max-content, size)",
-        }}
+        className={cn(
+          "pane-motion flex shrink-0 items-center transition-[min-width]",
+          rail.open ? "min-w-[350px]" : "min-w-0",
+        )}
       >
+        <span className="flex-1" />
         <ChromeDivider />
-        <span className="min-w-[18px] flex-1" />
+        <span className="w-[18px] shrink-0" />
         {team ? (
           <Popover>
             <PopoverAnchor asChild>{cluster}</PopoverAnchor>

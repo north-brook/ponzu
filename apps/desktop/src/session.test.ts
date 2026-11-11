@@ -18,7 +18,15 @@ function accessToken(n: number): string {
  */
 function harness(
   browser: (authorize: URL) => Promise<void>,
-  opts: { attemptMs?: number; exchange?: "down" } = {},
+  opts: {
+    attemptMs?: number;
+    exchangeMs?: number;
+    exchange?: "down";
+    /** Codes whose exchange the API never answers. */
+    hang?: string[];
+    /** How long the API takes to answer an exchange. */
+    delayMs?: number;
+  } = {},
 ) {
   const exchanges: unknown[] = [];
   const storage = memoryStorage();
@@ -33,13 +41,18 @@ function harness(
       focused++;
     },
     ...(opts.attemptMs ? { attemptMs: opts.attemptMs } : {}),
+    ...(opts.exchangeMs ? { exchangeMs: opts.exchangeMs } : {}),
     fetch: async (input, init) => {
       const request = new Request(input, init);
       if (request.url === "https://api.test/v1/auth/exchange") {
-        exchanges.push({
-          body: await request.json(),
-          client: request.headers.get("x-ponzu-client"),
-        });
+        const body = (await request.json()) as { code: string };
+        exchanges.push({ body, client: request.headers.get("x-ponzu-client") });
+        if (opts.hang?.includes(body.code)) {
+          await new Promise((_, reject) => {
+            init?.signal?.addEventListener("abort", () => reject(init.signal!.reason));
+          });
+        }
+        if (opts.delayMs) await new Promise((resolve) => setTimeout(resolve, opts.delayMs));
         if (opts.exchange === "down") {
           return Response.json(
             { error: { code: "unavailable", message: "Ponzu is down for a moment." } },
@@ -203,6 +216,49 @@ test("an exchange the API turns down says so on the page and in the app", async 
   expect(result.ok).toBe(false);
   expect(result.ok === false && result.reason).toBe("failed");
   expect(main.session.getState().status).toBe("signed_out");
+  expect(focused()).toBe(1);
+});
+
+test("an exchange that stalls is given up: its page says so, and the next tab still signs in", async () => {
+  const browser = tabs();
+  const { main, exchanges, focused } = harness(browser.open, {
+    hang: ["code_stuck"],
+    exchangeMs: 150,
+  });
+  const first = main.signIn();
+  await until(() => browser.opened.length === 1);
+  const second = main.signIn();
+  await until(() => browser.opened.length === 2);
+  const stuckPage = browser.back(0, "code_stuck");
+  await until(() => exchanges.length === 1);
+  // The second tab comes back while the first exchange hangs: it waits, but not for minutes.
+  const page = await browser.back(1, "code_2");
+  expect(page).toContain("You're signed in");
+  expect(await stuckPage).toContain("Ponzu couldn't be reached.");
+  expect(await stuckPage).not.toContain("You're signed in");
+  expect(await second).toEqual({ ok: true });
+  const firstResult = await first;
+  expect(firstResult.ok === false && firstResult.reason).toBe("failed");
+  expect(main.session.getState()).toEqual({ status: "signed_in", user });
+  expect((exchanges as { body: { code: string } }[]).map((e) => e.body.code)).toEqual([
+    "code_stuck",
+    "code_2",
+  ]);
+  expect(focused()).toBe(2);
+});
+
+test("two tabs back at once: one exchange, and Ponzu comes forward once", async () => {
+  const browser = tabs();
+  const { main, exchanges, focused } = harness(browser.open, { delayMs: 100 });
+  const first = main.signIn();
+  await until(() => browser.opened.length === 1);
+  const second = main.signIn();
+  await until(() => browser.opened.length === 2);
+  const pages = await Promise.all([browser.back(0, "code_1"), browser.back(1, "code_2")]);
+  for (const page of pages) expect(page).toContain("You're signed in");
+  expect(await first).toEqual({ ok: true });
+  expect(await second).toEqual({ ok: true });
+  expect(exchanges).toHaveLength(1);
   expect(focused()).toBe(1);
 });
 

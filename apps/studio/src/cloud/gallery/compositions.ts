@@ -168,6 +168,17 @@ export const COMPOSITIONS: Composition[] = [
     masks: [CANVAS],
     reference: true,
   },
+  {
+    id: "crowded-chrome",
+    title: "Chrome · five people and Update branch, rail open",
+    ...WINDOW,
+    reference: true,
+  },
+  {
+    id: "crowded-chrome-closed",
+    title: "Chrome · five people and Update branch, rail closed",
+    ...WINDOW,
+  },
   { id: "long-thread", title: "Thread · a thousand lines, older ones loading", ...WINDOW },
   { id: "thread-loading", title: "Thread · loading", ...WINDOW },
   { id: "thread-every-kind", title: "Thread · every kind of line", ...WINDOW },

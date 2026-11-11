@@ -89,16 +89,16 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
       expect(
         rail.filter((_, i) => railClock[i]! > 0.05 && railClock[i]! < 0.95).length,
       ).toBeGreaterThan(4);
-      expect(drift(rail, railClock, "railDivider")).toBeLessThanOrEqual(1);
+      // The cluster's divider keeps to the cluster, which holds still at the window's edge.
+      expect(drift(rail, railClock, "railDivider")).toBe(0);
       expect(drift(rail, railClock, "left")).toBe(0);
       expect(drift(rail, railClock, "tab")).toBe(0);
       expect(drift(rail, railClock, "thread")).toBe(0);
       times.push(duration(rail, "right"));
       if (state === "opening") {
-        // Open, each divider is on its pane's edge.
+        // Open, the tabs' divider is on the sidebar's edge.
         const last = rail.at(-1)!;
         expect(Math.abs(last.divider - last.left)).toBeLessThanOrEqual(1);
-        expect(Math.abs(last.railDivider - last.right)).toBeLessThanOrEqual(1);
       }
     }
     // Left and right, opening and closing, take the same time: within a frame.
