@@ -24,6 +24,11 @@
   --text-14: 14px;
   --text-16: 16px;
   --text-34: 34px;
+  --text-10: 10px;
+  --text-15: 15px;
+  --text-18: 18px;
+  --text-28: 28px;
+  --text-40: 40px;
 
   --radius-2: 2px;
   --radius-3: 3px;
@@ -36,6 +41,7 @@
   --radius-10: 10px;
   --radius-12: 12px;
   --radius-14: 14px;
+  --radius-16: 16px;
   --radius-20: 20px;
   --radius-pill: 99px;
 }
@@ -75,6 +81,27 @@
   --color-tip-ink: var(--c-tip-ink);
   --color-tip-key: var(--c-tip-key);
   --color-tip-key-ink: var(--c-tip-key-ink);
+  --color-raised-hover: var(--c-raised-hover);
+  --color-secondary: var(--c-secondary);
+  --color-step: var(--c-step);
+  --color-track: var(--c-track);
+  --color-switch-off: var(--c-switch-off);
+  --color-knob: var(--c-knob);
+  --color-dim: var(--c-dim);
+  --color-dim-dialog: var(--c-dim-dialog);
+  --color-danger-ink: var(--c-danger-ink);
+  --color-github: var(--c-github);
+  --color-github-hover: var(--c-github-hover);
+  --color-github-ink: var(--c-github-ink);
+  --shadow-github: var(--c-github-ring);
+
+  --shadow-card: var(--c-card-shadow);
+  --shadow-button: var(--c-button-shadow);
+  --shadow-field: var(--c-field);
+  --shadow-field-focus: var(--c-field-focus);
+  --shadow-field-error: var(--c-field-error);
+  --shadow-field-error-focus: var(--c-field-error-focus);
+  --shadow-knob: var(--c-knob-shadow);
 
   --shadow-pop: var(--c-pop);
   --shadow-bar: var(--c-bar-shadow);
@@ -152,6 +179,42 @@
 @utility juiceturn {
   animation: juiceturn var(--beat) var(--ease-turn) infinite;
   transform-origin: 50% 50%;
+}
+
+/* The same turn at half speed, in grey: waiting on someone else (a browser, GitHub, Claude). */
+@utility dryturn {
+  animation: juiceturn calc(var(--beat) * 2) var(--ease-turn) infinite;
+  transform-origin: 50% 50%;
+}
+
+/* The free credits in the usage bar and its legend: hairlines on the bias. */
+@utility hatch {
+  background: repeating-linear-gradient(-45deg, var(--c-faint) 0 1.5px, transparent 1.5px 4.5px);
+}
+
+/* A voice comment's waveform, each bar breathing on its own delay, and its caret blinking. */
+@keyframes wave {
+  from {
+    scale: 1 0.45;
+  }
+  to {
+    scale: 1 1;
+  }
+}
+
+@utility wave {
+  transform-origin: center;
+  animation: wave 1.4s ease-in-out infinite alternate;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@utility blink {
+  animation: blink 1.1s steps(1) infinite;
 }
 
 /* A band of light across a label: only the page tab the agent is working on. */
