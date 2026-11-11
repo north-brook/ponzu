@@ -2,8 +2,9 @@ import { GithubMark, Slice } from "../ui/marks.tsx";
 import { Waiting } from "./step.tsx";
 
 /**
- * Where sign-in stands: nothing yet, the browser open on GitHub (until the person comes back
- * without finishing, which is idle again), or a sign-in that failed.
+ * Where sign-in stands: nothing yet, just pressed (the browser opening on GitHub, for a short
+ * cooldown, after which it is idle again with the sign-in still able to finish in its tab), or
+ * a sign-in that failed.
  */
 export type SignInState = "idle" | "waiting" | "failed";
 
@@ -22,14 +23,12 @@ const SIGN_IN: SignInCopy = {
 export function SignInStep({
   state,
   onContinue,
-  onCancel,
   failure,
   copy = SIGN_IN,
 }: {
   state: SignInState;
+  /** Not called while waiting: a press in the cooldown does nothing. */
   onContinue: () => void;
-  /** While waiting: stop waiting for the browser, offered quietly under the button. */
-  onCancel?: () => void;
   /** Why it failed, in the shell's words; the spec's line when there are none. */
   failure?: string | null;
   copy?: SignInCopy;
@@ -46,7 +45,7 @@ export function SignInStep({
       </p>
       <button
         type="button"
-        onClick={onContinue}
+        onClick={waiting ? undefined : onContinue}
         disabled={waiting}
         aria-busy={waiting || undefined}
         className="mt-7 inline-flex h-11 cursor-default items-center gap-2.5 rounded-pill bg-github px-5 font-semibold text-14 text-github-ink leading-none shadow-github outline-none transition-colors duration-(--dur-hover) focus-ring not-disabled:hover:bg-github-hover"
@@ -58,15 +57,6 @@ export function SignInStep({
         <p role="alert" className="m-0 mt-3 max-w-[420px] text-center text-12 text-danger">
           {failure || "Couldn't sign in. Try again."}
         </p>
-      ) : waiting && onCancel ? (
-        // The browser may open without the window losing focus: this is the way out then.
-        <button
-          type="button"
-          onClick={onCancel}
-          className="mt-3 cursor-default rounded-4 px-1 text-12 text-muted outline-none transition-colors duration-(--dur-hover) focus-ring hover:text-ink"
-        >
-          Cancel
-        </button>
       ) : null}
     </div>
   );

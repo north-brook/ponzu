@@ -40,6 +40,19 @@ is the rail's content, needs you included; `PullRequestView` fills the canvas pa
 request tab is open (the rail folds away, and comes back as it was on leaving). Settings plugs in
 the same way.
 
+### The window chrome
+
+The chrome departs from the boards on purpose, at the founder's request: it draws no Ponzu
+lockup in any state, the sidebar toggle is the first thing at the left (on a Mac 8px past the
+traffic lights, which the shell puts at x 16, y 16, so the toggle's box spans 76 to 104 and is
+centred on the lights' line; on Windows and Linux 10px from the edge), and the thread toggle is
+the last thing at the right, 10px from the window's edge, whether the rail is open or closed and
+on every tab. The rest of the right cluster (presence, Share, the pull request mark, the next
+action) sits just before the thread toggle, so it holds one place too; the divider at the rail's
+edge stays there while the rail is open and comes in to just before the cluster when it closes.
+`visual.ts compare` masks the chrome's 44px for this reason, so the rest is still checked
+against the boards.
+
 Text from the model or GitHub (replies, plans, a pull request's body and comments) goes through
 `Prose`, never `dangerouslySetInnerHTML`. It is react-markdown with GitHub's flavour (tables, task
 lists, strikethrough, bare addresses; not footnotes, whose parser is slow on stray `]`s and whose

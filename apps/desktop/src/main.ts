@@ -228,7 +228,6 @@ function registerIpc(session: MainSession, updater: Updates) {
     if (isBridgeError(error)) session.report(error);
   });
   handle(CHANNELS.signIn, () => session.signIn());
-  listen(CHANNELS.cancelSignIn, () => session.cancelSignIn());
   handle(CHANNELS.signOut, () => session.session.signOut());
   handle(CHANNELS.links, () => {
     linkListeners++;
@@ -402,6 +401,8 @@ if (!app.requestSingleInstanceLock()) {
       config.updates && !smoke,
     );
     registerIpc(account, updates);
+    // A sign-in still waiting in the browser goes with the app, and only then.
+    app.on("will-quit", () => account.closeSignIns());
 
     buildMenu({
       command: (command: MenuCommand) => {

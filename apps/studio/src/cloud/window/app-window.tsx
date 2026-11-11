@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { cn } from "../ui/cn.ts";
 import { TipProvider } from "../ui/tooltip.tsx";
-import { Lockup, SidebarToggle, TrafficLights } from "./chrome.tsx";
+import { type Lights, SidebarToggle, TrafficLights } from "./chrome.tsx";
 
 /** The smallest window the layout holds at: sidebar 300, rail 360 and a usable canvas. */
 export const MIN_WINDOW = { width: 1100, height: 640 } as const;
@@ -20,7 +20,12 @@ export interface SidebarSlot {
  * - `chrome` is everything past the left block (DesignChrome); nothing on the create page.
  * - `rail` is the thread rail's content, or null while it is closed.
  * - `children` fill the canvas pane.
- * - `badge` sits just past the lockup: the shell's update mark, when there is one.
+ * - `badge` sits just past the sidebar toggle (or the traffic lights): the shell's update mark,
+ *   when there is one.
+ *
+ * The chrome draws no lockup, in any state (the founder asked for it gone; the boards still
+ * draw one). The sidebar toggle comes first at the left, just past the traffic lights, and
+ * DesignChrome ends with the thread toggle at the window's right edge.
  */
 export function AppWindow({
   lights,
@@ -30,7 +35,7 @@ export function AppWindow({
   badge,
   children,
 }: {
-  lights: "native" | "drawn";
+  lights: Lights;
   sidebar: SidebarSlot | null;
   chrome?: ReactNode;
   rail: ReactNode | null;
@@ -44,18 +49,29 @@ export function AppWindow({
         className="flex h-full flex-col bg-chrome text-ink"
         style={{ minWidth: MIN_WINDOW.width, minHeight: MIN_WINDOW.height }}
       >
-        <header className="app-drag flex h-11 shrink-0 items-center gap-1 pr-2.5 pl-4">
+        <header
+          className={cn(
+            "app-drag flex h-11 shrink-0 items-center gap-1",
+            // 10 at either edge; on a Mac the traffic lights' own 16 on the left.
+            lights === "none" ? "px-2.5" : "pr-2.5 pl-4",
+          )}
+        >
           <div
             className={cn(
-              "flex shrink-0 items-center gap-2 pr-[2px] transition-[width] duration-(--dur-pane) ease-out",
-              sidebarOpen ? "w-[280px]" : "w-auto",
+              "flex shrink-0 items-center pr-[2px] transition-[width] duration-(--dur-pane) ease-out",
+              // To the sidebar's edge at 300, where the divider is, less the padding and a gap.
+              !sidebarOpen ? "w-auto" : lights === "none" ? "w-[286px]" : "w-[280px]",
             )}
           >
-            <TrafficLights drawn={lights === "drawn"} />
-            <Lockup />
+            {lights === "none" ? null : <TrafficLights drawn={lights === "drawn"} />}
+            {sidebar ? (
+              // 8 past the lights (their own spacing): the icon starts 14 past the last light.
+              <span className={cn("flex shrink-0", lights !== "none" && "ml-2")}>
+                <SidebarToggle open={sidebar.open} onToggle={sidebar.onToggle} />
+              </span>
+            ) : null}
             {badge}
             <span className="flex-1" />
-            {sidebar ? <SidebarToggle open={sidebar.open} onToggle={sidebar.onToggle} /> : null}
           </div>
           {chrome}
         </header>
