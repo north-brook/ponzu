@@ -735,7 +735,8 @@ Person      = { id, name, login }
 | `stop` | now | `{}` | interrupts the running turn and what was put in behind it; nothing goes in |
 
 A comment event is one new comment or one reply; an edited, resolved or reopened comment is a
-canvas edit (`edit`). A review carries its first 20 line comments, each body clipped to 2,000 characters (`MAX_REVIEW_COMMENTS`): the
+canvas edit (`edit`), and so is one an undo or a redo puts back, which was heard when it was
+first made. A review carries its first 20 line comments, each body clipped to 2,000 characters (`MAX_REVIEW_COMMENTS`): the
 agent has no GitHub API token to read them with. `answer.question` is the question row's
 `kind` and `payload`, as the runner raised it.
 
@@ -925,9 +926,10 @@ A message writes its thread item and its `now` event in one statement. Its `atta
 files of the design by reference (`assets/<name>`), uploaded first; the item's payload and the
 event's carry them as `[{ ref, contentType }]`. A person uploads images only, and each is kept
 under its own name with six random characters added (`paste-k3v9qz.png`), so it never replaces
-one of the design's files. An answer is checked against what was asked (the texts of a
-`question`'s questions, or `approved` for a `plan` or `permission`); the first wins, and an
-answer to a question that is not open is 409 `question_closed`. It writes the `answer` event in
+one of the design's files. An answer is checked against what was asked (every one of a
+`question`'s questions by its text and no other, or `approved` for a `plan` or `permission`),
+since it closes the question for good; the first wins, and an answer to a question that is
+not open is 409 `question_closed`. It writes the `answer` event in
 the statement that closes the question, carrying the question as it was raised. A comment a
 person posts on the canvas reaches the thread the same way: the commit statement writes the
 `comment` item beside its event.
@@ -936,7 +938,8 @@ Each of these, and every op a person commits (undo and redo included), then call
 `requestWake` (`apps/api/src/sandboxes/wake.ts`): a message, an answer or a comment records a
 wake for the design, one at a time, and every reason pokes the runner when the design's
 sandbox is awake. A stop and an edit record none: a sleeping sandbox is running nothing to stop,
-and an edit is `later`.
+and an edit is `later`. `requestWake` never fails the request that called it: what that wrote
+is written, and a wake it could not record is logged (`wake_failed`).
 
 ### The other way: poke and health
 
