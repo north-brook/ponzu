@@ -102,7 +102,8 @@ standard, secure scheme of our own, so its origin never changes (its storage sta
 API's CORS allows exactly it) and the app and its UI always match. Every file goes out with the
 policy in `csp.ts`: script only from the studio itself, no frames, plugins or forms, and
 nothing reached but the API, its environment's Neon Realtime host and assets host (exact
-hosts, in `config.ts`; a development build allows any of each), and Google Fonts. Images load
+hosts, in `config.ts`; a development build allows any of each), and Google Fonts, for the
+fonts a design names (the studio's own fonts ship inside it). Images load
 from any https host, as the runner's previews draw them (docs/cloud.md, "Security").
 
 A studio built for shipping carries no stand-in for Ponzu Cloud: with no bridge under it (a
