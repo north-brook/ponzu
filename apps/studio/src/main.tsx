@@ -9,6 +9,7 @@ import { App } from "./app/app.tsx";
 import { CantStart } from "./app/cant-start.tsx";
 import { desktopHost } from "./app/desktop-host.ts";
 import type { Host } from "./app/host.ts";
+import { quietPointerFocus } from "./cloud/ui/quiet-focus.ts";
 
 declare global {
   interface Window {
@@ -34,6 +35,9 @@ async function host(): Promise<Host | null> {
   }
   return null;
 }
+
+// A ring shows for the keyboard only, never after a click (ui/quiet-focus.ts).
+quietPointerFocus();
 
 /** Whether, and where, this window reports usage: the shell says (docs/analytics.md). */
 function analyticsContext(): AnalyticsContext | null {

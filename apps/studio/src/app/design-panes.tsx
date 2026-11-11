@@ -20,6 +20,8 @@ export interface DesignPanes {
   chrome: ReactNode;
   rail: ReactNode | null;
   pane: ReactNode;
+  /** What the rail toggle does (⌘J, View › Toggle Thread): from the pull request tab too. */
+  toggleRail: () => void;
   /** What the canvas's pane shows: the canvas, or the pull request tab over it. */
   tab: "canvas" | "pull-request";
 }
@@ -112,6 +114,7 @@ export function useDesignPanes({
   };
 
   return {
+    toggleRail,
     tab: prTab ? "pull-request" : "canvas",
     chrome: (
       <DesignChromeSlot

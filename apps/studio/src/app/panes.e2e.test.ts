@@ -237,6 +237,17 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     expect((await geometry(page)).sidebar).toBeCloseTo(294, 0);
     await waitUntil(async () => (await saved(page))?.sidebarWidth === 294);
     expect(await edge.evaluate((el) => el.matches(":focus-visible"))).toBe(true);
+    // Reached with Tab, as the keyboard does (focus a script gave after a click stays quiet):
+    // the line, in the ring's colour.
+    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press("Tab");
+    expect(await edge.evaluate((el) => el === document.activeElement)).toBe(true);
+    await waitUntil(
+      async () =>
+        (await page
+          .locator("#sidebar-pane-edge > span")
+          .evaluate((el) => getComputedStyle(el).backgroundColor)) === "rgb(128, 124, 115)",
+    );
     await shootBoth("5-focus", await sidebarEdgeX());
     // The rail's edge moves the way the arrow points too: left widens it.
     const rail = page.locator("#thread-pane-edge");

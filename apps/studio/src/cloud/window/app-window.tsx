@@ -160,7 +160,9 @@ export function AppWindow({
   const groupWidth = useRef(0);
 
   // The rail's content stays while it closes, as it last was, so it slides away rather than
-  // emptying first.
+  // emptying first. Only while there's a chrome: what leaves with the whole view (the design it
+  // showed) goes at once.
+  const holdRail = chrome != null;
   const lastRail = useRef(rail);
   useEffect(() => {
     if (rail !== null) lastRail.current = rail;
@@ -169,7 +171,7 @@ export function AppWindow({
   const [wasOpen, setWasOpen] = useState(railOpen);
   if (railOpen !== wasOpen) {
     setWasOpen(railOpen);
-    setClosingRail(railOpen ? null : lastRail.current);
+    setClosingRail(railOpen || !holdRail ? null : lastRail.current);
   }
   useEffect(() => {
     if (closingRail === null) return;
@@ -278,6 +280,15 @@ export function AppWindow({
   const collapsibleNow = useRef(collapsible);
   collapsibleNow.current = collapsible;
   const was = useRef<Record<Pane, boolean | null>>({ sidebar: null, rail: null });
+  // A toggle's easing marks the window before this render reaches the page, not after: the
+  // panels lay themselves out (and so restyle the page) in their own layout effects, ahead of
+  // the one below, and a class that changed then would land with no easing.
+  if (
+    (was.current.sidebar !== null && hasSidebar && was.current.sidebar !== sidebarOpen) ||
+    (was.current.rail !== null && was.current.rail !== railOpen)
+  ) {
+    frame.current?.setAttribute("data-pane-motion", "");
+  }
   useLayoutEffect(() => {
     const before = was.current;
     const state: Record<Pane, boolean | null> = {
@@ -456,6 +467,8 @@ export function AppWindow({
         }
       >
         <header
+          // A click on its buttons and tabs leaves focus where it was (quietPointerFocus).
+          data-toolbar
           className={cn(
             "app-drag flex h-11 shrink-0 items-center gap-1",
             // 10 at either edge; on a Mac the traffic lights' own 16 on the left.
@@ -547,7 +560,7 @@ export function AppWindow({
             style={{ overflow: "hidden" }}
           >
             <aside
-              id={railOpen ? "thread" : undefined}
+              id="thread"
               aria-label="Thread"
               inert={!railOpen}
               // Held to the window's right edge, so it slides in and out from there; its width

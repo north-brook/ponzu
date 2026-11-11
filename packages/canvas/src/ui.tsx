@@ -29,7 +29,7 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export const buttonVariants = cva(
-  "pz:inline-flex pz:shrink-0 pz:items-center pz:justify-center pz:gap-1.5 pz:whitespace-nowrap pz:outline-none pz:focus-visible:ring-2 pz:focus-visible:ring-ring/50 pz:disabled:pointer-events-none pz:disabled:opacity-30",
+  "pz:inline-flex pz:shrink-0 pz:items-center pz:justify-center pz:gap-1.5 pz:whitespace-nowrap pz:outline-none pz:focus-visible:not-data-quiet-focus:ring-2 pz:focus-visible:not-data-quiet-focus:ring-ring/50 pz:disabled:pointer-events-none pz:disabled:opacity-30",
   {
     variants: {
       variant: {
@@ -198,7 +198,7 @@ const toggleGroupVariants = cva("pz:flex pz:gap-0.5 pz:p-0.5", {
 });
 
 const toggleGroupItemVariants = cva(
-  "pz:text-muted-foreground pz:outline-none pz:hover:text-foreground pz:focus-visible:ring-2 pz:focus-visible:ring-ring/50",
+  "pz:text-muted-foreground pz:outline-none pz:hover:text-foreground pz:focus-visible:not-data-quiet-focus:ring-2 pz:focus-visible:not-data-quiet-focus:ring-ring/50",
   {
     variants: {
       variant: {
