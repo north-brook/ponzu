@@ -250,9 +250,12 @@ class LiveQueries implements Live {
       });
       return;
     }
-    const sub: RealtimeSubscription = this.transport.subscribe(url, result.sealed, {
+    // A transport may speak before `subscribe` returns: until then the subscription is current.
+    let sub: RealtimeSubscription | null = null;
+    const current = () => sub === null || entry.sub === sub;
+    sub = this.transport.subscribe(url, result.sealed, {
       rows: (raw) => {
-        if (entry.sub !== sub) return;
+        if (!current()) return;
         const decode = DECODE[entry.name] as (row: RawRow<LiveQueryName>) => unknown;
         entry.failures = 0;
         this.update(entry, {
@@ -261,7 +264,7 @@ class LiveQueries implements Live {
         });
       },
       status: (status) => {
-        if (entry.sub === sub) this.heard(entry, status);
+        if (current()) this.heard(entry, status);
       },
     });
     entry.sub = sub;

@@ -4,6 +4,7 @@ import { ApiError, networkError } from "../errors.ts";
 import { FakeClock } from "../testing/clock.ts";
 import { type FakeQuery, FakeRealtime, fakeSeal } from "../testing/realtime.ts";
 import { createLive, type LiveSnapshot } from "./live.ts";
+import type { RealtimeTransport } from "./realtime.ts";
 import type { RawRow } from "./rows.ts";
 
 type LiveAnswer = Awaited<ReturnType<Api["live"]>>;
@@ -244,4 +245,30 @@ describe("offline and in the background", () => {
     const back = watch.last() as LiveSnapshot<{ seq: number }>;
     expect([back.status, back.rows?.[0]?.seq]).toEqual(["live", 3]);
   });
+});
+
+test("a transport that answers before subscribe returns is heard", async () => {
+  const clock = new FakeClock();
+  const transport: RealtimeTransport = {
+    subscribe(_url, _sealed, listener) {
+      listener.rows([head(4)]);
+      listener.status("live");
+      return { renew: async () => {}, close() {} };
+    },
+    close() {},
+  };
+  const api = {
+    live: async (queries: { name: string }[]): Promise<LiveAnswer> => ({
+      url: "wss://realtime.test",
+      results: queries.map(({ name }) => ({
+        name,
+        sealed: fakeSeal({ name, args: {}, userId: "usr_1" }, clock.now()),
+      })),
+    }),
+  };
+  const live = createLive({ api, transport, clock });
+  live.subscribe("design.head", { designId: "dsn_1" }, () => {});
+  await clock.advance(0);
+  const snapshot = live.snapshot("design.head", { designId: "dsn_1" });
+  expect([snapshot.status, snapshot.rows?.[0]?.seq]).toEqual(["live", 4]);
 });
