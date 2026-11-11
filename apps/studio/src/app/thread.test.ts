@@ -1,0 +1,368 @@
+import { expect, test } from "bun:test";
+import type { DesignHeadRow, MeRow } from "@ponzu/client";
+import { createFakeBackend, type FakeAgent, type FakePerson, settle } from "@ponzu/client/testing";
+import type { Person } from "../cloud/model.ts";
+import { AskStore } from "./ask-store.ts";
+import { agentActivity, steerGate, toThreadItem } from "./thread-map.ts";
+import { THREAD_PAGE, ThreadStore } from "./thread-store.ts";
+import { Uploads } from "./uploads.ts";
+
+/*
+ * An open design's thread and what its agent waits on, against Ponzu Cloud in memory, which
+ * answers as the API does: every kind of item arriving live, a message sent at once and its
+ * failure, questions answered by the viewer and by a teammate, a stop, each blocker, and
+ * read-only access.
+ */
+
+const person = (p: FakePerson): Person => ({
+  id: p.id,
+  name: p.name ?? p.githubLogin,
+  login: p.githubLogin,
+  avatarUrl: null,
+});
+
+async function world() {
+  const backend = createFakeBackend();
+  const maya = backend.addPerson({ login: "maya", name: "Maya Ortiz" });
+  const sam = backend.addPerson({ login: "sam", name: "Sam Lee" });
+  const ines = backend.addPerson({ login: "ines", name: "Ines" });
+  const ws = backend.addWorkspace({
+    login: "north-brook",
+    members: { [maya.id]: "admin", [sam.id]: "member", [ines.id]: "member" },
+    repos: [{ name: "site", access: { [ines.id]: "read" } }],
+  });
+  const client = backend.connect(maya);
+  const design = await client.api.designs.create({
+    workspaceId: ws.id,
+    repoId: ws.repos[0]!.id,
+    name: "Pricing",
+  });
+  const agent = backend.agent(design.id);
+  const thread = (who = client) =>
+    new ThreadStore({ api: who.api, live: who.live, designId: design.id }).start();
+  const errors: string[] = [];
+  const asks = (who = client) =>
+    new AskStore({
+      api: who.api,
+      live: who.live,
+      designId: design.id,
+      onError: (m) => errors.push(m),
+    }).start();
+  const people = new Map([maya, sam, ines].map((p) => [p.id, person(p)]));
+  return { backend, maya, sam, ines, ws, client, design, agent, thread, asks, errors, people };
+}
+
+const ctx = (people: ReadonlyMap<string, Person>) => ({
+  people,
+  assetsUrl: "https://assets.test/d/",
+  doc: null,
+});
+
+test("every kind of item arrives live, in order, and a streaming reply grows in place", async () => {
+  const w = await world();
+  const store = w.thread();
+  expect(store.getSnapshot().items).toBeNull();
+  await settle();
+  expect(store.getSnapshot().items).toEqual([]);
+
+  w.agent.wake();
+  const reply = w.agent.say("Reading", { streaming: true });
+  const work = w.agent.tool("Drawing Pricing · B", { artboards: ["ab_1"] });
+  await settle();
+  w.agent.say("Reading the repo and the current page.", { id: reply, streaming: false });
+  w.agent.tool("Drew Pricing · B", { id: work, streaming: false, steps: 4, artboards: ["ab_1"] });
+  w.agent.fail("turn_failed", "The model stopped.");
+  await w.client.api.designs.stop(w.design.id);
+  await settle();
+
+  const items = store.getSnapshot().items!.map((item) => toThreadItem(item, ctx(w.people)));
+  expect(items.map((i) => i.kind)).toEqual(["notice", "assistant", "tool", "notice", "notice"]);
+  expect(items[1]).toMatchObject({
+    streaming: false,
+    payload: { text: "Reading the repo and the current page." },
+  });
+  expect(items[2]).toMatchObject({ payload: { label: "Drew Pricing · B", steps: 4 } });
+  expect(items[3]).toMatchObject({ payload: { type: "error", code: "turn_failed" } });
+  // Who stopped it is the API's word, resolved to the member they are.
+  expect(items[4]).toMatchObject({ payload: { type: "stopped", by: { name: "Maya Ortiz" } } });
+  expect(agentActivity(undefined)).toEqual({ state: "idle", status: null, sandbox: null });
+  store.close();
+});
+
+test("a teammate's message and comment carry them, as the members they are", async () => {
+  const w = await world();
+  const store = w.thread();
+  const sam = w.backend.connect(w.sam);
+  await sam.api.designs.sendMessage(w.design.id, { text: "Keep the green" });
+  await settle();
+  const [message] = store.getSnapshot().items!.map((i) => toThreadItem(i, ctx(w.people)));
+  expect(message).toMatchObject({
+    kind: "message",
+    payload: { text: "Keep the green", from: { id: w.sam.id, name: "Sam Lee", login: "sam" } },
+  });
+  store.close();
+});
+
+test("a message shows at once, then is the thread's own; one that fails stays, to send again", async () => {
+  const w = await world();
+  const store = w.thread();
+  await settle();
+  store.send("Make the middle plan stand out", []);
+  // In the thread before the API has answered.
+  expect(store.getSnapshot().pending).toMatchObject([
+    { text: "Make the middle plan stand out", status: "sending" },
+  ]);
+  await settle();
+  const { items, pending } = store.getSnapshot();
+  expect(pending).toEqual([]);
+  expect(items!.map((i) => i.kind === "message" && i.payload.text)).toEqual([
+    "Make the middle plan stand out",
+  ]);
+  // It went to the design's feed as the viewer's.
+  expect(w.backend.design(w.design.id).thread.map((e) => e.userId)).toEqual([w.maya.id]);
+
+  w.backend.online = false;
+  store.send("And a fourth plan", []);
+  await settle();
+  const failed = store.getSnapshot().pending[0]!;
+  expect(failed).toMatchObject({ text: "And a fourth plan", status: "failed" });
+
+  w.backend.online = true;
+  store.retry(failed.id);
+  expect(store.getSnapshot().pending[0]?.status).toBe("sending");
+  await settle();
+  expect(store.getSnapshot().pending).toEqual([]);
+  expect(store.getSnapshot().items).toHaveLength(2);
+
+  w.backend.online = false;
+  store.send("Never mind", []);
+  await settle();
+  store.discard(store.getSnapshot().pending[0]!.id);
+  expect(store.getSnapshot().pending).toEqual([]);
+  store.close();
+});
+
+test("history comes a page at a time until the live rows have the whole thread", async () => {
+  const w = await world();
+  for (let i = 0; i < THREAD_PAGE + 5; i++) w.agent.say(`Line ${i}`);
+  // Without live rows (a realtime that never connects), the newest page paints first.
+  const live = { subscribe: () => () => {} };
+  const store = new ThreadStore({ api: w.client.api, live, designId: w.design.id }).start();
+  await settle();
+  expect(store.getSnapshot().items).toHaveLength(THREAD_PAGE);
+  expect(store.getSnapshot().older).toBe("more");
+  store.loadOlder();
+  expect(store.getSnapshot().older).toBe("loading");
+  await settle();
+  expect(store.getSnapshot().items).toHaveLength(THREAD_PAGE + 5);
+  expect(store.getSnapshot().older).toBe("none");
+  store.close();
+
+  const whole = w.thread();
+  await settle();
+  expect(whole.getSnapshot().items).toHaveLength(THREAD_PAGE + 5);
+  expect(whole.getSnapshot().older).toBe("none");
+  whole.close();
+});
+
+test("an image uploads as it is added, and goes with the next message", async () => {
+  const w = await world();
+  const uploads = new Uploads({
+    api: w.client.api,
+    designId: w.design.id,
+    preview: (file) => `blob:${file.name}`,
+    release: () => {},
+  });
+  const store = w.thread();
+  await settle();
+  uploads.add([new File([new Uint8Array([1, 2, 3])], "sketch.png", { type: "image/png" })]);
+  expect(uploads.getSnapshot()).toMatchObject([{ name: "sketch.png", status: "uploading" }]);
+  await settle();
+  expect(uploads.getSnapshot()[0]?.status).toBe("ready");
+  const attachments = uploads.take();
+  expect(attachments).toMatchObject([{ url: "blob:sketch.png", contentType: "image/png" }]);
+  expect(uploads.getSnapshot()).toEqual([]);
+
+  store.send("Like this", attachments);
+  await settle();
+  const item = toThreadItem(store.getSnapshot().items![0]!, ctx(w.people));
+  expect(item.kind === "message" && item.payload.attachments).toEqual([
+    {
+      ref: attachments[0]!.ref,
+      url: `https://assets.test/d/${attachments[0]!.ref}`,
+      contentType: "image/png",
+    },
+  ]);
+
+  w.backend.online = false;
+  uploads.add([new File([new Uint8Array([4])], "two.png", { type: "image/png" })]);
+  await settle();
+  const [failed] = uploads.getSnapshot();
+  expect(failed?.status).toBe("failed");
+  w.backend.online = true;
+  uploads.retry(failed!.id);
+  await settle();
+  expect(uploads.getSnapshot()[0]?.status).toBe("ready");
+  uploads.close();
+  store.close();
+});
+
+const HEADLINE: Parameters<FakeAgent["ask"]>[0] = {
+  kind: "question",
+  payload: {
+    questions: [
+      {
+        header: "Headline",
+        question: "Which way?",
+        options: [
+          { label: "Shorten it", description: "Two lines." },
+          { label: "Let it wrap", description: "Three lines." },
+        ],
+        multiSelect: false,
+      },
+    ],
+  },
+};
+
+test("a question waits in the composer's place, and the viewer's answer closes it", async () => {
+  const w = await world();
+  const store = w.asks();
+  const id = w.agent.ask(HEADLINE, "Headline");
+  await settle();
+  expect(store.getSnapshot()).toMatchObject([
+    { id, kind: "question", status: "open", questions: [{ question: "Which way?" }] },
+  ]);
+  store.answer(id, { answers: { "Which way?": "Shorten it" } });
+  expect(store.getSnapshot()[0]?.status).toBe("sending");
+  await settle();
+  expect(store.getSnapshot()).toEqual([]);
+  expect(w.backend.design(w.design.id).questions[0]?.answer).toEqual({
+    userId: w.maya.id,
+    body: { answers: { "Which way?": "Shorten it" } },
+  });
+  store.close();
+});
+
+test("a plan and a permission are answered yes or no, with a note", async () => {
+  const w = await world();
+  const store = w.asks();
+  const plan = w.agent.ask({ kind: "plan", payload: { plan: "1. Draw three plans" } }, "Plan");
+  const tool = w.agent.ask(
+    { kind: "permission", payload: { tool: "Bash", title: "Run the tests", description: "" } },
+    "Permission",
+  );
+  await settle();
+  expect(store.getSnapshot().map((a) => a.kind)).toEqual(["plan", "permission"]);
+  expect(store.getSnapshot()[1]).toMatchObject({ title: "Run the tests", description: null });
+  store.answer(plan, { approved: false, note: "Two plans" });
+  store.answer(tool, { approved: true });
+  await settle();
+  const answers = w.backend.design(w.design.id).questions.map((q) => q.answer?.body);
+  expect(answers).toEqual([{ approved: false, note: "Two plans" }, { approved: true }]);
+  store.close();
+});
+
+test("when a teammate answered first, the viewer's answer is turned away calmly", async () => {
+  const w = await world();
+  const store = w.asks();
+  // Sam's app hears nothing: the API decides.
+  const sam = w.backend.connect(w.sam);
+  const id = w.agent.ask(HEADLINE);
+  await settle();
+  const answered = sam.api.designs.answer(w.design.id, id, {
+    answers: { "Which way?": "Let it wrap" },
+  });
+  store.answer(id, { answers: { "Which way?": "Shorten it" } });
+  await answered;
+  await settle();
+  // Sam's answer won; Maya's own is kept as answered, to put away.
+  expect(w.backend.design(w.design.id).questions[0]?.answer?.userId).toBe(w.sam.id);
+  expect(store.getSnapshot()).toMatchObject([{ id, status: "answered", answeredBy: null }]);
+  expect(w.errors).toEqual([]);
+  store.dismiss(id);
+  expect(store.getSnapshot()).toEqual([]);
+  store.close();
+});
+
+test("a withdrawn question leaves, and an answer that can't reach Ponzu says so", async () => {
+  const w = await world();
+  const store = w.asks();
+  const gone = w.agent.ask(HEADLINE);
+  await settle();
+  w.agent.withdraw(gone);
+  await settle();
+  expect(store.getSnapshot()).toEqual([]);
+
+  const id = w.agent.ask(HEADLINE);
+  await settle();
+  w.backend.online = false;
+  store.answer(id, { answers: { "Which way?": "Shorten it" } });
+  await settle();
+  expect(store.getSnapshot()).toMatchObject([{ id, status: "open" }]);
+  expect(w.errors).toEqual([
+    "Your answer didn't reach Ponzu. Check your connection and send it again.",
+  ]);
+  store.close();
+});
+
+test("each blocker is what keeps the design from running, in the composer or the thread's foot", async () => {
+  const w = await world();
+  const maya = w.people.get(w.maya.id)!;
+  const repo = { id: w.ws.repos[0]!.id, owner: "north-brook", name: "site" };
+  const head = (agentBlocker: DesignHeadRow["agentBlocker"]) => ({
+    agentState: "idle" as const,
+    agentStatus: null,
+    agentBlocker,
+  });
+  const gate = (blocker: DesignHeadRow["agentBlocker"], owner: Person | null = maya) =>
+    steerGate({ access: "write", repo, head: head(blocker), owner, me: undefined, now: 0 });
+
+  expect(gate(null)).toBeNull();
+  expect(gate("claude_not_connected")).toEqual({ kind: "claude_disconnected", owner: maya });
+  expect(gate("claude_expired")).toEqual({ kind: "claude_expired", owner: maya });
+  expect(gate("claude_owner_left")).toEqual({ kind: "claude_owner_left" });
+  // An owner the workspace no longer has can't be named.
+  expect(gate("claude_not_connected", null)).toEqual({ kind: "claude_owner_left" });
+  // A machine to run on is the sandbox's, not anyone's Claude: messages are still taken.
+  expect(gate("sandbox_busy")).toBeNull();
+  expect(agentActivity(head("sandbox_busy")).sandbox).toBe("busy");
+  expect(agentActivity(head("sandbox_failed")).sandbox).toBe("failed");
+
+  // The viewer's own plan at its limit, from their `me` row.
+  const limitedUntil = new Date(10_000).toISOString();
+  const me = { id: w.maya.id, claudeAccount: { limitedUntil } } as MeRow;
+  expect(
+    steerGate({ access: "write", repo, head: head(null), owner: maya, me, now: 5_000 }),
+  ).toEqual({ kind: "claude_limit", owner: maya, until: limitedUntil });
+  expect(
+    steerGate({ access: "write", repo, head: head(null), owner: maya, me, now: 20_000 }),
+  ).toBeNull();
+
+  // The live head carries the blocker the API sets.
+  w.agent.block("sandbox_busy");
+  const view = await w.client.api.designs.get(w.design.id);
+  expect(view.agentBlocker).toBe("sandbox_busy");
+});
+
+test("someone who may only read sees the thread and is told so, and can't send or answer", async () => {
+  const w = await world();
+  const ines = w.backend.connect(w.ines);
+  const view = await ines.api.designs.get(w.design.id);
+  expect(view.access).toBe("read");
+  const repo = { id: w.ws.repos[0]!.id, owner: "north-brook", name: "site" };
+  expect(
+    steerGate({ access: view.access, repo, head: undefined, owner: null, me: undefined, now: 0 }),
+  ).toEqual({ kind: "read_only", repo });
+
+  w.agent.say("Here are three plans.");
+  const store = w.thread(ines);
+  await settle();
+  expect(store.getSnapshot().items).toHaveLength(1);
+  store.send("Mine", []);
+  await settle();
+  // The API refuses it; it stays, marked, rather than vanishing.
+  expect(store.getSnapshot().pending[0]?.status).toBe("failed");
+  const refused = await ines.api.designs.stop(w.design.id).catch((error) => error);
+  expect(refused.code).toBe("forbidden");
+  store.close();
+});

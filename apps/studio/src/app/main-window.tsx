@@ -8,11 +8,14 @@ import type { RowAction } from "../cloud/sidebar/design-row.tsx";
 import { Sidebar } from "../cloud/sidebar/sidebar.tsx";
 import { orderSettled } from "../cloud/status.ts";
 import { AppWindow } from "../cloud/window/app-window.tsx";
+import { DeleteDesignDialog } from "./confirm-dialogs.tsx";
 import { CreateView } from "./create.tsx";
-import { DesignCanvas, DesignChromeSlot, useCloudSource } from "./design.tsx";
+import { useOpenDesign } from "./design.tsx";
+import { useDesignPanes } from "./design-panes.tsx";
 import type { Host } from "./host.ts";
 import {
   designMembers,
+  hereNow,
   membersById,
   pushableRepos,
   searchByName,
@@ -22,7 +25,7 @@ import {
   usableWorkspaces,
 } from "./map.ts";
 import { Banner, PaneMessage } from "./notices.tsx";
-import { ThreadRail } from "./thread-rail.tsx";
+import { useAssetsUrls, useRowPresence } from "./sidebar-data.ts";
 import { filterFor, loadUi, saveUi, type UiState } from "./ui-state.ts";
 import { useAnswer, useOnReturn } from "./use-answer.ts";
 
@@ -205,14 +208,33 @@ function WorkspaceWindow({
   );
   const live = useLiveQuery("workspace.designs", { workspaceId: id });
   const openId = ui.designs[id] ?? null;
-  const open = useCloudSource(host, me, openId);
+  const open = useOpenDesign(host, me, openId, say);
   const [page, setPage] = useState<string | null>(null);
   const [query, setQuery] = useState<string | null>(null);
   const [settledOpen, setSettledOpen] = useState(false);
+  const [deleting, setDeleting] = useState<{ design: DesignSummary; busy: boolean } | null>(null);
+  const assetsUrls = useAssetsUrls(host.api, live.rows ?? null);
+  const activeIds = useMemo(
+    () =>
+      workspace.kind === "org"
+        ? (live.rows ?? []).filter((row) => row.status === "active").map((row) => row.id)
+        : [],
+    [live.rows, workspace.kind],
+  );
+  const presence = useRowPresence(host.live, activeIds, me.id);
 
   const summaries = useMemo(
-    () => live.rows?.map((row) => toSummary(row, { people, open: row.id === openId })) ?? null,
-    [live.rows, people, openId],
+    () =>
+      live.rows?.map((row) => {
+        const assetsUrl = assetsUrls.get(row.id);
+        return toSummary(row, {
+          people,
+          open: row.id === openId,
+          hereNow: hereNow(presence.get(row.id) ?? [], me.id),
+          ...(assetsUrl ? { assetsUrl } : {}),
+        });
+      }) ?? null,
+    [live.rows, people, openId, presence, assetsUrls, me.id],
   );
   const active = useMemo(
     () => summaries?.filter((d) => d.status === "active") ?? null,
@@ -260,20 +282,33 @@ function WorkspaceWindow({
     (design: DesignSummary, action: Exclude<RowAction, "rename">) => {
       const failed = () => say(`“${design.name}” couldn't be changed. Try again.`);
       if (action === "copy_link") {
-        void navigator.clipboard.writeText(`ponzu://design/${design.id}`).catch(failed);
+        navigator.clipboard.writeText(`ponzu://design/${design.id}`).then(
+          () => say(`Copied the link to “${design.name}”.`),
+          () => say("The link couldn't be copied. Try again."),
+        );
       } else if (action === "settle" || action === "reopen") {
         host.api.designs.settle(design.id, action === "settle").catch(failed);
       } else if (action === "delete") {
-        if (!window.confirm(`Delete “${design.name}”? Its canvas and thread go for everyone.`)) {
-          return;
-        }
-        host.api.designs.delete(design.id).then(() => {
-          if (design.id === openId) openDesign(null);
-        }, failed);
+        setDeleting({ design, busy: false });
       }
     },
-    [host, openId, openDesign, say],
+    [host, say],
   );
+  const confirmDelete = useCallback(() => {
+    if (!deleting || deleting.busy) return;
+    const { design } = deleting;
+    setDeleting({ design, busy: true });
+    host.api.designs.delete(design.id).then(
+      () => {
+        setDeleting(null);
+        if (design.id === openId) openDesign(null);
+      },
+      () => {
+        setDeleting(null);
+        say(`“${design.name}” couldn't be deleted. Try again.`);
+      },
+    );
+  }, [host, deleting, openId, openDesign, say]);
   const onRename = useCallback(
     (design: DesignSummary, name: string) => {
       host.api.designs
@@ -290,6 +325,29 @@ function WorkspaceWindow({
   const firstDesign = workspace.kind === "personal" && summaries?.length === 0;
   const designs = [...(active ?? []), ...(settled ?? [])];
   const sidebarOpen = ui.sidebarOpen;
+  const panes = useDesignPanes({
+    host,
+    me,
+    open: lost ? null : open,
+    summary: openSummary,
+    people,
+    members: designMembers(detail.data?.members ?? [], openSummary?.owner?.id ?? null),
+    workspaceKind: workspace.kind,
+    sidebarOpen: !firstDesign && sidebarOpen,
+    rail: {
+      open: ui.railOpen,
+      onToggle: () => update((now) => ({ ...now, railOpen: !now.railOpen })),
+    },
+    page,
+    onPage: setPage,
+    link,
+    seenThreadSeq: live.rows?.find((row) => row.id === openId)?.seenThreadSeq ?? null,
+    say,
+    onClose: () => openDesign(null),
+    // SEAM(connect Claude): the setup track's Connect Claude flow (its card, in a dialog, or
+    // Settings › Agents) opens from here once it is wired. Until then the composer's strip says
+    // the design waits, and offers no button that would do nothing.
+  });
 
   return (
     <AppWindow
@@ -342,26 +400,8 @@ function WorkspaceWindow({
               ),
             }
       }
-      chrome={
-        open && !lost ? (
-          <DesignChromeSlot
-            open={open}
-            summary={openSummary}
-            me={me}
-            workspaceKind={workspace.kind}
-            members={designMembers(detail.data?.members ?? [], openSummary?.owner?.id ?? null)}
-            sidebarOpen={!firstDesign && sidebarOpen}
-            page={page}
-            onPage={setPage}
-            rail={{
-              open: ui.railOpen,
-              onToggle: () => update((now) => ({ ...now, railOpen: !now.railOpen })),
-            }}
-            onOpenRepo={(fullName) => host.openExternal(`https://github.com/${fullName}`)}
-          />
-        ) : undefined
-      }
-      rail={open && !lost && ui.railOpen ? <ThreadRail host={host} open={open} /> : null}
+      chrome={panes?.chrome}
+      rail={panes?.rail ?? null}
     >
       {lost ? (
         <PaneMessage
@@ -369,17 +409,8 @@ function WorkspaceWindow({
           body="GitHub says you can't reach it any more. Ask one of its owners if that's a mistake."
           action={{ label: "Go to another workspace", onClick: onLostAccess }}
         />
-      ) : open ? (
-        <DesignCanvas
-          key={open.id}
-          host={host}
-          open={open}
-          me={me}
-          page={page}
-          onPage={setPage}
-          {...(link ? { link } : {})}
-          onClose={() => openDesign(null)}
-        />
+      ) : panes ? (
+        panes.pane
       ) : openId ? null : (
         <CreateView
           host={host}
@@ -395,6 +426,13 @@ function WorkspaceWindow({
         />
       )}
       {notice ? <Banner>{notice}</Banner> : null}
+      <DeleteDesignDialog
+        name={deleting?.design.name ?? ""}
+        open={deleting !== null}
+        busy={deleting?.busy ?? false}
+        onCancel={() => setDeleting(null)}
+        onConfirm={confirmDelete}
+      />
     </AppWindow>
   );
 }

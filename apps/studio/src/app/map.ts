@@ -3,6 +3,7 @@ import type {
   Contributor,
   DesignAccess,
   DesignMember,
+  DesignPreview,
   DesignSummary,
   Match,
   PageTab,
@@ -94,23 +95,31 @@ export function isUnseen(row: Pick<DesignListRow, "seq" | "seenSeq">): boolean {
   return row.seq > (row.seenSeq ?? 0);
 }
 
+/** A design's previews, as docs/cloud.md addresses them: `<assets url>previews/<seq>-<theme>.png`. */
+export function previewOf(assetsUrl: string, previewSeq: number | null): DesignPreview | null {
+  if (previewSeq === null) return null;
+  const base = `${assetsUrl}previews/${previewSeq}`;
+  return { light: `${base}-light.png`, dark: `${base}-dark.png` };
+}
+
 export function toSummary(
   row: DesignListRow,
   context: {
     /** The workspace's members by id: whose a design is. */
     people: ReadonlyMap<string, Person>;
-    /** Teammates in it now, when the app knows (the open design's presence). */
+    /** Teammates in it now, when the app knows. */
     hereNow?: Person[];
     /** The design open in the window is being seen, whatever the row last said. */
     open?: boolean;
+    /** Where its files are, once the API has said: its previews are there. */
+    assetsUrl?: string;
   },
 ): DesignSummary {
   return {
     id: row.id,
     name: row.name,
     project: toProject(row),
-    // The rows carry no asset key yet, so a preview can't be addressed.
-    preview: null,
+    preview: context.assetsUrl ? previewOf(context.assetsUrl, row.previewSeq) : null,
     status: row.status,
     agentState: row.agentState,
     needsYou: row.needsYouCount,
@@ -141,9 +150,21 @@ export function hereNow(rows: readonly PresenceRow[], meId: string): Person[] {
   return rows.filter((row) => row.userId !== meId).map((row) => toPerson(row.userId, row));
 }
 
-/** The chrome's avatars: the viewer, then everyone else here now. */
-export function contributors(rows: readonly PresenceRow[], me: Person): Contributor[] {
-  return [me, ...hereNow(rows, me.id)].map((person) => ({ person, here: true, lastHereAt: null }));
+/**
+ * The chrome's avatars: the viewer, everyone else here now, then whoever has worked on it and
+ * is away, faded, with when they were last in it (as far as the thread says).
+ */
+export function contributors(
+  rows: readonly PresenceRow[],
+  me: Person,
+  worked: readonly { person: Person; at: string }[] = [],
+): Contributor[] {
+  const here = [me, ...hereNow(rows, me.id)];
+  const away = worked.filter(({ person }) => !here.some((p) => p.id === person.id));
+  return [
+    ...here.map((person) => ({ person, here: true, lastHereAt: null })),
+    ...away.map(({ person, at }) => ({ person, here: false, lastHereAt: at })),
+  ];
 }
 
 /**
