@@ -1027,7 +1027,12 @@ The renderer never holds the refresh token: it borrows an access token from the
 main process for each request (`borrowSession` in `packages/client`) and sends
 the request itself, from the studio's origin. The window shows the studio and
 nothing else, under a content security policy that runs only the studio's own
-script and reaches only the API, Neon Realtime and a design's files.
+script and reaches only the API, Neon Realtime and a design's files (each its
+environment's exact host). A design's images may come from any https host, as they
+do in the runner's previews. The packaged app's Electron fuses refuse to run it as
+Node or open an inspector, and a release refuses a remote debugging port, so no
+other program can run code as Ponzu to read the session. Signing out forgets the
+session and everything the studio kept: the designs last opened and their asset keys.
 
 Links into the app (`apps/desktop/README.md`):
 
@@ -1058,7 +1063,7 @@ rendered-picture tier for heavy pages; it is not in the first cloud release.
 | Client and API | A WorkOS access token on every request, for a session the sign-in exchange let in. Clients never hold a GitHub, Claude or provider credential. |
 | Person and design | GitHub decides, checked by the API on every request. |
 | Sandbox and API | A token bound to one design. The API validates and sanitizes everything it sends. |
-| Design HTML and the app | Sanitized on the way in, written out so that no text or attribute can be read as markup whatever the tree holds, drawn in a shadow root, under a strict content security policy. The preload bridge exposes the minimum. |
+| Design HTML and the app | Sanitized on the way in, written out so that no text or attribute can be read as markup whatever the tree holds, drawn in a shadow root, under a strict content security policy: script only from the studio, and nothing reached but the API, Realtime and the design's files. Images may load from any https host, in the app as in the runner's previews: they run no script, and what they cost is that an image's host learns the design was opened. The preload bridge exposes the minimum. |
 | Workspace and workspace | Every row belongs to one workspace. A design carries its workspace, and must agree with its repo's; the rows under a design (ops, thread, questions, presence and the rest) carry the design and reach the workspace through it, so there is no second copy to disagree. Live queries are written by the API, and one scoped to a workspace joins through `designs`. |
 
 Stored secrets (Claude credentials, GitHub user tokens, repo secrets) are encrypted

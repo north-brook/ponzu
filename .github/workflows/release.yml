@@ -255,10 +255,10 @@ jobs:
       - name: The signed app draws its sign-in screen
         # The exact bundle in the draft, before the draft goes public. A broken
         # main process hangs on Electron's error dialog and trips the alarm;
-        # a studio that fails exits 1. See src/smoke.ts. macOS ships
-        # no `timeout`; perl's alarm survives exec.
-        # ELECTRON_RUN_AS_NODE, if a host sets it, would make the app plain Node.
-        run: env -u ELECTRON_RUN_AS_NODE PONZU_SMOKE=1 perl -e 'alarm shift; exec @ARGV' 120 out/mac-arm64/Ponzu.app/Contents/MacOS/Ponzu
+        # a studio that fails, or has no bridge, exits 1. See src/smoke.ts.
+        # macOS ships no `timeout`; perl's alarm survives exec. The app's
+        # fuses ignore ELECTRON_RUN_AS_NODE, so a host that sets it is moot.
+        run: PONZU_SMOKE=1 perl -e 'alarm shift; exec @ARGV' 120 out/mac-arm64/Ponzu.app/Contents/MacOS/Ponzu
         working-directory: apps/desktop
       - name: Upload anything electron-builder didn't
         if: env.PUBLISH == 'true'

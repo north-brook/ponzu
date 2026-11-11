@@ -14,8 +14,19 @@ PONZU_SMOKE=1 out/mac-arm64/Ponzu.app/Contents/MacOS/Ponzu   # must exit 0
 
 A development build may also take `PONZU_API_URL` (https, or http on this computer) and
 `PONZU_WORKOS_CLIENT_ID`. A packaged build ignores all three and talks to `api.ponzu.design`.
+A development build is an app of its own, `Ponzu Dev`: its own data folder, keychain item and
+single-instance lock, so it runs beside an installed Ponzu and never touches its session.
+
 `PONZU_SESSION_FILE=<path>` runs on a developer session saved by `bun run dev:signin` in
-apps/api instead of the keychain, rotating it in place: for driving the app without a browser.
+apps/api instead of the keychain, rotating it in place, unencrypted (the window says so): for
+driving the app without a browser. A development build takes it, and so does a test build,
+which is the packaged app built with `PONZU_TEST_BUILD=1` (`scripts/build.ts`) and which also
+allows `--remote-debugging-port` and developer tools. A release is never a test build: it
+ignores the variable, quits when started with a debugging port, and has no developer tools.
+
+```sh
+PONZU_TEST_BUILD=1 bun run package:dir          # for spare or CI to drive, signed in
+```
 
 ## Layout
 
@@ -46,13 +57,25 @@ Packaged, the studio is the files in `Resources/studio`, served from `ponzu-stud
 standard, secure scheme of our own, so its origin never changes (its storage stays put, the
 API's CORS allows exactly it) and the app and its UI always match. Every file goes out with the
 policy in `csp.ts`: script only from the studio itself, no frames, plugins or forms, and
-nothing loaded or reached but the API, Neon Realtime, a design's files on `*.ponzu.cloud`, R2
-for uploads, GitHub's avatars and Google Fonts.
+nothing reached but the API, its environment's Neon Realtime host and assets host (exact
+hosts, in `config.ts`; a development build allows any of each), and Google Fonts. Images load
+from any https host, as the runner's previews draw them (docs/cloud.md, "Security").
+
+A studio built for shipping carries no stand-in for Ponzu Cloud: with no bridge under it (a
+preload that failed to load) it says Ponzu couldn't start, and the smoke check fails.
 
 The window runs the studio as a web page and nothing more: context isolation, the renderer
 sandbox, no Node, no webviews. It never leaves the studio: a navigation elsewhere is stopped,
 and a link meant for the browser opens there only when it is plain https without credentials.
 Every IPC handler answers only the studio, in the main window's top frame.
+
+The packaged app's Electron fuses (`electronFuses` in package.json) turn off
+`ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS` and `--inspect`, and load only the app's own asar,
+checked against its signature. With those and no debugging port, another program on the
+computer can't run code as Ponzu to read the session or the keychain item that trusts it.
+Cookie encryption stays off: the app keeps no cookies (the API takes a bearer token), and
+turning it on would have Chromium read the keychain at the first web request, even with nobody
+signed in.
 
 ## Signing in
 
@@ -70,7 +93,8 @@ keychain is asked only when there is a session to read or write, so a launch wit
 in (and the smoke check) never prompts for it. The main process
 is the only refresher, and the rotated pair is written before the new access token is used. The
 studio borrows an access token per request and never sees the refresh token; Sign Out ends the
-session at the API and forgets it here.
+session at the API and forgets it here, with everything the studio kept: the designs last
+opened (with the keys to their files) and the window's remembered state.
 
 ## Links
 
@@ -81,7 +105,8 @@ ponzu://github/setup?result=requested | pending | sign_in | failed
 ```
 
 They arrive on a cold start (`open-url` on the Mac, the command line elsewhere) and while
-running (`second-instance`), and wait until the studio listens. Any web page can open one, so a
+running (`second-instance`), and wait until the studio listens, which it does while someone
+is signed in. Any web page can open one, so a
 link only ever asks to show something: one that doesn't parse is dropped without a word. A
 development build takes `ponzu-dev://` instead, through its checkout, and leaves an installed
 Ponzu's links alone.
@@ -101,13 +126,15 @@ dead (`legacy.ts`): the wake helper (a LaunchAgent, or systemd user units), the
 `~/.ponzu/bin/ponzu` shim and the links to it on the PATH, and the `ponzu` MCP server in Claude
 Code, Codex and Cursor that runs the shim. Each goes only when it is in the exact form 1.x
 wrote and what it runs is gone; nothing goes while a 1.x app is still installed. Designs and
-the rest of `~/.ponzu` are never touched. What it did is in `legacy-cleanup.json` in the app's
-data folder, and it never runs again. Windows' PATH entry and design.json association are
+the rest of `~/.ponzu` are never touched, and neither is a Cursor `mcp.json` that is a link
+(into someone's dotfiles, say). A step that fails is logged and doesn't stop the others. What
+it did is in `legacy-cleanup.json` in the app's data folder, and it never runs again. Windows' PATH entry and design.json association are
 removed by the uninstaller (`build/uninstall.ps1`).
 
 ## The smoke check
 
 `PONZU_SMOKE=1` launches the window off screen and exits 0 once the studio has drawn its
-sign-in screen, 1 if it fails to load. It never touches the keychain (the session is in
+sign-in screen and the bridge has answered over IPC that nobody is signed in; 1 if the studio
+fails to load or comes up without the bridge. It never touches the keychain (the session is in
 memory, so it starts signed out) or the network (every request that would leave the computer
 is refused and logged), and looks for no update.
