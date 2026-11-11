@@ -180,7 +180,16 @@ function imageChecks(
       run: async () => {
         const t0 = performance.now();
         await startRunner(box, start);
-        const said = await until("the runner's /health", () => health(box, start), 90_000, 200);
+        // `started` turns true once the runner claims: its session, lease and Claude Code are up.
+        const said = await until(
+          "the runner's /health to say started",
+          async () => {
+            const h = await health(box, start);
+            return h?.started ? h : null;
+          },
+          120_000,
+          200,
+        );
         const healthAfter = since(t0);
         const url = `${box.urls[RUNNER_PORT]}/health`;
         const bare = await fetchStatus(url);
