@@ -650,7 +650,7 @@ export class FakePullRequests {
         }
         const state = this.#mergeState(repo, pull);
         if (state === "CLEAN") return unprocessable("Pull request is in clean status");
-        pull.autoMerge = { method: String(variables.method), enabledBy: caller.login };
+        pull.autoMerge = { method: String(variables.mergeMethod), enabledBy: caller.login };
         this.#acted("auto_merge", pull, caller);
         break;
       }

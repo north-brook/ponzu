@@ -1,6 +1,7 @@
 import type { PrChecks, PrState } from "@ponzu/db";
 import { UpstreamError } from "../http/errors.ts";
-import type { AppPermissions, GithubAnswer, GithubTransport } from "./github.ts";
+import type { AppPermissions, GithubTransport } from "./github.ts";
+import { answer, bearer, type GithubAnswer, graphql, repoParams, send } from "./github-octokit.ts";
 
 /*
  * A design's pull request on GitHub (docs/cloud.md, "Pull requests"). The App reads it and
@@ -290,42 +291,26 @@ export const PULL_REQUEST_QUERY = `query PullRequestTab($owner: String!, $name: 
 }`;
 
 const MARK_READY = `mutation MarkReady($id: ID!) { markPullRequestReadyForReview(input: { pullRequestId: $id }) { clientMutationId } }`;
-const ENABLE_AUTO_MERGE = `mutation EnableAutoMerge($id: ID!, $method: PullRequestMergeMethod!) { enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: $method }) { clientMutationId } }`;
+const ENABLE_AUTO_MERGE = `mutation EnableAutoMerge($id: ID!, $mergeMethod: PullRequestMergeMethod!) { enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: $mergeMethod }) { clientMutationId } }`;
 const DISABLE_AUTO_MERGE = `mutation DisableAutoMerge($id: ID!) { disablePullRequestAutoMerge(input: { pullRequestId: $id }) { clientMutationId } }`;
 
-export function createPullRequestCalls({ request, asApp }: GithubTransport): GithubPullRequests {
+export function createPullRequestCalls({ octokit, asApp }: GithubTransport): GithubPullRequests {
   const target = ({ installationId, repository }: PullRequestRepo) => ({
     installationId,
     repositoryId: repository.id,
   });
 
-  /** A GraphQL call. GitHub answers 200 with `errors` for most failures. */
-  async function graphql(
-    as: "user" | "app",
-    bearer: string,
-    query: string,
-    variables: Record<string, unknown>,
-  ): Promise<{ data: any; errors: { type?: string; path?: unknown[] }[] }> {
-    const answer = await request(as, "POST", "/graphql", bearer, { query, variables });
-    if (answer.status !== 200) {
-      throw new UpstreamError("github", `graphql answered ${answer.status}`, {
-        status: answer.status,
-      });
-    }
-    return { data: answer.body?.data ?? null, errors: answer.body?.errors ?? [] };
-  }
-
   async function mutate(userToken: string, query: string, variables: Record<string, unknown>) {
-    const { errors } = await graphql("user", userToken, query, variables);
+    const { errors } = await graphql(octokit, "user", userToken, query, variables);
     if (errors.length === 0) return "done";
     return errors.some((error) => error.type === "FORBIDDEN") ? "forbidden" : "refused";
   }
 
   return {
     readPullRequest(repo, { branch, defaultBranch, number }) {
-      const [owner, name] = splitName(repo.repository.fullName);
+      const { owner, repo: name } = repoParams(repo.repository.fullName);
       return asApp(target(repo), READ, async (token) => {
-        const { data, errors } = await graphql("app", token, PULL_REQUEST_QUERY, {
+        const { data, errors } = await graphql(octokit, "app", token, PULL_REQUEST_QUERY, {
           owner,
           name,
           qualifiedBranch: `refs/heads/${branch}`,
@@ -347,52 +332,53 @@ export function createPullRequestCalls({ request, asApp }: GithubTransport): Git
     },
 
     async openPullRequest(userToken, { fullName, head, base, title, body, draft }) {
-      const path = `/repos/${fullName}/pulls`;
-      const answer = await request("user", "POST", path, userToken, {
-        title,
-        head,
-        base,
-        body,
-        draft,
-      });
-      if (answer.status === 201) return { kind: "opened", number: answer.body.number };
-      if (answer.status === 403 || answer.status === 404) return { kind: "forbidden" };
-      if (answer.status === 422) {
-        const refused = whyRefused(answer);
+      const opened = await answer("user", () =>
+        octokit.request("POST /repos/{owner}/{repo}/pulls", {
+          ...repoParams(fullName),
+          title,
+          head,
+          base,
+          body,
+          draft,
+          headers: bearer(userToken),
+        }),
+      );
+      if (opened.status === 201) return { kind: "opened", number: opened.body.number };
+      if (opened.status === 403 || opened.status === 404) return { kind: "forbidden" };
+      if (opened.status === 422) {
+        const refused = whyRefused(opened);
         if (refused) return { kind: refused };
       }
-      throw new UpstreamError("github", `POST ${path} answered ${answer.status}`, {
-        status: answer.status,
+      throw new UpstreamError("github", `POST /repos/${fullName}/pulls answered ${opened.status}`, {
+        status: opened.status,
       });
     },
 
     editPullRequestBody(repo, number, body) {
       return asApp(target(repo), WRITE, async (token) => {
-        const path = `/repos/${repo.repository.fullName}/pulls/${number}`;
-        const answer = await request("app", "PATCH", path, token, { body });
-        if (answer.status !== 200) {
-          throw new UpstreamError("github", `PATCH ${path} answered ${answer.status}`, {
-            status: answer.status,
-          });
-        }
+        await send("app", () =>
+          octokit.request("PATCH /repos/{owner}/{repo}/pulls/{pull_number}", {
+            ...repoParams(repo.repository.fullName),
+            pull_number: number,
+            body,
+            headers: bearer(token),
+          }),
+        );
       });
     },
 
     readPullRequestFile(repo, number, wanted) {
       return asApp(target(repo), READ, async (token) => {
         // GitHub lists a pull request's files in the same order here as to the tab's query.
-        const path = `/repos/${repo.repository.fullName}/pulls/${number}/files?per_page=${LISTED_FILES}`;
-        const answer = await request("app", "GET", path, token);
-        if (answer.status !== 200 || !Array.isArray(answer.body)) {
-          throw new UpstreamError(
-            "github",
-            `the files of a pull request answered ${answer.status}`,
-            {
-              status: answer.status,
-            },
-          );
-        }
-        const file = answer.body.find((candidate: any) => candidate.filename === wanted);
+        const { data: files } = await send("app", () =>
+          octokit.request("GET /repos/{owner}/{repo}/pulls/{pull_number}/files", {
+            ...repoParams(repo.repository.fullName),
+            pull_number: number,
+            per_page: LISTED_FILES,
+            headers: bearer(token),
+          }),
+        );
+        const file = files.find((candidate) => candidate.filename === wanted);
         if (!file) return null;
         return {
           path: file.filename,
@@ -406,36 +392,51 @@ export function createPullRequestCalls({ request, asApp }: GithubTransport): Git
     },
 
     markReady: (userToken, id) => mutate(userToken, MARK_READY, { id }),
+    // `method` is a name `@octokit/graphql` keeps for itself.
     enableAutoMerge: (userToken, id, method) =>
-      mutate(userToken, ENABLE_AUTO_MERGE, { id, method: method.toUpperCase() }),
+      mutate(userToken, ENABLE_AUTO_MERGE, { id, mergeMethod: method.toUpperCase() }),
     disableAutoMerge: (userToken, id) => mutate(userToken, DISABLE_AUTO_MERGE, { id }),
 
     async mergePullRequest(userToken, { fullName, number, method, sha }) {
-      const path = `/repos/${fullName}/pulls/${number}/merge`;
-      const answer = await request("user", "PUT", path, userToken, { merge_method: method, sha });
-      if (answer.status === 405) return mergeRefusal(messageOf(answer));
-      return personResult(answer, { 409: "head_moved" });
+      const merged = await answer("user", () =>
+        octokit.request("PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge", {
+          ...repoParams(fullName),
+          pull_number: number,
+          merge_method: method,
+          sha,
+          headers: bearer(userToken),
+        }),
+      );
+      if (merged.status === 405) return mergeRefusal(messageOf(merged));
+      return personResult(merged, { 409: "head_moved" });
     },
 
     async updatePullRequestBranch(userToken, { fullName, number, sha }) {
-      const path = `/repos/${fullName}/pulls/${number}/update-branch`;
-      const answer = await request("user", "PUT", path, userToken, { expected_head_sha: sha });
+      const updated = await answer("user", () =>
+        octokit.request("PUT /repos/{owner}/{repo}/pulls/{pull_number}/update-branch", {
+          ...repoParams(fullName),
+          pull_number: number,
+          expected_head_sha: sha,
+          headers: bearer(userToken),
+        }),
+      );
       // GitHub says a moved head with a 422 and these words; any other 422 is something else.
-      const moved = answer.status === 422 && /expected head sha/i.test(messageOf(answer));
-      return moved ? "head_moved" : personResult(answer, {});
+      const moved = updated.status === 422 && /expected head sha/i.test(messageOf(updated));
+      return moved ? "head_moved" : personResult(updated, {});
     },
 
     async closePullRequest(userToken, { fullName, number }) {
-      const path = `/repos/${fullName}/pulls/${number}`;
-      const answer = await request("user", "PATCH", path, userToken, { state: "closed" });
-      return personResult(answer, {});
+      const closed = await answer("user", () =>
+        octokit.request("PATCH /repos/{owner}/{repo}/pulls/{pull_number}", {
+          ...repoParams(fullName),
+          pull_number: number,
+          state: "closed",
+          headers: bearer(userToken),
+        }),
+      );
+      return personResult(closed, {});
     },
   };
-}
-
-function splitName(fullName: string): [string, string] {
-  const slash = fullName.indexOf("/");
-  return [fullName.slice(0, slash), fullName.slice(slash + 1)];
 }
 
 /** GitHub's own words for a refusal, from `message` and each of `errors`. Never shown to anyone. */
