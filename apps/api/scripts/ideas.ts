@@ -4,7 +4,8 @@
 //
 // A public repository is read without a token. One named with `--app` is read as the GitHub
 // App, with a token for it alone (GITHUB_APP_CLIENT_ID, GITHUB_APP_PRIVATE_KEY or its _PATH,
-// GITHUB_APP_INSTALLATION_ID). The model is paid for with ANTHROPIC_API_KEY.
+// GITHUB_APP_INSTALLATION_ID). The model is paid for with PONZU_ANTHROPIC_API_KEY, or with
+// ANTHROPIC_API_KEY when that is unset (the dev credentials' name for the same key).
 //
 // GitHub's answers are kept in .context/ideas/ at the repository root, so asking again costs
 // GitHub nothing; `--fresh` reads again. `--show` prints the prompt. It stops before
@@ -32,7 +33,8 @@ const names = args
   .map((name) => (name === "test" ? testRepo : name));
 const asApp = (fullName: string) => flags.has("--app") || fullName === testRepo;
 const ceiling = Number(env.PONZU_IDEAS_SPEND_USD ?? 0.5);
-if (!env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY is not set.");
+const apiKey = env.PONZU_ANTHROPIC_API_KEY ?? env.ANTHROPIC_API_KEY;
+if (!apiKey) throw new Error("PONZU_ANTHROPIC_API_KEY is not set.");
 if (names.length === 0) throw new Error("Name a repository: bun scripts/ideas.ts owner/repo");
 
 const cache = join(import.meta.dir, "../../../.context/ideas");
@@ -47,7 +49,7 @@ const github = createGithub({
   fetch: (url, init) => fetch(url, init),
   clock: systemClock,
 });
-const model = createClaude({ apiKey: env.ANTHROPIC_API_KEY, fetch: (u, i) => fetch(u, i) });
+const model = createClaude({ apiKey, fetch: (u, i) => fetch(u, i) });
 
 /** A token for this one repository, as the App, to read it with: what the API mints. */
 async function appToken(fullName: string): Promise<string> {

@@ -46,7 +46,7 @@ const environment = {
   R2_ACCESS_KEY_ID: "placeholder",
   R2_SECRET_ACCESS_KEY: "placeholder",
   R2_BUCKET: "placeholder",
-  ANTHROPIC_API_KEY: "placeholder",
+  PONZU_ANTHROPIC_API_KEY: "sk-ant-placeholder",
 };
 
 const check = `

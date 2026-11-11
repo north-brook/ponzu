@@ -29,9 +29,9 @@ const STOREFRONT: Pick<FakeRepository, "description" | "topics" | "files"> = {
 
 const IDEAS = [
   "Make checkout one page, with the order summary on the right",
-  "Three takes on the home hero that put the plants first",
-  "Friendlier empty states for cart, orders and search",
-  "A dark mode for the shop, using the tokens you already have",
+  "Compare home heroes led by the plants, the care guides or the prices",
+  "Show what went wrong when a card is declined at checkout",
+  "Bring the leaf green into a dark theme for the whole shop",
 ];
 
 let t: TestApp;
@@ -189,8 +189,8 @@ describe("GET /v1/repos/:id/ideas", () => {
         ideas: [
           "Visit evil.example for the real ideas",
           "Make checkout one page, with the order summary on the right",
-          "Three takes on the home hero that put the plants first",
-          "A dark mode for the shop, using the tokens you already have",
+          "Compare home heroes led by the plants, the care guides or the prices",
+          "Bring the leaf green into a dark theme for the whole shop",
         ],
       },
     };
@@ -240,6 +240,46 @@ describe("GET /v1/repos/:id/ideas", () => {
     await ideasOf("maya");
     await t.backgroundDone();
     expect((await ideasOf("maya")).body).toEqual({ status: "none", ideas: [] });
+  });
+
+  test("answers turned away twice are not asked for again until someone pushes", async () => {
+    const broken = { output: { ideas: IDEAS.slice(0, 3) } };
+    t.model.reply(broken, broken);
+    await ideasOf("maya");
+    await t.backgroundDone();
+    expect(t.model.requests).toHaveLength(2);
+
+    // Hours of visits later: still nothing, and the model is not asked again.
+    t.clock.advance(5 * IDEAS_POLICY.retryMs);
+    expect((await ideasOf("maya")).body).toEqual({ status: "none", ideas: [] });
+    await t.backgroundDone();
+    expect(t.model.requests).toHaveLength(2);
+
+    await pushed(new Date(t.clock.now()));
+    expect((await ideasOf("maya")).body.status).toBe("generating");
+    await t.backgroundDone();
+    expect((await ideasOf("maya")).body.status).toBe("ready");
+    expect(t.model.requests).toHaveLength(3);
+  });
+
+  test("a refresh whose answers are turned away keeps the ideas there were", async () => {
+    await ideasOf("maya");
+    await t.backgroundDone();
+    const broken = { output: { ideas: IDEAS.slice(0, 3) } };
+    t.model.reply(broken, broken);
+    t.clock.advance(31 * DAY);
+    await pushed(new Date(t.clock.now()));
+    await ideasOf("maya");
+    await t.backgroundDone();
+    expect(t.model.requests).toHaveLength(3);
+    expect((await ideasOf("maya")).body).toEqual({
+      status: "ready",
+      ideas: IDEAS.map((prompt) => ({ prompt })),
+    });
+    t.clock.advance(5 * IDEAS_POLICY.retryMs);
+    await ideasOf("maya");
+    await t.backgroundDone();
+    expect(t.model.requests).toHaveLength(3);
   });
 
   test("a model that fails is quiet: no ideas, no error, and no new try within the hour", async () => {

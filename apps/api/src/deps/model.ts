@@ -18,10 +18,14 @@ import type { Fetch } from "./fetch.ts";
  * sandbox and never comes through here. The one caller today is `ideas/`.
  *
  * The call is the AI SDK's `generateText` with a structured output. It reaches Claude through
- * the Anthropic provider on Ponzu's own key (`ANTHROPIC_API_KEY`), not the Vercel AI Gateway:
- * the key already exists on every environment, local development and the scripts need no
- * Vercel login, and the requests go through the API's own `fetch`, where a test can see them.
- * To go through the gateway instead, see `createClaude`: it is one line.
+ * the Anthropic provider on Ponzu's own key (`PONZU_ANTHROPIC_API_KEY`), not the Vercel AI
+ * Gateway: the key already exists on every environment, local development and the scripts
+ * need no Vercel login, and the requests go through the API's own `fetch`, where a test can
+ * see them. To go through the gateway instead, see `createClaude`.
+ *
+ * Two layers try again, so one ask is at most two HTTP requests: the SDK retries a 429, a 5xx
+ * or a dropped connection once (`maxRetries`). The caller may ask again for an answer it
+ * turned away (`ideas/` does, once), so one generation is at most four.
  */
 
 /** One request for an answer in the shape of `schema`. */
@@ -67,7 +71,16 @@ export const CLAUDE_HAIKU = "claude-haiku-5-5";
 const TIMEOUT_MS = 30_000;
 
 /** The real thing: Claude Haiku on Ponzu's Anthropic key, over the API's `fetch`. */
-export function createClaude({ apiKey, fetch }: { apiKey: string; fetch: Fetch }): Model {
+export function createClaude({
+  apiKey,
+  fetch,
+  timeoutMs = TIMEOUT_MS,
+}: {
+  apiKey: string;
+  fetch: Fetch;
+  /** One request's own limit, retry included: shorter only in tests. */
+  timeoutMs?: number;
+}): Model {
   const anthropic = createAnthropic({
     apiKey,
     // Said outright: the provider otherwise reads ANTHROPIC_BASE_URL from the environment,
@@ -75,15 +88,21 @@ export function createClaude({ apiKey, fetch }: { apiKey: string; fetch: Fetch }
     baseURL: "https://api.anthropic.com/v1",
     fetch: fetch as typeof globalThis.fetch,
   });
-  return createModel(anthropic(CLAUDE_HAIKU));
-  // Through the Vercel AI Gateway instead (AI_GATEWAY_API_KEY, or the deployment's OIDC token
-  // once the gateway is enabled on the project), the line is:
-  // return createModel("anthropic/claude-haiku-5.5");
+  return createModel(anthropic(CLAUDE_HAIKU), { timeoutMs });
+  // Through the Vercel AI Gateway instead, the model is this one line (with `createGateway`
+  // from "ai"), its key read in env.ts like every other (AI_GATEWAY_API_KEY, made in the team's
+  // AI Gateway settings), and PONZU_ANTHROPIC_API_KEY no longer needed:
+  // createGateway({ apiKey, fetch: fetch as typeof globalThis.fetch })("anthropic/claude-haiku-5.5")
+  // Never a bare "anthropic/…" string: that is the SDK's global provider, which reads its key
+  // from process.env and sends over the global fetch, around env.ts and the tests' fake.
 }
 
 /** Any AI SDK language model behind the `Model` interface. */
-export function createModel(model: LanguageModel): Model {
-  const id = typeof model === "string" ? model : model.modelId;
+export function createModel(
+  model: Exclude<LanguageModel, string>,
+  { timeoutMs = TIMEOUT_MS }: { timeoutMs?: number } = {},
+): Model {
+  const id = model.modelId;
   return {
     id,
     async structured<T>({
@@ -106,7 +125,7 @@ export function createModel(model: LanguageModel): Model {
           reasoning: effort,
           // One more try for a 429, a 5xx or a dropped connection; the timeout bounds both.
           maxRetries: 1,
-          timeout: TIMEOUT_MS,
+          timeout: timeoutMs,
           ...(signal ? { abortSignal: signal } : {}),
         });
         return {

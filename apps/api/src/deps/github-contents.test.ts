@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test";
 import { FakeClock } from "@ponzu/sandbox";
+import { UpstreamError } from "../http/errors.ts";
 import { createGithub } from "./github.ts";
 
-// Reading a repository's contents a little at a time: what `ideas/read-repo.ts` calls.
+// Reading a repository's contents through Octokit on the API's fetch: what `ideas/read-repo.ts`
+// calls.
 
 function githubServing(serve: (url: string, init: RequestInit) => Response) {
   const asked: { url: string; authorization: string | null; accept: string | null }[] = [];
@@ -24,52 +26,44 @@ function githubServing(serve: (url: string, init: RequestInit) => Response) {
   return { github, asked };
 }
 
-test("a tree longer than its budget is read as far as it goes, and never further", async () => {
-  const entries = Array.from({ length: 5_000 }, (_, i) => ({
-    path: `src/components/Part${i}.tsx`,
-    mode: "100644",
-    type: "blob",
-    sha: "a".repeat(40),
-    size: 120,
-    url: `https://api.github.com/repos/o/r/git/blobs/${i}`,
-  }));
-  const body = JSON.stringify({ sha: "b".repeat(40), tree: entries, truncated: false });
-  let pulled = 0;
-  const { github } = githubServing(() => {
-    const bytes = new TextEncoder().encode(body);
-    pulled = 0;
-    const stream = new ReadableStream<Uint8Array>({
-      pull(controller) {
-        if (pulled >= bytes.length) return controller.close();
-        controller.enqueue(bytes.subarray(pulled, pulled + 16_384));
-        pulled += 16_384;
-      },
-    });
-    return new Response(stream, { headers: { "content-type": "application/json" } });
+const file = (text: string) =>
+  Response.json({
+    type: "file",
+    size: text.length,
+    encoding: "base64",
+    content: Buffer.from(text).toString("base64"),
   });
 
-  const tree = await github.getTree("ghs_token", {
-    fullName: "o/r",
-    ref: "main",
-    maxBytes: 100_000,
+test("a tree is every entry GitHub lists, with paths of any characters, and says when it was cut", async () => {
+  const entries = [
+    { path: "app/{slug}/page.tsx", mode: "100644", type: "blob", sha: "a", size: 120 },
+    { path: "app/{slug}", mode: "040000", type: "tree", sha: "b" },
+    { path: "vendor/lib", mode: "160000", type: "commit", sha: "c" },
+  ];
+  const { github, asked } = githubServing(() =>
+    Response.json({ sha: "s", tree: entries, truncated: true }),
+  );
+  const tree = await github.getTree("ghs_token", { fullName: "o/r", ref: "main" });
+  expect(tree).toEqual({
+    entries: [
+      { path: "app/{slug}/page.tsx", type: "blob", size: 120 },
+      { path: "app/{slug}", type: "tree", size: null },
+    ],
+    complete: false,
   });
-  expect(tree.complete).toBe(false);
-  expect(tree.entries.length).toBeGreaterThan(300);
-  expect(tree.entries.length).toBeLessThan(5_000);
-  expect(tree.entries[0]).toEqual({ path: "src/components/Part0.tsx", type: "blob", size: 120 });
-  // It stopped pulling once it had enough.
-  expect(pulled).toBeLessThan(100_000 + 16_384 * 2);
-
-  const whole = await github.getTree(null, { fullName: "o/r", ref: "main", maxBytes: 10_000_000 });
-  expect(whole).toMatchObject({ complete: true });
-  expect(whole.entries).toHaveLength(5_000);
+  expect(asked[0]).toMatchObject({
+    url: "https://api.github.com/repos/o/r/git/trees/main?recursive=1",
+    authorization: "Bearer ghs_token",
+  });
 });
 
-test("a file is its raw text, cut at its budget; a missing one is null; a public read sends no token", async () => {
+test("a file is its text, cut at its budget; a missing or too large one is null; a public read sends no token", async () => {
   const { github, asked } = githubServing((url) =>
     url.includes("missing")
       ? Response.json({ message: "Not Found" }, { status: 404 })
-      : new Response("x".repeat(10_000)),
+      : url.includes("huge")
+        ? Response.json({ type: "file", size: 5_000_000, encoding: "none", content: "" })
+        : file("x".repeat(10_000)),
   );
   const text = await github.getFileText(null, {
     fullName: "o/r",
@@ -78,11 +72,11 @@ test("a file is its raw text, cut at its budget; a missing one is null; a public
     maxBytes: 1_000,
   });
   expect(text).toHaveLength(1_000);
-  expect(asked[0]).toEqual({
-    url: "https://api.github.com/repos/o/r/contents/app/(shop)/page.tsx?ref=main",
-    authorization: null,
-    accept: "application/vnd.github.raw+json",
-  });
+  // Octokit encodes the whole path as one part, which GitHub reads as the same path.
+  expect(asked[0]!.url).toBe(
+    "https://api.github.com/repos/o/r/contents/app%2F%28shop%29%2Fpage.tsx?ref=main",
+  );
+  expect(asked[0]!.authorization).toBeNull();
   expect(
     await github.getFileText("ghs_token", {
       fullName: "o/r",
@@ -93,8 +87,20 @@ test("a file is its raw text, cut at its budget; a missing one is null; a public
   ).toBeNull();
   expect(asked[1]!.authorization).toBe("Bearer ghs_token");
   expect(
+    await github.getFileText(null, { fullName: "o/r", path: "huge", ref: "main", maxBytes: 10 }),
+  ).toBeNull();
+  expect(
     await github.getReadme(null, { fullName: "o/missing", ref: "main", maxBytes: 10 }),
   ).toBeNull();
+});
+
+test("GitHub failing is an UpstreamError with its status", async () => {
+  const { github } = githubServing(() =>
+    Response.json({ message: "Git Repository is empty." }, { status: 409 }),
+  );
+  const error = await github.getTree(null, { fullName: "o/r", ref: "main" }).catch((e) => e);
+  expect(error).toBeInstanceOf(UpstreamError);
+  expect(error.status).toBe(409);
 });
 
 test("a repository's page: description, topics and default branch", async () => {

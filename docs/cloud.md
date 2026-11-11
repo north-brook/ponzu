@@ -1004,16 +1004,18 @@ Under the create composer, four prompts for the chosen repo ("Make checkout one 
 order summary on the right"). They are generated, never written by hand
 (`apps/api/src/ideas/`).
 
-- **Ponzu pays.** Claude Haiku 5.5 (`claude-haiku-5-5`) on Ponzu's own `ANTHROPIC_API_KEY`,
-  not the person's Claude account: a subscription token cannot make direct API calls, and the
-  ideas show before anyone has connected Claude. About $0.0009 a repo. This is the only model
-  call the API makes; a design's agent still runs on the person's own plan in its sandbox.
+- **Ponzu pays.** Claude Haiku 5.5 (`claude-haiku-5-5`) on Ponzu's own
+  `PONZU_ANTHROPIC_API_KEY`, not the person's Claude account: a subscription token cannot make
+  direct API calls, and the ideas show before anyone has connected Claude. The name is not
+  `ANTHROPIC_API_KEY`, which is the person's own key in a runner. About $0.001 a repo. This is
+  the only model call the API makes; a design's agent still runs on the person's own plan in
+  its sandbox.
 - **Through the AI SDK** (`ai`, `generateText` with `Output.object` and the zod schema, a 30
-  second timeout, one retry), reaching Anthropic with the `@ai-sdk/anthropic` provider and our
-  own key rather than the Vercel AI Gateway: the key is already on every environment, local
+  second timeout), reaching Anthropic with the `@ai-sdk/anthropic` provider and our own key
+  rather than the Vercel AI Gateway: the key is already on every environment, local
   development and tests need no Vercel login, and no gateway has to be enabled or billed on the
-  project. Going through the gateway is one line in `deps/model.ts` (`createClaude`), plus
-  `AI_GATEWAY_API_KEY` or the project's OIDC token.
+  project. Going through the gateway is the model line in `createClaude` (`deps/model.ts` has
+  it, with `createGateway` on the API's `fetch`), plus `AI_GATEWAY_API_KEY` read in `env.ts`.
 - **Per repo**, on `repos.ideas`, shared by everyone who can read the repo. `GET
   /v1/repos/:id/ideas` answers `ready`, `generating` or `none` to anyone `requireRepo` lets
   read it, a 404 to anyone else.
@@ -1021,24 +1023,35 @@ order summary on the right"). They are generated, never written by hand
   (`ideas_claimed_at`: one instance at a time) and answers `generating`; the client asks again
   on a short backoff (`watchRepoIdeas`, about 45 seconds at most). The read and the call have 45
   seconds. Each workspace may start 20 generations an hour, counted on its row, so a thousand
-  repos cannot run up a bill. Failures are quiet: nothing is kept, the screen shows no ideas,
-  and the repo is tried again an hour after.
+  repos cannot run up a bill. Failures are quiet: the screen shows no ideas. No answer at all
+  (GitHub or the model down, the deadline) is tried again an hour after; answers turned away
+  twice count as a generation, keeping the ideas there were, and wait for a push.
+- **Retries, two layers:** the SDK tries a 429, a 5xx or a dropped connection once more, and an
+  answer that breaks a rule is asked for once more with the rule it broke. At most two asks
+  and four HTTP requests a generation.
 - **Refresh**: ideas a month old are made again once the repo has been pushed to since; an
   empty list after any push. A visit alone never remakes them, and a repo nobody pushes to keeps
   them.
-- **A light read, never a clone**, as the App with a token for that one repo (`contents: read`,
-  `metadata: read`), minted and dropped: the repo's description and topics, its tree, README, up
-  to four manifests and one theme file. At most 8 reads, 4 MiB of tree and 64 KiB of each file,
-  about 18,000 characters into the prompt. Screens and routes come from path conventions (Next,
-  Remix, SvelteKit, Nuxt/Vue, Rails, Django and Jinja, Laravel, Phoenix, Expo Router, React
-  Native, SwiftUI, Android, Flutter). A repo with nothing to ground ideas in gets none, without
-  a model call: invented ideas about a product that is not there yet would mislead.
+- **A light read, never a clone**, through Octokit as the App with a token for that one repo
+  (`contents: read`, `metadata: read`), minted and dropped: the repo's description and topics,
+  its tree, README, up to four manifests and one theme file. At most 8 reads; the tree as far as
+  GitHub lists it (100,000 entries or 7 MB), a manifest or theme file only under 64 KiB, the
+  README cut at 64 KiB (GitHub's contents JSON carries at most 1 MB), about 18,000 characters
+  into the prompt. Screens and routes come from path conventions (Next, Remix, SvelteKit,
+  Nuxt/Vue, Rails, Django and Jinja, Laravel, Phoenix, Expo Router, React Native, SwiftUI,
+  Android, Flutter). A repo with nothing to ground ideas in gets none, without a model call:
+  invented ideas about a product that is not there yet would mislead.
+- **The four kinds**: improve a screen the repo names; variations of its most prominent one;
+  a screen or state it lacks; something across the interface. Kinds 3 and 4 are menus with no
+  default, so repos do not all get the same empty state or type scale, and only screens the
+  read found may be redesigned. "No dark theme" is said only when a theme file was read.
 - **The repo's text is untrusted.** The instructions are all in the system prompt, the same for
   every repo; the repo's text goes in the user turn inside one `<repository>` fence it cannot
   close (every `<` and `>` in it is replaced). The answer is structured output, and is kept only
-  if all four ideas are plain imperative sentences of at most 90 characters, with no address, markup, file
-  name or mention of Ponzu, AI, code or the repo. One broken answer is asked for again, then
-  nothing is kept.
+  if all four ideas are plain sentences of at most 90 characters that do not open like a noun
+  phrase (an article, a number), with no address, markup or file name, and no word about how
+  they were made (Ponzu, AI, Claude, "the codebase", "this repo"). A product's own words pass: a
+  code host's repositories, an editor's code.
 
 ## Billing
 

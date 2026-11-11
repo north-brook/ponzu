@@ -422,7 +422,16 @@ export class FakeGithub {
         : decodeURIComponent(part.slice("contents/".length));
     const text = path === undefined ? undefined : files[path];
     if (text === undefined) return Response.json({ message: "Not Found" }, { status: 404 });
-    return new Response(text, { headers: { "content-type": "application/vnd.github.raw" } });
+    // GitHub's JSON form: the content in base64 up to 1 MB, left out past that.
+    const bytes = Buffer.from(text);
+    const large = bytes.byteLength > 1024 * 1024;
+    return Response.json({
+      type: "file",
+      path,
+      size: bytes.byteLength,
+      encoding: large ? "none" : "base64",
+      content: large ? "" : bytes.toString("base64"),
+    });
   }
 
   /** What any token may read: an account's public profile. */

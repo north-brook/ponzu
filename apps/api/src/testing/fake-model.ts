@@ -28,9 +28,9 @@ export class FakeModel implements Model {
     output: {
       ideas: [
         "Make checkout one page, with the order summary on the right",
-        "Three takes on the home hero that put the plants first",
-        "Friendlier empty states for cart, orders and search",
-        "A dark mode for the shop, using the tokens you already have",
+        "Compare home heroes led by the plants, the care guides or the prices",
+        "Show what went wrong when a card is declined at checkout",
+        "Bring the leaf green into a dark theme for the whole shop",
       ],
     },
   };

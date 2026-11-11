@@ -31,7 +31,7 @@ export async function readRepository(
   const ref = about.defaultBranch;
   let tree: Awaited<ReturnType<Reader["getTree"]>>;
   try {
-    tree = await github.getTree(token, { fullName, ref, maxBytes: BUDGET.treeBytes });
+    tree = await github.getTree(token, { fullName, ref });
   } catch (error) {
     // 409: a repository with no commits has no tree.
     if (!(error instanceof UpstreamError && (error.status === 409 || error.status === 404))) {
@@ -39,10 +39,15 @@ export async function readRepository(
     }
     tree = { entries: [], complete: true };
   }
+  const sizes = new Map(tree.entries.map((entry) => [entry.path, entry.size]));
+  // A manifest or theme file larger than its budget is not worth fetching: cut, it would not
+  // parse, and it is a generated file more often than a written one.
   const file = (path: string) =>
-    github
-      .getFileText(token, { fullName, path, ref, maxBytes: BUDGET.fileBytes })
-      .catch(() => null);
+    (sizes.get(path) ?? 0) > BUDGET.fileBytes
+      ? Promise.resolve(null)
+      : github
+          .getFileText(token, { fullName, path, ref, maxBytes: BUDGET.fileBytes })
+          .catch(() => null);
   const themePath = pickTheme(tree);
   const manifestPaths = pickManifests(tree);
   const [readme, theme, ...manifests] = await Promise.all([

@@ -8,10 +8,14 @@ import { CLAUDE_HAIKU, createClaude } from "./model.ts";
 
 const Schema = z.object({ ideas: z.array(z.string()) });
 
-function claudeServing(serve: (body: Record<string, unknown>) => Response | "hang") {
+function claudeServing(
+  serve: (body: Record<string, unknown>) => Response | "hang",
+  { timeoutMs }: { timeoutMs?: number } = {},
+) {
   const sent: { url: string; key: string | null; body: Record<string, unknown> }[] = [];
   const model = createClaude({
     apiKey: "sk-ant-test",
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
     fetch: async (url, init = {}) => {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
       sent.push({ url, key: new Headers(init.headers).get("x-api-key"), body });
@@ -83,14 +87,20 @@ test("an answer not in the shape asked for is no output, with what it cost", asy
 });
 
 test("no answer at all is an UpstreamError from the model, after one retry at most", async () => {
+  // `retry-after-ms`, which the SDK honors, keeps its backoff from holding up the test.
   const failing = (status: number) =>
-    Response.json({ type: "error", error: { type: "api_error", message: "no" } }, { status });
+    Response.json(
+      { type: "error", error: { type: "api_error", message: "no" } },
+      { status, headers: { "retry-after-ms": "1" } },
+    );
 
   const overloaded = claudeServing(() => failing(529));
+  const started = Date.now();
   const error = await overloaded.model.structured({ ...ask, effort: "low" }).catch((e) => e);
   expect(error).toBeInstanceOf(UpstreamError);
   expect(error).toMatchObject({ service: "model", status: 529 });
   expect(overloaded.sent).toHaveLength(2);
+  expect(Date.now() - started).toBeLessThan(1_000);
 
   const refused = claudeServing(() => failing(401));
   await expect(refused.model.structured({ ...ask, effort: "low" })).rejects.toMatchObject({
@@ -104,4 +114,11 @@ test("no answer at all is an UpstreamError from the model, after one retry at mo
   await expect(hanging.model.structured({ ...ask, effort: "low", signal })).rejects.toBeInstanceOf(
     UpstreamError,
   );
+});
+
+test("a request that runs past its own timeout, with no signal from the caller, is an UpstreamError", async () => {
+  const hanging = claudeServing(() => "hang", { timeoutMs: 20 });
+  const error = await hanging.model.structured({ ...ask, effort: "low" }).catch((e) => e);
+  expect(error).toBeInstanceOf(UpstreamError);
+  expect(error).toMatchObject({ service: "model" });
 });

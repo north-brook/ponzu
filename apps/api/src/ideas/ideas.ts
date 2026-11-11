@@ -15,8 +15,9 @@ import { isEmpty } from "./snapshot.ts";
  * repo by a small fast model on Ponzu's own key, kept on its row for everyone who can read it.
  * They are made lazily, the first time anyone asks, in the background: the asker hears
  * `generating` at once and asks again. One instance at a time makes them (the claim in the
- * row), within a workspace's allowance, and every failure is quiet: nothing is kept, the
- * screen shows no ideas, and the repo is tried again an hour later.
+ * row), within a workspace's allowance, and every failure is quiet: nothing new is kept and
+ * the screen shows no ideas. A failure to get an answer (GitHub or the model down, the
+ * deadline) is tried again an hour later; answers turned away twice wait for a push.
  */
 
 const HOUR = 3600_000;
@@ -135,6 +136,7 @@ export async function generateRepoIdeas(
       deadline,
     );
     let ideas: string[] = [];
+    let rejected = false;
     if (isEmpty(snapshot)) {
       log.info("ideas_skipped", { ...ids, reason: "empty_repo", files: snapshot.files });
     } else {
@@ -149,10 +151,14 @@ export async function generateRepoIdeas(
           ...tally,
           reason: asked.rejected,
         });
-        await release(deps, repo.id, claimedAt);
-        return;
+        // Asking about the same material again would most likely be turned away again, so
+        // this counts as a generation: the ideas it had stay (none, the first time), and the
+        // next try waits for a push, as for a repo with nothing in it.
+        ideas = repo.ideas;
+        rejected = true;
+      } else {
+        ideas = asked.ideas;
       }
-      ideas = asked.ideas;
     }
     const saved = await saveRepoIdeas(deps.db, {
       repoId: repo.id,
@@ -160,14 +166,16 @@ export async function generateRepoIdeas(
       generatedAt: new Date(deps.clock.now()),
       claimedAt,
     });
-    log.info("ideas_generated", {
-      ...ids,
-      model: deps.model.id,
-      ...tally,
-      ideas: ideas.length,
-      saved,
-      ms: deps.clock.now() - started,
-    });
+    if (!rejected) {
+      log.info("ideas_generated", {
+        ...ids,
+        model: deps.model.id,
+        ...tally,
+        ideas: ideas.length,
+        saved,
+        ms: deps.clock.now() - started,
+      });
+    }
   } catch (error) {
     log.warn("ideas_failed", {
       ...ids,

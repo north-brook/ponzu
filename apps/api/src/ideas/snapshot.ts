@@ -10,12 +10,13 @@ import type { GithubTree } from "../deps/github.ts";
  * The budget, at most, for one repository:
  *   reads    8 GitHub requests: the repo, its tree, its README, 4 manifests, 1 theme file
  *            (plus the one that mints the token)
- *   bytes    4 MiB of tree, 64 KiB of each file; the rest of any answer is never fetched
+ *   bytes    the tree as far as GitHub lists it (it stops at 100,000 entries or 7 MB);
+ *            a manifest or theme file only when the tree says it is under 64 KiB; the README
+ *            cut at 64 KiB (GitHub sends at most 1 MB of any file's content)
  *   prompt   about 18,000 characters of repository text (about 5,000 tokens)
  */
 
 export const BUDGET = {
-  treeBytes: 4 * 1024 * 1024,
   fileBytes: 64 * 1024,
   manifests: 4,
   /** Characters kept of each part. */
