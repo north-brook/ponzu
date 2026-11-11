@@ -650,8 +650,9 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
   test("the pull request tab swaps the middle only: the thread stays, and ⌘J and the page numbers work there", async () => {
     await open("pull-request-tab");
     const heading = 'h1:text-is("Quieter hero, editorial take")';
+    // The rail's width as the design gives it: its panel and the 10 of gutter (its edge) before it.
     const thread = () =>
-      page.$eval("#thread", (el) => Math.round(el.getBoundingClientRect().width));
+      page.$eval("#thread-pane", (el) => Math.round(el.getBoundingClientRect().width + 10));
     const expanded = () =>
       page.$eval('button[aria-controls="thread"]', (b) => b.getAttribute("aria-expanded"));
     expect(await page.$(heading)).not.toBeNull();
