@@ -28,6 +28,7 @@ import type {
   TurnError,
 } from "./agent.ts";
 import { Channel } from "./channel.ts";
+import { PartialInput } from "./partial.ts";
 import { type TurnSummary, TurnTrace } from "./trace.ts";
 
 /** The MCP server the canvas tools are served as: the agent calls them `mcp__ponzu__<name>`. */
@@ -313,6 +314,8 @@ export class Translator {
   /** Streamed text by API message id, until the reply ends. */
   private texts = new Map<string, string>();
   private current: string | null = null;
+  /** Tool calls being written in the current message, by content block. */
+  private calls = new Map<number, { id: string; input: PartialInput }>();
   /** Messages sent `aside`: Claude Code ends each with a result of its own, which is no turn. */
   private asides = new Set<string>();
 
@@ -349,6 +352,20 @@ export class Translator {
       const e = m.event;
       if (e.type === "message_start") {
         this.current = e.message.id;
+        this.calls.clear();
+      } else if (e.type === "content_block_start" && e.content_block.type === "tool_use") {
+        // A long input (a board's HTML) takes a while to write: say what is coming meanwhile,
+        // and what it is on as soon as the keys that name it are written.
+        out.push({ type: "tool-start", id: e.content_block.id, name: e.content_block.name });
+        this.calls.set(e.index, { id: e.content_block.id, input: new PartialInput() });
+      } else if (e.type === "content_block_delta" && e.delta.type === "input_json_delta") {
+        const call = this.calls.get(e.index);
+        if (call?.input.feed(e.delta.partial_json)) {
+          const input = call.input.value();
+          if (input) out.push({ type: "tool-input", id: call.id, input });
+        }
+      } else if (e.type === "content_block_stop") {
+        this.calls.delete(e.index);
       } else if (
         e.type === "content_block_delta" &&
         e.delta.type === "text_delta" &&

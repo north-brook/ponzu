@@ -7,7 +7,7 @@ import * as f from "./fixtures.ts";
 import { CreateHarness, DesignChromeHarness, Harness } from "./harness.tsx";
 import { LivePreviews } from "./live-previews.tsx";
 import { SETUP_BOARDS } from "./setup-boards.tsx";
-import { THREAD_BOARDS, WORKING } from "./thread-boards.tsx";
+import { THREAD_BOARDS } from "./thread-boards.tsx";
 import * as t from "./thread-fixtures.ts";
 
 const ONBOARDING_PROMPT = "I'd like to iterate on the onboarding flow";
@@ -134,7 +134,7 @@ export const BOARDS: Record<string, () => ReactNode> = {
       design={quieter(f.soloWorking)}
       contributors={f.justYou}
       thread={t.heroThread}
-      agent={WORKING}
+      agent={t.heroAgent}
       // As the boards go on: board 2's questions follow your next message.
       then={t.boardAsks}
     />
@@ -146,7 +146,7 @@ export const BOARDS: Record<string, () => ReactNode> = {
       contributors={f.justYou}
       pages={f.onboardingPages}
       thread={t.setUpThread}
-      agent={WORKING}
+      agent={t.setUpAgent}
       changes={false}
     />
   ),

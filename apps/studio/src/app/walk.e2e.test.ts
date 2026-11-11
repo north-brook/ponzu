@@ -136,7 +136,7 @@ describe.skipIf(!chromiumPath)("a brand-new person, from sign-in to sign-out", (
     await watchForAnEmptyDesign(page, IDEA);
     await page.keyboard.press("Enter");
     await rail().getByText(IDEA).waitFor();
-    await rail().getByText("Waking up…").first().waitFor();
+    await rail().getByText("Waking up", { exact: true }).first().waitFor();
     expect(await sawAnEmptyDesign(page)).toEqual([]);
     await fake(() => {
       window.ponzuFake!.backend.latencyMs = 0;
