@@ -121,6 +121,8 @@ export function DesignChrome({
         <span
           aria-hidden={sidebarOpen}
           data-chrome-title
+          // A design's name: masked in a private session replay, as its row is (analytics/privacy.ts).
+          data-replay="mask"
           className={cn(
             // Hidden once its room has closed (visibility waits out the transition). The name is
             // set once against its own 240 and the room only clips it, under a fade at its right
