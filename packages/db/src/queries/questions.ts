@@ -1,45 +1,76 @@
 import { and, count, eq, inArray, isNotNull, ne, type SQL, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { newId } from "../ids.ts";
-import { designs, type Json, questions, repoSecrets } from "../schema/index.ts";
+import { designs, events, type Json, questions, repoSecrets } from "../schema/index.ts";
 import { run } from "./run.ts";
 import { scrubbed } from "./text.ts";
 
 export type Question = typeof questions.$inferSelect;
 
 /**
- * Raise something the agent needs a person for. The design's `needs_you_count` goes up in the
- * same statement, so the count clients watch never disagrees with the questions for long
- * enough to see.
+ * Raise something the agent needs a person for, under an id the caller chose (a runner derives
+ * it from the tool call), so raising it again changes nothing. The design's `needs_you_count`
+ * goes up in the same statement when the question is new, so the count clients watch never
+ * disagrees with the questions for long enough to see. Answers where the question stands, and
+ * whether this raised it.
  */
 export async function createQuestion(
   db: Db,
-  { designId, kind, payload }: { designId: string; kind: Question["kind"]; payload: Json },
-): Promise<Question> {
+  {
+    designId,
+    id = newId("q"),
+    kind,
+    payload,
+  }: { designId: string; id?: string; kind: Question["kind"]; payload: Json },
+): Promise<{ id: string; status: Question["status"]; raised: boolean }> {
+  // A conflict takes the row as it stands, whoever raised it, even one raised by a statement
+  // running at the same moment, which `do nothing` would hand back as nothing. Setting the id to
+  // itself changes nothing; `xmax` is 0 only on a row this statement inserted.
+  const raised = db.$with("raised").as(
+    db
+      .insert(questions)
+      .values({ id, designId, kind, payload: scrubbed(payload) })
+      .onConflictDoUpdate({
+        target: [questions.designId, questions.id],
+        set: { id: sql`${questions.id}` },
+      })
+      .returning({ status: questions.status, raised: sql<boolean>`xmax = 0`.as("raised") }),
+  );
   const counted = db.$with("counted").as(
     db
       .update(designs)
       // Relative, so two questions raised at once both count.
       .set({ needsYouCount: sql`${designs.needsYouCount} + 1` })
-      .where(eq(designs.id, designId))
+      .where(and(eq(designs.id, designId), sql`exists (select 1 from ${raised} where raised)`))
       .returning({ id: designs.id }),
   );
+  const [row] = await run(db.with(raised, counted).select().from(raised));
+  return { id, ...row! };
+}
+
+/** One of a design's questions, or null. */
+export async function getQuestion(
+  db: Db,
+  { designId, id }: { designId: string; id: string },
+): Promise<Question | null> {
   const [question] = await run(
     db
-      .with(counted)
-      .insert(questions)
-      .values({ id: newId("q"), designId, kind, payload: scrubbed(payload) })
-      .returning(),
+      .select()
+      .from(questions)
+      .where(and(eq(questions.designId, designId), eq(questions.id, id))),
   );
-  return question!;
+  return question ?? null;
 }
 
 /**
- * Answer an open question and take it off the design's count. The first answer wins: null
- * when the question is not open any more, or is not this design's.
+ * Answer an open question, take it off the design's count, and add the `answer` event that
+ * takes the answer to the agent, in one statement. The first answer wins: null, and nothing
+ * written, when the question is not open any more, or is not this design's.
  *
- * The answer is stored in the clear in a row clients watch. A question of kind `secret` is
- * not answered here (null); `answerSecretQuestion` keeps its value out of this table.
+ * The event carries the question as it was raised (`question: { kind, payload }`), so a runner
+ * that no longer has it in mind can say again what was asked, and `answer`'s fields beside it.
+ * The answer is stored in the clear in a row clients watch. A question of kind `secret` is not
+ * answered here (null); `answerSecretQuestion` keeps its value out of this table.
  */
 export async function answerQuestion(
   db: Db,
@@ -52,9 +83,20 @@ export async function answerQuestion(
     userId,
     only: ne(questions.kind, "secret"),
   });
+  const told = db.$with("told", { id: events.id }).as(sql`
+    insert into ${events} (id, design_id, kind, priority, payload, user_id)
+    select ${newId("evt")}, ${answered.designId}, 'answer', 'now',
+           jsonb_build_object(
+             'questionId', ${answered.id},
+             'question', jsonb_build_object('kind', ${answered.kind}, 'payload', ${answered.payload})
+           ) || ${answered.answer},
+           ${userId}
+      from ${answered}
+    returning id
+  `);
   const [question] = await run(
     db
-      .with(answered, uncounted(db, designId, answered))
+      .with(answered, uncounted(db, designId, answered), told)
       .select()
       .from(answered),
   );

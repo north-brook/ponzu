@@ -3,7 +3,13 @@ import { eq } from "drizzle-orm";
 import { seedDesign, seedUser } from "../fixtures.ts";
 import { creditLedger, usageEvents } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
-import { addLedgerEntry, ledgerBalance, type NewUsageEvent, recordUsage } from "./usage.ts";
+import {
+  addLedgerEntry,
+  ledgerBalance,
+  type NewUsageEvent,
+  recordTurnUsage,
+  recordUsage,
+} from "./usage.ts";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 beforeAll(async () => {
@@ -197,4 +203,50 @@ test("the ledger refuses entries that make no sense", async () => {
   await expect(
     addLedgerEntry(db, { ...entry, delta: -1, reason: "use" as never }),
   ).rejects.toThrow();
+});
+
+test("a runner's turns are recorded per model, once, on the owner's plan", async () => {
+  const { design, user, workspace } = await seedDesign(db);
+  const other = await seedDesign(db);
+  const model = (name: string, input: number) => ({
+    model: name,
+    inputTokens: input,
+    outputTokens: 20,
+    cacheReadTokens: 300,
+    cacheWriteTokens: 40,
+    costMicrousd: 1_500,
+  });
+  const turn = {
+    id: "8f0c2b1e-0000-4000-8000-000000000001",
+    at: november,
+    models: [model("claude-opus-5-5", 10), model("claude-haiku-5-5", 3)],
+  };
+
+  expect(await recordTurnUsage(db, { designId: design.id, turns: [turn] })).toBe(1);
+  expect(
+    await recordTurnUsage(db, {
+      designId: design.id,
+      turns: [turn, { id: "8f0c2b1e-0000-4000-8000-000000000002", at: december, models: [] }],
+    }),
+  ).toBe(0);
+  // Another design's turn of the same id is its own.
+  expect(await recordTurnUsage(db, { designId: other.design.id, turns: [turn] })).toBe(1);
+
+  const rows = await db.select().from(usageEvents).where(eq(usageEvents.designId, design.id));
+  expect(rows).toHaveLength(2);
+  expect(rows.find((row) => row.model === "claude-opus-5-5")).toMatchObject({
+    workspaceId: workspace.id,
+    userId: user.id,
+    kind: "model",
+    inputTokens: 10,
+    outputTokens: 20,
+    cacheReadTokens: 300,
+    cacheWriteTokens: 40,
+    costMicrousd: 1_500,
+    credits: 0,
+    payer: "own_plan",
+    rateCardVersion: 1,
+    occurredAt: november,
+  });
+  expect(await ledgerOf(workspace.id)).toEqual([]);
 });

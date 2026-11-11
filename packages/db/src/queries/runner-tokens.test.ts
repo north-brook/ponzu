@@ -4,6 +4,7 @@ import { seedDesign } from "../fixtures.ts";
 import { runnerTokens } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
 import { createRunnerToken, revokeRunnerTokens, verifyRunnerToken } from "./runner-tokens.ts";
+import { takeRunnerLease } from "./runners.ts";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 beforeAll(async () => {
@@ -26,8 +27,19 @@ test("a token verifies as its design, and only as its design", async () => {
   expect(await verifyRunnerToken(db, issued.token)).toEqual({
     id: issued.id,
     designId: one.design.id,
+    leaseRunnerId: null,
   });
   expect(await verifyRunnerToken(db, theirs.token)).toMatchObject({ designId: other.design.id });
+});
+
+test("a token comes back with the runner that holds its design's lease now", async () => {
+  const { design } = await seedDesign(db);
+  const issued = await createRunnerToken(db, { designId: design.id, ttlSeconds: 3600 });
+
+  await takeRunnerLease(db, { designId: design.id, now: new Date() });
+  const { runnerId } = await takeRunnerLease(db, { designId: design.id, now: new Date() });
+
+  expect(await verifyRunnerToken(db, issued.token)).toMatchObject({ leaseRunnerId: runnerId });
 });
 
 test("the table holds a hash, never the token", async () => {

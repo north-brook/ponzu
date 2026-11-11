@@ -2,7 +2,7 @@ import { getSessionUser, verifyRunnerToken } from "@ponzu/db";
 import { errors, jwtVerify } from "jose";
 import type { Deps } from "../deps/index.ts";
 import { ApiError, UpstreamError } from "../http/errors.ts";
-import type { RunnerActor, UserActor } from "./actor.ts";
+import type { LeasedRunner, RunnerActor, UserActor } from "./actor.ts";
 
 /** Every way jose says "this token is not good", as opposed to "the keys could not be had". */
 const TOKEN_FAULTS = [
@@ -54,14 +54,36 @@ export function isRunnerToken(token: string): boolean {
   return token.startsWith(RUNNER_TOKEN_PREFIX);
 }
 
-/** The runner a runner token belongs to, with the one design it may act on, or a 401. */
+/**
+ * The runner a runner token belongs to, with the one design it may act on, or a 401. This is
+ * also the one place the lease is held to (docs/cloud.md, "The runner protocol"): `runnerId` is
+ * the caller's `X-Ponzu-Runner`, and anything but the design's current runner is refused with
+ * 409 `superseded`, so a process a newer one replaced stops at its next call. Pass `"taking"`
+ * for the one call that takes the lease instead.
+ */
 export async function authenticateRunner(
   deps: Pick<Deps, "db">,
   token: string,
+  runnerId: "taking",
+): Promise<RunnerActor>;
+export async function authenticateRunner(
+  deps: Pick<Deps, "db">,
+  token: string,
+  runnerId: string | undefined,
+): Promise<LeasedRunner>;
+export async function authenticateRunner(
+  deps: Pick<Deps, "db">,
+  token: string,
+  runnerId: string | undefined,
 ): Promise<RunnerActor> {
   const found = isRunnerToken(token) ? await verifyRunnerToken(deps.db, token) : null;
   if (!found) throw new ApiError(401, "token_invalid", "This runner token is not valid.");
-  return { kind: "runner", tokenId: found.id, designId: found.designId };
+  const actor = { kind: "runner", tokenId: found.id, designId: found.designId } as const;
+  if (runnerId === "taking") return { ...actor, runnerId: null };
+  if (!runnerId || runnerId !== found.leaseRunnerId) {
+    throw new ApiError(409, "superseded", "A newer runner has started for this design.");
+  }
+  return { ...actor, runnerId };
 }
 
 /**

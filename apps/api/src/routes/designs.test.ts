@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { emptyDoc } from "@ponzu/core";
-import { appendThreadItem, claimEvents, getDesignAssetKey, readDocSource } from "@ponzu/db";
+import { appendThreadItem, getDesignAssetKey, readDocSource } from "@ponzu/db";
+import { feedOf } from "@ponzu/db/testing";
 import {
   call,
   designIn,
@@ -185,7 +186,7 @@ describe("PATCH /v1/designs/:id", () => {
       { seq: 1, actor: { kind: "user", id: ws.people.maya!.userId } },
     ]);
     // The agent hears of it like any other edit.
-    expect((await claimEvents(t.db, { designId: design.id })).map((e) => e.kind)).toEqual(["edit"]);
+    expect((await feedOf(t.db, design.id)).map((e) => e.kind)).toEqual(["edit"]);
     // Settling alone touches no document.
     await call(t, as("maya"), "PATCH", `/v1/designs/${design.id}`, { settled: true });
     expect((await call(t, as("ines"), "GET", `/v1/designs/${design.id}/doc`)).body.seq).toBe(1);

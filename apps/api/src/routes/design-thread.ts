@@ -1,0 +1,264 @@
+import {
+  answerQuestion,
+  appendEvent,
+  getDesignAssetKey,
+  getQuestion,
+  listAssets,
+  listThreadItems,
+  postMessage,
+  type Question,
+  type ThreadItem as StoredItem,
+} from "@ponzu/db";
+import { MAX_TEXT, type QuestionBody, type ThreadItem } from "@ponzu/runner/protocol";
+import { Hono } from "hono";
+import { z } from "zod";
+import { access } from "../auth/access.ts";
+import { requireDesign } from "../auth/authorize.ts";
+import { personFor } from "../designs/actor.ts";
+import type { AppEnv } from "../http/context.ts";
+import { ApiError } from "../http/errors.ts";
+import { validate } from "../http/validate.ts";
+import { Complete, MAX_UPLOAD_FILES, UploadFile } from "../runner/protocol.ts";
+import { requestWake } from "../sandboxes/wake.ts";
+import { completeUploads, presignUploads } from "../uploads/uploads.ts";
+
+/*
+ * People's side of a design's thread (docs/cloud.md, "The runner protocol", "Events", "Needs
+ * you"): what they say to the agent, their answers to its questions, stopping it, the thread's
+ * history, and the images they attach. Reading takes read access to the design; everything else
+ * steers it and takes write access. Each write that the agent must hear of then asks for the
+ * design's sandbox (`requestWake`).
+ */
+
+const Params = z.object({ id: z.string().min(1).max(64) });
+const QuestionParams = Params.extend({ questionId: z.string().min(1).max(64) });
+
+/** A file of the design as a message attaches it: what markup calls it. */
+const AssetRef = z.string().regex(/^assets\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/);
+const MAX_ATTACHMENTS = 8;
+
+const MessageBody = z.object({
+  text: z.string().trim().min(1).max(MAX_TEXT),
+  /** Files of the design, uploaded first (`/uploads`), by reference. */
+  attachments: z.array(AssetRef).max(MAX_ATTACHMENTS).optional(),
+});
+
+const AnswerBody = z.object({
+  /** For a `question`: each question's text, to the label chosen or the person's own words. */
+  answers: z.record(z.string().max(2_000), z.string().trim().min(1).max(4_000)).optional(),
+  /** For a `plan` or a `permission`. */
+  approved: z.boolean().optional(),
+  note: z.string().trim().max(4_000).optional(),
+});
+
+const ThreadQuery = z.object({
+  /** Items before this thread seq; the newest when left out. */
+  before: z.coerce.number().int().min(1).optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(50),
+});
+
+const UploadBody = z.object({ files: z.array(UploadFile).min(1).max(MAX_UPLOAD_FILES) });
+const CompleteBody = Complete.transform(({ ids }) => ({ ids }));
+
+const Item = z.object({
+  id: z.string(),
+  seq: z.number(),
+  at: z.string(),
+  streaming: z.boolean(),
+  kind: z.enum(["message", "comment", "assistant", "tool", "notice"]),
+  payload: z.record(z.string(), z.unknown()),
+});
+const ThreadView = z.object({ items: z.array(Item) });
+const QuestionView = z.object({
+  id: z.string(),
+  status: z.enum(["open", "answered", "cancelled"]),
+});
+const UploadView = z.object({
+  files: z.array(
+    z.object({
+      id: z.string(),
+      put: z.object({ url: z.string(), headers: z.record(z.string(), z.string()) }),
+      expiresAt: z.string(),
+    }),
+  ),
+});
+const CompleteView = z.object({
+  files: z.array(z.object({ id: z.string(), ref: z.string().nullable(), url: z.string() })),
+});
+
+/** A thread item as clients read it (`ThreadItem` in the runner protocol). */
+function toItem(item: StoredItem): ThreadItem {
+  return {
+    id: item.id,
+    seq: item.seq,
+    at: item.createdAt.toISOString(),
+    streaming: item.streaming,
+    kind: item.kind,
+    payload: item.payload,
+  } as ThreadItem;
+}
+
+/** What the answer event carries beside the question, if it answers a question of this kind. */
+function answerOf(question: Question, body: z.infer<typeof AnswerBody>): Record<string, unknown> {
+  const asked = { kind: question.kind, payload: question.payload } as QuestionBody;
+  if (asked.kind === "question") {
+    // Every question that was asked, by its text, and nothing else: an answer closes the
+    // question for good, so one left out could never be answered.
+    const texts = asked.payload.questions.map((q) => q.question);
+    const answers = body.answers ?? {};
+    const missing = texts.filter((text) => !Object.hasOwn(answers, text));
+    if (missing.length > 0) {
+      throw new ApiError(400, "invalid_request", `Answer every question: ${missing.join(" ")}`);
+    }
+    if (Object.keys(answers).some((text) => !texts.includes(text))) {
+      throw new ApiError(400, "invalid_request", "Answer only the questions that were asked.");
+    }
+    return { answers };
+  }
+  if (asked.kind === "plan" || asked.kind === "permission") {
+    if (body.approved === undefined) {
+      throw new ApiError(400, "invalid_request", "Say whether you approve.");
+    }
+    return { approved: body.approved, ...(body.note ? { note: body.note } : {}) };
+  }
+  throw new ApiError(400, "invalid_request", "This kind of question is not answered here.");
+}
+
+export const designThread = new Hono<AppEnv>()
+  /**
+   * Says something to the agent: the thread shows it at once, and it goes into the run as soon
+   * as the runner can take it. Answers the thread item.
+   */
+  .post(
+    "/:id/messages",
+    access.user,
+    validate("param", Params),
+    validate("json", MessageBody),
+    async (c) => {
+      const { deps, actor } = c.var;
+      const { design } = await requireDesign(c, c.req.valid("param").id, "write");
+      const { text, attachments: refs = [] } = c.req.valid("json");
+      const assets = await listAssets(deps.db, { designId: design.id, paths: [...new Set(refs)] });
+      const byPath = new Map(assets.map((asset) => [asset.path, asset]));
+      const missing = refs.find((ref) => !byPath.has(ref));
+      if (missing) {
+        throw new ApiError(400, "invalid_request", `${missing} is not one of this design's files.`);
+      }
+      const attachments = refs.map((ref) => ({ ref, contentType: byPath.get(ref)!.contentType }));
+      const extra = attachments.length > 0 ? { attachments } : {};
+      const item = await postMessage(deps.db, {
+        designId: design.id,
+        userId: actor.user.id,
+        item: { text, from: personFor(actor.user), ...extra },
+        event: { text, ...extra },
+      });
+      await requestWake(deps, design.id, "message");
+      return c.json(Item.parse(toItem(item)), 201);
+    },
+  )
+
+  /**
+   * Answers one of the agent's questions. The first answer wins; any later one is 409
+   * `question_closed`, as is an answer to a question the run has withdrawn.
+   */
+  .post(
+    "/:id/questions/:questionId/answer",
+    access.user,
+    validate("param", QuestionParams),
+    validate("json", AnswerBody),
+    async (c) => {
+      const { deps, actor } = c.var;
+      const { id, questionId } = c.req.valid("param");
+      const { design } = await requireDesign(c, id, "write");
+      const question = await getQuestion(deps.db, { designId: design.id, id: questionId });
+      if (!question) throw new ApiError(404, "not_found", "There is no such question.");
+      const closed = new ApiError(409, "question_closed", "This question is no longer open.");
+      if (question.status !== "open") throw closed;
+      const answered = await answerQuestion(deps.db, {
+        designId: design.id,
+        id: questionId,
+        answer: answerOf(question, c.req.valid("json")),
+        userId: actor.user.id,
+      });
+      if (!answered) throw closed;
+      await requestWake(deps, design.id, "answer");
+      return c.json(QuestionView.parse(answered));
+    },
+  )
+
+  /** Stops the agent's turn, and whatever was put in behind it. */
+  .post("/:id/stop", access.user, validate("param", Params), async (c) => {
+    const { deps, actor } = c.var;
+    const { design } = await requireDesign(c, c.req.valid("param").id, "write");
+    await appendEvent(deps.db, {
+      designId: design.id,
+      kind: "stop",
+      priority: "now",
+      payload: {},
+      userId: actor.user.id,
+    });
+    await requestWake(deps, design.id, "stop");
+    return c.body(null, 204);
+  })
+
+  /**
+   * The thread, a page at a time, oldest first: the newest items, or those before `before`.
+   * The live query `design.thread` keeps it current from there.
+   */
+  .get(
+    "/:id/thread",
+    access.user,
+    validate("param", Params),
+    validate("query", ThreadQuery),
+    async (c) => {
+      const { design } = await requireDesign(c, c.req.valid("param").id, "read");
+      const { before, limit } = c.req.valid("query");
+      const items = await listThreadItems(c.var.deps.db, { designId: design.id, before, limit });
+      return c.json(ThreadView.parse({ items: items.map(toItem) }));
+    },
+  )
+
+  /**
+   * Addresses that take exactly the declared images for ten minutes, for an attachment or a
+   * pasted picture. Each is kept under its own name with a few characters added, so it never
+   * replaces one of the design's files.
+   */
+  .post(
+    "/:id/uploads",
+    access.user,
+    validate("param", Params),
+    validate("json", UploadBody),
+    async (c) => {
+      const { deps, actor } = c.var;
+      const { design } = await requireDesign(c, c.req.valid("param").id, "write");
+      const assetKey = await getDesignAssetKey(deps.db, design.id);
+      if (!assetKey) throw new ApiError(404, "not_found", "There is no such design.");
+      const files = c.req.valid("json").files.map((file) => ({ ...file, kind: "image" as const }));
+      const placed = await presignUploads(
+        deps,
+        { designId: design.id, assetKey },
+        files,
+        actor.user.id,
+      );
+      return c.json(UploadView.parse({ files: placed }));
+    },
+  )
+
+  /** Records the images whose bytes arrived, as files of the design: `ref` is `assets/<name>`. */
+  .post(
+    "/:id/uploads/complete",
+    access.user,
+    validate("param", Params),
+    validate("json", CompleteBody),
+    async (c) => {
+      const { deps, actor } = c.var;
+      const { design } = await requireDesign(c, c.req.valid("param").id, "write");
+      const assetKey = await getDesignAssetKey(deps.db, design.id);
+      if (!assetKey) throw new ApiError(404, "not_found", "There is no such design.");
+      const target = { designId: design.id, assetKey, seq: design.seq };
+      const files = await completeUploads(deps, target, c.req.valid("json").ids, {
+        userId: actor.user.id,
+      });
+      return c.json(CompleteView.parse({ files }));
+    },
+  );

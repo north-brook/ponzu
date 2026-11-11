@@ -3,10 +3,11 @@ import { commitReversal, type Design, nextRedo, nextUndo } from "@ponzu/db";
 import type { Actor as Caller } from "../auth/actor.ts";
 import type { Deps } from "../deps/index.ts";
 import { ApiError } from "../http/errors.ts";
-import { actorOf, toCommittedOp } from "./actor.ts";
+import { requestWake, type WakeDeps } from "../sandboxes/wake.ts";
+import { actorOf, personFor, toCommittedOp } from "./actor.ts";
 import { COMMIT_ATTEMPTS, designBusy, headChange } from "./commit.ts";
 import { keep, readCurrentDoc } from "./document.ts";
-import { eventsForPersonOps } from "./events.ts";
+import { editEvent } from "./events.ts";
 
 /*
  * Undo is the API's (docs/cloud.md, "Undo"). An undo commits the inverse of the newest op by
@@ -18,7 +19,7 @@ import { eventsForPersonOps } from "./events.ts";
  * with their own names and times.
  */
 
-type UndoDeps = Pick<Deps, "db" | "docs" | "background">;
+type UndoDeps = Pick<Deps, "db" | "docs" | "background"> & WakeDeps;
 
 /** How many ops an undo passes over whose inverse no longer applies, before it gives up. */
 const SKIPS = 20;
@@ -30,7 +31,7 @@ export async function reverse(
     caller,
     kind,
   }: {
-    design: Pick<Design, "id" | "agentState" | "agentArtboards">;
+    design: Pick<Design, "id">;
     caller: Caller;
     kind: "undo" | "redo";
   },
@@ -64,6 +65,10 @@ export async function reverse(
     }
 
     const op = { id: newOpId(), op: target.inverse, inverse };
+    const events =
+      caller.kind === "user"
+        ? [editEvent(personFor(caller.user), op, { before: current.doc, after: doc })]
+        : [];
     const result = await commitReversal(deps.db, {
       designId: design.id,
       expectedSeq: current.seq,
@@ -71,7 +76,7 @@ export async function reverse(
       kind,
       reverses: target.seq,
       op,
-      events: caller.kind === "user" ? eventsForPersonOps(design, caller.user.id, [op], doc) : [],
+      events,
       head: headChange(current.doc, doc),
     });
     if (result.kind === "conflict") continue;
@@ -79,6 +84,7 @@ export async function reverse(
       throw new Error("An inverse from the log could not be stored again.");
     }
     keep(deps, design.id, current, { seq: result.seq, doc, ops: result.ops });
+    if (caller.kind === "user") await requestWake(deps, design.id, "edit");
     return { committed: toCommittedOp(result.ops[0]!), seq: result.seq };
   }
   throw designBusy();

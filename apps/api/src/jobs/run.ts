@@ -1,6 +1,7 @@
 import { claimJobs, completeJob, failAbandonedJobs, failJob, type Job } from "@ponzu/db";
 import type { Deps } from "../deps/index.ts";
 import { runWebhookJob, WEBHOOK_JOB } from "../github/webhook.ts";
+import { runWakeJob, WAKE_JOB } from "../sandboxes/wake.ts";
 
 /*
  * Work that must finish even if the request that started it does not (docs/cloud.md, "The
@@ -15,6 +16,7 @@ export type JobDeps = Pick<Deps, "db" | "clock" | "vault" | "github" | "log">;
 /** What runs a job of each kind. A kind is added here by the module whose work it is. */
 const HANDLERS: Record<string, (deps: JobDeps, payload: Job["payload"]) => Promise<void>> = {
   [WEBHOOK_JOB]: runWebhookJob,
+  [WAKE_JOB]: runWakeJob,
 };
 
 /** The wait before the next attempt: a minute after the first, doubling, at most an hour. */

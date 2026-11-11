@@ -42,7 +42,8 @@ test("every call carries the runner token, the client and JSON, and after the se
     s.url.endsWith("/session") ? json({ runnerId: "rnr_1" }) : json({ events: [], seq: 3 }),
   );
   await http.session();
-  expect(await http.claim({ limit: 100 })).toEqual({ events: [], seq: 3 });
+  const claim = { claimId: "clm_0000000000000000", limit: 100 };
+  expect(await http.claim(claim)).toEqual({ events: [], seq: 3 });
   const headers = {
     authorization: "Bearer pzr_secret",
     "x-ponzu-client": "runner/0.1.0",
@@ -54,7 +55,7 @@ test("every call carries the runner token, the client and JSON, and after the se
       method: "POST",
       url: "https://api.test/v1/runner/events/claim",
       headers: { ...headers, "x-ponzu-runner": "rnr_1" },
-      body: { limit: 100 },
+      body: claim,
     },
   ]);
 });

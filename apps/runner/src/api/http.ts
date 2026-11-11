@@ -3,6 +3,7 @@ import { CommitRefusedError, type SyncTransport } from "@ponzu/core";
 import type { RunnerApi, Uploaded, UploadFile } from "./api.ts";
 import type {
   AckRequest,
+  ClaimRequest,
   ClaimResponse,
   CompleteResponse,
   GitCredentialRequest,
@@ -37,8 +38,8 @@ export class HttpRunnerApi implements RunnerApi {
     return session;
   }
 
-  claim(opts: { limit?: number } = {}): Promise<ClaimResponse> {
-    return this.call("POST", "/v1/runner/events/claim", opts);
+  claim(request: ClaimRequest): Promise<ClaimResponse> {
+    return this.call("POST", "/v1/runner/events/claim", request);
   }
 
   async ack(ids: string[], claudeSessionId: string | null): Promise<void> {

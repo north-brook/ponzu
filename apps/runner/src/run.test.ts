@@ -8,7 +8,7 @@ import { ScriptedAgent, type ScriptedRun } from "./agent/scripted.ts";
 import { ApiError } from "./api/api.ts";
 import { ADA, FakeRunnerApi } from "./api/fake.ts";
 import type { AskedQuestion, RunnerSession } from "./api/protocol.ts";
-import { derivedId, eventUuid } from "./ids.ts";
+import { derivedId, eventUuid, randomId } from "./ids.ts";
 import { Runner, type Timing } from "./run.ts";
 
 const FAST: Partial<Timing> = {
@@ -478,6 +478,20 @@ test("a claim that comes back full is followed by another, so nothing waits behi
   expect(run.inputs.length).toBe(131);
 });
 
+test("a claim whose answer was lost is sent again as the same claim, and hands out what it took", async () => {
+  const api = new FakeRunnerApi();
+  const message = api.push({ kind: "message", payload: { text: "Draw it" } });
+  api.lostAnswers.add("claim");
+  const { run, runner } = await setup({ api });
+  const input = await run.input();
+  expect(input.uuid).toBe(eventUuid(message.id));
+  expect(api.claimIds[1]).toBe(api.claimIds[0]!);
+  api.push({ kind: "message", payload: { text: "And this" } });
+  runner.poke();
+  await until(() => run.inputs.length === 2);
+  expect(new Set(api.claimIds).size).toBe(2);
+});
+
 test("a runner that dies before the session holds an event: the next one gets it and puts it in", async () => {
   const stateDir = await temp();
   const first = await setup({ stateDir });
@@ -501,7 +515,7 @@ test("a runner that dies before the session holds an event: the next one gets it
 test("a runner that dies after the session took an event: the next acknowledges it without putting it in again", async () => {
   const api = new FakeRunnerApi({ session: { claudeSessionId: "sess_1" } });
   const event = api.push({ kind: "message", payload: { text: "Draw it" } });
-  await (await api.connect()).claim();
+  await (await api.connect()).claim({ claimId: randomId("clm") });
   const agent = new ScriptedAgent();
   agent.sessions.set("sess_1", {
     messages: new Set([eventUuid(event.id)]),

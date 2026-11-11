@@ -219,6 +219,8 @@ export class Runner {
 
   private claiming: Promise<void> | null = null;
   private claimAgain = false;
+  /** The claim being sent, until it is answered. */
+  private claimId: string | null = null;
   private claimFailures = 0;
   private claimTimer: ReturnType<typeof setInterval> | null = null;
   private stopping: Promise<void> | null = null;
@@ -498,7 +500,14 @@ export class Runner {
       do {
         this.claimAgain = false;
         try {
-          const { events, seq } = await this.api.claim({ limit: CLAIM_LIMIT });
+          // Kept until a claim is answered: one that is sent again after no answer hands out
+          // again what it handed out, rather than leaving that with nobody.
+          this.claimId ??= randomId("clm");
+          const { events, seq } = await this.api.claim({
+            claimId: this.claimId,
+            limit: CLAIM_LIMIT,
+          });
+          this.claimId = null;
           this.claimFailures = 0;
           this.replica.notify(seq);
           for (const event of events) this.take(event);

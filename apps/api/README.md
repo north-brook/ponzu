@@ -25,7 +25,9 @@ src/
                     refresh) and as the App (installation lookups and tokens, repo lists, a
                     person's permission in a repo)
     background.ts   work that outlives its request
-    storage.ts      interface only, until the assets module
+    storage.ts      real: Cloudflare R2 over its S3 API (presigned PUTs, head, copy, delete)
+    sigv4.ts        AWS Signature Version 4 on Web Crypto, for storage
+    poke.ts         real: `POST /poke` to an awake runner through its sandbox's address
     realtime.ts     real: seals live queries with the branch's Realtime secret
   http/           errors, validation, request ids and logs, CORS, the client-version gate
   auth/           access declarations, authentication, authorization, sign-in
@@ -35,6 +37,11 @@ src/
                   the install round trip and its setup page; what each webhook does
   designs/        committing ops, undo, the current document and its cache, who may send
                   which op (op-rules.ts), and the events a design's feed gets
+  runner/         the runner protocol's side here: its request bodies (protocol.ts), the
+                  session, thread writes, git credentials; runner.e2e.test.ts runs the real
+                  runner against these routes
+  uploads/        what may be uploaded and how it is served (files.ts), presign and complete
+  sandboxes/      wake.ts: requestWake, the one door from what people do to a design's sandbox
   live/           queries.ts: every live query, its arguments, who may watch it and its SQL
   jobs/           runJob and runDueJobs: work recorded in `jobs`, run now and retried by the cron
   routes/         one file per area, mounted under /v1 in routes/index.ts
@@ -68,6 +75,11 @@ has: no `Bun.…`, no DOM. `bun run typecheck` (and CI) checks exactly that.
    .post("/z", access.userOrRunner, (c) => …) // either; tell them apart by c.var.actor.kind
    .get("/y", access.public, (c) => …)        // anyone
    ```
+
+   A runner holds its design's lease (docs/cloud.md, "The runner protocol"): `access.runner` and
+   `access.userOrRunner` take a runner only with the design's current `X-Ponzu-Runner`, and
+   answer 409 `superseded` to anything else, so no route checks it again. The one route that
+   takes the lease, `POST /v1/runner/session`, declares `access.runnerStarting` instead.
 
    An area whose routes are all for people (or all for runners) may declare once, with
    `.use(access.user)` before them. **`access.public` is always written on the route itself**:
@@ -106,7 +118,8 @@ has: no `Bun.…`, no DOM. `bun run typecheck` (and CI) checks exactly that.
    `POST /v1/github/webhook` reads its raw body to check the signature before parsing it.
 
 4. **Dependencies.** Read them from `c.var.deps` (`db`, `clock`, `vault`, `workos`, `github`,
-   `sandbox`, `storage`, `realtime`, `docs`, `background`, `log`, `config`). Never import a client,
+   `sandbox`, `storage`, `poke`, `realtime`, `docs`, `gitTokens`, `background`, `log`,
+   `config`). Never import a client,
    the database or the clock as a module-level value, never call `fetch` or `Date.now()`
    directly, and never read `process.env` outside `env.ts`. Something new to talk to is an
    interface in `deps/`, a real implementation that takes `fetch` and `clock`, a line in
@@ -152,15 +165,17 @@ has: no `Bun.…`, no DOM. `bun run typecheck` (and CI) checks exactly that.
    ```
 
    `createTestApp` is the real app on an in-process Postgres with `t.workos` and `t.github`
-   (in-memory services behind the real clients), `t.sandbox` (`FakeProvider`), `t.storage`,
-   `t.realtime`, `t.clock`, `t.logs` and `t.db`. `signInAs` goes through the real exchange;
+   (in-memory services behind the real clients), `t.sandbox` (`FakeProvider`), `t.storage`
+   (`MemoryStorage`, which holds a presigned PUT to what R2 does: its `fetch` serves the
+   signed addresses and refuses other bytes, headers, sizes or a late PUT), `t.poke` (the
+   pokes, recorded), `t.realtime`, `t.clock`, `t.logs` and `t.db`. `signInAs` goes through the real exchange;
    `startSignIn` stops before it. Give GitHub installations and repositories with
    `t.github.installations.push(…)`. `await t.backgroundDone()` waits for what routes handed
    to `deps.background`. Nothing in it can reach the network.
 
    `t.clock` moves only when told, and it is the API's clock: token expiry, the GitHub token
    refresh, presence, repo access answers, timeouts and waits follow it. What `@ponzu/db` times
-   with Postgres's own `now()` does not: runner token expiry, job leases and event claims.
+   with Postgres's own `now()` does not: runner token expiry and job leases.
    (When a job is due is the API's clock: `runJob` and the cron set and compare it by
    `deps.clock`.) A query
    function that needs the time takes `now` from its caller (as the GitHub token claim does);
@@ -168,7 +183,14 @@ has: no `Bun.…`, no DOM. `bun run typecheck` (and CI) checks exactly that.
 
    For designs, `testing/designs.ts` makes a workspace whose repository each named person can
    reach as given (`workspaceWithRepo(t, { maya: "write", ines: "read" })`), designs in it,
-   and a runner's headers.
+   and their runners: `startRunner(t, designId)` takes a token and the lease through the real
+   session route (`runner.headers` carry both), and `designWithRunner` makes a design with one.
+   `feedOf(db, designId)` from `@ponzu/db/testing` is a design's whole feed, for asserting the
+   events something added.
+
+   `deps/storage.live.test.ts` runs uploads against the real bucket, through the routes: it is
+   skipped unless `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` and
+   `PONZU_ASSETS_URL` (the bucket's public URL) are set.
 
 ## Live queries
 

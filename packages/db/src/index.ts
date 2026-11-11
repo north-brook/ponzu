@@ -1,6 +1,6 @@
 export { createDb, createPooledDb, type Db } from "./client.ts";
 export { DESIGN_HEAD_COLUMNS, type DesignHead, type LiveDesignHead, toDesignHead } from "./head.ts";
-export { type IdPrefix, newId } from "./ids.ts";
+export { type IdPrefix, isId, newId, randomString } from "./ids.ts";
 export {
   type ClaudeAccount,
   deleteMembershipsExcept,
@@ -60,8 +60,11 @@ export {
 } from "./queries/designs.ts";
 export {
   appendEvent,
+  type ClaimedEvent,
   claimEvents,
   type DesignEvent,
+  type EventPerson,
+  findStops,
   markEventsDelivered,
   type NewEvent,
 } from "./queries/events.ts";
@@ -127,6 +130,7 @@ export {
   cancelQuestions,
   countOpenQuestions,
   createQuestion,
+  getQuestion,
   listOpenQuestions,
   type Question,
 } from "./queries/questions.ts";
@@ -149,6 +153,14 @@ export {
   verifyRunnerToken,
 } from "./queries/runner-tokens.ts";
 export {
+  getRunnerContext,
+  type RunnerContext,
+  type RunnerState,
+  reportRunnerState,
+  takeRunnerLease,
+} from "./queries/runners.ts";
+export { getAwakeSandboxAddress } from "./queries/sandboxes.ts";
+export {
   admitSession,
   endSession,
   endUserSessions,
@@ -159,17 +171,33 @@ export {
   appendThreadItem,
   listThreadItems,
   type NewThreadItem,
+  postMessage,
   type ThreadItem,
-  updateThreadItem,
+  type ThreadWrite,
+  type WrittenItem,
+  writeThreadItems,
 } from "./queries/thread.ts";
 export { commitReversal, nextRedo, nextUndo } from "./queries/undo.ts";
+export {
+  type Asset,
+  advancePreviewSeq,
+  completeUpload,
+  createUploads,
+  getUploads,
+  listAssets,
+  type NewUpload,
+  type Upload,
+} from "./queries/uploads.ts";
 export {
   addLedgerEntry,
   type LedgerBalance,
   ledgerBalance,
   type NewLedgerEntry,
   type NewUsageEvent,
+  recordTurnUsage,
   recordUsage,
+  type TurnModelUsage,
+  type TurnUsage,
 } from "./queries/usage.ts";
 export { takeWebhookDelivery } from "./queries/webhooks.ts";
 export * from "./schema/index.ts";

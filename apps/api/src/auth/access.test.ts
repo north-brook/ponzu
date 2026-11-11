@@ -4,9 +4,11 @@ import {
   createDesign,
   createRunnerToken,
   revokeRunnerTokens,
+  takeRunnerLease,
   upsertMembership,
   upsertWorkspace,
 } from "@ponzu/db";
+import { RUNNER_HEADER } from "@ponzu/runner/protocol";
 import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { createApp } from "../create-app.ts";
 import type { AppEnv } from "../http/context.ts";
@@ -221,25 +223,45 @@ async function design() {
 }
 
 describe("a route for a runner", () => {
-  // No runner route exists yet, so this mounts one the way a later module will.
   const withRunnerRoute = () => {
     const routes = new Hono<AppEnv>().get("/v1/test/design", access.runner, (c) =>
-      c.json({ designId: c.var.actor.designId }),
+      c.json({ designId: c.var.actor.designId, runnerId: c.var.actor.runnerId }),
     );
     return createApp(t.deps).route("/", routes);
   };
 
-  test("takes a runner token and is told the one design it is for", async () => {
+  test("takes a runner token with its design's lease, and is told the one design it is for", async () => {
     const app = withRunnerRoute();
     const { id: designId } = await design();
     const { token } = await createRunnerToken(t.db, { designId, ttlSeconds: 600 });
+    const { runnerId } = await takeRunnerLease(t.db, { designId, now: new Date() });
 
     const response = await app.request("/v1/test/design", {
-      headers: { authorization: `Bearer ${token}` },
+      headers: { authorization: `Bearer ${token}`, [RUNNER_HEADER]: runnerId },
     });
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ designId });
+    expect(await response.json()).toEqual({ designId, runnerId });
+  });
+
+  test("refuses a runner without the design's current lease as superseded", async () => {
+    const app = withRunnerRoute();
+    const { id: designId } = await design();
+    const { token } = await createRunnerToken(t.db, { designId, ttlSeconds: 600 });
+    const ask = async (lease?: string) => {
+      const response = await app.request("/v1/test/design", {
+        headers: { authorization: `Bearer ${token}`, ...(lease ? { [RUNNER_HEADER]: lease } : {}) },
+      });
+      return [response.status, ((await response.json()) as any).error?.code];
+    };
+    // Before any runner has started, nobody holds it.
+    expect(await ask()).toEqual([409, "superseded"]);
+    const older = await takeRunnerLease(t.db, { designId, now: new Date() });
+    const newer = await takeRunnerLease(t.db, { designId, now: new Date() });
+
+    expect(await ask(older.runnerId)).toEqual([409, "superseded"]);
+    expect(await ask()).toEqual([409, "superseded"]);
+    expect(await ask(newer.runnerId)).toEqual([200, undefined]);
   });
 
   test("refuses no token, a made-up one, a revoked one and a person's", async () => {
@@ -269,20 +291,25 @@ describe("a route for a person or a runner", () => {
     });
     return createApp(t.deps).route("/", routes);
   };
-  const ask = async (authorization?: string) => {
+  const ask = async (authorization?: string, lease?: string) => {
     const response = await withSharedRoute().request("/v1/test/either", {
-      headers: authorization ? { authorization } : {},
+      headers: {
+        ...(authorization ? { authorization } : {}),
+        ...(lease ? { [RUNNER_HEADER]: lease } : {}),
+      },
     });
     const body = (await response.json()) as any;
     return response.status === 200 ? body : [response.status, body.error.code];
   };
 
-  test("knows which of the two is asking", async () => {
+  test("knows which of the two is asking, and holds a runner to its lease", async () => {
     const { id: designId } = await design();
     const { token } = await createRunnerToken(t.db, { designId, ttlSeconds: 600 });
+    const { runnerId } = await takeRunnerLease(t.db, { designId, now: new Date() });
 
     expect(await ask(person.headers.authorization)).toEqual({ user: person.userId });
-    expect(await ask(`Bearer ${token}`)).toEqual({ design: designId });
+    expect(await ask(`Bearer ${token}`, runnerId)).toEqual({ design: designId });
+    expect(await ask(`Bearer ${token}`)).toEqual([409, "superseded"]);
   });
 
   test("refuses anyone who is neither, each as its own kind of token would be", async () => {

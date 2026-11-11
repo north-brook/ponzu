@@ -17,6 +17,11 @@ const complete = {
   NEON_REALTIME_URL: "https://ep-example.rt.c-1.us-east-1.aws.neon.tech/",
   NEON_REALTIME_SECRET: "nrt_live_1example",
   PONZU_ASSETS_URL: "https://assets.example/",
+  GITHUB_APP_BOT_USER_ID: "354938669",
+  R2_ACCOUNT_ID: "0123456789abcdef0123456789abcdef",
+  R2_ACCESS_KEY_ID: "r2-key-id",
+  R2_SECRET_ACCESS_KEY: "r2-secret",
+  R2_BUCKET: "ponzu-test",
 };
 
 test("a complete environment is read into one typed value", () => {
@@ -29,6 +34,7 @@ test("a complete environment is read into one typed value", () => {
       privateKey: complete.GITHUB_APP_PRIVATE_KEY,
       slug: "ponzu-dev",
       webhookSecret: complete.GITHUB_WEBHOOK_SECRET,
+      botUserId: 354938669,
     },
     cronSecret: complete.CRON_SECRET,
     boatApiKey: "boat-key",
@@ -36,6 +42,12 @@ test("a complete environment is read into one typed value", () => {
     realtime: { url: complete.NEON_REALTIME_URL, secret: "nrt_live_1example" },
     // Without its trailing slash, so a path can follow it.
     assetsUrl: "https://assets.example",
+    r2: {
+      accountId: complete.R2_ACCOUNT_ID,
+      accessKeyId: "r2-key-id",
+      secretAccessKey: "r2-secret",
+      bucket: "ponzu-test",
+    },
     minimumClientVersions: {},
     commit: null,
   });

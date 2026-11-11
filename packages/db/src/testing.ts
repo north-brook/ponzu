@@ -1,7 +1,10 @@
 import { PGlite } from "@electric-sql/pglite";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
+import type { Db } from "./client.ts";
 import { migrationsFolder } from "./migrations.ts";
+import { events } from "./schema/index.ts";
 
 // Starting an empty Postgres and migrating it takes about half a second; loading a copy of one
 // that is already migrated takes a tenth of that. So the first database made in a process is
@@ -19,4 +22,12 @@ export async function createTestDb() {
   migrated = migrate(db, { migrationsFolder }).then(() => client.dumpDataDir("none"));
   await migrated;
   return db;
+}
+
+/**
+ * A design's whole feed, oldest first, whatever has been claimed or delivered: what a test
+ * looks at to see which events something added. (A runner reads it through `claimEvents`.)
+ */
+export function feedOf(db: Db, designId: string) {
+  return db.select().from(events).where(eq(events.designId, designId)).orderBy(events.seq);
 }

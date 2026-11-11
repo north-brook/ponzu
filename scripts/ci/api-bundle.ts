@@ -41,6 +41,11 @@ const environment = {
   // Shaped as Neon issues one: its prefix, then an AES-256 key in base64url.
   NEON_REALTIME_SECRET: `nrt_live_1${Buffer.alloc(32, 2).toString("base64url")}`,
   PONZU_ASSETS_URL: "https://assets.invalid",
+  GITHUB_APP_BOT_USER_ID: "1",
+  R2_ACCOUNT_ID: "0".repeat(32),
+  R2_ACCESS_KEY_ID: "placeholder",
+  R2_SECRET_ACCESS_KEY: "placeholder",
+  R2_BUCKET: "placeholder",
 };
 
 const check = `

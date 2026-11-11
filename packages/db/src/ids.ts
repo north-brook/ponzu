@@ -12,6 +12,9 @@ export type IdPrefix =
   | "q"
   | "sbx"
   | "rt"
+  | "rnr"
+  | "clm"
+  | "up"
   | "dev"
   | "use"
   | "led"
@@ -22,6 +25,21 @@ export type IdPrefix =
 export function newId(prefix: IdPrefix): string {
   return `${prefix}_${randomString(16)}`;
 }
+
+/**
+ * Whether `value` is an id as `newId(prefix)` makes them: the prefix and 16 characters of the
+ * alphabet. For ids a caller chose (a runner's thread items and questions), checked before they
+ * reach a row.
+ */
+export function isId(prefix: IdPrefix, value: string): boolean {
+  return (
+    value.length === prefix.length + 17 &&
+    value.startsWith(`${prefix}_`) &&
+    ID_TAIL.test(value.slice(prefix.length + 1))
+  );
+}
+
+const ID_TAIL = new RegExp(`^[${ALPHABET}]{16}$`);
 
 /** `length` random characters, five bits each. */
 export function randomString(length: number): string {

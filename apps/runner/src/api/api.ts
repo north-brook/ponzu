@@ -1,5 +1,6 @@
 import type { SyncTransport } from "@ponzu/core";
 import type {
+  ClaimRequest,
   ClaimResponse,
   GitCredentialRequest,
   GitCredentialResponse,
@@ -45,8 +46,11 @@ export interface RunnerApi {
   readonly sync: SyncTransport;
   /** Takes the lease from whichever process held it. Safe to repeat: the last one wins. */
   session(): Promise<RunnerSession>;
-  /** Safe to repeat: an event is handed to this process once, and again only to a later one. */
-  claim(opts?: { limit?: number }): Promise<ClaimResponse>;
+  /**
+   * An event is handed to this process once, and again only to a later one. Safe to repeat
+   * with the same claim id: it hands out again what it handed out.
+   */
+  claim(request: ClaimRequest): Promise<ClaimResponse>;
   /** Safe to repeat. */
   ack(ids: string[], claudeSessionId: string | null): Promise<void>;
   /** Safe to repeat: items are written by their ids. */

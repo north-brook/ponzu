@@ -5,12 +5,14 @@ import { DocCache } from "../designs/doc-cache.ts";
 import type { Env } from "../env.ts";
 import type { MinimumVersions } from "../http/client-version.ts";
 import { consoleSink, createLogger, type Logger } from "../http/log.ts";
+import { GitTokens } from "../runner/git-credential.ts";
 import { createVault, type Vault } from "../vault/vault.ts";
 import { type Background, createBackground, waitUntil } from "./background.ts";
 import type { Fetch } from "./fetch.ts";
 import { createGithub, type Github } from "./github.ts";
+import { createPoke, type Poke } from "./poke.ts";
 import { createRealtimeSealer, type RealtimeSealer } from "./realtime.ts";
-import { type ObjectStorage, storageNotBuilt } from "./storage.ts";
+import { createR2Storage, type ObjectStorage } from "./storage.ts";
 import { createWorkos, type Workos } from "./workos.ts";
 
 /**
@@ -33,11 +35,15 @@ export interface Deps {
   workos: Workos;
   github: Github;
   sandbox: SandboxProvider;
-  /** Interface only until the assets module. */
+  /** Cloudflare R2: the bytes of designs' files, previews and exports. */
   storage: ObjectStorage;
+  /** Tells an awake runner there may be events to claim. */
+  poke: Poke;
   realtime: RealtimeSealer;
   /** The design documents this instance has built lately. */
   docs: DocCache;
+  /** The git tokens this instance hands runners, kept while they may be reused. */
+  gitTokens: GitTokens;
   config: Config;
 }
 
@@ -48,8 +54,11 @@ export interface Config {
   minimumClientVersions: MinimumVersions;
   /** Where design files are served from; a design's are under `<assetsUrl>/<asset key>/`. */
   assetsUrl: string;
-  /** The GitHub App's slug, where installs begin, and the secret its webhooks are signed with. */
-  githubApp: { slug: string; webhookSecret: string };
+  /**
+   * The GitHub App's slug, where installs begin, the secret its webhooks are signed with, and
+   * the user id of its bot, who commits are committed by.
+   */
+  githubApp: { slug: string; webhookSecret: string; botUserId: number };
   /** What the scheduler's requests carry (`routes/cron.ts`). */
   cronSecret: string;
 }
@@ -94,17 +103,23 @@ export function createDeps(env: Env): Deps {
       clock,
     }),
     sandbox: new BoatProvider({ apiKey: env.boatApiKey, clock }),
-    storage: storageNotBuilt,
+    storage: createR2Storage({ ...env.r2, fetch: outbound, clock }),
+    poke: createPoke({ fetch: outbound, clock }),
     realtime: createRealtimeSealer({
       ...env.realtime,
       database: new URL(env.databaseUrl).pathname.slice(1),
     }),
     docs: new DocCache(),
+    gitTokens: new GitTokens(),
     config: {
       build: { version: VERSION, commit: env.commit },
       minimumClientVersions: env.minimumClientVersions,
       assetsUrl: env.assetsUrl,
-      githubApp: { slug: env.githubApp.slug, webhookSecret: env.githubApp.webhookSecret },
+      githubApp: {
+        slug: env.githubApp.slug,
+        webhookSecret: env.githubApp.webhookSecret,
+        botUserId: env.githubApp.botUserId,
+      },
       cronSecret: env.cronSecret,
     },
   };

@@ -1,9 +1,10 @@
+import { RUNNER_HEADER } from "@ponzu/runner/protocol";
 import type { Context, MiddlewareHandler } from "hono";
 import { matchedRoutes } from "hono/route";
 import type { RouterRoute } from "hono/types";
 import type { AppEnv } from "../http/context.ts";
 import { ApiError } from "../http/errors.ts";
-import type { Actor, RunnerActor, UserActor } from "./actor.ts";
+import type { Actor, LeasedRunner, RunnerActor, UserActor } from "./actor.ts";
 import { authenticateRunner, authenticateUser, isRunnerToken } from "./authenticate.ts";
 
 /*
@@ -55,17 +56,24 @@ export const access = {
   }),
 
   /**
-   * The runner inside a design's sandbox: a runner token as the bearer. The handler reads the
-   * one design it may act on from `c.var.actor.designId`, and must not act on any other.
+   * The runner inside a design's sandbox: a runner token as the bearer, and the design's lease
+   * as `X-Ponzu-Runner` (409 `superseded` without it). The handler reads the one design it may
+   * act on from `c.var.actor.designId`, and must not act on any other.
    */
-  runner: declare<Declaration<RunnerActor>>("authenticated", async (c, next) => {
-    c.set("actor", await authenticateRunner(c.var.deps, bearer(c)));
+  runner: declare<Declaration<LeasedRunner>>("authenticated", async (c, next) => {
+    c.set("actor", await authenticateRunner(c.var.deps, bearer(c), c.req.header(RUNNER_HEADER)));
+    return next();
+  }),
+
+  /** A runner starting, on the one route that takes the lease: no `X-Ponzu-Runner` yet. */
+  runnerStarting: declare<Declaration<RunnerActor>>("authenticated", async (c, next) => {
+    c.set("actor", await authenticateRunner(c.var.deps, bearer(c), "taking"));
     return next();
   }),
 
   /**
-   * Either of the two, for a route both call (a design's ops are posted by people and by its
-   * runner). The handler tells them apart by `c.var.actor.kind`.
+   * Either a person or a runner that holds its lease, for a route both call (a design's ops are
+   * posted by people and by its runner). The handler tells them apart by `c.var.actor.kind`.
    */
   userOrRunner: declare<Declaration<Actor>>("authenticated", async (c, next) => {
     const token = bearer(c);
@@ -73,7 +81,7 @@ export const access = {
     c.set(
       "actor",
       isRunnerToken(token)
-        ? await authenticateRunner(deps, token)
+        ? await authenticateRunner(deps, token, c.req.header(RUNNER_HEADER))
         : await authenticateUser(deps, token),
     );
     return next();

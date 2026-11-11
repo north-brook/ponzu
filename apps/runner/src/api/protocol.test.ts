@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { emptyDoc } from "@ponzu/core";
 import { ScriptedAgent } from "../agent/scripted.ts";
+import { randomId } from "../ids.ts";
 import { Runner } from "../run.ts";
 import { ApiError } from "./api.ts";
 import { FakeRunnerApi } from "./fake.ts";
@@ -89,7 +90,14 @@ test("the runner over HTTP: an event in, an artboard drawn, the thread and state
   });
 
   const deadline = Date.now() + 3_000;
-  while (fake.lastState?.state !== "idle" || !fake.usage.has("res_1") || !fake.delivered.length) {
+  // Thread writes have a pacer of their own, so the last can land just after the idle report.
+  while (
+    fake.lastState?.state !== "idle" ||
+    !fake.usage.has("res_1") ||
+    !fake.delivered.length ||
+    fake.items().some((item) => item.streaming) ||
+    fake.items().length < 3
+  ) {
     if (Date.now() > deadline) throw new Error("timed out");
     await Bun.sleep(10);
   }
@@ -134,8 +142,11 @@ test("only the runner that started last is answered: an older one is told it was
   const { connected } = served();
   const older = await connected();
   const newer = await connected();
-  expect(await newer.claim()).toMatchObject({ events: [] });
-  await expect(older.claim()).rejects.toMatchObject({ status: 409, code: "superseded" });
+  expect(await newer.claim({ claimId: randomId("clm") })).toMatchObject({ events: [] });
+  await expect(older.claim({ claimId: randomId("clm") })).rejects.toMatchObject({
+    status: 409,
+    code: "superseded",
+  });
   await expect(older.sync.fetchDoc()).rejects.toMatchObject({ status: 409, code: "superseded" });
 });
 

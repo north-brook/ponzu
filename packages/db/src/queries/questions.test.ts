@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { emptyDoc } from "@ponzu/core";
 import { eq } from "drizzle-orm";
 import { seedDesign, seedRepo, seedUser, seedWorkspace } from "../fixtures.ts";
-import { questions, repoSecrets } from "../schema/index.ts";
+import { events, questions, repoSecrets } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
 import { createDesign, getDesignHead } from "./designs.ts";
 import {
@@ -11,6 +11,7 @@ import {
   cancelQuestions,
   countOpenQuestions,
   createQuestion,
+  getQuestion,
   listOpenQuestions,
 } from "./questions.ts";
 
@@ -35,7 +36,8 @@ test("a question opens and the design's count goes up with it", async () => {
   });
 
   expect(question.id).toMatch(/^q_/);
-  expect(question).toMatchObject({
+  expect(question).toMatchObject({ status: "open", raised: true });
+  expect(await getQuestion(db, { designId: design.id, id: question.id })).toMatchObject({
     kind: "secret",
     payload: { name: "STRIPE_SECRET_KEY" },
     status: "open",
@@ -45,6 +47,79 @@ test("a question opens and the design's count goes up with it", async () => {
   });
   expect(await needsYou(design.id)).toBe(1);
   expect(await countOpenQuestions(db, design.id)).toBe(1);
+});
+
+test("a question raised again under its id changes nothing and says where it stands", async () => {
+  const { design, user } = await seedDesign(db);
+  const raise = (header: string) =>
+    createQuestion(db, {
+      designId: design.id,
+      id: "q_0000000000000001",
+      kind: "plan",
+      payload: { header },
+    });
+  expect(await raise("First")).toEqual({ id: "q_0000000000000001", status: "open", raised: true });
+
+  expect(await raise("Again")).toEqual({ id: "q_0000000000000001", status: "open", raised: false });
+  expect(await needsYou(design.id)).toBe(1);
+  await answerQuestion(db, {
+    designId: design.id,
+    id: "q_0000000000000001",
+    answer: { approved: true },
+    userId: user.id,
+  });
+  expect(await raise("Late")).toMatchObject({ status: "answered", raised: false });
+  expect(await needsYou(design.id)).toBe(0);
+  const stored = await getQuestion(db, { designId: design.id, id: "q_0000000000000001" });
+  expect(stored!.payload).toEqual({ header: "First" });
+});
+
+test("the same question id in two designs is two questions", async () => {
+  const one = await seedDesign(db);
+  const other = await seedDesign(db);
+  const id = "q_0000000000000002";
+
+  await createQuestion(db, { designId: one.design.id, id, kind: "plan", payload: { plan: "A" } });
+  const theirs = await createQuestion(db, {
+    designId: other.design.id,
+    id,
+    kind: "plan",
+    payload: { plan: "B" },
+  });
+
+  expect(theirs.raised).toBe(true);
+  expect((await getQuestion(db, { designId: one.design.id, id }))!.payload).toEqual({ plan: "A" });
+  expect((await getQuestion(db, { designId: other.design.id, id }))!.payload).toEqual({
+    plan: "B",
+  });
+  expect(await getQuestion(db, { designId: one.design.id, id: "q_missing" })).toBeNull();
+});
+
+test("an answer is an event that carries the question as it was raised", async () => {
+  const { design, user } = await seedDesign(db);
+  const payload = { questions: [{ header: "Layout", question: "Which?", options: [] }] };
+  const { id } = await createQuestion(db, { designId: design.id, kind: "question", payload });
+
+  await answerQuestion(db, {
+    designId: design.id,
+    id,
+    answer: { answers: { "Which?": "Two columns" } },
+    userId: user.id,
+  });
+  await answerQuestion(db, { designId: design.id, id, answer: { answers: {} }, userId: user.id });
+
+  const feed = await db.select().from(events).where(eq(events.designId, design.id));
+  expect(feed).toHaveLength(1);
+  expect(feed[0]).toMatchObject({
+    kind: "answer",
+    priority: "now",
+    userId: user.id,
+    payload: {
+      questionId: id,
+      question: { kind: "question", payload },
+      answers: { "Which?": "Two columns" },
+    },
+  });
 });
 
 test("questions raised at once all count", async () => {

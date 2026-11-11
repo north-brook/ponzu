@@ -5,7 +5,9 @@
 import { afterAll, expect, test } from "bun:test";
 import { emptyDoc } from "@ponzu/core";
 import { actorFor, rename, seedDesign, seedRepo, seedUser } from "../fixtures.ts";
+import { newId } from "../ids.ts";
 import { describeLive } from "../live.ts";
+import { feedOf } from "../testing.ts";
 import {
   deleteMembershipsExcept,
   getRepoInstallationId,
@@ -26,7 +28,7 @@ import {
   listWorkspaceDesigns,
   markDesignSeen,
 } from "./designs.ts";
-import { appendEvent, claimEvents, markEventsDelivered } from "./events.ts";
+import { appendEvent, claimEvents, findStops, markEventsDelivered } from "./events.ts";
 import {
   claimGithubTokenRefresh,
   getGithubUserToken,
@@ -44,7 +46,13 @@ import { commitOps, findOps, readOps } from "./ops.ts";
 import { pingDb } from "./ping.ts";
 import { listPresence, touchPresence } from "./presence.ts";
 import { findDesignByBranch, recordPullRequest } from "./pull-requests.ts";
-import { answerSecretQuestion, cancelQuestions, createQuestion } from "./questions.ts";
+import {
+  answerQuestion,
+  answerSecretQuestion,
+  cancelQuestions,
+  createQuestion,
+  getQuestion,
+} from "./questions.ts";
 import {
   listWorkspaceRepoAccess,
   markRepoAccessStale,
@@ -53,10 +61,18 @@ import {
 } from "./repo-access.ts";
 import { QueryError } from "./run.ts";
 import { createRunnerToken, verifyRunnerToken } from "./runner-tokens.ts";
+import { reportRunnerState, takeRunnerLease } from "./runners.ts";
 import { admitSession, endSession, getSessionUser } from "./sessions.ts";
-import { appendThreadItem, listThreadItems, updateThreadItem } from "./thread.ts";
+import { appendThreadItem, listThreadItems, postMessage, writeThreadItems } from "./thread.ts";
 import { commitReversal, nextRedo, nextUndo } from "./undo.ts";
-import { addLedgerEntry, ledgerBalance, recordUsage } from "./usage.ts";
+import {
+  advancePreviewSeq,
+  completeUpload,
+  createUploads,
+  getUploads,
+  listAssets,
+} from "./uploads.ts";
+import { addLedgerEntry, ledgerBalance, recordTurnUsage, recordUsage } from "./usage.ts";
 import { takeWebhookDelivery } from "./webhooks.ts";
 
 describeLive("queries on a real Postgres", ({ db, close }) => {
@@ -86,7 +102,7 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
     });
 
     if (committed.kind !== "committed") throw new Error("expected a commit");
-    const [event] = await claimEvents(db, { designId: design.id });
+    const [event] = await feedOf(db, design.id);
     expect(event).toMatchObject({ kind: "edit", payload: { summary: "x", seq: 1 } });
     expect((await getDesignHead(db, design.id))!.name).toBe("One 😀");
     expect(committed).toMatchObject({ seq: 2, replayed: [] });
@@ -206,25 +222,70 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
 
     const item = await appendThreadItem(db, {
       designId: design.id,
-      kind: "assistant",
+      kind: "notice",
       payload: { text: "cut \ud83d" },
-      streaming: true,
     });
-    expect(item).toMatchObject({ payload: { text: "cut \ufffd" }, streaming: true });
-    expect(typeof item!.seq).toBe("number");
-    await updateThreadItem(db, { designId: design.id, id: item!.id, payload, streaming: false });
-    expect(await listThreadItems(db, { designId: design.id })).toMatchObject([{ payload }]);
+    expect(item).toMatchObject({ payload: { text: "cut \ufffd" }, streaming: false });
+    expect(typeof item.seq).toBe("number");
+    const id = newId("ti");
+    const streamed = { id, kind: "assistant" as const, payload: { text: "par" }, streaming: true };
+    const [first] = await writeThreadItems(db, { designId: design.id, items: [streamed] });
+    expect(first).toEqual({ id, seq: expect.any(Number), streaming: true });
+    expect(
+      await writeThreadItems(db, {
+        designId: design.id,
+        items: [
+          { ...streamed, payload, streaming: false },
+          { ...streamed, id: item.id },
+        ],
+      }),
+    ).toEqual([
+      { id, seq: first!.seq, streaming: false },
+      { id: item.id, seq: item.seq, streaming: false },
+    ]);
+    const message = await postMessage(db, {
+      designId: design.id,
+      userId: user.id,
+      item: payload,
+      event: payload,
+    });
+    expect(await listThreadItems(db, { designId: design.id })).toMatchObject([
+      { kind: "notice" },
+      { payload },
+      { id: message.id, payload, userId: user.id },
+    ]);
 
-    await appendEvent(db, { designId: design.id, kind: "message", priority: "now", payload });
-    const claimed = await claimEvents(db, { designId: design.id });
-    expect(claimed).toMatchObject([{ payload, deliveredAt: null }]);
+    const { runnerId } = await takeRunnerLease(db, { designId: design.id, now: new Date() });
+    const stop = await appendEvent(db, {
+      designId: design.id,
+      kind: "stop",
+      priority: "now",
+      payload: {},
+      userId: user.id,
+    });
+    const claim = await claimEvents(db, { designId: design.id, runnerId, claimId: newId("clm") });
+    expect(claim!.seq).toBe(design.seq);
+    const claimed = claim!.events;
+    expect(claimed).toMatchObject([
+      { kind: "message", payload, deliveredAt: null, claimedBy: runnerId, from: { id: user.id } },
+      { id: stop.id, kind: "stop" },
+    ]);
     expect(claimed[0]!.claimedAt).toBeInstanceOf(Date);
+    expect(typeof claimed[0]!.seq).toBe("number");
+    expect(await findStops(db, { designId: design.id, ids: [stop.id] })).toEqual([
+      { id: stop.id, from: { id: user.id, name: user.name!, login: user.githubLogin } },
+    ]);
     expect(
       await markEventsDelivered(db, {
         designId: design.id,
+        runnerId,
         ids: claimed.map((event) => event.id),
+        claudeSessionId: "sess-live",
       }),
-    ).toBe(1);
+    ).toBe(2);
+    expect(
+      (await takeRunnerLease(db, { designId: design.id, now: new Date() })).claudeSessionId,
+    ).toBe("sess-live");
 
     const repo = await seedRepo(db, workspace.id, `north-brook/live-${design.id}`);
     const inRepo = await createDesign(db, {
@@ -237,6 +298,13 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
       doc: emptyDoc("secrets"),
     });
     const question = await createQuestion(db, { designId: inRepo.id, kind: "secret", payload });
+    const asked = { designId: inRepo.id, id: newId("q"), kind: "plan" as const, payload };
+    expect(await createQuestion(db, asked)).toEqual({ id: asked.id, status: "open", raised: true });
+    expect(await createQuestion(db, asked)).toEqual({
+      id: asked.id,
+      status: "open",
+      raised: false,
+    });
     await createQuestion(db, { designId: inRepo.id, kind: "question", payload });
     const answered = await answerSecretQuestion(db, {
       designId: inRepo.id,
@@ -246,6 +314,19 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
       userId: user.id,
     });
     expect(answered).toMatchObject({ status: "answered", answer: { name: "API_KEY" }, payload });
+    expect(
+      await answerQuestion(db, {
+        designId: inRepo.id,
+        id: asked.id,
+        answer: { approved: true },
+        userId: user.id,
+      }),
+    ).toMatchObject({ status: "answered", answer: { approved: true } });
+    expect(await getQuestion(db, { designId: inRepo.id, id: asked.id })).toMatchObject({ payload });
+    expect((await feedOf(db, inRepo.id))[0]).toMatchObject({
+      kind: "answer",
+      payload: { questionId: asked.id, question: { kind: "plan", payload }, approved: true },
+    });
     expect(await cancelQuestions(db, { designId: inRepo.id })).toBe(1);
     expect((await getDesignHead(db, inRepo.id))!.needsYouCount).toBe(0);
 
@@ -296,6 +377,77 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
       used: 2.5,
       balance: 97.5,
     });
+    const turn = {
+      id: crypto.randomUUID(),
+      at: new Date(),
+      models: [
+        {
+          model: "claude-opus-5-5",
+          inputTokens: 1,
+          outputTokens: 2,
+          cacheReadTokens: 3,
+          cacheWriteTokens: 4,
+          costMicrousd: 5,
+        },
+      ],
+    };
+    expect(await recordTurnUsage(db, { designId: design.id, turns: [turn] })).toBe(1);
+    expect(await recordTurnUsage(db, { designId: design.id, turns: [turn] })).toBe(0);
+  }, 60_000);
+
+  test("a runner's state, its lease, and uploads", async () => {
+    const { design, user } = await seedDesign(db);
+    await takeRunnerLease(db, { designId: design.id, now: new Date() });
+    const report = {
+      state: "working" as const,
+      status: 'Drawing "A, B"',
+      artboards: ["ab_1", 'ab_"2"'],
+      claudeSessionId: "sess-1",
+    };
+
+    expect(await reportRunnerState(db, { designId: design.id, now: new Date(), ...report })).toBe(
+      0,
+    );
+    expect(await reportRunnerState(db, { designId: design.id, now: new Date(), ...report })).toBe(
+      0,
+    );
+    expect(await getDesignHead(db, design.id)).toMatchObject({
+      agentState: "working",
+      agentStatus: report.status,
+      agentArtboards: report.artboards,
+    });
+
+    const [made] = await createUploads(db, [
+      {
+        id: newId("up"),
+        designId: design.id,
+        purpose: "asset",
+        name: "logo.png",
+        objectKey: "k/uploads/logo.png",
+        contentType: "image/png",
+        size: 10,
+        sha256: "ab".repeat(32),
+        userId: user.id,
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    ]);
+    expect(made!.expiresAt).toBeInstanceOf(Date);
+    expect(await getUploads(db, { designId: design.id, ids: [made!.id] })).toEqual([made!]);
+    expect(
+      await completeUpload(db, {
+        designId: design.id,
+        id: made!.id,
+        servedKey: "k/assets/logo.png",
+        asset: { path: "assets/logo.png" },
+      }),
+    ).toMatchObject({ servedKey: "k/assets/logo.png" });
+    expect(await listAssets(db, { designId: design.id, paths: ["assets/logo.png"] })).toMatchObject(
+      [{ size: 10, createdByUserId: user.id }],
+    );
+    expect(await advancePreviewSeq(db, { designId: design.id, seq: 3 })).toEqual({
+      previous: null,
+    });
+    expect(await advancePreviewSeq(db, { designId: design.id, seq: 5 })).toEqual({ previous: 3 });
   }, 60_000);
 
   test("a GitHub token's times come back as the dates that went in, and the database answers", async () => {

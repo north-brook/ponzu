@@ -2,11 +2,13 @@ import { Hono } from "hono";
 import type { AppEnv } from "../http/context.ts";
 import { auth } from "./auth.ts";
 import { cron } from "./cron.ts";
+import { designThread } from "./design-thread.ts";
 import { designs } from "./designs.ts";
 import { github } from "./github.ts";
 import { health } from "./health.ts";
 import { live } from "./live.ts";
 import { me } from "./me.ts";
+import { runner } from "./runner.ts";
 import { workspaces } from "./workspaces.ts";
 
 /**
@@ -20,5 +22,7 @@ export const v1 = new Hono<AppEnv>()
   .route("/github", github)
   .route("/workspaces", workspaces)
   .route("/designs", designs)
+  .route("/designs", designThread)
+  .route("/runner", runner)
   .route("/live", live)
   .route("/cron", cron);

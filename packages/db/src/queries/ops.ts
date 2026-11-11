@@ -1,10 +1,11 @@
 import type { Op } from "@ponzu/core";
 import { type SQL, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
-import type { ActorKind, OpKind } from "../schema/index.ts";
+import { newId } from "../ids.ts";
+import type { ActorKind, Json, OpKind } from "../schema/index.ts";
 import { eventRow, type NewEvent } from "./events.ts";
 import { queryJson } from "./json.ts";
-import { isStorable, toStorableJson } from "./text.ts";
+import { isStorable, scrubbed, toStorableJson } from "./text.ts";
 
 /** Who made a change. It comes from the caller's token, never from what they sent. */
 export interface Actor {
@@ -101,6 +102,11 @@ export interface CommitInput {
 export interface OpEvent extends Omit<NewEvent, "designId"> {
   /** The sender's id for the op it is about. */
   opId: string;
+  /**
+   * The payload of a `comment` thread item to add with the event, by the event's person: how
+   * a comment that reaches the agent shows in the thread.
+   */
+  comment?: Json;
 }
 
 export interface LogEntry extends NewOp {
@@ -124,7 +130,13 @@ export async function commit(
   // One parameter however long the batch is. `json` keeps each op's text as sent, so `->` hands
   // back the op with its keys in the order the caller wrote them.
   const batch = `[${texts.join(",")}]`;
-  const feed = JSON.stringify(events.map(({ opId, ...event }) => ({ opId, ...eventRow(event) })));
+  const feed = JSON.stringify(
+    events.map(({ opId, comment, ...event }) => ({
+      opId,
+      ...eventRow(event),
+      ...(comment ? { comment: scrubbed(comment), itemId: newId("ti") } : {}),
+    })),
+  );
   const result = await queryJson<{
     seq: number;
     conflict: boolean;
@@ -199,6 +211,14 @@ export async function commit(
                jsonb_set((t.e->'payload')::jsonb, '{seq}', to_jsonb(a.seq)), t.e->>'userId'
           from json_array_elements(${feed}::json) with ordinality as t(e, ord)
           join appended a on a.client_op_id = t.e->>'opId'
+         order by t.ord
+      ),
+      threaded as (
+        insert into thread_items (id, design_id, kind, user_id, payload)
+        select t.e->>'itemId', ${designId}, 'comment', t.e->>'userId', (t.e->'comment')::jsonb
+          from json_array_elements(${feed}::json) with ordinality as t(e, ord)
+          join appended a on a.client_op_id = t.e->>'opId'
+         where t.e->'comment' is not null
          order by t.ord
       )
       select json_build_object(

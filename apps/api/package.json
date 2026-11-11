@@ -21,6 +21,7 @@
     "@neon/realtime": "0.2.1",
     "@ponzu/core": "workspace:*",
     "@ponzu/db": "workspace:*",
+    "@ponzu/runner": "workspace:*",
     "@ponzu/sandbox": "workspace:*",
     "hono": "^4.13.17",
     "jose": "^6.2.17",

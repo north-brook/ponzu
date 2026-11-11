@@ -6,23 +6,29 @@ import { createBackground } from "../deps/background.ts";
 import { createGithub } from "../deps/github.ts";
 import type { Deps } from "../deps/index.ts";
 import type { RealtimeSealer } from "../deps/realtime.ts";
+import type { ObjectStorage } from "../deps/storage.ts";
 import { createWorkos } from "../deps/workos.ts";
 import { DocCache } from "../designs/doc-cache.ts";
 import type { MinimumVersions } from "../http/client-version.ts";
 import { createLogger, type LogLine } from "../http/log.ts";
+import { GitTokens } from "../runner/git-credential.ts";
 import { createVault } from "../vault/vault.ts";
 import { FakeGithub, type FakeGithubUser } from "./fake-github.ts";
 import { FakeWorkos, type FakeWorkosUser } from "./fake-workos.ts";
-import { FakeSealer, MemoryStorage } from "./fakes.ts";
+import { FakePoke, FakeSealer, MemoryStorage } from "./fakes.ts";
 
 export { FakeGithub, type FakeInstallation, type FakeRepository } from "./fake-github.ts";
 export { FakeWorkos } from "./fake-workos.ts";
-export { FakeSealer, MemoryStorage } from "./fakes.ts";
+export { FakePoke, FakeSealer, MemoryStorage } from "./fakes.ts";
 
 /** 32 bytes of nothing secret, in base64url: the vault key every test app seals with. */
 export const TEST_VAULT_KEY = Buffer.alloc(32, 7).toString("base64url");
 /** What the test app's cron route takes as its bearer token. */
 export const TEST_CRON_SECRET = "test_cron_secret_".padEnd(40, "x");
+/** Where the test app says design files are served from. */
+export const TEST_ASSETS_URL = "https://assets.test";
+/** The test App's bot, who commits are committed by. */
+export const TEST_BOT_USER_ID = 9_000_001;
 
 /** Someone to sign in as. Everything has a default; `login` is what tells two people apart. */
 export interface Person {
@@ -77,6 +83,9 @@ export async function createTestApp(
      * them everything stays in this process.
      */
     live?: { db: Db; realtime: RealtimeSealer };
+    /** Real storage and where it serves from, for an opt-in test against the R2 bucket. */
+    storage?: ObjectStorage;
+    assetsUrl?: string;
   } = {},
 ) {
   const local = options.live ? null : await createTestDb();
@@ -91,7 +100,8 @@ export async function createTestApp(
   const workos = new FakeWorkos(clock);
   const github = new FakeGithub(clock);
   const sandbox = new FakeProvider(clock);
-  const storage = new MemoryStorage();
+  const storage = new MemoryStorage(clock);
+  const poke = new FakePoke();
   const sealer = new FakeSealer(clock);
   /** Every line the app logged, oldest first. */
   const logs: LogLine[] = [];
@@ -114,14 +124,20 @@ export async function createTestApp(
     }),
     github: createGithub({ ...github.credentials, fetch: github.fetch, clock }),
     sandbox,
-    storage,
+    storage: options.storage ?? storage,
+    poke: poke.poke,
     realtime: options.live?.realtime ?? sealer,
     docs: new DocCache(),
+    gitTokens: new GitTokens(),
     config: {
       build: { version: "0.0.0-test", commit: options.commit ?? "testcommit" },
       minimumClientVersions: options.minimumClientVersions ?? {},
-      assetsUrl: "https://assets.test",
-      githubApp: { slug: "ponzu-test", webhookSecret: github.credentials.webhookSecret },
+      assetsUrl: options.assetsUrl ?? TEST_ASSETS_URL,
+      githubApp: {
+        slug: "ponzu-test",
+        webhookSecret: github.credentials.webhookSecret,
+        botUserId: TEST_BOT_USER_ID,
+      },
       cronSecret: TEST_CRON_SECRET,
     },
   };
@@ -232,6 +248,7 @@ export async function createTestApp(
     github,
     sandbox,
     storage,
+    poke,
     realtime: sealer,
     logs,
     startSignIn,

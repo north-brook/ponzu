@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { newId, randomString } from "./ids.ts";
+import { isId, newId, randomString } from "./ids.ts";
 
 test("an id says what it is and is not guessable from another", () => {
   const ids = Array.from({ length: 1000 }, () => newId("des"));
@@ -18,4 +18,15 @@ test("random strings use the whole alphabet evenly", () => {
     expect(count).toBeGreaterThan(800);
     expect(count).toBeLessThan(1200);
   }
+});
+
+test("an id a caller chose is taken only in the shape newId makes", () => {
+  expect(isId("ti", newId("ti"))).toBe(true);
+  expect(isId("q", "q_0123456789abcdef")).toBe(true);
+  expect(isId("q", "ti_0123456789abcdef")).toBe(false);
+  expect(isId("q", "q_0123456789abcdeF")).toBe(false);
+  // i, l, o and u are not in the alphabet.
+  expect(isId("q", "q_0123456789abcdei")).toBe(false);
+  expect(isId("q", "q_0123456789abcde")).toBe(false);
+  expect(isId("q", "q_0123456789abcdef0")).toBe(false);
 });

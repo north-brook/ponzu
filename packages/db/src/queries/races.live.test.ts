@@ -4,6 +4,7 @@
 import { afterAll, expect, test } from "bun:test";
 import { and, eq, sql } from "drizzle-orm";
 import { actorFor, rename, seedDesign, seedUser, seedWorkspace } from "../fixtures.ts";
+import { newId } from "../ids.ts";
 import { describeLive } from "../live.ts";
 import { designOps, events, jobs, memberships } from "../schema/index.ts";
 import { upsertMembership } from "./accounts.ts";
@@ -14,6 +15,7 @@ import { claimJobs, enqueueJob } from "./jobs.ts";
 import { ensureWorkspaceAdmin, setMemberRole, workspaceHasAdmin } from "./members.ts";
 import { commitOps, readOps } from "./ops.ts";
 import { answerQuestion, countOpenQuestions, createQuestion } from "./questions.ts";
+import { takeRunnerLease } from "./runners.ts";
 import { commitReversal } from "./undo.ts";
 
 const times = <T>(count: number, make: (index: number) => T): T[] =>
@@ -169,16 +171,19 @@ describeLive("races on a real Postgres", ({ db, close }) => {
       });
     }
 
-    const first = await claimEvents(db, { designId: design.id, limit: 2 });
+    const { runnerId } = await takeRunnerLease(db, { designId: design.id, now: new Date() });
+    const claim = async (limit?: number) =>
+      (await claimEvents(db, { designId: design.id, runnerId, claimId: newId("clm"), limit }))!
+        .events;
+
+    const first = await claim(2);
     expect(first.map((event) => event.payload)).toEqual([{ index: 0 }, { index: 1 }]);
 
-    const claims = await Promise.all(
-      times(6, () => claimEvents(db, { designId: design.id, limit: 3 })),
-    );
+    const claims = await Promise.all(times(6, () => claim(3)));
     for (const claimed of claims) expect(claimed.length).toBeLessThanOrEqual(3);
     const taken = claims.flat().map((event) => event.id);
     expect(new Set(taken).size).toBe(taken.length);
-    const rest = await claimEvents(db, { designId: design.id });
+    const rest = await claim();
     expect(first.length + taken.length + rest.length).toBe(13);
     await db.delete(events).where(eq(events.designId, design.id));
   }, 60_000);
@@ -262,5 +267,23 @@ describeLive("races on a real Postgres", ({ db, close }) => {
     expect(results.filter((result) => result !== null)).toHaveLength(1);
     expect((await getDesignHead(db, design.id))!.needsYouCount).toBe(1);
     expect(await countOpenQuestions(db, design.id)).toBe(1);
+    const told = await db
+      .select()
+      .from(events)
+      .where(and(eq(events.designId, design.id), eq(events.kind, "answer")));
+    expect(told).toHaveLength(1);
+  }, 60_000);
+
+  test("one question raised many times at once is one question, counted once", async () => {
+    const { design } = await seedDesign(db);
+    const id = newId("q");
+
+    const raised = await Promise.all(
+      times(6, () => createQuestion(db, { designId: design.id, id, kind: "plan", payload: {} })),
+    );
+
+    expect(raised.filter((result) => result.raised)).toHaveLength(1);
+    expect(raised.every((result) => result.status === "open")).toBe(true);
+    expect((await getDesignHead(db, design.id))!.needsYouCount).toBe(1);
   }, 60_000);
 });

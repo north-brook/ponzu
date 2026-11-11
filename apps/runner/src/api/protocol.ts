@@ -165,6 +165,11 @@ export const MAX_REVIEW_COMMENT = 2_000;
 
 /** `POST /v1/runner/events/claim`. */
 export interface ClaimRequest {
+  /**
+   * The runner's id for this claim (`clm_…`): new for each claim, the same when it is sent
+   * again. Sent again, it hands out what it handed out the first time, and nothing new.
+   */
+  claimId: string;
   /** At most this many, oldest first. `CLAIM_LIMIT` when absent, and never more. */
   limit?: number;
 }

@@ -22,17 +22,30 @@ const openRefreshToken = async (person: SignedInPerson) =>
     row: person.userId,
   });
 
-/** Holds GitHub's answer to the next refresh until `release` is called. */
+/**
+ * Holds GitHub's answer to the next refresh until the returned function is called. Its
+ * `reached` settles once a refresh has arrived at GitHub and is being held.
+ */
 function holdRefresh() {
   let release!: () => void;
+  let arrived!: () => void;
   const held = new Promise<void>((resolve) => {
     release = resolve;
   });
-  t.github.duringRefresh = () => held;
-  return () => {
-    t.github.duringRefresh = null;
-    release();
+  const reached = new Promise<void>((resolve) => {
+    arrived = resolve;
+  });
+  t.github.duringRefresh = () => {
+    arrived();
+    return held;
   };
+  return Object.assign(
+    () => {
+      t.github.duringRefresh = null;
+      release();
+    },
+    { reached },
+  );
 }
 
 /** Lets everything already in flight run until it is waiting on the clock or on GitHub. */
@@ -96,6 +109,7 @@ test("two callers at once make one refresh, and both get the new token", async (
     githubUserToken(instance(), person.userId),
   ];
   // One is now waiting on GitHub and the other on the first.
+  await release.reached;
   await settle();
   expect(t.github.refreshAttempts).toBe(attempts + 1);
   release();
@@ -124,7 +138,7 @@ test("a caller waits only so long for someone else's refresh", async () => {
   t.clock.advance(8 * HOURS);
   const release = holdRefresh();
   const holder = githubUserToken(t.deps, person.userId);
-  await settle();
+  await release.reached;
 
   // The second caller's waiting moves the test clock, so its patience runs out at once. The
   // claim outlasts it (30 s against 15), so it never sends the refresh token itself.
