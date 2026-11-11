@@ -114,9 +114,9 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
         expect(Math.abs(last.divider - last.left)).toBeLessThanOrEqual(1);
       }
     }
-    // Left and right, opening and closing, take the same time: within a frame (the longest the
-    // machine took between two, at least 20ms).
-    expect(Math.max(...times) - Math.min(...times)).toBeLessThanOrEqual(Math.max(20, ...gaps));
+    // Left and right, opening and closing, take the same time: within what sampling frames can
+    // tell apart, a frame at either end (the longest the machine took between two, at least 10ms).
+    expect(Math.max(...times) - Math.min(...times)).toBeLessThanOrEqual(2 * Math.max(10, ...gaps));
   });
 
   test("with reduced motion a pane is open or closed from the next frame", async () => {
