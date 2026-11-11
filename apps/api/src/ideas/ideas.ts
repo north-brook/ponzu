@@ -1,0 +1,257 @@
+import { claimRepoIdeas, type RepoIdeasRow, releaseRepoIdeas, saveRepoIdeas } from "@ponzu/db";
+import type { z } from "zod";
+import type { Deps } from "../deps/index.ts";
+import type { Model, StructuredAnswer } from "../deps/model.ts";
+import type { Logger } from "../http/log.ts";
+import { checkIdeas, IDEAS_SYSTEM_PROMPT, IdeasOutput, ideasPrompt } from "./prompt.ts";
+
+type IdeasAnswer = z.infer<typeof IdeasOutput>;
+
+import { readRepository } from "./read-repo.ts";
+import { isEmpty } from "./snapshot.ts";
+
+/*
+ * A repo's ideas (docs/cloud.md, "Ideas"): four prompts to start a design from, made for the
+ * repo by a small fast model on Ponzu's own key, kept on its row for everyone who can read it.
+ * They are made lazily, the first time anyone asks, in the background: the asker hears
+ * `generating` at once and asks again. One instance at a time makes them (the claim in the
+ * row), within a workspace's allowance, and every failure is quiet: nothing is kept, the
+ * screen shows no ideas, and the repo is tried again an hour later.
+ */
+
+/** The model, by its exact id. */
+export const IDEAS_MODEL = "claude-haiku-5-5";
+
+const HOUR = 3600_000;
+const DAY = 24 * HOUR;
+
+export const IDEAS_POLICY = {
+  /** A claim this young is a generation under way: what `generating` means. */
+  generatingMs: 60_000,
+  /** The longest one generation may take, the read of the repo included. */
+  timeoutMs: 45_000,
+  /** How long after one try (that worked or not) the next may begin. */
+  retryMs: HOUR,
+  /**
+   * Ideas this old are made again once the repo has been pushed to since: a month of work
+   * may have changed what it is. An empty list is made again after any push, once `retryMs`
+   * has passed. A repo nobody pushes to keeps its ideas; nobody's visit alone remakes them.
+   */
+  staleMs: 30 * DAY,
+  /** Each workspace may start this many generations an hour, whatever it has in repos. */
+  windowMs: HOUR,
+  windowLimit: 20,
+} as const;
+
+/** What `GET /v1/repos/:id/ideas` answers. */
+export type IdeasStatus = "ready" | "generating" | "none";
+
+/** What the read and the answer may write: room for thinking, and four short lines. */
+const MAX_TOKENS = 4_000;
+/** One answer that breaks a rule is asked for again, once. */
+const ATTEMPTS = 2;
+
+type IdeasDeps = Pick<Deps, "db" | "clock" | "github" | "model" | "background">;
+
+/**
+ * The repo's ideas as the person may see them now, starting their generation if they are due.
+ * The caller has checked the person may read the repo (`requireRepo`). `installationId` is the
+ * App's on the repo's workspace, or null while Ponzu can reach none of its repos.
+ */
+export async function repoIdeas(
+  deps: IdeasDeps,
+  log: Logger,
+  { repo, installationId }: { repo: RepoIdeasRow; installationId: number | null },
+): Promise<{ status: IdeasStatus; ideas: string[] }> {
+  const now = deps.clock.now();
+  if (installationId !== null && isDue(repo, now)) {
+    const claim = await claimRepoIdeas(deps.db, {
+      repoId: repo.id,
+      now: new Date(now),
+      retryBefore: new Date(now - IDEAS_POLICY.retryMs),
+      staleBefore: new Date(now - IDEAS_POLICY.staleMs),
+      windowStartedBefore: new Date(now - IDEAS_POLICY.windowMs),
+      windowLimit: IDEAS_POLICY.windowLimit,
+    });
+    if (claim === "claimed") {
+      const claimedAt = new Date(now);
+      deps.background("ideas", generateRepoIdeas(deps, log, { repo, installationId, claimedAt }));
+      return repo.ideas.length
+        ? { status: "ready", ideas: repo.ideas }
+        : { status: "generating", ideas: [] };
+    }
+    if (claim === "rate_limited") {
+      log.warn("ideas_rate_limited", { repoId: repo.id, workspaceId: repo.workspaceId });
+    } else if (!repo.ideas.length) {
+      // Due when this request read the row, and no longer: someone else claimed it meanwhile.
+      return { status: "generating", ideas: [] };
+    }
+  }
+  if (repo.ideas.length) return { status: "ready", ideas: repo.ideas };
+  return { status: isGenerating(repo, now) ? "generating" : "none", ideas: [] };
+}
+
+/** Whether the repo's ideas should be made now, by `IDEAS_POLICY`: what the claim checks again. */
+function isDue(repo: RepoIdeasRow, now: number): boolean {
+  if (repo.ideasClaimedAt && repo.ideasClaimedAt.getTime() > now - IDEAS_POLICY.retryMs) {
+    return false;
+  }
+  const generated = repo.ideasGeneratedAt;
+  if (!generated) return true;
+  if (!repo.pushedAt || repo.pushedAt <= generated) return false;
+  return repo.ideas.length === 0 || generated.getTime() <= now - IDEAS_POLICY.staleMs;
+}
+
+/** A generation was claimed lately and has not written yet. */
+function isGenerating(repo: RepoIdeasRow, now: number): boolean {
+  const claimed = repo.ideasClaimedAt;
+  if (!claimed || claimed.getTime() <= now - IDEAS_POLICY.generatingMs) return false;
+  return !repo.ideasGeneratedAt || repo.ideasGeneratedAt < claimed;
+}
+
+/**
+ * Make and keep a repo's ideas, as the holder of the claim taken at `claimedAt`. Never throws:
+ * a failure is logged and nothing is kept.
+ */
+export async function generateRepoIdeas(
+  deps: Pick<Deps, "db" | "clock" | "github" | "model">,
+  log: Logger,
+  {
+    repo,
+    installationId,
+    claimedAt,
+  }: { repo: RepoIdeasRow; installationId: number; claimedAt: Date },
+): Promise<void> {
+  const started = deps.clock.now();
+  const deadline = deps.clock.timeout(IDEAS_POLICY.timeoutMs);
+  const ids = { repoId: repo.id, workspaceId: repo.workspaceId };
+  const tally: Tally = { attempts: 0, usage: { input: 0, output: 0 } };
+  try {
+    // Only this repo, only to read: the token is used for these few reads and never kept.
+    const { token } = await deps.github.createInstallationToken({
+      installationId,
+      repositoryIds: [repo.githubRepoId],
+      permissions: { contents: "read", metadata: "read" },
+    });
+    const snapshot = await beforeDeadline(
+      readRepository(deps.github, token, repo.fullName),
+      deadline,
+    );
+    let ideas: string[] = [];
+    if (isEmpty(snapshot)) {
+      log.info("ideas_skipped", { ...ids, reason: "empty_repo", files: snapshot.files });
+    } else {
+      const asked = await askForIdeas(deps.model, ideasPrompt(snapshot), {
+        signal: deadline,
+        tally,
+      });
+      if ("rejected" in asked) {
+        log.warn("ideas_rejected", {
+          ...ids,
+          model: IDEAS_MODEL,
+          ...tally,
+          reason: asked.rejected,
+        });
+        await release(deps, repo.id, claimedAt);
+        return;
+      }
+      ideas = asked.ideas;
+    }
+    const saved = await saveRepoIdeas(deps.db, {
+      repoId: repo.id,
+      ideas,
+      generatedAt: new Date(deps.clock.now()),
+      claimedAt,
+    });
+    log.info("ideas_generated", {
+      ...ids,
+      model: IDEAS_MODEL,
+      ...tally,
+      ideas: ideas.length,
+      saved,
+      ms: deps.clock.now() - started,
+    });
+  } catch (error) {
+    log.warn("ideas_failed", {
+      ...ids,
+      model: IDEAS_MODEL,
+      ...tally,
+      timedOut: deadline.aborted,
+      error,
+    });
+    await release(deps, repo.id, claimedAt).catch((cause) => {
+      log.warn("ideas_release_failed", { ...ids, error: cause });
+    });
+  }
+}
+
+/** How many times the model was asked, and what that cost in tokens. */
+export interface Tally {
+  attempts: number;
+  usage: { input: number; output: number };
+}
+
+/**
+ * Four ideas for the product `prompt` describes (`ideasPrompt`), or why there are none: one
+ * answer that breaks a rule is asked for again, once, with the rule it broke, and the second
+ * is the last. What each ask cost is added to `tally`, so it is known even when one throws.
+ */
+export async function askForIdeas(
+  model: Model,
+  prompt: string,
+  { signal, tally }: { signal?: AbortSignal; tally: Tally },
+): Promise<{ ideas: string[] } | { rejected: string }> {
+  let rejected = "";
+  while (tally.attempts < ATTEMPTS) {
+    tally.attempts++;
+    const answer: StructuredAnswer<IdeasAnswer> = await model.structured({
+      model: IDEAS_MODEL,
+      system: rejected
+        ? `${IDEAS_SYSTEM_PROMPT}\n\nAn earlier answer was turned away because ${rejected}. Keep to every rule.`
+        : IDEAS_SYSTEM_PROMPT,
+      prompt,
+      schema: IdeasOutput,
+      maxTokens: MAX_TOKENS,
+      // Medium read more of the material than low on real repos (sharper, more varied ideas),
+      // for under a tenth of a cent and a few more seconds, off the request's path.
+      effort: "medium",
+      signal,
+    });
+    tally.usage.input += answer.usage.input;
+    tally.usage.output += answer.usage.output;
+    const checked: ReturnType<typeof checkIdeas> = answer.output
+      ? checkIdeas(answer.output)
+      : { ok: false, reason: `it was not in the shape asked for (${answer.stopReason})` };
+    if (checked.ok) return { ideas: checked.ideas };
+    rejected = checked.reason;
+  }
+  return { rejected };
+}
+
+/**
+ * The try kept nothing: it stops reading as `generating` at once, so the screen stops waiting,
+ * and the next may begin `retryMs` after it began.
+ */
+function release(deps: Pick<Deps, "db">, repoId: string, claimedAt: Date) {
+  const to = new Date(claimedAt.getTime() - IDEAS_POLICY.generatingMs);
+  return releaseRepoIdeas(deps.db, { repoId, claimedAt, to });
+}
+
+/** `work`, or a rejection once `deadline` aborts, whichever is first. */
+function beforeDeadline<T>(work: Promise<T>, deadline: AbortSignal): Promise<T> {
+  if (deadline.aborted) return Promise.reject(deadline.reason);
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(deadline.reason);
+    deadline.addEventListener("abort", abort, { once: true });
+    work.then(
+      (value) => {
+        deadline.removeEventListener("abort", abort);
+        resolve(value);
+      },
+      (error) => {
+        deadline.removeEventListener("abort", abort);
+        reject(error);
+      },
+    );
+  });
+}

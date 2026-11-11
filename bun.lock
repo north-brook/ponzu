@@ -16,6 +16,7 @@
       "name": "@ponzu/api",
       "version": "0.1.0",
       "dependencies": {
+        "@anthropic-ai/sdk": "^1.8.0",
         "@hono/zod-validator": "^0.9.1",
         "@neon/realtime": "0.2.1",
         "@ponzu/core": "workspace:*",

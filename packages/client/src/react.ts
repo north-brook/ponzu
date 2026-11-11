@@ -6,8 +6,13 @@ import {
   type ReactNode,
   useCallback,
   useContext,
+  useEffect,
+  useState,
   useSyncExternalStore,
 } from "react";
+import type { Api } from "./api.ts";
+import type { Clock } from "./clock.ts";
+import { type IdeasState, watchRepoIdeas } from "./ideas.ts";
 import type { Live, LiveSnapshot } from "./live/live.ts";
 import type { LiveArgs, LiveQueryName, LiveRows } from "./live/rows.ts";
 import type { Session, SessionState } from "./session.ts";
@@ -38,6 +43,29 @@ export function useLiveQuery<Name extends LiveQueryName>(
   );
   const snapshot = () => live.snapshot(name, args);
   return useSyncExternalStore(subscribe, snapshot, snapshot);
+}
+
+/**
+ * The ideas for the repo the create page has chosen, in the shape its `Ideas` takes:
+ * `"loading"` while they are being made, the ideas once they are, null for none. Null too when
+ * `repoId` is null (Scratch has no repo to read). Changing the repo swaps them.
+ *
+ *   const ideas = useRepoIdeas(api, repo?.id ?? null);
+ */
+export function useRepoIdeas(
+  api: Pick<Api, "repos">,
+  repoId: string | null,
+  opts: { clock?: Clock } = {},
+): IdeasState {
+  const [known, setKnown] = useState<{ repoId: string; ideas: IdeasState } | null>(null);
+  const { clock } = opts;
+  useEffect(() => {
+    if (repoId === null) return;
+    return watchRepoIdeas(api, repoId, (ideas) => setKnown({ repoId, ideas }), { clock });
+  }, [api, repoId, clock]);
+  if (repoId === null) return null;
+  // Until this repo's first answer: loading, never the last repo's ideas.
+  return known?.repoId === repoId ? known.ideas : "loading";
 }
 
 /** Who is signed in, kept current. */

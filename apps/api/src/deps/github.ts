@@ -130,6 +130,45 @@ export interface Github {
   ): Promise<Listed<GithubInstalledRepository>>;
   /** With an installation token: an account's display name, or null when it has none. */
   getAccountName(installationToken: string, login: string): Promise<string | null>;
+
+  /*
+   * Reading a repository's contents, a little at a time, never cloning: with an installation
+   * token narrowed to it (`contents: read`), or with none for a public one. Each read stops at
+   * `maxBytes` of GitHub's answer, however large the thing is.
+   */
+  /** What a repository says of itself. */
+  getRepositoryAbout(token: string | null, fullName: string): Promise<GithubRepositoryAbout>;
+  /** Every path in the repository at `ref` (a branch or a commit), as far as `maxBytes` reaches. */
+  getTree(
+    token: string | null,
+    input: { fullName: string; ref: string; maxBytes: number },
+  ): Promise<GithubTree>;
+  /** A file's text at `ref`, cut at `maxBytes`, or null when there is no such file. */
+  getFileText(
+    token: string | null,
+    input: { fullName: string; path: string; ref: string; maxBytes: number },
+  ): Promise<string | null>;
+  /** The README GitHub shows on the repository's page, cut at `maxBytes`, or null for none. */
+  getReadme(
+    token: string | null,
+    input: { fullName: string; ref: string; maxBytes: number },
+  ): Promise<string | null>;
+}
+
+export interface GithubRepositoryAbout {
+  description: string | null;
+  topics: string[];
+  homepage: string | null;
+  /** The language GitHub counts most of it in. */
+  language: string | null;
+  defaultBranch: string;
+  archived: boolean;
+}
+
+export interface GithubTree {
+  entries: { path: string; type: "blob" | "tree"; size: number | null }[];
+  /** False when GitHub cut the list short, or it was longer than `maxBytes`. */
+  complete: boolean;
 }
 
 /** GitHub's four answers: admin, write and read, or none for no access at all. */
@@ -457,6 +496,165 @@ export function createGithub({
       const account = await call("app", "GET", path, installationToken);
       return typeof account.name === "string" && account.name.trim() !== "" ? account.name : null;
     },
+
+    async getRepositoryAbout(token, fullName) {
+      const { text } = await read(token, `/repos/${fullName}`, JSON_TYPE, ABOUT_MAX_BYTES);
+      const repository = JSON.parse(text);
+      return {
+        description: stringOrNull(repository.description),
+        topics: Array.isArray(repository.topics)
+          ? repository.topics.filter((topic: unknown) => typeof topic === "string")
+          : [],
+        homepage: stringOrNull(repository.homepage),
+        language: stringOrNull(repository.language),
+        defaultBranch: repository.default_branch,
+        archived: repository.archived === true,
+      };
+    },
+
+    async getTree(token, { fullName, ref, maxBytes }) {
+      const path = `/repos/${fullName}/git/trees/${encodeURIComponent(ref)}?recursive=1`;
+      const { text, complete } = await read(token, path, JSON_TYPE, maxBytes);
+      return parseTree(text, complete);
+    },
+
+    async getFileText(token, { fullName, path, ref, maxBytes }) {
+      const at = `/repos/${fullName}/contents/${path.split("/").map(encodeURIComponent).join("/")}`;
+      return readOrNull(token, `${at}?ref=${encodeURIComponent(ref)}`, maxBytes);
+    },
+
+    async getReadme(token, { fullName, ref, maxBytes }) {
+      return readOrNull(
+        token,
+        `/repos/${fullName}/readme?ref=${encodeURIComponent(ref)}`,
+        maxBytes,
+      );
+    },
+  };
+
+  /** A file as it is, or null when GitHub has none there. */
+  async function readOrNull(token: string | null, path: string, maxBytes: number) {
+    try {
+      return (await read(token, path, RAW_TYPE, maxBytes)).text;
+    } catch (error) {
+      if (error instanceof UpstreamError && error.status === 404) return null;
+      throw error;
+    }
+  }
+
+  /**
+   * A GET to api.github.com read to at most `maxBytes`: what a contents read takes, since a
+   * file or a tree can be far larger than anything worth holding. The rest is never fetched.
+   */
+  async function read(
+    token: string | null,
+    path: string,
+    accept: string,
+    maxBytes: number,
+  ): Promise<{ text: string; complete: boolean }> {
+    let response: Response;
+    try {
+      response = await fetch(`${API_URL}${path}`, {
+        headers: {
+          accept,
+          ...(token === null ? {} : { authorization: `Bearer ${token}` }),
+          "x-github-api-version": "2022-11-28",
+          "user-agent": "ponzu-api",
+        },
+        signal: clock.timeout(TIMEOUT_MS),
+      });
+    } catch (cause) {
+      throw new UpstreamError("github", `GET ${path.split("?")[0]} did not answer`, { cause });
+    }
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new UpstreamError("github", `GET ${path.split("?")[0]} answered ${response.status}`, {
+        status: response.status,
+      });
+    }
+    try {
+      return await readCapped(response, maxBytes);
+    } catch (cause) {
+      throw new UpstreamError("github", `GET ${path.split("?")[0]} broke off`, { cause });
+    }
+  }
+}
+
+const JSON_TYPE = "application/vnd.github+json";
+const RAW_TYPE = "application/vnd.github.raw+json";
+/** A repository's own JSON is a few kilobytes; this is far more than it ever is. */
+const ABOUT_MAX_BYTES = 256 * 1024;
+
+const stringOrNull = (value: unknown) =>
+  typeof value === "string" && value.trim() !== "" ? value : null;
+
+/** At most `maxBytes` of a response's body as text, and whether that was all of it. */
+export async function readCapped(
+  response: Response,
+  maxBytes: number,
+): Promise<{ text: string; complete: boolean }> {
+  const reader = response.body?.getReader();
+  if (!reader) return { text: "", complete: true };
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  let complete = true;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (size + value.byteLength > maxBytes) {
+      chunks.push(value.subarray(0, maxBytes - size));
+      size = maxBytes;
+      complete = false;
+      await reader.cancel();
+      break;
+    }
+    chunks.push(value);
+    size += value.byteLength;
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  // A cut can fall inside a character: what is left of it decodes as U+FFFD.
+  return { text: new TextDecoder().decode(bytes), complete };
+}
+
+/**
+ * GitHub's tree, `{ tree: [{ path, type, size, … }], truncated }`, from all of its JSON or the
+ * start of it: its entries are flat objects, so those that arrived whole are read one by one.
+ */
+function parseTree(text: string, whole: boolean): GithubTree {
+  let raw: any[];
+  let complete = whole;
+  if (whole) {
+    const body = JSON.parse(text);
+    raw = Array.isArray(body.tree) ? body.tree : [];
+    complete = body.truncated !== true;
+  } else {
+    raw = [];
+    for (const match of text.matchAll(/\{[^{}]*\}/g)) {
+      try {
+        raw.push(JSON.parse(match[0]));
+      } catch {
+        // The last one, cut off.
+      }
+    }
+  }
+  return {
+    entries: raw.flatMap((entry) =>
+      typeof entry?.path === "string" && (entry.type === "blob" || entry.type === "tree")
+        ? [
+            {
+              path: entry.path,
+              type: entry.type,
+              size: typeof entry.size === "number" ? entry.size : null,
+            },
+          ]
+        : [],
+    ),
+    complete,
   };
 }
 

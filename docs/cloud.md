@@ -998,6 +998,42 @@ a CSS `url()` (which run no script) it draws as ever. Object storage cannot atta
 Content-Security-Policy to an object; a response header rule on the assets zone could add one
 (`default-src 'none'; style-src 'unsafe-inline'; sandbox`) as a second wall.
 
+## Ideas
+
+Under the create composer, four prompts for the chosen repo ("Make checkout one page, with the
+order summary on the right"). They are generated, never written by hand
+(`apps/api/src/ideas/`).
+
+- **Ponzu pays.** Claude Haiku 5.5 (`claude-haiku-5-5`) on Ponzu's own `ANTHROPIC_API_KEY`,
+  not the person's Claude account: a subscription token cannot make direct API calls, and the
+  ideas show before anyone has connected Claude. About $0.0008 a repo. This is the only model
+  call the API makes; a design's agent still runs on the person's own plan in its sandbox.
+- **Per repo**, on `repos.ideas`, shared by everyone who can read the repo. `GET
+  /v1/repos/:id/ideas` answers `ready`, `generating` or `none` to anyone `requireRepo` lets
+  read it, a 404 to anyone else.
+- **Lazily, in the background.** The first ask claims the generation in the row
+  (`ideas_claimed_at`: one instance at a time) and answers `generating`; the client asks again
+  on a short backoff (`watchRepoIdeas`, about 45 seconds at most). The read and the call have 45
+  seconds. Each workspace may start 20 generations an hour, counted on its row, so a thousand
+  repos cannot run up a bill. Failures are quiet: nothing is kept, the screen shows no ideas,
+  and the repo is tried again an hour after.
+- **Refresh**: ideas a month old are made again once the repo has been pushed to since; an
+  empty list after any push. A visit alone never remakes them, and a repo nobody pushes to keeps
+  them.
+- **A light read, never a clone**, as the App with a token for that one repo (`contents: read`,
+  `metadata: read`), minted and dropped: the repo's description and topics, its tree, README, up
+  to four manifests and one theme file. At most 8 reads, 4 MiB of tree and 64 KiB of each file,
+  about 18,000 characters into the prompt. Screens and routes come from path conventions (Next,
+  Remix, SvelteKit, Nuxt/Vue, Rails, Django and Jinja, Laravel, Phoenix, Expo Router, React
+  Native, SwiftUI, Android, Flutter). A repo with nothing to ground ideas in gets none, without
+  a model call: invented ideas about a product that is not there yet would mislead.
+- **The repo's text is untrusted.** The instructions are all in the system prompt, the same for
+  every repo; the repo's text goes in the user turn inside one `<repository>` fence it cannot
+  close (every `<` and `>` in it is replaced). The answer is structured output, and is kept only
+  if all four ideas are plain sentences of at most 90 characters, with no address, markup, file
+  name or mention of Ponzu, AI, code or the repo. One broken answer is asked for again, then
+  nothing is kept.
+
 ## Billing
 
 Pay as you go in credits: $0.10 a credit, 5 credits per awake hour, 100 free per

@@ -22,6 +22,7 @@ const complete = {
   R2_ACCESS_KEY_ID: "r2-key-id",
   R2_SECRET_ACCESS_KEY: "r2-secret",
   R2_BUCKET: "ponzu-test",
+  ANTHROPIC_API_KEY: "sk-ant-example",
 };
 
 test("a complete environment is read into one typed value", () => {
@@ -48,6 +49,7 @@ test("a complete environment is read into one typed value", () => {
       secretAccessKey: "r2-secret",
       bucket: "ponzu-test",
     },
+    anthropicApiKey: "sk-ant-example",
     minimumClientVersions: {},
     commit: null,
   });

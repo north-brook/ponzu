@@ -4,6 +4,7 @@ export { type Api, type ApiOptions, createApi, type UploadFile } from "./api.ts"
 export { type Clock, systemClock } from "./clock.ts";
 export { type CachedDesign, DocCache } from "./doc-cache.ts";
 export { ApiError, type ClientErrorCode } from "./errors.ts";
+export { IDEAS_RETRY_MS, type Idea, type IdeasState, watchRepoIdeas } from "./ideas.ts";
 export {
   createLive,
   type Live,

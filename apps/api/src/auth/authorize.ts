@@ -2,8 +2,10 @@ import {
   type DesignAccess,
   getDesignAccess,
   getMemberWorkspace,
+  getRepoIdeasAccess,
   type MemberRole,
   type MemberWorkspace,
+  type RepoIdeasAccess,
   type User,
 } from "@ponzu/db";
 import type { Deps } from "../deps/index.ts";
@@ -76,6 +78,28 @@ export async function requireDesign(
     throw new ApiError(403, "forbidden", "You can open this design but not change it.");
   }
   return { ...found, access };
+}
+
+/**
+ * The repo `repoId` names, with its ideas, if the signed-in person may read it: a member of its
+ * workspace whom GitHub lets read the repo (as `requireDesign` asks for a design in it). The
+ * same 404 when it does not exist, the App has lost it, or the person may not read it.
+ */
+export async function requireRepo(
+  c: { var: { deps: Pick<Deps, "db" | "github" | "clock">; actor: UserActor } },
+  repoId: string,
+): Promise<RepoIdeasAccess> {
+  const { deps, actor } = c.var;
+  const found = await getRepoIdeasAccess(deps.db, { repoId, userId: actor.user.id });
+  if (!found?.member) throw new ApiError(404, "not_found", "There is no such repo.");
+  const permission = await repoPermission(deps, {
+    user: actor.user,
+    repo: found.repo,
+    installation: { installationId: found.installationId, suspendedAt: found.suspendedAt },
+    known: found.known,
+  });
+  if (permission === "none") throw new ApiError(404, "not_found", "There is no such repo.");
+  return found;
 }
 
 /**
