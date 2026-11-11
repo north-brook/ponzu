@@ -122,7 +122,12 @@ export {
 export {
   type BranchDesign,
   findDesignByBranch,
-  recordPullRequest,
+  getPullRequestContext,
+  listDesignsWithOpenPullRequests,
+  type PullRequestContext,
+  type PullRequestRead,
+  recordPullRequestRead,
+  setPullRequestSummary,
 } from "./queries/pull-requests.ts";
 export {
   answerQuestion,
