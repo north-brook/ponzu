@@ -42,6 +42,8 @@ const CANVAS: Rect = { x: 300, y: 44, width: 780, height: 850 };
 const RAIL: Rect = { x: 1080, y: 44, width: 360, height: 856 };
 const DESIGN = [CANVAS, RAIL];
 const WINDOW = { width: 1440, height: 900 };
+/** MIN_WINDOW in app-window.tsx, which this file can't import (it stays free of React). */
+const MIN = { width: 1100, height: 640 };
 
 export const COMPOSITIONS: Composition[] = [
   {
@@ -166,7 +168,20 @@ export const COMPOSITIONS: Composition[] = [
   { id: "fresh-start-personal", title: "Fresh start · a new personal workspace", ...WINDOW },
   { id: "fresh-start-no-repos", title: "Fresh start · no repos yet", ...WINDOW },
   { id: "fresh-start-loading", title: "Fresh start · loading", ...WINDOW },
-  { id: "sidebar-collapsed", title: "Sidebar collapsed, rail closed", ...WINDOW },
+  { id: "sidebar-collapsed", title: "Sidebar collapsed, rail closed", ...WINDOW, reference: true },
+  {
+    id: "sidebar-collapsed-long-name",
+    title: "Sidebar collapsed · a long design name",
+    ...WINDOW,
+    reference: true,
+  },
+  { id: "min-window", title: "The smallest window", ...MIN, reference: true },
+  {
+    id: "min-window-collapsed",
+    title: "The smallest window · sidebar collapsed",
+    ...MIN,
+    reference: true,
+  },
   { id: "settled-open", title: "Settled tray expanded", ...WINDOW },
   { id: "filtered-empty", title: "A filter nothing matches", ...WINDOW },
   {

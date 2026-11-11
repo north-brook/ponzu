@@ -300,11 +300,12 @@ describe.skipIf(!chromiumPath)("the number shortcuts", () => {
       expect(frames.every((f) => f.shown === 0 && f.opacity === 0)).toBe(true);
       await press("Escape");
     }
-    // Shown, then ⌘B: gone on the next frame, though ⌘ is still down.
+    // Shown, then another key (⌘E: not ⌘B, which takes the sidebar and its numbers away): gone
+    // on the next frame, though ⌘ is still down.
     await page.keyboard.down(mod);
     await wait(450);
     expect((await shownHints()).length).toBe(9);
-    await page.keyboard.press("KeyB");
+    await page.keyboard.press("KeyE");
     expect(await shownHints()).toEqual([]);
     await wait(450);
     expect(await shownHints()).toEqual([]);

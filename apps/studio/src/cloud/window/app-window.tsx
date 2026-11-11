@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
 import { cn } from "../ui/cn.ts";
 import { TipProvider } from "../ui/tooltip.tsx";
 import { type Lights, SidebarToggle, TrafficLights } from "./chrome.tsx";
@@ -18,7 +18,8 @@ export interface SidebarSlot {
  *
  * - `sidebar` null is a brand-new personal workspace: no sidebar and no toggle.
  * - `chrome` is everything past the left block (DesignChrome); nothing on the create page.
- * - `rail` is the thread rail's content, or null while it is closed.
+ * - `rail` is the thread rail's content, or null while it is closed. Both panes ease open and
+ *   shut on one clock (`pane-motion`), their content held still at the window's edge.
  * - `children` fill the canvas pane.
  * - `badge` sits just past the sidebar toggle (or the traffic lights): the shell's update mark,
  *   when there is one.
@@ -27,6 +28,34 @@ export interface SidebarSlot {
  * draw one). The sidebar toggle comes first at the left, just past the traffic lights, and
  * DesignChrome ends with the thread toggle at the window's right edge.
  */
+/**
+ * `content` while it is there, and the last of it for as long as `box` takes to close after it
+ * goes (its transition: none with reduced motion), so a pane closes with what it held. Only
+ * while `hold`: what is leaving with the whole view (the design it showed) goes at once.
+ */
+function useHeldWhileClosing(
+  content: ReactNode | null,
+  box: RefObject<HTMLElement | null>,
+  hold: boolean,
+): ReactNode | null {
+  const last = useRef(content);
+  if (content !== null) last.current = content;
+  else if (!hold) last.current = null;
+  const [closed, setClosed] = useState(content === null);
+  // Opening again before it had closed keeps what is there.
+  if (content !== null && closed) setClosed(false);
+  useEffect(() => {
+    if (content !== null || !box.current) return;
+    const seconds = Number.parseFloat(getComputedStyle(box.current).transitionDuration) || 0;
+    const timer = setTimeout(() => {
+      last.current = null;
+      setClosed(true);
+    }, seconds * 1000);
+    return () => clearTimeout(timer);
+  }, [content, box]);
+  return content ?? (closed ? null : last.current);
+}
+
 export function AppWindow({
   lights,
   sidebar,
@@ -43,6 +72,9 @@ export function AppWindow({
   children: ReactNode;
 }) {
   const sidebarOpen = sidebar?.open ?? false;
+  const railOpen = rail !== null;
+  const railBox = useRef<HTMLElement>(null);
+  const railShown = useHeldWhileClosing(rail, railBox, chrome != null);
   return (
     <TipProvider>
       <div
@@ -50,6 +82,8 @@ export function AppWindow({
         style={{ minWidth: MIN_WINDOW.width, minHeight: MIN_WINDOW.height }}
       >
         <header
+          // A click on its buttons and tabs leaves focus where it was (quietPointerFocus).
+          data-toolbar
           className={cn(
             "app-drag flex h-11 shrink-0 items-center gap-1",
             // 10 at either edge; on a Mac the traffic lights' own 16 on the left.
@@ -58,7 +92,7 @@ export function AppWindow({
         >
           <div
             className={cn(
-              "flex shrink-0 items-center pr-[2px] transition-[width] duration-(--dur-pane) ease-out",
+              "pane-motion flex shrink-0 items-center pr-[2px] transition-[width]",
               // To the sidebar's edge at 300, where the divider is, less the padding and a gap.
               !sidebarOpen ? "w-auto" : lights === "none" ? "w-[286px]" : "w-[280px]",
             )}
@@ -82,7 +116,7 @@ export function AppWindow({
               aria-label="Designs"
               inert={!sidebar.open}
               className={cn(
-                "shrink-0 overflow-hidden transition-[width] duration-(--dur-pane) ease-out",
+                "pane-motion shrink-0 overflow-hidden transition-[width]",
                 sidebar.open ? "w-[300px]" : "w-0",
               )}
             >
@@ -93,22 +127,31 @@ export function AppWindow({
           ) : null}
           <main
             className={cn(
-              "relative mb-1.5 min-w-0 flex-1 overflow-hidden rounded-10 bg-canvas transition-[margin] duration-(--dur-pane) ease-out",
+              "pane-motion relative mb-1.5 min-w-0 flex-1 overflow-hidden rounded-10 bg-canvas transition-[margin]",
               !sidebarOpen && "ml-1.5",
-              !rail && "mr-1.5",
+              !railOpen && "mr-1.5",
             )}
           >
             {children}
           </main>
-          {rail ? (
-            <aside
-              id="thread"
-              aria-label="Thread"
-              className="flex w-[360px] shrink-0 flex-col px-2.5 pb-2.5"
-            >
-              {rail}
-            </aside>
-          ) : null}
+          {/* The sidebar's mirror: the rail's content holds still at the window's edge while
+              its room opens or closes, and stays until it has closed. */}
+          <aside
+            ref={railBox}
+            id="thread"
+            aria-label="Thread"
+            inert={!railOpen}
+            className={cn(
+              "pane-motion flex shrink-0 justify-end overflow-hidden transition-[width]",
+              railOpen ? "w-[360px]" : "w-0",
+            )}
+          >
+            {railShown ? (
+              <div className="flex h-full w-[360px] shrink-0 flex-col px-2.5 pb-2.5">
+                {railShown}
+              </div>
+            ) : null}
+          </aside>
         </div>
       </div>
     </TipProvider>

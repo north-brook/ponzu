@@ -42,7 +42,8 @@ export interface DesignChromeProps {
 }
 
 /**
- * The chrome past the left block while a design is open: its pages, then at the window's right
+ * The chrome past the left block while a design is open: its name while the sidebar is
+ * collapsed, the divider, its pages, then at the window's right
  * edge who is in it, its pull request and next action, and the thread toggle last. The spacing
  * between the right-hand pieces is the design's, whichever of them a design has.
  */
@@ -108,11 +109,38 @@ export function DesignChrome({
   );
   return (
     <>
-      <ChromeDivider />
+      {/*
+       * The design's name, then the divider. Collapsed, the name sits just past the sidebar
+       * toggle (set as the row sets it, cut at 240) and the divider just past it; open, the row
+       * says the name, so its room closes to nothing and the divider lands on the sidebar's edge.
+       * The room opens and closes on the panes' clock, with the left block before it. A part of
+       * the title bar, not a control: a double-click zooms the window there, as on any Mac
+       * window, so renaming stays on the row.
+       */}
+      <span className="flex shrink-0 items-center">
+        <span
+          aria-hidden={sidebarOpen}
+          data-chrome-title
+          // A design's name: masked in a private session replay, as its row is (analytics/privacy.ts).
+          data-replay="mask"
+          className={cn(
+            // Hidden once its room has closed (visibility waits out the transition). The name is
+            // set once against its own 240 and the room only clips it, under a fade at its right
+            // edge (on the name's 12 of padding at rest), so no letter is cut against the
+            // divider; closing, it fades out on the hover clock, before the room is half shut.
+            "pane-motion flex overflow-hidden transition-[width,opacity,visibility] [mask-image:linear-gradient(to_right,black_calc(100%-12px),transparent)]",
+            sidebarOpen
+              ? "invisible w-0 opacity-0 [transition-duration:var(--dur-pane),var(--dur-hover),var(--dur-pane)]"
+              : "w-auto",
+          )}
+        >
+          <span className="max-w-[240px] shrink-0 truncate pr-3 pl-1 font-medium text-13 text-ink">
+            {name}
+          </span>
+        </span>
+        <ChromeDivider />
+      </span>
       <span className="w-1 shrink-0" />
-      {sidebarOpen ? null : (
-        <span className="max-w-[240px] shrink-0 truncate pr-2 font-semibold text-13">{name}</span>
-      )}
       <PageTabs pages={pages} activeId={activePageId} onSelect={onSelectPage} onAdd={onAddPage} />
       <span className="min-w-2 flex-1" />
       {/*
@@ -125,7 +153,7 @@ export function DesignChrome({
        */}
       <div
         className={cn(
-          "flex shrink-0 items-center transition-[min-width] duration-(--dur-pane) ease-out",
+          "pane-motion flex shrink-0 items-center transition-[min-width]",
           rail.open ? "min-w-[350px]" : "min-w-0",
         )}
       >

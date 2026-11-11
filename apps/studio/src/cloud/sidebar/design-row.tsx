@@ -227,6 +227,8 @@ function RenameField({ name, onDone }: { name: string; onDone: (name: string | n
   return (
     <input
       aria-label="Design name"
+      // ⌘B leaves the sidebar open while its name is being edited (paneHeld).
+      data-holds-pane
       defaultValue={name}
       autoFocus
       onFocus={(e) => e.currentTarget.select()}
