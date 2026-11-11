@@ -39,8 +39,23 @@ gallery/          dev-only: every board composed from fixtures, every component'
 `AppWindow` takes the sidebar, the chrome past its left block (`DesignChrome`, or nothing on the
 create page), the rail's content (null while closed) and the canvas pane's content. `ThreadRail`
 is the rail's content, needs you included; `PullRequestView` fills the canvas pane while the pull
-request tab is open (the rail folds away, and comes back as it was on leaving). Settings plugs in
-the same way.
+request tab is open. Settings plugs in the same way.
+
+### Three zones
+
+The window is three zones, and the chrome's two dividers mark them: the sidebar is navigation,
+the thread rail is the conversation with the agent, and everything between the dividers belongs
+to the middle (the page tabs and the pull request tab on its left, presence, Share, the pull
+request mark and the next action on its right, and below them what the chosen tab shows).
+Choosing the pull request tab swaps what the middle shows and nothing else: the rail stays as it
+was (open at its width or closed, its scroll, its draft, its working state), so does the
+sidebar, both toggles and ⌘B, ⌘J keep working, the chrome reads as on any page, and no pane
+moves. The tab sits over the canvas in the same rounded pane; the canvas waits underneath,
+`inert` (the canvas takes no keys while it is, and ⌘Z on the read-only tab is taken in
+`design-panes.tsx` so Edit › Undo doesn't reach into the thread's draft), and a page tab brings it back where it was:
+page, position, zoom and selection. The tab fits whatever width the middle has: details over
+files in one column at a reading measure below 1080, the board's two columns from there
+(`Columns` in `pr-tab/pull-request-view.tsx`).
 
 ### The window chrome
 
@@ -54,8 +69,9 @@ action) sits just before the thread toggle, so it holds one place too, and the d
 before the cluster in every state: it separates the page tabs from the cluster rather than marking
 the rail's edge, so a wider cluster (five people, Update branch) or the rail toggling never moves
 it off its partner.
-`visual.ts compare` masks the chrome's 44px for this reason, so the rest is still checked
-against the boards.
+The chrome is 38px tall where the boards draw 44 (the founder's direction: more compact, its
+28px controls and the traffic lights centred on it), so everything under it sits 6px higher than
+on a board. `visual.ts compare` masks the boards' 44px of chrome for these reasons.
 
 The chrome reads, left to right (the founder's order):
 
@@ -246,12 +262,11 @@ repaint something or say what isn't so. The usual swaps:
   rise into that room when they come; if none do, nothing moves.
 - The repo picker departs from board 5 (pick a project) on purpose: one-line rows at the menus'
   metrics (a repo by its name alone, since a workspace is one GitHub account; no owner heading,
-  no line under Scratch), a search only from seven repos (`SEARCH_FROM`), and Scratch's
-  temporary-folder icon from `ui/project-icons.ts`, the one place both projects' icons are set.
-  Its composition masks the picker and says so in `compare`. In a 900pt window a picker without
-  search (Scratch and up to six repos) fits under the centred composer and never moves it; one
-  with search lifts the composer to the top while it is open, by design: its ten-row list needs
-  the room, and a shorter list would scroll sooner for everyone with many repos.
+  no line under Scratch), a search only from five repos (`SEARCH_FROM`), and Scratch's
+  dashed-folder icon from `ui/project-icons.ts`, the one place both projects' icons are set.
+  Its composition masks the picker and says so in `compare`. The picker never moves the page:
+  its list shows five and a half rows and scrolls (a list that long has its search), and in a
+  window too short even for that the list gives up height and the picker stays under its chip.
 
 ### When you need
 

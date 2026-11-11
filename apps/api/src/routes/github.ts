@@ -3,8 +3,8 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { access } from "../auth/access.ts";
 import { listGithubAccounts } from "../github/accounts.ts";
-import { createInstallLink, finishSetup } from "../github/install.ts";
-import { LINK_SCHEMES, type LinkScheme } from "../github/link-scheme.ts";
+import { createInstallLink, finishSetup, installStatus, SETUP_RESULTS } from "../github/install.ts";
+import { LINK_TARGETS, type LinkTarget } from "../github/link-scheme.ts";
 import { renderSetupPage, SETUP_PAGE_HEADERS, type SetupPage } from "../github/setup-page.ts";
 import { syncGithub } from "../github/sync.ts";
 import {
@@ -44,15 +44,33 @@ const Accounts = z.object({
 const InstallLinkBody = z.object({
   client: z.enum(["mac", "ios"]),
   /**
-   * The scheme of the asking app's links, which the setup page links back to: Ponzu's when left
-   * out. Only these three, so no one can make the page link anywhere else (link-scheme.ts).
+   * The scheme of the asking app's links, which the setup page links back to, or `none` for a
+   * build that takes no links. Left out, the page links nowhere. Only these, so no one can make
+   * the page link anywhere else (link-scheme.ts).
    */
-  scheme: z.enum(LINK_SCHEMES).optional(),
+  scheme: z.enum(LINK_TARGETS).optional(),
   /** The account to suggest on GitHub's page. GitHub may ignore it. */
   githubAccountId: z.number().int().positive().optional(),
 });
 
-const InstallLink = z.object({ url: z.url(), expiresAt: z.date() });
+const InstallLink = z.object({
+  /** The app's handle on this install, for `GET /v1/github/installs/:id`. */
+  id: z.string(),
+  url: z.url(),
+  expiresAt: z.date(),
+});
+
+const InstallParam = z.object({ id: z.string().regex(/^auth_[A-Za-z0-9]{1,64}$/) });
+
+const InstallState = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("waiting"), expiresAt: z.date() }),
+  z.object({
+    status: z.literal("settled"),
+    result: z.enum(SETUP_RESULTS as [SetupPage["kind"], ...SetupPage["kind"][]]),
+    workspaceId: z.string().nullable(),
+  }),
+  z.object({ status: z.literal("expired") }),
+]);
 
 // What GitHub's install page sends back. A browser brings it, so any of it can be anything:
 // a value that is not what GitHub sends is treated as absent, and the page says so gently.
@@ -95,13 +113,24 @@ export const github = new Hono<AppEnv>()
   })
 
   /**
+   * How an install this person started stands: what an app asks while GitHub's page is open, so
+   * it hears the outcome without the setup page's link (a build that takes none, or a link
+   * nobody answered), comes forward and moves on.
+   */
+  .get("/installs/:id", access.user, validate("param", InstallParam), async (c) => {
+    const status = await installStatus(c.var.deps, c.var.actor.user.id, c.req.valid("param").id);
+    if (!status) throw new ApiError(404, "not_found", "There is no such install.");
+    return c.json(InstallState.parse(status));
+  })
+
+  /**
    * The App's Setup URL: GitHub's install page sends the browser here. It has no bearer token,
    * so the state it carries is what says who started it (`finishSetup`). The answer is a page
    * for a person, not JSON, and every outcome is one: a failure says so on the page.
    */
   .get("/setup", access.public, validate("query", SetupQuery), async (c) => {
     const query = c.req.valid("query");
-    let finished: { page: SetupPage; scheme?: LinkScheme };
+    let finished: { page: SetupPage; target: LinkTarget | null };
     try {
       finished = await finishSetup(
         { ...c.var.deps, log: c.var.log },
@@ -113,14 +142,15 @@ export const github = new Hono<AppEnv>()
       );
     } catch (error) {
       c.var.log.error("github_setup_failed", { error });
-      finished = { page: { kind: "failed" } };
+      // Failing before the state was read: no app can be named.
+      finished = { page: { kind: "failed" }, target: null };
     }
-    const { page, scheme } = finished;
-    return c.html(
-      renderSetupPage(page, scheme),
-      page.kind === "failed" ? 502 : 200,
-      SETUP_PAGE_HEADERS,
-    );
+    const { page, target } = finished;
+    const { html, csp } = await renderSetupPage(page, target);
+    return c.html(html, page.kind === "failed" ? 502 : 200, {
+      ...SETUP_PAGE_HEADERS,
+      "content-security-policy": csp,
+    });
   })
 
   /**
