@@ -1,3 +1,4 @@
+import type { MaxLiveQueries } from "@ponzu/api/types";
 import type { Api } from "../api.ts";
 import { type Clock, systemClock } from "../clock.ts";
 import { ApiError } from "../errors.ts";
@@ -13,9 +14,13 @@ import { DECODE, type LiveArgs, type LiveQueryName, type LiveRows, type RawRow }
 /*
  * Live queries (docs/cloud.md, "Realtime"): the API seals a named query for 60 seconds, the
  * client subscribes with it, and renews every subscription it holds in one `POST /v1/live`
- * call every 50 seconds. A query the API refuses ends on its own; one that fails otherwise is
- * tried again alone, with a growing wait, while the rest carry on.
+ * call every 50 seconds (in as few as the API's limit per call allows). A query the API refuses
+ * ends on its own; one that fails otherwise is tried again alone, with a growing wait, while the
+ * rest carry on.
  */
+
+/** The API's limit per call, typed against it: a change there fails to compile here. */
+export const MAX_LIVE_QUERIES: MaxLiveQueries = 32;
 
 /** A seal lasts 60 seconds; renewing at 50 leaves room for a slow call. */
 const RENEW_MS = 50_000;
@@ -130,6 +135,13 @@ class LiveQueries implements Live {
     const listener = (snapshot: LiveSnapshot<any>) => onChange(snapshot);
     entry.listeners.add(listener);
     const owner = entry;
+    // Joining a query that has already answered: hear where it stands, once this has returned.
+    const joined = entry.snapshot;
+    if (joined !== CONNECTING) {
+      void Promise.resolve().then(() => {
+        if (owner.listeners.has(listener) && owner.snapshot === joined) listener(joined);
+      });
+    }
     return () => {
       owner.listeners.delete(listener);
       if (owner.listeners.size > 0 || this.entries.get(key) !== owner) return;
@@ -192,28 +204,54 @@ class LiveQueries implements Live {
     );
   }
 
-  /** One call for everything due, and everything nearly due. */
+  /** Everything due, and everything nearly due, in as few calls as the API takes, all at once. */
   private async seal(): Promise<void> {
     const now = this.clock.now();
-    const batch = [...this.entries.values()].filter(
+    const due = [...this.entries.values()].filter(
       (entry) => entry.snapshot.status !== "ended" && entry.due <= now + ALIGN_MS,
     );
-    if (batch.length === 0) return this.schedule();
-    for (const entry of batch) entry.due = Number.POSITIVE_INFINITY;
+    if (due.length === 0) return this.schedule();
+    for (const entry of due) entry.due = Number.POSITIVE_INFINITY;
     this.calling = true;
     try {
-      const answer = await this.api.live(batch.map(({ name, args }) => ({ name, args })));
-      this.failures = 0;
-      answer.results.forEach((result, i) => this.take(batch[i]!, answer.url, result));
-    } catch {
+      const calls: Promise<Entry[]>[] = [];
+      for (let i = 0; i < due.length; i += MAX_LIVE_QUERIES) {
+        calls.push(this.sealSome(due.slice(i, i + MAX_LIVE_QUERIES)));
+      }
+      const unanswered = (await Promise.all(calls)).flat();
+      if (unanswered.length === 0) {
+        this.failures = 0;
+        return;
+      }
       const wait = backoff(this.failures++);
-      for (const entry of batch) {
+      for (const entry of unanswered) {
         entry.due = this.clock.now() + wait;
         if (!entry.sub && entry.snapshot.rows) this.update(entry, { status: "offline" });
       }
     } finally {
       this.calling = false;
       this.schedule();
+    }
+  }
+
+  /**
+   * One call for `batch`, answering with the entries it got no answer for. A call refused whole
+   * is not sent again as it was: it is halved until the query at fault is alone, and that ends.
+   */
+  private async sealSome(batch: Entry[]): Promise<Entry[]> {
+    try {
+      const answer = await this.api.live(batch.map(({ name, args }) => ({ name, args })));
+      answer.results.forEach((result, i) => this.take(batch[i]!, answer.url, result));
+      return [];
+    } catch (error) {
+      if (!(error instanceof ApiError && Object.hasOwn(FINAL, error.code))) return batch;
+      if (batch.length === 1) {
+        this.end(batch[0]!, error);
+        return [];
+      }
+      const half = Math.ceil(batch.length / 2);
+      const halves = [batch.slice(0, half), batch.slice(half)].map((part) => this.sealSome(part));
+      return (await Promise.all(halves)).flat();
     }
   }
 
@@ -229,13 +267,7 @@ class LiveQueries implements Live {
     if ("error" in result) {
       const { code, message } = result.error;
       if (Object.hasOwn(FINAL, code)) {
-        entry.sub?.close();
-        entry.sub = null;
-        const status = FINAL[code as keyof typeof FINAL];
-        this.update(entry, {
-          status: "ended",
-          error: new ApiError(status, code as never, message),
-        });
+        this.end(entry, new ApiError(FINAL[code as keyof typeof FINAL], code as never, message));
       } else {
         // GitHub or the database failing for this one query: the others are not held back.
         entry.due = this.clock.now() + backoff(entry.failures++);
@@ -292,6 +324,14 @@ class LiveQueries implements Live {
       case "closed":
         return;
     }
+  }
+
+  /** Refused for good: no more tries until it is subscribed to afresh. */
+  private end(entry: Entry, error: ApiError): void {
+    if (this.entries.get(entry.key) !== entry) return;
+    entry.sub?.close();
+    entry.sub = null;
+    this.update(entry, { status: "ended", error });
   }
 
   /** A subscription that failed is over: make a new one, which brings the whole result again. */

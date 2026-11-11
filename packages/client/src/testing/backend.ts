@@ -15,7 +15,7 @@ import type { QuestionBody, ThreadItem } from "@ponzu/runner/protocol";
 import type { Api } from "../api.ts";
 import { type Clock, systemClock } from "../clock.ts";
 import { ApiError, networkError } from "../errors.ts";
-import { createLive, type Live } from "../live/live.ts";
+import { createLive, type Live, MAX_LIVE_QUERIES } from "../live/live.ts";
 import { LIVE_COLUMNS, type LiveQueryName, type RawRow } from "../live/rows.ts";
 import type { Profile } from "../rpc.ts";
 import type { Session, SessionState } from "../session.ts";
@@ -594,24 +594,29 @@ export class FakeBackend {
           }),
       },
       live: (queries) =>
-        call(() => ({
-          url: this.realtime.url,
-          results: queries.map(({ name, args = {} }) => {
-            try {
-              this.authorizeLive(person.id, name, args as Record<string, unknown>);
-              return {
-                name,
-                sealed: fakeSeal(
-                  { name, args: args as Record<string, unknown>, userId: person.id },
-                  this.clock.now(),
-                ),
-              };
-            } catch (error) {
-              if (!(error instanceof ApiError)) throw error;
-              return { name, error: { code: error.code, message: error.message } };
-            }
-          }),
-        })),
+        call(() => {
+          if (queries.length === 0 || queries.length > MAX_LIVE_QUERIES) {
+            throw new ApiError(400, "invalid_request", `Ask for 1 to ${MAX_LIVE_QUERIES} queries.`);
+          }
+          return {
+            url: this.realtime.url,
+            results: queries.map(({ name, args = {} }) => {
+              try {
+                this.authorizeLive(person.id, name, args as Record<string, unknown>);
+                return {
+                  name,
+                  sealed: fakeSeal(
+                    { name, args: args as Record<string, unknown>, userId: person.id },
+                    this.clock.now(),
+                  ),
+                };
+              } catch (error) {
+                if (!(error instanceof ApiError)) throw error;
+                return { name, error: { code: error.code, message: error.message } };
+              }
+            }),
+          };
+        }),
     };
   }
 

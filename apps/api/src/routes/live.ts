@@ -9,8 +9,8 @@ import type { Logger } from "../http/log.ts";
 import { validate } from "../http/validate.ts";
 import { LIVE_QUERIES, type LiveQueryDefinition } from "../live/queries.ts";
 
-/** The most queries one call seals. A client renews all of its subscriptions in one call. */
-const MAX_QUERIES = 32;
+/** The most queries one call seals. A client holding more renews them in as many calls. */
+export const MAX_QUERIES = 32;
 
 const LiveBody = z.object({
   queries: z

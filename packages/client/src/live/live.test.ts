@@ -38,6 +38,11 @@ function harness() {
     async live(queries: { name: string; args?: unknown }[]): Promise<LiveAnswer> {
       calls.push(queries.map((q) => q.name));
       if (!online) throw networkError(new Error("offline"));
+      // As the API does: too many in one call, or one it cannot read, and the call is refused.
+      const unreadable = queries.some((q) => (q.args as { designId?: string }).designId === "bad");
+      if (queries.length > 32 || unreadable) {
+        throw new ApiError(400, "invalid_request", "That is not what this route takes.");
+      }
       return {
         url: realtime.url,
         results: queries.map(({ name, args }) => {
@@ -128,6 +133,59 @@ describe("sealing and renewing", () => {
     expect(h.realtime.open()).toHaveLength(0);
     await h.clock.advance(5 * 60_000);
     expect(h.calls).toHaveLength(1);
+  });
+
+  test("more queries than one call takes are sealed in as many calls, at the same time", async () => {
+    const h = harness();
+    const seen = new Map<string, LiveSnapshot<unknown>>();
+    for (let i = 0; i < 33; i++) {
+      const designId = `dsn_${i}`;
+      h.live.subscribe("design.head", { designId }, (snapshot) => seen.set(designId, snapshot));
+    }
+    await h.clock.advance(0);
+    expect(h.calls.map((names) => names.length)).toEqual([32, 1]);
+    expect([...seen.values()].filter((s) => s.status === "live")).toHaveLength(33);
+
+    await h.clock.advance(50_000);
+    expect(h.calls.map((names) => names.length)).toEqual([32, 1, 32, 1]);
+  });
+
+  test("a call refused whole is halved until the query at fault ends alone", async () => {
+    const h = harness();
+    const seen = new Map<string, LiveSnapshot<unknown>>();
+    for (const designId of ["dsn_1", "dsn_2", "bad", "dsn_3"]) {
+      h.live.subscribe("design.head", { designId }, (snapshot) => seen.set(designId, snapshot));
+    }
+    await h.clock.advance(0);
+
+    expect(h.calls.map((names) => names.length)).toEqual([4, 2, 2, 1, 1]);
+    expect(seen.get("bad")?.status).toBe("ended");
+    expect(seen.get("bad")?.error?.code).toBe("invalid_request");
+    for (const id of ["dsn_1", "dsn_2", "dsn_3"]) expect(seen.get(id)?.status).toBe("live");
+    // From then on the rest renew together, without it.
+    await h.clock.advance(50_000);
+    expect(h.calls.at(-1)).toHaveLength(3);
+  });
+
+  test("joining a query already answered hears where it stands, ended or live", async () => {
+    const h = harness();
+    h.refuse["design.thread"] = "forbidden";
+    h.watch("design.head");
+    h.watch("design.thread");
+    await h.clock.advance(0);
+
+    const head = h.watch("design.head");
+    const thread = h.watch("design.thread");
+    // Not before `subscribe` has returned, so the caller has its way to let go first.
+    expect([head.seen, thread.seen]).toEqual([[], []]);
+    await Promise.resolve();
+    expect(head.seen.map((s) => s.status)).toEqual(["live"]);
+    expect(thread.seen.map((s) => [s.status, s.error?.code])).toEqual([["ended", "forbidden"]]);
+
+    const gone = h.watch("design.head");
+    gone.off();
+    await Promise.resolve();
+    expect(gone.seen).toEqual([]);
   });
 
   test("a snapshot is the same object until something changes", async () => {
