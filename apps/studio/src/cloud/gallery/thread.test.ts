@@ -200,15 +200,36 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     // The line that was at the top is still on screen, below what was revealed.
     const top = await page.$eval(log, (el) => el.parentElement!.scrollTop);
     expect(top).toBeGreaterThan(200);
-    // Reading on to the top of what is loaded asks for older items.
-    for (let i = 0; i < 12; i++) {
+    // Reading on to the top of what is loaded reveals the rest of it, then asks for older items:
+    // noted as it asks, with the lines drawn under its "Loading earlier…".
+    await page.$eval(log, (el) => {
+      new MutationObserver(() => {
+        const w = window as { askedWith?: number };
+        if (el.hasAttribute("aria-busy")) w.askedWith ??= el.children.length - 1;
+      }).observe(el, { attributeFilter: ["aria-busy"] });
+    });
+    const asked = () => page.evaluate(() => (window as { askedWith?: number }).askedWith);
+    // Each reach waits for what the one before revealed, so none lands on a view already at 0.
+    for (let i = 0; i < 4 && (await asked()) === undefined; i++) {
+      const was = await first();
       await page.$eval(log, (el) => {
         el.parentElement!.scrollTop = 0;
       });
-      await page.waitForTimeout(80);
+      await page.waitForFunction(
+        ([sel, was]) => document.querySelector(`${sel} > *`)?.textContent !== was,
+        [log, was] as const,
+      );
     }
-    // The 200 items loaded at first are 150 lines, each turn's work folded with its first reply.
-    await page.waitForFunction((sel) => document.querySelectorAll(`${sel} > *`).length > 160, log);
+    const drawn = await asked();
+    expect(drawn).toBeGreaterThan(0);
+    // What arrives shows above with no further reach (another would ask for the page after).
+    await page.waitForFunction(
+      ([sel, drawn]) => {
+        const el = document.querySelector(sel)!;
+        return !el.hasAttribute("aria-busy") && el.children.length > drawn;
+      },
+      [log, drawn!] as const,
+    );
   });
 
   test("Stop while working with nothing typed; Send once there are words", async () => {
