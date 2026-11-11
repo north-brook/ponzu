@@ -78,6 +78,7 @@ export type WorkspaceKind = (typeof WORKSPACE_KINDS)[number];
 export type MemberRole = (typeof MEMBER_ROLES)[number];
 export type RepoPermission = (typeof REPO_PERMISSIONS)[number];
 export type GithubAccess = (typeof GITHUB_ACCESS)[number];
+export type BaseStatus = (typeof BASE_STATUSES)[number];
 export type ClaudeAccountKind = (typeof CLAUDE_ACCOUNT_KINDS)[number];
 export type ClaudeAccountStatus = (typeof CLAUDE_ACCOUNT_STATUSES)[number];
 export type DesignStatus = (typeof DESIGN_STATUSES)[number];

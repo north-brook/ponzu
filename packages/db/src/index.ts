@@ -2,6 +2,14 @@ export { createDb, createPooledDb, type Db } from "./client.ts";
 export { DESIGN_HEAD_COLUMNS, type DesignHead, type LiveDesignHead, toDesignHead } from "./head.ts";
 export { type IdPrefix, isId, newId, randomString } from "./ids.ts";
 export {
+  type AccountDeletionPlan,
+  anonymiseUser,
+  DELETED_PERSON,
+  type DeleteUserResult,
+  deleteUser,
+  planAccountDeletion,
+} from "./queries/account-deletion.ts";
+export {
   type ClaudeAccount,
   deleteMembershipsExcept,
   type GithubInstallation,
@@ -77,6 +85,19 @@ export {
   settleDesign,
 } from "./queries/designs.ts";
 export {
+  addRepoSecret,
+  deleteRepoSecret,
+  getRepoEnvironment,
+  listDesignSecrets,
+  listWorkspaceEnvironments,
+  markBaseForRebuild,
+  type RepoEnvironmentRow,
+  replaceRepoSecret,
+  type SealedSecret,
+  type SecretLimits,
+  type SecretWrite,
+} from "./queries/environments.ts";
+export {
   appendEvent,
   type ClaimedEvent,
   claimEvents,
@@ -116,6 +137,20 @@ export {
   type WorkspaceMember,
   workspaceHasAdmin,
 } from "./queries/members.ts";
+export {
+  type Device,
+  type DeviceChanges,
+  type DeviceRegistered,
+  type DeviceRegistration,
+  deleteDevice,
+  listDevices,
+  MAX_DEVICES_PER_USER,
+  type PingPrefs,
+  pingPrefsOf,
+  registerDevice,
+  setPingPrefs,
+  updateDevice,
+} from "./queries/notifications.ts";
 export {
   type Actor,
   type CommitInput,
@@ -258,4 +293,14 @@ export {
   type TurnUsage,
 } from "./queries/usage.ts";
 export { takeWebhookDelivery } from "./queries/webhooks.ts";
+export {
+  grantAllowances,
+  type RateCardNumbers,
+  readWorkspaceUsage,
+  setMonthlyCap,
+  type UsageDesign,
+  type UsagePerson,
+  type UsageRow,
+  type WorkspaceUsageRead,
+} from "./queries/workspace-usage.ts";
 export * from "./schema/index.ts";

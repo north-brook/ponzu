@@ -533,3 +533,51 @@ export interface UsageResponse {
 export interface ErrorBody {
   error: { code: string; message: string; details?: Record<string, unknown> };
 }
+
+/* ------------------------------------------------------------------ */
+/* Repo secrets                                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The one variable a design's repo's secrets reach its sandbox in. The runner, a Bun process
+ * that holds the runner token, never has them as variables of its own: a name like
+ * `BUN_OPTIONS` would load code into it before it starts. It hands them only to the agent's
+ * side, beside what it has itself (`agentEnv`). And whatever writes the sandbox's environment
+ * to a file a shell then sources, a value in it is only letters, digits, `+`, `/` and `=`.
+ */
+export const REPO_SECRETS_VARIABLE = "PONZU_REPO_SECRETS";
+
+/** `NAME:base64(value)`, comma-separated: each value's UTF-8 in standard base64. */
+export function encodeRepoSecrets(secrets: Iterable<[name: string, value: string]>): string {
+  return Array.from(secrets, ([name, value]) => `${name}:${toBase64(value)}`).join(",");
+}
+
+/**
+ * The secrets `encodeRepoSecrets` wrote, by name. An entry that is not a name and base64 is
+ * left out: a malformed variable costs the agent a secret, never the runner its start.
+ */
+export function decodeRepoSecrets(encoded: string | undefined): Record<string, string> {
+  const secrets: Record<string, string> = {};
+  for (const entry of encoded ? encoded.split(",") : []) {
+    const match = /^([A-Z][A-Z0-9_]*):([A-Za-z0-9+/]*={0,2})$/.exec(entry);
+    if (!match) continue;
+    try {
+      secrets[match[1]!] = fromBase64(match[2]!);
+    } catch {
+      // Not base64 after all, or not UTF-8: left out.
+    }
+  }
+  return secrets;
+}
+
+function toBase64(value: string): string {
+  let binary = "";
+  for (const byte of new TextEncoder().encode(value)) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function fromBase64(encoded: string): string {
+  const binary = atob(encoded);
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+}

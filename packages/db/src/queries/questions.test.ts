@@ -241,6 +241,7 @@ test("a secret's answer keeps the value with the repo, encrypted, and off the qu
     id: question.id,
     name: "STRIPE_SECRET_KEY",
     encryptedValue: "v1.ciphertext",
+    valueBytes: 24,
     userId: user.id,
   });
 
@@ -264,6 +265,7 @@ test("a secret given again replaces the repo's value, and a second answer change
       id,
       name: "STRIPE_SECRET_KEY",
       encryptedValue,
+      valueBytes: 24,
       userId: user.id,
     });
   await give(question.id, "v1.first");
@@ -315,6 +317,7 @@ test("only an open secret question of a design in a repo takes a secret", async 
       id,
       name: "KEY",
       encryptedValue: "v1.x",
+      valueBytes: 3,
       userId: user.id,
     });
 
