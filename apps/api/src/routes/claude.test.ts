@@ -259,10 +259,10 @@ describe("a subscription sign-in", () => {
 });
 
 describe("defaults", () => {
-  test("new designs start on Opus 5.5 at high, and a person's choice is kept", async () => {
+  test("new designs start on Opus 5.5 at medium, and a person's choice is kept", async () => {
     const headers = await as("ivy");
     const before = await call(t, headers, "GET", "/v1/claude/defaults");
-    expect(before.body).toMatchObject({ model: "claude-opus-5-5", effort: "high" });
+    expect(before.body).toMatchObject({ model: "claude-opus-5-5", effort: "medium" });
     expect(before.body.models.map((m: { label: string }) => m.label)).toEqual([
       "Fable 5.2",
       "Opus 5.5",
@@ -272,7 +272,7 @@ describe("defaults", () => {
     const changed = await call(t, headers, "PATCH", "/v1/claude/defaults", {
       model: "claude-haiku-5-5",
     });
-    expect(changed.body).toMatchObject({ model: "claude-haiku-5-5", effort: "high" });
+    expect(changed.body).toMatchObject({ model: "claude-haiku-5-5", effort: "medium" });
     const bad = await call(t, headers, "PATCH", "/v1/claude/defaults", { model: "gpt-9" });
     expect(bad.status).toBe(400);
   });

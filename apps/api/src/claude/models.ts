@@ -22,7 +22,7 @@ export const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const satisf
 
 /** What a person's new designs run on until they choose otherwise. */
 export const DEFAULT_MODEL = "claude-opus-5-5";
-export const DEFAULT_EFFORT: Effort = "high";
+export const DEFAULT_EFFORT: Effort = "medium";
 
 export const MODEL_IDS = CLAUDE_MODELS.map((model) => model.id) as [string, ...string[]];
 
