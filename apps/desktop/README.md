@@ -41,14 +41,22 @@ unless built with the release's credentials. CI builds it and runs its smoke che
 
 It was called Ponzu Preview (`design.ponzu.app.preview`, `ponzu-preview://`), and a checkout run
 was called Ponzu Dev. Its first launch (`src/carry-over.ts`) copies Ponzu Preview's window state
-(the studio's localStorage: the workspace and design last open, the sidebar, rail and filters),
-unless Ponzu Preview is running, and keeps it through the signed-out launch until the person
-signs in. The session can't come with it: it is sealed by "Ponzu Preview Safe Storage", which only
-Ponzu Preview opens, so the person signs in once. A "Ponzu Dev" folder a checkout run left is
-moved to "Ponzu Local" (or beside it); on such a Mac the first sign-in may ask once to use the
-"Ponzu Dev Safe Storage" keychain item that run made. Nothing is deleted: Ponzu Preview's app and
-folder stay for the person to remove. The API still links back to `ponzu-preview://` for a Ponzu
-Preview that asks.
+(the studio's localStorage: the workspace and design last open, the sidebar, rail and filters)
+and keeps it through the signed-out launch until the person signs in; the designs Ponzu Preview
+cached come over in the same copy and the studio drops them at once. While Ponzu Preview is
+open, it asks the person to quit it and Try Again, or to Continue Without. The session can't come
+with it: it is sealed by "Ponzu Preview Safe Storage", which only Ponzu Preview opens, so the
+person signs in once. A "Ponzu Dev" folder a checkout run left is moved to "Ponzu Local" (or
+beside it), and Ponzu Dev won't start while such a run is open.
+
+On a Mac where a checkout ran before the rename, that run made a "Ponzu Dev Safe Storage"
+keychain item, owned by node_modules' Electron.app. Delete it in Keychain Access before Ponzu
+Dev's first launch (it only sealed that old checkout session, which Ponzu Local no longer reads),
+and Ponzu Dev makes its own without asking; never answer Always Allow for it. Update every
+checkout to the current `cloud` before its next `bun run start`: an older one still calls itself
+Ponzu Dev and would open Ponzu Dev's folder. Nothing is deleted from code: Ponzu Preview's app
+and folder stay for the person to remove. The API still links back to `ponzu-preview://` for a
+Ponzu Preview that asks.
 
 `PONZU_SESSION_FILE=<path>` runs on a developer session saved by `bun run dev:signin` in
 apps/api instead of the keychain, rotating it in place, unencrypted (the window says so): for

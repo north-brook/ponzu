@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -14,10 +15,13 @@ import { dirname, join } from "node:path";
 import {
   adoptCheckoutFolder,
   awaitingSignIn,
+  bringOverWindowState,
   carryOver,
+  checkoutRunOpen,
   lockHeld,
   RECORD,
   signedInOnce,
+  skipWindowState,
 } from "./carry-over.ts";
 
 const homes: string[] = [];
@@ -87,12 +91,72 @@ test("the copied window state is kept while signed out, until the first sign-in"
   expect(awaitingSignIn(join(m.appData, "Ponzu"))).toBe(false);
 });
 
-test("a running Ponzu Preview's state isn't copied mid-write; the launch says so and starts new", () => {
-  const m = machine(["Ponzu Preview"]);
+test("a running Ponzu Preview's state isn't copied mid-write: it comes over once Preview quits", () => {
+  const running = ["Ponzu Preview"];
+  const m = machine(running);
   preview(m);
   expect(carryOver(m.host)).toMatchObject({ windowState: "running", awaitingSignIn: false });
   expect(existsSync(join(m.appData, "Ponzu Dev/Local Storage"))).toBe(false);
+  // Try Again with it still open: still waiting.
+  expect(bringOverWindowState(m.host).windowState).toBe("running");
+
+  // The person quits Ponzu Preview and tries again.
+  running.length = 0;
+  expect(bringOverWindowState(m.host)).toMatchObject({
+    windowState: "copied",
+    awaitingSignIn: true,
+  });
+  expect(m.read("Ponzu Dev/Local Storage/leveldb/000003.log")).toBe("ponzu.ui.usr_1");
+  expect(carryOver(m.host)).toBeNull();
 });
+
+test("Ponzu Dev quit while waiting on Ponzu Preview asks again at its next launch", () => {
+  const running = ["Ponzu Preview"];
+  const m = machine(running);
+  preview(m);
+  carryOver(m.host);
+  // Next launch, Preview still open: asked again, the folder stays Ponzu Dev's.
+  expect(carryOver(m.host)).toMatchObject({ windowState: "running", checkoutFolder: null });
+  expect(existsSync(join(m.appData, "Ponzu Local"))).toBe(false);
+  running.length = 0;
+  expect(carryOver(m.host)).toMatchObject({ windowState: "copied" });
+});
+
+test("going on without Ponzu Preview's window state isn't asked about again", () => {
+  const m = machine(["Ponzu Preview"]);
+  preview(m);
+  carryOver(m.host);
+  skipWindowState(join(m.appData, "Ponzu Dev"));
+  expect(JSON.parse(m.read(`Ponzu Dev/${RECORD}`)).windowState).toBe("skipped");
+  expect(carryOver(m.host)).toBeNull();
+  expect(awaitingSignIn(join(m.appData, "Ponzu Dev"))).toBe(false);
+});
+
+test.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+  "a first launch whose copy breaks off keeps its folder as Ponzu Dev's",
+  () => {
+    const m = machine();
+    preview(m);
+    // A file the copy can't read: cpSync throws partway.
+    const unreadable = join(m.appData, "Ponzu Preview/Local Storage/leveldb/000004.ldb");
+    writeFileSync(unreadable, "x");
+    chmodSync(unreadable, 0o000);
+    try {
+      expect(() => carryOver(m.host)).toThrow();
+    } finally {
+      chmodSync(unreadable, 0o600);
+    }
+    expect(JSON.parse(m.read(`Ponzu Dev/${RECORD}`)).windowState).toBe("failed");
+    expect(existsSync(join(m.appData, "Ponzu Dev/Local Storage.partial"))).toBe(false);
+
+    // The app went on, and the person signed in.
+    m.put("Ponzu Dev/session.bin", "Ponzu Dev's own");
+    expect(carryOver(m.host)).toBeNull();
+    expect(adoptCheckoutFolder(m.host)).toBeNull();
+    expect(m.read("Ponzu Dev/session.bin")).toBe("Ponzu Dev's own");
+    expect(existsSync(join(m.appData, "Ponzu Local"))).toBe(false);
+  },
+);
 
 test("with no Ponzu Preview, the first launch only marks the folder as Ponzu Dev's", () => {
   const m = machine();
@@ -136,10 +200,16 @@ test("a checkout run's old Ponzu Dev folder becomes Ponzu Local's, whichever app
 test("a checkout run still open under the old name is left alone, and asked about again later", () => {
   const m = machine(["Ponzu Dev"]);
   m.put("Ponzu Dev/session.bin", "the checkout's");
+  // Ponzu Dev won't start beside it (main.ts says why); Ponzu Dev's own open folder is no reason.
+  expect(checkoutRunOpen(m.host)).toBe(true);
   expect(adoptCheckoutFolder(m.host)).toBeNull();
   expect(carryOver(m.host)).toBeNull();
   expect(m.read("Ponzu Dev/session.bin")).toBe("the checkout's");
   expect(existsSync(join(m.appData, `Ponzu Dev/${RECORD}`))).toBe(false);
+
+  const own = machine(["Ponzu Dev"]);
+  carryOver(own.host);
+  expect(checkoutRunOpen(own.host)).toBe(false);
 });
 
 test.skipIf(process.platform === "win32")(

@@ -78,6 +78,9 @@ export function signedInCache(
   session.subscribe(() => {
     if (!signedIn()) forget();
   });
+  // Opened already signed out, with designs kept from before (Ponzu Dev's first launch, when the
+  // main process keeps what came from Ponzu Preview for the window state's sake): drop them now.
+  if (!signedIn() && session.getState().status !== "loading") forget();
   return {
     get: async (key) => {
       if (!signedIn()) return null;

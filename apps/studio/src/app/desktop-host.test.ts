@@ -60,3 +60,22 @@ test("signing out takes the designs kept for offline with it, and nothing is kep
   // The cache keeps to its own keys.
   expect(store.getItem("ponzu.ui.usr_1")).toBe("{}");
 });
+
+test("opened signed out, the designs kept from before go at once and the window state stays", () => {
+  // Ponzu Dev's first launch: Ponzu Preview's storage came over whole, and nobody is signed in.
+  const store = memoryStore();
+  store.setItem("ponzu.ui.usr_1", '{"sidebar":"open"}');
+  store.setItem("ponzu.cache.dsn_1", "the whole design, and its asset key");
+  signedInCache(session({ status: "signed_out" }), store);
+  expect(store.getItem("ponzu.cache.dsn_1")).toBeNull();
+  expect(store.getItem("ponzu.ui.usr_1")).toBe('{"sidebar":"open"}');
+
+  // Still finding out: nothing goes until the answer is in.
+  const later = memoryStore();
+  later.setItem("ponzu.cache.dsn_1", "kept");
+  const account = session({ status: "loading" });
+  signedInCache(account, later);
+  expect(later.getItem("ponzu.cache.dsn_1")).toBe("kept");
+  account.become({ status: "signed_out" });
+  expect(later.getItem("ponzu.cache.dsn_1")).toBeNull();
+});

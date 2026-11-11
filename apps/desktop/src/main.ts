@@ -26,9 +26,12 @@ import {
 import {
   adoptCheckoutFolder,
   awaitingSignIn,
+  bringOverWindowState,
   carryOver,
+  checkoutRunOpen,
   lockHeld,
   signedInOnce,
+  skipWindowState,
 } from "./carry-over.ts";
 import { APP_NAMES, bundleMismatch, claimsScheme, configFor } from "./config.ts";
 import { contentSecurityPolicy } from "./csp.ts";
@@ -56,7 +59,8 @@ const config = configFor(app.isPackaged, process.env);
 /*
  * Ponzu Dev and Ponzu Local (a run from a checkout) are apps of their own: their own data folder,
  * keychain item ("Ponzu Dev Safe Storage", "Ponzu Local Safe Storage") and single-instance lock,
- * so none reads, refreshes or replaces another's session, nor quits because another is running. The smoke check runs on a throwaway folder, whichever app it checks (data-folder.ts).
+ * so none reads, refreshes or replaces another's session, nor quits because another is running.
+ * The smoke check runs on a throwaway folder, whichever app it checks (data-folder.ts).
  * All of it before anything reads the name or the folder, and only once the bundle and the main
  * process agree on which app this is (`bundleMismatch`).
  */
@@ -81,15 +85,27 @@ if (smoke) removeOnceExited(userData);
  * ends up as Ponzu Local's. Before the instance lock, which lives in the folder; never in the
  * smoke check, which touches nobody's folders. A failure is logged and the app starts as new.
  */
+const carryOverHost = { appData: app.getPath("appData"), running: lockHeld, now: () => new Date() };
+const asPonzuDev = !smoke && app.isPackaged && config.appName === APP_NAMES.dev;
+if (asPonzuDev && checkoutRunOpen(carryOverHost)) {
+  // It would share Ponzu Dev's lock, folder and session; quitting it is the person's call.
+  dialog.showErrorBox(
+    "Quit the older Ponzu Dev first",
+    "A Ponzu run from a checkout made before the rename is open, and it is also called Ponzu Dev. Quit it, update that checkout, and open Ponzu Dev again.",
+  );
+  process.exit(1);
+}
+/** Ponzu Preview was open at the first launch: its window state waits on the person (below). */
+let previewOpen = false;
 if (!smoke) {
-  const host = { appData: app.getPath("appData"), running: lockHeld, now: () => new Date() };
   try {
     if (!app.isPackaged) {
-      const adopted = adoptCheckoutFolder(host);
+      const adopted = adoptCheckoutFolder(carryOverHost);
       if (adopted) console.log(`Moved the checkout run's "Ponzu Dev" folder to ${adopted}.`);
-    } else if (config.appName === APP_NAMES.dev) {
-      const done = carryOver(host);
+    } else if (asPonzuDev) {
+      const done = carryOver(carryOverHost);
       if (done) console.log(`First launch as Ponzu Dev: ${JSON.stringify(done)}`);
+      previewOpen = done?.windowState === "running";
     }
   } catch (error) {
     console.error(`Couldn't carry over the earlier app's data: ${error}`);
@@ -97,6 +113,37 @@ if (!smoke) {
 }
 /** Window state carried over from Ponzu Preview, kept while signed out until the first sign-in. */
 let keepCarriedOver = !smoke && awaitingSignIn(userData);
+
+/**
+ * Ponzu Preview is open, so its window state can't be copied mid-write: the person quits it and
+ * tries again, or goes on without it. Before anything opens the studio's storage. Quitting Ponzu
+ * Dev here instead asks again next time.
+ */
+async function waitForPonzuPreview(): Promise<void> {
+  while (previewOpen) {
+    const { response } = await dialog.showMessageBox({
+      type: "info",
+      message: "Ponzu Preview is open",
+      detail:
+        "Quit Ponzu Preview, then choose Try Again, and Ponzu Dev opens the way you left it: the same workspace and design, sidebar and filters.",
+      buttons: ["Try Again", "Continue Without"],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (response === 1) {
+      skipWindowState(userData);
+      previewOpen = false;
+      break;
+    }
+    try {
+      previewOpen = bringOverWindowState(carryOverHost).windowState === "running";
+    } catch (error) {
+      console.error(`Couldn't carry over Ponzu Preview's window state: ${error}`);
+      previewOpen = false;
+    }
+  }
+  keepCarriedOver = awaitingSignIn(userData);
+}
 
 /*
  * A debugging port would hand the signed-in window, and the access tokens it can borrow, to any
@@ -395,7 +442,8 @@ if (!app.requestSingleInstanceLock()) {
     app.setAsDefaultProtocolClient(config.linkScheme);
   }
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
+    await waitForPonzuPreview();
     if (smoke) blockNetwork();
     protocol.handle(STUDIO_SCHEME, serveStudio);
 
