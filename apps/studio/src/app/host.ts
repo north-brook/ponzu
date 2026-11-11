@@ -1,0 +1,55 @@
+import type { Api, KeyValueStorage, Live, Session } from "@ponzu/client";
+import type {
+  DeepLink,
+  MenuCommand,
+  PonzuDesktop,
+  SessionPersistence,
+  SignInResult,
+} from "@ponzu/desktop/bridge";
+
+declare global {
+  interface Window {
+    /** Set by the desktop app's preload script (apps/desktop/src/bridge.ts). */
+    ponzuDesktop?: PonzuDesktop;
+  }
+}
+
+/*
+ * What the app runs on: the session, the API and live queries, and what the place it runs in
+ * offers around them. In the Mac app that is the desktop shell (desktop-host.ts); in a plain
+ * browser, for development and tests, Ponzu Cloud in memory (fake-host.ts).
+ */
+export interface Host {
+  session: Session;
+  api: Api;
+  live: Live;
+  /** The Mac draws its own traffic lights; a browser gets painted ones. */
+  lights: "native" | "drawn";
+  /** Sign in with GitHub; resolves once it has finished or failed. */
+  signIn(): Promise<SignInResult>;
+  cancelSignIn(): void;
+  persistence(): Promise<SessionPersistence>;
+  onLink(listener: (link: DeepLink) => void): () => void;
+  onCommand(listener: (command: MenuCommand) => void): () => void;
+  /** The shell's updater; null where there is none to restart into. */
+  update: PonzuDesktop["update"] | null;
+  /** Open an https link in the system browser. */
+  openExternal(url: string): void;
+  /** Where the last designs opened are kept for showing offline: meant for size, not secrets. */
+  docStorage: KeyValueStorage | null;
+}
+
+/** localStorage as `KeyValueStorage`, for what may be lost: it can be full, or unavailable. */
+export function localStorageKv(prefix: string): KeyValueStorage {
+  return {
+    get: async (key) => {
+      try {
+        return localStorage.getItem(prefix + key);
+      } catch {
+        return null;
+      }
+    },
+    set: async (key, value) => localStorage.setItem(prefix + key, value),
+    delete: async (key) => localStorage.removeItem(prefix + key),
+  };
+}

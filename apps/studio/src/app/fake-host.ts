@@ -1,0 +1,175 @@
+import type { Session, SessionState } from "@ponzu/client";
+import { createFakeBackend, type FakeBackend, type FakePerson } from "@ponzu/client/testing";
+import { type Artboard, newId, newOpId, type Op } from "@ponzu/core";
+import type { DeepLink, MenuCommand } from "@ponzu/desktop/bridge";
+import type { Host } from "./host.ts";
+
+/*
+ * The studio in a plain browser, for development and the headless test: Ponzu Cloud in memory
+ * (@ponzu/client/testing), with a workspace to work in and a design an agent has drawn on. It
+ * starts signed out; Continue with GitHub signs in at once. `window.ponzuFake` hands the test
+ * the backend, to play the agent and teammates with.
+ */
+
+export interface FakeWorld {
+  backend: FakeBackend;
+  me: FakePerson;
+  teammate: FakePerson;
+  workspaceId: string;
+  /** Draw a board on the design's first page, as its agent. */
+  drawBoard(designId: string, name: string, color?: string): string;
+  /** Reply in a comment thread, as the teammate. */
+  reply(designId: string, threadId: string, text: string): Promise<void>;
+  /** Send a ponzu:// link, as the shell would. */
+  link(link: DeepLink): void;
+  command(command: MenuCommand): void;
+}
+
+declare global {
+  interface Window {
+    ponzuFake?: FakeWorld;
+  }
+}
+
+export function fakeHost(): Host {
+  const backend = createFakeBackend();
+  const me = backend.addPerson({ login: "maya", name: "Maya Ortiz" });
+  const teammate = backend.addPerson({ login: "sam", name: "Sam Lee" });
+  const workspace = backend.addWorkspace({
+    login: "north-brook",
+    name: "Northbrook",
+    members: { [me.id]: "admin", [teammate.id]: "member" },
+    repos: [{ name: "ponzu" }, { name: "site" }],
+  });
+  const client = backend.connect(me);
+  const session = signedOutUntilAsked(client.session, me);
+  const links = new Set<(link: DeepLink) => void>();
+  const commands = new Set<(command: MenuCommand) => void>();
+
+  const drawBoard = (designId: string, name: string, color = "#ffc81e") => {
+    const doc = backend.design(designId).sequencer.doc;
+    const page = doc.pages[0]!;
+    const id = newId("ab");
+    const artboard: Artboard = {
+      id,
+      name,
+      x: page.artboards.length * 520,
+      y: 0,
+      root: {
+        kind: "el",
+        id,
+        tag: "div",
+        attrs: {},
+        style: {
+          width: "480px",
+          height: "320px",
+          background: color,
+          display: "grid",
+          "place-items": "center",
+        },
+        children: [
+          {
+            kind: "el",
+            id: newId("n"),
+            tag: "h1",
+            attrs: {},
+            style: { margin: "0", font: "600 32px Inter, sans-serif", color: "#111110" },
+            children: [{ kind: "text", value: name }],
+          },
+        ],
+      },
+    };
+    const op: Op = { op: "artboard.create", page: page.id, index: page.artboards.length, artboard };
+    backend.agent(designId).commit([op]);
+    return id;
+  };
+
+  void seed(backend, client.api, workspace.id, workspace.repos[0]!.id, drawBoard, teammate);
+  const teammateApi = backend.connect(teammate).api;
+
+  window.ponzuFake = {
+    backend,
+    me,
+    teammate,
+    workspaceId: workspace.id,
+    drawBoard,
+    async reply(designId, threadId, text) {
+      const author = { kind: "user" as const, id: teammate.id, name: teammate.name ?? "Sam" };
+      const message = { id: newId("m"), author, text, createdAt: Date.now() };
+      await teammateApi.designs.commit(designId, [
+        { id: newOpId(), op: { op: "thread.message", id: threadId, message } },
+      ]);
+    },
+    link: (link) => {
+      for (const listener of links) listener(link);
+    },
+    command: (command) => {
+      for (const listener of commands) listener(command);
+    },
+  };
+
+  return {
+    session,
+    api: client.api,
+    live: client.live,
+    lights: "drawn",
+    async signIn() {
+      await session.completeSignIn({ code: "fake", codeVerifier: "fake" });
+      return { ok: true };
+    },
+    cancelSignIn() {},
+    persistence: async () => "keychain",
+    onLink(listener) {
+      links.add(listener);
+      return () => links.delete(listener);
+    },
+    onCommand(listener) {
+      commands.add(listener);
+      return () => commands.delete(listener);
+    },
+    update: null,
+    openExternal: (url) => window.open(url, "_blank", "noopener"),
+    docStorage: null,
+  };
+}
+
+/** One design the agent has worked on, so the sidebar and a canvas have something in them. */
+async function seed(
+  backend: FakeBackend,
+  api: Host["api"],
+  workspaceId: string,
+  repoId: string,
+  drawBoard: FakeWorld["drawBoard"],
+  teammate: FakePerson,
+) {
+  const design = await api.designs.create({ workspaceId, repoId, name: "Onboarding flow" });
+  drawBoard(design.id, "Welcome");
+  drawBoard(design.id, "Pick a repo", "#f4f3ef");
+  backend.agent(design.id).say("I drew the welcome screen and the repo picker.");
+  await backend.connect(teammate).api.designs.presence(design.id);
+}
+
+/** The fake session, but signed out until the sign-in screen's button is pressed. */
+function signedOutUntilAsked(session: Session, me: FakePerson): Session {
+  let state: SessionState = { status: "signed_out" };
+  const listeners = new Set<() => void>();
+  const set = (next: SessionState) => {
+    state = next;
+    for (const listener of listeners) listener();
+  };
+  return {
+    ...session,
+    getState: () => state,
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    async completeSignIn() {
+      set({ status: "signed_in", user: me });
+      return me;
+    },
+    async signOut() {
+      set({ status: "signed_out" });
+    },
+  };
+}
