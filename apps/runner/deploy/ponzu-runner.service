@@ -1,0 +1,29 @@
+# The runner in a design's sandbox. A template: the image build puts the path of Bun for
+# {{BUN}} and where it installed apps/runner/dist for {{RUNNER_DIR}}.
+[Unit]
+Description=Ponzu runner
+After=network-online.target
+Wants=network-online.target
+# Keep trying for as long as the sandbox is awake: the API can be out of reach for a while.
+StartLimitIntervalSec=0
+
+[Service]
+User=user
+Environment=HOME=/home/user
+WorkingDirectory=/home/user
+# boat writes the sandbox's environment (PONZU_*, the one Claude credential, the repo's secrets)
+# to this file at every start. systemd does not read it by itself, and it can appear a moment
+# after the unit starts, so the shell waits for it, exports all of it and becomes the runner.
+ExecStart=/bin/bash -c 'until [ -r /run/ascii-secrets/env.sh ]; do sleep 0.2; done; set -a; . /run/ascii-secrets/env.sh; set +a; exec {{BUN}} {{RUNNER_DIR}}/runner.js'
+Restart=on-failure
+RestartSec=3
+# 78: the environment is wrong (a variable is missing, or both Claude credentials are set), the
+# API revoked the runner token, or a newer runner took over the design. Starting again will not
+# mend it; a new environment comes with a new start of the sandbox.
+RestartPreventExitStatus=78
+# The runner finishes in order on SIGTERM: the turn, the edits, the final state.
+KillSignal=SIGTERM
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target

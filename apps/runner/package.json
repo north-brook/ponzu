@@ -1,0 +1,21 @@
+{
+  "name": "@ponzu/runner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    "./protocol": "./src/api/protocol.ts"
+  },
+  "scripts": {
+    "build": "bun scripts/build.ts",
+    "start": "bun src/main.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.322",
+    "@ponzu/core": "workspace:*",
+    "@ponzu/render": "workspace:*",
+    "@ponzu/tools": "workspace:*",
+    "zod": "^4"
+  }
+}
