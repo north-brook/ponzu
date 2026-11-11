@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { sampleDoc } from "@ponzu/core/fixtures";
-import { getDesignAssetKey, getDesignHead, listThreadItems, newId } from "@ponzu/db";
+import { getDesignAssetKey, getDesignHead, getQuestion, listThreadItems, newId } from "@ponzu/db";
 import { feedOf } from "@ponzu/db/testing";
 import {
   call,
@@ -209,6 +209,31 @@ describe("answers", () => {
       "forbidden",
     ]);
     expect(await feedOf(t.db, design.id)).toEqual([]);
+  });
+
+  test("an answer to several questions answers every one of them, and no others", async () => {
+    const { design, runner } = await sample();
+    const size = { ...HEADLINE, header: "Size", question: "How big?" };
+    const asked = await raise(runner, {
+      kind: "question",
+      payload: { questions: [HEADLINE, size] },
+    });
+
+    const partial = await answer("maya", design.id, asked, {
+      answers: { "Which way?": "Shorten it" },
+    });
+    const extra = await answer("maya", design.id, asked, {
+      answers: { "Which way?": "Shorten it", "How big?": "Big", "Why?": "Because" },
+    });
+
+    expect([partial.status, partial.body.error]).toEqual([
+      400,
+      { code: "invalid_request", message: "Answer every question: How big?" },
+    ]);
+    expect([extra.status, extra.body.error.code]).toEqual([400, "invalid_request"]);
+    expect((await getQuestion(t.db, { designId: design.id, id: asked }))!.status).toBe("open");
+    const both = { "Which way?": "Shorten it", "How big?": "Big" };
+    expect((await answer("maya", design.id, asked, { answers: both })).status).toBe(200);
   });
 
   test("a question is answered through its own design only", async () => {

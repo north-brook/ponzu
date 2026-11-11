@@ -102,14 +102,16 @@ function toItem(item: StoredItem): ThreadItem {
 function answerOf(question: Question, body: z.infer<typeof AnswerBody>): Record<string, unknown> {
   const asked = { kind: question.kind, payload: question.payload } as QuestionBody;
   if (asked.kind === "question") {
-    const texts = new Set(asked.payload.questions.map((q) => q.question));
+    // Every question that was asked, by its text, and nothing else: an answer closes the
+    // question for good, so one left out could never be answered.
+    const texts = asked.payload.questions.map((q) => q.question);
     const answers = body.answers ?? {};
-    if (Object.keys(answers).length === 0 || !Object.keys(answers).every((q) => texts.has(q))) {
-      throw new ApiError(
-        400,
-        "invalid_request",
-        "Answer the questions that were asked, by their text.",
-      );
+    const missing = texts.filter((text) => !Object.hasOwn(answers, text));
+    if (missing.length > 0) {
+      throw new ApiError(400, "invalid_request", `Answer every question: ${missing.join(" ")}`);
+    }
+    if (Object.keys(answers).some((text) => !texts.includes(text))) {
+      throw new ApiError(400, "invalid_request", "Answer only the questions that were asked.");
     }
     return { answers };
   }
