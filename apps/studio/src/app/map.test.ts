@@ -5,6 +5,7 @@ import {
   designMembers,
   hereNow,
   isUnseen,
+  keepUnchanged,
   membersById,
   NO_BRANCH_YET,
   pageTabs,
@@ -207,6 +208,34 @@ test("a row's preview is under its files, at the seq its pictures show; none bef
     light: "https://assets.test/k/previews/12-light.png",
     dark: "https://assets.test/k/previews/12-dark.png",
   });
+});
+
+test("a live update keeps what it didn't change: other rows, and an unchanged preview", () => {
+  const people = membersById([member("usr_maya", "maya", "Maya")]);
+  const at = { people, assetsUrl: "https://assets.test/k/" };
+  const before = [
+    toSummary(row({ previewSeq: 12 }), at),
+    toSummary(row({ id: "dsn_2", previewSeq: 3, prNumber: 7, prState: "open" }), at),
+  ];
+  // The first row's status moved on; the second came back as a new object, the same.
+  const after = keepUnchanged(before, [
+    toSummary(row({ previewSeq: 12, agentState: "working", seq: 5 }), at),
+    toSummary(row({ id: "dsn_2", previewSeq: 3, prNumber: 7, prState: "open" }), at),
+  ]);
+  expect(after).not.toBe(before);
+  expect(after[0]).not.toBe(before[0]);
+  expect(after[0]!.agentState).toBe("working");
+  expect(after[0]!.preview).toBe(before[0]!.preview);
+  expect(after[0]!.project).toBe(before[0]!.project);
+  expect(after[1]).toBe(before[1]);
+  // Rows that swap places are still matched by id.
+  const swapped = keepUnchanged(after, [after[1]!, { ...after[0]! }]);
+  expect(swapped[1]).toBe(after[0]);
+  // A new preview is new; nothing changed at all is the very same list.
+  const moved = keepUnchanged(after, [toSummary(row({ previewSeq: 13 }), at), after[1]!]);
+  expect(moved[0]!.preview).not.toBe(after[0]!.preview);
+  expect(moved[0]!.preview?.light).toBe("https://assets.test/k/previews/13-light.png");
+  expect(keepUnchanged(after, [...after])).toBe(after);
 });
 
 test("Share lists the owner first, then everyone who can edit", () => {

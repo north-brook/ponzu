@@ -129,9 +129,13 @@ async function settle(page: Page) {
   await page.evaluate(async () => {
     await document.fonts.ready;
     await Promise.all([...document.images].map((i) => i.decode().catch(() => {})));
-    // An avatar draws its picture only once it has loaded (ui/avatar.tsx).
+    // An avatar, and a design's preview, draw their picture only once it has loaded
+    // (ui/avatar.tsx, sidebar/design-preview.tsx).
+    const loading = ["avatar", "design-preview"]
+      .map((slot) => `[data-slot="${slot}"][data-status="loading"]`)
+      .join(", ");
     for (let tries = 0; tries < 100; tries++) {
-      if (!document.querySelector('[data-slot="avatar"][data-status="loading"]')) break;
+      if (!document.querySelector(loading)) break;
       await new Promise((r) => setTimeout(r, 20));
     }
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));

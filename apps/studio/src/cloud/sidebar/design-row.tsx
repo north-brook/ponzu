@@ -1,4 +1,4 @@
-import { Files01Icon, FolderGitIcon, GitBranchIcon } from "@hugeicons/core-free-icons";
+import { GitBranchIcon } from "@hugeicons/core-free-icons";
 import { type KeyboardEvent, memo, useEffect, useRef, useState } from "react";
 import type { DesignSummary } from "../model.ts";
 import { type RowIndicator, rowIndicator } from "../status.ts";
@@ -13,6 +13,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "../ui/menu.tsx";
+import { REPO_ICON, SCRATCH_ICON } from "../ui/project-icons.ts";
 import { PullRequestMark } from "../window/pull-request-mark.tsx";
 import { DesignPreviewImage } from "./design-preview.tsx";
 
@@ -148,14 +149,14 @@ function ProjectLine({ design }: { design: DesignSummary }) {
   if (project.kind === "scratch") {
     return (
       <span className="flex min-w-0 items-center gap-1 whitespace-nowrap">
-        <Icon icon={Files01Icon} size={11} stroke={1.9} />
+        <Icon icon={SCRATCH_ICON} size={11} stroke={1.9} />
         <span className="truncate">{project.city}</span>
       </span>
     );
   }
   return (
     <span className="flex min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap">
-      <Icon icon={FolderGitIcon} size={11} stroke={1.9} />
+      <Icon icon={REPO_ICON} size={11} stroke={1.9} />
       {project.repo.name}
       <span className="text-dry">·</span>
       <Icon icon={GitBranchIcon} size={10} stroke={2} />

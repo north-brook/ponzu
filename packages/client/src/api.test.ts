@@ -52,7 +52,7 @@ function clientFor(login: string, opts: Parameters<typeof createApi>[1] = {}): A
 
 describe("against the API's own routes", () => {
   test("an install link remembers which app asked, by its links' scheme", async () => {
-    const link = await clientFor("maya", { linkScheme: "ponzu-preview" }).github.installLink({
+    const link = await clientFor("maya", { linkScheme: "ponzu-dev" }).github.installLink({
       client: "mac",
     });
     const plain = await clientFor("maya").github.installLink({ client: "mac" });
@@ -60,8 +60,8 @@ describe("against the API's own routes", () => {
     const schemes = rows
       .filter((row) => row.userId === ws.people.maya!.userId)
       .map((row) => (row.payload as { scheme?: string }).scheme);
-    expect(schemes).toEqual(["ponzu-preview", "ponzu"]);
-    expect(link.url).not.toContain("ponzu-preview");
+    expect(schemes).toEqual(["ponzu-dev", "ponzu"]);
+    expect(link.url).not.toContain("ponzu-dev");
     expect(plain.url).toStartWith("https://github.com/");
   });
 

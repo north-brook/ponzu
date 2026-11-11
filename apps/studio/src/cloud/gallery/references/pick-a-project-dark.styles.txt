@@ -79,28 +79,20 @@ ground button[Project: fernwood] rgba(255, 255, 255, 0.1)
 icon svg[Project: fernwood] 13×13 rgb(169, 165, 155) stroke 1.7px
 icon svg[Project: fernwood] 11×11 rgb(169, 165, 155) stroke 2.2px
 ground div[Choose a repo] rgb(27, 27, 26) shadow rgba(0, 0, 0, 0.4) 0px 1px 2px 0px, rgba(0, 0, 0, 0.5) 0px 10px 30px 0px
-text "Search repositories" rgb(244, 243, 239) 400 13px Inter
-icon svg[Choose a repo] 14×14 rgb(107, 104, 98) stroke 1.7px
-ground div[Choose a repo] rgb(38, 37, 35)
-icon svg[Repositories] 15×15 rgb(169, 165, 155) stroke 1.7px
-text "Scratch" rgb(244, 243, 239) 500 13px Inter
-text "no repo, kept in Ponzu" rgb(107, 104, 98) 400 11px IBM Plex Mono
-text "north-brook" rgb(107, 104, 98) 600 11px Inter
+text "Choose a repo" rgb(244, 243, 239) 400 13px Inter
+icon svg[Repositories] 16×16 rgb(169, 165, 155) stroke 1.7px
+text "Scratch" rgb(244, 243, 239) 400 13px Inter
 ground div[Repositories] rgba(255, 255, 255, 0.06)
-icon svg[Repositories] 15×15 rgb(169, 165, 155) stroke 1.7px
-text "fernwood" rgb(244, 243, 239) 500 13px Inter
-text "north-brook/fernwood" rgb(107, 104, 98) 400 11px IBM Plex Mono
+icon svg[Repositories] 16×16 rgb(169, 165, 155) stroke 1.7px
+text "fernwood" rgb(244, 243, 239) 400 13px Inter
 icon svg[Repositories] 14×14 rgb(244, 243, 239) stroke 2.2px
-icon svg[Repositories] 15×15 rgb(169, 165, 155) stroke 1.7px
-text "lenny" rgb(244, 243, 239) 500 13px Inter
-text "north-brook/lenny" rgb(107, 104, 98) 400 11px IBM Plex Mono
-icon svg[Repositories] 15×15 rgb(169, 165, 155) stroke 1.7px
-text "ponzu" rgb(244, 243, 239) 500 13px Inter
-text "north-brook/ponzu" rgb(107, 104, 98) 400 11px IBM Plex Mono
-icon svg[Repositories] 15×15 rgb(169, 165, 155) stroke 1.7px
-text "fablefuel" rgb(244, 243, 239) 500 13px Inter
-text "north-brook/fablefuel" rgb(107, 104, 98) 400 11px IBM Plex Mono
+icon svg[Repositories] 16×16 rgb(169, 165, 155) stroke 1.7px
+text "lenny" rgb(244, 243, 239) 400 13px Inter
+icon svg[Repositories] 16×16 rgb(169, 165, 155) stroke 1.7px
+text "ponzu" rgb(244, 243, 239) 400 13px Inter
+icon svg[Repositories] 16×16 rgb(169, 165, 155) stroke 1.7px
+text "fablefuel" rgb(244, 243, 239) 400 13px Inter
 ground div[Choose a repo] rgb(38, 37, 35)
-text "Allow more on GitHub" rgb(244, 243, 239) 400 13px Inter
-icon svg[Choose a repo] 15×15 rgb(169, 165, 155) stroke 1px
+icon svg[Choose a repo] 16×16 rgb(107, 104, 98) stroke 1px
+text "Allow more on GitHub" rgb(169, 165, 155) 400 13px Inter
 icon svg[Choose a repo] 12×12 rgb(107, 104, 98) stroke 2px
