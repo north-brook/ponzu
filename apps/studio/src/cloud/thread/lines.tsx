@@ -60,7 +60,11 @@ export const ThreadLine = memo(function ThreadLine({
     case "assistant":
       return (
         <div className="px-[2px] text-13 leading-[1.5]">
-          <Prose text={item.payload.text} onOpenLink={handlers.onOpenLink} />
+          <Prose
+            text={item.payload.text}
+            streaming={item.streaming}
+            onOpenLink={handlers.onOpenLink}
+          />
         </div>
       );
     case "tool":

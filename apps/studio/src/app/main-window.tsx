@@ -124,6 +124,29 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
     return () => document.removeEventListener("visibilitychange", change);
   }, [host]);
 
+  // A design a link names, opened on its page or board: from the shell, or the thread.
+  const openDesign = useCallback(
+    (link: { designId: string; pageId?: string; artboardId?: string }) => {
+      host.api.designs.get(link.designId).then(
+        (design) => {
+          update((now) => ({
+            ...now,
+            workspaceId: design.workspaceId,
+            designs: { ...now.designs, [design.workspaceId]: design.id },
+          }));
+          openedVia.current = "link";
+          setOpening({
+            designId: design.id,
+            ...(link.pageId ? { page: link.pageId } : {}),
+            ...(link.artboardId ? { artboard: link.artboardId } : {}),
+          });
+        },
+        () => tell("design_unavailable", "That design isn't there, or you can't open it."),
+      );
+    },
+    [host, update, tell],
+  );
+
   useEffect(
     () =>
       host.onLink((link: DeepLink) => {
@@ -143,24 +166,9 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
           }
           return;
         }
-        host.api.designs.get(link.designId).then(
-          (design) => {
-            update((now) => ({
-              ...now,
-              workspaceId: design.workspaceId,
-              designs: { ...now.designs, [design.workspaceId]: design.id },
-            }));
-            openedVia.current = "link";
-            setOpening({
-              designId: design.id,
-              ...(link.pageId ? { page: link.pageId } : {}),
-              ...(link.artboardId ? { artboard: link.artboardId } : {}),
-            });
-          },
-          () => tell("design_unavailable", "That design isn't there, or you can't open it."),
-        );
+        openDesign(link);
       }),
-    [host, sync, update, say, tell],
+    [host, sync, update, tell, openDesign],
   );
 
   const all = meAnswer.data?.workspaces ?? null;
@@ -204,6 +212,7 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
       update={update}
       badge={badge}
       opening={opening}
+      onOpenDesign={openDesign}
       openedVia={openedVia}
       notice={notice}
       say={say}
@@ -227,6 +236,7 @@ function WorkspaceWindow({
   update,
   badge,
   opening,
+  onOpenDesign,
   openedVia,
   notice,
   say,
@@ -244,6 +254,8 @@ function WorkspaceWindow({
   update: (change: (ui: UiState) => UiState) => void;
   badge: ReactNode;
   opening: Opening | null;
+  /** Opens a design a link names, on its page or board. */
+  onOpenDesign: (link: { designId: string; pageId?: string; artboardId?: string }) => void;
   openedVia: { current: OpenedVia };
   notice: string | null;
   say: (notice: string) => void;
@@ -466,6 +478,12 @@ function WorkspaceWindow({
     page,
     onPage: switchPage,
     link,
+    onOpenDesign: ({ designId, page, artboard }) =>
+      onOpenDesign({
+        designId,
+        ...(page ? { pageId: page } : {}),
+        ...(artboard ? { artboardId: artboard } : {}),
+      }),
     seenThreadSeq: live.rows?.find((row) => row.id === openId)?.seenThreadSeq ?? null,
     say,
     onClose: () => openDesign(null),
