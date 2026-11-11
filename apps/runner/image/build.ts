@@ -76,6 +76,7 @@ if (!image || force) {
     // may be in it, whatever shape they have.
     const leaks = filesWithSecrets(dir, secretValues(process.env));
     if (leaks.length) throw new Error(`secrets in the image's inputs:\n${leaks.join("\n")}`);
+    ensureRepository();
     run("docker", [
       "buildx",
       "build",
@@ -134,33 +135,44 @@ const current: CurrentImage = {
 writeCurrent(current);
 console.log(`\nrecorded ${reference} in current.json (${since(t0)} s in all)`);
 
-/** The repository's images, through the Vercel CLI (VERCEL_TOKEN from the environment). */
-async function vcrImages(): Promise<VcrImage[]> {
+/** The Vercel CLI on ponzu-api, VERCEL_TOKEN from the environment (never an argument). */
+function vercel(args: string[]) {
   const r = spawnSync(
     "vercel",
     [
       "vcr",
-      "image",
-      "ls",
-      REPOSITORY,
+      ...args,
       "--project",
       creds.projectId,
       "--scope",
       creds.teamId,
       "--format",
       "json",
-      "--limit",
-      "100",
       "--non-interactive",
     ],
     { encoding: "utf8", env: { ...process.env, VERCEL_TOKEN: creds.token } },
   );
-  if (r.status !== 0) {
-    // A repository nothing was pushed to yet has no images.
-    if (/not.?found/i.test(r.stderr)) return [];
-    throw new Error(`vercel vcr image ls exited ${r.status}: ${r.stderr.slice(-800)}`);
-  }
-  return (JSON.parse(r.stdout) as { images: VcrImage[] }).images;
+  let json: Record<string, unknown> | null = null;
+  try {
+    json = JSON.parse(r.stdout);
+  } catch {}
+  return { ok: r.status === 0, json, stderr: r.stderr };
+}
+
+/** The repository's images; none when it does not exist yet. */
+async function vcrImages(): Promise<VcrImage[]> {
+  const r = vercel(["image", "ls", REPOSITORY, "--limit", "100"]);
+  if (r.ok && r.json) return (r.json as { images: VcrImage[] }).images;
+  if (r.json?.reason === "not_found") return [];
+  throw new Error(`vercel vcr image ls: ${JSON.stringify(r.json)} ${r.stderr.slice(-800)}`);
+}
+
+/** Makes the repository on its first push. */
+function ensureRepository(): void {
+  if (vercel(["inspect", REPOSITORY]).ok) return;
+  const r = vercel(["add", REPOSITORY]);
+  if (!r.ok) throw new Error(`vercel vcr add ${REPOSITORY}: ${JSON.stringify(r.json)} ${r.stderr}`);
+  console.log(`made the VCR repository ${REPOSITORY} in ${creds.projectId}`);
 }
 
 function safeCurrent(): CurrentImage | null {
