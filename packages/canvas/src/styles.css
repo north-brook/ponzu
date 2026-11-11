@@ -227,6 +227,31 @@
 }
 
 /*
+ * A board a link took the camera to (Canvas.tsx's Beacon): an ink outline, a gap out from the
+ * board, that comes in as the camera lands and fades. Neutral, like the selection: yuzu round a
+ * board means an agent is working on it. Still under reduced motion, then gone.
+ */
+@keyframes pz-beacon {
+  0% {
+    opacity: 0;
+  }
+  15%,
+  55% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.pz-beacon {
+  box-shadow:
+    0 0 0 2px var(--pz-select),
+    0 0 0 6px color-mix(in srgb, var(--pz-select) 10%, transparent);
+  animation: pz-beacon 1.6s ease-out both;
+}
+
+/*
  * An agent capturing a board (capture.tsx). A screenshot: yuzu brackets snap onto its corners
  * from just outside, kick out as a camera flash goes off over the board, and fade back into the
  * ring. A recording: a small flash on each frame, and the ring flaring once it's done.
@@ -518,7 +543,8 @@
   }
 
   .pz-ring,
-  .pz-ring::after {
+  .pz-ring::after,
+  .pz-beacon {
     animation: none;
   }
 

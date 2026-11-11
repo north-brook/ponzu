@@ -1069,7 +1069,42 @@ test("no cloud tool result names a place inside a .design folder", async () => {
     expect(r.text).not.toMatch(DESIGN_PATH);
     expect(r.text).not.toMatch(/\bfile\b|\bPath:/);
   }
-  expect(made.text).toBe(`Created artboard ${id} "Sign in" 1440px×900px at (1760, 0) on "Home".`);
+  expect(made.text).toBe(
+    `Created artboard ${id} "Sign in" 1440px×900px at (1760, 0) on "Home".\nLink: https://ponzu.test/designs/dsn_test?artboard=${id}`,
+  );
+});
+
+test("every page and board the agent learns of comes with its own link, ready to paste", async () => {
+  const { call } = setup();
+  const link = (at: string) => `https://ponzu.test/designs/dsn_test?${at}`;
+  const made = await call("create_artboard", { name: "Note: Pricing" });
+  const { id } = made.data as { id: string };
+  expect(made.text).toContain(`\nLink: ${link(`artboard=${id}`)}`);
+  const page = await call("create_page", { name: "Mobile" });
+  const pageId = /page (pg_\w+)/.exec(page.text)![1]!;
+  expect(page.text).toBe(`Created page ${pageId} "Mobile".\nLink: ${link(`page=${pageId}`)}`);
+  const copy = await call("duplicate", { ids: [id], names: ["Note: Pricing / B"] });
+  const copyId = (copy.data as { ids: string[] }).ids[0]!;
+  expect(copy.text).toContain(`"Note: Pricing / B" at `);
+  expect(copy.text).toContain(` · link: ${link(`artboard=${copyId}`)}`);
+  // The summary lists each beside its id, and says what the design's own Link is for.
+  const info = (await call("get_basic_info")).text;
+  for (const line of [
+    `Page pg_home "Home" · link: ${link("page=pg_home")}`,
+    `${id} "Note: Pricing" 1440px×900px at (1760, 0) · link: ${link(`artboard=${id}`)}`,
+    `Page ${pageId} "Mobile" (empty) · link: ${link(`page=${pageId}`)}`,
+  ])
+    expect(info).toContain(line);
+  expect(info).toContain("Link: https://ponzu.test/designs/dsn_test (opens this design in Ponzu");
+  expect((await call("get_tree")).text).toContain(` · link: ${link(`artboard=${id}`)}`);
+  // A page's tree gives the page's link, and each of its boards' on the board's own line.
+  const pageTree = (await call("get_tree", { id: "pg_home" })).text.split("\n");
+  expect(pageTree[0]).toBe(`Page pg_home "Home" · link: ${link("page=pg_home")}`);
+  const boardLine = pageTree.find((l) => l.includes(` ${id} `));
+  expect(boardLine).toEndWith(` · link: ${link(`artboard=${id}`)}`);
+  expect((await call("get_tree", { id })).text).toStartWith(
+    `${id} "Note: Pricing" 1440px×900px at (1760, 0) · page "Home" · link: ${link(`artboard=${id}`)}\n`,
+  );
 });
 
 /* ------------------------------------------------------------------ */
