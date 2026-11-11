@@ -137,10 +137,15 @@ export async function until<T>(
   everyMs = 250,
 ): Promise<T> {
   const end = Date.now() + ms;
+  let last: unknown = null;
   for (;;) {
-    const got = await check().catch(() => undefined);
+    const got = await check().catch((err) => {
+      last = err;
+      return undefined;
+    });
     if (got) return got;
-    if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
+    if (Date.now() > end)
+      throw new Error(`timed out waiting for ${what}${last ? ` (last: ${String(last)})` : ""}`);
     await Bun.sleep(everyMs);
   }
 }

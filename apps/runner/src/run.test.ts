@@ -326,6 +326,13 @@ test("a token the API revokes stops the runner for good, mid-life too", async ()
   expect(run.closed).toBe(true);
 });
 
+test("a fake that outlives its process goes on numbering its feed, as the API never reuses an id", () => {
+  const before = new FakeRunnerApi();
+  before.push({ kind: "message", payload: { text: "one" } });
+  const after = new FakeRunnerApi({ feedSeq: before.feedSeq });
+  expect(after.push({ kind: "message", payload: { text: "two" } }).id).toBe("evt_0002");
+});
+
 test("git's credential is asked through the lease, and only the live runner gets one", async () => {
   const api = new FakeRunnerApi({
     session: { repo: { owner: "north", name: "fern", defaultBranch: "main" }, branch: "pz/hero" },

@@ -23,6 +23,8 @@ const stateFile = process.env.PONZU_FAKE_API_STATE ?? `${process.env.HOME}/.ponz
 interface Kept {
   session: FakeRunnerApi["sessionInfo"];
   doc: ReturnType<FakeRunnerApi["doc"]["snapshot"]>["doc"];
+  /** The feed goes on from here: the transcript already holds the events before it. */
+  feedSeq: number;
 }
 const kept: Kept | null = existsSync(stateFile)
   ? JSON.parse(readFileSync(stateFile, "utf8"))
@@ -30,6 +32,8 @@ const kept: Kept | null = existsSync(stateFile)
 const fake = new FakeRunnerApi({
   doc: kept?.doc ?? emptyDoc("Untitled"),
   session: kept?.session ?? { design: { id: designId, name: "Untitled" }, model: "haiku" },
+  // The clock too, so that no restart repeats an id even if the file it reads is an old one.
+  feedSeq: Math.max(kept?.feedSeq ?? 0, Math.floor(Date.now() / 1000)),
 });
 const started = Date.now();
 /** State reports and every call, with when they arrived. */
@@ -78,6 +82,7 @@ async function control(route: string, url: URL, request: Request): Promise<Respo
     case "POST /control/events": {
       const body = (await request.json()) as EventBody & { priority?: Priority };
       const event = fake.push(body, body.priority ? { priority: body.priority } : {});
+      keep();
       await fetch(`http://127.0.0.1:${runnerPort}/poke`, { method: "POST" }).catch(() => {});
       return Response.json(event);
     }
@@ -99,7 +104,12 @@ async function control(route: string, url: URL, request: Request): Promise<Respo
 /** Written whole and then moved, so a cold start never reads half a file. */
 let last = "";
 function keep(): void {
-  const json = JSON.stringify({ session: fake.sessionInfo, doc: fake.doc.snapshot().doc });
+  const state: Kept = {
+    session: fake.sessionInfo,
+    doc: fake.doc.snapshot().doc,
+    feedSeq: fake.feedSeq,
+  };
+  const json = JSON.stringify(state);
   if (json === last) return;
   last = json;
   writeFileSync(`${stateFile}.new`, json);

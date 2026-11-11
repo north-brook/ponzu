@@ -193,9 +193,11 @@ jq -n --arg bun "$($bun --version)" \\
  * Tokens (an Anthropic key or Claude token, a boat key or address token, a GitHub token, a Neon
  * or WorkOS key, a runner token), in every file a snapshot keeps, text and binary (the journal
  * is binary), but boat's Docker and containerd stores, `/var/run` (which is `/run`, a tmpfs
- * holding the sandbox's environment, never in a snapshot), and boat's own binaries where a
- * GitHub-token-shaped string sits in compiled code: `gh` and three trees of other agents'
- * vendored binaries, also as boat's lazy-restore store (`/var/lib/ascii-lazy`) keeps them.
+ * holding the sandbox's environment, never in a snapshot), and three trees of other agents'
+ * vendored binaries in boat's base, where a GitHub-token-shaped string sits in compiled code.
+ * boat's lazy-restore store (`/var/lib/ascii-lazy/<kind>/<path>`) mirrors files from all over
+ * the disk; a mirror counts where its path would, so those of `/usr` and the like, which hold
+ * only the base's own binaries (`gh`, VS Code's Copilot), are left out.
  *
  * Private keys (the GitHub App's), where anything of ours is written: the base image's
  * toolchains are full of test keys. The machine's own are not ours: its SSH host keys (also in
@@ -217,13 +219,14 @@ regexes=(
 )
 patterns=$(mktemp)
 printf '%s\\n' "\${regexes[@]}" > "$patterns"
-vendored='^(/var/lib/ascii-lazy/[a-z]+)?(/usr/local/lib/node_modules/@openai/|/opt/ascii-agent/node_modules/@openai/|/root/.prime/agent/kernel-venv/|/usr/bin/gh$)'
+vendored='^(/var/lib/ascii-lazy/[a-z]+)?(/usr/local/lib/node_modules/@openai/|/opt/ascii-agent/node_modules/@openai/|/root/.prime/agent/kernel-venv/)'
+system='^/var/lib/ascii-lazy/[a-z]+/(usr/(bin|sbin|lib|lib32|lib64|libexec|share|include|src|games)|bin|sbin|lib|lib32|lib64|boot|snap)/'
 machine='^(/etc/ssh/ssh_host_|/etc/ssl/private/ssl-cert-snakeoil.key$|/home/user/.config/sunshine/sunshine.key$)'
 roots="/home /root /opt /etc /srv /usr/local /tmp $(ls -d /var/* | grep -vx -e /var/lib -e /var/run) $(ls -d /var/lib/* | grep -v -e /docker -e /containerd)"
 for root in $roots; do
   echo "scanning $root" >&2
   sudo rg -uuu -l --no-messages -f "$patterns" "$root" || true
-done | grep -Ev "$vendored" | while read -r file; do
+done | grep -Ev -e "$vendored" -e "$system" | while read -r file; do
   for i in "\${!names[@]}"; do
     sudo rg -q -uuu -e "\${regexes[$i]}" "$file" && echo "$file (\${names[$i]})"
   done
