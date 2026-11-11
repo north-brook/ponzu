@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, cloud-ci-suite]
   pull_request:
 
 permissions:
