@@ -136,8 +136,10 @@ export function DesignChrome({
       <ChromeDivider />
       <div
         className={cn(
-          "flex shrink-0 items-center pl-2.5 transition-[width] duration-(--dur-pane) ease-out",
-          rail.open ? "w-[346px]" : "w-auto",
+          // Open, to the rail's edge (`--pane-rail`, which follows its drag): less the header's
+          // 10 and a gap.
+          "pane-motion flex shrink-0 items-center pl-2.5",
+          rail.open ? "w-[calc(var(--pane-rail,360px)-14px)]" : "w-auto",
         )}
       >
         <ThreadToggle open={rail.open} signal={rail.signal} onToggle={rail.onToggle} />

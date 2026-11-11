@@ -40,6 +40,15 @@ is the rail's content, needs you included; `PullRequestView` fills the canvas pa
 request tab is open (the rail folds away, and comes back as it was on leaving). Settings plugs in
 the same way.
 
+The sidebar and the rail resize by dragging their edge with the canvas. The panes are shadcn's
+Resizable (`ui/resizable.tsx`, react-resizable-panels) in pixels, with their limits in
+`window/panes.ts`; `AppWindow` takes the widths to open them at and hands back a new one (the
+window keeps it in `app/ui-state.ts`). The edge is the gutter between pane and canvas, so it never
+covers either. The toggles collapse and expand the same panels, easing while `data-pane-motion` is
+on the window; a drag never eases. Anything that lines up with a pane's edge (the chrome's blocks)
+reads its width from `--pane-sidebar` or `--pane-rail`, which a drag writes in the frame the panes
+move in, and eases with the `pane-motion` class.
+
 Text from the model or GitHub (replies, plans, a pull request's body and comments) goes through
 `Prose`, never `dangerouslySetInnerHTML`. It is react-markdown with GitHub's flavour (tables, task
 lists, strikethrough, bare addresses; not footnotes, whose parser is slow on stray `]`s and whose

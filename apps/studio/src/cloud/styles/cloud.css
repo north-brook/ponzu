@@ -175,6 +175,33 @@
   -webkit-app-region: no-drag;
 }
 
+/*
+ * The window's panes (window/app-window.tsx). While a pane opens or closes, the window carries
+ * `data-pane-motion`: the panes, the chrome over them and the canvas between them ease together.
+ * At any other time, a drag included, they follow at once.
+ */
+[data-pane-motion] :is([data-panel], .pane-motion) {
+  transition-property: flex-grow, width, min-width, margin;
+  transition-duration: var(--dur-pane);
+  transition-timing-function: var(--ease-out);
+}
+
+/*
+ * While an edge is dragged (`data-pane-drag`): the column-resize cursor wherever the pointer
+ * goes, no text selected on the way, and the canvas's frames, which would swallow the pointer,
+ * let it through.
+ */
+[data-pane-drag],
+[data-pane-drag] * {
+  /* biome-ignore lint/complexity/noImportantStyles: outranks every control's own cursor */
+  cursor: col-resize !important;
+  user-select: none;
+}
+
+[data-pane-drag] iframe {
+  pointer-events: none;
+}
+
 /* Keyboard focus, the same on every control. */
 /* `data-quiet-focus`: focus handed over without the person moving it (a question taking the
    composer's place), which shows once they press a key. */
