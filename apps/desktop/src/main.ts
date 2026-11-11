@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import type { SessionState } from "@ponzu/client";
 import {
   app,
@@ -23,7 +23,17 @@ import {
   type MenuCommand,
   STUDIO_ORIGIN,
 } from "./bridge.ts";
-import { bundleMismatch, configFor, schemeRegistration } from "./config.ts";
+import {
+  adoptCheckoutFolder,
+  awaitingSignIn,
+  bringOverWindowState,
+  carryOver,
+  checkoutRunOpen,
+  lockHeld,
+  signedInOnce,
+  skipWindowState,
+} from "./carry-over.ts";
+import { APP_NAMES, bundleMismatch, claimsScheme, configFor } from "./config.ts";
 import { contentSecurityPolicy } from "./csp.ts";
 import { dataFolder, removeOnceExited } from "./data-folder.ts";
 import { linksIn, parseDeepLink } from "./deep-links.ts";
@@ -47,10 +57,10 @@ import { createMainWindow } from "./window.ts";
 const config = configFor(app.isPackaged, process.env);
 
 /*
- * Ponzu Preview and a development build are apps of their own: their own data folder, keychain
- * item ("Ponzu Preview Safe Storage", "Ponzu Dev Safe Storage") and single-instance lock, so
- * neither reads, refreshes or replaces an installed Ponzu's session, nor quits because one is
- * running. The smoke check runs on a throwaway folder, whichever app it checks (data-folder.ts).
+ * Ponzu Dev and Ponzu Local (a run from a checkout) are apps of their own: their own data folder,
+ * keychain item ("Ponzu Dev Safe Storage", "Ponzu Local Safe Storage") and single-instance lock,
+ * so none reads, refreshes or replaces another's session, nor quits because another is running.
+ * The smoke check runs on a throwaway folder, whichever app it checks (data-folder.ts).
  * All of it before anything reads the name or the folder, and only once the bundle and the main
  * process agree on which app this is (`bundleMismatch`).
  */
@@ -68,6 +78,72 @@ app.setPath("sessionData", userData);
 // Removed by a shell once this process is gone, however the check ends: a verdict, a crash or
 // the caller's timeout (data-folder.ts).
 if (smoke) removeOnceExited(userData);
+
+/*
+ * The first launch after the rename (carry-over.ts): Ponzu Dev takes what it safely can from
+ * Ponzu Preview, and each of it and Ponzu Local sees that a checkout run's old "Ponzu Dev" folder
+ * ends up as Ponzu Local's. Before the instance lock, which lives in the folder; never in the
+ * smoke check, which touches nobody's folders. A failure is logged and the app starts as new.
+ */
+const carryOverHost = { appData: app.getPath("appData"), running: lockHeld, now: () => new Date() };
+const asPonzuDev = !smoke && app.isPackaged && config.appName === APP_NAMES.dev;
+if (asPonzuDev && checkoutRunOpen(carryOverHost)) {
+  // It would share Ponzu Dev's lock, folder and session; quitting it is the person's call.
+  dialog.showErrorBox(
+    "Quit the older Ponzu Dev first",
+    "A Ponzu run from a checkout made before the rename is open, and it is also called Ponzu Dev. Quit it, update that checkout, and open Ponzu Dev again.",
+  );
+  process.exit(1);
+}
+/** Ponzu Preview was open at the first launch: its window state waits on the person (below). */
+let previewOpen = false;
+if (!smoke) {
+  try {
+    if (!app.isPackaged) {
+      const adopted = adoptCheckoutFolder(carryOverHost);
+      if (adopted) console.log(`Moved the checkout run's "Ponzu Dev" folder to ${adopted}.`);
+    } else if (asPonzuDev) {
+      const done = carryOver(carryOverHost);
+      if (done) console.log(`First launch as Ponzu Dev: ${JSON.stringify(done)}`);
+      previewOpen = done?.windowState === "running";
+    }
+  } catch (error) {
+    console.error(`Couldn't carry over the earlier app's data: ${error}`);
+  }
+}
+/** Window state carried over from Ponzu Preview, kept while signed out until the first sign-in. */
+let keepCarriedOver = !smoke && awaitingSignIn(userData);
+
+/**
+ * Ponzu Preview is open, so its window state can't be copied mid-write: the person quits it and
+ * tries again, or goes on without it. Before anything opens the studio's storage. Quitting Ponzu
+ * Dev here instead asks again next time.
+ */
+async function waitForPonzuPreview(): Promise<void> {
+  while (previewOpen) {
+    const { response } = await dialog.showMessageBox({
+      type: "info",
+      message: "Ponzu Preview is open",
+      detail:
+        "Quit Ponzu Preview, then choose Try Again, and Ponzu Dev opens the way you left it: the same workspace and design, sidebar and filters.",
+      buttons: ["Try Again", "Continue Without"],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (response === 1) {
+      skipWindowState(userData);
+      previewOpen = false;
+      break;
+    }
+    try {
+      previewOpen = bringOverWindowState(carryOverHost).windowState === "running";
+    } catch (error) {
+      console.error(`Couldn't carry over Ponzu Preview's window state: ${error}`);
+      previewOpen = false;
+    }
+  }
+  keepCarriedOver = awaitingSignIn(userData);
+}
 
 /*
  * A debugging port would hand the signed-in window, and the access tokens it can borrow, to any
@@ -146,7 +222,7 @@ function showWindow() {
         api: config.apiUrl,
         client: clientPlatform(),
         dev: app.isPackaged ? "0" : "1",
-        scheme: config.linkScheme,
+        scheme: config.linkScheme ?? "",
       },
     });
     const win = mainWindow;
@@ -174,7 +250,7 @@ function send(channel: string, ...args: unknown[]) {
 
 /** A link in this app's scheme: the studio acts on it once it's listening. Anything else is dropped. */
 function openLink(url: string) {
-  const link = parseDeepLink(url, config.linkScheme);
+  const link = config.linkScheme ? parseDeepLink(url, config.linkScheme) : null;
   if (!link) return;
   // Its kind only: what a link names stays out of the log.
   console.log(`Link: ${link.kind}, ${linkListeners > 0 ? "to the studio" : "waiting for it"}`);
@@ -228,7 +304,6 @@ function registerIpc(session: MainSession, updater: Updates) {
     if (isBridgeError(error)) session.report(error);
   });
   handle(CHANNELS.signIn, () => session.signIn());
-  listen(CHANNELS.cancelSignIn, () => session.cancelSignIn());
   handle(CHANNELS.signOut, () => session.session.signOut());
   handle(CHANNELS.links, () => {
     linkListeners++;
@@ -308,7 +383,7 @@ async function forgetStudioData(): Promise<void> {
 
 /**
  * What the local app left on this computer, removed once, a moment after the release's first
- * launch. Ponzu Preview and a development build leave it all alone (`removeLegacyFor`).
+ * launch. Ponzu Dev and Ponzu Local leave it all alone (`removeLegacyFor`).
  */
 function removeLegacySoon() {
   if (!config.cleansUpLegacy || smoke) return;
@@ -346,7 +421,7 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   // Windows and Linux hand a second launch its link in argv; the first launch's is read below.
   app.on("second-instance", (_event, argv) => {
-    const links = linksIn(argv, config.linkScheme);
+    const links = config.linkScheme ? linksIn(argv, config.linkScheme) : [];
     for (const link of links) openLink(link);
     if (!links.length) showWindow();
   });
@@ -357,21 +432,17 @@ if (!app.requestSingleInstanceLock()) {
     openLink(url);
   });
   /*
-   * Ponzu takes `ponzu:` links and Ponzu Preview `ponzu-preview:`, each declared in its bundle's
+   * Ponzu takes `ponzu:` links and Ponzu Dev `ponzu-dev:`, each declared in its bundle's
    * Info.plist (package.json's `protocols`, packaging.ts), which is what reaches a Mac's running
-   * app, or starts it. A development build takes `ponzu-dev:` links on Windows and Linux, through
-   * this checkout. Not on a Mac: there it runs inside node_modules' Electron.app, which declares no
-   * schemes, so registering would hand the scheme to whichever bare Electron the system finds.
-   * Use Ponzu Preview for links on a Mac. The smoke check claims nothing (`schemeRegistration`).
+   * app, or starts it. Ponzu Local takes none: use Ponzu Dev for links. The smoke check claims
+   * nothing (`claimsScheme`).
    */
-  const registration = schemeRegistration(app.isPackaged, process.platform, smoke);
-  if (registration === "bundle") app.setAsDefaultProtocolClient(config.linkScheme);
-  else if (registration === "checkout")
-    app.setAsDefaultProtocolClient(config.linkScheme, process.execPath, [
-      resolve(app.getAppPath()),
-    ]);
+  if (config.linkScheme && claimsScheme(config, smoke)) {
+    app.setAsDefaultProtocolClient(config.linkScheme);
+  }
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
+    await waitForPonzuPreview();
     if (smoke) blockNetwork();
     protocol.handle(STUDIO_SCHEME, serveStudio);
 
@@ -391,24 +462,33 @@ if (!app.requestSingleInstanceLock()) {
     let was = session.getState().status;
     session.subscribe(() => {
       const state = session.getState();
-      if (state.status !== was && endsSession(state)) void forgetStudioData();
+      if (state.status === "signed_in" && keepCarriedOver) {
+        keepCarriedOver = false;
+        signedInOnce(userData);
+      }
+      // A launch signed out forgets what the studio kept, except window state carried over from
+      // Ponzu Preview, which waits here for the person's first sign-in (carry-over.ts).
+      const launching = was === "loading" && keepCarriedOver;
+      if (state.status !== was && endsSession(state) && !launching) void forgetStudioData();
       was = state.status;
       send(CHANNELS.sessionChanged, state);
       setSignedIn(state.status === "signed_in");
     });
-    // The smoke check never looks for updates: it touches no network. Ponzu Preview has no feed.
+    // The smoke check never looks for updates: it touches no network. Ponzu Dev has no feed.
     const updates = installUpdater(
       (state) => send(CHANNELS.updateChanged, state),
       config.updates && !smoke,
     );
     registerIpc(account, updates);
+    // A sign-in still waiting in the browser goes with the app, and only then.
+    app.on("will-quit", () => account.closeSignIns());
 
     buildMenu({
       command: (command: MenuCommand) => {
         showWindow();
         send(CHANNELS.command, command);
       },
-      // Ponzu Preview doesn't update itself, so its menus don't offer to.
+      // Ponzu Dev doesn't update itself, so its menus don't offer to.
       checkForUpdates: config.updates
         ? () => {
             showWindow();
@@ -421,7 +501,9 @@ if (!app.requestSingleInstanceLock()) {
     });
     setSignedIn(session.getState().status === "signed_in");
 
-    for (const link of linksIn(process.argv, config.linkScheme)) openLink(link);
+    if (config.linkScheme) {
+      for (const link of linksIn(process.argv, config.linkScheme)) openLink(link);
+    }
     showWindow();
     if (!smoke) {
       followAppearance();

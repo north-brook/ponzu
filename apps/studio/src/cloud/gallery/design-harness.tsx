@@ -18,7 +18,7 @@ import type {
   ThreadItem,
 } from "../model.ts";
 import { type PullRequestTabState, PullRequestView } from "../pr-tab/pull-request-view.tsx";
-import { actionBlock, nextAction } from "../pull-request.ts";
+import { actionBlock, type NextAction, nextAction } from "../pull-request.ts";
 import { railSignal } from "../status.ts";
 import { ThreadRail } from "../thread/rail.tsx";
 import { DesignChrome } from "../window/design-chrome.tsx";
@@ -89,6 +89,7 @@ export function DesignHarness({
   tab = "page",
   rail: initialRail = true,
   changes = true,
+  action: forcedAction,
 }: {
   designs: DesignSummary[];
   design: DesignSummary;
@@ -108,6 +109,8 @@ export function DesignHarness({
   rail?: boolean;
   /** The branch has commits, so a design with no pull request offers Create PR. */
   changes?: boolean;
+  /** The next action, when it is one the summary can't give (Update branch). */
+  action?: NextAction;
 }) {
   const [page, setPage] = useState(pages.find((p) => p.working)?.id ?? pages[0]!.id);
   const [prTab, setPrTab] = useState(tab === "pull-request");
@@ -168,7 +171,7 @@ export function DesignHarness({
   };
 
   const pr = design.pullRequest;
-  const action = nextAction(pr, changes);
+  const action = forcedAction ?? nextAction(pr, changes);
   // With asks given, the count follows them as they're answered; otherwise it is the design's.
   const waiting =
     initialAsks.length || then.length

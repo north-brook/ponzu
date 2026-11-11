@@ -47,6 +47,27 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
       agent={WORKING}
     />
   ),
+  "crowded-chrome": () => (
+    <DesignHarness
+      designs={f.teamDesigns}
+      design={quieter(f.teamDesigns)}
+      contributors={[...f.contributors, { person: f.alex, here: true, lastHereAt: null }]}
+      thread={t.teamThread}
+      agent={WORKING}
+      action="update_branch"
+    />
+  ),
+  "crowded-chrome-closed": () => (
+    <DesignHarness
+      designs={f.teamDesigns}
+      design={quieter(f.teamDesigns)}
+      contributors={[...f.contributors, { person: f.alex, here: true, lastHereAt: null }]}
+      thread={t.teamThread}
+      agent={WORKING}
+      action="update_branch"
+      rail={false}
+    />
+  ),
   "long-thread": () => (
     <DesignHarness
       designs={f.soloDesigns}

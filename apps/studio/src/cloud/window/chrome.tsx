@@ -1,16 +1,22 @@
 import { LayoutLeftIcon } from "@hugeicons/core-free-icons";
 import { IconButton } from "../ui/button.tsx";
 import { Icon } from "../ui/icon.tsx";
-import { Slice } from "../ui/marks.tsx";
 
 /**
- * Where the Mac's traffic lights sit: three 12px lights 8px apart. In Electron the window draws
- * its own there (`trafficLightPosition: { x: 16, y: 16 }`), so the app leaves the room; `drawn`
- * paints them, for the browser and the gallery.
+ * What sits at the chrome's left before the sidebar toggle. `native`: the Mac's own traffic
+ * lights, which the window draws (`trafficLightPosition: { x: 16, y: 16 }`, so the app leaves
+ * their room); `drawn`: painted ones, for the browser and the gallery; `none`: Windows and
+ * Linux, whose windows keep their own title bar, so the chrome starts at its edge.
+ */
+export type Lights = "native" | "drawn" | "none";
+
+/**
+ * Where the Mac's traffic lights sit: three 12px lights 8px apart, from 16px in, centred on the
+ * chrome's 44px (16 down, 12 tall). The room ends 68px in.
  */
 export function TrafficLights({ drawn }: { drawn: boolean }) {
   return (
-    <div aria-hidden className="mr-0.5 flex shrink-0 gap-2">
+    <div aria-hidden className="flex shrink-0 gap-2">
       {["#ff5f57", "#febc2e", "#28c840"].map((color) => (
         <span
           key={color}
@@ -19,16 +25,6 @@ export function TrafficLights({ drawn }: { drawn: boolean }) {
         />
       ))}
     </div>
-  );
-}
-
-/** The slice and the wordmark, sharing a baseline. On every workspace, solo or team. */
-export function Lockup() {
-  return (
-    <span className="relative -top-[1.5px] flex shrink-0 items-center gap-1.5 text-ink">
-      <Slice size={16} className="relative top-[1.5px]" />
-      <span className="font-bold font-display text-16 leading-none tracking-[-0.05em]">ponzu</span>
-    </span>
   );
 }
 

@@ -4,11 +4,11 @@
 - `icon.ico`, `icons/<size>x<size>.png`: the Windows and Linux app icons, the
   Mac icon's tile cropped out of its margin and shadow. Regenerate with
   `bun run icons:platforms` whenever the app icon changes.
-- `preview/icon-1024.png`, `preview/icon.icns`, `preview/icons/<size>x<size>.png`:
-  Ponzu Preview's icon (`bun run package:preview`), the app icon with a PREVIEW
-  band across the foot of the tile, so it reads as Ponzu and never as the
-  release. Regenerate with `bun run icons:preview` whenever the app icon
-  changes.
+- `dev/icon-1024.png`, `dev/icon.icns`, `dev/icons/<size>x<size>.png`: Ponzu
+  Dev's icon (`bun run package:dev`), the app icon with its yellow tile turned
+  a neutral grey of the same lightness and the slice untouched, so it reads as
+  Ponzu and never as the release. Regenerate with `bun run icons:dev` whenever
+  the app icon changes.
 - `installer.nsh`, `uninstall.ps1`: the Windows installer's uninstall step,
   which removes what Ponzu 1.x registered for the person at launch (the
   design.json association, `~\.ponzu\bin` on their PATH). Not on an update.

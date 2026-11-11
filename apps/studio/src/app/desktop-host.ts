@@ -33,16 +33,16 @@ export function desktopHost(desktop: PonzuDesktop): Host {
       signOut: () => desktop.session.signOut(),
     },
   });
-  // GitHub's setup page links back to this app: Ponzu Preview's links aren't Ponzu 1.x's.
+  // GitHub's setup page links back to this app: Ponzu Dev's links aren't Ponzu 1.x's. Ponzu
+  // Local takes no links and says nothing, so the page offers Ponzu's.
   const api = createApi(session, { linkScheme: linkSchemeOf(desktop.config.linkScheme) });
   return {
     session,
     api,
     live: createLive({ api }),
     // The Mac's own lights sit in the chrome; elsewhere the window keeps its own title bar.
-    lights: "native",
+    lights: desktop.platform === "darwin" ? "native" : "none",
     signIn: () => desktop.session.signIn(),
-    cancelSignIn: () => desktop.session.cancelSignIn(),
     persistence: () => desktop.session.persistence(),
     onLink: (listener) => desktop.onLink(listener),
     onCommand: (listener) => desktop.onCommand(listener),
@@ -54,9 +54,7 @@ export function desktopHost(desktop: PonzuDesktop): Host {
 
 /** The shell's scheme, when it is one the API links back to; otherwise the API's default. */
 export function linkSchemeOf(scheme: string | undefined): LinkScheme | undefined {
-  return scheme === "ponzu" || scheme === "ponzu-preview" || scheme === "ponzu-dev"
-    ? scheme
-    : undefined;
+  return scheme === "ponzu" || scheme === "ponzu-dev" ? scheme : undefined;
 }
 
 const CACHE = "ponzu.cache.";
@@ -79,6 +77,9 @@ export function signedInCache(
   session.subscribe(() => {
     if (!signedIn()) forget();
   });
+  // Opened already signed out, with designs kept from before (Ponzu Dev's first launch, when the
+  // main process keeps what came from Ponzu Preview for the window state's sake): drop them now.
+  if (!signedIn() && session.getState().status !== "loading") forget();
   return {
     get: async (key) => {
       if (!signedIn()) return null;

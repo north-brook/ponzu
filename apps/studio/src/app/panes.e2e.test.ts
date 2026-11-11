@@ -82,10 +82,10 @@ describe.skipIf(!chromiumPath)("the side panes, resized by hand", () => {
     // The canvas starts where the sidebar's gutter ends, and stops where the rail's begins.
     expect(g.canvasLeft).toBeCloseTo(300, 0);
     expect(g.canvasRight).toBeCloseTo(WIDTH - 360, 0);
-    // The chrome's left block ends a header gap before x 300; the right block starts a divider
-    // and a gap past x 1080.
+    // The chrome's left block ends a header gap before x 300; the right block (the rail's
+    // toggle and the cluster before it) reaches back to x 1080, the rail's edge.
     expect(g.chromeLeftEnd + 4).toBeCloseTo(300, 0);
-    expect(g.chromeRightStart - 4).toBeCloseTo(WIDTH - 360, 0);
+    expect(g.chromeRightStart).toBeCloseTo(WIDTH - 360, 0);
     // Each edge is a separator in tab order, named for its pane.
     for (const [id, name] of [
       ["#sidebar-pane-edge", "Resize sidebar"],

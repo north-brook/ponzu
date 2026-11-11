@@ -20,15 +20,15 @@ export interface ApiOptions {
   /** For the upload's PUT to storage, which carries no bearer. */
   fetch?: Fetch;
   /**
-   * The scheme of the links this app takes, when it isn't `ponzu`: Ponzu Preview's
-   * `ponzu-preview`, a development build's `ponzu-dev`. Pages the API sends a person to (GitHub's
+   * The scheme of the links this app takes, when it isn't `ponzu`: Ponzu Dev's `ponzu-dev`.
+   * Pages the API sends a person to (GitHub's
    * setup) link back to it, so they return to the app they came from.
    */
   linkScheme?: LinkScheme;
 }
 
 /** The schemes the API will link back to (apps/api/src/github/link-scheme.ts). */
-export type LinkScheme = "ponzu" | "ponzu-preview" | "ponzu-dev";
+export type LinkScheme = "ponzu" | "ponzu-dev";
 
 /** What `api.designs.create` takes. */
 export type CreateDesignBody = InferRequestType<Rpc["v1"]["designs"]["$post"]>["json"];

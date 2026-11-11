@@ -6,7 +6,7 @@ import { join } from "node:path";
 /*
  * Where an app keeps Chromium's profile, its session file and its record of the 1.x cleanup: a
  * folder in the system's app data folder named after the app (config.ts's `appName`), so Ponzu,
- * Ponzu Preview and Ponzu Dev each have their own and none reads another's. The single-instance
+ * Ponzu Dev and Ponzu Local each have their own and none reads another's. The single-instance
  * lock lives in it too, which is what lets them run at once.
  *
  * The smoke check has none of them: it runs on a throwaway folder, so checking a packaged app on

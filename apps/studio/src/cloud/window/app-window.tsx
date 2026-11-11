@@ -14,7 +14,7 @@ import { type Layout, type PanelImperativeHandle, usePanelRef } from "react-resi
 import { cn } from "../ui/cn.ts";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "../ui/resizable.tsx";
 import { TipProvider } from "../ui/tooltip.tsx";
-import { Lockup, SidebarToggle, TrafficLights } from "./chrome.tsx";
+import { type Lights, SidebarToggle, TrafficLights } from "./chrome.tsx";
 import { CANVAS_MIN, PANE_STEP, PANE_STEP_LARGE, PANES, type Pane, paneWidth } from "./panes.ts";
 
 /** The smallest window the layout holds at: sidebar 300, rail 360 and a usable canvas. */
@@ -74,8 +74,13 @@ function panelLimits(pane: Pane, collapsible: boolean) {
  * - `chrome` is everything past the left block (DesignChrome); nothing on the create page.
  * - `rail` is the thread rail's content, or null while it is closed.
  * - `children` fill the canvas pane.
- * - `badge` sits just past the lockup: the shell's update mark, when there is one.
+ * - `badge` sits just past the sidebar toggle (or the traffic lights): the shell's update mark,
+ *   when there is one.
  * - `panes`: the widths to open the panes at, and where a new one goes when an edge is moved.
+ *
+ * The chrome draws no lockup, in any state (the founder asked for it gone; the boards still
+ * draw one). The sidebar toggle comes first at the left, just past the traffic lights, and
+ * DesignChrome ends with the thread toggle at the window's right edge.
  *
  * The panes are react-resizable-panels' (shadcn's Resizable, ui/resizable.tsx), in pixels. Each
  * edge between a pane and the canvas is a separator: the gutter there is its grab area, it
@@ -94,7 +99,7 @@ export function AppWindow({
   panes,
   children,
 }: {
-  lights: "native" | "drawn";
+  lights: Lights;
   sidebar: SidebarSlot | null;
   chrome?: ReactNode;
   rail: ReactNode | null;
@@ -240,19 +245,34 @@ export function AppWindow({
           } as CSSProperties
         }
       >
-        <header className="app-drag flex h-11 shrink-0 items-center gap-1 pr-2.5 pl-4">
+        <header
+          className={cn(
+            "app-drag flex h-11 shrink-0 items-center gap-1",
+            // 10 at either edge; on a Mac the traffic lights' own 16 on the left.
+            lights === "none" ? "px-2.5" : "pr-2.5 pl-4",
+          )}
+        >
           <div
             className={cn(
-              // To the sidebar's edge, where the divider is: less the header's 16 and a gap.
-              "pane-motion flex shrink-0 items-center gap-2 pr-[2px]",
-              sidebarOpen ? "w-[calc(var(--pane-sidebar,300px)-20px)]" : "w-auto",
+              "pane-motion flex shrink-0 items-center pr-[2px]",
+              // To the sidebar's edge, where the divider is: less the header's padding (16, or 10
+              // with no traffic lights) and a gap.
+              !sidebarOpen
+                ? "w-auto"
+                : lights === "none"
+                  ? "w-[calc(var(--pane-sidebar,300px)-14px)]"
+                  : "w-[calc(var(--pane-sidebar,300px)-20px)]",
             )}
           >
-            <TrafficLights drawn={lights === "drawn"} />
-            <Lockup />
+            {lights === "none" ? null : <TrafficLights drawn={lights === "drawn"} />}
+            {sidebar ? (
+              // 8 past the lights (their own spacing): the icon starts 14 past the last light.
+              <span className={cn("flex shrink-0", lights !== "none" && "ml-2")}>
+                <SidebarToggle open={sidebar.open} onToggle={sidebar.onToggle} />
+              </span>
+            ) : null}
             {badge}
             <span className="flex-1" />
-            {sidebar ? <SidebarToggle open={sidebar.open} onToggle={sidebar.onToggle} /> : null}
           </div>
           {chrome}
         </header>
