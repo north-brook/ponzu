@@ -1,5 +1,6 @@
 import { BrowserWindow, nativeTheme, shell } from "electron";
 import { externalLink, isStudio } from "./navigation.ts";
+import { trafficLights } from "./traffic-lights.ts";
 
 /*
  * The main window. It shows the studio, which draws designs agents wrote and comments anyone
@@ -11,12 +12,16 @@ import { externalLink, isStudio } from "./navigation.ts";
 const CHROME = { light: "#e8e6e0", dark: "#0e0e0d" };
 
 /**
- * The frame. The Mac's traffic lights sit in the studio's 44px chrome, which leaves them room;
- * Windows and Linux keep their own title bar, since the chrome's right end is the thread's.
+ * The frame. The Mac's traffic lights sit in the studio's 44px chrome, which leaves them room
+ * (apps/studio/src/cloud/window/chrome.tsx); Windows and Linux keep their own title bar, since
+ * the chrome's right end is the thread's.
  */
 function frame(): Electron.BrowserWindowConstructorOptions {
   if (process.platform !== "darwin") return {};
-  return { titleBarStyle: "hiddenInset", trafficLightPosition: { x: 16, y: 16 } };
+  return {
+    titleBarStyle: "hiddenInset",
+    trafficLightPosition: trafficLights(process.getSystemVersion()),
+  };
 }
 
 export function createMainWindow(opts: {
