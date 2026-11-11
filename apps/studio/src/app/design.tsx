@@ -110,13 +110,13 @@ export function useSourceState(source: CloudSource) {
  */
 export function useAccess(open: OpenDesign): "read" | "write" | null {
   const state = useSourceState(open.source);
-  if (state.status === "connecting" || state.status === "error") return null;
-  // The API's word arrives with the replica; a copy shown offline doesn't carry it.
-  return open.source.assetBase && state.status === "ready"
-    ? open.source.writable
-      ? "write"
-      : "read"
-    : null;
+  // The API's word arrives with the replica, and holds while the network comes and goes; a copy
+  // shown offline before it doesn't carry it.
+  const known = useRef<{ id: string; access: "read" | "write" } | null>(null);
+  if (state.status === "ready") {
+    known.current = { id: open.id, access: open.source.writable ? "write" : "read" };
+  }
+  return known.current?.id === open.id ? known.current.access : null;
 }
 
 /** The chrome past the left block for an open design. */

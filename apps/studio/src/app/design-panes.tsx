@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useState } from "react";
 import type { DesignMember, DesignSummary, Person, WorkspaceKind } from "../cloud/model.ts";
 import { DesignCanvas, DesignChromeSlot, type OpenDesign } from "./design.tsx";
 import type { Host } from "./host.ts";
@@ -57,29 +57,30 @@ export function useDesignPanes({
   onClose: () => void;
   onConnectClaude?: () => void;
 }): DesignPanes | null {
-  const [prTab, setPrTab] = useState(false);
-  const [shown, setShown] = useState<{ artboard: string; at: number } | null>(null);
+  // Each is the open design's own: another design opens on its canvas, where its own link or
+  // the person left it, never on the last one's tab or board.
   const designId = open?.id ?? null;
-  // Another design opens on its canvas, where its own link or the person left it.
-  useEffect(() => {
-    if (designId !== null) {
-      setPrTab(false);
-      setShown(null);
-    }
-  }, [designId]);
+  const [tabFor, setTabFor] = useState<string | null>(null);
+  const [showing, setShowing] = useState<{ designId: string; artboard: string; at: number }>();
+  const prTab = designId !== null && tabFor === designId;
+  const shown = showing?.designId === designId ? showing : null;
+  const setPrTab = (open: boolean) => setTabFor(open ? designId : null);
 
-  const onOpenArtboards = useCallback((ids: string[]) => {
-    const [artboard] = ids;
-    if (!artboard) return;
-    setPrTab(false);
-    setShown({ artboard, at: Date.now() });
-  }, []);
+  const onOpenArtboards = useCallback(
+    (ids: string[]) => {
+      const [artboard] = ids;
+      if (!artboard || !designId) return;
+      setTabFor(null);
+      setShowing({ designId, artboard, at: Date.now() });
+    },
+    [designId],
+  );
 
   if (!open) return null;
   const project = summary?.project ?? null;
   const repo = project?.kind === "repo" ? project.repo : null;
   const owner = summary?.owner ?? null;
-  const togglePrTab = () => setPrTab((was) => !was);
+  const togglePrTab = () => setPrTab(!prTab);
   // The tab folds the rail away; the toggle then says what the rail would, and brings it back.
   const railShown = rail.open && !prTab;
   const toggleRail = () => {
@@ -131,7 +132,11 @@ export function useDesignPanes({
             me={me}
             page={page}
             onPage={onPage}
-            {...(shown ? { link: shown } : link ? { link } : {})}
+            {...(shown
+              ? { link: { artboard: shown.artboard, at: shown.at } }
+              : link
+                ? { link }
+                : {})}
             onClose={onClose}
           />
         </div>
