@@ -45,13 +45,18 @@ export {
 export {
   createDesign,
   type Design,
+  type DesignAccess,
   type DesignListItem,
+  deleteDesign,
   getDesign,
+  getDesignAccess,
   getDesignAssetKey,
   getDesignHead,
+  getWorkspaceRepo,
   listWorkspaceDesigns,
   markDesignSeen,
   type NewDesign,
+  settleDesign,
 } from "./queries/designs.ts";
 export {
   appendEvent,
@@ -86,17 +91,18 @@ export {
   listWorkspaceMembers,
   removeMembership,
   type SetRoleResult,
-  setMemberRepos,
   setMemberRole,
   type WorkspaceMember,
   workspaceHasAdmin,
 } from "./queries/members.ts";
 export {
   type Actor,
+  type CommitInput,
   type CommitResult,
   commitOps,
   findOps,
   type NewOp,
+  type OpEvent,
   type ReadOpsResult,
   readOps,
   type StoredOp,
@@ -110,7 +116,11 @@ export {
   removePresence,
   touchPresence,
 } from "./queries/presence.ts";
-export { findDesignByBranch, recordPullRequest } from "./queries/pull-requests.ts";
+export {
+  type BranchDesign,
+  findDesignByBranch,
+  recordPullRequest,
+} from "./queries/pull-requests.ts";
 export {
   answerQuestion,
   answerSecretQuestion,
@@ -120,6 +130,18 @@ export {
   listOpenQuestions,
   type Question,
 } from "./queries/questions.ts";
+export {
+  getRepoAccess,
+  listWorkspaceRepoAccess,
+  markRepoAccessStale,
+  READABLE_PERMISSIONS,
+  type RepoAccessAnswer,
+  recordNoRepoAccess,
+  recordReachableRepos,
+  recordRepoAccess,
+  type WorkspaceRepoAccess,
+  WRITABLE_PERMISSIONS,
+} from "./queries/repo-access.ts";
 export { QueryError } from "./queries/run.ts";
 export {
   createRunnerToken,

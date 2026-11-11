@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { githubUserToken } from "../github/user-token.ts";
 import { createTestApp, type SignedInPerson, type TestApp } from "../testing/index.ts";
 
@@ -160,4 +160,98 @@ test("an installation that is gone is an upstream failure, not a token", async (
   await expect(t.deps.github.createInstallationToken({ installationId: 1 })).rejects.toThrow(
     /answered 404/,
   );
+});
+
+describe("a person's permission in a repository", () => {
+  const fernwood = { id: 1, fullName: "north-brook/fernwood" };
+  const ask = (
+    repository: { id: number; fullName: string },
+    user = { id: maya.github.id, login: "maya" },
+    installationId = 9002,
+  ) => t.deps.github.getRepoPermission({ installationId, repository, user });
+
+  test("is asked as the App, with a token for that one repository and metadata only", async () => {
+    const before = t.github.installationTokenRequests.length;
+
+    expect(await ask(fernwood)).toBe("write");
+    expect(await ask({ id: 2, fullName: "north-brook/site" })).toBe("read");
+    expect(await ask({ id: 3, fullName: "north-brook/secret" })).toBe("none");
+
+    expect(t.github.installationTokenRequests.slice(before).map(({ body }) => body)).toEqual([
+      { repository_ids: [1], permissions: { metadata: "read" } },
+      { repository_ids: [2], permissions: { metadata: "read" } },
+      { repository_ids: [3], permissions: { metadata: "read" } },
+    ]);
+  });
+
+  test("asks every time, but questions about one person and repository at once share an answer", async () => {
+    const asked = () => t.github.permissionRequests.filter((line) => line.endsWith(" maya")).length;
+    const before = asked();
+
+    const answers = await Promise.all([ask(fernwood), ask(fernwood), ask(fernwood)]);
+    expect(answers).toEqual(["write", "write", "write"]);
+    expect(asked()).toBe(before + 1);
+
+    expect(await ask(fernwood)).toBe("write");
+    expect(asked()).toBe(before + 2);
+  });
+
+  test("reuses its token for most of the hour, and mints again when GitHub stops taking it early", async () => {
+    await ask(fernwood);
+    const minted = t.github.installationTokenRequests.length;
+    expect(await ask(fernwood)).toBe("write");
+    expect(t.github.installationTokenRequests.length).toBe(minted);
+
+    // Suspended and back, or its permissions changed: the token says 401 before it runs out.
+    t.github.revokeInstallationTokens();
+    expect(await ask(fernwood)).toBe("write");
+    expect(t.github.installationTokenRequests.length).toBe(minted + 1);
+  });
+
+  test("takes an answer only about the person's own account, whatever login now belongs to whom", async () => {
+    const repository = t.github.installations[1]!.repositories[0]!;
+    const renamed = t.github.addUser({
+      id: 5150,
+      login: "kit-new",
+      name: null,
+      avatarUrl: null,
+      emails: [],
+    });
+    repository.access[renamed.id] = "read";
+    // Kit last signed in as `kit` and has renamed since; nobody has taken `kit` yet.
+    const kit = { id: renamed.id, login: "kit" };
+    expect(await ask(fernwood, kit)).toBe("read");
+
+    // Now someone else has the old login, and write access.
+    const squatter = t.github.addUser({
+      id: 5151,
+      login: "kit",
+      name: null,
+      avatarUrl: null,
+      emails: [],
+    });
+    repository.access[squatter.id] = "write";
+    expect(await ask(fernwood, kit)).toBe("read");
+
+    // An account that is gone has no access, whoever holds its old login.
+    expect(await ask(fernwood, { id: 5152, login: "kit" })).toBe("none");
+    delete repository.access[renamed.id];
+    delete repository.access[squatter.id];
+  });
+
+  test("is none for a login GitHub does not know, a repository or installation the App has lost", async () => {
+    expect(await ask(fernwood, { id: 9999, login: "renamed-since" })).toBe("none");
+    expect(await ask({ id: 4, fullName: "elsewhere/thing" })).toBe("none");
+    const uninstalled = { id: 5, fullName: "gone/thing" };
+    expect(await ask(uninstalled, { id: maya.github.id, login: "maya" }, 12345)).toBe("none");
+  });
+
+  test("GitHub failing is an upstream failure, not an answer", async () => {
+    t.github.failNext("/repos/north-brook/site/collaborators/maya/permission", 502);
+    const site = { id: 2, fullName: "north-brook/site" };
+    t.clock.advance(60_000);
+
+    await expect(ask(site)).rejects.toThrow(/answered 502/);
+    expect(await ask(site)).toBe("read");
+  });
 });

@@ -1,15 +1,14 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { seedUser, seedWorkspace } from "../fixtures.ts";
-import { type GithubAccess, memberRepos, memberships, users } from "../schema/index.ts";
+import { type GithubAccess, memberships, users } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
-import { markReposRemoved, upsertMembership, upsertRepos } from "./accounts.ts";
+import { upsertMembership } from "./accounts.ts";
 import {
   countWorkspaceMembers,
   ensureWorkspaceAdmin,
   listWorkspaceMembers,
   removeMembership,
-  setMemberRepos,
   setMemberRole,
   workspaceHasAdmin,
 } from "./members.ts";
@@ -170,96 +169,4 @@ test("removeMembership drops one person from the workspace an installation belon
     await removeMembership(db, { installationId: workspace.installationId!, userId: gone!.id }),
   ).toBeNull();
   expect(await removeMembership(db, { installationId: 404_404, userId: stays!.id })).toBeNull();
-});
-
-test("setMemberRepos records what a member reaches, and drops the rest only from a whole list", async () => {
-  const {
-    workspace,
-    members: [member],
-  } = await team(["reacher", "member"]);
-  const repo = (githubRepoId: number) => ({
-    githubRepoId,
-    fullName: `a/${githubRepoId}`,
-    defaultBranch: "main",
-    private: true,
-    pushedAt: null,
-  });
-  const rows = await upsertRepos(db, {
-    workspaceId: workspace.id,
-    repos: [repo(9101), repo(9102), repo(9103)],
-  });
-  const idOf = (githubRepoId: number) => rows.find((row) => row.githubRepoId === githubRepoId)!.id;
-  const set = (repos: [number, boolean][], complete = true) =>
-    setMemberRepos(db, {
-      workspaceId: workspace.id,
-      userId: member!.id,
-      repos: repos.map(([githubRepoId, canPush]) => ({ githubRepoId, canPush })),
-      complete,
-    });
-  const held = async () =>
-    Object.fromEntries(
-      (await db.select().from(memberRepos).where(eq(memberRepos.userId, member!.id))).map((row) => [
-        row.repoId,
-        row.canPush,
-      ]),
-    );
-
-  // 9999 is not a repo of this workspace (yet): it is reported, not recorded.
-  expect(
-    await set([
-      [9101, false],
-      [9102, true],
-      [9999, true],
-    ]),
-  ).toEqual({ missing: [9999] });
-  expect(await held()).toEqual({ [idOf(9101)]: false, [idOf(9102)]: true });
-
-  // A list cut short adds and updates, and takes nothing away.
-  expect(
-    await set(
-      [
-        [9103, false],
-        [9101, true],
-      ],
-      false,
-    ),
-  ).toEqual({ missing: [] });
-  expect(await held()).toEqual({ [idOf(9101)]: true, [idOf(9102)]: true, [idOf(9103)]: false });
-
-  // A whole list is the truth, and an empty one leaves nothing.
-  await set([[9103, false]]);
-  expect(await held()).toEqual({ [idOf(9103)]: false });
-  await set([]);
-  expect(await held()).toEqual({});
-
-  // A repo GitHub lists twice is recorded once; a removed one is still recorded.
-  await markReposRemoved(db, [9102]);
-  await set([
-    [9102, true],
-    [9102, true],
-  ]);
-  expect(await held()).toEqual({ [idOf(9102)]: true });
-});
-
-test("a member's repos go with their membership", async () => {
-  const {
-    workspace,
-    members: [member],
-  } = await team(["leaver", "member"]);
-  await upsertRepos(db, {
-    workspaceId: workspace.id,
-    repos: [
-      { githubRepoId: 9201, fullName: "a/x", defaultBranch: "main", private: true, pushedAt: null },
-    ],
-  });
-  await setMemberRepos(db, {
-    workspaceId: workspace.id,
-    userId: member!.id,
-    repos: [{ githubRepoId: 9201, canPush: true }],
-    complete: true,
-  });
-
-  await removeMembership(db, { installationId: workspace.installationId!, userId: member!.id });
-
-  expect(await db.$count(memberRepos, eq(memberRepos.userId, member!.id))).toBe(0);
 });

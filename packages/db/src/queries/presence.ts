@@ -1,16 +1,21 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { presence, users } from "../schema/index.ts";
+import { timeParam } from "./json.ts";
 import { run } from "./run.ts";
 
 /** A client refreshes its row every 30 seconds; one not refreshed for this long is gone. */
 export const PRESENCE_TTL_SECONDS = 75;
 
-const stale = (ttlSeconds: number) =>
-  sql`${presence.seenAt} < now() - make_interval(secs => ${ttlSeconds})`;
+/**
+ * Whether a row was last refreshed more than `ttlSeconds` before `now`. The time is the
+ * caller's, not Postgres's, so the API's clock decides who is still here.
+ */
+const stale = (now: Date, ttlSeconds: number) =>
+  sql`${presence.seenAt} < ${timeParam(new Date(now.getTime() - ttlSeconds * 1000))}::timestamptz`;
 
 /**
- * Say a person has a design open, now. Call it on opening and every 30 seconds after.
+ * Say a person has a design open, as of `now`. Call it on opening and every 30 seconds after.
  *
  * `pageId` is the page they are on; leave it out to say only "still here", and the page they
  * were on stands. Someone whose row had gone stale is arriving again, not still here, so they
@@ -18,18 +23,24 @@ const stale = (ttlSeconds: number) =>
  */
 export async function touchPresence(
   db: Db,
-  { designId, userId, pageId }: { designId: string; userId: string; pageId?: string | null },
+  {
+    designId,
+    userId,
+    pageId,
+    now,
+  }: { designId: string; userId: string; pageId?: string | null; now: Date },
 ): Promise<void> {
+  const at = sql`${timeParam(now)}::timestamptz`;
   await run(
     db
       .insert(presence)
-      .values({ designId, userId, pageId })
+      .values({ designId, userId, pageId, joinedAt: at, seenAt: at })
       .onConflictDoUpdate({
         target: [presence.designId, presence.userId],
         set: {
           ...(pageId === undefined ? {} : { pageId }),
-          joinedAt: sql`case when ${stale(PRESENCE_TTL_SECONDS)} then now() else ${presence.joinedAt} end`,
-          seenAt: sql`now()`,
+          joinedAt: sql`case when ${stale(now, PRESENCE_TTL_SECONDS)} then ${at} else ${presence.joinedAt} end`,
+          seenAt: at,
         },
       }),
   );
@@ -45,10 +56,14 @@ export interface PresentUser {
   seenAt: Date;
 }
 
-/** Who has a design open, longest here first. Rows past the TTL are left out. */
+/** Who has a design open as of `now`, longest here first. Rows past the TTL are left out. */
 export function listPresence(
   db: Db,
-  { designId, ttlSeconds = PRESENCE_TTL_SECONDS }: { designId: string; ttlSeconds?: number },
+  {
+    designId,
+    now,
+    ttlSeconds = PRESENCE_TTL_SECONDS,
+  }: { designId: string; now: Date; ttlSeconds?: number },
 ): Promise<PresentUser[]> {
   return run(
     db
@@ -63,7 +78,7 @@ export function listPresence(
       })
       .from(presence)
       .innerJoin(users, eq(users.id, presence.userId))
-      .where(and(eq(presence.designId, designId), sql`not ${stale(ttlSeconds)}`))
+      .where(and(eq(presence.designId, designId), sql`not ${stale(now, ttlSeconds)}`))
       .orderBy(presence.joinedAt, presence.userId),
   );
 }
@@ -79,15 +94,15 @@ export async function removePresence(
 }
 
 /**
- * Delete rows past the TTL, for the sweeper. A live query cannot compare against the clock, so
- * a watcher only sees someone leave when their row does. Answers how many went.
+ * Delete rows past the TTL as of `now`, for the sweeper. A live query cannot compare against
+ * the clock, so a watcher only sees someone leave when their row does. Answers how many went.
  */
 export async function deleteStalePresence(
   db: Db,
-  ttlSeconds: number = PRESENCE_TTL_SECONDS,
+  { now, ttlSeconds = PRESENCE_TTL_SECONDS }: { now: Date; ttlSeconds?: number },
 ): Promise<number> {
   const gone = await run(
-    db.delete(presence).where(stale(ttlSeconds)).returning({ userId: presence.userId }),
+    db.delete(presence).where(stale(now, ttlSeconds)).returning({ userId: presence.userId }),
   );
   return gone.length;
 }

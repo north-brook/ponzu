@@ -1,7 +1,15 @@
-import { getMemberWorkspace, type MemberRole, type MemberWorkspace } from "@ponzu/db";
+import {
+  type DesignAccess,
+  getDesignAccess,
+  getMemberWorkspace,
+  type MemberRole,
+  type MemberWorkspace,
+  type User,
+} from "@ponzu/db";
 import type { Deps } from "../deps/index.ts";
 import { ApiError } from "../http/errors.ts";
-import type { UserActor } from "./actor.ts";
+import type { Actor, UserActor } from "./actor.ts";
+import { canWrite, repoPermission } from "./repo-access.ts";
 
 /*
  * What a caller may touch. An access declaration says who is asking; the functions here say
@@ -12,11 +20,6 @@ import type { UserActor } from "./actor.ts";
  *   404 `not_found`   the thing does not exist, or the caller cannot see it. The two are not
  *                     told apart, so an id cannot be probed for.
  *   403 `forbidden`   the caller can see it and may not do this to it.
- *
- * `requireDesign` belongs here too and is the designs module's to write: opening a design
- * takes read access to its repository and steering it takes write access, both asked of
- * GitHub (docs/cloud.md, "Identity and access"), and a runner may act only on
- * `actor.designId`. Membership of the workspace alone is not that check.
  */
 
 /** A handler's context, as far as these need it: only a route for a signed-in person has one. */
@@ -38,4 +41,60 @@ export async function requireWorkspace(
     throw new ApiError(403, "forbidden", "Only an admin of this workspace can do this.");
   }
   return workspace;
+}
+
+/** A design as the caller may have it: they may look (`read`) or also steer it (`write`). */
+export interface DesignGrant extends DesignAccess {
+  access: "read" | "write";
+}
+
+type DesignContext = { var: { deps: Pick<Deps, "db" | "github" | "clock">; actor: Actor } };
+
+/**
+ * The design `designId` names, if the caller may `need` it. Opening a design takes read access
+ * to its repository and steering it takes write access, both GitHub's to say (docs/cloud.md,
+ * "Identity and access"), and either takes membership of its workspace; a Scratch design has
+ * no repository and is its owner's alone. A runner may look at and steer its own design and
+ * no other.
+ */
+export async function requireDesign(
+  c: DesignContext,
+  designId: string,
+  need: "read" | "write",
+): Promise<DesignGrant> {
+  const { deps, actor } = c.var;
+  const notFound = new ApiError(404, "not_found", "There is no such design.");
+  if (actor.kind === "runner" && actor.designId !== designId) throw notFound;
+  const found = await getDesignAccess(deps.db, {
+    designId,
+    userId: actor.kind === "user" ? actor.user.id : null,
+  });
+  if (!found) throw notFound;
+  const access = actor.kind === "runner" ? "write" : await personAccess(deps, actor.user, found);
+  if (!access) throw notFound;
+  if (need === "write" && access !== "write") {
+    throw new ApiError(403, "forbidden", "You can open this design but not change it.");
+  }
+  return { ...found, access };
+}
+
+/**
+ * What a person may do with the design: nothing outside its workspace, and inside it what
+ * GitHub lets them do in its repository. Null for nothing.
+ */
+async function personAccess(
+  deps: Pick<Deps, "db" | "github" | "clock">,
+  user: User,
+  { design, repo, installationId, suspendedAt, known, member }: DesignAccess,
+): Promise<DesignGrant["access"] | null> {
+  // Membership is GitHub's too, and a person who loses it loses the workspace's designs at
+  // once, whatever answer about the repo is still kept.
+  if (!member) return null;
+  if (!repo) return design.ownerId === user.id ? "write" : null;
+  // Without the App, or while it is suspended, it is `none`: nobody to ask, and nothing the
+  // design could do anyway.
+  const installation = { installationId, suspendedAt };
+  const permission = await repoPermission(deps, { user, repo, installation, known });
+  if (canWrite(permission)) return "write";
+  return permission === "read" ? "read" : null;
 }

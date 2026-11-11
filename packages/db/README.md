@@ -57,9 +57,9 @@ const result = await commitOps(db, { designId, expectedSeq, actor, ops });
   which is how the API gives the database ten seconds. Without one a statement can wait as
   long as the runtime's `fetch` does.
 - **A query that depends on the time takes `now` from its caller**, as the GitHub token claim
-  does, so a test can move the clock. The older ones still read Postgres's `now()` (runner
-  token expiry, job leases, presence, event claims; `claimJobs` takes a `now` for when a job
-  is due, which its caller then sets `runAt` by); convert one when a module
+  and presence do, so a test can move the clock. The older ones still read Postgres's `now()`
+  (runner token expiry, job leases, event claims; `claimJobs` takes a `now` for when a job is
+  due, which its caller then sets `runAt` by); convert one when a module
   comes to depend on its timing, and do not add to them.
 - `@ponzu/db/testing` exports `createTestDb()`: a migrated PGlite database, about 60 ms each.
 - `@ponzu/db/types` is for clients: the fixed lists (`AGENT_STATES`, `EVENT_PRIORITIES`, …),
@@ -123,8 +123,9 @@ People and access
 | `workspaces` | A GitHub account with the App installed, and its billing: Stripe customer, cap, period anchor. Keyed by the account; the installation id changes on a reinstall. `reconciled_at` is when the installation was last read as the App. | live |
 | `uninstalled_installations` | Installation ids GitHub said are gone. GitHub never reuses one, so a read that began before the uninstall cannot bring it back. | |
 | `memberships` | Who can reach a workspace, as GitHub last said, how (`github_access`: owner, member of its organization, or collaborator on some repos), and their role (admin or member). An owner is always an admin. | live |
-| `member_repos` | The repos of a workspace each member reaches, as GitHub last told them, and whether they can push. A member is shown only these. Goes with the membership. | |
+| `member_repos` | Retired: what `repo_access` holds now. Kept only while the build before reads it; the next migration drops it. Nothing reads or writes it. | |
 | `repos` | A repo the App can see: default branch, the base snapshot new designs start from, its stack, ideas. | live |
+| `repo_access` | What GitHub last said each person may do in each repo (`admin`, `write`, `read`, `none`), and when: the one answer to who may see or steer a repo. A person's sync writes a whole workspace of them (`recordReachableRepos`), a question asked as the App writes one (`recordRepoAccess`), and a webhook that cannot say whose access changed makes them stale (`markRepoAccessStale`). The repo list, the designs list and the live queries join it, so a repo and its designs show only to people who can read it. A row is replaced only by a newer answer, and is read only alongside the person's membership. | live |
 | `repo_secrets` | A repo's environment variables, encrypted. | |
 | `claude_accounts` | A person's own Claude: subscription or API key (encrypted), status, expiry, last known limits. | live |
 | `devices` | A phone or Mac to push to. | |
@@ -146,7 +147,7 @@ The agent
 | Table | What it is for | |
 |---|---|---|
 | `thread_items` | The agent thread: messages, comments, the agent's text (updated in place while it streams), tool steps. | live |
-| `events` | Things that happened to a design, with a priority, waiting for its runner to take them. | |
+| `events` | Things that happened to a design, with a priority, waiting for its runner to take them. A person's ops append theirs in the statement that commits them (`commitOps`'s `events`). | |
 | `questions` | Needs-you: a question, permission, plan or secret the agent is waiting on, and its answer. | live |
 | `sandboxes` | A design's sandbox at the provider: state, address, awake-since, the Claude session to resume. | |
 | `runner_tokens` | What a runner signs in with, hashed. Good for one design until it expires. | |

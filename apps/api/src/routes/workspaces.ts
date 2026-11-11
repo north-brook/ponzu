@@ -1,11 +1,16 @@
 import {
+  AGENT_STATES,
+  DESIGN_STATUSES,
   GITHUB_ACCESS,
   getWorkspace,
   listUserWorkspaces,
+  listWorkspaceDesigns,
   listWorkspaceMembers,
   listWorkspaceRepos,
   MEMBER_ROLES,
   type MemberWorkspace,
+  PR_CHECKS,
+  PR_STATES,
   REPOSITORY_SELECTIONS,
   setMemberRole,
   WORKSPACE_KINDS,
@@ -14,6 +19,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { access } from "../auth/access.ts";
 import { requireWorkspace } from "../auth/authorize.ts";
+import { refreshWorkspaceRepoAccess } from "../auth/repo-access.ts";
 import type { AppEnv } from "../http/context.ts";
 import { ApiError } from "../http/errors.ts";
 import { validate } from "../http/validate.ts";
@@ -63,7 +69,10 @@ const WorkspaceProfile = z.object({
       })
       .nullable(),
   }),
-  /** The repos of it the caller can open, as GitHub last said, most recently pushed first. */
+  /**
+   * The repos of it the caller can open, as GitHub said within the last minute (`repo_access`,
+   * refreshed before answering), most recently pushed first.
+   */
   repos: z.array(
     z.object({
       id: z.string(),
@@ -81,6 +90,34 @@ const WorkspaceProfile = z.object({
    */
   members: z.array(Member),
 });
+
+/** A row of the sidebar: what `workspace.designs` delivers live, plus how far the person has looked. */
+const DesignRow = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  repoId: z.string().nullable(),
+  repoFullName: z.string().nullable(),
+  ownerId: z.string().nullable(),
+  name: z.string(),
+  icon: z.string().nullable(),
+  branch: z.string().nullable(),
+  status: z.enum(DESIGN_STATUSES),
+  settledAt: z.date().nullable(),
+  seq: z.number(),
+  previewSeq: z.number().nullable(),
+  agentState: z.enum(AGENT_STATES),
+  agentStatus: z.string().nullable(),
+  needsYouCount: z.number(),
+  prNumber: z.number().nullable(),
+  prState: z.enum(PR_STATES).nullable(),
+  prChecks: z.enum(PR_CHECKS),
+  lastActivityAt: z.date(),
+  createdAt: z.date(),
+  seenSeq: z.number().nullable(),
+  seenThreadSeq: z.number().nullable(),
+});
+
+const DesignList = z.object({ designs: z.array(DesignRow) });
 
 const WorkspaceParam = z.object({ id: z.string().max(64) });
 const MemberParam = WorkspaceParam.extend({ userId: z.string().max(64) });
@@ -109,6 +146,12 @@ export const workspaces = new Hono<AppEnv>()
     const { db } = c.var.deps;
     const { user } = c.var.actor;
     const member = await requireWorkspace(c, c.req.valid("param").id);
+    // The repos are listed from `repo_access`, so what it says is brought up to the minute
+    // first, as for the design list: a repo they lost leaves the list within it.
+    await refreshWorkspaceRepoAccess(
+      { ...c.var.deps, log: c.var.log },
+      { user, workspace: member },
+    );
     const [workspace, repos, everyone] = await Promise.all([
       getWorkspace(db, member.id),
       listWorkspaceRepos(db, { workspaceId: member.id, userId: user.id }),
@@ -141,6 +184,22 @@ export const workspaces = new Hono<AppEnv>()
         members,
       }),
     );
+  })
+
+  /**
+   * The workspace's designs, for a first paint; the `workspace.designs` live query keeps them
+   * fresh. Like the live query, it lists the designs in repos GitHub lets the person read, as
+   * of the last minute, and their own Scratch designs.
+   */
+  .get("/:id/designs", validate("param", WorkspaceParam), async (c) => {
+    const { user } = c.var.actor;
+    const workspace = await requireWorkspace(c, c.req.valid("param").id);
+    await refreshWorkspaceRepoAccess({ ...c.var.deps, log: c.var.log }, { user, workspace });
+    const designs = await listWorkspaceDesigns(c.var.deps.db, {
+      workspaceId: workspace.id,
+      userId: user.id,
+    });
+    return c.json(DesignList.parse({ designs }));
   })
 
   /**

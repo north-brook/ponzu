@@ -38,7 +38,6 @@ import {
   ensureWorkspaceAdmin,
   listWorkspaceMembers,
   removeMembership,
-  setMemberRepos,
   setMemberRole,
 } from "./members.ts";
 import { commitOps, findOps, readOps } from "./ops.ts";
@@ -46,6 +45,12 @@ import { pingDb } from "./ping.ts";
 import { listPresence, touchPresence } from "./presence.ts";
 import { findDesignByBranch, recordPullRequest } from "./pull-requests.ts";
 import { answerSecretQuestion, cancelQuestions, createQuestion } from "./questions.ts";
+import {
+  listWorkspaceRepoAccess,
+  markRepoAccessStale,
+  recordReachableRepos,
+  recordRepoAccess,
+} from "./repo-access.ts";
 import { QueryError } from "./run.ts";
 import { createRunnerToken, verifyRunnerToken } from "./runner-tokens.ts";
 import { admitSession, endSession, getSessionUser } from "./sessions.ts";
@@ -74,9 +79,16 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
           inverse: { op: "style", id: "n_1", style: {} },
         },
       ],
+      events: [
+        { opId: "a", kind: "edit", priority: "later", payload: { summary: "x" }, userId: user.id },
+      ],
+      head: { name: "One 😀", icon: null },
     });
 
     if (committed.kind !== "committed") throw new Error("expected a commit");
+    const [event] = await claimEvents(db, { designId: design.id });
+    expect(event).toMatchObject({ kind: "edit", payload: { summary: "x", seq: 1 } });
+    expect((await getDesignHead(db, design.id))!.name).toBe("One 😀");
     expect(committed).toMatchObject({ seq: 2, replayed: [] });
     expect(committed.ops[0]).toMatchObject({ seq: 1, id: "a", op: { name: "One 😀" }, actor });
     expect(committed.ops[0]!.at).toBeInstanceOf(Date);
@@ -154,6 +166,20 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
       doc: emptyDoc("checkout"),
     });
     await markDesignSeen(db, { userId: user.id, designId: inRepo.id, seq: 4, threadSeq: 9 });
+    const checkedAt = new Date("2026-11-10T12:00:00.123Z");
+    await recordRepoAccess(db, [
+      { userId: user.id, repoId: repo.id, permission: "read", checkedAt },
+    ]);
+    expect(
+      await listWorkspaceRepoAccess(db, { workspaceId: workspace.id, userId: user.id }),
+    ).toContainEqual({
+      repoId: repo.id,
+      githubRepoId: repo.githubRepoId,
+      fullName: repo.fullName,
+      hasDesign: true,
+      permission: "read",
+      checkedAt,
+    });
 
     const head = await getDesignHead(db, inRepo.id);
     expect(head).toMatchObject({
@@ -168,8 +194,9 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
     expect(list.find((row) => row.id === inRepo.id)).toMatchObject({
       ...head!,
       repoFullName: repo.fullName,
-      seenSeq: 4,
-      seenThreadSeq: 9,
+      // Nothing past what there is: the design is at 0 and has no thread.
+      seenSeq: 0,
+      seenThreadSeq: 0,
     });
   }, 60_000);
 
@@ -222,9 +249,10 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
     expect(await cancelQuestions(db, { designId: inRepo.id })).toBe(1);
     expect((await getDesignHead(db, inRepo.id))!.needsYouCount).toBe(0);
 
-    await touchPresence(db, { designId: design.id, userId: user.id, pageId: "pg_1" });
-    await touchPresence(db, { designId: design.id, userId: user.id });
-    const [here] = await listPresence(db, { designId: design.id });
+    const now = new Date();
+    await touchPresence(db, { designId: design.id, userId: user.id, pageId: "pg_1", now });
+    await touchPresence(db, { designId: design.id, userId: user.id, now });
+    const [here] = await listPresence(db, { designId: design.id, now });
     expect(here).toMatchObject({ userId: user.id, pageId: "pg_1" });
     expect(here!.joinedAt).toBeInstanceOf(Date);
   }, 60_000);
@@ -320,15 +348,17 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
     ]);
     const repo = await seedRepo(db, workspace.id, "live/app");
     expect(
-      await setMemberRepos(db, {
+      await recordReachableRepos(db, {
         ...key,
         repos: [
-          { githubRepoId: repo.githubRepoId, canPush: true },
-          { githubRepoId: 1, canPush: false },
+          { githubRepoId: repo.githubRepoId, permission: "write" },
+          { githubRepoId: 1, permission: "read" },
         ],
         complete: true,
+        checkedAt: new Date(),
       }),
     ).toEqual({ missing: [1] });
+    expect(await markRepoAccessStale(db, { workspaceId: workspace.id })).toBe(1);
     expect(await listWorkspaceRepos(db, key)).toMatchObject([{ id: repo.id, canPush: true }]);
     expect(await deleteMembershipsExcept(db, { userId: user.id, workspaceIds: [] })).toEqual([
       workspace.id,
@@ -361,7 +391,7 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
       state: "merged",
       updatedAt,
     });
-    expect(await findDesignByBranch(db, branch)).toEqual({ id: settled!, status: "settled" });
+    expect(await findDesignByBranch(db, branch)).toMatchObject({ id: settled!, status: "settled" });
     expect(await markReposRemovedExcept(db, { workspaceId: workspace.id, githubRepoIds: [] })).toBe(
       1,
     );

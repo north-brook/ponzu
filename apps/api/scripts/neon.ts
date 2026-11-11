@@ -13,27 +13,39 @@ interface Branch {
   default: boolean;
 }
 
-/**
- * It refuses the project's default branch whatever that is called: until cutover that branch
- * is nobody's to develop against, and after it, it is production.
- */
-export async function branchDatabaseUrl(
-  name: string,
-  { apiKey, projectId, direct = false }: { apiKey: string; projectId: string; direct?: boolean },
-): Promise<string> {
-  const get = async (path: string) => {
+interface NeonProject {
+  apiKey: string;
+  projectId: string;
+}
+
+function neon({ apiKey, projectId }: NeonProject) {
+  return async (path: string) => {
     const response = await fetch(`${API}/projects/${projectId}${path}`, {
       headers: { authorization: `Bearer ${apiKey}`, accept: "application/json" },
     });
     if (!response.ok) throw new Error(`Neon answered ${response.status} for ${path.split("?")[0]}`);
     return (await response.json()) as any;
   };
+}
 
+/**
+ * It refuses the project's default branch whatever that is called: until cutover that branch
+ * is nobody's to develop against, and after it, it is production.
+ */
+async function findBranch(get: ReturnType<typeof neon>, name: string): Promise<Branch> {
   const { branches } = (await get("/branches")) as { branches: Branch[] };
   const branch = branches.find((candidate) => candidate.name === name);
   if (!branch) throw new Error(`The Neon project has no branch named "${name}".`);
   if (branch.default) throw new Error(`"${name}" is the project's default branch. Not that one.`);
+  return branch;
+}
 
+export async function branchDatabaseUrl(
+  name: string,
+  { direct = false, ...project }: NeonProject & { direct?: boolean },
+): Promise<string> {
+  const get = neon(project);
+  const branch = await findBranch(get, name);
   const { databases } = await get(`/branches/${branch.id}/databases`);
   const database = databases[0];
   if (!database) throw new Error(`The Neon branch "${name}" has no database.`);
@@ -46,6 +58,19 @@ export async function branchDatabaseUrl(
   const { uri } = (await get(`/connection_uri?${query}`)) as { uri: string };
   // Neon hands back the pooler's host either way; the direct host is the same without the suffix.
   return direct ? uri.replace("-pooler.", ".") : uri;
+}
+
+/** A branch's Realtime: the URL clients subscribe to and the secret the API seals with. */
+export async function branchRealtime(
+  name: string,
+  project: NeonProject,
+): Promise<{ url: string; secret: string }> {
+  const get = neon(project);
+  const branch = await findBranch(get, name);
+  const realtime = await get(`/branches/${branch.id}/realtime`);
+  if (!realtime.enabled) throw new Error(`Realtime is not enabled on the Neon branch "${name}".`);
+  const { secret } = await get(`/branches/${branch.id}/realtime/secret`);
+  return { url: realtime.invocation_url, secret };
 }
 
 if (import.meta.main) {

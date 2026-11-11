@@ -17,13 +17,14 @@ import {
   claudeAccounts,
   type GithubAccess,
   type MemberRole,
-  memberRepos,
   memberships,
+  repoAccess,
   repos,
   uninstalledInstallations,
   users,
   workspaces,
 } from "../schema/index.ts";
+import { markRepoAccessStale, READABLE_PERMISSIONS } from "./repo-access.ts";
 import { run } from "./run.ts";
 
 export type User = typeof users.$inferSelect;
@@ -429,6 +430,32 @@ export async function upsertRepos(
   { workspaceId, repos: seen }: { workspaceId: string; repos: GithubRepo[] },
 ): Promise<Repo[]> {
   if (seen.length === 0) return [];
+  // A repo that moved to another account or changed visibility changed who may read it, so
+  // what anyone was told about it is asked again before it is trusted (`repo_access`), however
+  // Ponzu learned of the change: a webhook, someone's sync, or the sweep.
+  const known = await run(
+    db
+      .select({
+        githubRepoId: repos.githubRepoId,
+        workspaceId: repos.workspaceId,
+        private: repos.private,
+      })
+      .from(repos)
+      .where(
+        inArray(
+          repos.githubRepoId,
+          seen.map(({ githubRepoId }) => githubRepoId),
+        ),
+      ),
+  );
+  const visibility = new Map(seen.map((repo) => [repo.githubRepoId, repo.private]));
+  const changed = known
+    .filter(
+      (repo) =>
+        repo.workspaceId !== workspaceId || repo.private !== visibility.get(repo.githubRepoId),
+    )
+    .map(({ githubRepoId }) => githubRepoId);
+  await markRepoAccessStale(db, { githubRepoIds: changed });
   return run(
     db
       .insert(repos)
@@ -473,8 +500,9 @@ export async function markReposRemovedExcept(
 }
 
 /**
- * The repos of a workspace one member can open now (`member_repos`), most recently pushed
- * first, with whether they can push to each.
+ * The repos of a workspace one member can open, as GitHub last said (`repo_access`), most
+ * recently pushed first, with whether they can push to each. That they are a member, and how
+ * recent those answers must be, is the caller's to decide.
  */
 export function listWorkspaceRepos(
   db: Db,
@@ -482,14 +510,17 @@ export function listWorkspaceRepos(
 ): Promise<(Repo & { canPush: boolean })[]> {
   return run(
     db
-      .select({ ...getTableColumns(repos), canPush: memberRepos.canPush })
+      .select({
+        ...getTableColumns(repos),
+        canPush: sql<boolean>`${repoAccess.permission} in ('admin', 'write')`.mapWith(Boolean),
+      })
       .from(repos)
       .innerJoin(
-        memberRepos,
+        repoAccess,
         and(
-          eq(memberRepos.repoId, repos.id),
-          eq(memberRepos.workspaceId, repos.workspaceId),
-          eq(memberRepos.userId, userId),
+          eq(repoAccess.repoId, repos.id),
+          eq(repoAccess.userId, userId),
+          inArray(repoAccess.permission, READABLE_PERMISSIONS),
         ),
       )
       .where(and(eq(repos.workspaceId, workspaceId), isNull(repos.removedAt)))

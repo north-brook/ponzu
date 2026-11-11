@@ -2,6 +2,7 @@ import type { Op } from "@ponzu/core";
 import { type SQL, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import type { ActorKind, OpKind } from "../schema/index.ts";
+import { eventRow, type NewEvent } from "./events.ts";
 import { queryJson } from "./json.ts";
 import { isStorable, toStorableJson } from "./text.ts";
 
@@ -71,16 +72,35 @@ export type CommitResult =
  * An op whose id is already in the log is not appended again; the stored op comes back in its
  * place. A batch made only of such ops succeeds whatever `expectedSeq` says, so a retry is
  * safe for as long as the log keeps the op: `OP_RETENTION_DAYS` at least (see `writeCheckpoint`).
+ *
+ * `events` go into the design's feed with the ops they are about, in the same statement, so
+ * an op is never in the log without them (see `OpEvent`). `head` is the design's name and icon
+ * after the ops, for its row to follow the document, when they changed them.
  */
-export function commitOps(
-  db: Db,
-  input: { designId: string; expectedSeq: number; actor: Actor; ops: NewOp[] },
-): Promise<CommitResult> {
+export function commitOps(db: Db, input: CommitInput & { ops: NewOp[] }): Promise<CommitResult> {
   return commit(
     db,
     input,
     input.ops.map((op) => ({ ...op, kind: "do", reverses: null })),
   );
+}
+
+export interface CommitInput {
+  designId: string;
+  expectedSeq: number;
+  actor: Actor;
+  events?: OpEvent[];
+  head?: { name: string; icon: string | null };
+}
+
+/**
+ * An event about one op of a commit. It is appended only if its op is, with the op's seq set
+ * as `payload.seq`, and an op that was in the log already appends none: whoever appended it
+ * appended its events.
+ */
+export interface OpEvent extends Omit<NewEvent, "designId"> {
+  /** The sender's id for the op it is about. */
+  opId: string;
 }
 
 export interface LogEntry extends NewOp {
@@ -91,7 +111,7 @@ export interface LogEntry extends NewOp {
 /** The statement behind `commitOps` and `commitReversal`. */
 export async function commit(
   db: Db,
-  { designId, expectedSeq, actor }: { designId: string; expectedSeq: number; actor: Actor },
+  { designId, expectedSeq, actor, events = [], head }: CommitInput,
   entries: LogEntry[],
 ): Promise<CommitResult> {
   if (entries.length === 0) throw new Error("A commit needs at least one op.");
@@ -104,6 +124,7 @@ export async function commit(
   // One parameter however long the batch is. `json` keeps each op's text as sent, so `->` hands
   // back the op with its keys in the order the caller wrote them.
   const batch = `[${texts.join(",")}]`;
+  const feed = JSON.stringify(events.map(({ opId, ...event }) => ({ opId, ...eventRow(event) })));
   const result = await queryJson<{
     seq: number;
     conflict: boolean;
@@ -133,6 +154,7 @@ export async function commit(
       bumped as (
         update designs
            set seq = seq + (select count(*) from fresh),
+               ${head ? sql`name = ${head.name}, icon = ${head.icon},` : sql.empty()}
                last_activity_at = now(),
                updated_at = now()
          where id = ${designId}
@@ -170,6 +192,14 @@ export async function commit(
            set reversed_by_seq = a.seq
           from appended a
          where target.design_id = ${designId} and target.seq = a.reverses_seq
+      ),
+      logged as (
+        insert into events (id, design_id, kind, priority, payload, user_id)
+        select t.e->>'id', ${designId}, t.e->>'kind', t.e->>'priority',
+               jsonb_set((t.e->'payload')::jsonb, '{seq}', to_jsonb(a.seq)), t.e->>'userId'
+          from json_array_elements(${feed}::json) with ordinality as t(e, ord)
+          join appended a on a.client_op_id = t.e->>'opId'
+         order by t.ord
       )
       select json_build_object(
         'seq', coalesce((select seq from bumped), (select seq from designs where id = ${designId})),
@@ -206,10 +236,18 @@ export type ReadOpsResult =
   /** The ops right after `after` have been pruned. Start again from the document. */
   | { kind: "too_old"; seq: number };
 
-/** The ops after `after`, oldest first, at most `limit` of them. Null when there is no such design. */
+/**
+ * The ops after `after`, oldest first: at most `limit` of them, and no more of them than fit in
+ * `maxBytes` of op text, though always the first. Null when there is no such design.
+ */
 export async function readOps(
   db: Db,
-  { designId, after, limit = 500 }: { designId: string; after: number; limit?: number },
+  {
+    designId,
+    after,
+    limit = 500,
+    maxBytes = Number.MAX_SAFE_INTEGER,
+  }: { designId: string; after: number; limit?: number; maxBytes?: number },
 ): Promise<ReadOpsResult | null> {
   const result = await queryJson<{ seq: number; ops: OpJson[] }>(
     db,
@@ -219,11 +257,20 @@ export async function readOps(
         'ops', (
           select coalesce(json_agg(${opJson("o")} order by o.seq), '[]'::json)
             from (
-              select *
-                from design_ops
-               where design_id = d.id and seq > ${after}
-               order by seq
-               limit ${limit}
+              select page.*
+                from (
+                  select head.*,
+                         row_number() over (order by head.seq) as n,
+                         sum(octet_length(head.op::text)) over (order by head.seq) as bytes
+                    from (
+                      select *
+                        from design_ops
+                       where design_id = d.id and seq > ${after}
+                       order by seq
+                       limit ${limit}
+                    ) head
+                ) page
+               where page.n = 1 or page.bytes <= ${maxBytes}::bigint
             ) o
         )
       ) as result

@@ -28,8 +28,12 @@ export interface FakeRepository {
   id: number;
   fullName: string;
   defaultBranch?: string;
+  /** Private unless it says otherwise. */
   private?: boolean;
-  /** Who can reach it, by GitHub user id, and whether they can push. */
+  /**
+   * Who has explicit access to it, by GitHub user id, and whether they can push: all a
+   * person's own token lists (GitHub's documented rule). On a public one anyone can read.
+   */
   access: Record<number, "read" | "write">;
 }
 
@@ -93,13 +97,15 @@ export class FakeGithub {
   duringRefresh: (() => Promise<void>) | null = null;
   /** Every installation token the App asked for. */
   readonly installationTokenRequests: { installationId: number; body: unknown }[] = [];
+  /** Every question about a person's access to a repository, as `owner/name login`. */
+  readonly permissionRequests: string[] = [];
 
   readonly #clock: Clock;
   readonly #users = new Map<number, FakeGithubUser>();
   readonly #accessTokens = new Map<string, { userId: number; expiresAt: number }>();
   readonly #refreshTokens = new Map<string, number>();
-  /** Each installation token the App was given, and the installation it acts in. */
-  readonly #installationTokens = new Map<string, number>();
+  /** Each installation token the App was given: the installation it acts in, and for what. */
+  readonly #installationTokens = new Map<string, InstallationToken>();
   readonly #failures: { path: string; status: number }[] = [];
   readonly #holds: { path: string; arrived: () => void; released: Promise<void> }[] = [];
   #next = 1;
@@ -135,6 +141,11 @@ export class FakeGithub {
       if (held.userId === userId) this.#accessTokens.delete(token);
     for (const [token, owner] of this.#refreshTokens)
       if (owner === userId) this.#refreshTokens.delete(token);
+  }
+
+  /** Every installation token stops working before it runs out, as when one is suspended. */
+  revokeInstallationTokens() {
+    this.#installationTokens.clear();
   }
 
   /** Makes the next request to `path` fail as if GitHub itself were broken. */
@@ -229,6 +240,9 @@ export class FakeGithub {
     }
     const asInstallation = this.#installationTokens.get(bearer);
     if (asInstallation !== undefined) {
+      if (asInstallation.expiresAt <= this.#clock.now()) {
+        return Response.json({ message: "Bad credentials" }, { status: 401 });
+      }
       return this.#serveInstallation(asInstallation, method, url);
     }
 
@@ -297,16 +311,32 @@ export class FakeGithub {
   }
 
   /** What an installation token can ask for, as the installation it was minted in. */
-  #serveInstallation(installationId: number, method: string, url: string): Response {
+  #serveInstallation(token: InstallationToken, method: string, url: string): Response {
     const { pathname, searchParams } = new URL(url);
-    const installation = this.#installation(installationId);
+    const installation = this.#installation(token.installationId);
     if (!installation) return Response.json({ message: "Bad credentials" }, { status: 401 });
+    const repositories = installation.repositories.filter(
+      ({ id }) => token.repositoryIds === null || token.repositoryIds.includes(id),
+    );
     if (method === "GET" && pathname === "/installation/repositories") {
       return Response.json({
-        total_count: installation.repositories.length,
+        total_count: repositories.length,
         repository_selection: installation.repositorySelection,
-        repositories: page(installation.repositories, searchParams).map(repositoryJson),
+        repositories: page(repositories, searchParams).map(repositoryJson),
       });
+    }
+    const permission = /^\/repos\/([^/]+\/[^/]+)\/collaborators\/([^/]+)\/permission$/.exec(
+      pathname,
+    );
+    if (method === "GET" && permission) {
+      return this.#permission(repositories, permission[1]!, decodeURIComponent(permission[2]!));
+    }
+    // An account by id needs no permission at all.
+    const account = /^\/user\/(\d+)$/.exec(pathname);
+    if (method === "GET" && account) {
+      const user = this.#users.get(Number(account[1]));
+      if (!user) return Response.json({ message: "Not Found" }, { status: 404 });
+      return Response.json({ id: user.id, login: user.login, type: "User" });
     }
     // An installation token cannot act as a person.
     if (pathname === "/user" || pathname.startsWith("/user/")) {
@@ -388,19 +418,60 @@ export class FakeGithub {
     const installation = this.#installation(installationId);
     if (!installation) return Response.json({ message: "Not Found" }, { status: 404 });
     if (installation.suspendedAt) return suspended();
+    const { repository_ids: repositoryIds } = body as { repository_ids?: number[] };
+    const outside = repositoryIds?.some(
+      (repositoryId) => !installation.repositories.some(({ id }) => id === repositoryId),
+    );
+    if (outside) {
+      return Response.json(
+        { message: "There is at least one repository that does not exist or is not accessible" },
+        { status: 422 },
+      );
+    }
     this.installationTokenRequests.push({ installationId, body });
     // Shaped like GitHub's today, which are far longer than the 40 characters they once were.
     const token = `ghs_${this.#secret(380)}`;
-    this.#installationTokens.set(token, installationId);
-    return Response.json(
-      { token, expires_at: new Date(this.#clock.now() + 3600_000).toISOString() },
-      { status: 201 },
-    );
+    const expiresAt = this.#clock.now() + 3600_000;
+    this.#installationTokens.set(token, {
+      installationId,
+      repositoryIds: repositoryIds ?? null,
+      expiresAt,
+    });
+    return Response.json({ token, expires_at: new Date(expiresAt).toISOString() }, { status: 201 });
+  }
+
+  /**
+   * `GET /repos/{owner}/{repo}/collaborators/{login}/permission`, asked with an installation
+   * token that reaches the repository. A login GitHub does not know is a 404; someone it knows
+   * without access is `none`, or `read` on a public repository, which anyone can read.
+   */
+  #permission(reachable: FakeRepository[], fullName: string, login: string): Response {
+    const repository = reachable.find((candidate) => candidate.fullName === fullName);
+    if (!repository) return Response.json({ message: "Not Found" }, { status: 404 });
+    const user = [...this.#users.values()].find((candidate) => candidate.login === login);
+    if (!user) return Response.json({ message: "Not Found" }, { status: 404 });
+    this.permissionRequests.push(`${fullName} ${login}`);
+    // Anyone may read a public repository, collaborator or not.
+    const permission =
+      repository.access[user.id] ?? (repository.private === false ? "read" : "none");
+    return Response.json({
+      permission,
+      role_name: permission,
+      user: { id: user.id, login: user.login },
+    });
   }
 
   #secret(length: number): string {
     return String(this.#next++).padStart(length, "0");
   }
+}
+
+interface InstallationToken {
+  installationId: number;
+  /** The repositories it was narrowed to; null for every one the installation has. */
+  repositoryIds: number[] | null;
+  /** Epoch milliseconds. */
+  expiresAt: number;
 }
 
 function page<T>(items: T[], params: URLSearchParams): T[] {

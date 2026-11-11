@@ -30,7 +30,7 @@ import {
   wasUninstalled,
 } from "./accounts.ts";
 import { createDesign, getDesign, listWorkspaceDesigns } from "./designs.ts";
-import { setMemberRepos } from "./members.ts";
+import { recordReachableRepos, recordRepoAccess } from "./repo-access.ts";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 beforeAll(async () => {
@@ -508,6 +508,9 @@ describe("repos", () => {
       });
     const inRepo = await make("checkout", repo!.id);
     const scratch = await make("Lisbon", null);
+    await recordRepoAccess(db, [
+      { userId: user.id, repoId: repo!.id, permission: "write", checkedAt: new Date() },
+    ]);
 
     await upsertRepos(db, { workspaceId: to.id, repos: [seen(211, "b/app")] });
 
@@ -564,14 +567,15 @@ describe("repos", () => {
     for (const person of [user, other]) {
       await upsertMembership(db, { workspaceId: workspace.id, userId: person.id, role: "member" });
     }
-    await setMemberRepos(db, {
+    await recordReachableRepos(db, {
       workspaceId: workspace.id,
       userId: user.id,
       repos: [501, 502, 503, 505].map((githubRepoId) => ({
         githubRepoId,
-        canPush: githubRepoId === 503,
+        permission: githubRepoId === 503 ? "write" : "read",
       })),
       complete: true,
+      checkedAt: new Date(),
     });
     const list = (userId: string) => listWorkspaceRepos(db, { workspaceId: workspace.id, userId });
 

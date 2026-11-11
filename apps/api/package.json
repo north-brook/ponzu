@@ -18,6 +18,8 @@
   },
   "dependencies": {
     "@hono/zod-validator": "^0.9.1",
+    "@neon/realtime": "0.2.1",
+    "@ponzu/core": "workspace:*",
     "@ponzu/db": "workspace:*",
     "@ponzu/sandbox": "workspace:*",
     "hono": "^4.13.17",
@@ -25,7 +27,6 @@
     "zod": "^4"
   },
   "devDependencies": {
-    "@ponzu/core": "workspace:*",
     "@types/node": "^26.6.5"
   }
 }

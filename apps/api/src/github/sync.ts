@@ -6,12 +6,13 @@ import {
   getUserByGithubId,
   getWorkspaceByInstallation,
   listWorkspaceMembers,
+  markRepoAccessStale,
   removeMembership,
-  setMemberRepos,
   type User,
   upsertMembership,
   type Workspace,
 } from "@ponzu/db";
+import { recordReposReachedBy } from "../auth/repo-access.ts";
 import type { Github, GithubUserInstallation } from "../deps/github.ts";
 import type { Deps } from "../deps/index.ts";
 import { ApiError } from "../http/errors.ts";
@@ -21,7 +22,8 @@ import { githubUserToken } from "./user-token.ts";
 /*
  * Keeping Ponzu's picture of one person's GitHub true. A person's workspaces are the
  * installations of the App their own GitHub token reaches (`GET /user/installations`), and in
- * each, the repos it shows them (`GET /user/installations/{id}/repositories`); Ponzu adds only
+ * each, the repos it shows them (`GET /user/installations/{id}/repositories`), kept in
+ * `repo_access` with what they may do there, which every access question reads; Ponzu adds only
  * a role. See "Identity and access" in docs/cloud.md.
  *
  * It runs after each sign-in, when an app asks (it came back to focus), and when a webhook
@@ -119,13 +121,13 @@ async function joinInstallation(
 
   // GitHub lists none of a suspended installation's repos; theirs stay as last seen.
   if (!workspace.suspendedAt) {
-    const repositories = await github.listInstallationRepositories(token, installation.id);
+    // What they may do in each repo of it, kept where every access question reads it.
     const record = () =>
-      setMemberRepos(db, {
+      recordReposReachedBy(deps, {
+        user,
         workspaceId: workspace.id,
-        userId: user.id,
-        repos: repositories.items.map(({ id, canPush }) => ({ githubRepoId: id, canPush })),
-        complete: repositories.complete,
+        installationId: installation.id,
+        token,
       });
     const { missing } = await record();
     // They reach a repo Ponzu has not recorded: its copy of the installation is behind.
@@ -194,6 +196,9 @@ export async function resyncGithubUser(
 export async function resyncWorkspaceMembers(deps: SyncDeps, installationId: number) {
   const workspace = await getWorkspaceByInstallation(deps.db, installationId);
   if (!workspace) return;
+  // At once, for everyone: until each person's sync below lands, nothing kept about the
+  // workspace's repos is taken as fresh.
+  await markRepoAccessStale(deps.db, { workspaceId: workspace.id });
   const members = await listWorkspaceMembers(deps.db, workspace.id);
   for (let start = 0; start < members.length; start += RESYNC_BATCH) {
     const batch = members.slice(start, start + RESYNC_BATCH);
@@ -213,6 +218,9 @@ async function resync(
   } catch (error) {
     if (!(error instanceof ApiError && error.code === "github_reauth_required")) throw error;
     deps.log.info("github_sync_skipped", { userId, reason: error.code });
+    // Their access changed and their token cannot say how: what is kept about them is asked
+    // of GitHub, as the App, before it is trusted again.
+    await markRepoAccessStale(deps.db, { userId });
     if (lostAccessTo === undefined) return;
     const workspaceId = await removeMembership(deps.db, { installationId: lostAccessTo, userId });
     if (workspaceId) await ensureWorkspaceAdmin(deps.db, workspaceId);

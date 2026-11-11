@@ -115,7 +115,10 @@ jobs:
       - name: Lint, typecheck and build beside the tests
         # None of these writes what another reads. Test files run in their own
         # workers; the Chromium ones take most of the time. Each check's output
-        # is printed whole after everything finishes.
+        # is printed whole after everything finishes. Every worker that makes a
+        # test database migrates its first one (half a second alone), and with
+        # all of this running at once that has taken longer than bun's default
+        # five seconds for a test or a hook, so they get twenty.
         run: |
           check() { name=$1; shift; { "$@" > "$RUNNER_TEMP/$name.log" 2>&1; echo $? > "$RUNNER_TEMP/$name.status"; } & }
           check lint bunx biome check .

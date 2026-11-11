@@ -118,10 +118,11 @@ organization is added through GitHub's install page, which has its own picker.
 
 **Membership** is GitHub's. Anyone who can reach an installation's repos is a
 member, and sees only the repos GitHub shows them
-(`GET /user/installations/{id}/repositories`, kept per member); the workspace's
-other repos stay hidden from them, and someone who reaches it only through repos
-shared with them (an outside collaborator) sees no other member. Ponzu stores only
-the role (Admin or Member). There are no invitations.
+(`GET /user/installations/{id}/repositories`, kept as their answers in
+`repo_access`, below); the workspace's other repos stay hidden from them, and
+someone who reaches it only through repos shared with them (an outside collaborator)
+sees no other member. Ponzu stores only the role (Admin or Member). There are no
+invitations.
 
 GitHub's owners are a floor: whoever owns the account (the person, for a personal
 account; an owner, for an organization, per `GET /user/memberships/orgs/{org}`) is an
@@ -135,7 +136,9 @@ only by an Admin in Ponzu, never by a sync.
 
 **Keeping it true.** `syncGithub` brings one person's workspaces in line with GitHub,
 as that person, against their own rate limit: the installations their token lists,
-their membership of each with the repos they reach in it, and none of any other but
+their membership of each with what they may do in each of its repos (`write` or
+`read` for the repos it lists, and for its others `read` if public, `none` if
+private), and none of any other but
 their own account's. An installation is read as the App (its workspace and every repo
 it can see) only when Ponzu's copy is ten minutes old, disagrees with the person's
 view, or lacks a repo they reach: those reads come out of the installation's hourly
@@ -146,7 +149,8 @@ an upsert or a reconciliation, so it is safe twice at once and again after a fai
 memberships are dropped only once every installation is accounted for, and nothing is
 dropped or marked removed from a list GitHub served only in part (more than 2,000
 items). A repo the App loses is marked removed, never deleted. A suspended
-installation keeps its workspace, marked. An uninstall is remembered by installation
+installation keeps its workspace, marked, and while it is suspended nobody reaches its
+repos through Ponzu (below). An uninstall is remembered by installation
 id, which GitHub never reuses, so a read of GitHub that began before it cannot bring
 the installation back. A one-minute cron reads again any installation nobody has read
 for six hours, which is how an uninstall whose webhook was lost is found.
@@ -175,22 +179,74 @@ retries (the cron runs a failed one again after a minute, doubling, for about tw
 hours). A delivery is a signal, not a record: an installation or repo event makes the
 API read the installation from GitHub as it is now, and an access event (`member`,
 `membership`, `organization`) syncs the person it names; when their GitHub token is
-dead, one that says they lost access removes them from that workspace at once. A
-`team` event, which names nobody, syncs everyone in the workspace. A pull request
-event updates the design that owns its branch, newest `updated_at` wins, and a merge
-settles the design. A failed check run or suite is an event with priority `next` on
-that design's feed, and so is a submitted review by the repo's owner, a member of its
-organization or a collaborator (`author_association`); anyone else's review is
-dropped, since on a public repo anyone can write one and the agent reads it. A review
-event says who wrote it and how they relate to the repo, and the runner gives its text
-to the agent as quoted input, never as an instruction. A revoked authorization
+dead, their kept answers go stale (below), and one that says they lost access removes
+them from that workspace at once. A `team` event, which names nobody, makes the
+workspace's answers stale and syncs everyone in it; so does a change to the
+installation's repos (`installation_repositories`), and a repo going private or
+public, moving or being deleted makes the answers about that repo stale. However
+Ponzu learns that a repo moved account or changed visibility (a webhook, a sync, the
+sweep), the answers about it go stale; and the App being suspended, unsuspended or
+uninstalled makes all of its workspace's answers stale. A pull
+request event updates the design that owns its branch, newest `updated_at` wins, and
+a merge settles the design. A failed check run or suite is an event with priority
+`next` on that design's feed, and so is a submitted review by someone GitHub says can
+push to the repo, asked the way every access question is (below). A review whose
+`author_association` is not the repo's owner, a member of its organization or a
+collaborator is dropped without asking, since on a public repo anyone can write one
+and the agent reads it. A review event says who wrote it, how they relate to the repo
+and, when they have signed in, which Ponzu person they are; the runner gives its text
+to the agent as quoted input, never as an instruction. Events GitHub causes enter the
+feed through the same row the commit statement writes for a person's ops
+(`eventRow` in `@ponzu/db`). A revoked authorization
 forgets the person's GitHub token and ends their sessions, once GitHub confirms the
 token is dead.
 
-**Opening a design** needs read access to its repo. Steering it (messages, answers,
-merging) needs write access. The API checks with
-`GET /repos/{owner}/{repo}/collaborators/{login}/permission`, cached for a minute
-and invalidated by membership webhooks.
+**Opening a design** needs membership of its workspace and read access to its repo.
+Steering it (messages, answers, merging) needs write access. Seeing a repo or its
+designs in a list needs the same read access: GitHub hides a private repo, its name
+included, from members who cannot read it, and so does Ponzu.
+
+Every one of these questions is answered from one table, `repo_access`: (person, repo)
+→ `admin | write | read | none`, and when GitHub was asked. Each answer is GitHub's,
+by numeric ids, and reaches the table one of two ways:
+
+- **A list, as the person.** `GET /user/installations/{id}/repositories` on their own
+  token names every repo of the installation they were given permission on, and
+  whether they can push: `write` or `read` for those. When the list is whole, the
+  workspace's others are `read` if public (anyone can read one, and GitHub leaves it
+  out of this list) and `none` if private. One call for the whole workspace, on their
+  own rate limit. Their sync does it for every workspace; the workspace's repo list
+  (`GET /v1/workspaces/:id`), its designs list and each renewal of `workspace.designs`
+  do it for one, when any answer about any of its repos is more than a minute old. A
+  list GitHub cut short (past 2,000 repos) says nothing of the repos it left out, so
+  the oldest of those whose answer a reader acts on (one that lets them read, or a
+  repo with a design), up to 20 at a time, are asked about as the App.
+- **A question, as the App.** `GET /repos/{owner}/{repo}/collaborators/{login}/permission`
+  about one repo, asked by `requireDesign`, `POST /v1/designs` and a review's check
+  when there is no fresh answer. It takes the answer only when the account it names
+  has the person's GitHub id (a login can change hands). GitHub answers `read` on a
+  public repo for anyone, so the list and the question agree.
+
+While the App is not installed on a workspace, or is suspended, the answer for every
+repo of it is `none` without asking GitHub: its designs open for nobody (404), none
+are listed, and no review reaches an agent.
+
+The rules for reading it:
+
+- An answer is taken as it is for a minute, so someone whose access is taken away
+  loses it within a minute even if no webhook says so. Answers only replace older
+  ones, so a slow request cannot bring back access a newer answer took away.
+- Webhooks make it prompt. An access event syncs the person and writes their new
+  answers at once; one that cannot (it names nobody, or their token is dead) makes the
+  answers it concerns stale, so they are asked again before they are trusted, and a
+  `workspace.designs` subscription drops what it should at its next renewal.
+- While GitHub fails or limits the API, the last answer stands for ten minutes. A
+  stale one never does. After that what needed it is refused (`upstream_unavailable`);
+  in `POST /v1/live` only that query is.
+- An answer is about a member: whoever reads it also requires the membership, so
+  someone who leaves a workspace loses its repos and designs at once.
+
+A Scratch design has no repo and is its owner's alone.
 
 **The GitHub App** is the only way Ponzu touches GitHub. The API mints one-hour
 installation tokens scoped to one repository and the least permission a job needs.
@@ -235,7 +291,12 @@ Then for each op, in order, the API:
    as it was, a `batch` op that failed partway included.
 5. **Appends** it to `design_ops` with the next `seq` and bumps `designs.seq`, in
    one statement that only succeeds if `designs.seq` is still what the API read.
-   On a miss it catches up and tries again.
+   On a miss it catches up and tries again. The same statement appends the events
+   a person's ops make (see Events), so an op is never in the log without them, and
+   copies the document's name and icon to the design's row when the ops changed
+   them. The document is where the name lives: people rename with
+   `PATCH /v1/designs/:id`, which commits `file.rename` and `file.icon` as theirs,
+   and the agent with `update_design`.
 
 `id` is generated by the sender and unique within a design. Posting the same id
 again returns the original result, so a retry is safe, for seven days. An op is
@@ -254,6 +315,11 @@ GET /v1/designs/:id/ops?after=N    → { ops: CommittedOp[], seq }   (410 if N i
 The API rebuilds the current document from the latest checkpoint plus the ops after
 it, and caches it per function instance keyed by `(design, seq)`. It writes a new
 checkpoint after every 64 ops or 256 KB of op payload.
+
+A page of ops holds at most 500 ops and 3 MB of them (always at least one), so the
+answer fits in what a Vercel function may send; when the last op is below `seq`, ask
+again from there. `GET /doc` has no such bound yet: before designs grow past a few
+MB it must stream, or hand out a checkpoint served from R2.
 
 ### The replica
 
@@ -320,7 +386,8 @@ it. Each op is stored with its inverse.
 `packages/client` wraps Neon Realtime behind one module so it can be replaced.
 
 - Clients never send SQL. They ask `POST /v1/live` for named queries with arguments
-  (`workspace.designs`, `design.head`, `design.thread`, `design.presence`, `me`).
+  (`workspace.designs`, `design.head`, `design.thread`, `design.questions`,
+  `design.presence`, `me`).
   The API authorizes each one and returns it sealed, with a 60-second lifetime.
 - The endpoint takes a list, and clients renew all their subscriptions in one call.
 - Live queries are plain filters and joins over small rows. Sorting happens on the
@@ -420,8 +487,9 @@ status and the artboards it is on, the intent of a request, storing an asset,
 publishing an export, the design's link and the theme to render in.
 
 - **One design.** No tool takes a file and none manages files. `update_design`
-  sets the design's name and icon. A design may have no pages (a new one has
-  none); `create_artboard` then makes the first page with the artboard, in one op.
+  sets the design's name and icon. A new design starts with one empty page
+  (`POST /v1/designs` makes it); a design may still come to have none, and
+  `create_artboard` then makes the first page with the artboard, in one op.
 - **No tool waits on the network.** A tool reads the replica's view and applies
   its op to it; the replica posts behind it.
 - **The view is what will be committed.** An op is sanitized (`sanitizeOp`, the

@@ -37,6 +37,10 @@ const environment = {
   CRON_SECRET: "placeholder".repeat(4),
   BOAT_API_KEY: "placeholder",
   PONZU_VAULT_KEY: Buffer.alloc(32, 1).toString("base64url"),
+  NEON_REALTIME_URL: "https://realtime.invalid/",
+  // Shaped as Neon issues one: its prefix, then an AES-256 key in base64url.
+  NEON_REALTIME_SECRET: `nrt_live_1${Buffer.alloc(32, 2).toString("base64url")}`,
+  PONZU_ASSETS_URL: "https://assets.invalid",
 };
 
 const check = `

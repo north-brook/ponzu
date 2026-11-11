@@ -1,5 +1,5 @@
 import type { Doc } from "@ponzu/core";
-import { and, desc, eq, getTableColumns, sql } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, inArray, isNull, or, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import type { DesignHead } from "../head.ts";
 import { newId, randomString } from "../ids.ts";
@@ -8,8 +8,16 @@ import {
   designCheckpoints,
   designReads,
   designs,
+  memberships,
+  type RepoPermission,
+  repoAccess,
   repos,
+  threadItems,
+  workspaces,
 } from "../schema/index.ts";
+import type { Repo } from "./accounts.ts";
+import { timeParam } from "./json.ts";
+import { READABLE_PERMISSIONS } from "./repo-access.ts";
 import { run } from "./run.ts";
 import { isStorable, unstorableDocument } from "./text.ts";
 
@@ -93,6 +101,131 @@ export async function getDesign(db: Db, designId: string): Promise<Design | null
   return row ?? null;
 }
 
+/** What deciding who may open a design takes: the design, its repo, and where to ask GitHub. */
+export interface DesignAccess {
+  design: Design;
+  /** The repo whose access decides who may open it. Null for Scratch. */
+  repo: { id: string; githubRepoId: number; fullName: string } | null;
+  /** The App's installation on the design's workspace. Null while the App is not installed. */
+  installationId: number | null;
+  /** Set while the App is suspended on the workspace, when nobody can reach its repos. */
+  suspendedAt: Date | null;
+  /** What GitHub last said the person asking may do in the repo, if it was ever asked. */
+  known: { permission: RepoPermission; checkedAt: Date } | null;
+  /**
+   * Whether the person asking is a member of the design's workspace. Nobody else may open it,
+   * whatever `known` says: an answer is only ever about a member (see `repo_access`).
+   */
+  member: boolean;
+}
+
+/**
+ * A design with what deciding whether `userId` may open it takes, or null when there is no
+ * such design. Pass null for a caller who is not a person.
+ */
+export async function getDesignAccess(
+  db: Db,
+  { designId, userId }: { designId: string; userId: string | null },
+): Promise<DesignAccess | null> {
+  const [row] = await run(
+    db
+      .select({
+        design: columns,
+        githubRepoId: repos.githubRepoId,
+        fullName: repos.fullName,
+        installationId: workspaces.installationId,
+        suspendedAt: workspaces.suspendedAt,
+        permission: repoAccess.permission,
+        checkedAt: repoAccess.checkedAt,
+        member: sql<boolean>`${memberships.userId} is not null`.mapWith(Boolean),
+      })
+      .from(designs)
+      .innerJoin(workspaces, eq(workspaces.id, designs.workspaceId))
+      .leftJoin(
+        memberships,
+        and(
+          eq(memberships.workspaceId, designs.workspaceId),
+          userId === null ? sql`false` : eq(memberships.userId, userId),
+        ),
+      )
+      .leftJoin(repos, eq(repos.id, designs.repoId))
+      .leftJoin(
+        repoAccess,
+        and(
+          eq(repoAccess.repoId, designs.repoId),
+          userId === null ? sql`false` : eq(repoAccess.userId, userId),
+        ),
+      )
+      .where(eq(designs.id, designId)),
+  );
+  if (!row) return null;
+  const { design, githubRepoId, fullName, installationId, suspendedAt, permission, checkedAt } =
+    row;
+  const { member } = row;
+  return {
+    design,
+    repo:
+      design.repoId === null || githubRepoId === null || fullName === null
+        ? null
+        : { id: design.repoId, githubRepoId, fullName },
+    installationId,
+    suspendedAt,
+    known: permission === null || checkedAt === null ? null : { permission, checkedAt },
+    member,
+  };
+}
+
+/** A repo of this workspace that the App can still see, or null. */
+export async function getWorkspaceRepo(
+  db: Db,
+  { workspaceId, repoId }: { workspaceId: string; repoId: string },
+): Promise<Repo | null> {
+  const [repo] = await run(
+    db
+      .select()
+      .from(repos)
+      .where(
+        and(eq(repos.id, repoId), eq(repos.workspaceId, workspaceId), isNull(repos.removedAt)),
+      ),
+  );
+  return repo ?? null;
+}
+
+/**
+ * Settle a design (as of `now`) or reopen it. Null when there is no such design. Its name and
+ * icon are the document's, and change by op.
+ */
+export async function settleDesign(
+  db: Db,
+  designId: string,
+  { settled, now }: { settled: boolean; now: Date },
+): Promise<Design | null> {
+  const [design] = await run(
+    db
+      .update(designs)
+      .set(
+        settled
+          ? {
+              status: "settled",
+              // Settling a settled design keeps the time it first settled.
+              settledAt: sql`coalesce(${designs.settledAt}, ${timeParam(now)}::timestamptz)`,
+            }
+          : { status: "active", settledAt: null },
+      )
+      .where(eq(designs.id, designId))
+      .returning(columns),
+  );
+  return design ?? null;
+}
+
+/** Delete a design and everything that is only its own (see the README). False if there was none. */
+export async function deleteDesign(db: Db, designId: string): Promise<boolean> {
+  const deleted = await run(
+    db.delete(designs).where(eq(designs.id, designId)).returning({ id: designs.id }),
+  );
+  return deleted.length > 0;
+}
+
 /**
  * The path segment a design's files are served under. Knowing it is the permission to read
  * them, so give it only to someone who may open the design.
@@ -120,8 +253,9 @@ export interface DesignListItem extends DesignHead {
 }
 
 /**
- * A workspace's designs, most recently active first, with how far `userId` has looked at each.
- * It does not check which repos that person can read; the caller does.
+ * A workspace's designs, most recently active first, with how far `userId` has looked at each:
+ * those in a repo `repo_access` says they can read, and their own Scratch designs. That they are
+ * a member, and that those answers are recent, is the caller's to make sure of.
  */
 export function listWorkspaceDesigns(
   db: Db,
@@ -146,8 +280,19 @@ export function listWorkspaceDesigns(
         designReads,
         and(eq(designReads.designId, designs.id), eq(designReads.userId, userId)),
       )
+      .leftJoin(
+        repoAccess,
+        and(eq(repoAccess.repoId, designs.repoId), eq(repoAccess.userId, userId)),
+      )
       .where(
-        and(eq(designs.workspaceId, workspaceId), status ? eq(designs.status, status) : undefined),
+        and(
+          eq(designs.workspaceId, workspaceId),
+          or(
+            and(isNull(designs.repoId), eq(designs.ownerId, userId)),
+            inArray(repoAccess.permission, READABLE_PERMISSIONS),
+          ),
+          status ? eq(designs.status, status) : undefined,
+        ),
       )
       .orderBy(desc(designs.lastActivityAt), designs.id),
   );
@@ -155,7 +300,9 @@ export function listWorkspaceDesigns(
 
 /**
  * Record how far a person has looked at a design. It only moves forward, so a slow request
- * from one device cannot bring back a dot another device cleared.
+ * from one device cannot bring back a dot another device cleared, and never past the design's
+ * seq or its newest thread item: nobody has seen what is not there yet, and a number from
+ * further on would hide the dot for good.
  */
 export async function markDesignSeen(
   db: Db,
@@ -166,10 +313,20 @@ export async function markDesignSeen(
     threadSeq = 0,
   }: { userId: string; designId: string; seq?: number; threadSeq?: number },
 ): Promise<void> {
+  const newestSeq = db.select({ seq: designs.seq }).from(designs).where(eq(designs.id, designId));
+  const newestThreadSeq = db
+    .select({ seq: sql`coalesce(max(${threadItems.seq}), 0)` })
+    .from(threadItems)
+    .where(eq(threadItems.designId, designId));
   await run(
     db
       .insert(designReads)
-      .values({ userId, designId, seenSeq: seq, seenThreadSeq: threadSeq })
+      .values({
+        userId,
+        designId,
+        seenSeq: sql`least(${seq}::bigint, (${newestSeq}))`,
+        seenThreadSeq: sql`least(${threadSeq}::bigint, (${newestThreadSeq}))`,
+      })
       .onConflictDoUpdate({
         target: [designReads.userId, designReads.designId],
         set: {

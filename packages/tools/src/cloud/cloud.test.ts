@@ -212,7 +212,7 @@ test("what a person does mid-session is in the agent's next read", async () => {
 });
 
 test("the first artboard of a design with no pages brings its page with it", async () => {
-  // How a new design starts in the cloud: a name and nothing else.
+  // A design whose pages were all deleted. (A new one starts with one empty page.)
   const { call, replica, api, synced } = setup({}, emptyDoc("Untitled"));
   expect((await call("get_basic_info")).text).toStartWith(
     "Design: Untitled\nNo pages yet. create_artboard makes the first one, or add one with create_page.",

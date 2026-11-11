@@ -1,6 +1,6 @@
 import { and, eq, isNull, lt, lte, or, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
-import { type DesignStatus, designs, type PrState, repos } from "../schema/index.ts";
+import { type DesignStatus, designs, type PrState, repos, workspaces } from "../schema/index.ts";
 import { run } from "./run.ts";
 
 /** Which design a branch of a repo belongs to. `branch` is unique within a repo. */
@@ -9,19 +9,40 @@ interface BranchKey {
   branch: string;
 }
 
+/** A design found by its branch, with what asking GitHub about its repo takes. */
+export interface BranchDesign {
+  id: string;
+  status: DesignStatus;
+  repo: { id: string; githubRepoId: number; fullName: string };
+  /** The App's installation on the design's workspace. Null while the App is not installed. */
+  installationId: number | null;
+  /** Set while the App is suspended on the workspace. */
+  suspendedAt: Date | null;
+}
+
 /** The design that owns a branch of a repo, or null when no design does. */
 export async function findDesignByBranch(
   db: Db,
   { githubRepoId, branch }: BranchKey,
-): Promise<{ id: string; status: DesignStatus } | null> {
+): Promise<BranchDesign | null> {
   const [row] = await run(
     db
-      .select({ id: designs.id, status: designs.status })
+      .select({
+        id: designs.id,
+        status: designs.status,
+        repoId: repos.id,
+        fullName: repos.fullName,
+        installationId: workspaces.installationId,
+        suspendedAt: workspaces.suspendedAt,
+      })
       .from(designs)
       .innerJoin(repos, eq(repos.id, designs.repoId))
+      .innerJoin(workspaces, eq(workspaces.id, designs.workspaceId))
       .where(and(eq(repos.githubRepoId, githubRepoId), eq(designs.branch, branch))),
   );
-  return row ?? null;
+  if (!row) return null;
+  const { repoId, fullName, ...design } = row;
+  return { ...design, repo: { id: repoId, githubRepoId, fullName } };
 }
 
 /**

@@ -4,6 +4,8 @@
 export const WORKSPACE_KINDS = ["personal", "org"] as const;
 export const REPOSITORY_SELECTIONS = ["all", "selected"] as const;
 export const MEMBER_ROLES = ["admin", "member"] as const;
+/** What GitHub says a person may do in a repo: its four legacy answers. */
+export const REPO_PERMISSIONS = ["admin", "write", "read", "none"] as const;
 /**
  * How a member reaches a workspace on GitHub: they own its account (a personal account's
  * person, an organization's owners), they are in its organization, or only some of its repos
@@ -46,6 +48,7 @@ export const WEBHOOK_SOURCES = ["github", "stripe", "boat", "workos"] as const;
 
 export type WorkspaceKind = (typeof WORKSPACE_KINDS)[number];
 export type MemberRole = (typeof MEMBER_ROLES)[number];
+export type RepoPermission = (typeof REPO_PERMISSIONS)[number];
 export type GithubAccess = (typeof GITHUB_ACCESS)[number];
 export type DesignStatus = (typeof DESIGN_STATUSES)[number];
 export type AgentState = (typeof AGENT_STATES)[number];

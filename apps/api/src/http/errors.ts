@@ -49,6 +49,14 @@ export type ErrorCode =
   | "identity_conflict"
   /** GitHub no longer accepts what Ponzu holds for this person. Sign in again. */
   | "github_reauth_required"
+  /** A design's ops: the log no longer keeps the ops after the seq asked for. Fetch the whole document. */
+  | "ops_pruned"
+  /** A design changed too often while this request tried to commit to it. Nothing was committed; try again. */
+  | "design_busy"
+  /** Undo: nothing of the caller's or the agent's is left that can be taken back. */
+  | "nothing_to_undo"
+  /** Redo: the caller has no undo left to take back. */
+  | "nothing_to_redo"
   /** WorkOS, GitHub or another service the API depends on failed or could not be reached. */
   | "upstream_unavailable"
   /** The API's own database did not answer in time. Nothing is known to have changed; try again. */
