@@ -995,7 +995,10 @@ under its own name with six random characters added (`paste-k3v9qz.png`), so it 
 one of the design's files. An answer is checked against what was asked (every one of a
 `question`'s questions by its text and no other, or `approved` for a `plan` or `permission`),
 since it closes the question for good; the first wins, and an answer to a question that is
-not open is 409 `question_closed`. It writes the `answer` event in
+not open is 409 `question_closed`, whose `details.answeredBy` (`{ id, name, login }`) names
+who answered it when someone did, so the person second is told by name. The live
+`design.questions` holds open questions only, so an answered one leaves it carrying nothing;
+this refusal is where a client learns who got there first. It writes the `answer` event in
 the statement that closes the question, carrying the question as it was raised. A comment a
 person posts on the canvas reaches the thread the same way: the commit statement writes the
 `comment` item beside its event.
@@ -1068,10 +1071,15 @@ has commits and no open pull request, or commits since its pull request merged),
 draft), `resolve` (conflicts), `fix_checks` (a check failed), `auto_merge` (checks are running,
 or the rules want a review, and the repo allows auto-merge), `update_branch` (the rules hold it
 back for being behind), `merge`, `blocked` (the rules want something, a review or a required
-check, and the repo has no auto-merge), or `none`. Create PR, Fix checks and Resolve are the
-agent's to do; the client sends it a message. A file's diff is the unified patch, or `binary`,
+check, and the repo has no auto-merge), or `none`. Create PR is the API's, as the person
+(`POST /v1/designs/:id/pull-request`, below), like Ready, Merge, Auto-merge and Update branch.
+Fix checks and Resolve are the agent's to do: the client sends it a message in the thread as
+the person (which failing checks, or which base to merge in), once for a commit. A file's diff is the unified patch, or `binary`,
 or `too_large` past 512 KB or where GitHub gives none; only the hundred files the tab lists
-are served, which is one request to GitHub.
+are served, which is one request to GitHub. Everyone the tab names (an author, a reviewer,
+whoever merged or turned on auto-merge) is `{ login, avatarUrl, bot, ponzu }`: `ponzu` marks
+the Ponzu App's own bot, the design's agent, so a client never guesses it from a login's shape
+(GitHub's GraphQL names a bot by its slug, its REST API as `<slug>[bot]`).
 
 **What a client must not trust.** Every title, description, comment, review, check name and
 notice title is what someone on GitHub wrote: anyone who can comment on the pull request, and

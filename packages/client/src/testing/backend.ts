@@ -544,7 +544,7 @@ export class FakeBackend {
       const done = this.onboarding.get(person.id);
       return { whereConfirmedAt: done?.whereAt ?? null, iphoneStepSeenAt: done?.iphoneAt ?? null };
     };
-    const claudeApi = this.claude.api(person.id, () => this.changed());
+    const claudeApi = this.claude.api(person.id, () => this.claudeChanged(person.id));
     const memberRow = (workspace: FakeWorkspace, userId: string) => {
       const who = this.people.get(userId)!;
       return {
@@ -857,7 +857,14 @@ export class FakeBackend {
             const question = design.questions.find((q) => q.id === questionId);
             if (!question) throw new ApiError(404, "not_found", "There is no such question.");
             if (question.status !== "open") {
-              throw new ApiError(409, "question_closed", "This question is no longer open.");
+              // As the API: who answered it first is named, when someone did.
+              const by = question.answer ? this.people.get(question.answer.userId) : undefined;
+              throw new ApiError(
+                409,
+                "question_closed",
+                "This question is no longer open.",
+                by ? { answeredBy: personOf(by) } : undefined,
+              );
             }
             checkAnswer(question.body, body);
             question.status = "answered";
@@ -1259,6 +1266,28 @@ export class FakeBackend {
 
   private touch(design: FakeDesign): void {
     design.lastActivityAt = this.now();
+    this.changed();
+  }
+
+  /**
+   * The person's Claude changed, as the API's `setClaudeBlocker` follows it: connected, their
+   * active designs that waited on it no longer do, and one with a message to take up wakes.
+   */
+  private claudeChanged(userId: string): void {
+    if (this.claude.view(userId)?.status === "connected") {
+      for (const design of this.designs.values()) {
+        const waited =
+          design.blocker === "claude_not_connected" || design.blocker === "claude_expired";
+        if (design.ownerId !== userId || design.settledAt !== null || !waited) continue;
+        design.blocker = null;
+        // What the person said while it waited is still to be taken up: the agent wakes for it.
+        if (design.thread.at(-1)?.item.kind === "message") {
+          design.agent = { state: "waking", status: null, artboards: [] };
+          this.append(design, { kind: "notice", payload: { type: "waking" } });
+        }
+        this.touch(design);
+      }
+    }
     this.changed();
   }
 

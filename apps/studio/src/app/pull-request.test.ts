@@ -25,7 +25,7 @@ const API_PULL: Pull = {
   state: "open",
   head: { ref: "pz/hero", sha: "a".repeat(40) },
   base: { ref: "main" },
-  author: { login: "maya", avatarUrl: null, bot: false },
+  author: { login: "maya", avatarUrl: null, bot: false, ponzu: false },
   mergedBy: null,
   createdAt: "2026-11-10T10:00:00.000Z",
   updatedAt: "2026-11-10T11:00:00.000Z",
@@ -71,7 +71,12 @@ const API_PULL: Pull = {
   reviews: [
     {
       id: "r1",
-      author: { login: "theo", avatarUrl: "https://avatars.example/theo", bot: false },
+      author: {
+        login: "theo",
+        avatarUrl: "https://avatars.example/theo",
+        bot: false,
+        ponzu: false,
+      },
       state: "approved",
       at: "2026-11-10T10:30:00.000Z",
       url: "https://github.com/x",
@@ -90,7 +95,7 @@ const API_PULL: Pull = {
     },
     {
       id: "c2",
-      author: { login: "ponzu-dev[bot]", avatarUrl: null, bot: true },
+      author: { login: "ponzu-dev", avatarUrl: null, bot: true, ponzu: true },
       body: "Done.",
       at: "2026-11-10T10:25:00.000Z",
       url: "https://github.com/w",
@@ -99,7 +104,7 @@ const API_PULL: Pull = {
     },
     {
       id: "c3",
-      author: { login: "vercel[bot]", avatarUrl: null, bot: true },
+      author: { login: "vercel", avatarUrl: null, bot: true, ponzu: false },
       body: "Preview ready.",
       at: "2026-11-10T10:26:00.000Z",
       url: "https://github.com/v",
@@ -177,7 +182,7 @@ test("the API's pull request, field by field, as the tab draws it", () => {
       // The Ponzu App's bot is the agent; another bot is itself.
       {
         id: "c2",
-        author: { login: "ponzu-dev[bot]", name: null, avatarUrl: null, agent: true },
+        author: { login: "ponzu-dev", name: null, avatarUrl: null, agent: true },
         body: "Done.",
         at: "2026-11-10T10:25:00.000Z",
         path: null,
@@ -186,7 +191,7 @@ test("the API's pull request, field by field, as the tab draws it", () => {
       },
       {
         id: "c3",
-        author: { login: "vercel[bot]", name: null, avatarUrl: null, agent: false },
+        author: { login: "vercel", name: null, avatarUrl: null, agent: false },
         body: "Preview ready.",
         at: "2026-11-10T10:26:00.000Z",
         path: null,

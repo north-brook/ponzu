@@ -496,7 +496,7 @@ function rollup(checks: Check[]): Pull["checks"]["state"] {
 }
 
 function who(login: string): Who {
-  return { login, avatarUrl: null, bot: false };
+  return { login, avatarUrl: null, bot: false, ponzu: false };
 }
 
 const closed = (pull: FakePull) =>

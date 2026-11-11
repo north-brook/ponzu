@@ -3,6 +3,7 @@ import {
   appendEvent,
   getDesignAssetKey,
   getQuestion,
+  getUser,
   listAssets,
   listThreadItems,
   postMessage,
@@ -98,6 +99,22 @@ function toItem(item: StoredItem): ThreadItem {
   } as ThreadItem;
 }
 
+/**
+ * The refusal of an answer to a question that is no longer open. When someone answered it,
+ * `details.answeredBy` says who, so the one who got there second is told by name.
+ */
+async function closedBy(db: Parameters<typeof getUser>[0], question: Question): Promise<ApiError> {
+  const message = "This question is no longer open.";
+  const userId = question.status === "answered" ? question.answeredByUserId : null;
+  const user = userId ? await getUser(db, userId) : null;
+  return new ApiError(
+    409,
+    "question_closed",
+    message,
+    user ? { details: { answeredBy: personFor(user) } } : {},
+  );
+}
+
 /** What the answer event carries beside the question, if it answers a question of this kind. */
 function answerOf(question: Question, body: z.infer<typeof AnswerBody>): Record<string, unknown> {
   const asked = { kind: question.kind, payload: question.payload } as QuestionBody;
@@ -172,15 +189,17 @@ export const designThread = new Hono<AppEnv>()
       const { design } = await requireDesign(c, id, "write");
       const question = await getQuestion(deps.db, { designId: design.id, id: questionId });
       if (!question) throw new ApiError(404, "not_found", "There is no such question.");
-      const closed = new ApiError(409, "question_closed", "This question is no longer open.");
-      if (question.status !== "open") throw closed;
+      if (question.status !== "open") throw await closedBy(deps.db, question);
       const answered = await answerQuestion(deps.db, {
         designId: design.id,
         id: questionId,
         answer: answerOf(question, c.req.valid("json")),
         userId: actor.user.id,
       });
-      if (!answered) throw closed;
+      if (!answered) {
+        const now = await getQuestion(deps.db, { designId: design.id, id: questionId });
+        throw await closedBy(deps.db, now ?? question);
+      }
       await requestWake(deps, design.id, "answer");
       return c.json(QuestionView.parse(answered));
     },

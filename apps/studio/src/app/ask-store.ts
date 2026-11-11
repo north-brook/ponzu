@@ -1,12 +1,12 @@
 import { type AnswerBody, type Api, ApiError, type Live, type QuestionRow } from "@ponzu/client";
-import type { Ask, AskAnswer } from "../cloud/model.ts";
+import type { Ask, AskAnswer, Person } from "../cloud/model.ts";
 import { toAsk } from "./thread-map.ts";
 
 /*
  * What the agent waits on in one open design: the `design.questions` live query, which holds
  * the open questions alone, and the viewer's answers on their way. The first answer wins: when
- * someone else's got there first, the API says so (409 `question_closed`) and the ask stays, put
- * calmly, until the viewer puts it away. A question the run withdrew, or a teammate answered,
+ * someone else's got there first, the API says so (409 `question_closed`, naming who) and the ask
+ * stays, put calmly with their name, until the viewer puts it away. A question the run withdrew, or a teammate answered,
  * leaves with its row; when the viewer had started answering it, it stays, closed, saying so,
  * until they put it away, so their choices don't vanish without a word.
  */
@@ -79,7 +79,7 @@ export class AskStore {
       (error: unknown) => {
         this.sending.delete(id);
         if (error instanceof ApiError && error.code === "question_closed") {
-          this.keepClosed({ ...asked, status: "answered" });
+          this.keepClosed({ ...asked, status: "answered", answeredBy: answeredBy(error) });
         } else {
           this.opts.onError(
             error instanceof ApiError && error.code === "network"
@@ -120,6 +120,13 @@ export class AskStore {
     this.snapshot = [...open, ...this.closed];
     for (const listener of this.listeners) listener();
   }
+}
+
+/** Who the API says answered first, when someone did; null when it doesn't say. */
+function answeredBy(error: ApiError): Person | null {
+  const by = error.details?.answeredBy as Partial<Person> | undefined;
+  if (typeof by?.id !== "string" || typeof by.login !== "string") return null;
+  return { id: by.id, login: by.login, name: by.name ?? by.login, avatarUrl: null };
 }
 
 /** The answer as the API takes it. A secret's value is never sent this way. */

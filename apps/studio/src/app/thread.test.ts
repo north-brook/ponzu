@@ -369,9 +369,11 @@ test("when a teammate answered first, the viewer's answer is turned away calmly"
   store.answer(id, { answers: { "Which way?": "Shorten it" } });
   await answered;
   await settle();
-  // Sam's answer won; Maya's own is kept as answered, to put away.
+  // Sam's answer won; Maya's own is kept as answered, by Sam, to put away.
   expect(w.backend.design(w.design.id).questions[0]?.answer?.userId).toBe(w.sam.id);
-  expect(store.getSnapshot()).toMatchObject([{ id, status: "answered", answeredBy: null }]);
+  expect(store.getSnapshot()).toMatchObject([
+    { id, status: "answered", answeredBy: { id: w.sam.id, login: w.sam.githubLogin } },
+  ]);
   expect(w.errors).toEqual([]);
   store.dismiss(id);
   expect(store.getSnapshot()).toEqual([]);
