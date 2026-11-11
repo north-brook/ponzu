@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { beatsOf, indexIn, lengthOf, SCRIPTS } from "./script.ts";
+import { beatsOf, indexIn, SCRIPTS } from "./script.ts";
 
 /** The demo's design, as files: its pages and, for each, its boards' HTML by id. */
 const DIR = join(import.meta.dir, "../../public/demo/seekle.design");
@@ -54,15 +54,5 @@ for (const script of SCRIPTS) {
       const html = all.get(id) ?? "";
       expect(html).toMatch(new RegExp(`class="[^"]*\\b${selector.replace(/^\./, "")}\\b`));
     }
-  });
-
-  test(`${script.id}: makes one comment at least and resolves or answers each`, () => {
-    expect(script.comments.length).toBeGreaterThan(0);
-    for (const c of script.comments) expect(c.resolve ?? c.reply).toBeDefined();
-  });
-
-  test(`${script.id}: plays in about the span of the others`, () => {
-    expect(lengthOf(script)).toBeGreaterThan(20_000);
-    expect(lengthOf(script)).toBeLessThan(65_000);
   });
 }

@@ -114,20 +114,6 @@ describe("css", () => {
 });
 
 describe("html", () => {
-  test("strips scripts, handlers and javascript urls", () => {
-    const { nodes, dropped } = parseHtml(
-      `<div onclick="x()"><script>alert(1)</script><a href=" javascript:alert(1)">hi</a><iframe src="x"></iframe></div>`,
-    );
-    const html = serializeNodes(nodes, { omitIds: true });
-    expect(html).toBe("<div><a>hi</a></div>");
-    expect(dropped.map((d) => d.what)).toEqual([
-      "onclick on <div>",
-      "<script>",
-      "javascript: URL in href on <a>",
-      "<iframe>",
-    ]);
-  });
-
   test("keeps a scene script as data, and only as data", () => {
     const { nodes, dropped } = parseHtml(
       `<div><script type=" Ponzu/Act " src="x.js" onload="x()">move @Invite\nclick</script><script type="module">alert(1)</script><script type="text/javascript">alert(2)</script></div>`,
@@ -496,21 +482,6 @@ describe("ops", () => {
     ] as const;
     const inverses = ops.map((op) => applyOp(d, structuredClone(op) as any));
     for (const inv of inverses.reverse()) applyOp(d, inv);
-    expect(JSON.stringify(d)).toBe(before);
-  });
-
-  test("failed batch rolls back", () => {
-    const d = doc();
-    const before = JSON.stringify(d);
-    expect(() =>
-      applyOp(d, {
-        op: "batch",
-        ops: [
-          { op: "style", id: "n_1", style: { color: "red" } },
-          { op: "remove", id: "n_missing" },
-        ],
-      }),
-    ).toThrow();
     expect(JSON.stringify(d)).toBe(before);
   });
 

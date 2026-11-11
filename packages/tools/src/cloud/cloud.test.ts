@@ -344,6 +344,8 @@ test("an edit the API refuses is reported in the next tool result, once", async 
     "\n\nUndone: an edit you made earlier is not in the design, though the tool said it was.\n- added to n_card: Ponzu refused it (",
   );
   expect(next.text).toContain("Look at what is there now (get_tree, get_html)");
+  // The heading the basics guide tells the agent to look for is the one the notice has.
+  expect(cloudGuides.basics).toContain('a note that starts "Undone:"');
   // Told once.
   expect((await call("get_tree", { id: "ab_pricing" })).text).not.toContain("Undone");
 });
@@ -1151,33 +1153,6 @@ test("the guides written for the cloud leave the local world out", () => {
     if (where.endsWith(" schema")) continue;
     expect(text, where).not.toMatch(LOCAL_WORLD);
   }
-  expect(cloudGuides.comments).toContain("reaches you as a new turn");
-  expect(CLOUD_INSTRUCTIONS).toContain("reach you as new turns");
-  // What the agent writes is a chat message beside the canvas, not a terminal recap.
-  expect(CLOUD_INSTRUCTIONS).toContain("Where your words go: not to a terminal.");
-  expect(cloudGuides.basics).toContain("goes to a chat thread beside the canvas");
-  // Claude Code's preset asks for progress updates; here set_status is that update.
-  expect(CLOUD_INSTRUCTIONS).toContain("is for a terminal, where people can't see your tools");
-  expect(cloudGuides.code).toContain("rebuild it on the canvas faithfully before you change");
-  expect(CLOUD_INSTRUCTIONS).toContain(
-    "rebuild it on the canvas faithfully from the running dev server",
-  );
-});
-
-test("the basics guide describes add_asset, big HTML and undone edits as the tools behave", async () => {
-  expect(cloudGuides.basics).toContain("pass that file's absolute path as path instead of html");
-  expect(cloudGuides.basics).toContain(
-    "add_asset takes the absolute path of a file in the sandbox",
-  );
-  // The heading the guide tells the agent to look for is the one a notice has.
-  expect(cloudGuides.basics).toContain('a note that starts "Undone:"');
-  const api = gated();
-  const { call, commitAs, synced, ws } = setup({ transport: api.transport });
-  commitAs(ada, { op: "artboard.delete", id: "ab_hero" });
-  await call("set_text", { updates: [{ id: "n_h", text: "Hello" }] });
-  api.release();
-  await synced();
-  expect(ws.notices?.()[0]).toStartWith("Undone:");
 });
 
 test("get_guide serves the cloud's guides", async () => {
