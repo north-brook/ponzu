@@ -13,7 +13,7 @@ import {
 } from "@ponzu/render";
 import { memo, useLayoutEffect, useRef } from "react";
 import type { Arrivals } from "./arrive.ts";
-import { cornersCss, designCorners } from "./corners.ts";
+import { circular, cornersCss, designCorners, measureCorners, type Radii } from "./corners.ts";
 import { BoardImages, firstStep, markupUrl } from "./images.ts";
 import { BoardDetail, type Detail, holdLoops, STILL_CSS } from "./lod.ts";
 import { animationsOf, MOTION_CSS, Motion } from "./motion.ts";
@@ -41,10 +41,16 @@ interface Props {
    */
   hold?: boolean;
   /**
-   * Rounded as the canvas draws the board's sheet, by `--pz-board-radius` on a parent (which
-   * already holds the design's own radius where the canvas could read it: corners.ts).
+   * Rounded as the canvas draws the board's sheet: each corner the design's own radius, or
+   * `--pz-board-radius` on a parent where that is larger (corners.ts).
    */
   rounded?: boolean;
+  /**
+   * A rounded board's corners as the browser resolved its root's radius (a token, a calc(), a %),
+   * each time its content is drawn, so the sheet, ring and frame round round it too. Keep it
+   * stable: it isn't a reason to draw again.
+   */
+  onCorners?: (corners: Radii) => void;
 }
 
 const loadedFonts = new Set<string>();
@@ -94,7 +100,10 @@ export const ArtboardView = memo(function ArtboardView({
   arrivals,
   hold: held = false,
   rounded = false,
+  onCorners,
 }: Props) {
+  const reportCorners = useRef(onCorners);
+  reportCorners.current = onCorners;
   const host = useRef<HTMLDivElement>(null);
   const last = useRef("");
   // Every board, the home screen's previews too, holds while nobody can be watching the window.
@@ -133,23 +142,13 @@ export const ArtboardView = memo(function ArtboardView({
     // The page's media preference is the system's; a canvas in its own theme decides them here.
     const pin = (css: string) => (colorScheme ? pinColorScheme(css, colorScheme) : css);
     const scheme = colorScheme ? `:host{color-scheme:${colorScheme}}` : "";
-    // The canvas rounds its boards a touch (`--pz-board-radius`, a few screen px), and keeps the
-    // design's own radius wherever that is larger: corners.ts, which the sheet round the board
-    // follows too. A radius it can't read as px (a token, a %) is left as the design gave it.
-    // Thumbnails, screenshots and exports draw the design's own.
-    const own = rounded ? designCorners(artboard) : null;
-    const round = !rounded
-      ? ""
-      : own
-        ? `:host{--pz-board-corners:${cornersCss(own, "var(--pz-board-radius)")}}[data-artboard]{border-radius:var(--pz-board-corners)!important}`
-        : "";
     // Tokens' url()s resolve like the artboard's: an @font-face in tokens.css finds assets/ too.
     const resolved = resolveTokenAssets(tokens, assetBase);
     const canvas = tracked ? `${MOTION_CSS}${STILL_CSS}` : "";
-    const head = `<style data-pz-base>${tracked ? HOST_RESET : ""}${styleText(pin(hostTokens(resolved)))}${scheme}${round}${ARTBOARD_BASE_CSS}${canvas}</style>`;
+    const head = `<style data-pz-base>${tracked ? HOST_RESET : ""}${styleText(pin(hostTokens(resolved)))}${scheme}${ARTBOARD_BASE_CSS}${canvas}</style>`;
     const body = pin(serializeArtboardElement(artboard, { rewriteUrl: resolve }));
     // Sized images or not is part of the content: a board that learns how it's drawn renders again.
-    const key = `${sized ? "sized" : ""}${head}${body}`;
+    const key = `${sized ? "sized" : ""}${rounded ? "rounded" : ""}${head}${body}`;
     if (key === last.current) return;
     last.current = key;
     ensureFonts(googleFonts(body, tokens));
@@ -174,6 +173,7 @@ export const ArtboardView = memo(function ArtboardView({
         );
     }
     root.innerHTML = html;
+    if (rounded) roundRoot(root, artboard, reportCorners.current);
     // Before the first paint: decoding an image never holds up a frame.
     for (const img of root.querySelectorAll("img"))
       if (!img.hasAttribute("decoding")) img.decoding = "async";
@@ -203,6 +203,8 @@ export const ArtboardView = memo(function ArtboardView({
     if (detail.hidden !== wasHidden.current) {
       wasHidden.current = detail.hidden;
       videos.current?.recount();
+      // A root that had no box to resolve a % against has one now.
+      if (rounded && !detail.hidden) roundRoot(root, artboard, reportCorners.current);
     }
   });
 
@@ -247,6 +249,29 @@ export const ArtboardView = memo(function ArtboardView({
   return <div ref={host} data-artboard-host={artboard.id} style={{ display: "contents" }} />;
 }, same);
 
+/**
+ * The canvas rounds its boards a touch (`--pz-board-radius`, a few screen px) and keeps the
+ * design's own radius wherever that is larger (corners.ts). The design's is read from the root as
+ * the browser resolved it, so a token, a calc() or a % counts, and handed up for the sheet, the
+ * working ring and the frame to follow. A root not laid out yet (hidden) takes the document's px
+ * as a guess. Thumbnails, screenshots and exports draw the design's own corners.
+ */
+function roundRoot(root: ShadowRoot, artboard: AB, report?: (corners: Radii) => void) {
+  root.querySelector("style[data-pz-round]")?.remove();
+  const el = root.querySelector<HTMLElement>("[data-artboard]");
+  const measured = el ? measureCorners(el) : null;
+  const guess = designCorners(artboard);
+  const corners = measured ?? (guess ? circular(guess) : null);
+  // Nothing to go on: the root keeps the design's corners as they are until it is laid out.
+  if (!corners) return;
+  const css = cornersCss(corners, "var(--pz-board-radius)");
+  const style = root.ownerDocument.createElement("style");
+  style.dataset.pzRound = "";
+  style.textContent = `:host{--pz-board-corners:${css}}[data-artboard]{border-radius:var(--pz-board-corners)!important}`;
+  root.prepend(style);
+  if (measured) report?.(measured);
+}
+
 function same(a: Props, b: Props) {
   return (
     a.artboard === b.artboard &&
@@ -257,6 +282,7 @@ function same(a: Props, b: Props) {
     a.arrivals === b.arrivals &&
     a.hold === b.hold &&
     a.rounded === b.rounded &&
+    a.onCorners === b.onCorners &&
     !a.detail === !b.detail &&
     a.detail?.hidden === b.detail?.hidden &&
     a.detail?.scale === b.detail?.scale &&

@@ -160,10 +160,48 @@ describe.skipIf(!chromium)("a board's corners in Chromium", () => {
     await page.close();
   });
 
-  test("a radius in a token is the design's own, as the server's picture draws it", async () => {
+  /** The sheet's corner is the card's: canvas just inside the corner, card a little further in. */
+  const cornerIsRound = async (rx: number, ry: number) => {
+    const d = await drawn();
+    // The box's very corner, where a square sheet's hairline would show past the card's curve,
+    // is the canvas's own colour, as it is well clear of the board.
+    const canvas = await shot(d.box.x - 40, d.box.y - 40);
+    for (const [x, y] of [
+      [d.box.x, d.box.y],
+      [d.box.x + 2, d.box.y + 2],
+    ] as const) {
+      const corner = await shot(x, y);
+      expect(near(corner, YELLOW)).toBe(false);
+      expect(near(corner, canvas)).toBe(true);
+    }
+    expect(near(await shot(d.box.x + rx * d.zoom, d.box.y + ry * d.zoom), YELLOW)).toBe(true);
+  };
+
+  test("a radius in a calc() rounds the sheet under the card too", async () => {
     await mount("width:320px;height:200px;background:#fff6b3;border-radius:calc(8px * 3)");
     const d = await drawn();
     expect(d.root).toBe("24px");
+    expect(d.sheet).toBe("24px");
+    await cornerIsRound(24, 24);
+    await page.close();
+  });
+
+  test("a radius in a token (var()) rounds the sheet as the content", async () => {
+    await mount("--radius-lg:20px;width:320px;height:200px;background:#fff6b3;border-radius:var(--radius-lg)");
+    const d = await drawn();
+    expect(d.root).toBe("20px");
+    expect(d.sheet).toBe("20px");
+    await cornerIsRound(20, 20);
+    await page.close();
+  });
+
+  test("a % radius is resolved against the board, elliptical corners and all", async () => {
+    await mount("width:320px;height:200px;background:#fff6b3;border-radius:10%");
+    const d = await drawn();
+    // 10% of 320 across, of 200 down.
+    expect(d.root).toBe("32px 20px");
+    expect(d.sheet).toBe("32px 20px");
+    await cornerIsRound(32, 20);
     await page.close();
   });
 });
