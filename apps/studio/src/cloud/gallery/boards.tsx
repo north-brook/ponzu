@@ -63,6 +63,8 @@ export const BOARDS: Record<string, () => ReactNode> = {
       contributors={f.justYou}
       thread={t.heroThread}
       agent={WORKING}
+      // As the boards go on: board 2's questions follow your next message.
+      then={t.boardAsks}
     />
   ),
   "claude-sets-it-up": () => (

@@ -1,8 +1,9 @@
 /*
  * An open design with its thread rail and pull request tab, as the data layer will drive them:
  * local state stands in for the API, so a composition can be clicked through. Sending adds your
- * message and sets the agent working, Stop stops it, an answer goes out and the ask closes, an
- * image uploads, and the thread loads older items as you read up.
+ * message and the agent streams a reply (then asks, if given something to ask), Stop stops it,
+ * an answer goes out and the ask closes, an image uploads, and the thread loads older items as
+ * you read up.
  */
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import type {
@@ -23,9 +24,12 @@ import { ThreadRail } from "../thread/rail.tsx";
 import { DesignChrome } from "../window/design-chrome.tsx";
 import * as f from "./fixtures.ts";
 import { Harness } from "./harness.tsx";
-import { notice, said } from "./thread-fixtures.ts";
+import { notice, reply as replyFixture, said } from "./thread-fixtures.ts";
 
 const ignore = () => {};
+
+/** What the agent says to any message, a word at a time. */
+const REPLY = "On it. Keeping the green, and letting the photo do the talking in B.";
 
 /**
  * The canvas's miniature of a board, as the gallery fakes it: the boards' "Hero" at a quarter
@@ -44,7 +48,7 @@ const renderBoard = (): ReactNode => (
       padding: "24px 28px",
       background: "#f3efe6",
       color: "#1f2a1d",
-      fontFamily: "'Instrument Serif', Georgia, serif",
+      fontFamily: "'Instrument Serif', serif",
     }}
   >
     <div
@@ -79,6 +83,7 @@ export function DesignHarness({
   olderThread = [],
   agent: initialAgent,
   asks: initialAsks = [],
+  then = [],
   gate = null,
   pullRequest = null,
   tab = "page",
@@ -95,6 +100,8 @@ export function DesignHarness({
   olderThread?: ThreadItem[];
   agent: AgentActivity;
   asks?: Ask[];
+  /** What the agent asks once it has answered a message. */
+  then?: Ask[];
   gate?: SteerGate | null;
   pullRequest?: PullRequestTabState | null;
   tab?: "page" | "pull-request";
@@ -119,6 +126,38 @@ export function DesignHarness({
     timers.current.push(window.setTimeout(run, ms));
   };
 
+  /** Each send starts a turn; Stop ends it, and what it had still to say goes unsaid. */
+  const turn = useRef(0);
+  const answer = () => {
+    const mine = ++turn.current;
+    const { id, seq, at } = replyFixture("");
+    const words = REPLY.split(" ");
+    words.forEach((_, i) =>
+      later(400 + i * 60, () => {
+        if (turn.current !== mine) return;
+        const last = i === words.length - 1;
+        const next: ThreadItem = {
+          id,
+          seq,
+          at,
+          streaming: !last,
+          kind: "assistant",
+          payload: { text: words.slice(0, i + 1).join(" ") },
+        };
+        setItems((all) =>
+          i === 0
+            ? [...(all ?? []), next]
+            : (all ?? []).map((item) => (item.id === id ? next : item)),
+        );
+        if (!last) return;
+        if (then.length) {
+          setAsks(then);
+          setAgent({ state: "needs_you", status: null });
+        } else setAgent({ state: "idle", status: null });
+      }),
+    );
+  };
+
   const openTab = (open: boolean) => {
     if (open === prTab) return;
     if (open) {
@@ -131,9 +170,10 @@ export function DesignHarness({
   const pr = design.pullRequest;
   const action = nextAction(pr, changes);
   // With asks given, the count follows them as they're answered; otherwise it is the design's.
-  const waiting = initialAsks.length
-    ? asks.filter((a) => a.status === "open").length
-    : design.needsYou;
+  const waiting =
+    initialAsks.length || then.length
+      ? asks.filter((a) => a.status === "open").length
+      : design.needsYou;
   const shown = { ...design, needsYou: waiting, agentState: agent.state };
 
   const rail = (
@@ -186,8 +226,10 @@ export function DesignHarness({
         setAttachments([]);
         setItems((all) => [...(all ?? []), message]);
         setAgent({ state: "working", status: "Reading your message" });
+        answer();
       }}
       onStop={() => {
+        turn.current++;
         setAgent({ state: "idle", status: null });
         setItems((all) => [
           ...(all ?? []).map((i) => ({ ...i, streaming: false })),

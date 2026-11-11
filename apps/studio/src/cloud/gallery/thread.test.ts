@@ -56,30 +56,134 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     expect(drawn).toBeLessThan(120);
   });
 
-  test("scrolling up stops following; what arrives is counted; the pill goes back", async () => {
-    await open("long-thread");
-    await scrollBy(-600);
-    // The rail has heard the scroll once it fades its foot.
-    await page.waitForFunction(
+  /** Waits until the rail has heard the person's scroll: it fades its foot. */
+  const heardScroll = () =>
+    page.waitForFunction(
       (sel) =>
         (document.querySelector(sel)!.parentElement as HTMLElement).style.maskImage.endsWith(
           "transparent)",
         ),
       log,
     );
-    const away = await fromFoot();
-    expect(away).toBeGreaterThan(500);
+  /** Where the first line in view sits on screen, by its text. */
+  const reading = () =>
+    page.$eval(log, (el) => {
+      const top = el.parentElement!.getBoundingClientRect().top;
+      const line = [...el.children].find((c) => c.getBoundingClientRect().bottom > top + 40)!;
+      return { text: line.textContent, y: line.getBoundingClientRect().top };
+    });
+  /** Where a line with this text sits on screen now. */
+  const whereIs = (text: string | null) =>
+    page.$eval(
+      log,
+      (el, text) =>
+        [...el.children].find((c) => c.textContent === text)?.getBoundingClientRect().top ?? null,
+      text,
+    );
+
+  test("scrolling up stops following; what arrives is counted; the pill goes back", async () => {
+    await open("long-thread");
+    await scrollBy(-600);
+    await heardScroll();
+    expect(await fromFoot()).toBeGreaterThan(500);
+    const before = await reading();
     // The run is stopped (a line from someone else, as far as following goes).
     await page.click('button[aria-label="Stop"]');
     await page.waitForSelector('button:has-text("1 new")');
-    // The view stayed where the person was reading.
-    expect(Math.abs((await fromFoot()) - away)).toBeLessThan(80);
+    // What the person was reading didn't move.
+    expect(Math.abs((await whereIs(before.text))! - before.y)).toBeLessThan(2);
     await page.click('button:has-text("1 new")');
     await page.waitForFunction((sel) => {
       const s = document.querySelector(sel)!.parentElement!;
       return s.scrollHeight - s.clientHeight - s.scrollTop < 2;
     }, log);
     expect(await page.$('button:has-text("new")')).toBeNull();
+  });
+
+  test("pictures loading above what the person reads don't move it", async () => {
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route("**/*.png", async (route) => {
+      await held;
+      await route.continue();
+    });
+    try {
+      await open("long-thread");
+      expect(await page.$$eval(`${log} img`, (imgs) => imgs.length)).toBeGreaterThan(0);
+      await scrollBy(-500);
+      await heardScroll();
+      const before = await reading();
+      release();
+      await page.waitForFunction(
+        (sel) =>
+          [...document.querySelectorAll<HTMLImageElement>(`${sel} img`)].every((i) => i.complete),
+        log,
+      );
+      await page.waitForTimeout(100);
+      expect(Math.abs((await whereIs(before.text))! - before.y)).toBeLessThan(2);
+    } finally {
+      release();
+      await page.unroute("**/*.png");
+    }
+  });
+
+  test("text streaming in redraws its own line and no other", async () => {
+    // Every commit React makes, through the hook its developer tools use: a line drew again
+    // when its props are a new object, since a line that skips drawing keeps its old ones.
+    await page.addInitScript(() => {
+      const counts: Record<string, number> = {};
+      const seen = new Map<string, unknown>();
+      type Fiber = {
+        key: string | null;
+        memoizedProps: unknown;
+        child: Fiber | null;
+        sibling: Fiber | null;
+      };
+      (window as { lineRenders?: Record<string, number> }).lineRenders = counts;
+      (window as { __REACT_DEVTOOLS_GLOBAL_HOOK__?: unknown }).__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
+        isDisabled: false,
+        supportsFiber: true,
+        renderers: new Map(),
+        inject: () => 1,
+        checkDCE: () => {},
+        onCommitFiberUnmount: () => {},
+        onPostCommitFiberRoot: () => {},
+        onCommitFiberRoot: (_: number, root: { current: Fiber }) => {
+          const stack = [root.current];
+          while (stack.length) {
+            const fiber = stack.pop()!;
+            const props = fiber.memoizedProps as { item?: { id: string }; handlers?: unknown };
+            if (props?.handlers && props.item && fiber.key === props.item.id) {
+              if (seen.get(fiber.key) !== props) counts[fiber.key] = (counts[fiber.key] ?? 0) + 1;
+              seen.set(fiber.key, props);
+            }
+            if (fiber.child) stack.push(fiber.child);
+            if (fiber.sibling) stack.push(fiber.sibling);
+          }
+        },
+      };
+    });
+    await open("thread-in-the-right-rail");
+    const counts = () =>
+      page.evaluate(() => ({
+        ...(window as { lineRenders?: Record<string, number> }).lineRenders,
+      }));
+    const drawn = await counts();
+    expect(Object.keys(drawn).length).toBeGreaterThan(2);
+    await page.fill('textarea[aria-label="Message"]', "Calmer");
+    await page.keyboard.press("Enter");
+    // The reply streams in, a word at a time, and ends.
+    await page.waitForSelector(`${log} p:has-text("in B.")`);
+    const after = await counts();
+    const redrawn = Object.keys(drawn).filter((id) => after[id] !== drawn[id]);
+    expect(redrawn).toEqual([]);
+    const fresh = Object.keys(after).filter((id) => !(id in drawn));
+    // Your message, drawn once, and the reply, drawn as it grew.
+    expect(fresh.map((id) => after[id]! > 5)).toEqual([false, true]);
+    await page.close();
+    page = await browser.newPage();
   });
 
   test("reading up reveals older lines without moving what is on screen", async () => {
@@ -162,5 +266,30 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Space");
     expect(await page.$$eval('[role="checkbox"][aria-checked="true"]', (e) => e.length)).toBe(2);
+    // ⌘ and a digit is the app's, not a choice.
+    await page.keyboard.press("Meta+1");
+    expect(await page.$$eval('[role="checkbox"][aria-checked="true"]', (e) => e.length)).toBe(2);
+    // The last answer goes, and the keyboard is back in the composer.
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector('textarea[aria-label="Message"]');
+    expect(await focused()).toBe("Message");
+  });
+
+  /** The focused element's name. */
+  const focused = () =>
+    page.evaluate(
+      () => document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.tagName,
+    );
+
+  test("a question arriving while you type takes the keyboard with it", async () => {
+    await open("thread-in-the-right-rail");
+    await page.click('textarea[aria-label="Message"]');
+    await page.keyboard.type("Calmer");
+    await page.keyboard.press("Enter");
+    // The reply, then board 2's questions in the composer's place.
+    await page.waitForSelector('[role="radio"]');
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("role"))).toBe("radio");
+    expect(await page.evaluate(() => document.activeElement?.textContent)).toContain("Shorten it");
   });
 });

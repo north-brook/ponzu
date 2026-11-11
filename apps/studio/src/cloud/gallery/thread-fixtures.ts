@@ -4,6 +4,7 @@
  */
 import type { Ask, Person, PullRequestDetail, ThreadItem, ThreadNotice } from "../model.ts";
 import { bryce, maya, NOW, sam } from "./fixtures.ts";
+import heroPreview from "./previews/hero.png";
 
 const at = (minutesAgo: number) => new Date(NOW - minutesAgo * 60_000).toISOString();
 
@@ -203,7 +204,11 @@ export function longThread(count = 1000): ThreadItem[] {
             payload: {
               text: `Pass ${n}: tighten the spacing on B.`,
               from: people[i % 3]!,
-              attachments: [],
+              // Now and then a picture, to read past while it loads.
+              attachments:
+                i % 40 === 0
+                  ? [{ ref: "assets/hero.png", url: heroPreview, contentType: "image/png" }]
+                  : [],
             },
           }
         : turn === 1

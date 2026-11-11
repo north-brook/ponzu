@@ -22,7 +22,7 @@ ground button rgb(17, 17, 16)
 icon svg 13×13 rgb(255, 255, 255) stroke 2px
 ground span rgba(17, 17, 16, 0.1)
 text "2" rgb(17, 17, 16) 600 12px Inter
-ground span[Ponzu needs you] rgb(255, 200, 30)
+ground span[2 questions for you] rgb(255, 200, 30)
 text "Northbrook" rgb(17, 17, 16) 600 13px Inter
 icon svg[Workspace: Northbrook] 11×11 rgb(128, 124, 115) stroke 2.2px
 icon svg[Search] 15×15 rgb(94, 91, 84) stroke 1.7px
