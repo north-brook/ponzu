@@ -12,7 +12,6 @@ text "Product" rgb(183, 179, 169) 400 13px Inter
 icon svg[Pages] 14×14 rgb(183, 179, 169) stroke 1.7px
 text "Care cards" rgb(183, 179, 169) 400 13px Inter
 icon svg[New page] 14×14 rgb(118, 115, 105) stroke 1.9px
-ground span rgba(244, 243, 239, 0.1)
 ground img[Bryce (you)] shadow rgb(26, 26, 25) 0px 0px 0px 1.5px
 ground img[Sam] shadow rgb(26, 26, 25) 0px 0px 0px 1.5px
 ground img[Maya] shadow rgb(26, 26, 25) 0px 0px 0px 1.5px
@@ -25,6 +24,7 @@ icon svg[Checks passed] 10×10 rgb(142, 138, 130) stroke 2.6px
 text "Merge" rgb(17, 17, 16) 600 12px Inter
 ground button rgb(244, 243, 239)
 icon svg 13×13 rgb(17, 17, 16) stroke 2px
+ground span rgba(244, 243, 239, 0.1)
 icon svg[Thread] 16×16 rgb(183, 179, 169) stroke 1.7px
 ground div[Designs] rgb(27, 27, 26) shadow rgb(38, 37, 35) 0px 0px 0px 1px
 icon svg[Designs] 15×15 rgb(142, 138, 130) stroke 1.8px
