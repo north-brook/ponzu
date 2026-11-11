@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { parseInline, parseMarkdown, safeHref } from "./markdown.ts";
+import { type Block, type Inline, parseInline, parseMarkdown, safeHref } from "./markdown.ts";
 import { Prose } from "./prose.tsx";
 
 const html = (text: string) => renderToStaticMarkup(<Prose text={text} />);
@@ -129,4 +129,42 @@ test("an unclosed fence while text streams is code to the end", () => {
 
 test("pull request templates' HTML comments are dropped", () => {
   expect(html("<!-- describe your change -->\nFixes the hero")).not.toContain("describe");
+});
+
+test("hostile text the size of a GitHub comment reads in linear time", () => {
+  const LIMIT = 65_536;
+  const fill = (unit: string) => unit.repeat(Math.ceil(LIMIT / unit.length)).slice(0, LIMIT);
+  for (const text of [
+    fill("*a "),
+    fill("_a "),
+    fill("**a "),
+    fill("~~a "),
+    fill("[a "),
+    fill("![a "),
+    fill("*_~~[`a "),
+    `http://a${".".repeat(LIMIT)}x`,
+    `- ${fill("*a ")}`,
+  ]) {
+    const started = performance.now();
+    parseMarkdown(text);
+    expect(performance.now() - started).toBeLessThan(50);
+  }
+});
+
+test("quotes, links and emphasis nest only so deep", () => {
+  const depth = (blocks: Block[]): number =>
+    Math.max(0, ...blocks.map((b) => (b.kind === "quote" ? 1 + depth(b.children) : 0)));
+  expect(depth(parseMarkdown(`${">".repeat(5000)} deep`))).toBe(3);
+  expect(html(`${">".repeat(5000)} deep`)).toContain("&gt;&gt;");
+
+  // A link's label never holds another link.
+  const nested = `${"[".repeat(3000)}x${"](https://a.test)".repeat(3000)}`;
+  expect(html(nested).match(/<a /g)).toHaveLength(1);
+
+  const tall = (nodes: Inline[]): number =>
+    Math.max(0, ...nodes.map((n) => ("children" in n ? 1 + tall(n.children) : 0)));
+  // Five kinds of emphasis, each inside the last: the fifth reads as written.
+  const five = parseInline("*a _b **c __d ~~e~~ d__ c** b_ a*");
+  expect(tall(five)).toBe(4);
+  expect(JSON.stringify(five)).toContain("~~e~~");
 });

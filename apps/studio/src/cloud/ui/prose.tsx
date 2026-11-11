@@ -1,4 +1,4 @@
-import { type MouseEvent, type ReactNode, useMemo } from "react";
+import { type MouseEvent, memo, type ReactNode, useMemo } from "react";
 import { cn } from "./cn.ts";
 import { type Block, type Inline, parseMarkdown } from "./markdown.ts";
 
@@ -6,9 +6,10 @@ import { type Block, type Inline, parseMarkdown } from "./markdown.ts";
  * Markdown from the agent or GitHub, drawn as text. Everything it holds becomes React text and a
  * handful of elements (markdown.ts decides which), so no string from it is ever read as markup.
  * Links leave the app through `onOpenLink`; without it they open a new window, which the desktop
- * shell hands to the browser.
+ * shell hands to the browser. Memoized: a line of the thread redraws only when its text changes,
+ * so `onOpenLink` should keep its identity.
  */
-export function Prose({
+export const Prose = memo(function Prose({
   text,
   onOpenLink,
   className,
@@ -26,15 +27,23 @@ export function Prose({
       ))}
     </div>
   );
-}
+});
 
 function BlockView({ block, onOpenLink }: { block: Block; onOpenLink?: (url: string) => void }) {
   const inline = (children: Inline[]) => <InlineView nodes={children} onOpenLink={onOpenLink} />;
   switch (block.kind) {
     case "paragraph":
-      return <p className="m-0">{inline(block.children)}</p>;
+      return (
+        <p dir="auto" className="m-0">
+          {inline(block.children)}
+        </p>
+      );
     case "heading":
-      return <p className="m-0 font-semibold text-ink">{inline(block.children)}</p>;
+      return (
+        <p dir="auto" className="m-0 font-semibold text-ink">
+          {inline(block.children)}
+        </p>
+      );
     case "list": {
       const List = block.ordered ? "ol" : "ul";
       return (
@@ -47,7 +56,7 @@ function BlockView({ block, onOpenLink }: { block: Block; onOpenLink?: (url: str
         >
           {block.items.map((item, i) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: items have no identity but their place
-            <li key={i} className="pl-0.5">
+            <li key={i} dir="auto" className="pl-0.5">
               {inline(item)}
             </li>
           ))}
@@ -62,7 +71,10 @@ function BlockView({ block, onOpenLink }: { block: Block; onOpenLink?: (url: str
       );
     case "quote":
       return (
-        <blockquote className="m-0 flex flex-col gap-2 border-rule border-l-2 pl-3 text-muted">
+        <blockquote
+          dir="auto"
+          className="m-0 flex flex-col gap-2 border-rule border-l-2 pl-3 text-muted"
+        >
           {block.children.map((child, i) => (
             // biome-ignore lint/suspicious/noArrayIndexKey: blocks have no identity but their place
             <BlockView key={i} block={child} onOpenLink={onOpenLink} />

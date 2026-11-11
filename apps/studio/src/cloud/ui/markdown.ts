@@ -39,16 +39,23 @@ const RULE = /^ {0,3}([-*_])(?:\s*\1){2,}\s*$/;
 const QUOTE = /^ {0,3}> ?(.*)$/;
 const ITEM = /^\s{0,8}(?:([-*+])|(\d{1,9})[.)])\s+(.*)$/;
 
-const startsBlock = (line: string) =>
-  FENCE.test(line) || HEADING.test(line) || RULE.test(line) || QUOTE.test(line) || ITEM.test(line);
+/** How deep quotes nest: a `>` past the third is text in the third. */
+const MAX_QUOTES = 3;
+
+const startsBlock = (line: string, quotes: number) =>
+  FENCE.test(line) ||
+  HEADING.test(line) ||
+  RULE.test(line) ||
+  (quotes < MAX_QUOTES && QUOTE.test(line)) ||
+  ITEM.test(line);
 
 export function parseMarkdown(source: string): Block[] {
   // HTML comments (pull request templates are full of them) say nothing to a reader.
   const text = source.replace(/<!--[\s\S]*?(?:-->|$)/g, "").replace(/\r\n?/g, "\n");
-  return parseBlocks(text.split("\n"));
+  return parseBlocks(text.split("\n"), 0);
 }
 
-function parseBlocks(lines: string[]): Block[] {
+function parseBlocks(lines: string[], quotes: number): Block[] {
   const blocks: Block[] = [];
   let i = 0;
   while (i < lines.length) {
@@ -77,11 +84,11 @@ function parseBlocks(lines: string[]): Block[] {
       i++;
       continue;
     }
-    if (QUOTE.test(line)) {
+    if (quotes < MAX_QUOTES && QUOTE.test(line)) {
       const quoted: string[] = [];
       for (; i < lines.length && QUOTE.test(lines[i]!); i++)
         quoted.push(QUOTE.exec(lines[i]!)![1]!);
-      blocks.push({ kind: "quote", children: parseBlocks(quoted) });
+      blocks.push({ kind: "quote", children: parseBlocks(quoted, quotes + 1) });
       continue;
     }
     const item = ITEM.exec(line);
@@ -110,7 +117,7 @@ function parseBlocks(lines: string[]): Block[] {
       continue;
     }
     const paragraph: string[] = [];
-    for (; i < lines.length && lines[i]!.trim() && !startsBlock(lines[i]!); i++) {
+    for (; i < lines.length && lines[i]!.trim() && !startsBlock(lines[i]!, quotes); i++) {
       paragraph.push(lines[i]!.trim());
     }
     blocks.push({ kind: "paragraph", children: parseInline(paragraph.join("\n")) });
@@ -119,20 +126,42 @@ function parseBlocks(lines: string[]): Block[] {
 }
 
 const ESCAPABLE = /[\\`*_{}[\]()#+\-.!~<>|"']/;
-const AUTOLINK = /^https?:\/\/[^\s<>]+/;
+const AUTOLINK = /https?:\/\/[^\s<>]+/y;
+const ANGLE_LINK = /<(https?:\/\/[^\s<>]+|mailto:[^\s<>]+)>/y;
+const LINK_TARGET = /\(\s*<?([^\s()<>]*(?:\([^\s()]*\)[^\s()<>]*)*)>?(?:\s+"[^"]*")?\s*\)/y;
+/** Sentence punctuation after a bare address belongs to the sentence. */
+const TRAILING = new Set([".", ",", ":", ";", "!", "?", "'", '"', ")", "]"]);
+
+/**
+ * How deep emphasis and links nest in each other. Past it, markers read as written: prose never
+ * goes this deep, and hostile text can't build a tree a thousand elements tall.
+ */
+const MAX_NESTING = 4;
 
 /** Reads emphasis, code, links and line breaks out of one block's text. */
 export function parseInline(text: string): Inline[] {
+  return readInline(text, 0, true);
+}
+
+/**
+ * One pass over the text. Every search ahead (a closing marker, a closing bracket) is made once
+ * for the whole text or remembered when it fails, so hostile text full of lone markers reads in
+ * linear time, not a pass per marker. A link's label never holds another link.
+ */
+function readInline(text: string, depth: number, links: boolean): Inline[] {
   const out: Inline[] = [];
   let plain = "";
   const flush = () => {
     if (plain) out.push({ kind: "text", text: plain });
     plain = "";
   };
+  const nest = depth < MAX_NESTING;
+  const brackets = nest && links && text.includes("[") ? matchBrackets(text) : null;
+  // A marker, or a run of backticks, that found no closer from one place finds none later on.
+  const unclosed = new Set<string>();
   let i = 0;
   while (i < text.length) {
     const c = text[i]!;
-    const rest = text.slice(i);
 
     if (c === "\\" && ESCAPABLE.test(text[i + 1] ?? "")) {
       plain += text[i + 1];
@@ -146,33 +175,42 @@ export function parseInline(text: string): Inline[] {
       continue;
     }
     if (c === "`") {
-      const ticks = /^`+/.exec(rest)![0];
-      const end = text.indexOf(ticks, i + ticks.length);
+      let n = i;
+      while (text[n] === "`") n++;
+      const ticks = text.slice(i, n);
+      const end = unclosed.has(ticks) ? -1 : text.indexOf(ticks, n);
       if (end > 0) {
         flush();
-        out.push({ kind: "code", text: text.slice(i + ticks.length, end).trim() || " " });
+        out.push({ kind: "code", text: text.slice(n, end).trim() || " " });
         i = end + ticks.length;
         continue;
       }
+      unclosed.add(ticks);
       plain += ticks;
-      i += ticks.length;
+      i = n;
       continue;
     }
-    const link = c === "[" || (c === "!" && text[i + 1] === "[") ? readLink(text, i) : null;
+    const link =
+      brackets && (c === "[" || (c === "!" && text[i + 1] === "["))
+        ? readLink(text, i, brackets)
+        : null;
     if (link) {
       flush();
       const href = safeHref(link.href);
       // An image is never drawn: it would load from wherever its address says, as the reader
       // reads. It becomes a link to the picture, named by its alt text.
       const label = link.image && !link.label ? link.href : link.label;
-      const children = link.image ? [{ kind: "text" as const, text: label }] : parseInline(label);
+      const children = link.image
+        ? [{ kind: "text" as const, text: label }]
+        : readInline(label, depth + 1, false);
       if (href) out.push({ kind: "link", href, children });
       else out.push(...children);
       i = link.end;
       continue;
     }
-    if (c === "<") {
-      const auto = /^<(https?:\/\/[^\s<>]+|mailto:[^\s<>]+)>/.exec(rest);
+    if (c === "<" && links) {
+      ANGLE_LINK.lastIndex = i;
+      const auto = ANGLE_LINK.exec(text);
       const href = auto ? safeHref(auto[1]!) : null;
       if (auto && href) {
         flush();
@@ -182,11 +220,13 @@ export function parseInline(text: string): Inline[] {
       }
     }
     // A bare address starts a line or follows a space or a bracket (not a quote: that is markup).
-    if (c === "h" && /^$|[\s(]/.test(text[i - 1] ?? "")) {
-      const auto = AUTOLINK.exec(rest);
+    if (c === "h" && links && /^$|[\s(]/.test(text[i - 1] ?? "")) {
+      AUTOLINK.lastIndex = i;
+      const auto = AUTOLINK.exec(text);
       if (auto) {
-        // Sentence punctuation after an address belongs to the sentence.
-        const url = auto[0].replace(/[.,:;!?'")\]]+$/, "");
+        let end = auto[0].length;
+        while (end > 0 && TRAILING.has(auto[0][end - 1]!)) end--;
+        const url = auto[0].slice(0, end);
         const href = safeHref(url);
         if (href) {
           flush();
@@ -196,16 +236,19 @@ export function parseInline(text: string): Inline[] {
         }
       }
     }
-    const marker = /^(\*\*|__|~~|\*|_)/.exec(rest)?.[0];
+    const marker = nest ? markerAt(text, i) : null;
     if (marker) {
-      const span = readSpan(text, i, marker);
+      const span = unclosed.has(marker) ? undefined : readSpan(text, i, marker);
       if (span) {
         flush();
         const kind = marker === "~~" ? "del" : marker.length === 2 ? "strong" : "em";
-        out.push({ kind, children: parseInline(span.inner) });
+        out.push({ kind, children: readInline(span.inner, depth + 1, links) });
         i = span.end;
         continue;
       }
+      // A marker that can't open (a space after it) says nothing of the ones after it; one that
+      // opened and found no closer does.
+      if (span === undefined) unclosed.add(marker);
       plain += marker;
       i += marker.length;
       continue;
@@ -217,27 +260,36 @@ export function parseInline(text: string): Inline[] {
   return out;
 }
 
-/** `[label](href)` or `![alt](src)` starting at `at`, with balanced brackets. */
+function markerAt(text: string, at: number): string | null {
+  const two = text.slice(at, at + 2);
+  if (two === "**" || two === "__" || two === "~~") return two;
+  return text[at] === "*" || text[at] === "_" ? text[at]! : null;
+}
+
+/** Where each `[` closes, or -1 where it never does: one pass, with a stack. */
+function matchBrackets(text: string): Int32Array {
+  const close = new Int32Array(text.length).fill(-1);
+  const open: number[] = [];
+  for (let j = 0; j < text.length; j++) {
+    if (text[j] === "\\") j++;
+    else if (text[j] === "[") open.push(j);
+    else if (text[j] === "]" && open.length) close[open.pop()!] = j;
+  }
+  return close;
+}
+
+/** `[label](href)` or `![alt](src)` starting at `at`. */
 function readLink(
   text: string,
   at: number,
+  brackets: Int32Array,
 ): { label: string; href: string; image: boolean; end: number } | null {
   const image = text[at] === "!";
   const open = image ? at + 1 : at;
-  let depth = 0;
-  let close = -1;
-  for (let j = open; j < text.length; j++) {
-    if (text[j] === "\\") j++;
-    else if (text[j] === "[") depth++;
-    else if (text[j] === "]" && --depth === 0) {
-      close = j;
-      break;
-    }
-  }
+  const close = brackets[open]!;
   if (close < 0 || text[close + 1] !== "(") return null;
-  const target = /^\(\s*<?([^\s()<>]*(?:\([^\s()]*\)[^\s()<>]*)*)>?(?:\s+"[^"]*")?\s*\)/.exec(
-    text.slice(close + 1),
-  );
+  LINK_TARGET.lastIndex = close + 1;
+  const target = LINK_TARGET.exec(text);
   if (!target) return null;
   return {
     label: text.slice(open + 1, close),
@@ -249,16 +301,21 @@ function readLink(
 
 /**
  * An emphasis span opened by `marker` at `at`: it must hug its text on both sides, and an
- * underscore must stand at a word's edge, so snake_case and 2 * 3 * 4 stay as they are.
+ * underscore must stand at a word's edge, so snake_case and 2 * 3 * 4 stay as they are. Null
+ * when the marker can't open a span here; undefined when it could but nothing closes it.
  */
-function readSpan(text: string, at: number, marker: string): { inner: string; end: number } | null {
+function readSpan(
+  text: string,
+  at: number,
+  marker: string,
+): { inner: string; end: number } | null | undefined {
   const from = at + marker.length;
   if (/\s/.test(text[from] ?? " ")) return null;
   if (marker[0] === "_" && /\w/.test(text[at - 1] ?? "")) return null;
   let j = from;
   for (;;) {
     j = text.indexOf(marker, j + 1);
-    if (j < 0) return null;
+    if (j < 0) return undefined;
     // `*a **b** c*`: a single marker skips over a double one.
     if (marker.length === 1 && text[j + 1] === marker) {
       j++;
