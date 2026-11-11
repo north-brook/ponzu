@@ -734,8 +734,8 @@ Person      = { id, name, login }
 | `review` | next | `{ state, reviewer: { login }, body, url, comments: [{ path, line, body }] }` | a user message, priority `next` |
 | `stop` | now | `{}` | interrupts the running turn and what was put in behind it; nothing goes in |
 
-`stop` is not yet in the database's `EVENT_KINDS`; the events module adds it. A review carries
-its first 20 line comments, each body clipped to 2,000 characters (`MAX_REVIEW_COMMENTS`): the
+A comment event is one new comment or one reply; an edited, resolved or reopened comment is a
+canvas edit (`edit`). A review carries its first 20 line comments, each body clipped to 2,000 characters (`MAX_REVIEW_COMMENTS`): the
 agent has no GitHub API token to read them with. `answer.question` is the question row's
 `kind` and `payload`, as the runner raised it.
 
@@ -876,7 +876,9 @@ path: "<owner>/<name>.git" }`. The API mints a one-hour installation token for t
 repository (`contents: write`, `metadata: read`), or reuses one with ten minutes or more
 left. 403 `forbidden` for any other host or repository, 404 `not_found` for Scratch, 502
 `upstream_unavailable` when GitHub fails. When GitHub refuses a token, git calls `erase`, and
-the API drops the token it was reusing. Both are safe to repeat.
+the API drops the token it was reusing. Both are safe to repeat. A token is kept for reuse only
+in the memory of the function instance that minted it, never in a row, so an `erase` that lands
+on another instance leaves the first one's in use until it has ten minutes left.
 
 At start the runner sets `author.*` to the person and `committer.*` to the App's bot in the
 global git config, clones the repository into `~/work/<name>` (or fetches, when the disk kept
@@ -900,6 +902,37 @@ Claude Code reports a session's running totals; the runner sends the difference 
 totals the last turn reported, which it keeps on disk across restarts. After a crash Claude
 Code restores the totals it saved at its last clean exit, and a turn that would come out
 below zero counts as zero.
+
+### People's side
+
+A person steers the run through the design's routes, each `requireDesign` with write access
+but the thread's history, which takes read:
+
+| Method | Path | Request | Response |
+|---|---|---|---|
+| POST | `/v1/designs/:id/messages` | `{ text, attachments?: string[] }` | 201, the `message` `ThreadItem` |
+| POST | `/v1/designs/:id/questions/:questionId/answer` | `{ answers? }` or `{ approved, note? }` | `{ id, status }` |
+| POST | `/v1/designs/:id/stop` | none | 204 |
+| GET | `/v1/designs/:id/thread?before=&limit=` | none | `{ items: ThreadItem[] }`, oldest first, at most 50 |
+| POST | `/v1/designs/:id/uploads` | `{ files: [{ name, contentType, size, sha256 }] }` | as `/v1/runner/uploads` |
+| POST | `/v1/designs/:id/uploads/complete` | `{ ids }` | as `/v1/runner/uploads/complete` |
+
+A message writes its thread item and its `now` event in one statement. Its `attachments` are
+files of the design by reference (`assets/<name>`), uploaded first; the item's payload and the
+event's carry them as `[{ ref, contentType }]`. A person uploads images only, and each is kept
+under its own name with six random characters added (`paste-k3v9qz.png`), so it never replaces
+one of the design's files. An answer is checked against what was asked (the texts of a
+`question`'s questions, or `approved` for a `plan` or `permission`); the first wins, and an
+answer to a question that is not open is 409 `question_closed`. It writes the `answer` event in
+the statement that closes the question, carrying the question as it was raised. A comment a
+person posts on the canvas reaches the thread the same way: the commit statement writes the
+`comment` item beside its event.
+
+Each of these, and every op a person commits (undo and redo included), then calls
+`requestWake` (`apps/api/src/sandboxes/wake.ts`): a message, an answer or a comment records a
+wake for the design, one at a time, and every reason pokes the runner when the design's
+sandbox is awake. A stop and an edit record none: a sleeping sandbox is running nothing to stop,
+and an edit is `later`.
 
 ### The other way: poke and health
 
@@ -932,6 +965,31 @@ contains ever shares an origin or a cookie with `ponzu.design`.
 
 The runner uploads a light and a dark preview of the first page after each batch of
 edits. The sidebar and the phone show those.
+
+Under a design's asset key:
+
+| Key | What |
+|---|---|
+| `assets/<name>` | a file of the design, as markup references it |
+| `previews/<seq>-light.png`, `previews/<seq>-dark.png` | the previews of `designs.preview_seq` |
+| `exports/<upload id>-<name>` | a file an export link reaches |
+
+A client builds a preview's address from the design's head: `<assets url>/<asset key>/previews/
+<preview seq>-<theme>.png`. A preview waits under `staging/` at the bucket's root until it is
+completed with its seq, and is copied into place then; a bucket lifecycle rule can clear what is
+never completed. Previews replaced by later ones are deleted.
+
+Uploads are signed (SigV4, `apps/api/src/deps/sigv4.ts`) for their type, exact size, SHA-256
+(`x-amz-checksum-sha256`, which R2 checks against the bytes), cache rule and disposition, for
+ten minutes; completing one checks that storage holds that size and checksum. Kinds and sizes:
+assets are the images, fonts and videos `add_asset` takes, up to 20 MB; exports PNG, JPEG or
+PDF, up to 50 MB; previews PNG, up to 5 MB; a person's upload an image, up to 20 MB.
+
+An SVG can run script when a browser opens it by itself, so it is stored with
+`Content-Disposition: attachment`: opened directly it is saved, not shown, and as an `<img>` or
+a CSS `url()` (which run no script) it draws as ever. Object storage cannot attach a
+Content-Security-Policy to an object; a response header rule on the assets zone could add one
+(`default-src 'none'; style-src 'unsafe-inline'; sandbox`) as a second wall.
 
 ## Billing
 

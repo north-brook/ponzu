@@ -69,6 +69,17 @@ export type ErrorCode =
   | "last_admin"
   /** GitHub says this person owns the workspace's account, so they are always an admin. */
   | "owner_is_admin"
+  /**
+   * A runner call without the design's current lease (`X-Ponzu-Runner`): a newer runner has
+   * started for the design. The runner stops for good.
+   */
+  | "superseded"
+  /** An answer to a question that is no longer open: someone answered first, or the run moved on. */
+  | "question_closed"
+  /** An upload larger than its kind of file may be. `details.maxBytes` says how large it may be. */
+  | "file_too_large"
+  /** An upload of a kind of file this place does not take, or whose name and type disagree. */
+  | "unsupported_file_type"
   | "internal";
 
 /**
@@ -110,7 +121,7 @@ export class UpstreamError extends Error {
   readonly status?: number;
 
   constructor(
-    readonly service: "workos" | "github",
+    readonly service: "workos" | "github" | "storage",
     message: string,
     options: { status?: number; cause?: unknown } = {},
   ) {
@@ -120,7 +131,11 @@ export class UpstreamError extends Error {
   }
 }
 
-const SERVICE_NAME = { workos: "the sign-in service", github: "GitHub" } as const;
+const SERVICE_NAME = {
+  workos: "the sign-in service",
+  github: "GitHub",
+  storage: "its file storage",
+} as const;
 
 /** What Hono's own middleware (a body limit, a rate limiter) means by each status it refuses with. */
 const REFUSALS: Record<number, [code: ErrorCode, message: string]> = {

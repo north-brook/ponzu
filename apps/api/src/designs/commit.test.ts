@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { applyOp, type Doc, MAX_COMMIT_OPS } from "@ponzu/core";
 import { el, sampleDoc } from "@ponzu/core/fixtures";
-import { claimEvents, getDesign, readDocSource, readOps } from "@ponzu/db";
+import { getDesign, listThreadItems, readDocSource, readOps } from "@ponzu/db";
+import { feedOf } from "@ponzu/db/testing";
 import type { RunnerActor } from "../auth/actor.ts";
 import {
   call,
@@ -190,7 +191,7 @@ describe("committing", () => {
       [3, "op_c"],
     ]);
     expect(more.body.committed.slice(0, 2)).toEqual(first.body.committed);
-    expect(await claimEvents(t.db, { designId: design.id })).toHaveLength(3);
+    expect(await feedOf(t.db, design.id)).toHaveLength(3);
   });
 
   test("a post that is malformed, too long, too large or repeats an id is refused whole", async () => {
@@ -319,7 +320,7 @@ describe("comments", () => {
 });
 
 describe("the event feed", () => {
-  const feed = (designId: string) => claimEvents(t.db, { designId });
+  const feed = (designId: string) => feedOf(t.db, designId);
   /** What the next module's runner reports; set by hand here. */
   const agentOn = (designId: string, state: string, boards: string) =>
     t.db.execute(
@@ -378,8 +379,13 @@ describe("the event feed", () => {
         userId,
         payload: {
           seq: 2,
-          summary: expect.any(String),
-          comments: [{ kind: "created", threadId: "th_a", artboardId: "ab_1", text: "Bigger" }],
+          threadId: "th_a",
+          messageId: "m_th_a",
+          text: "Bigger",
+          reply: false,
+          artboardId: "ab_1",
+          artboardName: "Home",
+          nodeId: null,
         },
       },
       {
@@ -388,27 +394,107 @@ describe("the event feed", () => {
         userId,
         payload: {
           seq: 3,
-          summary: expect.any(String),
-          comments: [{ kind: "created", threadId: "th_b", artboardId: "ab_2", text: "Bigger" }],
+          threadId: "th_b",
+          messageId: "m_th_b",
+          text: "Bigger",
+          reply: false,
+          artboardId: "ab_2",
+          artboardName: "Busy",
+          nodeId: null,
         },
       },
+      // Resolving a comment is a change to the canvas, not something said to the agent.
       {
-        kind: "comment",
-        priority: "next",
+        kind: "edit",
+        priority: "later",
         userId,
-        payload: {
-          seq: 4,
-          summary: expect.any(String),
-          comments: [{ kind: "status", threadId: "th_1", artboardId: "ab_1", status: "resolved" }],
-        },
+        payload: { seq: 4, summary: expect.any(String), artboards: [] },
       },
       {
         kind: "edit",
         priority: "later",
         userId,
-        payload: { seq: 5, summary: 'updated artboard "Home"', artboards: ["ab_1"] },
+        payload: {
+          seq: 5,
+          summary: 'updated artboard "Home"',
+          artboards: [{ id: "ab_1", name: "Home" }],
+        },
       },
     ]);
+  });
+
+  test("a new comment and a reply each show in the thread beside their event, by the person", async () => {
+    const design = await sample();
+    const reply = {
+      op: "thread.message",
+      id: "th_1",
+      message: { id: "m_yes", author: { kind: "user", name: "Maya" }, text: "Yes", createdAt: 0 },
+    };
+
+    await post(as("maya"), design.id, [
+      { id: "op_c1", op: comment("th_new", "ab_1") },
+      { id: "op_c2", op: reply },
+    ]);
+
+    const maya = ws.people.maya!;
+    const from = { id: maya.userId, name: "Maya", login: "maya" };
+    const thread = await listThreadItems(t.db, { designId: design.id });
+    expect(
+      thread.map(({ kind, userId, streaming, payload }) => ({ kind, userId, streaming, payload })),
+    ).toEqual([
+      {
+        kind: "comment",
+        userId: maya.userId,
+        streaming: false,
+        payload: {
+          threadId: "th_new",
+          messageId: "m_th_new",
+          text: "Bigger",
+          artboardId: "ab_1",
+          artboardName: "Home",
+          from,
+        },
+      },
+      {
+        kind: "comment",
+        userId: maya.userId,
+        streaming: false,
+        payload: {
+          threadId: "th_1",
+          messageId: "m_yes",
+          text: "Yes",
+          artboardId: "ab_1",
+          artboardName: "Home",
+          from,
+        },
+      },
+    ]);
+    expect(
+      (await feed(design.id)).map((event) => (event.payload as { reply: boolean }).reply),
+    ).toEqual([false, true]);
+  });
+
+  test("a person's ops ask for the design's sandbox, and a comment asks it to wake", async () => {
+    const design = await sample();
+    const wakes = async () => {
+      const result = await t.db.execute(
+        `select key from jobs where kind = 'sandbox.wake' and key = '${design.id}'`,
+      );
+      return (result as unknown as { rows: unknown[] }).rows.length;
+    };
+
+    await post(as("maya"), design.id, [
+      { id: "op_e", op: { op: "artboard.update", id: "ab_1", x: 9 } },
+    ]);
+    expect(await wakes()).toBe(0);
+
+    await post(as("maya"), design.id, [{ id: "op_c", op: comment("th_w", "ab_1") }]);
+    expect(await wakes()).toBe(1);
+    // The agent's own ops are not news to it.
+    await post(await runnerHeaders(t, design.id), design.id, [
+      { id: "op_r", op: { op: "artboard.update", id: "ab_1", x: 10 } },
+    ]);
+    expect((await feed(design.id)).map((event) => event.kind)).toEqual(["edit", "comment"]);
   });
 
   test("a comment is `next` while the agent is not working, whatever boards it last named", async () => {
@@ -528,6 +614,7 @@ describe("two function instances", () => {
     kind: "runner",
     tokenId: "rt_test",
     designId,
+    runnerId: "rnr_test",
   });
   const instance = () => ({ ...t.deps, docs: new DocCache() });
 

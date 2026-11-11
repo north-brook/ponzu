@@ -6,6 +6,7 @@ import {
   upsertRepos,
   upsertWorkspace,
 } from "@ponzu/db";
+import { RUNNER_HEADER, type RunnerSession } from "@ponzu/runner/protocol";
 import type { FakeInstallation, FakeRepository } from "./fake-github.ts";
 import type { SignedInPerson, TestApp } from "./index.ts";
 
@@ -112,10 +113,56 @@ export async function designIn(
   });
 }
 
-/** The headers a design's runner sends. */
-export async function runnerHeaders(t: TestApp, designId: string) {
+/** A design's runner as it is once started: its token, and the session that gave it the lease. */
+export interface StartedRunner {
+  token: string;
+  session: RunnerSession;
+  /** What it sends on every later call: the token, and the lease as `X-Ponzu-Runner`. */
+  headers: { authorization: string; [RUNNER_HEADER]: string };
+}
+
+/**
+ * A runner token for the design and a session through the real `POST /v1/runner/session`, so
+ * the runner holds the design's lease. Starting another for the same design supersedes this
+ * one, as in a sandbox.
+ */
+export async function startRunner(t: TestApp, designId: string): Promise<StartedRunner> {
   const { token } = await createRunnerToken(t.db, { designId, ttlSeconds: 3600 });
-  return { authorization: `Bearer ${token}` };
+  const started = await call(
+    t,
+    { authorization: `Bearer ${token}` },
+    "POST",
+    "/v1/runner/session",
+    {},
+  );
+  if (started.status !== 200) {
+    throw new Error(
+      `startRunner: the session answered ${started.status} ${JSON.stringify(started.body)}`,
+    );
+  }
+  const session = started.body as RunnerSession;
+  return {
+    token,
+    session,
+    headers: { authorization: `Bearer ${token}`, [RUNNER_HEADER]: session.runnerId },
+  };
+}
+
+/** The headers a design's runner sends, from a runner just started for it. */
+export async function runnerHeaders(t: TestApp, designId: string) {
+  return (await startRunner(t, designId)).headers;
+}
+
+/** A design in the workspace's repository, as `designIn` makes it, with its runner started. */
+export async function designWithRunner(
+  t: TestApp,
+  workspace: Workspace,
+  owner: string,
+  doc: Doc,
+  repo: "repo" | "scratch" = "repo",
+) {
+  const design = await designIn(t, workspace, owner, doc, repo);
+  return { design, runner: await startRunner(t, design.id) };
 }
 
 /** Calls the API and reads the answer, whatever it was. */

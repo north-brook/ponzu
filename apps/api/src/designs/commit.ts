@@ -15,7 +15,8 @@ import { type CommitInput, commitOps, type Design, findOps, type NewOp } from "@
 import type { Actor as Caller } from "../auth/actor.ts";
 import type { Deps } from "../deps/index.ts";
 import { ApiError } from "../http/errors.ts";
-import { actorOf, toCommittedOp } from "./actor.ts";
+import { requestWake, type WakeDeps } from "../sandboxes/wake.ts";
+import { actorOf, personFor, toCommittedOp } from "./actor.ts";
 import { keep, readCurrentDoc } from "./document.ts";
 import { eventsForPersonOps } from "./events.ts";
 import { refusal } from "./op-rules.ts";
@@ -28,7 +29,7 @@ import { refusal } from "./op-rules.ts";
  * whole post is worked out again on the newer document.
  */
 
-type CommitDeps = Pick<Deps, "db" | "docs" | "background" | "clock">;
+type CommitDeps = Pick<Deps, "db" | "docs" | "background" | "clock"> & WakeDeps;
 
 /** How many times a post is worked out again on a newer document before the caller is told to retry. */
 export const COMMIT_ATTEMPTS = 5;
@@ -71,12 +72,19 @@ export async function commitPost(
       return { committed: replayed.map(toCommittedOp), rejected, seq: current.seq };
     }
 
+    const events =
+      caller.kind === "user"
+        ? eventsForPersonOps(design, personFor(caller.user), fresh, {
+            before: current.doc,
+            after: doc,
+          })
+        : [];
     const result = await commitOps(deps.db, {
       designId: design.id,
       expectedSeq: current.seq,
       actor,
       ops: fresh,
-      events: caller.kind === "user" ? eventsForPersonOps(design, caller.user.id, fresh, doc) : [],
+      events,
       head: headChange(current.doc, doc),
     });
     if (result.kind === "conflict") continue;
@@ -89,6 +97,10 @@ export async function commitPost(
     const appended = result.ops.filter((stored) => !result.replayed.includes(stored.id));
     if (result.replayed.length === 0) {
       keep(deps, design.id, current, { seq: result.seq, doc, ops: appended });
+    }
+    if (caller.kind === "user" && appended.length > 0) {
+      const commented = events.some((event) => event.kind === "comment");
+      await requestWake(deps, design.id, commented ? "comment" : "edit");
     }
     const committed = [...replayed, ...result.ops].sort((a, b) => a.seq - b.seq);
     return { committed: committed.map(toCommittedOp), rejected, seq: result.seq };

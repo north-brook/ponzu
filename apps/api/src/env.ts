@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { R2Config } from "./deps/storage.ts";
 import { type MinimumVersions, parseMinimumVersions } from "./http/client-version.ts";
 
 /**
@@ -18,6 +19,8 @@ const schema = z.object({
   GITHUB_APP_SLUG: z.string().regex(/^[a-z0-9-]+$/),
   /** What GitHub signs each webhook delivery with (the App's webhook secret). */
   GITHUB_WEBHOOK_SECRET: z.string().min(32),
+  /** The GitHub user id of the App's bot, `<slug>[bot]`: who commits are committed by. */
+  GITHUB_APP_BOT_USER_ID: z.coerce.number().int().positive(),
   /** What Vercel's cron sends as its bearer token: the only way into `/v1/cron`. */
   CRON_SECRET: z.string().min(32),
   BOAT_API_KEY: z.string(),
@@ -28,6 +31,11 @@ const schema = z.object({
   NEON_REALTIME_SECRET: z.string(),
   /** Where design files are served from, without a trailing slash: `https://assets.ponzu.cloud`. */
   PONZU_ASSETS_URL: z.url(),
+  /** The Cloudflare R2 bucket behind PONZU_ASSETS_URL, and an API token that can write it. */
+  R2_ACCOUNT_ID: z.string().regex(/^[0-9a-f]{32}$/),
+  R2_ACCESS_KEY_ID: z.string(),
+  R2_SECRET_ACCESS_KEY: z.string(),
+  R2_BUCKET: z.string(),
   /** Keys that were PONZU_VAULT_KEY before, comma-separated, so what they sealed still opens. */
   PONZU_VAULT_OLD_KEYS: z.string().optional(),
   /** The oldest client each platform may run, like `macos=2.1.0,ios=1.3.0`. Unset: no gate. */
@@ -53,12 +61,14 @@ export interface Env {
     privateKey: string;
     slug: string;
     webhookSecret: string;
+    botUserId: number;
   };
   cronSecret: string;
   boatApiKey: string;
   vault: { key: string; oldKeys: string[] };
   realtime: { url: string; secret: string };
   assetsUrl: string;
+  r2: R2Config;
   minimumClientVersions: MinimumVersions;
   commit: string | null;
 }
@@ -95,6 +105,7 @@ export function readEnv(source: Record<string, string | undefined>): Env {
       privateKey: env.GITHUB_APP_PRIVATE_KEY,
       slug: env.GITHUB_APP_SLUG,
       webhookSecret: env.GITHUB_WEBHOOK_SECRET,
+      botUserId: env.GITHUB_APP_BOT_USER_ID,
     },
     cronSecret: env.CRON_SECRET,
     boatApiKey: env.BOAT_API_KEY,
@@ -104,6 +115,12 @@ export function readEnv(source: Record<string, string | undefined>): Env {
     },
     realtime: { url: env.NEON_REALTIME_URL, secret: env.NEON_REALTIME_SECRET },
     assetsUrl: env.PONZU_ASSETS_URL.replace(/\/+$/, ""),
+    r2: {
+      accountId: env.R2_ACCOUNT_ID,
+      accessKeyId: env.R2_ACCESS_KEY_ID,
+      secretAccessKey: env.R2_SECRET_ACCESS_KEY,
+      bucket: env.R2_BUCKET,
+    },
     minimumClientVersions,
     commit: env.VERCEL_GIT_COMMIT_SHA ?? null,
   };

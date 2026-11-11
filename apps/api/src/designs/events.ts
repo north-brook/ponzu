@@ -1,12 +1,21 @@
-import type { Op } from "@ponzu/core";
-import { type Doc, summarize, threadEvents, touchedArtboards } from "@ponzu/core";
+import {
+  type Doc,
+  findArtboard,
+  type Op,
+  summarize,
+  type Thread,
+  touchedArtboards,
+} from "@ponzu/core";
 import type { Design, EventPriority, OpEvent } from "@ponzu/db";
+import type { CommentEvent, EditEvent, Person, ThreadContent } from "@ponzu/runner/protocol";
 
 /*
- * What the agent hears about a person's ops (docs/cloud.md, "Events"). A comment is `now`
- * when it is on a board the agent is working on and `next` otherwise; any other change to the
- * canvas is `later`, for the agent to see before it next touches that board. The runner's own
- * ops are not news to it, so they make no events.
+ * What the agent hears about a person's ops (docs/cloud.md, "Events"), in the shapes of the
+ * runner protocol. A new comment or a reply is a `comment` event, `now` when it is on a board
+ * the agent is working on and `next` otherwise, with the `comment` thread item that shows it in
+ * the thread; any other change to the canvas (an edited or resolved comment among them) is an
+ * `edit`, `later`, for the agent to see before it next touches that board. The runner's own ops
+ * are not news to it, so they make no events.
  */
 
 /**
@@ -17,46 +26,80 @@ export function agentBoards(design: Pick<Design, "agentState" | "agentArtboards"
   return design.agentState === "working" ? design.agentArtboards : [];
 }
 
+type CommentItem = Extract<ThreadContent, { kind: "comment" }>["payload"];
+
 /**
- * One event per op a person is committing, read against the document after them. They are
- * committed with the ops, which give each its `payload.seq`.
+ * The events of each op a person is committing, read against the document before and after
+ * them. They are committed with the ops, which give each its `payload.seq`.
  */
 export function eventsForPersonOps(
   design: Pick<Design, "agentState" | "agentArtboards">,
-  userId: string,
+  person: Person,
   ops: { id: string; op: Op }[],
-  doc: Doc,
+  docs: { before: Doc; after: Doc },
 ): OpEvent[] {
   const working = new Set(agentBoards(design));
-  return ops.map(({ id, op }) => {
-    const base = { opId: id, userId };
-    const summary = summarize(doc, op);
-    const comments = threadEvents(op).map((event) => {
-      const threadId = event.kind === "created" ? event.thread.id : event.id;
-      const thread =
-        event.kind === "created" ? event.thread : doc.threads.find(({ id }) => id === threadId);
-      return {
-        kind: event.kind,
-        threadId,
-        artboardId: thread?.artboardId ?? null,
-        ...(event.kind === "created" ? { text: event.thread.messages[0]?.text ?? "" } : {}),
-        ...(event.kind === "message" || event.kind === "edited" ? { text: event.text } : {}),
-        ...(event.kind === "status" ? { status: event.status } : {}),
-      };
-    });
+  return ops.flatMap(({ id, op }): OpEvent[] => {
+    const base = { opId: id, userId: person.id };
+    const comments = commentsIn(op, docs.after);
     if (comments.length === 0) {
-      return {
-        ...base,
-        kind: "edit",
-        priority: "later",
-        payload: { summary, artboards: touchedArtboards(doc, op) },
-      };
+      const artboards = touchedArtboards(docs.after, op).map((board) => ({
+        id: board,
+        name: artboardName(docs, board) ?? "",
+      }));
+      const payload: EditEvent = { summary: summarize(docs.after, op), artboards };
+      return [{ ...base, kind: "edit", priority: "later", payload: { ...payload } }];
     }
-    const priority: EventPriority = comments.some(
-      ({ artboardId }) => artboardId !== null && working.has(artboardId),
-    )
-      ? "now"
-      : "next";
-    return { ...base, kind: "comment", priority, payload: { summary, comments } };
+    return comments.map((comment) => {
+      const priority: EventPriority =
+        comment.artboardId !== null && working.has(comment.artboardId) ? "now" : "next";
+      const item: CommentItem = {
+        threadId: comment.threadId,
+        messageId: comment.messageId,
+        text: comment.text,
+        artboardId: comment.artboardId,
+        artboardName: comment.artboardName,
+        from: person,
+      };
+      return { ...base, kind: "comment", priority, payload: { ...comment }, comment: { ...item } };
+    });
   });
+}
+
+/** The new comments and replies an op makes, as the agent is told of them. */
+function commentsIn(op: Op, doc: Doc): CommentEvent[] {
+  if (op.op === "batch") return op.ops.flatMap((inner) => commentsIn(inner, doc));
+  if (op.op === "thread.create") {
+    const [first] = op.thread.messages;
+    return first ? [comment(doc, op.thread, first.id, first.text, false)] : [];
+  }
+  if (op.op === "thread.message") {
+    const thread = doc.threads.find(({ id }) => id === op.id);
+    return thread ? [comment(doc, thread, op.message.id, op.message.text, true)] : [];
+  }
+  return [];
+}
+
+function comment(
+  doc: Doc,
+  thread: Thread,
+  messageId: string,
+  text: string,
+  reply: boolean,
+): CommentEvent {
+  const artboardId = thread.artboardId ?? null;
+  return {
+    threadId: thread.id,
+    messageId,
+    text,
+    reply,
+    artboardId,
+    artboardName: artboardId ? (findArtboard(doc, artboardId)?.artboard.name ?? null) : null,
+    nodeId: thread.nodeId ?? null,
+  };
+}
+
+/** A board's name after the ops, or before them for one they deleted. */
+function artboardName(docs: { before: Doc; after: Doc }, id: string): string | undefined {
+  return (findArtboard(docs.after, id) ?? findArtboard(docs.before, id))?.artboard.name;
 }

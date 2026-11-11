@@ -1,5 +1,6 @@
 import type { Actor, CommittedOp } from "@ponzu/core";
-import type { StoredOp } from "@ponzu/db";
+import type { StoredOp, User } from "@ponzu/db";
+import type { Person } from "@ponzu/runner/protocol";
 import type { Actor as Caller } from "../auth/actor.ts";
 
 /** The agent, as a design's ops and comments name it. A runner acts as it, on its one design. */
@@ -15,6 +16,11 @@ export function actorOf(caller: Caller): Actor {
     name: user.name ?? user.githubLogin,
     ...(user.avatarUrl ? { avatarUrl: user.avatarUrl } : {}),
   };
+}
+
+/** A person as the runner protocol names them: in events, and in the thread. */
+export function personFor(user: Pick<User, "id" | "name" | "githubLogin">): Person {
+  return { id: user.id, name: user.name ?? user.githubLogin, login: user.githubLogin };
 }
 
 /** An op from the log as clients receive it. */

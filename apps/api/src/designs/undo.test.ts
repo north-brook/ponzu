@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { applyOp, type Doc } from "@ponzu/core";
 import { sampleDoc } from "@ponzu/core/fixtures";
-import { claimEvents, readDocSource } from "@ponzu/db";
+import { readDocSource } from "@ponzu/db";
+import { feedOf } from "@ponzu/db/testing";
 import {
   call,
   designIn,
@@ -127,13 +128,13 @@ test("an op whose inverse no longer applies is passed over", async () => {
 
 test("a person's undo is news to the agent; someone who may only look cannot undo", async () => {
   const { design, act } = await touched();
-  await claimEvents(t.db, { designId: design.id });
+  const before = (await feedOf(t.db, design.id)).length;
 
   await act(as("maya"), "undo");
   const reader = await act(as("ines"), "undo");
 
-  expect(
-    (await claimEvents(t.db, { designId: design.id })).map((e) => [e.kind, e.priority]),
-  ).toEqual([["edit", "later"]]);
+  expect((await feedOf(t.db, design.id)).slice(before).map((e) => [e.kind, e.priority])).toEqual([
+    ["edit", "later"],
+  ]);
   expect([reader.status, reader.body.error.code]).toEqual([403, "forbidden"]);
 });
