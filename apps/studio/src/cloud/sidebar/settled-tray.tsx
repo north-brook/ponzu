@@ -1,6 +1,6 @@
 import { ArrowRight01Icon } from "@hugeicons/core-free-icons";
 import type { DesignSummary } from "../model.ts";
-import { orderSettled } from "../status.ts";
+import { settledShown } from "../status.ts";
 import { cn } from "../ui/cn.ts";
 import { FadeScroll } from "../ui/fade-scroll.tsx";
 import { Icon } from "../ui/icon.tsx";
@@ -8,9 +8,11 @@ import { DesignList, DesignListSkeleton } from "./design-list.tsx";
 import type { RowHandlers } from "./design-row.tsx";
 
 /**
- * Designs whose pull request merged, folded into a tray at the sidebar's foot. Expanded, they
- * open in place above it, most recently settled first and without indicators; opening one
- * reopens it. `designs` is null while they load.
+ * Designs whose pull request merged, folded into a section at the sidebar's foot: its header,
+ * and under it, when it is open, the settled designs, most recently settled first and without
+ * indicators. Closed, it still shows the design that is open in the window if that one is
+ * settled, alone under the header, so the row you are in is never out of sight. `designs` is
+ * null while they load.
  */
 export function SettledTray({
   count,
@@ -26,25 +28,12 @@ export function SettledTray({
   onExpandedChange: (expanded: boolean) => void;
   openId: string | null;
 }) {
+  const shown = designs ? settledShown(designs, expanded, openId) : expanded ? null : [];
   return (
     <div className="flex min-h-0 shrink-0 flex-col">
-      {expanded ? (
-        <FadeScroll id="settled" className="max-h-[45vh] border-sep border-t pt-1.5">
-          {designs ? (
-            <DesignList
-              designs={orderSettled(designs)}
-              openId={openId}
-              label="Settled designs"
-              indicators={false}
-              {...handlers}
-            />
-          ) : (
-            <DesignListSkeleton rows={Math.min(count, 3)} />
-          )}
-        </FadeScroll>
-      ) : null}
       <button
         type="button"
+        data-moves="settled"
         aria-expanded={expanded}
         aria-controls="settled"
         onClick={() => onExpandedChange(!expanded)}
@@ -62,6 +51,19 @@ export function SettledTray({
           )}
         />
       </button>
+      <FadeScroll id="settled" className={cn("max-h-[45vh]", shown?.length !== 0 && "pt-px")}>
+        {shown === null ? (
+          <DesignListSkeleton rows={Math.min(count, 3)} />
+        ) : shown.length ? (
+          <DesignList
+            designs={shown}
+            openId={openId}
+            label="Settled designs"
+            indicators={false}
+            {...handlers}
+          />
+        ) : null}
+      </FadeScroll>
     </div>
   );
 }

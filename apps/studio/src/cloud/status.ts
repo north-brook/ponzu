@@ -52,3 +52,17 @@ export function orderDesigns(designs: DesignSummary[], workspace: WorkspaceKind)
 export function orderSettled(designs: DesignSummary[]): DesignSummary[] {
   return designs.toSorted((a, b) => (b.settledAt ?? "").localeCompare(a.settledAt ?? ""));
 }
+
+/**
+ * The settled rows the sidebar shows: all of them, most recent first, while the section is
+ * open; closed, only the design that is open in the window, if it is one of them, so the row
+ * you are in is never out of sight.
+ */
+export function settledShown(
+  designs: DesignSummary[],
+  expanded: boolean,
+  openId: string | null,
+): DesignSummary[] {
+  const ordered = orderSettled(designs);
+  return expanded ? ordered : ordered.filter((design) => design.id === openId);
+}
