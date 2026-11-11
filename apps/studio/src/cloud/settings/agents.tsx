@@ -23,14 +23,16 @@ export interface AgentDefaults {
   effort: Effort;
 }
 
-export interface AgentsSectionProps {
-  /** The person's Claude; null when none is connected. */
-  connection: ClaudeConnection | null;
-  /**
-   * Connecting one, or switching to the other way: the setup's card in place of the connected
-   * rows. Null shows what is connected.
-   */
-  entry: ClaudeCardProps | null;
+/**
+ * The person's Claude, and the setup's card in place of its rows while connecting one. With
+ * nothing connected there is always the card, so the section always offers a way to connect;
+ * with one connected, `entry` is switching to the other way, and null shows what is connected.
+ */
+export type AgentsConnection =
+  | { connection: null; entry: ClaudeCardProps }
+  | { connection: ClaudeConnection; entry: ClaudeCardProps | null };
+
+export type AgentsSectionProps = AgentsConnection & {
   onDisconnect: () => void;
   /** Connect the other way instead of the one connected: the wiring opens `entry` on it. */
   onSwitch: () => void;
@@ -42,7 +44,7 @@ export interface AgentsSectionProps {
   onDefaultsChange: (defaults: AgentDefaults) => void;
   /** The plan's windows, as last seen; null for an API key, which has none. */
   limits: ClaudeLimit[] | null;
-}
+};
 
 /**
  * Agents: which agent account is connected, the defaults a new design starts with, and the

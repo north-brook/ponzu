@@ -12,6 +12,7 @@ import type { Repo } from "../model.ts";
 import { Waiting } from "../setup/step.tsx";
 import { ago, useNow } from "../time.ts";
 import { TextField } from "../ui/field.tsx";
+import { useFocusReturn } from "../ui/focus-return.ts";
 import { Icon } from "../ui/icon.tsx";
 import {
   canSaveSecret,
@@ -111,7 +112,7 @@ function RepoEnvironmentRow({
         {open ? null : (
           <span className="mr-1 flex items-center gap-[5px]" aria-hidden>
             {base.stack.map((item) => (
-              <StackLogo key={item.slug} slug={item.slug} size={13} />
+              <StackLogo key={item.slug} item={item} size={13} />
             ))}
             <span className="w-1.5" />
             <Icon icon={Key01Icon} size={13} stroke={1.8} className="text-faint" />
@@ -136,7 +137,7 @@ function RepoEnvironmentRow({
                 key={item.slug}
                 className="mr-2.5 inline-flex items-center gap-[5px] whitespace-nowrap text-11 text-muted"
               >
-                <StackLogo slug={item.slug} size={11} />
+                <StackLogo item={item} size={11} />
                 {item.label}
               </span>
             ))}
@@ -195,9 +196,20 @@ function BaseAge({ base }: { base: RepoEnvironment["base"] }) {
   ) : null;
 }
 
-function StackLogo({ slug, size }: { slug: StackItem["slug"]; size: number }) {
-  const logo = STACK_LOGOS[slug];
-  if (!logo) return null;
+/** A stack item's mark: its logo, or for a slug without one its label's first letter in a tile. */
+function StackLogo({ item, size }: { item: StackItem; size: number }) {
+  const logo = STACK_LOGOS[item.slug];
+  if (!logo) {
+    return (
+      <span
+        aria-hidden
+        className="grid shrink-0 place-items-center rounded-3 bg-step font-semibold text-muted leading-none"
+        style={{ width: size, height: size, fontSize: Math.round(size * 0.7) }}
+      >
+        {item.label.charAt(0).toUpperCase()}
+      </span>
+    );
+  }
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden className="block shrink-0">
       <path d={logo.d} style={{ fill: logo.color }} />
@@ -220,6 +232,12 @@ function Secrets({
   onRemove: (name: string) => void;
 }) {
   const [draft, setDraft] = useState<Draft | null>(null);
+  // An edit ends with focus back on what opened it: Add, or the secret's pencil.
+  const focus = useFocusReturn();
+  const close = () => {
+    focus.returnTo(draft?.replacing ?? "add");
+    setDraft(null);
+  };
   const save = () => {
     if (!draft) return;
     const ok = draft.replacing
@@ -227,14 +245,14 @@ function Secrets({
       : canSaveSecret(draft.name, draft.value, env.secrets);
     if (!ok) return;
     onSave(draft.name, draft.value);
-    setDraft(null);
+    close();
   };
   const keys = (e: KeyboardEvent) => {
     if (e.key === "Enter") {
       e.preventDefault();
       save();
     } else if (e.key === "Escape") {
-      setDraft(null);
+      close();
     }
   };
   const adding = draft && !draft.replacing ? draft : null;
@@ -244,6 +262,7 @@ function Secrets({
       <CardHead icon={Key01Icon} label="Secrets">
         {canEdit && !adding ? (
           <button
+            ref={focus.target("add")}
             type="button"
             onClick={() => setDraft({ name: "", value: "", replacing: null })}
             className="flex cursor-default items-center gap-[5px] rounded-4 font-medium text-12 text-muted outline-none transition-colors duration-(--dur-hover) focus-ring hover:text-ink"
@@ -274,6 +293,7 @@ function Secrets({
               type="button"
               onClick={() => {
                 onRemove(secret.name);
+                focus.returnTo("add");
                 setDraft(null);
               }}
               className="cursor-default rounded-4 font-medium text-12 text-danger outline-none focus-ring hover:underline"
@@ -286,6 +306,7 @@ function Secrets({
             <span className="font-mono text-12 text-muted">{SECRET_MASK}</span>
             {canEdit ? (
               <RowIcon
+                ref={focus.target(secret.name)}
                 icon={PencilEdit02Icon}
                 label={`Edit ${secret.name}`}
                 onClick={() => setDraft({ name: secret.name, value: "", replacing: secret.name })}

@@ -3,6 +3,7 @@ import { type ReactNode, useState } from "react";
 import { Avatar } from "../ui/avatar.tsx";
 import { cn } from "../ui/cn.ts";
 import { TextField } from "../ui/field.tsx";
+import { useFocusReturn } from "../ui/focus-return.ts";
 import {
   atCap,
   type CardBrand as Brand,
@@ -196,7 +197,8 @@ function PlanRow({
 
 /**
  * The monthly cap, which the pencil turns into a field in place: Return or leaving it saves,
- * Escape puts it back. It can't go below what this month has billed.
+ * Escape puts it back. It can't go below what this month has billed; a cap below that stays in
+ * the field with the reason until it is changed or Escape puts it back.
  */
 function CapRow({
   capUsd,
@@ -212,6 +214,7 @@ function CapRow({
   onChange: (usd: number) => void;
 }) {
   const [typed, setTyped] = useState<string | null>(null);
+  const focus = useFocusReturn();
   const parsed = typed === null ? null : parseCap(typed, billed);
   const commit = () => {
     if (parsed?.ok && parsed.usd !== capUsd) onChange(parsed.usd);
@@ -223,6 +226,7 @@ function CapRow({
       action={
         canManage && typed === null ? (
           <RowIcon
+            ref={focus.target("cap")}
             icon={PencilEdit02Icon}
             label="Change cap"
             onClick={() => setTyped(String(capUsd))}
@@ -245,10 +249,19 @@ function CapRow({
             value={typed}
             onChange={(e) => setTyped(e.target.value)}
             onFocus={(e) => e.target.select()}
-            onBlur={() => (parsed?.ok ? commit() : setTyped(null))}
+            // A cap it can't be stays in the field with its reason, rather than vanishing.
+            onBlur={() => parsed?.ok && commit()}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && parsed?.ok) commit();
-              if (e.key === "Escape") setTyped(null);
+              if (e.key === "Enter" && parsed?.ok) {
+                // Held back, or the Return would go on to press the pencil it focuses.
+                e.preventDefault();
+                focus.returnTo("cap");
+                commit();
+              }
+              if (e.key === "Escape") {
+                focus.returnTo("cap");
+                setTyped(null);
+              }
             }}
             className="w-[120px]"
           />
