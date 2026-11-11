@@ -162,10 +162,10 @@ jobs:
           path: apps/web/.next/cache
           key: next-${{ runner.os }}-${{ hashFiles('bun.lock') }}-${{ github.sha }}
 
-  test:
-    # The tests alone; "Lint, typecheck, build" runs the rest. Main's ruleset requires this
-    # check by its name.
-    name: Check, typecheck, test
+  tests:
+    # The tests alone; "Lint, typecheck, build" runs the rest, and "Check, typecheck, test"
+    # reports both.
+    name: Tests
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 10
     env:
@@ -230,6 +230,23 @@ jobs:
         with:
           path: ${{ env.TIMINGS }}
           key: bun-timings-${{ github.sha }}
+
+  test:
+    # Main's ruleset requires this check by its name. It used to run the lint, typecheck,
+    # builds and tests in one job; they now run beside each other in the two above, and this
+    # passes only when both did, so the required check still fails when any of them does.
+    name: Check, typecheck, test
+    needs: [checks, tests]
+    if: ${{ !cancelled() }}
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    steps:
+      - env:
+          CHECKS: ${{ needs.checks.result }}
+          TESTS: ${{ needs.tests.result }}
+        run: |
+          echo "lint, typecheck, build: $CHECKS; tests: $TESTS"
+          [ "$CHECKS" = success ] && [ "$TESTS" = success ]
 
   database:
     # The cloud database's migrations and queries on a real Postgres. Every
@@ -400,8 +417,7 @@ jobs:
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
       - name: The CLI and the app's own paths, as Windows writes them
         if: env.RUN == 'true'
-        # The CLI's tests that need Windows itself ("Check, typecheck, test"
-        # runs the rest), and the app's serving of the studio and reading of
+        # The CLI's tests that need Windows itself ("Tests" runs the rest), and the app's serving of the studio and reading of
         # links with Windows' separators.
         run: |
           bun test apps/cli/src/host.test.ts apps/cli/src/command.test.ts -t "on Windows"
@@ -430,7 +446,7 @@ jobs:
 
   mobile-checks:
     # The iPhone app on its own: its typecheck ("Lint, typecheck, build" also
-    # runs it) and tests ("Check, typecheck, test" also runs them, with
+    # runs it) and tests ("Tests" also runs them, with
     # everything), and an iOS export, which proves Metro, NativeWind and every
     # import resolve without a Mac. The export is all that is its own, and it
     # was the last check to finish on a third of pull requests, so pull
