@@ -7,8 +7,11 @@ export const SCROLL_FADE = 16;
 /**
  * A region that scrolls on one axis and fades out at an edge with more beyond it, so a list cut
  * short reads as cut short. Nothing fades while everything fits.
+ *
+ * Ours, not shadcn's scroll-area: that one draws its own scrollbars over Radix's, where the Mac
+ * app keeps the system's thin native one and fades the cut edge instead.
  */
-export function ScrollArea({
+export function FadeScroll({
   axis = "y",
   className,
   style,

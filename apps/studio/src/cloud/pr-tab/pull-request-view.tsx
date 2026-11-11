@@ -25,6 +25,7 @@ import { Icon, type IconSvgElement } from "../ui/icon.tsx";
 import { safeHref } from "../ui/markdown.ts";
 import { AgentMark } from "../ui/marks.tsx";
 import { Prose } from "../ui/prose.tsx";
+import { Skeleton } from "../ui/skeleton.tsx";
 import { orderChecks } from "./diff.ts";
 import { Files } from "./files.tsx";
 
@@ -69,7 +70,7 @@ export function PullRequestView({
       <div className="absolute inset-0 grid grid-cols-[380px_minmax(0,1fr)] gap-12 pr-12 pl-14">
         <div className={cn(column, "gap-[26px]")}>
           <div className="flex flex-col gap-3.5">
-            <span className="breathe h-[29px] w-4/5 rounded-6 bg-hover" />
+            <Skeleton className="h-[29px] w-4/5 rounded-6" />
             <Subtitle state={state.summary.state} number={state.summary.number} />
           </div>
           {state.kind === "error" ? (
@@ -80,15 +81,15 @@ export function PullRequestView({
               </Button>
             </div>
           ) : (
-            <Skeleton rows={6} />
+            <DetailsSkeleton rows={6} />
           )}
         </div>
         <div className={cn(column, "gap-2.5")} aria-hidden>
-          <span className="breathe h-3.5 w-12 rounded-3 bg-hover" />
+          <Skeleton className="h-3.5 w-12 rounded-3" />
           {[0, 1, 2].map((i) => (
-            <span
+            <Skeleton
               key={i}
-              className="breathe h-9 rounded-10 bg-surface shadow-file-card"
+              className="h-9 rounded-10 bg-surface shadow-file-card"
               style={{ animationDelay: `${i * 120}ms` }}
             />
           ))}
@@ -361,15 +362,15 @@ function ReviewRow({ review, viewerLogin }: { review: PrReview; viewerLogin: str
   );
 }
 
-function Skeleton({ rows }: { rows: number }) {
+function DetailsSkeleton({ rows }: { rows: number }) {
   return (
     <div role="status" aria-label="Loading the pull request" className="flex flex-col gap-2">
-      <span className="breathe mb-2 h-2.5 w-12 rounded-3 bg-hover" />
+      <Skeleton className="mb-2 h-2.5 w-12 rounded-3" />
       {Array.from({ length: rows }, (_, i) => (
-        <span
+        <Skeleton
           // biome-ignore lint/suspicious/noArrayIndexKey: placeholders have nothing else to tell them apart
           key={i}
-          className="breathe h-5 rounded-4 bg-hover"
+          className="h-5 rounded-4"
           style={{ width: `${88 - (i % 3) * 16}%`, animationDelay: `${i * 120}ms` }}
         />
       ))}

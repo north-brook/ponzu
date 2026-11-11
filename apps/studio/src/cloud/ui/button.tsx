@@ -1,16 +1,19 @@
+/*
+ * shadcn/ui's button, with the design's variants in place of shadcn's. Every button has the same
+ * four states: hover lifts it a wash, pressed a second, keyboard focus rings it, disabled fades
+ * it and takes it out of reach. A menu or popover's trigger keeps its wash while open, read from
+ * aria-expanded (Radix's data-state is the tooltip's on a trigger that has one); a pane toggle,
+ * which has no popup, never shows an open state. Most are sized by the caller, as the design
+ * sizes each one; `size` names the ones that repeat.
+ */
 import { ArrowUp02Icon } from "@hugeicons/core-free-icons";
 import { cva, type VariantProps } from "class-variance-authority";
-import type { ComponentProps } from "react";
+import { Slot } from "radix-ui";
+import type * as React from "react";
 import { cn } from "./cn.ts";
 import { Icon } from "./icon.tsx";
 import { Tip } from "./tooltip.tsx";
 
-/*
- * Every button has the same four states: hover lifts it a wash, pressed a second, keyboard focus
- * rings it, disabled fades it and takes it out of reach. A menu or popover's trigger keeps its
- * wash while open, read from aria-expanded (Radix's data-state is the tooltip's on a trigger
- * that has one); a pane toggle, which has no popup, never shows an open state.
- */
 const buttonVariants = cva(
   "app-no-drag inline-flex shrink-0 cursor-default select-none items-center whitespace-nowrap outline-none transition-colors duration-(--dur-hover) focus-ring disabled:pointer-events-none disabled:opacity-35",
   {
@@ -34,14 +37,34 @@ const buttonVariants = cva(
         /** An icon alone. Size it with a class; it is square unless told otherwise. */
         icon: "justify-center rounded-7 text-muted hover:bg-hover active:bg-press [&[aria-haspopup][aria-expanded=true]]:bg-hover",
       },
+      size: {
+        /** As the variant and the caller's class draw it. */
+        default: "",
+        /** A dialog's button: 36 tall, sharing the row's width. */
+        dialog: "h-9 flex-1 px-3.5 text-12",
+      },
     },
+    defaultVariants: { size: "default" },
   },
 );
 
-export type ButtonProps = ComponentProps<"button"> & VariantProps<typeof buttonVariants>;
+export type ButtonProps = React.ComponentProps<"button"> &
+  VariantProps<typeof buttonVariants> & {
+    /** Draws the button's look on its one child (a link, a Radix trigger) instead of a button. */
+    asChild?: boolean;
+  };
 
-export function Button({ variant, className, type = "button", ...props }: ButtonProps) {
-  return <button type={type} className={cn(buttonVariants({ variant }), className)} {...props} />;
+function Button({ className, variant, size, asChild = false, type, ...props }: ButtonProps) {
+  const Comp = asChild ? Slot.Root : "button";
+  return (
+    <Comp
+      data-slot="button"
+      data-variant={variant ?? undefined}
+      type={asChild ? type : (type ?? "button")}
+      className={cn(buttonVariants({ variant, size }), className)}
+      {...props}
+    />
+  );
 }
 
 /** An icon button, named for assistive tech and, on hover, with its tip and shortcut. */
@@ -75,7 +98,7 @@ export function SendButton({
   onClick,
   className,
   ...props
-}: Omit<ButtonProps, "variant"> & { size: 28 | 32; iconSize: number }) {
+}: Omit<ButtonProps, "variant" | "size" | "asChild"> & { size: 28 | 32; iconSize: number }) {
   return (
     <Tip label="Send" keys={["↩"]} side="top">
       <button
@@ -95,3 +118,5 @@ export function SendButton({
     </Tip>
   );
 }
+
+export { Button, buttonVariants };

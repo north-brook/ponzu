@@ -1,10 +1,10 @@
 import { ArrowUpRight01Icon } from "@hugeicons/core-free-icons";
 import type { DesignAccess, DesignMember, Repo } from "../model.ts";
 import { Avatar } from "../ui/avatar.tsx";
+import { FadeScroll } from "../ui/fade-scroll.tsx";
 import { Icon } from "../ui/icon.tsx";
 import { GithubMark } from "../ui/marks.tsx";
 import { PopoverContent } from "../ui/popover.tsx";
-import { ScrollArea } from "../ui/scroll-area.tsx";
 
 const ACCESS: Record<DesignAccess, string> = {
   owner: "Owner",
@@ -54,7 +54,7 @@ export function SharePopover({
           <Icon icon={ArrowUpRight01Icon} size={11} stroke={1.5} className="text-icon-soft" />
         </button>
       </div>
-      <ScrollArea>
+      <FadeScroll>
         <ul
           aria-label="People with access"
           className="m-0 flex list-none flex-col px-3 pt-0.5 pb-2"
@@ -75,7 +75,7 @@ export function SharePopover({
             </li>
           ))}
         </ul>
-      </ScrollArea>
+      </FadeScroll>
     </PopoverContent>
   );
 }

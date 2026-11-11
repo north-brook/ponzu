@@ -1,13 +1,27 @@
-import { type MouseEvent, memo, type ReactNode, useMemo } from "react";
+import { Tick02Icon } from "@hugeicons/core-free-icons";
+import {
+  type ComponentProps,
+  isValidElement,
+  type MouseEvent,
+  memo,
+  type ReactElement,
+  type ReactNode,
+  useMemo,
+} from "react";
+import Markdown, { type Components } from "react-markdown";
+import remarkBreaks from "remark-breaks";
+import remarkGfm from "remark-gfm";
 import { cn } from "./cn.ts";
-import { type Block, type Inline, parseMarkdown } from "./markdown.ts";
+import { Icon } from "./icon.tsx";
+import { blocks, parseable, prepare, remarkUntrusted, safeHref } from "./markdown.ts";
 
 /**
- * Markdown from the agent or GitHub, drawn as text. Everything it holds becomes React text and a
- * handful of elements (markdown.ts decides which), so no string from it is ever read as markup.
- * Links leave the app through `onOpenLink`; without it they open a new window, which the desktop
- * shell hands to the browser. Memoized: a line of the thread redraws only when its text changes,
- * so `onOpenLink` should keep its identity.
+ * Markdown from the agent or GitHub, drawn with react-markdown into our own elements and tokens.
+ * Nothing it holds is ever read as markup (markdown.ts has the rules). Links leave the app
+ * through `onOpenLink`; without it they open a new window, which the desktop shell hands to the
+ * browser. Memoized twice: a line of the thread redraws only when its text changes (so
+ * `onOpenLink` should keep its identity), and within it each block (markdown.ts's `blocks`)
+ * only when its own text does, so a reply streaming in parses and redraws only its last block.
  */
 export const Prose = memo(function Prose({
   text,
@@ -18,130 +32,178 @@ export const Prose = memo(function Prose({
   onOpenLink?: (url: string) => void;
   className?: string;
 }) {
-  const blocks = useMemo(() => parseMarkdown(text), [text]);
+  const components = useMemo(() => elements(onOpenLink), [onOpenLink]);
+  const source = useMemo(() => prepare(text), [text]);
+  const parts = useMemo(() => (parseable(source) ? blocks(source) : null), [source]);
   return (
     <div className={cn("flex min-w-0 flex-col gap-2 [overflow-wrap:anywhere]", className)}>
-      {blocks.map((block, i) => (
+      {parts ? (
         // biome-ignore lint/suspicious/noArrayIndexKey: blocks have no identity but their place
-        <BlockView key={i} block={block} onOpenLink={onOpenLink} />
-      ))}
+        parts.map((part, i) => <Block key={i} source={part} components={components} />)
+      ) : (
+        <p dir="auto" className="m-0 whitespace-pre-wrap">
+          {source}
+        </p>
+      )}
     </div>
   );
 });
 
-function BlockView({ block, onOpenLink }: { block: Block; onOpenLink?: (url: string) => void }) {
-  const inline = (children: Inline[]) => <InlineView nodes={children} onOpenLink={onOpenLink} />;
-  switch (block.kind) {
-    case "paragraph":
-      return (
-        <p dir="auto" className="m-0">
-          {inline(block.children)}
-        </p>
-      );
-    case "heading":
-      return (
-        <p dir="auto" className="m-0 font-semibold text-ink">
-          {inline(block.children)}
-        </p>
-      );
-    case "list": {
-      const List = block.ordered ? "ol" : "ul";
-      return (
-        <List
-          start={block.ordered && block.start !== 1 ? block.start : undefined}
+const PLUGINS = [remarkGfm, remarkBreaks, remarkUntrusted];
+const safeUrl = (url: string) => safeHref(url) ?? undefined;
+
+const Block = memo(function Block({
+  source,
+  components,
+}: {
+  source: string;
+  components: Components;
+}) {
+  return (
+    <Markdown
+      remarkPlugins={PLUGINS}
+      urlTransform={safeUrl}
+      disallowedElements={["img"]}
+      components={components}
+    >
+      {source}
+    </Markdown>
+  );
+});
+
+const linkClass =
+  "rounded-2 text-ink underline decoration-dry underline-offset-2 outline-none transition-[text-decoration-color] duration-(--dur-hover) focus-ring hover:decoration-current";
+
+/** Our elements for each of Markdown's. `node` is react-markdown's tree, never drawn. */
+function elements(onOpenLink?: (url: string) => void): Components {
+  const heading = ({ children }: { children?: ReactNode }) => (
+    <p dir="auto" className="m-0 font-semibold text-ink">
+      {children}
+    </p>
+  );
+  return {
+    p: ({ children }) => (
+      <p dir="auto" className="m-0">
+        {children}
+      </p>
+    ),
+    h1: heading,
+    h2: heading,
+    h3: heading,
+    h4: heading,
+    h5: heading,
+    h6: heading,
+    ul: ({ children, className }) => (
+      <ul
+        className={cn(
+          "m-0 flex flex-col gap-0.5 pl-[18px] marker:text-faint",
+          className?.includes("contains-task-list") ? "list-none pl-0.5" : "list-disc",
+        )}
+      >
+        {children}
+      </ul>
+    ),
+    ol: ({ children, start }) => (
+      <ol
+        start={start}
+        className="m-0 flex list-decimal flex-col gap-0.5 pl-[18px] marker:text-faint"
+      >
+        {children}
+      </ol>
+    ),
+    li: ({ children }) => (
+      <li dir="auto" className="pl-0.5">
+        {children}
+      </li>
+    ),
+    // A task list's box: drawn, never a control (GitHub's are disabled too).
+    input: ({ type, checked }) =>
+      type === "checkbox" ? (
+        <span
+          role="img"
+          aria-label={checked ? "Done" : "Not done"}
           className={cn(
-            "m-0 flex flex-col gap-0.5 pl-[18px] marker:text-faint",
-            block.ordered ? "list-decimal" : "list-disc",
+            "mr-1.5 inline-grid size-[13px] place-items-center rounded-3 align-[-2px]",
+            checked ? "bg-action text-action-ink" : "shadow-[inset_0_0_0_1px_var(--c-faint)]",
           )}
         >
-          {block.items.map((item, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: items have no identity but their place
-            <li key={i} dir="auto" className="pl-0.5">
-              {inline(item)}
-            </li>
-          ))}
-        </List>
-      );
-    }
-    case "code":
+          {checked ? <Icon icon={Tick02Icon} size={9} stroke={2.8} /> : null}
+        </span>
+      ) : null,
+    // Fenced code: the text alone in a box that scrolls sideways, so a long line never widens the
+    // thread.
+    pre: ({ children }) => (
+      <pre className="m-0 min-w-0 overflow-x-auto rounded-8 bg-hover px-3 py-2 font-mono text-12 leading-[1.6] [overflow-wrap:normal] [scrollbar-width:thin]">
+        {codeText(children)}
+      </pre>
+    ),
+    code: ({ children }) => <code className="font-mono text-[0.923em]">{children}</code>,
+    blockquote: ({ children }) => (
+      <blockquote
+        dir="auto"
+        className="m-0 flex flex-col gap-2 border-rule border-l-2 pl-3 text-muted"
+      >
+        {children}
+      </blockquote>
+    ),
+    hr: () => <hr className="m-0 h-px border-0 bg-rule" />,
+    strong: ({ children }) => <strong className="font-semibold text-ink">{children}</strong>,
+    em: ({ children }) => <em>{children}</em>,
+    del: ({ children }) => <del>{children}</del>,
+    a: ({ href, children }) => {
+      // An address that wasn't safe arrives without one: its words stay, as text.
+      if (!href) return <>{children}</>;
+      const open = onOpenLink
+        ? (e: MouseEvent) => {
+            e.preventDefault();
+            onOpenLink(href);
+          }
+        : undefined;
       return (
-        <pre className="m-0 overflow-x-auto rounded-8 bg-hover px-3 py-2 font-mono text-12 leading-[1.6] [scrollbar-width:thin]">
-          {block.text}
-        </pre>
-      );
-    case "quote":
-      return (
-        <blockquote
-          dir="auto"
-          className="m-0 flex flex-col gap-2 border-rule border-l-2 pl-3 text-muted"
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={open}
+          className={linkClass}
         >
-          {block.children.map((child, i) => (
-            // biome-ignore lint/suspicious/noArrayIndexKey: blocks have no identity but their place
-            <BlockView key={i} block={child} onOpenLink={onOpenLink} />
-          ))}
-        </blockquote>
+          {children}
+        </a>
       );
-    case "rule":
-      return <hr className="m-0 h-px border-0 bg-rule" />;
-  }
+    },
+    // A table scrolls sideways inside its own box rather than widening what holds it.
+    table: ({ children }) => (
+      <div className="min-w-0 overflow-x-auto [scrollbar-width:thin]">
+        <table className="border-collapse text-12">{children}</table>
+      </div>
+    ),
+    th: ({ children, style }) => (
+      <th
+        dir="auto"
+        style={align(style)}
+        className="border-rule border-b px-2 py-1 text-left font-semibold text-ink first:pl-0"
+      >
+        {children}
+      </th>
+    ),
+    td: ({ children, style }) => (
+      <td dir="auto" style={align(style)} className="border-rule border-b px-2 py-1 first:pl-0">
+        {children}
+      </td>
+    ),
+  };
 }
 
-function InlineView({
-  nodes,
-  onOpenLink,
-}: {
-  nodes: Inline[];
-  onOpenLink?: (url: string) => void;
-}): ReactNode {
-  return nodes.map((node, i) => {
-    switch (node.kind) {
-      case "text":
-        return node.text;
-      case "break":
-        // biome-ignore lint/suspicious/noArrayIndexKey: inline runs have no identity but their place
-        return <br key={i} />;
-      case "code":
-        return (
-          // biome-ignore lint/suspicious/noArrayIndexKey: inline runs have no identity but their place
-          <code key={i} className="font-mono text-[0.923em]">
-            {node.text}
-          </code>
-        );
-      case "strong":
-      case "em":
-      case "del": {
-        const Tag = node.kind === "strong" ? "strong" : node.kind;
-        return (
-          <Tag
-            // biome-ignore lint/suspicious/noArrayIndexKey: inline runs have no identity but their place
-            key={i}
-            className={node.kind === "strong" ? "font-semibold text-ink" : undefined}
-          >
-            <InlineView nodes={node.children} onOpenLink={onOpenLink} />
-          </Tag>
-        );
-      }
-      case "link": {
-        const open = onOpenLink
-          ? (e: MouseEvent) => {
-              e.preventDefault();
-              onOpenLink(node.href);
-            }
-          : undefined;
-        return (
-          <a
-            // biome-ignore lint/suspicious/noArrayIndexKey: inline runs have no identity but their place
-            key={i}
-            href={node.href}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={open}
-            className="rounded-2 text-ink underline decoration-dry underline-offset-2 outline-none transition-[text-decoration-color] duration-(--dur-hover) focus-ring hover:decoration-current"
-          >
-            <InlineView nodes={node.children} onOpenLink={onOpenLink} />
-          </a>
-        );
-      }
-    }
-  });
+/** A column's alignment, which GFM writes as a style; nothing else of a style survives. */
+function align(style: ComponentProps<"td">["style"]) {
+  return style?.textAlign ? { textAlign: style.textAlign } : undefined;
+}
+
+/** A fenced block's text, out of the `<code>` react-markdown wraps it in, less its last line end. */
+function codeText(children: ReactNode): ReactNode {
+  const code = Array.isArray(children) ? children[0] : children;
+  const text = isValidElement(code)
+    ? (code as ReactElement<{ children?: ReactNode }>).props.children
+    : children;
+  return typeof text === "string" ? text.replace(/\n$/, "") : text;
 }
