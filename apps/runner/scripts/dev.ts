@@ -20,6 +20,8 @@ import { fakeApiHandler } from "../src/api/fake-http.ts";
 
 const DESIGN = "des_dev";
 const TOKEN = "pzr_dev";
+/** The bearer of the runner's port, which every call to it carries. */
+const PORT_TOKEN = "port_dev";
 const RUNNER_PORT = Number(process.env.PONZU_RUNNER_PORT ?? 4600);
 
 const fake = new FakeRunnerApi({
@@ -45,6 +47,7 @@ const runner = spawn(process.execPath, [join(import.meta.dir, "..", entry)], {
     PONZU_API_URL: `http://127.0.0.1:${api.port}`,
     PONZU_DESIGN_ID: DESIGN,
     PONZU_RUNNER_TOKEN: TOKEN,
+    PONZU_PORT_TOKEN: PORT_TOKEN,
     PONZU_RUNNER_PORT: String(RUNNER_PORT),
     PONZU_WORK_ROOT: join(root, "work"),
     PONZU_STATE_DIR: join(root, "state"),
@@ -59,7 +62,10 @@ runner.on("exit", (code) => {
 console.log(`fake API on ${api.port}, runner on ${RUNNER_PORT}, files in ${root}`);
 
 const poke = () =>
-  fetch(`http://127.0.0.1:${RUNNER_PORT}/poke`, { method: "POST" }).catch(() => {});
+  fetch(`http://127.0.0.1:${RUNNER_PORT}/poke`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${PORT_TOKEN}` },
+  }).catch(() => {});
 
 // The thread, as it changes.
 const shown = new Map<string, string>();

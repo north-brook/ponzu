@@ -13,7 +13,7 @@ import { ScratchWork } from "./save/work.ts";
 
 /*
  * What lives only on a sandbox's disk, kept through the runner: a checkpoint after each turn,
- * getting ready before a sleep, and a disk that comes back behind the last checkpoint.
+ * what a stop saves, and a disk that comes back behind the last checkpoint.
  */
 
 const FAST: Partial<Timing> = {
@@ -24,7 +24,6 @@ const FAST: Partial<Timing> = {
   stopStepMs: 300,
   previewDelayMs: 10,
   restartMs: 10,
-  quiesceTurnMs: 400,
   checkpointMs: 2_000,
   backoff: () => 20,
 };
@@ -124,90 +123,33 @@ test("once a turn has settled its checkpoint is saved, and then the disk is flus
   expect(JSON.parse(readFileSync(join(d.stateDir, "checkpoint.json"), "utf8")).turn).toBe(1);
 });
 
-test("asked to get ready for sleep, the runner takes no new work, finishes its turn, saves, flushes and says so", async () => {
+test("a stop saves a checkpoint of the session, flushes the disk and reports the final state", async () => {
   const api = new FakeRunnerApi();
   const d = await disk();
   const s = await start(api, d);
   s.run.ready(SESSION);
   await turn(api, s);
   await writeTranscript(d.config, ['{"type":"user"}']);
-
-  // The API is stopping the sandbox; the runner hears it on its next report.
-  api.sleep = "2026-11-11T10:00:00.000Z";
-  s.runner.report();
-  await until(() => s.logs.some((l) => l.startsWith("getting ready to sleep")));
-  // A message now waits in the feed: nothing is claimed while it goes to sleep.
-  const waiting = api.push({ kind: "message", payload: { text: "Later" } });
-  s.runner.poke();
-  await Bun.sleep(30);
-  expect(api.events.find((e) => e.event.id === waiting.id)!.claimedBy).toBeUndefined();
-  expect(api.quiesced).toEqual([]);
-
-  // The turn ends; then it is ready.
   s.run.say("m1", "Done.");
   s.run.end();
-  await until(() => api.quiesced.length === 1);
-  expect(api.quiesced).toEqual(["2026-11-11T10:00:00.000Z"]);
+  await until(() => api.checkpoints.length === 1);
+  const flushed = s.order.length;
+  const states = api.states.length;
+  // Claude Code writes the transcript's last lines as it closes.
+  await writeTranscript(d.config, ['{"type":"user"}', '{"type":"assistant"}']);
+
+  // ponzu-stop: SIGTERM, which main.ts answers with `stop`.
+  await s.runner.stop();
+  expect(api.checkpoints).toHaveLength(2);
   expect(api.saved?.session).toBe(true);
-  expect(s.order.length).toBeGreaterThan(0);
-
-  // A warm resume thaws the same process: the API says it is awake, and work goes on.
-  api.sleep = null;
-  s.runner.report();
-  await until(() => api.events.find((e) => e.event.id === waiting.id)!.claimedBy !== undefined);
-  await until(() => api.lastState?.quiesced === null);
+  expect(s.order.length).toBeGreaterThan(flushed);
+  expect(api.states.length).toBeGreaterThan(states);
+  expect(api.lastState?.state).toBe("idle");
+  expect(s.run.closed).toBe(true);
+  expect(s.runner.health().started).toBe(false);
 });
 
-test("a report asked for while the runner is still starting waits: it has no lease to send it under", async () => {
-  // A cold boot: the port answers before the session does, and the API's stop or wake asks.
-  const api = new FakeRunnerApi();
-  api.down = true;
-  const d = await disk();
-  const fatal: string[] = [];
-  const runner = new Runner({
-    api: api.client(),
-    agent: new ScriptedAgent(),
-    prepare: async () => d.work,
-    stateDir: d.stateDir,
-    log: () => {},
-    onFatal: (reason) => fatal.push(reason),
-    timing: FAST,
-  });
-  open.push(runner);
-  const started = runner.start();
-  runner.report();
-  runner.report();
-  await Bun.sleep(60);
-  api.down = false;
-  await started;
-  await until(() => api.states.length > 0);
-  expect(fatal).toEqual([]);
-  expect(api.calls.filter((c) => c === "session")).not.toHaveLength(0);
-  // Everything after the session carried its lease.
-  expect(api.calls.indexOf("putState")).toBeGreaterThan(api.calls.lastIndexOf("session"));
-});
-
-test("after a warm wake the API's poke alone gets the waiting message claimed", async () => {
-  const api = new FakeRunnerApi();
-  const d = await disk();
-  const s = await start(api, d, { timing: { heartbeatMs: 60_000 } });
-  s.run.ready(SESSION);
-  api.sleep = "2026-11-11T10:00:00.000Z";
-  s.runner.report();
-  await until(() => api.quiesced.length === 1);
-
-  // Thawed: the API moves the sandbox to awake and pokes, as orchestrate.ts does. No report.
-  api.sleep = null;
-  const waiting = api.push({ kind: "message", payload: { text: "After the wake" } });
-  s.runner.poke();
-  await until(
-    () => api.events.find((e) => e.event.id === waiting.id)!.claimedBy !== undefined,
-    1_000,
-  );
-  expect((await s.run.input()).text).toContain("After the wake");
-});
-
-test("a claim in flight when the sleep comes is waited for, and what it brings waits for the wake", async () => {
+test("a claim in flight when the stop comes puts nothing into the run: the next runner gets it", async () => {
   const api = new FakeRunnerApi();
   const d = await disk();
   const s = await start(api, d, { timing: { heartbeatMs: 60_000 } });
@@ -217,34 +159,21 @@ test("a claim in flight when the sleep comes is waited for, and what it brings w
   const message = api.push({ kind: "message", payload: { text: "Mid-claim" } });
   s.runner.poke();
   await Bun.sleep(20);
-  api.sleep = "2026-11-11T10:00:00.000Z";
-  s.runner.report();
-  await until(() => api.quiesced.length === 1, 3_000);
-  // Ready only once the claim was answered, and nothing it brought was put into the run.
-  const claimed = api.events.find((e) => e.event.id === message.id)!;
-  expect(claimed.claimedBy).toBeDefined();
+  await s.runner.stop();
   await Bun.sleep(400);
   expect(s.run.inputs).toHaveLength(0);
   expect(api.events.find((e) => e.event.id === message.id)!.deliveredAt).toBeUndefined();
-
-  // A warm wake: the same process claims it again, and this time it goes in.
-  api.delays.delete("claim");
-  api.sleep = null;
-  s.runner.poke();
-  expect((await s.run.input()).text).toContain("Mid-claim");
 });
 
-test("a turn that will not finish does not hold the sleep up for long: it is interrupted, and the thread says so", async () => {
+test("a stop during a turn interrupts it, and the thread says so", async () => {
   const api = new FakeRunnerApi();
   const d = await disk();
   const s = await start(api, d);
   s.run.ready(SESSION);
   await turn(api, s);
-  api.sleep = "2026-11-11T10:05:00.000Z";
-  s.runner.report();
-  await until(() => api.quiesced.length === 1, 3_000);
+  await s.runner.stop();
   expect(s.run.interrupts).toBe(1);
-  await until(() =>
+  expect(
     api
       .items()
       .some(
@@ -253,7 +182,7 @@ test("a turn that will not finish does not hold the sleep up for long: it is int
           i.payload.type === "error" &&
           i.payload.message.includes("before Claude finished"),
       ),
-  );
+  ).toBe(true);
 });
 
 test("a disk behind the last checkpoint gets the session and the work back before Claude Code resumes", async () => {

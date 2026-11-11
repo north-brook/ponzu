@@ -1716,41 +1716,36 @@ test("with analytics off the agent traces nothing, and the runner never makes a 
   expect(s.run.opts.trace).toBeUndefined();
 });
 
-test("the traces are flushed as the sandbox gets ready to sleep, and sent off as the runner stops", async () => {
+test("the traces are sent off as the runner stops, once Claude Code has closed", async () => {
   const t = recordingTelemetry();
   const s = await setup({ session: { analytics: ANALYTICS }, telemetry: t.telemetry });
   s.run.ready("sess_1");
-  s.api.sleep = "2026-11-11T10:00:00.000Z";
-  s.runner.report();
-  await until(() => s.api.quiesced.length === 1);
-  expect(t.calls).toEqual(["flush"]);
+  expect(t.calls).toEqual([]);
   await s.runner.stop();
-  expect(t.calls).toEqual(["flush", "shutdown"]);
+  expect(s.run.closed).toBe(true);
+  expect(t.calls).toEqual(["shutdown"]);
 });
 
-test("a PostHog that fails to send does not cut short the wait for the thread before sleep", async () => {
+test("a PostHog that fails to send does not cut short the wait for the thread before a stop", async () => {
   const s = await setup({
     session: { analytics: ANALYTICS },
     telemetry: () => ({
       capture: () => {},
-      flush: () => Promise.reject(new Error("PostHog is down")),
-      shutdown: async () => {},
+      flush: async () => {},
+      shutdown: () => Promise.reject(new Error("PostHog is down")),
     }),
   });
   s.run.ready("sess_1");
   await turn(s);
-  // The API is slow to take the thread: the reply is still on its way when the sleep comes.
+  // The API is slow to take the thread: the reply is still on its way when the stop comes.
   s.api.delays.set("writeThread", 150);
   s.run.say("m1", "Drawn.");
   s.run.end();
-  s.api.sleep = "2026-11-11T10:00:00.000Z";
-  s.runner.report();
-  await until(() => s.api.quiesced.length === 1);
+  await s.runner.stop();
   expect(s.api.items().find((i) => i.kind === "assistant")).toMatchObject({
     streaming: false,
     payload: { text: "Drawn." },
   });
-  expect(s.logs).toContain("sending the turns' traces failed: PostHog is down");
 });
 
 test("telemetry that cannot start leaves the runner running, untraced", async () => {

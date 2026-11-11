@@ -15,6 +15,7 @@
  */
 import { type ChildProcess, spawn as spawnChild } from "node:child_process";
 import { chownSync, mkdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 /** The runner's "do not restart". */
 export const EXIT_CONFIG = 78;
@@ -82,10 +83,20 @@ export async function supervise(opts: SuperviseOptions): Promise<number> {
   }
 }
 
+/**
+ * The runner this supervisor starts: the one beside it, from the same bundle
+ * (/opt/ponzu/runners/<sha256>/), or main.ts beside the source.
+ */
+export function runnerEntry(
+  dir: string = import.meta.dir,
+  file: string = import.meta.path,
+): string {
+  return join(dir, file.endsWith(".ts") ? "main.ts" : "runner.js");
+}
+
 /** What the image says about where things are (provision.sh writes it): no secrets. */
 interface ImageConfig {
   bun: string;
-  runner: string;
   user: string;
   group: string;
   home: string;
@@ -117,7 +128,7 @@ function startRunner(image: ImageConfig): Child {
       "--ambient-caps=+dac_read_search",
       "--",
       image.bun,
-      image.runner,
+      runnerEntry(),
     ],
     { cwd: image.home, env, stdio: "inherit", detached: true },
   );

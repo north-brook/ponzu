@@ -219,14 +219,11 @@ test("a checkpoint over HTTP: archives up, recorded only forward, and read back 
   expect((await connected().then((c) => c.session())).saved?.turn).toBe(2);
 });
 
-test("the state answer says when the sandbox is going to sleep, and the pull request summary goes through", async () => {
+test("the state answer carries the design's head, and the pull request summary goes through", async () => {
   const { fake, connected } = served();
   const http = await connected();
   const state = { state: "idle" as const, status: null, artboards: [], claudeSessionId: null };
-  expect(await http.putState(state)).toEqual({ seq: 0, sleep: null });
-  fake.sleep = "2026-11-11T10:00:00.000Z";
-  expect((await http.putState({ ...state, quiesced: fake.sleep })).sleep).toBe(fake.sleep);
-  expect(fake.quiesced).toEqual([fake.sleep]);
+  expect(await http.putState(state)).toEqual({ seq: 0 });
   expect(await http.pullRequestSummary("What the branch does.")).toEqual({
     pullRequest: null,
     open: null,
