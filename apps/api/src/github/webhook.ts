@@ -31,6 +31,7 @@ import { resyncGithubUser, resyncWorkspaceMembers } from "./sync.ts";
  */
 
 /** Whether `header` is GitHub's signature of exactly these bytes, compared in constant time. */
+// Not `@octokit/webhooks-methods`: it takes the body as a string, and this checks the raw bytes.
 export function verifySignature(secret: string, body: Uint8Array, header: string | undefined) {
   const signature = /^sha256=([0-9a-f]{64})$/.exec(header ?? "")?.[1];
   if (!signature) return false;

@@ -10,8 +10,9 @@ import {
   useState,
 } from "react";
 import type { AgentActivity, OlderItems, ThreadItem } from "../model.ts";
+import { SCROLL_FADE } from "../ui/fade-scroll.tsx";
 import { Icon } from "../ui/icon.tsx";
-import { SCROLL_FADE } from "../ui/scroll-area.tsx";
+import { Skeleton } from "../ui/skeleton.tsx";
 import { atFoot, FOLLOWING, follow, type ScrollMetrics } from "./follow.ts";
 import { type LineHandlers, ThreadLine, WorkingLine } from "./lines.tsx";
 import { threadRows, workingLine } from "./thread.ts";
@@ -252,15 +253,15 @@ export function ThreadSkeleton() {
         { side: "start", width: 260 },
       ].map(({ side, width }, i) =>
         side === "end" ? (
-          <span
+          <Skeleton
             key={`${side}-${width}`}
-            className="breathe h-[38px] self-end rounded-14 bg-hover"
+            className="h-[38px] self-end rounded-14"
             style={{ width, animationDelay: `${i * 120}ms` }}
           />
         ) : (
-          <span
+          <Skeleton
             key={`${side}-${width}`}
-            className="breathe h-3 rounded-3 bg-hover"
+            className="h-3 rounded-3"
             style={{ width, animationDelay: `${i * 120}ms` }}
           />
         ),
