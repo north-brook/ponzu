@@ -17,6 +17,7 @@ import {
 } from "drizzle-orm/pg-core";
 import {
   ACTOR_KINDS,
+  AGENT_BLOCKERS,
   AGENT_STATES,
   DESIGN_STATUSES,
   EVENT_KINDS,
@@ -87,9 +88,16 @@ export const designs = pgTable(
     agentStatus: text("agent_status"),
     /** The artboards the agent is on. */
     agentArtboards: text("agent_artboards").array().notNull().default(sql`'{}'::text[]`),
+    /** Why the agent cannot run now, when something outside the design must change first. */
+    agentBlocker: text("agent_blocker", { enum: AGENT_BLOCKERS }),
     /** How many questions are open. Kept in step by the question queries. */
     needsYouCount: integer("needs_you_count").notNull().default(0),
     lastActivityAt: instant("last_activity_at").notNull().defaultNow(),
+    /**
+     * The key its creator's app sent with the create, so that a create sent twice (a double
+     * tap, a retry after a lost answer) makes one design.
+     */
+    createKey: text("create_key"),
     /** The sandbox it has now, if any. */
     sandboxId: text("sandbox_id").references((): AnyPgColumn => sandboxes.id, {
       onDelete: "set null",
@@ -111,6 +119,7 @@ export const designs = pgTable(
     index("designs_workspace_id_status_idx").on(t.workspaceId, t.status),
     // One design, one branch. Also how a GitHub webhook finds the design for a pull request.
     uniqueIndex("designs_repo_id_branch_key").on(t.repoId, t.branch),
+    uniqueIndex("designs_owner_id_create_key_key").on(t.ownerId, t.createKey),
     // Deleting a sandbox clears the designs that point at it.
     index("designs_sandbox_id_idx").on(t.sandboxId),
     check("designs_status_check", oneOf(t.status, DESIGN_STATUSES)),
@@ -123,6 +132,7 @@ export const designs = pgTable(
     check("designs_pr_number_check", sql`(${t.prNumber} is null) = (${t.prState} is null)`),
     check("designs_pr_checks_check", oneOf(t.prChecks, PR_CHECKS)),
     check("designs_agent_state_check", oneOf(t.agentState, AGENT_STATES)),
+    check("designs_agent_blocker_check", oneOf(t.agentBlocker, AGENT_BLOCKERS)),
     check("designs_needs_you_count_check", sql`${t.needsYouCount} >= 0`),
   ],
 );
@@ -353,7 +363,12 @@ export const questions = pgTable(
   ],
 );
 
-/** A sandbox a design has or had. A lost one is marked gone and a new row replaces it. */
+/**
+ * A sandbox a design has or had, and where it is in its life (docs/cloud.md, "The sandbox").
+ * At most one row of a design is not `gone`; a lost one is marked gone and a row of the next
+ * generation replaces it. Every move between states is a statement that holds to the state it
+ * moves from, so two function instances racing on one sandbox cannot both make the move.
+ */
 export const sandboxes = pgTable(
   "sandboxes",
   {
@@ -361,15 +376,44 @@ export const sandboxes = pgTable(
     designId: text("design_id")
       .notNull()
       .references(() => designs.id, { onDelete: "cascade" }),
+    /**
+     * Counts the design's sandboxes from 1. With the design it makes the provider's idempotency
+     * key, so a create sent again after a crash finds the sandbox the first one made.
+     */
+    generation: integer("generation").notNull().default(1),
     provider: text("provider", { enum: SANDBOX_PROVIDERS }).notNull(),
-    providerId: text("provider_id").notNull(),
-    state: text("state", { enum: SANDBOX_STATES }).notNull().default("starting"),
+    /** Null until the provider has accepted the create. */
+    providerId: text("provider_id"),
+    state: text("state", { enum: SANDBOX_STATES }).notNull().default("waking"),
+    /** When it entered its state: how a row a crashed function left mid-move is found. */
+    stateAt: instant("state_at").notNull().defaultNow(),
+    /** Why it is `failed`, or what the provider said when it was lost. */
+    failure: text("failure"),
     /** Where the API reaches the runner. */
     address: text("address"),
     encryptedAddressToken: text("encrypted_address_token"),
-    /** Set while it is awake. Awake time is billed from here when it next sleeps. */
+    /**
+     * The runner token its environment carries. A wake that finds it revoked or about to run
+     * out starts the sandbox on a new environment.
+     */
+    runnerTokenId: text("runner_token_id").references(() => runnerTokens.id, {
+      onDelete: "set null",
+    }),
+    /**
+     * Which Claude credential its environment carries: the account and when it was connected.
+     * A wake that finds the owner's credential changed starts the sandbox on a new environment.
+     */
+    claudeCredential: text("claude_credential"),
+    /** Set while it is awake. Awake time is metered from here when it next stops. */
     awakeSince: instant("awake_since"),
+    /** Who its awake time is put down to: the person who woke it or last kept it awake. */
+    awakeUserId: text("awake_user_id").references(() => users.id, { onDelete: "set null" }),
+    /** The last time a person or a working agent kept it awake. Idle is counted from here. */
     lastActivityAt: instant("last_activity_at").notNull().defaultNow(),
+    /** The provider's own auto-stop deadline as the API last set it: the safety net. */
+    autoStopAt: instant("auto_stop_at"),
+    /** How often its runner was found dead and restarted since one was last heard from. */
+    restarts: integer("restarts").notNull().default(0),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
@@ -377,6 +421,7 @@ export const sandboxes = pgTable(
     uniqueIndex("sandboxes_provider_provider_id_key").on(t.provider, t.providerId),
     // One design owns one sandbox.
     uniqueIndex("sandboxes_design_id_live_key").on(t.designId).where(sql`${t.state} <> 'gone'`),
+    uniqueIndex("sandboxes_design_id_generation_key").on(t.designId, t.generation),
     // Deleting a design deletes its sandboxes, gone ones included.
     index("sandboxes_design_id_idx").on(t.designId),
     // What the idle sweep reads.
@@ -389,6 +434,7 @@ export const sandboxes = pgTable(
       "sandboxes_awake_since_check",
       sql`(${t.state} = 'awake') = (${t.awakeSince} is not null)`,
     ),
+    check("sandboxes_generation_check", sql`${t.generation} > 0`),
   ],
 );
 

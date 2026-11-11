@@ -33,7 +33,12 @@ export {
   type Workspace,
   wasUninstalled,
 } from "./queries/accounts.ts";
-export { type AuthState, consumeAuthState, createAuthState } from "./queries/auth-states.ts";
+export {
+  type AuthState,
+  consumeAuthState,
+  createAuthState,
+  getAuthState,
+} from "./queries/auth-states.ts";
 export {
   type DocSource,
   OP_RETENTION_DAYS,
@@ -43,16 +48,28 @@ export {
   writeCheckpoint,
 } from "./queries/checkpoints.ts";
 export {
+  type ConnectedClaude,
+  claudeAccountIdFor,
+  connectClaudeAccount,
+  disconnectClaudeAccount,
+  setAgentDefaults,
+  setClaudeBlocker,
+} from "./queries/claude.ts";
+export {
+  BRANCH_TAKEN,
+  CREATE_KEY_TAKEN,
   createDesign,
   type Design,
   type DesignAccess,
   type DesignListItem,
   deleteDesign,
+  findDesignByCreateKey,
   getDesign,
   getDesignAccess,
   getDesignAssetKey,
   getDesignHead,
   getWorkspaceRepo,
+  listRepoBranches,
   listWorkspaceDesigns,
   markDesignSeen,
   type NewDesign,
@@ -149,6 +166,7 @@ export {
 export { QueryError } from "./queries/run.ts";
 export {
   createRunnerToken,
+  revokeRunnerToken,
   revokeRunnerTokens,
   verifyRunnerToken,
 } from "./queries/runner-tokens.ts";
@@ -159,7 +177,25 @@ export {
   reportRunnerState,
   takeRunnerLease,
 } from "./queries/runners.ts";
-export { getAwakeSandboxAddress } from "./queries/sandboxes.ts";
+export {
+  beginSandbox,
+  countSandboxRestart,
+  getAwakeSandboxAddress,
+  getLiveSandbox,
+  getWakeContext,
+  isSandboxKnown,
+  listLiveSandboxes,
+  listSandboxesToSweep,
+  moveSandbox,
+  recordDesignClaudeAccount,
+  type Sandbox,
+  type SandboxChanges,
+  type SweptSandbox,
+  setSandboxAutoStop,
+  showAgentWaiting,
+  touchSandbox,
+  type WakeContext,
+} from "./queries/sandboxes.ts";
 export {
   admitSession,
   endSession,

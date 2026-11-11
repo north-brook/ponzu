@@ -175,6 +175,7 @@ export class BoatProvider implements SandboxProvider {
         // built-in token to this one sandbox. Every Ponzu sandbox runs someone else's code.
         noEnv: true,
         ttlSeconds: options.autoStopSeconds,
+        ...(options.commandHistory === false ? { monitoring: false } : {}),
         ...(options.name ? { name: options.name } : {}),
         // A retry must match the first request's body, so the same options always make the
         // same body, whatever order the caller built them in.

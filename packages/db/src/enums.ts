@@ -46,7 +46,23 @@ export const QUESTION_KINDS = [
 ] as const;
 export const QUESTION_STATUSES = ["open", "answered", "cancelled"] as const;
 export const SANDBOX_PROVIDERS = ["boat"] as const;
-export const SANDBOX_STATES = ["starting", "awake", "asleep", "gone"] as const;
+/**
+ * A sandbox's life as the API drives it. `waking` and `stopping` are the moves between `asleep`
+ * and `awake`; `failed` is a wake that gave up, with its reason, until the next wake tries again;
+ * `gone` is destroyed, or lost and replaced by a new row.
+ */
+export const SANDBOX_STATES = ["waking", "awake", "stopping", "asleep", "failed", "gone"] as const;
+/**
+ * Why a design's agent cannot run, when something outside the design must change first: its
+ * owner's Claude is not connected, or has expired; no machine can be started for now, so the
+ * wake is waiting (and retrying by itself); or the sandbox failed to start for good.
+ */
+export const AGENT_BLOCKERS = [
+  "claude_not_connected",
+  "claude_expired",
+  "sandbox_busy",
+  "sandbox_failed",
+] as const;
 /** What uploaded bytes are for: a file of the design, a file a link reaches, the sidebar's picture. */
 export const UPLOAD_PURPOSES = ["asset", "export", "preview"] as const;
 
@@ -60,6 +76,8 @@ export type WorkspaceKind = (typeof WORKSPACE_KINDS)[number];
 export type MemberRole = (typeof MEMBER_ROLES)[number];
 export type RepoPermission = (typeof REPO_PERMISSIONS)[number];
 export type GithubAccess = (typeof GITHUB_ACCESS)[number];
+export type ClaudeAccountKind = (typeof CLAUDE_ACCOUNT_KINDS)[number];
+export type ClaudeAccountStatus = (typeof CLAUDE_ACCOUNT_STATUSES)[number];
 export type DesignStatus = (typeof DESIGN_STATUSES)[number];
 export type AgentState = (typeof AGENT_STATES)[number];
 export type PrState = (typeof PR_STATES)[number];
@@ -71,4 +89,6 @@ export type EventKind = (typeof EVENT_KINDS)[number];
 export type EventPriority = (typeof EVENT_PRIORITIES)[number];
 export type QuestionKind = (typeof QUESTION_KINDS)[number];
 export type QuestionStatus = (typeof QUESTION_STATUSES)[number];
+export type SandboxStatus = (typeof SANDBOX_STATES)[number];
+export type AgentBlocker = (typeof AGENT_BLOCKERS)[number];
 export type UploadPurpose = (typeof UPLOAD_PURPOSES)[number];

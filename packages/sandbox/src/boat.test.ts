@@ -182,6 +182,13 @@ describe("create", () => {
     expect(b.sent[0]!.body).toEqual({ type: "small", noEnv: true, ttlSeconds: 600 });
   });
 
+  test("asks boat to keep no command history when told", async () => {
+    const b = boat();
+    b.on("POST /sandboxes", created);
+    await b.provider.create({ idempotencyKey: "k", autoStopSeconds: 600, commandHistory: false });
+    expect(b.sent[0]!.body).toMatchObject({ monitoring: false });
+  });
+
   test("leaves out a port boat could not host", async () => {
     const b = boat();
     b.on("POST /sandboxes", () =>

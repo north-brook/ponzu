@@ -64,6 +64,13 @@
       "when": 1794365810848,
       "tag": "0008_claim_ids",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794368533503,
+      "tag": "0009_sandbox_lifecycle",
+      "breakpoints": true
     }
   ]
 }

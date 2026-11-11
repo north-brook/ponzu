@@ -8,6 +8,8 @@ import {
   designCheckpoints,
   designReads,
   designs,
+  events,
+  type Json,
   memberships,
   type RepoPermission,
   repoAccess,
@@ -16,10 +18,11 @@ import {
   workspaces,
 } from "../schema/index.ts";
 import type { Repo } from "./accounts.ts";
+import { eventRow } from "./events.ts";
 import { timeParam } from "./json.ts";
 import { READABLE_PERMISSIONS } from "./repo-access.ts";
 import { run } from "./run.ts";
-import { isStorable, unstorableDocument } from "./text.ts";
+import { isStorable, scrubbed, unstorableDocument } from "./text.ts";
 
 // Whoever knows a design's asset key can read its files, so no query hands it back with the
 // rest of the row. It has to be asked for by name: `getDesignAssetKey`.
@@ -40,13 +43,27 @@ export interface NewDesign {
   effort?: string | null;
   /** The document it starts as. */
   doc: Doc;
+  /** The creator's key for this create: another create with it by the same owner is refused. */
+  createKey?: string | null;
+  /** What its owner says first, as a message: its thread item and its event. */
+  firstMessage?: { item: Json; event: Json };
 }
 
+/** The unique index a create with a key already used breaks. */
+export const CREATE_KEY_TAKEN = "designs_owner_id_create_key_key";
+/** The unique index a branch already taken in the repo breaks. */
+export const BRANCH_TAKEN = "designs_repo_id_branch_key";
+
 /**
- * Create a design and its first checkpoint, at seq 0, in one statement. Every design has a
- * checkpoint from then on, which is what `readDocSource` relies on.
+ * Create a design and its first checkpoint, at seq 0, in one statement, with its first message
+ * in the thread and the feed when it has one. Every design has a checkpoint from then on, which
+ * is what `readDocSource` relies on. A `createKey` or a branch already taken fails the whole
+ * statement with a `QueryError` naming `CREATE_KEY_TAKEN` or `BRANCH_TAKEN`.
  */
-export async function createDesign(db: Db, { doc, ...values }: NewDesign): Promise<Design> {
+export async function createDesign(
+  db: Db,
+  { doc, firstMessage, ...values }: NewDesign,
+): Promise<Design> {
   if (!isStorable(doc)) throw unstorableDocument();
   const id = newId("des");
   const checkpoint = db
@@ -57,15 +74,78 @@ export async function createDesign(db: Db, { doc, ...values }: NewDesign): Promi
         .values({ designId: id, seq: 0, doc })
         .returning({ seq: designCheckpoints.seq }),
     );
+  // Postgres runs a data-modifying `with` whether or not the statement reads it.
+  const said = firstMessage && [
+    db.$with("queued").as(
+      db
+        .insert(events)
+        .values({
+          designId: id,
+          ...eventRow({
+            kind: "message",
+            priority: "now",
+            payload: firstMessage.event,
+            userId: values.ownerId,
+          }),
+        })
+        .returning({ id: events.id }),
+    ),
+    db.$with("said").as(
+      db
+        .insert(threadItems)
+        .values({
+          id: newId("ti"),
+          designId: id,
+          kind: "message",
+          userId: values.ownerId,
+          payload: scrubbed(firstMessage.item),
+        })
+        .returning({ id: threadItems.id }),
+    ),
+  ];
   const [design] = await run(
     db
-      .with(checkpoint)
+      .with(checkpoint, ...(said ?? []))
       .insert(designs)
       // 160 random bits: the key is all that guards the design's files.
       .values({ ...values, id, assetKey: randomString(32) })
       .returning(columns),
   );
   return design!;
+}
+
+/** The design an owner already created under `createKey`, if any. */
+export async function findDesignByCreateKey(
+  db: Db,
+  { ownerId, createKey }: { ownerId: string; createKey: string },
+): Promise<Design | null> {
+  const [row] = await run(
+    db
+      .select(columns)
+      .from(designs)
+      .where(and(eq(designs.ownerId, ownerId), eq(designs.createKey, createKey))),
+  );
+  return row ?? null;
+}
+
+/** The branches of a repo's designs that are `prefix` or start with `prefix-`. */
+export async function listRepoBranches(
+  db: Db,
+  { repoId, prefix }: { repoId: string; prefix: string },
+): Promise<string[]> {
+  const like = `${prefix.replace(/[\\%_]/g, (c) => `\\${c}`)}-%`;
+  const rows = await run(
+    db
+      .select({ branch: designs.branch })
+      .from(designs)
+      .where(
+        and(
+          eq(designs.repoId, repoId),
+          or(eq(designs.branch, prefix), sql`${designs.branch} like ${like}`),
+        ),
+      ),
+  );
+  return rows.flatMap((row) => (row.branch ? [row.branch] : []));
 }
 
 // `DesignHead` and the column list a live query selects are in ../head.ts, where a client can
