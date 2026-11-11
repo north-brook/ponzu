@@ -112,7 +112,15 @@ Ctrl stands for ⌘ off the Mac, and Alt for ⌥. The numbers are the 1.x studio
 - Fonts: `vite.config.ts` links the web fonts into every page (the app and the gallery) from one
   URL; a new family or weight goes there, so the gallery always measures what ships.
 - What is open or chosen (the open row, the selected result, the open "+") takes `bg-selected`,
-  not `bg-canvas`: in dark the canvas is too close to the chrome to show.
+  not `bg-canvas`: in dark the black canvas would read as a hole in the shell.
+- The grounds, at the founder's direction: the canvas (`--c-canvas`) is pure white or pure black,
+  the canvas package's ground too; the shell round it is a little tinted, and on a Mac a little
+  glassy. `--c-chrome` is the solid shell (a browser, the gallery, Windows and Linux, Reduce
+  Transparency) and `--c-chrome-glass` the tint laid over the Mac's window material, which the
+  shell says it has over the bridge (`glass`, from apps/desktop/src/shell-ground.ts). Paint the
+  shell with `bg-shell`, never `bg-chrome`: over the glass only `<html>` paints the tint, once.
+  Raised things on the shell (the composer, cards, menus, popovers) stay solid. `bun
+  scripts/glass-shots.ts <dir> [ids]` draws compositions solid and over a stand-in for the glass.
 - One way to style: the canvas keeps its own `pz:` build, and `studio.css` (the local app's)
   doesn't scan this folder.
 

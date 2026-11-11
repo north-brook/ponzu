@@ -32,6 +32,7 @@ function argument(name: string): string {
 
 const desktop: PonzuDesktop = {
   platform: process.platform,
+  glass: argument("glass") === "1",
   version: argument("version"),
   config: {
     apiUrl: argument("api"),

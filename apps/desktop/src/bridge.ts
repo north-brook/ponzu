@@ -66,6 +66,11 @@ export type MenuCommand = "new-design" | "settings";
 
 export interface PonzuDesktop {
   platform: string;
+  /**
+   * Whether the window's ground is the Mac's own material (shell-ground.ts): the studio then
+   * paints its shell as a tint over it rather than as a solid colour.
+   */
+  glass: boolean;
   version: string;
   /**
    * Where the API is, what this app calls itself to it (`X-Ponzu-Client: macos/2.0.0`, the same

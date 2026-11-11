@@ -22,6 +22,10 @@ async function host(): Promise<Host | null> {
   return null;
 }
 
+// On a Mac the window's ground is the system's material, and the shell is a tint over it
+// (tokens.css). Set before anything shows: the window stays hidden until the studio first paints.
+if (window.ponzuDesktop?.glass) document.documentElement.dataset.glass = "";
+
 void host().then((host) =>
   createRoot(document.getElementById("root")!).render(host ? <App host={host} /> : <CantStart />),
 );
