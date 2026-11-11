@@ -20,7 +20,7 @@ import type { Deps } from "../deps/index.ts";
 export type WakeReason = "message" | "answer" | "comment" | "stop" | "edit";
 
 /** What waking takes. A caller of `requestWake` takes these with its own (`CommitDeps`). */
-export type WakeDeps = Pick<Deps, "db" | "clock" | "vault" | "poke" | "background">;
+export type WakeDeps = Pick<Deps, "db" | "clock" | "vault" | "poke" | "background" | "log">;
 
 /** The job that wakes a design's sandbox. One waits per design: its key is the design's id. */
 export const WAKE_JOB = "sandbox.wake";
@@ -41,24 +41,38 @@ const WAKES: Record<WakeReason, boolean> = {
 /**
  * Something happened to `designId` that its runner should hear of: record a wake when the
  * reason calls for one, and poke the runner when its sandbox is awake. Call it after the event
- * or op is written. It never fails for the poke, which is not retried: the runner claims once a
- * minute by itself.
+ * or op is written.
+ *
+ * It never fails: what the caller wrote is written, and a request that answered 5xx for it
+ * would be sent again and write it twice. A wake it could not record is logged
+ * (`wake_failed`), and the event waits in the feed until the sandbox next wakes. The poke is
+ * not retried: an awake runner claims once a minute by itself.
  */
 export async function requestWake(
   deps: WakeDeps,
   designId: string,
   reason: WakeReason,
 ): Promise<void> {
-  if (WAKES[reason]) {
-    // Null when a wake is already waiting for the design: that one will do.
-    await enqueueJob(deps.db, {
-      kind: WAKE_JOB,
-      key: designId,
-      payload: { designId, reason },
-      runAt: new Date(deps.clock.now()),
-    });
+  try {
+    await wake(deps, designId, reason);
+  } catch (error) {
+    deps.log.error("wake_failed", { designId, reason, error });
   }
-  const sandbox = await getAwakeSandboxAddress(deps.db, designId);
+}
+
+async function wake(deps: WakeDeps, designId: string, reason: WakeReason): Promise<void> {
+  const [, sandbox] = await Promise.all([
+    WAKES[reason]
+      ? // Null when a wake is already waiting for the design: that one will do.
+        enqueueJob(deps.db, {
+          kind: WAKE_JOB,
+          key: designId,
+          payload: { designId, reason },
+          runAt: new Date(deps.clock.now()),
+        })
+      : null,
+    getAwakeSandboxAddress(deps.db, designId),
+  ]);
   if (!sandbox) return;
   deps.background(
     "poke",
