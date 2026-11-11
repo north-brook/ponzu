@@ -25,11 +25,12 @@ const PRICE = { input: 0.1, output: 0.5 };
 const { env } = process;
 const args = process.argv.slice(2);
 const flags = new Set(args.filter((arg) => arg.startsWith("--")));
-// `test` stands for the dev App's test repository, GITHUB_TEST_REPO, read as the App.
+// `test` stands for the dev App's test repository, GITHUB_TEST_REPO, which is read as the App.
+const testRepo = env.GITHUB_TEST_REPO ?? "test";
 const names = args
   .filter((arg) => !arg.startsWith("--"))
-  .map((name) => (name === "test" ? (env.GITHUB_TEST_REPO ?? name) : name));
-if (args.includes("test")) flags.add("--app");
+  .map((name) => (name === "test" ? testRepo : name));
+const asApp = (fullName: string) => flags.has("--app") || fullName === testRepo;
 const ceiling = Number(env.PONZU_IDEAS_SPEND_USD ?? 0.5);
 if (!env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY is not set.");
 if (names.length === 0) throw new Error("Name a repository: bun scripts/ideas.ts owner/repo");
@@ -94,7 +95,7 @@ const reader = {
 };
 
 async function snapshotOf(fullName: string): Promise<RepoSnapshot> {
-  const token = flags.has("--app") ? await appToken(fullName) : null;
+  const token = asApp(fullName) ? await appToken(fullName) : null;
   return readRepository(reader, token, fullName);
 }
 
