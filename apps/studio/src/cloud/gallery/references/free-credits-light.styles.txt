@@ -65,7 +65,7 @@ text "Try a darker footer with the newsletter…" rgb(17, 17, 16) 400 16px Inter
 icon svg[Attach] 16×16 rgb(86, 83, 77) stroke 1.7px
 text "Opus 5.5" rgb(86, 83, 77) 500 12px Inter
 icon svg[Claude] 13×13 rgb(86, 83, 77) stroke 1px
-text "· High" rgb(169, 165, 155) 400 12px Inter
+text "High" rgb(169, 165, 155) 400 12px Inter
 icon svg[Model: Opus 5.5, effort High] 11×11 rgb(86, 83, 77) stroke 2.2px
 ground button[Send] rgb(255, 200, 30)
 icon svg[Send] 16×16 rgb(17, 17, 16) stroke 2.1px

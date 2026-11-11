@@ -16,7 +16,7 @@ ground img[Bryce (you)] shadow rgb(26, 26, 25) 0px 0px 0px 1.5px
 ground img[Sam] shadow rgb(26, 26, 25) 0px 0px 0px 1.5px
 ground img[Maya] shadow rgb(26, 26, 25) 0px 0px 0px 1.5px
 ground img[Jordan · last here 2 days ago] shadow rgb(26, 26, 25) 0px 0px 0px 1.5px
-ground button[Share] rgb(48, 48, 46)
+ground button[Share] rgb(48, 48, 46) shadow rgb(26, 26, 25) 0px 0px 0px 1.5px
 icon svg[Share] 11×11 rgb(183, 179, 169) stroke 2.2px
 text "#412" rgb(183, 179, 169) 400 11px IBM Plex Mono
 icon svg[Pull request #412] 11×11 rgb(183, 179, 169) stroke 2.2px
