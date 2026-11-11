@@ -38,7 +38,7 @@ import { APP_NAMES, bundleMismatch, claimsScheme, configFor } from "./config.ts"
 import { contentSecurityPolicy } from "./csp.ts";
 import { dataFolder, removeOnceExited } from "./data-folder.ts";
 import { linksIn, parseDeepLink } from "./deep-links.ts";
-import { recordLaunch } from "./launches.ts";
+import { launchOnce, recordLaunch } from "./launches.ts";
 import { removeLegacyFor, runProgram } from "./legacy.ts";
 import { registerAppImage } from "./linux.ts";
 import { startMainTelemetry } from "./main-telemetry.ts";
@@ -179,9 +179,12 @@ const offBecause = telemetryOffBecause(process.env, homedir());
 const posthog = config.posthog && !smoke && !offBecause ? config.posthog : null;
 if (config.posthog && offBecause && !smoke) console.log(`Usage analytics off: ${offBecause}.`);
 const csp = contentSecurityPolicy({ ...config, posthog });
-const launch = posthog
-  ? recordLaunch(join(userData, "launches.json"), app.getVersion())
-  : { first: false, updatedFrom: null };
+/** This launch's facts, handed to the first window only (`launchOnce`). */
+const takeLaunch = launchOnce(
+  posthog
+    ? recordLaunch(join(userData, "launches.json"), app.getVersion())
+    : { first: false, updatedFrom: null },
+);
 /** What every event from this build carries, the main process's and the studio's. */
 const buildProperties = {
   app_version: app.getVersion(),
@@ -189,17 +192,18 @@ const buildProperties = {
   platform: process.platform,
   os_version: process.getSystemVersion(),
 };
-const analytics: AnalyticsSetup | null = posthog
-  ? {
-      key: posthog.key,
-      host: posthog.host,
-      replay: posthog.replay,
-      channel: config.appName,
-      osVersion: buildProperties.os_version,
-      firstLaunch: launch.first,
-      updatedFrom: launch.updatedFrom,
-    }
-  : null;
+/** What a new window is told about analytics; the launch's facts go to the first one only. */
+const analyticsFor = (): AnalyticsSetup | null =>
+  posthog
+    ? {
+        key: posthog.key,
+        host: posthog.host,
+        replay: posthog.replay,
+        channel: config.appName,
+        osVersion: buildProperties.os_version,
+        launch: takeLaunch(),
+      }
+    : null;
 /** Who the main process's errors are put down to: set once the session is read. */
 let signedInUser: () => string | null = () => null;
 const telemetry = posthog
@@ -255,6 +259,7 @@ async function serveStudio(request: Request): Promise<Response> {
 function showWindow() {
   if (!app.isReady()) return;
   if (!mainWindow || mainWindow.isDestroyed()) {
+    const analytics = analyticsFor();
     mainWindow = createMainWindow({
       url: config.studioDevUrl ?? `${STUDIO_ORIGIN}/`,
       preload: join(here, "preload.cjs"),

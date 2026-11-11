@@ -61,9 +61,12 @@ export interface AnalyticsSetup {
   channel: string;
   /** The operating system's version (the user agent's is frozen). */
   osVersion: string;
-  firstLaunch: boolean;
-  /** The version the last launch ran, when an update was installed since. */
-  updatedFrom: string | null;
+  /**
+   * What this launch follows, for `app opened` and `update installed`; only in the launch's
+   * first window. A window opened again later (the Mac's dock icon after its window closed) has
+   * null: the launch was reported already.
+   */
+  launch: { first: boolean; updatedFrom: string | null } | null;
 }
 
 /**

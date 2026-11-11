@@ -13,6 +13,9 @@ import { buildApp, serve, waitUntil } from "../e2e-lib.ts";
 setDefaultTimeout(90_000);
 
 const KEY = "phc_e2e_sink";
+/** A 1×1 PNG, for a picture of the person's own. */
+const PNG =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
 interface Sent {
   path: string;
@@ -66,6 +69,8 @@ function postHogSink() {
             heatmaps: true,
             capturePerformance: { network_timing: true },
             autocaptureExceptions: true,
+            // Autocapture runs only once remote config says the project hasn't opted out.
+            autocapture_opt_out: false,
             featureFlags: {},
           },
           { headers: cors },
@@ -111,6 +116,10 @@ describe.skipIf(!chromiumPath)("PostHog in the built studio, against a local sin
     await page.setViewportSize({ width: 1440, height: 900 });
     const requested: string[] = [];
     page.on("request", (request) => requested.push(request.url()));
+    // A design's files, played here: the in-memory backend serves them at `https://assets.test/`.
+    await page.route("https://assets.test/**", (route) =>
+      route.fulfill({ status: 200, contentType: "image/png", body: Buffer.from(PNG, "base64") }),
+    );
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(String(error)));
     await page.addInitScript(
@@ -124,8 +133,7 @@ describe.skipIf(!chromiumPath)("PostHog in the built studio, against a local sin
           replay: mode,
           channel: "Ponzu Dev",
           osVersion: "15.1",
-          firstLaunch: true,
-          updatedFrom: null,
+          launch: { first: true, updatedFrom: null },
           apiUrl: host,
         };
       },
@@ -147,6 +155,34 @@ describe.skipIf(!chromiumPath)("PostHog in the built studio, against a local sin
       ),
     );
     await page.getByText("I drew the welcome screen").first().waitFor();
+    // A picture of the person's own in the thread, at an address under the design's asset key.
+    const attachment = await page.evaluate(
+      async ({ png }) => {
+        const fake = window.ponzuFake!;
+        const designId = [...fake.backend.designs.keys()][0]!;
+        const api = fake.backend.connect(fake.me).api;
+        const bytes = Uint8Array.from(atob(png), (c) => c.charCodeAt(0));
+        const upload = await api.designs.upload(designId, {
+          name: "my-sketch.png",
+          type: "image/png",
+          bytes,
+        });
+        await api.designs.sendMessage(designId, {
+          text: "Here is my sketch",
+          attachments: [upload.ref!],
+        });
+        return { designId, url: upload.url! };
+      },
+      { png: PNG },
+    );
+    await page.waitForFunction((src) => {
+      const img = document.querySelector<HTMLImageElement>(`#thread img[src="${src}"]`);
+      return !!img?.complete && img.naturalWidth > 0;
+    }, attachment.url);
+    // A search: its results name the designs it found, and the boards and comments.
+    await page.getByRole("button", { name: "Search" }).first().click();
+    await page.keyboard.type("Onboard");
+    await page.locator("#search-results [role=option]").first().waitFor();
     // An API request, as the app's own: it carries PostHog's session headers.
     await page.evaluate((host) => fetch(`${host}/api/probe`).catch(() => {}), sink.url);
     // A batch of the recording sent since the design drew; then leave, which sends what's queued.
@@ -160,7 +196,7 @@ describe.skipIf(!chromiumPath)("PostHog in the built studio, against a local sin
     sink.stop();
     // Telemetry broke nothing on the way.
     expect(errors).toEqual([]);
-    return { sink, requested, meId };
+    return { sink, requested, meId, attachment };
   }
 
   /**
@@ -188,14 +224,20 @@ describe.skipIf(!chromiumPath)("PostHog in the built studio, against a local sin
   };
 
   test("full: the app's events, its views as synthetic URLs, and the boards and thread recorded", async () => {
+    // Network timing isn't recorded on localhost (PostHog's own rule), so what it keeps of an
+    // address is held by privacy.test.ts.
     const { sink, requested, meId } = await openDesign("full");
     const events = sink.events();
     const names = events.map((e) => e.event);
 
-    // Nothing came from PostHog's CDN or anywhere but the app and the sink.
-    expect(
-      requested.filter((url) => !url.startsWith(app.url) && !url.startsWith(sink.url)),
-    ).toEqual(requested.filter((url) => url.startsWith("https://fonts.")));
+    // Nothing came from PostHog's CDN or anywhere but the app, the sink and the design's files.
+    const elsewhere = (url: string) =>
+      !url.startsWith(app.url) &&
+      !url.startsWith(sink.url) &&
+      !url.startsWith("https://assets.test/");
+    expect(requested.filter(elsewhere)).toEqual(
+      requested.filter((url) => url.startsWith("https://fonts.")),
+    );
 
     expect(names).toContain("app opened");
     expect(events.find((e) => e.event === "app opened")!.properties.first_launch).toBe(true);
@@ -225,9 +267,13 @@ describe.skipIf(!chromiumPath)("PostHog in the built studio, against a local sin
       channel: "Ponzu Dev",
       os_version: "15.1",
     });
-    // Autocapture keeps no element's words.
-    for (const click of events.filter((e) => e.event === "$autocapture")) {
+    // Autocapture keeps no element's words, nor its labels: the sidebar row clicked to open the
+    // design has the design's name in its `aria-label`.
+    const clicks = events.filter((e) => e.event === "$autocapture");
+    expect(clicks.length).toBeGreaterThan(0);
+    for (const click of clicks) {
       expect(JSON.stringify(click.properties)).not.toContain("Onboarding flow");
+      expect(JSON.stringify(click.properties)).not.toContain("onboarding-flow");
     }
 
     // The API heard the session: its request carried the session id the events have.
@@ -240,6 +286,7 @@ describe.skipIf(!chromiumPath)("PostHog in the built studio, against a local sin
     const recorded = snapshotText(events);
     expect(recorded).toContain("Welcome");
     expect(recorded).toContain("I drew the welcome screen");
+    expect(recorded).toContain("Here is my sketch");
     expect(recorded).toContain("ponzu://app/");
   });
 
@@ -260,7 +307,7 @@ describe.skipIf(!chromiumPath)("PostHog in the built studio, against a local sin
   });
 
   test("private: the window and how it is used, without the boards or the thread's words", async () => {
-    const { sink } = await openDesign("private");
+    const { sink, attachment } = await openDesign("private");
     const events = sink.events();
     const recorded = snapshotText(events);
     expect(recorded.length).toBeGreaterThan(1000);
@@ -271,6 +318,12 @@ describe.skipIf(!chromiumPath)("PostHog in the built studio, against a local sin
     expect(recorded).not.toContain("Welcome");
     expect(recorded).not.toContain("I drew the welcome screen");
     expect(recorded).not.toContain("Onboarding flow");
+    // Nor the search's results: the design it found, its match highlighted apart from the rest.
+    expect(recorded).not.toContain("ing flow");
+    // Nor the person's picture, nor the address that would fetch it.
+    expect(recorded).not.toContain("Here is my sketch");
+    expect(recorded).not.toContain(attachment.url);
+    expect(recorded).not.toContain(`assets.test/${attachment.designId}`);
     expect(events.map((e) => e.event)).toContain("design opened");
   });
 });

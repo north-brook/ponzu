@@ -1,3 +1,4 @@
+import { scrubSecrets } from "@ponzu/client";
 import type { CaptureResult, PostHogConfig } from "posthog-js";
 // The bundle with every extension PostHog would otherwise fetch from its CDN built in (the
 // recorder, exception autocapture, tracing headers, heatmaps, dead clicks) and no script loader:
@@ -9,7 +10,7 @@ import {
   placeOnView,
   replayPrivacy,
   scrubLocalPathsDeep,
-  scrubUrl,
+  scrubNetworkUrl,
   type ViewPlace,
 } from "./privacy.ts";
 
@@ -49,8 +50,14 @@ export function startPosthog(
       ...(event.$set ? { $set: placeOnView(event.$set, place, false) } : {}),
       ...(event.$set_once ? { $set_once: placeOnView(event.$set_once, place, false) } : {}),
     };
-    if (event.event === "$snapshot") placed.properties = placeSnapshot(placed.properties, place);
-    return development ? scrubLocalPathsDeep(placed) : placed;
+    // A recording's frames are compressed bytes, and its network timing is scrubbed as it is
+    // recorded (`maskCapturedNetworkRequestFn`); everything else goes through the last pass for
+    // URL queries and credentials (an exception's message can name a link with a code in it).
+    const sent =
+      event.event === "$snapshot"
+        ? { ...placed, properties: placeSnapshot(placed.properties, place) }
+        : scrubSecrets(placed);
+    return development ? scrubLocalPathsDeep(sent) : sent;
   };
 
   const client = posthog.init(setup.key, {
@@ -63,10 +70,13 @@ export function startPosthog(
     capture_pageview: false,
     capture_pageleave: false,
     save_referrer: false,
-    // Clicks, changes and submits, for heatmaps and paths; never an element's text, which is so
-    // often a design's name or someone's words.
+    // Clicks, changes and submits, for heatmaps and paths; never an element's text nor its
+    // attributes, which are so often a design's name or someone's words (a sidebar row's
+    // `aria-label` names its design, repo and branch; a board's `title` is its name). What is
+    // left is the elements' tags and places, which is what heatmaps and dead clicks need.
     autocapture: true,
     mask_all_text: true,
+    mask_all_element_attributes: true,
     capture_heatmaps: true,
     capture_dead_clicks: true,
     capture_exceptions: {
@@ -84,7 +94,11 @@ export function startPosthog(
       recordBody: false,
       maskCapturedNetworkRequestFn: (request) => ({
         ...request,
-        name: scrubUrl(request.name, { origin: pageOrigin, replacement: place.url }),
+        name: scrubNetworkUrl(request.name, {
+          origin: pageOrigin,
+          replacement: place.url,
+          api: context.apiUrl,
+        }),
       }),
     },
     tracing_headers: [new URL(context.apiUrl).hostname],

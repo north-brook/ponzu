@@ -8,9 +8,10 @@
  * field in Needs you, and a repo's secrets in Settings.
  *
  * `private`, besides: a design's boards are blocked wherever they are drawn (the canvas's live
- * boards and their pictures, the thread's miniatures, the sidebar's previews), and the text of
- * the canvas (board names, comments), the thread and its composer, the create page's ideas, the
- * pull request tab and the sidebar's design names is masked. The chrome, the layout and every
+ * boards and their pictures, the thread's miniatures and attachments, the sidebar's previews),
+ * and the text of the canvas (board names, comments), the thread and its composer, the create
+ * page's ideas, the pull request tab, the sidebar's design names and its search results is
+ * masked. The chrome, the layout and every
  * pointer and key stay watchable.
  */
 
@@ -26,6 +27,9 @@ const DESIGN_PIXELS = [
   "[data-pz-tier]",
   "[data-pz-cover]",
   '[data-replay="block"]',
+  // The thread's attachments: a person's own pictures, at addresses that carry the design's
+  // asset key. Masking the thread's text would leave both.
+  "#thread img",
 ];
 
 /** Where a design's or a person's words are: masked to asterisks, kept in place. */
@@ -69,6 +73,22 @@ export function scrubUrl(value: string, page: { origin: string; replacement: str
   const url = new URL(value);
   if (url.protocol === "file:") return page.replacement;
   return `${url.origin}${url.pathname}`;
+}
+
+/**
+ * A request's address for replay's network timing: the API's keep their path (`/v1/designs/…`
+ * says what was slow), everything else only its origin. A design's files are served under its
+ * asset key (`https://assets.ponzu.cloud/<asset key>/…`, docs/cloud.md), and that key is the
+ * capability to read them: a path off the API's origin may be one, so none is kept.
+ */
+export function scrubNetworkUrl(
+  value: string,
+  page: { origin: string; replacement: string; api: string },
+): string {
+  const scrubbed = scrubUrl(value, page);
+  if (scrubbed === page.replacement || !URL.canParse(scrubbed)) return scrubbed;
+  const url = new URL(scrubbed);
+  return url.origin === new URL(page.api).origin ? scrubbed : url.origin;
 }
 
 /**

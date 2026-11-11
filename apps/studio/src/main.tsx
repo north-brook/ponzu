@@ -50,16 +50,24 @@ function analyticsContext(): AnalyticsContext | null {
   return local ? { setup: local, platform: "web", version: "0.0.0", apiUrl: local.apiUrl } : null;
 }
 
-/** The launch's own events, once a launch: a reload after a crash is the same launch. */
+/**
+ * The launch's own events, once a launch. The shell hands the launch's facts to its first window
+ * only, so a window the dock opens again says nothing; a reload after a crash keeps the window's
+ * arguments, so this window remembers it has said them.
+ */
 function launched(analytics: Analytics, setup: AnalyticsSetup | null, version: string) {
+  const launch = setup?.launch;
+  if (!launch) return;
   try {
-    if (!setup || sessionStorage.getItem("ponzu.launched")) return;
+    if (sessionStorage.getItem("ponzu.launched")) return;
     sessionStorage.setItem("ponzu.launched", "1");
   } catch {}
-  if (!setup) return;
-  analytics.capture("app opened", { first_launch: setup.firstLaunch });
-  if (setup.updatedFrom) {
-    analytics.capture("update installed", { from_version: setup.updatedFrom, to_version: version });
+  analytics.capture("app opened", { first_launch: launch.first });
+  if (launch.updatedFrom) {
+    analytics.capture("update installed", {
+      from_version: launch.updatedFrom,
+      to_version: version,
+    });
   }
 }
 

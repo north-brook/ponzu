@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { scrubSecrets } from "@ponzu/client";
 import { PostHog, type PostHogOptions } from "posthog-node";
 import type { PosthogConfig } from "./config.ts";
 
@@ -47,7 +48,9 @@ export function startMainTelemetry(opts: {
     maxQueueSize: 100,
     requestTimeout: 5000,
     fetchRetryCount: 1,
-    before_send: (event) => (event ? scrubPaths(event, opts.home) : event),
+    // No home folder, and no URL's query or anything shaped like a credential (an error can
+    // name a deep link with its sign-in code in it).
+    before_send: (event) => (event ? scrubSecrets(scrubPaths(event, opts.home)) : event),
     ...(opts.fetch ? { fetch: opts.fetch } : {}),
   });
   // PostHog being away is never the person's problem.

@@ -23,7 +23,7 @@ a design is its `design_id`.
 
 | Event | Properties | When |
 |---|---|---|
-| `app opened` | `first_launch` | the window's studio starts; once a launch, a reload after a crash isn't another |
+| `app opened` | `first_launch` | the launch's first window starts; a reload after a crash, or a window the Mac's dock opens again, isn't another |
 | `update installed` | `from_version`, `to_version` | the first launch after an update |
 | `update available` | `version` | an update has downloaded and the title bar offers it |
 | `update restart clicked` | `version` | Restart, in its popover |
@@ -46,7 +46,9 @@ a design is its `design_id`.
 | `$exception` | | an uncaught error or rejection in the studio, an error React can't render past, and the main process's uncaught exceptions and rejections |
 
 Autocapture records clicks, changes and submits for heatmaps, dead clicks and paths, with no
-element's text (`mask_all_text`). Pointer-level detail is left to it.
+element's text (`mask_all_text`) and none of its attributes (`mask_all_element_attributes`): a
+sidebar row's `aria-label` names its design, repo and branch, and a board's `title` is its name.
+What is left is each element's tag and place. Pointer-level detail is left to it.
 
 **Views.** The studio has no routes and, in a development build, a page address that names the
 checkout, so every event and recording says where the window is as a stable synthetic URL, and a
@@ -67,9 +69,10 @@ anonymous. The main process puts its exceptions down to whoever is signed in.
 ## Session replay
 
 Every session is recorded when a project is set (turn session replay on, at 100%, in the
-project's settings): the DOM, pointer and keys, console logs, and network timing (each request's
-address without its query, method, status and duration; never headers or bodies). Heatmaps and
-dead clicks are on.
+project's settings): the DOM, pointer and keys, console logs, and network timing (method, status
+and duration, and the request's address: the API's with its path and without its query, anything
+else only its origin, since a design's files sit under its asset key, which is the capability to
+read them; never headers or bodies). Heatmaps and dead clicks are on.
 
 Both modes mask every input, and block outright (an empty box of its size) anything that can
 show a secret: PostHog's `ph-no-capture` class on the Claude card (its code and API key), a
@@ -78,8 +81,8 @@ secret's field in Needs you, and a repo's secrets in Settings. What else shows i
 
 | Mode | Shows |
 |---|---|
-| `private` (the default) | the chrome, the layout and every interaction. A design's boards are blocked wherever they are drawn (the canvas's live boards and pictures, the thread's miniatures, the sidebar's previews); the text and labels of the canvas (board names, comments), the thread and its composer, the create page's ideas, the pull request tab and the sidebar's design names are masked. |
-| `full` (Ponzu Dev) | everything a person sees, boards and thread included. |
+| `private` (the default) | the chrome, the layout and every interaction. A design's boards are blocked wherever they are drawn (the canvas's live boards and pictures, the thread's miniatures and attachments, the sidebar's previews); the text and labels of the canvas (board names, comments), the thread and its composer, the create page's ideas, the pull request tab, and the sidebar's design names and search results are masked. |
+| `full` (Ponzu Dev) | everything a person sees, boards and thread included. The recording keeps the addresses of a design's pictures so the player can show them, and with them the design's asset key: anyone who can watch a `full` recording can read that design's files. |
 
 The rules are `apps/studio/src/app/analytics/privacy.ts`; `analytics.e2e.test.ts` records a
 design in each mode against a local sink and checks what the recording holds.
@@ -129,7 +132,11 @@ As in 1.x, any of these turns everything off, in the shell and the studio, befor
 Tokens, API keys, OAuth codes, Ponzu's session ids, Claude credentials, repo secrets,
 authorization headers, request and response bodies, URL queries, and paths on someone's
 computer: the main process replaces the home folder with `~` in what it sends, and a development
-build's `/@fs/` paths lose the folders above the repo's own.
+build's `/@fs/` paths lose the folders above the repo's own. As a backstop, every event the
+studio and the shell send (an exception's message, say) passes through `scrubSecrets`
+(`packages/client/src/telemetry-scrub.ts`): any URL in it loses its query and fragment, and
+`code=…`, `token=…`, `Bearer …` and anything shaped like a GitHub, Anthropic, WorkOS or Ponzu
+credential is replaced.
 
 PostHog being down, slow or blocked costs nothing a person can see: nothing is awaited on a
 request's path, every capture is guarded, PostHog's queues are bounded, and quitting waits two

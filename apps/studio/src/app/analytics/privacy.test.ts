@@ -1,6 +1,13 @@
 import { expect, test } from "bun:test";
 import { viewUrl } from "./events.ts";
-import { placeOnView, replayPrivacy, SECRET_CLASS, scrubLocalPaths, scrubUrl } from "./privacy.ts";
+import {
+  placeOnView,
+  replayPrivacy,
+  SECRET_CLASS,
+  scrubLocalPaths,
+  scrubNetworkUrl,
+  scrubUrl,
+} from "./privacy.ts";
 
 const page = { origin: "ponzu-studio://app", replacement: "ponzu://app/design" };
 
@@ -14,6 +21,21 @@ test("a URL sent keeps its origin and path, never a query, a fragment or a file"
   expect(scrubUrl("ponzu-studio://app/assets/index.js", page)).toBe("ponzu://app/design");
   expect(scrubUrl("file:///Users/maya/Library/x", page)).toBe("ponzu://app/design");
   expect(scrubUrl("not a url", page)).toBe("not a url");
+});
+
+test("network timing keeps an API request's path, and of anything else only its origin", () => {
+  const network = { ...page, api: "https://api.ponzu.design" };
+  // A design's files sit under its asset key, the capability to read them.
+  expect(scrubNetworkUrl("https://assets.ponzu.cloud/k3y/assets/a.png?v=1", network)).toBe(
+    "https://assets.ponzu.cloud",
+  );
+  expect(scrubNetworkUrl("https://assets.ponzu.cloud/pull-requests/k3y/light.png", network)).toBe(
+    "https://assets.ponzu.cloud",
+  );
+  expect(scrubNetworkUrl("https://api.ponzu.design/v1/designs/dsn_1?x=1", network)).toBe(
+    "https://api.ponzu.design/v1/designs/dsn_1",
+  );
+  expect(scrubNetworkUrl("ponzu-studio://app/assets/index.js", network)).toBe("ponzu://app/design");
 });
 
 test("an event says the view it happened in, never the page's address or a referrer", () => {
@@ -75,6 +97,8 @@ test("secrets are blocked in both modes; a design's pixels and words only in pri
   expect(full.maskTextSelector).toBeNull();
   expect(full.maskAttributeFn).toBeNull();
   expect(closed.blockSelector).toContain("[data-artboard-host]");
+  // The thread's attachments: a person's pictures, at addresses under the asset key.
+  expect(closed.blockSelector).toContain("#thread img");
   expect(closed.maskTextSelector).toContain("#thread");
   const inThread = { closest: (s: string) => (s.includes("#thread") ? {} : null) } as Element;
   expect(closed.maskAttributeFn!("aria-label", "Pricing page", inThread)).toBe("************");

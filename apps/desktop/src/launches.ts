@@ -14,6 +14,19 @@ export interface Launch {
   updatedFrom: string | null;
 }
 
+/**
+ * The launch's facts for the first window that asks, and null for every window after it: the
+ * Mac keeps running with no window and makes a new one from the dock, and that is not a launch.
+ */
+export function launchOnce(launch: Launch): () => Launch | null {
+  let taken = false;
+  return () => {
+    if (taken) return null;
+    taken = true;
+    return launch;
+  };
+}
+
 interface Saved {
   version: string;
 }

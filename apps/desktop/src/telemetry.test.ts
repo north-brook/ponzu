@@ -3,7 +3,7 @@ import { EventEmitter } from "node:events";
 import { gunzipSync } from "node:zlib";
 import { configFor, posthogFrom } from "./config.ts";
 import { contentSecurityPolicy } from "./csp.ts";
-import { recordLaunch } from "./launches.ts";
+import { launchOnce, recordLaunch } from "./launches.ts";
 import { scrubPaths, startMainTelemetry } from "./main-telemetry.ts";
 import { telemetryOffBecause } from "./telemetry-consent.ts";
 
@@ -123,6 +123,13 @@ test("a launch knows whether it is the first, and what version it was updated fr
   expect(recordLaunch("/data/launches.json", "2.2.0", readOnly).updatedFrom).toBe("2.1.0");
 });
 
+test("a launch is told to its first window only, not to one the dock opens again", () => {
+  const take = launchOnce({ first: true, updatedFrom: "2.0.0" });
+  expect(take()).toEqual({ first: true, updatedFrom: "2.0.0" });
+  expect(take()).toBeNull();
+  expect(take()).toBeNull();
+});
+
 test("a path names the home folder nowhere", () => {
   const event = {
     message: "ENOENT: /Users/maya/Library/x.json",
@@ -172,7 +179,11 @@ test("the main process's uncaught errors go to PostHog as the signed-in person, 
   // Only a monitor: Electron's own uncaught-exception handling (its dialog) is left as it is.
   expect(process.listenerCount("uncaughtException")).toBe(0);
   expect(process.listenerCount("unhandledRejection")).toBe(0);
-  process.emit("uncaughtExceptionMonitor", new Error("boom in /Users/maya/x"), "uncaughtException");
+  process.emit(
+    "uncaughtExceptionMonitor",
+    new Error("boom in /Users/maya/x opening ponzu://auth?code=abc123"),
+    "uncaughtException",
+  );
   user = null;
   process.emit("uncaughtExceptionMonitor", new Error("rejected"), "unhandledRejection");
   await telemetry.shutdown();
@@ -188,6 +199,9 @@ test("the main process's uncaught errors go to PostHog as the signed-in person, 
     origin: "uncaughtException",
   });
   expect(JSON.stringify(mine)).not.toContain("/Users/maya");
+  // A deep link's sign-in code in an error's message is not sent; the link itself is.
+  expect(JSON.stringify(mine)).not.toContain("abc123");
+  expect(JSON.stringify(mine)).toContain("ponzu://auth");
   expect(nobody!.distinct_id).not.toBe("usr_1");
   expect(nobody!.properties.$process_person_profile).toBe(false);
 });
