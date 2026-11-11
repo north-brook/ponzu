@@ -40,9 +40,8 @@ export function desktopHost(desktop: PonzuDesktop): Host {
     api,
     live: createLive({ api }),
     // The Mac's own lights sit in the chrome; elsewhere the window keeps its own title bar.
-    lights: "native",
+    lights: desktop.platform === "darwin" ? "native" : "none",
     signIn: () => desktop.session.signIn(),
-    cancelSignIn: () => desktop.session.cancelSignIn(),
     persistence: () => desktop.session.persistence(),
     onLink: (listener) => desktop.onLink(listener),
     onCommand: (listener) => desktop.onCommand(listener),

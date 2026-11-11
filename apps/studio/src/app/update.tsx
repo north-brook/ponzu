@@ -25,7 +25,7 @@ export function useUpdate(updater: Updater | null): UpdateState | null {
 }
 
 /**
- * A yuzu circle beside the lockup once a newer Ponzu has downloaded. Its popover holds the
+ * A yuzu circle at the chrome's left, past the sidebar toggle, once a newer Ponzu has downloaded. Its popover holds the
  * release notes, which are what's new: nothing shows them again after the restart.
  */
 export function UpdateMark({ updater }: { updater: Updater | null }) {
@@ -41,7 +41,7 @@ export function UpdateMark({ updater }: { updater: Updater | null }) {
           aria-label={
             state.installing ? `Restarting into Ponzu ${version}` : `Ponzu ${version} is ready`
           }
-          className="app-no-drag ml-1 grid size-[18px] shrink-0 cursor-default place-items-center rounded-pill bg-yuzu text-yuzu-ink outline-none transition-[filter] duration-(--dur-hover) focus-ring hover:brightness-[1.04]"
+          className="app-no-drag ml-2 grid size-[18px] shrink-0 cursor-default place-items-center rounded-pill bg-yuzu text-yuzu-ink outline-none transition-[filter] duration-(--dur-hover) focus-ring hover:brightness-[1.04]"
         >
           <Icon icon={ArrowUp02Icon} size={12} stroke={2.6} />
         </button>
