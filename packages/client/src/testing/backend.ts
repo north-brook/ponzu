@@ -19,6 +19,7 @@ import { createLive, type Live, MAX_LIVE_QUERIES } from "../live/live.ts";
 import { LIVE_COLUMNS, type LiveQueryName, type RawRow } from "../live/rows.ts";
 import type { Profile } from "../rpc.ts";
 import type { Session, SessionState } from "../session.ts";
+import { FakeClaude } from "./claude.ts";
 import { type FakeQuery, FakeRealtime, fakeSeal } from "./realtime.ts";
 
 /*
@@ -49,7 +50,16 @@ interface FakeWorkspace {
   name: string;
   kind: "personal" | "org";
   members: Map<string, Role>;
+  /** Who owns the account on GitHub: always admins. */
+  owners: Set<string>;
   repos: FakeRepo[];
+  /** The App is on the account. */
+  installed: boolean;
+  /** It was once, so its members still have it, marked. */
+  everInstalled: boolean;
+  suspended: boolean;
+  /** Someone has GitHub's install page open for it: the next sync finds it installed. */
+  installing: boolean;
 }
 
 interface FakeThreadItem {
@@ -81,6 +91,9 @@ export interface FakeDesign {
   done: Map<string, number[]>;
   undone: Map<string, number[]>;
   agent: { state: "idle" | "working" | "needs_you"; status: string | null; artboards: string[] };
+  /** What it was made to run on, when the create said. */
+  model: string | null;
+  effort: string | null;
   thread: FakeThreadItem[];
   questions: FakeQuestion[];
   presence: Map<string, { pageId: string | null; joinedAt: string; seenAt: string }>;
@@ -123,6 +136,12 @@ export class FakeBackend {
    * answer and the last one stays. A repo with none set has `none`.
    */
   readonly repoIdeas = new Map<string, RepoIdeasAnswer[]>();
+  /** Each person's own Claude: connecting it, and what their designs start on. */
+  readonly claude: FakeClaude;
+  /** When each person finished the guided setup steps that leave no other trace. */
+  readonly onboarding = new Map<string, { whereAt: string | null; iphoneAt: string | null }>();
+  /** Designs by the person's create key: a create sent again makes nothing new. */
+  private readonly createKeys = new Map<string, string>();
   /** While false, every call fails as if there were no network. */
   online = true;
   private ids = 0;
@@ -130,6 +149,7 @@ export class FakeBackend {
 
   constructor(readonly clock: Clock) {
     this.realtime = new FakeRealtime((query) => this.rows(query), clock);
+    this.claude = new FakeClaude(clock);
   }
 
   addPerson(input: { login: string; name?: string | null }): FakePerson {
@@ -150,15 +170,34 @@ export class FakeBackend {
     name?: string;
     kind?: "personal" | "org";
     members: Record<string, Role>;
+    /** Who owns the account on GitHub. A personal account's admins own it. */
+    owners?: string[];
     repos?: { name: string; access?: Record<string, Permission> }[];
-  }): { id: string; repos: { id: string; fullName: string }[] } {
+    /** False: a GitHub account the App is not on yet, which "Where do you design?" offers. */
+    installed?: boolean;
+    suspended?: boolean;
+  }): { id: string; githubAccountId: number; repos: { id: string; fullName: string }[] } {
+    const installed = input.installed ?? true;
+    const kind = input.kind ?? "org";
     const workspace: FakeWorkspace = {
       id: this.id("ws"),
       githubAccountId: 1000 + this.ids,
       githubLogin: input.login,
       name: input.name ?? input.login,
-      kind: input.kind ?? "org",
+      kind,
       members: new Map(Object.entries(input.members)),
+      owners: new Set(
+        input.owners ??
+          (kind === "personal"
+            ? Object.entries(input.members)
+                .filter(([, role]) => role === "admin")
+                .map(([id]) => id)
+            : []),
+      ),
+      installed,
+      everInstalled: installed,
+      suspended: input.suspended ?? false,
+      installing: false,
       repos: (input.repos ?? []).map((repo) => ({
         id: this.id("repo"),
         fullName: `${input.login}/${repo.name}`,
@@ -168,8 +207,45 @@ export class FakeBackend {
     this.workspaces.set(workspace.id, workspace);
     return {
       id: workspace.id,
+      githubAccountId: workspace.githubAccountId,
       repos: workspace.repos.map(({ id, fullName }) => ({ id, fullName })),
     };
+  }
+
+  /** The App installed on a workspace's account, as its webhook would tell the API. */
+  install(workspaceId: string): void {
+    const workspace = this.workspace(workspaceId);
+    Object.assign(workspace, { installed: true, everInstalled: true, installing: false });
+    this.changed();
+  }
+
+  /** GitHub suspended the App on the account, or lifted the suspension. */
+  suspend(workspaceId: string, suspended = true): void {
+    this.workspace(workspaceId).suspended = suspended;
+    this.changed();
+  }
+
+  /** The App removed from the account: its members keep the workspace, marked. */
+  uninstall(workspaceId: string): void {
+    this.workspace(workspaceId).installed = false;
+    this.changed();
+  }
+
+  /** Mark a guided setup step done for `userId`, as another device would have. */
+  finishStep(userId: string, step: "where" | "iphone"): void {
+    const was = this.onboarding.get(userId) ?? { whereAt: null, iphoneAt: null };
+    const at = this.now();
+    this.onboarding.set(userId, {
+      whereAt: step === "where" ? (was.whereAt ?? at) : was.whereAt,
+      iphoneAt: step === "iphone" ? (was.iphoneAt ?? at) : was.iphoneAt,
+    });
+    this.changed();
+  }
+
+  private workspace(id: string): FakeWorkspace {
+    const workspace = this.workspaces.get(id);
+    if (!workspace) throw new Error(`No workspace ${id}.`);
+    return workspace;
   }
 
   /**
@@ -330,27 +406,42 @@ export class FakeBackend {
       kind: workspace.kind,
       avatarUrl: null,
       role,
-      installed: true,
-      suspended: false,
+      installed: workspace.installed,
+      suspended: workspace.suspended,
     });
+    /** The workspaces the person is in: those the App is or was on. */
     const mine = () =>
       [...this.workspaces.values()].flatMap((workspace) => {
         const role = workspace.members.get(person.id);
-        return role ? [{ workspace, role }] : [];
+        return role && workspace.everInstalled ? [{ workspace, role }] : [];
       });
+    // The person's own account first, then each one with the App that they reach.
     const accounts = () => ({
-      accounts: mine().map(({ workspace }) => ({
-        githubAccountId: workspace.githubAccountId,
-        login: workspace.githubLogin,
-        name: workspace.name,
-        avatarUrl: null,
-        kind: workspace.kind,
-        status: "ready" as const,
-        workspaceId: workspace.id,
-        suspended: false,
-        memberCount: workspace.kind === "org" ? workspace.members.size : null,
-      })),
+      accounts: [...this.workspaces.values()]
+        .filter(
+          (workspace) =>
+            workspace.members.has(person.id) &&
+            (workspace.installed || workspace.kind === "personal"),
+        )
+        .toSorted((a, b) => Number(b.kind === "personal") - Number(a.kind === "personal"))
+        .map((workspace) => ({
+          githubAccountId: workspace.githubAccountId,
+          login: workspace.githubLogin,
+          name: workspace.name,
+          avatarUrl: null,
+          kind: workspace.kind,
+          status: workspace.installed ? ("ready" as const) : ("not_installed" as const),
+          workspaceId: workspace.installed ? workspace.id : null,
+          suspended: workspace.suspended,
+          memberCount:
+            workspace.kind === "org" && workspace.installed ? workspace.members.size : null,
+        })),
     });
+    const onboarding = () => {
+      const done = this.onboarding.get(person.id);
+      return { whereConfirmedAt: done?.whereAt ?? null, iphoneStepSeenAt: done?.iphoneAt ?? null };
+    };
+    const claudeApi = this.claude.api(person.id, () => this.changed());
     const memberRow = (workspace: FakeWorkspace, userId: string) => {
       const who = this.people.get(userId)!;
       return {
@@ -359,7 +450,7 @@ export class FakeBackend {
         name: who.name,
         avatarUrl: who.avatarUrl,
         role: workspace.members.get(userId)!,
-        githubAccess: "member" as const,
+        githubAccess: workspace.owners.has(userId) ? ("owner" as const) : ("member" as const),
       };
     };
 
@@ -367,18 +458,42 @@ export class FakeBackend {
       me: () =>
         call(() => ({
           user: person,
-          onboarding: { whereConfirmedAt: null, iphoneStepSeenAt: null },
-          claudeAccount: null,
+          onboarding: onboarding(),
+          claudeAccount: this.claude.view(person.id),
           workspaces: mine().map(({ workspace, role }) => summary(workspace, role)),
         })),
+      onboarding: (step) =>
+        call(() => {
+          this.finishStep(person.id, step);
+          return onboarding();
+        }),
+      claude: claudeApi,
       github: {
         accounts: () => call(accounts),
-        sync: () => call(accounts),
-        installLink: () =>
-          call(() => ({
-            url: "https://github.com/apps/ponzu-dev/installations/new?state=fake",
-            expiresAt: new Date(this.clock.now() + 15 * 60_000).toISOString(),
-          })),
+        // GitHub is asked again: an install page that was open has finished by now.
+        sync: () =>
+          call(() => {
+            for (const workspace of this.workspaces.values()) {
+              if (workspace.installing && workspace.members.has(person.id)) {
+                this.install(workspace.id);
+              }
+            }
+            return accounts();
+          }),
+        installLink: (body) =>
+          call(() => {
+            const account = [...this.workspaces.values()].find(
+              (workspace) =>
+                workspace.githubAccountId === body.githubAccountId &&
+                workspace.members.has(person.id) &&
+                !workspace.installed,
+            );
+            if (account) account.installing = true;
+            return {
+              url: "https://github.com/apps/ponzu-dev/installations/new?state=fake",
+              expiresAt: new Date(this.clock.now() + 15 * 60_000).toISOString(),
+            };
+          }),
       },
       workspaces: {
         list: () =>
@@ -391,13 +506,15 @@ export class FakeBackend {
             return {
               workspace: {
                 ...summary(workspace, role),
-                installation: {
-                  id: workspace.githubAccountId,
-                  repositorySelection: "selected" as const,
-                  installedAt: null,
-                  installedBy: null,
-                  suspendedAt: null,
-                },
+                installation: workspace.installed
+                  ? {
+                      id: workspace.githubAccountId,
+                      repositorySelection: "selected" as const,
+                      installedAt: null,
+                      installedBy: null,
+                      suspendedAt: workspace.suspended ? this.now() : null,
+                    }
+                  : null,
               },
               repos: workspace.repos
                 .filter((repo) => repoPermission(repo, person.id) !== "none")
@@ -430,6 +547,13 @@ export class FakeBackend {
               throw new ApiError(404, "not_found", "There is no such member in this workspace.");
             }
             const admins = [...workspace.members.values()].filter((r) => r === "admin").length;
+            if (role === "member" && workspace.owners.has(userId)) {
+              throw new ApiError(
+                409,
+                "owner_is_admin",
+                "They own it on GitHub, so they're an admin.",
+              );
+            }
             if (role === "member" && workspace.members.get(userId) === "admin" && admins === 1) {
               throw new ApiError(409, "last_admin", "A workspace needs an admin.");
             }
@@ -456,6 +580,9 @@ export class FakeBackend {
       designs: {
         create: (body) =>
           call(() => {
+            const key = body.createKey ? `${person.id}:${body.createKey}` : null;
+            const made = key ? this.createKeys.get(key) : undefined;
+            if (made) return this.view(readable(made), person.id);
             const { workspace } = member(body.workspaceId);
             const repo = body.repoId
               ? workspace.repos.find((candidate) => candidate.id === body.repoId)
@@ -483,6 +610,8 @@ export class FakeBackend {
               done: new Map(),
               undone: new Map(),
               agent: { state: "idle", status: null, artboards: [] },
+              model: body.model ?? null,
+              effort: body.effort ?? null,
               thread: [],
               questions: [],
               presence: new Map(),
@@ -490,6 +619,11 @@ export class FakeBackend {
             };
             design.sequencer.now = this.clock.now();
             this.designs.set(design.id, design);
+            if (key) this.createKeys.set(key, design.id);
+            if (body.message) {
+              const payload = { text: body.message.text, from: personOf(person) };
+              this.append(design, { kind: "message", payload }, person.id);
+            }
             this.changed();
             return this.view(design, person.id);
           }),
@@ -579,44 +713,48 @@ export class FakeBackend {
         sendMessage: (id, body) =>
           call(() => {
             const design = writable(id);
-            const item = this.append(
-              design,
-              { kind: "message", payload: { text: body.text, from: personOf(person) } },
-              person.id,
-            );
+            const attachments = body.attachments?.map((ref) => ({
+              ref,
+              contentType: "image/png",
+            }));
+            const payload = {
+              text: body.text,
+              from: personOf(person),
+              ...(attachments ? { attachments } : {}),
+            };
+            const item = this.append(design, { kind: "message", payload }, person.id);
             this.touch(design);
-            return { id: this.id("ev"), seq: item.seq };
+            return item;
           }),
         answer: (id, questionId, _body) =>
           call(() => {
             const design = writable(id);
             const question = design.questions.find((q) => q.id === questionId);
-            if (!question || question.status !== "open") {
-              throw new ApiError(404, "not_found", "There is no such question waiting.");
+            if (!question) throw new ApiError(404, "not_found", "There is no such question.");
+            if (question.status !== "open") {
+              throw new ApiError(409, "question_closed", "This question is no longer open.");
             }
             question.status = "answered";
             if (!design.questions.some((q) => q.status === "open")) design.agent.state = "working";
             this.touch(design);
-            return { id: this.id("ev"), seq: question.seq };
+            return { id: question.id, status: question.status };
           }),
         stop: (id) =>
           call(() => {
             const design = writable(id);
-            const item = this.append(design, {
+            this.append(design, {
               kind: "notice",
               payload: { type: "stopped", by: personOf(person) },
             });
             design.agent = { state: "idle", status: null, artboards: [] };
             this.touch(design);
-            return { id: this.id("ev"), seq: item.seq };
           }),
         thread: (id, page = {}) =>
           call(() => {
             const older = readable(id)
               .thread.map((entry) => entry.item)
               .filter((item) => page.before === undefined || item.seq < page.before);
-            const limit = page.limit ?? 50;
-            return { items: older.slice(-limit), more: older.length > limit };
+            return { items: older.slice(-(page.limit ?? 50)) };
           }),
         upload: (id, file) =>
           call(() => {
@@ -688,6 +826,9 @@ export class FakeBackend {
     switch (name as LiveQueryName) {
       case "me": {
         const who = this.people.get(userId)!;
+        const done = this.onboarding.get(userId);
+        const claude = this.claude.view(userId);
+        const defaults = this.claude.defaultsOf(userId);
         const row: RawRow<"me"> = {
           id: who.id,
           github_login: who.githubLogin,
@@ -695,22 +836,22 @@ export class FakeBackend {
           email: who.email,
           avatar_url: who.avatarUrl,
           default_agent: null,
-          default_model: null,
-          default_effort: null,
+          default_model: defaults.model,
+          default_effort: defaults.effort,
           ping_needs_you: true,
           ping_replies: true,
           ping_pr_ready: true,
           ping_teammate_comments: true,
           email_digest: false,
-          onboarding_where_at: null,
-          onboarding_iphone_at: null,
-          claude_account_id: null,
-          claude_account_kind: null,
-          claude_account_status: null,
+          onboarding_where_at: done?.whereAt ?? null,
+          onboarding_iphone_at: done?.iphoneAt ?? null,
+          claude_account_id: claude ? `cla_${userId}` : null,
+          claude_account_kind: claude?.kind ?? null,
+          claude_account_status: claude?.status ?? null,
           claude_plan_label: null,
           claude_key_hint: null,
-          claude_connected_at: null,
-          claude_expires_at: null,
+          claude_connected_at: claude?.connectedAt ?? null,
+          claude_expires_at: claude?.expiresAt ?? null,
           claude_limited_until: null,
         };
         return [row];

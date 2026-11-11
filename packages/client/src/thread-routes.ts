@@ -1,67 +1,36 @@
 import type { ThreadItem } from "@ponzu/runner/protocol";
+import type { InferRequestType, InferResponseType } from "hono/client";
+import type { Rpc } from "./rpc.ts";
 
 /*
- * PENDING ROUTES. The thread's routes for people are being added to the API alongside this
- * package and are not on `cloud` yet, so their shapes are written here by hand, from
- * docs/cloud.md ("Events", "The thread", "Uploads") and the runner's protocol. When they merge,
- * delete this file and let `api.ts` infer them from `AppType` like every other route.
- *
- *   POST /v1/designs/:id/messages                  SendMessageBody → SentEvent
- *   POST /v1/designs/:id/questions/:qid/answer     AnswerBody      → SentEvent
- *   POST /v1/designs/:id/stop                      {}              → SentEvent
- *   GET  /v1/designs/:id/thread?before=N&limit=M   ThreadPage
- *   POST /v1/designs/:id/uploads                   UploadBody      → UploadTickets
- *   PUT  <put.url>                                 the bytes, with put.headers, no bearer
- *   POST /v1/designs/:id/uploads/complete          { ids }         → UploadedFiles
+ * The thread's routes for people (docs/cloud.md, "People's side"), as the apps name their
+ * shapes, inferred from the API's own routes (`AppType`) so the two cannot drift. The API's
+ * schema for an item says only that its payload is an object; which payload goes with which
+ * kind is the runner protocol's `ThreadItem`, so items are read as that.
  */
 
-/** What a person sends the agent. `uploads` are ids from `api.upload`. */
-export interface SendMessageBody {
-  text: string;
-  uploads?: string[];
-}
+type DesignRoutes = Rpc["v1"]["designs"][":id"];
+
+/** What a person sends the agent. `attachments` are `ref`s from `api.designs.upload`. */
+export type SendMessageBody = InferRequestType<DesignRoutes["messages"]["$post"]>["json"];
 
 /** An answer to a question row (`design.questions`), as the runner's `answer` event carries it. */
-export interface AnswerBody {
-  /** For a `question`: the chosen label, or labels joined, per question text. */
-  answers?: Record<string, string>;
-  /** For a `plan` or a `permission`. */
-  approved?: boolean;
-  note?: string;
-}
+export type AnswerBody = InferRequestType<
+  DesignRoutes["questions"][":questionId"]["answer"]["$post"]
+>["json"];
 
-/** The event the API added to the design's feed. The thread item arrives through `design.thread`. */
-export interface SentEvent {
-  id: string;
-  seq: number;
-}
+type ThreadAnswer = InferResponseType<DesignRoutes["thread"]["$get"], 200>;
 
-/** Thread items older than `before`, oldest first, for scrolling back past what is live. */
-export interface ThreadPage {
-  items: ThreadItem[];
-  /** There are older ones still. */
-  more: boolean;
-}
+/** Thread items before `before`, oldest first, for scrolling back past what is live. */
+export type ThreadPage = Omit<ThreadAnswer, "items"> & { items: ThreadItem[] };
 
-/** `asset`: a file for the canvas (a picture dropped on a board). `attachment`: one sent with a message. */
+/**
+ * `asset`: a file for the canvas (a picture dropped on a board). `attachment`: one sent with a
+ * message. Both are images kept as files of the design, which the API treats alike.
+ */
 export type UploadPurpose = "asset" | "attachment";
 
-export interface UploadBody {
-  /** `sha256` is hex: the address takes these bytes and no others. */
-  files: {
-    purpose: UploadPurpose;
-    name: string;
-    contentType: string;
-    size: number;
-    sha256: string;
-  }[];
-}
-
-export interface UploadTickets {
-  files: { id: string; put: { url: string; headers: Record<string, string> }; expiresAt: string }[];
-}
-
-export interface UploadedFiles {
-  /** An asset's `ref` is `assets/<name>`, as markup uses it; `url` is where it is served. */
-  files: { id: string; ref: string | null; url: string }[];
+/** An item as the API sent it, read by its kind. */
+export function asThreadItem(item: ThreadAnswer["items"][number]): ThreadItem {
+  return item as ThreadItem;
 }

@@ -1,17 +1,15 @@
 import type { ClientOp, PageIcon } from "@ponzu/core";
+import type { InferRequestType } from "hono/client";
 import { ApiError, networkError } from "./errors.ts";
 import type { Randomness } from "./pkce.ts";
-import { createRpc, type Fetch } from "./rpc.ts";
+import { createRpc, type Fetch, type Rpc } from "./rpc.ts";
 import type { Session } from "./session.ts";
-import type {
-  AnswerBody,
-  SendMessageBody,
-  SentEvent,
-  ThreadPage,
-  UploadBody,
-  UploadedFiles,
-  UploadPurpose,
-  UploadTickets,
+import {
+  type AnswerBody,
+  asThreadItem,
+  type SendMessageBody,
+  type ThreadPage,
+  type UploadPurpose,
 } from "./thread-routes.ts";
 
 /** A file to upload, in the shape both a browser `File` and the phone's picker give. */
@@ -29,6 +27,15 @@ export interface ApiOptions {
   fetch?: Fetch;
 }
 
+/** What `api.designs.create` takes. */
+export type CreateDesignBody = InferRequestType<Rpc["v1"]["designs"]["$post"]>["json"];
+/** What `api.claude.setDefaults` takes: the model, the effort, or both. */
+export type AgentDefaultsBody = InferRequestType<Rpc["v1"]["claude"]["defaults"]["$patch"]>["json"];
+/** A guided setup step that leaves no other trace (`api.onboarding`). */
+export type OnboardingStep = InferRequestType<
+  Rpc["v1"]["me"]["onboarding"]["$post"]
+>["json"]["step"];
+
 /**
  * One method per thing the apps ask the API (apps/api/README.md has the rules every route
  * follows). Each returns the answer's JSON, typed from the API's own routes, or throws
@@ -39,20 +46,50 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
   const v1 = rpc.v1;
   const design = (id: string) => ({ param: { id } });
 
-  /** For the routes `AppType` does not have yet (thread-routes.ts). */
-  const call = async <T>(method: string, path: string, body?: unknown): Promise<T> => {
-    const response = await session.fetch(`${session.apiUrl}/v1/${path}`, {
-      method,
-      ...(body === undefined
-        ? {}
-        : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
-    });
-    return (await response.json()) as T;
-  };
-
   return {
     /** Everything the app needs at launch: the person, setup progress, their workspaces. */
     me: async () => (await v1.me.$get()).json(),
+
+    /**
+     * Records a guided setup step as done (Continue on "Where do you design?", Start designing
+     * on the iPhone step). The first time counts. Answers where setup stands.
+     */
+    onboarding: async (step: OnboardingStep) =>
+      (await v1.me.onboarding.$post({ json: { step } })).json(),
+
+    /** The person's own Claude, which their designs run on (docs/cloud.md, "Credentials"). */
+    claude: {
+      /** What is connected, or `{ account: null }`. Never the credential. */
+      get: async () => (await v1.claude.$get()).json(),
+      /** 400 `claude_key_invalid` when Anthropic doesn't take the key. */
+      connectApiKey: async (key: string) =>
+        (await v1.claude["api-key"].$post({ json: { key } })).json(),
+      /** A claude.ai sign-in: open `authorizeUrl`, then send the code it shows before `expiresAt`. */
+      startSignIn: async () => (await v1.claude["sign-ins"].$post()).json(),
+      /**
+       * 400 `claude_code_invalid` (not whole, or turned away), 409 `claude_sign_in_used` and
+       * 410 `claude_sign_in_expired`. Past a code that was turned away, only a new sign-in works.
+       */
+      sendCode: async (signInId: string, code: string) =>
+        (
+          await v1.claude["sign-ins"][":id"].code.$post({
+            param: { id: signInId },
+            json: { code },
+          })
+        ).json(),
+      /** The person chose another way: the sign-in is given up. */
+      abandonSignIn: async (signInId: string): Promise<void> => {
+        await v1.claude["sign-ins"][":id"].$delete({ param: { id: signInId } });
+      },
+      /** Designs wait until Claude is connected again; what runs on it now stops. */
+      disconnect: async (): Promise<void> => {
+        await v1.claude.$delete();
+      },
+      /** The model and effort new designs start on, and what there is to choose from. */
+      defaults: async () => (await v1.claude.defaults.$get()).json(),
+      setDefaults: async (body: AgentDefaultsBody) =>
+        (await v1.claude.defaults.$patch({ json: body })).json(),
+    },
 
     github: {
       /** What "Where do you design?" lists, as of the last sync. */
@@ -90,9 +127,11 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
     },
 
     designs: {
-      /** In a repo the person can push to, or Scratch (`repoId` left out). */
-      create: async (body: { workspaceId: string; repoId?: string | null; name?: string }) =>
-        (await v1.designs.$post({ json: body })).json(),
+      /**
+       * In a repo the person can push to, or Scratch (`repoId` left out). With a first message
+       * the agent sets off at once; a `createKey` sent again answers the design it made.
+       */
+      create: async (body: CreateDesignBody) => (await v1.designs.$post({ json: body })).json(),
       get: async (id: string) => (await v1.designs[":id"].$get(design(id))).json(),
       rename: async (id: string, body: { name?: string; icon?: PageIcon | null }) =>
         (await v1.designs[":id"].$patch({ ...design(id), json: body })).json(),
@@ -128,39 +167,61 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
         await v1.designs[":id"].seen.$post({ ...design(id), json: body });
       },
 
-      // Pending routes (thread-routes.ts): typed by hand until the API has them.
-      sendMessage: (id: string, body: SendMessageBody) =>
-        call<SentEvent>("POST", `designs/${id}/messages`, body),
-      answer: (id: string, questionId: string, body: AnswerBody) =>
-        call<SentEvent>("POST", `designs/${id}/questions/${questionId}/answer`, body),
-      stop: (id: string) => call<SentEvent>("POST", `designs/${id}/stop`, {}),
-      /** Older thread items than `before` (a seq), for scrolling back. */
-      thread: (id: string, page: { before?: number; limit?: number } = {}) => {
-        const query = new URLSearchParams();
-        if (page.before !== undefined) query.set("before", String(page.before));
-        if (page.limit !== undefined) query.set("limit", String(page.limit));
-        const text = query.toString();
-        return call<ThreadPage>("GET", `designs/${id}/thread${text ? `?${text}` : ""}`);
+      /** Says something to the agent; answers the thread's new `message` item. */
+      sendMessage: async (id: string, body: SendMessageBody) =>
+        asThreadItem(
+          await (await v1.designs[":id"].messages.$post({ ...design(id), json: body })).json(),
+        ),
+      /** 409 `question_closed` when someone answered first, or the run moved on. */
+      answer: async (id: string, questionId: string, body: AnswerBody) =>
+        (
+          await v1.designs[":id"].questions[":questionId"].answer.$post({
+            param: { id, questionId },
+            json: body,
+          })
+        ).json(),
+      stop: async (id: string): Promise<void> => {
+        await v1.designs[":id"].stop.$post(design(id));
       },
-      /** A person's file, straight to storage: an asset for the canvas, or a message's attachment. */
-      upload: async (id: string, file: UploadFile, purpose: UploadPurpose = "asset") => {
+      /** Older thread items than `before` (a seq), oldest first, for scrolling back. */
+      thread: async (
+        id: string,
+        page: { before?: number; limit?: number } = {},
+      ): Promise<ThreadPage> => {
+        const answer = await (
+          await v1.designs[":id"].thread.$get({
+            ...design(id),
+            query: {
+              ...(page.before === undefined ? {} : { before: String(page.before) }),
+              ...(page.limit === undefined ? {} : { limit: String(page.limit) }),
+            },
+          })
+        ).json();
+        return { ...answer, items: answer.items.map(asThreadItem) };
+      },
+      /**
+       * A person's image, straight to storage: an asset for the canvas, or a message's
+       * attachment (its `ref` goes in the message's `attachments`). The API keeps both alike,
+       * as files of the design.
+       */
+      upload: async (id: string, file: UploadFile, _purpose: UploadPurpose = "asset") => {
         const crypto = opts.crypto ?? (globalThis.crypto as unknown as Randomness);
         const sha256 = hex(await crypto.subtle.digest("SHA-256", file.bytes));
-        const ticket: UploadBody["files"][number] = {
-          purpose,
-          name: file.name,
-          contentType: file.type,
-          size: file.bytes.byteLength,
-          sha256,
-        };
-        const tickets = await call<UploadTickets>("POST", `designs/${id}/uploads`, {
-          files: [ticket],
-        });
+        const ticket = { name: file.name, contentType: file.type, size: file.bytes.byteLength };
+        const tickets = await (
+          await v1.designs[":id"].uploads.$post({
+            ...design(id),
+            json: { files: [{ ...ticket, sha256 }] },
+          })
+        ).json();
         const { id: uploadId, put } = tickets.files[0]!;
         await putBytes(opts.fetch ?? globalThis.fetch, put, file.bytes);
-        const done = await call<UploadedFiles>("POST", `designs/${id}/uploads/complete`, {
-          ids: [uploadId],
-        });
+        const done = await (
+          await v1.designs[":id"].uploads.complete.$post({
+            ...design(id),
+            json: { ids: [uploadId] },
+          })
+        ).json();
         return done.files[0]!;
       },
     },
