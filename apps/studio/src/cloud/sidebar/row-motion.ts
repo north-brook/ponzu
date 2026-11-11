@@ -15,13 +15,29 @@ const MOVES = "[data-design-row], [data-moves]";
 
 const keyOf = (el: HTMLElement) => el.dataset.designRow ?? el.dataset.moves ?? "";
 
+/** Where something was at a commit: its box, and how far its scrolling list had scrolled. */
+interface Place {
+  rect: DOMRect;
+  scroller: HTMLElement | null;
+  scrolled: number;
+}
+
+/** The list that scrolls `el`, if one does. */
+function scrollerOf(el: HTMLElement, root: HTMLElement): HTMLElement | null {
+  for (let at = el.parentElement; at && at !== root; at = at.parentElement) {
+    const overflow = getComputedStyle(at).overflowY;
+    if (overflow === "auto" || overflow === "scroll") return at;
+  }
+  return null;
+}
+
 /**
  * Animates what moved inside `root` whenever `signature` changes: pass something that names
  * which rows are showing and in what order. A change that isn't a change of rows (a status, a
  * preview) leaves everything still.
  */
 export function useRowMotion(root: RefObject<HTMLElement | null>, signature: string): void {
-  const before = useRef<Map<string, DOMRect> | null>(null);
+  const before = useRef<Map<string, Place> | null>(null);
   const last = useRef(signature);
 
   // Every commit: where everything is now, to be "before" at the next change. Rows mid-flight
@@ -29,13 +45,18 @@ export function useRowMotion(root: RefObject<HTMLElement | null>, signature: str
   useLayoutEffect(() => {
     const el = root.current;
     if (!el) return;
-    const now = new Map<string, DOMRect>();
+    const now = new Map<string, Place>();
     const nodes = [...el.querySelectorAll<HTMLElement>(MOVES)];
     for (const node of nodes) {
       for (const animation of node.getAnimations()) {
         if (animation.id === "row-motion") animation.finish();
       }
-      now.set(keyOf(node), node.getBoundingClientRect());
+      const scroller = scrollerOf(node, el);
+      now.set(keyOf(node), {
+        rect: node.getBoundingClientRect(),
+        scroller,
+        scrolled: scroller?.scrollTop ?? 0,
+      });
     }
     const was = before.current;
     const changed = last.current !== signature;
@@ -54,8 +75,11 @@ export function useRowMotion(root: RefObject<HTMLElement | null>, signature: str
         node.animate([{ opacity: 0 }, { opacity: 1 }], { duration, easing, id: "row-motion" });
         continue;
       }
-      const dx = from.left - to.left;
-      const dy = from.top - to.top;
+      // Scrolling makes no commit, so the old box is where the row was when it was measured:
+      // take off however far its list has scrolled since, to get where it was just now.
+      const since = from.scroller?.isConnected ? from.scroller.scrollTop - from.scrolled : 0;
+      const dx = from.rect.left - to.rect.left;
+      const dy = from.rect.top - since - to.rect.top;
       if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) continue;
       node.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }], {
         duration,
