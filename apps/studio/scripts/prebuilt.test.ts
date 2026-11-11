@@ -2,7 +2,15 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildEnv, describe, PREBUILT_ENV, prebuilt, STAMP, type Stamp } from "./prebuilt.ts";
+import {
+  buildEnv,
+  describe,
+  envFiles,
+  PREBUILT_ENV,
+  prebuilt,
+  STAMP,
+  type Stamp,
+} from "./prebuilt.ts";
 
 let root: string;
 let src: string;
@@ -21,6 +29,7 @@ beforeEach(() => {
     env: buildEnv(),
     scanned: [src],
     sources: { [join(src, "app.tsx")]: describe(join(src, "app.tsx"))! },
+    envFiles: Object.fromEntries(envFiles(root, "e2e").map((file) => [file, describe(file)])),
   };
   writeFileSync(join(root, "e2e", STAMP), JSON.stringify(stamp));
   process.env[PREBUILT_ENV] = root;
@@ -63,6 +72,16 @@ test("a source gone, or a new one where the build scanned, fails", () => {
   expect(() => prebuilt("e2e")).toThrow(/built before .*new\.tsx was made/);
   rmSync(join(src, "app.tsx"));
   expect(() => prebuilt("e2e")).toThrow(/app\.tsx, which is gone/);
+});
+
+test("a .env file made, changed or removed after the build fails", () => {
+  const file = join(root, ".env.e2e");
+  writeFileSync(file, "VITE_PREBUILT_TEST=1");
+  expect(() => prebuilt("e2e")).toThrow(/built before .*\.env\.e2e was made, changed or removed/);
+  rmSync(file);
+  const copy = prebuilt("e2e")!;
+  expect(existsSync(join(copy, "index.html"))).toBe(true);
+  rmSync(copy, { recursive: true, force: true });
 });
 
 test("a build made with other VITE_ variables fails", () => {

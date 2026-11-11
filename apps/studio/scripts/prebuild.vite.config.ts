@@ -8,7 +8,15 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type ConfigEnv, mergeConfig, type Plugin, type UserConfig } from "vite";
 import studio from "../vite.config.ts";
-import { buildEnv, describe, filesUnder, type Kind, STAMP, type Stamp } from "./prebuilt.ts";
+import {
+  buildEnv,
+  describe,
+  envFiles,
+  filesUnder,
+  type Kind,
+  STAMP,
+  type Stamp,
+} from "./prebuilt.ts";
 
 // Vite loads this under Node, so no Bun APIs here or in what it imports.
 const STUDIO = fileURLToPath(new URL("..", import.meta.url));
@@ -34,7 +42,10 @@ function stamp(kind: Kind): Plugin {
         const now = describe(file);
         if (now) sources[file] = now;
       }
-      const body: Stamp = { kind, env: buildEnv(), scanned, sources };
+      // Vite reads its .env files itself, so they are no module; one made later counts too.
+      const env: Stamp["envFiles"] = {};
+      for (const file of envFiles(STUDIO, kind)) env[file] = describe(file);
+      const body: Stamp = { kind, env: buildEnv(), scanned, sources, envFiles: env };
       this.emitFile({ type: "asset", fileName: STAMP, source: JSON.stringify(body) });
     },
   };

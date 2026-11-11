@@ -24,6 +24,13 @@ export interface Stamp {
   scanned: string[];
   /** Every file the build read, with its size and modification time once it was built. */
   sources: Record<string, [size: number, mtimeMs: number]>;
+  /** Vite's .env files for the build's mode (envFiles), as they were: null for one not there. */
+  envFiles: Record<string, [size: number, mtimeMs: number] | null>;
+}
+
+/** The .env files Vite reads from `dir` for `mode`, there or not. */
+export function envFiles(dir: string, mode: string): string[] {
+  return [".env", ".env.local", `.env.${mode}`, `.env.${mode}.local`].map((f) => join(dir, f));
 }
 
 /**
@@ -73,7 +80,7 @@ export function prebuilt(kind: Kind): string | null {
   const stampPath = join(dir, STAMP);
   if (!existsSync(stampPath)) throw stale("isn't there");
   const stamp = JSON.parse(readFileSync(stampPath, "utf8")) as Stamp;
-  if (stamp.kind !== kind || Object.keys(stamp.sources).length === 0) {
+  if (stamp.kind !== kind || Object.keys(stamp.sources).length === 0 || !stamp.envFiles) {
     throw stale("has a stamp for something else");
   }
   if (JSON.stringify(stamp.env) !== JSON.stringify(buildEnv())) {
@@ -83,6 +90,11 @@ export function prebuilt(kind: Kind): string | null {
     const now = describe(path);
     if (!now) throw stale(`was built from ${path}, which is gone`);
     if (now[0] !== size || now[1] !== mtimeMs) throw stale(`is older than ${path}`);
+  }
+  for (const [path, then] of Object.entries(stamp.envFiles)) {
+    if (JSON.stringify(describe(path)) !== JSON.stringify(then)) {
+      throw stale(`was built before ${path} was made, changed or removed`);
+    }
   }
   for (const path of stamp.scanned.flatMap(filesUnder)) {
     if (!stamp.sources[path]) throw stale(`was built before ${path} was made`);
