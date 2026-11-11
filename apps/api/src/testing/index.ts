@@ -20,6 +20,11 @@ import { FakePoke, FakeSealer, MemoryStorage } from "./fakes.ts";
 
 export { FakeGithub, type FakeInstallation, type FakeRepository } from "./fake-github.ts";
 export { FakeModel, type FakeReply } from "./fake-model.ts";
+export {
+  type FakePull,
+  type FakeRepoAccess,
+  MERGEABLE_AFTER_MS,
+} from "./fake-pull-requests.ts";
 export { FakeWorkos } from "./fake-workos.ts";
 export { FakePoke, FakeSealer, MemoryStorage } from "./fakes.ts";
 

@@ -1,6 +1,7 @@
 import { claimJobs, completeJob, failAbandonedJobs, failJob, type Job } from "@ponzu/db";
 import type { Deps } from "../deps/index.ts";
 import { runWebhookJob, WEBHOOK_JOB } from "../github/webhook.ts";
+import { REFRESH_JOB, runRefreshJob } from "../pull-requests/refresh.ts";
 import { runWakeJob, WAKE_JOB } from "../sandboxes/wake.ts";
 
 /*
@@ -11,13 +12,21 @@ import { runWakeJob, WAKE_JOB } from "../sandboxes/wake.ts";
  * once, so each kind's work is safe to repeat.
  */
 
-export type JobDeps = Pick<Deps, "db" | "clock" | "vault" | "github" | "log">;
+export type JobDeps = Pick<
+  Deps,
+  "db" | "clock" | "vault" | "github" | "log" | "storage" | "config"
+>;
 
-/** What runs a job of each kind. A kind is added here by the module whose work it is. */
-const HANDLERS: Record<string, (deps: JobDeps, payload: Job["payload"]) => Promise<void>> = {
+/**
+ * What runs a job of each kind. A kind is added here by the module whose work it is. Made when
+ * asked, not when this module loads: a module that runs its own jobs imports this one, and may
+ * be loaded first.
+ */
+const handlers = (): Record<string, (deps: JobDeps, payload: Job["payload"]) => Promise<void>> => ({
   [WEBHOOK_JOB]: runWebhookJob,
   [WAKE_JOB]: runWakeJob,
-};
+  [REFRESH_JOB]: runRefreshJob,
+});
 
 /** The wait before the next attempt: a minute after the first, doubling, at most an hour. */
 const RETRY_BASE_MS = 60_000;
@@ -38,7 +47,7 @@ export async function runJob(
 ): Promise<void> {
   const { db, clock, log } = deps;
   try {
-    const handler = HANDLERS[job.kind];
+    const handler = handlers()[job.kind];
     if (!handler) throw new Error(`Nothing runs jobs of kind ${job.kind}.`);
     await handler(deps, job.payload);
   } catch (error) {

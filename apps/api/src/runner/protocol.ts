@@ -5,8 +5,10 @@ import {
   type ClaimRequest,
   type CompleteRequest,
   type GitCredentialRequest,
+  MAX_PULL_REQUEST_SUMMARY,
   MAX_TEXT,
   MAX_THREAD_WRITE,
+  type PullRequestSummaryRequest,
   type QuestionRequest,
   type RunErrorCode,
   type StateRequest,
@@ -168,6 +170,10 @@ export const GitCredential: z.ZodType<GitCredentialRequest> = z.object({
   protocol: z.string().max(32),
   host: z.string().max(256),
   path: z.string().max(512),
+});
+
+export const PullRequestSummary: z.ZodType<PullRequestSummaryRequest> = z.object({
+  summary: text(MAX_PULL_REQUEST_SUMMARY),
 });
 
 const Count = z.number().int().min(0);

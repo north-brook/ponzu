@@ -43,6 +43,25 @@ export async function appendThreadItem(db: Db, item: NewThreadItem): Promise<Thr
   return row!;
 }
 
+/**
+ * Add an item whose id the caller made to the end of a design's thread, unless the thread has
+ * it already: true when it was added. Unlike `appendThreadItem`, posting it again writes
+ * nothing at all, so the thread's watchers hear of it once.
+ */
+export async function appendThreadItemOnce(
+  db: Db,
+  item: NewThreadItem & { id: string },
+): Promise<boolean> {
+  const added = await run(
+    db
+      .insert(threadItems)
+      .values({ ...item, payload: scrubbed(item.payload) })
+      .onConflictDoNothing({ target: [threadItems.designId, threadItems.id] })
+      .returning({ id: threadItems.id }),
+  );
+  return added.length > 0;
+}
+
 /** One item a runner writes: appended when new, its payload replaced while it streams. */
 export interface ThreadWrite {
   id: string;

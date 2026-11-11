@@ -82,6 +82,17 @@ export const designs = pgTable(
      * order, so one older than this is not applied.
      */
     prUpdatedAt: instant("pr_updated_at"),
+    /**
+     * When the API began the read of GitHub that the pull request columns above come from. A
+     * check finishing or mergeability being worked out leaves GitHub's `updated_at` alone, so
+     * this is what keeps a slower, older read from being stored over a newer one.
+     */
+    prReadAt: instant("pr_read_at"),
+    /**
+     * The agent's words on what the branch changes, for the pull request's description. Kept
+     * here until a pull request is opened, and written into its body whenever they change.
+     */
+    prSummary: text("pr_summary"),
     agentState: text("agent_state", { enum: AGENT_STATES }).notNull().default("idle"),
     /** One line: what the agent is doing. */
     agentStatus: text("agent_status"),

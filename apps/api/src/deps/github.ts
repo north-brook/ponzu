@@ -4,6 +4,7 @@ import type { Clock } from "@ponzu/sandbox";
 import { SignJWT } from "jose";
 import { ApiError, UpstreamError } from "../http/errors.ts";
 import type { Fetch } from "./fetch.ts";
+import { createPullRequestCalls, type GithubPullRequests } from "./github-pull-requests.ts";
 
 /*
  * GitHub, on plain fetch, in the two ways the API talks to it: as a person, with their user
@@ -89,7 +90,7 @@ export interface GithubInstallationToken {
  * carries GitHub's `status`, so a caller can tell "no such repository, or not for you" (404)
  * and "not allowed" (403) from GitHub being down.
  */
-export interface Github {
+export interface Github extends GithubPullRequests {
   /** Calls made as a person. Each fails as `github_reauth_required` when GitHub refuses the token. */
   getUser(userToken: string): Promise<GithubUser>;
   /** Needs the App's "Email addresses" permission. */
@@ -225,14 +226,17 @@ export function createGithub({
     log: { debug() {}, info() {}, warn() {}, error() {} },
   });
 
-  /** One call to api.github.com. `as` says whose credential `bearer` is. */
-  async function call(
+  /**
+   * One request to api.github.com, answered whatever its status but a person's 401. `as` says
+   * whose credential `bearer` is.
+   */
+  async function request(
     as: "user" | "app",
     method: string,
     path: string,
     bearer: string,
     body?: unknown,
-  ) {
+  ): Promise<GithubAnswer> {
     let response: Response;
     try {
       response = await fetch(`${API_URL}${path}`, {
@@ -254,12 +258,33 @@ export function createGithub({
       // The token ran out early or the person revoked the App: only signing in again mends it.
       throw new ApiError(401, "github_reauth_required", "Sign in again to reconnect GitHub.");
     }
-    if (!response.ok) {
-      throw new UpstreamError("github", `${method} ${path} answered ${response.status}`, {
-        status: response.status,
+    const text = await response.text();
+    let parsed: any = null;
+    try {
+      parsed = text ? JSON.parse(text) : null;
+    } catch (cause) {
+      if (response.ok) {
+        throw new UpstreamError("github", `${method} ${path} answered with no JSON`, { cause });
+      }
+    }
+    return { status: response.status, body: parsed };
+  }
+
+  /** One call to api.github.com that must succeed: any other answer is an `UpstreamError`. */
+  async function call(
+    as: "user" | "app",
+    method: string,
+    path: string,
+    bearer: string,
+    body?: unknown,
+  ) {
+    const answer = await request(as, method, path, bearer, body);
+    if (answer.status < 200 || answer.status >= 300) {
+      throw new UpstreamError("github", `${method} ${path} answered ${answer.status}`, {
+        status: answer.status,
       });
     }
-    return (await response.json()) as any;
+    return answer.body;
   }
 
   /** Every page of a list GitHub wraps as `{ total_count, [key]: [...] }`, up to `MAX_PAGES`. */
@@ -327,17 +352,28 @@ export function createGithub({
     }
   }
 
+  /** A GET as the App, with a `metadata: read` token for one repository. */
+  function getAsApp(installationId: number, repositoryId: number, path: string) {
+    return asApp({ installationId, repositoryId }, { metadata: "read" }, (token) =>
+      call("app", "GET", path, token),
+    );
+  }
+
   /**
-   * A GET as the App, with a `metadata: read` token for one repository. A token GitHub stops
-   * taking before it runs out (the installation was suspended, or its permissions changed) is
-   * dropped, and one more is minted.
+   * Work as the App in one repository, with a token for exactly `permissions` there. A token
+   * GitHub stops taking before it runs out (the installation was suspended, or its permissions
+   * changed) is dropped, and the work is tried once more with a new one.
    */
-  async function getAsApp(installationId: number, repositoryId: number, path: string) {
-    const key = `${installationId}:${repositoryId}`;
+  async function asApp<T>(
+    target: { installationId: number; repositoryId: number },
+    permissions: AppPermissions,
+    work: (token: string) => Promise<T>,
+  ): Promise<T> {
+    const key = `${target.installationId}:${target.repositoryId}:${JSON.stringify(permissions)}`;
     for (let attempt = 1; ; attempt++) {
-      const token = await metadataToken(key, installationId, repositoryId);
+      const token = await appToken(key, target, permissions);
       try {
-        return await call("app", "GET", path, token);
+        return await work(token);
       } catch (error) {
         if (attempt === 2 || !(error instanceof UpstreamError) || error.status !== 401) throw error;
         tokens.delete(key);
@@ -345,11 +381,11 @@ export function createGithub({
     }
   }
 
-  /** A `metadata: read` token for one repository, reused while it has a while to run. */
-  async function metadataToken(
+  /** A token for one repository, reused while it has a while to run. */
+  async function appToken(
     key: string,
-    installationId: number,
-    repositoryId: number,
+    { installationId, repositoryId }: { installationId: number; repositoryId: number },
+    permissions: AppPermissions,
   ): Promise<string> {
     const held = tokens.get(key);
     if (held && held.expiresAt.getTime() - TOKEN_REUSE_MARGIN_MS > clock.now()) return held.token;
@@ -358,7 +394,7 @@ export function createGithub({
       minted = await createInstallationToken({
         installationId,
         repositoryIds: [repositoryId],
-        permissions: { metadata: "read" },
+        permissions: { ...permissions },
       });
     } catch (error) {
       // 404: the installation is gone. 422: the repository is not in it any more.
@@ -507,6 +543,18 @@ export function createGithub({
       return typeof account.name === "string" && account.name.trim() !== "" ? account.name : null;
     },
 
+    ...createPullRequestCalls({
+      request,
+      async asApp(target, permissions, work) {
+        try {
+          return await asApp(target, permissions, work);
+        } catch (error) {
+          if (!(error instanceof NoInstallationToken)) throw error;
+          throw new ApiError(403, "forbidden", "Ponzu cannot reach this repository on GitHub now.");
+        }
+      },
+    }),
+
     async getRepositoryAbout(token, fullName) {
       const { data: repository } = await reading("repos.get", () =>
         octokit.rest.repos.get({ ...at(fullName), ...as(token) }),
@@ -611,6 +659,35 @@ async function fileOrNull(
   const bytes = Buffer.from(file.content, "base64");
   // A cut can fall inside a character: what is left of it decodes as U+FFFD.
   return new TextDecoder().decode(bytes.subarray(0, maxBytes));
+}
+
+/** What GitHub answered: its status, and its body when it sent JSON. */
+export interface GithubAnswer {
+  status: number;
+  body: any;
+}
+
+/** What an installation token may do, by GitHub's permission names. */
+export type AppPermissions = Readonly<Record<string, "read" | "write">>;
+
+/**
+ * How a group of calls reaches GitHub: one request as anybody, or work as the App in one
+ * repository with a token for exactly the permissions given.
+ */
+export interface GithubTransport {
+  request(
+    as: "user" | "app",
+    method: string,
+    path: string,
+    bearer: string,
+    body?: unknown,
+  ): Promise<GithubAnswer>;
+  /** Throws 403 `forbidden` when the App cannot reach the repository at all. */
+  asApp<T>(
+    target: { installationId: number; repositoryId: number },
+    permissions: AppPermissions,
+    work: (token: string) => Promise<T>,
+  ): Promise<T>;
 }
 
 /**
