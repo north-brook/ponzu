@@ -65,8 +65,13 @@ export const AGENT_BLOCKERS = [
   "sandbox_busy",
   "sandbox_failed",
 ] as const;
-/** What uploaded bytes are for: a file of the design, a file a link reaches, the sidebar's picture. */
-export const UPLOAD_PURPOSES = ["asset", "export", "preview"] as const;
+/**
+ * What uploaded bytes are for: a file of the design, a file a link reaches, the sidebar's
+ * picture; and two the runner keeps that no client ever reads: the Claude session's transcript
+ * and a Scratch design's work in progress, each a compressed archive (docs/cloud.md, "Saving
+ * the sandbox").
+ */
+export const UPLOAD_PURPOSES = ["asset", "export", "preview", "session", "workspace"] as const;
 
 export const USAGE_KINDS = ["sandbox", "model"] as const;
 export const USAGE_PAYERS = ["ponzu", "own_plan"] as const;

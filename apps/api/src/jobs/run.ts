@@ -16,7 +16,16 @@ import { RetryLater } from "./retry.ts";
 
 export type JobDeps = Pick<
   Deps,
-  "db" | "clock" | "vault" | "github" | "log" | "sandbox" | "poke" | "storage" | "config"
+  | "db"
+  | "clock"
+  | "vault"
+  | "github"
+  | "log"
+  | "sandbox"
+  | "poke"
+  | "runnerPort"
+  | "storage"
+  | "config"
 >;
 
 /** A job as its handler sees it: which attempt this is, out of how many. */

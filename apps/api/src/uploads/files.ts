@@ -1,4 +1,11 @@
 import type { UploadPurpose } from "@ponzu/db";
+import {
+  ARCHIVE_TYPE,
+  MAX_SESSION_BYTES,
+  MAX_WORKSPACE_BYTES,
+  SESSION_ARCHIVE,
+  WORKSPACE_ARCHIVE,
+} from "@ponzu/runner/protocol";
 import type { StoredObject } from "../deps/storage.ts";
 import { ApiError } from "../http/errors.ts";
 
@@ -68,7 +75,21 @@ const RULES: Record<UploadKind, Rule> = {
   image: { types: IMAGE_TYPES, maxBytes: 20 * MB },
   export: { types: EXPORT_TYPES, maxBytes: 50 * MB },
   preview: { types: { png: "image/png" }, maxBytes: 5 * MB, names: ["light.png", "dark.png"] },
+  // A checkpoint's archives (docs/cloud.md, "Saving the sandbox"): never served to anyone.
+  session: {
+    types: { gz: ARCHIVE_TYPE },
+    maxBytes: MAX_SESSION_BYTES,
+    names: [SESSION_ARCHIVE],
+  },
+  workspace: {
+    types: { gz: ARCHIVE_TYPE },
+    maxBytes: MAX_WORKSPACE_BYTES,
+    names: [WORKSPACE_ARCHIVE],
+  },
 };
+
+/** Purposes whose bytes no client may ever read: stored apart, and recorded by a checkpoint. */
+export const PRIVATE_PURPOSES: readonly UploadKind[] = ["session", "workspace"];
 
 /** Names reused for new bytes (an asset) may be cached briefly; the rest never change. */
 const CHANGEABLE = "public, max-age=300";
@@ -94,7 +115,7 @@ export function checkUpload(kind: UploadKind, file: Declared): StoredObject {
       400,
       "invalid_request",
       rule.names
-        ? `A preview is named ${rule.names.join(" or ")}.`
+        ? `A ${kind} is named ${rule.names.join(" or ")}.`
         : `"${file.name}" can't be a file's name. Use letters, numbers, dots, dashes and underscores, with its extension.`,
     );
   }
@@ -121,7 +142,11 @@ export function checkUpload(kind: UploadKind, file: Declared): StoredObject {
     contentType: type,
     size: file.size,
     sha256: file.sha256,
-    cacheControl: kind === "asset" || kind === "image" ? CHANGEABLE : IMMUTABLE,
+    cacheControl: PRIVATE_PURPOSES.includes(kind)
+      ? "private, no-store"
+      : kind === "asset" || kind === "image"
+        ? CHANGEABLE
+        : IMMUTABLE,
     ...(type === "image/svg+xml" ? { contentDisposition: "attachment" } : {}),
   };
 }

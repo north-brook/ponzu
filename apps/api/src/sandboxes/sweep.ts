@@ -1,5 +1,6 @@
 import {
   countSandboxRestart,
+  hasHeldEvents,
   isSandboxKnown,
   listSandboxesToSweep,
   moveSandbox,
@@ -11,6 +12,7 @@ import {
 } from "@ponzu/db";
 import type { JobDeps } from "../jobs/run.ts";
 import { AUTO_STOP_SECONDS, designSandboxes, sandboxLabels } from "./orchestrate.ts";
+import { stopSandbox } from "./quiesce.ts";
 import { destroySandboxes, retireSandboxes } from "./retire.ts";
 import { startWake } from "./wake.ts";
 
@@ -201,8 +203,9 @@ const STEPS: Record<SweepStep, Step> = {
 };
 
 /**
- * Put an awake sandbox to sleep with an explicit stop. With `idleBefore`, only if nobody has
- * kept it awake since. False when it was not this call that stopped it.
+ * Put an awake sandbox to sleep with an explicit stop, once its runner is ready for it or has
+ * had its time (quiesce.ts). With `idleBefore`, only if nobody has kept it awake since. False
+ * when it was not this call that stopped it.
  */
 async function putToSleep(
   deps: JobDeps,
@@ -220,7 +223,8 @@ async function putToSleep(
     ...(changes ? { changes } : {}),
   });
   if (!stopping) return false;
-  await deps.sandbox.stop(sandbox.providerId!);
+  // A runner that is being restarted for going quiet has nothing to say.
+  await stopSandbox(deps, stopping, { quiesce: !changes });
   // The stop is under way; a wake that comes now waits it out.
   await moveSandbox(db, {
     id: sandbox.id,
@@ -228,6 +232,11 @@ async function putToSleep(
     to: "asleep",
     now: new Date(clock.now()),
   });
+  // A claim the runner had out as it got ready brought events it held back for the wake
+  // (docs/cloud.md, "Getting ready to sleep"); asleep, nothing would wake the design for them.
+  if (idleBefore && (await hasHeldEvents(db, sandbox.designId))) {
+    await startWake(deps, sandbox.designId, "held");
+  }
   return true;
 }
 

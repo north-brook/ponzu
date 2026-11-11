@@ -30,9 +30,11 @@ src/
     github-pull-requests.ts  a design's pull request: the one GraphQL read and describing
                     it as the App, opening and acting on it as the person
     background.ts   work that outlives its request
-    storage.ts      real: Cloudflare R2 over its S3 API (presigned PUTs, head, copy, delete)
+    storage.ts      real: Cloudflare R2 over its S3 API (presigned PUTs and GETs, head, copy,
+                    delete); `archives` is the same, on R2_PRIVATE_BUCKET when it is set
     sigv4.ts        AWS Signature Version 4 on Web Crypto, for storage
-    poke.ts         real: `POST /poke` to an awake runner through its sandbox's address
+    poke.ts         real: `POST /poke` and `POST /report` to an awake runner through its
+                    sandbox's address, and whether its `/health` answers (`runnerPort`)
     anthropic.ts    real: whether Anthropic takes an API key (the free list of models)
     realtime.ts     real: seals live queries with the branch's Realtime secret
     model.ts        real: Claude Haiku via the AI SDK on Ponzu's own key, structured answers
@@ -45,8 +47,10 @@ src/
   designs/        committing ops, undo, the current document and its cache, who may send
                   which op (op-rules.ts), and the events a design's feed gets
   runner/         the runner protocol's side here: its request bodies (protocol.ts), the
-                  session, thread writes, git credentials; runner.e2e.test.ts runs the real
-                  runner against these routes
+                  session, thread writes, git credentials, checkpoints (checkpoint.ts: the
+                  transcript and work-in-progress archives, kept where no client reads them,
+                  restoring them, and rollbacks logged and counted); runner.e2e.test.ts runs the
+                  real runner against these routes
   pull-requests/  a design's pull request: sync.ts reads it and records it (the one place a
                   merge settles a design), refresh.ts reads it again after webhooks, as jobs,
                   open.ts opens it and keeps the agent's summary and picture in it, actions.ts
@@ -55,6 +59,8 @@ src/
   uploads/        what may be uploaded and how it is served (files.ts), presign and complete
   sandboxes/      wake.ts: requestWake, the one door from what people do to a design's sandbox;
                   orchestrate.ts: the wake job (create, resume, a new environment, replace);
+                  quiesce.ts: every stop asks the runner to get ready, waits, syncs, stops,
+                  and a warm resume starts a runner that had exited;
                   environment.ts: what a sandbox starts with; sweep.ts: the minute's idle
                   stop, dead runners, settled designs, orphans and repairs; retire.ts
   claude/         a person's own Claude: connecting a key or a subscription (sign-in.ts drives
@@ -89,7 +95,11 @@ deployment that wakes them must set it; unset, every wake shows `sandbox_failed`
 runner must speak this API's runner protocol, so bake it (`bun apps/runner/image/bake.ts`) from
 a commit at least as new as the API's protocol: an image from before `claimId` (migration
 0008) cannot claim its events. The one the sandbox lifecycle was proven with end to end is
-`ponzu-runner-6041787d9d11`. Every deployment shares the boat.dev account; the sweeps keep to
+`ponzu-runner-6041787d9d11`. Checkpoints, getting ready to sleep and `POST /report` need an image
+from this API's checkpoint routes on (migration 0014), and one from this API's `keep` on, whose
+runner keeps work in progress off GitHub: `apps/runner/image/current.json` names it. An older
+image still works against this API: its runner has no `/report` (a stop then does not wait for
+it, and still runs `sync`), and it saves no checkpoint, so its disk stays the only copy. Every deployment shares the boat.dev account; the sweeps keep to
 the sandboxes labelled with their own database (`SandboxConfig.scope`).
 
 ## Adding a route
@@ -151,8 +161,8 @@ the sandboxes labelled with their own database (`SandboxConfig.scope`).
    `POST /v1/github/webhook` reads its raw body to check the signature before parsing it.
 
 4. **Dependencies.** Read them from `c.var.deps` (`db`, `clock`, `vault`, `workos`, `github`,
-   `sandbox`, `storage`, `poke`, `realtime`, `model`, `docs`, `gitTokens`, `background`, `log`,
-   `config`). Never import a client,
+   `sandbox`, `storage`, `poke`, `runnerPort`, `realtime`, `model`, `docs`, `gitTokens`,
+   `background`, `log`, `config`). Never import a client,
    the database or the clock as a module-level value, never call `fetch` or `Date.now()`
    directly, and never read `process.env` outside `env.ts`. Something new to talk to is an
    interface in `deps/`, a real implementation that takes `fetch` and `clock`, a line in
@@ -201,8 +211,10 @@ the sandboxes labelled with their own database (`SandboxConfig.scope`).
    (in-memory services behind the real clients), `t.sandbox` (`FakeProvider`, with the image
    `TEST_SNAPSHOT` baked), `t.anthropic` (the API keys Anthropic takes), `t.storage`
    (`MemoryStorage`, which holds a presigned PUT to what R2 does: its `fetch` serves the
-   signed addresses and refuses other bytes, headers, sizes or a late PUT), `t.poke` (the
-   pokes, recorded), `t.realtime`, `t.model` (`FakeModel`: every request it was sent, answered
+   signed addresses and refuses other bytes, headers, sizes or a late PUT, and serves a signed
+   GET), `t.poke` (the pokes, report requests and health checks, recorded: `onReport` plays a
+   runner that answers a request for a report, `healthy` one whose `/health` answers),
+   `t.realtime`, `t.model` (`FakeModel`: every request it was sent, answered
    from `reply(…)`), `t.clock`, `t.logs` and `t.db`. `signInAs` goes through the real exchange;
    `startSignIn` stops before it. Give GitHub installations and repositories with
    `t.github.installations.push(…)`. `await t.backgroundDone()` waits for what routes handed
@@ -336,8 +348,12 @@ builds that do work we use the one with nothing experimental in it: `bun build` 
 the preset still recognises the entry. The costs: the Vercel build does not typecheck (CI
 does, and `scripts/ci/api-bundle.ts` loads the bundle in Node), and a `maxDuration` in
 `vercel.json` is not applied to a bundled entry, so the function has the platform default of
-300 seconds. Nothing waits that long: every call out (WorkOS, GitHub, the database) has ten
-seconds. If a route ever needs longer than the default, switch to
+300 seconds. Every call out (WorkOS, GitHub, the database) has ten seconds. The longest waits
+are the sandbox wake job's (a stop to wait out, getting the runner ready, `sync`, the resume,
+starting a runner that a warm resume did not bring back, and a cold start after that):
+`sandboxes/quiesce.ts` adds them up, and one attempt keeps to a 260-second budget, going cold
+early or leaving the rest to the job's next attempt when it would not fit. If a route ever needs
+longer than the default, switch to
 `VERCEL_EXPERIMENTAL_BACKENDS=1`, which honours `maxDuration`.
 
 The environment variables live on the Vercel project, for Production and Preview, as

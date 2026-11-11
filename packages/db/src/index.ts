@@ -106,6 +106,7 @@ export {
   type DesignEvent,
   type EventPerson,
   findStops,
+  hasHeldEvents,
   markEventsDelivered,
   type NewEvent,
 } from "./queries/events.ts";
@@ -224,10 +225,16 @@ export {
   verifyRunnerToken,
 } from "./queries/runner-tokens.ts";
 export {
+  countSandboxRollback,
+  getQuiescedFor,
   getRunnerContext,
+  getSavedPoint,
   type RunnerContext,
   type RunnerState,
+  recordCheckpoint,
   reportRunnerState,
+  type SavedPoint,
+  type StateAnswer,
   takeRunnerLease,
 } from "./queries/runners.ts";
 export {
@@ -280,6 +287,7 @@ export {
   createUploads,
   getUploads,
   listAssets,
+  listUploadKeys,
   type NewUpload,
   type Upload,
 } from "./queries/uploads.ts";

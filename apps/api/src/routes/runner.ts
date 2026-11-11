@@ -10,13 +10,16 @@ import {
 } from "@ponzu/db";
 import type {
   AckResponse,
+  CheckpointResponse,
   ClaimResponse,
   CompleteResponse,
   GitCredentialResponse,
   PullRequestSummaryResponse,
   QuestionResponse,
+  RestoreResponse,
   RunnerEvent,
   RunnerSession,
+  SavedPoint,
   StateResponse,
   ThreadResponse,
   UploadResponse,
@@ -33,14 +36,17 @@ import type { AppEnv } from "../http/context.ts";
 import { ApiError } from "../http/errors.ts";
 import { validate } from "../http/validate.ts";
 import { savePullRequestSummary } from "../pull-requests/open.ts";
+import { recordRestored, recordRunnerCheckpoint, restoreFor } from "../runner/checkpoint.ts";
 import { credentialOf, gitTarget } from "../runner/git-credential.ts";
 import {
   Ack,
+  Checkpoint,
   Claim,
   Complete,
   GitCredential,
   PullRequestSummary,
   Question,
+  Restored,
   State,
   Thread,
   Upload,
@@ -60,6 +66,14 @@ import { completeUploads, presignUploads } from "../uploads/uploads.ts";
 
 /** The answers, as the allowlist of what leaves. Their types are the protocol's. */
 const Person = z.object({ id: z.string(), name: z.string(), login: z.string().nullable() });
+const SavedView: z.ZodType<SavedPoint> = z.object({
+  turn: z.number(),
+  at: z.string(),
+  claudeSessionId: z.string().nullable(),
+  wipCommit: z.string().nullable(),
+  session: z.boolean(),
+  workspace: z.boolean(),
+});
 const SessionView: z.ZodType<RunnerSession> = z.object({
   runnerId: z.string(),
   design: z.object({ id: z.string(), name: z.string() }),
@@ -75,6 +89,13 @@ const SessionView: z.ZodType<RunnerSession> = z.object({
   theme: z.enum(["light", "dark"]).nullable(),
   openQuestions: z.array(z.string()),
   seq: z.number(),
+  saved: SavedView.nullable(),
+});
+const Archive = z.object({ url: z.string(), size: z.number(), sha256: z.string() });
+const RestoreView: z.ZodType<RestoreResponse> = z.object({
+  saved: SavedView.nullable(),
+  session: Archive.nullable(),
+  workspace: Archive.nullable(),
 });
 const ClaimView = z.object({
   events: z.array(
@@ -200,13 +221,40 @@ export const runner = new Hono<AppEnv>()
    */
   .put("/state", access.runner, validate("json", State), async (c) => {
     const { deps, actor } = c.var;
-    const seq = await reportRunnerState(deps.db, {
+    const { quiesced, ...report } = c.req.valid("json");
+    const answer = await reportRunnerState(deps.db, {
       designId: actor.designId,
       now: new Date(deps.clock.now()),
-      ...c.req.valid("json"),
+      ...report,
+      quiesced: quiesced ? new Date(quiesced) : null,
     });
-    if (seq === null) throw new ApiError(404, "not_found", "There is no such design.");
-    return c.json({ seq } satisfies StateResponse);
+    if (answer === null) throw new ApiError(404, "not_found", "There is no such design.");
+    // While the sandbox is being stopped, which stop: the runner gets ready and says so.
+    return c.json({
+      seq: answer.seq,
+      sleep: answer.sleep?.toISOString() ?? null,
+    } satisfies StateResponse);
+  })
+
+  /**
+   * Records a checkpoint whose archives were uploaded (purposes `session` and `workspace`), if
+   * its turn is above the design's last. Safe to repeat.
+   */
+  .post("/checkpoint", access.runner, validate("json", Checkpoint), async (c) => {
+    const saved = await recordRunnerCheckpoint(c.var.deps, c.var.actor, c.req.valid("json"));
+    return c.json({ saved: SavedView.parse(saved) } satisfies CheckpointResponse);
+  })
+
+  /** The design's last checkpoint and addresses that read its archives back for ten minutes. */
+  .post("/restore", access.runner, async (c) => {
+    const restored = await restoreFor(c.var.deps, c.var.actor.designId);
+    return c.json(RestoreView.parse(restored));
+  })
+
+  /** The runner found its disk behind the last checkpoint and restored from it. Logged. */
+  .post("/restored", access.runner, validate("json", Restored), async (c) => {
+    await recordRestored(c.var.deps, c.var.actor.designId, c.req.valid("json"));
+    return c.body(null, 204);
   })
 
   /** Raises a question under the id the runner chose. Safe to repeat. */

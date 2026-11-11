@@ -8,7 +8,14 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { SandboxAddress, SandboxProvider } from "@ponzu/sandbox";
-import type { RunnerSession, StateRequest, ThreadItem, TurnUsage } from "../src/api/protocol.ts";
+import type {
+  RestoredReport,
+  RunnerSession,
+  SavedPoint,
+  StateRequest,
+  ThreadItem,
+  TurnUsage,
+} from "../src/api/protocol.ts";
 import { bundle, forget, scratch, sh, since, track, until, upload } from "./harness.ts";
 
 export const RUNNER_PORT = 4600;
@@ -43,7 +50,18 @@ export interface Recorded {
   session: Omit<RunnerSession, "runnerId" | "seq">;
   doc: { doc: { pages: { artboards: { id: string; name: string }[] }[] }; seq: number };
   /** How often the fake wrote its state, and what it read back when it started. */
-  kept: { writes: number; restored: { writes: number; feedSeq: number } };
+  kept: {
+    writes: number;
+    restored: { writes: number; feedSeq: number; savedTurn: number | null };
+  };
+  /** Whether it is holding the runner off until the driver hands its memory back. */
+  held: boolean;
+  saved: SavedPoint | null;
+  checkpoints: { turn: number; claudeSessionId: string | null; wipCommit: string | null }[];
+  restored: RestoredReport[];
+  quiesced: string[];
+  /** When the runner last claimed (the fake's clock), the latest twenty. */
+  claims: number[];
 }
 
 /**
@@ -62,6 +80,11 @@ export async function startTrial(
     session?: Partial<RunnerSession>;
     gitToken?: { password: string; expiresAt: string };
     autoStopSeconds?: number;
+    /**
+     * The fake holds the runner off after every start until the driver hands back the memory it
+     * kept (`handBack`), as the real API is never on the sandbox's disk.
+     */
+    hold?: boolean;
   },
 ): Promise<Trial> {
   const designId = `des_${randomBytes(8).toString("hex")}`;
@@ -111,7 +134,8 @@ export async function startTrial(
       healthAfter,
       boot,
     };
-    await installFakeApi(trial);
+    await installFakeApi(trial, { hold: opts.hold ?? false });
+    if (opts.hold) await control(trial, "POST", "release");
     if (opts.session) await control(trial, "PUT", "session", opts.session);
     // Over the address's TLS, into the fake's memory: never a command, a file or a log.
     if (opts.gitToken) await control(trial, "PUT", "git-token", opts.gitToken);
@@ -171,6 +195,89 @@ export function record(trial: Trial): Promise<Recorded> {
   return control<Recorded>(trial, "GET", "record");
 }
 
+/** What the API keeps of a design (the fake's memory), held on this machine across a stop. */
+export type Memory = Record<string, unknown>;
+
+/**
+ * Stops the sandbox as the API's idle stop does (apps/api/src/sandboxes/quiesce.ts): the stop
+ * is under way and the runner is asked for a report, which tells it to get ready; it is waited
+ * for (30 s at most), the disk is flushed and the sandbox stopped. Answers how long each part
+ * took, and the fake's memory as of the stop, which `wakeLikeTheApi` hands back.
+ */
+export async function sleepLikeTheApi(trial: Trial) {
+  const sleep = new Date().toISOString();
+  const began = performance.now();
+  await control(trial, "PUT", "sleep", { sleep });
+  const quiesced = await until(
+    "the runner to be ready for sleep",
+    async () => (await record(trial)).quiesced.includes(sleep),
+    30_000,
+    200,
+  ).catch(() => false);
+  const quiesceSeconds = since(began);
+  const memory = await control<Memory>(trial, "GET", "memory");
+  const synced = performance.now();
+  await sh(trial.boat, trial.id, "sync", { quiet: true });
+  const syncSeconds = since(synced);
+  await trial.boat.stop(trial.id);
+  await until(
+    "sleep",
+    async () => (await trial.boat.get(trial.id)).state === "asleep",
+    120_000,
+    500,
+  );
+  return { sleep, quiesced, quiesceSeconds, syncSeconds, memory };
+}
+
+/**
+ * Resumes the sandbox and hands the fake back the memory the driver kept, as the real API
+ * remembers whatever the sandbox's disk does. Answers whether boat started it cold and how long
+ * the runner took to answer `/health`, as the API's warm-resume check sees it.
+ */
+export async function wakeLikeTheApi(trial: Trial, memory: Memory) {
+  const began = performance.now();
+  const resumed = await until(
+    "boat to take the resume",
+    () =>
+      trial.boat.resume(trial.id).catch((err) => {
+        if (err?.code === "busy") return null;
+        throw err;
+      }),
+    120_000,
+    500,
+  );
+  await until("the fake API", () => record(trial), 120_000, 200);
+  const fakeUpSeconds = since(began);
+  const before = await record(trial);
+  const awakeAt = before.now;
+  await control(trial, "PUT", "memory", memory);
+  // Awake again: the stop is over, and the runner is poked, as the API's wake does.
+  await control(trial, "PUT", "sleep", { sleep: null });
+  await until("the runner's /health", () => health(trial.runner), 180_000, 200);
+  const healthSeconds = since(began);
+  await firstClaim(trial, awakeAt);
+  return {
+    coldStart: resumed.coldStart,
+    fakeUpSeconds,
+    healthSeconds,
+    /** From the resume to the runner's first claim: when a waiting message would be taken. */
+    claimSeconds: since(began),
+    /** What the fake's own flushed state file said when it started: a second witness. */
+    fakeFileSavedTurn: before.kept.restored.savedTurn,
+    fakeFileWrites: before.kept.restored.writes,
+  };
+}
+
+/** Waits for the runner's first claim after `at` (the fake's clock). */
+export function firstClaim(trial: Trial, at: number): Promise<number> {
+  return until(
+    "the runner's first claim",
+    async () => (await record(trial)).claims.find((c) => c > at) ?? null,
+    120_000,
+    100,
+  );
+}
+
 /** A person's message, as the API adds it to the feed and pokes the runner. */
 export function message(trial: Trial, text: string): Promise<{ id: string }> {
   return control(trial, "POST", "events", { kind: "message", payload: { text } });
@@ -182,11 +289,14 @@ export async function restartRunner(trial: Trial): Promise<void> {
   await until("the runner's /health", () => health(trial.runner), 60_000);
 }
 
-async function installFakeApi(trial: Trial): Promise<void> {
+async function installFakeApi(trial: Trial, { hold }: { hold: boolean }): Promise<void> {
   await scratch(async (dir) => {
     await bundle(join(import.meta.dir, "sandbox", "fake-api.ts"), dir, "fake-api.js");
     mkdirSync(join(dir, "unit"));
-    writeFileSync(join(dir, "unit", "ponzu-fake-api.service"), FAKE_API_UNIT);
+    const unit = hold
+      ? FAKE_API_UNIT.replace("[Service]\n", "[Service]\nEnvironment=PONZU_FAKE_API_HOLD=1\n")
+      : FAKE_API_UNIT;
+    writeFileSync(join(dir, "unit", "ponzu-fake-api.service"), unit);
     await upload(trial.boat, trial.id, dir, FAKE_DIR);
   });
   await sh(

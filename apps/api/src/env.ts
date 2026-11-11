@@ -53,6 +53,11 @@ const schema = z.object({
   R2_ACCESS_KEY_ID: z.string(),
   R2_SECRET_ACCESS_KEY: z.string(),
   R2_BUCKET: z.string(),
+  /**
+   * A bucket on the same account with no public domain, for checkpoint archives (transcripts,
+   * work in progress). Unset: they go in R2_BUCKET under a random key (docs/cloud.md).
+   */
+  R2_PRIVATE_BUCKET: z.string().optional(),
   /** Ponzu's own Anthropic API key, for what the API asks a model itself (repo ideas). */
   PONZU_ANTHROPIC_API_KEY: z.string().startsWith("sk-ant-"),
   /** Keys that were PONZU_VAULT_KEY before, comma-separated, so what they sealed still opens. */
@@ -117,6 +122,7 @@ export interface Env {
   realtime: { url: string; secret: string };
   assetsUrl: string;
   r2: R2Config;
+  r2PrivateBucket: string | null;
   anthropicApiKey: string;
   minimumClientVersions: MinimumVersions;
   commit: string | null;
@@ -180,6 +186,7 @@ export function readEnv(source: Record<string, string | undefined>): Env {
       secretAccessKey: env.R2_SECRET_ACCESS_KEY,
       bucket: env.R2_BUCKET,
     },
+    r2PrivateBucket: env.R2_PRIVATE_BUCKET || null,
     anthropicApiKey: env.PONZU_ANTHROPIC_API_KEY,
     minimumClientVersions,
     commit: env.VERCEL_GIT_COMMIT_SHA ?? null,

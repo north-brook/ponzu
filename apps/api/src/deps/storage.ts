@@ -16,6 +16,11 @@ export interface ObjectStorage {
    * else: another type, size or SHA-256, or a missing header.
    */
   presignPut(key: string, object: StoredObject, expiresIn: number): Promise<PresignedPut>;
+  /**
+   * An address that reads `key` for `expiresIn` seconds, with no other credential: how a
+   * runner reads back a checkpoint stored where nothing serves it publicly.
+   */
+  presignGet(key: string, expiresIn: number): Promise<string>;
   /** What is at `key`, or null when nothing is. */
   head(key: string): Promise<StoredHead | null>;
   /** Puts a copy of `from` at `to`, with the headers `from` was stored with. */
@@ -103,6 +108,17 @@ export function createR2Storage({
         expiresIn,
       });
       return { url: url.toString(), headers };
+    },
+
+    async presignGet(key, expiresIn) {
+      const url = await presign(credentials, {
+        method: "GET",
+        url: urlOf(key),
+        headers: {},
+        now: clock.now(),
+        expiresIn,
+      });
+      return url.toString();
     },
 
     async head(key) {

@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { testSession } from "./api/fake.ts";
@@ -87,6 +87,18 @@ test("a sandbox that slept keeps its checkout as it left it", async () => {
   expect(existsSync(join(dir, "draft.txt"))).toBe(true);
   expect(git(["branch", "--show-current"], dir)).toBe("pz/hero");
   expect(helpers(git)).toEqual(["", "!/opt/ponzu/helper"]);
+});
+
+test("a clone cut off by a stop is made whole at the next start", async () => {
+  const { git, session, opts, root } = await world();
+  // What a clone killed early leaves: a .git with no remote and no branches.
+  const dir = join(root, "fern");
+  await mkdir(dir, { recursive: true });
+  git(["init", "--quiet", dir]);
+  expect(await checkout(session, opts)).toBe(dir);
+  expect(git(["branch", "--show-current"], dir)).toBe("pz/hero");
+  expect(git(["rev-parse", "HEAD"], dir)).toBe(git(["rev-parse", "origin/main"], dir));
+  expect(readFileSync(join(dir, "README.md"), "utf8")).toBe("Fern\n");
 });
 
 test("a branch already on GitHub is checked out, not made again", async () => {
