@@ -1,5 +1,9 @@
 import type { Doc, PNode } from "@ponzu/core";
 import { fromMarkdown } from "mdast-util-from-markdown";
+// The thread's own reader of our address (#451): what the studio follows in place is what passes.
+import { parseDesignAddress } from "../../../studio/src/cloud/ui/design-address.ts";
+
+export { parseDesignAddress };
 
 /*
  * What code decides exactly about a turn's messages: each check has one right answer, so a
@@ -9,44 +13,6 @@ import { fromMarkdown } from "mdast-util-from-markdown";
  * Messages are read as the thread reads them: Markdown, parsed by the parser the studio's
  * react-markdown uses (mdast-util-from-markdown, CommonMark, no autolinks).
  */
-
-/* ------------------------------------------------------------------ */
-/* The design's own address                                            */
-/* ------------------------------------------------------------------ */
-
-/*
- * A copy of apps/studio/src/cloud/ui/design-address.ts from #451 (cloud-thread-links), which
- * has not merged: once it does, import that and delete this.
- *
- *   https://ponzu.design/designs/<design id>                  the design
- *   https://ponzu.design/designs/<design id>?page=<page id>   one of its pages
- *   https://ponzu.design/designs/<design id>?artboard=<id>    one of its boards
- */
-const ID = /^[A-Za-z0-9_-]{1,64}$/;
-const PATH = /^\/designs\/([A-Za-z0-9_-]{1,64})\/?$/;
-
-export interface DesignAddress {
-  designId: string;
-  page?: string;
-  artboard?: string;
-}
-
-export function parseDesignAddress(href: string): DesignAddress | null {
-  if (!URL.canParse(href)) return null;
-  const url = new URL(href);
-  if (url.protocol !== "https:" || url.hostname !== "ponzu.design") return null;
-  if (url.port || url.username || url.password) return null;
-  const designId = PATH.exec(url.pathname)?.[1];
-  if (!designId) return null;
-  const at: DesignAddress = { designId };
-  for (const name of ["page", "artboard"] as const) {
-    const values = url.searchParams.getAll(name);
-    if (!values.length) continue;
-    if (values.length > 1 || !ID.test(values[0]!)) return null;
-    at[name] = values[0]!;
-  }
-  return at;
-}
 
 /* ------------------------------------------------------------------ */
 /* What a message holds                                                */
