@@ -129,6 +129,26 @@ export type ErrorCode =
   | "already_mergeable"
   /** GitHub refused, for a reason Ponzu cannot name. */
   | "github_refused"
+  /** A push token another device of the person's already has. */
+  | "push_token_taken"
+  /**
+   * A secret's name that would replace or steer what Ponzu puts in a sandbox (its own
+   * variables, the Claude credential, the proxy, the loader). Pick another name.
+   */
+  | "secret_name_reserved"
+  /** The repo already has a secret of that name: replace its value instead. */
+  | "secret_exists"
+  /** The repo's secrets are as many, or as large, as a sandbox's environment takes. */
+  | "secrets_full"
+  /** A monthly cap below what the period has already billed. `details.lowestUsd` says the least. */
+  | "cap_too_low"
+  /**
+   * Deleting the account would leave a team with nobody to run it: the person is its only
+   * admin and others are in it. `details.workspaces` names them. Make someone else an admin.
+   */
+  | "sole_admin"
+  /** The confirmation typed to delete the account is not the person's GitHub login. */
+  | "confirmation_mismatch"
   | "internal";
 
 /**

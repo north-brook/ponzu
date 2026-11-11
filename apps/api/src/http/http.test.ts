@@ -295,9 +295,9 @@ describe("addresses and methods", () => {
   });
 
   test("the wrong method on a real address is a 405 that names the right ones", async () => {
-    const response = await t.app.request("/v1/me", { method: "DELETE" });
+    const response = await t.app.request("/v1/me", { method: "PUT" });
     expect(response.status).toBe(405);
-    expect(response.headers.get("allow")).toBe("GET");
+    expect(response.headers.get("allow")).toBe("GET, DELETE");
     expect(((await response.json()) as any).error.code).toBe("method_not_allowed");
 
     const exchange = await t.app.request("/v1/auth/exchange");

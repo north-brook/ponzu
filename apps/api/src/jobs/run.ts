@@ -1,5 +1,6 @@
 import { claimJobs, completeJob, failAbandonedJobs, failJob, type Job } from "@ponzu/db";
 import type { Deps } from "../deps/index.ts";
+import { BASE_REBUILD_JOB, runBaseRebuildJob } from "../environments/rebuild.ts";
 import { runWebhookJob, WEBHOOK_JOB } from "../github/webhook.ts";
 import { REFRESH_JOB, runRefreshJob } from "../pull-requests/refresh.ts";
 import { runWakeJob, WAKE_JOB } from "../sandboxes/orchestrate.ts";
@@ -33,6 +34,7 @@ const handlers = (): Record<
   [WEBHOOK_JOB]: runWebhookJob,
   [WAKE_JOB]: runWakeJob,
   [REFRESH_JOB]: runRefreshJob,
+  [BASE_REBUILD_JOB]: runBaseRebuildJob,
 });
 
 /** The wait before the next attempt: a minute after the first, doubling, at most an hour. */

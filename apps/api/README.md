@@ -56,6 +56,11 @@ src/
                   stop, dead runners, settled designs, orphans and repairs; retire.ts
   claude/         a person's own Claude: connecting a key or a subscription (sign-in.ts drives
                   `claude setup-token` in a utility sandbox), disconnecting, and the models
+  environments/   a repo's secrets (what a name may be, how a value is sealed) and its base's
+                  rebuild, recorded as a job whose handler only marks it for now
+  billing/        a billing period (period.ts), the credit arithmetic and its rounding
+                  (credits.ts), and Plan and usage worked out from usage events (usage.ts)
+  account/        deleting a person's account, step by step
   live/           queries.ts: every live query, its arguments, who may watch it and its SQL
   jobs/           runJob and runDueJobs: work recorded in `jobs`, run now and retried by the cron
   ideas/          a repo's ideas: the light read (read-repo.ts, snapshot.ts), the prompt and
