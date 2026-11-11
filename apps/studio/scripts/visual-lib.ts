@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { type ChromiumOptions, findChromium } from "@ponzu/render/chromium";
 import type { Composition, Rect } from "../src/cloud/gallery/compositions.ts";
+import { prebuilt } from "./prebuilt.ts";
 
 export type Page = Parameters<NonNullable<ChromiumOptions["preparePage"]>>[0];
 export interface Browser {
@@ -28,8 +29,13 @@ export async function launch(): Promise<Browser> {
   return chromium.launch({ executablePath: chromiumPath, headless: true });
 }
 
-/** Builds the gallery (gallery.html and what it imports) into a fresh directory. */
+/**
+ * Builds the gallery (gallery.html and what it imports) into a fresh directory: a copy of the
+ * one built before the tests, when PONZU_PREBUILT_STUDIO names it (scripts/prebuilt.ts).
+ */
 export async function buildGallery(): Promise<{ dir: string; dispose(): void }> {
+  const ready = prebuilt("gallery");
+  if (ready) return { dir: ready, dispose: () => rmSync(ready, { recursive: true, force: true }) };
   const dir = mkdtempSync(join(tmpdir(), "ponzu-gallery-"));
   const build = Bun.spawn(["bunx", "vite", "build", "--mode", "gallery", "--outDir", dir], {
     cwd: STUDIO,
