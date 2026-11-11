@@ -129,6 +129,21 @@ test("a link still being written at a streaming reply's end shows as its words a
   // In code it is what was written.
   expect(settled("run `arr[i")).toBe("run `arr[i");
   expect(settled("```\nconst a = b[")).toBe("```\nconst a = b[");
+  // Hostile text streaming in costs it next to nothing.
+  const fill = (unit: string) => unit.repeat(Math.ceil(65_536 / unit.length)).slice(0, 65_536);
+  for (const text of [
+    fill("[a "),
+    fill("![a "),
+    fill('[a](b "x '),
+    fill("[a](b "),
+    `[a](b "${fill("[a](b ")}`,
+    fill("[a](b 'x"),
+    fill("[a]("),
+  ]) {
+    const started = performance.now();
+    settled(text);
+    expect(performance.now() - started).toBeLessThan(50);
+  }
   // Drawn, no half address and no bracket ever shows.
   const out = renderToStaticMarkup(
     <Prose text="on [Note: Pricing](https://ponzu.design/des" streaming />,
