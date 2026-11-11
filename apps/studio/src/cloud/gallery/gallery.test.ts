@@ -1,49 +1,35 @@
 /*
- * The cloud gallery in a real Chromium: its compositions against their references (the picture
- * for layout, the painted styles for color and type), and the components' keyboard and focus
- * behaviour. Skips where there is no Chrome or Chromium.
+ * The cloud gallery's components in a real Chromium: their keyboard and focus behaviour. Its
+ * compositions against their references are in gallery.references.*.test.ts. Skips where there
+ * is no Chrome or Chromium.
  */
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
-import { join } from "node:path";
 import {
   type Browser,
   buildGallery,
   chromiumPath,
-  compare,
   fontsLoaded,
   launch,
   type Page,
-  paintedStyles,
-  REFERENCES,
   serve,
-  shootComposition,
 } from "../../../scripts/visual-lib.ts";
-import { COMPOSITIONS } from "./compositions.ts";
 
 setDefaultTimeout(60_000);
-
-/**
- * At most this share of a picture may differ from its reference. Text is hidden in both, so what
- * is left is layout, grounds, icons and shadows; this leaves room for antialiasing between GPUs
- * and operating systems, and catches a moved row or a changed ground. Small things (a text or
- * icon color, a weight) are below it: the painted styles catch those.
- */
-const TOLERANCE = 0.002;
 
 describe.skipIf(!chromiumPath)("the cloud gallery", () => {
   let built: Awaited<ReturnType<typeof buildGallery>>;
   let server: ReturnType<typeof serve>;
   let browser: Browser;
   let page: Page;
-  let fonts = false;
 
   beforeAll(async () => {
     built = await buildGallery();
     server = serve(built.dir);
     browser = await launch();
     page = await browser.newPage();
+    // The app's fonts, loaded once into the browser's cache before the first test measures.
     await page.goto(`${server.url}/gallery.html?board=team-sidebar`);
-    fonts = await fontsLoaded(page);
+    await fontsLoaded(page);
   });
   afterAll(async () => {
     await browser?.close();
@@ -67,29 +53,6 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
       name,
       { timeout: 2000 },
     );
-
-  for (const c of COMPOSITIONS.filter((c) => c.reference)) {
-    for (const theme of ["light", "dark"] as const) {
-      test(`${c.id} in ${theme} matches its reference`, async () => {
-        // Without the app's fonts every line measures differently; that is the network, not us.
-        if (!fonts) return console.warn("The app's fonts didn't load; references not compared.");
-        const shot = await shootComposition(page, server.url, c, theme, { hideText: true });
-        const reference = Buffer.from(
-          await Bun.file(join(REFERENCES, `${c.id}-${theme}.png`)).arrayBuffer(),
-        );
-        const tool = await browser.newPage();
-        const diff = await compare(tool, reference, shot);
-        await tool.close();
-        expect(diff.changed).toBeLessThan(TOLERANCE);
-      });
-
-      test(`${c.id} in ${theme} paints with its reference's styles`, async () => {
-        await shootComposition(page, server.url, c, theme);
-        const expected = await Bun.file(join(REFERENCES, `${c.id}-${theme}.styles.txt`)).text();
-        expect(await paintedStyles(page)).toBe(expected);
-      });
-    }
-  }
 
   test("the team menu is a keyboard menu that returns focus to its trigger", async () => {
     await open("team-sidebar");
