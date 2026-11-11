@@ -2,6 +2,7 @@ import {
   Alert02Icon,
   CheckmarkCircle01Icon,
   Clock01Icon,
+  GitBranchIcon,
   GitMergeIcon,
   GitPullRequestIcon,
   Wrench01Icon,
@@ -18,7 +19,9 @@ const ACTIONS: Record<NextAction, { label: string; icon: IconSvgElement }> = {
   auto_merge_on: { label: "Auto-merge on", icon: Clock01Icon },
   fix_checks: { label: "Fix checks", icon: Wrench01Icon },
   resolve: { label: "Resolve", icon: Alert02Icon },
+  update_branch: { label: "Update branch", icon: GitBranchIcon },
   merge: { label: "Merge", icon: GitMergeIcon },
+  blocked: { label: "Merge", icon: GitMergeIcon },
 };
 
 /**

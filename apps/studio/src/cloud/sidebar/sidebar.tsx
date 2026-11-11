@@ -176,7 +176,11 @@ export function Sidebar(props: SidebarProps) {
                 </Button>
               </EmptyNote>
             ) : (
-              <EmptyNote>No designs yet.</EmptyNote>
+              <EmptyNote>
+                {props.settled.count
+                  ? "Nothing open. Settled designs are below."
+                  : "No designs yet."}
+              </EmptyNote>
             )}
           </FadeScroll>
           {props.settled.count ? (

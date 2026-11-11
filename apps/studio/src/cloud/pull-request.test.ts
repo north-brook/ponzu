@@ -38,8 +38,15 @@ test("an action is blocked without write access, and the agent's wait on its Cla
   expect(actionBlock("fix_checks", limit, "usr_maya")).toMatch(
     /^Bryce's plan is at its limit until \d+:\d\d [AP]M\. This design waits\.$/,
   );
-  expect(actionBlock("create_pr", { kind: "claude_disconnected", owner: bryce }, bryce.id)).toBe(
+  expect(actionBlock("resolve", { kind: "claude_disconnected", owner: bryce }, bryce.id)).toBe(
     "Your Claude isn't connected. This design waits.",
+  );
+  // The API opens a pull request as the person: no Claude needed.
+  expect(
+    actionBlock("create_pr", { kind: "claude_disconnected", owner: bryce }, bryce.id),
+  ).toBeNull();
+  expect(actionBlock("create_pr", readOnly, "usr_maya")).toBe(
+    "Needs write access to north-brook/fernwood",
   );
 });
 

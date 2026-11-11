@@ -1,7 +1,12 @@
 import { gateMessage } from "./gate.ts";
 import type { PullRequestSummary, SteerGate } from "./model.ts";
 
-/** The one thing the chrome's dark button offers, from the pull request's state. */
+/**
+ * The one thing the chrome's dark button offers, from the pull request's state. The API names
+ * two the pull request's summary can't: `update_branch`, when the repo's rules hold it back for
+ * being behind, and `blocked`, when they want something (a review, a required check) and the
+ * repo has no auto-merge, so a merge goes past them only if the person says so.
+ */
 export type NextAction =
   | "create_pr"
   | "ready"
@@ -9,7 +14,9 @@ export type NextAction =
   | "fix_checks"
   | "auto_merge"
   | "auto_merge_on"
-  | "merge";
+  | "update_branch"
+  | "merge"
+  | "blocked";
 
 /**
  * The next best action. A draft is made ready before anything else; conflicts are resolved
@@ -30,8 +37,11 @@ export function nextAction(
   return "merge";
 }
 
-/** The actions Ponzu hands to the agent, which wait while it can't run. The rest are GitHub's. */
-const AGENT_ACTIONS: ReadonlySet<NextAction> = new Set(["create_pr", "fix_checks", "resolve"]);
+/**
+ * The actions Ponzu hands to the agent, which wait while it can't run. The rest, Create PR among
+ * them (the API opens it as the person), are GitHub's.
+ */
+const AGENT_ACTIONS: ReadonlySet<NextAction> = new Set(["fix_checks", "resolve"]);
 
 /**
  * Why the next action can't be taken now, for its tip, or null when it can. Every action steers

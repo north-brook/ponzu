@@ -1,18 +1,9 @@
 import type { ClientOp, PageIcon } from "@ponzu/core";
+import type { ThreadItem } from "@ponzu/runner/protocol";
 import { ApiError, networkError } from "./errors.ts";
 import type { Randomness } from "./pkce.ts";
 import { createRpc, type Fetch } from "./rpc.ts";
 import type { Session } from "./session.ts";
-import type {
-  AnswerBody,
-  SendMessageBody,
-  SentEvent,
-  ThreadPage,
-  UploadBody,
-  UploadedFiles,
-  UploadPurpose,
-  UploadTickets,
-} from "./thread-routes.ts";
 
 /** A file to upload, in the shape both a browser `File` and the phone's picker give. */
 export interface UploadFile {
@@ -38,17 +29,7 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
   const rpc = createRpc(session.apiUrl, (input, init) => session.fetch(input, init));
   const v1 = rpc.v1;
   const design = (id: string) => ({ param: { id } });
-
-  /** For the routes `AppType` does not have yet (thread-routes.ts). */
-  const call = async <T>(method: string, path: string, body?: unknown): Promise<T> => {
-    const response = await session.fetch(`${session.apiUrl}/v1/${path}`, {
-      method,
-      ...(body === undefined
-        ? {}
-        : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
-    });
-    return (await response.json()) as T;
-  };
+  const pullRequest = v1.designs[":id"]["pull-request"];
 
   return {
     /** Everything the app needs at launch: the person, setup progress, their workspaces. */
@@ -128,40 +109,85 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
         await v1.designs[":id"].seen.$post({ ...design(id), json: body });
       },
 
-      // Pending routes (thread-routes.ts): typed by hand until the API has them.
-      sendMessage: (id: string, body: SendMessageBody) =>
-        call<SentEvent>("POST", `designs/${id}/messages`, body),
-      answer: (id: string, questionId: string, body: AnswerBody) =>
-        call<SentEvent>("POST", `designs/${id}/questions/${questionId}/answer`, body),
-      stop: (id: string) => call<SentEvent>("POST", `designs/${id}/stop`, {}),
-      /** Older thread items than `before` (a seq), for scrolling back. */
-      thread: (id: string, page: { before?: number; limit?: number } = {}) => {
-        const query = new URLSearchParams();
-        if (page.before !== undefined) query.set("before", String(page.before));
-        if (page.limit !== undefined) query.set("limit", String(page.limit));
-        const text = query.toString();
-        return call<ThreadPage>("GET", `designs/${id}/thread${text ? `?${text}` : ""}`);
+      /**
+       * Says something to the agent, with images uploaded first (`upload`) by their `ref`.
+       * Answers the message's thread item, which `design.thread` delivers too.
+       */
+      sendMessage: async (id: string, body: SendMessageBody): Promise<ThreadItem> =>
+        (await (
+          await v1.designs[":id"].messages.$post({ ...design(id), json: body })
+        ).json()) as ThreadItem,
+      /** The first answer wins: a later one, or one to a withdrawn question, is 409 `question_closed`. */
+      answer: async (id: string, questionId: string, body: AnswerBody) =>
+        (
+          await v1.designs[":id"].questions[":questionId"].answer.$post({
+            param: { id, questionId },
+            json: body,
+          })
+        ).json(),
+      /** Stops the agent's turn. The runner's `stopped` notice arrives through `design.thread`. */
+      stop: async (id: string): Promise<void> => {
+        await v1.designs[":id"].stop.$post(design(id));
       },
-      /** A person's file, straight to storage: an asset for the canvas, or a message's attachment. */
-      upload: async (id: string, file: UploadFile, purpose: UploadPurpose = "asset") => {
+      /**
+       * A page of the thread, oldest first: the newest `limit` (at most 50) items before
+       * `before`, a thread seq. Fewer than `limit` means there are none older.
+       */
+      thread: async (id: string, page: { before?: number; limit?: number } = {}) => {
+        const query = {
+          ...(page.before === undefined ? {} : { before: String(page.before) }),
+          ...(page.limit === undefined ? {} : { limit: String(page.limit) }),
+        };
+        const answer = await v1.designs[":id"].thread.$get({ ...design(id), query });
+        return { items: (await answer.json()).items as ThreadItem[] };
+      },
+      /** A person's image, straight to storage: an asset for the canvas, or a message's attachment. */
+      upload: async (id: string, file: UploadFile) => {
         const crypto = opts.crypto ?? (globalThis.crypto as unknown as Randomness);
         const sha256 = hex(await crypto.subtle.digest("SHA-256", file.bytes));
-        const ticket: UploadBody["files"][number] = {
-          purpose,
-          name: file.name,
-          contentType: file.type,
-          size: file.bytes.byteLength,
-          sha256,
-        };
-        const tickets = await call<UploadTickets>("POST", `designs/${id}/uploads`, {
-          files: [ticket],
-        });
+        const size = file.bytes.byteLength;
+        const tickets = await (
+          await v1.designs[":id"].uploads.$post({
+            ...design(id),
+            json: { files: [{ name: file.name, contentType: file.type, size, sha256 }] },
+          })
+        ).json();
         const { id: uploadId, put } = tickets.files[0]!;
         await putBytes(opts.fetch ?? globalThis.fetch, put, file.bytes);
-        const done = await call<UploadedFiles>("POST", `designs/${id}/uploads/complete`, {
-          ids: [uploadId],
-        });
+        const done = await (
+          await v1.designs[":id"].uploads.complete.$post({
+            ...design(id),
+            json: { ids: [uploadId] },
+          })
+        ).json();
         return done.files[0]!;
+      },
+
+      /**
+       * The design's pull request as GitHub has it (docs/cloud.md, "Pull requests"). Every
+       * answer is the whole tab, `nextAction` included, and the design's head row follows it.
+       */
+      pullRequest: {
+        get: async (id: string) => (await pullRequest.$get(design(id))).json(),
+        /** One changed file and its diff, for a card opened in the tab. */
+        file: async (id: string, path: string) =>
+          (await pullRequest.files.$get({ ...design(id), query: { path } })).json(),
+        /** A draft, as the person. 409 `no_changes`, `branch_not_pushed` or `no_repository`. */
+        open: async (id: string) => (await pullRequest.$post(design(id))).json(),
+        ready: async (id: string) => (await pullRequest.ready.$post(design(id))).json(),
+        /**
+         * Merges the commit the person looked at. `bypass` only once they chose to merge past
+         * what the repo's rules still want: GitHub then decides whether they may.
+         */
+        merge: async (id: string, body: { headSha: string; bypass?: boolean }) =>
+          (await pullRequest.merge.$post({ ...design(id), json: body })).json(),
+        autoMerge: async (id: string, on: boolean) => {
+          const route = pullRequest["auto-merge"];
+          return (await (on ? route.$post(design(id)) : route.$delete(design(id)))).json();
+        },
+        close: async (id: string) => (await pullRequest.close.$post(design(id))).json(),
+        updateBranch: async (id: string, body: { headSha: string }) =>
+          (await pullRequest["update-branch"].$post({ ...design(id), json: body })).json(),
       },
     },
 
@@ -274,6 +300,27 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
 }
 
 export type Api = ReturnType<typeof createApi>;
+
+type Designs = Api["designs"];
+/** What a person says to the agent: their words, and the images they attach, by `ref`. */
+export interface SendMessageBody {
+  text: string;
+  attachments?: string[];
+}
+/**
+ * An answer to a question row: for a `question`, each question's text to the label chosen or
+ * the person's own words; for a `plan` or a `permission`, yes or no, with a note.
+ */
+export interface AnswerBody {
+  answers?: Record<string, string>;
+  approved?: boolean;
+  note?: string;
+}
+export type ThreadPage = Awaited<ReturnType<Designs["thread"]>>;
+/** What the pull request tab shows (`GET /v1/designs/:id/pull-request`). */
+export type PullRequestTab = Awaited<ReturnType<Designs["pullRequest"]["get"]>>;
+/** One changed file and its diff. */
+export type PullRequestFile = Awaited<ReturnType<Designs["pullRequest"]["file"]>>;
 
 async function putBytes(
   fetch: Fetch,
