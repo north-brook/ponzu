@@ -85,7 +85,7 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
       design={quieter(f.teamDesigns)}
       contributors={[...f.contributors, { person: f.alex, here: true, lastHereAt: null }]}
       thread={t.teamThread}
-      agent={WORKING}
+      agent={t.teamAgent}
       action="update_branch"
     />
   ),
@@ -95,7 +95,7 @@ export const THREAD_BOARDS: Record<string, () => ReactNode> = {
       design={quieter(f.teamDesigns)}
       contributors={[...f.contributors, { person: f.alex, here: true, lastHereAt: null }]}
       thread={t.teamThread}
-      agent={WORKING}
+      agent={t.teamAgent}
       action="update_branch"
       rail={false}
     />
