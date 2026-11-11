@@ -5,6 +5,7 @@ import {
   IDEAS_SYSTEM_PROMPT,
   ideasPrompt,
   ideasRequest,
+  ownWords,
   saysWhatItIs,
 } from "./prompt.ts";
 import type { RepoSnapshot } from "./snapshot.ts";
@@ -225,5 +226,35 @@ describe("ideasRequest, for a product not built yet", () => {
     for (const example of examples) {
       expect(checkIdeas(withFirst(example), options)).toMatchObject({ ok: false });
     }
+  });
+});
+
+describe("a product named with a word ideas may not otherwise say", () => {
+  const named = ["Give Ponzu a welcome screen that shows one clear next step", ...GOOD.slice(1)];
+
+  test("its own name is let through, for it alone", () => {
+    const own = ownWords({ fullName: "north-brook/ponzu-test", description: null });
+    expect(own).toEqual(["ponzu"]);
+    expect(checkIdeas({ ideas: named }, { own })).toMatchObject({ ok: true });
+    expect(checkIdeas({ ideas: named })).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining('"ponzu"'),
+    });
+  });
+
+  test("the other words stay refused for it", () => {
+    const own = ownWords({ fullName: "north-brook/ponzu-test", description: null });
+    const ideas = ["Ask Claude to lay out the welcome screen for Ponzu", ...GOOD.slice(1)];
+    expect(checkIdeas({ ideas }, { own })).toMatchObject({
+      ok: false,
+      reason: expect.stringContaining('"claude"'),
+    });
+  });
+
+  test("a description counts, and an ordinary product has no such words", () => {
+    expect(
+      ownWords({ fullName: "acme/assistant", description: "A GPT wrapper for teams" }),
+    ).toEqual(["gpt"]);
+    expect(ownWords({ fullName: "acme/checkout", description: "Payments" })).toEqual([]);
   });
 });
