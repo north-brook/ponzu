@@ -1,4 +1,4 @@
-ground div rgb(232, 230, 224)
+ground div rgb(238, 237, 233)
 ground span rgb(255, 95, 87)
 ground span rgb(254, 188, 46)
 ground span rgb(40, 200, 64)
@@ -13,10 +13,10 @@ icon svg[Pages] 14×14 rgb(94, 91, 84) stroke 1.7px
 text "Care cards" rgb(94, 91, 84) 400 13px Inter
 icon svg[New page] 14×14 rgb(169, 165, 155) stroke 1.9px
 ground span rgba(17, 17, 16, 0.1)
-ground img[Bryce (you)] shadow rgb(232, 230, 224) 0px 0px 0px 1.5px
-ground img[Sam] shadow rgb(232, 230, 224) 0px 0px 0px 1.5px
-ground img[Maya] shadow rgb(232, 230, 224) 0px 0px 0px 1.5px
-ground img[Jordan · last here 2 days ago] shadow rgb(232, 230, 224) 0px 0px 0px 1.5px
+ground img[Bryce (you)] shadow rgb(238, 237, 233) 0px 0px 0px 1.5px
+ground img[Sam] shadow rgb(238, 237, 233) 0px 0px 0px 1.5px
+ground img[Maya] shadow rgb(238, 237, 233) 0px 0px 0px 1.5px
+ground img[Jordan · last here 2 days ago] shadow rgb(238, 237, 233) 0px 0px 0px 1.5px
 ground button[Share] shadow rgb(211, 208, 200) 0px 0px 0px 1px inset
 icon svg[Share] 11×11 rgb(94, 91, 84) stroke 2.4px
 text "#412" rgb(94, 91, 84) 400 11px IBM Plex Mono
@@ -30,7 +30,7 @@ ground div[Designs] rgb(255, 255, 255) shadow rgb(232, 230, 224) 0px 0px 0px 1px
 icon svg[Designs] 15×15 rgb(128, 124, 115) stroke 1.8px
 text "esc" rgb(169, 165, 155) 400 11px Inter
 text "Designs" rgb(169, 165, 155) 500 11px Inter
-ground div[Search results] rgb(244, 243, 239)
+ground div[Search results] rgb(255, 255, 255)
 ground span[Search results] rgba(17, 17, 16, 0.05) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
 text "Quieter shop" rgb(17, 17, 16) 500 13px Inter
 text "hero" rgb(17, 17, 16) 500 13px Inter
@@ -59,4 +59,4 @@ text "“Can C try the serif at a smaller size …" rgb(17, 17, 16) 500 13px Int
 text "hero" rgb(17, 17, 16) 500 13px Inter
 ground mark[Search results] rgb(255, 244, 209)
 text "Maya · Quieter shop hero · 2 h" rgb(169, 165, 155) 400 11px Inter
-ground main rgb(244, 243, 239)
+ground main rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
