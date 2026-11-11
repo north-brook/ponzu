@@ -219,6 +219,13 @@ export const COMPOSITIONS: Composition[] = [
     id: "crowded-chrome-closed",
     title: "Chrome · five people and Update branch, rail closed",
     ...WINDOW,
+    reference: true,
+  },
+  {
+    id: "crowded-chrome-min-window",
+    title: "Chrome · five people and Update branch, the smallest window",
+    ...MIN,
+    reference: true,
   },
   { id: "long-thread", title: "Thread · a thousand lines, older ones loading", ...WINDOW },
   { id: "thread-loading", title: "Thread · loading", ...WINDOW },

@@ -151,7 +151,8 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     expect(await active()).toBe("search-design-dsn_settled_1");
     await page.keyboard.press("Escape");
     await page.waitForSelector(field, { state: "detached" });
-    await focusOn("Search");
+    // Back where ⌘K found it: nowhere, so the next key goes to the window.
+    await page.waitForFunction(() => document.activeElement === document.body);
   });
 
   test("⌘K with the sidebar collapsed opens it, then searches", async () => {
@@ -217,7 +218,10 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
   });
 
   test("at the smallest window the active page tab stays whole and clear of the fade", async () => {
+    // With the rail closed, the cluster at the window's edge. With both panes open the cluster
+    // takes the canvas column's room and the tabs give way to it (chrome.test.ts).
     await open("team-sidebar", { width: 1100, height: 640 });
+    await page.click('button[aria-controls="thread"]');
     const clear = await page.evaluate(() => {
       const tab = document.querySelector('[role="tab"][aria-selected="true"]')!;
       const strip = tab.closest('[role="tablist"]')!.parentElement!.getBoundingClientRect();
@@ -316,7 +320,7 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     expect(await questionTop()).toBe(withIdeas);
   });
 
-  test("a menu closed by a click gives focus back without a ring; by the keyboard, with one", async () => {
+  test("a menu gives focus back without a ring, unless the keyboard brought it to the chip", async () => {
     await open("create");
     const chip = 'button[aria-label^="Model"]';
     const ring = () => page.$eval(chip, (el) => getComputedStyle(el).boxShadow);
@@ -328,11 +332,24 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     await page.waitForSelector('[role="menu"]', { state: "detached" });
     await focusOn(await page.$eval(chip, (el) => el.getAttribute("aria-label")!));
     expect(await ring()).toBe("none");
-    // From the keyboard it is the keyboard's, ring and all.
+    // Opened and closed with the keyboard, the chip a click had focused stays quiet: Return and
+    // Escape aren't navigation.
     await page.keyboard.press("Enter");
     await page.waitForSelector('[role="menu"]');
     await page.keyboard.press("Escape");
     await page.waitForSelector('[role="menu"]', { state: "detached" });
+    expect(await ring()).toBe("none");
+    // Reached with Tab, it is the keyboard's, and the menu gives it back ring and all.
+    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press("Tab");
+    await focusOn(await page.$eval(chip, (el) => el.getAttribute("aria-label")!));
+    expect(await ring()).not.toBe("none");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector('[role="menu"]');
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Escape");
+    await page.waitForSelector('[role="menu"]', { state: "detached" });
+    await focusOn(await page.$eval(chip, (el) => el.getAttribute("aria-label")!));
     expect(await ring()).not.toBe("none");
   });
 

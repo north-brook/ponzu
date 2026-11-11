@@ -1,10 +1,25 @@
-import { type ReactNode, type RefObject, useEffect, useRef, useState } from "react";
+import {
+  type CSSProperties,
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { cn } from "../ui/cn.ts";
 import { TipProvider } from "../ui/tooltip.tsx";
 import { type Lights, SidebarToggle, TrafficLights } from "./chrome.tsx";
 
 /** The smallest window the layout holds at: sidebar 300, rail 360 and a usable canvas. */
 export const MIN_WINDOW = { width: 1100, height: 640 } as const;
+
+/**
+ * The side panes' widths, as the window sets them on itself in `--pane-sidebar` and
+ * `--pane-rail`: the panes take their widths from these, and so does whatever in the chrome lines
+ * up with a pane's edge (the left block, the rail's block with its divider), so there is one
+ * number for each edge.
+ */
+const PANE_WIDTH = { sidebar: 300, rail: 360 } as const;
 
 export interface SidebarSlot {
   open: boolean;
@@ -79,10 +94,17 @@ export function AppWindow({
     <TipProvider>
       <div
         className="flex h-full flex-col bg-chrome text-ink"
-        style={{ minWidth: MIN_WINDOW.width, minHeight: MIN_WINDOW.height }}
+        style={
+          {
+            minWidth: MIN_WINDOW.width,
+            minHeight: MIN_WINDOW.height,
+            "--pane-sidebar": `${PANE_WIDTH.sidebar}px`,
+            "--pane-rail": `${PANE_WIDTH.rail}px`,
+          } as CSSProperties
+        }
       >
         <header
-          // A click on its buttons and tabs leaves focus where it was (quietPointerFocus).
+          // A click on its buttons and tabs leaves focus where it was (installFocusRule).
           data-toolbar
           className={cn(
             "app-drag flex h-11 shrink-0 items-center gap-1",
@@ -93,8 +115,13 @@ export function AppWindow({
           <div
             className={cn(
               "pane-motion flex shrink-0 items-center pr-[2px] transition-[width]",
-              // To the sidebar's edge at 300, where the divider is, less the padding and a gap.
-              !sidebarOpen ? "w-auto" : lights === "none" ? "w-[286px]" : "w-[280px]",
+              // To the sidebar's edge, where the divider is: less the header's padding (16, or 10
+              // with no traffic lights) and its 4 of gap.
+              !sidebarOpen
+                ? "w-auto"
+                : lights === "none"
+                  ? "w-[calc(var(--pane-sidebar)-14px)]"
+                  : "w-[calc(var(--pane-sidebar)-20px)]",
             )}
           >
             {lights === "none" ? null : <TrafficLights drawn={lights === "drawn"} />}
@@ -117,10 +144,10 @@ export function AppWindow({
               inert={!sidebar.open}
               className={cn(
                 "pane-motion shrink-0 overflow-hidden transition-[width]",
-                sidebar.open ? "w-[300px]" : "w-0",
+                sidebar.open ? "w-(--pane-sidebar)" : "w-0",
               )}
             >
-              <div className="flex h-full w-[300px] flex-col px-2 pt-[2px] pb-2.5">
+              <div className="flex h-full w-(--pane-sidebar) flex-col px-2 pt-[2px] pb-2.5">
                 {sidebar.content}
               </div>
             </aside>
@@ -143,11 +170,11 @@ export function AppWindow({
             inert={!railOpen}
             className={cn(
               "pane-motion flex shrink-0 justify-end overflow-hidden transition-[width]",
-              railOpen ? "w-[360px]" : "w-0",
+              railOpen ? "w-(--pane-rail)" : "w-0",
             )}
           >
             {railShown ? (
-              <div className="flex h-full w-[360px] shrink-0 flex-col px-2.5 pb-2.5">
+              <div className="flex h-full w-(--pane-rail) shrink-0 flex-col px-2.5 pb-2.5">
                 {railShown}
               </div>
             ) : null}

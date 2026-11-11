@@ -176,8 +176,8 @@
 }
 
 /* Keyboard focus, the same on every control. */
-/* `data-quiet-focus` (ui/quiet-focus.ts): focus a click gave, or handed over without the person
-   moving it (a question taking the composer's place), which shows once they press a key. */
+/* `data-quiet-focus` (ui/quiet-focus.ts): focus keyboard navigation didn't put there (a click, a
+   shortcut, our own code handing it on), which shows no ring until they navigate from it. */
 @utility focus-ring {
   &:focus-visible:not([data-quiet-focus]) {
     box-shadow: var(--c-focus);

@@ -43,9 +43,9 @@ export interface DesignChromeProps {
 
 /**
  * The chrome past the left block while a design is open: its name while the sidebar is
- * collapsed, the divider, its pages, then at the window's right
- * edge who is in it, its pull request and next action, and the thread toggle last. The spacing
- * between the right-hand pieces is the design's, whichever of them a design has.
+ * collapsed, the divider, its pages; then who is in it, its pull request and next action, the
+ * rail's divider, and the thread toggle last at the window's right edge. The spacing between the
+ * right-hand pieces is the design's, whichever of them a design has.
  */
 export function DesignChrome({
   name,
@@ -142,22 +142,21 @@ export function DesignChrome({
       <PageTabs pages={pages} activeId={activePageId} onSelect={onSelectPage} onAdd={onAddPage} />
       <span className="min-w-2 flex-1" />
       {/*
-       * The right block, flush with the window's right edge in every state: the divider 18px
-       * before the cluster, and the cluster just before the thread toggle, so none of them moves
-       * between the canvas and the pull request tab, as the rail opens and closes, or with the
-       * width of the next action. Open, the block reaches at least to the rail's edge (the
-       * header's 10 of right padding and this 350 make the rail's 360), which keeps the page
-       * tabs over the canvas; the space it adds is empty header, before the divider.
+       * The right side, the left's mirror: `[people] [pull request] [action] | … [toggle]`. The
+       * cluster ends 12 before the divider, and the divider starts the rail's block, which ends
+       * with the thread toggle 10 from the window's edge. Open, the block is the rail's width
+       * (`--pane-rail`, the rail's own), so the divider's pixel is the canvas's last column, as
+       * the left divider's is its first, and the cluster sits over the canvas; closed, the block
+       * is only the divider, 12 and the toggle, together at the window's edge.
+       *
+       * Between the two it eases on the panes' clock by its min-width: from 1px closed to the
+       * rail's width open, less 5 (it reaches 4 into the header's 10 of padding, and the
+       * divider's pixel is the canvas's). The canvas's edge moves from 6 to the rail's width
+       * from the window's edge on the same curve (the rail opening as the canvas's 6 of margin
+       * closes), so the divider keeps to it to the pixel until only the toggle's room is left,
+       * and holds there. The cluster rides with the divider; the page tabs give way to it.
        */}
-      <div
-        className={cn(
-          "pane-motion flex shrink-0 items-center transition-[min-width]",
-          rail.open ? "min-w-[350px]" : "min-w-0",
-        )}
-      >
-        <span className="flex-1" />
-        <ChromeDivider />
-        <span className="w-[18px] shrink-0" />
+      <div className="flex shrink-0 items-center">
         {team ? (
           <Popover>
             <PopoverAnchor asChild>{cluster}</PopoverAnchor>
@@ -173,7 +172,18 @@ export function DesignChrome({
           cluster
         ) : null}
         {right.length ? <span className="w-3 shrink-0" /> : null}
-        <ThreadToggle open={rail.open} signal={rail.signal} onToggle={rail.onToggle} />
+        <div
+          data-chrome-rail
+          className={cn(
+            "pane-motion -mr-1 flex shrink-0 items-center transition-[min-width]",
+            rail.open ? "min-w-[calc(var(--pane-rail,360px)-5px)]" : "min-w-px",
+          )}
+        >
+          <ChromeDivider />
+          <span className="min-w-3 flex-1" />
+          <ThreadToggle open={rail.open} signal={rail.signal} onToggle={rail.onToggle} />
+          <span className="w-1 shrink-0" />
+        </div>
       </div>
     </>
   );

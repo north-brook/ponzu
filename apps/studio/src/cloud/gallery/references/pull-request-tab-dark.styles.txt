@@ -11,7 +11,6 @@ text "Product" rgb(169, 165, 155) 400 13px Inter
 icon svg[Pages] 14×14 rgb(169, 165, 155) stroke 1.7px
 text "Care cards" rgb(169, 165, 155) 400 13px Inter
 icon svg[New page] 14×14 rgb(107, 104, 98) stroke 1.9px
-ground span rgba(244, 243, 239, 0.1)
 ground button[Pull request #412] rgb(58, 58, 58) shadow rgba(255, 255, 255, 0.06) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.4) 0px 1px 2px 0px
 text "#412" rgb(244, 243, 239) 400 11px IBM Plex Mono
 icon svg[Pull request #412] 11×11 rgb(95, 179, 107) stroke 2px
@@ -19,6 +18,7 @@ icon svg[Checks passed] 10×10 rgb(95, 179, 107) stroke 2.6px
 text "Merge" rgb(17, 17, 16) 600 12px Inter
 ground button rgb(244, 243, 239)
 icon svg 13×13 rgb(17, 17, 16) stroke 2px
+ground span rgba(244, 243, 239, 0.1)
 text "2" rgb(17, 17, 16) 600 12px Inter
 ground span[2 questions for you] rgb(255, 200, 30)
 text "Northbrook" rgb(244, 243, 239) 600 13px Inter

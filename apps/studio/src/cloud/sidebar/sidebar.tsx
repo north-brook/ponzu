@@ -13,6 +13,7 @@ import { orderDesigns } from "../status.ts";
 import { Button, IconButton } from "../ui/button.tsx";
 import { FadeScroll } from "../ui/fade-scroll.tsx";
 import { Icon } from "../ui/icon.tsx";
+import { focusNow, giveFocusBack } from "../ui/quiet-focus.ts";
 import { jumpTarget, useJumpShortcuts, useShortcut } from "../ui/shortcut.ts";
 import { DesignList, DesignListSkeleton } from "./design-list.tsx";
 import type { RowHandlers } from "./design-row.tsx";
@@ -67,9 +68,16 @@ export function Sidebar(props: SidebarProps) {
   const searchField = useRef<HTMLInputElement>(null);
   const [selected, setSelected] = useResultSelection(results);
 
+  // Where focus was when search opened (⌘K from the composer, a click on Search that took no
+  // focus, Return on the Search button), to give it back to when search closes.
+  const openedFrom = useRef<ReturnType<typeof focusNow>>(null);
+  const openSearch = () => {
+    openedFrom.current = focusNow();
+    props.onQueryChange("");
+  };
   useShortcut("k", () => {
     if (props.collapsed) props.onExpand();
-    if (query === null) props.onQueryChange("");
+    if (query === null) openSearch();
     // Already open: back into the field, once the pane is no longer inert. A field just opened
     // takes focus as it mounts.
     else requestAnimationFrame(() => searchField.current?.focus({ preventScroll: true }));
@@ -79,8 +87,11 @@ export function Sidebar(props: SidebarProps) {
 
   const closeSearch = () => {
     props.onQueryChange(null);
-    // Back to where search was opened from.
-    requestAnimationFrame(() => searchButton.current?.focus());
+    const was = openedFrom.current;
+    openedFrom.current = null;
+    // Back where search found it, as the keyboard's if it was (Return on Search: the button,
+    // drawn again); found nowhere, nowhere, so the next key goes to the window as before.
+    requestAnimationFrame(() => giveFocusBack(was, searchButton.current));
   };
 
   const searching = query !== null && query.trim() !== "";
@@ -109,7 +120,12 @@ export function Sidebar(props: SidebarProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {query === null ? (
-        <div className="flex h-[34px] shrink-0 items-center rounded-9 pl-2.5">
+        <div
+          // Search and New design take no focus from a click, as the window's chrome doesn't
+          // (installFocusRule): focus stays where it was, and search gives it back there.
+          data-toolbar
+          className="flex h-[34px] shrink-0 items-center rounded-9 pl-2.5"
+        >
           <WorkspaceMenu
             current={workspace}
             workspaces={props.workspaces}
@@ -124,7 +140,7 @@ export function Sidebar(props: SidebarProps) {
             ref={searchButton}
             label="Search"
             keys={["⌘", "K"]}
-            onClick={() => props.onQueryChange("")}
+            onClick={openSearch}
             className="h-[26px] w-6"
           >
             <Icon icon={Search01Icon} size={15} stroke={1.7} />

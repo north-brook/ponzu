@@ -99,6 +99,7 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
       // The right side holds still.
       expect(drift(sidebar, clock, "thread")).toBe(0);
       expect(drift(sidebar, clock, "right")).toBe(0);
+      expect(drift(sidebar, clock, "railDivider")).toBe(0);
       times.push(duration(sidebar, "left"));
 
       const rail = await sampleToggle(page, THREAD);
@@ -107,8 +108,12 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
         rail.filter((_, i) => railClock[i]! > 0.05 && railClock[i]! < 0.95).length,
       ).toBeGreaterThanOrEqual(5);
       gaps.push(gap(rail));
-      // The cluster's divider keeps to the cluster, which holds still at the window's edge.
-      expect(drift(rail, railClock, "railDivider")).toBe(0);
+      // The rail's divider is on the canvas's right edge (its pixel the canvas's last) in every
+      // frame, until the edge passes where the divider rests with the rail closed, 12 before
+      // the toggle; there it holds.
+      const rest = Math.max(...rail.map((f) => f.railDivider + 1));
+      const off = rail.map((f) => f.railDivider + 1 - Math.min(f.right, rest));
+      expect(Math.max(...off.map(Math.abs))).toBeLessThanOrEqual(1);
       expect(drift(rail, railClock, "left")).toBe(0);
       expect(drift(rail, railClock, "tab")).toBe(0);
       expect(drift(rail, railClock, "thread")).toBe(0);
@@ -122,12 +127,17 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
     // Left and right run on one clock: everything that moves with a pane has the same duration
     // and easing.
     const clocks = await page.evaluate(() =>
-      ["#sidebar", "#thread", "main", "header > div:first-child", "[data-chrome-title]"].map(
-        (s) => {
-          const cs = getComputedStyle(document.querySelector(s)!);
-          return `${cs.transitionDuration.split(",")[0]} ${cs.transitionTimingFunction.split(",")[0]}`;
-        },
-      ),
+      [
+        "#sidebar",
+        "#thread",
+        "main",
+        "header > div:first-child",
+        "[data-chrome-title]",
+        "[data-chrome-rail]",
+      ].map((s) => {
+        const cs = getComputedStyle(document.querySelector(s)!);
+        return `${cs.transitionDuration.split(",")[0]} ${cs.transitionTimingFunction.split(",")[0]}`;
+      }),
     );
     expect(new Set(clocks).size).toBe(1);
     // And measured, they take the same time: within a frame at either end. Only where the machine
@@ -175,6 +185,68 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
     // The create page: nothing past the toggle, and no divider.
     await open("create");
     expect(await page.$$eval("header [data-chrome-divider]", (els) => els.length)).toBe(0);
+  });
+
+  /** The right side of the chrome, as boxes. */
+  const rightSide = () =>
+    page.evaluate(() => {
+      const box = (el: Element | null | undefined) => {
+        const b = el!.getBoundingClientRect();
+        return { left: b.left, right: b.right, top: b.top, bottom: b.bottom };
+      };
+      const header = document.querySelector("header")!;
+      const rail = header.querySelector("[data-chrome-rail]")!;
+      // The cluster is the block's sibling before the 12 between them.
+      const cluster = rail.previousElementSibling?.previousElementSibling;
+      const tabs = header.querySelector('[role="tablist"]')!.parentElement!.parentElement!;
+      const plus = header.querySelector('button[aria-label="New page"]');
+      return {
+        width: window.innerWidth,
+        main: box(document.querySelector("main")),
+        divider: box(rail.querySelector("[data-chrome-divider]")),
+        toggle: box(header.querySelector('[aria-controls="thread"]')),
+        cluster: cluster ? box(cluster) : null,
+        clusterHeight: cluster ? cluster.getBoundingClientRect().height : 0,
+        tabsEnd: Math.max(box(tabs).right, plus ? box(plus).right : 0),
+        overflow: header.scrollWidth - header.clientWidth,
+      };
+    });
+
+  test("the right side mirrors the left: [people] [action] | … [toggle], the divider on the canvas's edge", async () => {
+    const cases: [string, "open" | "closed", { width: number; height: number }?][] = [
+      ["team-sidebar", "open"],
+      ["thread-in-the-right-rail", "open"],
+      ["crowded-chrome", "open"],
+      ["sidebar-collapsed", "closed"],
+      ["crowded-chrome-closed", "closed"],
+      // The pull request tab folds the rail: the right side reads as it does closed.
+      ["pull-request-tab", "closed"],
+      ["min-window", "open", { width: 1100, height: 640 }],
+      ["min-window-collapsed", "open", { width: 1100, height: 640 }],
+      ["crowded-chrome-min-window", "open", { width: 1100, height: 640 }],
+    ];
+    for (const [board, rail, size] of cases) {
+      await open(board);
+      if (size) await page.setViewportSize(size);
+      const at = await rightSide();
+      // The toggle 10 from the window's edge, always.
+      expect(at.toggle.right).toBe(at.width - 10);
+      if (rail === "open") {
+        // The divider's pixel is the canvas's last column, as the left one's is its first.
+        expect(at.divider.right).toBe(at.main.right);
+      } else {
+        // Divider, 12, toggle, together at the window's edge.
+        expect(at.toggle.left - at.divider.right).toBe(12);
+      }
+      if (at.cluster) {
+        // The cluster ends 12 before the divider, on one line, whole.
+        expect(at.divider.left - at.cluster.right).toBe(12);
+        expect(at.clusterHeight).toBe(28);
+        // The page tabs give way before it: never under it.
+        expect(at.tabsEnd).toBeLessThanOrEqual(at.cluster.left);
+      }
+      expect(at.overflow).toBe(0);
+    }
   });
 
   test("⌘B toggles the sidebar from the window and from a composer, ⌘J the rail", async () => {
@@ -287,5 +359,83 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
       reached = await ring();
     }
     expect(reached).toEqual({ name: "Toggle sidebar", ring: true });
+  });
+
+  /** Every element on the page whose focus ring shows, by name. */
+  const rings = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll(":focus-visible:not([data-quiet-focus])")]
+        .filter((el) => !el.matches("input, textarea"))
+        .map((el) => el.getAttribute("aria-label") ?? el.textContent?.trim()),
+    );
+
+  test("a shortcut, or a modifier held for one, never lights a control", async () => {
+    await open("thread-in-the-right-rail");
+    // The founder's case: Search (and its tip) after ⌘K and Escape, with ⌘ and ⌥ held after.
+    await page.click("#thread textarea");
+    await page.keyboard.press("Meta+k");
+    await page.waitForSelector('input[role="combobox"]');
+    await page.keyboard.press("Escape");
+    await page.waitForSelector('input[role="combobox"]', { state: "detached" });
+    // Search gives focus back where ⌘K found it: the composer.
+    await page.waitForFunction(() => document.activeElement?.tagName === "TEXTAREA");
+    for (const key of ["Meta", "Alt", "Shift", "Control"]) {
+      await page.keyboard.down(key);
+      await new Promise((r) => setTimeout(r, 300));
+      expect(await rings()).toEqual([]);
+      await page.keyboard.up(key);
+    }
+    // A click on a control that keeps its focus (a design's row), then shortcuts, Return and
+    // the modifiers: quiet throughout, and no tip.
+    await page.click('#sidebar [data-design-row="dsn_pricing"]');
+    for (const key of ["Meta", "Alt", "Meta+j", "Meta+j", "Meta+b", "Meta+b", "Enter", "Space"]) {
+      await page.keyboard.press(key);
+      expect(await rings()).toEqual([]);
+    }
+    expect(await page.$('[data-slot="tooltip-content"]')).toBeNull();
+    // A click on Search takes no focus; Escape gives it back where it was, which was nowhere.
+    await page.click('#sidebar button[aria-label="Search"]');
+    await page.waitForSelector('input[role="combobox"]');
+    await page.keyboard.press("Escape");
+    await page.waitForSelector('input[role="combobox"]', { state: "detached" });
+    await page.keyboard.down("Meta");
+    expect(await rings()).toEqual([]);
+    await page.keyboard.up("Meta");
+    // Focus our own code moves after a key (a row back from renaming) is quiet too.
+    await page.evaluate(() => {
+      document.querySelector<HTMLElement>('[data-design-row="dsn_pricing"]')!.focus();
+    });
+    expect(await rings()).toEqual([]);
+  });
+
+  test("keyboard navigation rings where it lands, and keeps it where focus comes back", async () => {
+    await open("thread-in-the-right-rail");
+    await page.click("#thread textarea");
+    // Shift-Tab back from the composer until Search.
+    let name: string | null | undefined;
+    for (let i = 0; i < 60 && name !== "Search"; i++) {
+      await page.keyboard.press("Shift+Tab");
+      name = await page.evaluate(() => document.activeElement?.getAttribute("aria-label"));
+    }
+    expect(await rings()).toEqual(["Search"]);
+    // Holding ⌘ changes nothing; Return opens search, Escape brings the ring back on Search.
+    await page.keyboard.down("Meta");
+    expect(await rings()).toEqual(["Search"]);
+    await page.keyboard.up("Meta");
+    await page.keyboard.press("Enter");
+    await page.waitForSelector('input[role="combobox"]');
+    await page.keyboard.press("Escape");
+    await page.waitForSelector('input[role="combobox"]', { state: "detached" });
+    await page.waitForFunction(
+      () => document.activeElement?.getAttribute("aria-label") === "Search",
+    );
+    expect(await rings()).toEqual(["Search"]);
+    // Arrows in the design list move the ring with them.
+    await page.focus('[data-design-row="dsn_quieter"]');
+    await page.keyboard.press("ArrowDown");
+    expect((await rings()).length).toBe(1);
+    expect(
+      await page.evaluate(() => document.activeElement?.getAttribute("data-design-row")),
+    ).not.toBe("dsn_quieter");
   });
 });
