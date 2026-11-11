@@ -311,8 +311,11 @@ sandbox's disk; each sleep is done as the API does it (the stop asks, the runner
   put it on `refs/ponzu/wip/<design>` (GitHub showed the file there and no branch was pushed). A
   warm and a cold sleep and wake; boat did not roll the disk back, so the checkout, Claude's
   config folder and the runner's state were put back as they were before that turn, and the
-  runner restarted. It logged `sandbox_rollback` (disk at checkpoint 1, the API at 3) and
-  restored. The results of the final run are in the pull request that added this.
+  runner restarted. On `ponzu-runner-b06c59b6e389` it logged `sandbox_rollback` (disk at
+  checkpoint 2, the API at 4), restored the transcript and the work (`restored 460b6b0ab7c8 over
+  c025990e3fc1`: the saved tree over the same HEAD), the checkout held `notes/plan.md` again,
+  untracked, and the next turn answered without a tool: "Code word: apricot. Line written to
+  notes/plan.md: juniper 42." The hidden ref and the branch were deleted after.
 - **What it costs.** Getting ready to sleep took 0.82 to 0.84 s and the stop's `sync` 0.14 to
   0.66 s, so a sleep is about a second later than before. A wake with nothing to restore costs
   nothing new on a cold start; after a warm one the API's `/health` check answered at once (the
