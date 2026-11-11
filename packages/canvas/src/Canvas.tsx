@@ -434,13 +434,25 @@ export function Canvas({
   // Fit when a page first shows, before it paints: after, its first frame is at the old page's
   // camera. A change of framing (a window crossing a host's breakpoint) frames it again.
   useLayoutEffect(() => {
-    if (!page || !bounds) return;
+    if (!page) return;
+    if (!bounds) {
+      // An empty page waits at 100%, the page's origin (where a first board lands) in the
+      // middle: the first board's fit, before it paints, then moves nothing anyone can see and
+      // leaves the zoom where it was, so it arrives with its own animation and no jump.
+      const empty = `${page.id}:empty`;
+      if (fitted.current === empty) return;
+      fitted.current = empty;
+      const v = viewportSize();
+      camera.set({ zoom: 1, x: Math.round(v.w / 2), y: Math.round(v.h / 2) }, true);
+      return;
+    }
     const key = `${page.id}:${initialFit}`;
     if (fitted.current === key) return;
     fitted.current = key;
     if (initialFit === "first") fitFirst();
     else fitPage();
-  }, [page, bounds, fitPage, fitFirst, initialFit]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, bounds, fitPage, fitFirst, initialFit, camera]);
 
   /** Show a board's page with the board framed, in place of the page's own fit. */
   const showBoard = (pageId: string, ab: Artboard | undefined) => {
