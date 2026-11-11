@@ -342,6 +342,28 @@
   animation: rise var(--dur-pop) var(--ease-out);
 }
 
+/* A design's new preview and the one it replaces: a short, quiet cross-fade. The two run on
+   the same timing so, added with plus-lighter, they always sum to one (design-preview.tsx). */
+@keyframes preview-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes preview-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@utility preview-in {
+  animation: preview-in var(--dur-pop) var(--ease-out);
+}
+
+@utility preview-out {
+  animation: preview-out var(--dur-pop) var(--ease-out) forwards;
+}
+
 @keyframes tip-in {
   from {
     opacity: 0;

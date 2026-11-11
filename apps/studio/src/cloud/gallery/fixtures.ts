@@ -109,6 +109,26 @@ export const lenny = repo("lenny");
 export const brand = repo("brand");
 /** The repo picker's list, pushed-to lately first. */
 export const repos = [fernwood, lenny, repo("ponzu"), repo("fablefuel")];
+/** A workspace with just the one repo installed. */
+export const oneRepo = [repo("ponzu-test")];
+/** Enough to scroll, and a name too long for the row. */
+export const manyRepos = [
+  fernwood,
+  lenny,
+  repo("ponzu"),
+  repo("fablefuel"),
+  repo("customer-onboarding-experiments-and-landing-page-variants"),
+  repo("brand"),
+  repo("north-brook.com"),
+  repo("design-system"),
+  repo("mobile"),
+  repo("api"),
+  repo("docs"),
+  repo("sandbox-images"),
+  repo("press-kit"),
+  repo("dotfiles"),
+  repo("infra"),
+];
 
 const preview = (src: string) => ({ light: src, dark: src });
 

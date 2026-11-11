@@ -87,6 +87,7 @@ try {
         await Bun.write(join(out, `${name}.pair.png`), await sideBySide(tool, theirs, ours));
         const pct = (n: number) => `${(n * 100).toFixed(2)}%`.padStart(7);
         rows.push(`${name.padEnd(34)} ${pct(diff.changed)}  ${pct(diff.changedOutsideMasks)}`);
+        if (c.differs && theme === THEMES.at(-1)) rows.push(`  on purpose: ${c.differs}`);
       }
     }
     console.log(

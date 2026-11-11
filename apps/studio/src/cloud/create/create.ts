@@ -9,21 +9,28 @@ export function canSend(prompt: string, sending: boolean): boolean {
 }
 
 /**
- * The picker's rows for a query: Scratch, then repos grouped by owner, each group in the order
- * given (pushed-to lately first). A query keeps rows whose name or owner/name contains it.
+ * The picker's search shows from this many repos: fewer read at a glance (with Scratch, at most
+ * seven one-line rows), and the arrows reach them as fast as typing would. Seven rows is also as
+ * tall as the picker gets while it still fits under a centred composer in a 900pt window, so a
+ * picker without search never lifts the composer; one with search (and its longer list) does.
+ */
+export const SEARCH_FROM = 7;
+
+/** Whether the picker offers a search: only once there are enough repos to need one. */
+export function showsSearch(repos: readonly Repo[] | null): boolean {
+  return (repos?.length ?? 0) >= SEARCH_FROM;
+}
+
+/**
+ * The picker's rows for a query: Scratch, then the repos in the order given (pushed-to lately
+ * first). A query keeps those whose name contains it. Repos go by their name alone: they are the
+ * workspace's, and a workspace is one GitHub account, so every one has the same owner.
  */
 export function pickerRows(
-  repos: Repo[],
+  repos: readonly Repo[],
   query: string,
-): { scratch: boolean; groups: { owner: string; repos: Repo[] }[] } {
+): { scratch: boolean; repos: Repo[] } {
   const q = query.trim().toLowerCase();
   const matches = (text: string) => !q || text.toLowerCase().includes(q);
-  const groups: { owner: string; repos: Repo[] }[] = [];
-  for (const repo of repos) {
-    if (!matches(`${repo.owner}/${repo.name}`)) continue;
-    const group = groups.find((g) => g.owner === repo.owner);
-    if (group) group.repos.push(repo);
-    else groups.push({ owner: repo.owner, repos: [repo] });
-  }
-  return { scratch: matches("scratch"), groups };
+  return { scratch: matches("scratch"), repos: repos.filter((repo) => matches(repo.name)) };
 }
