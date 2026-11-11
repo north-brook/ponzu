@@ -31,6 +31,7 @@ import { type FakeQuery, FakeRealtime, fakeSeal } from "./realtime.ts";
 type Permission = "admin" | "write" | "read" | "none";
 type Role = "admin" | "member";
 type DesignView = Awaited<ReturnType<Api["designs"]["get"]>>;
+type RepoIdeasAnswer = Awaited<ReturnType<Api["repos"]["ideas"]>>;
 
 export type FakePerson = Profile;
 
@@ -117,6 +118,11 @@ export class FakeBackend {
   readonly people = new Map<string, FakePerson>();
   readonly workspaces = new Map<string, FakeWorkspace>();
   readonly designs = new Map<string, FakeDesign>();
+  /**
+   * What `GET /v1/repos/:id/ideas` answers for each repo, in turn: each ask takes the next
+   * answer and the last one stays. A repo with none set has `none`.
+   */
+  readonly repoIdeas = new Map<string, RepoIdeasAnswer[]>();
   /** While false, every call fails as if there were no network. */
   online = true;
   private ids = 0;
@@ -164,6 +170,21 @@ export class FakeBackend {
       id: workspace.id,
       repos: workspace.repos.map(({ id, fullName }) => ({ id, fullName })),
     };
+  }
+
+  /**
+   * What asking for a repo's ideas answers from now on, in turn: `setIdeas(repo, "generating",
+   * ["Make checkout one page", …])` is one `generating`, then those ideas, ready.
+   */
+  setIdeas(repoId: string, ...answers: (RepoIdeasAnswer["status"] | string[])[]): void {
+    this.repoIdeas.set(
+      repoId,
+      answers.map((answer) =>
+        Array.isArray(answer)
+          ? { status: "ready", ideas: answer.map((prompt) => ({ prompt })) }
+          : { status: answer, ideas: [] },
+      ),
+    );
   }
 
   /** A device signed in as `person`. */
@@ -415,6 +436,21 @@ export class FakeBackend {
             workspace.members.set(userId, role);
             this.changed();
             return { member: memberRow(workspace, userId) };
+          }),
+      },
+      repos: {
+        ideas: (id) =>
+          call(() => {
+            const repo = [...this.workspaces.values()]
+              .filter((workspace) => workspace.members.has(person.id))
+              .flatMap((workspace) => workspace.repos)
+              .find((candidate) => candidate.id === id);
+            if (!repo || repoPermission(repo, person.id) === "none") {
+              throw new ApiError(404, "not_found", "There is no such repo.");
+            }
+            const answers = this.repoIdeas.get(id) ?? [];
+            const answer = answers.length > 1 ? answers.shift()! : answers[0];
+            return answer ?? { status: "none" as const, ideas: [] };
           }),
       },
       designs: {

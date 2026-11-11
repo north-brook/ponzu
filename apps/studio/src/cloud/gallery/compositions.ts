@@ -7,6 +7,8 @@
  * - `masks` cover what this pull request doesn't draw (the canvas's boards, the thread rail).
  * - `reference` draws it for the visual regression test, from references/.
  */
+import { SETUP_COMPOSITIONS } from "./setup-compositions.ts";
+
 export interface Rect {
   x: number;
   y: number;
@@ -117,4 +119,5 @@ export const COMPOSITIONS: Composition[] = [
   { id: "sidebar-collapsed", title: "Sidebar collapsed, rail closed", ...WINDOW },
   { id: "settled-open", title: "Settled tray expanded", ...WINDOW },
   { id: "filtered-empty", title: "A filter nothing matches", ...WINDOW },
+  ...SETUP_COMPOSITIONS,
 ];

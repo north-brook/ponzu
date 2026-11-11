@@ -8,9 +8,25 @@ import { extendTailwindMerge } from "tailwind-merge";
 const merge = extendTailwindMerge({
   extend: {
     theme: {
-      text: ["9", "11", "12", "13", "14", "16", "34"],
-      radius: ["2", "3", "4", "5", "6", "7", "8", "9", "10", "12", "14", "20", "pill"],
-      shadow: ["pop", "bar", "raised", "preview", "dot", "tip", "focus"],
+      text: ["9", "10", "11", "12", "13", "14", "15", "16", "18", "28", "34", "40"],
+      radius: ["2", "3", "4", "5", "6", "7", "8", "9", "10", "12", "14", "16", "20", "pill"],
+      shadow: [
+        "pop",
+        "bar",
+        "raised",
+        "preview",
+        "dot",
+        "tip",
+        "focus",
+        "card",
+        "button",
+        "field",
+        "field-focus",
+        "field-error",
+        "field-error-focus",
+        "knob",
+        "github",
+      ],
     },
   },
 });

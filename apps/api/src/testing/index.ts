@@ -14,10 +14,12 @@ import { createLogger, type LogLine } from "../http/log.ts";
 import { GitTokens } from "../runner/git-credential.ts";
 import { createVault } from "../vault/vault.ts";
 import { FakeGithub, type FakeGithubUser } from "./fake-github.ts";
+import { FakeModel } from "./fake-model.ts";
 import { FakeWorkos, type FakeWorkosUser } from "./fake-workos.ts";
 import { FakePoke, FakeSealer, MemoryStorage } from "./fakes.ts";
 
 export { FakeGithub, type FakeInstallation, type FakeRepository } from "./fake-github.ts";
+export { FakeModel, type FakeReply } from "./fake-model.ts";
 export {
   type FakePull,
   type FakeRepoAccess,
@@ -108,6 +110,7 @@ export async function createTestApp(
   const storage = new MemoryStorage(clock);
   const poke = new FakePoke();
   const sealer = new FakeSealer(clock);
+  const model = new FakeModel();
   /** Every line the app logged, oldest first. */
   const logs: LogLine[] = [];
   let requests = 0;
@@ -132,6 +135,7 @@ export async function createTestApp(
     storage: options.storage ?? storage,
     poke: poke.poke,
     realtime: options.live?.realtime ?? sealer,
+    model,
     docs: new DocCache(),
     gitTokens: new GitTokens(),
     config: {
@@ -255,6 +259,7 @@ export async function createTestApp(
     storage,
     poke,
     realtime: sealer,
+    model,
     logs,
     startSignIn,
     signInAs,
