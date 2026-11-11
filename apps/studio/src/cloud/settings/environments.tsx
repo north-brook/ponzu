@@ -164,12 +164,15 @@ function RepoEnvironmentRow({
             ) : null}
           </div>
           <div className="mx-2.5 h-px bg-rule" />
-          <Secrets
-            env={env}
-            canEdit={canEdit}
-            onSave={(name, value) => onSaveSecret(repo, name, value)}
-            onRemove={(name) => onRemoveSecret(repo, name)}
-          />
+          {/* A repo's secrets as they are written: never recorded (app/analytics/privacy.ts). */}
+          <div className="ph-no-capture flex flex-col">
+            <Secrets
+              env={env}
+              canEdit={canEdit}
+              onSave={(name, value) => onSaveSecret(repo, name, value)}
+              onRemove={(name) => onRemoveSecret(repo, name)}
+            />
+          </div>
           <span className="h-2" />
         </div>
       ) : null}

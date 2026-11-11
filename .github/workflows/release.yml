@@ -233,6 +233,14 @@ jobs:
         env:
           # electron-builder imports the base64 p12 into a temporary keychain itself.
           CSC_LINK: ${{ secrets.APPLE_CERTIFICATE }}
+          # The PostHog project the app reports to (docs/analytics.md): none until the variable is
+          # set, which is the cloud app's own project, never the 1.x one PONZU_POSTHOG_KEY names.
+          # The CLI's credentials upload source maps for its stack traces; none, none uploaded.
+          PONZU_POSTHOG_KEY: ${{ vars.PONZU_APP_POSTHOG_KEY }}
+          PONZU_POSTHOG_HOST: ${{ vars.PONZU_APP_POSTHOG_HOST }}
+          PONZU_POSTHOG_REPLAY: ${{ vars.PONZU_APP_POSTHOG_REPLAY }}
+          POSTHOG_CLI_API_KEY: ${{ secrets.PONZU_APP_POSTHOG_CLI_API_KEY }}
+          POSTHOG_CLI_PROJECT_ID: ${{ vars.PONZU_APP_POSTHOG_CLI_PROJECT_ID }}
           CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           CSC_NAME: Northbrook PBC (R9352YFQL4)
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
@@ -323,6 +331,14 @@ jobs:
         working-directory: apps/desktop
         env:
           GH_TOKEN: ${{ github.token }}
+          # The PostHog project the app reports to (docs/analytics.md): none until the variable is
+          # set, which is the cloud app's own project, never the 1.x one PONZU_POSTHOG_KEY names.
+          # The CLI's credentials upload source maps for its stack traces; none, none uploaded.
+          PONZU_POSTHOG_KEY: ${{ vars.PONZU_APP_POSTHOG_KEY }}
+          PONZU_POSTHOG_HOST: ${{ vars.PONZU_APP_POSTHOG_HOST }}
+          PONZU_POSTHOG_REPLAY: ${{ vars.PONZU_APP_POSTHOG_REPLAY }}
+          POSTHOG_CLI_API_KEY: ${{ secrets.PONZU_APP_POSTHOG_CLI_API_KEY }}
+          POSTHOG_CLI_PROJECT_ID: ${{ vars.PONZU_APP_POSTHOG_CLI_PROJECT_ID }}
       - name: The update feed names no publisher to check updates against
         # electron-updater checks a Windows update's signature only against the
         # publisher app-update.yml names, which an unsigned build has none of.
@@ -442,6 +458,14 @@ jobs:
         working-directory: apps/desktop
         env:
           GH_TOKEN: ${{ github.token }}
+          # The PostHog project the app reports to (docs/analytics.md): none until the variable is
+          # set, which is the cloud app's own project, never the 1.x one PONZU_POSTHOG_KEY names.
+          # The CLI's credentials upload source maps for its stack traces; none, none uploaded.
+          PONZU_POSTHOG_KEY: ${{ vars.PONZU_APP_POSTHOG_KEY }}
+          PONZU_POSTHOG_HOST: ${{ vars.PONZU_APP_POSTHOG_HOST }}
+          PONZU_POSTHOG_REPLAY: ${{ vars.PONZU_APP_POSTHOG_REPLAY }}
+          POSTHOG_CLI_API_KEY: ${{ secrets.PONZU_APP_POSTHOG_CLI_API_KEY }}
+          POSTHOG_CLI_PROJECT_ID: ${{ vars.PONZU_APP_POSTHOG_CLI_PROJECT_ID }}
       - name: The AppImage draws its sign-in screen
         # As CI's "Desktop package", through the AppImage's own runtime. Its
         # icons are where the app's desktop entry finds them (src/linux.ts).

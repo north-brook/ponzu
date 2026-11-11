@@ -43,7 +43,13 @@ export function DesignList({
   };
 
   return (
-    <ul aria-label={label} onKeyDown={onKeyDown} className="m-0 flex list-none flex-col gap-px p-0">
+    <ul
+      aria-label={label}
+      onKeyDown={onKeyDown}
+      // Designs' names: masked in a private recording (app/analytics/privacy.ts).
+      data-replay="mask"
+      className="m-0 flex list-none flex-col gap-px p-0"
+    >
       {designs.map((design) => (
         <li key={design.id}>
           <DesignRow

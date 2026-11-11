@@ -17,6 +17,8 @@ export function DesignPreviewImage({
   const scheme = useColorScheme();
   return (
     <span
+      // A design's own pixels: blocked in a private recording (app/analytics/privacy.ts).
+      data-replay="block"
       className={cn("block shrink-0 overflow-hidden rounded-4 bg-hover shadow-preview", className)}
       style={{ width, height }}
     >

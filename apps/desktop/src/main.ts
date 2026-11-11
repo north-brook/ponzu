@@ -17,6 +17,7 @@ import {
 } from "electron";
 import { followAppearance } from "./appearance.ts";
 import {
+  type AnalyticsSetup,
   type BridgeError,
   CHANNELS,
   type DeepLink,
@@ -37,14 +38,17 @@ import { APP_NAMES, bundleMismatch, claimsScheme, configFor } from "./config.ts"
 import { contentSecurityPolicy } from "./csp.ts";
 import { dataFolder, removeOnceExited } from "./data-folder.ts";
 import { linksIn, parseDeepLink } from "./deep-links.ts";
+import { recordLaunch } from "./launches.ts";
 import { removeLegacyFor, runProgram } from "./legacy.ts";
 import { registerAppImage } from "./linux.ts";
+import { startMainTelemetry } from "./main-telemetry.ts";
 import { buildMenu, setSignedIn } from "./menu.ts";
 import { externalLink, isStudio } from "./navigation.ts";
 import { clientPlatform, type MainSession, mainSession } from "./session.ts";
 import { sessionFileStorage } from "./session-file.ts";
 import { blockNetwork, smoke, watchSmoke } from "./smoke.ts";
 import { STUDIO_SCHEME, studioFile } from "./studio-files.ts";
+import { telemetryOffBecause } from "./telemetry-consent.ts";
 import { memoryStorage, tokenStorage } from "./token-store.ts";
 import { checkForUpdatesNow, installUpdater, type Updates } from "./updater.ts";
 import { createMainWindow } from "./window.ts";
@@ -165,7 +169,47 @@ const studioRoot = app.isPackaged
   ? join(process.resourcesPath, "studio")
   : join(app.getAppPath(), "../studio/dist");
 const studioOrigins = [STUDIO_ORIGIN, ...(config.studioDevUrl ? [config.studioDevUrl] : [])];
-const csp = contentSecurityPolicy(config);
+
+/*
+ * Usage analytics and error tracking (docs/analytics.md): only when this build has a PostHog
+ * project, the smoke check isn't running, and the person hasn't said no the ways 1.x heard.
+ * Otherwise nothing of PostHog loads here or in the studio, and the policy reaches none of it.
+ */
+const offBecause = telemetryOffBecause(process.env, homedir());
+const posthog = config.posthog && !smoke && !offBecause ? config.posthog : null;
+if (config.posthog && offBecause && !smoke) console.log(`Usage analytics off: ${offBecause}.`);
+const csp = contentSecurityPolicy({ ...config, posthog });
+const launch = posthog
+  ? recordLaunch(join(userData, "launches.json"), app.getVersion())
+  : { first: false, updatedFrom: null };
+/** What every event from this build carries, the main process's and the studio's. */
+const buildProperties = {
+  app_version: app.getVersion(),
+  channel: config.appName,
+  platform: process.platform,
+  os_version: process.getSystemVersion(),
+};
+const analytics: AnalyticsSetup | null = posthog
+  ? {
+      key: posthog.key,
+      host: posthog.host,
+      replay: posthog.replay,
+      channel: config.appName,
+      osVersion: buildProperties.os_version,
+      firstLaunch: launch.first,
+      updatedFrom: launch.updatedFrom,
+    }
+  : null;
+/** Who the main process's errors are put down to: set once the session is read. */
+let signedInUser: () => string | null = () => null;
+const telemetry = posthog
+  ? startMainTelemetry({
+      posthog,
+      properties: buildProperties,
+      userId: () => signedInUser(),
+      home: homedir(),
+    })
+  : null;
 
 let mainWindow: BrowserWindow | null = null;
 /** Links that arrived before the studio listened for them. */
@@ -223,6 +267,7 @@ function showWindow() {
         client: clientPlatform(),
         dev: app.isPackaged ? "0" : "1",
         scheme: config.linkScheme ?? "",
+        ...(analytics ? { analytics: encodeURIComponent(JSON.stringify(analytics)) } : {}),
       },
     });
     const win = mainWindow;
@@ -459,6 +504,10 @@ if (!app.requestSingleInstanceLock()) {
       },
     });
     const session = account.session;
+    signedInUser = () => {
+      const state = session.getState();
+      return state.status === "signed_in" ? state.user.id : null;
+    };
     let was = session.getState().status;
     session.subscribe(() => {
       const state = session.getState();
@@ -514,6 +563,15 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.on("activate", () => showWindow());
+
+  // What the main process has queued goes before it quits, for two seconds at most.
+  let flushed = false;
+  app.on("will-quit", (event) => {
+    if (!telemetry || flushed) return;
+    event.preventDefault();
+    flushed = true;
+    void telemetry.shutdown().finally(() => app.quit());
+  });
 
   // The Mac keeps an app with no window in the dock; elsewhere closing the window quits.
   app.on("window-all-closed", () => {

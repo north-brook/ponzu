@@ -40,7 +40,31 @@ export type SignInResult =
    * it was the oldest of too many, or Ponzu quit. Nothing to say.
    */
   | { ok: false; reason: "closed" }
-  | { ok: false; reason: "failed"; message: string };
+  | { ok: false; reason: "failed"; message: string; code: SignInFailure };
+
+/**
+ * Why a sign-in failed, coarsely, for usage analytics: GitHub said no, the API refused the
+ * exchange, it couldn't be reached, or anything else.
+ */
+export type SignInFailure = "access_denied" | "refused" | "network" | "other";
+
+/**
+ * The studio's usage analytics, when this build reports and the person hasn't said no
+ * (docs/analytics.md): the PostHog project, what replay may show, and what only the shell knows
+ * about this launch.
+ */
+export interface AnalyticsSetup {
+  key: string;
+  host: string;
+  replay: "full" | "private";
+  /** `Ponzu`, `Ponzu Preview` or `Ponzu Dev`. */
+  channel: string;
+  /** The operating system's version (the user agent's is frozen). */
+  osVersion: string;
+  firstLaunch: boolean;
+  /** The version the last launch ran, when an update was installed since. */
+  updatedFrom: string | null;
+}
 
 /**
  * Where the session's tokens live. `memory`: this computer's keychain could not be used, so the
@@ -73,7 +97,14 @@ export interface PonzuDesktop {
    * this app takes (`ponzu`, `ponzu-dev`; empty for Ponzu Local, which takes none), which the
    * API's pages link back to.
    */
-  config: { apiUrl: string; client: string; dev: boolean; linkScheme: string };
+  config: {
+    apiUrl: string;
+    client: string;
+    dev: boolean;
+    linkScheme: string;
+    /** Null when nothing is to be reported: then the studio loads none of PostHog. */
+    analytics: AnalyticsSetup | null;
+  };
   session: {
     state(): Promise<SessionState>;
     onState(listener: (state: SessionState) => void): () => void;

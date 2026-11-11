@@ -107,6 +107,8 @@ export interface CanvasProps {
    * followed once; a new `at` follows the same one again (a comment's board, clicked twice).
    */
   link?: { page?: string; artboard?: string; at?: number };
+  /** Called when the tool changes, by its button or its key: select, hand or comment. */
+  onModeChange?: (mode: Mode) => void;
   className?: string;
 }
 
@@ -249,6 +251,7 @@ export function Canvas({
   onPageChange,
   initialFit = "page",
   link,
+  onModeChange,
   className,
 }: CanvasProps) {
   // Read-only hides the controls that edit; this catches anything they missed.
@@ -269,6 +272,17 @@ export function Canvas({
     if (shownId && shownId !== pageId) setOwnPageId(shownId);
   }, [shownId, pageId]);
   const [mode, setMode] = useState<Mode>("select");
+  const modeChanged = useRef(onModeChange);
+  modeChanged.current = onModeChange;
+  const firstMode = useRef(true);
+  useEffect(() => {
+    // The tool it starts on is no change.
+    if (firstMode.current) {
+      firstMode.current = false;
+      return;
+    }
+    modeChanged.current?.(mode);
+  }, [mode]);
   const space = useKeyHeld("Space");
   const panning = mode === "hand" || space;
   const { camera, zoomAt, panBy, fit } = useCameraStore();

@@ -177,13 +177,19 @@ export function clientPlatform(): string {
 }
 
 function failed(error: unknown): SignInResult {
-  const message =
-    error instanceof SignInError && error.code === "access_denied"
-      ? "GitHub didn't let Ponzu in. Try again."
-      : error instanceof ApiError
-        ? error.message
-        : "Couldn't sign in. Try again.";
-  return { ok: false, reason: "failed", message };
+  if (error instanceof SignInError && error.code === "access_denied") {
+    return {
+      ok: false,
+      reason: "failed",
+      message: "GitHub didn't let Ponzu in. Try again.",
+      code: "access_denied",
+    };
+  }
+  if (error instanceof ApiError) {
+    const code = error.code === "network" ? "network" : "refused";
+    return { ok: false, reason: "failed", message: error.message, code };
+  }
+  return { ok: false, reason: "failed", message: "Couldn't sign in. Try again.", code: "other" };
 }
 
 /** Why the exchange failed, for the page the browser lands on (the app says it its own way). */
