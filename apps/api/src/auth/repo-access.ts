@@ -32,6 +32,8 @@ import { UpstreamError } from "../http/errors.ts";
  * over it, and the reviews that reach a design's agent. Each also requires the person's
  * membership of the workspace. Webhooks keep it true between syncs: an access event syncs the
  * person it names, and one that names nobody makes the answers it concerns stale.
+ *
+ * Ours, not a library's: who may reach what is Ponzu's model, kept in its own database.
  */
 
 /** How long an answer is taken as it is. Someone whose access is taken away loses it within this. */

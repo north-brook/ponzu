@@ -20,6 +20,8 @@ import type { Binding } from "../vault/vault.ts";
  * instances that both sent the same refresh token would leave one of them holding nothing,
  * so the refresh is claimed in the token's row first and whoever does not get the claim waits
  * for the one who did.
+ *
+ * Ours, not Octokit's: no library coordinates a single-use refresh token across instances.
  */
 
 /** Refresh a token this close to running out, so the caller has time to use what it gets. */

@@ -24,6 +24,9 @@ src/
     github.ts       real: as a person (user, emails, installations, repositories, org role, token
                     refresh) and as the App (installation lookups and tokens, repo lists, a
                     person's permission in a repo)
+    github-octokit.ts  how all of it reaches GitHub: Octokit on our fetch and clock, the App's
+                    JWT and installation tokens (auth-app), pages, GraphQL, and GitHub's
+                    failures as the API's errors. No retry or throttling plugin, on purpose
     github-pull-requests.ts  a design's pull request: the one GraphQL read and describing
                     it as the App, opening and acting on it as the person
     background.ts   work that outlives its request
