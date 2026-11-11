@@ -5,6 +5,7 @@ import type { Contributor, DesignSummary } from "../model.ts";
 import { DesignHarness } from "./design-harness.tsx";
 import * as f from "./fixtures.ts";
 import { CreateHarness, DesignChromeHarness, Harness } from "./harness.tsx";
+import { LivePreviews } from "./live-previews.tsx";
 import { SETUP_BOARDS } from "./setup-boards.tsx";
 import { THREAD_BOARDS, WORKING } from "./thread-boards.tsx";
 import * as t from "./thread-fixtures.ts";
@@ -117,6 +118,7 @@ export const BOARDS: Record<string, () => ReactNode> = {
   "sidebar-search": () => <DesignWindow query="" />,
   "sidebar-search-results": () => <DesignWindow query="hero" />,
   share: () => <DesignWindow />,
+  "sidebar-previews-updating": () => <LivePreviews />,
   "thread-in-the-right-rail": () => (
     <DesignHarness
       designs={f.soloWorking}
@@ -147,6 +149,25 @@ export const BOARDS: Record<string, () => ReactNode> = {
   "pick-a-project": () => (
     <Harness designs={f.soloDesigns} openId={null}>
       <CreateHarness initialPrompt={ONBOARDING_PROMPT} />
+    </Harness>
+  ),
+  "pick-a-project-scratch": () => (
+    <Harness designs={f.soloDesigns} openId={null}>
+      <CreateHarness initialPrompt={ONBOARDING_PROMPT} initialProject={{ kind: "scratch" }} />
+    </Harness>
+  ),
+  "pick-a-project-one-repo": () => (
+    <Harness designs={f.soloDesigns} openId={null}>
+      <CreateHarness
+        initialPrompt={ONBOARDING_PROMPT}
+        initialProject={{ kind: "repo", repo: f.oneRepo[0]! }}
+        repos={f.oneRepo}
+      />
+    </Harness>
+  ),
+  "pick-a-project-many-repos": () => (
+    <Harness designs={f.soloDesigns} openId={null}>
+      <CreateHarness initialPrompt={ONBOARDING_PROMPT} repos={f.manyRepos} />
     </Harness>
   ),
   "fresh-start": () => (
