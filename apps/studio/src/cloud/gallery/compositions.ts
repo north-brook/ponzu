@@ -232,24 +232,11 @@ export const COMPOSITIONS: Composition[] = [
   { id: "turn-running", title: "Turn · running, drawing a board", ...WINDOW },
   { id: "turn-running-thinking", title: "Turn · running, thinking", ...WINDOW },
   { id: "turn-running-command", title: "Turn · running, a long command", ...WINDOW },
-  { id: "turn-completed", title: "Turn · completed, folded", ...WINDOW },
-  {
-    id: "turn-completed-open",
-    title: "Turn · completed, opened",
-    ...WINDOW,
-    // The thread's last fold: the earlier turns' are above it, out of view.
-    open: '[data-slot="trace-collapsible-trigger"] >> nth=-1',
-  },
+  { id: "turn-completed", title: "Turn · completed, only its answer", ...WINDOW },
   { id: "turn-stopped", title: "Turn · stopped", ...WINDOW },
   { id: "turn-failed", title: "Turn · failed", ...WINDOW },
   { id: "turn-asked", title: "Turn · ended on a question", ...WINDOW },
-  {
-    id: "turn-old-runner",
-    title: "Turn · an older runner's thread, opened",
-    ...WINDOW,
-    // The thread's last fold: the earlier turns' are above it, out of view.
-    open: '[data-slot="trace-collapsible-trigger"] >> nth=-1',
-  },
+  { id: "turn-old-runner", title: "Turn · an older runner's thread", ...WINDOW },
   { id: "pull-request-busy", title: "Pull request · draft, failing, large files", ...WINDOW },
   { id: "pull-request-merged", title: "Pull request · merged", ...WINDOW },
   {
