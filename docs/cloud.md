@@ -73,6 +73,10 @@ GitHub user token encrypted, and returns WorkOS access and refresh tokens. The
 GitHub token never reaches a device.
 
 - The Mac app redirects to a loopback address (`http://127.0.0.1:<port>/auth/callback`).
+  Each press of Continue with GitHub is its own attempt (port, state, verifier) that can
+  finish for ten minutes whatever the window does; the first back signs in and the rest
+  close, as do the oldest past three and every one when Ponzu quits. The page the browser
+  lands on is written after the exchange has answered, so it says how it went.
 - The iPhone app redirects to `ponzu://auth/callback` inside an auth session.
 - Access tokens are five-minute JWTs. The API verifies them locally against
   WorkOS's JWKS. Clients refresh directly with WorkOS, one refresh in flight at a
