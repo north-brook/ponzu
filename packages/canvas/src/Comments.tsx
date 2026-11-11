@@ -32,11 +32,11 @@ function initials(name: string): string {
 }
 
 /**
- * Whether two authors are the same: by id when both have one (two people can share a name),
+ * Whether two authors are the same: by id when either has one (two people can share a name),
  * else by kind and name, which is all the local app's comments carry.
  */
 export function sameAuthor(a: Author, b: Author): boolean {
-  if (a.id !== undefined && b.id !== undefined) return a.id === b.id;
+  if (a.id !== undefined || b.id !== undefined) return a.id === b.id;
   return a.kind === b.kind && a.name === b.name;
 }
 
