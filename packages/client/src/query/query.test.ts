@@ -96,6 +96,35 @@ test("a change to the person's row on another device asks for what it covers aga
   client.live.close();
 });
 
+test("the same row delivered again asks for nothing, and a step asks only for `me`", async () => {
+  const { backend, maya, queryClient, queries, client } = device();
+  const read = () =>
+    Promise.all([
+      queryClient.fetchQuery({ ...queries.me(), staleTime: 0 }),
+      queryClient.fetchQuery({ ...queries.claudeAccount(), staleTime: 0 }),
+      queryClient.fetchQuery({ ...queries.claudeDefaults(), staleTime: 0 }),
+    ]);
+  await read();
+  const stop = invalidateFromLive(queryClient, client.live);
+  await settle();
+  const invalidated = () =>
+    [queryKeys.me(), queryKeys.claudeAccount(), queryKeys.claudeDefaults()].map(
+      (key) => queryClient.getQueryState(key)?.isInvalidated,
+    );
+
+  // Out of sight and back: the live query comes back whole, with the rows as they were.
+  client.live.pause();
+  client.live.resume();
+  await settle();
+  expect(invalidated()).toEqual([false, false, false]);
+
+  backend.finishStep(maya.id, "where");
+  await settle();
+  expect(invalidated()).toEqual([true, false, false]);
+  stop();
+  client.live.close();
+});
+
 test("a role change asks for the workspace again, whether or not it was refused", async () => {
   const { backend, maya, queryClient, queries, mutations, mutate } = device();
   const team = backend.addWorkspace({ login: "north-brook", members: { [maya.id]: "admin" } });

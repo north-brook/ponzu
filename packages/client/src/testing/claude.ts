@@ -44,6 +44,10 @@ export class FakeClaude {
   acceptsCode: (code: string) => boolean = () => true;
   /** While true, a sign-in cannot be started: Claude can't be reached. */
   unreachable = false;
+  /** While true, a sign-in cannot be started: the person has started too many this hour. */
+  limited = false;
+  /** How long starting a sign-in takes, in real time: the API wakes a sandbox for each. */
+  startTakesMs = 0;
   /** The address each sign-in opens, for a test to check. */
   readonly opened: string[] = [];
 
@@ -86,6 +90,17 @@ export class FakeClaude {
     };
   }
 
+  /**
+   * How many of `userId`'s sign-ins still take a code: each is a sandbox the API pays for until
+   * it is used, abandoned, replaced or out of time.
+   */
+  openSignIns(userId: string): number {
+    const now = this.clock.now();
+    return [...this.signIns.values()].filter(
+      (s) => s.userId === userId && !s.used && s.expiresAt > now,
+    ).length;
+  }
+
   /** `/v1/claude` as one person. */
   api(userId: string, changed: () => void): Api["claude"] {
     const answer = () => ({ account: this.view(userId) });
@@ -109,8 +124,18 @@ export class FakeClaude {
         return connected("api_key", key.slice(-4));
       },
       startSignIn: async () => {
+        if (this.startTakesMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, this.startTakesMs));
+        }
         if (this.unreachable) {
           throw new ApiError(502, "upstream_unavailable", "Claude couldn't be reached.");
+        }
+        if (this.limited) {
+          throw new ApiError(
+            429,
+            "rate_limited",
+            "You've started signing in to Claude several times this hour. Try again later.",
+          );
         }
         for (const open of this.signIns.values()) if (open.userId === userId) open.used = true;
         const id = `csi_${String(++this.ids).padStart(16, "0")}`;

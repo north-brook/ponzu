@@ -25,14 +25,20 @@ export function ponzuMutations(api: Api, queryClient: QueryClient) {
   };
 
   return {
-    /** Ask GitHub again: the accounts it answers, and the workspaces `me` lists. */
+    /**
+     * Ask GitHub again: the accounts it answers, the workspaces `me` lists, and each
+     * workspace's installation (installed, suspended, gone), repos and members.
+     */
     syncGithub: () =>
       mutationOptions({
         mutationKey: ["ponzu", "github", "sync"],
         mutationFn: () => api.github.sync(),
         onSuccess: (answer) => {
           queryClient.setQueryData(queryKeys.githubAccounts(), answer);
-          return queryClient.invalidateQueries({ queryKey: queryKeys.me() });
+          return Promise.all([
+            queryClient.invalidateQueries({ queryKey: queryKeys.me() }),
+            queryClient.invalidateQueries({ queryKey: queryKeys.workspaces() }),
+          ]);
         },
       }),
     /** GitHub's install page for an account, with a state good for one return. */
@@ -47,17 +53,21 @@ export function ponzuMutations(api: Api, queryClient: QueryClient) {
         onSuccess: (onboarding) =>
           queryClient.setQueryData<Me>(queryKeys.me(), (me) => (me ? { ...me, onboarding } : me)),
       }),
+    /** The key is its variables: the cache lets go of it as soon as nothing watches it. */
     connectApiKey: () =>
       mutationOptions({
         mutationFn: (key: string) => api.claude.connectApiKey(key),
         onSuccess: claudeChanged,
+        gcTime: 0,
       }),
     startClaudeSignIn: () => mutationOptions({ mutationFn: () => api.claude.startSignIn() }),
+    /** As for a key: the code claude.ai showed is not kept once it is sent. */
     sendClaudeCode: () =>
       mutationOptions({
         mutationFn: ({ signInId, code }: { signInId: string; code: string }) =>
           api.claude.sendCode(signInId, code),
         onSuccess: claudeChanged,
+        gcTime: 0,
       }),
     abandonClaudeSignIn: () =>
       mutationOptions({ mutationFn: (signInId: string) => api.claude.abandonSignIn(signInId) }),

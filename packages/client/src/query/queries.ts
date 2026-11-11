@@ -13,8 +13,17 @@ import { queryKeys } from "./keys.ts";
  */
 export function ponzuQueries(api: Api) {
   return {
-    /** The person, where setup stands, their Claude and their workspaces: every gate reads it. */
-    me: () => queryOptions({ queryKey: queryKeys.me(), queryFn: () => api.me() }),
+    /**
+     * The person, where setup stands, their Claude and their workspaces: every gate reads it.
+     * Not asked again just for the window coming to the front: the live `me` row says when it
+     * changed, and the app's sync with GitHub on coming back answers for the workspaces.
+     */
+    me: () =>
+      queryOptions({
+        queryKey: queryKeys.me(),
+        queryFn: () => api.me(),
+        refetchOnWindowFocus: false,
+      }),
     /** "Where do you design?": the person's own account, then each one with the App. */
     githubAccounts: () =>
       queryOptions({ queryKey: queryKeys.githubAccounts(), queryFn: () => api.github.accounts() }),

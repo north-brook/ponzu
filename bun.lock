@@ -255,22 +255,24 @@
       "dependencies": {
         "@neon/realtime": "0.2.1",
         "@ponzu/core": "workspace:*",
-        "@tanstack/react-query": "^5.102.8",
         "hono": "^4.13.17",
       },
       "devDependencies": {
         "@ponzu/api": "workspace:*",
         "@ponzu/canvas": "workspace:*",
         "@ponzu/runner": "workspace:*",
+        "@tanstack/react-query": "^5.102.8",
         "@types/react": "^19.3.0",
         "@types/react-dom": "^19.3.0",
         "react": "^19.3.1",
         "react-dom": "^19.3.1",
       },
       "peerDependencies": {
+        "@tanstack/react-query": "^5.102.8",
         "react": ">=19",
       },
       "optionalPeers": [
+        "@tanstack/react-query",
         "react",
       ],
     },
