@@ -7,7 +7,12 @@ import { AppWindow } from "../cloud/window/app-window.tsx";
  */
 export function CantStart() {
   return (
-    <AppWindow lights="native" sidebar={null} rail={null}>
+    <AppWindow
+      // No shell to ask: a Mac's window has its lights in the chrome, others their title bar.
+      lights={/Mac/.test(navigator.userAgent) ? "native" : "none"}
+      sidebar={null}
+      rail={null}
+    >
       <div
         data-screen="cant-start"
         className="absolute inset-0 flex flex-col items-center pt-[230px]"

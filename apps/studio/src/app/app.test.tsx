@@ -25,7 +25,6 @@ function hostIn(state: SessionState): Host {
     live: client.live,
     lights: "drawn",
     signIn: async () => ({ ok: true }),
-    cancelSignIn() {},
     persistence: async () => "keychain",
     onLink: () => () => {},
     onCommand: () => () => {},
@@ -73,7 +72,9 @@ test("while the session is read, nothing is shown that could flash and go", () =
 test("signed in, the main window takes over", () => {
   const html = renderToStaticMarkup(<App host={hostIn({ status: "signed_in", user })} />);
   expect(html).not.toContain('data-screen="sign-in"');
-  expect(html).toContain("ponzu");
+  // The window's chrome, with no lockup in it (README, "The window chrome").
+  expect(html).toContain("<header");
+  expect(html).not.toContain(">ponzu<");
 });
 
 test("the update's notes, and Restart while it isn't already restarting", () => {
