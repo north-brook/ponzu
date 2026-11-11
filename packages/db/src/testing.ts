@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, relative } from "node:path";
+import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
 import { eq } from "drizzle-orm";
@@ -22,8 +22,8 @@ import { events } from "./schema/index.ts";
 
 // Starting an empty Postgres and migrating it costs a few seconds of CPU (most of it initdb);
 // loading a copy of one that is already migrated costs a fraction of that. Test files each run
-// in their own process, so the copy is kept on disk, named for the migrations and the PGlite
-// that made it: the first process to need it makes it once, and every other one, in this run
+// in their own process, so the copy is kept on disk, named for the migrations and the code
+// that made it (see cacheKey): the first process to need it makes it once, and every other one, in this run
 // or a later one, loads it. Each database is still its own, made fresh from that copy.
 let migrated: Promise<Blob> | undefined;
 
@@ -114,15 +114,17 @@ function lockAge(lock: string): number {
   }
 }
 
-/** Every migration file's path and contents, and PGlite's version: what the copy depends on. */
+/**
+ * What the copy depends on: the PGlite that made it, the drizzle that migrated it, this file
+ * (how it was made), and every migration file's path and contents.
+ */
 function cacheKey(): string {
   const hash = createHash("sha256");
-  const pglite = join(
-    dirname(fileURLToPath(import.meta.resolve("@electric-sql/pglite"))),
-    "..",
-    "package.json",
-  );
-  hash.update(`pglite ${JSON.parse(readFileSync(pglite, "utf8")).version}\n`);
+  for (const name of ["@electric-sql/pglite", "drizzle-orm"]) {
+    const manifest = fileURLToPath(import.meta.resolve(`${name}/package.json`));
+    hash.update(`${name} ${JSON.parse(readFileSync(manifest, "utf8")).version}\n`);
+  }
+  hash.update(readFileSync(fileURLToPath(import.meta.url)));
   const files = readdirSync(migrationsFolder, { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile())
     .map((entry) => join(entry.parentPath, entry.name))
