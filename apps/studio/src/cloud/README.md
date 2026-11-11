@@ -69,7 +69,8 @@ The chrome reads, left to right (the founder's order):
 ⌘B toggles the sidebar and ⌘J the rail, from anywhere in the window, the canvas and the
 composers included (no field here takes rich text, so ⌘B means nothing else); both are in the
 toggles' tips and in the desktop's View menu (Toggle Sidebar, Toggle Thread), whose clicks
-reach the studio as commands.
+reach the studio as commands. Neither toggles while a menu or a modal is open over the window,
+or while a design's name is being edited on its row (`paneHeld` in `ui/shortcut.ts`).
 
 Both panes open and close on one clock, `pane-motion` (`--dur-pane`, `--ease-out`), and so does
 everything that moves with them: the pane's width, the canvas pane's margin, the left block's
@@ -81,7 +82,10 @@ the app's end-to-end test that the boards don't move.
 
 A click never leaves a ring: whatever takes focus while the pointer was the last thing used is
 marked quiet (`ui/quiet-focus.ts`, the mechanism the menus and the needs-you options use), and
-the ring comes back from the next key that works focus (not a modifier or a ⌘ shortcut).
+the ring comes back only from a key that moves focus: Tab, or an arrow inside a menu, tablist
+or radio group. A letter, Space, Escape or Return after a click is the canvas's, not the
+control's. The chrome's buttons and page tabs (`data-toolbar`) take no focus from a click at
+all, as a Mac's toolbar buttons don't, so the next key goes where it went before the click.
 
 Text from the model or GitHub (replies, plans, a pull request's body and comments) goes through
 `Prose`, never `dangerouslySetInnerHTML`. It is react-markdown with GitHub's flavour (tables, task

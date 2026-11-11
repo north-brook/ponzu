@@ -122,12 +122,17 @@ export function DesignChrome({
           aria-hidden={sidebarOpen}
           data-chrome-title
           className={cn(
-            // Hidden once its room has closed (visibility waits out the transition).
-            "pane-motion flex overflow-hidden transition-[width,opacity,visibility]",
-            sidebarOpen ? "invisible w-0 opacity-0" : "w-auto",
+            // Hidden once its room has closed (visibility waits out the transition). The name is
+            // set once against its own 240 and the room only clips it, under a fade at its right
+            // edge (on the name's 12 of padding at rest), so no letter is cut against the
+            // divider; closing, it fades out on the hover clock, before the room is half shut.
+            "pane-motion flex overflow-hidden transition-[width,opacity,visibility] [mask-image:linear-gradient(to_right,black_calc(100%-12px),transparent)]",
+            sidebarOpen
+              ? "invisible w-0 opacity-0 [transition-duration:var(--dur-pane),var(--dur-hover),var(--dur-pane)]"
+              : "w-auto",
           )}
         >
-          <span className="max-w-[240px] truncate pr-3 pl-1 font-medium text-13 text-ink">
+          <span className="max-w-[240px] shrink-0 truncate pr-3 pl-1 font-medium text-13 text-ink">
             {name}
           </span>
         </span>

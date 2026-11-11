@@ -10,7 +10,7 @@ import type { SettingsSection } from "../cloud/settings/settings-modal.tsx";
 import type { RowAction } from "../cloud/sidebar/design-row.tsx";
 import { Sidebar } from "../cloud/sidebar/sidebar.tsx";
 import { orderSettled } from "../cloud/status.ts";
-import { ranJustNow } from "../cloud/ui/shortcut.ts";
+import { paneHeld, ranJustNow } from "../cloud/ui/shortcut.ts";
 import { AppWindow } from "../cloud/window/app-window.tsx";
 import { DeleteDesignDialog } from "./confirm-dialogs.tsx";
 import { CreateView } from "./create.tsx";
@@ -320,9 +320,12 @@ function WorkspaceWindow({
       host.onCommand((command) => {
         if (command === "new-design") openDesign(null);
         if (command === "settings") openSettings();
-        // The window's own ⌘B and ⌘J take the keys first; a press they just ran isn't run again.
-        if (command === "toggle-sidebar" && !ranJustNow("b")) toggles.current.sidebar?.();
-        if (command === "toggle-thread" && !ranJustNow("j")) toggles.current.rail?.();
+        // The window's own ⌘B and ⌘J take the keys first; a press they just ran isn't run again,
+        // and neither toggles under a menu or a modal (paneHeld).
+        if (command === "toggle-sidebar" && !ranJustNow("b") && !paneHeld("sidebar"))
+          toggles.current.sidebar?.();
+        if (command === "toggle-thread" && !ranJustNow("j") && !paneHeld("thread"))
+          toggles.current.rail?.();
       }),
     [host, openDesign, openSettings],
   );

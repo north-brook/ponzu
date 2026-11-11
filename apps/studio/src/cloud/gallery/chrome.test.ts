@@ -79,6 +79,10 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
       expect(drift(sidebar, clock, "divider")).toBeLessThanOrEqual(1);
       expect(drift(sidebar, clock, "tab")).toBeLessThanOrEqual(1);
       expect(drift(sidebar, clock, "title")).toBeLessThanOrEqual(1);
+      // The name is set once and only clipped by its room: never re-cut frame by frame.
+      // (Within half a pixel: the name's face can finish loading as it first shows.)
+      const widths = sidebar.map((f) => f.titleText);
+      expect(Math.max(...widths) - Math.min(...widths)).toBeLessThanOrEqual(0.5);
       // The right side holds still.
       expect(drift(sidebar, clock, "thread")).toBe(0);
       expect(drift(sidebar, clock, "right")).toBe(0);
@@ -162,6 +166,55 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
     expect(await expanded(THREAD)).toBe("true");
   });
 
+  test("⌘B and ⌘J leave the panes alone under a menu, and while a row's name is edited", async () => {
+    await open("team-sidebar");
+    const expanded = (s: string) => page.getAttribute(s, "aria-expanded");
+    await page.click('#sidebar button[aria-label^="Workspace:"]');
+    await page.waitForSelector("[role=menu]");
+    await page.keyboard.press("Meta+b");
+    await page.keyboard.press("Meta+j");
+    expect(await expanded(SIDEBAR)).toBe("true");
+    expect(await expanded(THREAD)).toBe("true");
+    expect(await page.$("[role=menu]")).not.toBeNull();
+    await page.keyboard.press("Escape");
+    await page.waitForSelector("[role=menu]", { state: "detached" });
+
+    await page.click("#sidebar [aria-current]", { button: "right" });
+    await page.click('[role=menuitem]:has-text("Rename")');
+    await page.waitForSelector('input[aria-label="Design name"]');
+    await page.waitForSelector("[role=menu]", { state: "detached" });
+    await page.keyboard.press("Meta+b");
+    expect(await expanded(SIDEBAR)).toBe("true");
+    expect(await page.$('input[aria-label="Design name"]')).not.toBeNull();
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Meta+b");
+    expect(await expanded(SIDEBAR)).toBe("false");
+  });
+
+  test("after a click on a toolbar control, the canvas's keys light no ring and press nothing", async () => {
+    await open("team-sidebar");
+    const state = () =>
+      page.evaluate(() => {
+        const el = document.activeElement as HTMLElement;
+        return {
+          ring: el.matches(":focus-visible:not([data-quiet-focus])"),
+          sidebar: document
+            .querySelector('[aria-controls="sidebar"]')!
+            .getAttribute("aria-expanded"),
+          thread: document.querySelector('[aria-controls="thread"]')!.getAttribute("aria-expanded"),
+        };
+      });
+    for (const selector of [SIDEBAR, THREAD, 'header [role="tab"]:nth-child(2)']) {
+      await page.click(selector);
+      const after = await state();
+      expect(after.ring).toBe(false);
+      for (const key of ["c", "Space", "Escape", "Enter", "ArrowLeft"]) {
+        await page.keyboard.press(key);
+        expect(await state()).toEqual(after);
+      }
+    }
+  });
+
   test("a click leaves no ring on any control; the keyboard brings it back", async () => {
     await open("team-sidebar");
     const ring = () =>
@@ -193,11 +246,16 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
       }, selector);
       expect((await ring()).ring).toBe(false);
     }
-    // Tab moves focus on, and rings where it lands.
+    // A click leaves focus where it was; Tab moves it on and rings where it lands, and reaches
+    // the toggles.
     await page.click(SIDEBAR);
     await page.keyboard.press("Tab");
     expect((await ring()).ring).toBe(true);
-    await page.keyboard.press("Shift+Tab");
-    expect(await ring()).toEqual({ name: "Toggle sidebar", ring: true });
+    let reached = await ring();
+    for (let i = 0; i < 60 && reached.name !== "Toggle sidebar"; i++) {
+      await page.keyboard.press("Shift+Tab");
+      reached = await ring();
+    }
+    expect(reached).toEqual({ name: "Toggle sidebar", ring: true });
   });
 });

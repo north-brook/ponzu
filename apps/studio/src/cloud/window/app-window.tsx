@@ -82,6 +82,8 @@ export function AppWindow({
         style={{ minWidth: MIN_WINDOW.width, minHeight: MIN_WINDOW.height }}
       >
         <header
+          // A click on its buttons and tabs leaves focus where it was (quietPointerFocus).
+          data-toolbar
           className={cn(
             "app-drag flex h-11 shrink-0 items-center gap-1",
             // 10 at either edge; on a Mac the traffic lights' own 16 on the left.

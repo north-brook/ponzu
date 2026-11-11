@@ -25,6 +25,21 @@ export function useShortcut(key: string, handler: () => void, enabled = true): v
   }, [key, enabled]);
 }
 
+/** A layer over the window that a pane's toggle must not pull the ground from under. */
+const LAYER = "[role=menu], [role=dialog][aria-modal=true], [role=alertdialog]";
+
+/**
+ * Whether a pane should stay as it is for now: a menu or a modal is open over the window (a
+ * workspace menu anchored in the sidebar would float over nothing, a settings sheet would hide
+ * the change), or a field in the pane that holds it (`data-holds-pane`: a design's name being
+ * edited on its row) has focus. ⌘B, ⌘J and the menu's commands check it before they toggle.
+ */
+export function paneHeld(pane: "sidebar" | "thread"): boolean {
+  if (typeof document === "undefined") return false;
+  if (document.querySelector(LAYER)) return true;
+  return !!document.activeElement?.closest(`#${pane} [data-holds-pane]`);
+}
+
 /**
  * Whether the shortcut on `key` just ran. The desktop's menu carries the same accelerators; the
  * page takes the key first and the shell's menu only what it leaves, but a menu command that

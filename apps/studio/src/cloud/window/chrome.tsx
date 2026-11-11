@@ -1,7 +1,7 @@
 import { LayoutLeftIcon } from "@hugeicons/core-free-icons";
 import { IconButton } from "../ui/button.tsx";
 import { Icon } from "../ui/icon.tsx";
-import { useShortcut } from "../ui/shortcut.ts";
+import { paneHeld, useShortcut } from "../ui/shortcut.ts";
 
 /**
  * What sits at the chrome's left before the sidebar toggle. `native`: the Mac's own traffic
@@ -37,9 +37,12 @@ export function ChromeDivider() {
   return <span aria-hidden data-chrome-divider className="h-4 w-px shrink-0 bg-sep" />;
 }
 
-/** Opens and closes the sidebar: ⌘B from anywhere in the window, as ⌘J does the rail. */
+/**
+ * Opens and closes the sidebar: ⌘B from anywhere in the window, as ⌘J does the rail, except
+ * while a menu or a modal is over it or its row's name is being edited (paneHeld).
+ */
 export function SidebarToggle({ open, onToggle }: { open: boolean; onToggle: () => void }) {
-  useShortcut("b", onToggle);
+  useShortcut("b", () => paneHeld("sidebar") || onToggle());
   return (
     <IconButton
       label="Toggle sidebar"

@@ -298,6 +298,8 @@ export interface Frame {
   /** The design's name in the chrome: its room's width, and how opaque it is. */
   title: number;
   titleOpacity: number;
+  /** The name's own width inside its room: set once, not re-cut as the room moves. */
+  titleText: number;
   /** The first board on the canvas, where there is one: where it is on screen. */
   boardX: number;
   boardY: number;
@@ -331,6 +333,7 @@ export function sampleToggle(page: Page, selector: string): Promise<Frame[]> {
             thread: x(document.querySelector('header [aria-controls="thread"]')),
             title: title?.getBoundingClientRect().width ?? NaN,
             titleOpacity: title ? Number(getComputedStyle(title).opacity) : NaN,
+            titleText: title?.firstElementChild?.getBoundingClientRect().width ?? NaN,
             boardX: board?.left ?? NaN,
             boardY: board?.top ?? NaN,
           });

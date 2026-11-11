@@ -1,23 +1,32 @@
 /*
- * Focus that shows no ring until the keyboard is used. `focus-ring` (cloud.css) skips
- * `[data-quiet-focus]`; the mark goes at the element's first key, or when focus leaves it.
+ * Focus that shows no ring until the keyboard moves it. `focus-ring` (cloud.css) skips
+ * `[data-quiet-focus]`; the mark goes at the first key that moves focus, or when focus leaves.
  */
+
+/** Widgets whose arrow keys move focus between their items. */
+const COMPOSITE =
+  "[role=menu], [role=menubar], [role=tablist], [role=radiogroup], [role=listbox], [role=tree], [role=grid], [role=toolbar]";
 
 /**
- * A key that moves or works the keyboard's focus: not a modifier alone, nor a shortcut (⌘J,
- * ⌘B and the rest act on the window, not on what has focus).
+ * A key that moves the keyboard's focus: Tab either way, and the arrows, Home and End inside a
+ * widget that moves focus with them (a menu, the page tabs, a question's options). Nothing
+ * else: a letter, Space, Escape or Return pressed after a click is meant for the canvas or the
+ * window (a tool, panning, deselecting), not for the control the click happened to land on;
+ * nor is a shortcut (⌘J, ⌘B) or a modifier alone.
  */
-function keyboards(e: KeyboardEvent): boolean {
+function movesFocus(e: KeyboardEvent): boolean {
   if (e.metaKey || e.ctrlKey || e.altKey) return false;
-  return !["Shift", "Meta", "Control", "Alt", "CapsLock", "Fn"].includes(e.key);
+  if (e.key === "Tab") return true;
+  if (!/^(Arrow(Up|Down|Left|Right)|Home|End)$/.test(e.key)) return false;
+  return e.target instanceof Element && e.target.closest(COMPOSITE) !== null;
 }
 
-/** Marks `el` quiet until its first key or its blur. */
+/** Marks `el` quiet until a key moves focus from it, or it loses focus. */
 function hush(el: HTMLElement): void {
   if ("quietFocus" in el.dataset) return;
   el.dataset.quietFocus = "";
   const done = (e?: Event) => {
-    if (e instanceof KeyboardEvent && !keyboards(e)) return;
+    if (e instanceof KeyboardEvent && !movesFocus(e)) return;
     delete el.dataset.quietFocus;
     el.removeEventListener("keydown", done, true);
     el.removeEventListener("blur", done);
@@ -29,12 +38,18 @@ function hush(el: HTMLElement): void {
 /**
  * Focus `el` without its ring: the keyboard is there for whoever reaches for it, but nothing on
  * screen claims attention the person didn't ask for: a question taking the composer's place, or
- * a menu closing after a click. The ring shows from their first key on it.
+ * a menu closing after a click. The ring shows once they move focus with the keyboard.
  */
 export function quietFocus(el: HTMLElement): void {
   hush(el);
   el.focus({ preventScroll: true });
 }
+
+/**
+ * The buttons of a toolbar (`data-toolbar`: the window's chrome) that a click doesn't focus. A
+ * tab that focuses itself on its press (Radix's) holds its own press back (the page tabs).
+ */
+const TOOLBAR_PRESS = "[data-toolbar] button:not([aria-haspopup]):not(:disabled)";
 
 let installed = false;
 
@@ -42,9 +57,15 @@ let installed = false;
  * Whatever takes focus while the pointer was the last thing used is quiet: the control a click
  * pressed, and anything a click hands focus to (a pane toggle re-rendering, a tip, a popup
  * giving focus back). Chromium shows `:focus-visible` after a click in more cases than the
- * keyboard (an Escape or Shift pressed first, the window coming back to the front, focus moved
- * by script), and a ring after a click reads as a stuck button. From the next key on, focus is
- * the keyboard's and rings again. Installed once, by the app and the gallery.
+ * keyboard (any key pressed next, the window coming back to the front, focus moved by script),
+ * and a ring after a click reads as a stuck button. Once a key moves focus (movesFocus), focus
+ * is the keyboard's and rings again.
+ *
+ * And a toolbar's buttons and tabs take no focus from a click at all, as a Mac's toolbar
+ * buttons don't: focus stays where it was (the composer, the canvas), so the next key goes
+ * there and Space can't press the toggle again. Tab still reaches them. A menu or popover's
+ * trigger (aria-haspopup) keeps its own focus handling. Installed once, by the app and the
+ * gallery.
  */
 export function quietPointerFocus(): void {
   if (installed || typeof document === "undefined") return;
@@ -55,7 +76,7 @@ export function quietPointerFocus(): void {
   document.addEventListener(
     "keydown",
     (e) => {
-      if (keyboards(e)) pointer = false;
+      if (movesFocus(e)) pointer = false;
     },
     options,
   );
@@ -66,4 +87,10 @@ export function quietPointerFocus(): void {
     },
     options,
   );
+  // On the document as the press bubbles out, after React's handlers (a tab selects on its
+  // press, and wouldn't if the press were stopped first): only the focus is held back.
+  document.addEventListener("mousedown", (e) => {
+    if (e.button !== 0 || !(e.target instanceof Element)) return;
+    if (e.target.closest(TOOLBAR_PRESS)) e.preventDefault();
+  });
 }
