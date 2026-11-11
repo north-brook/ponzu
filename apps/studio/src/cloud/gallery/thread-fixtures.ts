@@ -268,6 +268,7 @@ export const pullRequest: PullRequestDetail = {
   title: "Quieter hero, editorial take",
   body: "Drops the paragraph from the hero and lets the photo carry it. Headline set in Instrument Serif at 38px; tokens get a `--hero-measure`.",
   head: "pz/hero-refresh",
+  headSha: "4e1c2a0f9b3d7e6c5a4b3c2d1e0f9a8b7c6d5e4f",
   base: "main",
   state: "open",
   endedAt: null,
@@ -283,6 +284,7 @@ export const pullRequest: PullRequestDetail = {
     check("CodeQL", 93),
     check("commitlint", 9),
   ],
+  checksComplete: true,
   comments: [
     {
       id: "c1",
@@ -350,6 +352,7 @@ export const pullRequest: PullRequestDetail = {
       diff: { kind: "text", patch: HERO_PATCH },
     },
   ],
+  filesTotal: 4,
 };
 
 /** What the tab draws when a pull request has more going on than board 3's. */
@@ -399,4 +402,5 @@ export const busyPullRequest: PullRequestDetail = {
       diff: { kind: "text", patch: HERO_PATCH },
     },
   ],
+  filesTotal: 7,
 };

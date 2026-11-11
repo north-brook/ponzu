@@ -28,6 +28,8 @@ export interface FakeFileInput {
   deletions?: number;
   /** The unified diff; null for a binary file. */
   patch?: string | null;
+  /** Where a renamed file was. */
+  previousPath?: string | null;
 }
 
 interface FakePull {
@@ -91,6 +93,7 @@ export class FakePullRequests {
         additions: 1,
         deletions: 0,
         patch: `@@ -1 +1,${1 + (file.additions ?? 1)} @@\n context\n+${file.path}`,
+        previousPath: null,
         ...file,
       };
       this.files = [...this.files.filter((f) => f.path !== file.path), changed];
@@ -196,7 +199,7 @@ export class FakePullRequests {
     }
     return {
       path: file.path,
-      previousPath: null,
+      previousPath: file.previousPath,
       change: file.change,
       additions: file.additions,
       deletions: file.deletions,

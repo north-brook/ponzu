@@ -37,8 +37,11 @@ export function nextAction(
   return "merge";
 }
 
-/** The actions Ponzu hands to the agent, which wait while it can't run. The rest are GitHub's. */
-const AGENT_ACTIONS: ReadonlySet<NextAction> = new Set(["create_pr", "fix_checks", "resolve"]);
+/**
+ * The actions Ponzu hands to the agent, which wait while it can't run. The rest, Create PR among
+ * them (the API opens it as the person), are GitHub's.
+ */
+const AGENT_ACTIONS: ReadonlySet<NextAction> = new Set(["fix_checks", "resolve"]);
 
 /**
  * Why the next action can't be taken now, for its tip, or null when it can. Every action steers

@@ -1,5 +1,5 @@
 import type { Api, PullRequestTab } from "@ponzu/client";
-import type { PrDiff } from "../cloud/model.ts";
+import type { LoadedDiff } from "../cloud/model.ts";
 import type { NextAction } from "../cloud/pull-request.ts";
 import { prActionError, rulesWant } from "./pull-request-map.ts";
 
@@ -8,8 +8,9 @@ import { prActionError, rulesWant } from "./pull-request-map.ts";
  * the head's pull request columns or the agent's turn change, and after every action), and the
  * one action the chrome offers. Ready, Auto-merge, Update branch and Merge are the person's, done
  * through the API with the commit they looked at; Create PR opens a draft from what the agent
- * pushed; Fix checks and Resolve are the agent's, asked of it in the thread. A merge the repo's
- * rules still hold back is offered only after the person confirms it.
+ * pushed; Fix checks and Resolve are the agent's, asked of it in the thread once for a commit.
+ * A merge the repo's rules still hold back is offered only after the person confirms it, and goes
+ * out with the commit they confirmed: a push while they decide closes the question.
  */
 
 export interface PullRequestState {
@@ -19,13 +20,23 @@ export interface PullRequestState {
   status: "loading" | "ready" | "error";
   /** The action on its way. */
   busy: NextAction | null;
-  /** Merging past what the rules still want, waiting on the person to say so. */
-  bypass: { reason: string } | null;
+  /** Merging past what the rules still want at `headSha`, waiting on the person to say so. */
+  bypass: { reason: string; headSha: string } | null;
+  /** The agent's action already asked of it for the head as it stands, until it moves. */
+  asked: NextAction | null;
 }
 
 export class PullRequestStore {
-  private state: PullRequestState = { tab: null, status: "loading", busy: null, bypass: null };
+  private state: PullRequestState = {
+    tab: null,
+    status: "loading",
+    busy: null,
+    bypass: null,
+    asked: null,
+  };
   private readonly listeners = new Set<() => void>();
+  /** The head the agent was last asked about, while `asked` holds. */
+  private askedAt: string | null = null;
   /** Only the latest read is taken. */
   private reads = 0;
   private closed = false;
@@ -62,9 +73,14 @@ export class PullRequestStore {
     );
   }
 
-  /** A file's diff, for its card. */
-  loadDiff = async (path: string): Promise<PrDiff> =>
-    (await this.opts.api.designs.pullRequest.file(this.opts.designId, path)).diff;
+  /** A file's diff, for its card, with where it was if it was renamed. */
+  loadDiff = async (path: string): Promise<LoadedDiff> => {
+    const { diff, previousPath } = await this.opts.api.designs.pullRequest.file(
+      this.opts.designId,
+      path,
+    );
+    return { diff, previousPath };
+  };
 
   run(action: NextAction): void {
     const { tab, busy } = this.state;
@@ -89,9 +105,10 @@ export class PullRequestStore {
         if (pr) this.act(action, () => pullRequest.merge(id, { headSha: pr.head.sha }));
         break;
       case "blocked":
-        if (pr) this.set({ bypass: { reason: rulesWant(pr) } });
+        if (pr) this.set({ bypass: { reason: rulesWant(pr), headSha: pr.head.sha } });
         break;
       case "fix_checks": {
+        if (!this.ask(action)) break;
         const failing = pr?.checks.items
           .filter((check) => check.state === "failed" || check.state === "cancelled")
           .map((check) => check.name);
@@ -103,6 +120,7 @@ export class PullRequestStore {
         break;
       }
       case "resolve": {
+        if (!this.ask(action)) break;
         const base = tab.branch.base;
         this.opts.tellAgent(
           `The branch conflicts with ${base}. Merge ${base} in, resolve the conflicts and push.`,
@@ -115,14 +133,17 @@ export class PullRequestStore {
     }
   }
 
-  /** The person said to merge past what the rules still want: GitHub decides if they may. */
+  /**
+   * The person said to merge past what the rules still want: GitHub decides if they may. It goes
+   * out with the commit the question was asked about, so a push since is refused, not merged.
+   */
   confirmBypass(): void {
-    const pr = this.state.tab?.pullRequest;
+    const { bypass, busy } = this.state;
     this.set({ bypass: null });
-    if (!pr) return;
+    if (!bypass || busy) return;
     this.act("blocked", () =>
       this.opts.api.designs.pullRequest.merge(this.opts.designId, {
-        headSha: pr.head.sha,
+        headSha: bypass.headSha,
         bypass: true,
       }),
     );
@@ -130,6 +151,19 @@ export class PullRequestStore {
 
   cancelBypass(): void {
     this.set({ bypass: null });
+  }
+
+  /** The agent's turn ended: what it was asked may be asked again, if the head didn't move. */
+  agentIdle(): void {
+    if (this.state.asked) this.set({ asked: null });
+  }
+
+  /** Marks `action` asked of the agent for this head; false when it already was. */
+  private ask(action: NextAction): boolean {
+    if (this.state.asked === action) return false;
+    this.askedAt = this.state.tab?.pullRequest?.head.sha ?? null;
+    this.set({ asked: action });
+    return true;
   }
 
   private act(action: NextAction, call: () => Promise<PullRequestTab>): void {
@@ -150,7 +184,27 @@ export class PullRequestStore {
 
   private set(change: Partial<PullRequestState>): void {
     if (this.closed) return;
-    this.state = { ...this.state, ...change };
+    const next = { ...this.state, ...change };
+    this.state = change.tab === undefined ? next : { ...next, ...this.followHead(next) };
     for (const listener of this.listeners) listener();
+  }
+
+  /**
+   * What a fresh read changes of the questions open on the old head. The bypass holds only while
+   * the head is the one it asked about and the rules still hold the merge back, its reason kept
+   * true; the agent may be asked again once the head moves.
+   */
+  private followHead(next: PullRequestState): Partial<PullRequestState> {
+    const pr = next.tab?.pullRequest ?? null;
+    const sha = pr?.head.sha ?? null;
+    const change: Partial<PullRequestState> = {};
+    if (next.bypass) {
+      change.bypass =
+        pr && sha === next.bypass.headSha && next.tab?.nextAction === "blocked"
+          ? { ...next.bypass, reason: rulesWant(pr) }
+          : null;
+    }
+    if (next.asked && sha !== this.askedAt) change.asked = null;
+    return change;
   }
 }

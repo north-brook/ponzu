@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { PrDiff, PrFile } from "../model.ts";
+import type { LoadedDiff, PrDiff, PrFile } from "../model.ts";
 import { Button } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
 import { Icon } from "../ui/icon.tsx";
@@ -24,22 +24,43 @@ export function Counts({ additions, deletions }: { additions: number; deletions:
   );
 }
 
-/** The changed files, each a card that opens to its diff. */
+/** A quiet line under a list GitHub gave only the start of, with the way to the rest. */
+export function MoreOnGithub({ children, onOpen }: { children: ReactNode; onOpen: () => void }) {
+  return (
+    <p className="m-0 flex items-center gap-2 py-1.5 text-12 text-muted">
+      {children}
+      <Button variant="quiet" onClick={onOpen} className="-my-1 px-2 text-ink">
+        Open on GitHub
+      </Button>
+    </p>
+  );
+}
+
+/**
+ * The changed files, each a card that opens to its diff. An open card reads its diff again when
+ * the head moves, so what the person reads is what a merge would ship.
+ */
 export function Files({
   files,
+  total = files.length,
+  headSha,
   additions,
   deletions,
   url,
   onOpenLink,
   onLoadDiff,
 }: {
+  /** The first of them, when GitHub lists fewer than `total`. */
   files: PrFile[];
+  total?: number;
+  /** The commit they are at. */
+  headSha: string;
   additions: number;
   deletions: number;
   url: string;
   onOpenLink: (url: string) => void;
   /** Fetches a file's diff the tab wasn't sent. */
-  onLoadDiff?: (path: string) => Promise<PrDiff>;
+  onLoadDiff?: (path: string) => Promise<LoadedDiff>;
 }) {
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   const toggle = (path: string) =>
@@ -51,12 +72,14 @@ export function Files({
   return (
     <section aria-label="Files changed" className="flex min-w-0 flex-col gap-2.5">
       <div className="flex items-center font-semibold text-11 text-faint">
-        {files.length} {files.length === 1 ? "file" : "files"}
+        {total > files.length ? `${files.length} of ${total.toLocaleString("en-US")}` : total}{" "}
+        {total === 1 ? "file" : "files"}
         <Counts additions={additions} deletions={deletions} />
       </div>
       {files.map((file) => (
         <FileCard
-          key={file.path}
+          // A new head is a new diff: the card asks for it again.
+          key={`${headSha}:${file.path}`}
           file={file}
           open={open.has(file.path)}
           onToggle={() => toggle(file.path)}
@@ -64,6 +87,11 @@ export function Files({
           onOpenOnGithub={() => onOpenLink(`${url}/files`)}
         />
       ))}
+      {total > files.length ? (
+        <MoreOnGithub onOpen={() => onOpenLink(`${url}/files`)}>
+          The rest are on GitHub.
+        </MoreOnGithub>
+      ) : null}
     </section>
   );
 }
@@ -78,10 +106,23 @@ function FileCard({
   file: PrFile;
   open: boolean;
   onToggle: () => void;
-  onLoadDiff: ((path: string) => Promise<PrDiff>) | undefined;
+  onLoadDiff: ((path: string) => Promise<LoadedDiff>) | undefined;
   onOpenOnGithub: () => void;
 }) {
   const id = `file-${file.path}`;
+  // Where a renamed file was comes with its diff.
+  const [renamedFrom, setRenamedFrom] = useState<string | null>(null);
+  const load = useMemo(
+    () =>
+      onLoadDiff &&
+      (async (path: string) => {
+        const loaded = await onLoadDiff(path);
+        setRenamedFrom(loaded.previousPath);
+        return loaded.diff;
+      }),
+    [onLoadDiff],
+  );
+  const previousPath = file.previousPath ?? renamedFrom;
   return (
     <div className="overflow-hidden rounded-10 bg-surface shadow-file-card">
       <button
@@ -98,7 +139,7 @@ function FileCard({
           className="text-icon-soft"
         />
         <span className="min-w-0 truncate">
-          {file.previousPath ? <span className="text-faint">{file.previousPath} → </span> : null}
+          {previousPath ? <span className="text-faint">{previousPath} → </span> : null}
           {file.path}
         </span>
         {file.status === "added" || file.status === "removed" ? (
@@ -110,7 +151,7 @@ function FileCard({
       </button>
       {open ? (
         <div id={id} className="border-rule border-t">
-          <FileBody file={file} onLoadDiff={onLoadDiff} onOpenOnGithub={onOpenOnGithub} />
+          <FileBody file={file} onLoadDiff={load} onOpenOnGithub={onOpenOnGithub} />
         </div>
       ) : null}
     </div>

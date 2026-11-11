@@ -138,6 +138,39 @@ export function toThreadItem(item: RunnerItem, ctx: ThreadContext): ThreadItem {
   }
 }
 
+/**
+ * The items the rail shows. A question still open is in the composer's place, never in the
+ * thread too: its "Asked" line appears once it has closed.
+ */
+export function shownItems(
+  items: readonly RunnerItem[],
+  openAsks: ReadonlySet<string>,
+): RunnerItem[] {
+  return items.filter(
+    (item) =>
+      !(
+        item.kind === "notice" &&
+        item.payload.type === "question" &&
+        openAsks.has(item.payload.questionId)
+      ),
+  );
+}
+
+/**
+ * The seq of the thread's latest item after which the branch may have moved: a finished
+ * stretch of the agent's work, or a pull request notice. 0 while there is none.
+ */
+export function branchMoment(items: readonly RunnerItem[]): number {
+  let at = 0;
+  for (const item of items) {
+    const moved =
+      (item.kind === "tool" && !item.streaming) ||
+      (item.kind === "notice" && item.payload.type === "pull_request");
+    if (moved && item.seq > at) at = item.seq;
+  }
+  return at;
+}
+
 /** A question row as the needs-you slot takes it. */
 export function toAsk(row: QuestionRow): Ask {
   const open = { id: row.id, status: "open" as const, answeredBy: null };

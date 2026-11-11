@@ -37,7 +37,7 @@ const API_PULL: Pull = {
   autoMerge: null,
   checks: {
     state: "running",
-    complete: true,
+    complete: false,
     items: [
       {
         name: "ci / test",
@@ -88,9 +88,27 @@ const API_PULL: Pull = {
       path: "src/hero.tsx",
       line: 15,
     },
+    {
+      id: "c2",
+      author: { login: "ponzu-dev[bot]", avatarUrl: null, bot: true },
+      body: "Done.",
+      at: "2026-11-10T10:25:00.000Z",
+      url: "https://github.com/w",
+      path: null,
+      line: null,
+    },
+    {
+      id: "c3",
+      author: { login: "vercel[bot]", avatarUrl: null, bot: true },
+      body: "Preview ready.",
+      at: "2026-11-10T10:26:00.000Z",
+      url: "https://github.com/v",
+      path: null,
+      line: null,
+    },
   ],
   files: {
-    total: 2,
+    total: 340,
     additions: 30,
     deletions: 4,
     items: [
@@ -109,6 +127,7 @@ test("the API's pull request, field by field, as the tab draws it", () => {
     // Untrusted, and passed on as text: the tab draws it through Prose.
     body: "Drops the paragraph. <img src=x onerror=alert(1)>",
     head: "pz/hero",
+    headSha: "a".repeat(40),
     base: "main",
     state: "open",
     endedAt: null,
@@ -143,6 +162,8 @@ test("the API's pull request, field by field, as the tab draws it", () => {
         url: null,
       },
     ],
+    // GitHub has more than the hundred it listed.
+    checksComplete: false,
     comments: [
       {
         id: "c1",
@@ -152,6 +173,25 @@ test("the API's pull request, field by field, as the tab draws it", () => {
         path: "src/hero.tsx",
         line: 15,
         url: "https://github.com/z",
+      },
+      // The Ponzu App's bot is the agent; another bot is itself.
+      {
+        id: "c2",
+        author: { login: "ponzu-dev[bot]", name: null, avatarUrl: null, agent: true },
+        body: "Done.",
+        at: "2026-11-10T10:25:00.000Z",
+        path: null,
+        line: null,
+        url: "https://github.com/w",
+      },
+      {
+        id: "c3",
+        author: { login: "vercel[bot]", name: null, avatarUrl: null, agent: false },
+        body: "Preview ready.",
+        at: "2026-11-10T10:26:00.000Z",
+        path: null,
+        line: null,
+        url: "https://github.com/v",
       },
     ],
     // A dismissed review no longer stands.
@@ -186,6 +226,7 @@ test("the API's pull request, field by field, as the tab draws it", () => {
         diff: null,
       },
     ],
+    filesTotal: 340,
   });
   const merged = { ...API_PULL, state: "merged" as const, mergedAt: "2026-11-10T12:00:00.000Z" };
   expect(toPullRequestDetail(merged).endedAt).toBe("2026-11-10T12:00:00.000Z");
@@ -360,6 +401,7 @@ test("behind its base, Update branch; held by the rules without auto-merge, Merg
   // Nothing merges until the person says so.
   expect((await w.run("blocked")).bypass).toEqual({
     reason: "The repo's rules want an approving review.",
+    headSha: held.tab!.pullRequest!.head.sha,
   });
   w.store.cancelBypass();
   expect(w.store.getSnapshot().bypass).toBeNull();
@@ -369,6 +411,80 @@ test("behind its base, Update branch; held by the rules without auto-merge, Merg
   w.store.confirmBypass();
   await settle();
   expect(w.store.getSnapshot().tab?.pullRequest?.state).toBe("merged");
+});
+
+test("Merge anyway goes out with the commit the person confirmed, never one pushed since", async () => {
+  const w = await world();
+  w.backend.agent(w.design.id).push();
+  await w.read();
+  await w.run("create_pr");
+  await w.run("ready");
+  w.github.autoMergeAllowed = false;
+  w.github.protect({ review: true });
+  await w.read();
+  const asked = (await w.run("blocked")).bypass!;
+
+  // The agent pushes while the dialog is open, and the next read has the new head.
+  w.backend.agent(w.design.id).push([{ path: "src/x.ts", additions: 3 }]);
+  const moved = await w.read();
+  expect(moved.tab?.pullRequest?.head.sha).not.toBe(asked.headSha);
+  // The question was about a commit that isn't the head now: it closes.
+  expect(moved.bypass).toBeNull();
+  w.store.confirmBypass();
+  await settle();
+  expect(w.store.getSnapshot().tab?.pullRequest?.state).toBe("open");
+
+  // Asked again, and confirmed after a push the store hasn't read: the API refuses it.
+  const again = (await w.run("blocked")).bypass!;
+  w.backend.agent(w.design.id).push([{ path: "src/y.ts", additions: 1 }]);
+  w.store.confirmBypass();
+  await settle();
+  expect(w.said.at(-1)).toBe("The branch has new commits since you looked. Look again first.");
+  const after = w.store.getSnapshot();
+  expect(after.tab?.pullRequest?.state).toBe("open");
+  expect(after.tab?.pullRequest?.head.sha).not.toBe(again.headSha);
+});
+
+test("the bypass question keeps its reason true, and closes once the rules let the merge go", async () => {
+  const w = await world();
+  w.backend.agent(w.design.id).push();
+  await w.read();
+  await w.run("create_pr");
+  await w.run("ready");
+  w.github.autoMergeAllowed = false;
+  w.github.protect({ review: true });
+  await w.read();
+  expect((await w.run("blocked")).bypass?.reason).toBe(
+    "The repo's rules want an approving review.",
+  );
+  w.github.protect({ review: false });
+  expect((await w.read()).bypass).toBeNull();
+});
+
+test("Fix checks and Resolve ask the agent once for a commit", async () => {
+  const w = await world();
+  w.backend.agent(w.design.id).push();
+  await w.read();
+  await w.run("create_pr");
+  await w.run("ready");
+  w.github.setChecks([{ name: "ci / e2e", state: "failed" }]);
+  await w.read();
+  expect((await w.run("fix_checks")).asked).toBe("fix_checks");
+  await w.run("fix_checks");
+  expect(w.told).toHaveLength(1);
+
+  // Its turn over with nothing pushed, it may be asked again.
+  w.store.agentIdle();
+  expect(w.store.getSnapshot().asked).toBeNull();
+  await w.run("fix_checks");
+  expect(w.told).toHaveLength(2);
+
+  // A push moves the head: the question is new.
+  w.backend.agent(w.design.id).push();
+  w.github.setChecks([{ name: "ci / e2e", state: "failed" }]);
+  expect((await w.read()).asked).toBeNull();
+  await w.run("fix_checks");
+  expect(w.told).toHaveLength(3);
 });
 
 test("a merge GitHub's rules refuse says why, and the button follows what is true now", async () => {
@@ -404,19 +520,24 @@ test("a closed pull request offers to open another once the branch has changes",
   expect(chromeAction(closed.tab!)).toBe("create_pr");
 });
 
-test("a file's diff is asked for when its card opens", async () => {
+test("a file's diff is asked for when its card opens, with where a renamed one was", async () => {
   const w = await world();
   w.backend.agent(w.design.id).push([
     { path: "src/a.tsx", patch: "@@ -1 +1 @@\n-a\n+b" },
     { path: "logo.png", patch: null },
+    { path: "src/hero-copy.tsx", change: "renamed", previousPath: "src/copy.tsx" },
   ]);
   await w.read();
   await w.run("create_pr");
   expect(await w.store.loadDiff("src/a.tsx")).toEqual({
-    kind: "text",
-    patch: "@@ -1 +1 @@\n-a\n+b",
+    diff: { kind: "text", patch: "@@ -1 +1 @@\n-a\n+b" },
+    previousPath: null,
   });
-  expect(await w.store.loadDiff("logo.png")).toEqual({ kind: "binary" });
+  expect(await w.store.loadDiff("logo.png")).toEqual({
+    diff: { kind: "binary" },
+    previousPath: null,
+  });
+  expect((await w.store.loadDiff("src/hero-copy.tsx")).previousPath).toBe("src/copy.tsx");
   await expect(w.store.loadDiff("nope.ts")).rejects.toMatchObject({ code: "not_found" });
 });
 

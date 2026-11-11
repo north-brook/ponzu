@@ -204,6 +204,8 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     const asked = page.getByRole("region", { name: "Ponzu needs you: Default" });
     await asked.getByText("Which should the toggle show first?").waitFor();
     expect(await rail().getByPlaceholder("Steer, or ask more").count()).toBe(0);
+    // Waiting in the composer's place, it isn't also a line in the thread.
+    expect(await rail().getByText("Asked:").count()).toBe(0);
     await asked.getByRole("radio", { name: /Yearly/ }).click();
     await asked.getByRole("button", { name: "Send" }).click();
     await waitUntil(() =>
@@ -215,6 +217,8 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
       ),
     );
     await rail().getByPlaceholder("Steer, or ask more").waitFor();
+    // Answered, it is part of what happened.
+    await rail().getByText("Asked:").waitFor();
 
     // It pushes and its turn ends: Create PR, then Ready, then Merge.
     await page.evaluate((designId) => {
@@ -235,6 +239,15 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     expect(await page.locator("#thread").count()).toBe(0);
     await page.getByRole("button", { name: /src\/pricing\.tsx/ }).click();
     await page.getByText("src/pricing.tsx", { exact: false }).first().waitFor();
+    // The agent pushes again while the file is open: the diff shown is the new head's.
+    await page.evaluate((designId) => {
+      const agent = window.ponzuFake!.backend.agent(designId);
+      agent.push([
+        { path: "src/pricing.tsx", patch: "@@ -1 +1,2 @@\n context\n+const yearly = true;" },
+      ]);
+      agent.tool("Pushed the toggle", { streaming: false });
+    }, id);
+    await page.getByText("const yearly = true;").waitFor();
 
     await action("Merge").click();
     await page

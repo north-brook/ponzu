@@ -293,8 +293,12 @@ export interface AskedQuestion {
   multiSelect: boolean;
 }
 
-/** `sending` is the viewer's own answer on its way; `answered` and `cancelled` are closed. */
-export type AskStatus = "open" | "sending" | "answered" | "cancelled";
+/**
+ * `sending` is the viewer's own answer on its way; `answered`, `cancelled` and `closed` are
+ * closed. `closed` is one that left while the viewer was answering it, by a teammate's answer or
+ * the run moving on: which, nothing says.
+ */
+export type AskStatus = "open" | "sending" | "answered" | "cancelled" | "closed";
 
 export type Ask = {
   id: string;
@@ -379,6 +383,12 @@ export interface PrFile {
 /** A file's unified diff as GitHub gives it, or why there is none to show. */
 export type PrDiff = { kind: "text"; patch: string } | { kind: "binary" } | { kind: "too_large" };
 
+/** A file's diff as its card asks for it, with where a renamed file was. */
+export interface LoadedDiff {
+  diff: PrDiff;
+  previousPath: string | null;
+}
+
 export interface PullRequestDetail {
   number: number;
   url: string;
@@ -386,6 +396,8 @@ export interface PullRequestDetail {
   /** Markdown, from GitHub: untrusted text. */
   body: string;
   head: string;
+  /** The commit the tab shows: an open file's diff is read again when it moves. */
+  headSha: string;
   base: string;
   state: PrState;
   /** When it merged or closed, for a pull request that has. */
@@ -393,8 +405,13 @@ export interface PullRequestDetail {
   additions: number;
   deletions: number;
   checks: CheckRun[];
+  /** False when GitHub has more checks than `checks` holds. */
+  checksComplete: boolean;
   /** Oldest first. */
   comments: PrComment[];
   reviews: PrReview[];
+  /** The first of them, when there are more than GitHub lists at once. */
   files: PrFile[];
+  /** How many files the pull request changes. */
+  filesTotal: number;
 }

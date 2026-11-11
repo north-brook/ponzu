@@ -38,12 +38,17 @@ const FILE_STATUS: Record<Pull["files"]["items"][number]["change"], PrFile["stat
   changed: "modified",
 };
 
-/** Someone on GitHub; a deleted account is GitHub's "ghost". */
+/**
+ * Someone on GitHub; a deleted account is GitHub's "ghost". The Ponzu App's bot (`ponzu…[bot]`,
+ * its slug differing between deployments) is the agent; any other bot is itself.
+ */
 function authorOf(who: Who): GithubAuthor {
-  return who
-    ? { login: who.login, name: null, avatarUrl: who.avatarUrl, agent: false }
-    : { login: "ghost", name: null, avatarUrl: null, agent: false };
+  if (!who) return { login: "ghost", name: null, avatarUrl: null, agent: false };
+  const agent = who.bot && PONZU_BOT.test(who.login);
+  return { login: who.login, name: null, avatarUrl: who.avatarUrl, agent };
 }
+
+const PONZU_BOT = /^ponzu[a-z0-9-]*\[bot\]$/;
 
 /** The tab's pull request, from the API's. Each file's diff is asked for when its card opens. */
 export function toPullRequestDetail(pr: Pull): PullRequestDetail {
@@ -53,6 +58,7 @@ export function toPullRequestDetail(pr: Pull): PullRequestDetail {
     title: pr.title,
     body: pr.body,
     head: pr.head.ref,
+    headSha: pr.head.sha,
     base: pr.base.ref,
     state: pr.state,
     endedAt: pr.mergedAt ?? pr.closedAt,
@@ -68,6 +74,7 @@ export function toPullRequestDetail(pr: Pull): PullRequestDetail {
       description: null,
       url: check.url,
     })),
+    checksComplete: pr.checks.complete,
     comments: pr.conversation.map((comment) => ({
       id: comment.id,
       author: authorOf(comment.author),
@@ -90,6 +97,7 @@ export function toPullRequestDetail(pr: Pull): PullRequestDetail {
             },
           ],
     ),
+    // Where a renamed file was comes with its diff, when its card opens.
     files: pr.files.items.map((file) => ({
       path: file.path,
       previousPath: null,
@@ -98,6 +106,7 @@ export function toPullRequestDetail(pr: Pull): PullRequestDetail {
       deletions: file.deletions,
       diff: null,
     })),
+    filesTotal: pr.files.total,
   };
 }
 

@@ -16,7 +16,7 @@ import { contributors, pageTabs } from "./map.ts";
 import { Banner, PaneMessage } from "./notices.tsx";
 import { chromeAction, prSummary } from "./pull-request-map.ts";
 import { PullRequestStore } from "./pull-request-store.ts";
-import { steerGate } from "./thread-map.ts";
+import { branchMoment, steerGate } from "./thread-map.ts";
 import { ThreadStore } from "./thread-store.ts";
 import { Uploads } from "./uploads.ts";
 import { useOnReturn } from "./use-answer.ts";
@@ -76,7 +76,7 @@ export function useOpenDesign(
       me: actor,
       ...(cache ? { cache } : {}),
     });
-    const thread = new ThreadStore({ api, live, designId }).start();
+    const thread = new ThreadStore({ api, live, designId, meId: actor.id }).start();
     const asks = new AskStore({ api, live, designId, onError: (m) => saying.current(m) }).start();
     const uploads = new Uploads({ api, designId });
     const pullRequest = new PullRequestStore({
@@ -165,7 +165,7 @@ export function DesignChromeSlot({
   const pages = doc ? pageTabs(doc.pages, head?.agentArtboards ?? []) : [];
   const project = summary?.project ?? null;
   const repo = project?.kind === "repo" ? project.repo : null;
-  usePullRequestReads(open, repo ? head : undefined);
+  usePullRequestReads(open, repo ? head : undefined, thread.items);
 
   const pr = prSummary(head);
   const kind = repo && pull.tab ? chromeAction(pull.tab) : null;
@@ -227,7 +227,7 @@ export function DesignChromeSlot({
           ? {
               kind,
               busy: pull.busy !== null,
-              blocked: actionBlock(kind, gate, me.id),
+              blocked: actionBlock(kind, gate, me.id) ?? (pull.asked === kind ? ASKED : null),
               onRun: (action) => open.pullRequest.run(action),
             }
           : null
@@ -239,13 +239,26 @@ export function DesignChromeSlot({
 
 /**
  * Reads the pull request when the design opens, and again when what the head says of it
- * changes, when a turn of the agent's ends (it may have pushed), and on coming back to the
+ * changes, when the agent's state changes or a stretch of its work ends (it may have pushed),
+ * when the thread says a pull request opened, merged or closed, and on coming back to the
  * window. A Scratch design (no `head` given) has none to read.
  */
-function usePullRequestReads(open: OpenDesign, head: DesignHeadRow | undefined) {
-  const turn = head?.agentState === "working" || head?.agentState === "waking";
+function usePullRequestReads(
+  open: OpenDesign,
+  head: DesignHeadRow | undefined,
+  items: readonly RunnerItem[] | null,
+) {
+  const branch = items ? branchMoment(items) : 0;
   const key = head
-    ? [head.prNumber, head.prState, head.prChecks, head.prMergeable, head.prAutoMerge, turn].join()
+    ? [
+        head.prNumber,
+        head.prState,
+        head.prChecks,
+        head.prMergeable,
+        head.prAutoMerge,
+        head.agentState,
+        branch,
+      ].join()
     : null;
   useEffect(() => {
     if (key === null) return;
@@ -256,10 +269,17 @@ function usePullRequestReads(open: OpenDesign, head: DesignHeadRow | undefined) 
   useOnReturn(() => {
     if (key !== null) open.pullRequest.refresh();
   }, RETURN_READ_MS);
+  // What was asked of the agent may be asked again once its turn is over.
+  const idle = head?.agentState === "idle";
+  useEffect(() => {
+    if (idle) open.pullRequest.agentIdle();
+  }, [open, idle]);
 }
 
 const READ_AFTER_MS = 300;
 const RETURN_READ_MS = 30_000;
+/** The next action's tip once the agent has been asked to do it for this commit. */
+const ASKED = "Asked Claude";
 
 type RunnerItem = LiveRows["design.thread"];
 

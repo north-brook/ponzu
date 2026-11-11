@@ -11,8 +11,8 @@ import type { ReactNode } from "react";
 import type {
   CheckRun,
   GithubAuthor,
+  LoadedDiff,
   PrComment,
-  PrDiff,
   PrReview,
   PrState,
   PullRequestDetail,
@@ -28,7 +28,7 @@ import { AgentMark } from "../ui/marks.tsx";
 import { Prose } from "../ui/prose.tsx";
 import { Skeleton } from "../ui/skeleton.tsx";
 import { orderChecks } from "./diff.ts";
-import { Files } from "./files.tsx";
+import { Files, MoreOnGithub } from "./files.tsx";
 
 /** The tab's content: the pull request, or the moments before it arrives or when it can't. */
 export type PullRequestTabState =
@@ -61,7 +61,7 @@ export function PullRequestView({
   onOpenLink: (url: string) => void;
   onRetry: () => void;
   /** Fetches a file's diff when its card first opens. */
-  onLoadDiff?: (path: string) => Promise<PrDiff>;
+  onLoadDiff?: (path: string) => Promise<LoadedDiff>;
 }) {
   // GitHub's addresses (a check's page, a link in a comment) leave the app only to the web.
   const onOpenLink = (url: string) => {
@@ -130,6 +130,11 @@ export function PullRequestView({
             {orderChecks(pr.checks).map((check) => (
               <CheckRow key={check.id} check={check} onOpenLink={onOpenLink} />
             ))}
+            {pr.checksComplete ? null : (
+              <MoreOnGithub onOpen={() => onOpenLink(`${pr.url}/checks`)}>
+                More checks than shown here.
+              </MoreOnGithub>
+            )}
           </Section>
         ) : null}
         {pr.comments.length ? (
@@ -155,6 +160,8 @@ export function PullRequestView({
       <div className={column}>
         <Files
           files={pr.files}
+          total={pr.filesTotal}
+          headSha={pr.headSha}
           additions={pr.additions}
           deletions={pr.deletions}
           url={pr.url}
