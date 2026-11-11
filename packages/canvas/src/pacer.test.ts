@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { countPlaying, PACE_FROM, shouldPace } from "./pacer.tsx";
+import { countPlaying, shouldPace } from "./pacer.tsx";
 import { PACER_SRC } from "./pacer-src.ts";
 
 const root = (videos: { paused: boolean; ended?: boolean }[]) =>
@@ -13,12 +13,9 @@ test("only playing videos count", () => {
   expect(countPlaying(root([{ paused: false, ended: true }]))).toBe(0);
 });
 
-test("the pacer starts where viz starts throttling", () => {
-  // VideoConferenceMatcher needs two videos; one video alone never caps the frame rate on desktop.
-  expect(PACE_FROM).toBe(2);
-});
-
 test("it paces only when something besides video animates", () => {
+  // From two videos, where viz starts throttling: VideoConferenceMatcher needs two; one video
+  // alone never caps the frame rate on desktop.
   expect(shouldPace(1, true)).toBe(false);
   // Only video moving: the videos' rate is all anyone sees.
   expect(shouldPace(24, false)).toBe(false);

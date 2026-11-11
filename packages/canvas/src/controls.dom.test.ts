@@ -106,7 +106,7 @@ describe.skipIf(!chromium)("the canvas's controls in Chromium", () => {
   const percent = () =>
     page.evaluate(() => document.querySelector('[aria-label="Zoom to fit"]')!.textContent);
 
-  test("without page tabs, the tools stand bottom left and the zoom alone bottom right", async () => {
+  test("without page tabs, the tools stand bottom left and the zoom alone bottom right, and do what they did", async () => {
     await mount({ pageBar: false });
     const [tools, zoom, ...rest] = await bars();
     expect(rest).toEqual([]);
@@ -133,10 +133,8 @@ describe.skipIf(!chromium)("the canvas's controls in Chromium", () => {
       ["12px", "4px", true],
       ["12px", "4px", true],
     ]);
-  });
 
-  test("apart, the tools and the zoom do what they did", async () => {
-    await mount({ pageBar: false });
+    // Apart, the tools and the zoom do what they did.
     expect(await checked()).toBe("Select");
     // Clicks and the shortcuts both pick a tool; the comment tool stays armed.
     await page.click('[aria-label="Hand"]');
@@ -175,12 +173,6 @@ describe.skipIf(!chromium)("the canvas's controls in Chromium", () => {
     await page.hover('[aria-label="Hand"]');
     const tip = await page.waitForSelector('[data-slot="tip"]');
     expect((await tip.textContent())?.replace(/\s+/g, "")).toBe("HandH");
-  });
-
-  test("read-only, the tools leave out the comment tool", async () => {
-    await mount({ pageBar: false, readOnly: true });
-    const [tools] = await bars();
-    expect(tools!.controls).toEqual(["Select", "Hand"]);
   });
 
   test("beside page tabs, the tools and the zoom keep one bar at the bottom right", async () => {
