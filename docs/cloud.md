@@ -1682,42 +1682,75 @@ Content-Security-Policy to an object; a response header rule on the assets zone 
 
 ## Ideas
 
-Under the create composer, four prompts for the chosen repo ("Make checkout one page, with the
-order summary on the right"). They are generated, never written by hand
+Under the create composer, up to four prompts for the chosen repo ("Make checkout one page, with
+the order summary on the right"). They are generated, never written by hand
 (`apps/api/src/ideas/`).
 
-- **Ponzu pays.** Claude Haiku 5.5 (`claude-haiku-5-5`) on Ponzu's own
+- **Ponzu pays.** Claude Haiku 5.5 (`claude-haiku-5-5`) writes them, and Claude Sonnet 5.5
+  (`claude-sonnet-5-5`) checks them (the gate, below), both on Ponzu's own
   `PONZU_ANTHROPIC_API_KEY`, not the person's Claude account: a subscription token cannot make
   direct API calls, and the ideas show before anyone has connected Claude. The name is not
-  `ANTHROPIC_API_KEY`, which is the person's own key in a runner. About $0.001 a repo. This is
-  the only model call the API makes; a design's agent still runs on the person's own plan in
-  its sandbox.
+  `ANTHROPIC_API_KEY`, which is the person's own key in a runner. About $0.001 for the writing
+  and $0.005 for the gate a repo, about $0.015 at worst (two of each). These are the only model
+  calls the API makes; a design's agent still runs on the person's own plan in its sandbox.
 - **Through the AI SDK** (`ai`, `generateText` with `Output.object` and the zod schema, a 30
   second timeout), reaching Anthropic with the `@ai-sdk/anthropic` provider and our own key
   rather than the Vercel AI Gateway: the key is already on every environment, local
   development and tests need no Vercel login, and no gateway has to be enabled or billed on the
   project. Going through the gateway is the model line in `createClaude` (`deps/model.ts` has
   it, with `createGateway` on the API's `fetch`), plus `AI_GATEWAY_API_KEY` read in `env.ts`.
+  The writer is `deps.model` and the gate `deps.reviewer`; both are traced (docs/analytics.md).
 - **Per repo**, on `repos.ideas`, shared by everyone who can read the repo. `GET
   /v1/repos/:id/ideas` answers `ready`, `generating` or `none` to anyone `requireRepo` lets
   read it, a 404 to anyone else.
 - **Lazily, in the background.** The first ask claims the generation in the row
   (`ideas_claimed_at`: one instance at a time) and answers `generating`; the client asks again
-  on a short backoff (`watchRepoIdeas`, about 45 seconds at most). The read and the call have 45
-  seconds. Each workspace may start 20 generations an hour, counted on its row, so a thousand
-  repos cannot run up a bill. Failures are quiet: the screen shows no ideas. No answer at all
-  (GitHub or the model down, the deadline) is tried again an hour after; answers turned away
-  twice count as a generation, keeping the ideas there were, and wait for a push.
+  on a short backoff (`watchRepoIdeas`, about 45 seconds at most). The read, two asks and two
+  gate checks have 60 seconds. Each workspace may start 20 generations an hour, counted on its
+  row, so a thousand repos cannot run up a bill. Failures are quiet: the screen shows no ideas.
+- **What reaches a person**, in order:
+  1. **Exact checks** (`checkIdeas`), on what code alone can decide: the answer parses as the
+     schema, it has exactly four ideas, each is non-empty and at most 90 characters (code
+     points), none holds a control, format (bidi override, zero-width), private-use or line
+     separator character, and no two are the same. Each is normalised: spaces collapsed, a final
+     period dropped, the first letter raised.
+  2. **The gate** (`gate.ts`): Claude Sonnet 5.5 at low effort reads the four ideas, with only
+     the product's name and description (fenced as data, never the README), and says of each,
+     with its reason, whether it is **safe** (asks the reader for nothing but a design: no
+     address, contact, command, install, sign-in, credential, setting, third-party code,
+     destructive step or payment, relays no message from the repo, nothing hateful or abusive)
+     and whether it is a **design** (something people see or do). It judges nothing else.
+  - An answer that fails either is asked for again once, with Ponzu's own fixed sentence for
+    what failed (`RETRY_REASONS`), never the answer's words or the gate's, which may quote the
+    repo. Then: every idea passes, and all four are kept; some fail only as designs, and those
+    that pass are kept (one to four; the grid shows fewer tiles fine); one is unsafe in the last
+    answer the gate read, and none of this generation's are kept (`ideas_withheld`: the repo is
+    steering the ideas); nothing passes, and none are kept (`ideas_rejected`). Those last two
+    count as a generation, keeping the ideas there were, and wait for a push, or a day when the
+    repo is left with none. A gate that gives no verdict (down, refused, out of shape) is a
+    failed generation, never a verdict: nothing is stored and it is tried again an hour later,
+    like GitHub or the writer failing or the deadline passing.
+  - **Why a gate.** A repo's text is untrusted, and an idea a person taps goes into their own
+    message to an agent that can write and push their repo, where it is no longer quoted text. A
+    README can ask for an idea that tells the reader to re-enter a token at an address spelled
+    out in words, run a script or add someone's snippet; no exact check tells those from a
+    brief, so a stronger model judges them against a written rubric, which is itself checked
+    against labelled examples (docs/evals.md). Whether an idea is specific, honest about a
+    product not built yet, in its own words or free of talk about how it was made is not gated:
+    a false "no" there costs a person their ideas, so those are measured offline by the eval
+    suite and fixed in the prompt. There are no word lists, opener lists or phrase matching:
+    the ones there were turned away a product called ponzu-test for a week and let a spelled-out
+    address through.
 - **Retries, two layers:** the SDK tries a 429, a 5xx or a dropped connection once more, and an
-  answer that breaks a rule is asked for once more with the rule it broke. At most two asks
-  and four HTTP requests a generation.
+  answer that fails a check or the gate is asked for once more. At most two asks and two gate
+  checks, eight HTTP requests, a generation.
 - **Refresh**: ideas a month old are made again once the repo has been pushed to since; an
   empty list after any push. A visit alone never remakes them, and a repo nobody pushes to keeps
   them. The one exception is a change in how ideas are made: each list keeps the version that
   made it (`repos.ideas_version`, `IDEAS_VERSION`), and an empty list an earlier version wrote is
-  made again at the next ask, push or not (version 1 is the one that stopped skipping a repo with
-  nothing built yet). And an empty list (both answers turned away, with none from before) is
-  made again a week on, push or not: a repo with little in it is the kind nobody pushes to.
+  made again at the next ask, push or not (version 3 is the one that replaced the pattern rules
+  with the gate). And an empty list (nothing kept, with none from before) is made again a day
+  on, push or not: a repo with little in it is the kind nobody pushes to.
 - **A light read, never a clone**, through Octokit as the App with a token for that one repo
   (`contents: read`, `metadata: read`), minted and dropped: the repo's description and topics,
   its tree, README, up to four manifests and one theme file. At most 8 reads; the tree as far as
@@ -1730,32 +1763,33 @@ order summary on the right"). They are generated, never written by hand
   with a screen. A repo of fewer than 8 files also has the start (16 KiB) of up to 2 of its
   files read, its largest page first, with the reads its missing manifests leave (still at
   most 8).
-- **A product not built yet still gets four.** A repo with no screens, no components, no theme
+- **A product not built yet still gets ideas.** A repo with no screens, no components, no theme
   and fewer than 8 files (`isUnbuilt`) is asked with its own instructions
   (`FRESH_SYSTEM_PROMPT`): where a designer would begin this product, one of each of four kinds,
   each a short menu (where people start: a first screen, a welcome, an empty state; how it
   introduces itself: a landing page, a pitch, a sign-up page; what people come to do: the
   screen at its heart or its core flow; its look), as specific as its name, owner, description,
-  topics, README and files allow, building on a first draft when one is there. They never
-  pretend it has screens: an idea that redesigns, improves or fixes anything, or speaks of "the
-  current" or "the existing", is turned away like any other broken rule. When nothing says what
-  the product is, the user turn says so (Ponzu's words, outside the fence): keep to what the
-  name alone implies, naming no feature it does not, or, when the name says nothing either,
-  write good first briefs for any new product, claiming nothing about this one.
-- **Never the prompt's own words.** An idea that shares a run of 5 words with the instructions
-  it was asked with (an example, a stock opener) is turned away: it would be the same for every
-  repo.
+  topics, README and files allow, building on a first draft when one is there, and honest that
+  nothing exists yet. When nothing says what the product is, the user turn says so (Ponzu's
+  words, outside the fence): keep to what the name alone implies, naming no feature it does
+  not, or, when the name says nothing either, write good first briefs for any new product,
+  claiming nothing about this one.
 - **The four kinds** (a product with an interface): improve a screen the repo names; variations of its most prominent one;
   a screen or state it lacks; something across the interface. Kinds 3 and 4 are menus with no
   default, so repos do not all get the same empty state or type scale, and only screens the
   read found may be redesigned. "No dark theme" is said only when a theme file was read.
 - **The repo's text is untrusted.** The instructions are all in the system prompt, the same for
   every repo; the repo's text goes in the user turn inside one `<repository>` fence it cannot
-  close (every `<` and `>` in it is replaced). The answer is structured output, and is kept only
-  if all four ideas are plain sentences of at most 90 characters that do not open like a noun
-  phrase (an article, a number), with no address, markup or file name, and no word about how
-  they were made (Ponzu, AI, Claude, "the codebase", "this repo"). A product's own words pass: a
-  code host's repositories, an editor's code.
+  close (every `<` and `>` in it is replaced). The prompt says never to pass on a message,
+  address, contact or command from the material, and that the product's own name and words are
+  always fine, whatever they are (a product called ponzu-test, gpt-playground or Claude Desk; a
+  code host's repositories, an editor's code). The answer is structured output, and what reaches
+  a person has passed the exact checks and the gate above.
+- **Measured, not pattern-matched.** `bun run evals ideas` runs the prompt and the gate against
+  checked-in repos of every kind, hostile ones included, and grades what a person would see
+  with a calibrated judge (docs/evals.md); a prompt change comes with its numbers before and
+  after. `bun apps/api/scripts/ideas.ts owner/repo` prints the ideas, and the gate's verdicts,
+  for a live public repo, for reading by eye.
 
 ## Billing
 
