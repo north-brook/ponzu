@@ -25,6 +25,11 @@ import { type Finished, type SignInAttempt, signInWithBrowser } from "./sign-in.
 
 /** Sign-in attempts listening at once: a press past this closes the oldest. */
 export const MAX_ATTEMPTS = 3;
+/**
+ * How long the API has to answer an exchange before the browser's page says Ponzu couldn't be
+ * reached and the next tab back may try its own code.
+ */
+export const EXCHANGE_MS = 20_000;
 
 export interface MainSession {
   session: SessionHost;
@@ -53,6 +58,8 @@ export function mainSession(opts: {
   fetch?: Fetch;
   /** How long an attempt waits for its browser: ten minutes unless a test says otherwise. */
   attemptMs?: number;
+  /** How long the API is given to answer an exchange: EXCHANGE_MS unless a test says otherwise. */
+  exchangeMs?: number;
 }): MainSession {
   const session = createSession({
     apiUrl: opts.config.apiUrl,
@@ -72,20 +79,45 @@ export function mainSession(opts: {
     if (session.getState().status === "signed_in") closeAll();
   });
 
-  /** The exchange in flight: a second tab back at the same moment waits for the first. */
+  /**
+   * The exchange in flight: a second tab back at the same moment waits for the first, and
+   * never longer than the first is given (`exchangeMs`), so a stalled one can't hold the rest.
+   */
   let exchanging: Promise<unknown> | null = null;
-  const finish = async (redirect: { code: string; codeVerifier: string }): Promise<Finished> => {
-    while (exchanging) await exchanging.catch(() => {});
+  const exchangeMs = opts.exchangeMs ?? EXCHANGE_MS;
+  /** `exchanged`: this redirect's code was the one that signed the person in. */
+  const finish = async (redirect: {
+    code: string;
+    codeVerifier: string;
+  }): Promise<Finished & { exchanged?: boolean }> => {
+    while (exchanging) await exchanging;
     if (session.getState().status === "signed_in") return { ok: true };
-    const exchange = session.completeSignIn(redirect);
-    exchanging = exchange;
+    const giveUp = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tooLong = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        const error = new ApiError(0, "network", "Ponzu could not be reached.");
+        giveUp.abort(error);
+        reject(error);
+      }, exchangeMs);
+    });
+    const exchange = Promise.race([
+      session.completeSignIn({ ...redirect, signal: giveUp.signal }),
+      tooLong,
+    ]);
+    const settled = exchange.then(
+      () => {},
+      () => {},
+    );
+    exchanging = settled;
     try {
       await exchange;
-      return { ok: true };
+      return { ok: true, exchanged: true };
     } catch (error) {
       return { ok: false, error, why: pageReason(error) };
     } finally {
-      exchanging = null;
+      clearTimeout(timer);
+      if (exchanging === settled) exchanging = null;
     }
   };
 
@@ -106,11 +138,18 @@ export function mainSession(opts: {
     },
     async signIn() {
       let attempt: SignInAttempt;
+      // Whether this attempt's own code signed the person in, rather than finding them signed
+      // in by another tab back at the same moment: only then is Ponzu brought forward.
+      let exchanged = false;
       try {
         attempt = await signInWithBrowser({
           workosClientId: opts.config.workosClientId,
           openBrowser: opts.openBrowser,
-          finish,
+          finish: async (redirect) => {
+            const finished = await finish(redirect);
+            exchanged = finished.ok && finished.exchanged === true;
+            return finished;
+          },
           ...(opts.attemptMs ? { timeoutMs: opts.attemptMs } : {}),
         });
       } catch (error) {
@@ -121,7 +160,7 @@ export function mainSession(opts: {
       const end = await attempt.ended;
       const at = attempts.indexOf(attempt);
       if (at >= 0) attempts.splice(at, 1);
-      if (end.kind === "signed_in" || end.kind === "failed") opts.focus();
+      if ((end.kind === "signed_in" && exchanged) || end.kind === "failed") opts.focus();
       if (end.kind === "signed_in") return { ok: true };
       if (end.kind === "failed") return failed(end.error);
       return { ok: false, reason: "closed" };

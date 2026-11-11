@@ -43,6 +43,8 @@ export interface FakeWorld {
   finishSignIn(): void;
   /** How many sign-ins the screen has started. */
   signInsStarted: number;
+  /** How many of them have ended, signed in or not: only the "browser" ends one. */
+  signInsEnded: number;
 }
 
 declare global {
@@ -153,6 +155,7 @@ export function fakeHost(): Host {
       held = null;
     },
     signInsStarted: 0,
+    signInsEnded: 0,
   };
   const world = window.ponzuFake;
 
@@ -163,12 +166,16 @@ export function fakeHost(): Host {
     lights: "drawn",
     async signIn() {
       world.signInsStarted++;
-      if (held) await held.promise;
-      // The first back signs in; the rest find the person signed in already, as the shell's do.
-      if (session.getState().status !== "signed_in") {
-        await session.completeSignIn({ code: "fake", codeVerifier: "fake" });
+      try {
+        if (held) await held.promise;
+        // The first back signs in; the rest find the person signed in already, as the shell's do.
+        if (session.getState().status !== "signed_in") {
+          await session.completeSignIn({ code: "fake", codeVerifier: "fake" });
+        }
+        return { ok: true };
+      } finally {
+        world.signInsEnded++;
       }
-      return { ok: true };
     },
     persistence: async () => "keychain",
     onLink(listener) {

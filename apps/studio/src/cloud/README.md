@@ -48,8 +48,10 @@ traffic lights, which the shell puts at x 16, y 16, so the toggle's box spans 76
 centred on the lights' line; on Windows and Linux 10px from the edge), and the thread toggle is
 the last thing at the right, 10px from the window's edge, whether the rail is open or closed and
 on every tab. The rest of the right cluster (presence, Share, the pull request mark, the next
-action) sits just before the thread toggle, so it holds one place too; the divider at the rail's
-edge stays there while the rail is open and comes in to just before the cluster when it closes.
+action) sits just before the thread toggle, so it holds one place too, and the divider sits 18px
+before the cluster in every state: it separates the page tabs from the cluster rather than marking
+the rail's edge, so a wider cluster (five people, Update branch) or the rail toggling never moves
+it off its partner.
 `visual.ts compare` masks the chrome's 44px for this reason, so the rest is still checked
 against the boards.
 
