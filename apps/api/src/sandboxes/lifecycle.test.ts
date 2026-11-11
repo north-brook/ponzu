@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sampleDoc } from "@ponzu/core/fixtures";
 import {
+  appendEvent,
+  askRunnerToPush,
   getDesign,
   getLiveSandbox,
   moveSandbox,
@@ -1248,6 +1250,9 @@ describe("a new image", () => {
     ).toEqual([{ state: "gone", failure: `Moved onto ${image}.`, image: from }]);
     expect((await t.sandbox.get(sandbox.providerId!)).state).toBe("gone");
     expect((await machines(design.id)).map((m) => m.labels.generation)).toEqual(["2"]);
+    // Its runner has answered already and may have claimed before the row moved, so it is poked:
+    // a message sent meanwhile does not wait for its next minute's claim.
+    expect(t.poke.pokes.at(-1)?.url).toBe(moved.address!);
     // The head said waking, as for any start, and points at the new sandbox.
     expect(await head(design.id)).toMatchObject({
       sandboxId: moved.id,
@@ -1356,6 +1361,23 @@ describe("a new image", () => {
     t.clock.advance(MINUTE);
     await say(design.id);
     expect(await live(design.id)).toMatchObject({ generation: 2 });
+  });
+
+  test("a stop or a push taken after the last checkpoint does not hold the move back", async () => {
+    const { design, runner } = await awakeDesign();
+    await take(runner);
+    await save(design.id, runner);
+    // Create PR asks the runner to push, and a stop comes after the turn: both are acknowledged
+    // without going into the session.
+    await askRunnerToPush(t.db, { designId: design.id, userId: design.ownerId! });
+    await appendEvent(t.db, { designId: design.id, kind: "stop", priority: "now", payload: {} });
+    expect(await take(runner)).toHaveLength(2);
+    await idleToSleep(runner);
+    const image = newImage();
+
+    t.clock.advance(MINUTE);
+    await say(design.id);
+    expect(await live(design.id)).toMatchObject({ generation: 2, image });
   });
 
   test("a runner that never saved a checkpoint keeps its sandbox, and the log says why", async () => {

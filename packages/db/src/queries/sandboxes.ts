@@ -668,8 +668,12 @@ export async function getCheckpointCover(db: Db, designId: string): Promise<Chec
       select json_build_object(
         'saved_turn', (select saved_turn from design_runners where design_id = ${designId}),
         'through', (select saved_through from design_runners where design_id = ${designId}),
+        -- A stop and a push are acknowledged without going into the session, and a push after
+        -- the turn's checkpoint changes nothing the sleep's would save: neither is work a
+        -- checkpoint must hold.
         'last', (select max(seq) from events
-                  where design_id = ${designId} and delivered_at is not null)
+                  where design_id = ${designId} and delivered_at is not null
+                    and kind not in ('stop', 'push'))
       ) as result
     `,
   );

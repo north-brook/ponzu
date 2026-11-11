@@ -733,7 +733,9 @@ always (asleep or failed), then, when it was made from another image:
    waits, within 100 seconds, for it to be up and for its runner to answer `/health`;
 3. in one statement marks the old row `gone` ("Moved onto <image>.") and inserts the new one,
    `waking` for the same wake, which the design now points at; destroys the old machine;
-4. finishes as any wake does: awake, every runner token but the new one revoked.
+4. finishes as any wake does: awake, every runner token but the new one revoked, and a poke,
+   since the new runner is already listening and a message sent during the move found no awake
+   sandbox to poke.
 
 The new runner finds no disk, restores the last checkpoint ("Saving the sandbox": the transcript,
 the work in progress and its unpushed commits) and resumes the same Claude session, and the
@@ -747,7 +749,7 @@ happening to the person: the wake takes a little longer.
 | Why (`reason`) | What happens next |
 |---|---|
 | it is awake or getting there | nothing: an awake sandbox is never moved, so no turn is ever cut. It moves at the first wake after it next sleeps. |
-| `checkpoint_behind`: an event went into the session after the last checkpoint was recorded (`design_runners.saved_through` against the delivered events' `seq`) | the old one wakes, its runner saves after its next turn, and the wake after the next sleep moves it |
+| `checkpoint_behind`: an event went into the session after the last checkpoint was recorded (`design_runners.saved_through` against the delivered events' `seq`; a `stop` or a `push`, which never go into the session, does not count) | the old one wakes, its runner saves after its next turn, and the wake after the next sleep moves it |
 | `no_checkpoint`: its runner never saved one (a runner from before checkpoints) | it stays: a move would lose its conversation and what is only on its disk. `scripts/images.ts` lists these; moving one anyway is destroying its sandbox at the provider, which the next wake replaces from the branch, losing exactly that |
 | `image_failed`: a move onto this image failed for this design | it stays until another image is set: one failed start per design per image, never a loop |
 | `moves_at_once`: the slots are taken | it moves at a later wake |
