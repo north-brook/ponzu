@@ -1,0 +1,120 @@
+/*
+ * The gallery's full-window compositions: what each is, its size, and how it is compared. The
+ * React for each is in boards.tsx; this file stays free of it so the visual scripts can read it.
+ *
+ * - `board` names the design's artboard file (under its pages/ folder) it is compared with.
+ * - `open` is a control pressed before the picture: a menu or a popover's trigger.
+ * - `masks` cover what this pull request doesn't draw (the canvas's boards, the thread rail).
+ * - `reference` draws it for the visual regression test, from references/.
+ */
+export interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface Composition {
+  id: string;
+  title: string;
+  board?: string;
+  width: number;
+  height: number;
+  open?: string;
+  masks?: Rect[];
+  reference?: boolean;
+}
+
+const CANVAS: Rect = { x: 300, y: 44, width: 780, height: 850 };
+const RAIL: Rect = { x: 1080, y: 44, width: 360, height: 856 };
+const DESIGN = [CANVAS, RAIL];
+const WINDOW = { width: 1440, height: 900 };
+
+export const COMPOSITIONS: Composition[] = [
+  {
+    id: "team-sidebar",
+    title: "Team sidebar",
+    board: "teams/team-sidebar.html",
+    ...WINDOW,
+    masks: DESIGN,
+    reference: true,
+  },
+  {
+    id: "sidebar-team-menu",
+    title: "Sidebar · Team menu",
+    board: "mac/sidebar-team-menu.html",
+    ...WINDOW,
+    open: 'button[aria-label^="Workspace"]',
+    masks: DESIGN,
+    reference: true,
+  },
+  {
+    id: "sidebar-filter",
+    title: "Sidebar · Filter",
+    board: "mac/sidebar-filter.html",
+    ...WINDOW,
+    open: 'button[aria-label^="Filter"]',
+    masks: DESIGN,
+    reference: true,
+  },
+  {
+    id: "sidebar-search",
+    title: "Sidebar · Search",
+    board: "mac/sidebar-search.html",
+    ...WINDOW,
+    masks: DESIGN,
+  },
+  {
+    id: "sidebar-search-results",
+    title: "Sidebar · Search results",
+    board: "mac/sidebar-search-results.html",
+    ...WINDOW,
+    masks: DESIGN,
+    reference: true,
+  },
+  {
+    id: "share",
+    title: "Share",
+    board: "teams/share.html",
+    ...WINDOW,
+    open: 'button[aria-label="Share"]',
+    masks: DESIGN,
+    reference: true,
+  },
+  {
+    id: "thread-in-the-right-rail",
+    title: "1 · Thread in the right rail",
+    board: "mac/1-thread-in-the-right-rail.html",
+    ...WINDOW,
+    masks: DESIGN,
+  },
+  {
+    id: "claude-sets-it-up",
+    title: "6 · Claude sets it up",
+    board: "mac/6-claude-sets-it-up.html",
+    ...WINDOW,
+    masks: DESIGN,
+  },
+  { id: "create", title: "4 · Create", board: "mac/4-create.html", ...WINDOW, reference: true },
+  {
+    id: "pick-a-project",
+    title: "5 · Pick a project",
+    board: "mac/5-pick-a-project.html",
+    ...WINDOW,
+    open: 'button[aria-label^="Project"]',
+    reference: true,
+  },
+  {
+    id: "fresh-start",
+    title: "5 · Fresh start",
+    board: "onboarding/5-fresh-start.html",
+    ...WINDOW,
+    reference: true,
+  },
+  { id: "fresh-start-personal", title: "Fresh start · a new personal workspace", ...WINDOW },
+  { id: "fresh-start-no-repos", title: "Fresh start · no repos yet", ...WINDOW },
+  { id: "fresh-start-loading", title: "Fresh start · loading", ...WINDOW },
+  { id: "sidebar-collapsed", title: "Sidebar collapsed, rail closed", ...WINDOW },
+  { id: "settled-open", title: "Settled tray expanded", ...WINDOW },
+  { id: "filtered-empty", title: "A filter nothing matches", ...WINDOW },
+];

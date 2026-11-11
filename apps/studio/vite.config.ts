@@ -9,7 +9,7 @@ const checkout = sourceCheckout(fileURLToPath(import.meta.url));
 const target =
   process.env.PONZU_SERVER ?? `http://127.0.0.1:${checkout ? checkoutPort(checkout) : 7777}`;
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react(), tailwindcss()],
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   server: {
@@ -24,5 +24,15 @@ export default defineConfig({
       "/ws": { target: target.replace(/^http/, "ws"), ws: true },
     },
   },
-  build: { outDir: "dist", emptyOutDir: true, sourcemap: false },
-});
+  build: {
+    outDir: "dist",
+    emptyOutDir: true,
+    sourcemap: false,
+    // The cloud gallery (gallery.html) is dev-only; `--mode gallery` builds it alone for the
+    // visual scripts (scripts/visual.ts), never into the app.
+    rollupOptions:
+      mode === "gallery"
+        ? { input: fileURLToPath(new URL("./gallery.html", import.meta.url)) }
+        : undefined,
+  },
+}));

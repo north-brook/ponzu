@@ -10,6 +10,7 @@
     "apps/runner/src",
     "apps/runner/scripts",
     "apps/studio/src",
+    "apps/studio/scripts",
     "apps/desktop/src/**/*.test.ts",
     "scripts"
   ]
