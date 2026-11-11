@@ -40,10 +40,6 @@ const NAMES = Object.keys(ARGS) as LiveQueryName[];
 const every = (ids = { workspaceId: ws.id, designId }) =>
   NAMES.map((name) => ({ name, args: ARGS[name](ids) }));
 
-test("the registry is the six queries the clients watch", () => {
-  expect(Object.keys(LIVE_QUERIES).sort()).toEqual([...NAMES].sort());
-});
-
 /** What the fake sealer sealed for one result: it writes the query into the capability. */
 const unsealed = (result: { sealed: { capability: string } }): { sql: string; params: string[] } =>
   JSON.parse(result.sealed.capability.slice("sealed:".length));

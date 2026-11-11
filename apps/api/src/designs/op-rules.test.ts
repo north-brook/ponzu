@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import type { Op } from "@ponzu/core";
+import type { Actor, Op } from "@ponzu/core";
 import { SAMPLE_OPS, sampleDoc, VARIANTS } from "@ponzu/core/fixtures";
 import {
   call,
@@ -9,7 +9,8 @@ import {
   workspaceWithRepo,
 } from "../testing/designs.ts";
 import { createTestApp, type TestApp } from "../testing/index.ts";
-import { OP_RULES } from "./op-rules.ts";
+import { AGENT } from "./actor.ts";
+import { refusal } from "./op-rules.ts";
 
 let t: TestApp;
 let ws: Workspace;
@@ -61,35 +62,42 @@ const RUNNER: Record<Op["op"], "committed" | "rejected"> = {
   "thread.unmessage": "rejected",
 };
 
-test("every op variant is decided, and nothing else", () => {
-  expect(Object.keys(OP_RULES).sort()).toEqual([...VARIANTS].sort());
-  expect(Object.keys(PERSON).sort()).toEqual([...VARIANTS].sort());
+const PERSON_ACTOR: Actor = { kind: "user", id: "usr_maya", name: "Maya" };
+
+test.each([
+  ["a person with write access", PERSON_ACTOR, PERSON],
+  ["the design's runner", AGENT, RUNNER],
+] as const)("what %s may commit, op by op", (_, actor, expected) => {
+  const outcomes = Object.fromEntries(
+    VARIANTS.map((variant) => [
+      variant,
+      refusal(actor, SAMPLE_OPS[variant], sampleDoc()) === null ? "committed" : "rejected",
+    ]),
+  );
+  expect(outcomes).toEqual(expected);
 });
 
-describe.each([
-  ["a person with write access", PERSON],
-  ["the design's runner", RUNNER],
-] as const)("what %s may commit", (who, expected) => {
-  test.each(VARIANTS)("%s", async (variant) => {
-    const design = await designIn(t, ws, "maya", sampleDoc());
-    const headers = who.startsWith("a person")
-      ? ws.people.maya!.headers
-      : await runnerHeaders(t, design.id);
+// The table above is `refusal`'s; these show a post through the route is judged by it, for a
+// person and for the runner, and that a refused op changes nothing.
+test.each([
+  ["a person", "style", "rejected"],
+  ["the runner", "style", "committed"],
+  ["the runner", "file.scratch", "rejected"],
+] as const)("%s posting %s through the route: %s", async (who, variant, expected) => {
+  const design = await designIn(t, ws, "maya", sampleDoc());
+  const headers = who === "a person" ? ws.people.maya!.headers : await runnerHeaders(t, design.id);
 
-    const { status, body } = await call(t, headers, "POST", `/v1/designs/${design.id}/ops`, {
-      ops: [{ id: `op_${variant.replace(".", "_")}`, op: SAMPLE_OPS[variant] }],
-    });
-
-    expect(status).toBe(200);
-    const outcome = body.committed.length === 1 ? "committed" : "rejected";
-    expect([variant, outcome]).toEqual([variant, expected[variant]]);
-    expect(body.seq).toBe(outcome === "committed" ? 1 : 0);
-    // A refused op changes nothing.
-    if (outcome === "rejected") {
-      const doc = await call(t, headers, "GET", `/v1/designs/${design.id}/doc`);
-      expect(doc.body).toEqual({ doc: sampleDoc(), seq: 0 });
-    }
+  const { status, body } = await call(t, headers, "POST", `/v1/designs/${design.id}/ops`, {
+    ops: [{ id: `op_${variant.replace(".", "_")}`, op: SAMPLE_OPS[variant] }],
   });
+
+  expect(status).toBe(200);
+  expect(body.committed.length === 1 ? "committed" : "rejected").toBe(expected);
+  expect(body.seq).toBe(expected === "committed" ? 1 : 0);
+  if (expected === "rejected") {
+    const doc = await call(t, headers, "GET", `/v1/designs/${design.id}/doc`);
+    expect(doc.body).toEqual({ doc: sampleDoc(), seq: 0 });
+  }
 });
 
 describe("a person's batch is judged op by op, however deep", () => {
