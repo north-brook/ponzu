@@ -15,6 +15,8 @@ import {
 import { Button } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
 import { Icon } from "../ui/icon.tsx";
+import { overlayOpen, useShortcut } from "../ui/shortcut.ts";
+import { Tip } from "../ui/tooltip.tsx";
 
 /**
  * How loud a mark is. `colored` gives the icon and the checks their state's color (the pull
@@ -101,7 +103,7 @@ export function PullRequestMark({
 
 /**
  * The pull request mark in the chrome. It is the pull request tab: raised and in color while the
- * tab is open, muted like an inactive page tab otherwise.
+ * tab is open, muted like an inactive page tab otherwise. ⌘P toggles it.
  */
 export function PullRequestTab({
   pr,
@@ -112,20 +114,24 @@ export function PullRequestTab({
   active: boolean;
   onToggle: () => void;
 }) {
+  // ⌘P shows and hides the pull request, as a click on the mark does.
+  useShortcut("p", () => overlayOpen() || onToggle());
   return (
-    <Button
-      variant="icon"
-      aria-pressed={active}
-      aria-label={`Pull request #${pr.number}`}
-      onClick={onToggle}
-      className={cn(
-        "h-7 px-2.5",
-        active
-          ? "bg-raised text-ink shadow-raised hover:bg-raised"
-          : "text-muted [&_svg]:text-icon-soft",
-      )}
-    >
-      <PullRequestMark pr={pr} tone={active ? "colored" : "neutral"} checks />
-    </Button>
+    <Tip label={`Pull request #${pr.number}`} keys={["⌘", "P"]}>
+      <Button
+        variant="icon"
+        aria-pressed={active}
+        aria-label={`Pull request #${pr.number}`}
+        onClick={onToggle}
+        className={cn(
+          "h-7 px-2.5",
+          active
+            ? "bg-raised text-ink shadow-raised hover:bg-raised"
+            : "text-muted [&_svg]:text-icon-soft",
+        )}
+      >
+        <PullRequestMark pr={pr} tone={active ? "colored" : "neutral"} checks />
+      </Button>
+    </Tip>
   );
 }

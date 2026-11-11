@@ -10,6 +10,7 @@ import {
 import type { NextAction } from "../pull-request.ts";
 import { Button } from "../ui/button.tsx";
 import { Icon, type IconSvgElement } from "../ui/icon.tsx";
+import { overlayOpen, useShortcut } from "../ui/shortcut.ts";
 import { Tip } from "../ui/tooltip.tsx";
 
 const ACTIONS: Record<NextAction, { label: string; icon: IconSvgElement }> = {
@@ -28,7 +29,7 @@ const ACTIONS: Record<NextAction, { label: string; icon: IconSvgElement }> = {
  * The chrome's one dark button: the next best thing to do with the design's pull request. While
  * `busy` (a merge GitHub hasn't answered) it holds still and disabled. Auto-merge, once on, and
  * an action `blocked` (actionBlock: no write access, or the agent's Claude can't run) fade and
- * can't be pressed, but stay in reach so their tip says why.
+ * can't be pressed, but stay in reach so their tip says why. ⌘⇧↵ presses it from anywhere.
  */
 export function NextActionButton({
   action,
@@ -43,6 +44,9 @@ export function NextActionButton({
 }) {
   const { label, icon } = ACTIONS[action];
   const why = blocked ?? (action === "auto_merge_on" ? "Merges once the checks pass" : null);
+  // ⌘⇧↵ presses it: three keys, since it can merge. Not under a menu or a dialog, and never
+  // while it couldn't be pressed.
+  useShortcut("enter", () => why || busy || overlayOpen() || onRun(action), true, { shift: true });
   const button = (
     <Button
       variant="action"
@@ -56,5 +60,11 @@ export function NextActionButton({
       {label}
     </Button>
   );
-  return why ? <Tip label={why}>{button}</Tip> : button;
+  return why ? (
+    <Tip label={why}>{button}</Tip>
+  ) : (
+    <Tip label={label} keys={["⌘", "⇧", "↵"]}>
+      {button}
+    </Tip>
+  );
 }

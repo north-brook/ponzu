@@ -29,6 +29,13 @@ export interface ThreadRow {
   team: boolean;
   /** Stamp the sender's avatar: the thread is a team's, and their run ends here. */
   avatar: boolean;
+  /**
+   * Something the agent said on the way, not its answer: set quieter than the answer, in
+   * italics. A message is one once the agent has gone on working after it.
+   */
+  aside?: boolean;
+  /** An aside straight after another: it sits tight under it, as one run of them. */
+  asideContinues?: boolean;
 }
 
 /** A finished turn's middle, folded to one line that opens on it. */
@@ -115,11 +122,11 @@ function live(turn: Turn, agent: AgentActivity | undefined): boolean {
 }
 
 /**
- * The lines the thread shows, in order. What the run says about itself while starting (waking,
- * resumed, started) has no line. A running turn shows the agent's messages and nothing of its
- * tools: the working line at the foot says what it is doing. A finished turn keeps its answer
- * in full and folds what came before it into one line that opens on it; a turn that was only
- * its answer has no fold.
+ * The lines the thread shows, in order: what people said, what the agent said, and how a turn
+ * ended. What the run says about itself while starting (waking, resumed, started) has no line,
+ * and neither do the agent's tools: while a turn runs, the working line at the foot says what
+ * it is doing, and once it has ended nothing of its work is kept in the thread. What the agent
+ * said on the way to its answer stays, marked as an aside.
  */
 export function threadRows(items: ThreadItem[], agent?: AgentActivity): Row[] {
   const shown = items.filter((item) => {
@@ -128,15 +135,42 @@ export function threadRows(items: ThreadItem[], agent?: AgentActivity): Row[] {
     return type !== "waking" && type !== "resumed" && type !== "started";
   });
   const { before, turns } = turnsOf(shown);
-  const out: (ThreadItem | FoldRow)[] = [...before];
+  const out: ThreadItem[] = [...before];
+  const asides = new Set<string>();
   turns.forEach((turn, i) => {
-    if (i === turns.length - 1 && live(turn, agent)) {
-      out.push(...turn.items.filter((item) => item.kind !== "tool"));
-      return;
-    }
-    out.push(...folded(turn));
+    for (const id of asidesOf(turn, i === turns.length - 1 && live(turn, agent))) asides.add(id);
+    out.push(...turn.items.filter((item) => item.kind !== "tool"));
   });
-  return withRuns(out);
+  return withRuns(out, asides);
+}
+
+/**
+ * The agent's messages in a turn that are not its answer. In a finished turn, every message
+ * but the one the runner named as the answer (for an older runner, its last, unless it went on
+ * working after it). In a running turn, every message the agent has gone on working after: a
+ * later message, or steps logged after it. Its newest words, with nothing after them yet, read
+ * as an answer until it carries on.
+ */
+function asidesOf(turn: Turn, running: boolean): string[] {
+  const { items, work } = turn;
+  const messages = items.filter((i): i is Reply => i.kind === "assistant");
+  if (running) {
+    const after = new Set(work?.payload.turn.log.map((group) => group.after));
+    return messages
+      .filter((message, at) => {
+        if (at < messages.length - 1 || after.has(message.id)) return true;
+        // An older runner: a tool item after it is the work it went on to.
+        return !work && items.slice(items.indexOf(message) + 1).some((i) => i.kind === "tool");
+      })
+      .map((message) => message.id);
+  }
+  const lastAgent = items.findLast((i) => i.kind === "assistant" || i.kind === "tool");
+  const finalId = work
+    ? work.payload.turn.final
+    : lastAgent?.kind === "assistant"
+      ? lastAgent.id
+      : null;
+  return messages.filter((message) => message.id !== finalId).map((message) => message.id);
 }
 
 /** A finished turn: its middle folded into one row where it began, the rest as it was. */
@@ -288,7 +322,7 @@ export function took(ms: number): string {
 }
 
 /** Lines in order, each person's run of messages marked. */
-function withRuns(shown: (ThreadItem | FoldRow)[]): Row[] {
+function withRuns(shown: (ThreadItem | FoldRow)[], asides: ReadonlySet<string> = new Set()): Row[] {
   // A fold sits between two of a person's messages as a line of its own: it breaks their run.
   const items = shown.map((s) => ("fold" in s ? undefined : s));
   const people = new Set(
@@ -299,11 +333,14 @@ function withRuns(shown: (ThreadItem | FoldRow)[]): Row[] {
   const team = people.size > 1;
   return shown.map((s, i) => {
     if ("fold" in s) return s;
+    const aside = asides.has(s.id);
+    const above = items[i - 1];
     return {
       item: s,
-      continues: sameSender(items[i - 1], s),
+      continues: sameSender(above, s),
       team: team && said(s),
       avatar: team && said(s) && !sameSender(s, items[i + 1]),
+      ...(aside ? { aside, asideContinues: above !== undefined && asides.has(above.id) } : {}),
     };
   });
 }

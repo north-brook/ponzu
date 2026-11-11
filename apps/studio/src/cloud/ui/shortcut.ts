@@ -11,29 +11,34 @@ const ran = new Map<string, number>();
 /**
  * Runs `handler` on ⌘ (Ctrl off the Mac) plus `key`, anywhere in the window, text fields
  * included: none of the app's take rich text, so no shortcut here shadows one of theirs. `key`
- * is the KeyboardEvent key, lowercase: "k", "n", "j", "b", ",". Each use is counted
- * (`hotkey used`), by key.
+ * is the KeyboardEvent key, lowercase: "k", "n", "j", "b", ",", "p", "enter"; `shift` asks for ⇧
+ * as well (⌘⇧↵). Each use is counted (`hotkey used`), by key.
  */
-export function useShortcut(key: string, handler: () => void, enabled = true): void {
+export function useShortcut(
+  key: string,
+  handler: () => void,
+  enabled = true,
+  { shift = false }: { shift?: boolean } = {},
+): void {
   const latest = useRef(handler);
   latest.current = handler;
   const analytics = useAnalytics();
   useEffect(() => {
     if (!enabled) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey !== shift || e.altKey) return;
       if (e.key.toLowerCase() !== key) return;
       e.preventDefault();
       ran.set(key, performance.now());
       if (!counted.has(e)) {
         counted.add(e);
-        analytics.capture("hotkey used", { hotkey: `mod+${key}` });
+        analytics.capture("hotkey used", { hotkey: `mod+${shift ? "shift+" : ""}${key}` });
       }
       latest.current();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [key, enabled, analytics]);
+  }, [key, enabled, analytics, shift]);
 }
 
 /**

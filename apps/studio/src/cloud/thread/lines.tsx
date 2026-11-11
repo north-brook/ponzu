@@ -41,6 +41,8 @@ export const ThreadLine = memo(function ThreadLine({
   continues,
   team,
   avatar,
+  aside = false,
+  asideContinues = false,
   meId,
   handlers,
 }: ThreadRow & { meId: string; handlers: LineHandlers }) {
@@ -59,7 +61,16 @@ export const ThreadLine = memo(function ThreadLine({
       );
     case "assistant":
       return (
-        <div className="px-[2px] text-13 leading-[1.5]">
+        <div
+          data-aside={aside || undefined}
+          className={cn(
+            "px-[2px] text-13 leading-[1.5]",
+            // Said on the way to the answer: quieter, in italics, a run of them close together
+            // (the thread's 14 between lines, less 8).
+            aside && "text-muted italic",
+            asideContinues && "-mt-2",
+          )}
+        >
           <Prose
             text={item.payload.text}
             streaming={item.streaming}
