@@ -187,7 +187,9 @@ describe.skipIf(!chromium)("a board's corners in Chromium", () => {
   });
 
   test("a radius in a token (var()) rounds the sheet as the content", async () => {
-    await mount("--radius-lg:20px;width:320px;height:200px;background:#fff6b3;border-radius:var(--radius-lg)");
+    await mount(
+      "--radius-lg:20px;width:320px;height:200px;background:#fff6b3;border-radius:var(--radius-lg)",
+    );
     const d = await drawn();
     expect(d.root).toBe("20px");
     expect(d.sheet).toBe("20px");

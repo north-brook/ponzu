@@ -296,6 +296,8 @@ export function Canvas({
   /** Artboard and node ids, for this canvas only: agents point with comments instead. */
   const [selection, setSelection] = useState<string[]>([]);
   const fitted = useRef<string | null>(null);
+  /** Pages that have had boards on them since this canvas mounted. */
+  const hadBoards = useRef(new Set<string>());
 
   const working = useMemo(() => {
     const map = new Map<string, Worker[]>();
@@ -462,6 +464,9 @@ export function Canvas({
   useLayoutEffect(() => {
     if (!page) return;
     if (!bounds) {
+      // A page that had boards and has none now (its last one deleted) keeps the person's
+      // camera, and its fit: an undo brings the board back where they were looking.
+      if (hadBoards.current.has(page.id)) return;
       // An empty page waits at 100%, the page's origin (where a first board lands) in the
       // middle: the first board's fit, before it paints, then moves nothing anyone can see and
       // leaves the zoom where it was, so it arrives with its own animation and no jump.
@@ -472,6 +477,7 @@ export function Canvas({
       camera.set({ zoom: 1, x: Math.round(v.w / 2), y: Math.round(v.h / 2) }, true);
       return;
     }
+    hadBoards.current.add(page.id);
     const key = `${page.id}:${initialFit}`;
     if (fitted.current === key) return;
     fitted.current = key;

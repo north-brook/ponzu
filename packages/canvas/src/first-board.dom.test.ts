@@ -141,4 +141,48 @@ describe.skipIf(!chromium)("an empty design's first board in Chromium", () => {
     expect(frames.filter((f) => !f.sheet).every((f) => f.frame === null)).toBe(true);
     await page.close();
   });
+
+  test("deleting a page's last board and undoing it leaves the camera where the person put it", async () => {
+    page = await browser.newPage();
+    await page.setViewportSize({ width: 1200, height: 800 });
+    await page.setContent(
+      "<!doctype html><div id=host style='position:fixed;inset:0;display:flex'></div>",
+    );
+    await page.addStyleTag({ content: css });
+    await page.addScriptTag({ content: code, type: "module" });
+    await page.waitForFunction(() => "pzMount" in window);
+    await page.evaluate(() => (window as any).pzMount());
+    await new Promise((r) => setTimeout(r, 200));
+    await page.evaluate(() => (window as any).pzCreate(0, 0));
+    await new Promise((r) => setTimeout(r, 600));
+    // The person zooms in and pans away from where the board landed.
+    await page.mouse.move(600, 400);
+    await page.keyboard.down("Control");
+    await page.mouse.wheel(0, -60);
+    await page.keyboard.up("Control");
+    await new Promise((r) => setTimeout(r, 300));
+    await page.mouse.wheel(240, 160);
+    await new Promise((r) => setTimeout(r, 300));
+    const camera = () =>
+      page.evaluate(() => {
+        const zoom = [...document.querySelectorAll("button, span")]
+          .map((e) => e.textContent)
+          .find((t) => /^\d+%$/.test(t ?? ""));
+        const r = document.querySelector("[data-pz-board]")?.getBoundingClientRect();
+        return { zoom, at: r ? `${Math.round(r.left)},${Math.round(r.top)}` : null };
+      });
+    const before = await camera();
+    expect(before.zoom).not.toBe("100%");
+    await page.evaluate(() =>
+      (window as any).pzSource.apply({ op: "artboard.delete", id: "ab_card" }),
+    );
+    await new Promise((r) => setTimeout(r, 200));
+    const empty = await camera();
+    expect(empty.at).toBeNull();
+    expect(empty.zoom).toBe(before.zoom);
+    await page.evaluate(() => (window as any).pzSource.undo());
+    await new Promise((r) => setTimeout(r, 300));
+    expect(await camera()).toEqual(before);
+    await page.close();
+  });
 });
