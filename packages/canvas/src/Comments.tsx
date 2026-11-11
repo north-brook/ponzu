@@ -31,6 +31,15 @@ function initials(name: string): string {
     .toUpperCase();
 }
 
+/**
+ * Whether two authors are the same: by id when either has one (two people can share a name),
+ * else by kind and name, which is all the local app's comments carry.
+ */
+export function sameAuthor(a: Author, b: Author): boolean {
+  if (a.id !== undefined || b.id !== undefined) return a.id === b.id;
+  return a.kind === b.kind && a.name === b.name;
+}
+
 /** The product behind an agent author, for its logo. Agents are named after their client. */
 function agentClient(author: Author): "claude" | "openai" | null {
   if (author.kind !== "agent") return null;
@@ -248,7 +257,7 @@ export function ThreadCard({
     count.current = thread.messages.length;
     const last = thread.messages.at(-1);
     if (!el || !added || !last) return;
-    const own = last.author.kind === me.kind && last.author.name === me.name;
+    const own = sameAuthor(last.author, me);
     if (!own && !atEnd.current) return;
     following.current = el.scrollHeight - el.scrollTop - el.clientHeight >= 8;
     atEnd.current = true;
@@ -310,7 +319,7 @@ export function ThreadCard({
     setDraft(draftKey.edit(file, messageId), null);
     source.apply({ op: "thread.unmessage", id: thread.id, messageId });
   };
-  const mine = (a: Author) => !readOnly && a.kind === me.kind && a.name === me.name;
+  const mine = (a: Author) => !readOnly && sameAuthor(a, me);
   // The first message is the comment itself. Its actions live in the card's
   // menu, so nothing appears on hover beside the Resolve and More buttons.
   const first = thread.messages[0];

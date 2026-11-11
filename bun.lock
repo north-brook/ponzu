@@ -220,6 +220,30 @@
         "tailwindcss",
       ],
     },
+    "packages/client": {
+      "name": "@ponzu/client",
+      "version": "0.1.0",
+      "dependencies": {
+        "@neon/realtime": "0.2.1",
+        "@ponzu/core": "workspace:*",
+        "hono": "^4.13.17",
+      },
+      "devDependencies": {
+        "@ponzu/api": "workspace:*",
+        "@ponzu/canvas": "workspace:*",
+        "@ponzu/runner": "workspace:*",
+        "@types/react": "^19.3.0",
+        "@types/react-dom": "^19.3.0",
+        "react": "^19.3.1",
+        "react-dom": "^19.3.1",
+      },
+      "peerDependencies": {
+        "react": ">=19",
+      },
+      "optionalPeers": [
+        "react",
+      ],
+    },
     "packages/core": {
       "name": "@ponzu/core",
       "version": "0.1.0",
@@ -871,6 +895,8 @@
     "@ponzu/api": ["@ponzu/api@workspace:apps/api"],
 
     "@ponzu/canvas": ["@ponzu/canvas@workspace:packages/canvas"],
+
+    "@ponzu/client": ["@ponzu/client@workspace:packages/client"],
 
     "@ponzu/core": ["@ponzu/core@workspace:packages/core"],
 

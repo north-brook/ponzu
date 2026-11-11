@@ -286,8 +286,13 @@ export function viewOnly(source: CanvasSource): CanvasSource {
     apply() {},
     undo() {},
     redo() {},
-    assetBase: source.assetBase,
-    renditions: source.renditions,
+    // Read through: a source may learn where its assets are after it has been wrapped.
+    get assetBase() {
+      return source.assetBase;
+    },
+    get renditions() {
+      return source.renditions;
+    },
     setTheme: source.setTheme ? (theme) => source.setTheme?.(theme) : undefined,
     onOp: source.onOp ? (listener) => source.onOp!(listener) : undefined,
     onCapture: source.onCapture ? (listener) => source.onCapture!(listener) : undefined,
