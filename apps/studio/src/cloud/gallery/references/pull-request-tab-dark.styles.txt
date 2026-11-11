@@ -4,76 +4,76 @@ ground span rgb(254, 188, 46)
 ground span rgb(40, 200, 64)
 icon svg[Toggle sidebar] 16×16 rgb(169, 165, 155) stroke 1.7px
 ground span rgba(244, 243, 239, 0.1)
-icon svg[Pages] 14×14 rgb(169, 165, 155) stroke 1.7px
+icon svg[Pages] 14×14 rgb(169, 165, 155) stroke 1.9px
 text "Home" rgb(169, 165, 155) 400 13px Inter
-icon svg[Pages] 14×14 rgb(169, 165, 155) stroke 1.7px
+icon svg[Pages] 14×14 rgb(169, 165, 155) stroke 1.9px
 text "Product" rgb(169, 165, 155) 400 13px Inter
-icon svg[Pages] 14×14 rgb(169, 165, 155) stroke 1.7px
+icon svg[Pages] 14×14 rgb(169, 165, 155) stroke 1.9px
 text "Care cards" rgb(169, 165, 155) 400 13px Inter
-icon svg[New page] 14×14 rgb(110, 107, 101) stroke 1.9px
+icon svg[New page] 14×14 rgb(142, 138, 130) stroke 1.9px
 ground span rgba(244, 243, 239, 0.1)
 ground button[Pull request #412] rgb(58, 58, 58) shadow rgba(255, 255, 255, 0.06) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.4) 0px 1px 2px 0px
 text "#412" rgb(244, 243, 239) 400 11px IBM Plex Mono
-icon svg[Pull request #412] 11×11 rgb(95, 179, 107) stroke 2px
-icon svg[Checks passed] 10×10 rgb(95, 179, 107) stroke 2.6px
+icon svg[Pull request #412] 11×11 rgb(95, 179, 107) stroke 2.2px
+icon svg[Checks passed] 10×10 rgb(95, 179, 107) stroke 2.4px
 text "Merge" rgb(17, 17, 16) 600 12px Inter
 ground button rgb(244, 243, 239)
-icon svg 13×13 rgb(17, 17, 16) stroke 2px
+icon svg 12×12 rgb(17, 17, 16) stroke 2.4px
 icon svg[Thread] 16×16 rgb(169, 165, 155) stroke 1.7px
 text "Northbrook" rgb(244, 243, 239) 600 13px Inter
 icon svg[Workspace: Northbrook] 11×11 rgb(142, 138, 130) stroke 2.2px
-icon svg[Search] 15×15 rgb(169, 165, 155) stroke 1.7px
-icon svg[Filter] 15×15 rgb(169, 165, 155) stroke 1.9px
-icon svg[New design] 15×15 rgb(211, 208, 200) stroke 1.7px
+icon svg[Search] 16×16 rgb(169, 165, 155) stroke 1.7px
+icon svg[Filter] 16×16 rgb(169, 165, 155) stroke 1.7px
+icon svg[New design] 16×16 rgb(169, 165, 155) stroke 1.7px
 ground button[Quieter shop hero, 2 waiting for you, f…] rgb(40, 40, 38)
 ground span[Quieter shop hero, 2 waiting for you, f…] rgba(255, 255, 255, 0.06) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
-icon svg[Quieter shop hero, 2 waiting for you, f…] 11×11 rgb(110, 107, 101) stroke 1.9px
+icon svg[Quieter shop hero, 2 waiting for you, f…] 11×11 rgb(110, 107, 101) stroke 2.2px
 text "fernwood" rgb(110, 107, 101) 400 11px IBM Plex Mono
 text "2" rgb(17, 17, 16) 600 9px IBM Plex Mono
 ground span[Quieter shop hero, 2 waiting for you, f…] rgb(255, 200, 30)
 text "Quieter shop hero" rgb(244, 243, 239) 500 13px Inter
-icon svg[Quieter shop hero, 2 waiting for you, f…] 11×11 rgb(110, 107, 101) stroke 1.9px
+icon svg[Quieter shop hero, 2 waiting for you, f…] 11×11 rgb(110, 107, 101) stroke 2.2px
 text "pz/hero-refresh" rgb(110, 107, 101) 400 11px IBM Plex Mono
 text "#412" rgb(110, 107, 101) 400 11px IBM Plex Mono
-icon svg[Quieter shop hero, 2 waiting for you, f…] 11×11 rgb(110, 107, 101) stroke 1.9px
+icon svg[Quieter shop hero, 2 waiting for you, f…] 11×11 rgb(110, 107, 101) stroke 2.2px
 ground span[Pricing page, three takes, new activity…] rgba(255, 255, 255, 0.06) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
-icon svg[Pricing page, three takes, new activity…] 11×11 rgb(110, 107, 101) stroke 1.9px
+icon svg[Pricing page, three takes, new activity…] 11×11 rgb(110, 107, 101) stroke 2.2px
 text "fernwood" rgb(110, 107, 101) 400 11px IBM Plex Mono
 ground span[Pricing page, three takes, new activity…] rgb(255, 200, 30) shadow rgba(0, 0, 0, 0.4) 0px 0px 0px 1px
 text "Pricing page, three takes" rgb(244, 243, 239) 500 13px Inter
-icon svg[Pricing page, three takes, new activity…] 11×11 rgb(110, 107, 101) stroke 1.9px
+icon svg[Pricing page, three takes, new activity…] 11×11 rgb(110, 107, 101) stroke 2.2px
 text "pz/pricing" rgb(110, 107, 101) 400 11px IBM Plex Mono
 text "#405" rgb(110, 107, 101) 400 11px IBM Plex Mono
-icon svg[Pricing page, three takes, new activity…] 11×11 rgb(110, 107, 101) stroke 1.9px
+icon svg[Pricing page, three takes, new activity…] 11×11 rgb(110, 107, 101) stroke 2.2px
 ground span[Autumn drop moodboard, Scratch, lisbon] rgba(255, 255, 255, 0.06) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
-icon svg[Autumn drop moodboard, Scratch, lisbon] 11×11 rgb(110, 107, 101) stroke 1.9px
+icon svg[Autumn drop moodboard, Scratch, lisbon] 11×11 rgb(110, 107, 101) stroke 2.2px
 text "Scratch" rgb(110, 107, 101) 400 11px IBM Plex Mono
 text "Autumn drop moodboard" rgb(244, 243, 239) 500 13px Inter
 text "lisbon" rgb(110, 107, 101) 400 11px IBM Plex Mono
 ground span[Survey results readout, new activity, l…] rgba(255, 255, 255, 0.06) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
-icon svg[Survey results readout, new activity, l…] 11×11 rgb(110, 107, 101) stroke 1.9px
+icon svg[Survey results readout, new activity, l…] 11×11 rgb(110, 107, 101) stroke 2.2px
 text "lenny" rgb(110, 107, 101) 400 11px IBM Plex Mono
 ground span[Survey results readout, new activity, l…] rgb(255, 200, 30) shadow rgba(0, 0, 0, 0.4) 0px 0px 0px 1px
 text "Survey results readout" rgb(244, 243, 239) 500 13px Inter
-icon svg[Survey results readout, new activity, l…] 11×11 rgb(110, 107, 101) stroke 1.9px
+icon svg[Survey results readout, new activity, l…] 11×11 rgb(110, 107, 101) stroke 2.2px
 text "pz/survey-readout" rgb(110, 107, 101) 400 11px IBM Plex Mono
 ground span[One-page checkout, fernwood, pz/checkout] rgba(255, 255, 255, 0.06) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
-icon svg[One-page checkout, fernwood, pz/checkout] 11×11 rgb(110, 107, 101) stroke 1.9px
+icon svg[One-page checkout, fernwood, pz/checkout] 11×11 rgb(110, 107, 101) stroke 2.2px
 text "fernwood" rgb(110, 107, 101) 400 11px IBM Plex Mono
 text "One-page checkout" rgb(244, 243, 239) 500 13px Inter
-icon svg[One-page checkout, fernwood, pz/checkout] 11×11 rgb(110, 107, 101) stroke 1.9px
+icon svg[One-page checkout, fernwood, pz/checkout] 11×11 rgb(110, 107, 101) stroke 2.2px
 text "pz/checkout" rgb(110, 107, 101) 400 11px IBM Plex Mono
 ground span[Brand kit for the relaunch, brand, pz/r…] rgba(255, 255, 255, 0.06) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
-icon svg[Brand kit for the relaunch, brand, pz/r…] 11×11 rgb(110, 107, 101) stroke 1.9px
+icon svg[Brand kit for the relaunch, brand, pz/r…] 11×11 rgb(110, 107, 101) stroke 2.2px
 text "brand" rgb(110, 107, 101) 400 11px IBM Plex Mono
 text "Brand kit for the relaunch" rgb(244, 243, 239) 500 13px Inter
-icon svg[Brand kit for the relaunch, brand, pz/r…] 11×11 rgb(110, 107, 101) stroke 1.9px
+icon svg[Brand kit for the relaunch, brand, pz/r…] 11×11 rgb(110, 107, 101) stroke 2.2px
 text "pz/relaunch" rgb(110, 107, 101) 400 11px IBM Plex Mono
 ground span[Support inbox triage, lenny, pz/inbox-t…] rgba(255, 255, 255, 0.06) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
-icon svg[Support inbox triage, lenny, pz/inbox-t…] 11×11 rgb(110, 107, 101) stroke 1.9px
+icon svg[Support inbox triage, lenny, pz/inbox-t…] 11×11 rgb(110, 107, 101) stroke 2.2px
 text "lenny" rgb(110, 107, 101) 400 11px IBM Plex Mono
 text "Support inbox triage" rgb(244, 243, 239) 500 13px Inter
-icon svg[Support inbox triage, lenny, pz/inbox-t…] 11×11 rgb(110, 107, 101) stroke 1.9px
+icon svg[Support inbox triage, lenny, pz/inbox-t…] 11×11 rgb(110, 107, 101) stroke 2.2px
 text "pz/inbox-triage" rgb(110, 107, 101) 400 11px IBM Plex Mono
 text "Settled" rgb(169, 165, 155) 400 12px Inter
 text "9" rgb(110, 107, 101) 400 11px IBM Plex Mono
@@ -82,7 +82,7 @@ ground main rgb(0, 0, 0) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
 text "Quieter hero, editorial take" rgb(244, 243, 239) 600 26px Funnel Display
 text "#412" rgb(169, 165, 155) 400 12px IBM Plex Mono
 icon svg 12×12 rgb(95, 179, 107) stroke 2px
-icon svg[Open on GitHub] 11×11 rgb(110, 107, 101) stroke 1.9px
+icon svg[Open on GitHub] 11×11 rgb(142, 138, 130) stroke 2.2px
 text "·" rgb(94, 91, 84) 400 12px IBM Plex Mono
 text "pz/hero-refresh" rgb(169, 165, 155) 400 12px IBM Plex Mono
 text "→ main" rgb(169, 165, 155) 400 12px IBM Plex Mono
@@ -90,35 +90,35 @@ text "Drops the paragraph from the hero and l…" rgb(169, 165, 155) 400 13px In
 text "--hero-measure" rgb(169, 165, 155) 400 11.999px IBM Plex Mono
 text "Checks" rgb(110, 107, 101) 600 11px Inter
 text "Passed:" rgb(244, 243, 239) 400 13px Inter
-icon svg[Checks] 13×13 rgb(95, 179, 107) stroke 2.4px
+icon svg[Checks] 12×12 rgb(95, 179, 107) stroke 2px
 text "ci / test" rgb(244, 243, 239) 400 13px Inter
 text "2m 41s" rgb(110, 107, 101) 400 11px IBM Plex Mono
 text "Passed:" rgb(244, 243, 239) 400 13px Inter
-icon svg[Checks] 13×13 rgb(95, 179, 107) stroke 2.4px
+icon svg[Checks] 12×12 rgb(95, 179, 107) stroke 2px
 text "ci / typecheck" rgb(244, 243, 239) 400 13px Inter
 text "58s" rgb(110, 107, 101) 400 11px IBM Plex Mono
 text "Passed:" rgb(244, 243, 239) 400 13px Inter
-icon svg[Checks] 13×13 rgb(95, 179, 107) stroke 2.4px
+icon svg[Checks] 12×12 rgb(95, 179, 107) stroke 2px
 text "ci / lint" rgb(244, 243, 239) 400 13px Inter
 text "21s" rgb(110, 107, 101) 400 11px IBM Plex Mono
 text "Passed:" rgb(244, 243, 239) 400 13px Inter
-icon svg[Checks] 13×13 rgb(95, 179, 107) stroke 2.4px
+icon svg[Checks] 12×12 rgb(95, 179, 107) stroke 2px
 text "ci / build" rgb(244, 243, 239) 400 13px Inter
 text "1m 12s" rgb(110, 107, 101) 400 11px IBM Plex Mono
 text "Passed:" rgb(244, 243, 239) 400 13px Inter
-icon svg[Checks] 13×13 rgb(95, 179, 107) stroke 2.4px
+icon svg[Checks] 12×12 rgb(95, 179, 107) stroke 2px
 text "ci / e2e" rgb(244, 243, 239) 400 13px Inter
 text "3m 05s" rgb(110, 107, 101) 400 11px IBM Plex Mono
 text "Passed:" rgb(244, 243, 239) 400 13px Inter
-icon svg[Checks] 13×13 rgb(95, 179, 107) stroke 2.4px
+icon svg[Checks] 12×12 rgb(95, 179, 107) stroke 2px
 text "Vercel preview" rgb(244, 243, 239) 400 13px Inter
 text "Ready" rgb(110, 107, 101) 400 11px IBM Plex Mono
 text "Passed:" rgb(244, 243, 239) 400 13px Inter
-icon svg[Checks] 13×13 rgb(95, 179, 107) stroke 2.4px
+icon svg[Checks] 12×12 rgb(95, 179, 107) stroke 2px
 text "CodeQL" rgb(244, 243, 239) 400 13px Inter
 text "1m 33s" rgb(110, 107, 101) 400 11px IBM Plex Mono
 text "Passed:" rgb(244, 243, 239) 400 13px Inter
-icon svg[Checks] 13×13 rgb(95, 179, 107) stroke 2.4px
+icon svg[Checks] 12×12 rgb(95, 179, 107) stroke 2px
 text "commitlint" rgb(244, 243, 239) 400 13px Inter
 text "9s" rgb(110, 107, 101) 400 11px IBM Plex Mono
 text "Comments" rgb(110, 107, 101) 600 11px Inter
@@ -144,14 +144,14 @@ text "4 files" rgb(110, 107, 101) 600 11px Inter
 text "+214" rgb(95, 179, 107) 400 12px IBM Plex Mono
 text "−38" rgb(224, 103, 91) 400 12px IBM Plex Mono
 ground div[Files changed] rgb(27, 27, 26) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
-icon svg[Files changed] 12×12 rgb(142, 138, 130) stroke 2.2px
+icon svg[Files changed] 12×12 rgb(142, 138, 130) stroke 2px
 text "src/app/(shop)/page.tsx" rgb(244, 243, 239) 400 13px IBM Plex Mono
 text "src/app/(shop)/" rgb(244, 243, 239) 400 13px IBM Plex Mono
 text "page.tsx" rgb(244, 243, 239) 400 13px IBM Plex Mono
 text "+96" rgb(95, 179, 107) 400 12px IBM Plex Mono
 text "−21" rgb(224, 103, 91) 400 12px IBM Plex Mono
 ground div[Files changed] rgb(27, 27, 26) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
-icon svg[Files changed] 12×12 rgb(142, 138, 130) stroke 2.2px
+icon svg[Files changed] 12×12 rgb(142, 138, 130) stroke 2px
 text "src/components/hero.tsx" rgb(244, 243, 239) 400 13px IBM Plex Mono
 text "src/components/" rgb(244, 243, 239) 400 13px IBM Plex Mono
 text "hero.tsx" rgb(244, 243, 239) 400 13px IBM Plex Mono
@@ -189,14 +189,14 @@ text "18" rgb(110, 107, 101) 400 12px IBM Plex Mono
 text "17" rgb(110, 107, 101) 400 12px IBM Plex Mono
 text ");" rgb(244, 243, 239) 400 12px IBM Plex Mono
 ground div[Files changed] rgb(27, 27, 26) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
-icon svg[Files changed] 12×12 rgb(142, 138, 130) stroke 2.2px
+icon svg[Files changed] 12×12 rgb(142, 138, 130) stroke 2px
 text "src/styles/tokens.css" rgb(244, 243, 239) 400 13px IBM Plex Mono
 text "src/styles/" rgb(244, 243, 239) 400 13px IBM Plex Mono
 text "tokens.css" rgb(244, 243, 239) 400 13px IBM Plex Mono
 text "+18" rgb(95, 179, 107) 400 12px IBM Plex Mono
 text "−3" rgb(224, 103, 91) 400 12px IBM Plex Mono
 ground div[Files changed] rgb(27, 27, 26) shadow rgba(255, 255, 255, 0.08) 0px 0px 0px 0.5px
-icon svg[Files changed] 12×12 rgb(142, 138, 130) stroke 2.2px
+icon svg[Files changed] 12×12 rgb(142, 138, 130) stroke 2px
 text "src/components/hero-photo.tsx" rgb(244, 243, 239) 400 13px IBM Plex Mono
 text "src/components/" rgb(244, 243, 239) 400 13px IBM Plex Mono
 text "hero-photo.tsx" rgb(244, 243, 239) 400 13px IBM Plex Mono
@@ -214,9 +214,9 @@ text "Folding that into B: no paragraph, and …" rgb(244, 243, 239) 400 13px In
 ground section[Ponzu needs you: Headline] rgba(28, 28, 28, 0.72) shadow rgba(255, 255, 255, 0.1) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.4) 0px 6px 20px 0px, rgba(0, 0, 0, 0.3) 0px 1px 3px 0px
 ground span[Ponzu needs you: Headline] rgb(255, 200, 30) shadow rgba(255, 200, 30, 0.25) 0px 0px 0px 3px
 text "Headline" rgb(244, 243, 239) 600 13px Inter
-icon svg[Previous] 12×12 rgb(110, 107, 101) stroke 2.2px
+icon svg[Previous] 12×12 rgb(110, 107, 101) stroke 2px
 text "1/2" rgb(169, 165, 155) 400 11px IBM Plex Mono
-icon svg[Next] 12×12 rgb(169, 165, 155) stroke 2.2px
+icon svg[Next] 12×12 rgb(169, 165, 155) stroke 2px
 text "The headline runs to three lines at 390…" rgb(244, 243, 239) 500 13px Inter
 ground div[The headline runs to three lines at 390…] rgba(255, 255, 255, 0.06)
 text "Shorten it" rgb(244, 243, 239) 500 13px Inter
