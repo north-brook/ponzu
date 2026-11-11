@@ -48,3 +48,27 @@ test("the check knows shadcn's names from ours", () => {
     ),
   ).toEqual([]);
 });
+
+test("the check finds a border with no color, a dark variant and shadcn's disabled opacity", () => {
+  const names = (source: string) => unmappedClasses(source).map((f) => f.name);
+  // What shadcn's popover, command, input and checkbox arrive with.
+  expect(names('"rounded-12 border p-4"')).toEqual(["border"]);
+  expect(names('cn("flex border-b px-3", className)')).toEqual(["border-b"]);
+  expect(names('"-mx-1 h-px border-t data-[side=top]:border-x"')).toEqual([
+    "border-t",
+    "data-[side=top]:border-x",
+  ]);
+  expect(names('"dark:bg-input/30 dark:aria-invalid:ring-danger"')).toEqual([
+    "dark:bg-input/30",
+    "dark:aria-invalid:ring-danger",
+  ]);
+  expect(
+    names('"disabled:opacity-50 data-[disabled]:opacity-50 peer-disabled:opacity-50"'),
+  ).toEqual(["disabled:opacity-50", "data-[disabled]:opacity-50", "peer-disabled:opacity-50"]);
+  // Ours: a border with its color beside it, a width or style alone, our disabled opacity.
+  expect(
+    names(
+      '"border-rule border-b" "border-sep border-t pt-1.5" "border-0" "border-collapse" "disabled:opacity-35" "opacity-50"',
+    ),
+  ).toEqual([]);
+});

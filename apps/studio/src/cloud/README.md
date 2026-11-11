@@ -42,11 +42,12 @@ the same way.
 
 Text from the model or GitHub (replies, plans, a pull request's body and comments) goes through
 `Prose`, never `dangerouslySetInnerHTML`. It is react-markdown with GitHub's flavour (tables, task
-lists, strikethrough, bare addresses) and GitHub's line breaks, drawn into our elements: raw HTML
-stays text (no rehype-raw), images become links so nothing loads by itself, a link survives only
-to http, https or mailto and opens outside the app. Text shaped to make the parser slow (see
-`parseable` in markdown.ts), or longer than 32 KB, is plain text. Each block is memoised, so a
-reply streaming in parses only its last.
+lists, strikethrough, bare addresses; not footnotes, whose parser is slow on stray `]`s and whose
+in-page links we drop, so `[^1]` reads as written) and GitHub's line breaks, drawn into our
+elements: raw HTML stays text (no rehype-raw), images become links so nothing loads by itself, a
+link survives only to http, https or mailto and opens outside the app. Text shaped to make the
+parser slow (see `parseable` and `parts` in markdown.ts), or longer than 32 KB, is plain text.
+Blocks are memoised in runs of 16, so a reply streaming in parses only its last run.
 
 ## Tokens
 
@@ -81,10 +82,15 @@ That runs `shadcn add` (components.json: new-york, Tailwind v4, Hugeicons, files
 then makes its files ours: their `cn` comes from `ui/cn.ts` (which teaches tailwind-merge our
 token scales) rather than the `cn` package, siblings are imported by relative path, and the
 dependencies we replace (`cn`, `lucide-react`, `tw-animate-css`) are taken back out. It ends by
-listing every class in the new files that still names shadcn's theme. Map each one onto our
-tokens, swap any lucide icon for `ui/icon.tsx` at the design's size, and drop shadcn's
-`[&_svg]:size-4` rules (they override a Hugeicon's own size). `styles/shadcn-names.test.ts` fails
-on any left behind.
+listing every class in the new files that still names shadcn's theme, a bare `border` with no
+color beside it (Tailwind v4's is currentColor, an ink hairline here), a `dark:` variant (it
+follows only the system, not a pinned `data-theme`, and our tokens already hold both themes) and
+shadcn's `disabled:opacity-50` (ours is 35). Map each one onto our tokens, swap any lucide icon
+for `ui/icon.tsx` at the design's size, and drop shadcn's `[&_svg]:size-4` rules (they override a
+Hugeicon's own size). The new-york v4 registry ignores `iconLibrary` for some items (checkbox
+still imports `CheckIcon` from lucide-react), so the script's lucide warning is expected: the
+file won't typecheck until the icon is swapped. `styles/shadcn-names.test.ts` fails on any left
+behind.
 
 Then build the product's piece on it. Name that for what it is in the product and give it the
 product's types (a row takes a `DesignSummary`, not strings per pixel); where shadcn's API

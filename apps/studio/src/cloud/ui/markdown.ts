@@ -1,7 +1,8 @@
 /*
  * The rules for Markdown nobody vouches for: the agent's replies, its plans, a pull request's
  * description and conversation from GitHub. prose.tsx draws it with react-markdown and GitHub's
- * flavour (tables, task lists, strikethrough, bare addresses); these keep it safe and bounded:
+ * flavour (tables, task lists, strikethrough, bare addresses; footnotes read as written); these
+ * keep it safe and bounded:
  *
  * - raw HTML stays text (react-markdown's default, with no rehype-raw), and HTML comments, which
  *   pull request templates are full of, are dropped;
@@ -11,6 +12,45 @@
  *   so hostile text can't build a tree a thousand elements tall;
  * - past `PROSE_LIMIT` characters it is plain text.
  */
+
+import { gfmAutolinkLiteralFromMarkdown } from "mdast-util-gfm-autolink-literal";
+import { gfmStrikethroughFromMarkdown } from "mdast-util-gfm-strikethrough";
+import { gfmTableFromMarkdown } from "mdast-util-gfm-table";
+import { gfmTaskListItemFromMarkdown } from "mdast-util-gfm-task-list-item";
+import { gfmAutolinkLiteral } from "micromark-extension-gfm-autolink-literal";
+import { gfmStrikethrough } from "micromark-extension-gfm-strikethrough";
+import { gfmTable } from "micromark-extension-gfm-table";
+import { gfmTaskListItem } from "micromark-extension-gfm-task-list-item";
+
+/**
+ * GitHub's flavour without its footnotes: remark-gfm is these four extensions and footnotes,
+ * assembled the same way. Footnotes go because their parser slows with the square of the `]`s in
+ * a block (32 KB of `a]` took 0.8 s against 10 ms without them) and because GitHub draws them
+ * with in-page links, which `safeHref` drops; `[^1]` reads as written instead.
+ */
+export function remarkGfm(this: { data(): object }) {
+  const data = this.data() as Record<string, unknown[] | undefined>;
+  const add = (key: string, extension: unknown) => {
+    data[key] ??= [];
+    data[key].push(extension);
+  };
+  for (const extension of [
+    gfmAutolinkLiteral(),
+    gfmStrikethrough(),
+    gfmTable(),
+    gfmTaskListItem(),
+  ]) {
+    add("micromarkExtensions", extension);
+  }
+  for (const extension of [
+    gfmAutolinkLiteralFromMarkdown(),
+    gfmStrikethroughFromMarkdown(),
+    gfmTableFromMarkdown(),
+    gfmTaskListItemFromMarkdown(),
+  ]) {
+    add("fromMarkdownExtensions", extension);
+  }
+}
 
 const SAFE_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
 
@@ -43,7 +83,10 @@ const NESTING = new Set(["*", "_", "~", "[", "]", "!", "(", ")", ">", "#", ".", 
  *   row of dots in an address);
  * - a line that opens more than 4 quotes or lists before its text (`> > > > > …`,
  *   `- - - - - …`), or indents one past 64 spaces;
- * - more than 1,000 lines of quotes or lists, or 2,000 table cells;
+ * - more than 1,000 lines of quotes or lists, 2,000 table cells, or 200 lines underlined as
+ *   headings (`a\n=\n…`, which micromark resolves with the square of the text before them);
+ * - more than 1,000 lines in a row with no blank line outside fenced code (one paragraph of
+ *   16,000 short lines took 0.3 s, and grows with its square);
  * - more than a quarter of a long text in emphasis and link markers.
  */
 export function parseable(source: string): boolean {
@@ -63,12 +106,42 @@ export function parseable(source: string): boolean {
   }
   if (source.length > 4096 && markers > source.length / 4) return false;
   let containers = 0;
+  let underlines = 0;
+  let unbroken = 0;
+  let fence: string | null = null;
+  const html = /^[ \t]*</m.test(source);
   for (const line of source.split("\n")) {
+    // Fenced code is skipped, since micromark reads it in one linear pass. It counts as open only
+    // where it certainly is (at the margin, where no list or quote can end it) and as shut at
+    // anything that might shut it, so hostile lines can't hide inside what only looks like code.
+    // An HTML block can hold a fence's line as its own text, so with one none is skipped.
+    if (fence) {
+      const shut = FENCE.exec(line)?.[1];
+      if (shut && shut[0] === fence[0] && shut.length >= fence.length) fence = null;
+      continue;
+    }
+    const open = html ? null : OPEN_FENCE.exec(line);
+    if (open) {
+      fence = open[1] ?? open[2]!;
+      unbroken = 0;
+      continue;
+    }
+    if (!line.trim()) {
+      unbroken = 0;
+      continue;
+    }
+    if (unbroken > 0 && UNDERLINE.test(line) && ++underlines > 200) return false;
+    if (++unbroken > 1000) return false;
     if (!CONTAINER.test(line)) continue;
     if (++containers > 1000 || OPENS_FIVE.test(line) || DEEP_INDENT.test(line)) return false;
   }
   return true;
 }
+
+/** A line that turns the one above it into a heading (`=` or `-` under a line of text). */
+const UNDERLINE = /^ {0,3}(?:=+|-+)[ \t]*$/;
+/** A fence that opens code at the margin (a backtick fence's info may hold no backtick). */
+const OPEN_FENCE = /^(?:(`{3,})[^`]*|(~{3,}).*)$/;
 
 const MARKER = String.raw`(?:>[ \t]*|(?:[*+-]|\d{1,9}[.)])(?:[ \t]+|$))`;
 const CONTAINER = new RegExp(String.raw`^[ \t]*${MARKER}`);
@@ -119,6 +192,29 @@ export function blocks(source: string): string[] {
   }
   out.push(lines.slice(start).join("\n"));
   return out.filter((block) => block.trim());
+}
+
+/**
+ * What prose.tsx draws as Markdown, in runs (`runs`) that each draw alone, or null for plain
+ * text: text `parseable` refuses, or more than 1,000 blocks, which cost by their number alone
+ * (11,000 one-letter paragraphs took 0.15 s) and no reply or pull request has.
+ */
+export function parts(source: string): string[] | null {
+  if (!parseable(source)) return null;
+  const split = blocks(source);
+  return split.length > 1000 ? null : runs(split);
+}
+
+/**
+ * Blocks in fixed runs of `size`, each run joined by the blank line that parted them, so drawing
+ * a run costs one parse however short its blocks (thousands of one-word paragraphs drew in
+ * 0.6 s, one parse each) while a streaming reply still redraws only its last run: the runs
+ * before it never change.
+ */
+export function runs(parts: string[], size = 16): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < parts.length; i += size) out.push(parts.slice(i, i + size).join("\n\n"));
+  return out;
 }
 
 const MAX_QUOTES = 3;

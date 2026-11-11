@@ -39,6 +39,7 @@ export function PageTabs({
     <Tabs
       value={activeId ?? ""}
       onValueChange={onSelect}
+      panels={false}
       className="flex min-w-0 items-center gap-0.5"
     >
       <FadeScroll axis="x" className="min-w-0" style={{ minWidth }}>

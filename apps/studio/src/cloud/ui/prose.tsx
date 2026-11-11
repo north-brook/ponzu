@@ -10,18 +10,18 @@ import {
 } from "react";
 import Markdown, { type Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
-import remarkGfm from "remark-gfm";
 import { cn } from "./cn.ts";
 import { Icon } from "./icon.tsx";
-import { blocks, parseable, prepare, remarkUntrusted, safeHref } from "./markdown.ts";
+import { parts, prepare, remarkGfm, remarkUntrusted, safeHref } from "./markdown.ts";
 
 /**
  * Markdown from the agent or GitHub, drawn with react-markdown into our own elements and tokens.
  * Nothing it holds is ever read as markup (markdown.ts has the rules). Links leave the app
  * through `onOpenLink`; without it they open a new window, which the desktop shell hands to the
  * browser. Memoized twice: a line of the thread redraws only when its text changes (so
- * `onOpenLink` should keep its identity), and within it each block (markdown.ts's `blocks`)
- * only when its own text does, so a reply streaming in parses and redraws only its last block.
+ * `onOpenLink` should keep its identity), and within it each run of blocks (markdown.ts's
+ * `blocks` and `runs`) only when its own text does, so a reply streaming in parses and redraws
+ * only its last run.
  */
 export const Prose = memo(function Prose({
   text,
@@ -34,12 +34,12 @@ export const Prose = memo(function Prose({
 }) {
   const components = useMemo(() => elements(onOpenLink), [onOpenLink]);
   const source = useMemo(() => prepare(text), [text]);
-  const parts = useMemo(() => (parseable(source) ? blocks(source) : null), [source]);
+  const runs = useMemo(() => parts(source), [source]);
   return (
     <div className={cn("flex min-w-0 flex-col gap-2 [overflow-wrap:anywhere]", className)}>
-      {parts ? (
+      {runs ? (
         // biome-ignore lint/suspicious/noArrayIndexKey: blocks have no identity but their place
-        parts.map((part, i) => <Block key={i} source={part} components={components} />)
+        runs.map((run, i) => <Block key={i} source={run} components={components} />)
       ) : (
         <p dir="auto" className="m-0 whitespace-pre-wrap">
           {source}

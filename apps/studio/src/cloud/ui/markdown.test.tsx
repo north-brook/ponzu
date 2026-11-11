@@ -2,8 +2,15 @@ import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import Markdown from "react-markdown";
 import remarkBreaks from "remark-breaks";
-import remarkGfm from "remark-gfm";
-import { blocks, PROSE_LIMIT, parseable, remarkUntrusted, safeHref } from "./markdown.ts";
+import {
+  blocks,
+  PROSE_LIMIT,
+  parseable,
+  parts,
+  remarkGfm,
+  remarkUntrusted,
+  safeHref,
+} from "./markdown.ts";
 import { Prose } from "./prose.tsx";
 
 const html = (text: string) => renderToStaticMarkup(<Prose text={text} />);
@@ -169,7 +176,9 @@ test("strikethrough and bare addresses, as GitHub writes them", () => {
  * micromark slows with the square of some shapes (a 16 KB address of dots took 1.5 s, 16 KB of
  * `![` 5 s at 64 KB) and runs out of stack on a line of nested lists. `parseable` sends those to
  * plain text; what it lets through, shaped to sit just under each of its limits, measured under
- * 100 ms at the 32 KB limit on an M-series Mac, about twice an ordinary reply that long. The
+ * 100 ms at the 32 KB limit on an M-series Mac, at most about four times an ordinary reply that
+ * long (a thousand one-letter paragraphs and a long fenced block cost by their number of
+ * lines). The
  * bound is against that reply on the same machine, since CI runs slower: a shape that grows with
  * the square of its length costs tens of times more.
  */
@@ -203,12 +212,28 @@ test("hostile text the size of a GitHub comment draws about as fast as a reply",
     `${">".repeat(16_384)} deep`,
     `${"- ".repeat(5000)}x`,
     `${"*_".repeat(4096)}x${"_*".repeat(4096)}`,
+    // Brackets with no partner, which GFM's footnotes scanned back over with the square of their
+    // number; lines underlined as headings, which micromark resolves against the text before
+    // them; and short lines, in one paragraph or each its own.
+    under("a]"),
+    under("x]\n"),
+    under("a ]"),
+    under("b]a"),
+    under("a\n=\n"),
+    under("a\n-\n"),
+    under("a\n"),
+    under("a\n\n"),
+    under("[^a] "),
     // Just under the limits.
     under(`${"[".repeat(16)}${"a ".repeat(100)}`),
     under(`${"*_".repeat(8)}${"a ".repeat(100)}`),
     under(`${"*_".repeat(4)}a${"_*".repeat(4)} ${"b ".repeat(80)}`),
     under(`http://a${".".repeat(15)}b `),
     under("*a* bcde "),
+    under(`${"x]\n".repeat(1000)}\n`),
+    `${"a\n=\n".repeat(200)}${fill("word ", PROSE_LIMIT - 801)}`,
+    `${"a\n\n".repeat(1000)}${fill("word ", PROSE_LIMIT - 3001)}`,
+    `\`\`\`\n${fill("a\n", PROSE_LIMIT - 5)}`,
     fill("- - - - x\n", 8000),
     Array.from({ length: 30 }, (_, i) => `${"  ".repeat(i)}- x`)
       .join("\n")
@@ -239,6 +264,60 @@ test("what can't be parsed quickly is plain text, as written", () => {
   ]) {
     expect(parseable(text)).toBe(true);
   }
+});
+
+test("long runs of lines, headings and blocks are plain text just past their limits", () => {
+  const lines = (n: number, line = "a") => `${line}\n`.repeat(n);
+  expect(parseable(lines(1000))).toBe(true);
+  expect(parseable(lines(1001))).toBe(false);
+  // A blank line or fenced code starts the count again.
+  expect(parseable(`${lines(1000)}\n${lines(1000)}`)).toBe(true);
+  expect(parseable(`\`\`\`\n${lines(5000)}\`\`\`\n${lines(1000)}`)).toBe(true);
+  // A fence that only looks like one hides nothing: inside an HTML block, after text, or with a
+  // backtick in its info.
+  expect(parseable(`<div>\n\`\`\`\n\n${lines(1001)}`)).toBe(false);
+  expect(parseable(`\`\`\` a\`b\n${lines(1001)}`)).toBe(false);
+  expect(parseable(`- a\n  \`\`\`\n${lines(1001)}`)).toBe(false);
+  expect(parseable("a\n=\n".repeat(200))).toBe(true);
+  expect(parseable("a\n=\n".repeat(201))).toBe(false);
+  // A rule after a blank line underlines nothing.
+  expect(parseable("a\n\n---\n".repeat(300))).toBe(true);
+
+  const out = (n: number) => html("a\n\n".repeat(n));
+  expect(out(1000)).not.toContain("whitespace-pre-wrap");
+  expect(out(1001)).toContain("whitespace-pre-wrap");
+});
+
+test("blocks drawn in runs draw as they do whole", () => {
+  const text = Array.from({ length: 40 }, (_, i) =>
+    i % 3 ? `Line ${i} **bold**` : `> quote ${i}\n> - [x] done`,
+  ).join("\n\n");
+  const whole = renderToStaticMarkup(
+    <Markdown remarkPlugins={[remarkGfm, remarkBreaks, remarkUntrusted]}>{text}</Markdown>,
+  );
+  expect(blocks(text)).toHaveLength(40);
+  const split = parts(text)!;
+  expect(split).toHaveLength(3);
+  const apart = split
+    .map((run) =>
+      renderToStaticMarkup(
+        <Markdown remarkPlugins={[remarkGfm, remarkBreaks, remarkUntrusted]}>{run}</Markdown>,
+      ),
+    )
+    .join("\n");
+  expect(apart).toBe(whole);
+  // Text streaming in leaves every run but the last as it was.
+  expect(parts(`${text}\n\nmore`)!.slice(0, 2)).toEqual(split.slice(0, 2));
+});
+
+test("footnotes read as written, with no heading or back link", () => {
+  const out = html("Footnote[^1].\n\n[^1]: the note");
+  expect(out).not.toContain("<section");
+  expect(out).not.toContain("<sup");
+  expect(out).not.toContain("Footnotes");
+  expect(out).not.toContain("↩");
+  expect(out).toContain("Footnote[^1].");
+  expect(out).toContain("[^1]: the note");
 });
 
 test("quotes, links and emphasis nest only so deep", () => {

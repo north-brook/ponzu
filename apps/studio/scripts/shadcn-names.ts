@@ -25,15 +25,34 @@ export const UNMAPPED = new RegExp(
     "(?<![\\w-])(?:animate-(?:in|out|pulse|spin)|fade-(?:in|out)-\\d+|zoom-(?:in|out)-\\d+|slide-(?:in|out)-from-[a-z]+-\\d+)(?![\\w-])",
     // A ring or border width for focus: keyboard focus is `focus-ring`.
     "(?<![\\w-])ring-\\[\\d+px\\](?![\\w-])",
+    // `dark:` follows only the system's appearance, not a theme pinned with `data-theme`; our
+    // tokens hold both themes (light-dark()), so a dark variant is never needed.
+    "(?<![\\w:-])dark:[^\\s\"'`]+",
+    // shadcn's disabled half-opacity: ours is `opacity-35`.
+    "(?<![\\w-])[\\w[\\]=-]*disabled[^\\s\"'`]*:opacity-50(?![\\w-])",
   ].join("|"),
   "g",
 );
+
+/** A border with no color of its own (Tailwind v4's is currentColor: an ink hairline here). */
+const BARE_BORDER = /(?<![\w:[-])(?:[\w[\]=&>*-]+:)*border(?:-[trblxyse])?(?![\w-])/g;
+/** A border color in the same class list, which a bare border then takes. */
+const BORDER_COLOR =
+  /(?<![\w-])(?:[\w[\]=&>*-]+:)*border(?:-[trblxyse])?-(?!(?:\d|\[\d|solid|dashed|dotted|double|none|hidden|collapse|separate|spacing)(?![\w-]))[a-z][\w-]+/;
+/** A string of class names: whatever sits between one pair of quotes. */
+const STRING = /"[^"\n]*"|'[^'\n]*'|`[^`\n]*`/g;
 
 /** Every unmapped class in a source file, with its line. */
 export function unmappedClasses(source: string): { line: number; name: string }[] {
   const found: { line: number; name: string }[] = [];
   source.split("\n").forEach((text, i) => {
     for (const match of text.matchAll(UNMAPPED)) found.push({ line: i + 1, name: match[0] });
+    for (const [classes] of text.matchAll(STRING)) {
+      if (BORDER_COLOR.test(classes)) continue;
+      for (const match of classes.matchAll(BARE_BORDER)) {
+        found.push({ line: i + 1, name: match[0] });
+      }
+    }
   });
   return found;
 }

@@ -337,6 +337,10 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
           .map((e) => e.textContent ?? ""),
       );
     expect(await selected()).toEqual([names[0]!]);
+    // They open pages, not panels of their own: no tab points at a panel that isn't there.
+    expect(
+      await page.$$eval(tabs, (els) => els.filter((e) => e.hasAttribute("aria-controls")).length),
+    ).toBe(0);
     await page.focus(`${tabs}[aria-selected="true"]`);
     await page.keyboard.press("ArrowRight");
     await focusOn(names[1]!);
