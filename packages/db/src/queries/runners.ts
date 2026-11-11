@@ -316,6 +316,49 @@ export async function askRunnerToPush(
   );
 }
 
+/**
+ * The design's runner wrote something of a turn to the thread as of `now`: everything delivered
+ * before it has had its answer begun (docs/cloud.md, "A turn that never came").
+ */
+export async function noteRunnerSaid(
+  db: Db,
+  { designId, now }: { designId: string; now: Date },
+): Promise<void> {
+  await run(
+    db
+      .update(designRunners)
+      .set({
+        saidAt: sql`greatest(${designRunners.saidAt}, ${timeParam(now)}::timestamptz)`,
+      })
+      .where(eq(designRunners.designId, designId)),
+  );
+}
+
+/**
+ * Whether the design's runner has shown it is alive since `since`: it reported its state or took
+ * the lease, or claimed or acknowledged an event, by the API's clock. What a wake asks when the
+ * runner's `/health` does not answer through its address: a runner that is calling the API is
+ * up, whatever its address does.
+ */
+export async function runnerHeardSince(
+  db: Db,
+  { designId, since }: { designId: string; since: Date },
+): Promise<boolean> {
+  const after = sql`${timeParam(since)}::timestamptz`;
+  const result = await queryJson<{ heard: boolean }>(
+    db,
+    sql`
+      select json_build_object('heard',
+        exists (select 1 from design_runners r where r.design_id = ${designId} and r.heard_at >= ${after})
+        or exists (select 1 from events e join design_runners r on r.design_id = e.design_id
+                    where e.design_id = ${designId} and e.claimed_by = r.runner_id
+                      and (e.claimed_at >= ${after} or e.delivered_at >= ${after}))
+      ) as result
+    `,
+  );
+  return result?.heard ?? false;
+}
+
 /** The sleep the design's runner last said it was ready for, or null. */
 export async function getQuiescedFor(db: Db, designId: string): Promise<Date | null> {
   const [row] = await run(

@@ -1,7 +1,10 @@
 import {
+  appendThreadItemOnce,
   countSandboxRestart,
+  getDesign,
   hasHeldEvents,
   isSandboxKnown,
+  lapseEvents,
   listSandboxesToSweep,
   moveSandbox,
   revokeRunnerTokens,
@@ -10,9 +13,10 @@ import {
   showAgentWaiting,
   WAKING_LEASE_MS,
 } from "@ponzu/db";
+import type { ServerEvents } from "../analytics/events.ts";
 import type { JobDeps } from "../jobs/run.ts";
 import { AUTO_STOP_SECONDS, designSandboxes, sandboxLabels } from "./orchestrate.ts";
-import { stopSandbox } from "./quiesce.ts";
+import { runnerAddress, stopSandbox } from "./quiesce.ts";
 import { destroySandboxes, retireSandboxes } from "./retire.ts";
 import { startWake } from "./wake.ts";
 
@@ -37,7 +41,58 @@ const EXTEND_WITHIN_MS = 10 * 60_000;
 /** Restarts in a row of a runner that never answers before the sandbox is failed. */
 const MAX_RESTARTS = 3;
 
-export type SweepStep = "retire" | "sleep" | "stop" | "restart" | "repair" | "extend";
+/*
+ * A turn that never came (docs/cloud.md). An event that begins a turn and was delivered, so the
+ * Claude session holds it, is owed an answer until the runner writes anything of a turn
+ * (`design_runners.said_at`). While it is owed the sandbox does not sleep. It lapses, and the
+ * thread says so and the event goes in again as a copy (once; a copy that lapses says to send
+ * it again), when its runner says it is not working for two minutes, or says it is but has
+ * written nothing for fifteen. Both are counted from the delivery or from when the runner that
+ * holds it started, whichever is later, so a cold start or a long session's resume gets its own
+ * time. Two minutes is many times what a runner takes to write a turn's first item after the
+ * model's first token, which comes before it reports idle; fifteen is past the slowest first
+ * output of a model on a long session (a minute or so of reading the context, then thinking at
+ * the most effort), and past Claude Code's own ten-minute limit on a request.
+ */
+export const OWED_IDLE_MS = 2 * 60_000;
+export const OWED_SILENT_MS = 15 * 60_000;
+/**
+ * A runner that says it is working and has written nothing of the turn for an hour is stuck:
+ * its sandbox is started again cold and the thread says so. The runner's own watchdog stops a
+ * silent turn after twenty minutes and rewrites a long turn's item every few minutes, so this
+ * is for a runner older than that, or one that is wedged.
+ */
+export const STALLED_MS = 60 * 60_000;
+
+export type SweepStep =
+  | "retire"
+  | "sleep"
+  | "stop"
+  | "restart"
+  | "repair"
+  | "extend"
+  | "lapse"
+  | "stalled";
+
+/**
+ * Whether the design owes a turn: `wait` while the one it owes may still come (the sandbox stays
+ * awake), `lapse` once it is past waiting for, null when it owes none.
+ */
+export function owing(row: SweptSandbox, now: number): "wait" | "lapse" | null {
+  const newest = row.owed.at(-1);
+  if (!newest) return null;
+  const waited = now - Math.max(newest.deliveredAt.getTime(), row.runnerStartedAt?.getTime() ?? 0);
+  const starting = row.agentState === "working" || row.agentState === "waking";
+  if (waited >= OWED_SILENT_MS || (!starting && waited >= OWED_IDLE_MS)) return "lapse";
+  return "wait";
+}
+
+/** Whether the runner says it is working but has written nothing of the turn for too long. */
+function stalled(row: SweptSandbox, now: number): boolean {
+  if (row.agentState !== "working") return false;
+  const since = Math.max(row.saidAt?.getTime() ?? 0, row.runnerStartedAt?.getTime() ?? 0);
+  return now - since >= STALLED_MS;
+}
 
 /** What the sweep does with one sandbox now, or null for nothing. */
 export function stepFor(row: SweptSandbox, now: number, idleMs: number): SweepStep | null {
@@ -48,7 +103,11 @@ export function stepFor(row: SweptSandbox, now: number, idleMs: number): SweepSt
     if (!row.claudeUsable) return "stop";
     const heard = Math.max(sandbox.awakeSince?.getTime() ?? 0, row.heardAt?.getTime() ?? 0);
     if (heard < now - DEAD_AFTER_MS) return "restart";
-    if (sandbox.lastActivityAt.getTime() < now - idleMs) return "sleep";
+    const owes = owing(row, now);
+    if (owes === "lapse") return "lapse";
+    if (stalled(row, now)) return "stalled";
+    // A turn owed is work, whatever the runner reports: never slept on.
+    if (!owes && sandbox.lastActivityAt.getTime() < now - idleMs) return "sleep";
     if (!sandbox.autoStopAt || sandbox.autoStopAt.getTime() < now + EXTEND_WITHIN_MS) {
       return "extend";
     }
@@ -72,6 +131,8 @@ export async function sweepSandboxes(deps: JobDeps): Promise<SweepCounts> {
     restart: 0,
     repair: 0,
     extend: 0,
+    lapse: 0,
+    stalled: 0,
     orphaned: 0,
   };
   const rows = await listSandboxesToSweep(deps.db, { now: new Date(now) });
@@ -202,7 +263,120 @@ const STEPS: Record<SweepStep, Step> = {
     });
     return true;
   },
+
+  lapse: async (deps, row) => {
+    const { db, clock, log } = deps;
+    const { sandbox } = row;
+    const { designId } = sandbox;
+    const now = clock.now();
+    const lapsed = await lapseEvents(db, {
+      designId,
+      ids: row.owed.map((event) => event.id),
+      now: new Date(now),
+    });
+    if (lapsed.length === 0) return false;
+    const copies = lapsed.flatMap((event) => (event.copy ? [event.copy] : []));
+    const newest = row.owed.at(-1)!;
+    // Under the event's id, so a sweep that runs this twice says it once.
+    await appendThreadItemOnce(db, {
+      id: `ti_lapsed-${lapsed.at(-1)!.id}`,
+      designId,
+      kind: "notice",
+      payload: {
+        type: "error",
+        code: "turn_failed",
+        message: copies.length ? LAPSED_AGAIN : LAPSED_GIVE_UP,
+      },
+    });
+    const starting = row.agentState === "working" || row.agentState === "waking";
+    const fields = {
+      designId,
+      sandboxId: sandbox.id,
+      runnerId: row.runnerId,
+      events: lapsed.map((event) => event.id),
+      copies,
+      agentState: row.agentState,
+      deliveredMs: now - newest.deliveredAt.getTime(),
+      runnerMs: row.runnerStartedAt ? now - row.runnerStartedAt.getTime() : null,
+      saidMs: row.saidAt ? now - row.saidAt.getTime() : null,
+      heardMs: row.heardAt ? now - row.heardAt.getTime() : null,
+    };
+    log.warn("turn_lapsed", fields);
+    await captureAbout(deps, designId, "turn lapsed", {
+      kinds: lapsed.map((event) => event.kind),
+      sent_again: copies.length > 0,
+      agent_state: row.agentState,
+      waited_ms: fields.deliveredMs,
+    });
+    if (starting) {
+      // It says it is working and has said nothing in all this time: a warm resume would thaw
+      // the same stuck process, so it starts cold, and the copy is the next runner's.
+      if (!(await putToSleep(deps, sandbox, undefined, { claudeCredential: null }))) return true;
+      await startWake(deps, designId, "lapsed");
+      return true;
+    }
+    // An idle runner claims the copy at once; failing that, within the minute by itself.
+    await pokeRunner(deps, sandbox);
+    return true;
+  },
+
+  stalled: async (deps, row) => {
+    const { db, clock, log } = deps;
+    const { sandbox } = row;
+    const { designId } = sandbox;
+    const now = clock.now();
+    await appendThreadItemOnce(db, {
+      id: `ti_stalled-${row.runnerId ?? sandbox.id}`,
+      designId,
+      kind: "notice",
+      payload: { type: "error", code: "turn_failed", message: STALLED_SAID },
+    });
+    log.warn("turn_stalled", {
+      designId,
+      sandboxId: sandbox.id,
+      runnerId: row.runnerId,
+      saidMs: row.saidAt ? now - row.saidAt.getTime() : null,
+      runnerMs: row.runnerStartedAt ? now - row.runnerStartedAt.getTime() : null,
+    });
+    await captureAbout(deps, designId, "turn stalled", {});
+    if (!(await putToSleep(deps, sandbox, undefined, { claudeCredential: null }))) return false;
+    await startWake(deps, designId, "stalled");
+    return true;
+  },
 };
+
+/** What the thread says when an owed turn lapses and the event goes in again. */
+export const LAPSED_AGAIN =
+  "Claude was cut off before it answered this, so Ponzu is sending it again.";
+/** What it says when the copy lapsed too. */
+export const LAPSED_GIVE_UP = "Claude didn't get to this message. Send it again to try once more.";
+export const STALLED_SAID =
+  "Claude went quiet for an hour in the middle of this turn, so Ponzu restarted it. Send a message to pick it up again.";
+
+/** Ask the runner to claim now. A runner that does not answer claims within the minute anyway. */
+async function pokeRunner(deps: JobDeps, sandbox: SweptSandbox["sandbox"]): Promise<void> {
+  try {
+    const address = await runnerAddress(deps, sandbox);
+    if (address) await deps.poke(address);
+  } catch (error) {
+    deps.log.info("poke_missed", { designId: sandbox.designId, error });
+  }
+}
+
+/** An analytics event about the design's owner, under its workspace. Never fails the sweep. */
+async function captureAbout<E extends "turn lapsed" | "turn stalled">(
+  deps: JobDeps,
+  designId: string,
+  event: E,
+  properties: Omit<ServerEvents[E], "design_id">,
+): Promise<void> {
+  const design = await getDesign(deps.db, designId).catch(() => null);
+  if (!design) return;
+  deps.analytics.capture(event, { design_id: designId, ...properties } as ServerEvents[E], {
+    distinctId: design.ownerId,
+    workspaceId: design.workspaceId,
+  });
+}
 
 /**
  * Put an awake sandbox to sleep with an explicit stop, once its runner is ready for it or has

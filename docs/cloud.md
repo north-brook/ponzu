@@ -516,7 +516,7 @@ detection and no wake-on-request, so the API owns the lifecycle.
 | First run in a repo | Claude sets the checkout up itself. The result is saved as the repo's base so later designs start warm. |
 | Run | Ops go to the API as they happen. Commits go to the branch as they happen, and at the end of each turn the runner pushes whatever the agent left unpushed ("Git"). After each turn the runner saves a checkpoint: the session's transcript and the checkout's uncommitted work ("Saving the sandbox"). |
 | Sleep | Five minutes after the last activity the API stops the sandbox: it asks the runner to get ready (finish the turn, settle, checkpoint, `sync`), waits up to 30 seconds for it, runs `sync` itself, then stops. A stop keeps the disk; memory survives for about ten minutes. |
-| Wake | A message, answer or comment resumes it. Cold, the runner restarts as a systemd service; warm, the API checks `/health` and starts the unit again if it is down. A disk behind the last checkpoint is restored from it; then the runner resumes the Claude session and takes its pending events. |
+| Wake | A message, answer or comment resumes it. Cold, the runner restarts as a systemd service; warm, the API checks `/health`, and whether the runner has called in since the thaw, and starts the unit again only if neither says it is up. A disk behind the last checkpoint is restored from it; then the runner resumes the Claude session, picks up a turn the last process left unfinished, and takes its pending events. |
 | Settle | On merge the design settles and its sandbox is destroyed. |
 | Lost | A sandbox that cannot be resumed is recreated from the branch and the base, and its runner restores the last checkpoint: the conversation and the uncommitted work come back. |
 
@@ -554,8 +554,9 @@ one-minute cron finishes anything a function did not (`apps/api/src/sandboxes`).
 - **The image** is `PONZU_SANDBOX_SNAPSHOT`, the name `apps/runner/image/bake.ts` prints. Unset,
   a wake fails saying so. A sandbox made from another image is moved onto this one at its next
   wake ("How images roll out").
-- **Sleep.** The runner's heartbeat while `working`, and anything a person does to the design,
-  keeps the sandbox awake. The cron stops one idle for `PONZU_SANDBOX_IDLE_SECONDS` (300) with
+- **Sleep.** The runner's heartbeat while `working` (which it is from the moment it puts a message
+  in, "Waking up" included), a turn the design is owed ("A turn that never came"), and anything a
+  person does to the design keep the sandbox awake. The cron stops one idle for `PONZU_SANDBOX_IDLE_SECONDS` (300) with
   an explicit stop, and keeps the provider's own auto-stop 20 minutes ahead while awake as a
   safety net. A runner unheard from for 90 seconds is dead: the sandbox is stopped and woken on
   a new environment, and after three restarts in a row with nothing heard it is `failed`.
@@ -583,12 +584,21 @@ one-minute cron finishes anything a function did not (`apps/api/src/sandboxes`).
   the poke rather than at the next heartbeat.
 - **A warm resume and a stopped runner.** A warm resume thaws the boot as it was, so a runner
   that had exited stays exited. After every warm resume the API asks `/health` through the
-  stored address (3 seconds); when it does not answer, it reads the design again and, unless it
-  was settled or deleted meanwhile, runs `sudo systemctl start ponzu-runner` through the
-  provider and looks again for 15 seconds. If that fails it runs `sync` (a health check can fail
-  for the address alone, with the runner writing), stops the sandbox and resumes it on a new
-  environment, which is always a cold start, and revokes the token it had. The same check runs
-  after a resume that found the machine already running. One attempt of a wake keeps to 260
+  stored address (3 seconds). A runner is up when it answers, or when it has called the API since
+  the resume began (a state report, a claim or an ack, `runnerHeardSince`): a health check can
+  fail for the address alone, with the runner working, and that is logged
+  (`runner_health_unreachable`, with the address's host and what each look got: a status, or
+  the error, and how long) and nothing more is done. When neither, it reads the design again
+  and, unless it was settled or deleted meanwhile, runs `sudo systemctl start ponzu-runner`
+  through the provider and looks again for 15 seconds, still counting a call from the runner as
+  up. If that fails (`runner_revive_failed`, with the looks) it runs `sync`, stops the sandbox
+  and resumes it on a new environment, which is always a cold start, and revokes the token it
+  had. The same check runs after a resume that found the machine already running. On
+  2026-11-11 the thawed runner claimed and acknowledged a message within three seconds while its
+  address answered no `/health` for eighteen; the wake, going by the health check alone, stopped
+  the machine under the turn that had just begun, and the cold start's runner, finding the
+  message in the session, had nothing to deliver. Why the address did not answer is not known:
+  the looks are logged now for the next time. One attempt of a wake keeps to 260
   of its function's 300 seconds (`quiesce.ts` adds the waits up): with too little left for the
   unit's start and a cold start after it, it goes cold at once; with too little for the cold
   start, the job tries again. A runner that
@@ -978,6 +988,63 @@ There is no watch loop. The local app told agents to poll for comments; in the c
 that would be a model turn a minute and a sandbox that never sleeps. Events arrive
 as turns instead, and `wait_for_activity` is gone.
 
+### A turn that never came
+
+An event is acknowledged once the Claude session holds it, and from then on no claim hands it
+out again. That leaves one way to lose it: the session holds the message and the turn it began
+never finishes, because the process was killed under it (2026-11-11: a wake stopped a thawed
+sandbox whose runner had just taken a message, "A warm resume and a stopped runner"), or Claude
+Code died, or the turn hung. A resumed Claude Code whose transcript ends on a message it never
+answered waits for another; the next runner finds the message in the session and has nothing to
+deliver. The person was left looking at their own message, with no working line and no error,
+and the sweep put the sandbox to sleep on top of it. Two things now see to it, and either alone is
+enough.
+
+**The runner picks it up** (`apps/runner/src/inflight.ts`). When Claude Code takes a message in,
+the runner writes what it took (its uuid and event) to `~/.ponzu/turn.json`, flushed, and clears
+it at the turn's result, unless its own shutdown cut the turn off. A runner that starts (or starts
+Claude Code again after it died) and finds it, with the resumed session holding that message, says
+so in the thread (`turn_failed`, "Claude was cut off before it finished this, and is picking it
+back up"), puts in a word to the agent that its last turn was cut off and to carry on, and reports
+`working` at once. A turn is picked up twice at most; the third time the thread asks the person
+to send it again. A message the session does not hold was never delivered, and the claim brings it
+back; a session that is gone is the API's to send again. A turn the runner interrupts to sleep
+says so already and is not picked up. And a turn in which Claude Code says nothing at all for 20
+minutes (no stream, no tool's result, no subagent's step: past its own ten-minute limits on a
+request and on a command) is stuck: the runner interrupts it and says so, and if it is still
+stuck a turn later, starts Claude Code again. A long turn's item is written again every five
+minutes while Claude Code is busy, so the API sees it go on.
+
+**The API notices it, whatever the runner** (`apps/api/src/sandboxes/sweep.ts`). A runner thread
+write that says anything of a turn (the agent's text, a turn's work, a question, a stop, an error
+of a turn; not `waking`, `resumed` or `started`, nor `clone_failed` or `push_failed`) moves
+`design_runners.said_at` on, and so does a usage report of a finished turn (`POST
+/v1/runner/usage` with a `turn`), which every runner sends, so a turn that answered without
+writing anything is not taken for one that never came. An event that begins a turn (`message`,
+`answer`, `comment`, `check`, `review`, priority `now` or `next`) delivered after it is owed one,
+by the API's clock, which `delivered_at` and `claimed_at` are now kept by too, unless a person's
+stop came after it: a turn stopped while it was starting writes nothing, and is not sent again. While a design owes a turn its sandbox is not
+put to sleep. The owed events lapse when the runner says it is not working for two minutes, or
+says it is but has written nothing for fifteen, both counted from the newest delivery or from when
+the runner that holds the lease started, whichever is later, so a cold start or a long session's
+resume has its own time. Two minutes is many times what a runner takes to write a turn's first
+item once the model's first token is in, which comes before it would report idle; fifteen is
+past the slowest first output of a model on a long session. A lapse marks the events
+(`events.lapsed_at`), writes an error notice in the thread under the newest one's id
+(`ti_lapsed-<event>`: "Claude was cut off before it answered this, so Ponzu is sending it
+again."), and puts each in the feed again as a copy under a new id with `payload.retryOf`
+naming it, which the next claim hands out and every runner, old or new, puts into the session as
+a message it has not seen. A copy that lapses too is not copied again: the thread says to send it
+again. The sweep then pokes an idle runner, or, for one that said it was working all along,
+stops the sandbox and starts it cold, since a warm resume would thaw the same stuck process. A
+runner that says it is working and has written nothing of the turn for an hour is stuck the same
+way: the thread says so (`ti_stalled-<runner>`) and the sandbox starts cold. Each lapse is logged
+(`turn_lapsed`: the events, the copies, the agent's state, how long since the delivery, the
+runner's start, its last word and its last report) and captured (`turn lapsed`, `turn
+stalled`). A runner that is picking up a turn acknowledges the API's copy of it without putting
+it in. Everything delivered before this was deployed counts as answered (the migration sets
+`said_at`).
+
 ### Needs you
 
 When Claude asks a question, wants a secret, or hands off a link, the runner writes
@@ -1201,7 +1268,10 @@ or its uuid came back on a reply), or, for an answer, the question's tool result
 Until Claude Code has said which session that is, those acks wait. Each event's message goes
 in under a uuid derived from the event's id, so the transcript says which events it holds: a
 runner that starts again reads it before it delivers anything, and acknowledges, without
-delivering again, whatever was taken before the last one died. Some are acknowledged without
+delivering again, whatever was taken before the last one died; a turn that died with it is picked
+up ("A turn that never came"). A copy the API sent again (`payload.retryOf`, any kind) is always
+put in, whatever the session holds of what it repeats, with a first line saying it was sent
+before; a runner already picking up the turn it repeats acknowledges it without putting it in. Some are acknowledged without
 going in, with `claudeSessionId` null when nothing else in the batch went in: a stop once its
 interrupt is sent; what a stop cancelled; a kind this runner does not know; and a message
 Claude Code turned away (a repo's `UserPromptSubmit` hook), which would only be turned away
@@ -1219,7 +1289,9 @@ assistant   { text }                    markdown, streams                 the ru
 tool        { label, steps, artboards, turn? }  one turn's work (below)   the runner
 notice      { type: "waking" | "resumed" | "started" }                    the runner
             { type: "question", questionId, header, text }                the runner
-            { type: "error", code, message }                              the runner
+            { type: "error", code, message }                              the runner, and the
+                                                                          API for a turn that
+                                                                          never came
             { type: "stopped", by: Person | null }                        the API, from the runner's
                                                                           { type: "stopped", eventId }
             { type: "pull_request", number, url, title, state }           the API
@@ -1289,7 +1361,8 @@ An `assistant` item cut off by an interrupt is finished with the text it had. `e
 `clone_failed`, `claude_auth`, `claude_limit`, `model_unavailable`, `max_turns`, `turn_failed`,
 `agent_exited`, `message_refused`, `question_failed`, `push_failed` (the runner gave up pushing
 the branch; its message says why and what to do, in Ponzu's words, once for a commit and a
-reason). The `waking` notice becomes `resumed` or
+reason). The API writes `turn_failed` itself, under `ti_lapsed-<event>` or `ti_stalled-<runner>`,
+for a turn that never came. The `waking` notice becomes `resumed` or
 `started` once Claude Code is up. A `pull_request` notice is written once for each pull request
 opening, merging and closing, under an id of its own (`ti_pr-<number>-opened`, `-merged`,
 `-closed`) that no runner can write, whichever of a route and a webhook sees it first.
@@ -1562,7 +1635,8 @@ report now, and only the API's answer to that report can say the sandbox is goin
 API asks for one when it starts a stop. While the runner holds a sleep, a poke makes it ask for a
 report too, which is how a warm wake (which only pokes) reaches it. `GET /health` answers
 `{ "ok": true, "state": "working" | "needs_you" | "idle" }`, and the API reads it after a warm
-resume.
+resume, with what each look got (a status, or the error) for its log; it is not the only sign
+of a runner that is up ("A warm resume and a stopped runner").
 
 ### Environment
 

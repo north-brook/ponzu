@@ -3,6 +3,7 @@ import type { Db } from "../client.ts";
 import type { PrState } from "../enums.ts";
 import { newId } from "../ids.ts";
 import { designRunners, designs, events, type Json, users } from "../schema/index.ts";
+import { queryJson, timeParam } from "./json.ts";
 import { run } from "./run.ts";
 import { scrubbed } from "./text.ts";
 
@@ -102,6 +103,17 @@ export function personOf(
     : null;
 }
 
+/** `now` as a statement's time, or the database's own clock when there is none. */
+function at(now: Date | undefined) {
+  return now ? sql`${timeParam(now)}::timestamptz` : sql`now()`;
+}
+
+/**
+ * The kinds of event that begin a turn the agent owes a person an answer for, as a `now` or
+ * `next` event. A stop and a push are put into nothing, and an edit never starts a turn.
+ */
+export const TURN_KINDS = ["message", "answer", "comment", "check", "review"] as const;
+
 /** Whether `runnerId` holds `designId`'s lease, as a condition of the statement it is in. */
 function leaseHeld(db: Db, designId: string, runnerId: string) {
   const leased = db
@@ -133,7 +145,15 @@ export async function claimEvents(
     runnerId,
     claimId,
     limit = 100,
-  }: { designId: string; runnerId: string; claimId: string; limit?: number },
+    now,
+  }: {
+    designId: string;
+    runnerId: string;
+    claimId: string;
+    limit?: number;
+    /** The API's clock, which the wake compares a claim with; the database's when absent. */
+    now?: Date;
+  },
 ): Promise<{
   events: ClaimedEvent[];
   seq: number;
@@ -171,7 +191,7 @@ export async function claimEvents(
     db
       .with(waiting)
       .update(events)
-      .set({ claimedAt: sql`now()`, claimedBy: runnerId, claimId })
+      .set({ claimedAt: at(now), claimedBy: runnerId, claimId })
       .where(inArray(events.id, db.select({ id: waiting.id }).from(waiting)))
       .returning(),
   );
@@ -196,6 +216,7 @@ export async function claimEvents(
           claimedBy: claimed.claimedBy,
           claimId: claimed.claimId,
           deliveredAt: claimed.deliveredAt,
+          lapsedAt: claimed.lapsedAt,
         },
         user: { id: users.id, name: users.name, githubLogin: users.githubLogin },
       })
@@ -231,7 +252,18 @@ export async function markEventsDelivered(
     runnerId,
     ids,
     claudeSessionId = null,
-  }: { designId: string; runnerId: string; ids: string[]; claudeSessionId?: string | null },
+    now,
+  }: {
+    designId: string;
+    runnerId: string;
+    ids: string[];
+    claudeSessionId?: string | null;
+    /**
+     * The API's clock, which the sweep weighs a delivered event's wait for its turn by (against
+     * `design_runners.said_at`); the database's when absent.
+     */
+    now?: Date;
+  },
 ): Promise<number> {
   const session = db.$with("session").as(
     db
@@ -254,7 +286,7 @@ export async function markEventsDelivered(
     db
       .with(session)
       .update(events)
-      .set({ deliveredAt: sql`now()` })
+      .set({ deliveredAt: at(now) })
       .where(
         and(
           eq(events.designId, designId),
@@ -314,4 +346,54 @@ export async function hasHeldEvents(db: Db, designId: string): Promise<boolean> 
       .limit(1),
   );
   return row !== undefined;
+}
+
+/** An event the API stopped waiting on a turn for, and the copy that puts it in again, if any. */
+export interface LapsedEvent {
+  id: string;
+  kind: DesignEvent["kind"];
+  /** The event it is itself a copy of, when it is one: such a one is not put in again. */
+  retryOf: string | null;
+  /** The copy put in the feed for it, or null when it was a copy already. */
+  copy: string | null;
+}
+
+/**
+ * Give up waiting for the turn these delivered events were owed (docs/cloud.md, "A turn that
+ * never came"), in one statement: each is marked lapsed, and each that is not itself a copy is
+ * put in the feed again as a copy with a new id (`payload.retryOf` naming it), which no runner
+ * has seen, so the next claim hands it out and the runner puts it into the session as new. Only
+ * events not lapsed already are touched, so of two sweeps one does it. Answers what it lapsed.
+ */
+export async function lapseEvents(
+  db: Db,
+  { designId, ids, now }: { designId: string; ids: string[]; now: Date },
+): Promise<LapsedEvent[]> {
+  if (ids.length === 0) return [];
+  const pairs = JSON.stringify(ids.map((id) => ({ id, copy: newId("evt") })));
+  const result = await queryJson<{ rows: LapsedEvent[] }>(
+    db,
+    sql`
+      with pairs as (
+        select p.id, p.copy from json_to_recordset(${pairs}::json) as p(id text, copy text)
+      ), lapsed as (
+        update events e set lapsed_at = ${timeParam(now)}::timestamptz
+         where e.design_id = ${designId} and e.id in (select id from pairs)
+           and e.lapsed_at is null and e.delivered_at is not null
+        returning e.*
+      ), copies as (
+        insert into events (id, design_id, kind, priority, payload, user_id, posthog_session_id)
+        select p.copy, l.design_id, l.kind, l.priority,
+               l.payload || jsonb_build_object('retryOf', l.id), l.user_id, l.posthog_session_id
+          from lapsed l join pairs p on p.id = l.id
+         where l.payload->>'retryOf' is null
+        returning id, payload->>'retryOf' as of
+      )
+      select json_build_object('rows', coalesce(json_agg(json_build_object(
+        'id', l.id, 'kind', l.kind, 'retryOf', l.payload->>'retryOf', 'copy', c.id
+      ) order by l.seq), '[]'::json)) as result
+        from lapsed l left join copies c on c.of = l.id
+    `,
+  );
+  return result?.rows ?? [];
 }

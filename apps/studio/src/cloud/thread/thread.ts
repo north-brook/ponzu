@@ -16,6 +16,12 @@ const said = (item: ThreadItem | undefined): item is Said =>
   item?.kind === "message" || item?.kind === "comment";
 const isTurn = (item: ThreadItem): item is Work & { payload: { turn: TurnRecord } } =>
   item.kind === "tool" && !!item.payload.turn;
+/** What the run says of itself while it starts: no line of its own, and no answer to anyone. */
+const starting = (item: ThreadItem): boolean =>
+  item.kind === "notice" &&
+  (item.payload.type === "waking" ||
+    item.payload.type === "resumed" ||
+    item.payload.type === "started");
 
 /** One line of the thread as the rail draws it. */
 export interface ThreadRow {
@@ -98,11 +104,7 @@ function live(turn: Turn, agent: AgentActivity | undefined): boolean {
  * request, a stop or an error).
  */
 export function threadRows(items: ThreadItem[], agent?: AgentActivity): ThreadRow[] {
-  const shown = items.filter((item) => {
-    if (item.kind !== "notice") return true;
-    const { type } = item.payload;
-    return type !== "waking" && type !== "resumed" && type !== "started";
-  });
+  const shown = items.filter((item) => !starting(item));
   const { before, turns } = turnsOf(shown);
   const out: ThreadItem[] = [...before];
   const asides = new Set<string>();
@@ -212,9 +214,10 @@ export function workingLine(
     if (lastTurn && !lastTurn.streaming && !after.some(said)) return null;
     return agent.status?.trim() || "Thinking";
   }
-  // Idle as far as the head knows, but a person has just sent something it hasn't taken yet.
+  // Idle as far as the head knows, but a person has just sent something it hasn't taken yet. A
+  // runner's own word that it started (`waking`, `resumed`, `started`) is no answer to it.
   const lastAgent = items.findLast(
-    (i) => i.kind === "assistant" || i.kind === "tool" || i.kind === "notice",
+    (i) => i.kind === "assistant" || i.kind === "tool" || (i.kind === "notice" && !starting(i)),
   );
   const lastSaid = items.findLast(said);
   if (!lastSaid || (lastAgent && lastAgent.seq > lastSaid.seq)) return null;
