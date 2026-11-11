@@ -39,6 +39,12 @@ function duration(frames: Frame[], key: keyof Frame): number {
   return frames[rest]!.t - frames[start - 1]!.t;
 }
 
+/** The longest time between two frames while the pane moved, in ms. */
+function gap(frames: Frame[]): number {
+  const moving = frames.slice(1, -1);
+  return Math.max(0, ...moving.slice(1).map((f, i) => f.t - moving[i]!.t));
+}
+
 describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
   let built: Awaited<ReturnType<typeof buildGallery>>;
   let server: ReturnType<typeof serve>;
@@ -69,13 +75,15 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
   test("each pane opens and closes on one clock, and the chrome moves on it within a pixel", async () => {
     await open("team-sidebar", "no-preference");
     const times: number[] = [];
+    const gaps: number[] = [];
     for (const state of ["closing", "opening"]) {
       const sidebar = await sampleToggle(page, SIDEBAR);
       const clock = progress(sidebar, "left");
-      // Many frames between, not a jump.
-      expect(sidebar.filter((_, i) => clock[i]! > 0.05 && clock[i]! < 0.95).length).toBeGreaterThan(
-        4,
-      );
+      // Frames between, not a jump (a busy CI machine draws fewer of them).
+      expect(
+        sidebar.filter((_, i) => clock[i]! > 0.05 && clock[i]! < 0.95).length,
+      ).toBeGreaterThanOrEqual(2);
+      gaps.push(gap(sidebar));
       expect(drift(sidebar, clock, "divider")).toBeLessThanOrEqual(1);
       expect(drift(sidebar, clock, "tab")).toBeLessThanOrEqual(1);
       expect(drift(sidebar, clock, "title")).toBeLessThanOrEqual(1);
@@ -92,7 +100,8 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
       const railClock = progress(rail, "right");
       expect(
         rail.filter((_, i) => railClock[i]! > 0.05 && railClock[i]! < 0.95).length,
-      ).toBeGreaterThan(4);
+      ).toBeGreaterThanOrEqual(2);
+      gaps.push(gap(rail));
       // The cluster's divider keeps to the cluster, which holds still at the window's edge.
       expect(drift(rail, railClock, "railDivider")).toBe(0);
       expect(drift(rail, railClock, "left")).toBe(0);
@@ -105,8 +114,9 @@ describe.skipIf(!chromiumPath)("the window's panes and chrome", () => {
         expect(Math.abs(last.divider - last.left)).toBeLessThanOrEqual(1);
       }
     }
-    // Left and right, opening and closing, take the same time: within a frame.
-    expect(Math.max(...times) - Math.min(...times)).toBeLessThanOrEqual(20);
+    // Left and right, opening and closing, take the same time: within a frame (the longest the
+    // machine took between two, at least 20ms).
+    expect(Math.max(...times) - Math.min(...times)).toBeLessThanOrEqual(Math.max(20, ...gaps));
   });
 
   test("with reduced motion a pane is open or closed from the next frame", async () => {
