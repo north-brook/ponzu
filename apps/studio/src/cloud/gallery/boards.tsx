@@ -89,6 +89,25 @@ export const BOARDS: Record<string, () => ReactNode> = {
       <CreateHarness initialPrompt={ONBOARDING_PROMPT} />
     </Harness>
   ),
+  "pick-a-project-scratch": () => (
+    <Harness designs={f.soloDesigns} openId={null}>
+      <CreateHarness initialPrompt={ONBOARDING_PROMPT} initialProject={{ kind: "scratch" }} />
+    </Harness>
+  ),
+  "pick-a-project-one-repo": () => (
+    <Harness designs={f.soloDesigns} openId={null}>
+      <CreateHarness
+        initialPrompt={ONBOARDING_PROMPT}
+        initialProject={{ kind: "repo", repo: f.oneRepo[0]! }}
+        repos={f.oneRepo}
+      />
+    </Harness>
+  ),
+  "pick-a-project-many-repos": () => (
+    <Harness designs={f.soloDesigns} openId={null}>
+      <CreateHarness initialPrompt={ONBOARDING_PROMPT} repos={f.manyRepos} />
+    </Harness>
+  ),
   "fresh-start": () => (
     <Harness designs={f.teamDesigns} openId={null}>
       <CreateHarness ideas={f.ideas} />
