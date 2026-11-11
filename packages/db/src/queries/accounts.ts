@@ -49,8 +49,12 @@ export interface GithubProfile {
  * person a new id (their user there was deleted and made again, or their GitHub email
  * changed), so a known GitHub id arriving under a new WorkOS id is the same person and takes
  * the new id. It throws only if that WorkOS id already belongs to a different GitHub account.
+ * `created` says whether this made the row: the person's sign-up.
  */
-export async function upsertUser(db: Db, profile: GithubProfile): Promise<User> {
+export async function upsertUser(
+  db: Db,
+  profile: GithubProfile,
+): Promise<User & { created: boolean }> {
   const [user] = await run(
     db
       .insert(users)
@@ -65,7 +69,8 @@ export async function upsertUser(db: Db, profile: GithubProfile): Promise<User> 
           avatarUrl: profile.avatarUrl,
         },
       })
-      .returning(),
+      // An inserted row has no deleting transaction; an updated one has this one's.
+      .returning({ ...getTableColumns(users), created: sql<boolean>`(xmax = 0)` }),
   );
   return user!;
 }

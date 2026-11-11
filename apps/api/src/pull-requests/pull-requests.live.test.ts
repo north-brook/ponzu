@@ -31,6 +31,7 @@ import {
   repos,
 } from "@ponzu/db";
 import { systemClock } from "@ponzu/sandbox";
+import { noAnalytics } from "../analytics/analytics.ts";
 import { createGithub, type Github } from "../deps/github.ts";
 import type { Config } from "../deps/index.ts";
 import type { ObjectStorage } from "../deps/storage.ts";
@@ -66,6 +67,7 @@ describe.skipIf(!configured)("a design's pull request on GitHub, for real", () =
     clock: systemClock,
     vault: createVault({ key: env.PONZU_VAULT_KEY ?? "" }),
     log: createLogger(() => {}),
+    analytics: noAnalytics,
     background: (_name: string, work: Promise<unknown>) => {
       background.push(work.catch(() => {}));
     },

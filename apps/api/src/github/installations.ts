@@ -23,7 +23,7 @@ import type { Deps } from "../deps/index.ts";
  * see `syncGithub`.
  */
 
-type ReconcileDeps = Pick<Deps, "db" | "clock" | "github" | "log">;
+type ReconcileDeps = Pick<Deps, "db" | "clock" | "github" | "log" | "analytics">;
 
 /** All it takes to read an installation's account and repo list. */
 const READ_REPOSITORIES = { metadata: "read" } as const;
@@ -47,9 +47,16 @@ const SWEEP_AFTER_MS = 6 * 3600_000;
  * installer and never replaces a known one. Safe to run any number of times, at once.
  */
 export async function reconcileInstallation(
-  { db, clock, github, log }: ReconcileDeps,
+  { db, clock, github, log, analytics }: ReconcileDeps,
   installationId: number,
-  { installedByUserId = null }: { installedByUserId?: string | null } = {},
+  {
+    installedByUserId = null,
+    reposChanged = false,
+  }: {
+    installedByUserId?: string | null;
+    /** GitHub said the repos the installation reaches changed: said in analytics once read. */
+    reposChanged?: boolean;
+  } = {},
 ): Promise<Workspace | null> {
   const readAt = new Date(clock.now());
   const installation = await github.getInstallation(installationId);
@@ -60,9 +67,19 @@ export async function reconcileInstallation(
   const reachChanged = async () => {
     if (before) await markRepoAccessStale(db, { workspaceId: before.id });
   };
+  const disconnected = (reason: "uninstalled" | "suspended") => {
+    if (before?.installationId === installationId && before.suspendedAt === null) {
+      analytics.capture(
+        "workspace disconnected",
+        { workspace_id: before.id, reason },
+        { distinctId: null, workspaceId: before.id },
+      );
+    }
+  };
   if (!installation) {
     await markWorkspaceUninstalled(db, installationId);
     await reachChanged();
+    disconnected("uninstalled");
     return null;
   }
   if (installation.suspendedAt) {
@@ -72,6 +89,7 @@ export async function reconcileInstallation(
       reconciledAt: readAt,
     });
     if (before?.suspendedAt === null) await reachChanged();
+    disconnected("suspended");
     return suspended;
   }
 
@@ -127,6 +145,32 @@ export async function reconcileInstallation(
   if (await wasUninstalled(db, installationId)) {
     await markWorkspaceUninstalled(db, installationId);
     return null;
+  }
+  const kind = workspace.kind === "org" ? "organization" : "user";
+  analytics.group({
+    workspaceId: workspace.id,
+    name: account.login,
+    kind,
+    repos: repositories.items.length,
+    repositorySelection: installation.repositorySelection,
+  });
+  // Connected: an account Ponzu had no workspace for, or one that had lost the App or had it
+  // suspended. Whoever installed it is who it is about, when Ponzu knows them.
+  if (!before || before.installationId !== installationId || before.suspendedAt !== null) {
+    analytics.capture(
+      "workspace connected",
+      { workspace_id: workspace.id, kind, repos: repositories.items.length },
+      {
+        distinctId: installedByUserId ?? workspace.installedByUserId ?? null,
+        workspaceId: workspace.id,
+      },
+    );
+  } else if (reposChanged) {
+    analytics.capture(
+      "repo access changed",
+      { workspace_id: workspace.id, repos: repositories.items.length },
+      { distinctId: null, workspaceId: workspace.id },
+    );
   }
   return workspace;
 }

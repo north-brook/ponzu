@@ -943,7 +943,9 @@ RunnerSession = {
   theme: "light" | "dark" | null,                // the owner's canvas, once known
   openQuestions: string[],                       // still open from an earlier run
   seq,                                           // the design's head
-  saved: SavedPoint | null                       // the last checkpoint ("Checkpoints")
+  saved: SavedPoint | null,                      // the last checkpoint ("Checkpoints")
+  workspaceId,                                   // the design's workspace
+  analytics: { key, host, content } | null       // where turns are traced (docs/analytics.md)
 }
 ```
 
@@ -954,9 +956,13 @@ answers come in as messages (Questions).
 ### Events
 
 ```
-RunnerEvent = { id, seq, at, priority: "now" | "next" | "later", from: Person | null, kind, payload }
+RunnerEvent = { id, seq, at, priority: "now" | "next" | "later", from: Person | null,
+                posthogSessionId: string | null, kind, payload }
 Person      = { id, name, login }
 ```
+
+`posthogSessionId` is the PostHog session of the app that sent it, when it said: the turn the
+event begins is traced under it (docs/analytics.md).
 
 | Kind | Priority | Payload | Into the run |
 |---|---|---|---|
@@ -1175,13 +1181,19 @@ recording it again changes nothing:
 
 ```
 TurnUsage = { id, claudeSessionId, at,
-              models: [{ model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, costUsd }] }
+              models: [{ model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, costUsd }],
+              turn?: { startedAt, outcome: "completed" | "failed" | "stopped", errorCode,
+                       durationMs, toolCalls, eventId } }
 ```
 
 Claude Code reports a session's running totals; the runner sends the difference from the
 totals the last turn reported, which it keeps on disk across restarts. After a crash Claude
 Code restores the totals it saved at its last clean exit, and a turn that would come out
 below zero counts as zero.
+
+`turn` is how the turn went, sent for every turn the runner sees end, used or not: the API
+captures it as "turn started" and "turn finished" (docs/analytics.md), about the person whose
+event (`eventId`) began it, as that event's row says.
 
 ### People's side
 
@@ -1892,6 +1904,15 @@ area can be declared for people or for runners; opening a route to anyone is
 said on that route and nowhere else. Errors leave the API as
 `{ error: { code, message, details? } }` with a stable code and nothing of the
 failure itself; logs carry ids and outcomes, never tokens, bodies or headers.
+
+## Analytics
+
+PostHog, one project per environment ("Ponzu Dev" for dev, "Ponzu" for production), switched on
+by setting `PONZU_POSTHOG_KEY` and off without it. The API captures what happens on the server
+(`apps/api/src/analytics/`), sends unexpected errors to error tracking, and traces the model
+calls it makes; each design's runner traces the agent's turns in LLM analytics; the apps capture
+what only they know and record sessions. The rules both sides keep, the event catalogue and what
+is never sent are in [analytics.md](analytics.md).
 
 ## Environments
 

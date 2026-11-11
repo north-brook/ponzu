@@ -20,6 +20,7 @@ import { agentShell } from "./save/shell.ts";
 import { Transcripts } from "./save/transcripts.ts";
 import { GitWork, gitIn, ScratchWork } from "./save/work.ts";
 import { serve, serveCredentials } from "./server.ts";
+import { posthogTelemetry } from "./telemetry.ts";
 import { VERSION } from "./version.ts";
 
 /**
@@ -138,6 +139,8 @@ const runner = new Runner({
   },
   boot,
   log,
+  // Each turn's trace, to PostHog, when the API's session says analytics is on.
+  telemetry: (config) => posthogTelemetry(config, { log }),
   event: (name, fields) => log(JSON.stringify({ event: name, designId: env.designId, ...fields })),
   onFatal: () => {
     server.stop();

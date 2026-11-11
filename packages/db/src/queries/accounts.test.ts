@@ -60,6 +60,9 @@ describe("upsertUser", () => {
     expect(second.id).toBe(first.id);
     expect(second).toMatchObject({ githubLogin: "bryce", name: null, email: "bryce@example.com" });
     expect(second.createdAt).toEqual(first.createdAt);
+    // The first made the row (their sign-up); the second found it.
+    expect(first.created).toBe(true);
+    expect(second.created).toBe(false);
   });
 
   test("a GitHub account that arrives under a new WorkOS id is the same person", async () => {
