@@ -1,29 +1,29 @@
-ground div rgb(238, 237, 233)
+ground div rgb(244, 243, 240)
 ground span rgb(255, 95, 87)
 ground span rgb(254, 188, 46)
 ground span rgb(40, 200, 64)
-icon svg[Toggle sidebar] 16×16 rgb(94, 91, 84) stroke 1.7px
+icon svg[Toggle sidebar] 16×16 rgb(86, 83, 77) stroke 1.7px
 ground span rgba(17, 17, 16, 0.1)
 ground button[Pages] rgb(255, 255, 255) shadow rgba(0, 0, 0, 0) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.08) 0px 1px 2px 0px
 icon svg[Pages] 14×14 rgb(63, 61, 57) stroke 1.7px
 text "Home" rgb(17, 17, 16) 500 13px Inter
-icon svg[Pages] 14×14 rgb(94, 91, 84) stroke 1.7px
-text "Product" rgb(94, 91, 84) 400 13px Inter
-icon svg[Pages] 14×14 rgb(94, 91, 84) stroke 1.7px
-text "Care cards" rgb(94, 91, 84) 400 13px Inter
+icon svg[Pages] 14×14 rgb(86, 83, 77) stroke 1.7px
+text "Product" rgb(86, 83, 77) 400 13px Inter
+icon svg[Pages] 14×14 rgb(86, 83, 77) stroke 1.7px
+text "Care cards" rgb(86, 83, 77) 400 13px Inter
 icon svg[New page] 14×14 rgb(169, 165, 155) stroke 1.9px
 ground span rgba(17, 17, 16, 0.1)
-text "#412" rgb(94, 91, 84) 400 11px IBM Plex Mono
+text "#412" rgb(86, 83, 77) 400 11px IBM Plex Mono
 icon svg[Pull request #412] 11×11 rgb(128, 124, 115) stroke 2px
 icon svg[Checks passed] 10×10 rgb(128, 124, 115) stroke 2.6px
 text "Merge" rgb(255, 255, 255) 600 12px Inter
 ground button rgb(17, 17, 16)
 icon svg 13×13 rgb(255, 255, 255) stroke 2px
-icon svg[Thread] 16×16 rgb(94, 91, 84) stroke 1.7px
+icon svg[Thread] 16×16 rgb(86, 83, 77) stroke 1.7px
 text "Personal" rgb(17, 17, 16) 600 13px Inter
 icon svg[Workspace: Personal] 11×11 rgb(128, 124, 115) stroke 2.2px
-icon svg[Search] 15×15 rgb(94, 91, 84) stroke 1.7px
-icon svg[Filter] 15×15 rgb(94, 91, 84) stroke 1.9px
+icon svg[Search] 15×15 rgb(86, 83, 77) stroke 1.7px
+icon svg[Filter] 15×15 rgb(86, 83, 77) stroke 1.9px
 icon svg[New design] 15×15 rgb(63, 61, 57) stroke 1.7px
 ground button[Quieter shop hero, fernwood, pz/hero-re…] rgb(255, 255, 255)
 ground span[Quieter shop hero, fernwood, pz/hero-re…] rgba(17, 17, 16, 0.05) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
@@ -73,7 +73,7 @@ text "lenny" rgb(169, 165, 155) 400 11px IBM Plex Mono
 text "Support inbox triage" rgb(17, 17, 16) 500 13px Inter
 icon svg[Support inbox triage, lenny, pz/inbox-t…] 11×11 rgb(169, 165, 155) stroke 1.9px
 text "pz/inbox-triage" rgb(169, 165, 155) 400 11px IBM Plex Mono
-text "Settled" rgb(94, 91, 84) 400 12px Inter
+text "Settled" rgb(86, 83, 77) 400 12px Inter
 text "9" rgb(169, 165, 155) 400 11px IBM Plex Mono
 icon svg[Designs] 11×11 rgb(128, 124, 115) stroke 2.2px
 ground main rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.08) 0px 0px 0px 0.5px
@@ -81,36 +81,36 @@ ground div rgba(17, 17, 16, 0.18)
 ground div rgb(255, 255, 255) shadow rgba(0, 0, 0, 0.06) 0px 1px 2px 0px, rgba(0, 0, 0, 0.1) 0px 8px 28px 0px
 text "Settings" rgb(17, 17, 16) 400 13px Inter
 ground nav[Settings] rgb(244, 243, 239)
-text "Account" rgb(94, 91, 84) 400 13px Inter
-icon svg[Settings] 16×16 rgb(94, 91, 84) stroke 1.5px
-text "Agents" rgb(94, 91, 84) 400 13px Inter
-icon svg[Settings] 16×16 rgb(94, 91, 84) stroke 1.5px
-text "Notifications" rgb(94, 91, 84) 400 13px Inter
-icon svg[Settings] 16×16 rgb(94, 91, 84) stroke 1.5px
+text "Account" rgb(86, 83, 77) 400 13px Inter
+icon svg[Settings] 16×16 rgb(86, 83, 77) stroke 1.5px
+text "Agents" rgb(86, 83, 77) 400 13px Inter
+icon svg[Settings] 16×16 rgb(86, 83, 77) stroke 1.5px
+text "Notifications" rgb(86, 83, 77) 400 13px Inter
+icon svg[Settings] 16×16 rgb(86, 83, 77) stroke 1.5px
 text "Plan and usage" rgb(17, 17, 16) 500 13px Inter
 ground button[Settings] rgba(17, 17, 16, 0.05)
 icon svg[Settings] 16×16 rgb(17, 17, 16) stroke 1.5px
-text "GitHub" rgb(94, 91, 84) 400 13px Inter
-icon svg[Settings] 16×16 rgb(94, 91, 84) stroke 1.5px
-text "Environments" rgb(94, 91, 84) 400 13px Inter
-icon svg[Settings] 16×16 rgb(94, 91, 84) stroke 1.5px
+text "GitHub" rgb(86, 83, 77) 400 13px Inter
+icon svg[Settings] 16×16 rgb(86, 83, 77) stroke 1.5px
+text "Environments" rgb(86, 83, 77) 400 13px Inter
+icon svg[Settings] 16×16 rgb(86, 83, 77) stroke 1.5px
 text "Create a team" rgb(169, 165, 155) 400 13px Inter
 icon svg[Settings] 16×16 rgb(169, 165, 155) stroke 1.8px
 text "Plan and usage" rgb(17, 17, 16) 600 18px Funnel Display
 icon svg[Close] 15×15 rgb(169, 165, 155) stroke 2px
 text "$22.00" rgb(17, 17, 16) 600 40px Funnel Display
-text "billed this month · 320 credits, 100 of…" rgb(94, 91, 84) 400 13px Inter
+text "billed this month · 320 credits, 100 of…" rgb(86, 83, 77) 400 13px Inter
 ground div[Usage this month] rgb(232, 230, 224)
 ground span[Usage this month] rgb(17, 17, 16)
 ground span[Usage this month] rgb(255, 255, 255)
-text "$10 free" rgb(94, 91, 84) 400 12px Inter
-text "$22 billed" rgb(94, 91, 84) 400 12px Inter
+text "$10 free" rgb(86, 83, 77) 400 12px Inter
+text "$22 billed" rgb(86, 83, 77) 400 12px Inter
 ground span rgb(17, 17, 16)
-text "Cap $50" rgb(94, 91, 84) 400 12px Inter
-text "Monthly cap" rgb(94, 91, 84) 400 13px Inter
+text "Cap $50" rgb(86, 83, 77) 400 12px Inter
+text "Monthly cap" rgb(86, 83, 77) 400 13px Inter
 text "$50" rgb(17, 17, 16) 500 13px Inter
 icon svg[Change cap] 16×16 rgb(169, 165, 155) stroke 1.5px
-text "Card" rgb(94, 91, 84) 400 13px Inter
+text "Card" rgb(86, 83, 77) 400 13px Inter
 ground span rgb(255, 255, 255) shadow rgb(232, 230, 224) 0px 0px 0px 1px inset
 icon svg 26×26 rgb(17, 17, 16) stroke 1px
 text "Visa ending 4242" rgb(17, 17, 16) 500 13px Inter

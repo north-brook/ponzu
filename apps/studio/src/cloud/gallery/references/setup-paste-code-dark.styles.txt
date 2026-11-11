@@ -1,4 +1,4 @@
-ground div rgb(18, 18, 17)
+ground div rgb(26, 26, 25)
 ground span rgb(255, 95, 87)
 ground span rgb(254, 188, 46)
 ground span rgb(40, 200, 64)
@@ -7,17 +7,17 @@ ground span[Setup] rgb(244, 243, 239)
 ground span[Setup] rgb(244, 243, 239)
 ground span[Setup] rgb(58, 57, 54)
 text "Connect Claude" rgb(244, 243, 239) 600 28px Funnel Display
-text "Claude Code does the designing, in the …" rgb(169, 165, 155) 400 15px Inter
+text "Claude Code does the designing, in the …" rgb(183, 179, 169) 400 15px Inter
 ground div rgb(27, 27, 26) shadow rgb(38, 37, 35) 0px 0px 0px 1px, rgba(0, 0, 0, 0.3) 0px 1px 2px 0px
 ground span rgb(22, 22, 21)
-icon svg[Claude] 17×17 rgb(169, 165, 155) stroke 1px
+icon svg[Claude] 17×17 rgb(183, 179, 169) stroke 1px
 text "Claude Subscription" rgb(244, 243, 239) 500 14px Inter
-text "Change" rgb(169, 165, 155) 500 12px Inter
+text "Change" rgb(183, 179, 169) 500 12px Inter
 ground div rgb(38, 37, 35)
 text "Paste the code from claude.ai" rgb(244, 243, 239) 500 13px Inter
 ground span rgb(27, 27, 26) shadow rgb(107, 104, 98) 0px 0px 0px 1px, rgba(255, 255, 255, 0.06) 0px 0px 0px 4px
-text "claude.ai shows it after you approve." rgb(110, 107, 101) 400 12px Inter
-text "Open sign-in again" rgb(169, 165, 155) 500 12px Inter
+text "claude.ai shows it after you approve." rgb(118, 115, 105) 400 12px Inter
+text "Open sign-in again" rgb(183, 179, 169) 500 12px Inter
 icon svg 10×10 rgb(142, 138, 130) stroke 2px
 text "Connect" rgb(17, 17, 16) 500 13px Inter
 ground button rgb(244, 243, 239)

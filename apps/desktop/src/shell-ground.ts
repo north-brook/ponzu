@@ -9,7 +9,7 @@ import type { BrowserWindowConstructorOptions } from "electron";
  */
 
 /** The studio's `--c-chrome`: the solid shell, and the window's ground where it has no material. */
-export const SHELL = { light: "#eeede9", dark: "#121211" } as const;
+export const SHELL = { light: "#f4f3f0", dark: "#1a1a19" } as const;
 
 /**
  * The material. `sidebar` is what a native sidebar is made of, and most of the shell is the
