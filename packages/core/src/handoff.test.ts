@@ -75,6 +75,19 @@ describe("the document", () => {
     expect(closes).not.toContain("data-retry>");
   });
 
+  test("every page carries the site's lockup, outlined, so it needs no font", async () => {
+    for (const page of [
+      withLink("ponzu://github/setup?result=pending"),
+      { documentTitle: "Hi", view: opened, link: null },
+    ]) {
+      const { html } = await renderHandoff(page);
+      const header = html.match(/<header>([\s\S]*?)<\/header>/)![1]!;
+      expect(header).toContain('aria-label="Ponzu"');
+      expect(header.match(/<path /g)).toHaveLength(7);
+      expect(header).not.toContain("<text");
+    }
+  });
+
   test("the policy allows its one script and one style sheet by hash, and nothing else", async () => {
     const { html, csp } = await renderHandoff(withLink("ponzu://github/setup?result=pending"));
     expect(csp).toBe(await handoffPolicy());

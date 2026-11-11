@@ -513,7 +513,7 @@ describe("GET /v1/github/setup", () => {
     // The only elements are the page's own, and every link on it is the app's.
     const tags = [...page.matchAll(/<([a-z][a-z0-9]*)[\s>]/g)].map((m) => m[1]!);
     expect([...new Set(tags)].sort()).toEqual(
-      ["html", "head", "meta", "title", "style", "body", "main", "svg", "g", "path"]
+      ["html", "head", "meta", "title", "style", "body", "header", "main", "svg", "g", "path"]
         .concat(["section", "h1", "p", "a", "script"])
         .sort(),
     );

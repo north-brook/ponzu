@@ -240,7 +240,8 @@ Ponzu Local sent no scheme, and the API, taking silence for Ponzu, recorded `pon
 Ponzu Local now says `none`, and silence now means not known.
 
 **Handing back to the app.** Every page a browser is left on is a handoff, the pattern of
-the old product's `/local` page: the Ponzu mark and one plain line, the app's link opened
+the old product's `/local` page: the site's lockup in the corner (outlined, since the page
+loads no font), the Ponzu mark and one plain line, the app's link opened
 by the page itself, and a watch for the app taking over (launching an app takes the
 page's focus or hides it). When it does, the page says Ponzu has it and closes itself (or
 says the tab can be closed, where the browser won't let a tab it didn't open close).
