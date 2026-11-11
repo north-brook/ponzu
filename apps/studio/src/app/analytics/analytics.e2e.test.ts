@@ -116,6 +116,11 @@ describe.skipIf(!chromiumPath)("PostHog in the built studio, against a local sin
     await page.setViewportSize({ width: 1440, height: 900 });
     const requested: string[] = [];
     page.on("request", (request) => requested.push(request.url()));
+    // What the page has sent PostHog and not yet heard back on.
+    const pending = new Set<unknown>();
+    page.on("request", (r) => r.url().startsWith(sink.url) && pending.add(r));
+    page.on("requestfinished", (r) => pending.delete(r));
+    page.on("requestfailed", (r) => pending.delete(r));
     // A design's files, played here: the in-memory backend serves them at `https://assets.test/`.
     await page.route("https://assets.test/**", (route) =>
       route.fulfill({ status: 200, contentType: "image/png", body: Buffer.from(PNG, "base64") }),
@@ -185,14 +190,21 @@ describe.skipIf(!chromiumPath)("PostHog in the built studio, against a local sin
     await page.locator("#search-results [role=option]").first().waitFor();
     // An API request, as the app's own: it carries PostHog's session headers.
     await page.evaluate((host) => fetch(`${host}/api/probe`).catch(() => {}), sink.url);
-    // A batch of the recording sent since the design drew; then leave, which sends what's queued.
-    const snapshots = () => sink.events().filter((e) => e.event === "$snapshot").length;
-    const drawn = snapshots();
-    await waitUntil(async () => snapshots() > drawn, 30_000);
-    await page.waitForTimeout(500);
+    // A mark put on the page last. The recorder compresses and sends its frames in order, so a
+    // batch with the mark holds, or comes after, every frame of the thread and the search; and
+    // once every request the page has made to PostHog is answered, all of them are here.
+    const mark = `e2e-mark-${crypto.randomUUID()}`;
+    await page.evaluate((mark) => {
+      const element = document.createElement("div");
+      element.dataset.e2eMark = mark;
+      document.body.append(element);
+    }, mark);
+    await waitUntil(
+      async () => pending.size === 0 && snapshotText(sink.events()).includes(mark),
+      30_000,
+    );
     const meId = await page.evaluate(() => window.ponzuFake!.me.id);
-    await page.close({ runBeforeUnload: true });
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await page.close();
     sink.stop();
     // Telemetry broke nothing on the way.
     expect(errors).toEqual([]);
