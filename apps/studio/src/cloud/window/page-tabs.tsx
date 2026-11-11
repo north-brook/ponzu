@@ -6,7 +6,7 @@ import { IconButton } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
 import { FadeScroll, SCROLL_FADE } from "../ui/fade-scroll.tsx";
 import { Icon } from "../ui/icon.tsx";
-import { jumpNumber, jumpTarget, useJumpShortcuts } from "../ui/shortcut.ts";
+import { JUMP_KEY, jumpNumber, jumpTarget, useJumpShortcuts } from "../ui/shortcut.ts";
 import { HintedLabel, ShortcutHint } from "../ui/shortcut-hint.tsx";
 import { Tabs, TabsList, TabsTrigger } from "../ui/tabs.tsx";
 
@@ -16,7 +16,7 @@ import { Tabs, TabsList, TabsTrigger } from "../ui/tabs.tsx";
  * between tabs and Return or Space opens one. Too many to fit scroll under a fade, keeping the
  * active tab in view and clear of the fade: the strip gets narrower than it needs for that only
  * when the chrome has no more room, and then it gives way before anything beside it does.
- * ⌥1–9 open the first eight and the last; held a moment, ⌥ shows each tab its number, over its
+ * ⌃1–9 open the first eight and the last; held a moment, ⌃ shows each tab its number, over its
  * icon, or on a tab without one in place of its name, centred on the tab.
  */
 export function PageTabs({
@@ -77,7 +77,7 @@ export function PageTabs({
               <TabsTrigger
                 key={page.id}
                 value={page.id}
-                aria-keyshortcuts={n ? `Alt+${n}` : undefined}
+                aria-keyshortcuts={n ? `${JUMP_KEY.page.key}+${n}` : undefined}
                 // A click opens the page without taking focus, as the chrome's buttons don't
                 // (installFocusRule): Radix would focus the tab itself, so the press is ours.
                 onMouseDown={(e) => {

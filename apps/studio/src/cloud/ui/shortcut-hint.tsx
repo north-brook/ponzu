@@ -1,5 +1,5 @@
 /*
- * The number a held modifier shows on what it jumps to (⌘1 on a sidebar row, ⌥2 on a page tab):
+ * The number a held modifier shows on what it jumps to (⌘1 on a sidebar row, ⌃2 on a page tab):
  * the 1.x studio's ShortcutHint (@ponzu/canvas), drawn with our tokens. It waits for the modifier
  * to be held a moment (useJumpShortcuts), arrives target after target and leaves all at once,
  * quicker, since the key is already up. It is always mounted, so it eases out as well as in, and

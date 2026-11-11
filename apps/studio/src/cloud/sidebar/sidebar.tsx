@@ -9,7 +9,7 @@ import {
 } from "../filter.ts";
 import type { DesignSummary, Person, SearchResults, Workspace } from "../model.ts";
 import type { ResultKey } from "../search.ts";
-import { orderDesigns } from "../status.ts";
+import { orderDesigns, settledShown } from "../status.ts";
 import { Button, IconButton } from "../ui/button.tsx";
 import { FadeScroll } from "../ui/fade-scroll.tsx";
 import { Icon } from "../ui/icon.tsx";
@@ -18,6 +18,7 @@ import { jumpTarget, useJumpShortcuts, useShortcut } from "../ui/shortcut.ts";
 import { DesignList, DesignListSkeleton } from "./design-list.tsx";
 import type { RowHandlers } from "./design-row.tsx";
 import { FilterMenu } from "./filter-menu.tsx";
+import { useRowMotion } from "./row-motion.ts";
 import { SearchField, SearchResultsView, useResultSelection } from "./search.tsx";
 import { SettledTray } from "./settled-tray.tsx";
 import { WorkspaceMenu } from "./workspace-menu.tsx";
@@ -111,6 +112,21 @@ export function Sidebar(props: SidebarProps) {
     if (design && design.id !== props.openDesignId) props.onOpen(design);
     return design !== undefined;
   });
+  // Which rows show, and in what order: when this changes, what moved slides (row-motion.ts).
+  const lists = useRef<HTMLDivElement>(null);
+  const settledRows = settledShown(
+    props.settled.designs ?? [],
+    props.settled.expanded,
+    props.openDesignId,
+  );
+  useRowMotion(
+    lists,
+    [
+      ...(shown ?? []).map((design) => design.id),
+      "|",
+      ...settledRows.map((design) => design.id),
+    ].join(" "),
+  );
   const handlers: RowHandlers = {
     onOpen: props.onOpen,
     onAction: props.onAction,
@@ -118,7 +134,7 @@ export function Sidebar(props: SidebarProps) {
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div ref={lists} className="flex min-h-0 flex-1 flex-col">
       {query === null ? (
         <div
           // Search and New design take no focus from a click, as the window's chrome doesn't
@@ -208,11 +224,9 @@ export function Sidebar(props: SidebarProps) {
                 </Button>
               </EmptyNote>
             ) : (
-              <EmptyNote>
-                {props.settled.count
-                  ? "No designs in progress. Settled ones are below."
-                  : "No designs yet."}
-              </EmptyNote>
+              <EmptyTrace
+                label={props.settled.count ? "No designs in progress" : "No designs yet"}
+              />
             )}
           </FadeScroll>
           {props.settled.count ? (
@@ -227,6 +241,31 @@ export function Sidebar(props: SidebarProps) {
           ) : null}
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * An empty list: the faint trace of rows that aren't there yet, fading out, and no words to
+ * read. What it means is said once, for a screen reader.
+ */
+function EmptyTrace({ label }: { label: string }) {
+  return (
+    <div
+      role="img"
+      aria-label={label}
+      className="flex flex-col gap-px opacity-70 [mask-image:linear-gradient(to_bottom,black,transparent)]"
+    >
+      {[58, 44, 66].map((name) => (
+        <div key={name} className="flex items-center gap-2.5 px-2 py-1.5">
+          <span className="h-12 w-16 shrink-0 rounded-4 border border-sep border-dashed" />
+          <span className="flex flex-1 flex-col gap-[9px]">
+            <span className="h-px w-1/4 bg-sep" />
+            <span className="h-px bg-sep" style={{ width: `${name}%` }} />
+            <span className="h-px w-2/5 bg-sep" />
+          </span>
+        </div>
+      ))}
     </div>
   );
 }

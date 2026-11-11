@@ -23,7 +23,8 @@ import { Icon } from "../ui/icon.tsx";
  */
 type Tone = "colored" | "neutral";
 
-const ICONS = {
+/** The icon for each state a pull request can be in. */
+export const PULL_REQUEST_ICONS = {
   open: GitPullRequestIcon,
   draft: GitPullRequestIcon,
   conflict: GitPullRequestClosedIcon,
@@ -87,7 +88,7 @@ export function PullRequestMark({
   return (
     <span className="flex shrink-0 items-center gap-1 font-mono text-11">
       <Icon
-        icon={ICONS[state]}
+        icon={PULL_REQUEST_ICONS[state]}
         size={11}
         stroke={2}
         className={tone === "colored" ? ICON_COLORS[state] : undefined}
