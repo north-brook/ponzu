@@ -50,10 +50,10 @@ credential and are out of the agent's reach; deleting them would not last, since
 them again at the next start. No secret is ever part of a bake: the bake sandbox has no
 environment at all.
 
-The snapshot is 487 MiB (510,758,912 bytes: what differs from boat's base); `/opt/ponzu` is
-369 MiB of it, most of it the headless shell (about 250 MiB) and Bun (95 MiB); the fonts are
-most of the rest. (The bake before, which installed the shell through playwright's CLI, was
-500 MiB.)
+The snapshot is 813 MiB (what differs from boat's base); `/opt/ponzu` is 695 MiB of it: Claude
+Code's binary (326 MiB, which used to be boat's and so cost nothing), the headless shell (about
+250 MiB) and Bun (95 MiB); the fonts are most of the rest. (Before the image carried its own
+Claude Code it was 487 MiB.)
 
 ## Two users
 
