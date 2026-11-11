@@ -3,11 +3,19 @@ import { ApiError } from "./api/api.ts";
 import type { GitCredentialRequest, GitCredentialResponse } from "./api/protocol.ts";
 
 /**
- * The runner's one port, which the API reaches through the sandbox's token-gated address.
- * `POST /poke` says there may be something to claim, and carries nothing: whatever arrives,
- * the runner only claims, from the API, with its own token. `GET /health` says it is up.
+ * The runner's one port, which the API reaches through the sandbox's token-gated address (and
+ * anything in the sandbox on localhost, the agent included). Nothing that arrives is trusted:
+ * `POST /poke` says there may be something to claim, and the runner only claims, from the API,
+ * with its own token; `POST /report` asks for a state report now, and only the API's answer to
+ * that report can tell the runner to get ready for sleep. `GET /health` says it is up.
  */
-export function serve(opts: { port: number; hostname?: string; poke(): void; health(): unknown }): {
+export function serve(opts: {
+  port: number;
+  hostname?: string;
+  poke(): void;
+  report?(): void;
+  health(): unknown;
+}): {
   port: number;
   stop(): void;
 } {
@@ -19,6 +27,11 @@ export function serve(opts: { port: number; hostname?: string; poke(): void; hea
       if (pathname === "/poke") {
         if (request.method !== "POST") return new Response(null, { status: 405 });
         opts.poke();
+        return new Response(null, { status: 204 });
+      }
+      if (pathname === "/report") {
+        if (request.method !== "POST") return new Response(null, { status: 405 });
+        opts.report?.();
         return new Response(null, { status: 204 });
       }
       if (pathname === "/health") {

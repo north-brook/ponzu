@@ -216,7 +216,7 @@ test("a runner starting for a message says it is waking until its first claim, n
   const api = new FakeRunnerApi();
   api.push({ kind: "message", payload: { text: "Make the card" } });
   // A claim takes a while to come back, as over the network: long enough for a heartbeat.
-  api.slow.set("claim", 60);
+  api.delays.set("claim", 60);
   const s = await setup({ api });
   await until(() => s.agent.runs.length > 0);
   await Bun.sleep(30);
@@ -228,7 +228,7 @@ test("a runner starting for a message says it is waking until its first claim, n
 
 test("a runner with nothing to claim goes from waking to idle once its claim is answered", async () => {
   const api = new FakeRunnerApi();
-  api.slow.set("claim", 40);
+  api.delays.set("claim", 40);
   await setup({ api });
   await until(() => api.states.at(-1)?.state === "idle");
   const said = api.states.map((r) => r.state);

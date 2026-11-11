@@ -57,6 +57,8 @@ test("a complete environment is read into one typed value", () => {
       secretAccessKey: "r2-secret",
       bucket: "ponzu-test",
     },
+    // Unset, checkpoint archives go in the assets bucket under a random key.
+    r2PrivateBucket: null,
     anthropicApiKey: "sk-ant-example",
     minimumClientVersions: {},
     commit: null,

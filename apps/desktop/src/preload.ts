@@ -33,7 +33,12 @@ function argument(name: string): string {
 const desktop: PonzuDesktop = {
   platform: process.platform,
   version: argument("version"),
-  config: { apiUrl: argument("api"), client: argument("client"), dev: argument("dev") === "1" },
+  config: {
+    apiUrl: argument("api"),
+    client: argument("client"),
+    dev: argument("dev") === "1",
+    linkScheme: argument("scheme"),
+  },
   session: {
     state: () => ipcRenderer.invoke(CHANNELS.sessionState) as Promise<SessionState>,
     onState: (listener) => on<SessionState>(CHANNELS.sessionChanged, listener),

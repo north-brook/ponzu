@@ -6,6 +6,7 @@ import type { SessionState } from "@ponzu/client";
 import {
   app,
   type BrowserWindow,
+  dialog,
   type IpcMainEvent,
   type IpcMainInvokeEvent,
   ipcMain,
@@ -22,10 +23,11 @@ import {
   type MenuCommand,
   STUDIO_ORIGIN,
 } from "./bridge.ts";
-import { configFor } from "./config.ts";
+import { bundleMismatch, configFor, schemeRegistration } from "./config.ts";
 import { contentSecurityPolicy } from "./csp.ts";
+import { dataFolder, removeOnceExited } from "./data-folder.ts";
 import { linksIn, parseDeepLink } from "./deep-links.ts";
-import { removeLegacyOnce, runProgram } from "./legacy.ts";
+import { removeLegacyFor, runProgram } from "./legacy.ts";
 import { registerAppImage } from "./linux.ts";
 import { buildMenu, setSignedIn } from "./menu.ts";
 import { externalLink, isStudio } from "./navigation.ts";
@@ -45,14 +47,27 @@ import { createMainWindow } from "./window.ts";
 const config = configFor(app.isPackaged, process.env);
 
 /*
- * A development build is an app of its own: its own data folder, keychain item ("Ponzu Dev Safe
- * Storage") and single-instance lock, so it never reads, refreshes or replaces an installed
- * Ponzu's session, nor quits because one is running. Both before anything reads either.
+ * Ponzu Preview and a development build are apps of their own: their own data folder, keychain
+ * item ("Ponzu Preview Safe Storage", "Ponzu Dev Safe Storage") and single-instance lock, so
+ * neither reads, refreshes or replaces an installed Ponzu's session, nor quits because one is
+ * running. The smoke check runs on a throwaway folder, whichever app it checks (data-folder.ts).
+ * All of it before anything reads the name or the folder, and only once the bundle and the main
+ * process agree on which app this is (`bundleMismatch`).
  */
-if (app.name !== config.appName) {
-  app.setName(config.appName);
-  app.setPath("userData", join(app.getPath("appData"), config.appName));
+const mismatch = bundleMismatch(app.isPackaged, app.name, config);
+if (mismatch) {
+  console.error(mismatch);
+  // The smoke check's caller reads the exit code; a person needs to be told.
+  if (!smoke) dialog.showErrorBox("Ponzu can't start", mismatch);
+  process.exit(1);
 }
+if (app.name !== config.appName) app.setName(config.appName);
+const userData = dataFolder(app.getPath("appData"), config.appName, { smoke });
+app.setPath("userData", userData);
+app.setPath("sessionData", userData);
+// Removed by a shell once this process is gone, however the check ends: a verdict, a crash or
+// the caller's timeout (data-folder.ts).
+if (smoke) removeOnceExited(userData);
 
 /*
  * A debugging port would hand the signed-in window, and the access tokens it can borrow, to any
@@ -131,6 +146,7 @@ function showWindow() {
         api: config.apiUrl,
         client: clientPlatform(),
         dev: app.isPackaged ? "0" : "1",
+        scheme: config.linkScheme,
       },
     });
     const win = mainWindow;
@@ -156,10 +172,12 @@ function send(channel: string, ...args: unknown[]) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, ...args);
 }
 
-/** A `ponzu://` link: the studio acts on it once it's listening. Anything else is dropped. */
+/** A link in this app's scheme: the studio acts on it once it's listening. Anything else is dropped. */
 function openLink(url: string) {
   const link = parseDeepLink(url, config.linkScheme);
   if (!link) return;
+  // Its kind only: what a link names stays out of the log.
+  console.log(`Link: ${link.kind}, ${linkListeners > 0 ? "to the studio" : "waiting for it"}`);
   showWindow();
   if (linkListeners > 0) send(CHANNELS.link, link);
   else pendingLinks.push(link);
@@ -288,11 +306,15 @@ async function forgetStudioData(): Promise<void> {
 /* Ponzu 1.x                                                           */
 /* ------------------------------------------------------------------ */
 
-/** What the local app left on this computer, removed once, a moment after the first launch. */
+/**
+ * What the local app left on this computer, removed once, a moment after the release's first
+ * launch. Ponzu Preview and a development build leave it all alone (`removeLegacyFor`).
+ */
 function removeLegacySoon() {
-  if (!app.isPackaged || smoke) return;
+  if (!config.cleansUpLegacy || smoke) return;
   setTimeout(async () => {
-    const steps = await removeLegacyOnce(
+    const steps = await removeLegacyFor(
+      config,
       {
         platform: process.platform,
         home: homedir(),
@@ -334,10 +356,17 @@ if (!app.requestSingleInstanceLock()) {
     event.preventDefault();
     openLink(url);
   });
-  // A development build takes `ponzu-dev:` links, through this checkout, and leaves an installed
-  // Ponzu's alone.
-  if (app.isPackaged) app.setAsDefaultProtocolClient(config.linkScheme);
-  else
+  /*
+   * Ponzu takes `ponzu:` links and Ponzu Preview `ponzu-preview:`, each declared in its bundle's
+   * Info.plist (package.json's `protocols`, packaging.ts), which is what reaches a Mac's running
+   * app, or starts it. A development build takes `ponzu-dev:` links on Windows and Linux, through
+   * this checkout. Not on a Mac: there it runs inside node_modules' Electron.app, which declares no
+   * schemes, so registering would hand the scheme to whichever bare Electron the system finds.
+   * Use Ponzu Preview for links on a Mac. The smoke check claims nothing (`schemeRegistration`).
+   */
+  const registration = schemeRegistration(app.isPackaged, process.platform, smoke);
+  if (registration === "bundle") app.setAsDefaultProtocolClient(config.linkScheme);
+  else if (registration === "checkout")
     app.setAsDefaultProtocolClient(config.linkScheme, process.execPath, [
       resolve(app.getAppPath()),
     ]);
@@ -367,8 +396,11 @@ if (!app.requestSingleInstanceLock()) {
       send(CHANNELS.sessionChanged, state);
       setSignedIn(state.status === "signed_in");
     });
-    // The smoke check never looks for updates: it touches no network.
-    const updates = installUpdater((state) => send(CHANNELS.updateChanged, state), !smoke);
+    // The smoke check never looks for updates: it touches no network. Ponzu Preview has no feed.
+    const updates = installUpdater(
+      (state) => send(CHANNELS.updateChanged, state),
+      config.updates && !smoke,
+    );
     registerIpc(account, updates);
 
     buildMenu({
@@ -376,10 +408,13 @@ if (!app.requestSingleInstanceLock()) {
         showWindow();
         send(CHANNELS.command, command);
       },
-      checkForUpdates: () => {
-        showWindow();
-        if (mainWindow) void checkForUpdatesNow(mainWindow);
-      },
+      // Ponzu Preview doesn't update itself, so its menus don't offer to.
+      checkForUpdates: config.updates
+        ? () => {
+            showWindow();
+            if (mainWindow) void checkForUpdatesNow(mainWindow);
+          }
+        : null,
       signOut: () => void session.signOut(),
       // Developer tools are a developer's: a release has no way to open them on someone's session.
       devTools: config.remoteDebugging,
@@ -390,7 +425,8 @@ if (!app.requestSingleInstanceLock()) {
     showWindow();
     if (!smoke) {
       followAppearance();
-      void registerAppImage().catch(() => {});
+      // The AppImage's desktop entry claims `ponzu:` links: the release's alone.
+      if (config.linkScheme === "ponzu") void registerAppImage().catch(() => {});
       removeLegacySoon();
     }
   });

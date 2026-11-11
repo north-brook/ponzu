@@ -19,7 +19,16 @@ export interface ApiOptions {
   crypto?: Randomness;
   /** For the upload's PUT to storage, which carries no bearer. */
   fetch?: Fetch;
+  /**
+   * The scheme of the links this app takes, when it isn't `ponzu`: Ponzu Preview's
+   * `ponzu-preview`, a development build's `ponzu-dev`. Pages the API sends a person to (GitHub's
+   * setup) link back to it, so they return to the app they came from.
+   */
+  linkScheme?: LinkScheme;
 }
+
+/** The schemes the API will link back to (apps/api/src/github/link-scheme.ts). */
+export type LinkScheme = "ponzu" | "ponzu-preview" | "ponzu-dev";
 
 /** What `api.designs.create` takes. */
 export type CreateDesignBody = InferRequestType<Rpc["v1"]["designs"]["$post"]>["json"];
@@ -91,9 +100,13 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
       accounts: async () => (await v1.github.accounts.$get()).json(),
       /** Sync with GitHub now: on coming back to focus, and after the install page. */
       sync: async () => (await v1.github.sync.$post()).json(),
-      /** GitHub's install page, with a state good for one return. */
+      /** GitHub's install page, with a state good for one return, to this app's links. */
       installLink: async (body: { client: "mac" | "ios"; githubAccountId?: number }) =>
-        (await v1.github["install-link"].$post({ json: body })).json(),
+        (
+          await v1.github["install-link"].$post({
+            json: opts.linkScheme ? { ...body, scheme: opts.linkScheme } : body,
+          })
+        ).json(),
     },
 
     workspaces: {

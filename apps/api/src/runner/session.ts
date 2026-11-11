@@ -2,6 +2,7 @@ import { getRunnerContext, listOpenQuestions, takeRunnerLease } from "@ponzu/db"
 import type { Effort, RunnerSession } from "@ponzu/runner/protocol";
 import type { Deps } from "../deps/index.ts";
 import { ApiError } from "../http/errors.ts";
+import { savedView } from "./checkpoint.ts";
 
 /*
  * The runner's first call (docs/cloud.md, "The runner protocol", "Session"): it takes the
@@ -53,6 +54,7 @@ export async function startRunnerSession(
     theme: null,
     openQuestions: open.map((question) => question.id),
     seq: design.seq,
+    saved: lease.saved ? savedView(lease.saved) : null,
   };
 }
 

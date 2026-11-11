@@ -4,6 +4,7 @@ import { z } from "zod";
 import { access } from "../auth/access.ts";
 import { listGithubAccounts } from "../github/accounts.ts";
 import { createInstallLink, finishSetup } from "../github/install.ts";
+import { LINK_SCHEMES, type LinkScheme } from "../github/link-scheme.ts";
 import { renderSetupPage, SETUP_PAGE_HEADERS, type SetupPage } from "../github/setup-page.ts";
 import { syncGithub } from "../github/sync.ts";
 import {
@@ -38,6 +39,11 @@ const Accounts = z.object({
 
 const InstallLinkBody = z.object({
   client: z.enum(["mac", "ios"]),
+  /**
+   * The scheme of the asking app's links, which the setup page links back to: Ponzu's when left
+   * out. Only these three, so no one can make the page link anywhere else (link-scheme.ts).
+   */
+  scheme: z.enum(LINK_SCHEMES).optional(),
   /** The account to suggest on GitHub's page. GitHub may ignore it. */
   githubAccountId: z.number().int().positive().optional(),
 });
@@ -91,9 +97,9 @@ export const github = new Hono<AppEnv>()
    */
   .get("/setup", access.public, validate("query", SetupQuery), async (c) => {
     const query = c.req.valid("query");
-    let page: SetupPage;
+    let finished: { page: SetupPage; scheme?: LinkScheme };
     try {
-      page = await finishSetup(
+      finished = await finishSetup(
         { ...c.var.deps, log: c.var.log },
         {
           state: query.state,
@@ -103,9 +109,14 @@ export const github = new Hono<AppEnv>()
       );
     } catch (error) {
       c.var.log.error("github_setup_failed", { error });
-      page = { kind: "failed" };
+      finished = { page: { kind: "failed" } };
     }
-    return c.html(renderSetupPage(page), page.kind === "failed" ? 502 : 200, SETUP_PAGE_HEADERS);
+    const { page, scheme } = finished;
+    return c.html(
+      renderSetupPage(page, scheme),
+      page.kind === "failed" ? 502 : 200,
+      SETUP_PAGE_HEADERS,
+    );
   })
 
   /**

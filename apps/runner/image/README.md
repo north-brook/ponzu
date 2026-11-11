@@ -18,6 +18,7 @@ bake.ts          bake, verify, list and prune
 checks.ts        the acceptance checks
 trial.ts         a sandbox from the image with the runner's fake API beside the runner
 e2e.ts           the runner for real: a turn, wakes, a repo checkout and push
+durability.ts    checkpoints for real: sleeps as the API does them, a rollback, two cold wakes
 sandbox/         what those run inside a sandbox (the fake API, a screenshot, the tools probe)
 current.json     the last snapshot baked and checked: name, inputs, base, dates, size, pins
 ```
@@ -231,17 +232,18 @@ by itself (the unit is enabled and waits for boat's environment file).
 | Exit | What it means | systemd |
 |---|---|---|
 | 0 | SIGTERM: the runner stopped the turn, let edits reach the API and reported its state | stays stopped until the next boot or `systemctl start` |
-| 78 | the environment is wrong, the token was revoked (design deleted or settled), or a newer runner took the lease | stays stopped (`RestartPreventExitStatus=78`). **A warm resume does not bring it back**: it thaws the same boot, units and all, so the runner stays down and `/health` never answers. The API must either `exec` `sudo systemctl start ponzu-runner` (same env), or resume with a new `env`, which is always a cold start and boots it. |
+| 78 | the environment is wrong, the token was revoked (design deleted or settled), or a newer runner took the lease | stays stopped (`RestartPreventExitStatus=78`). **A warm resume does not bring it back**: it thaws the same boot, units and all. So after every warm resume the API asks `/health` (3 s) and, unless the design was settled or deleted, `exec`s `sudo systemctl start ponzu-runner` (same env) and looks again for 20 s; failing that it resumes with a new `env`, which is always a cold start and boots it (`apps/api/src/sandboxes/quiesce.ts`). |
 | anything else, or a crash | | restarted after 3 s, for as long as the sandbox is awake |
 
 `systemctl stop ponzu-runner` sends SIGTERM to the runner alone (`KillMode=mixed`) and kills
 what is left after 20 s. A warm stop freezes the machine: the runner kept the same process
 across both warm wakes measured, and was not signalled. Whether boat signals anything before a
 stop that turns cold could not be read back (the journal of the boot before is not kept), so
-an API that wants the final state reported and the edits settled before a long sleep should
-`systemctl stop ponzu-runner` through `exec` before it stops the sandbox. Either way it should
-`exec` `sync` just before the stop: the runner flushes after each turn, but anything written
-since (by the agent's dev server, say) is lost by a cold start if it was not flushed (below).
+the API does not rely on a signal: before every stop it asks the runner to get ready (the state
+answer's `sleep`, nudged by `POST /report`), and the runner settles, saves a checkpoint, runs
+`sync` and says `quiesced`; the API waits up to 30 s for that, then `exec`s `sync` itself and
+stops (docs/cloud.md, "Getting ready to sleep"). The runner stays up, so a warm resume finds it
+running.
 
 **How long each start takes**, measured from a Mac in the US against boat's EU hosts, on
 `small`. "/health" is the runner answering through its address; "first text" is the first words
@@ -286,6 +288,49 @@ which it flushes and checks on every start:
   transcript (the agent forgets the last exchanges; events the API saw acknowledged are not
   delivered again), unpushed commits, and the usage totals (a turn after it is counted again).
   `e2e.ts scratch` fails when it happens, by design.
+
+**Checkpoints, for real** (`durability.ts`; first on `ponzu-runner-9866a3cd969c`,
+`ponzu-runner-0b599d9a201c` and `ponzu-runner-b06c59b6e389`, which kept work in progress on a ref
+on GitHub, then on `ponzu-runner-80375d620254`, `ponzu-runner-13c05061cbbd` and, after `cloud`
+was merged in, `ponzu-runner-97c629db44bc`, which keep it in a bundle with the checkpoint). The fake API holds the runner off after each boot until the driver
+hands back the memory it kept, as the real API is never on the sandbox's disk; each sleep is done
+as the API does it (the stop asks, the runner gets ready, `sync`, stop), and each wake as the API
+does it (the row says awake, the runner is only poked), timed from the resume to `/health` and
+to the runner's first claim.
+
+- **The double cold start**, as above, but with the stop asking the runner first: seven complete
+  runs, fourteen cold wakes (four on the ref images, three on `ponzu-runner-80375d620254`). No
+  disk went back in any of them: the fake API's own flushed state file came back at its last
+  write each time, the flushed probe was kept and, with the stop's `sync`, so was the unflushed
+  one. Each third turn remembered both words without a tool, and `notes.txt` held both lines.
+  Whether asking and flushing before the stop is what made the difference, or the rollback is
+  just rare, these runs cannot say.
+- **Bugs found, now fixed**: on a cold boot the API's `POST /report` (here the driver's) reached
+  the runner before its session had answered, the state report went out with no lease, the API
+  answered `superseded`, and the runner exited 78 and stayed down; a report is now ignored until
+  the runner has started. A runner whose checkout could not be had saved a checkpoint with no
+  work in progress, dropping the pointer to the saved work; a checkpoint now keeps the last
+  one's. A runner restarted while it cloned left a `.git` with no `origin` branches, and every
+  start after failed to make the design's branch (`invalid reference: origin/main`); the
+  checkout now makes such a clone whole.
+- **The proof** (a repo design, on `ponzu-runner-13c05061cbbd`, and again with the same result on
+  `ponzu-runner-97c629db44bc`): a turn wrote `notes/plan.md`
+  without committing; its checkpoint carried the commit in its workspace archive, and GitHub had
+  neither a `refs/ponzu/wip/<design>` ref nor the branch. A folder was made beside the session's
+  transcript (`<session>/subagents/`, as Claude Code makes for subagents) before that turn. A
+  warm and a cold sleep and wake; boat did not roll the disk back, so the checkout, Claude's
+  config folder and the runner's state were put back as they were before that turn, and the
+  runner restarted. It logged `sandbox_rollback` (disk at checkpoint 1, the API at 3), restored
+  the transcript, its folder and the work (`restored 88d6aff4b9e5 over 1644f452090e`, the saved
+  tree over the same HEAD) in 333 ms, the checkout held `notes/plan.md` again, untracked, and the
+  next turn answered without a tool: "Code word: apricot. Line written to notes/plan.md: juniper
+  42." The branch was deleted after.
+- **What it costs.** Getting ready to sleep took 0.79 to 0.85 s and the stop's `sync` 0.14 to
+  0.66 s, so a sleep is about a second later than before. A warm wake was 1.19 s from the resume
+  to `/health` and 1.29 s to the first claim, which the poke now makes (before, a quiesced runner
+  waited up to its 30 s heartbeat); a cold one 4.4 to 20.8 s to `/health` and 0.1 to 0.8 s more to
+  the first claim. Restoring from a checkpoint took 77 to 333 ms in the runner, plus reading it
+  back from the API.
 
 What the end-to-end runs saw, beyond the checks: a first turn on Haiku drew the board, wrote a
 started notice, a work line ("Drawing "Hello"") and its reply, went working then idle,

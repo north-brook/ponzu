@@ -48,6 +48,9 @@ import { derivedId, eventUuid, randomId } from "./ids.ts";
 import { backoff as BACKOFF, Outbox } from "./pacer.ts";
 import { Previews } from "./previews.ts";
 import { eventText, noticeText, RUNNER_INSTRUCTIONS } from "./prompt.ts";
+import { type Boot, Checkpoints, type Recovery } from "./save/checkpoints.ts";
+import type { Transcripts } from "./save/transcripts.ts";
+import type { WorkSaver } from "./save/work.ts";
 import { StateReporter } from "./state.ts";
 import { stepLabel, stepWeight } from "./steps.ts";
 import { ThreadWriter } from "./thread.ts";
@@ -70,6 +73,12 @@ export interface Timing {
   previewDelayMs: number;
   /** The wait before Claude Code is started again after it stopped by itself. */
   restartMs: number;
+  /**
+   * Getting ready to sleep: how long a running turn may go on finishing, and how long the
+   * checkpoint may take. The API stops the sandbox after its own wait whatever happens.
+   */
+  quiesceTurnMs: number;
+  checkpointMs: number;
   /** The wait before a failed call is made again, after `failures` in a row. */
   backoff(failures: number): number;
 }
@@ -84,6 +93,8 @@ export const TIMING: Timing = {
   stopStepMs: 2_500,
   previewDelayMs: 3_000,
   restartMs: 2_000,
+  quiesceTurnMs: 15_000,
+  checkpointMs: 10_000,
   backoff: BACKOFF,
 };
 
@@ -115,12 +126,25 @@ export interface RunnerOptions {
   /** Where the runner keeps what it needs across restarts. */
   stateDir: string;
   /**
-   * Called once a turn has ended and its edits have settled: put what the turn wrote (the
-   * session's transcript, the checkout) on the disk. A stop that turns cold loses what was
-   * still in memory, and the sandbox may be stopped at any time after a turn.
+   * Called once a turn has ended, its edits have settled and its checkpoint is saved, and before
+   * the sandbox sleeps: put what was written (the session's transcript, the checkout, the
+   * runner's own files) on the disk. A stop that turns cold loses what was still in memory.
    */
-  flush?(): void;
+  flush?(): void | Promise<void>;
+  /**
+   * What a checkpoint saves in this sandbox, once the working folder is ready: the session's
+   * transcripts and the work in progress (save/). Without it nothing is saved or restored.
+   */
+  saving?(
+    session: RunnerSession,
+    cwd: string,
+    checkedOut: boolean,
+  ): { transcripts: Transcripts | null; work: WorkSaver | null };
+  /** This boot of the machine, for what is logged about a rollback. */
+  boot?(): Boot;
   log(message: string): void;
+  /** A structured line for the journal. `log` with its JSON when absent. */
+  event?(name: string, fields: Record<string, unknown>): void;
   /**
    * The API said this process must stop for good (its token is revoked, or a newer runner
    * took the lease). Called once the runner has stopped.
@@ -245,6 +269,15 @@ export class Runner {
   private claimTimer: ReturnType<typeof setInterval> | null = null;
   private stopping: Promise<void> | null = null;
   private fatalReason: string | null = null;
+  /** Saves and restores what lives only on this disk; null until the folder is ready. */
+  private checkpoints: Checkpoints | null = null;
+  /** What starting found of the disk against the API's last checkpoint. */
+  recovery: Recovery = { kind: "none", restored: { session: false, workspace: false } };
+  /**
+   * The sleep the API is putting the sandbox through, as its state answers name it: no new work
+   * is claimed until it says the sandbox is awake again. `ready` once the runner said so.
+   */
+  private sleep: { id: string; ready: boolean } | null = null;
 
   constructor(private readonly opts: RunnerOptions) {
     this.api = watchFatal(opts.api, (err) => this.fatal(err));
@@ -260,6 +293,7 @@ export class Runner {
       gapMs: this.timing.stateGapMs,
       heartbeatMs: this.timing.heartbeatMs,
       onSeq: (seq) => this.replica?.notify(seq),
+      onSleep: (sleep) => this.onSleep(sleep),
       onError: onError("state report"),
       backoff,
     });
@@ -294,6 +328,9 @@ export class Runner {
     for (const id of this.session.openQuestions) this.asks.set(id, null);
 
     this.cwd = await this.prepare();
+    // Before Claude Code reads its transcript: a disk behind the last checkpoint gets it back.
+    await this.recover();
+    if (this.stopping) return;
     this.replica = await this.retry(() =>
       Replica.open({ transport: this.api.sync, schedule: timer, actor: ACTOR }),
     );
@@ -335,6 +372,17 @@ export class Runner {
   /** Something may be waiting to be claimed. What arrives is never trusted: it only starts a claim. */
   poke(): void {
     this.claim();
+  }
+
+  /**
+   * Report the state now. What arrives is never trusted: only the API's answer to the report can
+   * say the sandbox is going to sleep.
+   */
+  report(): void {
+    // Not started: a report now would carry no lease, and the API would answer `superseded`.
+    // The reports that start the heartbeat hear any sleep there is.
+    if (this.stopping || !this.claimTimer) return;
+    this.state.now();
   }
 
   /** What `/health` says. */
@@ -385,6 +433,12 @@ export class Runner {
       ]),
     );
     if (this.run) await within(this.run.close());
+    // Claude Code has written the transcript's last line: keep it, with the work, and flush.
+    if (!this.fatalReason)
+      await bounded(
+        this.checkpoint(),
+        Math.min(this.timing.checkpointMs, this.timing.stopStepMs * 2),
+      );
     for (const outbox of [this.thread, this.acks, this.questions, this.turns]) outbox.close();
     this.ws?.close();
     this.replica?.close();
@@ -406,6 +460,118 @@ export class Runner {
   /* ---------------------------------------------------------------- */
   /* Starting                                                          */
   /* ---------------------------------------------------------------- */
+
+  /**
+   * The disk against the API's last checkpoint (save/checkpoints.ts): behind it, or holding none
+   * of it, the transcript and the work in progress come back from it. A rollback is said in the
+   * log, to the API, and in the thread when the session resumes.
+   */
+  private async recover(): Promise<void> {
+    const parts = this.opts.saving?.(this.session, this.cwd, !this.cloneError);
+    if (!parts) return;
+    this.checkpoints = new Checkpoints({
+      api: this.api,
+      stateDir: this.opts.stateDir,
+      transcripts: parts.transcripts,
+      work: parts.work,
+      log: (m) => this.log(m),
+      event: (name, fields) => this.event(name, fields),
+      boot: () => this.opts.boot?.() ?? { id: null, at: null },
+      flush: () => this.flushDisk(),
+      // `turn_failed` is the notice whose own words the thread shows.
+      notify: (message) =>
+        this.notice(randomId("ti"), { type: "error", code: "turn_failed", message }),
+    });
+    try {
+      this.recovery = await this.checkpoints.recover(this.session.saved ?? null);
+    } catch (err) {
+      if (fatal(err)) throw err;
+      this.log(`restoring from the last checkpoint failed: ${said(err)}`);
+    }
+  }
+
+  /** Save a checkpoint of the session and the work in progress, then flush the disk. */
+  private async checkpoint(): Promise<void> {
+    await this.checkpoints?.save(this.sessionId);
+    await this.flushDisk();
+  }
+
+  private async flushDisk(): Promise<void> {
+    try {
+      await this.opts.flush?.();
+    } catch (err) {
+      this.log(`flushing the disk failed: ${said(err)}`);
+    }
+  }
+
+  private event(name: string, fields: Record<string, unknown>): void {
+    if (this.opts.event) this.opts.event(name, fields);
+    else this.log(JSON.stringify({ event: name, designId: this.session?.design.id, ...fields }));
+  }
+
+  /* ---------------------------------------------------------------- */
+  /* Sleep                                                             */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * What the API's state answer says of sleep. A stop under way makes the runner take no new
+   * work, finish the turn (for a while), let its edits reach the API, save a checkpoint, flush
+   * the disk and say it is ready; the API stops the sandbox after its own wait either way. The
+   * sandbox awake again (a warm resume thaws this same process) makes it take work again.
+   */
+  private onSleep(sleep: string | null): void {
+    if (sleep === null) {
+      if (!this.sleep) return;
+      this.sleep = null;
+      this.log("awake again");
+      this.state.set({ quiesced: null });
+      this.claim();
+      return;
+    }
+    if (this.sleep?.id === sleep || this.stopping) return;
+    this.sleep = { id: sleep, ready: false };
+    void this.quiesce(sleep).catch((err) =>
+      this.log(`getting ready to sleep failed: ${said(err)}`),
+    );
+  }
+
+  private async quiesce(id: string): Promise<void> {
+    const current = () => this.sleep?.id === id && !this.stopping;
+    this.log(`getting ready to sleep (${id})`);
+    const until = Date.now() + this.timing.quiesceTurnMs;
+    // A claim already out may bring work: `claim` holds back what it brings, once it is in.
+    if (this.claiming) await bounded(this.claiming, this.timing.quiesceTurnMs);
+    while (this.working && Date.now() < until && current()) await sleep(50);
+    if (!current()) return;
+    if (this.working && this.run) {
+      // The stop would cut the turn anyway: end it here, so the transcript and the thread say
+      // where it stopped, and the person knows to pick it up.
+      this.log("the turn did not finish before the sleep: interrupting it");
+      await bounded(this.interrupt(), this.timing.stopStepMs);
+      this.notice(randomId("ti"), {
+        type: "error",
+        code: "turn_failed",
+        message:
+          "The sandbox had to go to sleep before Claude finished this turn. Send a message to pick it up again.",
+      });
+    }
+    if (this.ws) await this.ws.design.settled(this.timing.settleMs);
+    await bounded(
+      Promise.all([
+        this.thread.flush(),
+        this.acks.flush(),
+        this.questions.flush(),
+        this.turns.flush(),
+        this.previews?.flush(),
+      ]),
+      this.timing.stopStepMs,
+    );
+    await bounded(this.checkpoint(), this.timing.checkpointMs);
+    if (!current()) return;
+    this.sleep!.ready = true;
+    this.state.set({ quiesced: id });
+    this.log("ready to sleep");
+  }
 
   private async prepare(): Promise<string> {
     try {
@@ -555,6 +721,13 @@ export class Runner {
     // Not started: a poke that comes first is answered by the claim that ends `start`, which
     // the design and Claude Code are ready for.
     if (this.stopping || !this.claimTimer) return;
+    // Going to sleep, or just thawed from it: what arrives now waits in the feed until the API
+    // says the sandbox is awake. A warm wake only pokes, so ask it now; an answer with no sleep
+    // claims (`onSleep`).
+    if (this.sleep) {
+      this.state.now();
+      return;
+    }
     if (this.claiming) {
       this.claimAgain = true;
       return;
@@ -570,9 +743,15 @@ export class Runner {
             claimId: this.claimId,
             limit: CLAIM_LIMIT,
           });
-          this.claimId = null;
           this.claimFailures = 0;
           this.replica.notify(seq);
+          if (this.sleep) {
+            // The sleep came while this claim was out: nothing it brought starts a turn the stop
+            // would cut. Unacknowledged, they are handed out again to the same claim id (this
+            // process, after a warm wake) or to the next runner (after a cold one).
+            break;
+          }
+          this.claimId = null;
           for (const event of events) this.take(event);
           // The first answer ends the start: working on what it handed out, or idle.
           if (!this.claimedOnce) {
@@ -1050,7 +1229,8 @@ export class Runner {
         return;
       }
       this.ws.presence.leave(CALLER.id);
-      this.opts.flush?.();
+      // The sandbox may be stopped at any time now: nothing of the turn may live only here.
+      await this.checkpoint();
     };
     end().catch((err) => this.log(`ending the turn failed: ${said(err)}`));
   }

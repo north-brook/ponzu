@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
 import { Lockup } from "@/components/icons";
 import { OpenDesign } from "../../local/open-design";
+import { designAppLink } from "./app-link";
 
 /*
  * Where a link to a design in Ponzu Cloud lands: https://ponzu.design/designs/<id>, as a pull
  * request's description and the agent's messages give it. A browser can't show the design (it
  * is the team's, behind their sign-in), so the page hands it to the Mac app as
  * ponzu://design/<id>, which opens it for whoever may, or offers the app, like /local does for a
- * design on someone's Mac.
+ * design on someone's Mac. `?app=ponzu-preview` hands it to Ponzu Preview instead (app-link.ts).
  */
 
 export const metadata: Metadata = {
@@ -16,12 +17,10 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-/** A design's id, as the app's ponzu://design/<id> takes it. */
-const ID = /^[A-Za-z0-9_-]{1,64}$/;
-
 export default async function Page(props: PageProps<"/designs/[id]">) {
   const { id } = await props.params;
-  const to = ID.test(id) ? `ponzu://design/${id}` : null;
+  const { app } = await props.searchParams;
+  const to = designAppLink(id, app);
   return (
     <div className="mx-auto flex min-h-dvh max-w-[1440px] flex-col px-16 max-[720px]:px-5">
       <div className="flex h-[82px] items-center">

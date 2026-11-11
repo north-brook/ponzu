@@ -60,6 +60,105 @@ export interface RunnerSession {
   openQuestions: string[];
   /** The design's head: its latest committed op. */
   seq: number;
+  /**
+   * The design's last checkpoint, as the API recorded it: a runner whose disk is behind it
+   * (a rollback) or holds none of it (a new sandbox) restores from it before it resumes.
+   */
+  saved: SavedPoint | null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Saving the sandbox                                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * What a checkpoint saved, as the API recorded it. A runner saves one after each turn has
+ * settled and before the sandbox sleeps: the session's transcript, and the checkout's work in
+ * progress, so that nothing lives only on the sandbox's disk.
+ */
+export interface SavedPoint {
+  /** Goes up by one each checkpoint, across runners and sandboxes: the API keeps the highest. */
+  turn: number;
+  /** When the API recorded it, as an ISO 8601 time. */
+  at: string;
+  /** The Claude session whose transcript is stored, if one is. */
+  claudeSessionId: string | null;
+  /**
+   * A repo design's work in progress: a commit on `refs/ponzu/wip/<design id>` whose parent is
+   * the checkout's HEAD and whose tree is its working tree, untracked files included.
+   */
+  wipCommit: string | null;
+  /** Whether the transcript, and a Scratch design's files, are stored with it. */
+  session: boolean;
+  workspace: boolean;
+}
+
+/** The hidden ref a repo design's work in progress is pushed to. Never a branch. */
+export const wipRef = (designId: string) => `refs/ponzu/wip/${designId}`;
+
+/** The names and type of the two archives a checkpoint uploads. */
+export const SESSION_ARCHIVE = "session.tar.gz";
+export const WORKSPACE_ARCHIVE = "workspace.tar.gz";
+export const ARCHIVE_TYPE = "application/gzip";
+/** The largest each may be, compressed. */
+export const MAX_SESSION_BYTES = 64 * 1024 * 1024;
+export const MAX_WORKSPACE_BYTES = 64 * 1024 * 1024;
+
+/**
+ * `POST /v1/runner/checkpoint`: record a checkpoint whose archives were uploaded (purposes
+ * `session` and `workspace`). Recorded only if `turn` is above the one the API has, so a late
+ * or repeated call never puts an older one back.
+ */
+export interface CheckpointRequest {
+  turn: number;
+  claudeSessionId: string | null;
+  wipCommit: string | null;
+  /** The upload ids of the archives, as `/v1/runner/uploads` answered them. */
+  session: string | null;
+  workspace: string | null;
+  /**
+   * Keep the archive the last checkpoint stored in place of one this checkpoint does not carry:
+   * the transcript (with its session id) when it could not be packed or is not on this disk, the
+   * work in progress (with its commit) when nothing changed or it could not be saved. A
+   * checkpoint never carries less than the one before it. Absent: keep nothing.
+   */
+  keep?: { session?: boolean; workspace?: boolean };
+}
+
+export interface CheckpointResponse {
+  /** The checkpoint the API has now: this one, or a newer one it kept. */
+  saved: SavedPoint;
+}
+
+/** Where to read one stored archive back, for a few minutes. */
+export interface SavedArchive {
+  url: string;
+  size: number;
+  /** Hex. */
+  sha256: string;
+}
+
+/** `POST /v1/runner/restore`: the design's last checkpoint and where to read its archives. */
+export interface RestoreResponse {
+  saved: SavedPoint | null;
+  session: SavedArchive | null;
+  workspace: SavedArchive | null;
+}
+
+/**
+ * `POST /v1/runner/restored`: the runner found its disk behind the design's last checkpoint and
+ * restored from it. The API logs it with the sandbox it happened in, and counts a rollback.
+ */
+export interface RestoredReport {
+  /** `rollback`: the disk had an older checkpoint. `rebuilt`: it had none (a new sandbox). */
+  kind: "rollback" | "rebuilt";
+  /** The checkpoint the disk had, if any. */
+  disk: { turn: number; at: string; bootId: string | null } | null;
+  saved: { turn: number; at: string };
+  /** This boot of the machine (`/proc/sys/kernel/random/boot_id`), and when it began. */
+  bootId: string | null;
+  bootAt: string | null;
+  restored: { session: boolean; workspace: boolean };
 }
 
 /* ------------------------------------------------------------------ */
@@ -370,11 +469,22 @@ export interface StateRequest {
   artboards: string[];
   /** The Claude session, once Claude Code has said which it is. Stored for the next resume. */
   claudeSessionId: string | null;
+  /**
+   * The sleep this runner is ready for: the `sleep` an answer named, once it has finished its
+   * turn, let its edits reach the API, saved a checkpoint and flushed the disk.
+   */
+  quiesced?: string | null;
 }
 
 export interface StateResponse {
   /** The design's head, so the runner's replica can catch up. */
   seq: number;
+  /**
+   * While the API is putting the sandbox to sleep: which stop (an ISO 8601 time). The runner
+   * takes no new work and gets ready, then says so with `quiesced`. Null otherwise; absent from
+   * an API that does not ask.
+   */
+  sleep?: string | null;
 }
 
 /** How often a live runner reports its state, changed or not. */
@@ -427,8 +537,12 @@ export interface WithdrawResponse {
 /* Uploads                                                             */
 /* ------------------------------------------------------------------ */
 
-/** `asset`: one of the design's files. `export`: a file a link reaches. `preview`: the sidebar's picture. */
-export type UploadPurpose = "asset" | "export" | "preview";
+/**
+ * `asset`: one of the design's files. `export`: a file a link reaches. `preview`: the sidebar's
+ * picture. `session` and `workspace`: a checkpoint's archives (the transcript, a Scratch
+ * design's files), stored where no client reads them and recorded only by `/v1/runner/checkpoint`.
+ */
+export type UploadPurpose = "asset" | "export" | "preview" | "session" | "workspace";
 
 /** `POST /v1/runner/uploads`: somewhere to put bytes. */
 export interface UploadRequest {

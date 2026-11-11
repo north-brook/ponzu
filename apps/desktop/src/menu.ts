@@ -9,7 +9,8 @@ import type { MenuCommand } from "./bridge.ts";
 
 export interface MenuActions {
   command(command: MenuCommand): void;
-  checkForUpdates(): void;
+  /** Null in a build that doesn't update itself (Ponzu Preview): the menus leave the item out. */
+  checkForUpdates: (() => void) | null;
   signOut(): void;
   /** Whether View has Toggle Developer Tools: development and test builds only. */
   devTools: boolean;
@@ -28,10 +29,10 @@ export function buildMenu(actions: MenuActions): void {
     { type: "separator" },
     { id: SIGN_OUT, label: "Sign Out", enabled: false, click: () => actions.signOut() },
   ];
-  const update: Electron.MenuItemConstructorOptions = {
-    label: "Check for Updates…",
-    click: () => actions.checkForUpdates(),
-  };
+  const checkForUpdates = actions.checkForUpdates;
+  const update: Electron.MenuItemConstructorOptions[] = checkForUpdates
+    ? [{ label: "Check for Updates…", click: () => checkForUpdates() }]
+    : [];
   const template: Electron.MenuItemConstructorOptions[] = [
     ...(mac
       ? [
@@ -39,7 +40,7 @@ export function buildMenu(actions: MenuActions): void {
             label: app.name,
             submenu: [
               { role: "about" as const },
-              update,
+              ...update,
               { type: "separator" as const },
               ...account,
               { type: "separator" as const },
@@ -82,7 +83,7 @@ export function buildMenu(actions: MenuActions): void {
       submenu: [
         { label: "ponzu.design", click: () => void shell.openExternal("https://ponzu.design") },
         // Off the Mac there's no app menu to hold these.
-        ...(mac ? [] : [{ type: "separator" as const }, update, ...account]),
+        ...(mac ? [] : [{ type: "separator" as const }, ...update, ...account]),
       ],
     },
   ];
