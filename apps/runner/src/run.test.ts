@@ -326,6 +326,22 @@ test("a token the API revokes stops the runner for good, mid-life too", async ()
   expect(run.closed).toBe(true);
 });
 
+test("git's credential is asked through the lease, and only the live runner gets one", async () => {
+  const api = new FakeRunnerApi({
+    session: { repo: { owner: "north", name: "fern", defaultBranch: "main" }, branch: "pz/hero" },
+  });
+  const ask = { protocol: "https", host: "github.com", path: "north/fern.git" };
+  const first = await setup({ api });
+  expect((await first.runner.gitCredential(ask)).password).toBe("ghs_fake");
+  await first.runner.eraseGitCredential(ask);
+  expect(api.erased).toEqual([ask]);
+
+  // A newer runner took the design: the older one's git gets nothing, and it stops.
+  await setup({ api });
+  await expect(first.runner.gitCredential(ask)).rejects.toThrow("A newer runner");
+  await until(() => first.fatal.length === 1);
+});
+
 /* ------------------------------------------------------------------ */
 /* Events in                                                           */
 /* ------------------------------------------------------------------ */

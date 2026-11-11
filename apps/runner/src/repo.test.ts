@@ -113,3 +113,17 @@ test("a clone that fails says why", async () => {
   expect(err).toBeInstanceOf(CheckoutError);
   expect(err.message).toStartWith("Ponzu could not get north/fern:");
 });
+
+test("every git call goes through the git it is given, as the image's runs as the agent's user", async () => {
+  const { git, session, opts } = await world();
+  const bin = await temp();
+  const log = join(bin, "calls");
+  const wrapper = join(bin, "agent-git");
+  await writeFile(wrapper, `#!/bin/sh\necho "$1" >> '${log}'\nexec git "$@"\n`, { mode: 0o755 });
+  const dir = await checkout(session, { ...opts, git: wrapper });
+  expect(git(["branch", "--show-current"], dir)).toBe("pz/hero");
+  const calls = (await readFile(log, "utf8")).trim().split("\n");
+  expect(calls).toContain("config");
+  expect(calls).toContain("clone");
+  expect(calls).toContain("switch");
+});

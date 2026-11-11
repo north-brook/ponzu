@@ -28,6 +28,8 @@ import { type ApiError, fatal, type RunnerApi, retryable, watchFatal } from "./a
 import {
   type AgentState,
   CLAIM_LIMIT,
+  type GitCredentialRequest,
+  type GitCredentialResponse,
   HEARTBEAT_MS,
   type ModelUsage,
   type QuestionBody,
@@ -316,6 +318,16 @@ export class Runner {
   /** What `/health` says. */
   health(): { ok: true; state: AgentState } {
     return { ok: true, state: this.state.current.state };
+  }
+
+  /** A token for git, asked through this runner's lease: the agent's git holds no runner token. */
+  gitCredential(ask: GitCredentialRequest): Promise<GitCredentialResponse> {
+    return this.api.gitCredential(ask);
+  }
+
+  /** GitHub refused the token git was given. */
+  eraseGitCredential(ask: GitCredentialRequest): Promise<void> {
+    return this.api.eraseGitCredential(ask);
   }
 
   /**

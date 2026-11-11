@@ -1,14 +1,11 @@
 /*
- * git's credential helper for github.com in a design's sandbox: `bun git-credential.js
- * <runner id> <op>`, with git's request on stdin. It asks the API for a one-hour token for the
- * design's own repository each time git needs one, and keeps nothing (docs/cloud.md, "Git").
- * The runner id is the lease of the runner that configured git, which the API checks like any
- * other call's. It needs PONZU_API_URL and PONZU_RUNNER_TOKEN, which git passes on from
- * whoever ran it.
+ * git's credential helper for github.com in a design's sandbox: `bun git-credential.js <socket>
+ * <op>`, with git's request on stdin. It asks the runner, over the socket the runner listens on
+ * (`serveCredentials` in server.ts), and the runner asks the API for a one-hour token for the
+ * design's own repository with its own token and lease (docs/cloud.md, "Git"). So the agent's
+ * git, which runs as the agent's user, holds no runner token, and the helper keeps nothing.
  */
-import type { GitCredentialRequest, GitCredentialResponse } from "./api/protocol.ts";
-import { type Endpoint, request } from "./api/request.ts";
-import { VERSION } from "./version.ts";
+import type { ErrorBody, GitCredentialRequest, GitCredentialResponse } from "./api/protocol.ts";
 
 /** git's `key=value` lines. */
 export function parseRequest(input: string): GitCredentialRequest {
@@ -31,25 +28,31 @@ export function formatCredential(c: GitCredentialResponse): string {
 }
 
 /** Answers one helper call. Prints nothing when there is no credential: git then fails as it should. */
-export async function helper(op: string, input: string, endpoint: Endpoint): Promise<string> {
-  const ask = parseRequest(input);
-  if (op === "get")
-    return formatCredential(
-      await request<GitCredentialResponse>(endpoint, "POST", "/v1/runner/git-credential", ask),
-    );
+export async function helper(op: string, input: string, socket: string): Promise<string> {
+  // git also says `store`, which keeps nothing here.
+  if (op !== "get" && op !== "erase") return "";
+  const response = await fetch(`http://runner/${op}`, {
+    unix: socket,
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(parseRequest(input)),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) {
+    const body = (await response.json().catch(() => null)) as ErrorBody | null;
+    throw new Error(body?.error.message ?? `The runner answered ${response.status}.`);
+  }
   // GitHub refused what it was given, so the API should not hand it out again.
-  if (op === "erase") await request(endpoint, "POST", "/v1/runner/git-credential/erase", ask);
-  return "";
+  if (op === "erase") return "";
+  return formatCredential((await response.json()) as GitCredentialResponse);
 }
 
 if (import.meta.main) {
-  const { PONZU_API_URL: baseUrl, PONZU_RUNNER_TOKEN: token } = process.env;
   try {
-    if (!baseUrl || !token) throw new Error("PONZU_API_URL and PONZU_RUNNER_TOKEN must be set.");
-    const [runnerId, op = ""] = process.argv.slice(2);
+    const [socket, op = ""] = process.argv.slice(2);
+    if (!socket) throw new Error("Say which socket the runner listens on.");
     const input = await new Response(Bun.stdin.stream()).text();
-    const client = `runner/${VERSION}`;
-    process.stdout.write(await helper(op, input, { baseUrl, token, client, runnerId }));
+    process.stdout.write(await helper(op, input, socket));
   } catch (err) {
     process.stderr.write(`ponzu credential helper: ${err instanceof Error ? err.message : err}\n`);
   }

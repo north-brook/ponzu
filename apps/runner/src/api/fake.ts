@@ -91,6 +91,8 @@ export class FakeRunnerApi {
   readonly uploads: (UploadFile & { seq?: number })[] = [];
   readonly usage = new Map<string, TurnUsage>();
   readonly erased: GitCredentialRequest[] = [];
+  /** What git's credential answers with: a stand-in, or a real token for a run against GitHub. */
+  gitToken: { password: string; expiresAt: string } | null = null;
   /** While true, every call fails as if the API could not be reached. */
   down = false;
   /** While true, every call is refused as with a revoked runner token. */
@@ -292,8 +294,8 @@ export class FakeRunnerApi {
       throw new ApiError(403, "forbidden", "That is not this design's repository.");
     return {
       username: "x-access-token",
-      password: "ghs_fake",
-      expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+      password: this.gitToken?.password ?? "ghs_fake",
+      expiresAt: this.gitToken?.expiresAt ?? new Date(Date.now() + 3_600_000).toISOString(),
     };
   }
 
