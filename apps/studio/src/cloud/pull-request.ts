@@ -1,4 +1,5 @@
-import type { PullRequestSummary } from "./model.ts";
+import { gateMessage } from "./gate.ts";
+import type { PullRequestSummary, SteerGate } from "./model.ts";
 
 /** The one thing the chrome's dark button offers, from the pull request's state. */
 export type NextAction =
@@ -27,6 +28,25 @@ export function nextAction(
   if (pr.checks === "failing") return "fix_checks";
   if (pr.checks === "running") return pr.autoMerge ? "auto_merge_on" : "auto_merge";
   return "merge";
+}
+
+/** The actions Ponzu hands to the agent, which wait while it can't run. The rest are GitHub's. */
+const AGENT_ACTIONS: ReadonlySet<NextAction> = new Set(["create_pr", "fix_checks", "resolve"]);
+
+/**
+ * Why the next action can't be taken now, for its tip, or null when it can. Every action steers
+ * the design, so it needs write access; the agent's actions also wait while its Claude can't run.
+ */
+export function actionBlock(
+  action: NextAction,
+  gate: SteerGate | null,
+  meId: string,
+): string | null {
+  if (!gate) return null;
+  if (gate.kind === "read_only") {
+    return gate.repo ? `Needs write access to ${gate.repo.owner}/${gate.repo.name}` : null;
+  }
+  return AGENT_ACTIONS.has(action) ? gateMessage(gate, meId) : null;
 }
 
 /** The pull request icon's state: which glyph, and which color when the mark is active. */
