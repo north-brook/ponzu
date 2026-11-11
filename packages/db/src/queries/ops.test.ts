@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
-import { actorFor, agent, feedOf, rename, seedDesign } from "../fixtures.ts";
+import { actorFor, agent, rename, seedDesign } from "../fixtures.ts";
 import { designOps } from "../schema/index.ts";
-import { createTestDb } from "../testing.ts";
+import { createTestDb, feedOf } from "../testing.ts";
 import { getDesign } from "./designs.ts";
 import { commit, commitOps, findOps, type OpEvent, readOps } from "./ops.ts";
 import { QueryError } from "./run.ts";

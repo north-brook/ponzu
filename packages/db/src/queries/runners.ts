@@ -1,7 +1,15 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, getTableColumns, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { newId } from "../ids.ts";
-import { type AgentState, designRunners, designs } from "../schema/index.ts";
+import {
+  type AgentState,
+  designRunners,
+  designs,
+  repos,
+  users,
+  workspaces,
+} from "../schema/index.ts";
+import type { Design } from "./designs.ts";
 import { timeParam } from "./json.ts";
 import { run } from "./run.ts";
 
@@ -9,6 +17,70 @@ import { run } from "./run.ts";
  * A design's runner (docs/cloud.md, "The runner protocol"): the lease that makes one process
  * the design's runner, when it was last heard from, and the state it reports.
  */
+
+/** What a design's runner works with: the design, its repository, and the person behind it. */
+export interface RunnerContext {
+  design: Design;
+  assetKey: string;
+  /** Null for Scratch. */
+  repo: { githubRepoId: number; fullName: string; defaultBranch: string } | null;
+  /** The App's installation on the workspace; null while it is not installed. */
+  installationId: number | null;
+  /** Set while the App is suspended on the workspace. */
+  suspendedAt: Date | null;
+  /** The design's owner, whom commits are authored by. Null once they are deleted. */
+  owner: { id: string; name: string | null; githubLogin: string; githubUserId: number } | null;
+}
+
+/** A design with what its runner works with, in one read. Null when there is no such design. */
+export async function getRunnerContext(db: Db, designId: string): Promise<RunnerContext | null> {
+  const { assetKey, ...design } = getTableColumns(designs);
+  const [row] = await run(
+    db
+      .select({
+        design,
+        assetKey,
+        repoGithubId: repos.githubRepoId,
+        repoFullName: repos.fullName,
+        repoDefaultBranch: repos.defaultBranch,
+        installationId: workspaces.installationId,
+        suspendedAt: workspaces.suspendedAt,
+        ownerId: users.id,
+        ownerName: users.name,
+        ownerLogin: users.githubLogin,
+        ownerGithubId: users.githubUserId,
+      })
+      .from(designs)
+      .innerJoin(workspaces, eq(workspaces.id, designs.workspaceId))
+      .leftJoin(repos, eq(repos.id, designs.repoId))
+      .leftJoin(users, eq(users.id, designs.ownerId))
+      .where(eq(designs.id, designId)),
+  );
+  if (!row) return null;
+  return {
+    design: row.design,
+    assetKey: row.assetKey,
+    repo:
+      row.repoGithubId === null || row.repoFullName === null || row.repoDefaultBranch === null
+        ? null
+        : {
+            githubRepoId: row.repoGithubId,
+            fullName: row.repoFullName,
+            defaultBranch: row.repoDefaultBranch,
+          },
+    installationId: row.installationId,
+    suspendedAt: row.suspendedAt,
+    owner:
+      row.ownerId === null || row.ownerLogin === null || row.ownerGithubId === null
+        ? null
+        : {
+            id: row.ownerId,
+            name: row.ownerName,
+            githubLogin: row.ownerLogin,
+            githubUserId: row.ownerGithubId,
+          },
+  };
+}
 
 /**
  * Make a new runner id the design's lease, replacing whichever was there: the runner that

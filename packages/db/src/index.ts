@@ -1,6 +1,6 @@
 export { createDb, createPooledDb, type Db } from "./client.ts";
 export { DESIGN_HEAD_COLUMNS, type DesignHead, type LiveDesignHead, toDesignHead } from "./head.ts";
-export { type IdPrefix, isId, newId } from "./ids.ts";
+export { type IdPrefix, isId, newId, randomString } from "./ids.ts";
 export {
   type ClaudeAccount,
   deleteMembershipsExcept,
@@ -67,7 +67,6 @@ export {
   findStops,
   markEventsDelivered,
   type NewEvent,
-  personOf,
 } from "./queries/events.ts";
 export {
   claimGithubTokenRefresh,
@@ -154,10 +153,13 @@ export {
   verifyRunnerToken,
 } from "./queries/runner-tokens.ts";
 export {
+  getRunnerContext,
+  type RunnerContext,
   type RunnerState,
   reportRunnerState,
   takeRunnerLease,
 } from "./queries/runners.ts";
+export { getAwakeSandboxAddress } from "./queries/sandboxes.ts";
 export {
   admitSession,
   endSession,

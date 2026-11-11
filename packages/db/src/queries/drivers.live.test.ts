@@ -4,9 +4,10 @@
 // what PGlite gave. Runs only when PONZU_TEST_DATABASE_URL is set (see ../live.ts).
 import { afterAll, expect, test } from "bun:test";
 import { emptyDoc } from "@ponzu/core";
-import { actorFor, feedOf, rename, seedDesign, seedRepo, seedUser } from "../fixtures.ts";
+import { actorFor, rename, seedDesign, seedRepo, seedUser } from "../fixtures.ts";
 import { newId } from "../ids.ts";
 import { describeLive } from "../live.ts";
+import { feedOf } from "../testing.ts";
 import {
   deleteMembershipsExcept,
   getRepoInstallationId,
