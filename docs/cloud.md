@@ -1908,7 +1908,12 @@ the order summary on the right"). They are generated, never written by hand
 - **Retries, two layers:** the SDK tries a 429, a 5xx or a dropped connection once more, and an
   answer that fails a check or the gate is asked for once more. At most two asks and two gate
   checks, eight HTTP requests, a generation.
-- **Refresh**: ideas a month old are made again once the repo has been pushed to since; an
+- **Refresh**: ideas are made again when the repo's default branch moves. GitHub's `push`
+  webhook for it stamps `repos.default_pushed_at`, and the next ask after that (an hour at least
+  after the last try) starts a generation; the ideas there were show meanwhile, and the new ones
+  the next time the page opens. A push to any other branch, a design's own included, changes
+  nothing they were made from; those are known only from the repo list's `pushed_at`, which
+  remakes ideas a month old (and catches a default-branch push whose webhook never came), and an
   empty list after any push. A visit alone never remakes them, and a repo nobody pushes to keeps
   them. The one exception is a change in how ideas are made: each list keeps the version that
   made it (`repos.ideas_version`, `IDEAS_VERSION`), and an empty list an earlier version wrote is

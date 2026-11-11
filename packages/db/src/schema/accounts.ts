@@ -246,6 +246,12 @@ export const repos = pgTable(
     defaultBranch: text("default_branch").notNull(),
     private: boolean("private").notNull().default(false),
     pushedAt: instant("pushed_at"),
+    /**
+     * When the default branch last moved: the API's clock as GitHub's push webhook for it came
+     * in. Null: none has been heard since the App could see the repo. (`pushed_at` is GitHub's
+     * own, for any branch, a design's included, and only as fresh as the last read of the list.)
+     */
+    defaultPushedAt: instant("default_pushed_at"),
     /** The provider snapshot new designs in this repo start from. */
     baseSnapshot: text("base_snapshot"),
     baseStatus: text("base_status", { enum: BASE_STATUSES }).notNull().default("none"),
