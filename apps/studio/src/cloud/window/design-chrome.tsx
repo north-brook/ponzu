@@ -65,7 +65,7 @@ export function DesignChrome({
     right.push({
       key: "presence",
       node: <Presence contributors={team.contributors} meId={team.meId} />,
-      after: 14,
+      after: 2,
     });
   }
   if (pullRequest) {
@@ -78,7 +78,7 @@ export function DesignChrome({
           onToggle={pullRequest.onToggleTab}
         />
       ),
-      after: 8,
+      after: 2,
     });
   }
   if (action) {
@@ -96,7 +96,8 @@ export function DesignChrome({
     });
   }
 
-  // The board spaces them with spacers between 4px header gaps: a spacer of n is n + 8 here.
+  // One rhythm across the cluster: 10 between its pieces (a spacer of n is n + 8 here), 12
+  // before the divider.
   const cluster = (
     <div className="flex shrink-0 items-center">
       {right.map(({ key, node, after }, i) => (
@@ -140,7 +141,7 @@ export function DesignChrome({
             {name}
           </span>
         </span>
-        <ChromeDivider />
+        <ChromeDivider pane="sidebar" />
       </span>
       <span className="w-1 shrink-0" />
       <PageTabs pages={pages} activeId={activePageId} onSelect={onSelectPage} onAdd={onAddPage} />
@@ -183,7 +184,7 @@ export function DesignChrome({
             rail.open ? "min-w-[calc(var(--pane-rail,360px)-5px)]" : "min-w-px",
           )}
         >
-          <ChromeDivider />
+          <ChromeDivider pane="rail" />
           <span className="min-w-3 flex-1" />
           <ThreadToggle open={rail.open} signal={rail.signal} onToggle={rail.onToggle} />
           <span className="w-1 shrink-0" />
