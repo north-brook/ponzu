@@ -1,8 +1,10 @@
 name: CI
 
 on:
+  # A push tests what a merge made, which no pull request's run saw, and saves the caches
+  # that pull requests into that branch restore.
   push:
-    branches: [main]
+    branches: [main, cloud]
   pull_request:
 
 permissions:
@@ -13,8 +15,12 @@ permissions:
 # can't affect (scripts/ci/scope.ts) passes without doing its work, rather
 # than never reporting.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  # A newer push to a pull request supersedes the old head; main keeps every run.
+  # A pull request's runs share a group, and a newer push to it cancels the old head's. A
+  # push to a branch is its own group, keyed by commit, and is never cancelled: grouped by
+  # branch, a third quick merge would cancel the second's pending run, and when merges come
+  # quickly the commit that broke the branch would have no verdict of its own. The two
+  # kinds never share a group, so neither cancels the other.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -53,7 +59,7 @@ jobs:
 
   scope:
     # Which suites this pull request can affect (scripts/ci/scope.ts). A push
-    # to main runs everything. A suite whose scope is unknown runs: the jobs
+    # runs everything. A suite whose scope is unknown runs: the jobs
     # below skip only when this job answered false, so its failing never
     # passes them.
     name: Test scope
@@ -80,9 +86,12 @@ jobs:
           bun scripts/ci/scope.ts "origin/$BASE_REF" > "$RUNNER_TEMP/scope"
           tee -a "$GITHUB_OUTPUT" < "$RUNNER_TEMP/scope"
 
-  test:
-    name: Check, typecheck, test
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+  checks:
+    # Everything but the tests, on its own runner, so none of it shares cores with them: most
+    # flaky failures used to come in bun's first minute, while these ran beside it, and a
+    # typecheck or lint failure now reports on its own instead of after the tests.
+    name: Lint, typecheck, build
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -94,31 +103,29 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: apps/api/package.json
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      # The Linux jobs restore this cache, and only this one saves it, only on a push: jobs
+      # no longer race to upload the same 800 MB, and a pull request reads what its base
+      # branch saved.
+      - id: bun-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
           restore-keys: bun-${{ runner.os }}-
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      # Saved by each push, so a pull request restores the newest one its base branch built,
+      # from an older lockfile if need be. Next discards what no longer matches.
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: apps/web/.next/cache
           key: next-${{ runner.os }}-${{ hashFiles('bun.lock') }}-${{ github.sha }}
-          restore-keys: next-${{ runner.os }}-${{ hashFiles('bun.lock') }}-
+          restore-keys: |
+            next-${{ runner.os }}-${{ hashFiles('bun.lock') }}-
+            next-${{ runner.os }}-
       # Nothing here needs Electron itself, only its types.
       - run: bun install --frozen-lockfile --ignore-scripts
-      - name: The Chromium the render tests use
-        # They skip without one, which would pass with them unrun.
-        run: |
-          chrome=$(command -v google-chrome-stable || command -v google-chrome || command -v chromium || true)
-          [ -n "$chrome" ] || { echo "::error::No Chrome or Chromium on this runner; the render tests would skip."; exit 1; }
-          echo "PONZU_CHROMIUM=$chrome" >> "$GITHUB_ENV"
-      - name: Lint, typecheck and build beside the tests
-        # None of these writes what another reads. Test files run in their own
-        # workers; the Chromium ones take most of the time. Each check's output
-        # is printed whole after everything finishes. Every worker that makes a
-        # test database migrates its first one (half a second alone), and with
-        # all of this running at once that has taken longer than bun's default
-        # five seconds for a test or a hook, so they get twenty.
+      - name: Lint, typecheck and build
+        # None of these writes what another reads, so they run at once. Each one's output is
+        # printed whole after all have finished.
         run: |
           check() { name=$1; shift; { "$@" > "$RUNNER_TEMP/$name.log" 2>&1; echo $? > "$RUNNER_TEMP/$name.status"; } & }
           check lint bunx biome check .
@@ -128,13 +135,12 @@ jobs:
           check typecheck-api bunx tsc -p apps/api/tsconfig.json --noEmit
           check studio bun run --filter @ponzu/studio build
           check web bun run --filter @ponzu/web build
+          # Builds the API the way Vercel does and loads the bundle in Node.
           check api bun scripts/ci/api-bundle.ts
+          # Builds the runner and starts it, which must refuse an empty environment.
           check runner bun apps/runner/scripts/build.ts --smoke
-          failed=0
-          # Beside the builds above, a test file's first in-process Postgres can take longer to
-          # boot than bun's five seconds; it takes well under one alone.
-          bun test --parallel --timeout 20000 || failed=1
           wait
+          failed=0
           for name in lint typecheck typecheck-mobile typecheck-desktop typecheck-api studio web api runner; do
             echo "::group::$name"
             cat "$RUNNER_TEMP/$name.log"
@@ -145,6 +151,85 @@ jobs:
             fi
           done
           exit $failed
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        if: ${{ !cancelled() && github.event_name == 'push' && steps.bun-cache.outputs.cache-hit != 'true' }}
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        if: ${{ !cancelled() && github.event_name == 'push' }}
+        with:
+          path: apps/web/.next/cache
+          key: next-${{ runner.os }}-${{ hashFiles('bun.lock') }}-${{ github.sha }}
+
+  test:
+    # The tests alone; "Lint, typecheck, build" runs the rest. Main's ruleset requires this
+    # check by its name.
+    name: Check, typecheck, test
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    timeout-minutes: 10
+    env:
+      # Kept between runs by the cache below, outside the checkout.
+      TIMINGS: ~/.cache/ponzu-ci/bun-timings.json
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: package.json
+      # "Lint, typecheck, build" saves it.
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      # How long each test file took on the newest push, so `--parallel` starts the slowest
+      # first instead of whenever it reaches them: the studio's two longest files used to
+      # start among the last, and the run ended when they did. A file it doesn't list runs in
+      # the usual order, and with no file at all bun runs as it always has.
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ env.TIMINGS }}
+          key: bun-timings-${{ github.sha }}
+          restore-keys: bun-timings-
+      # Nothing here needs Electron itself, only its types.
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - name: The Chromium the render tests use
+        # They skip without one, which would pass with them unrun.
+        run: |
+          chrome=$(command -v google-chrome-stable || command -v google-chrome || command -v chromium || true)
+          [ -n "$chrome" ] || { echo "::error::No Chrome or Chromium on this runner; the render tests would skip."; exit 1; }
+          echo "PONZU_CHROMIUM=$chrome" >> "$GITHUB_ENV"
+      - name: Tests
+        # Test files run in their own workers; the Chromium ones take most of the time. Every
+        # worker that makes a test database migrates its first one (half a second alone), and
+        # with every worker starting at once that has taken longer than bun's default five
+        # seconds for a test or a hook, so they get twenty. A push records each file's time
+        # for the runs after it. Every test's result also goes to JUnit XML, uploaded below,
+        # so which test failed when can be asked of the artifacts rather than the logs.
+        run: |
+          timings=${TIMINGS/#\~/$HOME}
+          results="$RUNNER_TEMP/test-results"
+          mkdir -p "$(dirname "$timings")" "$results"
+          update=()
+          if [ "$GITHUB_EVENT_NAME" = push ]; then update=(--update-timings); fi
+          status=0
+          bun test --parallel --timeout 20000 --timings "$timings" "${update[@]}" \
+            --reporter=junit --reporter-outfile="$results/junit.xml" || status=$?
+          if [ -f "$timings" ]; then cp "$timings" "$results/"; fi
+          exit $status
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          # One per attempt, so a rerun's results sit beside the first's.
+          name: test-results-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/test-results
+          if-no-files-found: warn
+          retention-days: 30
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        if: ${{ !cancelled() && github.event_name == 'push' }}
+        with:
+          path: ${{ env.TIMINGS }}
+          key: bun-timings-${{ github.sha }}
 
   database:
     # The cloud database's migrations and queries on a real Postgres. Every
@@ -175,12 +260,20 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: package.json
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      # Only the database package and what it imports: about 95 MB, against 800 MB for the
+      # whole repository, for a second of tests. Its own cache, saved by a push.
+      - id: bun-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-          restore-keys: bun-${{ runner.os }}-
-      - run: bun install --frozen-lockfile --ignore-scripts
+          key: bun-db-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-db-${{ runner.os }}-
+      - run: bun install --frozen-lockfile --ignore-scripts --filter @ponzu/db
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        if: ${{ github.event_name == 'push' && steps.bun-cache.outputs.cache-hit != 'true' }}
+        with:
+          path: ~/.bun/install/cache
+          key: bun-db-${{ runner.os }}-${{ hashFiles('bun.lock') }}
       - name: The migrations apply, and applying them again changes nothing
         run: bun run db:migrate && bun run db:migrate
         working-directory: packages/db
@@ -210,7 +303,8 @@ jobs:
         if: env.RUN == 'true'
         with:
           bun-version-file: package.json
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      # "Lint, typecheck, build" saves it.
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         if: env.RUN == 'true'
         with:
           path: ~/.bun/install/cache
@@ -283,7 +377,9 @@ jobs:
         if: env.RUN == 'true'
         with:
           bun-version-file: package.json
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      # Only this job uses Windows' cache. Saved by a push, like Linux's.
+      - id: bun-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         if: env.RUN == 'true'
         with:
           path: ~/.bun/install/cache
@@ -297,6 +393,11 @@ jobs:
           restore-keys: electron-${{ runner.os }}-
       - run: bun install --frozen-lockfile
         if: env.RUN == 'true'
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        if: env.RUN == 'true' && github.event_name == 'push' && steps.bun-cache.outputs.cache-hit != 'true'
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
       - name: The CLI and the app's own paths, as Windows writes them
         if: env.RUN == 'true'
         # The CLI's tests that need Windows itself ("Check, typecheck, test"
@@ -328,12 +429,19 @@ jobs:
         working-directory: apps/desktop
 
   mobile-checks:
-    # The iPhone app on its own: its typecheck and tests (which "Check,
-    # typecheck, test" also runs, with everything), and an iOS export, which
-    # proves Metro, NativeWind and every import resolve without a Mac.
+    # The iPhone app on its own: its typecheck ("Lint, typecheck, build" also
+    # runs it) and tests ("Check, typecheck, test" also runs them, with
+    # everything), and an iOS export, which proves Metro, NativeWind and every
+    # import resolve without a Mac. The export is all that is its own, and it
+    # was the last check to finish on a third of pull requests, so pull
+    # requests into `cloud` skip it, as they skip "Mobile iOS": the cloud
+    # rewrite doesn't ship this app. A push to `cloud` still runs it, so a
+    # change there that breaks the bundle shows before `cloud` reaches main.
     name: Mobile checks
     needs: scope
-    if: ${{ !cancelled() && needs.scope.outputs.mobile != 'false' }}
+    if: >-
+      ${{ !cancelled() && github.base_ref != 'cloud'
+      && needs.scope.outputs.mobile != 'false' }}
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
     steps:
@@ -341,7 +449,8 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: package.json
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      # "Lint, typecheck, build" saves it.
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}

@@ -14,7 +14,7 @@
  * neither does a manifest whose only change is its version: that is what a
  * release pull request is, told by its diff, never its branch name. Any
  * other file outside the packages (the lockfile, root configuration, this
- * script, CI) runs everything. The workflow runs everything on a push to main.
+ * script, CI) runs everything. The workflow runs everything on a push.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
@@ -36,7 +36,7 @@ const SUITES: Record<Suite, string[]> = {
  * Packages the others import for types alone: the cloud API, whose routes the typed client
  * takes as `AppType` from `@ponzu/api/types`, and the runner, whose thread items it takes from
  * `@ponzu/runner/protocol`. A change to one cannot alter what a dependant
- * builds or bundles, only whether it typechecks, and "Check, typecheck, test" typechecks the
+ * builds or bundles, only whether it typechecks, and "Lint, typecheck, build" typechecks the
  * desktop app, the phone and everything else on every pull request. So a change to one (or to
  * a package only it uses, like the database) does not pass on to the packages that depend on it.
  */
