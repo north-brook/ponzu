@@ -6,6 +6,7 @@ import type {
   SessionPersistence,
   SignInResult,
 } from "@ponzu/desktop/bridge";
+import type { Lights } from "../cloud/window/chrome.tsx";
 
 declare global {
   interface Window {
@@ -23,11 +24,16 @@ export interface Host {
   session: Session;
   api: Api;
   live: Live;
-  /** The Mac draws its own traffic lights; a browser gets painted ones. */
-  lights: "native" | "drawn";
-  /** Sign in with GitHub; resolves once it has finished or failed. */
+  /**
+   * The Mac draws its own traffic lights in the chrome; a browser gets painted ones; Windows
+   * and Linux keep their own title bar, with nothing on the chrome's left.
+   */
+  lights: Lights;
+  /**
+   * Sign in with GitHub, beside any attempt still waiting in the browser; resolves once this
+   * one has ended. Nothing cancels one: it finishes, fails, or the shell closes it.
+   */
   signIn(): Promise<SignInResult>;
-  cancelSignIn(): void;
   persistence(): Promise<SessionPersistence>;
   onLink(listener: (link: DeepLink) => void): () => void;
   onCommand(listener: (command: MenuCommand) => void): () => void;

@@ -4,10 +4,12 @@ import type { Host } from "./host.ts";
 
 /*
  * 1 · Sign in (spec: onboarding 4.1). GitHub is only the method: one button, and the browser
- * does the rest. While the browser is out the button waits with the grey turning slice in place
- * of GitHub's mark; someone who comes back to the window without finishing finds it ready
- * again (or presses Cancel, for a browser that opened without taking the window's focus), and
- * a sign-in that failed says why in one line under it, in the shell's words.
+ * does the rest. A press starts a sign-in in the browser, and the button waits with the grey
+ * turning slice in place of GitHub's mark for a short cooldown (`cooldown` below), then is
+ * ready again, for someone whose tab went missing. Nothing here ends a sign-in: each one the
+ * shell started can still finish in its tab, whatever this window does, and the first to finish
+ * signs the person in. A sign-in that failed says why in one line under the button, in the
+ * shell's words.
  */
 
 export type SignInReason = "signed_out" | "github_reauth";
@@ -20,11 +22,38 @@ const COPY: Record<SignInReason, SignInCopy | undefined> = {
   },
 };
 
+/** Never ready again sooner than this after a press: the browser takes a moment to open. */
+export const COOLDOWN_MS = 4_000;
+/** Back in the window from the browser: ready again this long after, not at once. */
+export const BACK_MS = 1_500;
+
 /**
- * Back in the window while the browser is out: give it this long to finish first, since a
- * sign-in that completes brings the window forward itself.
+ * Waits out the cooldown after a press, then calls `ready`: at least COOLDOWN_MS, and if the
+ * window is in the background then (the browser took the focus), until BACK_MS after it is
+ * back. A browser that opened behind the window leaves it focused: ready at COOLDOWN_MS.
+ * Returns a function that stops waiting.
  */
-const RETURN_GRACE_MS = 1_500;
+export function cooldown(
+  ready: () => void,
+  target: Pick<
+    Window,
+    "addEventListener" | "removeEventListener" | "setTimeout" | "clearTimeout"
+  > & { document: Pick<Document, "hasFocus"> } = window,
+): () => void {
+  let timer: number | undefined;
+  const back = () => {
+    target.clearTimeout(timer);
+    timer = target.setTimeout(ready, BACK_MS);
+  };
+  timer = target.setTimeout(() => {
+    if (target.document.hasFocus()) ready();
+    else target.addEventListener("focus", back);
+  }, COOLDOWN_MS);
+  return () => {
+    target.clearTimeout(timer);
+    target.removeEventListener("focus", back);
+  };
+}
 
 export function SignInScreen({ host, reason }: { host: Host; reason: SignInReason }) {
   const [state, setState] = useState<SignInState>("idle");
@@ -34,46 +63,30 @@ export function SignInScreen({ host, reason }: { host: Host; reason: SignInReaso
     mounted.current = true;
     return () => {
       mounted.current = false;
-      host.cancelSignIn();
     };
-  }, [host]);
+  }, []);
 
-  // Came back without finishing: the button is ready again.
+  // The cooldown after a press: then the button is ready again, the sign-in still waiting.
   useEffect(() => {
     if (state !== "waiting") return;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const back = () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => host.cancelSignIn(), RETURN_GRACE_MS);
-    };
-    window.addEventListener("focus", back);
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener("focus", back);
-    };
-  }, [host, state]);
+    return cooldown(() => setState("idle"));
+  }, [state]);
 
   const signIn = async () => {
+    if (state === "waiting") return;
     setState("waiting");
     setFailure(null);
     const result = await host.signIn();
     if (!mounted.current) return;
+    // A sign-in that ended quietly (another finished, it ran out) changes nothing here.
     if (!result.ok && result.reason === "failed") {
       setFailure(result.message);
       setState("failed");
-    } else {
-      setState("idle");
     }
   };
 
   const copy = COPY[reason];
   return (
-    <SignInStep
-      state={state}
-      onContinue={signIn}
-      onCancel={() => host.cancelSignIn()}
-      failure={failure}
-      {...(copy ? { copy } : {})}
-    />
+    <SignInStep state={state} onContinue={signIn} failure={failure} {...(copy ? { copy } : {})} />
   );
 }
