@@ -43,7 +43,8 @@ src/
   vault/          sealing stored secrets
   github/         githubUserToken: a person's GitHub token, kept fresh; syncGithub and
                   reconcileInstallation: workspaces, members and repos in line with GitHub;
-                  the install round trip and its setup page; what each webhook does
+                  the install round trip and its setup page; what each webhook does;
+                  people.ts: everyone GitHub gives access, read once per installation
   designs/        committing ops, undo, the current document and its cache, who may send
                   which op (op-rules.ts), and the events a design's feed gets
   runner/         the runner protocol's side here: its request bodies (protocol.ts), the
@@ -144,7 +145,11 @@ the sandboxes labelled with their own database (`SandboxConfig.scope`).
    answers at once with `recordReposReachedBy`; a list of repos or designs (or a live query
    over one) joins the table, after `refreshWorkspaceRepoAccess` where it must be current.
    A webhook that cannot say whose access changed calls `markRepoAccessStale`. Never keep a
-   second copy of who can reach what.
+   second copy of who can reach what. The one exception is for show:
+   `workspace_people.repo_permissions` (`github/people.ts`) is the App's snapshot of who
+   GitHub lists in each repo, kept so the team can be shown before people open Ponzu. It is
+   never consulted to grant anything, and for anyone with a `repo_access` answer that answer
+   wins (`listRepoPeople`).
 
    To turn a token into a person anywhere else (a socket, a sealed query), call
    `authenticateUser(deps, token)` from `auth/authenticate.ts`. It verifies the WorkOS token

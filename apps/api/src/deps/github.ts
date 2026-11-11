@@ -7,6 +7,7 @@ import {
   createAppCredentials,
   createOctokit,
   type GithubOctokit,
+  graphql,
   idOf,
   listPages,
   pagedAs,
@@ -65,6 +66,14 @@ export type GithubInstalledRepository = Omit<GithubRepository, "canPush">;
 
 /** A person's standing in an organization: `admin` is an owner. */
 export type GithubOrgRole = "admin" | "member";
+
+/** Someone GitHub lists in an organization or a repository, as their profile says. */
+export interface GithubListedPerson {
+  id: number;
+  login: string;
+  name: string | null;
+  avatarUrl: string | null;
+}
 
 /**
  * A list GitHub serves a page at a time. `complete` is false when it was longer than the API
@@ -142,6 +151,24 @@ export interface Github extends GithubPullRequests {
   ): Promise<Listed<GithubInstalledRepository>>;
   /** With an installation token: an account's display name, or null when it has none. */
   getAccountName(installationToken: string, login: string): Promise<string | null>;
+  /**
+   * With an installation token that has `members: read`: everyone in an organization and their
+   * role, as far as `MAX_PEOPLE_PAGES` reads. Null when the token may not see its members.
+   */
+  listOrganizationPeople(
+    installationToken: string,
+    org: string,
+  ): Promise<Listed<GithubListedPerson & { role: GithubOrgRole }> | null>;
+  /**
+   * With an installation token: everyone with access to one repository (its collaborators,
+   * its organization's members through their teams or the base permission, its owners) and
+   * what each may do there, as far as `MAX_PEOPLE_PAGES` reads. Null when GitHub has no such
+   * repository for the token.
+   */
+  listRepositoryPeople(
+    installationToken: string,
+    fullName: string,
+  ): Promise<Listed<GithubListedPerson & { permission: RepoPermission }> | null>;
 
   /*
    * Reading a repository's contents, a little at a time, never cloning: with an installation
@@ -199,6 +226,40 @@ const OAUTH_URL = "https://github.com";
 const PAGE_SIZE = 100;
 /** The most pages one list is read to: 2,000 installations or repositories. */
 const MAX_PAGES = 20;
+/** The most pages one list of people is read to: 1,000 people in a repository or organization. */
+export const MAX_PEOPLE_PAGES = 10;
+
+/**
+ * Everyone in an organization, with their role. GraphQL, not REST: one call for a hundred
+ * people carries their names too, which the REST lists leave out.
+ */
+export const ORGANIZATION_PEOPLE_QUERY = `query InstallationOrganizationPeople($login: String!, $after: String) {
+  organization(login: $login) {
+    membersWithRole(first: 100, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      edges { role node { databaseId login name avatarUrl } }
+    }
+  }
+}`;
+
+/** Everyone with access to a repository, however they have it, and what they may do there. */
+export const REPOSITORY_PEOPLE_QUERY = `query InstallationRepositoryPeople($owner: String!, $name: String!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    collaborators(first: 100, after: $after, affiliation: ALL) {
+      pageInfo { hasNextPage endCursor }
+      edges { permission node { databaseId login name avatarUrl } }
+    }
+  }
+}`;
+
+/** GitHub's five repository roles as its four legacy answers, as the REST API gives them. */
+const GRAPHQL_PERMISSIONS: Record<string, RepoPermission> = {
+  ADMIN: "admin",
+  MAINTAIN: "write",
+  WRITE: "write",
+  TRIAGE: "read",
+  READ: "read",
+};
 
 export function createGithub({
   clientId,
@@ -310,6 +371,51 @@ export function createGithub({
     } catch (error) {
       if (error instanceof NoInstallationToken) return "none";
       throw error;
+    }
+  }
+
+  /**
+   * A GraphQL connection of people, a hundred at a time, up to `MAX_PEOPLE_PAGES`. Null when
+   * GitHub says the token may not see it, or there is no such thing for it; any other error
+   * throws, so a list GitHub failed to give is never taken for an empty one.
+   */
+  async function listPeople<Extra>(
+    token: string,
+    query: string,
+    variables: Record<string, unknown>,
+    connectionOf: (data: any) => any,
+    extra: (edge: any) => Extra,
+  ): Promise<Listed<GithubListedPerson & Extra> | null> {
+    const items: (GithubListedPerson & Extra)[] = [];
+    let after: string | null = null;
+    for (let page = 1; ; page++) {
+      const { data, errors } = await graphql(octokit, "app", token, query, {
+        ...variables,
+        after,
+      });
+      const connection = connectionOf(data);
+      if (!connection) {
+        if (errors.some((error) => error.type === "FORBIDDEN" || error.type === "NOT_FOUND")) {
+          return null;
+        }
+        const types = errors.map((error) => error.type ?? "unknown").join(", ");
+        throw new UpstreamError("github", `a list of people answered ${types || "nothing"}`);
+      }
+      for (const edge of connection.edges ?? []) {
+        const node = edge?.node;
+        if (typeof node?.databaseId !== "number" || typeof node.login !== "string") continue;
+        items.push({
+          id: node.databaseId,
+          login: node.login,
+          name: stringOrNull(node.name),
+          avatarUrl: stringOrNull(node.avatarUrl),
+          ...extra(edge),
+        });
+      }
+      const more = connection.pageInfo?.hasNextPage === true;
+      if (!more) return { items, complete: true };
+      if (page === MAX_PEOPLE_PAGES) return { items, complete: false };
+      after = String(connection.pageInfo.endCursor);
     }
   }
 
@@ -468,6 +574,27 @@ export function createGithub({
         }),
       );
       return typeof account.name === "string" && account.name.trim() !== "" ? account.name : null;
+    },
+
+    async listOrganizationPeople(installationToken, org) {
+      return listPeople(
+        installationToken,
+        ORGANIZATION_PEOPLE_QUERY,
+        { login: org },
+        (data) => data?.organization?.membersWithRole,
+        (edge) => ({ role: edge.role === "ADMIN" ? "admin" : "member" }) as const,
+      );
+    },
+
+    async listRepositoryPeople(installationToken, fullName) {
+      const { owner, repo } = repoParams(fullName);
+      return listPeople(
+        installationToken,
+        REPOSITORY_PEOPLE_QUERY,
+        { owner, name: repo },
+        (data) => data?.repository?.collaborators,
+        (edge) => ({ permission: GRAPHQL_PERMISSIONS[String(edge.permission)] ?? "none" }),
+      );
     },
 
     ...createPullRequestCalls({
