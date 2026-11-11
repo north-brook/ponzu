@@ -166,7 +166,8 @@ export const orientTools = [
         });
         const pageLink = linkNote(ctx, key, { page: page.id });
         return {
-          text: (pageLink ? `Page ${page.id} "${page.name}"${pageLink}\n\n` : "") + boards.join("\n\n"),
+          text:
+            (pageLink ? `Page ${page.id} "${page.name}"${pageLink}\n\n` : "") + boards.join("\n\n"),
         };
       }
       const hit = locate(doc, id);
