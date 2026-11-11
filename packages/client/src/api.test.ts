@@ -83,10 +83,11 @@ describe("against the API's own routes", () => {
     const ines = clientFor("ines");
     expect(await ines.repos.ideas(ws.repo.id)).toEqual({ status: "generating", ideas: [] });
     await t.backgroundDone();
-    // The test repo has nothing in it to ground ideas in.
+    // The test repo has next to nothing in it, and gets four all the same: where to begin.
     const answer = await ines.repos.ideas(ws.repo.id);
     const status: "ready" | "generating" | "none" = answer.status;
-    expect(status).toBe("none");
+    expect(status).toBe("ready");
+    expect(answer.ideas).toHaveLength(4);
     await expect(ines.repos.ideas("repo_nosuchrepo00000")).rejects.toMatchObject({
       code: "not_found",
     });

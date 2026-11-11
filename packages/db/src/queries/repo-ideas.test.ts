@@ -27,8 +27,10 @@ function policy(now: Date, windowLimit = 3): IdeasPolicy {
     now,
     retryBefore: new Date(now.getTime() - HOUR),
     staleBefore: new Date(now.getTime() - 30 * DAY),
+    emptyBefore: new Date(now.getTime() - 7 * DAY),
     windowStartedBefore: new Date(now.getTime() - HOUR),
     windowLimit,
+    version: 1,
   };
 }
 
@@ -70,6 +72,7 @@ describe("claimRepoIdeas", () => {
         ideas: ["One"],
         generatedAt: claimedAt,
         claimedAt,
+        version: 1,
       }),
     ).toBe(true);
 
@@ -89,7 +92,13 @@ describe("claimRepoIdeas", () => {
     const empty = await seedRepo(db, workspace.id, "north-brook/empty");
     const first = at("01T12:00:00");
     await claimRepoIdeas(db, { repoId: empty.id, ...policy(first) });
-    await saveRepoIdeas(db, { repoId: empty.id, ideas: [], generatedAt: first, claimedAt: first });
+    await saveRepoIdeas(db, {
+      repoId: empty.id,
+      ideas: [],
+      generatedAt: first,
+      claimedAt: first,
+      version: 1,
+    });
     const twoHours = new Date(first.getTime() + 2 * HOUR);
     expect(await claimRepoIdeas(db, { repoId: empty.id, ...policy(twoHours) })).toBe("not_due");
     await db
@@ -97,6 +106,23 @@ describe("claimRepoIdeas", () => {
       .set({ pushedAt: new Date(first.getTime() + HOUR) })
       .where(eq(repos.id, empty.id));
     expect(await claimRepoIdeas(db, { repoId: empty.id, ...policy(twoHours) })).toBe("claimed");
+
+    // An empty list nobody pushes to is made again a week on, and not before.
+    // In a workspace of its own, so the claims above leave its allowance whole.
+    const still = await seedWorkspace(db, "still-water");
+    const quiet = await seedRepo(db, still.id, "still-water/quiet");
+    await claimRepoIdeas(db, { repoId: quiet.id, ...policy(first) });
+    await saveRepoIdeas(db, {
+      repoId: quiet.id,
+      ideas: [],
+      generatedAt: first,
+      claimedAt: first,
+      version: 1,
+    });
+    const sixDays = new Date(first.getTime() + 6 * DAY);
+    expect(await claimRepoIdeas(db, { repoId: quiet.id, ...policy(sixDays) })).toBe("not_due");
+    const week = new Date(first.getTime() + 7 * DAY);
+    expect(await claimRepoIdeas(db, { repoId: quiet.id, ...policy(week) })).toBe("claimed");
   });
 
   test("a workspace starts at most its allowance in a window, across its repos", async () => {
@@ -137,6 +163,44 @@ describe("claimRepoIdeas", () => {
       "not_due",
     );
   });
+  test("an empty list an earlier way of making ideas wrote is due at once, push or not", async () => {
+    const workspace = await seedWorkspace(db);
+    const repo = await seedRepo(db, workspace.id, "north-brook/skipped");
+    const first = at("01T12:00:00");
+    await claimRepoIdeas(db, { repoId: repo.id, ...policy(first) });
+    // Written before there were versions: the column's default.
+    await saveRepoIdeas(db, {
+      repoId: repo.id,
+      ideas: [],
+      generatedAt: first,
+      claimedAt: first,
+      version: 0,
+    });
+    const twoHours = new Date(first.getTime() + 2 * HOUR);
+    expect(await claimRepoIdeas(db, { repoId: repo.id, ...policy(twoHours) })).toBe("claimed");
+    // Once this way has written its own empty list, that one waits for a push.
+    await saveRepoIdeas(db, {
+      repoId: repo.id,
+      ideas: [],
+      generatedAt: twoHours,
+      claimedAt: twoHours,
+      version: 1,
+    });
+    const later = new Date(twoHours.getTime() + 2 * HOUR);
+    expect(await claimRepoIdeas(db, { repoId: repo.id, ...policy(later) })).toBe("not_due");
+
+    // Ideas an earlier way made are kept: only an empty list is made again.
+    const kept = await seedRepo(db, workspace.id, "north-brook/kept");
+    await claimRepoIdeas(db, { repoId: kept.id, ...policy(first) });
+    await saveRepoIdeas(db, {
+      repoId: kept.id,
+      ideas: ["One"],
+      generatedAt: first,
+      claimedAt: first,
+      version: 0,
+    });
+    expect(await claimRepoIdeas(db, { repoId: kept.id, ...policy(twoHours) })).toBe("not_due");
+  });
 });
 
 describe("saveRepoIdeas", () => {
@@ -153,6 +217,7 @@ describe("saveRepoIdeas", () => {
         ideas: ["Late"],
         generatedAt: second,
         claimedAt: first,
+        version: 1,
       }),
     ).toBe(false);
     expect(
@@ -161,6 +226,7 @@ describe("saveRepoIdeas", () => {
         ideas: ["On time"],
         generatedAt: second,
         claimedAt: second,
+        version: 1,
       }),
     ).toBe(true);
   });
