@@ -57,7 +57,7 @@ export const users = pgTable("users", {
   pingNeedsYou: boolean("ping_needs_you").notNull().default(true),
   pingReplies: boolean("ping_replies").notNull().default(true),
   pingPrReady: boolean("ping_pr_ready").notNull().default(true),
-  pingTeammateComments: boolean("ping_teammate_comments").notNull().default(true),
+  pingTeammateComments: boolean("ping_teammate_comments").notNull().default(false),
   emailDigest: boolean("email_digest").notNull().default(false),
   // Guided setup: when each step that has no other trace was finished.
   onboardingWhereAt: instant("onboarding_where_at"),
@@ -199,6 +199,11 @@ export const repos = pgTable(
     baseStatus: text("base_status", { enum: BASE_STATUSES }).notNull().default("none"),
     baseBuiltAt: instant("base_built_at"),
     baseError: text("base_error"),
+    /**
+     * When someone asked for the base to be made again. The sandbox side of building a base is
+     * not built yet, so this only records that the repo's next start should rebuild it.
+     */
+    baseRebuildRequestedAt: instant("base_rebuild_requested_at"),
     stack: jsonb("stack").$type<StackItem[]>().notNull().default([]),
     /** Prompts to start from, grounded in the repo: the API's `ideas/` writes them. */
     ideas: jsonb("ideas").$type<string[]>().notNull().default([]),
@@ -266,6 +271,8 @@ export const repoSecrets = pgTable(
     /** The environment variable the sandbox receives. */
     name: text("name").notNull(),
     encryptedValue: text("encrypted_value").notNull(),
+    /** The value's length in UTF-8 bytes, so a repo's secrets fit what a sandbox's env takes. */
+    valueBytes: integer("value_bytes").notNull().default(0),
     updatedByUserId: text("updated_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
@@ -275,6 +282,7 @@ export const repoSecrets = pgTable(
   (t) => [
     primaryKey({ columns: [t.repoId, t.name] }),
     check("repo_secrets_name_check", sql`${t.name} ~ '^[A-Za-z_][A-Za-z0-9_]*$'`),
+    check("repo_secrets_value_bytes_check", sql`${t.valueBytes} >= 0`),
   ],
 );
 
@@ -331,6 +339,8 @@ export const devices = pgTable(
     name: text("name"),
     appVersion: text("app_version"),
     pingsEnabled: boolean("pings_enabled").notNull().default(true),
+    /** The phone's own settings turned Ponzu's notifications off: nothing can reach it. */
+    pingsBlocked: boolean("pings_blocked").notNull().default(false),
     lastSeenAt: instant("last_seen_at").notNull().defaultNow(),
     createdAt: createdAt(),
   },

@@ -92,6 +92,13 @@
       "when": 1794376099850,
       "tag": "0012_sandbox_claims",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1794378951448,
+      "tag": "0013_settings",
+      "breakpoints": true
     }
   ]
 }

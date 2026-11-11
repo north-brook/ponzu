@@ -317,6 +317,7 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
       id: question.id,
       name: "API_KEY",
       encryptedValue: "v1.ciphertext",
+      valueBytes: 24,
       userId: user.id,
     });
     expect(answered).toMatchObject({ status: "answered", answer: { name: "API_KEY" }, payload });
