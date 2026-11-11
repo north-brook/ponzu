@@ -1,10 +1,19 @@
+import { redactText } from "@ponzu/core/redact";
 import { claimRepoIdeas, type RepoIdeasRow, releaseRepoIdeas, saveRepoIdeas } from "@ponzu/db";
 import type { z } from "zod";
 import { stableUuid } from "../analytics/analytics.ts";
 import type { Deps } from "../deps/index.ts";
 import type { Model, StructuredAnswer } from "../deps/model.ts";
 import type { Logger } from "../http/log.ts";
-import { checkIdeas, IdeasOutput, type IdeasRequest, ideasRequest } from "./prompt.ts";
+import { gateIdeas } from "./gate.ts";
+import {
+  checkIdeas,
+  IdeasOutput,
+  type IdeasRequest,
+  ideasRequest,
+  RETRY_REASONS,
+  type RejectCode,
+} from "./prompt.ts";
 import { readRepository } from "./read-repo.ts";
 
 type IdeasAnswer = z.infer<typeof IdeasOutput>;
@@ -15,11 +24,21 @@ type IdeasAnswer = z.infer<typeof IdeasOutput>;
  * They are made lazily, the first time anyone asks, in the background: the asker hears
  * `generating` at once and asks again. One instance at a time makes them (the claim in the
  * row), within a workspace's allowance, and every failure is quiet: nothing new is kept and
- * the screen shows no ideas. A failure to get an answer (GitHub or the model down, the
- * deadline) is tried again an hour later; answers turned away twice wait for a push, or a
- * week when they leave the repo with none.
+ * the screen shows no ideas.
  *
- * Every repo the App can read gets four, however little is in it: a product not built yet gets
+ * What reaches a person passes the exact checks (`checkIdeas`) and then the gate (gate.ts), a
+ * stronger model that says of each idea whether it is safe and a design. An answer either fails
+ * is asked for again once, with Ponzu's own sentence for what failed. Then:
+ * - every idea passes: all four are kept;
+ * - some fail only as designs: those that pass are kept, one to four;
+ * - one is unsafe in the last answer the gate read: the repository is steering the ideas, so
+ *   none of this generation's are kept (`ideas_withheld`);
+ * - nothing passes: none are kept (`ideas_rejected`).
+ * The last two count as a generation, keeping the ideas there were: the next waits for a push,
+ * or a day when the repo is left with none. A failure to get an answer at all (GitHub, the model
+ * or the gate down or out of shape, the deadline) is tried again an hour later.
+ *
+ * Every repo the App can read gets ideas, however little is in it: a product not built yet gets
  * where to begin designing it (`FRESH_SYSTEM_PROMPT`).
  */
 
@@ -27,19 +46,20 @@ type IdeasAnswer = z.infer<typeof IdeasOutput>;
  * The way ideas are made, kept with them (`repos.ideas_version`). An empty list an earlier way
  * wrote is made again at the next ask, push or not. 1: a repo with nothing built yet gets
  * ideas, where before it got none, so those it was skipped for get theirs. 2: a product may be
- * named by its own name even when that is a word like "ponzu" or "gpt", which had every answer
- * for such a repo turned away.
+ * named by its own name even when that is a word like "ponzu" or "gpt". 3: the pattern rules
+ * (banned words, openers, five-word echoes, addresses, file names) are gone, and a gate judges
+ * what reaches a person, so every list they left empty is made again.
  */
-export const IDEAS_VERSION = 2;
+export const IDEAS_VERSION = 3;
 
 const HOUR = 3600_000;
 const DAY = 24 * HOUR;
 
 export const IDEAS_POLICY = {
   /** A claim this young is a generation under way: what `generating` means. */
-  generatingMs: 60_000,
-  /** The longest one generation may take, the read of the repo included. */
-  timeoutMs: 45_000,
+  generatingMs: 75_000,
+  /** The longest one generation may take: the read, two asks and two checks by the gate. */
+  timeoutMs: 60_000,
   /** How long after one try (that worked or not) the next may begin. */
   retryMs: HOUR,
   /**
@@ -49,11 +69,11 @@ export const IDEAS_POLICY = {
    */
   staleMs: 30 * DAY,
   /**
-   * An empty list (both answers turned away, with none from before) is made again this long
-   * after, pushed or not: a repo with little in it is the kind nobody pushes to, and one
-   * unlucky pair of answers must not leave it with no ideas for good.
+   * An empty list (nothing passed, or the gate withheld it, with none from before) is made
+   * again this long after, pushed or not: a repo with little in it is the kind nobody pushes to,
+   * and one unlucky pair of answers must not leave it with no ideas for long.
    */
-  emptyRetryMs: 7 * DAY,
+  emptyRetryMs: DAY,
   /** Each workspace may start this many generations an hour, whatever it has in repos. */
   windowMs: HOUR,
   windowLimit: 20,
@@ -67,10 +87,15 @@ export const IDEAS_FEATURE = "repo_ideas";
 
 /** What the read and the answer may write: room for thinking, and four short lines. */
 const MAX_TOKENS = 4_000;
-/** One answer that breaks a rule is asked for again, once. */
+/** One answer that fails a check or the gate is asked for again, once. */
 const ATTEMPTS = 2;
+/** How much of a gate's reason a log line keeps. */
+const REASON_LOGGED = 300;
 
-type IdeasDeps = Pick<Deps, "db" | "clock" | "github" | "model" | "background" | "analytics">;
+type IdeasDeps = Pick<
+  Deps,
+  "db" | "clock" | "github" | "model" | "reviewer" | "background" | "analytics"
+>;
 
 /**
  * The repo's ideas as the person may see them now, starting their generation if they are due.
@@ -152,7 +177,7 @@ function isGenerating(repo: RepoIdeasRow, now: number): boolean {
  * a failure is logged and nothing is kept.
  */
 export async function generateRepoIdeas(
-  deps: Pick<Deps, "db" | "clock" | "github" | "model" | "analytics">,
+  deps: Pick<Deps, "db" | "clock" | "github" | "model" | "reviewer" | "analytics">,
   log: Logger,
   {
     repo,
@@ -163,8 +188,9 @@ export async function generateRepoIdeas(
   const started = deps.clock.now();
   const deadline = deps.clock.timeout(IDEAS_POLICY.timeoutMs);
   const ids = { repoId: repo.id, workspaceId: repo.workspaceId };
-  const tally: Tally = { attempts: 0, usage: { input: 0, output: 0 } };
-  const skipped = (reason: "rejected" | "failed") =>
+  const tally = newTally();
+  const models = { model: deps.model.id, reviewer: deps.reviewer.id };
+  const skipped = (reason: "rejected" | "unsafe" | "failed") =>
     deps.analytics.capture(
       "ideas skipped",
       { repo_id: repo.id, reason },
@@ -182,28 +208,34 @@ export async function generateRepoIdeas(
       deadline,
     );
     const request = ideasRequest(snapshot);
-    const asked = await askForIdeas(deps.model, request, {
+    const asked = await askForIdeas({ writer: deps.model, reviewer: deps.reviewer }, request, {
       signal: deadline,
       tally,
       workspaceId: repo.workspaceId,
     });
-    let ideas: string[];
-    const rejected = "rejected" in asked;
-    if ("rejected" in asked) {
-      log.warn("ideas_rejected", {
+    if (asked.kind === "withheld") {
+      // The repository steered an idea into asking the reader for something. What the gate
+      // said goes to the logs only, redacted and clipped: it may quote the repository.
+      log.warn("ideas_withheld", {
         ...ids,
-        model: deps.model.id,
+        ...models,
         ...tally,
         fresh: request.fresh,
-        reason: asked.rejected,
+        failures: logged(asked.failures),
       });
-      // Asking about the same material again would most likely be turned away again, so
-      // this counts as a generation: the ideas it had stay (none, the first time), and the
-      // next try waits for a push, or `emptyRetryMs` when it has none.
-      ideas = repo.ideas;
-    } else {
-      ideas = asked.ideas;
+    } else if (asked.kind === "rejected") {
+      log.warn("ideas_rejected", {
+        ...ids,
+        ...models,
+        ...tally,
+        fresh: request.fresh,
+        codes: asked.codes,
+        failures: logged(asked.failures),
+      });
     }
+    // Nothing kept counts as a generation: the ideas there were stay (none, the first time),
+    // and the next try waits for a push, or `emptyRetryMs` when the repo has none.
+    const ideas = asked.kind === "kept" ? asked.ideas : repo.ideas;
     const saved = await saveRepoIdeas(deps.db, {
       repoId: repo.id,
       ideas,
@@ -211,15 +243,17 @@ export async function generateRepoIdeas(
       claimedAt,
       version: IDEAS_VERSION,
     });
-    if (rejected) skipped("rejected");
+    if (asked.kind === "withheld") skipped("unsafe");
+    else if (asked.kind === "rejected") skipped("rejected");
     else {
       const ms = deps.clock.now() - started;
       log.info("ideas_generated", {
         ...ids,
-        model: deps.model.id,
+        ...models,
         ...tally,
         fresh: request.fresh,
         ideas: ideas.length,
+        ...(asked.failures.length ? { failures: logged(asked.failures) } : {}),
         saved,
         ms,
       });
@@ -242,7 +276,7 @@ export async function generateRepoIdeas(
     skipped("failed");
     log.warn("ideas_failed", {
       ...ids,
-      model: deps.model.id,
+      ...models,
       ...tally,
       timedOut: deadline.aborted,
       error,
@@ -253,32 +287,60 @@ export async function generateRepoIdeas(
   }
 }
 
-/** How many times the model was asked, and what that cost in tokens. */
+/** How many times the models were asked, and what that cost in tokens. */
 export interface Tally {
+  /** Asks of the model that writes the ideas. */
   attempts: number;
   usage: { input: number; output: number };
+  /** Checks by the gate, and what they cost. */
+  gate: { calls: number; usage: { input: number; output: number } };
 }
 
+export const newTally = (): Tally => ({
+  attempts: 0,
+  usage: { input: 0, output: 0 },
+  gate: { calls: 0, usage: { input: 0, output: 0 } },
+});
+
+/** An idea the gate failed: its number (1 to 4), what it failed, and the gate's reason. */
+export interface GateFailure {
+  idea: number;
+  criteria: ("safe" | "design")[];
+  reason: string;
+}
+
+/** What asking came to (see the top of this file for what each means). */
+export type Asked =
+  | { kind: "kept"; ideas: string[]; failures: GateFailure[] }
+  | { kind: "withheld"; failures: GateFailure[] }
+  | { kind: "rejected"; codes: RejectCode[]; failures: GateFailure[] };
+
 /**
- * Four ideas for the product `request` describes (`ideasRequest`), or why there are none: one
- * answer that breaks a rule is asked for again, once, with the rule it broke, and the second
- * is the last. What each ask cost is added to `tally`, so it is known even when one throws.
+ * Ideas for the product `request` describes (`ideasRequest`), checked exactly and then by the
+ * gate. An answer that fails either is asked for again, once, with Ponzu's fixed sentence for
+ * what failed (`RETRY_REASONS`): never the answer's words or the gate's, which may quote the
+ * repository. What each call cost is added to `tally`, so it is known even when one throws. A
+ * gate that gives no verdict throws: that is a failed generation, never a verdict.
  */
 export async function askForIdeas(
-  model: Model,
-  { instructions, prompt, fresh, own }: IdeasRequest,
+  { writer, reviewer }: { writer: Model; reviewer: Model },
+  { instructions, prompt, product }: IdeasRequest,
   {
     signal,
     tally,
     workspaceId = null,
   }: { signal?: AbortSignal; tally: Tally; workspaceId?: string | null },
-): Promise<{ ideas: string[] } | { rejected: string }> {
-  let rejected = "";
+): Promise<Asked> {
+  let codes: RejectCode[] = [];
+  /** The answer whose ideas failed only as designs, with the most that passed. */
+  let best: { ideas: string[]; failures: GateFailure[] } | null = null;
+  /** What the gate found in the last answer it read. */
+  let last: GateFailure[] | null = null;
   while (tally.attempts < ATTEMPTS) {
     tally.attempts++;
-    const answer: StructuredAnswer<IdeasAnswer> = await model.structured({
-      instructions: rejected
-        ? `${instructions}\n\nAn earlier answer was turned away because ${rejected}. Keep to every rule.`
+    const answer: StructuredAnswer<IdeasAnswer> = await writer.structured({
+      instructions: codes.length
+        ? `${instructions}\n\nAn earlier answer was turned away: ${codes.map((code) => RETRY_REASONS[code]).join("; ")}. Keep to every rule.`
         : instructions,
       prompt,
       schema: IdeasOutput,
@@ -291,13 +353,47 @@ export async function askForIdeas(
     });
     tally.usage.input += answer.usage.input;
     tally.usage.output += answer.usage.output;
-    const checked: ReturnType<typeof checkIdeas> = answer.output
-      ? checkIdeas(answer.output, { fresh, instructions, own })
-      : { ok: false, reason: `it was not in the shape asked for (${answer.finishReason})` };
-    if (checked.ok) return { ideas: checked.ideas };
-    rejected = checked.reason;
+    const checked = answer.output
+      ? checkIdeas(answer.output)
+      : ({ ok: false, code: "shape" } as const);
+    if (!checked.ok) {
+      codes = [checked.code];
+      continue;
+    }
+    tally.gate.calls++;
+    const gated = await gateIdeas(reviewer, product, checked.ideas, { signal, workspaceId });
+    tally.gate.usage.input += gated.usage.input;
+    tally.gate.usage.output += gated.usage.output;
+    const failures = gated.verdicts.flatMap((verdict, i): GateFailure[] => {
+      const criteria = [
+        ...(verdict.safe ? [] : (["safe"] as const)),
+        ...(verdict.design ? [] : (["design"] as const)),
+      ];
+      return criteria.length ? [{ idea: i + 1, criteria, reason: verdict.reason }] : [];
+    });
+    last = failures;
+    if (!failures.length) return { kind: "kept", ideas: checked.ideas, failures };
+    const unsafe = failures.some((failure) => failure.criteria.includes("safe"));
+    if (!unsafe) {
+      const passing = checked.ideas.filter((_, i) => !failures.some((f) => f.idea === i + 1));
+      if (!best || passing.length >= best.ideas.length) best = { ideas: passing, failures };
+    }
+    codes = [unsafe ? "unsafe" : "not_design"];
   }
-  return { rejected };
+  if (last?.some((failure) => failure.criteria.includes("safe"))) {
+    return { kind: "withheld", failures: last };
+  }
+  if (best?.ideas.length) return { kind: "kept", ideas: best.ideas, failures: best.failures };
+  return { kind: "rejected", codes, failures: last ?? [] };
+}
+
+/** The gate's failures as a log line keeps them: its reasons redacted and clipped. */
+function logged(failures: readonly GateFailure[]) {
+  return failures.map(({ idea, criteria, reason }) => ({
+    idea,
+    criteria,
+    reason: redactText(reason).slice(0, REASON_LOGGED),
+  }));
 }
 
 /**

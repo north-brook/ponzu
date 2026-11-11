@@ -13,7 +13,7 @@ import { type Anthropic, createAnthropic } from "./anthropic.ts";
 import { type Background, createBackground, waitUntil } from "./background.ts";
 import type { Fetch } from "./fetch.ts";
 import { createGithub, type Github } from "./github.ts";
-import { createClaude, type Model } from "./model.ts";
+import { CLAUDE_SONNET, createClaude, type Model } from "./model.ts";
 import { createPoke, createRunnerPort, type Poke, type RunnerPort } from "./poke.ts";
 import { createRealtimeSealer, type RealtimeSealer } from "./realtime.ts";
 import { createR2Storage, type ObjectStorage } from "./storage.ts";
@@ -56,6 +56,11 @@ export interface Deps {
   realtime: RealtimeSealer;
   /** Claude Haiku, through the AI SDK on Ponzu's own key, for what the API asks itself (repo ideas). */
   model: Model;
+  /**
+   * Claude Sonnet, the same way on the same key: it reviews what `model` wrote before a person
+   * sees it (the ideas gate, `ideas/gate.ts`).
+   */
+  reviewer: Model;
   /** The design documents this instance has built lately. */
   docs: DocCache;
   /** The git tokens this instance hands runners, kept while they may be reused. */
@@ -142,6 +147,12 @@ export function createDeps(env: Env): Deps {
       database: new URL(env.databaseUrl).pathname.slice(1),
     }),
     model: createClaude({ apiKey: env.anthropicApiKey, fetch: outbound, tracing: analytics.ai }),
+    reviewer: createClaude({
+      apiKey: env.anthropicApiKey,
+      fetch: outbound,
+      model: CLAUDE_SONNET,
+      tracing: analytics.ai,
+    }),
     docs: new DocCache(),
     gitTokens: new GitTokens(),
     config: {
