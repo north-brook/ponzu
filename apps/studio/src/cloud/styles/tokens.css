@@ -39,13 +39,16 @@
    */
   --c-secondary: light-dark(#f4f3ef, #161615);
 
-  /* Ink, strongest to quietest. */
+  /*
+   * Ink, strongest to quietest: the colour ladder (README, "The ladder"). Ink is what is read or
+   * chosen; muted a control at rest and a secondary line; faint quiet text (meta, placeholders,
+   * labels), deliberately under AA. icon-soft is the quiet step for an icon standing alone (a
+   * disclosure chevron, a field's glyph), the design's #807c73 (--n-500), one step above faint so
+   * it holds 3:1. Dark: derived. dry is the slice at rest and the dot between meta.
+   */
   --c-ink: light-dark(#111110, #f4f3ef);
-  /* The design's #3f3d39 (--n-700) icons: New design, the active page tab. Dark: derived. */
-  --c-icon-strong: light-dark(#3f3d39, #d3d0c8);
   /* A step past the design's #5e5b54 (--n-600), and dark's a step up, so text holds AA on the glassy shell. */
   --c-muted: light-dark(#56534d, #b7b3a9);
-  /* The design's #807c73 (--n-500) icons: chevrons, the search field. Dark: derived. */
   --c-icon-soft: light-dark(#807c73, #8e8a82);
   /* Dark: steps up from the design's #6b6862, so it holds where it did on the open row now the shell is lifted. */
   --c-faint: light-dark(#a9a59b, #767369);
@@ -195,7 +198,7 @@
   --c-diff-del-bar: light-dark(rgba(180, 69, 58, 0.5), rgba(224, 103, 91, 0.6));
   --c-diff-del-word: light-dark(rgba(180, 69, 58, 0.14), rgba(224, 103, 91, 0.24));
 
-  /* Type. The families the app ships (vite.config.ts links them into every page). */
+  /* Type. The families the app ships (fonts/fonts.css, which cloud.css brings into every page). */
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
   --font-display: "Funnel Display", "Inter", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
@@ -207,6 +210,8 @@
   --dur-hover: 120ms;
   --dur-pop: 140ms;
   --dur-pane: 220ms;
+  /* How long the pointer rests on a pane's edge before its line shows: sweeping past shows nothing. */
+  --dur-linger: 300ms;
   --beat: 1.2s;
 }
 
@@ -244,12 +249,16 @@
 }
 
 /*
- * The canvas package's ground and board edge are ours, so the canvas is one token here.
+ * The canvas package's ground, board edge and greys are ours, so the canvas is one token here:
+ * its tools, zoom and comment cards paint the studio's ink, muted and faint (the colour ladder).
  * `:root` puts these past the package's own `.pz-root` and `.pz-root.pz-dark`.
  */
 :root .pz-root,
 :root .pz-root.pz-dark {
   --pz-canvas: var(--c-canvas);
+  --pz-ink: var(--c-ink);
+  --pz-muted: var(--c-muted);
+  --pz-faint: var(--c-faint);
   --pz-board-edge: var(--c-board-edge);
   --pz-board-drop: var(--c-board-drop);
   --pz-board-shadow: var(--c-board);

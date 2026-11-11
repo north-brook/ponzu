@@ -9,6 +9,7 @@ import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui";
 import type * as React from "react";
 import { cn } from "./cn.ts";
 import { Icon } from "./icon.tsx";
+import { TEXT } from "./ladder.ts";
 
 /** The surface every menu shares, the dropdown's and a row's context menu. */
 export const menuContentClass =
@@ -22,7 +23,7 @@ export const menuItemClass =
 export const menuRadioItemClass =
   "data-[state=checked]:bg-hover data-[state=checked]:data-[highlighted]:bg-press";
 
-export const menuLabelClass = "px-2 pt-1.5 pb-1 font-medium text-11 text-faint";
+export const menuLabelClass = `px-2 pt-1.5 pb-1 ${TEXT.label}`;
 
 export const menuSeparatorClass = "mx-1 my-[5px] h-px shrink-0 bg-rule";
 
@@ -117,7 +118,7 @@ function DropdownMenuRadioItem({
     >
       {children}
       <DropdownMenuPrimitive.ItemIndicator>
-        <Icon icon={Tick02Icon} size={14} stroke={2.2} />
+        <Icon icon={Tick02Icon} step="inline" />
       </DropdownMenuPrimitive.ItemIndicator>
     </DropdownMenuPrimitive.RadioItem>
   );
@@ -184,7 +185,7 @@ function DropdownMenuSubTrigger({
       {...props}
     >
       {children}
-      <Icon icon={ArrowRight01Icon} size={12} stroke={2} className="ml-auto text-faint" />
+      <Icon icon={ArrowRight01Icon} step="small" className="ml-auto text-icon-soft" />
     </DropdownMenuPrimitive.SubTrigger>
   );
 }

@@ -1,11 +1,11 @@
 import {
-  Add01Icon,
   ArrowDown01Icon,
   BotIcon,
   Cancel01Icon,
   CreditCardIcon,
   GithubIcon,
   Notification01Icon,
+  PlusSignIcon,
   ServerStack01Icon,
   UserCircleIcon,
   UserGroupIcon,
@@ -117,7 +117,7 @@ export function SettingsPanel({
               onClick={onCreateTeam}
               className="flex h-8 shrink-0 cursor-default items-center gap-[9px] rounded-8 px-2.5 text-13 text-faint outline-none transition-colors duration-(--dur-hover) focus-ring hover:bg-hover hover:text-muted"
             >
-              <Icon icon={Add01Icon} size={16} stroke={1.8} />
+              <Icon icon={PlusSignIcon} step="control" />
               Create a team
             </button>
           </>
@@ -132,9 +132,9 @@ export function SettingsPanel({
             label="Close"
             keys={["esc"]}
             onClick={onClose}
-            className="-my-1.5 -mr-1.5 size-7 text-faint hover:text-muted"
+            className="-my-1.5 -mr-1.5 size-7 text-icon-soft hover:text-ink"
           >
-            <Icon icon={Cancel01Icon} size={15} stroke={2} />
+            <Icon icon={Cancel01Icon} step="control" />
           </IconButton>
         </div>
         <FadeScroll className="flex-1">
@@ -165,7 +165,7 @@ function NavItem({
         active ? "bg-hover font-medium text-ink" : "text-muted hover:bg-hover",
       )}
     >
-      <Icon icon={icon} size={16} stroke={1.5} />
+      <Icon icon={icon} step="control" />
       {title}
     </button>
   );
@@ -191,7 +191,7 @@ function WorkspaceSwitcher({
         <span className="flex-1 truncate text-left font-semibold text-13 text-ink">
           {workspaceName(current)}
         </span>
-        <Icon icon={ArrowDown01Icon} size={11} stroke={2.2} className="text-icon-soft" />
+        <Icon icon={ArrowDown01Icon} step="meta" className="text-icon-soft" />
       </MenuTrigger>
       <MenuContent width={260} side="bottom" align="start" sideOffset={4}>
         <MenuRadioGroup

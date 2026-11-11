@@ -52,7 +52,7 @@ export function GithubSection({ installation, repos, onManage, onInstall }: Gith
           trailing={
             <ExternalLink
               tone="ink"
-              arrow={12}
+              arrow="small"
               onClick={state === "not_installed" ? onInstall : onManage}
               className="gap-[5px] font-medium text-13"
             >
@@ -69,7 +69,7 @@ export function GithubSection({ installation, repos, onManage, onInstall }: Gith
             repos.map((repo) => (
               <Row
                 key={repo.id}
-                leading={<Icon icon={REPO_ICON} size={16} stroke={1.6} className="text-muted" />}
+                leading={<Icon icon={REPO_ICON} step="control" className="text-muted" />}
               >
                 <TwoLine title={repo.name} line={`${repo.owner}/${repo.name}`} />
               </Row>

@@ -1,7 +1,7 @@
 /*
  * The cloud gallery: every board as a full window from fixtures, and every component's states.
  * Dev only: gallery.html is not part of the app's build. `?board=<id>` draws one composition,
- * `?states` the component states, nothing the index; `&theme=light|dark` pins the scheme.
+ * `?states` the component states, `?ladder` the icon and text ladder, nothing the index; `&theme=light|dark` pins the scheme.
  */
 import "../styles/cloud.css";
 import { createRoot } from "react-dom/client";
@@ -10,6 +10,7 @@ import { quietPointerFocus } from "../ui/quiet-focus.ts";
 import { BOARDS } from "./boards.tsx";
 import { COMPOSITIONS } from "./compositions.ts";
 import { NOW } from "./fixtures.ts";
+import { Ladder } from "./ladder.tsx";
 import { States } from "./states.tsx";
 
 const params = new URLSearchParams(location.search);
@@ -28,6 +29,11 @@ function Index() {
         <li>
           <a href={link("states")} className="text-ink">
             Component states
+          </a>
+        </li>
+        <li>
+          <a href={link("ladder")} className="text-ink">
+            The ladder
           </a>
         </li>
         {COMPOSITIONS.map((c) => (
@@ -51,8 +57,27 @@ const view = board ? (
   (BOARDS[board]?.() ?? <p>No board “{board}”.</p>)
 ) : params.has("states") ? (
   <States />
+) : params.has("ladder") ? (
+  <Ladder />
 ) : (
   <Index />
+);
+
+// The app's faces load before anything draws, so the first layout is the one that ships. Laid out
+// in a fallback first, a component that measures itself once (page-tabs.tsx) keeps the fallback's
+// size after the swap. Nothing caches the fonts between the gallery's pages.
+await Promise.all(
+  [
+    '400 13px "Inter"',
+    '600 13px "Inter"',
+    'italic 400 13px "Inter"',
+    '600 34px "Funnel Display"',
+    '400 11px "IBM Plex Mono"',
+    '500 11px "IBM Plex Mono"',
+  ].map(
+    // A face that won't load draws in its fallback; the gallery tests' fontsLoaded says so.
+    (face) => document.fonts.load(face).catch(() => []),
+  ),
 );
 
 createRoot(document.getElementById("root")!).render(

@@ -13,7 +13,10 @@
 /** Any environment's, for a development build that may point anywhere. */
 const ANY_ASSETS = "https://*.ponzu.cloud";
 const ANY_REALTIME = "https://*.neon.tech";
-/** The UI's web fonts and the Google Fonts designs name. */
+/**
+ * The Google Fonts designs name, which the canvas loads to draw a board as its author meant. The
+ * studio's own fonts ship with it and come from 'self'.
+ */
 const FONT_CSS = "https://fonts.googleapis.com";
 const FONT_FILES = "https://fonts.gstatic.com";
 

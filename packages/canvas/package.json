@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./icons": "./src/icons.tsx",
+    "./ladder": "./src/ladder.ts",
     "./modifier-hint": "./src/modifier-hint.ts",
     "./slice": "./src/slice.ts",
     "./styles.css": "./dist/styles.css",

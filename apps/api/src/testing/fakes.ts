@@ -152,9 +152,15 @@ export class FakePoke {
       if (!this.onReport) throw new Error("The runner answered a report with 404.");
       await this.onReport();
     },
-    healthy: async (address) => {
+    health: async (address) => {
       this.checks.push(address);
-      return !this.failing && this.healthy;
+      const ok = !this.failing && this.healthy;
+      return {
+        ok,
+        status: this.failing ? null : ok ? 200 : 502,
+        error: this.failing ? "The runner could not be reached." : null,
+        ms: 0,
+      };
     },
   };
 }

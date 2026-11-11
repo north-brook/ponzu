@@ -47,7 +47,7 @@ export function ThreadToggle({
         <Slice size={16} turning className="text-yuzu" />
       ) : (
         <>
-          <Icon icon={LayoutRightIcon} size={16} stroke={1.7} />
+          <Icon icon={LayoutRightIcon} step="control" />
           {shown === "unseen" ? (
             <span className="absolute top-1 right-1 size-[7px] rounded-pill bg-yuzu shadow-[0_0_0_1.5px_var(--c-chrome)]" />
           ) : null}

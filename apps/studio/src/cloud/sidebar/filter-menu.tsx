@@ -9,7 +9,9 @@ import {
 import type { Person } from "../model.ts";
 import { Avatar } from "../ui/avatar.tsx";
 import { IconButton } from "../ui/button.tsx";
+import { cn } from "../ui/cn.ts";
 import { Icon } from "../ui/icon.tsx";
+import { TEXT } from "../ui/ladder.ts";
 import {
   Menu,
   MenuCheckboxItem,
@@ -53,7 +55,7 @@ export function FilterMenu({
           label={isFiltering(filter) ? "Filter (on)" : "Filter"}
           className="relative h-[26px] w-6"
         >
-          <Icon icon={FilterHorizontalIcon} size={15} stroke={1.9} />
+          <Icon icon={FilterHorizontalIcon} step="control" />
           {isFiltering(filter) ? (
             <span className="absolute top-[3px] right-[2px] size-1.5 rounded-pill bg-yuzu shadow-[0_0_0_1.5px_var(--c-chrome)]" />
           ) : null}
@@ -72,7 +74,7 @@ export function FilterMenu({
                 onSelect={(e) => e.preventDefault()}
                 leading={
                   <span className="grid size-5 shrink-0 place-items-center rounded-pill bg-hover text-muted">
-                    <Icon icon={UserGroupIcon} size={13} stroke={1.8} />
+                    <Icon icon={UserGroupIcon} step="small" />
                   </span>
                 }
               >
@@ -100,9 +102,7 @@ export function FilterMenu({
                 key={key}
                 checked={isProjectChecked(filter, key)}
                 onCheckedChange={() => onChange(toggleProject(filter, key, all))}
-                trailing={
-                  <span className="font-mono text-11 text-faint leading-none">{count}</span>
-                }
+                trailing={<span className={cn("leading-none", TEXT.meta)}>{count}</span>}
               >
                 {repo ? repo.name : "Scratch"}
               </MenuCheckboxItem>

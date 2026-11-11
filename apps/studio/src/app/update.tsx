@@ -54,7 +54,7 @@ export function UpdateMark({ updater }: { updater: Updater | null }) {
           }
           className="app-no-drag ml-2 grid size-[18px] shrink-0 cursor-default place-items-center rounded-pill bg-yuzu text-yuzu-ink outline-none transition-[filter] duration-(--dur-hover) focus-ring hover:brightness-[1.04]"
         >
-          <Icon icon={ArrowUp02Icon} size={12} stroke={2.6} />
+          <Icon icon={ArrowUp02Icon} step="small" onFill />
         </button>
       </PopoverTrigger>
       <PopoverContent width={320} side="bottom" align="start" sideOffset={10} className="p-4">

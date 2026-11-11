@@ -40,9 +40,9 @@ test("the studio's components the phone reads by path run the phone too", () => 
 });
 
 test("the cloud API and the packages only it uses run neither", () => {
-  // "Check, typecheck, test" covers them on every pull request: the root typecheck includes
-  // apps/api and its own tsconfig checks it against Node, `bun test` runs its tests, and
-  // scripts/ci/api-bundle.ts builds and loads it.
+  // Every pull request covers them: in "Lint, typecheck, build" the root typecheck includes
+  // apps/api, its own tsconfig checks it against Node and scripts/ci/api-bundle.ts builds and
+  // loads it, and "Tests" runs its tests.
   for (const file of [
     "apps/api/src/routes/me.ts",
     "apps/api/vercel.json",

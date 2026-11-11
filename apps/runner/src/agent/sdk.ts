@@ -34,6 +34,9 @@ import { type TurnSummary, TurnTrace } from "./trace.ts";
 /** The MCP server the canvas tools are served as: the agent calls them `mcp__ponzu__<name>`. */
 export const SERVER = "ponzu";
 
+/** How often, at most, the run says Claude Code is alive. */
+const ALIVE_EVERY_MS = 1_000;
+
 export interface ClaudeAgentOptions {
   /** The `claude` binary to run. Without one the SDK runs the copy it installed. */
   executable?: string;
@@ -231,8 +234,14 @@ class ClaudeRun implements AgentRun {
 
   private async pump(): Promise<void> {
     let error: string | null = null;
+    let alive = 0;
     try {
       for await (const message of this.q) {
+        // Anything at all, a subagent's included, which the translator leaves out.
+        if (Date.now() - alive >= ALIVE_EVERY_MS) {
+          alive = Date.now();
+          this.out.push({ type: "alive" });
+        }
         const turn = this.observe(message);
         for (const event of this.translate.events(message)) {
           this.out.push(event.type === "result" ? { ...event, turn } : event);

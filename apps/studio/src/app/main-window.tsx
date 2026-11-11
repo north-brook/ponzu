@@ -583,6 +583,12 @@ function WorkspaceWindow({
       }
       chrome={panes?.chrome}
       rail={panes?.rail ?? null}
+      panes={{
+        sidebar: ui.sidebarWidth,
+        rail: ui.railWidth,
+        onResize: (pane, width) =>
+          update((now) => ({ ...now, [pane === "sidebar" ? "sidebarWidth" : "railWidth"]: width })),
+      }}
     >
       {lost ? (
         <PaneMessage

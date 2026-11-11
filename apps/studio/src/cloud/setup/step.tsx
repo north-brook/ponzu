@@ -128,7 +128,7 @@ export function StepButton({
       {...props}
     >
       {children}
-      {busy ? <Waiting size={14} /> : <Icon icon={ArrowRight01Icon} size={14} stroke={2} />}
+      {busy ? <Waiting size={14} /> : <Icon icon={ArrowRight01Icon} step="inline" onFill />}
     </Button>
   );
 }
@@ -164,8 +164,8 @@ export function RowButton({
       ) : leaves ? (
         <Icon
           icon={ArrowUpRight01Icon}
-          size={12}
-          stroke={2}
+          step="small"
+          onFill={tone !== "raised"}
           className={tone === "raised" ? "text-muted" : undefined}
         />
       ) : null}

@@ -5,8 +5,15 @@ import { seedDesign } from "../fixtures.ts";
 import { newId } from "../ids.ts";
 import { designRunners, designs, events } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
-import { appendEvent, claimEvents, findStops, markEventsDelivered, personOf } from "./events.ts";
-import { takeRunnerLease } from "./runners.ts";
+import {
+  appendEvent,
+  claimEvents,
+  findStops,
+  lapseEvents,
+  markEventsDelivered,
+  personOf,
+} from "./events.ts";
+import { runnerHeardSince, takeRunnerLease } from "./runners.ts";
 
 let db: Awaited<ReturnType<typeof createTestDb>>;
 beforeAll(async () => {
@@ -302,4 +309,65 @@ test("text Postgres cannot store is replaced in the payload, not refused", async
   const event = await say(db, design.id, "cut \ud83d here\u0000");
 
   expect(event.payload).toEqual({ text: "cut � here�" });
+});
+
+test("a lapsed event goes in again once, as a copy any runner claims as new; a copy is not copied", async () => {
+  const { design } = await seedDesign(db);
+  const message = await say(db, design.id, "use hugeicons");
+  const first = await start(design.id);
+  await first.claim();
+  await first.ack([message.id]);
+  const now = new Date();
+
+  // Two sweeps at once: one lapses it.
+  const [a, b] = await Promise.all([
+    lapseEvents(db, { designId: design.id, ids: [message.id], now }),
+    lapseEvents(db, { designId: design.id, ids: [message.id], now }),
+  ]);
+  const lapsed = [...a, ...b];
+  expect(lapsed).toHaveLength(1);
+  expect(lapsed[0]).toMatchObject({ id: message.id, kind: "message", retryOf: null });
+  const copyId = lapsed[0]!.copy!;
+  expect(copyId).toMatch(/^evt_/);
+
+  // The runner that took the original claims the copy: it has never been handed it.
+  const [copy] = await first.claim();
+  expect(copy).toMatchObject({
+    id: copyId,
+    kind: "message",
+    priority: "now",
+    payload: { text: "use hugeicons", retryOf: message.id },
+  });
+
+  // Not delivered, a copy cannot lapse; delivered and lapsed, it is not copied again.
+  expect(await lapseEvents(db, { designId: design.id, ids: [copyId], now })).toEqual([]);
+  await first.ack([copyId]);
+  expect(await lapseEvents(db, { designId: design.id, ids: [copyId], now })).toEqual([
+    { id: copyId, kind: "message", retryOf: message.id, copy: null },
+  ]);
+  expect(await first.claim()).toEqual([]);
+});
+
+test("a runner heard since a moment is one that reported, claimed or acknowledged after it", async () => {
+  const { design } = await seedDesign(db);
+  const before = new Date(Date.now() - 60_000);
+  const { runnerId } = await takeRunnerLease(db, { designId: design.id, now: before });
+  const thaw = new Date();
+  expect(await runnerHeardSince(db, { designId: design.id, since: thaw })).toBe(false);
+  const message = await say(db, design.id, "hi");
+  const later = new Date(thaw.getTime() + 1_000);
+  await claimEvents(db, { designId: design.id, runnerId, claimId: newId("clm"), now: later });
+  expect(await runnerHeardSince(db, { designId: design.id, since: thaw })).toBe(true);
+  expect(
+    await runnerHeardSince(db, { designId: design.id, since: new Date(later.getTime() + 1) }),
+  ).toBe(false);
+  await markEventsDelivered(db, {
+    designId: design.id,
+    runnerId,
+    ids: [message.id],
+    now: new Date(later.getTime() + 5_000),
+  });
+  expect(
+    await runnerHeardSince(db, { designId: design.id, since: new Date(later.getTime() + 1) }),
+  ).toBe(true);
 });

@@ -258,9 +258,11 @@ describe.skipIf(!chromiumPath)("links to pages and boards in the agent's words",
   });
 
   test("another design's board opens that design, in the app", async () => {
-    // The turn has ended, so its earlier lines fold away under "Worked for …": open them.
-    const fold = rail().getByRole("button", { name: /^Worked for/ });
-    if (await fold.count()) await fold.first().click();
+    // The turn has ended, so only its answer is left in the thread: the agent says it again.
+    await page.evaluate(
+      ([designId, text]) => window.ponzuFake!.backend.agent(designId!).say(text!),
+      [world.id, `The cart is in [Checkout](${SITE}/${world.other}?artboard=ab_x).`],
+    );
     await rail().getByRole("link", { name: "Checkout" }).click();
     await page.locator('[data-board-name][title="Cart"]').waitFor();
     expect(await opened()).toHaveLength(2);

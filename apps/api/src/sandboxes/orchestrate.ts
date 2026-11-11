@@ -1,9 +1,13 @@
 import {
   beginSandbox,
+  type CheckpointCover,
   claimSandbox,
+  getCheckpointCover,
   getLiveSandbox,
   getWakeContext,
   moveSandbox,
+  moveSandboxOnto,
+  newId,
   recordDesignClaudeAccount,
   revokeRunnerToken,
   revokeRunnerTokens,
@@ -11,6 +15,7 @@ import {
   type SandboxChanges,
   type SandboxClaim,
   showAgentWaiting,
+  takeMoveSlot,
   type WakeContext,
 } from "@ponzu/db";
 import { SandboxError, type SandboxErrorCode } from "@ponzu/sandbox";
@@ -25,6 +30,7 @@ import {
 } from "./environment.ts";
 import {
   addressBinding,
+  HEALTH_MS,
   REVIVE_BUDGET_MS,
   reviveRunner,
   SYNC_MS,
@@ -43,6 +49,9 @@ import {
  *   no sandbox, or a lost one     create one from the image, on a new environment
  *   stopping                      wait for the stop to land, then as asleep
  *   asleep, failed                resume it; on a new environment when its credential changed
+ *   ... from another image        move it: a new sandbox from the image set now, which restores
+ *                                 the last checkpoint; the old one is resumed instead when the
+ *                                 move may not or cannot happen (`moveOnto`)
  *   awake on an old environment   stop it, then resume it on the new one (a cold start)
  *   disk expired, or gone         mark it gone and create the next generation
  *
@@ -64,6 +73,15 @@ const WAKE_TIMEOUT_MS = 90_000;
 const WAKE_BUDGET_MS = 260_000;
 /** What a cold start after a failed revive takes at most: `sync`, the stop, the boot. */
 const COLD_MS = SYNC_MS + WAKE_TIMEOUT_MS + 10_000;
+/**
+ * What moving onto a new image may take of an attempt: the create, the boot and the runner's
+ * first `/health`, which took 7 to 31 s from the call in the image's runs (its README). An
+ * attempt starts a move only with time for this and for resuming the old sandbox after it, so
+ * a move that fails still wakes the design in the same attempt.
+ */
+const MOVE_MS = 100_000;
+/** How often a move looks for the new runner's `/health`. */
+const HEALTH_POLL_MS = 1_000;
 /** How long one attempt waits for a stop under way to land, and how often it looks. */
 const STOP_WAIT_MS = 60_000;
 const STOP_POLL_MS = 2_000;
@@ -113,7 +131,7 @@ export async function runWakeJob(
 }
 
 /** How a wake went, for the log: what the sandbox went through to be awake. */
-type Start = "none" | "warm" | "cold" | "created";
+type Start = "none" | "warm" | "cold" | "created" | "moved";
 
 /** The wake job running: its id is what holds the sandbox while it is `waking`. */
 type Wake = Pick<RunningJob, "id" | "attempts" | "maxAttempts">;
@@ -151,7 +169,13 @@ export async function wakeDesign(deps: JobDeps, designId: string, job: Wake): Pr
     const woke = await bringUp(deps, context, job.id, began + WAKE_BUDGET_MS);
     if (woke) {
       const ms = clock.now() - began;
-      log.info("sandbox_awake", { designId, sandboxId: woke.sandbox.id, start: woke.start, ms });
+      log.info("sandbox_awake", {
+        designId,
+        sandboxId: woke.sandbox.id,
+        start: woke.start,
+        image: woke.sandbox.image,
+        ms,
+      });
       // About the design's owner, whose Claude it runs on: whoever's message woke it, it runs
       // for them.
       const about = { distinctId: context.ownerId, workspaceId: context.workspaceId };
@@ -159,7 +183,12 @@ export async function wakeDesign(deps: JobDeps, designId: string, job: Wake): Pr
       if (woke.start !== "none") {
         deps.analytics.capture(
           "sandbox woke",
-          { design_id: designId, start: WAKE_STARTS[woke.start], duration_ms: ms },
+          {
+            design_id: designId,
+            start: WAKE_STARTS[woke.start],
+            duration_ms: ms,
+            image: woke.sandbox.image,
+          },
           about,
         );
       }
@@ -211,7 +240,7 @@ type Claude = NonNullable<WakeContext["claude"]>;
 type Woke = { sandbox: Sandbox; start: Start; replaced?: boolean };
 
 /** How analytics names each way a sandbox comes up. */
-const WAKE_STARTS = { created: "new", cold: "cold", warm: "warm" } as const;
+const WAKE_STARTS = { created: "new", cold: "cold", warm: "warm", moved: "moved" } as const;
 
 /** The sandbox the design has now, awake. Null when another wake has it in hand. */
 async function bringUp(
@@ -257,7 +286,9 @@ async function bringUp(
   );
   if (!waking) return null;
   if (!waking.providerId) return create(deps, waking, claude, by);
-  return resume(deps, waking, claude, current, by, deadline);
+  const moved = await moveOnto(deps, context, waking, claude, by, deadline);
+  if (moved.done) return moved.woke;
+  return resume(deps, moved.waking, claude, current, by, deadline);
 }
 
 /**
@@ -322,6 +353,7 @@ async function create(
     by,
     changes: {
       providerId,
+      image: config.sandbox.snapshot!,
       runnerTokenId: environment.runnerTokenId,
       claudeCredential: environment.claudeCredential,
       ...address,
@@ -354,7 +386,13 @@ async function adopt(
     to: "waking",
     now: new Date(deps.clock.now()),
     by,
-    changes: { providerId: found.id, runnerTokenId: null, claudeCredential: null },
+    changes: {
+      providerId: found.id,
+      // Made by this generation's create, from the image set then.
+      image: deps.config.sandbox.snapshot!,
+      runnerTokenId: null,
+      claudeCredential: null,
+    },
   });
   if (!adopted) return null;
   deps.log.warn("sandbox_adopted", { designId: waking.designId, sandboxId: waking.id });
@@ -383,6 +421,8 @@ async function resume(
     autoStopSeconds: AUTO_STOP_SECONDS,
     timeoutMs: WAKE_TIMEOUT_MS,
   };
+  // A runner that calls the API after this was thawed by this resume, and is up.
+  const since = clock.now();
   try {
     let wake: Awaited<ReturnType<typeof deps.sandbox.ensureAwake>>;
     try {
@@ -400,12 +440,16 @@ async function resume(
       const left = deadline - clock.now();
       const runner = await reviveRunner(deps, waking, {
         startUnit: left >= REVIVE_BUDGET_MS + COLD_MS,
+        since,
       });
       if (runner === "stay_down") return null;
       if (runner === "down") {
+        // Neither `/health` nor any call from it since the thaw: there is no runner here to
+        // lose a turn, so the machine is stopped without asking it to get ready.
         deps.log.warn("runner_down_after_warm_resume", {
           designId: waking.designId,
           sandboxId: waking.id,
+          start: wake.start,
         });
         // The next attempt starts here again, on a machine that is up.
         if (deadline - clock.now() < COLD_MS)
@@ -430,6 +474,229 @@ async function resume(
       (error.code === "not_found" || error.code === "snapshot_expired");
     if (!lost) throw error;
     return replace(deps, waking, claude, by, error);
+  }
+}
+
+/** Why a design on another image is not moved at this wake (`sandbox_move_held`). */
+export type Held =
+  | "moving_off"
+  | "image_failed"
+  | "checkpoint_behind"
+  | "no_checkpoint"
+  | "no_time"
+  | "moves_at_once";
+
+/**
+ * Why a design whose sandbox is from another image than `image` may not move onto it, by what
+ * is known before a wake begins, or null when it may. The wake adds the time it has left and the
+ * moves under way.
+ */
+export function moveHold(
+  sandbox: Pick<Sandbox, "imageFailed">,
+  image: string,
+  maxMoves: number,
+  cover: CheckpointCover,
+): Held | null {
+  if (maxMoves === 0) return "moving_off";
+  if (sandbox.imageFailed === image) return "image_failed";
+  if (cover === "behind") return "checkpoint_behind";
+  if (cover === "none") return "no_checkpoint";
+  return null;
+}
+
+/**
+ * Either the wake is done (the design moved, or another wake took the sandbox), or it goes on
+ * with `waking`, the sandbox it holds, as it would have without a move.
+ */
+type MoveOutcome = { done: true; woke: Woke | null } | { done: false; waking: Sandbox };
+
+/**
+ * Move the design whose sandbox `waking` was made from another image onto a new sandbox from the
+ * image set now (docs/cloud.md, "How images roll out"). It is the restore of a lost sandbox,
+ * chosen on purpose: the new sandbox's runner finds no disk and restores the last checkpoint,
+ * and resumes the same Claude session. So it happens only when that loses nothing and there is
+ * room for it:
+ *
+ *   - the sandbox is asleep or failed (the claim took it from there), never under a turn;
+ *   - the last checkpoint holds every event that went into the session; when it is behind (a
+ *     turn cut off, a checkpoint that failed) the old one is woken, saves one, and the design
+ *     moves at a later wake;
+ *   - a move onto this image has not failed for this design before;
+ *   - fewer than `PONZU_SANDBOX_MAX_MOVES` are under way, since each is one of the provider's
+ *     rationed starts;
+ *   - there is time in this attempt for the move and for resuming the old one after it.
+ *
+ * A move whose sandbox does not start, or whose runner does not answer, is undone: the new one
+ * is destroyed, the image is recorded as failed for this design, and the old one is resumed in
+ * the same attempt, so a broken image costs a design one slower wake, not a loop. Only once the
+ * new sandbox's runner answers does the row move, and only then is the old machine destroyed.
+ */
+async function moveOnto(
+  deps: JobDeps,
+  context: WakeContext,
+  waking: Sandbox,
+  claude: Claude,
+  by: string,
+  deadline: number,
+): Promise<MoveOutcome> {
+  const { db, clock, config, log } = deps;
+  const image = config.sandbox.snapshot!;
+  if (waking.image === image) return { done: false, waking };
+  const designId = waking.designId;
+  const fields = { designId, sandboxId: waking.id, from: waking.image, to: image };
+  const held = (reason: Held): MoveOutcome => {
+    log.info("sandbox_move_held", { ...fields, reason });
+    return { done: false, waking };
+  };
+  const hold = moveHold(
+    waking,
+    image,
+    config.sandbox.maxMoves,
+    await getCheckpointCover(db, designId),
+  );
+  if (hold) return held(hold);
+  if (deadline - clock.now() < MOVE_MS + WAKE_TIMEOUT_MS) return held("no_time");
+  const slot = await takeMoveSlot(db, {
+    id: waking.id,
+    by,
+    now: new Date(clock.now()),
+    max: config.sandbox.maxMoves,
+  });
+  if (!slot) return held("moves_at_once");
+
+  await showAgentWaiting(db, { designId, waking: true, blocker: null });
+  const began = clock.now();
+  const until = began + MOVE_MS;
+  const generation = waking.generation + 1;
+  const labels = sandboxLabels(config.sandbox.scope, designId, generation);
+  const nextId = newId("sbx");
+  const environment = await newEnvironment(deps, designId, claude);
+  let providerId: string | null = null;
+  let address: SandboxChanges = {};
+  try {
+    const created = await deps.sandbox.create({
+      idempotencyKey: `${designId}-${generation}`,
+      from: image,
+      size: "small",
+      name: `design-${designId}`,
+      labels,
+      env: environment.env,
+      ports: [RUNNER_PORT],
+      autoStopSeconds: AUTO_STOP_SECONDS,
+    });
+    providerId = created.sandbox.id;
+    const port =
+      created.addresses.find((a) => a.port === RUNNER_PORT) ??
+      (await deps.sandbox.address(providerId, RUNNER_PORT));
+    await deps.sandbox.ensureAwake(providerId, {
+      timeoutMs: Math.max(10_000, until - clock.now()),
+    });
+    if (!(await answers(deps, port, until))) {
+      throw new SandboxError("unavailable", "Its runner did not answer /health in time.");
+    }
+    address = await sealedAddress(deps, nextId, port);
+  } catch (error) {
+    await revokeRunnerToken(db, environment.runnerTokenId);
+    await destroyQuietly(deps, designId, providerId, labels);
+    // Ours (the database, the vault), or a create refused before anything was made for want of
+    // starts or a provider that is away: the image is not to blame, and the job tries again.
+    if (!(error instanceof SandboxError)) throw error;
+    if (!providerId && WAITS.has(error.code)) throw error;
+    if (!providerId && error.code === "conflict") {
+      // An earlier attempt of this wake made this generation's machine and was cut off: it is
+      // destroyed above, so the provider forgets the key, and the next attempt starts afresh.
+      throw new SandboxError("busy", error.message, { retryAfterSeconds: 5 });
+    }
+    const reason = error.message.slice(0, 500);
+    log.error("sandbox_move_failed", { ...fields, reason, ms: clock.now() - began });
+    deps.analytics.exception(error, { design_id: designId, image });
+    const kept = await moveSandbox(db, {
+      id: waking.id,
+      from: ["waking"],
+      to: "waking",
+      now: new Date(clock.now()),
+      by,
+      changes: { imageFailed: image, movingSince: null },
+    });
+    if (!kept) return { done: true, woke: null };
+    // The old sandbox, as if no move had been tried: the person waits a little longer, no more.
+    return { done: false, waking: kept };
+  }
+
+  const moved = await moveSandboxOnto(db, {
+    id: waking.id,
+    nextId,
+    by,
+    now: new Date(clock.now()),
+    changes: {
+      providerId,
+      image,
+      address: address.address ?? null,
+      encryptedAddressToken: address.encryptedAddressToken ?? null,
+      runnerTokenId: environment.runnerTokenId,
+      claudeCredential: environment.claudeCredential,
+    },
+  });
+  if (!moved) {
+    // Another wake took the sandbox over meanwhile; it does the rest.
+    await revokeRunnerToken(db, environment.runnerTokenId);
+    await destroyQuietly(deps, designId, providerId, labels);
+    return { done: true, woke: null };
+  }
+  // The old machine's disk is what the checkpoint holds; the new one has restored it.
+  await destroyQuietly(deps, designId, waking.providerId, null);
+  const ms = clock.now() - began;
+  log.info("sandbox_moved", {
+    ...fields,
+    sandboxId: moved.sandbox.id,
+    fromSandboxId: waking.id,
+    ms,
+  });
+  deps.analytics.capture(
+    "sandbox moved",
+    { design_id: designId, from_image: waking.image, to_image: image, duration_ms: ms },
+    // About the design's owner, whose Claude it runs on, as "sandbox woke" is.
+    { distinctId: context.ownerId, workspaceId: context.workspaceId },
+  );
+  return { done: true, woke: await awake(deps, moved.sandbox, "moved", by) };
+}
+
+/** Whether a runner answers `/health` through its address before `until`. */
+async function answers(
+  deps: JobDeps,
+  port: { url: string; token: string | null },
+  until: number,
+): Promise<boolean> {
+  const address = { url: port.url, token: port.token };
+  for (;;) {
+    if ((await deps.runnerPort.health(address, HEALTH_MS)).ok) return true;
+    if (deps.clock.now() >= until) return false;
+    await deps.clock.sleep(HEALTH_POLL_MS);
+  }
+}
+
+/**
+ * Destroy a machine a move made or left, by its id or, not knowing it, by its generation's
+ * labels. A destroy that fails is logged: the orphan sweep finds the machine once no row
+ * claims it.
+ */
+async function destroyQuietly(
+  deps: JobDeps,
+  designId: string,
+  providerId: string | null,
+  labels: Record<string, string> | null,
+): Promise<void> {
+  try {
+    const ids = providerId
+      ? [providerId]
+      : labels
+        ? (await deps.sandbox.list({ labels }))
+            .filter((found) => found.state !== "gone")
+            .map((found) => found.id)
+        : [];
+    for (const id of ids) await deps.sandbox.destroy(id);
+  } catch (error) {
+    deps.log.warn("sandbox_destroy_failed", { designId, providerId, error });
   }
 }
 
@@ -525,7 +792,9 @@ async function awake(
   // The runner says what it is doing as soon as it is up; until then the head says waking.
   await showAgentWaiting(db, { designId: moved.designId, waking: true, blocker: null });
   // A sandbox made just now has a runner still booting, which claims the feed by itself once it
-  // is up: a poke would only find nobody listening yet.
+  // is up: a poke would only find nobody listening yet. A move's runner has answered `/health`
+  // already and may have made its first claim before the row moved: a message sent meanwhile
+  // found no awake sandbox to poke, so it is poked now rather than at its next minute's claim.
   if (start === "created") return { sandbox: moved, start };
   try {
     await deps.poke({ url: moved.address!, token });
