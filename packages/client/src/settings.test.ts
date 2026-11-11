@@ -54,6 +54,7 @@ async function settingsSteps(maya: Api, ines: Api, workspaceId: string, repoId: 
     platform: "ios",
     pushToken: "c".repeat(64),
     pushEnvironment: "development",
+    installId: "maya-phone-install-01",
     name: "iPhone 16 Pro",
   });
   const { device: off } = await maya.devices.update(device.id, { pings: false });

@@ -15,10 +15,13 @@ beforeAll(async () => {
 afterAll(() => t.close());
 
 const token = (n: number) => n.toString(16).padStart(64, "a");
+/** The install of the app a phone runs: one per token unless a test says otherwise. */
+const install = (n: number) => `install-${n.toString().padStart(12, "0")}`;
 const phone = (n: number, extra: Record<string, unknown> = {}) => ({
   platform: "ios",
   pushToken: token(n),
   pushEnvironment: "production",
+  installId: install(n),
   name: "iPhone 16 Pro",
   appVersion: "0.13.0",
   ...extra,
@@ -145,6 +148,45 @@ describe("devices", () => {
     expect(theirs.body.device.pings).toBe(true);
     const listed = await call(t, maya.headers, "GET", "/v1/me/notifications");
     expect(listed.body.devices.some((d: { id: string }) => d.id === mine.device.id)).toBe(false);
+    expect(t.logs).toContainEqual(
+      expect.objectContaining({ event: "device_token_moved", from: maya.userId, to: ines.userId }),
+    );
+  });
+
+  test("another install's token stays with whoever holds it", async () => {
+    const { body: mine } = await call(t, maya.headers, "POST", "/v1/me/devices", phone(10));
+    const stolen = await call(t, ines.headers, "POST", "/v1/me/devices", {
+      ...phone(10),
+      installId: install(999),
+    });
+    expect(stolen.status).toBe(409);
+    expect(stolen.body.error.code).toBe("push_token_taken");
+    // Maya still has it, unchanged, and Ines has nothing to change or delete.
+    const listed = await call(t, maya.headers, "GET", "/v1/me/notifications");
+    expect(listed.body.devices.find((d: { id: string }) => d.id === mine.device.id)).toMatchObject({
+      name: "iPhone 16 Pro",
+      pings: true,
+    });
+    const hers = await call(t, ines.headers, "GET", "/v1/me/notifications");
+    expect(hers.body.devices.some((d: { id: string }) => d.id === mine.device.id)).toBe(false);
+    expect(t.logs).toContainEqual(
+      expect.objectContaining({
+        event: "device_token_conflict",
+        userId: ines.userId,
+        holderId: maya.userId,
+      }),
+    );
+    expect(JSON.stringify(t.logs)).not.toContain(token(10));
+  });
+
+  test("refuse a registration that does not say which install it is", async () => {
+    for (const installId of [undefined, "short", "has spaces in it, sixteen+"]) {
+      const bad = await call(t, maya.headers, "POST", "/v1/me/devices", {
+        ...phone(11),
+        installId,
+      });
+      expect(bad.status).toBe(400);
+    }
   });
 
   test("are each person's own: another's device is not found", async () => {

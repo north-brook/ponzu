@@ -336,6 +336,12 @@ export const devices = pgTable(
     platform: text("platform", { enum: DEVICE_PLATFORMS }).notNull(),
     pushToken: text("push_token").notNull().unique(),
     pushEnvironment: text("push_environment", { enum: PUSH_ENVIRONMENTS }).notNull(),
+    /**
+     * The install of the app that registered the token: a random id it keeps in the Keychain.
+     * Only the same install may move the token to another person (the phone signed in as
+     * someone else). Null for a row registered before it was asked for.
+     */
+    installId: text("install_id"),
     name: text("name"),
     appVersion: text("app_version"),
     pingsEnabled: boolean("pings_enabled").notNull().default(true),

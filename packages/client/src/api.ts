@@ -184,12 +184,17 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
     },
 
     devices: {
-      /** This device, for pings: once the person turns notifications on, and at each launch. */
+      /**
+       * This device, for pings: once the person turns notifications on, and at each launch.
+       * 409 `push_token_taken` while another account holds the token from another install.
+       */
       register: async (body: {
         platform: "ios" | "macos";
         /** The APNs device token, in hex. */
         pushToken: string;
         pushEnvironment: "development" | "production";
+        /** The app's random id for this install, made once and kept in the Keychain. */
+        installId: string;
         name?: string | null;
         appVersion?: string | null;
         /** iOS has notifications for Ponzu turned off. */

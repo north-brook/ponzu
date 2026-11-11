@@ -72,61 +72,91 @@ export interface DeviceRegistration {
   platform: Device["platform"];
   pushToken: string;
   pushEnvironment: Device["pushEnvironment"];
+  /** The app's own id for this install, kept in the Keychain. */
+  installId: string;
   name: string | null;
   appVersion: string | null;
   pingsBlocked: boolean;
 }
 
+export type DeviceRegistered =
+  | {
+      status: "registered";
+      device: Device;
+      created: boolean;
+      /** Who held the token until now, when it moved from another person. */
+      movedFrom?: string;
+    }
+  /**
+   * Another person holds the token from another install of the app, or from one that never
+   * said which it was: nothing changed. `holderId` is who holds it.
+   */
+  | { status: "taken"; holderId: string };
+
 /**
- * Record a device's push token for a person, as seen now. A token is one install of the app on
- * one phone, so registering one another person registered moves it to this person (the phone
- * signed in as someone else) with pings on, and registering it again updates it in place.
- * Answers the device and whether it is new to this person. In the same statement, the person's
- * devices past `MAX_DEVICES_PER_USER` are forgotten, longest unseen first.
+ * Record a device's push token for a person, as seen now. Registering it again updates it in
+ * place. A token another person registered moves to this person, with pings on, only when the
+ * same install registers it (the phone signed in as someone else); otherwise it stays theirs.
+ * Answers the device and whether it is new to this person. In the same statement, the person's devices past `MAX_DEVICES_PER_USER` are forgotten, longest unseen
+ * first.
  */
 export async function registerDevice(
   db: Db,
   device: DeviceRegistration,
-): Promise<{ device: Device; created: boolean }> {
-  const result = await queryJson<{ device: Record<string, unknown>; created: boolean }>(
+): Promise<DeviceRegistered> {
+  const result = await queryJson<{
+    device: Record<string, unknown> | null;
+    priorUserId: string | null;
+  }>(
     db,
     sql`
       with prior as (
         select user_id from devices where push_token = ${device.pushToken}
       ),
       registered as (
-        insert into devices (id, user_id, platform, push_token, push_environment, name,
-                             app_version, pings_blocked, last_seen_at)
+        insert into devices (id, user_id, platform, push_token, push_environment, install_id,
+                             name, app_version, pings_blocked, last_seen_at)
         values (${newId("dev")}, ${device.userId}, ${device.platform}, ${device.pushToken},
-                ${device.pushEnvironment}, ${device.name}, ${device.appVersion},
-                ${device.pingsBlocked}, now())
+                ${device.pushEnvironment}, ${device.installId}, ${device.name},
+                ${device.appVersion}, ${device.pingsBlocked}, now())
         on conflict (push_token) do update set
           user_id = excluded.user_id,
           platform = excluded.platform,
           push_environment = excluded.push_environment,
+          install_id = excluded.install_id,
           name = coalesce(excluded.name, devices.name),
           app_version = coalesce(excluded.app_version, devices.app_version),
           pings_blocked = excluded.pings_blocked,
           pings_enabled = devices.pings_enabled or devices.user_id <> excluded.user_id,
           last_seen_at = now()
+        where devices.user_id = excluded.user_id or devices.install_id = excluded.install_id
         returning devices.*
       ),
       forgotten as (
         delete from devices
          where id in (
            select id from devices
-            where user_id = ${device.userId} and id <> (select id from registered)
+            where user_id = ${device.userId}
+              and exists (select 1 from registered)
+              and id <> (select id from registered)
             order by last_seen_at desc, id
             offset ${MAX_DEVICES_PER_USER - 1}
          )
       )
       select json_build_object(
         'device', (select row_to_json(r) from registered r),
-        'created', not exists (select 1 from prior where user_id = ${device.userId})
+        'priorUserId', (select user_id from prior)
       ) as result
     `,
   );
-  return { device: toDevice(result!.device), created: result!.created };
+  const prior = result?.priorUserId ?? null;
+  if (!result?.device) return { status: "taken", holderId: prior! };
+  return {
+    status: "registered",
+    device: toDevice(result.device),
+    created: prior !== device.userId,
+    ...(prior && prior !== device.userId ? { movedFrom: prior } : {}),
+  };
 }
 
 export interface DeviceChanges {
@@ -188,6 +218,7 @@ function toDevice(json: Record<string, unknown>): Device {
     platform: json.platform as Device["platform"],
     pushToken: String(json.push_token),
     pushEnvironment: json.push_environment as Device["pushEnvironment"],
+    installId: (json.install_id as string | null) ?? null,
     name: (json.name as string | null) ?? null,
     appVersion: (json.app_version as string | null) ?? null,
     pingsEnabled: Boolean(json.pings_enabled),

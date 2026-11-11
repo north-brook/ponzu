@@ -73,6 +73,13 @@ const Registration = z.object({
   pushToken: PushToken,
   /** Which APNs the token is for: a development build's or the App Store's. */
   pushEnvironment: z.enum(PUSH_ENVIRONMENTS),
+  /**
+   * The app's own random id for this install, made once and kept in the Keychain: what lets
+   * the phone, signed in as someone else, take its token along. Never returned.
+   */
+  installId: z
+    .string()
+    .regex(/^[A-Za-z0-9-]{16,64}$/, "An install id is 16 to 64 letters, digits or dashes."),
   name: DeviceName.nullish(),
   appVersion: AppVersion.nullish(),
   blocked: z.boolean().optional(),
@@ -112,21 +119,31 @@ export const notifications = new Hono<AppEnv>()
   /**
    * Register this device for pings, or say again that it is here: 201 when it is new to the
    * person, 200 when it was theirs already. A token another person registered moves to this
-   * one (the phone signed in as someone else).
+   * one only from the same install (the phone signed in as someone else); from any other, it is
+   * 409 `push_token_taken` and stays theirs.
    */
   .post("/devices", access.user, validate("json", Registration), async (c) => {
-    const { deps, actor } = c.var;
+    const { deps, actor, log } = c.var;
     const body = c.req.valid("json");
-    const { device, created } = await registerDevice(deps.db, {
+    const registered = await registerDevice(deps.db, {
       userId: actor.user.id,
       platform: body.platform,
       pushToken: body.pushToken,
       pushEnvironment: body.pushEnvironment,
+      installId: body.installId,
       name: body.name ?? null,
       appVersion: body.appVersion ?? null,
       pingsBlocked: body.blocked ?? false,
     });
-    c.var.log.info("device_registered", { deviceId: device.id, created });
+    if (registered.status === "taken") {
+      log.warn("device_token_conflict", { userId: actor.user.id, holderId: registered.holderId });
+      throw new ApiError(409, "push_token_taken", "Another account has this device.");
+    }
+    const { device, created, movedFrom } = registered;
+    if (movedFrom) {
+      log.info("device_token_moved", { deviceId: device.id, from: movedFrom, to: actor.user.id });
+    }
+    log.info("device_registered", { deviceId: device.id, created });
     return c.json(DeviceAnswer.parse({ device: toView(device) }), created ? 201 : 200);
   })
 
