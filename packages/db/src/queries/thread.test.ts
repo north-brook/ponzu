@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
-import { seedDesign } from "../fixtures.ts";
+import { seedDesign, seedUser } from "../fixtures.ts";
 import { newId } from "../ids.ts";
 import { events } from "../schema/index.ts";
 import { createTestDb } from "../testing.ts";
@@ -8,6 +8,7 @@ import { QueryError } from "./run.ts";
 import {
   appendThreadItem,
   appendThreadItemOnce,
+  attachCommentPicture,
   listThreadItems,
   postMessage,
   type ThreadWrite,
@@ -256,4 +257,31 @@ test("refuses a payload too large for a row that clients watch", async () => {
     appendThreadItem(db, { ...item, payload: { output: "x".repeat(300_000) } }),
   ).rejects.toThrow();
   expect(await listThreadItems(db, { designId: design.id })).toHaveLength(1);
+});
+
+test("a comment keeps the first picture its author attaches, and nobody else's", async () => {
+  const { design, user } = await seedDesign(db);
+  const other = await seedUser(db, `sam${Date.now()}`);
+  const comment = await appendThreadItem(db, {
+    designId: design.id,
+    kind: "comment",
+    userId: user.id,
+    payload: { threadId: "th_1", messageId: "m_1", text: "Tighter" },
+  });
+  const picture = { light: "comments/m_1-light.webp", dark: "comments/m_1-dark.webp" };
+  const attach = (messageId: string, userId: string, given: Record<string, string> = picture) =>
+    attachCommentPicture(db, { designId: design.id, messageId, userId, picture: given });
+
+  // Not theirs, or no such comment: nothing changes.
+  expect(await attach("m_1", other.id)).toBeNull();
+  expect(await attach("m_2", user.id)).toBeNull();
+
+  const attached = await attach("m_1", user.id);
+  expect(attached).toMatchObject({ id: comment.id, payload: { text: "Tighter", picture } });
+
+  // Again, with another: the first stays, and comes back.
+  const again = await attach("m_1", user.id, { light: "comments/x.webp", dark: "comments/x.webp" });
+  expect(again?.payload).toMatchObject({ picture });
+  const [stored] = await listThreadItems(db, { designId: design.id });
+  expect(stored!.payload).toEqual({ threadId: "th_1", messageId: "m_1", text: "Tighter", picture });
 });

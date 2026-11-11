@@ -17,6 +17,8 @@ import { ApiError } from "../http/errors.ts";
  *   assets/<name>               a design's file, as markup references it (`assets/<name>`)
  *   previews/<seq>-<theme>.png  the sidebar's picture of the design at `seq`
  *   exports/<upload id>-<name>  a file a link reaches
+ *   comments/<message id>-<theme>-<random>.webp
+ *                               the picture of where a comment was left, as the thread shows it
  *
  * An SVG is the one kind that can run script when a browser opens it by itself, so it is stored
  * `Content-Disposition: attachment`: opened directly, the browser saves it instead of rendering
@@ -60,8 +62,14 @@ const EXPORT_TYPES: Record<string, string> = {
   pdf: "application/pdf",
 };
 
-/** Who is uploading what: a runner for any purpose, a person only images for the design. */
+/**
+ * Who is uploading what: a runner for any purpose but a comment's picture, a person images for
+ * the design and the pictures of their comments.
+ */
 export type UploadKind = UploadPurpose | "image";
+
+/** A comment's picture is two files, one for each theme. */
+export const COMMENT_PICTURE_NAMES = ["light.webp", "dark.webp"];
 
 interface Rule {
   types: Record<string, string>;
@@ -75,6 +83,8 @@ const RULES: Record<UploadKind, Rule> = {
   image: { types: IMAGE_TYPES, maxBytes: 20 * MB },
   export: { types: EXPORT_TYPES, maxBytes: 50 * MB },
   preview: { types: { png: "image/png" }, maxBytes: 5 * MB, names: ["light.png", "dark.png"] },
+  // A person's picture of where they left a comment, in each theme: a few hundred px a side.
+  comment: { types: { webp: "image/webp" }, maxBytes: 2 * MB, names: COMMENT_PICTURE_NAMES },
   // A checkpoint's archives (docs/cloud.md, "Saving the sandbox"): never served to anyone.
   session: {
     types: { gz: ARCHIVE_TYPE },
