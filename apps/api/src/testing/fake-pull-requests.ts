@@ -709,7 +709,8 @@ export class FakePullRequests {
 
   #pullJson(repo: FakeRepoAccess, pull: FakePull) {
     const iso = (ms: number | null) => (ms === null ? null : new Date(ms).toISOString());
-    const who = (login: string, bot = false) => ({
+    // The App's bot as GraphQL names it, by its slug; anyone else is a person.
+    const who = (login: string, bot = login === this.botLogin) => ({
       __typename: bot ? "Bot" : "User",
       login,
       avatarUrl: `https://avatars.example/${login}`,

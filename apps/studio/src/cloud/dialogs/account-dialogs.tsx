@@ -1,9 +1,10 @@
 /*
- * Dialogs about the person's own account: their Claude signed out (on send), disconnecting it,
- * and deleting the account.
+ * Dialogs about the person's own account: their Claude signed out (on send, or from a design
+ * waiting on it), getting the iPhone app, disconnecting Claude, and deleting the account.
  */
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { ClaudeCard, type ClaudeCardProps, canConnect } from "../setup/claude-card.tsx";
+import { IphoneCard } from "../setup/iphone-step.tsx";
 import { TextField } from "../ui/field.tsx";
 import {
   BlockingDialog,
@@ -15,41 +16,88 @@ import {
 
 /**
  * The person's Claude is signed out (its year ran out, or it was revoked) and they sent: connect
- * it again, with the setup's own card, and the prompt goes.
+ * it again, with the setup's own card, and the prompt goes. From an open design that waits on
+ * it (`resume`), connecting is all it takes for the design to pick up again.
  */
 export function ClaudeSignedOutDialog({
   open,
   onDismiss,
   card,
+  connected = true,
+  expired = false,
+  resume = false,
 }: {
   open: boolean;
   onDismiss: () => void;
   card: ClaudeCardProps;
+  /** False for someone with no Claude at all: it asks to connect, not to reconnect. */
+  connected?: boolean;
+  /** Its sign-in ran out, rather than being revoked: said as the design's strip says it. */
+  expired?: boolean;
+  /** Opened from a design waiting on the person's Claude, not from a send. */
+  resume?: boolean;
 }) {
   const { state } = card;
+  const then = resume
+    ? "and this design picks up where it waited."
+    : "and Ponzu sends this. Your prompt is saved.";
+  const title = !connected
+    ? "Connect Claude"
+    : expired
+      ? "Your Claude sign-in ran out"
+      : "Claude was signed out";
   return (
     <BlockingDialog
       open={open}
       onDismiss={onDismiss}
-      title="Claude was signed out"
-      body="Connect Claude again and Ponzu sends this. Your prompt is saved."
+      title={title}
+      body={
+        connected
+          ? `${expired ? "Sign in to Claude again" : "Connect Claude again"} ${then}`
+          : `Claude Code does the designing, on your own plan. Connect it ${then}`
+      }
       wide
     >
       <div className="mt-0.5 flex flex-col">
         <ClaudeCard {...card} />
       </div>
-      {state.mode === "choose" ? null : (
-        <DialogActions>
+      <DialogActions>
+        <DialogButton tone="raised" onClick={onDismiss}>
+          Cancel
+        </DialogButton>
+        {state.mode === "choose" ? null : (
           <DialogButton
             tone="primary"
             onClick={card.onSubmit}
             disabled={!canConnect(state)}
             busy={state.status === "connecting"}
           >
-            Connect and send
+            {resume ? "Connect" : "Connect and send"}
           </DialogButton>
-        </DialogActions>
-      )}
+        )}
+      </DialogActions>
+    </BlockingDialog>
+  );
+}
+
+/** Getting Ponzu on an iPhone, from Settings: the guided setup's own card, over the window. */
+export function GetIphoneDialog({ open, onDismiss }: { open: boolean; onDismiss: () => void }) {
+  return (
+    <BlockingDialog
+      open={open}
+      onDismiss={onDismiss}
+      title="Get Ponzu on your iPhone"
+      body="Comment on designs and answer Ponzu's questions from your phone. You'll get a notification when a pull request is ready."
+      wide
+    >
+      <div className="mt-0.5 flex flex-col">
+        <IphoneCard />
+      </div>
+      <DialogActions>
+        <DialogButton tone="raised" onClick={onDismiss}>
+          Done
+        </DialogButton>
+      </DialogActions>
     </BlockingDialog>
   );
 }
@@ -97,18 +145,30 @@ export function DeleteAccountDialog({
   login,
   soleAdmin,
   busy = false,
+  error = null,
 }: {
   open: boolean;
   onCancel: () => void;
   onConfirm: () => void;
   login: string;
-  /** The only admin of a team with other members: someone else must be made one first. */
-  soleAdmin: boolean;
+  /**
+   * The only admin of a team with other members: someone else must be made one first. With the
+   * teams' names, the dialog says which.
+   */
+  soleAdmin: boolean | string[];
   busy?: boolean;
+  /** Why the last try didn't go, when it was something else. */
+  error?: string | null;
 }) {
   const [typed, setTyped] = useState("");
+  // Each opening starts with the field empty.
+  useEffect(() => {
+    if (open) setTyped("");
+  }, [open]);
   const id = useId();
-  const matches = typed.trim() === login;
+  // GitHub's logins are the same whatever their case.
+  const matches = typed.trim().toLowerCase() === login.toLowerCase();
+  const blocked = Array.isArray(soleAdmin) ? soleAdmin.length > 0 : soleAdmin;
   return (
     <BlockingDialog
       open={open}
@@ -121,7 +181,7 @@ export function DeleteAccountDialog({
         className="flex flex-col gap-3"
         onSubmit={(e) => {
           e.preventDefault();
-          if (matches && !soleAdmin) onConfirm();
+          if (matches && !blocked) onConfirm();
         }}
       >
         <div className="flex flex-col gap-2">
@@ -131,20 +191,33 @@ export function DeleteAccountDialog({
             mono
             placeholder={login}
             value={typed}
-            disabled={soleAdmin || busy}
+            disabled={blocked || busy}
             onChange={(e) => setTyped(e.target.value)}
           />
-          <DialogError>{soleAdmin ? "Make someone else an admin first." : null}</DialogError>
+          <DialogError>
+            {blocked
+              ? Array.isArray(soleAdmin) && soleAdmin.length
+                ? `You're the only admin of ${listed(soleAdmin)}. Make someone else an admin first.`
+                : "Make someone else an admin first."
+              : error}
+          </DialogError>
         </div>
         <DialogActions>
           <DialogButton tone="raised" onClick={onCancel} disabled={busy}>
             Cancel
           </DialogButton>
-          <DialogButton tone="danger" type="submit" busy={busy} disabled={!matches || soleAdmin}>
+          <DialogButton tone="danger" type="submit" busy={busy} disabled={!matches || blocked}>
             Delete account
           </DialogButton>
         </DialogActions>
       </form>
     </BlockingDialog>
   );
+}
+
+/** "North Brook", "North Brook and Lisbon", "A, B and C". */
+function listed(names: string[]): string {
+  return names.length < 2
+    ? (names[0] ?? "")
+    : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
 }

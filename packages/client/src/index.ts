@@ -1,10 +1,13 @@
 // `@ponzu/client`: what the Mac app, the phone and a browser share to talk to Ponzu Cloud.
 // No Node APIs and no DOM: it runs as it is in Electron's renderer, a browser and Hermes.
 export {
+  type AgentDefaultsBody,
   type AnswerBody,
   type Api,
   type ApiOptions,
+  type CreateDesignBody,
   createApi,
+  type OnboardingStep,
   type PullRequestFile,
   type PullRequestTab,
   type SendMessageBody,

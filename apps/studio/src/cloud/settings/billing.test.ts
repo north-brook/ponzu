@@ -5,6 +5,7 @@ import {
   money,
   nextCap,
   parseCap,
+  pastFreeWord,
   type Usage,
   usageBar,
   usageLine,
@@ -40,6 +41,21 @@ describe("plan and usage", () => {
     expect(usageLine({ ...solo, usedCredits: 60, card: null, capUsd: null })).toBe(
       "this month · 60 credits, all free · resets December 9",
     );
+  });
+
+  test("before Ponzu can bill, use past the free credits is past free, and not billed yet", () => {
+    const unbilled: Usage = { ...solo, card: null, notBilled: true };
+    expect(usageLine(unbilled)).toBe("this month · 320 credits, 100 of them free · not billed yet");
+    expect(pastFreeWord(unbilled)).toBe("past free");
+    expect(pastFreeWord(solo)).toBe("billed");
+    // All free: the period simply resets.
+    expect(usageLine({ ...unbilled, usedCredits: 60 })).toBe(
+      "this month · 60 credits, all free · resets December 9",
+    );
+    expect(parseCap("10", 22, "used past free")).toEqual({
+      ok: false,
+      error: "At least $22, used past free so far",
+    });
   });
 
   test("the bar spans the free credits and what the cap buys", () => {

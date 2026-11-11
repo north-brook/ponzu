@@ -56,6 +56,17 @@ describe("the list", () => {
     expect(got.body).toEqual({ repos: [], canManageSecrets: true });
   });
 
+  test("lists a repo once someone has designed in it, before its base is built", async () => {
+    const other = await workspaceWithRepo(t, { kim: "admin" });
+    const list = async () =>
+      (await call(t, await as("kim"), "GET", `/v1/workspaces/${other.id}/environments`)).body;
+    expect((await list()).repos).toEqual([]);
+    await designIn(t, other, "kim", sampleDoc());
+    expect((await list()).repos).toMatchObject([
+      { repo: { id: other.repo.id }, base: { status: "none" }, secrets: [] },
+    ]);
+  });
+
   test("lists a repo once it has a secret, by name, for whoever can read it", async () => {
     const ada = await as("ada");
     const added = await call(t, ada, "POST", `${env()}/secrets`, {

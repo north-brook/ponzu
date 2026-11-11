@@ -112,3 +112,42 @@ test("someone set up: their workspaces with roles, and their Claude account with
     expect(text).not.toContain(kept);
   }
 });
+
+const recordStep = (headers: Record<string, string>, step: string) =>
+  t.app.request("/v1/me/onboarding", {
+    method: "POST",
+    headers: { ...headers, "content-type": "application/json" },
+    body: JSON.stringify({ step }),
+  });
+
+test("a guided setup step, once recorded, stays done as it was first done, on every device", async () => {
+  const person = await t.signInAs({ login: "stepper" });
+
+  const where = await recordStep(person.headers, "where");
+  expect(where.status).toBe(200);
+  const first = (await where.json()) as { whereConfirmedAt: string; iphoneStepSeenAt: null };
+  expect(first.iphoneStepSeenAt).toBeNull();
+  expect(first.whereConfirmedAt).toBe(new Date(t.clock.now()).toISOString());
+
+  t.clock.advance(60_000);
+  const again = (await (await recordStep(person.headers, "where")).json()) as typeof first;
+  expect(again.whereConfirmedAt).toBe(first.whereConfirmedAt);
+
+  await recordStep(person.headers, "iphone");
+  const me = (await (await t.app.request("/v1/me", { headers: person.headers })).json()) as {
+    onboarding: unknown;
+  };
+  expect(me.onboarding).toEqual({
+    whereConfirmedAt: first.whereConfirmedAt,
+    iphoneStepSeenAt: new Date(t.clock.now()).toISOString(),
+  });
+});
+
+test("only the two steps that leave no other trace can be recorded", async () => {
+  const person = await t.signInAs({ login: "skipper" });
+  const response = await recordStep(person.headers, "claude");
+  expect(response.status).toBe(400);
+  expect(((await response.json()) as { error: { code: string } }).error.code).toBe(
+    "invalid_request",
+  );
+});

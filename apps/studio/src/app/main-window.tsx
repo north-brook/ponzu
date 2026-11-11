@@ -1,16 +1,19 @@
 import type { Api, Profile } from "@ponzu/client";
 import { useLiveQuery } from "@ponzu/client/react";
 import type { DeepLink } from "@ponzu/desktop/bridge";
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { GetIphoneDialog } from "../cloud/dialogs/account-dialogs.tsx";
 import type { DesignSummary, Person } from "../cloud/model.ts";
 import type { ResultKey } from "../cloud/search.ts";
+import type { SettingsSection } from "../cloud/settings/settings-modal.tsx";
 import type { RowAction } from "../cloud/sidebar/design-row.tsx";
 import { Sidebar } from "../cloud/sidebar/sidebar.tsx";
 import { orderSettled } from "../cloud/status.ts";
 import { AppWindow } from "../cloud/window/app-window.tsx";
 import { DeleteDesignDialog } from "./confirm-dialogs.tsx";
 import { CreateView } from "./create.tsx";
-import { useOpenDesign } from "./design.tsx";
+import { type FreshDesign, useOpenDesign } from "./design.tsx";
 import { useDesignPanes } from "./design-panes.tsx";
 import type { Host } from "./host.ts";
 import {
@@ -25,9 +28,12 @@ import {
   usableWorkspaces,
 } from "./map.ts";
 import { Banner, PaneMessage } from "./notices.tsx";
+import { usePonzu } from "./ponzu-query.tsx";
+import { SettingsView } from "./settings/settings-view.tsx";
+import { ConnectClaudeDialog } from "./setup/connect-claude-dialog.tsx";
 import { useAssetsUrls, useRowPresence } from "./sidebar-data.ts";
 import { filterFor, loadUi, saveUi, type UiState } from "./ui-state.ts";
-import { useAnswer, useOnReturn } from "./use-answer.ts";
+import { useOnReturn } from "./use-answer.ts";
 
 /*
  * The main window, signed in: the person's workspaces from `me`, one of them open with its
@@ -46,6 +52,8 @@ interface Opening {
 
 const RETURN_SYNC_MS = 60_000;
 const NOTICE_MS = 6000;
+/** Ideas show under the composer until the person has made this many designs in a workspace. */
+const IDEAS_UNTIL = 3;
 
 export function MainWindow({ host, user, badge }: { host: Host; user: Profile; badge: ReactNode }) {
   const me = useMemo(() => toPerson(user.id, user), [user]);
@@ -59,8 +67,11 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
       }),
     [user.id],
   );
-  const meAnswer = useAnswer(() => host.api.me(), user.id);
-  const reloadMe = meAnswer.reload;
+  const { queries, mutations } = usePonzu();
+  const meAnswer = useQuery(queries.me());
+  const { refetch } = meAnswer;
+  const reloadMe = useCallback(() => void refetch(), [refetch]);
+  const syncGithub = useMutation(mutations.syncGithub()).mutateAsync;
   const [opening, setOpening] = useState<Opening | null>(null);
   const [notice, say] = useNotice();
 
@@ -77,9 +88,8 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
 
   // Back in front: GitHub may have changed who reaches what (docs/cloud.md, "Keeping it true").
   const sync = useCallback(async () => {
-    await host.api.github.sync().catch(() => {});
-    reloadMe();
-  }, [host, reloadMe]);
+    await syncGithub().catch(() => reloadMe());
+  }, [syncGithub, reloadMe]);
   useOnReturn(sync, RETURN_SYNC_MS);
   useEffect(() => {
     window.addEventListener("online", reloadMe);
@@ -131,22 +141,25 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
   const all = meAnswer.data?.workspaces ?? null;
   const usable = useMemo(() => (all ? usableWorkspaces(all) : []), [all]);
   const workspace = usable.find((w) => w.id === ui.workspaceId) ?? usable[0] ?? null;
+  // The workspace the window showed is suspended on GitHub: it opens another, and says why.
+  // What was shown counts, not what was chosen: a window that took the first workspace too.
+  const shownId = useRef<string | null>(null);
+  useEffect(() => {
+    const was = shownId.current;
+    shownId.current = workspace?.id ?? null;
+    const gone = was && was !== workspace?.id ? all?.find((w) => w.id === was) : null;
+    if (gone?.suspended) {
+      say(
+        `Ponzu is suspended on GitHub for ${toWorkspace(gone).name}. Its designs open again once it's back.`,
+      );
+    }
+  }, [workspace?.id, all, say]);
 
+  // Guided setup (FirstRun) holds the window until there is a workspace to work in, so there
+  // is none only for the moment GitHub takes one away, before the gates see it.
   if (!all || !workspace) {
     return (
       <AppWindow lights={host.lights} sidebar={null} rail={null} badge={badge}>
-        {!all ? (
-          meAnswer.error ? (
-            <PaneMessage
-              title="Can't reach Ponzu"
-              body="Check your connection. Your designs are safe in the cloud and open as soon as Ponzu is back."
-              action={{ label: "Try again", onClick: reloadMe }}
-              busy
-            />
-          ) : null
-        ) : (
-          <NoWorkspace host={host} />
-        )}
         {notice ? <Banner>{notice}</Banner> : null}
       </AppWindow>
     );
@@ -156,8 +169,10 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
       key={workspace.id}
       host={host}
       me={me}
+      user={user}
       workspace={workspace}
       workspaces={usable}
+      everyWorkspace={all}
       ui={ui}
       update={update}
       badge={badge}
@@ -176,8 +191,10 @@ export function MainWindow({ host, user, badge }: { host: Host; user: Profile; b
 function WorkspaceWindow({
   host,
   me,
+  user,
   workspace,
   workspaces,
+  everyWorkspace,
   ui,
   update,
   badge,
@@ -188,8 +205,12 @@ function WorkspaceWindow({
 }: {
   host: Host;
   me: Person;
+  user: Profile;
   workspace: MeWorkspace;
+  /** Those the window can switch to: installed and not suspended. */
   workspaces: MeWorkspace[];
+  /** Every one the person is in, for Settings to say what is wrong with those that aren't. */
+  everyWorkspace: MeWorkspace[];
   ui: UiState;
   update: (change: (ui: UiState) => UiState) => void;
   badge: ReactNode;
@@ -199,8 +220,9 @@ function WorkspaceWindow({
   onLostAccess: () => void;
 }) {
   const id = workspace.id;
-  const detail = useAnswer(() => host.api.workspaces.get(id), id);
-  useOnReturn(detail.reload, RETURN_SYNC_MS);
+  const { queries } = usePonzu();
+  // Asked again with `me` after each sync with GitHub, as the window comes back to the front.
+  const detail = useQuery(queries.workspace(id));
   const people = useMemo(() => membersById(detail.data?.members ?? []), [detail.data]);
   const repos = useMemo(
     () => (detail.data ? pushableRepos(detail.data.repos) : null),
@@ -208,10 +230,33 @@ function WorkspaceWindow({
   );
   const live = useLiveQuery("workspace.designs", { workspaceId: id });
   const openId = ui.designs[id] ?? null;
-  const open = useOpenDesign(host, me, openId, say);
+  // The design the create page just made, as its answer said, for it to open on.
+  const [fresh, setFresh] = useState<FreshDesign | null>(null);
+  const open = useOpenDesign(host, me, openId, say, fresh);
   const [page, setPage] = useState<string | null>(null);
   const [query, setQuery] = useState<string | null>(null);
   const [settledOpen, setSettledOpen] = useState(false);
+  // Each opening starts Settings on the window's workspace: `opened` keys it.
+  const [settings, setSettings] = useState<{
+    open: boolean;
+    section: SettingsSection;
+    opened: number;
+  }>({ open: false, section: "account", opened: 0 });
+  const showSettings = useCallback(
+    (open: boolean, section?: SettingsSection) =>
+      setSettings((now) => ({
+        open,
+        section: section ?? now.section,
+        opened: open && !now.open ? now.opened + 1 : now.opened,
+      })),
+    [],
+  );
+  const openSettings = useCallback(() => showSettings(true, "account"), [showSettings]);
+  const openPlan = useCallback(() => showSettings(true, "plan"), [showSettings]);
+  const [gettingIphone, setGettingIphone] = useState(false);
+  // Kept apart from whether it is open, so the dialog's words hold as it closes.
+  const [connectingClaude, setConnectingClaude] = useState(false);
+  const [claudeExpired, setClaudeExpired] = useState(false);
   const [deleting, setDeleting] = useState<{ design: DesignSummary; busy: boolean } | null>(null);
   const assetsUrls = useAssetsUrls(host.api, live.rows ?? null);
   const activeIds = useMemo(
@@ -266,9 +311,9 @@ function WorkspaceWindow({
     () =>
       host.onCommand((command) => {
         if (command === "new-design") openDesign(null);
-        // SEAM(settings): the settings track mounts Settings here.
+        if (command === "settings") openSettings();
       }),
-    [host, openDesign],
+    [host, openDesign, openSettings],
   );
 
   const addWorkspace = useCallback(() => {
@@ -322,8 +367,10 @@ function WorkspaceWindow({
   const lost =
     live.status === "ended" &&
     (live.error?.code === "not_found" || live.error?.code === "forbidden");
-  // A brand-new personal workspace has no sidebar until its first design (onboarding 3.6).
-  const firstDesign = workspace.kind === "personal" && summaries?.length === 0;
+  // A brand-new personal workspace has no sidebar until its first design (onboarding 3.6), when
+  // it is all the person has: with a team set up too, the sidebar is how they reach it.
+  const firstDesign =
+    workspace.kind === "personal" && summaries?.length === 0 && workspaces.length === 1;
   const designs = [...(active ?? []), ...(settled ?? [])];
   const sidebarOpen = ui.sidebarOpen;
   const panes = useDesignPanes({
@@ -345,9 +392,11 @@ function WorkspaceWindow({
     seenThreadSeq: live.rows?.find((row) => row.id === openId)?.seenThreadSeq ?? null,
     say,
     onClose: () => openDesign(null),
-    // SEAM(connect Claude): the setup track's Connect Claude flow (its card, in a dialog, or
-    // Settings › Agents) opens from here once it is wired. Until then the composer's strip says
-    // the design waits, and offers no button that would do nothing.
+    // The design waits on the viewer's own Claude: the guided setup's card, in a dialog.
+    onConnectClaude: (expired) => {
+      setClaudeExpired(expired);
+      setConnectingClaude(true);
+    },
   });
 
   return (
@@ -393,9 +442,8 @@ function WorkspaceWindow({
                   onNewDesign={() => openDesign(null)}
                   onSwitchWorkspace={(next) => update((now) => ({ ...now, workspaceId: next.id }))}
                   onAddWorkspace={addWorkspace}
-                  // SEAM(settings): Settings and Plan and usage arrive with the settings track.
-                  onSettings={() => {}}
-                  onPlan={() => {}}
+                  onSettings={openSettings}
+                  onPlan={openPlan}
                   onSignOut={() => void host.session.signOut()}
                 />
               ),
@@ -417,15 +465,41 @@ function WorkspaceWindow({
           host={host}
           workspaceId={id}
           repos={repos}
+          showIdeas={
+            summaries !== null &&
+            summaries.filter((d) => d.owner?.id === me.id).length < IDEAS_UNTIL
+          }
           onAllowMore={addWorkspace}
-          onCreated={(designId, messageFailed) => {
-            openDesign(designId);
+          onCreated={(design, messageFailed) => {
+            setFresh(design);
+            openDesign(design.id);
             if (messageFailed) {
               say("The design is made, but your message didn't reach Claude. Send it again.");
             }
           }}
         />
       )}
+      <SettingsView
+        key={settings.opened}
+        host={host}
+        me={me}
+        user={user}
+        workspaces={everyWorkspace}
+        workspaceId={id}
+        open={settings.open}
+        onOpenChange={(open) => showSettings(open)}
+        section={settings.section}
+        onSectionChange={(section) => setSettings((now) => ({ ...now, section }))}
+        onAddWorkspace={addWorkspace}
+        onGetIphone={() => setGettingIphone(true)}
+      />
+      <GetIphoneDialog open={gettingIphone} onDismiss={() => setGettingIphone(false)} />
+      <ConnectClaudeDialog
+        host={host}
+        open={connectingClaude}
+        expired={claudeExpired}
+        onClose={() => setConnectingClaude(false)}
+      />
       {notice ? <Banner>{notice}</Banner> : null}
       <DeleteDesignDialog
         name={deleting?.design.name ?? ""}
@@ -435,51 +509,6 @@ function WorkspaceWindow({
         onConfirm={confirmDelete}
       />
     </AppWindow>
-  );
-}
-
-/**
- * Signed in, but nowhere to design: the Ponzu GitHub App is on none of the person's accounts.
- *
- * SEAM(guided setup): the setup track's "Where do you design?" replaces this. Until then this is
- * its least: install the App on GitHub, and the workspace appears when the browser comes back.
- */
-function NoWorkspace({ host }: { host: Host }) {
-  const [failed, setFailed] = useState(false);
-  return (
-    <div className="absolute inset-0 flex flex-col items-center pt-[200px] text-center">
-      <h1 className="m-0 font-display font-semibold text-[28px] tracking-[-0.02em]">
-        Where do you design?
-      </h1>
-      <p className="m-0 mt-3 max-w-[460px] text-[15px] text-muted leading-[1.55]">
-        Ponzu works in the GitHub accounts it's installed on. Set it up on yours or an
-        organization's, and choose the repos it can open.
-      </p>
-      <button
-        type="button"
-        onClick={() =>
-          host.api.github.installLink({ client: "mac" }).then(
-            ({ url }) => host.openExternal(url),
-            () => setFailed(true),
-          )
-        }
-        className="app-no-drag mt-8 flex h-9 cursor-default items-center gap-1.5 rounded-8 bg-action px-[18px] font-medium text-13 text-action-ink outline-none transition-colors duration-(--dur-hover) focus-ring hover:bg-action-hover active:bg-action-press"
-      >
-        Set up on GitHub
-      </button>
-      {failed ? (
-        <p role="alert" className="m-0 mt-3 text-12 text-danger">
-          GitHub's install page couldn't be opened. Try again.
-        </p>
-      ) : null}
-      <button
-        type="button"
-        onClick={() => void host.session.signOut()}
-        className="app-no-drag mt-6 cursor-default rounded-4 px-1 text-12 text-muted outline-none focus-ring hover:underline"
-      >
-        Sign out
-      </button>
-    </div>
   );
 }
 

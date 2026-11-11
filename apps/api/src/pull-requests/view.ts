@@ -1,6 +1,6 @@
 import { PR_CHECKS, PR_STATES } from "@ponzu/db";
 import { z } from "zod";
-import type { GithubPullRequestRead } from "../deps/github-pull-requests.ts";
+import type { GithubPullRequestRead, GithubWho } from "../deps/github-pull-requests.ts";
 import type { PullRequestTarget } from "./sync.ts";
 
 /*
@@ -14,7 +14,13 @@ import type { PullRequestTarget } from "./sync.ts";
  * are http(s).
  */
 
-const Who = z.object({ login: z.string(), avatarUrl: z.string().nullable(), bot: z.boolean() });
+const Who = z.object({
+  login: z.string(),
+  avatarUrl: z.string().nullable(),
+  bot: z.boolean(),
+  /** The Ponzu App's own bot: the design's agent, which pushes and writes as the App. */
+  ponzu: z.boolean(),
+});
 const MergeMethod = z.enum(["squash", "merge", "rebase"]);
 
 /** The one thing the chrome's action button offers (docs/cloud.md, "Pull requests"). */
@@ -156,9 +162,33 @@ export const PullRequestTabView = z.object({
 
 export type PullRequestTab = z.input<typeof PullRequestTabView>;
 
-/** The tab as a read found it. */
-export function toTab(target: PullRequestTarget, read: GithubPullRequestRead): PullRequestTab {
-  const { pullRequest, branch } = read;
+type Who = z.input<typeof Who>;
+
+/**
+ * The tab as a read found it. `appSlug` is the Ponzu App's (`github.com/apps/<slug>`): its bot
+ * is the agent, and is marked as such wherever it appears. GitHub's GraphQL names a bot by its
+ * slug and its REST API as `<slug>[bot]`; either is this App's, and no person can hold either.
+ */
+export function toTab(
+  target: PullRequestTarget,
+  read: GithubPullRequestRead,
+  appSlug: string,
+): PullRequestTab {
+  const { branch } = read;
+  const mark = (who: GithubWho | null): Who | null =>
+    who && {
+      ...who,
+      ponzu: who.bot && (who.login === appSlug || who.login === `${appSlug}[bot]`),
+    };
+  const pr = read.pullRequest;
+  const pullRequest = pr && {
+    ...pr,
+    author: mark(pr.author),
+    mergedBy: mark(pr.mergedBy),
+    autoMerge: pr.autoMerge && { ...pr.autoMerge, enabledBy: mark(pr.autoMerge.enabledBy) },
+    reviews: pr.reviews.map((review) => ({ ...review, author: mark(review.author) })),
+    conversation: pr.conversation.map((said) => ({ ...said, author: mark(said.author) })),
+  };
   return {
     branch: {
       name: target.branch,

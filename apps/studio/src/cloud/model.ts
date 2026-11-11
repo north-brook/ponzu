@@ -294,17 +294,28 @@ export interface AskedQuestion {
 }
 
 /**
- * `sending` is the viewer's own answer on its way; `answered`, `cancelled` and `closed` are
- * closed. `closed` is one that left while the viewer was answering it, by a teammate's answer or
- * the run moving on: which, nothing says.
+ * `sending` is the viewer's own answer on its way, or, for one that just left while they were on
+ * it, Ponzu finding out how it closed; `answered`, `cancelled` and `closed` are closed. `closed`
+ * is one that left while the viewer was answering it when Ponzu couldn't say how.
  */
 export type AskStatus = "open" | "sending" | "answered" | "cancelled" | "closed";
+
+/** The answer that closed an ask, as it was given: what the card shows as chosen. */
+export interface AskGiven {
+  /** For a question: each question's text, to the labels chosen and the note, as sent. */
+  answers?: Record<string, string>;
+  /** For a plan or a permission. */
+  approved?: boolean;
+  note?: string;
+}
 
 export type Ask = {
   id: string;
   status: AskStatus;
   /** Who answered it, once someone has. */
   answeredBy: Person | null;
+  /** The answer that won, once someone else's has: shown in place of the viewer's own choice. */
+  given?: AskGiven | null;
 } & (
   | { kind: "question"; questions: AskedQuestion[] }
   /** Markdown, from the model. */

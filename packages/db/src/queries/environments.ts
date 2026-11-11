@@ -104,7 +104,7 @@ export async function getRepoEnvironment(
  * The environments of a workspace's repos that `userId` can read, as `repo_access` last said
  * (whether that is recent enough, and that they are a member, is the caller's to make sure
  * of), most recently pushed first. A repo is listed once it has an environment to show: a
- * base, a rebuild asked for, or a secret.
+ * design (whose start builds its base), a base, a rebuild asked for, or a secret.
  */
 export async function listWorkspaceEnvironments(
   db: Db,
@@ -121,7 +121,8 @@ export async function listWorkspaceEnvironments(
                           and a.permission in ('admin', 'write', 'read')
        where r.workspace_id = ${workspaceId} and r.removed_at is null
          and (r.base_status <> 'none' or r.base_rebuild_requested_at is not null
-              or exists (select 1 from repo_secrets s where s.repo_id = r.id))
+              or exists (select 1 from repo_secrets s where s.repo_id = r.id)
+              or exists (select 1 from designs d where d.repo_id = r.id))
     `,
   );
   return (result?.repos ?? []).map(toEnvironment);

@@ -153,10 +153,33 @@ describe("reading", () => {
       ["theo", "src/hero.tsx"],
       ["maya", null],
     ]);
+    // People are people: only the App's own bot is marked as Ponzu.
+    expect(body.pullRequest.author.ponzu).toBe(false);
+    expect(body.pullRequest.reviews[0].author.ponzu).toBe(false);
     // Nothing of GitHub's own that the shape does not list.
     expect(body.pullRequest).not.toHaveProperty("id");
     // The row the sidebar watches has caught up too.
     expect(await getDesign(t.db, design.id)).toMatchObject({ prChecks: "running" });
+  });
+
+  test("what the Ponzu App's own bot wrote is marked as Ponzu's; another bot is itself", async () => {
+    const { ws, repo, design } = await setup();
+    await opened(ws, design.id);
+    const pull = t.github.pulls.latest(repo)!;
+    t.github.pulls.comment(pull, t.github.pulls.botLogin, "Pushed the new hero.");
+    t.github.pulls.comment(pull, "maya", "Looks right.");
+    t.github.pulls.comment(pull, "ponzu-test-impostor", "Not the App.");
+    t.github.pulls.review(pull, t.github.pulls.botLogin, "COMMENTED", "Summary of the change.");
+
+    const { body } = await call(t, as(ws, "ines"), "GET", path(design.id));
+    const said = body.pullRequest.conversation.map((remark: any) => [
+      remark.author.login,
+      remark.author.ponzu,
+    ]);
+    expect(said).toContainEqual([t.github.pulls.botLogin, true]);
+    expect(said).toContainEqual(["maya", false]);
+    expect(said).toContainEqual(["ponzu-test-impostor", false]);
+    expect(said.filter(([, ponzu]: [string, boolean]) => ponzu)).toHaveLength(2);
   });
 
   test("Scratch has none, and someone outside the workspace finds nothing", async () => {

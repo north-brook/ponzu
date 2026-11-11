@@ -116,7 +116,7 @@ text "Disconnect" rgb(244, 243, 239) 500 12px Inter
 ground button[Connected] rgb(58, 58, 58) shadow rgba(255, 255, 255, 0.06) 0px 0px 0px 0.5px, rgba(0, 0, 0, 0.4) 0px 1px 2px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0.5px
 icon svg[Connected] 16×16 rgb(107, 104, 98) stroke 1.8px
 text "Use an API key instead" rgb(169, 165, 155) 400 13px Inter
-icon svg[Switch] 16×16 rgb(107, 104, 98) stroke 1.5px
+icon svg[Connected] 16×16 rgb(107, 104, 98) stroke 1.5px
 text "Defaults for new designs" rgb(107, 104, 98) 600 11px Inter
 text "Agent" rgb(169, 165, 155) 400 13px Inter
 text "Claude Code" rgb(244, 243, 239) 500 13px Inter

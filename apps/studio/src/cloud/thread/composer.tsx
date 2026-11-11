@@ -17,7 +17,8 @@ const images = (files: FileList | null | undefined) =>
  * works with nothing typed, and Send otherwise (composerButton). Return sends and Shift-Return
  * breaks the line; the field grows to six lines, then scrolls. Images come in by the "+", a
  * paste or a drop. While the run waits on its owner's Claude a strip above the field says so
- * and nothing sends; typing still keeps a draft.
+ * and nothing sends; typing still keeps a draft. Once its owner has left the workspace nothing
+ * will run it again, so the strip is all there is: no field to write in for nobody.
  */
 export function RailComposer({
   text,
@@ -49,6 +50,7 @@ export function RailComposer({
   onConnectClaude?: () => void;
 }) {
   const button = composerButton({ working, text, attachments, gate });
+  const ended = gate?.kind === "claude_owner_left";
   const picker = useRef<HTMLInputElement>(null);
   const [dropping, setDropping] = useState(false);
 
@@ -87,7 +89,12 @@ export function RailComposer({
       )}
     >
       {gate ? (
-        <div className="flex items-center gap-2.5 border-rule border-b bg-strip py-[11px] pr-3 pl-[18px] text-13 leading-[1.4]">
+        <div
+          className={cn(
+            "flex items-center gap-2.5 bg-strip py-[11px] pr-3 pl-[18px] text-13 leading-[1.4]",
+            !ended && "border-rule border-b",
+          )}
+        >
           <span className="flex shrink-0" aria-hidden>
             <AgentMark client="claude" size={13} />
           </span>
@@ -103,7 +110,7 @@ export function RailComposer({
           ) : null}
         </div>
       ) : null}
-      {attachments.length ? (
+      {ended ? null : attachments.length ? (
         <ul aria-label="Attached images" className="m-0 flex list-none flex-wrap gap-1.5 px-3 pt-3">
           {attachments.map((a) => (
             <AttachmentChip
@@ -115,7 +122,7 @@ export function RailComposer({
           ))}
         </ul>
       ) : null}
-      <div className="flex items-end gap-[2px] py-2 pr-2 pl-1.5">
+      <div className={cn("flex items-end gap-[2px] py-2 pr-2 pl-1.5", ended && "hidden")}>
         <IconButton
           label="Attach an image"
           tipSide="top"
@@ -175,7 +182,7 @@ export function StopButton({ onStop }: { onStop: () => void }) {
 }
 
 /** An image on its way: its picture, breathing while it uploads, with a way to take it back. */
-function AttachmentChip({
+export function AttachmentChip({
   attachment,
   onRemove,
   onRetry,
@@ -219,11 +226,23 @@ function AttachmentChip({
   );
 }
 
-/** Someone who can read the design but not steer it: one line where the composer would be. */
-export function ReadOnlyLine({ message }: { message: string }) {
+/**
+ * Someone who can read the design but not steer it: one line where the composer would be. The
+ * repo's name, when the line has one, wraps whole rather than at its hyphen or slash.
+ */
+export function ReadOnlyLine({ message, whole }: { message: string; whole?: string | null }) {
+  const at = whole ? message.indexOf(whole) : -1;
   return (
     <p className="m-0 shrink-0 px-3 py-2.5 text-center text-12 text-faint leading-[1.5]">
-      {message}
+      {whole && at >= 0 ? (
+        <>
+          {message.slice(0, at)}
+          <span className="whitespace-nowrap">{whole}</span>
+          {message.slice(at + whole.length)}
+        </>
+      ) : (
+        message
+      )}
     </p>
   );
 }

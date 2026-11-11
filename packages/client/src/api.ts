@@ -1,8 +1,9 @@
 import type { ClientOp, PageIcon } from "@ponzu/core";
 import type { ThreadItem } from "@ponzu/runner/protocol";
+import type { InferRequestType } from "hono/client";
 import { ApiError, networkError } from "./errors.ts";
 import type { Randomness } from "./pkce.ts";
-import { createRpc, type Fetch } from "./rpc.ts";
+import { createRpc, type Fetch, type Rpc } from "./rpc.ts";
 import type { Session } from "./session.ts";
 
 /** A file to upload, in the shape both a browser `File` and the phone's picker give. */
@@ -20,6 +21,15 @@ export interface ApiOptions {
   fetch?: Fetch;
 }
 
+/** What `api.designs.create` takes. */
+export type CreateDesignBody = InferRequestType<Rpc["v1"]["designs"]["$post"]>["json"];
+/** What `api.claude.setDefaults` takes: the model, the effort, or both. */
+export type AgentDefaultsBody = InferRequestType<Rpc["v1"]["claude"]["defaults"]["$patch"]>["json"];
+/** A guided setup step that leaves no other trace (`api.onboarding`). */
+export type OnboardingStep = InferRequestType<
+  Rpc["v1"]["me"]["onboarding"]["$post"]
+>["json"]["step"];
+
 /**
  * One method per thing the apps ask the API (apps/api/README.md has the rules every route
  * follows). Each returns the answer's JSON, typed from the API's own routes, or throws
@@ -34,6 +44,47 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
   return {
     /** Everything the app needs at launch: the person, setup progress, their workspaces. */
     me: async () => (await v1.me.$get()).json(),
+
+    /**
+     * Records a guided setup step as done (Continue on "Where do you design?", Start designing
+     * on the iPhone step). The first time counts. Answers where setup stands.
+     */
+    onboarding: async (step: OnboardingStep) =>
+      (await v1.me.onboarding.$post({ json: { step } })).json(),
+
+    /** The person's own Claude, which their designs run on (docs/cloud.md, "Credentials"). */
+    claude: {
+      /** What is connected, or `{ account: null }`. Never the credential. */
+      get: async () => (await v1.claude.$get()).json(),
+      /** 400 `claude_key_invalid` when Anthropic doesn't take the key. */
+      connectApiKey: async (key: string) =>
+        (await v1.claude["api-key"].$post({ json: { key } })).json(),
+      /** A claude.ai sign-in: open `authorizeUrl`, then send the code it shows before `expiresAt`. */
+      startSignIn: async () => (await v1.claude["sign-ins"].$post()).json(),
+      /**
+       * 400 `claude_code_invalid` (not whole, or turned away), 409 `claude_sign_in_used` and
+       * 410 `claude_sign_in_expired`. Past a code that was turned away, only a new sign-in works.
+       */
+      sendCode: async (signInId: string, code: string) =>
+        (
+          await v1.claude["sign-ins"][":id"].code.$post({
+            param: { id: signInId },
+            json: { code },
+          })
+        ).json(),
+      /** The person chose another way: the sign-in is given up. */
+      abandonSignIn: async (signInId: string): Promise<void> => {
+        await v1.claude["sign-ins"][":id"].$delete({ param: { id: signInId } });
+      },
+      /** Designs wait until Claude is connected again; what runs on it now stops. */
+      disconnect: async (): Promise<void> => {
+        await v1.claude.$delete();
+      },
+      /** The model and effort new designs start on, and what there is to choose from. */
+      defaults: async () => (await v1.claude.defaults.$get()).json(),
+      setDefaults: async (body: AgentDefaultsBody) =>
+        (await v1.claude.defaults.$patch({ json: body })).json(),
+    },
 
     github: {
       /** What "Where do you design?" lists, as of the last sync. */
@@ -71,9 +122,11 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
     },
 
     designs: {
-      /** In a repo the person can push to, or Scratch (`repoId` left out). */
-      create: async (body: { workspaceId: string; repoId?: string | null; name?: string }) =>
-        (await v1.designs.$post({ json: body })).json(),
+      /**
+       * In a repo the person can push to, or Scratch (`repoId` left out). With a first message
+       * the agent sets off at once; a `createKey` sent again answers the design it made.
+       */
+      create: async (body: CreateDesignBody) => (await v1.designs.$post({ json: body })).json(),
       get: async (id: string) => (await v1.designs[":id"].$get(design(id))).json(),
       rename: async (id: string, body: { name?: string; icon?: PageIcon | null }) =>
         (await v1.designs[":id"].$patch({ ...design(id), json: body })).json(),
@@ -124,6 +177,14 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
             param: { id, questionId },
             json: body,
           })
+        ).json(),
+      /**
+       * One of the agent's questions as it stands: once answered, the answer that won and who
+       * gave it. `design.questions` holds the open ones alone; this says how one closed.
+       */
+      question: async (id: string, questionId: string) =>
+        (
+          await v1.designs[":id"].questions[":questionId"].$get({ param: { id, questionId } })
         ).json(),
       /** Stops the agent's turn. The runner's `stopped` notice arrives through `design.thread`. */
       stop: async (id: string): Promise<void> => {

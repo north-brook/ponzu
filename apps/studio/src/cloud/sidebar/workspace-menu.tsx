@@ -59,13 +59,26 @@ export function WorkspaceMark({ workspace, size = 20 }: { workspace: Workspace; 
       style={{
         width: size,
         height: size,
-        background: monogramColor(workspace.id),
+        background: monogramColor(workspace.login),
         color: "#ffffff",
       }}
     >
-      {workspaceName(workspace).charAt(0).toUpperCase()}
+      {monogramLetter(workspace)}
     </span>
   );
+}
+
+/**
+ * The letter on an account's tile, the same wherever it shows: a person's from their GitHub
+ * login (a personal workspace is called "Personal", which isn't theirs), a team's from its name.
+ */
+export function monogramLetter(account: {
+  kind: Workspace["kind"];
+  name: string;
+  login: string;
+}): string {
+  const from = account.kind === "personal" ? account.login : account.name || account.login;
+  return from.trim().charAt(0).toUpperCase();
 }
 
 export function workspaceName(workspace: Workspace): string {

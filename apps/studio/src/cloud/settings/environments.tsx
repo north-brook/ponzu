@@ -33,6 +33,10 @@ export interface EnvironmentsSectionProps {
   onOpenChange: (open: string[]) => void;
   /** Admins add, change and remove secrets; everyone else sees their names. */
   canEdit: boolean;
+  /** Who can push to a repo may rebuild its base; left out, everyone may. */
+  canRebuild?: (repo: Repo) => boolean;
+  /** Under the list: what a change to a secret does, and when. */
+  note?: string;
   onRebuild: (repo: Repo) => void;
   /** Adds a secret, or replaces the value of one by its name. */
   onSaveSecret: (repo: Repo, name: string, value: string) => void;
@@ -47,10 +51,11 @@ export function EnvironmentsSection({
   environments,
   open,
   onOpenChange,
+  note,
   ...props
 }: EnvironmentsSectionProps) {
   return (
-    <Section label="Repos">
+    <Section label="Repos" note={environments.length ? note : undefined}>
       {environments.length ? (
         environments.map((env) => {
           const isOpen = open.includes(env.repo.id);
@@ -85,7 +90,8 @@ function RepoEnvironmentRow({
   onRebuild,
   onSaveSecret,
   onRemoveSecret,
-}: Omit<EnvironmentsSectionProps, "environments" | "open" | "onOpenChange"> & {
+  canRebuild = () => true,
+}: Omit<EnvironmentsSectionProps, "environments" | "open" | "onOpenChange" | "note"> & {
   env: RepoEnvironment;
   open: boolean;
   onToggle: () => void;
@@ -141,10 +147,18 @@ function RepoEnvironmentRow({
                 {item.label}
               </span>
             ))}
+            {base.status === "none" ? (
+              <span className="text-12 text-faint">Ponzu sets it up as a design here starts.</span>
+            ) : null}
             <span className="flex-1" />
-            <QuietButton disabled={base.status === "building"} onClick={() => onRebuild(repo)}>
-              {base.status === "failed" ? "Try again" : "Rebuild"}
-            </QuietButton>
+            {base.status !== "none" && canRebuild(repo) ? (
+              <QuietButton
+                disabled={base.status === "building" || base.status === "requested"}
+                onClick={() => onRebuild(repo)}
+              >
+                {base.status === "failed" ? "Try again" : "Rebuild"}
+              </QuietButton>
+            ) : null}
           </div>
           <div className="mx-2.5 h-px bg-rule" />
           <Secrets
@@ -191,6 +205,9 @@ function BaseAge({ base }: { base: RepoEnvironment["base"] }) {
     );
   }
   if (base.status === "failed") return <span className="text-12 text-danger">Rebuild failed</span>;
+  if (base.status === "requested") {
+    return <span className="text-12 text-faint">Rebuilds at the next start</span>;
+  }
   return base.builtAt ? (
     <span className="text-12 text-faint">Built {ago(base.builtAt, now, "long")}</span>
   ) : null;

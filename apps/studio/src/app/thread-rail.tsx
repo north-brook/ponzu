@@ -1,4 +1,5 @@
 import { useLiveQuery } from "@ponzu/client/react";
+import { useMutation } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo } from "react";
 import type { Person, Repo, ThreadItem } from "../cloud/model.ts";
 import { ThreadRail } from "../cloud/thread/rail.tsx";
@@ -8,6 +9,7 @@ import { useColorScheme } from "../cloud/ui/color-scheme.ts";
 import { BoardMiniature } from "./board-miniature.tsx";
 import { type OpenDesign, useAccess, useSourceState } from "./design.tsx";
 import type { Host } from "./host.ts";
+import { usePonzu } from "./ponzu-query.tsx";
 import {
   agentActivity,
   shownItems,
@@ -47,16 +49,31 @@ export function DesignRail({
   /** Shows these boards on the canvas. */
   onOpenArtboards: (artboardIds: string[]) => void;
   onOpenPullRequest: () => void;
-  /** Connects the viewer's own Claude, when the design waits on it; absent until it can. */
-  onConnectClaude?: () => void;
+  /**
+   * Connects the viewer's own Claude, when the design waits on it; absent until it can. Says
+   * whether its sign-in ran out, so the dialog puts it as the strip did.
+   */
+  onConnectClaude?: (expired: boolean) => void;
   /** Says over the window what didn't happen. */
   say: (notice: string) => void;
 }) {
   const designId = open.id;
+  const { mutations } = usePonzu();
+  const stop = useMutation(mutations.stopAgent());
   const state = useSourceState(open.source);
   const access = useAccess(open);
   const thread = useSnapshot(open.thread);
-  const asks = useSnapshot(open.asks);
+  const asked = useSnapshot(open.asks);
+  // Who answered, as the member they are: with their picture, when the workspace has them.
+  const asks = useMemo(
+    () =>
+      asked.map((ask) =>
+        ask.answeredBy
+          ? { ...ask, answeredBy: people.get(ask.answeredBy.id) ?? ask.answeredBy }
+          : ask,
+      ),
+    [asked, people],
+  );
   const attachments = useSnapshot(open.uploads);
   const head = useLiveQuery("design.head", { designId }).rows?.[0];
   const meRow = useLiveQuery("me", {}).rows?.[0];
@@ -74,10 +91,11 @@ export function DesignRail({
     [asks],
   );
   const items = useMemo(() => {
-    if (!thread.items) return null;
+    // A design just made shows its first message while its thread is read.
+    if (!thread.items && !thread.pending.length) return null;
     const ctx: ThreadContext = { people, assetsUrl: assetBase ?? null, doc };
     return [
-      ...shownItems(thread.items, waiting).map((item) => toThreadItem(item, ctx)),
+      ...shownItems(thread.items ?? [], waiting).map((item) => toThreadItem(item, ctx)),
       ...thread.pending.map((message, i) => pendingItem(message, me, i)),
     ];
   }, [thread, waiting, people, assetBase, doc, me]);
@@ -118,7 +136,7 @@ export function DesignRail({
       items={items}
       older={thread.older}
       onLoadOlder={() => open.thread.loadOlder()}
-      agent={agentActivity(head)}
+      agent={agentActivity(head ?? open.fresh?.head)}
       asks={asks}
       gate={gate}
       attachments={attachments}
@@ -127,16 +145,16 @@ export function DesignRail({
       onRetryAttachment={(id) => open.uploads.retry(id)}
       onSend={(text) => open.thread.send(text.trim(), open.uploads.take())}
       onStop={() =>
-        void host.api.designs
-          .stop(designId)
-          .catch(() => say("Claude couldn't be stopped. Try again."))
+        stop.mutate(designId, { onError: () => say("Claude couldn't be stopped. Try again.") })
       }
       onAnswer={(id, answer) => open.asks.answer(id, answer)}
       onDismissAsk={(id) => open.asks.dismiss(id)}
       onTouchAsk={(id) => open.asks.touch(id)}
       onRetryMessage={(id) => open.thread.retry(id)}
       onEditMessage={(id) => open.thread.discard(id)}
-      {...(onConnectClaude ? { onConnectClaude } : {})}
+      {...(onConnectClaude
+        ? { onConnectClaude: () => onConnectClaude(gate?.kind === "claude_expired") }
+        : {})}
       renderBoard={(artboardId) => (
         <BoardMiniature doc={doc} artboardId={artboardId} assetBase={assetBase} theme={theme} />
       )}

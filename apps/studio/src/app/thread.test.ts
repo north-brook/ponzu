@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
-import type { DesignHeadRow, MeRow } from "@ponzu/client";
+import { ApiError, type DesignHeadRow, type MeRow } from "@ponzu/client";
 import { createFakeBackend, type FakeAgent, type FakePerson, settle } from "@ponzu/client/testing";
 import type { Person } from "../cloud/model.ts";
 import { AskStore } from "./ask-store.ts";
+import { storePonzu } from "./store-ponzu.ts";
 import { agentActivity, branchMoment, shownItems, steerGate, toThreadItem } from "./thread-map.ts";
 import { THREAD_PAGE, ThreadStore } from "./thread-store.ts";
 import { Uploads } from "./uploads.ts";
@@ -39,11 +40,16 @@ async function world() {
   });
   const agent = backend.agent(design.id);
   const thread = (who = client, meId = maya.id) =>
-    new ThreadStore({ api: who.api, live: who.live, designId: design.id, meId }).start();
+    new ThreadStore({
+      ponzu: storePonzu(who.api),
+      live: who.live,
+      designId: design.id,
+      meId,
+    }).start();
   const errors: string[] = [];
   const asks = (who = client) =>
     new AskStore({
-      api: who.api,
+      ponzu: storePonzu(who.api),
       live: who.live,
       designId: design.id,
       onError: (m) => errors.push(m),
@@ -205,7 +211,7 @@ test("a message the live rows hold before the API answers shows once, not twice"
     },
   };
   const store = new ThreadStore({
-    api,
+    ponzu: storePonzu({ ...w.client.api, ...api }),
     live: w.client.live,
     designId: w.design.id,
     meId: w.maya.id,
@@ -237,7 +243,7 @@ test("history comes a page at a time until the live rows have the whole thread",
   // Without live rows (a realtime that never connects), the newest page paints first.
   const live = { subscribe: () => () => {} };
   const store = new ThreadStore({
-    api: w.client.api,
+    ponzu: storePonzu(w.client.api),
     live,
     designId: w.design.id,
     meId: w.maya.id,
@@ -262,7 +268,7 @@ test("history comes a page at a time until the live rows have the whole thread",
 test("an image uploads as it is added, and goes with the next message", async () => {
   const w = await world();
   const uploads = new Uploads({
-    api: w.client.api,
+    ponzu: storePonzu(w.client.api),
     designId: w.design.id,
     preview: (file) => `blob:${file.name}`,
     release: () => {},
@@ -369,16 +375,23 @@ test("when a teammate answered first, the viewer's answer is turned away calmly"
   store.answer(id, { answers: { "Which way?": "Shorten it" } });
   await answered;
   await settle();
-  // Sam's answer won; Maya's own is kept as answered, to put away.
+  // Sam's answer won; Maya's own is kept as answered, by Sam, to put away.
   expect(w.backend.design(w.design.id).questions[0]?.answer?.userId).toBe(w.sam.id);
-  expect(store.getSnapshot()).toMatchObject([{ id, status: "answered", answeredBy: null }]);
+  expect(store.getSnapshot()).toMatchObject([
+    {
+      id,
+      status: "answered",
+      answeredBy: { id: w.sam.id, login: w.sam.githubLogin },
+      given: { answers: { "Which way?": "Let it wrap" } },
+    },
+  ]);
   expect(w.errors).toEqual([]);
   store.dismiss(id);
   expect(store.getSnapshot()).toEqual([]);
   store.close();
 });
 
-test("a question the viewer had started on stays, closed, when it leaves without their answer", async () => {
+test("a question the viewer had started on stays when it leaves without their answer, saying how it closed", async () => {
   const w = await world();
   const store = w.asks();
   const sam = w.backend.connect(w.sam);
@@ -391,19 +404,49 @@ test("a question the viewer had started on stays, closed, when it leaves without
     answers: { "Which way?": "Let it wrap" },
   });
   await settle();
-  // Who closed it the live rows don't say: it says only that it no longer waits.
-  expect(store.getSnapshot()).toMatchObject([{ id, status: "closed" }]);
+  // Sam answered while Maya was choosing: his name and his answer, not her choice.
+  expect(store.getSnapshot()).toMatchObject([
+    {
+      id,
+      status: "answered",
+      answeredBy: { id: w.sam.id },
+      given: { answers: { "Which way?": "Let it wrap" } },
+    },
+  ]);
   store.dismiss(id);
   expect(store.getSnapshot()).toEqual([]);
 
-  // Withdrawn while the viewer was on it: the same.
+  // Withdrawn while the viewer was on it: Claude moved on.
   const next = w.agent.ask(HEADLINE);
   await settle();
   store.touch(next);
   w.agent.withdraw(next);
   await settle();
-  expect(store.getSnapshot()).toMatchObject([{ id: next, status: "closed" }]);
+  expect(store.getSnapshot()).toMatchObject([{ id: next, status: "cancelled", answeredBy: null }]);
+  store.dismiss(next);
+
   store.close();
+
+  // When how it closed can't be read, it says only that it no longer waits.
+  const unread = new AskStore({
+    ponzu: storePonzu({
+      ...w.client.api,
+      designs: {
+        ...w.client.api.designs,
+        question: () => Promise.reject(new ApiError(404, "not_found", "Gone.")),
+      },
+    }),
+    live: w.client.live,
+    designId: w.design.id,
+    onError: () => {},
+  }).start();
+  const last = w.agent.ask(HEADLINE);
+  await settle();
+  unread.touch(last);
+  w.agent.withdraw(last);
+  await settle();
+  expect(unread.getSnapshot()).toMatchObject([{ id: last, status: "closed" }]);
+  unread.close();
 });
 
 test("an open question is in the composer's place, not also a line in the thread", async () => {
