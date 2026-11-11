@@ -173,8 +173,18 @@ export function AppWindow({
   }
   useEffect(() => {
     if (closingRail === null) return;
-    const timer = setTimeout(() => setClosingRail(null), motion.ms());
-    return () => clearTimeout(timer);
+    let live = true;
+    const timer = setTimeout(
+      () =>
+        motion.after(() => {
+          if (live) setClosingRail(null);
+        }),
+      motion.ms(),
+    );
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
   }, [closingRail, motion]);
 
   /** The width the panels share: the group's, less its edges'. */
@@ -242,21 +252,18 @@ export function AppWindow({
     const el = group.current;
     if (!el) return;
     groupWidth.current = el.clientWidth;
-    let later: ReturnType<typeof setTimeout> | undefined;
+    let live = true;
     const observer = new ResizeObserver(([entry]) => {
       groupWidth.current = entry?.borderBoxSize?.[0]?.inlineSize ?? el.clientWidth;
       if (frame.current?.hasAttribute("data-pane-drag")) return;
-      clearTimeout(later);
       // While a toggle eases, once it has.
-      if (frame.current?.hasAttribute("data-pane-motion")) {
-        later = setTimeout(() => place(now.current.open), motion.ms() + 64);
-      } else {
-        place(now.current.open);
-      }
+      motion.after(() => {
+        if (live) place(now.current.open);
+      });
     });
     observer.observe(el);
     return () => {
-      clearTimeout(later);
+      live = false;
       observer.disconnect();
     };
   }, [place, motion]);
@@ -575,6 +582,8 @@ function dragging(frame: HTMLElement | null, after: () => void) {
 interface PaneMotion {
   start(): void;
   stop(): void;
+  /** Runs `fn` once no toggle is easing: now, or when the easing ends. */
+  after(fn: () => void): void;
   /** How long a pane takes to open or close: `--dur-pane`. */
   ms(): number;
 }
@@ -591,10 +600,25 @@ function usePaneMotion(frame: RefObject<HTMLDivElement | null>): PaneMotion {
       const parsed = Number.parseFloat(value) * (/\ds$/.test(value) ? 1000 : 1);
       return Number.isFinite(parsed) ? parsed : 220;
     };
+    let waiting: (() => void)[] = [];
     const stop = () => {
       clearTimeout(timer.current);
       frame.current?.removeAttribute("data-pane-motion");
+      const run = waiting;
+      waiting = [];
+      for (const fn of run) fn();
     };
+    /** Whether a pane's easing is still under way: a busy window can start it late. */
+    const easing = () =>
+      (frame.current?.getAnimations({ subtree: true }) ?? []).some((animation) => {
+        const target = (animation.effect as KeyframeEffect | null)?.target;
+        return (
+          animation.playState === "running" &&
+          "transitionProperty" in animation &&
+          target instanceof Element &&
+          target.matches("[data-panel], .pane-motion")
+        );
+      });
     return {
       ms,
       stop,
@@ -603,8 +627,19 @@ function usePaneMotion(frame: RefObject<HTMLDivElement | null>): PaneMotion {
         if (!el) return;
         clearTimeout(timer.current);
         el.setAttribute("data-pane-motion", "");
-        // A frame past the easing, so its last step lands before the transitions go.
-        timer.current = setTimeout(stop, ms() + 32);
+        const began = performance.now();
+        const limit = ms() * 4 + 500;
+        // A frame past the easing, so its last step lands before the transitions go; longer
+        // while it's still running.
+        const check = () => {
+          if (easing() && performance.now() - began < limit) timer.current = setTimeout(check, 32);
+          else stop();
+        };
+        timer.current = setTimeout(check, ms() + 32);
+      },
+      after(fn) {
+        if (frame.current?.hasAttribute("data-pane-motion")) waiting.push(fn);
+        else fn();
       },
     };
   });
