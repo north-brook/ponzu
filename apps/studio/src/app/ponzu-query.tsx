@@ -7,7 +7,7 @@ import {
   ponzuMutations,
   ponzuQueries,
 } from "@ponzu/client/query";
-import { focusManager, QueryClientProvider } from "@tanstack/react-query";
+import { focusManager, type QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
 import type { Host } from "./host.ts";
 
@@ -22,6 +22,8 @@ interface Ponzu {
   api: Api;
   queries: PonzuQueries;
   mutations: PonzuMutations;
+  /** The window's one QueryClient, for an open design's stores (store-ponzu.ts). */
+  queryClient: QueryClient;
 }
 
 const PonzuContext = createContext<Ponzu | null>(null);
@@ -51,6 +53,7 @@ export function PonzuQueryProvider({ host, children }: { host: Host; children: R
       api: host.api,
       queries: ponzuQueries(host.api),
       mutations: ponzuMutations(host.api, queryClient),
+      queryClient,
     }),
     [host, queryClient],
   );

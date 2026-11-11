@@ -62,14 +62,15 @@ export function ponzuQueries(api: Api) {
       }),
 
     /**
-     * A page of a design's thread, oldest first: the newest `limit` items before `before`. Older
-     * pages never change; the newest is the live query's from then on, so none is asked again.
+     * A page of a design's thread, oldest first: the newest `limit` items before `before`. A
+     * page before a seq never changes, so it is kept; the newest is asked for each time, and the
+     * live query keeps it current from there.
      */
     threadPage: (designId: string, page: { before?: number; limit: number }) =>
       queryOptions({
         queryKey: queryKeys.threadPage(designId, page.before ?? null, page.limit),
         queryFn: () => api.designs.thread(designId, page),
-        staleTime: Number.POSITIVE_INFINITY,
+        staleTime: page.before === undefined ? 0 : Number.POSITIVE_INFINITY,
       }),
     /**
      * The design's pull request as GitHub has it, `nextAction` included. Read again whenever

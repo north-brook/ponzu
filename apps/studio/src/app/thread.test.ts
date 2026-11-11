@@ -3,6 +3,7 @@ import type { DesignHeadRow, MeRow } from "@ponzu/client";
 import { createFakeBackend, type FakeAgent, type FakePerson, settle } from "@ponzu/client/testing";
 import type { Person } from "../cloud/model.ts";
 import { AskStore } from "./ask-store.ts";
+import { storePonzu } from "./store-ponzu.ts";
 import { agentActivity, branchMoment, shownItems, steerGate, toThreadItem } from "./thread-map.ts";
 import { THREAD_PAGE, ThreadStore } from "./thread-store.ts";
 import { Uploads } from "./uploads.ts";
@@ -39,11 +40,16 @@ async function world() {
   });
   const agent = backend.agent(design.id);
   const thread = (who = client, meId = maya.id) =>
-    new ThreadStore({ api: who.api, live: who.live, designId: design.id, meId }).start();
+    new ThreadStore({
+      ponzu: storePonzu(who.api),
+      live: who.live,
+      designId: design.id,
+      meId,
+    }).start();
   const errors: string[] = [];
   const asks = (who = client) =>
     new AskStore({
-      api: who.api,
+      ponzu: storePonzu(who.api),
       live: who.live,
       designId: design.id,
       onError: (m) => errors.push(m),
@@ -205,7 +211,7 @@ test("a message the live rows hold before the API answers shows once, not twice"
     },
   };
   const store = new ThreadStore({
-    api,
+    ponzu: storePonzu({ ...w.client.api, ...api }),
     live: w.client.live,
     designId: w.design.id,
     meId: w.maya.id,
@@ -237,7 +243,7 @@ test("history comes a page at a time until the live rows have the whole thread",
   // Without live rows (a realtime that never connects), the newest page paints first.
   const live = { subscribe: () => () => {} };
   const store = new ThreadStore({
-    api: w.client.api,
+    ponzu: storePonzu(w.client.api),
     live,
     designId: w.design.id,
     meId: w.maya.id,
@@ -262,7 +268,7 @@ test("history comes a page at a time until the live rows have the whole thread",
 test("an image uploads as it is added, and goes with the next message", async () => {
   const w = await world();
   const uploads = new Uploads({
-    api: w.client.api,
+    ponzu: storePonzu(w.client.api),
     designId: w.design.id,
     preview: (file) => `blob:${file.name}`,
     release: () => {},

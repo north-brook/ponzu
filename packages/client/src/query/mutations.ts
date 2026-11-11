@@ -1,6 +1,7 @@
 import { mutationOptions, type QueryClient } from "@tanstack/react-query";
 import type {
   AgentDefaultsBody,
+  AnswerBody,
   Api,
   CreateDesignBody,
   OnboardingStep,
@@ -119,6 +120,15 @@ export function ponzuMutations(api: Api, queryClient: QueryClient) {
      * person sends it, each answered by the API, with the live rows following.
      */
 
+    /**
+     * Answers one of the agent's questions. The first answer wins: a later one is 409
+     * `question_closed`, naming who answered (`details.answeredBy`).
+     */
+    answerQuestion: () =>
+      mutationOptions({
+        mutationFn: (vars: { designId: string; questionId: string; body: AnswerBody }) =>
+          api.designs.answer(vars.designId, vars.questionId, vars.body),
+      }),
     /** Says something to the agent; answers the message's thread item. */
     sendMessage: () =>
       mutationOptions({

@@ -1,5 +1,5 @@
-import type { Api } from "@ponzu/client";
 import type { Attachment, PendingAttachment } from "../cloud/model.ts";
+import { mutate, type StorePonzu } from "./store-ponzu.ts";
 
 /*
  * The images on their way into the next message of one design. Each uploads straight to
@@ -23,7 +23,7 @@ export class Uploads {
 
   constructor(
     private readonly opts: {
-      api: Pick<Api, "designs">;
+      ponzu: StorePonzu;
       designId: string;
       /** A local picture of a file: an object URL in the browser. */
       preview?: (file: File) => string;
@@ -93,10 +93,10 @@ export class Uploads {
     if (!upload) return;
     try {
       const bytes = new Uint8Array(await upload.file.arrayBuffer());
-      const stored = await this.opts.api.designs.upload(this.opts.designId, {
-        name: upload.file.name,
-        type: upload.file.type,
-        bytes,
+      const { ponzu, designId } = this.opts;
+      const stored = await mutate(ponzu, ponzu.mutations.upload(), {
+        designId,
+        file: { name: upload.file.name, type: upload.file.type, bytes },
       });
       if (!stored.ref) throw new Error("The upload has no reference.");
       this.set(id, {

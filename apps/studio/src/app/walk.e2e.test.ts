@@ -63,7 +63,6 @@ describe.skipIf(!chromiumPath)("a brand-new person, from sign-in to sign-out", (
     }
   };
   /** Runs in the page, where `window.ponzuFake` is the backend: as GitHub, the agent, a teammate. */
-  // biome-ignore lint/suspicious/noExplicitAny: what each step hands the page is its own
   const fake = <T>(run: (arg: any) => T, arg?: unknown): Promise<T> =>
     page.evaluate(run as (arg: unknown) => T, arg);
   const rail = () => page.locator("#thread");

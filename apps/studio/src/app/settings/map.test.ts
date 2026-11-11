@@ -1,8 +1,19 @@
 import { describe, expect, test } from "bun:test";
 import { createFakeBackend } from "@ponzu/client/testing";
 import { connectionLine } from "../../cloud/claude.ts";
+import { billedUsd, usageLine } from "../../cloud/settings/billing.ts";
 import { roleEdit } from "../../cloud/settings/members.ts";
-import { installationUrl, toConnection, toInstallation, toMembers } from "./map.ts";
+import {
+  hasIphone,
+  installationUrl,
+  toConnection,
+  toEnvironment,
+  toInstallation,
+  toMembers,
+  toPingDevices,
+  toTeamUsage,
+  toUsage,
+} from "./map.ts";
 
 /** A team with an owner on GitHub, an admin Ponzu made, and a member; and Maya's own account. */
 function team() {
@@ -15,6 +26,7 @@ function team() {
     name: "Northbrook",
     members: { [owner.id]: "admin", [maya.id]: "admin", [sam.id]: "member" },
     owners: [owner.id],
+    repos: [{ name: "site" }],
   });
   const own = backend.addWorkspace({
     login: "maya",
@@ -84,5 +96,62 @@ describe("Agents", () => {
     await api.claude.connectApiKey("sk-ant-api03-abcdefghijklmnop4f2a");
     const key = toConnection((await api.claude.get()).account!);
     expect(connectionLine(key)).toStartWith("Anthropic API key · sk-ant-…4f2a · connected");
+  });
+});
+
+describe("Notifications", () => {
+  test("only iPhones are where pings go, each named; one signed in passes the setup's step", async () => {
+    const { api } = team();
+    expect(hasIphone(await api.notifications.get())).toBe(false);
+    await api.devices.register({
+      platform: "macos",
+      pushToken: "aa",
+      pushEnvironment: "production",
+      installId: "mac",
+    });
+    await api.devices.register({
+      platform: "ios",
+      pushToken: "bb",
+      pushEnvironment: "production",
+      installId: "phone",
+      name: null,
+    });
+    const answer = await api.notifications.get();
+    expect(hasIphone(answer)).toBe(true);
+    expect(toPingDevices(answer).map((d) => d.name)).toEqual(["iPhone"]);
+  });
+});
+
+describe("Environments", () => {
+  test("a rebuild asked for says it happens at the next start", async () => {
+    const { backend, api, ws } = team();
+    const repoId = ws.repos[0]!.id;
+    backend.settings.setBase(repoId, { status: "ready", builtAt: new Date().toISOString() });
+    expect(toEnvironment((await api.environments.get(repoId)).environment).base.status).toBe(
+      "ready",
+    );
+    const asked = await api.environments.rebuild(repoId);
+    expect(toEnvironment(asked.environment).base.status).toBe("requested");
+  });
+});
+
+describe("Plan and usage", () => {
+  test("the pooled free credits come off first; a member sees only their own use", async () => {
+    const { backend, api, ws, maya, sam } = team();
+    backend.settings.use(ws.id, maya.id, 250);
+    backend.settings.use(ws.id, sam.id, 150);
+    const answer = await api.usage.get(ws.id);
+    const usage = toUsage(answer);
+    // Three people, 100 free each: 400 used, 300 free, 100 billed at $0.10.
+    expect([usage.freeCredits, usage.usedCredits, billedUsd(usage)]).toEqual([300, 400, 10]);
+    expect(usage.card).toBeNull();
+    expect(usageLine(usage, { name: "Northbrook", people: 3 })).toContain("400 credits");
+    expect(toTeamUsage(answer, "Northbrook").byPerson?.map((p) => p.usedCredits)).toEqual([
+      250, 150, 0,
+    ]);
+
+    const asSam = backend.connect(sam).api;
+    const theirs = toTeamUsage(await asSam.usage.get(ws.id), "Northbrook");
+    expect([theirs.byPerson, theirs.mine.usedCredits]).toEqual([null, 150]);
   });
 });

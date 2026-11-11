@@ -87,7 +87,10 @@ const connect = useMutation(mutations.connectApiKey());
 ```
 
 What is asked for by request (`me`, the GitHub accounts, a workspace, the person's Claude and
-their defaults) is cached by TanStack Query, the phone's library too. Each mutation writes what
+their defaults; Settings' notifications, environments and usage; an open design's thread pages,
+its pull request and each file's diff at a commit) is cached by TanStack Query, the phone's
+library too. A design's sends, answers, uploads, stop and pull request actions are mutations
+here as well; its thread and questions are live queries. Each mutation writes what
 its answer says into the cache and asks again for what it may have changed. Where a live query
 covers the same rows, it says when an answer is out of date: `invalidateFromLive` asks for
 `me` and the Claude answers again when the person's own row changes elsewhere. A query that

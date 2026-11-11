@@ -9,6 +9,7 @@ import {
   toPullRequestDetail,
 } from "./pull-request-map.ts";
 import { PullRequestStore } from "./pull-request-store.ts";
+import { storePonzu } from "./store-ponzu.ts";
 
 /*
  * A design's pull request: the API's answer mapped onto the tab, and each state and action on
@@ -308,7 +309,7 @@ async function world() {
   const said: string[] = [];
   const told: string[] = [];
   const store = new PullRequestStore({
-    api: client.api,
+    ponzu: storePonzu(client.api),
     designId: design.id,
     say: (m) => said.push(m),
     tellAgent: (t) => told.push(t),

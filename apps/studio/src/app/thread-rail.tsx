@@ -1,4 +1,5 @@
 import { useLiveQuery } from "@ponzu/client/react";
+import { useMutation } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo } from "react";
 import type { Person, Repo, ThreadItem } from "../cloud/model.ts";
 import { ThreadRail } from "../cloud/thread/rail.tsx";
@@ -8,6 +9,7 @@ import { useColorScheme } from "../cloud/ui/color-scheme.ts";
 import { BoardMiniature } from "./board-miniature.tsx";
 import { type OpenDesign, useAccess, useSourceState } from "./design.tsx";
 import type { Host } from "./host.ts";
+import { usePonzu } from "./ponzu-query.tsx";
 import {
   agentActivity,
   shownItems,
@@ -53,6 +55,8 @@ export function DesignRail({
   say: (notice: string) => void;
 }) {
   const designId = open.id;
+  const { mutations } = usePonzu();
+  const stop = useMutation(mutations.stopAgent());
   const state = useSourceState(open.source);
   const access = useAccess(open);
   const thread = useSnapshot(open.thread);
@@ -128,9 +132,7 @@ export function DesignRail({
       onRetryAttachment={(id) => open.uploads.retry(id)}
       onSend={(text) => open.thread.send(text.trim(), open.uploads.take())}
       onStop={() =>
-        void host.api.designs
-          .stop(designId)
-          .catch(() => say("Claude couldn't be stopped. Try again."))
+        stop.mutate(designId, { onError: () => say("Claude couldn't be stopped. Try again.") })
       }
       onAnswer={(id, answer) => open.asks.answer(id, answer)}
       onDismissAsk={(id) => open.asks.dismiss(id)}

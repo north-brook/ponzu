@@ -29,7 +29,7 @@ function device() {
     queryClient,
     queries: ponzuQueries(client.api),
     /** Runs a mutation as `useMutation` would. */
-    mutate: <R, V>(options: MutationOptions<R, Error, V>, vars: V) =>
+    mutate: <R, V, C>(options: MutationOptions<R, Error, V, C>, vars: V) =>
       new MutationObserver(queryClient, options).mutate(vars),
     mutations: ponzuMutations(client.api, queryClient),
   };
@@ -137,4 +137,68 @@ test("a role change asks for the workspace again, whether or not it was refused"
   });
   await expect(refused).rejects.toMatchObject({ code: "last_admin" });
   expect(queryClient.getQueryState(queryKeys.workspace(team.id))?.isInvalidated).toBe(true);
+});
+
+test("a ping toggle shows at once, and is put back when the API turns it down", async () => {
+  const { backend, queryClient, queries, mutations, mutate } = device();
+  const needsYou = () => queryClient.getQueryData(queries.notifications().queryKey)?.prefs.needsYou;
+  await queryClient.fetchQuery(queries.notifications());
+  // Answers take a moment: what shows before one is the toggle as flipped.
+  backend.latencyMs = 20;
+  const flipped = mutate(mutations.setPings(), { needsYou: false });
+  await settle();
+  expect(needsYou()).toBe(false);
+  await flipped;
+  expect(needsYou()).toBe(false);
+
+  backend.online = false;
+  const refused = mutate(mutations.setPings(), { needsYou: true });
+  await settle();
+  expect(needsYou()).toBe(true);
+  await expect(refused).rejects.toMatchObject({ code: "network" });
+  expect(needsYou()).toBe(false);
+});
+
+test("a secret saved or a rebuild asked for shows in the workspace's environments at once", async () => {
+  const { backend, maya, queryClient, queries, mutations, mutate } = device();
+  const team = backend.addWorkspace({
+    login: "north-brook",
+    members: { [maya.id]: "admin" },
+    repos: [{ name: "site" }],
+  });
+  const repoId = team.repos[0]!.id;
+  backend.settings.setBase(repoId, { status: "ready", builtAt: new Date().toISOString() });
+  await queryClient.fetchQuery(queries.environments(team.id));
+  const listed = () => queryClient.getQueryData(queries.environments(team.id).queryKey)!.repos[0]!;
+
+  await mutate(mutations.saveSecret(), {
+    workspaceId: team.id,
+    repoId,
+    name: "STRIPE_KEY",
+    value: "sk_test_1",
+    replacing: false,
+  });
+  expect(listed().secrets.map((s) => s.name)).toEqual(["STRIPE_KEY"]);
+  await mutate(mutations.rebuildEnvironment(), { workspaceId: team.id, repoId });
+  expect(listed().base.rebuild.requestedAt).not.toBeNull();
+});
+
+test("a pull request action's answer is the tab the query holds", async () => {
+  const { backend, maya, queryClient, queries, mutations, mutate, client } = device();
+  const team = backend.addWorkspace({
+    login: "north-brook",
+    members: { [maya.id]: "admin" },
+    repos: [{ name: "site" }],
+  });
+  const design = await client.api.designs.create({
+    workspaceId: team.id,
+    repoId: team.repos[0]!.id,
+    name: "Pricing",
+  });
+  backend.agent(design.id).push();
+  await queryClient.fetchQuery(queries.pullRequest(design.id));
+  await mutate(mutations.pullRequestAction(), { designId: design.id, action: { kind: "open" } });
+  const tab = queryClient.getQueryData(queries.pullRequest(design.id).queryKey);
+  expect(tab?.pullRequest?.state).toBe("draft");
+  expect(tab?.nextAction).toBe("ready");
 });

@@ -1,5 +1,6 @@
-import { type AnswerBody, type Api, ApiError, type Live, type QuestionRow } from "@ponzu/client";
+import { type AnswerBody, ApiError, type Live, type QuestionRow } from "@ponzu/client";
 import type { Ask, AskAnswer, Person } from "../cloud/model.ts";
+import { mutate, type StorePonzu } from "./store-ponzu.ts";
 import { toAsk } from "./thread-map.ts";
 
 /*
@@ -25,7 +26,7 @@ export class AskStore {
 
   constructor(
     private readonly opts: {
-      api: Pick<Api, "designs">;
+      ponzu: StorePonzu;
       live: Pick<Live, "subscribe">;
       designId: string;
       /** Says, in a sentence, that an answer didn't go. */
@@ -74,7 +75,8 @@ export class AskStore {
     const asked = toAsk(row);
     this.sending.add(id);
     this.emit();
-    this.opts.api.designs.answer(this.opts.designId, id, body).then(
+    const { ponzu, designId } = this.opts;
+    mutate(ponzu, ponzu.mutations.answerQuestion(), { designId, questionId: id, body }).then(
       () => this.emit(),
       (error: unknown) => {
         this.sending.delete(id);

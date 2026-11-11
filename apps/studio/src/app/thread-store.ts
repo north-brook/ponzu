@@ -1,5 +1,6 @@
-import type { Api, Live, LiveRows, LiveSnapshot } from "@ponzu/client";
+import type { Live, LiveRows, LiveSnapshot } from "@ponzu/client";
 import type { Attachment, OlderItems } from "../cloud/model.ts";
+import { mutate, type StorePonzu } from "./store-ponzu.ts";
 
 /*
  * One open design's thread: the `design.thread` live query, pages of its history from the API
@@ -8,6 +9,7 @@ import type { Attachment, OlderItems } from "../cloud/model.ts";
  * and the live row follows with the same id. The live row often comes first (the API wakes the
  * agent before it answers), so a bubble also gives way to the viewer's own message with its words
  * arriving after it was sent. One that fails stays, marked, to send again or take back to edit.
+ * Pages of history are the client's `threadPage` queries, and a send its `sendMessage`.
  */
 
 type RunnerItem = LiveRows["design.thread"];
@@ -52,7 +54,7 @@ export class ThreadStore {
 
   constructor(
     private readonly opts: {
-      api: Pick<Api, "designs">;
+      ponzu: StorePonzu;
       live: Pick<Live, "subscribe">;
       designId: string;
       /** The viewer, whose messages the bubbles are. */
@@ -74,7 +76,7 @@ export class ThreadStore {
         this.emit();
       },
     );
-    this.opts.api.designs.thread(this.opts.designId, { limit: THREAD_PAGE }).then(
+    this.page({ limit: THREAD_PAGE }).then(
       ({ items }) => {
         for (const item of items) this.pages.set(item.id, item);
         this.firstPage = items.length < THREAD_PAGE ? "short" : "full";
@@ -109,8 +111,7 @@ export class ThreadStore {
     if (!oldest) return;
     this.loadingOlder = true;
     this.emit();
-    this.opts.api.designs
-      .thread(this.opts.designId, { before: oldest.seq, limit: THREAD_PAGE })
+    this.page({ before: oldest.seq, limit: THREAD_PAGE })
       .then(
         ({ items }) => {
           for (const item of items) this.pages.set(item.id, item);
@@ -203,9 +204,10 @@ export class ThreadStore {
   private async deliver(message: PendingMessage): Promise<void> {
     const refs = message.attachments.map((a) => a.ref);
     try {
-      const item = await this.opts.api.designs.sendMessage(this.opts.designId, {
-        text: message.text,
-        ...(refs.length ? { attachments: refs } : {}),
+      const { ponzu, designId } = this.opts;
+      const item = await mutate(ponzu, ponzu.mutations.sendMessage(), {
+        designId,
+        body: { text: message.text, ...(refs.length ? { attachments: refs } : {}) },
       });
       // Held until the live rows have it, unless they already do.
       if (!this.live?.rows?.some((row) => row.id === item.id)) this.sent.set(item.id, item);
@@ -217,6 +219,11 @@ export class ThreadStore {
       );
     }
     this.emit();
+  }
+
+  private page(page: { before?: number; limit: number }) {
+    const { ponzu, designId } = this.opts;
+    return ponzu.queryClient.fetchQuery(ponzu.queries.threadPage(designId, page));
   }
 
   private emit(): void {

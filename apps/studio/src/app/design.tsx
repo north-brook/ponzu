@@ -14,6 +14,7 @@ import { AskStore } from "./ask-store.ts";
 import type { Host } from "./host.ts";
 import { contributors, pageTabs } from "./map.ts";
 import { Banner, PaneMessage } from "./notices.tsx";
+import { usePonzu } from "./ponzu-query.tsx";
 import { chromeAction, prSummary } from "./pull-request-map.ts";
 import { PullRequestStore } from "./pull-request-store.ts";
 import { branchMoment, steerGate } from "./thread-map.ts";
@@ -65,6 +66,11 @@ export function useOpenDesign(
   fresh: FreshDesign | null = null,
 ): OpenDesign | null {
   const [open, setOpen] = useState<OpenDesign | null>(null);
+  const { queryClient, queries, mutations } = usePonzu();
+  const ponzu = useMemo(
+    () => ({ queryClient, queries, mutations }),
+    [queryClient, queries, mutations],
+  );
   const actor = useMemo<Actor>(
     () => ({
       kind: "user",
@@ -96,13 +102,14 @@ export function useOpenDesign(
       me: actor,
       ...(cache ? { cache } : {}),
     });
-    const thread = new ThreadStore({ api, live, designId, meId: actor.id }).start();
+    const thread = new ThreadStore({ ponzu, live, designId, meId: actor.id }).start();
     const known = made.current?.id === designId ? made.current : null;
     if (known?.message) thread.seed(known.message);
-    const asks = new AskStore({ api, live, designId, onError: (m) => saying.current(m) }).start();
-    const uploads = new Uploads({ api, designId });
+    const asks = new AskStore({ ponzu, live, designId, onError: (m) => saying.current(m) });
+    asks.start();
+    const uploads = new Uploads({ ponzu, designId });
     const pullRequest = new PullRequestStore({
-      api,
+      ponzu,
       designId,
       say: (m) => saying.current(m),
       tellAgent: (text) => thread.send(text, []),
@@ -115,7 +122,7 @@ export function useOpenDesign(
       uploads.close();
       pullRequest.close();
     };
-  }, [host, actor, cache, designId]);
+  }, [host, ponzu, actor, cache, designId]);
   return open && open.id === designId ? open : null;
 }
 
