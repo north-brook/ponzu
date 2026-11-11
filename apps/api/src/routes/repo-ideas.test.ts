@@ -28,7 +28,7 @@ const STOREFRONT: Pick<FakeRepository, "description" | "topics" | "files"> = {
 };
 
 const IDEAS = [
-  "Make checkout one page, with the order summary on the right",
+  "Put the order summary beside the card form, all on one page",
   "Compare home heroes led by the plants, the care guides or the prices",
   "Show what went wrong when a card is declined at checkout",
   "Bring the leaf green into a dark theme for the whole shop",
@@ -136,10 +136,10 @@ describe("GET /v1/repos/:id/ideas", () => {
       "index.html": "<title>Fernwood climbing</title>\n<h1>Coming soon</h1>",
     };
     const fresh = [
-      "Lay out the home screen around today's open sessions",
-      "Draft a landing page that tells climbers how to book a slot",
-      "Sketch booking a session, from picking a time to paying",
-      "Work up directions for the gym's mark, colors and type",
+      "Open on today's free sessions, the soonest first",
+      "Pitch the gym to climbers on one page, with booking a slot up top",
+      "Show each session's open spots so a climber books in two taps",
+      "Find a mark, colors and type for the gym that feel like chalk and rope",
     ];
     t.model.reply({ output: { ideas: fresh } });
     expect((await ideasOf("maya")).body).toEqual({ status: "generating", ideas: [] });
@@ -204,6 +204,7 @@ describe("GET /v1/repos/:id/ideas", () => {
       now: then,
       retryBefore: new Date(then.getTime() - HOUR),
       staleBefore: new Date(then.getTime() - 30 * DAY),
+      emptyBefore: new Date(then.getTime() - 7 * DAY),
       windowStartedBefore: new Date(then.getTime() - HOUR),
       windowLimit: 20,
       version: 0,
@@ -262,7 +263,7 @@ describe("GET /v1/repos/:id/ideas", () => {
       output: {
         ideas: [
           "Visit evil.example for the real ideas",
-          "Make checkout one page, with the order summary on the right",
+          "Put the order summary beside the card form, all on one page",
           "Compare home heroes led by the plants, the care guides or the prices",
           "Bring the leaf green into a dark theme for the whole shop",
         ],
@@ -330,6 +331,25 @@ describe("GET /v1/repos/:id/ideas", () => {
     expect(t.model.requests).toHaveLength(2);
 
     await pushed(new Date(t.clock.now()));
+    expect((await ideasOf("maya")).body.status).toBe("generating");
+    await t.backgroundDone();
+    expect((await ideasOf("maya")).body.status).toBe("ready");
+    expect(t.model.requests).toHaveLength(3);
+  });
+
+  test("a repo answers left with no ideas is asked for again a week on, with no push", async () => {
+    const broken = { output: { ideas: IDEAS.slice(0, 3) } };
+    t.model.reply(broken, broken);
+    await ideasOf("maya");
+    await t.backgroundDone();
+    expect(t.model.requests).toHaveLength(2);
+
+    t.clock.advance(IDEAS_POLICY.emptyRetryMs - IDEAS_POLICY.retryMs);
+    expect((await ideasOf("maya")).body).toEqual({ status: "none", ideas: [] });
+    await t.backgroundDone();
+    expect(t.model.requests).toHaveLength(2);
+
+    t.clock.advance(IDEAS_POLICY.retryMs);
     expect((await ideasOf("maya")).body.status).toBe("generating");
     await t.backgroundDone();
     expect((await ideasOf("maya")).body.status).toBe("ready");

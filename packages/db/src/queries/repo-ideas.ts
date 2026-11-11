@@ -100,6 +100,8 @@ export interface IdeasPolicy {
   retryBefore: Date;
   /** Ideas written at or before this are old enough to make again, if the repo was pushed since. */
   staleBefore: Date;
+  /** An empty list written at or before this is made again, pushed since or not. */
+  emptyBefore: Date;
   /** A workspace's window that began at or before this is over, and a new one begins. */
   windowStartedBefore: Date;
   /** How many generations one workspace may start in one window. */
@@ -123,8 +125,8 @@ export type IdeasClaim =
  * take its last generation. Two requests for the same repo at once can both spend one, and
  * only one of them claims it; the allowance errs that way, never the other.
  *
- * Due: never generated; generated empty by an earlier `version`; or generated empty, or at or
- * before `staleBefore`, and pushed since.
+ * Due: never generated; generated empty by an earlier `version`, or at or before
+ * `emptyBefore`; or generated empty, or at or before `staleBefore`, and pushed since.
  */
 export async function claimRepoIdeas(
   db: Db,
@@ -169,7 +171,8 @@ function due(policy: IdeasPolicy): SQL {
     and (repos.ideas_claimed_at is null
       or repos.ideas_claimed_at <= ${timeParam(policy.retryBefore)}::timestamptz)
     and (repos.ideas_generated_at is null
-      or (jsonb_array_length(repos.ideas) = 0 and repos.ideas_version < ${policy.version})
+      or (jsonb_array_length(repos.ideas) = 0 and (repos.ideas_version < ${policy.version}
+        or repos.ideas_generated_at <= ${timeParam(policy.emptyBefore)}::timestamptz))
       or (repos.pushed_at > repos.ideas_generated_at
         and (jsonb_array_length(repos.ideas) = 0
           or repos.ideas_generated_at <= ${timeParam(policy.staleBefore)}::timestamptz)))`;

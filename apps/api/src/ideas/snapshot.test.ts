@@ -214,6 +214,43 @@ describe("layoutOf, isUnbuilt and the few files of a new repo", () => {
     expect(isUnbuilt({ ...base, files: 30 })).toBe(false);
   });
 
+  test("a finished one-page site is built: its page is a screen, its stylesheet a theme", () => {
+    // Kairo-2081/portfolio: a README and a 28 KB index.html, a whole portfolio.
+    const site: GithubTree = {
+      entries: [
+        { path: "README.md", type: "blob", size: 600 },
+        { path: "index.html", type: "blob", size: 28_000 },
+      ],
+      complete: true,
+    };
+    const { screens, components } = interfaceOf(site);
+    expect(screens).toEqual([{ where: ".", kind: "pages", names: ["/"] }]);
+    expect(isUnbuilt({ screens, components, theme: null, files: 2 })).toBe(false);
+    // A framework's empty shell is not a page of its own.
+    const shell = interfaceOf({
+      entries: [{ path: "index.html", type: "blob", size: 600 }],
+      complete: true,
+    });
+    expect(shell.screens).toEqual([]);
+    // ajnooncstu/m12-portfolio: index.html, style.css, app.js.
+    expect(pickTheme(tree("index.html", "style.css", "app.js"))).toBe("style.css");
+    expect(excerptTheme("style.css", "h1 {\n  color: #0a3d62;\n  margin: 0;\n}")).toBe(
+      "h1 {\ncolor: #0a3d62;",
+    );
+  });
+
+  test("the biggest page of a small repo is read, the start of it", () => {
+    const files: GithubTree = {
+      entries: [
+        { path: "draft.html", type: "blob", size: 900 },
+        { path: "index.html", type: "blob", size: 28_000 },
+        { path: "notes.md", type: "blob", size: 300 },
+      ],
+      complete: true,
+    };
+    expect(pickSamples(files, [], 1)).toEqual(["index.html"]);
+  });
+
   test("of a new repo's files, reads small text ones, pages and prose first, never the README", () => {
     const entries = [
       { path: "README.md", type: "blob" as const, size: 40 },
@@ -222,12 +259,16 @@ describe("layoutOf, isUnbuilt and the few files of a new repo", () => {
       { path: "index.html", type: "blob" as const, size: 200 },
       { path: "docs/idea.md", type: "blob" as const, size: 900 },
       { path: "logo.png", type: "blob" as const, size: 900 },
-      { path: "dump.json", type: "blob" as const, size: BUDGET.sampleBytes + 1 },
+      { path: "dump.json", type: "blob" as const, size: BUDGET.fileBytes + 1 },
       { path: "package.json", type: "blob" as const, size: 90 },
     ];
     const files = { entries, complete: true };
     expect(pickSamples(files, ["package.json"], 2)).toEqual(["index.html", "docs/idea.md"]);
     expect(pickSamples(files, ["package.json"], 0)).toEqual([]);
+    expect(pickSamples(files, ["package.json", "index.html"], 3)).toEqual([
+      "docs/idea.md",
+      "main.py",
+    ]);
     expect(excerptSample("Tides\n\n\n\nSee https://evil.example now  ")).toBe("Tides\n\nSee  now");
     expect(excerptSample("   ")).toBeNull();
   });

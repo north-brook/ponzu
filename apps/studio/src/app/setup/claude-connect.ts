@@ -182,26 +182,35 @@ export function useClaudeConnect({
       // hears back. It is held again only if it can still take a code.
       const sending = held.current;
       if (entry.mode === "subscription") held.current = null;
-      const done = {
-        onSuccess: () => {
-          setPending(null);
-          // Nothing of the key or code stays in the card, or its mutation, once it is sent.
-          if (!leavesWhenConnected) setState(CHOOSING);
-          connectKey.reset();
-          sendCode.reset();
-          connected.current?.();
-        },
-        onError: (error: unknown) => {
-          const next = afterRefusal(entry, error);
-          // A sign-in that took its one code, or ran out, has nothing left to let go of.
-          if (entry.mode === "subscription" && !signInSpent(next)) held.current = sending;
-          setState(next);
-        },
+      // The answer is heard whether or not the card is still here (`mutateAsync`, not the
+      // per-call callbacks React Query drops once the card unmounts): a card left since
+      // (Change, or the card going away) lets go of a sign-in its code failed to use.
+      const ticket = latest.current;
+      const left = () => ticket !== latest.current;
+      const onSuccess = () => {
+        if (left()) return;
+        setPending(null);
+        // Nothing of the key or code stays in the card, or its mutation, once it is sent.
+        if (!leavesWhenConnected) setState(CHOOSING);
+        connectKey.reset();
+        sendCode.reset();
+        connected.current?.();
+      };
+      const onError = (error: unknown) => {
+        const next = afterRefusal(entry, error);
+        // A sign-in that took its one code, or ran out, has nothing left to let go of.
+        if (entry.mode === "subscription" && sending && !signInSpent(next)) {
+          if (left()) return letGo(sending);
+          held.current = sending;
+        }
+        if (!left()) setState(next);
       };
       if (entry.mode === "api_key") {
-        connectKey.mutate(entry.key, done);
+        connectKey.mutateAsync(entry.key).then(onSuccess, onError);
       } else if (pending) {
-        sendCode.mutate({ signInId: pending.id, code: entry.code.trim() }, done);
+        sendCode
+          .mutateAsync({ signInId: pending.id, code: entry.code.trim() })
+          .then(onSuccess, onError);
       } else {
         setState({ ...entry, status: "expired", code: "" });
       }

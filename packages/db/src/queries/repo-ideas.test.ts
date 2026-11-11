@@ -27,6 +27,7 @@ function policy(now: Date, windowLimit = 3): IdeasPolicy {
     now,
     retryBefore: new Date(now.getTime() - HOUR),
     staleBefore: new Date(now.getTime() - 30 * DAY),
+    emptyBefore: new Date(now.getTime() - 7 * DAY),
     windowStartedBefore: new Date(now.getTime() - HOUR),
     windowLimit,
     version: 1,
@@ -105,6 +106,21 @@ describe("claimRepoIdeas", () => {
       .set({ pushedAt: new Date(first.getTime() + HOUR) })
       .where(eq(repos.id, empty.id));
     expect(await claimRepoIdeas(db, { repoId: empty.id, ...policy(twoHours) })).toBe("claimed");
+
+    // An empty list nobody pushes to is made again a week on, and not before.
+    const quiet = await seedRepo(db, workspace.id, "north-brook/quiet");
+    await claimRepoIdeas(db, { repoId: quiet.id, ...policy(first) });
+    await saveRepoIdeas(db, {
+      repoId: quiet.id,
+      ideas: [],
+      generatedAt: first,
+      claimedAt: first,
+      version: 1,
+    });
+    const sixDays = new Date(first.getTime() + 6 * DAY);
+    expect(await claimRepoIdeas(db, { repoId: quiet.id, ...policy(sixDays) })).toBe("not_due");
+    const week = new Date(first.getTime() + 7 * DAY);
+    expect(await claimRepoIdeas(db, { repoId: quiet.id, ...policy(week) })).toBe("claimed");
   });
 
   test("a workspace starts at most its allowance in a window, across its repos", async () => {

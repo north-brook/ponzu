@@ -26,6 +26,7 @@ const PRICE = { input: 0.1, output: 0.5 };
 const { env } = process;
 const args = process.argv.slice(2);
 const flags = new Set(args.filter((arg) => arg.startsWith("--")));
+// `blank:owner/name` stands for a repository with only its names in it.
 // `test` stands for the dev App's test repository, GITHUB_TEST_REPO, which is read as the App.
 const testRepo = env.GITHUB_TEST_REPO ?? "test";
 const names = args
@@ -97,6 +98,24 @@ const reader = {
 };
 
 async function snapshotOf(fullName: string): Promise<RepoSnapshot> {
+  // `blank:owner/name`: a repository with nothing in it but its names, never read.
+  if (fullName.startsWith("blank:")) {
+    return {
+      fullName: fullName.slice("blank:".length),
+      description: null,
+      topics: [],
+      language: null,
+      readme: null,
+      layout: [],
+      manifests: [],
+      screens: [],
+      components: [],
+      theme: null,
+      darkTheme: false,
+      samples: [],
+      files: 0,
+    };
+  }
   const token = asApp(fullName) ? await appToken(fullName) : null;
   return readRepository(reader, token, fullName);
 }

@@ -7,7 +7,7 @@ import {
   excerptTheme,
   hasDarkTheme,
   interfaceOf,
-  isUnbuilt,
+  isSmall,
   layoutOf,
   pickManifests,
   pickSamples,
@@ -55,12 +55,12 @@ export async function readRepository(
   const manifestPaths = pickManifests(tree);
   const { screens, components } = interfaceOf(tree);
   const files = tree.entries.filter((entry) => entry.type === "blob").length;
-  // Nothing built yet: the few files there are say what it will be, read with the requests
+  // A small repo: the few files there are say what it is or will be, read with the requests
   // the manifests it lacks leave over, so the budget stays the same.
-  const samplePaths = isUnbuilt({ screens, components, theme: themePath, files })
+  const samplePaths = isSmall(files)
     ? pickSamples(
         tree,
-        manifestPaths,
+        [...manifestPaths, ...(themePath ? [themePath] : [])],
         Math.min(BUDGET.samples, BUDGET.manifests - manifestPaths.length),
       )
     : [];
@@ -70,7 +70,12 @@ export async function readRepository(
       : github.getReadme(token, { fullName, ref, maxBytes: BUDGET.fileBytes }).catch(() => null),
     themePath ? file(themePath) : null,
     ...manifestPaths.map(file),
-    ...samplePaths.map(file),
+    // Only the start of each: a page's first screenful says what it is.
+    ...samplePaths.map((path) =>
+      github
+        .getFileText(token, { fullName, path, ref, maxBytes: BUDGET.sampleBytes })
+        .catch(() => null),
+    ),
   ]);
   const manifests = texts.slice(0, manifestPaths.length);
   const samples = texts.slice(manifestPaths.length);

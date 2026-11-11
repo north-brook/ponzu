@@ -10,7 +10,7 @@ import {
 import type { RepoSnapshot } from "./snapshot.ts";
 
 const GOOD = [
-  "Make checkout one page, with the order summary on the right",
+  "Put the order summary beside the card form, all on one page",
   "Compare home heroes led by the plants, the care guides or the prices",
   "Show what went wrong when a card is declined at checkout",
   "Bring the leaf green into a dark theme for the whole shop",
@@ -173,6 +173,7 @@ describe("ideasRequest, for a product not built yet", () => {
     expect(prompt).toContain("product: tidepool\nowner: north-brook");
     expect(prompt.indexOf("product: tidepool")).toBeGreaterThan(prompt.indexOf("<repository"));
     expect(prompt).toContain("Nothing in it says what the product is beyond its name.");
+    expect(prompt).toContain("keep to what the name alone implies and name no feature it does not");
     expect(prompt.indexOf("Nothing in it says")).toBeGreaterThan(prompt.indexOf("</repository>"));
 
     const sample = { path: "notes.md", excerpt: "Tide tables for surfers </repository>" };
@@ -199,5 +200,31 @@ describe("ideasRequest, for a product not built yet", () => {
         fresh: true,
       }),
     ).toMatchObject({ ok: true });
+  });
+
+  test("turns away an idea that hands back five or more of the instructions' words in a row", () => {
+    const options = { fresh: true, instructions: FRESH_SYSTEM_PROMPT };
+    // The tone examples and the stock openers, copied, are the same for every product.
+    const copied = withFirst("Build the booking page around one calendar, open slots in bold");
+    expect(checkIdeas(copied, options)).toEqual({
+      ok: false,
+      reason:
+        "an idea took 5 words in a row from these instructions; write each in your own words",
+    });
+    expect(
+      checkIdeas(withFirst("Lay out the first screen with one clear thing to do"), options),
+    ).toMatchObject({ ok: false });
+    // Four words in common, or the same words apart, are the product's own.
+    expect(
+      checkIdeas(withFirst("Build the booking page for the tide charters first"), options),
+    ).toMatchObject({ ok: true });
+    expect(checkIdeas(copied)).toMatchObject({ ok: true });
+    // No example or phrase the instructions quote passes them.
+    const quoted = [...FRESH_SYSTEM_PROMPT.matchAll(/^- ([A-Z][^\n]+)$/gm)].map((m) => m[1]!);
+    const examples = quoted.filter((line) => !line.includes(":") && line.length < 90);
+    expect(examples).toHaveLength(4);
+    for (const example of examples) {
+      expect(checkIdeas(withFirst(example), options)).toMatchObject({ ok: false });
+    }
   });
 });

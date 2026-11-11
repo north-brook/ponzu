@@ -15,7 +15,8 @@ type IdeasAnswer = z.infer<typeof IdeasOutput>;
  * `generating` at once and asks again. One instance at a time makes them (the claim in the
  * row), within a workspace's allowance, and every failure is quiet: nothing new is kept and
  * the screen shows no ideas. A failure to get an answer (GitHub or the model down, the
- * deadline) is tried again an hour later; answers turned away twice wait for a push.
+ * deadline) is tried again an hour later; answers turned away twice wait for a push, or a
+ * week when they leave the repo with none.
  *
  * Every repo the App can read gets four, however little is in it: a product not built yet gets
  * where to begin designing it (`FRESH_SYSTEM_PROMPT`).
@@ -44,6 +45,12 @@ export const IDEAS_POLICY = {
    * has passed. A repo nobody pushes to keeps its ideas; nobody's visit alone remakes them.
    */
   staleMs: 30 * DAY,
+  /**
+   * An empty list (both answers turned away, with none from before) is made again this long
+   * after, pushed or not: a repo with little in it is the kind nobody pushes to, and one
+   * unlucky pair of answers must not leave it with no ideas for good.
+   */
+  emptyRetryMs: 7 * DAY,
   /** Each workspace may start this many generations an hour, whatever it has in repos. */
   windowMs: HOUR,
   windowLimit: 20,
@@ -76,6 +83,7 @@ export async function repoIdeas(
       now: new Date(now),
       retryBefore: new Date(now - IDEAS_POLICY.retryMs),
       staleBefore: new Date(now - IDEAS_POLICY.staleMs),
+      emptyBefore: new Date(now - IDEAS_POLICY.emptyRetryMs),
       windowStartedBefore: new Date(now - IDEAS_POLICY.windowMs),
       windowLimit: IDEAS_POLICY.windowLimit,
       version: IDEAS_VERSION,
@@ -105,7 +113,10 @@ function isDue(repo: RepoIdeasRow, now: number): boolean {
   }
   const generated = repo.ideasGeneratedAt;
   if (!generated) return true;
-  if (repo.ideas.length === 0 && repo.ideasVersion < IDEAS_VERSION) return true;
+  if (repo.ideas.length === 0) {
+    if (repo.ideasVersion < IDEAS_VERSION) return true;
+    if (generated.getTime() <= now - IDEAS_POLICY.emptyRetryMs) return true;
+  }
   if (!repo.pushedAt || repo.pushedAt <= generated) return false;
   return repo.ideas.length === 0 || generated.getTime() <= now - IDEAS_POLICY.staleMs;
 }
@@ -159,7 +170,7 @@ export async function generateRepoIdeas(
       });
       // Asking about the same material again would most likely be turned away again, so
       // this counts as a generation: the ideas it had stay (none, the first time), and the
-      // next try waits for a push.
+      // next try waits for a push, or `emptyRetryMs` when it has none.
       ideas = repo.ideas;
     } else {
       ideas = asked.ideas;
@@ -230,7 +241,7 @@ export async function askForIdeas(
     tally.usage.input += answer.usage.input;
     tally.usage.output += answer.usage.output;
     const checked: ReturnType<typeof checkIdeas> = answer.output
-      ? checkIdeas(answer.output, { fresh })
+      ? checkIdeas(answer.output, { fresh, instructions })
       : { ok: false, reason: `it was not in the shape asked for (${answer.finishReason})` };
     if (checked.ok) return { ideas: checked.ideas };
     rejected = checked.reason;
