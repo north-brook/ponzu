@@ -170,7 +170,7 @@ export class CloudSource implements CanvasSource {
   setPage(pageId: string | null): void {
     if (pageId === this.pageId) return;
     this.pageId = pageId;
-    if (this.replica) this.keepPresent();
+    if (this.replica && !this.failure) this.keepPresent();
   }
 
   /** Back online, or back in the foreground: try now instead of sitting out a wait. */
@@ -230,7 +230,7 @@ export class CloudSource implements CanvasSource {
       }, wait);
       return this.set({ status: "offline" });
     }
-    if (this.closed || this.replica) return;
+    if (this.closed || this.replica || this.failure) return;
 
     this.assetBase = view.assetsUrl;
     this.writable = view.access === "write";
@@ -291,11 +291,19 @@ export class CloudSource implements CanvasSource {
   private transport(): SyncTransport {
     const { designs } = this.api;
     const id = this.opts.designId;
+    /** Deleted, or no longer theirs: stop now, rather than retry until `design.head` says so. */
+    const gone = (error: unknown) => {
+      if (error instanceof ApiError && (error.status === 403 || error.status === 404)) {
+        this.fail(error.message);
+      }
+      return error;
+    };
     return {
       async commit(ops) {
         try {
           return await designs.commit(id, ops);
         } catch (error) {
+          gone(error);
           // Refused outright (malformed, too large, not allowed): sending it again can't help.
           if (error instanceof ApiError && [400, 403, 404, 413].includes(error.status)) {
             throw new CommitRefusedError(error.message);
@@ -308,10 +316,10 @@ export class CloudSource implements CanvasSource {
           return await designs.ops(id, after);
         } catch (error) {
           if (error instanceof ApiError && error.code === "ops_pruned") return "gone";
-          throw error;
+          throw gone(error);
         }
       },
-      fetchDoc: () => designs.doc(id),
+      fetchDoc: () => designs.doc(id).catch((error) => Promise.reject(gone(error))),
     };
   }
 
@@ -418,13 +426,16 @@ export class CloudSource implements CanvasSource {
     });
   }
 
-  /** Deleted, or no longer the person's to see: stop, and say why. */
+  /** Deleted, or no longer the person's to see: stop, say why, and that what is waiting is lost. */
   private fail(reason: string): void {
+    if (this.failure) return;
     this.failure = reason;
     this.writable = false;
     this.replica?.close();
     this.cancelPresence?.();
+    this.cancelPresence = null;
     this.set({ status: "error", error: reason });
+    for (const { op } of this.replica?.pending ?? []) this.unsaved({ op, reason });
   }
 
   private unsaved(unsaved: Unsaved): void {

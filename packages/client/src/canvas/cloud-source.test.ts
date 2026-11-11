@@ -132,6 +132,63 @@ describe("opening", () => {
     expect(source.getState().error).toBe("There is no such design.");
   });
 
+  test("opened after something else already watches the design's head, it still hears it", async () => {
+    const h = await harness();
+    h.backend.agent(h.design.id).work(["ab_home"], "Drawing Home");
+    const client = h.backend.connect(h.ines);
+    // The app's header, watching the same query before the canvas opens.
+    client.live.subscribe("design.head", { designId: h.design.id }, () => {});
+    await h.settle();
+
+    const source = new CloudSource({
+      api: client.api,
+      live: client.live,
+      designId: h.design.id,
+      me: actorOf(h.ines),
+      clock: h.clock,
+    });
+    await h.settle();
+    expect(source.getState().presence.map((p) => p.name)).toEqual(["Claude"]);
+  });
+
+  test("a design deleted while open stops at the API's first no, and what waited is unsaved", async () => {
+    const h = await harness();
+    const client = h.backend.connect(h.ines);
+    const asked: string[] = [];
+    const designs = new Proxy(client.api.designs, {
+      get(target, key: keyof typeof target) {
+        const method = target[key] as (...args: unknown[]) => unknown;
+        return (...args: unknown[]) => {
+          asked.push(key);
+          return method.apply(target, args);
+        };
+      },
+    });
+    const source = new CloudSource({
+      api: { designs },
+      live: client.live,
+      designId: h.design.id,
+      me: actorOf(h.ines),
+      clock: h.clock,
+    });
+    const unsaved: Unsaved[] = [];
+    source.onUnsaved((u) => unsaved.push(u));
+    await h.settle();
+    await h.backend.connect(h.maya).api.designs.delete(h.design.id);
+
+    source.apply({ op: "artboard.update", id: "ab_home", x: 70 });
+    await h.settle();
+    expect(source.getState()).toMatchObject({ status: "error", error: "There is no such design." });
+    expect(source.writable).toBe(false);
+    expect(unsaved.map((u) => u.op)).toEqual([{ op: "artboard.update", id: "ab_home", x: 70 }]);
+
+    // Nothing more is asked of the API for it: no retries, and no presence kept up.
+    asked.length = 0;
+    source.setPage(h.page);
+    await h.clock.advance(5 * 60_000);
+    expect(asked).toEqual([]);
+  });
+
   test("presence is said on opening, every 30 seconds after, and taken back on closing", async () => {
     const h = await harness();
     const { source } = h.open(h.maya);
