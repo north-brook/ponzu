@@ -103,8 +103,8 @@ Every event about a workspace also carries `workspace_id`.
 | `sandbox slept` | `design_id`, `quiesced` | `quiesced`: its runner said it was ready before the stop. |
 | `sandbox lost` | `design_id` | The provider lost the sandbox or its disk; the wake made a new one. |
 | `sandbox restored` | `design_id`, `kind` (`rollback`, `rebuilt`) | A runner found its disk behind the last checkpoint. About no one. |
-| `ideas generated` | `repo_id`, `count`, `duration_ms`, `attempts`, `input_tokens`, `output_tokens` | About whoever's visit started it. |
-| `ideas skipped` | `repo_id`, `reason` (`rate_limited`, `rejected`, `failed`) | `rate_limited` is said by every read of a due repo while its workspace is over the hourly limit, under one id per repo and hour, so PostHog keeps one; about no one. |
+| `ideas generated` | `repo_id`, `count`, `duration_ms`, `attempts`, `input_tokens`, `output_tokens` | About whoever's visit started it. `count` is 1 to 4: ideas the gate found are not designs are dropped. The tokens are the writer's; the gate's calls are traced as `repo_ideas_gate`. |
+| `ideas skipped` | `repo_id`, `reason` (`rate_limited`, `rejected`, `unsafe`, `failed`) | `unsafe`: the gate found an idea asking the reader for something other than a design, so none were kept (what it said goes to the logs only, never here). `rate_limited` is said by every read of a due repo while its workspace is over the hourly limit, under one id per repo and hour, so PostHog keeps one; about no one. |
 | `file uploaded` | `design_id`, `content_type`, `bytes` | A person's image reached a design. |
 | `monthly cap set` | `cap_usd` | |
 | `repo secret changed` | `repo_id`, `action` (`added`, `replaced`, `removed`) | Never the secret's name or value. |
@@ -125,15 +125,21 @@ API working, and is not an exception.
 
 ### Model calls the API makes
 
-The API's own model calls (today, the repo ideas under the create composer) go through
-`deps.model`, whose every call names its feature (`repo_ideas`) and is traced, in PostHog's
+The API's own model calls (today, the repo ideas under the create composer, and the gate that
+checks them) go through `deps.model` and `deps.reviewer`, whose every call names its feature
+(`repo_ideas`, `repo_ideas_gate`) and is traced, in PostHog's
 documented way for AI SDK v7: `@ai-sdk/otel` with `PostHogSpanProcessor` from `@posthog/ai/otel`
 (`apps/api/src/analytics/ai.ts`). `withTracing` from `@posthog/ai` wraps AI SDK v5 and v6 models
 only, and refuses v7's. Each call is a trace attributed to the person the request is about, in
 the workspace it was asked for (`$groups`), with `feature` and `workspace_id`, under the app's
 session. With `PONZU_POSTHOG_AI_CONTENT` off, the AI SDK records no prompt or answer and the
 processor drops whatever might carry one. A new model call from the API gets all of this by going
-through `deps.model`.
+through `deps.model` (or `deps.reviewer`).
+
+What these traces are not for, yet, is judging: PostHog's LLM-as-judge evaluations need each
+call's input and output, which production does not send while `PONZU_POSTHOG_AI_CONTENT` is
+off. Whether the model's output is good is measured offline by the eval suite (docs/evals.md),
+and guarded at runtime by the gate (docs/cloud.md, "Ideas").
 
 ### Agent turns
 

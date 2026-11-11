@@ -1,5 +1,6 @@
 import type { CanvasProps } from "@ponzu/canvas";
-import { type ReactNode, useCallback, useState } from "react";
+import { isTyping } from "@ponzu/canvas/modifier-hint";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import type { DesignMember, DesignSummary, Person, WorkspaceKind } from "../cloud/model.ts";
 import type { DesignAddress } from "../cloud/ui/design-address.ts";
 import { useAnalytics } from "./analytics/provider.tsx";
@@ -12,8 +13,9 @@ type CanvasLink = NonNullable<CanvasProps["link"]>;
 
 /*
  * What the window shows for an open design, in AppWindow's three slots: the chrome, the thread
- * rail, and the canvas's pane, which the pull request tab takes over while it is open (the rail
- * folds away meanwhile, and comes back as it was). A board a line of the thread points at is
+ * rail, and the canvas's pane, which the pull request tab takes over while it is open. The tab
+ * swaps what is in the canvas's pane and nothing else: the rail stays as it was, open or closed,
+ * and the canvas waits underneath where it was left. A board a line of the thread points at is
  * shown on the canvas.
  */
 
@@ -85,6 +87,20 @@ export function useDesignPanes({
     setTabFor(open ? designId : null);
   };
 
+  // The tab is read-only: ⌘Z there has nothing to undo. Uncaught, it would reach Edit › Undo,
+  // which reverts the last typing anywhere in the window (the thread's draft, beside the tab) and
+  // jumps there. On a page the canvas takes it; on the tab it is taken here, unless in a field.
+  useEffect(() => {
+    if (!prTab) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z" && !isTyping(e)) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [prTab]);
+
   // Every jump the thread makes (a comment, a stretch of work, a link in a reply) is the canvas
   // following a link, as a ponzu:// one does: the same framing and the same mark.
   const show = useCallback(
@@ -121,17 +137,9 @@ export function useDesignPanes({
   const repo = project?.kind === "repo" ? project.repo : null;
   const owner = summary?.owner ?? null;
   const togglePrTab = () => setPrTab(!prTab);
-  // The tab folds the rail away; the toggle then says what the rail would, and brings it back.
-  const railShown = rail.open && !prTab;
-  const toggleRail = () => {
-    if (prTab) {
-      setPrTab(false);
-      if (!rail.open) rail.onToggle();
-    } else rail.onToggle();
-  };
 
   return {
-    toggleRail,
+    toggleRail: rail.onToggle,
     tab: prTab ? "pull-request" : "canvas",
     chrome: (
       <DesignChromeSlot
@@ -144,13 +152,13 @@ export function useDesignPanes({
         sidebarOpen={sidebarOpen}
         page={page}
         onPage={onPage}
-        rail={{ open: railShown, onToggle: toggleRail }}
+        rail={rail}
         prTab={{ open: prTab, onToggle: togglePrTab }}
         seenThreadSeq={seenThreadSeq}
         onOpenRepo={(fullName) => host.openExternal(`https://github.com/${fullName}`)}
       />
     ),
-    rail: railShown ? (
+    rail: rail.open ? (
       <DesignRail
         host={host}
         open={open}
