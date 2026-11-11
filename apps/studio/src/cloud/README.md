@@ -82,9 +82,9 @@ the app's end-to-end test that the boards don't move.
 
 A click never leaves a ring: whatever takes focus while the pointer was the last thing used is
 marked quiet (`ui/quiet-focus.ts`, the mechanism the menus and the needs-you options use), and
-the ring comes back only from a key that moves focus: Tab, or an arrow inside a menu, tablist
-or radio group. A letter, Space, Escape or Return after a click is the canvas's, not the
-control's. The chrome's buttons and page tabs (`data-toolbar`) take no focus from a click at
+the ring comes back only from a key that works focus: Tab, an arrow inside a menu, tablist or
+radio group, or Return or Space pressing the focused control. A letter or Escape after a click
+is the canvas's, not the control's. The chrome's buttons and page tabs (`data-toolbar`) take no focus from a click at
 all, as a Mac's toolbar buttons don't, so the next key goes where it went before the click.
 
 Text from the model or GitHub (replies, plans, a pull request's body and comments) goes through

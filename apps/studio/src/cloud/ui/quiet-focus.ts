@@ -7,18 +7,25 @@
 const COMPOSITE =
   "[role=menu], [role=menubar], [role=tablist], [role=radiogroup], [role=listbox], [role=tree], [role=grid], [role=toolbar]";
 
+/** What Return and Space press: a control, not a field. */
+const PRESSABLE =
+  "button, a[href], summary, [role=button], [role=link], [role^=menuitem], [role=option], [role=tab], [role=radio], [role=checkbox], [role=switch]";
+
 /**
- * A key that moves the keyboard's focus: Tab either way, and the arrows, Home and End inside a
- * widget that moves focus with them (a menu, the page tabs, a question's options). Nothing
- * else: a letter, Space, Escape or Return pressed after a click is meant for the canvas or the
- * window (a tool, panning, deselecting), not for the control the click happened to land on;
- * nor is a shortcut (⌘J, ⌘B) or a modifier alone.
+ * A key that works the keyboard's focus: Tab either way; the arrows, Home and End inside a
+ * widget that moves focus with them (a menu, the page tabs, a question's options); and Return
+ * or Space on the control that has focus, which presses it. Nothing else: a letter or Escape
+ * pressed after a click is meant for the canvas or the window (a tool, deselecting), not for
+ * the control the click happened to land on; nor is a shortcut (⌘J, ⌘B) or a modifier alone.
+ * (The chrome's controls keep no focus from a click, so Space there pans the canvas.)
  */
 function movesFocus(e: KeyboardEvent): boolean {
   if (e.metaKey || e.ctrlKey || e.altKey) return false;
   if (e.key === "Tab") return true;
+  if (!(e.target instanceof Element)) return false;
+  if (e.key === "Enter" || e.key === " ") return e.target.matches(PRESSABLE);
   if (!/^(Arrow(Up|Down|Left|Right)|Home|End)$/.test(e.key)) return false;
-  return e.target instanceof Element && e.target.closest(COMPOSITE) !== null;
+  return e.target.closest(COMPOSITE) !== null;
 }
 
 /** Marks `el` quiet until a key moves focus from it, or it loses focus. */
