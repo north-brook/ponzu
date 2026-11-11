@@ -11,14 +11,15 @@ import {
   type Op,
 } from "@ponzu/core";
 import { Sequencer } from "@ponzu/core/testing";
-import type { QuestionBody, ThreadItem } from "@ponzu/runner/protocol";
-import type { Api } from "../api.ts";
+import type { QuestionBody, RunErrorCode, ThreadItem } from "@ponzu/runner/protocol";
+import type { AnswerBody, Api } from "../api.ts";
 import { type Clock, systemClock } from "../clock.ts";
 import { ApiError, networkError } from "../errors.ts";
 import { createLive, type Live, MAX_LIVE_QUERIES } from "../live/live.ts";
 import { LIVE_COLUMNS, type LiveQueryName, type RawRow } from "../live/rows.ts";
 import type { Profile } from "../rpc.ts";
 import type { Session, SessionState } from "../session.ts";
+import { FakePullRequests } from "./pull-requests.ts";
 import { type FakeQuery, FakeRealtime, fakeSeal } from "./realtime.ts";
 
 /*
@@ -32,6 +33,8 @@ type Permission = "admin" | "write" | "read" | "none";
 type Role = "admin" | "member";
 type DesignView = Awaited<ReturnType<Api["designs"]["get"]>>;
 type RepoIdeasAnswer = Awaited<ReturnType<Api["repos"]["ideas"]>>;
+type AgentBlocker = NonNullable<DesignView["agentBlocker"]>;
+type AgentState = DesignView["agentState"];
 
 export type FakePerson = Profile;
 
@@ -64,6 +67,8 @@ interface FakeQuestion {
   body: QuestionBody;
   status: "open" | "answered" | "cancelled";
   createdAt: string;
+  /** Who answered it, and what they said: the `answer` event the runner is handed. */
+  answer: { userId: string; body: AnswerBody } | null;
 }
 
 /** One design and everything under it. */
@@ -80,7 +85,19 @@ export interface FakeDesign {
   /** Per person, the seqs of their own ops they may undo, newest last; and of their undos. */
   done: Map<string, number[]>;
   undone: Map<string, number[]>;
-  agent: { state: "idle" | "working" | "needs_you"; status: string | null; artboards: string[] };
+  agent: { state: AgentState; status: string | null; artboards: string[] };
+  /** Why the agent can't run now, as the API's sandbox jobs say it. */
+  blocker: AgentBlocker | null;
+  /** The design's seq its previews show, once the runner has drawn them. */
+  previewSeq: number | null;
+  /** `pz/<topic>`, from the first message; null for Scratch and before it. */
+  branch: string | null;
+  /** Its branch and pull request on GitHub; null for Scratch. */
+  github: FakePullRequests | null;
+  /** The files people uploaded to it: `assets/<name>` to their type. */
+  assets: Map<string, string>;
+  /** Stops people asked for, oldest first. */
+  stops: string[];
   thread: FakeThreadItem[];
   questions: FakeQuestion[];
   presence: Map<string, { pageId: string | null; joinedAt: string; seenAt: string }>;
@@ -99,11 +116,31 @@ export interface FakeAgent {
   commit(ops: Op[]): CommittedOp[];
   /** Say something in the thread; while `streaming`, saying again with the same id replaces it. */
   say(text: string, opts?: { id?: string; streaming?: boolean }): string;
+  /**
+   * A stretch of work in the thread: while `streaming`, the working line; saying again with the
+   * same id replaces it, until it is finished.
+   */
+  tool(
+    label: string,
+    opts?: { id?: string; streaming?: boolean; steps?: number; artboards?: string[] },
+  ): string;
   /** Show it at work on these boards, with a working line. */
   work(artboards: string[], status?: string): void;
   idle(): void;
+  /** Its sandbox starting: the head says `waking`, and the thread a `waking` notice. */
+  wake(): void;
+  /** A turn ended badly, as the runner says in the thread. */
+  fail(code: RunErrorCode, message?: string): void;
   /** Ask the person something: a question row, a notice in the thread, and "needs you". */
   ask(body: QuestionBody, header?: string): string;
+  /** The run moved on without an answer: the question is cancelled. */
+  withdraw(questionId: string): void;
+  /** Why the agent can't run, as the API's sandbox jobs set it; null when it can. */
+  block(blocker: AgentBlocker | null): void;
+  /** The runner drew the previews of the design as it is now. */
+  preview(): void;
+  /** Commits pushed to the design's branch on GitHub. */
+  push(...files: Parameters<FakePullRequests["push"]>): string;
 }
 
 const AGENT: Actor = { kind: "agent", id: "claude", name: "Claude" };
@@ -228,6 +265,18 @@ export class FakeBackend {
         this.touch(design);
         return id;
       },
+      tool: (label, { id = this.id("ti"), streaming = true, steps = 1, artboards = [] } = {}) => {
+        const payload = { label, steps, artboards };
+        const existing = design.thread.find((entry) => entry.item.id === id);
+        if (existing?.item.streaming) {
+          existing.item = { ...existing.item, payload, streaming } as ThreadItem;
+          existing.updatedAt = this.now();
+        } else if (!existing) {
+          this.append(design, { kind: "tool", payload }, null, streaming, id);
+        }
+        this.touch(design);
+        return id;
+      },
       work: (artboards, status) => {
         design.agent = { state: "working", status: status ?? null, artboards };
         this.touch(design);
@@ -236,10 +285,45 @@ export class FakeBackend {
         design.agent = { state: "idle", status: null, artboards: [] };
         this.touch(design);
       },
+      wake: () => {
+        design.agent = { state: "waking", status: null, artboards: [] };
+        this.append(design, { kind: "notice", payload: { type: "waking" } });
+        this.touch(design);
+      },
+      fail: (code, message = "") => {
+        this.append(design, { kind: "notice", payload: { type: "error", code, message } });
+        design.agent = { state: "idle", status: null, artboards: [] };
+        this.touch(design);
+      },
+      withdraw: (questionId) => {
+        const question = design.questions.find((q) => q.id === questionId);
+        if (question?.status === "open") question.status = "cancelled";
+        if (!design.questions.some((q) => q.status === "open")) design.agent.state = "idle";
+        this.touch(design);
+      },
+      block: (blocker) => {
+        design.blocker = blocker;
+        this.touch(design);
+      },
+      preview: () => {
+        design.previewSeq = design.sequencer.seq;
+        this.touch(design);
+      },
+      push: (...files) => {
+        if (!design.github) throw new Error("A Scratch design has no branch.");
+        return design.github.push(...files);
+      },
       ask: (body, header = "A question") => {
         const id = this.id("q");
         const seq = this.nextThreadSeq(design);
-        design.questions.push({ id, seq, body, status: "open", createdAt: this.now() });
+        design.questions.push({
+          id,
+          seq,
+          body,
+          status: "open",
+          createdAt: this.now(),
+          answer: null,
+        });
         const text =
           body.kind === "question" ? (body.payload.questions[0]?.question ?? "") : header;
         this.append(design, {
@@ -282,6 +366,12 @@ export class FakeBackend {
         throw new ApiError(403, "forbidden", "You can only look at this design.");
       }
       return design;
+    };
+    const github = (design: FakeDesign) => {
+      if (!design.github) {
+        throw new ApiError(409, "no_repository", "A Scratch design has no repository.");
+      }
+      return design.github;
     };
     const member = (workspaceId: string) => {
       const workspace = this.workspaces.get(workspaceId);
@@ -470,6 +560,7 @@ export class FakeBackend {
               ...emptyDoc(name),
               pages: [{ id: newId("pg"), name: "Page 1", artboards: [] }],
             };
+            const branch = repo ? `pz/${topic(name)}` : null;
             const design: FakeDesign = {
               id: this.id("dsn"),
               workspaceId: workspace.id,
@@ -483,12 +574,19 @@ export class FakeBackend {
               done: new Map(),
               undone: new Map(),
               agent: { state: "idle", status: null, artboards: [] },
+              blocker: null,
+              previewSeq: null,
+              branch,
+              github: null,
+              assets: new Map(),
+              stops: [],
               thread: [],
               questions: [],
               presence: new Map(),
               reads: new Map(),
             };
             design.sequencer.now = this.clock.now();
+            if (repo && branch) design.github = this.pullRequestsOf(design, repo.fullName, branch);
             this.designs.set(design.id, design);
             this.changed();
             return this.view(design, person.id);
@@ -579,55 +677,101 @@ export class FakeBackend {
         sendMessage: (id, body) =>
           call(() => {
             const design = writable(id);
+            const text = body.text.trim();
+            if (!text) throw new ApiError(400, "invalid_request", "Say something.");
+            const refs = [...new Set(body.attachments ?? [])];
+            const missing = refs.find((ref) => !design.assets.has(ref));
+            if (missing) {
+              throw new ApiError(
+                400,
+                "invalid_request",
+                `${missing} is not one of this design's files.`,
+              );
+            }
+            const attachments = refs.map((ref) => ({ ref, contentType: design.assets.get(ref)! }));
             const item = this.append(
               design,
-              { kind: "message", payload: { text: body.text, from: personOf(person) } },
+              {
+                kind: "message",
+                payload: {
+                  text,
+                  from: personOf(person),
+                  ...(attachments.length ? { attachments } : {}),
+                },
+              },
               person.id,
             );
             this.touch(design);
-            return { id: this.id("ev"), seq: item.seq };
+            return item;
           }),
-        answer: (id, questionId, _body) =>
+        answer: (id, questionId, body) =>
           call(() => {
             const design = writable(id);
             const question = design.questions.find((q) => q.id === questionId);
-            if (!question || question.status !== "open") {
-              throw new ApiError(404, "not_found", "There is no such question waiting.");
+            if (!question) throw new ApiError(404, "not_found", "There is no such question.");
+            if (question.status !== "open") {
+              throw new ApiError(409, "question_closed", "This question is no longer open.");
             }
+            checkAnswer(question.body, body);
             question.status = "answered";
+            question.answer = { userId: person.id, body };
+            // The runner takes the answer at once, and works again.
             if (!design.questions.some((q) => q.status === "open")) design.agent.state = "working";
             this.touch(design);
-            return { id: this.id("ev"), seq: question.seq };
+            return { id: question.id, status: question.status };
           }),
         stop: (id) =>
           call(() => {
             const design = writable(id);
-            const item = this.append(design, {
+            design.stops.push(person.id);
+            // The runner answers a stop at once: the turn ends, and it says who stopped it.
+            for (const entry of design.thread) {
+              if (entry.item.streaming) entry.item = { ...entry.item, streaming: false };
+            }
+            this.append(design, {
               kind: "notice",
               payload: { type: "stopped", by: personOf(person) },
             });
             design.agent = { state: "idle", status: null, artboards: [] };
             this.touch(design);
-            return { id: this.id("ev"), seq: item.seq };
           }),
         thread: (id, page = {}) =>
           call(() => {
             const older = readable(id)
               .thread.map((entry) => entry.item)
-              .filter((item) => page.before === undefined || item.seq < page.before);
-            const limit = page.limit ?? 50;
-            return { items: older.slice(-limit), more: older.length > limit };
+              .filter((item) => page.before === undefined || item.seq < page.before)
+              .toSorted((a, b) => a.seq - b.seq);
+            return { items: older.slice(-Math.min(page.limit ?? 50, 50)) };
           }),
         upload: (id, file) =>
           call(() => {
-            writable(id);
-            const fileId = this.id("up");
-            return {
-              id: fileId,
-              ref: `assets/${file.name}`,
-              url: `https://assets.test/${id}/assets/${file.name}`,
-            };
+            const design = writable(id);
+            if (!file.type.startsWith("image/")) {
+              throw new ApiError(400, "invalid_request", "A person uploads images only.");
+            }
+            // Each is kept under its own name with a few characters added, as the API does.
+            const dot = file.name.lastIndexOf(".");
+            const stem = dot > 0 ? file.name.slice(0, dot) : file.name;
+            const ext = dot > 0 ? file.name.slice(dot) : "";
+            const ref = `assets/${stem}-${this.id("x").slice(-6)}${ext}`;
+            design.assets.set(ref, file.type);
+            return { id: this.id("up"), ref, url: `${assetsUrl(design)}${ref}` };
           }),
+        pullRequest: {
+          get: (id) => call(() => github(readable(id)).tab()),
+          file: (id, path) => call(() => github(readable(id)).file(path)),
+          open: (id) =>
+            call(() => {
+              const design = writable(id);
+              return github(design).open(person.githubLogin, design.sequencer.doc.name).tab;
+            }),
+          ready: (id) => call(() => github(writable(id)).ready()),
+          merge: (id, body) =>
+            call(() => github(writable(id)).merge(person.githubLogin, body.headSha, !!body.bypass)),
+          autoMerge: (id, on) => call(() => github(writable(id)).autoMerge(on)),
+          close: (id) => call(() => github(writable(id)).close()),
+          updateBranch: (id, body) => call(() => github(writable(id)).updateBranch(body.headSha)),
+        },
       },
       live: (queries) =>
         call(() => {
@@ -727,18 +871,18 @@ export class FakeBackend {
             owner_id: visible.ownerId,
             name: head.name,
             icon: head.icon,
-            branch: null,
+            branch: head.branch,
             status: head.status,
             settled_at: visible.settledAt,
             seq: String(head.seq),
-            preview_seq: null,
+            preview_seq: head.previewSeq === null ? null : String(head.previewSeq),
             agent_state: head.agentState,
             agent_status: head.agentStatus,
-            agent_blocker: null,
+            agent_blocker: head.agentBlocker,
             needs_you_count: head.needsYouCount,
-            pr_number: null,
-            pr_state: null,
-            pr_checks: "none",
+            pr_number: head.prNumber,
+            pr_state: head.prState,
+            pr_checks: head.prChecks,
             last_activity_at: visible.lastActivityAt,
             created_at: visible.createdAt,
             seen_seq: read ? String(read.seq) : null,
@@ -755,18 +899,18 @@ export class FakeBackend {
           icon: head.icon,
           status: head.status,
           seq: String(head.seq),
-          preview_seq: null,
+          preview_seq: head.previewSeq === null ? null : String(head.previewSeq),
           agent_state: head.agentState,
           agent_status: head.agentStatus,
           agent_artboards: head.agentArtboards,
           needs_you_count: head.needsYouCount,
-          pr_number: null,
-          pr_state: null,
-          pr_checks: "none",
-          pr_mergeable: null,
-          pr_auto_merge: false,
+          pr_number: head.prNumber,
+          pr_state: head.prState,
+          pr_checks: head.prChecks,
+          pr_mergeable: head.prMergeable,
+          pr_auto_merge: head.prAutoMerge,
           last_activity_at: head.lastActivityAt,
-          agent_blocker: null,
+          agent_blocker: head.agentBlocker,
           sandbox_state: null,
         };
         return [row];
@@ -822,49 +966,58 @@ export class FakeBackend {
   private view(design: FakeDesign, userId: string): DesignView {
     const head = this.headOf(design);
     return {
-      id: design.id,
-      workspaceId: design.workspaceId,
+      ...head,
       repo: design.repoId ? { id: design.repoId, fullName: this.repoOf(design)!.fullName } : null,
       ownerId: design.ownerId,
-      name: head.name,
-      icon: head.icon,
-      branch: null,
-      status: head.status,
       settledAt: design.settledAt,
-      seq: head.seq,
-      previewSeq: null,
-      agentState: head.agentState,
-      agentStatus: head.agentStatus,
-      agentArtboards: head.agentArtboards,
-      agentBlocker: null,
-      needsYouCount: head.needsYouCount,
-      prNumber: null,
-      prState: null,
-      prChecks: "none",
-      prMergeable: null,
-      prAutoMerge: false,
-      lastActivityAt: design.lastActivityAt,
       createdAt: design.createdAt,
       access: canWrite(this.permission(userId, design)) ? "write" : "read",
-      assetsUrl: `https://assets.test/${design.id}/`,
+      assetsUrl: assetsUrl(design),
     };
   }
 
   private headOf(design: FakeDesign) {
     const doc = design.sequencer.doc;
+    const pr = design.github?.row;
     return {
       id: design.id,
       workspaceId: design.workspaceId,
       name: doc.name,
       icon: design.icon,
+      branch: design.branch,
       status: design.settledAt ? ("settled" as const) : ("active" as const),
       seq: design.sequencer.seq,
+      previewSeq: design.previewSeq,
       agentState: design.agent.state,
       agentStatus: design.agent.status,
       agentArtboards: design.agent.artboards,
+      agentBlocker: design.blocker,
       needsYouCount: design.questions.filter((question) => question.status === "open").length,
+      prNumber: pr?.prNumber ?? null,
+      prState: pr?.prState ?? null,
+      prChecks: pr?.prChecks ?? ("none" as const),
+      prMergeable: pr?.prMergeable ?? null,
+      prAutoMerge: pr?.prAutoMerge ?? false,
       lastActivityAt: design.lastActivityAt,
     };
+  }
+
+  /** The design's branch and pull request, saying in its thread what GitHub does to it. */
+  private pullRequestsOf(design: FakeDesign, repo: string, branch: string): FakePullRequests {
+    return new FakePullRequests(repo, branch, () => this.now(), {
+      notice: (number, url, title, state) => {
+        const verb = state === "draft" || state === "open" ? "opened" : state;
+        const id = `ti_pr-${number}-${verb}`;
+        if (design.thread.some((entry) => entry.item.id === id)) return;
+        const payload = { type: "pull_request", number, url, title, state } as const;
+        this.append(design, { kind: "notice", payload }, null, false, id);
+      },
+      // A merge settles the design, as a read that finds it merged does.
+      merged: () => {
+        design.settledAt = this.now();
+      },
+      changed: () => this.touch(design),
+    });
   }
 
   private visibleDesigns(workspaceId: string, userId: string): FakeDesign[] {
@@ -955,22 +1108,52 @@ function listRow(head: ReturnType<FakeBackend["headOf"]>, design: FakeDesign, us
     ownerId: design.ownerId,
     name: head.name,
     icon: head.icon,
-    branch: null,
+    branch: head.branch,
     status: head.status,
     settledAt: design.settledAt,
     seq: head.seq,
-    previewSeq: null,
+    previewSeq: head.previewSeq,
     agentState: head.agentState,
     agentStatus: head.agentStatus,
     needsYouCount: head.needsYouCount,
-    prNumber: null,
-    prState: null,
-    prChecks: "none" as const,
+    prNumber: head.prNumber,
+    prState: head.prState,
+    prChecks: head.prChecks,
     lastActivityAt: design.lastActivityAt,
     createdAt: design.createdAt,
     seenSeq: read?.seq ?? null,
     seenThreadSeq: read?.threadSeq ?? null,
   };
+}
+
+/** Where the design's files are served, as `GET /v1/designs/:id` answers it. */
+function assetsUrl(design: FakeDesign): string {
+  return `https://assets.test/${design.id}/`;
+}
+
+/** A branch's topic from the design's first words, as the API names `pz/<topic>`. */
+function topic(name: string): string {
+  const words = name.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+  return words.slice(0, 3).join("-") || "design";
+}
+
+/**
+ * An answer is checked against what was asked, since it closes the question for good: every one
+ * of a `question`'s questions by its text and no other, or `approved` for a plan or permission.
+ */
+function checkAnswer(asked: QuestionBody, body: AnswerBody): void {
+  if (asked.kind === "question") {
+    const texts = asked.payload.questions.map((q) => q.question);
+    const answers = body.answers ?? {};
+    if (texts.some((text) => !Object.hasOwn(answers, text))) {
+      throw new ApiError(400, "invalid_request", "Answer every question.");
+    }
+    if (Object.keys(answers).some((text) => !texts.includes(text))) {
+      throw new ApiError(400, "invalid_request", "Answer only the questions that were asked.");
+    }
+  } else if (body.approved === undefined) {
+    throw new ApiError(400, "invalid_request", "Say whether you approve.");
+  }
 }
 
 /** A session that is signed in as `person` until `signOut`, and sends nothing anywhere. */

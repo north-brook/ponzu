@@ -1,8 +1,14 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { newOpId } from "@ponzu/core";
+import { emptyDoc, newOpId } from "@ponzu/core";
 // The real API, in process, to hold the typed client to the routes it is typed from. A test
 // may run the API's code; the package itself only ever imports its types.
-import { type Workspace, workspaceWithRepo } from "../../../apps/api/src/testing/designs.ts";
+import {
+  call,
+  designIn,
+  startRunner,
+  type Workspace,
+  workspaceWithRepo,
+} from "../../../apps/api/src/testing/designs.ts";
 import { createTestApp, type TestApp } from "../../../apps/api/src/testing/index.ts";
 import { type Api, createApi } from "./api.ts";
 import { systemClock } from "./clock.ts";
@@ -155,5 +161,73 @@ describe("against the API's own routes", () => {
       "sealed",
       "not_found",
     ]);
+  });
+
+  test("the thread: a message, its page, an answer that wins once, and a stop", async () => {
+    const maya = clientFor("maya");
+    const design = await designIn(t, ws, "maya", emptyDoc("Thread"));
+    const sent = await maya.designs.sendMessage(design.id, { text: "Make it calmer" });
+    expect(sent).toMatchObject({ kind: "message", streaming: false });
+    expect(sent.kind === "message" && sent.payload.text).toBe("Make it calmer");
+    const page = await maya.designs.thread(design.id, { limit: 10 });
+    expect(page.items.map((item) => item.id)).toEqual([sent.id]);
+    expect((await maya.designs.thread(design.id, { before: sent.seq })).items).toEqual([]);
+
+    const runner = await startRunner(t, design.id);
+    const questionId = "q_abcdefghjkmnpqrs";
+    const asked = {
+      header: "Headline",
+      question: "Which way?",
+      options: [
+        { label: "Shorten it", description: "Two lines." },
+        { label: "Let it wrap", description: "Three lines." },
+      ],
+      multiSelect: false,
+    };
+    const raised = await call(t, runner.headers, "POST", "/v1/runner/questions", {
+      id: questionId,
+      kind: "question",
+      payload: { questions: [asked] },
+    });
+    expect(raised.status).toBe(200);
+    const answer = { answers: { "Which way?": "Shorten it" } };
+    expect(await maya.designs.answer(design.id, questionId, answer)).toEqual({
+      id: questionId,
+      status: "answered",
+    });
+    const again = await maya.designs.answer(design.id, questionId, answer).catch((e) => e);
+    expect([again.status, again.code]).toEqual([409, "question_closed"]);
+
+    expect(await maya.designs.stop(design.id)).toBeUndefined();
+    const ines = await clientFor("ines")
+      .designs.stop(design.id)
+      .catch((e) => e);
+    expect([ines.status, ines.code]).toEqual([403, "forbidden"]);
+  });
+
+  test("the pull request: the tab, opening it, a file's diff, and a refusal by code", async () => {
+    const maya = clientFor("maya");
+    const design = await designIn(t, ws, "maya", emptyDoc("Shorter checkout"));
+    await t.db.execute(`update designs set branch = 'pz/checkout' where id = '${design.id}'`);
+    const before = await maya.designs.pullRequest.get(design.id);
+    expect([before.branch.exists, before.pullRequest, before.nextAction]).toEqual([
+      false,
+      null,
+      "none",
+    ]);
+
+    t.github.pulls.push(t.github.repo(ws.repo.fullName)!, "pz/checkout");
+    expect((await maya.designs.pullRequest.get(design.id)).nextAction).toBe("create_pr");
+    const opened = await maya.designs.pullRequest.open(design.id);
+    expect(opened.pullRequest).toMatchObject({ state: "draft", title: "Shorter checkout" });
+    const [file] = opened.pullRequest!.files.items;
+    const diff = await maya.designs.pullRequest.file(design.id, file!.path);
+    expect(diff.path).toBe(file!.path);
+    expect(["text", "binary", "too_large"]).toContain(diff.diff.kind);
+
+    const sha = opened.pullRequest!.head.sha;
+    const draft = await maya.designs.pullRequest.merge(design.id, { headSha: sha }).catch((e) => e);
+    expect([draft.status, draft.code]).toEqual([409, "pull_request_draft"]);
+    expect((await maya.designs.pullRequest.ready(design.id)).pullRequest!.state).toBe("open");
   });
 });
