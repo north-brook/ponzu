@@ -37,6 +37,24 @@ export function getUploads(
 }
 
 /**
+ * Where every upload of these purposes of the design's is stored, recorded by a checkpoint or
+ * not: what to delete with the design (a checkpoint's archives, `session` and `workspace`).
+ */
+export async function listUploadKeys(
+  db: Db,
+  { designId, purposes }: { designId: string; purposes: Upload["purpose"][] },
+): Promise<string[]> {
+  if (purposes.length === 0) return [];
+  const rows = await run(
+    db
+      .select({ key: uploads.objectKey })
+      .from(uploads)
+      .where(and(eq(uploads.designId, designId), inArray(uploads.purpose, purposes))),
+  );
+  return rows.map((row) => row.key);
+}
+
+/**
  * Record that an upload's bytes are where they are served from (`servedKey`), and when it is
  * one of the design's files, record the file under `asset` in `assets` in the same statement,
  * replacing one of that path. Null when the upload is not this design's or is completed

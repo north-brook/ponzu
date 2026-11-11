@@ -23,7 +23,14 @@ import {
   newEnvironment,
   RUNNER_PORT,
 } from "./environment.ts";
-import { addressBinding, reviveRunner, stopSandbox } from "./quiesce.ts";
+import {
+  addressBinding,
+  REVIVE_BUDGET_MS,
+  reviveRunner,
+  SYNC_MS,
+  stopSandbox,
+  syncDisk,
+} from "./quiesce.ts";
 
 /*
  * Waking a design's sandbox (docs/cloud.md, "The sandbox"): the job `requestWake` records, run
@@ -50,6 +57,13 @@ export const WAKE_JOB = "sandbox.wake";
 export const WAKE_ATTEMPTS = 40;
 /** How long one attempt waits for the provider to say the sandbox is awake. */
 const WAKE_TIMEOUT_MS = 90_000;
+/**
+ * What one attempt may spend, of the function's 300 seconds, before it leaves the rest to the
+ * next (quiesce.ts adds the waits up). The rest is for the database and the provider's calls.
+ */
+const WAKE_BUDGET_MS = 260_000;
+/** What a cold start after a failed revive takes at most: `sync`, the stop, the boot. */
+const COLD_MS = SYNC_MS + WAKE_TIMEOUT_MS + 10_000;
 /** How long one attempt waits for a stop under way to land, and how often it looks. */
 const STOP_WAIT_MS = 60_000;
 const STOP_POLL_MS = 2_000;
@@ -134,7 +148,7 @@ export async function wakeDesign(deps: JobDeps, designId: string, job: Wake): Pr
       await showAgentWaiting(db, { designId, waking: true, blocker: null });
       context = await afterStop(deps, designId);
     }
-    const woke = await bringUp(deps, context, job.id);
+    const woke = await bringUp(deps, context, job.id, began + WAKE_BUDGET_MS);
     if (woke) {
       log.info("sandbox_awake", {
         designId,
@@ -189,7 +203,12 @@ type Claude = NonNullable<WakeContext["claude"]>;
 type Woke = { sandbox: Sandbox; start: Start };
 
 /** The sandbox the design has now, awake. Null when another wake has it in hand. */
-async function bringUp(deps: JobDeps, context: WakeContext, by: string): Promise<Woke | null> {
+async function bringUp(
+  deps: JobDeps,
+  context: WakeContext,
+  by: string,
+  deadline: number,
+): Promise<Woke | null> {
   const { db, clock, config } = deps;
   const claude = context.claude!;
   const now = new Date(clock.now());
@@ -227,7 +246,7 @@ async function bringUp(deps: JobDeps, context: WakeContext, by: string): Promise
   );
   if (!waking) return null;
   if (!waking.providerId) return create(deps, waking, claude, by);
-  return resume(deps, waking, claude, current, by);
+  return resume(deps, waking, claude, current, by, deadline);
 }
 
 /**
@@ -328,7 +347,7 @@ async function adopt(
   });
   if (!adopted) return null;
   deps.log.warn("sandbox_adopted", { designId: waking.designId, sandboxId: waking.id });
-  return resume(deps, adopted, claude, false, by);
+  return resume(deps, adopted, claude, false, by, deps.clock.now() + WAKE_BUDGET_MS / 2);
 }
 
 /**
@@ -341,8 +360,9 @@ async function resume(
   claude: Claude,
   current: boolean,
   by: string,
+  deadline: number,
 ): Promise<Woke | null> {
-  const { db } = deps;
+  const { db, clock } = deps;
   const providerId = waking.providerId!;
   await showAgentWaiting(db, { designId: waking.designId, waking: true, blocker: null });
 
@@ -362,18 +382,28 @@ async function resume(
       await deps.sandbox.stop(providerId);
       wake = await deps.sandbox.ensureAwake(providerId, options);
     }
-    if (wake.start === "warm") {
-      // A thaw brings back the boot as it was, a runner that had exited included (quiesce.ts).
-      const runner = await reviveRunner(deps, waking);
+    if (wake.start !== "cold") {
+      // A thaw brings back the boot as it was, a runner that had exited included (quiesce.ts);
+      // so may a machine an earlier attempt left running. Started again through the provider
+      // only when there is time left for the cold start after it, should that fail too.
+      const left = deadline - clock.now();
+      const runner = await reviveRunner(deps, waking, {
+        startUnit: left >= REVIVE_BUDGET_MS + COLD_MS,
+      });
       if (runner === "stay_down") return null;
       if (runner === "down") {
         deps.log.warn("runner_down_after_warm_resume", {
           designId: waking.designId,
           sandboxId: waking.id,
         });
+        // The next attempt starts here again, on a machine that is up.
+        if (deadline - clock.now() < COLD_MS)
+          throw new SandboxError("busy", "The wake ran out of time to start the runner again.");
         if (environment) await revokeRunnerToken(db, environment.runnerTokenId);
-        // A new environment is always a cold start, and a boot starts the unit.
+        // A new environment is always a cold start, and a boot starts the unit. What the
+        // machine wrote is flushed first: a health check can fail for its address alone.
         environment = await newEnvironment(deps, waking.designId, claude);
+        await syncDisk(deps, providerId, waking.designId);
         await deps.sandbox.stop(providerId);
         wake = await deps.sandbox.ensureAwake(providerId, {
           ...options,

@@ -41,6 +41,12 @@ export interface Deps {
   anthropic: Anthropic;
   /** Cloudflare R2: the bytes of designs' files, previews and exports. */
   storage: ObjectStorage;
+  /**
+   * Where a checkpoint's archives (a session's transcript, work in progress) are kept: a bucket
+   * with no public domain when `R2_PRIVATE_BUCKET` is set, else `storage` under a random key
+   * (docs/cloud.md, "Saving the sandbox").
+   */
+  archives: ObjectStorage;
   /** Tells an awake runner there may be events to claim. */
   poke: Poke;
   /** Asks an awake runner for a state report now, and whether it answers at all. */
@@ -97,6 +103,7 @@ export function createDeps(env: Env): Deps {
   const clock = systemClock;
   const outbound: Fetch = (url, init) => fetch(url, init);
   const log = createLogger(consoleSink);
+  const storage = createR2Storage({ ...env.r2, fetch: outbound, clock });
   return {
     db: createDb(env.databaseUrl, { deadline: () => clock.timeout(DATABASE_TIMEOUT_MS) }),
     clock,
@@ -114,7 +121,10 @@ export function createDeps(env: Env): Deps {
     }),
     sandbox: new BoatProvider({ apiKey: env.boatApiKey, clock }),
     anthropic: createAnthropic({ fetch: outbound, clock }),
-    storage: createR2Storage({ ...env.r2, fetch: outbound, clock }),
+    storage,
+    archives: env.r2PrivateBucket
+      ? createR2Storage({ ...env.r2, bucket: env.r2PrivateBucket, fetch: outbound, clock })
+      : storage,
     poke: createPoke({ fetch: outbound, clock }),
     runnerPort: createRunnerPort({ fetch: outbound, clock }),
     realtime: createRealtimeSealer({

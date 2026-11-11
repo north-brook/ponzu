@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { sampleDoc } from "@ponzu/core/fixtures";
-import { getDesign, getLiveSandbox, moveSandbox, type Sandbox } from "@ponzu/db";
+import { getDesign, getLiveSandbox, moveSandbox, newId, type Sandbox } from "@ponzu/db";
 import { RUNNER_HEADER } from "@ponzu/runner/protocol";
 import { SandboxError } from "@ponzu/sandbox";
 import { call, designIn, type Workspace, workspaceWithRepo } from "../testing/designs.ts";
@@ -118,6 +118,10 @@ async function runnerIn(sandbox: Sandbox) {
   return {
     status: started.status,
     beat,
+    claim: (claimId = newId("clm")) =>
+      call(t, headers, "POST", "/v1/runner/events/claim", { claimId }),
+    ack: (ids: string[]) =>
+      call(t, headers, "POST", "/v1/runner/events/ack", { ids, claudeSessionId: "session-1" }),
     /**
      * What the runner does when asked for a report: report, and once the answer names a sleep,
      * get ready and report again saying so.
@@ -929,6 +933,34 @@ describe("getting ready to sleep", () => {
     }
   });
 
+  test("a message a runner claimed as it got ready, and held back, wakes the design again once the stop lands", async () => {
+    const { design, runner } = await awakeDesign();
+    const watched = watchStop();
+    const claimId = newId("clm");
+    try {
+      t.poke.onReport = async () => {
+        // The claim went out before the sleep was heard and came back after: held, not acked.
+        const claimed = await runner.claim(claimId);
+        expect(claimed.body.events.length).toBeGreaterThan(0);
+        await runner.readyForSleep();
+      };
+      await idleToSleep(runner);
+      expect(watched.order).toContain("stop");
+      expect(logged("sandbox_awake", design.id)).toMatchObject({ start: "warm" });
+      expect((await live(design.id)).state).toBe("awake");
+    } finally {
+      watched.done();
+    }
+
+    // Awake again, the same claim hands them out again; once they are in its session, the next
+    // idle stop leaves it asleep.
+    const claimed = await runner.claim(claimId);
+    expect(claimed.body.events.length).toBeGreaterThan(0);
+    await runner.ack(claimed.body.events.map((e: { id: string }) => e.id));
+    await idleToSleep(runner);
+    expect((await live(design.id)).state).toBe("asleep");
+  });
+
   test("a runner that never says it is ready is stopped anyway, after the wait", async () => {
     const { design, runner } = await awakeDesign();
     const watched = watchStop();
@@ -998,11 +1030,17 @@ describe("a runner that a warm resume does not bring back", () => {
     t.poke.healthy = false;
     t.sandbox.onExec = ({ command }) =>
       command.startsWith("sudo systemctl") ? { exitCode: 1, stderr: "failed" } : undefined;
+    const before = t.sandbox.commands.length;
     try {
       t.clock.advance(MINUTE);
       await say(design.id, "And the footer");
       expect(logged("runner_down_after_warm_resume", design.id)).toBeDefined();
       expect(logged("sandbox_awake", design.id)).toMatchObject({ start: "cold" });
+      // What the machine wrote is flushed before the stop: /health can fail for its address.
+      expect(t.sandbox.commands.slice(before).map((c) => c.command)).toEqual([
+        "sudo systemctl start ponzu-runner",
+        "sync",
+      ]);
       const now = t.sandbox.env(sandbox.providerId!).PONZU_RUNNER_TOKEN;
       expect(now).not.toBe(token);
       // The old token is revoked: only the new environment's runner is let in.
@@ -1017,6 +1055,34 @@ describe("a runner that a warm resume does not bring back", () => {
     } finally {
       t.poke.healthy = true;
       t.sandbox.onExec = null;
+    }
+  });
+
+  test("goes straight to a cold start when the wake has no time left to start it again", async () => {
+    const { design, sandbox, runner } = await awakeDesign();
+    await idleToSleep(runner);
+    t.poke.healthy = false;
+    // The resume itself took most of the attempt's time.
+    const ensureAwake = t.sandbox.ensureAwake.bind(t.sandbox);
+    let first = true;
+    t.sandbox.ensureAwake = async (id, options) => {
+      const woke = await ensureAwake(id, options);
+      if (first) t.clock.advance(140_000);
+      first = false;
+      return woke;
+    };
+    const before = t.sandbox.commands.length;
+    try {
+      t.clock.advance(MINUTE);
+      await say(design.id, "And the footer");
+      const commands = t.sandbox.commands.slice(before).map((c) => c.command);
+      expect(commands).not.toContain("sudo systemctl start ponzu-runner");
+      expect(commands).toEqual(["sync"]);
+      expect(logged("sandbox_awake", design.id)).toMatchObject({ start: "cold" });
+      expect(t.sandbox.env(sandbox.providerId!).PONZU_RUNNER_TOKEN).toBeDefined();
+    } finally {
+      t.poke.healthy = true;
+      t.sandbox.ensureAwake = ensureAwake;
     }
   });
 

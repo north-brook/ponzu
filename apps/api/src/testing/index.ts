@@ -151,6 +151,7 @@ export async function createTestApp(
     sandbox,
     anthropic,
     storage: options.storage ?? storage,
+    archives: options.storage ?? storage,
     poke: poke.poke,
     runnerPort: poke.port,
     realtime: options.live?.realtime ?? sealer,

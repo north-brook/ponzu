@@ -46,6 +46,7 @@ import { reverse } from "../designs/undo.ts";
 import type { AppEnv } from "../http/context.ts";
 import { ApiError } from "../http/errors.ts";
 import { validate } from "../http/validate.ts";
+import { forgetCheckpoints } from "../runner/checkpoint.ts";
 import { destroySandboxes, retireSandboxes } from "../sandboxes/retire.ts";
 
 /*
@@ -303,8 +304,11 @@ export const designs = new Hono<AppEnv>()
     }
     // Its sandboxes first, while the design is there to put their awake time down to.
     const sandboxes = await retireSandboxes(deps, design.id);
+    const forget = await forgetCheckpoints(deps, design.id);
     await deleteDesign(deps.db, design.id);
     deps.background("retire", destroySandboxes(deps, sandboxes));
+    // Its transcripts and work in progress, which no row knows of any more.
+    deps.background("checkpoints_deleted", forget());
     return c.body(null, 204);
   })
 

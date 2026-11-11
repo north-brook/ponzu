@@ -1,5 +1,6 @@
 import {
   countSandboxRestart,
+  hasHeldEvents,
   isSandboxKnown,
   listSandboxesToSweep,
   moveSandbox,
@@ -231,6 +232,11 @@ async function putToSleep(
     to: "asleep",
     now: new Date(clock.now()),
   });
+  // A claim the runner had out as it got ready brought events it held back for the wake
+  // (docs/cloud.md, "Getting ready to sleep"); asleep, nothing would wake the design for them.
+  if (idleBefore && (await hasHeldEvents(db, sandbox.designId))) {
+    await startWake(deps, sandbox.designId, "held");
+  }
   return true;
 }
 

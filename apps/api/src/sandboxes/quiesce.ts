@@ -14,17 +14,38 @@ import type { JobDeps } from "../jobs/run.ts";
  *
  * After a warm resume, which thaws the same boot, a runner that had exited stays exited: the API
  * looks at `/health` and starts the unit again through the provider.
+ *
+ * Function time. Every wait here runs inside a function with 300 seconds (apps/api/README.md),
+ * so each is bounded, and one attempt of a wake keeps to a budget (orchestrate.ts,
+ * `WAKE_BUDGET_MS`, 260 s) that the worst of them fits:
+ *
+ *   a stop to wait out (afterStop), or a stop of its own (quiesce, sync)   60 s, or 30 + 10 s
+ *   the resume                                                              90 s
+ *   /health, `systemctl start` and /health again                            3 + 15 + 3 s
+ *   `sync`, the stop and a cold start on a new environment                  10 + 90 s
+ *
+ * An attempt with too little left for the revive and the cold start after it skips the revive
+ * and goes cold; one with too little left for the cold start is tried again by the job. The
+ * sweep puts sandboxes to sleep in parallel, each stop at most 30 + 10 s.
  */
 
 /** How long a stop waits for the runner to be ready, and how often it looks. */
 export const QUIESCE_MS = 30_000;
 const QUIESCE_POLL_MS = 1_000;
 /** How long `sync` may take before the stop goes ahead. */
-const SYNC_SECONDS = 30;
+const SYNC_SECONDS = 10;
 /** How long `/health` has to answer after a warm resume, and after the unit is started again. */
 export const HEALTH_MS = 3_000;
-export const REVIVE_MS = 20_000;
+const SYSTEMCTL_SECONDS = 10;
+export const REVIVE_MS = 15_000;
 const REVIVE_POLL_MS = 1_000;
+/**
+ * What starting the unit again may take, at most: the first look, then the start and the looks
+ * after it (`REVIVE_MS` holds both, and the last look may run past it).
+ */
+export const REVIVE_BUDGET_MS = HEALTH_MS + REVIVE_MS + HEALTH_MS;
+/** What a stop with `sync` may take before the next start, besides the provider's own calls. */
+export const SYNC_MS = SYNC_SECONDS * 1000;
 
 /** Where the API reaches a sandbox's runner, with the token that opens its address. */
 export async function runnerAddress(
@@ -75,16 +96,8 @@ export async function stopSandbox(
     }
   }
   const quiesceMs = clock.now() - began;
-  // What was written and not flushed is lost by a stop that turns cold, whatever the runner did.
   const synced = clock.now();
-  try {
-    const result = await deps.sandbox.exec(stopping.providerId!, "sync", {
-      timeoutSeconds: SYNC_SECONDS,
-    });
-    if (result.exitCode !== 0) log.warn("sync_failed", { designId: stopping.designId });
-  } catch (error) {
-    log.warn("sync_failed", { designId: stopping.designId, error });
-  }
+  await syncDisk(deps, stopping.providerId!, stopping.designId);
   const syncMs = clock.now() - synced;
   await deps.sandbox.stop(stopping.providerId!);
   log.info("sandbox_stopping", {
@@ -97,6 +110,20 @@ export async function stopSandbox(
   });
 }
 
+/**
+ * `sync` through the provider, before any stop of a running machine: what was written and not
+ * flushed is lost by a stop that turns cold, whatever the runner did. A failure is logged; the
+ * stop goes ahead.
+ */
+export async function syncDisk(deps: JobDeps, providerId: string, designId: string) {
+  try {
+    const result = await deps.sandbox.exec(providerId, "sync", { timeoutSeconds: SYNC_SECONDS });
+    if (result.exitCode !== 0) deps.log.warn("sync_failed", { designId });
+  } catch (error) {
+    deps.log.warn("sync_failed", { designId, error });
+  }
+}
+
 export type Revived = "up" | "revived" | "down" | "stay_down";
 
 /**
@@ -104,21 +131,27 @@ export type Revived = "up" | "revived" | "down" | "stay_down";
  * again through the provider (`systemctl start`, which does nothing to one that runs) and look
  * again. `down` when it still does not answer: only a cold start on a new environment is left.
  * `stay_down` when the design was settled or deleted meanwhile: its runner exited on purpose,
- * the sweep destroys the sandbox, and nothing is started.
+ * the sweep destroys the sandbox, and nothing is started. With `startUnit` false (the wake has
+ * no time left for it), a runner that does not answer is `down` at once.
  */
-export async function reviveRunner(deps: JobDeps, sandbox: Sandbox): Promise<Revived> {
+export async function reviveRunner(
+  deps: JobDeps,
+  sandbox: Sandbox,
+  { startUnit = true }: { startUnit?: boolean } = {},
+): Promise<Revived> {
   const { clock, log } = deps;
   const address = await runnerAddress(deps, sandbox);
   if (!address) return "up";
   if (await deps.runnerPort.healthy(address, HEALTH_MS)) return "up";
   const context = await getWakeContext(deps.db, sandbox.designId);
   if (!context || context.status === "settled") return "stay_down";
+  if (!startUnit) return "down";
   const began = clock.now();
   try {
     const started = await deps.sandbox.exec(
       sandbox.providerId!,
       "sudo systemctl start ponzu-runner",
-      { timeoutSeconds: 30 },
+      { timeoutSeconds: SYSTEMCTL_SECONDS },
     );
     if (started.exitCode !== 0) {
       log.warn("runner_revive_failed", {

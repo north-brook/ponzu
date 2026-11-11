@@ -106,6 +106,7 @@ export {
   type DesignEvent,
   type EventPerson,
   findStops,
+  hasHeldEvents,
   markEventsDelivered,
   type NewEvent,
 } from "./queries/events.ts";
@@ -286,6 +287,7 @@ export {
   createUploads,
   getUploads,
   listAssets,
+  listUploadKeys,
   type NewUpload,
   type Upload,
 } from "./queries/uploads.ts";
