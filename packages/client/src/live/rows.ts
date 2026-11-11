@@ -1,5 +1,13 @@
-import type { AgentState, DesignStatus, PrChecks, PrState, QuestionStatus } from "@ponzu/db/types";
 import type { QuestionBody, ThreadItem } from "@ponzu/runner/protocol";
+import type { Api } from "../api.ts";
+
+/** The lists a design's columns take, as the API's own answer about a design names them. */
+type DesignView = Awaited<ReturnType<Api["designs"]["get"]>>;
+type DesignStatus = DesignView["status"];
+type AgentState = DesignView["agentState"];
+type PrState = NonNullable<DesignView["prState"]>;
+type PrChecks = DesignView["prChecks"];
+type QuestionStatus = "open" | "answered" | "cancelled";
 
 /*
  * The rows each live query delivers, as the apps read them. The registry is the API's

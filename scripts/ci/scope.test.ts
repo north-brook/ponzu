@@ -54,19 +54,20 @@ test("the cloud API and the packages only it uses run neither", () => {
 });
 
 test("it still runs neither once the apps take its route types through the client", () => {
-  // The typed client imports `AppType` from the API, and both apps will depend on the client.
-  // A route change can break their typecheck, which every pull request runs, but cannot
-  // change the desktop package or the phone's bundle.
-  const withClient = [
-    ...packages.map((workspace) =>
-      ["desktop", "mobile"].includes(workspace.name)
-        ? { ...workspace, dependencies: [...workspace.dependencies, "client"] }
-        : workspace,
-    ),
-    { name: "client", dir: "packages/client", dependencies: ["api", "core"] },
-  ];
+  // The typed client imports `AppType` from the API and the thread's types from the runner,
+  // and both apps will depend on the client. A route change can break their typecheck, which
+  // every pull request runs, but cannot change the desktop package or the phone's bundle.
+  const withClient = packages.map((workspace) =>
+    ["desktop", "mobile"].includes(workspace.name)
+      ? { ...workspace, dependencies: [...workspace.dependencies, "client"] }
+      : workspace,
+  );
 
-  for (const file of ["apps/api/src/routes/me.ts", "packages/db/src/queries/accounts.ts"]) {
+  for (const file of [
+    "apps/api/src/routes/me.ts",
+    "packages/db/src/queries/accounts.ts",
+    "apps/runner/src/api/protocol.ts",
+  ]) {
     expect(scope([file], withClient)).toEqual({ desktop: false, mobile: false });
   }
   // What the client runs still reaches them.

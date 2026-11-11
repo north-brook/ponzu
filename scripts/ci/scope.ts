@@ -33,12 +33,13 @@ const SUITES: Record<Suite, string[]> = {
 
 /**
  * Packages the others import for types alone: the cloud API, whose routes the typed client
- * takes as `AppType` from `@ponzu/api/types`. A change to one cannot alter what a dependant
+ * takes as `AppType` from `@ponzu/api/types`, and the runner, whose thread items it takes from
+ * `@ponzu/runner/protocol`. A change to one cannot alter what a dependant
  * builds or bundles, only whether it typechecks, and "Check, typecheck, test" typechecks the
  * desktop app, the phone and everything else on every pull request. So a change to one (or to
  * a package only it uses, like the database) does not pass on to the packages that depend on it.
  */
-const TYPES_ONLY = ["api"];
+const TYPES_ONLY = ["api", "runner"];
 
 /** Changes that run every suite: what decides how they all run. */
 const EVERYTHING = [/^\.github\/workflows\/ci\.yml$/, /^scripts\/ci\/scope\.ts$/];

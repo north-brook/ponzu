@@ -56,7 +56,9 @@ async function harness() {
     name: "Kettle",
   });
   const page = backend.design(design.id).sequencer.doc.pages[0]!.id;
-  backend.agent(design.id).commit([{ op: "artboard.create", page, index: 0, artboard: board("ab_home") }]);
+  backend
+    .agent(design.id)
+    .commit([{ op: "artboard.create", page, index: 0, artboard: board("ab_home") }]);
 
   const open = (person: FakePerson, opts: { cache?: DocCache } = {}) => {
     const client = person === maya ? mayaClient : backend.connect(person);
@@ -79,7 +81,8 @@ async function harness() {
     return { source, ops, unsaved, states, client };
   };
   const doc = (source: CloudSource) => source.getState().doc!;
-  const home = (source: CloudSource) => doc(source).pages[0]!.artboards.find((a) => a.id === "ab_home");
+  const home = (source: CloudSource) =>
+    doc(source).pages[0]!.artboards.find((a) => a.id === "ab_home");
   /** Let the API answer, Realtime deliver and the replicas fetch what it told them of. */
   const settle = () => clock.advance(0);
   return { clock, backend, design, page, maya, ines, omar, open, doc, home, settle };
@@ -114,7 +117,9 @@ describe("opening", () => {
     omar.source.undo();
     await h.settle();
     expect(h.home(omar.source)?.x).toBe(0);
-    expect(omar.unsaved.map((u) => u.reason)).toEqual(["This design can only be looked at right now."]);
+    expect(omar.unsaved.map((u) => u.reason)).toEqual([
+      "This design can only be looked at right now.",
+    ]);
     expect(h.backend.design(h.design.id).sequencer.seq).toBe(before);
   });
 
@@ -210,7 +215,9 @@ describe("editing as the canvas expects", () => {
     ines.source.apply({ op: "artboard.update", id: "ab_home", y: 200 });
     h.backend
       .agent(h.design.id)
-      .commit([{ op: "artboard.create", page: h.page, index: 1, artboard: board("ab_price", 900) }]);
+      .commit([
+        { op: "artboard.create", page: h.page, index: 1, artboard: board("ab_price", 900) },
+      ]);
     await h.clock.advance(1_000);
 
     const server = h.backend.design(h.design.id).sequencer.doc;
@@ -230,7 +237,7 @@ describe("editing as the canvas expects", () => {
     expect(arrival.doc.pages[0]!.artboards.map((a) => a.id)).toContain("ab_price");
     // While it hears the op, the canvas still shows the document from before it (arrive.ts
     // compares the two), untouched by the replica changing its own in place.
-    expect(arrival.before?.pages[0]!.artboards.map((a) => a.id)).not.toContain("ab_price");
+    expect(arrival.before!.pages[0]!.artboards.map((a) => a.id)).not.toContain("ab_price");
   });
 
   test("an edit the API rejects is taken back, and said so", async () => {
@@ -284,7 +291,12 @@ describe("editing as the canvas expects", () => {
     h.backend.agent(h.design.id).work(["ab_home"], "Drawing Home");
     await h.settle();
     expect(source.getState().presence).toEqual([
-      expect.objectContaining({ kind: "agent", name: "Claude", working: ["ab_home"], status: "Drawing Home" }),
+      expect.objectContaining({
+        kind: "agent",
+        name: "Claude",
+        working: ["ab_home"],
+        status: "Drawing Home",
+      }),
     ]);
     h.backend.agent(h.design.id).idle();
     await h.settle();
