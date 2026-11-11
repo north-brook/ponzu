@@ -126,7 +126,7 @@ const heroTurn = turn(true);
 /** Board 1: you alone, the agent mid-run. */
 export const heroThread: ThreadItem[] = [
   said(bryce, ASK),
-  // A turn that was only its answer: nothing to fold.
+  // A turn that was only its answer.
   ended(readTurn, { final: readReply.id }),
   readReply,
   comment(bryce, "Too many words here. Calmer, and put a quieter take beside it."),
@@ -161,15 +161,15 @@ export const teamThread: ThreadItem[] = [
 export const teamAgent: AgentActivity = { state: "working", status: "Cropping Hero · B's photo" };
 
 /*
- * The founder's onboarding flow, a long turn: the agent says what it is on as it goes, and its
- * steps fold away once it ends.
+ * The founder's onboarding flow, a long turn: the agent says what it is on as it goes (asides,
+ * with Markdown in them), and once it ends only its answer stays.
  */
 const FLOW_ASK = "Build the onboarding flow for the running app, seven screens.";
 const flowSaid = [
-  'Copied the screen layout to steps 3–5. Now I\'m filling in "3 · Experience".',
-  'Now "4 · About you": age, height and weight, with a ruler picker for weight.',
-  'Now "5 · Schedule": training days, session length and time of day.',
-  'Next is "1 · Welcome", a dark intro screen.',
+  "Copied the screen layout to steps 3–5. Now I'm filling in **3 · Experience**.",
+  'Now "4 · About you": age, height and weight, with a ruler picker (`WeightRuler`) for weight.',
+  'Now "5 · Schedule":\n\n- training days\n- session length\n- time of day',
+  "Next is [1 · Welcome](https://ponzu.design/designs/dsn_quieter?artboard=ab_welcome), a dark intro screen.",
 ];
 const flowFinal =
   "The flow is ready: seven screens from **Welcome** to **Plan ready**, sharing one layout and the app's tokens. The weight picker is a ruler; *Plan ready* summarises the plan with week 1's sessions.";
@@ -201,7 +201,7 @@ export const runningTurn: ThreadItem[] = (() => {
   return [said(bryce, FLOW_ASK), start, ...replies];
 })();
 
-/** The same turn, ended: its middle folded, its answer in full. */
+/** The same turn, ended: only its answer stays. */
 export const completedTurn: ThreadItem[] = (() => {
   const { start, replies, steps } = flowTurn(false);
   const final = reply(flowFinal);
@@ -234,7 +234,7 @@ export const stoppedTurn: ThreadItem[] = (() => {
   ];
 })();
 
-/** Failed: what it did folds, the error says what happened. */
+/** Failed: nothing it said on the way stays; the error says what happened. */
 export const failedTurn: ThreadItem[] = (() => {
   const start = turn(false);
   const first = reply("Running the app to see the current checkout.");
@@ -261,7 +261,7 @@ export const failedTurn: ThreadItem[] = (() => {
   ];
 })();
 
-/** Ended on a question: the question is how it ended, outside the fold. */
+/** Ended on a question: its answer, then the question, which is how it ended. */
 export const askedTurn: ThreadItem[] = (() => {
   const start = turn(false);
   const first = reply("I drew two takes on the hero.");

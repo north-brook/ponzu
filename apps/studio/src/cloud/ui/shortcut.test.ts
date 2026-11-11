@@ -1,5 +1,53 @@
 import { expect, test } from "bun:test";
-import { jumpDigit, jumpNumber, jumpTarget } from "./shortcut.ts";
+import { hotkeyName, jumpDigit, jumpNumber, jumpTarget, shortcutPress } from "./shortcut.ts";
+
+const press = (
+  key: string,
+  mods: Partial<Record<"meta" | "ctrl" | "alt" | "shift" | "repeat" | "composing", boolean>> = {},
+) => ({
+  key,
+  metaKey: mods.meta ?? false,
+  ctrlKey: mods.ctrl ?? false,
+  altKey: mods.alt ?? false,
+  shiftKey: mods.shift ?? false,
+  repeat: mods.repeat ?? false,
+  isComposing: mods.composing ?? false,
+});
+
+test("⌘P is the pull request's and ⌘⇧↵ the action's: no other modifiers, Ctrl off the Mac", () => {
+  expect(shortcutPress(press("p", { meta: true }), "p")).toBe("run");
+  expect(shortcutPress(press("p", { ctrl: true }), "p")).toBe("run");
+  // ⇧ or ⌥ with it, or no ⌘ at all, is another key's.
+  expect(shortcutPress(press("P", { meta: true, shift: true }), "p")).toBeNull();
+  expect(shortcutPress(press("p", { meta: true, alt: true }), "p")).toBeNull();
+  expect(shortcutPress(press("p"), "p")).toBeNull();
+  const action = { shift: true, once: true };
+  expect(shortcutPress(press("Enter", { meta: true, shift: true }), "enter", action)).toBe("run");
+  // ⌘↵ alone is the composer's send; ⇧↵ its line break; a key mid-composition is the IME's.
+  expect(shortcutPress(press("Enter", { meta: true }), "enter", action)).toBeNull();
+  expect(shortcutPress(press("Enter", { shift: true }), "enter", action)).toBeNull();
+  expect(
+    shortcutPress(press("Enter", { meta: true, shift: true, composing: true }), "enter", action),
+  ).toBeNull();
+  expect(hotkeyName("enter", true)).toBe("mod+shift+enter");
+  expect(hotkeyName("p")).toBe("mod+p");
+});
+
+test("a shortcut that can't run now leaves the key alone; one that runs once runs once a press", () => {
+  // Under a menu, or with the button disabled: not taken at all.
+  expect(shortcutPress(press("p", { meta: true }), "p", { when: () => false })).toBeNull();
+  const once = { shift: true, once: true };
+  const seen = new WeakSet<object>();
+  const e = press("Enter", { meta: true, shift: true });
+  expect(shortcutPress(e, "enter", once, seen)).toBe("run");
+  // Another of it mounted at once hears the same press: taken, not run again.
+  expect(shortcutPress(e, "enter", once, seen)).toBe("taken");
+  // Held down, the key repeats: taken, not run.
+  const held = press("Enter", { meta: true, shift: true, repeat: true });
+  expect(shortcutPress(held, "enter", once, seen)).toBe("taken");
+  // Without `once`, a held ⌘J toggles as it always did.
+  expect(shortcutPress(press("j", { meta: true, repeat: true }), "j")).toBe("run");
+});
 
 const key = (
   code: string,

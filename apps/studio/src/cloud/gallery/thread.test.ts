@@ -177,8 +177,11 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     // The reply streams in, a word at a time, and ends.
     await page.waitForSelector(`${log} p:has-text("in B.")`);
     const after = await counts();
+    // Only the agent's words from before the send, once: it carried on after them, so they
+    // became an aside of the turn (and left with it).
     const redrawn = Object.keys(drawn).filter((id) => after[id] !== drawn[id]);
-    expect(redrawn).toEqual([]);
+    expect(redrawn.length).toBeLessThanOrEqual(1);
+    for (const id of redrawn) expect(after[id]! - drawn[id]!).toBe(1);
     const fresh = Object.keys(after).filter((id) => !(id in drawn));
     // Your message, drawn once, and the reply, drawn as it grew.
     expect(fresh.map((id) => after[id]! > 5)).toEqual([false, true]);
@@ -207,8 +210,8 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
       });
       await page.waitForTimeout(80);
     }
-    // The 200 items loaded at first are 150 lines, each turn's work folded with its first reply.
-    await page.waitForFunction((sel) => document.querySelectorAll(`${sel} > *`).length > 160, log);
+    // The 200 items loaded at first are 100 lines, each turn its message and its answer.
+    await page.waitForFunction((sel) => document.querySelectorAll(`${sel} > *`).length > 110, log);
   });
 
   test("Stop while working with nothing typed; Send once there are words", async () => {
@@ -300,67 +303,98 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     expect(await ring()).not.toBe("none");
   });
 
-  /*
-   * A turn played through as the API delivers it, watched every frame: from the send until the
-   * turn folds there is always exactly one working line, the agent's work never has lines of its
-   * own, and the fold appears in the frame the working line goes, with the answer where it was.
-   */
-  test("a streaming turn always has its working line, no work lines, and folds in one frame", async () => {
+  /** One frame of the thread, as the person sees it. */
+  type Frame = {
+    t: number;
+    /** Live working lines (one leaving is not one). */
+    lines: number;
+    working: string | null;
+    /** Live asides, by text, and whether each is set in italics. */
+    asides: { text: string; italic: boolean }[];
+    /** Lines on their way out: their height and opacity. */
+    leaving: { height: number; opacity: number }[];
+    messages: number;
+    work: boolean;
+    answerBottom: number | null;
+    askTop: number | null;
+    /** The working line's height with the gap above it: what the answer settles by. */
+    lineRoom: number;
+  };
+
+  /** Plays the live turn on `board`, sampling every frame until a moment after it ends. */
+  const playTurn = async (board: string, reducedMotion: "reduce" | "no-preference") => {
     await page.setViewportSize({ width: 600, height: 700 });
-    await page.emulateMedia({ colorScheme: "light", reducedMotion: "no-preference" });
-    await page.goto(`${server.url}/gallery.html?board=turn-live&theme=light`);
+    await page.emulateMedia({ colorScheme: "light", reducedMotion });
+    await page.goto(`${server.url}/gallery.html?board=${board}&theme=light`);
     await page.waitForFunction(
       () => typeof (window as { playTurn?: unknown }).playTurn === "function",
     );
-    const frames = await page.evaluate(async () => {
-      type Frame = {
-        lines: number;
-        working: string | null;
-        folds: number;
-        messages: number;
-        work: boolean;
-        answerBottom: number | null;
-        /** The working line's height with the gap above it: what the answer settles by. */
-        lineRoom: number;
-      };
+    return page.evaluate(async () => {
       const out: Frame[] = [];
       let on = true;
-      const sample = () => {
+      const sample = (t: number) => {
         const log = document.querySelector('[role="log"]');
-        const lines = document.querySelectorAll("[data-working-line]");
-        const answer = [...(log?.querySelectorAll(".text-13") ?? [])].find((el) =>
+        const lines = log?.querySelectorAll(":scope > * [data-working-line]") ?? [];
+        const answer = [...(log?.querySelectorAll(":scope > .text-13") ?? [])].find((el) =>
           el.textContent?.startsWith("Done: Plan"),
         );
+        const ask = [...(log?.querySelectorAll("p[dir=auto]") ?? [])].find((el) =>
+          el.textContent?.includes("Two small boards"),
+        );
         out.push({
+          t,
           lines: lines.length,
           working: lines[0]?.textContent ?? null,
-          folds: log?.querySelectorAll("[data-fold]").length ?? 0,
+          asides: [...(log?.querySelectorAll<HTMLElement>(":scope > [data-aside]") ?? [])].map(
+            (el) => ({
+              text: el.textContent ?? "",
+              italic: getComputedStyle(el).fontStyle === "italic",
+            }),
+          ),
+          leaving: [...(log?.querySelectorAll<HTMLElement>(":scope > [data-leaving]") ?? [])].map(
+            (el) => ({
+              height: el.getBoundingClientRect().height,
+              opacity: Number(getComputedStyle(el).opacity),
+            }),
+          ),
           messages: log?.querySelectorAll("p[dir=auto]").length ?? 0,
-          // What the rail's old stretches said: "· N steps" lines.
-          work: /\d+ steps?/.test(log?.textContent ?? ""),
+          // What the rail's old stretches and fold said: "N steps", "Worked for".
+          work: /\d+ steps?|Worked for/.test(log?.textContent ?? ""),
           answerBottom: answer ? answer.getBoundingClientRect().bottom : null,
+          askTop: ask ? ask.getBoundingClientRect().top : null,
           lineRoom: lines[0] ? lines[0].getBoundingClientRect().height + 14 : 0,
         });
         if (on) requestAnimationFrame(sample);
       };
       requestAnimationFrame(sample);
       await (window as unknown as { playTurn: () => Promise<void> }).playTurn();
-      await new Promise((r) => setTimeout(r, 300));
+      await new Promise((r) => setTimeout(r, 500));
       on = false;
       return out;
     });
+  };
+
+  /*
+   * A turn played through as the API delivers it, watched every frame: from the send until the
+   * turn ends there is always exactly one working line and the agent's work never has lines of
+   * its own; what it said before carrying on is an aside, in italics, as it comes; and when the
+   * turn ends the aside and the working line go together, closing their room and fading, while
+   * the answer settles into place without a jump.
+   */
+  test("a streaming turn: one working line, asides as they come, and an end that settles", async () => {
+    const frames = await playTurn("turn-live", "no-preference");
     const sent = frames.findIndex((f) => f.messages > 0);
-    const folded = frames.findIndex((f) => f.folds > 0);
+    const end = frames.findIndex((f, i) => i > sent && f.lines === 0 && f.messages > 0);
     expect(sent).toBeGreaterThanOrEqual(0);
-    expect(folded).toBeGreaterThan(sent);
-    // Every frame from the send to the fold: one working line, never blank, no work lines.
-    const during = frames.slice(sent, folded);
+    expect(end).toBeGreaterThan(sent);
+    // Every frame from the send to the end: one working line, never blank, no work lines.
+    const during = frames.slice(sent, end);
     expect(during.length).toBeGreaterThan(30);
     for (const frame of during) {
       expect(frame.lines).toBe(1);
       expect(frame.working?.trim()).toBeTruthy();
       expect(frame.work).toBe(false);
-      expect(frame.folds).toBe(0);
+      expect(frame.leaving).toEqual([]);
     }
     // The states it went through, each specific; thinking right after it spoke.
     const states = during.map((f) => f.working!).filter((state, i, all) => state !== all[i - 1]);
@@ -373,69 +407,146 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
       "Editing styles/tokens.css",
       "Thinking",
     ]);
-    // The fold's frame: the working line is gone in it, and stays gone.
-    for (const frame of frames.slice(folded)) {
-      expect(frame.lines).toBe(0);
-      expect(frame.folds).toBe(1);
+    // Its first message reads plain while it is the newest thing said, and becomes an aside, in
+    // italics, the moment the agent carries on after it; the answer is never one.
+    const firstAside = during.findIndex((f) => f.asides.length > 0);
+    expect(firstAside).toBeGreaterThan(0);
+    expect(during[firstAside]!.working).toBe('Drawing "Plan ready"');
+    for (const frame of during.slice(firstAside)) {
+      expect(frame.asides).toEqual([
+        { text: "Drew Plan. Now Plan ready, then the tokens.", italic: true },
+      ]);
     }
-    // The answer stays where it was in the frame the turn folds above it and the working line
-    // goes from under it; then it settles into the line's room, a little each frame, never
-    // jumping, and stays there.
-    const before = frames[folded - 1]!;
-    expect(Math.abs(frames[folded]!.answerBottom! - before.answerBottom!)).toBeLessThan(1);
+
+    // The end's frame: the aside and the working line are no longer live, both leaving.
+    const after = frames.slice(end);
+    for (const frame of after) {
+      expect(frame.lines).toBe(0);
+      expect(frame.asides).toEqual([]);
+      expect(frame.work).toBe(false);
+    }
+    const before = frames[end - 1]!;
+    expect(frames[end]!.leaving).toHaveLength(2);
+    // No jump: the answer is where it was in that frame, and the leaving lines hold no more
+    // room than they did (no flash of an aside at its full height after it had gone).
+    expect(Math.abs(frames[end]!.answerBottom! - before.answerBottom!)).toBeLessThan(1);
+    expect(Math.abs(frames[end]!.askTop! - before.askTop!)).toBeLessThan(1);
+    // Then they close and fade a little each frame, on the pane's clock, and are gone.
+    const leaving = after.filter((f) => f.leaving.length);
+    expect(leaving.length).toBeGreaterThan(5);
+    const total = (f: Frame) => f.leaving.reduce((n, l) => n + l.height, 0);
+    for (let i = 1; i < leaving.length; i++) {
+      expect(total(leaving[i]!)).toBeLessThanOrEqual(total(leaving[i - 1]!) + 0.5);
+      for (const [j, l] of leaving[i]!.leaving.entries()) {
+        expect(l.opacity).toBeLessThanOrEqual((leaving[i - 1]!.leaving[j]?.opacity ?? 1) + 0.01);
+      }
+    }
+    expect(leaving.at(-1)!.t - leaving[0]!.t).toBeLessThan(400);
+    expect(frames.at(-1)!.leaving).toEqual([]);
+    // Each closes all the way, the space above it included, before it goes: its going moves
+    // nothing (no last step of the answer by the gap it held).
+    expect(total(leaving.at(-1)!)).toBeLessThan(1);
+    const gone = frames.findIndex((f, i) => i > end && f.leaving.length === 0);
+    expect(Math.abs(frames[gone]!.answerBottom! - frames[gone - 1]!.answerBottom!)).toBeLessThan(1);
+    // The answer settles into the working line's room, a little each frame, never jumping, and
+    // stays there.
     const settled = frames.at(-1)!.answerBottom!;
     expect(Math.abs(settled - before.answerBottom! - before.lineRoom)).toBeLessThan(2);
-    const after = frames.slice(folded).map((f) => f.answerBottom!);
-    for (let i = 1; i < after.length; i++) {
-      expect(after[i]! - after[i - 1]!).toBeGreaterThan(-0.5);
-      expect(after[i]! - after[i - 1]!).toBeLessThan(before.lineRoom * 0.6);
+    const bottoms = after.map((f) => f.answerBottom!);
+    for (let i = 1; i < bottoms.length; i++) {
+      expect(bottoms[i]! - bottoms[i - 1]!).toBeGreaterThan(-0.5);
+      expect(bottoms[i]! - bottoms[i - 1]!).toBeLessThan(before.lineRoom * 0.6);
     }
   });
 
-  test("a folded turn opens and closes from the keyboard, says so, and stays where it is", async () => {
-    await open("turn-completed");
-    // A thread shorter than the rail, sitting at its foot: the hard case, with room above to
-    // be lifted into.
-    const trigger = '[data-slot="trace-collapsible-trigger"] >> nth=-1';
-    const expanded = () => page.$eval(trigger, (b) => b.getAttribute("aria-expanded"));
-    const top = () => page.$eval(trigger, (b) => b.getBoundingClientRect().top);
-    expect(await page.$eval(trigger, (b) => b.textContent)).toContain("Worked for 4 min");
-    expect(await expanded()).toBe("false");
-    // The steps aren't there to read until it opens.
-    expect(await page.$('[aria-label="Steps"]')).toBeNull();
-    await page.focus(trigger);
-    const at = await top();
-    await page.keyboard.press("Enter");
-    await page.waitForSelector('[aria-label="Steps"]');
-    expect(await expanded()).toBe("true");
-    const controls = await page.$eval(trigger, (b) => b.getAttribute("aria-controls"));
-    expect(await page.$eval(`[id="${controls}"]`, (el) => el.textContent)).toContain(
-      'Drew "4 · About you"',
-    );
-    // Its intermediate messages, in order, and no tool's input or output.
-    const text = await page.$eval(`[id="${controls}"]`, (el) => el.textContent ?? "");
-    expect(text.indexOf("Copied the screen layout")).toBeLessThan(
-      text.indexOf('Now "4 · About you"'),
-    );
-    expect(Math.abs((await top()) - at)).toBeLessThan(2);
-    await page.keyboard.press("Space");
-    await page.waitForFunction(
-      (sel) =>
-        [...document.querySelectorAll(sel)].at(-1)?.getAttribute("aria-expanded") === "false",
-      '[data-slot="trace-collapsible-trigger"]',
-    );
-    await page.waitForSelector('[aria-label="Steps"]', { state: "detached" });
-    expect(Math.abs((await top()) - at)).toBeLessThan(2);
-    expect(await page.evaluate(() => document.activeElement?.getAttribute("data-slot"))).toBe(
-      "trace-collapsible-trigger",
-    );
+  test("with reduced motion, the end of a turn is one frame: nothing leaves, nothing moves after", async () => {
+    const frames = await playTurn("turn-live", "reduce");
+    const sent = frames.findIndex((f) => f.messages > 0);
+    const end = frames.findIndex((f, i) => i > sent && f.lines === 0 && f.messages > 0);
+    expect(end).toBeGreaterThan(sent);
+    for (const frame of frames) expect(frame.leaving).toEqual([]);
+    const settled = frames[end]!.answerBottom!;
+    for (const frame of frames.slice(end)) {
+      expect(frame.asides).toEqual([]);
+      expect(Math.abs(frame.answerBottom! - settled)).toBeLessThan(0.5);
+    }
   });
 
-  test("an older runner's thread folds its stretches and never shows their stale labels", async () => {
+  test("reading up while a turn ends: the line at the top of the view stays put", async () => {
+    await page.setViewportSize({ width: 600, height: 700 });
+    await page.emulateMedia({ colorScheme: "light", reducedMotion: "no-preference" });
+    await page.goto(`${server.url}/gallery.html?board=turn-live-long&theme=light`);
+    await page.waitForFunction(
+      () => typeof (window as { playTurn?: unknown }).playTurn === "function",
+    );
+    const play = page.evaluate(() =>
+      (window as unknown as { playTurn: () => Promise<void> }).playTurn(),
+    );
+    // Once the aside is there, scroll up a little to read, past the foot's slack.
+    await page.waitForSelector(`${log} > [data-aside]`);
+    await scrollBy(-120);
+    await heardScroll();
+    const before = await reading();
+    await play;
+    await page.waitForFunction((sel) => !document.querySelector(`${sel} > [data-leaving]`), log);
+    expect(Math.abs((await whereIs(before.text))! - before.y)).toBeLessThan(2);
+  });
+
+  test("a thread opened after its turns ended shows them settled: answers only, nothing leaving", async () => {
+    await open("turn-completed");
+    expect(await page.$(`${log} [data-leaving]`)).toBeNull();
+    expect(await page.$(`${log} [data-aside]`)).toBeNull();
+    const text = await page.$eval(log, (el) => el.textContent ?? "");
+    // The answer, and none of what was said on the way, nor any fold.
+    expect(text).toContain("The flow is ready");
+    expect(text).not.toContain("Copied the screen layout");
+    expect(text).not.toContain("Worked for");
+    expect(await page.$('[aria-expanded][data-slot^="trace"]')).toBeNull();
+  });
+
+  test("a running turn's asides: italic, quieter than the answer, close together, Markdown intact", async () => {
+    await open("turn-running");
+    const asides = await page.$$eval(`${log} > [data-aside]`, (els) =>
+      els.map((el) => {
+        const s = getComputedStyle(el);
+        return {
+          italic: s.fontStyle,
+          color: s.color,
+          bold: el.querySelector("strong") !== null,
+          code: el.querySelector("code") !== null,
+          list: el.querySelectorAll("li").length,
+          top: el.getBoundingClientRect().top,
+          bottom: el.getBoundingClientRect().bottom,
+        };
+      }),
+    );
+    // The flow's first three messages; its newest, with nothing after it, reads plain.
+    expect(asides).toHaveLength(3);
+    for (const a of asides) expect(a.italic).toBe("italic");
+    expect(asides[0]!.bold).toBe(true);
+    expect(asides[1]!.code).toBe(true);
+    expect(asides[2]!.list).toBe(3);
+    // A run of them: 6 between, where the thread's lines keep 14.
+    expect(Math.round(asides[1]!.top - asides[0]!.bottom)).toBe(6);
+    const plain = await page.$$eval(`${log} > div.text-13:not([data-aside])`, (els) => {
+      const el = els.at(-1)!;
+      return {
+        italic: getComputedStyle(el).fontStyle,
+        color: getComputedStyle(el).color,
+        link: el.querySelector("a, button") !== null,
+      };
+    });
+    expect(plain.italic).toBe("normal");
+    expect(plain.link).toBe(true);
+    expect(plain.color).not.toBe(asides[0]!.color);
+  });
+
+  test("an older runner's thread keeps its answers and never shows its stretches' stale labels", async () => {
     await open("turn-old-runner");
-    const log = await page.$eval('[role="log"]', (el) => el.textContent ?? "");
-    expect(log).not.toContain("Setting direction");
-    expect(log).toContain("Worked for");
+    const text = await page.$eval('[role="log"]', (el) => el.textContent ?? "");
+    expect(text).not.toContain("Setting direction");
+    expect(text).not.toContain("Worked for");
+    expect(text).toContain("The flow is ready");
   });
 
   /** A field's card: the element whose presses go to it. */
