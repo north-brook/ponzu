@@ -789,8 +789,8 @@ export class Runner {
             `The repository ${repo.owner}/${repo.name} is checked out at ${this.cwd}, on the design's branch ${branch}. Commit as you go and push the branch (git push sets its upstream itself).`,
             "If a push fails, don't work around it or guess why: Ponzu pushes the branch itself when your turn ends, trying again, and tells the person if it still can't.",
             "Ponzu doesn't open a pull request by itself, and there is no GitHub API token here: the person opens it with Create PR in Ponzu once the branch has commits. Each turn starts by saying whether a pull request is open.",
-            `Once the branch has your change, write what it changes with ${SUMMARY_TOOL}: a few lines of Markdown for a reviewer, what changed and why. Its answer says what it did: updated the open pull request's description, or saved it for the one the person will open. Never say you opened or updated a pull request unless that answer named it.`,
-            "End a turn by saying in plain words where the work stands: what is committed and whether it is on GitHub, that the description is ready, and, when no pull request is open, that they can press Create PR when they're ready.",
+            `Once the branch has your change, write what it changes with ${SUMMARY_TOOL}: Markdown for a reviewer on GitHub who hasn't seen the canvas, what changed and why; this, not the thread, is where the full account goes. Its answer says what it did: updated the open pull request's description, or saved it for the one the person will open. Never say you opened or updated a pull request unless that answer named it.`,
+            "Your closing message ends on where the work stands, in plain words: what is committed and whether it is on GitHub, that the description is ready, and, when no pull request is open, that they can press Create PR when they're ready.",
           ].join(" ");
     const naming = `The design's name titles its pull request and the commit that merges it. If it is still the person's first words rather than a name, give it one in your first turn with update_design: two to four words for what is being designed, like "Quieter shop hero".`;
     return `${CLOUD_INSTRUCTIONS}\n\nThis sandbox's design is "${design.name}" (${link}). ${naming} ${where}\n\n${RUNNER_INSTRUCTIONS}`;
@@ -805,7 +805,7 @@ export class Runner {
       title: "Write pull request description",
       group: "converse",
       description:
-        "Write what the design's branch changes, as its pull request's description: a few lines of Markdown for a reviewer, what changed and why. When a pull request is open, Ponzu updates its description on GitHub; when none is, Ponzu saves it as the description of the one the person opens with Create PR. The answer says which. Call it again when the story changes; the last one wins.",
+        "Write what the design's branch changes, as its pull request's description: Markdown for a reviewer on GitHub who hasn't seen the canvas, what changed and why. This, not the thread, is where the full account goes. When a pull request is open, Ponzu updates its description on GitHub; when none is, Ponzu saves it as the description of the one the person opens with Create PR. The answer says which. Call it again when the story changes; the last one wins.",
       input: {
         summary: z.string().min(1).max(MAX_PULL_REQUEST_SUMMARY).describe("Markdown."),
       },
