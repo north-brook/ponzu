@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { MAX_SESSION_BYTES } from "../api/protocol.ts";
-import type { AgentShell } from "./shell.ts";
+import { type AgentShell, UNPACK_KEEPING_NEWER } from "./shell.ts";
 
 /*
  * Claude Code's transcript of one session, as files under its config folder (`CLAUDE_CONFIG_DIR`,
@@ -87,20 +87,13 @@ export class Transcripts {
 
   /**
    * Puts an archive `pack` made back under the config folder. A file on the disk that is newer
-   * than the archive's copy is left as it is (`--keep-newer-files`): a transcript only grows, so
+   * than the archive's copy is left as it is (`UNPACK_KEEPING_NEWER`): a transcript only grows, so
    * the disk's is newer when the turn after the checkpoint was written but never saved.
    */
   async unpack(archive: Uint8Array): Promise<void> {
-    await this.opts.shell(
-      [
-        "/bin/sh",
-        "-c",
-        'mkdir -p "$1" && exec tar -xzf - -C "$1" --keep-newer-files --no-same-owner',
-        "sh",
-        this.opts.configDir,
-      ],
-      { input: archive },
-    );
+    await this.opts.shell(["/bin/sh", "-c", UNPACK_KEEPING_NEWER, "sh", this.opts.configDir], {
+      input: archive,
+    });
   }
 
   /** Whether the session has a transcript on this disk. */

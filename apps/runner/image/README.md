@@ -289,6 +289,36 @@ which it flushes and checks on every start:
   delivered again), unpushed commits, and the usage totals (a turn after it is counted again).
   `e2e.ts scratch` fails when it happens, by design.
 
+**Checkpoints, for real** (`durability.ts`, on `ponzu-runner-9866a3cd969c`,
+`ponzu-runner-0b599d9a201c` and `ponzu-runner-b06c59b6e389`). The fake API holds the runner off
+after each boot until the driver hands back the memory it kept, as the real API is never on the
+sandbox's disk; each sleep is done as the API does it (the stop asks, the runner gets ready,
+`sync`, stop).
+
+- **The double cold start**, as above, but with the stop asking the runner first: four complete
+  runs, eight cold wakes. No disk went back in any of them: the fake API's own flushed state
+  file came back at its last write each time, the flushed probe was kept and, with the stop's
+  `sync`, so was the unflushed one. Each third turn remembered both words without a tool, and
+  `notes.txt` held both lines. Whether asking and flushing before the stop is what made the
+  difference, or the rollback is just rare, these runs cannot say.
+- **Two runs found a bug, now fixed**: on a cold boot the API's `POST /report` (here the
+  driver's) reached the runner before its session had answered, the state report went out with
+  no lease, the API answered `superseded`, and the runner exited 78 and stayed down. A report is
+  now ignored until the runner has started. A third run found that a runner whose checkout could
+  not be had saved a checkpoint with no work in progress, dropping the pointer to the saved work;
+  a checkpoint now carries the last one's forward.
+- **The proof** (a repo design): a turn wrote `notes/plan.md` without committing; the checkpoint
+  put it on `refs/ponzu/wip/<design>` (GitHub showed the file there and no branch was pushed). A
+  warm and a cold sleep and wake; boat did not roll the disk back, so the checkout, Claude's
+  config folder and the runner's state were put back as they were before that turn, and the
+  runner restarted. It logged `sandbox_rollback` (disk at checkpoint 1, the API at 3) and
+  restored. The results of the final run are in the pull request that added this.
+- **What it costs.** Getting ready to sleep took 0.82 to 0.84 s and the stop's `sync` 0.14 to
+  0.66 s, so a sleep is about a second later than before. A wake with nothing to restore costs
+  nothing new on a cold start; after a warm one the API's `/health` check answered at once (the
+  whole warm wake, resume to `/health`, was 1.2 s). Restoring from a checkpoint took 77 ms in the
+  runner (one transcript of a few turns), plus reading it back from the API.
+
 What the end-to-end runs saw, beyond the checks: a first turn on Haiku drew the board, wrote a
 started notice, a work line ("Drawing "Hello"") and its reply, went working then idle,
 reported usage ($0.003 to $0.006 a turn) and uploaded light and dark previews whose text and

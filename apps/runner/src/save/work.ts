@@ -1,7 +1,7 @@
 import { type Dirent, lstatSync, readdirSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { MAX_WORKSPACE_BYTES, type SavedPoint, wipRef } from "../api/protocol.ts";
-import { type AgentShell, text } from "./shell.ts";
+import { type AgentShell, text, UNPACK_KEEPING_NEWER } from "./shell.ts";
 
 /*
  * A design's work in progress: what is in its working folder and in no commit on GitHub. A
@@ -265,16 +265,9 @@ export class ScratchWork implements WorkSaver {
   async restore(_point: SavedPoint, archive: Uint8Array | null): Promise<RestoredWork> {
     if (!archive) return { done: false, why: "the checkpoint has no Scratch files" };
     // A file newer on this disk than in the archive stays as it is.
-    await this.opts.shell(
-      [
-        "/bin/sh",
-        "-c",
-        'mkdir -p "$1" && exec tar -xzf - -C "$1" --keep-newer-files --no-same-owner',
-        "sh",
-        this.opts.cwd,
-      ],
-      { input: archive },
-    );
+    await this.opts.shell(["/bin/sh", "-c", UNPACK_KEEPING_NEWER, "sh", this.opts.cwd], {
+      input: archive,
+    });
     return { done: true, what: "restored the Scratch folder" };
   }
 

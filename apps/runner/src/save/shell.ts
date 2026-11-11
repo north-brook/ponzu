@@ -65,5 +65,25 @@ export function agentShell(asAgent: string | undefined, env: NodeJS.ProcessEnv):
     });
 }
 
+/**
+ * A shell script that puts the gzipped tar on its input under the folder `$1`, keeping every file
+ * the folder has that is newer than the archive's copy. GNU tar's `--keep-newer-files` fails the
+ * whole extraction over a folder that is newer (bsdtar's does not), so the archive goes to a
+ * folder of its own beside them and each file is moved over unless the one there is newer; tar
+ * keeps the times the files had, and refuses names that climb out with `..`.
+ */
+export const UNPACK_KEEPING_NEWER = `set -e
+mkdir -p "$1"
+tmp=$(mktemp -d "$1/.ponzu-restore.XXXXXX")
+trap 'rm -rf "$tmp"' EXIT
+tar -xzf - -C "$tmp" --no-same-owner
+cd "$tmp"
+find . \\( -type f -o -type l \\) -print | while IFS= read -r f; do
+  to="$1/\${f#./}"
+  if [ -e "$to" ] && [ "$to" -nt "$f" ]; then continue; fi
+  mkdir -p "$(dirname "$to")"
+  mv -f "$f" "$to"
+done`;
+
 /** The text a command printed. */
 export const text = (bytes: Uint8Array) => Buffer.from(bytes).toString("utf8");
