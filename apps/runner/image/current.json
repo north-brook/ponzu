@@ -1,7 +1,7 @@
 {
-  "snapshot": "ponzu-runner-cac2ee15017d",
-  "inputs": "cac2ee15017d68335cd43dbbf4149ae93e6c16058aa1d1b0adf630565c25f599",
-  "sizeBytes": 524349440,
+  "snapshot": "ponzu-runner-6041787d9d11",
+  "inputs": "6041787d9d11c9c3a7005e66983cec2e2fc9b87368712c4ecaecd83b802cb2e6",
+  "sizeBytes": 524341248,
   "pins": {
     "bunVersion": "1.4.2",
     "bunSha256": "36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913",
@@ -10,5 +10,5 @@
     "playwrightCoreVersion": "1.64.1",
     "headlessShellVersion": "156.0.8078.4"
   },
-  "bakedAt": "2026-11-11T01:42:56.785Z"
+  "bakedAt": "2026-11-11T04:37:09.551Z"
 }

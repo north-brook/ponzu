@@ -193,7 +193,9 @@ an API that wants the final state reported and the edits settled before a long s
 `systemctl stop ponzu-runner` through `exec` before it stops the sandbox.
 
 **How long each start takes**, measured from a Mac in the US against boat's EU hosts, on
-`small`, with this image (`ponzu-runner-cac2ee15017d`). "/health" is the runner answering
+`small`, with `ponzu-runner-cac2ee15017d`: this recipe's bake of the runner as it was before the
+API's runner protocol landed (`current.json` names the bake of what is on `cloud` now, the same
+recipe and 500 MiB, which passed the same checks). "/health" is the runner answering
 through its address; "first text" is the first words of the reply to a message sent as soon as
 the sandbox answered, which is what a person waits for.
 
