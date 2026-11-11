@@ -1024,8 +1024,8 @@ The sandbox starts the runner (a systemd service that sources boat's
 `/run/ascii-secrets/env.sh`) with `PONZU_API_URL`, `PONZU_DESIGN_ID`, `PONZU_RUNNER_TOKEN` and
 exactly one of `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`. With both it refuses to
 start: Claude Code would use the key without a word and bill its account. The repo's secrets
-come in the same environment, under names that can be none of these ("Repo environments"), and
-the runner passes them on to what it starts. The rest is optional and in
+come packed in one more variable, `PONZU_REPO_SECRETS`, which the runner unpacks only into the
+environment of what it starts, never its own ("Repo environments"). The rest is optional and in
 `apps/runner/README.md`. On SIGTERM it stops the turn, waits a few seconds for
 the agent's edits to reach the API, reports its final state (`needs_you` when a question
 stays open) and exits.
@@ -1340,10 +1340,15 @@ integer:
   design runs on its owner's own plan), added up exactly and rounded down to a whole credit. A
   partial credit, under twelve minutes awake at 5 an hour, is never charged.
 - Free credits: the card's free credits per member × the people counted, pooled. The people
-  counted are everyone who is a member now, plus anyone else whose use is in the period (they
-  joined and left, or were removed): a member's allowance is granted once a period and never
-  taken back, as `credit_ledger_grant_key` will hold it when grants are written. Only people who
-  have signed in are members, so a collaborator who never signed in adds nothing.
+  counted are everyone who has been a member at any point in the period, plus anyone else whose
+  use is in it. A member's allowance is granted once a period and never taken back: it is a
+  `grant` row in `credit_ledger` for the period's start (`credit_ledger_grant_key` keeps it to
+  one), written for every member the first time Plan and usage reads the period with them in
+  it, and for a person as they leave (a sync that drops their membership, or deleting their
+  account, whose grants stay with no person). So the count is the members now, everyone with a
+  grant for the period, and everyone whose use is in it, and someone who leaves mid-period
+  without using anything still counts. Only people who have signed in are members, so a
+  collaborator who never signed in adds nothing.
 - Billed credits: used − free, never below zero. Billed cents: billed credits × what a credit
   sells for, rounded down. The apps work dollars out of these: the headline to the cent, the
   legend in whole dollars rounded down.
@@ -1372,7 +1377,7 @@ API keeps what sending will need.
 |---|---|---|---|
 | GET | `/v1/me/notifications` | none | `{ prefs, devices }` |
 | PATCH | `/v1/me/notifications` | some of `prefs` | `{ prefs, devices }` |
-| POST | `/v1/me/devices` | `{ platform, pushToken, pushEnvironment, name?, appVersion?, blocked? }` | 201 `{ device }`, 200 when it was theirs already |
+| POST | `/v1/me/devices` | `{ platform, pushToken, pushEnvironment, installId, name?, appVersion?, blocked? }` | 201 `{ device }`, 200 when it was theirs already, 409 `push_token_taken` |
 | PATCH | `/v1/me/devices/:id` | `{ pings?, blocked?, name?, appVersion?, pushToken? }` | `{ device }` |
 | DELETE | `/v1/me/devices/:id` | none | 204 |
 
@@ -1382,8 +1387,12 @@ flipped and every device reads the same row. A device is an install of the app: 
 its APNs device token in hex (`ios`; `macos` is kept for the Mac's own notifications later) and
 `pushEnvironment` which APNs it is for. The iPhone registers after the person turns
 notifications on, and again at each launch, which updates the row in place and keeps
-`lastSeenAt`. A token another person registered moves to whoever registers it now (the phone
-signed in as someone else), with pings on. `pings` is the person's toggle for one device;
+`lastSeenAt`. `installId` is the app's own random id for the install (16 to 64 letters, digits
+or dashes), made once and kept in the Keychain, and never returned. A token another person
+registered moves to whoever registers it now, with pings on, only when the same install
+registers it (the phone signed in as someone else; logged `device_token_moved` with both
+people). From any other install it stays where it is and the answer is 409 `push_token_taken`
+(logged `device_token_conflict`): knowing a token is not enough to take someone's pings. `pings` is the person's toggle for one device;
 `blocked` is the phone saying iOS has notifications for Ponzu off, which the app reports and
 Settings shows as "Turned off in iOS Settings". A person keeps twenty devices; registering a
 21st forgets the one unseen longest. Signing out of the phone deletes its device. No answer
@@ -1433,14 +1442,19 @@ only a mark: `repos.base_rebuild_requested_at`, for the repo's next start to act
 Designs that have a sandbox keep it.
 
 **Secrets.** A name is capitals, digits and underscores, starting with a letter, at most 64
-characters; a value is 1 byte to 16 KiB with no NUL; a repo holds at most 50, 48 KiB of names
-and values in all, because they all go into one sandbox's environment (boat.dev takes 100
-variables and 64 KB) beside Ponzu's own (409 `secrets_full`). A name that would replace or steer
-what Ponzu puts there is refused (400 `secret_name_reserved`): anything starting `PONZU_`,
-`CLAUDE_`, `ANTHROPIC_` (a second credential, or `ANTHROPIC_BASE_URL` sending the owner's to
-someone else), `ASCII_` or `BOAT_` (the provider's), `GIT_` (the credential helper is Ponzu's)
-or `LD_`, and `PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `PWD`, `TMPDIR`, `NODE_OPTIONS`,
-`NODE_EXTRA_CA_CERTS`, `SSL_CERT_FILE`, `SSL_CERT_DIR` and the proxy variables. Adding a name
+characters; a value is 1 byte to 16 KiB with no NUL; a repo holds at most 50, 44 KiB of names
+and values in all, because they all go into one sandbox's environment (boat.dev takes 64 KB)
+in base64, which is a third larger, beside Ponzu's own (409 `secrets_full`). A name that would
+replace or steer what Ponzu puts there, or change how a program loads code or checks TLS, is
+refused (400 `secret_name_reserved`): anything starting `PONZU_`, `CLAUDE_`, `ANTHROPIC_` (a
+second credential, or `ANTHROPIC_BASE_URL` sending the owner's to someone else), `ASCII_` or
+`BOAT_` (the provider's), `GIT_` (the credential helper is Ponzu's), `LD_` or `DYLD_` (the
+loader's), `BUN_` (`BUN_OPTIONS` is flags, `--preload` among them), `NODE_` or `NPM_CONFIG_`
+(but `NODE_ENV` and `NODE_AUTH_TOKEN`, which only say how the repo's own code runs and
+installs), and `BASH_` (`BASH_ENV`, exported functions); and `PATH`, `HOME`, `USER`, `LOGNAME`,
+`SHELL`, `PWD`, `TMPDIR`, `ENV`, `SHELLOPTS`, `BASHOPTS`, `PS4`, `IFS`, `PROMPT_COMMAND`,
+`PYTHONSTARTUP`, `XDG_CONFIG_HOME`, `SSL_CERT_FILE`, `SSL_CERT_DIR`, `CURL_CA_BUNDLE`,
+`REQUESTS_CA_BUNDLE` and the proxy variables. Adding a name
 the repo has is 409 `secret_exists`; replacing or removing one it lacks is 404. The value is
 sealed in the vault bound to `repo_secrets.encrypted_value` and `<repo id>/<name>`, and is
 never returned, logged or put in an event or a question. A secret the agent asks for in the
@@ -1449,8 +1463,16 @@ keeps only its name; that name comes from the sandbox, so the route that wires i
 as these routes do, and the sandbox's environment checks it again either way.
 
 **Into the sandbox.** `newEnvironment` (`sandboxes/environment.ts`) opens the design's repo's
-secrets, read in one statement, and puts them in the provider's `env` with Ponzu's own after
-them, so nothing of the repo's stands in for those. A Scratch design has none. It never fails a
+secrets, read in one statement, and packs them into one variable of the provider's `env`,
+`PONZU_REPO_SECRETS`: `NAME:base64(value)`, comma-separated (`encodeRepoSecrets` in
+`@ponzu/runner/protocol`). They never become variables of the runner's own: the runner is a Bun
+process that holds the runner token and the Claude credential, and a variable like
+`BUN_OPTIONS` would load code into it before it starts. The runner unpacks them only into the
+environment of what it starts for the agent (`agentEnv`), under its own variables, so none can
+stand in for those either, and without the runner token. Base64 also means boat's
+`/run/ascii-secrets/env.sh`, which the runner's unit sources with bash, holds nothing a shell
+could read as a command whatever an admin typed (a quote, `$(…)`, a newline in a PEM). A
+Scratch design has none. It never fails a
 wake: a name that is reserved now (one stored before it was) and a value the vault cannot open
 are left out, and anything past the provider's limits is too, each logged by count only. A
 changed secret takes effect at the sandbox's next cold start: a new design, a sandbox replaced
@@ -1463,8 +1485,14 @@ started with."
 
 `DELETE /v1/me` with `{ confirm }`, the person's GitHub login typed out (any case; 400
 `confirmation_mismatch` otherwise), answers 204 once the account is gone, and the app signs out.
-While the person is the only admin of an organization that others are in it is refused, 409
-`sole_admin` with `details.workspaces`, and nothing changes: a workspace always has an admin.
+While the person is the only admin of a workspace that others are in it is refused, 409
+`sole_admin` ("Make someone else an admin first.") with `details.workspaces`, and nothing
+changes: a workspace always has an admin. That is an organization's workspace, and their own
+account's too when collaborators on their repos are in it: it still bills, and someone must be
+able to set its cap. The check is made first, and again in the statement that deletes the row,
+on the admins' membership rows locked, so two admins deleting themselves at once cannot each
+see the other stay; the second is refused there, after the steps before it, which are safe to
+have taken.
 There is nothing else to change about a profile: a person's name, avatar and email are GitHub's
 and change there, coming through at their next sign-in.
 
@@ -1476,21 +1504,24 @@ In this order, each step safe to repeat, so a request that fails partway can be 
    revoked; the provider destroys the machines in the background, and the sweep catches what
    that misses.
 3. Their designs that are theirs alone are deleted with everything under them: their Scratch
-   designs, and their designs in their own account's workspace.
+   designs, and their designs in a workspace nobody else is in.
 4. Their name is taken out of what stays: in every design of a workspace they are in, or that
    they own, a thread item they wrote or stopped a run in names them as
    `{ name: "Deleted user", login: "ghost" }` (GitHub's own name for a deleted account) under
    their old id, and their ops' actor is "Deleted user" with no picture. Their words stay.
-5. Their row is deleted, and with it everything that hangs off it: their sessions (so every
+5. This period's free allowance is granted to them in every workspace they are in, so their
+   leaving does not take it back ("Billing").
+6. Their row is deleted, and with it everything that hangs off it: their sessions (so every
    token of theirs stops working at once), GitHub token, memberships, repo access answers,
    Claude account, devices and open sign-ins. What other people's work points at forgets them:
    a design's owner, who wrote a thread item, who answered a question, who changed a secret,
    whom usage is put down to (the workspace's usage history stays, put down to nobody).
-6. Their WorkOS user is deleted, in the background, so their next sign-in is someone new.
+7. Their WorkOS user is deleted, in the background, so their next sign-in is someone new.
 
-**Designs they own in a team's workspace stay with the team**, owned by nobody. Their canvas,
-thread and pull request are the team's work in the team's repo, which teammates have commented
-on and may be about to merge; deleting them would take that from people who did not ask, and
+**Designs they own in a workspace others are in stay with it**, owned by nobody: a team's, or
+their own account's when collaborators on their repos are in it. Their canvas, thread and pull
+request are work shared with people in a repo they reach, who have commented on it and may be
+about to merge it; deleting them would take that from people who did not ask, and
 GitHub, which holds the branch and the pull request, keeps them either way. They run on nobody's
 Claude now, so they do not wake (`claude_owner_left`) until a later change lets a teammate take
 one over; they can be read, commented on, merged and deleted by an admin. The delete dialog
