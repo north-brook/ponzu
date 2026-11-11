@@ -176,8 +176,20 @@ export async function getSavedPoint(db: Db, designId: string): Promise<SavedPoin
  */
 export async function recordCheckpoint(
   db: Db,
-  point: Omit<SavedPoint, "at"> & { designId: string; runnerId: string; now: Date },
+  point: Omit<SavedPoint, "at"> & {
+    designId: string;
+    runnerId: string;
+    now: Date;
+    /**
+     * Keep the transcript (with its session id), or the work in progress (with its commit), that
+     * the checkpoint replaced, in place of one this one does not carry.
+     */
+    keepSession?: boolean;
+    keepWorkspace?: boolean;
+  },
 ): Promise<{ saved: SavedPoint | null; replaced: SavedPoint | null } | null> {
+  const keepSession = point.keepSession === true;
+  const keepWorkspace = point.keepWorkspace === true;
   const columns = (of: string) =>
     sql.raw(
       ["saved_turn as turn", "saved_at as at", "saved_claude_session_id as claude_session_id"]
@@ -198,10 +210,14 @@ export async function recordCheckpoint(
         update design_runners
            set saved_turn = ${point.turn},
                saved_at = ${timeParam(point.now)}::timestamptz,
-               saved_claude_session_id = ${point.claudeSessionId},
-               saved_wip_commit = ${point.wipCommit},
-               session_upload_id = ${point.sessionUploadId},
-               workspace_upload_id = ${point.workspaceUploadId}
+               saved_claude_session_id = case when ${keepSession}::boolean
+                 then before.claude_session_id else ${point.claudeSessionId}::text end,
+               saved_wip_commit = case when ${keepWorkspace}::boolean
+                 then before.wip_commit else ${point.wipCommit}::text end,
+               session_upload_id = case when ${keepSession}::boolean
+                 then before.session_upload_id else ${point.sessionUploadId}::text end,
+               workspace_upload_id = case when ${keepWorkspace}::boolean
+                 then before.workspace_upload_id else ${point.workspaceUploadId}::text end
           from before
          where design_runners.design_id = before.design_id
            and (before.turn is null or before.turn < ${point.turn})

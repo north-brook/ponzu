@@ -116,6 +116,13 @@ export interface CheckpointRequest {
   /** The upload ids of the archives, as `/v1/runner/uploads` answered them. */
   session: string | null;
   workspace: string | null;
+  /**
+   * Keep the archive the last checkpoint stored in place of one this checkpoint does not carry:
+   * the transcript (with its session id) when it could not be packed or is not on this disk, the
+   * work in progress (with its commit) when nothing changed or it could not be saved. A
+   * checkpoint never carries less than the one before it. Absent: keep nothing.
+   */
+  keep?: { session?: boolean; workspace?: boolean };
 }
 
 export interface CheckpointResponse {

@@ -138,6 +138,8 @@ export class FakeRunnerApi {
   sleep: string | null = null;
   /** The sleeps the runner said it was ready for, in order. */
   readonly quiesced: string[] = [];
+  /** How long each call of a kind takes before the fake looks at it: a slow API. */
+  readonly delays = new Map<Call, number>();
 
   private readonly transport: SyncTransport;
   private seq: number;
@@ -261,17 +263,20 @@ export class FakeRunnerApi {
     const { session, workspace, ...marker } = point;
     this.checkpoints.push(structuredClone(marker));
     if (!this.saved || this.saved.turn < point.turn) {
+      const before = this.saved;
+      const keepSession = !session && !!point.keep?.session && !!before;
+      const keepWork = !workspace && !!point.keep?.workspace && !!before;
       this.saved = {
         turn: point.turn,
         at: new Date().toISOString(),
-        claudeSessionId: point.claudeSessionId,
-        wipCommit: point.wipCommit,
-        session: session !== null,
-        workspace: workspace !== null,
+        claudeSessionId: keepSession ? before!.claudeSessionId : point.claudeSessionId,
+        wipCommit: keepWork ? before!.wipCommit : point.wipCommit,
+        session: keepSession ? before!.session : session !== null,
+        workspace: keepWork ? before!.workspace : workspace !== null,
       };
       this.archives = {
-        session: session && new Uint8Array(session),
-        workspace: workspace && new Uint8Array(workspace),
+        session: keepSession ? this.archives.session : session && new Uint8Array(session),
+        workspace: keepWork ? this.archives.workspace : workspace && new Uint8Array(workspace),
       };
     }
     return structuredClone(this.saved);
@@ -446,6 +451,8 @@ export class FakeRunnerApi {
 
   private async enter(call: Call, runner?: string): Promise<void> {
     this.calls.push(call);
+    const delay = this.delays.get(call);
+    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
     if (this.down) throw new TypeError("fetch failed");
     if (this.revoked) throw new ApiError(401, "token_invalid", "This runner token is not valid.");
     const failure = this.failing.get(call);

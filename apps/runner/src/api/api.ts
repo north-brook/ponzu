@@ -93,6 +93,8 @@ export interface Checkpoint {
   /** The transcript's archive, and a Scratch design's files' (gzipped tar). */
   session: Uint8Array | null;
   workspace: Uint8Array | null;
+  /** Keep what the last checkpoint stored in place of an archive this one does not carry. */
+  keep?: { session?: boolean; workspace?: boolean };
 }
 
 /** The last checkpoint, with its archives' bytes. */

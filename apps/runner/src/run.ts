@@ -473,6 +473,9 @@ export class Runner {
       event: (name, fields) => this.event(name, fields),
       boot: () => this.opts.boot?.() ?? { id: null, at: null },
       flush: () => this.flushDisk(),
+      // `turn_failed` is the notice whose own words the thread shows.
+      notify: (message) =>
+        this.notice(randomId("ti"), { type: "error", code: "turn_failed", message }),
     });
     try {
       this.recovery = await this.checkpoints.recover(this.session.saved ?? null);
@@ -531,8 +534,22 @@ export class Runner {
     const current = () => this.sleep?.id === id && !this.stopping;
     this.log(`getting ready to sleep (${id})`);
     const until = Date.now() + this.timing.quiesceTurnMs;
+    // A claim already out may bring work: `claim` holds back what it brings, once it is in.
+    if (this.claiming) await bounded(this.claiming, this.timing.quiesceTurnMs);
     while (this.working && Date.now() < until && current()) await sleep(50);
     if (!current()) return;
+    if (this.working && this.run) {
+      // The stop would cut the turn anyway: end it here, so the transcript and the thread say
+      // where it stopped, and the person knows to pick it up.
+      this.log("the turn did not finish before the sleep: interrupting it");
+      await bounded(this.interrupt(), this.timing.stopStepMs);
+      this.notice(randomId("ti"), {
+        type: "error",
+        code: "turn_failed",
+        message:
+          "The sandbox had to go to sleep before Claude finished this turn. Send a message to pick it up again.",
+      });
+    }
     if (this.ws) await this.ws.design.settled(this.timing.settleMs);
     await bounded(
       Promise.all([
@@ -710,8 +727,13 @@ export class Runner {
     // Not started: a poke that comes first is answered by the claim that ends `start`, which
     // the design and Claude Code are ready for.
     if (this.stopping || !this.claimTimer) return;
-    // Going to sleep: what arrives now waits in the feed for the sandbox to wake.
-    if (this.sleep) return;
+    // Going to sleep, or just thawed from it: what arrives now waits in the feed until the API
+    // says the sandbox is awake. A warm wake only pokes, so ask it now; an answer with no sleep
+    // claims (`onSleep`).
+    if (this.sleep) {
+      this.state.now();
+      return;
+    }
     if (this.claiming) {
       this.claimAgain = true;
       return;
@@ -727,9 +749,15 @@ export class Runner {
             claimId: this.claimId,
             limit: CLAIM_LIMIT,
           });
-          this.claimId = null;
           this.claimFailures = 0;
           this.replica.notify(seq);
+          if (this.sleep) {
+            // The sleep came while this claim was out: nothing it brought starts a turn the stop
+            // would cut. Unacknowledged, they are handed out again to the same claim id (this
+            // process, after a warm wake) or to the next runner (after a cold one).
+            break;
+          }
+          this.claimId = null;
           for (const event of events) this.take(event);
           // A full page: there may be more behind it.
           if (events.length >= CLAIM_LIMIT) this.claimAgain = true;

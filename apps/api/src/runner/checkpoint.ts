@@ -4,6 +4,7 @@ import {
   getLiveSandbox,
   getSavedPoint,
   getUploads,
+  listUploadKeys,
   recordCheckpoint,
   type SavedPoint as SavedRow,
   type Upload,
@@ -26,7 +27,7 @@ import { ApiError } from "../http/errors.ts";
  * went back says so, and the API logs it with the sandbox and counts it.
  */
 
-type CheckpointDeps = Pick<Deps, "db" | "storage" | "clock" | "background" | "log">;
+type CheckpointDeps = Pick<Deps, "db" | "archives" | "clock" | "background" | "log">;
 
 /** How long an address that reads an archive back lasts. */
 export const RESTORE_SECONDS = 600;
@@ -67,7 +68,7 @@ export async function recordRunnerCheckpoint(
   const arrived = await Promise.all(
     rows.map(async (row) => {
       if (row.completedAt) return true;
-      const head = await deps.storage.head(row.objectKey);
+      const head = await deps.archives.head(row.objectKey);
       return head !== null && head.size === row.size && head.sha256 === row.sha256;
     }),
   );
@@ -86,6 +87,9 @@ export async function recordRunnerCheckpoint(
     wipCommit: body.wipCommit,
     sessionUploadId: wanted.session,
     workspaceUploadId: wanted.workspace,
+    // Only in place of an archive this checkpoint does not carry.
+    keepSession: wanted.session === null && body.keep?.session === true,
+    keepWorkspace: wanted.workspace === null && body.keep?.workspace === true,
   });
   if (!recorded?.saved)
     throw new ApiError(409, "superseded", "A newer runner has started for this design.");
@@ -103,7 +107,28 @@ export async function recordRunnerCheckpoint(
 
 async function clear(deps: CheckpointDeps, designId: string, ids: string[]): Promise<void> {
   const rows = await getUploads(deps.db, { designId, ids: [...new Set(ids)] });
-  await Promise.all(rows.map((row: Upload) => deps.storage.delete(row.objectKey)));
+  await Promise.all(rows.map((row: Upload) => deps.archives.delete(row.objectKey)));
+}
+
+/**
+ * Before a design is deleted: where its checkpoints' archives are, every one (recorded or not),
+ * and a promise that deletes them, to hand to `background` once the design's row is gone. The
+ * rows go with the design; the bytes would otherwise stay in the bucket for good.
+ */
+export async function forgetCheckpoints(
+  deps: Pick<Deps, "db" | "archives" | "log">,
+  designId: string,
+): Promise<() => Promise<void>> {
+  const keys = await listUploadKeys(deps.db, {
+    designId,
+    purposes: ["session", "workspace"],
+  });
+  return async () => {
+    const failed = (await Promise.allSettled(keys.map((key) => deps.archives.delete(key)))).filter(
+      (result) => result.status === "rejected",
+    ).length;
+    if (failed) deps.log.warn("checkpoint_delete_failed", { designId, failed });
+  };
 }
 
 /** The design's last checkpoint, with addresses that read its archives for ten minutes. */
@@ -118,7 +143,7 @@ export async function restoreFor(deps: CheckpointDeps, designId: string): Promis
     const row = id ? rows.find((r) => r.id === id) : undefined;
     if (!row) return null;
     return {
-      url: await deps.storage.presignGet(row.objectKey, RESTORE_SECONDS),
+      url: await deps.archives.presignGet(row.objectKey, RESTORE_SECONDS),
       size: row.size,
       sha256: row.sha256,
     };

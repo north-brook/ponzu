@@ -3,8 +3,8 @@ import { join } from "node:path";
 import type { RunnerApi } from "../api/api.ts";
 import type { RestoredReport, SavedPoint } from "../api/protocol.ts";
 import { writeDurably } from "../durable.ts";
-import type { Transcripts } from "./transcripts.ts";
-import type { WorkSaver } from "./work.ts";
+import { type Transcripts, TranscriptTooLarge } from "./transcripts.ts";
+import type { SavedWork, WorkSaver } from "./work.ts";
 
 /*
  * Checkpoints (docs/cloud.md, "Saving the sandbox"). A sandbox's disk is a cache: it can be lost,
@@ -27,6 +27,12 @@ export interface Marker {
   wipCommit: string | null;
   /** The boot that wrote it, to tell boat which boot's writes came back. */
   bootId: string | null;
+  /**
+   * The turn of a checkpoint being sent when this was written: the disk had everything that
+   * checkpoint carries, so the API holding it while the marker says one less is the marker
+   * lagging (a stop between the API's answer and the marker's write), not a rollback.
+   */
+  pending?: number;
 }
 
 export interface Boot {
@@ -38,6 +44,10 @@ export type Recovery = {
   kind: "none" | "rebuilt" | "rollback";
   restored: { session: boolean; workspace: boolean };
 };
+
+/** What the person is told once the conversation stops being saved. */
+export const SESSION_UNSAVED =
+  "This conversation is now too long for Ponzu to keep a copy of it. Your files are still saved after each turn, but if this sandbox is lost Claude will start a new conversation.";
 
 export interface CheckpointOptions {
   api: RunnerApi;
@@ -51,6 +61,8 @@ export interface CheckpointOptions {
   boot(): Boot;
   /** Puts everything written on the disk (`sync`). */
   flush(): Promise<void>;
+  /** Tells the person, in the thread, something they lost or may want: said once per thing. */
+  notify?(message: string): void;
 }
 
 export class Checkpoints {
@@ -62,6 +74,8 @@ export class Checkpoints {
   private last: string | null = null;
   /** The API's last checkpoint, as this process last heard of it. */
   private known: SavedPoint | null = null;
+  /** What the person was already told, so it is said once. */
+  private told = new Set<string>();
 
   constructor(private readonly opts: CheckpointOptions) {}
 
@@ -91,6 +105,18 @@ export class Checkpoints {
     this.turn = Math.max(disk?.turn ?? 0, saved?.turn ?? 0);
     const restored = { session: false, workspace: false };
     if (!saved || (disk && disk.turn >= saved.turn)) return { kind: "none", restored };
+    if (disk?.pending !== undefined && disk.pending >= saved.turn) {
+      // The disk wrote everything of that checkpoint before it was sent; only the marker's
+      // confirmation was cut off. Nothing went back.
+      this.opts.event("marker_lag", {
+        diskTurn: disk.turn,
+        pending: disk.pending,
+        savedTurn: saved.turn,
+        bootId: this.opts.boot().id,
+      });
+      this.write(saved, this.opts.boot());
+      return { kind: "none", restored };
+    }
     const kind = disk ? "rollback" : "rebuilt";
     const boot = this.opts.boot();
     const began = Date.now();
@@ -123,6 +149,11 @@ export class Checkpoints {
         this.opts.log(
           work.done ? `work in progress: ${work.what}` : `work in progress: ${work.why}`,
         );
+        if (!work.done && work.kept)
+          this.tell(
+            `wip:${latest.turn}`,
+            `The uncommitted work from before this sandbox was rebuilt could not go back on the branch, which has moved on since. It is on the branch ${work.kept} in the sandbox: ask Claude to bring over what you need.`,
+          );
       } catch (err) {
         this.opts.log(`the work in progress could not be restored: ${said(err)}`);
       }
@@ -184,24 +215,47 @@ export class Checkpoints {
     ].join("#");
     if (stamp === this.last) return;
     const turn = this.turn + 1;
-    const session = sessionId && transcripts ? await transcripts.pack(sessionId) : null;
     const known = this.known;
-    // A checkpoint never carries less than the last one: without a transcript on this disk it
-    // would drop the one stored, so there is nothing to save yet.
-    if (!session && known?.session) {
-      this.opts.log("no transcript on this disk to save over the stored one: no checkpoint");
-      return;
+    // Each part on its own: one that cannot be saved never keeps the other from it. What is not
+    // carried, the API keeps from the checkpoint before (`keep`), so a checkpoint never carries
+    // less than the last one.
+    let session: Uint8Array | null = null;
+    if (sessionId && transcripts) {
+      try {
+        session = await transcripts.pack(sessionId);
+      } catch (err) {
+        this.opts.log(`the session's transcript was left out of the checkpoint: ${said(err)}`);
+        this.opts.event("checkpoint_session_skipped", { turn, reason: said(err) });
+        if (err instanceof TranscriptTooLarge) this.tell("session", SESSION_UNSAVED);
+      }
     }
-    const saved = work ? await work.save(turn) : null;
+    let saved: SavedWork | null = null;
+    if (work) {
+      try {
+        saved = await work.save(turn);
+      } catch (err) {
+        this.opts.log(`the work in progress was left out of the checkpoint: ${said(err)}`);
+        this.opts.event("checkpoint_work_skipped", { turn, reason: said(err) });
+      }
+    }
     if (saved?.skipped.length)
-      this.opts.log(`left out of the checkpoint for their size: ${saved.skipped.join(", ")}`);
+      this.opts.log(`left out of the checkpoint: ${saved.skipped.join(", ")}`);
+    const keepSession = !session && !!known?.session;
+    // No checkout (it could not be had), a save that failed, or nothing new: the work saved
+    // before is still the work.
+    const keepWorkspace =
+      !saved?.workspace && (!saved || !!saved.kept) && !!(known?.workspace || known?.wipCommit);
+    // Before the call: once the API has it, this disk has everything it carries.
+    this.write(this.markerPoint(), this.opts.boot(), turn);
     const point = await this.opts.api.saveCheckpoint({
       turn,
       claudeSessionId: session ? sessionId : null,
-      // No checkout here (it could not be had): the work saved before is still the work.
-      wipCommit: work ? (saved?.wipCommit ?? null) : (known?.wipCommit ?? null),
+      wipCommit: saved?.wipCommit ?? (keepWorkspace ? (known?.wipCommit ?? null) : null),
       session,
       workspace: saved?.workspace ?? null,
+      ...(keepSession || keepWorkspace
+        ? { keep: { session: keepSession, workspace: keepWorkspace } }
+        : {}),
     });
     this.known = point;
     this.turn = Math.max(turn, point.turn);
@@ -212,13 +266,33 @@ export class Checkpoints {
     await this.opts.flush();
   }
 
-  private write(point: SavedPoint, boot: Boot): void {
+  /** The marker as the disk has it now, to carry a pending turn. */
+  private markerPoint(): SavedPoint {
+    const disk = this.marker();
+    return {
+      turn: disk?.turn ?? 0,
+      at: disk?.at ?? new Date(0).toISOString(),
+      claudeSessionId: disk?.claudeSessionId ?? null,
+      wipCommit: disk?.wipCommit ?? null,
+      session: false,
+      workspace: false,
+    };
+  }
+
+  private tell(what: string, message: string): void {
+    if (this.told.has(what)) return;
+    this.told.add(what);
+    this.opts.notify?.(message);
+  }
+
+  private write(point: SavedPoint, boot: Boot, pending?: number): void {
     const marker: Marker = {
       turn: point.turn,
       at: point.at,
       claudeSessionId: point.claudeSessionId,
       wipCommit: point.wipCommit,
       bootId: boot.id,
+      ...(pending === undefined ? {} : { pending }),
     };
     writeDurably(this.file, JSON.stringify(marker));
   }

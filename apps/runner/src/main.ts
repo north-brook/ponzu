@@ -11,6 +11,7 @@ import { ChromiumRenderer } from "@ponzu/render/chromium";
 import { ClaudeAgent } from "./agent/sdk.ts";
 import { fatal } from "./api/api.ts";
 import { HttpRunnerApi } from "./api/http.ts";
+import { decodeRepoSecrets, REPO_SECRETS_VARIABLE } from "./api/protocol.ts";
 import { agentEnv, EnvError, readEnv } from "./env.ts";
 import { agentFiles } from "./files.ts";
 import { checkout } from "./repo.ts";
@@ -26,6 +27,8 @@ import { VERSION } from "./version.ts";
  * lease): systemd is told not to try (RestartPreventExitStatus).
  */
 const EXIT_CONFIG = 78;
+/** Where the environment carries the owner's Claude credential. */
+const CLAUDE_CREDENTIALS = ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"];
 /** The Claude Code the sandbox image installs. */
 const IMAGE_CLAUDE = "/usr/local/bin/claude";
 
@@ -112,15 +115,25 @@ const runner = new Runner({
       shell: asAgent,
     });
     if (session.repo && !checkedOut) return { transcripts, work: null };
-    const work = session.repo
-      ? new GitWork({
-          cwd,
-          designId: session.design.id,
-          // The image's git already runs as the agent; elsewhere the agent is this user.
-          git: gitIn(agentShell(undefined, agentEnv(process.env)), env.git ?? "git", cwd),
-          log,
-        })
-      : new ScratchWork({ cwd, shell: asAgent });
+    // What a checkpoint never carries: the repo's secrets and the Claude credential, which the
+    // next sandbox's environment brings back.
+    const secrets = [
+      ...Object.values(decodeRepoSecrets(process.env[REPO_SECRETS_VARIABLE])),
+      ...CLAUDE_CREDENTIALS.flatMap((name) => process.env[name] ?? []),
+    ];
+    const work =
+      session.repo && session.branch
+        ? new GitWork({
+            cwd,
+            designId: session.design.id,
+            branch: session.branch,
+            defaultBranch: session.repo.defaultBranch,
+            // The image's git already runs as the agent; elsewhere the agent is this user.
+            git: gitIn(agentShell(undefined, agentEnv(process.env)), env.git ?? "git", cwd),
+            secrets,
+            log,
+          })
+        : new ScratchWork({ cwd, shell: asAgent, secrets });
     return { transcripts, work };
   },
   boot,

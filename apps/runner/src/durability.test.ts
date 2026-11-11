@@ -68,7 +68,7 @@ async function writeTranscript(config: string, lines: string[]): Promise<string>
 async function start(
   api: FakeRunnerApi,
   d: Awaited<ReturnType<typeof disk>>,
-  opts: { agent?: ScriptedAgent; session?: Partial<RunnerSession> } = {},
+  opts: { agent?: ScriptedAgent; session?: Partial<RunnerSession>; timing?: Partial<Timing> } = {},
 ) {
   const agent = opts.agent ?? new ScriptedAgent();
   const shell = agentShell(undefined, process.env);
@@ -88,7 +88,7 @@ async function start(
       order.push(`flush after ${api.checkpoints.length} checkpoints`);
     },
     log: (m) => logs.push(m),
-    timing: FAST,
+    timing: { ...FAST, ...opts.timing },
   });
   open.push(runner);
   await runner.start();
@@ -187,7 +187,54 @@ test("a report asked for while the runner is still starting waits: it has no lea
   expect(api.calls.indexOf("putState")).toBeGreaterThan(api.calls.lastIndexOf("session"));
 });
 
-test("a turn that will not finish does not hold the sleep up for long", async () => {
+test("after a warm wake the API's poke alone gets the waiting message claimed", async () => {
+  const api = new FakeRunnerApi();
+  const d = await disk();
+  const s = await start(api, d, { timing: { heartbeatMs: 60_000 } });
+  s.run.ready(SESSION);
+  api.sleep = "2026-11-11T10:00:00.000Z";
+  s.runner.report();
+  await until(() => api.quiesced.length === 1);
+
+  // Thawed: the API moves the sandbox to awake and pokes, as orchestrate.ts does. No report.
+  api.sleep = null;
+  const waiting = api.push({ kind: "message", payload: { text: "After the wake" } });
+  s.runner.poke();
+  await until(
+    () => api.events.find((e) => e.event.id === waiting.id)!.claimedBy !== undefined,
+    1_000,
+  );
+  expect((await s.run.input()).text).toContain("After the wake");
+});
+
+test("a claim in flight when the sleep comes is waited for, and what it brings waits for the wake", async () => {
+  const api = new FakeRunnerApi();
+  const d = await disk();
+  const s = await start(api, d, { timing: { heartbeatMs: 60_000 } });
+  s.run.ready(SESSION);
+  await until(() => api.calls.includes("claim"));
+  api.delays.set("claim", 300);
+  const message = api.push({ kind: "message", payload: { text: "Mid-claim" } });
+  s.runner.poke();
+  await Bun.sleep(20);
+  api.sleep = "2026-11-11T10:00:00.000Z";
+  s.runner.report();
+  await until(() => api.quiesced.length === 1, 3_000);
+  // Ready only once the claim was answered, and nothing it brought was put into the run.
+  const claimed = api.events.find((e) => e.event.id === message.id)!;
+  expect(claimed.claimedBy).toBeDefined();
+  await Bun.sleep(400);
+  expect(s.run.inputs).toHaveLength(0);
+  expect(api.events.find((e) => e.event.id === message.id)!.deliveredAt).toBeUndefined();
+
+  // A warm wake: the same process claims it again, and this time it goes in.
+  api.delays.delete("claim");
+  api.sleep = null;
+  s.runner.poke();
+  expect((await s.run.input()).text).toContain("Mid-claim");
+});
+
+test("a turn that will not finish does not hold the sleep up for long: it is interrupted, and the thread says so", async () => {
   const api = new FakeRunnerApi();
   const d = await disk();
   const s = await start(api, d);
@@ -196,7 +243,17 @@ test("a turn that will not finish does not hold the sleep up for long", async ()
   api.sleep = "2026-11-11T10:05:00.000Z";
   s.runner.report();
   await until(() => api.quiesced.length === 1, 3_000);
-  expect(s.run.interrupts).toBe(0);
+  expect(s.run.interrupts).toBe(1);
+  await until(() =>
+    api
+      .items()
+      .some(
+        (i) =>
+          i.kind === "notice" &&
+          i.payload.type === "error" &&
+          i.payload.message.includes("before Claude finished"),
+      ),
+  );
 });
 
 test("a disk behind the last checkpoint gets the session and the work back before Claude Code resumes", async () => {

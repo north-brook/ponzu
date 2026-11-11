@@ -232,4 +232,51 @@ describe("checkpoints", () => {
       t.logs.findLast((l) => l.event === "sandbox_rebuilt" && l.designId === design.id),
     ).toMatchObject({ level: "info", savedTurn: 5, diskTurn: null });
   });
+
+  test("a checkpoint can keep the archives of the one before in place of those it does not carry", async () => {
+    const { runner } = await designWithRunner(t, ws, "maya", sampleDoc());
+    const talk = await archive(runner, "session", bytes("the conversation so far"));
+    const work = await archive(runner, "workspace", bytes("a bundle"));
+    await send(
+      runner,
+      "POST",
+      "/checkpoint",
+      point(1, { session: talk.id, workspace: work.id, wipCommit: "b".repeat(40) }),
+    );
+    // The transcript outgrew what a checkpoint keeps, and the work did not change.
+    const kept = await send(
+      runner,
+      "POST",
+      "/checkpoint",
+      point(2, { claudeSessionId: null, keep: { session: true, workspace: true } }),
+    );
+    expect(kept.body.saved).toMatchObject({
+      turn: 2,
+      claudeSessionId: "sess-1",
+      wipCommit: "b".repeat(40),
+      session: true,
+      workspace: true,
+    });
+    await t.backgroundDone();
+    expect(t.storage.objects.has(talk.key)).toBe(true);
+    expect(t.storage.objects.has(work.key)).toBe(true);
+    // Without `keep`, what is not carried is dropped, and its archive deleted.
+    const dropped = await send(runner, "POST", "/checkpoint", point(3));
+    expect(dropped.body.saved).toMatchObject({ turn: 3, session: false, workspace: false });
+    await t.backgroundDone();
+    expect(t.storage.objects.has(talk.key)).toBe(false);
+  });
+
+  test("deleting a design deletes its checkpoints' archives, recorded or not", async () => {
+    const { design, runner } = await designWithRunner(t, ws, "maya", sampleDoc());
+    const recorded = await archive(runner, "session", bytes("the whole conversation"));
+    await send(runner, "POST", "/checkpoint", point(1, { session: recorded.id }));
+    const unrecorded = await archive(runner, "workspace", bytes("never recorded"));
+    const { headers } = await t.signInAs({ login: "maya" });
+    const deleted = await call(t, headers, "DELETE", `/v1/designs/${design.id}`);
+    expect(deleted.status).toBe(204);
+    await t.backgroundDone();
+    expect(t.storage.objects.has(recorded.key)).toBe(false);
+    expect(t.storage.objects.has(unrecorded.key)).toBe(false);
+  });
 });

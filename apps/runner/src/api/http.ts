@@ -144,6 +144,7 @@ export class HttpRunnerApi implements RunnerApi {
       wipCommit: point.wipCommit,
       session: ids.session ?? null,
       workspace: ids.workspace ?? null,
+      ...(point.keep ? { keep: point.keep } : {}),
     } satisfies CheckpointRequest);
     return saved;
   }
