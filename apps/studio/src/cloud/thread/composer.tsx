@@ -6,7 +6,7 @@ import { Button, IconButton, SendButton } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
 import { Icon } from "../ui/icon.tsx";
 import { AgentMark } from "../ui/marks.tsx";
-import { FIELD, pressToFocus } from "../ui/press-to-focus.ts";
+import { FIELD, PRESS_OWN, pressToFocus } from "../ui/press-to-focus.ts";
 import { Tip } from "../ui/tooltip.tsx";
 import { composerButton } from "./composer-rules.ts";
 
@@ -93,9 +93,12 @@ export function RailComposer({
       )}
     >
       {gate ? (
+        // The gate's words are a status, not part of the field: they keep the arrow and their
+        // own presses, so they can be selected and copied.
         <div
+          {...PRESS_OWN}
           className={cn(
-            "flex items-center gap-2.5 bg-strip py-[11px] pr-3 pl-[18px] text-13 leading-[1.4]",
+            "flex cursor-default items-center gap-2.5 bg-strip py-[11px] pr-3 pl-[18px] text-13 leading-[1.4]",
             !ended && "border-rule border-b",
           )}
         >

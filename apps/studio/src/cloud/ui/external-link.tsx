@@ -30,7 +30,9 @@ export function ExternalLink({
       type="button"
       data-slot="external-link"
       className={cn(
-        "group/link inline-flex cursor-default items-center gap-1.5 rounded-4 outline-none transition-colors duration-(--dur-hover) focus-ring",
+        // The margins give back the padding: the words sit where they would, and the keyboard's
+        // ring gets 4px of air at the sides and 2px above and below instead of hugging them.
+        "group/link -mx-1 -my-0.5 inline-flex cursor-default items-center gap-1.5 rounded-6 px-1 py-0.5 outline-none transition-colors duration-(--dur-hover) focus-ring",
         tone === "muted" ? "text-muted hover:text-ink" : "text-ink",
         className,
       )}

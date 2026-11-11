@@ -355,6 +355,29 @@ describe.skipIf(!chromiumPath)("the thread rail", () => {
     expect(await page.inputValue(field)).toBe("");
   });
 
+  test("the rail's composer under a gate: the strip's words keep the arrow and can be selected", async () => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
+    await page.goto(`${server.url}/gallery.html?states&theme=light`);
+    await page.waitForFunction(() => (window as { galleryReady?: boolean }).galleryReady === true);
+    // A gate whose composer still shows its field (not the owner having left).
+    const strip = await page.evaluateHandle(() => {
+      for (const status of document.querySelectorAll<HTMLElement>('[role="status"]')) {
+        const card = status.closest<HTMLElement>("[class*='cursor-text']");
+        const field = card?.querySelector("textarea[data-press-focus]");
+        if (field?.getClientRects().length) return status;
+      }
+      throw new Error("no gated composer with a field");
+    });
+    const el = strip.asElement()!;
+    await el.scrollIntoViewIfNeeded();
+    expect(await el.evaluate((s) => getComputedStyle(s).cursor)).toBe("default");
+    const box = (await el.boundingBox())!;
+    await page.mouse.dblclick(box.x + 4, box.y + box.height / 2);
+    expect(await focused()).not.toBe("Message");
+    expect(await page.evaluate(() => getSelection()?.toString().trim().length ?? 0)).toBeGreaterThan(0);
+  });
+
   test("the note under a question: a press anywhere on its card writes there", async () => {
     await open("needs-you-a-question");
     const field = 'textarea[aria-label="Note"]';

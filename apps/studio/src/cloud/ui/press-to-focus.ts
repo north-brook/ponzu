@@ -2,13 +2,17 @@ import type { MouseEvent } from "react";
 
 /**
  * What a press on a field's card leaves alone: the controls in it (attach, send, a picker, an
- * image's remove), and the field itself, whose own press places the caret and starts a selection.
+ * image's remove), the field itself, whose own press places the caret and starts a selection,
+ * and anything marked PRESS_OWN (a status strip whose words can be selected and copied).
  */
 const OWN_PRESS =
-  "button, a[href], input, textarea, select, label, summary, [contenteditable], [role=button], [role=link], [role=menuitem], [role=option], [role=radio], [role=checkbox], [role=switch], [role=tab], [role=slider], [tabindex]:not([tabindex='-1'])";
+  "[data-press-own], button, a[href], input, textarea, select, label, summary, [contenteditable], [role=button], [role=link], [role=menuitem], [role=option], [role=radio], [role=checkbox], [role=switch], [role=tab], [role=slider], [tabindex]:not([tabindex='-1'])";
 
 /** Marks the field a card's presses focus (pressToFocus). */
 export const FIELD = { "data-press-focus": "" } as const;
+
+/** Marks a part of the card that keeps its own presses and its own cursor (pressToFocus). */
+export const PRESS_OWN = { "data-press-own": "" } as const;
 
 /**
  * A composer is one card around its field: a press anywhere on it that isn't a control goes to
