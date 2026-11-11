@@ -157,9 +157,13 @@ const FENCE = /^ {0,3}(`{3,}|~{3,})/;
 
 /**
  * A link still being written at the end of a reply streaming in: `[Note: Pri`, `[Note: Pricing]`,
- * `[Note: Pricing](https://ponzu.des`. Its text is the group, and it holds no newline.
+ * `[Note: Pricing](https://ponzu.des`, or one with a title still being written after its address,
+ * or an image's (`![alt](…`, which draws as a link named by its alt text). Its text is the group,
+ * and it holds no newline. Knowingly left out, since the agent's links don't take these shapes:
+ * a reference link (`[Note][re`), an address with parentheses in it, and an unclosed `**` around
+ * a link, each of which shows a stray mark or two until it closes.
  */
-const OPEN_LINK = /\[([^[\]\n]*)(?:\]\([^()\s]*|\])?$/;
+const OPEN_LINK = /!?\[([^[\]\n]*)(?:\]\([^()\s]*(?:[ \t]+(?:"[^"\n]*"?|'[^'\n]*'?)?)?|\])?$/;
 
 /**
  * Text streaming in, with a link it is still writing at its end shown as its words alone, so half

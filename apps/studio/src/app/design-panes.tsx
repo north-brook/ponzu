@@ -99,9 +99,11 @@ export function useDesignPanes({
       if (at.designId !== designId) onOpenDesign(at);
       else if (at.artboard) show({ artboard: at.artboard });
       else if (at.page) show({ page: at.page });
+      // The design itself, as older replies link it: show the page that's open, whole.
+      else if (page) show({ page });
       else setTabFor(null);
     },
-    [designId, show, onOpenDesign],
+    [designId, page, show, onOpenDesign],
   );
 
   if (!open) return null;

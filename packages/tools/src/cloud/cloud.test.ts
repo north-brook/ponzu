@@ -1097,6 +1097,11 @@ test("every page and board the agent learns of comes with its own link, ready to
     expect(info).toContain(line);
   expect(info).toContain("Link: https://ponzu.test/designs/dsn_test (opens this design in Ponzu");
   expect((await call("get_tree")).text).toContain(` · link: ${link(`artboard=${id}`)}`);
+  // A page's tree gives the page's link, and each of its boards' on the board's own line.
+  const pageTree = (await call("get_tree", { id: "pg_home" })).text.split("\n");
+  expect(pageTree[0]).toBe(`Page pg_home "Home" · link: ${link("page=pg_home")}`);
+  const boardLine = pageTree.find((l) => l.includes(` ${id} `));
+  expect(boardLine).toEndWith(` · link: ${link(`artboard=${id}`)}`);
   expect((await call("get_tree", { id })).text).toStartWith(
     `${id} "Note: Pricing" 1440px×900px at (1760, 0) · page "Home" · link: ${link(`artboard=${id}`)}\n`,
   );

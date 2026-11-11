@@ -124,7 +124,7 @@ describe.skipIf(!chromiumPath)("links to pages and boards in the agent's words",
         id,
         [
           `The repo picker is on [Pick a repo](${SITE}/${id}?artboard=${picker}), and the phone version on [Phone home](${SITE}/${id}?artboard=${phone}).`,
-          `Everything for small screens is on [Mobile](${SITE}/${id}?page=${mobile}).`,
+          `Everything for small screens is on [Mobile](${SITE}/${id}?page=${mobile}), and the rest of [Onboarding flow](${SITE}/${id}) is as it was.`,
           `I dropped [Hero / B](${SITE}/${id}?artboard=ab_gone1) in favour of A.`,
           `The cart is in [Checkout](${SITE}/${other}?artboard=ab_x).`,
           "See [the docs](https://ponzu.design/docs) and [this](https://ponzu.design.evil.test/designs/x?artboard=ab_1).",
@@ -133,7 +133,7 @@ describe.skipIf(!chromiumPath)("links to pages and boards in the agent's words",
     );
     await rail().getByRole("link", { name: "Pick a repo" }).waitFor();
     // Ours carry no target and say where they go; the gone one is no link at all.
-    expect(await rail().locator("a[data-place]").count()).toBe(4);
+    expect(await rail().locator("a[data-place]").count()).toBe(5);
     expect(await rail().getByRole("link", { name: "Hero / B" }).count()).toBe(0);
     expect(await rail().locator('[data-place="gone"]').textContent()).toBe("Hero / B");
     expect(await rail().getByRole("link", { name: "the docs" }).getAttribute("data-place")).toBe(
@@ -184,6 +184,18 @@ describe.skipIf(!chromiumPath)("links to pages and boards in the agent's words",
     await shoot("5-focus");
     await page.keyboard.press("Enter");
     await waitUntil(async () => (await activeTab())?.includes("Mobile") ?? false);
+    expect(await opened()).toEqual([]);
+  });
+
+  test("a link to the design itself shows the page that's open, whole", async () => {
+    await page.getByRole("tablist", { name: "Pages" }).getByRole("tab").first().click();
+    await waitUntil(() => inView("Welcome"));
+    await page.mouse.move(400, 400);
+    await page.mouse.wheel(0, 3000);
+    await waitUntil(async () => !(await inView("Welcome")));
+    await rail().getByRole("link", { name: "Onboarding flow" }).click();
+    await waitUntil(() => inView("Welcome"));
+    expect(await activeTab()).not.toContain("Mobile");
     expect(await opened()).toEqual([]);
   });
 

@@ -122,6 +122,10 @@ test("a link still being written at a streaming reply's end shows as its words a
   expect(settled(closed)).toBe(closed);
   expect(settled(`${closed} and the`)).toBe(`${closed} and the`);
   expect(settled("a [b](c) then [d")).toBe("a [b](c) then d");
+  // A title still being written, and an image's link, show only their words too.
+  expect(settled('on [Note](https://ponzu.design/designs/des_1 "ti')).toBe("on Note");
+  expect(settled('on [Note](https://ponzu.design/designs/des_1 "title"')).toBe("on Note");
+  expect(settled("see ![the chart](https://exa")).toBe("see the chart");
   // In code it is what was written.
   expect(settled("run `arr[i")).toBe("run `arr[i");
   expect(settled("```\nconst a = b[")).toBe("```\nconst a = b[");

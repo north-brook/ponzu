@@ -157,10 +157,16 @@ export const orientTools = [
       if (page) {
         if (!page.artboards.length)
           return { text: `Page ${page.id} "${page.name}" has no artboards.` };
+        // Each board's first line is its header; where boards have links, its link goes there.
+        const boards = page.artboards.map((ab) => {
+          const [head = "", ...rest] = outline(ab.root, Math.min(depth ?? 2, 3), {
+            artboard: true,
+          }).split("\n");
+          return [head + linkNote(ctx, key, { artboard: ab.id }), ...rest].join("\n");
+        });
+        const pageLink = linkNote(ctx, key, { page: page.id });
         return {
-          text: page.artboards
-            .map((ab) => outline(ab.root, Math.min(depth ?? 2, 3), { artboard: true }))
-            .join("\n\n"),
+          text: (pageLink ? `Page ${page.id} "${page.name}"${pageLink}\n\n` : "") + boards.join("\n\n"),
         };
       }
       const hit = locate(doc, id);
