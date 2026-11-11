@@ -1,6 +1,6 @@
 import { BrowserWindow, nativeTheme, shell } from "electron";
 import { externalLink, isStudio } from "./navigation.ts";
-import { shellGround } from "./shell-ground.ts";
+import { MATERIAL, shellGround } from "./shell-ground.ts";
 import { trafficLights } from "./traffic-lights.ts";
 
 /*
@@ -64,6 +64,15 @@ export function createMainWindow(opts: {
   win.once("ready-to-show", () => {
     if (!opts.hidden) win.show();
   });
+  if (ground.glass) {
+    // The material is the appearance's (shell-ground.ts): when that changes, so does it.
+    const rematerial = () => {
+      if (win.isDestroyed()) return;
+      win.setVibrancy(MATERIAL[nativeTheme.shouldUseDarkColors ? "dark" : "light"]);
+    };
+    nativeTheme.on("updated", rematerial);
+    win.once("closed", () => nativeTheme.off("updated", rematerial));
+  }
 
   const leave = (event: Electron.Event, url: string) => {
     if (isStudio(url, opts.studio)) return;
