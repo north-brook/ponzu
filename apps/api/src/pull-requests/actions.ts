@@ -106,7 +106,21 @@ async function act(
         method,
         sha: ready.head.sha,
       });
-      if (result === "done") return untilMerged(deps, target, number);
+      if (result === "done") {
+        const merged = await untilMerged(deps, target, number);
+        // The branch is done with once merged, as GitHub's own button leaves it to be deleted:
+        // only while it is still where it merged, so nothing pushed since is lost.
+        if (
+          merged.read.pullRequest?.state === "merged" &&
+          merged.read.branch?.sha === ready.head.sha
+        ) {
+          deps.background(
+            "pull_request_branch_delete",
+            deleteMergedBranch(deps, await personToken(), fullName, ready.head.ref),
+          );
+        }
+        return merged;
+      }
       if (result === "not_mergeable") {
         // GitHub does not say why, but the pull request as it is now does.
         throw blockedBy((await readAndRecord(deps, target)).read.pullRequest ?? ready);
@@ -223,6 +237,17 @@ async function untilMerged(
     await refreshLater(deps, { designId: target.designId, number }, MERGE_CHECKED_AFTER_MS);
   }
   return current;
+}
+
+/** Deletes a merged design's branch; a refusal (protected, or no right to) leaves it be. */
+async function deleteMergedBranch(
+  deps: ActDeps,
+  userToken: string,
+  fullName: string,
+  branch: string,
+): Promise<void> {
+  const result = await deps.github.deleteBranch(userToken, { fullName, branch });
+  if (result !== "done") deps.log.info("pull_request_branch_kept", { fullName, branch, result });
 }
 
 /** Throws what GitHub's answer means, unless it did what was asked. */

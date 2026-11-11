@@ -200,7 +200,14 @@ export type ThreadNotice =
   | { type: "waking" }
   | { type: "resumed" }
   | { type: "started" }
-  | { type: "question"; questionId: string; header: string; text: string }
+  | {
+      type: "question";
+      questionId: string;
+      header: string;
+      text: string;
+      /** Once it closed: what was picked, in a few words ("Royal blue", "Yes"); else absent. */
+      answer?: string | null;
+    }
   | { type: "error"; code: RunErrorCode; message: string }
   | { type: "stopped"; by: Person | null }
   | { type: "pull_request"; number: number; url: string; title: string; state: PrState };

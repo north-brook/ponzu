@@ -18,6 +18,7 @@ import { BASE_REBUILD_JOB, requestBaseRebuild } from "../environments/rebuild.ts
 import {
   MAX_SECRET_BYTES,
   MAX_SECRET_NAME,
+  reservedReason,
   SECRET_LIMITS,
   secretBinding,
   secretNameProblem,
@@ -131,11 +132,7 @@ async function requireSecretsAdmin(c: UserContext, repoId: string) {
 function checkedName(name: string): string {
   const problem = secretNameProblem(name);
   if (problem === "reserved") {
-    throw new ApiError(
-      400,
-      "secret_name_reserved",
-      `${name} is a name Ponzu sets in every sandbox itself. Use another name.`,
-    );
+    throw new ApiError(400, "secret_name_reserved", reservedReason(name));
   }
   if (problem === "invalid") {
     throw new ApiError(

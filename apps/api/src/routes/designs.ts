@@ -395,11 +395,14 @@ export const designs = new Hono<AppEnv>()
     },
   )
 
-  /** Says the person closed the design, so they leave at once. */
+  /**
+   * Says the person closed the design, so they leave at once. It takes away only their own
+   * row, so it asks nothing of the design: one just deleted, or no longer theirs to open, is left
+   * as quietly as any other.
+   */
   .delete("/:id/presence", access.user, validate("param", Params), async (c) => {
     const { deps, actor } = c.var;
-    const { design } = await requireDesign(c, c.req.valid("param").id, "read");
-    await removePresence(deps.db, { designId: design.id, userId: actor.user.id });
+    await removePresence(deps.db, { designId: c.req.valid("param").id, userId: actor.user.id });
     return c.body(null, 204);
   })
 

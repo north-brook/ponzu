@@ -505,13 +505,17 @@ describe("acting", () => {
       "draft",
       "merged",
     ]);
+    // The branch is deleted once merged, as the person.
+    expect(t.github.pulls.head(repo, BRANCH)).toBeUndefined();
     // Merging again is the same answer.
-    expect((await merge(ws, design.id, repo)).body.pullRequest.state).toBe("merged");
+    const again = await merge(ws, design.id, repo, { headSha: pull.mergedHead });
+    expect(again.body.pullRequest.state).toBe("merged");
   });
 
   test("a design reopened after its merge stays open, and its new work gets a new pull request", async () => {
     const { ws, repo, design, pull } = await ready();
     await merge(ws, design.id, repo);
+    await t.backgroundDone();
     await call(t, as(ws, "maya"), "PATCH", `/v1/designs/${design.id}`, { settled: false });
 
     const after = await call(t, as(ws, "ines"), "GET", path(design.id));

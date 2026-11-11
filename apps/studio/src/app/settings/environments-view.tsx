@@ -63,7 +63,7 @@ export function EnvironmentsView({ workspaceId }: { workspaceId: string }) {
         onSaveSecret={(repo, name, value) => {
           const env = answer.data.repos.find((r) => r.repo.id === repo.id);
           const replacing = env?.secrets.some((s) => s.name === name) ?? false;
-          save.mutate({ workspaceId, repoId: repo.id, name, value, replacing });
+          return save.mutateAsync({ workspaceId, repoId: repo.id, name, value, replacing });
         }}
         onRemoveSecret={(repo, name) => remove.mutate({ workspaceId, repoId: repo.id, name })}
       />

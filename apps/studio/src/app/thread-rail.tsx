@@ -1,5 +1,5 @@
 import { useLiveQuery } from "@ponzu/client/react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueries } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo } from "react";
 import type { Person, Repo, ThreadItem } from "../cloud/model.ts";
 import { ThreadRail } from "../cloud/thread/rail.tsx";
@@ -12,6 +12,8 @@ import type { Host } from "./host.ts";
 import { usePonzu } from "./ponzu-query.tsx";
 import {
   agentActivity,
+  answerLine,
+  closedQuestions,
   shownItems,
   steerGate,
   type ThreadContext,
@@ -58,7 +60,7 @@ export function DesignRail({
   say: (notice: string) => void;
 }) {
   const designId = open.id;
-  const { mutations } = usePonzu();
+  const { queries, mutations } = usePonzu();
   const stop = useMutation(mutations.stopAgent());
   const state = useSourceState(open.source);
   const access = useAccess(open);
@@ -90,15 +92,33 @@ export function DesignRail({
       ),
     [asks],
   );
+  // Each closed question's line says what was picked: read once it has left the slot.
+  const shown = useMemo(() => shownItems(thread.items ?? [], waiting), [thread.items, waiting]);
+  const closedIds = useMemo(() => closedQuestions(shown), [shown]);
+  const picked = useQueries({
+    queries: closedIds.map((id) => ({
+      ...queries.question(designId, id),
+      // A closed question stays as it closed; one read while still open is read again.
+      staleTime: (q: { state: { data?: { status: string } } }) =>
+        q.state.data?.status === "open" ? 0 : Number.POSITIVE_INFINITY,
+      refetchInterval: (q: { state: { data?: { status: string } } }) =>
+        q.state.data?.status === "open" ? 5_000 : false,
+    })),
+    combine: (results) => JSON.stringify(results.map((r) => answerLine(r.data))),
+  });
+  const answers = useMemo(() => {
+    const lines = JSON.parse(picked) as (string | null)[];
+    return new Map(closedIds.map((id, i) => [id, lines[i] ?? null] as const));
+  }, [picked, closedIds]);
   const items = useMemo(() => {
     // A design just made shows its first message while its thread is read.
     if (!thread.items && !thread.pending.length) return null;
     const ctx: ThreadContext = { people, assetsUrl: assetBase ?? null, doc };
     return [
-      ...shownItems(thread.items ?? [], waiting).map((item) => toThreadItem(item, ctx)),
+      ...shown.map((item) => withAnswer(toThreadItem(item, ctx), answers)),
       ...thread.pending.map((message, i) => pendingItem(message, me, i)),
     ];
-  }, [thread, waiting, people, assetBase, doc, me]);
+  }, [thread, shown, answers, people, assetBase, doc, me]);
 
   // With the rail open, the viewer has read the thread as far as it goes.
   const newest = thread.items?.at(-1)?.seq;
@@ -164,6 +184,13 @@ export function DesignRail({
       onOpenLink={(url) => host.openExternal(url)}
     />
   );
+}
+
+/** A question's line with what was picked, once that is known. */
+function withAnswer(item: ThreadItem, answers: ReadonlyMap<string, string | null>): ThreadItem {
+  if (item.kind !== "notice" || item.payload.type !== "question") return item;
+  const answer = answers.get(item.payload.questionId);
+  return answer ? { ...item, payload: { ...item.payload, answer } } : item;
 }
 
 /** A message of the viewer's on its way, at the thread's foot until it arrives. */

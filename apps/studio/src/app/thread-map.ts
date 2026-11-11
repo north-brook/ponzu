@@ -171,6 +171,31 @@ export function branchMoment(items: readonly RunnerItem[]): number {
   return at;
 }
 
+/** How one of the agent's questions closed, as the API answers it. */
+export interface StandingQuestion {
+  status: "open" | "answered" | "cancelled";
+  answer: { answers?: Record<string, string>; approved?: boolean } | null;
+}
+
+/** What a closed question's "Asked" line says was picked: the labels, or yes or no. */
+export function answerLine(question: StandingQuestion | undefined): string | null {
+  if (!question || question.status !== "answered" || !question.answer) return null;
+  const { answers, approved } = question.answer;
+  if (answers) {
+    const picked = Object.values(answers).filter((text) => text.trim());
+    return picked.length ? picked.join(", ") : null;
+  }
+  if (approved !== undefined) return approved ? "Yes" : "No";
+  return null;
+}
+
+/** The questions whose "Asked" lines the thread shows, to read how each closed. */
+export function closedQuestions(items: readonly RunnerItem[]): string[] {
+  return items.flatMap((item) =>
+    item.kind === "notice" && item.payload.type === "question" ? [item.payload.questionId] : [],
+  );
+}
+
 /** A question row as the needs-you slot takes it. */
 export function toAsk(row: QuestionRow): Ask {
   const open = { id: row.id, status: "open" as const, answeredBy: null };

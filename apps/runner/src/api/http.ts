@@ -8,6 +8,8 @@ import type {
   CompleteResponse,
   GitCredentialRequest,
   GitCredentialResponse,
+  PullRequestSummaryRequest,
+  PullRequestSummaryResponse,
   QuestionRequest,
   RunnerSession,
   StateRequest,
@@ -100,6 +102,15 @@ export class HttpRunnerApi implements RunnerApi {
 
   async recordUsage(turns: TurnUsage[]): Promise<void> {
     await this.call("POST", "/v1/runner/usage", { turns });
+  }
+
+  async pullRequestSummary(summary: string): Promise<number | null> {
+    const answer = await this.call<PullRequestSummaryResponse>(
+      "POST",
+      "/v1/runner/pull-request-summary",
+      { summary } satisfies PullRequestSummaryRequest,
+    );
+    return answer.pullRequest;
   }
 
   /** The existing document routes, as core's `Replica` asks for them. */

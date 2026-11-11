@@ -13,7 +13,10 @@ import {
   runTool,
   type ToolCaller,
   type ToolDef,
+  ToolError,
+  tool,
 } from "@ponzu/tools";
+import { z } from "zod";
 import type {
   Agent,
   AgentEvent,
@@ -32,6 +35,7 @@ import {
   type GitCredentialRequest,
   type GitCredentialResponse,
   HEARTBEAT_MS,
+  MAX_PULL_REQUEST_SUMMARY,
   type ModelUsage,
   type QuestionBody,
   type QuestionRequest,
@@ -85,6 +89,9 @@ export const TIMING: Timing = {
 
 /** How many times in a row Claude Code may stop by itself before the runner stops starting it. */
 const MAX_RESTARTS = 3;
+
+/** The tool the agent describes its branch's pull request with, beside the canvas tools. */
+const SUMMARY_TOOL = "describe_pull_request";
 
 const EVENT_KINDS = new Set<string>([
   "message",
@@ -438,7 +445,7 @@ export class Runner {
       model: this.session.model,
       effort: this.session.effort,
       instructions: this.instructions(),
-      tools: cloudTools.map((def) => this.tool(def)),
+      tools: this.tools().map((def) => this.tool(def)),
     });
     this.run = run;
     this.consume(run).catch((err) => this.log(`reading Claude Code failed: ${said(err)}`));
@@ -455,8 +462,39 @@ export class Runner {
       ? `This design has no repository: ${this.cwd} is an empty folder for your own files.`
       : this.cloneError
         ? `The design's repository, ${repo.owner}/${repo.name}, could not be checked out (${this.cloneError}), so ${this.cwd} is an empty folder. Work on the canvas only, and tell the person the code is out of reach until the sandbox starts again.`
-        : `The repository ${repo.owner}/${repo.name} is checked out at ${this.cwd}, on the design's branch ${branch}. Commit as you go and push the branch (git push sets its upstream itself). Ponzu opens and merges the pull request: there is no GitHub API token here, so don't try to open one yourself.`;
-    return `${CLOUD_INSTRUCTIONS}\n\nThis sandbox's design is "${design.name}" (${link}). ${where}\n\n${RUNNER_INSTRUCTIONS}`;
+        : `The repository ${repo.owner}/${repo.name} is checked out at ${this.cwd}, on the design's branch ${branch}. Commit as you go and push the branch (git push sets its upstream itself). Ponzu opens and merges the pull request: there is no GitHub API token here, so don't try to open one yourself. Whenever you push, say what the branch changes with ${SUMMARY_TOOL}: a few lines of Markdown for a reviewer, what changed and why. It becomes the pull request's description, now or when it opens.`;
+    const naming = `The design's name titles its pull request and the commit that merges it. If it is still the person's first words rather than a name, give it one in your first turn with update_design: two to four words for what is being designed, like "Quieter shop hero".`;
+    return `${CLOUD_INSTRUCTIONS}\n\nThis sandbox's design is "${design.name}" (${link}). ${naming} ${where}\n\n${RUNNER_INSTRUCTIONS}`;
+  }
+
+  /** The canvas tools, and for a design with a repo, the one that describes its pull request. */
+  private tools(): ToolDef<any>[] {
+    if (!this.session.repo || this.cloneError) return cloudTools;
+    const api = this.api;
+    const describe = tool({
+      name: SUMMARY_TOOL,
+      title: "Describe pull request",
+      group: "converse",
+      description:
+        "Say what the design's branch changes, for its pull request's description: a few lines of Markdown for a reviewer, what changed and why. Ponzu writes it into the open pull request, or keeps it for the one it opens. Call it again after a push that changes the story; the last one wins.",
+      input: {
+        summary: z.string().min(1).max(MAX_PULL_REQUEST_SUMMARY).describe("Markdown."),
+      },
+      async handler({ summary }) {
+        try {
+          const number = await api.pullRequestSummary(summary);
+          return {
+            text:
+              number === null
+                ? "Kept: it becomes the pull request's description when Ponzu opens it."
+                : `Written into pull request #${number}'s description.`,
+          };
+        } catch (err) {
+          throw new ToolError(`Ponzu could not take it: ${said(err)}`);
+        }
+      },
+    });
+    return [...cloudTools, describe];
   }
 
   private tool(def: ToolDef<any>): AgentTool {
@@ -871,6 +909,9 @@ export class Runner {
 
   private raise(askId: string, ask: Ask): void {
     const id = derivedId("q", askId);
+    // The work so far ends where the question is asked, so the thread reads in order: what it
+    // did, what it asked, then what it did with the answer.
+    this.finishWork();
     this.asks.set(id, askId);
     this.questions.put(`ask:${id}`, { ask: { id, ...questionBody(ask) } });
     const [header, text] =

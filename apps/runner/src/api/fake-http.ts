@@ -84,6 +84,10 @@ export function fakeApiHandler(
         case "POST /v1/runner/usage":
           await fake.recordUsage(runner, body.turns);
           return Response.json({ recorded: body.turns.length });
+        case "POST /v1/runner/pull-request-summary":
+          return Response.json({
+            pullRequest: await fake.pullRequestSummary(runner, body.summary),
+          });
         case `POST ${design}/ops`:
           return Response.json(await fake.commit(runner, body.ops as ClientOp[]));
         case `GET ${design}/ops`: {
