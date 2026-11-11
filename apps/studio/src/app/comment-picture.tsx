@@ -227,7 +227,8 @@ export function CommentScene({
                   width: w,
                   height: h ?? undefined,
                   borderRadius: BOARD_RADIUS / k,
-                  boxShadow: "var(--pz-board-shadow)",
+                  // The canvas's edge, one px in the picture whatever its scale (Canvas.tsx).
+                  boxShadow: `0 0 0 ${1 / k}px var(--pz-board-edge), var(--pz-board-drop)`,
                   "--pz-board-radius": `${BOARD_RADIUS / k}px`,
                 } as CSSProperties
               }

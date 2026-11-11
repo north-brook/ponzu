@@ -66,6 +66,22 @@ for (const [theme, i] of [
     expect(contrast(i === 0 ? ring[0]! : ring[1]!, token("chrome")[i])).toBeGreaterThanOrEqual(3);
   });
 
+  // The Mac's material is its own appearance's grey with the wallpaper blurred into it; this
+  // takes it as far from the tint as a mid grey, past what a light or dark sidebar shows, so text
+  // on the glassy shell holds AA over any wallpaper.
+  test(`text holds AA on the glass in ${theme}`, () => {
+    const glass = channels(token("chrome-glass")[i], "#808080");
+    const hex = `#${glass
+      .map((c) =>
+        Math.round(c * 255)
+          .toString(16)
+          .padStart(2, "0"),
+      )
+      .join("")}`;
+    expect(contrast(token("ink")[i], hex)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(token("muted")[i], hex)).toBeGreaterThanOrEqual(4.5);
+  });
+
   test(`faint stays where the design puts it in ${theme}`, () => {
     // Dark's lowest is on the open row's ground, which the design doesn't draw.
     expect(worst("faint", i)).toBeGreaterThanOrEqual(i === 0 ? 1.8 : 2.75);

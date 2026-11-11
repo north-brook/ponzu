@@ -1,5 +1,6 @@
 import { BrowserWindow, nativeTheme, shell } from "electron";
 import { externalLink, isStudio } from "./navigation.ts";
+import { shellGround } from "./shell-ground.ts";
 import { trafficLights } from "./traffic-lights.ts";
 
 /*
@@ -7,9 +8,6 @@ import { trafficLights } from "./traffic-lights.ts";
  * can leave, so it runs as a web page with nothing more: isolated, sandboxed, no Node, and
  * unable to leave the studio. A link out goes to the system browser once it checks out.
  */
-
-/** The studio's `--c-chrome`: the window's ground before the studio paints. */
-const CHROME = { light: "#e8e6e0", dark: "#0e0e0d" };
 
 /**
  * The frame. The Mac's traffic lights sit in the studio's 44px chrome, which leaves them room
@@ -31,11 +29,16 @@ export function createMainWindow(opts: {
   studio: readonly string[];
   /** Painted, but kept off screen (the smoke check). */
   hidden: boolean;
-  /** What the preload hands the studio: `--ponzu-<name>=<value>` on the renderer's command line. */
+  /**
+   * What the preload hands the studio: `--ponzu-<name>=<value>` on the renderer's command line.
+   * The window adds `glass`: whether its ground is the Mac's material (shell-ground.ts).
+   */
   args: Record<string, string>;
   /** Whether developer tools can open on the window at all: not in a release. */
   devTools: boolean;
 }): BrowserWindow {
+  const ground = shellGround(process.platform, nativeTheme.shouldUseDarkColors);
+  const args = { ...opts.args, glass: ground.glass ? "1" : "0" };
   const win = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -43,7 +46,7 @@ export function createMainWindow(opts: {
     minWidth: 1100,
     minHeight: 640,
     ...frame(),
-    backgroundColor: CHROME[nativeTheme.shouldUseDarkColors ? "dark" : "light"],
+    ...ground.options,
     show: false,
     webPreferences: {
       preload: opts.preload,
@@ -55,9 +58,7 @@ export function createMainWindow(opts: {
       navigateOnDragDrop: false,
       safeDialogs: true,
       devTools: opts.devTools,
-      additionalArguments: Object.entries(opts.args).map(
-        ([name, value]) => `--ponzu-${name}=${value}`,
-      ),
+      additionalArguments: Object.entries(args).map(([name, value]) => `--ponzu-${name}=${value}`),
     },
   });
   win.once("ready-to-show", () => {
