@@ -351,9 +351,6 @@ export function States() {
           <div className="w-[660px]">
             <Ideas ideas={f.ideas} onPick={ignore} />
           </div>
-          <div className="w-[660px]">
-            <Ideas ideas="loading" onPick={ignore} />
-          </div>
         </Section>
 
         <Section title="Create page in a pane">

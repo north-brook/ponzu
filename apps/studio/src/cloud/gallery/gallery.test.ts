@@ -281,6 +281,41 @@ describe.skipIf(!chromiumPath)("the cloud gallery", () => {
     expect(await disabled()).toBe(false);
   });
 
+  /** Where the create page's question sits, in px from the window's top. */
+  const questionTop = () =>
+    page.$eval("h1", (h) => Math.round(h.getBoundingClientRect().top) as number);
+
+  test("the repo picker lifts the column only when its list would not fit below it", async () => {
+    // Scratch alone: a short list, with room under the chip at 1440×900. Nothing moves.
+    await open("fresh-start-no-repos");
+    const resting = await questionTop();
+    await page.click('button[aria-label^="Project"]');
+    await page.waitForSelector('input[aria-label="Search repositories"]');
+    await new Promise((r) => setTimeout(r, 100));
+    expect(await questionTop()).toBe(resting);
+    // Four repos and Scratch: the list needs more than the room under the chip, so it rises.
+    await open("create");
+    const centred = await questionTop();
+    await page.click('button[aria-label^="Project"]');
+    await page.waitForSelector('input[aria-label="Search repositories"]');
+    await new Promise((r) => setTimeout(r, 100));
+    expect(await questionTop()).toBeLessThan(centred);
+    const raised = await questionTop();
+    // Typing shortens the list; the column stays where it went.
+    await page.keyboard.type("len");
+    await new Promise((r) => setTimeout(r, 100));
+    expect(await questionTop()).toBe(raised);
+  });
+
+  test("a first visit sits where its ideas go, and shows nothing while they're made", async () => {
+    await open("fresh-start");
+    const withIdeas = await questionTop();
+    await open("fresh-start-loading");
+    expect(await page.$('[aria-label="Finding ideas"]')).toBeNull();
+    expect(await page.$('[aria-label="Ideas"]')).toBeNull();
+    expect(await questionTop()).toBe(withIdeas);
+  });
+
   test("the repo picker filters as you type and chooses with Return", async () => {
     await open("create");
     await page.click('button[aria-label^="Project"]');

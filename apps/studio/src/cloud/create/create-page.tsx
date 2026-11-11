@@ -9,8 +9,10 @@ import { RepoPicker } from "./repo-picker.tsx";
 
 /** Where the column's top sits when it needs room below: for ideas, or the open repo picker. */
 const TOP = 130;
-/** What the open repo picker takes below the chip: its list at its tallest, and a margin. */
-const PICKER_ROOM = 340;
+/** The open repo picker hangs this far under the chip (its `sideOffset`). */
+const PICKER_GAP = 8;
+/** And keeps this much of the pane clear under it, so it never touches the pane's edge. */
+const PICKER_MARGIN = 16;
 
 export interface CreatePageProps {
   prompt: string;
@@ -25,7 +27,10 @@ export interface CreatePageProps {
   repos: Repo[] | null;
   onProjectChange: (project: ProjectChoice) => void;
   onAllowMore: () => void;
-  /** Prompts for the chosen repo; null shows none (the workspace has designs, or Scratch). */
+  /**
+   * Prompts for the chosen repo; null shows none (the workspace has designs, or Scratch), and
+   * "loading" none yet, with their room kept.
+   */
   ideas: Idea[] | "loading" | null;
   /** Images to send with the prompt. */
   attachments?: PendingAttachment[];
@@ -35,7 +40,9 @@ export interface CreatePageProps {
 /**
  * Starting a design, in the canvas pane: the question, the composer and the repo chip. On a
  * workspace's first visit ideas follow below. The column sits a little above centre, and rises
- * to a fixed top when it needs the room below (ideas, or the repo picker open).
+ * to a fixed top when it needs the room below: on a first visit, where ideas will be (from the
+ * first frame, so it never moves when they come or don't), or when the repo picker opens and
+ * its list would not fit below the chip where the column is.
  */
 export function CreatePage({
   prompt,
@@ -56,7 +63,13 @@ export function CreatePage({
   const field = useRef<HTMLTextAreaElement>(null);
   const pane = useRef<HTMLDivElement>(null);
   const column = useRef<HTMLDivElement>(null);
-  const lift = useCentreLift(pane, column, ideas !== null, pickerOpen);
+  // The open list, as it mounts (its portal mounts a commit after the picker opens).
+  const [picker, setPicker] = useState<HTMLDivElement | null>(null);
+  // A page that expected ideas keeps their place for as long as it is open: ideas that never
+  // come, or a switch to Scratch, don't move the composer down under the person.
+  const [expectsIdeas, setExpectsIdeas] = useState(ideas !== null);
+  if (ideas !== null && !expectsIdeas) setExpectsIdeas(true);
+  const lift = useCentreLift(pane, column, picker, expectsIdeas, pickerOpen);
 
   const pick = (idea: Idea) => {
     onPromptChange(idea.prompt);
@@ -100,10 +113,12 @@ export function CreatePage({
             onAllowMore={onAllowMore}
             open={pickerOpen}
             onOpenChange={setPickerOpen}
+            contentRef={setPicker}
           />
         </div>
-        {/* 8 after the chip, as the column spaces its rows, and 22 more. */}
-        {ideas ? (
+        {/* 8 after the chip, as the column spaces its rows, and 22 more. Nothing while they're
+            made (onboarding 4.6): they rise into the room the column already left them. */}
+        {Array.isArray(ideas) && ideas.length > 0 ? (
           <div className="mt-[30px]">
             <Ideas ideas={ideas} onPick={pick} />
           </div>
@@ -116,14 +131,17 @@ export function CreatePage({
 /**
  * How far below TOP the column sits to be centred in the pane, 40px high of true centre; zero
  * when it should sit at TOP (ideas follow) or doesn't fit. The open repo picker lifts it only
- * when the picker wouldn't fit below it where it is, so the page doesn't jump for nothing.
- * `measured` is false until the first measure, so the column doesn't glide into place on arrival.
+ * when its list, as tall as it really is, wouldn't fit below the chip where the column is, so the
+ * page doesn't jump for nothing; once lifted it stays up while the picker is open (typing a
+ * search shortens the list, and the column shouldn't chase it). `measured` is false until the
+ * first measure, so the column doesn't glide into place on arrival.
  */
 function useCentreLift(
   pane: RefObject<HTMLDivElement | null>,
   column: RefObject<HTMLDivElement | null>,
+  picker: HTMLDivElement | null,
   top: boolean,
-  picker: boolean,
+  pickerOpen: boolean,
 ) {
   const [state, setState] = useState({ centre: 0, roomBelow: 0, measured: false });
   useLayoutEffect(() => {
@@ -146,6 +164,28 @@ function useCentreLift(
     observer.observe(c);
     return () => observer.disconnect();
   }, []);
-  const lifted = top || (picker && state.roomBelow < PICKER_ROOM);
+
+  // What the open picker needs below the chip: its own height, measured as it opens (before
+  // it paints) and as its list loads, and its gap and margin.
+  const [needs, setNeeds] = useState<number | null>(null);
+  const [raised, setRaised] = useState(false);
+  useLayoutEffect(() => {
+    if (!pickerOpen) {
+      setNeeds(null);
+      setRaised(false);
+      return;
+    }
+    const el = picker;
+    if (!el) return;
+    const measure = () => setNeeds(el.offsetHeight + PICKER_GAP + PICKER_MARGIN);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [pickerOpen, picker]);
+  const short = pickerOpen && needs !== null && state.roomBelow < needs;
+  if (short && !raised) setRaised(true);
+
+  const lifted = top || (pickerOpen && (raised || short));
   return { offset: lifted ? 0 : state.centre, measured: state.measured };
 }
