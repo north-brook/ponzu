@@ -78,7 +78,8 @@ export function AppWindow({
   return (
     <TipProvider>
       <div
-        className="flex h-full flex-col bg-chrome text-ink"
+        // The shell: the solid colour, or clear over the Mac's glass (tokens.css, --c-shell).
+        className="flex h-full flex-col bg-shell text-ink"
         style={{ minWidth: MIN_WINDOW.width, minHeight: MIN_WINDOW.height }}
       >
         <header
@@ -127,7 +128,7 @@ export function AppWindow({
           ) : null}
           <main
             className={cn(
-              "pane-motion relative mb-1.5 min-w-0 flex-1 overflow-hidden rounded-10 bg-canvas transition-[margin]",
+              "pane-motion relative mb-1.5 min-w-0 flex-1 overflow-hidden rounded-10 bg-canvas shadow-canvas-edge transition-[margin]",
               !sidebarOpen && "ml-1.5",
               !railOpen && "mr-1.5",
             )}
