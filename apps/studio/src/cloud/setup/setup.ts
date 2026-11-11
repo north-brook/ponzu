@@ -29,6 +29,8 @@ export interface SetupFacts {
   workspaces: { installed: boolean; suspended: boolean }[];
   whereConfirmed: boolean;
   claude: Pick<ClaudeConnection, "status"> | null;
+  /** A claude.ai sign-in started and not yet finished, which lapses ten minutes after it began. */
+  claudeSignIn: { expiresAt: string } | null;
   iphoneStepSeen: boolean;
   hasIphone: boolean;
 }
@@ -41,8 +43,9 @@ export type SetupStep = "sign_in" | "where" | "claude" | "iphone" | "done";
  * 1. Signed out: Sign in.
  * 2. No workspace Ponzu can work in, or "Where do you design?" never confirmed: that step. It is
  *    shown once even to someone whose team already set Ponzu up, so they learn they can add more.
- * 3. No Claude at all: Connect Claude. One that was connected and has since signed out does not
- *    send a returning person back through setup; a send asks them to reconnect instead.
+ * 3. No Claude at all: Connect Claude (on the code field while a sign-in is pending; see
+ *    `claudeStepMode`). One that was connected and has since signed out does not send a
+ *    returning person back through setup; a send asks them to reconnect instead.
  * 4. The iPhone step never seen and no iPhone signed in: Get Ponzu on your iPhone.
  * 5. Otherwise setup is done.
  */
@@ -75,3 +78,13 @@ export function canContinue(accounts: GithubAccount[]): boolean {
  * or entering an API key.
  */
 export type ClaudeStepMode = "choose" | ClaudeMethod;
+
+/**
+ * Where Connect Claude opens, from the server's state: on the code field while a sign-in is
+ * pending, so a relaunch or another device picks it up, and on the two ways otherwise. A key
+ * being typed is only ever on this screen, so the server never opens on it.
+ */
+export function claudeStepMode(facts: SetupFacts, now: number): "choose" | "subscription" {
+  const pending = facts.claudeSignIn && Date.parse(facts.claudeSignIn.expiresAt) > now;
+  return pending ? "subscription" : "choose";
+}

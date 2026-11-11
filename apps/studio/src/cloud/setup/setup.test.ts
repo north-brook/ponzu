@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   canContinue,
+  claudeStepMode,
   type GithubAccount,
   isReady,
   type SetupFacts,
@@ -18,9 +19,15 @@ const brandNew: SetupFacts = {
   workspaces: [],
   whereConfirmed: false,
   claude: null,
+  claudeSignIn: null,
   iphoneStepSeen: false,
   hasIphone: false,
 };
+
+const NOW = Date.parse("2026-11-10T12:00:00Z");
+const minutes = (n: number) => new Date(NOW + n * 60_000).toISOString();
+const pending = { expiresAt: minutes(6) };
+const lapsed = { expiresAt: minutes(-1) };
 
 describe("the gates, as people meet them", () => {
   test("a brand-new person on the Mac goes through every step in order", () => {
@@ -78,20 +85,39 @@ describe("the gates, as people meet them", () => {
       expect(setupStep(returning)).toBe("done");
     }
   });
+
+  test("someone who pressed Sign in and relaunched lands back on the code field", () => {
+    const signingIn = { ...brandNew, workspaces: [ready], whereConfirmed: true };
+    expect(setupStep({ ...signingIn, claudeSignIn: pending })).toBe("claude");
+    expect(claudeStepMode({ ...signingIn, claudeSignIn: pending }, NOW)).toBe("subscription");
+    // Ten minutes on, the sign-in has lapsed: back to the two ways.
+    expect(claudeStepMode({ ...signingIn, claudeSignIn: lapsed }, NOW)).toBe("choose");
+    expect(claudeStepMode(signingIn, NOW)).toBe("choose");
+  });
 });
 
 describe("the gates, every combination", () => {
   const bools = [false, true];
   const workspaceSets = [[], [ready], [suspended], [removed], [removed, ready]];
   const claudes = [null, { status: "connected" as const }, { status: "revoked" as const }];
+  const signIns = [null, pending, lapsed];
   const all: SetupFacts[] = [];
   for (const signedIn of bools)
     for (const workspaces of workspaceSets)
       for (const whereConfirmed of bools)
         for (const claude of claudes)
-          for (const iphoneStepSeen of bools)
-            for (const hasIphone of bools)
-              all.push({ signedIn, workspaces, whereConfirmed, claude, iphoneStepSeen, hasIphone });
+          for (const claudeSignIn of signIns)
+            for (const iphoneStepSeen of bools)
+              for (const hasIphone of bools)
+                all.push({
+                  signedIn,
+                  workspaces,
+                  whereConfirmed,
+                  claude,
+                  claudeSignIn,
+                  iphoneStepSeen,
+                  hasIphone,
+                });
 
   // Each gate, as its own predicate: true when it holds the person back.
   const gates: [SetupStep, (f: SetupFacts) => boolean][] = [
@@ -105,6 +131,13 @@ describe("the gates, every combination", () => {
     for (const facts of all) {
       const expected = gates.find(([, holds]) => holds(facts))?.[0] ?? "done";
       expect({ facts, step: setupStep(facts) }).toEqual({ facts, step: expected });
+    }
+  });
+
+  test(`Connect Claude opens on the code exactly while a sign-in is pending, in all ${all.length}`, () => {
+    for (const facts of all) {
+      const expected = facts.claudeSignIn === pending ? "subscription" : "choose";
+      expect({ facts, mode: claudeStepMode(facts, NOW) }).toEqual({ facts, mode: expected });
     }
   });
 });
