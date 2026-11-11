@@ -16,6 +16,7 @@ export * from "./context.ts";
 export { threadLine } from "./converse.ts";
 export * from "./define.ts";
 export * from "./design.ts";
+export { type AgentFiles, FileError, type FileProblem, localFiles } from "./disk.ts";
 
 // The tools on folders of files, on the local server until it is deleted.
 export { GUIDES, type GuideTopic, SERVER_INSTRUCTIONS } from "./guides.ts";

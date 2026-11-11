@@ -1,10 +1,14 @@
 import { expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   type Input,
   inputsHash,
   pinsEnv,
   prunable,
   readPins,
+  recipeInputs,
   SNAPSHOT_PREFIX,
   snapshotName,
 } from "./recipe.ts";
@@ -28,7 +32,37 @@ test("provision.sh gets the pins and the inputs' hash as shell variables", () =>
   expect(env).toContain("PLAYWRIGHT_CORE_VERSION=");
   expect(env).toEndWith("INPUTS_HASH=abc\n");
   // Nothing in it needs quoting.
-  for (const line of env.trim().split("\n")) expect(line).toMatch(/^[A-Z_0-9]+=[A-Za-z0-9.]+$/);
+  for (const line of env.trim().split("\n")) expect(line).toMatch(/^[A-Z_0-9]+=[A-Za-z0-9.:/_-]+$/);
+});
+
+test("the headless shell is the build playwright-core pins, fetched from where its installer would", () => {
+  const pins = readPins();
+  expect(pins.headlessShellUrl).toBe(
+    `https://cdn.playwright.dev/builds/cft/${pins.headlessShellVersion}/linux64/chrome-headless-shell-linux64.zip`,
+  );
+  expect(pins.headlessShellSha256).toMatch(/^[0-9a-f]{64}$/);
+});
+
+test("the fonts are pinned to the versions the checks passed with", () => {
+  const fonts = require("../../../packages/render/sandbox-fonts.json");
+  for (const pkg of fonts.apt) expect(pkg).toMatch(/^[a-z0-9.+-]+=[0-9][A-Za-z0-9.+:~-]*$/);
+});
+
+test("the name covers boat's base and the checks, which are hashed but not sent", () => {
+  const pins = readPins();
+  const dist = mkdtempSync(join(tmpdir(), "ponzu-dist-"));
+  try {
+    writeFileSync(join(dist, "runner.js"), "1");
+    const inputs = recipeInputs(pins, "Ubuntu 24.04", dist);
+    const hashedOnly = inputs.filter((i) => i.hashedOnly).map((i) => i.path);
+    expect(hashedOnly).toContain("base.txt");
+    expect(hashedOnly).toContain("checks/apps/runner/image/checks.ts");
+    expect(hashedOnly).toContain("checks/packages/render/src/stand-ins.test.ts");
+    expect(inputs.find((i) => i.path === "runner/runner.js")?.hashedOnly).toBeUndefined();
+    expect(inputsHash(recipeInputs(pins, "Ubuntu 24.04.1", dist))).not.toBe(inputsHash(inputs));
+  } finally {
+    rmSync(dist, { recursive: true, force: true });
+  }
 });
 
 const file = (path: string, text: string): Input => ({ path, bytes: Buffer.from(text) });

@@ -3,7 +3,7 @@ import { MAX_OP_BYTES, type Op } from "@ponzu/core";
 import { z } from "zod";
 import { converseTools } from "../converse.ts";
 import { type ToolDef, ToolError, tool } from "../define.ts";
-import { absolute, readGiven } from "../disk.ts";
+import { type AgentFiles, absolute, localFiles, readGiven } from "../disk.ts";
 import { guideTool, listenTools } from "../listen.ts";
 import { ICON_HINT, icon, organizeTools } from "../organize.ts";
 import { orientTools } from "../orient.ts";
@@ -43,7 +43,8 @@ function htmlByPath(def: ToolDef<any>, about: string): ToolDef<any> {
     async handler({ path, ...args }, ctx) {
       if (path !== undefined && args.html !== undefined)
         throw new ToolError("Pass html or path, not both.");
-      const html = path === undefined ? args.html : await htmlAt(path as string);
+      const html =
+        path === undefined ? args.html : await htmlAt(ctx.ws.files ?? localFiles, path as string);
       if (needed && html === undefined)
         throw new ToolError("Pass html, or the path of a file that holds it.");
       return def.handler({ ...args, html }, ctx);
@@ -52,9 +53,10 @@ function htmlByPath(def: ToolDef<any>, about: string): ToolDef<any> {
 }
 
 /** The HTML in a file the agent wrote. */
-async function htmlAt(path: string): Promise<string> {
+async function htmlAt(files: AgentFiles, path: string): Promise<string> {
   // An op's limit: HTML doesn't get smaller when stored, so a larger file wouldn't fit one.
   const bytes = await readGiven(
+    files,
     path,
     MAX_OP_BYTES,
     "Split the HTML into parts and write each with its own write_html call; append is the default mode.",
