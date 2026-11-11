@@ -5,6 +5,7 @@ import type { Contributor, DesignSummary } from "../model.ts";
 import { DesignHarness } from "./design-harness.tsx";
 import * as f from "./fixtures.ts";
 import { CreateHarness, DesignChromeHarness, Harness } from "./harness.tsx";
+import { LivePreviews } from "./live-previews.tsx";
 import { SETUP_BOARDS } from "./setup-boards.tsx";
 import { THREAD_BOARDS, WORKING } from "./thread-boards.tsx";
 import * as t from "./thread-fixtures.ts";
@@ -57,6 +58,7 @@ export const BOARDS: Record<string, () => ReactNode> = {
   "sidebar-search": () => <DesignWindow query="" />,
   "sidebar-search-results": () => <DesignWindow query="hero" />,
   share: () => <DesignWindow />,
+  "sidebar-previews-updating": () => <LivePreviews />,
   "thread-in-the-right-rail": () => (
     <DesignHarness
       designs={f.soloWorking}
