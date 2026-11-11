@@ -1,7 +1,8 @@
 /*
  * The apps a page of the API's hands a person back to, by the scheme of the links each takes:
- * Ponzu (`ponzu`, the Mac app and the iPhone), Ponzu Preview (`ponzu-preview`, the cloud app
- * beside Ponzu 1.x) and a development build (`ponzu-dev`). An app says which it is when it asks
+ * Ponzu (`ponzu`, the Mac app and the iPhone) and Ponzu Dev (`ponzu-dev`, the cloud app beside
+ * Ponzu 1.x). `ponzu-preview` is Ponzu Dev under its earlier name, Ponzu Preview, kept for the
+ * copies of it still installed until they are gone. An app says which it is when it asks
  * for the install link, and the scheme is kept in the install's state, a row only the sealed
  * state names: nothing a browser brings can change where the page links. Anything else is
  * `ponzu`, never a scheme someone made up.
