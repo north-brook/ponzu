@@ -456,7 +456,8 @@ export function AppWindow({
     <TipProvider>
       <div
         ref={frame}
-        className="flex h-full flex-col bg-chrome text-ink"
+        // The shell: the solid colour, or clear over the Mac's glass (tokens.css, --c-shell).
+        className="flex h-full flex-col bg-shell text-ink"
         style={
           {
             minWidth: MIN_WINDOW.width,
@@ -540,7 +541,7 @@ export function AppWindow({
           >
             <main
               className={cn(
-                "pane-motion relative mb-1.5 min-h-0 flex-1 overflow-hidden rounded-10 bg-canvas transition-[margin]",
+                "pane-motion relative mb-1.5 min-h-0 flex-1 overflow-hidden rounded-10 bg-canvas shadow-canvas-edge transition-[margin]",
                 // 6 from the window's edge where a pane is closed: the closed pane's gutter is 8
                 // (sidebar) or 10 (rail), and the canvas reaches into it.
                 !sidebar ? "ml-1.5" : !sidebarOpen && "-ml-0.5",

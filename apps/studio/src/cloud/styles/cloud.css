@@ -51,6 +51,7 @@
 
 @theme inline {
   --color-chrome: var(--c-chrome);
+  --color-shell: var(--c-shell);
   --color-canvas: var(--c-canvas);
   --color-surface: var(--c-surface);
   --color-raised: var(--c-raised);
@@ -122,6 +123,7 @@
   --shadow-tip: var(--c-tip-shadow);
   --shadow-focus: var(--c-focus);
   --shadow-board: var(--c-board);
+  --shadow-canvas-edge: var(--c-canvas-edge);
   --shadow-chosen: var(--c-chosen-shadow);
   --shadow-note-field: var(--c-field-shadow);
   --shadow-file-card: var(--c-card-ring);
@@ -150,7 +152,7 @@
   body {
     margin: 0;
     overflow: hidden;
-    background: var(--c-chrome);
+    background: var(--c-shell);
     color: var(--c-ink);
     font-family: var(--font-sans);
     font-size: 13px;

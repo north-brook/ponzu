@@ -11,9 +11,23 @@
 :root {
   color-scheme: light dark;
 
-  /* Grounds, back to front. */
-  --c-chrome: light-dark(#e8e6e0, #0e0e0d);
-  --c-canvas: light-dark(#f4f3ef, #121211);
+  /*
+   * Grounds, back to front. The founder's: the canvas pure white or pure dark, the shell around
+   * it (the chrome, the sidebar, the thread pane) a little tinted, and on a Mac a little glassy.
+   *
+   * --c-chrome is the solid shell: what it is with no material behind it (a browser, the
+   * gallery, Windows and Linux, Reduce Transparency), and what a ring cut against the shell
+   * uses. The desktop's window takes the same two (apps/desktop/src/shell-ground.ts).
+   * --c-chrome-glass is the tint laid over the Mac's material instead, a touch darker in dark
+   * than the solid, so over the material's own grey the two read as one app. Its alpha is how
+   * much of the material shows through.
+   * --c-canvas is the ground the boards sit on, the canvas package's too (`--pz-canvas`, below).
+   */
+  --c-chrome: light-dark(#eeede9, #121211);
+  --c-chrome-glass: light-dark(rgba(238, 237, 233, 0.8), rgba(12, 12, 11, 0.8));
+  --c-canvas: light-dark(#ffffff, #000000);
+  /* What the shell paints: the solid shell, or nothing where <html> carries the glass (below). */
+  --c-shell: var(--c-chrome);
   --c-surface: light-dark(#ffffff, #1b1b1a);
   --c-raised: light-dark(#ffffff, #3a3a3a);
   /* A raised button under the pointer. Derived: a step down from raised toward the chrome. */
@@ -32,7 +46,8 @@
   --c-muted: light-dark(#5e5b54, #a9a59b);
   /* The design's #807c73 (--n-500) icons: chevrons, the search field. Dark: derived. */
   --c-icon-soft: light-dark(#807c73, #8e8a82);
-  --c-faint: light-dark(#a9a59b, #6b6862);
+  /* Dark: a step up from the design's #6b6862, so it holds where it did on the open row now the shell is lifted. */
+  --c-faint: light-dark(#a9a59b, #6e6b65);
   --c-dry: light-dark(#c9c5bc, #5e5b54);
 
   /* Lines and washes. */
@@ -43,10 +58,10 @@
   --c-press: light-dark(rgba(17, 17, 16, 0.08), rgba(255, 255, 255, 0.1));
   /*
    * What is open or chosen: the open design's row, the selected search result, the "+" while
-   * Share is open. Light is the canvas, so the open row reads as part of the pane beside it.
-   * Dark: derived, a step above hover; the dark canvas sits too close to the chrome to show.
+   * Share is open. Light is the canvas (white), so the open row reads as part of the pane beside it.
+   * Dark: derived, a step above hover; the black canvas would read as a hole in the shell.
    */
-  --c-selected: light-dark(#f4f3ef, #252523);
+  --c-selected: light-dark(#ffffff, #282826);
   /* The ring of the presence "+" (--n-300). Dark: derived. */
   --c-outline: light-dark(#d3d0c8, #3f3d39);
   /* A step of the guided setup not reached yet (--n-300). Dark: derived. */
@@ -146,10 +161,17 @@
   --c-strip: light-dark(#f4f3ef, #1b1b1a);
   /* The soft halo round the yuzu dot that heads a question. */
   --c-yuzu-halo: rgba(255, 200, 30, 0.25);
-  /* A board's miniature, as the canvas draws boards (the design's --c-board). */
-  --c-board:
-    0 0 0 1px light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.06)),
-    0 2px 10px light-dark(rgba(0, 0, 0, 0.05), transparent);
+  /*
+   * A board's edge, on the canvas and in a miniature (the canvas package's --pz-board-*,
+   * below): its hairline's colour and the shadow under it. The design's --c-board, its hairlines
+   * a step firmer: a white board on the white canvas, or a near-black one on the black, is held
+   * by the hairline alone, which the canvas draws one screen px wide at any zoom.
+   */
+  --c-board-edge: light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.1));
+  --c-board-drop: 0 2px 10px light-dark(rgba(0, 0, 0, 0.05), transparent);
+  --c-board: 0 0 0 1px var(--c-board-edge), var(--c-board-drop);
+  /* The canvas pane's edge on the shell: a hairline, so it keeps a crisp edge over the glass. */
+  --c-canvas-edge: 0 0 0 0.5px light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.08));
   /* Where a comment's pin landed on a board's miniature (the canvas's pin, small). */
   --c-pin-shadow: 0 0 0 1px rgba(17, 17, 16, 0.18), 0 1px 3px rgba(0, 0, 0, 0.25);
   /* The chosen answer: raised, with a hairline to hold its edge on the track. */
@@ -203,4 +225,33 @@
   :root:not([data-theme="light"]) {
     --c-pop: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.5);
   }
+}
+
+/*
+ * The Mac's window has its material behind the page (`data-glass`, which main.tsx sets from the
+ * bridge): <html> lays the tint over it once, and the body and the window's frame paint nothing,
+ * so the tint isn't doubled. With Reduce Transparency the system makes the material solid, and
+ * the shell is the solid colour, as everywhere else.
+ */
+:root[data-glass] {
+  --c-shell: transparent;
+  background: var(--c-chrome-glass);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-glass] {
+    background: var(--c-chrome);
+  }
+}
+
+/*
+ * The canvas package's ground and board edge are ours, so the canvas is one token here.
+ * `:root` puts these past the package's own `.pz-root` and `.pz-root.pz-dark`.
+ */
+:root .pz-root,
+:root .pz-root.pz-dark {
+  --pz-canvas: var(--c-canvas);
+  --pz-board-edge: var(--c-board-edge);
+  --pz-board-drop: var(--c-board-drop);
+  --pz-board-shadow: var(--c-board);
 }

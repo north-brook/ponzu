@@ -44,6 +44,7 @@ const merge = extendTailwindMerge({
         "knob",
         "github",
         "board",
+        "canvas-edge",
         "chosen",
         "note-field",
         "file-card",
