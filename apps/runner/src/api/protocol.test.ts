@@ -89,7 +89,14 @@ test("the runner over HTTP: an event in, an artboard drawn, the thread and state
   });
 
   const deadline = Date.now() + 3_000;
-  while (fake.lastState?.state !== "idle" || !fake.usage.has("res_1") || !fake.delivered.length) {
+  // Thread writes have a pacer of their own, so the last can land just after the idle report.
+  while (
+    fake.lastState?.state !== "idle" ||
+    !fake.usage.has("res_1") ||
+    !fake.delivered.length ||
+    fake.items().some((item) => item.streaming) ||
+    fake.items().length < 3
+  ) {
     if (Date.now() > deadline) throw new Error("timed out");
     await Bun.sleep(10);
   }
