@@ -20,6 +20,7 @@ import { LIVE_COLUMNS, type LiveQueryName, type RawRow } from "../live/rows.ts";
 import type { Profile } from "../rpc.ts";
 import type { Session, SessionState } from "../session.ts";
 import { type FakeQuery, FakeRealtime, fakeSeal } from "./realtime.ts";
+import { FakeSettings, type SettingsWorld } from "./settings.ts";
 
 /*
  * Ponzu Cloud in memory, behind the same interfaces as the real thing: a `Session` signed in
@@ -128,8 +129,12 @@ export class FakeBackend {
   private ids = 0;
   private refreshing = false;
 
+  /** Settings: ping toggles and devices, environments, usage and caps (`setBase`, `use`). */
+  readonly settings: FakeSettings;
+
   constructor(readonly clock: Clock) {
     this.realtime = new FakeRealtime((query) => this.rows(query), clock);
+    this.settings = new FakeSettings(clock);
   }
 
   addPerson(input: { login: string; name?: string | null }): FakePerson {
@@ -653,6 +658,51 @@ export class FakeBackend {
             }),
           };
         }),
+      ...this.settings.apiFor(person.id, this.settingsWorld(person, call, member)),
+    };
+  }
+
+  /** What the settings routes ask of the rest of the fake, as `person`. */
+  private settingsWorld(
+    person: FakePerson,
+    call: SettingsWorld["call"],
+    member: (workspaceId: string) => { workspace: FakeWorkspace; role: Role },
+  ): SettingsWorld {
+    const readable = (workspace: FakeWorkspace) =>
+      workspace.repos.filter((repo) => repoPermission(repo, person.id) !== "none");
+    return {
+      call,
+      member,
+      repo: (repoId) => {
+        for (const workspace of this.workspaces.values()) {
+          const repo = readable(workspace).find(({ id }) => id === repoId);
+          if (repo && workspace.members.has(person.id)) {
+            return {
+              id: repo.id,
+              fullName: repo.fullName,
+              workspaceId: workspace.id,
+              canPush: canWrite(repoPermission(repo, person.id)),
+            };
+          }
+        }
+        throw new ApiError(404, "not_found", "There is no such repo.");
+      },
+      repos: (workspaceId) => readable(member(workspaceId).workspace),
+      person: (userId) => this.people.get(userId)!,
+      soleAdminOf: (userId) =>
+        [...this.workspaces.values()]
+          .filter(
+            (workspace) =>
+              workspace.kind === "org" &&
+              workspace.members.get(userId) === "admin" &&
+              workspace.members.size > 1 &&
+              [...workspace.members].every(([id, role]) => id === userId || role !== "admin"),
+          )
+          .map(({ id, name }) => ({ id, name })),
+      forget: (userId) => {
+        for (const workspace of this.workspaces.values()) workspace.members.delete(userId);
+        this.people.delete(userId);
+      },
     };
   }
 

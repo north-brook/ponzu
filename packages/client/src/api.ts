@@ -165,6 +165,103 @@ export function createApi(session: Session, opts: ApiOptions = {}) {
       },
     },
 
+    /*
+     * Settings: notifications and devices, environments, usage and the cap, the account
+     * (docs/cloud.md, "Notifications", "Environments", "Billing", "Deleting an account").
+     */
+
+    notifications: {
+      /** The person's ping toggles and their devices. */
+      get: async () => (await v1.me.notifications.$get()).json(),
+      /** Change some toggles; the rest stay. */
+      set: async (prefs: {
+        needsYou?: boolean;
+        replies?: boolean;
+        prReady?: boolean;
+        teammateComments?: boolean;
+        emailDigest?: boolean;
+      }) => (await v1.me.notifications.$patch({ json: prefs })).json(),
+    },
+
+    devices: {
+      /** This device, for pings: once the person turns notifications on, and at each launch. */
+      register: async (body: {
+        platform: "ios" | "macos";
+        /** The APNs device token, in hex. */
+        pushToken: string;
+        pushEnvironment: "development" | "production";
+        name?: string | null;
+        appVersion?: string | null;
+        /** iOS has notifications for Ponzu turned off. */
+        blocked?: boolean;
+      }) => (await v1.me.devices.$post({ json: body })).json(),
+      /** 409 `push_token_taken` for a token another of the person's devices has. */
+      update: async (
+        id: string,
+        changes: {
+          pings?: boolean;
+          blocked?: boolean;
+          name?: string | null;
+          appVersion?: string | null;
+          pushToken?: string;
+        },
+      ) => (await v1.me.devices[":id"].$patch({ param: { id }, json: changes })).json(),
+      /** On signing out of the device. */
+      remove: async (id: string): Promise<void> => {
+        await v1.me.devices[":id"].$delete({ param: { id } });
+      },
+    },
+
+    environments: {
+      /** The workspace's repos with an environment, that the person can read. */
+      list: async (workspaceId: string) =>
+        (await v1.workspaces[":id"].environments.$get(design(workspaceId))).json(),
+      get: async (repoId: string) =>
+        (await v1.repos[":id"].environment.$get(design(repoId))).json(),
+      /** Anyone who can push. Kept for the repo's next start until building a base is built. */
+      rebuild: async (repoId: string) =>
+        (await v1.repos[":id"].environment.rebuild.$post(design(repoId))).json(),
+      /** Admins. 409 `secret_exists`, `secrets_full`; 400 `secret_name_reserved`. */
+      addSecret: async (repoId: string, body: { name: string; value: string }) =>
+        (await v1.repos[":id"].environment.secrets.$post({ ...design(repoId), json: body })).json(),
+      /** Admins. The old value is gone for good. */
+      replaceSecret: async (repoId: string, name: string, value: string) =>
+        (
+          await v1.repos[":id"].environment.secrets[":name"].$put({
+            param: { id: repoId, name },
+            json: { value },
+          })
+        ).json(),
+      /** Admins. */
+      removeSecret: async (repoId: string, name: string) =>
+        (
+          await v1.repos[":id"].environment.secrets[":name"].$delete({
+            param: { id: repoId, name },
+          })
+        ).json(),
+    },
+
+    usage: {
+      /** This billing period so far, as the person may see it. */
+      get: async (workspaceId: string) =>
+        (await v1.workspaces[":id"].usage.$get(design(workspaceId))).json(),
+      /** Admins. Whole dollars; 400 `cap_too_low` below what the period has billed. */
+      setCap: async (workspaceId: string, capUsd: number) =>
+        (
+          await v1.workspaces[":id"].billing.$patch({ ...design(workspaceId), json: { capUsd } })
+        ).json(),
+    },
+
+    account: {
+      /**
+       * Deletes the account, confirmed with the person's GitHub login. 409 `sole_admin` while
+       * they are the only admin of a team others are in. Sign out once it resolves.
+       */
+      delete: async (confirm: string): Promise<void> => {
+        await v1.me.$delete({ json: { confirm } });
+      },
+    },
+
     /** Seals named live queries. The live module calls this; apps use `live.subscribe`. */
     live: async (queries: { name: string; args?: unknown }[]) =>
       (await v1.live.$post({ json: { queries } })).json(),
