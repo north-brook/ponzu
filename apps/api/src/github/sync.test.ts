@@ -92,7 +92,14 @@ function installOnPerson(person: SignedInPerson, repoNames = ["site"]): FakeInst
   return installation;
 }
 
-const sync = (person: SignedInPerson) => syncGithub(t.deps, person.userId);
+/** A person's sync, and the work it starts beside it (a due read of people). */
+async function sync(person: SignedInPerson) {
+  try {
+    return await syncGithub(t.deps, person.userId);
+  } finally {
+    await t.backgroundDone();
+  }
+}
 
 async function rolesOf(person: SignedInPerson) {
   return Object.fromEntries(
@@ -401,18 +408,24 @@ describe("GitHub's budgets", () => {
       t.github.installationTokenRequests.filter(({ installationId }) => installationId === org.id);
 
     await sync(ned);
+    // Its repos, and who can reach them (`github/people.ts`).
     expect(minted()).toEqual([
       { installationId: org.id, body: { permissions: { metadata: "read" } } },
+      {
+        installationId: org.id,
+        body: { permissions: { metadata: "read", members: "read" } },
+      },
     ]);
 
     // Focus, focus, focus: the person's own view each time, and nothing of the installation's.
     await sync(ned);
     await sync(ned);
-    expect(minted()).toHaveLength(1);
+    expect(minted()).toHaveLength(2);
 
+    // Its repos again; who can reach them is read once an hour unless a webhook says.
     t.clock.advance(LATER);
     await sync(ned);
-    expect(minted()).toHaveLength(2);
+    expect(minted()).toHaveLength(3);
 
     const stored = JSON.stringify(await t.db.select().from(workspaces));
     expect(stored).not.toContain("ghs_");

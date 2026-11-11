@@ -1,5 +1,6 @@
 import { claimRepoIdeas, type RepoIdeasRow, releaseRepoIdeas, saveRepoIdeas } from "@ponzu/db";
 import type { z } from "zod";
+import { stableUuid } from "../analytics/analytics.ts";
 import type { Deps } from "../deps/index.ts";
 import type { Model, StructuredAnswer } from "../deps/model.ts";
 import type { Logger } from "../http/log.ts";
@@ -59,12 +60,15 @@ export const IDEAS_POLICY = {
 /** What `GET /v1/repos/:id/ideas` answers. */
 export type IdeasStatus = "ready" | "generating" | "none";
 
+/** What LLM analytics calls the model calls made here. */
+export const IDEAS_FEATURE = "repo_ideas";
+
 /** What the read and the answer may write: room for thinking, and four short lines. */
 const MAX_TOKENS = 4_000;
 /** One answer that breaks a rule is asked for again, once. */
 const ATTEMPTS = 2;
 
-type IdeasDeps = Pick<Deps, "db" | "clock" | "github" | "model" | "background">;
+type IdeasDeps = Pick<Deps, "db" | "clock" | "github" | "model" | "background" | "analytics">;
 
 /**
  * The repo's ideas as the person may see them now, starting their generation if they are due.
@@ -97,6 +101,19 @@ export async function repoIdeas(
     }
     if (claim === "rate_limited") {
       log.warn("ideas_rate_limited", { repoId: repo.id, workspaceId: repo.workspaceId });
+      // Every read of a due repo says this while the limit holds: said once per repo and window
+      // (one id, time and nobody's), so how often the app reads is not what PostHog counts.
+      const window = Math.floor(now / IDEAS_POLICY.windowMs) * IDEAS_POLICY.windowMs;
+      deps.analytics.capture(
+        "ideas skipped",
+        { repo_id: repo.id, reason: "rate_limited" },
+        {
+          distinctId: null,
+          workspaceId: repo.workspaceId,
+          timestamp: new Date(window),
+          uuid: stableUuid(`${repo.id}/ideas/rate_limited/${window}`),
+        },
+      );
     } else if (!repo.ideas.length) {
       // Due when this request read the row, and no longer: someone else claimed it meanwhile.
       return { status: "generating", ideas: [] };
@@ -133,7 +150,7 @@ function isGenerating(repo: RepoIdeasRow, now: number): boolean {
  * a failure is logged and nothing is kept.
  */
 export async function generateRepoIdeas(
-  deps: Pick<Deps, "db" | "clock" | "github" | "model">,
+  deps: Pick<Deps, "db" | "clock" | "github" | "model" | "analytics">,
   log: Logger,
   {
     repo,
@@ -145,6 +162,12 @@ export async function generateRepoIdeas(
   const deadline = deps.clock.timeout(IDEAS_POLICY.timeoutMs);
   const ids = { repoId: repo.id, workspaceId: repo.workspaceId };
   const tally: Tally = { attempts: 0, usage: { input: 0, output: 0 } };
+  const skipped = (reason: "rejected" | "failed") =>
+    deps.analytics.capture(
+      "ideas skipped",
+      { repo_id: repo.id, reason },
+      { workspaceId: repo.workspaceId },
+    );
   try {
     // Only this repo, only to read: the token is used for these few reads and never kept.
     const { token } = await deps.github.createInstallationToken({
@@ -157,7 +180,11 @@ export async function generateRepoIdeas(
       deadline,
     );
     const request = ideasRequest(snapshot);
-    const asked = await askForIdeas(deps.model, request, { signal: deadline, tally });
+    const asked = await askForIdeas(deps.model, request, {
+      signal: deadline,
+      tally,
+      workspaceId: repo.workspaceId,
+    });
     let ideas: string[];
     const rejected = "rejected" in asked;
     if ("rejected" in asked) {
@@ -182,7 +209,9 @@ export async function generateRepoIdeas(
       claimedAt,
       version: IDEAS_VERSION,
     });
-    if (!rejected) {
+    if (rejected) skipped("rejected");
+    else {
+      const ms = deps.clock.now() - started;
       log.info("ideas_generated", {
         ...ids,
         model: deps.model.id,
@@ -190,10 +219,25 @@ export async function generateRepoIdeas(
         fresh: request.fresh,
         ideas: ideas.length,
         saved,
-        ms: deps.clock.now() - started,
+        ms,
       });
+      if (saved && ideas.length > 0) {
+        deps.analytics.capture(
+          "ideas generated",
+          {
+            repo_id: repo.id,
+            count: ideas.length,
+            duration_ms: ms,
+            attempts: tally.attempts,
+            input_tokens: tally.usage.input,
+            output_tokens: tally.usage.output,
+          },
+          { workspaceId: repo.workspaceId },
+        );
+      }
     }
   } catch (error) {
+    skipped("failed");
     log.warn("ideas_failed", {
       ...ids,
       model: deps.model.id,
@@ -221,7 +265,11 @@ export interface Tally {
 export async function askForIdeas(
   model: Model,
   { instructions, prompt, fresh }: IdeasRequest,
-  { signal, tally }: { signal?: AbortSignal; tally: Tally },
+  {
+    signal,
+    tally,
+    workspaceId = null,
+  }: { signal?: AbortSignal; tally: Tally; workspaceId?: string | null },
 ): Promise<{ ideas: string[] } | { rejected: string }> {
   let rejected = "";
   while (tally.attempts < ATTEMPTS) {
@@ -237,6 +285,7 @@ export async function askForIdeas(
       // for under a tenth of a cent and a few more seconds, off the request's path.
       effort: "medium",
       signal,
+      feature: { name: IDEAS_FEATURE, workspaceId },
     });
     tally.usage.input += answer.usage.input;
     tally.usage.output += answer.usage.output;

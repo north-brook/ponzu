@@ -1,6 +1,7 @@
 import type { ToolResult } from "@ponzu/tools";
 import type { z } from "zod";
 import type { AskedQuestion, Effort, ModelUsage, RunErrorCode } from "../api/protocol.ts";
+import type { Origin, TraceOptions, TurnSummary } from "./trace.ts";
 
 /*
  * The agent as the runner drives it: start one long-lived session, feed it messages, answer
@@ -30,6 +31,8 @@ export interface AgentOptions {
   instructions: string;
   /** Served to the agent as the `ponzu` MCP server. */
   tools: AgentTool[];
+  /** Where each turn's trace goes (LLM analytics), or absent when analytics is off. */
+  trace?: TraceOptions;
 }
 
 /** Something to put into the run. */
@@ -45,6 +48,8 @@ export interface AgentInput {
   priority: "now" | "next" | "aside";
   /** A person typed it, rather than the runner writing it for them. */
   human: boolean;
+  /** The event it carries, who sent it and from which app session: whose turn it begins. */
+  origin?: Origin | null;
 }
 
 /** What the agent needs a person for. */
@@ -77,8 +82,18 @@ export type AgentEvent =
   | { type: "tool-done"; id: string; error: boolean }
   /** The agent waits on a person; answer with `reply` or take it back with `withdraw`. */
   | { type: "ask"; id: string; ask: Ask }
-  /** The turn ended. `usage` is the session's running total, by model. */
-  | { type: "result"; id: string; ok: boolean; error: TurnError | null; usage: ModelUsage[] }
+  /**
+   * The turn ended. `usage` is the session's running total, by model; `turn` is when it began,
+   * how many tools it called and which event began it, when the agent knows.
+   */
+  | {
+      type: "result";
+      id: string;
+      ok: boolean;
+      error: TurnError | null;
+      usage: ModelUsage[];
+      turn?: TurnSummary | null;
+    }
   /** The session ended, on its own or by `close`. */
   | { type: "exit"; error: string | null };
 

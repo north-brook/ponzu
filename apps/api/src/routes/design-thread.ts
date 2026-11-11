@@ -13,6 +13,7 @@ import {
 import { MAX_TEXT, type QuestionBody, type ThreadItem } from "@ponzu/runner/protocol";
 import { Hono } from "hono";
 import { z } from "zod";
+import { appSession } from "../analytics/scope.ts";
 import { access } from "../auth/access.ts";
 import { requireDesign } from "../auth/authorize.ts";
 import { personFor } from "../designs/actor.ts";
@@ -179,6 +180,13 @@ export const designThread = new Hono<AppEnv>()
         userId: actor.user.id,
         item: { text, from: personFor(actor.user), ...extra },
         event: { text, ...extra },
+        posthogSessionId: appSession(),
+      });
+      deps.analytics.capture("message sent", {
+        design_id: design.id,
+        first: false,
+        characters: text.length,
+        attachments: attachments.length,
       });
       await requestWake(deps, design.id, "message");
       return c.json(Item.parse(toItem(item)), 201);
@@ -206,11 +214,17 @@ export const designThread = new Hono<AppEnv>()
         id: questionId,
         answer: answerOf(question, c.req.valid("json")),
         userId: actor.user.id,
+        posthogSessionId: appSession(),
       });
       if (!answered) {
         const now = await getQuestion(deps.db, { designId: design.id, id: questionId });
         throw await closedBy(deps.db, now ?? question);
       }
+      deps.analytics.capture("question answered", {
+        design_id: design.id,
+        question_id: answered.id,
+        kind: answered.kind,
+      });
       await requestWake(deps, design.id, "answer");
       return c.json(QuestionView.parse(answered));
     },
@@ -252,6 +266,7 @@ export const designThread = new Hono<AppEnv>()
       payload: {},
       userId: actor.user.id,
     });
+    deps.analytics.capture("turn stopped", { design_id: design.id });
     await requestWake(deps, design.id, "stop");
     return c.body(null, 204);
   })

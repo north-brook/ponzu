@@ -8,9 +8,9 @@ import type { Actor, NewOp } from "./queries/ops.ts";
 // GitHub ids must be unique; tests in one database take the next.
 let nextGithubId = 1;
 
-export function seedUser(db: Db, login = "bryce") {
+export async function seedUser(db: Db, login = "bryce") {
   const githubUserId = nextGithubId++;
-  return upsertUser(db, {
+  const { created: _created, ...user } = await upsertUser(db, {
     workosUserId: `user_${githubUserId}`,
     githubUserId,
     githubLogin: login,
@@ -18,11 +18,12 @@ export function seedUser(db: Db, login = "bryce") {
     email: `${login}@example.com`,
     avatarUrl: null,
   });
+  return user;
 }
 
-export function seedWorkspace(db: Db, login = "north-brook") {
+export async function seedWorkspace(db: Db, login = "north-brook") {
   const githubAccountId = nextGithubId++;
-  return upsertWorkspace(db, {
+  const { connected: _connected, ...workspace } = await upsertWorkspace(db, {
     githubAccountId,
     githubLogin: login,
     kind: "org",
@@ -32,6 +33,7 @@ export function seedWorkspace(db: Db, login = "north-brook") {
     repositorySelection: "all",
     installedByUserId: null,
   });
+  return workspace;
 }
 
 export async function seedRepo(db: Db, workspaceId: string, fullName = "north-brook/fernwood") {

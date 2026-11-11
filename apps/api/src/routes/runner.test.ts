@@ -79,6 +79,9 @@ describe("the session and the lease", () => {
       openQuestions: [],
       seq: 0,
       saved: null,
+      workspaceId: ws.id,
+      // The test app has no PostHog key: the runner traces nothing.
+      analytics: null,
     });
   });
 
@@ -179,6 +182,8 @@ describe("events", () => {
           at: first.createdAt.toISOString(),
           priority: "now",
           from: { id: ws.people.maya!.userId, name: "Maya", login: "maya" },
+          // Sent without the app's PostHog session.
+          posthogSessionId: null,
           kind: "message",
           payload: { text: "Make it blue" },
         },

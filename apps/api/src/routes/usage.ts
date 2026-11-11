@@ -158,6 +158,7 @@ export const usage = new Hono<AppEnv>()
       }
       await setMonthlyCap(c.var.deps.db, { workspaceId: workspace.id, capCents: capUsd * 100 });
       c.var.log.info("monthly_cap_set", { workspaceId: workspace.id, capUsd });
+      c.var.deps.analytics.capture("monthly cap set", { cap_usd: capUsd });
       return c.json(view(await usageFor(c, workspace.id)));
     },
   );

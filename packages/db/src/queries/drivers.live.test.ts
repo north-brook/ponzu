@@ -36,7 +36,7 @@ import {
   saveGithubUserToken,
 } from "./github-tokens.ts";
 import {
-  countWorkspaceMembers,
+  countJoinedMembers,
   ensureWorkspaceAdmin,
   listWorkspaceMembers,
   removeMembership,
@@ -508,7 +508,7 @@ describeLive("queries on a real Postgres", ({ db, close }) => {
     });
 
     expect(await setMemberRole(db, { ...key, role: "member" })).toBe("last_admin");
-    expect(await countWorkspaceMembers(db, [workspace.id])).toEqual([
+    expect(await countJoinedMembers(db, [workspace.id])).toEqual([
       { workspaceId: workspace.id, members: 2 },
     ]);
     const repo = await seedRepo(db, workspace.id, "live/app");

@@ -55,6 +55,15 @@ export async function startRunnerSession(
     openQuestions: open.map((question) => question.id),
     seq: design.seq,
     saved: lease.saved ? savedView(lease.saved) : null,
+    workspaceId: design.workspaceId,
+    // Public values: the runner reports each turn's trace to LLM analytics itself.
+    analytics: deps.config.posthog
+      ? {
+          key: deps.config.posthog.key,
+          host: deps.config.posthog.host,
+          content: deps.config.posthog.aiContent,
+        }
+      : null,
   };
 }
 

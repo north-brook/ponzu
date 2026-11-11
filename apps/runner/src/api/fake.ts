@@ -210,13 +210,17 @@ export class FakeRunnerApi {
   }
 
   /** Add something to the design's feed, as the API does when it happens. */
-  push(body: EventBody, opts: { priority?: Priority; from?: Person | null } = {}): RunnerEvent {
+  push(
+    body: EventBody,
+    opts: { priority?: Priority; from?: Person | null; posthogSessionId?: string | null } = {},
+  ): RunnerEvent {
     const event = {
       id: `evt_${String(++this.seq).padStart(4, "0")}`,
       seq: this.seq,
       at: new Date().toISOString(),
       priority: opts.priority ?? "now",
       from: opts.from === undefined ? ADA : opts.from,
+      ...(opts.posthogSessionId !== undefined ? { posthogSessionId: opts.posthogSessionId } : {}),
       ...body,
     } as RunnerEvent;
     this.events.push({ event });

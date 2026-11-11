@@ -16,6 +16,8 @@ export interface NewEvent {
   payload: Json;
   /** The person behind it. Null when GitHub was. */
   userId?: string | null;
+  /** The PostHog session of the app that sent it, if it said. */
+  posthogSessionId?: string | null;
 }
 
 /** Someone behind an event, as the runner names them. */
@@ -43,8 +45,20 @@ export function eventRow({
   priority,
   payload,
   userId = null,
-}: Omit<NewEvent, "designId">): Omit<NewEvent, "designId"> & { id: string; userId: string | null } {
-  return { id: newId("evt"), kind, priority, payload: scrubbed(payload), userId };
+  posthogSessionId = null,
+}: Omit<NewEvent, "designId">): Omit<NewEvent, "designId"> & {
+  id: string;
+  userId: string | null;
+  posthogSessionId: string | null;
+} {
+  return {
+    id: newId("evt"),
+    kind,
+    priority,
+    payload: scrubbed(payload),
+    userId,
+    posthogSessionId,
+  };
 }
 
 /**
@@ -59,6 +73,24 @@ export async function appendEvent(db: Db, event: NewEvent): Promise<DesignEvent>
       .returning(),
   );
   return row!;
+}
+
+/**
+ * Who sent each of these events of a design, and from which app session: what a turn the event
+ * began is attributed to. Ids that are not the design's are left out.
+ */
+export async function getEventOrigins(
+  db: Db,
+  { designId, ids }: { designId: string; ids: string[] },
+): Promise<Map<string, { userId: string | null; posthogSessionId: string | null }>> {
+  if (ids.length === 0) return new Map();
+  const rows = await run(
+    db
+      .select({ id: events.id, userId: events.userId, posthogSessionId: events.posthogSessionId })
+      .from(events)
+      .where(and(eq(events.designId, designId), inArray(events.id, ids))),
+  );
+  return new Map(rows.map(({ id, ...origin }) => [id, origin]));
 }
 
 /** A person as an event names them. */
@@ -158,6 +190,7 @@ export async function claimEvents(
           kind: claimed.kind,
           priority: claimed.priority,
           payload: claimed.payload,
+          posthogSessionId: claimed.posthogSessionId,
           createdAt: claimed.createdAt,
           claimedAt: claimed.claimedAt,
           claimedBy: claimed.claimedBy,

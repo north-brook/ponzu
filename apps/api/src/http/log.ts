@@ -7,6 +7,8 @@
  * bodies, headers or query strings.
  */
 
+import { redact as redactValue } from "@ponzu/core/redact";
+
 export type LogLevel = "info" | "warn" | "error";
 
 export interface LogLine {
@@ -51,59 +53,7 @@ export function createLogger(sink: LogSink, bound: Record<string, unknown> = {})
   };
 }
 
-const REDACTED = "[redacted]";
-
-/** A field with one of these in its name never has its value logged, whatever the value is. */
-const SECRET_KEY =
-  /token|secret|password|passwd|authorization|cookie|verifier|credential|key$|^code$/i;
-
-/** What a secret looks like when it turns up inside some other text. */
-const SECRET_VALUES = [
-  // A JWT: a WorkOS access token, a GitHub App assertion.
-  /\beyJ[\w-]{8,}\.[\w-]{8,}\.[\w-]*/g,
-  // GitHub tokens: user, refresh, installation, OAuth, personal.
-  /\b(?:gh[pousr]_\w{16,}|github_pat_\w{16,})/g,
-  // WorkOS API keys, Ponzu runner tokens, vault ciphertexts.
-  /\bsk_(?:test|live)_\w+/g,
-  /\bpzr_[0-9a-z]{16,}/g,
-  /\bpzv1\.[\w.-]+/g,
-  /\bBearer\s+[^\s"',]+/gi,
-  /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g,
-];
-
-/** The password in a connection string (`postgres://user:<this>@host`), and `password=<this>`. */
-const URL_PASSWORD = /(\w+:\/\/[^\s:/@]+:)[^\s@]+@/g;
-const ASSIGNED = /\b(password|passwd|secret|token|api_?key)=[^\s&"']+/gi;
-
-const MAX_DEPTH = 6;
-
-/** A copy of `value` that is safe to log. */
-export function redact(value: unknown, depth = 0): unknown {
-  if (typeof value === "string") return redactText(value);
-  // JSON has no bigint, and `JSON.stringify` throws on one.
-  if (typeof value === "bigint") return value.toString();
-  if (value === null || typeof value !== "object") return value;
-  if (depth >= MAX_DEPTH) return "[too deep]";
-  if (value instanceof Error) {
-    return {
-      name: value.name,
-      message: redactText(value.message),
-      ...(value.stack ? { stack: redactText(value.stack) } : {}),
-      ...(value.cause === undefined ? {} : { cause: redact(value.cause, depth + 1) }),
-    };
-  }
-  if (value instanceof Date) return value.toISOString();
-  if (Array.isArray(value)) return value.map((item) => redact(item, depth + 1));
-  return Object.fromEntries(
-    Object.entries(value).map(([key, field]) => [
-      key,
-      SECRET_KEY.test(key) && field != null ? REDACTED : redact(field, depth + 1),
-    ]),
-  );
-}
-
-function redactText(text: string): string {
-  let out = text.replace(URL_PASSWORD, `$1${REDACTED}@`).replace(ASSIGNED, `$1=${REDACTED}`);
-  for (const pattern of SECRET_VALUES) out = out.replace(pattern, REDACTED);
-  return out;
+/** A copy of `value` that is safe to log (`@ponzu/core/redact`, which the runner's traces share). */
+export function redact(value: unknown): unknown {
+  return redactValue(value);
 }

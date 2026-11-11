@@ -276,6 +276,8 @@ describe("an answer that does not arrive whole", () => {
 
   test("a sync cut off keeps the person's workspaces and the workspace's repos", async () => {
     await syncGithub(t.deps, maya.userId);
+    // And the read of who can reach it that the sync started beside it.
+    await t.backgroundDone();
     const workspace = (await getWorkspaceByInstallation(t.db, 9002))!;
     const workspacesBefore = await listUserWorkspaces(t.db, maya.userId);
     const reposBefore = await listWorkspaceRepos(t.db, {
