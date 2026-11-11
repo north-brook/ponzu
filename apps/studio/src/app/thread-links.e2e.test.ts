@@ -258,6 +258,9 @@ describe.skipIf(!chromiumPath)("links to pages and boards in the agent's words",
   });
 
   test("another design's board opens that design, in the app", async () => {
+    // The turn has ended, so its earlier lines fold away under "Worked for …": open them.
+    const fold = rail().getByRole("button", { name: /^Worked for/ });
+    if (await fold.count()) await fold.first().click();
     await rail().getByRole("link", { name: "Checkout" }).click();
     await page.locator('[data-board-name][title="Cart"]').waitFor();
     expect(await opened()).toHaveLength(2);
