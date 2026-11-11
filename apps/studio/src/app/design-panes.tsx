@@ -1,5 +1,6 @@
 import type { CanvasProps } from "@ponzu/canvas";
-import { type ReactNode, useCallback, useState } from "react";
+import { isTyping } from "@ponzu/canvas/modifier-hint";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import type { DesignMember, DesignSummary, Person, WorkspaceKind } from "../cloud/model.ts";
 import { useAnalytics } from "./analytics/provider.tsx";
 import { DesignCanvas, DesignChromeSlot, type OpenDesign } from "./design.tsx";
@@ -81,6 +82,20 @@ export function useDesignPanes({
     }
     setTabFor(open ? designId : null);
   };
+
+  // The tab is read-only: ⌘Z there has nothing to undo. Uncaught, it would reach Edit › Undo,
+  // which reverts the last typing anywhere in the window (the thread's draft, beside the tab) and
+  // jumps there. On a page the canvas takes it; on the tab it is taken here, unless in a field.
+  useEffect(() => {
+    if (!prTab) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z" && !isTyping(e)) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [prTab]);
 
   const onOpenArtboards = useCallback(
     (ids: string[]) => {

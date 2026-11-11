@@ -518,6 +518,10 @@ describe.skipIf(!chromiumPath)("the studio, built, on Ponzu Cloud in memory", ()
     // Keys go to what shows: Delete doesn't reach the chosen board under the tab.
     await page.getByRole("heading", { name: NAME }).click();
     await page.keyboard.press("Backspace");
+    // ⌘Z has nothing to undo on the tab: it neither undoes on the canvas underneath nor reaches
+    // into the thread to take back the draft.
+    await page.keyboard.press("Meta+z");
+    expect(await draft.inputValue()).toBe("Half typed");
     // ⌘J closes and opens the thread on this tab as on any other, and the draft survives.
     const threadShown = () =>
       page.locator('button[aria-controls="thread"]').getAttribute("aria-expanded");

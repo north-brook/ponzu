@@ -51,7 +51,8 @@ Choosing the pull request tab swaps what the middle shows and nothing else: the 
 was (open at its width or closed, its scroll, its draft, its working state), so does the
 sidebar, both toggles and ⌘B, ⌘J keep working, the chrome reads as on any page, and no pane
 moves. The tab sits over the canvas in the same rounded pane; the canvas waits underneath,
-`inert` (the canvas takes no keys while it is), and a page tab brings it back where it was:
+`inert` (the canvas takes no keys while it is, and ⌘Z on the read-only tab is taken in
+`design-panes.tsx` so Edit › Undo doesn't reach into the thread's draft), and a page tab brings it back where it was:
 page, position, zoom and selection. The tab fits whatever width the middle has: details over
 files in one column at a reading measure below 1080, the board's two columns from there
 (`Columns` in `pr-tab/pull-request-view.tsx`).
