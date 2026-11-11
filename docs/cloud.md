@@ -610,8 +610,8 @@ secret's name. A Scratch design has no repo, so it has nowhere to keep one.
   token for the design's repository. No GitHub secret is stored in the sandbox.
 - **Commits** are authored by the person (their GitHub noreply address) and
   committed by the app.
-- **Pull requests** are opened, read and merged by the API: opened and read as the App,
-  merged and acted on as the person ("Pull requests" says why). The agent has no GitHub
+- **Pull requests** are opened, read and merged by the API: read as the App, opened, merged
+  and acted on as the person ("Pull requests" says why). The agent has no GitHub
   API token; it hands the API its summary of the change.
 - **Claude.** The owner's credential (an OAuth token from `claude setup-token`, or
   an API key) is passed as an environment variable when the sandbox starts or
@@ -987,84 +987,135 @@ pull-requests/` and `deps/github-pull-requests.ts`.
 | GET | `/v1/designs/:id/pull-request/files?path=` | none | one file and its diff |
 | POST | `/v1/designs/:id/pull-request` | none | 201 `PullRequestTab`; 200 when one was open |
 | POST | `/v1/designs/:id/pull-request/ready` | none | `PullRequestTab` |
-| POST | `/v1/designs/:id/pull-request/merge` | `{ headSha? }` | `PullRequestTab` |
+| POST | `/v1/designs/:id/pull-request/merge` | `{ headSha, bypass? }` | `PullRequestTab` |
 | POST, DELETE | `/v1/designs/:id/pull-request/auto-merge` | none | `PullRequestTab` |
 | POST | `/v1/designs/:id/pull-request/close` | none | `PullRequestTab` |
-| POST | `/v1/designs/:id/pull-request/update-branch` | `{ headSha? }` | `PullRequestTab` |
+| POST | `/v1/designs/:id/pull-request/update-branch` | `{ headSha }` | `PullRequestTab` |
 
 Reading takes read access to the design; the rest takes write access. `PullRequestTab` is the
 branch (`exists`, `aheadBy`, `behindBy` against the default branch), the pull request or null
 (state, draft, mergeable and GitHub's merge state, review decision and reviews, every check with
-its state and link, the conversation with line comments, the first hundred changed files with
-their counts, the last hundred commits), the merge method Merge would use, whether the repo
-allows auto-merge, and `nextAction`, the one thing the chrome's button offers: `create_pr` (the
-branch has commits and no open pull request), `ready` (a draft), `resolve` (conflicts),
-`fix_checks` (a check failed), `auto_merge` (checks are running and the repo allows it),
-`update_branch` (the repo's rules hold it back for being behind), `merge`, or `none`. Create PR,
-Fix checks and Resolve are the agent's to do; the client sends it a message. A file's diff is
-the unified patch, or `binary`, or `too_large` past 512 KB or where GitHub gives none.
+its state, whether the repo's rules require it, and its link, the conversation (the last
+hundred comments and reviews) with line comments, the first hundred changed files with their
+counts, the last hundred commits), the merge method Merge would use, whether the repo allows
+auto-merge, and `nextAction`, the one thing the chrome's button offers: `create_pr` (the branch
+has commits and no open pull request, or commits since its pull request merged), `ready` (a
+draft), `resolve` (conflicts), `fix_checks` (a check failed), `auto_merge` (checks are running,
+or the rules want a review, and the repo allows auto-merge), `update_branch` (the rules hold it
+back for being behind), `merge`, `blocked` (the rules want something, a review or a required
+check, and the repo has no auto-merge), or `none`. Create PR, Fix checks and Resolve are the
+agent's to do; the client sends it a message. A file's diff is the unified patch, or `binary`,
+or `too_large` past 512 KB or where GitHub gives none; only the hundred files the tab lists
+are served, which is one request to GitHub.
 
-**Who acts.** The App opens the pull request, reads it and writes its description, each with a
-one-hour token for the one repository and only what that needs (`pull_requests: write` and
-`contents: read` to open and edit; `contents`, `pull_requests`, `checks` and `statuses: read`
-to read). The person does everything else (ready, merge, auto-merge, close, update the branch)
-with their own GitHub user token (`githubUserToken`).
+**What a client must not trust.** Every title, description, comment, review, check name and
+notice title is what someone on GitHub wrote: anyone who can comment on the pull request, and
+any app or CI that posts a check. It is GitHub's markdown, which can carry raw HTML (a
+description carries Ponzu's own `<picture>`). A client renders it with raw HTML off, and
+neither loads nor follows remote images in it (a tracking pixel learns who looked, and when).
+The links the API sends (a check's page, an avatar) are http(s) or null: a check's link is
+whatever its poster said, and anything else is dropped.
 
-- Opened as the App, the pull request's author is the bot and not whoever pressed Create PR, so
-  they, like anyone else who can push, may approve it where the repo's rules want a review.
-  Reading needs no person, so a webhook can do it.
+**Who acts.** The App reads the pull request and writes its description, each with a one-hour
+token for the one repository and only what that needs (`contents`, `pull_requests`, `checks`
+and `statuses: read` to read; `pull_requests: write` and `contents: read` to edit). The person
+does everything else (open, ready, merge, auto-merge, close, update the branch) with their own
+GitHub user token (`githubUserToken`).
+
+- Opened as the person, the pull request's author is whoever pressed Create PR. GitHub never
+  counts an author's approval of their own pull request, so where the repo's rules want one
+  review, it comes from someone else, as it would without Ponzu. Opened as the App, the bot
+  would be its author, and the sandbox pushes as the App too, so the person who asked for the
+  change could approve it on GitHub and press Merge: one person where the rules want two.
 - A user-to-server token acts with what both the person and the App may do. So GitHub holds a
-  merge to the repo's rules exactly as they apply to that person: a rule that lets only some
-  people merge, or lets admins bypass it, applies to them, and not to the App, which a rule's
-  bypass list could name. GitHub's history names the person (`merged_by`), not the bot.
+  merge to the repo's rules exactly as they apply to that person, and not as they apply to the
+  App, which a ruleset's bypass list could name. GitHub's history names the person
+  (`merged_by`), not the bot.
+- But GitHub lets an admin, or someone on a ruleset's bypass list, merge past what the rules
+  still want. So Merge does not ask GitHub until the merge state is `clean`, `unstable` or
+  `has_hooks`: anything else (a review wanted, a required check not passed, behind, unknown) is
+  refused with its code before GitHub hears of it, and `nextAction` is never `merge` then. A
+  client may offer to merge anyway only by asking the person and sending `bypass: true`; GitHub
+  then decides whether they may.
+- Reading needs no person, so a webhook can do it.
 - Measured on the test repository with the App's permissions (contents and pull requests
-  write; checks, statuses, metadata and members read): a person's token marks a draft ready
-  (GraphQL `markPullRequestReadyForReview`), brings its branch up to date
-  (`PUT …/update-branch`) and merges it (`PUT …/merge`, `merged_by` the person). Auto-merge is a
-  setting of the repo, and where it is off GitHub refuses it to either token.
+  write; checks, statuses, metadata and members read): a person's token opens a pull request
+  (its author the person), marks it ready (GraphQL `markPullRequestReadyForReview`), brings its
+  branch up to date (`PUT …/update-branch`) and merges it (`PUT …/merge`, `merged_by` the
+  person). Auto-merge is a setting of the repo, and where it is off GitHub refuses it to either
+  token. Not measured: a base protected by rules, which takes the repo's administration
+  permission to set up, and neither the App nor a token through it has that.
 - A person whose GitHub token is dead is asked to sign in again (401 `github_reauth_required`).
 
 **Opening** is a draft from the branch into the default branch, titled with the design's name,
-whose description is the agent's summary, the design's first page as its preview shows it (light
-and dark, through `<picture>`), and a link back to the design. The preview's address carries the
-design's asset key, which opens every file of the design, so it goes only into a private repo's
-pull request, whose readers the repo would let open the design anyway; a public repo's gets the
-link alone. Where the repo's plan has no draft pull requests GitHub refuses one, and a ready one
-is opened instead. Asking again answers the pull request already open from the branch (or
-merged); one someone opened on GitHub from the branch is the design's too; after one is closed,
-asking opens a new one. Refused: Scratch (409 `no_repository`), a branch not on GitHub
-(`branch_not_pushed`), a branch with nothing the default branch lacks (`no_changes`).
+whose description is the agent's summary, the design's first page as its preview showed it
+(light and dark, through `<picture>`), and a link back to the design. The picture is a copy of
+the previews made for that pull request, under a random key of its own
+(`pull-requests/<key>/light.png` and `dark.png` at the bucket's root), which reaches those two
+files and nothing else: a description outlives anyone's access to the repo, is mailed to its
+watchers and is read by its integrations, and the design's asset key opens every file of the
+design. Only a private repo's pull request gets one (whoever reads a public one need not be
+able to open the design), and only once the design has previews. When a repo is made public,
+the picture is taken out of each of its designs' newest pull request's description and its
+copy deleted from storage. What stays exposed: whoever could read the description has seen the
+first page as it was, a mail or an integration may keep a copy, and an earlier pull request of
+the same design (one closed, or merged before the design was reopened) keeps its picture.
+
+Where the repo's plan has no draft pull requests GitHub refuses one, and a ready one is opened
+instead. Asking again answers the pull request already open from the branch, or the merged one
+until the branch has commits since its merge (the design was reopened and worked on), when a
+new one is opened from the same branch; one someone opened on GitHub from the branch into the
+default branch is the design's too; after one is closed, asking opens a new one. Refused:
+Scratch (409 `no_repository`), a branch not on GitHub (`branch_not_pushed`), a branch with
+nothing the default branch lacks (`no_changes`).
 
 The agent's summary sits between `<!-- ponzu:summary -->` and `<!-- /ponzu:summary -->`, and
 only that part is written again. A description someone rewrote without those markers is theirs:
 the summary then waits, unwritten.
 
 **Reading, and keeping the row in step.** One GraphQL query as the App (`PULL_REQUEST_QUERY`)
-reads the branch and the pull request; the newest pull request from the branch is the design's,
-and one from a fork never is. Every path that reads one (the tab, an action, a webhook) records
-what it read through one function, `recordRead`: the row, the thread's notice, and, on a merge,
-the design settling. So a merge from the button and GitHub's webhook for it settle the design
-once, whichever comes first, and the sandbox's teardown follows from the settled state. Reads
-finish out of order and a check finishing leaves GitHub's `updated_at` alone, so a read is
-recorded only over one that began no later (`designs.pr_read_at`), or over an older pull
+reads the branch and the pull request; the newest pull request from the branch into the default
+branch is the design's. One from a fork never is, and nor is one someone pointed at another
+base: it merges nothing into the default branch, so it neither shows nor settles the design.
+Every path that reads one (the tab, an action, a webhook) records what it read through one
+function, `recordRead`: the row, the thread's notice (written once, by an id of its own), and,
+on a merge, the design settling. So a merge from the button and GitHub's webhook for it settle
+the design once, whichever comes first, and the sandbox's teardown follows from the settled
+state. Reads finish out of order and a check finishing leaves GitHub's `updated_at` alone, so a
+read is recorded only over one that began no later (`designs.pr_read_at`), or over an older pull
 request; a merge is the last word on its pull request, and a design reopened after its merge
-stays open.
+stays open. A read that finds what the row already says writes nothing, since every write
+reaches everyone watching the workspace's designs.
+
+GitHub's pull request lags a push to its branch by a second or so, and until then shows the
+old commit with its checks and mergeability. The query reads the branch's commit with the pull
+request, and a read that shows an open pull request at another commit than its branch is not
+recorded (a green tick for a commit nobody checked), unless it is the last read there will be;
+Merge and Update branch refuse it as `head_moved`.
 
 A webhook is a signal to read again, never a record: `pull_request` (opened, closed, reopened,
-synchronize, edited, ready, back to draft, auto-merge on and off), `check_run`, `check_suite`,
-`pull_request_review`, and `push`. GitHub takes a few seconds after a push or a change of base to
-work out whether a pull request can merge (`mergeable` is null, the spike measured four to eight
-seconds), and the pull request lags a push by about a second, so after those the pull request is
-read again at one, two, three and four seconds until GitHub knows and shows the pushed commit. A
-push to the default branch reads again every open pull request of the repo's designs (fifty at
-most), since it may have given them conflicts. Whether checks pass is the rollup of check runs
-and commit statuses, never check suites: other apps leave theirs queued for good.
+synchronize, edited, ready, back to draft, auto-merge on and off), `check_run` (completed and
+re-run; one starting adds nothing the push's read does not see), `check_suite` (completed),
+`pull_request_review`, and `push`. Each read is a GraphQL point of the installation's 5,000 an
+hour, and GitHub sends a delivery for every check that finishes, so deliveries are folded into
+windows of two seconds (`pull-requests/refresh.ts`): the first about a design in a window
+records one read for the window's end as a job (`pull_request.refresh`, keyed by the design and
+the window) and makes it then, the rest find it recorded, and the cron tries again a read that
+failed. A read is made again at one, two, three and four seconds while the pull request lags its
+branch or GitHub is still working out whether it can merge (`mergeable` is null; the spike
+measured four to eight seconds after a push or a change of base). A push to the default branch
+reads the open pull requests of the repo's designs, the fifty updated last, four at a time,
+since it may have given them conflicts. Whether checks pass is the rollup of check runs and
+commit statuses, never check suites: other apps leave theirs queued for good.
 
 **Acting** refuses what it can name before asking GitHub, and says why GitHub refused with a
-code a client can show. Merge uses the first of squash, merge and rebase the repo allows (GitHub
-has no default method of a repo's own; squash is what most allow). It takes the commit the person
-looked at (`headSha`) and merges only while the branch is still there, waiting up to three
-seconds while GitHub works out whether it can.
+code a client can show, from GitHub's own words where it gives them. Merge uses the first of
+squash, merge and rebase the repo allows (GitHub has no default method of a repo's own; squash
+is what most allow). It takes the commit the person looked at (`headSha`, required, as for
+Update branch) and merges only while the branch is still there, waiting up to three seconds
+while GitHub works out whether it can. After GitHub says it merged, it is read until the read
+shows it, for a few seconds; if it still does not, a job reads it again a minute later, so the
+design settles whether or not the merge's webhook arrives.
 
 | Code | When |
 |---|---|
@@ -1074,17 +1125,18 @@ seconds while GitHub works out whether it can.
 | `mergeability_unknown` | GitHub is still working out whether it can merge |
 | `merge_conflicts` | the branch conflicts with its base |
 | `review_required`, `changes_requested` | the repo's rules want an approval; a reviewer asked for changes |
-| `checks_failing`, `checks_pending` | a required check failed, or has not finished |
+| `checks_failing`, `checks_pending` | a check the rules require failed, or has not finished (other checks may fail) |
 | `branch_behind` | the rules want the branch up to date: update it |
-| `branch_protected` | the rules refuse it for a reason GitHub does not give |
+| `branch_protected` | the rules refuse it for a reason GitHub does not give (signed commits, a merge queue…) |
 | `branch_up_to_date` | updating a branch that has everything its base has |
 | `auto_merge_not_allowed`, `already_mergeable` | the repo has auto-merge off; nothing is left to wait for |
 | `forbidden` | GitHub does not let this person do it (403) |
 | `github_refused` | anything else GitHub refused (422) |
 
 Not handled yet: a repo that merges through a merge queue (GitHub refuses a direct merge there:
-`branch_protected`); and the App has no `workflows` permission, so a branch update or a push that
-would change `.github/workflows/` is refused by GitHub.
+`branch_protected`); the App has no `workflows` permission, so a branch update or a push that
+would change `.github/workflows/` is refused by GitHub; and there is no sweep that reads open
+pull requests whose webhooks were all lost (a merge from Ponzu is covered by its own job).
 
 ## Assets and previews
 
@@ -1106,6 +1158,10 @@ Under a design's asset key:
 | `assets/<name>` | a file of the design, as markup references it |
 | `previews/<seq>-light.png`, `previews/<seq>-dark.png` | the previews of `designs.preview_seq` |
 | `exports/<upload id>-<name>` | a file an export link reaches |
+
+At the bucket's root, `pull-requests/<key>/light.png` and `dark.png` are a pull request's
+picture, copied from the previews when it opens, under a random key that opens nothing else
+("Pull requests").
 
 A client builds a preview's address from the design's head: `<assets url>/<asset key>/previews/
 <preview seq>-<theme>.png`. A preview waits under `staging/` at the bucket's root until it is
